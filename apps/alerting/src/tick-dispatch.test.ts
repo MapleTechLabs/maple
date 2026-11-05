@@ -110,7 +110,7 @@ describe("dispatchTick", () => {
 			const { binding, seen } = fakeBinding(204)
 			yield* dispatchTick("*/5 * * * *", "anomaly", { ...ENV, [SELF_BINDING]: binding })
 			expect(seen).toHaveLength(1)
-			const tick = yield* authorizeTickRequest(seen[0]!, ENV)
+			const tick = yield* authorizeTickRequest(seen[0], ENV)
 			expect(tick).toMatchObject({ cron: "*/5 * * * *", lane: "anomaly" })
 		}),
 	)

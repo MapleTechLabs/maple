@@ -31,7 +31,7 @@ export const makeQueryRunners = ({ warehouse, queryEngine }: QueryRunnerDeps) =>
 		tenant: TenantContext,
 		payload: Payload,
 		execute: Effect.Effect<A, E>,
-		cacheCodec: (row: CompiledQueryRowSchema<Row>) => Schema.Codec<A, unknown, never, never>,
+		cacheCodec: (row: CompiledQueryRowSchema<Row>) => Schema.Codec<A, unknown>,
 	) =>
 		Effect.gen(function* () {
 			// Static policies do not require a Clock service.

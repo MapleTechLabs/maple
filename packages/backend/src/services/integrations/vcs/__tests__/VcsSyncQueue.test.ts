@@ -208,7 +208,7 @@ describe("VcsSyncQueue.sendBatch chunking", () => {
 			const queue = yield* VcsSyncQueue
 			yield* queue.sendBatch(jobs)
 			// Sanity: a single job is under the byte cap (so the split is genuine).
-			assert.ok(bodyBytes(chunks.flat()[0]!) < QUEUE_BATCH_MAX_BYTES)
+			assert.ok(bodyBytes(chunks.flat()[0]) < QUEUE_BATCH_MAX_BYTES)
 			assertChunksValid(chunks)
 			assert.deepStrictEqual(chunkSizes(chunks), [2, 2, 1])
 		}).pipe(provideQueue(layer))
@@ -225,7 +225,7 @@ describe("VcsSyncQueue.sendBatch chunking", () => {
 			yield* queue.sendBatch(jobs)
 			assertChunksValid(chunks)
 			assert.ok(
-				Arr.some(chunks, (c) => c.length === 1 && bodyBytes(c[0]!) > QUEUE_BATCH_MAX_BYTES),
+				Arr.some(chunks, (c) => c.length === 1 && bodyBytes(c[0]) > QUEUE_BATCH_MAX_BYTES),
 				"oversized message is sent in a chunk of its own",
 			)
 			// All three jobs survive across the chunks (nothing silently dropped).

@@ -27,7 +27,7 @@ afterAll(async () => {
 	await member.dispose()
 })
 
-const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: S, result: McpToolResult) =>
+const decode = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
 	Schema.decodeSync(schema)(result.structuredContent)
 
 const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"

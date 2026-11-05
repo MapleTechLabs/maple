@@ -147,7 +147,7 @@ export const buildTraceScatterSpike = (spec: SpikeSpec) => {
 		definition,
 		focusKeyOf: (point) => `${point.datum.x}:${point.datum.y}`,
 		// Packed for the lab's body: the clock, then the count with its swatch and the reading.
-		tooltipOf: (points: ReadonlyArray<ChartPoint<Bin, ChartValue, ChartValue>>) =>
+		tooltipOf: (points: ReadonlyArray<ChartPoint<Bin>>) =>
 			Option.map(Option.fromNullishOr(points[0]?.datum), (bin) =>
 				ChartTooltip.Bucket({
 					heading: clockOf(bin.x, true),

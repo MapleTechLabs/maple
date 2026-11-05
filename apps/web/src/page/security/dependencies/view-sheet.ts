@@ -175,7 +175,7 @@ const triage = (h: H, model: Model, finding: DependencyFindingView, clock: Clock
 				h.p(
 					[h.Class("text-sm")],
 					[
-						`${STATUS_FILTER_LABEL[finding.status]}`,
+						STATUS_FILTER_LABEL[finding.status],
 						...(finding.statusChangedAt === null
 							? []
 							: [

@@ -61,7 +61,7 @@ let doc: MutableDocumentStub
 let localStorage: FakeStorage
 
 const statuses = (): string[] => posted.map((p) => String(p.row.status))
-const last = (): Record<string, unknown> => posted[posted.length - 1]!.row
+const last = (): Record<string, unknown> => posted[posted.length - 1].row
 
 const start = (hooks: Partial<SessionLifecycleHooks> = {}) =>
 	startSessionLifecycle(
@@ -280,7 +280,7 @@ describe("visibility", () => {
 
 		setVisibility("hidden")
 		expect(statuses()).toEqual(["active", "ended"])
-		expect(posted[1]!.keepalive).toBe(true)
+		expect(posted[1].keepalive).toBe(true)
 		expect(suspends).toEqual([{ flush: true, keepalive: true }])
 
 		// A second hide signal (pagehide after visibilitychange) must not post again.
@@ -333,7 +333,7 @@ describe("visibility with an owner that pauses", () => {
 		const id = handle!.sessionId
 		setVisibility("hidden")
 		expect(statuses()).toEqual(["active", "ended"])
-		expect(posted[1]!.keepalive).toBe(true)
+		expect(posted[1].keepalive).toBe(true)
 		setVisibility("visible")
 		expect(statuses()).toEqual(["active", "ended", "active"])
 		expect(calls).toEqual(["start", "pause:true"])
@@ -429,7 +429,7 @@ describe("shutdown", () => {
 		const handle = start()
 		await handle!.shutdown()
 		expect(statuses()).toEqual(["active", "ended"])
-		expect(posted[1]!.keepalive).toBe(true)
+		expect(posted[1].keepalive).toBe(true)
 
 		vi.advanceTimersByTime(5 * HEARTBEAT)
 		expect(posted).toHaveLength(2)

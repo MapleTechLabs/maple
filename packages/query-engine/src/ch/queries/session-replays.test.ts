@@ -802,9 +802,9 @@ describe("session replay rows decode timestamps to DateTime.Utc", () => {
 				const compiled = yield* compile(sessionReplaysListQuery(opts), { ...baseParams, ...WINDOW })
 				expect(compiled.rowSchemaSource).toBe("derived")
 				const [row] = yield* compiled.decodeRows([listRow])
-				expect(DateTime.formatIso(row!.startTime)).toBe("2026-06-24T04:00:00.123Z")
-				expect(row!.endTime).toBeNull()
-				expect(row!.lastActivityAt && DateTime.formatIso(row!.lastActivityAt)).toBe(
+				expect(DateTime.formatIso(row.startTime)).toBe("2026-06-24T04:00:00.123Z")
+				expect(row.endTime).toBeNull()
+				expect(row.lastActivityAt && DateTime.formatIso(row.lastActivityAt)).toBe(
 					"2026-06-24T04:05:00.000Z",
 				)
 			}),
@@ -825,7 +825,7 @@ describe("session replay rows decode timestamps to DateTime.Utc", () => {
 					isCheckpoint: 1,
 				},
 			])
-			expect(DateTime.formatIso(row!.timestamp)).toBe("2026-06-24T04:00:01.500Z")
+			expect(DateTime.formatIso(row.timestamp)).toBe("2026-06-24T04:00:01.500Z")
 		}),
 	)
 
@@ -839,7 +839,7 @@ describe("session replay rows decode timestamps to DateTime.Utc", () => {
 			const [row] = yield* compiled.decodeRows([
 				{ sessionId: "sess_1", startTime: "2026-06-24 04:00:00.000000000", durationMs: null },
 			])
-			expect(DateTime.toEpochMillis(row!.startTime)).toBe(Date.UTC(2026, 5, 24, 4))
+			expect(DateTime.toEpochMillis(row.startTime)).toBe(Date.UTC(2026, 5, 24, 4))
 		}),
 	)
 })

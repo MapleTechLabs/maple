@@ -534,7 +534,7 @@ export function buildToolErrorDetailFixture(
 		sessionId,
 		vendorId: "maple",
 		agentName: "investigation-lane",
-		service: where[index % where.length]![1],
+		service: where[index % where.length][1],
 		hits: Math.max(1, Math.round(spec.calls / (spec.sessions + index))),
 		lastSeen: row.lastSeen - index * 47 * 60_000,
 	}))
@@ -546,8 +546,8 @@ export function buildToolErrorDetailFixture(
 					index,
 					Arr.map(variants, (candidate) => candidate.calls),
 				)
-			]!
-		const [model, service] = where[index % where.length]!
+			]
+		const [model, service] = where[index % where.length]
 		const args = spec.arguments(index)
 		const result = Str.startsWith("{")(spec.message) ? variant.message : ""
 		return {
@@ -622,8 +622,8 @@ function detailSessions(
 			const durationMs = seed.maxMs * 4 + 12_000
 			return {
 				sessionId: seed.sessionId,
-				vendorId: ["eve", "claude_agent_sdk", "vercel_ai_sdk", "langchain"][index % 4]!,
-				vendorVersion: ["v1.4.2", "v0.9.1", "v5.0.4", "v0.3.27"][index % 4]!,
+				vendorId: ["eve", "claude_agent_sdk", "vercel_ai_sdk", "langchain"][index % 4],
+				vendorVersion: ["v1.4.2", "v0.9.1", "v5.0.4", "v0.3.27"][index % 4],
 				traceCount: 1 + (index % 6),
 				spanCount: 22 + index * 97,
 				errorSpanCount: seed.errors,

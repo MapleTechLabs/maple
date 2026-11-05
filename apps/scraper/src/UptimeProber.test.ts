@@ -49,7 +49,7 @@ describe("UptimeProber", () => {
 				),
 			)
 
-			const span = toOtlpSpan(exported[0]!)
+			const span = toOtlpSpan(exported[0])
 			assert.match(span.traceId, /^[0-9a-f]{32}$/)
 			assert.match(span.spanId, /^[0-9a-f]{16}$/)
 			assert.strictEqual(recorded[0]?.headers.traceparent, `00-${span.traceId}-${span.spanId}-01`)

@@ -32,6 +32,7 @@ export function writeClipboardFallback(text: string): boolean {
 	// `execCommand` throws outright in a sandboxed frame rather than returning
 	// false, so an unavailable command and a refused one are one answer.
 	const ok = Option.getOrElse(
+		// oxlint-disable-next-line typescript/no-deprecated -- fallback for contexts without the async Clipboard API.
 		trySync(() => document.execCommand("copy")),
 		() => false,
 	)

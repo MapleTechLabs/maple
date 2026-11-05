@@ -5,7 +5,7 @@ import { dataSourceEndpoint } from "@maple/widgets/dashboard"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { inspectWidget, type InspectWidgetTimeRange } from "../lib/inspect-widget"
 import { truncate } from "../lib/format"
-import { resolveDashboardTimeRange, type DashboardTimeRangeInput } from "../lib/resolve-dashboard-time-range"
+import { resolveDashboardTimeRange } from "../lib/resolve-dashboard-time-range"
 import { resolveTimeRange } from "../lib/time"
 import { loadDashboard } from "../lib/dashboard-mutations"
 import { stringifyJson, stringifyJsonPretty } from "../lib/json"
@@ -141,9 +141,7 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 				// A widget pinned to its own window is inspected on that window —
 				// otherwise the rows returned here aren't the rows the tile renders.
 				const source = widget.timeRange ? ("widget" as const) : ("dashboard" as const)
-				const resolved = resolveDashboardTimeRange(
-					(widget.timeRange ?? dashboard.timeRange) as DashboardTimeRangeInput,
-				)
+				const resolved = resolveDashboardTimeRange(widget.timeRange ?? dashboard.timeRange)
 				if (resolved) {
 					timeRange = { startTime: resolved.startTime, endTime: resolved.endTime, source }
 				} else {

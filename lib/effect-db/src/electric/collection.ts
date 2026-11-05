@@ -217,7 +217,7 @@ type AnyEffectElectricCollectionConfig =
 	| (EffectElectricCollectionConfig<any, any, any, any, any> & {
 			runtime: ManagedRuntime.ManagedRuntime<any, unknown>
 	  })
-	| (EffectElectricCollectionConfig<any, any, any, any, never> & { runtime?: never })
+	| (EffectElectricCollectionConfig<any, any, any, any> & { runtime?: never })
 
 /** Creates Electric collection options with Effect-based handlers. */
 export function effectElectricCollectionOptions<T extends StandardSchemaV1, R>(
@@ -238,13 +238,7 @@ export function effectElectricCollectionOptions<T extends StandardSchemaV1, R>(
 }
 
 export function effectElectricCollectionOptions<T extends StandardSchemaV1>(
-	config: EffectElectricCollectionConfig<
-		InferSchemaOutput<T>,
-		string | number,
-		T,
-		Record<string, never>,
-		never
-	> & {
+	config: EffectElectricCollectionConfig<InferSchemaOutput<T>, string | number, T> & {
 		schema: T
 		runtime?: never
 	},
@@ -259,18 +253,18 @@ export function effectElectricCollectionOptions<T extends Row<unknown>, R>(
 		schema?: never
 		runtime: ManagedRuntime.ManagedRuntime<R, unknown>
 	},
-): CollectionConfig<T, string | number> & {
+): CollectionConfig<T> & {
 	id?: string
 	utils: EffectElectricCollectionUtils
 	schema?: never
 }
 
 export function effectElectricCollectionOptions<T extends Row<unknown>>(
-	config: EffectElectricCollectionConfig<T, string | number, never, Record<string, never>, never> & {
+	config: EffectElectricCollectionConfig<T> & {
 		schema?: never
 		runtime?: never
 	},
-): CollectionConfig<T, string | number> & {
+): CollectionConfig<T> & {
 	id?: string
 	utils: EffectElectricCollectionUtils
 	schema?: never

@@ -24,9 +24,9 @@ describe("coalesceDeltas", () => {
 			Arr.map(out, (part) => part.type),
 			["reasoning-start", "reasoning-delta", "reasoning-end", "text-delta"],
 		)
-		assert.equal(out[1]!.type === "reasoning-delta" ? out[1]!.delta : "", "Let me check.")
+		assert.equal(out[1].type === "reasoning-delta" ? out[1].delta : "", "Let me check.")
 		// The last delta is flushed when the stream ends.
-		assert.equal(out[3]!.type === "text-delta" ? out[3]!.delta : "", "Done.")
+		assert.equal(out[3].type === "text-delta" ? out[3].delta : "", "Done.")
 	})
 
 	it("never joins two parts, two kinds, or past the size bound", async () => {

@@ -52,12 +52,12 @@ export const parseChildFindings = (answer: string): ReadonlyArray<PrReviewFindin
 		const [, severity, category, title, why, fix, check] = parts
 		return [
 			{
-				path: canonicalPath(anchor[1]!),
+				path: canonicalPath(anchor[1]),
 				line: Number(anchor[2]),
-				severity: severityOf(severity!),
-				category: Str.toLowerCase(category!),
-				title: title!,
-				body: why!,
+				severity: severityOf(severity),
+				category: Str.toLowerCase(category),
+				title: title,
+				body: why,
 				...(fix ? { suggestion: fix } : undefined),
 				...(check && check !== "-" ? { checkId: check } : undefined),
 			},

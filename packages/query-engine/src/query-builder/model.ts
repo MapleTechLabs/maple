@@ -1573,7 +1573,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 				filters: finalFilters,
 				bucketSeconds,
 				seriesLimit,
-			} as QuerySpec,
+			},
 			warnings,
 			error: null,
 		}
@@ -1614,7 +1614,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 				filters: buildLogsSpecFilters(filters),
 				bucketSeconds,
 				seriesLimit,
-			} as QuerySpec,
+			},
 			warnings,
 			error: null,
 		}
@@ -1652,7 +1652,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 				filters: buildProductEventsSpecFilters(filters),
 				bucketSeconds,
 				seriesLimit,
-			} as QuerySpec,
+			},
 			warnings,
 			error: null,
 		}

@@ -105,7 +105,7 @@ describe("dashboard concurrency", () => {
 			const listed = yield* persistence.list(ORG)
 
 			assert.strictEqual(listed.dashboards.length, 1)
-			const widgets = Arr.map(listed.dashboards[0]!.document.widgets, (w) => w.id).sort()
+			const widgets = Arr.map(listed.dashboards[0].document.widgets, (w) => w.id).sort()
 			assert.deepStrictEqual(widgets, ["w-a", "w-b"])
 		}).pipe(Effect.provide(layer))
 	})
@@ -132,9 +132,9 @@ describe("dashboard concurrency", () => {
 			const failures = Arr.filter(exits, Exit.isFailure)
 			assert.strictEqual(successes.length, 1)
 			assert.strictEqual(failures.length, 1)
-			assert.instanceOf(findError(failures[0]!), DashboardConcurrencyError)
+			assert.instanceOf(findError(failures[0]), DashboardConcurrencyError)
 			const { document: stored } = yield* persistence.get(ORG, created.id)
-			assert.strictEqual(stored.name, successes[0]!.value.document.name)
+			assert.strictEqual(stored.name, successes[0].value.document.name)
 		}).pipe(Effect.provide(layer))
 	})
 

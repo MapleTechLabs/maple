@@ -27,6 +27,7 @@ interface ScriptLogic {
 }
 
 // The shipped script source, evaluated as the browser would, to hold it to the server's answers.
+// oxlint-disable-next-line typescript/no-implied-eval -- evaluates the shipped inline script source on purpose.
 const logic: ScriptLogic = new Function(
 	`${PAGE_SCRIPT_LOGIC}return{shift,mlabel,fday,bounds,state,tip,pct,cells,mback}`,
 )()

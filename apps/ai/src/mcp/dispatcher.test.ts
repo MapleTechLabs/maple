@@ -180,7 +180,7 @@ describe("MCP dispatcher", () => {
 						"sandbox_exec",
 						{ repository: "acme/app", command: "git", args: ["log"] },
 						"mcp",
-					) as Effect.Effect<never, McpToolNotFoundError, never>,
+					) as Effect.Effect<never, McpToolNotFoundError>,
 				)
 				// Same answer as a name that was never registered, so probing cannot
 				// tell the two apart.
@@ -232,8 +232,7 @@ describe("MCP dispatcher", () => {
 			const error = yield* Effect.flip(
 				executor.execute(TENANT, "not_a_maple_tool", {}, "mcp") as Effect.Effect<
 					never,
-					McpToolNotFoundError,
-					never
+					McpToolNotFoundError
 				>,
 			)
 			expect(error._tag).toBe("@maple/mcp/ToolNotFoundError")

@@ -134,7 +134,7 @@ describe("run_code", () => {
 		assert.sameMembers(dispatched, ["list_services", "find_errors"])
 		const result = Option.getOrUndefined(
 			Arr.findFirst(
-				toolResults(prompts[1]!),
+				toolResults(prompts[1]),
 				(part) => part.type === "tool-result" && part.name === RUN_CODE,
 			),
 		)
@@ -213,7 +213,7 @@ describe("run_code", () => {
 		assert.deepEqual(dispatched, [])
 		const result = Option.getOrUndefined(
 			Arr.findFirst(
-				toolResults(prompts[1]!),
+				toolResults(prompts[1]),
 				(part) => part.type === "tool-result" && part.name === RUN_CODE,
 			),
 		)
@@ -274,7 +274,7 @@ describe("run_code", () => {
 		assert.deepEqual(dispatched, [])
 		const result = Option.getOrUndefined(
 			Arr.findFirst(
-				toolResults(prompts[1]!),
+				toolResults(prompts[1]),
 				(part) => part.type === "tool-result" && part.name === RUN_CODE,
 			),
 		)
@@ -364,8 +364,8 @@ describe("run_code", () => {
 			assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted, `run failed: ${String(exit)}`)
 			// Model call 2 is the child's first.
 			assert.include(offered[1], RUN_CODE)
-			assert.strictEqual(offered[1]!.includes("pr_file_diff"), !codeOnly)
-			assert.include(JSON.stringify(prompts[1]!.content[0]), "Reading with run_code")
+			assert.strictEqual(offered[1].includes("pr_file_diff"), !codeOnly)
+			assert.include(JSON.stringify(prompts[1].content[0]), "Reading with run_code")
 			assert.include(dispatched, "pr_file_diff")
 			// The child's two model calls, counted apart from the parent's own usage.
 			assert.strictEqual(usage.delegated.modelCalls, 2)
@@ -427,7 +427,7 @@ describe("run_code", () => {
 				executor: recordingExecutor().executor,
 				withCode,
 			})
-			return offered[0]!.includes(RUN_CODE)
+			return offered[0].includes(RUN_CODE)
 		}
 
 		assert.isTrue(await offeredTo(INVESTIGATION, true))

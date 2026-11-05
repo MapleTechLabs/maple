@@ -154,7 +154,7 @@ describe("dispatchDelivery: pagerduty", () => {
 			const result = yield* dispatch(context, fetchFn)
 
 			assert.lengthOf(calls, 1)
-			const call = calls[0]!
+			const call = calls[0]
 			assert.strictEqual(call.url, "https://events.pagerduty.com/v2/enqueue")
 			assert.strictEqual(call.method, "POST")
 			assert.strictEqual(call.headers.get("content-type"), "application/json")
@@ -187,7 +187,7 @@ describe("dispatchDelivery: pagerduty", () => {
 			const { calls, fetchFn } = recorder(ok)
 			yield* dispatch({ ...context, eventType: "resolve" }, fetchFn)
 
-			const body = JSON.parse(calls[0]!.body)
+			const body = JSON.parse(calls[0].body)
 			assert.strictEqual(body.event_action, "resolve")
 			assert.strictEqual(body.dedup_key, "org_1:rule_1:checkout")
 		}),
@@ -198,7 +198,7 @@ describe("dispatchDelivery: pagerduty", () => {
 			const { calls, fetchFn } = recorder(ok)
 			yield* dispatch({ ...context, severity: "warning" }, fetchFn)
 
-			assert.strictEqual(JSON.parse(calls[0]!.body).payload.severity, "warning")
+			assert.strictEqual(JSON.parse(calls[0].body).payload.severity, "warning")
 		}),
 	)
 })
@@ -217,7 +217,7 @@ describe("dispatchDelivery: webhook", () => {
 			)
 
 			assert.lengthOf(calls, 1)
-			const call = calls[0]!
+			const call = calls[0]
 			assert.strictEqual(call.url, url)
 			assert.strictEqual(call.method, "POST")
 			// Byte-identical: the webhook body IS the caller's payload string.
@@ -245,7 +245,7 @@ describe("dispatchDelivery: webhook", () => {
 				payloadJson,
 			)
 
-			const signature = calls[0]!.headers.get("x-maple-signature")
+			const signature = calls[0].headers.get("x-maple-signature")
 			assert.isNotNull(signature)
 			// Pinned: consumers verify against this exact construction.
 			assert.strictEqual(signature, createHmac("sha256", "s3cr3t").update(payloadJson).digest("hex"))
@@ -276,7 +276,7 @@ describe("dispatchDelivery: discord", () => {
 			const result = yield* dispatch(context, fetchFn)
 
 			assert.lengthOf(calls, 1)
-			const call = calls[0]!
+			const call = calls[0]
 			assert.strictEqual(call.url, webhookUrl)
 			assert.strictEqual(call.method, "POST")
 			assert.strictEqual(call.headers.get("content-type"), "application/json")
@@ -309,7 +309,7 @@ describe("dispatchDelivery: discord", () => {
 			const { calls, fetchFn } = recorder(ok)
 			yield* dispatch(context, fetchFn, '{"totally":"ignored"}')
 
-			assert.notInclude(calls[0]!.body, "totally")
+			assert.notInclude(calls[0].body, "totally")
 		}),
 	)
 })
@@ -352,7 +352,7 @@ describe("dispatchDelivery: telegram", () => {
 			const result = yield* dispatch(context, fetchFn)
 
 			assert.lengthOf(calls, 1)
-			const call = calls[0]!
+			const call = calls[0]
 			assert.strictEqual(call.url, `https://api.telegram.org/bot${botToken}/sendMessage`)
 			assert.strictEqual(call.method, "POST")
 
@@ -406,7 +406,7 @@ describe("dispatchDelivery: telegram", () => {
 			const { calls, fetchFn } = recorder(sent)
 			yield* dispatch(context, fetchFn, '{"totally":"ignored"}')
 
-			assert.notInclude(calls[0]!.body, "totally")
+			assert.notInclude(calls[0].body, "totally")
 		}),
 	)
 })

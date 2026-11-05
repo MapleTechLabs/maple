@@ -73,7 +73,7 @@ const ArgText = Schema.Union([Scalar, Schema.NonEmptyArray(Scalar)]).pipe(
 const decodeArg = Schema.decodeUnknownOption(ArgText)
 
 const clamp = (value: string): string => {
-	const line = Str.trim(Str.split("\n")(value)[0]!)
+	const line = Str.trim(Str.split("\n")(value)[0])
 	return line.length > ARG_MAX ? `${Str.trimEnd(Str.slice(0, ARG_MAX - 1)(line))}…` : line
 }
 

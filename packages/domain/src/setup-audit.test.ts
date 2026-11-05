@@ -187,7 +187,7 @@ describe("runSetupAudit — baseline", () => {
 			const config: ConfigAuditInputs = {
 				...healthyConfig,
 				alertRules: each((i) => ({
-					...healthyConfig.alertRules[0]!,
+					...healthyConfig.alertRules[0],
 					id: `rule-${i}`,
 					name: `rule ${i}`,
 					destinationIds: [],
@@ -436,7 +436,7 @@ describe("CFG-ALERT-02 — alert rules exist", () => {
 describe("CFG-ALERT-03 — rules route somewhere", () => {
 	it("fails a rule with no destinations selected", () => {
 		const report = runSetupAudit(
-			inputs({ alertRules: [{ ...healthyConfig.alertRules[0]!, destinationIds: [] }] }),
+			inputs({ alertRules: [{ ...healthyConfig.alertRules[0], destinationIds: [] }] }),
 		)
 		const result = check(report, "CFG-ALERT-03")
 		expect(result.status).toBe("fail")
@@ -449,7 +449,7 @@ describe("CFG-ALERT-03 — rules route somewhere", () => {
 
 	it("fails a rule whose only destination was deleted", () => {
 		const report = runSetupAudit(
-			inputs({ alertRules: [{ ...healthyConfig.alertRules[0]!, destinationIds: ["gone"] }] }),
+			inputs({ alertRules: [{ ...healthyConfig.alertRules[0], destinationIds: ["gone"] }] }),
 		)
 		expect(check(report, "CFG-ALERT-03").affected[0]?.note).toContain("disabled or deleted")
 	})
@@ -465,7 +465,7 @@ describe("CFG-ALERT-03 — rules route somewhere", () => {
 
 	it("passes when at least one selected destination is live", () => {
 		const report = runSetupAudit(
-			inputs({ alertRules: [{ ...healthyConfig.alertRules[0]!, destinationIds: ["gone", "dest-1"] }] }),
+			inputs({ alertRules: [{ ...healthyConfig.alertRules[0], destinationIds: ["gone", "dest-1"] }] }),
 		)
 		expect(check(report, "CFG-ALERT-03").status).toBe("pass")
 	})
@@ -548,7 +548,7 @@ describe("CFG-ALERT-05 — rules are evaluating", () => {
 		const report = runSetupAudit(
 			inputs({
 				alertRules: [
-					{ ...healthyConfig.alertRules[0]!, lastScheduledAt: null, createdAt: NOW - 3 * HOUR },
+					{ ...healthyConfig.alertRules[0], lastScheduledAt: null, createdAt: NOW - 3 * HOUR },
 				],
 				alertRuleStates: [],
 			}),
@@ -560,7 +560,7 @@ describe("CFG-ALERT-05 — rules are evaluating", () => {
 		const report = runSetupAudit(
 			inputs({
 				alertRules: [
-					{ ...healthyConfig.alertRules[0]!, lastScheduledAt: null, createdAt: NOW - 10 * 60_000 },
+					{ ...healthyConfig.alertRules[0], lastScheduledAt: null, createdAt: NOW - 10 * 60_000 },
 				],
 				alertRuleStates: [],
 			}),
@@ -570,20 +570,20 @@ describe("CFG-ALERT-05 — rules are evaluating", () => {
 
 	it("flags a rule whose scheduler claim has gone stale", () => {
 		const report = runSetupAudit(
-			inputs({ alertRules: [{ ...healthyConfig.alertRules[0]!, lastScheduledAt: NOW - 4 * HOUR }] }),
+			inputs({ alertRules: [{ ...healthyConfig.alertRules[0], lastScheduledAt: NOW - 4 * HOUR }] }),
 		)
 		expect(check(report, "CFG-ALERT-05").affected[0]?.note).toBe("last evaluated 4 hours ago")
 	})
 
 	it("tolerates a claim that is merely a few minutes old", () => {
 		const report = runSetupAudit(
-			inputs({ alertRules: [{ ...healthyConfig.alertRules[0]!, lastScheduledAt: NOW - 10 * 60_000 }] }),
+			inputs({ alertRules: [{ ...healthyConfig.alertRules[0], lastScheduledAt: NOW - 10 * 60_000 }] }),
 		)
 		expect(check(report, "CFG-ALERT-05").status).toBe("pass")
 	})
 
 	const hourlyRule = (lastScheduledAt: number) => ({
-		...healthyConfig.alertRules[0]!,
+		...healthyConfig.alertRules[0],
 		windowMinutes: 60,
 		evaluationIntervalMinutes: 60,
 		lastScheduledAt,
@@ -604,7 +604,7 @@ describe("CFG-ALERT-05 — rules are evaluating", () => {
 			inputs({
 				alertRules: [
 					{
-						...healthyConfig.alertRules[0]!,
+						...healthyConfig.alertRules[0],
 						evaluationIntervalMinutes: 5,
 						lastScheduledAt: NOW - 45 * 60_000,
 					},
@@ -1319,7 +1319,7 @@ describe("resource-attribute coverage", () => {
 })
 
 describe("RES-03 — spans carry an environment", () => {
-	const profile = (noEnvCount: number) => [{ ...healthyWarehouse.spanShape[0]!, noEnvCount }]
+	const profile = (noEnvCount: number) => [{ ...healthyWarehouse.spanShape[0], noEnvCount }]
 
 	it("flags a service where most spans have no environment", () => {
 		const result = check(telemetry({ spanShape: profile(900) }), "RES-03")
@@ -1335,7 +1335,7 @@ describe("RES-03 — spans carry an environment", () => {
 describe("NAME-02 — span-name cardinality", () => {
 	it("flags a service whose span names look like IDs", () => {
 		const report = telemetry({
-			spanShape: [{ ...healthyWarehouse.spanShape[0]!, spanNameCount: 40_000 }],
+			spanShape: [{ ...healthyWarehouse.spanShape[0], spanNameCount: 40_000 }],
 		})
 		const result = check(report, "NAME-02")
 		expect(result.status).toBe("fail")
@@ -1405,7 +1405,7 @@ describe("STAT-01 — status and kind casing", () => {
 		const report = telemetry({
 			spanShape: [
 				{
-					...healthyWarehouse.spanShape[0]!,
+					...healthyWarehouse.spanShape[0],
 					badStatusCodes: ["ERROR"],
 					badSpanKinds: ["SPAN_KIND_SERVER"],
 				},
@@ -1421,7 +1421,7 @@ describe("STAT-01 — status and kind casing", () => {
 describe("STAT-02 — failures recorded on spans", () => {
 	it("flags a service that logs errors but never marks a span failed", () => {
 		const report = telemetry({
-			spanShape: [{ ...healthyWarehouse.spanShape[0]!, errorCount: 0 }],
+			spanShape: [{ ...healthyWarehouse.spanShape[0], errorCount: 0 }],
 			logSeverity: [{ serviceName: "api", severityText: "ERROR", logCount: 12 }],
 		})
 		const result = check(report, "STAT-02")
@@ -1437,7 +1437,7 @@ describe("STAT-02 — failures recorded on spans", () => {
 	})
 
 	it("passes when the service logs no errors either", () => {
-		const report = telemetry({ spanShape: [{ ...healthyWarehouse.spanShape[0]!, errorCount: 0 }] })
+		const report = telemetry({ spanShape: [{ ...healthyWarehouse.spanShape[0], errorCount: 0 }] })
 		expect(check(report, "STAT-02").status).toBe("pass")
 	})
 })
@@ -1445,7 +1445,7 @@ describe("STAT-02 — failures recorded on spans", () => {
 describe("STAT-04 — entry-point spans", () => {
 	it("reports a service with no Server or Consumer spans, as advisory only", () => {
 		const report = telemetry({
-			spanShape: [{ ...healthyWarehouse.spanShape[0]!, serverCount: 0, consumerCount: 0 }],
+			spanShape: [{ ...healthyWarehouse.spanShape[0], serverCount: 0, consumerCount: 0 }],
 		})
 		const result = check(report, "STAT-04")
 		expect(result.status).toBe("fail")
@@ -1454,7 +1454,7 @@ describe("STAT-04 — entry-point spans", () => {
 
 	it("accepts a queue consumer as an entry point", () => {
 		const report = telemetry({
-			spanShape: [{ ...healthyWarehouse.spanShape[0]!, serverCount: 0, consumerCount: 30 }],
+			spanShape: [{ ...healthyWarehouse.spanShape[0], serverCount: 0, consumerCount: 30 }],
 		})
 		expect(check(report, "STAT-04").status).toBe("pass")
 	})

@@ -129,7 +129,7 @@ type RouteEndpointRowMapper<Payload, Row> = (
  */
 const readModelPlan = <Payload, Row>(
 	families: ReadonlyArray<TelemetryReadFamily>,
-	payloadSchema: Schema.Codec<Payload, unknown, never, never>,
+	payloadSchema: Schema.Codec<Payload, unknown>,
 	definition: QueryDefinition<Payload, Row>,
 	toResponse: RouteEndpointRowMapper<Payload, Row>,
 ): RouteEndpointPlan => {

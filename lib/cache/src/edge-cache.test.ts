@@ -332,7 +332,7 @@ describe("EdgeCacheService.getOrCompute (with Schema.Class schema)", () => {
 					const view = new Uint8Array(digest)
 					let out = ""
 					for (let i = 0; i < view.length; i++) {
-						out += Str.padStart(2, "0")(view[i]!.toString(16))
+						out += Str.padStart(2, "0")(view[i].toString(16))
 					}
 					return out
 				})

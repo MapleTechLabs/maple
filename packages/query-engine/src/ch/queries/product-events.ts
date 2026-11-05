@@ -585,7 +585,7 @@ function stepIndex(stepCount: number): CH.Expr<number> {
  */
 export function productEventsFunnelQuery(
 	opts: ProductEventsFunnelOpts,
-): Result.Result<CHQuery<ColumnDefs, ProductEventsFunnelOutput, {}>, ProductEventsFunnelError> {
+): Result.Result<CHQuery<ColumnDefs, ProductEventsFunnelOutput>, ProductEventsFunnelError> {
 	const invalid = validate(opts)
 	if (invalid !== undefined) return Result.fail(invalid)
 	const filters = opts.filters ?? {}
@@ -626,7 +626,7 @@ export function productEventsFunnelQuery(
  */
 export function productEventsFunnelBreakdownQuery(
 	opts: ProductEventsFunnelBreakdownOpts,
-): Result.Result<CHQuery<ColumnDefs, ProductEventsFunnelBreakdownOutput, {}>, ProductEventsFunnelError> {
+): Result.Result<CHQuery<ColumnDefs, ProductEventsFunnelBreakdownOutput>, ProductEventsFunnelError> {
 	const invalid = validate(opts)
 	if (invalid !== undefined) return Result.fail(invalid)
 	const limit = opts.limit ?? 10
@@ -653,7 +653,7 @@ export function productEventsFunnelBreakdownQuery(
 			// Not `$.group`: the inner SELECT's shape is a union — the breakdown
 			// branch has this column and the plain branch does not — so it is not
 			// on the accessor's type even though this code path always emits it.
-			group: CH.dynamicColumn<string>("group", T.string),
+			group: CH.dynamicColumn("group", T.string),
 			counts: stepCounts(n),
 			entered: CH.countIf(CH.dynamicColumn<number>("level").gte(1)),
 		}))
@@ -684,7 +684,7 @@ export function productEventsFunnelBreakdownQuery(
  */
 export function productEventNamesQuery(
 	opts: ProductEventNamesOpts = {},
-): CHQuery<ColumnDefs, ProductEventNamesOutput, {}> {
+): CHQuery<ColumnDefs, ProductEventNamesOutput> {
 	const filters: ProductEventsFilters = { ...opts.filters, useProductEvents: true }
 	const limit = opts.limit ?? 100
 	return from(ProductEvents)
@@ -748,7 +748,7 @@ export interface ProductEventsForTraceOpts {
  */
 export function productEventsForTraceQuery(
 	opts: ProductEventsForTraceOpts = {},
-): CHQuery<ColumnDefs, ProductEventForTraceOutput, {}> {
+): CHQuery<ColumnDefs, ProductEventForTraceOutput> {
 	return from(ProductEvents)
 		.select(($) => ({
 			timestamp: $.Timestamp,
@@ -792,7 +792,7 @@ export interface ProductEventTraceSamplesOpts {
  */
 export function productEventTraceSamplesQuery(
 	opts: ProductEventTraceSamplesOpts = {},
-): CHQuery<ColumnDefs, ProductEventTraceSampleOutput, {}> {
+): CHQuery<ColumnDefs, ProductEventTraceSampleOutput> {
 	return from(ProductEvents)
 		.select(($) => ({
 			traceId: $.TraceId,
@@ -890,7 +890,7 @@ function chainQuery(plan: FunnelPlan) {
 				key: $.key as CH.Expr<string>,
 				level: CH.windowFunnel(windowMs)(ts, ...conditions),
 				// `Seq` breaks ties inside a millisecond, as the table's sorting key does.
-				evs: CH.untypedExpr<unknown>(`arraySort(x -> (x.1, x.2), groupArray(tuple(${tuple})))`),
+				evs: CH.untypedExpr(`arraySort(x -> (x.1, x.2), groupArray(tuple(${tuple})))`),
 			}
 		})
 		.groupBy("key")
@@ -913,7 +913,7 @@ function chainQuery(plan: FunnelPlan) {
 				]
 			}),
 		)
-		return { key: $.key as CH.Expr<string>, level: $.level as CH.Expr<number>, ...times }
+		return { key: $.key, level: $.level, ...times }
 	})
 }
 
@@ -944,7 +944,7 @@ export type ProductEventsFunnelTimingOutput = typeof productEventsFunnelTimingRo
  */
 export function productEventsFunnelTimingQuery(
 	opts: ProductEventsFunnelOpts,
-): Result.Result<CHQuery<ColumnDefs, ProductEventsFunnelTimingOutput, {}>, ProductEventsFunnelError> {
+): Result.Result<CHQuery<ColumnDefs, ProductEventsFunnelTimingOutput>, ProductEventsFunnelError> {
 	const invalid = validateDetails(opts)
 	if (invalid !== undefined) return Result.fail(invalid)
 	const filters = opts.filters ?? {}
@@ -1002,7 +1002,7 @@ export const FUNNEL_LEAVERS_PER_STEP = 6
  */
 export function productEventsFunnelLeaversQuery(
 	opts: ProductEventsFunnelOpts,
-): Result.Result<CHQuery<ColumnDefs, ProductEventsFunnelLeaversOutput, {}>, ProductEventsFunnelError> {
+): Result.Result<CHQuery<ColumnDefs, ProductEventsFunnelLeaversOutput>, ProductEventsFunnelError> {
 	const invalid = validateDetails(opts)
 	if (invalid !== undefined) return Result.fail(invalid)
 	const filters = opts.filters ?? {}
@@ -1050,7 +1050,7 @@ export function productEventsFunnelLeaversQuery(
 	const ranked = fromQuery(counted, "counted")
 		.select(($) => ({
 			step: $.step,
-			head: CH.untypedExpr<unknown>(
+			head: CH.untypedExpr(
 				`arraySlice(arrayReverseSort(x -> x.2, groupArray(tuple(next, count))), 1, ${FUNNEL_LEAVERS_PER_STEP})`,
 			),
 		}))
@@ -1058,7 +1058,7 @@ export function productEventsFunnelLeaversQuery(
 
 	const hops = fromQuery(ranked, "ranked").select(($) => ({
 		step: $.step,
-		hop: CH.untypedExpr<unknown>("arrayJoin(head)"),
+		hop: CH.untypedExpr("arrayJoin(head)"),
 	}))
 
 	return Result.succeed(

@@ -804,8 +804,8 @@ describe("durable migration recovery", () => {
 				state: _verifiedState,
 				progress: _verifiedProgress,
 				...verifiedWithoutStateAndProgress
-			} = base.chain[0]!
-			const { progress: _missingProgress, ...verifiedWithoutProgress } = base.chain[0]!
+			} = base.chain[0]
+			const { progress: _missingProgress, ...verifiedWithoutProgress } = base.chain[0]
 			await durableJson(migrationJournalPath(dataDir), {
 				...base,
 				chain: [{ ...verifiedWithoutStateAndProgress, status: "verified" }],
@@ -818,7 +818,7 @@ describe("durable migration recovery", () => {
 			await expect(readMigrationJournal(dataDir)).rejects.toThrow(/no persisted progress/)
 			await durableJson(migrationJournalPath(dataDir), {
 				...base,
-				chain: [{ ...base.chain[0]!, progress: { sourceInventory: [], copied: {} } }],
+				chain: [{ ...base.chain[0], progress: { sourceInventory: [], copied: {} } }],
 			})
 			// The message is the schema's, so this asserts the failing field rather
 			// than the phrasing: an array where the inventory map belongs.

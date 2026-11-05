@@ -65,10 +65,10 @@ describe("eventTelemetry", () => {
 	it.live("with a cadence, exports spans while the event is still running", () =>
 		Effect.gen(function* () {
 			const exported: Array<string> = []
-			globalThis.fetch = (async (input: RequestInfo | URL) => {
+			globalThis.fetch = async (input: RequestInfo | URL) => {
 				exported.push(new Request(input).url)
 				return new Response(null, { status: 200 })
-			}) as typeof fetch
+			}
 			const env = { MAPLE_ENDPOINT: "https://collector.test", MAPLE_INGEST_KEY: "secret" }
 			const scope = yield* Scope.make()
 			const services = yield* Layer.buildWithScope(
