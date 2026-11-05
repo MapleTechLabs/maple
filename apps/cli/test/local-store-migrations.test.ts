@@ -911,6 +911,66 @@ describe("durable migration recovery", () => {
 		}
 	})
 
+	it("records a failed promotion in the journal", async () => {
+		const root = await mkdtemp(join(tmpdir(), "maple-migration-promotion-failure-"))
+		const dataDir = join(root, "data")
+		const migrationId = "local-0000-to-0001-raw-replay-promotion-failure"
+		const migrationRoot = join(root, ".maple-migrations", migrationId)
+		const journal: MigrationJournal = {
+			formatVersion: 2,
+			migrationId,
+			phase: "copy-verified",
+			chain: [
+				{
+					id: "local-0000-to-0001-raw-replay",
+					moduleVersion: 1,
+					from: LEGACY_LOCAL_SCHEMA,
+					to: LOCAL_SCHEMA_V1,
+					status: "completed",
+					state: { module: "local-0000-to-0001-raw-replay", version: 1 },
+					progress: { sourceInventory: {}, copied: {} },
+				},
+			],
+			currentStepIndex: 1,
+			sourceDataDir: dataDir,
+			sourceStoreId: "source-store",
+			sourceChdb: CURRENT_LOCAL_SCHEMA.chdb,
+			sourceFingerprint: LEGACY_SCHEMA_FINGERPRINT,
+			sourceDigest: "",
+			sourceVersion: 0,
+			targetDataDir: join(migrationRoot, "target", "data"),
+			targetStoreId: "target-store-promotion-failure",
+			targetChdb: CURRENT_LOCAL_SCHEMA.chdb,
+			targetFingerprint: LOCAL_SCHEMA_V1.fingerprint,
+			targetDigest: LOCAL_SCHEMA_V1.digest,
+			targetVersion: 1,
+			cutoffAt: "2026-01-01T00:00:00.000Z",
+			createdAt: "2026-01-01T00:00:00.000Z",
+		}
+		try {
+			await mkdir(join(dataDir, "store"), { recursive: true })
+			await durableJson(storeMarkerPath(dataDir), {
+				chdb: CURRENT_LOCAL_SCHEMA.chdb,
+				maple: "test",
+				createdAt: journal.createdAt,
+				schema: LEGACY_SCHEMA_FINGERPRINT,
+			})
+			// A file where promotion expects the target root makes it throw before `promotion-started`.
+			await mkdir(migrationRoot, { recursive: true })
+			await Bun.write(join(migrationRoot, "target"), "not a directory")
+			await durableJson(migrationJournalPath(dataDir), journal)
+
+			const failure = await runLocalStoreMigration({ dataDir }).then(
+				() => undefined,
+				(error: unknown) => (error instanceof Error ? error.message : String(error)),
+			)
+			expect(failure).toBeDefined()
+			expect(await readMigrationJournal(dataDir)).toMatchObject({ phase: "failed", failure })
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
+	})
+
 	it("runs a genuine two-step coordinator chain, resumes a verified step, and promotes once", async () => {
 		const root = await mkdtemp(join(tmpdir(), "maple-migration-chain-"))
 		const v2 = {
