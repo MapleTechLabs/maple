@@ -1794,7 +1794,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 				// Preview only needs `alerts:read`, but a raw-SQL rule executes
 				// user-authored ClickHouse against the org's warehouse — the same
-				// capability `createRule`/`testRule` gate behind org-admin. Previewing
+				// capability `createRule`/`testRule` gate behind `alerts:manage`. Previewing
 				// one must not be a cheaper route to that than creating it.
 				if (plan.kind === "raw_sql") {
 					yield* requireAlertsPermission(roles)

@@ -371,7 +371,10 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				return yield* Policy.check(
 					roles,
 					"organization:manage",
-					() => new OrganizationForbiddenError({ message: `Only org admins can ${action}` }),
+					(denial) =>
+						new OrganizationForbiddenError({
+							message: `Only ${Policy.holdersPhrase(denial.required)} can ${action}.`,
+						}),
 				)
 			})
 
