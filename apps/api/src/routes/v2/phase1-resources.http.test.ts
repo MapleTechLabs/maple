@@ -2035,6 +2035,8 @@ describe("v2 users wire mapping over HTTP", () => {
 				lastSeen: "2026-11-01 14:00:00",
 			},
 		],
+		// Uncapped totals, distinct from the listed issue's hits so the profile shows which it read.
+		userIssueTotals: [{ hits: 97, fingerprints: 1 }],
 		userSessions: [
 			{
 				sessionId: "sess_ada",
@@ -2212,7 +2214,7 @@ describe("v2 users wire mapping over HTTP", () => {
 			trace_count: 71,
 			log_count: 73,
 			issue_count: 1,
-			issue_hit_count: 89,
+			issue_hit_count: 97,
 		})
 
 		const activity = await get("/v2/users/u_ada/activity")
