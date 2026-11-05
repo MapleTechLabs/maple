@@ -154,7 +154,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 		name: "sync_railway",
 		title: "Sync Railway",
 		description:
-			"Poll Railway now instead of waiting for the next 5-minute tick, then report each environment's last sync and error. Use after fixing a Railway token or project access, to confirm metrics flow again. Admin only. Environments already caught up cost no Railway call.",
+			"Poll Railway now instead of waiting for the next 5-minute tick, then report each environment's last sync and error. Use after fixing a Railway token or project access, to confirm metrics flow again. Org admins and engineers only. Environments already caught up cost no Railway call.",
 		parameters: Schema.Struct({}),
 		output: SyncRailwayOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
@@ -239,7 +239,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 		name: "create_scrape_target",
 		title: "Create Scrape Target",
 		description:
-			"Start scraping a Prometheus metrics endpoint: Maple's scraper pulls `url` every interval and stores the samples as metrics, tagged with `service` when given. Admin only. The endpoint must be reachable from the internet without credentials; to add a bearer or basic credential, create it in Sources → Prometheus instead.",
+			"Start scraping a Prometheus metrics endpoint: Maple's scraper pulls `url` every interval and stores the samples as metrics, tagged with `service` when given. Org admins and engineers only. The endpoint must be reachable from the internet without credentials; to add a bearer or basic credential, create it in Sources → Prometheus instead.",
 		parameters: Schema.Struct({
 			name: P.text("A label for the target, e.g. `node-exporter`"),
 			url: P.text("The full metrics URL, e.g. `https://metrics.example.com/metrics`"),
@@ -306,7 +306,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 		name: "update_scrape_target",
 		title: "Update Scrape Target",
 		description:
-			"Change a Prometheus scrape target: pause or resume it, or change its URL, name, service or interval. Fields left out keep their value, and a stored credential is kept. Admin only. Targets managed by an integration (PlanetScale) are changed from that integration in Settings.",
+			"Change a Prometheus scrape target: pause or resume it, or change its URL, name, service or interval. Fields left out keep their value, and a stored credential is kept. Org admins and engineers only. Targets managed by an integration (PlanetScale) are changed from that integration in Settings.",
 		parameters: Schema.Struct({
 			target: P.text("The target's name or id (list_integrations provider=prometheus lists them)"),
 			enabled: P.optionalFlag("false pauses scraping, true resumes it"),
@@ -366,7 +366,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 		name: "delete_scrape_target",
 		title: "Delete Scrape Target",
 		description:
-			"Stop scraping a Prometheus target and delete it with its check history; metrics already stored stay. Irreversible; requires confirm=true. To stop it for a while, update_scrape_target enabled=false instead. Admin only.",
+			"Stop scraping a Prometheus target and delete it with its check history; metrics already stored stay. Irreversible; requires confirm=true. To stop it for a while, update_scrape_target enabled=false instead. Org admins and engineers only.",
 		parameters: Schema.Struct({
 			target: P.text("The target's name or id"),
 			confirm: P.flag("Must be true. There is no undo."),

@@ -228,7 +228,7 @@ export function registerListSecurityAuditRunsTool(server: McpToolRegistrar) {
 										: `${run.agentInvocations} of ${run.budget}`,
 									run.costUsd === null ? "pending" : usd(run.costUsd),
 									run.findings === null
-										? "admins only"
+										? "admins and engineers only"
 										: `${run.findings.critical}/${run.findings.high}/${run.findings.medium}/${run.findings.low}/${run.findings.informational}, ${run.findings.leads}, ${run.findings.rejected}`,
 								]),
 							),

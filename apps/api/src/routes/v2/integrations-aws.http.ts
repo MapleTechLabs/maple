@@ -16,7 +16,7 @@ import {
 } from "@maple/backend/services/integrations/AwsConnectionService"
 import { AwsIngestService } from "@maple/backend/services/integrations/AwsIngestService"
 
-// The reads (status, ingest) are open to every member. Everything else is admin-only: a connection
+// The reads (status, ingest) are open to every member. Everything else needs integrations:manage: a connection
 // decides what Maple may read in the org's AWS account.
 
 const toV2Connection = (connection: AwsConnection): V2AwsConnection => ({

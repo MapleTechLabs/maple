@@ -279,8 +279,8 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 					.handle("organizations", () =>
 						Effect.gen(function* () {
 							const tenant = yield* CurrentTenant.Context
-							// Admin-gated like `select_organization`: this drives the org picker
-							// while the connection is pending, and both are admin-only flows.
+							// Gated like `select_organization`: this drives the org picker
+							// while the connection is pending, and both need integrations:manage.
 							yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
 								V2InsufficientPermissions.make(denial.message),
 							)
@@ -377,7 +377,7 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 					.handle("webhookConfig", () =>
 						Effect.gen(function* () {
 							const tenant = yield* CurrentTenant.Context
-							// Admin-only: the response carries the webhook HMAC secret.
+							// Needs integrations:manage: the response carries the webhook HMAC secret.
 							yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
 								V2InsufficientPermissions.make(denial.message),
 							)

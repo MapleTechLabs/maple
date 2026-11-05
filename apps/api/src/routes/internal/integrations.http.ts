@@ -504,7 +504,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("railwaySync", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						// Spends the org's per-token Railway quota, so it is an admin action like connect.
+						// Spends the org's per-token Railway quota, so it needs integrations:manage like connect.
 						yield* requirePermission(tenant.roles, "integrations:manage")
 						return yield* railway.sync(tenant.orgId)
 					}),
@@ -517,7 +517,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						return new RailwayDisconnectResponse(disconnected)
 					}),
 				)
-				// Any member may read the status; every change is an admin action, as for Railway.
+				// Any member may read the status; every change needs integrations:manage, as for Railway.
 				.handle("supabaseStatus", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -539,7 +539,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("supabaseSync", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						// Spends the org's Supabase rate limit, so it is an admin action like connect.
+						// Spends the org's Supabase rate limit, so it needs integrations:manage like connect.
 						yield* requirePermission(tenant.roles, "integrations:manage")
 						return yield* supabase.sync(tenant.orgId)
 					}),

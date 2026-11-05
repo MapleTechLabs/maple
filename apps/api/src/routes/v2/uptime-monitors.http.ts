@@ -20,7 +20,7 @@ import {
 	UptimeMonitorsService,
 } from "@maple/backend/services/uptime/UptimeMonitorsService"
 
-// Writes are admin-gated: a monitor makes Maple's infrastructure request an operator-chosen
+// Writes need uptime_monitors:manage: a monitor makes Maple's infrastructure request an operator-chosen
 // host on a schedule, and `test` does so on demand. Reads stay on `uptime_monitors:read`.
 
 const toV2UptimeMonitor = (monitor: UptimeMonitorRecord): V2UptimeMonitor => ({
