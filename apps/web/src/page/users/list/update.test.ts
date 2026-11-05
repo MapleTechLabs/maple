@@ -1,10 +1,10 @@
 import { OrgId } from "@maple/domain"
-import { Schema } from "effect"
+import { Array as Arr, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import type { PageContext, PageReturn } from "../../contract"
 import { Message } from "./message"
 import type { Model, Search } from "./model"
-import { init, routeChanged, update } from "./update"
+import { groupUsersHref, init, routeChanged, update } from "./update"
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_acme"),
@@ -57,5 +57,41 @@ describe("users directory empty window", () => {
 		expect(params.get("timePreset")).toBe("1mo")
 		expect(params.has("startTime")).toBe(false)
 		expect(params.get("q")).toBe("ada")
+	})
+})
+
+describe("users directory group view", () => {
+	const window = { startTime: "2026-06-24 04:00:00", endTime: "2026-06-25 04:00:00" }
+	const resolved = (search: Search) =>
+		update(start(search), Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }), context)
+	const commandNames = (result: PageReturn<Model, Message>) =>
+		Arr.map(result.commands ?? [], (command) => command.name)
+
+	it("reads the groups instead of the users while grouped, and the users otherwise", () => {
+		const grouped = commandNames(resolved({ groupBy: "group" }))
+		expect(grouped).toContain("FetchUserGroups")
+		expect(grouped).not.toContain("FetchUsers")
+		const listed = commandNames(resolved({}))
+		expect(listed).toContain("FetchUsers")
+		expect(listed).not.toContain("FetchUserGroups")
+	})
+
+	it("keeps the filters when switching between users and groups", () => {
+		const model = start({ q: "ada", hasErrors: true })
+		const grouped = navigatedTo(update(model, Message.ClickedGroupBy({ groupBy: "group" }), context))
+		expect(grouped.get("groupBy")).toBe("group")
+		expect(grouped.get("q")).toBe("ada")
+		expect(grouped.get("hasErrors")).toBe("true")
+		const back = update(start({ groupBy: "group" }), Message.ClickedGroupBy({ groupBy: null }), context)
+		expect(navigatedTo(back).has("groupBy")).toBe(false)
+	})
+
+	it("links a group to the users in it, over the same filters", () => {
+		const href = groupUsersHref({ groupBy: "group", hasErrors: true, timePreset: "1w" })("grp_acme")
+		const params = new URL(href, "https://app.test").searchParams
+		expect(params.has("groupBy")).toBe(false)
+		expect(params.get("groups")).toContain("grp_acme")
+		expect(params.get("hasErrors")).toBe("true")
+		expect(params.get("timePreset")).toBe("1w")
 	})
 })

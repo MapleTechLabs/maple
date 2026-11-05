@@ -6,6 +6,7 @@ import {
 	ServiceNamespace,
 	UserDetailRequest,
 	UsersFacetsRequest,
+	UsersGroupsRequest,
 	UsersListRequest,
 } from "@maple/domain/http"
 import { MapleInternalHttp } from "./warehouse-services"
@@ -57,6 +58,34 @@ export const listUsers = Effect.fn("Users.list")(function* ({ data }: { data: Us
 					...(input.hasReplay === true && { hasReplay: true }),
 					...(input.groups !== undefined && input.groups.length > 0 && { groups: input.groups }),
 					...(input.limit !== undefined && { limit: input.limit }),
+				}),
+			})
+		}),
+	)
+})
+
+const UsersGroupsInput = Schema.Struct({
+	...UsersWindowInput.fields,
+	search: UsersListInput.fields.search,
+	hasErrors: UsersListInput.fields.hasErrors,
+	hasReplay: UsersListInput.fields.hasReplay,
+	groups: UsersListInput.fields.groups,
+})
+export type UsersGroupsInput = typeof UsersGroupsInput.Encoded
+
+/** The directory grouped by `identify()` group, over the list's filters. */
+export const listUserGroups = Effect.fn("Users.groups")(function* ({ data }: { data: UsersGroupsInput }) {
+	const input = yield* decodeInput(UsersGroupsInput, data, "listUserGroups")
+	return yield* runWarehouseQuery("listUserGroups", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.usersInternal.groups({
+				payload: new UsersGroupsRequest({
+					...windowOf(input),
+					...(input.search !== undefined && { search: input.search }),
+					...(input.hasErrors === true && { hasErrors: true }),
+					...(input.hasReplay === true && { hasReplay: true }),
+					...(input.groups !== undefined && input.groups.length > 0 && { groups: input.groups }),
 				}),
 			})
 		}),

@@ -1,4 +1,9 @@
-import { getUsersFacets, listUsers, USERS_SEARCH_MAX_LENGTH } from "@maple/web-data/warehouse/users"
+import {
+	getUsersFacets,
+	listUserGroups,
+	listUsers,
+	USERS_SEARCH_MAX_LENGTH,
+} from "@maple/web-data/warehouse/users"
 import { Array as Arr, Clock, Duration, Effect, Schema, String as Str } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -9,7 +14,7 @@ import { resolveUsersWindow } from "../window"
 import { UsersSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { Message, RequestMode } from "./message"
-import { UsersFacetsData, UsersPage, type Search } from "./model"
+import { UsersFacetsData, UsersGroupsPage, UsersPage, type Search } from "./model"
 
 /** Users the directory reads in one go. */
 export const USERS_LIMIT = 200
@@ -59,6 +64,12 @@ export const listInputs = (search: Search, window: TimeWindow, pinnedNamespace: 
 	limit: USERS_LIMIT,
 })
 
+/** The group view's inputs: the list's filters, no page size. */
+export const groupsInputs = (search: Search, window: TimeWindow, pinnedNamespace: string | null) => {
+	const { limit: _limit, ...inputs } = listInputs(search, window, pinnedNamespace)
+	return inputs
+}
+
 export const ResolveWindow = Command.define("ResolveUsersWindow", {
 	args: {
 		mode: RequestMode,
@@ -103,6 +114,23 @@ export const FetchUsers = Command.define("FetchUsers", {
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchUsers({ key, result })),
+		),
+})
+
+export const FetchGroups = Command.define("FetchUserGroups", {
+	args: FetchArgs,
+	messages: [Message.CompletedFetchGroups],
+	execute: ({ key, refresh, search, window, pinnedNamespace }) =>
+		readThrough(
+			{ key, refresh, idleTtlMs: IdleTtl.listUserGroups, schema: UsersGroupsPage },
+			Effect.map(
+				listUserGroups({ data: groupsInputs(search, window, pinnedNamespace) }),
+				(response): UsersGroupsPage => ({ groups: response.groups, truncated: response.truncated }),
+			),
+		).pipe(
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchGroups({ key, result })),
 		),
 })
 

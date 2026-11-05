@@ -6,6 +6,7 @@ import {
 	UserProfileResponse,
 	UserTracesResponse,
 	UsersFacetsResponse,
+	UsersGroupsResponse,
 	UsersListResponse,
 	type UserActivityItem,
 	type UserDetailRequest,
@@ -20,6 +21,8 @@ import {
 	type UserSignalKind,
 	type UserTraceItem,
 	type UsersFacetsRequest,
+	type UsersGroupItem,
+	type UsersGroupsRequest,
 	type UsersListRequest,
 } from "@maple/domain/http"
 import { Array as Arr, Clock, DateTime, Effect, Option, Order, String as Str } from "effect"
@@ -309,6 +312,72 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 		"maple.users.mcp_named": mcpNames.length,
 	})
 	return new UsersListResponse({ users, ...(next !== undefined && { next }) })
+})
+
+/** Groups the group view lists at most. */
+const GROUPS_LIMIT = 200
+
+/** The directory grouped by `identify()` group, over the list's filters; the ungrouped row last. */
+export const readUsersGroups = Effect.fn("UsersReads.groups")(function* (
+	tenant: TenantContext,
+	payload: UsersGroupsRequest,
+) {
+	const warehouse = yield* WarehouseQueryService
+	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+	const scope = yield* loadScope(tenant, payload)
+	const nowMs = yield* Clock.currentTimeMillis
+	const filter = {
+		...(payload.search !== undefined && { search: payload.search }),
+		...(payload.hasErrors !== undefined && { hasErrors: payload.hasErrors }),
+		...(payload.hasReplay !== undefined && { hasReplay: payload.hasReplay }),
+		...(payload.groups !== undefined && { groups: payload.groups }),
+	}
+	const params = {
+		orgId: tenant.orgId,
+		startTime: payload.startTime,
+		endTime: payload.endTime,
+		activeSince: formatWarehouseDateTime(nowMs - DAY_MS),
+	}
+	// One row of lookahead says whether more groups exist. A search does not reach MCP span names
+	// here, unlike the list: the group view counts users, it does not find one.
+	const fetched = yield* withRollupFallback(scope, [], (scope) =>
+		warehouse.compiledQuery(
+			tenant,
+			CH.compile(CH.usersGroupsQuery(scope, filter, GROUPS_LIMIT + 1), params),
+			{ profile: "aggregation", context: "usersGroups" },
+		),
+	)
+	const rows = fetched.slice(0, GROUPS_LIMIT)
+	const names = yield* readGroupNames(
+		tenant,
+		payload,
+		Arr.map(rows, (row) => row.groupId),
+		scope,
+	)
+	const groups = Arr.map(rows, (row): UsersGroupItem => ({
+		groupId: nullIfEmpty(row.groupId),
+		groupName: names.get(row.groupId) ?? null,
+		users: row.users,
+		activeToday: row.activeToday,
+		withErrors: row.withErrors,
+		withReplay: row.withReplay,
+		sessions: row.sessions,
+		errors: row.errors,
+		requests: row.requests,
+		firstSeenMs: toMs(row.firstSeen),
+		lastSeenMs: toMs(row.lastSeen),
+	}))
+	yield* Effect.annotateCurrentSpan({
+		"maple.users.group_rows": groups.length,
+		"maple.users.groups_truncated": fetched.length > GROUPS_LIMIT,
+	})
+	return new UsersGroupsResponse({
+		groups: [
+			...Arr.filter(groups, (group) => group.groupId !== null),
+			...Arr.filter(groups, (group) => group.groupId === null),
+		],
+		truncated: fetched.length > GROUPS_LIMIT,
+	})
 })
 
 export const readUsersFacets = Effect.fn("UsersReads.facets")(function* (

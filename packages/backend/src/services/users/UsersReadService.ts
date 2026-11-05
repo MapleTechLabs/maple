@@ -1,4 +1,9 @@
-import type { UserDetailRequest, UsersFacetsRequest, UsersListRequest } from "@maple/domain/http"
+import type {
+	UserDetailRequest,
+	UsersFacetsRequest,
+	UsersGroupsRequest,
+	UsersListRequest,
+} from "@maple/domain/http"
 import { Context, Effect, Layer } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -11,6 +16,7 @@ import {
 	readUserProfile,
 	readUserTraces,
 	readUsersFacets,
+	readUsersGroups,
 	readUsersList,
 } from "./users-reads"
 
@@ -26,6 +32,8 @@ const make = Effect.gen(function* () {
 		)
 	return {
 		list: (tenant: TenantContext, request: UsersListRequest) => provide(readUsersList(tenant, request)),
+		groups: (tenant: TenantContext, request: UsersGroupsRequest) =>
+			provide(readUsersGroups(tenant, request)),
 		facets: (tenant: TenantContext, request: UsersFacetsRequest) =>
 			provide(readUsersFacets(tenant, request)),
 		overview: (tenant: TenantContext, request: UserDetailRequest) =>

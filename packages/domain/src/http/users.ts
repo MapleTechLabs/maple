@@ -95,6 +95,43 @@ export class UsersListResponse extends Schema.Class<UsersListResponse>("UsersLis
 	next: Schema.optionalKey(UsersListKeyset),
 }) {}
 
+/** The directory grouped: the same filters as {@link UsersListRequest}, one row per group. */
+export class UsersGroupsRequest extends Schema.Class<UsersGroupsRequest>("UsersGroupsRequest")({
+	...windowFields,
+	search: Schema.optionalKey(searchText),
+	hasErrors: Schema.optionalKey(Schema.Literal(true)),
+	hasReplay: Schema.optionalKey(Schema.Literal(true)),
+	groups: Schema.optionalKey(Schema.Array(groupId).check(Schema.isMaxLength(50))),
+}) {}
+
+/**
+ * One group's users over the window. A user in two groups counts in both; their requests and
+ * errors count in full toward each group, since spans carry no group of their own.
+ */
+export const UsersGroupItem = Schema.Struct({
+	/** `null` is the users no SDK put in a group. */
+	groupId: Schema.NullOr(Schema.String),
+	groupName: Schema.NullOr(Schema.String),
+	users: Schema.Number,
+	/** Users with any signal in the 24 hours before the request. */
+	activeToday: Schema.Number,
+	withErrors: Schema.Number,
+	withReplay: Schema.Number,
+	sessions: Schema.Number,
+	errors: Schema.Number,
+	requests: Schema.Number,
+	firstSeenMs: Schema.Number,
+	lastSeenMs: Schema.Number,
+})
+export type UsersGroupItem = typeof UsersGroupItem.Type
+
+export class UsersGroupsResponse extends Schema.Class<UsersGroupsResponse>("UsersGroupsResponse")({
+	/** The most users first; the ungrouped row, when present, last. */
+	groups: Schema.Array(UsersGroupItem),
+	/** More groups exist than the read returns. */
+	truncated: Schema.Boolean,
+}) {}
+
 const FacetOption = Schema.Struct({ name: Schema.String, count: Schema.Number })
 
 /** A group in the rail: `name` is its id (what the filter sends), `label` its name when known. */
@@ -344,6 +381,13 @@ export class UsersInternalApiGroup extends HttpApiGroup.make("usersInternal")
 		HttpApiEndpoint.post("list", "/list", {
 			payload: UsersListRequest,
 			success: UsersListResponse,
+			error: warehouseReadHttpErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("groups", "/groups", {
+			payload: UsersGroupsRequest,
+			success: UsersGroupsResponse,
 			error: warehouseReadHttpErrors,
 		}),
 	)

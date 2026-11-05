@@ -5,7 +5,7 @@ import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { TimeWindow } from "../../../data/time-range"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { UsersFacetsData, UsersPage } from "./model"
+import { UsersFacetsData, UsersGroupsPage, UsersPage } from "./model"
 
 export const RequestMode = Schema.Literals(["Load", "Refresh"])
 export type RequestMode = typeof RequestMode.Type
@@ -18,6 +18,9 @@ const result = <A extends Schema.Top>(schema: A) => ({
 export const Message = defineMessageUnion({
 	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, mode: RequestMode },
 	CompletedFetchUsers: result(UsersPage),
+	CompletedFetchGroups: result(UsersGroupsPage),
+	/** `null` lists users, `group` one row per group. */
+	ClickedGroupBy: { groupBy: Schema.NullOr(Schema.Literal("group")) },
 	CompletedFetchFacets: result(UsersFacetsData),
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	ClickedReload: {},
