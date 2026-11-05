@@ -274,7 +274,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 							// pattern, so reaching here means a route was registered outside the
 							// shape the scope check understands, and answering the request would
 							// mean skipping the check entirely.
-							// oxlint-disable-next-line maple/no-effect-die
+							// oxlint-disable-next-line maple/no-effect-die -- fail closed on a route the scope check cannot classify
 							return yield* Effect.die(
 								new V2UnclassifiableRoute({
 									message: "Cannot derive a scope family for a scope-protected v2 route.",

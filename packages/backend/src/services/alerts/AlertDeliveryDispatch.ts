@@ -7,7 +7,8 @@
  * is a value in, a value out, which is what makes the Discord/Telegram
  * output assertable without any HTTP stub.
  */
-import { Option, Array as Arr, String as Str } from "effect"
+import { Option, pipe, Array as Arr, String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 import type { AlertDestinationType, AlertEventType } from "@maple/domain/http"
 import type { DispatchContext } from "./delivery/context"
 import {
@@ -197,14 +198,12 @@ export const buildTelegramText = (context: DispatchContext): string => {
  * let a template author aim a button at an arbitrary in-app action.
  */
 const markdownToTelegramHtml = (markdown: string): string =>
-	Str.replace(
-		/\*\*([^*]+)\*\*/g,
-		"<b>$1</b>",
-		// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
-	)(escapeTelegramHtml(markdown)).replace(
-		/\[([^\]]+)\]\(([^)\s]+)\)/g,
-		(match, text: string, url: string) =>
+	pipe(
+		escapeTelegramHtml(markdown),
+		Str.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>"),
+		replaceWith(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, text = "", url = "") =>
 			/^https?:\/\//i.test(url) ? `<a href="${Str.replaceAll('"', "%22")(url)}">${text}</a>` : match,
+		),
 	)
 
 export const buildTelegramTextFromTemplate = (

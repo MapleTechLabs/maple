@@ -25,6 +25,7 @@ import {
 	Stream,
 	Array as Arr,
 	Option,
+	Schema,
 	String as Str,
 } from "effect"
 import type { ChatMessageRef, ChatOutbound, ChatTarget, ChatWritePhase } from "./outbound"
@@ -110,10 +111,7 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 						// A retraction can shrink a turn below a message it had already needed, so a surplus
 						// message is emptied rather than left holding text the turn no longer says.
 						const group = index < groups.length ? groups[index] : NO_BLOCKS
-						// A fingerprint of what this message should now say, not a wire format — nothing decodes
-						// it, it is only ever compared with the previous flush's.
-						// oxlint-disable-next-line effecttsgo/global-json-in-effect
-						const rendered = JSON.stringify(group)
+						const rendered = renderedKey(group)
 						if (index >= posted.length) {
 							const postedMessage = yield* transport.post(target, group, phase)
 							posted.push(postedMessage)
@@ -227,6 +225,11 @@ interface TurnState {
 }
 
 const NO_BLOCKS: ReadonlyArray<ChatBlock> = []
+
+/** A fingerprint of what a message should say; only compared with the previous flush's. */
+const renderedKey: (group: ReadonlyArray<ChatBlock>) => string = Schema.encodeSync(
+	Schema.fromJsonString(Schema.Unknown),
+)
 
 const PENDING: ChatNoticeBlock = { kind: "notice", tone: "pending", text: "Working on it…" }
 

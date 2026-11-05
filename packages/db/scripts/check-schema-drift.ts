@@ -96,7 +96,7 @@ const check = (url: string) =>
 	Effect.gen(function* () {
 		const want = yield* migratedCatalog
 		const have = yield* catalog.pipe(
-			// oxlint-disable-next-line effecttsgo/strict-effect-provide
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide -- script entry point: each catalog read gets its own client
 			Effect.provide(PgClient.layer({ url: Redacted.make(url), maxConnections: 1, prepare: false })),
 		)
 		const keys = [...new Set([...want.keys(), ...have.keys()])].sort()

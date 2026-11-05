@@ -1,5 +1,6 @@
 import type { ReplayEngine, ReplayEngineCreateInput, ReplayEngineFactory } from "./replay-engine"
 import { Array as Arr } from "effect"
+import { codeUnitAt } from "@maple/strings"
 
 // The video engine — mobile recordings.
 //
@@ -134,8 +135,7 @@ export function resolveSegment(
 /** Decode base64 to an MP4 object URL. Mirrors the idiom in `lib/log-key.ts`. */
 function toObjectUrl(base64: string): string {
 	const binary = atob(base64)
-	// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
-	const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
+	const bytes = Uint8Array.from(binary, (char) => codeUnitAt(char, 0))
 	return URL.createObjectURL(new Blob([bytes], { type: "video/mp4" }))
 }
 

@@ -10,6 +10,7 @@
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
+		"@maple/strings": "workspace:*",
 		"alchemy": "catalog:alchemy",
 		"effect": "catalog:effect"
 	},

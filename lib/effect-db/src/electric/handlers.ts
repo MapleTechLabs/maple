@@ -5,7 +5,7 @@ import type {
 	UpdateMutationFnParams,
 	UtilsRecord,
 } from "@tanstack/db"
-import type { Txid } from "@tanstack/electric-db-collection"
+import type { ElectricCollectionUtils, Txid } from "@tanstack/electric-db-collection"
 import { Cause, Effect, Exit, type ManagedRuntime, Option, Array as Arr } from "effect"
 import { DeleteError, InsertError, MissingTxIdError, UpdateError } from "./errors"
 import type { EffectDeleteHandler, EffectInsertHandler, EffectUpdateHandler } from "./types"
@@ -13,8 +13,22 @@ import type { EffectDeleteHandler, EffectInsertHandler, EffectUpdateHandler } fr
 type PromiseMutationHandler<Params> = (params: Params) => Promise<void>
 
 // Electric deprecated returning `{ txid }`; awaiting it here is what it did with the return value.
-const awaitTxids = (utils: UtilsRecord, txid: Txid | Array<Txid>) =>
-	Promise.all(Arr.map(Arr.isArray(txid) ? txid : [txid], (id) => utils.awaitTxId(id)))
+// TanStack types a collection's utils as `Record<string, any>`; Electric collections carry `awaitTxId`.
+const hasAwaitTxId = (utils: UtilsRecord): utils is Pick<ElectricCollectionUtils, "awaitTxId"> =>
+	typeof utils.awaitTxId === "function"
+
+const awaitTxids = (
+	utils: UtilsRecord,
+	txid: Txid | Array<Txid>,
+	operation: "insert" | "update" | "delete",
+): Promise<void> =>
+	hasAwaitTxId(utils)
+		? Promise.all(Arr.map(Arr.isArray(txid) ? txid : [txid], (id) => utils.awaitTxId(id))).then(
+				() => undefined,
+			)
+		: Promise.reject(
+				new MissingTxIdError({ message: "The collection has no awaitTxId to wait on", operation }),
+			)
 
 /** Adapts an Effect insert handler to Electric's Promise API. */
 export function convertInsertHandler<
@@ -65,7 +79,7 @@ export function convertInsertHandler<
 			? await runtime.runPromiseExit(effect)
 			: await Effect.runPromiseExit(
 					// The overload without a runtime only accepts handlers whose requirements are `never`.
-					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion
+					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- the overload without a runtime only accepts R = never
 					effect as Effect.Effect<{ txid: Txid | Array<Txid> }, InsertError>,
 				)
 
@@ -91,7 +105,7 @@ export function convertInsertHandler<
 			})
 		}
 
-		await awaitTxids(params.collection.utils, result.txid)
+		await awaitTxids(params.collection.utils, result.txid, "insert")
 	}
 }
 
@@ -144,7 +158,7 @@ export function convertUpdateHandler<
 			? await runtime.runPromiseExit(effect)
 			: await Effect.runPromiseExit(
 					// The overload without a runtime only accepts handlers whose requirements are `never`.
-					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion
+					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- the overload without a runtime only accepts R = never
 					effect as Effect.Effect<{ txid: Txid | Array<Txid> }, UpdateError>,
 				)
 
@@ -170,7 +184,7 @@ export function convertUpdateHandler<
 			})
 		}
 
-		await awaitTxids(params.collection.utils, result.txid)
+		await awaitTxids(params.collection.utils, result.txid, "update")
 	}
 }
 
@@ -223,7 +237,7 @@ export function convertDeleteHandler<
 			? await runtime.runPromiseExit(effect)
 			: await Effect.runPromiseExit(
 					// The overload without a runtime only accepts handlers whose requirements are `never`.
-					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion
+					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- the overload without a runtime only accepts R = never
 					effect as Effect.Effect<{ txid: Txid | Array<Txid> }, DeleteError>,
 				)
 
@@ -249,6 +263,6 @@ export function convertDeleteHandler<
 			})
 		}
 
-		await awaitTxids(params.collection.utils, result.txid)
+		await awaitTxids(params.collection.utils, result.txid, "delete")
 	}
 }

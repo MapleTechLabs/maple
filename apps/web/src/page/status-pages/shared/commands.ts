@@ -10,7 +10,7 @@ import {
 	type V2StatusPageIncidentUpdateParams,
 	type V2StatusPageUpdateParams,
 } from "@maple/domain/http/v2"
-import { Effect, Option, Schema, Array as Arr } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AppRoute, hrefOf } from "../../../route"
@@ -250,9 +250,10 @@ export const statusPagesHref = (): string => hrefOf(AppRoute.StatusPages())
 export const newStatusPageHref = (): string => hrefOf(AppRoute.StatusPageNew())
 
 /** The status Worker's origin; empty where it has no domain yet (prd today). */
-export const STATUS_PAGE_BASE_URL: string = (import.meta.env.VITE_STATUS_PAGE_BASE_URL ?? "")
-	.trim()
-	.replace(/\/+$/u, "")
+export const STATUS_PAGE_BASE_URL: string = Str.replace(
+	/\/+$/u,
+	"",
+)(Str.trim(import.meta.env.VITE_STATUS_PAGE_BASE_URL ?? ""))
 
 /** Where visitors read the page, or `null` while no status domain is configured. */
 export const publicUrl = (baseUrl: string, slug: string): string | null =>

@@ -56,6 +56,7 @@
         "@maple/query-engine-integrations": "workspace:*",
         "@maple/query-model": "workspace:*",
         "@maple/security-audit": "workspace:*",
+        "@maple/strings": "workspace:*",
         "@maple/widgets": "workspace:*",
         "@yielded/agent": "0.1.0-beta.191",
         "@yielded/agent-platform-cloudflare": "0.1.0-beta.191",
@@ -168,6 +169,7 @@
         "@maple/auth": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/infra": "workspace:*",
+        "@maple/strings": "workspace:*",
         "effect": "catalog:effect",
       },
       "devDependencies": {
@@ -259,6 +261,7 @@
         "@cloudflare/sandbox": "1.0.3",
         "@maple/domain": "workspace:*",
         "@maple/infra": "workspace:*",
+        "@maple/strings": "workspace:*",
         "effect": "catalog:effect",
       },
       "devDependencies": {
@@ -278,6 +281,7 @@
         "@maple/domain": "workspace:*",
         "@maple/prometheus-otlp": "workspace:*",
         "@maple/safe-fetch": "workspace:*",
+        "@maple/strings": "workspace:*",
         "effect": "catalog:effect",
       },
       "devDependencies": {
@@ -295,6 +299,7 @@
         "@maple/domain": "workspace:*",
         "@maple/infra": "workspace:*",
         "@maple/status-page": "workspace:*",
+        "@maple/strings": "workspace:*",
         "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",
       },
@@ -327,6 +332,7 @@
         "@maple/query-engine": "workspace:*",
         "@maple/query-model": "workspace:*",
         "@maple/status-page": "workspace:*",
+        "@maple/strings": "workspace:*",
         "@maple/ui": "workspace:*",
         "@maple/views": "workspace:*",
         "@maple/web-data": "workspace:*",
@@ -409,6 +415,7 @@
     "lib/alchemy-portless": {
       "name": "@maple/alchemy-portless",
       "dependencies": {
+        "@maple/strings": "workspace:*",
         "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",
       },
@@ -466,6 +473,7 @@
     "lib/lockfiles": {
       "name": "@maple/lockfiles",
       "dependencies": {
+        "@maple/strings": "workspace:*",
         "effect": "catalog:effect",
         "smol-toml": "^1.9.1",
         "yaml": "^2.9.1",
@@ -524,11 +532,23 @@
         "vitest": "catalog:",
       },
     },
+    "lib/strings": {
+      "name": "@maple/strings",
+      "dependencies": {
+        "effect": "catalog:effect",
+      },
+      "devDependencies": {
+        "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:",
+      },
+    },
     "packages/agent-sessions": {
       "name": "@maple/agent-sessions",
       "dependencies": {
         "@maple/domain": "workspace:*",
         "@maple/query-engine": "workspace:*",
+        "@maple/strings": "workspace:*",
         "effect": "catalog:effect",
       },
       "devDependencies": {
@@ -622,6 +642,7 @@
         "@maple/query-model": "workspace:*",
         "@maple/safe-fetch": "workspace:*",
         "@maple/security-audit": "workspace:*",
+        "@maple/strings": "workspace:*",
         "@maple/widgets": "workspace:*",
         "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",
@@ -694,6 +715,7 @@
       "dependencies": {
         "@maple/domain": "workspace:*",
         "@maple/primitives": "workspace:*",
+        "@maple/strings": "workspace:*",
         "effect": "catalog:effect",
       },
       "devDependencies": {
@@ -746,6 +768,7 @@
         "@maple/primitives": "workspace:*",
         "@maple/query-model": "workspace:*",
         "@maple/security-audit": "workspace:*",
+        "@maple/strings": "workspace:*",
         "@maple/widgets": "workspace:*",
         "effect": "catalog:effect",
       },
@@ -779,6 +802,7 @@
     "packages/email": {
       "name": "@maple/email",
       "devDependencies": {
+        "@maple/strings": "workspace:*",
         "@types/bun": "^1.4.4",
         "effect": "catalog:effect",
         "foldkit": "0.170.0",
@@ -825,6 +849,7 @@
       "name": "@maple/ingest-rules",
       "dependencies": {
         "@maple/domain": "workspace:*",
+        "@maple/strings": "workspace:*",
         "effect": "catalog:effect",
       },
       "devDependencies": {
@@ -875,6 +900,7 @@
         "@maple/cache": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/query-model": "workspace:*",
+        "@maple/strings": "workspace:*",
         "effect": "catalog:effect",
       },
       "devDependencies": {
@@ -941,6 +967,7 @@
       "name": "@maple/status-page",
       "dependencies": {
         "@maple/domain": "workspace:*",
+        "@maple/strings": "workspace:*",
         "effect": "catalog:effect",
       },
       "devDependencies": {
@@ -954,6 +981,7 @@
       "dependencies": {
         "@maple/domain": "workspace:*",
         "@maple/query-engine": "workspace:*",
+        "@maple/strings": "workspace:*",
         "@tanstack/charts": "catalog:charts",
         "@tanstack/charts-scales": "catalog:charts",
         "@xyflow/system": "0.0.84",
@@ -984,6 +1012,7 @@
         "@maple/chat-platform": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/query-engine": "workspace:*",
+        "@maple/strings": "workspace:*",
         "@maple/ui": "workspace:*",
         "@maple/web-data": "workspace:*",
         "@pierre/highlights": "0.3.0",
@@ -1579,6 +1608,8 @@
 
     "@maple/status-page": ["@maple/status-page@workspace:packages/status-page"],
 
+    "@maple/strings": ["@maple/strings@workspace:lib/strings"],
+
     "@maple/ui": ["@maple/ui@workspace:packages/ui"],
 
     "@maple/views": ["@maple/views@workspace:packages/views"],
@@ -1983,13 +2014,13 @@
 
     "@tailwindcss/oxide-linux-arm-gnueabihf": ["@tailwindcss/oxide-linux-arm-gnueabihf@4.3.4", "", { "os": "linux", "cpu": "arm" }, "sha512-3aih/sRxzeYfi2Bkh+bGYNf2YU9Llamb2mpA7BNF1obYzdgEeWDAMQzK6BSwzLhs/eTdOaSur92qrGfchagUtQ=="],
 
-    "@tailwindcss/oxide-linux-arm64-gnu": ["@tailwindcss/oxide-linux-arm64-gnu@4.3.4", "", { "os": "linux", "cpu": "arm64", "libc": "glibc" }, "sha512-ktJSrPGQou4OqL88rDEx5CkeM9BjzrwZvYo8u7B7VL1zkBa2XBm351o4MQrek95qikb2M++26Y7w7vbH6Mgl8g=="],
+    "@tailwindcss/oxide-linux-arm64-gnu": ["@tailwindcss/oxide-linux-arm64-gnu@4.3.4", "", { "os": "linux", "cpu": "arm64" }, "sha512-ktJSrPGQou4OqL88rDEx5CkeM9BjzrwZvYo8u7B7VL1zkBa2XBm351o4MQrek95qikb2M++26Y7w7vbH6Mgl8g=="],
 
-    "@tailwindcss/oxide-linux-arm64-musl": ["@tailwindcss/oxide-linux-arm64-musl@4.3.4", "", { "os": "linux", "cpu": "arm64", "libc": "musl" }, "sha512-rt3hjUxT7utAtcB+df6wHyaXDyxhE7Zd1x7L/nvB5Jb2qBb8dZwFUoWqeRja1BaF5OlSqkKSjBmVXj9OsevmCQ=="],
+    "@tailwindcss/oxide-linux-arm64-musl": ["@tailwindcss/oxide-linux-arm64-musl@4.3.4", "", { "os": "linux", "cpu": "arm64" }, "sha512-rt3hjUxT7utAtcB+df6wHyaXDyxhE7Zd1x7L/nvB5Jb2qBb8dZwFUoWqeRja1BaF5OlSqkKSjBmVXj9OsevmCQ=="],
 
-    "@tailwindcss/oxide-linux-x64-gnu": ["@tailwindcss/oxide-linux-x64-gnu@4.3.4", "", { "os": "linux", "cpu": "x64", "libc": "glibc" }, "sha512-XE3jO2yOOWjttpeGvpwf3/b274NMi3QapQSAI/EzsgrmYNan1Tw8dXT9JQkN7K0OgvuqiC8mcCyNvGzEkpVJPQ=="],
+    "@tailwindcss/oxide-linux-x64-gnu": ["@tailwindcss/oxide-linux-x64-gnu@4.3.4", "", { "os": "linux", "cpu": "x64" }, "sha512-XE3jO2yOOWjttpeGvpwf3/b274NMi3QapQSAI/EzsgrmYNan1Tw8dXT9JQkN7K0OgvuqiC8mcCyNvGzEkpVJPQ=="],
 
-    "@tailwindcss/oxide-linux-x64-musl": ["@tailwindcss/oxide-linux-x64-musl@4.3.4", "", { "os": "linux", "cpu": "x64", "libc": "musl" }, "sha512-PaAZ2FjJaZk9SQLYtKIfQWiFm/xtl7pX2MKPgCzn0mS/VU54yu+vP457AJdB2XFLxU3gO2abLCt8N7Lg4EbKNg=="],
+    "@tailwindcss/oxide-linux-x64-musl": ["@tailwindcss/oxide-linux-x64-musl@4.3.4", "", { "os": "linux", "cpu": "x64" }, "sha512-PaAZ2FjJaZk9SQLYtKIfQWiFm/xtl7pX2MKPgCzn0mS/VU54yu+vP457AJdB2XFLxU3gO2abLCt8N7Lg4EbKNg=="],
 
     "@tailwindcss/oxide-wasm32-wasi": ["@tailwindcss/oxide-wasm32-wasi@4.3.4", "", { "dependencies": { "@emnapi/core": "^1.11.3", "@emnapi/runtime": "^1.11.3", "@emnapi/wasi-threads": "^1.2.3", "@napi-rs/wasm-runtime": "^1.2.2", "@tybys/wasm-util": "^0.10.3", "tslib": "^2.8.1" } }, "sha512-bjO9WmoM687p8AoCIyw1DUqzpAs4JICLvNmIPxIWDmhw8IOsdubtWQLShyJmISnDKtRy1BBApHVOUl6sNFQQJA=="],
 

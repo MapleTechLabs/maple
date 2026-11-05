@@ -16,6 +16,7 @@
 		"@maple/domain": "workspace:*",
 		"@maple/prometheus-otlp": "workspace:*",
 		"@maple/safe-fetch": "workspace:*",
+		"@maple/strings": "workspace:*",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {

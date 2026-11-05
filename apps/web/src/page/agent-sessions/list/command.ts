@@ -6,7 +6,7 @@ import {
 	listAiSessions,
 } from "@maple/web-data/warehouse/ai-sessions"
 import { getAiToolBreakdowns, getAiToolTotals } from "@maple/web-data/warehouse/ai-session-tools"
-import { Clock, Duration, Effect, Option, Queue, Schema, Stream, Array as Arr } from "effect"
+import { Clock, Duration, Effect, Option, Order, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
@@ -82,10 +82,12 @@ export const FetchDetails = Command.define("FetchAgentSessionDetails", {
 	execute: ({ detailsKey, search, window, rows }) =>
 		getAiSessionDetails({
 			data: {
-				// @effect-diagnostics-next-line preferEffectArray:off -- no initial value; Arr.reduce requires one
-				startTime: Arr.map(rows, (row) => row.startTime).reduce((a, b) => (a < b ? a : b)),
-				// @effect-diagnostics-next-line preferEffectArray:off -- no initial value; Arr.reduce requires one
-				endTime: Arr.map(rows, (row) => row.endTime).reduce((a, b) => (a < b ? b : a)),
+				startTime: Arr.reduce(rows, rows[0]?.startTime ?? "", (min, row) =>
+					Order.min(Order.String)(min, row.startTime),
+				),
+				endTime: Arr.reduce(rows, rows[0]?.endTime ?? "", (max, row) =>
+					Order.max(Order.String)(max, row.endTime),
+				),
 				sessionIds: Arr.map(rows, (row) => row.sessionId),
 				...countedFilters(filterInputs(search, window)),
 			},

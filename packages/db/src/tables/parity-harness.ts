@@ -51,6 +51,11 @@ const catalog = async (db: PGlite, tables: ReadonlyArray<string>) => {
 const isTable = (value: unknown): value is PgSchemaTable<string, ColumnDefs> =>
 	typeof value === "object" && value !== null && "_tag" in value && value._tag === "Table" && "ddl" in value
 
+// `Array.isArray` narrows this union to `any[]`; the guard keeps the table type.
+const isTableList = (
+	tables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> | Record<string, unknown>,
+): tables is ReadonlyArray<PgSchemaTable<string, ColumnDefs>> => Arr.isArray(tables)
+
 /**
  * Check `tables` (or every table a module exports) against the migrations.
  * `complete` also requires them to be every table the database has.
@@ -59,8 +64,7 @@ export const describeParity = (
 	tables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> | Record<string, unknown>,
 	options: { readonly complete?: boolean } = {},
 ) => {
-	// @effect-diagnostics-next-line preferEffectArray:off preferEffectRecord:off -- Arr.isArray narrows to a mutable Array and loses the ReadonlyArray branch; not a record type; Rec.values would need a cast
-	const list = Array.isArray(tables) ? tables : Arr.filter(Object.values(tables), isTable)
+	const list = isTableList(tables) ? tables : Arr.filter(Rec.values(tables), isTable)
 	const ormEntities = Effect.runSync(S.pgEntitiesOf(list))
 	const ormTables = new Set<string>(Arr.map(list, (table) => table.name))
 

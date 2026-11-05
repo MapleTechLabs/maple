@@ -17,6 +17,7 @@ import {
 import type { WarehouseDriverError, WarehouseDriverFailureReason } from "./driver-error"
 import { detectQuotaSetting } from "../profiles"
 import { String as Str, Option } from "effect"
+import { indexOfFrom } from "@maple/strings"
 
 /**
  * The OTel database conventions' failure attributes for a warehouse span.
@@ -53,15 +54,13 @@ const redactInvalidTokens = (message: string): string => {
 	let out = ""
 	let cursor = 0
 	for (;;) {
-		// @effect-diagnostics-next-line preferEffectString:off -- searches from a position; Str.indexOf takes none
-		const at = lower.indexOf(INVALID_TOKEN_MARKER, cursor)
+		const at = indexOfFrom(lower, INVALID_TOKEN_MARKER, cursor)
 		if (at === -1) break
 		let i = at + INVALID_TOKEN_MARKER.length
 		while (i < message.length && Option.exists(Str.charAt(message, i), (ch) => /\s/.test(ch))) i++
 		if (message[i] === "b") i++
 		const quote = message[i]
-		// @effect-diagnostics-next-line preferEffectString:off -- searches from a position; Str.indexOf takes none
-		const close = quote === "'" || quote === '"' ? message.indexOf(quote, i + 1) : -1
+		const close = quote === "'" || quote === '"' ? indexOfFrom(message, quote, i + 1) : -1
 		if (close === -1) {
 			out += Str.slice(cursor, i)(message)
 			cursor = i

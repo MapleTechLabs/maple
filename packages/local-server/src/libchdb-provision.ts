@@ -16,11 +16,12 @@ import {
 } from "effect"
 import { HttpClient } from "effect/http"
 import { createHash, randomUUID } from "node:crypto"
-import { createReadStream, existsSync } from "node:fs"
+import { existsSync } from "node:fs"
 import { mkdir, open, readdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import manifest from "../libchdb.json" with { type: "json" }
+import { sha256File as sha256FileAsync } from "./checkpoint-digest"
 
 export class LibchdbProvisionError extends Schema.TaggedError<LibchdbProvisionError>()(
 	"@maple/local-server/LibchdbProvisionError",
@@ -127,9 +128,7 @@ const download = (
 const sha256File = (path: string) =>
 	Effect.tryPromise({
 		try: async () => {
-			const hash = createHash("sha256")
-			for await (const chunk of createReadStream(path)) hash.update(chunk)
-			return hash.digest("hex")
+			return sha256FileAsync(path)
 		},
 		catch: (error) => fail(`cannot read ${path}: ${String(error)}`),
 	})

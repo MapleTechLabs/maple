@@ -1,5 +1,12 @@
 {
 	"extends": "astro/tsconfigs/strict",
 	"include": [".astro/types.d.ts", "**/*"],
-	"exclude": ["dist"]
+	"exclude": ["dist"],
+	"compilerOptions": {
+		// `@maple/ui` exports `./*` without extensions; Vite resolves them, tsc needs the mapping.
+		"paths": {
+			"@maple/ui/styles/ui/*": ["../../packages/ui/src/components/ui/*.styles.ts"],
+			"@maple/ui/*": ["../../packages/ui/src/*"]
+		}
+	}
 }

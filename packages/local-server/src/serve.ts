@@ -966,13 +966,19 @@ const readBoundedBytes = async (
 			return Result.fail(next.failure)
 		}
 		if (next.success.done) break
-		total += next.success.value.byteLength
+		// The host types body chunks as `any`; anything but bytes is not a body we read.
+		const value: unknown = next.success.value
+		if (!(value instanceof Uint8Array)) {
+			reader.releaseLock()
+			return Result.fail(new InvalidJsonBody({ message: "read request body: chunk is not bytes" }))
+		}
+		total += value.byteLength
 		if (total > maximumBytes) {
 			await reader.cancel().catch(() => undefined)
 			reader.releaseLock()
 			return Result.fail(RequestBodyTooLargeError.create(maximumBytes))
 		}
-		chunks.push(next.success.value)
+		chunks.push(value)
 	}
 	reader.releaseLock()
 	return Result.succeed(Buffer.concat(chunks, total))

@@ -11,7 +11,8 @@
  * grouping quality.
  */
 
-import { Option, Schema, Array as Arr, String as Str } from "effect"
+import { Option, pipe, Schema, Array as Arr, String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 
 export interface FingerprintInputs {
 	/** First normalized frame — stored on error_events and error_issues for display. */
@@ -488,12 +489,11 @@ const readString = (s: string, at: number): Read<{ readonly text: string; readon
 	if (token === undefined || text === undefined || LONE_SURROGATE.test(text)) return undefined
 	// ClickHouse escapes the two line separators JSON.stringify leaves raw, and writes
 	// `\u000F` where JSON.stringify writes `\u000f`. An escaped backslash pairs first.
-	const raw = Str.replace(
-		/\u2029/g,
-		"\\u2029",
-		// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
-	)(Str.replace(/\u2028/g, "\\u2028")(encodeJson(text))).replace(/\\\\|\\u[0-9a-f]{4}/g, (escape) =>
-		Str.replace("\\U", "\\u")(Str.toUpperCase(escape)),
+	const raw = pipe(
+		encodeJson(text),
+		Str.replace(/\u2028/g, "\\u2028"),
+		Str.replace(/\u2029/g, "\\u2029"),
+		replaceWith(/\\\\|\\u[0-9a-f]{4}/g, (escape) => Str.replace("\\U", "\\u")(Str.toUpperCase(escape))),
 	)
 	return { value: { text, raw }, end: at + token.length }
 }

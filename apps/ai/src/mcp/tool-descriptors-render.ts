@@ -1,15 +1,15 @@
 import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
 import { Schema, Array as Arr, String as Str } from "effect"
+import { codeUnitAt, replaceWith } from "@maple/strings"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** JSON with every non-ASCII character escaped: the generated module stays plain ASCII. */
 const asciiJson = (value: unknown): string =>
-	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
-	encodeJson(value).replace(
+	replaceWith(
+		encodeJson(value),
 		/[\u0080-\uffff]/g,
-		// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
-		(char) => `\\u${Str.padStart(4, "0")(char.charCodeAt(0).toString(16))}`,
+		(char) => `\\u${Str.padStart(4, "0")(codeUnitAt(char, 0).toString(16))}`,
 	)
 
 /** The source of `tool-descriptors.generated.ts`: one tool per line, so a diff names the tool. */

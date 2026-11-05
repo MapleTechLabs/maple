@@ -10,6 +10,7 @@ import type { QueryProfileName, WarehouseQuerySettings } from "../profiles"
 import { alertQueryLimits } from "../datetime"
 import { escapeClickHouseString, splitTerminalClauses } from "@maple-dev/effect-orm/sql"
 import type { OrgId } from "@maple/domain"
+import { replaceWith } from "@maple/strings"
 
 // User-authored ClickHouse SQL: validation, macro expansion, and execution.
 //
@@ -120,8 +121,7 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	// literal — quotes and all.
 	// Parenthesised so the predicate is one operand wherever it lands; `rawSqlIssue`
 	// already rejected an org filter that sits beside a top-level OR.
-	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
-	sql = sql.replace(ORG_FILTER_MACRO_RE, (_match, alias: string | undefined) =>
+	sql = replaceWith(sql, ORG_FILTER_MACRO_RE, (_match, alias: string | undefined) =>
 		alias === undefined ? `(OrgId = ${orgLiteral})` : `(${Str.trim(alias)}.OrgId = ${orgLiteral})`,
 	)
 	sql = replaceAllLiteral(sql, "$__startTime", startLiteral)

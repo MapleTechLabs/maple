@@ -12,6 +12,7 @@ import {
 } from "@maple/domain/status-page"
 import { Schema, Array as Arr, String as Str } from "effect"
 import { safeColor } from "./escape"
+import { replaceWith } from "@maple/strings"
 
 const isPreset = Schema.is(StatusPageThemePreset)
 const isAppearance = Schema.is(StatusPageThemeAppearance)
@@ -61,8 +62,8 @@ const TOKEN_NAMES = [
 ] as const satisfies ReadonlyArray<keyof ResolvedStatusPageThemeTokens>
 
 /** `okTint` as `ok-tint`. */
-// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
-const cssName = (name: string): string => name.replace(/[A-Z]/gu, (letter) => `-${Str.toLowerCase(letter)}`)
+const cssName = (name: string): string =>
+	replaceWith(name, /[A-Z]/gu, (letter) => `-${Str.toLowerCase(letter)}`)
 
 /** One scheme's CSS variables; `safeColor` drops any token that is not a hex colour. */
 export const tokenVariables = (tokens: ResolvedStatusPageThemeTokens): string =>

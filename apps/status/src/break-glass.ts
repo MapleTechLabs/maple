@@ -15,6 +15,7 @@ import { MANAGE_FIELDS, NEW_INCIDENT, NO_CHANGE } from "@maple/status-page"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import type { StatusEnv, StatusStorageError } from "./ports"
 import { listOverlay, rememberOverlay } from "./snapshot"
+import { codeUnitAt } from "@maple/strings"
 
 /** A break-glass post that was refused; `status` is the HTTP status the form page answers with. */
 export class BreakGlassRejected extends Schema.TaggedError<BreakGlassRejected>()(
@@ -56,8 +57,7 @@ export const constantTimeEqual = (a: string, b: string): boolean =>
 	Arr.reduce(
 		Array.from(
 			{ length: Math.max(a.length, b.length) },
-			// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
-			(_, index) => a.charCodeAt(index) ^ b.charCodeAt(index),
+			(_, index) => codeUnitAt(a, index) ^ codeUnitAt(b, index),
 		),
 		a.length ^ b.length,
 		(diff, bits) => diff | bits,
@@ -72,21 +72,23 @@ const orNoChange = (value: string): string | null => (value === NO_CHANGE ? null
 
 /** Reads the body chunk by chunk and stops past the cap, whatever `content-length` claims. */
 const readCapped = (
-	reader: ReadableStreamDefaultReader<Uint8Array>,
+	reader: ReadableStreamDefaultReader<unknown>,
 	chunks: ReadonlyArray<Uint8Array>,
 	total: number,
 ): Effect.Effect<ReadonlyArray<Uint8Array>, BreakGlassRejected> =>
 	Effect.tryPromise({ try: () => reader.read(), catch: unreadable }).pipe(
 		Effect.flatMap((chunk) => {
 			if (chunk.done) return Effect.succeed(chunks)
-			const size = total + chunk.value.byteLength
+			const value = chunk.value
+			if (!(value instanceof Uint8Array)) return Effect.fail(unreadable())
+			const size = total + value.byteLength
 			if (size > MAX_FORM_BYTES) {
 				return Effect.tryPromise({ try: () => reader.cancel(), catch: unreadable }).pipe(
 					Effect.ignore,
 					Effect.andThen(reject(413, TOO_LARGE)),
 				)
 			}
-			return readCapped(reader, [...chunks, chunk.value], size)
+			return readCapped(reader, [...chunks, value], size)
 		}),
 	)
 

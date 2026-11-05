@@ -1,4 +1,5 @@
 import { Array as Arr, Option, String as Str } from "effect"
+import { indexOfFrom } from "@maple/strings"
 /**
  * Ranking for the chat channel picker.
  *
@@ -44,8 +45,7 @@ const subsequencePenalty = (name: string, query: string): number | null => {
 	let gaps = 0
 	let firstIndex = -1
 	for (const char of query) {
-		// @effect-diagnostics-next-line preferEffectString:off -- searches from a position; Str.indexOf takes none
-		const found = name.indexOf(char, nameIndex)
+		const found = indexOfFrom(name, char, nameIndex)
 		if (found === -1) return null
 		if (firstIndex === -1) firstIndex = found
 		else gaps += found - nameIndex

@@ -93,7 +93,15 @@ it("playground", async () => {
 			const started = Date.now()
 			const params: unknown = decodeJson(env.PLAYGROUND_ARGS ?? "{}")
 			const result = await runToolDirect(rt, tool, params).then(
-				(value) => ({ text: markdown(value), ok: value?.isError !== true }),
+				(value: unknown) => ({
+					text: markdown(value),
+					ok: !(
+						typeof value === "object" &&
+						value !== null &&
+						"isError" in value &&
+						value.isError === true
+					),
+				}),
 				(error: unknown) => ({ text: `Tool failed: ${String(error)}`, ok: false }),
 			)
 			writeFileSync(out, result.text)

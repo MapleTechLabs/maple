@@ -14,6 +14,7 @@ import {
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { DETECTORS, findAll, type Span } from "./detectors"
 import { hmacSha256, sha256, toHex, utf8 } from "./sha256"
+import { codeUnitAt } from "@maple/strings"
 
 // The TS twin of `apps/ingest/src/ingest_rules.rs`; semantics in docs/ingest-rules.md.
 
@@ -253,14 +254,12 @@ export const scanCut = (text: string): number => {
 	let bytes = 0
 	let index = 0
 	while (index < text.length) {
-		// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
-		const unit = text.charCodeAt(index)
+		const unit = codeUnitAt(text, index)
 		const pair =
 			unit >= 0xd800 &&
 			unit <= 0xdbff &&
 			index + 1 < text.length &&
-			// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
-			(text.charCodeAt(index + 1) & 0xfc00) === 0xdc00
+			(codeUnitAt(text, index + 1) & 0xfc00) === 0xdc00
 		const size = pair ? 4 : unit < 0x80 ? 1 : unit < 0x800 ? 2 : 3
 		if (bytes + size > cap) return index
 		bytes += size
