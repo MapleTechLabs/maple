@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { AuditedRead } from "../audit-log"
 import { ErrorPersistenceError, WorkflowState } from "../errors"
 import { McpClientKind, McpSessionSource } from "../mcp"
-import { UserSignalKind } from "../users"
+import { END_USER_ID_MAX_LENGTH, UserSignalKind } from "../users"
 import { AuthorizationV2 } from "./auth"
 import { ListOf, ListQuery, Timestamp, wireExample } from "./envelopes"
 import { defineV2Error, V2CursorInvalid, V2ParameterInvalid, V2TimeRangeInvalid } from "./errors"
@@ -17,7 +17,10 @@ import { V2TelemetryRangeTooLarge } from "./telemetry"
 // A user's id is the app's own opaque string, so it passes through like a trace id, never prefixed.
 
 /** An end user's id as the SDK sent it, matched exactly. URL-encode it in the path. */
-export const V2EndUserId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512)).annotate({
+export const V2EndUserId = Schema.String.check(
+	Schema.isMinLength(1),
+	Schema.isMaxLength(END_USER_ID_MAX_LENGTH),
+).annotate({
 	title: "End user ID",
 	description: "The id the app identified the user with (`identify()` or the `user.id` attribute).",
 	examples: ["user_2abc"],
