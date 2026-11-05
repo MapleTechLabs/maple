@@ -11,7 +11,7 @@ import {
 } from "@maple/domain/http/v2"
 import { Array as Arr, Effect } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { Env } from "@maple/backend/platform/Env"
 import type {
 	ChatConnectorStatus,
@@ -109,8 +109,8 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 				.handle("install", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles, () =>
-							V2InsufficientPermissions.make("Only org admins can link a chat workspace"),
+						yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+							V2InsufficientPermissions.make(denial.message),
 						)
 						const req = yield* HttpServerRequest.HttpServerRequest
 						const origin = resolveRequestOrigin(req)
@@ -191,10 +191,8 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 				.handle("updateWorkspace", ({ params, payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles, () =>
-							V2InsufficientPermissions.make(
-								"Only org admins can change chat workspace settings",
-							),
+						yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+							V2InsufficientPermissions.make(denial.message),
 						)
 						const workspace = yield* chat.updateSettings(
 							tenant.orgId,
@@ -213,10 +211,8 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 				.handle("destinations", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles, () =>
-							V2InsufficientPermissions.make(
-								"Only org admins can list a chat workspace's channels",
-							),
+						yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+							V2InsufficientPermissions.make(denial.message),
 						)
 						const destinations = yield* chat.listDestinations(tenant.orgId, params.id)
 						return {
@@ -232,8 +228,8 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 				.handle("deleteWorkspace", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles, () =>
-							V2InsufficientPermissions.make("Only org admins can unlink a chat workspace"),
+						yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+							V2InsufficientPermissions.make(denial.message),
 						)
 						yield* chat.uninstall(tenant.orgId, params.id)
 						yield* recordHttpAudit("chat_integration.uninstalled", { resourceId: params.id })

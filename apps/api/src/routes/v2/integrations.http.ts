@@ -28,7 +28,7 @@ import {
 } from "@maple/domain/http/v2"
 import { Array as Arr, Effect, Option, String as Str } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { Env } from "@maple/backend/platform/Env"
 import { EdgeCacheService } from "@maple/cache"
 import {
@@ -241,8 +241,8 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 					.handle("connect", ({ payload }) =>
 						Effect.gen(function* () {
 							const tenant = yield* CurrentTenant.Context
-							yield* requireAdmin(tenant.roles, () =>
-								V2InsufficientPermissions.make("Only org admins can connect PlanetScale"),
+							yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+								V2InsufficientPermissions.make(denial.message),
 							)
 							const req = yield* HttpServerRequest.HttpServerRequest
 							const origin = resolveRequestOrigin(req)
@@ -281,10 +281,8 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 							const tenant = yield* CurrentTenant.Context
 							// Admin-gated like `select_organization`: this drives the org picker
 							// while the connection is pending, and both are admin-only flows.
-							yield* requireAdmin(tenant.roles, () =>
-								V2InsufficientPermissions.make(
-									"Only org admins can manage the PlanetScale integration",
-								),
+							yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+								V2InsufficientPermissions.make(denial.message),
 							)
 							const organizations = yield* planetscaleOAuth
 								.listOrganizations(tenant.orgId)
@@ -301,10 +299,8 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 					.handle("selectOrganization", ({ payload }) =>
 						Effect.gen(function* () {
 							const tenant = yield* CurrentTenant.Context
-							yield* requireAdmin(tenant.roles, () =>
-								V2InsufficientPermissions.make(
-									"Only org admins can manage the PlanetScale integration",
-								),
+							yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+								V2InsufficientPermissions.make(denial.message),
 							)
 							const status = yield* planetscale
 								.finalizeOrgSelection(tenant.orgId, {
@@ -326,10 +322,8 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 					.handle("setMetricsToken", ({ payload }) =>
 						Effect.gen(function* () {
 							const tenant = yield* CurrentTenant.Context
-							yield* requireAdmin(tenant.roles, () =>
-								V2InsufficientPermissions.make(
-									"Only org admins can manage the PlanetScale integration",
-								),
+							yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+								V2InsufficientPermissions.make(denial.message),
 							)
 							const status = yield* planetscale
 								.setMetricsToken(
@@ -351,8 +345,8 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 					.handle("disconnect", () =>
 						Effect.gen(function* () {
 							const tenant = yield* CurrentTenant.Context
-							yield* requireAdmin(tenant.roles, () =>
-								V2InsufficientPermissions.make("Only org admins can disconnect PlanetScale"),
+							yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+								V2InsufficientPermissions.make(denial.message),
 							)
 							yield* planetscale
 								.disconnect(tenant.orgId)
@@ -384,10 +378,8 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 						Effect.gen(function* () {
 							const tenant = yield* CurrentTenant.Context
 							// Admin-only: the response carries the webhook HMAC secret.
-							yield* requireAdmin(tenant.roles, () =>
-								V2InsufficientPermissions.make(
-									"Only org admins can read the PlanetScale webhook configuration",
-								),
+							yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+								V2InsufficientPermissions.make(denial.message),
 							)
 							const config = yield* planetscale
 								.webhookConfig(tenant.orgId)

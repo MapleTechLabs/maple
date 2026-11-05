@@ -1,7 +1,7 @@
 import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant, DependencyScanForbiddenError, MapleInternalApi } from "@maple/domain/http"
 import { Effect } from "effect"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { DependencyScanService } from "@maple/backend/services/dependency-scan/DependencyScanService"
 
 export const HttpDependencyScanLive = HttpApiBuilder.group(MapleInternalApi, "dependencyScan", (handlers) =>
@@ -24,11 +24,12 @@ export const HttpDependencyScanLive = HttpApiBuilder.group(MapleInternalApi, "de
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					// Triage, like the code audit's, is an admin's call.
-					yield* requireAdmin(
+					yield* Policy.check(
 						tenant.roles,
-						() =>
+						"security:manage",
+						(denial) =>
 							new DependencyScanForbiddenError({
-								message: "Only org admins can triage findings",
+								message: denial.message,
 							}),
 					)
 					return yield* scans.updateFinding(tenant.orgId, tenant.userId, params.findingId, payload)

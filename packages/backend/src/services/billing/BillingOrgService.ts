@@ -24,7 +24,7 @@ import { Clock, Context, Effect, Layer, Option } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database, type DatabaseClient } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import { isAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import {
 	CUSTOMER_CACHE_BUCKET,
@@ -283,7 +283,7 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 			const link = Effect.fn("BillingOrgService.link")(function* (input: LinkBillingOrgInput) {
 				const { orgId, billingOrgId: payer } = input
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.billing_org_id": payer })
-				if (!isAdmin(input.roles)) {
+				if (!Policy.can(input.roles, "billing:manage")) {
 					return yield* new BillingForbiddenError({
 						message: "Only org admins can change who pays for the organization",
 					})
@@ -299,7 +299,7 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 							}),
 					),
 				)
-				if (Option.isNone(membership) || !isAdmin([membership.value.role])) {
+				if (Option.isNone(membership) || !Policy.can([membership.value.role], "billing:manage")) {
 					return yield* reject("not_admin_of_billing_org")
 				}
 				// Usage meters and Postgres rows live per region; a link cannot span two.
@@ -387,7 +387,7 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 			const unlink = Effect.fn("BillingOrgService.unlink")(function* (input: UnlinkBillingOrgInput) {
 				const { orgId, memberOrgId } = input
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.billing.member_org_id": memberOrgId })
-				if (!isAdmin(input.roles)) {
+				if (!Policy.can(input.roles, "billing:manage")) {
 					return yield* new BillingForbiddenError({
 						message: "Only org admins can change who pays for the organization",
 					})

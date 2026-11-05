@@ -8,7 +8,7 @@ import {
 } from "@maple/domain/onboarding-checklist"
 import { Effect, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import {
 	OnboardingChecklistService,
 	type OnboardingChecklistReport,
@@ -60,8 +60,8 @@ export const HttpV2OnboardingChecklistLive = HttpApiBuilder.group(
 				.handle("claim", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles, () =>
-							V2InsufficientPermissions.make("Only org admins can claim the onboarding reward"),
+						yield* Policy.check(tenant.roles, "billing:manage", (denial) =>
+							V2InsufficientPermissions.make(denial.message),
 						)
 						const { report, newlyClaimed } = yield* service.claim(tenant)
 						// A repeat of an idempotent claim is not a second credit; audit the redemption once.

@@ -19,7 +19,7 @@ import {
 	type OrgId,
 } from "@maple/domain/primitives"
 import { UptimeDnsRecordType, UptimeHttpMethod } from "@maple/domain/uptime"
-import { isAdmin, requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
@@ -38,11 +38,12 @@ import {
 const adminOnly = (tool: string) =>
 	Effect.gen(function* () {
 		const tenant = yield* CurrentMcpTenant
-		yield* requireAdmin(
+		yield* Policy.check(
 			tenant.roles,
+			"uptime_monitors:manage",
 			() =>
 				new McpUnavailableError({
-					message: `${tool} changes the organization's uptime monitors, which only org admins may do. Ask an admin, or change it in Alerts → Uptime.`,
+					message: `${tool} changes the organization's uptime monitors, which only org admins and engineers may do. Ask an admin or engineer, or change it in Alerts → Uptime.`,
 					capability: "org_admin",
 				}),
 		)
@@ -269,7 +270,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 			const monitors = yield* service
 				.list(tenant.orgId)
 				.pipe(Effect.mapError(toMcpUptimeError("list_uptime_monitors")))
-			const canWrite = isAdmin(tenant.roles)
+			const canWrite = Policy.can(tenant.roles, "uptime_monitors:manage")
 			const rows = Arr.map(monitors, (monitor) => toMonitorRow(monitor, canWrite))
 			const count = (status: keyof typeof STATUS_ORDER) =>
 				Arr.filter(rows, (row) => row.status === status).length
@@ -306,7 +307,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 								output.statusFilter === undefined && output.serviceFilter === undefined
 									? "This organization has no uptime monitors."
 									: "No uptime monitor matches these filters.",
-							hints: ["create_uptime_monitor adds one (org admins only)."],
+							hints: ["create_uptime_monitor adds one (org admins and engineers only)."],
 						},
 					}
 				: undefined),

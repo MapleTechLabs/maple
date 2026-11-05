@@ -51,7 +51,7 @@ import {
 } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { SecurityAuditWorkflowStarter } from "@maple/backend/platform/bindings"
-import { isAdmin, requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { securityAuditLimits } from "@maple/backend/services/security-audit/limits"
 import { SecurityAuditCredits } from "@maple/backend/services/security-audit/SecurityAuditCredits"
@@ -215,11 +215,12 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 
 		const adminAccess = orgAccess.pipe(
 			Effect.tap(({ tenant }) =>
-				requireAdmin(
+				Policy.check(
 					tenant.roles,
+					"security:manage",
 					() =>
 						new SecurityAuditForbiddenError({
-							message: "Only org admins can manage security audits.",
+							message: "Only org admins and engineers can manage security audits.",
 						}),
 				),
 			),
@@ -486,7 +487,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					)
 					const runs = Arr.map(rows, toRun)
 					// Members may list runs but not read findings, so only admins see what each reported.
-					if (!isAdmin(tenant.roles)) return { runs }
+					if (!Policy.can(tenant.roles, "security:manage")) return { runs }
 					const findingCounts = yield* orUnavailable(
 						store.countRunFindings(Arr.map(rows, (r) => r.id)),
 					)

@@ -656,7 +656,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const {
 				normalizeRule,
 				normalizeRuleRow,
-				requireAdmin,
+				requireAlertsPermission,
 				requireDestinationIds,
 				requireRuleRow,
 				upsertRuleRow,
@@ -1564,7 +1564,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					"tenant.userId": userId,
 					"maple.alert.rule_id": ruleId,
 				})
-				yield* requireAdmin(roles)
+				yield* requireAlertsPermission(roles)
 				const oldRow = yield* requireRuleRow(orgId, ruleId)
 				if (oldRow.signalType === "uptime") {
 					return yield* makeValidationError(UPTIME_RULE_MANAGED_MESSAGE)
@@ -1605,7 +1605,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				sendNotification = false,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "tenant.userId": userId })
-				yield* requireAdmin(roles)
+				yield* requireAlertsPermission(roles)
 				const normalized = yield* normalizeRule(orgId, request)
 				yield* requireDestinationIds(orgId, normalized.destinationIds)
 
@@ -1797,7 +1797,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// capability `createRule`/`testRule` gate behind org-admin. Previewing
 				// one must not be a cheaper route to that than creating it.
 				if (plan.kind === "raw_sql") {
-					yield* requireAdmin(roles)
+					yield* requireAlertsPermission(roles)
 				}
 				// Alongside the series query, which spans many windows and so says nothing about one check.
 				const queryTiming = yield* Effect.forkChild(

@@ -13,15 +13,13 @@ import { Effect, Array as Arr } from "effect"
 import { auditDiff, redactAuditUrl } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { timestampMs } from "@maple/backend/platform/time"
 
 // Every write is admin-gated: a scrape target stores credentials and makes
 // Maple's infrastructure fetch an operator-chosen URL, so `probe` (which sends
 // the stored credential on demand) is a write, not a read. Reads stay on the
 // `scrape_targets:read` scope — they never expose the credential itself.
-const adminOnly = (action: string) => () =>
-	V2InsufficientPermissions.make(`Only org admins can ${action} scrape targets`)
 
 const toV2ScrapeTarget = (target: ScrapeTargetResponse): V2ScrapeTarget => ({
 	id: target.id,
@@ -90,7 +88,9 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles, adminOnly("create"))
+					yield* Policy.check(tenant.roles, "scrape_targets:manage", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const created = yield* service.create(
 						tenant.orgId,
 						new CreateScrapeTargetRequest({
@@ -146,7 +146,9 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 			.handle("update", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles, adminOnly("update"))
+					yield* Policy.check(tenant.roles, "scrape_targets:manage", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const current = yield* service.get(tenant.orgId, params.id)
 					const updated = yield* service.update(
 						tenant.orgId,
@@ -208,7 +210,9 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles, adminOnly("delete"))
+					yield* Policy.check(tenant.roles, "scrape_targets:manage", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const deleted = yield* service.delete(tenant.orgId, params.id)
 					yield* recordHttpAudit("scrape_target.deleted", { resourceId: deleted.id })
 
@@ -218,7 +222,9 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 			.handle("probe", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles, adminOnly("probe"))
+					yield* Policy.check(tenant.roles, "scrape_targets:manage", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const result = yield* service.probe(tenant.orgId, params.id)
 
 					return {

@@ -30,7 +30,7 @@ import {
 import { IngestRuleValidationError, type SelfDescribingHttpError } from "@maple/domain/http"
 import type { ListLogsOutput } from "@maple/domain/tinybird"
 import type { OrgId } from "@maple/domain/primitives"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
@@ -59,11 +59,12 @@ const PREVIEW_SALT = "preview"
 const adminOnly = (tool: string) =>
 	Effect.gen(function* () {
 		const tenant = yield* CurrentMcpTenant
-		yield* requireAdmin(
+		yield* Policy.check(
 			tenant.roles,
+			"ingest_rules:manage",
 			() =>
 				new McpUnavailableError({
-					message: `${tool} changes the organization's ingest rules, which only org admins may do. Ask an admin, or change it in Settings → Ingestion.`,
+					message: `${tool} changes the organization's ingest rules, which only org admins and engineers may do. Ask an admin or engineer, or change it in Settings → Ingestion.`,
 					capability: "org_admin",
 				}),
 		)
@@ -326,7 +327,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 							message:
 								"This organization has no ingest rules; all telemetry is stored as sent.",
 							hints: [
-								"create_ingest_rule adds one (org admins only); preview_ingest_rule tries one first.",
+								"create_ingest_rule adds one (org admins and engineers only); preview_ingest_rule tries one first.",
 							],
 						},
 					}
