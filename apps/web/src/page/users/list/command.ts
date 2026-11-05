@@ -38,6 +38,15 @@ const searchText = (q: string | undefined): string | undefined => {
 /** The most namespace or group picks the API takes; a longer shared URL drops the rest. */
 const USERS_PICKS_MAX = 50
 
+/** The longest group id the API takes; a hand-edited URL's longer pick is dropped, not sent. */
+const GROUP_ID_MAX_LENGTH = 500
+
+const validGroups = (groups: ReadonlyArray<string>): ReadonlyArray<string> =>
+	Arr.take(
+		Arr.filter(groups, (group) => group.length > 0 && group.length <= GROUP_ID_MAX_LENGTH),
+		USERS_PICKS_MAX,
+	)
+
 /** The list's inputs: the window, the namespace scope, the search, the toggles and the group picks. */
 export const listInputs = (search: Search, window: TimeWindow, pinnedNamespace: string | null) => ({
 	startTime: window.startTime,
@@ -46,7 +55,7 @@ export const listInputs = (search: Search, window: TimeWindow, pinnedNamespace: 
 	search: searchText(search.q),
 	hasErrors: search.hasErrors === true ? true : undefined,
 	hasReplay: search.hasReplay === true ? true : undefined,
-	groups: search.groups === undefined ? undefined : Arr.take(search.groups, USERS_PICKS_MAX),
+	groups: search.groups === undefined ? undefined : validGroups(search.groups),
 	limit: USERS_LIMIT,
 })
 
