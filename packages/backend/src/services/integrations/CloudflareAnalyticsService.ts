@@ -1075,7 +1075,7 @@ const allPartsFailed = (
  */
 const documentRateLimited = (item: WorkItem, message: string): Array<PartResult> => {
 	const part = item.parts[0]
-	if (!part) return []
+	if (part === undefined) return []
 	return [{ part, outcome: { kind: "rate-limited", message } }]
 }
 
@@ -1143,7 +1143,7 @@ type PollStopReason =
  */
 const documentPlanBlocked = (item: WorkItem, message: string): Array<PartResult> => {
 	const part = item.parts[0]
-	if (!part) return []
+	if (part === undefined) return []
 	return [{ part, outcome: { kind: "plan-blocked", message } }]
 }
 

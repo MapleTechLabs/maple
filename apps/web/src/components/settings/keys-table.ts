@@ -111,7 +111,7 @@ export function filterKeyRows(
 				(row) => needle.length === 0 || Str.includes(needle)(searchText(row)),
 			),
 			(row, index) => ({ row, index }),
-		).sort((a, b) => rank(a.row) - rank(b.row) || a.index - b.index),
+		).sort((a, b) => (rank(a.row) !== rank(b.row) ? rank(a.row) - rank(b.row) : a.index - b.index)),
 		({ row }) => row,
 	)
 	const count = (type: KeyTypeFilter) => Arr.filter(inStatus, (row) => typeMatches(row, type)).length

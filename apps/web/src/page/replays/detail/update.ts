@@ -32,6 +32,7 @@ import {
 import { Message } from "./message"
 import type { Model, Player } from "./model"
 import { controlValue, type TransportAction } from "../kit/replay-engine-mount"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 type Return = PageReturn<Model, Message>
 type Route = { readonly sessionId: string; readonly search: Model["search"] }
@@ -274,7 +275,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next = planOnce({ ...model, manifest })
 			const withTotal = {
 				...next,
-				player: { ...next.player, totalMs: manifestTotalMs(next) || next.player.totalMs },
+				player: { ...next.player, totalMs: nonZeroOr(manifestTotalMs(next), next.player.totalMs) },
 			}
 			return accept(context, withTotal)
 		},
@@ -325,7 +326,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				player: {
 					...model.player,
 					// rrweb only knows the loaded seed; the manifest knows the whole recording.
-					totalMs: manifestTotalMs(model) || totalMs,
+					totalMs: nonZeroOr(manifestTotalMs(model), totalMs),
 					currentMs: startMs,
 					isFinished: false,
 					isPlaying: false,

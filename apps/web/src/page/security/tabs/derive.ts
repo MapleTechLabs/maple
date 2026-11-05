@@ -105,12 +105,13 @@ export const openNeedsValidation = (findings: ReadonlyArray<SecurityAuditFinding
 export const openLeads = (
 	findings: ReadonlyArray<SecurityAuditFinding>,
 ): ReadonlyArray<SecurityAuditFinding> =>
-	[...openConfirmed(findings), ...openNeedsValidation(findings)].sort(
-		(a, b) =>
-			SEVERITY_BUCKETS.indexOf(bucketOf(a)) - SEVERITY_BUCKETS.indexOf(bucketOf(b)) ||
-			Number(isUnverified(a)) - Number(isUnverified(b)) ||
-			b.updatedAt - a.updatedAt,
-	)
+	[...openConfirmed(findings), ...openNeedsValidation(findings)].sort((a, b) => {
+		const bySeverity = SEVERITY_BUCKETS.indexOf(bucketOf(a)) - SEVERITY_BUCKETS.indexOf(bucketOf(b))
+		if (bySeverity !== 0) return bySeverity
+		const byVerified = Number(isUnverified(a)) - Number(isUnverified(b))
+		if (byVerified !== 0) return byVerified
+		return b.updatedAt - a.updatedAt
+	})
 
 /** Closed units out of the ledger: what the run got to, whatever it found. */
 const CLOSED_UNIT_STATUSES: ReadonlyArray<string> = ["covered", "candidate", "not_applicable", "out_of_scope"]

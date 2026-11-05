@@ -892,7 +892,7 @@ const make: Effect.Effect<
 						),
 					)
 					const claimed = claimedRows[0]
-					if (!claimed) return
+					if (claimed === undefined) return
 
 					const payloadOption = decodeErrorNotificationOutboxPayload(claimed.payloadJson)
 					if (Option.isNone(payloadOption)) {
@@ -1127,7 +1127,7 @@ const make: Effect.Effect<
 			}),
 		)
 		const row = claim[0]
-		if (!row) return null
+		if (row === undefined) return null
 		const windowStartMs = row.processedThrough
 		return {
 			claimToken,
@@ -1173,11 +1173,12 @@ const make: Effect.Effect<
 		)
 		// The actor exists after an org's first tick, so the insert path is a
 		// once-per-org cost rather than a per-tick round-trip.
-		const systemActor = preamble.actorRow
-			? rowToActor(preamble.actorRow)
-			: yield* ensureSystemActor(orgId).pipe(
-					Effect.tapError(() => releaseTickClaim(orgId, tickWindow.claimToken, nowMs)),
-				)
+		const systemActor =
+			preamble.actorRow !== null
+				? rowToActor(preamble.actorRow)
+				: yield* ensureSystemActor(orgId).pipe(
+						Effect.tapError(() => releaseTickClaim(orgId, tickWindow.claimToken, nowMs)),
+					)
 		const policy = preamble.policyRow ?? defaultPolicy(orgId, nowMs)
 
 		const leasesExpired = yield* expireLeasesForOrg(

@@ -146,7 +146,7 @@ export function meadowMat(_scope: Scope, { district, palette }: { district: Dist
 function paintTurf(geometry: THREE.BufferGeometry, moss: string, soil: string) {
 	const normal = geometry.getAttribute("normal")
 	const colors = geometry.getAttribute("color")
-	if (!normal || !colors) return
+	if (normal == null || colors == null) return
 	const [top, wall] = [new THREE.Color(moss), new THREE.Color(soil)]
 	const tone = new THREE.Color()
 	for (let i = 0; i < normal.count; i++) {
@@ -258,7 +258,7 @@ export function terraceSteps(
 	)
 	return Arr.flatMap(tiers.slice(1), (lower, i) => {
 		const upper = tiers[i]
-		if (!upper) return []
+		if (upper === undefined) return []
 		const from = upper.position[0] + upper.width / 2,
 			to = lower.position[0] - lower.width / 2
 		const drop = upper.position[1] - lower.position[1]

@@ -54,7 +54,9 @@ function errorEventsTableForRecentScan(opts: {
 	// Fingerprint-filtered lookups align with error_events' key
 	// (OrgId, FingerprintHash, Timestamp). Broad recent-window scans align with
 	// error_events_by_time's key (OrgId, Timestamp, FingerprintHash).
-	return opts.fingerprintHashes?.length ? ErrorEvents : ErrorEventsByTime
+	return opts.fingerprintHashes !== undefined && opts.fingerprintHashes.length > 0
+		? ErrorEvents
+		: ErrorEventsByTime
 }
 
 const fingerprintHashLiteral = (hash: string) => CH.toUInt64(CH.lit(hash))
@@ -125,26 +127,32 @@ const sharedFilterConditions = (
 	 */
 	except?: ErrorsFilterDimension,
 ): Array<CH.Condition | undefined> => [
-	opts.services?.length && except !== "services" ? CH.inList($.ServiceName, opts.services) : undefined,
-	opts.deploymentEnvs?.length && except !== "deploymentEnvs"
+	opts.services !== undefined && opts.services.length > 0 && except !== "services"
+		? CH.inList($.ServiceName, opts.services)
+		: undefined,
+	opts.deploymentEnvs !== undefined && opts.deploymentEnvs.length > 0 && except !== "deploymentEnvs"
 		? CH.inList($.DeploymentEnv, opts.deploymentEnvs)
 		: undefined,
-	opts.errorLabels?.length && except !== "errorLabels"
+	opts.errorLabels !== undefined && opts.errorLabels.length > 0 && except !== "errorLabels"
 		? CH.inList($.ErrorLabel, opts.errorLabels)
 		: undefined,
-	opts.serviceVersions?.length && except !== "serviceVersions"
+	opts.serviceVersions !== undefined && opts.serviceVersions.length > 0 && except !== "serviceVersions"
 		? CH.inList($.ServiceVersion, opts.serviceVersions)
 		: undefined,
-	opts.excludedServices?.length && except !== "services"
+	opts.excludedServices !== undefined && opts.excludedServices.length > 0 && except !== "services"
 		? CH.notInList($.ServiceName, opts.excludedServices)
 		: undefined,
-	opts.excludedDeploymentEnvs?.length && except !== "deploymentEnvs"
+	opts.excludedDeploymentEnvs !== undefined &&
+	opts.excludedDeploymentEnvs.length > 0 &&
+	except !== "deploymentEnvs"
 		? CH.notInList($.DeploymentEnv, opts.excludedDeploymentEnvs)
 		: undefined,
-	opts.excludedErrorLabels?.length && except !== "errorLabels"
+	opts.excludedErrorLabels !== undefined && opts.excludedErrorLabels.length > 0 && except !== "errorLabels"
 		? CH.notInList($.ErrorLabel, opts.excludedErrorLabels)
 		: undefined,
-	opts.excludedServiceVersions?.length && except !== "serviceVersions"
+	opts.excludedServiceVersions !== undefined &&
+	opts.excludedServiceVersions.length > 0 &&
+	except !== "serviceVersions"
 		? CH.notInList($.ServiceVersion, opts.excludedServiceVersions)
 		: undefined,
 ]
@@ -220,7 +228,7 @@ export function errorsByTypeQuery(opts: ErrorsByTypeOpts) {
 			$.Timestamp.lte(utcSecondsParam("endTime")),
 			CH.whenTrue(!!opts.rootOnly, () => $.ParentSpanId.eq("")),
 			...sharedFilterConditions($, opts),
-			opts.fingerprintHashes?.length
+			opts.fingerprintHashes !== undefined && opts.fingerprintHashes.length > 0
 				? fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes)
 				: undefined,
 			opts.unexpectedIdentity
@@ -261,7 +269,9 @@ export function errorsTimeseriesQuery(opts: ErrorsTimeseriesOpts) {
 			fingerprintHashEq($.FingerprintHash, opts.fingerprintHash),
 			$.Timestamp.gte(utcSecondsParam("startTime")),
 			$.Timestamp.lte(utcSecondsParam("endTime")),
-			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
+			opts.services !== undefined && opts.services.length > 0
+				? CH.inList($.ServiceName, opts.services)
+				: undefined,
 		])
 		.groupBy("bucket")
 		.orderBy(["bucket", "asc"])
@@ -1017,7 +1027,7 @@ export function errorsFacetsQuery(opts: ErrorsFacetsOpts): CHUnionQuery<ErrorsFa
 			$.Timestamp.lte(utcSecondsParam("endTime")),
 			CH.whenTrue(!!opts.rootOnly, () => $.ParentSpanId.eq("")),
 			...sharedFilterConditions($, opts, except),
-			opts.fingerprintHashes?.length
+			opts.fingerprintHashes !== undefined && opts.fingerprintHashes.length > 0
 				? fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes)
 				: undefined,
 		]
@@ -1111,7 +1121,7 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 			$.Timestamp.lte(utcSecondsParam("endTime")),
 			CH.whenTrue(!!opts.rootOnly, () => $.ParentSpanId.eq("")),
 			...sharedFilterConditions($, opts),
-			opts.fingerprintHashes?.length
+			opts.fingerprintHashes !== undefined && opts.fingerprintHashes.length > 0
 				? fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes)
 				: undefined,
 		])
@@ -1140,13 +1150,17 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 					$.OrgId.eq(orgIdParam),
 					$.Timestamp.gte(utcSecondsParam("startTime")),
 					$.Timestamp.lte(utcSecondsParam("endTime")),
-					opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
-					opts.deploymentEnvs?.length ? CH.inList($.DeploymentEnv, opts.deploymentEnvs) : undefined,
+					opts.services !== undefined && opts.services.length > 0
+						? CH.inList($.ServiceName, opts.services)
+						: undefined,
+					opts.deploymentEnvs !== undefined && opts.deploymentEnvs.length > 0
+						? CH.inList($.DeploymentEnv, opts.deploymentEnvs)
+						: undefined,
 				]),
 		)
 	}
 
-	if (opts.deploymentEnvs?.length) {
+	if (opts.deploymentEnvs !== undefined && opts.deploymentEnvs.length > 0) {
 		const deploymentEnvs = opts.deploymentEnvs
 		return buildResult(
 			from(Traces)
@@ -1157,7 +1171,9 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 					$.OrgId.eq(orgIdParam),
 					$.Timestamp.gte(param.dateTime("startTime")),
 					$.Timestamp.lte(param.dateTime("endTime")),
-					opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
+					opts.services !== undefined && opts.services.length > 0
+						? CH.inList($.ServiceName, opts.services)
+						: undefined,
 					CH.inList(deploymentEnvExpr($.ResourceAttributes), deploymentEnvs),
 				]),
 		)
@@ -1173,7 +1189,9 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			...utcInteriorConditions($.Hour),
-			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
+			opts.services !== undefined && opts.services.length > 0
+				? CH.inList($.ServiceName, opts.services)
+				: undefined,
 		])
 	const partialHours = from(Traces)
 		.select(() => ({
@@ -1184,7 +1202,9 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
 			edgeCondition("Timestamp"),
-			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
+			opts.services !== undefined && opts.services.length > 0
+				? CH.inList($.ServiceName, opts.services)
+				: undefined,
 		])
 	return buildResult(
 		fromUnion(unionAll(wholeHours, partialHours), "usage").select(($) => ({
@@ -1237,12 +1257,18 @@ export function errorIssuesQuery(opts: ErrorIssuesOpts) {
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(utcSecondsParam("startTime")),
 			$.Timestamp.lte(utcSecondsParam("endTime")),
-			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
-			opts.deploymentEnvs?.length ? CH.inList($.DeploymentEnv, opts.deploymentEnvs) : undefined,
-			opts.fingerprintHashes?.length
+			opts.services !== undefined && opts.services.length > 0
+				? CH.inList($.ServiceName, opts.services)
+				: undefined,
+			opts.deploymentEnvs !== undefined && opts.deploymentEnvs.length > 0
+				? CH.inList($.DeploymentEnv, opts.deploymentEnvs)
+				: undefined,
+			opts.fingerprintHashes !== undefined && opts.fingerprintHashes.length > 0
 				? fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes)
 				: undefined,
-			opts.exceptionTypes?.length ? CH.inList($.ExceptionType, opts.exceptionTypes) : undefined,
+			opts.exceptionTypes !== undefined && opts.exceptionTypes.length > 0
+				? CH.inList($.ExceptionType, opts.exceptionTypes)
+				: undefined,
 		])
 		.groupBy("fingerprintHash")
 		.orderBy(["count", "desc"])
@@ -1377,8 +1403,12 @@ export function errorFingerprintsQuery(opts: ErrorFingerprintsOpts) {
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(utcSecondsParam("startTime")),
 			$.Timestamp.lte(utcSecondsParam("endTime")),
-			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
-			opts.deploymentEnvs?.length ? CH.inList($.DeploymentEnv, opts.deploymentEnvs) : undefined,
+			opts.services !== undefined && opts.services.length > 0
+				? CH.inList($.ServiceName, opts.services)
+				: undefined,
+			opts.deploymentEnvs !== undefined && opts.deploymentEnvs.length > 0
+				? CH.inList($.DeploymentEnv, opts.deploymentEnvs)
+				: undefined,
 		])
 		.groupBy("fingerprintHash")
 		.limit(opts.limit ?? 1000)
@@ -1570,8 +1600,12 @@ export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 			$.Timestamp.gte(utcSecondsParam("startTime")),
 			$.Timestamp.lte(utcSecondsParam("endTime")),
 			CH.whenTrue(!!opts.rootOnly, () => $.ParentSpanId.eq("")),
-			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
-			opts.deploymentEnvs?.length ? CH.inList($.DeploymentEnv, opts.deploymentEnvs) : undefined,
+			opts.services !== undefined && opts.services.length > 0
+				? CH.inList($.ServiceName, opts.services)
+				: undefined,
+			opts.deploymentEnvs !== undefined && opts.deploymentEnvs.length > 0
+				? CH.inList($.DeploymentEnv, opts.deploymentEnvs)
+				: undefined,
 		])
 		.groupBy("TraceId")
 		// The TraceId tiebreak keeps both reads of this subquery (the IN set and
@@ -1659,7 +1693,9 @@ export function errorFingerprintSummaryQuery(opts: ErrorFingerprintSummaryOpts) 
 			fingerprintHashEq($.FingerprintHash, opts.fingerprintHash),
 			$.Timestamp.gte(utcSecondsParam("startTime")),
 			$.Timestamp.lte(utcSecondsParam("endTime")),
-			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
+			opts.services !== undefined && opts.services.length > 0
+				? CH.inList($.ServiceName, opts.services)
+				: undefined,
 		])
 		.format("JSON")
 }
@@ -1687,7 +1723,7 @@ export function errorCooccurringFingerprintsQuery(opts: ErrorCooccurringFingerpr
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(utcSecondsParam("startTime")),
 			$.Timestamp.lte(utcSecondsParam("endTime")),
-			opts.traceIds.length ? CH.inList($.TraceId, opts.traceIds) : CH.rawCond("1 = 0"),
+			opts.traceIds.length > 0 ? CH.inList($.TraceId, opts.traceIds) : CH.rawCond("1 = 0"),
 			$.FingerprintHash.neq(fingerprintHashLiteral(opts.fingerprintHash)),
 		])
 		.groupBy("fingerprintHash")
@@ -1730,10 +1766,10 @@ export function errorOccurrenceSpansQuery(opts: { traceIds: readonly string[]; s
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			opts.traceIds.length
+			opts.traceIds.length > 0
 				? inTraces((id) => CH.inList(id, opts.traceIds), paramTraceWindow())
 				: CH.rawCond("1 = 0"),
-			opts.spanIds.length ? CH.inList($.SpanId, opts.spanIds) : CH.rawCond("1 = 0"),
+			opts.spanIds.length > 0 ? CH.inList($.SpanId, opts.spanIds) : CH.rawCond("1 = 0"),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
 		])

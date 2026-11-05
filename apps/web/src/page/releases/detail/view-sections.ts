@@ -153,7 +153,8 @@ const serviceRow = <M>(
 						[
 							serviceDot(h, { serviceName: impact.serviceName }),
 							impact.serviceName,
-							...(impact.environment && !environments?.length
+							...(impact.environment &&
+							(environments === undefined || environments.length === 0)
 								? [h.span([h.Class("text-foreground-subtle")], [impact.environment])]
 								: []),
 							...(impact.health === "healthy"

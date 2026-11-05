@@ -259,7 +259,7 @@ function zoned(scale: TimeScale, timeZone: string): TimeScale {
 	// whichever it was handed.
 	scale.ticks = (count?: number | TickInterval) => {
 		const [start, end] = scale.domain()
-		if (!start || !end) return []
+		if (start === undefined || end === undefined) return []
 		const startMs = start.getTime()
 		const endMs = end.getTime()
 		const wallClock = scaleUtc<number, number>().domain([

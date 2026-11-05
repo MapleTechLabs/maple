@@ -140,7 +140,10 @@ export function inkBox({ size, position = [0, 0, 0], color, ink, cell }: InkBoxP
 	const [w, h, d] = size
 	const faces = shadeFaces(new THREE.BoxGeometry(w, h, d))
 	const edges = new THREE.EdgesGeometry(faces)
-	const points = [...edges.getAttribute("position").array, ...(cell ? seams(size, cell) : [])]
+	const points = [
+		...edges.getAttribute("position").array,
+		...(cell !== undefined && cell > 0 ? seams(size, cell) : []),
+	]
 	edges.dispose()
 	const lines = new THREE.BufferGeometry()
 	lines.setAttribute("position", new THREE.Float32BufferAttribute(points, 3))

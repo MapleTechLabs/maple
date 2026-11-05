@@ -62,7 +62,7 @@ const figure = <M>(h: HtmlBuilder<M>, options: StatFigureOptions, className?: st
 				],
 				[options.value],
 			),
-			...(options.unit
+			...(options.unit !== undefined && options.unit !== ""
 				? [
 						h.span(
 							[h.Class(cn(statFigureUnitStyles, statFigureUnitSizeStyles[size]))],

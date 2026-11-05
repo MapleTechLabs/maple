@@ -189,7 +189,7 @@ export function pickImportantAttributes(log: LogLike, limit = 4): PickedAttribut
 		scored.push({ key, value, score: scoreKey(key) - 10, source: "resource" })
 	}
 
-	scored.sort((a, b) => b.score - a.score || Str.localeCompare(b.key)(a.key))
+	scored.sort((a, b) => (b.score !== a.score ? b.score - a.score : Str.localeCompare(b.key)(a.key)))
 
 	return Arr.map(scored.slice(0, limit), ({ key, value, source }) => ({
 		key,

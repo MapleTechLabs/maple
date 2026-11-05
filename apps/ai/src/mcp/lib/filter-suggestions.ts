@@ -55,7 +55,9 @@ export const closestMatches = (
 		else if (abbreviates(needle, hay)) scored.push({ name, score: 2.5 })
 	}
 	return Arr.map(
-		scored.sort((a, b) => a.score - b.score || Str.localeCompare(b.name)(a.name)).slice(0, max),
+		scored
+			.sort((a, b) => (a.score !== b.score ? a.score - b.score : Str.localeCompare(b.name)(a.name)))
+			.slice(0, max),
 		(s) => s.name,
 	)
 }

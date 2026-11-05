@@ -717,7 +717,9 @@ const localTracesTimeseries = (p: {
 		const result = yield* executor.query("custom_traces_timeseries", {
 			start_time: p.range.startTime,
 			end_time: p.range.endTime,
-			...(p.bucketSeconds ? { bucket_seconds: p.bucketSeconds } : undefined),
+			...(p.bucketSeconds !== undefined && p.bucketSeconds > 0
+				? { bucket_seconds: p.bucketSeconds }
+				: undefined),
 			...(p.service ? { service_name: p.service } : undefined),
 			...(p.spanName ? { span_name: p.spanName } : undefined),
 			...(p.errorsOnly ? { errors_only: "1" } : undefined),

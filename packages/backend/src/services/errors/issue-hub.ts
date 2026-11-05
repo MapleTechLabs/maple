@@ -105,7 +105,7 @@ const ensureSystemAlertsActor = Effect.fn("IssueHub.ensureSystemAlertsActor")(fu
 			),
 		)
 	const existing = yield* select()
-	if (existing[0]) return existing[0].id
+	if (existing[0] !== undefined) return existing[0].id
 
 	const timestamp = yield* Clock.currentTimeMillis
 	yield* database.execute((db) =>
@@ -128,7 +128,7 @@ const ensureSystemAlertsActor = Effect.fn("IssueHub.ensureSystemAlertsActor")(fu
 	)
 	const after = yield* select()
 	const row = after[0]
-	if (!row) {
+	if (row === undefined) {
 		// The row was upserted two statements above; a select that then finds nothing
 		// means the write and the read disagree, which the alert tick cannot act on.
 		// oxlint-disable-next-line maple/no-effect-die -- write/read disagreement, an invariant break

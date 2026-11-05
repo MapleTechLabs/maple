@@ -299,7 +299,9 @@ export function failureTimeline(rows: ReadonlyArray<Row>): ReadonlyArray<Row> {
 			(row) => ({ ...row, depth: 0 }),
 		)
 			// On a tie a run's stop follows the steps that stopped it.
-			.toSorted((a, b) => at(a) - at(b) || Number(a.kind === "turn") - Number(b.kind === "turn"))
+			.toSorted((a, b) =>
+				at(a) !== at(b) ? at(a) - at(b) : Number(a.kind === "turn") - Number(b.kind === "turn"),
+			)
 	)
 }
 

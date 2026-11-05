@@ -118,7 +118,9 @@ export function releasesListQuery(opts: ReleasesListOpts = {}) {
 		}))
 		.where(($) => [
 			CH.notInList($.bCommitSha, PLACEHOLDER_COMMIT_SHAS),
-			opts.serviceNames?.length ? CH.inList($.bServiceName, opts.serviceNames) : undefined,
+			opts.serviceNames !== undefined && opts.serviceNames.length > 0
+				? CH.inList($.bServiceName, opts.serviceNames)
+				: undefined,
 		])
 		.groupBy("serviceName", "environment", "commitSha")
 		.orderBy(["firstSeen", "desc"], ["spanCount", "desc"])
@@ -245,7 +247,9 @@ export function releasesTimelineQuery(
 		}))
 		.where(($) => [
 			CH.notInList($.bCommitSha, PLACEHOLDER_COMMIT_SHAS),
-			opts.serviceNames?.length ? CH.inList($.bServiceName, opts.serviceNames) : undefined,
+			opts.serviceNames !== undefined && opts.serviceNames.length > 0
+				? CH.inList($.bServiceName, opts.serviceNames)
+				: undefined,
 		])
 		.groupBy("bucket", "serviceName", "commitSha")
 		.orderBy(["bucket", "asc"])
@@ -286,7 +290,9 @@ export function releaseErrorFingerprintsQuery(opts: ReleaseErrorFingerprintsOpts
 			$.ServiceVersion.eq(param.string("serviceVersion")),
 			$.Timestamp.gte(utcSecondsParam("startTime")),
 			$.Timestamp.lte(utcSecondsParam("endTime")),
-			opts.environments?.length ? CH.inList($.DeploymentEnv, opts.environments) : undefined,
+			opts.environments !== undefined && opts.environments.length > 0
+				? CH.inList($.DeploymentEnv, opts.environments)
+				: undefined,
 		])
 		.groupBy("fingerprintHash")
 		.orderBy(["count", "desc"])

@@ -61,8 +61,8 @@ export function registerListServicesTool(server: McpToolRegistrar) {
 		}),
 		render: (output) => {
 			const minutes = windowMinutes(output.timeRange)
-			const unhealthy = Arr.filter(output.services, (s) => s.errorRate > 0).sort(
-				(a, b) => b.errorRate - a.errorRate || b.throughput - a.throughput,
+			const unhealthy = Arr.filter(output.services, (s) => s.errorRate > 0).sort((a, b) =>
+				b.errorRate !== a.errorRate ? b.errorRate - a.errorRate : b.throughput - a.throughput,
 			)
 			return {
 				title: "Services",

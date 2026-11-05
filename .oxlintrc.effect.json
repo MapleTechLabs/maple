@@ -88,6 +88,21 @@
 		"effecttsgo/yield-in-call-argument": "error",
 		"effecttsgo/schema-sync-in-effect": "error",
 		"effecttsgo/unsafe-effect-type-assertion": "error",
+		// 0 and NaN are falsy, so `if (count)` or `ts || fallback` on a number hides real values;
+		// an object in a condition is always truthy. Strings and nullable objects stay allowed.
+		"typescript/strict-boolean-expressions": [
+			"error",
+			{
+				"allowString": true,
+				"allowNumber": false,
+				"allowNullableObject": true,
+				"allowNullableBoolean": true,
+				"allowNullableString": true,
+				"allowNullableNumber": false,
+				"allowNullableEnum": false,
+				"allowAny": true
+			}
+		],
 		"typescript/await-thenable": "error",
 		"typescript/no-floating-promises": "error",
 		"typescript/restrict-template-expressions": "error",

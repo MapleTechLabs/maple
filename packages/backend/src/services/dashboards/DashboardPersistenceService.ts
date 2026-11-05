@@ -321,7 +321,7 @@ export class DashboardPersistenceService extends Context.Service<
 			)
 
 			const row = rows[0]
-			if (!row) return null
+			if (row === undefined) return null
 			const document = yield* parsePayload(row.payloadJson, {
 				dashboardId,
 				component: "document",
@@ -365,7 +365,7 @@ export class DashboardPersistenceService extends Context.Service<
 					latestRow.changeKind === kind &&
 					now - latestRow.createdAt < COALESCE_WINDOW_MS
 
-				if (canCoalesce && latestRow) {
+				if (canCoalesce && latestRow !== undefined) {
 					yield* db.run(
 						PG.update(DashboardVersions)
 							.set({ snapshotJson, changeSummary: summaryText })
@@ -751,7 +751,7 @@ export class DashboardPersistenceService extends Context.Service<
 			)
 
 			const row = rows[0]
-			if (!row || row.dashboardId !== dashboardId) {
+			if (row === undefined || row.dashboardId !== dashboardId) {
 				return yield* new DashboardVersionNotFoundError({
 					dashboardId,
 					versionId,

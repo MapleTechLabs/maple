@@ -371,7 +371,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 				// dual-emitted — carrying both would put four near-identical rows on
 				// every uncaught error in the attribute list.
 				...(event.filename ? { "code.file.path": event.filename } : undefined),
-				...(event.lineno ? { "code.line.number": event.lineno } : undefined),
+				...(event.lineno > 0 ? { "code.line.number": event.lineno } : undefined),
 			},
 		})
 	}

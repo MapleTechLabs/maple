@@ -10,6 +10,7 @@ import {
 	type PathCache,
 	type Track,
 } from "./particle-tracks"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 // `ServiceMapParticleCanvas`: one canvas, one rAF loop, a global particle budget. The edges
 // it animates arrive as `data-tracks` (the view's serialized geometry); the camera is read
@@ -144,7 +145,7 @@ const animate = (canvas: HTMLCanvasElement) => {
 	}
 	const size = { cssW: 0, cssH: 0, dpr: 1 }
 	const resize = () => {
-		size.dpr = Math.min(2, window.devicePixelRatio || 1)
+		size.dpr = Math.min(2, nonZeroOr(window.devicePixelRatio, 1))
 		size.cssW = canvas.clientWidth
 		size.cssH = canvas.clientHeight
 		const width = Math.max(1, Math.round(size.cssW * size.dpr))

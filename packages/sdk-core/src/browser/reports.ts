@@ -53,8 +53,8 @@ function parseReportBody(body: unknown): ReportFields {
 function sourceAttributes(fields: ReportFields): Record<string, LogAttributeValue> {
 	return {
 		...(fields.sourceFile ? { "code.file.path": scrubUrl(fields.sourceFile) } : undefined),
-		...(fields.lineNumber ? { "code.line.number": fields.lineNumber } : undefined),
-		...(fields.columnNumber ? { "code.column.number": fields.columnNumber } : undefined),
+		...((fields.lineNumber ?? 0) > 0 ? { "code.line.number": fields.lineNumber } : undefined),
+		...((fields.columnNumber ?? 0) > 0 ? { "code.column.number": fields.columnNumber } : undefined),
 	}
 }
 

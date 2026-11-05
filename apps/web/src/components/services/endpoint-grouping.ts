@@ -265,8 +265,10 @@ const leafMetric = (endpoint: GroupableEndpoint, sort: Exclude<EndpointSort, "pa
 	}
 }
 
-const byPath = (a: GroupableEndpoint, b: GroupableEndpoint) =>
-	Str.localeCompare(b.route)(a.route) || Str.localeCompare(b.method)(a.method)
+const byPath = (a: GroupableEndpoint, b: GroupableEndpoint) => {
+	const byRoute = Str.localeCompare(b.route)(a.route)
+	return byRoute !== 0 ? byRoute : Str.localeCompare(b.method)(a.method)
+}
 
 /**
  * Partition endpoints into stem groups, headerless singletons for the endpoints

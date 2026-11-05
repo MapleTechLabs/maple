@@ -551,7 +551,8 @@ const indexTracesOf = <Bounds extends IndexBounds, Row extends { readonly traceI
 	sessionIds: readonly string[] | undefined,
 	select: ($: IndexColumns) => Row,
 ) => {
-	const values = (list: readonly string[] | undefined) => (list?.length ? list : undefined)
+	const values = (list: readonly string[] | undefined) =>
+		list !== undefined && list.length > 0 ? list : undefined
 	const search = opts.search === undefined ? undefined : Str.trim(opts.search) || undefined
 	const carries = (cond: CH.Condition) => CH.countIf(cond).gt(0)
 	return from(AiTraceIndex)

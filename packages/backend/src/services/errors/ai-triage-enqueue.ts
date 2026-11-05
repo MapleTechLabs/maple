@@ -403,7 +403,7 @@ export const maybeEnqueueTriage: (
 			),
 		)
 		const existing = existingRows[0]
-		if (existing) {
+		if (existing !== undefined) {
 			if (isInvestigationStale(existing, nowMs)) {
 				const budget = STALE_MS
 				yield* database.execute((db) =>

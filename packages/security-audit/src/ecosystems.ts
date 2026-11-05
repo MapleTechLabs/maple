@@ -127,8 +127,10 @@ export const DEPENDENCY_PATHSPECS: ReadonlyArray<string> = [
 	":(glob).github/workflows/*.yaml",
 ]
 
-const shallowestFirst = (a: string, b: string) =>
-	Str.split("/")(a).length - Str.split("/")(b).length || (a < b ? -1 : 1)
+const shallowestFirst = (a: string, b: string) => {
+	const byDepth = Str.split("/")(a).length - Str.split("/")(b).length
+	return byDepth !== 0 ? byDepth : a < b ? -1 : 1
+}
 
 /** The config files worth reading: registry configs first, then broad files, each tier capped. */
 export const configFilesToRead = (paths: ReadonlyArray<string>): ReadonlyArray<string> => [

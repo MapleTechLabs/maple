@@ -9,7 +9,10 @@ export const PAGE_SIZE = 8
 export async function getSortedReleases(): Promise<Release[]> {
 	const releases = await getCollection("changelog", ({ data }) => !data.draft || import.meta.env.DEV)
 	// Same-day entries fall back to the id so the order is stable across builds.
-	return releases.sort((a, b) => b.data.date.getTime() - a.data.date.getTime() || b.id.localeCompare(a.id))
+	return releases.sort((a, b) => {
+		const byDate = b.data.date.getTime() - a.data.date.getTime()
+		return byDate !== 0 ? byDate : b.id.localeCompare(a.id)
+	})
 }
 
 export function pageCount(total: number): number {

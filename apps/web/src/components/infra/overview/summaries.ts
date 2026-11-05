@@ -148,7 +148,10 @@ export function summarizeHosts(hosts: ReadonlyArray<HostRow>, referenceTime: str
 			{ key: "elevated", count: elevated },
 			{ key: "saturated", count: saturated },
 		],
-		headline: busiest ? `busiest ${busiest.hostName} at ${formatPercent(hostPeak(busiest))}` : "no hosts",
+		headline:
+			busiest !== undefined
+				? `busiest ${busiest.hostName} at ${formatPercent(hostPeak(busiest))}`
+				: "no hosts",
 		headlineTone: worstTone(findings),
 		findings,
 	}

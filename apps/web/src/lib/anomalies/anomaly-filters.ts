@@ -41,7 +41,7 @@ export function matchesAnomalyFilters(
 
 export function hasAnomalyFilters(filters: AnomalyFilters): boolean {
 	// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.values would need a cast
-	return Arr.some(Object.values(filters), (values) => (values?.length ?? 0) > 0)
+	return Arr.some(Object.values(filters), (values) => values !== undefined && values.length > 0)
 }
 
 /** One facet, in both polarities. `label` matches the sidebar section title exactly. */
@@ -68,13 +68,13 @@ export function anomalyFilterChips(filters: AnomalyFilters): AnomalyFilterChipDe
 	const chips: AnomalyFilterChipDescriptor[] = []
 	for (const facet of FACETS) {
 		const excluded = filters[facet.exclude]
-		if (excluded?.length) {
+		if (excluded !== undefined && excluded.length > 0) {
 			chips.push({ param: facet.exclude, label: facet.label, values: excluded, negated: true })
 		}
 	}
 	for (const facet of FACETS) {
 		const included = filters[facet.include]
-		if (included?.length) {
+		if (included !== undefined && included.length > 0) {
 			chips.push({ param: facet.include, label: facet.label, values: included, negated: false })
 		}
 	}

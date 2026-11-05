@@ -873,7 +873,7 @@ function buildValueSuggestions(
 	} satisfies Record<string, string[]>
 
 	const explicit = mappedValues[normalizedKey]
-	if (explicit) {
+	if (explicit !== undefined) {
 		return Arr.map(explicit, (value) => toStringValueSuggestion(value, normalizedKey))
 	}
 

@@ -88,7 +88,8 @@ export async function startApp(root: string): Promise<{
 		const path = (req.url ?? "/").split("?")[0] ?? "/"
 		if (path.startsWith("/api/")) {
 			apiRequests.push({ path, headers: req.headers })
-			const status = Number(path.split("/")[2]) || 200
+			const requested = Number(path.split("/")[2])
+			const status = Number.isNaN(requested) || requested === 0 ? 200 : requested
 			res.writeHead(status, { "content-type": "application/json" }).end(`{"path":"${path}"}`)
 			return
 		}

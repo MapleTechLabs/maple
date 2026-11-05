@@ -107,7 +107,7 @@ document.addEventListener("keydown", (event) => {
 	const key = root?.dataset.langTabs
 	if (!root || !key) return
 	const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0
-	if (!step) return
+	if (step === 0) return
 	event.preventDefault()
 	const triggers = triggersOf(root)
 	const next = triggers[(triggers.indexOf(current) + step + triggers.length) % triggers.length]

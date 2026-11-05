@@ -177,8 +177,10 @@ const settingsData = () => ({
 const bucketsInWindow = (variables: Record<string, unknown> | undefined): string[] => {
 	const rawStart = variables?.start
 	const rawEnd = variables?.end
-	const start = (typeof rawStart === "string" ? Date.parse(rawStart) : NaN) || Date.now() - 30 * 60_000
-	const end = (typeof rawEnd === "string" ? Date.parse(rawEnd) : NaN) || Date.now()
+	const parsedStart = typeof rawStart === "string" ? Date.parse(rawStart) : NaN
+	const parsedEnd = typeof rawEnd === "string" ? Date.parse(rawEnd) : NaN
+	const start = Number.isNaN(parsedStart) ? Date.now() - 30 * 60_000 : parsedStart
+	const end = Number.isNaN(parsedEnd) ? Date.now() : parsedEnd
 	const out: string[] = []
 	for (let t = Math.ceil(start / 300_000) * 300_000; t < end; t += 300_000) {
 		out.push(Str.replace(".000Z", "Z")(new Date(t).toISOString()))

@@ -45,7 +45,7 @@ const loadText = async (): Promise<string> => {
 const payload = JSON.parse(await loadText()) as SourcePayload
 const attributes = payload.attributes
 const versions = payload.registries
-if (!Array.isArray(attributes) || attributes.length === 0 || !versions?.semconv || !versions.genai) {
+if (!Array.isArray(attributes) || attributes.length === 0 || !versions?.semconv || versions.genai == null) {
 	throw new Error(`${SOURCE} answered without attributes or registry versions`)
 }
 

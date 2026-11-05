@@ -1124,7 +1124,7 @@ export function groupDeliveryEventsByDay(
 	for (const event of events) {
 		const key = String(startOfDay(Date.parse(event.scheduledAt), timeZone))
 		const last = groups[groups.length - 1]
-		if (last && last.key === key) {
+		if (last !== undefined && last.key === key) {
 			last.events.push(event)
 		} else {
 			groups.push({

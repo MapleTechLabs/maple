@@ -189,7 +189,7 @@ const flushSignal = async <A>(args: {
 	readonly ignoreCooldown: boolean | undefined
 }): Promise<void> => {
 	const { url, headers, buffer, body, state, signal, transport, logPrefix, tailBytes } = args
-	if (!args.ignoreCooldown && state.disabledUntil && Date.now() < state.disabledUntil) {
+	if (!args.ignoreCooldown && state.disabledUntil > 0 && Date.now() < state.disabledUntil) {
 		console.warn(
 			`${logPrefix} ${signal} flush skipped (cooldown ${state.disabledUntil - Date.now()}ms remaining)`,
 		)
@@ -201,7 +201,7 @@ const flushSignal = async <A>(args: {
 	// Asked per signal, right before the split: the room depends on what the
 	// signals before this one have just reserved.
 	const tail = tailBytes?.()
-	const chunks = tail ? newestFirst(batch, body, tail) : [batch]
+	const chunks = tail !== undefined && tail !== 0 ? newestFirst(batch, body, tail) : [batch]
 	const posted = await Promise.all(
 		Arr.map(chunks, async (chunk) => ({
 			chunk,
@@ -221,7 +221,7 @@ const flushSignal = async <A>(args: {
 		Result.isFailure(result) ? [{ chunk, cause: result.failure }] : [],
 	)
 	const [first] = failed
-	if (first) {
+	if (first !== undefined) {
 		// One restore, back in drain order.
 		buffer.restore(Arr.flatMap(failed.reverse(), ({ chunk }) => chunk))
 		state.disabledUntil = Date.now() + COOLDOWN_MS

@@ -185,7 +185,9 @@ export function sortInvestigations(
 			if (right === null) return -1
 			return direction === "desc" ? right - left : left - right
 		}
-		return updatedWeight(b) - updatedWeight(a) || Str.localeCompare(b.id)(a.id)
+		return updatedWeight(b) !== updatedWeight(a)
+			? updatedWeight(b) - updatedWeight(a)
+			: Str.localeCompare(b.id)(a.id)
 	})
 }
 

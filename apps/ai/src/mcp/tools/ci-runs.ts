@@ -78,7 +78,7 @@ const summarize = (runs: ReadonlyArray<SummarizedRun>): Output["pipelines"] => {
 				...(red === undefined ? undefined : { red }),
 			},
 		]
-	}).sort((a, b) => b.failed - a.failed || b.runs - a.runs)
+	}).sort((a, b) => (b.failed !== a.failed ? b.failed - a.failed : b.runs - a.runs))
 }
 
 export function registerCiRunsTool(server: McpToolRegistrar) {

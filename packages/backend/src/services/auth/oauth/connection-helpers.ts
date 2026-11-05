@@ -250,7 +250,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			orgId: OrgId,
 		) {
 			const row = yield* loadConnection(orgId)
-			if (!row) {
+			if (row == null) {
 				return yield* new IntegrationsNotConnectedError({
 					message: `${providerLabel} is not connected for this organization`,
 				})

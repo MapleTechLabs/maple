@@ -419,7 +419,7 @@ const makeOtlpSpan = (
 		})
 		otelStatus = { code: StatusCode.Error }
 		const firstError = errors[0]
-		if (firstError) {
+		if (firstError !== undefined) {
 			otelStatus.message = firstError.message
 			for (const error of errors) {
 				events.push({

@@ -29,7 +29,9 @@ const scopeConditions = ($: DetailColumns, opts: ServiceEndpointDetailsScopeOpts
 	$.ServiceName.eq(opts.serviceName),
 	$.Hour.gte(utcHourFloor("startTime")),
 	$.Hour.lte(utcHourFloor("endTime")),
-	opts.environments?.length ? CH.inList($.DeploymentEnv, opts.environments) : undefined,
+	opts.environments !== undefined && opts.environments.length > 0
+		? CH.inList($.DeploymentEnv, opts.environments)
+		: undefined,
 ]
 
 // D. Status code x error.type breakdown

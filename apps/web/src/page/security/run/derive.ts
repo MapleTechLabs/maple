@@ -35,7 +35,7 @@ export const filteredEvents = (
 
 /** Newest first; the id breaks a tie in the same millisecond, as the API pages them. */
 const byNewest = (a: SecurityAuditEvent, b: SecurityAuditEvent): number =>
-	b.at - a.at || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
+	b.at !== a.at ? b.at - a.at : a.id < b.id ? 1 : a.id > b.id ? -1 : 0
 
 /** `page` merged into `log`: each event once, newest first. */
 export const mergeEvents = (
