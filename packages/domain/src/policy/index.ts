@@ -8,6 +8,7 @@ export {
 	assignableRoles,
 	type ClerkRoleKey,
 	highestRole,
+	holdersPhrase,
 	isAtLeast,
 	outranks,
 	Role,
