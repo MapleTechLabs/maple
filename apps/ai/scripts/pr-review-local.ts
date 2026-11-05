@@ -1126,7 +1126,7 @@ export const reviewLocally = async (
 			append,
 			onChildSettled: (child) => children.push(child),
 		}).pipe(
-			// oxlint-disable-next-line effecttsgo/strict-effect-provide
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide -- script entry point: the local run composes its own LLM layer
 			Effect.provide(layerLlm(settings)),
 			// The engine logs every tool execution at info; the progress lines above are the readable view.
 			Effect.provideService(References.MinimumLogLevel, "Warn"),

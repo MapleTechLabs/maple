@@ -155,7 +155,6 @@ const send = async (
 	body: unknown,
 	signal: AbortSignal,
 ): Promise<void> => {
-	// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 	const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal })
 	if (!res.ok) {
 		throw new Error(`OTLP ${res.status} ${res.statusText}`)
@@ -242,7 +241,6 @@ const newestFirst = <A>(
 	maxBytes: number,
 ): Array<ReadonlyArray<A>> => {
 	const encoder = new TextEncoder()
-	// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 	const size = (chunk: ReadonlyArray<A>) => encoder.encode(JSON.stringify(body(chunk))).byteLength
 	const envelope = size([])
 	let start = items.length

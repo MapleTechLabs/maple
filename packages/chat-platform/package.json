@@ -16,6 +16,7 @@
 	"dependencies": {
 		"@maple/domain": "workspace:*",
 		"@maple/primitives": "workspace:*",
+		"@maple/strings": "workspace:*",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {

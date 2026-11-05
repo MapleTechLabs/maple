@@ -412,7 +412,7 @@ const requireSecret = (option: Option.Option<Redacted.Redacted>, label: string):
 		// Config is read once at layer build, so a missing secret is a misconfigured
 		// deployment, not a request that could be answered differently.
 		onNone: () =>
-			// oxlint-disable-next-line maple/no-effect-die
+			// oxlint-disable-next-line maple/no-effect-die -- a missing secret is a misconfigured deployment
 			Effect.die(new MissingAuthSecretError({ secret: label, message: `${label} is required` })),
 		onSome: (value) => Effect.succeed(Redacted.value(value)),
 	})

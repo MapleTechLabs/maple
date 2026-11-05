@@ -8,6 +8,7 @@
 // "invalid link" state.
 
 import { Option, Schema, String as Str } from "effect"
+import { codeUnitAt } from "@maple/strings"
 
 export interface LogKey {
 	/** Raw Log.timestamp — ClickHouse DateTime64 string. */
@@ -37,8 +38,7 @@ function toBase64Url(str: string): string {
 function fromBase64Url(token: string): string {
 	const padded = Str.replace(/_/g, "/")(Str.replace(/-/g, "+")(token))
 	const binary = atob(padded)
-	// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
-	const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
+	const bytes = Uint8Array.from(binary, (char) => codeUnitAt(char, 0))
 	return new TextDecoder().decode(bytes)
 }
 

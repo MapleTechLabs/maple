@@ -90,6 +90,7 @@
 		"@maple/primitives": "workspace:*",
 		"@maple/query-model": "workspace:*",
 		"@maple/security-audit": "workspace:*",
+		"@maple/strings": "workspace:*",
 		"@maple/widgets": "workspace:*",
 		"effect": "catalog:effect"
 	},

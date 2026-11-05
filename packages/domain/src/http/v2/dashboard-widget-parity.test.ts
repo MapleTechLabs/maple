@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import { WIDGET_DATA_SOURCE_KINDS } from "@maple/widgets/dashboard"
 import { DashboardWidgetSchema, WidgetDisplayConfigSchema } from "../dashboards"
 import { V2DashboardWidget, V2WidgetDataSource, V2WidgetDisplay } from "./dashboards"
+import { replaceWith } from "@maple/strings"
 
 // The v2 public schema is a hand-maintained clone of the stored widget schema:
 // the same fields again, differing only by `Schema.encodeKeys` for snake_case.
@@ -16,8 +17,7 @@ import { V2DashboardWidget, V2WidgetDataSource, V2WidgetDisplay } from "./dashbo
 // `tsc` when either side gains a field, and the encode tests fail when a field is
 // present in the type but dropped on the wire or spelled differently there.
 
-// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
-const snakeCase = (key: string): string => key.replace(/[A-Z]/g, (c) => `_${Str.toLowerCase(c)}`)
+const snakeCase = (key: string): string => replaceWith(key, /[A-Z]/g, (c) => `_${Str.toLowerCase(c)}`)
 
 /** Fails to compile unless `A` is assignable to `B`. */
 type AssertAssignable<A extends B, B> = [A, B]

@@ -77,34 +77,33 @@ export function registerInspectSecurityAuditRunTool(server: McpToolRegistrar) {
 
 			const targets = yield* store.listTargets.pipe(Effect.mapError(storeError))
 			const runId = params.run_id
+			const latestRun = Effect.gen(function* () {
+				// One target per branch: the repository's latest run is the newest across them.
+				const matching = Arr.filter(
+					targets,
+					(t) => Str.toLowerCase(t.repository) === Str.toLowerCase(params.repository ?? ""),
+				)
+				if (matching.length === 0)
+					return yield* new McpInvalidInputError({
+						message: `${params.repository} is not set up for the code audit. Set up: ${Arr.join(
+							Arr.map(targets, (t) => t.repository),
+							", ",
+						)}.`,
+						parameter: "repository",
+					})
+				const pages = yield* Effect.forEach(
+					matching,
+					(t) => store.listRuns({ targetId: t.id, limit: 1 }),
+					{ concurrency: 4 },
+				).pipe(Effect.mapError(storeError))
+				return Option.fromUndefinedOr(
+					Arr.flatten(pages).toSorted((a, b) => b.startedAt - a.startedAt)[0],
+				)
+			})
 			const found =
 				runId !== undefined
 					? yield* store.getRun(runId).pipe(Effect.mapError(storeError))
-					: yield* Effect.gen(function* () {
-							// One target per branch: the repository's latest run is the newest across them.
-							const matching = Arr.filter(
-								targets,
-								(t) =>
-									Str.toLowerCase(t.repository) ===
-									Str.toLowerCase(params.repository ?? ""),
-							)
-							if (matching.length === 0)
-								return yield* new McpInvalidInputError({
-									message: `${params.repository} is not set up for the code audit. Set up: ${Arr.join(
-										Arr.map(targets, (t) => t.repository),
-										", ",
-									)}.`,
-									parameter: "repository",
-								})
-							const pages = yield* Effect.forEach(
-								matching,
-								(t) => store.listRuns({ targetId: t.id, limit: 1 }),
-								{ concurrency: 4 },
-							).pipe(Effect.mapError(storeError))
-							return Option.fromUndefinedOr(
-								Arr.flatten(pages).toSorted((a, b) => b.startedAt - a.startedAt)[0],
-							)
-						})
+					: yield* latestRun
 			if (Option.isNone(found))
 				return yield* new McpInvalidInputError({
 					message:

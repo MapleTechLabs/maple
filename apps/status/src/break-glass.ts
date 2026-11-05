@@ -15,6 +15,7 @@ import { MANAGE_FIELDS, NEW_INCIDENT, NO_CHANGE } from "@maple/status-page"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import type { StatusEnv, StatusStorageError } from "./ports"
 import { listOverlay, rememberOverlay } from "./snapshot"
+import { codeUnitAt } from "@maple/strings"
 
 /** A break-glass post that was refused; `status` is the HTTP status the form page answers with. */
 export class BreakGlassRejected extends Schema.TaggedError<BreakGlassRejected>()(
@@ -56,8 +57,7 @@ export const constantTimeEqual = (a: string, b: string): boolean =>
 	Arr.reduce(
 		Array.from(
 			{ length: Math.max(a.length, b.length) },
-			// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
-			(_, index) => a.charCodeAt(index) ^ b.charCodeAt(index),
+			(_, index) => codeUnitAt(a, index) ^ codeUnitAt(b, index),
 		),
 		a.length ^ b.length,
 		(diff, bits) => diff | bits,

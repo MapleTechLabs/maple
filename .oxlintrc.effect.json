@@ -48,9 +48,7 @@
 		"effecttsgo/map-map-error-to-map-both": "error",
 		"effecttsgo/multiple-catch-tag": "error",
 		"effecttsgo/multiple-effect-provide": "error",
-		// Flags a ternary whose branches are generators, and inner generators used for an early
-		// `return`; inlining either reads worse.
-		"effecttsgo/nested-effect-gen-yield": "off",
+		"effecttsgo/nested-effect-gen-yield": "error",
 		"effecttsgo/outdated-api": "error",
 		"effecttsgo/promise-in-effect-success": "error",
 		"effecttsgo/provide-merge-all-to-array": "error",
@@ -72,6 +70,7 @@
 		// node:crypto HMAC/hashes in Workers and node:fs/path in the local server are the intended APIs.
 		"effecttsgo/node-builtin-import": "off",
 		// Fires on `new X({ ...x })`, which rebuilds the instance and is how Schema classes are copied.
+		// Re-measured 2026-11-05: all 109 hits are Schema class instances; the rule has no option to skip them.
 		"typescript/no-misused-spread": "off",
 		// New in the effect-native preset: flags every sync decode, ~1k hits mostly in tests and non-Effect
 		// boundaries. `schema-sync-in-effect` already covers the case that matters.
@@ -181,6 +180,7 @@
 				"effecttsgo/crypto-random-uuid": "off",
 				"effecttsgo/global-console": "off",
 				"effecttsgo/global-fetch": "off",
+				"effecttsgo/global-json": "off",
 				"effecttsgo/global-random": "off",
 				"effecttsgo/global-timers": "off",
 				"effecttsgo/new-promise": "off",
@@ -190,8 +190,8 @@
 				"effecttsgo/prefer-effect-string": "off"
 			}
 		},
-		// Host APIs on purpose: the customer SDK exports a Promise surface, the CLI reads its own
-		// environment, and the canvas animations draw with Math.random per frame.
+		// Host APIs on purpose: the customer SDK exports a Promise surface and keeps Schema out of its
+		// bundle, the CLI reads its own environment, and the canvas animations use Math.random per frame.
 		{
 			"files": [
 				"packages/effect-sdk/**",
@@ -203,6 +203,7 @@
 				"effecttsgo/crypto-random-uuid": "off",
 				"effecttsgo/global-console": "off",
 				"effecttsgo/global-fetch": "off",
+				"effecttsgo/global-json": "off",
 				"effecttsgo/global-random": "off",
 				"effecttsgo/global-timers": "off",
 				"effecttsgo/new-promise": "off",

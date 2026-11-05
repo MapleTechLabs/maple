@@ -30,6 +30,7 @@ import type { ListHostsResponse } from "@maple/domain/http"
 import { formatLag, formatStoragePercent, lagTone, utilizationTone } from "../planetscale/metrics"
 import { railwayInScope } from "../railway/railway-scope"
 import type { Tone } from "../severity-tokens"
+import { replaceWith } from "@maple/strings"
 
 type HostRow = ListHostsResponse["data"][number]
 
@@ -398,8 +399,7 @@ export function summarizeGcp(fleet: ReadonlyArray<GcpFleetService>): SourceSumma
 		source: "gcp",
 		tone: tone === "crit" ? "crit" : "warn",
 		// "orders-db at 93% disk", "api at 8.0% 5xx rate": an acronym keeps its capitals.
-		// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
-		title: `${gcpWorkloadName(service, workload.keys)} at ${formatGcpValue(worst.format, worst.value)} ${worst.label.replace(/^[A-Z](?=[a-z])/, (letter) => Str.toLowerCase(letter))}`,
+		title: `${gcpWorkloadName(service, workload.keys)} at ${formatGcpValue(worst.format, worst.value)} ${replaceWith(worst.label, /^[A-Z](?=[a-z])/, (letter) => Str.toLowerCase(letter))}`,
 		detail: Arr.join([GCP_INFRA_SERVICES[service].title, ...workload.keys.slice(1)], " / "),
 		target: { kind: "gcp", service, keys: workload.keys },
 	}))

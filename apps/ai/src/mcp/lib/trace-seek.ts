@@ -2,6 +2,7 @@ import { TRACE_BUCKET_FN } from "@maple/domain/tinybird/datasources"
 import { MAX_RAW_SQL_LENGTH, maskLiteralsAndComments, rawSqlIssue } from "@maple/domain/raw-sql"
 import { definedNames, referencedTableNames } from "./sql-identifiers"
 import { Array as Arr, Option, String as Str } from "effect"
+import { matchAllIndexed } from "@maple/strings"
 
 const ID = "'[0-9a-fA-F]{16,32}'"
 
@@ -39,8 +40,7 @@ export const withTraceIndexSeek = (sql: string): string | undefined => {
 	)
 		return undefined
 	// The literal is blanked in `masked`, so match the original and keep conjuncts outside literals.
-	// @effect-diagnostics-next-line preferEffectString:off -- match.index feeds arithmetic; Str.matchAll types it as optional
-	const hits = Arr.filter([...sql.matchAll(TRACE_ID_PREDICATE)], (m) => {
+	const hits = Arr.filter(matchAllIndexed(sql, TRACE_ID_PREDICATE), (m) => {
 		const name = `${m[1] === undefined ? "" : `${m[1]}.`}TraceId`
 		return (
 			Str.startsWith(name, m.index)(masked) &&
