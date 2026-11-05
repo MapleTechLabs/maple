@@ -114,7 +114,7 @@ describe("readUserTraces", () => {
 			const raw = ran[1]?.sql ?? ""
 			assert.include(raw, "traces.ServiceName IN ('checkout')")
 			assert.include(raw, "traces.Timestamp >= '2026-11-01 14:00:00'")
-			assert.include(raw, "traces.Timestamp <= '2026-11-01 14:59:59'")
+			assert.include(raw, "traces.Timestamp <= '2026-11-01 15:00:00'")
 			assert.deepStrictEqual(
 				Arr.map(response.traces, (trace) => [
 					trace.traceId,

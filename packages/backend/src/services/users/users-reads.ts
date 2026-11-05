@@ -798,7 +798,8 @@ export const sliceWindow = (
 	return {
 		serviceNames: Arr.dedupe(Arr.map(services, (service) => service.serviceName)),
 		startTime: formatWarehouseDateTime(Math.max(startMs, Math.min(...firsts))),
-		endTime: formatWarehouseDateTime(Math.min(endMs, Math.max(...lasts) + HOUR_MS - 1000)),
+		// The read is inclusive, so the next hour's start keeps a span in the last hour's final second.
+		endTime: formatWarehouseDateTime(Math.min(endMs, Math.max(...lasts) + HOUR_MS)),
 	}
 }
 
