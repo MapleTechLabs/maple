@@ -292,6 +292,45 @@ const securityTelemetryFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 ]
 
+// `/users` reads (user-activity.ts): the rollup scoped to a user and namespaces, and the raw
+// trace/log reads narrowed to the services its slices name.
+const USER_SCOPE = { userId: "user_catalog", namespaces: ["storefront"] }
+const userActivityFixture = (name: string, compile: () => CompiledQuery<unknown>): BuilderFixture => ({
+	module: "user-activity",
+	name,
+	label: "default",
+	compile,
+})
+const userActivityFixtures: ReadonlyArray<BuilderFixture> = [
+	userActivityFixture("userActivitySlicesQuery", () =>
+		CH.compileUnsafe(CH.userActivitySlicesQuery(USER_SCOPE), window),
+	),
+	userActivityFixture("userActivitySummaryQuery", () =>
+		CH.compileUnsafe(CH.userActivitySummaryQuery(USER_SCOPE), window),
+	),
+	userActivityFixture("userActivityServicesQuery", () =>
+		CH.compileUnsafe(CH.userActivityServicesQuery(USER_SCOPE), window),
+	),
+	userActivityFixture("userActivityTotalsQuery", () =>
+		CH.compileUnsafe(CH.userActivityTotalsQuery({ userIds: ["user_a", "user_b"] }), window),
+	),
+	userActivityFixture("userTracesQuery", () =>
+		CH.compileUnsafe(CH.userTracesQuery({ ...USER_SCOPE, serviceNames: ["api"] }), window),
+	),
+	{
+		...userActivityFixture("userTracesQuery", () =>
+			CH.compileUnsafe(
+				CH.userTracesQuery({ ...USER_SCOPE, serviceNames: ["api"], notableSlowerThanMs: 2000 }),
+				window,
+			),
+		),
+		label: "notable",
+	},
+	userActivityFixture("userLogsQuery", () =>
+		CH.compileUnsafe(CH.userLogsQuery({ ...USER_SCOPE, serviceNames: ["api"] }), window),
+	),
+]
+
 // Product-event funnel fixtures. The funnel SQL has four independent axes —
 // person-key resolution (with or without the identity_links join), a session
 // step 1 (UNION ALL of a session_replays branch), the population filter
@@ -1444,6 +1483,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	...webAnalyticsFixtures,
 	...webAnalyticsAiFixtures,
 	...securityTelemetryFixtures,
+	...userActivityFixtures,
 
 	// Traces sidebar (query-engine runtime); the pipe fixtures cover the raw-only route.
 	{
@@ -2219,6 +2259,13 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				}),
 				window,
 			),
+	},
+	{
+		module: "users",
+		name: "usersListQuery",
+		label: "activityRollup",
+		compile: () =>
+			CH.compileUnsafe(CH.usersListQuery({ ...USERS_NAMESPACE_SCOPE, activityRollup: true }), window),
 	},
 	{
 		module: "users",

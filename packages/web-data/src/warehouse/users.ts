@@ -1,4 +1,4 @@
-// The warehouse reads behind the users directory (`/users`). The API returns epoch-ms times.
+// The warehouse reads behind the users pages (`/users`, `/users/$userId`). The API returns epoch-ms times.
 
 import { Effect, Schema } from "effect"
 import {
@@ -97,6 +97,28 @@ export const getUserActivity = Effect.fn("Users.activity")(function* ({ data }: 
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
 			return yield* client.usersInternal.activity({ payload: detailRequest(input) })
+		}),
+	)
+})
+
+/** One user's requests (entry-point spans), the latest first; read only where the rollup saw them. */
+export const getUserTraces = Effect.fn("Users.traces")(function* ({ data }: { data: UserDetailInput }) {
+	const input = yield* decodeInput(UserDetailInput, data, "userTraces")
+	return yield* runWarehouseQuery("userTraces", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.usersInternal.traces({ payload: detailRequest(input) })
+		}),
+	)
+})
+
+/** One user's log lines, the latest first; read only where the rollup saw them. */
+export const getUserLogs = Effect.fn("Users.logs")(function* ({ data }: { data: UserDetailInput }) {
+	const input = yield* decodeInput(UserDetailInput, data, "userLogs")
+	return yield* runWarehouseQuery("userLogs", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.usersInternal.logs({ payload: detailRequest(input) })
 		}),
 	)
 })

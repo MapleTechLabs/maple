@@ -4,7 +4,8 @@ import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { readThrough } from "../../../data/read-cache"
-import { resolveWindow, TimeWindow } from "../../../data/time-range"
+import { TimeWindow } from "../../../data/time-range"
+import { resolveUsersWindow } from "../window"
 import { UsersSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { Message, RequestMode } from "./message"
@@ -70,7 +71,10 @@ export const ResolveWindow = Command.define("ResolveUsersWindow", {
 	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
 		Effect.map(Clock.currentTimeMillis, (nowMs) =>
 			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
+				window: resolveUsersWindow(
+					{ startTime, endTime, preset, snap: mode === "Load", timeZone },
+					nowMs,
+				),
 				nowMs,
 				mode,
 			}),

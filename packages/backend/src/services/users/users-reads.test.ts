@@ -1,6 +1,16 @@
-import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
-import { eventDetail, mcpServersInScope, mergeActivity, resolveUsersScope, signalsOf } from "./users-reads"
+import { Array as Arr, DateTime } from "effect"
+import {
+	bucketActivity,
+	eventDetail,
+	mcpServersInScope,
+	mergeActivity,
+	mergeServices,
+	resolveUsersScope,
+	severityOf,
+	signalsOf,
+	sliceWindow,
+} from "./users-reads"
 
 const rows = [
 	{ service: "web", namespace: "storefront" },
@@ -31,6 +41,11 @@ describe("signalsOf", () => {
 	it("lists the sources that saw the user", () => {
 		expect(signalsOf({ sessions: 2, events: 0, mcpSpans: 5 })).toEqual(["replay", "mcp"])
 		expect(signalsOf({ sessions: 0, events: 1, mcpSpans: 0 })).toEqual(["events"])
+		expect(signalsOf({ sessions: 0, events: 0, mcpSpans: 3, spans: 3, logLines: 0 })).toEqual(["mcp"])
+		expect(signalsOf({ sessions: 0, events: 0, mcpSpans: 0, spans: 4, logLines: 2 })).toEqual([
+			"traces",
+			"logs",
+		])
 	})
 })
 
@@ -80,7 +95,7 @@ describe("mergeActivity", () => {
 	}
 
 	it("merges every source newest first, an MCP session at its start", () => {
-		const items = mergeActivity([session], [event], [mcpSession])
+		const items = mergeActivity({ sessions: [session], events: [event], mcpSessions: [mcpSession] })
 		expect(Arr.map(items, (item) => [item.kind, item.atMs])).toEqual([
 			["event", 3_000],
 			["mcp", 2_000],
@@ -89,7 +104,11 @@ describe("mergeActivity", () => {
 	})
 
 	it("links sessions and MCP sessions to their pages and marks failures", () => {
-		const [eventItem, mcpItem, sessionItem] = mergeActivity([session], [event], [mcpSession])
+		const [eventItem, mcpItem, sessionItem] = mergeActivity({
+			sessions: [session],
+			events: [event],
+			mcpSessions: [mcpSession],
+		})
 		expect(eventItem?.sessionId).toBeNull()
 		expect(mcpItem).toMatchObject({
 			sessionId: mcpSession.sessionId,
@@ -101,7 +120,122 @@ describe("mergeActivity", () => {
 	})
 
 	it("keeps the latest rows when capped", () => {
-		const items = mergeActivity([session], [event], [mcpSession], 2)
+		const items = mergeActivity({ sessions: [session], events: [event], mcpSessions: [mcpSession] }, 2)
 		expect(Arr.map(items, (item) => item.kind)).toEqual(["event", "mcp"])
+	})
+
+	it("adds failed and slow requests and warnings, each opening its trace", () => {
+		const trace = (atMs: number, status: string, durationMs: number) => ({
+			traceId: `t${atMs}`,
+			spanId: "s",
+			atMs,
+			spanName: "POST /checkout",
+			service: "api",
+			durationMs,
+			status,
+			isRoot: true,
+		})
+		const items = mergeActivity({
+			sessions: [],
+			events: [],
+			mcpSessions: [],
+			traces: [trace(5_000, "Error", 120), trace(4_000, "Ok", 2_400)],
+			logs: [{ atMs: 6_000, severity: "WARN", service: "api", body: "card declined", traceId: "" }],
+		})
+		expect(Arr.map(items, (item) => [item.kind, item.tone, item.traceId])).toEqual([
+			["log", "warn", null],
+			["request", "crit", "t5000"],
+			["request", "warn", "t4000"],
+		])
+		expect(items[1]?.detail).toBe("Failed · 120 ms · api")
+	})
+})
+
+describe("bucketActivity", () => {
+	const window = { startMs: Date.UTC(2026, 10, 1), endMs: Date.UTC(2026, 10, 8) }
+	const hour = (day: number, h: number) => Date.UTC(2026, 10, day, h) / 1000
+
+	it("sums each hour's requests into its day of a week window, oldest first", () => {
+		expect(bucketActivity([hour(1, 3), hour(1, 9), hour(7, 23)], [2, 3, 5], window)).toEqual([
+			5, 0, 0, 0, 0, 0, 5,
+		])
+	})
+
+	it("puts an hour floored before the window start into the first slice", () => {
+		expect(
+			bucketActivity([hour(1, 0) - 1800], [4], { ...window, startMs: window.startMs - 1000 })[0],
+		).toBe(4)
+	})
+})
+
+describe("sliceWindow", () => {
+	const hours = (serviceName: string, first: string, last: string) => ({
+		serviceName,
+		firstHour: DateTime.makeUnsafe(first),
+		lastHour: DateTime.makeUnsafe(last),
+	})
+	const window = { startTime: "2026-11-01 00:20:00", endTime: "2026-11-02 00:00:00" }
+
+	it("narrows the raw read to the services and the hours they span inside the window", () => {
+		expect(
+			sliceWindow(
+				[
+					hours("api", "2026-11-01T05:00:00Z", "2026-11-01T05:00:00Z"),
+					hours("web", "2026-11-01T00:00:00Z", "2026-11-01T05:00:00Z"),
+				],
+				window,
+			),
+		).toEqual({
+			serviceNames: ["api", "web"],
+			startTime: "2026-11-01 00:20:00",
+			endTime: "2026-11-01 06:00:00",
+		})
+	})
+
+	it("reads nothing raw when no slice holds the signal", () => {
+		expect(sliceWindow([], window)).toBeNull()
+	})
+})
+
+describe("mergeServices", () => {
+	it("adds the rollup's requests and logs, keeping the larger count on an MCP server", () => {
+		const rollup = (
+			serviceName: string,
+			serviceNamespace: string,
+			requestCount: number,
+			logCount: number,
+		) => ({
+			serviceName,
+			serviceNamespace,
+			requestCount,
+			failedRequestCount: 0,
+			errorSpanCount: 0,
+			logCount,
+			lastSeen: DateTime.makeUnsafe(0),
+		})
+		expect(
+			mergeServices(
+				[
+					{ service: "web", namespace: "storefront", signals: 4 },
+					{ service: "docs-mcp", namespace: "platform", signals: 6 },
+				],
+				[rollup("docs-mcp", "platform", 6, 0), rollup("api", "platform", 9, 3)],
+				["docs-mcp"],
+			),
+		).toEqual([
+			{ service: "api", namespace: "platform", signals: 12 },
+			{ service: "docs-mcp", namespace: "platform", signals: 6 },
+			{ service: "web", namespace: "storefront", signals: 4 },
+		])
+	})
+})
+
+describe("severityOf", () => {
+	it("keeps the SDK's text, else names the OTel level of the number", () => {
+		expect(severityOf("Warning", 13)).toBe("Warning")
+		expect(severityOf("", 13)).toBe("WARN")
+		expect(severityOf("", 17)).toBe("ERROR")
+		expect(severityOf("", 24)).toBe("FATAL")
+		expect(severityOf("", 0)).toBe("UNSPECIFIED")
 	})
 })

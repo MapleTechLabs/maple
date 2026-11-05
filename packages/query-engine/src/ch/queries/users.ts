@@ -1,6 +1,7 @@
 // End users (`/users`): one row per user id the SDKs identified, from session replays, product
-// events and MCP server spans. Replays and events carry only a service name, so the caller resolves
-// the namespace scope to service names and passes each service's namespace for the row label.
+// events, MCP server spans and `user_activity_hourly`. Replays and events carry only a service name,
+// so the caller resolves the namespace scope to service names and passes each service's namespace.
+// Browser events carry no service at all: their session's replay names it.
 
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
@@ -8,12 +9,21 @@ import {
 	from,
 	fromQuery,
 	fromUnion,
+	inSubquery,
 	param,
 	unionAll,
 	type ColumnAccessor,
 } from "@maple-dev/effect-orm/clickhouse"
-import { IdentityLinks, ProductEvents, SessionReplays, Traces, orgIdParam } from "../tables"
+import {
+	IdentityLinks,
+	ProductEvents,
+	SessionReplays,
+	Traces,
+	UserActivityHourly,
+	orgIdParam,
+} from "../tables"
 import { method as mcpMethod, userId as mcpUserId } from "./mcp"
+import { utcHourFloor } from "./query-helpers"
 import { serviceOverviewWindows } from "./services"
 import { Array as Arr } from "effect"
 
@@ -27,6 +37,8 @@ export interface UsersScope {
 	readonly serviceNamespaces: ReadonlyArray<readonly [service: string, namespace: string]>
 	/** Services answering MCP requests; MCP spans are only read from these (an unscoped scan times out). */
 	readonly mcpServices: ReadonlyArray<string>
+	/** Read `user_activity_hourly` (spans and logs with `user.id`); off on a cluster without migration 0056. */
+	readonly activityRollup?: boolean
 }
 
 /** The directory's filters, applied per user after every source is merged. */
@@ -74,9 +86,46 @@ export const readsServiceSources = (scope: UsersScope): boolean =>
 const serviceScope = (service: CH.Expr<string>, scope: UsersScope) =>
 	scope.namespaces.length === 0 ? undefined : CH.inList(service, scope.services)
 
+const readsActivityRollup = (scope: UsersScope): boolean => scope.activityRollup === true
+
 /** Whether any source can hold a user under this scope; when not, every users query is empty. */
 export const hasUserSources = (scope: UsersScope): boolean =>
-	readsServiceSources(scope) || scope.mcpServices.length > 0
+	readsServiceSources(scope) || scope.mcpServices.length > 0 || readsActivityRollup(scope)
+
+/** How far before the window a session may have started and still carry in-window events. */
+const SESSION_LOOKBACK_DAYS = 1
+
+/** Sessions active in the window, including ones that began up to a day before it. */
+const activeSessionWindow = ($: ColumnAccessor<typeof SessionReplays.columns>) => {
+	const start = param.dateTime("startTime")
+	return [
+		$.OrgId.eq(orgIdParam),
+		$.StartTime.gte(
+			CH.compileTypedFnCall("subtractDays", CH.schemaOf(start), start, CH.lit(SESSION_LOOKBACK_DAYS)),
+		),
+		$.StartTime.lte(param.dateTime("endTime")),
+		CH.ifNull($.LastActivityAt, $.StartTime).gte(start),
+	]
+}
+
+/** Sessions recorded by an in-scope service and active in the window, so their in-window browser events keep a service. */
+const scopedSessionIds = (scope: UsersScope) =>
+	from(SessionReplays)
+		.select(($) => ({ sessionId: $.SessionId }))
+		.where(($) => [...activeSessionWindow($), CH.inList($.ServiceName, scope.services)])
+		.groupBy("sessionId")
+
+/**
+ * A product event in scope: its own service, or for a browser event (no service) its session's.
+ * Unscoped, every event is.
+ */
+const eventScope = ($: ColumnAccessor<typeof ProductEvents.columns>, scope: UsersScope) =>
+	scope.namespaces.length === 0
+		? undefined
+		: CH.or(
+				CH.inList($.ServiceName, scope.services),
+				CH.and($.ServiceName.eq(""), inSubquery($.SessionId, scopedSessionIds(scope))),
+			)
 
 /** One session per row, each field finalized to its latest version (a ReplacingMergeTree). */
 const replaySessions = (scope: UsersScope) =>
@@ -121,6 +170,8 @@ const replayUsers = (scope: UsersScope, groups: ReadonlyArray<string>) =>
 			requests: zero(),
 			mcpSpans: zero(),
 			events: zero(),
+			spans: zero(),
+			logLines: zero(),
 			groupHits: groupHits($.groupId, groups),
 		}))
 		.where(($) => [$.userId.neq("")])
@@ -141,6 +192,8 @@ const eventUsers = (scope: UsersScope, groups: ReadonlyArray<string>) =>
 			requests: zero(),
 			mcpSpans: zero(),
 			events: CH.count(),
+			spans: zero(),
+			logLines: zero(),
 			groupHits: groupHits($.GroupId, groups),
 		}))
 		.where(($) => [
@@ -148,7 +201,7 @@ const eventUsers = (scope: UsersScope, groups: ReadonlyArray<string>) =>
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
 			$.UserId.neq(""),
-			serviceScope($.ServiceName, scope),
+			eventScope($, scope),
 		])
 		.groupBy("userId", "namespace")
 
@@ -168,6 +221,8 @@ const mcpUsers = (scope: UsersScope) =>
 			requests: CH.countIf(mcpMethod($).eq("tools/call")),
 			mcpSpans: CH.count(),
 			events: zero(),
+			spans: zero(),
+			logLines: zero(),
 			groupHits: zero(),
 		}))
 		.where(($) => [
@@ -184,11 +239,66 @@ const mcpUsers = (scope: UsersScope) =>
 		])
 		.groupBy("userId", "namespace")
 
-/** Every source's rows per (user, namespace). Callers check {@link hasUserSources} first. */
+/**
+ * Spans and logs with `user.id` from the rollup: entry-point requests, failed ones as errors, and
+ * spans on an MCP server as MCP activity (MCP spans carry the same user id).
+ */
+const activityUsers = (scope: UsersScope) =>
+	from(UserActivityHourly)
+		.select(($) => ({
+			userId: $.UserId,
+			name: CH.lit(""),
+			email: CH.lit(""),
+			groupId: CH.lit(""),
+			namespace: $.ServiceNamespace,
+			// The other sources' times are DateTime64(9); UNION ALL needs one type.
+			firstSeen: CH.compileTypedFnCall(
+				"toDateTime64",
+				T.dateTime64.schema,
+				CH.min_($.FirstSeen),
+				CH.lit(9),
+			),
+			lastSeen: CH.compileTypedFnCall(
+				"toDateTime64",
+				T.dateTime64.schema,
+				CH.max_($.LastSeen),
+				CH.lit(9),
+			),
+			sessions: zero(),
+			errors: CH.toUInt64(CH.sum($.FailedRequestCount)),
+			requests: CH.toUInt64(CH.sum($.RequestCount)),
+			mcpSpans:
+				scope.mcpServices.length === 0
+					? zero()
+					: CH.toUInt64(CH.sumIf($.SpanCount, CH.inList($.ServiceName, scope.mcpServices))),
+			events: zero(),
+			spans: CH.toUInt64(CH.sum($.SpanCount)),
+			logLines: CH.toUInt64(CH.sum($.LogCount)),
+			groupHits: zero(),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			scope.namespaces.length === 0 ? undefined : CH.inList($.ServiceNamespace, scope.namespaces),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
+			$.UserId.neq(""),
+		])
+		.groupBy("userId", "namespace")
+
+/**
+ * Every source's rows per (user, namespace). The rollup replaces the raw MCP span scan: both carry
+ * the same users, and a query reading a rollup and raw spans must tile the window, which these do
+ * not. Callers check {@link hasUserSources} first.
+ */
 const userSignals = (scope: UsersScope, groups: ReadonlyArray<string> = []) => {
+	const spanSource = readsActivityRollup(scope)
+		? [activityUsers(scope)]
+		: scope.mcpServices.length > 0
+			? [mcpUsers(scope)]
+			: []
 	const [first, ...rest] = [
 		...(readsServiceSources(scope) ? [replayUsers(scope, groups), eventUsers(scope, groups)] : []),
-		...(scope.mcpServices.length > 0 ? [mcpUsers(scope)] : []),
+		...spanSource,
 	]
 	return fromUnion(unionAll(first ?? replayUsers(scope, groups), ...rest), "signals")
 }
@@ -209,6 +319,8 @@ export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, 
 			requests: CH.sum($.requests),
 			mcpSpans: CH.sum($.mcpSpans),
 			events: CH.sum($.events),
+			spans: CH.sum($.spans),
+			logLines: CH.sum($.logLines),
 		}))
 		.groupBy("userId")
 		.having(($) => [
@@ -297,7 +409,7 @@ export function usersAnonymousVisitorsQuery(scope: UsersScope) {
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
 			$.VisitorId.neq(""),
-			serviceScope($.ServiceName, scope),
+			eventScope($, scope),
 		])
 		.groupBy("visitorId")
 	const visitors = fromUnion(unionAll(replays, events), "visitors")
@@ -391,8 +503,50 @@ const userEventRows = ($: ColumnAccessor<typeof ProductEvents.columns>, scope: U
 	$.Timestamp.gte(param.dateTime("startTime")),
 	$.Timestamp.lte(param.dateTime("endTime")),
 	$.UserId.eq(userIdParam),
-	serviceScope($.ServiceName, scope),
+	eventScope($, scope),
 ]
+
+/**
+ * The service each of the user's browser sessions was recorded by, for their events: the browser
+ * SDK puts its `serviceName` on the replay, not on the event.
+ */
+const userSessionServices = () =>
+	from(SessionReplays)
+		.select(($) => ({ sessionId: $.SessionId, service: CH.any_($.ServiceName) }))
+		.where(($) => [
+			...activeSessionWindow($),
+			$.ServiceName.neq(""),
+			inSubquery(
+				$.SessionId,
+				from(ProductEvents)
+					.select(($e) => ({ sessionId: $e.SessionId }))
+					.where(($e) => [
+						$e.OrgId.eq(orgIdParam),
+						$e.Timestamp.gte(param.dateTime("startTime")),
+						$e.Timestamp.lte(param.dateTime("endTime")),
+						$e.UserId.eq(userIdParam),
+						$e.ServiceName.eq(""),
+						$e.SessionId.neq(""),
+					])
+					.groupBy("sessionId"),
+			),
+		])
+		.groupBy("sessionId")
+
+/** The user's events with their service: their own, else their session's (`''` when neither). */
+const userAttributedEvents = (scope: UsersScope) =>
+	from(ProductEvents)
+		.leftJoinQuery(userSessionServices(), "session", (e, session) => e.SessionId.eq(session.sessionId))
+		.select(($) => ({
+			timestamp: $.Timestamp,
+			name: $.EventName,
+			source: $.Source,
+			service: CH.if_($.ServiceName.neq(""), $.ServiceName, CH.ifNull($.session.service, CH.lit(""))),
+			pagePath: $.PagePath,
+			propertyKeys: CH.mapKeys($.Attributes),
+			propertyValues: CH.mapValues($.Attributes),
+		}))
+		.where(($) => userEventRows($, scope))
 
 /** The user's product event totals: how many, how many distinct names, and when. */
 export function userEventsSummaryQuery(scope: UsersScope) {
@@ -407,19 +561,18 @@ export function userEventsSummaryQuery(scope: UsersScope) {
 		.format("JSON")
 }
 
-/** The user's product events, the latest first, with their page and properties. */
+/** The user's product events, the latest first, with their page, properties and service. */
 export function userEventsQuery(scope: UsersScope, limit = 200) {
-	return from(ProductEvents)
+	return fromQuery(userAttributedEvents(scope), "events")
 		.select(($) => ({
-			timestamp: $.Timestamp,
-			name: $.EventName,
-			source: $.Source,
-			service: $.ServiceName,
-			pagePath: $.PagePath,
-			propertyKeys: CH.mapKeys($.Attributes),
-			propertyValues: CH.mapValues($.Attributes),
+			timestamp: $.timestamp,
+			name: $.name,
+			source: $.source,
+			service: $.service,
+			pagePath: $.pagePath,
+			propertyKeys: $.propertyKeys,
+			propertyValues: $.propertyValues,
 		}))
-		.where(($) => userEventRows($, scope))
 		.orderBy(["timestamp", "desc"])
 		.limit(limit)
 		.format("JSON")
@@ -474,13 +627,13 @@ export function userServicesQuery(scope: UsersScope) {
 			signals: CH.count(),
 		}))
 		.groupBy("service", "namespace")
-	const events = from(ProductEvents)
+	const events = fromQuery(userAttributedEvents(scope), "events")
 		.select(($) => ({
-			service: $.ServiceName,
-			namespace: namespaceOf($.ServiceName, scope),
+			service: $.service,
+			namespace: namespaceOf($.service, scope),
 			signals: CH.count(),
 		}))
-		.where(($) => [...userEventRows($, scope), $.ServiceName.neq("")])
+		.where(($) => [$.service.neq("")])
 		.groupBy("service", "namespace")
 	// The same map as the replay and event arms, so one service reaches the rail once.
 	const mcp = from(Traces)

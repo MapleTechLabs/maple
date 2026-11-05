@@ -227,6 +227,9 @@ export {
 	type RuntimeVersionsOutput,
 } from "./queries/security-telemetry"
 
+// Queries: Users (`user_activity_hourly`, per-user traces, logs and issues)
+export * from "./queries/user-activity"
+
 // Queries — Product events (funnels over `product_events`)
 export {
 	productEventsFunnelQuery,

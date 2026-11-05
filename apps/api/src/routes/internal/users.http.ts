@@ -3,7 +3,9 @@ import { CurrentTenant, MapleInternalApi } from "@maple/domain/http"
 import { Effect } from "effect"
 import {
 	readUserActivity,
+	readUserLogs,
 	readUserProfile,
+	readUserTraces,
 	readUsersFacets,
 	readUsersList,
 } from "@maple/backend/services/users/users-reads"
@@ -20,5 +22,7 @@ export const HttpUsersInternalLive = HttpApiBuilder.group(MapleInternalApi, "use
 		.handle("list", withTenant(readUsersList))
 		.handle("facets", withTenant(readUsersFacets))
 		.handle("profile", withTenant(readUserProfile))
-		.handle("activity", withTenant(readUserActivity)),
+		.handle("activity", withTenant(readUserActivity))
+		.handle("traces", withTenant(readUserTraces))
+		.handle("logs", withTenant(readUserLogs)),
 )

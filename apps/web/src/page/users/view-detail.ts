@@ -175,7 +175,8 @@ export const tabCount = (tab: UserTab, detail: UserDetail): number | undefined =
 		case "errors":
 			return profile.issues ?? undefined
 		case "traces":
-			return profile.traces ?? undefined
+			// The tab lists entry-point requests, so its badge counts them, not distinct traces.
+			return profile.requests ?? undefined
 		case "logs":
 			return profile.logs ?? undefined
 		case "events":
@@ -208,8 +209,8 @@ export const userTabs = <M>(h: HtmlBuilder<M>, detail: UserDetail, options: User
 
 // --- stats --------------------------------------------------------------------------------------
 
-/** A stat the per-user request rollup will fill: a dash, never a fake zero. */
-const NOT_YET = EMPTY_VALUE
+/** A request figure the org's warehouse cannot answer: a dash, never a fake zero. */
+const UNKNOWN = EMPTY_VALUE
 
 const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 	statRail(h, { columns: 5, isFlush: true }, [
@@ -234,14 +235,17 @@ const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 		}),
 		statRailItem(h, {
 			eyebrow: "Requests",
-			value: profile.requests === null ? NOT_YET : formatNumber(profile.requests),
+			value: profile.requests === null ? UNKNOWN : formatNumber(profile.requests),
 			subline:
-				profile.requests === 0
-					? "no requests in the window"
-					: profile.failedRate === null
-						? "not available yet"
-						: `${formatPercent(profile.failedRate)} failed`,
-			spark: profile.requests === null ? undefined : profile.activity,
+				profile.requests === null
+					? "no per-user request data"
+					: profile.requests === 0
+						? "no requests in the window"
+						: profile.failedRate === null
+							? "failure rate not available"
+							: `${formatPercent(profile.failedRate)} failed`,
+			tone: profile.failedRate !== null && profile.failedRate > 0 ? "warn" : "neutral",
+			spark: Arr.some(profile.activity, (count) => count > 0) ? profile.activity : undefined,
 			compact: true,
 		}),
 		profile.p95Ms === null
@@ -254,12 +258,8 @@ const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 			: statRailItem(h, {
 					eyebrow: "P95 latency",
 					value: formatLatency(profile.p95Ms),
-					tone:
-						profile.orgP95Ms !== null && profile.p95Ms > profile.orgP95Ms * 1.25
-							? "warn"
-							: "neutral",
-					subline:
-						profile.orgP95Ms === null ? undefined : `org p95 ${formatLatency(profile.orgP95Ms)}`,
+					// The p95 spans every entry request, so the subline names that scope, not a route.
+					subline: "over every request",
 					compact: true,
 				}),
 		statRailItem(h, {
@@ -486,13 +486,13 @@ const KIND_ACTION = {
 	request: "Trace",
 	event: "Event",
 	session: "Watch replay",
-	log: "Log",
+	log: "Trace",
 	mcp: "Open session",
 } satisfies { readonly [K in ActivityKind]: string }
 
 const ACTIVITY_ROW_CLASS = "grid grid-cols-[3rem_1rem_minmax(0,1fr)_auto] items-start gap-3 px-2.5 py-2"
 
-/** One timeline row; a row with a page (a replay, an MCP session) is a link to it. */
+/** One timeline row; a row with a page (a replay, an MCP session, a trace) is a link to it. */
 const activityRow = <M>(h: HtmlBuilder<M>, item: ActivityItem, timeZone: string): Html =>
 	selectableRow(
 		h,
@@ -573,7 +573,7 @@ const activityBody = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<ActivityItem>, 
 /** A tab with no rows in the window. */
 const noRows = <M>(h: HtmlBuilder<M>, text: string): Html => emptyMessage(h, { dashed: true }, [text])
 
-/** A tab whose data arrives with the per-user request rollup: said plainly, never demo rows. */
+/** A tab whose data Maple does not read per user yet: said plainly, never demo rows. */
 const pendingTab = <M>(h: HtmlBuilder<M>, iconName: IconName, title: string, description: string): Html =>
 	empty(h, [
 		emptyHeader(h, [
@@ -584,7 +584,17 @@ const pendingTab = <M>(h: HtmlBuilder<M>, iconName: IconName, title: string, des
 	])
 
 const PENDING_DESCRIPTION =
-	"Maple does not index spans and logs by user yet. Once it does, this tab lists this user's own, from every service that stamps user.id."
+	"Maple does not group this user's errors into issues yet. Once it does, this tab lists the issues they hit, from every service that stamps user.id."
+
+/** Where this warehouse has no per-user rollup (it has not applied migration 0056): no count to show. */
+const UNINDEXED_DESCRIPTION =
+	"This warehouse does not index requests and logs per user yet. Apply the latest ClickHouse migration to see them here."
+
+/** A rollup-backed tab: no count means the warehouse cannot answer, which is not "no rows". */
+export const indexedTabState = (
+	count: number | null,
+	rows: ReadonlyArray<unknown>,
+): "unindexed" | "empty" | "rows" => (count === null ? "unindexed" : rows.length === 0 ? "empty" : "rows")
 
 const cellText = <M>(
 	h: HtmlBuilder<M>,
@@ -744,24 +754,27 @@ const errorsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 					),
 				])
 
+/** A request this slow reads as a warning. */
+const SLOW_MS = 2000
+
+/** The user's requests, one row per entry span; each opens its trace. */
 const tracesBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
-	detail.profile.traces === null
-		? pendingTab(h, "LayersIcon", "Traces by user are on the way", PENDING_DESCRIPTION)
+	indexedTabState(detail.profile.requests, detail.traces) === "unindexed"
+		? pendingTab(h, "LayersIcon", "Requests are not indexed per user here", UNINDEXED_DESCRIPTION)
 		: Arr.isReadonlyArrayEmpty(detail.traces)
-			? noRows(h, "No traces from this user in the window.")
+			? noRows(h, "No requests from this user in the window.")
 			: toolTable(h, [
 					toolTableHead(h, [
 						th(h, { label: "Time", width: "w-28 shrink-0" }),
 						th(h, { label: "Root span", width: columnClass({ min: "0" }) }),
 						th(h, { label: "Service", width: "w-28 shrink-0" }),
 						th(h, { label: "Duration", width: "w-20 shrink-0", align: "right" }),
-						th(h, { label: "Spans", width: "w-14 shrink-0", align: "right" }),
 						th(h, { label: "Status", width: "w-16 shrink-0", align: "right" }),
 					]),
 					toolTableBody(
 						h,
 						Arr.map(detail.traces, (trace) =>
-							toolTableRow(h, { href: `/traces/${trace.traceId}` }, [
+							toolTableRow(h, { href: trace.href }, [
 								timeCell(h, trace.atMs, clock),
 								cellText(h, trace.rootSpan, "w-0 flex-1"),
 								hstack(h, { gap: "1.5", as: "span", className: "w-28 shrink-0" }, [
@@ -772,11 +785,7 @@ const tracesBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 								]),
 								cellText(h, formatLatency(trace.durationMs), "w-20 shrink-0", {
 									right: true,
-									tone: trace.durationMs > 2000 ? "warning" : "foreground",
-								}),
-								cellText(h, String(trace.spans), "w-14 shrink-0", {
-									right: true,
-									tone: "muted",
+									tone: trace.durationMs >= SLOW_MS ? "warning" : "foreground",
 								}),
 								cellText(h, trace.status, "w-16 shrink-0", {
 									right: true,
@@ -787,9 +796,10 @@ const tracesBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 					),
 				])
 
+/** The user's log lines; one inside a trace opens it. */
 const logsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
-	detail.profile.logs === null
-		? pendingTab(h, "FileIcon", "Logs by user are on the way", PENDING_DESCRIPTION)
+	indexedTabState(detail.profile.logs, detail.logs) === "unindexed"
+		? pendingTab(h, "FileIcon", "Logs are not indexed per user here", UNINDEXED_DESCRIPTION)
 		: Arr.isReadonlyArrayEmpty(detail.logs)
 			? noRows(h, "No logs from this user in the window.")
 			: toolTable(h, [
@@ -802,7 +812,7 @@ const logsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html 
 					toolTableBody(
 						h,
 						Arr.map(detail.logs, (log) =>
-							toolTableRow(h, {}, [
+							toolTableRow(h, log.href === null ? {} : { href: log.href }, [
 								timeCell(h, log.atMs, clock),
 								h.span(
 									[h.Class("w-16 shrink-0")],

@@ -1,3 +1,4 @@
+import { USERS_PRESETS } from "../window"
 import { Submodel, AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
@@ -33,12 +34,8 @@ type H = HtmlBuilder<Message>
 const DESCRIPTION =
 	"People your SDKs identified with identify() or a user.id attribute: their sessions, errors, requests and events."
 
-/** A listed user as the kit row draws it; route and activity arrive with the request rollup. */
-const toRow = (user: UserListItem): UserRow => ({
-	...user,
-	topRoute: null,
-	activity: [],
-})
+/** A listed user as the kit row draws it. */
+const toRow = (user: UserListItem): UserRow => user
 
 const filtersOf = (model: Model): UsersFilters => ({
 	search: model.query,
@@ -186,7 +183,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							selectedPreset:
 								search.timePreset ??
 								(search.startTime === undefined ? DEFAULT_PRESET : undefined),
-							presets: TimeRangePicker.PRESET_VALUES,
+							presets: USERS_PRESETS,
 						},
 					}),
 			}),

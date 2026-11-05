@@ -8,7 +8,8 @@ import { SessionAuthorization } from "./current-tenant"
 import { warehouseReadHttpErrors } from "./warehouse"
 
 // End users endpoint schemas (`/users`): the people Maple's customers identified with `identify()`
-// or a `user.id` span attribute, read by `ch/queries/users.ts`. Times are epoch milliseconds.
+// or a `user.id` span attribute, read by `ch/queries/users.ts` and `user-activity.ts`. Times are
+// epoch milliseconds.
 
 const searchText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))
 const groupId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(500))
@@ -21,7 +22,7 @@ const windowFields = {
 }
 
 /** A signal Maple holds for a user. */
-export const UserSignalKind = Schema.Literals(["replay", "events", "mcp"])
+export const UserSignalKind = Schema.Literals(["replay", "events", "mcp", "traces", "logs"])
 export type UserSignalKind = typeof UserSignalKind.Type
 
 export const UserListItem = Schema.Struct({
@@ -33,8 +34,14 @@ export const UserListItem = Schema.Struct({
 	firstSeenMs: Schema.Number,
 	lastSeenMs: Schema.Number,
 	sessions: Schema.Number,
+	/** Errors the browser SDK recorded in the user's sessions, plus their failed requests. */
 	errors: Schema.Number,
+	/** Entry-point requests carrying the user's id; MCP tool calls where the span rollup is absent. */
 	requests: Schema.Number,
+	/** The user's busiest route, `null` without requests. */
+	topRoute: Schema.NullOr(Schema.String),
+	/** Requests in 7 equal slices of the window, oldest first; empty without the span rollup. */
+	activity: Schema.Array(Schema.Number),
 	signals: Schema.Array(UserSignalKind),
 })
 export type UserListItem = typeof UserListItem.Type
@@ -91,17 +98,21 @@ export class UserDetailRequest extends Schema.Class<UserDetailRequest>("UserDeta
 	userId: EndUserId,
 }) {}
 
-const UserService = Schema.Struct({
+export const UserService = Schema.Struct({
 	service: Schema.String,
 	/** `''` when the service map does not know the service. */
 	namespace: Schema.String,
-	/** Sessions, events and MCP requests from the service. */
+	/** Sessions, events, requests and log lines from the service. */
 	signals: Schema.Number,
 })
+export type UserService = typeof UserService.Type
 
 const UserDevice = Schema.Struct({ browser: Schema.String, os: Schema.String, sessions: Schema.Number })
 
-/** A user's identity and totals. `null` numbers arrive with the per-user rollup and are never zeros. */
+/**
+ * A user's identity and totals. The request numbers read `user_activity_hourly`; they are `null`
+ * where a cluster lacks it (never a fake zero). `issues` arrives with the per-user issues read.
+ */
 export const UserProfileItem = Schema.Struct({
 	userId: Schema.String,
 	name: Schema.NullOr(Schema.String),
@@ -126,12 +137,20 @@ export const UserProfileItem = Schema.Struct({
 	country: Schema.NullOr(Schema.String),
 	services: Schema.Array(UserService),
 	signals: Schema.Array(UserSignalKind),
+	/** Entry-point requests. */
 	requests: Schema.NullOr(Schema.Number),
+	/** Failed requests over requests, 0 to 1; `null` without requests. */
 	failedRate: Schema.NullOr(Schema.Number),
+	/** p95 request latency; `null` without requests. */
 	p95Ms: Schema.NullOr(Schema.Number),
+	/** Distinct traces the user's spans belong to. */
 	traces: Schema.NullOr(Schema.Number),
 	logs: Schema.NullOr(Schema.Number),
 	issues: Schema.NullOr(Schema.Number),
+	/** The busiest route, `null` without requests. */
+	topRoute: Schema.NullOr(Schema.String),
+	/** Requests in 7 equal slices of the window, oldest first. */
+	activity: Schema.Array(Schema.Number),
 })
 export type UserProfileItem = typeof UserProfileItem.Type
 
@@ -192,6 +211,8 @@ export const UserActivityItem = Schema.Struct({
 	tone: Schema.Literals(["crit", "warn", "neutral"]),
 	/** The replay or MCP session the row opens; `null` for a row with no page. */
 	sessionId: Schema.NullOr(Schema.String),
+	/** The trace a request or log row opens; `null` when it has none. */
+	traceId: Schema.NullOr(Schema.String),
 })
 export type UserActivityItem = typeof UserActivityItem.Type
 
@@ -199,8 +220,44 @@ export class UserActivityResponse extends Schema.Class<UserActivityResponse>("Us
 	sessions: Schema.Array(UserSessionItem),
 	events: Schema.Array(UserEventItem),
 	mcpSessions: Schema.Array(UserMcpSessionItem),
-	/** Sessions, events and MCP sessions merged, the latest first, capped. */
+	/** Sessions, events, MCP sessions, failed or slow requests and warnings merged, the latest first, capped. */
 	activity: Schema.Array(UserActivityItem),
+}) {}
+
+/** One request of the user: an entry-point span (Server/Consumer or a root). */
+export const UserTraceItem = Schema.Struct({
+	traceId: Schema.String,
+	spanId: Schema.String,
+	atMs: Schema.Number,
+	/** The entry span's name, e.g. `GET /checkout`. */
+	spanName: Schema.String,
+	service: Schema.String,
+	durationMs: Schema.Number,
+	/** `Ok`, `Error` or `Unset`. */
+	status: Schema.String,
+	isRoot: Schema.Boolean,
+})
+export type UserTraceItem = typeof UserTraceItem.Type
+
+export class UserTracesResponse extends Schema.Class<UserTracesResponse>("UserTracesResponse")({
+	/** The latest first, capped. */
+	traces: Schema.Array(UserTraceItem),
+}) {}
+
+export const UserLogItem = Schema.Struct({
+	atMs: Schema.Number,
+	/** The SDK's severity text, else the OTel level of its number. */
+	severity: Schema.String,
+	service: Schema.String,
+	body: Schema.String,
+	/** `''` for a log outside a trace. */
+	traceId: Schema.String,
+})
+export type UserLogItem = typeof UserLogItem.Type
+
+export class UserLogsResponse extends Schema.Class<UserLogsResponse>("UserLogsResponse")({
+	/** The latest first, capped. */
+	logs: Schema.Array(UserLogItem),
 }) {}
 
 export class UsersInternalApiGroup extends HttpApiGroup.make("usersInternal")
@@ -229,6 +286,20 @@ export class UsersInternalApiGroup extends HttpApiGroup.make("usersInternal")
 		HttpApiEndpoint.post("activity", "/activity", {
 			payload: UserDetailRequest,
 			success: UserActivityResponse,
+			error: warehouseReadHttpErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("traces", "/traces", {
+			payload: UserDetailRequest,
+			success: UserTracesResponse,
+			error: warehouseReadHttpErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("logs", "/logs", {
+			payload: UserDetailRequest,
+			success: UserLogsResponse,
 			error: warehouseReadHttpErrors,
 		}),
 	)

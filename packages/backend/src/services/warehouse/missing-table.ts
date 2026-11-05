@@ -59,6 +59,19 @@ export const isMissingServiceMapDbEdgesMinutely = (error: unknown): boolean =>
 /** `service_endpoint_details_hourly` ships in migration 0048; the endpoint detail reads degrade to empty. */
 export const isMissingServiceEndpointDetails = isMissingTable(/service_endpoint_details_hourly/i)
 
+/**
+ * `user_activity_hourly` ships in migration 0056. The users pages then read without it: the
+ * directory retries on its other sources, and the per-user request reads answer empty. The
+ * message must name it, since the retry reads every other table.
+ */
+export const isMissingUserActivityHourly = (error: unknown): boolean =>
+	isMissingTable(/user_activity_hourly/i)(error) &&
+	typeof error === "object" &&
+	error !== null &&
+	"message" in error &&
+	typeof error.message === "string" &&
+	/user_activity_hourly/i.test(error.message)
+
 const MIGRATION_0048_COLUMNS =
 	/\b(?:HttpClassifiedSpanCount|HttpStatusCount|Http4xxCount|Http5xxCount|RequestBodyBytes|RequestBodyCount)\b/
 

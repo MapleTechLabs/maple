@@ -91,6 +91,27 @@ describe("tabs and namespaces", () => {
 		expect(step.commands ?? []).toEqual([])
 	})
 
+	it("reads the user's requests only once the Traces tab opens, and logs only on Logs", () => {
+		const loaded = update(
+			page({}),
+			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
+			context,
+		)
+		const names = (step: ReturnType<typeof update>) =>
+			Arr.map(step.commands ?? [], (command) => command.name)
+		expect(names(loaded)).not.toContain("FetchUserTraces")
+		const traces = routeChanged(
+			loaded.model,
+			{ userId: "user/42 ada", search: { tab: "traces" } },
+			context,
+		)
+		expect(names(traces)).toEqual(["FetchUserTraces"])
+		const logs = routeChanged(traces.model, { userId: "user/42 ada", search: { tab: "logs" } }, context)
+		expect(names(logs)).toEqual(["FetchUserLogs"])
+		const back = routeChanged(logs.model, { userId: "user/42 ada", search: { tab: "traces" } }, context)
+		expect(names(back)).toEqual([])
+	})
+
 	it("refetches when the namespace changes", () => {
 		const loaded = update(
 			page({}),
@@ -115,6 +136,7 @@ describe("activity links", () => {
 		title: "",
 		detail: "",
 		tone: "neutral" as const,
+		traceId: null,
 	}
 
 	it("opens an MCP session on its own server's page over the user page's window", () => {
@@ -126,6 +148,15 @@ describe("activity links", () => {
 	it("opens a replay session, and nothing for an event", () => {
 		expect(activityHref({ ...item, kind: "session", sessionId: "s1" }, {})).toBe("/replays/s1")
 		expect(activityHref({ ...item, kind: "event", sessionId: null }, {})).toBeNull()
+	})
+
+	it("opens the trace of a failed request or a log line", () => {
+		expect(activityHref({ ...item, kind: "request", sessionId: null, traceId: "a1b2" }, {})).toBe(
+			"/traces/a1b2",
+		)
+		expect(activityHref({ ...item, kind: "log", sessionId: null, traceId: "c3d4" }, {})).toBe(
+			"/traces/c3d4",
+		)
 	})
 })
 

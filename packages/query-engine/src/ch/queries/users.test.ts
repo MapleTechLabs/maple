@@ -119,6 +119,39 @@ describe("usersListQuery", () => {
 		expect(sql).toMatch(/ORDER BY lastSeen DESC\s+LIMIT 50/)
 	})
 
+	it("reads spans and logs from the activity rollup in place of raw MCP spans", () => {
+		const { sql } = compileUnsafe(usersListQuery({ ...storefront, activityRollup: true }), params)
+		expect(count(sql, "UNION ALL")).toBe(2)
+		expect(sql).not.toContain("FROM traces")
+		expect(sql).toContain("user_activity_hourly.OrgId = 'org_1'")
+		expect(sql).toContain("user_activity_hourly.ServiceNamespace IN ('storefront')")
+		expect(sql).toContain("toUInt64(sum(user_activity_hourly.FailedRequestCount)) AS errors")
+		expect(sql).toContain("toUInt64(sum(user_activity_hourly.RequestCount)) AS requests")
+		expect(sql).toContain(
+			"toUInt64(sumIf(user_activity_hourly.SpanCount, user_activity_hourly.ServiceName IN ('mcp-server'))) AS mcpSpans",
+		)
+		expect(sql).toContain("sum(signals.spans) AS spans")
+	})
+
+	it("holds users under a namespace with no service when the rollup is read", () => {
+		const scope = { ...unscoped, mcpServices: [], namespaces: ["x"], services: [] }
+		expect(hasUserSources(scope)).toBe(false)
+		expect(hasUserSources({ ...scope, activityRollup: true })).toBe(true)
+	})
+
+	it("keeps a browser event in scope through its session's service", () => {
+		const { sql } = compileUnsafe(usersListQuery(storefront), params)
+		expect(sql).toContain(
+			"(product_events.ServiceName IN ('web') OR (product_events.ServiceName = '' AND product_events.SessionId IN (SELECT",
+		)
+	})
+
+	it("matches a browser event to a session active in the window, even one started the day before", () => {
+		const { sql } = compileUnsafe(usersListQuery(storefront), params)
+		expect(sql).toContain("session_replays.StartTime >= subtractDays(")
+		expect(sql).toContain("ifNull(session_replays.LastActivityAt, session_replays.StartTime) >=")
+	})
+
 	it("finalizes replay identity to the session's latest version", () => {
 		const { sql } = compileUnsafe(usersListQuery(unscoped), params)
 		expect(sql).toContain("argMax(session_replays.UserId, session_replays.Version) AS userId")
@@ -133,7 +166,7 @@ describe("usersFacetsQuery", () => {
 		expect(groups).toContain("'group' AS facetType")
 		expect(groups).toContain("session_replays.ServiceName IN ('web')")
 		expect(namespaces).not.toContain("session_replays.ServiceName IN")
-		expect(count(sql, "session_replays.OrgId = 'org_1'")).toBe(2)
+		expect(count(sql, "product_events.OrgId = 'org_1'")).toBe(2)
 	})
 
 	it("skips the namespace facet under a pin", () => {
@@ -198,6 +231,18 @@ describe("one user's reads", () => {
 		expect(compileUnsafe(userMcpSummaryQuery(storefront), userParams).sql).toContain(
 			"traces.ResourceAttributes['service.namespace'] IN ('storefront')",
 		)
+	})
+
+	it("attributes a browser event to the service of the session it came from", () => {
+		const { sql } = compileUnsafe(userEventsQuery(unscoped), userParams)
+		expect(sql).toContain(
+			"if(product_events.ServiceName != '', product_events.ServiceName, ifNull(session.service, '')) AS service",
+		)
+		expect(sql).toContain("LEFT JOIN (SELECT")
+		expect(sql).toContain("ON product_events.SessionId = session.sessionId")
+		const services = compileUnsafe(userServicesQuery(unscoped), userParams).sql
+		expect(services).toContain("ifNull(session.service, '')")
+		expect(services).toContain("WHERE events.service != ''")
 	})
 
 	it("reads every source for services touched, dropping MCP when no server answers it", () => {

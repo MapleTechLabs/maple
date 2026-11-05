@@ -54,6 +54,7 @@ import { migration_0052_error_fingerprint_json_frames } from "./0052_error_finge
 import { migration_0053_error_fingerprint_interleaved_values } from "./0053_error_fingerprint_interleaved_values"
 import { migration_0054_error_custom_fingerprint } from "./0054_error_custom_fingerprint"
 import { migration_0055_error_fingerprint_v4 } from "./0055_error_fingerprint_v4"
+import { migration_0056_user_activity_hourly } from "./0056_user_activity_hourly"
 import { Array as Arr } from "effect"
 
 /**
@@ -141,6 +142,7 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0053_error_fingerprint_interleaved_values,
 	migration_0054_error_custom_fingerprint,
 	migration_0055_error_fingerprint_v4,
+	migration_0056_user_activity_hourly,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied

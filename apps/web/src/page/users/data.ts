@@ -34,8 +34,8 @@ export type UserService = Readonly<{ service: string; namespace: string; signals
 export type UserDevice = Readonly<{ browser: string; os: string; sessions: number }>
 
 /**
- * One user's profile. The request figures (`requests`, `failedRate`, the p95s, `traces`, `logs`,
- * `issues`) are `null` until the per-user request rollup lands; the page shows them as not available.
+ * One user's profile. The request figures (`requests`, `failedRate`, `p95Ms`, `traces`, `logs`) are
+ * `null` where the org's warehouse has no per-user rollup, and `issues` until issues by user land.
  */
 export type UserProfile = Omit<UserRow, "requests"> &
 	Readonly<{
@@ -52,7 +52,6 @@ export type UserProfile = Omit<UserRow, "requests"> &
 		issues: number | null
 		failedRate: number | null
 		p95Ms: number | null
-		orgP95Ms: number | null
 		logs: number | null
 		traces: number | null
 	}>
@@ -66,7 +65,7 @@ export type ActivityItem = Readonly<{
 	title: string
 	detail: string
 	tone: "crit" | "warn" | "neutral"
-	/** The page the row opens (a replay, an MCP session); `null` when it has none. */
+	/** The page the row opens (a replay, an MCP session, a trace); `null` when it has none. */
 	href: string | null
 }>
 
@@ -96,18 +95,28 @@ export type UserIssue = Readonly<{
 	status: UserIssueStatus
 }>
 
+/** One request of the user: its entry span, and the trace page it opens. */
 export type UserTrace = Readonly<{
 	traceId: string
 	atMs: number
+	/** The entry span's name, e.g. `POST /api/checkout`. */
 	rootSpan: string
 	service: string
 	durationMs: number
-	spans: number
+	/** `Ok`, `Error` or `Unset`. */
 	status: string
 	isError: boolean
+	href: string
 }>
 
-export type UserLog = Readonly<{ atMs: number; severity: string; service: string; body: string }>
+/** One log line; `href` opens its trace, `null` outside one. */
+export type UserLog = Readonly<{
+	atMs: number
+	severity: string
+	service: string
+	body: string
+	href: string | null
+}>
 
 export type UserEvent = Readonly<{
 	atMs: number
