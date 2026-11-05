@@ -372,7 +372,8 @@ const userRow = <M>(h: HtmlBuilder<M>, row: UserRow, options: UsersListOptions<M
 					as: "span",
 					className: typographyClass({ tone: "subtle", className: "w-3.5 shrink-0" }),
 				},
-				[icon(h, "ChevronRightIcon", { size: 14 })],
+				// The chevron says the row opens; a row with no page keeps the column, empty.
+				options.userHref === undefined ? [] : [icon(h, "ChevronRightIcon", { size: 14 })],
 			),
 		],
 	)
