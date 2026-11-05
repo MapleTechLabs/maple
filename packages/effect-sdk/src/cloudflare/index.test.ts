@@ -66,9 +66,9 @@ describe("MapleCloudflareSDK.make", () => {
 				scopeSpans: Array<{ spans: Array<{ name: string }> }>
 			}>
 		}
-		const spans = body.resourceSpans[0].scopeSpans[0].spans
+		const spans = Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0).scopeSpans, 0).spans
 		expect(Arr.map(spans, (s) => s.name).sort()).toEqual(["op-1", "op-2"])
-		const attrs = body.resourceSpans[0].resource.attributes
+		const attrs = Arr.getUnsafe(body.resourceSpans, 0).resource.attributes
 		const attrMap = Rec.fromEntries(Arr.map(attrs, (a) => [a.key, a.value.stringValue]))
 		expect(attrMap["service.name"]).toBe("unit-test")
 		expect(attrMap["maple.sdk.type"]).toBe("cloudflare")
@@ -106,11 +106,11 @@ describe("MapleCloudflareSDK.make", () => {
 				}>
 			}>
 		}
-		const records = body.resourceLogs[0].scopeLogs[0].logRecords
+		const records = Arr.getUnsafe(Arr.getUnsafe(body.resourceLogs, 0).scopeLogs, 0).logRecords
 		expect(records).toHaveLength(2)
-		expect(records[0].severityText).toBe("Info")
-		expect(records[0].body.stringValue).toBe("hello world")
-		expect(records[1].severityText).toBe("Error")
+		expect(Arr.getUnsafe(records, 0).severityText).toBe("Info")
+		expect(Arr.getUnsafe(records, 0).body.stringValue).toBe("hello world")
+		expect(Arr.getUnsafe(records, 1).severityText).toBe("Error")
 	})
 
 	it("defaults to https://ingest.maple.dev when no endpoint is configured", async () => {
@@ -142,8 +142,12 @@ describe("MapleCloudflareSDK.make", () => {
 
 		expect(calls.length).toBe(0)
 		expect(consoleInfoSpy).toHaveBeenCalledTimes(1)
-		expect(consoleInfoSpy.mock.calls[0][0]).toContain("no ingest key configured")
-		expect(consoleInfoSpy.mock.calls[0][0]).toContain("set MAPLE_INGEST_KEY")
+		expect(Arr.getUnsafe(Arr.getUnsafe(consoleInfoSpy.mock.calls, 0), 0)).toContain(
+			"no ingest key configured",
+		)
+		expect(Arr.getUnsafe(Arr.getUnsafe(consoleInfoSpy.mock.calls, 0), 0)).toContain(
+			"set MAPLE_INGEST_KEY",
+		)
 
 		// A second flush within the same isolate should stay silent —
 		// the info log is one-shot.
@@ -268,7 +272,9 @@ describe("MapleCloudflareSDK.make", () => {
 		const body = Option.getOrThrow(traceCall).body as {
 			resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
 		}
-		expect(Arr.map(body.resourceSpans[0].scopeSpans[0].spans, (s) => s.name)).toEqual(["deferred-op"])
+		expect(
+			Arr.map(Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0).scopeSpans, 0).spans, (s) => s.name),
+		).toEqual(["deferred-op"])
 	})
 
 	it("overlapping flushes export every span exactly once", async () => {
@@ -349,7 +355,10 @@ describe("MapleCloudflareSDK.make", () => {
 				const body = c.body as {
 					resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
 				}
-				return Arr.map(body.resourceSpans[0]?.scopeSpans[0]?.spans, (s) => s.name)
+				return Arr.map(
+					Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0)?.scopeSpans, 0)?.spans,
+					(s) => s.name,
+				)
 			},
 		)
 		expect(names).toEqual([["stuck-op"], ["later-op"]])
@@ -388,9 +397,12 @@ describe("MapleCloudflareSDK.make requestLayer", () => {
 			const body = traces[0]?.body as {
 				resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
 			}
-			expect(Arr.map(body.resourceSpans[0]?.scopeSpans[0]?.spans, (span) => span.name)).toEqual([
-				"op-1",
-			])
+			expect(
+				Arr.map(
+					Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0)?.scopeSpans, 0)?.spans,
+					(span) => span.name,
+				),
+			).toEqual(["op-1"])
 		} finally {
 			restore()
 		}

@@ -167,7 +167,7 @@ describe("renderDiscordMessage", () => {
 			},
 		])
 
-		expect(payload.embeds[0].title).toHaveLength(256)
+		expect(Arr.getUnsafe(payload.embeds, 0).title).toHaveLength(256)
 	})
 
 	it("falls back to text once the embeds together would be too long", () => {

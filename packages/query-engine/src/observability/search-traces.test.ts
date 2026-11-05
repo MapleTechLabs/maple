@@ -158,7 +158,7 @@ describe("searchTraces by span name", () => {
 			})
 			yield* run(executor, { traceId: TRACE_ID })
 			assert.lengthOf(calls, 2)
-			assert.strictEqual(calls[1].startTime, "2026-04-01 00:00:00")
+			assert.strictEqual(Arr.getUnsafe(calls, 1).startTime, "2026-04-01 00:00:00")
 		}),
 	)
 })

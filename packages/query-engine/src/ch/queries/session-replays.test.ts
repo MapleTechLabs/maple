@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect, Array as Arr, String as Str, Option } from "effect"
 import { compile, compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
@@ -802,6 +802,7 @@ describe("session replay rows decode timestamps to DateTime.Utc", () => {
 				const compiled = yield* compile(sessionReplaysListQuery(opts), { ...baseParams, ...WINDOW })
 				expect(compiled.rowSchemaSource).toBe("derived")
 				const [row] = yield* compiled.decodeRows([listRow])
+				assert.isDefined(row)
 				expect(DateTime.formatIso(row.startTime)).toBe("2026-06-24T04:00:00.123Z")
 				expect(row.endTime).toBeNull()
 				expect(row.lastActivityAt && DateTime.formatIso(row.lastActivityAt)).toBe(
@@ -825,6 +826,7 @@ describe("session replay rows decode timestamps to DateTime.Utc", () => {
 					isCheckpoint: 1,
 				},
 			])
+			assert.isDefined(row)
 			expect(DateTime.formatIso(row.timestamp)).toBe("2026-06-24T04:00:01.500Z")
 		}),
 	)
@@ -839,6 +841,7 @@ describe("session replay rows decode timestamps to DateTime.Utc", () => {
 			const [row] = yield* compiled.decodeRows([
 				{ sessionId: "sess_1", startTime: "2026-06-24 04:00:00.000000000", durationMs: null },
 			])
+			assert.isDefined(row)
 			expect(DateTime.toEpochMillis(row.startTime)).toBe(Date.UTC(2026, 5, 24, 4))
 		}),
 	)

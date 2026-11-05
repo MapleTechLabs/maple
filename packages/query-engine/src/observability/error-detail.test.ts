@@ -82,8 +82,8 @@ describe("errorDetail", () => {
 			assert.lengthOf(logs, 1)
 			// Without an explicit range, pipe-dispatch falls back to an all-time
 			// sentinel window (2023→2099) and the lookup scans full retention.
-			assert.strictEqual(logs[0].params.start_time, "2026-04-03 11:00:00")
-			assert.strictEqual(logs[0].params.end_time, "2026-04-03 13:00:00")
+			assert.strictEqual(Arr.getUnsafe(logs, 0).params.start_time, "2026-04-03 11:00:00")
+			assert.strictEqual(Arr.getUnsafe(logs, 0).params.end_time, "2026-04-03 13:00:00")
 		}),
 	)
 
@@ -98,8 +98,8 @@ describe("errorDetail", () => {
 
 			const logs = Arr.filter(captured.pipeCalls, (c) => c.pipe === "list_logs")
 			assert.lengthOf(logs, 1)
-			assert.strictEqual(logs[0].params.start_time, timeRange.startTime)
-			assert.strictEqual(logs[0].params.end_time, timeRange.endTime)
+			assert.strictEqual(Arr.getUnsafe(logs, 0).params.start_time, timeRange.startTime)
+			assert.strictEqual(Arr.getUnsafe(logs, 0).params.end_time, timeRange.endTime)
 		}),
 	)
 
@@ -111,7 +111,7 @@ describe("errorDetail", () => {
 					makeLayer(makeMockExecutor(captured, [traceRow("t1", "2026-04-03 12:00:00")])),
 				),
 			)
-			const span = result.traces[0].errorSpan
+			const span = Arr.getUnsafe(result.traces, 0).errorSpan
 			assert.isDefined(span)
 			assert.strictEqual(span.name, "chat gpt-x")
 			assert.strictEqual(span.statusMessage, "boom")
@@ -236,10 +236,13 @@ describe("errorDetail", () => {
 			)
 			assert.strictEqual(result.error?.label, "GET 404 /api/org")
 			assert.deepStrictEqual(
-				Arr.map(result.traces[0].logs, (l) => l.body),
+				Arr.map(Arr.getUnsafe(result.traces, 0).logs, (l) => l.body),
 				["lookup failed", "Tool completed"],
 			)
-			assert.strictEqual(result.traces[0].errorSpan?.attributes["http.response.status_code"], "404")
+			assert.strictEqual(
+				Arr.getUnsafe(result.traces, 0).errorSpan?.attributes["http.response.status_code"],
+				"404",
+			)
 		}),
 	)
 

@@ -110,9 +110,10 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 					Effect.gen(function* () {
 						// A retraction can shrink a turn below a message it had already needed, so a surplus
 						// message is emptied rather than left holding text the turn no longer says.
-						const group = index < groups.length ? groups[index] : NO_BLOCKS
+						const group = groups[index] ?? NO_BLOCKS
 						const rendered = renderedKey(group)
-						if (index >= posted.length) {
+						const existing = posted[index]
+						if (existing === undefined) {
 							const postedMessage = yield* transport.post(target, group, phase)
 							posted.push(postedMessage)
 							sent.push(rendered)
@@ -125,7 +126,7 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 						// platform's edit budget is per channel, not per message. A live message is the
 						// exception at the end: it shows as still being written until its final write.
 						if (sent[index] === rendered && (running || outbound.liveMessages !== true)) return
-						yield* transport.edit(posted[index], group, phase)
+						yield* transport.edit(existing, group, phase)
 						sent[index] = rendered
 					}),
 				{ discard: true },

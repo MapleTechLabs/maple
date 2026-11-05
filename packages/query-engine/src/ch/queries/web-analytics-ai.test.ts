@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect, String as Str, Option } from "effect"
 import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
@@ -106,6 +106,7 @@ describe("AI traffic rows decode timestamps to DateTime.Utc", () => {
 			const [row] = yield* compiled.decodeRows([
 				{ bucket: "2026-09-19 00:00:00.000000000", product: "chatgpt", sessions: "3" },
 			])
+			assert.isDefined(row)
 			expect(DateTime.toEpochMillis(row.bucket)).toBe(Date.UTC(2026, 8, 19))
 		}),
 	)
@@ -123,6 +124,7 @@ describe("AI traffic rows decode timestamps to DateTime.Utc", () => {
 					lastSeen: "2026-09-20 08:00:00.500000000",
 				},
 			])
+			assert.isDefined(row)
 			expect(DateTime.formatIso(row.lastSeen)).toBe("2026-09-20T08:00:00.500Z")
 		}),
 	)

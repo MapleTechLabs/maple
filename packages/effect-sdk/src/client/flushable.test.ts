@@ -1,5 +1,5 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
-import { describe, it } from "@effect/vitest"
+import { assert, describe, it } from "@effect/vitest"
 import {
 	OTLP_KEEPALIVE_BYTES,
 	OTLP_UNLOAD_TAIL_BYTES,
@@ -77,8 +77,17 @@ const traceCalls = (calls: ReadonlyArray<FetchCall>) =>
 const spanNames = (calls: ReadonlyArray<FetchCall>): Array<string> =>
 	Arr.flatMap(traceCalls(calls), (c) =>
 		Arr.map(
-			(c.body as { resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }> })
-				.resourceSpans[0].scopeSpans[0].spans,
+			Arr.getUnsafe(
+				Arr.getUnsafe(
+					(
+						c.body as {
+							resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
+						}
+					).resourceSpans,
+					0,
+				).scopeSpans,
+				0,
+			).spans,
 			(span) => span.name,
 		),
 	)
@@ -180,8 +189,10 @@ describe("MapleFlush.make (client)", () => {
 				scopeSpans: Array<{ spans: Array<{ name: string }> }>
 			}>
 		}
-		expect(Arr.map(body.resourceSpans[0].scopeSpans[0].spans, (s) => s.name)).toEqual(["op-1"])
-		const attrs = body.resourceSpans[0].resource.attributes
+		expect(
+			Arr.map(Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0).scopeSpans, 0).spans, (s) => s.name),
+		).toEqual(["op-1"])
+		const attrs = Arr.getUnsafe(body.resourceSpans, 0).resource.attributes
 		const attrMap = Rec.fromEntries(Arr.map(attrs, (a) => [a.key, a.value.stringValue]))
 		expect(attrMap["service.name"]).toBe("unit-test")
 		expect(attrMap["maple.sdk.type"]).toBe("client")
@@ -300,13 +311,16 @@ describe("MapleFlush.make (client)", () => {
 		await telemetry.flush()
 
 		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
-		const attrs = (
-			traceCall.body as {
-				resourceSpans: Array<{
-					resource: { attributes: Array<{ key: string; value: { stringValue?: string } }> }
-				}>
-			}
-		).resourceSpans[0].resource.attributes
+		const attrs = Arr.getUnsafe(
+			(
+				traceCall.body as {
+					resourceSpans: Array<{
+						resource: { attributes: Array<{ key: string; value: { stringValue?: string } }> }
+					}>
+				}
+			).resourceSpans,
+			0,
+		).resource.attributes
 		const attrMap = Rec.fromEntries(Arr.map(attrs, (a) => [a.key, a.value.stringValue]))
 		expect(attrMap["user_agent.original"]).toBe("TestAgent/1.0")
 		expect(attrMap["browser.language"]).toBe("en-GB")
@@ -330,18 +344,30 @@ describe("MapleFlush.make (client)", () => {
 		await telemetry.flush()
 
 		expect(recordTraceId).toHaveBeenCalledTimes(1)
-		expect(recordTraceId.mock.calls[0][0]).toMatch(/^[0-9a-f]{32}$/i)
+		expect(Arr.getUnsafe(Arr.getUnsafe(recordTraceId.mock.calls, 0), 0)).toMatch(/^[0-9a-f]{32}$/i)
 
 		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
-		const span = (
-			traceCall.body as {
-				resourceSpans: Array<{
-					scopeSpans: Array<{
-						spans: Array<{ attributes: Array<{ key: string; value: { stringValue?: string } }> }>
-					}>
-				}>
-			}
-		).resourceSpans[0].scopeSpans[0].spans[0]
+		const span = Arr.getUnsafe(
+			Arr.getUnsafe(
+				Arr.getUnsafe(
+					(
+						traceCall.body as {
+							resourceSpans: Array<{
+								scopeSpans: Array<{
+									spans: Array<{
+										attributes: Array<{ key: string; value: { stringValue?: string } }>
+									}>
+								}>
+							}>
+						}
+					).resourceSpans,
+					0,
+				).scopeSpans,
+				0,
+			).spans,
+			0,
+		)
+		assert.isDefined(span)
 		const sessionAttr = Option.getOrThrow(Arr.findFirst(span.attributes, (a) => a.key === "session.id"))
 		expect(sessionAttr.value.stringValue).toBe("sess-123")
 	})
@@ -583,14 +609,14 @@ describe("MapleFlush.make (client)", () => {
 		await recordSpans(telemetry, numbered("big", 400))
 		await telemetry.flush()
 		expect(traceCalls(calls)).toHaveLength(1)
-		expect(traceCalls(calls)[0].bytes).toBeGreaterThan(OTLP_KEEPALIVE_BYTES)
+		expect(Arr.getUnsafe(traceCalls(calls), 0).bytes).toBeGreaterThan(OTLP_KEEPALIVE_BYTES)
 		// The browser would reject this body with keepalive set, whatever the server says.
-		expect(traceCalls(calls)[0].keepalive).toBe(false)
+		expect(Arr.getUnsafe(traceCalls(calls), 0).keepalive).toBe(false)
 
 		await recordSpans(telemetry, ["small"])
 		await telemetry.flush()
 		expect(traceCalls(calls)).toHaveLength(2)
-		expect(traceCalls(calls)[1].keepalive).toBe(true)
+		expect(Arr.getUnsafe(traceCalls(calls), 1).keepalive).toBe(true)
 		expect(spanNames(calls)).toHaveLength(401)
 	})
 
@@ -710,6 +736,8 @@ describe("MapleFlush.make (client)", () => {
 			"metrics",
 		])
 		const [newest, older] = traceCalls(calls)
+		assert.isDefined(older)
+		assert.isDefined(newest)
 		const tail = spanNames([newest])
 		expect(tail.length).toBeGreaterThan(1)
 		expect(tail).toEqual(names.slice(-tail.length))
@@ -765,7 +793,9 @@ describe("MapleFlush.make (client)", () => {
 		// Both newest-first bodies are full, the older parts are too large for what
 		// is left, and OTLP's share still holds the metrics snapshot.
 		const keepalive = Arr.filter(calls, (call) => call.keepalive === true)
-		expect(keepalive[0].bytes + keepalive[1].bytes).toBeGreaterThan(24 * 1024)
+		expect(Arr.getUnsafe(keepalive, 0).bytes + Arr.getUnsafe(keepalive, 1).bytes).toBeGreaterThan(
+			24 * 1024,
+		)
 		expect(Arr.reduce(keepalive, 0, (sum, call) => sum + call.bytes)).toBeLessThanOrEqual(
 			OTLP_KEEPALIVE_BYTES,
 		)
@@ -788,6 +818,8 @@ describe("MapleFlush.make (client)", () => {
 		dom.fire("pagehide")
 
 		const [newest, older] = traceCalls(calls)
+		assert.isDefined(older)
+		assert.isDefined(newest)
 		expect(newest.keepalive).toBe(true)
 		expect(newest.bytes).toBeLessThanOrEqual(OTLP_UNLOAD_TAIL_BYTES)
 		// A plain request issued at unload is often lost, so room that is left is used.
@@ -817,6 +849,9 @@ describe("MapleFlush.make (client)", () => {
 		dom.fire("pagehide")
 
 		const [inFlight, newest, older] = traceCalls(calls)
+		assert.isDefined(older)
+		assert.isDefined(newest)
+		assert.isDefined(inFlight)
 		expect(inFlight.keepalive).toBe(true)
 		// The newest spans take what is left of OTLP's share; the older ones go plain.
 		const tail = spanNames([newest])
@@ -852,7 +887,7 @@ describe("MapleFlush.make (client)", () => {
 
 		// Session bytes count against the shared total, not against OTLP's share.
 		expect(traceCalls(calls)).toHaveLength(1)
-		expect(traceCalls(calls)[0].keepalive).toBe(true)
+		expect(Arr.getUnsafe(traceCalls(calls), 0).keepalive).toBe(true)
 
 		inflight.resolveAll()
 		await sessionRows
@@ -1007,13 +1042,19 @@ describe("MapleFlush.make (client)", () => {
 					Arr.flatMap(
 						traceCalls(calls),
 						(c) =>
-							(
-								c.body as {
-									resourceSpans: Array<{
-										scopeSpans: Array<{ spans: Array<ExportedSpan> }>
-									}>
-								}
-							).resourceSpans[0].scopeSpans[0].spans,
+							Arr.getUnsafe(
+								Arr.getUnsafe(
+									(
+										c.body as {
+											resourceSpans: Array<{
+												scopeSpans: Array<{ spans: Array<ExportedSpan> }>
+											}>
+										}
+									).resourceSpans,
+									0,
+								).scopeSpans,
+								0,
+							).spans,
 					),
 					(span) => span.kind === 3 /* client */,
 				),

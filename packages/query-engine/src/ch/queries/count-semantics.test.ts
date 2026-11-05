@@ -47,7 +47,7 @@ function spanCountExpr(sql: string): string {
 }
 
 function sourceTable(sql: string): string {
-	const tables = Arr.map(Arr.fromIterable(Str.matchAll(/FROM (\w+)/g)(sql)), (m) => m[1])
+	const tables = Arr.map(Arr.fromIterable(Str.matchAll(/FROM (\w+)/g)(sql)), (m) => Arr.getUnsafe(m, 1))
 	// Union/CTE shapes read several tables; the invariant cares about the set.
 	return Arr.join([...new Set(tables)].sort(), "+")
 }

@@ -16,12 +16,14 @@ export const splitBlocks = (
 	blocks: ReadonlyArray<ChatBlock>,
 	maxChars: number,
 ): ReadonlyArray<ReadonlyArray<ChatBlock>> => {
-	const groups: Array<Array<ChatBlock>> = [[]]
+	let current: Array<ChatBlock> = []
+	const groups: Arr.NonEmptyArray<Array<ChatBlock>> = [current]
 	let used = 0
 
-	const open = () => groups[groups.length - 1]
+	const open = () => current
 	const next = () => {
-		groups.push([])
+		current = []
+		groups.push(current)
 		used = 0
 	}
 
@@ -47,7 +49,7 @@ export const splitBlocks = (
 		}
 	}
 
-	return groups[0].length === 0 ? [[]] : groups
+	return Arr.headNonEmpty(groups).length === 0 ? [[]] : groups
 }
 
 /**

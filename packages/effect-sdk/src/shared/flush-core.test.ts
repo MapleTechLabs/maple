@@ -124,10 +124,12 @@ describe("runFlush", () => {
 			const body = traceBodies[0] as {
 				resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
 			}
-			expect(Arr.map(body.resourceSpans[0].scopeSpans[0].spans, (span) => span.name)).toEqual([
-				"first",
-				"second",
-			])
+			expect(
+				Arr.map(
+					Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0).scopeSpans, 0).spans,
+					(span) => span.name,
+				),
+			).toEqual(["first", "second"])
 		}),
 	)
 
@@ -264,7 +266,12 @@ describe("runFlush", () => {
 									scopeSpans: Array<{ spans: Array<{ name: string }> }>
 								}>
 							}
-							sent.push(Arr.map(resourceSpans[0].scopeSpans[0].spans, (span) => span.name))
+							sent.push(
+								Arr.map(
+									Arr.getUnsafe(Arr.getUnsafe(resourceSpans, 0).scopeSpans, 0).spans,
+									(span) => span.name,
+								),
+							)
 							// The newest request fails last: completion order must not decide the restore order.
 							if (sent.length === 1) await new Promise((resolve) => setTimeout(resolve, 5))
 							throw new Error("collector unavailable")
@@ -334,9 +341,12 @@ describe("runFlush", () => {
 					}>
 				}>
 			}
-			const exported = body.resourceMetrics[0].scopeMetrics[0].metrics[0]
+			const exported = Arr.getUnsafe(
+				Arr.getUnsafe(Arr.getUnsafe(body.resourceMetrics, 0).scopeMetrics, 0).metrics,
+				0,
+			)
 			expect(exported.name).toBe("test.requests_total")
-			expect(exported.sum.dataPoints[0].asDouble).toBe(3)
+			expect(Arr.getUnsafe(exported.sum.dataPoints, 0).asDouble).toBe(3)
 		}),
 	)
 

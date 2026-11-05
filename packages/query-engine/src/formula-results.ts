@@ -52,9 +52,9 @@ function tokenizeFormula(expression: string): {
 
 	while (index < expression.length) {
 		tokenRegex.lastIndex = index
-		const match = tokenRegex.exec(expression)
+		const rawToken = tokenRegex.exec(expression)?.[1]
 
-		if (!match) {
+		if (rawToken === undefined) {
 			const remaining = Str.trim(Str.slice(index)(expression))
 			if (!remaining) {
 				break
@@ -67,7 +67,6 @@ function tokenizeFormula(expression: string): {
 		}
 
 		index = tokenRegex.lastIndex
-		const rawToken = match[1]
 
 		if (rawToken === "(") {
 			tokens.push({ type: "leftParen" })
@@ -193,6 +192,7 @@ function compileFormula(expression: string): {
 
 			while (operatorStack.length > 0) {
 				const top = operatorStack[operatorStack.length - 1]
+				if (top === undefined) break
 				if (top.type === "unary") {
 					emitTop()
 					continue
@@ -312,11 +312,11 @@ function evaluateCompiledFormula(
 		stack.push(left / right)
 	}
 
-	if (stack.length !== 1) {
+	const [value] = stack
+	if (stack.length !== 1 || value === undefined) {
 		return { value: null, error: "Invalid formula expression", reason: "other" }
 	}
 
-	const value = stack[0]
 	if (!Number.isFinite(value)) {
 		return { value: null, error: "Formula result is not finite", reason: "other" }
 	}
@@ -344,11 +344,11 @@ function aggregateByBucket(points: TimeseriesPoint[]): Map<string, number> {
 }
 
 function listIntersectedBuckets(bucketMaps: Map<string, number>[]): string[] {
-	if (bucketMaps.length === 0) {
+	const [first, ...rest] = bucketMaps
+	if (first === undefined) {
 		return []
 	}
 
-	const [first, ...rest] = bucketMaps
 	return Arr.filter([...first.keys()], (bucket) =>
 		Arr.every(rest, (bucketMap) => bucketMap.has(bucket)),
 	).sort()

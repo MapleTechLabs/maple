@@ -87,8 +87,8 @@ describe("runQuerySetWindow", () => {
 
 			assert.strictEqual(requests.length, 1)
 			assert.strictEqual(result.queryResults.length, 2)
-			assert.strictEqual(result.queryResults[0].status, "success")
-			assert.strictEqual(result.queryResults[1].status, "error")
+			assert.strictEqual(Arr.getUnsafe(result.queryResults, 0).status, "success")
+			assert.strictEqual(Arr.getUnsafe(result.queryResults, 1).status, "error")
 			// A build failure records a diagnostic with no spec, which is how a debug
 			// panel tells "never ran" apart from "ran and failed".
 			assert.isNull(
@@ -115,9 +115,9 @@ describe("runQuerySetWindow", () => {
 				...WINDOW,
 			})
 
-			assert.strictEqual(result.queryResults[0].status, "success")
-			assert.strictEqual(result.queryResults[1].status, "error")
-			assert.strictEqual(result.queryResults[1].error, "logs are down")
+			assert.strictEqual(Arr.getUnsafe(result.queryResults, 0).status, "success")
+			assert.strictEqual(Arr.getUnsafe(result.queryResults, 1).status, "error")
+			assert.strictEqual(Arr.getUnsafe(result.queryResults, 1).error, "logs are down")
 		}),
 	)
 
@@ -131,8 +131,8 @@ describe("runQuerySetWindow", () => {
 				...WINDOW,
 			})
 
-			assert.strictEqual(result.queryResults[0].status, "success")
-			assert.deepStrictEqual(result.queryResults[0].data, [])
+			assert.strictEqual(Arr.getUnsafe(result.queryResults, 0).status, "success")
+			assert.deepStrictEqual(Arr.getUnsafe(result.queryResults, 0).data, [])
 		}),
 	)
 
@@ -187,9 +187,12 @@ describe("runQuerySetWindow", () => {
 				fallback: LAB_EMPTY_RANGE_STRATEGY,
 			})
 
-			assert.strictEqual(result.queryResults[0].status, "success")
-			assert.isTrue(result.diagnostics[0].fallbackUsed)
-			assert.include(Arr.join(result.queryResults[0].warnings, " "), "used fallback window")
+			assert.strictEqual(Arr.getUnsafe(result.queryResults, 0).status, "success")
+			assert.isTrue(Arr.getUnsafe(result.diagnostics, 0).fallbackUsed)
+			assert.include(
+				Arr.join(Arr.getUnsafe(result.queryResults, 0).warnings, " "),
+				"used fallback window",
+			)
 		}),
 	)
 
@@ -205,8 +208,8 @@ describe("runQuerySetWindow", () => {
 			})
 
 			assert.strictEqual(requests.length, 1)
-			assert.strictEqual(result.queryResults[0].status, "error")
-			assert.strictEqual(result.queryResults[0].error, "boom")
+			assert.strictEqual(Arr.getUnsafe(result.queryResults, 0).status, "error")
+			assert.strictEqual(Arr.getUnsafe(result.queryResults, 0).error, "boom")
 		}),
 	)
 })

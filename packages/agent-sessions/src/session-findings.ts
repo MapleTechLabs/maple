@@ -169,14 +169,15 @@ function failureFindings(
 		{
 			kind: SessionFailureKind
 			tool: string | undefined
-			members: { span: AiSessionSpan; turnIndex: number }[]
+			members: Arr.NonEmptyArray<{ span: AiSessionSpan; turnIndex: number }>
 		}
 	>()
 	for (const event of events) {
-		const turnIndex = turnIndexBySpan.get(event.span.spanId) ?? 0
-		const group = byLabel.get(event.label) ?? { kind: event.kind, tool: event.tool, members: [] }
-		group.members.push({ span: event.span, turnIndex })
-		byLabel.set(event.label, group)
+		const member = { span: event.span, turnIndex: turnIndexBySpan.get(event.span.spanId) ?? 0 }
+		const group = byLabel.get(event.label)
+		if (group === undefined)
+			byLabel.set(event.label, { kind: event.kind, tool: event.tool, members: [member] })
+		else group.members.push(member)
 	}
 
 	return Arr.map([...byLabel], ([label, group]) => {
@@ -188,7 +189,8 @@ function failureFindings(
 				? Option.none()
 				: Arr.findFirst(group.members, (member) => member.span.spanId === causeSpanId)
 		const terminal = Option.isSome(cause)
-		const linked = Option.getOrElse(cause, () => group.members[0])
+		const first = Arr.headNonEmpty(group.members)
+		const linked = Option.getOrElse(cause, () => first)
 		return {
 			id: `failure:${label}`,
 			kind: group.kind,
@@ -205,7 +207,7 @@ function failureFindings(
 					label,
 				),
 			spanId: linked.span.spanId,
-			atMs: spanStartMs(group.members[0].span),
+			atMs: spanStartMs(first.span),
 		}
 	})
 }
@@ -390,8 +392,9 @@ function stallFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 /** `Turn 4 (final)`, `Turns 9, 11`, `Segments 1, 2`, `6 of 14 turns`. */
 function turnListText(indices: readonly number[], turns: readonly SessionTurn[], terminal: boolean): string {
 	const word = turns[0]?.anchorKind === "trace" ? "Segment" : "Turn"
-	if (indices.length === 1) {
-		const one = `${word} ${turns[indices[0]]?.index ?? indices[0] + 1}`
+	const [only] = indices
+	if (indices.length === 1 && only !== undefined) {
+		const one = `${word} ${turns[only]?.index ?? only + 1}`
 		return terminal ? `${one} (final)` : one
 	}
 	if (indices.length > 4) return `${indices.length} of ${turns.length} ${Str.toLowerCase(word)}s`

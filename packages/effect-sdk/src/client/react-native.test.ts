@@ -101,11 +101,13 @@ describe("React Native client telemetry", () => {
 				),
 			)
 			expect(Arr.map(spans, (span) => span.name)).toEqual(["native-span", "anonymous-span"])
-			expect(spans[0].attributes).toContainEqual({
+			expect(Arr.getUnsafe(spans, 0).attributes).toContainEqual({
 				key: "user.id",
 				value: { stringValue: "native-user" },
 			})
-			expect(Arr.some(spans[1].attributes, (attribute) => attribute.key === "user.id")).toBe(false)
+			expect(
+				Arr.some(Arr.getUnsafe(spans, 1).attributes, (attribute) => attribute.key === "user.id"),
+			).toBe(false)
 			expect(
 				Arr.every(spans, (span) =>
 					Arr.every(span.attributes, (attribute) => attribute.key !== "session.id"),

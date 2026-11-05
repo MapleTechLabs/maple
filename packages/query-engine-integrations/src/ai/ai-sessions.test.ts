@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 import { Effect, Array as Arr, String as Str, Option } from "effect"
 import {
 	compileUnsafe,
@@ -728,6 +728,7 @@ describe("aiSessionDetailsQuery", () => {
 	it("reads the index over the page's bounds and the spans over one slice of them", () => {
 		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), listParams)
 		const [fanOut, rest] = Str.split("TraceId IN (SELECT")(sql)
+		assert.isDefined(rest)
 		const [detection, traceIndexBounds] = Str.split("AND trace_index.Bucket >=")(rest)
 
 		// `traces` is PARTITION BY toDate(Timestamp), so this predicate

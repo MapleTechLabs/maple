@@ -46,9 +46,10 @@ function pickBucketColumn(columns: ReadonlyArray<string>, firstRow: Record<strin
 export function toLineChartRows(
 	rows: ReadonlyArray<Record<string, unknown>>,
 ): Array<Record<string, string | number>> {
-	if (rows.length === 0) return []
-	const columns = Rec.keys(rows[0])
-	const bucketCol = pickBucketColumn(columns, rows[0])
+	const [first] = rows
+	if (first === undefined) return []
+	const columns = Rec.keys(first)
+	const bucketCol = pickBucketColumn(columns, first)
 	if (!bucketCol) {
 		// Couldn't infer a time axis — return rows untouched so the user can debug
 		// in the table view. The chart renderer will simply render an empty plot.

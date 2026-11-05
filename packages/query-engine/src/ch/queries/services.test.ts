@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 import { DateTime, Effect, Array as Arr, String as Str } from "effect"
 import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
@@ -206,10 +206,11 @@ describe("serviceOverviewQuery", () => {
 				},
 			]),
 		)
+		assert.isDefined(decoded)
 		expect(decoded.estimatedSpanCount).toBe(200)
 		expect(decoded.p95LatencyMs).toBe(42)
 		expect(decoded.commits).toHaveLength(2)
-		const [sha, spans, errors, firstSeen] = decoded.commits[0]
+		const [sha, spans, errors, firstSeen] = Arr.getUnsafe(decoded.commits, 0)
 		expect([sha, spans, errors, DateTime.formatIso(firstSeen)]).toEqual([
 			"abc123",
 			80,
@@ -361,6 +362,7 @@ describe("serviceApdexTimeseriesQuery", () => {
 				},
 			]),
 		)
+		assert.isDefined(decoded)
 		expect(decoded.totalCount).toBe(100)
 		expect(decoded.apdexScore).toBe(0.85)
 	})

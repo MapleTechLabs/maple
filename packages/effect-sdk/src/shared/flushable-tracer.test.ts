@@ -279,10 +279,11 @@ describe("makeSpanBuffer rendered 5xx responses", () => {
 				Effect.ignore,
 			)
 			const [span] = buffer.drain()
+			assert.isDefined(span)
 			assert.strictEqual(span.status.message, "HTTP 500 (GET /api/sync/shape)")
 			const exceptions = Arr.filter(span.events, (event) => event.name === "exception")
 			assert.strictEqual(exceptions.length, 1)
-			assert.deepStrictEqual(attributeOf(exceptions[0], "exception.type"), {
+			assert.deepStrictEqual(attributeOf(Arr.getUnsafe(exceptions, 0), "exception.type"), {
 				stringValue: "HttpServerErrorResponse",
 			})
 		}),
@@ -349,10 +350,11 @@ describe("makeSpanBuffer rendered 5xx responses", () => {
 				Effect.provide(buffer.tracerLayer),
 			)
 			const [span] = buffer.drain()
+			assert.isDefined(span)
 			assert.strictEqual(span.status.code, 2 /* Error */)
 			const exceptions = Arr.filter(span.events, (event) => event.name === "exception")
 			assert.strictEqual(exceptions.length, 1)
-			assert.deepStrictEqual(attributeOf(exceptions[0], "exception.type"), {
+			assert.deepStrictEqual(attributeOf(Arr.getUnsafe(exceptions, 0), "exception.type"), {
 				stringValue: "WarehouseQueryError",
 			})
 		}),
@@ -552,7 +554,8 @@ describe("makeSpanBuffer captureException", () => {
 		})
 
 		const [span] = buffer.drain()
-		assert.strictEqual(span?.name, "browser.uncaught_error")
+		assert.isDefined(span)
+		assert.strictEqual(span.name, "browser.uncaught_error")
 		assert.deepStrictEqual(attributeOf(span, "maple.exception.source"), {
 			stringValue: "window.onerror",
 		})
@@ -645,7 +648,7 @@ describe("makeSpanBuffer span dropping", () => {
 			)
 			const spans = buffer.drain()
 			assert.strictEqual(spans.length, 1)
-			assert.deepStrictEqual(attributeOf(spans[0], "queue.empty"), { boolValue: false })
+			assert.deepStrictEqual(attributeOf(Arr.getUnsafe(spans, 0), "queue.empty"), { boolValue: false })
 		}),
 	)
 })
@@ -677,6 +680,7 @@ describe("makeSpanBuffer anticipated-error predicate and 5xx precedence", () => 
 				Effect.exit,
 			)
 			const [span] = buffer.drain()
+			assert.isDefined(span)
 			assert.strictEqual(span.status.code, 2 /* Error */)
 			assert.deepStrictEqual(
 				attributeOf(
@@ -694,7 +698,10 @@ describe("makeSpanBuffer anticipated-error predicate and 5xx precedence", () => 
 			const stacktrace = (buffer: ReturnType<typeof makeSpanBuffer>) =>
 				attributeOf(
 					Option.getOrThrow(
-						Arr.findFirst(buffer.drain()[0].events, (event) => event.name === "exception"),
+						Arr.findFirst(
+							Arr.getUnsafe(buffer.drain(), 0).events,
+							(event) => event.name === "exception",
+						),
 					),
 					"exception.stacktrace",
 				)?.stringValue

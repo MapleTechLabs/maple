@@ -168,8 +168,8 @@ describe("pointsToBuckets", () => {
 		]
 		const buckets = pointsToBuckets(points, bucketMs, flux)
 		expect(Arr.map(buckets, (b) => b.startMs)).toEqual([0, MIN])
-		expect(buckets[0].points).toHaveLength(1)
-		expect(buckets[1].points).toHaveLength(1)
+		expect(Arr.getUnsafe(buckets, 0).points).toHaveLength(1)
+		expect(Arr.getUnsafe(buckets, 1).points).toHaveLength(1)
 	})
 
 	it("skips points with an unparseable bucket timestamp", () => {
@@ -179,7 +179,7 @@ describe("pointsToBuckets", () => {
 		]
 		const buckets = pointsToBuckets(points, MIN, FAR_FUTURE_FLUX)
 		expect(buckets).toHaveLength(1)
-		expect(buckets[0].points).toHaveLength(1)
+		expect(Arr.getUnsafe(buckets, 0).points).toHaveLength(1)
 	})
 })
 
@@ -196,7 +196,7 @@ describe("mergeAndDeduplicateBuckets", () => {
 		const fresh = [bucket(0, MIN, [point("1970-01-01T00:00:00.000Z", { fresh: 2 })])]
 		const merged = mergeAndDeduplicateBuckets(existing, fresh)
 		expect(merged).toHaveLength(1)
-		expect(merged[0].points[0].series).toEqual({ fresh: 2 })
+		expect(Arr.getUnsafe(Arr.getUnsafe(merged, 0).points, 0).series).toEqual({ fresh: 2 })
 	})
 })
 
@@ -524,8 +524,8 @@ describe("BucketCacheService.getOrComputeBuckets", () => {
 			const second = yield* svc.getOrComputeBuckets({ ...base, bucketSeconds: 180 }, makeCompute(180))
 
 			assert.strictEqual(computeCalls.length, 2)
-			assert.strictEqual(computeCalls[0].bucketSeconds, 60)
-			assert.strictEqual(computeCalls[1].bucketSeconds, 180)
+			assert.strictEqual(Arr.getUnsafe(computeCalls, 0).bucketSeconds, 60)
+			assert.strictEqual(Arr.getUnsafe(computeCalls, 1).bucketSeconds, 180)
 			assert.isTrue(second.bucketsMissed > 0)
 		}).pipe(Effect.provide(BucketTestLive))
 	})
@@ -695,7 +695,7 @@ describe("BucketCacheService.getOrComputeBuckets", () => {
 			// cold under sustained timeouts.
 			assert.strictEqual(writes.length, 1)
 			assert.deepStrictEqual(
-				Arr.map(writes[0].buckets, (b) => b.startMs),
+				Arr.map(Arr.getUnsafe(writes, 0).buckets, (b) => b.startMs),
 				[0, MIN],
 			)
 		}).pipe(Effect.provide(makeBucketTestLive(backend, makeConfig(), 10)), Effect.timeout(200))

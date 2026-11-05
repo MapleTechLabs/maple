@@ -106,7 +106,7 @@ describe("standalone session emission (client)", () => {
 		// postSessionMetaRow is fire-and-forget; let the microtask run.
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		expect(metaPosts.length).toBe(1)
-		const row = metaPosts[0].row
+		const row = Arr.getUnsafe(metaPosts, 0).row
 		const stored = JSON.parse(store.get("maple.session")!)
 		expect(row.session_id).toBe(stored.id)
 		expect(row.status).toBe("active")
@@ -133,7 +133,7 @@ describe("standalone session emission (client)", () => {
 		make(baseConfig)
 
 		await new Promise((resolve) => setTimeout(resolve, 0))
-		expect(metaPosts[0].row.user_id).toBe("")
+		expect(Arr.getUnsafe(metaPosts, 0).row.user_id).toBe("")
 	})
 
 	it("keeps persisted click/error totals and adds live capture deltas", async () => {
@@ -247,7 +247,7 @@ describe("standalone session emission (client)", () => {
 
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		expect(Arr.map(metaPosts, (post) => post.row.status)).toEqual(["active"])
-		expect(metaPosts[0].authorization).toBeNull()
+		expect(Arr.getUnsafe(metaPosts, 0).authorization).toBeNull()
 	})
 
 	it("attaches observed trace ids to the ended row and rotates sessions", async () => {

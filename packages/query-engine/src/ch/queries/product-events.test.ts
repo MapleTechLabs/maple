@@ -219,7 +219,7 @@ describe("productEventsFunnelQuery", () => {
 		expect(
 			rejection(
 				productEventsFunnelQuery({
-					steps: [STEPS[0], REFERRAL],
+					steps: [Arr.getUnsafe(STEPS, 0), REFERRAL],
 					keyBy: "person",
 					windowSeconds: 60,
 				}),
@@ -231,7 +231,7 @@ describe("productEventsFunnelQuery", () => {
 		expect(
 			rejection(
 				productEventsFunnelQuery({
-					steps: Array.from({ length: 11 }, () => STEPS[1]),
+					steps: Array.from({ length: 11 }, () => Arr.getUnsafe(STEPS, 1)),
 					keyBy: "person",
 					windowSeconds: 60,
 				}),
@@ -419,7 +419,7 @@ describe("funnel drop-off details", () => {
 	})
 
 	it("need two steps — there is no 'between' with one", () => {
-		const one = [STEPS[0]]
+		const one = [Arr.getUnsafe(STEPS, 0)]
 		expect(
 			rejection(productEventsFunnelTimingQuery({ steps: one, keyBy: "person", windowSeconds: 60 })),
 		).toBeInstanceOf(ProductEventsFunnelError)

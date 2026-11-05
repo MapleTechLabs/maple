@@ -141,8 +141,11 @@ const predicatesMatch = (
 	actual.length === a.length &&
 	a.length === b.length &&
 	Arr.every(a, ([key, operator], i) => {
-		const [actualKey, actualOperator] = actual[i]
-		return actualOperator === operator && (actualKey === key || key !== b[i][0])
+		const actualPredicate = actual[i]
+		const expected = b[i]
+		if (actualPredicate === undefined || expected === undefined) return false
+		const [actualKey, actualOperator] = actualPredicate
+		return actualOperator === operator && (actualKey === key || key !== expected[0])
 	})
 
 /**
@@ -163,7 +166,15 @@ const keepsClausePredicates = (clause: string, values: VariableValues): boolean 
 		predicatesMatch(actual.clauses, a.clauses, b.clauses) &&
 		actual.groups.length === a.groups.length &&
 		a.groups.length === b.groups.length &&
-		Arr.every(a.groups, (group, i) => predicatesMatch(actual.groups[i], group, b.groups[i]))
+		Arr.every(a.groups, (group, i) => {
+			const actualGroup = actual.groups[i]
+			const expectedGroup = b.groups[i]
+			return (
+				actualGroup !== undefined &&
+				expectedGroup !== undefined &&
+				predicatesMatch(actualGroup, group, expectedGroup)
+			)
+		})
 	)
 }
 

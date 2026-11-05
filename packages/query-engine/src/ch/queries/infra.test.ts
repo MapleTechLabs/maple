@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect, Record as Rec, Array as Arr, String as Str } from "effect"
 import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
@@ -605,6 +605,7 @@ describe("infra rows decode timestamps to DateTime.Utc", () => {
 					load15: 1,
 				},
 			])
+			assert.isDefined(row)
 			expect(DateTime.formatIso(row.lastSeen)).toBe("2024-01-01T10:00:00.123Z")
 		}),
 	)
@@ -618,6 +619,7 @@ describe("infra rows decode timestamps to DateTime.Utc", () => {
 			const [row] = yield* compiled.decodeRows([
 				{ bucket: "2024-01-01 10:00:00.000000000", attributeValue: "", avgValue: 1 },
 			])
+			assert.isDefined(row)
 			expect(DateTime.toEpochMillis(row.bucket)).toBe(Date.UTC(2024, 0, 1, 10))
 		}),
 	)

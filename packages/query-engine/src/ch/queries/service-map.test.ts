@@ -828,6 +828,6 @@ describe("serviceDbQuerySpansQuery", () => {
 			serviceName: "orders-api",
 			durationMs: 812.5,
 		})
-		expect(DateTime.formatIso(rows[0].timestamp)).toBe("2024-01-01T10:00:00.123Z")
+		expect(DateTime.formatIso(Arr.getUnsafe(rows, 0).timestamp)).toBe("2024-01-01T10:00:00.123Z")
 	})
 })

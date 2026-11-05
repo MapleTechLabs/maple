@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect, Record as Rec } from "effect"
 import { compile, compileUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
@@ -600,6 +600,7 @@ describe("metric rows decode buckets to DateTime.Utc", () => {
 			const query = yield* compiled
 			expect(query.rowSchemaSource).not.toBe("none")
 			const [row] = yield* query.decodeRows([wire])
+			assert.isDefined(row)
 			return row.bucket
 		})
 

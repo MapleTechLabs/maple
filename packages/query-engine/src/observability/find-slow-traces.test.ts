@@ -110,6 +110,7 @@ describe("findSlowTraces", () => {
 
 			assert.strictEqual(output.traces.length, 1)
 			const trace = output.traces[0]
+			assert.isDefined(trace)
 			assert.strictEqual(trace.traceId, "trace-abc")
 			assert.strictEqual(trace.spanId, null)
 			assert.strictEqual(trace.spanName, "GET /api/users")

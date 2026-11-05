@@ -2,7 +2,7 @@
  * The transport against a stubbed HTTP client: the requests Hazel's bot API expects, a turn streamed
  * through a message's live state, a 429 waited out, and the conversation a mention opens.
  */
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import { Array as Arr, Duration, Effect, Fiber, Layer, Option, String as Str } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import { TestClock } from "effect/testing"
@@ -34,6 +34,7 @@ const stub = (routes: ReadonlyArray<readonly [string, Reply | ReadonlyArray<Repl
 		const index = counts.get(prefix) ?? 0
 		counts.set(prefix, index + 1)
 		const reply = list[Math.min(index, list.length - 1)]
+		assert.isDefined(reply)
 		return Effect.succeed(
 			HttpClientResponse.fromWeb(request, new Response(reply.body, { status: reply.status })),
 		)

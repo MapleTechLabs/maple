@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect, Array as Arr, String as Str } from "effect"
 import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
@@ -303,6 +303,7 @@ describe("container rows decode timestamps to DateTime.Utc", () => {
 					uptimeSeconds: 60,
 				},
 			])
+			assert.isDefined(row)
 			expect(DateTime.formatIso(row.firstSeen)).toBe("2024-01-01T09:00:00.000Z")
 			expect(DateTime.formatIso(row.lastSeen)).toBe("2024-01-01T10:00:00.500Z")
 		}),

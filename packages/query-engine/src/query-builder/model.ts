@@ -90,7 +90,7 @@ export interface BuildSpecResult {
 
 export const AGGREGATIONS_BY_SOURCE: Record<
 	QueryBuilderDataSource,
-	Array<{ label: string; value: string }>
+	Arr.NonEmptyArray<{ label: string; value: string }>
 > = {
 	traces: [
 		{ label: "count", value: "count" },
@@ -119,7 +119,7 @@ export const AGGREGATIONS_BY_SOURCE: Record<
 		{ label: "uniq(users)", value: "users" },
 		{ label: "uniq(visitors)", value: "visitors" },
 	],
-} satisfies Record<QueryBuilderDataSource, Array<{ label: string; value: string }>>
+} satisfies Record<QueryBuilderDataSource, Arr.NonEmptyArray<{ label: string; value: string }>>
 
 /**
  * The aggregations legal on traces when `valueField` names a numeric span
@@ -239,7 +239,7 @@ export const GROUP_BY_OPTIONS: Record<QueryBuilderDataSource, Array<{ label: str
 const QUERY_BADGE_COLORS = ["bg-chart-1", "bg-chart-2", "bg-chart-4", "bg-chart-5", "bg-chart-3"] as const
 
 export function queryBadgeColor(index: number): string {
-	return QUERY_BADGE_COLORS[index % QUERY_BADGE_COLORS.length]
+	return QUERY_BADGE_COLORS[index % QUERY_BADGE_COLORS.length] ?? QUERY_BADGE_COLORS[0]
 }
 
 function defaultWhereClause(): string {
@@ -315,7 +315,7 @@ export function resetQueryForDataSource(
 		enabled: query.enabled,
 		hidden: query.hidden,
 		whereClause: query.whereClause,
-		aggregation: AGGREGATIONS_BY_SOURCE[dataSource][0].value,
+		aggregation: Arr.headNonEmpty(AGGREGATIONS_BY_SOURCE[dataSource]).value,
 		stepInterval: query.stepInterval,
 		orderByDirection: query.orderByDirection,
 		addOns: query.addOns,
@@ -353,7 +353,7 @@ function parseBucketSeconds(raw: string): number | undefined {
 	}
 	const shorthand = shorthandMatch.value
 
-	const amount = Number.parseInt(shorthand[1], 10)
+	const amount = Number.parseInt(shorthand[1] ?? "", 10)
 	if (!Number.isFinite(amount) || amount <= 0) {
 		return undefined
 	}

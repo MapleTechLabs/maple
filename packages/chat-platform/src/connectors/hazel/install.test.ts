@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import { Effect, Layer, Redacted, Record as Rec } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import type { ChatConnectorConfig } from "../../install"
@@ -6,6 +6,7 @@ import { BOT_ID_CONFIG, BOT_TOKEN_CONFIG, REGION_CONFIG } from "./api"
 import { isConnectorConfigured } from "../../index"
 import { hazel } from "./index"
 import { hazelInstall, hazelInstallUrl, hazelRedirectUri } from "./install"
+import * as Arr from "effect/Array"
 
 const config: ChatConnectorConfig = new Map([
 	[BOT_ID_CONFIG, Redacted.make("bot-1")],
@@ -74,7 +75,10 @@ describe("hazel install", () => {
 				params: new URLSearchParams({ code: "org-1.secret", state: "nonce", hazel_region: "eu" }),
 				redirectUri,
 			})
-			expect(sentBody(http.seen[0])).toEqual({ code: "org-1.secret", redirectUri: regionalUri })
+			expect(sentBody(Arr.getUnsafe(http.seen, 0))).toEqual({
+				code: "org-1.secret",
+				redirectUri: regionalUri,
+			})
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -99,6 +103,7 @@ describe("hazel install", () => {
 			})
 			expect(result).toEqual({ externalWorkspaceId: "org-1", name: "Acme" })
 			const [request] = http.seen
+			assert.isDefined(request)
 			expect(request?.url).toBe("https://api.hazel.sh/api/v1/bot-installs/token")
 			expect(request?.headers["authorization"]).toBe("Bearer hzl_bot_token")
 			expect(sentBody(request)).toEqual({ code: "org-1.secret", redirectUri })
@@ -110,6 +115,7 @@ describe("hazel install", () => {
 		return Effect.gen(function* () {
 			yield* hazelInstall.complete({ config, params: new URLSearchParams({ code: "c" }), redirectUri })
 			const [, settings] = http.seen
+			assert.isDefined(settings)
 			expect(settings?.method).toBe("PATCH")
 			expect(settings?.url).toBe("https://api.hazel.sh/bot-commands/settings")
 			expect(settings?.headers["authorization"]).toBe("Bearer hzl_bot_token")

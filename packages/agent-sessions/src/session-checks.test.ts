@@ -115,7 +115,7 @@ describe("buildSessionChecks", () => {
 		expect(report.verdict.status).toBe("failed")
 		expect(report.headline).toBe("the final turn died on the context window")
 		// The cause leads the list; the outcome is the headline, not a row.
-		expect(report.checks[0].id).toBe("context-window")
+		expect(Arr.getUnsafe(report.checks, 0).id).toBe("context-window")
 
 		const context = byId(report, "context-window")
 		expect(context.status).toBe("failed")
@@ -163,7 +163,7 @@ describe("buildSessionChecks", () => {
 		expect(limits.status).toBe("warning")
 		expect(limits.headline).toBe("1 model call was rate-limited on turn 2; the session carried on")
 		expect(limits.fixArea).toBe("provider")
-		expect(report.checks[0].id).toBe("rate-limits")
+		expect(Arr.getUnsafe(report.checks, 0).id).toBe("rate-limits")
 	})
 
 	// A tool that cannot run needs fixing whether or not the run survived it,
@@ -635,11 +635,11 @@ describe("buildSessionChecks", () => {
 
 		expect(report.verdict.status).toBe("failed")
 		expect(report.headline).toBe("the final turn died on `fetch_docs` timing out")
-		expect(report.checks[0].id).toBe("tool-timeouts")
-		expect(report.checks[0].headline).toBe(
+		expect(Arr.getUnsafe(report.checks, 0).id).toBe("tool-timeouts")
+		expect(Arr.getUnsafe(report.checks, 0).headline).toBe(
 			"`fetch_docs` timed out once on turn 2 (final): deadline exceeded after 8s",
 		)
-		expect(report.checks[0].fixArea).toBe("tool")
+		expect(Arr.getUnsafe(report.checks, 0).fixArea).toBe("tool")
 	})
 
 	it("names three findings and counts the rest", () => {

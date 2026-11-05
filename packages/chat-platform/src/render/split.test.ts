@@ -53,7 +53,7 @@ describe("cutMarkdown", () => {
 		expect(chunks.length).toBeGreaterThan(1)
 		// Unclosed fences render the rest of a message as code on every platform that has them.
 		for (const chunk of chunks) expect(countFences(chunk) % 2).toBe(0)
-		expect(Str.startsWith("```ts")(chunks[1])).toBe(true)
+		expect(Str.startsWith("```ts")(Arr.getUnsafe(chunks, 1))).toBe(true)
 	})
 
 	/**

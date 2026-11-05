@@ -145,7 +145,7 @@ export function langGraphThreadSpans(prompts: readonly string[]): readonly AiSes
 				durationMs: 3_000,
 				vendorId: "langchain",
 				agentName: "ReAct Agent",
-				genAi: turn === 0 ? {} : { inputMessages: [user(prompts[0])] },
+				genAi: turn === 0 ? {} : { inputMessages: [user(Arr.getUnsafe(prompts, 0))] },
 			}),
 			makeSpan({
 				spanId: `call-model-${turn + 1}`,
