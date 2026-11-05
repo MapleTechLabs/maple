@@ -55,10 +55,7 @@ jobs:
         env:
             PR_NUMBER: ${{ github.event.pull_request.number }}
             HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-            # Same caps and web-only test as deploy-pr-preview.yml, so a preview the deploy
-            # refuses gets no branch either.
-            MAX_LIVE_PREVIEWS: 3
-            MAX_TOTAL_PREVIEWS: 8
+            # Same web-only test as deploy-pr-preview.yml, for the shared caps check.
             WEB_ONLY: >-
                 ${{ contains(github.event.pull_request.labels.*.name, 'preview:web')
                 && !contains(github.event.pull_request.labels.*.name, 'preview') && '1' || '' }}
@@ -72,25 +69,21 @@ jobs:
                         && !contains(github.event.pull_request.labels.*.name, 'preview:web')))
                 && 'true' || 'false' }}
         steps:
-            - name: Check the live preview caps
-              id: caps
-              if: ${{ env.TEARDOWN != 'true' }}
-              env:
-                  GH_TOKEN: ${{ github.token }}
-              run: |
-                  list() { gh pr list --repo "$GITHUB_REPOSITORY" --state open --label "$1" --limit 200 --json number --jq '.[].number'; }
-                  full=$(list preview | wc -l | tr -d ' ')
-                  total=$({ list preview; list preview:web; } | sort -u | wc -l | tr -d ' ')
-                  if { [ "$WEB_ONLY" != "1" ] && [ "$full" -gt "$MAX_LIVE_PREVIEWS" ]; } || [ "$total" -gt "$MAX_TOTAL_PREVIEWS" ]; then
-                    echo "::notice::Over the preview caps ($full full, $total total); the deploy refuses this one, so no branch is created."
-                    echo "over=true" >> "$GITHUB_OUTPUT"
-                  fi
-
             # The base branch (main), never the PR head.
             - name: Checkout main
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
               with:
                   persist-credentials: false
+
+            # The same caps the deploy job refuses a preview over (main's copy of the action),
+            # so a refused preview gets no branch either.
+            - name: Check the live preview caps
+              id: caps
+              if: ${{ env.TEARDOWN != 'true' }}
+              uses: ./.github/actions/preview-caps
+              with:
+                  web-only: ${{ env.WEB_ONLY }}
+                  github-token: ${{ github.token }}
 
             - name: Install uv
               uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
