@@ -165,8 +165,8 @@ export const userIssueTotals = (
 	row: CH.UserIssueTotalsOutput | undefined,
 	resolvedIssues: number,
 ): UserIssueTotals => {
-	const fingerprints = row?.fingerprints ?? 0
-	return { hits: row?.hits ?? 0, issues: fingerprints > USER_ISSUES_LIMIT ? fingerprints : resolvedIssues }
+	const errorGroups = row?.errorGroups ?? 0
+	return { hits: row?.hits ?? 0, issues: errorGroups > USER_ISSUES_LIMIT ? errorGroups : resolvedIssues }
 }
 
 /** The uncapped totals row; `None` where `error_events` predates `UserId`. */

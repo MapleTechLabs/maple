@@ -222,11 +222,11 @@ describe("affectedUsersResponse", () => {
 
 describe("userIssueTotals", () => {
 	it("counts every hit and the resolved issues while the list holds every fingerprint", () => {
-		expect(userIssueTotals({ hits: 412, fingerprints: 3 }, 2)).toEqual({ hits: 412, issues: 2 })
+		expect(userIssueTotals({ hits: 412, errorGroups: 3 }, 2)).toEqual({ hits: 412, issues: 2 })
 	})
 
 	it("counts the distinct fingerprints once the list is capped", () => {
-		expect(userIssueTotals({ hits: 9_000, fingerprints: 340 }, 100)).toEqual({
+		expect(userIssueTotals({ hits: 9_000, errorGroups: 340 }, 100)).toEqual({
 			hits: 9_000,
 			issues: 340,
 		})
