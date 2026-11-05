@@ -91,7 +91,10 @@ describe("planHourShards — per-part physical offset ranges (no ORDER BY)", () 
 		const parts = [{ part: "p1", offsetMin: 0, offsetMax: 99, matchingRows: 100 }]
 		const plans = planHourShards(12, parts, settings())
 		deepStrictEqual(plans.length, 1)
-		deepStrictEqual([plans[0].range.offsetLo, plans[0].range.offsetHiExclusive], [0, 100])
+		deepStrictEqual(
+			[Arr.getUnsafe(plans, 0).range.offsetLo, Arr.getUnsafe(plans, 0).range.offsetHiExclusive],
+			[0, 100],
+		)
 	})
 
 	it("handles multiple parts, paging each independently", () => {
@@ -160,7 +163,7 @@ const manifestWith = (
 describe("shard time evidence — UTC nanoseconds, host-timezone-independent (round 5)", () => {
 	it("accepts a valid in-range shard bound", () => {
 		const parsed = parseArchiveGenerationManifest(manifestWith({}), "traces", "2026-06-29")
-		strictEqual(parsed.shards[0].minEventTimeUnixNano, nano("2026-06-29T12:00:00.000Z"))
+		strictEqual(Arr.getUnsafe(parsed.shards, 0).minEventTimeUnixNano, nano("2026-06-29T12:00:00.000Z"))
 	})
 
 	it("accepts a valid 23:30 UTC late-day bound (the round-4 timezone defect)", () => {
@@ -176,7 +179,7 @@ describe("shard time evidence — UTC nanoseconds, host-timezone-independent (ro
 			"traces",
 			"2026-06-29",
 		)
-		strictEqual(parsed.shards[0].maxEventTimeUnixNano, nano("2026-06-29T23:30:00.000Z"))
+		strictEqual(Arr.getUnsafe(parsed.shards, 0).maxEventTimeUnixNano, nano("2026-06-29T23:30:00.000Z"))
 	})
 
 	it("rejects an out-of-range (2027) shard bound", () => {
@@ -211,7 +214,7 @@ describe("shard time evidence — UTC nanoseconds, host-timezone-independent (ro
 
 	it("rejects a missing complexDigestAlgorithm (round 5 manifest field)", () => {
 		const m = manifestWith({})
-		delete (m.shards as Array<Record<string, unknown>>)[0].complexDigestAlgorithm
+		delete Arr.getUnsafe(m.shards as Array<Record<string, unknown>>, 0).complexDigestAlgorithm
 		throws(() => parseArchiveGenerationManifest(m, "traces", "2026-06-29"), /complexDigestAlgorithm/)
 	})
 

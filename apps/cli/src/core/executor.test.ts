@@ -5,6 +5,7 @@ import { Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { rawCompiledQuery } from "@maple/query-engine/ch"
 import { makeLocalWarehouseExecutorApi } from "./executor"
+import * as Arr from "effect/Array"
 
 // The local executor is the REAL makeWarehouseExecutor wired to the `chdb`
 // backend — these tests pin the wiring: SQL normalization for the local
@@ -56,11 +57,11 @@ describe("makeLocalWarehouseExecutorApi", () => {
 
 			expect(rows).toEqual([{ c: 1 }])
 			expect(requests).toHaveLength(1)
-			expect(requests[0].url).toBe(`${BASE_URL}/local/query`)
+			expect(Arr.getUnsafe(requests, 0).url).toBe(`${BASE_URL}/local/query`)
 			// The chdb backend speaks the ClickHouse protocol shape: the executor
 			// strips the trailing FORMAT and the local server owns the output format.
-			expect(requests[0].sql).not.toContain("FORMAT JSON")
-			expect(requests[0].sql).toContain("OrgId = 'local'")
+			expect(Arr.getUnsafe(requests, 0).sql).not.toContain("FORMAT JSON")
+			expect(Arr.getUnsafe(requests, 0).sql).toContain("OrgId = 'local'")
 		}).pipe(Effect.provide(httpWith(request)))
 	})
 

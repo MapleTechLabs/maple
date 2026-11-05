@@ -144,16 +144,16 @@ const DIFF_HEADER = /^### (.+) · [a-z]+ · \+\d+\/-\d+$/
  */
 export const reviewablePathsInListing = (answer: string): ReadonlyArray<string> =>
 	Arr.flatMap(Str.split("\n")(answer), (line) => {
-		const match = LISTED_FILE.exec(line)
-		if (match === null || match[3] !== undefined) return []
-		return REVIEWED_KIND_NAMES.has(match[2]) ? [match[1]] : []
+		const [, path, kind, noPatch] = LISTED_FILE.exec(line) ?? []
+		if (path === undefined || kind === undefined || noPatch !== undefined) return []
+		return REVIEWED_KIND_NAMES.has(kind) ? [path] : []
 	})
 
 /** The files whose diff a `pr_file_diff` answer actually showed, from {@link fileDiffsDoc}'s headings. */
 export const pathsInDiffAnswer = (answer: string): ReadonlyArray<string> =>
 	Arr.flatMap(Str.split("\n")(answer), (line) => {
-		const match = DIFF_HEADER.exec(line)
-		return match === null ? [] : [match[1]]
+		const path = DIFF_HEADER.exec(line)?.[1]
+		return path === undefined ? [] : [path]
 	})
 
 export const changedFilesOutput = (

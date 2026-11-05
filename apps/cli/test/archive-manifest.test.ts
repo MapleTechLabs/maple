@@ -18,6 +18,7 @@ import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
 import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
 import { randomUUID } from "node:crypto"
 import { String as Str } from "effect"
+import * as Arr from "effect/Array"
 
 const withArchive = async (run: (archiveDir: string) => Promise<void> | void): Promise<void> => {
 	const parent = mkdtempSync(join(tmpdir(), "maple-archive-manifest-test-"))
@@ -77,7 +78,7 @@ describe("archive generation manifest parser", () => {
 		strictEqual(parsed.generationId, generationId)
 		strictEqual(parsed.signal, "traces")
 		strictEqual(parsed.shards.length, 1)
-		strictEqual(parsed.shards[0].bytes, 4096)
+		strictEqual(Arr.getUnsafe(parsed.shards, 0).bytes, 4096)
 	})
 
 	it("rejects an unknown (future) format version", () => {

@@ -383,7 +383,8 @@ const make: Effect.Effect<
 		).pipe(Effect.orElseSucceed((): ReadonlyArray<{ readonly orgId: string }> => []))
 		const byo = new Set<string>(Arr.map(byoRows, (r) => r.orgId))
 
-		if (knownOrgs.length === 0) {
+		const [routingOrg] = knownOrgs
+		if (routingOrg === undefined) {
 			yield* Effect.annotateCurrentSpan({
 				"maple.anomaly.active_orgs": byo.size,
 				"maple.anomaly.failed_closed": false,
@@ -392,7 +393,7 @@ const make: Effect.Effect<
 		}
 
 		const startTime = formatWarehouseDateTime(nowMs - ANOMALY_ACTIVE_DISCOVERY_WINDOW_MS)
-		const routingTenant = systemTenant(knownOrgs[0])
+		const routingTenant = systemTenant(routingOrg)
 		yield* warehouse.warmRoute(routingTenant)
 		return yield* Effect.all(
 			[
@@ -1993,7 +1994,8 @@ const make: Effect.Effect<
 						currentDetectorKey: evaluation.detectorKey,
 						incidentId,
 					})
-					if (otherStates.length === 0) {
+					const [nextState] = otherStates
+					if (nextState === undefined) {
 						yield* dbExecute((db) =>
 							db.run(
 								PG.update(AnomalyIncidents)
@@ -2028,7 +2030,7 @@ const make: Effect.Effect<
 						// If the departing series was the primary, promote a remaining
 						// one — `detectorKey` must always point at a live series for the
 						// continue branch and manual resolve to find it.
-						const next = otherStates[0]
+						const next = nextState
 						const nextEntry =
 							next.fingerprintHash === null || runtime === undefined
 								? Option.none<IncidentFingerprintEntry>()

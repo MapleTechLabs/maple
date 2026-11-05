@@ -95,9 +95,9 @@ export const inspectPhysicalSchema = (db: Pick<Chdb, "query">): PhysicalSchema =
 			),
 		)
 	const indexesFromDefinition = (definition: string): string[] =>
-		Arr.map(
+		Arr.flatMap(
 			Arr.fromIterable(Str.matchAll(/\bINDEX\s+([A-Za-z_][A-Za-z0-9_]*)\b/gi)(definition)),
-			(match) => match[1],
+			(match) => (match[1] === undefined ? [] : [match[1]]),
 		)
 	return {
 		objects: Arr.map(tables, (table): PhysicalSchemaObject => ({

@@ -1,3 +1,4 @@
+import { ok } from "node:assert"
 // Golden decode tests for the coordinator journal envelope.
 //
 // The fixture below is a literal copy of what a shipped build writes to
@@ -10,6 +11,7 @@ import {
 	decodeMigrationJournal,
 	MigrationJournalSchema,
 } from "@maple/local-server/local-store-migrations/journal-schema"
+import * as Arr from "effect/Array"
 
 const golden = {
 	formatVersion: 2,
@@ -79,13 +81,13 @@ describe("migration journal envelope", () => {
 
 	it("keeps absent optional identity fields absent rather than present-undefined", () => {
 		const journal = structuredClone(golden)
-		const { manifestDigest: _m, projectRevision: _p, ...leanFrom } = journal.chain[0].from
+		const { manifestDigest: _m, projectRevision: _p, ...leanFrom } = Arr.getUnsafe(journal.chain, 0).from
 		const decoded = decodeMigrationJournal({
 			...journal,
 			chain: [{ ...journal.chain[0], from: leanFrom }],
 		})
-		expect("manifestDigest" in decoded.chain[0].from).toBe(false)
-		const from: Readonly<Record<string, unknown>> = decoded.chain[0].from
+		expect("manifestDigest" in Arr.getUnsafe(decoded.chain, 0).from).toBe(false)
+		const from: Readonly<Record<string, unknown>> = Arr.getUnsafe(decoded.chain, 0).from
 		expect(Rec.keys(from)).not.toContain("projectRevision")
 	})
 
@@ -117,6 +119,7 @@ describe("migration journal envelope", () => {
 
 	it("rejects a malformed step without interpreting module state", () => {
 		const step = golden.chain[0]
+		ok(step !== undefined)
 		for (const patch of [
 			{ status: "halfway" },
 			{ moduleVersion: 0 },

@@ -208,7 +208,8 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 	list_logs: readModelPlan(["logs"], ListLogsRequest, Queries.listLogs, (rows, payload) => {
 		const logs = coerceLogRows(asRows(rows))
 		const limit = payload.limit
-		const cursor = logs.length === limit && logs.length > 0 ? logs[logs.length - 1].timestamp : null
+		const last = logs.at(-1)
+		const cursor = logs.length === limit && last !== undefined ? last.timestamp : null
 		return { data: logs, meta: { limit, cursor } }
 	}),
 	// The product-event funnel widget. The stored params are the flat

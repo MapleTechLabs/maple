@@ -1480,6 +1480,7 @@ export const reconcileCheckpointOperations = async (
 		)
 	}
 	const entry = entries[0]
+	if (entry === undefined) return
 	if (!entry.isDirectory() || !Str.startsWith("checkpoint-")(entry.name)) {
 		throw new Error(`unrecognized checkpoint operation debris: ${join(operationsRoot, entry.name)}`)
 	}

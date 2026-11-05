@@ -24,10 +24,9 @@ export const withToolTranscript = (history: ReadonlyArray<ChatMessage>): Readonl
 	const rendered = new Map<number, { readonly calls: ReadonlyArray<string>; readonly omitted: number }>()
 	for (let index = history.length - 1; index >= 0; index--) {
 		const message = history[index]
-		if (message.role !== "assistant" || message.toolCalls.length === 0) continue
+		if (message === undefined || message.role !== "assistant" || message.toolCalls.length === 0) continue
 		const kept: Array<string> = []
-		for (let call = message.toolCalls.length - 1; call >= 0; call--) {
-			const { name, input, output } = message.toolCalls[call]
+		for (const { name, input, output } of Arr.reverse(message.toolCalls)) {
 			const text = `[${name} ${renderToolValue(input)}]\n${output === undefined ? "(no result)" : renderToolValue(output)}`
 			if (full || text.length > budget) {
 				full = true

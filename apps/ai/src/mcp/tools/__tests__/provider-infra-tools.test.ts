@@ -41,7 +41,7 @@ describe("list_infra provider kinds", () => {
 	it("reads status=hot on a traffic kind as an error rate, counted against the whole fleet", async () => {
 		const result = await call("list_infra", { kind: "cloudflare_zones", status: "hot" })
 		const section = decode(ListInfraOutput, result).sections[0]
-		expect(Arr.map(section?.rows, (row) => row.name)).toEqual([PROVIDER_WORLD.failingZone])
+		expect(Arr.map(section?.rows ?? [], (row) => row.name)).toEqual([PROVIDER_WORLD.failingZone])
 		expect(section?.summary?.total).toBe(3)
 	})
 

@@ -220,7 +220,7 @@ const fitFrom = (encoded: ReadonlyArray<string>, budget: number): number => {
 	let total = Arr.reduce(encoded, 1, (sum, json) => sum + json.length + 1)
 	let start = 0
 	while (total > budget && start < encoded.length - 1) {
-		total -= encoded[start].length + 1
+		total -= (encoded[start]?.length ?? 0) + 1
 		start += 1
 	}
 	return start

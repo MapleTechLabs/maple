@@ -48,12 +48,21 @@ export const parseChildFindings = (answer: string): ReadonlyArray<PrReviewFindin
 	Arr.flatMap(Str.split("\n")(answer), (line) => {
 		const parts = Arr.map(Str.split("|")(line), (part) => Str.trim(part))
 		const anchor = ANCHOR.exec(Str.replaceAll("`", "")(Str.replace(/^[-*]\s+/, "")(parts[0] ?? "")))
-		if (parts.length < 6 || anchor === null) return []
 		const [, severity, category, title, why, fix, check] = parts
+		const path = anchor?.[1]
+		if (
+			path === undefined ||
+			severity === undefined ||
+			category === undefined ||
+			title === undefined ||
+			why === undefined ||
+			fix === undefined
+		)
+			return []
 		return [
 			{
-				path: canonicalPath(anchor[1]),
-				line: Number(anchor[2]),
+				path: canonicalPath(path),
+				line: Number(anchor?.[2]),
 				severity: severityOf(severity),
 				category: Str.toLowerCase(category),
 				title: title,

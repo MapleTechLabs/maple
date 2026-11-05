@@ -1,3 +1,4 @@
+import { ok } from "node:assert"
 import { describe, expect, it } from "vitest"
 import insertMappings from "../schema/local-inserts.json"
 import {
@@ -21,6 +22,7 @@ const schemaFields = (datasource: string): Set<string> => {
 	const ds = (insertMappings as { datasources: Record<string, { inputSchema: string }> }).datasources[
 		datasource
 	]
+	ok(ds !== undefined)
 	const fields = new Set<string>()
 	// Split top-level commas only (types like Map(K, V) / Array(…) contain commas).
 	let depth = 0
@@ -208,12 +210,14 @@ const keysOf = (batch: { ndjson: string }) => new Set(Rec.keys(JSON.parse(Str.sp
 describe("encoder output matches the chDB inputSchema", () => {
 	it("traces row keys == traces inputSchema", () => {
 		const [batch] = encodeTraces(sampleTraceReq())
+		ok(batch !== undefined)
 		expect(batch.datasource).toBe("traces")
 		expect(keysOf(batch)).toEqual(schemaFields("traces"))
 	})
 
 	it("logs row keys == logs inputSchema", () => {
 		const [batch] = encodeLogs(sampleLogsReq())
+		ok(batch !== undefined)
 		expect(keysOf(batch)).toEqual(schemaFields("logs"))
 	})
 
@@ -234,7 +238,7 @@ describe("encoder output matches the chDB inputSchema", () => {
 
 describe("value-level spot checks", () => {
 	it("trace_id is lowercase hex; duration + status are correct", () => {
-		const row = JSON.parse(encodeTraces(sampleTraceReq())[0].ndjson)
+		const row = JSON.parse(Arr.getUnsafe(encodeTraces(sampleTraceReq()), 0).ndjson)
 		expect(row.trace_id).toBe(hex)
 		expect(row.parent_span_id).toBe("") // all-zero → empty
 		expect(row.span_kind).toBe("Server")
@@ -358,14 +362,14 @@ describe("OTLP/JSON hex ids", () => {
 	// still self-joined, so it looked fine until compared against the emitter.
 	it("stores a hex trace id end-to-end at 32 chars, not 48", () => {
 		const req = sampleTraceReq()
-		const span = req.resourceSpans[0].scopeSpans[0].spans[0]
+		const span = Arr.getUnsafe(Arr.getUnsafe(Arr.getUnsafe(req.resourceSpans, 0).scopeSpans, 0).spans, 0)
 		span.traceId = hex
 		span.spanId = spanHex
 		span.parentSpanId = "0000000000000000"
-		span.links[0].traceId = hex
-		span.links[0].spanId = spanHex
+		Arr.getUnsafe(span.links, 0).traceId = hex
+		Arr.getUnsafe(span.links, 0).spanId = spanHex
 
-		const row = JSON.parse(encodeTraces(req)[0].ndjson)
+		const row = JSON.parse(Arr.getUnsafe(encodeTraces(req), 0).ndjson)
 		expect(row.trace_id).toBe(hex)
 		expect(row.span_id).toBe(spanHex)
 		expect(row.parent_span_id).toBe("")
@@ -386,7 +390,8 @@ describe("OTLP/JSON hex ids", () => {
 
 	it("propagates the rejection out of encodeTraces / encodeLogs", () => {
 		const req = sampleTraceReq()
-		req.resourceSpans[0].scopeSpans[0].spans[0].traceId = "0af7651916cd43dd" // 8 bytes
+		Arr.getUnsafe(Arr.getUnsafe(Arr.getUnsafe(req.resourceSpans, 0).scopeSpans, 0).spans, 0).traceId =
+			"0af7651916cd43dd" // 8 bytes
 		expect(() => encodeTraces(req)).toThrow(OtlpFieldError)
 
 		const logs = {
@@ -406,6 +411,7 @@ describe("protobuf round-trip (proves vendored .proto field numbers)", () => {
 		const bytes = encodeTraceRequest(sampleTraceReq())
 		const decoded = decodeTraceRequest(bytes)
 		const [batch] = encodeTraces(decoded)
+		ok(batch !== undefined)
 		expect(keysOf(batch)).toEqual(schemaFields("traces"))
 		const row = JSON.parse(batch.ndjson)
 		expect(row.trace_id).toBe(hex)
@@ -438,6 +444,7 @@ describe("external OTLP protobuf compatibility", () => {
 	it("decodes a Java agent OTLP/HTTP traces payload captured from the wire", () => {
 		const decoded = decodeTraceRequest(Buffer.from(javaAgentTracePayloadB64, "base64"))
 		const [batch] = encodeTraces(decoded)
+		ok(batch !== undefined)
 		expect(batch.datasource).toBe("traces")
 		expect(batch.rowCount).toBe(1)
 		const row = JSON.parse(batch.ndjson)
@@ -455,7 +462,7 @@ describe("non-finite metric values", () => {
 			{ scopeMetrics: [{ metrics: [{ name: "g", gauge: { dataPoints: [{ asDouble }] } }] }] },
 		],
 	})
-	const valueOf = (req: unknown) => JSON.parse(encodeMetrics(req)[0].ndjson).value
+	const valueOf = (req: unknown) => JSON.parse(Arr.getUnsafe(encodeMetrics(req), 0).ndjson).value
 
 	it("keeps NaN and infinities instead of serializing them as null (stored as 0)", () => {
 		expect(valueOf(gauge(Number.NaN))).toBe("nan")
@@ -493,6 +500,7 @@ describe("non-finite metric values", () => {
 				},
 			],
 		})
+		ok(batch !== undefined)
 		const row = JSON.parse(batch.ndjson)
 		expect(row.sum).toBe("nan")
 		expect(row.explicit_bounds).toEqual([1, "inf"])

@@ -1,5 +1,5 @@
 import { Array as Arr, Option } from "effect"
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 import type { BreakdownItem, TimeseriesPoint } from "@maple/domain"
 import {
 	computeBreakdownStats,
@@ -46,6 +46,7 @@ describe("computeTimeseriesStats", () => {
 			point("b3", { auth: 3 }),
 		])
 		const auth = stats.seriesStats[0]
+		assert.isDefined(auth)
 		expect(auth.validCount).toBe(2)
 		expect(auth.nullCount).toBe(1)
 	})
@@ -56,10 +57,10 @@ describe("computeTimeseriesStats", () => {
 			points.push(point(`b${i}`, { s: i + 1 }))
 		}
 		const stats = computeTimeseriesStats(points)
-		const samples = stats.seriesStats[0].samples
+		const samples = Arr.getUnsafe(stats.seriesStats, 0).samples
 		expect(samples.length).toBe(6)
-		expect(samples[0].value).toBe(1)
-		expect(samples[5].value).toBe(10)
+		expect(Arr.getUnsafe(samples, 0).value).toBe(1)
+		expect(Arr.getUnsafe(samples, 5).value).toBe(10)
 	})
 })
 
@@ -80,6 +81,7 @@ describe("computeBreakdownStats", () => {
 		expect(stats.rowCount).toBe(3)
 		expect(stats.seriesCount).toBe(1)
 		const series = stats.seriesStats[0]
+		assert.isDefined(series)
 		expect(series.min).toBe(25)
 		expect(series.max).toBe(100)
 		expect(series.avg).toBeCloseTo(58.333, 2)

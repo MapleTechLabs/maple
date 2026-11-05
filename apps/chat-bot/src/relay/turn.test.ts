@@ -7,7 +7,7 @@
  * linked, a session that recycles its connection mid-turn, a turn that fails, and the picture a
  * chart is relayed as.
  */
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import {
 	decodeChatEventPayload,
 	encodeChatEventPayload,
@@ -396,6 +396,7 @@ describe("relaying a mention", () => {
 			// One turn, on the session the connector's conversation key names.
 			expect(agent.turns).toHaveLength(1)
 			const turn = agent.turns[0]
+			assert.isDefined(turn)
 			expect(turn.sessionId).toBe(SESSION_ID)
 			// The org's own tenant, with no roles: a connector turn proposes mutations, it does not
 			// perform them.

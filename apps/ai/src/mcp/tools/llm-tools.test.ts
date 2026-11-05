@@ -113,6 +113,8 @@ describe("buildMapleToolkit", () => {
 			surface: "chat",
 			onAnswer: (tool, answer) => seen.push(`${tool}: ${answer}`),
 		})
+		assert.isDefined(handlers.list_services)
+		assert.isDefined(handlers.run_sql)
 		await Effect.runPromise(handlers.list_services({}, {}))
 		await Effect.runPromise(Effect.result(handlers.run_sql({ sql: "select 1" }, {})))
 		assert.deepEqual(seen, ["list_services: list_services ran"])
@@ -132,6 +134,7 @@ describe("buildMapleToolkit", () => {
 			surface: "chat",
 			onUi: (callId, ui) => uis.push([callId, ui]),
 		})
+		assert.isDefined(handlers.list_services)
 		const answer = await Effect.runPromise(handlers.list_services({}, { toolCallId: "call-1" }))
 		assert.equal(answer, "## Services")
 		assert.deepEqual(uis, [

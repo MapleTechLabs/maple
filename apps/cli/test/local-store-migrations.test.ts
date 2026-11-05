@@ -1,3 +1,4 @@
+import { ok } from "node:assert"
 import { describe, expect, it } from "vitest"
 import {
 	CURRENT_LOCAL_SCHEMA,
@@ -91,10 +92,12 @@ const [v7ToV8AppleCrashFramesModule] = Arr.filter(
 	localStoreMigrations,
 	(migration) => migration.id === "local-0007-to-0008-apple-crash-frames",
 )
+ok(v7ToV8AppleCrashFramesModule !== undefined)
 const [v10ToV11ProductEventsModule] = Arr.filter(
 	localStoreMigrations,
 	(migration) => migration.id === "local-0010-to-0011-product-events",
 )
+ok(v10ToV11ProductEventsModule !== undefined)
 
 describe("current local schema identity", () => {
 	it("matches the generated v49 revision and keeps the issue-297 identity frozen", () => {
@@ -693,7 +696,7 @@ describe("local migration registry", () => {
 					chdb: CURRENT_LOCAL_SCHEMA.chdb,
 				})
 			}
-			const operationIds = Arr.map(migration?.operations, (operation) => operation.id) ?? []
+			const operationIds = Arr.map(migration?.operations ?? [], (operation) => operation.id)
 			expect(operationIds[0]).toBe(`clone-v${step.from}-store`)
 			expect(operationIds.at(-1)).toBe(`verify-v${step.to}-schema`)
 			expect(migration?.dispositions[0]?.name).toBe("local store")
@@ -812,8 +815,8 @@ describe("durable migration recovery", () => {
 				state: _verifiedState,
 				progress: _verifiedProgress,
 				...verifiedWithoutStateAndProgress
-			} = base.chain[0]
-			const { progress: _missingProgress, ...verifiedWithoutProgress } = base.chain[0]
+			} = Arr.getUnsafe(base.chain, 0)
+			const { progress: _missingProgress, ...verifiedWithoutProgress } = Arr.getUnsafe(base.chain, 0)
 			await durableJson(migrationJournalPath(dataDir), {
 				...base,
 				chain: [{ ...verifiedWithoutStateAndProgress, status: "verified" }],

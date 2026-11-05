@@ -42,13 +42,19 @@ const MISSING_TABLE_NAME_RES = [
 /** Names the error or the query's FROM/JOIN clauses use that are neither catalog tables nor CTEs. */
 const unknownTableNames = (message: string, sql: string): ReadonlyArray<string> => {
 	const known = new Set(Arr.map(listWarehouseTables(), (t) => t.name))
-	const ctes = new Set(Arr.map([...sql.matchAll(/\b([A-Za-z_]\w*)\s+AS\s*\(/gi)], (m) => m[1]))
+	const ctes = new Set(
+		Arr.flatMap([...sql.matchAll(/\b([A-Za-z_]\w*)\s+AS\s*\(/gi)], (m) =>
+			m[1] === undefined ? [] : [m[1]],
+		),
+	)
 	const named = [
 		...Arr.flatMap(MISSING_TABLE_NAME_RES, (re) => {
 			const name = message.match(re)?.[1]
 			return name === undefined ? [] : [name]
 		}),
-		...Arr.map([...sql.matchAll(/\b(?:FROM|JOIN)\s+([A-Za-z_][\w.]*)/gi)], (m) => m[1]),
+		...Arr.flatMap([...sql.matchAll(/\b(?:FROM|JOIN)\s+([A-Za-z_][\w.]*)/gi)], (m) =>
+			m[1] === undefined ? [] : [m[1]],
+		),
 	]
 	return Arr.filter(
 		[...new Set(named)],

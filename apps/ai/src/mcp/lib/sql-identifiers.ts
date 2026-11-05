@@ -87,8 +87,10 @@ const identifierFix = (
 	if (owners(written) > 0) return undefined
 	const byFold = (name: string, unqualified: boolean) => {
 		const columns = new Set(Arr.flatMap(tables, (t) => Arr.map(t.columns, (c) => c.name)))
-		const hits = Arr.filter([...columns], (c) => fold(c) === fold(name))
-		return hits.length === 1 && (!unqualified || owners(hits[0]) === 1) ? hits[0] : undefined
+		const [only, ...others] = Arr.filter([...columns], (c) => fold(c) === fold(name))
+		return only !== undefined && others.length === 0 && (!unqualified || owners(only) === 1)
+			? only
+			: undefined
 	}
 	const whole = byFold(written, true)
 	if (whole !== undefined) return whole
@@ -100,11 +102,13 @@ const identifierFix = (
 	const dot = lastDot.value
 	const qualified = Arr.findFirst(tables, (t) => t.name === qualifiers.get(Str.slice(0, dot)(written)))
 	if (Option.isNone(qualified)) return undefined
-	const hits = Arr.filter(
+	const [only, ...others] = Arr.filter(
 		qualified.value.columns,
 		(c) => fold(c.name) === fold(Str.slice(dot + 1)(written)),
 	)
-	return hits.length === 1 ? `${Str.slice(0, dot + 1)(written)}${hits[0].name}` : undefined
+	return only !== undefined && others.length === 0
+		? `${Str.slice(0, dot + 1)(written)}${only.name}`
+		: undefined
 }
 
 const escapeRegExp = (text: string) => Str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")(text)
@@ -146,10 +150,9 @@ const RELATION = new RegExp(
 )
 
 const relations = (sql: string) =>
-	Arr.map(Arr.fromIterable(Str.matchAll(RELATION)(identifierText(sql))), (m) => ({
-		name: m[1],
-		alias: m[2],
-	}))
+	Arr.flatMap(Arr.fromIterable(Str.matchAll(RELATION)(identifierText(sql))), (m) =>
+		m[1] === undefined ? [] : [{ name: m[1], alias: m[2] }],
+	)
 
 /**
  * Names the SQL defines itself, which are never column typos: `AS x`, `x AS (`, a relation's
@@ -158,12 +161,17 @@ const relations = (sql: string) =>
 export const definedNames = (sql: string): ReadonlySet<string> => {
 	const text = identifierText(sql)
 	return new Set([
-		...Arr.map(
+		...Arr.flatMap(
 			Arr.fromIterable(Str.matchAll(/\bAS\s+([A-Za-z_][\w.]*)|\b([A-Za-z_]\w*)\s+AS\s*\(/gi)(text)),
-			(m) => m[1] ?? m[2],
+			(m) => {
+				const name = m[1] ?? m[2]
+				return name === undefined ? [] : [name]
+			},
 		),
 		...Arr.filter(
-			Arr.map(Arr.fromIterable(Str.matchAll(/\)\s*([A-Za-z_][\w.]*)/g)(text)), (m) => m[1]),
+			Arr.flatMap(Arr.fromIterable(Str.matchAll(/\)\s*([A-Za-z_][\w.]*)/g)(text)), (m) =>
+				m[1] === undefined ? [] : [m[1]],
+			),
 			(name) => !KEYWORDS.has(Str.toLowerCase(name)),
 		),
 		...Arr.flatMap(relations(sql), (r) => (r.alias === undefined ? [] : [r.alias])),

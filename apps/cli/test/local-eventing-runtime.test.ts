@@ -74,7 +74,7 @@ const exampleRecordObserved = {
 }
 
 const firstLogRecord = (request: typeof exampleRecordObserved) =>
-	request.resourceLogs[0].scopeLogs[0].logRecords[0]
+	Arr.getUnsafe(Arr.getUnsafe(Arr.getUnsafe(request.resourceLogs, 0).scopeLogs, 0).logRecords, 0)
 
 const projection = (overrides: Partial<SignalProjectionSpec> = {}): SignalProjectionSpec => ({
 	id: "example-record-observed",
@@ -350,6 +350,7 @@ describe("LocalEventingRuntime", () => {
 
 	it("uses a locale-independent source-fingerprint field order", () => {
 		const [signal] = run(normalizeOtlpLogs(exampleRecordObserved, "2026-08-07T20:00:00Z"))
+		ok(signal !== undefined)
 		const fields = new Map(signal.fields)
 		fields.set("attribute:ä", { type: "string", value: "umlaut" })
 		fields.set("attribute:z", { type: "string", value: "ascii" })
@@ -376,6 +377,7 @@ describe("LocalEventingRuntime", () => {
 			}),
 		)
 		const [signal] = run(normalizeOtlpLogs(request, "2026-08-07T20:00:00Z"))
+		ok(signal !== undefined)
 		const record = (signal.data as { record: { attributes: Record<string, JsonValue> } }).record
 		ok(Rec.has(record.attributes, "__proto__"))
 		// Attribute maps are null-prototype on purpose, so a `__proto__` key stays data.
@@ -437,7 +439,7 @@ describe("LocalEventingRuntime", () => {
 				strictEqual(first.events.length, 1)
 				deepStrictEqual(first.events[0], {
 					specversion: "1.0",
-					id: first.events[0].id,
+					id: Arr.getUnsafe(first.events, 0).id,
 					source: "https://events.example.test",
 					type: "dev.maple.example.record.observed.v1",
 					subject: "example/widgets/records/42",
@@ -520,7 +522,7 @@ describe("LocalEventingRuntime", () => {
 						? attr(entry.key, { stringValue: "second" })
 						: entry,
 				)
-				request.resourceLogs[0].scopeLogs[0].logRecords.push(second)
+				Arr.getUnsafe(Arr.getUnsafe(request.resourceLogs, 0).scopeLogs, 0).logRecords.push(second)
 				throws(
 					() => run(runtime.evaluateOtlp("logs", request)),
 					/source occurrence collision within one ingest batch/,
@@ -541,7 +543,7 @@ describe("LocalEventingRuntime", () => {
 				const request = structuredClone(exampleRecordObserved)
 				const sibling = structuredClone(firstLogRecord(request))
 				sibling.eventName = "example.record.ignored"
-				request.resourceLogs[0].scopeLogs[0].logRecords.push(sibling)
+				Arr.getUnsafe(Arr.getUnsafe(request.resourceLogs, 0).scopeLogs, 0).logRecords.push(sibling)
 				throws(
 					() => run(runtime.evaluateOtlp("logs", request)),
 					/source occurrence collision within one ingest batch/,
@@ -566,7 +568,7 @@ describe("LocalEventingRuntime", () => {
 						attr(`projection-only-sibling-${index}`, { stringValue: "warehouse-valid" }),
 					),
 				)
-				request.resourceLogs[0].scopeLogs[0].logRecords.push(sibling)
+				Arr.getUnsafe(Arr.getUnsafe(request.resourceLogs, 0).scopeLogs, 0).logRecords.push(sibling)
 				throws(
 					() => run(runtime.evaluateOtlp("logs", request)),
 					/source occurrence collision with an unprojectable record within one ingest batch/,
@@ -588,7 +590,7 @@ describe("LocalEventingRuntime", () => {
 				const request = structuredClone(exampleRecordObserved)
 				const sibling = structuredClone(firstLogRecord(request))
 				sibling.eventName = "example.record.alternate"
-				request.resourceLogs[0].scopeLogs[0].logRecords.push(sibling)
+				Arr.getUnsafe(Arr.getUnsafe(request.resourceLogs, 0).scopeLogs, 0).logRecords.push(sibling)
 				throws(
 					() => run(runtime.evaluateOtlp("logs", request)),
 					/source occurrence collision within one ingest batch/,

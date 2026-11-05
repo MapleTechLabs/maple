@@ -257,9 +257,9 @@ const materializedViews = (manifest: LocalSchemaManifest): ReadonlyArray<ViewEdg
 		(o) => {
 			const body = viewBody(o.definition) ?? ""
 			const sources = Arr.filter(
-				Arr.map(
+				Arr.flatMap(
 					Arr.fromIterable(Str.matchAll(/\bFROM\s+([A-Za-z_][A-Za-z0-9_]*)/gi)(body)),
-					(match) => match[1],
+					(match) => (match[1] === undefined ? [] : [match[1]]),
 				),
 				(name) => tables.has(name),
 			)

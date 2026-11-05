@@ -97,7 +97,7 @@ const scanWords = (sql: string): ReadonlyArray<Word> | undefined => {
 		return sql[k] === "("
 	}
 	while (i < sql.length) {
-		const c = sql[i]
+		const c = Str.slice(i, i + 1)(sql)
 		if (c === "'" || c === '"' || c === "`") {
 			let j = i + 1
 			while (j < sql.length && sql[j] !== c) j += sql[j] === "\\" ? 2 : 1
@@ -120,7 +120,7 @@ const scanWords = (sql: string): ReadonlyArray<Word> | undefined => {
 			i++
 		} else if (isWordStart(c)) {
 			let j = i + 1
-			while (j < sql.length && isWordPart(sql[j])) j++
+			while (j < sql.length && isWordPart(Str.slice(j, j + 1)(sql))) j++
 			words.push({
 				text: Str.slice(i, j)(sql),
 				start: i,
@@ -133,7 +133,7 @@ const scanWords = (sql: string): ReadonlyArray<Word> | undefined => {
 		} else if (/[0-9]/.test(c)) {
 			// Numeric literals such as 1e9 or 0x1F are not words.
 			let j = i + 1
-			while (j < sql.length && /[0-9A-Za-z_.]/.test(sql[j])) j++
+			while (j < sql.length && /[0-9A-Za-z_.]/.test(Str.slice(j, j + 1)(sql))) j++
 			i = j
 		} else i++
 	}

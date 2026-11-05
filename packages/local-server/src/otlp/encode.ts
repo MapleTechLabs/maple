@@ -99,11 +99,9 @@ function hexFromBytes(bytes: Uint8Array): string {
 	if (allZero) {
 		return ""
 	}
-	const HEX = "0123456789abcdef"
 	let out = ""
-	for (let i = 0; i < bytes.length; i++) {
-		const byte = bytes[i]
-		out += HEX[byte >> 4] + HEX[byte & 0x0f]
+	for (const byte of bytes) {
+		out += Str.padStart(2, "0")(byte.toString(16))
 	}
 	return out
 }
@@ -546,8 +544,7 @@ function encodeExemplars(exemplars: Exemplar[] | undefined): EncodedExemplars {
 	if (!exemplars) {
 		return out
 	}
-	for (let index = 0; index < exemplars.length; index++) {
-		const exemplar = exemplars[index]
+	for (const [index, exemplar] of exemplars.entries()) {
 		out.exemplars_trace_id.push(traceIdHex(exemplar.traceId, `exemplars[${index}].traceId`))
 		out.exemplars_span_id.push(spanIdHex(exemplar.spanId, `exemplars[${index}].spanId`))
 		out.exemplars_timestamp.push(formatTimestampNano(exemplar.timeUnixNano))

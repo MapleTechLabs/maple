@@ -33,17 +33,18 @@ export const emailTransport: EffectTransport<Config> = {
 			const failures = Arr.filter(outcomes, (outcome) => outcome.error != null)
 			const count = members.length
 
-			if (failures.length === count && count > 0) {
+			const [firstFailure] = failures
+			if (firstFailure !== undefined && failures.length === count) {
 				// Nobody received it — safe to fail retryable; the retry re-sends to
 				// members who all got nothing. Keep the first failure message
 				// verbatim so timeout classification survives the aggregation.
 				return yield* makeDeliveryError(
-					`Email delivery failed for all ${count} member${count === 1 ? "" : "s"}: ${failures[0].error}`,
+					`Email delivery failed for all ${count} member${count === 1 ? "" : "s"}: ${firstFailure.error}`,
 					"email",
 				)
 			}
 
-			if (failures.length > 0) {
+			if (firstFailure !== undefined) {
 				// Partial success is TERMINAL: there is no per-member attempt state,
 				// so retrying would re-email the members who already received it.
 				// Report success and surface the failures.
@@ -52,7 +53,7 @@ export const emailTransport: EffectTransport<Config> = {
 					Effect.annotateLogs({
 						failedCount: failures.length,
 						memberCount: count,
-						firstError: failures[0].error,
+						firstError: firstFailure.error,
 					}),
 				)
 				return {

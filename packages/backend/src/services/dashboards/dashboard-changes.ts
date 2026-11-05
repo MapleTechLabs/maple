@@ -90,7 +90,7 @@ export const summarizeDashboardChange = (
 			kinds.add("section_added")
 			detail =
 				detail ??
-				(addedSections.length === 1
+				(addedSections.length === 1 && addedSections[0] !== undefined
 					? `Added group "${addedSections[0].title}"`
 					: `Added ${addedSections.length} groups`)
 		}
@@ -98,7 +98,7 @@ export const summarizeDashboardChange = (
 			kinds.add("section_removed")
 			detail =
 				detail ??
-				(removedSections.length === 1
+				(removedSections.length === 1 && removedSections[0] !== undefined
 					? `Removed group "${removedSections[0].title}"`
 					: `Removed ${removedSections.length} groups`)
 		}
@@ -120,14 +120,16 @@ export const summarizeDashboardChange = (
 		kinds.add("widget_added")
 		detail =
 			detail ??
-			(added.length === 1 ? `Added "${widgetTitle(added[0])}"` : `Added ${added.length} widgets`)
+			(added.length === 1 && added[0] !== undefined
+				? `Added "${widgetTitle(added[0])}"`
+				: `Added ${added.length} widgets`)
 	}
 
 	if (removed.length > 0) {
 		kinds.add("widget_removed")
 		detail =
 			detail ??
-			(removed.length === 1
+			(removed.length === 1 && removed[0] !== undefined
 				? `Removed "${widgetTitle(removed[0])}"`
 				: `Removed ${removed.length} widgets`)
 	}
@@ -162,7 +164,8 @@ export const summarizeDashboardChange = (
 		detail = detail ?? "Layout changed"
 	}
 
-	if (kinds.size === 0) {
+	const [kind] = kinds
+	if (kind === undefined) {
 		return { kind: "multiple", summary: "No changes" }
 	}
 
@@ -170,6 +173,5 @@ export const summarizeDashboardChange = (
 		return { kind: "multiple", summary: "Multiple changes" }
 	}
 
-	const [kind] = kinds
-	return { kind: kind, summary: detail ?? "Updated" }
+	return { kind, summary: detail ?? "Updated" }
 }

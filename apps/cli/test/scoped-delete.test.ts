@@ -250,7 +250,7 @@ describeWithChdb("scoped delete against chDB", () => {
 			if (table !== "service_map_edges_hourly")
 				expect({ table, rows: serviceRows(table, "keep") }).toEqual({
 					table,
-					rows: keepBefore[table],
+					rows: keepBefore[table] ?? 0,
 				})
 		}
 		expect(serviceRows("service_map_edges_hourly", "keep")).toBe(1)

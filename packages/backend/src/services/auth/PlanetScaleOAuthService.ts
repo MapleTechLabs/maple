@@ -452,7 +452,8 @@ export class PlanetScaleOAuthService extends Context.Service<
 					}),
 				),
 			)
-			if (organizations.length === 0) {
+			const [firstOrganization] = organizations
+			if (firstOrganization === undefined) {
 				return yield* new IntegrationsValidationError({
 					message: "The PlanetScale authorization grants access to no organizations",
 				})
@@ -475,7 +476,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 
 			yield* oauth.upsertConnection(orgId, currentTime, {
 				externalUserId: Option.match(currentUser, {
-					onNone: () => organizations[0].id,
+					onNone: () => firstOrganization.id,
 					onSome: (user) => user.id,
 				}),
 				externalUserEmail: Option.match(currentUser, {

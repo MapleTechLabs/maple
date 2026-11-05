@@ -2,7 +2,17 @@
 import { assert } from "@effect/vitest"
 import { createHmac, generateKeyPairSync } from "node:crypto"
 import { OrgId, UserId, type VcsSyncJob } from "@maple/domain/http"
-import { Cause, ConfigProvider, type Context, Effect, Exit, Layer, Option, Schema } from "effect"
+import {
+	Array as Arr,
+	Cause,
+	ConfigProvider,
+	type Context,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Schema,
+} from "effect"
 import type { TestDb } from "@maple/backend/platform/test-pglite"
 import { Env } from "@maple/backend/platform/Env"
 import { HttpClient, HttpClientResponse } from "effect/http"
@@ -108,7 +118,7 @@ export const fakeGithubHttp = (respond: (request: FakeGithubRequest) => Response
 export const scriptedHttp = (responders: ReadonlyArray<() => Response>) => {
 	let i = 0
 	return fakeGithubHttp(() => {
-		const make = responders[Math.min(i, responders.length - 1)]
+		const make = Arr.getUnsafe(responders, Math.min(i, responders.length - 1))
 		i += 1
 		return make()
 	})

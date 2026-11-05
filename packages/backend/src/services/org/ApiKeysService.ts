@@ -629,12 +629,13 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 				// Lost the claim: either the key never existed (404) or it was already
 				// revoked, in which case the stored row — not a freshly stamped copy —
 				// is the truth to report back.
-				if (revokedRows.length === 0) {
+				const [revoked] = revokedRows
+				if (revoked === undefined) {
 					const stored = yield* requireById(orgId, keyId)
 					return rowToResponse(stored)
 				}
 
-				return rowToResponse(revokedRows[0], readTxid(revokedRows))
+				return rowToResponse(revoked, readTxid(revokedRows))
 			})
 
 			const resolveByKey = Effect.fn("ApiKeysService.resolveByKey")(function* (rawKey: string) {

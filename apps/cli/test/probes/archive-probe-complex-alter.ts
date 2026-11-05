@@ -10,6 +10,7 @@ import { join } from "node:path"
 import { ArchiveProbe } from "../archive-probe-helpers"
 import { archiveSignal } from "@maple/local-server/archives/signals"
 import { exportSignalShards } from "@maple/local-server/archives/export"
+import * as Arr from "effect/Array"
 
 const SCHEMA = `
 CREATE DATABASE IF NOT EXISTS default;
@@ -32,7 +33,7 @@ const exportOnce = (db: ReturnType<typeof h.openDb>, suffix: string): string => 
 	})
 	rmSync(dir, { recursive: true, force: true })
 	if (written.length !== 1) h.fail(`expected 1 shard for ${suffix}, got ${written.length}`)
-	return written[0].complexDigest
+	return Arr.getUnsafe(written, 0).complexDigest
 }
 
 try {

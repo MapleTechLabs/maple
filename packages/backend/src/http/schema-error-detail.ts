@@ -53,9 +53,11 @@ export const widgetIdForPath = (root: unknown, path: ReadonlyArray<PropertyKey>)
 	let widgetId: string | undefined
 	for (let i = 0; i < path.length; i++) {
 		const segment = path[i]
+		if (segment === undefined) break
 		const next = readKey(cursor, segment)
-		if (segment === "widgets" && typeof path[i + 1] === "number") {
-			const widget = readKey(next, path[i + 1])
+		const following = path[i + 1]
+		if (segment === "widgets" && typeof following === "number") {
+			const widget = readKey(next, following)
 			const id = readKey(widget, "id")
 			if (typeof id === "string") widgetId = id
 		}

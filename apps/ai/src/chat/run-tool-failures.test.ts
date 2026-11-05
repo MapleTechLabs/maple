@@ -112,7 +112,7 @@ describe("runChatTurn tool failures", () => {
 
 		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
 		assert.lengthOf(prompts, 2, "the model is called again after the failed tool")
-		const results = Arr.flatMap(prompts[1].content, (message) =>
+		const results = Arr.flatMap(Arr.getUnsafe(prompts, 1).content, (message) =>
 			message.role === "tool" ? message.content : [],
 		)
 		assert.deepInclude(
@@ -194,7 +194,7 @@ describe("runChatTurn diagnosis rejections", () => {
 		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
 		assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted)
 		// The rejection is a failed tool result the model reads, not a retried model call.
-		const results = Arr.flatMap(prompts[1].content, (message) =>
+		const results = Arr.flatMap(Arr.getUnsafe(prompts, 1).content, (message) =>
 			message.role === "tool" ? message.content : [],
 		)
 		assert.deepInclude(
@@ -364,7 +364,7 @@ describe("runChatTurn reply rejections", () => {
 		const exit = await Effect.runPromiseExit(effect.pipe(Effect.provide(llmClients)))
 
 		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
-		const results = Arr.flatMap(prompts[1].content, (message) =>
+		const results = Arr.flatMap(Arr.getUnsafe(prompts, 1).content, (message) =>
 			message.role === "tool" ? message.content : [],
 		)
 		assert.deepInclude(

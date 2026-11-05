@@ -123,7 +123,12 @@ export class LiveActivitiesService extends Context.Service<LiveActivitiesService
 							.returning(),
 					),
 				)
-				return toLiveActivity(rows[0])
+				const [row] = rows
+				if (row === undefined)
+					return yield* new MobileDevicePersistenceError({
+						message: "Live activity insert returned no row",
+					})
+				return toLiveActivity(row)
 			})
 
 			const listActive = Effect.fn("LiveActivitiesService.listActive")(function* (

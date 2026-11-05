@@ -144,7 +144,7 @@ const topRoutes = (traces: ReadonlyArray<Trace>): string => {
 		const key = Arr.join(
 			Arr.filter(
 				[attrs["http.request.method"], route, attrs["http.response.status_code"]],
-				(part) => part !== undefined && part !== "",
+				(part): part is string => part !== undefined && part !== "",
 			),
 			" ",
 		)
