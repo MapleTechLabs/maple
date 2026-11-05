@@ -148,7 +148,7 @@ export function summarizeCrawls(
 		const entry = byProduct.get(crawler.product) ?? {
 			requests: 0,
 			failedRequests: 0,
-			purposes: new Map(),
+			purposes: new Map<AiCrawlPurpose, AiPurposeActivity>(),
 		}
 		entry.requests += row.requests
 		entry.failedRequests += row.failedRequests

@@ -44,6 +44,9 @@ const AWAY = 25
  * `null` when the duck is off the lake, so the click is a plain miss. */
 export type DuckClick = { readonly seconds: number; readonly alarm: boolean } | null
 
+/** Each duck's click hit box, mapped to what a click on it does. */
+export const duckClicks = new WeakMap<THREE.Object3D, () => DuckClick>()
+
 interface Duck {
 	readonly phase: number
 	readonly lane: number
@@ -59,7 +62,7 @@ interface Duck {
 
 /** Mallards paddle a steady loop round the lake. A click makes one hop and quack; a few quick
  * clicks and the duck flies off, gliding back in a while later. Each duck's hit box carries
- * `userData.quack`, which the scene's click handler calls. */
+ * `duckClicks` entry, which the scene's click handler calls. */
 export function ducks(
 	scope: Scope,
 	{
@@ -108,7 +111,7 @@ export function ducks(
 				position: [0, 0.1, 0],
 			},
 		)
-		box.userData.quack = (): DuckClick => click(duck)
+		duckClicks.set(box, () => click(duck))
 		return box
 	}
 	// Wings hinge at the shoulders, folded out of sight until the duck takes off.

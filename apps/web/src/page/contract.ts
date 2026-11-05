@@ -318,48 +318,58 @@ export const definePage = <
 	 * Each Subscription restarts per instance and stamps its Messages with that instance's key and
 	 * org, so a Message queued by an older instance's stream is dropped like a late Command result.
 	 */
+	type PageSubscriptionEntry = Subscription.Subscription<
+		PageSubscriptionInput<ModelSchema["Type"]>,
+		MessageSchema["Type"],
+		unknown,
+		Resources
+	>
 	const stamped = Subscription.make<PageHost, WrappedType, Resources>()((entry) =>
 		Rec.fromEntries(
-			Array.map(Rec.toEntries(spec.subscriptions ?? {}), ([name, inner]) => [
-				name,
-				entry(
-					{
-						maybeInstance: Schema.Option(
-							Schema.Struct({
-								key: Schema.String,
-								orgId: Schema.String,
-								instance: Schema.Number,
-								inner: inner.dependenciesSchema,
+			// foldkit erases each entry's dependencies to `any`; `unknown` keeps them opaque here.
+			Array.map(
+				Rec.toEntries(spec.subscriptions ?? {}),
+				([name, inner]: readonly [string, PageSubscriptionEntry]) => [
+					name,
+					entry(
+						{
+							maybeInstance: Schema.Option(
+								Schema.Struct({
+									key: Schema.String,
+									orgId: Schema.String,
+									instance: Schema.Number,
+									inner: inner.dependenciesSchema,
+								}),
+							),
+						},
+						{
+							modelToDependencies: (host) => ({
+								maybeInstance:
+									host.page !== null && host.context !== null && isOwnSlot(host.page)
+										? Option.some({
+												key: host.page.key,
+												orgId: host.page.orgId,
+												instance: host.page.instance,
+												inner: inner.modelToDependencies({
+													model: host.page.model,
+													context: host.context,
+												}),
+											})
+										: Option.none(),
 							}),
-						),
-					},
-					{
-						modelToDependencies: (host) => ({
-							maybeInstance:
-								host.page !== null && host.context !== null && isOwnSlot(host.page)
-									? Option.some({
-											key: host.page.key,
-											orgId: host.page.orgId,
-											instance: host.page.instance,
-											inner: inner.modelToDependencies({
-												model: host.page.model,
-												context: host.context,
-											}),
-										})
-									: Option.none(),
-						}),
-						dependenciesToStream: ({ maybeInstance }) =>
-							Option.match(maybeInstance, {
-								onNone: () => Stream.empty,
-								onSome: ({ key, orgId, instance, inner: dependencies }) =>
-									Stream.map(
-										inner.dependenciesToStream(dependencies, () => dependencies),
-										wrapFor(key, orgId, instance),
-									),
-							}),
-					},
-				),
-			]),
+							dependenciesToStream: ({ maybeInstance }) =>
+								Option.match(maybeInstance, {
+									onNone: () => Stream.empty,
+									onSome: ({ key, orgId, instance, inner: dependencies }) =>
+										Stream.map(
+											inner.dependenciesToStream(dependencies, () => dependencies),
+											wrapFor(key, orgId, instance),
+										),
+								}),
+						},
+					),
+				],
+			),
 		),
 	)
 

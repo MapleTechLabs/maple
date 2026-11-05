@@ -12,7 +12,8 @@ import { Schema, Array as Arr, String as Str, Struct } from "effect"
 
 const encodeAttrJson = Schema.encodeSync(
 	Schema.fromJsonString(Schema.Unknown, {
-		replacer: (_key, inner) => (typeof inner === "bigint" ? String(inner) : inner),
+		replacer: (_key: string, inner: unknown): unknown =>
+			typeof inner === "bigint" ? String(inner) : inner,
 	}),
 )
 

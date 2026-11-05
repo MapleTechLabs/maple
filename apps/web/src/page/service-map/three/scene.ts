@@ -5,7 +5,7 @@ import type { Topology3D } from "../../../components/service-map/three/types"
 import * as THREE from "three"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 import { type CameraCommand, cameraRig, type Size } from "./camera"
-import type { DuckClick } from "./critters"
+import { type DuckClick, duckClicks } from "./critters"
 import { type Child, disposeTree, group, makeScope, type Scope } from "./kit"
 import { quacker } from "./quack"
 import { type Layout, layoutOf, sceneryKey, sceneryOf, worldOf } from "./world"
@@ -45,7 +45,8 @@ const disposeScope = (scope: Scope, root: THREE.Object3D) => {
 	scope.textures.forEach((texture) => texture.dispose())
 }
 
-const asGroup = (child: Child): THREE.Group => (child instanceof THREE.Group ? child : group({}, [child]))
+const isGroup = (child: Child): child is THREE.Group => child instanceof THREE.Group
+const asGroup = (child: Child): THREE.Group => (isGroup(child) ? child : group({}, [child]))
 
 /** R3F's default orthographic camera, framed to the canvas size as `updateCamera` does. */
 const fitFrustum = (camera: THREE.OrthographicCamera, { width, height }: Size) => {
@@ -103,7 +104,7 @@ const pick = (
 	)
 }
 
-/** The `userData.quack` of the duck hit box under the pointer, if any. Only the boxes are
+/** The `duckClicks` entry of the duck hit box under the pointer, if any. Only the boxes are
  * tested: the ink outlines would pick with three's 1-unit line threshold. */
 const pickDuck = (
 	camera: THREE.Camera,
@@ -113,12 +114,12 @@ const pickDuck = (
 ): (() => DuckClick) | null => {
 	const ducks: Array<THREE.Object3D> = []
 	scenery.traverse((node) => {
-		if (typeof node.userData.quack === "function") ducks.push(node)
+		if (duckClicks.has(node)) ducks.push(node)
 	})
 	const raycaster = aim(camera, event, size)
 	return Option.match(
 		Arr.findFirst(ducks, (duck) => raycaster.intersectObject(duck, false).length > 0),
-		{ onNone: () => null, onSome: (hit) => hit.userData.quack },
+		{ onNone: () => null, onSome: (hit) => duckClicks.get(hit) ?? null },
 	)
 }
 

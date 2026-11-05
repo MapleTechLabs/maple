@@ -40,8 +40,17 @@ export function matchesAnomalyFilters(
 }
 
 export function hasAnomalyFilters(filters: AnomalyFilters): boolean {
-	// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.values would need a cast
-	return Arr.some(Object.values(filters), (values) => (values?.length ?? 0) > 0)
+	const lists = [
+		filters.severity,
+		filters.signals,
+		filters.services,
+		filters.envs,
+		filters.excludedSeverity,
+		filters.excludedSignals,
+		filters.excludedServices,
+		filters.excludedEnvs,
+	]
+	return Arr.some(lists, (values) => (values?.length ?? 0) > 0)
 }
 
 /** One facet, in both polarities. `label` matches the sidebar section title exactly. */
