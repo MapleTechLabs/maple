@@ -26,7 +26,6 @@
         "@maple/db": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/infra": "workspace:*",
-        "@oxlint/plugins": "1.90.0",
         "@types/node": "catalog:tooling",
         "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",
@@ -483,6 +482,9 @@
     "lib/oxlint-config": {
       "name": "@maple-dev/oxlint-config",
       "version": "0.1.0",
+      "devDependencies": {
+        "@oxlint/plugins": "1.90.0",
+      },
       "peerDependencies": {
         "@effect/tsgo": ">=0.64.1",
         "@oxlint/plugins": ">=1.90.0",

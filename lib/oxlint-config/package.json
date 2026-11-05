@@ -36,5 +36,8 @@
 		"oxlint-tsgolint": {
 			"optional": true
 		}
+	},
+	"devDependencies": {
+		"@oxlint/plugins": "1.90.0"
 	}
 }

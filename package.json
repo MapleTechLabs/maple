@@ -85,7 +85,6 @@
 		"@maple/db": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/infra": "workspace:*",
-		"@oxlint/plugins": "1.90.0",
 		"@types/node": "catalog:tooling",
 		"alchemy": "catalog:alchemy",
 		"effect": "catalog:effect",
