@@ -13,6 +13,9 @@ describe("Policy.can", () => {
 		expect(Policy.can(engineer, "code_review:configure")).toBe(true)
 		expect(Policy.can(engineer, "billing:manage")).toBe(false)
 		expect(Policy.can(engineer, "members:manage")).toBe(false)
+		// Triage findings, but not spend the audit budget.
+		expect(Policy.can(engineer, "security:manage")).toBe(true)
+		expect(Policy.can(engineer, "security_audit:run")).toBe(false)
 	})
 
 	it("gives admins and root everything an engineer has and more", () => {
