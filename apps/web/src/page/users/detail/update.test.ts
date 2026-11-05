@@ -30,7 +30,7 @@ const page = (search: Parameters<typeof AppRoute.UserDetail>[0]["search"], ctx =
 describe("the user page URL", () => {
 	it("round-trips an id that needs encoding, the tab and the namespace", () => {
 		const href = userDetailHref("user/42 ada", { tab: "mcp", namespace: "storefront" })
-		expect(href).toBe("/users/user%2F42%20ada?tab=mcp&namespace=storefront")
+		expect(href).toBe("/users/user/42%20ada?tab=mcp&namespace=storefront")
 		expect(parse(href)).toEqual(
 			AppRoute.UserDetail({ userId: "user/42 ada", search: { tab: "mcp", namespace: "storefront" } }),
 		)
@@ -50,18 +50,18 @@ describe("tabs and namespaces", () => {
 	it("puts a clicked tab in the URL, keeping the window and namespace", () => {
 		const model = page({ timePreset: "24h", namespace: "storefront" })
 		expect(navigatedTo(update(model, Message.ClickedTab({ tab: "sessions" }), context))).toBe(
-			"/users/user%2F42%20ada?tab=sessions&namespace=storefront&timePreset=24h",
+			"/users/user/42%20ada?tab=sessions&namespace=storefront&timePreset=24h",
 		)
 	})
 
 	it("puts a picked namespace in the URL, and drops it to show every namespace", () => {
 		const model = page({ tab: "events" })
 		expect(navigatedTo(update(model, Message.ClickedNamespace({ namespace: "checkout" }), context))).toBe(
-			"/users/user%2F42%20ada?tab=events&namespace=checkout",
+			"/users/user/42%20ada?tab=events&namespace=checkout",
 		)
 		const scoped = page({ namespace: "checkout" })
 		expect(navigatedTo(update(scoped, Message.ClickedNamespace({ namespace: null }), context))).toBe(
-			"/users/user%2F42%20ada",
+			"/users/user/42%20ada",
 		)
 	})
 
