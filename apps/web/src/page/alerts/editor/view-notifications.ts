@@ -249,7 +249,7 @@ const viewOf = stableSlice((model: Model) =>
 		"isSendingTest",
 		"isMessageTemplateOpen",
 		"mountedForm",
-		"isAdmin",
+		"grants",
 		"connectors",
 		"menus",
 		"chatConnect",

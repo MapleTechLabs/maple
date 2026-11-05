@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { Effect, Result, Schema, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -31,7 +32,7 @@ const listModel = (): ListModel => {
 	const entered = Arr.reduce(
 		[
 			ListMessage.ReadClock({ nowMs: LAB_NOW_MS }),
-			ListMessage.CompletedFetchSession({ orgId: LAB_ORG, isAdmin: true }),
+			ListMessage.CompletedFetchSession({ orgId: LAB_ORG, grants: Policy.allPermissions }),
 		],
 		listInit({ _tag: "StatusPages" }, context).model,
 		step,

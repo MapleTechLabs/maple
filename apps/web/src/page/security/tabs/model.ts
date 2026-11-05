@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import {
 	GithubIntegrationStatus,
 	SecurityAuditFindingsResponse,
@@ -30,7 +31,7 @@ export const Model = Schema.Struct({
 	runsSearch: SecurityRunsSearch,
 	nowMs: Schema.Finite,
 	/** `useIsOrgAdmin`: hides writes a member would be refused. The server still decides. */
-	isAdmin: Schema.Boolean,
+	grants: Schema.Array(Policy.PermissionName),
 	targets: KeyedSchema(SecurityAuditTargetsResponse, LoadFailure),
 	runs: KeyedSchema(SecurityAuditRunsResponse, LoadFailure),
 	/** Each target's own runs: its latest run and this month's spend, past the global list's cap. */
@@ -56,6 +57,10 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
+/** The viewer may change what this page edits (`security:manage`). */
+export const canManage = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "security:manage")
+
 const result = <S extends Schema.Top>(schema: S) => ({
 	key: Schema.String,
 	result: Schema.Result(schema, LoadFailure),
@@ -63,7 +68,7 @@ const result = <S extends Schema.Top>(schema: S) => ({
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Finite },
-	CompletedReadIsAdmin: { isAdmin: Schema.Boolean },
+	CompletedReadGrants: { grants: Schema.Array(Policy.PermissionName) },
 	CompletedFetchTargets: result(SecurityAuditTargetsResponse),
 	CompletedFetchRuns: result(SecurityAuditRunsResponse),
 	CompletedFetchTargetRuns: { targetId: SecurityAuditTargetId, ...result(SecurityAuditRunsResponse) },

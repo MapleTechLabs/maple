@@ -35,7 +35,7 @@ describe("onboarding reward pill", () => {
 			Checklist.Message.SucceededLoadChecklist({ checklist: checklist("claimable"), nowMs: 0 }),
 		).model,
 		Checklist.Message.LoadedViewer({
-			isAdmin: true,
+			grants: ["billing:manage"],
 			seenKey: "maple-onboarding-reward-seen-v3-org:user",
 			isSeen: false,
 		}),

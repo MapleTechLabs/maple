@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { AsyncData } from "foldkit"
 import { Result, Array as Arr, Option } from "effect"
 import { expect as expectView, given, scene, selector, withViewInputs } from "foldkit/scene"
@@ -6,6 +7,8 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { Message, type Model } from "./model"
 import { init, revisit, update } from "./update"
 import { view } from "./view"
+
+const ADMIN = Policy.grantsOf(["org:admin"])
 
 const member = (id: string) => ({
 	id,
@@ -24,7 +27,7 @@ describe("members tab", () => {
 			total: 12,
 		}
 		const loaded = update(
-			init(true).model,
+			init(ADMIN).model,
 			Message.CompletedFetchMembers({ page: 1, generation: 0, result: Result.succeed(firstPage) }),
 		).model
 		const fetching = update(loaded, Message.ClickedLoadMoreMembers())
@@ -56,7 +59,7 @@ describe("members paging under a mutation", () => {
 			total: 12,
 		}
 		const loaded = update(
-			init(true).model,
+			init(ADMIN).model,
 			Message.CompletedFetchMembers({ page: 1, generation: 0, result: Result.succeed(firstPage) }),
 		).model
 		const paging = update(loaded, Message.ClickedLoadMoreMembers()).model
@@ -96,7 +99,7 @@ describe("members revisits after a failure", () => {
 	test("two quick revisits read page 1 twice and only the newer answer lands", () => {
 		const failure = Result.fail(toLoadFailure(new Error("down")))
 		const failed = update(
-			init(true).model,
+			init(ADMIN).model,
 			Message.CompletedFetchMembers({ page: 1, generation: 0, result: failure }),
 		).model
 		const generationOf = (step: ReturnType<typeof revisit>) =>
@@ -131,7 +134,7 @@ describe("members revisits after a failure", () => {
 
 describe("members avatars", () => {
 	test("a member's Clerk image is drawn over the initials", () => {
-		const withOrg = update(init(true).model, Message.CompletedFetchOrganization({ name: "Acme" })).model
+		const withOrg = update(init(ADMIN).model, Message.CompletedFetchOrganization({ name: "Acme" })).model
 		const rows = [{ ...member("ada"), imageUrl: "https://img.clerk.test/ada.png" }, member("bob")]
 		const page = Result.succeed({ rows, total: 2 })
 		const loaded = update(

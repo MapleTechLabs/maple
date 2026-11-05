@@ -87,7 +87,7 @@ describe("alert rule editor", () => {
 			expect.arrayContaining([
 				"GenerateAlertDraftId",
 				"ReadAlertEditorClock",
-				"ReadAlertEditorIsAdmin",
+				"ReadAlertEditorGrants",
 				"FetchAlertEditorConnectors",
 			]),
 		)

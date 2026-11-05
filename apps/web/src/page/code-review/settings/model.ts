@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import {
 	GithubIntegrationStatus,
 	GithubPrReviewConfigResponse,
@@ -24,7 +25,7 @@ export const Model = Schema.Struct({
 	settings: KeyedSchema(GithubPrReviewSettingsResponse, LoadFailure),
 	githubStatus: KeyedSchema(GithubIntegrationStatus, LoadFailure),
 	/** `useIsOrgAdmin`: always true self-hosted; the session's roles under Clerk. */
-	isAdmin: Schema.Boolean,
+	grants: Schema.Array(Policy.PermissionName),
 	modelSelect: Select.Model,
 	isSavingModel: Schema.Boolean,
 	/** The settings as this tab has written them (in flight or queued); every save is built from it. */
@@ -54,6 +55,10 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
+/** The viewer may change what this page edits (`code_review:configure`). */
+export const canManage = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "code_review:configure")
+
 const result = <S extends Schema.Top>(schema: S) => ({
 	key: Schema.String,
 	result: Schema.Result(schema, LoadFailure),
@@ -63,7 +68,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchSettings: result(GithubPrReviewSettingsResponse),
 	CompletedFetchStatus: result(GithubIntegrationStatus),
 	CompletedFetchRepoConfig: result(GithubPrReviewConfigResponse),
-	CompletedReadIsAdmin: { isAdmin: Schema.Boolean },
+	CompletedReadGrants: { grants: Schema.Array(Policy.PermissionName) },
 	ClickedRetrySettings: {},
 	ClickedRetryStatus: {},
 	GotModelSelectMessage: { message: Select.Message },

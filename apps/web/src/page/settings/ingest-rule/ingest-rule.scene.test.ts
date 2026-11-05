@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { V2IngestRule } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
@@ -11,13 +12,15 @@ import type { LogSample } from "./preview"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
+const ENGINEER = Policy.grantsOf(["org:engineer"])
+
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 
 const asAdmin = (model: Model): Model =>
-	pageUpdate(model, Message.CompletedFetchSession({ orgId: ORG, isAdmin: true })).model
+	pageUpdate(model, Message.CompletedFetchSession({ orgId: ORG, grants: ENGINEER })).model
 const fresh = (template?: string): Model =>
 	asAdmin(
 		init({ _tag: "IngestRuleNew", search: template === undefined ? {} : { template } }, context).model,

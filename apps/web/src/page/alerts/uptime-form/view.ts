@@ -20,7 +20,7 @@ import { uptimePanelBody } from "../shared/uptime-view"
 import { formIssues } from "./derive"
 import { ASSERTION_OPS, type AssertionDraft, type MonitorKind } from "./form"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { assertionsSection, type H, requestSection, scheduleSection } from "./view-fields"
 import { dnsSection, heartbeatSection, notifySection, serviceSection, tcpSection } from "./view-kinds"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -261,7 +261,7 @@ const actionBar = (h: H, model: Model, widthClass: string): Html => {
 							h,
 							{
 								// Until the session says this is an admin, a click would be dropped by `save`.
-								isDisabled: issues.length > 0 || !model.isAdmin,
+								isDisabled: issues.length > 0 || !canManage(model),
 								isLoading: model.isSaving,
 								attributes: [h.OnClick(Message.ClickedSave())],
 							},
@@ -326,7 +326,7 @@ const adminOnlyPage = (
 	dashboardPage(h, header, [
 		alert(h, { variant: "info" }, [
 			icon(h, "ShieldIcon"),
-			alertTitle(h, ["Only org admins can create or change uptime monitors"]),
+			alertTitle(h, ["Only org admins and engineers can create or change uptime monitors"]),
 			alertDescription(h, ["Ask an admin to make this change."]),
 		]),
 		h.div(
@@ -350,7 +350,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		title: isEdit ? "Edit monitor" : "New monitor",
 		description: "Maple checks it from Ashburn, US and records every check as a trace.",
 	}
-	if (model.isSessionLoaded && !model.isAdmin) return adminOnlyPage(h, model, header)
+	if (model.isSessionLoaded && !canManage(model)) return adminOnlyPage(h, model, header)
 	if (isEdit && AsyncData.isFailure(model.existing.data))
 		return dashboardPage(h, header, [
 			errorState(h, { failure: model.existing.data.error, title: "Couldn't load the monitor" }),

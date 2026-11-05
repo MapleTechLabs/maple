@@ -131,7 +131,7 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		destinations: null,
 		deliveries: Keyed.idle(),
 		routingDeliveries: Keyed.idle(),
-		isAdmin: false,
+		grants: [],
 		rulesQuery: "",
 		isShowingAllRules: false,
 		togglingRuleId: null,
@@ -436,8 +436,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchRoutingDeliveries: ({ key, result }) => ({
 			model: { ...model, routingDeliveries: Keyed.accept(model.routingDeliveries, key, result) },
 		}),
-		CompletedFetchSession: ({ orgId, isAdmin }) =>
-			orgId === context.orgId ? { model: { ...model, isAdmin } } : { model },
+		CompletedFetchSession: ({ orgId, grants }) =>
+			orgId === context.orgId ? { model: { ...model, grants } } : { model },
 		ChangedRulesQuery: ({ value }) => ({ model: { ...model, rulesQuery: value } }),
 		ClickedStatusFilter: ({ bucket }) => statusToggled(model, bucket),
 		ClickedClearRuleFilters: () => ({

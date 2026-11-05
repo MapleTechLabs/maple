@@ -59,7 +59,7 @@ const FILTER_LABELS = {
 export type RepoListOptions<M> = Readonly<{
 	repositories: ReadonlyArray<GithubRepoSummary>
 	state: RepoListState
-	isAdmin: boolean
+	canEdit: boolean
 	busy: ReadonlyArray<string>
 	/** The row's switch (optimistic); counts and the filter read the server's value. */
 	isEnabled: (repo: GithubRepoSummary) => boolean
@@ -142,7 +142,7 @@ const repositoryRow = <M>(h: HtmlBuilder<M>, repo: GithubRepoSummary, options: R
 				id: `${id}-switch`,
 				inputId: id,
 				isChecked: isEnabled,
-				isDisabled: !options.isAdmin,
+				isDisabled: !options.canEdit,
 				ariaLabel: `Review pull requests on ${repo.fullName}`,
 				// Ignored while a change is in flight, rather than disabled, which would drop focus.
 				onToggle: options.busy.includes(repo.id) ? undefined : options.onToggle(repo),

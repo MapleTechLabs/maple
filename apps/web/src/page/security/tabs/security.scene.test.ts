@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import {
 	ApiRequestValidationError,
@@ -56,6 +57,8 @@ import { Message, type Model } from "./model"
 import { subscriptions } from "./subscription"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
+
+const MEMBER = Policy.grantsOf(["org:member"])
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_acme"),
@@ -271,7 +274,7 @@ describe("security tabs", () => {
 			{ update: pageUpdate, view },
 			given(gated),
 			expectView(text("acme/api-gateway")).toExist(),
-			expectView(text("Findings and reports are visible to org admins only")).toExist(),
+			expectView(text("Findings and reports are visible to org admins and engineers only")).toExist(),
 		)
 	})
 
@@ -479,7 +482,7 @@ describe("security tabs", () => {
 	})
 
 	test("a member sees no Add target or Start run control", () => {
-		const member = pageUpdate(loaded(), Message.CompletedReadIsAdmin({ isAdmin: false })).model
+		const member = pageUpdate(loaded(), Message.CompletedReadGrants({ grants: MEMBER })).model
 		scene(
 			{ update: pageUpdate, view },
 			given(member),
@@ -838,7 +841,7 @@ describe("spend and models", () => {
 	})
 
 	test("a member gets no Spend & models control", () => {
-		const member = pageUpdate(withSettings(), Message.CompletedReadIsAdmin({ isAdmin: false })).model
+		const member = pageUpdate(withSettings(), Message.CompletedReadGrants({ grants: MEMBER })).model
 		scene(
 			{ update: pageUpdate, view },
 			given(member),

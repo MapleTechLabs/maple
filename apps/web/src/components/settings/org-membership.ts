@@ -1,12 +1,33 @@
-export type OrgRole = "org:admin" | "org:member"
+import * as Policy from "@maple/domain/policy"
+import { Array as Arr, Option, String as Str } from "effect"
 
-/** Clerk role strings outside the two Maple roles read as member, the safer reading. */
+/** A role the Members page can give, by its Clerk key. */
+export type OrgRole = Policy.ClerkRoleKey
+
+/** The assignable Clerk role keys, lowest role first. */
+export const orgRoleKeys: ReadonlyArray<OrgRole> = Arr.map(Policy.assignableRoles, (entry) => entry.clerkKey)
+
+const [memberEntry] = Policy.assignableRoles
+
+/** A Clerk role string's entry; anything unknown reads as member, the safer reading. */
+const entryOf = (role: string): Policy.AssignableRole =>
+	Option.getOrElse(
+		Arr.findFirst(Policy.assignableRoles, (entry) => entry.clerkKey === role),
+		(): Policy.AssignableRole => memberEntry,
+	)
+
 export function toOrgRole(role: string): OrgRole {
-	return role === "org:admin" ? "org:admin" : "org:member"
+	return entryOf(role).clerkKey
 }
 
 export function orgRoleLabel(role: string): string {
-	return toOrgRole(role) === "org:admin" ? "Admin" : "Member"
+	return entryOf(role).label
+}
+
+/** "an admin", "a member": the role as a noun after "is now" or "Make Ada". */
+export function orgRoleNoun(role: string): string {
+	const noun = Str.toLowerCase(entryOf(role).label)
+	return `${/^[aeiou]/.test(noun) ? "an" : "a"} ${noun}`
 }
 
 /**
@@ -24,15 +45,11 @@ export function leaveEligibility(input: {
 	return input.adminCount > 1 ? "allowed" : "last-admin"
 }
 
-/** The confirm-strip question before a role change, naming what the new role can or cannot do. */
+/** The confirm-strip question before a role change, naming what the new role can do. */
 export function roleChangePrompt(name: string, next: OrgRole): { question: string; confirmLabel: string } {
-	return next === "org:admin"
-		? {
-				question: `Make ${name} an admin? Admins can manage billing and delete the organization.`,
-				confirmLabel: "Make admin",
-			}
-		: {
-				question: `Make ${name} a member? Members can no longer manage billing, keys or members.`,
-				confirmLabel: "Make member",
-			}
+	const entry = entryOf(next)
+	return {
+		question: `Make ${name} ${orgRoleNoun(next)}? ${entry.summary}`,
+		confirmLabel: `Make ${Str.toLowerCase(entry.label)}`,
+	}
 }

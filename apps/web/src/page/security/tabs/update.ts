@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import type { SecurityAuditRun } from "@maple/domain/http"
 import type { SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Result, Array as Arr, String as Str, Option } from "effect"
@@ -23,7 +24,7 @@ import {
 	FetchTargets,
 	WaitSecuritySearchDebounce,
 	ReadSecurityClock,
-	ReadSecurityIsAdmin,
+	ReadSecurityGrants,
 	StartRun,
 } from "./command"
 import {
@@ -216,7 +217,7 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 		tab: tabOfRoute(route),
 		...searches,
 		nowMs: 0,
-		isAdmin: !isClerkAuthEnabled,
+		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 		targets: Keyed.idle(),
 		runs: Keyed.idle(),
 		targetRuns: {},
@@ -245,7 +246,7 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 		...loaded,
 		commands: [
 			ReadSecurityClock(),
-			...(isClerkAuthEnabled ? [ReadSecurityIsAdmin()] : []),
+			...(isClerkAuthEnabled ? [ReadSecurityGrants()] : []),
 			...(loaded.commands ?? []),
 		],
 	}
@@ -398,7 +399,7 @@ const spendSettingsStep = (model: Model, message: SpendSettings.Message, context
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		CompletedReadIsAdmin: ({ isAdmin }) => ({ model: { ...model, isAdmin } }),
+		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		CompletedFetchTargets: ({ key, result }) => {
 			const next: Model = { ...model, targets: Keyed.accept(model.targets, key, result) }
 			return chain(followTargets(next, context, "Load"), (updated) =>

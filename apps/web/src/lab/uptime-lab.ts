@@ -186,7 +186,7 @@ export const init = (_flags: Flags): Return => ({
 		monitor: Keyed.idle(),
 		destinations: null,
 		incidents: null,
-		isAdmin: false,
+		grants: [],
 		isToggling: false,
 		isChecking: false,
 		copies: {},

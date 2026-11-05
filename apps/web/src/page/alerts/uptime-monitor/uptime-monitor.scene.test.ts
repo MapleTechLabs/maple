@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { UptimeMonitorPublicId } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr, String as Str } from "effect"
@@ -27,6 +28,8 @@ import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
+const ENGINEER = Policy.grantsOf(["org:engineer"])
+
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
@@ -47,7 +50,7 @@ const opened = (monitor: UptimeMonitor, extra: ReadonlyArray<Message> = []): Mod
 	return Arr.reduce(
 		[
 			Message.ReadClock({ nowMs: NOW }),
-			Message.CompletedFetchSession({ orgId: ORG, isAdmin: true }),
+			Message.CompletedFetchSession({ orgId: ORG, grants: ENGINEER }),
 			Message.CompletedFetchMonitor({
 				key: entered.monitor.key ?? "",
 				result: Result.succeed(monitor),

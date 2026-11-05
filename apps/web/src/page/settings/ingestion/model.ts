@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { V2AttributeMapping, V2IngestKeys, V2Recommendation } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
@@ -29,7 +30,7 @@ export const RecommendationTab = Schema.Literals(["open", "closed"])
 export type RecommendationTab = typeof RecommendationTab.Type
 
 export const Model = Schema.Struct({
-	isAdmin: Schema.Boolean,
+	grants: Schema.Array(Policy.PermissionName),
 	overview: OverviewData.schema,
 	ingest: IngestData.schema,
 	endpointCopy: CopyButton.Model,
@@ -59,3 +60,14 @@ export const Model = Schema.Struct({
 	isDeleting: Schema.Boolean,
 })
 export type Model = typeof Model.Type
+
+type Grants = Pick<Model, "grants">
+/** The ingest key pair shows (`ingest_keys:view`). */
+export const canViewKeys = (model: Grants): boolean => Policy.has(model.grants, "ingest_keys:view")
+/** The pair can be regenerated (`ingest_keys:roll`). */
+export const canRollKeys = (model: Grants): boolean => Policy.has(model.grants, "ingest_keys:roll")
+/** Ingest rules can be added, edited and removed (`ingest_rules:manage`). */
+export const canManageRules = (model: Grants): boolean => Policy.has(model.grants, "ingest_rules:manage")
+/** Attribute mappings, and the rename recommendations that create them (`attribute_mappings:manage`). */
+export const canManageMappings = (model: Grants): boolean =>
+	Policy.has(model.grants, "attribute_mappings:manage")

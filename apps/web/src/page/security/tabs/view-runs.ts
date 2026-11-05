@@ -41,7 +41,7 @@ import { stopSummaryOf } from "../kit/outcome"
 import { BUCKET_LABEL, type BucketCounts, SCORED_BUCKETS } from "../kit/findings"
 import { bucketDot } from "../kit/findings-view"
 import { meter } from "@maple/views/ui/meter"
-import { Message, type Model } from "./model"
+import { canManage, Message, type Model } from "./model"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
@@ -257,7 +257,7 @@ const toolbar = (
 export const startRunAction = (h: H, model: Model): Html | undefined => {
 	const targetId = model.runsSearch.target
 	const found = Arr.findFirst(targetsOf(model), (candidate) => candidate.id === targetId)
-	if (Option.isNone(found) || !model.isAdmin) return undefined
+	if (Option.isNone(found) || !canManage(model)) return undefined
 	const target = found.value
 	const isRunning = Arr.some(runsForTarget(model, target.id), isLive)
 	return button(
@@ -283,12 +283,12 @@ const noTargets = (h: H, model: Model): Html =>
 			emptyHeader(h, [
 				emptyTitle(h, ["No runs yet"]),
 				emptyDescription(h, [
-					model.isAdmin
+					canManage(model)
 						? "Add a target, then start its first run."
 						: "An org admin adds the first target on the Overview tab.",
 				]),
 			]),
-			model.isAdmin
+			canManage(model)
 				? button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedAddTarget())] }, [
 						icon(h, "PlusIcon"),
 						"Add target",
