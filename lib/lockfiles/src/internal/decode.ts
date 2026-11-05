@@ -1,4 +1,4 @@
-import { Effect, Schema, Array as Arr } from "effect"
+import { Effect, Option, Schema, Array as Arr } from "effect"
 import { parse as parseToml } from "smol-toml"
 import { parse as parseYaml, parseAllDocuments, type ParseOptions } from "yaml"
 import { LockfileParseError } from "../errors.ts"
@@ -60,14 +60,22 @@ export const parseYamlDocuments = (
 		catch: parseError(path, "invalid YAML"),
 	}).pipe(
 		Effect.flatMap((docs) => {
-			const broken = docs.find((doc) => doc.errors.length > 0)
-			return broken === undefined
-				? Effect.try({
-						try: () => Arr.map(docs, (doc) => doc.toJS()),
-						catch: parseError(path, "invalid YAML"),
-					})
-				: Effect.fail(
-						parseError(path, "invalid YAML")(broken.errors[0]?.message ?? "unreadable document"),
-					)
+			return Option.match(
+				Arr.findFirst(docs, (doc) => doc.errors.length > 0),
+				{
+					onNone: () =>
+						Effect.try({
+							try: () => Arr.map(docs, (doc) => doc.toJS()),
+							catch: parseError(path, "invalid YAML"),
+						}),
+					onSome: (broken) =>
+						Effect.fail(
+							parseError(
+								path,
+								"invalid YAML",
+							)(broken.errors[0]?.message ?? "unreadable document"),
+						),
+				},
+			)
 		}),
 	)

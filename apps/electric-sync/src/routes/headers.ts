@@ -10,7 +10,7 @@ const STRIPPED_UPSTREAM_HEADERS = ["content-encoding", "content-length"]
  * caching, so it's left as-is.
  */
 const appendVary = (existing: string | undefined, header: string): string => {
-	const trimmed = existing?.trim()
+	const trimmed = existing === undefined ? undefined : Str.trim(existing)
 	if (!trimmed) return header
 	if (trimmed === "*") return trimmed
 	const tokens = Arr.filter(

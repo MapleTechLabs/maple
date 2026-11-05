@@ -8,7 +8,7 @@ import {
 	type MapleRegion,
 	regionSuffix,
 } from "../region.ts"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 
 /** An alchemy stage string that names no deployable Maple stage or instance. */
 export class MapleStageError extends Schema.TaggedError<MapleStageError>()("@maple/infra/MapleStageError", {
@@ -114,9 +114,9 @@ const mapleStageResult = (stage: string): Result.Result<MapleStage, MapleStageEr
 		)
 	}
 
-	const prMatch = normalized.match(PR_STAGE_RE)
-	if (prMatch) {
-		const prNumber = Number(prMatch[1])
+	const prMatch = Str.match(PR_STAGE_RE)(normalized)
+	if (Option.isSome(prMatch)) {
+		const prNumber = Number(prMatch.value[1])
 		if (Number.isSafeInteger(prNumber) && prNumber > 0) {
 			return Result.succeed({ kind: "pr", prNumber })
 		}
@@ -146,11 +146,19 @@ export function parseMapleStage(stage: string): MapleStage {
  */
 const mapleDeploymentResult = (raw: string): Result.Result<MapleDeployment, MapleStageError> => {
 	const normalized = Str.toLowerCase(Str.trim(raw))
-	const match = normalized.match(REGION_STAGE_SUFFIX_RE)
-	const suffix = match?.[1]
-	const region: MapleRegion = suffix !== undefined && isMapleRegion(suffix) ? suffix : DEFAULT_MAPLE_REGION
+	const match = Str.match(REGION_STAGE_SUFFIX_RE)(normalized)
+	const region: MapleRegion = match.pipe(
+		Option.flatMapNullishOr((found) => found[1]),
+		Option.filter(isMapleRegion),
+		Option.getOrElse(() => DEFAULT_MAPLE_REGION),
+	)
 	return Result.flatMap(
-		mapleStageResult(match ? Str.slice(0, -match[0].length)(normalized) : normalized),
+		mapleStageResult(
+			Option.match(match, {
+				onNone: () => normalized,
+				onSome: (found) => Str.slice(0, -found[0].length)(normalized),
+			}),
+		),
 		(stage): Result.Result<MapleDeployment, MapleStageError> =>
 			stage.kind === "pr" && region !== DEFAULT_MAPLE_REGION
 				? Result.fail(

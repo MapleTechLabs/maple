@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr, Record as Rec } from "effect"
 import {
 	MapleCloudEventSchema,
 	type JsonValue,
@@ -51,21 +51,22 @@ export const isJsonValue = (value: unknown, seen: Set<object> = new Set()): valu
 	if (seen.has(value)) return false
 	seen.add(value)
 	const prototype = Object.getPrototypeOf(value)
-	const valid = Array.isArray(value)
-		? value.every((item) => isJsonValue(item, seen))
+	const valid = Arr.isArray(value)
+		? Arr.every(value, (item) => isJsonValue(item, seen))
 		: (prototype === Object.prototype || prototype === null) &&
-			Object.values(value).every((item) => isJsonValue(item, seen))
+			Arr.every(Object.values(value), (item) => isJsonValue(item, seen))
 	seen.delete(value)
 	return valid
 }
 
 const canonicalizeJson = (value: JsonValue): JsonValue => {
 	if (value === null || typeof value !== "object") return value
-	if (Array.isArray(value)) return value.map(canonicalizeJson)
-	return Object.fromEntries(
-		Object.entries(value)
-			.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-			.map(([key, child]) => [key, canonicalizeJson(child)]),
+	if (Array.isArray(value)) return Arr.map(value, canonicalizeJson)
+	return Rec.fromEntries(
+		Arr.map(
+			Object.entries(value).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
+			([key, child]) => [key, canonicalizeJson(child)],
+		),
 	)
 }
 

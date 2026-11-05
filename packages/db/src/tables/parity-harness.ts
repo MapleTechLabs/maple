@@ -8,7 +8,7 @@ import { PGlite } from "@electric-sql/pglite"
 import * as Kit from "@maple-dev/effect-orm/kit"
 import * as Migrate from "@maple-dev/effect-orm/migrate"
 import * as S from "@maple-dev/effect-orm/schema"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { ColumnDefs, PgSchemaTable } from "@maple-dev/effect-orm/postgres"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { bundledMigrations, runMigrations } from "../migrate"
@@ -20,9 +20,9 @@ const isPgEntity = Schema.is(S.PgSchemaEntity)
 
 /** The schema the newest snapshot records. */
 const headEntities = async (): Promise<ReadonlyArray<S.PgSchemaEntity>> =>
-	(await folder()).base.filter(isPgEntity)
+	Arr.filter((await folder()).base, isPgEntity)
 
-const LEDGER = new Set<string>(Object.values(Migrate.LEDGER_TABLES))
+const LEDGER = new Set<string>(Rec.values(Migrate.LEDGER_TABLES))
 
 /** The table an entity belongs to; an enum type belongs to none. */
 const tableOf = (entity: S.PgSchemaEntity): string | undefined =>
@@ -59,13 +59,13 @@ export const describeParity = (
 	tables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>> | Record<string, unknown>,
 	options: { readonly complete?: boolean } = {},
 ) => {
-	const list = Array.isArray(tables) ? tables : Object.values(tables).filter(isTable)
+	const list = Array.isArray(tables) ? tables : Arr.filter(Object.values(tables), isTable)
 	const ormEntities = Effect.runSync(S.pgEntitiesOf(list))
-	const ormTables = new Set<string>(list.map((table) => table.name))
+	const ormTables = new Set<string>(Arr.map(list, (table) => table.name))
 
 	const SNAPSHOT_READ_TIMEOUT_MS = 30_000
 
-	describe(`effect-orm tables (${[...ormTables].sort().join(", ")})`.slice(0, 120), () => {
+	describe(Str.slice(0, 120)(`effect-orm tables (${Arr.join([...ormTables].sort(), ", ")})`), () => {
 		// Reads every migration's snapshot, so it grows with the folder; the default 5 s is too tight on CI.
 		it.runIf(options.complete)(
 			"leave the migrations folder consistent",
@@ -81,10 +81,13 @@ export const describeParity = (
 			"cover every table the head snapshot knows",
 			async () => {
 				const snapshotTables = new Set(
-					(await headEntities()).filter((e) => e.kind === "table").map((e) => e.name),
+					Arr.map(
+						Arr.filter(await headEntities(), (e) => e.kind === "table"),
+						(e) => e.name,
+					),
 				)
-				expect([...snapshotTables].filter((name) => !ormTables.has(name)).sort()).toEqual([])
-				expect([...ormTables].filter((name) => !snapshotTables.has(name)).sort()).toEqual([])
+				expect(Arr.filter([...snapshotTables], (name) => !ormTables.has(name)).sort()).toEqual([])
+				expect(Arr.filter([...ormTables], (name) => !snapshotTables.has(name)).sort()).toEqual([])
 			},
 			SNAPSHOT_READ_TIMEOUT_MS,
 		)
@@ -92,7 +95,7 @@ export const describeParity = (
 		it(
 			"match the head snapshot entity for entity, so generate has nothing to write",
 			async () => {
-				const head = (await headEntities()).filter((entity) => {
+				const head = Arr.filter(await headEntities(), (entity) => {
 					const table = tableOf(entity)
 					return table !== undefined && ormTables.has(table)
 				})
@@ -120,9 +123,10 @@ export const describeParity = (
 				const { rows } = await migrated.query<{ table_name: string }>(
 					`SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY 1`,
 				)
-				const extra = rows
-					.map((row) => row.table_name)
-					.filter((name) => !ormTables.has(name) && !LEDGER.has(name))
+				const extra = Arr.filter(
+					Arr.map(rows, (row) => row.table_name),
+					(name) => !ormTables.has(name) && !LEDGER.has(name),
+				)
 				expect(extra).toEqual([])
 			})
 

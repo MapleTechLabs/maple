@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { IngestRuleSpec } from "@maple/domain/ingest-rules"
 import { INGEST_RULE_LIMITS } from "@maple/domain/ingest-rules"
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { applyRules, compileRules, formatDouble, globMatches, scanCut, type RuleRecord } from "./engine"
 import { text } from "./fuzz-arbitraries"
 import { hmacSha256, sha256, toHex, utf8 } from "./sha256"
@@ -133,7 +133,7 @@ describe("scanCut", () => {
 			const bytes = (part: string) => utf8(part).length
 			expect(bytes(Str.slice(0, cut)(value))).toBeLessThanOrEqual(INGEST_RULE_LIMITS.scanBytes)
 			expect(Str.slice(cut, cut + 1)(value)).not.toMatch(/^[\udc00-\udfff]$/u)
-			const next = String.fromCodePoint(value.codePointAt(cut) ?? 0)
+			const next = String.fromCodePoint(Option.getOrElse(Str.codePointAt(cut)(value), () => 0))
 			if (cut < value.length)
 				expect(bytes(Str.slice(0, cut)(value)) + bytes(next)).toBeGreaterThan(
 					INGEST_RULE_LIMITS.scanBytes,

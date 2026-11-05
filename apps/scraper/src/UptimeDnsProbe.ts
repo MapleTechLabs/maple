@@ -71,7 +71,13 @@ const canonicalIpv6 = (value: string): string => {
 /** Addresses compare as addresses, names case-insensitively without the root dot, TXT exactly. */
 const normalize = (recordType: UptimeDnsRecordType, value: string): string => {
 	const trimmed = Str.trim(value)
-	if (recordType === "A") return IPV4.test(trimmed) ? trimmed.split(".").map(Number).join(".") : trimmed
+	if (recordType === "A")
+		return IPV4.test(trimmed)
+			? Arr.join(
+					Arr.map(Str.split(".")(trimmed), (octet) => String(Number(octet))),
+					".",
+				)
+			: trimmed
 	if (recordType === "AAAA") return canonicalIpv6(trimmed)
 	if (!NAME_TYPES.has(recordType)) return trimmed
 	const lower = Str.toLowerCase(trimmed)

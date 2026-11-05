@@ -1,4 +1,4 @@
-import { Schema, Array as Arr, Record as Rec } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 import * as Effect from "effect/Effect"
 import { deepEqual, isResolved } from "alchemy/Diff"
 import { Unowned } from "alchemy/AdoptPolicy"
@@ -220,13 +220,14 @@ export const AlertRuleProvider = () =>
 			const findByName = (name: string) =>
 				Effect.gen(function* () {
 					const items = yield* listAll(api, "/v2/alerts/rules")
-					const match = items.find(
+					const match = Arr.findFirst(
+						items,
 						(item) =>
 							typeof item === "object" &&
 							item !== null &&
 							(item as { name?: unknown }).name === name,
 					)
-					return match === undefined ? undefined : yield* decodeWireRule(match)
+					return Option.isNone(match) ? undefined : yield* decodeWireRule(match.value)
 				})
 
 			return {
