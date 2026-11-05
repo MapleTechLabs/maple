@@ -9893,7 +9893,7 @@ SELECT
         LIMIT 2
         FORMAT JSON
 
--- builder:user-activity:userIssuesQuery:default  [2620f591]
+-- builder:user-activity:userIssuesQuery:default  [db0e3ebe]
 SELECT
           toString(error_events_by_time.FingerprintHash) AS fingerprintHash,
           argMax(error_events_by_time.ServiceName, error_events_by_time.Timestamp) AS serviceName,
@@ -9908,20 +9908,12 @@ SELECT
           AND error_events_by_time.Timestamp >= '2026-01-01 10:30:00'
           AND error_events_by_time.Timestamp <= '2026-01-03 14:15:00'
           AND error_events_by_time.UserId = 'user_catalog'
-          AND error_events_by_time.ServiceName IN (SELECT
-          user_activity_hourly.ServiceName AS ServiceName
-        FROM user_activity_hourly
-        WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
-          AND user_activity_hourly.ServiceNamespace IN ('storefront')
-          AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND user_activity_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
-          AND user_activity_hourly.UserId = 'user_catalog')
         GROUP BY fingerprintHash
         ORDER BY hits DESC, lastSeen DESC
         LIMIT 50
         FORMAT JSON
 
--- builder:user-activity:userIssueTotalsQuery:default  [c1cef9d7]
+-- builder:user-activity:userIssueTotalsQuery:default  [10c2bfc2]
 SELECT
           count() AS hits,
           uniqExact(error_events_by_time.FingerprintHash) AS errorGroups
@@ -9930,14 +9922,6 @@ SELECT
           AND error_events_by_time.Timestamp >= '2026-01-01 10:30:00'
           AND error_events_by_time.Timestamp <= '2026-01-03 14:15:00'
           AND error_events_by_time.UserId = 'user_catalog'
-          AND error_events_by_time.ServiceName IN (SELECT
-          user_activity_hourly.ServiceName AS ServiceName
-        FROM user_activity_hourly
-        WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
-          AND user_activity_hourly.ServiceNamespace IN ('storefront')
-          AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND user_activity_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
-          AND user_activity_hourly.UserId = 'user_catalog')
         FORMAT JSON
 
 -- builder:user-activity:userLogsQuery:default  [3bd5f1bd]

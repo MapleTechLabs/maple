@@ -6,7 +6,7 @@
 import { Schema, type DateTime, Array as Arr } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import * as T from "@maple-dev/effect-orm/clickhouse"
-import { from, inSubquery, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
+import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "../schema"
 import { DateTimeUtcFromWarehouse, DateTimeUtcFromWarehouse64 } from "../../datetime"
 import {
@@ -475,23 +475,25 @@ export const userIssueRowSchema = Schema.Struct({
 })
 
 /**
- * The issues (by FingerprintHash, as the errors queries key them) one user hit, most hits first.
- * `error_events` has no namespace, so a scope narrows to the services the rollup puts it in.
+ * One user's error scope. `error_events` has no namespace, so a namespace scope arrives as the
+ * services the caller resolved for it; absent is every service. No rollup is read, so a cluster
+ * without `user_activity_hourly` still scopes its issues.
  */
-const userErrorRows = ($: ColumnAccessor<typeof ErrorEventsByTime.columns>, opts: UserScopeOpts) => {
-	const scopedServices = from(UserActivityHourly)
-		.select(($s) => ({ ServiceName: $s.ServiceName }))
-		.where(($s) => [...activityWindow($s, opts), $s.UserId.eq(opts.userId)])
-	return [
-		$.OrgId.eq(orgIdParam),
-		$.Timestamp.gte(utcSecondsParam("startTime")),
-		$.Timestamp.lte(utcSecondsParam("endTime")),
-		$.UserId.eq(opts.userId),
-		opts.namespaces?.length ? inSubquery($.ServiceName, scopedServices) : undefined,
-	]
+export interface UserIssueScope {
+	readonly userId: string
+	readonly serviceNames?: readonly string[]
 }
 
-export function userIssuesQuery(opts: UserScopeOpts & { readonly limit?: number }) {
+const userErrorRows = ($: ColumnAccessor<typeof ErrorEventsByTime.columns>, opts: UserIssueScope) => [
+	$.OrgId.eq(orgIdParam),
+	$.Timestamp.gte(utcSecondsParam("startTime")),
+	$.Timestamp.lte(utcSecondsParam("endTime")),
+	$.UserId.eq(opts.userId),
+	opts.serviceNames === undefined ? undefined : CH.inList($.ServiceName, opts.serviceNames),
+]
+
+/** The issues (by FingerprintHash, as the errors queries key them) one user hit, most hits first. */
+export function userIssuesQuery(opts: UserIssueScope & { readonly limit?: number }) {
 	return from(ErrorEventsByTime)
 		.select(($) => ({
 			fingerprintHash: CH.toString_($.FingerprintHash),
@@ -519,7 +521,7 @@ export interface UserIssueTotalsOutput {
 export const userIssueTotalsRowSchema = Schema.Struct({ hits: CHNumber, errorGroups: CHNumber })
 
 /** All of the user's error occurrences and distinct fingerprints, uncapped, for the profile totals. */
-export function userIssueTotalsQuery(opts: UserScopeOpts) {
+export function userIssueTotalsQuery(opts: UserIssueScope) {
 	return from(ErrorEventsByTime)
 		.select(($) => ({ hits: CH.count(), errorGroups: CH.uniqExact($.FingerprintHash) }))
 		.where(($) => userErrorRows($, opts))

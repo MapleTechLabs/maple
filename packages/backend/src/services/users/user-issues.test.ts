@@ -2,14 +2,7 @@ import { afterEach, assert, describe, expect, it } from "@effect/vitest"
 import { Array as Arr, DateTime, Effect, Exit, Layer, Option, Schema, String as Str } from "effect"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
-import {
-	ErrorIssueId,
-	OrgId,
-	UserDetailRequest,
-	UserId,
-	WarehouseConfigError,
-	WarehouseSchemaDriftError,
-} from "@maple/domain/http"
+import { ErrorIssueId, OrgId, UserDetailRequest, UserId, WarehouseSchemaDriftError } from "@maple/domain/http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -166,40 +159,56 @@ describe("readUserIssues", () => {
 		}).pipe(Effect.provide([warehouse([], ran, missingUserId), createTestDb(createdDbs).layer]))
 	})
 
-	it.effect("reads unscoped, still attributed, on a cluster without user_activity_hourly", () => {
-		const sqls: Array<string> = []
-		const missingRollup = new WarehouseConfigError({
-			message: "Code: 60. Table default.user_activity_hourly does not exist",
-			pipeName: "userIssues",
-			clickhouseType: "UNKNOWN_TABLE",
-		})
-		const noRollup = Layer.succeed(
-			WarehouseQueryService,
-			makeWarehouseServiceStub({
-				compiledQuery: (_tenant, input) => {
-					const compiled = compiledQueryOf(input)
-					sqls.push(compiled.sql)
-					if (Str.includes("user_activity_hourly")(compiled.sql)) return Effect.fail(missingRollup)
-					return compiled.decodeRows([row("333", 2, "2026-11-05 11:00:00")]).pipe(Effect.orDie)
-				},
-			}),
-		)
-		return Effect.gen(function* () {
-			const response = yield* readUserIssues(
-				tenant,
-				new UserDetailRequest({ ...request, namespaces: ["storefront"] }),
+	it.effect(
+		"scopes a namespace by its services, so a cluster without the per-user rollup still attributes",
+		() => {
+			const sqls: Array<string> = []
+			const noRollup = Layer.succeed(
+				WarehouseQueryService,
+				makeWarehouseServiceStub({
+					compiledQuery: (_tenant, input, options) => {
+						const compiled = compiledQueryOf(input)
+						const context = options?.context ?? ""
+						sqls.push(compiled.sql)
+						if (Str.includes("user_activity_hourly")(compiled.sql))
+							return Effect.fail(
+								new WarehouseSchemaDriftError({
+									message: "Table user_activity_hourly does not exist",
+									pipeName: context,
+									clickhouseType: "UNKNOWN_TABLE",
+								}),
+							)
+						const found =
+							context === "usersServiceNamespaces"
+								? [
+										{ service: "checkout", namespace: "storefront", spans: "5" },
+										{ service: "billing", namespace: "payments", spans: "3" },
+									]
+								: context === "userIssues"
+									? [row("111", 4, "2026-11-05 09:00:00")]
+									: []
+						return compiled.decodeRows(found).pipe(Effect.orDie)
+					},
+				}),
 			)
-			assert.isTrue(response.attributed)
-			assert.deepStrictEqual(
-				Arr.map(response.issues, (issue) => issue.fingerprintHash),
-				["333"],
-			)
-			// The scoped read hit the missing rollup; the retry read without the namespace subquery.
-			assert.strictEqual(sqls.length, 2)
-			assert.include(sqls[0], "user_activity_hourly")
-			assert.notInclude(sqls[1], "user_activity_hourly")
-		}).pipe(Effect.provide([noRollup, createTestDb(createdDbs).layer]))
-	})
+			return Effect.gen(function* () {
+				yield* seed
+				const scoped = new UserDetailRequest({ ...request, namespaces: ["storefront"] })
+				const response = yield* readUserIssues(tenant, scoped)
+				assert.isTrue(response.attributed)
+				assert.deepStrictEqual(
+					Arr.map(response.issues, (issue) => issue.issueId),
+					[KEPT],
+				)
+				const issuesSql = Arr.findFirst(sqls, (sql) => Str.includes("FROM error_events_by_time")(sql))
+				assert.isTrue(Option.isSome(issuesSql))
+				assert.include(
+					Option.getOrElse(issuesSql, () => ""),
+					"ServiceName IN ('checkout')",
+				)
+			}).pipe(Effect.provide([noRollup, createTestDb(createdDbs).layer]))
+		},
+	)
 
 	it.effect("surfaces any other schema drift", () => {
 		const ran: Ran = []
