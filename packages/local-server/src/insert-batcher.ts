@@ -156,7 +156,7 @@ export class InsertBatcher {
 			if (Result.isSuccess(inserted))
 				for (const { owner, rowCount } of statement.parts) owner.queued.accepted += rowCount
 			else if (statement.parts.length === 1)
-				statement.parts[0]!.owner.queued.failure = { datasource, cause: inserted.failure }
+				statement.parts[0].owner.queued.failure = { datasource, cause: inserted.failure }
 			else
 				this.#retryAlone(
 					datasource,

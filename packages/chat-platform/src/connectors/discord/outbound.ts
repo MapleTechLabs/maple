@@ -61,7 +61,7 @@ import { renderDiscordMessage } from "./render"
  * half's, so one secret under one name serves both. A host that has not resolved it posts with an
  * empty token, and Discord's 401 reports that as the auth failure it is.
  */
-const botToken = (config: ConnectorConfig): Redacted.Redacted<string> =>
+const botToken = (config: ConnectorConfig): Redacted.Redacted =>
 	Redacted.make(config.get(BOT_TOKEN_CONFIG) ?? "")
 
 /**
@@ -258,7 +258,7 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 		 * nesting three deep under the first one.
 		 */
 		const attempt = Effect.fn("Discord.request", { kind: "client" })(function* (
-			bearer: Redacted.Redacted<string>,
+			bearer: Redacted.Redacted,
 			operation: ChatOutboundOperation,
 			route: string,
 			request: HttpClientRequest.HttpClientRequest,

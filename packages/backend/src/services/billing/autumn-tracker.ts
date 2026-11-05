@@ -105,7 +105,7 @@ const resolveTracker = Effect.fn("AutumnTracker.resolveTracker")(function* (orgI
 
 const postUsage = (
 	client: HttpClient.HttpClient,
-	tracker: { readonly apiUrl: string; readonly secretKey: Redacted.Redacted<string> },
+	tracker: { readonly apiUrl: string; readonly secretKey: Redacted.Redacted },
 	request: UsageRequest,
 ) =>
 	client

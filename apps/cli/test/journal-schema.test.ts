@@ -79,13 +79,13 @@ describe("migration journal envelope", () => {
 
 	it("keeps absent optional identity fields absent rather than present-undefined", () => {
 		const journal = structuredClone(golden)
-		const { manifestDigest: _m, projectRevision: _p, ...leanFrom } = journal.chain[0]!.from
+		const { manifestDigest: _m, projectRevision: _p, ...leanFrom } = journal.chain[0].from
 		const decoded = decodeMigrationJournal({
 			...journal,
-			chain: [{ ...journal.chain[0]!, from: leanFrom }],
+			chain: [{ ...journal.chain[0], from: leanFrom }],
 		})
-		expect("manifestDigest" in decoded.chain[0]!.from).toBe(false)
-		const from: Readonly<Record<string, unknown>> = decoded.chain[0]!.from
+		expect("manifestDigest" in decoded.chain[0].from).toBe(false)
+		const from: Readonly<Record<string, unknown>> = decoded.chain[0].from
 		expect(Rec.keys(from)).not.toContain("projectRevision")
 	})
 
@@ -116,7 +116,7 @@ describe("migration journal envelope", () => {
 	})
 
 	it("rejects a malformed step without interpreting module state", () => {
-		const step = golden.chain[0]!
+		const step = golden.chain[0]
 		for (const patch of [
 			{ status: "halfway" },
 			{ moduleVersion: 0 },

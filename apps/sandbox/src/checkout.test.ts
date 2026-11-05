@@ -168,7 +168,7 @@ describe("wrapCommand's environment", () => {
 		const firstHome = first.get("HOME")
 		assert.isDefined(firstHome)
 		assert.notStrictEqual(firstHome, second.get("HOME"))
-		assert.isFalse(existsSync(firstHome!))
+		assert.isFalse(existsSync(firstHome))
 		assert.strictEqual(first.get("GIT_CONFIG_GLOBAL"), "/dev/null")
 		assert.strictEqual(first.get("GIT_CONFIG_NOSYSTEM"), undefined)
 		assert.deepStrictEqual([...first.keys()].sort(), SANDBOX_COMMAND_ENV_NAMES)
@@ -429,7 +429,7 @@ describe("runExec", () => {
 				assert.strictEqual(response.stdout, "src/a.ts:1:x")
 				assert.isFalse(response.stdoutTruncated)
 			}
-			assert.include(seen[1]!, `@${checkoutDir(SHA)}`)
+			assert.include(seen[1], `@${checkoutDir(SHA)}`)
 		}),
 	)
 

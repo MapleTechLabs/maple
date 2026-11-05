@@ -391,12 +391,12 @@ describe("PlanetScaleService", () => {
 			// Branch defaulted to the inventory's production branch.
 			assert.strictEqual(result.branch, "main")
 			assert.isTrue(Str.includes("/databases/main-db/branches/main/insights")(insightCalls[0] ?? ""))
-			const insightUrl = new URL(insightCalls[0]!)
+			const insightUrl = new URL(insightCalls[0])
 			assert.strictEqual(insightUrl.searchParams.get("sort"), "totalTime")
 			assert.strictEqual(insightUrl.searchParams.get("dir"), "desc")
 			assert.isNull(result.unavailableReason)
 			assert.strictEqual(result.rows.length, 1)
-			const row = result.rows[0]!
+			const row = result.rows[0]
 			assert.strictEqual(row.fingerprint, "abc123")
 			assert.strictEqual(row.queryCount, 420)
 			assert.strictEqual(row.p99LatencyMillis, 140)

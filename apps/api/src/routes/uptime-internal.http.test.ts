@@ -92,7 +92,7 @@ const makeHarness = () => {
 				},
 				body: init.body === undefined ? undefined : JSON.stringify(init.body),
 			}),
-			Context.empty() as never,
+			Context.empty(),
 		)
 		return { status: response.status, text: await response.text() }
 	}

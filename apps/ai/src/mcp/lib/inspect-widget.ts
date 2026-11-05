@@ -38,7 +38,7 @@ import {
 	type ChartFlag,
 	type QueryStats,
 } from "./chart-statistics"
-import { resolveDashboardTimeRange, type DashboardTimeRangeInput } from "./resolve-dashboard-time-range"
+import { resolveDashboardTimeRange } from "./resolve-dashboard-time-range"
 import { resolveTimeRange } from "./time"
 import { autoBucketSeconds, runRawSql } from "./run-raw-sql"
 import type { DashboardDocument, DashboardWidgetSchema } from "@maple/domain/http"
@@ -1007,7 +1007,7 @@ export const inspectWidgetsAfterMutation = Effect.fn("McpInspectWidget.inspectWi
 		const capped = targets.length > maxWidgets
 		const toInspect = capped ? targets.slice(0, maxWidgets) : targets
 
-		const resolved = resolveDashboardTimeRange(dashboard.timeRange as DashboardTimeRangeInput)
+		const resolved = resolveDashboardTimeRange(dashboard.timeRange)
 		const timeRange: InspectWidgetTimeRange = resolved
 			? { startTime: resolved.startTime, endTime: resolved.endTime, source: "dashboard" }
 			: (() => {
@@ -1020,7 +1020,7 @@ export const inspectWidgetsAfterMutation = Effect.fn("McpInspectWidget.inspectWi
 		// on data the tile will never show.
 		const timeRangeFor = (widget: DashboardWidget): InspectWidgetTimeRange => {
 			if (!widget.timeRange) return timeRange
-			const widgetResolved = resolveDashboardTimeRange(widget.timeRange as DashboardTimeRangeInput)
+			const widgetResolved = resolveDashboardTimeRange(widget.timeRange)
 			return widgetResolved
 				? { startTime: widgetResolved.startTime, endTime: widgetResolved.endTime, source: "widget" }
 				: timeRange

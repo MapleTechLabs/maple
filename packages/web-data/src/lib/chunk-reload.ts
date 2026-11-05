@@ -14,7 +14,7 @@ export function isChunkLoadError(error: unknown): boolean {
 	if (error instanceof Error) return CHUNK_ERROR_PATTERN.test(error.message)
 	if (typeof error === "string") return CHUNK_ERROR_PATTERN.test(error)
 	if (error && typeof error === "object" && "message" in error) {
-		const message = (error as { message: unknown }).message
+		const message = error.message
 		if (typeof message === "string") return CHUNK_ERROR_PATTERN.test(message)
 	}
 	return false

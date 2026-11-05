@@ -388,7 +388,7 @@ const make: Effect.Effect<
 				"maple.anomaly.active_orgs": byo.size,
 				"maple.anomaly.failed_closed": false,
 			})
-			return byo as ReadonlySet<string>
+			return byo
 		}
 
 		const startTime = formatWarehouseDateTime(nowMs - ANOMALY_ACTIVE_DISCOVERY_WINDOW_MS)
@@ -425,7 +425,7 @@ const make: Effect.Effect<
 					const orgId = row.orgId
 					if (orgId) active.add(orgId)
 				}
-				return active as ReadonlySet<string>
+				return active
 			}),
 			Effect.tap((active) =>
 				Effect.annotateCurrentSpan({
@@ -468,7 +468,7 @@ const make: Effect.Effect<
 								"maple.anomaly.active_orgs": active.size,
 								"maple.anomaly.failed_closed": true,
 							})
-							return active as ReadonlySet<string>
+							return active
 						}),
 			),
 		)
@@ -2028,7 +2028,7 @@ const make: Effect.Effect<
 						// If the departing series was the primary, promote a remaining
 						// one — `detectorKey` must always point at a live series for the
 						// continue branch and manual resolve to find it.
-						const next = otherStates[0]!
+						const next = otherStates[0]
 						const nextEntry =
 							next.fingerprintHash === null || runtime === undefined
 								? Option.none<IncidentFingerprintEntry>()

@@ -295,7 +295,7 @@ describe("ClerkWebhookRouter", () => {
 				)
 				assert.strictEqual(response.status, 200)
 				assert.strictEqual(audit.recorded.length, 1)
-				const entry = audit.recorded[0]!
+				const entry = audit.recorded[0]
 				assert.strictEqual(entry.action, "member.added")
 				assert.strictEqual(entry.affectedUserId, "user_2abc")
 				assert.strictEqual(entry.orgId, "org_42")

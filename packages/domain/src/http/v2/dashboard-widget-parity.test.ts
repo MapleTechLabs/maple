@@ -265,7 +265,7 @@ describe("the v2 data source covers every stored kind", () => {
 			raw_sql: { kind: "raw_sql", sql: "SELECT count() FROM logs WHERE $__orgFilter" },
 			route: { kind: "route", endpoint: "list_traces" },
 			static: { kind: "static" },
-		}[kind]!
+		}[kind]
 
 		expect(() => decode(fixture)).not.toThrow()
 	})

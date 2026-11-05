@@ -49,7 +49,7 @@ const recording = (answer: Effect.Effect<ExecutorRunExited, AuditExecutionError>
 	return { execution, asked, released }
 }
 
-const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(Effect.result(effect))
+const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(Effect.result(effect))
 
 describe("run_in_sandbox", () => {
 	it("runs as the calling agent with defaults, and renders output and promoted evidence", async () => {

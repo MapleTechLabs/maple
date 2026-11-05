@@ -214,7 +214,7 @@ export const revokeGrant = Effect.fn("SupabaseApi.revokeGrant")(function* (
 	baseUrl: string,
 	params: {
 		readonly clientId: string
-		readonly clientSecret: Redacted.Redacted<string>
+		readonly clientSecret: Redacted.Redacted
 		readonly refreshToken: string
 	},
 ) {
@@ -296,7 +296,7 @@ export interface OtlpLogDrainSpec {
 	readonly description: string
 	/** Full OTLP/HTTP logs URL, e.g. `https://ingest.maple.dev/v1/logs`. */
 	readonly endpoint: string
-	readonly token: Redacted.Redacted<string>
+	readonly token: Redacted.Redacted
 }
 
 /** The `CreateLogDrainRequestOpenApi` body for an OTLP drain. */

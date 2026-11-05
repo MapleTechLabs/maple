@@ -48,7 +48,7 @@ export const GET: APIRoute = ({ site }) => {
 			"## Assets",
 			table(
 				["Asset", "Use", "URL"],
-				Arr.map(assets, ([name, use, path]) => [name!, use!, url(path!)]),
+				Arr.map(assets, ([name, use, path]) => [name, use, url(path)]),
 			),
 			"Each `.svg` has PNG siblings: append `-256`, `-512`, or `-1024` before the extension.",
 

@@ -1063,7 +1063,7 @@ describe("security dependencies tab", () => {
 	})
 
 	test("a saved triage reads the findings again and says what changed", () => {
-		const finding = findingsOf(NOW).findings[0]!
+		const finding = findingsOf(NOW).findings[0]
 		const saving = apply(opened(loaded()), [
 			() =>
 				Message.GotReasonMessage({ message: Field.Message.ChangedValue({ value: "Not reachable" }) }),

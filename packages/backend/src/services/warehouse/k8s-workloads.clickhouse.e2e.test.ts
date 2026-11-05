@@ -179,7 +179,7 @@ describe.skipIf(!clickhouseE2eEnabled)("listWorkloadsQuery against ClickHouse", 
 			}),
 		)
 		assert.isDefined(compiled.rowSchema)
-		return Schema.decodeUnknownSync(Schema.Array(compiled.rowSchema!))(body.data)
+		return Schema.decodeUnknownSync(Schema.Array(compiled.rowSchema))(body.data)
 	}
 
 	it("ranks missing replicas first, including a workload with no pods at all", async () => {
@@ -188,7 +188,7 @@ describe.skipIf(!clickhouseE2eEnabled)("listWorkloadsQuery against ClickHouse", 
 			Arr.map(rows, (row) => row.workloadName),
 			["checkout-api", "orphan", "api"],
 		)
-		const orphan = rows[1]!
+		const orphan = rows[1]
 		assert.strictEqual(orphan.podCount, 0)
 		assert.strictEqual(orphan.shortfall, 2)
 	})
@@ -196,29 +196,29 @@ describe.skipIf(!clickhouseE2eEnabled)("listWorkloadsQuery against ClickHouse", 
 	it("reads the latest replica gauges and sums restarts per container, not per sample", async () => {
 		const [checkout] = await run({ kind: "deployment", workloadNames: ["checkout-api"] })
 		assert.isDefined(checkout)
-		assert.strictEqual(checkout!.desiredReplicas, 5)
-		assert.strictEqual(checkout!.readyReplicas, 2)
-		assert.strictEqual(checkout!.shortfall, 3)
-		assert.isAbove(checkout!.replicaSamples, 0)
+		assert.strictEqual(checkout.desiredReplicas, 5)
+		assert.strictEqual(checkout.readyReplicas, 2)
+		assert.strictEqual(checkout.shortfall, 3)
+		assert.isAbove(checkout.replicaSamples, 0)
 		// 0 → 4 on pod a's app, 10 → 12 on b's app, 3 → 8 on b's worker, 5 → 5 on the sidecar;
 		// the other org's 500 is excluded.
-		assert.strictEqual(checkout!.restarts, 11)
+		assert.strictEqual(checkout.restarts, 11)
 		// a's OOM kill is the latest restart; b's worker errored earlier.
-		assert.strictEqual(checkout!.lastTerminatedReason, "OOMKilled")
-		assert.strictEqual(checkout!.podCount, 2)
+		assert.strictEqual(checkout.lastTerminatedReason, "OOMKilled")
+		assert.strictEqual(checkout.podCount, 2)
 		// Only pod a still reports at the window's end.
-		assert.closeTo(checkout!.cpuUsage, 0.2, 1e-9)
-		assert.closeTo(checkout!.peakMemoryLimitPct, 0.38, 1e-9)
+		assert.closeTo(checkout.cpuUsage, 0.2, 1e-9)
+		assert.closeTo(checkout.peakMemoryLimitPct, 0.38, 1e-9)
 	})
 
 	it("reports the worst pod's peak, not where it ended", async () => {
 		const [api] = await run({ kind: "deployment", workloadNames: ["api"] })
-		assert.closeTo(api!.peakCpuLimitPct, 0.93, 1e-9)
-		assert.closeTo(api!.saturation, 0.93, 1e-9)
-		assert.strictEqual(api!.shortfall, 0)
-		assert.strictEqual(api!.restarts, 9)
+		assert.closeTo(api.peakCpuLimitPct, 0.93, 1e-9)
+		assert.closeTo(api.saturation, 0.93, 1e-9)
+		assert.strictEqual(api.shortfall, 0)
+		assert.strictEqual(api.restarts, 9)
 		// c's Error is newer than d's OOM kills, whatever order the series are read in.
-		assert.strictEqual(api!.lastTerminatedReason, "Error")
+		assert.strictEqual(api.lastTerminatedReason, "Error")
 	})
 
 	it("lists jobs by failures, without calling a running job short of replicas", async () => {

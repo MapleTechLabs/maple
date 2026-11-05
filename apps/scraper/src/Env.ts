@@ -4,7 +4,7 @@ export interface ScraperEnvConfig {
 	/** Base URL of the Maple API, e.g. `https://api.maple.dev`. */
 	readonly MAPLE_API_URL: string
 	/** Shared internal bearer for the `/api/internal/*` scraper endpoints. */
-	readonly SD_INTERNAL_TOKEN: Redacted.Redacted<string>
+	readonly SD_INTERNAL_TOKEN: Redacted.Redacted
 	/**
 	 * Base URL of the Maple ingest gateway, e.g. `https://ingest.maple.dev`.
 	 * Scraped metrics are sent here as OTLP/JSON with each org's public

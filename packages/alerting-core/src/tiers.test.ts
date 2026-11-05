@@ -30,7 +30,7 @@ const evaluate = (tiers: ReadonlyArray<AlertThresholdTier>, value: number | null
 	evaluateAlertObservation(
 		{
 			comparator: "gt",
-			threshold: tiers[0]!.value,
+			threshold: tiers[0].value,
 			thresholdUpper: null,
 			tiers,
 			minimumSampleCount: 0,
@@ -216,22 +216,23 @@ describe("single-tier rules behave exactly as the consecutive-count machine did"
 
 	it.each([1, 2, 3, 7, 42, 1234])("seed %i", (seed) => {
 		const rolls = lcg(seed)(300)
-		const n = 1 + Math.floor(rolls[0]! * 3)
-		const r = 1 + Math.floor(rolls[1]! * 3)
+		const n = 1 + Math.floor(rolls[0] * 3)
+		const r = 1 + Math.floor(rolls[1] * 3)
 		const values = Arr.map(rolls.slice(2), (roll) => (roll < 0.1 ? null : roll < 0.55 ? 15 : 5))
 
 		const tiered = replay([warnAt(10)], values, { n, r })
 
 		const config = { breachesToOpen: n, healthyToResolve: r, cooldownMs: 0 }
+		const initialRow: HysteresisRow = {
+			consecutiveBreaches: 0,
+			consecutiveHealthy: 0,
+			incidentOpen: false,
+			lastResolvedAtMs: null,
+		}
 		const legacy = Arr.reduce(
 			values,
 			{
-				row: {
-					consecutiveBreaches: 0,
-					consecutiveHealthy: 0,
-					incidentOpen: false,
-					lastResolvedAtMs: null,
-				} as HysteresisRow,
+				row: initialRow,
 				outcomes: [] as ReadonlyArray<{
 					transition: string
 					consecutiveBreaches: number

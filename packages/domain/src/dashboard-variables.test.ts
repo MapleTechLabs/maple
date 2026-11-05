@@ -58,7 +58,7 @@ describe("DashboardDocument with sections", () => {
 		expect(decoded.sections).toBeUndefined()
 		const encoded = encodeDocument(decoded)
 		expect("sections" in encoded).toBe(false)
-		expect("sectionId" in encoded.widgets[0]!).toBe(false)
+		expect("sectionId" in encoded.widgets[0]).toBe(false)
 	})
 
 	// This is the entire back-compat story for an older client reading a newer

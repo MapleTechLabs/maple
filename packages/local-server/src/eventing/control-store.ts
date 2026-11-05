@@ -320,9 +320,9 @@ const assertRealDatabaseFile = (path: string): void => {
 }
 
 const configure = (db: Database): void => {
-	db.exec("PRAGMA foreign_keys = ON")
-	db.exec("PRAGMA trusted_schema = OFF")
-	db.exec("PRAGMA busy_timeout = 5000")
+	db.run("PRAGMA foreign_keys = ON")
+	db.run("PRAGMA trusted_schema = OFF")
+	db.run("PRAGMA busy_timeout = 5000")
 }
 
 const checkpointWal = (db: Database): void => {
@@ -620,13 +620,13 @@ const openDatabase = (path: string): Effect.Effect<Database, EventingControlStor
 			Effect.try({
 				try: () => {
 					configure(db)
-					db.exec("PRAGMA journal_mode = WAL")
-					db.exec("PRAGMA synchronous = FULL")
+					db.run("PRAGMA journal_mode = WAL")
+					db.run("PRAGMA synchronous = FULL")
 					const version = db.query<UserVersionRow, []>("PRAGMA user_version").get()
 					if (!version) throw storeError("eventing control database has no schema version")
 					let schemaVersion = asNumber(version.user_version)
 					if (schemaVersion === 0) {
-						db.transaction(() => db.exec(CREATE_SCHEMA)).exclusive()
+						db.transaction(() => db.run(CREATE_SCHEMA)).exclusive()
 						schemaVersion = CONTROL_SCHEMA_VERSION
 					}
 					if (schemaVersion !== CONTROL_SCHEMA_VERSION)

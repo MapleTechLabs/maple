@@ -86,7 +86,7 @@ export const planetScaleWebhookStatus = (
 /** The SDK wraps the signing secret in `Redacted`; a body it passes through unchecked holds a string. */
 const SecretSchema = Schema.Union([
 	Schema.String,
-	Schema.declare((value): value is Redacted.Redacted<string> => Redacted.isRedacted(value)).pipe(
+	Schema.declare((value): value is Redacted.Redacted => Redacted.isRedacted(value)).pipe(
 		Schema.decodeTo(Schema.String, {
 			decode: SchemaGetter.transform((secret) => String(Redacted.value(secret))),
 			encode: SchemaGetter.transform((secret) => Redacted.make(secret)),

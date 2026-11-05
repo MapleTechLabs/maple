@@ -39,7 +39,7 @@ describe("normalizePrReviewSubmission", () => {
 		assert.equal(droppedFindings, 0)
 		assert.equal(report.verdict, "issues")
 		assert.equal(report.findings.length, 1)
-		const finding = report.findings[0]!
+		const finding = report.findings[0]
 		assert.equal(finding.path, "src/routes/orders.ts")
 		assert.equal(finding.line, 42)
 		assert.equal(finding.endLine, 48)
@@ -149,7 +149,7 @@ describe("normalizePrReviewSubmission", () => {
 				},
 			],
 		})
-		assert.equal(report.findings[0]!.replacement, "\tif (a) {\n\t\treturn b")
+		assert.equal(report.findings[0].replacement, "\tif (a) {\n\t\treturn b")
 	})
 
 	it("derives the verdict from the findings when the model gave none", () => {
@@ -201,14 +201,14 @@ describe("normalizePrReviewSubmission", () => {
 		const { report } = normalizePrReviewSubmission({
 			findings: [{ path: "src/a.ts", checkId: "SPAN-01", line: 1, severity: "medium", title: "x" }],
 		})
-		assert.equal(report.findings[0]!.severity, "warn")
+		assert.equal(report.findings[0].severity, "warn")
 	})
 
 	it("ignores an end line at or before the start line", () => {
 		const { report } = normalizePrReviewSubmission({
 			findings: [{ path: "src/a.ts", checkId: "SPAN-01", line: 10, endLine: 10, title: "same" }],
 		})
-		assert.equal(report.findings[0]!.endLine, undefined)
+		assert.equal(report.findings[0].endLine, undefined)
 	})
 
 	it("records which top-level keys the model filled", () => {
@@ -229,8 +229,8 @@ describe("normalizePrReviewSubmission", () => {
 			],
 		})
 		assert.equal(report.coverage.length, 1)
-		assert.equal(report.coverage[0]!.unit, "POST /orders")
-		assert.equal(report.coverage[0]!.instrumented, true)
+		assert.equal(report.coverage[0].unit, "POST /orders")
+		assert.equal(report.coverage[0].instrumented, true)
 	})
 })
 
@@ -307,9 +307,9 @@ describe("lenient numbers and booleans", () => {
 			findings: [{ path: "a.ts", line: "12", endLine: "14", title: "x" }],
 			coverage: [{ unit: "GET /x", instrumented: "true" }],
 		})
-		assert.equal(report.findings[0]!.line, 12)
-		assert.equal(report.findings[0]!.endLine, 14)
-		assert.isTrue(report.coverage[0]!.instrumented)
+		assert.equal(report.findings[0].line, 12)
+		assert.equal(report.findings[0].endLine, 14)
+		assert.isTrue(report.coverage[0].instrumented)
 		assert.lengthOf(
 			normalizePrReviewSubmission({ findings: [{ path: "a.ts", line: "x" }] }).report.findings,
 			0,

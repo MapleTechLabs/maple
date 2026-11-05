@@ -622,8 +622,8 @@ const copyTable = async (
 		if (selected.length === 0) throw new Error(`could not form a bounded batch for ${table.name}`)
 		rows = Arr.map(selected, (candidate) => candidate.row)
 		const payload = Arr.map(selected, (candidate) => candidate.copy)
-		const first = rows[0]!
-		const last = rows[rows.length - 1]!
+		const first = rows[0]
+		const last = rows[rows.length - 1]
 		const lastKey = keyOf(last)
 		const selectedLastKeyCount = Arr.filter(rows, (row) => keyOf(row) === lastKey).length
 		const priorKey =
@@ -720,8 +720,8 @@ const recoverPendingBatch = async (
 			delete copy.__maple_tie_break
 			return copy
 		})
-		const first = inserted[0]!
-		const last = inserted[inserted.length - 1]!
+		const first = inserted[0]
+		const last = inserted[inserted.length - 1]
 		const firstKey = keyOf(first)
 		const lastKey = keyOf(last)
 		const expectedFirstKey = `${pending.firstTimestamp ?? ""}\0${pending.firstHash ?? ""}\0${pending.firstTieBreak ?? ""}`

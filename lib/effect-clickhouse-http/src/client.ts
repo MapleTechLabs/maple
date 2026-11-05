@@ -30,7 +30,7 @@ export interface ClientConfig {
 	readonly url: string
 	readonly database?: string
 	readonly username?: string
-	readonly password?: Redacted.Redacted<string>
+	readonly password?: Redacted.Redacted
 	readonly settings?: Readonly<Record<string, string | number>>
 }
 export interface QueryOptions {

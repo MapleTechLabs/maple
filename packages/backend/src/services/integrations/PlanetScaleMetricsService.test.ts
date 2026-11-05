@@ -151,7 +151,7 @@ const fakePlanetScale = (
 		const metricsMatch = Str.match(/\/branches\/([^/]+)\/metrics$/)(url.pathname)
 		if (Option.isSome(metricsMatch)) {
 			const metrics = metricsMatch.value
-			const branch = decodeURIComponent(metrics[1]!)
+			const branch = decodeURIComponent(metrics[1])
 			metricRequests.push({
 				branch,
 				metrics: url.searchParams.get("metrics"),

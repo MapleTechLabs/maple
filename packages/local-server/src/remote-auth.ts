@@ -249,7 +249,7 @@ export const throttleClientKey = (address: string): string => {
 	const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(bare)?.[1]
 	if (mapped !== undefined) return mapped
 	if (!Str.includes(":")(bare)) return bare
-	const [head = "", tail] = Str.split("::")(bare)
+	const [head, tail] = Str.split("::")(bare)
 	const left = head === "" ? [] : Str.split(":")(head)
 	const right = tail === undefined || tail === "" ? [] : Str.split(":")(tail)
 	const fill = Arr.makeBy(Math.max(0, 8 - left.length - right.length), () => "0")

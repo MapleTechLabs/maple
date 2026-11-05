@@ -208,7 +208,7 @@ export class ServiceMapRollupService extends Context.Service<
 			const startTime = formatWarehouseDateTime(nowMs - ACTIVE_DISCOVERY_HOURS * HOUR_MS)
 			return yield* warehouse
 				.crossOrgQuery(
-					systemTenant(knownOrgs[0]!),
+					systemTenant(knownOrgs[0]),
 					CH.compile(CH.activeOrgsByTracesQuery(), { startTime }),
 					{
 						profile: "discovery",

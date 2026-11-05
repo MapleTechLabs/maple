@@ -303,8 +303,8 @@ describe("Database execute span instrumentation", () => {
 			)
 			assert.isDefined(selectSpan)
 			assert.isDefined(probeSpan)
-			assert.notInclude(selectSpan as string, "concurrent_probe")
-			assert.notInclude(probeSpan as string, "org_onboarding_state")
+			assert.notInclude(selectSpan, "concurrent_probe")
+			assert.notInclude(probeSpan, "org_onboarding_state")
 			for (const span of dbSpans(spans)) {
 				assert.strictEqual(span.attributes.get("db.statement_count"), 1)
 			}

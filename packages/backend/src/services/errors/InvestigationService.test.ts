@@ -356,7 +356,7 @@ describe("InvestigationService", () => {
 			)
 			assert.strictEqual(started.status, "investigating")
 			assert.lengthOf(chat.beginTurns, 1)
-			assert.include(chat.beginTurns[0]!.text, "err_incident")
+			assert.include(chat.beginTurns[0].text, "err_incident")
 
 			const rows = yield* database.execute((db) =>
 				db.run(
@@ -599,9 +599,9 @@ describe("InvestigationService", () => {
 			// Labelled sections, not a bare JSON blob. The two facts the prompt opens
 			// by demanding — the interval and the identifiers — were being buried in
 			// one, and the model routinely skipped both.
-			assert.include(chat.beginTurns[0]!.text, "## Interval")
-			assert.include(chat.beginTurns[0]!.text, "err_autonomous_start")
-			assert.include(chat.beginTurns[0]!.text, '"snapshot"')
+			assert.include(chat.beginTurns[0].text, "## Interval")
+			assert.include(chat.beginTurns[0].text, "err_autonomous_start")
+			assert.include(chat.beginTurns[0].text, '"snapshot"')
 
 			const database = yield* Database
 			const databaseRows = yield* database.execute((db) =>
