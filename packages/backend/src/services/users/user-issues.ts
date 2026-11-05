@@ -145,3 +145,46 @@ export const readUserIssueItems = Effect.fn("UsersReads.issueItems")(function* (
 	})
 	return Option.some(items)
 })
+
+/** The profile's issue figures over the window, uncapped by the Errors list's limit. */
+export type UserIssueTotals = Readonly<{ hits: number; issues: number }>
+
+/**
+ * Every error hit, and the issue count: the resolved issues (aliases folded) while the list holds
+ * every fingerprint, the distinct fingerprints past its cap (aliasing can only overcount those).
+ */
+export const userIssueTotals = (
+	row: CH.UserIssueTotalsOutput | undefined,
+	resolvedIssues: number,
+): UserIssueTotals => {
+	const fingerprints = row?.fingerprints ?? 0
+	return { hits: row?.hits ?? 0, issues: fingerprints > USER_ISSUES_LIMIT ? fingerprints : resolvedIssues }
+}
+
+/** The uncapped totals row; `None` where `error_events` predates `UserId`. */
+export const readUserIssueTotalsRow = Effect.fn("UsersReads.issueTotals")(function* (
+	tenant: TenantContext,
+	payload: UserDetailRequest,
+) {
+	const warehouse = yield* WarehouseQueryService
+	return yield* warehouse
+		.compiledQuery(
+			tenant,
+			CH.compile(
+				CH.userIssueTotalsQuery({ userId: payload.userId, namespaces: payload.namespaces ?? [] }),
+				{
+					orgId: tenant.orgId,
+					startTime: payload.startTime,
+					endTime: payload.endTime,
+				},
+			),
+			{ profile: "aggregation", context: "userIssueTotals" },
+		)
+		.pipe(
+			Effect.map((rows) => Option.some(rows[0])),
+			Effect.catchIf(
+				(error) => isMissingErrorEventsUserId(error) || isMissingUserActivityHourly(error),
+				() => Effect.succeed(Option.none<CH.UserIssueTotalsOutput | undefined>()),
+			),
+		)
+})

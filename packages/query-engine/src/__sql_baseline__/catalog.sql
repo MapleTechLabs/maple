@@ -9845,6 +9845,25 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
+-- builder:user-activity:userIssueTotalsQuery:default  [8ffd458c]
+SELECT
+          count() AS hits,
+          uniqExact(error_events_by_time.FingerprintHash) AS fingerprints
+        FROM error_events_by_time
+        WHERE error_events_by_time.OrgId = 'org_sql_catalog'
+          AND error_events_by_time.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events_by_time.Timestamp <= '2026-01-03 14:15:00'
+          AND error_events_by_time.UserId = 'user_catalog'
+          AND error_events_by_time.ServiceName IN (SELECT
+          user_activity_hourly.ServiceName AS ServiceName
+        FROM user_activity_hourly
+        WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
+          AND user_activity_hourly.ServiceNamespace IN ('storefront')
+          AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND user_activity_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND user_activity_hourly.UserId = 'user_catalog')
+        FORMAT JSON
+
 -- builder:user-activity:userLogsQuery:default  [3bd5f1bd]
 SELECT
           logs.Timestamp AS timestamp,
