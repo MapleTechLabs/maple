@@ -70,6 +70,17 @@ export const groupsInputs = (search: Search, window: TimeWindow, pinnedNamespace
 	return inputs
 }
 
+/** The summary strip's read for one picked group: its whole size, so only the window and scope narrow it. */
+export const groupStatsInputs = (search: Search, window: TimeWindow, pinnedNamespace: string | null) => {
+	const {
+		search: _search,
+		hasErrors: _errors,
+		hasReplay: _replay,
+		...inputs
+	} = groupsInputs(search, window, pinnedNamespace)
+	return inputs
+}
+
 export const ResolveWindow = Command.define("ResolveUsersWindow", {
 	args: {
 		mode: RequestMode,
@@ -117,6 +128,12 @@ export const FetchUsers = Command.define("FetchUsers", {
 		),
 })
 
+/** The group view reads over the list's filters; a list narrowed to one group reads its whole size. */
+export const groupsReadInputs = (search: Search, window: TimeWindow, pinnedNamespace: string | null) =>
+	search.groupBy === "group"
+		? groupsInputs(search, window, pinnedNamespace)
+		: groupStatsInputs(search, window, pinnedNamespace)
+
 export const FetchGroups = Command.define("FetchUserGroups", {
 	args: FetchArgs,
 	messages: [Message.CompletedFetchGroups],
@@ -124,7 +141,7 @@ export const FetchGroups = Command.define("FetchUserGroups", {
 		readThrough(
 			{ key, refresh, idleTtlMs: IdleTtl.listUserGroups, schema: UsersGroupsPage },
 			Effect.map(
-				listUserGroups({ data: groupsInputs(search, window, pinnedNamespace) }),
+				listUserGroups({ data: groupsReadInputs(search, window, pinnedNamespace) }),
 				(response): UsersGroupsPage => ({ groups: response.groups, truncated: response.truncated }),
 			),
 		).pipe(

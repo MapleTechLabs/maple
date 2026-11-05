@@ -10,6 +10,7 @@ import { activeNamespace, detailInputs } from "./command"
 import { activityHref } from "./data-map"
 import { Message } from "./message"
 import { init, routeChanged, tabOf, update, userDetailHref } from "./update"
+import { groupStatsOf } from "./view"
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_test"),
@@ -226,6 +227,20 @@ describe("the namespace in effect", () => {
 	})
 })
 
+const GROUP = {
+	groupId: "grp_acme",
+	groupName: "Acme Inc.",
+	users: 3,
+	activeToday: 1,
+	withErrors: 1,
+	withReplay: 2,
+	sessions: 6,
+	errors: 1,
+	requests: 40,
+	firstSeenMs: 0,
+	lastSeenMs: 0,
+}
+
 describe("the group card", () => {
 	const profile = (groupId: string | null): UserProfileItem => ({
 		userId: "user/42 ada",
@@ -284,6 +299,41 @@ describe("the group card", () => {
 		expect(Option.isSome(read)).toBe(true)
 		expect(step.model.groupStats.key).toContain("grp_acme")
 		expect(step.model.groupStats.key).toContain("storefront")
+	})
+
+	it("refreshes the group card on a reload, beside the overview", () => {
+		const step = overviewFor("grp_acme")
+		const loaded = update(
+			step.model,
+			Message.CompletedFetchGroupStats({
+				key: step.model.groupStats.key ?? "",
+				result: Result.succeed({ group: GROUP }),
+			}),
+			pinned,
+		).model
+		const reloaded = update(
+			loaded,
+			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Refresh" }),
+			pinned,
+		)
+		const names = Arr.map(reloaded.commands ?? [], (command) => command.name)
+		expect(names).toContain("FetchUserGroupStats")
+		expect(names).toContain("FetchUserOverview")
+	})
+
+	it("shows another group's numbers as loading, never under this group's name", () => {
+		const step = overviewFor("grp_acme")
+		const landed = update(
+			step.model,
+			Message.CompletedFetchGroupStats({
+				key: step.model.groupStats.key ?? "",
+				result: Result.succeed({ group: { ...GROUP, groupId: "grp_acme" } }),
+			}),
+			pinned,
+		).model
+		expect(groupStatsOf(landed, "grp_acme")).toMatchObject({ users: 3 })
+		expect(groupStatsOf(landed, "grp_globex")).toBe("loading")
+		expect(groupStatsOf(landed, null)).toBeNull()
 	})
 
 	it("reads nothing for a user in no group", () => {

@@ -133,7 +133,7 @@ const userPage = (h: H, model: Model, profile: UserProfileItem, inputs: PageView
 				clock,
 				namespace,
 				detail.profile.groupId === null ? null : groupUsersHref(detail.profile.groupId, model.search),
-				groupStatsOf(model),
+				groupStatsOf(model, detail.profile.groupId),
 			),
 			rightPanelWidth: "w-80",
 			scrollClassName: "p-0",
@@ -142,14 +142,18 @@ const userPage = (h: H, model: Model, profile: UserProfileItem, inputs: PageView
 	)
 }
 
-/** The rail's group numbers: none until the overview names a group, then the read's state. */
-const groupStatsOf = (model: Model): UserGroupStats =>
-	model.groupStats.key === null
+/**
+ * The rail's group numbers: none until the overview names a group, then the read's state. Numbers
+ * for another group (a window change moved the user) read as loading until the right ones land.
+ */
+export const groupStatsOf = (model: Model, groupId: string | null): UserGroupStats =>
+	model.groupStats.key === null || groupId === null
 		? null
 		: AsyncData.matchData(model.groupStats.data, {
 				onEmpty: (): UserGroupStats => "loading",
 				onFailure: (): UserGroupStats => "failed",
-				onData: ({ group }): UserGroupStats => group,
+				onData: ({ group }): UserGroupStats =>
+					group === null || group.groupId === groupId ? group : "loading",
 			})
 
 /** No signal in the window and scope carries this id. */

@@ -71,15 +71,15 @@ const orgSummaryStateOf = (model: Model): UsersSummaryState =>
 	})
 
 /**
- * A list narrowed to one group shows that group's numbers; until they arrive, or if their read
- * fails, the org's.
+ * A list narrowed to one group shows that group's numbers: a skeleton while they load, the failed
+ * strip if their read fails, the org's only when the window holds no such group.
  */
 const summaryStateOf = (model: Model): UsersSummaryState => {
 	const groupId = pickedGroup(model.search)
 	if (groupId === null || isGrouped(model.search)) return orgSummaryStateOf(model)
 	return AsyncData.matchData(model.groups.data, {
 		onEmpty: (): UsersSummaryState => "loading",
-		onFailure: () => orgSummaryStateOf(model),
+		onFailure: (): UsersSummaryState => "failed",
 		onData: (page) =>
 			Option.match(
 				Arr.findFirst(page.groups, (row) => row.groupId === groupId),

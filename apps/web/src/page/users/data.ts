@@ -179,6 +179,10 @@ export const namespacesOf = (
 	)
 }
 
+/** A per-user average: one decimal under ten, whole numbers past it. */
+export const perUserText = (value: number): string =>
+	value >= 10 ? Math.round(value).toLocaleString("en-US") : value.toFixed(1)
+
 /** A group's display name: its name, else its id; `null` without a group. */
 export const groupLabel = (group: Pick<UserRow, "groupId" | "groupName">): string | null =>
 	group.groupId === null ? null : (group.groupName ?? group.groupId)

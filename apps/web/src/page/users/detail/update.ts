@@ -1,5 +1,5 @@
 import { Option, Result } from "effect"
-import { Command } from "foldkit"
+import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import { type TimeWindow } from "../../../data/time-range"
@@ -61,7 +61,21 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): 
  * The overview (profile, activity and issues) always; the Traces and Logs tabs' reads only while
  * their tab is open, so a page view never scans rows it does not show.
  */
+/** The group the loaded profile names, so a reload can refresh its card beside the overview. */
+const loadedGroupId = (model: Model): string | null =>
+	Option.match(AsyncData.getData(model.profile.data), {
+		onNone: () => null,
+		onSome: (data) => data.profile?.groupId ?? null,
+	})
+
+/** Every read, and the group card's too when the loaded profile already names a group. */
 const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
+	const step = requestReads(model, context, window, mode)
+	const group = requestGroupStats(step.model, context, loadedGroupId(model), mode)
+	return { model: group.model, commands: [...(step.commands ?? []), ...(group.commands ?? [])] }
+}
+
+const requestReads = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
 	const inputs = detailInputs(model.userId, model.search, window, context.pinnedNamespace)
 	const tab = tabOf(model.search)
 	const overviewKey = requestKey(context.orgId, "getUserOverview", { data: inputs })
@@ -95,9 +109,14 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 
 /**
  * The group card's read, once the overview names the user's group: org-wide under the pin, not the
- * page's namespace pick, since a group spans namespaces. A reload refreshes it with the overview.
+ * page's namespace pick, since a group spans namespaces.
  */
-const requestGroupStats = (model: Model, context: PageContext, groupId: string | null): Return => {
+const requestGroupStats = (
+	model: Model,
+	context: PageContext,
+	groupId: string | null,
+	mode: RequestMode,
+): Return => {
 	if (groupId === null || model.window === null) return { model }
 	const inputs = {
 		groupId,
@@ -106,12 +125,12 @@ const requestGroupStats = (model: Model, context: PageContext, groupId: string |
 		namespaces: context.pinnedNamespace === null ? [] : [context.pinnedNamespace],
 	}
 	const key = requestKey(context.orgId, "listUserGroups", { data: inputs })
-	const groupStats = Keyed.request(model.groupStats, key, model.isReloading ? "Refresh" : "Load")
+	const groupStats = Keyed.request(model.groupStats, key, mode)
 	return Option.match(groupStats, {
 		onNone: () => ({ model }),
 		onSome: (next) => ({
 			model: { ...model, groupStats: next },
-			commands: [FetchGroupStats({ key, refresh: model.isReloading, ...inputs })],
+			commands: [FetchGroupStats({ key, refresh: mode === "Refresh", ...inputs })],
 		}),
 	})
 }
@@ -233,6 +252,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					onSuccess: (data) => data.profile.profile?.groupId ?? null,
 					onFailure: () => null,
 				}),
+				"Load",
 			),
 		CompletedFetchGroupStats: ({ key, result }) => ({
 			model: { ...model, groupStats: Keyed.accept(model.groupStats, key, result) },

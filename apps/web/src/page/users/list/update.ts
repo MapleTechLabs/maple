@@ -19,7 +19,7 @@ import {
 	FetchGroups,
 	FetchUsers,
 	facetsInputs,
-	groupsInputs,
+	groupsReadInputs,
 	listInputs,
 	LoadSignalPresence,
 	ResolveWindow,
@@ -62,7 +62,7 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 		data: listInputs(model.search, window, pinnedNamespace),
 	})
 	const groupsKey = requestKey(context.orgId, "listUserGroups", {
-		data: groupsInputs(model.search, window, pinnedNamespace),
+		data: groupsReadInputs(model.search, window, pinnedNamespace),
 	})
 	const facetsKey = requestKey(context.orgId, "getUsersFacets", {
 		data: facetsInputs(window, pinnedNamespace),

@@ -31,7 +31,7 @@ import {
 import { pinnedNamespaceNotice } from "../kit/pinned-namespace-notice"
 import { listRelativeTime } from "../kit/relative-time"
 import { statRail, statRailItem, statRailItemSkeleton } from "../kit/stat-rail"
-import { groupLabel, type UserRow } from "./data"
+import { groupLabel, perUserText, type UserRow } from "./data"
 import { signalLane, signalTags, userAvatar, userNameBlock } from "./view-kit"
 
 // `/users`: every end user the SDKs identified in the window, most recently seen first.
@@ -234,7 +234,7 @@ const groupSummaryItems = (summary: UsersGroupSummary): ReadonlyArray<SummaryIte
 		subline:
 			summary.users === 0
 				? "recorded sessions"
-				: `${(summary.sessions / summary.users).toFixed(1)} per user`,
+				: `${perUserText(summary.sessions / summary.users)} per user`,
 	},
 ]
 

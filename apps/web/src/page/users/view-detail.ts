@@ -46,7 +46,7 @@ import { clientIcon, kindTag } from "../mcp/view-kit"
 import { statRail, statRailItem } from "../kit/stat-rail"
 import { type LinkTab, linkTabStrip } from "../kit/underline-tabs"
 import type { ActivityItem, ActivityKind, UserDetail, UserProfile, UserTab } from "./data"
-import { namespacesOf, USER_TABS, userLabel } from "./data"
+import { namespacesOf, perUserText, USER_TABS, userLabel } from "./data"
 import { WORKFLOW_LABEL, workflowRingIcon } from "../errors/kit/workflow"
 import { userAvatar } from "./view-kit"
 
@@ -332,10 +332,6 @@ export type UserGroupStats =
 	| "loading"
 	| "failed"
 	| null
-
-/** One decimal under ten, whole numbers past it. */
-const perUserText = (value: number): string =>
-	value >= 10 ? formatNumber(Math.round(value)) : value.toFixed(1)
 
 const shareText = (count: number, of: number): string =>
 	count === 0 ? "0" : `${formatNumber(count)} · ${formatPercentColumn(count / Math.max(1, of))}`
