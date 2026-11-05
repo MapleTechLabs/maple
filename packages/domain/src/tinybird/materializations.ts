@@ -1468,6 +1468,8 @@ export const userActivityHourlyTracesMv = defineMaterializedView("user_activity_
 	description:
 		"Rolls up spans that carry user.id (else enduser.id) hourly per user, service and service.namespace: spans, requests, errors, traces, sessions, request latency and top routes.",
 	datasource: userActivityHourly,
+	// A 90-day rollup over 30-day `traces`/`logs`: a rebuild would drop days 31-90.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "user_activity_hourly_traces_mv_node",
@@ -1503,6 +1505,8 @@ export const userActivityHourlyLogsMv = defineMaterializedView("user_activity_ho
 	description:
 		"Rolls up logs that carry user.id (else enduser.id) hourly per user, service and service.namespace: log, warning and error log counts and sessions.",
 	datasource: userActivityHourly,
+	// A 90-day rollup over 30-day `traces`/`logs`: a rebuild would drop days 31-90.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "user_activity_hourly_logs_mv_node",
