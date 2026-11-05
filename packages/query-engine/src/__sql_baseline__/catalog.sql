@@ -10187,7 +10187,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- builder:users:usersFacetsQuery:default  [fda36b9a]
+-- builder:users:usersFacetsQuery:default  [3fb921fa]
 SELECT
           signals.namespace AS name,
           uniqExact(signals.userId) AS count,
@@ -10207,7 +10207,8 @@ SELECT
           toUInt64(0) AS mcpSpans,
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
         FROM (SELECT
           session_replays.SessionId AS sessionId,
           argMax(session_replays.UserId, session_replays.Version) AS userId,
@@ -10240,7 +10241,8 @@ SELECT
           toUInt64(0) AS mcpSpans,
           count() AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
@@ -10262,7 +10264,8 @@ SELECT
           count() AS mcpSpans,
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -10297,7 +10300,8 @@ SELECT
           toUInt64(0) AS mcpSpans,
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
         FROM (SELECT
           session_replays.SessionId AS sessionId,
           argMax(session_replays.UserId, session_replays.Version) AS userId,
@@ -10331,7 +10335,8 @@ SELECT
           toUInt64(0) AS mcpSpans,
           count() AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
@@ -10362,7 +10367,8 @@ SELECT
           count() AS mcpSpans,
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -10380,7 +10386,7 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- builder:users:usersFacetsQuery:pinned  [5f486b38]
+-- builder:users:usersFacetsQuery:pinned  [67e061ac]
 SELECT
           signals.groupId AS name,
           uniqExact(signals.userId) AS count,
@@ -10400,7 +10406,8 @@ SELECT
           toUInt64(0) AS mcpSpans,
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
         FROM (SELECT
           session_replays.SessionId AS sessionId,
           argMax(session_replays.UserId, session_replays.Version) AS userId,
@@ -10434,7 +10441,8 @@ SELECT
           toUInt64(0) AS mcpSpans,
           count() AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
@@ -10465,7 +10473,8 @@ SELECT
           count() AS mcpSpans,
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -10483,7 +10492,7 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- builder:users:usersListQuery:activityRollup  [2fe76708]
+-- builder:users:usersListQuery:activityRollup  [8afc6f4c]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10514,7 +10523,8 @@ SELECT
           toUInt64(0) AS mcpSpans,
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
         FROM (SELECT
           session_replays.SessionId AS sessionId,
           argMax(session_replays.UserId, session_replays.Version) AS userId,
@@ -10548,7 +10558,8 @@ SELECT
           toUInt64(0) AS mcpSpans,
           count() AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
@@ -10579,7 +10590,8 @@ SELECT
           toUInt64(sumIf(user_activity_hourly.SpanCount, user_activity_hourly.ServiceName IN ('maple-ai'))) AS mcpSpans,
           toUInt64(0) AS events,
           toUInt64(sum(user_activity_hourly.SpanCount)) AS spans,
-          toUInt64(sum(user_activity_hourly.LogCount)) AS logLines
+          toUInt64(sum(user_activity_hourly.LogCount)) AS logLines,
+          toUInt64(0) AS groupHits
         FROM user_activity_hourly
         WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
           AND user_activity_hourly.ServiceNamespace IN ('storefront')
@@ -10593,7 +10605,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:users:usersListQuery:namespaceFiltered  [c6164559]
+-- builder:users:usersListQuery:namespaceFiltered  [a95afe54]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10624,7 +10636,8 @@ SELECT
           toUInt64(0) AS mcpSpans,
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(countIf(sessions.groupId IN ('acme'))) AS groupHits
         FROM (SELECT
           session_replays.SessionId AS sessionId,
           argMax(session_replays.UserId, session_replays.Version) AS userId,
@@ -10658,7 +10671,8 @@ SELECT
           toUInt64(0) AS mcpSpans,
           count() AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(countIf(product_events.GroupId IN ('acme'))) AS groupHits
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
@@ -10689,7 +10703,8 @@ SELECT
           count() AS mcpSpans,
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -10704,13 +10719,13 @@ SELECT
         GROUP BY userId
         HAVING sum(signals.errors) > 0
           AND sum(signals.sessions) > 0
-          AND countIf(signals.groupId IN ('acme')) > 0
+          AND sum(signals.groupHits) > 0
           AND (positionCaseInsensitiveUTF8(signals.userId, 'ada') > 0 OR positionCaseInsensitiveUTF8(anyIf(signals.name, signals.name != ''), 'ada') > 0 OR positionCaseInsensitiveUTF8(anyIf(signals.email, signals.email != ''), 'ada') > 0)
         ORDER BY lastSeen DESC
         LIMIT 200
         FORMAT JSON
 
--- builder:users:usersListQuery:unscoped  [71404ca5]
+-- builder:users:usersListQuery:unscoped  [9e693e19]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10741,7 +10756,8 @@ SELECT
           toUInt64(0) AS mcpSpans,
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
         FROM (SELECT
           session_replays.SessionId AS sessionId,
           argMax(session_replays.UserId, session_replays.Version) AS userId,
@@ -10774,7 +10790,8 @@ SELECT
           toUInt64(0) AS mcpSpans,
           count() AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
@@ -10796,7 +10813,8 @@ SELECT
           count() AS mcpSpans,
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -10868,7 +10886,7 @@ SELECT
         LIMIT 2000
         FORMAT JSON
 
--- builder:users:usersSummaryQuery:default  [e7bbbfe6]
+-- builder:users:usersSummaryQuery:default  [fa8f125e]
 SELECT
           count() AS identified,
           countIf(users.lastSeen >= '2026-01-01 10:30:00') AS activeToday,
@@ -10894,7 +10912,8 @@ SELECT
           toUInt64(0) AS mcpSpans,
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
         FROM (SELECT
           session_replays.SessionId AS sessionId,
           argMax(session_replays.UserId, session_replays.Version) AS userId,
@@ -10927,7 +10946,8 @@ SELECT
           toUInt64(0) AS mcpSpans,
           count() AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
@@ -10949,7 +10969,8 @@ SELECT
           count() AS mcpSpans,
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
-          toUInt64(0) AS logLines
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'

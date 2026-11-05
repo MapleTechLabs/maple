@@ -159,7 +159,11 @@ const replaySessions = (scope: UsersScope) =>
 
 // Every source answers the same columns in the same order: UNION ALL is positional.
 
-const replayUsers = (scope: UsersScope) =>
+/** Rows in a selected group, per source: a user can carry several groups, and `groupId` keeps one. */
+const groupHits = (groupId: CH.Expr<string>, groups: ReadonlyArray<string>) =>
+	groups.length === 0 ? zero() : CH.toUInt64(CH.countIf(CH.inList(groupId, groups)))
+
+const replayUsers = (scope: UsersScope, groups: ReadonlyArray<string>) =>
 	fromQuery(replaySessions(scope), "sessions")
 		.select(($) => ({
 			userId: $.userId,
@@ -176,11 +180,12 @@ const replayUsers = (scope: UsersScope) =>
 			events: zero(),
 			spans: zero(),
 			logLines: zero(),
+			groupHits: groupHits($.groupId, groups),
 		}))
 		.where(($) => [$.userId.neq("")])
 		.groupBy("userId", "namespace")
 
-const eventUsers = (scope: UsersScope) =>
+const eventUsers = (scope: UsersScope, groups: ReadonlyArray<string>) =>
 	from(ProductEvents)
 		.select(($) => ({
 			userId: $.UserId,
@@ -197,6 +202,7 @@ const eventUsers = (scope: UsersScope) =>
 			events: CH.count(),
 			spans: zero(),
 			logLines: zero(),
+			groupHits: groupHits($.GroupId, groups),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -225,6 +231,7 @@ const mcpUsers = (scope: UsersScope) =>
 			events: zero(),
 			spans: zero(),
 			logLines: zero(),
+			groupHits: zero(),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -275,6 +282,7 @@ const activityUsers = (scope: UsersScope) =>
 			events: zero(),
 			spans: CH.toUInt64(CH.sum($.SpanCount)),
 			logLines: CH.toUInt64(CH.sum($.LogCount)),
+			groupHits: zero(),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -290,22 +298,22 @@ const activityUsers = (scope: UsersScope) =>
  * the same users, and a query reading a rollup and raw spans must tile the window, which these do
  * not. Callers check {@link hasUserSources} first.
  */
-const userSignals = (scope: UsersScope) => {
+const userSignals = (scope: UsersScope, groups: ReadonlyArray<string> = []) => {
 	const spanSource = readsActivityRollup(scope)
 		? [activityUsers(scope)]
 		: scope.mcpServices.length > 0
 			? [mcpUsers(scope)]
 			: []
 	const [first, ...rest] = [
-		...(readsServiceSources(scope) ? [replayUsers(scope), eventUsers(scope)] : []),
+		...(readsServiceSources(scope) ? [replayUsers(scope, groups), eventUsers(scope, groups)] : []),
 		...spanSource,
 	]
-	return fromUnion(unionAll(first ?? replayUsers(scope), ...rest), "signals")
+	return fromUnion(unionAll(first ?? replayUsers(scope, groups), ...rest), "signals")
 }
 
 /** The directory: one row per user under the filter, the most recently seen first. */
 export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, limit = 200) {
-	return userSignals(scope)
+	return userSignals(scope, filter.groups ?? [])
 		.select(($) => ({
 			userId: $.userId,
 			name: nonEmpty($.name),
@@ -326,10 +334,8 @@ export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, 
 		.having(($) => [
 			CH.when(filter.hasErrors === true ? true : undefined, () => CH.sum($.errors).gt(0)),
 			CH.when(filter.hasReplay === true ? true : undefined, () => CH.sum($.sessions).gt(0)),
-			// Any of the user's groups, not one arbitrary pick: a user can carry several.
-			filter.groups !== undefined && filter.groups.length > 0
-				? CH.countIf(CH.inList($.groupId, filter.groups)).gt(0)
-				: undefined,
+			// Any of the user's groups, counted in each source before it keeps one `groupId`.
+			filter.groups !== undefined && filter.groups.length > 0 ? CH.sum($.groupHits).gt(0) : undefined,
 			CH.when(filter.search, (search) =>
 				CH.or(
 					containsText($.userId, search),
