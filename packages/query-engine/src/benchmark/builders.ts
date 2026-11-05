@@ -2222,6 +2222,29 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "mcp",
+		name: "mcpServersSessionListQuery",
+		label: "userPage",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.mcpServersSessionListQuery(["maple-ai", "docs-mcp"], {
+					user: "user_42",
+					namespaces: ["platform"],
+				}),
+				window,
+			),
+	},
+	{
+		module: "mcp",
+		name: "mcpServersUserActivityQuery",
+		label: "userPage",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.mcpServersUserActivityQuery(["maple-ai", "docs-mcp"], { user: "user_42" }, 5_000),
+				window,
+			),
+	},
+	{
+		module: "mcp",
 		name: "mcpSessionTotalsQuery",
 		label: "default",
 		compile: () => CH.compileUnsafe(CH.mcpSessionTotalsQuery(), { ...window, serviceName: "maple-ai" }),
@@ -2282,6 +2305,18 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "usersFacetsQuery",
 		label: "default",
 		compile: () => CH.compileUnionUnsafe(CH.usersFacetsQuery(USERS_NAMESPACE_SCOPE, USERS_SCOPE), window),
+	},
+	{
+		module: "users",
+		name: "usersMcpNamesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.usersMcpNamesQuery(["maple-ai"], ["user_42", "user_43"]), window),
+	},
+	{
+		module: "users",
+		name: "usersMcpNameSearchQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.usersMcpNameSearchQuery(["maple-ai"], "ada"), window),
 	},
 	{
 		module: "users",

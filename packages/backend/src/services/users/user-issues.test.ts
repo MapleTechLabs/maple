@@ -10,7 +10,7 @@ import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { affectedUsersResponse } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
-import { readUserActivity, readUserIssues } from "./users-reads"
+import { readUserActivity, readUserIssues, readUserOverview } from "./users-reads"
 import { userIssueTotals } from "./user-issues"
 
 // One user's issues: fingerprints resolved to the issue the errors tick lands them on, and a
@@ -239,6 +239,95 @@ describe("readUserIssues", () => {
 				createTestDb(createdDbs).layer,
 			]),
 		)
+	})
+})
+
+const summaryRow = {
+	spanCount: "9",
+	errorSpanCount: "0",
+	requestCount: "4",
+	failedRequestCount: "1",
+	traceCount: "4",
+	sessionCount: "0",
+	p50DurationMs: "20",
+	p95DurationMs: "80",
+	logCount: "0",
+	warnLogCount: "0",
+	errorLogCount: "0",
+	topRoutes: ["POST /profile-route"],
+	topRouteCounts: ["4"],
+	requestHours: [String(Date.UTC(2026, 10, 5, 14) / 1000)],
+	requestHourCounts: ["4"],
+	firstSeen: "2026-11-05 14:00:00",
+	lastSeen: "2026-11-05 14:30:00",
+}
+
+const overviewRows = new Map<string, ReadonlyArray<unknown>>([
+	["usersServiceNamespaces", [{ service: "checkout", namespace: "storefront", spans: "5" }]],
+	["mcpServices", []],
+	["userIssues", [row("111", 4, "2026-11-05 10:00:00")]],
+	["userActivitySummary", [summaryRow]],
+	[
+		"userActivitySlices",
+		[
+			{
+				serviceName: "checkout",
+				serviceNamespace: "storefront",
+				spanCount: "12",
+				requestCount: "4",
+				logCount: "0",
+				firstRequestHour: "2026-11-05 14:00:00",
+				lastRequestHour: "2026-11-05 14:00:00",
+				firstLogHour: "1970-01-01 00:00:00",
+				lastLogHour: "1970-01-01 00:00:00",
+			},
+		],
+	],
+	[
+		"userNotableTraces",
+		[
+			{
+				traceId: "trace-activity",
+				spanId: "s1",
+				timestamp: "2026-11-05 14:12:00.000000000",
+				serviceName: "checkout",
+				spanName: "POST /activity-route",
+				spanKind: "Server",
+				durationMs: "812.5",
+				statusCode: "Error",
+				isRoot: "1",
+			},
+		],
+	],
+])
+
+describe("readUserOverview", () => {
+	it.effect("reads the scope and the issues once, each part keeping its own payload", () => {
+		const ran: Ran = []
+		const byContext = Layer.succeed(
+			WarehouseQueryService,
+			makeWarehouseServiceStub({
+				compiledQuery: (_tenant, input, options) => {
+					const compiled = compiledQueryOf(input)
+					const context = options?.context ?? ""
+					ran.push(context)
+					return compiled.decodeRows(overviewRows.get(context) ?? []).pipe(Effect.orDie)
+				},
+			}),
+		)
+		const count = (context: string) => Arr.filter(ran, (ranContext) => ranContext === context).length
+		return Effect.gen(function* () {
+			yield* seed
+			const overview = yield* readUserOverview(tenant, request)
+			assert.strictEqual(count("usersServiceNamespaces"), 1)
+			assert.strictEqual(count("mcpServices"), 1)
+			assert.strictEqual(count("userIssues"), 1)
+			assert.strictEqual(overview.profile?.topRoute, "POST /profile-route")
+			const requests = Arr.filter(overview.activity.activity, (item) => item.kind === "request")
+			expect(requests).toMatchObject([{ traceId: "trace-activity", tone: "crit" }])
+			assert.isTrue(overview.issues.attributed)
+			expect(overview.issues.issues).toMatchObject([{ issueId: KEPT, fingerprintHash: "111", hits: 4 }])
+		}).pipe(Effect.provide([byContext, createTestDb(createdDbs).layer]))
 	})
 })
 

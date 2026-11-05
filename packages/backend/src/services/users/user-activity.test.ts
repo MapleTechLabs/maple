@@ -12,6 +12,7 @@ const USER = Schema.decodeSync(UserId)("user_member")
 const tenant: TenantContext = { orgId: ORG, userId: USER, roles: ["org:admin"], authMode: "self_hosted" }
 
 const minuteRow = (minute: string, calls: number, errors: number, tools: ReadonlyArray<string>) => ({
+	service: "docs-mcp",
 	user: "user_42",
 	client: "Claude Code",
 	minute,
@@ -25,7 +26,7 @@ const minuteRow = (minute: string, calls: number, errors: number, tools: Readonl
 	lastSeen: `${minute}.000`,
 })
 
-/** Query context to wire rows; MCP reads answer per server, keyed on the service they were asked for. */
+/** Query context to wire rows; an MCP row answers only when its server is in the query's list. */
 const fixture = new Map<string, ReadonlyArray<unknown>>([
 	[
 		"usersServiceNamespaces",
@@ -42,9 +43,10 @@ const fixture = new Map<string, ReadonlyArray<unknown>>([
 		],
 	],
 	[
-		"userMcpSessionList:maple-ai",
+		"userMcpSessionList",
 		[
 			{
+				service: "maple-ai",
 				sessionId: "sess-1",
 				client: "Cursor",
 				kind: "agent",
@@ -61,7 +63,7 @@ const fixture = new Map<string, ReadonlyArray<unknown>>([
 	],
 	// Two bursts 40 minutes apart: the 30 minute idle gap splits them into two sessions.
 	[
-		"userMcpActivity:docs-mcp",
+		"userMcpActivity",
 		[
 			minuteRow("2026-11-01 09:40:00", 1, 0, ["search"]),
 			minuteRow("2026-11-01 09:00:00", 2, 0, ["search", "fetch"]),
@@ -86,8 +88,33 @@ const warehouseOf = (rows: ReadonlyMap<string, ReadonlyArray<unknown>>, seen: Ar
 		}),
 	)
 
-const run = (payload: UserDetailRequest, seen: Array<string>) =>
-	readUserActivity(tenant, payload).pipe(Effect.provide(warehouseOf(fixture, seen)))
+const run = (payload: UserDetailRequest, seen: Array<string>, sqls: Array<string> = []) =>
+	readUserActivity(tenant, payload).pipe(
+		Effect.provide(
+			Layer.succeed(
+				WarehouseQueryService,
+				makeWarehouseServiceStub({
+					compiledQuery: (_tenant, input, options) => {
+						const compiled = compiledQueryOf(input)
+						const context = options?.context ?? ""
+						seen.push(context)
+						sqls.push(compiled.sql)
+						const servers = /ServiceName IN \(([^)]*)\)/.exec(compiled.sql)?.[1]
+						const rows = Arr.filter(
+							fixture.get(context) ?? [],
+							(row) =>
+								servers === undefined ||
+								typeof row !== "object" ||
+								row === null ||
+								!("service" in row) ||
+								Str.includes(`'${String(row.service)}'`)(servers),
+						)
+						return compiled.decodeRows(rows).pipe(Effect.orDie)
+					},
+				}),
+			),
+		),
+	)
 
 const request = (namespaces?: ReadonlyArray<string>) =>
 	new UserDetailRequest({
@@ -134,12 +161,20 @@ describe("readUserActivity", () => {
 	it.effect("reads only the MCP servers under the picked namespace", () =>
 		Effect.gen(function* () {
 			const seen: Array<string> = []
-			const response = yield* run(request(["platform"]), seen)
+			const sqls: Array<string> = []
+			const response = yield* run(request(["platform"]), seen, sqls)
 			assert.deepStrictEqual(
 				[...new Set(Arr.map(response.mcpSessions, (session) => session.service))],
 				["docs-mcp"],
 			)
 			assert.strictEqual(Arr.filter(seen, (context) => context === "userMcpSessionList").length, 1)
+			assert.strictEqual(Arr.filter(seen, (context) => context === "userMcpActivity").length, 1)
+			const mcpSql = Arr.filter(sqls, (sql) => Str.includes("mcp.session.id")(sql))
+			// Both MCP reads ran, and each one carries the namespace filter.
+			assert.strictEqual(mcpSql.length, 2)
+			assert.isTrue(
+				Arr.every(mcpSql, (sql) => Str.includes("['service.namespace'] IN ('platform')")(sql)),
+			)
 		}),
 	)
 })

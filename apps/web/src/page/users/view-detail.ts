@@ -38,12 +38,13 @@ import {
 	toolTableHead,
 	toolTableRow,
 } from "../agent-sessions/tools-kit/table"
+import { AppRoute, hrefOf } from "../../route"
 import { listRelativeTime } from "../kit/relative-time"
 import { clientIcon, kindTag } from "../mcp/view-kit"
 import { statRail, statRailItem } from "../kit/stat-rail"
 import { type LinkTab, linkTabStrip } from "../kit/underline-tabs"
 import type { ActivityItem, ActivityKind, UserDetail, UserProfile, UserTab } from "./data"
-import { ERRORS_ATTRIBUTED_FROM, namespacesOf, USER_TABS, userLabel } from "./data"
+import { namespacesOf, USER_TABS, userLabel } from "./data"
 import { WORKFLOW_LABEL, workflowRingIcon } from "../errors/kit/workflow"
 import { userAvatar } from "./view-kit"
 
@@ -223,7 +224,7 @@ const errorsStat = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html => {
 			profile.issues === null
 				? "in recorded sessions"
 				: profile.issues === 0
-					? `tracked since ${ERRORS_ATTRIBUTED_FROM}`
+					? "none named this user"
 					: `across ${countLabel(profile.issues, "issue")}`,
 		compact: true,
 	})
@@ -592,7 +593,7 @@ const unavailableTab = <M>(h: HtmlBuilder<M>, iconName: IconName, title: string,
 	])
 
 /** Errors carry the user that hit them only from the release that added it; earlier ones never do. */
-const ATTRIBUTION_NOTE = `Errors are linked to users from ${ERRORS_ATTRIBUTED_FROM} on. Earlier errors have no user.`
+const ATTRIBUTION_NOTE = "Errors recorded before user tracking carry no user."
 
 /** Where this warehouse has no per-user rollup (it has not applied migration 0056): no count to show. */
 const UNINDEXED_DESCRIPTION =
@@ -682,30 +683,38 @@ const sessionsTable = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): 
 				toolTableBody(
 					h,
 					Arr.map(detail.sessions, (session) =>
-						toolTableRow(h, { href: `/replays/${encodeURIComponent(session.sessionId)}` }, [
-							timeCell(h, session.startedMs, clock),
-							cellText(h, formatDuration(session.durationMs), "w-20 shrink-0", { right: true }),
-							cellText(h, String(session.pages), "w-14 shrink-0", { right: true }),
-							cellText(h, String(session.errors), "w-14 shrink-0", {
-								right: true,
-								tone: session.errors > 0 ? "error" : "muted",
-							}),
-							cellText(
-								h,
-								session.exit === null ? session.entry : `${session.entry} → ${session.exit}`,
-								"w-0 flex-1 pl-4",
-								{ tone: "soft" },
-							),
-							cellText(h, session.device, "w-36 shrink-0", { tone: "muted", mono: false }),
-							hstack(
-								h,
-								{ gap: "1.5", justify: "end", as: "span", className: "w-24 shrink-0" },
-								[
-									icon(h, "MediaPlayIcon", { size: 12, className: "text-primary" }),
-									typography(h, { size: "xs", tone: "primary", as: "span" }, ["Watch"]),
-								],
-							),
-						]),
+						toolTableRow(
+							h,
+							{ href: hrefOf(AppRoute.Replay({ sessionId: session.sessionId, search: {} })) },
+							[
+								timeCell(h, session.startedMs, clock),
+								cellText(h, formatDuration(session.durationMs), "w-20 shrink-0", {
+									right: true,
+								}),
+								cellText(h, String(session.pages), "w-14 shrink-0", { right: true }),
+								cellText(h, String(session.errors), "w-14 shrink-0", {
+									right: true,
+									tone: session.errors > 0 ? "error" : "muted",
+								}),
+								cellText(
+									h,
+									session.exit === null
+										? session.entry
+										: `${session.entry} → ${session.exit}`,
+									"w-0 flex-1 pl-4",
+									{ tone: "soft" },
+								),
+								cellText(h, session.device, "w-36 shrink-0", { tone: "muted", mono: false }),
+								hstack(
+									h,
+									{ gap: "1.5", justify: "end", as: "span", className: "w-24 shrink-0" },
+									[
+										icon(h, "MediaPlayIcon", { size: 12, className: "text-primary" }),
+										typography(h, { size: "xs", tone: "primary", as: "span" }, ["Watch"]),
+									],
+								),
+							],
+						),
 					),
 				),
 			])

@@ -2,6 +2,7 @@ import {
 	UserActivityResponse,
 	UserIssuesResponse,
 	UserLogsResponse,
+	UserOverviewResponse,
 	UserProfileResponse,
 	UserTracesResponse,
 	UsersFacetsResponse,
@@ -26,7 +27,7 @@ import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/quer
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { isMissingUserActivityHourly } from "@maple/backend/services/warehouse/missing-table"
-import { readUserSessionsOnServer } from "@maple/backend/services/mcp/mcp-reads"
+import { readUserMcpSessions } from "@maple/backend/services/mcp/mcp-reads"
 import { readUserIssueItems, readUserIssueTotalsRow, userIssueTotals } from "./user-issues"
 
 // The users directory's reads (`/users`): the namespace scope is resolved to services first, since
@@ -167,13 +168,34 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 		...(payload.after !== undefined && { after: payload.after }),
 	}
 	const params = { orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime }
+	// The rollup keeps no name, so a search there first finds the MCP users whose span name matches.
+	const searchUserIds = (scope: CH.UsersScope) =>
+		payload.search === undefined || scope.activityRollup !== true || mcpServersInScope(scope).length === 0
+			? Effect.succeed([])
+			: warehouse
+					.compiledQuery(
+						tenant,
+						CH.compile(
+							CH.usersMcpNameSearchQuery(
+								mcpServersInScope(scope),
+								payload.search,
+								scope.namespaces,
+							),
+							params,
+						),
+						{ profile: "list", context: "usersMcpNameSearch" },
+					)
+					.pipe(Effect.map(Arr.map((row) => row.userId)))
 	const limit = payload.limit ?? DEFAULT_LIMIT
 	// One row of lookahead says whether a next page exists.
 	const fetched = yield* withRollupFallback(scope, [], (scope) =>
-		warehouse.compiledQuery(tenant, CH.compile(CH.usersListQuery(scope, filter, limit + 1), params), {
-			profile: "list",
-			context: "usersList",
-		}),
+		Effect.flatMap(searchUserIds(scope), (ids) =>
+			warehouse.compiledQuery(
+				tenant,
+				CH.compile(CH.usersListQuery(scope, { ...filter, searchUserIds: ids }, limit + 1), params),
+				{ profile: "list", context: "usersList" },
+			),
+		),
 	)
 	const rows = fetched.slice(0, limit)
 	const last = rows.at(-1)
@@ -181,30 +203,52 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 		fetched.length > limit && last !== undefined
 			? { lastSeen: last.lastSeenKey, userId: last.userId }
 			: undefined
-	const totals =
-		rows.length === 0
-			? []
-			: yield* rollupRead(
-					warehouse.compiledQuery(
+	// The rollup keeps no name: a page's unnamed users take the one their MCP spans carry.
+	// A row missing either the name or the email takes the missing one from its MCP spans.
+	const unnamed = Arr.map(
+		Arr.filter(rows, (row) => row.name === "" || row.email === ""),
+		(row) => row.userId,
+	)
+	const [totals, mcpNames] = yield* Effect.all(
+		[
+			rows.length === 0
+				? Effect.succeed([])
+				: rollupRead(
+						warehouse.compiledQuery(
+							tenant,
+							CH.compile(
+								CH.userActivityTotalsQuery({
+									userIds: Arr.map(rows, (row) => row.userId),
+									namespaces: scope.namespaces,
+								}),
+								params,
+							),
+							{ profile: "list", context: "userActivityTotals" },
+						),
+					).pipe(Effect.map((found) => Option.getOrElse(found, () => []))),
+			unnamed.length === 0 || mcpServersInScope(scope).length === 0
+				? Effect.succeed([])
+				: warehouse.compiledQuery(
 						tenant,
 						CH.compile(
-							CH.userActivityTotalsQuery({
-								userIds: Arr.map(rows, (row) => row.userId),
-								namespaces: scope.namespaces,
-							}),
+							CH.usersMcpNamesQuery(mcpServersInScope(scope), unnamed, scope.namespaces),
 							params,
 						),
-						{ profile: "list", context: "userActivityTotals" },
+						{ profile: "list", context: "usersMcpNames" },
 					),
-				).pipe(Effect.map((found) => Option.getOrElse(found, () => [])))
+		],
+		{ concurrency: 2 },
+	)
 	const totalsByUser = new Map(Arr.map(totals, (row) => [row.userId, row] as const))
+	const namesByUser = new Map(Arr.map(mcpNames, (row) => [row.userId, row] as const))
 	const window = windowMs(payload)
 	const users = Arr.map(rows, (row): UserListItem => {
 		const total = totalsByUser.get(row.userId)
+		const named = namesByUser.get(row.userId)
 		return {
 			userId: row.userId,
-			name: nullIfEmpty(row.name),
-			email: nullIfEmpty(row.email),
+			name: nullIfEmpty(row.name) ?? nullIfEmpty(named?.name ?? ""),
+			email: nullIfEmpty(row.email) ?? nullIfEmpty(named?.email ?? ""),
 			groupId: nullIfEmpty(row.groupId),
 			namespaces: row.namespaces,
 			firstSeenMs: toMs(row.firstSeen),
@@ -223,18 +267,9 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 	yield* Effect.annotateCurrentSpan({
 		"maple.users.rows": users.length,
 		"maple.users.with_requests": totals.length,
+		"maple.users.mcp_named": mcpNames.length,
 	})
 	return new UsersListResponse({ users, ...(next !== undefined && { next }) })
-})
-
-const EMPTY_FACETS = new UsersFacetsResponse({
-	namespaces: [],
-	groups: [],
-	withErrors: 0,
-	withReplay: 0,
-	identified: 0,
-	activeToday: 0,
-	anonymousVisitors: 0,
 })
 
 export const readUsersFacets = Effect.fn("UsersReads.facets")(function* (
@@ -244,8 +279,6 @@ export const readUsersFacets = Effect.fn("UsersReads.facets")(function* (
 	const warehouse = yield* WarehouseQueryService
 	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 	const scope = yield* loadScope(tenant, payload)
-	// The namespace facet counts every namespace, so a pick never hides the others; a pin hides it.
-	const pinned = (payload.namespaces ?? []).length > 0
 	const nowMs = yield* Clock.currentTimeMillis
 	const params = {
 		orgId: tenant.orgId,
@@ -253,15 +286,16 @@ export const readUsersFacets = Effect.fn("UsersReads.facets")(function* (
 		endTime: payload.endTime,
 		activeSince: formatWarehouseDateTime(nowMs - DAY_MS),
 	}
-	const read = (scope: CH.UsersScope) => {
-		const everyNamespace: CH.UsersScope | undefined = pinned
-			? undefined
-			: { ...scope, namespaces: [], services: [] }
-		return Effect.all(
+	// Under a pin the namespace facet would only repeat it, so it is skipped.
+	const read = (scope: CH.UsersScope) =>
+		Effect.all(
 			[
 				warehouse.compiledQuery(
 					tenant,
-					CH.compileUnion(CH.usersFacetsQuery(scope, everyNamespace), params),
+					CH.compileUnion(
+						CH.usersFacetsQuery(scope, scope.namespaces.length === 0 ? scope : undefined),
+						params,
+					),
 					{ profile: "aggregation", context: "usersFacets" },
 				),
 				warehouse.compiledQuery(tenant, CH.compile(CH.usersSummaryQuery(scope), params), {
@@ -275,9 +309,7 @@ export const readUsersFacets = Effect.fn("UsersReads.facets")(function* (
 			],
 			{ concurrency: USERS_READ_CONCURRENCY },
 		)
-	}
 	const [facets, summary, anonymous] = yield* withRollupFallback(scope, [[], [], []], read)
-	if (facets.length === 0 && summary.length === 0) return EMPTY_FACETS
 	const options = (facetType: string) =>
 		Arr.map(
 			Arr.filter(facets, (row) => row.facetType === facetType),
@@ -302,8 +334,6 @@ const USER_LIST_LIMIT = 100
 const USER_EVENTS_LIMIT = 200
 /** Rows the merged Activity timeline keeps. */
 const ACTIVITY_LIMIT = 200
-/** MCP servers one user page reads sessions from at most. */
-const MCP_SERVERS_LIMIT = 20
 /** Properties an event's detail line names when it has no page. */
 const EVENT_DETAIL_PROPERTIES = 3
 /** Requests and log lines the Traces and Logs tabs list at most. */
@@ -319,11 +349,13 @@ const WARN_SEVERITY = 13
 const LOG_TITLE_LENGTH = 200
 
 /** The MCP servers in scope: every one when unscoped, else those that emitted under the namespace. */
+/** MCP servers one user page reads sessions from at most. */
+const MCP_SESSION_SERVERS_LIMIT = 20
+
 export const mcpServersInScope = (scope: CH.UsersScope): ReadonlyArray<string> =>
-	(scope.namespaces.length === 0
+	scope.namespaces.length === 0
 		? scope.mcpServices
 		: Arr.filter(scope.mcpServices, (service) => scope.services.includes(service))
-	).slice(0, MCP_SERVERS_LIMIT)
 
 /** An event's detail line: its page, else its first properties as `key=value`. */
 export const eventDetail = (
@@ -472,6 +504,65 @@ export const mergeActivity = (
 /** Newest first, by the moment a timeline row happened. */
 const NEWEST_FIRST = Order.flip(Order.mapInput(Order.Number, (item: { atMs: number }) => item.atMs))
 
+/** The issues the user hit; `None` where errors carry no user id. */
+type IssueItems = Option.Option<ReadonlyArray<UserIssueItem>>
+
+/** The scope's services for the issue reads: the namespace's services, or every one when unscoped. */
+const resolvedServices = (scope: CH.UsersScope) => ({
+	serviceNames: scope.namespaces.length > 0 ? scope.services : undefined,
+})
+
+/**
+ * The scope and the user's issues: every detail read takes both. Unscoped, the issue read needs no
+ * services, so the two run side by side; under a namespace it reuses the services the scope resolved.
+ */
+const scopeAndIssues = (tenant: TenantContext, payload: UserDetailRequest) =>
+	(payload.namespaces ?? []).length === 0
+		? Effect.all(
+				[
+					loadScope(tenant, payload),
+					readUserIssueItems(tenant, payload, { serviceNames: undefined }),
+				],
+				{ concurrency: 2 },
+			)
+		: Effect.flatMap(loadScope(tenant, payload), (scope) =>
+				Effect.all([
+					Effect.succeed(scope),
+					readUserIssueItems(tenant, payload, resolvedServices(scope)),
+				]),
+			)
+
+const issuesResponse = (issues: IssueItems) =>
+	new UserIssuesResponse({
+		issues: Option.getOrElse(issues, () => []),
+		attributed: Option.isSome(issues),
+	})
+
+/** One user's identity and totals, resolving the scope first. */
+export const readUserProfile = (tenant: TenantContext, payload: UserDetailRequest) =>
+	Effect.flatMap(scopeAndIssues(tenant, payload), ([scope, issues]) =>
+		profileIn(tenant, payload, scope, issues),
+	)
+
+/** One user's sessions, events, MCP sessions and timeline, resolving the scope first. */
+export const readUserActivity = (tenant: TenantContext, payload: UserDetailRequest) =>
+	Effect.flatMap(scopeAndIssues(tenant, payload), ([scope, issues]) =>
+		activityIn(tenant, payload, scope, issues),
+	)
+
+/** The user page's first paint: the profile, the activity and the issues over one scope and issues read. */
+export const readUserOverview = Effect.fn("UsersReads.overview")(function* (
+	tenant: TenantContext,
+	payload: UserDetailRequest,
+) {
+	const [scope, issues] = yield* scopeAndIssues(tenant, payload)
+	const [{ profile }, activity] = yield* Effect.all(
+		[profileIn(tenant, payload, scope, issues), activityIn(tenant, payload, scope, issues)],
+		{ concurrency: 2 },
+	)
+	return new UserOverviewResponse({ profile, activity, issues: issuesResponse(issues) })
+})
+
 const detailParams = (tenant: TenantContext, payload: UserDetailRequest) => ({
 	orgId: tenant.orgId,
 	startTime: payload.startTime,
@@ -511,100 +602,79 @@ export const mergeServices = (
 	)
 }
 
-/** The scope's services for the issue reads: the namespace's services, or every one when unscoped. */
-const resolvedServices = (scope: CH.UsersScope) => ({
-	serviceNames: scope.namespaces.length > 0 ? scope.services : undefined,
-})
-
-export const readUserProfile = Effect.fn("UsersReads.profile")(function* (
+const profileIn = Effect.fn("UsersReads.profile")(function* (
 	tenant: TenantContext,
 	payload: UserDetailRequest,
+	scope: CH.UsersScope,
+	issues: IssueItems,
 ) {
 	const warehouse = yield* WarehouseQueryService
 	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-	const scope = yield* loadScope(tenant, payload)
 	const params = detailParams(tenant, payload)
 	const readsServices = CH.readsServiceSources(scope)
 	const readsMcp = scope.mcpServices.length > 0
 	const userScope = { userId: payload.userId, namespaces: scope.namespaces }
-	const [
-		replay,
-		devices,
-		events,
-		mcp,
-		services,
-		visitors,
-		summary,
-		rollupServices,
-		totals,
-		issues,
-		issueTotalsRow,
-	] = yield* Effect.all(
-		[
-			readsServices
-				? warehouse.compiledQuery(tenant, CH.compile(CH.userReplayProfileQuery(scope), params), {
-						profile: "aggregation",
-						context: "userReplayProfile",
-					})
-				: Effect.succeed([]),
-			readsServices
-				? warehouse.compiledQuery(tenant, CH.compile(CH.userDevicesQuery(scope), params), {
-						profile: "aggregation",
-						context: "userDevices",
-					})
-				: Effect.succeed([]),
-			readsServices
-				? warehouse.compiledQuery(tenant, CH.compile(CH.userEventsSummaryQuery(scope), params), {
-						profile: "aggregation",
-						context: "userEventsSummary",
-					})
-				: Effect.succeed([]),
-			readsMcp
-				? warehouse.compiledQuery(tenant, CH.compile(CH.userMcpSummaryQuery(scope), params), {
-						profile: "aggregation",
-						context: "userMcpSummary",
-					})
-				: Effect.succeed([]),
-			CH.hasUserSources(scope)
-				? warehouse.compiledQuery(tenant, CH.compile(CH.userServicesQuery(scope), params), {
-						profile: "aggregation",
-						context: "userServices",
-					})
-				: Effect.succeed([]),
-			warehouse.compiledQuery(tenant, CH.compile(CH.userVisitorIdsQuery(), params), {
-				profile: "list",
-				context: "userVisitorIds",
-			}),
-			rollupRead(
-				warehouse.compiledQuery(tenant, CH.compile(CH.userActivitySummaryQuery(userScope), params), {
-					profile: "aggregation",
-					context: "userActivitySummary",
+	const [replay, devices, events, mcp, services, visitors, summary, rollupServices, issueTotalsRow] =
+		yield* Effect.all(
+			[
+				readsServices
+					? warehouse.compiledQuery(tenant, CH.compile(CH.userReplayProfileQuery(scope), params), {
+							profile: "aggregation",
+							context: "userReplayProfile",
+						})
+					: Effect.succeed([]),
+				readsServices
+					? warehouse.compiledQuery(tenant, CH.compile(CH.userDevicesQuery(scope), params), {
+							profile: "aggregation",
+							context: "userDevices",
+						})
+					: Effect.succeed([]),
+				readsServices
+					? warehouse.compiledQuery(tenant, CH.compile(CH.userEventsSummaryQuery(scope), params), {
+							profile: "aggregation",
+							context: "userEventsSummary",
+						})
+					: Effect.succeed([]),
+				readsMcp
+					? warehouse.compiledQuery(tenant, CH.compile(CH.userMcpSummaryQuery(scope), params), {
+							profile: "aggregation",
+							context: "userMcpSummary",
+						})
+					: Effect.succeed([]),
+				CH.hasUserSources(scope)
+					? warehouse.compiledQuery(tenant, CH.compile(CH.userServicesQuery(scope), params), {
+							profile: "aggregation",
+							context: "userServices",
+						})
+					: Effect.succeed([]),
+				warehouse.compiledQuery(tenant, CH.compile(CH.userVisitorIdsQuery(), params), {
+					profile: "list",
+					context: "userVisitorIds",
 				}),
-			),
-			rollupRead(
-				warehouse.compiledQuery(tenant, CH.compile(CH.userActivityServicesQuery(userScope), params), {
-					profile: "aggregation",
-					context: "userActivityServices",
-				}),
-			),
-			rollupRead(
-				warehouse.compiledQuery(
-					tenant,
-					CH.compile(
-						CH.userActivityTotalsQuery({
-							userIds: [payload.userId],
-							namespaces: scope.namespaces,
-						}),
-						params,
+				rollupRead(
+					warehouse.compiledQuery(
+						tenant,
+						CH.compile(CH.userActivitySummaryQuery(userScope), params),
+						{
+							profile: "aggregation",
+							context: "userActivitySummary",
+						},
 					),
-					{ profile: "aggregation", context: "userActivityTotals" },
 				),
-			),
-			readUserIssueItems(tenant, payload, resolvedServices(scope)),
-			readUserIssueTotalsRow(tenant, payload, resolvedServices(scope)),
-		],
-		{ concurrency: USERS_READ_CONCURRENCY },
-	)
+				rollupRead(
+					warehouse.compiledQuery(
+						tenant,
+						CH.compile(CH.userActivityServicesQuery(userScope), params),
+						{
+							profile: "aggregation",
+							context: "userActivityServices",
+						},
+					),
+				),
+				readUserIssueTotalsRow(tenant, payload, resolvedServices(scope)),
+			],
+			{ concurrency: USERS_READ_CONCURRENCY },
+		)
 	const sessions = replay[0]?.sessions ?? 0
 	const eventCount = events[0]?.events ?? 0
 	const mcpRequests = mcp[0]?.requests ?? 0
@@ -653,7 +723,6 @@ export const readUserProfile = Effect.fn("UsersReads.profile")(function* (
 	]
 	const traitKeys = replay[0]?.traitKeys ?? []
 	const traitValues = replay[0]?.traitValues ?? []
-	const total = Option.flatMap(totals, (rows) => Option.fromNullishOr(rows[0]))
 	const requestFigure = <A>(read: (row: CH.UserActivitySummaryOutput) => A): A | null =>
 		Option.match(activity, {
 			onNone: () => null,
@@ -702,12 +771,13 @@ export const readUserProfile = Effect.fn("UsersReads.profile")(function* (
 		logs: countFigure((row) => row.logCount),
 		issues: Option.getOrNull(Option.map(issueTotals, (totals) => totals.issues)),
 		issueHits: Option.getOrNull(Option.map(issueTotals, (totals) => totals.hits)),
-		topRoute: Option.getOrNull(
-			Option.flatMap(total, (row) => Option.fromNullishOr(nullIfEmpty(row.topRoute))),
-		),
-		activity: Option.match(total, {
+		topRoute: Option.getOrNull(Option.flatMap(activity, (row) => Option.fromNullishOr(row.topRoutes[0]))),
+		activity: Option.match(activity, {
 			onNone: () => [],
-			onSome: (row) => bucketActivity(row.requestHours, row.requestHourCounts, windowMs(payload)),
+			onSome: (row) =>
+				row.spanCount + row.logCount === 0
+					? []
+					: bucketActivity(row.requestHours, row.requestHourCounts, windowMs(payload)),
 		}),
 	}
 	return new UserProfileResponse({ profile })
@@ -921,18 +991,20 @@ const readNotable = Effect.fn("UsersReads.notable")(function* (
 	)
 })
 
-export const readUserActivity = Effect.fn("UsersReads.activity")(function* (
+const activityIn = Effect.fn("UsersReads.activity")(function* (
 	tenant: TenantContext,
 	payload: UserDetailRequest,
+	scope: CH.UsersScope,
+	issues: IssueItems,
 ) {
 	const warehouse = yield* WarehouseQueryService
 	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-	const scope = yield* loadScope(tenant, payload)
 	const params = detailParams(tenant, payload)
 	const readsServices = CH.readsServiceSources(scope)
-	const servers = mcpServersInScope(scope)
+	// A user page stitches sessions from at most this many servers, so its read stays bounded.
+	const servers = Arr.take(mcpServersInScope(scope), MCP_SESSION_SERVERS_LIMIT)
 	const window = { startTime: payload.startTime, endTime: payload.endTime }
-	const [replays, eventRows, mcpSessions, [notableTraces, notableLogs], issues] = yield* Effect.all(
+	const [replays, eventRows, mcpSessions, [notableTraces, notableLogs]] = yield* Effect.all(
 		[
 			readsServices
 				? warehouse.compiledQuery(
@@ -956,49 +1028,27 @@ export const readUserActivity = Effect.fn("UsersReads.activity")(function* (
 					)
 				: Effect.succeed([]),
 			Effect.map(
-				Effect.forEach(
-					servers,
-					(service) =>
-						Effect.map(
-							readUserSessionsOnServer(
-								tenant,
-								window,
-								service,
-								payload.userId,
-								USER_LIST_LIMIT,
-							),
-							Arr.map((session): UserMcpSessionItem => ({
-								service,
-								sessionId: session.sessionId,
-								source: session.source,
-								client: session.client,
-								kind: session.kind,
-								requests: session.requests,
-								calls: session.calls,
-								errors: session.errors,
-								tools: session.tools,
-								firstSeenMs: session.firstSeenMs,
-								lastSeenMs: session.lastSeenMs,
-							})),
-						),
-					{ concurrency: USERS_READ_CONCURRENCY },
-				),
-				(perServer) =>
-					Arr.take(
-						Arr.sort(
-							Arr.flatten(perServer),
-							Order.flip(
-								Order.mapInput(
-									Order.Number,
-									(session: { lastSeenMs: number }) => session.lastSeenMs,
-								),
-							),
-						),
-						USER_LIST_LIMIT,
-					),
+				readUserMcpSessions(tenant, window, {
+					services: servers,
+					user: payload.userId,
+					namespaces: scope.namespaces,
+					limit: USER_LIST_LIMIT,
+				}),
+				Arr.map((session): UserMcpSessionItem => ({
+					service: session.service,
+					sessionId: session.sessionId,
+					source: session.source,
+					client: session.client,
+					kind: session.kind,
+					requests: session.requests,
+					calls: session.calls,
+					errors: session.errors,
+					tools: session.tools,
+					firstSeenMs: session.firstSeenMs,
+					lastSeenMs: session.lastSeenMs,
+				})),
 			),
 			readNotable(tenant, payload),
-			readUserIssueItems(tenant, payload, resolvedServices(scope)),
 		],
 		{ concurrency: 4 },
 	)
@@ -1053,8 +1103,5 @@ export const readUserIssues = Effect.fn("UsersReads.issues")(function* (
 ) {
 	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 	const issues = yield* readUserIssueItems(tenant, payload)
-	return new UserIssuesResponse({
-		issues: Option.getOrElse(issues, () => []),
-		attributed: Option.isSome(issues),
-	})
+	return issuesResponse(issues)
 })

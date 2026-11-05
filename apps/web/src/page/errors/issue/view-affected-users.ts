@@ -7,7 +7,6 @@ import { detailRailField, detailRailGroup, detailRailRow } from "@maple/views/ui
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../../route"
-import { ERRORS_ATTRIBUTED_FROM } from "../../users/data"
 import type { Message } from "./message"
 import type { Model } from "./model"
 
@@ -94,7 +93,7 @@ const attributedRows = (
 			? [detailRailField(h, { label: "Most hit" }, [userList(h, response.users, search)])]
 			: []),
 		typography(h, { size: "2xs", tone: "muted" }, [
-			`Users are tracked from ${ERRORS_ATTRIBUTED_FROM} on.`,
+			"Errors recorded before user tracking carry no user.",
 		]),
 	]
 }

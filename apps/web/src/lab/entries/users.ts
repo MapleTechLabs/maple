@@ -236,7 +236,15 @@ const view = (model: Model, h: H): Html => {
 		case "detail":
 			return detailPage(h, model)
 		case "empty":
-			return listPage(h, model, noUsersState(h, { onSetup: Message.Ignored(), docsHref: "#" }))
+			return listPage(
+				h,
+				model,
+				noUsersState(h, {
+					onSetup: Message.Ignored(),
+					docsHref: "#",
+					onWidenRange: Message.Ignored(),
+				}),
+			)
 		case "loading":
 			return listPage(h, model, usersLoading(h))
 	}

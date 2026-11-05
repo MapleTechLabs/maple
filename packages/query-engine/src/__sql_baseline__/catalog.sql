@@ -3130,6 +3130,35 @@ SELECT
         GROUP BY service, bucket
         FORMAT JSON
 
+-- builder:mcp:mcpServersSessionListQuery:userPage  [11aed10c]
+SELECT
+          traces.ServiceName AS service,
+          traces.SpanAttributes['mcp.session.id'] AS sessionId,
+          anyIf(multiIf(positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-code/') = 1, 'Claude Code', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-user') = 1, 'Claude', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'openai-mcp/') = 1, 'Codex', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'cursor/') = 1, 'Cursor', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'windsurf/') = 1, 'Windsurf', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'vscode/') = 1, 'VS Code', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'omp/') = 1, 'omp', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'curl/') = 1, 'curl', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'bun/') = 1, 'Bun', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'undici') = 1, 'Node (undici)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'node') = 1, 'Node', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-httpx/') = 1, 'Python (httpx)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-requests/') = 1, 'Python (requests)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'aiohttp/') = 1, 'Python (aiohttp)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'go-http-client/') = 1, 'Go', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'executor') = 1, 'executor', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'estate-console/') = 1, 'estate-console', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'preview-verifier/') = 1, 'preview-verifier', extract(traces.SpanAttributes['user_agent.original'], '^[^/ ]+') = '', 'unknown', extract(traces.SpanAttributes['user_agent.original'], '^[^/ ]+')), traces.SpanAttributes['user_agent.original'] != '') AS client,
+          anyIf(multiIf(positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-code/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-user') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'openai-mcp/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'cursor/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'windsurf/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'vscode/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'omp/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'curl/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'bun/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'undici') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'node') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-httpx/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-requests/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'aiohttp/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'go-http-client/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'executor') = 1, 'internal', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'estate-console/') = 1, 'internal', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'preview-verifier/') = 1, 'internal', 'unknown'), traces.SpanAttributes['user_agent.original'] != '') AS kind,
+          anyIf(if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']), if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != '') AS user,
+          anyIf(if(traces.SpanAttributes['user.name'] != '', traces.SpanAttributes['user.name'], traces.SpanAttributes['user.email']), if(traces.SpanAttributes['user.name'] != '', traces.SpanAttributes['user.name'], traces.SpanAttributes['user.email']) != '') AS userName,
+          count() AS requests,
+          countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call') AS calls,
+          countIf((traces.SpanAttributes['mcp.method.name'] = 'tools/call' AND traces.SpanAttributes['error.type'] != '')) AS errors,
+          uniqExact(nullIf(traces.SpanAttributes['gen_ai.tool.name'], '')) AS tools,
+          min(traces.Timestamp) AS firstSeen,
+          max(traces.Timestamp) AS lastSeen
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName IN ('maple-ai', 'docs-mcp')
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND traces.SpanAttributes['mcp.session.id'] != ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) = 'user_42'
+          AND traces.ResourceAttributes['service.namespace'] IN ('platform')
+        GROUP BY service, sessionId
+        ORDER BY lastSeen DESC
+        LIMIT 200
+        FORMAT JSON
+
 -- builder:mcp:mcpServerStatsQuery:twoServers  [2b165cff]
 SELECT
           traces.ServiceName AS service,
@@ -3147,6 +3176,50 @@ SELECT
           AND traces.ServiceName IN ('maple-ai', 'docs-mcp')
           AND traces.SpanAttributes['mcp.method.name'] = 'tools/call'
         GROUP BY service
+        FORMAT JSON
+
+-- builder:mcp:mcpServersUserActivityQuery:userPage  [5e45bd44]
+SELECT
+          ranked.service AS service,
+          ranked.user AS user,
+          ranked.client AS client,
+          ranked.minute AS minute,
+          ranked.kind AS kind,
+          ranked.userName AS userName,
+          ranked.requests AS requests,
+          ranked.calls AS calls,
+          ranked.errors AS errors,
+          ranked.tools AS tools,
+          ranked.firstSeen AS firstSeen,
+          ranked.lastSeen AS lastSeen
+        FROM (SELECT
+          traces.ServiceName AS service,
+          if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS user,
+          multiIf(positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-code/') = 1, 'Claude Code', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-user') = 1, 'Claude', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'openai-mcp/') = 1, 'Codex', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'cursor/') = 1, 'Cursor', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'windsurf/') = 1, 'Windsurf', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'vscode/') = 1, 'VS Code', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'omp/') = 1, 'omp', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'curl/') = 1, 'curl', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'bun/') = 1, 'Bun', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'undici') = 1, 'Node (undici)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'node') = 1, 'Node', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-httpx/') = 1, 'Python (httpx)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-requests/') = 1, 'Python (requests)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'aiohttp/') = 1, 'Python (aiohttp)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'go-http-client/') = 1, 'Go', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'executor') = 1, 'executor', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'estate-console/') = 1, 'estate-console', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'preview-verifier/') = 1, 'preview-verifier', extract(traces.SpanAttributes['user_agent.original'], '^[^/ ]+') = '', 'unknown', extract(traces.SpanAttributes['user_agent.original'], '^[^/ ]+')) AS client,
+          toStartOfMinute(traces.Timestamp) AS minute,
+          any(multiIf(positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-code/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-user') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'openai-mcp/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'cursor/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'windsurf/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'vscode/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'omp/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'curl/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'bun/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'undici') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'node') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-httpx/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-requests/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'aiohttp/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'go-http-client/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'executor') = 1, 'internal', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'estate-console/') = 1, 'internal', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'preview-verifier/') = 1, 'internal', 'unknown')) AS kind,
+          anyIf(if(traces.SpanAttributes['user.name'] != '', traces.SpanAttributes['user.name'], traces.SpanAttributes['user.email']), if(traces.SpanAttributes['user.name'] != '', traces.SpanAttributes['user.name'], traces.SpanAttributes['user.email']) != '') AS userName,
+          count() AS requests,
+          countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call') AS calls,
+          countIf((traces.SpanAttributes['mcp.method.name'] = 'tools/call' AND traces.SpanAttributes['error.type'] != '')) AS errors,
+          groupUniqArray(nullIf(traces.SpanAttributes['gen_ai.tool.name'], '')) AS tools,
+          min(traces.Timestamp) AS firstSeen,
+          max(traces.Timestamp) AS lastSeen,
+          row_number() OVER (PARTITION BY service ORDER BY minute DESC) AS serviceRank
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName IN ('maple-ai', 'docs-mcp')
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND traces.SpanAttributes['mcp.session.id'] = ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) = 'user_42'
+        GROUP BY service, user, client, minute) AS ranked
+        WHERE ranked.serviceRank <= 5000
+        ORDER BY minute DESC
+        LIMIT 20000
         FORMAT JSON
 
 -- builder:mcp:mcpServicesQuery:default  [083d9dc7]
@@ -9772,7 +9845,7 @@ SELECT
         ORDER BY serviceName ASC
         FORMAT JSON
 
--- builder:user-activity:userActivitySummaryQuery:default  [344f6010]
+-- builder:user-activity:userActivitySummaryQuery:default  [644ac3ff]
 SELECT
           sum(user_activity_hourly.SpanCount) AS spanCount,
           sum(user_activity_hourly.ErrorSpanCount) AS errorSpanCount,
@@ -9787,6 +9860,8 @@ SELECT
           sum(user_activity_hourly.ErrorLogCount) AS errorLogCount,
           arrayMap(x -> x.1, arrayFilter(x -> x.1 != '', approx_top_kMerge(10)(TopRoutes))) AS topRoutes,
           arrayMap(x -> x.2, arrayFilter(x -> x.1 != '', approx_top_kMerge(10)(TopRoutes))) AS topRouteCounts,
+          tupleElement(sumMap([toUInt32(toUnixTimestamp(Hour))], [toUInt64(RequestCount)]), 1) AS requestHours,
+          tupleElement(sumMap([toUInt32(toUnixTimestamp(Hour))], [toUInt64(RequestCount)]), 2) AS requestHourCounts,
           min(user_activity_hourly.FirstSeen) AS firstSeen,
           max(user_activity_hourly.LastSeen) AS lastSeen
         FROM user_activity_hourly
@@ -10838,6 +10913,40 @@ SELECT
         GROUP BY userId
         ORDER BY lastSeen DESC, userId ASC
         LIMIT 200
+        FORMAT JSON
+
+-- builder:users:usersMcpNameSearchQuery:default  [47202f1a]
+SELECT
+          if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS userId
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName IN ('maple-ai')
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != ''
+          AND (positionCaseInsensitiveUTF8(traces.SpanAttributes['user.name'], 'ada') > 0 OR positionCaseInsensitiveUTF8(traces.SpanAttributes['user.email'], 'ada') > 0)
+        GROUP BY userId
+        ORDER BY userId ASC
+        LIMIT 500
+        FORMAT JSON
+
+-- builder:users:usersMcpNamesQuery:default  [0f43736f]
+SELECT
+          if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS userId,
+          anyIf(traces.SpanAttributes['user.name'], traces.SpanAttributes['user.name'] != '') AS name,
+          anyIf(traces.SpanAttributes['user.email'], traces.SpanAttributes['user.email'] != '') AS email
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName IN ('maple-ai')
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) IN ('user_42', 'user_43')
+        GROUP BY userId
+        LIMIT 2
         FORMAT JSON
 
 -- builder:users:usersServiceNamespacesQuery:default  [7caa4563]

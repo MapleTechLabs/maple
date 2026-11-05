@@ -1,6 +1,7 @@
 import { Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { facetsInputs, listInputs } from "./command"
+import { userHref } from "./update"
 
 const window = { startTime: "2026-06-24 04:00:00", endTime: "2026-06-25 04:00:00" }
 
@@ -42,5 +43,18 @@ describe("listInputs", () => {
 	it("keeps the rail's picks out of the facets, and only the pin in", () => {
 		expect(facetsInputs(window, null).namespaces).toEqual([])
 		expect(facetsInputs(window, "storefront").namespaces).toEqual(["storefront"])
+	})
+})
+
+describe("userHref", () => {
+	it("links a row to the user page over the directory's window", () => {
+		expect(userHref({ timePreset: "24h", q: "ada" })("user/42")).toBe("/users/user/42?timePreset=24h")
+		const href = userHref({ startTime: "2026-11-01 00:00:00", endTime: "2026-11-02 00:00:00", q: "ada" })(
+			"ada",
+		)
+		const params = new URL(href, "https://app.test").searchParams
+		expect(params.get("startTime")).toBe("2026-11-01 00:00:00")
+		expect(params.get("endTime")).toBe("2026-11-02 00:00:00")
+		expect(params.has("q")).toBe(false)
 	})
 })

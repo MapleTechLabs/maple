@@ -1,4 +1,4 @@
-import { USER_ERRORS_ATTRIBUTED_FROM_MS, type WorkflowState } from "@maple/domain/http"
+import type { WorkflowState } from "@maple/domain/http"
 import type { McpClientKind } from "@maple/domain/mcp-clients"
 import { Array as Arr, Order } from "effect"
 import { USER_DETAIL_TABS, type UserDetailTab } from "../../route/search"
@@ -99,14 +99,6 @@ export type UserIssue = Readonly<{
 	/** The issue page. */
 	href: string | null
 }>
-
-/** "5 Nov 2026": the day errors started carrying the user that hit them. */
-export const ERRORS_ATTRIBUTED_FROM = new Intl.DateTimeFormat("en-GB", {
-	day: "numeric",
-	month: "short",
-	year: "numeric",
-	timeZone: "UTC",
-}).format(USER_ERRORS_ATTRIBUTED_FROM_MS)
 
 /** One request of the user: its entry span, and the trace page it opens. */
 export type UserTrace = Readonly<{

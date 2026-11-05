@@ -231,6 +231,7 @@ describe("a cluster without user_activity_hourly", () => {
 							distinctEvents: "2",
 							firstSeen: "2026-11-01 08:00:00.000000000",
 							lastSeen: "2026-11-01 09:00:00.000000000",
+							lastSeenKey: "2026-11-01 09:00:00.000000000",
 						},
 					],
 				],
@@ -288,6 +289,172 @@ describe("readUserActivity", () => {
 				),
 				"(traces.StatusCode = 'Error' OR traces.Duration >= 2000000000)",
 			)
+		}),
+	)
+})
+
+const listRow = (userId: string, name: string) => ({
+	userId,
+	name,
+	email: "",
+	groupId: "",
+	namespaces: [],
+	firstSeen: "2026-11-01 08:00:00.000000000",
+	lastSeen: "2026-11-01 09:00:00.000000000",
+	lastSeenKey: "2026-11-01 09:00:00.000000000",
+	sessions: "0",
+	errors: "0",
+	requests: "3",
+	mcpSpans: "3",
+	events: "0",
+	spans: "3",
+	logLines: "0",
+})
+
+describe("the directory's MCP-only users", () => {
+	it.effect("take a missing name or email from their MCP spans, read only for rows missing one", () =>
+		Effect.gen(function* () {
+			const ran: Ran = []
+			const rows = new Map<string, ReadonlyArray<unknown>>([
+				["usersServiceNamespaces", []],
+				["mcpServices", [{ service: "docs-mcp", serverSpans: "4" }]],
+				[
+					"usersList",
+					[
+						listRow("user_42", ""),
+						listRow("user_7", "Grace"),
+						{ ...listRow("user_9", "Linus"), email: "linus@example.com" },
+					],
+				],
+				[
+					"usersMcpNames",
+					[
+						{ userId: "user_42", name: "Ada", email: "ada@example.com" },
+						{ userId: "user_7", name: "Grace Hopper", email: "grace@example.com" },
+					],
+				],
+			])
+			const response = yield* readUsersList(
+				tenant,
+				new UsersListRequest({ startTime: request.startTime, endTime: request.endTime }),
+			).pipe(Effect.provide(warehouse(rows, ran)))
+			assert.deepStrictEqual(
+				Arr.map(response.users, (user) => [user.userId, user.name, user.email]),
+				[
+					["user_42", "Ada", "ada@example.com"],
+					// The replay's name stays; only the missing email comes from MCP.
+					["user_7", "Grace", "grace@example.com"],
+					["user_9", "Linus", "linus@example.com"],
+				],
+			)
+			const names = Option.match(
+				Arr.findFirst(ran, (query) => query.context === "usersMcpNames"),
+				{
+					onNone: () => "",
+					onSome: (query) => query.sql,
+				},
+			)
+			assert.include(names, "traces.ServiceName IN ('docs-mcp')")
+			assert.include(names, "IN ('user_42', 'user_7')")
+			assert.notInclude(names, "user_9")
+		}),
+	)
+})
+
+describe("searching the directory on the rollup", () => {
+	it.effect("finds an MCP-only user by the name its spans carry", () =>
+		Effect.gen(function* () {
+			const ran: Ran = []
+			const rows = new Map<string, ReadonlyArray<unknown>>([
+				["usersServiceNamespaces", []],
+				["mcpServices", [{ service: "docs-mcp", serverSpans: "4" }]],
+				["usersMcpNameSearch", [{ userId: "user_42" }]],
+				["usersList", [listRow("user_42", "")]],
+				["usersMcpNames", [{ userId: "user_42", name: "Ada Lovelace", email: "" }]],
+			])
+			const response = yield* readUsersList(
+				tenant,
+				new UsersListRequest({
+					startTime: request.startTime,
+					endTime: request.endTime,
+					search: "lovelace",
+				}),
+			).pipe(Effect.provide(warehouse(rows, ran)))
+			assert.deepStrictEqual(
+				Arr.map(response.users, (user) => [user.userId, user.name]),
+				[["user_42", "Ada Lovelace"]],
+			)
+			const searches = Arr.filter(ran, (query) => query.context === "usersMcpNameSearch")
+			assert.strictEqual(searches.length, 1)
+			assert.include(searches[0]?.sql ?? "", "traces.ServiceName IN ('docs-mcp')")
+			assert.include(
+				Option.match(
+					Arr.findFirst(ran, (query) => query.context === "usersList"),
+					{
+						onNone: () => "",
+						onSome: (query) => query.sql,
+					},
+				),
+				"signals.userId IN ('user_42')",
+			)
+		}),
+	)
+
+	it.effect("runs no name search without a search term", () =>
+		Effect.gen(function* () {
+			const ran: Ran = []
+			const rows = new Map<string, ReadonlyArray<unknown>>([
+				["usersServiceNamespaces", []],
+				["mcpServices", [{ service: "docs-mcp", serverSpans: "4" }]],
+				["usersList", [listRow("user_7", "Grace")]],
+			])
+			yield* readUsersList(
+				tenant,
+				new UsersListRequest({ startTime: request.startTime, endTime: request.endTime }),
+			).pipe(Effect.provide(warehouse(rows, ran)))
+			assert.strictEqual(Arr.filter(ran, (query) => query.context === "usersList").length, 1)
+			assert.isFalse(Arr.some(ran, (query) => query.context === "usersMcpNameSearch"))
+		}),
+	)
+})
+
+describe("readUserProfile", () => {
+	it.effect("takes the top route and the request spark from the one summary read", () =>
+		Effect.gen(function* () {
+			const ran: Ran = []
+			const rows = new Map<string, ReadonlyArray<unknown>>([
+				...scopeRows,
+				[
+					"userActivitySummary",
+					[
+						{
+							spanCount: "9",
+							errorSpanCount: "0",
+							requestCount: "4",
+							failedRequestCount: "1",
+							traceCount: "4",
+							sessionCount: "0",
+							p50DurationMs: "20",
+							p95DurationMs: "80",
+							logCount: "0",
+							warnLogCount: "0",
+							errorLogCount: "0",
+							topRoutes: ["POST /checkout"],
+							topRouteCounts: ["4"],
+							requestHours: [String(Date.UTC(2026, 10, 1, 14) / 1000)],
+							requestHourCounts: ["4"],
+							firstSeen: "2026-11-01 14:00:00",
+							lastSeen: "2026-11-01 14:30:00",
+						},
+					],
+				],
+			])
+			const response = yield* readUserProfile(tenant, request).pipe(
+				Effect.provide(warehouse(rows, ran)),
+			)
+			assert.strictEqual(response.profile?.topRoute, "POST /checkout")
+			assert.deepStrictEqual(response.profile?.activity, [0, 0, 0, 0, 4, 0, 0])
+			assert.isFalse(Arr.some(ran, (query) => query.context === "userActivityTotals"))
 		}),
 	)
 })

@@ -79,24 +79,13 @@ export type UserDetailInput = typeof UserDetailInput.Encoded
 const detailRequest = (input: typeof UserDetailInput.Type) =>
 	new UserDetailRequest({ ...windowOf(input), userId: input.userId })
 
-/** One user's identity and totals; `profile` is `null` when nothing in the window carries them. */
-export const getUserProfile = Effect.fn("Users.profile")(function* ({ data }: { data: UserDetailInput }) {
-	const input = yield* decodeInput(UserDetailInput, data, "userProfile")
-	return yield* runWarehouseQuery("userProfile", () =>
+/** The user page's first paint: the profile and the activity in one request, over one scope read. */
+export const getUserOverview = Effect.fn("Users.overview")(function* ({ data }: { data: UserDetailInput }) {
+	const input = yield* decodeInput(UserDetailInput, data, "userOverview")
+	return yield* runWarehouseQuery("userOverview", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
-			return yield* client.usersInternal.profile({ payload: detailRequest(input) })
-		}),
-	)
-})
-
-/** One user's replay sessions, product events, MCP sessions and the merged timeline. */
-export const getUserActivity = Effect.fn("Users.activity")(function* ({ data }: { data: UserDetailInput }) {
-	const input = yield* decodeInput(UserDetailInput, data, "userActivity")
-	return yield* runWarehouseQuery("userActivity", () =>
-		Effect.gen(function* () {
-			const client = yield* MapleInternalHttp
-			return yield* client.usersInternal.activity({ payload: detailRequest(input) })
+			return yield* client.usersInternal.overview({ payload: detailRequest(input) })
 		}),
 	)
 })
@@ -119,17 +108,6 @@ export const getUserLogs = Effect.fn("Users.logs")(function* ({ data }: { data: 
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
 			return yield* client.usersInternal.logs({ payload: detailRequest(input) })
-		}),
-	)
-})
-
-/** The issues one user hit, most hits first; `attributed` is false where errors carry no user id. */
-export const getUserIssues = Effect.fn("Users.issues")(function* ({ data }: { data: UserDetailInput }) {
-	const input = yield* decodeInput(UserDetailInput, data, "userIssues")
-	return yield* runWarehouseQuery("userIssues", () =>
-		Effect.gen(function* () {
-			const client = yield* MapleInternalHttp
-			return yield* client.usersInternal.issues({ payload: detailRequest(input) })
 		}),
 	)
 })

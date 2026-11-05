@@ -1,7 +1,6 @@
-// End users (`/users`): one row per user id the SDKs identified, from session replays, product
-// events, MCP server spans and `user_activity_hourly`. Replays and events carry only a service name,
-// so the caller resolves the namespace scope to service names and passes each service's namespace.
-// Browser events carry no service at all: their session's replay names it.
+// End users (`/users`): one row per user id, from replays, product events, MCP server spans and
+// `user_activity_hourly`. Replays and events carry only a service name (browser events not even
+// that), so the caller resolves the namespace scope to services.
 
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
@@ -46,6 +45,8 @@ export interface UsersScope {
 export interface UsersListFilter {
 	/** Case-insensitive substring of the user id, name or email. */
 	readonly search?: string
+	/** Users the search matched outside this query: MCP users whose name the rollup does not keep. */
+	readonly searchUserIds?: ReadonlyArray<string>
 	readonly hasErrors?: boolean
 	readonly hasReplay?: boolean
 	readonly groups?: ReadonlyArray<string>
@@ -246,6 +247,77 @@ const mcpUsers = (scope: UsersScope) =>
 		.groupBy("userId", "namespace")
 
 /**
+ * The name and email MCP server spans carry for the listed users: the rollup keeps neither, so the
+ * directory reads them for the page's unnamed users only.
+ */
+export function usersMcpNamesQuery(
+	mcpServices: ReadonlyArray<string>,
+	userIds: ReadonlyArray<string>,
+	namespaces: ReadonlyArray<string> = [],
+) {
+	return from(Traces)
+		.select(($) => ({
+			userId: mcpUserId($),
+			name: nonEmpty($.SpanAttributes.get("user.name")),
+			email: nonEmpty($.SpanAttributes.get("user.email")),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			$.SpanKind.eq("Server"),
+			mcpServices.length > 0 ? CH.inList($.ServiceName, mcpServices) : CH.rawCond("1 = 0"),
+			mcpMethod($).neq(""),
+			userIds.length > 0 ? CH.inList(mcpUserId($), userIds) : CH.rawCond("1 = 0"),
+			namespaces.length > 0
+				? CH.inList($.ResourceAttributes.get("service.namespace"), namespaces)
+				: undefined,
+		])
+		.groupBy("userId")
+		.limit(Math.max(1, userIds.length))
+		.format("JSON")
+}
+
+/** Max MCP users a name search hands to the directory's search. */
+const MCP_NAME_SEARCH_LIMIT = 500
+
+/**
+ * MCP users whose span `user.name` or `user.email` contains `search`: the rollup keeps no name, so
+ * the directory's search also accepts these ids.
+ */
+export function usersMcpNameSearchQuery(
+	mcpServices: ReadonlyArray<string>,
+	search: string,
+	namespaces: ReadonlyArray<string> = [],
+) {
+	return (
+		from(Traces)
+			.select(($) => ({ userId: mcpUserId($) }))
+			.where(($) => [
+				$.OrgId.eq(orgIdParam),
+				$.Timestamp.gte(param.dateTime("startTime")),
+				$.Timestamp.lte(param.dateTime("endTime")),
+				$.SpanKind.eq("Server"),
+				mcpServices.length > 0 ? CH.inList($.ServiceName, mcpServices) : CH.rawCond("1 = 0"),
+				mcpMethod($).neq(""),
+				mcpUserId($).neq(""),
+				CH.or(
+					containsText($.SpanAttributes.get("user.name"), search),
+					containsText($.SpanAttributes.get("user.email"), search),
+				),
+				namespaces.length > 0
+					? CH.inList($.ResourceAttributes.get("service.namespace"), namespaces)
+					: undefined,
+			])
+			.groupBy("userId")
+			// A stable order, so the cap keeps the same ids on every call.
+			.orderBy(["userId", "asc"])
+			.limit(MCP_NAME_SEARCH_LIMIT)
+			.format("JSON")
+	)
+}
+
+/**
  * Spans and logs with `user.id` from the rollup: entry-point requests, failed ones as errors, and
  * spans on an MCP server as MCP activity (MCP spans carry the same user id).
  */
@@ -341,6 +413,9 @@ export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, 
 					containsText($.userId, search),
 					containsText(nonEmpty($.name), search),
 					containsText(nonEmpty($.email), search),
+					...(filter.searchUserIds !== undefined && filter.searchUserIds.length > 0
+						? [CH.inList($.userId, filter.searchUserIds)]
+						: []),
 				),
 			),
 			CH.when(filter.after, (after) => {

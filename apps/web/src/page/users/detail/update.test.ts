@@ -1,4 +1,6 @@
-import { Array as Arr, Option, Schema } from "effect"
+import { Array as Arr, Option, Result, Schema } from "effect"
+import { AsyncData } from "foldkit"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { fromString } from "foldkit/url"
 import { describe, expect, it } from "vitest"
 import { ErrorIssueId, OrgId } from "@maple/domain/http"
@@ -112,21 +114,45 @@ describe("tabs and namespaces", () => {
 		expect(names(back)).toEqual([])
 	})
 
-	it("reads the user's issues only once the Errors tab opens", () => {
+	it("reads the user's issues with the overview, and nothing more when the Errors tab opens", () => {
 		const loaded = update(
 			page({}),
 			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
 			context,
 		)
-		const names = (step: ReturnType<typeof update>) =>
-			Arr.map(step.commands ?? [], (command) => command.name)
-		expect(names(loaded)).not.toContain("FetchUserIssues")
 		const errors = routeChanged(
 			loaded.model,
 			{ userId: "user/42 ada", search: { tab: "errors" } },
 			context,
 		)
-		expect(names(errors)).toEqual(["FetchUserIssues"])
+		expect(errors.commands ?? []).toEqual([])
+	})
+
+	it("loads the profile, the activity and the issues in one request", () => {
+		const loaded = update(
+			page({}),
+			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
+			context,
+		)
+		expect(Arr.map(loaded.commands ?? [], (command) => command.name)).toEqual(["FetchUserOverview"])
+	})
+
+	it("settles the issues with the overview, so the Errors tab never stays loading", () => {
+		const loaded = update(
+			page({}),
+			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
+			context,
+		).model
+		const failed = update(
+			loaded,
+			Message.CompletedFetchOverview({
+				key: loaded.issues.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+			context,
+		).model
+		expect(AsyncData.isFailure(failed.issues.data)).toBe(true)
+		expect(AsyncData.isFailure(failed.profile.data)).toBe(true)
 	})
 
 	it("refetches when the namespace changes", () => {
@@ -141,8 +167,7 @@ describe("tabs and namespaces", () => {
 			context,
 		)
 		const names = Arr.map(step.commands ?? [], (command) => command.name)
-		expect(names).toContain("FetchUserProfile")
-		expect(names).toContain("FetchUserActivity")
+		expect(names).toEqual(["FetchUserOverview"])
 	})
 })
 

@@ -128,14 +128,10 @@ export function registerInspectUserTool(server: McpToolRegistrar) {
 				...(namespaces !== undefined && { namespaces }),
 			})
 			const reads = yield* UsersReadService
-			const [{ profile }, activity, issues] = yield* Effect.all(
-				[
-					reads.profile(tenant, request),
-					reads.activity(tenant, request),
-					reads.issues(tenant, request),
-				],
-				{ concurrency: 3 },
-			).pipe(Effect.catchTags(errorReads))
+			// One scope and one issues read: the profile, the activity and its issues together.
+			const { profile, activity, issues } = yield* reads
+				.overview(tenant, request)
+				.pipe(Effect.catchTags(errorReads))
 			return {
 				timeRange: { start: st, end: et },
 				userId: params.user_id,
