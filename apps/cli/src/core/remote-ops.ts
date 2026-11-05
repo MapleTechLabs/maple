@@ -23,7 +23,6 @@ import type {
 } from "@maple/query-engine/observability"
 import type { ListMetricsOutput } from "@maple/domain/tinybird"
 import { CliNotFoundError } from "../lib/errors"
-import type { MetricSeriesOutput } from "../lib/views"
 import type { Range } from "./time"
 import { type MapleV2Client, toV2Window, unsupportedInRemote } from "./v2-client"
 
@@ -41,10 +40,7 @@ const clampListLimit = (limit: number | undefined): number => Math.min(limit ?? 
 const serviceName = (value: string) => Schema.decodeSync(ServiceName)(value)
 const traceId = (value: string) => Schema.decodeSync(TraceId)(value)
 
-export const listServices = (
-	client: MapleV2Client,
-	p: { range: Range; environment?: string },
-): Effect.Effect<ReadonlyArray<ServiceSummary>, unknown> =>
+export const listServices = (client: MapleV2Client, p: { range: Range; environment?: string }) =>
 	Effect.map(
 		client.services.list({
 			query: {
@@ -72,10 +68,7 @@ const isV2ErrorTagged = (tag: string) => (error: unknown) =>
 	Predicate.hasProperty(error, "error") && Predicate.isTagged(error.error, tag)
 
 /** `services.retrieve` looks the name up directly, so no list page can hide it. */
-export const serviceHasTelemetry = (
-	client: MapleV2Client,
-	p: { service: string; range: Range },
-): Effect.Effect<boolean, unknown> =>
+export const serviceHasTelemetry = (client: MapleV2Client, p: { service: string; range: Range }) =>
 	client.services.retrieve({ params: { name: serviceName(p.service) }, query: toV2Window(p.range) }).pipe(
 		Effect.as(true),
 		Effect.catchIf(isV2ErrorTagged(SERVICE_NOT_FOUND_TAG), () => Effect.succeed(false)),
@@ -84,7 +77,7 @@ export const serviceHasTelemetry = (
 export const serviceMap = (
 	client: MapleV2Client,
 	p: { range: Range; service?: string; environment?: string },
-): Effect.Effect<ReadonlyArray<ServiceEdge>, unknown> =>
+) =>
 	Effect.map(
 		client.serviceMap.retrieve({
 			query: {
@@ -120,7 +113,7 @@ export const searchTraces = (
 		limit?: number
 		offset?: number
 	},
-): Effect.Effect<SearchTracesOutput, unknown> => {
+) => {
 	// Local mode answers a span-name filter with a span-level scan, matching the
 	// name as a substring. /v2/traces/search only ever returns root-based
 	// summaries and matches the name exactly, so neither the rows nor the
@@ -250,10 +243,7 @@ export const traceLogWindows = (
 	return from(Date.parse(start))
 }
 
-export const inspectTrace = (
-	client: MapleV2Client,
-	p: { traceId: string },
-): Effect.Effect<InspectTraceOutput, unknown> =>
+export const inspectTrace = (client: MapleV2Client, p: { traceId: string }) =>
 	Effect.gen(function* () {
 		const id = traceId(p.traceId)
 		const trace = yield* client.traces.retrieve({ params: { trace_id: id } }).pipe(
@@ -347,7 +337,7 @@ export const searchLogs = (
 		offset?: number
 		includeAttributes?: boolean
 	},
-): Effect.Effect<SearchLogsOutput, unknown> => {
+) => {
 	if (p.offset !== undefined && p.offset > 0) {
 		return unsupportedInRemote(
 			"list_logs",
@@ -437,7 +427,7 @@ export const mineLogPatterns = (
 export const listMetrics = (
 	client: MapleV2Client,
 	p: { range: Range; service?: string; search?: string; limit?: number },
-): Effect.Effect<ReadonlyArray<ListMetricsOutput>, unknown> =>
+) =>
 	Effect.map(
 		client.metrics.list({
 			query: {
@@ -604,7 +594,7 @@ export const metricTimeseries = (
 		bucketSeconds: number
 		service?: string
 	},
-): Effect.Effect<MetricSeriesOutput["points"], unknown> =>
+) =>
 	Effect.map(
 		client.metrics.timeseries({
 			payload: {

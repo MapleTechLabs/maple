@@ -41,5 +41,5 @@ export const localSpec: LocalSpec = Effect.gen(function* () {
 	} satisfies LocalProvider.LocalProviderSpec<Local, LocalConfig>
 })
 
-const providers: RpcServer.ProviderLayer = LocalProviderLocal()
+const providers = LocalProviderLocal() satisfies RpcServer.ProviderLayer
 export default providers

@@ -30,7 +30,7 @@ import { ChatSessionCallError, type ChatSessionRpc, chatSessionClient } from "./
 
 describe("chatSessionClient", () => {
 	const unused = () => Effect.die("not called")
-	const rpc = (overrides: Partial<ChatSessionRpc>): ChatSessionRpc => ({
+	const rpc = (overrides: Partial<ChatSessionRpc<unknown>>): ChatSessionRpc<unknown> => ({
 		cursor: unused,
 		running: unused,
 		history: unused,

@@ -6,7 +6,8 @@ import {
 import { Effect, Exit, Fiber, Ref, type Scope, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
-import { MissingBatchResultError, makeExecuteBatcher, type SendExecuteBatch } from "./execute-batcher"
+import { MissingBatchResultError } from "@maple/web-data/warehouse/warehouse-services"
+import { makeExecuteBatcher, type SendExecuteBatch } from "./execute-batcher"
 
 const WINDOW_MS = 15
 

@@ -33,8 +33,11 @@ export interface ReadSpec<S extends Schema.Top> {
 	readonly refresh?: boolean
 }
 
+/** A load's value, or `None` when it failed: joiners then run their own load, typed by their `E`. */
+type Answer = Deferred.Deferred<Option.Option<unknown>>
+
 type Entry = Readonly<{
-	result: Deferred.Deferred<unknown, unknown>
+	result: Answer
 	idleTtlMs: number
 	touchedAtMs: number
 	isSettled: boolean
@@ -72,10 +75,9 @@ const ofOrg = (entries: Entries, org: string): Map<RequestKey, Entry> =>
 	new Map(Arr.filter([...entries], ([key]) => orgOfKey(key) === org))
 
 type EntriesRef = SynchronizedRef.SynchronizedRef<Entries>
-type Answer = Deferred.Deferred<unknown, unknown>
 
 /** A load finished: a success stays (its TTL counts from now), a failure is not kept. */
-const settle = (entries: EntriesRef, key: RequestKey, result: Answer, exit: Exit.Exit<unknown, unknown>) =>
+const settle = <A, E>(entries: EntriesRef, key: RequestKey, result: Answer, exit: Exit.Exit<A, E>) =>
 	Effect.flatMap(Clock.currentTimeMillis, (nowMs) =>
 		SynchronizedRef.update(entries, (current) => {
 			const entry = current.get(key)
@@ -85,7 +87,11 @@ const settle = (entries: EntriesRef, key: RequestKey, result: Answer, exit: Exit
 			else next.delete(key)
 			return next
 		}),
-	).pipe(Effect.andThen(Deferred.done(result, exit)))
+	).pipe(
+		Effect.andThen(
+			Deferred.succeed(result, Exit.isSuccess(exit) ? Option.some(exit.value) : Option.none()),
+		),
+	)
 
 type Outcome<A, E> =
 	| { readonly _tag: "Owner"; readonly fiber: Fiber.Fiber<A, E> }
@@ -108,7 +114,7 @@ const makeRead =
 						touched(next, spec.key, { ...existing, touchedAtMs: nowMs })
 						return step<S["Type"], E>({ _tag: "Joiner", result: existing.result }, next)
 					}
-					const result = yield* Deferred.make<unknown, unknown>()
+					const result = yield* Deferred.make<Option.Option<unknown>>()
 					// Forked in the cache's scope, so the read outlives the reader that started it.
 					const fiber = yield* Effect.forkIn(
 						Effect.onExit(load, (exit) => settle(entries, spec.key, result, exit)),
@@ -124,11 +130,13 @@ const makeRead =
 				}),
 			),
 		).pipe(
-			Effect.flatMap((outcome): Effect.Effect<S["Type"], unknown, R> =>
+			Effect.flatMap((outcome): Effect.Effect<S["Type"], E, R> =>
 				outcome._tag === "Owner"
 					? Fiber.join(outcome.fiber)
-					: Deferred.await(outcome.result).pipe(
-							Effect.filterOrElse(Schema.is(spec.schema), () => load),
+					: Effect.flatMap(Deferred.await(outcome.result), (answer) =>
+							Option.isSome(answer) && Schema.is(spec.schema)(answer.value)
+								? Effect.succeed(answer.value)
+								: load,
 						),
 			),
 		)
@@ -165,12 +173,12 @@ export class ReadCache extends Context.Service<
 		readonly read: <S extends Schema.Top, E, R>(
 			spec: ReadSpec<S>,
 			load: Effect.Effect<S["Type"], E, R>,
-		) => Effect.Effect<S["Type"], unknown, R>
+		) => Effect.Effect<S["Type"], E, R>
 		/** `read` under the open org's `requestKey`; before any org is open it only loads. */
 		readonly readInOrg: <S extends Schema.Top, E, R>(
 			spec: OrgReadSpec<S>,
 			load: Effect.Effect<S["Type"], E, R>,
-		) => Effect.Effect<S["Type"], unknown, R>
+		) => Effect.Effect<S["Type"], E, R>
 		/** The holder of these keys let go of them: their idle TTL starts now. */
 		readonly release: (keys: ReadonlyArray<RequestKey>) => Effect.Effect<void>
 		/** The open org: other orgs' entries are dropped (an org switch). */

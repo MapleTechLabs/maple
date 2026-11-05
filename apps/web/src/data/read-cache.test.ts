@@ -167,7 +167,9 @@ describe("ReadCache", () => {
 			Effect.gen(function* () {
 				const { runs, load } = yield* counting
 				const gate = yield* Deferred.make<void>()
-				const slow = yield* Effect.forkChild(read(keyOf("org_a", "slow"), Effect.andThen(Deferred.await(gate), load)))
+				const slow = yield* Effect.forkChild(
+					read(keyOf("org_a", "slow"), Effect.andThen(Deferred.await(gate), load)),
+				)
 				yield* Effect.yieldNow
 				const shas = Array.from({ length: READ_CACHE_MAX_ENTRIES - 1 }, (_, index) => `sha${index}`)
 				yield* Effect.forEach(shas, (sha) => read(keyOf("org_a", sha), load), { discard: true })
@@ -199,6 +201,22 @@ describe("ReadCache", () => {
 				expect(Exit.isFailure(yield* Effect.exit(read(keyOf("org_a"), failing)))).toBe(true)
 				expect(yield* read(keyOf("org_a"), load)).toEqual({ count: 2 })
 				expect(yield* Ref.get(runs)).toBe(2)
+			}),
+		))
+
+	test("a reader joined to a read that fails runs its own load", () =>
+		run(
+			Effect.gen(function* () {
+				const gate = yield* Deferred.make<void>()
+				const { runs, load } = yield* counting
+				const failing = Effect.andThen(Deferred.await(gate), Effect.fail("down"))
+				const owner = yield* Effect.forkChild(Effect.exit(read(keyOf("org_a"), failing)))
+				const joiner = yield* Effect.forkChild(read(keyOf("org_a"), load))
+				yield* Effect.yieldNow
+				yield* Deferred.succeed(gate, undefined)
+				expect(Exit.isFailure(yield* Fiber.join(owner))).toBe(true)
+				expect(yield* Fiber.join(joiner)).toEqual({ count: 1 })
+				expect(yield* Ref.get(runs)).toBe(1)
 			}),
 		))
 

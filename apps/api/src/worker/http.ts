@@ -63,7 +63,7 @@ export const buildIsolateHandler = <ROut, E>(
 						memoMap,
 						scope,
 					)
-					// oxlint-disable-next-line effecttsgo/return-effect-in-gen -- Return the handler for later requests, never execute it during the build.
+					// oxlint-disable-next-line effecttsgo/return-effect-in-gen, effecttsgo/any-unknown-in-error-context -- Return the handler for later requests, never run it during the build. HttpRouter types its error as unknown; bridgeHandler discharges it.
 					return Context.get(context, HttpRouter.HttpRouter).asHttpEffect()
 				}),
 	).pipe(Effect.map(bridgeHandler))
@@ -191,10 +191,10 @@ const recordEscapedCause = (method: string, path: string, cause: Cause.Cause<unk
  * when an unrelated binding is unavailable. Everything else runs the router
  * under one Postgres connection for the request.
  */
-export const makeFetch = (
-	app: Effect.Effect<HttpEffect, unknown>,
+export const makeFetch = <E>(
+	app: Effect.Effect<HttpEffect, E>,
 	ports: Layer.Layer<MapleDbConnection | AiWorkerFetcher>,
-	queryApp: Effect.Effect<HttpEffect, unknown> = app,
+	queryApp: Effect.Effect<HttpEffect, E> = app,
 	vcsSyncBatch?: Effect.Effect<
 		HttpServerResponse.HttpServerResponse,
 		never,

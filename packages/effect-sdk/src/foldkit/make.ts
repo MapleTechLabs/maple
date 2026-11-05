@@ -90,6 +90,7 @@ const parseAppConfig = <Config extends object>(app: Config): FoldkitAppConfig =>
 	const slow = field(app, "slow")
 	const slowThresholds = field(slow, "thresholdOverrides")
 	return {
+		// @effect-diagnostics-next-line anyUnknownInErrorContext:off -- the app's own Layer, passed through untouched
 		resources: Layer.isLayer(resources) ? resources : undefined,
 		init: fnField<InitFn>(app, "init"),
 		update: fnField<UpdateFn>(app, "update"),
@@ -241,6 +242,7 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 		return {
 			...command,
 			args: { ...args, [NAVIGATION_ARG]: navigationId },
+			// @effect-diagnostics-next-line anyUnknownInErrorContext:off -- the app's Command, typed by the app, passed through
 			effect: Effect.tap(command.effect, (message) =>
 				Effect.sync(() => marks.set(message, navigationId)),
 			),
@@ -337,6 +339,7 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 		const { init, update, onUrlChange, crashReport, onSlow } = parsed
 		return {
 			...app,
+			// @effect-diagnostics-next-line anyUnknownInErrorContext:off -- the app's own Layer, merged and passed through
 			resources: parsed.resources === undefined ? layer : Layer.merge(parsed.resources, layer),
 			crash: {
 				...parsed.crash,

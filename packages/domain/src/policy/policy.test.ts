@@ -82,7 +82,7 @@ describe("Policy.grantsOf", () => {
 
 	it("survives a round trip through the page-model schema", () => {
 		const grants = Policy.grantsOf(["org:admin"])
-		const decoded = Schema.decodeUnknownSync(Schema.Array(Policy.PermissionName))(grants)
+		const decoded = Schema.decodeSync(Schema.Array(Policy.PermissionName))(grants)
 		expect(Policy.has(decoded, "warehouse:manage")).toBe(true)
 	})
 })

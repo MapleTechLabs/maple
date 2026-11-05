@@ -159,6 +159,11 @@ const localServerFailure =
 			: error
 	}
 
+/** How an op fails when it may run over either remote transport: the MCP tool or v2. */
+type EitherFailure<Op extends keyof typeof RemoteMcp & keyof typeof Remote> =
+	| Effect.Error<ReturnType<(typeof RemoteMcp)[Op]>>
+	| Effect.Error<ReturnType<(typeof Remote)[Op]>>
+
 /** Run `remote` against the workspace when one is configured, else `local`. */
 const dispatch = <A, E, R, E2, R2>(
 	local: Effect.Effect<A, E, R>,
@@ -266,7 +271,7 @@ export const searchTraces = (p: {
 			// cursor. The MCP tool searches spans by substring and takes a numeric
 			// offset, but filters no environment, so `--env --offset` stays on v2,
 			// which refuses it.
-			({ v2, mcp }): Effect.Effect<SearchTracesOutput, unknown> =>
+			({ v2, mcp }): Effect.Effect<SearchTracesOutput, EitherFailure<"searchTraces">> =>
 				p.environment === undefined && (p.spanName !== undefined || (p.offset ?? 0) > 0)
 					? RemoteMcp.searchTraces(mcp, p)
 					: Remote.searchTraces(v2, p),
@@ -369,7 +374,7 @@ export const searchLogs = (p: {
 		}).pipe(withEnvironment(p.environment)),
 		// A numeric offset needs the MCP tool, which has no environment filter
 		// and no attributes; v2 then explains why --offset is unavailable.
-		({ v2, mcp }): Effect.Effect<SearchLogsOutput, unknown> =>
+		({ v2, mcp }): Effect.Effect<SearchLogsOutput, EitherFailure<"searchLogs">> =>
 			(p.offset ?? 0) > 0 && p.environment === undefined && p.includeAttributes !== true
 				? RemoteMcp.searchLogs(mcp, p)
 				: Remote.searchLogs(v2, p),
@@ -394,7 +399,7 @@ export const mineLogPatterns = (p: {
 		}).pipe(withEnvironment(p.environment)),
 		// The MCP tool clusters a 10k-log sample server-side, as local mode does;
 		// it has no environment filter, so --env falls back to v2's 100-log page.
-		({ v2, mcp }): Effect.Effect<MineLogPatternsOutput, unknown> =>
+		({ v2, mcp }): Effect.Effect<MineLogPatternsOutput, EitherFailure<"mineLogPatterns">> =>
 			p.environment === undefined ? RemoteMcp.mineLogPatterns(mcp, p) : Remote.mineLogPatterns(v2, p),
 		"list_logs",
 	)
