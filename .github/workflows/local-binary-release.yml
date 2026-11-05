@@ -54,9 +54,10 @@ jobs:
             sha: ${{ steps.resolve.outputs.sha }}
             version: ${{ steps.resolve.outputs.version }}
         steps:
+            # Keeps the read-only token: `git show` below lazily fetches the tagged commit's
+            # blobs, and this job runs no repo code and uploads nothing.
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
               with:
-                  persist-credentials: false
                   fetch-depth: 0
                   filter: blob:none
 
