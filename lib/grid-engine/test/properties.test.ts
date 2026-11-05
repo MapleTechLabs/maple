@@ -1,5 +1,5 @@
 import fc from "fast-check"
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 
 import {
 	clampPosition,
@@ -47,6 +47,7 @@ const normalized = layoutArb(cols).map((layout) => normalizeLayout(layout, cols,
 /** Apply an op the way the canvas does: clamp, then step. */
 function apply(layout: Layout, op: Op): Layout {
 	const item = layout[op.pick % layout.length]
+	if (item === undefined) return layout
 	if (op.kind === "move") {
 		const target = clampPosition(item, op.x, op.y, cols)
 		return moveItem(layout, item.i, target.x, target.y)
@@ -90,7 +91,11 @@ describe("normalizeLayout", () => {
 				// Overlapping inputs push items down to resolve the overlap; boards
 				// without overlaps only ever float up.
 				if (overlaps(layout)) return
-				out.forEach((item, index) => expect(item.y).toBeLessThanOrEqual(layout[index].y))
+				out.forEach((item, index) => {
+					const before = layout[index]
+					assert.isDefined(before)
+					expect(item.y).toBeLessThanOrEqual(before.y)
+				})
 			}),
 			{ numRuns: 3000 },
 		)
@@ -102,6 +107,7 @@ describe("normalizeLayout", () => {
 				const out = normalizeLayout(layout, cols, "vertical")
 				out.forEach((item, index) => {
 					const before = layout[index]
+					assert.isDefined(before)
 					const unchanged =
 						before.x === item.x &&
 						before.y === item.y &&
@@ -142,8 +148,8 @@ describe("editing", () => {
 	it("respects min/max sizes and the grid edge on resize", () => {
 		fc.assert(
 			fc.property(normalized, opArb(cols), (layout, op) => {
-				if (layout.length === 0 || op.kind !== "resize") return
 				const item = layout[op.pick % layout.length]
+				if (item === undefined || op.kind !== "resize") return
 				const { w, h } = clampSize(item, op.w, op.h, cols)
 				expect(w).toBeGreaterThanOrEqual(item.minW ?? 1)
 				expect(h).toBeGreaterThanOrEqual(item.minH ?? 1)
@@ -160,8 +166,8 @@ describe("editing", () => {
 	it("is a no-op to drop a tile back on its own cell", () => {
 		fc.assert(
 			fc.property(normalized, fc.nat(), (layout, pick) => {
-				if (layout.length === 0) return
 				const item = layout[pick % layout.length]
+				if (item === undefined) return
 				expect(moveItem(layout, item.i, item.x, item.y)).toBe(layout)
 			}),
 			{ numRuns: 2000 },
@@ -175,8 +181,8 @@ describe("editing", () => {
 	it("settles after one step, so recomputing per cell equals per pointer event", () => {
 		fc.assert(
 			fc.property(normalized, opArb(cols), (layout, op) => {
-				if (layout.length === 0 || op.kind !== "move") return
 				const item = layout[op.pick % layout.length]
+				if (item === undefined || op.kind !== "move") return
 				const target = clampPosition(item, op.x, op.y, cols)
 				const once = moveItem(layout, item.i, target.x, target.y)
 				const twice = moveItem(once, item.i, target.x, target.y)
@@ -205,9 +211,9 @@ describe("nudgeItem", () => {
 				fc.nat(),
 				fc.constantFrom([1, 0], [-1, 0], [0, 1], [0, -1]),
 				(layout, pick, dir) => {
-					if (layout.length === 0) return
 					const [dx, dy] = dir as [-1 | 0 | 1, -1 | 0 | 1]
 					const item = layout[pick % layout.length]
+					if (item === undefined) return
 					const next = nudgeItem(layout, item.i, dx, dy, cols)
 					const atEdge =
 						(dx === -1 && item.x === 0) ||

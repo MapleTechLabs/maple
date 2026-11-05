@@ -30,7 +30,7 @@ const evaluate = (tiers: ReadonlyArray<AlertThresholdTier>, value: number | null
 	evaluateAlertObservation(
 		{
 			comparator: "gt",
-			threshold: tiers[0].value,
+			threshold: tiers[0]?.value ?? 0,
 			thresholdUpper: null,
 			tiers,
 			minimumSampleCount: 0,
@@ -216,8 +216,9 @@ describe("single-tier rules behave exactly as the consecutive-count machine did"
 
 	it.each([1, 2, 3, 7, 42, 1234])("seed %i", (seed) => {
 		const rolls = lcg(seed)(300)
-		const n = 1 + Math.floor(rolls[0] * 3)
-		const r = 1 + Math.floor(rolls[1] * 3)
+		const [first = 0, second = 0] = rolls
+		const n = 1 + Math.floor(first * 3)
+		const r = 1 + Math.floor(second * 3)
 		const values = Arr.map(rolls.slice(2), (roll) => (roll < 0.1 ? null : roll < 0.55 ? 15 : 5))
 
 		const tiered = replay([warnAt(10)], values, { n, r })

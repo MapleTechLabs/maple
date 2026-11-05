@@ -6,7 +6,7 @@ import {
 	type StatusPageTheme,
 } from "@maple/domain/status-page"
 import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 import {
 	FIXTURE_NOW,
 	fixtureComponentId,
@@ -749,7 +749,9 @@ describe("editor preview render", () => {
 describe("previewSnapshot", () => {
 	const base = makeSnapshot()
 	const withoutDays = (index: number) => {
-		const { days: _days, ...component } = base.components[index]
+		const picked = base.components[index]
+		assert.isDefined(picked)
+		const { days: _days, ...component } = picked
 		return component
 	}
 
@@ -774,21 +776,25 @@ describe("previewSnapshot", () => {
 		expect(snapshot.components[1]?.baseStatus).toBe("operational")
 		expect(Arr.map(snapshot.components, (c) => c.days.length)).toEqual([90, 90, 0])
 		expect(Arr.map(snapshot.incidentHistory, (entry) => entry.id)).toEqual(["inc-1"])
-		expect(Arr.every(snapshot.components[0]?.days, (day) => day.checks === 0)).toBe(true)
+		const [first] = snapshot.components
+		assert.isDefined(first)
+		expect(Arr.every(first.days, (day) => day.checks === 0)).toBe(true)
 		const html = renderPage(snapshot, { _tag: "live", updatedAt: FIXTURE_NOW }, FIXTURE_NOW)
 		expect(html).toContain("--link:#123abc")
-		expect(rowOf(html, snapshot.components[0].id)).toContain(`<span class="uptime">No data</span>`)
+		expect(rowOf(html, first.id)).toContain(`<span class="uptime">No data</span>`)
 	})
 })
 
 describe("previewSnapshot with history", () => {
 	it("shows the days it is given for a monitored component", () => {
 		const base = makeSnapshot()
-		const days = base.components[0].days
+		const [component] = base.components
+		assert.isDefined(component)
+		const days = component.days
 		const snapshot = previewSnapshot({
 			pageId: base.pageId,
 			page: base.page,
-			components: [{ ...base.components[0], monitorStatus: "up", manualStatus: null, days }],
+			components: [{ ...component, monitorStatus: "up", manualStatus: null, days }],
 			incidents: [],
 			nowMs: FIXTURE_NOW,
 		})

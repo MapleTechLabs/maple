@@ -59,7 +59,9 @@ const successorsOf = (attribute: SourceAttribute): ReadonlyArray<string> => {
 	const deprecated = attribute.deprecated
 	if (!deprecated) return []
 	if (deprecated.renamedTo) return [deprecated.renamedTo]
-	const named = [...(deprecated.note ?? "").matchAll(/`([a-z0-9_.]+)`/g)].map((m) => m[1])
+	const named = [...(deprecated.note ?? "").matchAll(/`([a-z0-9_.]+)`/g)].flatMap((m) =>
+		m[1] === undefined ? [] : [m[1]],
+	)
 	return [...new Set(named.filter((id) => id !== attribute.id && knownIds.has(id)))]
 }
 

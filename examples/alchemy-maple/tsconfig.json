@@ -1,6 +1,7 @@
 {
 	"include": ["alchemy.run.ts", "src/**/*.ts"],
 	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
 		"lib": ["esnext"],
 		"target": "esnext",
 		"module": "preserve",

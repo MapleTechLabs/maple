@@ -38,7 +38,7 @@ const models = [...(data as ReadonlyArray<OpenRouterModel>)].sort((a, b) => a.id
 // model name. Ids under `~` are OpenRouter's rolling aliases of a real vendor.
 const vendors = new Map<string, string>()
 for (const model of models) {
-	const slug = model.id.split("/")[0].replace(/^~/, "")
+	const slug = model.id.replace(/\/.*$/s, "").replace(/^~/, "")
 	const separator = model.name.indexOf(": ")
 	if (separator === -1 || vendors.has(slug)) continue
 	vendors.set(slug, model.name.slice(0, separator))

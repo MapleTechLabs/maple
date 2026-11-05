@@ -309,6 +309,7 @@ export const disallowedTableFunction = (sql: string): string | null => {
 	let fromListDepth = -1
 	for (let i = 0; i < tokens.length; i++) {
 		const t = tokens[i]
+		if (t === undefined) continue
 		if (!t.ident) {
 			if (t.v === "(") {
 				const prev = tokens[i - 1]
@@ -706,7 +707,7 @@ export const rawSqlIssue = (
 	for (const macro of ["$__timeFilter", "$__timeGroup"] as const) {
 		const pattern = new RegExp(`\\${macro}\\(([^)]*)\\)`, "g")
 		for (const match of Str.matchAll(pattern)(sql)) {
-			const column = Str.trim(match[1])
+			const column = Str.trim(match[1] ?? "")
 			if (!COLUMN_IDENT_RE.test(column)) {
 				return issue(
 					"InvalidMacro",
@@ -745,7 +746,7 @@ export const rawSqlIssue = (
 	if (denyMatch) {
 		return issue(
 			"DisallowedStatement",
-			`Statement keyword '${Str.toUpperCase(denyMatch[1])}' is not allowed in raw SQL.`,
+			`Statement keyword '${Str.toUpperCase(denyMatch[1] ?? denyMatch[0])}' is not allowed in raw SQL.`,
 		)
 	}
 	if (INTO_OUTFILE_RE.test(masked)) {

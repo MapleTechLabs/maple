@@ -479,7 +479,7 @@ describe("error fingerprint normalization", () => {
 				["Cannot GET /.git/index", "Cannot GET /admin/phpmyadmin/"],
 				["Route GET:/.env not found", "Route GET:/backup.sql not found"],
 				['No route found for "GET https://x.dev/.env"', 'No route found for "GET /a (b)"'],
-			]) {
+			] as const) {
 				expect(signature(a)).toBe(signature(b))
 			}
 			expect(signature("RouteNotFound (GET /.env)")).not.toBe(signature("RouteNotFound (POST /.env)"))

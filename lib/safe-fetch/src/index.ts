@@ -80,25 +80,35 @@ const isPrivateIPv4 = (host: string): boolean =>
  * The URL parser hands us the compressed hex form (`[::7f00:1]`), but a
  * trailing dotted quad is accepted too so direct callers get the same answer.
  */
-const ipv6Groups = (inner: string): ReadonlyArray<number> | null => {
+type Ipv6Groups = readonly [number, number, number, number, number, number, number, number]
+type Quad = readonly [number, number, number, number]
+
+const isIpv6Groups = (groups: ReadonlyArray<number>): groups is Ipv6Groups => groups.length === 8
+const isQuad = (octets: ReadonlyArray<number>): octets is Quad => octets.length === 4
+
+const ipv6Groups = (inner: string): Ipv6Groups | null => {
 	const dotted = /^(.*:)(\d{1,3}(?:\.\d{1,3}){3})$/.exec(inner)
-	const quad = dotted ? Arr.map(Str.split(".")(dotted[2]), Number) : null
+	const prefix = dotted?.[1]
+	const quadText = dotted?.[2]
+	const quad = quadText === undefined ? null : Arr.map(Str.split(".")(quadText), Number)
 	if (quad && Arr.some(quad, (octet) => octet > 255)) return null
 	const hexTail =
-		quad !== null
+		quad !== null && isQuad(quad)
 			? `${((quad[0] << 8) | quad[1]).toString(16)}:${((quad[2] << 8) | quad[3]).toString(16)}`
 			: null
-	const head = dotted && hexTail ? `${dotted[1]}${hexTail}` : inner
+	const head = prefix !== undefined && hexTail ? `${prefix}${hexTail}` : inner
 	const halves = Str.split("::")(head)
 	if (halves.length > 2) return null
 	const parse = (part: string) => (part === "" ? [] : Str.split(":")(part))
-	const left = parse(halves[0])
-	const right = halves.length === 2 ? parse(halves[1]) : []
+	const [first, second] = halves
+	const left = parse(first)
+	const right = second === undefined ? [] : parse(second)
 	const missing = 8 - left.length - right.length
 	if (halves.length === 2 ? missing < 1 : missing !== 0) return null
 	const groups = [...left, ...Array.from({ length: missing }, () => "0"), ...right]
 	if (!Arr.every(groups, (group) => /^[0-9a-f]{1,4}$/i.test(group))) return null
-	return Arr.map(groups, (group) => Number.parseInt(group, 16))
+	const parsed = Arr.map(groups, (group) => Number.parseInt(group, 16))
+	return isIpv6Groups(parsed) ? parsed : null
 }
 
 const dottedFrom = (hi: number, lo: number): string =>
@@ -116,7 +126,7 @@ const zeroed = (groups: ReadonlyArray<number>, from: number, to: number): boolea
  * - mapped `::ffff:a.b.c.d`, NAT64 `64:ff9b::/96` and 6to4 `2002::/16` carry an
  *   IPv4 address in a fixed place, so that address faces the IPv4 rules.
  */
-const isPrivateIPv6Groups = (groups: ReadonlyArray<number>): boolean => {
+const isPrivateIPv6Groups = (groups: Ipv6Groups): boolean => {
 	const [g0, g1, g2] = groups
 	if (zeroed(groups, 0, 6)) return true
 	if ((g0 & 0xfe00) === 0xfc00 || (g0 & 0xff00) === 0xff00) return true

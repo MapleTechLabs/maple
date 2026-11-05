@@ -13,7 +13,8 @@ const provider = new TracerProvider({
 })
 setMapleProviderForTests(provider)
 
-const exceptionEventOf = (span: ReadableSpan) => span.events.find((event) => event.name === "exception")
+const exceptionEventOf = (span: ReadableSpan | undefined) =>
+	span?.events.find((event) => event.name === "exception")
 
 beforeEach(() => {
 	exporter.reset()

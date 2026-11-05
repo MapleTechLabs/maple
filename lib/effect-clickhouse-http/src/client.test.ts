@@ -62,7 +62,9 @@ describe("HTTP request contract", () => {
 					const result = yield* query
 					assert.deepStrictEqual(result.data, [{ n: "42" }])
 					assert.strictEqual(result.queryId, "my query")
-					const { url, init } = requests[0]
+					const request = requests[0]
+					assert.isDefined(request)
+					const { url, init } = request
 					assert.strictEqual(url.pathname, "/proxy/ch")
 					assert.strictEqual(url.searchParams.get("custom"), "keep")
 					assert.strictEqual(url.searchParams.get("database"), "analytics")

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
 
 import { DashboardDocument, DashboardVariableSchema } from "./http/dashboards"
+import * as Arr from "effect/Array"
 
 const decodeVariable = Schema.decodeUnknownSync(DashboardVariableSchema)
 const decodeDocument = Schema.decodeUnknownSync(DashboardDocument)
@@ -58,7 +59,7 @@ describe("DashboardDocument with sections", () => {
 		expect(decoded.sections).toBeUndefined()
 		const encoded = encodeDocument(decoded)
 		expect("sections" in encoded).toBe(false)
-		expect("sectionId" in encoded.widgets[0]).toBe(false)
+		expect("sectionId" in Arr.getUnsafe(encoded.widgets, 0)).toBe(false)
 	})
 
 	// This is the entire back-compat story for an older client reading a newer

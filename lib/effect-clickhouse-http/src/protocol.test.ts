@@ -112,7 +112,7 @@ describe("errors after HTTP 200", () => {
 		["legacy", `{"ok":1}\n${message}`],
 		["framed", `{"ok":1}\n${frame}`],
 		["partial-row-framed", `{"partial":${frame}`],
-	]) {
+	] as const) {
 		const bytes = encode(wire)
 		for (let cut = 0; cut <= bytes.length; cut++) {
 			it.effect(`${name} exception survives byte split ${cut}`, () =>
@@ -136,7 +136,7 @@ describe("errors after HTTP 200", () => {
 		["missing footer", Str.slice(0, Option.getOrThrow(Str.lastIndexOf("__exception__")(frame)))(frame)],
 		["trailing data", frame + '{"ok":1}\n'],
 		["oversized exception", "__exception__\r\n" + Str.repeat(17000)("x") + "\n"],
-	])
+	] as const)
 		it.effect(`rejects ${name}`, () =>
 			Effect.gen(function* () {
 				assert.instanceOf(yield* Effect.flip(collect([encode(bad)])), ClickHouseProtocolError)

@@ -1,5 +1,5 @@
 import { Option, Array as Arr } from "effect"
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 import { StatusPageComponentId, StatusPageId } from "./primitives"
 import {
 	applyOverlay,
@@ -207,7 +207,8 @@ describe("applyOverlay", () => {
 		const merged = applyOverlay(snapshot(), { entries: [followUp, opened] })
 		expect(merged.incidents).toHaveLength(1)
 		const incident = merged.incidents[0]
-		expect(incident?.title).toBe("API errors")
+		assert.isDefined(incident)
+		expect(incident.title).toBe("API errors")
 		expect(incident?.status).toBe("identified")
 		expect(Arr.map(incident?.updates, (update) => update.body)).toEqual([
 			"A bad deploy; rolling back.",
@@ -318,7 +319,7 @@ describe("applyOverlay", () => {
 			],
 		})
 		expect(merged.incidents).toHaveLength(1)
-		expect(Arr.map(merged.incidents[0]?.updates, (update) => update.body)).toEqual([
+		expect(Arr.map(Arr.getUnsafe(merged.incidents, 0)?.updates, (update) => update.body)).toEqual([
 			"Still working on it.",
 			"Imported.",
 		])

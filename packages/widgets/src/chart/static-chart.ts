@@ -358,8 +358,8 @@ export function downsample(
 	const kept: ChartPoint[] = [first]
 	for (let i = 0; i < inner.length; i += size) {
 		const slice = inner.slice(i, i + size)
-		if (slice.length === 0) continue
-		const pick = Arr.reduce(slice, slice[0], (best, p) =>
+		if (!Arr.isReadonlyArrayNonEmpty(slice)) continue
+		const pick = Arr.reduce(slice, Arr.headNonEmpty(slice), (best, p) =>
 			breachSide === "below" ? (p[1] < best[1] ? p : best) : p[1] > best[1] ? p : best,
 		)
 		kept.push(pick)
@@ -664,7 +664,7 @@ export function sparkline(values: readonly number[], maxBuckets = 24): string {
 				range === 0
 					? 3
 					: Math.min(SPARK_LEVELS.length - 1, Math.floor(((v - min) / range) * SPARK_LEVELS.length))
-			return SPARK_LEVELS[idx]
+			return SPARK_LEVELS[idx] ?? ""
 		}),
 		"",
 	)

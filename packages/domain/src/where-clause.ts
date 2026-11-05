@@ -159,8 +159,12 @@ const isParseWarning = Schema.is(WhereClauseParseWarning)
 const unsupported = (part: string) =>
 	new WhereClauseParseWarning({ message: `Unsupported clause syntax ignored: ${part}`, clause: part })
 
-const matchOrNull = (text: string, regex: RegExp): RegExpMatchArray | null =>
-	Option.getOrNull(Str.match(regex)(text))
+/** A clause match with its leading key group trimmed, or `null` when the regex does not match. */
+const matchOrNull = (text: string, regex: RegExp): (RegExpMatchArray & { readonly key: string }) | null => {
+	const match = Option.getOrNull(Str.match(regex)(text))
+	const key = match?.[1]
+	return match === null || key === undefined ? null : Object.assign(match, { key: Str.trim(key) })
+}
 
 /** One `key op value` clause, or the warning explaining why it is not one. */
 function parseSimpleClause(part: string): ParsedClause | WhereClauseParseWarning {
@@ -168,8 +172,8 @@ function parseSimpleClause(part: string): ParsedClause | WhereClauseParseWarning
 	const notExistsMatch = matchOrNull(part, /^([a-zA-Z0-9_.-]+)\s+!\s*exists$/i)
 	if (notExistsMatch) {
 		return {
-			key: Str.toLowerCase(Str.trim(notExistsMatch[1])),
-			rawKey: Str.trim(notExistsMatch[1]),
+			key: Str.toLowerCase(notExistsMatch.key),
+			rawKey: notExistsMatch.key,
 			operator: "!exists",
 			value: "",
 		}
@@ -178,8 +182,8 @@ function parseSimpleClause(part: string): ParsedClause | WhereClauseParseWarning
 	const existsMatch = matchOrNull(part, /^([a-zA-Z0-9_.-]+)\s+exists$/i)
 	if (existsMatch) {
 		return {
-			key: Str.toLowerCase(Str.trim(existsMatch[1])),
-			rawKey: Str.trim(existsMatch[1]),
+			key: Str.toLowerCase(existsMatch.key),
+			rawKey: existsMatch.key,
 			operator: "exists",
 			value: "",
 		}
@@ -191,8 +195,8 @@ function parseSimpleClause(part: string): ParsedClause | WhereClauseParseWarning
 	)
 	if (notContainsMatch) {
 		return {
-			key: Str.toLowerCase(Str.trim(notContainsMatch[1])),
-			rawKey: Str.trim(notContainsMatch[1]),
+			key: Str.toLowerCase(notContainsMatch.key),
+			rawKey: notContainsMatch.key,
 			operator: "!contains",
 			value: Str.trim(notContainsMatch[2] ?? notContainsMatch[3] ?? notContainsMatch[4] ?? ""),
 		}
@@ -204,8 +208,8 @@ function parseSimpleClause(part: string): ParsedClause | WhereClauseParseWarning
 	)
 	if (containsMatch) {
 		return {
-			key: Str.toLowerCase(Str.trim(containsMatch[1])),
-			rawKey: Str.trim(containsMatch[1]),
+			key: Str.toLowerCase(containsMatch.key),
+			rawKey: containsMatch.key,
 			operator: "contains",
 			value: Str.trim(containsMatch[2] ?? containsMatch[3] ?? containsMatch[4] ?? ""),
 		}
@@ -221,8 +225,8 @@ function parseSimpleClause(part: string): ParsedClause | WhereClauseParseWarning
 			return new WhereClauseParseWarning({ message: `Unclosed quote in clause: ${part}`, clause: part })
 		}
 		return {
-			key: Str.toLowerCase(Str.trim(compMatch[1])),
-			rawKey: Str.trim(compMatch[1]),
+			key: Str.toLowerCase(compMatch.key),
+			rawKey: compMatch.key,
 			operator: compMatch[2] as Operator,
 			value: Str.trim(compMatch[3] ?? compMatch[4] ?? compMatch[5] ?? ""),
 		}

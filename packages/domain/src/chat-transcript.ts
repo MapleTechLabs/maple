@@ -257,7 +257,8 @@ const foldTaskEvent = (
 		Arr.findFirstIndex(parent.toolCalls, (call) => call.id === ref.id),
 		() => -1,
 	)
-	if (index < 0) return
+	const existing = parent.toolCalls[index]
+	if (existing === undefined) return
 
 	const child = nested.get(ref.id) ?? makeDrafts()
 	nested.set(ref.id, child)
@@ -269,7 +270,7 @@ const foldTaskEvent = (
 	// constructor would copy. Like the top-level drafts, the HTTP edge rebuilds real instances.
 	// @effect-diagnostics-next-line schemaClassObjectLiteral:off
 	parent.toolCalls[index] = {
-		...parent.toolCalls[index],
+		...existing,
 		// @effect-diagnostics-next-line schemaClassObjectLiteral:off
 		task: {
 			id: ref.id,

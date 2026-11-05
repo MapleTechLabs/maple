@@ -84,7 +84,7 @@ describe("applyRawTtlOverrides", () => {
 			...EMPTY_TTL_OVERRIDES,
 			logsRetentionDays: 45,
 		})
-		const content = result[0].content
+		const content = Arr.getUnsafe(result, 0).content
 		expect(content).toContain("Retention INTERVAL 90 DAY mentioned")
 		expect(content).toContain('ENGINE_TTL "toDate(TimestampTime) + INTERVAL 45 DAY"')
 	})

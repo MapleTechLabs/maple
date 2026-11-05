@@ -216,11 +216,11 @@ const verifySelfHostedSessionToken = Effect.fn("AuthService.verifySelfHostedSess
 	secret: string,
 ): Effect.fn.Return<SelfHostedSessionClaims, UnauthorizedError> {
 	const parts = Str.split(".")(token)
-	if (parts.length !== 3) {
+	const [encodedHeader, encodedPayload, encodedSignature] = parts
+	if (parts.length !== 3 || encodedPayload === undefined || encodedSignature === undefined) {
 		return yield* unauthorized("Invalid JWT format")
 	}
 
-	const [encodedHeader, encodedPayload, encodedSignature] = parts
 	const header = yield* Schema.decodeEffect(Schema.fromJsonString(JwtHeaderSchema))(
 		decodeBase64Url(encodedHeader),
 	).pipe(Effect.mapError(() => unauthorized("Invalid JWT header")))

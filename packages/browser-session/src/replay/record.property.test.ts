@@ -3,6 +3,7 @@
 // BOUNDARY-FILE: Test doubles mirror intentionally untyped external callbacks.
 import fc from "fast-check"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import * as Arr from "effect/Array"
 
 type EmitFn = (event: unknown, isCheckout?: boolean) => void
 let emitRef: EmitFn | undefined
@@ -197,7 +198,7 @@ describe("startRecording, under any sequence of events, flushes and upload outco
 				const uploaded = posted.filter((chunk) => chunk.outcome !== "gzip-error")
 				// Seqs strictly increase; the chunk header matches its body.
 				for (let i = 1; i < uploaded.length; i++) {
-					expect(uploaded[i].seq).toBeGreaterThan(uploaded[i - 1].seq)
+					expect(Arr.getUnsafe(uploaded, i).seq).toBeGreaterThan(Arr.getUnsafe(uploaded, i - 1).seq)
 				}
 				for (const chunk of uploaded) {
 					expect(chunk.eventCount).toBe(chunk.events.length)
@@ -210,7 +211,8 @@ describe("startRecording, under any sequence of events, flushes and upload outco
 				}
 				// Everything that went out is the emitted stream minus drops: in order, never twice.
 				const sent = posted.flatMap((chunk) => chunk.events.map((event) => event.uid))
-				for (let i = 1; i < sent.length; i++) expect(sent[i]).toBeGreaterThan(sent[i - 1])
+				for (let i = 1; i < sent.length; i++)
+					expect(sent[i]).toBeGreaterThan(Arr.getUnsafe(sent, i - 1))
 
 				// After anything was lost, the next kept event opens a snapshot.
 				const kept = posted
@@ -268,7 +270,8 @@ describe("startBufferedRecording, under any sequence of events", () => {
 					for (const segments of drains) {
 						expect(segments.length).toBeLessThanOrEqual(2)
 						const uids = segments.flatMap((chunk) => chunk.events.map((event) => event.uid))
-						for (let i = 1; i < uids.length; i++) expect(uids[i]).toBeGreaterThan(uids[i - 1])
+						for (let i = 1; i < uids.length; i++)
+							expect(uids[i]).toBeGreaterThan(Arr.getUnsafe(uids, i - 1))
 						const bytes = segments.reduce(
 							(sum, chunk) => sum + chunk.bytes - chunk.events.length - 1,
 							0,

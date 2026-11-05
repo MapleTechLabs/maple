@@ -22,7 +22,7 @@ export interface GcpInfraService {
 	/** The metric group the tab reads. */
 	readonly resourceType: string
 	/** What identifies a row, as column label and resource attribute. The first names the row. */
-	readonly identity: ReadonlyArray<readonly [label: string, attribute: string]>
+	readonly identity: Arr.NonEmptyReadonlyArray<readonly [label: string, attribute: string]>
 }
 
 const PROJECT = ["Project", "cloud.account.id"] as const
@@ -101,7 +101,7 @@ const WORKLOAD_NAME_ATTRIBUTES = ["service.name", "k8s.container.name", "host.na
 
 /** Whether a source's rows are named after the workload; the rest are `gcp/<resource type>`. */
 export const gcpInfraNamesService = (source: GcpInfraSourceId): boolean =>
-	WORKLOAD_NAME_ATTRIBUTES.includes(GCP_INFRA_SOURCES[source].identity[0][1])
+	WORKLOAD_NAME_ATTRIBUTES.includes(Arr.headNonEmpty(GCP_INFRA_SOURCES[source].identity)[1])
 
 /** The `service.name` the series of one workload carry: see `gcpResourceAttributes`. */
 export const gcpInfraServiceName = (source: GcpInfraSourceId, keys: ReadonlyArray<string>): string =>

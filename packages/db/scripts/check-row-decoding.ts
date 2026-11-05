@@ -115,7 +115,12 @@ const decodeTable = (orm: Orm.DatabaseApi, table: AnyTable) => {
 			const compiled = yield* PG.compile(
 				PG.from(table)
 					.select()
-					.orderBy(($) => Arr.map(keys, (key) => [$[key], "asc"] as const))
+					.orderBy(($) =>
+						Arr.flatMap(keys, (key) => {
+							const column = $[key]
+							return column === undefined ? [] : [[column, "asc"] as const]
+						}),
+					)
 					.limit(PAGE)
 					.offset(offset),
 			)

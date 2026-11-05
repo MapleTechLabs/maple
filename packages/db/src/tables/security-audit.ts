@@ -63,47 +63,50 @@ export const SecurityAuditTargets = PG.table("security_audit_targets", {
 	tenantColumn: "orgId",
 })
 
+const securityAuditRunsColumns = {
+	id: PG.brand(PG.text, SecurityAuditRunId),
+	orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+	targetId: PG.column(PG.brand(PG.text, SecurityAuditTargetId), { name: "target_id" }),
+	kind: PG.brand(PG.text, SecurityAuditRunKind),
+	sourceRef: PG.column(PG.text, { name: "source_ref" }),
+	profile: PG.brand(PG.text, SecurityAuditProfile),
+	scopePaths: PG.column(PG.jsonb(ScopePaths), { name: "scope_paths" }),
+	/** Max agent invocations for this run; null is unbounded. */
+	budget: PG.nullable(PG.int4),
+	/** The engine's `run-metadata.json`; null until the engine first saves it. */
+	metadata: PG.nullable(PG.jsonb(RunMetadataRecord)),
+	status: PG.column(PG.brand(PG.text, SecurityAuditRunStatus), { default: "in_progress" }),
+	incompleteReason: PG.column(PG.nullable(PG.text), { name: "incomplete_reason" }),
+	architectureMd: PG.column(PG.nullable(PG.text), { name: "architecture_md" }),
+	reports: PG.nullable(PG.jsonb(AuditReportsRecord)),
+	/** How the run may execute target code and why not; null until prepare inspects the repository. */
+	executionProfile: PG.column(PG.nullable(PG.jsonb(ExecutionProfile)), { name: "execution_profile" }),
+	invocationsSpent: PG.column(PG.int4, { name: "invocations_spent", default: 0 }),
+	inputTokens: PG.column(PG.int8, { name: "input_tokens", default: 0 }),
+	outputTokens: PG.column(PG.int8, { name: "output_tokens", default: 0 }),
+	/** What OpenRouter charged for the run's agents; null until it settles. */
+	costUsd: PG.column(PG.nullable(PG.float8), { name: "cost_usd" }),
+	/** Sandbox fees of the run's granted agents in US dollars, added as each is granted. */
+	sandboxUsd: PG.column(PG.float8, { name: "sandbox_usd", default: 0 }),
+	/** The OpenRouter model ids the run used; null for runs from before they were recorded. */
+	discoveryModel: PG.column(PG.nullable(PG.text), { name: "discovery_model" }),
+	validationModel: PG.column(PG.nullable(PG.text), { name: "validation_model" }),
+	workflowInstanceId: PG.column(PG.nullable(PG.text), { name: "workflow_instance_id" }),
+	startedAt: PG.column(PG.timestamptzMillis, { name: "started_at" }),
+	finishedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "finished_at" }),
+	error: PG.nullable(PG.text),
+}
+type SecurityAuditRunsColumns = PG.ColumnsOf<typeof securityAuditRunsColumns>
+
 /** One engine run over a target at one ref. `id` is the engine's `run_id`. */
 export const SecurityAuditRuns = PG.table("security_audit_runs", {
-	columns: {
-		id: PG.brand(PG.text, SecurityAuditRunId),
-		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
-		targetId: PG.column(PG.brand(PG.text, SecurityAuditTargetId), { name: "target_id" }),
-		kind: PG.brand(PG.text, SecurityAuditRunKind),
-		sourceRef: PG.column(PG.text, { name: "source_ref" }),
-		profile: PG.brand(PG.text, SecurityAuditProfile),
-		scopePaths: PG.column(PG.jsonb(ScopePaths), { name: "scope_paths" }),
-		/** Max agent invocations for this run; null is unbounded. */
-		budget: PG.nullable(PG.int4),
-		/** The engine's `run-metadata.json`; null until the engine first saves it. */
-		metadata: PG.nullable(PG.jsonb(RunMetadataRecord)),
-		status: PG.column(PG.brand(PG.text, SecurityAuditRunStatus), { default: "in_progress" }),
-		incompleteReason: PG.column(PG.nullable(PG.text), { name: "incomplete_reason" }),
-		architectureMd: PG.column(PG.nullable(PG.text), { name: "architecture_md" }),
-		reports: PG.nullable(PG.jsonb(AuditReportsRecord)),
-		/** How the run may execute target code and why not; null until prepare inspects the repository. */
-		executionProfile: PG.column(PG.nullable(PG.jsonb(ExecutionProfile)), { name: "execution_profile" }),
-		invocationsSpent: PG.column(PG.int4, { name: "invocations_spent", default: 0 }),
-		inputTokens: PG.column(PG.int8, { name: "input_tokens", default: 0 }),
-		outputTokens: PG.column(PG.int8, { name: "output_tokens", default: 0 }),
-		/** What OpenRouter charged for the run's agents; null until it settles. */
-		costUsd: PG.column(PG.nullable(PG.float8), { name: "cost_usd" }),
-		/** Sandbox fees of the run's granted agents in US dollars, added as each is granted. */
-		sandboxUsd: PG.column(PG.float8, { name: "sandbox_usd", default: 0 }),
-		/** The OpenRouter model ids the run used; null for runs from before they were recorded. */
-		discoveryModel: PG.column(PG.nullable(PG.text), { name: "discovery_model" }),
-		validationModel: PG.column(PG.nullable(PG.text), { name: "validation_model" }),
-		workflowInstanceId: PG.column(PG.nullable(PG.text), { name: "workflow_instance_id" }),
-		startedAt: PG.column(PG.timestamptzMillis, { name: "started_at" }),
-		finishedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "finished_at" }),
-		error: PG.nullable(PG.text),
-	},
+	columns: securityAuditRunsColumns,
 	primaryKey: ["id"],
 	indexes: [
 		PG.index("security_audit_runs_org_started_idx", ["orgId", "startedAt"]),
 		PG.index("security_audit_runs_target_started_idx", ["targetId", "startedAt"]),
 		// One unfinished run per target; the store refuses a second before the insert reaches this.
-		PG.uniqueIndex("security_audit_runs_one_running_idx", ["targetId"], {
+		PG.uniqueIndex<SecurityAuditRunsColumns>("security_audit_runs_one_running_idx", ["targetId"], {
 			where: ($) => $.finishedAt.isNull(),
 		}),
 	],

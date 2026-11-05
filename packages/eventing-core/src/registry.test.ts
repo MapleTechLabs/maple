@@ -1,5 +1,5 @@
 import { Result, Schema, Array as Arr, String as Str } from "effect"
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 import {
 	CompiledProjectionRegistry,
 	canonicalJson,
@@ -166,6 +166,7 @@ describe("CompiledProjectionRegistry", () => {
 			CompiledProjectionRegistry.compile([projection()], sources(), projectors()),
 		)
 		const event = Result.getOrThrow(registry.evaluate(signal(), acceptedAt)).events[0]
+		assert.isDefined(event)
 		const { sourceoccurrenceid: _occurrence, identityquality: _quality, ...historical } = event
 		const validated = Result.getOrThrow(validateMapleCloudEvent(historical)).event
 		expect(validated.id).toBe(event.id)
