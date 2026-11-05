@@ -746,7 +746,7 @@ export const issuedSession = (row: IssuedRow): McpSessionItem => ({
 	lastSeenMs: toMs(row.lastSeen),
 })
 
-/** User session rows one user's read stitches at most, over every server. */
+/** Session rows each listed MCP server contributes to one user's stitched read (a per-server cap). */
 const ONE_USER_ACTIVITY_LIMIT = 5_000
 
 /** A user's session on one MCP server. */
