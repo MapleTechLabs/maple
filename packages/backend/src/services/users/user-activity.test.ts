@@ -153,6 +153,8 @@ describe("readUserActivity", () => {
 			assert.strictEqual(seen.filter((context) => context === "userMcpSessionList").length, 1)
 			assert.strictEqual(seen.filter((context) => context === "userMcpActivity").length, 1)
 			const mcpSql = sqls.filter((sql) => sql.includes("mcp.session.id"))
+			// Both MCP reads ran, and each one carries the namespace filter.
+			assert.strictEqual(mcpSql.length, 2)
 			assert.isTrue(mcpSql.every((sql) => sql.includes("['service.namespace'] IN ('platform')")))
 		}),
 	)

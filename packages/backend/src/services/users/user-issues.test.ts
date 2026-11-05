@@ -193,7 +193,10 @@ describe("readUserIssues", () => {
 				response.issues.map((issue) => issue.fingerprintHash),
 				["333"],
 			)
+			// The scoped read hit the missing rollup; the retry read without the namespace subquery.
 			assert.strictEqual(sqls.length, 2)
+			assert.include(sqls[0], "user_activity_hourly")
+			assert.notInclude(sqls[1], "user_activity_hourly")
 		}).pipe(Effect.provide([noRollup, createTestDb(createdDbs).layer]))
 	})
 
