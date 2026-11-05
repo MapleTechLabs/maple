@@ -151,7 +151,7 @@ const TAB_ICON = {
 	mcp: "PlugIcon",
 } satisfies { readonly [K in UserTab]: IconName }
 
-const tabCount = (tab: UserTab, detail: UserDetail): number | undefined => {
+export const tabCount = (tab: UserTab, detail: UserDetail): number | undefined => {
 	const { profile } = detail
 	switch (tab) {
 		case "activity":
@@ -161,7 +161,8 @@ const tabCount = (tab: UserTab, detail: UserDetail): number | undefined => {
 		case "errors":
 			return profile.issues ?? undefined
 		case "traces":
-			return profile.traces ?? undefined
+			// The tab lists entry-point requests, so its badge counts them, not distinct traces.
+			return profile.requests ?? undefined
 		case "logs":
 			return profile.logs ?? undefined
 		case "events":
@@ -701,7 +702,7 @@ const SLOW_MS = 2000
 
 /** The user's requests, one row per entry span; each opens its trace. */
 const tracesBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
-	indexedTabState(detail.profile.traces, detail.traces) === "unindexed"
+	indexedTabState(detail.profile.requests, detail.traces) === "unindexed"
 		? pendingTab(h, "LayersIcon", "Requests are not indexed per user here", UNINDEXED_DESCRIPTION)
 		: Arr.isReadonlyArrayEmpty(detail.traces)
 			? noRows(h, "No requests from this user in the window.")
