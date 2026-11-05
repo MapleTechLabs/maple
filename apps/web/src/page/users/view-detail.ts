@@ -213,7 +213,7 @@ const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 			subline:
 				profile.requests === null
 					? "no per-user request data"
-					: profile.failedRate === null
+					: profile.requests === 0 || profile.failedRate === null
 						? "no requests in the window"
 						: `${formatPercent(profile.failedRate)} failed`,
 			tone: profile.failedRate !== null && profile.failedRate > 0 ? "warn" : "neutral",
