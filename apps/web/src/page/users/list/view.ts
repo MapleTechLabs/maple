@@ -4,6 +4,7 @@ import { Array as Arr, Option } from "effect"
 import type { UserListItem } from "@maple/domain/http"
 import { presenceOf } from "@maple/views/data/signal-presence"
 import { errorState } from "@maple/views/ui/error-state"
+import { vstack } from "@maple/views/ui/stack"
 import { docsUrl } from "../../../lib/docs"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
@@ -17,9 +18,10 @@ import {
 	type UsersSummary,
 	usersFilterRail,
 	usersListBody,
+	usersToolbar,
 } from "../view-list"
 import { noUsersState, usersLoading } from "../view-states"
-import { namespaceScope } from "./command"
+import { pinScope } from "./command"
 import { Message } from "./message"
 import type { Model, UsersFacetsData } from "./model"
 import { DEFAULT_PRESET } from "./update"
@@ -88,17 +90,29 @@ const hasNoTelemetry = (model: Model): boolean =>
 	presenceOf(model.presence, "traces").status === "absent" &&
 	presenceOf(model.presence, "sessions").status === "absent"
 
+const searchOptions = (model: Model) => ({
+	filters: filtersOf(model),
+	onSearch: (value: string) => Message.ChangedQuery({ value }),
+	onClearSearch: Message.ClickedClearQuery(),
+})
+
+const signalEmpty = (h: H, model: Model): Html =>
+	signalEmptyState(h, {
+		signal: hasNoTelemetry(model) ? "traces" : "sessions",
+		presence: presenceOf(model.presence, hasNoTelemetry(model) ? "traces" : "sessions"),
+		nowMs: model.nowMs,
+		noun: "users",
+		isFiltered: isFiltered(model),
+		onClearFilters: Message.ClickedClearSearchAndFilters(),
+	})
+
+/** A filtered empty list keeps the search box above it, so a search with no matches can be edited. */
 const emptyBody = (h: H, model: Model): Html =>
-	isFiltered(model) || hasNoTelemetry(model)
-		? signalEmptyState(h, {
-				signal: hasNoTelemetry(model) ? "traces" : "sessions",
-				presence: presenceOf(model.presence, hasNoTelemetry(model) ? "traces" : "sessions"),
-				nowMs: model.nowMs,
-				noun: "users",
-				isFiltered: isFiltered(model),
-				onClearFilters: Message.ClickedClearFilters(),
-			})
-		: noUsersState(h, { onSetup: Message.ClickedSetup(), docsHref: docsUrl("browserSdk") })
+	isFiltered(model)
+		? vstack(h, { className: "min-w-0" }, [usersToolbar(h, searchOptions(model)), signalEmpty(h, model)])
+		: hasNoTelemetry(model)
+			? signalEmpty(h, model)
+			: noUsersState(h, { onSetup: Message.ClickedSetup(), docsHref: docsUrl("browserSdk") })
 
 const body = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.list.data, {
@@ -111,10 +125,8 @@ const body = (h: H, model: Model, inputs: PageViewInputs): Html =>
 				: usersListBody(h, Arr.map(page.users, toRow), summaryOf(facetsOf(model)), {
 						nowMs: model.nowMs,
 						timeZone: inputs.context.timeZone,
-						filters: filtersOf(model),
-						scope: namespaceScope(model.search, inputs.context.pinnedNamespace),
-						onSearch: (value) => Message.ChangedQuery({ value }),
-						onClearSearch: Message.ClickedClearQuery(),
+						...searchOptions(model),
+						scope: pinScope(inputs.context.pinnedNamespace),
 					}),
 	})
 

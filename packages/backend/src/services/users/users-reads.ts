@@ -138,8 +138,11 @@ export const readUsersFacets = Effect.fn("UsersReads.facets")(function* (
 	const warehouse = yield* WarehouseQueryService
 	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 	const scope = yield* loadScope(tenant, payload)
-	// The namespace facet counts every namespace, so a pick never hides the others.
-	const everyNamespace: CH.UsersScope = { ...scope, namespaces: [], services: [] }
+	// The namespace facet counts every namespace, so a pick never hides the others; a pin hides it.
+	const pinned = (payload.namespaces ?? []).length > 0
+	const everyNamespace: CH.UsersScope | undefined = pinned
+		? undefined
+		: { ...scope, namespaces: [], services: [] }
 	if (!CH.hasUserSources(scope)) return EMPTY_FACETS
 	const nowMs = yield* Clock.currentTimeMillis
 	const params = {
