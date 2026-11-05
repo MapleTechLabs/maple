@@ -1462,160 +1462,153 @@ const make: Effect.Effect<
 		const incidentsOpened = persistence.incidentsOpened
 		const incidentsResolved = persistence.incidentsResolved
 
-		const { issuesArchived, issuesDeleted } = runRetention
-			? yield* Effect.gen(function* () {
-					// Issues a fingerprint-algorithm bump left behind. One that still occurs is
-					// re-keyed onto its new hash by the tick and restamped, so only an issue
-					// quiet for FINGERPRINT_BUMP_GRACE_MS is retired here; if it comes back,
-					// the tick restores it. Error-kind only: alert and integration issues
-					// key off their own identifiers, not the ClickHouse fingerprint.
-					const staleFingerprintRows = yield* dbExecute((db) =>
-						db.run(
-							PG.update(ErrorIssues)
-								.set({ archivedAt: nowMs, updatedAt: nowMs })
-								.where(($) => [
-									$.orgId.eq(orgId),
-									$.kind.eq("error"),
-									$.fingerprintVersion.lt(FINGERPRINT_VERSION),
-									$.lastSeenAt.lt(nowMs - FINGERPRINT_BUMP_GRACE_MS),
-									$.archivedAt.isNull(),
-								])
-								.returning("id"),
-						),
-					)
+		const retention = Effect.gen(function* () {
+			// Issues a fingerprint-algorithm bump left behind. One that still occurs is
+			// re-keyed onto its new hash by the tick and restamped, so only an issue
+			// quiet for FINGERPRINT_BUMP_GRACE_MS is retired here; if it comes back,
+			// the tick restores it. Error-kind only: alert and integration issues
+			// key off their own identifiers, not the ClickHouse fingerprint.
+			const staleFingerprintRows = yield* dbExecute((db) =>
+				db.run(
+					PG.update(ErrorIssues)
+						.set({ archivedAt: nowMs, updatedAt: nowMs })
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.kind.eq("error"),
+							$.fingerprintVersion.lt(FINGERPRINT_VERSION),
+							$.lastSeenAt.lt(nowMs - FINGERPRINT_BUMP_GRACE_MS),
+							$.archivedAt.isNull(),
+						])
+						.returning("id"),
+				),
+			)
 
-					const resolvedCutoff = nowMs - RESOLVED_RETENTION_DAYS * DAY_MS
-					const archivedRows = yield* dbExecute((db) =>
-						db.run(
-							PG.update(ErrorIssues)
-								.set({ archivedAt: nowMs, updatedAt: nowMs })
-								.where(($) => [
-									$.orgId.eq(orgId),
-									$.workflowState.eq("done"),
-									$.archivedAt.isNull(),
-									$.resolvedAt.isNotNull(),
-									$.resolvedAt.lt(resolvedCutoff),
-								])
-								.returning("id"),
-						),
-					)
+			const resolvedCutoff = nowMs - RESOLVED_RETENTION_DAYS * DAY_MS
+			const archivedRows = yield* dbExecute((db) =>
+				db.run(
+					PG.update(ErrorIssues)
+						.set({ archivedAt: nowMs, updatedAt: nowMs })
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.workflowState.eq("done"),
+							$.archivedAt.isNull(),
+							$.resolvedAt.isNotNull(),
+							$.resolvedAt.lt(resolvedCutoff),
+						])
+						.returning("id"),
+				),
+			)
 
-					// Candidates that never reached the promotion threshold. Without this the
-					// holding table would accumulate every one-off fingerprint forever.
-					yield* dbExecute((db) =>
-						db.run(
-							PG.deleteFrom(ErrorFingerprintCandidates).where(($) => [
-								$.orgId.eq(orgId),
-								$.lastSeenAt.lt(nowMs - CANDIDATE_RETENTION_MS),
-							]),
-						),
-					)
+			// Candidates that never reached the promotion threshold. Without this the
+			// holding table would accumulate every one-off fingerprint forever.
+			yield* dbExecute((db) =>
+				db.run(
+					PG.deleteFrom(ErrorFingerprintCandidates).where(($) => [
+						$.orgId.eq(orgId),
+						$.lastSeenAt.lt(nowMs - CANDIDATE_RETENTION_MS),
+					]),
+				),
+			)
 
-					const archivedCutoff = nowMs - ARCHIVED_RETENTION_DAYS * DAY_MS
-					const toDelete = yield* dbExecute((db) =>
-						db.run(
-							PG.from(ErrorIssues)
-								.select("id")
-								.where(($) => [
-									$.orgId.eq(orgId),
-									$.archivedAt.isNotNull(),
-									$.archivedAt.lt(archivedCutoff),
-									// A fixed issue old clients still hit holds the build set that keeps them
-									// from reopening it; deleting it re-mints the bug as a new triage issue.
-									$.lastSeenAt.lt(archivedCutoff),
-								])
-								.limit(500),
-						),
-					)
-					if (toDelete.length > 0) {
-						const ids = Arr.map(toDelete, (r) => r.id)
-						yield* dbExecute((db) =>
-							db.run(
-								PG.deleteFrom(ErrorIncidents).where(($) => [
-									$.orgId.eq(orgId),
-									$.issueId.in_(...ids),
-								]),
-							),
-						)
-						yield* dbExecute((db) =>
-							db.run(
-								PG.deleteFrom(ErrorIssueStates).where(($) => [
-									$.orgId.eq(orgId),
-									$.issueId.in_(...ids),
-								]),
-							),
-						)
-						yield* dbExecute((db) =>
-							db.run(
-								PG.deleteFrom(ErrorIssueEvents).where(($) => [
-									$.orgId.eq(orgId),
-									$.issueId.in_(...ids),
-								]),
-							),
-						)
-						// The issues merged into a purged one get back what they brought, as an unmerge
-						// hands it back: their own hash is their primary again, the rest their aliases.
-						const freed = yield* dbExecute((db) =>
-							db.run(
-								PG.from(ErrorIssues)
-									.select("id", "fingerprintHash")
-									.where(($) => [$.orgId.eq(orgId), $.mergedIntoIssueId.in_(...ids)]),
-							),
-						)
-						yield* Effect.forEach(
-							freed,
-							(issue) =>
-								dbExecute((db) =>
-									Effect.andThen(
-										db.run(
-											PG.deleteFrom(ErrorIssueFingerprints).where(($) => [
-												$.orgId.eq(orgId),
-												$.originIssueId.eq(issue.id),
-												$.fingerprintHash.eq(issue.fingerprintHash),
-											]),
-										),
-										db.run(
-											PG.update(ErrorIssueFingerprints)
-												.set({ issueId: issue.id, originIssueId: null })
-												.where(($) => [
-													$.orgId.eq(orgId),
-													$.originIssueId.eq(issue.id),
-												]),
-										),
-									),
+			const archivedCutoff = nowMs - ARCHIVED_RETENTION_DAYS * DAY_MS
+			const toDelete = yield* dbExecute((db) =>
+				db.run(
+					PG.from(ErrorIssues)
+						.select("id")
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.archivedAt.isNotNull(),
+							$.archivedAt.lt(archivedCutoff),
+							// A fixed issue old clients still hit holds the build set that keeps them
+							// from reopening it; deleting it re-mints the bug as a new triage issue.
+							$.lastSeenAt.lt(archivedCutoff),
+						])
+						.limit(500),
+				),
+			)
+			if (toDelete.length > 0) {
+				const ids = Arr.map(toDelete, (r) => r.id)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.deleteFrom(ErrorIncidents).where(($) => [
+							$.orgId.eq(orgId),
+							$.issueId.in_(...ids),
+						]),
+					),
+				)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.deleteFrom(ErrorIssueStates).where(($) => [
+							$.orgId.eq(orgId),
+							$.issueId.in_(...ids),
+						]),
+					),
+				)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.deleteFrom(ErrorIssueEvents).where(($) => [
+							$.orgId.eq(orgId),
+							$.issueId.in_(...ids),
+						]),
+					),
+				)
+				// The issues merged into a purged one get back what they brought, as an unmerge
+				// hands it back: their own hash is their primary again, the rest their aliases.
+				const freed = yield* dbExecute((db) =>
+					db.run(
+						PG.from(ErrorIssues)
+							.select("id", "fingerprintHash")
+							.where(($) => [$.orgId.eq(orgId), $.mergedIntoIssueId.in_(...ids)]),
+					),
+				)
+				yield* Effect.forEach(
+					freed,
+					(issue) =>
+						dbExecute((db) =>
+							Effect.andThen(
+								db.run(
+									PG.deleteFrom(ErrorIssueFingerprints).where(($) => [
+										$.orgId.eq(orgId),
+										$.originIssueId.eq(issue.id),
+										$.fingerprintHash.eq(issue.fingerprintHash),
+									]),
 								),
-							{ discard: true },
-						)
-						// Whatever the purged issues still own stops landing anywhere.
-						yield* dbExecute((db) =>
-							db.run(
-								PG.deleteFrom(ErrorIssueFingerprints).where(($) => [
-									$.orgId.eq(orgId),
-									$.issueId.in_(...ids),
-								]),
+								db.run(
+									PG.update(ErrorIssueFingerprints)
+										.set({ issueId: issue.id, originIssueId: null })
+										.where(($) => [$.orgId.eq(orgId), $.originIssueId.eq(issue.id)]),
+								),
 							),
-						)
-						yield* dbExecute((db) =>
-							db.run(
-								PG.update(ErrorIssues)
-									.set({ mergedIntoIssueId: null, updatedAt: nowMs })
-									.where(($) => [$.orgId.eq(orgId), $.mergedIntoIssueId.in_(...ids)]),
-							),
-						)
-						yield* dbExecute((db) =>
-							db.run(
-								PG.deleteFrom(ErrorIssues).where(($) => [
-									$.orgId.eq(orgId),
-									$.id.in_(...ids),
-								]),
-							),
-						)
-					}
-					return {
-						issuesArchived: archivedRows.length + staleFingerprintRows.length,
-						issuesDeleted: toDelete.length,
-					}
-				})
+						),
+					{ discard: true },
+				)
+				// Whatever the purged issues still own stops landing anywhere.
+				yield* dbExecute((db) =>
+					db.run(
+						PG.deleteFrom(ErrorIssueFingerprints).where(($) => [
+							$.orgId.eq(orgId),
+							$.issueId.in_(...ids),
+						]),
+					),
+				)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(ErrorIssues)
+							.set({ mergedIntoIssueId: null, updatedAt: nowMs })
+							.where(($) => [$.orgId.eq(orgId), $.mergedIntoIssueId.in_(...ids)]),
+					),
+				)
+				yield* dbExecute((db) =>
+					db.run(PG.deleteFrom(ErrorIssues).where(($) => [$.orgId.eq(orgId), $.id.in_(...ids)])),
+				)
+			}
+			return {
+				issuesArchived: archivedRows.length + staleFingerprintRows.length,
+				issuesDeleted: toDelete.length,
+			}
+		})
+		const { issuesArchived, issuesDeleted } = runRetention
+			? yield* retention
 			: { issuesArchived: 0, issuesDeleted: 0 }
 
 		return {

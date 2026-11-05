@@ -47,9 +47,7 @@
 		"effecttsgo/map-map-error-to-map-both": "error",
 		"effecttsgo/multiple-catch-tag": "error",
 		"effecttsgo/multiple-effect-provide": "error",
-		// Flags a ternary whose branches are generators, and inner generators used for an early
-		// `return`; inlining either reads worse.
-		"effecttsgo/nested-effect-gen-yield": "off",
+		"effecttsgo/nested-effect-gen-yield": "error",
 		"effecttsgo/outdated-api": "error",
 		"effecttsgo/promise-in-effect-success": "error",
 		"effecttsgo/provide-merge-all-to-array": "error",
