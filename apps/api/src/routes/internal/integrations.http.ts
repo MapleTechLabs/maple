@@ -673,7 +673,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						return new GithubSetPrReviewResponse(result)
 					}),
 				)
-				// Any member may read a repository's review settings and history; only admins change them.
+				// Any member may read a repository's review settings and history; changing them needs code_review:configure.
 				.handle("githubGetPrReviewConfig", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context

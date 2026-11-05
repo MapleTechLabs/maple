@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { aiCreditsUsd } from "@maple/domain/billing"
 import { InspectSecurityAuditRunOutput } from "@maple/domain/mcp-outputs"
@@ -64,8 +65,7 @@ export function registerInspectSecurityAuditRunTool(server: McpToolRegistrar) {
 				})
 			if (!access.admin)
 				return yield* new McpUnavailableError({
-					message:
-						"Only org admins can read an audit run's coverage, claims and log; list_security_audit_runs shows its status.",
+					message: `${Policy.denialFor("security:manage").message} list_security_audit_runs shows a run's status.`,
 					capability: "security_audit_admin",
 				})
 			const { store } = access
