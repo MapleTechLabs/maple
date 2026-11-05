@@ -538,7 +538,7 @@ export const tracesTimeseries = (
 		// tabular shape `--format table` expects.
 		const rows = new Map<string, Record<string, unknown>>()
 		Arr.forEach(results, (result, index) => {
-			const field = TRACE_AGGREGATIONS[index]![0]
+			const field = TRACE_AGGREGATIONS[index][0]
 			for (const series of result.series) {
 				for (const point of series.points) {
 					const key = `${point.timestamp}\0${series.group ?? ""}`
@@ -583,7 +583,7 @@ export const tracesBreakdown = (
 
 		const rows = new Map<string, Record<string, unknown>>()
 		Arr.forEach(results, (result, index) => {
-			const field = TRACE_AGGREGATIONS[index]![0]
+			const field = TRACE_AGGREGATIONS[index][0]
 			for (const item of result.data) {
 				const row = rows.get(item.name) ?? { name: item.name }
 				row[field] = item.value

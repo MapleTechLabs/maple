@@ -113,8 +113,8 @@ describe("DashboardPersistenceService", () => {
 			const dashboards = yield* persistence.list(asOrgId("org_a"))
 
 			assert.strictEqual(dashboards.dashboards.length, 1)
-			assert.strictEqual(dashboards.dashboards[0]!.document.id, orgA.id)
-			assert.strictEqual(dashboards.dashboards[0]!.document.name, "Org A")
+			assert.strictEqual(dashboards.dashboards[0].document.id, orgA.id)
+			assert.strictEqual(dashboards.dashboards[0].document.name, "Org A")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -135,8 +135,8 @@ describe("DashboardPersistenceService", () => {
 			const dashboards = yield* persistence.list(org)
 
 			assert.strictEqual(dashboards.dashboards.length, 1)
-			assert.strictEqual(dashboards.dashboards[0]!.document.name, "Second Name")
-			assert.strictEqual(dashboards.dashboards[0]!.document.updatedAt, later)
+			assert.strictEqual(dashboards.dashboards[0].document.name, "Second Name")
+			assert.strictEqual(dashboards.dashboards[0].document.updatedAt, later)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -165,7 +165,7 @@ describe("DashboardPersistenceService", () => {
 			assert.strictEqual(typeof created.createdAt, "string")
 			assert.strictEqual(typeof created.updatedAt, "string")
 			assert.strictEqual(listed.dashboards.length, 1)
-			assert.strictEqual(listed.dashboards[0]!.document.id, created.id)
+			assert.strictEqual(listed.dashboards[0].document.id, created.id)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -189,7 +189,7 @@ describe("DashboardPersistenceService", () => {
 			assert.strictEqual(created.description, undefined)
 			assert.strictEqual(created.tags, undefined)
 			assert.strictEqual(listed.dashboards.length, 1)
-			assert.strictEqual(listed.dashboards[0]!.document.id, created.id)
+			assert.strictEqual(listed.dashboards[0].document.id, created.id)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -249,16 +249,16 @@ describe("DashboardPersistenceService", () => {
 			)
 
 			const listed = yield* persistence.list(asOrgId("org_a"))
-			const stored = listed.dashboards[0]!.document
+			const stored = listed.dashboards[0].document
 			const [orphan, dangling] = stored.widgets
 
 			// A widget pointing at a section that is gone becomes ungrouped, and
 			// the keys are absent rather than `undefined` — they are optionalKey.
-			assert.isFalse("sectionId" in orphan!)
-			assert.isFalse("tabId" in orphan!)
+			assert.isFalse("sectionId" in orphan)
+			assert.isFalse("tabId" in orphan)
 			// A dangling tab snaps to the section's first tab rather than vanishing.
-			assert.strictEqual(dangling!.sectionId, "s1")
-			assert.strictEqual(dangling!.tabId, "t1")
+			assert.strictEqual(dangling.sectionId, "s1")
+			assert.strictEqual(dangling.tabId, "t1")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -269,7 +269,7 @@ describe("DashboardPersistenceService", () => {
 			const persistence = yield* DashboardPersistenceService
 			yield* persistence.create(org, user, makePortableDashboard({ name: "Flat" }))
 			const listed = yield* persistence.list(asOrgId("org_a"))
-			assert.isFalse("sections" in listed.dashboards[0]!.document)
+			assert.isFalse("sections" in listed.dashboards[0].document)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -675,7 +675,7 @@ describe("DashboardPersistenceService", () => {
 					[1, "created"],
 				],
 			)
-			const latest = yield* persistence.getVersion(org, created.id, history.versions[0]!.id)
+			const latest = yield* persistence.getVersion(org, created.id, history.versions[0].id)
 			assert.strictEqual(latest.snapshot.name, "v3")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
@@ -697,7 +697,7 @@ describe("DashboardPersistenceService", () => {
 
 			const first = yield* persistence.listPage(org, { limit: 2 })
 			assert.isNotNull(first.next)
-			const second = yield* persistence.listPage(org, { limit: 2, after: first.next! })
+			const second = yield* persistence.listPage(org, { limit: 2, after: first.next })
 			assert.isNull(second.next)
 
 			const tied = [a.id, b.id].sort().reverse()

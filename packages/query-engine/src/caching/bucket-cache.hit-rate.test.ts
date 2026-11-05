@@ -186,7 +186,7 @@ const assertMatchesOracle = (
 	Arr.forEach(outcomes, (outcome, index) => {
 		assert.deepStrictEqual(
 			outcome.points,
-			expected[index]!,
+			expected[index],
 			`request ${index} returned different points than an uncached run`,
 		)
 	})
@@ -257,7 +257,7 @@ describe("bucket cache hit rate — dashboard access patterns", () => {
 
 			assertMatchesOracle(outcomes, requests)
 
-			const revisit = outcomes[2]!
+			const revisit = outcomes[2]
 			assert.strictEqual(revisit.bucketsMissed, 0)
 			assert.strictEqual(revisit.warehouseQueryCount, 0)
 			assert.strictEqual(revisit.bucketsHit, revisit.requestedBuckets)
@@ -294,10 +294,10 @@ describe("bucket cache hit rate — dashboard access patterns", () => {
 			const { outcomes } = yield* runSequence(requests, backend)
 
 			// The zoomed request is cold...
-			expect(outcomes[1]!.bucketsHit).toBe(0)
+			expect(outcomes[1].bucketsHit).toBe(0)
 			// ...and the original is still fully warm afterwards.
-			assert.strictEqual(outcomes[2]!.warehouseQueryCount, 0)
-			assert.strictEqual(outcomes[2]!.bucketsMissed, 0)
+			assert.strictEqual(outcomes[2].warehouseQueryCount, 0)
+			assert.strictEqual(outcomes[2].bucketsMissed, 0)
 		})
 	})
 
@@ -374,7 +374,7 @@ describe("bucket cache hit rate — dashboard access patterns", () => {
 			// Expired, so it refetches — and the points are still correct.
 			assert.strictEqual(afterExpiry.warehouseCalls, 1)
 			assert.deepStrictEqual(
-				afterExpiry.outcomes[0]!.points,
+				afterExpiry.outcomes[0].points,
 				warehousePointsFor(fixed.startMs, fixed.endMs),
 			)
 		})
@@ -399,7 +399,7 @@ describe("bucket cache hit rate — dashboard access patterns", () => {
 				}),
 			)
 
-			const second = outcomes[1]!
+			const second = outcomes[1]
 			// Settled buckets are cached...
 			expect(second.bucketsHit).toBeGreaterThan(0)
 			// ...but the live tail is never cached, so a query is still issued.
@@ -523,8 +523,8 @@ describe("bucket cache hit rate — degraded backends", () => {
 			// The second read must validate against `isBucketCacheSegmentData` and
 			// hit — if the round trip perturbed the shape it would silently miss.
 			assert.strictEqual(warehouseCalls, 1)
-			assert.strictEqual(outcomes[1]!.bucketsMissed, 0)
-			assert.deepStrictEqual(outcomes[1]!.points, warehousePointsFor(fixed.startMs, fixed.endMs))
+			assert.strictEqual(outcomes[1].bucketsMissed, 0)
+			assert.deepStrictEqual(outcomes[1].points, warehousePointsFor(fixed.startMs, fixed.endMs))
 		})
 	})
 })
@@ -575,7 +575,7 @@ describe("bucket cache hit rate — concurrency", () => {
 			Arr.forEach(outcomes, (outcome, index) => {
 				assert.deepStrictEqual(
 					outcome.points,
-					warehousePointsFor(widgets[index]!.startMs, widgets[index]!.endMs),
+					warehousePointsFor(widgets[index].startMs, widgets[index].endMs),
 					`widget ${index} received points from a different window`,
 				)
 			})

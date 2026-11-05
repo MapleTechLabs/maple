@@ -86,7 +86,7 @@ const grade = (submission: Submission): Grade => {
 	}
 }
 
-const submissions = decodeSubmissions(readFileSync(process.argv[2]!, "utf8"))
+const submissions = decodeSubmissions(readFileSync(process.argv[2], "utf8"))
 const grades = Arr.map(submissions, grade)
 
 const clean = Arr.filter(

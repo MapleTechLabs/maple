@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { StatusPageComponentId, StatusPageId, StatusPageIncidentId } from "@maple/domain"
 import {
 	StatusPageConfig,
@@ -52,7 +53,7 @@ export const Model = Schema.Struct({
 	incidents: KeyedSchema(Schema.Array(V2StatusPageIncident), LoadFailure),
 	/** The org's monitors: the component picker and each linked component's status. */
 	monitors: KeyedSchema(Schema.Array(V2UptimeMonitor), LoadFailure),
-	isAdmin: Schema.Boolean,
+	grants: Schema.Array(Policy.PermissionName),
 	isSessionLoaded: Schema.Boolean,
 	pageMenu: Menu.Model,
 	panel: Schema.NullOr(Panel),
@@ -113,3 +114,11 @@ export const Model = Schema.Struct({
 	jsonCopy: CopyButton.Model,
 })
 export type Model = typeof Model.Type
+
+/** The viewer may change what this page edits (`status_pages:edit`). */
+export const canManage = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "status_pages:edit")
+
+/** The viewer may rotate or revoke the break-glass token (`status_pages:break_glass`). */
+export const canBreakGlass = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "status_pages:break_glass")

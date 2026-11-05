@@ -34,7 +34,7 @@ function tracesDraft(overrides: Partial<QueryBuilderQueryDraftPayload> = {}): Qu
 		limit: "",
 		legend: "",
 		...overrides,
-	} as QueryBuilderQueryDraftPayload
+	}
 }
 
 function attrFilters(whereClause: string) {
@@ -301,7 +301,7 @@ describe("metrics resource.* support", () => {
 			isMonotonic: false,
 			signalSource: "default",
 			...overrides,
-		} as Partial<QueryBuilderQueryDraftPayload>)
+		})
 	}
 
 	function metricsFiltersOf(overrides: Partial<QueryBuilderQueryDraftPayload>) {
@@ -474,16 +474,16 @@ describe("GROUP_BY_TOKENS catalog matches the resolvers", () => {
 			addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
 			groupBy: [...groupBy],
 		}
-		if (dataSource === "logs") return { ...base, aggregation: "count" } as QueryBuilderQueryDraftPayload
+		if (dataSource === "logs") return { ...base, aggregation: "count" }
 		if (dataSource === "metrics") {
 			return {
 				...base,
 				aggregation: "avg",
 				metricName: "http.server.duration",
 				metricType: "gauge",
-			} as QueryBuilderQueryDraftPayload
+			}
 		}
-		return base as QueryBuilderQueryDraftPayload
+		return base
 	}
 
 	for (const source of ["traces", "logs", "metrics", "product_events"] as const) {
@@ -588,7 +588,7 @@ describe("aggregation enforcement follows AGGREGATIONS_BY_SOURCE", () => {
 			aggregation: "p95",
 			metricName: "http.server.duration",
 			metricType: "gauge",
-		} as QueryBuilderQueryDraftPayload)
+		})
 		expect(result.error).toContain("Unsupported metrics aggregation")
 		expect(result.error).toContain("rate")
 	})

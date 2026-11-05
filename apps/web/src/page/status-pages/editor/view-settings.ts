@@ -23,7 +23,7 @@ import {
 } from "../shared/form"
 import { appearanceSection, previewPanel } from "./view-appearance"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canBreakGlass, canManage, type Model } from "./model"
 import { isSettingsDirty, settingsOf } from "./update-settings"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -40,7 +40,7 @@ const AUTO_INCIDENT_ENTRIES = [
 
 const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
 	const issues = settingsIssues(form)
-	const isReadOnly = !model.isAdmin
+	const isReadOnly = !canManage(model)
 	return settingsSection(
 		h,
 		{
@@ -132,7 +132,7 @@ const behaviourSection = (h: H, model: Model, form: SettingsForm): Html =>
 					label: "Show powered by Maple",
 					description: "A small credit in the page footer.",
 					isChecked: form.showPoweredBy,
-					isDisabled: !model.isAdmin,
+					isDisabled: !canManage(model),
 					onToggle: Message.ToggledPoweredBy(),
 					className: "p-4",
 				}),
@@ -144,7 +144,7 @@ const behaviourSection = (h: H, model: Model, form: SettingsForm): Html =>
 							label: "When a linked monitor goes down",
 							value: form.autoIncidents,
 							entries: AUTO_INCIDENT_ENTRIES,
-							isDisabled: !model.isAdmin,
+							isDisabled: !canManage(model),
 							hint: "A draft waits for you under Incidents in the editor's On this page list; a published one shows on the page at once.",
 							onInput: (value) => Message.ChangedSetting({ field: "autoIncidents", value }),
 						}),
@@ -214,7 +214,7 @@ const breakGlassSection = (h: H, model: Model, page: V2StatusPage): Html => {
 									h.code([h.Class(typographyClass({ size: "xs", mono: true }))], [suffix]),
 								],
 					),
-					...(model.isAdmin
+					...(canBreakGlass(model)
 						? [
 								hstack(h, { gap: "2" }, [
 									...(suffix === null
@@ -291,11 +291,11 @@ const formView = (
 				[h.Class("grid gap-10 xl:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] xl:items-start")],
 				[
 					settingsSections(h, [
-						...(model.isAdmin
+						...(canManage(model)
 							? []
 							: [
 									adminOnlyNote(h, [
-										"Only org admins can change a status page. You can still post incident updates.",
+										"Only org admins and engineers can change a status page. You can still post incident updates.",
 									]),
 								]),
 						...sections(form),
@@ -335,7 +335,7 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage): Html =>
 		pageSection(h, model, form),
 		behaviourSection(h, model, form),
 		breakGlassSection(h, model, page),
-		...(model.isAdmin ? [deleteSection(h)] : []),
+		...(canManage(model) ? [deleteSection(h)] : []),
 	])
 
 export const appearanceView = (h: H, model: Model, page: V2StatusPage): Html =>

@@ -671,7 +671,7 @@ function renderTranscript(output: Output): ToolDoc {
 					? [{ lines: [rowLine(row)] }]
 					: [
 							...acc.slice(0, -1),
-							{ ...acc[acc.length - 1]!, lines: [...acc[acc.length - 1]!.lines, rowLine(row)] },
+							{ ...acc[acc.length - 1], lines: [...acc[acc.length - 1].lines, rowLine(row)] },
 						],
 		[],
 	)

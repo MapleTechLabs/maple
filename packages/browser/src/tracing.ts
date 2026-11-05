@@ -272,6 +272,7 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	const globalProvider = trace.getTracerProvider()
 	const ownsGlobals =
 		globalProvider === provider ||
+		// oxlint-disable-next-line typescript/no-deprecated -- the API still installs a ProxyTracerProvider as the global; no replacement exists yet.
 		(globalProvider instanceof ProxyTracerProvider && globalProvider.getDelegate() === provider)
 
 	// Without this the batch processor's queue dies with the tab: its only flush
@@ -342,6 +343,7 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	const instrumentations = [
 		...(config.tracingInstrumentFetch
 			? [
+					// oxlint-disable-next-line typescript/no-deprecated -- moving to the new browser instrumentation package is its own change.
 					new FetchInstrumentation({
 						...requestOptions,
 						applyCustomAttributesOnSpan: (span, request, result) => {
@@ -376,6 +378,7 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 			: []),
 		...(config.tracingInstrumentXhr
 			? [
+					// oxlint-disable-next-line typescript/no-deprecated -- moving to the new browser instrumentation package is its own change.
 					new XMLHttpRequestInstrumentation({
 						...requestOptions,
 						applyCustomAttributesOnSpan: (span, xhr) => {

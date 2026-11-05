@@ -72,7 +72,7 @@ describe("withAuditedRead", () => {
 
 			const entries = yield* audit.list(ORG, { limit: 10, offset: 0 })
 			expect(entries).toHaveLength(1)
-			const entry = entries[0]!
+			const entry = entries[0]
 			expect(entry.action).toBe("telemetry.read")
 			expect(entry.userId).toBe(USER)
 			expect(entry.requestId).toBe("ray-1")
@@ -120,7 +120,7 @@ describe("withAuditedRead", () => {
 			expect(Result.isFailure(outcome)).toBe(true)
 			const entries = yield* audit.list(ORG, { limit: 10, offset: 0 })
 			expect(entries).toHaveLength(1)
-			expect(entries[0]!.metadata).toMatchObject({ status: 0, endpoint: "traces.retrieve" })
+			expect(entries[0].metadata).toMatchObject({ status: 0, endpoint: "traces.retrieve" })
 		}),
 	)
 })
@@ -322,13 +322,13 @@ describe("recordRawSqlAudit", () => {
 				["telemetry.sql_executed", "allowed"],
 				["telemetry.sql_executed", "denied"],
 			])
-			expect(entries[1]!.denialReason).toBe("missing $__orgFilter")
-			expect(entries[0]!.metadata).toMatchObject({
+			expect(entries[1].denialReason).toBe("missing $__orgFilter")
+			expect(entries[0].metadata).toMatchObject({
 				sql: "SELECT 1",
 				row_count: 3,
 				context: "mcp.run_sql",
 			})
-			expect(entries[0]!.source).toBe("mcp")
+			expect(entries[0].source).toBe("mcp")
 		}).pipe(
 			Effect.provideService(CurrentAuditActor, { type: "api_key", source: "mcp" }),
 			Effect.provide(AuditLogService.layerMemory),

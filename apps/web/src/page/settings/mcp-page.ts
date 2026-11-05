@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { Result, Schema, Stream } from "effect"
 import { Command, Submodel, Subscription } from "foldkit"
@@ -21,7 +22,11 @@ import { apiKeyRows } from "./subscription"
 
 // `/mcp`: the same `McpSection` as `/settings?tab=mcp`, standalone.
 
-const Model = Schema.Struct({ nowMs: Schema.Number, isAdmin: Schema.Boolean, mcp: McpModel.Model })
+const Model = Schema.Struct({
+	nowMs: Schema.Number,
+	grants: Schema.Array(Policy.PermissionName),
+	mcp: McpModel.Model,
+})
 type Model = typeof Model.Type
 
 const Message = defineMessageUnion({
@@ -38,7 +43,7 @@ const toMcp = (message: McpMessage.Message) => Message.GotMcpMessage({ message }
 const init = (_route: unknown, _context: PageContext): Return => {
 	const step = Mcp.init()
 	return {
-		model: { nowMs: 0, isAdmin: !isClerkAuthEnabled, mcp: step.model },
+		model: { nowMs: 0, grants: isClerkAuthEnabled ? [] : Policy.allPermissions, mcp: step.model },
 		commands: [
 			Command.mapMessage(ReadSettingsClock(), toSettings),
 			Command.mapMessage(FetchSettingsSession(), toSettings),
@@ -53,11 +58,11 @@ const update = (model: Model, message: Message, _context: PageContext): Return =
 		GotSettingsMessage: ({ message: inner }) => {
 			if (inner._tag === "ReadClock") return { model: { ...model, nowMs: inner.nowMs } }
 			if (inner._tag !== "CompletedFetchSession") return { model }
-			const isAdmin = Result.getOrElse(
-				Result.map(inner.result, (session) => session.isAdmin),
-				() => false,
+			const grants = Result.getOrElse(
+				Result.map(inner.result, (session) => session.grants),
+				(): ReadonlyArray<Policy.Permission> => [],
 			)
-			return { model: { ...model, isAdmin: !isClerkAuthEnabled || isAdmin } }
+			return { model: { ...model, grants: isClerkAuthEnabled ? grants : Policy.allPermissions } }
 		},
 		GotMcpMessage: ({ message: inner }) => {
 			const step = Mcp.update(model.mcp, inner)
@@ -76,7 +81,7 @@ const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs,
 			model: model.mcp,
 			view: McpView.view,
 			toParentMessage: toMcp,
-			viewInputs: { isAdmin: model.isAdmin, nowMs: model.nowMs, timeZone: inputs.context.timeZone },
+			viewInputs: { grants: model.grants, nowMs: model.nowMs, timeZone: inputs.context.timeZone },
 		}),
 	]),
 )

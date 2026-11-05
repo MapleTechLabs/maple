@@ -122,7 +122,7 @@ const main = async (): Promise<void> => {
 
 	const failures: string[] = []
 	for (const { id, name, match } of candidates) {
-		const state = await fetchPreviewState(match[1] as string)
+		const state = await fetchPreviewState(match[1])
 		if (state === "live") {
 			console.log(`… keeping ${name} (PR #${match[1]} has a live preview)`)
 			continue

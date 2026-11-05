@@ -826,7 +826,7 @@ const containerInfraGaugeTimeseries = defineQuery({
 			CH.containerGaugeTimeseriesQuery({
 				containerName: payload.containerName,
 				hostName: payload.hostName,
-				metricName: spec.metricNames[0]!,
+				metricName: spec.metricNames[0],
 				divideBy: spec.divideBy,
 			}),
 			{

@@ -109,7 +109,7 @@ const traceIdHex = () => randomBytes(16).toString("hex")
 const spanIdHex = () => randomBytes(8).toString("hex")
 
 function pick<T>(rand: Rand, arr: readonly T[]): T {
-	return arr[Math.floor(rand() * arr.length)]!
+	return arr[Math.floor(rand() * arr.length)]
 }
 
 function gaussian(rand: Rand, mean: number, stddev: number): number {

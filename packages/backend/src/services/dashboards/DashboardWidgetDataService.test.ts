@@ -231,7 +231,7 @@ describe("DashboardWidgetDataService", () => {
 		// resolver that reported narrowing while still scanning 30 days would be
 		// the exact bug this asserts against.
 		expect(windows.length).toBeGreaterThan(0)
-		const executed = windows[0]!
+		const executed = windows[0]
 		const spanSeconds = (Date.parse(`${executed.endTime}Z`) - Date.parse(`${executed.startTime}Z`)) / 1000
 		expect(spanSeconds).toBe(MAX_LIST_RANGE_SECONDS)
 		expect(executed.endTime).toBe(WINDOW.endTime)

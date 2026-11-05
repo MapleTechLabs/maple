@@ -31,7 +31,7 @@ export const UnsignedDecimal = Schema.String.check(Schema.isPattern(/^\d+$/u))
 const strict = { onExcessProperty: "error" } as const
 
 /** `decodeUnknownSync` with the strict excess-property policy. */
-export const strictDecoder = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: S) =>
+export const strictDecoder = <S extends Schema.Codec<unknown, unknown>>(schema: S) =>
 	Schema.decodeUnknownSync(schema, strict)
 
 /** Exactly the raw telemetry tables a migration must preserve, in a stable order. */

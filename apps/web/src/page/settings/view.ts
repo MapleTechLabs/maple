@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
@@ -59,7 +60,7 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					view: McpView.view,
 					toParentMessage: (message) => Message.GotMcpMessage({ message }),
 					viewInputs: {
-						isAdmin: visibilityOf(model).isAdmin,
+						grants: visibilityOf(model).grants,
 						nowMs: model.nowMs,
 						timeZone: inputs.context.timeZone,
 					},
@@ -212,7 +213,7 @@ const gatedTabReason = (model: Model, tab: SettingsTab): string => {
 	const label = settingsTabLabels[tab]
 	const visibility = visibilityOf(model)
 	if (!visibility.isClerk) return `${label} isn't available on this deployment.`
-	if (tab === "data-platform" && visibility.isAdmin)
+	if (tab === "data-platform" && Policy.has(visibility.grants, "warehouse:manage"))
 		return `${label} needs the Bring your own cloud add-on.`
 	return `You need admin access to view ${label}.`
 }
@@ -249,7 +250,9 @@ const pageNote = (h: H, model: Model): ReadonlyArray<Html> => {
 			: gatedTabReason(model, model.deniedTab)
 	// The add-on gate is the one a viewer can lift themselves, so it links to the plans.
 	const linksToPlans =
-		!isRoleUnknown(model) && model.deniedTab === "data-platform" && visibilityOf(model).isAdmin
+		!isRoleUnknown(model) &&
+		model.deniedTab === "data-platform" &&
+		Policy.has(visibilityOf(model).grants, "warehouse:manage")
 	return reason === null
 		? []
 		: [

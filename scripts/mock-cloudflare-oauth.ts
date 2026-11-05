@@ -189,7 +189,7 @@ const bucketsInWindow = (variables: Record<string, unknown> | undefined): string
 const jitter = (bucket: string, salt: number, max: number) => {
 	// Deterministic per (bucket, salt) so repeated polls of a window return identical data.
 	const h = createHash("sha256").update(`${bucket}:${salt}`).digest()
-	return (h[0]! * 256 + h[1]!) % max
+	return (h[0] * 256 + h[1]) % max
 }
 
 const httpAnalyticsData = (variables: Record<string, unknown> | undefined) => {

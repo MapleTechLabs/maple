@@ -132,13 +132,13 @@ const chunks = await measure(result.outputs)
  * that import runs.
  */
 const eagerChunks = (group: Chunk[]): Chunk[] => {
-	const entryChunk = group.find((chunk) => chunk.name.startsWith("index.")) ?? group[0]!
+	const entryChunk = group.find((chunk) => chunk.name.startsWith("index.")) ?? group[0]
 	const names = new Set<string>([entryChunk.name])
 	const queue = [entryChunk]
 	while (queue.length > 0) {
 		const chunk = queue.pop()!
 		for (const match of chunk.text.matchAll(/(?:from|import)\s*"\.\/([^"]+)"/g)) {
-			const name = match[1]!
+			const name = match[1]
 			if (names.has(name)) continue
 			const next = group.find((candidate) => candidate.name === name)
 			if (!next) continue

@@ -395,7 +395,7 @@ describe("relaying a mention", () => {
 
 			// One turn, on the session the connector's conversation key names.
 			expect(agent.turns).toHaveLength(1)
-			const turn = agent.turns[0]!
+			const turn = agent.turns[0]
 			expect(turn.sessionId).toBe(SESSION_ID)
 			// The org's own tenant, with no roles: a connector turn proposes mutations, it does not
 			// perform them.

@@ -158,7 +158,7 @@ export function registerUpdateDashboardWidgetTool(server: McpToolRegistrar) {
 					const index = Arr.findFirstIndex(existingWidgets, (w) => w.id === widget_id)
 					if (Option.isNone(index)) return yield* widgetNotFound(widget_id)
 					const replacement = yield* resolveReplacement(
-						existingWidgets[index.value]!,
+						existingWidgets[index.value],
 						widget_json,
 						patch,
 					)

@@ -118,7 +118,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		incidents: Keyed.idle(),
 		config: Keyed.idle(),
 		monitors: Keyed.idle(),
-		isAdmin: false,
+		grants: [],
 		isSessionLoaded: false,
 		pageMenu: Menu.init(PAGE_MENU_ID),
 		panel: null,
@@ -300,8 +300,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchMonitors: ({ key, result }) => ({
 			model: { ...model, monitors: Keyed.accept(model.monitors, key, result) },
 		}),
-		CompletedFetchSession: ({ orgId, isAdmin }) =>
-			orgId === context.orgId ? { model: { ...model, isAdmin, isSessionLoaded: true } } : { model },
+		CompletedFetchSession: ({ orgId, grants }) =>
+			orgId === context.orgId ? { model: { ...model, grants, isSessionLoaded: true } } : { model },
 		ClickedRetry: () =>
 			chain(
 				model,

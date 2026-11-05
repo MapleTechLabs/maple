@@ -7,7 +7,7 @@ import { button } from "@maple/views/ui/button"
 import { catalogEntry, chatConnectorOf, integrationOfSearch, type IntegrationId } from "./catalog"
 import { ConnectProvider } from "./connect"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { navShell } from "../settings/kit/nav-shell"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { visibleSections } from "../settings/nav"
@@ -42,7 +42,7 @@ export const connectButton = (h: H, model: Model, integration: IntegrationId): H
 			size: "sm",
 			isLoading: model.connect.isStarting,
 			// Linear's start is admin-only on the server.
-			isDisabled: integration === "linear" && !model.isAdmin,
+			isDisabled: integration === "linear" && !canManage(model),
 			attributes: [h.OnClick(Message.ClickedConnect())],
 		},
 		[entryGlyph(h, entry, undefined), "Connect ", entry.name],

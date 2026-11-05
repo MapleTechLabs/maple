@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { Array, Option } from "effect"
 import type { NavShellRow, NavShellSection } from "./kit/nav-shell"
 import { legacySettingsTabValues, settingsTabValues } from "../../route/search"
@@ -93,7 +94,8 @@ const navSections: ReadonlyArray<NavShellSection<SettingsTab>> = [
 
 export type Visibility = Readonly<{
 	isClerk: boolean
-	isAdmin: boolean
+	/** The session's permissions: every one off Clerk, none until the session answers. */
+	grants: ReadonlyArray<Policy.Permission>
 	canAccessDataPlatform: boolean
 	/** An admin without the add-on: the row shows and opens a locked page naming the add-on. */
 	isDataPlatformLocked?: boolean
@@ -104,7 +106,8 @@ const isVisible = (id: string, visibility: Visibility): boolean => {
 	if (!visibility.isClerk) return true
 	if (id === "data-platform")
 		return visibility.canAccessDataPlatform || visibility.isDataPlatformLocked === true
-	if (id === "audit-log" || id === "ai") return visibility.isAdmin
+	if (id === "audit-log") return Policy.has(visibility.grants, "audit_log:read")
+	if (id === "ai") return Policy.has(visibility.grants, "llm_keys:manage")
 	return true
 }
 

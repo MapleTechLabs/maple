@@ -96,7 +96,7 @@ const providerLayer = (
 		requests.push(url)
 		bodies.push(body ?? "")
 		authorizations.push(headers["authorization"])
-		return responses[next++]!
+		return responses[next++]
 	})
 	return Layer.effect(GithubProvider, GithubProvider.make).pipe(
 		Layer.provide(
@@ -147,7 +147,7 @@ describe("GithubProvider pull requests", () => {
 			assert.strictEqual(prs[2]?.isDraft, true)
 			assert.strictEqual(prs[0]?.headRef, "fix/null-customer")
 
-			const listUrl = requests[1]!
+			const listUrl = requests[1]
 			assert.match(listUrl, /\/repos\/octo\/shop\/pulls\?/)
 			assert.match(listUrl, /state=all/)
 			assert.match(listUrl, /sort=updated/)
@@ -165,7 +165,7 @@ describe("GithubProvider pull requests", () => {
 			yield* Effect.gen(function* () {
 				const provider = yield* GithubProvider
 				yield* provider.fetchPullRequests(INSTALLATION, REPO, { limit: 5_000 })
-				assert.match(requests[1]!, /per_page=100/)
+				assert.match(requests[1], /per_page=100/)
 			}).pipe(Effect.provide(layer))
 		}),
 	)
@@ -181,7 +181,7 @@ describe("GithubProvider pull requests", () => {
 			const pr = yield* provider.fetchPullRequest(INSTALLATION, REPO, 612)
 			assert.isTrue(Option.isSome(pr))
 			assert.strictEqual(Option.getOrThrow(pr).state, "closed")
-			assert.match(requests[1]!, /\/repos\/octo\/shop\/pulls\/612$/)
+			assert.match(requests[1], /\/repos\/octo\/shop\/pulls\/612$/)
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -310,17 +310,17 @@ describe("GithubProvider publishing a review", () => {
 				summary: "Maple is reviewing `abc123`.",
 			})
 			assert.equal(started.url, "https://github.com/octo/shop/runs/7")
-			assert.include(requests[1]!, "/commits/abc123/check-runs?check_name=Maple%20%2F%20observability")
-			assert.isTrue(Str.endsWith("/repos/octo/shop/check-runs")(requests[2]!))
-			assert.include(bodies[2]!, `"status":"in_progress"`)
-			assert.notInclude(bodies[2]!, "conclusion")
+			assert.include(requests[1], "/commits/abc123/check-runs?check_name=Maple%20%2F%20observability")
+			assert.isTrue(Str.endsWith("/repos/octo/shop/check-runs")(requests[2]))
+			assert.include(bodies[2], `"status":"in_progress"`)
+			assert.notInclude(bodies[2], "conclusion")
 
 			const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
 			assert.equal(published.checkRunUrl, "https://github.com/octo/shop/runs/7")
 			// The running one is moved on, not duplicated.
-			assert.isTrue(Str.endsWith("/repos/octo/shop/check-runs/7")(requests[4]!))
-			assert.include(bodies[4]!, `"conclusion":"success"`)
-			assert.notInclude(bodies[4]!, "head_sha")
+			assert.isTrue(Str.endsWith("/repos/octo/shop/check-runs/7")(requests[4]))
+			assert.include(bodies[4], `"conclusion":"success"`)
+			assert.notInclude(bodies[4], "head_sha")
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -568,7 +568,7 @@ describe("GithubProvider changes since an earlier review", () => {
 				base: BASE,
 			})
 			assert.deepStrictEqual(delta, { rewritten: false, paths: ["src/a.ts"] })
-			assert.include(requests[1]!, `/compare/${OLD}...${NEW}`)
+			assert.include(requests[1], `/compare/${OLD}...${NEW}`)
 			assert.lengthOf(requests, 2)
 		}).pipe(Effect.provide(layer))
 	})
@@ -658,7 +658,7 @@ describe("GithubProvider reading why a CI job failed", () => {
 			const provider = yield* GithubProvider
 			const annotations = yield* provider.fetchWorkflowJobAnnotations(INSTALLATION, REPO, "555")
 			assert.isTrue(
-				Str.endsWith("/repos/octo/shop/check-runs/555/annotations?per_page=100&page=1")(requests[1]!),
+				Str.endsWith("/repos/octo/shop/check-runs/555/annotations?per_page=100&page=1")(requests[1]),
 			)
 			assert.deepStrictEqual(annotations, [
 				{
@@ -719,7 +719,7 @@ describe("GithubProvider reading a CI job's log", () => {
 			const lines = yield* provider
 				.streamWorkflowJobLog(INSTALLATION, REPO, "555")
 				.pipe(Stream.runCollect)
-			assert.isTrue(Str.endsWith("/repos/octo/shop/actions/jobs/555/logs")(requests[1]!))
+			assert.isTrue(Str.endsWith("/repos/octo/shop/actions/jobs/555/logs")(requests[1]))
 			assert.strictEqual(authorizations[1], "token installation-token")
 			assert.strictEqual(requests[2], SIGNED_URL)
 			assert.isUndefined(authorizations[2])
@@ -746,7 +746,7 @@ describe("GithubProvider reading a CI job's log", () => {
 				assert.isFalse(yield* provider.canReadWorkflowLogs(INSTALLATION))
 				assert.isFalse(yield* provider.canReadWorkflowLogs(INSTALLATION))
 				assert.lengthOf(requests, 1)
-				assert.isTrue(Str.endsWith("/app/installations/42/access_tokens")(requests[0]!))
+				assert.isTrue(Str.endsWith("/app/installations/42/access_tokens")(requests[0]))
 			}).pipe(Effect.provide(layer))
 		},
 	)
@@ -858,9 +858,9 @@ describe("GithubProvider hiding earlier review comments", () => {
 					keep: "<!-- maple-pr-review r3 0 -->",
 				})
 				assert.equal(hidden, 1)
-				assert.deepEqual(JSON.parse(bodies[2]!).variables, { ids: ["IC_1", "IC_2"] })
-				assert.include(bodies[3]!, "classifier: OUTDATED")
-				assert.deepEqual(JSON.parse(bodies[3]!).variables, { id: "IC_2" })
+				assert.deepEqual(JSON.parse(bodies[2]).variables, { ids: ["IC_1", "IC_2"] })
+				assert.include(bodies[3], "classifier: OUTDATED")
+				assert.deepEqual(JSON.parse(bodies[3]).variables, { id: "IC_2" })
 				assert.lengthOf(requests, 4)
 			}).pipe(Effect.provide(layer))
 		},

@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { UptimeMonitorId } from "@maple/domain"
 import { AlertDeliveryEventDocument, AlertDestinationId, AlertRuleId } from "@maple/domain/http"
 import { V2UptimeMonitor } from "@maple/domain/http/v2"
@@ -39,8 +40,8 @@ export const Model = Schema.Struct({
 	deliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
 	/** The Routing tab's own `alertDeliveries.list` read, separate from `deliveries`. */
 	routingDeliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
-	/** `session.roles` has root or org:admin; `false` until the session answers. */
-	isAdmin: Schema.Boolean,
+	/** What the session may do (`Policy.grantsOf`); none until the session answers. */
+	grants: Schema.Array(Policy.PermissionName),
 	/** Rules tab: the search box and "Show all". */
 	rulesQuery: Schema.String,
 	isShowingAllRules: Schema.Boolean,
@@ -75,3 +76,6 @@ export const Model = Schema.Struct({
 	deleteMonitorDialog: Dialog.Model,
 })
 export type Model = typeof Model.Type
+
+/** The viewer may change what this page edits (`alerts:manage`). */
+export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "alerts:manage")

@@ -46,7 +46,7 @@ const normalized = layoutArb(cols).map((layout) => normalizeLayout(layout, cols,
 
 /** Apply an op the way the canvas does: clamp, then step. */
 function apply(layout: Layout, op: Op): Layout {
-	const item = layout[op.pick % layout.length]!
+	const item = layout[op.pick % layout.length]
 	if (op.kind === "move") {
 		const target = clampPosition(item, op.x, op.y, cols)
 		return moveItem(layout, item.i, target.x, target.y)
@@ -90,7 +90,7 @@ describe("normalizeLayout", () => {
 				// Overlapping inputs push items down to resolve the overlap; boards
 				// without overlaps only ever float up.
 				if (overlaps(layout)) return
-				out.forEach((item, index) => expect(item.y).toBeLessThanOrEqual(layout[index]!.y))
+				out.forEach((item, index) => expect(item.y).toBeLessThanOrEqual(layout[index].y))
 			}),
 			{ numRuns: 3000 },
 		)
@@ -101,7 +101,7 @@ describe("normalizeLayout", () => {
 			fc.property(layoutArb(cols), (layout) => {
 				const out = normalizeLayout(layout, cols, "vertical")
 				out.forEach((item, index) => {
-					const before = layout[index]!
+					const before = layout[index]
 					const unchanged =
 						before.x === item.x &&
 						before.y === item.y &&
@@ -143,7 +143,7 @@ describe("editing", () => {
 		fc.assert(
 			fc.property(normalized, opArb(cols), (layout, op) => {
 				if (layout.length === 0 || op.kind !== "resize") return
-				const item = layout[op.pick % layout.length]!
+				const item = layout[op.pick % layout.length]
 				const { w, h } = clampSize(item, op.w, op.h, cols)
 				expect(w).toBeGreaterThanOrEqual(item.minW ?? 1)
 				expect(h).toBeGreaterThanOrEqual(item.minH ?? 1)
@@ -161,7 +161,7 @@ describe("editing", () => {
 		fc.assert(
 			fc.property(normalized, fc.nat(), (layout, pick) => {
 				if (layout.length === 0) return
-				const item = layout[pick % layout.length]!
+				const item = layout[pick % layout.length]
 				expect(moveItem(layout, item.i, item.x, item.y)).toBe(layout)
 			}),
 			{ numRuns: 2000 },
@@ -176,7 +176,7 @@ describe("editing", () => {
 		fc.assert(
 			fc.property(normalized, opArb(cols), (layout, op) => {
 				if (layout.length === 0 || op.kind !== "move") return
-				const item = layout[op.pick % layout.length]!
+				const item = layout[op.pick % layout.length]
 				const target = clampPosition(item, op.x, op.y, cols)
 				const once = moveItem(layout, item.i, target.x, target.y)
 				const twice = moveItem(once, item.i, target.x, target.y)
@@ -207,7 +207,7 @@ describe("nudgeItem", () => {
 				(layout, pick, dir) => {
 					if (layout.length === 0) return
 					const [dx, dy] = dir as [-1 | 0 | 1, -1 | 0 | 1]
-					const item = layout[pick % layout.length]!
+					const item = layout[pick % layout.length]
 					const next = nudgeItem(layout, item.i, dx, dy, cols)
 					const atEdge =
 						(dx === -1 && item.x === 0) ||

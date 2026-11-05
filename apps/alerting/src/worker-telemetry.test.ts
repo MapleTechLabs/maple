@@ -38,14 +38,15 @@ interface RecordedRequest {
 	readonly body: string | null
 }
 
-const stubFetch = (recorded: Array<RecordedRequest>): typeof globalThis.fetch =>
-	(async (input: string | URL | Request, init?: RequestInit) => {
+const stubFetch =
+	(recorded: Array<RecordedRequest>): typeof globalThis.fetch =>
+	async (input: string | URL | Request, init?: RequestInit) => {
 		recorded.push({
 			url: input instanceof Request ? input.url : String(input),
 			body: typeof init?.body === "string" ? init.body : null,
 		})
 		return new Response("{}", { status: 200 })
-	}) as typeof globalThis.fetch
+	}
 
 const telemetryEnv = { MAPLE_INGEST_KEY: "maple_sk_test", MAPLE_ENDPOINT: "http://ingest.test" }
 

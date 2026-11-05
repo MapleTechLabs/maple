@@ -65,7 +65,7 @@ describe.skipIf(!clickhouseE2eEnabled)("series cap result parity", () => {
 			}),
 		)
 		assert.isDefined(compiled.rowSchema)
-		return Schema.decodeUnknownSync(Schema.Array(compiled.rowSchema!))(body.data)
+		return Schema.decodeUnknownSync(Schema.Array(compiled.rowSchema))(body.data)
 	}
 
 	for (const seriesLimit of [1, 2, 3, 4, 5, 6, 20]) {

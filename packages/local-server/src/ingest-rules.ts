@@ -27,6 +27,7 @@ import {
 
 /** `~/.maple/ingest-rules.json`, or `MAPLE_LOCAL_INGEST_RULES`. */
 export const localIngestRulesPath = (): string =>
+	// @effect-diagnostics-next-line processEnv:off -- path override for sync callers
 	process.env.MAPLE_LOCAL_INGEST_RULES ?? path.join(os.homedir(), ".maple", "ingest-rules.json")
 
 const LocalRule = Schema.Struct({

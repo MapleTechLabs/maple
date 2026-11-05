@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { BillingCustomer } from "@maple/domain/http"
 import { V2ApiKey } from "@maple/domain/http/v2"
 import { Schema } from "effect"
@@ -18,9 +19,9 @@ import * as SetupHealth from "./setup-health/model"
 
 // `/settings`: the nav rail and the active tab's section.
 
-/** What `useVisibleSettingsSections` reads from the session: whether the member administers the org. */
+/** What `useVisibleSettingsSections` reads from the session: the permissions its roles hold. */
 export const SessionInfo = Schema.Struct({
-	isAdmin: Schema.Boolean,
+	grants: Schema.Array(Policy.PermissionName),
 	userId: Schema.NullOr(Schema.String),
 	/** `useOrganizationFeatureFlags().flags.aiAutoTriage`: Clerk org metadata; on self-hosted. */
 	hasAiAutoTriage: Schema.Boolean,

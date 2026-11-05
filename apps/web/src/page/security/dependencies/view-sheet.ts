@@ -11,7 +11,7 @@ import { textarea } from "@maple/views/ui/textarea"
 import { relativeTime } from "../../kit/relative-time"
 import { sheetDetailHeader } from "../../kit/sheet-detail-header"
 import { RELATION_LABEL, reasonErrorOf, selectedFindingOf, shortSha, STATUS_FILTER_LABEL } from "./derive"
-import { Message, type Model } from "./model"
+import { canManage, Message, type Model } from "./model"
 import { advisorySeverityBadge } from "../kit/parts"
 import { advisoryLink } from "./view-findings"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -163,8 +163,10 @@ const reasonField = (h: H, model: Model): Html => {
 const note = (h: H, text: string): Html => typography(h, { size: "xs", tone: "muted", as: "p" }, [text])
 
 const triage = (h: H, model: Model, finding: DependencyFindingView, clock: Clock): Html => {
-	if (!model.isAdmin)
-		return detailRailGroup(h, "Triage", [note(h, "Only org admins can change a finding's status.")])
+	if (!canManage(model))
+		return detailRailGroup(h, "Triage", [
+			note(h, "Only org admins and engineers can change a finding's status."),
+		])
 	if (finding.status === "fixed")
 		return detailRailGroup(h, "Triage", [
 			note(h, "A later scan no longer finds this package version. It reopens if it comes back."),
@@ -175,7 +177,7 @@ const triage = (h: H, model: Model, finding: DependencyFindingView, clock: Clock
 				h.p(
 					[h.Class("text-sm")],
 					[
-						`${STATUS_FILTER_LABEL[finding.status]}`,
+						STATUS_FILTER_LABEL[finding.status],
 						...(finding.statusChangedAt === null
 							? []
 							: [

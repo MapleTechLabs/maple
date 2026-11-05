@@ -165,7 +165,7 @@ describe("CompiledProjectionRegistry", () => {
 		const registry = Result.getOrThrow(
 			CompiledProjectionRegistry.compile([projection()], sources(), projectors()),
 		)
-		const event = Result.getOrThrow(registry.evaluate(signal(), acceptedAt)).events[0]!
+		const event = Result.getOrThrow(registry.evaluate(signal(), acceptedAt)).events[0]
 		const { sourceoccurrenceid: _occurrence, identityquality: _quality, ...historical } = event
 		const validated = Result.getOrThrow(validateMapleCloudEvent(historical)).event
 		expect(validated.id).toBe(event.id)

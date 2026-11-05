@@ -241,15 +241,11 @@ export const optionalResourceIdList = (kind: ResourceIdKind, description: string
  * decodes it against the real schema, so a malformed field is a parameter error naming the
  * field rather than a handler-side `JSON.parse` failure.
  */
-export const json = <S extends Schema.Codec<unknown, unknown, never, never>>(
-	schema: S,
-	description: string,
-) => Schema.Union([Schema.fromJsonString(schema), schema]).annotate({ description })
+export const json = <S extends Schema.Codec<unknown, unknown>>(schema: S, description: string) =>
+	Schema.Union([Schema.fromJsonString(schema), schema]).annotate({ description })
 
-export const optionalJson = <S extends Schema.Codec<unknown, unknown, never, never>>(
-	schema: S,
-	description: string,
-) => Schema.optional(json(schema, description))
+export const optionalJson = <S extends Schema.Codec<unknown, unknown>>(schema: S, description: string) =>
+	Schema.optional(json(schema, description))
 
 const clampTo = (spec: { readonly min: number; readonly max: number }) =>
 	SchemaTransformation.transform<number, number>({

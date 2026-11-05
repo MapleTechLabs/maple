@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { Option, Result, Array as Arr, String as Str } from "effect"
 import { Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -140,7 +141,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			scrapeTargets: Keyed.idle(),
 		},
 		customer: Keyed.idle(),
-		isAdmin: !isClerkAuthEnabled,
+		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 		connect: initConnect(),
 		disconnect: { dialog: Dialog.init("integration-disconnect", "alert-dialog"), isPending: false },
 		chatCard: { busy: null, confirmId: null, identityBusy: false },
@@ -261,7 +262,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadCustomer: ({ key, result }) => ({
 			model: { ...model, customer: Keyed.accept(model.customer, key, result) },
 		}),
-		CompletedLoadSession: ({ isAdmin }) => ({ model: { ...model, isAdmin } }),
+		CompletedLoadSession: ({ grants }) => ({ model: { ...model, grants } }),
 		CompletedTrackConnected: () => ({ model }),
 		ClickedIntegration: ({ integration }) =>
 			navigateTo(model, hrefOfSearch(integration === null ? {} : { integration }), false),

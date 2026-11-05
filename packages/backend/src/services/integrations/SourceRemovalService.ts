@@ -134,6 +134,8 @@ export class SourceRemovalService extends Context.Service<SourceRemovalService>(
 						)
 						return null
 					}
+					default:
+						break
 				}
 				// The rest have one connection per org, disconnected only while it still sends as this source.
 				if (source.integrationId === null) return null
@@ -149,6 +151,9 @@ export class SourceRemovalService extends Context.Service<SourceRemovalService>(
 						break
 					case "supabase":
 						yield* supabase.disconnect(orgId)
+						break
+					default:
+						// Push-only platforms have no connection to remove.
 						break
 				}
 				return null

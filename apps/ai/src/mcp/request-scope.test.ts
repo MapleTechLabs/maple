@@ -109,7 +109,7 @@ const isolate = async () => {
 		Layer.provideMerge(ports),
 	)
 	const handler = await Effect.runPromise(
-		Effect.flatMap(Effect.context<never>(), (context) => buildIsolateHandler(context, routes)),
+		Effect.flatMap(Effect.context(), (context) => buildIsolateHandler(context, routes)),
 	)
 
 	// Which request's scope ran each statement.

@@ -128,6 +128,6 @@ export const otelResourceAttributes = Effect.gen(function* () {
 	const raw = yield* Config.option(Config.String("OTEL_RESOURCE_ATTRIBUTES"))
 	return Option.match(raw, {
 		onSome: (value) => parseOtelResourceAttributes(value),
-		onNone: () => ({}) as Record<string, string>,
+		onNone: () => ({}),
 	})
 })

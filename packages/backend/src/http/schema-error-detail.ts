@@ -52,10 +52,10 @@ export const widgetIdForPath = (root: unknown, path: ReadonlyArray<PropertyKey>)
 	let cursor = root
 	let widgetId: string | undefined
 	for (let i = 0; i < path.length; i++) {
-		const segment = path[i]!
+		const segment = path[i]
 		const next = readKey(cursor, segment)
 		if (segment === "widgets" && typeof path[i + 1] === "number") {
-			const widget = readKey(next, path[i + 1]!)
+			const widget = readKey(next, path[i + 1])
 			const id = readKey(widget, "id")
 			if (typeof id === "string") widgetId = id
 		}
@@ -79,6 +79,13 @@ const reportedInputs = (issue: SchemaIssue.Issue): ReadonlyArray<unknown> => {
 			case "Composite":
 			case "AnyOf":
 				Arr.forEach(current.issues, visit)
+				break
+			case "Forbidden":
+			case "InvalidType":
+			case "InvalidValue":
+			case "MissingKey":
+			case "OneOf":
+			case "UnexpectedKey":
 				break
 		}
 	}

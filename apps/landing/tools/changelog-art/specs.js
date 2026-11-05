@@ -154,7 +154,7 @@ async function renderCover() {
 	canvas.style.width = "640px"
 	canvas.style.height = "336px"
 	out.prepend(canvas)
-	return await save(COVER.file, canvas)
+	return save(COVER.file, canvas)
 }
 
 window.COVER = COVER

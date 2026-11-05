@@ -94,7 +94,7 @@ const runWithToken = <A, E>(
 	accessToken: string,
 	effect: Effect.Effect<A, E, CloudflareRequirements>,
 	apiBaseUrl?: string,
-): Effect.Effect<A, E, never> =>
+): Effect.Effect<A, E> =>
 	effect.pipe(
 		// The token and API base are per invocation, so this cannot be hoisted into
 		// the static service graph; the layer closes the distilled SDK operation.
@@ -107,7 +107,7 @@ const runMapped = <A, E>(
 	accessToken: string,
 	effect: Effect.Effect<A, E, CloudflareRequirements>,
 	apiBaseUrl?: string,
-): Effect.Effect<A, CloudflareApiError, never> =>
+): Effect.Effect<A, CloudflareApiError> =>
 	runWithToken(accessToken, effect, apiBaseUrl).pipe(Effect.mapError(mapCloudflareError))
 
 export interface CloudflareAccount {
@@ -123,7 +123,7 @@ export interface CloudflareAccount {
 export const listAccounts: (
 	accessToken: string,
 	apiBaseUrl?: string,
-) => Effect.Effect<ReadonlyArray<CloudflareAccount>, CloudflareApiError, never> = Effect.fn(
+) => Effect.Effect<ReadonlyArray<CloudflareAccount>, CloudflareApiError> = Effect.fn(
 	"CloudflareApi.listAccounts",
 )(function* (accessToken: string, apiBaseUrl?: string) {
 	const response = yield* runMapped(accessToken, Accounts.listAccounts({ perPage: 50 }), apiBaseUrl)
@@ -174,29 +174,29 @@ export const listZones: (
 	accessToken: string,
 	accountId: string,
 	apiBaseUrl?: string,
-) => Effect.Effect<BoundedListing<CloudflareZone>, CloudflareApiError, never> = Effect.fn(
-	"CloudflareApi.listZones",
-)(function* (accessToken: string, accountId: string, apiBaseUrl?: string) {
-	yield* Effect.annotateCurrentSpan("maple.cloudflare.account_id", accountId)
-	const zones = yield* runMapped(
-		accessToken,
-		collectBounded(
-			Zones.listZones.items({ account: { id: accountId }, status: "active", perPage: 50 }),
-			MAX_ZONES,
-		),
-		apiBaseUrl,
-	)
-	yield* Effect.annotateCurrentSpan("maple.cloudflare.zone_count", zones.items.length)
-	yield* Effect.annotateCurrentSpan("maple.cloudflare.zone_listing_truncated", zones.truncated)
-	return {
-		items: Arr.map(zones.items, (zone) => ({
-			id: zone.id,
-			name: zone.name,
-			status: zone.status ?? null,
-		})),
-		truncated: zones.truncated,
-	}
-})
+) => Effect.Effect<BoundedListing<CloudflareZone>, CloudflareApiError> = Effect.fn("CloudflareApi.listZones")(
+	function* (accessToken: string, accountId: string, apiBaseUrl?: string) {
+		yield* Effect.annotateCurrentSpan("maple.cloudflare.account_id", accountId)
+		const zones = yield* runMapped(
+			accessToken,
+			collectBounded(
+				Zones.listZones.items({ account: { id: accountId }, status: "active", perPage: 50 }),
+				MAX_ZONES,
+			),
+			apiBaseUrl,
+		)
+		yield* Effect.annotateCurrentSpan("maple.cloudflare.zone_count", zones.items.length)
+		yield* Effect.annotateCurrentSpan("maple.cloudflare.zone_listing_truncated", zones.truncated)
+		return {
+			items: Arr.map(zones.items, (zone) => ({
+				id: zone.id,
+				name: zone.name,
+				status: zone.status ?? null,
+			})),
+			truncated: zones.truncated,
+		}
+	},
+)
 
 // Script enumeration is bounded like zone discovery: the poller only needs a membership set to
 // filter stale scriptName dimensions, so a pathological account can't fan out unbounded work.
@@ -211,24 +211,24 @@ export const listWorkerScripts: (
 	accessToken: string,
 	accountId: string,
 	apiBaseUrl?: string,
-) => Effect.Effect<BoundedListing<string>, CloudflareApiError, never> = Effect.fn(
-	"CloudflareApi.listWorkerScripts",
-)(function* (accessToken: string, accountId: string, apiBaseUrl?: string) {
-	yield* Effect.annotateCurrentSpan("maple.cloudflare.account_id", accountId)
-	const scripts = yield* runMapped(
-		accessToken,
-		collectBounded(Workers.listScripts.items({ accountId }), MAX_SCRIPTS),
-		apiBaseUrl,
-	)
-	yield* Effect.annotateCurrentSpan("maple.cloudflare.script_count", scripts.items.length)
-	yield* Effect.annotateCurrentSpan("maple.cloudflare.script_listing_truncated", scripts.truncated)
-	return {
-		items: Arr.flatMap(scripts.items, (script) =>
-			script.id == null || script.id === "" ? [] : [script.id],
-		),
-		truncated: scripts.truncated,
-	}
-})
+) => Effect.Effect<BoundedListing<string>, CloudflareApiError> = Effect.fn("CloudflareApi.listWorkerScripts")(
+	function* (accessToken: string, accountId: string, apiBaseUrl?: string) {
+		yield* Effect.annotateCurrentSpan("maple.cloudflare.account_id", accountId)
+		const scripts = yield* runMapped(
+			accessToken,
+			collectBounded(Workers.listScripts.items({ accountId }), MAX_SCRIPTS),
+			apiBaseUrl,
+		)
+		yield* Effect.annotateCurrentSpan("maple.cloudflare.script_count", scripts.items.length)
+		yield* Effect.annotateCurrentSpan("maple.cloudflare.script_listing_truncated", scripts.truncated)
+		return {
+			items: Arr.flatMap(scripts.items, (script) =>
+				script.id == null || script.id === "" ? [] : [script.id],
+			),
+			truncated: scripts.truncated,
+		}
+	},
+)
 
 export interface CloudflareHyperdriveConfig {
 	readonly id: string
@@ -278,7 +278,7 @@ export const listHyperdriveConfigs: (
 	accessToken: string,
 	accountId: string,
 	apiBaseUrl?: string,
-) => Effect.Effect<BoundedListing<CloudflareHyperdriveConfig>, CloudflareApiError, never> = Effect.fn(
+) => Effect.Effect<BoundedListing<CloudflareHyperdriveConfig>, CloudflareApiError> = Effect.fn(
 	"CloudflareApi.listHyperdriveConfigs",
 )(function* (accessToken: string, accountId: string, apiBaseUrl?: string) {
 	yield* Effect.annotateCurrentSpan("maple.cloudflare.account_id", accountId)
@@ -368,25 +368,25 @@ export const graphqlQuery: (
 	accessToken: string,
 	request: { readonly query: string; readonly variables?: Record<string, unknown> },
 	apiBaseUrl?: string,
-) => Effect.Effect<CloudflareGraphqlResult, CloudflareApiError, never> = Effect.fn(
-	"CloudflareApi.graphqlQuery",
-)(function* (
-	accessToken: string,
-	request: { readonly query: string; readonly variables?: Record<string, unknown> },
-	apiBaseUrl?: string,
-) {
-	const response = yield* runMapped(
-		accessToken,
-		graphqlOperation({
-			query: request.query,
-			...(!(request.variables === undefined) ? { variables: request.variables } : undefined),
-		}),
-		apiBaseUrl,
-	)
-	const errors = response.errors ?? []
-	yield* Effect.annotateCurrentSpan("maple.cloudflare.graphql_error_count", errors.length)
-	return {
-		data: response.data ?? null,
-		errors,
-	}
-})
+) => Effect.Effect<CloudflareGraphqlResult, CloudflareApiError> = Effect.fn("CloudflareApi.graphqlQuery")(
+	function* (
+		accessToken: string,
+		request: { readonly query: string; readonly variables?: Record<string, unknown> },
+		apiBaseUrl?: string,
+	) {
+		const response = yield* runMapped(
+			accessToken,
+			graphqlOperation({
+				query: request.query,
+				...(!(request.variables === undefined) ? { variables: request.variables } : undefined),
+			}),
+			apiBaseUrl,
+		)
+		const errors = response.errors ?? []
+		yield* Effect.annotateCurrentSpan("maple.cloudflare.graphql_error_count", errors.length)
+		return {
+			data: response.data ?? null,
+			errors,
+		}
+	},
+)

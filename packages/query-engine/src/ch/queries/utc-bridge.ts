@@ -6,5 +6,5 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 
 /** A time expression decoded as the wire string, for an ingest-shaped row. */
-export const utcAsWireString = <E extends CH.Expr<DateTime.Utc, never>>(expr: E) =>
+export const utcAsWireString = <E extends CH.Expr<DateTime.Utc>>(expr: E) =>
 	CH.makeExpr(expr.toFragment(), T.dateTimeString.schema, undefined, [expr])

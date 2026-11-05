@@ -87,7 +87,7 @@ export const promptFromHistory = (history: ReadonlyArray<ChatMessage>): Readonly
 	const kept: Array<ChatMessage> = []
 	let chars = 0
 	for (let i = spoken.length - 1; i >= 0; i--) {
-		const message = spoken[i]!
+		const message = spoken[i]
 		if (kept.length >= MAX_REPLAYED_MESSAGES) break
 		if (chars + message.text.length > MAX_REPLAYED_CHARS && kept.length > 0) break
 		chars += message.text.length
