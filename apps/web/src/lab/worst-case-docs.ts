@@ -20,7 +20,7 @@ const NOW = Date.now()
 const decodeInvestigation = Schema.decodeUnknownSync(Schema.toType(V2Investigation))
 
 export function verdict(mode: WorstCaseMode): V2Investigation {
-	const base = VERDICT_LAB_CASES[0]!.investigation
+	const base = VERDICT_LAB_CASES[0].investigation
 	if (mode === "demo") return base
 	return decodeInvestigation({
 		...base,

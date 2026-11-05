@@ -542,8 +542,8 @@ describe("archive operation journal v2 → v3 migration (Gate 3b)", () => {
 			// Now the on-disk record parses cleanly as v3.
 			const active = readActiveOperation(archiveDir)
 			ok(active !== null)
-			strictEqual(active!.intent.kind, "create")
-			strictEqual(active!.intent.formatVersion, 3)
+			strictEqual(active.intent.kind, "create")
+			strictEqual(active.intent.formatVersion, 3)
 			// A second migration is a no-op (already v3).
 			const migrated2 = await migrateActiveIntentIfLegacy(archiveDir)
 			strictEqual(migrated2, false, "already-v3 intent is not re-migrated")

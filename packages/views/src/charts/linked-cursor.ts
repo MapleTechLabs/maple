@@ -29,7 +29,7 @@ interface CursorState {
 const alignOverlays = (container: HTMLElement) => {
 	const placements = Arr.flatMap([...container.querySelectorAll<HTMLElement>(CHART_SELECTOR)], (chart) => {
 		const overlay = chart.querySelector<HTMLElement>(OVERLAY_SELECTOR)
-		const plot = chart.querySelector<Element>(PLOT_SELECTOR)
+		const plot = chart.querySelector(PLOT_SELECTOR)
 		const host = overlay?.offsetParent
 		if (!overlay || !plot || !(host instanceof HTMLElement)) return []
 		const plotBounds = plot.getBoundingClientRect()
@@ -94,7 +94,7 @@ export const linkedCursorStream = <A>(element: Element, attached: A): Stream.Str
 					const target = event.target
 					const chart =
 						target instanceof Element ? target.closest<HTMLElement>(CHART_SELECTOR) : null
-					const plot = chart?.querySelector<Element>(PLOT_SELECTOR)
+					const plot = chart?.querySelector(PLOT_SELECTOR)
 					const bounds = plot?.getBoundingClientRect()
 					const isInside =
 						chart !== null &&

@@ -11,7 +11,7 @@ import type * as Redacted from "effect/Redacted"
 
 /** The env api reads the key from (`packages/backend/src/platform/Env.ts`). */
 export interface MapleDeviceTokenEnv {
-	readonly MAPLE_DEVICE_TOKEN_SIGNING_KEY: Output.Output<Redacted.Redacted<string>>
+	readonly MAPLE_DEVICE_TOKEN_SIGNING_KEY: Output.Output<Redacted.Redacted>
 }
 
 export const createMapleDeviceTokenKey = Effect.gen(function* () {

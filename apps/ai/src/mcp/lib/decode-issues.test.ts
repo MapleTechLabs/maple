@@ -6,7 +6,7 @@ import * as P from "./params"
 
 const failureFor = (tool: string, schema: Schema.Codec<unknown, unknown, never, unknown>, input: unknown) => {
 	const published = toInputSchema(schema)
-	const properties = Rec.keys((published.properties ?? {}) as object)
+	const properties = Rec.keys(published.properties ?? {})
 	const normalized = normalizeArguments(input, properties)
 	const exit = Schema.decodeUnknownExit(schema)(normalized.args)
 	if (!Exit.isFailure(exit)) throw new Error("expected a decode failure")

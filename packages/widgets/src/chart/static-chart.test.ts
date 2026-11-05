@@ -48,7 +48,7 @@ describe("niceTicks", () => {
 	it("spans zero to above the max", () => {
 		const ticks = niceTicks(0.4, 3.9)
 		expect(ticks[0]).toBe(0)
-		expect(ticks[ticks.length - 1]!).toBeGreaterThanOrEqual(3.9)
+		expect(ticks[ticks.length - 1]).toBeGreaterThanOrEqual(3.9)
 	})
 
 	it("does not collapse when every value is identical", () => {
@@ -231,7 +231,7 @@ describe("renderChartSvg, as an alert draws it: one series and a threshold", () 
 			[at(30), 1],
 			[at(15), 2],
 		]
-		const sorted: ReadonlyArray<ChartPoint> = [shuffled[0]!, shuffled[2]!, shuffled[1]!]
+		const sorted: ReadonlyArray<ChartPoint> = [shuffled[0], shuffled[2], shuffled[1]]
 		const draw = (points: ReadonlyArray<ChartPoint>) =>
 			renderChartSvg({ ...spec, kind: "line", series: [{ name: "n", points }] }).svg
 		expect(draw(shuffled)).toBe(draw(sorted))

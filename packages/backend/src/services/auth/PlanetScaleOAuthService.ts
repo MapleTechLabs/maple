@@ -57,7 +57,7 @@ const MAX_PAGES = 10
 interface ResolvedPlanetScaleOAuthConfig {
 	readonly clientId: string
 	/** Always present — PlanetScale OAuth apps are confidential clients (no PKCE). Redacted until the wire. */
-	readonly clientSecret: Redacted.Redacted<string>
+	readonly clientSecret: Redacted.Redacted
 	readonly authorizeUrl: string
 	readonly tokenUrl: string
 	/** Space-delimited, resource-prefixed scopes sent in the authorize request. */
@@ -475,7 +475,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 
 			yield* oauth.upsertConnection(orgId, currentTime, {
 				externalUserId: Option.match(currentUser, {
-					onNone: () => organizations[0]!.id,
+					onNone: () => organizations[0].id,
 					onSome: (user) => user.id,
 				}),
 				externalUserEmail: Option.match(currentUser, {

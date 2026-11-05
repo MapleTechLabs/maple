@@ -190,7 +190,7 @@ const seedPublishedOperation = async (
 		checkpointId,
 		shards: [
 			{
-				...baseManifest.shards[0]!,
+				...baseManifest.shards[0],
 				bytes: statSync(shardPath).size,
 				sha256: createHash("sha256").update(readFileSync(shardPath)).digest("hex"),
 			},
@@ -632,7 +632,7 @@ describe("archive generation promotion", () => {
 			const exactManifest: ArchiveGenerationManifest = {
 				...baseManifest,
 				checkpointId,
-				shards: [{ ...baseManifest.shards[0]!, bytes: shardBytes, sha256: shardSha256 }],
+				shards: [{ ...baseManifest.shards[0], bytes: shardBytes, sha256: shardSha256 }],
 			}
 			await writeInitialIntent({
 				archiveDir,
@@ -760,7 +760,7 @@ describe("archive generation promotion", () => {
 			assertCatalogExact(archiveDir, "traces")
 			const lines = Str.split("\n")(Str.trim(readFileSync(catalogPath(archiveDir, "traces"), "utf8")))
 			strictEqual(lines.length, 1)
-			strictEqual((JSON.parse(lines[0]!) as { generationId: string }).generationId, seeded.generationId)
+			strictEqual((JSON.parse(lines[0]) as { generationId: string }).generationId, seeded.generationId)
 		})
 	})
 

@@ -152,24 +152,21 @@ export const dispatchVcsSyncBatch = Effect.fnUntraced(function* (
 })
 
 /** A message with no outcome is delivered again: an unknown outcome is never acked. */
-export const applyOutcome = (message: Message<unknown>, outcome: MessageOutcome | undefined) =>
+export const applyOutcome = (message: Message, outcome: MessageOutcome | undefined) =>
 	Effect.sync(() => {
 		if (outcome?.outcome === "ack") return message.ack()
 		if (outcome?.delaySeconds !== undefined) return message.retry({ delaySeconds: outcome.delaySeconds })
 		return message.retry()
 	})
 
-export const applyOutcomes = (
-	messages: ReadonlyArray<Message<unknown>>,
-	outcomes: ReadonlyArray<MessageOutcome>,
-) => {
+export const applyOutcomes = (messages: ReadonlyArray<Message>, outcomes: ReadonlyArray<MessageOutcome>) => {
 	const byId = new Map(Arr.map(outcomes, (outcome) => [outcome.id, outcome]))
 	return Effect.forEach(messages, (message) => applyOutcome(message, byId.get(message.id)), {
 		discard: true,
 	})
 }
 
-export const toPlacedMessage = (message: Message<unknown>): PlacedMessage => ({
+export const toPlacedMessage = (message: Message): PlacedMessage => ({
 	id: message.id,
 	body: message.body,
 	attempts: message.attempts,

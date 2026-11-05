@@ -108,7 +108,7 @@ export const fakeGithubHttp = (respond: (request: FakeGithubRequest) => Response
 export const scriptedHttp = (responders: ReadonlyArray<() => Response>) => {
 	let i = 0
 	return fakeGithubHttp(() => {
-		const make = responders[Math.min(i, responders.length - 1)]!
+		const make = responders[Math.min(i, responders.length - 1)]
 		i += 1
 		return make()
 	})

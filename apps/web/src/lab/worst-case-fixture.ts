@@ -209,7 +209,7 @@ export function legend(mode: WorstCaseMode): LegendFixture {
 	const series = Array.from({ length: count + 1 }, (_, i) => ({
 		key: `s${i + 1}`,
 		label: i === count ? (mode === "demo" ? "idle" : "service.name=, http.route=") : label(i),
-		color: COLORS[i % COLORS.length]!,
+		color: COLORS[i % COLORS.length],
 	}))
 	// The last series has no stats entry at all: what an all-null column computes to.
 	const stats = Rec.fromEntries(

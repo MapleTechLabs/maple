@@ -264,7 +264,7 @@ describe("transport", () => {
 			}),
 		)
 		expect(sent.map((part) => part.keepalive)).toEqual([true, false])
-		expect(sent[0]!.bytes).toBeLessThanOrEqual(8 * 1024)
+		expect(sent[0].bytes).toBeLessThanOrEqual(8 * 1024)
 		// SAFETY: each line is one of the rows above, serialized by the transport.
 		const seqs = sent.flatMap((part) =>
 			part.body

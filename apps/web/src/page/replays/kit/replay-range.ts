@@ -225,7 +225,7 @@ export const initialRanges = (
 	if (chunks.length === 0) return []
 	const seed = Option.getOrElse(
 		Arr.findFirst(chunks, (chunk) => chunk.is_checkpoint),
-		() => chunks[0]!,
+		() => chunks[0],
 	)
 	return rangesCovering(chunks, plan, seed.chunk_seq, INITIAL_WINDOW_BYTES)
 }
@@ -258,7 +258,7 @@ export const rangesCovering = (
 	const ranges: Array<ReplayRange> = []
 	let bytes = 0
 	for (let i = startIndex; i < plan.length; i++) {
-		const range = plan[i]!
+		const range = plan[i]
 		ranges.push(range)
 		bytes += bytesIn(range)
 		if (bytes >= byteBudget) break

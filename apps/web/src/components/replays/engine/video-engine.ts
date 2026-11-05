@@ -120,7 +120,7 @@ export function resolveSegment(
 ): SegmentPosition | undefined {
 	if (segments.length === 0) return undefined
 	for (let index = 0; index < segments.length; index++) {
-		const segment = segments[index]!
+		const segment = segments[index]
 		if (offsetMs < segment.startMs) return { index, offsetSec: 0 }
 		if (offsetMs < segment.startMs + segment.durationMs) {
 			return { index, offsetSec: (offsetMs - segment.startMs) / 1000 }
@@ -129,7 +129,7 @@ export function resolveSegment(
 	// Past the end of the recording — hold at the tail of the last segment so the
 	// engine reports "finished" rather than silently restarting.
 	const index = segments.length - 1
-	return { index, offsetSec: segments[index]!.durationMs / 1000 }
+	return { index, offsetSec: segments[index].durationMs / 1000 }
 }
 
 /** Decode base64 to an MP4 object URL. Mirrors the idiom in `lib/log-key.ts`. */
@@ -226,7 +226,7 @@ class VideoEngine implements ReplayEngine {
 	private urlFor(index: number): string {
 		const existing = this.urls.get(index)
 		if (existing !== undefined) return existing
-		const url = toObjectUrl(this.segments[index]!.base64)
+		const url = toObjectUrl(this.segments[index].base64)
 		this.urls.set(index, url)
 		return url
 	}

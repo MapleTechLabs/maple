@@ -222,7 +222,7 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 							.returning(),
 					),
 				)
-				return toDevice(rows[0]!)
+				return toDevice(rows[0])
 			})
 
 			const unregister = Effect.fn("MobileDevicesService.unregister")(function* (

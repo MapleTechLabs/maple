@@ -230,7 +230,7 @@ export function errorTextTokens(text: string): ReadonlyArray<ErrorTextToken> {
 	for (const match of matchAllIndexed(text, AT_PATH)) {
 		tokens.push(...outsideTokens(Str.slice(cursor, match.index)(text), emphasizeQuoted))
 		tokens.push({ kind: "at" })
-		const path = match[1]!
+		const path = match[1]
 		tokens.push({
 			kind: "path",
 			parts: Arr.map([...Str.matchAll(PATH_SEGMENT)(path)], (segment) =>
@@ -275,7 +275,7 @@ export function parseErrorPath(text: string): ErrorPath | undefined {
 	const matches = [...Str.matchAll(AT_PATH)(text)]
 	const last = matches[matches.length - 1]
 	if (last === undefined) return undefined
-	return Arr.map([...Str.matchAll(PATH_SEGMENT)(last[1]!)], (segment) => {
+	return Arr.map([...Str.matchAll(PATH_SEGMENT)(last[1])], (segment) => {
 		if (segment[2] !== undefined) return Number(segment[2])
 		const unescaped = parseJson(`"${segment[1]}"`)
 		return typeof unescaped === "string" ? unescaped : segment[1]
@@ -392,11 +392,11 @@ export function variantDifferences(texts: ReadonlyArray<string>): ReadonlyArray<
 	if (texts.length < 2) return Arr.map(texts, (text) => ({ before: "", middle: text, after: "" }))
 	const shortest = Math.min(...Arr.map(texts, (text) => text.length))
 	let start = 0
-	while (start < shortest && Arr.every(texts, (text) => text[start] === texts[0]![start])) start++
+	while (start < shortest && Arr.every(texts, (text) => text[start] === texts[0][start])) start++
 	let end = 0
 	while (
 		end < shortest - start &&
-		Arr.every(texts, (text) => text[text.length - 1 - end] === texts[0]![texts[0]!.length - 1 - end])
+		Arr.every(texts, (text) => text[text.length - 1 - end] === texts[0][texts[0].length - 1 - end])
 	) {
 		end++
 	}

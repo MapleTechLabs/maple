@@ -96,7 +96,7 @@ const localSandbox = (repo: string, seen: string[][] = []): Layer.Layer<Sandbox>
 								wallTime: Duration.millis(1),
 								stdoutBytes: Buffer.byteLength(stdout),
 								stderrBytes: 0,
-							}) as ConstructorParameters<typeof SandboxExited>[0]["resourceUse"],
+							}),
 							artifacts: [],
 						}),
 					])
@@ -346,7 +346,7 @@ const answering = (output: { readonly text: string; readonly bytes: number; read
 						wallTime: Duration.millis(1),
 						stdoutBytes: output.bytes,
 						stderrBytes: 0,
-					}) as ConstructorParameters<typeof SandboxExited>[0]["resourceUse"],
+					}),
 					artifacts: [],
 				}),
 			]),

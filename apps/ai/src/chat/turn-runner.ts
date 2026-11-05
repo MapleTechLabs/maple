@@ -340,7 +340,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	const prReviewId = prReviewForSession(input.sessionId)
 	const prReplyId = prReplyForSession(input.sessionId)
 
-	const turnBody = (orgKey: Option.Option<Redacted.Redacted<string>>) =>
+	const turnBody = (orgKey: Option.Option<Redacted.Redacted>) =>
 		Effect.gen(function* () {
 			const investigations = yield* InvestigationService
 			const reviews = yield* PrReviewService

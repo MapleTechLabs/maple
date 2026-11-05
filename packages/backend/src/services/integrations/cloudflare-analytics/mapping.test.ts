@@ -148,7 +148,7 @@ describe("mapHttpGroups", () => {
 		)
 		const origin = Arr.filter(gaugeRows, (row) => row.metric_name === METRIC_HTTP_ORIGIN_DURATION)
 		assert.strictEqual(origin.length, 3)
-		assert.strictEqual(origin[0]!.metric_unit, "ms")
+		assert.strictEqual(origin[0].metric_unit, "ms")
 	})
 
 	it('keeps the top-N hosts and folds the tail into "other"', () => {
@@ -345,7 +345,7 @@ describe("mapHttpDimensionGroups", () => {
 			],
 		})
 		assert.strictEqual(sumRows.length, 1)
-		const row = sumRows[0]!
+		const row = sumRows[0]
 		assert.strictEqual(row.metric_name, METRIC_HTTP_REQUESTS_BY_CLIENT)
 		assert.strictEqual(row.timestamp, BUCKET_TS)
 		assert.deepStrictEqual(row.metric_attributes, {
@@ -485,7 +485,7 @@ describe("mapFirewallGroups", () => {
 		})
 		assert.strictEqual(gaugeRows.length, 0)
 		assert.strictEqual(sumRows.length, 1)
-		const row = sumRows[0]!
+		const row = sumRows[0]
 		assert.strictEqual(row.metric_name, METRIC_FIREWALL_EVENTS)
 		assert.strictEqual(row.value, 20)
 		assert.strictEqual(row.service_name, "cloudflare/example.com")
@@ -558,8 +558,8 @@ describe("queue + durable object mappers", () => {
 				},
 			],
 		})
-		assert.strictEqual(consumers.gaugeRows[0]!.metric_name, METRIC_QUEUE_CONSUMER_CONCURRENCY)
-		assert.strictEqual(consumers.gaugeRows[0]!.value, 3)
+		assert.strictEqual(consumers.gaugeRows[0].metric_name, METRIC_QUEUE_CONSUMER_CONCURRENCY)
+		assert.strictEqual(consumers.gaugeRows[0].value, 3)
 	})
 
 	it("maps durable objects onto the implementing worker's service and normalizes wallTime µs→ms", () => {

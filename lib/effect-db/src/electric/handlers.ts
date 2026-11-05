@@ -23,7 +23,7 @@ export function convertInsertHandler<
 	TUtils extends UtilsRecord,
 	E = never,
 >(
-	handler: EffectInsertHandler<T, TKey, TUtils, E, never> | undefined,
+	handler: EffectInsertHandler<T, TKey, TUtils, E> | undefined,
 	runtime?: undefined,
 ): PromiseMutationHandler<InsertMutationFnParams<T, TKey, TUtils>> | undefined
 export function convertInsertHandler<
@@ -66,7 +66,7 @@ export function convertInsertHandler<
 			: await Effect.runPromiseExit(
 					// The overload without a runtime only accepts handlers whose requirements are `never`.
 					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- the overload without a runtime only accepts R = never
-					effect as Effect.Effect<{ txid: Txid | Array<Txid> }, InsertError, never>,
+					effect as Effect.Effect<{ txid: Txid | Array<Txid> }, InsertError>,
 				)
 
 		if (Exit.isFailure(exit)) {
@@ -102,7 +102,7 @@ export function convertUpdateHandler<
 	TUtils extends UtilsRecord,
 	E = never,
 >(
-	handler: EffectUpdateHandler<T, TKey, TUtils, E, never> | undefined,
+	handler: EffectUpdateHandler<T, TKey, TUtils, E> | undefined,
 	runtime?: undefined,
 ): PromiseMutationHandler<UpdateMutationFnParams<T, TKey, TUtils>> | undefined
 export function convertUpdateHandler<
@@ -145,7 +145,7 @@ export function convertUpdateHandler<
 			: await Effect.runPromiseExit(
 					// The overload without a runtime only accepts handlers whose requirements are `never`.
 					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- the overload without a runtime only accepts R = never
-					effect as Effect.Effect<{ txid: Txid | Array<Txid> }, UpdateError, never>,
+					effect as Effect.Effect<{ txid: Txid | Array<Txid> }, UpdateError>,
 				)
 
 		if (Exit.isFailure(exit)) {
@@ -181,7 +181,7 @@ export function convertDeleteHandler<
 	TUtils extends UtilsRecord,
 	E = never,
 >(
-	handler: EffectDeleteHandler<T, TKey, TUtils, E, never> | undefined,
+	handler: EffectDeleteHandler<T, TKey, TUtils, E> | undefined,
 	runtime?: undefined,
 ): PromiseMutationHandler<DeleteMutationFnParams<T, TKey, TUtils>> | undefined
 export function convertDeleteHandler<
@@ -224,7 +224,7 @@ export function convertDeleteHandler<
 			: await Effect.runPromiseExit(
 					// The overload without a runtime only accepts handlers whose requirements are `never`.
 					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- the overload without a runtime only accepts R = never
-					effect as Effect.Effect<{ txid: Txid | Array<Txid> }, DeleteError, never>,
+					effect as Effect.Effect<{ txid: Txid | Array<Txid> }, DeleteError>,
 				)
 
 		if (Exit.isFailure(exit)) {

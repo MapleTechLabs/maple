@@ -76,7 +76,7 @@ const statusCodeOf = (span: ExportedSpan | undefined): number | undefined =>
 		),
 	)
 
-const appLayer = (options: { readonly ensureConfigured?: Effect.Effect<void, never> } = {}) =>
+const appLayer = (options: { readonly ensureConfigured?: Effect.Effect<void> } = {}) =>
 	ElectricSyncRouter.pipe(
 		Layer.provide(
 			recordingElectricClient({
@@ -125,7 +125,7 @@ const event = (
 				input: new Request(`http://sync.maple.test${path}`, { headers }),
 			})
 		assert.isDefined(fetchEvent)
-		const response = yield* fetchEvent!.pipe(Effect.provide(services), Scope.provide(request))
+		const response = yield* fetchEvent.pipe(Effect.provide(services), Scope.provide(request))
 		const flushedBeforeClose = recorded.length
 		yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
 		yield* Scope.close(request, Exit.void)

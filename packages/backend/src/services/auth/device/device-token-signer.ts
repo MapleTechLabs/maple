@@ -66,7 +66,7 @@ const pemBody = (pem: string) =>
 
 export const makeDeviceTokenSigner = Effect.fn("makeDeviceTokenSigner")(function* (
 	issuer: string,
-	privateKeyPem: Redacted.Redacted<string>,
+	privateKeyPem: Redacted.Redacted,
 ) {
 	const failed = (message: string) => () => new DeviceTokenKeyError({ message })
 	const privateKey = yield* Effect.tryPromise({

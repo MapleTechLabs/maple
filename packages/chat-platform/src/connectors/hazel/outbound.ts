@@ -52,7 +52,7 @@ import {
 } from "./render"
 import { replaceWith } from "@maple/strings"
 
-const botToken = (config: ConnectorConfig): Redacted.Redacted<string> =>
+const botToken = (config: ConnectorConfig): Redacted.Redacted =>
 	Redacted.make(config.get(BOT_TOKEN_CONFIG) ?? "")
 
 /** Under the renderer's own clamp, so a connector's decoration has somewhere to go. */
@@ -210,7 +210,7 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 		const token = Effect.map(credentials, botToken)
 
 		const attempt = Effect.fn("Hazel.request", { kind: "client" })(function* (
-			bearer: Redacted.Redacted<string>,
+			bearer: Redacted.Redacted,
 			operation: ChatOutboundOperation,
 			route: string,
 			request: HttpClientRequest.HttpClientRequest,

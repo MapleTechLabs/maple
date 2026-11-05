@@ -101,7 +101,7 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 			// Every option takes a value; a missing one, or another option in its place, is a usage error.
 			if (value === undefined || Str.startsWith("--")(value)) {
 				console.error(
-					`${arg} needs a value\n${"usage: bun run security:local <repo-dir> [--ref <commit>] [--scope <path>]... [--profile quick|standard|deep] [--budget <n>] [--concurrency <n>] [--out <dir>] [--prior <run dir>]"}`,
+					`${arg} needs a value\nusage: bun run security:local <repo-dir> [--ref <commit>] [--scope <path>]... [--profile quick|standard|deep] [--budget <n>] [--concurrency <n>] [--out <dir>] [--prior <run dir>]`,
 				)
 				process.exit(2)
 			}

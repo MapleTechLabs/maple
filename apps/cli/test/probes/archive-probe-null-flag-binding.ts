@@ -41,7 +41,7 @@ const exportOnce = (db: ReturnType<typeof h.openDb>, suffix: string, noteExpr: s
 	})
 	rmSync(dir, { recursive: true, force: true })
 	if (written.length !== 1) h.fail(`expected 1 shard for ${suffix}, got ${written.length}`)
-	return written[0]!.complexDigest
+	return written[0].complexDigest
 }
 
 try {

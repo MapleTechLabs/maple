@@ -107,9 +107,7 @@ describe("hasSelectedPlan", () => {
 		])
 		const addOnCustomer = buildCustomer([buildSubscription({ addOn: true })])
 		const defaultCustomer = buildCustomer([buildSubscription({ autoEnable: true })])
-		const scheduledCustomer = buildCustomer([
-			buildSubscription({ status: "scheduled" as Subscription["status"] }),
-		])
+		const scheduledCustomer = buildCustomer([buildSubscription({ status: "scheduled" })])
 
 		expect(hasSelectedPlan(freeCustomer)).toBe(false)
 		expect(hasSelectedPlan(addOnCustomer)).toBe(false)

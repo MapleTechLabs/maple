@@ -65,7 +65,8 @@ export const makeEvalRuntime = (
 	)
 	// `as any`: the residual requirement set is satisfied at runtime (same pattern
 	// as apps/api/src/agent.ts buildSetup).
-	// oxlint-disable-next-line typescript/no-explicit-any
+	// The lint type checker reads `make(any)` as already `<any, never>`; tsc infers `<unknown, unknown>`.
+	// oxlint-disable-next-line typescript/no-explicit-any, typescript/no-unnecessary-type-assertion
 	const runtime = ManagedRuntime.make(layer as any) as ManagedRuntime.ManagedRuntime<any, never>
 
 	return {

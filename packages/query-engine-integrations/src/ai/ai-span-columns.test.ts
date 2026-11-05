@@ -34,11 +34,11 @@ const key = (column: string) => `if(${column} = '', 0, bitShiftRight(cityHash64(
 
 describe("session usage SQL", () => {
 	const trace = traceUsageColumns({
-		SpanId: CH.dynamicColumn<string>("SpanId", T.string),
-		ParentSpanId: CH.dynamicColumn<string>("ParentSpanId", T.string),
+		SpanId: CH.dynamicColumn("SpanId", T.string),
+		ParentSpanId: CH.dynamicColumn("ParentSpanId", T.string),
 		Tokens: CH.dynamicColumn<number>("Tokens", T.float64),
 		Cost: CH.dynamicColumn<number>("Cost", T.float64),
-		ResponseId: CH.dynamicColumn<string>("ResponseId", T.string),
+		ResponseId: CH.dynamicColumn("ResponseId", T.string),
 		IsLlmCall: CH.dynamicColumn<number>("IsLlmCall", T.uint8),
 		InputTokens: CH.dynamicColumn<number>("InputTokens", T.float64),
 		CacheReadTokens: CH.dynamicColumn<number>("CacheReadTokens", T.float64),

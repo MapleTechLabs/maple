@@ -161,7 +161,7 @@ describe("Maple.Telemetry at runtime", () => {
 			}
 			const event = yield* Scope.make()
 			const services = yield* Layer.buildWithScope(
-				context.telemetry!.pipe(
+				context.telemetry.pipe(
 					Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env)),
 				),
 				event,

@@ -605,7 +605,7 @@ describe("infra rows decode timestamps to DateTime.Utc", () => {
 					load15: 1,
 				},
 			])
-			expect(DateTime.formatIso(row!.lastSeen)).toBe("2024-01-01T10:00:00.123Z")
+			expect(DateTime.formatIso(row.lastSeen)).toBe("2024-01-01T10:00:00.123Z")
 		}),
 	)
 
@@ -618,7 +618,7 @@ describe("infra rows decode timestamps to DateTime.Utc", () => {
 			const [row] = yield* compiled.decodeRows([
 				{ bucket: "2024-01-01 10:00:00.000000000", attributeValue: "", avgValue: 1 },
 			])
-			expect(DateTime.toEpochMillis(row!.bucket)).toBe(Date.UTC(2024, 0, 1, 10))
+			expect(DateTime.toEpochMillis(row.bucket)).toBe(Date.UTC(2024, 0, 1, 10))
 		}),
 	)
 })

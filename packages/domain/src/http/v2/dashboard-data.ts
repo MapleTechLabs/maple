@@ -103,7 +103,7 @@ const snakeCasedWire = <S extends Schema.Top>(schema: S) =>
 			decode: SchemaGetter.transform((value) => {
 				const mapped = mapJsonKeys(value, toCamelKey)
 				// SAFETY: Every schema passed below decodes the same object after its wire keys are camel-cased.
-				return mapped as S["Encoded"]
+				return mapped
 			}),
 			encode: SchemaGetter.transform((value) => {
 				const mapped = mapJsonKeys(value, toSnakeKey)

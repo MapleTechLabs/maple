@@ -133,7 +133,7 @@ const asObjectArray = (value: JsonValue | undefined): ReadonlyArray<JsonObject> 
 	const entries = asArray(value)
 	if (entries === undefined) return undefined
 	const objects = entries.map(asObject)
-	return objects.every((entry) => entry !== undefined) ? (objects as ReadonlyArray<JsonObject>) : undefined
+	return objects.every((entry) => entry !== undefined) ? objects : undefined
 }
 
 const asString = (value: JsonValue | undefined): string | undefined =>
@@ -142,9 +142,7 @@ const asString = (value: JsonValue | undefined): string | undefined =>
 const asStringArray = (value: JsonValue | undefined): ReadonlyArray<string> | undefined => {
 	const entries = asArray(value)
 	if (entries === undefined) return undefined
-	return entries.every((entry) => typeof entry === "string")
-		? (entries as ReadonlyArray<string>)
-		: undefined
+	return entries.every((entry) => typeof entry === "string") ? entries : undefined
 }
 
 const HTTP_METHODS = ["get", "put", "post", "delete", "options", "head", "patch", "trace"] as const
@@ -549,7 +547,7 @@ function flattenedConstraintAllOf(schema: JsonObject): JsonObject | undefined {
 function singleBranchUnion(schema: JsonObject): JsonObject | undefined {
 	const branches = asObjectArray(schema.anyOf)
 	if (branches === undefined || branches.length !== 1) return undefined
-	return mergeAnnotations(schema, branches[0]!)
+	return mergeAnnotations(schema, branches[0])
 }
 
 /** Fold a wrapper's sibling annotations (title, description) onto its inner schema. */

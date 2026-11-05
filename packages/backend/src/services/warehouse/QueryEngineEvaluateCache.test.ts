@@ -71,17 +71,16 @@ const COUNT_ROWS = [
 	traceRow({ bucket: "2026-01-01 00:10:00", count: 5 }),
 ]
 
-const countRequest = (reducer: QueryEngineEvaluateRequest["reducer"]): AlertEvaluateRequest =>
-	({
-		startTime: "2026-01-01 00:00:00",
-		endTime: "2026-01-01 00:15:00",
-		source: {
-			kind: "spec",
-			query: { kind: "timeseries", source: "traces", metric: "count", bucketSeconds: 300 },
-		},
-		reducer,
-		sampleCountStrategy: "trace_count",
-	}) as AlertEvaluateRequest
+const countRequest = (reducer: QueryEngineEvaluateRequest["reducer"]): AlertEvaluateRequest => ({
+	startTime: "2026-01-01 00:00:00",
+	endTime: "2026-01-01 00:15:00",
+	source: {
+		kind: "spec",
+		query: { kind: "timeseries", source: "traces", metric: "count", bucketSeconds: 300 },
+	},
+	reducer,
+	sampleCountStrategy: "trace_count",
+})
 
 const evalStub = (rows: ReadonlyArray<Record<string, unknown>>) =>
 	({
@@ -120,7 +119,7 @@ describe("makeQueryEngineEvaluate (shared alert-lowering core)", () => {
 			const result = yield* makeQueryEngineEvaluate(evalStub(rows))(tenant, {
 				...req,
 				source: { kind: "spec", query: { ...req.source.query, groupBy: ["service"] } },
-			} as AlertEvaluateRequest)
+			})
 			assert.deepStrictEqual(result, [
 				{ groupKey: "a", value: 6, sampleCount: 6, hasData: true },
 				{ groupKey: "b", value: 3, sampleCount: 3, hasData: true },
@@ -167,7 +166,7 @@ describe("makeQueryEngineEvaluateSeries (per-bucket preview core)", () => {
 			const series = yield* makeQueryEngineEvaluateSeries(evalStub(rows))(tenant, {
 				...req,
 				source: { kind: "spec", query: { ...req.source.query, groupBy: ["service"] } },
-			} as AlertEvaluateRequest)
+			})
 			assert.deepStrictEqual(series, [
 				{ bucket: "2026-01-01T00:00:00.000Z", groupKey: "a", value: 2, sampleCount: 2 },
 				{ bucket: "2026-01-01T00:00:00.000Z", groupKey: "b", value: 3, sampleCount: 3 },

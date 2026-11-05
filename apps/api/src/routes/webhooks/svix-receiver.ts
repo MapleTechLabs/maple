@@ -24,7 +24,7 @@ const textResponse = (body: string, status: number) => HttpServerResponse.text(b
 
 export const receiveSvixWebhook = (options: {
 	readonly provider: "clerk" | "autumn"
-	readonly secret: Option.Option<Redacted.Redacted<string>>
+	readonly secret: Option.Option<Redacted.Redacted>
 	readonly request: HttpServerRequest.HttpServerRequest
 }): Effect.Effect<SvixReceiveOutcome> =>
 	Effect.gen(function* () {

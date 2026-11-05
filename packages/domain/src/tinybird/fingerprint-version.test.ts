@@ -87,7 +87,7 @@ const digest = digestOf((event) => computeFingerprintInputs(event).hashInputs)
 
 describe("FINGERPRINT_VERSION", () => {
 	it("is bumped whenever the hash inputs move", () => {
-		const latest = HISTORY[HISTORY.length - 1]!
+		const latest = HISTORY[HISTORY.length - 1]
 		expect(
 			{ version: FINGERPRINT_VERSION, digest },
 			"The fingerprint hash inputs changed. Bump FINGERPRINT_VERSION (a bump re-keys issues, it does not lose them), then append the new version and the digest shown below to HISTORY.",

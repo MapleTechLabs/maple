@@ -693,7 +693,7 @@ const chatPreview = (nowMs: number, range: { start: number; end: number }): Aler
 }
 
 const chatInvestigation = (nowMs: number): V2Investigation => {
-	const base = VERDICT_LAB_CASES[0]!.investigation
+	const base = VERDICT_LAB_CASES[0].investigation
 	const opened = nowMs - 23 * MIN
 	const iso = (ms: number) => new Date(ms).toISOString()
 	return decodeInvestigation({
@@ -762,10 +762,10 @@ export function buildAlertsLabFixture(nowMs: number): AlertsLabFixture {
 		now: nowMs,
 	})
 
-	const chatRule = ruleById.get(RULE.errorRate) ?? rules[0]!
+	const chatRule = ruleById.get(RULE.errorRate) ?? rules[0]
 	const chat = Option.getOrElse(
 		Arr.findFirst(incidents, (incident) => incident.id === INCIDENT.chat),
-		() => incidents[0]!,
+		() => incidents[0],
 	)
 	const opened = Date.parse(chat.firstTriggeredAt)
 	const range = { start: opened - 30 * MIN, end: nowMs }

@@ -61,8 +61,8 @@ export interface TelemetryProps extends TelemetrySdkOptions {
 	 */
 	readonly ingestKey?:
 		| ResourceInput<IngestKeys>
-		| Redacted.Redacted<string>
-		| Output.Output<Redacted.Redacted<string>>
+		| Redacted.Redacted
+		| Output.Output<Redacted.Redacted>
 		| undefined
 	/** Bound as `MAPLE_ENDPOINT`. Default: the SDK's, `https://ingest.maple.dev`. */
 	readonly endpoint?: string | Output.Output<string> | undefined
@@ -72,7 +72,7 @@ export interface TelemetryProps extends TelemetrySdkOptions {
 
 const ingestKeyOutput = (
 	ingestKey: NonNullable<TelemetryProps["ingestKey"]>,
-): Effect.Effect<Output.Output<Redacted.Redacted<string>>, never, unknown> =>
+): Effect.Effect<Output.Output<Redacted.Redacted>, never, unknown> =>
 	Effect.gen(function* () {
 		if (Output.isOutput(ingestKey) || Redacted.isRedacted(ingestKey)) return Output.asOutput(ingestKey)
 		// Declarations are yielded to instances (registering them on the Stack

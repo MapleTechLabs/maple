@@ -182,7 +182,7 @@ describe("ScrapeTargetsService", () => {
 			assert.include(refused.message, `${MAX_SCRAPE_TARGETS_PER_ORG} scrape targets`)
 
 			yield* create("org_other", "node")
-			yield* service.delete(asOrgId("org_full"), full[0]!.id)
+			yield* service.delete(asOrgId("org_full"), full[0].id)
 			yield* create("org_full", "replacement")
 
 			// Integration-owned rows are bounded by their integration: not counted, not refused.
@@ -190,7 +190,7 @@ describe("ScrapeTargetsService", () => {
 				executeSql(
 					testDb,
 					"UPDATE scrape_targets SET managed_by = 'planetscale:conn_1' WHERE id = $1",
-					[full[1]!.id],
+					[full[1].id],
 				),
 			)
 			yield* create("org_full", "after-managed")
@@ -355,14 +355,14 @@ describe("ScrapeTargetsService", () => {
 
 			yield* service.recordScrapeResults([{ targetId: api.id, scrapedAt: 1750000000000, error: null }])
 			const healthy = yield* readSource()
-			assert.isNotNull(healthy!.last_poll_ok_at)
-			assert.isNull(healthy!.last_poll_error)
-			assert.isNull(healthy!.poll_resources)
+			assert.isNotNull(healthy.last_poll_ok_at)
+			assert.isNull(healthy.last_poll_error)
+			assert.isNull(healthy.poll_resources)
 
 			yield* service.recordScrapeResults([
 				{ targetId: api.id, scrapedAt: 1750000015000, error: "HTTP 503" },
 			])
-			assert.strictEqual((yield* readSource())!.last_poll_error, "HTTP 503")
+			assert.strictEqual((yield* readSource()).last_poll_error, "HTTP 503")
 
 			// Two targets on one source: the failure names its target and counts it unhealthy.
 			yield* Effect.promise(() =>
@@ -376,15 +376,15 @@ describe("ScrapeTargetsService", () => {
 				{ targetId: worker.id, scrapedAt: 1750000030000, error: "HTTP 401" },
 			])
 			const shared = yield* readSource()
-			assert.strictEqual(shared!.last_poll_error, "worker: HTTP 401")
-			assert.deepStrictEqual(shared!.poll_resources, { total: 2, unhealthy: 1 })
+			assert.strictEqual(shared.last_poll_error, "worker: HTTP 401")
+			assert.deepStrictEqual(shared.poll_resources, { total: 2, unhealthy: 1 })
 
 			yield* service.recordScrapeResults([
 				{ targetId: worker.id, scrapedAt: 1750000045000, error: null },
 			])
 			const recovered = yield* readSource()
-			assert.isNull(recovered!.last_poll_error)
-			assert.deepStrictEqual(recovered!.poll_resources, { total: 2, unhealthy: 0 })
+			assert.isNull(recovered.last_poll_error)
+			assert.deepStrictEqual(recovered.poll_resources, { total: 2, unhealthy: 0 })
 
 			// A PlanetScale connection's target leaves its source to the connection's own poller.
 			yield* Effect.promise(() =>
@@ -396,7 +396,7 @@ describe("ScrapeTargetsService", () => {
 			yield* service.recordScrapeResults([
 				{ targetId: worker.id, scrapedAt: 1750000200000, error: "HTTP 500" },
 			])
-			assert.isNull((yield* readSource())!.last_poll_error)
+			assert.isNull((yield* readSource()).last_poll_error)
 
 			// A probe of a switched-off target says nothing about its source.
 			yield* Effect.promise(() =>

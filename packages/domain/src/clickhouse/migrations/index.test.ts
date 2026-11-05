@@ -115,7 +115,7 @@ describe("ClickHouse migrations", () => {
 
 	it("orders 0015 so the backfill and the MV never both write", () => {
 		const kinds = Arr.map(migration_0015_service_overview_minutely.statements, (stmt) =>
-			isBackfill(stmt) ? "backfill" : Str.trim(Str.split("\n")(stmt)[0]!),
+			isBackfill(stmt) ? "backfill" : Str.trim(Str.split("\n")(stmt)[0]),
 		)
 
 		const dropIndex = indexWhere(kinds, (kind) => Str.startsWith("DROP VIEW")(kind))

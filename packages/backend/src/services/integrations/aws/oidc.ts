@@ -24,10 +24,7 @@ export interface AwsOidcSigner {
 	readonly issuer: string
 	readonly jwk: AwsOidcJwk
 	/** A token for `subject`, valid from `nowMs` for five minutes. */
-	readonly mint: (
-		subject: string,
-		nowMs: number,
-	) => Effect.Effect<Redacted.Redacted<string>, AwsOidcKeyError>
+	readonly mint: (subject: string, nowMs: number) => Effect.Effect<Redacted.Redacted, AwsOidcKeyError>
 }
 
 const base64url = (bytes: ArrayBuffer | Uint8Array) =>
@@ -52,7 +49,7 @@ export const awsOidcDiscovery = (issuer: string) => ({
 /** The signer for a PKCS#8 PEM RSA key. Its `kid` is the key's RFC 7638 thumbprint. */
 export const makeAwsOidcSigner = Effect.fn("makeAwsOidcSigner")(function* (
 	issuer: string,
-	privateKeyPem: Redacted.Redacted<string>,
+	privateKeyPem: Redacted.Redacted,
 ) {
 	const failed = (message: string) => (cause: unknown) => new AwsOidcKeyError({ message, cause })
 	const key = yield* Effect.tryPromise({

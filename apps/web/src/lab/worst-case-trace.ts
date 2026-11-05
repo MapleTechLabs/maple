@@ -46,7 +46,7 @@ const RUNTIMES = new Map<string, Record<string, string>>([
 /** A single parent chain, `depth` spans deep, so indentation is the only thing that grows. */
 function chain(depth: number, worst: boolean): SpanHierarchyRow[] {
 	return Array.from({ length: depth }, (_, i) => {
-		const serviceName = worst ? SERVICES[i % SERVICES.length]! : "api"
+		const serviceName = worst ? SERVICES[i % SERVICES.length] : "api"
 		return row({
 			spanId: `d${i}`,
 			parentSpanId: i === 0 ? "" : `d${i - 1}`,

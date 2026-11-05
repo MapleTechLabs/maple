@@ -53,8 +53,8 @@ const routedHttp = (resolvable: (repoName: string, sha: string) => boolean) => {
 			const match = commitMatch.value
 			calls.commitGets += 1
 			const [, repoName, sha] = match
-			return resolvable(repoName!, Str.toLowerCase(sha!))
-				? jsonResponse(commitBody(Str.toLowerCase(sha!)))
+			return resolvable(repoName, Str.toLowerCase(sha))
+				? jsonResponse(commitBody(Str.toLowerCase(sha)))
 				: jsonResponse({ message: "No commit found for SHA" }, { status: 404 })
 		}
 		return jsonResponse({ message: `unexpected ${method} ${url}` }, { status: 500 })
@@ -310,7 +310,7 @@ describe("VcsCommitService.resolveCommitDetails", () => {
 				Arr.sort(SHAS, Order.String),
 			)
 			assert.ok(Arr.every(details, (d) => d.resolved === "stored"))
-			assert.strictEqual(details[0]!.repoFullName, "octo/repo")
+			assert.strictEqual(details[0].repoFullName, "octo/repo")
 			// The whole batch must be two reads, not one per SHA.
 			assert.strictEqual(calls.commitGets, 0)
 		}).pipe(Effect.provide(commitLayer(testDb, layer)))
@@ -409,20 +409,20 @@ describe("VcsCommitService.resolveCommitRanges", () => {
 			const [wide, narrow] = yield* svc.resolveCommitRanges(
 				orgId,
 				[
-					{ base: SHAS[0]!, head: SHAS[4]! },
-					{ base: SHAS[2]!, head: SHAS[3]! },
+					{ base: SHAS[0], head: SHAS[4] },
+					{ base: SHAS[2], head: SHAS[3] },
 				],
 				{ limit: 2 },
 			)
-			assert.strictEqual(wide!.status, "resolved")
-			assert.strictEqual(wide!.totalCount, 4)
+			assert.strictEqual(wide.status, "resolved")
+			assert.strictEqual(wide.totalCount, 4)
 			assert.deepStrictEqual(
-				Arr.map(wide!.commits, (c) => c.sha),
+				Arr.map(wide.commits, (c) => c.sha),
 				[SHAS[4], SHAS[3]],
 			)
-			assert.strictEqual(wide!.repoFullName, "octo/repo")
-			assert.strictEqual(narrow!.totalCount, 1)
-			assert.strictEqual(narrow!.commits[0]!.sha, SHAS[3])
+			assert.strictEqual(wide.repoFullName, "octo/repo")
+			assert.strictEqual(narrow.totalCount, 1)
+			assert.strictEqual(narrow.commits[0].sha, SHAS[3])
 			assert.strictEqual(calls.commitGets, 0)
 		}).pipe(Effect.provide(commitLayer(testDb, layer)))
 	})
@@ -439,9 +439,9 @@ describe("VcsCommitService.resolveCommitRanges", () => {
 			const results = yield* svc.resolveCommitRanges(
 				orgId,
 				[
-					{ base: Str.repeat(40)("f"), head: SHAS[4]! },
-					{ base: SHAS[4]!, head: SHAS[0]! },
-					{ base: "v1.2.0", head: SHAS[1]! },
+					{ base: Str.repeat(40)("f"), head: SHAS[4] },
+					{ base: SHAS[4], head: SHAS[0] },
+					{ base: "v1.2.0", head: SHAS[1] },
 				],
 				{ limit: 10 },
 			)

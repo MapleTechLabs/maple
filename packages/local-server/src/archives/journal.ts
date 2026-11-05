@@ -841,7 +841,7 @@ export const inspectActiveOperation = (
 			reason: `${ids.length} active operations are ambiguous; manual inspection required`,
 		}
 	}
-	const operationId = ids[0]!
+	const operationId = ids[0]
 	const dir = operationDir(archiveDir, operationId)
 	const path = intentPath(archiveDir, operationId)
 	if (!existsSync(path)) {
