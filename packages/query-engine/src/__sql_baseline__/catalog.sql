@@ -9847,10 +9847,10 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- builder:user-activity:userIssueTotalsQuery:default  [8ffd458c]
+-- builder:user-activity:userIssueTotalsQuery:default  [c1cef9d7]
 SELECT
           count() AS hits,
-          uniqExact(error_events_by_time.FingerprintHash) AS fingerprints
+          uniqExact(error_events_by_time.FingerprintHash) AS errorGroups
         FROM error_events_by_time
         WHERE error_events_by_time.OrgId = 'org_sql_catalog'
           AND error_events_by_time.Timestamp >= '2026-01-01 10:30:00'
