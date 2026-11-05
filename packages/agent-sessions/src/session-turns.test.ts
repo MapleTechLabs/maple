@@ -19,7 +19,7 @@ import {
 	spanFailed,
 	spanTtftMs,
 } from "./session-turns"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 const SECOND = 1000
 
@@ -780,7 +780,7 @@ describe("turn labels", () => {
 
 		const long = labelFor([{ role: "user", content: Str.repeat(500)("x") }])
 		expect(long).toHaveLength(80)
-		expect(long?.endsWith("…")).toBe(true)
+		expect(long !== undefined && Str.endsWith("…")(long)).toBe(true)
 	})
 
 	// smolagents sends every task as "New task:\n<task>", so every turn and the
@@ -902,7 +902,9 @@ describe("buildSessionTurns — concurrent conversation ids", () => {
 
 		for (const index of [0, 1, 2, 3]) {
 			const lane = `hypothesis-${index}`
-			const turn = turns.find((candidate) => candidate.id === `conversation:inv_1_${lane}`)!
+			const turn = Option.getOrThrow(
+				Arr.findFirst(turns, (candidate) => candidate.id === `conversation:inv_1_${lane}`),
+			)
 			expect(Arr.map(turn.spans, (span) => span.spanId)).toEqual([
 				`${lane}-agent`,
 				`${lane}-chat-1`,

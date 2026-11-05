@@ -170,7 +170,9 @@ interface Person {
 const MENTION = /@\[userId:([0-9a-f-]{36})\]/gu
 
 const mentionedIds = (text: string): ReadonlyArray<string> =>
-	Arr.flatMap(Array.from(text.matchAll(MENTION)), (match) => (match[1] === undefined ? [] : [match[1]]))
+	Arr.flatMap(Array.from(Str.matchAll(MENTION)(text)), (match) =>
+		match[1] === undefined ? [] : [match[1]],
+	)
 
 /**
  * A conversation's key: the channel (or thread) id without its dashes, which the key's charset
@@ -630,7 +632,7 @@ const retryAfter = (response: HttpClientResponse.HttpClientResponse) =>
  * is the default rather than zero, which would retry at once into the same limit.
  */
 export const headerRetryAfter = (value: string | undefined, now: number): Duration.Duration => {
-	const trimmed = value?.trim() ?? ""
+	const trimmed = value === undefined ? "" : Str.trim(value)
 	if (trimmed === "") return DEFAULT_RETRY_AFTER
 	if (/^\d+$/u.test(trimmed)) return Duration.seconds(Number(trimmed))
 	const at = Date.parse(trimmed)

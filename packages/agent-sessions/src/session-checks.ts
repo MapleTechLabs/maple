@@ -36,7 +36,7 @@ import {
 	type SessionTurn,
 	type TurnAnchorKind,
 } from "./session-turns"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /** Below this share of the prompt served from cache, across the calls after
  *  the first, the prefix is not being reused. */
@@ -190,8 +190,11 @@ function reportHeadline(
 ): string {
 	const word = turns[0]?.anchorKind === "trace" ? "segment" : "turn"
 	if (report.verdict.status === "failed") {
-		const cause = report.findings.find((finding) => finding.terminal)
-		return `the final ${word} ${cause === undefined ? "did not close cleanly" : causeText(cause)}`
+		const cause = Arr.findFirst(report.findings, (finding) => finding.terminal)
+		return `the final ${word} ${Option.match(cause, {
+			onNone: () => "did not close cleanly",
+			onSome: causeText,
+		})}`
 	}
 	// A fan-out whose sub-agents failed has not completed the way its verdict word
 	// suggests: the runs that did the work are what the headline names.
@@ -372,8 +375,10 @@ function contextWindowCheck(
 		// after it recovered. The row links the deepest span; the group's own
 		// time is its first member's, which may be a wrapper that started
 		// before that call.
-		const overflow = llmCalls.find((span) => span.spanId === found.spanId)
-		const untilMs = overflow === undefined ? found.atMs : spanStartMs(overflow)
+		const untilMs = Option.match(
+			Arr.findFirst(llmCalls, (span) => span.spanId === found.spanId),
+			{ onNone: () => found.atMs, onSome: spanStartMs },
+		)
 		const sizes = promptSizes(Arr.filter(llmCalls, (span) => spanStartMs(span) <= untilMs))
 		const first = sizes[0]
 		const last = sizes[sizes.length - 1]
@@ -485,7 +490,10 @@ function replyLengthCheck(
 	const found = findings[0]
 	if (found !== undefined) {
 		const n = total(findings)
-		const limit = llmCalls.find((span) => span.spanId === found.spanId)?.genAi.requestMaxTokens
+		const limit = Arr.findFirst(llmCalls, (span) => span.spanId === found.spanId).pipe(
+			Option.map((span) => span.genAi.requestMaxTokens),
+			Option.getOrUndefined,
+		)
 		return check(
 			identity,
 			foundStatus(findings),

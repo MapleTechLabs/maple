@@ -981,7 +981,12 @@ function markParallelTurns(entries: readonly TurnRows[]): ReadonlyMap<string, Tr
 	const marked = new Map<string, TranscriptRow | undefined>()
 	for (const cluster of clusterByOverlap(items)) {
 		for (const item of cluster.members) marked.set(item.entry.turn.id, undefined)
-		const first = cluster.members.reduce((a, b) => (a.order <= b.order ? a : b))
+		if (!Arr.isReadonlyArrayNonEmpty(cluster.members)) continue
+		const first = Arr.reduce(
+			Arr.tailNonEmpty(cluster.members),
+			Arr.headNonEmpty(cluster.members),
+			(a, b) => (a.order <= b.order ? a : b),
+		)
 		marked.set(first.entry.turn.id, {
 			kind: "parallel-turns",
 			key: `${first.ref.key}:parallel-turns`,
@@ -1494,7 +1499,12 @@ function rowText(row: TranscriptRow): string | undefined {
 		case "thinking":
 			return row.text
 		case "tool":
-			return [row.toolName, row.args?.text, row.result?.text].filter(Boolean).join("\n")
+			return Arr.join(
+				Arr.filter([row.toolName, row.args?.text, row.result?.text], (part): part is string =>
+					Boolean(part),
+				),
+				"\n",
+			)
 		case "structure":
 			return row.label
 		default:
