@@ -102,9 +102,11 @@ const step = <A, E>(outcome: Outcome<A, E>, next: Entries): readonly [Outcome<A,
 	next,
 ]
 
-const makeRead =
-	(entries: EntriesRef, scope: Scope.Scope) =>
-	<S extends Schema.Top, E, R>(spec: ReadSpec<S>, load: Effect.Effect<S["Type"], E, R>) =>
+const makeRead = (entries: EntriesRef, scope: Scope.Scope) => {
+	const read = <S extends Schema.Top, E, R>(
+		spec: ReadSpec<S>,
+		load: Effect.Effect<S["Type"], E, R>,
+	): Effect.Effect<S["Type"], E, R> =>
 		Effect.flatMap(Clock.currentTimeMillis, (nowMs) =>
 			SynchronizedRef.modifyEffect(entries, (current) =>
 				Effect.gen(function* () {
@@ -134,12 +136,17 @@ const makeRead =
 				outcome._tag === "Owner"
 					? Fiber.join(outcome.fiber)
 					: Effect.flatMap(Deferred.await(outcome.result), (answer) =>
-							Option.isSome(answer) && Schema.is(spec.schema)(answer.value)
-								? Effect.succeed(answer.value)
-								: load,
+							// A failed read is gone from the cache, so joiners retry through it and share one load.
+							Option.isNone(answer)
+								? read({ ...spec, refresh: false }, load)
+								: Schema.is(spec.schema)(answer.value)
+									? Effect.succeed(answer.value)
+									: load,
 						),
 			),
 		)
+	return read
+}
 
 const makeRelease = (entries: EntriesRef) => (keys: ReadonlyArray<RequestKey>) =>
 	Effect.flatMap(Clock.currentTimeMillis, (nowMs) =>
