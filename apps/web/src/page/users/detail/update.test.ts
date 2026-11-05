@@ -1,0 +1,227 @@
+import { Array as Arr, Option, Result, Schema } from "effect"
+import { AsyncData } from "foldkit"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import { fromString } from "foldkit/url"
+import { describe, expect, it } from "vitest"
+import { ErrorIssueId, OrgId } from "@maple/domain/http"
+import { AppRoute, urlToAppRoute } from "../../../route"
+import type { PageContext } from "../../contract"
+import { activeNamespace, detailInputs } from "./command"
+import { activityHref } from "./data-map"
+import { Message } from "./message"
+import { init, routeChanged, tabOf, update, userDetailHref } from "./update"
+
+const context: PageContext = {
+	orgId: Schema.decodeSync(OrgId)("org_test"),
+	pinnedNamespace: null,
+	timeZone: "UTC",
+}
+const pinned: PageContext = { ...context, pinnedNamespace: "storefront" }
+
+const parse = (path: string) => urlToAppRoute(Option.getOrThrow(fromString(`http://maple.test${path}`)))
+
+const window = { startTime: "2026-11-01 00:00:00", endTime: "2026-11-02 00:00:00" }
+
+/** Where a step navigates, or undefined when it stays put. */
+const navigatedTo = (step: ReturnType<typeof update>): string | undefined =>
+	step.outMessage?._tag === "RequestedNavigation" ? step.outMessage.url : undefined
+
+const page = (search: Parameters<typeof AppRoute.UserDetail>[0]["search"], ctx = context) =>
+	init({ userId: "user/42 ada", search }, ctx).model
+
+describe("the user page URL", () => {
+	it("round-trips an id that needs encoding, the tab and the namespace", () => {
+		const href = userDetailHref("user/42 ada", { tab: "mcp", namespace: "storefront" })
+		expect(href).toBe("/users/user/42%20ada?tab=mcp&namespace=storefront")
+		expect(parse(href)).toEqual(
+			AppRoute.UserDetail({ userId: "user/42 ada", search: { tab: "mcp", namespace: "storefront" } }),
+		)
+	})
+
+	it("leaves the default Activity tab out of the URL", () => {
+		expect(userDetailHref("u1", { tab: "activity" })).toBe("/users/u1")
+		expect(tabOf({})).toBe("activity")
+	})
+
+	it("is not the directory's route", () => {
+		expect(parse("/users")._tag).toBe("Users")
+	})
+})
+
+describe("tabs and namespaces", () => {
+	it("puts a clicked tab in the URL, keeping the window and namespace", () => {
+		const model = page({ timePreset: "24h", namespace: "storefront" })
+		expect(navigatedTo(update(model, Message.ClickedTab({ tab: "sessions" }), context))).toBe(
+			"/users/user/42%20ada?tab=sessions&namespace=storefront&timePreset=24h",
+		)
+	})
+
+	it("puts a picked namespace in the URL, and drops it to show every namespace", () => {
+		const model = page({ tab: "events" })
+		expect(navigatedTo(update(model, Message.ClickedNamespace({ namespace: "checkout" }), context))).toBe(
+			"/users/user/42%20ada?tab=events&namespace=checkout",
+		)
+		const scoped = page({ namespace: "checkout" })
+		expect(navigatedTo(update(scoped, Message.ClickedNamespace({ namespace: null }), context))).toBe(
+			"/users/user/42%20ada",
+		)
+	})
+
+	it("ignores a namespace pick while the org pin is on", () => {
+		const model = page({}, pinned)
+		expect(
+			update(model, Message.ClickedNamespace({ namespace: "checkout" }), pinned).outMessage,
+		).toBeUndefined()
+	})
+
+	it("scopes both reads to the org pin over the page's pick", () => {
+		expect(detailInputs("u1", { namespace: "checkout" }, window, null).namespaces).toEqual(["checkout"])
+		expect(detailInputs("u1", { namespace: "checkout" }, window, "storefront").namespaces).toEqual([
+			"storefront",
+		])
+		expect(detailInputs("u1", {}, window, null).namespaces).toEqual([])
+	})
+
+	it("starts no read when only the tab changes", () => {
+		const loaded = update(
+			page({}),
+			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
+			context,
+		).model
+		const step = routeChanged(loaded, { userId: "user/42 ada", search: { tab: "mcp" } }, context)
+		expect(step.model.search.tab).toBe("mcp")
+		expect(step.commands ?? []).toEqual([])
+	})
+
+	it("reads the user's requests only once the Traces tab opens, and logs only on Logs", () => {
+		const loaded = update(
+			page({}),
+			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
+			context,
+		)
+		const names = (step: ReturnType<typeof update>) =>
+			Arr.map(step.commands ?? [], (command) => command.name)
+		expect(names(loaded)).not.toContain("FetchUserTraces")
+		const traces = routeChanged(
+			loaded.model,
+			{ userId: "user/42 ada", search: { tab: "traces" } },
+			context,
+		)
+		expect(names(traces)).toEqual(["FetchUserTraces"])
+		const logs = routeChanged(traces.model, { userId: "user/42 ada", search: { tab: "logs" } }, context)
+		expect(names(logs)).toEqual(["FetchUserLogs"])
+		const back = routeChanged(logs.model, { userId: "user/42 ada", search: { tab: "traces" } }, context)
+		expect(names(back)).toEqual([])
+	})
+
+	it("reads the user's issues with the overview, and nothing more when the Errors tab opens", () => {
+		const loaded = update(
+			page({}),
+			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
+			context,
+		)
+		const errors = routeChanged(
+			loaded.model,
+			{ userId: "user/42 ada", search: { tab: "errors" } },
+			context,
+		)
+		expect(errors.commands ?? []).toEqual([])
+	})
+
+	it("loads the profile, the activity and the issues in one request", () => {
+		const loaded = update(
+			page({}),
+			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
+			context,
+		)
+		expect(Arr.map(loaded.commands ?? [], (command) => command.name)).toEqual(["FetchUserOverview"])
+	})
+
+	it("settles the issues with the overview, so the Errors tab never stays loading", () => {
+		const loaded = update(
+			page({}),
+			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
+			context,
+		).model
+		const failed = update(
+			loaded,
+			Message.CompletedFetchOverview({
+				key: loaded.issues.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+			context,
+		).model
+		expect(AsyncData.isFailure(failed.issues.data)).toBe(true)
+		expect(AsyncData.isFailure(failed.profile.data)).toBe(true)
+	})
+
+	it("refetches when the namespace changes", () => {
+		const loaded = update(
+			page({}),
+			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
+			context,
+		).model
+		const step = routeChanged(
+			loaded,
+			{ userId: "user/42 ada", search: { namespace: "checkout" } },
+			context,
+		)
+		const names = Arr.map(step.commands ?? [], (command) => command.name)
+		expect(names).toEqual(["FetchUserOverview"])
+	})
+})
+
+describe("activity links", () => {
+	const item = {
+		atMs: 0,
+		service: "docs-mcp",
+		title: "",
+		detail: "",
+		tone: "neutral" as const,
+		traceId: null,
+		issueId: null,
+	}
+
+	it("opens an MCP session on its own server's page over the user page's window", () => {
+		expect(activityHref({ ...item, kind: "mcp", sessionId: "user:1:Q2w:dQ" }, { timePreset: "1w" })).toBe(
+			"/mcp-servers/docs-mcp/sessions/user%3A1%3AQ2w%3AdQ?timePreset=1w",
+		)
+	})
+
+	it("opens a replay session, and nothing for an event", () => {
+		expect(activityHref({ ...item, kind: "session", sessionId: "s1" }, {})).toBe("/replays/s1")
+		expect(activityHref({ ...item, kind: "event", sessionId: null }, {})).toBeNull()
+	})
+
+	it("opens the trace of a failed request or a log line", () => {
+		expect(activityHref({ ...item, kind: "request", sessionId: null, traceId: "a1b2" }, {})).toBe(
+			"/traces/a1b2",
+		)
+		expect(activityHref({ ...item, kind: "log", sessionId: null, traceId: "c3d4" }, {})).toBe(
+			"/traces/c3d4",
+		)
+	})
+
+	it("opens the issue an error row names, and nothing for a fingerprint not yet an issue", () => {
+		const issueId = Schema.decodeSync(ErrorIssueId)("00000000-0000-4000-8000-000000000001")
+		expect(activityHref({ ...item, kind: "error", sessionId: null, issueId }, {})).toBe(
+			"/errors/issues/00000000-0000-4000-8000-000000000001",
+		)
+		expect(activityHref({ ...item, kind: "error", sessionId: null }, {})).toBeNull()
+	})
+
+	it("opens an issue over the user page's window", () => {
+		const issueId = Schema.decodeSync(ErrorIssueId)("00000000-0000-4000-8000-000000000001")
+		expect(
+			activityHref({ ...item, kind: "error", sessionId: null, issueId }, { timePreset: "24h" }),
+		).toBe("/errors/issues/00000000-0000-4000-8000-000000000001?timePreset=24h")
+	})
+})
+
+describe("the namespace in effect", () => {
+	it("reads an empty ?namespace= as none, and lets the org pin win", () => {
+		expect(activeNamespace({ namespace: "" }, null)).toBeNull()
+		expect(activeNamespace({ namespace: "storefront" }, null)).toBe("storefront")
+		expect(activeNamespace({ namespace: "storefront" }, "payments")).toBe("payments")
+	})
+})

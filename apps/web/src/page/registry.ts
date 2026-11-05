@@ -82,6 +82,8 @@ import * as ServiceDetail from "./services/detail"
 import * as ServiceMap from "./service-map"
 import * as ReplayDetail from "./replays/detail"
 import * as ReplaysList from "./replays/list"
+import * as UsersList from "./users/list"
+import * as UserDetail from "./users/detail"
 import * as ServicesList from "./services/list"
 import * as Settings from "./settings"
 import * as Account from "./settings/account"
@@ -179,6 +181,8 @@ export const pages = [
 	Account.page,
 	ReplaysList.page,
 	ReplayDetail.page,
+	UsersList.page,
+	UserDetail.page,
 	Share.page,
 	Analytics.page,
 ]

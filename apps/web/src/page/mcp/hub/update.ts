@@ -79,6 +79,14 @@ const windowSearch = (search: Search): Search => ({
 	timePreset: search.timePreset,
 })
 
+/** One session's page on its server, carrying only the window. */
+export const sessionHref = (service: string, sessionId: string, search: Search): string =>
+	hrefOfView({ _tag: "Session", service, sessionId }, windowSearch(search))
+
+/** The page of the end user a session belongs to, over the same window. */
+export const userHref = (userId: string, search: Search): string =>
+	hrefOf(AppRoute.UserDetail({ userId, search: windowSearch(search) }))
+
 /** What travels between a server's tabs: the window, the client selection and failing-only, not the search box. */
 export const tabSearch = (search: Search): Search => ({
 	...windowSearch(search),
@@ -417,14 +425,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							metric: undefined,
 							identity: undefined,
 						},
-					),
-		ClickedOpenSession: ({ sessionId }) =>
-			model.view._tag === "Servers"
-				? { model }
-				: navigateTo(
-						model,
-						{ _tag: "Session", service: model.view.service, sessionId },
-						windowSearch(model.search),
 					),
 		ClickedOpenAgentSession: ({ sessionId }) => ({
 			model,

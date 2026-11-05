@@ -1,5 +1,5 @@
 // Shared fixtures for the AlertsService suites, split across files so CI can shard them.
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"

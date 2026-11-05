@@ -8,6 +8,7 @@ import {
 	Ref,
 	Schema,
 	Array as Arr,
+	Record as Rec,
 	String as Str,
 } from "effect"
 import { HttpRouter } from "effect/http"
@@ -56,6 +57,9 @@ import {
 import { MapleApiV2, encodePublicId } from "@maple/domain/http/v2"
 import { WarehouseResponseLimitError } from "@maple/query-engine/execution"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { Database } from "@maple/backend/platform/DatabaseLive"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { ErrorIssues } from "@maple/db/tables"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { Env } from "@maple/backend/platform/Env"
@@ -715,10 +719,14 @@ const makeHarness = (
 			}),
 		)
 
+	/** Runs a write against the harness's own database, to seed rows a read joins to. */
+	const seedDb = <A, E>(effect: Effect.Effect<A, E, Database>) => runtime.runPromise(effect)
+
 	return {
 		request,
 		bootstrapKey,
 		bootstrapSession,
+		seedDb,
 		lastIssueListCall: () => lastIssueListCall,
 		lastIssueDetailCall: () => lastIssueDetailCall,
 		issueActions: () => issueActions,
@@ -1763,5 +1771,579 @@ describe("v2 session_replays over HTTP", () => {
 			expect(response.body.error.message).toContain("narrower chunk range")
 			await harness.dispose()
 		})
+	})
+})
+
+describe("v2 users over HTTP", () => {
+	const WINDOW = "start_time=2026-11-01T00:00:00.000Z&end_time=2026-11-02T00:00:00.000Z"
+
+	it("serves empty envelopes for a quiet window and 404s a user nothing carries", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["users:read"])
+
+		const list = await harness.request(
+			"GET",
+			`/v2/users?${WINDOW}&namespace=storefront,billing&limit=5`,
+			{
+				token: key.secret,
+			},
+		)
+		expect(list.status).toBe(200)
+		expect(list.body).toEqual({ object: "list", data: [], has_more: false, next_cursor: null })
+
+		const missing = await harness.request("GET", `/v2/users/${encodeURIComponent("user 42")}?${WINDOW}`, {
+			token: key.secret,
+		})
+		expect(missing.status).toBe(404)
+		expect(missing.body.error.code).toBe("user_not_found")
+
+		const activity = await harness.request("GET", `/v2/users/user_42/activity?${WINDOW}`, {
+			token: key.secret,
+		})
+		expect(activity.status).toBe(200)
+		expect(activity.body).toEqual({
+			object: "user.activity",
+			user_id: "user_42",
+			sessions: [],
+			events: [],
+			mcp_sessions: [],
+			timeline: [],
+		})
+
+		const issues = await harness.request("GET", `/v2/users/user_42/issues?${WINDOW}`, {
+			token: key.secret,
+		})
+		expect(issues.status).toBe(200)
+		expect(issues.body).toMatchObject({ object: "list", data: [], has_more: false, next_cursor: null })
+		expect(typeof issues.body.attributed).toBe("boolean")
+		await harness.dispose()
+	})
+
+	it("pages populated users by keyset, continuing after a lastSeen tie without repeats", async () => {
+		// Two users share the boundary lastSeen to the nanosecond; only userId orders them.
+		const tie = "2026-11-01 10:00:00.123456789"
+		const fixture = [
+			{ userId: "u_a", lastSeenKey: "2026-11-01 11:00:00.000000001" },
+			{ userId: "u_b", lastSeenKey: tie },
+			{ userId: "u_c", lastSeenKey: tie },
+		]
+		const row = (user: (typeof fixture)[number]) => ({
+			...user,
+			name: "",
+			email: "",
+			groupId: "",
+			namespaces: [],
+			firstSeen: "2026-11-01 01:00:00.000000000",
+			lastSeen: user.lastSeenKey,
+			sessions: 1,
+			errors: 0,
+			requests: 0,
+			mcpSpans: 0,
+			events: 0,
+			spans: 0,
+			logLines: 0,
+		})
+		// Answers the list like the warehouse would: the keyset HAVING, then the LIMIT.
+		const usersWarehouse: WarehouseQueryServiceApi = {
+			...warehouseStub,
+			compiledQuery: (_tenant, compiled, options) => {
+				const query = compiledQueryOf(compiled)
+				if (options?.context !== "usersList") return query.decodeRows([]).pipe(Effect.orDie)
+				const after = /signals\.lastSeen\) < '([^']+)'.*signals\.userId > '([^']+)'/s.exec(query.sql)
+				const limit = Number(/LIMIT\s+(\d+)/i.exec(query.sql)?.[1] ?? 200)
+				const kept = Arr.filter(
+					fixture,
+					(user) =>
+						after === null ||
+						user.lastSeenKey < (after[1] ?? "") ||
+						(user.lastSeenKey === after[1] && user.userId > (after[2] ?? "")),
+				)
+				return query.decodeRows(Arr.map(kept.slice(0, limit), row)).pipe(Effect.orDie)
+			},
+		}
+		const harness = makeHarness(usersWarehouse)
+		const key = await harness.bootstrapKey(["users:read"])
+
+		const first = await harness.request("GET", `/v2/users?${WINDOW}&limit=2`, { token: key.secret })
+		expect(first.status).toBe(200)
+		expect(Arr.map(first.body.data, (user: { id: string }) => user.id)).toEqual(["u_a", "u_b"])
+		expect(first.body.has_more).toBe(true)
+		expect(typeof first.body.next_cursor).toBe("string")
+
+		const second = await harness.request(
+			"GET",
+			`/v2/users?${WINDOW}&limit=2&cursor=${encodeURIComponent(first.body.next_cursor)}`,
+			{ token: key.secret },
+		)
+		expect(second.status).toBe(200)
+		expect(Arr.map(second.body.data, (user: { id: string }) => user.id)).toEqual(["u_c"])
+		expect(second.body.has_more).toBe(false)
+		expect(second.body.next_cursor).toBeNull()
+
+		const forged = await harness.request("GET", `/v2/users?${WINDOW}&cursor=usr_bm90LWpzb24`, {
+			token: key.secret,
+		})
+		expect(forged.status).toBe(400)
+		expect(forged.body.error.code).toBe("cursor_invalid")
+		await harness.dispose()
+	})
+
+	it("needs users:read", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["traces:read"])
+		const denied = await harness.request("GET", `/v2/users?${WINDOW}`, { token: key.secret })
+		expect(denied.status).toBe(403)
+		expect(denied.body.error.code).toBe("insufficient_scope")
+		await harness.dispose()
+	})
+
+	it("refuses an inverted or over-wide window and an offset cursor", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey()
+
+		const inverted = await harness.request(
+			"GET",
+			"/v2/users?start_time=2026-11-02T00:00:00.000Z&end_time=2026-11-01T00:00:00.000Z",
+			{ token: key.secret },
+		)
+		expect(inverted.status).toBe(400)
+		expect(inverted.body.error.code).toBe("invalid_time_range")
+
+		const wide = await harness.request(
+			"GET",
+			"/v2/users/user_42?start_time=2026-08-01T00:00:00.000Z&end_time=2026-11-01T00:00:00.000Z",
+			{ token: key.secret },
+		)
+		expect(wide.status).toBe(400)
+		expect(wide.body.error.code).toBe("time_range_too_large")
+
+		const deep = await harness.request("GET", `/v2/users?${WINDOW}&cursor=off_zzzzz`, {
+			token: key.secret,
+		})
+		expect(deep.status).toBe(400)
+		expect(deep.body.error.type).toBe("invalid_request_error")
+		await harness.dispose()
+	})
+})
+
+describe("v2 users wire mapping over HTTP", () => {
+	const WINDOW = "start_time=2026-11-01T00:00:00.000Z&end_time=2026-11-02T00:00:00.000Z"
+	const ISSUE_ID = Schema.decodeSync(ErrorIssueId)("00000000-0000-4000-8000-0000000000a1")
+	const HASH = "11640295108927840024"
+
+	// One row per query, every field a value no other field shares, so a swapped mapping shows.
+	const rows = {
+		usersServiceNamespaces: [{ service: "web", namespace: "storefront", spans: 1 }],
+		mcpServices: [{ service: "maple-mcp", serverSpans: 1 }],
+		usersList: [
+			{
+				userId: "u_ada",
+				name: "Ada Lovelace",
+				email: "ada@acme.test",
+				groupId: "grp_acme",
+				namespaces: ["storefront"],
+				firstSeen: "2026-11-01 01:00:00",
+				lastSeen: "2026-11-01 09:00:00",
+				lastSeenKey: "2026-11-01 09:00:00.000000000",
+				sessions: 3,
+				errors: 5,
+				requests: 7,
+				mcpSpans: 11,
+				events: 13,
+				spans: 17,
+				logLines: 19,
+			},
+		],
+		userActivityTotals: [
+			{
+				userId: "u_ada",
+				topRoute: "GET /checkout",
+				requestHours: [Date.UTC(2026, 10, 1, 8) / 1000, Date.UTC(2026, 10, 1, 20) / 1000],
+				requestHourCounts: [23, 29],
+				requestCount: 23,
+				failedRequestCount: 2,
+				errorSpanCount: 1,
+				errorLogCount: 1,
+				logCount: 4,
+				firstSeen: "2026-11-01 08:00:00",
+				lastSeen: "2026-11-01 08:30:00",
+			},
+		],
+		userReplayProfile: [
+			{
+				name: "Ada Replay",
+				email: "ada.replay@acme.test",
+				groupId: "grp_replay",
+				sessions: 29,
+				recordedMs: 31_000,
+				errors: 37,
+				country: "GB",
+				traitKeys: ["plan"],
+				traitValues: ["pro"],
+				firstSeen: "2026-11-01 02:00:00",
+				lastSeen: "2026-11-01 10:00:00",
+			},
+		],
+		userDevices: [{ browser: "Firefox", os: "Linux", sessions: 41 }],
+		userEventsSummary: [
+			{
+				events: 43,
+				distinctEvents: 47,
+				firstSeen: "2026-11-01 03:00:00",
+				lastSeen: "2026-11-01 11:00:00",
+			},
+		],
+		userMcpSummary: [
+			{
+				requests: 53,
+				calls: 59,
+				name: "",
+				email: "",
+				firstSeen: "2026-11-01 04:00:00",
+				lastSeen: "2026-11-01 12:00:00",
+			},
+		],
+		userServices: [{ service: "web", namespace: "storefront", signals: 61 }],
+		userVisitorIds: [{ visitorId: "v_visitor", firstSeen: "2026-11-01 02:00:00" }],
+		userActivitySummary: [
+			{
+				requestCount: 80,
+				failedRequestCount: 20,
+				p50DurationMs: 120,
+				p95DurationMs: 830,
+				traceCount: 71,
+				spanCount: 79,
+				logCount: 73,
+				errorSpanCount: 3,
+				errorLogCount: 2,
+				warnLogCount: 1,
+				sessionCount: 2,
+				topRoutes: ["GET /checkout"],
+				topRouteCounts: [23],
+				requestHours: [Date.UTC(2026, 10, 1, 8) / 1000, Date.UTC(2026, 10, 1, 20) / 1000],
+				requestHourCounts: [23, 29],
+				firstSeen: "2026-11-01 05:00:00",
+				lastSeen: "2026-11-01 13:00:00",
+			},
+		],
+		userIssues: [
+			{
+				fingerprintHash: HASH,
+				serviceName: "warehouse-svc",
+				exceptionType: "WarehouseError",
+				exceptionMessage: "warehouse message",
+				errorLabel: "",
+				hits: 89,
+				firstSeen: "2026-11-01 06:00:00",
+				lastSeen: "2026-11-01 14:00:00",
+			},
+		],
+		// Uncapped totals, distinct from the listed issue's hits so the profile shows which it read.
+		userIssueTotals: [{ hits: 97, errorGroups: 1 }],
+		userSessions: [
+			{
+				sessionId: "sess_ada",
+				serviceName: "web",
+				startTime: "2026-11-01 07:00:00",
+				endTime: "2026-11-01 07:05:00",
+				lastActivityAt: "2026-11-01 07:05:00",
+				durationMs: 97_000,
+				pageViews: 101,
+				errorCount: 103,
+				entryPath: "/pricing",
+				browserName: "Safari",
+				osName: "iOS",
+				status: "ended",
+				userId: "u_ada",
+				userName: "",
+				userEmail: "",
+				groupId: "",
+				groupName: "",
+				visitorId: "v_visitor",
+				utmSource: "",
+				urlInitial: "",
+				deviceType: "mobile",
+				country: "GB",
+				clickCount: 0,
+				traceCount: 0,
+				recorded: "true",
+				quality: "normal",
+				visitorIsNew: 0,
+			},
+		],
+		userEvents: [
+			{
+				timestamp: "2026-11-01 07:30:00",
+				name: "plan_upgraded",
+				source: "server",
+				service: "billing",
+				pagePath: "/upgrade",
+				propertyKeys: [],
+				propertyValues: [],
+			},
+		],
+		userActivitySlices: [
+			{
+				serviceName: "orders-api",
+				serviceNamespace: "storefront",
+				spanCount: 1,
+				requestCount: 1,
+				logCount: 0,
+				firstRequestHour: "2026-11-01 15:00:00",
+				lastRequestHour: "2026-11-01 15:00:00",
+				firstLogHour: "1970-01-01 00:00:00",
+				lastLogHour: "1970-01-01 00:00:00",
+			},
+		],
+		userNotableTraces: [
+			{
+				traceId: "7f3a4b5c6d7e8f901234567890abcdef",
+				spanId: "a1b2c3d4e5f60718",
+				timestamp: "2026-11-01 15:10:00.000000000",
+				serviceName: "orders-api",
+				spanName: "POST /orders",
+				spanKind: "Server",
+				durationMs: 912,
+				statusCode: "Error",
+				isRoot: 1,
+			},
+		],
+		userMcpSessionList: [
+			{
+				sessionId: "mcp_sess_ada",
+				service: "maple-mcp",
+				client: "claude-code",
+				kind: "agent",
+				user: "u_ada",
+				userName: "",
+				requests: 107,
+				calls: 109,
+				errors: 113,
+				tools: 127,
+				firstSeen: "2026-11-01 08:10:00",
+				lastSeen: "2026-11-01 08:20:00",
+			},
+		],
+	} satisfies Record<string, ReadonlyArray<unknown>>
+	const rowsByContext = new Map<string, ReadonlyArray<unknown>>(Rec.toEntries(rows))
+
+	const usersWarehouse: WarehouseQueryServiceApi = {
+		...warehouseStub,
+		compiledQuery: (_tenant, compiled, options) =>
+			compiledQueryOf(compiled)
+				.decodeRows(rowsByContext.get(options?.context ?? "") ?? [])
+				.pipe(Effect.orDie),
+	}
+
+	const seedIssue = Effect.gen(function* () {
+		const database = yield* Database
+		yield* database.execute((db) =>
+			db.run(
+				PG.insertInto(ErrorIssues).values({
+					id: ISSUE_ID,
+					orgId: ORG,
+					fingerprintHash: HASH,
+					serviceName: "checkout-api",
+					exceptionType: "CheckoutError",
+					exceptionMessage: "cart is undefined",
+					topFrame: "cart.ts:1",
+					workflowState: "in_progress",
+					firstSeenAt: 0,
+					lastSeenAt: 0,
+					createdAt: 0,
+					updatedAt: 0,
+				}),
+			),
+		)
+	})
+
+	it("maps each read's fields onto their own wire fields", async () => {
+		const harness = makeHarness(usersWarehouse)
+		await harness.seedDb(seedIssue)
+		const key = await harness.bootstrapKey(["users:read"])
+		const get = (path: string) => harness.request("GET", `${path}?${WINDOW}`, { token: key.secret })
+
+		const list = await get("/v2/users")
+		expect(list.status).toBe(200)
+		expect(list.body).toEqual({
+			object: "list",
+			data: [
+				{
+					id: "u_ada",
+					object: "user",
+					name: "Ada Lovelace",
+					email: "ada@acme.test",
+					group_id: "grp_acme",
+					first_seen_at: "2026-11-01T01:00:00.000Z",
+					last_seen_at: "2026-11-01T09:00:00.000Z",
+					session_count: 3,
+					top_route: "GET /checkout",
+					activity: [0, 0, 23, 0, 0, 29, 0],
+					signals: ["replay", "events", "mcp", "traces", "logs"],
+					namespaces: ["storefront"],
+					error_count: 5,
+					request_count: 7,
+				},
+			],
+			has_more: false,
+			next_cursor: null,
+		})
+
+		const profile = await get("/v2/users/u_ada")
+		expect(profile.status).toBe(200)
+		expect(profile.body).toEqual({
+			id: "u_ada",
+			object: "user",
+			name: "Ada Replay",
+			email: "ada.replay@acme.test",
+			group_id: "grp_replay",
+			// The earliest and latest any source saw the user: the replay and the issue.
+			first_seen_at: "2026-11-01T02:00:00.000Z",
+			last_seen_at: "2026-11-01T14:00:00.000Z",
+			session_count: 29,
+			top_route: "GET /checkout",
+			activity: [0, 0, 23, 0, 0, 29, 0],
+			signals: ["replay", "events", "mcp", "traces", "logs"],
+			traits: { plan: "pro" },
+			visitor_ids: ["v_visitor"],
+			recorded_ms: 31_000,
+			replay_error_count: 37,
+			event_count: 43,
+			distinct_event_count: 47,
+			mcp_request_count: 53,
+			mcp_call_count: 59,
+			devices: [{ browser: "Firefox", os: "Linux", session_count: 41 }],
+			country: "GB",
+			services: [{ service_name: "web", namespace: "storefront", signal_count: 61 }],
+			request_count: 80,
+			failed_request_rate: 0.25,
+			p95_duration_ms: 830,
+			trace_count: 71,
+			log_count: 73,
+			issue_count: 1,
+			issue_hit_count: 97,
+		})
+
+		const activity = await get("/v2/users/u_ada/activity")
+		const replayId = encodePublicId("srep", "sess_ada")
+		const issueId = encodePublicId("iss", ISSUE_ID)
+		const entry = { session_replay_id: null, mcp_session_id: null, trace_id: null, issue_id: null }
+		expect(activity.status).toBe(200)
+		expect(activity.body).toEqual({
+			object: "user.activity",
+			user_id: "u_ada",
+			sessions: [
+				{
+					id: replayId,
+					service_name: "web",
+					start_time: "2026-11-01T07:00:00.000Z",
+					duration_ms: 97_000,
+					page_views: 101,
+					error_count: 103,
+					entry_path: "/pricing",
+					device: "Safari · iOS",
+				},
+			],
+			events: [
+				{
+					timestamp: "2026-11-01T07:30:00.000Z",
+					name: "plan_upgraded",
+					source: "server",
+					service_name: "billing",
+					detail: "/upgrade",
+				},
+			],
+			mcp_sessions: [
+				{
+					service_name: "maple-mcp",
+					session_id: "mcp_sess_ada",
+					source: "issued",
+					client: "claude-code",
+					client_kind: "agent",
+					request_count: 107,
+					call_count: 109,
+					error_count: 113,
+					tool_count: 127,
+					first_seen_at: "2026-11-01T08:10:00.000Z",
+					last_seen_at: "2026-11-01T08:20:00.000Z",
+				},
+			],
+			timeline: [
+				{
+					...entry,
+					kind: "request",
+					timestamp: "2026-11-01T15:10:00.000Z",
+					service_name: "orders-api",
+					title: "POST /orders",
+					detail: "Failed · 912 ms · orders-api",
+					tone: "crit",
+					trace_id: "7f3a4b5c6d7e8f901234567890abcdef",
+				},
+				{
+					...entry,
+					kind: "error",
+					timestamp: "2026-11-01T14:00:00.000Z",
+					service_name: "checkout-api",
+					title: "CheckoutError",
+					detail: "89 hits · checkout-api · cart is undefined",
+					tone: "crit",
+					issue_id: issueId,
+				},
+				{
+					...entry,
+					kind: "mcp",
+					timestamp: "2026-11-01T08:10:00.000Z",
+					service_name: "maple-mcp",
+					title: "109 tool calls from claude-code",
+					detail: "maple-mcp · 127 tools · 113 failed",
+					tone: "crit",
+					mcp_session_id: "mcp_sess_ada",
+				},
+				{
+					...entry,
+					kind: "event",
+					timestamp: "2026-11-01T07:30:00.000Z",
+					service_name: "billing",
+					title: "plan_upgraded",
+					detail: "server · /upgrade",
+					tone: "neutral",
+				},
+				{
+					...entry,
+					kind: "session",
+					timestamp: "2026-11-01T07:00:00.000Z",
+					service_name: "web",
+					title: "Session on /pricing",
+					detail: "101 pages · 103 errors · Safari · iOS",
+					tone: "crit",
+					session_replay_id: replayId,
+				},
+			],
+		})
+
+		// The issue's own fields win over the warehouse's latest occurrence; hits and bounds stay its.
+		const issues = await get("/v2/users/u_ada/issues")
+		expect(issues.status).toBe(200)
+		expect(issues.body).toEqual({
+			object: "list",
+			data: [
+				{
+					object: "user.issue",
+					issue_id: issueId,
+					fingerprint_hash: HASH,
+					type: "CheckoutError",
+					message: "cart is undefined",
+					service_name: "checkout-api",
+					hit_count: 89,
+					first_seen_at: "2026-11-01T06:00:00.000Z",
+					last_seen_at: "2026-11-01T14:00:00.000Z",
+					workflow_state: "in_progress",
+				},
+			],
+			has_more: false,
+			next_cursor: null,
+			attributed: true,
+		})
+		await harness.dispose()
 	})
 })

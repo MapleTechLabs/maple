@@ -79,6 +79,15 @@ describe("scoped API keys on the MCP server", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
+	it.effect("carries a scoped key's scopes to the tools, and none for an unscoped key", () =>
+		Effect.gen(function* () {
+			const scoped = yield* resolveWithScopes([...readAll, "users:read"])
+			const unscoped = yield* resolveWithScopes(null)
+			expect(scoped._tag === "Success" ? scoped.success.scopes : undefined).toContain("users:read")
+			expect(unscoped._tag === "Success" ? unscoped.success.scopes : "failed").toBeUndefined()
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
 	it.effect("treats `*` and unscoped keys as full access", () =>
 		Effect.gen(function* () {
 			const results = yield* Effect.forEach([["*"], null], resolveWithScopes)

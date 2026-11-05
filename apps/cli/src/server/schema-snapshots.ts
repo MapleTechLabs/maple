@@ -45,6 +45,8 @@ import schemaV44Sql from "./schema/local-schema-v44.sql" with { type: "text" }
 import schemaV45Sql from "./schema/local-schema-v45.sql" with { type: "text" }
 import schemaV46Sql from "./schema/local-schema-v46.sql" with { type: "text" }
 import schemaV47Sql from "./schema/local-schema-v47.sql" with { type: "text" }
+import schemaV48Sql from "./schema/local-schema-v48.sql" with { type: "text" }
+import schemaV49Sql from "./schema/local-schema-v49.sql" with { type: "text" }
 import { buildLocalSchemaManifest, type LocalSchemaManifest } from "@maple/local-server/schema-manifest"
 import { Array as Arr } from "effect"
 
@@ -105,6 +107,8 @@ const SNAPSHOT_SQL: ReadonlyArray<string> = [
 	schemaV45Sql,
 	schemaV46Sql,
 	schemaV47Sql,
+	schemaV48Sql,
+	schemaV49Sql,
 ]
 
 export interface LocalSchemaSnapshot {

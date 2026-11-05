@@ -1,4 +1,5 @@
 import {
+	ErrorIssueAffectedUsersResponse,
 	ErrorIssueEventsResponse,
 	ErrorIssueId,
 	ErrorIssuePullRequestsResponse,
@@ -41,6 +42,8 @@ export const Model = Schema.Struct({
 	leaseNowMs: Schema.Number,
 	detail: keyed(V2ErrorIssueDetail),
 	events: keyed(ErrorIssueEventsResponse),
+	/** The rail's Affected users group, over the window. */
+	affectedUsers: keyed(ErrorIssueAffectedUsersResponse),
 	investigations: keyed(Schema.Array(V2Investigation)),
 	pullRequests: keyed(ErrorIssuePullRequestsResponse),
 	verifications: keyed(ErrorIssueVerificationsResponse),

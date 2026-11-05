@@ -107,6 +107,8 @@ const SAMPLE_PATHS = [
 	"/sources/src_1",
 	"/account",
 	"/replays",
+	"/users",
+	"/users/user_1",
 	"/replays/session_1",
 	"/share/token_1",
 	"/analytics",

@@ -21,6 +21,7 @@ import { clampPriority, PRIORITY_LABEL, priorityBarsIcon } from "../kit/priority
 import { SEVERITY_LABEL, SEVERITY_ORDER, severityDot } from "../kit/severity"
 import { WORKFLOW_LABEL, workflowRingIcon } from "../kit/workflow"
 import { Message } from "./message"
+import { affectedUsersGroup } from "./view-affected-users"
 import { leaseHud } from "./view-lease"
 import type { Model } from "./model"
 import { sidebarBusy } from "./writes"
@@ -321,6 +322,8 @@ export const issueSidebar = (
 					: []),
 				detailRailRow(h, { label: "Issue ID" }, [issueIdCopy(h, model, issue.id)]),
 			]),
+			// Alert and anomaly issues have no occurrences in `error_events`, so no users either.
+			...(issue.kind === "error" ? [affectedUsersGroup(h, model)] : []),
 			detailRailGroup(h, "Lease", [leaseGroup(h, model, issue, canClaim)]),
 		],
 	)

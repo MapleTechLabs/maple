@@ -66,6 +66,8 @@ const RETENTION_DAYS = {
 	trace_list_mv: 30,
 	traces: 30,
 	traces_aggregates_hourly: 365,
+	// Users' PII: last seen up to a quarter back, not a year; raw drill-down needs only 30.
+	user_activity_hourly: 90,
 	// Browser rows past 30 days can never be rebuilt from `session_events`, but
 	// direct-ingested (server/mobile) rows have no source: this table IS the copy.
 	product_events: 365,
@@ -112,11 +114,13 @@ describe("Tinybird retention matrix", () => {
 	 * data movement, which is the only correct shape here. Migration 0023's first
 	 * deploy attempt failed on exactly this.
 	 */
-	it("applies service-operations and endpoint-details rollup changes by ALTER, never by rebuild", () => {
+	it("applies service-operations, endpoint-details and user-activity rollup changes by ALTER, never by rebuild", () => {
 		for (const name of [
 			"service_operations_minutely_mv",
 			"service_operations_hourly_mv",
 			"service_endpoint_details_hourly_mv",
+			"user_activity_hourly_traces_mv",
+			"user_activity_hourly_logs_mv",
 		]) {
 			const pipe = Option.getOrUndefined(
 				Arr.findFirst(tinybirdProjectManifest.pipes, (candidate) => candidate.name === name),

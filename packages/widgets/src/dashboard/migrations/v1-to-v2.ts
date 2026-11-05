@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 import { WIDGET_TYPES, WIDGET_VISUALIZATIONS } from "../../widget-types"
 import { SORT_DIRECTIONS, STAT_AGGREGATES } from "../shared/transform"
 import type { DashboardMigration } from "./types"

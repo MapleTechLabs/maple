@@ -33,6 +33,7 @@ export interface MapleErrorBoundaryProps {
 	/** Rendered instead of the children after an error. Default: nothing. */
 	readonly fallback?: ReactNode | ((props: MapleErrorBoundaryFallbackProps) => ReactNode)
 	/** Called after the error is reported. */
+	// BOUNDARY: a thrown value is unparsed by definition.
 	readonly onError?: (error: unknown, info: ErrorInfo) => void
 }
 
@@ -67,6 +68,7 @@ export class MapleErrorBoundary extends Component<MapleErrorBoundaryProps, Maple
 	}
 }
 
+// BOUNDARY: React hands root errors over as thrown values, unparsed by definition.
 type ReactRootErrorHandler = (
 	error: unknown,
 	info: { readonly componentStack?: string | null | undefined },
