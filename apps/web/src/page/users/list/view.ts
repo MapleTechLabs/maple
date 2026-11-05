@@ -22,7 +22,7 @@ import { noUsersState, usersLoading } from "../view-states"
 import { namespaceScope } from "./command"
 import { Message } from "./message"
 import type { Model, UsersFacetsData } from "./model"
-import { DEFAULT_PRESET, userHref } from "./update"
+import { DEFAULT_PRESET } from "./update"
 
 type H = HtmlBuilder<Message>
 
@@ -115,7 +115,6 @@ const body = (h: H, model: Model, inputs: PageViewInputs): Html =>
 						scope: namespaceScope(model.search, inputs.context.pinnedNamespace),
 						onSearch: (value) => Message.ChangedQuery({ value }),
 						onClearSearch: Message.ClickedClearQuery(),
-						userHref,
 					}),
 	})
 
