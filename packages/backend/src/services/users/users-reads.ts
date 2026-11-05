@@ -239,7 +239,8 @@ export const readUsersFacets = Effect.fn("UsersReads.facets")(function* (
 	const warehouse = yield* WarehouseQueryService
 	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 	const scope = yield* loadScope(tenant, payload)
-	// The namespace facet counts every namespace, so a pick never hides the others.
+	// The namespace facet counts every namespace, so a pick never hides the others; a pin hides it.
+	const pinned = (payload.namespaces ?? []).length > 0
 	const nowMs = yield* Clock.currentTimeMillis
 	const params = {
 		orgId: tenant.orgId,
@@ -248,7 +249,9 @@ export const readUsersFacets = Effect.fn("UsersReads.facets")(function* (
 		activeSince: formatWarehouseDateTime(nowMs - DAY_MS),
 	}
 	const read = (scope: CH.UsersScope) => {
-		const everyNamespace: CH.UsersScope = { ...scope, namespaces: [], services: [] }
+		const everyNamespace: CH.UsersScope | undefined = pinned
+			? undefined
+			: { ...scope, namespaces: [], services: [] }
 		return Effect.all(
 			[
 				warehouse.compiledQuery(
