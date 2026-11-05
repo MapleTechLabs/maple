@@ -53,6 +53,8 @@ const seed = async () => {
 		// joan: two replays in two groups under one service, so one source sees both groups.
 		{ session: "s5", user: "joan", group: "grp_acme", name: "", hour: 8, errors: 0 },
 		{ session: "s6", user: "joan", group: "grp_initech", name: "Initech", hour: 9, errors: 0 },
+		// otto: Beta on a replay at 11, between an Alpha event at 10 and a group-less event at 12.
+		{ session: "s7", user: "otto", group: "grp_beta", name: "", hour: 11, errors: 0 },
 	]
 	await clickhouseExec(
 		`INSERT INTO session_replays (OrgId, SessionId, UserId, GroupId, GroupName, ServiceName, StartTime, LastActivityAt, ErrorCount, Version) VALUES\n${Arr.join(
@@ -68,7 +70,9 @@ const seed = async () => {
 	await clickhouseExec(
 		`INSERT INTO product_events (OrgId, Timestamp, Source, UserId, GroupId, Kind, EventName, ServiceName) VALUES
 (${quote(ORG_ID)}, ${quote(at(6))}, 'server', 'grace', 'grp_globex', 'custom', 'plan_started', 'api'),
-(${quote(ORG_ID)}, ${quote(at(7))}, 'server', 'ken', '', 'custom', 'sync_ran', 'api')`,
+(${quote(ORG_ID)}, ${quote(at(7))}, 'server', 'ken', '', 'custom', 'sync_ran', 'api'),
+(${quote(ORG_ID)}, ${quote(at(10))}, 'server', 'otto', 'grp_alpha', 'custom', 'plan_started', 'api'),
+(${quote(ORG_ID)}, ${quote(at(12))}, 'server', 'otto', '', 'custom', 'plan_viewed', 'api')`,
 		database,
 	)
 	// Requests carry no group: ada's count toward Acme, ken's toward no group.
@@ -118,6 +122,8 @@ describe.skipIf(!clickhouseE2eEnabled)("users grouped by group", () => {
 			[
 				["grp_acme", 3, 5, 10, 1, 1],
 				["", 2, 1, 5, 2, 1],
+				["grp_alpha", 1, 1, 0, 0, 0],
+				["grp_beta", 1, 1, 0, 0, 0],
 				["grp_globex", 1, 1, 0, 0, 0],
 				["grp_initech", 1, 2, 0, 0, 0],
 			],
@@ -129,6 +135,8 @@ describe.skipIf(!clickhouseE2eEnabled)("users grouped by group", () => {
 		assert.deepStrictEqual(pick(rows, "groupId", "activeToday"), [
 			["grp_acme", 3],
 			["", 1],
+			["grp_alpha", 1],
+			["grp_beta", 1],
 			["grp_globex", 1],
 			["grp_initech", 1],
 		])
@@ -150,6 +158,8 @@ describe.skipIf(!clickhouseE2eEnabled)("users grouped by group", () => {
 			Arr.sort(pick(facets, "name", "count"), (a, b) => (String(a[0]) < String(b[0]) ? -1 : 1)),
 			[
 				["grp_acme", 3],
+				["grp_alpha", 1],
+				["grp_beta", 1],
 				["grp_globex", 1],
 				["grp_initech", 1],
 			],
@@ -171,6 +181,13 @@ describe.skipIf(!clickhouseE2eEnabled)("users grouped by group", () => {
 		const rows = await runJson(CH.compileUnsafe(CH.usersListQuery(scope, { search: "joan" }), params).sql)
 		assert.deepStrictEqual(pick(rows, "userId", "groupId", "groupIds"), [
 			["joan", "grp_initech", ["grp_acme", "grp_initech"]],
+		])
+	})
+
+	it("keeps the newest group across sources, not the newest source's", async () => {
+		const rows = await runJson(CH.compileUnsafe(CH.usersListQuery(scope, { search: "otto" }), params).sql)
+		assert.deepStrictEqual(pick(rows, "userId", "groupId", "groupIds"), [
+			["otto", "grp_beta", ["grp_alpha", "grp_beta"]],
 		])
 	})
 
