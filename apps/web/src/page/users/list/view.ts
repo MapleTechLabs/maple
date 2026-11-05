@@ -115,7 +115,7 @@ const body = (h: H, model: Model, inputs: PageViewInputs): Html =>
 						scope: namespaceScope(model.search, inputs.context.pinnedNamespace),
 						onSearch: (value) => Message.ChangedQuery({ value }),
 						onClearSearch: Message.ClickedClearQuery(),
-						userHref,
+						userHref: userHref(model.search),
 					}),
 	})
 
