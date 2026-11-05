@@ -438,7 +438,7 @@ const selected = ($: TracesRow, filter: McpSessionFilter) => [
 	CH.when(filter.client, (client) => mcpClientName($).eq(client)),
 	CH.when(filter.kind, (kind) => mcpClientKind($).eq(kind)),
 	CH.when(filter.user, (user) => userId($).eq(user)),
-	filter.namespaces?.length
+	filter.namespaces !== undefined && filter.namespaces.length > 0
 		? CH.inList($.ResourceAttributes.get("service.namespace"), filter.namespaces)
 		: undefined,
 	// Ids every request of a session carries, so a match keeps whole sessions.
@@ -539,7 +539,7 @@ export function mcpUserActivityQuery(filter: McpSessionFilter = {}, limit = 50_0
 /** The listed services' MCP server spans in the window. */
 const serversSpans = ($: TracesRow, services: ReadonlyArray<string>) => [
 	...inWindow($),
-	services.length ? CH.inList($.ServiceName, services) : CH.rawCond("1 = 0"),
+	services.length > 0 ? CH.inList($.ServiceName, services) : CH.rawCond("1 = 0"),
 	method($).neq(""),
 ]
 

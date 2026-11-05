@@ -169,7 +169,11 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 							},
 						}),
 				next: Arr.map(
-					users.toSorted((a, b) => b.errors - a.errors || b.lastSeenMs - a.lastSeenMs).slice(0, 3),
+					users
+						.toSorted((a, b) =>
+							b.errors !== a.errors ? b.errors - a.errors : b.lastSeenMs - a.lastSeenMs,
+						)
+						.slice(0, 3),
 					(user) =>
 						doc.next(
 							"inspect_user",
