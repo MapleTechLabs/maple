@@ -31,7 +31,7 @@ import type { Model } from "./model"
 import { fleetOf, gcpTitles, inventoryOf, logTiles, metricsTiles } from "./view-gcp-band"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Order } from "effect"
 
 // `Workloads`, `Resources` and `GcpUsageBand`.
 
@@ -52,13 +52,16 @@ const workloads = (h: H, model: Model, className: string): Html => {
 	const all = Arr.flatMap(services, (entry) =>
 		Arr.map(entry.workloads, (workload) => ({ service: entry.service, workload })),
 	)
-	const rows = Arr.filter(all, (row) => service === "all" || row.service === service).toSorted(
-		(a, b) =>
-			TONE_ORDER.indexOf(gcpWorkloadTone(a.workload)) -
-				TONE_ORDER.indexOf(gcpWorkloadTone(b.workload)) ||
-			Str.localeCompare(gcpWorkloadName(b.service, b.workload.keys))(
-				gcpWorkloadName(a.service, a.workload.keys),
-			),
+	type Row = (typeof all)[number]
+	const rows = Arr.sort(
+		Arr.filter(all, (row) => service === "all" || row.service === service),
+		Order.combine(
+			Order.mapInput(Order.Number, (row: Row) => TONE_ORDER.indexOf(gcpWorkloadTone(row.workload))),
+			(a: Row, b: Row) =>
+				Str.localeCompare(gcpWorkloadName(b.service, b.workload.keys))(
+					gcpWorkloadName(a.service, a.workload.keys),
+				),
+		),
 	)
 	const manyProjects =
 		new Set(Arr.map(all, (row) => gcpWorkloadProject(row.service, row.workload.keys))).size > 1
@@ -146,15 +149,20 @@ const workloads = (h: H, model: Model, className: string): Html => {
 												"text-xs font-medium text-foreground group-hover:text-primary",
 										}),
 										truncatedText(h, {
-											text: [
-												GCP_INFRA_SERVICES[rowService].title,
-												gcpWorkloadLocation(rowService, workload.keys),
-												manyProjects
-													? gcpWorkloadProject(rowService, workload.keys)
-													: undefined,
-											]
-												.filter((part) => part !== undefined && part !== "")
-												.join(" · "),
+											text: Arr.join(
+												Arr.filter(
+													[
+														GCP_INFRA_SERVICES[rowService].title,
+														gcpWorkloadLocation(rowService, workload.keys),
+														manyProjects
+															? gcpWorkloadProject(rowService, workload.keys)
+															: undefined,
+													],
+													(part): part is string =>
+														part !== undefined && part !== "",
+												),
+												" · ",
+											),
 											className: typographyClass({ size: "2xs", tone: "muted" }),
 										}),
 									]),
@@ -201,7 +209,15 @@ const TYPES_SHOWN = 8
 const resources = (h: H, model: Model, className: string): Html => {
 	const inventory = inventoryOf(model)
 	if (inventory === null) return skeleton(h, cn("h-40 rounded-md", className))
-	const types = inventory === "failed" ? [] : inventory.types.toSorted((a, b) => b.count - a.count)
+	const types =
+		inventory === "failed"
+			? []
+			: Arr.sort(
+					inventory.types,
+					Order.flip(
+						Order.mapInput(Order.Number, (type: { readonly count: number }) => type.count),
+					),
+				)
 	return panel(h, { className: cn("h-fit border-border-subtle", className) }, [
 		panelHeader(h, {
 			className: "border-border-subtle",

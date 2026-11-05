@@ -33,7 +33,8 @@ import { Array as Arr, String as Str } from "effect"
 
 type H = HtmlBuilder<Message>
 
-const titleCase = (value: string): string => `${Str.toUpperCase(value.charAt(0))}${Str.slice(1)(value)}`
+const titleCase = (value: string): string =>
+	`${Str.toUpperCase(Str.slice(0, 1)(value))}${Str.slice(1)(value)}`
 
 /** The SQL column a stat or gauge reduces, typed since the editor cannot list a query's columns. */
 const sqlValueField = (h: H, state: EditorState): Html =>

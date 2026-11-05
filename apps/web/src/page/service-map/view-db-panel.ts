@@ -60,8 +60,10 @@ const toMap = (message: ServiceMap.Message) => Message.GotMapMessage({ message }
 const hyperdriveOf = (model: Model, nodeId: string) =>
 	Option.getOrUndefined(
 		Option.flatMapNullishOr(
-			model.map,
-			(map) => map.source.rawNodes.find((node) => node.id === nodeId)?.data.hyperdrive,
+			Option.flatMap(model.map, (map) =>
+				Arr.findFirst(map.source.rawNodes, (node) => node.id === nodeId),
+			),
+			(node) => node.data.hyperdrive,
 		),
 	)
 

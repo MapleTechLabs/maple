@@ -14,7 +14,7 @@ const context: Context = {
 }
 
 const commandNames = (result: { commands?: ReadonlyArray<{ name: string }> }) =>
-	result.commands?.map((command) => command.name) ?? []
+	Arr.map(result.commands ?? [], (command) => command.name)
 
 const typed = (model: Model, value: string) =>
 	update(model, Message.GotListMessage({ message: Combobox.Message.ChangedInput({ value }) }), context)

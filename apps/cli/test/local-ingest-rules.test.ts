@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { String as Str } from "effect"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -383,7 +384,8 @@ describe("local ingest rules", () => {
 		const blockedFirst = blocked()
 		expect([
 			blockedFirst.reloaded,
-			blockedFirst.rules.problems[0]?.includes("could not be read"),
+			blockedFirst.rules.problems[0] !== undefined &&
+				Str.includes("could not be read")(blockedFirst.rules.problems[0]),
 		]).toEqual([true, true])
 		expect(blocked().reloaded).toBe(false)
 		fs.rmSync(dir, { recursive: true })

@@ -73,7 +73,7 @@ describe("cloudflare worker", () => {
 			{ scriptName: "edge-router", search: { account: "acct_b", timePreset: "1h" } },
 			context,
 		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveCloudflareWorkerWindow", "Refresh"],
 		])
 	})

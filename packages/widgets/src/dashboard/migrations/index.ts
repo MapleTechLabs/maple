@@ -1,7 +1,7 @@
 import { CURRENT_DASHBOARD_SCHEMA_VERSION, type DashboardSchemaVersion } from "../version"
 import type { DashboardMigration } from "./types"
 import { v1ToV2 } from "./v1-to-v2"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 export type { DashboardMigration } from "./types"
 
@@ -56,12 +56,12 @@ export const migrateToLatest = (document: unknown): Record<string, unknown> => {
 	let version = detectSchemaVersion(document)
 
 	while (version < CURRENT_DASHBOARD_SCHEMA_VERSION) {
-		const step = DASHBOARD_MIGRATIONS.find((migration) => migration.from === version)
+		const step = Arr.findFirst(DASHBOARD_MIGRATIONS, (migration) => migration.from === version)
 		// No step for this version means the chain is broken. Stop rather than
 		// loop; decode reports what is actually wrong with the document.
-		if (step === undefined) break
-		current = step.migrate(current)
-		version = step.to
+		if (Option.isNone(step)) break
+		current = step.value.migrate(current)
+		version = step.value.to
 	}
 
 	// Stamped with the version actually REACHED, not with the current one.

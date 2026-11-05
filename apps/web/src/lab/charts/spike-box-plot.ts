@@ -36,12 +36,11 @@ const nextState = (state: number): number => (Math.imul(state, 1_664_525) + 1_01
 
 /** `makeRows`: two uniforms per sample through Box-Muller, in operation order. */
 const makeRows = (): ReadonlyArray<BoxPlotRow> =>
-	Arr.flatMap(OPERATIONS, (operation) =>
-		Array.from({ length: SAMPLES_PER_OPERATION }, () => operation),
-	).reduce<{
-		state: number
-		rows: ReadonlyArray<BoxPlotRow>
-	}>(
+	Arr.reduce<(typeof OPERATIONS)[number], { state: number; rows: ReadonlyArray<BoxPlotRow> }>(
+		Arr.flatMap(OPERATIONS, (operation) =>
+			Array.from({ length: SAMPLES_PER_OPERATION }, () => operation),
+		),
+		{ state: 0xb0c5_1234 >>> 0, rows: [] },
 		(acc, operation) => {
 			const s1 = nextState(acc.state)
 			const s2 = nextState(s1)
@@ -54,7 +53,6 @@ const makeRows = (): ReadonlyArray<BoxPlotRow> =>
 			)
 			return { state: s2, rows: [...acc.rows, { operation: operation.name, durationMs }] }
 		},
-		{ state: 0xb0c5_1234 >>> 0, rows: [] },
 	).rows
 
 /** The box or outlier under the pointer: its summary rows, the median emphasised. */

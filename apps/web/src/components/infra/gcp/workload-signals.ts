@@ -537,7 +537,7 @@ export const gcpShareTone = (fraction: number | undefined): UtilizationLevel | u
 
 /** The latest reading of a gauge in the window, by bucket. */
 function latest(points: ReadonlyArray<GcpBucketPoint>, bucketSeconds: number, metric: string) {
-	for (const { points: bucketPoints } of gcpBuckets(points, bucketSeconds).toReversed()) {
+	for (const { points: bucketPoints } of Arr.reverse(gcpBuckets(points, bucketSeconds))) {
 		const value = gcpMetricReader(bucketPoints).mean(metric)
 		if (value !== undefined) return value
 	}

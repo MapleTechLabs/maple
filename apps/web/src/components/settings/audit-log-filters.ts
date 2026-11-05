@@ -1,4 +1,5 @@
 import type { AuditActorType, AuditOutcome } from "@maple/domain/http"
+import { Array as Arr, Option } from "effect"
 
 export interface AuditLogSearch {
 	readonly range?: string
@@ -54,20 +55,23 @@ const isActorId = (value: string | undefined): value is string =>
 
 /** Narrow the raw search params to filters the API accepts, dropping anything malformed. */
 export function parseAuditLogSearch(search: AuditLogSearch): AuditLogFilters {
-	const preset = AUDIT_RANGE_PRESETS.find((option) => option.value === search.range)
 	const since = isIsoTimestamp(search.since) ? search.since : undefined
 	const until = isIsoTimestamp(search.until) ? search.until : undefined
-	const range: AuditDateRange =
-		preset !== undefined
-			? { kind: "preset", preset: preset.value }
-			: since !== undefined || until !== undefined
-				? { kind: "custom", since, until }
-				: { kind: "all" }
+	const range = Option.match(
+		Arr.findFirst(AUDIT_RANGE_PRESETS, (option) => option.value === search.range),
+		{
+			onSome: (preset): AuditDateRange => ({ kind: "preset", preset: preset.value }),
+			onNone: (): AuditDateRange =>
+				since !== undefined || until !== undefined
+					? { kind: "custom", since, until }
+					: { kind: "all" },
+		},
+	)
 	return {
 		range,
 		actorId: isActorId(search.actor) ? search.actor : undefined,
-		actorType: ACTOR_TYPES.find((type) => type === search.actor_type),
-		outcome: OUTCOMES.find((value) => value === search.outcome),
+		actorType: Option.getOrUndefined(Arr.findFirst(ACTOR_TYPES, (type) => type === search.actor_type)),
+		outcome: Option.getOrUndefined(Arr.findFirst(OUTCOMES, (value) => value === search.outcome)),
 	}
 }
 
@@ -97,10 +101,13 @@ export function resolveAuditDateRange(
 	if (range.kind === "custom") return { since: range.since, until: range.until }
 	const preset =
 		range.kind === "preset"
-			? AUDIT_RANGE_PRESETS.find((option) => option.value === range.preset)
-			: undefined
+			? Arr.findFirst(AUDIT_RANGE_PRESETS, (option) => option.value === range.preset)
+			: Option.none()
 	return {
-		since: preset === undefined ? undefined : new Date(now - preset.ms).toISOString(),
+		since: Option.match(preset, {
+			onNone: () => undefined,
+			onSome: (found) => new Date(now - found.ms).toISOString(),
+		}),
 		until: undefined,
 	}
 }

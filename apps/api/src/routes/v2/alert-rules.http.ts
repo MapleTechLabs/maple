@@ -445,13 +445,13 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 		const findRule = (orgId: Parameters<typeof rules.listRules>[0], ruleId: AlertRuleDocument["id"]) =>
 			Effect.gen(function* () {
 				const response = yield* rules.listRules(orgId)
-				const rule = response.rules.find((doc) => doc.id === ruleId)
-				if (rule === undefined)
+				const rule = Arr.findFirst(response.rules, (doc) => doc.id === ruleId)
+				if (Option.isNone(rule))
 					return yield* new AlertRuleNotFoundError({
 						message: "No such alert rule.",
 						ruleId,
 					})
-				return rule
+				return rule.value
 			})
 
 		return handlers

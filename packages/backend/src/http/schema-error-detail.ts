@@ -16,7 +16,7 @@
  * decode failure, so the common request-decode path now renders the path alone.
  * The path still identifies the widget positionally (`widgets[0]`).
  */
-import { SchemaIssue, Array as Arr } from "effect"
+import { SchemaIssue, Array as Arr, Option } from "effect"
 
 /** Which part of the request failed to decode; mirrors `HttpApiSchemaError.kind`. */
 export type SchemaErrorKind = "Params" | "Headers" | "Query" | "Body" | "Payload" | "ResponseHeaders"
@@ -129,8 +129,11 @@ export const describeSchemaIssue = (issue: SchemaIssue.Issue): ReadonlyArray<Sch
 
 	const details: Array<SchemaIssueDetail> = []
 	for (const [key, { path, messages }] of byPath) {
-		const widgetId = Arr.map(inputs, (input) => widgetIdForPath(input, path)).find(
-			(id) => id !== undefined,
+		const widgetId = Option.getOrUndefined(
+			Arr.findFirst(
+				Arr.map(inputs, (input) => widgetIdForPath(input, path)),
+				(id) => id !== undefined,
+			),
 		)
 		const message = Arr.join(messages, "; ")
 		const location = key === "" ? "<root>" : key

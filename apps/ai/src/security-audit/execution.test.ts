@@ -204,8 +204,8 @@ describe("invocationExecution", () => {
 	it("releases when the invocation is interrupted mid-command", async () => {
 		const { execution, released } = recording(Effect.never)
 		const scoped = await Effect.runPromise(invocationExecution(execution, "hunter-4-12345678"))
-		const outcome = await Effect.runPromise(
-			Effect.exit(Effect.timeout(scoped.releasingAfter(scoped.run("hunter-4", command)), "10 millis")),
+		const outcome = await Effect.runPromiseExit(
+			Effect.timeout(scoped.releasingAfter(scoped.run("hunter-4", command)), "10 millis"),
 		)
 		expect(outcome._tag).toBe("Failure")
 		expect(released).toEqual(["hunter-4-12345678"])

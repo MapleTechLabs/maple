@@ -9,7 +9,7 @@ import {
 	AgentType,
 } from "@maple/domain/http"
 import { AgentFeedbackId, type OrgId, type UserId } from "@maple/domain/primitives"
-import { Clock, Context, Effect, Layer, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 
@@ -75,7 +75,7 @@ const decodeSource = Schema.decodeUnknownSync(AgentFeedbackSource)
 
 /** Blank optional strings are stored as null, so "not said" has one spelling. */
 const nonBlank = (value: string | undefined): string | null => {
-	const trimmed = value?.trim()
+	const trimmed = typeof value === "string" ? Str.trim(value) : undefined
 	return trimmed === undefined || trimmed.length === 0 ? null : trimmed
 }
 

@@ -26,7 +26,10 @@ interface TrafficPoint {
 
 /** The descriptor a spec names by key; an unknown key reads as the strip's first metric. */
 const metricOf = (key: string) =>
-	ANALYTICS_METRICS.find((metric) => metric.key === key) ?? findMetric("visitors")
+	Option.getOrElse(
+		Arr.findFirst(ANALYTICS_METRICS, (metric) => metric.key === key),
+		() => findMetric("visitors"),
+	)
 
 export const buildAnalyticsTraffic = (spec: TrafficSpec): BuiltChart<TrafficPoint, ChartValue, number> => {
 	const data: ReadonlyArray<TrafficPoint> = Arr.map(spec.points, (point) => ({
@@ -62,7 +65,7 @@ export const buildAnalyticsTraffic = (spec: TrafficSpec): BuiltChart<TrafficPoin
 						valueOf(entry.key),
 						colorOf(entry.key),
 					),
-					...runs.flatMap((run, index) => [
+					...Arr.flatMap(runs, (run, index) => [
 						areaY(run, {
 							id: `${entry.key}-band:${index}`,
 							x: at,

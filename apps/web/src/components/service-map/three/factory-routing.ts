@@ -1,5 +1,5 @@
 import * as THREE from "three"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Order, Schema, Array as Arr, String as Str } from "effect"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import type { Edge3D, Topology3D } from "./types"
 import type { SpatialLayout } from "./spatial-layout"
@@ -27,6 +27,10 @@ export interface RoutingTopology {
 	nodes: ReadonlyArray<Pick<Topology3D["nodes"][number], "id" | "kind">>
 	edges: ReadonlyArray<Pick<Edge3D, "source" | "target">>
 }
+
+type RoutingEdge = RoutingTopology["edges"][number]
+
+const byLocale = Order.make<string>((a, b) => Str.localeCompare(b)(a))
 
 /** Round a Manhattan route into actual elbows, without the overshoot of a
  * free spline. All distances are physical scene units. */
@@ -65,58 +69,60 @@ export class CurveSection extends THREE.Curve<THREE.Vector3> {
 
 export function factoryRoutes(topology: RoutingTopology, layout: SpatialLayout): FactoryRoute[] {
 	const nodes = new Map(Arr.map(topology.nodes, (node) => [node.id, node]))
-	return Arr.flatMap(
-		topology.edges.toSorted(
-			(a, b) => Str.localeCompare(b.source)(a.source) || Str.localeCompare(b.target)(a.target),
+	const edges = Arr.sort(
+		topology.edges,
+		Order.combine(
+			Order.mapInput(byLocale, (edge: RoutingEdge) => edge.source),
+			Order.mapInput(byLocale, (edge: RoutingEdge) => edge.target),
 		),
-		(edge, index) => {
-			const source = layout.positions.get(edge.source),
-				target = layout.positions.get(edge.target)
-			if (!source || !target) return []
-			const kind =
-				nodes.get(edge.source)?.kind === "queue" || nodes.get(edge.target)?.kind === "queue"
-					? "conveyor"
-					: "pipe"
-			const a = new THREE.Vector3(...source),
-				b = new THREE.Vector3(...target)
-			const alongX = Math.abs(b.x - a.x) >= Math.abs(b.z - a.z)
-			const direction = Math.sign(alongX ? b.x - a.x : b.z - a.z) || 1
-			const side = alongX ? "x" : "z"
-			a[side] += direction * 1.3
-			b[side] -= direction * 1.3
-			// Belts run on the ground plane. A hair of height per lane keeps
-			// overlapping decks from flickering where routes share a corridor.
-			a.y += 0.07 + (index % 4) * 0.004
-			b.y += 0.07 + (index % 4) * 0.004
-			const lead = a.clone()
-			lead[side] += direction * 0.6
-			const tail = b.clone()
-			tail[side] -= direction * 0.6
-			const middle = lead.clone().setY(Math.max(a.y, b.y))
-			// Stagger where lanes cross over, never past either end of the run.
-			const span = Math.abs(tail[side] - lead[side])
-			middle[side] = (lead[side] + tail[side]) / 2 + ((index % 3) - 1) * Math.min(0.55, span / 4)
-			const turn = tail.clone().setY(middle.y)
-			turn[side] = middle[side]
-			const waypoints = [a, lead, middle, turn, tail, b]
-			const clean = Arr.filter(waypoints, (point, i) => {
-				const previous = waypoints[i - 1]
-				return !previous || point.distanceTo(previous) > 0.01
-			})
-			const curve = roundedRoute(clean, 0.3)
-			return [
-				{
-					id: `link:${encodePair([edge.source, edge.target])}`,
-					source: edge.source,
-					target: edge.target,
-					geometryKey: encodePoints(Arr.map(clean, (point) => point.toArray())),
-					kind,
-					curve,
-					signPosition: curve.getPointAt(0.5).add(new THREE.Vector3(0, 0.9, 0)),
-				},
-			]
-		},
 	)
+	return Arr.flatMap(edges, (edge, index) => {
+		const source = layout.positions.get(edge.source),
+			target = layout.positions.get(edge.target)
+		if (!source || !target) return []
+		const kind =
+			nodes.get(edge.source)?.kind === "queue" || nodes.get(edge.target)?.kind === "queue"
+				? "conveyor"
+				: "pipe"
+		const a = new THREE.Vector3(...source),
+			b = new THREE.Vector3(...target)
+		const alongX = Math.abs(b.x - a.x) >= Math.abs(b.z - a.z)
+		const direction = Math.sign(alongX ? b.x - a.x : b.z - a.z) || 1
+		const side = alongX ? "x" : "z"
+		a[side] += direction * 1.3
+		b[side] -= direction * 1.3
+		// Belts run on the ground plane. A hair of height per lane keeps
+		// overlapping decks from flickering where routes share a corridor.
+		a.y += 0.07 + (index % 4) * 0.004
+		b.y += 0.07 + (index % 4) * 0.004
+		const lead = a.clone()
+		lead[side] += direction * 0.6
+		const tail = b.clone()
+		tail[side] -= direction * 0.6
+		const middle = lead.clone().setY(Math.max(a.y, b.y))
+		// Stagger where lanes cross over, never past either end of the run.
+		const span = Math.abs(tail[side] - lead[side])
+		middle[side] = (lead[side] + tail[side]) / 2 + ((index % 3) - 1) * Math.min(0.55, span / 4)
+		const turn = tail.clone().setY(middle.y)
+		turn[side] = middle[side]
+		const waypoints = [a, lead, middle, turn, tail, b]
+		const clean = Arr.filter(waypoints, (point, i) => {
+			const previous = waypoints[i - 1]
+			return !previous || point.distanceTo(previous) > 0.01
+		})
+		const curve = roundedRoute(clean, 0.3)
+		return [
+			{
+				id: `link:${encodePair([edge.source, edge.target])}`,
+				source: edge.source,
+				target: edge.target,
+				geometryKey: encodePoints(Arr.map(clean, (point) => point.toArray())),
+				kind,
+				curve,
+				signPosition: curve.getPointAt(0.5).add(new THREE.Vector3(0, 0.9, 0)),
+			},
+		]
+	})
 }
 
 /** Metrics update independently of route geometry and its GPU resources. */

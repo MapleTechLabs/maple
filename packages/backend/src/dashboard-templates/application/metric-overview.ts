@@ -107,7 +107,7 @@ function widgets(opts: {
 				title: "By Service",
 				columns: [
 					{ field: "name", header: "Service" },
-					{ field: "value", header: Str.toUpperCase(agg.charAt(0)) + Str.slice(1)(agg) },
+					{ field: "value", header: Str.toUpperCase(Str.slice(0, 1)(agg)) + Str.slice(1)(agg) },
 				],
 			},
 			layout: { x: 0, y: 8, w: 12, h: 4 },

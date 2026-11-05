@@ -16,7 +16,7 @@ import {
 	MAX_ISSUE_MERGE_SOURCES,
 	type OrgId,
 } from "@maple/domain/http"
-import { Clock, Context, Effect, Layer, Array as Arr } from "effect"
+import { Clock, Context, Effect, Layer, Option, Array as Arr } from "effect"
 import type { MapleDb } from "@maple/db/client"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
@@ -104,14 +104,19 @@ const make: Effect.Effect<ErrorIssueMergeServiceApi, never, Database | ErrorIssu
 				db.transaction(
 					Effect.gen(function* () {
 						const rows = yield* lockIssues(db, orgId, [targetId, ...sources])
-						const target = rows.find((row) => row.id === targetId)
-						if (target === undefined) return yield* ErrorIssueNotFoundError.forIssue(targetId)
+						const found = Arr.findFirst(rows, (row) => row.id === targetId)
+						if (Option.isNone(found)) return yield* ErrorIssueNotFoundError.forIssue(targetId)
+						const target = found.value
 						if (target.kind !== "error") return yield* invalid("Only error issues can be merged.")
 						if (target.mergedIntoIssueId !== null || target.archivedAt !== null) {
 							return yield* invalid("The issue to keep is archived or merged away.")
 						}
-						const missing = sources.find((id) => !rows.some((row) => row.id === id))
-						if (missing !== undefined) return yield* ErrorIssueNotFoundError.forIssue(missing)
+						const missing = Arr.findFirst(
+							sources,
+							(id) => !Arr.some(rows, (row) => row.id === id),
+						)
+						if (Option.isSome(missing))
+							return yield* ErrorIssueNotFoundError.forIssue(missing.value)
 						const merged = Arr.filter(rows, (row) => row.id !== targetId)
 						const problems = Arr.flatMap(merged, (row) => {
 							const problem = mergeProblem(target, row)
@@ -154,13 +159,16 @@ const make: Effect.Effect<ErrorIssueMergeServiceApi, never, Database | ErrorIssu
 							return yield* invalid("This issue is not merged into another.")
 						}
 						const locked = yield* lockIssues(db, orgId, [issueId, unlocked.mergedIntoIssueId])
-						const issue = locked.find((row) => row.id === issueId)
-						const targetId = issue?.mergedIntoIssueId ?? null
+						const lockedIssue = Arr.findFirst(locked, (row) => row.id === issueId)
+						const targetId = Option.getOrNull(
+							Option.map(lockedIssue, (row) => row.mergedIntoIssueId),
+						)
 						// Re-read under the lock: a concurrent unmerge or merge may have moved it.
-						if (issue === undefined || targetId !== unlocked.mergedIntoIssueId) {
+						if (Option.isNone(lockedIssue) || targetId !== unlocked.mergedIntoIssueId) {
 							return yield* invalid("This issue changed while unmerging; try again.")
 						}
-						const target = locked.find((row) => row.id === targetId)
+						const issue = lockedIssue.value
+						const target = Arr.findFirst(locked, (row) => row.id === targetId)
 
 						// Its own hash goes back to being its primary; any others it brought
 						// become its aliases again.
@@ -181,13 +189,13 @@ const make: Effect.Effect<ErrorIssueMergeServiceApi, never, Database | ErrorIssu
 								.set({ mergedIntoIssueId: null, archivedAt: null, updatedAt: timestamp })
 								.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)]),
 						)
-						if (target !== undefined) {
+						if (Option.isSome(target)) {
 							yield* db.run(
 								PG.update(ErrorIssues)
 									.set({
 										occurrenceCount: Math.max(
 											0,
-											target.occurrenceCount - issue.occurrenceCount,
+											target.value.occurrenceCount - issue.occurrenceCount,
 										),
 										updatedAt: timestamp,
 									})

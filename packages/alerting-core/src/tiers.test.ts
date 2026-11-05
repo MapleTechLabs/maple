@@ -204,12 +204,13 @@ describe("single-tier rules behave exactly as the consecutive-count machine did"
 	const lcg = (seed: number) => {
 		const next = (state: number) => (state * 1_103_515_245 + 12_345) % 2_147_483_648
 		return (count: number) =>
-			Array.from({ length: count }).reduce<{ seed: number; out: number[] }>(
+			Arr.reduce<unknown, { seed: number; out: number[] }>(
+				Array.from({ length: count }),
+				{ seed, out: [] },
 				(acc) => {
 					const seedNext = next(acc.seed)
 					return { seed: seedNext, out: [...acc.out, seedNext / 2_147_483_648] }
 				},
-				{ seed, out: [] },
 			).out
 	}
 

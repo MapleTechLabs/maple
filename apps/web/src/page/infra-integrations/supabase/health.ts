@@ -26,7 +26,7 @@ const sentenceCase = (status: string): string => {
 		Arr.filter(Str.split("_")(Str.toLowerCase(status)), (word) => word !== ""),
 		" ",
 	)
-	return Str.toUpperCase(sentence.charAt(0)) + Str.slice(1)(sentence)
+	return Str.toUpperCase(Str.slice(0, 1)(sentence)) + Str.slice(1)(sentence)
 }
 
 export const lifecycleOf = (status: string): Lifecycle => {

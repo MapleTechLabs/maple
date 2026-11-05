@@ -209,7 +209,13 @@ const linkTags = <M>(
 	palette: Palette,
 	toMessage: (message: Message) => M,
 ): ReadonlyArray<Html> => {
-	const labelOf = (id: string) => topology.nodes.find((node) => node.id === id)?.label
+	const labelOf = (id: string) =>
+		Option.getOrUndefined(
+			Option.map(
+				Arr.findFirst(topology.nodes, (node) => node.id === id),
+				(node) => node.label,
+			),
+		)
 	return Arr.map(
 		Arr.filter(
 			Arr.filter(links, (link) => !link.edge.relation),

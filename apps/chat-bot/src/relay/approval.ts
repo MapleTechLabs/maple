@@ -38,5 +38,5 @@ export const settledMessageBlocks = (
 				),
 		)
 	// The caller found this message BY the call, so its approval block is in one of these groups.
-	return groups.find(holdsProposal) ?? []
+	return Option.getOrElse(Arr.findFirst(groups, holdsProposal), (): ReadonlyArray<ChatBlock> => [])
 }

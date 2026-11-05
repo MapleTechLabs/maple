@@ -14,6 +14,7 @@ import {
 	Tracer,
 	Array as Arr,
 	String as Str,
+	Option,
 } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -239,7 +240,12 @@ const stamped = (ms: number, text: string) =>
 const spansOf = (call: IngestCall) =>
 	Arr.flatMap(call.body.resourceSpans, (rs) => Arr.flatMap(rs.scopeSpans, (ss) => ss.spans))
 const attr = (attributes: OtlpRequest["resourceSpans"][number]["resource"]["attributes"], key: string) => {
-	const value = attributes.find((kv) => kv.key === key)?.value
+	const value = Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(attributes, (kv) => kv.key === key),
+			(kv) => kv.value,
+		),
+	)
 	return value?.stringValue ?? value?.intValue
 }
 
@@ -288,8 +294,12 @@ describe("CiTraceService", () => {
 				expected,
 			)
 			assert.strictEqual(
-				logCalls[0]!.resourceLogs[0]!.resource.attributes.find((kv) => kv.key === "maple_source_id")
-					?.value.stringValue,
+				Option.getOrThrow(
+					Arr.findFirst(
+						logCalls[0]!.resourceLogs[0]!.resource.attributes,
+						(kv) => kv.key === "maple_source_id",
+					),
+				).value.stringValue,
 				expected,
 			)
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [200], logCalls))))
@@ -631,7 +641,12 @@ describe("CiTraceService", () => {
 				Arr.map(calls, (call) => call.authorization),
 				[calls[0]!.authorization, calls[0]!.authorization, `Bearer ${rotated.publicKey}`],
 			)
-			assert.notStrictEqual(rotated.publicKey, calls[0]!.authorization?.slice("Bearer ".length))
+			assert.notStrictEqual(
+				rotated.publicKey,
+				Option.getOrUndefined(
+					Option.map(Option.fromNullishOr(calls[0]!.authorization), Str.slice("Bearer ".length)),
+				),
+			)
 		})
 	})
 
@@ -831,9 +846,11 @@ describe("CiTraceService", () => {
 			yield* sink
 				.onWorkflowJobLog(orgId, job, Stream.fail("log download reset"))
 				.pipe(Effect.provideService(Tracer.Tracer, tracer))
-			const emitLog = spans.find((span) => span.name === "CiTraceService.emitLog")
-			assert.strictEqual(emitLog?.status._tag, "Ended")
-			if (emitLog?.status._tag !== "Ended") return
+			const emitLog = Option.getOrThrow(
+				Arr.findFirst(spans, (span) => span.name === "CiTraceService.emitLog"),
+			)
+			assert.strictEqual(emitLog.status._tag, "Ended")
+			if (emitLog.status._tag !== "Ended") return
 			assert.isTrue(Exit.isFailure(emitLog.status.exit))
 			assert.strictEqual(emitLog.attributes.get("maple.cicd.outcome"), "log_failed")
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch([]))))

@@ -95,9 +95,9 @@ export const load = (model: Model, context: PageContext, force = false): Step =>
 					),
 				]),
 			}
-			return Record.keys(model.cards).reduce<Step>((step, fingerprintHash) => {
+			return Array.reduce(Record.keys(model.cards), base, (step, fingerprintHash): Step => {
 				const card = loadCard(step.model, context, fingerprintHash, force)
 				return { model: card.model, commands: [...(step.commands ?? []), ...(card.commands ?? [])] }
-			}, base)
+			})
 		},
 	})

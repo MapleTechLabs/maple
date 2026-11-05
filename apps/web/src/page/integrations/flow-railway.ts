@@ -4,6 +4,7 @@ import { fold } from "./derive"
 import type { FlowSpec } from "./flow"
 import type { Model } from "./model"
 import { unsyncedEnvironments } from "./railway"
+import { Array as Arr } from "effect"
 
 // Railway's place in the connect flow: a token, then Go live. Railway has no project filter yet.
 
@@ -20,7 +21,10 @@ export const railwayFlow = (model: Model): FlowSpec => {
 		() => null,
 	)
 	const connected = status !== null && status.connected && !status.authFailed ? railwayReach(status) : null
-	const failing = status?.environments.filter((environment) => environment.lastError !== null).length ?? 0
+	const failing =
+		status === null
+			? 0
+			: Arr.filter(status.environments, (environment) => environment.lastError !== null).length
 	const live =
 		status === null || !status.connected
 			? "pending"

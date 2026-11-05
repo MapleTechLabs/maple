@@ -120,7 +120,7 @@ describe("telegramTransport.render", () => {
 	it("carries the Open in Maple link as the only inline keyboard button", () => {
 		const [row] = render().body.reply_markup.inline_keyboard
 		assert.deepStrictEqual(
-			row?.map((button) => button.url),
+			Arr.map(row ?? [], (button) => button.url),
 			[LINK],
 		)
 	})

@@ -1,6 +1,6 @@
 import type { ReleaseServiceImpact } from "../../../components/releases/release-model"
 import { deriveReleaseImpacts } from "../../../components/releases/release-model"
-import { Option, Array as Arr, Record as Rec } from "effect"
+import { Option, Array as Arr, Record as Rec, Order } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { ChartRuntime, LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
@@ -31,15 +31,23 @@ const withCommands = (model: Model, commands: Commands, result: Return = { model
 	commands: [...(result.commands ?? []), ...commands],
 })
 
+const busiestFirst = Order.flip(
+	Order.mapInput(Order.Number, (impact: { readonly spanCount: number }) => impact.spanCount),
+)
+
 /** `ReleaseBody`: the busiest environment's baseline for this service and version. */
 export const baselineOf = (model: Model, serviceName: string): string | undefined =>
 	Option.getOrUndefined(
 		Option.flatMap(AsyncData.getData(model.releases.data), (data) =>
 			Option.fromUndefinedOr(
-				Arr.filter(
-					deriveOf(data).impacts,
-					(impact) => impact.serviceName === serviceName && impact.commitSha === model.commitSha,
-				).toSorted((a, b) => b.spanCount - a.spanCount)[0]?.baseline?.commitSha,
+				Arr.sort(
+					Arr.filter(
+						deriveOf(data).impacts,
+						(impact) =>
+							impact.serviceName === serviceName && impact.commitSha === model.commitSha,
+					),
+					busiestFirst,
+				)[0]?.baseline?.commitSha,
 			),
 		),
 	)
@@ -62,8 +70,9 @@ export const derivedOf = (model: Model, serviceName: string): ServiceDerived | u
 			return {
 				detail,
 				impacts,
-				impact: Arr.filter(impacts, (candidate) => candidate.commitSha === model.commitSha).toSorted(
-					(a, b) => b.spanCount - a.spanCount,
+				impact: Arr.sort(
+					Arr.filter(impacts, (candidate) => candidate.commitSha === model.commitSha),
+					busiestFirst,
 				)[0],
 				releases: Arr.map(
 					Arr.filter(detail.timeline, (point) => point.serviceName === serviceName),

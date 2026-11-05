@@ -62,7 +62,7 @@ import {
 	themeContrastIssue,
 	STATUS_PAGE_MAX_URL_LENGTH,
 } from "@maple/domain/status-page"
-import { Clock, Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { postgresSqlState } from "@maple/backend/platform/postgres-errors"
@@ -312,7 +312,7 @@ const validateName = (raw: string, what: string) => {
 
 /** Optional free text: blank becomes null. */
 const validateText = (raw: string | null, what: string) => {
-	const text = raw?.trim() ?? ""
+	const text = raw === null ? "" : Str.trim(raw)
 	if (text.length > MAX_TEXT_LENGTH)
 		return Effect.fail(invalid(`${what} must be at most ${MAX_TEXT_LENGTH} characters`))
 	return Effect.succeed(text.length === 0 ? null : text)
@@ -326,7 +326,7 @@ const validateSlug = (slug: string) =>
 			)
 
 const validateHttpsUrl = (raw: string | null, what: string) => {
-	const value = raw?.trim() ?? ""
+	const value = raw === null ? "" : Str.trim(raw)
 	if (value.length === 0) return Effect.succeed(null)
 	if (value.length > STATUS_PAGE_MAX_URL_LENGTH || !URL.canParse(value))
 		return Effect.fail(invalid(`${what} must be a valid URL`))
@@ -336,7 +336,7 @@ const validateHttpsUrl = (raw: string | null, what: string) => {
 
 /** Blank is no colour; anything else must be `#rrggbb`, stored lower-cased. */
 const validateHex = (raw: string | null, what: string) => {
-	const value = raw?.trim() ?? ""
+	const value = raw === null ? "" : Str.trim(raw)
 	if (value.length === 0) return Effect.succeed(null)
 	return STATUS_PAGE_HEX_COLOR_PATTERN.test(value)
 		? Effect.succeed(Str.toLowerCase(value))
@@ -601,8 +601,8 @@ const ensureComponentsOnPage = Effect.fnUntraced(function* (
 			.where(($) => [$.orgId.eq(orgId), $.pageId.eq(pageId), $.id.in_(first, ...rest)]),
 	)
 	const known = new Set(Arr.map(found, (row) => row.id))
-	const missing = componentIds.find((id) => !known.has(id))
-	if (missing !== undefined) return yield* invalid(`Component ${missing} is not on this page`)
+	const missing = Arr.findFirst(componentIds, (id) => !known.has(id))
+	if (Option.isSome(missing)) return yield* invalid(`Component ${missing.value} is not on this page`)
 })
 
 const replaceIncidentComponents = Effect.fnUntraced(function* (

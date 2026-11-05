@@ -11,7 +11,7 @@ import {
 	mapGcpTimeSeries,
 	type GcpTopGroup,
 } from "./mapping"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 const startMs = Date.UTC(2026, 9, 8, 12, 0, 0)
 const endMs = startMs + 5 * 60_000
@@ -19,8 +19,8 @@ const at = (minutes: number) => new Date(startMs + minutes * 60_000).toISOString
 
 const find = (type: string): { readonly group: GcpMetricGroup; readonly metric: GcpMetric } => {
 	for (const group of GCP_METRIC_GROUPS) {
-		const metric = group.metrics.find((candidate) => candidate.type === type)
-		if (metric !== undefined) return { group, metric }
+		const metric = Arr.findFirst(group.metrics, (candidate) => candidate.type === type)
+		if (Option.isSome(metric)) return { group, metric: metric.value }
 	}
 	throw new Error(`${type} is not a curated metric`)
 }
@@ -178,8 +178,10 @@ describe("mapGcpTimeSeries", () => {
 		}
 		// Read twice: once for its quantiles, once for its count.
 		const latencies = (name: string) => {
-			const group = GCP_METRIC_GROUPS.find((one) => one.resourceType === "cloudsql_instance_database")!
-			const metric = group.metrics.find((one) => one.name === name)!
+			const group = Option.getOrThrow(
+				Arr.findFirst(GCP_METRIC_GROUPS, (one) => one.resourceType === "cloudsql_instance_database"),
+			)
+			const metric = Option.getOrThrow(Arr.findFirst(group.metrics, (one) => one.name === name))
 			return mapGcpTimeSeries({ group, metric, startMs, endMs }, [series])
 		}
 		const [queries] = latencies("gcp.cloud_sql.queries").sumRows
@@ -381,7 +383,7 @@ describe("mapGcpResource", () => {
 })
 
 describe("gcpTopSeries", () => {
-	const statements = GCP_METRIC_GROUPS.find((group) => group.top !== undefined)!
+	const statements = Option.getOrThrow(Arr.findFirst(GCP_METRIC_GROUPS, (group) => group.top !== undefined))
 	const group: GcpTopGroup = { ...statements, top: { ...statements.top!, limit: 2 } }
 	const series = (instance: string, hash: string, microseconds: number): GcpTimeSeries => ({
 		metric: { labels: { query_hash: hash } },
@@ -422,7 +424,9 @@ describe("gcpTopSeries", () => {
 	})
 
 	it("stores a point per window, its counter's start at the window's start", () => {
-		const metric = statements.metrics.find((candidate) => candidate.name === statements.top!.by)!
+		const metric = Option.getOrThrow(
+			Arr.findFirst(statements.metrics, (candidate) => candidate.name === statements.top!.by),
+		)
 		const { sumRows } = mapGcpTimeSeries({ group, metric, startMs, endMs }, [
 			{
 				...series("orders-db", "a", 2_000_000),

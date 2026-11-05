@@ -256,7 +256,7 @@ const cleanPrReviewConfig = Effect.fn("GithubConnectService.cleanPrReviewConfig"
 	]
 	if (ignorePaths.length > 50)
 		return yield* new IntegrationsValidationError({ message: "At most 50 ignored paths." })
-	const instructions = config.instructions?.trim()
+	const instructions = config.instructions === undefined ? undefined : Str.trim(config.instructions)
 	return new PrReviewRepositoryConfig({
 		...(instructions ? { instructions } : undefined),
 		...(ignorePaths.length > 0 ? { ignorePaths } : undefined),

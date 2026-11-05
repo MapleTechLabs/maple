@@ -24,6 +24,7 @@ import {
 	Semaphore,
 	Stream,
 	Array as Arr,
+	Option,
 	String as Str,
 } from "effect"
 import type { ChatMessageRef, ChatOutbound, ChatTarget, ChatWritePhase } from "./outbound"
@@ -89,9 +90,10 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 			// Messages an earlier run posted already say more than a render of no events would.
 			if (resumed && transcript.seq === 0) return
 			const { ending, running } = yield* Ref.updateAndGet(turn, (state) => ({ ...state, dirty: false }))
-			const message = transcript.messages.find((candidate) => candidate.id === messageId)
-			const blocks: Array<ChatBlock> =
-				message === undefined ? [] : [...renderChatMessage(message, context, running)]
+			const blocks: Array<ChatBlock> = Option.match(
+				Arr.findFirst(transcript.messages, (candidate) => candidate.id === messageId),
+				{ onNone: () => [], onSome: (message) => [...renderChatMessage(message, context, running)] },
+			)
 			if (ending !== null) blocks.push(ending)
 			// A finished turn must never be left under the placeholder: a model that stops after a
 			// tool call without a closing word renders as nothing at all, and "Working on it…" would

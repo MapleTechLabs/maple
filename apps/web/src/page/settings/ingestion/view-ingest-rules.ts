@@ -26,7 +26,7 @@ import { settingsSection } from "../kit/section"
 import { hourlyMatches, menuIdOf, Message as RulesMessage, type Model } from "./ingest-rules"
 import { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // `IngestRulesSection`: above the attribute mappings on the ingestion tab.
 
@@ -81,8 +81,9 @@ const hitsCell = (h: H, model: Model, rule: V2IngestRule): Html => {
 		onEmpty: () => [skeleton(h, "h-3.5 w-16")],
 		onFailure: () => [muted(h, "-")],
 		onData: (stats) => {
-			const totals = stats.rules.find((entry) => entry.id === rule.id)
-			if (totals === undefined || totals.matched === 0) return [muted(h, "No hits")]
+			const found = Arr.findFirst(stats.rules, (entry) => entry.id === rule.id)
+			if (Option.isNone(found) || found.value.matched === 0) return [muted(h, "No hits")]
+			const totals = found.value
 			const count =
 				rule.action.type === "drop"
 					? `${formatNumber(totals.dropped)} dropped`

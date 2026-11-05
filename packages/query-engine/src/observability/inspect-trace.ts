@@ -51,7 +51,7 @@ const extractKeyAttributes = (raw: string, keepAll: boolean): Effect.Effect<Reco
 							(!HashSet.has(SKIP_ATTR_KEYS, k) &&
 								!Arr.some(SKIP_ATTR_PREFIXES, (p) => Str.startsWith(p)(k)))),
 				),
-				Object.fromEntries,
+				Rec.fromEntries,
 			),
 		),
 		Effect.orElseSucceed(() => ({})),
@@ -63,7 +63,7 @@ const parseJsonAttributes = (raw: string): Effect.Effect<Record<string, string>>
 			pipe(
 				Rec.toEntries(parsed),
 				Arr.filter(([, v]) => v !== ""),
-				Object.fromEntries,
+				Rec.fromEntries,
 			),
 		),
 		Effect.orElseSucceed(() => ({})),

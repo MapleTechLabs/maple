@@ -1,5 +1,5 @@
 import { inferBucketSeconds, parseBucketMs } from "../../lib/format"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 /**
  * A row that can be tested for partiality. `partial` is the authoritative flag
@@ -25,8 +25,8 @@ export function findFirstPartialIndex(
 ): number {
 	if (rows.length === 0) return -1
 
-	const flagged = rows.findIndex((row) => row.partial === true)
-	if (flagged !== -1) return flagged
+	const flagged = Arr.findFirstIndex(rows, (row) => row.partial === true)
+	if (Option.isSome(flagged)) return flagged.value
 
 	const bucketSeconds = inferBucketSeconds(rows)
 	if (bucketSeconds == null) return -1

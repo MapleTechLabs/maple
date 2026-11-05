@@ -62,7 +62,8 @@ const orderByTree = (
 		{ span, depth },
 		...Arr.flatMap(childrenOf(span.spanId), (child) => walk(child, depth + 1)),
 	]
-	return Arr.filter(spans, (span) => parentOf(span) === undefined).flatMap((root) => walk(root, 0))
+	const roots = Arr.filter(spans, (span) => parentOf(span) === undefined)
+	return Arr.flatMap(roots, (root) => walk(root, 0))
 }
 
 /** Turns, their spans and the idle gaps between, in time order; a turn the filter empties drops out. */
@@ -117,8 +118,8 @@ const leadingOperation = (span: AiSessionSpan, name: string): string | undefined
 
 const namesTheModel = (span: AiSessionSpan, subject: string): boolean => {
 	const lower = Str.toLowerCase(subject)
-	return (
-		span.genAi.responseModel?.toLowerCase() === lower || span.genAi.requestModel?.toLowerCase() === lower
+	return Arr.some([span.genAi.responseModel, span.genAi.requestModel], (model) =>
+		model === undefined ? false : Str.toLowerCase(model) === lower,
 	)
 }
 

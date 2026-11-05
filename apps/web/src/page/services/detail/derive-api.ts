@@ -1,6 +1,6 @@
 import { parseBucketMs } from "@maple/ui/lib/format"
 import type { ApiBucket, ApiTotals, Endpoint, StatusRow } from "./model-tabs"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option, Order } from "effect"
 
 // Pure halves of the API tab: status mix, KPI figures, the responses chart, the non-2xx breakdown,
 // the table filters and the drawer's latency distribution.
@@ -74,9 +74,10 @@ export const bucketAxis = (
 	window: WindowMs,
 ): ReadonlyArray<number> => {
 	const step = Math.max(1, bucketSeconds) * 1000
-	const anchor = buckets.reduce<number | null>(
-		(found, bucket) => found ?? parseBucketMs(bucket.bucket),
+	const anchor = Arr.reduce<ApiBucket, number | null>(
+		buckets,
 		null,
+		(found, bucket) => found ?? parseBucketMs(bucket.bucket),
 	)
 	const origin = anchor ?? Math.floor(window.startMs / step) * step
 	// The first slot at or before the window start, the last one starting before its end.
@@ -183,7 +184,14 @@ const isNonOk = (code: string) => Number(code) >= 400
 type Ranked = ReadonlyArray<Readonly<{ name: string; count: number }>>
 
 const ranked = (counts: ReadonlyMap<string, number>): Ranked =>
-	Arr.map([...counts], ([name, count]) => ({ name, count })).toSorted((a, b) => b.count - a.count)
+	Arr.sort(
+		Arr.map([...counts], ([name, count]) => ({ name, count })),
+		byCountDesc,
+	)
+
+const byCountDesc = Order.flip(
+	Order.mapInput(Order.Number, (entry: { readonly count: number }) => entry.count),
+)
 
 const add = (map: Map<string, number>, key: string, count: number) =>
 	map.set(key, (map.get(key) ?? 0) + count)
@@ -217,13 +225,16 @@ export const statusCodeSummaries = (rows: ReadonlyArray<StatusRow>): ReadonlyArr
 		},
 	)
 	const total = Arr.reduce([...groups.values()], 0, (sum, entry) => sum + entry.count)
-	return Arr.map([...groups], ([code, entry]) => ({
-		code,
-		count: entry.count,
-		share: total > 0 ? entry.count / total : 0,
-		errorTypes: ranked(entry.errorTypes),
-		routes: ranked(entry.routes),
-	})).toSorted((a, b) => b.count - a.count)
+	return Arr.sort(
+		Arr.map([...groups], ([code, entry]) => ({
+			code,
+			count: entry.count,
+			share: total > 0 ? entry.count / total : 0,
+			errorTypes: ranked(entry.errorTypes),
+			routes: ranked(entry.routes),
+		})),
+		byCountDesc,
+	)
 }
 
 /** Every status code of one endpoint (2xx included), busiest first, with its share of the endpoint. */
@@ -240,7 +251,18 @@ export const endpointStatusCodes = (rows: ReadonlyArray<StatusRow>, spanName: st
 /** "/v1/traces, /v1/logs +3": the leading routes of a code, by their path only. */
 export const routeList = (routes: Ranked, shown = 2): string => {
 	// GET and POST of one path read the same once the method is dropped: list each path once.
-	const all = [...new Set(Arr.map(routes, (route) => Str.slice(route.name.indexOf(" ") + 1)(route.name)))]
+	const all = [
+		...new Set(
+			Arr.map(routes, (route) =>
+				Str.slice(
+					Option.match(Str.indexOf(" ")(route.name), {
+						onNone: () => 0,
+						onSome: (space) => space + 1,
+					}),
+				)(route.name),
+			),
+		),
+	]
 	const paths = all.slice(0, shown)
 	const rest = all.length - shown
 	return rest > 0 ? `${Arr.join(paths, ", ")} +${rest}` : Arr.join(paths, ", ")
@@ -282,9 +304,8 @@ export const matchesFilter = (endpoint: Endpoint, filter: EndpointFilter, query:
 
 /** The endpoint the "slowest" badge marks: the worst p95, when it is past the slow line. */
 export const slowestEndpoint = (endpoints: ReadonlyArray<Endpoint>): string | null => {
-	const worst = endpoints.reduce<Endpoint | null>(
-		(acc, endpoint) => (acc === null || endpoint.p95DurationMs > acc.p95DurationMs ? endpoint : acc),
-		null,
+	const worst = Arr.reduce<Endpoint, Endpoint | null>(endpoints, null, (acc, endpoint) =>
+		acc === null || endpoint.p95DurationMs > acc.p95DurationMs ? endpoint : acc,
 	)
 	return worst !== null && worst.p95DurationMs > SLOW_P95_MS ? worst.spanName : null
 }
@@ -310,15 +331,19 @@ export const latencyHistogram = (
 	valuesMs: ReadonlyArray<number>,
 ): ReadonlyArray<HistogramBin> => {
 	// t-digest quantiles can dip out of order; a running max keeps the CDF monotone.
-	const points = Arr.filter(
-		Arr.map(levels, (level, index) => ({ level, ms: Math.max(MIN_LATENCY_MS, valuesMs[index] ?? 0) })),
-		(point) => Number.isFinite(point.ms),
-	).reduce<Array<{ level: number; ms: number }>>(
+	const points = Arr.reduce<{ level: number; ms: number }, Array<{ level: number; ms: number }>>(
+		Arr.filter(
+			Arr.map(levels, (level, index) => ({
+				level,
+				ms: Math.max(MIN_LATENCY_MS, valuesMs[index] ?? 0),
+			})),
+			(point) => Number.isFinite(point.ms),
+		),
+		[],
 		(acc, point) => [
 			...acc,
 			{ level: point.level, ms: Math.max(point.ms, acc[acc.length - 1]?.ms ?? 0) },
 		],
-		[],
 	)
 	const first = points[0]
 	const last = points[points.length - 1]
@@ -328,14 +353,19 @@ export const latencyHistogram = (
 		const x = logOf(ms)
 		if (x <= logOf(first.ms)) return first.level
 		if (x >= logOf(last.ms)) return last.level
-		const upper = points.findIndex((point) => logOf(point.ms) >= x)
-		const hi = points[upper]
-		const lo = points[upper - 1]
+		const upper = Arr.findFirstIndex(points, (point) => logOf(point.ms) >= x)
+		if (Option.isNone(upper)) return last.level
+		const hi = points[upper.value]
+		const lo = points[upper.value - 1]
 		if (hi === undefined || lo === undefined) return last.level
 		const span = logOf(hi.ms) - logOf(lo.ms)
 		return span <= 0 ? hi.level : lo.level + ((x - logOf(lo.ms)) / span) * (hi.level - lo.level)
 	}
-	const quantileAt = (level: number) => points.find((point) => point.level >= level)?.ms ?? last.ms
+	const quantileAt = (level: number) =>
+		Option.match(
+			Arr.findFirst(points, (point) => point.level >= level),
+			{ onNone: () => last.ms, onSome: (point) => point.ms },
+		)
 	const p95 = quantileAt(0.95)
 	const p99 = quantileAt(0.99)
 	const step = (logOf(last.ms) - logOf(first.ms)) / HISTOGRAM_BINS

@@ -14,7 +14,7 @@ import {
 import { basename, join } from "node:path"
 import type { Chdb } from "../chdb"
 import { type ArchiveSignal } from "./signals"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 const decodeJsonRecord = Schema.decodeUnknownSync(
 	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
@@ -200,8 +200,9 @@ export const captureSourceSchema = (
  * "Map(String, String)" }. Returns null for a leaf type with no parentheses.
  */
 const splitType = (type: string): { head: string; inner: string } | null => {
-	const open = type.indexOf("(")
-	if (open < 0) return null
+	const found = Str.indexOf("(")(type)
+	if (Option.isNone(found)) return null
+	const open = found.value
 	const head = Str.trim(Str.slice(0, open)(type))
 	if (!Str.endsWith(")")(type)) return null
 	const inner = Str.slice(open + 1, -1)(type)

@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 
 import type { WorkflowState } from "@maple/domain/http"
@@ -143,16 +144,19 @@ describe("buildErrorSignals", () => {
 		const day = (n: number) => `2026-11-0${n}T00:00:00.000Z`
 		const [signal] = buildErrorSignals({
 			issues: [merged],
-			warehouse: [
-				{ fingerprintHash: "1", count: 4, affectedServicesCount: 1 },
-				{ fingerprintHash: "2", count: 6, affectedServicesCount: 2 },
-			].map((row) => ({
-				...row,
-				errorLabel: "",
-				sampleMessage: "",
-				firstSeen: new Date(0),
-				lastSeen: new Date(0),
-			})),
+			warehouse: Arr.map(
+				[
+					{ fingerprintHash: "1", count: 4, affectedServicesCount: 1 },
+					{ fingerprintHash: "2", count: 6, affectedServicesCount: 2 },
+				],
+				(row) => ({
+					...row,
+					errorLabel: "",
+					sampleMessage: "",
+					firstSeen: new Date(0),
+					lastSeen: new Date(0),
+				}),
+			),
 			spark: [
 				{
 					fingerprintHash: "1",

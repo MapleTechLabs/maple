@@ -31,6 +31,7 @@ import {
 	Effect,
 	Layer,
 	Predicate,
+	Option,
 	Schema,
 	String as Str,
 } from "effect"
@@ -320,7 +321,7 @@ const parseEventCursor = (
 	cursor: string | undefined,
 ): { readonly occurredAtMs: number; readonly id: string } | null => {
 	if (cursor === undefined || cursor === "") return null
-	const separator = cursor.indexOf(":")
+	const separator = Option.getOrElse(Str.indexOf(":")(cursor), () => -1)
 	if (separator <= 0) return null
 	const occurredAtMs = Number(Str.slice(0, separator)(cursor))
 	const id = Str.slice(separator + 1)(cursor)

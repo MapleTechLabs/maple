@@ -9,7 +9,7 @@ import {
 	worstSourceStatus,
 } from "./source-health"
 import { redactUrlSecrets } from "./url-redaction"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 export const INTEGRATION_PROVIDERS = [
 	"github",
@@ -211,7 +211,7 @@ const summarizeResources = (resources: ReadonlyArray<IntegrationResource>): stri
 	if (unhealthy.length === 0) return null
 	const worst = worstStatus(Arr.map(unhealthy, (r) => r.status))
 	const ofWorst = Arr.filter(unhealthy, (r) => r.status === worst)
-	const example = ofWorst.find((r) => r.lastError !== null) ?? ofWorst[0]
+	const example = Option.getOrUndefined(Arr.findFirst(ofWorst, (r) => r.lastError !== null)) ?? ofWorst[0]
 	if (example === undefined) return null
 	const detail = example.lastError ?? example.note
 	return `${ofWorst.length} of ${resources.length} ${worst}, e.g. ${example.kind} ${example.name}${detail ? `: ${detail}` : ""}`
@@ -267,7 +267,7 @@ const entry = (
 }
 
 const oauthFor = (inputs: IntegrationInventoryInputs, provider: string) =>
-	inputs.oauthConnections.find((c) => c.provider === provider)
+	Option.getOrUndefined(Arr.findFirst(inputs.oauthConnections, (c) => c.provider === provider))
 
 const isRevoked = (oauth: IntegrationInventoryInputs["oauthConnections"][number] | undefined) =>
 	oauth !== undefined && oauth.revokedAt !== null
@@ -423,25 +423,32 @@ const planetscale = (inputs: IntegrationInventoryInputs, now: number): Integrati
 		const states = Arr.filter(inputs.planetscalePollStates, (s) => s.databaseId === db.databaseId)
 		const statuses = Arr.map(states, (s) => pollStatus(s, now, PLANETSCALE_STALE_MS))
 		const status = states.length === 0 ? "healthy" : worstStatus(statuses)
-		const failing = states.find((_, i) => statuses[i] === "failing")
+		const failing = Option.getOrUndefined(Arr.findFirst(states, (_, i) => statuses[i] === "failing"))
 		return {
 			kind: "database",
 			name: db.name,
 			status,
-			lastSuccessAt: states.reduce<number | null>(
-				(latest, s) =>
-					s.lastSuccessAt !== null && (latest === null || s.lastSuccessAt > latest)
-						? s.lastSuccessAt
-						: latest,
-				null,
+			lastSuccessAt: Arr.reduce<(typeof states)[number], number | null>(states, null, (latest, s) =>
+				s.lastSuccessAt !== null && (latest === null || s.lastSuccessAt > latest)
+					? s.lastSuccessAt
+					: latest,
 			),
 			lastError: failing?.lastError ?? null,
-			note: [db.kind, db.region, db.state].filter((part) => part !== null && part !== "").join(", "),
+			note: Arr.join(
+				Arr.filter(
+					[db.kind, db.region, db.state],
+					(part): part is string => part !== null && part !== "",
+				),
+				", ",
+			),
 		}
 	})
 	// A disabled managed target only holds branch filters: metrics come from the metrics API.
 	const scrape = Arr.map(
-		inputs.scrapeTargets.filter((t) => t.managedBy?.startsWith("planetscale:") && t.enabled !== false),
+		Arr.filter(
+			inputs.scrapeTargets,
+			(t) => t.managedBy != null && Str.startsWith("planetscale:")(t.managedBy) && t.enabled !== false,
+		),
 		(t) => scrapeResource(t, now, "metrics scrape"),
 	)
 	// Only permissions something still depends on; older bindings stored ones that no longer matter.
@@ -484,7 +491,10 @@ const PLANETSCALE_PERMISSION_FEEDS = [
 ] as const
 
 const permissionFeed = (permission: string) =>
-	PLANETSCALE_PERMISSION_FEEDS.find(([key]) => key === permission)?.[1] ?? "unknown use"
+	Option.match(
+		Arr.findFirst(PLANETSCALE_PERMISSION_FEEDS, ([key]) => key === permission),
+		{ onNone: () => "unknown use", onSome: ([, feed]) => feed },
+	)
 
 export const scrapeResource = (
 	target: IntegrationInventoryInputs["scrapeTargets"][number],
@@ -603,7 +613,9 @@ export const withSourceHealth = (
 		const own = Arr.filter(sources, (source) => source.platform === entry.provider)
 		if (own.length === 0) return entry
 		const status = worstStatus([entry.status, ...Arr.map(own, (source) => source.health.status)])
-		const problem = own.find((source) => source.health.status === status)?.health.problem ?? entry.problem
+		const problem =
+			Option.getOrUndefined(Arr.findFirst(own, (source) => source.health.status === status))?.health
+				.problem ?? entry.problem
 		return { ...entry, status, problem: status === "healthy" ? null : problem }
 	}),
 })

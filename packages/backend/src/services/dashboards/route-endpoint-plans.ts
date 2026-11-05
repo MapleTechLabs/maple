@@ -53,7 +53,7 @@ import {
 } from "@maple/query-model"
 import { PRODUCT_EVENTS_FUNNEL_ENDPOINT, PRODUCT_EVENTS_PATHS_ENDPOINT } from "@maple/widgets/dashboard"
 import { TELEMETRY_READ_FAMILIES } from "@maple/domain/http/v2"
-import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	coerceErrorsByTypeRows,
 	coerceErrorsSummary,
@@ -101,7 +101,9 @@ interface RouteEndpointPlanRegistry {
 
 /** Own keys only, so a stored endpoint like "constructor" finds no plan instead of `Object`. */
 export const routeEndpointPlan = (endpoint: string): RouteEndpointPlan | undefined =>
-	Object.hasOwn(ROUTE_ENDPOINT_PLANS, endpoint) ? ROUTE_ENDPOINT_PLANS[endpoint] : undefined
+	Rec.has<string, RouteEndpointPlan>(ROUTE_ENDPOINT_PLANS, endpoint)
+		? ROUTE_ENDPOINT_PLANS[endpoint]
+		: undefined
 
 /**
  * What a plan hands the tile: the browser's server function's return value for

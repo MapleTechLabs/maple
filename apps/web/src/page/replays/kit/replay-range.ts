@@ -223,7 +223,10 @@ export const initialRanges = (
 	plan: ReadonlyArray<ReplayRange>,
 ): ReadonlyArray<ReplayRange> => {
 	if (chunks.length === 0) return []
-	const seed = chunks.find((chunk) => chunk.is_checkpoint) ?? chunks[0]!
+	const seed = Option.getOrElse(
+		Arr.findFirst(chunks, (chunk) => chunk.is_checkpoint),
+		() => chunks[0]!,
+	)
 	return rangesCovering(chunks, plan, seed.chunk_seq, INITIAL_WINDOW_BYTES)
 }
 
@@ -240,10 +243,12 @@ export const rangesCovering = (
 	fromChunkSeq: number,
 	byteBudget: number,
 ): ReadonlyArray<ReplayRange> => {
-	const startIndex = plan.findIndex(
+	const found = Arr.findFirstIndex(
+		plan,
 		(range) => fromChunkSeq >= range.fromChunkSeq && fromChunkSeq <= range.toChunkSeq,
 	)
-	if (startIndex < 0) return []
+	if (Option.isNone(found)) return []
+	const startIndex = found.value
 	const bytesIn = (range: ReplayRange) =>
 		Arr.reduce(chunks, 0, (sum, chunk) =>
 			chunk.chunk_seq >= range.fromChunkSeq && chunk.chunk_seq <= range.toChunkSeq

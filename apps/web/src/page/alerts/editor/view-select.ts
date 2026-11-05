@@ -2,7 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Select from "@maple/views/ui/select"
 import { view as selectView, type SelectOption } from "@maple/views/ui/select-view"
 import { Message } from "./message"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -20,8 +20,8 @@ export const formSelect = (
 		toView: (parts: ReadonlyArray<Html>) => Html
 	}>,
 ): Html => {
-	const index = options.findIndex((option) => option.value === value)
-	const current = selected ?? Select.init(id, { value, selectedIndex: index === -1 ? null : index })
+	const index = Arr.findFirstIndex(options, (option) => option.value === value)
+	const current = selected ?? Select.init(id, { value, selectedIndex: Option.getOrNull(index) })
 	return h.submodel({
 		slotId: `alert-rule-select-${id}`,
 		model: { ...current, value },

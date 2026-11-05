@@ -3,7 +3,7 @@
 // for everything that reads. Both come from the environment, never argv.
 
 import { createHash, createHmac, timingSafeEqual } from "node:crypto"
-import { Result, Schema, Array as Arr, String as Str } from "effect"
+import { Option, pipe, Result, Schema, Array as Arr, String as Str } from "effect"
 
 export const INGEST_KEY_ENV = "MAPLE_LOCAL_INGEST_KEY"
 export const ACCESS_TOKEN_ENV = "MAPLE_LOCAL_ACCESS_TOKEN"
@@ -36,7 +36,8 @@ const readSecret = (
 	env: Readonly<Record<string, string | undefined>>,
 	name: string,
 ): Result.Result<string | undefined, RemoteAuthConfigError> => {
-	const value = env[name]?.trim()
+	const raw = env[name]
+	const value = raw === undefined ? undefined : Str.trim(raw)
 	if (value === undefined || value === "") return Result.succeed(undefined)
 	return value.length < MIN_SECRET_LENGTH
 		? Result.fail(
@@ -66,8 +67,13 @@ export const secretMatches = (expected: string, supplied: string | null | undefi
 
 const bearerToken = (req: Request): string | null => {
 	const header = req.headers.get("authorization")
-	const match = header?.match(/^Bearer\s+(.+)$/i)
-	return match?.[1]?.trim() ?? null
+	if (header === null) return null
+	return pipe(
+		Str.match(/^Bearer\s+(.+)$/i)(header),
+		Option.flatMap((match) => Option.fromUndefinedOr(match[1])),
+		Option.map(Str.trim),
+		Option.getOrNull,
+	)
 }
 
 /** The ingest key as Maple's cloud ingest accepts it: `x-maple-ingest-key` or a Bearer token. */
@@ -76,9 +82,9 @@ export const presentedIngestKey = (req: Request): string | null =>
 
 const readCookie = (req: Request, name: string): string | null => {
 	for (const part of Str.split(";")(req.headers.get("cookie") ?? "")) {
-		const separator = part.indexOf("=")
-		if (separator !== -1 && Str.trim(Str.slice(0, separator)(part)) === name)
-			return Str.trim(Str.slice(separator + 1)(part))
+		const separator = Str.indexOf("=")(part)
+		if (Option.isSome(separator) && Str.trim(Str.slice(0, separator.value)(part)) === name)
+			return Str.trim(Str.slice(separator.value + 1)(part))
 	}
 	return null
 }
@@ -96,8 +102,9 @@ export const issueSession = (accessToken: string, nowMs: number): string => {
 }
 
 export const sessionValid = (accessToken: string, value: string | null, nowMs: number): boolean => {
-	const match = value?.match(/^(\d{1,16})\.([\w-]{43})$/)
-	if (!match) return false
+	const found = value === null ? Option.none() : Str.match(/^(\d{1,16})\.([\w-]{43})$/)(value)
+	if (Option.isNone(found)) return false
+	const match = found.value
 	const expiresAtMs = Number(match[1])
 	if (expiresAtMs <= nowMs) return false
 	const expected = Buffer.from(sessionSignature(accessToken, expiresAtMs))
@@ -105,9 +112,12 @@ export const sessionValid = (accessToken: string, value: string | null, nowMs: n
 	return expected.length === supplied.length && timingSafeEqual(expected, supplied)
 }
 
+const forwardedProto = (header: string | null): string | null =>
+	header === null ? null : Str.trim(Str.split(",")(header)[0])
+
 /** Requests through a TLS-terminating proxy arrive as plain HTTP with `x-forwarded-proto`. */
 const isSecureRequest = (req: Request, url: URL): boolean =>
-	url.protocol === "https:" || req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() === "https"
+	url.protocol === "https:" || forwardedProto(req.headers.get("x-forwarded-proto")) === "https"
 
 export const sessionCookie = (req: Request, url: URL, value: string): string =>
 	Arr.join(
@@ -213,7 +223,7 @@ export class LoginThrottle {
 	retryAfterMs(client: string, nowMs: number): number {
 		this.#prune(nowMs)
 		// Failures are only recorded below the server limit, so this scan stays short.
-		const own = this.#failures.filter((failure) => failure.client === client)
+		const own = Arr.filter(this.#failures, (failure) => failure.client === client)
 		return Math.max(
 			this.#retryAfter(this.#failures, this.serverLimit, nowMs),
 			this.#retryAfter(own, this.perClientLimit, nowMs),
@@ -264,7 +274,16 @@ export const safeNextPath = (value: string | null | undefined): string =>
 	// becomes `//evil`) and the header refuses non-Latin-1. `//` and `\` are refused too.
 	value !== null && value !== undefined && /^\/(?!\/)[\x21-\x5b\x5d-\x7e]*$/.test(value) ? value : "/"
 
-const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`)
+// `&` goes first so the later replacements' own ampersands are not escaped again.
+const escapeHtml = (value: string): string =>
+	pipe(
+		value,
+		Str.replaceAll("&", "&#38;"),
+		Str.replaceAll("<", "&#60;"),
+		Str.replaceAll(">", "&#62;"),
+		Str.replaceAll('"', "&#34;"),
+		Str.replaceAll("'", "&#39;"),
+	)
 
 const LOGIN_CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
 

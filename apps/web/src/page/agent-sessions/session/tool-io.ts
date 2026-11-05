@@ -13,6 +13,7 @@ import { disclosed, jsonPayload, viewSwitch } from "./payload-view"
 import { clampedBody, payloadCopyButton } from "./transcript-kit"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // Tool input and output, and its summary: one invocation, both halves, joined by a spine.
 
@@ -193,9 +194,13 @@ const ioHalf = (h: H, model: Model, half: Half): Html =>
 						h.span(
 							[h.Class(META)],
 							[
-								[half.name, half.meta, sizeLine(half.payload)]
-									.filter((part) => part !== undefined && part !== "")
-									.join(" · "),
+								Arr.join(
+									Arr.filter(
+										[half.name, half.meta, sizeLine(half.payload)],
+										(part): part is string => part !== undefined && part !== "",
+									),
+									" · ",
+								),
 							],
 						),
 						...(half.payload.truncatedByEmitter ? [truncatedBadge(h)] : []),

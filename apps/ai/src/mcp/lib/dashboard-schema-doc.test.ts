@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Schema, Array as Arr } from "effect"
+import { Option, Predicate, Schema, Array as Arr, String as Str } from "effect"
 import {
 	DashboardWidgetSchema,
 	PANEL_TYPES,
@@ -24,8 +24,8 @@ const allSections = () =>
 
 /** Every ```json fence in the generated doc. */
 const jsonExamples = (markdown: string): ReadonlyArray<unknown> => {
-	const blocks = markdown.matchAll(/```json\n([\s\S]*?)\n```/g)
-	return Arr.map([...blocks], ([, body]) => JSON.parse(body!))
+	const blocks = Arr.fromIterable(Str.matchAll(/```json\n([\s\S]*?)\n```/g)(markdown))
+	return Arr.map(blocks, ([, body]) => JSON.parse(body!))
 }
 
 describe("generated JSON examples decode", () => {
@@ -39,7 +39,7 @@ describe("generated JSON examples decode", () => {
 		for (const example of examples) {
 			// The whole-widget example decodes through the widget schema instead;
 			// everything else in this section is a bare data source.
-			const decode = Object.hasOwn(example as object, "dataSource") ? decodeWidget : decodeDataSource
+			const decode = Predicate.hasProperty(example, "dataSource") ? decodeWidget : decodeDataSource
 			expect(() => decode(example)).not.toThrow()
 		}
 	})
@@ -49,7 +49,7 @@ describe("generated JSON examples decode", () => {
 		// all take an assembled widget. Every agent in the documentation A/B
 		// inferred that envelope correctly but reported it as a guess.
 		const examples = jsonExamples(renderDashboardSchemaSection("data_sources"))
-		const widgets = Arr.filter(examples, (example) => Object.hasOwn(example as object, "dataSource"))
+		const widgets = Arr.filter(examples, (example) => Predicate.hasProperty(example, "dataSource"))
 		// The generic widget and the product-event funnel widget, whose data source
 		// is derived from `display.funnel` and so only makes sense shown whole.
 		expect(widgets).toHaveLength(2)
@@ -59,10 +59,13 @@ describe("generated JSON examples decode", () => {
 	it("shows the product-event funnel definition on `display.funnel` with a derived route", () => {
 		const doc = renderDashboardSchemaSection("data_sources")
 		expect(doc).toContain("product_events_funnel")
-		const funnel = jsonExamples(doc).find(
-			(example) =>
-				Object.hasOwn(example as object, "dataSource") &&
-				(example as { visualization?: string }).visualization === "funnel",
+		const funnel = Option.getOrThrow(
+			Arr.findFirst(
+				jsonExamples(doc),
+				(example) =>
+					Predicate.hasProperty(example, "dataSource") &&
+					(example as { visualization?: string }).visualization === "funnel",
+			),
 		) as {
 			dataSource: { endpoint?: string; params?: { steps?: unknown[] } }
 			display: { funnel?: { steps?: unknown[] } }

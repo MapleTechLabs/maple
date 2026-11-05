@@ -32,7 +32,7 @@ import { fieldStateOf, idsOf, numberField, wasNote } from "./view-fields"
 import { formSelect } from "./view-select"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // `RuleConditionFields`: the rule's condition row.
 
@@ -124,7 +124,10 @@ const severityPicker = (h: H, value: AlertSeverity): Html => {
 
 /** `TierLabel`: the fixed severity of a row once a rule has two tiers. */
 const tierLabel = (h: H, severity: AlertSeverity): Html => {
-	const option = SEVERITY_OPTIONS.find((candidate) => candidate.value === severity) ?? SEVERITY_OPTIONS[0]
+	const option = Option.getOrElse(
+		Arr.findFirst(SEVERITY_OPTIONS, (candidate) => candidate.value === severity),
+		() => SEVERITY_OPTIONS[0],
+	)
 	const ids = idsOf(`rule-tier-${severity}`, false)
 	return field(h, { className: "items-stretch gap-1.5", state: fieldStateOf("", undefined) }, [
 		fieldLabel(h, { ids, state: fieldStateOf("", undefined) }, "Severity"),
@@ -261,7 +264,7 @@ const intervalPicker = (
 			inputId: `rule-interval-${option.value}-input`,
 		})),
 	}
-	const current = options.find((option) => option.value === selected)
+	const current = Arr.findFirst(options, (option) => option.value === selected)
 	return field(h, { className: "items-stretch gap-1.5", state: filledState }, [
 		typography(h, { size: "sm", weight: "medium", attributes: [h.Id("rule-interval-label")] }, [
 			"Check every",
@@ -324,9 +327,11 @@ const intervalPicker = (
 const slowdownOf = (model: Model): Pick<ConditionView, "slowedMinutes"> => {
 	const row =
 		model.editingRuleId === null
-			? undefined
-			: model.rules?.find((rule) => rule.id === model.editingRuleId)
-	return { slowedMinutes: row?.slowed_interval_minutes ?? null }
+			? Option.none()
+			: Arr.findFirst(model.rules ?? [], (rule) => rule.id === model.editingRuleId)
+	return {
+		slowedMinutes: Option.getOrNull(Option.flatMapNullishOr(row, (rule) => rule.slowed_interval_minutes)),
+	}
 }
 
 /** Saving resets a slowdown, so say so while the picked interval is shorter than it. */
@@ -366,10 +371,11 @@ const slowdownNotice = (h: H, model: ConditionView, form: RuleForm): ReadonlyArr
 
 const intervalNote = (
 	form: RuleForm,
-	option: ReturnType<typeof intervalOptions>[number] | undefined,
+	found: Option.Option<ReturnType<typeof intervalOptions>[number]>,
 	timing: AlertQueryTiming | null,
 ): string => {
-	if (option === undefined) return ""
+	if (Option.isNone(found)) return ""
+	const option = found.value
 	if (option.isLongerThanWindow) return "Longer than the window, so data between checks would go unread."
 	if (form.signalType === "raw_query" && timing?.failure === "query_too_much_memory") {
 		return "It ran out of memory with the most any interval allows, so checking less often will not help."

@@ -78,7 +78,7 @@ export const resourceTimingAttributes = (
 
 const lookup = (path: string, startedAt: number, doneAt: number): ResourceTimingEntry | undefined =>
 	findResourceTiming(
-		performance.getEntriesByType("resource").filter(isResourceTiming),
+		Arr.filter(performance.getEntriesByType("resource"), isResourceTiming),
 		path,
 		startedAt,
 		doneAt,

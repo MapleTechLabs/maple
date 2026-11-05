@@ -1,5 +1,5 @@
 import type { Lang as Supported, Theme } from "@pierre/highlights"
-import { Effect, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Array as Arr, String as Str } from "effect"
 import { DISPLAY_MAX_CHARS } from "./display-text"
 
 /** A language name or alias (`json`, `shell`), or a file name whose extension names one. */
@@ -84,7 +84,10 @@ export const isHighlighterReady = (): boolean => highlights !== null
 const resolveLang = (module: Highlights, label: Lang): Supported => {
 	const name = Str.toLowerCase(Str.trim(label))
 	if (module.isSupportedLanguage(name)) return name
-	const extension = Str.slice(name.lastIndexOf(".") + 1)(name)
+	const extension = Option.match(Str.lastIndexOf(".")(name), {
+		onNone: () => name,
+		onSome: (dot) => Str.slice(dot + 1)(name),
+	})
 	return Str.includes(".")(name) && module.isSupportedLanguage(extension) ? extension : "text"
 }
 
@@ -105,7 +108,9 @@ export const highlightCode = (code: string, lang: Lang): string => {
 		return `<span ${PENDING}="${escapeAttribute(lang)}">${escapeHtml(code)}</span>`
 	}
 	const html = decoder.decode(highlights.codeToHtml(code, { lang: resolveLang(highlights, lang), theme }))
-	return Str.slice(html.indexOf("<code>") + "<code>".length, html.lastIndexOf("</code>"))(html)
+	const open = Option.getOrElse(Str.indexOf("<code>")(html), () => -1)
+	const close = Option.getOrElse(Str.lastIndexOf("</code>")(html), () => -1)
+	return Str.slice(open + "<code>".length, close)(html)
 }
 
 const SLOT = /^var\(--sh-([\w-]+)\)$/

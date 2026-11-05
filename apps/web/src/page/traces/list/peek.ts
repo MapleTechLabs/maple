@@ -8,7 +8,7 @@ import type { Message as DetailMessage } from "../detail/message"
 import { Message } from "./message"
 import type { Model, TraceRow } from "./model"
 import { allRows } from "./update"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // The trace peek sheet's wiring: the URL's
 // `peek*` params pick the trace; the trace page's Model runs inside the sheet.
@@ -34,9 +34,12 @@ const peekIndex = (model: Model, rows: ReadonlyArray<TraceRow>): number => {
 	if (peek === undefined) return -1
 	const exact =
 		model.search.peekRow === undefined
-			? -1
-			: rows.findIndex((row) => row.traceId === peek && row.spanId === model.search.peekRow)
-	return exact >= 0 ? exact : rows.findIndex((row) => row.traceId === peek)
+			? Option.none()
+			: Arr.findFirstIndex(rows, (row) => row.traceId === peek && row.spanId === model.search.peekRow)
+	return Option.getOrElse(
+		Option.orElse(exact, () => Arr.findFirstIndex(rows, (row) => row.traceId === peek)),
+		() => -1,
+	)
 }
 
 export const peekPosition = (model: Model): { readonly index: number; readonly count: number } | null => {
@@ -59,7 +62,10 @@ export const traceHrefFrom = (
 ) => {
 	const list = hrefOf(AppRoute.Traces({ search: { ...search, ...PEEK_CLEARED } }))
 	const page = hrefOf(AppRoute.Trace({ traceId, search: { t, spanId } }))
-	const listQuery = Str.includes("?")(list) ? Str.slice(list.indexOf("?") + 1)(list) : ""
+	const listQuery = Option.match(Str.indexOf("?")(list), {
+		onNone: () => "",
+		onSome: (question) => Str.slice(question + 1)(list),
+	})
 	const [path, pageQuery = ""] = Str.split("?")(page)
 	const query = Arr.join(
 		Arr.filter([listQuery, pageQuery], (part) => part !== ""),

@@ -18,6 +18,7 @@ export const splitOnMatches = (
 	const segments: Array<{ text: string; match: boolean }> = []
 	const step = (cursor: number, found: number): number => {
 		if (found >= MAX_MATCHES) return cursor
+		// @effect-diagnostics-next-line preferEffectString:off -- searches from a position; Str.indexOf takes none
 		const at = haystack.indexOf(needle, cursor)
 		if (at === -1) return cursor
 		if (at > cursor) segments.push({ text: Str.slice(cursor, at)(text), match: false })

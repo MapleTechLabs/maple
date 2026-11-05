@@ -1,7 +1,7 @@
 import type { SupabaseAdvisorLint } from "@maple/domain/http"
 import { healthReason, projectHealth, type ProjectHealth } from "../health"
 import type { SupabaseFleetInsights, SupabaseProjectRow, SupabaseStatus } from "../model"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 
 // The pure half of the overview: discovery, metrics and health joined per project.
 
@@ -102,13 +102,16 @@ export const advisorFindings = (
 	fleet: SupabaseFleetInsights,
 	names: ReadonlyMap<string, string>,
 ): ReadonlyArray<AdvisorFinding> =>
-	Arr.flatMap(fleet.insights, (insights) =>
-		Arr.map([...insights.advisors.error, ...insights.advisors.warn], (lint): AdvisorFinding => ({
-			lint,
-			projectRef: insights.projectRef,
-			projectName: names.get(insights.projectRef) ?? insights.projectRef,
-		})),
-	).toSorted((a, b) => LEVEL_RANK[a.lint.level] - LEVEL_RANK[b.lint.level])
+	Arr.sort(
+		Arr.flatMap(fleet.insights, (insights) =>
+			Arr.map([...insights.advisors.error, ...insights.advisors.warn], (lint): AdvisorFinding => ({
+				lint,
+				projectRef: insights.projectRef,
+				projectName: names.get(insights.projectRef) ?? insights.projectRef,
+			})),
+		),
+		Order.mapInput(Order.Number, (finding: AdvisorFinding) => LEVEL_RANK[finding.lint.level]),
+	)
 
 /** Whether any read project's advisors have been checked at least once. */
 export const advisorsChecked = (fleet: SupabaseFleetInsights): boolean =>

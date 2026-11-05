@@ -3,7 +3,7 @@ import { defaultRuleForm, ruleToFormState } from "@maple/web-data/alerts/form-ut
 import { switchSignalKind } from "@maple/web-data/alerts/rule-modes"
 import { buildRuleStatesByRuleId, rowToAlertRuleDocument } from "@maple/web-data/collections/alerts"
 import { createWidgetAlertPrefill, resolveWidgetAlertPrefill } from "../../../lib/alerts/widget-prefill"
-import { Option, Schema, String as Str } from "effect"
+import { Option, Schema, String as Str, Array as Arr } from "effect"
 import { ALERT_TEMPLATES } from "../shared/templates"
 import { fromFormState, type RuleForm } from "./form"
 import type { Model, Notice } from "./model"
@@ -62,8 +62,13 @@ export const decodeChartParam = (raw: string) => Option.flatMap(fromBase64Url(ra
 
 /** The rule being edited, from the live rows. */
 export const editingRuleOf = (model: Model, ruleId: string): AlertRuleDocument | null => {
-	const row = (model.rules ?? []).find((candidate) => candidate.id === ruleId)
-	return row === undefined ? null : rowToAlertRuleDocument(row, buildRuleStatesByRuleId(model.states ?? []))
+	return Option.match(
+		Arr.findFirst(model.rules ?? [], (candidate) => candidate.id === ruleId),
+		{
+			onNone: () => null,
+			onSome: (row) => rowToAlertRuleDocument(row, buildRuleStatesByRuleId(model.states ?? [])),
+		},
+	)
 }
 
 export const initialization = (model: Model, draftId: string): Initialization => {
@@ -131,8 +136,8 @@ export const initialization = (model: Model, draftId: string): Initialization =>
 			{ severity: "warning", message: "Couldn't load dashboards. Starting from a blank alert." },
 		])
 	}
-	const template = ALERT_TEMPLATES.find((candidate) => candidate.id === search.template)
-	if (template !== undefined)
-		return ready(`new:template:${template.id}`, fromFormState(template.apply(base)))
+	const template = Arr.findFirst(ALERT_TEMPLATES, (candidate) => candidate.id === search.template)
+	if (Option.isSome(template))
+		return ready(`new:template:${template.value.id}`, fromFormState(template.value.apply(base)))
 	return ready(`new:${search.serviceName ?? "blank"}`, base, [], null, search.serviceName === undefined)
 }

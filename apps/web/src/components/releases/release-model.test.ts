@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { CommitSha, ServiceName } from "@maple/domain/http"
 import type { Release, ReleaseTimelineBucket } from "@maple/web-data/warehouse/releases"
 import {
@@ -345,7 +345,10 @@ describe("liveVersions", () => {
 	it("reports a service stuck on an older co-deployed commit as behind", () => {
 		const live = liveVersions(timeline, groups)
 		expect(live[0]).toMatchObject({ serviceName: "db-sync", commitSha: SHA_A, behind: 2 })
-		expect(live.find((v) => v.serviceName === "api")).toMatchObject({ commitSha: SHA_C, behind: 0 })
+		expect(Option.getOrUndefined(Arr.findFirst(live, (v) => v.serviceName === "api"))).toMatchObject({
+			commitSha: SHA_C,
+			behind: 0,
+		})
 	})
 
 	it("ignores a release its siblings are still rolling out", () => {
@@ -356,8 +359,11 @@ describe("liveVersions", () => {
 			bucket(last, DB, SHA_A, 100),
 		]
 		const live = liveVersions(rolling, groups)
-		expect(live.find((v) => v.serviceName === "db-sync")?.behind).toBe(1)
-		expect(live.find((v) => v.serviceName === "api")).toMatchObject({ commitSha: SHA_B, behind: 0 })
+		expect(Option.getOrUndefined(Arr.findFirst(live, (v) => v.serviceName === "db-sync"))?.behind).toBe(1)
+		expect(Option.getOrUndefined(Arr.findFirst(live, (v) => v.serviceName === "api"))).toMatchObject({
+			commitSha: SHA_B,
+			behind: 0,
+		})
 	})
 
 	it("never calls an independently deployed service behind", () => {

@@ -148,7 +148,12 @@ const scopePicked = (model: Model, label: string): Return => {
 	const repositoryId =
 		label === ALL_REPOSITORIES
 			? null
-			: (repositoriesOf(model).find((repository) => repository.fullName === label)?.id ?? null)
+			: Option.getOrNull(
+					Option.map(
+						Arr.findFirst(repositoriesOf(model), (repository) => repository.fullName === label),
+						(repository) => repository.id,
+					),
+				)
 	if (label !== ALL_REPOSITORIES && repositoryId === null) return { model: withScopeLabel(model) }
 	if ((repositoryId ?? "all") === model.scope) return { model }
 	return {
@@ -256,7 +261,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}
 			return Result.match(result, {
 				onSuccess: () => {
-					const repository = repositoriesOf(model).find((entry) => entry.id === repositoryId)
+					const repository = Option.getOrUndefined(
+						Arr.findFirst(repositoriesOf(model), (entry) => entry.id === repositoryId),
+					)
 					const pending = {
 						repositoryId,
 						requestedAtMs: model.nowMs,

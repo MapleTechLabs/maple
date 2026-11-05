@@ -59,14 +59,11 @@ export const remember = <A>(
 
 /** Merges steps; a key already being fetched by an earlier step is not sent again. */
 export const mergeSteps = <Patch, M>(steps: ReadonlyArray<Step<Patch, M>>): Step<Patch, M> =>
-	steps.reduce<Step<Patch, M>>(
-		(acc, step) => {
-			const isDuplicate = step.keys.length > 0 && Arr.every(step.keys, (key) => acc.keys.includes(key))
-			return {
-				patch: { ...acc.patch, ...step.patch },
-				commands: isDuplicate ? acc.commands : [...acc.commands, ...step.commands],
-				keys: [...acc.keys, ...step.keys],
-			}
-		},
-		{ patch: {}, commands: [], keys: [] },
-	)
+	Arr.reduce<Step<Patch, M>, Step<Patch, M>>(steps, { patch: {}, commands: [], keys: [] }, (acc, step) => {
+		const isDuplicate = step.keys.length > 0 && Arr.every(step.keys, (key) => acc.keys.includes(key))
+		return {
+			patch: { ...acc.patch, ...step.patch },
+			commands: isDuplicate ? acc.commands : [...acc.commands, ...step.commands],
+			keys: [...acc.keys, ...step.keys],
+		}
+	})

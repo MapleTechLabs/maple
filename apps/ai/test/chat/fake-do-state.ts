@@ -13,15 +13,14 @@ import { readdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { DatabaseSync, type SQLInputValue, type SQLOutputValue } from "node:sqlite"
 import { CHAT_SESSION_MIGRATIONS } from "../../src/chat/ChatSession"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Order, Record as Rec, String as Str } from "effect"
 
 const migrationsDir = path.resolve(import.meta.dirname, "../../../..", CHAT_SESSION_MIGRATIONS)
 
 /** Every migration file, in order, as alchemy's `apply` runs them (minus its history table). */
 export const applyChatSessionMigrations = (sql: SqlStorage): void => {
-	for (const file of Arr.filter(readdirSync(migrationsDir), (name) =>
-		Str.endsWith(".sql")(name),
-	).toSorted()) {
+	const files = Arr.filter(readdirSync(migrationsDir), (name) => Str.endsWith(".sql")(name))
+	for (const file of Arr.sort(files, Order.String)) {
 		sql.exec(readFileSync(path.join(migrationsDir, file), "utf8"))
 	}
 }

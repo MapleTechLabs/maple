@@ -311,9 +311,10 @@ const aiKpis = (
 	const summaries = referrals === undefined ? [] : [...referrals.values()]
 	const visits = Arr.reduce(summaries, 0, (sum, summary) => sum + summary.visits)
 	const products = Arr.filter(summaries, (summary) => summary.visits > 0).length
-	const spark = summaries.reduce<ReadonlyArray<number>>(
-		(total, summary) => Arr.map(summary.spark, (value, i) => value + (total[i] ?? 0)),
+	const spark = Arr.reduce<(typeof summaries)[number], ReadonlyArray<number>>(
+		summaries,
 		[],
+		(total, summary) => Arr.map(summary.spark, (value, i) => value + (total[i] ?? 0)),
 	)
 	const previousVisits =
 		previousTotals === undefined
@@ -322,9 +323,11 @@ const aiKpis = (
 	const change =
 		previousVisits !== undefined && previousVisits > 0 ? (visits - previousVisits) / previousVisits : null
 	const sessions = dataOf(model.summary)?.sessions
-	const fetches = crawlers?.crawlers.reduce((sum, row) => sum + row.requests, 0) ?? 0
-	const failed = crawlers?.crawlers.reduce((sum, row) => sum + row.failedRequests, 0) ?? 0
-	const pages = crawlers?.formats.reduce((sum, row) => sum + row.pages, 0) ?? 0
+	const fetches =
+		crawlers === undefined ? 0 : Arr.reduce(crawlers.crawlers, 0, (sum, row) => sum + row.requests)
+	const failed =
+		crawlers === undefined ? 0 : Arr.reduce(crawlers.crawlers, 0, (sum, row) => sum + row.failedRequests)
+	const pages = crawlers === undefined ? 0 : Arr.reduce(crawlers.formats, 0, (sum, row) => sum + row.pages)
 	return statRail(h, {}, [
 		statRailItem(h, {
 			eyebrow: "AI visits",

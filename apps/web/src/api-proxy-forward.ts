@@ -1,4 +1,4 @@
-import { Effect, Option, Schema, type Tracer } from "effect"
+import { Array as Arr, Effect, Option, Schema, type Tracer } from "effect"
 import { Headers, HttpTraceContext } from "effect/http"
 import { API_PROXY_PREFIX } from "./api-proxy"
 import type { ApiTarget } from "./worker-env"
@@ -73,7 +73,8 @@ const forwardOverBinding = (
 			// Copying the request copies the browser's `Host: app.…`, and a service binding passes it
 			// through as-is. The API builds OAuth redirect URIs from Host, so it must name the API.
 			forwarded.headers.set("host", target.host)
-			Object.entries(HttpTraceContext.toHeaders(client)).forEach(([name, value]) =>
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
+			Arr.forEach(Object.entries(HttpTraceContext.toHeaders(client)), ([name, value]) =>
 				forwarded.headers.set(name, value),
 			)
 			return Effect.tryPromise({

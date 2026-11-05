@@ -8,7 +8,7 @@
  * Verified against Slack's Events API, event reference and interaction-payload documentation; the
  * pages behind each are listed in this directory's README.
  */
-import { Option, Schema } from "effect"
+import { Array as Arr, Option, Schema } from "effect"
 
 /** Sent once, when a request URL is first saved in the app's configuration. */
 export const UrlVerification = Schema.Struct({
@@ -184,6 +184,6 @@ export const decodeHistoryMessage = Schema.decodeUnknownOption(HistoryMessage)
 
 /** The bot's own user id for this delivery, where Slack named it. */
 export const botUserIdOf = (callback: SlackEventCallback): Option.Option<string> =>
-	Option.fromNullishOr(
-		callback.authorizations?.find((authorization) => authorization.is_bot === true)?.user_id,
+	Arr.findFirst(callback.authorizations ?? [], (authorization) => authorization.is_bot === true).pipe(
+		Option.flatMap((authorization) => Option.fromNullishOr(authorization.user_id)),
 	)

@@ -12,7 +12,7 @@ import {
 	windowCount,
 } from "./history"
 import { PAGE_SCRIPT_LOGIC } from "./script"
-import { Array as Arr } from "effect"
+import { Array as Arr, Record as Rec } from "effect"
 
 interface ScriptLogic {
 	readonly shift: (day: string, offset: number) => string
@@ -93,7 +93,7 @@ describe("page script logic", () => {
 describe("history bounds", () => {
 	it("pages back only as far as the oldest checked day", () => {
 		const unchecked = (count: number) =>
-			Object.fromEntries(Array.from({ length: count }, (_, index) => [index, "none" as const]))
+			Rec.fromEntries(Array.from({ length: count }, (_, index) => [String(index), "none" as const]))
 		const withDays = (blank: number) =>
 			makeSnapshot({
 				components: [makeComponent(0, { days: makeDays(FIXTURE_NOW, unchecked(blank), 365) })],

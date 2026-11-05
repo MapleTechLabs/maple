@@ -1,4 +1,4 @@
-import { Effect, Option, Queue, Schema, Stream } from "effect"
+import { Effect, Option, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
@@ -125,7 +125,7 @@ export const update = (
 			const step = ToggleGroup.update(model.perspectiveGroup, inner)
 			const next = step.model
 			const picked = Option.flatMap(
-				Option.fromNullishOr(next.values.find((value) => value !== model.perspective)),
+				Arr.findFirst(next.values, (value) => value !== model.perspective),
 				decodePerspective,
 			)
 			const perspective = Option.getOrElse(picked, () => model.perspective)

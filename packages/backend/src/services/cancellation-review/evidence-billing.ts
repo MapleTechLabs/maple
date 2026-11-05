@@ -10,7 +10,7 @@ import type {
 	CancellationReviewedSubscription,
 } from "@maple/domain/http"
 import { CancellationBillingInterval, CancellationStripeReason } from "@maple/domain/http"
-import { Option, Cause, Context, Effect, Layer, Schema, Array as Arr } from "effect"
+import { Option, Cause, Context, Effect, Layer, Order, Schema, Array as Arr } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { ensureOk } from "@maple/backend/services/billing/autumn-client"
 import { StripeClient } from "@maple/backend/services/billing/stripe-http"
@@ -47,10 +47,11 @@ export const reviewedSubscriptionOf = <S extends { readonly canceledAt?: number 
 	atMs: number,
 ): S | undefined => {
 	const distance = (sub: S) => Math.abs((sub.canceledAt ?? 0) * 1000 - atMs)
-	return Arr.filter(
-		subscriptions,
-		(sub) => sub.canceledAt != null && distance(sub) <= SAME_CANCELLATION_MS,
-	).toSorted((a, b) => distance(a) - distance(b))[0]
+	return Arr.sortWith(
+		Arr.filter(subscriptions, (sub) => sub.canceledAt != null && distance(sub) <= SAME_CANCELLATION_MS),
+		distance,
+		Order.Number,
+	)[0]
 }
 
 /** Only what is read off Stripe's subscription list (camelised, discounts expanded). */
@@ -104,7 +105,11 @@ const isInterval = Schema.is(CancellationBillingInterval)
 
 const reviewedOf = (sub: StripeSubscription, atMs: number): CancellationReviewedSubscription => {
 	const reason = sub.cancellationDetails?.reason
-	const interval = sub.items.data.find((item) => item.price.recurring != null)?.price.recurring?.interval
+	const interval = Arr.findFirst(sub.items.data, (item) => item.price.recurring != null).pipe(
+		Option.flatMapNullishOr((item) => item.price.recurring?.interval),
+		Option.filter(isInterval),
+		Option.getOrNull,
+	)
 	// Usage-billed prices carry a per-unit amount, not what the interval costs.
 	const fixed = Arr.filter(sub.items.data, (item) => item.price.recurring?.usageType !== "metered")
 	// A tiered price has no flat amount, and an all-metered plan has no fixed part:
@@ -119,7 +124,7 @@ const reviewedOf = (sub: StripeSubscription, atMs: number): CancellationReviewed
 		startedDaysBeforeCancel: daysBefore(atMs, sub.startDate),
 		trialStartedDaysBeforeCancel: sub.trialStart == null ? null : daysBefore(atMs, sub.trialStart),
 		trialEndedDaysBeforeCancel: sub.trialEnd == null ? null : daysBefore(atMs, sub.trialEnd),
-		interval: isInterval(interval) ? interval : null,
+		interval,
 		pricePerIntervalDollars: fixedCents === null ? null : fixedCents / 100,
 		discount:
 			discount === undefined
@@ -166,12 +171,14 @@ export const subscriptionsEvidenceOf = (response: unknown, atMs: number) =>
 			return {
 				reviewed: reviewed === undefined ? null : reviewedOf(reviewed, atMs),
 				others: Arr.map(
-					Arr.filter(
-						started,
-						(sub) => sub !== reviewed && knownAtCancel(atMs, sub.startDate * 1000),
-					)
-						.toSorted((a, b) => b.startDate - a.startDate)
-						.slice(0, OTHER_SUBSCRIPTIONS_SHOWN),
+					Arr.sortWith(
+						Arr.filter(
+							started,
+							(sub) => sub !== reviewed && knownAtCancel(atMs, sub.startDate * 1000),
+						),
+						(sub: { readonly startDate: number }) => sub.startDate,
+						Order.flip(Order.Number),
+					).slice(0, OTHER_SUBSCRIPTIONS_SHOWN),
 					(sub) => otherOf(sub, started, atMs),
 				),
 			}
@@ -199,9 +206,11 @@ const AutumnInvoices = Schema.Struct({
 export const invoicesEvidenceOf = (customer: unknown, atMs: number) =>
 	Schema.decodeUnknownEffect(AutumnInvoices)(customer).pipe(
 		Effect.map(({ invoices }): NonNullable<BillingEvidence["invoices"]> => {
-			const newestFirst = Arr.filter(invoices ?? [], (invoice) =>
-				knownAtCancel(atMs, invoice.createdAt),
-			).toSorted((a, b) => b.createdAt - a.createdAt)
+			const newestFirst = Arr.sortWith(
+				Arr.filter(invoices ?? [], (invoice) => knownAtCancel(atMs, invoice.createdAt)),
+				(invoice: { readonly createdAt: number }) => invoice.createdAt,
+				Order.flip(Order.Number),
+			)
 			const paid = Arr.filter(
 				newestFirst,
 				(invoice) => invoice.status === "paid" && invoice.total !== 0,
@@ -262,12 +271,16 @@ const StripeCharges = Schema.Struct({
 export const chargesEvidenceOf = (response: unknown, atMs: number) =>
 	Schema.decodeUnknownEffect(StripeCharges)(response).pipe(
 		Effect.map(({ data }): NonNullable<BillingEvidence["charges"]> => {
-			const charges = Arr.filter(
-				data,
-				(charge) =>
-					charge.created * 1000 >= atMs - CHARGE_WINDOW_MS &&
-					knownAtCancel(atMs, charge.created * 1000),
-			).toSorted((a, b) => b.created - a.created)
+			const charges = Arr.sortWith(
+				Arr.filter(
+					data,
+					(charge) =>
+						charge.created * 1000 >= atMs - CHARGE_WINDOW_MS &&
+						knownAtCancel(atMs, charge.created * 1000),
+				),
+				(charge: { readonly created: number }) => charge.created,
+				Order.flip(Order.Number),
+			)
 			const failed = Arr.filter(charges, (charge) => charge.status === "failed")
 			return {
 				failed: failed.length,

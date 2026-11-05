@@ -75,7 +75,7 @@ const BUSY_PRIORITY: ReadonlyArray<Busy> = ["state", "severity", "heartbeat", "r
 
 /** The sidebar's busy state: the first in-flight kind by its priority chain. */
 export const sidebarBusy = (model: Model): Busy | null =>
-	BUSY_PRIORITY.find((kind) => model.busy.includes(kind)) ?? null
+	Option.getOrNull(Arr.findFirst(BUSY_PRIORITY, (kind) => model.busy.includes(kind)))
 
 const currentIssue = (model: Model) => Option.getOrNull(AsyncData.getData(model.detail.data))
 
@@ -84,10 +84,10 @@ export const pickedState = (model: Model, value: string): Return => {
 	const issue = currentIssue(model)
 	if (issue === null) return { model }
 	const allowed = allowedTransitionsForAll([issue.workflow_state])
-	const next = allowed.find((state) => state === value)
-	return next === undefined || next === issue.workflow_state
+	const next = Arr.findFirst(allowed, (state) => state === value)
+	return Option.isNone(next) || next.value === issue.workflow_state
 		? { model }
-		: startWrite(model, { _tag: "Transition", toState: next })
+		: startWrite(model, { _tag: "Transition", toState: next.value })
 }
 
 /** `changeSeverity`: clearing writes at once, a level asks the escalation policy first. */
@@ -120,9 +120,11 @@ export const evaluatedEscalation = (
 		}),
 		onSuccess: (preview) => {
 			if (preview.outcome !== "route") return startWrite(model, { _tag: "SetSeverity", severity })
-			const names = Arr.map(
-				preview.destinationIds,
-				(id) => model.destinations.find((destination) => destination.id === id)?.name ?? id,
+			const names = Arr.map(preview.destinationIds, (id) =>
+				Arr.findFirst(model.destinations, (destination) => destination.id === id).pipe(
+					Option.flatMapNullishOr((found) => found.name),
+					Option.getOrElse(() => id),
+				),
 			)
 			return liftConfirm(
 				{ ...model, pendingSeverity: { severity, destinationNames: names } },

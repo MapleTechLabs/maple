@@ -328,10 +328,14 @@ const errorRateChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartV
  * belongs to both halves, so the dashed tail starts where the solid line ends.
  */
 const splitRunAt = (run: ReadonlyArray<TimeseriesRow>, partialFromMs: number | null) => {
-	const first = partialFromMs === null ? -1 : run.findIndex((row) => row.date.getTime() >= partialFromMs)
-	return first === -1
-		? { solid: run, dashed: [] }
-		: { solid: run.slice(0, first), dashed: run.slice(Math.max(0, first - 1)) }
+	const first =
+		partialFromMs === null
+			? Option.none()
+			: Arr.findFirstIndex(run, (row) => row.date.getTime() >= partialFromMs)
+	return Option.match(first, {
+		onNone: () => ({ solid: run, dashed: [] }),
+		onSome: (index) => ({ solid: run.slice(0, index), dashed: run.slice(Math.max(0, index - 1)) }),
+	})
 }
 
 const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue, number> => {
@@ -365,7 +369,7 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 	// which would read as a wider bucket and mark closed readings in flight.
 	const partialFromMs = plotRows[findFirstPartialIndex(plotRows, model.trimOptions)]?.date.getTime() ?? null
 	const lines = Arr.flatMap(runs, ({ entry, runs: entryRuns }) =>
-		entryRuns.flatMap((run, index) => {
+		Arr.flatMap(entryRuns, (run, index) => {
 			const { solid, dashed } = splitRunAt(run, partialFromMs)
 			return [
 				line(solid, entry, false, index),

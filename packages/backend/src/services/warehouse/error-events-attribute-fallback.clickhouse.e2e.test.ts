@@ -4,7 +4,7 @@
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { migrations } from "@maple/domain/clickhouse"
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { msToDate } from "../../platform/time"
 import {
 	applyRealMigrations,
@@ -289,13 +289,20 @@ describe.skipIf(!clickhouseE2eEnabled)("error_events attribute fallback (ClickHo
 		// Evaluate both frozen SELECTs against identical spans; do not reimplement
 		// hashing. (0039 rotates every hash on purpose, so the live view is not 0030.)
 		const frozenSelect = (version: number): string => {
-			const view = migrations
-				.find((migration) => migration.version === version)
-				?.statements.find(
-					(statement) =>
-						typeof statement === "string" &&
-						Str.startsWith("CREATE MATERIALIZED VIEW IF NOT EXISTS error_events_mv ")(statement),
-				)
+			const view = Option.getOrUndefined(
+				Option.flatMap(
+					Arr.findFirst(migrations, (migration) => migration.version === version),
+					(migration) =>
+						Arr.findFirst(
+							migration.statements,
+							(statement) =>
+								typeof statement === "string" &&
+								Str.startsWith("CREATE MATERIALIZED VIEW IF NOT EXISTS error_events_mv ")(
+									statement,
+								),
+						),
+				),
+			)
 			assert.isString(view)
 			return view.slice(view.indexOf(" AS\n") + 4)
 		}
@@ -314,7 +321,7 @@ describe.skipIf(!clickhouseE2eEnabled)("error_events attribute fallback (ClickHo
 	})
 
 	it("preserves stored occurrences when the migration is reapplied", async () => {
-		const migration = migrations.find((entry) => entry.version === 39)
+		const migration = Option.getOrUndefined(Arr.findFirst(migrations, (entry) => entry.version === 39))
 		assert.isDefined(migration)
 		for (const statement of migration.statements) {
 			assert.isString(statement)

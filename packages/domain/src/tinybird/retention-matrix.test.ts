@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { tinybirdProjectManifest } from "../generated/tinybird-project-manifest"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Option, Record as Rec } from "effect"
 
 const RETENTION_DAYS = {
 	alert_checks: 365,
@@ -82,8 +82,8 @@ describe("Tinybird retention matrix", () => {
 		expect(actualNames).toEqual([...Rec.keys(RETENTION_DAYS), ...ZERO_RETENTION_DATASOURCES].sort())
 
 		for (const [name, expectedDays] of Rec.toEntries(RETENTION_DAYS)) {
-			const datasource = tinybirdProjectManifest.datasources.find(
-				(candidate) => candidate.name === name,
+			const datasource = Option.getOrUndefined(
+				Arr.findFirst(tinybirdProjectManifest.datasources, (candidate) => candidate.name === name),
 			)
 			expect(datasource, name).toBeDefined()
 			expect(datasource!.content, datasource!.name).toMatch(
@@ -94,8 +94,8 @@ describe("Tinybird retention matrix", () => {
 
 	it("does not retain Null-engine ingestion bridges", () => {
 		for (const name of ZERO_RETENTION_DATASOURCES) {
-			const datasource = tinybirdProjectManifest.datasources.find(
-				(candidate) => candidate.name === name,
+			const datasource = Option.getOrUndefined(
+				Arr.findFirst(tinybirdProjectManifest.datasources, (candidate) => candidate.name === name),
 			)
 			expect(datasource, name).toBeDefined()
 			expect(datasource?.content, name).toContain("ENGINE Null")
@@ -120,7 +120,9 @@ describe("Tinybird retention matrix", () => {
 			"service_operations_hourly_mv",
 			"service_endpoint_details_hourly_mv",
 		]) {
-			const pipe = tinybirdProjectManifest.pipes.find((candidate) => candidate.name === name)
+			const pipe = Option.getOrUndefined(
+				Arr.findFirst(tinybirdProjectManifest.pipes, (candidate) => candidate.name === name),
+			)
 			expect(pipe, name).toBeDefined()
 			expect(pipe?.content, name).toContain("DEPLOYMENT_METHOD alter")
 		}
@@ -133,7 +135,9 @@ describe("Tinybird retention matrix", () => {
 	 */
 	it("applies error-events view changes by ALTER, never by rebuild", () => {
 		for (const name of ["error_events_mv", "error_events_by_time_mv"]) {
-			const pipe = tinybirdProjectManifest.pipes.find((candidate) => candidate.name === name)
+			const pipe = Option.getOrUndefined(
+				Arr.findFirst(tinybirdProjectManifest.pipes, (candidate) => candidate.name === name),
+			)
 			expect(pipe, name).toBeDefined()
 			expect(pipe?.content, name).toContain("DEPLOYMENT_METHOD alter")
 		}

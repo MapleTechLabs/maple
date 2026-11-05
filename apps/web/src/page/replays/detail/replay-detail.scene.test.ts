@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema, Array as Arr, Record as Rec } from "effect"
+import { Result, Schema, Array as Arr, Record as Rec, Option } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import type { HtmlBuilder } from "foldkit/html"
 import { Lazy } from "foldkit/test"
@@ -211,8 +211,11 @@ describe("replay detail", () => {
 			start,
 			Message.CompletedFetchDetail({ key: start.detail.key ?? "", result: Result.succeed(traced) }),
 		)
-		const summaries = detailed.commands?.find((command) => command.name === FetchTraceSummaries.name)
-		expect(summaries?.args).toMatchObject({
+		const summaries = Arr.findFirst(
+			detailed.commands ?? [],
+			(command) => command.name === FetchTraceSummaries.name,
+		)
+		expect(Option.getOrUndefined(summaries)?.args).toMatchObject({
 			windowStart: "2026-10-01 11:03:00",
 			windowEnd: "2026-10-01 11:37:00",
 		})

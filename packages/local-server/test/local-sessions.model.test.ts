@@ -61,8 +61,11 @@ const readSession = async (child: Bun.Subprocess<"ignore", "pipe", "pipe">, log:
 		const chunk = decoder.decode(value, { stream: true })
 		buffered += chunk
 		log.push(chunk)
-		const line = Str.split("\n")(buffered).find((candidate) => Str.startsWith("SESSION ")(candidate))
-		if (line !== undefined) {
+		const found = Arr.findFirst(Str.split("\n")(buffered), (candidate) =>
+			Str.startsWith("SESSION ")(candidate),
+		)
+		if (Option.isSome(found)) {
+			const line = found.value
 			reader.releaseLock()
 			// Keep draining so the child never blocks on a full pipe.
 			if (drain)
@@ -308,7 +311,7 @@ describe.skipIf(skipWithoutChdb)("several alchemy dev sessions on one store", ()
 			expect(Arr.join(log, "")).toContain("not cleanly closed")
 			await Bun.sleep(3500)
 			const output = Arr.join(log, "")
-			expect(output.match(/cannot take over Maple Local/g)).toHaveLength(1)
+			expect(Arr.fromIterable(Str.matchAll(/cannot take over Maple Local/g)(output))).toHaveLength(1)
 			expect(output).toContain('onDirtyStore: "wipe"')
 			expect(output).not.toContain("; retrying")
 		} finally {

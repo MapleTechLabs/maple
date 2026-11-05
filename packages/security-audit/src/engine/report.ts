@@ -7,7 +7,7 @@ import type { EstimatedSeverity, Finding } from "../schema"
 import type { LedgerUnit } from "./ledger"
 import type { AuditReports } from "./ports"
 import type { AuditRunInput, EngineState } from "./state"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 type Confirmed = Extract<Finding, { readonly verdict: "confirmed" }>
 type NeedsValidation = Extract<Finding, { readonly verdict: "needs_validation" }>
@@ -35,13 +35,16 @@ const traceLines = (record: Finding) =>
 	)
 
 const boundaryOf = (ledger: ReadonlyArray<LedgerUnit>, fingerprint: string) =>
-	ledger.find((unit) => unit.result_fingerprints.includes(fingerprint))?.boundary ?? "not linked to a unit"
+	Arr.findFirst(ledger, (unit) => unit.result_fingerprints.includes(fingerprint)).pipe(
+		Option.map((unit) => unit.boundary),
+		Option.getOrElse(() => "not linked to a unit"),
+	)
 
 const countBy = (ledger: ReadonlyArray<LedgerUnit>) =>
-	ledger.reduce<Record<string, number>>(
-		(acc, unit) => ({ ...acc, [unit.status]: (acc[unit.status] ?? 0) + 1 }),
-		{},
-	)
+	Arr.reduce<LedgerUnit, Record<string, number>>(ledger, {}, (acc, unit) => ({
+		...acc,
+		[unit.status]: (acc[unit.status] ?? 0) + 1,
+	}))
 
 const confirmedDetail = (record: Confirmed) =>
 	Arr.join(

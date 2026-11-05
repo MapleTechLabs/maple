@@ -1,7 +1,7 @@
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 
 // A thin line sparkline placed on the time window: a few recent buckets sit at the right end,
 // and a missing bucket (or a null value) breaks the line instead of being bridged.
@@ -23,10 +23,13 @@ export const sparkSegments = (
 	floor?: number,
 ): ReadonlyArray<ReadonlyArray<readonly [number, number]>> => {
 	const span = window.endMs - window.startMs
-	const placed = Arr.filter(
-		Arr.map(points, (point) => ({ at: toEpochMs(point.bucket), value: point.value })),
-		(point) => Number.isFinite(point.at),
-	).toSorted((a, b) => a.at - b.at)
+	const placed = Arr.sort(
+		Arr.filter(
+			Arr.map(points, (point) => ({ at: toEpochMs(point.bucket), value: point.value })),
+			(point) => Number.isFinite(point.at),
+		),
+		Order.mapInput(Order.Number, (point: { readonly at: number }) => point.at),
+	)
 	const values = Arr.flatMap(placed, (point) =>
 		point.value === null || !Number.isFinite(point.value) ? [] : [point.value],
 	)
@@ -37,14 +40,18 @@ export const sparkSegments = (
 	const y = (value: number) =>
 		max === min ? HEIGHT / 2 : PAD + (1 - (value - min) / (max - min)) * (HEIGHT - PAD * 2)
 	return Arr.filter(
-		placed.reduce<ReadonlyArray<ReadonlyArray<readonly [number, number]>>>((runs, point, index) => {
-			if (point.value === null || !Number.isFinite(point.value)) return [...runs, []]
-			const previous = placed[index - 1]
-			const isGap = previous === undefined || point.at - previous.at > window.bucketMs * 1.5
-			const xy: readonly [number, number] = [x(point.at), y(point.value)]
-			const last = runs[runs.length - 1]
-			return isGap || last === undefined ? [...runs, [xy]] : [...runs.slice(0, -1), [...last, xy]]
-		}, []),
+		Arr.reduce<(typeof placed)[number], ReadonlyArray<ReadonlyArray<readonly [number, number]>>>(
+			placed,
+			[],
+			(runs, point, index) => {
+				if (point.value === null || !Number.isFinite(point.value)) return [...runs, []]
+				const previous = placed[index - 1]
+				const isGap = previous === undefined || point.at - previous.at > window.bucketMs * 1.5
+				const xy: readonly [number, number] = [x(point.at), y(point.value)]
+				const last = runs[runs.length - 1]
+				return isGap || last === undefined ? [...runs, [xy]] : [...runs.slice(0, -1), [...last, xy]]
+			},
+		),
 		(run) => run.length > 0,
 	)
 }

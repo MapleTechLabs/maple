@@ -55,6 +55,7 @@ const withRequestTimeout = (httpClient: HttpClient.HttpClient, timeoutRetries: n
 						request,
 						new Response(body.byteLength === 0 ? null : body, {
 							status: res.status,
+							// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 							headers: new Headers(Object.entries(res.headers)),
 						}),
 					),

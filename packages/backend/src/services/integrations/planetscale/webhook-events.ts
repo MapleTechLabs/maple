@@ -22,7 +22,7 @@ import {
 	PlanetscaleEvents,
 	type ErrorIssueRow,
 } from "@maple/db/tables"
-import { Clock, Effect, Result, Schema, String as Str } from "effect"
+import { Clock, Effect, Option, Result, Schema, String as Str } from "effect"
 import { timestampMs } from "@maple/backend/platform/time"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { secretsEqual } from "@maple/backend/services/auth/secret-equal"
@@ -366,8 +366,7 @@ export const deployRequestNumber = (payload: PlanetScaleWebhookPayload): string 
 
 /** The lifecycle state a `deploy_request.*` / `branch.*` event represents. */
 const stateFromEvent = (event: string): string | null => {
-	const dot = event.indexOf(".")
-	return dot === -1 ? null : Str.slice(dot + 1)(event)
+	return Option.getOrNull(Option.map(Str.indexOf(".")(event), (dot) => Str.slice(dot + 1)(event)))
 }
 
 /** The events Maple subscribes its registered webhooks to: every one the map below acts on. */

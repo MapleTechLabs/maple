@@ -1,5 +1,5 @@
 import { AsyncData, Command } from "foldkit"
-import { Result } from "effect"
+import { Result, Option, Array as Arr } from "effect"
 import * as Dialog from "@maple/views/ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { FetchSnapshot, FetchVersions, RestoreVersion } from "./command-history"
@@ -53,10 +53,17 @@ type HistoryMessage = Extract<
 >
 
 const preview = (model: Model, versionId: string): Return => {
-	const version = AsyncData.getOrElse(model.history.versions, () => []).find((row) => row.id === versionId)
-	if (version === undefined || model.history.previewed?.id === versionId) return { model }
+	const version = Arr.findFirst(
+		AsyncData.getOrElse(model.history.versions, () => []),
+		(row) => row.id === versionId,
+	)
+	if (Option.isNone(version) || model.history.previewed?.id === versionId) return { model }
 	return {
-		model: withHistory(model, { previewed: version, snapshot: AsyncData.Loading(), sectionView: {} }),
+		model: withHistory(model, {
+			previewed: version.value,
+			snapshot: AsyncData.Loading(),
+			sectionView: {},
+		}),
 		commands: [FetchSnapshot({ dashboardId: model.dashboardId, versionId })],
 	}
 }

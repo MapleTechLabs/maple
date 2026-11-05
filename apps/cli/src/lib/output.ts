@@ -39,7 +39,8 @@ export const argvFormat = (argv: ReadonlyArray<string>): OutputFormat | undefine
 		const arg = argv[i]
 		if (arg === "--") break
 		if (arg === "--format") found = argv[i + 1]
-		else if (arg?.startsWith("--format=")) found = Str.slice("--format=".length)(arg)
+		else if (arg !== undefined && Str.startsWith("--format=")(arg))
+			found = Str.slice("--format=".length)(arg)
 	}
 	return isFormat(found) ? found : undefined
 }
@@ -296,7 +297,7 @@ export interface View<A> {
 export const isEmptyResult = (data: unknown): boolean => {
 	if (Arr.isArray(data)) return data.length === 0
 	if (!isRecord(data)) return false
-	const arrays = Arr.filter(Rec.values(data), Array.isArray)
+	const arrays = Arr.filter(Rec.values(data), (value): value is Array<unknown> => Arr.isArray(value))
 	return arrays.length > 0 && Arr.every(arrays, (a) => a.length === 0)
 }
 

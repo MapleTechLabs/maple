@@ -616,7 +616,9 @@ export function auditRootlessTracesSQL(
 				],
 				(condition) => condition !== undefined,
 			)
-			const keptBySampler = kept.length === 0 ? undefined : kept.reduce((a, b) => a.or(b))
+			const keptBySampler = Arr.isReadonlyArrayNonEmpty(kept)
+				? Arr.reduce(Arr.tailNonEmpty(kept), Arr.headNonEmpty(kept), (a, b) => a.or(b))
+				: undefined
 			return {
 				TraceId: $.TraceId,
 				entryService: CH.argMin($.ServiceName, $.Timestamp),

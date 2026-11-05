@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema } from "effect"
+import { Array as Arr, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { OrgId, UserDetailRequest, UserId, UsersListRequest, WarehouseConfigError } from "@maple/domain/http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -32,7 +32,7 @@ const warehouse = (fixture: Fixture, ran: Ran, hasRollup = true) =>
 				const compiled = compiledQueryOf(input)
 				const context = options?.context ?? ""
 				ran.push({ context, sql: compiled.sql })
-				if (!hasRollup && compiled.sql.includes("user_activity_hourly"))
+				if (!hasRollup && Str.includes("user_activity_hourly")(compiled.sql))
 					return Effect.fail(missingRollup)
 				return compiled.decodeRows(fixture.get(context) ?? []).pipe(Effect.orDie)
 			},
@@ -108,7 +108,7 @@ describe("readUserTraces", () => {
 				Effect.provide(warehouse(fixture, ran)),
 			)
 			assert.deepStrictEqual(
-				ran.map((query) => query.context),
+				Arr.map(ran, (query) => query.context),
 				["userActivitySlices", "userTraces"],
 			)
 			const raw = ran[1]?.sql ?? ""
@@ -116,7 +116,7 @@ describe("readUserTraces", () => {
 			assert.include(raw, "traces.Timestamp >= '2026-11-01 14:00:00'")
 			assert.include(raw, "traces.Timestamp <= '2026-11-01 14:59:59'")
 			assert.deepStrictEqual(
-				response.traces.map((trace) => [
+				Arr.map(response.traces, (trace) => [
 					trace.traceId,
 					trace.spanName,
 					trace.status,
@@ -135,7 +135,7 @@ describe("readUserTraces", () => {
 				Effect.provide(warehouse(empty, ran)),
 			)
 			assert.deepStrictEqual(
-				ran.map((query) => query.context),
+				Arr.map(ran, (query) => query.context),
 				["userActivitySlices"],
 			)
 			assert.deepStrictEqual(response.traces, [])
@@ -149,7 +149,7 @@ describe("readUserTraces", () => {
 				Effect.provide(warehouse(fixture, ran, false)),
 			)
 			assert.deepStrictEqual(response.traces, [])
-			assert.isFalse(ran.some((query) => query.context === "userTraces"))
+			assert.isFalse(Arr.some(ran, (query) => query.context === "userTraces"))
 		}),
 	)
 })
@@ -163,7 +163,7 @@ describe("readUserLogs", () => {
 			)
 			assert.include(ran[1]?.sql ?? "", "logs.ServiceName IN ('worker')")
 			assert.deepStrictEqual(
-				response.logs.map((log) => [log.severity, log.service, log.body]),
+				Arr.map(response.logs, (log) => [log.severity, log.service, log.body]),
 				[["ERROR", "worker", "charge failed"]],
 			)
 		}),
@@ -207,12 +207,12 @@ describe("a cluster without user_activity_hourly", () => {
 				tenant,
 				new UsersListRequest({ startTime: request.startTime, endTime: request.endTime }),
 			).pipe(Effect.provide(warehouse(rows, ran, false)))
-			const lists = ran.filter((query) => query.context === "usersList")
+			const lists = Arr.filter(ran, (query) => query.context === "usersList")
 			assert.strictEqual(lists.length, 2)
 			assert.include(lists[0]?.sql ?? "", "FROM user_activity_hourly")
 			assert.notInclude(lists[1]?.sql ?? "", "user_activity_hourly")
 			assert.deepStrictEqual(
-				response.users.map((user) => [user.userId, user.topRoute, user.activity]),
+				Arr.map(response.users, (user) => [user.userId, user.topRoute, user.activity]),
 				[["user_42", null, []]],
 			)
 		}),
@@ -252,7 +252,7 @@ describe("a cluster without user_activity_hourly", () => {
 				Effect.provide(warehouse(new Map(scopeRows), ran, false)),
 			)
 			assert.deepStrictEqual(response.activity, [])
-			assert.isFalse(ran.some((query) => query.context.startsWith("userNotable")))
+			assert.isFalse(Arr.some(ran, (query) => Str.startsWith("userNotable")(query.context)))
 		}),
 	)
 })
@@ -271,14 +271,20 @@ describe("readUserActivity", () => {
 				Effect.provide(warehouse(notable, ran)),
 			)
 			assert.deepStrictEqual(
-				response.activity.map((item) => [item.kind, item.tone, item.traceId]),
+				Arr.map(response.activity, (item) => [item.kind, item.tone, item.traceId]),
 				[
 					["request", "crit", "a1b2"],
 					["log", "crit", null],
 				],
 			)
 			assert.include(
-				ran.find((query) => query.context === "userNotableTraces")?.sql ?? "",
+				Option.match(
+					Arr.findFirst(ran, (query) => query.context === "userNotableTraces"),
+					{
+						onNone: () => "",
+						onSome: (query) => query.sql,
+					},
+				),
 				"(traces.StatusCode = 'Error' OR traces.Duration >= 2000000000)",
 			)
 		}),

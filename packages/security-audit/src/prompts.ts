@@ -70,7 +70,9 @@ const encodeData = (value: unknown): string =>
 type Verdict = "confirmed" | "needs_validation" | "rejected"
 
 const schemaBranch = (verdict: Verdict): string => {
-	const branch = reportSchema.items.oneOf.find((b) => b.properties.verdict.const === verdict)
+	const branch = Option.getOrUndefined(
+		Arr.findFirst(reportSchema.items.oneOf, (b) => b.properties.verdict.const === verdict),
+	)
 	return Option.getOrElse(encodeJsonOption(branch), () => `(no report schema branch for ${verdict})`)
 }
 
@@ -245,7 +247,7 @@ export const synthesisPrompt = (
 
 /** The file part of a block reference; the whole reference when it names only a file. */
 export const companionFileOf = (ref: string): string =>
-	Str.includes("#")(ref) ? Str.slice(0, ref.indexOf("#"))(ref) : ref
+	Option.match(Str.indexOf("#")(ref), { onNone: () => ref, onSome: (at) => Str.slice(0, at)(ref) })
 
 /** A selected block's text, plus the sections every selected companion must carry. */
 const selectedBlockTexts = (units: ReadonlyArray<CoverageUnit>): ReadonlyArray<string> => {

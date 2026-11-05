@@ -27,7 +27,7 @@ import { docsLink } from "../../kit/signal-empty-state"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 // The issue incidents and occurrences tables.
 
@@ -138,7 +138,7 @@ const occurrenceRow = <M>(h: HtmlBuilder<M>, trace: ErrorIssueSampleTrace, clock
 		]),
 		truncatedTableCell(h, [
 			truncatedText(h, { text: trace.exceptionMessage }, [
-				trace.exceptionMessage.split("\n", 1)[0] ?? "",
+				Arr.headNonEmpty(Str.split("\n")(trace.exceptionMessage)),
 			]),
 		]),
 		tableCell(h, [

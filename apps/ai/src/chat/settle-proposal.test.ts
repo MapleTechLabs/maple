@@ -14,7 +14,7 @@ import { assert, beforeEach, describe, it } from "vitest"
 import type { ChatConnectorOrigin } from "@maple/domain/chat-session"
 import { ChatSession, type ProposalApplier } from "./ChatSession"
 import { makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 /** Everything the applier was handed — the settlement as it arrived, plus what the log supplied. */
 const applied: Array<unknown> = []
@@ -55,7 +55,12 @@ const withProposal = (session: ChatSession, callId = "call_9") => {
 }
 
 const settledCall = (session: ChatSession, callId = "call_9") =>
-	Arr.flatMap(session.history(), (message) => message.toolCalls).find((call) => call.id === callId)
+	Option.getOrUndefined(
+		Arr.findFirst(
+			Arr.flatMap(session.history(), (message) => message.toolCalls),
+			(call) => call.id === callId,
+		),
+	)
 
 const settle = (session: ChatSession, decision: "approve" | "deny", callId = "call_9") =>
 	session.settleProposal({ sessionId: SESSION_ID, toolCallId: callId, decision, approver: ADA })

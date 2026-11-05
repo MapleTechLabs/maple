@@ -1,4 +1,4 @@
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Order, String as Str } from "effect"
 export type RepositoryFilter = "all" | "reviewed" | "off"
 
 /** Below this the whole list fits at a glance and a search bar is noise. */
@@ -21,14 +21,21 @@ export function visibleRepositories<R extends FilterableRepository>(
 	const showToolbar = repositories.length > SEARCH_THRESHOLD
 	const needle = showToolbar ? Str.toLowerCase(Str.trim(search)) : ""
 	const activeFilter = showToolbar ? filter : "all"
-	return Arr.filter(
-		repositories,
-		(repo) =>
-			(activeFilter === "all" || repo.prReviewEnabled === (activeFilter === "reviewed")) &&
-			(needle.length === 0 || Str.includes(needle)(Str.toLowerCase(repo.fullName))),
-	).toSorted(
-		(a, b) =>
-			Number(pinned.has(b.id)) - Number(pinned.has(a.id)) ||
-			a.fullName.localeCompare(b.fullName, undefined, { numeric: true, sensitivity: "base" }),
+	return Arr.sort(
+		Arr.filter(
+			repositories,
+			(repo) =>
+				(activeFilter === "all" || repo.prReviewEnabled === (activeFilter === "reviewed")) &&
+				(needle.length === 0 || Str.includes(needle)(Str.toLowerCase(repo.fullName))),
+		),
+		Order.combine(
+			Order.flip(Order.mapInput(Order.Number, (repo: R) => Number(pinned.has(repo.id)))),
+			Order.mapInput(
+				Order.make<string>((a, b) =>
+					Str.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })(a),
+				),
+				(repo: R) => repo.fullName,
+			),
+		),
 	)
 }

@@ -19,7 +19,7 @@ import {
 } from "./maple-scenery-field"
 import { hash } from "./maple-scenery-sketch"
 import type { District } from "./spatial-layout"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 /** Everything the planting avoids or follows: zones, belts, the meadow edge and the creek. */
 export interface World {
@@ -66,8 +66,8 @@ function along(world: World, theta: number, gap: number) {
 	const radii = Array.from({ length: Math.ceil(meadow.reach / 0.2) }, (_, i) => i * 0.2)
 	// Skip the gaps between zones: only look beyond the last point still near one.
 	const past = Arr.reduce(radii, 0, (last, r) => (zoneGap(world.zones, ...at(r)) < gap ? r : last))
-	const radius = radii.find((r) => r > past && roomy(world, ...at(r), gap))
-	return at(radius ?? meadow.radiusAt(theta))
+	const radius = Arr.findFirst(radii, (r) => r > past && roomy(world, ...at(r), gap))
+	return at(Option.getOrElse(radius, () => meadow.radiusAt(theta)))
 }
 
 /** Landmarks the forest grows around. The campfire and fence sit on the screen-left side,
@@ -90,13 +90,15 @@ export function landmarks(world: World) {
 	const [mx, mz] = along(world, fenceTheta, 1.8)
 	const [tx, tz] = [-Math.sin(fenceTheta), Math.cos(fenceTheta)]
 	// The longest fence, up to 3.4 units, whose every post keeps clear.
-	const half =
-		[1.7, 1.2, 0.8, 0.4].find((h) =>
+	const half = Option.getOrElse(
+		Arr.findFirst([1.7, 1.2, 0.8, 0.4], (h) =>
 			Arr.every(
 				Array.from({ length: 7 }, (_, i) => -h + (2 * h * i) / 6),
 				(d) => roomy(world, mx + tx * d, mz + tz * d, 0.9),
 			),
-		) ?? 0.3
+		),
+		() => 0.3,
+	)
 	const floor = -0.14
 	return {
 		bridge: { at: [ford.x, floor, ford.z] as const, yaw: Math.atan2(ford.nx, ford.nz) },
@@ -234,10 +236,11 @@ export function groundOf(world: World, marks: Landmarks) {
 	)
 	const footpath = (end: Point) => {
 		const bearing = Math.atan2(end[1] - meadow.cz, end[0] - meadow.cx)
-		return (
-			Arr.map([-0.4, 0.4], (turn) => trail(along(world, bearing + turn, 1.1), end)).find((points) =>
-				Arr.every(points, ([x, z], i) => i > points.length - 4 || walkable(world, x, z)),
-			) ?? null
+		return Option.getOrNull(
+			Arr.findFirst(
+				Arr.map([-0.4, 0.4], (turn) => trail(along(world, bearing + turn, 1.1), end)),
+				(points) => Arr.every(points, ([x, z], i) => i > points.length - 4 || walkable(world, x, z)),
+			),
 		)
 	}
 	const paths = Arr.filter(
@@ -246,27 +249,29 @@ export function groundOf(world: World, marks: Landmarks) {
 	)
 	const pathGap = (x: number, z: number) =>
 		Arr.reduce(paths.flat(), Infinity, (gap, [px, pz]) => Math.min(gap, Math.hypot(x - px, z - pz)))
+	const clearMounds = Arr.filter(
+		Array.from({ length: 24 }, (_, i) => {
+			const radius = 0.9 + hash(i, 3.3) * 0.5
+			const [x, z] = meadow.point(hash(i, 9.9) * Math.PI * 2, 0.8 + hash(5.5, i) * 1.8 + radius)
+			const room = radius * 1.3
+			const clear =
+				zoneGap(world.zones, x, z) >= room + 0.9 &&
+				beltGap(world.belts, x, z) >= room + 0.75 &&
+				creekGap(world.creek, x, z) >= room + 0.3 &&
+				!onLand(world, x, z, room + 0.3) &&
+				pathGap(x, z) >= room + 0.3 &&
+				Arr.every(landmarks, ([lx, lz]) => Math.hypot(x - lx, z - lz) >= room + 0.8)
+			return clear ? { x, z, radius, steps: 1 + Math.floor(hash(z, x) * 2) } : null
+		}),
+		(mound): mound is { x: number; z: number; radius: number; steps: number } => mound !== null,
+	)
 	const mounds = Arr.map(
-		Arr.filter(
-			Array.from({ length: 24 }, (_, i) => {
-				const radius = 0.9 + hash(i, 3.3) * 0.5
-				const [x, z] = meadow.point(hash(i, 9.9) * Math.PI * 2, 0.8 + hash(5.5, i) * 1.8 + radius)
-				const room = radius * 1.3
-				const clear =
-					zoneGap(world.zones, x, z) >= room + 0.9 &&
-					beltGap(world.belts, x, z) >= room + 0.75 &&
-					creekGap(world.creek, x, z) >= room + 0.3 &&
-					!onLand(world, x, z, room + 0.3) &&
-					pathGap(x, z) >= room + 0.3 &&
-					Arr.every(landmarks, ([lx, lz]) => Math.hypot(x - lx, z - lz) >= room + 0.8)
-				return clear ? { x, z, radius, steps: 1 + Math.floor(hash(z, x) * 2) } : null
-			}),
-			(mound): mound is { x: number; z: number; radius: number; steps: number } => mound !== null,
-		)
-			.filter((mound, i, all) =>
-				Arr.every(all.slice(0, i), (other) => Math.hypot(mound.x - other.x, mound.z - other.z) > 3.5),
-			)
-			.slice(0, 3),
+		Arr.filter(clearMounds, (mound, i) =>
+			Arr.every(
+				clearMounds.slice(0, i),
+				(other) => Math.hypot(mound.x - other.x, mound.z - other.z) > 3.5,
+			),
+		).slice(0, 3),
 		(mound, i) =>
 			Array.from({ length: mound.steps }, (_, step) =>
 				blob(mound.x, mound.z, mound.radius * (1 - step * 0.45), 0.25, 8.3 + i * 1.7, 24),

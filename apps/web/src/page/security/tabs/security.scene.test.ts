@@ -758,7 +758,12 @@ describe("spend and models", () => {
 		).model
 		const saved = send(raised, SpendSettings.Message.Submitted())
 		expect(
-			saved.commands?.find((command) => command.name === "SecurityApiUpdateSettings")?.args,
+			Option.getOrUndefined(
+				Arr.findFirst(
+					saved.commands ?? [],
+					(command) => command.name === "SecurityApiUpdateSettings",
+				),
+			)?.args,
 		).toMatchObject({
 			payload: {
 				monthlySpendLimitUsd: 2_500,
@@ -882,7 +887,9 @@ describe("add target", () => {
 			"anthropic/claude-sonnet-5.5",
 		])
 		const created = send(form, AddTarget.Message.Submitted())
-		const args = created.commands?.find((command) => command.name === "SecurityApiCreateTarget")?.args
+		const args = Option.getOrUndefined(
+			Arr.findFirst(created.commands ?? [], (command) => command.name === "SecurityApiCreateTarget"),
+		)?.args
 		expect(args).toEqual({
 			attempt: form.addTarget.attempt,
 			payload: {
@@ -912,7 +919,9 @@ describe("add target", () => {
 
 	test("a created target starts its first run", () => {
 		const created = send(pick(opened(), "acme/api-gateway"), AddTarget.Message.Submitted()).model
-		const target = targetsOf(NOW).targets.find((candidate) => candidate.repository === "acme/api-gateway")
+		const target = Option.getOrUndefined(
+			Arr.findFirst(targetsOf(NOW).targets, (candidate) => candidate.repository === "acme/api-gateway"),
+		)
 		expect(target).toBeDefined()
 		if (target === undefined) return
 		const started = send(

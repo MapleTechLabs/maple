@@ -199,12 +199,15 @@ const parseLoopbackRedirectUri = (value: string) =>
 	Option.map(decodeLoopbackMcpOAuthRedirectUri(value), (url) => {
 		// RFC 8252 permits only the port to vary. Keep the original suffix so path and query
 		// matching does not inherit URL parser normalization.
-		const authorityStart = value.indexOf("//") + 2
-		const suffixOffset = Str.slice(authorityStart)(value).search(/[/?]/)
+		const authorityStart = Option.getOrElse(Str.indexOf("//")(value), () => -1) + 2
+		const suffixOffset = Str.search(/[/?]/)(Str.slice(authorityStart)(value))
 		return {
 			protocol: url.protocol,
 			hostname: url.hostname,
-			suffix: suffixOffset === -1 ? "" : Str.slice(authorityStart + suffixOffset)(value),
+			suffix: Option.match(suffixOffset, {
+				onNone: () => "",
+				onSome: (offset) => Str.slice(authorityStart + offset)(value),
+			}),
 		}
 	})
 

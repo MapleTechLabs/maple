@@ -12,7 +12,7 @@
 // The server's transport is stateless: one POST carries one `tools/call`, no
 // `initialize` or session id needed.
 
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { McpToolOutputs, type McpToolName } from "@maple/domain/mcp-outputs"
 import { WarehouseQueryError } from "@maple/domain/http/warehouse-errors"
@@ -63,21 +63,27 @@ const decodeBody = Schema.decodeUnknownOption(
 const FEEDBACK_HINT = /\n?If this looks like a bug in Maple.*$/s
 
 const textOf = (result: typeof ToolResult.Type): string =>
-	(result.content ?? [])
-		.map((part) => part.text ?? "")
-		.join("\n")
-		.replace(FEEDBACK_HINT, "")
-		.trim()
+	Str.trim(
+		Str.replace(
+			FEEDBACK_HINT,
+			"",
+		)(
+			Arr.join(
+				Arr.map(result.content ?? [], (part) => part.text ?? ""),
+				"\n",
+			),
+		),
+	)
 
 /** Arguments without `undefined` values, so an unset flag sends nothing. */
 const definedArgs = (args: Record<string, unknown>): Record<string, unknown> =>
-	Object.fromEntries(Object.entries(args).filter(([, value]) => value !== undefined))
+	Rec.filter(args, (value) => value !== undefined)
 
 const CALL_ID = 1
 
 export const makeMcpClient = (apiUrl: string, token: string) =>
 	Effect.map(HttpClient.HttpClient, (http): MapleMcpClient => {
-		const endpoint = `${apiUrl.replace(/\/$/, "")}/mcp`
+		const endpoint = `${Str.replace(/\/$/, "")(apiUrl)}/mcp`
 		const call = <K extends McpToolName>(tool: K, args: Record<string, unknown>) => {
 			const queryError = (message: string, cause: unknown) =>
 				new WarehouseQueryError({ message, pipeName: tool, cause })
@@ -118,18 +124,19 @@ export const makeMcpClient = (apiUrl: string, token: string) =>
 				const decoded = decodeBody(body)
 				if (decoded._tag === "None")
 					return yield* failure(`${endpoint} returned a malformed response`)
-				const envelope = Array.isArray(decoded.value)
-					? decoded.value.find((r) => r.id === CALL_ID)
-					: decoded.value
-				if (envelope?.error !== undefined) return yield* failure(envelope.error.message)
-				const result = envelope?.result
+				const envelope = Arr.isArray<typeof decoded.value>(decoded.value)
+					? Arr.findFirst(decoded.value, (r) => r.id === CALL_ID)
+					: Option.some(decoded.value)
+				if (Option.isSome(envelope) && envelope.value.error !== undefined)
+					return yield* failure(envelope.value.error.message)
+				const result = Option.isSome(envelope) ? envelope.value.result : undefined
 				if (result === undefined) return yield* failure(`${tool} returned no result`)
 				if (result.isError === true) {
 					const text = textOf(result)
 					// The registry phrases caller mistakes as "Invalid input…"/"Invalid parameters…".
 					return yield* /^Invalid (input|parameters)/.test(text)
-						? new CliUsageError({ message: text.split("\n")[0]! })
-						: failure(text.split("\n")[0] || `${tool} failed`)
+						? new CliUsageError({ message: Str.split("\n")(text)[0] })
+						: failure(Str.split("\n")(text)[0] || `${tool} failed`)
 				}
 				return yield* Schema.decodeUnknownEffect(McpToolOutputs[tool])(result.structuredContent).pipe(
 					Effect.mapError(() =>

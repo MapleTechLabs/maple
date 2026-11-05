@@ -4,7 +4,7 @@
 // `maple-store-migration.json`. Its purpose is to fail loudly if the schema
 // ever stops accepting a journal an installed store already holds — the
 // declaration is only safe because this pins the accepted form.
-import { Schema, String as Str } from "effect"
+import { Schema, Record as Rec, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	decodeMigrationJournal,
@@ -85,7 +85,8 @@ describe("migration journal envelope", () => {
 			chain: [{ ...journal.chain[0]!, from: leanFrom }],
 		})
 		expect("manifestDigest" in decoded.chain[0]!.from).toBe(false)
-		expect(Object.keys(decoded.chain[0]!.from)).not.toContain("projectRevision")
+		const from: Readonly<Record<string, unknown>> = decoded.chain[0]!.from
+		expect(Rec.keys(from)).not.toContain("projectRevision")
 	})
 
 	it("rejects a journal written by a build this one does not know", () => {

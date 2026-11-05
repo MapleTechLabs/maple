@@ -80,7 +80,7 @@ describe("error issue", () => {
 		const reloaded = pageUpdate(windowed(), Message.ClickedReload()).model
 		expect(routeChanged(reloaded, { search: { tab: "activity" } }, context).commands).toBeUndefined()
 		const moved = routeChanged(reloaded, { search: { timePreset: "1d" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveIssueWindow", "Refresh"],
 		])
 	})

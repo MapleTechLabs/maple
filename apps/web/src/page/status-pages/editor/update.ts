@@ -337,14 +337,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						}),
 					}),
 		ReceivedPreviewSelection: ({ kind, id }) => {
-			const component = componentsOf(model).find((row) => row.id === id)
 			return kind === "component"
-				? component === undefined
-					? { model }
-					: selectComponent(model, component.id)
+				? Option.match(
+						Arr.findFirst(componentsOf(model), (row) => row.id === id),
+						{
+							onNone: () => ({ model }),
+							onSome: (component) => selectComponent(model, component.id),
+						},
+					)
 				: Option.match(
-						Option.fromNullishOr(
-							AsyncData.getOrElse(model.incidents.data, () => []).find((row) => row.id === id),
+						Arr.findFirst(
+							AsyncData.getOrElse(model.incidents.data, () => []),
+							(row) => row.id === id,
 						),
 						{
 							onNone: () => ({ model }),

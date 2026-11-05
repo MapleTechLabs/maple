@@ -1,5 +1,5 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { Chdb, RAW_TELEMETRY_TTL_COLUMNS } from "./chdb"
 import { decodeJsonEachRow } from "./chdb-rows"
 import { LOCAL_SCHEMA_MANIFEST } from "./schema-identity"
@@ -86,9 +86,19 @@ export const inspectPhysicalSchema = (db: Pick<Chdb, "query">): PhysicalSchema =
 		indexesByTable.set(index.table, list)
 	}
 	const ttlFromDefinition = (definition: string): string | undefined =>
-		definition.match(/\bTTL\s+(.+?)(?=\bSETTINGS\b|$)/is)?.[1]?.trim()
+		Option.getOrUndefined(
+			Option.map(
+				Option.flatMap(Str.match(/\bTTL\s+(.+?)(?=\bSETTINGS\b|$)/is)(definition), (match) =>
+					Option.fromUndefinedOr(match[1]),
+				),
+				Str.trim,
+			),
+		)
 	const indexesFromDefinition = (definition: string): string[] =>
-		Arr.map([...definition.matchAll(/\bINDEX\s+([A-Za-z_][A-Za-z0-9_]*)\b/gi)], (match) => match[1]!)
+		Arr.map(
+			Arr.fromIterable(Str.matchAll(/\bINDEX\s+([A-Za-z_][A-Za-z0-9_]*)\b/gi)(definition)),
+			(match) => match[1]!,
+		)
 	return {
 		objects: Arr.map(tables, (table): PhysicalSchemaObject => ({
 			name: table.name,
@@ -132,7 +142,11 @@ const formatViewBody = (db: Pick<Chdb, "query">): ((sql: string) => string | und
 			// The local store is always the `default` database, and ClickHouse
 			// qualifies every source table with it on the way back out. Drop the
 			// qualifier so `FROM logs` and `FROM default.logs` compare equal.
-			formatted = rows[0]?.formatted?.replace(/(?:\bdefault|`default`)\./g, "")
+			const first = rows[0]
+			formatted =
+				first === undefined
+					? undefined
+					: Str.replace(/(?:\bdefault|`default`)\./g, "")(first.formatted)
 		} catch {
 			formatted = undefined
 		}

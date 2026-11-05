@@ -11,7 +11,7 @@ import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import { assert, describe, expect, it } from "vitest"
 import type { ChatRenderContext } from "./blocks"
 import { renderChatMessage, summarizeToolInput } from "./message"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 const sessionId = makeChatSessionId("org_1", "bot-42")
 
@@ -27,9 +27,9 @@ const turn = (inputs: ReadonlyArray<ChatEventInput>): ChatMessage => {
 	Arr.forEach(inputs, (input, index) =>
 		transcript.add(decodeChatEventPayload(encodeChatEventPayload(input), index + 1), 0),
 	)
-	const message = transcript.messages.find((candidate) => candidate.role === "assistant")
-	assert(message !== undefined)
-	return message
+	const message = Arr.findFirst(transcript.messages, (candidate) => candidate.role === "assistant")
+	assert(Option.isSome(message))
+	return message.value
 }
 
 const text = (body: string) =>
@@ -278,7 +278,7 @@ describe("renderChatMessage", () => {
 					name: "query_data",
 					input: {},
 					output: null,
-					textOffset: body.indexOf(CHART),
+					textOffset: Option.getOrThrow(Str.indexOf(CHART)(body)),
 				}),
 				new ChatToolCall({ id: "c2", name: "find_errors", input: {}, output: null, textOffset: 0 }),
 			],

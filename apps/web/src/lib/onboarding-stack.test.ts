@@ -1,3 +1,4 @@
+import { Array as Arr, Option } from "effect"
 import { describe, expect, test } from "vitest"
 import {
 	filledSurfaces,
@@ -26,10 +27,13 @@ describe("onboarding stack", () => {
 	})
 
 	test("each surface names the picks that fill it", () => {
-		const infra = filledSurfaces({ languages: [], platforms: ["cloudflare", "supabase"] }).find(
-			(surface) => surface.intent === "infrastructure",
+		const infra = Option.getOrUndefined(
+			Arr.findFirst(
+				filledSurfaces({ languages: [], platforms: ["cloudflare", "supabase"] }),
+				(surface) => surface.intent === "infrastructure",
+			),
 		)
-		expect(infra?.sources.map((source) => source.label)).toEqual(["Cloudflare", "Supabase"])
+		expect(Arr.map(infra?.sources ?? [], (source) => source.label)).toEqual(["Cloudflare", "Supabase"])
 	})
 
 	test("the checklist opens on the first language, or OpenTelemetry for a platform-only stack", () => {

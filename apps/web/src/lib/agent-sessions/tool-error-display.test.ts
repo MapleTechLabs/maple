@@ -16,7 +16,7 @@ import {
 	whatsWrong,
 	type ErrorTextToken,
 } from "./tool-error-display"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 // Verbatim shapes of production tool failures: a schema decoder's message in a
 // `{"result": …}` envelope, an MCP parameter error, a templated domain error,
@@ -224,14 +224,16 @@ describe("payloadLines", () => {
 	it("writes a missing key into the object that lacks it, and folds that object's siblings", () => {
 		const args = { evidence: [{ note: "first" }, { note: "second", traceIds: ["t"] }] }
 		const lines = payloadLines(args, MISSING_NESTED)
-		expect(lines.find((line) => line.missingKey !== undefined)?.missingKey).toBe("traceIds")
+		expect(
+			Option.getOrUndefined(Arr.findFirst(lines, (line) => line.missingKey !== undefined))?.missingKey,
+		).toBe("traceIds")
 		expect(
 			Arr.map(
 				Arr.filter(lines, (line) => line.highlight),
 				(line) => line.text,
 			),
 		).toEqual(["{", '"note": "first"', "", "},"])
-		const folded = lines.find((line) => line.folded !== undefined)
+		const folded = Option.getOrUndefined(Arr.findFirst(lines, (line) => line.folded !== undefined))
 		expect(folded?.text).toBe('{ "note": "…", "traceIds": […] }')
 		expect(folded?.folded).toMatch(/^item \[1\] · \d+ B$/)
 	})

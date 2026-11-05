@@ -22,7 +22,7 @@
 // therefore produces no headers at all and degrades into a plain sorted list.
 
 import type { ServiceEndpoint } from "@maple/web-data/warehouse/service-endpoints"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 // The table sort direction.
 type SortDir = "asc" | "desc"
@@ -371,8 +371,14 @@ export function leafLabel(route: string, stem: string): LeafLabel {
 	if (remainder === "" || remainder === "/") {
 		return grouped ? { head: "", tail: "(index)" } : { head: "", tail: "/" }
 	}
-	const lastSlash = remainder.lastIndexOf("/")
-	if (lastSlash <= 0) return { head: "", tail: remainder }
-	const head = Str.slice(0, lastSlash)(remainder)
-	return { head: grouped ? `…${head}` : head, tail: Str.slice(lastSlash)(remainder) }
+	return Option.match(
+		Option.filter(Str.lastIndexOf("/")(remainder), (at) => at > 0),
+		{
+			onNone: () => ({ head: "", tail: remainder }),
+			onSome: (lastSlash) => {
+				const head = Str.slice(0, lastSlash)(remainder)
+				return { head: grouped ? `…${head}` : head, tail: Str.slice(lastSlash)(remainder) }
+			},
+		},
+	)
 }

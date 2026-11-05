@@ -199,7 +199,7 @@ export const makeBrowserOriginPolicy = (options: {
 	readonly anySameOriginHost?: boolean
 }): Result.Result<BrowserOriginPolicy, LocalServerConfigError> => {
 	const trusted = new Set<string>()
-	const hosted = options.hostedOrigin?.trim()
+	const hosted = options.hostedOrigin === undefined ? undefined : Str.trim(options.hostedOrigin)
 	if (hosted) {
 		const origin = parseOrigin(hosted)
 		if (origin === undefined)

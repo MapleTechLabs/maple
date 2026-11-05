@@ -38,7 +38,7 @@ import { stripClass } from "@maple/views/ui/rule"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // `AlertsRoutingTab` and `DestinationRow`: the hub's Routing tab.
 
@@ -189,7 +189,7 @@ type RowInputs = Readonly<{
 export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: RowInputs): Html => {
 	const { destination, recent } = row
 	const provider = destinationProvider(destination.type, destination.chatConnector ?? undefined)
-	const lastSuccess = recent.find((event) => event.status === "success")
+	const lastSuccess = Arr.findFirst(recent, (event) => event.status === "success")
 	const failed = Arr.filter(recent, (event) => event.status === "failed").length
 	const problem =
 		!destination.enabled && destination.disabledReason
@@ -261,15 +261,17 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 											: [],
 										[destination.disabledAt != null ? "auto-disabled" : "disabled"],
 									)
-								: lastSuccess !== undefined
-									? relativeTime(h, {
-											value: lastSuccess.scheduledAt,
-											nowMs: inputs.nowMs,
-											timeZone: inputs.timeZone,
-											variant: "short",
-											tooltip: "title",
-										})
-									: "never",
+								: Option.match(lastSuccess, {
+										onNone: () => "never",
+										onSome: (event) =>
+											relativeTime(h, {
+												value: event.scheduledAt,
+												nowMs: inputs.nowMs,
+												timeZone: inputs.timeZone,
+												variant: "short",
+												tooltip: "title",
+											}),
+									}),
 						],
 					),
 					hstack(h, { gap: "2", justify: "end" }, [

@@ -501,17 +501,17 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 							),
 						)
 			// A restarted turn reads from its kickoff: what came after it is the attempt that died.
-			const kickoff =
-				input.resume === undefined
-					? -1
-					: spoken.findIndex(
-							(message) =>
-								message.role === "user" && message.id === input.resume?.userMessageId,
-						)
-			const text = input.resume?.text ?? (latest?.role === "user" ? latest.text : "")
+			const resume = input.resume
+			const text = resume?.text ?? (latest?.role === "user" ? latest.text : "")
 			const prior =
-				input.resume !== undefined
-					? spoken.slice(0, kickoff === -1 ? spoken.length : kickoff)
+				resume !== undefined
+					? Option.match(
+							Arr.findFirstIndex(
+								spoken,
+								(message) => message.role === "user" && message.id === resume.userMessageId,
+							),
+							{ onNone: () => spoken, onSome: (kickoff) => spoken.slice(0, kickoff) },
+						)
 					: latest?.role === "user"
 						? spoken.slice(0, -1)
 						: spoken

@@ -1,6 +1,6 @@
 import type { SecurityAuditRun } from "@maple/domain/http"
 import type { SecurityAuditTargetId } from "@maple/domain/security-audit"
-import { Result, Array as Arr, String as Str } from "effect"
+import { Result, Array as Arr, String as Str, Option } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -568,11 +568,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(next) => Message.GotStatusSelectMessage({ message: next }),
 				(updated, value) => {
 					const { status: _status, ...rest } = searchWithDraft(updated)
-					const status = STATUS_TABS.find((tab) => tab === value)
 					// Open is the default, so the URL only carries another status.
 					return navigate(
 						updated,
-						findingsUrl(status === undefined || status === "open" ? rest : { ...rest, status }),
+						findingsUrl(
+							Option.match(
+								Arr.findFirst(STATUS_TABS, (tab) => tab === value && tab !== "open"),
+								{ onNone: () => rest, onSome: (status) => ({ ...rest, status }) },
+							),
+						),
 					)
 				},
 			),

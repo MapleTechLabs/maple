@@ -195,8 +195,13 @@ const teamsAnswered = (
 }
 
 const teamName = (model: Model, teamId: string): string =>
-	Option.getOrElse(AsyncData.getData(model.teams.data), () => []).find((team) => team.id === teamId)
-		?.name ?? ""
+	Arr.findFirst(
+		Option.getOrElse(AsyncData.getData(model.teams.data), () => []),
+		(team) => team.id === teamId,
+	).pipe(
+		Option.flatMapNullishOr((found) => found.name),
+		Option.getOrElse(() => ""),
+	)
 
 export const update = (model: Model, message: Message, form: DestinationForm): Return =>
 	Message.match<Return>(message, {

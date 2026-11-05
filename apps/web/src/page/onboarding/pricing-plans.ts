@@ -68,6 +68,7 @@ const formatIncludedUsage = (item: CatalogPlanItem): string => {
 
 // A one-decimal dollar amount reads as cents: "$0.3" becomes "$0.30"; "$5" and "$0.002" stay.
 const padCents = (text: string): string =>
+	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	text.replace(/\$(\d+)\.(\d)(?!\d)/g, (_, dollars: string, tenths: string) => `$${dollars}.${tenths}0`)
 
 const normalizeDetailText = (text: string): string =>

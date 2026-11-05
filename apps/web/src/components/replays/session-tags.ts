@@ -1,4 +1,4 @@
-import { Schema, Array as Arr } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import {
 	SESSION_QUALITY_TAGS,
 	SESSION_TAG_THRESHOLDS,
@@ -58,7 +58,8 @@ export const SESSION_TAG_ORDER: ReadonlyArray<SessionTag> = SESSION_TAGS
 const isSessionTag = Schema.is(SessionTag)
 
 /** `name` as a tag, or undefined for anything the vocabulary does not know. */
-export const asSessionTag = (name: string): SessionTag | undefined => SESSION_TAGS.find((tag) => tag === name)
+export const asSessionTag = (name: string): SessionTag | undefined =>
+	Option.getOrUndefined(Arr.findFirst(SESSION_TAGS, (tag) => tag === name))
 
 /** The valid tags in a URL param; a hand-edited URL cannot send the API an unknown tag. */
 export const sessionTagsFromSearch = (
@@ -79,12 +80,15 @@ export const nextTagSelection = (
 	values: ReadonlyArray<string>,
 ): Array<SessionTag> => {
 	const next = sessionTagsFromSearch(values) ?? []
-	const addedTier = next.find((tag) => isQualityTier(tag) && !previous.includes(tag))
-	return addedTier === undefined
-		? next
-		: Arr.filter(next, (tag) => !isQualityTier(tag) || tag === addedTier)
+	return Option.match(
+		Arr.findFirst(next, (tag) => isQualityTier(tag) && !previous.includes(tag)),
+		{
+			onNone: () => next,
+			onSome: (addedTier) => Arr.filter(next, (tag) => !isQualityTier(tag) || tag === addedTier),
+		},
+	)
 }
 
 /** The quality tier worth flagging on a row: everything but `engaged`. */
 export const noiseTierOf = (tags: ReadonlyArray<SessionTag>): SessionTag | undefined =>
-	tags.find((tag) => tag !== "engaged" && isQualityTier(tag))
+	Option.getOrUndefined(Arr.findFirst(tags, (tag) => tag !== "engaged" && isQualityTier(tag)))

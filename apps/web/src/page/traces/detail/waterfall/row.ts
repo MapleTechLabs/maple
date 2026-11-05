@@ -342,7 +342,9 @@ const codeLocation = (span: SpanNodeData): CodeLocation | null => {
 	const path = attrs["code.file.path"] ?? attrs["code.filepath"] ?? ""
 	if (path === "") return null
 	return {
-		file: Str.slice(path.lastIndexOf("/") + 1)(path),
+		file: Str.slice(
+			Option.match(Str.lastIndexOf("/")(path), { onNone: () => 0, onSome: (slash) => slash + 1 }),
+		)(path),
 		path,
 		line: attrs["code.line.number"] ?? attrs["code.lineno"] ?? "",
 	}

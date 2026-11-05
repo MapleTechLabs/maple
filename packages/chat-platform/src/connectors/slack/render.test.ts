@@ -121,7 +121,7 @@ describe("charts", () => {
 		const payload = renderSlackMessage([
 			chart(`https://app.maple.dev/${Str.repeat(MAX_IMAGE_URL_CHARS)("x")}`),
 		])
-		expect(payload.blocks?.some((block) => block.type === "image")).toBe(false)
+		expect(payload.blocks && Arr.some(payload.blocks, (block) => block.type === "image")).toBe(false)
 	})
 })
 
@@ -185,7 +185,7 @@ describe("approvals", () => {
 				},
 			},
 		])
-		expect(payload.blocks?.some((block) => block.type === "actions")).toBe(false)
+		expect(payload.blocks && Arr.some(payload.blocks, (block) => block.type === "actions")).toBe(false)
 		expect(payload.blocks?.[0]).toMatchObject({
 			type: "section",
 			text: {
@@ -200,7 +200,7 @@ describe("approvals", () => {
 
 	it("says so rather than sending buttons Slack would reject the message over", () => {
 		const payload = renderSlackMessage([approval(Str.repeat(MAX_BUTTON_VALUE_CHARS + 1)("x"))])
-		expect(payload.blocks?.some((block) => block.type === "actions")).toBe(false)
+		expect(payload.blocks && Arr.some(payload.blocks, (block) => block.type === "actions")).toBe(false)
 		expect(payload.text).toContain("Approve create_dashboard?")
 	})
 })
@@ -260,17 +260,16 @@ describe("the rest of the vocabulary", () => {
 		expect(attachment?.color).toBe("#e01e5a")
 		expect(attachment?.fallback).toContain("High error rate — Triggered")
 		const blocks = attachment?.blocks ?? []
-		const section = blocks.find((block) => block.type === "section")
+		const section = Option.getOrUndefined(Arr.findFirst(blocks, (block) => block.type === "section"))
 		// Markdown is converted, and each field reads as its label over its value.
 		expect(section?.type === "section" && section.text.text).toBe(
 			"*Error Rate* is *49.7%* — above the 5% threshold, measured over the last 5m.",
 		)
-		expect(section?.type === "section" && section.fields?.map((field) => field.text)).toEqual([
-			"*Severity*\n\u{1F534} Critical",
-			"*Group*\n`electric-sync`",
-		])
+		expect(
+			section?.type === "section" && section.fields && Arr.map(section.fields, (field) => field.text),
+		).toEqual(["*Severity*\n\u{1F534} Critical", "*Group*\n`electric-sync`"])
 		// Only the primary link is styled; every link button carries its url.
-		const actions = blocks.find((block) => block.type === "actions")
+		const actions = Option.getOrUndefined(Arr.findFirst(blocks, (block) => block.type === "actions"))
 		expect(
 			actions?.type === "actions" && Arr.map(actions.elements, (button) => [button.url, button.style]),
 		).toEqual([
@@ -278,7 +277,7 @@ describe("the rest of the vocabulary", () => {
 			["https://app.maple.dev/alerts/rule_1", undefined],
 		])
 		// The sent time is a Slack date token in seconds, with an ISO fallback.
-		const context = blocks.find((block) => block.type === "context")
+		const context = Option.getOrUndefined(Arr.findFirst(blocks, (block) => block.type === "context"))
 		expect(context?.type === "context" && context.elements[0]?.text).toContain(
 			"<!date^1700000000^{date_short_pretty} at {time}|2023-11-14T22:13:20.000Z>",
 		)
@@ -287,7 +286,7 @@ describe("the rest of the vocabulary", () => {
 	it("puts an alert's chart between the summary and the buttons", () => {
 		const blocks = renderSlackMessage([alert({ imageUrl: "https://charts.maple.dev/c.png" })])
 			.attachments?.[0]?.blocks
-		expect(blocks?.map((block) => block.type)).toEqual([
+		expect(blocks && Arr.map(blocks, (block) => block.type)).toEqual([
 			"header",
 			"section",
 			"image",

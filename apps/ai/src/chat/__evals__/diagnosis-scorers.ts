@@ -12,7 +12,7 @@
  * rule that only runs when someone sets an API key is a rule that rots.
  */
 import type { DiagnosisFixture } from "./diagnosis-fixtures"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /**
  * Every field is `unknown`, and that is the point.
@@ -169,10 +169,14 @@ export const scoreCauseMatch = (report: ScoredReport, fixture: DiagnosisFixture)
 			? pass("correctly declined to name a cause")
 			: fail(`named a cause on an unknowable incident: "${text(report.suspectedCause)}"`)
 	}
-	const hit = fixture.expectedCauseTerms.find((term) => Str.includes(term)(said))
-	return hit === undefined
-		? fail(
-				`named none of the expected cause terms ${JSON.stringify(fixture.expectedCauseTerms)}; said "${text(report.suspectedCause)}"`,
-			)
-		: pass(`named the planted cause family via "${hit}"`)
+	return Option.match(
+		Arr.findFirst(fixture.expectedCauseTerms, (term) => Str.includes(term)(said)),
+		{
+			onNone: () =>
+				fail(
+					`named none of the expected cause terms ${JSON.stringify(fixture.expectedCauseTerms)}; said "${text(report.suspectedCause)}"`,
+				),
+			onSome: (hit) => pass(`named the planted cause family via "${hit}"`),
+		},
+	)
 }

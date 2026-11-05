@@ -12,7 +12,7 @@ import { type TileContext, widgetTile } from "./tiles"
 type Model = Readonly<{ runtime: ChartRuntime; reloads: number; dataLoading?: boolean; noRows?: boolean }>
 type Message = "ClickedReloadPage" | "Ignored"
 
-const [widget] = Schema.decodeUnknownSync(DashboardDocument)({
+const [widget] = Schema.decodeSync(DashboardDocument)({
 	id: "dash_runtime",
 	name: "Runtime",
 	timeRange: { type: "relative", value: "1h" },

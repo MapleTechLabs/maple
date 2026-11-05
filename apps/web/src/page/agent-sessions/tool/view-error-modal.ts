@@ -224,9 +224,15 @@ const content = (h: H, model: Model, inputs: ModalInputs): Html => {
 	const occurrences = occurrencesOf(model)
 	const samplesTotal =
 		variant !== undefined && session === undefined
-			? (detail.variants.find((row) => row.message === variant)?.calls ?? occurrences.length)
+			? Arr.findFirst(detail.variants, (row) => row.message === variant).pipe(
+					Option.flatMapNullishOr((found) => found.calls),
+					Option.getOrElse(() => occurrences.length),
+				)
 			: session !== undefined && variant === undefined
-				? (detail.sessions.find((row) => row.sessionId === session)?.hits ?? occurrences.length)
+				? Arr.findFirst(detail.sessions, (row) => row.sessionId === session).pipe(
+						Option.flatMapNullishOr((found) => found.hits),
+						Option.getOrElse(() => occurrences.length),
+					)
 				: variant === undefined
 					? group.calls
 					: occurrences.length
