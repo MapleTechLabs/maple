@@ -15,6 +15,7 @@ import {
 import { icon } from "@maple/views/ui/icon"
 import { miniBars } from "@maple/views/ui/mini-bars"
 import { searchInput } from "@maple/views/ui/search-input"
+import { button } from "@maple/views/ui/button"
 import { hstack } from "@maple/views/ui/stack"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
@@ -73,9 +74,14 @@ export type UsersListOptions<M> = Readonly<{
 	userHref?: (userId: string) => string
 }>
 
+/** The rail's counts, or why it has none: still loading, or the facets read failed. */
+export type UsersRailFacets = UsersFacets | "loading" | "failed"
+
 export type UsersRailOptions<M> = Readonly<{
 	filters: UsersFilters
-	facets: UsersFacets
+	facets: UsersRailFacets
+	/** Re-runs the reads when the facets failed. */
+	onRetry: M
 	/** The org-global pin: the Namespace section becomes its notice and the picks are ignored. */
 	pinnedNamespace: string | null
 	sections: FilterSections.Model
@@ -93,21 +99,42 @@ const hasRailFilters = (filters: UsersFilters): boolean =>
 	filters.hasErrors || filters.hasReplay || filters.namespaces.length > 0 || filters.groups.length > 0
 
 /** The users filter rail: the toggles, then Namespace (or the pin's notice) and Group. */
-export const usersFilterRail = <M>(h: HtmlBuilder<M>, options: UsersRailOptions<M>): Html =>
-	filterSidebarFrame(h, {}, [
+/** While the facets are out or failed: no counts and no options, only the picks already made. */
+const NO_FACETS: UsersFacets = { namespaces: [], groups: [], withErrors: 0, withReplay: 0 }
+
+const railStatus = <M>(h: HtmlBuilder<M>, facets: UsersRailFacets, onRetry: M): ReadonlyArray<Html> =>
+	facets === "loading"
+		? [typography(h, { size: "xs", tone: "subtle", className: "px-1" }, ["Loading filter counts…"])]
+		: facets === "failed"
+			? [
+					hstack(h, { gap: "2", className: "px-1" }, [
+						typography(h, { size: "xs", tone: "muted" }, ["Couldn't load the filters"]),
+						button(h, { size: "xs", variant: "ghost", attributes: [h.OnClick(onRetry)] }, [
+							"Retry",
+						]),
+					]),
+				]
+			: []
+
+/** The users filter rail: the toggles, then Namespace (or the pin's notice) and Group. */
+export const usersFilterRail = <M>(h: HtmlBuilder<M>, options: UsersRailOptions<M>): Html => {
+	const ready = typeof options.facets === "string" ? undefined : options.facets
+	const facets = ready ?? NO_FACETS
+	return filterSidebarFrame(h, {}, [
 		filterSidebarHeader(h, hasRailFilters(options.filters) ? { onClear: options.onClearAll } : {}),
 		...filterSidebarBody(h, "users-filters", [
+			...railStatus(h, options.facets, options.onRetry),
 			singleCheckboxFilter(h, {
 				title: "Has errors",
 				isChecked: options.filters.hasErrors,
 				onToggle: options.onToggleErrors,
-				count: options.facets.withErrors,
+				...(ready !== undefined && { count: ready.withErrors }),
 			}),
 			singleCheckboxFilter(h, {
 				title: "Has replay",
 				isChecked: options.filters.hasReplay,
 				onToggle: options.onToggleReplay,
-				count: options.facets.withReplay,
+				...(ready !== undefined && { count: ready.withReplay }),
 			}),
 			options.pinnedNamespace !== null
 				? pinnedNamespaceNotice(h, options.pinnedNamespace, options.onClearNamespacePin)
@@ -115,7 +142,7 @@ export const usersFilterRail = <M>(h: HtmlBuilder<M>, options: UsersRailOptions<
 						title: "Namespace",
 						description:
 							"The service.namespace of the services users' requests and sessions reached in the window.",
-						options: options.facets.namespaces,
+						options: facets.namespaces,
 						selected: options.filters.namespaces,
 						isSearchable: true,
 						sections: options.sections,
@@ -124,7 +151,7 @@ export const usersFilterRail = <M>(h: HtmlBuilder<M>, options: UsersRailOptions<
 					}),
 			filterSection(h, {
 				title: "Group",
-				options: options.facets.groups,
+				options: facets.groups,
 				selected: options.filters.groups,
 				isSearchable: true,
 				sections: options.sections,
@@ -133,6 +160,7 @@ export const usersFilterRail = <M>(h: HtmlBuilder<M>, options: UsersRailOptions<
 			}),
 		]),
 	])
+}
 
 const scopeText = (scope: ReadonlyArray<string>): string =>
 	scope.length === 0
