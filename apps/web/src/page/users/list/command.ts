@@ -17,11 +17,15 @@ export const USERS_LIMIT = 200
 export const namespaceScope = (search: Search, pinnedNamespace: string | null): ReadonlyArray<string> =>
 	pinnedNamespace !== null ? [pinnedNamespace] : (search.namespaces ?? [])
 
+/** The facets' and the summary's scope: the org pin only, never the rail's picks. */
+export const pinScope = (pinnedNamespace: string | null): ReadonlyArray<string> =>
+	pinnedNamespace === null ? [] : [pinnedNamespace]
+
 /** The facets' inputs: the window and the pin only, so a rail pick never refetches the facets. */
 export const facetsInputs = (window: TimeWindow, pinnedNamespace: string | null) => ({
 	startTime: window.startTime,
 	endTime: window.endTime,
-	namespaces: pinnedNamespace === null ? [] : [pinnedNamespace],
+	namespaces: pinScope(pinnedNamespace),
 })
 
 /** The list's inputs: the window, the namespace scope, the search, the toggles and the group picks. */

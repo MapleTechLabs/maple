@@ -10,7 +10,7 @@ import { USER_TABS, type UserTab, userLabel } from "../../page/users/data"
 import { userDetailBody, userRail, userTabs, userTitle } from "../../page/users/view-detail"
 import { usersFilterRail, usersListBody } from "../../page/users/view-list"
 import type { Resources } from "../../platform/resources"
-import { filterUsers, scopeDetail, scopeOf, usersFacets } from "../users-filter"
+import { filterUsers, scopeDetail, usersFacets } from "../users-filter"
 import { noUsersState, usersLoading } from "../../page/users/view-states"
 import { USER_DETAIL, USER_ROWS, USERS_NOW, USERS_SUMMARY, USERS_TIME_ZONE } from "../users-fixture"
 import { defineShellLab } from "../shell-lab"
@@ -138,7 +138,7 @@ const filtersOf = (model: Model) => ({
 const rail = (h: H, model: Model): Html =>
 	usersFilterRail(h, {
 		filters: filtersOf(model),
-		facets: usersFacets(USER_ROWS),
+		facets: usersFacets(USER_ROWS, model.pinnedNamespace),
 		pinnedNamespace: model.pinnedNamespace,
 		sections: model.filterSections,
 		toSectionsMessage: (message) => Message.GotFilterSectionsMessage({ message }),
@@ -225,7 +225,7 @@ const view = (model: Model, h: H): Html => {
 						nowMs: USERS_NOW,
 						timeZone: USERS_TIME_ZONE,
 						filters: filtersOf(model),
-						scope: scopeOf(filtersOf(model), model.pinnedNamespace),
+						scope: model.pinnedNamespace === null ? [] : [model.pinnedNamespace],
 						onSearch: (value) => Message.ChangedSearch({ value }),
 						onClearSearch: Message.ChangedSearch({ value: "" }),
 						userHref: () => "?view=detail",
