@@ -204,6 +204,8 @@ describe("one user's reads", () => {
 		expect(count(compileUnsafe(userServicesQuery(unscoped), userParams).sql, "UNION ALL")).toBe(2)
 		const sql = compileUnsafe(userServicesQuery({ ...unscoped, mcpServices: [] }), userParams).sql
 		expect(sql).not.toContain("FROM traces")
+	})
+})
 
 describe("a namespace no service resolves to", () => {
 	const ghost: UsersScope = { ...unscoped, namespaces: ["ghost"], services: [], mcpServices: ["maple-ai"] }
