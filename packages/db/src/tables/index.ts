@@ -89,6 +89,7 @@ import {
 	StatusPages,
 } from "./status-pages"
 import { UptimeMonitorDaily, UptimeMonitorStates, UptimeMonitors } from "./uptime"
+import { Slos } from "./slos"
 import {
 	VcsInstallations,
 	VcsRepositories,
@@ -151,6 +152,7 @@ export * from "./status-pages"
 export * from "./supabase"
 export * from "./support-channels"
 export * from "./uptime"
+export * from "./slos"
 export * from "./vcs"
 
 /** Every table the application database has, for schema checks and DDL. */
@@ -247,6 +249,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	UptimeMonitors,
 	UptimeMonitorStates,
 	UptimeMonitorDaily,
+	Slos,
 	StatusPages,
 	StatusPageComponents,
 	StatusPageIncidents,
