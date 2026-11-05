@@ -667,7 +667,7 @@ const errorsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 					toolTableBody(
 						h,
 						Arr.map(detail.issues, (issue) =>
-							toolTableRow(h, { href: `/errors/${issue.issueId}`, className: "h-12" }, [
+							toolTableRow(h, { href: `/errors/issues/${issue.issueId}`, className: "h-12" }, [
 								vstack(h, { gap: "0", className: "w-0 min-w-0 flex-1" }, [
 									typography(h, { size: "xs", mono: true, tone: "error", truncate: true }, [
 										issue.type,
