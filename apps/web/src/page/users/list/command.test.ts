@@ -22,6 +22,10 @@ describe("listInputs", () => {
 		expect(listInputs({ q: " ada " }, window, null).search).toBe("ada")
 	})
 
+	it("cuts a pasted search to the length the API accepts", () => {
+		expect(listInputs({ q: "a".repeat(450) }, window, null).search).toHaveLength(200)
+	})
+
 	it("keeps the rail's picks out of the facets, and only the pin in", () => {
 		expect(facetsInputs(window, null).namespaces).toEqual([])
 		expect(facetsInputs(window, "storefront").namespaces).toEqual(["storefront"])

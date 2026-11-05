@@ -53,7 +53,7 @@ const identifyExample = <M>(h: HtmlBuilder<M>): Html =>
 /** `/users` before any signal carries a user id: the integration on-ramp, never demo data. */
 export const noUsersState = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ onSetup: M; docsHref: string }>,
+	options: Readonly<{ onSetup: M; docsHref: string; onWidenRange?: M | undefined }>,
 ): Html =>
 	h.div(
 		[h.Class("border-t border-border px-6 py-14")],
@@ -61,14 +61,27 @@ export const noUsersState = <M>(
 			empty(h, [
 				emptyHeader(h, [
 					emptyMedia(h, { variant: "icon" }, [icon(h, "UsersIcon")]),
-					emptyTitle(h, ["Tell Maple who your users are"]),
+					emptyTitle(h, ["No identified users in this window"]),
 					emptyDescription(h, [
-						"Telemetry is arriving, but nothing carries a user id yet. Add one where you know who is signed in, and every session, trace, log, error and event from that person lands on one page.",
+						"Nothing in this window carries a user id. If your SDKs don't identify users yet, add one where you know who is signed in, and every session, trace, log, error and event from that person lands on one page.",
 					]),
 				]),
 				emptyContent(h, [
 					identifyExample(h),
 					hstack(h, { gap: "4", wrap: true, justify: "center" }, [
+						...(options.onWidenRange === undefined
+							? []
+							: [
+									button(
+										h,
+										{
+											size: "sm",
+											variant: "outline",
+											attributes: [h.OnClick(options.onWidenRange)],
+										},
+										["Show the last month"],
+									),
+								]),
 						button(h, { size: "sm", attributes: [h.OnClick(options.onSetup)] }, [
 							icon(h, "PlugIcon", { size: 14 }),
 							"Set up identify()",

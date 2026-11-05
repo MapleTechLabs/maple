@@ -1,4 +1,4 @@
-import { getUsersFacets, listUsers } from "@maple/web-data/warehouse/users"
+import { getUsersFacets, listUsers, USERS_SEARCH_MAX_LENGTH } from "@maple/web-data/warehouse/users"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -28,12 +28,18 @@ export const facetsInputs = (window: TimeWindow, pinnedNamespace: string | null)
 	namespaces: pinScope(pinnedNamespace),
 })
 
+/** The typed search as the API takes it: trimmed, cut to its 200-character cap, absent when blank. */
+const searchText = (q: string | undefined): string | undefined => {
+	const text = (q ?? "").trim().slice(0, USERS_SEARCH_MAX_LENGTH).trim()
+	return text === "" ? undefined : text
+}
+
 /** The list's inputs: the window, the namespace scope, the search, the toggles and the group picks. */
 export const listInputs = (search: Search, window: TimeWindow, pinnedNamespace: string | null) => ({
 	startTime: window.startTime,
 	endTime: window.endTime,
 	namespaces: namespaceScope(search, pinnedNamespace),
-	search: search.q === undefined || search.q.trim() === "" ? undefined : search.q.trim(),
+	search: searchText(search.q),
 	hasErrors: search.hasErrors === true ? true : undefined,
 	hasReplay: search.hasReplay === true ? true : undefined,
 	groups: search.groups,

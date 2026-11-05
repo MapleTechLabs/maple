@@ -28,6 +28,8 @@ type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
 
 export const DEFAULT_PRESET: PresetValue = "1w"
+/** The window the empty directory offers when the selected one holds no users. */
+export const WIDE_PRESET: PresetValue = "1mo"
 
 /** Where the empty state's setup button leads: the ingestion settings. */
 const SETUP_HREF = "/settings?tab=ingestion"
@@ -233,6 +235,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				startTime: undefined,
 				endTime: undefined,
 				timePreset: DEFAULT_PRESET,
+			}),
+		ClickedWidenRange: () =>
+			navigate(model, {
+				...model.search,
+				startTime: undefined,
+				endTime: undefined,
+				timePreset: WIDE_PRESET,
 			}),
 		ClickedRetry: () =>
 			model.window === null ? { model } : requestAll(model, context, model.window, "Refresh"),
