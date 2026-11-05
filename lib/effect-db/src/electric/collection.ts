@@ -426,6 +426,7 @@ export function createEffectCollection<A extends Row<unknown>, TRuntime>(
 		schema: standardSchema,
 	} as Parameters<typeof effectElectricCollectionOptions>[0])
 
+	// oxlint-disable-next-line typescript/no-unsafe-argument -- no createCollection overload accepts the generic schema config; the result is typed below
 	const collection = tanstackCreateCollection(options as any)
 	return collection as EffectCollection<A>
 }
