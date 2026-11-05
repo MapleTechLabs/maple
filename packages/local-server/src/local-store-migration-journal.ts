@@ -64,8 +64,9 @@ export const assertJournalPaths = (dataDir: string, journal: MigrationJournal): 
 		journal.currentStepIndex > journal.chain.length
 	)
 		throw new Error("local migration journal chain state is invalid")
-	const final = journal.chain[journal.chain.length - 1]
+	const final = journal.chain.at(-1)
 	if (
+		final === undefined ||
 		final.to.version !== journal.targetVersion ||
 		final.to.fingerprint !== journal.targetFingerprint ||
 		final.to.digest !== journal.targetDigest
@@ -80,8 +81,11 @@ const assertJournalChainInvariants = (journal: MigrationJournal): void => {
 	const { chain, currentStepIndex: current } = journal
 	if (current < 0 || current > chain.length)
 		throw new Error("migration journal currentStepIndex is invalid")
+	const first = chain[0]
+	const last = chain.at(-1)
+	if (first === undefined || last === undefined) throw new Error("migration journal chain is empty")
 	if (
-		!sameJournalIdentity(chain[0].from, {
+		!sameJournalIdentity(first.from, {
 			version: journal.sourceVersion,
 			fingerprint: journal.sourceFingerprint,
 			digest: journal.sourceDigest,
@@ -90,7 +94,7 @@ const assertJournalChainInvariants = (journal: MigrationJournal): void => {
 	)
 		throw new Error("migration journal source identity does not match its first step")
 	if (
-		!sameJournalIdentity(chain[chain.length - 1].to, {
+		!sameJournalIdentity(last.to, {
 			version: journal.targetVersion,
 			fingerprint: journal.targetFingerprint,
 			digest: journal.targetDigest,
@@ -98,17 +102,19 @@ const assertJournalChainInvariants = (journal: MigrationJournal): void => {
 		})
 	)
 		throw new Error("migration journal target identity does not match its final step")
-	for (let index = 1; index < chain.length; index += 1) {
-		if (!sameJournalIdentity(chain[index - 1].to, chain[index].from))
-			throw new Error(`migration journal step ${index} does not continue the previous step`)
+	for (const [offset, [previous, step]] of Arr.zip(chain, chain.slice(1)).entries()) {
+		if (!sameJournalIdentity(previous.to, step.from))
+			throw new Error(`migration journal step ${offset + 1} does not continue the previous step`)
 	}
-	for (let index = 0; index < current; index += 1) {
-		if (chain[index].status !== "completed")
+	for (const [index, step] of chain.slice(0, current).entries()) {
+		if (step.status !== "completed")
 			throw new Error(`migration journal step ${index} precedes currentStepIndex but is not completed`)
 	}
-	for (let index = current + 1; index < chain.length; index += 1) {
-		if (chain[index].status !== "pending")
-			throw new Error(`migration journal step ${index} follows currentStepIndex but is not pending`)
+	for (const [offset, step] of chain.slice(current + 1).entries()) {
+		if (step.status !== "pending")
+			throw new Error(
+				`migration journal step ${current + 1 + offset} follows currentStepIndex but is not pending`,
+			)
 	}
 	if (current === chain.length) {
 		if (Arr.some(chain, (step) => step.status !== "completed"))
@@ -116,7 +122,9 @@ const assertJournalChainInvariants = (journal: MigrationJournal): void => {
 				"migration journal currentStepIndex reaches the end before all steps are completed",
 			)
 	} else {
-		const currentStatus = chain[current].status
+		const currentStep = chain[current]
+		if (currentStep === undefined) throw new Error("migration journal currentStepIndex is invalid")
+		const currentStatus = currentStep.status
 		const plannedStart = journal.phase === "planned" && current === 0
 		if (plannedStart) {
 			if (currentStatus !== "pending" && currentStatus !== "running")

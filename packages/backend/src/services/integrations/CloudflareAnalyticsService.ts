@@ -67,7 +67,6 @@ import {
 	Ref,
 	Result,
 	Schema,
-	Record as Rec,
 	String as Str,
 } from "effect"
 import * as CloudflareAnalyticsMetrics from "@maple/backend/observability/CloudflareAnalyticsMetrics"
@@ -1201,7 +1200,7 @@ interface ZoneWatchSettings {
 const WATCH_ALL_ZONES: ZoneWatchSettings = { watchNewZones: true, zoneOverrides: {} }
 
 const isZoneWatched = (settings: ZoneWatchSettings, zoneId: string): boolean =>
-	Rec.has(settings.zoneOverrides, zoneId) ? settings.zoneOverrides[zoneId] : settings.watchNewZones
+	settings.zoneOverrides[zoneId] ?? settings.watchNewZones
 
 interface ZoneSettingsUpdate {
 	readonly accountId: string

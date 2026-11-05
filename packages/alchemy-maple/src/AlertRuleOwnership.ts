@@ -65,7 +65,8 @@ export const canAdoptRule = Effect.fn(function* (fqn: string) {
 export const ownsRule = (tags: ReadonlyArray<string>, expected: ReadonlyArray<string>, tracked: boolean) => {
 	const owners = ownershipTags(tags)
 	// Existing state is the ownership evidence for pre-tag provider releases.
-	return (owners.length === 1 && expected.includes(owners[0])) || (tracked && owners.length === 0)
+	const [owner, ...others] = owners
+	return owner === undefined ? tracked : others.length === 0 && expected.includes(owner)
 }
 
 export const ownershipError = (fqn: string, ruleName: string) =>

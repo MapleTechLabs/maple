@@ -1,3 +1,4 @@
+import { ok } from "node:assert"
 import { describe, expect, it } from "vitest"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import fc from "fast-check"
@@ -176,6 +177,7 @@ class Stop implements fc.AsyncCommand<{ running: number }, World> {
 	check = (model: Readonly<{ running: number }>) => model.running > 0
 	async run(model: { running: number }, world: World) {
 		const [session] = world.sessions.splice(this.pick % world.sessions.length, 1)
+		ok(session !== undefined)
 		session.process.kill("SIGTERM")
 		// A session that cannot close within the deadline is a failure, not a hung test.
 		const exited = await Promise.race([session.process.exited, Bun.sleep(30_000).then(() => "timed out")])

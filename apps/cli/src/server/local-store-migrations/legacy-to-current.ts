@@ -623,7 +623,9 @@ const copyTable = async (
 		rows = Arr.map(selected, (candidate) => candidate.row)
 		const payload = Arr.map(selected, (candidate) => candidate.copy)
 		const first = rows[0]
-		const last = rows[rows.length - 1]
+		const last = rows.at(-1)
+		if (first === undefined || last === undefined)
+			throw new Error(`could not form a bounded batch for ${table.name}`)
 		const lastKey = keyOf(last)
 		const selectedLastKeyCount = Arr.filter(rows, (row) => keyOf(row) === lastKey).length
 		const priorKey =
@@ -721,7 +723,9 @@ const recoverPendingBatch = async (
 			return copy
 		})
 		const first = inserted[0]
-		const last = inserted[inserted.length - 1]
+		const last = inserted.at(-1)
+		if (first === undefined || last === undefined)
+			throw new Error("pending migration batch is empty while recovering; refusing to guess")
 		const firstKey = keyOf(first)
 		const lastKey = keyOf(last)
 		const expectedFirstKey = `${pending.firstTimestamp ?? ""}\0${pending.firstHash ?? ""}\0${pending.firstTieBreak ?? ""}`

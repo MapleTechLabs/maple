@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, String as Str } from "effect"
 import { authorizeTickRequest, dispatchTick, SELF_BINDING, TICK_PATH } from "./tick-dispatch"
+import * as Arr from "effect/Array"
 
 const TOKEN = "secret-token"
 const ENV = { INTERNAL_SERVICE_TOKEN: TOKEN }
@@ -110,7 +111,7 @@ describe("dispatchTick", () => {
 			const { binding, seen } = fakeBinding(204)
 			yield* dispatchTick("*/5 * * * *", "anomaly", { ...ENV, [SELF_BINDING]: binding })
 			expect(seen).toHaveLength(1)
-			const tick = yield* authorizeTickRequest(seen[0], ENV)
+			const tick = yield* authorizeTickRequest(Arr.getUnsafe(seen, 0), ENV)
 			expect(tick).toMatchObject({ cron: "*/5 * * * *", lane: "anomaly" })
 		}),
 	)

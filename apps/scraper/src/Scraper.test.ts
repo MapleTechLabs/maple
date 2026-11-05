@@ -79,7 +79,9 @@ const cycle = (harness: Harness, targets: TargetGroup, failing?: ReadonlyMap<str
 
 /** A one-target cycle, failing with that target's result. */
 const scrape = (harness: Harness, target: InternalScrapeTarget = TARGET) =>
-	Effect.flatMap(cycle(harness, [target]), (outcome) => Effect.fromResult(outcome.scrapes[0].result))
+	Effect.flatMap(cycle(harness, [target]), (outcome) =>
+		Effect.fromResult(Arr.getUnsafe(outcome.scrapes, 0).result),
+	)
 
 const branch = (key: string) =>
 	decodeTarget({
@@ -97,8 +99,8 @@ describe("Scraper", () => {
 
 			assert.deepStrictEqual(result, { samplesScraped: 1, samplesExported: 1 })
 			assert.lengthOf(harness.sent, 1)
-			assert.strictEqual(harness.sent[0].ingestKey, "maple_pk_org")
-			const resource = harness.sent[0].request.resourceMetrics[0]
+			assert.strictEqual(Arr.getUnsafe(harness.sent, 0).ingestKey, "maple_pk_org")
+			const resource = Arr.getUnsafe(Arr.getUnsafe(harness.sent, 0).request.resourceMetrics, 0)
 			const attrs = Rec.fromEntries(
 				Arr.map(resource.resource.attributes, (attr) => [attr.key, attr.value.stringValue]),
 			)
@@ -108,7 +110,7 @@ describe("Scraper", () => {
 				maple_scrape_target_id: TARGET.id,
 				maple_scrape_target_name: "Node Exporter",
 			})
-			assert.strictEqual(resource.scopeMetrics[0].scope.name, "maple-prometheus-scraper")
+			assert.strictEqual(Arr.getUnsafe(resource.scopeMetrics, 0).scope.name, "maple-prometheus-scraper")
 		}),
 	)
 
@@ -117,10 +119,11 @@ describe("Scraper", () => {
 			const harness = makeHarness()
 			yield* scrape(harness, decodeTarget({ ...TARGET, sourceId: "src_abc" }))
 			const attrs = Rec.fromEntries(
-				Arr.map(harness.sent[0].request.resourceMetrics[0].resource.attributes, (attr) => [
-					attr.key,
-					attr.value.stringValue,
-				]),
+				Arr.map(
+					Arr.getUnsafe(Arr.getUnsafe(harness.sent, 0).request.resourceMetrics, 0).resource
+						.attributes,
+					(attr) => [attr.key, attr.value.stringValue],
+				),
 			)
 			assert.strictEqual(attrs.maple_source_id, "src_abc")
 		}),
@@ -155,6 +158,7 @@ describe("Scraper", () => {
 			assert.strictEqual(error.targetHost, "node.example.com:9100")
 
 			const [span] = endedSpansNamed(tracer.ended, "scraper.scrape_target")
+			assert.isDefined(span)
 			assert.isTrue(Exit.isFailure(span.exit))
 			assert.strictEqual(span.attributes.get("error.type"), "target_error")
 			assert.strictEqual(span.attributes.get("http.response.status_code"), 500)
@@ -182,7 +186,7 @@ describe("Scraper", () => {
 
 			// Both still report the failure; only the span status differs.
 			for (const outcome of [repeated, changed]) {
-				assert.isTrue(Result.isFailure(outcome.scrapes[0].result))
+				assert.isTrue(Result.isFailure(Arr.getUnsafe(outcome.scrapes, 0).result))
 			}
 			const spans = endedSpansNamed(tracer.ended, "scraper.scrape_target")
 			assert.deepStrictEqual(
@@ -235,15 +239,20 @@ describe("Scraper", () => {
 			const harness = makeHarness()
 			const keys = Array.from({ length: 54 }, (_, index) => `branch-${index}`)
 			const [first, ...rest] = Arr.map(keys, branch)
+			assert.isDefined(first)
 			const outcome = yield* cycle(harness, [first, ...rest])
 
 			assert.lengthOf(harness.sent, 1)
 			const instances = Arr.map(
-				harness.sent[0].request.resourceMetrics,
+				Arr.getUnsafe(harness.sent, 0).request.resourceMetrics,
 				(resource) =>
 					Option.getOrThrow(
 						Arr.findFirst(
-							resource.scopeMetrics[0].metrics[0].gauge!.dataPoints[0].attributes,
+							Arr.getUnsafe(
+								Arr.getUnsafe(Arr.getUnsafe(resource.scopeMetrics, 0).metrics, 0).gauge!
+									.dataPoints,
+								0,
+							).attributes,
 							(a) => a.key === "instance",
 						),
 					).value.stringValue,
@@ -278,7 +287,7 @@ describe("Scraper", () => {
 			const outcome = yield* cycle(harness, [branch("main"), branch("broken"), branch("dev")])
 
 			assert.lengthOf(harness.sent, 1)
-			assert.lengthOf(harness.sent[0].request.resourceMetrics, 2)
+			assert.lengthOf(Arr.getUnsafe(harness.sent, 0).request.resourceMetrics, 2)
 			assert.isNull(outcome.deliveryFailure)
 			const byKey = new Map(
 				Arr.map(outcome.scrapes, (scrape) => [scrape.target.subTargetKey, scrape.result]),
@@ -313,8 +322,8 @@ describe("Scraper", () => {
 			const lone = yield* Effect.forkChild(cycle(harness, [branch("dev")]))
 			yield* TestClock.adjust(Duration.seconds(10))
 			const loneOutcome = yield* Fiber.join(lone)
-			assert.isTrue(Result.isSuccess(loneOutcome.scrapes[0].result))
-			assert.strictEqual(loneOutcome.scrapes[0].durationMs, 10_000)
+			assert.isTrue(Result.isSuccess(Arr.getUnsafe(loneOutcome.scrapes, 0).result))
+			assert.strictEqual(Arr.getUnsafe(loneOutcome.scrapes, 0).durationMs, 10_000)
 		}),
 	)
 
@@ -358,7 +367,11 @@ describe("Scraper", () => {
 			const targets = endedSpansNamed(tracer.ended, "scraper.scrape_target")
 			assert.deepStrictEqual(
 				Arr.map(targets, (span) => span.parentSpanId),
-				[cycles[0].spanId, cycles[0].spanId, cycles[1].spanId],
+				[
+					Arr.getUnsafe(cycles, 0).spanId,
+					Arr.getUnsafe(cycles, 0).spanId,
+					Arr.getUnsafe(cycles, 1).spanId,
+				],
 			)
 		}),
 	)

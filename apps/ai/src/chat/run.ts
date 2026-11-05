@@ -86,8 +86,7 @@ export const promptFromHistory = (history: ReadonlyArray<ChatMessage>): Readonly
 	// Walk backwards so the newest turns are the ones kept — the tail is what the next turn needs.
 	const kept: Array<ChatMessage> = []
 	let chars = 0
-	for (let i = spoken.length - 1; i >= 0; i--) {
-		const message = spoken[i]
+	for (const message of Arr.reverse(spoken)) {
 		if (kept.length >= MAX_REPLAYED_MESSAGES) break
 		if (chars + message.text.length > MAX_REPLAYED_CHARS && kept.length > 0) break
 		chars += message.text.length

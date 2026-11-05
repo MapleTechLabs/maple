@@ -378,7 +378,7 @@ describe("checkpoint state resolution", () => {
 			strictEqual((await resolveCheckpoint(dataDir)).manifest.formatVersion, 2)
 
 			const corrupted = Buffer.from(controlBytes)
-			corrupted[corrupted.length - 1] ^= 1
+			corrupted.writeUInt8((corrupted.at(-1) ?? 0) ^ 1, corrupted.length - 1)
 			writeFileSync(controlPath, corrupted)
 			await rejects(resolveCheckpoint(dataDir), /digest mismatch|quick_check failed/)
 		})
@@ -554,8 +554,8 @@ describe("checkpoint reconciliation and retention", () => {
 			const quarantines = readdirSync(quarantineRoot)
 			strictEqual(quarantines.length, 1)
 			// A failed refresh used to leave a full store copy here, forever.
-			deepStrictEqual(readdirSync(join(quarantineRoot, quarantines[0])), ["operation"])
-			ok(existsSync(join(quarantineRoot, quarantines[0], "operation", "intent.json")))
+			deepStrictEqual(readdirSync(join(quarantineRoot, Arr.getUnsafe(quarantines, 0))), ["operation"])
+			ok(existsSync(join(quarantineRoot, Arr.getUnsafe(quarantines, 0), "operation", "intent.json")))
 		})
 	})
 

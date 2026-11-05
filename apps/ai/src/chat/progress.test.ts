@@ -74,7 +74,7 @@ describe("makeProgressFeed", () => {
 			yield* settle
 			assert.lengthOf(writes, 1)
 			assert.deepEqual(
-				Arr.map(writes[0].steps, (step) => step.label),
+				Arr.map(Arr.getUnsafe(writes, 0).steps, (step) => step.label),
 				["Search logs"],
 			)
 		}),
@@ -91,7 +91,7 @@ describe("makeProgressFeed", () => {
 			assert.lengthOf(writes, 1)
 			yield* TestClock.adjust(INVESTIGATION_PROGRESS_HEARTBEAT)
 			assert.lengthOf(writes, 2)
-			assert.equal(writes[1].stepCount, 3)
+			assert.equal(Arr.getUnsafe(writes, 1).stepCount, 3)
 		}),
 	)
 

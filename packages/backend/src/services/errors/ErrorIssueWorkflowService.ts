@@ -389,9 +389,8 @@ const make: Effect.Effect<
 			return rollups
 		})
 
-	const hydrateIssueRows: ErrorIssueWorkflowServiceApi["hydrateIssueRows"] = (orgId, rows) =>
+	const hydrateNonEmpty = (orgId: OrgId, rows: Arr.NonEmptyReadonlyArray<ErrorIssueRow>) =>
 		Effect.gen(function* () {
-			if (rows.length === 0) return []
 			const issueIds = Arr.map(rows, (row) => row.id)
 			const openSet = yield* issuesWithOpenIncidents(orgId, issueIds)
 			const activityMap = yield* issueActivityRollups(orgId, issueIds)
@@ -411,11 +410,14 @@ const make: Effect.Effect<
 			)
 		})
 
+	const hydrateIssueRows: ErrorIssueWorkflowServiceApi["hydrateIssueRows"] = (orgId, rows) =>
+		Arr.isReadonlyArrayNonEmpty(rows) ? hydrateNonEmpty(orgId, rows) : Effect.succeed([])
+
 	const hydrateIssue: ErrorIssueWorkflowServiceApi["hydrateIssue"] = Effect.fn(
 		"ErrorIssueWorkflowService.hydrateIssue",
 	)(function* (orgId, row) {
-		const hydrated = yield* hydrateIssueRows(orgId, [row])
-		return hydrated[0]
+		const hydrated = yield* hydrateNonEmpty(orgId, [row])
+		return Arr.headNonEmpty(hydrated)
 	})
 
 	const buildEventInsert = (

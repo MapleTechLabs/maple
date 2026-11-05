@@ -146,11 +146,12 @@ describe("archive listing", () => {
 			const listing = listActiveGenerations(archiveDir)
 			strictEqual(listing.active.length, 1)
 			const summary = listing.active[0]
+			ok(summary !== undefined)
 			strictEqual(summary.generationId, active)
 			strictEqual(summary.archivedRowCount, 10)
 			strictEqual(summary.shardCount, 1)
 			strictEqual(summary.shardPaths.length, 1)
-			ok(Str.endsWith("00-0000.parquet")(summary.shardPaths[0]))
+			ok(Str.endsWith("00-0000.parquet")(Arr.getUnsafe(summary.shardPaths, 0)))
 			strictEqual(summary.shardBytes, 4)
 			deepStrictEqual(listing.signals, ["traces"])
 		})
@@ -225,8 +226,8 @@ describe("archive listing", () => {
 			const paths = activeParquetPaths(archiveDir, "logs")
 			strictEqual(paths.length, 2)
 			// Ascending range order: June 1 before June 2.
-			ok(Str.includes("2026-06-01")(paths[0]))
-			ok(Str.includes("2026-06-02")(paths[1]))
+			ok(Str.includes("2026-06-01")(Arr.getUnsafe(paths, 0)))
+			ok(Str.includes("2026-06-02")(Arr.getUnsafe(paths, 1)))
 		})
 	})
 
@@ -238,7 +239,7 @@ describe("archive listing", () => {
 			writeFileSync(activePointerPath(archiveDir, "traces", "2026-06-02"), "{bad json")
 			const listing = listActiveGenerations(archiveDir)
 			strictEqual(listing.active.length, 1)
-			strictEqual(listing.active[0].rangeStart, "2026-06-01")
+			strictEqual(Arr.getUnsafe(listing.active, 0).rangeStart, "2026-06-01")
 		})
 	})
 

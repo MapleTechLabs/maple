@@ -121,9 +121,8 @@ const parseDayRecord = (value: unknown): RetiredDayRecord => {
 	const names = Arr.map(signals, (signal) => signal.signal)
 	if (names.length !== ARCHIVE_SIGNALS.length || new Set(names).size !== ARCHIVE_SIGNALS.length)
 		throw new Error("retired-day record must contain each raw signal exactly once")
-	for (let index = 0; index < ARCHIVE_SIGNALS.length; index++)
-		if (names[index] !== ARCHIVE_SIGNALS[index].name)
-			throw new Error("retired-day signals are not in canonical order")
+	for (const [index, signal] of ARCHIVE_SIGNALS.entries())
+		if (names[index] !== signal.name) throw new Error("retired-day signals are not in canonical order")
 	const retiredAt = requiredString(value, "retiredAt", "retired-day record")
 	const retiredMillis = Date.parse(retiredAt)
 	if (Number.isNaN(retiredMillis) || new Date(retiredMillis).toISOString() !== retiredAt)
@@ -143,7 +142,7 @@ export const parseRetiredDayLedger = (value: unknown): RetiredDayLedger => {
 	if (!Arr.isArray(value.retiredDays)) throw new Error("retired-day ledger retiredDays must be an array")
 	const retiredDays = Arr.map(value.retiredDays, parseDayRecord)
 	const dates = Arr.map(retiredDays, (day) => day.rangeDate)
-	if (Arr.some(dates, (date, index) => index > 0 && dates[index - 1] >= date))
+	if (Arr.some(Arr.zip(dates, dates.slice(1)), ([previous, date]) => previous >= date))
 		throw new Error("retired-day ledger dates must be unique and sorted")
 	return { formatVersion: LEDGER_FORMAT_VERSION, retiredDays }
 }
@@ -345,9 +344,10 @@ const completeArchiveDay = (archiveDir: string, rangeDate: string) => {
 			listing.active,
 			(generation) => generation.signal === signal.name && generation.rangeStart === rangeDate,
 		)
-		if (matches.length !== 1)
+		const [summary, ...extra] = matches
+		if (summary === undefined || extra.length > 0)
 			throw new Error(`archive date ${rangeDate} lacks one active ${signal.name} generation`)
-		return { signal, summary: matches[0] }
+		return { signal, summary }
 	})
 }
 
@@ -487,8 +487,8 @@ const parseExpireOperation = (value: unknown): ExpireOperation => {
 	})
 	if (new Set(completedSignals).size !== completedSignals.length)
 		throw new Error("completedSignals contains duplicates")
-	for (let index = 0; index < completedSignals.length; index++)
-		if (completedSignals[index] !== ARCHIVE_SIGNALS[index].name)
+	for (const [index, signal] of completedSignals.entries())
+		if (signal !== ARCHIVE_SIGNALS[index]?.name)
 			throw new Error("completedSignals must be a canonical completed prefix")
 	const removingSignal = value.removingSignal
 	if (
@@ -606,7 +606,12 @@ export const expireArchiveDay = async (options: {
 					listing.active,
 					(candidate) => candidate.signal === signal.name && candidate.rangeStart === rangeDate,
 				)
-				if (current.length !== 1 || current[0].generationId !== op.archivedGenerations[signal.name])
+				const [only, ...others] = current
+				if (
+					only === undefined ||
+					others.length > 0 ||
+					only.generationId !== op.archivedGenerations[signal.name]
+				)
 					throw new Error(
 						`archive generation changed after expiration intent: ${signal.name}/${rangeDate}`,
 					)

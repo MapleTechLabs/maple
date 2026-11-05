@@ -156,12 +156,10 @@ export function registerUpdateDashboardWidgetTool(server: McpToolRegistrar) {
 			const dashboard = yield* withDashboardMutation(dashboard_id, TOOL, (existingWidgets) =>
 				Effect.gen(function* () {
 					const index = Arr.findFirstIndex(existingWidgets, (w) => w.id === widget_id)
-					if (Option.isNone(index)) return yield* widgetNotFound(widget_id)
-					const replacement = yield* resolveReplacement(
-						existingWidgets[index.value],
-						widget_json,
-						patch,
-					)
+					const existing = Option.isSome(index) ? existingWidgets[index.value] : undefined
+					if (Option.isNone(index) || existing === undefined)
+						return yield* widgetNotFound(widget_id)
+					const replacement = yield* resolveReplacement(existing, widget_json, patch)
 					const result = yield* prepareWidget(replacement)
 					yield* Ref.set(prepared, Option.some(result))
 					return Arr.map(existingWidgets, (w, i) =>

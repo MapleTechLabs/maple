@@ -184,7 +184,7 @@ describe("archive gc planning", () => {
 			await rebuildSignalCatalog(archiveDir, "traces")
 			const plan = planArchiveGc(archiveDir, 1)
 			strictEqual(plan.deleteSet.length, 1)
-			strictEqual(plan.deleteSet[0].generationId, oldest.generationId)
+			strictEqual(Arr.getUnsafe(plan.deleteSet, 0).generationId, oldest.generationId)
 			strictEqual(
 				Arr.some(plan.retained, (r) => r.generationId === newer.generationId && r.reason === "kept"),
 				true,

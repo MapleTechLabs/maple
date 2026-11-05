@@ -190,7 +190,7 @@ const seedPublishedOperation = async (
 		checkpointId,
 		shards: [
 			{
-				...baseManifest.shards[0],
+				...Arr.getUnsafe(baseManifest.shards, 0),
 				bytes: statSync(shardPath).size,
 				sha256: createHash("sha256").update(readFileSync(shardPath)).digest("hex"),
 			},
@@ -632,7 +632,9 @@ describe("archive generation promotion", () => {
 			const exactManifest: ArchiveGenerationManifest = {
 				...baseManifest,
 				checkpointId,
-				shards: [{ ...baseManifest.shards[0], bytes: shardBytes, sha256: shardSha256 }],
+				shards: [
+					{ ...Arr.getUnsafe(baseManifest.shards, 0), bytes: shardBytes, sha256: shardSha256 },
+				],
 			}
 			await writeInitialIntent({
 				archiveDir,

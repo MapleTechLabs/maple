@@ -700,7 +700,10 @@ describe("delta joining", () => {
 		Effect.gen(function* () {
 			const joined = yield* partsSeen(true)
 			assert.lengthOf(joined, 1)
-			assert.strictEqual(joined[0].type === "text-delta" ? joined[0].delta : "", "Looks safe.")
+			assert.strictEqual(
+				Arr.getUnsafe(joined, 0).type === "text-delta" ? Arr.getUnsafe(joined, 0).delta : "",
+				"Looks safe.",
+			)
 			assert.lengthOf(yield* partsSeen(false), 3)
 		}),
 	)

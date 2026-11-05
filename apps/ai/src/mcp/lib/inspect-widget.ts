@@ -208,7 +208,7 @@ function applyReduceToValue(
 		case "max":
 			return { value: Math.max(...values) }
 		case "first":
-			return { value: values[0] }
+			return { value: values[0] ?? null }
 		case "count":
 			return { value: values.length }
 		default:
@@ -1036,8 +1036,9 @@ export const inspectWidgetsAfterMutation = Effect.fn("McpInspectWidget.inspectWi
 			{ concurrency: maxConcurrent },
 		)
 
-		const inspected: WidgetInspectionEntry[] = Arr.map(toInspect, (widget, i) =>
-			summarizeOutcome(widget, outcomes[i]),
+		const inspected: WidgetInspectionEntry[] = Arr.map(
+			Arr.zip(toInspect, outcomes),
+			([widget, outcome]) => summarizeOutcome(widget, outcome),
 		)
 
 		const countVerdict = (verdict: WidgetInspectionEntry["verdict"]) =>

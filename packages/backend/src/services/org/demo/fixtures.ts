@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto"
+import { Array as Arr } from "effect"
 import {
 	fmtMetricTs,
 	type MetricGaugeRow,
@@ -8,7 +9,7 @@ import {
 const SERVICES = ["demo-api", "demo-frontend", "demo-worker", "demo-db"] as const
 type DemoServiceName = (typeof SERVICES)[number]
 
-const HTTP_ROUTES: Array<{ method: string; route: string; service: DemoServiceName }> = [
+const HTTP_ROUTES: Arr.NonEmptyArray<{ method: string; route: string; service: DemoServiceName }> = [
 	{ method: "GET", route: "/api/users", service: "demo-api" },
 	{ method: "GET", route: "/api/users/:id", service: "demo-api" },
 	{ method: "POST", route: "/api/users", service: "demo-api" },
@@ -20,7 +21,7 @@ const HTTP_ROUTES: Array<{ method: string; route: string; service: DemoServiceNa
 	{ method: "GET", route: "/checkout", service: "demo-frontend" },
 ]
 
-const DB_QUERIES = [
+const DB_QUERIES: Arr.NonEmptyReadonlyArray<string> = [
 	"SELECT * FROM users WHERE id = $1",
 	"SELECT * FROM orders WHERE user_id = $1",
 	"INSERT INTO orders (user_id, total) VALUES ($1, $2)",
@@ -28,7 +29,13 @@ const DB_QUERIES = [
 	"UPDATE users SET last_seen = NOW() WHERE id = $1",
 ]
 
-const WORKER_JOBS = ["send_email", "process_payment", "sync_inventory", "generate_report", "refresh_cache"]
+const WORKER_JOBS: Arr.NonEmptyReadonlyArray<string> = [
+	"send_email",
+	"process_payment",
+	"sync_inventory",
+	"generate_report",
+	"refresh_cache",
+]
 
 // Demo data is written straight to the `traces` / `logs` datasources via
 // WarehouseQueryService.ingest (bypassing the billing-enforced ingest gateway),
@@ -108,8 +115,8 @@ type Rand = () => number
 const traceIdHex = () => randomBytes(16).toString("hex")
 const spanIdHex = () => randomBytes(8).toString("hex")
 
-function pick<T>(rand: Rand, arr: readonly T[]): T {
-	return arr[Math.floor(rand() * arr.length)]
+function pick<T>(rand: Rand, arr: Arr.NonEmptyReadonlyArray<T>): T {
+	return arr[Math.floor(rand() * arr.length)] ?? Arr.headNonEmpty(arr)
 }
 
 function gaussian(rand: Rand, mean: number, stddev: number): number {

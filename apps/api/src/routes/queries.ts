@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 import * as CH from "@maple/query-engine/ch"
 import * as Integrations from "@maple/query-engine-integrations"
 import { defineQuery } from "@maple/query-engine/registry"
@@ -826,7 +827,7 @@ const containerInfraGaugeTimeseries = defineQuery({
 			CH.containerGaugeTimeseriesQuery({
 				containerName: payload.containerName,
 				hostName: payload.hostName,
-				metricName: spec.metricNames[0],
+				metricName: Arr.headNonEmpty(spec.metricNames),
 				divideBy: spec.divideBy,
 			}),
 			{

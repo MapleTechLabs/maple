@@ -408,9 +408,7 @@ export const compareSchema = (
 			`archive shard validation failed: ${shardPath} column count mismatch: source ${source.length}, Parquet ${parquetCols.length}`,
 		)
 	}
-	for (let i = 0; i < source.length; i++) {
-		const src = source[i]
-		const par = parquetCols[i]
+	for (const [i, [src, par]] of Arr.zip(source, parquetCols).entries()) {
 		if (src.name !== par.name) {
 			throw new Error(
 				`archive shard validation failed: ${shardPath} column ${i} name mismatch: source ${src.name}, Parquet ${par.name}`,

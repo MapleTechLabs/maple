@@ -330,7 +330,8 @@ const make: Effect.Effect<
 			),
 		)
 
-		if (knownOrgs.length === 0) {
+		const [routingOrg] = knownOrgs
+		if (routingOrg === undefined) {
 			yield* Effect.annotateCurrentSpan({
 				"maple.errors.active_orgs": byo.size,
 				"maple.errors.failed_closed": false,
@@ -342,7 +343,7 @@ const make: Effect.Effect<
 			startTime: DateTime.makeUnsafe(nowMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS),
 		})
 		return yield* warehouse
-			.crossOrgQuery(systemTenant(knownOrgs[0]), compiled, {
+			.crossOrgQuery(systemTenant(routingOrg), compiled, {
 				// Bound the one cross-org scan (no OrgId predicate ⇒ can't prune the
 				// primary key): abort server-side at 5s instead of riding the ~30s
 				// client timeout when the warehouse is slow.
@@ -545,7 +546,8 @@ const make: Effect.Effect<
 			),
 		)
 
-		if (claimed.length === 0) {
+		const [row] = claimed
+		if (row === undefined) {
 			const latestRows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(ErrorIssues)
@@ -557,7 +559,7 @@ const make: Effect.Effect<
 			return yield* leaseConflict(issueId, latestRows[0] ?? null)
 		}
 
-		return { row: claimed[0], leaseExpiresAt }
+		return { row, leaseExpiresAt }
 	})
 
 	const claimIssue: ErrorsServiceApi["claimIssue"] = Effect.fn("ErrorsService.claimIssue")(

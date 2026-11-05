@@ -191,7 +191,7 @@ describe("Alchemy engine lifecycle", () => {
 				Effect.gen(function* () {
 					const initial = yield* stack.deploy(program("old"))
 					const plan = yield* stack.plan(program("new", ["dashboards:read"]))
-					expect(plan.resources.key.action).toBe("replace")
+					expect(plan.resources.key?.action).toBe("replace")
 					const updated = yield* stack.deploy(program("new", ["dashboards:read"]))
 					expect(updated.id).not.toBe(initial.id)
 					expect(Redacted.value(updated.secret)).not.toBe(Redacted.value(initial.secret))
@@ -201,7 +201,7 @@ describe("Alchemy engine lifecycle", () => {
 					})
 					expect(h.documents.get(`/v2/api_keys/${initial.id}`)?.revoked).toBe(true)
 					expect(
-						(yield* stack.plan(program("new", ["dashboards:read"]))).resources.key.action,
+						(yield* stack.plan(program("new", ["dashboards:read"]))).resources.key?.action,
 					).toBe("noop")
 				}),
 			)
@@ -220,7 +220,7 @@ describe("Alchemy engine lifecycle", () => {
 		return h.run(
 			Effect.gen(function* () {
 				const initial = yield* stack.deploy(program("1"))
-				expect((yield* stack.plan(program("2"))).resources.key.action).toBe("update")
+				expect((yield* stack.plan(program("2"))).resources.key?.action).toBe("update")
 				h.calls.length = 0
 				yield* stack.deploy(program("2"))
 				expect(
@@ -256,8 +256,8 @@ describe("Alchemy engine lifecycle", () => {
 				const doc = h.documents.get(`/v2/dashboards/${output.dashboardId}`)!
 				doc.tags = ["wrong"]
 				doc.widgets = []
-				expect((yield* h.sync(stack, "test", true)).resources.health.action).toBe("drifted")
-				expect((yield* h.sync(stack)).resources.health.action).toBe("repaired")
+				expect((yield* h.sync(stack, "test", true)).resources.health?.action).toBe("drifted")
+				expect((yield* h.sync(stack)).resources.health?.action).toBe("repaired")
 				expect(h.documents.get(`/v2/dashboards/${output.dashboardId}`)).toMatchObject({
 					tags: props.tags,
 					widgets: props.widgets,
@@ -266,7 +266,7 @@ describe("Alchemy engine lifecycle", () => {
 				fresh.description = "Edited outside IaC"
 				fresh.updated_at = "2026-09-08T00:00:00Z"
 				delete fresh.sections // API versions before sections should still converge.
-				expect((yield* h.sync(stack)).resources.health.action).toBe("unchanged")
+				expect((yield* h.sync(stack)).resources.health?.action).toBe("unchanged")
 			}),
 		)
 	})
@@ -294,8 +294,10 @@ describe("Alchemy engine lifecycle", () => {
 				const second = yield* stack.deploy(Dashboard("health", updated))
 				expect(second.dashboardId).toBe(existing.id)
 				expect(second.configuration).toEqual({ name: "Health", refresh_interval_seconds: 300 })
-				expect((yield* stack.plan(Dashboard("health", updated))).resources.health.action).toBe("noop")
-				expect((yield* h.sync(stack)).resources.health.action).toBe("unchanged")
+				expect((yield* stack.plan(Dashboard("health", updated))).resources.health?.action).toBe(
+					"noop",
+				)
+				expect((yield* h.sync(stack)).resources.health?.action).toBe("unchanged")
 				expect(
 					Arr.filter(h.calls, (call) => call.method === "POST" || call.method === "DELETE"),
 				).toEqual([])
@@ -348,14 +350,14 @@ describe("Alchemy engine lifecycle", () => {
 				const output = yield* stack.deploy(AlertRule("errors", ruleProps))
 				const path = `/v2/alerts/rules/${output.ruleId}`
 				Object.assign(h.documents.get(path)!, { threshold: 0.9, destination_ids: ["foreign"] })
-				expect((yield* h.sync(stack, "test", true)).resources.errors.action).toBe("drifted")
-				expect((yield* h.sync(stack)).resources.errors.action).toBe("repaired")
+				expect((yield* h.sync(stack, "test", true)).resources.errors?.action).toBe("drifted")
+				expect((yield* h.sync(stack)).resources.errors?.action).toBe("repaired")
 				expect(h.documents.get(path)).toMatchObject({ threshold: 0.05, destination_ids: [] })
 				Object.assign(h.documents.get(path)!, {
 					last_evaluated_at: "2026-09-08T00:00:00Z",
 					notes: "Unmanaged",
 				})
-				expect((yield* h.sync(stack)).resources.errors.action).toBe("unchanged")
+				expect((yield* h.sync(stack)).resources.errors?.action).toBe("unchanged")
 			}),
 		)
 	})
@@ -452,7 +454,7 @@ describe("Alchemy engine lifecycle", () => {
 		return h.run(
 			Effect.gen(function* () {
 				const stack = h.stack("late-collision")
-				expect((yield* stack.plan(program)).resources.errors.action).toBe("create")
+				expect((yield* stack.plan(program)).resources.errors?.action).toBe("create")
 				expect(Exit.isFailure(yield* Effect.exit(stack.deploy(program)))).toBe(true)
 				expect(h.documents.get(`/v2/alerts/rules/${foreign.id}`)?.destination_ids).toEqual([])
 				yield* stack.destroy()
@@ -472,9 +474,9 @@ describe("Alchemy engine lifecycle", () => {
 				expect(output.enabled).toBe(true)
 				const path = `/v2/alerts/destinations/${output.destinationId}`
 				h.documents.get(path)!.enabled = false
-				expect((yield* h.sync(stack)).resources.hook.action).toBe("repaired")
+				expect((yield* h.sync(stack)).resources.hook?.action).toBe("repaired")
 				expect(h.documents.get(path)?.enabled).toBe(true)
-				expect((yield* h.sync(stack)).resources.hook.action).toBe("unchanged")
+				expect((yield* h.sync(stack)).resources.hook?.action).toBe("unchanged")
 			}),
 		)
 	})
@@ -514,7 +516,7 @@ describe("Alchemy engine lifecycle", () => {
 					)
 					expect(
 						(yield* stack.plan(program("https://example.com/new", 3, true))).resources.hook
-							.action,
+							?.action,
 					).toBe("replace")
 					const replaced = yield* stack.deploy(program("https://example.com/new", 3, true))
 					expect(replaced.destinationId).not.toBe(initial.destinationId)
@@ -552,8 +554,8 @@ describe("Alchemy engine lifecycle", () => {
 				}).pipe(Effect.provide(stack.state))
 				h.documents.get(`/v2/alerts/rules/${initial.rule.ruleId}`)!.tags = []
 				const plan = yield* stack.plan(program)
-				expect(plan.resources.health.action).toBe("update")
-				expect(plan.resources.errors.action).toBe("update")
+				expect(plan.resources.health?.action).toBe("update")
+				expect(plan.resources.errors?.action).toBe("update")
 				const upgraded = yield* stack.deploy(program)
 				expect(upgraded.dashboard.dashboardId).toBe(initial.dashboard.dashboardId)
 				expect(upgraded.rule.ruleId).toBe(initial.rule.ruleId)
@@ -562,8 +564,8 @@ describe("Alchemy engine lifecycle", () => {
 					expect.stringMatching(/^alchemy:[a-f0-9]{24}$/),
 				])
 				const next = yield* stack.plan(program)
-				expect(next.resources.health.action).toBe("noop")
-				expect(next.resources.errors.action).toBe("noop")
+				expect(next.resources.health?.action).toBe("noop")
+				expect(next.resources.errors?.action).toBe("noop")
 			}),
 		)
 	})

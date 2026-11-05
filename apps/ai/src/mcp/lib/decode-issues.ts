@@ -35,15 +35,16 @@ const isPlainObject = (value: unknown): value is Readonly<Record<string, unknown
 const editDistance = (a: string, b: string): number => {
 	const previous = Array.from({ length: b.length + 1 }, (_, index) => index)
 	for (let i = 1; i <= a.length; i++) {
-		let diagonal = previous[0]
+		let diagonal = previous[0] ?? 0
 		previous[0] = i
 		for (let j = 1; j <= b.length; j++) {
-			const above = previous[j]
-			previous[j] = Math.min(above + 1, previous[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1))
+			const above = previous[j] ?? 0
+			const left = previous[j - 1] ?? 0
+			previous[j] = Math.min(above + 1, left + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1))
 			diagonal = above
 		}
 	}
-	return previous[b.length]
+	return previous[b.length] ?? 0
 }
 
 const words = (key: string): ReadonlyArray<string> =>
@@ -354,7 +355,7 @@ export const formatDecodeFailure = (
 	const required = new Set(Arr.isArray(inputSchema.required) ? Arr.map(inputSchema.required, String) : [])
 	const lines = Arr.map(formatter(error.issue).issues, ({ path: rawPath, message }) => {
 		const path = rawPath ?? []
-		const name = path.length === 0 ? undefined : segmentName(path[0])
+		const name = path[0] === undefined ? undefined : segmentName(path[0])
 		if (name === undefined) return `- ${message}`
 		const nested = path.length > 1 ? ` at ${Arr.join(Arr.map(path.slice(1), segmentName), ".")}` : ""
 		return message === "Missing key"

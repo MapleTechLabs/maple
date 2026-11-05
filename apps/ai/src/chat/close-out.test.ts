@@ -46,12 +46,14 @@ describe("withToolTranscript", () => {
 			startSeq: 1,
 		})
 		const [rendered] = withToolTranscript([message])
+		assert.isDefined(rendered)
 		assert.include(rendered.text, "## Services")
 		assert.notInclude(rendered.text, "__maple_ui")
 	})
 
 	it("renders every call of a small pass", () => {
 		const [message] = withToolTranscript([pass(3, 100)])
+		assert.isDefined(message)
 		assert.include(message.text, "src/f0.ts")
 		assert.include(message.text, "src/f2.ts")
 		assert.notInclude(message.text, "left out for length")
@@ -60,6 +62,7 @@ describe("withToolTranscript", () => {
 	/** A 149-call pass once rendered past the context limit, and the close-out died before its first call. */
 	it("keeps a long pass under the budget, newest calls first, and counts what it left out", () => {
 		const [message] = withToolTranscript([pass(149, 19_000)])
+		assert.isDefined(message)
 		const text = message.text
 		assert.isAtMost(text.length, CLOSE_OUT_EVIDENCE_CHARS + 1_000)
 		assert.include(text, "src/f148.ts")

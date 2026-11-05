@@ -155,7 +155,7 @@ export class InsertBatcher {
 			const inserted = Result.try(() => this.#db.exec(statement.sql))
 			if (Result.isSuccess(inserted))
 				for (const { owner, rowCount } of statement.parts) owner.queued.accepted += rowCount
-			else if (statement.parts.length === 1)
+			else if (statement.parts.length === 1 && statement.parts[0] !== undefined)
 				statement.parts[0].owner.queued.failure = { datasource, cause: inserted.failure }
 			else
 				this.#retryAlone(

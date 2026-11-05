@@ -202,13 +202,14 @@ export class ServiceMapRollupService extends Context.Service<
 		const resolveActiveOrgs = Effect.fn("ServiceMapRollupService.resolveActiveOrgs")(function* (
 			knownOrgs: ReadonlyArray<OrgId>,
 		) {
-			if (knownOrgs.length === 0) return undefined
+			const [routingOrg] = knownOrgs
+			if (routingOrg === undefined) return undefined
 
 			const nowMs = yield* Clock.currentTimeMillis
 			const startTime = formatWarehouseDateTime(nowMs - ACTIVE_DISCOVERY_HOURS * HOUR_MS)
 			return yield* warehouse
 				.crossOrgQuery(
-					systemTenant(knownOrgs[0]),
+					systemTenant(routingOrg),
 					CH.compile(CH.activeOrgsByTracesQuery(), { startTime }),
 					{
 						profile: "discovery",

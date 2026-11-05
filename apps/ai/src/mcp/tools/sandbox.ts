@@ -341,10 +341,11 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			}
 			const body = Str.split("\n")(result.stdout)
 			const markerIndex = body.findIndex((line) => Str.startsWith(TOTAL_MARKER)(line))
+			const markerLine = body[markerIndex]
 			const total =
-				markerIndex === -1
+				markerLine === undefined
 					? undefined
-					: Number(Str.trim(Str.slice(TOTAL_MARKER.length)(body[markerIndex])))
+					: Number(Str.trim(Str.slice(TOTAL_MARKER.length)(markerLine)))
 			// No blank-line filter: the header reports the line range, so dropping
 			// empty lines would leave the rendered source not matching those numbers.
 			// awk's trailing newline is the one empty element worth removing.

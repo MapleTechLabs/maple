@@ -45,7 +45,7 @@ export const environment = () => ({
 /** `--name value` / `--flag` argv parsing with defaults. */
 export const flag = (name: string, fallback: string): string => {
 	const i = process.argv.indexOf(`--${name}`)
-	return i >= 0 && i + 1 < process.argv.length ? process.argv[i + 1] : fallback
+	return (i >= 0 ? process.argv[i + 1] : undefined) ?? fallback
 }
 export const list = (name: string, fallback: string): string[] =>
 	Arr.filter(Str.split(",")(flag(name, fallback)), Boolean)

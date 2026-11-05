@@ -137,8 +137,11 @@ describe("scraper telemetry", () => {
 		expect(Arr.flatMap(spans, (span) => Arr.map(span.events, (event) => event.name))).not.toContain(
 			"exception",
 		)
-		expect(Arr.map(collector.bodies[0]?.resourceSpans[0]?.resource.attributes, (a) => a.key)).toContain(
-			"vcs.repository.url.full",
-		)
+		expect(
+			Arr.map(
+				Arr.getUnsafe(Arr.getUnsafe(collector.bodies, 0)?.resourceSpans, 0)?.resource.attributes,
+				(a) => a.key,
+			),
+		).toContain("vcs.repository.url.full")
 	})
 })

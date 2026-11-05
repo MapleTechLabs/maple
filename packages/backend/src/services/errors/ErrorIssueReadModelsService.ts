@@ -484,7 +484,7 @@ const make: Effect.Effect<
 			[timeseriesEffect, samplesEffect, environmentsEffect, incidentsEffect],
 			{ concurrency: 4 },
 		)
-		const issue = (yield* workflow.hydrateIssueRows(orgId, [issueRow]))[0]
+		const issue = yield* workflow.hydrateIssue(orgId, issueRow)
 		const timeseries = Arr.map(
 			timeseriesRows,
 			(row) =>

@@ -81,8 +81,8 @@ const matchingParen = (value: string, open: number): number => {
 const topLevelKeyword = (declaration: string, keywords: ReadonlyArray<string>): number => {
 	let depth = 0
 	let quote: "'" | '"' | "`" | null = null
-	for (let i = 0; i < declaration.length; i += 1) {
-		const char = declaration[i]
+	for (let i = 0; i < declaration.length; i++) {
+		const char = Str.slice(i, i + 1)(declaration)
 		if (quote !== null) {
 			if (char === quote && declaration[i - 1] !== "\\") quote = null
 			continue
@@ -106,8 +106,9 @@ const parseColumn = (line: string): LocalSchemaColumn | undefined => {
 	if (/^INDEX\b/i.test(trimmed)) return undefined
 	const found = Str.match(/^([A-Za-z_][A-Za-z0-9_]*)\s+(.+)$/)(trimmed)
 	if (Option.isNone(found)) return undefined
-	const name = found.value[1]
-	const declaration = stripTrailingComma(found.value[2])
+	const [, name, rawDeclaration] = found.value
+	if (name === undefined || rawDeclaration === undefined) return undefined
+	const declaration = stripTrailingComma(rawDeclaration)
 	const stop = topLevelKeyword(declaration, ["DEFAULT", "MATERIALIZED", "ALIAS", "CODEC", "COMMENT"])
 	const type = normalize(stop === -1 ? declaration : Str.slice(0, stop)(declaration))
 	if (type.length === 0) return undefined
@@ -127,7 +128,9 @@ const parseColumn = (line: string): LocalSchemaColumn | undefined => {
 	return {
 		name,
 		type,
-		...(Option.isSome(defaultMatch)
+		...(Option.isSome(defaultMatch) &&
+		defaultMatch.value[1] !== undefined &&
+		defaultMatch.value[2] !== undefined
 			? {
 					defaultKind: Str.toUpperCase(defaultMatch.value[1]),
 					defaultExpression: normalize(defaultMatch.value[2]),
@@ -148,8 +151,8 @@ const splitStatements = (sql: string): ReadonlyArray<string> => {
 	let quote: "'" | '"' | "`" | null = null
 	for (const line of Str.split("\n")(sql)) {
 		current += `${line}\n`
-		for (let i = 0; i < line.length; i += 1) {
-			const char = line[i]
+		for (let i = 0; i < line.length; i++) {
+			const char = Str.slice(i, i + 1)(line)
 			if (quote !== null) {
 				if (char === quote && line[i - 1] !== "\\") quote = null
 				continue
@@ -201,6 +204,7 @@ const parseStatement = (raw: string): LocalSchemaObject | undefined => {
 			? "materialized_view"
 			: "view"
 	const name = match[1]
+	if (name === undefined) return undefined
 	const open = Option.getOrElse(
 		Option.map(Str.indexOf("(")(Str.slice(match[0].length)(statement)), (at) => at + match[0].length),
 		() => -1,
@@ -221,9 +225,9 @@ const parseStatement = (raw: string): LocalSchemaObject | undefined => {
 	)
 	const orderBy = firstGroup(clause, /\bORDER\s+BY\s+(.+?)(?=\bPRIMARY\s+KEY\b|\bTTL\b|\bSETTINGS\b|$)/is)
 	const ttl = firstGroup(clause, /\bTTL\s+(.+?)(?=\bSETTINGS\b|$)/is)
-	const indexes = Arr.map(
+	const indexes = Arr.flatMap(
 		Arr.fromIterable(Str.matchAll(/^\s*INDEX\s+([A-Za-z_][A-Za-z0-9_]*)\b/gim)(statement)),
-		(match) => match[1],
+		(index) => (index[1] === undefined ? [] : [index[1]]),
 	)
 	return {
 		name,

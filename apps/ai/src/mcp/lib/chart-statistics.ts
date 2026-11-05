@@ -165,13 +165,12 @@ export function computeBreakdownStats(rows: ReadonlyArray<BreakdownItem>): Query
 
 	const sortedDesc = [...rows].sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
 	const samples: SeriesSample[] = []
-	const headLimit = Math.min(SAMPLE_HEAD, sortedDesc.length)
-	for (let i = 0; i < headLimit; i++) {
-		samples.push({ bucket: sortedDesc[i].name, value: sortedDesc[i].value })
+	for (const row of sortedDesc.slice(0, SAMPLE_HEAD)) {
+		samples.push({ bucket: row.name, value: row.value })
 	}
 	if (sortedDesc.length > SAMPLE_HEAD + SAMPLE_TAIL) {
-		for (let i = sortedDesc.length - SAMPLE_TAIL; i < sortedDesc.length; i++) {
-			samples.push({ bucket: sortedDesc[i].name, value: sortedDesc[i].value })
+		for (const row of sortedDesc.slice(sortedDesc.length - SAMPLE_TAIL)) {
+			samples.push({ bucket: row.name, value: row.value })
 		}
 	}
 

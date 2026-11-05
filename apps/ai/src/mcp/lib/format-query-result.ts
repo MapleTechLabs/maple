@@ -7,7 +7,7 @@ import { Array as Arr, Option, String as Str } from "effect"
 export function formatBucket(bucket: string): string {
 	return Option.match(Str.match(/T(\d{2}:\d{2}:\d{2})/)(bucket), {
 		onNone: () => Str.slice(11, 19)(bucket),
-		onSome: (match) => match[1],
+		onSome: (match) => match[1] ?? Str.slice(11, 19)(bucket),
 	})
 }
 
