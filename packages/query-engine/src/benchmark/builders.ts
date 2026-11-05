@@ -330,6 +330,9 @@ const userActivityFixtures: ReadonlyArray<BuilderFixture> = [
 		CH.compileUnsafe(CH.userLogsQuery({ ...USER_SCOPE, serviceNames: ["api"] }), window),
 	),
 	userActivityFixture("userIssuesQuery", () => CH.compileUnsafe(CH.userIssuesQuery(USER_SCOPE), window)),
+	userActivityFixture("userIssueTotalsQuery", () =>
+		CH.compileUnsafe(CH.userIssueTotalsQuery(USER_SCOPE), window),
+	),
 	userActivityFixture("issueAffectedUsersQuery", () =>
 		CH.compileUnsafe(CH.issueAffectedUsersQuery({ fingerprintHashes: ["1234567890"] }), window),
 	),

@@ -447,10 +447,20 @@ export const userIssueRowSchema = Schema.Struct({
  * The issues (by FingerprintHash, as the errors queries key them) one user hit, most hits first.
  * `error_events` has no namespace, so a scope narrows to the services the rollup puts it in.
  */
-export function userIssuesQuery(opts: UserScopeOpts & { readonly limit?: number }) {
+const userErrorRows = ($: ColumnAccessor<typeof ErrorEventsByTime.columns>, opts: UserScopeOpts) => {
 	const scopedServices = from(UserActivityHourly)
-		.select(($) => ({ ServiceName: $.ServiceName }))
-		.where(($) => [...activityWindow($, opts), $.UserId.eq(opts.userId)])
+		.select(($s) => ({ ServiceName: $s.ServiceName }))
+		.where(($s) => [...activityWindow($s, opts), $s.UserId.eq(opts.userId)])
+	return [
+		$.OrgId.eq(orgIdParam),
+		$.Timestamp.gte(utcSecondsParam("startTime")),
+		$.Timestamp.lte(utcSecondsParam("endTime")),
+		$.UserId.eq(opts.userId),
+		opts.namespaces?.length ? inSubquery($.ServiceName, scopedServices) : undefined,
+	]
+}
+
+export function userIssuesQuery(opts: UserScopeOpts & { readonly limit?: number }) {
 	return from(ErrorEventsByTime)
 		.select(($) => ({
 			fingerprintHash: CH.toString_($.FingerprintHash),
@@ -462,16 +472,25 @@ export function userIssuesQuery(opts: UserScopeOpts & { readonly limit?: number 
 			firstSeen: CH.min_($.Timestamp),
 			lastSeen: CH.max_($.Timestamp),
 		}))
-		.where(($) => [
-			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(utcSecondsParam("startTime")),
-			$.Timestamp.lte(utcSecondsParam("endTime")),
-			$.UserId.eq(opts.userId),
-			opts.namespaces?.length ? inSubquery($.ServiceName, scopedServices) : undefined,
-		])
+		.where(($) => userErrorRows($, opts))
 		.groupBy("fingerprintHash")
 		.orderBy(["hits", "desc"], ["lastSeen", "desc"])
 		.limit(opts.limit ?? 50)
+		.format("JSON")
+}
+
+export interface UserIssueTotalsOutput {
+	readonly hits: number
+	readonly fingerprints: number
+}
+
+export const userIssueTotalsRowSchema = Schema.Struct({ hits: CHNumber, fingerprints: CHNumber })
+
+/** All of the user's error occurrences and distinct fingerprints, uncapped, for the profile totals. */
+export function userIssueTotalsQuery(opts: UserScopeOpts) {
+	return from(ErrorEventsByTime)
+		.select(($) => ({ hits: CH.count(), fingerprints: CH.uniqExact($.FingerprintHash) }))
+		.where(($) => userErrorRows($, opts))
 		.format("JSON")
 }
 
