@@ -169,16 +169,19 @@ describe("bucketActivity", () => {
 })
 
 describe("sliceWindow", () => {
-	const slice = (iso: string, serviceName: string) => ({ hour: DateTime.makeUnsafe(iso), serviceName })
+	const hours = (serviceName: string, first: string, last: string) => ({
+		serviceName,
+		firstHour: DateTime.makeUnsafe(first),
+		lastHour: DateTime.makeUnsafe(last),
+	})
 	const window = { startTime: "2026-11-01 00:20:00", endTime: "2026-11-02 00:00:00" }
 
-	it("narrows the raw read to the slices' services and hours inside the window", () => {
+	it("narrows the raw read to the services and the hours they span inside the window", () => {
 		expect(
 			sliceWindow(
 				[
-					slice("2026-11-01T05:00:00Z", "api"),
-					slice("2026-11-01T00:00:00Z", "web"),
-					slice("2026-11-01T05:00:00Z", "web"),
+					hours("api", "2026-11-01T05:00:00Z", "2026-11-01T05:00:00Z"),
+					hours("web", "2026-11-01T00:00:00Z", "2026-11-01T05:00:00Z"),
 				],
 				window,
 			),

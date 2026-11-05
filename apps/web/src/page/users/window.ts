@@ -14,5 +14,16 @@ export const hourAlignedWindow = (window: TimeWindow): TimeWindow => ({
 export const resolveUsersWindow = (request: WindowRequest, nowMs: number): TimeWindow =>
 	hourAlignedWindow(resolveWindow(request, nowMs))
 
+const SUB_HOUR_PRESETS: ReadonlyArray<string> = ["5m", "15m", "30m"]
+
 /** The picker's presets an hourly read can answer. */
-export const USERS_PRESETS = Arr.filter(PRESET_VALUES, (preset) => !["5m", "15m", "30m"].includes(preset))
+export const USERS_PRESETS = Arr.filter(PRESET_VALUES, (preset) => !SUB_HOUR_PRESETS.includes(preset))
+
+/**
+ * A URL's preset as the users pages read it: a sub-hour one (an old bookmark) becomes `1h`, so the
+ * label, the picker and the hour-aligned window agree.
+ */
+export const usersSearch = <S extends Readonly<{ timePreset?: string | undefined }>>(search: S): S =>
+	search.timePreset !== undefined && SUB_HOUR_PRESETS.includes(search.timePreset)
+		? { ...search, timePreset: "1h" }
+		: search

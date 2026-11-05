@@ -3,7 +3,7 @@ import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import { type TimeWindow } from "../../../data/time-range"
-import { resolveUsersWindow } from "../window"
+import { resolveUsersWindow, usersSearch } from "../window"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import type { UserDetailTab } from "../../../route/search"
@@ -105,7 +105,7 @@ const navigate = (model: Model, search: Search): Return => ({
 export const init = (route: Route, context: PageContext): Return => {
 	const model: Model = {
 		userId: route.userId,
-		search: route.search,
+		search: usersSearch(route.search),
 		window: null,
 		nowMs: 0,
 		profile: Keyed.idle(),
@@ -142,7 +142,7 @@ export const preload = (route: Route, context: PageContext, nowMs: number) => {
 
 /** A tab or namespace pick keeps the reads it can; opening Traces or Logs starts that tab's read. */
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
-	const { search } = route
+	const search = usersSearch(route.search)
 	if (userDetailHref(model.userId, model.search) === userDetailHref(route.userId, search)) return { model }
 	const next: Model = { ...model, search }
 	const resolve = (): Return => ({
