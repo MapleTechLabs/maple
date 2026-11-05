@@ -365,7 +365,7 @@ export class ConnectorSocket {
 		// A failed step is logged and the object carries on, exactly as it always did.
 		await Effect.runPromise(
 			program.pipe(
-				// oxlint-disable-next-line effecttsgo/strict-effect-provide
+				// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the Durable Object step is the entry point (see above)
 				Effect.provide(stepLayer(this.relays)),
 				Effect.catchCause((cause) =>
 					Effect.logError("Chat socket step failed").pipe(

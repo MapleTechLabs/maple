@@ -150,7 +150,7 @@ export const makeAuditAgents = (
 							invocation.prompt,
 							options,
 						).pipe(
-							// oxlint-disable-next-line effecttsgo/strict-effect-provide
+							// oxlint-disable-next-line effecttsgo/strict-effect-provide -- each sub-agent runs on the model layer chosen for its role
 							Effect.provide(
 								Layer.merge(
 									executionToolHandlers(
@@ -167,7 +167,7 @@ export const makeAuditAgents = (
 							sandbox.releasingAfter,
 						)
 					: AgentRuntime.run(auditAgent(invocation.role, model), invocation.prompt, options).pipe(
-							// oxlint-disable-next-line effecttsgo/strict-effect-provide
+							// oxlint-disable-next-line effecttsgo/strict-effect-provide -- each sub-agent runs on the model layer chosen for its role
 							Effect.provide(
 								Layer.merge(auditToolHandlers(source, counted).layer, InMemory.layer),
 							),

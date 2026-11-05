@@ -233,7 +233,7 @@ export const meterTurn = (
 	).pipe(
 		Effect.timeout(METERING_TIMEOUT),
 		Effect.ignore,
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide -- metering is forked off the turn and runs on its own HTTP client
 		Effect.provide(FetchHttpClient.layer),
 	)
 }
@@ -630,7 +630,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 						}
 						input.session.append(event)
 					},
-					// oxlint-disable-next-line effecttsgo/strict-effect-provide
+					// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the turn's OpenRouter client is built per turn from its settings
 				}).pipe(Effect.provide(openRouterClient))
 
 			// A pass that failed is a pass with no diagnosis yet, not a dead turn: the close-out below

@@ -449,7 +449,7 @@ const main = async () => {
 						release: (agentId) => executor.release(executorRun, agentId),
 					}
 		const agents = yield* makeAuditAgents(models, localSource(args.repoDir, sha), execution).pipe(
-			// oxlint-disable-next-line effecttsgo/strict-effect-provide
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide -- script entry point: the local run composes its own LLM layer
 			Effect.provide(layerLlm(settings)),
 		)
 		const input: AuditRunInput = {
