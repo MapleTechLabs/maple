@@ -1,3 +1,4 @@
+import { USERS_PRESETS } from "../window"
 import { Submodel, AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr, Option } from "effect"
@@ -16,6 +17,7 @@ import {
 	type UsersFacets,
 	type UsersFilters,
 	type UsersSummary,
+	type UsersSummaryState,
 	usersFilterRail,
 	usersListBody,
 	usersToolbar,
@@ -24,7 +26,7 @@ import { noUsersState, usersLoading } from "../view-states"
 import { pinScope } from "./command"
 import { Message } from "./message"
 import type { Model, UsersFacetsData } from "./model"
-import { DEFAULT_PRESET, userHref } from "./update"
+import { DEFAULT_PRESET, userHref, WIDE_PRESET } from "./update"
 
 type H = HtmlBuilder<Message>
 
@@ -62,6 +64,14 @@ const railFacets = (facets: UsersFacetsData): UsersFacets => ({
 	withReplay: facets.withReplay,
 })
 
+/** The strip waits for the facets read and says so when it failed, rather than drawing zeros. */
+const summaryStateOf = (model: Model): UsersSummaryState =>
+	AsyncData.matchData(model.facets.data, {
+		onEmpty: () => "loading",
+		onFailure: () => "failed",
+		onData: summaryOf,
+	})
+
 const summaryOf = (facets: UsersFacetsData): UsersSummary => ({
 	identified: facets.identified,
 	activeToday: facets.activeToday,
@@ -84,7 +94,12 @@ const isFiltered = (model: Model): boolean => {
 /** No telemetry at all yet: the connect on-ramp, not the identify() one. */
 const hasNoTelemetry = (model: Model): boolean =>
 	presenceOf(model.presence, "traces").status === "absent" &&
-	presenceOf(model.presence, "sessions").status === "absent"
+	presenceOf(model.presence, "sessions").status === "absent" &&
+	presenceOf(model.presence, "product_events").status === "absent"
+
+/** Already on the month the empty state offers, or a custom range the user picked by hand. */
+const isWidestWindow = (model: Model): boolean =>
+	model.search.startTime !== undefined || model.search.timePreset === WIDE_PRESET
 
 const searchOptions = (model: Model) => ({
 	filters: filtersOf(model),
@@ -108,7 +123,11 @@ const emptyBody = (h: H, model: Model): Html =>
 		? vstack(h, { className: "min-w-0" }, [usersToolbar(h, searchOptions(model)), signalEmpty(h, model)])
 		: hasNoTelemetry(model)
 			? signalEmpty(h, model)
-			: noUsersState(h, { onSetup: Message.ClickedSetup(), docsHref: docsUrl("browserSdk") })
+			: noUsersState(h, {
+					onSetup: Message.ClickedSetup(),
+					docsHref: docsUrl("browserSdk"),
+					onWidenRange: isWidestWindow(model) ? undefined : Message.ClickedWidenRange(),
+				})
 
 const body = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.list.data, {
@@ -118,7 +137,7 @@ const body = (h: H, model: Model, inputs: PageViewInputs): Html =>
 		onData: (page) =>
 			page.users.length === 0
 				? emptyBody(h, model)
-				: usersListBody(h, Arr.map(page.users, toRow), summaryOf(facetsOf(model)), {
+				: usersListBody(h, Arr.map(page.users, toRow), summaryStateOf(model), {
 						nowMs: model.nowMs,
 						timeZone: inputs.context.timeZone,
 						...searchOptions(model),
@@ -167,7 +186,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							selectedPreset:
 								search.timePreset ??
 								(search.startTime === undefined ? DEFAULT_PRESET : undefined),
-							presets: TimeRangePicker.PRESET_VALUES,
+							presets: USERS_PRESETS,
 						},
 					}),
 			}),

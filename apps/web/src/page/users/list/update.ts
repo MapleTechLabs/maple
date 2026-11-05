@@ -4,7 +4,8 @@ import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
-import { resolveWindow, type TimeWindow } from "../../../data/time-range"
+import { type TimeWindow } from "../../../data/time-range"
+import { resolveUsersWindow } from "../window"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn, pickCommands } from "../../contract"
@@ -28,6 +29,8 @@ type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
 
 export const DEFAULT_PRESET: PresetValue = "1w"
+/** The window the empty directory offers when the selected one holds no users. */
+export const WIDE_PRESET: PresetValue = "1mo"
 
 /** Where the empty state's setup button leads: the ingestion settings. */
 const SETUP_HREF = "/settings?tab=ingestion"
@@ -149,7 +152,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 /** The route loader warms the list and the facets. */
 export const preload = (route: { readonly search: Search }, context: PageContext, nowMs: number) => {
 	const { model } = init(route, context)
-	const window = resolveWindow(
+	const window = resolveUsersWindow(
 		{
 			startTime: model.search.startTime,
 			endTime: model.search.endTime,
@@ -248,6 +251,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				startTime: undefined,
 				endTime: undefined,
 				timePreset: DEFAULT_PRESET,
+			}),
+		ClickedWidenRange: () =>
+			navigate(model, {
+				...model.search,
+				startTime: undefined,
+				endTime: undefined,
+				timePreset: WIDE_PRESET,
 			}),
 		ClickedRetry: () =>
 			model.window === null ? { model } : requestAll(model, context, model.window, "Refresh"),

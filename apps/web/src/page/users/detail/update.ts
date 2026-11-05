@@ -2,7 +2,8 @@ import { Option } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
-import { resolveWindow, type TimeWindow } from "../../../data/time-range"
+import { type TimeWindow } from "../../../data/time-range"
+import { resolveUsersWindow } from "../window"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import type { UserDetailTab } from "../../../route/search"
@@ -126,7 +127,7 @@ export const init = (route: Route, context: PageContext): Return => {
 /** The route loader warms the profile and the activity, and the open tab's issues, spans or logs. */
 export const preload = (route: Route, context: PageContext, nowMs: number) => {
 	const { model } = init(route, context)
-	const window = resolveWindow(
+	const window = resolveUsersWindow(
 		{
 			startTime: model.search.startTime,
 			endTime: model.search.endTime,
