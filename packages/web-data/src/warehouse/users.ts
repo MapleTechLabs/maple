@@ -1,7 +1,13 @@
 // The warehouse reads behind the users directory (`/users`). The API returns epoch-ms times.
 
 import { Effect, Schema } from "effect"
-import { ServiceNamespace, UsersFacetsRequest, UsersListRequest } from "@maple/domain/http"
+import {
+	EndUserId,
+	ServiceNamespace,
+	UserDetailRequest,
+	UsersFacetsRequest,
+	UsersListRequest,
+} from "@maple/domain/http"
 import { MapleInternalHttp } from "./warehouse-services"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
 
@@ -63,6 +69,34 @@ export const getUsersFacets = Effect.fn("Users.facets")(function* ({ data }: { d
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
 			return yield* client.usersInternal.facets({ payload: new UsersFacetsRequest(windowOf(input)) })
+		}),
+	)
+})
+
+const UserDetailInput = Schema.Struct({ ...UsersWindowInput.fields, userId: EndUserId })
+export type UserDetailInput = typeof UserDetailInput.Encoded
+
+const detailRequest = (input: typeof UserDetailInput.Type) =>
+	new UserDetailRequest({ ...windowOf(input), userId: input.userId })
+
+/** One user's identity and totals; `profile` is `null` when nothing in the window carries them. */
+export const getUserProfile = Effect.fn("Users.profile")(function* ({ data }: { data: UserDetailInput }) {
+	const input = yield* decodeInput(UserDetailInput, data, "userProfile")
+	return yield* runWarehouseQuery("userProfile", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.usersInternal.profile({ payload: detailRequest(input) })
+		}),
+	)
+})
+
+/** One user's replay sessions, product events, MCP sessions and the merged timeline. */
+export const getUserActivity = Effect.fn("Users.activity")(function* ({ data }: { data: UserDetailInput }) {
+	const input = yield* decodeInput(UserDetailInput, data, "userActivity")
+	return yield* runWarehouseQuery("userActivity", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.usersInternal.activity({ payload: detailRequest(input) })
 		}),
 	)
 })

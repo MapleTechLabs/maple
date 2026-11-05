@@ -156,10 +156,12 @@ export const USER_DETAIL: UserDetail = {
 		],
 		visitorIds: ["v_93kd02", "v_1aa7f4"],
 		services: [
-			{ service: "web", namespace: "storefront", spans: 1_140 },
-			{ service: "api", namespace: "storefront", spans: 640 },
-			{ service: "billing", namespace: "payments", spans: 210 },
-			{ service: "search", namespace: "data", spans: 150 },
+			{ service: "web", namespace: "storefront", signals: 1_140 },
+			{ service: "api", namespace: "storefront", signals: 640 },
+			{ service: "billing", namespace: "payments", signals: 210 },
+			{ service: "search", namespace: "data", signals: 150 },
+			{ service: "maple-ai", namespace: "storefront", signals: 96 },
+			{ service: "docs-mcp", namespace: "data", signals: 58 },
 		],
 		devices: [
 			{ browser: "Chrome 130", os: "macOS 15", sessions: 11 },
@@ -173,10 +175,20 @@ export const USER_DETAIL: UserDetail = {
 		orgP95Ms: 410,
 		events: 230,
 		distinctEvents: 6,
+		mcpCalls: 41,
 		logs: 1_208,
 		traces: 412,
 	},
 	activity: [
+		{
+			service: "maple-ai",
+			kind: "mcp",
+			atMs: ago(90_000),
+			title: "12 tool calls from Claude Code",
+			detail: "maple-ai · 5 tools · 1 failed",
+			tone: "crit",
+			href: "/mcp-servers/maple-ai/sessions/mcp_7f3c9a2e",
+		},
 		{
 			service: "web",
 			kind: "error",
@@ -184,6 +196,7 @@ export const USER_DETAIL: UserDetail = {
 			title: 'TypeError: Cannot read properties of undefined (reading "total")',
 			detail: "web · CheckoutSummary.tsx:88",
 			tone: "crit",
+			href: null,
 		},
 		{
 			service: "api",
@@ -192,6 +205,7 @@ export const USER_DETAIL: UserDetail = {
 			title: "POST /api/checkout 502 in 1.81s",
 			detail: "api → billing · 23 spans",
 			tone: "crit",
+			href: null,
 		},
 		{
 			service: "billing",
@@ -200,6 +214,7 @@ export const USER_DETAIL: UserDetail = {
 			title: "card token refresh retried",
 			detail: "billing · WARN",
 			tone: "warn",
+			href: null,
 		},
 		{
 			service: "web",
@@ -208,6 +223,7 @@ export const USER_DETAIL: UserDetail = {
 			title: "checkout_started",
 			detail: "browser · /checkout · cart_items=3",
 			tone: "neutral",
+			href: null,
 		},
 		{
 			service: "web",
@@ -216,6 +232,7 @@ export const USER_DETAIL: UserDetail = {
 			title: "Session started on /pricing",
 			detail: "Chrome 130 · macOS · 6m 12s · 5 pages",
 			tone: "neutral",
+			href: "/replays/s_01HZ9K2",
 		},
 		{
 			service: "api",
@@ -224,6 +241,7 @@ export const USER_DETAIL: UserDetail = {
 			title: "plan_upgraded",
 			detail: "server · from=starter to=pro",
 			tone: "neutral",
+			href: null,
 		},
 		{
 			service: "web",
@@ -232,6 +250,7 @@ export const USER_DETAIL: UserDetail = {
 			title: "Session started on /settings/billing",
 			detail: "Safari 18 · iOS · 12m 4s · 9 pages",
 			tone: "neutral",
+			href: null,
 		},
 		{
 			service: "search",
@@ -240,6 +259,7 @@ export const USER_DETAIL: UserDetail = {
 			title: "GET /reports/:id slow, 3.2s",
 			detail: "search · route p95 900ms",
 			tone: "warn",
+			href: null,
 		},
 		{
 			service: "web",
@@ -248,6 +268,7 @@ export const USER_DETAIL: UserDetail = {
 			title: "ChunkLoadError: Loading chunk 412 failed",
 			detail: "web · resolved since",
 			tone: "crit",
+			href: null,
 		},
 	],
 	sessions: [
@@ -468,6 +489,32 @@ export const USER_DETAIL: UserDetail = {
 			service: "api",
 			source: "server",
 			detail: "source=google",
+		},
+	],
+	mcpSessions: [
+		{
+			service: "maple-ai",
+			sessionId: "mcp_7f3c9a2e",
+			client: "Claude Code",
+			kind: "agent",
+			calls: 12,
+			errors: 1,
+			tools: 5,
+			firstSeenMs: ago(90_000),
+			lastSeenMs: ago(20_000),
+			href: "/mcp-servers/maple-ai/sessions/mcp_7f3c9a2e",
+		},
+		{
+			service: "docs-mcp",
+			sessionId: "user:1730700000000:Q3Vyc29y:dV9tYXlh",
+			client: "Cursor",
+			kind: "agent",
+			calls: 29,
+			errors: 0,
+			tools: 3,
+			firstSeenMs: ago(26 * HOUR),
+			lastSeenMs: ago(25 * HOUR),
+			href: "/mcp-servers/docs-mcp/sessions/user%3A1730700000000%3AQ3Vyc29y%3AdV9tYXlh",
 		},
 	],
 }

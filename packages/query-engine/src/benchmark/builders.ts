@@ -2152,6 +2152,26 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "mcp",
+		name: "mcpSessionListQuery",
+		label: "oneUser",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpSessionListQuery({ user: "user_42" }, 100), {
+				...window,
+				serviceName: "maple-ai",
+			}),
+	},
+	{
+		module: "mcp",
+		name: "mcpUserActivityQuery",
+		label: "userPage",
+		compile: () =>
+			CH.compileUnsafe(CH.mcpUserActivityQuery({ user: "user_42" }, 5_001), {
+				...window,
+				serviceName: "maple-ai",
+			}),
+	},
+	{
+		module: "mcp",
 		name: "mcpSessionTotalsQuery",
 		label: "default",
 		compile: () => CH.compileUnsafe(CH.mcpSessionTotalsQuery(), { ...window, serviceName: "maple-ai" }),
@@ -2230,6 +2250,55 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "usersServiceNamespacesQuery",
 		label: "default",
 		compile: () => CH.compileUnsafe(CH.usersServiceNamespacesQuery(), window),
+	},
+	{
+		module: "users",
+		name: "userReplayProfileQuery",
+		label: "namespaceFiltered",
+		compile: () =>
+			CH.compileUnsafe(CH.userReplayProfileQuery(USERS_NAMESPACE_SCOPE), {
+				...window,
+				userId: "user_42",
+			}),
+	},
+	{
+		module: "users",
+		name: "userDevicesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.userDevicesQuery(USERS_SCOPE), { ...window, userId: "user_42" }),
+	},
+	{
+		module: "users",
+		name: "userEventsSummaryQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.userEventsSummaryQuery(USERS_SCOPE), { ...window, userId: "user_42" }),
+	},
+	{
+		module: "users",
+		name: "userEventsQuery",
+		label: "namespaceFiltered",
+		compile: () =>
+			CH.compileUnsafe(CH.userEventsQuery(USERS_NAMESPACE_SCOPE), { ...window, userId: "user_42" }),
+	},
+	{
+		module: "users",
+		name: "userMcpSummaryQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.userMcpSummaryQuery(USERS_SCOPE), { ...window, userId: "user_42" }),
+	},
+	{
+		module: "users",
+		name: "userServicesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.userServicesQuery(USERS_SCOPE), { ...window, userId: "user_42" }),
+	},
+	{
+		module: "users",
+		name: "userVisitorIdsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.userVisitorIdsQuery(), { ...window, userId: "user_42" }),
 	},
 	{
 		module: "mcp",

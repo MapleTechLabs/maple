@@ -26,7 +26,7 @@ import { noUsersState, usersLoading } from "../view-states"
 import { pinScope } from "./command"
 import { Message } from "./message"
 import type { Model, UsersFacetsData } from "./model"
-import { DEFAULT_PRESET, WIDE_PRESET } from "./update"
+import { DEFAULT_PRESET, userHref, WIDE_PRESET } from "./update"
 
 type H = HtmlBuilder<Message>
 
@@ -141,6 +141,7 @@ const body = (h: H, model: Model, inputs: PageViewInputs): Html =>
 						timeZone: inputs.context.timeZone,
 						...searchOptions(model),
 						scope: pinScope(inputs.context.pinnedNamespace),
+						userHref: userHref(model.search),
 					}),
 	})
 

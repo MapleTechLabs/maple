@@ -1,9 +1,16 @@
 import { describe, expect, it } from "@effect/vitest"
-import { String as Str } from "effect"
+import { Array as Arr, String as Str } from "effect"
 import { compileUnionUnsafe, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
 import {
 	hasUserSources,
+	userDevicesQuery,
+	userEventsQuery,
+	userEventsSummaryQuery,
+	userMcpSummaryQuery,
+	userReplayProfileQuery,
+	userServicesQuery,
+	userVisitorIdsQuery,
 	usersAnonymousVisitorsQuery,
 	usersFacetsQuery,
 	usersListQuery,
@@ -151,6 +158,52 @@ describe("usersAnonymousVisitorsQuery", () => {
 		expect(sql).toContain("session_replays.OrgId = 'org_1'")
 		expect(sql).toContain("product_events.OrgId = 'org_1'")
 		expect(sql).toContain("product_events.ServiceName IN ('web')")
+	})
+})
+
+describe("one user's reads", () => {
+	const userParams = { ...params, userId: "user_42" }
+
+	it("filters OrgId and the exact user id in every read", () => {
+		const sqls = [
+			compileUnsafe(userReplayProfileQuery(unscoped), userParams).sql,
+			compileUnsafe(userDevicesQuery(unscoped), userParams).sql,
+			compileUnsafe(userEventsSummaryQuery(unscoped), userParams).sql,
+			compileUnsafe(userEventsQuery(unscoped), userParams).sql,
+			compileUnsafe(userMcpSummaryQuery(unscoped), userParams).sql,
+			compileUnsafe(userServicesQuery(unscoped), userParams).sql,
+			compileUnsafe(userVisitorIdsQuery(), userParams).sql,
+		]
+		Arr.forEach(sqls, (sql) => {
+			expect(sql).toMatch(/OrgId = 'org_1'/)
+			expect(sql).toContain("'user_42'")
+		})
+	})
+
+	it("keys MCP spans on user.id then enduser.id, only from MCP servers", () => {
+		const { sql } = compileUnsafe(userMcpSummaryQuery(unscoped), userParams)
+		expect(sql).toContain(
+			"if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) = 'user_42'",
+		)
+		expect(sql).toContain("traces.ServiceName IN ('mcp-server')")
+	})
+
+	it("narrows replays and events to the scoped services and MCP spans to the namespace", () => {
+		expect(compileUnsafe(userEventsQuery(storefront), userParams).sql).toContain(
+			"product_events.ServiceName IN ('web')",
+		)
+		expect(compileUnsafe(userReplayProfileQuery(storefront), userParams).sql).toContain(
+			"session_replays.ServiceName IN ('web')",
+		)
+		expect(compileUnsafe(userMcpSummaryQuery(storefront), userParams).sql).toContain(
+			"traces.ResourceAttributes['service.namespace'] IN ('storefront')",
+		)
+	})
+
+	it("reads every source for services touched, dropping MCP when no server answers it", () => {
+		expect(count(compileUnsafe(userServicesQuery(unscoped), userParams).sql, "UNION ALL")).toBe(2)
+		const sql = compileUnsafe(userServicesQuery({ ...unscoped, mcpServices: [] }), userParams).sql
+		expect(sql).not.toContain("FROM traces")
 	})
 })
 

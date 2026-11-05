@@ -68,3 +68,21 @@ export const restSegments = <K extends string>(name: K): TerminalParser<Record<K
 			segments: [...state.segments, ...Arr.map(Str.split("/")(value[name]), encodeURIComponent)],
 		}),
 })
+
+/** {@link restSegments} with the decoded value bounded, for an id an API caps (a user id). */
+export const boundedRestSegments = <K extends string>(
+	name: K,
+	maxLength: number,
+): TerminalParser<Record<K, string>> => {
+	const rest = restSegments(name)
+	return {
+		...rest,
+		parse: (segments) =>
+			rest.parse(segments).pipe(
+				Effect.filterOrFail(
+					(result) => result[0][name].length <= maxLength,
+					() => new ParseError({ message: `${name} is longer than ${maxLength} characters` }),
+				),
+			),
+	}
+}

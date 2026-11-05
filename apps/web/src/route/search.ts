@@ -633,6 +633,17 @@ export const UsersSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
+/** `/users/$userId`'s tabs; absent in the URL is `activity`. */
+export const USER_DETAIL_TABS = ["activity", "sessions", "mcp", "errors", "traces", "logs", "events"] as const
+export type UserDetailTab = (typeof USER_DETAIL_TABS)[number]
+
+/** `/users/$userId`: the tab and a namespace picked on the page (the org pin overrides it). */
+export const UserDetailSearch = Schema.Struct({
+	tab: Schema.optional(Schema.Literals(USER_DETAIL_TABS)),
+	namespace: Schema.optional(Schema.String),
+	...TimeRangeSearchFields,
+})
+
 // sessionTimeRangeSearchMiddleware({ maxRangeSeconds: one year })
 export const ServicesSearch = Schema.Struct({
 	environments: OptionalStringArrayParam,

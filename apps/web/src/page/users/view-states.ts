@@ -10,7 +10,7 @@ import {
 } from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 
@@ -112,4 +112,19 @@ export const usersLoading = <M>(h: HtmlBuilder<M>): Html =>
 			skeleton(h, "h-8 max-w-sm"),
 			...Array.from({ length: 8 }, () => skeleton(h, "h-11")),
 		],
+	)
+
+/** One user's page while the profile read is out: the stats strip, then rows. */
+export const userDetailLoading = <M>(h: HtmlBuilder<M>): Html =>
+	h.div(
+		[h.Class("flex flex-col gap-3 px-6 pt-4")],
+		[skeleton(h, "h-16"), ...Array.from({ length: 6 }, () => skeleton(h, "h-10"))],
+	)
+
+/** A tab's rows while their read is out. */
+export const userRowsLoading = <M>(h: HtmlBuilder<M>): Html =>
+	vstack(
+		h,
+		{ gap: "2" },
+		Array.from({ length: 6 }, () => skeleton(h, "h-9")),
 	)

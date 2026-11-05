@@ -1,11 +1,17 @@
-import { AlertRuleId, AnomalyIncidentId, DashboardId, ErrorIssueId } from "@maple/domain/http"
+import {
+	AlertRuleId,
+	AnomalyIncidentId,
+	DashboardId,
+	END_USER_ID_MAX_LENGTH,
+	ErrorIssueId,
+} from "@maple/domain/http"
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { pipe, Schema, Record as Rec } from "effect"
 import { Route } from "foldkit"
 import { query, schemaSegment, slash } from "foldkit/route"
 import { AppRoute } from "./app-route"
 import * as Search from "./search"
-import { boundedSegment, path, restSegments, segment } from "./segment"
+import { boundedRestSegments, boundedSegment, path, restSegments, segment } from "./segment"
 import { tanstackSearch } from "./tanstack-search"
 
 const search = <A, I>(schema: Schema.Codec<A, I>) => query(tanstackSearch(schema))
@@ -274,6 +280,13 @@ const routers = {
 	Services: pipe(path("services"), search(Search.ServicesSearch), Route.mapTo(AppRoute.Services)),
 	Traces: pipe(path("traces"), search(Search.TracesSearch), Route.mapTo(AppRoute.Traces)),
 	Users: pipe(path("users"), search(Search.UsersSearch), Route.mapTo(AppRoute.Users)),
+	UserDetail: pipe(
+		path("users"),
+		// The rest of the path: Cloudflare turns an encoded `%2F` in a user id back into a slash.
+		slash(boundedRestSegments("userId", END_USER_ID_MAX_LENGTH)),
+		search(Search.UserDetailSearch),
+		Route.mapTo(AppRoute.UserDetail),
+	),
 	AgentSessionTool: pipe(
 		path("agent-sessions", "tools"),
 		slash(segment("toolName")),
@@ -512,6 +525,7 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
 		routers.McpServer,
 		routers.AgentSessionTools,
 		routers.ErrorIssues,
+		routers.UserDetail,
 		...Rec.values(routers),
 	),
 	AppRoute.NotFound,

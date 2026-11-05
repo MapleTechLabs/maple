@@ -70,6 +70,21 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Users({ search }))
 
+/** The user page a directory row links to, over the directory's window. */
+export const userHref =
+	(search: Search) =>
+	(userId: string): string =>
+		hrefOf(
+			AppRoute.UserDetail({
+				userId,
+				search: {
+					startTime: search.startTime,
+					endTime: search.endTime,
+					timePreset: search.timePreset,
+				},
+			}),
+		)
+
 const textValue = (text: string): string | undefined => {
 	const trimmed = Str.trim(text)
 	return trimmed === "" ? undefined : trimmed
