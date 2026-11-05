@@ -15,6 +15,7 @@
 	},
 	"rules": {
 		"effecttsgo/abort-controller-in-effect": "error",
+		"effecttsgo/any-unknown-in-error-context": "error",
 		"effecttsgo/catch-to-ignore": "error",
 		"effecttsgo/crypto-random-uuid": "error",
 		"effecttsgo/crypto-random-uuid-in-effect": "error",
@@ -174,6 +175,8 @@
 				"lib/semconv/**"
 			],
 			"rules": {
+				// Bench suites and probes load untyped modules and run them as-is.
+				"effecttsgo/any-unknown-in-error-context": "off",
 				"effecttsgo/crypto-random-uuid": "off",
 				"effecttsgo/global-console": "off",
 				"effecttsgo/global-fetch": "off",
