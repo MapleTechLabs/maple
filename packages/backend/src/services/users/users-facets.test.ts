@@ -1,14 +1,14 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Array as Arr, Effect, Layer, Order, Schema, String as Str } from "effect"
-import { OrgId, UserId, UsersFacetsRequest } from "@maple/domain/http"
+import { Array as Arr, Effect, Layer, Schema, String as Str } from "effect"
+import { OrgId, UserId, UsersFacetsRequest, WarehouseConfigError } from "@maple/domain/http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { readUsersFacets } from "./users-reads"
 
-// The directory's rail and summary: the namespace facet unpinned, none under a pin, and no
-// warehouse read at all when the scope leaves no source that could hold a user.
+// The directory's rail and summary: the namespace facet unpinned, none under a pin, and no re-read
+// without the rollup when a missing rollup leaves no other source that could hold a user.
 
 const tenant: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_users_facets"),
@@ -91,20 +91,46 @@ describe("readUsersFacets", () => {
 		}),
 	)
 
-	it.effect("reads no facets when the pin leaves no source that could hold a user", () =>
+	it.effect("reads a pin no raw source covers through the rollup, which carries the namespace", () =>
 		Effect.gen(function* () {
 			const ran: Ran = []
-			const facets = yield* readUsersFacets(tenant, request(["ghost"])).pipe(
-				Effect.provide(warehouse(ran)),
+			yield* readUsersFacets(tenant, request(["ghost"])).pipe(Effect.provide(warehouse(ran)))
+			assert.isTrue(Arr.some(ran, (query) => query.context === "usersFacets"))
+		}),
+	)
+
+	it.effect("reads no more once the rollup is missing and the pin leaves no other source", () =>
+		Effect.gen(function* () {
+			const ran: Ran = []
+			const noRollup = Layer.succeed(
+				WarehouseQueryService,
+				makeWarehouseServiceStub({
+					compiledQuery: (_tenant, input, options) => {
+						const compiled = compiledQueryOf(input)
+						const context = options?.context ?? ""
+						ran.push({ context, sql: compiled.sql })
+						return Str.includes("user_activity_hourly")(compiled.sql)
+							? Effect.fail(
+									new WarehouseConfigError({
+										message:
+											"Code: 60. Table default.user_activity_hourly does not exist",
+										pipeName: context,
+										clickhouseType: "UNKNOWN_TABLE",
+									}),
+								)
+							: compiled.decodeRows(rows.get(context) ?? []).pipe(Effect.orDie)
+					},
+				}),
 			)
+			const facets = yield* readUsersFacets(tenant, request(["ghost"])).pipe(Effect.provide(noRollup))
 			assert.strictEqual(facets.identified, 0)
 			assert.deepStrictEqual(facets.namespaces, [])
-			assert.deepStrictEqual(
-				Arr.sort(
-					Arr.map(ran, (query) => query.context),
-					Order.String,
+			// The rollup read failed once; nothing was re-read without it.
+			assert.isTrue(
+				Arr.every(
+					Arr.filter(ran, (query) => query.context === "usersFacets"),
+					(query) => Str.includes("user_activity_hourly")(query.sql),
 				),
-				["mcpServices", "usersServiceNamespaces"],
 			)
 		}),
 	)
