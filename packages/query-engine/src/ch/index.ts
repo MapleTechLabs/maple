@@ -721,6 +721,7 @@ export {
 	usersFacetsQuery,
 	usersListQuery,
 	usersGroupNamesQuery,
+	usersGroupsQuery,
 	usersMcpNamesQuery,
 	usersMcpNameSearchQuery,
 	usersServiceNamespacesQuery,

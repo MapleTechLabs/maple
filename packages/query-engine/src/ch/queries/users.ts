@@ -410,14 +410,16 @@ const userSignals = (scope: UsersScope, groups: ReadonlyArray<string> = []) => {
 	return fromUnion(unionAll(first ?? replayUsers(scope, groups), ...rest), "signals")
 }
 
-/** The directory: one row per user under the filter, the most recently seen first, then by id. */
-export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, limit = 200) {
-	return userSignals(scope, filter.groups ?? [])
+/** One row per user under the filter, every source merged: the directory and its group view read it. */
+const usersPerUser = (scope: UsersScope, filter: UsersListFilter) =>
+	userSignals(scope, filter.groups ?? [])
 		.select(($) => ({
 			userId: $.userId,
 			name: nonEmpty($.name),
 			email: nonEmpty($.email),
 			groupId: nonEmpty($.groupId),
+			/** Every group a source put the user in; `groupId` keeps one of them. */
+			groupIds: CH.arraySort(CH.groupUniqArrayIf(USER_GROUPS_MAX)($.groupId, $.groupId.neq(""))),
 			namespaces: CH.arraySort(CH.groupUniqArrayIf(20)($.namespace, $.namespace.neq(""))),
 			firstSeen: CH.min_($.firstSeen),
 			lastSeen: CH.max_($.lastSeen),
@@ -454,7 +456,53 @@ export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, 
 					.or(CH.max_($.lastSeen).eq(at).and($.userId.gt(after.userId)))
 			}),
 		])
+
+/** The directory: one row per user under the filter, the most recently seen first, then by id. */
+export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, limit = 200) {
+	return usersPerUser(scope, filter)
 		.orderBy(["lastSeen", "desc"], ["userId", "asc"])
+		.limit(limit)
+		.format("JSON")
+}
+
+/** Groups one user counts toward at most. */
+const USER_GROUPS_MAX = 20
+
+/**
+ * The directory grouped: one row per group over the same filtered users, the largest first. A
+ * user in two groups counts in both; users in none share the `''` row. A user's requests and
+ * errors count in full toward each of their groups, though spans carry no group themselves.
+ * Picked `groups` keep only those rows.
+ */
+export function usersGroupsQuery(scope: UsersScope, filter: UsersListFilter = {}, limit = 200) {
+	const picked = filter.groups ?? []
+	return fromQuery(usersPerUser(scope, filter), "per_user")
+		.select(($) => {
+			const groups =
+				picked.length === 0
+					? $.groupIds
+					: CH.compileTypedFnCall(
+							"arrayIntersect",
+							T.array(T.string).schema,
+							$.groupIds,
+							CH.arrayOf(...Arr.map(picked, (group) => CH.lit(group))),
+						)
+			const ungrouped = CH.compileTypedFnCall("length", T.uint64.schema, groups).eq(0)
+			return {
+				groupId: CH.arrayJoin(CH.if_(ungrouped, CH.arrayOf(CH.lit("")), groups)),
+				users: CH.count(),
+				activeToday: CH.countIf($.lastSeen.gte(param.dateTime("activeSince"))),
+				withErrors: CH.countIf($.errors.gt(0)),
+				withReplay: CH.countIf($.sessions.gt(0)),
+				sessions: CH.sum($.sessions),
+				errors: CH.sum($.errors),
+				requests: CH.sum($.requests),
+				firstSeen: CH.min_($.firstSeen),
+				lastSeen: CH.max_($.lastSeen),
+			}
+		})
+		.groupBy("groupId")
+		.orderBy(["users", "desc"], ["groupId", "asc"])
 		.limit(limit)
 		.format("JSON")
 }
