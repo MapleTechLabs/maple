@@ -1,7 +1,7 @@
 import { USERS_PRESETS } from "../window"
 import { Submodel, AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 import type { UserListItem } from "@maple/domain/http"
 import { presenceOf } from "@maple/views/data/signal-presence"
 import { errorState } from "@maple/views/ui/error-state"
@@ -29,7 +29,7 @@ import { noUsersState, usersLoading } from "../view-states"
 import { pinScope } from "./command"
 import { Message } from "./message"
 import type { Model, UsersFacetsData } from "./model"
-import { DEFAULT_PRESET, groupUsersHref, isGrouped, userHref, WIDE_PRESET } from "./update"
+import { DEFAULT_PRESET, groupUsersHref, isGrouped, pickedGroup, userHref, WIDE_PRESET } from "./update"
 
 type H = HtmlBuilder<Message>
 
@@ -63,12 +63,40 @@ const railFacetsStateOf = (model: Model): UsersRailFacets =>
 	})
 
 /** The strip waits for the facets read and says so when it failed, rather than drawing zeros. */
-const summaryStateOf = (model: Model): UsersSummaryState =>
+const orgSummaryStateOf = (model: Model): UsersSummaryState =>
 	AsyncData.matchData(model.facets.data, {
 		onEmpty: () => "loading",
 		onFailure: () => "failed",
 		onData: summaryOf,
 	})
+
+/**
+ * A list narrowed to one group shows that group's numbers: a skeleton while they load, the failed
+ * strip if their read fails, the org's only when the window holds no such group.
+ */
+const summaryStateOf = (model: Model): UsersSummaryState => {
+	const groupId = pickedGroup(model.search)
+	if (groupId === null || isGrouped(model.search)) return orgSummaryStateOf(model)
+	return AsyncData.matchData(model.groups.data, {
+		onEmpty: (): UsersSummaryState => "loading",
+		onFailure: (): UsersSummaryState => "failed",
+		onData: (page) =>
+			Option.match(
+				Arr.findFirst(page.groups, (row) => row.groupId === groupId),
+				{
+					onNone: () => orgSummaryStateOf(model),
+					onSome: (group): UsersSummaryState => ({
+						kind: "group",
+						label: group.groupName ?? groupId,
+						users: group.users,
+						activeToday: group.activeToday,
+						withErrors: group.withErrors,
+						sessions: group.sessions,
+					}),
+				},
+			),
+	})
+}
 
 const summaryOf = (facets: UsersFacetsData): UsersSummary => ({
 	identified: facets.identified,

@@ -4,7 +4,7 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { USER_DETAIL_TABS } from "../../../route/search"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { LogsData, OverviewData, TracesData } from "./model"
+import { GroupStatsData, LogsData, OverviewData, TracesData } from "./model"
 
 export const RequestMode = Schema.Literals(["Load", "Refresh"])
 export type RequestMode = typeof RequestMode.Type
@@ -19,6 +19,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchOverview: result(OverviewData),
 	CompletedFetchTraces: result(TracesData),
 	CompletedFetchLogs: result(LogsData),
+	CompletedFetchGroupStats: result(GroupStatsData),
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedResetTimeRange: {},

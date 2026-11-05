@@ -19,7 +19,7 @@ import {
 	FetchGroups,
 	FetchUsers,
 	facetsInputs,
-	groupsInputs,
+	groupsReadInputs,
 	listInputs,
 	LoadSignalPresence,
 	ResolveWindow,
@@ -49,6 +49,12 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): 
 /** Whether the directory shows one row per group instead of per user. */
 export const isGrouped = (search: Search): boolean => search.groupBy === "group"
 
+/** The one group the list is narrowed to, whose numbers the summary strip shows; else `null`. */
+export const pickedGroup = (search: Search): string | null => {
+	const [only, ...rest] = search.groups ?? []
+	return only !== undefined && rest.length === 0 ? only : null
+}
+
 const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
 	const pinnedNamespace = context.pinnedNamespace
 	const grouped = isGrouped(model.search)
@@ -56,14 +62,18 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 		data: listInputs(model.search, window, pinnedNamespace),
 	})
 	const groupsKey = requestKey(context.orgId, "listUserGroups", {
-		data: groupsInputs(model.search, window, pinnedNamespace),
+		data: groupsReadInputs(model.search, window, pinnedNamespace),
 	})
 	const facetsKey = requestKey(context.orgId, "getUsersFacets", {
 		data: facetsInputs(window, pinnedNamespace),
 	})
-	// Only the view on screen reads: the other keeps its last answer for a quick switch back.
+	// Only the view on screen reads: the other keeps its last answer for a quick switch back. A list
+	// narrowed to one group reads the group view too: that one row is the strip's numbers.
 	const list = grouped ? Option.none() : Keyed.request(model.list, listKey, mode)
-	const groups = grouped ? Keyed.request(model.groups, groupsKey, mode) : Option.none()
+	const groups =
+		grouped || pickedGroup(model.search) !== null
+			? Keyed.request(model.groups, groupsKey, mode)
+			: Option.none()
 	const facets = Keyed.request(model.facets, facetsKey, mode)
 	const args = { search: model.search, window, pinnedNamespace, refresh: mode === "Refresh" }
 	return {

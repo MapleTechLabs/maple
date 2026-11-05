@@ -1,5 +1,5 @@
-import { getUserLogs, getUserOverview, getUserTraces } from "@maple/web-data/warehouse/users"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { getUserLogs, getUserOverview, getUserTraces, listUserGroups } from "@maple/web-data/warehouse/users"
+import { Array as Arr, Clock, Duration, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { IdleTtl } from "../../../data/idle-ttl"
@@ -7,7 +7,7 @@ import { readThrough } from "../../../data/read-cache"
 import { TimeWindow } from "../../../data/time-range"
 import { resolveUsersWindow } from "../window"
 import { Message, RequestMode } from "./message"
-import { LogsData, OverviewData, TracesData, type Search } from "./model"
+import { GroupStatsData, LogsData, OverviewData, TracesData, type Search } from "./model"
 
 /** The namespace in effect: the org-global pin wins over one picked on this page. */
 export const activeNamespace = (search: Search, pinnedNamespace: string | null): string | null =>
@@ -81,6 +81,35 @@ export const FetchOverview = Command.define("FetchUserOverview", {
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchOverview({ key, result })),
+		),
+})
+
+/** The user's group over the window and the org pin: its users and their totals, for the rail. */
+export const FetchGroupStats = Command.define("FetchUserGroupStats", {
+	args: {
+		key: Schema.String,
+		groupId: Schema.String,
+		startTime: Schema.String,
+		endTime: Schema.String,
+		namespaces: Schema.Array(Schema.String),
+		refresh: Schema.Boolean,
+	},
+	messages: [Message.CompletedFetchGroupStats],
+	execute: ({ key, refresh, groupId, ...window }) =>
+		readThrough(
+			{ key, refresh, idleTtlMs: IdleTtl.listUserGroups, schema: GroupStatsData },
+			Effect.map(
+				listUserGroups({ data: { ...window, groups: [groupId] } }),
+				(response): GroupStatsData => ({
+					group: Option.getOrNull(
+						Arr.findFirst(response.groups, (group) => group.groupId === groupId),
+					),
+				}),
+			),
+		).pipe(
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchGroupStats({ key, result })),
 		),
 })
 

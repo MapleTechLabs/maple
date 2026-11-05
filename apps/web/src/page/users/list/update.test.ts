@@ -95,3 +95,35 @@ describe("users directory group view", () => {
 		expect(params.get("timePreset")).toBe("1w")
 	})
 })
+
+describe("users directory narrowed to one group", () => {
+	const window = { startTime: "2026-06-24 04:00:00", endTime: "2026-06-25 04:00:00" }
+	const names = (search: Search) =>
+		Arr.map(
+			update(start(search), Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }), context)
+				.commands ?? [],
+			(command) => command.name,
+		)
+
+	it("reads that group's numbers beside the users", () => {
+		const read = names({ groups: ["grp_acme"] })
+		expect(read).toContain("FetchUsers")
+		expect(read).toContain("FetchUserGroups")
+	})
+
+	it("reads the group's whole size, whatever the list's search and toggles", () => {
+		const step = update(
+			start({ groups: ["grp_acme"], hasErrors: true, q: "ada" }),
+			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
+			context,
+		)
+		const key = step.model.groups.key ?? ""
+		expect(key).toContain("grp_acme")
+		expect(key).not.toContain("hasErrors")
+		expect(key).not.toContain("ada")
+	})
+
+	it("reads no group numbers for two picked groups", () => {
+		expect(names({ groups: ["grp_acme", "grp_globex"] })).not.toContain("FetchUserGroups")
+	})
+})

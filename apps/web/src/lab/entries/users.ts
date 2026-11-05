@@ -8,7 +8,12 @@ import { icon } from "@maple/views/ui/icon"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { USER_TABS, type UserTab, userLabel } from "../../page/users/data"
 import { userDetailBody, userRail, userTabs, userTitle } from "../../page/users/view-detail"
-import { usersFilterRail, usersGroupsBody, usersListBody } from "../../page/users/view-list"
+import {
+	type UsersSummaryState,
+	usersFilterRail,
+	usersGroupsBody,
+	usersListBody,
+} from "../../page/users/view-list"
 import type { Resources } from "../../platform/resources"
 import { filterUsers, scopeDetail, usersFacets, usersGroups, usersSummary } from "../users-filter"
 import { noUsersState, usersLoading } from "../../page/users/view-states"
@@ -217,6 +222,10 @@ const detailPage = (h: H, model: Model): Html => {
 				clock,
 				namespace,
 				detail.profile.groupId === null ? null : `?view=list&groups=${detail.profile.groupId}`,
+				Arr.findFirst(
+					usersGroups(USER_ROWS, USERS_NOW),
+					(group) => group.groupId === detail.profile.groupId,
+				).pipe(Option.getOrNull),
 			),
 			rightPanelWidth: "w-80",
 			scrollClassName: "p-0",
@@ -229,7 +238,18 @@ const view = (model: Model, h: H): Html => {
 	switch (model.view) {
 		case "list": {
 			const shown = filterUsers(USER_ROWS, filtersOf(model), model.pinnedNamespace)
-			const summary = usersSummary(USER_ROWS, model.pinnedNamespace, USERS_SUMMARY, USERS_NOW)
+			const [picked] = model.groups.length === 1 ? usersGroups(shown, USERS_NOW) : []
+			const summary: UsersSummaryState =
+				picked === undefined || picked.groupId === null || model.groupBy === "group"
+					? usersSummary(USER_ROWS, model.pinnedNamespace, USERS_SUMMARY, USERS_NOW)
+					: {
+							kind: "group",
+							label: picked.groupName ?? picked.groupId,
+							users: picked.users,
+							activeToday: picked.activeToday,
+							withErrors: picked.withErrors,
+							sessions: picked.sessions,
+						}
 			const options = {
 				nowMs: USERS_NOW,
 				timeZone: USERS_TIME_ZONE,
