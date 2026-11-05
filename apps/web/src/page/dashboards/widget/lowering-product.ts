@@ -28,7 +28,8 @@ import {
 	PRODUCT_EVENTS_PATHS_ENDPOINT,
 } from "@maple/widgets/dashboard"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
-import type { FunnelDraft, PathsDraft, StepDraft } from "./editor-state"
+import type { StepDraft } from "../../kit/funnel-steps"
+import type { FunnelDraft, PathsDraft } from "./editor-state"
 
 // The funnel's and the paths widget's editor drafts, read from a stored widget
 // and checked (`validate`).

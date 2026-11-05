@@ -1,12 +1,7 @@
-import {
-	FunnelKeyBy,
-	FunnelSessionDimension,
-	FunnelVariant,
-	PathsDirection,
-	PathsInclude,
-} from "@maple/query-model"
+import { FunnelKeyBy, FunnelVariant, PathsDirection, PathsInclude } from "@maple/query-model"
 import { Schema } from "effect"
 import { defineTaggedUnion } from "foldkit/schema"
+import { StepEdit, StepScope } from "../../kit/funnel-steps"
 import { ListDataSource } from "./editor-state"
 
 /**
@@ -14,14 +9,6 @@ import { ListDataSource } from "./editor-state"
  * `PathsQueryPanel` and the `FunnelStepBuilder` they mount), as data for one Message.
  * `scope` names the step list: the funnel's steps, or the paths widget's single anchor.
  */
-export const StepScope = Schema.Literals(["funnel", "paths"])
-export type StepScope = typeof StepScope.Type
-
-export const StepKind = Schema.Literals(["event", "page", "session"])
-export type StepKind = typeof StepKind.Type
-
-export const StepTextField = Schema.Literals(["eventName", "pagePath", "host", "value", "filterClause"])
-export type StepTextField = typeof StepTextField.Type
 
 export const ListColumnText = Schema.Literals(["field", "header"])
 
@@ -40,12 +27,8 @@ export const ProductEdit = defineTaggedUnion({
 	RemovedListColumn: { index: Schema.Number },
 	AddedListColumn: {},
 	MovedListColumn: { index: Schema.Number, delta: Schema.Number },
-	SetStepKind: { scope: StepScope, index: Schema.Number, kind: StepKind },
-	ChangedStepText: { scope: StepScope, index: Schema.Number, field: StepTextField, value: Schema.String },
-	SetStepDimension: { scope: StepScope, index: Schema.Number, dimension: FunnelSessionDimension },
-	MovedStep: { index: Schema.Number, delta: Schema.Number },
-	RemovedStep: { index: Schema.Number },
-	AddedStep: {},
+	/** The step builder's edit: the funnel's steps, or the paths widget's anchor. */
+	Step: { scope: StepScope, edit: StepEdit },
 	ChangedPopulationFilter: { scope: StepScope, value: Schema.String },
 	ToggledFunnelAddOn: { key: FunnelAddOn },
 	ToggledPathsAddOn: { key: PathsAddOn },

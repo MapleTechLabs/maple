@@ -9,7 +9,8 @@ import type { WhereFieldSpec, WhereFieldsInputs } from "../../kit/where-field-up
 import type { ListDataSource } from "./editor-state"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { ProductEdit, type StepScope } from "./product-edit"
+import { StepEdit, type StepScope } from "../../kit/funnel-steps"
+import { ProductEdit } from "./product-edit"
 import { autocompleteWindowOf } from "./update"
 import { providerValuesOf } from "./where-inputs"
 
@@ -79,7 +80,8 @@ export const stepField = (scope: StepScope, index: number, expression: string): 
 		values: {},
 		requestOf: noValues,
 	},
-	edit: (value) => ProductEdit.ChangedStepText({ scope, index, field: "filterClause", value }),
+	edit: (value) =>
+		ProductEdit.Step({ scope, edit: StepEdit.ChangedText({ index, field: "filterClause", value }) }),
 })
 
 /**

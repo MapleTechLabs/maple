@@ -9,7 +9,8 @@ import { WhereFieldMessage } from "../../kit/where-field"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { update } from "./page-update"
-import { ProductEdit, type StepScope } from "./product-edit"
+import { StepEdit, type StepScope } from "../../kit/funnel-steps"
+import { ProductEdit } from "./product-edit"
 import { init } from "./update"
 import { LIST_FILTER_ID, populationFilterId, stepFilterId } from "./where-fields"
 
@@ -169,10 +170,13 @@ describe("widget where fields", () => {
 	})
 
 	test("a funnel step's filter completes only `=`, and Enter writes it into the step", () => {
-		const onFunnel = opened(Message.ClickedPanelType({ panel: "funnel" }), edit(ProductEdit.AddedStep()))
+		const onFunnel = opened(Message.ClickedPanelType({ panel: "funnel" }), edit(ProductEdit.Step({ scope: "funnel", edit: StepEdit.Added() })))
 		const id = stepFilterId("funnel", 0)
 		const typedIn = typed(onFunnel, id, "plan ", (value) =>
-			ProductEdit.ChangedStepText({ scope: "funnel", index: 0, field: "filterClause", value }),
+			ProductEdit.Step({
+				scope: "funnel",
+				edit: StepEdit.ChangedText({ index: 0, field: "filterClause", value }),
+			}),
 		)
 		const accepted = run(typedIn, field(WhereFieldMessage.PressedEnter({ fieldId: id })))
 		expect(accepted.model.state?.funnel.steps[0]).toMatchObject({ filterClause: "plan = " })

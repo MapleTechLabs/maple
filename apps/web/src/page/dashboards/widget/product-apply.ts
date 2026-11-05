@@ -3,26 +3,15 @@ import {
 	DEFAULT_FUNNEL_WINDOW_SECONDS,
 	FUNNEL_SESSION_DIMENSIONS,
 } from "../../../components/funnels/definition"
-import type { EditorState, FunnelDraft, ListColumn, PathsDraft, StepDraft } from "./editor-state"
+import { FUNNEL_MAX_STEPS } from "@maple/query-model"
+import { applyAnchorEdit, applyStepEdit, type StepEdit, type StepScope } from "../../kit/funnel-steps"
+import type { EditorState, FunnelDraft, ListColumn, PathsDraft } from "./editor-state"
 import { DEFAULT_LIST_COLUMNS } from "./lowering-list"
-import { ProductEdit, type StepKind, type StepScope, type StepTextField } from "./product-edit"
+import { ProductEdit } from "./product-edit"
 import { Array as Arr, String as Str } from "effect"
 
 // What each `ProductEdit` does to the editor state: `ListConfigPanel`'s `onChange`, the
 // `FunnelStepBuilder`'s `onChange`, and `updateFunnel` / `updatePaths`.
-
-/** `withKind`: a step's kind changed, carrying nothing over. */
-const withKind = (step: StepDraft, kind: StepKind): StepDraft => {
-	if (step.kind === kind) return step
-	switch (kind) {
-		case "event":
-			return { kind: "event", eventName: "" }
-		case "page":
-			return { kind: "page", pagePath: "" }
-		case "session":
-			return { kind: "session", dimension: "referrerHost", value: "" }
-	}
-}
 
 /** `move`: an item moved within the list; out of range is a no-op. */
 const move = <T>(items: ReadonlyArray<T>, from: number, to: number): ReadonlyArray<T> => {
@@ -32,42 +21,18 @@ const move = <T>(items: ReadonlyArray<T>, from: number, to: number): ReadonlyArr
 	return [...rest.slice(0, to), item, ...rest.slice(to)]
 }
 
-/** A typed field of a step; an emptied host or filter drops its key. */
-const withText = (step: StepDraft, field: StepTextField, value: string): StepDraft => {
-	switch (step.kind) {
-		case "event": {
-			if (field === "eventName") return { ...step, eventName: value }
-			if (field !== "filterClause") return step
-			const { filterClause: _clause, ...rest } = step
-			return value === "" ? rest : { ...rest, filterClause: value }
-		}
-		case "page": {
-			if (field === "pagePath") return { ...step, pagePath: value }
-			if (field !== "host") return step
-			const { host: _host, ...rest } = step
-			return value === "" ? rest : { ...rest, host: value }
-		}
-		case "session":
-			return field === "value" ? { ...step, value } : step
-	}
-}
-
 const updateAt = <T>(items: ReadonlyArray<T>, index: number, update: (item: T) => T): ReadonlyArray<T> =>
 	Arr.map(items, (item, position) => (position === index ? update(item) : item))
 
-const editSteps = (
-	state: EditorState,
-	scope: StepScope,
-	index: number,
-	update: (step: StepDraft) => StepDraft,
-): EditorState =>
-	scope === "funnel"
-		? { ...state, funnel: { ...state.funnel, steps: updateAt(state.funnel.steps, index, update) } }
-		: // The anchor is never a session step: the panel offers none, and `onChange` drops one.
-			((anchor) =>
-				anchor.kind === "session" ? state : { ...state, paths: { ...state.paths, anchor } })(
-				update(state.paths.anchor),
-			)
+/** A step builder edit on the funnel's steps, or on the paths anchor (never a session step). */
+const editSteps = (state: EditorState, scope: StepScope, edit: StepEdit): EditorState => {
+	if (scope === "funnel")
+		return {
+			...state,
+			funnel: { ...state.funnel, steps: applyStepEdit(state.funnel.steps, edit, FUNNEL_MAX_STEPS) },
+		}
+	return { ...state, paths: { ...state.paths, anchor: applyAnchorEdit(state.paths.anchor, edit) } }
+}
 
 const funnel = (state: EditorState, update: (funnel: FunnelDraft) => FunnelDraft): EditorState => ({
 	...state,
@@ -128,12 +93,6 @@ const withBreakdown = (current: FunnelDraft, value: string | null): FunnelDraft 
 	return dimension === undefined ? rest : { ...rest, breakdownBy: dimension }
 }
 
-/** A funnel step moved; a session step past step 1 is demoted to an event step (`reorder`). */
-const reorderSteps = (steps: ReadonlyArray<StepDraft>, from: number, to: number): ReadonlyArray<StepDraft> =>
-	Arr.map(move(steps, from, to), (step, index) =>
-		index > 0 && step.kind === "session" ? withKind(step, "event") : step,
-	)
-
 export const applyProductEdit = (state: EditorState, edit: ProductEdit): EditorState =>
 	ProductEdit.match<EditorState>(edit, {
 		// A new source starts over: its default columns, no filter.
@@ -172,29 +131,7 @@ export const applyProductEdit = (state: EditorState, edit: ProductEdit): EditorS
 			columns(state, (list) =>
 				move(list, index, Math.max(0, Math.min(list.length - 1, index + delta))),
 			),
-		SetStepKind: ({ scope, index, kind }) =>
-			editSteps(state, scope, index, (step) => withKind(step, kind)),
-		ChangedStepText: ({ scope, index, field, value }) =>
-			editSteps(state, scope, index, (step) => withText(step, field, value)),
-		SetStepDimension: ({ scope, index, dimension }) =>
-			editSteps(state, scope, index, (step) =>
-				step.kind === "session" ? { ...step, dimension } : step,
-			),
-		MovedStep: ({ index, delta }) =>
-			funnel(state, (current) => ({
-				...current,
-				steps: reorderSteps(current.steps, index, index + delta),
-			})),
-		RemovedStep: ({ index }) =>
-			funnel(state, (current) => ({
-				...current,
-				steps: Arr.filter(current.steps, (_, position) => position !== index),
-			})),
-		AddedStep: () =>
-			funnel(state, (current) => ({
-				...current,
-				steps: [...current.steps, { kind: "event", eventName: "" }],
-			})),
+		Step: ({ scope, edit }) => editSteps(state, scope, edit),
 		ChangedPopulationFilter: ({ scope, value }) =>
 			scope === "funnel"
 				? funnel(state, (current) => ({ ...current, filterClause: value }))

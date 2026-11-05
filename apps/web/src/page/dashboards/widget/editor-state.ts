@@ -8,14 +8,13 @@ import {
 import {
 	FunnelBreakdownBy,
 	FunnelKeyBy,
-	FunnelPageStep,
-	FunnelSessionStep,
 	FunnelVariant,
 	PathsDirection,
 	PathsInclude,
 	QUERY_COMPARISON_MODES,
 } from "@maple/query-model"
 import { Schema } from "effect"
+import { StepDraft } from "../../kit/funnel-steps"
 import { QueryDraft } from "../../kit/query-builder/draft"
 
 // The widget editor's state (`QueryBuilderWidgetState`).
@@ -51,19 +50,6 @@ export type ListColumn = typeof ListColumn.Type
 
 export const ListDataSource = Schema.Literals(["traces", "logs", "product_events"])
 export type ListDataSource = typeof ListDataSource.Type
-
-/** `FunnelStepDraft` (funnel-filters.ts): the wire step plus an event step's filter as typed. */
-export const StepDraft = Schema.Union([
-	Schema.Struct({
-		kind: Schema.Literal("event"),
-		eventName: Schema.String,
-		attributeEquals: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
-		filterClause: Schema.optionalKey(Schema.String),
-	}),
-	FunnelPageStep,
-	FunnelSessionStep,
-])
-export type StepDraft = typeof StepDraft.Type
 
 export const FunnelAddOns = Schema.Struct({
 	keyBy: Schema.Boolean,
