@@ -1,6 +1,8 @@
 import { defineRule } from "@oxlint/plugins";
 
-import type { ESTree, SourceCode } from "@oxlint/plugins";
+import type { ESTree } from "@oxlint/plugins";
+
+import { hasBoundaryComment } from "../shared/boundary-comment.ts";
 
 import { lexicalTypeParameterNames } from "../shared/lexical-type-parameters.ts";
 
@@ -21,12 +23,6 @@ function referencedAliasName(type: ESTree.TSType): string | null {
     type.typeArguments.params.length === 0
     ? type.typeName.name
     : null;
-}
-
-function hasBoundaryComment(sourceCode: SourceCode): boolean {
-  return sourceCode
-    .getAllComments()
-    .some((comment) => /\bBOUNDARY\s*:/u.test(comment.value));
 }
 
 /** Ban function contracts that return unknown instead of a parsed domain type. */
@@ -98,7 +94,7 @@ export const noUnknownReturnsRule = defineRule({
         option !== null &&
         !Array.isArray(option) &&
         option.allowWithBoundaryComment === true &&
-        hasBoundaryComment(context.sourceCode)
+        hasBoundaryComment(context.sourceCode, node)
       ) {
         return;
       }

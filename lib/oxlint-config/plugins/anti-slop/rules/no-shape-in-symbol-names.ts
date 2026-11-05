@@ -51,6 +51,8 @@ function isPropertyKeyOrExternalMember(node: ESTree.Node & { name: string }): bo
     parent.type === "ExportSpecifier" &&
     parent.local === node &&
     parent.exported !== node &&
+    parent.exported.type === "Identifier" &&
+    parent.exported.name !== node.name &&
     parent.parent?.type === "ExportNamedDeclaration" &&
     parent.parent.source !== null
   ) {

@@ -1,5 +1,7 @@
 import { defineRule } from "@oxlint/plugins";
-import type { ESTree, SourceCode } from "@oxlint/plugins";
+import type { ESTree } from "@oxlint/plugins";
+
+import { hasBoundaryComment } from "../shared/boundary-comment.ts";
 
 type Parameter = ESTree.ParamPattern;
 type ParameterOwner =
@@ -52,37 +54,6 @@ function isBoundaryParameter(node: ParameterOwner): boolean {
   // boundary. TypeScript prevents the implementation from using the value
   // without narrowing it; signature-only contracts still need a domain type.
   return hasRuntimeBody(node);
-}
-
-/**
- * A `BOUNDARY:` header above the first statement marks the whole module as a boundary; one
- * anywhere else exempts only the function it sits on.
- */
-function hasBoundaryComment(sourceCode: SourceCode, node: ESTree.Node): boolean {
-  const firstStatement = sourceCode.ast.body[0];
-  if (
-    sourceCode
-      .getAllComments()
-      .some(
-        (comment) =>
-          /\bBOUNDARY\s*:/u.test(comment.value) &&
-          (firstStatement === undefined || comment.end <= firstStatement.start),
-      )
-  ) {
-    return true;
-  }
-  let current = node;
-  while (current.type !== "Program") {
-    if (
-      sourceCode
-        .getCommentsBefore(current)
-        .some((comment) => comment.end <= node.start && /\bBOUNDARY\s*:/u.test(comment.value))
-    ) {
-      return true;
-    }
-    current = current.parent;
-  }
-  return false;
 }
 
 /** Disallow unknown inputs except explicitly named error-cause enrichment. */

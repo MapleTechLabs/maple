@@ -1,4 +1,4 @@
-// BOUNDARY: a merge patch is untyped JSON until the merged widget is decoded again.
+// BOUNDARY-FILE: a merge patch is untyped JSON until the merged widget is decoded again.
 /** Partial widget edits: a JSON Merge Patch (RFC 7386) plus shorthand fields, over the saved widget. */
 import { Result, Schema, SchemaIssue, Array as Arr, Record as Rec } from "effect"
 import { DashboardWidgetSchema } from "@maple/domain/http"

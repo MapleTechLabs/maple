@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 /**
  * Thin, token-keyed wrapper around `@distilled.cloud/cloudflare` (the Effect-native Cloudflare SDK).
  *

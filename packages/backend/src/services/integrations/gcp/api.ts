@@ -1,4 +1,4 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 /**
  * The Google calls the poller makes, over WebCrypto and `fetch` so they run in a Worker. Nothing
  * here may leak a credential: tokens stay `Redacted`, and a failure carries the HTTP status and

@@ -306,6 +306,7 @@ const isResponseFailure = (exit: Exit.Exit<unknown, unknown>): boolean => {
 
 // The single failure of a raw HTTP client span, when it is an Effect `HttpClientError`
 // with this reason. Anything carrying a defect or a second failure is a real error.
+// BOUNDARY: the reason is an arbitrary error value until the caller narrows it.
 const httpClientFailureReason = (exit: Exit.Exit<unknown, unknown>, reasonTag: string): unknown => {
 	if (exit._tag === "Success") return undefined
 	const [reason, ...rest] = exit.cause.reasons

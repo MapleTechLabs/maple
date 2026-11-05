@@ -1,5 +1,5 @@
 import { OrgClickHouseSettingsEncryptionError } from "@maple/domain/http"
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, describe, expect, it, layer } from "@effect/vitest"
 import {
 	OrgClickHouseSettingsPersistenceError,

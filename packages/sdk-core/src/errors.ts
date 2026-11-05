@@ -22,6 +22,7 @@ interface ErrorFields {
 }
 
 /** A property read that a throwing getter or Proxy trap cannot turn into a second error. */
+// BOUNDARY: a thrown value's fields can hold anything.
 function read(value: ErrorFields, key: keyof ErrorFields): unknown {
 	try {
 		return value[key]

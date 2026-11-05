@@ -1,4 +1,4 @@
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { assert } from "@effect/vitest"
 import { createHmac, generateKeyPairSync } from "node:crypto"
 import { OrgId, UserId, type VcsSyncJob } from "@maple/domain/http"
