@@ -59,6 +59,7 @@ export const makeSyncFetch =
 							headers.set("authorization", `Bearer ${token.value}`)
 						return { ...init, headers }
 					}),
+					// @effect-diagnostics-next-line globalFetch:off -- the collection client takes a plain fetch function
 				).then((authorized) => globalThis.fetch(input, authorized))
 
 const makeSet = (

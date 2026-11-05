@@ -454,6 +454,7 @@ export class ConnectorSocket {
 
 export interface ConnectorSocketApi {
 	readonly ensureConnected: (connectorId: ChatConnectorId) => Effect.Effect<void, ConnectorSocketCallFailed>
+	// @effect-diagnostics-next-line lazyEffect:off -- mirrors the Durable Object's RPC method
 	readonly alarm: () => Effect.Effect<void, ConnectorSocketCallFailed>
 }
 

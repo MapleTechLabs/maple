@@ -891,14 +891,16 @@ describe("v2 telemetry reads over HTTP", () => {
 			execute: (_tenant, request) =>
 				Effect.succeed(
 					(request.query.kind === "breakdown"
-						? {
+						? // @effect-diagnostics-next-line schemaClassObjectLiteral:off -- raw BYO numeric strings the class constructor would reject
+							{
 								result: {
 									kind: "breakdown",
 									source: "metrics",
 									data: [{ name: "api", value: "42" }],
 								},
 							}
-						: {
+						: // @effect-diagnostics-next-line schemaClassObjectLiteral:off -- raw BYO numeric strings the class constructor would reject
+							{
 								result: {
 									kind: "timeseries",
 									source: "metrics",
