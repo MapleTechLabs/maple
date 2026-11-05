@@ -6,6 +6,7 @@ import { icon } from "@maple/views/ui/icon"
 import { middleTruncate } from "@maple/views/ui/middle-truncate"
 import { pressable } from "@maple/views/ui/pressable"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { SEVERITY_FILL, severityIcon } from "../../errors/kit/severity"
 import { locationOf } from "./format"
 import {
@@ -169,21 +170,9 @@ const findingRow = <M>(h: HtmlBuilder<M>, options: FindingRowOptions<M>): Html =
 	const location = locationOf(finding.record)
 	const note = noteOf(finding)
 	const rowClass =
-		"flex h-10 w-full min-w-0 items-center gap-3 pr-3 pl-8 text-left outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-strong focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
-	const children = [
-		bucketIcon(h, bucketOf(finding), isUnverified(finding)),
-		h.span(
-			[
-				h.Class(
-					cn(
-						"min-w-0 shrink truncate text-sm",
-						finding.verdict === "rejected" && "text-muted-foreground line-through",
-					),
-				),
-				h.Title(finding.record.title),
-			],
-			[finding.record.title],
-		),
+		"flex min-h-10 w-full min-w-0 items-center gap-3 py-1.5 pr-3 pl-8 text-left outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-strong focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+	// The title is what people read, so it gets the full line; where and why sit under it.
+	const meta = [
 		...(location === null
 			? []
 			: [
@@ -191,27 +180,41 @@ const findingRow = <M>(h: HtmlBuilder<M>, options: FindingRowOptions<M>): Html =
 						text: location,
 						tail: Math.min(28, location.length - location.lastIndexOf("/")),
 						mono: true,
-						className:
-							"hidden min-w-0 max-w-[40%] shrink-[2] text-xs text-muted-foreground md:flex",
 					}),
 				]),
-		...(note === null
-			? []
-			: [
-					h.span(
-						[
-							h.Class(
-								"hidden min-w-0 shrink-[3] truncate text-xs text-muted-foreground xl:inline",
-							),
-							h.Title(note),
-						],
-						[note],
-					),
-				]),
-		h.span(
-			[h.Class("ml-auto flex shrink-0 items-center gap-3")],
-			[...(isUnverified(finding) ? [unverifiedChip(h)] : []), ...options.trailing],
-		),
+		...(note === null ? [] : [typography(h, { truncate: true, attributes: [h.Title(note)] }, [note])]),
+	]
+	const children = [
+		bucketIcon(h, bucketOf(finding), isUnverified(finding)),
+		vstack(h, { gap: "0.5", shrink: true, grow: true }, [
+			typography(
+				h,
+				{
+					size: "sm",
+					truncate: true,
+					className: cn(finding.verdict === "rejected" && "text-muted-foreground line-through"),
+					attributes: [h.Title(finding.record.title)],
+				},
+				[finding.record.title],
+			),
+			...(meta.length === 0
+				? []
+				: [
+						hstack(
+							h,
+							{
+								gap: "2",
+								shrink: true,
+								className: "hidden text-xs text-muted-foreground md:flex",
+							},
+							meta,
+						),
+					]),
+		]),
+		hstack(h, { gap: "3", className: "shrink-0" }, [
+			...(isUnverified(finding) ? [unverifiedChip(h)] : []),
+			...options.trailing,
+		]),
 	]
 	return h.li(
 		[h.Key(`${finding.targetId}/${finding.fingerprint}`), h.Class("border-b border-border-subtle")],
