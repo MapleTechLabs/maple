@@ -98,7 +98,7 @@ export const noFailedRequestsText = (
 	const failed = Math.round(profile.requests * profile.failedRate)
 	return failed === 0
 		? "No failed requests in the window."
-		: `${formatNumber(failed)} failed requests in the window, none among the timeline's most recent rows.`
+		: `${formatNumber(failed)} failed ${failed === 1 ? "request" : "requests"} in the window, none among the timeline's most recent rows.`
 }
 
 export function registerInspectUserTool(server: McpToolRegistrar) {
