@@ -137,6 +137,7 @@ const filtersOf = (model: Model) => ({
 
 const rail = (h: H, model: Model): Html =>
 	usersFilterRail(h, {
+		onRetry: Message.Ignored(),
 		filters: filtersOf(model),
 		facets: usersFacets(USER_ROWS, model.pinnedNamespace),
 		pinnedNamespace: model.pinnedNamespace,
