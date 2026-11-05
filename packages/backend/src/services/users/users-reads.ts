@@ -504,9 +504,30 @@ const NEWEST_FIRST = Order.flip(Order.mapInput(Order.Number, (item: { atMs: numb
 /** The issues the user hit; `None` where errors carry no user id. */
 type IssueItems = Option.Option<ReadonlyArray<UserIssueItem>>
 
-/** The scope and the user's issues, read side by side: every detail read takes both. */
+/** The scope's services for the issue reads: the namespace's services, or every one when unscoped. */
+const resolvedServices = (scope: CH.UsersScope) => ({
+	serviceNames: scope.namespaces.length > 0 ? scope.services : undefined,
+})
+
+/**
+ * The scope and the user's issues: every detail read takes both. Unscoped, the issue read needs no
+ * services, so the two run side by side; under a namespace it reuses the services the scope resolved.
+ */
 const scopeAndIssues = (tenant: TenantContext, payload: UserDetailRequest) =>
-	Effect.all([loadScope(tenant, payload), readUserIssueItems(tenant, payload)], { concurrency: 2 })
+	(payload.namespaces ?? []).length === 0
+		? Effect.all(
+				[
+					loadScope(tenant, payload),
+					readUserIssueItems(tenant, payload, { serviceNames: undefined }),
+				],
+				{ concurrency: 2 },
+			)
+		: Effect.flatMap(loadScope(tenant, payload), (scope) =>
+				Effect.all([
+					Effect.succeed(scope),
+					readUserIssueItems(tenant, payload, resolvedServices(scope)),
+				]),
+			)
 
 const issuesResponse = (issues: IssueItems) =>
 	new UserIssuesResponse({
@@ -577,11 +598,6 @@ export const mergeServices = (
 		Order.flip(Order.mapInput(Order.Number, (service: { signals: number }) => service.signals)),
 	)
 }
-
-/** The scope's services for the issue reads: the namespace's services, or every one when unscoped. */
-const resolvedServices = (scope: CH.UsersScope) => ({
-	serviceNames: scope.namespaces.length > 0 ? scope.services : undefined,
-})
 
 const profileIn = Effect.fn("UsersReads.profile")(function* (
 	tenant: TenantContext,

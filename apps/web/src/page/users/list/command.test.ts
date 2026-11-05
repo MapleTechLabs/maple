@@ -49,5 +49,12 @@ describe("listInputs", () => {
 describe("userHref", () => {
 	it("links a row to the user page over the directory's window", () => {
 		expect(userHref({ timePreset: "24h", q: "ada" })("user/42")).toBe("/users/user/42?timePreset=24h")
+		const href = userHref({ startTime: "2026-11-01 00:00:00", endTime: "2026-11-02 00:00:00", q: "ada" })(
+			"ada",
+		)
+		const params = new URL(href, "https://app.test").searchParams
+		expect(params.get("startTime")).toBe("2026-11-01 00:00:00")
+		expect(params.get("endTime")).toBe("2026-11-02 00:00:00")
+		expect(params.has("q")).toBe(false)
 	})
 })
