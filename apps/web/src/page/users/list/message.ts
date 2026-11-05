@@ -34,7 +34,6 @@ export const Message = defineMessageUnion({
 	ClickedClearFilters: {},
 	ClickedClearNamespacePin: {},
 	ClickedSetup: {},
-	ClickedUser: { userId: Schema.String },
 	GotFilterSectionsMessage: { message: FilterSections.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 })
