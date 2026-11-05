@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { formatCell, listCellText } from "./tiles"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { listCellText } from "./tiles"
 
 describe("listCellText", () => {
 	it("formats object items instead of printing [object Object]", () => {
@@ -14,7 +15,7 @@ describe("listCellText", () => {
 	})
 
 	it("formats a non-array value like any other cell", () => {
-		expect(listCellText("solo")).toBe(formatCell("solo"))
-		expect(listCellText(null)).toBe(formatCell(null))
+		expect(listCellText("solo")).toBe("solo")
+		expect(listCellText(null)).toBe(EMPTY_VALUE)
 	})
 })
