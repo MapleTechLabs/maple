@@ -102,11 +102,12 @@ type EffectSurface<Stub, E> = {
  * heartbeat alarm it dispatches as the object's `alarm`. Also the shape alchemy's namespace client
  * types its stubs with, so it is typed for the caller's side too: a call can fail across the RPC
  * boundary, and alchemy decodes the subscription's `ReadableStream` into an Effect `Stream`.
+ * `E` is what a call fails with: `never` where the object serves it, untyped across alchemy's RPC.
  */
-export type ChatSessionRpc = Omit<EffectSurface<ChatSessionStub, unknown>, "subscribe"> & {
+export type ChatSessionRpc<E = never> = Omit<EffectSurface<ChatSessionStub, E>, "subscribe"> & {
 	readonly subscribe: (
 		cursor: number,
-	) => Effect.Effect<ReadableStream<Uint8Array> | Stream.Stream<Uint8Array, unknown>, unknown>
+	) => Effect.Effect<ReadableStream<Uint8Array> | Stream.Stream<Uint8Array, E>, E>
 	readonly alarm: () => Effect.Effect<void>
 }
 
@@ -126,7 +127,7 @@ const callFailed = (method: string) => (cause: unknown) =>
 	new ChatSessionCallError({ method, message: `ChatSession.${method} failed`, cause })
 
 /** `subscribe`'s value as a byte stream, whichever form it crossed the RPC boundary in. */
-const subscription = (body: ReadableStream<Uint8Array> | Stream.Stream<Uint8Array, unknown>) =>
+const subscription = <E>(body: ReadableStream<Uint8Array> | Stream.Stream<Uint8Array, E>) =>
 	body instanceof ReadableStream
 		? body
 		: Stream.toReadableStream(Stream.mapError(body, callFailed("subscribe")))
@@ -135,7 +136,7 @@ const subscription = (body: ReadableStream<Uint8Array> | Stream.Stream<Uint8Arra
  * A client over one of alchemy's RPC stubs: a call that failed across the RPC boundary is kept as
  * a `ChatSessionCallError`.
  */
-export const chatSessionClient = (rpc: ChatSessionRpc): ChatSessionClient => ({
+export const chatSessionClient = <E>(rpc: ChatSessionRpc<E>): ChatSessionClient => ({
 	cursor: () => rpc.cursor().pipe(Effect.mapError(callFailed("cursor"))),
 	running: () => rpc.running().pipe(Effect.mapError(callFailed("running"))),
 	history: () => rpc.history().pipe(Effect.mapError(callFailed("history"))),

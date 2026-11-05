@@ -4,6 +4,7 @@ import type { SessionData } from "./derive"
 import type { Model } from "./model"
 import { disclosed, messageBody } from "./payload-view"
 import { Array as Arr } from "effect"
+import { codePointAt } from "@maple/strings"
 
 // The transcript's rows and the markdown bodies they show, shared by the view and the parse it asks for.
 
@@ -50,8 +51,7 @@ export const textHash = (text: string): string => {
 	const hash = Arr.reduce(
 		Array.from(text),
 		2_166_136_261,
-		// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.codePointAt allocates an Option per character
-		(acc, char) => Math.imul(acc ^ (char.codePointAt(0) ?? 0), 16_777_619) >>> 0,
+		(acc, char) => Math.imul(acc ^ codePointAt(char, 0), 16_777_619) >>> 0,
 	)
 	return `${hash.toString(36)}:${text.length}`
 }

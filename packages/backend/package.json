@@ -46,6 +46,7 @@
 		"@maple/query-model": "workspace:*",
 		"@maple/safe-fetch": "workspace:*",
 		"@maple/security-audit": "workspace:*",
+		"@maple/strings": "workspace:*",
 		"@maple/widgets": "workspace:*",
 		"alchemy": "catalog:alchemy",
 		"effect": "catalog:effect"

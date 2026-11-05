@@ -17,6 +17,7 @@
 	"dependencies": {
 		"@maple/domain": "workspace:*",
 		"@maple/query-engine": "workspace:*",
+		"@maple/strings": "workspace:*",
 		"@tanstack/charts": "catalog:charts",
 		"@tanstack/charts-scales": "catalog:charts",
 		"@xyflow/system": "0.0.84",

@@ -773,6 +773,7 @@ export const toolHandlersWithContent = <
 			name,
 			(params: never, context: never) =>
 				withToolCallContent(
+					// @effect-diagnostics-next-line anyUnknownInErrorContext:off -- each handler keeps its own types; the map is re-typed as `Handlers` below
 					Effect.suspend(() => handler(params, context)),
 					{
 						description: toolkit.tools[name]?.description,

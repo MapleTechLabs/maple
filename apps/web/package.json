@@ -30,6 +30,7 @@
 		"@maple/query-engine": "workspace:*",
 		"@maple/query-model": "workspace:*",
 		"@maple/status-page": "workspace:*",
+		"@maple/strings": "workspace:*",
 		"@maple/ui": "workspace:*",
 		"@maple/views": "workspace:*",
 		"@maple/web-data": "workspace:*",

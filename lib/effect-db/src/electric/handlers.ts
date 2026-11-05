@@ -79,7 +79,7 @@ export function convertInsertHandler<
 			? await runtime.runPromiseExit(effect)
 			: await Effect.runPromiseExit(
 					// The overload without a runtime only accepts handlers whose requirements are `never`.
-					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion
+					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- the overload without a runtime only accepts R = never
 					effect as Effect.Effect<{ txid: Txid | Array<Txid> }, InsertError>,
 				)
 
@@ -158,7 +158,7 @@ export function convertUpdateHandler<
 			? await runtime.runPromiseExit(effect)
 			: await Effect.runPromiseExit(
 					// The overload without a runtime only accepts handlers whose requirements are `never`.
-					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion
+					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- the overload without a runtime only accepts R = never
 					effect as Effect.Effect<{ txid: Txid | Array<Txid> }, UpdateError>,
 				)
 
@@ -237,7 +237,7 @@ export function convertDeleteHandler<
 			? await runtime.runPromiseExit(effect)
 			: await Effect.runPromiseExit(
 					// The overload without a runtime only accepts handlers whose requirements are `never`.
-					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion
+					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- the overload without a runtime only accepts R = never
 					effect as Effect.Effect<{ txid: Txid | Array<Txid> }, DeleteError>,
 				)
 

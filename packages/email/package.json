@@ -18,6 +18,7 @@
 		"typecheck": "tsrs --noEmit"
 	},
 	"devDependencies": {
+		"@maple/strings": "workspace:*",
 		"@types/bun": "^1.4.4",
 		"effect": "catalog:effect",
 		"foldkit": "0.170.0",

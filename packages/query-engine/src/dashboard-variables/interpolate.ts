@@ -20,6 +20,7 @@
 import { escapeClickHouseString } from "@maple-dev/effect-orm/sql"
 import { parseWhereClause, splitWhereClause } from "@maple/domain/where-clause"
 import { Schema, Array as Arr, Record as Rec, String as Str, Predicate } from "effect"
+import { replaceWith } from "@maple/strings"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -54,8 +55,7 @@ function sqlLiteral(variable: ResolvedVariable): string {
 }
 
 function replaceRefs(input: string, resolve: (name: string) => string | null): string {
-	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
-	return input.replace(VAR_REF, (match, braced: string | undefined, bare: string | undefined) => {
+	return replaceWith(input, VAR_REF, (match, braced: string | undefined, bare: string | undefined) => {
 		const replacement = resolve(braced ?? bare ?? "")
 		// Unknown (or deleted) variable: keep the reference literal so the query
 		// returns no rows instead of silently matching everything.

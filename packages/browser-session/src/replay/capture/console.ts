@@ -111,7 +111,6 @@ export function boundedStringify(value: unknown, budget: number): string {
 	const full = (): boolean => out.length > budget
 	const room = (): number => Math.max(0, budget - out.length) + 2
 	/** A quoted string cut to the room left: escaping can grow it sixfold. */
-	// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 	const quote = (text: string): string => truncateText(JSON.stringify(truncateText(text, room())), room())
 
 	const visit = (node: unknown, depth: number): void => {
@@ -142,7 +141,6 @@ export function boundedStringify(value: unknown, budget: number): string {
 			return
 		}
 		if (node instanceof Date) {
-			// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 			out += Number.isNaN(node.getTime()) ? "null" : JSON.stringify(node.toISOString())
 			return
 		}

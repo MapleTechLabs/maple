@@ -1,4 +1,5 @@
 import { Array as Arr } from "effect"
+import { codeUnitAt } from "@maple/strings"
 // copied: packages/ui/src/components/service-map/service-map-particles.tsx (the budget and
 // sampling half), which cannot be imported here because it is a React module.
 
@@ -80,8 +81,7 @@ export interface Track {
 
 const hash01 = (value: string): number => {
 	let h = 0
-	// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
-	for (let i = 0; i < value.length; i++) h = (h * 31 + value.charCodeAt(i)) | 0
+	for (let i = 0; i < value.length; i++) h = (h * 31 + codeUnitAt(value, i)) | 0
 	return (Math.abs(h) % 1000) / 1000
 }
 

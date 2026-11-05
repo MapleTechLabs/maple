@@ -32,6 +32,7 @@
 		"@maple/cache": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/query-model": "workspace:*",
+		"@maple/strings": "workspace:*",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {

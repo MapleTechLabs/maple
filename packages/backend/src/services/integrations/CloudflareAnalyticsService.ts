@@ -2028,44 +2028,39 @@ export class CloudflareAnalyticsService extends Context.Service<
 				row,
 				liveScripts: context.liveScripts,
 			})
-			const mapped =
-				item.scope === "zone"
-					? yield* Effect.gen(function* () {
-							const envelope = yield* decodeZoneAnalyticsEnvelope(result.data).pipe(
-								Effect.mapError(() => decodeError("zone")),
-							)
-							const nodeByTag = new Map<string, unknown>()
-							for (const node of envelope.viewer.zones ?? []) {
-								const tag = decodeZoneTagOption(node)
-								if (Option.isSome(tag)) nodeByTag.set(tag.value.zoneTag, node)
-							}
-							const targets = cleanParts.flatMap((part) =>
-								part.rows.flatMap((row) => {
-									const node = nodeByTag.get(row.zoneId)
-									return node === undefined ? [] : [{ part, row, node }]
-								}),
-							)
-							return yield* Effect.forEach(targets, ({ part, row, node }) =>
-								part.dataset
-									.mapNode(node, mapContext(row))
-									.pipe(Effect.map((rows) => ({ part, rows }))),
-							)
-						})
-					: yield* Effect.gen(function* () {
-							const envelope = yield* decodeAccountAnalyticsEnvelope(result.data).pipe(
-								Effect.mapError(() => decodeError("account")),
-							)
-							const node = envelope.viewer.accounts?.[0]
-							const targets = cleanParts.flatMap((part) => {
-								const row = part.rows[0]
-								return node === undefined || row === undefined ? [] : [{ part, row, node }]
-							})
-							return yield* Effect.forEach(targets, ({ part, row, node }) =>
-								part.dataset
-									.mapNode(node, mapContext(row))
-									.pipe(Effect.map((rows) => ({ part, rows }))),
-							)
-						})
+			const mappedAccount = Effect.gen(function* () {
+				const envelope = yield* decodeAccountAnalyticsEnvelope(result.data).pipe(
+					Effect.mapError(() => decodeError("account")),
+				)
+				const node = envelope.viewer.accounts?.[0]
+				const targets = cleanParts.flatMap((part) => {
+					const row = part.rows[0]
+					return node === undefined || row === undefined ? [] : [{ part, row, node }]
+				})
+				return yield* Effect.forEach(targets, ({ part, row, node }) =>
+					part.dataset.mapNode(node, mapContext(row)).pipe(Effect.map((rows) => ({ part, rows }))),
+				)
+			})
+			const mappedZone = Effect.gen(function* () {
+				const envelope = yield* decodeZoneAnalyticsEnvelope(result.data).pipe(
+					Effect.mapError(() => decodeError("zone")),
+				)
+				const nodeByTag = new Map<string, unknown>()
+				for (const node of envelope.viewer.zones ?? []) {
+					const tag = decodeZoneTagOption(node)
+					if (Option.isSome(tag)) nodeByTag.set(tag.value.zoneTag, node)
+				}
+				const targets = cleanParts.flatMap((part) =>
+					part.rows.flatMap((row) => {
+						const node = nodeByTag.get(row.zoneId)
+						return node === undefined ? [] : [{ part, row, node }]
+					}),
+				)
+				return yield* Effect.forEach(targets, ({ part, row, node }) =>
+					part.dataset.mapNode(node, mapContext(row)).pipe(Effect.map((rows) => ({ part, rows }))),
+				)
+			})
+			const mapped = item.scope === "zone" ? yield* mappedZone : yield* mappedAccount
 			const combined: CloudflareMetricRows = {
 				sumRows: mapped.flatMap(({ rows }) => rows.sumRows),
 				gaugeRows: mapped.flatMap(({ rows }) => rows.gaugeRows),

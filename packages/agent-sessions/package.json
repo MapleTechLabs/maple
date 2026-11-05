@@ -13,6 +13,7 @@
 	"dependencies": {
 		"@maple/domain": "workspace:*",
 		"@maple/query-engine": "workspace:*",
+		"@maple/strings": "workspace:*",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {

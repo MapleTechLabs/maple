@@ -43,6 +43,7 @@ import { eventNamesKeyOf, requestSuggestions } from "./product-step"
 import { dataSourceRawSql } from "@maple/widgets/dashboard"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { codeUnitAt } from "@maple/strings"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 /** `JSON.stringify` equality: an absent value reads as `null`, never as a thrown encode. */
@@ -184,8 +185,7 @@ const revisionOf = (text: string): string =>
 	Arr.reduce(
 		Array.from(text),
 		2166136261,
-		// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
-		(hash, char) => Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0,
+		(hash, char) => Math.imul(hash ^ codeUnitAt(char, 0), 16777619) >>> 0,
 	).toString(36)
 
 /**

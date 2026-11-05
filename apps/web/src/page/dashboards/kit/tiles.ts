@@ -278,10 +278,18 @@ const resolveFieldPath = (row: Row, path: string): unknown => {
 	)
 }
 
+/** A list column's text: array items joined with their own formatting, anything else as one cell. */
+export const listCellText = (value: unknown, unit?: string): string =>
+	Arr.isArray(value)
+		? Arr.join(
+				Arr.map(value, (item) => (item === null || item === undefined ? "" : cellText(item))),
+				", ",
+			)
+		: formatCell(value, unit)
+
 const listCell = <M>(h: HtmlBuilder<M>, column: Column, index: number, row: Row): Html => {
 	const value = resolveFieldPath(row, column.field)
-	// @effect-diagnostics-next-line preferEffectArray:off -- unknown elements; Arr.join takes strings
-	const display = Arr.isArray(value) ? value.join(", ") : formatCell(value, column.unit)
+	const display = listCellText(value, column.unit)
 	const className = cn("text-xs", columnVisibilityClass(index))
 	const content: Html | string =
 		column.field === "traceId" && typeof value === "string" && value !== ""

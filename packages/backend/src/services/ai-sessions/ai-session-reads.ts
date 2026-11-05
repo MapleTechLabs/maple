@@ -219,34 +219,35 @@ export const listAiSessions = Effect.fn("AiSessionReads.list")(function* (
 	// the window to show fifty sessions — the whole of a list read for an org
 	// with long agent runs, and past the profile's memory on a later page. A
 	// sort or filter on usage needs every session netted either way.
+	const rankedPage = Effect.gen(function* () {
+		const ranked = yield* warehouse.compiledQuery(
+			tenant,
+			CH.compile(Integrations.aiSessionRankQuery(opts), window),
+			{ profile: "list", context: "aiSessionsRank" },
+		)
+		if (!Arr.isReadonlyArrayNonEmpty(ranked)) return []
+		return yield* readPage(
+			Integrations.aiSessionPageQuery({
+				...opts,
+				sessionIds: Arr.map(ranked, (row) => row.sessionId),
+			}),
+			{
+				orgId: tenant.orgId,
+				// Fixed-width literals, so they order as the instants do.
+				fanOutStart: Arr.min(
+					Arr.map(ranked, (row) => row.agentStart),
+					Order.String,
+				),
+				fanOutEnd: Arr.max(
+					Arr.map(ranked, (row) => row.agentEnd),
+					Order.String,
+				),
+				endTime: payload.endTime,
+			},
+		)
+	})
 	const page = Integrations.aiSessionPageRanksOnIndex(opts)
-		? yield* Effect.gen(function* () {
-				const ranked = yield* warehouse.compiledQuery(
-					tenant,
-					CH.compile(Integrations.aiSessionRankQuery(opts), window),
-					{ profile: "list", context: "aiSessionsRank" },
-				)
-				if (!Arr.isReadonlyArrayNonEmpty(ranked)) return []
-				return yield* readPage(
-					Integrations.aiSessionPageQuery({
-						...opts,
-						sessionIds: Arr.map(ranked, (row) => row.sessionId),
-					}),
-					{
-						orgId: tenant.orgId,
-						// Fixed-width literals, so they order as the instants do.
-						fanOutStart: Arr.min(
-							Arr.map(ranked, (row) => row.agentStart),
-							Order.String,
-						),
-						fanOutEnd: Arr.max(
-							Arr.map(ranked, (row) => row.agentEnd),
-							Order.String,
-						),
-						endTime: payload.endTime,
-					},
-				)
-			})
+		? yield* rankedPage
 		: yield* readPage(Integrations.aiSessionPageQuery(opts), window)
 	// Rows returned, not rows asked for — annotated before the empty answer
 	// leaves, so a window that ranks nothing is visible as such.

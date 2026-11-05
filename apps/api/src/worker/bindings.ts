@@ -10,7 +10,7 @@ import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPage
 import { StatusSnapshotsBucket, StatusSnapshotsKv } from "@maple/infra/cloudflare"
 import { MapleDb } from "@maple/infra/cloudflare"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { RuntimeContext } from "alchemy/RuntimeContext"
+import { dischargeRuntimeContext } from "@maple/backend/platform/alchemy-runtime"
 import { Effect, Layer, Option } from "effect"
 import {
 	ApiV2RateLimit,
@@ -109,11 +109,6 @@ export const ApiBindingsLive = Layer.mergeAll(
 	Cloudflare.Email.SendBinding,
 )
 
-/** Discharge alchemy's phantom color, the way alchemy's own runtime helpers do. */
-const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effect<A, E> =>
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
-	Effect.provide(effect, RuntimeContext.phantom)
-
 /**
  * A producer over the raw queue handle rather than alchemy's `send`: the
  * client's option type omits `delaySeconds`, which the VCS producer needs to
@@ -121,7 +116,7 @@ const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effe
  */
 const producer = (client: Cloudflare.Queues.WriteQueueClient): QueueProducer => ({
 	sendBatch: (messages) =>
-		runtime(client.raw).pipe(
+		dischargeRuntimeContext(client.raw).pipe(
 			Effect.flatMap((queue) =>
 				Effect.tryPromise({
 					try: () => queue.sendBatch(messages),
@@ -137,7 +132,7 @@ const producer = (client: Cloudflare.Queues.WriteQueueClient): QueueProducer => 
 
 const limiter = (client: Cloudflare.Workers.RateLimitClient): RateLimiter => ({
 	limit: (key) =>
-		runtime(client.limit({ key })).pipe(
+		dischargeRuntimeContext(client.limit({ key })).pipe(
 			Effect.mapError(
 				(error) =>
 					new RateLimitBindingError({
@@ -150,7 +145,7 @@ const limiter = (client: Cloudflare.Workers.RateLimitClient): RateLimiter => ({
 
 const objectStore = (client: Cloudflare.R2.ReadBucketClient): ObjectStore => ({
 	getBytes: (key) =>
-		runtime(client.get(key)).pipe(
+		dischargeRuntimeContext(client.get(key)).pipe(
 			Effect.flatMap((object) =>
 				object === null ? Effect.succeed(Option.none<Uint8Array>()) : Effect.asSome(object.bytes()),
 			),
@@ -201,7 +196,7 @@ export const apiPorts = (
 		Layer.succeed(McpOAuthRateLimit, limiter(clients.mcpOAuthRateLimit)),
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),
 		Layer.unwrap(
-			runtime(Effect.all([clients.statusKv.raw, clients.statusBucket.raw])).pipe(
+			dischargeRuntimeContext(Effect.all([clients.statusKv.raw, clients.statusBucket.raw])).pipe(
 				Effect.map(([kv, bucket]) => StatusPageStore.fromBindings(kv, bucket)),
 			),
 		),

@@ -28,7 +28,6 @@ for (const model of data) {
 		typeof model.canonical_slug !== "string" ||
 		typeof model.name !== "string"
 	) {
-		// oxlint-disable-next-line effecttsgo/global-json -- lib/ai-model-catalog does not depend on effect
 		throw new Error(`${SOURCE} lists a model without id/canonical_slug/name: ${JSON.stringify(model)}`)
 	}
 }
@@ -45,7 +44,6 @@ for (const model of models) {
 	vendors.set(slug, model.name.slice(0, separator))
 }
 
-// oxlint-disable-next-line effecttsgo/global-json -- lib/ai-model-catalog does not depend on effect
 const quote = (value: string) => JSON.stringify(value)
 
 const lines = [

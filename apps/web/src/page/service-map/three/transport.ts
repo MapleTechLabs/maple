@@ -15,6 +15,7 @@ import {
 } from "./kit"
 import { factoryMotion } from "./motion"
 import { Array as Arr } from "effect"
+import { codeUnitAt } from "@maple/strings"
 
 interface TransportProps {
 	readonly link: FactoryLink
@@ -382,8 +383,7 @@ function beltWidth(link: FactoryLink) {
 /** A stable 0..996 number per link, for rare seeded dressing. */
 export function linkSeed(id: string) {
 	let seed = 11
-	// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
-	for (let i = 0; i < id.length; i++) seed = (seed * 31 + id.charCodeAt(i)) % 997
+	for (let i = 0; i < id.length; i++) seed = (seed * 31 + codeUnitAt(id, i)) % 997
 	return seed
 }
 

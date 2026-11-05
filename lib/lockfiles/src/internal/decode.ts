@@ -2,6 +2,7 @@ import { Effect, Option, Schema, Array as Arr } from "effect"
 import { parse as parseToml } from "smol-toml"
 import { parse as parseYaml, parseAllDocuments, type ParseOptions } from "yaml"
 import { LockfileParseError } from "../errors.ts"
+import { replaceWith } from "@maple/strings"
 
 const parseError = (path: string, what: string) => (cause: unknown) =>
 	new LockfileParseError({
@@ -13,8 +14,11 @@ const parseError = (path: string, what: string) => (cause: unknown) =>
 const STRING_OR_TRAILING_COMMA = /"(?:[^"\\]|\\.)*"|,(\s*[\]}])/g
 
 export const stripTrailingCommas = (text: string): string =>
-	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
-	text.replace(STRING_OR_TRAILING_COMMA, (match: string, closer: string | undefined) => closer ?? match)
+	replaceWith(
+		text,
+		STRING_OR_TRAILING_COMMA,
+		(match: string, closer: string | undefined) => closer ?? match,
+	)
 
 export const decodeJson = <T>(
 	schema: Schema.Decoder<T>,
