@@ -15,7 +15,7 @@ describe("affected users coverage", () => {
 describe("affected user links", () => {
 	it("open the user page over the issue page's window", () => {
 		expect(affectedUserHref("user/42", { timePreset: "24h", tab: "activity" })).toBe(
-			"/users/user%2F42?timePreset=24h",
+			"/users/user/42?timePreset=24h",
 		)
 	})
 })
