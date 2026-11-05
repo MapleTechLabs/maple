@@ -32,7 +32,7 @@ const observedTraceIdsBySession = new Map<string, Set<string>>()
  * session's traces", the UI paginates them anyway, and dropping the tail of a
  * long session is a smaller loss than dropping the row.
  */
-const MAX_TRACE_IDS_PER_SESSION = 200
+export const MAX_TRACE_IDS_PER_SESSION = 200
 
 /** Record a trace id seen during the session. Idempotent per id. */
 export function recordTraceId(traceId: string, sessionId = readSessionSink()?.sessionId): void {
