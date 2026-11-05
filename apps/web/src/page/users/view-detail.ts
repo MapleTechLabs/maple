@@ -1,4 +1,11 @@
-import { EMPTY_VALUE, formatDuration, formatLatency, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import {
+	countLabel,
+	EMPTY_VALUE,
+	formatDuration,
+	formatLatency,
+	formatNumber,
+	formatPercent,
+} from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -216,7 +223,7 @@ const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 			subline:
 				profile.issues === null
 					? "in recorded sessions"
-					: `across ${formatNumber(profile.issues)} issues`,
+					: `across ${countLabel(profile.issues, "issue")}`,
 			compact: true,
 		}),
 		statRailItem(h, {
@@ -311,17 +318,36 @@ export const userRail = <M>(
 				Arr.isReadonlyArrayEmpty(profile.services)
 					? [typography(h, { size: "xs", tone: "subtle" }, ["no service named in the window"])]
 					: Arr.map(profile.services, (service) =>
-							hstack(h, { gap: "2", className: "min-h-7" }, [
+							hstack(h, { gap: "2", className: "min-h-7 min-w-0" }, [
 								serviceDot(h, { serviceName: service.service }),
-								typography(h, { size: "xs", mono: true, className: "flex-1" }, [
-									service.service,
-								]),
-								typography(h, { size: "2xs", mono: true, tone: "subtle", as: "span" }, [
-									service.namespace,
-								]),
-								typography(h, { size: "2xs", mono: true, tone: "muted", numeric: true }, [
-									formatNumber(service.signals),
-								]),
+								typography(
+									h,
+									{ size: "xs", mono: true, truncate: true, className: "min-w-0 flex-1" },
+									[service.service],
+								),
+								typography(
+									h,
+									{
+										size: "2xs",
+										mono: true,
+										tone: "subtle",
+										as: "span",
+										truncate: true,
+										className: "min-w-0 max-w-24",
+									},
+									[service.namespace],
+								),
+								typography(
+									h,
+									{
+										size: "2xs",
+										mono: true,
+										tone: "muted",
+										numeric: true,
+										className: "shrink-0",
+									},
+									[formatNumber(service.signals)],
+								),
 							]),
 						),
 			),
@@ -332,7 +358,7 @@ export const userRail = <M>(
 					? [typography(h, { size: "xs", tone: "subtle" }, ["no recorded sessions"])]
 					: Arr.map(profile.devices, (device) =>
 							detailRailRow(h, { label: device.browser, hint: device.os }, [
-								railValue(h, `${device.sessions} sessions`, false),
+								railValue(h, countLabel(device.sessions, "session"), false),
 							]),
 						),
 			),
