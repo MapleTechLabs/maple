@@ -88,7 +88,7 @@ const findingsCell = (
 	counts: Readonly<{ buckets: BucketCounts; unverified: number }> | null,
 	run: SecurityAuditRun,
 ): Html => {
-	if (counts === null) return muted(h, "", "Findings are visible to org admins only")
+	if (counts === null) return muted(h, "", "Findings are visible to org admins and engineers only")
 	const { buckets, unverified } = counts
 	const shown = Arr.filter(SCORED_BUCKETS, (bucket) => buckets[bucket] > 0)
 	if (shown.length === 0) return muted(h, isLive(run) ? "" : "None")

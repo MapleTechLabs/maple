@@ -175,7 +175,11 @@ const kpis = (h: H, model: Model): Html => {
 	const toValidate = openNeedsValidation(findings).length
 	// Gated reads as words; still loading is the same still block as every other placeholder.
 	const unknown: Html | string | null =
-		state._tag === "Ready" ? null : state._tag === "Gated" ? "Admins only" : placeholder(h, "h-7 w-10")
+		state._tag === "Ready"
+			? null
+			: state._tag === "Gated"
+				? "Admins and engineers"
+				: placeholder(h, "h-7 w-10")
 	const running = runningRuns(model).length
 	const coverage = coverageAcross(model)
 	// Until its reads land, an empty sum is unknown, not "not mapped".
@@ -375,7 +379,9 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 				? typography(h, { size: "xs", tone: "muted" }, ["No completed run"])
 				: leadCounts(h, findings)
 			: leadCounts(h, findings)
-		: typography(h, { size: "xs", tone: "muted" }, [findings === "forbidden" ? "Admins only" : ""])
+		: typography(h, { size: "xs", tone: "muted" }, [
+				findings === "forbidden" ? "Admins and engineers" : "",
+			])
 	return tableRow(
 		h,
 		[
