@@ -22,7 +22,12 @@ import {
 	UserActivityHourly,
 	orgIdParam,
 } from "../tables"
-import { method as mcpMethod, userId as mcpUserId } from "./mcp"
+import {
+	method as mcpMethod,
+	userId as mcpUserId,
+	userIdIn as mcpUserIdIn,
+	userIdIs as mcpUserIdIs,
+} from "./mcp"
 import { utcHourFloor } from "./query-helpers"
 import { serviceOverviewWindows } from "./services"
 import { Array as Arr } from "effect"
@@ -268,7 +273,9 @@ export function usersMcpNamesQuery(
 			$.SpanKind.eq("Server"),
 			mcpServices.length > 0 ? CH.inList($.ServiceName, mcpServices) : CH.rawCond("1 = 0"),
 			mcpMethod($).neq(""),
-			userIds.length > 0 ? CH.inList(mcpUserId($), userIds) : CH.rawCond("1 = 0"),
+			userIds.length > 0 ? mcpUserIdIn($, userIds) : CH.rawCond("1 = 0"),
+			// A span without either key adds no name, and the `mapKeys` bloom index skips its granule.
+			CH.mapContains($.SpanAttributes, "user.name").or(CH.mapContains($.SpanAttributes, "user.email")),
 			namespaces.length > 0
 				? CH.inList($.ResourceAttributes.get("service.namespace"), namespaces)
 				: undefined,
@@ -301,6 +308,9 @@ export function usersMcpNameSearchQuery(
 				mcpServices.length > 0 ? CH.inList($.ServiceName, mcpServices) : CH.rawCond("1 = 0"),
 				mcpMethod($).neq(""),
 				mcpUserId($).neq(""),
+				CH.mapContains($.SpanAttributes, "user.name").or(
+					CH.mapContains($.SpanAttributes, "user.email"),
+				),
 				CH.or(
 					containsText($.SpanAttributes.get("user.name"), search),
 					containsText($.SpanAttributes.get("user.email"), search),
@@ -674,7 +684,7 @@ const userMcpSpans = ($: ColumnAccessor<typeof Traces.columns>, scope: UsersScop
 	$.SpanKind.eq("Server"),
 	CH.inList($.ServiceName, scope.mcpServices),
 	mcpMethod($).neq(""),
-	mcpUserId($).eq(userIdParam),
+	mcpUserIdIs($, userIdParam),
 	scope.namespaces.length === 0
 		? undefined
 		: CH.inList($.ResourceAttributes.get("service.namespace"), scope.namespaces),
