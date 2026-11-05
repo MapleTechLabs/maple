@@ -564,6 +564,7 @@ export function mcpServersUserActivityQuery(
 	services: ReadonlyArray<string>,
 	filter: McpSessionFilter = {},
 	limitPerService = 5_000,
+	limitTotal = 20_000,
 ) {
 	const ranked = from(Traces)
 		.select(($) => ({
@@ -581,24 +582,28 @@ export function mcpServersUserActivityQuery(
 			...selected($, filter),
 		])
 		.groupBy("service", "user", "client", "minute")
-	return fromQuery(ranked, "ranked")
-		.select(($) => ({
-			service: $.service,
-			user: $.user,
-			client: $.client,
-			minute: $.minute,
-			kind: $.kind,
-			userName: $.userName,
-			requests: $.requests,
-			calls: $.calls,
-			errors: $.errors,
-			tools: $.tools,
-			firstSeen: $.firstSeen,
-			lastSeen: $.lastSeen,
-		}))
-		.where(($) => [$.serviceRank.lte(limitPerService)])
-		.orderBy(["minute", "desc"])
-		.format("JSON")
+	return (
+		fromQuery(ranked, "ranked")
+			.select(($) => ({
+				service: $.service,
+				user: $.user,
+				client: $.client,
+				minute: $.minute,
+				kind: $.kind,
+				userName: $.userName,
+				requests: $.requests,
+				calls: $.calls,
+				errors: $.errors,
+				tools: $.tools,
+				firstSeen: $.firstSeen,
+				lastSeen: $.lastSeen,
+			}))
+			.where(($) => [$.serviceRank.lte(limitPerService)])
+			.orderBy(["minute", "desc"])
+			// Each server keeps its own budget; the read as a whole stays bounded too.
+			.limit(limitTotal)
+			.format("JSON")
+	)
 }
 
 /** Sessions and users active per bucket; a user's stateless requests count once per client. */

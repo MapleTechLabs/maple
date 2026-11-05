@@ -3178,7 +3178,7 @@ SELECT
         GROUP BY service
         FORMAT JSON
 
--- builder:mcp:mcpServersUserActivityQuery:userPage  [366340e8]
+-- builder:mcp:mcpServersUserActivityQuery:userPage  [5e45bd44]
 SELECT
           ranked.service AS service,
           ranked.user AS user,
@@ -3219,6 +3219,7 @@ SELECT
         GROUP BY service, user, client, minute) AS ranked
         WHERE ranked.serviceRank <= 5000
         ORDER BY minute DESC
+        LIMIT 20000
         FORMAT JSON
 
 -- builder:mcp:mcpServicesQuery:default  [083d9dc7]

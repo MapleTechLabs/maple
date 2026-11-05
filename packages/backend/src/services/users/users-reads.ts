@@ -349,6 +349,9 @@ const WARN_SEVERITY = 13
 const LOG_TITLE_LENGTH = 200
 
 /** The MCP servers in scope: every one when unscoped, else those that emitted under the namespace. */
+/** MCP servers one user page reads sessions from at most. */
+const MCP_SESSION_SERVERS_LIMIT = 20
+
 export const mcpServersInScope = (scope: CH.UsersScope): ReadonlyArray<string> =>
 	scope.namespaces.length === 0
 		? scope.mcpServices
@@ -998,7 +1001,8 @@ const activityIn = Effect.fn("UsersReads.activity")(function* (
 	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 	const params = detailParams(tenant, payload)
 	const readsServices = CH.readsServiceSources(scope)
-	const servers = mcpServersInScope(scope)
+	// A user page stitches sessions from at most this many servers, so its read stays bounded.
+	const servers = Arr.take(mcpServersInScope(scope), MCP_SESSION_SERVERS_LIMIT)
 	const window = { startTime: payload.startTime, endTime: payload.endTime }
 	const [replays, eventRows, mcpSessions, [notableTraces, notableLogs]] = yield* Effect.all(
 		[
