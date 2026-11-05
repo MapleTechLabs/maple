@@ -105,7 +105,7 @@ export const readCode = (tenant: TenantContext) =>
 		if (!Policy.can(tenant.roles, "security:manage")) {
 			return {
 				_tag: "forbidden",
-				message: "Only org admins and engineers can read code audit findings.",
+				message: Policy.denialFor("security:manage").message,
 			} satisfies CodeRead
 		}
 		const store = (yield* SecurityAuditStore).forOrg(tenant.orgId)
