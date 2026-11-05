@@ -1,4 +1,4 @@
-import { formatDuration, formatLatency, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { countLabel, formatDuration, formatLatency, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -193,7 +193,7 @@ const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 			eyebrow: "Errors",
 			value: formatNumber(profile.errors),
 			tone: profile.errors > 0 ? "crit" : "neutral",
-			subline: `across ${formatNumber(profile.issues)} issues`,
+			subline: `across ${countLabel(profile.issues, "issue")}`,
 			compact: true,
 		}),
 		statRailItem(h, {
@@ -274,15 +274,30 @@ export const userRail = <M>(
 				h,
 				"Services touched",
 				Arr.map(profile.services, (service) =>
-					hstack(h, { gap: "2", className: "min-h-7" }, [
+					hstack(h, { gap: "2", className: "min-h-7 min-w-0" }, [
 						serviceDot(h, { serviceName: service.service }),
-						typography(h, { size: "xs", mono: true, className: "flex-1" }, [service.service]),
-						typography(h, { size: "2xs", mono: true, tone: "subtle", as: "span" }, [
-							service.namespace,
-						]),
-						typography(h, { size: "2xs", mono: true, tone: "muted", numeric: true }, [
-							`${formatNumber(service.spans)} spans`,
-						]),
+						typography(
+							h,
+							{ size: "xs", mono: true, truncate: true, className: "min-w-0 flex-1" },
+							[service.service],
+						),
+						typography(
+							h,
+							{
+								size: "2xs",
+								mono: true,
+								tone: "subtle",
+								as: "span",
+								truncate: true,
+								className: "min-w-0 max-w-24",
+							},
+							[service.namespace],
+						),
+						typography(
+							h,
+							{ size: "2xs", mono: true, tone: "muted", numeric: true, className: "shrink-0" },
+							[countLabel(service.spans, "span")],
+						),
 					]),
 				),
 			),
@@ -291,7 +306,7 @@ export const userRail = <M>(
 				"Devices",
 				Arr.map(profile.devices, (device) =>
 					detailRailRow(h, { label: device.browser, hint: device.os }, [
-						railValue(h, `${device.sessions} sessions`, false),
+						railValue(h, countLabel(device.sessions, "session"), false),
 					]),
 				),
 			),
