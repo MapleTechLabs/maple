@@ -207,7 +207,7 @@ export const reopen = (ledger: Ledger, ids: ReadonlySet<string>, reason: string)
 /** Units hunters may take this wave, in the skill's priority order. */
 export const huntable = (ledger: Ledger): ReadonlyArray<LedgerUnit> =>
 	Arr.filter(ledger, (unit) => unit.status === "planned" && unit.carried_fingerprint === undefined).sort(
-		(a, b) => rank(a) - rank(b) || (a.coverage_id < b.coverage_id ? -1 : 1),
+		(a, b) => (rank(a) !== rank(b) ? rank(a) - rank(b) : a.coverage_id < b.coverage_id ? -1 : 1),
 	)
 
 const PRIOR_GAP: ReadonlySet<PriorStatus> = new Set([

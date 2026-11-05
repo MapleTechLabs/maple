@@ -109,7 +109,7 @@ function createBackoffOnError(
 	let resetTimeout: ReturnType<typeof setTimeout> | null = null
 
 	const scheduleReset = () => {
-		if (resetTimeout) {
+		if (resetTimeout !== null) {
 			clearTimeout(resetTimeout)
 		}
 		resetTimeout = setTimeout(() => {

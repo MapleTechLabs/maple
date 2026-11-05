@@ -84,9 +84,10 @@ const ipv6Groups = (inner: string): ReadonlyArray<number> | null => {
 	const dotted = /^(.*:)(\d{1,3}(?:\.\d{1,3}){3})$/.exec(inner)
 	const quad = dotted ? Arr.map(Str.split(".")(dotted[2]), Number) : null
 	if (quad && Arr.some(quad, (octet) => octet > 255)) return null
-	const hexTail = quad
-		? `${((quad[0] << 8) | quad[1]).toString(16)}:${((quad[2] << 8) | quad[3]).toString(16)}`
-		: null
+	const hexTail =
+		quad !== null
+			? `${((quad[0] << 8) | quad[1]).toString(16)}:${((quad[2] << 8) | quad[3]).toString(16)}`
+			: null
 	const head = dotted && hexTail ? `${dotted[1]}${hexTail}` : inner
 	const halves = Str.split("::")(head)
 	if (halves.length > 2) return null

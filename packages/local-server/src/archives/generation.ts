@@ -722,7 +722,7 @@ const parseCount = (text: string): number => {
 		(line) => decodeJsonRecord(line),
 	)
 	const row = rows[0]
-	if (!row) return 0
+	if (row === undefined) return 0
 	const value = row["count()"] ?? row.count
 	const count = typeof value === "number" ? value : Number(value ?? 0)
 	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid count result: ${String(value)}`)

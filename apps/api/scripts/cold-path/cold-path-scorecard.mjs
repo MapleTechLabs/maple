@@ -64,7 +64,7 @@ const result = {
 	evalMs: { startupGraph: startupMs, plusHttpGraph: httpGraphMs },
 	heapMB: { startupGraph: startupHeap, fullGraph: fullHeap },
 	registry: registry
-		? { file: registry, sizeMB: mb(size(registry)), inStartupGraph: !!startupHasRegistry }
+		? { file: registry, sizeMB: mb(size(registry)), inStartupGraph: startupHasRegistry === true }
 		: null,
 	verdict: {
 		startupEvalBudget: `${startupMs}ms / ${budgets.startupEvalMs}ms desktop proxy (${startupMs <= budgets.startupEvalMs ? "OK" : "OVER"})`,

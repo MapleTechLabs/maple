@@ -194,12 +194,12 @@ const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3, unknown: 4 } sa
 
 /** Worst first, then newest. */
 export const sortAdvisories = (advisories: ReadonlyArray<RuntimeAdvisory>): ReadonlyArray<RuntimeAdvisory> =>
-	[...advisories].sort(
-		(a, b) =>
-			SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
-			Str.localeCompare(a.published ?? "")(b.published ?? "") ||
-			Str.localeCompare(b.id)(a.id),
-	)
+	[...advisories].sort((a, b) => {
+		const bySeverity = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]
+		if (bySeverity !== 0) return bySeverity
+		const byPublished = Str.localeCompare(a.published ?? "")(b.published ?? "")
+		return byPublished !== 0 ? byPublished : Str.localeCompare(b.id)(a.id)
+	})
 
 export const isUrgentSeverity = (severity: AdvisorySeverity): boolean =>
 	severity === "critical" || severity === "high"

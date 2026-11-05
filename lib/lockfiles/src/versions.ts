@@ -45,11 +45,14 @@ const comparePrerelease = (a: ReadonlyArray<string>, b: ReadonlyArray<string>): 
 	)
 }
 
-const compareParsed = (a: SemVer, b: SemVer): number =>
-	compareNumeric(a.major, b.major) ||
-	compareNumeric(a.minor, b.minor) ||
-	compareNumeric(a.patch, b.patch) ||
-	comparePrerelease(a.prerelease, b.prerelease)
+const compareParsed = (a: SemVer, b: SemVer): number => {
+	const byMajor = compareNumeric(a.major, b.major)
+	if (byMajor !== 0) return byMajor
+	const byMinor = compareNumeric(a.minor, b.minor)
+	if (byMinor !== 0) return byMinor
+	const byPatch = compareNumeric(a.patch, b.patch)
+	return byPatch !== 0 ? byPatch : comparePrerelease(a.prerelease, b.prerelease)
+}
 
 const toSemVer = (m: RegExpExecArray): SemVer => ({
 	major: m[1] ?? "0",

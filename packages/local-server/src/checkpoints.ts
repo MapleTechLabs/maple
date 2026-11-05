@@ -649,7 +649,7 @@ const readJsonRows = (text: string): ReadonlyArray<Record<string, unknown>> =>
 
 const countFrom = (rows: ReadonlyArray<Record<string, unknown>>): number => {
 	const row = rows[0]
-	if (!row) throw new Error("count query returned no rows")
+	if (row === undefined) throw new Error("count query returned no rows")
 	const value = row["count()"] ?? row.count
 	const count = typeof value === "number" ? value : Number(value ?? 0)
 	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid count result: ${String(value)}`)

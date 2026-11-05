@@ -393,9 +393,10 @@ const verify = async (connectionUrl: string, backup: Backup): Promise<Verificati
 			checks.push({
 				name: "sample record readable with its history",
 				pass: sample !== null,
-				detail: sample
-					? `most recently updated dashboard read back with ${sample.version_count} versions`
-					: "no dashboards found",
+				detail:
+					sample !== null
+						? `most recently updated dashboard read back with ${sample.version_count} versions`
+						: "no dashboards found",
 			})
 		}
 
@@ -494,7 +495,7 @@ const main = async (): Promise<void> => {
 
 	const source = describeBranch(database, sourceBranch)
 	const backups = listBackups(database, sourceBranch)
-	const latest = backups.find((b) => b.state === "success" && b.completed_at)
+	const latest = backups.find((b) => b.state === "success" && b.completed_at !== null)
 	if (!latest) return fail(`No successful backup of ${database}/${sourceBranch} to restore`)
 	console.log(
 		`✓ Newest successful backup: ${latest.id} (${latest.name}, completed ${latest.completed_at})\n`,

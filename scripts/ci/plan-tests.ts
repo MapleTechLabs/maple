@@ -162,7 +162,7 @@ const pack = (
 	args: ReadonlyArray<string>,
 ): Array<Lane> => {
 	const groups: Array<Lane> = []
-	const sorted = [...suites].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+	const sorted = [...suites].sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : a[0] < b[0] ? -1 : 1))
 	for (const [name, weight, vitest] of sorted) {
 		let group = groups.find((g) => g["estimated-seconds"] + weight <= TARGET_SECONDS)
 		if (group === undefined) {
