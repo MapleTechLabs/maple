@@ -80,13 +80,13 @@ export function anomalyFilterChips(filters: AnomalyFilters): AnomalyFilterChipDe
 	const chips: AnomalyFilterChipDescriptor[] = []
 	for (const facet of FACETS) {
 		const excluded = filters[facet.exclude]
-		if (excluded?.length) {
+		if (excluded !== undefined && excluded.length > 0) {
 			chips.push({ param: facet.exclude, label: facet.label, values: excluded, negated: true })
 		}
 	}
 	for (const facet of FACETS) {
 		const included = filters[facet.include]
-		if (included?.length) {
+		if (included !== undefined && included.length > 0) {
 			chips.push({ param: facet.include, label: facet.label, values: included, negated: false })
 		}
 	}

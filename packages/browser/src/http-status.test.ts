@@ -27,7 +27,7 @@ const finish = (
 	build(span)
 	span.end()
 	const [result] = exported.getFinishedSpans()
-	if (!result) throw new Error("nothing exported")
+	if (result === undefined) throw new Error("nothing exported")
 	return result
 }
 

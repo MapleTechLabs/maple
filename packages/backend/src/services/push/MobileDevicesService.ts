@@ -170,7 +170,7 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 						: undefined),
 				}
 
-				if (existing) {
+				if (existing != null) {
 					const rows = yield* dbExecute((db) =>
 						db.run(
 							PG.update(MobileDevices)
@@ -222,7 +222,7 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 							.returning(),
 					),
 				)
-				return toDevice(rows[0]!)
+				return toDevice(rows[0])
 			})
 
 			const unregister = Effect.fn("MobileDevicesService.unregister")(function* (

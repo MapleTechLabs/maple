@@ -81,10 +81,10 @@ describe("cutMarkdown", () => {
 			80,
 		],
 	])("keeps every chunk inside the budget: %s", (_name, markdown, maxChars) => {
-		const chunks = cutMarkdown(markdown as string, maxChars as number)
+		const chunks = cutMarkdown(markdown, maxChars)
 		expect(chunks.length).toBeGreaterThan(0)
 		for (const chunk of chunks) {
-			expect(chunk.length).toBeLessThanOrEqual(maxChars as number)
+			expect(chunk.length).toBeLessThanOrEqual(maxChars)
 			expect(countFences(chunk) % 2).toBe(0)
 		}
 	})

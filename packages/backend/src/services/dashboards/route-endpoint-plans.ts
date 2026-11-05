@@ -129,7 +129,7 @@ type RouteEndpointRowMapper<Payload, Row> = (
  */
 const readModelPlan = <Payload, Row>(
 	families: ReadonlyArray<TelemetryReadFamily>,
-	payloadSchema: Schema.Codec<Payload, unknown, never, never>,
+	payloadSchema: Schema.Codec<Payload, unknown>,
 	definition: QueryDefinition<Payload, Row>,
 	toResponse: RouteEndpointRowMapper<Payload, Row>,
 ): RouteEndpointPlan => {
@@ -259,14 +259,14 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 							Arr.map(rows, (row) => ({
 								group: row.group,
 								step: row.step,
-								count: row.count || 0,
+								count: row.count,
 							})),
 						),
 					}
 				}
 				yield* validateFunnelDefinition(productEventsFunnelOpts(payload))
 				const rows = yield* runQuery(Queries.productEventsFunnel, context.tenant, payload)
-				const counts = Arr.map(rows, (row) => ({ step: row.step, count: row.count || 0 }))
+				const counts = Arr.map(rows, (row) => ({ step: row.step, count: row.count }))
 				// The drop-off view's extras. A one-step funnel has no "between"
 				// and no leavers, so it draws with counts alone.
 				if (details !== true || payload.steps.length < 2) {
@@ -288,13 +288,13 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 						funnelStepDetails(
 							Arr.map(timing, (row) => ({
 								step: row.step,
-								p50Ms: row.p50Ms || 0,
-								p90Ms: row.p90Ms || 0,
+								p50Ms: row.p50Ms,
+								p90Ms: row.p90Ms,
 							})),
 							Arr.map(leavers, (row) => ({
 								step: row.step,
 								next: row.next,
-								count: row.count || 0,
+								count: row.count,
 							})),
 						),
 					),
@@ -334,10 +334,10 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 				})
 				const rows = yield* runQuery(Queries.productEventsPaths, context.tenant, payload)
 				const data: ReadonlyArray<PathsWidgetRow> = Arr.map(rows, (row) => ({
-					hop: row.hop || 0,
+					hop: row.hop,
 					fromNode: row.fromNode,
 					toNode: row.toNode,
-					count: row.count || 0,
+					count: row.count,
 				}))
 				return { data }
 			}),

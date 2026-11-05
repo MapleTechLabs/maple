@@ -366,7 +366,8 @@ const normalizeLogRecord = (
 	if (occurredNanos === null) return null
 	const observedNanos = epochNanos(log.observedTimeUnixNano)
 	const occurredAt = nanosToTimestamp(occurredNanos)
-	const sourceObservedAt = observedNanos ? nanosToTimestamp(observedNanos) : occurredAt
+	const sourceObservedAt =
+		observedNanos !== null && observedNanos > 0n ? nanosToTimestamp(observedNanos) : occurredAt
 	const bodyScalar = anyValueScalar(log.body, "log.body")
 	const traceId = traceIdHex(log.traceId, "logRecord.traceId")
 	const spanId = spanIdHex(log.spanId, "logRecord.spanId")

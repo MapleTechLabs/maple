@@ -342,7 +342,7 @@ const loadConfig = (
 			),
 		)
 		const row = rows[0]
-		if (!row) {
+		if (row === undefined) {
 			return yield* new SchemaApplyConfigError({
 				message: `No ClickHouse settings configured for org ${orgId}`,
 			})

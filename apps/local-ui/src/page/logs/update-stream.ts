@@ -60,8 +60,8 @@ const columnOptionsOf = (logs: ReadonlyArray<LocalLog>): ReadonlyArray<ColumnOpt
 			counts.set(key, (counts.get(key) ?? 0) + 1),
 		),
 	)
-	return Arr.map([...counts], ([name, count]) => ({ name, count })).sort(
-		(a, b) => b.count - a.count || Str.localeCompare(b.name)(a.name),
+	return Arr.map([...counts], ([name, count]) => ({ name, count })).sort((a, b) =>
+		b.count !== a.count ? b.count - a.count : Str.localeCompare(b.name)(a.name),
 	)
 }
 

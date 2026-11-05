@@ -299,7 +299,9 @@ export function failureTimeline(rows: ReadonlyArray<Row>): ReadonlyArray<Row> {
 			(row) => ({ ...row, depth: 0 }),
 		)
 			// On a tie a run's stop follows the steps that stopped it.
-			.toSorted((a, b) => at(a) - at(b) || Number(a.kind === "turn") - Number(b.kind === "turn"))
+			.toSorted((a, b) =>
+				at(a) !== at(b) ? at(a) - at(b) : Number(a.kind === "turn") - Number(b.kind === "turn"),
+			)
 	)
 }
 
@@ -671,7 +673,7 @@ function renderTranscript(output: Output): ToolDoc {
 					? [{ lines: [rowLine(row)] }]
 					: [
 							...acc.slice(0, -1),
-							{ ...acc[acc.length - 1]!, lines: [...acc[acc.length - 1]!.lines, rowLine(row)] },
+							{ ...acc[acc.length - 1], lines: [...acc[acc.length - 1].lines, rowLine(row)] },
 						],
 		[],
 	)

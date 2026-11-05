@@ -48,8 +48,8 @@ export interface CountEntry {
 
 /** Count map entries, largest first, ties by name. */
 export function rankCounts(counts: Readonly<Record<string, number>>): ReadonlyArray<CountEntry> {
-	return Arr.map(Rec.toEntries(counts), ([name, count]) => ({ name, count })).sort(
-		(a, b) => b.count - a.count || Str.localeCompare(b.name)(a.name),
+	return Arr.map(Rec.toEntries(counts), ([name, count]) => ({ name, count })).sort((a, b) =>
+		b.count !== a.count ? b.count - a.count : Str.localeCompare(b.name)(a.name),
 	)
 }
 

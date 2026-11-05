@@ -184,7 +184,7 @@ function oneOrMany<T extends string>(
 	list: readonly T[] | undefined,
 	scalar: T | undefined,
 ): readonly T[] | undefined {
-	if (list?.length) return list
+	if (list !== undefined && list.length > 0) return list
 	if (scalar) return [scalar]
 	return undefined
 }
@@ -196,7 +196,7 @@ function oneOrMany<T extends string>(
  * bloom/text index prefilters in `buildAttrFilterCondition` still apply.
  */
 function httpAttributeFilter(key: string, values: readonly string[] | undefined): AttributeFilter | null {
-	if (!values?.length) return null
+	if (values === undefined || values.length === 0) return null
 	if (values.length === 1) return { key, value: values[0], mode: "equals" }
 	return { key, values: [...values], mode: "in" }
 }
@@ -216,7 +216,7 @@ function toAttributeFilter(entry: typeof AttributeFilterInput.Type): AttributeFi
 	const { or, ...first } = entry
 	return {
 		...toAttributeFilterLeaf(first),
-		...(or?.length ? { or: Arr.map(or, toAttributeFilterLeaf) } : undefined),
+		...(or !== undefined && or.length > 0 ? { or: Arr.map(or, toAttributeFilterLeaf) } : undefined),
 	}
 }
 
@@ -405,7 +405,8 @@ const listTracesEffect = Effect.fn("QueryEngine.listTraces")(function* ({ data }
 	const groupByTrace = rootOnly
 	const hideNoise = groupByTrace && (input.hideNoise ?? true)
 
-	if (input.services?.length) yield* Effect.annotateCurrentSpan("services", Arr.join(input.services, ","))
+	if (input.services !== undefined && input.services.length > 0)
+		yield* Effect.annotateCurrentSpan("services", Arr.join(input.services, ","))
 	yield* Effect.annotateCurrentSpan("rootOnly", rootOnly)
 	yield* Effect.annotateCurrentSpan("groupByTrace", groupByTrace)
 	yield* Effect.annotateCurrentSpan("limit", limit)
@@ -439,12 +440,22 @@ const listTracesEffect = Effect.fn("QueryEngine.listTraces")(function* ({ data }
 				attributeFilters: attributeFilters.length > 0 ? attributeFilters : undefined,
 				resourceAttributeFilters:
 					resourceAttributeFilters.length > 0 ? resourceAttributeFilters : undefined,
-				excludedServiceNames: input.excludedServices?.length ? input.excludedServices : undefined,
-				excludedSpanNames: input.excludedSpanNames?.length ? input.excludedSpanNames : undefined,
-				excludedEnvironments: input.excludedDeploymentEnvs?.length
-					? input.excludedDeploymentEnvs
-					: undefined,
-				excludedNamespaces: input.excludedNamespaces?.length ? input.excludedNamespaces : undefined,
+				excludedServiceNames:
+					input.excludedServices !== undefined && input.excludedServices.length > 0
+						? input.excludedServices
+						: undefined,
+				excludedSpanNames:
+					input.excludedSpanNames !== undefined && input.excludedSpanNames.length > 0
+						? input.excludedSpanNames
+						: undefined,
+				excludedEnvironments:
+					input.excludedDeploymentEnvs !== undefined && input.excludedDeploymentEnvs.length > 0
+						? input.excludedDeploymentEnvs
+						: undefined,
+				excludedNamespaces:
+					input.excludedNamespaces !== undefined && input.excludedNamespaces.length > 0
+						? input.excludedNamespaces
+						: undefined,
 			},
 		},
 	})
@@ -684,8 +695,8 @@ export type GetTracesFacetsInput = (typeof GetTracesFacetsInputSchema)["Encoded"
 type GetTracesFacetsDecoded = (typeof GetTracesFacetsInputSchema)["Type"]
 
 function buildTracesFiltersFromInput(input: GetTracesFacetsDecoded) {
-	const attributeFilters = buildAttributeFilters(input as ListTracesDecoded)
-	const resourceAttributeFilters = buildResourceAttributeFilters(input as ListTracesDecoded)
+	const attributeFilters = buildAttributeFilters(input)
+	const resourceAttributeFilters = buildResourceAttributeFilters(input)
 	const matchModes: Record<string, string> = {}
 	if (input.serviceMatchMode === "contains") matchModes.serviceName = "contains"
 	if (input.spanNameMatchMode === "contains") matchModes.spanName = "contains"
@@ -717,7 +728,8 @@ const getTracesFacetsEffect = Effect.fn("QueryEngine.getTracesFacets")(function*
 }) {
 	const input = yield* decodeInput(GetTracesFacetsInputSchema, data ?? {}, "getTracesFacets")
 
-	if (input.services?.length) yield* Effect.annotateCurrentSpan("services", Arr.join(input.services, ","))
+	if (input.services !== undefined && input.services.length > 0)
+		yield* Effect.annotateCurrentSpan("services", Arr.join(input.services, ","))
 
 	const filters = buildTracesFiltersFromInput(input)
 	const now = yield* Clock.currentTimeMillis

@@ -120,7 +120,7 @@ function groupBySegment(root: HTMLElement): HTMLElement[][] {
 	const out: HTMLElement[][] = []
 	for (const el of root.querySelectorAll<HTMLElement>(".lt-line")) {
 		const idx = Number(el.dataset.segment ?? 0)
-		if (!out[idx]) out[idx] = []
+		if (out[idx] === undefined) out[idx] = []
 		out[idx].push(el)
 	}
 	return out

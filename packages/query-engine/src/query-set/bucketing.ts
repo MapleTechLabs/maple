@@ -106,7 +106,7 @@ export function resolveTimeseriesBucketSpec(
 	endTime: string,
 	options?: BucketResolutionOptions,
 ): QuerySpec {
-	if (spec.kind !== "timeseries" || spec.bucketSeconds) {
+	if (spec.kind !== "timeseries" || (spec.bucketSeconds ?? 0) !== 0) {
 		return spec
 	}
 

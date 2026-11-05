@@ -83,7 +83,7 @@ export function auditLogEntriesQuery(opts: AuditLogEntriesOpts) {
 			CH.whenTrue(!!opts.requestId, () => $.RequestId.eq(param.string("requestId"))),
 			CH.whenTrue(!!opts.since, () => $.OccurredAt.gte(param.dateTime("since"))),
 			CH.whenTrue(!!opts.until, () => $.OccurredAt.lte(param.dateTime("until"))),
-			opts.excludeActionSuffixes?.length
+			opts.excludeActionSuffixes !== undefined && opts.excludeActionSuffixes.length > 0
 				? CH.not(
 						CH.or(...Arr.map(opts.excludeActionSuffixes, (suffix) => endsWith($.Action, suffix))),
 					)

@@ -51,7 +51,7 @@ export function runScenario(engine: Engine, scenario: Scenario): Boxes[] {
 	// Editing only ever happens on a compacted grid.
 	if (scenario.compaction !== "vertical" || layout.length === 0) return snapshots
 	for (const op of scenario.ops) {
-		const id = layout[op.pick % layout.length]!.i
+		const id = layout[op.pick % layout.length].i
 		layout =
 			op.kind === "move"
 				? engine.move(layout, id, op.x, op.y, scenario.cols)

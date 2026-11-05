@@ -11,7 +11,7 @@ import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 export const resolveOrgName = Effect.fn("Digest.resolveOrgName")(function* (
 	env: {
 		readonly MAPLE_AUTH_MODE: string
-		readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
+		readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted>
 	},
 	orgId: OrgId,
 ) {

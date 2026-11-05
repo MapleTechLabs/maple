@@ -17,7 +17,7 @@ export interface PodRestartSummary {
 export const podKey = (pod: { namespace: string; podName: string }) => `${pod.namespace}/${pod.podName}`
 
 const byMostRestarts = (a: PodRestartRow, b: PodRestartRow) =>
-	b.restarts - a.restarts || b.totalRestarts - a.totalRestarts
+	b.restarts !== a.restarts ? b.restarts - a.restarts : b.totalRestarts - a.totalRestarts
 
 /** Folds per-container rows into one summary per pod, keyed by `podKey`. */
 export function summarizePodRestarts(

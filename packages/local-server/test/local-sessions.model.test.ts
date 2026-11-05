@@ -176,14 +176,11 @@ class Stop implements fc.AsyncCommand<{ running: number }, World> {
 	check = (model: Readonly<{ running: number }>) => model.running > 0
 	async run(model: { running: number }, world: World) {
 		const [session] = world.sessions.splice(this.pick % world.sessions.length, 1)
-		session!.process.kill("SIGTERM")
+		session.process.kill("SIGTERM")
 		// A session that cannot close within the deadline is a failure, not a hung test.
-		const exited = await Promise.race([
-			session!.process.exited,
-			Bun.sleep(30_000).then(() => "timed out"),
-		])
-		if (exited === "timed out") session!.process.kill("SIGKILL")
-		expect({ exited, log: exited === 0 ? "" : Arr.join(session!.log, "") }).toEqual({
+		const exited = await Promise.race([session.process.exited, Bun.sleep(30_000).then(() => "timed out")])
+		if (exited === "timed out") session.process.kill("SIGKILL")
+		expect({ exited, log: exited === 0 ? "" : Arr.join(session.log, "") }).toEqual({
 			exited: 0,
 			log: "",
 		})

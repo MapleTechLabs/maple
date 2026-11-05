@@ -660,7 +660,7 @@ export function pickDefaultDestination(
 	rules: ReadonlyArray<Pick<AlertRuleDocument, "destinationIds">>,
 ): AlertDestinationDocument["id"] | null {
 	const usable = Arr.filter(destinations, (d) => d.enabled && !d.disabledAt)
-	if (usable.length === 1) return usable[0]!.id
+	if (usable.length === 1) return usable[0].id
 	const uses = new Map<string, number>()
 	for (const id of Arr.flatMap(rules, (rule) => rule.destinationIds)) uses.set(id, (uses.get(id) ?? 0) + 1)
 	const ranked = Arr.filter(usable, (d) => (uses.get(d.id) ?? 0) > 0).sort(
@@ -1124,7 +1124,7 @@ export function groupDeliveryEventsByDay(
 	for (const event of events) {
 		const key = String(startOfDay(Date.parse(event.scheduledAt), timeZone))
 		const last = groups[groups.length - 1]
-		if (last && last.key === key) {
+		if (last !== undefined && last.key === key) {
 			last.events.push(event)
 		} else {
 			groups.push({

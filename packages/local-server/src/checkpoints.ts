@@ -19,6 +19,7 @@ import { FileSystem } from "effect/FileSystem"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { CHDB_VERSION, MAPLE_VERSION } from "./version"
 import { serverUrl } from "./local-address"
+import { errnoCode } from "./store-errors"
 import { Chdb, MERGE_TREE_CONFIG_XML, RAW_TELEMETRY_TTL_COLUMNS, writeIngestConfig } from "./chdb"
 import { ttlDaysFromDefinition } from "./schema-manifest"
 import { sha256File } from "./checkpoint-digest"
@@ -649,7 +650,7 @@ const readJsonRows = (text: string): ReadonlyArray<Record<string, unknown>> =>
 
 const countFrom = (rows: ReadonlyArray<Record<string, unknown>>): number => {
 	const row = rows[0]
-	if (!row) throw new Error("count query returned no rows")
+	if (row === undefined) throw new Error("count query returned no rows")
 	const value = row["count()"] ?? row.count
 	const count = typeof value === "number" ? value : Number(value ?? 0)
 	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid count result: ${String(value)}`)
@@ -1343,8 +1344,8 @@ const readMaintenanceOwner = (lockPath: string): Promise<LockHolder | "absent" |
 		.then(async () =>
 			Schema.decodeUnknownSync(LockHolderSchema)(decodeJsonSync(await readFile(ownerPath, "utf8"))),
 		)
-		.catch((error: NodeJS.ErrnoException): "absent" | "uncertain" =>
-			error?.code === "ENOENT" ? "absent" : "uncertain",
+		.catch((error: unknown): "absent" | "uncertain" =>
+			errnoCode(error) === "ENOENT" ? "absent" : "uncertain",
 		)
 }
 
@@ -1478,7 +1479,7 @@ export const reconcileCheckpointOperations = async (
 			)}`,
 		)
 	}
-	const entry = entries[0]!
+	const entry = entries[0]
 	if (!entry.isDirectory() || !Str.startsWith("checkpoint-")(entry.name)) {
 		throw new Error(`unrecognized checkpoint operation debris: ${join(operationsRoot, entry.name)}`)
 	}

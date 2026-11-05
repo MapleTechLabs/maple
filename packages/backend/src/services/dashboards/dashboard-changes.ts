@@ -91,7 +91,7 @@ export const summarizeDashboardChange = (
 			detail =
 				detail ??
 				(addedSections.length === 1
-					? `Added group "${addedSections[0]!.title}"`
+					? `Added group "${addedSections[0].title}"`
 					: `Added ${addedSections.length} groups`)
 		}
 		if (removedSections.length > 0) {
@@ -99,7 +99,7 @@ export const summarizeDashboardChange = (
 			detail =
 				detail ??
 				(removedSections.length === 1
-					? `Removed group "${removedSections[0]!.title}"`
+					? `Removed group "${removedSections[0].title}"`
 					: `Removed ${removedSections.length} groups`)
 		}
 		// Renames, tab edits, reordering and the stored collapse default all land
@@ -120,7 +120,7 @@ export const summarizeDashboardChange = (
 		kinds.add("widget_added")
 		detail =
 			detail ??
-			(added.length === 1 ? `Added "${widgetTitle(added[0]!)}"` : `Added ${added.length} widgets`)
+			(added.length === 1 ? `Added "${widgetTitle(added[0])}"` : `Added ${added.length} widgets`)
 	}
 
 	if (removed.length > 0) {
@@ -128,7 +128,7 @@ export const summarizeDashboardChange = (
 		detail =
 			detail ??
 			(removed.length === 1
-				? `Removed "${widgetTitle(removed[0]!)}"`
+				? `Removed "${widgetTitle(removed[0])}"`
 				: `Removed ${removed.length} widgets`)
 	}
 
@@ -171,5 +171,5 @@ export const summarizeDashboardChange = (
 	}
 
 	const [kind] = kinds
-	return { kind: kind!, summary: detail ?? "Updated" }
+	return { kind: kind, summary: detail ?? "Updated" }
 }

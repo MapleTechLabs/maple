@@ -50,7 +50,10 @@ export function selectLockfiles(files: ReadonlyArray<VcsTreeFile>): {
 	const kept = Arr.filter(
 		candidates,
 		(c) => c.kind !== "go-sum" || !goModDirs.has(directoryOf(c.file.path)),
-	).sort((a, b) => depth(a.file.path) - depth(b.file.path) || Str.localeCompare(b.file.path)(a.file.path))
+	).sort((a, b) => {
+		const byDepth = depth(a.file.path) - depth(b.file.path)
+		return byDepth !== 0 ? byDepth : Str.localeCompare(b.file.path)(a.file.path)
+	})
 	return { selected: kept.slice(0, MAX_LOCKFILES), skipped: kept.slice(MAX_LOCKFILES) }
 }
 
@@ -71,7 +74,10 @@ export function manifestsFor(
 			(file.path === `${dir}package.json` || Str.endsWith("/package.json")(file.path)) &&
 			!isIgnoredLockfilePath(file.path) &&
 			file.size <= MAX_MANIFEST_BYTES,
-	).sort((a, b) => depth(a.path) - depth(b.path) || Str.localeCompare(b.path)(a.path))
+	).sort((a, b) => {
+		const byDepth = depth(a.path) - depth(b.path)
+		return byDepth !== 0 ? byDepth : Str.localeCompare(b.path)(a.path)
+	})
 	const { kept } = Arr.reduce(candidates, { bytes: 0, kept: Arr.empty<VcsTreeFile>() }, (read, file) =>
 		read.kept.length < MAX_MANIFESTS && read.bytes + file.size <= MAX_MANIFEST_TOTAL_BYTES
 			? { bytes: read.bytes + file.size, kept: [...read.kept, file] }

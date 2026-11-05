@@ -180,7 +180,7 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 				),
 			)
 			const issue = issueRows[0]
-			if (!issue) {
+			if (issue === undefined) {
 				yield* finalize(row, "skipped", timestamp, "issue_missing")
 				return "skipped" as const
 			}

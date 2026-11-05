@@ -26,7 +26,7 @@ export const scopeServicesToNamespaces = Effect.fn("QueryEngine.scopeServicesToN
 	startTime: string
 	endTime: string
 }) {
-	if (!opts.namespaces?.length) {
+	if (opts.namespaces === undefined || opts.namespaces.length === 0) {
 		return { services: opts.services, empty: false, memberServices: null } satisfies NamespaceServiceScope
 	}
 
@@ -46,7 +46,7 @@ export const scopeServicesToNamespaces = Effect.fn("QueryEngine.scopeServicesToN
 	const rows = coerceServiceOverviewRows(result.data, windowDurationSeconds(opts.startTime, opts.endTime))
 	const names = new Set(Arr.map(rows, (row) => row.serviceName))
 
-	if (opts.services?.length) {
+	if (opts.services !== undefined && opts.services.length > 0) {
 		const services = Arr.filter(opts.services, (service) => names.has(service))
 		return {
 			services,

@@ -146,7 +146,7 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 				]),
 			]
 
-			if (rule.apdexThresholdMs) {
+			if ((rule.apdexThresholdMs ?? 0) > 0) {
 				blocks.push(
 					doc.heading("Apdex Configuration"),
 					doc.fields([["Apdex Threshold", `${rule.apdexThresholdMs}ms`]]),

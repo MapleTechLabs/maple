@@ -32,18 +32,18 @@ const makeExecutor = (captured: Captured, responses: MockResponses): WarehouseEx
 	return {
 		orgId: OrgId.make("org_test"),
 		query: () => Effect.succeed({ data: [] as ReadonlyArray<never> }),
-		compiledQuery: ((compiled) => {
+		compiledQuery: (compiled) => {
 			captured.sqls.push(compiledQueryOf(compiled).sql)
 			return compiledQueryOf(compiled)
 				.decodeRows(rowsFor(compiledQueryOf(compiled).sql))
 				.pipe(Effect.orDie)
-		}) as WarehouseExecutorApi["compiledQuery"],
-		compiledQueryFirst: ((compiled) => {
+		},
+		compiledQueryFirst: (compiled) => {
 			captured.sqls.push(compiledQueryOf(compiled).sql)
 			return compiledQueryOf(compiled)
 				.decodeFirstRow(rowsFor(compiledQueryOf(compiled).sql))
 				.pipe(Effect.orDie)
-		}) as WarehouseExecutorApi["compiledQueryFirst"],
+		},
 	}
 }
 

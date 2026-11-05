@@ -527,7 +527,9 @@ export const tracesTimeseries = (
 						aggregation,
 						filters,
 						...(group ? { group_by: group } : undefined),
-						...(p.bucketSeconds ? { bucket_seconds: p.bucketSeconds } : undefined),
+						...(p.bucketSeconds !== undefined && p.bucketSeconds > 0
+							? { bucket_seconds: p.bucketSeconds }
+							: undefined),
 					},
 				}),
 			),
@@ -538,7 +540,7 @@ export const tracesTimeseries = (
 		// tabular shape `--format table` expects.
 		const rows = new Map<string, Record<string, unknown>>()
 		Arr.forEach(results, (result, index) => {
-			const field = TRACE_AGGREGATIONS[index]![0]
+			const field = TRACE_AGGREGATIONS[index][0]
 			for (const series of result.series) {
 				for (const point of series.points) {
 					const key = `${point.timestamp}\0${series.group ?? ""}`
@@ -574,7 +576,7 @@ export const tracesBreakdown = (
 						aggregation,
 						group_by: group,
 						filters,
-						...(p.limit ? { limit: p.limit } : undefined),
+						...(p.limit !== undefined && p.limit > 0 ? { limit: p.limit } : undefined),
 					},
 				}),
 			),
@@ -583,7 +585,7 @@ export const tracesBreakdown = (
 
 		const rows = new Map<string, Record<string, unknown>>()
 		Arr.forEach(results, (result, index) => {
-			const field = TRACE_AGGREGATIONS[index]![0]
+			const field = TRACE_AGGREGATIONS[index][0]
 			for (const item of result.data) {
 				const row = rows.get(item.name) ?? { name: item.name }
 				row[field] = item.value

@@ -407,7 +407,7 @@ export class AlertDestinationsService extends Context.Service<
 						.limit(1),
 				),
 			)
-			if (rows[0]) return rows[0]
+			if (rows[0] !== undefined) return rows[0]
 			return yield* new AlertDestinationNotFoundError({
 				message: "Alert destination not found",
 				destinationId,

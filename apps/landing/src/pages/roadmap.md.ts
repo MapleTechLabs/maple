@@ -23,7 +23,11 @@ export const GET: APIRoute = async () => {
 	const sections = Arr.map(STATUS_ORDER, (status) => {
 		const items = entries
 			.filter((entry) => entry.data.status === status)
-			.sort((a, b) => a.data.order - b.data.order || a.data.title.localeCompare(b.data.title))
+			.sort((a, b) =>
+				a.data.order !== b.data.order
+					? a.data.order - b.data.order
+					: a.data.title.localeCompare(b.data.title),
+			)
 
 		if (items.length === 0) return undefined
 

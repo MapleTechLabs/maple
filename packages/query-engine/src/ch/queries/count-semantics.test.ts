@@ -207,7 +207,7 @@ const BREAKDOWN_DIMENSIONS = [
 describe("a breakdown totals the same regardless of the dimension", () => {
 	for (const filters of [{}, { rootOnly: true }, { serviceName: "api" }] as TracesBaseWhereOpts[]) {
 		const keys = Rec.keys<string, unknown>({ ...filters })
-		const label = keys.length ? Arr.join(keys, "+") : "no filters"
+		const label = keys.length > 0 ? Arr.join(keys, "+") : "no filters"
 
 		it(`uses one count definition and one population across dimensions (${label})`, () => {
 			const compiled = Arr.map(

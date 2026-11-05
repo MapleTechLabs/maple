@@ -27,7 +27,7 @@ describe("captureException", () => {
 		const [span] = exporter.getFinishedSpans()
 		assert.strictEqual(span?.name, "exception")
 		assert.strictEqual(span?.status.code, SpanStatusCode.ERROR)
-		const event = exceptionEventOf(span!)
+		const event = exceptionEventOf(span)
 		assert.strictEqual(event?.attributes?.["exception.type"], "TypeError")
 		assert.strictEqual(event?.attributes?.["exception.message"], "x is not a function")
 	})
@@ -40,10 +40,10 @@ describe("captureException", () => {
 
 		const [fromObject, fromString] = exporter.getFinishedSpans()
 		assert.strictEqual(
-			exceptionEventOf(fromObject!)?.attributes?.["exception.message"],
+			exceptionEventOf(fromObject)?.attributes?.["exception.message"],
 			"plain object failure",
 		)
-		assert.strictEqual(exceptionEventOf(fromString!)?.attributes?.["exception.message"], "string failure")
+		assert.strictEqual(exceptionEventOf(fromString)?.attributes?.["exception.message"], "string failure")
 	})
 
 	it("records an error once when a boundary reports it and the handler sees it again", () => {
@@ -145,7 +145,7 @@ describe("setupErrorCapture", () => {
 
 		const [span] = exporter.getFinishedSpans()
 		assert.strictEqual(span?.attributes["code.file.path"], "https://cdn.test/app.js?signature=REDACTED")
-		const event = exceptionEventOf(span!)
+		const event = exceptionEventOf(span)
 		assert.strictEqual(event?.attributes?.["exception.message"], "boom")
 		// One frame at the throw site, none from inside the SDK.
 		assert.strictEqual(
@@ -191,14 +191,14 @@ describe("filters and linked errors", () => {
 
 	it("describes a thrown plain object by its fields, with no stack from inside the SDK", () => {
 		captureException({ code: 1, reason: "busy" })
-		const event = exceptionEventOf(exporter.getFinishedSpans()[0]!)
+		const event = exceptionEventOf(exporter.getFinishedSpans()[0])
 		assert.strictEqual(event?.attributes?.["exception.message"], '{"code":1,"reason":"busy"}')
 		assert.isUndefined(event?.attributes?.["exception.stacktrace"])
 	})
 
 	it("records the cause chain in exception.stacktrace", () => {
 		captureException(new Error("save failed", { cause: new TypeError("network down") }))
-		const stacktrace = exceptionEventOf(exporter.getFinishedSpans()[0]!)?.attributes?.[
+		const stacktrace = exceptionEventOf(exporter.getFinishedSpans()[0])?.attributes?.[
 			"exception.stacktrace"
 		]
 		assert.include(String(stacktrace), "Caused by: TypeError: network down")

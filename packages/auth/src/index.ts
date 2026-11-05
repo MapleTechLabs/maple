@@ -390,15 +390,15 @@ export interface AuthEnv {
 	 * seeded org. Honoured only when `MAPLE_ENVIRONMENT` is `development`; absent means refuse.
 	 */
 	readonly MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS?: boolean | undefined
-	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted<string>>
-	readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
+	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted>
+	readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted>
 	readonly CLERK_PUBLISHABLE_KEY: Option.Option<string>
-	readonly CLERK_JWT_KEY: Option.Option<Redacted.Redacted<string>>
+	readonly CLERK_JWT_KEY: Option.Option<Redacted.Redacted>
 }
 
 const getOptionalString = <A>(option: Option.Option<A>): A | undefined => Option.getOrUndefined(option)
 
-const getOptionalSecret = (option: Option.Option<Redacted.Redacted<string>>): string | undefined =>
+const getOptionalSecret = (option: Option.Option<Redacted.Redacted>): string | undefined =>
 	Option.match(option, { onNone: () => undefined, onSome: Redacted.value })
 
 /**
@@ -411,10 +411,7 @@ class MissingAuthSecretError extends Schema.TaggedError<MissingAuthSecretError>(
 	{ secret: Schema.String, message: Schema.String },
 ) {}
 
-const requireSecret = (
-	option: Option.Option<Redacted.Redacted<string>>,
-	label: string,
-): Effect.Effect<string, never> =>
+const requireSecret = (option: Option.Option<Redacted.Redacted>, label: string): Effect.Effect<string> =>
 	Option.match(option, {
 		// Config is read once at layer build, so a missing secret is a misconfigured
 		// deployment, not a request that could be answered differently.
@@ -442,7 +439,7 @@ const makeClerkAuthenticateRequest = (
 			jwtKey: options.jwtKey,
 			acceptsToken:
 				typeof options.acceptsToken === "string" ? options.acceptsToken : [...options.acceptsToken],
-		}) as Promise<ClerkRequestState>
+		})
 }
 
 export const makeLoginSelfHosted = (

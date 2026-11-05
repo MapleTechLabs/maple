@@ -507,7 +507,11 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 	}
 	const columnHeight = (column: { nodes: Array<ProvenanceNode> }): number => {
 		const gap = isActionColumn(column) ? ACTION_GAP : COLUMN_GAP
-		return Arr.reduce(column.nodes, 0, (total, node, index) => total + node.height + (index ? gap : 0))
+		return Arr.reduce(
+			column.nodes,
+			0,
+			(total, node, index) => total + node.height + (index > 0 ? gap : 0),
+		)
 	}
 	const height = Math.max(0, ...Arr.map(columns, columnHeight))
 

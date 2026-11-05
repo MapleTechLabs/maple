@@ -338,7 +338,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	 * boundary-caught error in development, so a boundary that reports it *and*
 	 * `window.onerror` would otherwise fingerprint the same crash twice.
 	 */
-	const reported = new WeakSet<object>()
+	const reported = new WeakSet()
 	const captureException = (error: unknown, options: CaptureExceptionOptions = {}): void => {
 		if (typeof error === "object" && error !== null) {
 			if (reported.has(error)) return
@@ -372,7 +372,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 				// dual-emitted — carrying both would put four near-identical rows on
 				// every uncaught error in the attribute list.
 				...(event.filename ? { "code.file.path": event.filename } : undefined),
-				...(event.lineno ? { "code.line.number": event.lineno } : undefined),
+				...(event.lineno > 0 ? { "code.line.number": event.lineno } : undefined),
 			},
 		})
 	}

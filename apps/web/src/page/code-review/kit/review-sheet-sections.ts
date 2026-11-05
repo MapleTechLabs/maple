@@ -126,7 +126,7 @@ const findingCard = (h: H, finding: PrReviewFinding, tracked: CodeReviewFinding 
 						finding.path,
 						":",
 						String(finding.line),
-						...(finding.endLine && finding.endLine !== finding.line
+						...((finding.endLine ?? 0) > 0 && finding.endLine !== finding.line
 							? [`-${finding.endLine}`]
 							: []),
 					],

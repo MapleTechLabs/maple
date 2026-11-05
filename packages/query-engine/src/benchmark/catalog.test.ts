@@ -227,7 +227,7 @@ describe("sql catalog", () => {
 			).sort((a, b) => b.label.length - a.label.length)[0]
 			const query = fixture?.query
 			const bucketSeconds =
-				query && "bucketSeconds" in query && typeof query.bucketSeconds === "number"
+				query !== undefined && "bucketSeconds" in query && typeof query.bucketSeconds === "number"
 					? query.bucketSeconds
 					: 0
 			expect(bucketSeconds, `${entry.id} has no bucketSeconds`).toBeGreaterThan(0)

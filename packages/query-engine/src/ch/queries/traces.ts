@@ -197,7 +197,7 @@ function buildGroupNameExpr(
 			case "attribute":
 				if (groupByResourceAttributeKey) {
 					parts.push(CH.toString_($.ResourceAttributes.get(groupByResourceAttributeKey)))
-				} else if (groupByAttributeKeys?.length) {
+				} else if (groupByAttributeKeys !== undefined && groupByAttributeKeys.length > 0) {
 					const keys: CH.Expr<string>[] = Arr.map(groupByAttributeKeys, (k) =>
 						CH.toString_($.SpanAttributes.get(k)),
 					)
@@ -496,9 +496,9 @@ export function canUseAnnualServiceOverview(opts: TracesTimeseriesOpts): boolean
 		!opts.errorsOnly &&
 		opts.minDurationMs == null &&
 		opts.maxDurationMs == null &&
-		!opts.excludedSpanNames?.length &&
-		!opts.attributeFilters?.length &&
-		!opts.resourceAttributeFilters?.length &&
+		(opts.excludedSpanNames === undefined || opts.excludedSpanNames.length === 0) &&
+		(opts.attributeFilters === undefined || opts.attributeFilters.length === 0) &&
+		(opts.resourceAttributeFilters === undefined || opts.resourceAttributeFilters.length === 0) &&
 		!Rec.values<string, unknown>({ ...opts.matchModes }).includes("contains")
 	)
 }
@@ -524,7 +524,7 @@ function buildOverviewRollupGroupNameExpr(
 
 export function tracesTimeseriesQuery(
 	opts: TracesTimeseriesOpts,
-): CHQuery<ColumnDefs, TracesTimeseriesOutput, {}> {
+): CHQuery<ColumnDefs, TracesTimeseriesOutput> {
 	const apdexThresholdMs = opts.apdexThresholdMs ?? 500
 
 	if (canUseAnnualServiceOverview(opts)) {
@@ -562,16 +562,22 @@ export function tracesTimeseriesQuery(
 		) => [
 			$.OrgId.eq(orgIdParam),
 			opts.serviceName ? $.ServiceName.eq(opts.serviceName) : undefined,
-			opts.environments?.length ? CH.inList($.DeploymentEnv, opts.environments) : undefined,
-			opts.namespaces?.length ? CH.inList($.ServiceNamespace, opts.namespaces) : undefined,
-			opts.commitShas?.length ? CH.inList($.CommitSha, opts.commitShas) : undefined,
-			opts.excludedServiceNames?.length
+			opts.environments !== undefined && opts.environments.length > 0
+				? CH.inList($.DeploymentEnv, opts.environments)
+				: undefined,
+			opts.namespaces !== undefined && opts.namespaces.length > 0
+				? CH.inList($.ServiceNamespace, opts.namespaces)
+				: undefined,
+			opts.commitShas !== undefined && opts.commitShas.length > 0
+				? CH.inList($.CommitSha, opts.commitShas)
+				: undefined,
+			opts.excludedServiceNames !== undefined && opts.excludedServiceNames.length > 0
 				? CH.notInList($.ServiceName, opts.excludedServiceNames)
 				: undefined,
-			opts.excludedEnvironments?.length
+			opts.excludedEnvironments !== undefined && opts.excludedEnvironments.length > 0
 				? CH.notInList($.DeploymentEnv, opts.excludedEnvironments)
 				: undefined,
-			opts.excludedNamespaces?.length
+			opts.excludedNamespaces !== undefined && opts.excludedNamespaces.length > 0
 				? CH.notInList($.ServiceNamespace, opts.excludedNamespaces)
 				: undefined,
 		]
@@ -712,8 +718,7 @@ export function tracesTimeseriesQuery(
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
 		return finalizeTimeseries(annual, TRACES_TS_COLUMNS, "count", opts) as CHQuery<
 			ColumnDefs,
-			TracesTimeseriesOutput,
-			{}
+			TracesTimeseriesOutput
 		>
 	}
 
@@ -830,11 +835,7 @@ export function tracesTimeseriesQuery(
 			}))
 			.groupBy("bucket", "groupName")
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
-		return finalizeTimeseries(aggregates, TRACES_TS_COLUMNS, "count", opts) as CHQuery<
-			ColumnDefs,
-			TracesTimeseriesOutput,
-			{}
-		>
+		return finalizeTimeseries(aggregates, TRACES_TS_COLUMNS, "count", opts)
 	}
 
 	// Fast path: when no filter or groupBy references span-level columns
@@ -858,8 +859,7 @@ export function tracesTimeseriesQuery(
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
 		return finalizeTimeseries(mv, TRACES_TS_COLUMNS, "count", opts) as CHQuery<
 			ColumnDefs,
-			TracesTimeseriesOutput,
-			{}
+			TracesTimeseriesOutput
 		>
 	}
 
@@ -879,8 +879,7 @@ export function tracesTimeseriesQuery(
 		.orderBy(["bucket", "asc"], ["groupName", "asc"])
 	return finalizeTimeseries(raw, TRACES_TS_COLUMNS, "count", opts) as CHQuery<
 		ColumnDefs,
-		TracesTimeseriesOutput,
-		{}
+		TracesTimeseriesOutput
 	>
 }
 
@@ -941,7 +940,7 @@ export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 			.orderBy(["count", "desc"])
 			.limit(limit)
 			.format("JSON")
-		return mv as CHQuery<ColumnDefs, TracesBreakdownOutput, {}>
+		return mv as CHQuery<ColumnDefs, TracesBreakdownOutput>
 	}
 
 	const raw = from(Traces)
@@ -968,7 +967,7 @@ export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 		.orderBy(["count", "desc"])
 		.limit(limit)
 		.format("JSON")
-	return raw as CHQuery<ColumnDefs, TracesBreakdownOutput, {}>
+	return raw as CHQuery<ColumnDefs, TracesBreakdownOutput>
 }
 
 // List query
@@ -1648,13 +1647,14 @@ const TRACE_LIST_MV_ATTR_COLUMNS = new Map<string, "HttpMethod" | "HttpStatusCod
  * pre-extracted columns are expressible; anything else falls back to raw.
  */
 export function canUseTraceListMvStage1(opts: TraceListOpts): boolean {
-	if (opts.resourceAttributeFilters?.length) return false
-	if (opts.commitShas?.length) return false
+	if (opts.resourceAttributeFilters !== undefined && opts.resourceAttributeFilters.length > 0) return false
+	if (opts.commitShas !== undefined && opts.commitShas.length > 0) return false
 	for (const af of opts.attributeFilters ?? []) {
-		if (af.or?.length) return false
+		if (af.or !== undefined && af.or.length > 0) return false
 		if (!TRACE_LIST_MV_ATTR_COLUMNS.has(af.key)) return false
 		const expressible =
-			(af.mode === "equals" && af.value !== undefined) || (af.mode === "in" && !!af.values?.length)
+			(af.mode === "equals" && af.value !== undefined) ||
+			(af.mode === "in" && af.values !== undefined && af.values.length > 0)
 		if (!expressible) return false
 	}
 	return true
@@ -1691,7 +1691,7 @@ function traceListMvWhereConditions(
 	if (opts.maxDurationMs != null) {
 		conditions.push($.Duration.lte(opts.maxDurationMs * 1000000))
 	}
-	if (opts.environments?.length) {
+	if (opts.environments !== undefined && opts.environments.length > 0) {
 		conditions.push(
 			matchOrIn(
 				$.DeploymentEnv,
@@ -1700,7 +1700,7 @@ function traceListMvWhereConditions(
 			),
 		)
 	}
-	if (opts.namespaces?.length) {
+	if (opts.namespaces !== undefined && opts.namespaces.length > 0) {
 		conditions.push(
 			matchOrIn(
 				$.ServiceNamespace,
@@ -1715,21 +1715,21 @@ function traceListMvWhereConditions(
 		const col = $[column]
 		if (af.mode === "equals" && af.value !== undefined) {
 			conditions.push(af.negated ? col.neq(af.value) : col.eq(af.value))
-		} else if (af.mode === "in" && af.values?.length) {
+		} else if (af.mode === "in" && af.values !== undefined && af.values.length > 0) {
 			const inCond = CH.inList(col, af.values)
 			conditions.push(af.negated ? CH.not(inCond) : inCond)
 		}
 	}
-	if (opts.excludedServiceNames?.length) {
+	if (opts.excludedServiceNames !== undefined && opts.excludedServiceNames.length > 0) {
 		conditions.push(CH.notInList($.ServiceName, opts.excludedServiceNames))
 	}
-	if (opts.excludedSpanNames?.length) {
+	if (opts.excludedSpanNames !== undefined && opts.excludedSpanNames.length > 0) {
 		conditions.push(CH.notInList($.SpanName, opts.excludedSpanNames))
 	}
-	if (opts.excludedEnvironments?.length) {
+	if (opts.excludedEnvironments !== undefined && opts.excludedEnvironments.length > 0) {
 		conditions.push(CH.notInList($.DeploymentEnv, opts.excludedEnvironments))
 	}
-	if (opts.excludedNamespaces?.length) {
+	if (opts.excludedNamespaces !== undefined && opts.excludedNamespaces.length > 0) {
 		conditions.push(CH.notInList($.ServiceNamespace, opts.excludedNamespaces))
 	}
 

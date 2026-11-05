@@ -114,8 +114,8 @@ describe("AlertsService evaluation cadence", () => {
 			assert.strictEqual(longTicks[0], 0)
 			const settled = longTicks.slice(1)
 			assert.isAtLeast(settled.length, 3)
-			Arr.forEach(settled.slice(1), (tick, i) => assert.strictEqual(tick - settled[i]!, 3))
-			assert.isAtMost(settled[0]!, 3)
+			Arr.forEach(settled.slice(1), (tick, i) => assert.strictEqual(tick - settled[i], 3))
+			assert.isAtMost(settled[0], 3)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
 	})
 
@@ -271,9 +271,9 @@ describe("AlertsService check intervals", () => {
 			// Right away (never claimed), then on its phase minute every ten.
 			assert.strictEqual(ran[0], 0)
 			const settled = ran.slice(1)
-			assert.isAtMost(settled[0]!, 10)
+			assert.isAtMost(settled[0], 10)
 			assert.isAtLeast(settled.length, 2)
-			Arr.forEach(settled.slice(1), (tick, i) => assert.strictEqual(tick - settled[i]!, 10))
+			Arr.forEach(settled.slice(1), (tick, i) => assert.strictEqual(tick - settled[i], 10))
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
 	})
 
@@ -627,7 +627,7 @@ describe("AlertsService scheduler pool", () => {
 			const slotMs = spreadMs / RULE_COUNT
 			Arr.forEach(offsets, (offset, index) => {
 				assert.isAtLeast(offset, index * slotMs)
-				assert.isBelow(offset - offsets[0]!, index * slotMs + 500)
+				assert.isBelow(offset - offsets[0], index * slotMs + 500)
 			})
 		}).pipe(
 			Effect.provide(makeLayer(testDb, stub, { fetch: okFetch, schedulerSpreadMs: () => spreadMs })),
@@ -694,8 +694,8 @@ describe("AlertsService scheduler pool", () => {
 			Arr.forEach(offsets, (offset, index) => {
 				const claimedAt = claimOffset.get(orgAt(index))
 				assert.isDefined(claimedAt)
-				assert.isAtMost(claimedAt!, offset)
-				assert.isBelow(offset - claimedAt!, chunkSpanMs + 500)
+				assert.isAtMost(claimedAt, offset)
+				assert.isBelow(offset - claimedAt, chunkSpanMs + 500)
 			})
 			assert.isAtLeast(claimOffset.get(orgAt(25))!, chunkSpanMs - 100)
 		}).pipe(
@@ -734,7 +734,7 @@ describe("AlertsService scheduler pool", () => {
 				assert.isAtLeast(offset, index * slotMs)
 				assert.isBelow(offset - (firstStart - startedAt), index * slotMs + 500)
 			})
-			const stuckRule = (yield* alerts.listRules(orgAt(0))).rules[0]!
+			const stuckRule = (yield* alerts.listRules(orgAt(0))).rules[0]
 			assert.include(stuckRule.lastEvaluationError ?? "", "exceeded")
 		}).pipe(
 			Effect.provide(
@@ -872,7 +872,7 @@ describe("AlertsService scheduler pool", () => {
 				const windows = yield* Ref.get(checkWindows)
 				assert.strictEqual(windows.length, RULE_COUNT)
 				assert.lengthOf(Arr.dedupe(windows), 1)
-				assert.include(windows[0]!, formatWarehouseDateTime(tickAt - 58_500))
+				assert.include(windows[0], formatWarehouseDateTime(tickAt - 58_500))
 			}).pipe(
 				Effect.provide(
 					makeLayer(testDb, stub, {
@@ -922,7 +922,7 @@ describe("AlertsService scheduler pool", () => {
 			assert.isBelow(wallMs, tickBudgetMs + 2_500)
 			assert.isBelow(HashSet.size(yield* queried), RULE_COUNT)
 			assert.strictEqual(firstTick.evaluatedCount, HashSet.size(yield* queried))
-			const stuckRule = (yield* alerts.listRules(orgAt(0))).rules[0]!
+			const stuckRule = (yield* alerts.listRules(orgAt(0))).rules[0]
 			assert.include(stuckRule.lastEvaluationError ?? "", "deadline")
 
 			// Each tick a minute later, past every claim's TTL. Five more ticks leave

@@ -47,7 +47,10 @@ const matchesSearch = (search: string | undefined) => (row: InfraEntityRow) =>
 const byTrouble = (rows: ReadonlyArray<InfraEntityRow>, sort: InfraSort): Array<InfraEntityRow> =>
 	sort === "name" || sort === "last_seen"
 		? sortRows(rows, sort)
-		: [...rows].sort((a, b) => (b.errors ?? 0) - (a.errors ?? 0) || (b.requests ?? 0) - (a.requests ?? 0))
+		: [...rows].sort((a, b) => {
+				const byErrors = (b.errors ?? 0) - (a.errors ?? 0)
+				return byErrors !== 0 ? byErrors : (b.requests ?? 0) - (a.requests ?? 0)
+			})
 
 const zoneRow = (
 	counters: Integrations.CloudflareZoneCountersOutput,

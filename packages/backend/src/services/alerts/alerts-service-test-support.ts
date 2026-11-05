@@ -133,11 +133,16 @@ export function makeWarehouseStub(state: {
 	// Route the response based on what data is configured in the test state.
 	const sqlQueryStub = () => {
 		// Return whichever data is configured — tests evaluate one rule type at a time
-		if (state.rawQueryRows?.length) return succeedRows(state.rawQueryRows)
-		if (state.logsAggregateByServiceRows?.length) return succeedRows(state.logsAggregateByServiceRows)
-		if (state.tracesAggregateRows?.length) return succeedRows(state.tracesAggregateRows)
-		if (state.metricsAggregateRows?.length) return succeedRows(state.metricsAggregateRows)
-		if (state.logsAggregateRows?.length) return succeedRows(state.logsAggregateRows)
+		if (state.rawQueryRows !== undefined && state.rawQueryRows.length > 0)
+			return succeedRows(state.rawQueryRows)
+		if (state.logsAggregateByServiceRows !== undefined && state.logsAggregateByServiceRows.length > 0)
+			return succeedRows(state.logsAggregateByServiceRows)
+		if (state.tracesAggregateRows !== undefined && state.tracesAggregateRows.length > 0)
+			return succeedRows(state.tracesAggregateRows)
+		if (state.metricsAggregateRows !== undefined && state.metricsAggregateRows.length > 0)
+			return succeedRows(state.metricsAggregateRows)
+		if (state.logsAggregateRows !== undefined && state.logsAggregateRows.length > 0)
+			return succeedRows(state.logsAggregateRows)
 		return succeedRows(emptyWarehouseRows)
 	}
 
@@ -391,7 +396,7 @@ export const makeUuidSequence = (...values: string[]): Pick<AlertRuntimeApi, "ma
 	}
 }
 
-export const okFetch: typeof fetch = (async () => new Response("ok", { status: 200 })) as typeof fetch
+export const okFetch: typeof fetch = async () => new Response("ok", { status: 200 })
 
 export const insertDeliveryEventRow = async (
 	db: TestDb,

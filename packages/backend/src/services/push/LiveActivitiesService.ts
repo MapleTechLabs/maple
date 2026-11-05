@@ -123,7 +123,7 @@ export class LiveActivitiesService extends Context.Service<LiveActivitiesService
 							.returning(),
 					),
 				)
-				return toLiveActivity(rows[0]!)
+				return toLiveActivity(rows[0])
 			})
 
 			const listActive = Effect.fn("LiveActivitiesService.listActive")(function* (

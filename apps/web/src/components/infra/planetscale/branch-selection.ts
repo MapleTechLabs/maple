@@ -107,14 +107,18 @@ export function defaultBranch(
 		// A promote in flight can briefly show two production branches; the busier
 		// one is the one actually serving. Both keep their badge in the table —
 		// this picks a default, it does not hide the anomaly.
-		const branch = [...production].sort(
-			(a, b) => connectionsOf(b) - connectionsOf(a) || Str.localeCompare(b.name)(a.name),
-		)[0]!
+		const branch = [...production].sort((a, b) =>
+			connectionsOf(b) !== connectionsOf(a)
+				? connectionsOf(b) - connectionsOf(a)
+				: Str.localeCompare(b.name)(a.name),
+		)[0]
 		return { branch, role: "production" }
 	}
-	const branch = [...candidates].sort(
-		(a, b) => connectionsOf(b) - connectionsOf(a) || Str.localeCompare(b.name)(a.name),
-	)[0]!
+	const branch = [...candidates].sort((a, b) =>
+		connectionsOf(b) !== connectionsOf(a)
+			? connectionsOf(b) - connectionsOf(a)
+			: Str.localeCompare(b.name)(a.name),
+	)[0]
 	return { branch, role: "busiest" }
 }
 

@@ -289,23 +289,26 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 					enabled: destination.enabled,
 					lastTestError: destination.lastTestError,
 				})),
-				errorNotificationPolicy: rows.notificationPolicy[0]
-					? {
-							enabled: rows.notificationPolicy[0].enabled,
-							destinationIds: rows.notificationPolicy[0].destinationIdsJson ?? [],
-						}
-					: null,
-				anomalyDetector: rows.anomalySettings[0]
-					? { enabled: rows.anomalySettings[0].enabled }
-					: null,
+				errorNotificationPolicy:
+					rows.notificationPolicy[0] !== undefined
+						? {
+								enabled: rows.notificationPolicy[0].enabled,
+								destinationIds: rows.notificationPolicy[0].destinationIdsJson ?? [],
+							}
+						: null,
+				anomalyDetector:
+					rows.anomalySettings[0] !== undefined
+						? { enabled: rows.anomalySettings[0].enabled }
+						: null,
 				dashboardCount: rows.dashboardRows[0]?.count ?? 0,
-				samplingPolicy: rows.sampling[0]
-					? {
-							traceSampleRatio: rows.sampling[0].traceSampleRatio,
-							alwaysKeepErrorSpans: rows.sampling[0].alwaysKeepErrorSpans,
-							alwaysKeepSlowSpansMs: rows.sampling[0].alwaysKeepSlowSpansMs,
-						}
-					: null,
+				samplingPolicy:
+					rows.sampling[0] !== undefined
+						? {
+								traceSampleRatio: rows.sampling[0].traceSampleRatio,
+								alwaysKeepErrorSpans: rows.sampling[0].alwaysKeepErrorSpans,
+								alwaysKeepSlowSpansMs: rows.sampling[0].alwaysKeepSlowSpansMs,
+							}
+						: null,
 				attributeMappings: Arr.map(rows.mappings, (mapping) => ({
 					id: mapping.id,
 					name: mapping.name,
@@ -316,14 +319,15 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 					operation: mapping.operation,
 					updatedAt: mapping.updatedAt,
 				})),
-				clickhouse: clickhouseRow
-					? {
-							syncStatus: clickhouseRow.syncStatus,
-							lastSyncError: clickhouseRow.lastSyncError,
-							schemaVersion: clickhouseRow.schemaVersion,
-							expectedSchemaVersion: clickHouseSchemaVersion,
-						}
-					: null,
+				clickhouse:
+					clickhouseRow !== undefined
+						? {
+								syncStatus: clickhouseRow.syncStatus,
+								lastSyncError: clickhouseRow.lastSyncError,
+								schemaVersion: clickhouseRow.schemaVersion,
+								expectedSchemaVersion: clickHouseSchemaVersion,
+							}
+						: null,
 				integrations: Arr.map(rows.connections, (connection) => ({
 					provider: connection.provider,
 					revokedAt: connection.revokedAt,

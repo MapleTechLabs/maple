@@ -34,7 +34,7 @@ describe("frameUrls", () => {
 			fc.property(fc.array(fc.tuple(url, fc.nat(9999), fc.nat(9999)), { maxLength: 8 }), (frames) => {
 				const text = frames
 					.map(([u, line, col], i) =>
-						i % 2 ? `fn@${u}:${line}:${col}` : `    at f (${u}:${line}:${col})`,
+						i % 2 === 1 ? `fn@${u}:${line}:${col}` : `    at f (${u}:${line}:${col})`,
 					)
 					.join("\n")
 				expect(frameUrls(text)).toEqual(frames.map(([u]) => u))

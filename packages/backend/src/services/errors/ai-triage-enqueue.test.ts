@@ -221,8 +221,8 @@ describe("maybeEnqueueTriage", () => {
 			const result = yield* maybeEnqueueTriage(criticalInput(chat.chatSessions, "incident-critical"))
 			assert.isTrue(result.enqueued)
 			assert.lengthOf(chat.turns, 1)
-			assert.strictEqual(chat.turns[0]!.sessionId, `${ORG}:inv-${result.investigationId}`)
-			assert.include(chat.turns[0]!.text, "checkout-api")
+			assert.strictEqual(chat.turns[0].sessionId, `${ORG}:inv-${result.investigationId}`)
+			assert.include(chat.turns[0].text, "checkout-api")
 
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>

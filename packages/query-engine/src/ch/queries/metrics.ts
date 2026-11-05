@@ -121,7 +121,7 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 			$.TimeUnix.lte(param.dateTime("endTime")),
 			wholeRangeEnd($.TimeUnix, opts.wholeRange),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
-			opts.environments?.length
+			opts.environments !== undefined && opts.environments.length > 0
 				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
 				: undefined,
 			...datapointFilterConditions(opts.attributeFilters),
@@ -195,7 +195,10 @@ const SPAN_METRICS_CALLS_NAMES = new Set(["span.metrics.calls", "calls", "traces
 function spanKindEqualsValue(filters: readonly AttributeFilter[] | undefined): string | undefined {
 	const [only, ...rest] = filters ?? []
 	if (only === undefined || rest.length > 0) return undefined
-	return only.key === "span.kind" && only.mode === "equals" && !only.negated && !only.or?.length
+	return only.key === "span.kind" &&
+		only.mode === "equals" &&
+		!only.negated &&
+		(only.or === undefined || only.or.length === 0)
 		? only.value
 		: undefined
 }
@@ -215,7 +218,8 @@ function canUseSpanMetricsCallsHourly(opts: MetricsRateTimeseriesOpts): boolean 
 		opts.bucketSeconds % 3600 === 0 &&
 		(opts.groupByAttributeKey === undefined || opts.groupByAttributeKey === "span.kind") &&
 		// The hourly MV keeps only SpanKind of the datapoint labels.
-		((opts.attributeFilters?.length ?? 0) === 0 ||
+		(opts.attributeFilters === undefined ||
+			opts.attributeFilters.length === 0 ||
 			spanKindEqualsValue(opts.attributeFilters) !== undefined) &&
 		// The hourly MV folds ResourceAttributes into a fingerprint — it cannot
 		// serve resource-attribute filters or group-bys, and `deployment.environment`
@@ -228,7 +232,7 @@ function canUseSpanMetricsCallsHourly(opts: MetricsRateTimeseriesOpts): boolean 
 
 function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 	opts: MetricsRateTimeseriesOpts,
-): CHQuery<ColumnDefs, MetricsRateTimeseriesOutput, {}> {
+): CHQuery<ColumnDefs, MetricsRateTimeseriesOutput> {
 	const bucket = CH.toStartOfInterval(
 		CH.toDateTime(utcSecondsParam("startTime")),
 		param.int("bucketSeconds"),
@@ -379,7 +383,7 @@ export function metricDeltaExpr(args: {
 
 export function metricsTimeseriesRateQuery(
 	opts: MetricsRateTimeseriesOpts,
-): CHQuery<ColumnDefs, MetricsRateTimeseriesOutput, {}> {
+): CHQuery<ColumnDefs, MetricsRateTimeseriesOutput> {
 	if (canUseSpanMetricsCallsHourly(opts)) return metricsTimeseriesRateFromSpanMetricsCallsHourly(opts)
 
 	// Prometheus-style counters often land as gauges (or as sums flagged
@@ -439,7 +443,7 @@ export function metricsTimeseriesRateQuery(
 			$.TimeUnix.lte(param.dateTime("endTime")),
 			wholeRangeEnd($.TimeUnix, opts.wholeRange),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
-			opts.environments?.length
+			opts.environments !== undefined && opts.environments.length > 0
 				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
 				: undefined,
 			...datapointFilterConditions(opts.attributeFilters),
@@ -611,7 +615,7 @@ export function metricsBreakdownQuery(opts: MetricsBreakdownOpts) {
 			CH.when(groupKey, (k: string) => $.Attributes.get(k).neq("")),
 			CH.when(resourceGroupKey, (k: string) => $.ResourceAttributes.get(k).neq("")),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
-			opts.environments?.length
+			opts.environments !== undefined && opts.environments.length > 0
 				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
 				: undefined,
 			...datapointFilterConditions(opts.attributeFilters),

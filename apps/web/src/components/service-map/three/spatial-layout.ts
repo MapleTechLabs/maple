@@ -54,12 +54,12 @@ export function spatialLayout(topology: SpatialTopology, view: SpatialView): Spa
 				depth: Math.ceil(nodes.length / columns) * 4.2 + 1.1,
 				tier: Math.min(...Arr.map(nodes, (node) => tiers.get(node.id) ?? 0)),
 			}
-		}).sort(
-			(a, b) =>
-				b.width * b.depth - a.width * a.depth ||
-				a.tier - b.tier ||
-				Str.localeCompare(b.namespace)(a.namespace),
-		)
+		}).sort((a, b) => {
+			const byArea = b.width * b.depth - a.width * a.depth
+			if (byArea !== 0) return byArea
+			if (a.tier !== b.tier) return a.tier - b.tier
+			return Str.localeCompare(b.namespace)(a.namespace)
+		})
 		const gap = 2.8
 		// Balance namespace stacks across columns so a large team doesn't leave
 		// an entire empty row beside the smaller database / service groups.
@@ -120,7 +120,7 @@ export function spatialLayout(topology: SpatialTopology, view: SpatialView): Spa
 					Order.mapInput(byLocale, (node: SpatialNode) => node.id),
 				),
 			)
-			if (!group.length) continue
+			if (group.length === 0) continue
 			const x = (tier - (count - 1) / 2) * 5.2
 			const y = (count - 1 - tier) * 0.75
 			Arr.forEach(group, (node, index) =>

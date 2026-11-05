@@ -335,14 +335,14 @@ const make: Effect.Effect<
 				"maple.errors.active_orgs": byo.size,
 				"maple.errors.failed_closed": false,
 			})
-			return { active: byo as ReadonlySet<OrgId>, discovered: byoKnown }
+			return { active: byo, discovered: byoKnown }
 		}
 
 		const compiled = CH.compile(CH.activeOrgsByErrorEventsQuery(), {
 			startTime: DateTime.makeUnsafe(nowMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS),
 		})
 		return yield* warehouse
-			.crossOrgQuery(systemTenant(knownOrgs[0]!), compiled, {
+			.crossOrgQuery(systemTenant(knownOrgs[0]), compiled, {
 				// Bound the one cross-org scan (no OrgId predicate ⇒ can't prune the
 				// primary key): abort server-side at 5s instead of riding the ~30s
 				// client timeout when the warehouse is slow.
@@ -357,7 +357,7 @@ const make: Effect.Effect<
 					for (const row of rows) {
 						active.add(row.orgId)
 					}
-					return { active: active as ReadonlySet<OrgId>, discovered: byoKnown }
+					return { active: active, discovered: byoKnown }
 				}),
 				Effect.tap(({ active }) =>
 					Effect.annotateCurrentSpan({
@@ -404,7 +404,7 @@ const make: Effect.Effect<
 									"maple.errors.active_orgs": active.size,
 									"maple.errors.failed_closed": true,
 								})
-								return { active: active as ReadonlySet<string>, discovered: false }
+								return { active: active, discovered: false }
 							}),
 				),
 			)
@@ -557,7 +557,7 @@ const make: Effect.Effect<
 			return yield* leaseConflict(issueId, latestRows[0] ?? null)
 		}
 
-		return { row: claimed[0]!, leaseExpiresAt }
+		return { row: claimed[0], leaseExpiresAt }
 	})
 
 	const claimIssue: ErrorsServiceApi["claimIssue"] = Effect.fn("ErrorsService.claimIssue")(
@@ -892,7 +892,7 @@ const make: Effect.Effect<
 						),
 					)
 					const claimed = claimedRows[0]
-					if (!claimed) return
+					if (claimed === undefined) return
 
 					const payloadOption = decodeErrorNotificationOutboxPayload(claimed.payloadJson)
 					if (Option.isNone(payloadOption)) {
@@ -1127,7 +1127,7 @@ const make: Effect.Effect<
 			}),
 		)
 		const row = claim[0]
-		if (!row) return null
+		if (row === undefined) return null
 		const windowStartMs = row.processedThrough
 		return {
 			claimToken,
@@ -1173,11 +1173,12 @@ const make: Effect.Effect<
 		)
 		// The actor exists after an org's first tick, so the insert path is a
 		// once-per-org cost rather than a per-tick round-trip.
-		const systemActor = preamble.actorRow
-			? rowToActor(preamble.actorRow)
-			: yield* ensureSystemActor(orgId).pipe(
-					Effect.tapError(() => releaseTickClaim(orgId, tickWindow.claimToken, nowMs)),
-				)
+		const systemActor =
+			preamble.actorRow !== null
+				? rowToActor(preamble.actorRow)
+				: yield* ensureSystemActor(orgId).pipe(
+						Effect.tapError(() => releaseTickClaim(orgId, tickWindow.claimToken, nowMs)),
+					)
 		const policy = preamble.policyRow ?? defaultPolicy(orgId, nowMs)
 
 		const leasesExpired = yield* expireLeasesForOrg(
@@ -1229,9 +1230,7 @@ const make: Effect.Effect<
 			readonly issuesRaw: Effect.Success<ScanWindow>
 			readonly splits: number
 		}
-		const shedWindow = (
-			state: ShedWindow,
-		): Effect.Effect<ShedWindow, Effect.Error<ScanWindow>, Effect.Services<ScanWindow>> => {
+		const shedWindow = (state: ShedWindow): Effect.Effect<ShedWindow, Effect.Error<ScanWindow>> => {
 			if (state.issuesRaw.length <= TICK_MAX_WINDOW_ROWS || state.splits >= TICK_MAX_WINDOW_SPLITS) {
 				return Effect.succeed(state)
 			}

@@ -159,7 +159,7 @@ export function ducks(
 			const node = groups[i]
 			const body = node?.children[0]
 			const pair = wings[i]
-			if (!node || !body || !pair) return
+			if (node === undefined || body === undefined || pair === undefined) return
 			const s = (duck.phase * water.length + elapsed.value * duck.speed) % water.length
 			const point = water.at(s)
 			// The tangent is the outward normal turned a quarter: (-nz, nx).

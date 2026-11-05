@@ -137,7 +137,7 @@ const cellText = (value: unknown): string =>
 
 const parseCount = (text: string): number => {
 	const row = readRows(text)[0]
-	if (!row) return 0
+	if (row === undefined) return 0
 	const value = row["count()"] ?? row.count
 	const count = typeof value === "number" ? value : Number(value ?? 0)
 	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid count result: ${String(value)}`)
@@ -218,7 +218,7 @@ const splitArgs = (inner: string): string[] => {
 	let depth = 0
 	let start = 0
 	for (let i = 0; i < inner.length; i++) {
-		const ch = inner[i]!
+		const ch = inner[i]
 		if (ch === "(") depth++
 		else if (ch === ")") depth--
 		else if (ch === "," && depth === 0) {
@@ -409,8 +409,8 @@ export const compareSchema = (
 		)
 	}
 	for (let i = 0; i < source.length; i++) {
-		const src = source[i]!
-		const par = parquetCols[i]!
+		const src = source[i]
+		const par = parquetCols[i]
 		if (src.name !== par.name) {
 			throw new Error(
 				`archive shard validation failed: ${shardPath} column ${i} name mismatch: source ${src.name}, Parquet ${par.name}`,

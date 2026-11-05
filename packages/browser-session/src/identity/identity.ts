@@ -137,11 +137,11 @@ export function normalizeIdentity(input: IdentifyInput): ResolvedIdentity | unde
 	// An object with nothing usable in it reads as "clear the identity" — the
 	// same as identify(undefined).
 	const hasAnything =
-		resolved.id ||
-		resolved.email ||
-		resolved.username ||
-		resolved.groupId ||
-		resolved.groupName ||
+		!!resolved.id ||
+		!!resolved.email ||
+		!!resolved.username ||
+		!!resolved.groupId ||
+		!!resolved.groupName ||
 		Object.keys(resolved.traits).length > 0
 	return hasAnything ? resolved : undefined
 }

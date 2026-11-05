@@ -164,7 +164,7 @@ function requestsByEnvironment(rows: ReadonlyArray<ServiceOverviewRow>): Map<str
 	const totals = new Map<string, number>()
 	for (const row of rows) {
 		const environment = row.environment
-		totals.set(environment, (totals.get(environment) ?? 0) + (row.estimatedSpanCount || 0))
+		totals.set(environment, (totals.get(environment) ?? 0) + row.estimatedSpanCount)
 	}
 	return totals
 }
@@ -231,15 +231,15 @@ function buildBreakdown(
 	for (const row of current) {
 		const label = dimension(row)
 		const entry = totals.get(label) ?? { requests: 0, errors: 0 }
-		entry.requests += row.estimatedSpanCount || 0
-		entry.errors += row.estimatedErrorCount || 0
+		entry.requests += row.estimatedSpanCount
+		entry.errors += row.estimatedErrorCount
 		totals.set(label, entry)
 	}
 
 	const prevTotals = new Map<string, number>()
 	for (const row of previous) {
 		const label = dimension(row)
-		prevTotals.set(label, (prevTotals.get(label) ?? 0) + (row.estimatedSpanCount || 0))
+		prevTotals.set(label, (prevTotals.get(label) ?? 0) + row.estimatedSpanCount)
 	}
 
 	return Arr.map([...totals.entries()], ([label, { requests, errors }]) => ({
@@ -259,14 +259,14 @@ function buildBreakdownFromRows(
 	current: ReadonlyArray<TracesBreakdownRow>,
 	previous: ReadonlyArray<TracesBreakdownRow>,
 ): Array<DigestBreakdownRow> {
-	const previousByName = new Map(Arr.map(previous, (row) => [row.name, row.count || 0] as const))
+	const previousByName = new Map(Arr.map(previous, (row) => [row.name, row.count] as const))
 	return Arr.map(current, (row) => {
 		const label = row.name
-		const requests = row.count || 0
+		const requests = row.count
 		return {
 			label,
 			requests,
-			errorRate: (row.errorRate || 0) * 100,
+			errorRate: row.errorRate * 100,
 			requestsDelta: computeDelta(requests, previousByName.get(label) ?? 0),
 		}
 	}).sort((a, b) => b.requests - a.requests)
@@ -304,7 +304,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			)
 
 			const row = rows[0]
-			if (!row) {
+			if (row === undefined) {
 				return yield* new DigestNotFoundError({
 					message: "No digest subscription found",
 				})
@@ -636,9 +636,9 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 				const row = rows[0]
 				return {
 					name: "all",
-					count: row?.count || 0,
-					errorRate: row?.errorRate || 0,
-					p95Duration: row?.p95Duration || 0,
+					count: row?.count ?? 0,
+					errorRate: row?.errorRate ?? 0,
+					p95Duration: row?.p95Duration ?? 0,
 				}
 			}
 			const cur = summaryRow(curSummary)
@@ -655,26 +655,26 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			const curUsageData = usageRows.filter((r) => r.period === "current")
 			const prevUsageData = usageRows.filter((r) => r.period === "previous")
 			const sumUsage = (data: ReadonlyArray<ServiceUsageRow>) => ({
-				logs: data.reduce((s, r) => s + (r.totalLogCount || 0), 0),
-				traces: data.reduce((s, r) => s + (r.totalTraceCount || 0), 0),
+				logs: data.reduce((s, r) => s + r.totalLogCount, 0),
+				traces: data.reduce((s, r) => s + r.totalTraceCount, 0),
 				metrics: data.reduce(
 					(s, r) =>
 						s +
-						(r.totalSumMetricCount || 0) +
-						(r.totalGaugeMetricCount || 0) +
-						(r.totalHistogramMetricCount || 0) +
-						(r.totalExpHistogramMetricCount || 0),
+						r.totalSumMetricCount +
+						r.totalGaugeMetricCount +
+						r.totalHistogramMetricCount +
+						r.totalExpHistogramMetricCount,
 					0,
 				),
 				totalBytes: data.reduce(
 					(s, r) =>
 						s +
-						(r.totalLogSizeBytes || 0) +
-						(r.totalTraceSizeBytes || 0) +
-						(r.totalSumMetricSizeBytes || 0) +
-						(r.totalGaugeMetricSizeBytes || 0) +
-						(r.totalHistogramMetricSizeBytes || 0) +
-						(r.totalExpHistogramMetricSizeBytes || 0),
+						r.totalLogSizeBytes +
+						r.totalTraceSizeBytes +
+						r.totalSumMetricSizeBytes +
+						r.totalGaugeMetricSizeBytes +
+						r.totalHistogramMetricSizeBytes +
+						r.totalExpHistogramMetricSizeBytes,
 					0,
 				),
 			})
@@ -692,7 +692,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			// returns rather than on the service name alone.
 			const prevRequestsByService = new Map<string, number>()
 			for (const s of prevOverviewData) {
-				prevRequestsByService.set(serviceKey(s), s.estimatedSpanCount || 0)
+				prevRequestsByService.set(serviceKey(s), s.estimatedSpanCount)
 			}
 
 			const services: Array<DigestServiceRow> = curOverviewData
@@ -700,15 +700,15 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 					// `estimatedSpanCount` is the sample-weighted count, matching the
 					// summary cards and the rest of the product; `throughput` is the raw
 					// stored-row count and disagrees with both under any sampling.
-					const requests = s.estimatedSpanCount || 0
-					const errors = s.estimatedErrorCount || 0
+					const requests = s.estimatedSpanCount
+					const errors = s.estimatedErrorCount
 					return {
 						name: s.serviceName,
 						environment: s.environment,
 						namespace: s.serviceNamespace,
 						requests,
 						errorRate: requests > 0 ? (errors / requests) * 100 : 0,
-						p95Ms: s.p95LatencyMs || 0,
+						p95Ms: s.p95LatencyMs,
 						requestsDelta: computeDelta(requests, prevRequestsByService.get(serviceKey(s)) ?? 0),
 					}
 				})
@@ -751,8 +751,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 
 			const errorsData = currentErrors.map((e) => ({
 				message: e.errorLabel || e.sampleMessage || "Unknown error",
-				count: e.count || 0,
-				affectedServices: e.affectedServicesCount || 0,
+				count: e.count,
+				affectedServices: e.affectedServicesCount,
 				isNew: e.fingerprintHash ? !prevErrorFingerprints.has(e.fingerprintHash) : false,
 			}))
 
@@ -765,11 +765,11 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 				// Guard against any boundary off-by-one — keep the 7 most recent days.
 				.slice(-7)
 				.map((r) => {
-					const requests = r.count || 0
+					const requests = r.count
 					return {
 						label: weekdayInitial(r.bucket),
 						requests,
-						errors: Math.round(requests * (r.errorRate || 0)),
+						errors: Math.round(requests * r.errorRate),
 					}
 				})
 
@@ -1082,7 +1082,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 				(orgSubs) => {
 					// Every subscription in the group shares an org and a scope by
 					// construction, so the first row speaks for all of them.
-					const head = orgSubs[0]!
+					const head = orgSubs[0]
 					const rawOrgId = head.orgId
 					const scope: DigestScope = {
 						environments: parseScopeColumn(head.environmentsJson),

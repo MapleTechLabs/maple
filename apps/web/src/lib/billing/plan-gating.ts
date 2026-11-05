@@ -171,7 +171,7 @@ export function getTrialStatus(customer: Customer | null | undefined): TrialStat
 	let daysRemaining: number | null = null
 	let trialEndsAt: Date | null = null
 
-	if (isTrialing && sub.trialEndsAt) {
+	if (isTrialing && sub.trialEndsAt != null) {
 		trialEndsAt = new Date(sub.trialEndsAt)
 		const msRemaining = trialEndsAt.getTime() - Date.now()
 		daysRemaining = msRemaining > 0 ? Math.ceil(msRemaining / (1000 * 60 * 60 * 24)) : 0

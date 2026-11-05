@@ -191,7 +191,11 @@ export function fireLanes(
 		ruleId,
 		ruleName: lane.ruleName,
 		bars: lane.bars,
-	})).sort((a, b) => b.bars.length - a.bars.length || Str.localeCompare(b.ruleName)(a.ruleName))
+	})).sort((a, b) =>
+		b.bars.length !== a.bars.length
+			? b.bars.length - a.bars.length
+			: Str.localeCompare(b.ruleName)(a.ruleName),
+	)
 }
 
 export type RibbonCell = "quiet" | "warning" | "critical"

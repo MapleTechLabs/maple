@@ -886,7 +886,9 @@ function modelUsage(
 		// A model whose calls reported no cost reads as unpriced rather than
 		// free — the session total may still be non-zero from another model.
 		cost: entry.costs.length === 0 ? undefined : sumCosts(entry.costs),
-	})).sort((a, b) => b.llmCalls - a.llmCalls || b.tokens.total - a.tokens.total)
+	})).sort((a, b) =>
+		b.llmCalls !== a.llmCalls ? b.llmCalls - a.llmCalls : b.tokens.total - a.tokens.total,
+	)
 }
 
 /**
@@ -966,7 +968,13 @@ function toolUsage(
 		}))
 			// Reach leads, time breaks the tie: what the agent kept going back to is
 			// the first thing a reader scans the ledger for.
-			.sort((a, b) => b.calls - a.calls || b.totalMs - a.totalMs || Str.localeCompare(b.name)(a.name))
+			.sort((a, b) =>
+				b.calls !== a.calls
+					? b.calls - a.calls
+					: b.totalMs !== a.totalMs
+						? b.totalMs - a.totalMs
+						: Str.localeCompare(b.name)(a.name),
+			)
 	)
 }
 
@@ -1322,7 +1330,9 @@ export function groupFailures(events: readonly SessionFailureEvent[]): readonly 
 			count: (existing?.count ?? 0) + 1,
 		})
 	}
-	return [...groups.values()].sort((a, b) => b.count - a.count || Str.localeCompare(b.label)(a.label))
+	return [...groups.values()].sort((a, b) =>
+		b.count !== a.count ? b.count - a.count : Str.localeCompare(b.label)(a.label),
+	)
 }
 
 /* -------------------------------------------------------------------------- */

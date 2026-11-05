@@ -203,7 +203,7 @@ describe("tracesListQuery", () => {
 		// Cutoff subquery reads only Timestamp — no Map columns, no Duration math.
 		const cutoffMatch = Option.getOrThrow(Str.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)(sql))
 		expect(cutoffMatch).not.toBeNull()
-		const inner = cutoffMatch[1]!
+		const inner = cutoffMatch[1]
 		expect(inner).toContain("Timestamp AS ts")
 		expect(inner).not.toContain("SpanAttributes")
 		expect(inner).not.toContain("ResourceAttributes")
@@ -220,7 +220,7 @@ describe("tracesListQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		const cutoffMatch = Option.getOrThrow(Str.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)(sql))
 		expect(cutoffMatch).not.toBeNull()
-		const inner = cutoffMatch[1]!
+		const inner = cutoffMatch[1]
 		// Stage 1 must look at limit+offset rows so the cutoff isn't above the
 		// rows the outer OFFSET will skip past.
 		expect(inner).toContain("LIMIT 125")
@@ -305,7 +305,7 @@ describe("tracesRootListQuery", () => {
 		// Cutoff subquery reads only Timestamp.
 		const cutoffMatch = Option.getOrThrow(Str.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)(sql))
 		expect(cutoffMatch).not.toBeNull()
-		const inner = cutoffMatch[1]!
+		const inner = cutoffMatch[1]
 		expect(inner).toContain("Timestamp AS ts")
 		expect(inner).not.toContain("SpanAttributes")
 		expect(inner).not.toContain("Duration")
@@ -325,7 +325,7 @@ describe("tracesRootListQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		const cutoffMatch = Option.getOrThrow(Str.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)(sql))
 		expect(cutoffMatch).not.toBeNull()
-		const inner = cutoffMatch[1]!
+		const inner = cutoffMatch[1]
 		expect(inner).toContain("LIMIT 100")
 	})
 
@@ -400,7 +400,7 @@ describe("traceListQuery", () => {
 		type Cursor = { timestamp: DateTime.Utc; traceId: string }
 		const second = (ts: DateTime.Utc) => Math.floor(DateTime.toEpochMillis(ts) / 1000) * 1000
 		const desc = (key: (r: Root) => number) => (a: Root, b: Root) =>
-			key(b) - key(a) || Str.localeCompare(a.traceId)(b.traceId)
+			key(b) !== key(a) ? key(b) - key(a) : Str.localeCompare(a.traceId)(b.traceId)
 
 		/** Evaluates one page the way ClickHouse would, reading stage 2's order off the SQL. */
 		const page = (cursor: Cursor | undefined): Root[] => {

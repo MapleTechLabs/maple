@@ -46,7 +46,7 @@ const loadText = async (): Promise<string> => {
 const payload = JSON.parse(await loadText()) as SourcePayload
 const attributes = payload.attributes
 const versions = payload.registries
-if (!Array.isArray(attributes) || attributes.length === 0 || !versions?.semconv || !versions.genai) {
+if (!Array.isArray(attributes) || attributes.length === 0 || !versions?.semconv || versions.genai == null) {
 	throw new Error(`${SOURCE} answered without attributes or registry versions`)
 }
 
@@ -60,7 +60,7 @@ const successorsOf = (attribute: SourceAttribute): ReadonlyArray<string> => {
 	const deprecated = attribute.deprecated
 	if (!deprecated) return []
 	if (deprecated.renamedTo) return [deprecated.renamedTo]
-	const named = [...(deprecated.note ?? "").matchAll(/`([a-z0-9_.]+)`/g)].map((m) => m[1]!)
+	const named = [...(deprecated.note ?? "").matchAll(/`([a-z0-9_.]+)`/g)].map((m) => m[1])
 	return [...new Set(named.filter((id) => id !== attribute.id && knownIds.has(id)))]
 }
 

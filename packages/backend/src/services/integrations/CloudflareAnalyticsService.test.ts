@@ -254,9 +254,9 @@ const readRequestBody = async (
 ): Promise<string> => {
 	if (init?.body != null) {
 		if (typeof init.body === "string") return init.body
-		return await new Response(init.body as BodyInit).text()
+		return new Response(init.body as BodyInit).text()
 	}
-	return input instanceof Request ? await input.text() : "{}"
+	return input instanceof Request ? input.text() : "{}"
 }
 
 /** A tracer that keeps every span, so a test can read what the poller annotated. */
@@ -280,7 +280,7 @@ const readHeader = (
 	name: string,
 ): string => {
 	if (init?.headers) {
-		const value = new Headers(init.headers as HeadersInit).get(name)
+		const value = new Headers(init.headers).get(name)
 		if (value != null) return value
 	}
 	if (input instanceof Request) {
@@ -326,7 +326,7 @@ const mockCloudflareFetch =
 			return jsonResponse({ data: null, errors: [{ message: "unknown query" }] })
 		}
 		if (Str.includes("/hyperdrive/configs")(url)) {
-			if (options.hyperdriveStatus) {
+			if (options.hyperdriveStatus !== undefined) {
 				return jsonResponse(
 					{
 						success: false,
@@ -364,7 +364,7 @@ const mockCloudflareFetch =
 			})
 		}
 		if (Str.includes("/zones")(url)) {
-			if (options.zonesStatus) {
+			if (options.zonesStatus !== undefined) {
 				return jsonResponse(
 					{
 						success: false,
@@ -851,16 +851,16 @@ describe("CloudflareAnalyticsService", () => {
 
 			// The first tick runs out of budget with history still owed; later ticks drain it.
 			const [first] = named("CloudflareAnalyticsService.pollConnection")
-			assert.strictEqual(first!.attributes.get("maple.cloudflare.stop_reason"), "budget_exhausted")
-			assert.isAbove(Number(first!.attributes.get("maple.cloudflare.pending_items")), 0)
+			assert.strictEqual(first.attributes.get("maple.cloudflare.stop_reason"), "budget_exhausted")
+			assert.isAbove(Number(first.attributes.get("maple.cloudflare.pending_items")), 0)
 			yield* service.pollOrg(ORG)
 			const next = recordSpans()
 			yield* service.pollOrg(ORG).pipe(Effect.withTracer(next.tracer))
 			const [poll] = next.named("CloudflareAnalyticsService.pollConnection")
-			assert.strictEqual(poll!.attributes.get("maple.cloudflare.stop_reason"), "caught_up")
-			assert.strictEqual(poll!.attributes.get("maple.cloudflare.pending_items"), 0)
+			assert.strictEqual(poll.attributes.get("maple.cloudflare.stop_reason"), "caught_up")
+			assert.strictEqual(poll.attributes.get("maple.cloudflare.pending_items"), 0)
 			// Caught up means the head sits at the safety horizon, 10 min behind now.
-			assert.strictEqual(poll!.attributes.get("maple.cloudflare.max_lag_ms"), 10 * MIN)
+			assert.strictEqual(poll.attributes.get("maple.cloudflare.max_lag_ms"), 10 * MIN)
 
 			const lag = yield* Metric.value(
 				Metric.withAttributes(CloudflareAnalyticsMetrics.datasetLagSeconds, {
@@ -996,7 +996,7 @@ describe("CloudflareAnalyticsService", () => {
 				yield* service.pollOrg(ORG)
 				const second = yield* service.listHyperdriveConfigs(ORG)
 				assert.strictEqual(second.length, 1)
-				assert.strictEqual(second[0]!.name, "maple-mysql-renamed")
+				assert.strictEqual(second[0].name, "maple-mysql-renamed")
 
 				const database = yield* Database
 				const allRows = yield* database.execute((db) =>
@@ -1096,8 +1096,8 @@ describe("CloudflareAnalyticsService", () => {
 					// History is still filling in behind it: the backfill frontier started walking down
 					// from the seed but couldn't reach the 24h floor under the per-tick call budget.
 					assert.isNotNull(row.backfillAt)
-					assert.isAbove(row.backfillAt!, BACKFILL_FLOOR)
-					assert.isBelow(row.backfillAt!, HORIZON)
+					assert.isAbove(row.backfillAt, BACKFILL_FLOOR)
+					assert.isBelow(row.backfillAt, HORIZON)
 				}
 				// Budget-bound tick (that's WHY history is incomplete) — the head still won the race.
 				// Pinned to the floor rather than a magic number so retuning the adaptive cap
@@ -1120,9 +1120,9 @@ describe("CloudflareAnalyticsService", () => {
 			yield* service.pollOrg(ORG).pipe(Effect.withTracer(tracer))
 
 			const [poll] = named("CloudflareAnalyticsService.pollConnection")
-			assert.strictEqual(poll!.attributes.get("maple.cloudflare.stop_reason"), "budget_exhausted")
-			assert.isAbove(Number(poll!.attributes.get("maple.cloudflare.pending_items")), 0)
-			assert.strictEqual(poll!.attributes.get("maple.cloudflare.budget_used_before"), 0)
+			assert.strictEqual(poll.attributes.get("maple.cloudflare.stop_reason"), "budget_exhausted")
+			assert.isAbove(Number(poll.attributes.get("maple.cloudflare.pending_items")), 0)
+			assert.strictEqual(poll.attributes.get("maple.cloudflare.budget_used_before"), 0)
 			// Chunk spans tell head from backfill, so the cut-short history is visible per window.
 			const phases = Arr.map(named("CloudflareAnalyticsService.pollDatasetChunk"), (span) =>
 				span.attributes.get("maple.cloudflare.phase"),
@@ -1673,7 +1673,7 @@ describe("CloudflareAnalyticsService", () => {
 			assert.strictEqual(result.rowsIngested, 0)
 			assert.strictEqual(result.skipped, 1)
 			assert.strictEqual(result.perOrg.length, 1)
-			assert.strictEqual(result.perOrg[0]!.skipped, "lease held by another tick")
+			assert.strictEqual(result.perOrg[0].skipped, "lease held by another tick")
 		}).pipe(Effect.provide(makeLayer(testDb, captured)))
 	})
 
@@ -1704,7 +1704,7 @@ describe("CloudflareAnalyticsService", () => {
 						.where(($) => [$.orgId.eq(ORG)]),
 				),
 			)
-			assert.isNull(rows[0]!.revokedAt)
+			assert.isNull(rows[0].revokedAt)
 		}).pipe(Effect.provide(makeLayer(testDb, captured)))
 	})
 
@@ -1951,8 +1951,8 @@ describe("CloudflareAnalyticsService", () => {
 			const summary = yield* service.pollOrg(ORG).pipe(Effect.withTracer(tracer))
 			// The poll span says why it stopped and that the windows are still owed.
 			const [poll] = named("CloudflareAnalyticsService.pollConnection")
-			assert.strictEqual(poll!.attributes.get("maple.cloudflare.stop_reason"), "rate_limited")
-			assert.isAbove(Number(poll!.attributes.get("maple.cloudflare.pending_items")), 0)
+			assert.strictEqual(poll.attributes.get("maple.cloudflare.stop_reason"), "rate_limited")
+			assert.isAbove(Number(poll.attributes.get("maple.cloudflare.pending_items")), 0)
 			assert.include(
 				Arr.map(named("CloudflareAnalyticsService.pollDatasetChunk"), (span) =>
 					span.attributes.get("maple.cloudflare.outcome"),
@@ -1981,7 +1981,7 @@ describe("CloudflareAnalyticsService", () => {
 				Arr.findFirst(rows, (row) => row.dataset === "workers_invocations" && row.zoneId === ""),
 			)
 			assert.isNotNull(anchor.leaseUntil)
-			assert.isAbove(anchor.leaseUntil!, T0)
+			assert.isAbove(anchor.leaseUntil, T0)
 			assert.strictEqual(captured.length, 0)
 		}).pipe(
 			Effect.provide(
@@ -2011,8 +2011,8 @@ describe("CloudflareAnalyticsService", () => {
 			// No stored cap yet: the tick runs at the starting cap and halves it.
 			yield* service.pollOrg(ORG).pipe(Effect.withTracer(tracer))
 			const [org] = named("CloudflareAnalyticsService.pollOrg")
-			assert.strictEqual(org!.attributes.get("maple.cloudflare.grant_cap"), 60)
-			assert.strictEqual(org!.attributes.get("maple.cloudflare.grant_cap_next"), 30)
+			assert.strictEqual(org.attributes.get("maple.cloudflare.grant_cap"), 60)
+			assert.strictEqual(org.attributes.get("maple.cloudflare.grant_cap_next"), 30)
 			assert.deepStrictEqual(yield* grantCapsOf, [30])
 
 			// Near the floor a halving clamps to it, and a further rate limit keeps it there.
@@ -2149,7 +2149,7 @@ describe("CloudflareAnalyticsService", () => {
 				"countryAgg:",
 				"clientAgg:",
 			]) {
-				assert.include(zoneDocs[0]!, alias)
+				assert.include(zoneDocs[0], alias)
 			}
 		}).pipe(Effect.provide(makeLayer(testDb, captured, { graphqlQueries })))
 	})
@@ -2435,8 +2435,8 @@ describe("CloudflareAnalyticsService", () => {
 				),
 			)
 			assert.isDefined(requestsMetric.sum)
-			assert.strictEqual(requestsMetric.sum!.aggregationTemporality, 1)
-			assert.strictEqual(requestsMetric.sum!.isMonotonic, true)
+			assert.strictEqual(requestsMetric.sum.aggregationTemporality, 1)
+			assert.strictEqual(requestsMetric.sum.isMonotonic, true)
 		}).pipe(Effect.provide(makeLayer(testDb, captured, { otlpCalls })))
 	})
 
@@ -2763,7 +2763,7 @@ describe("CloudflareAnalyticsService", () => {
 			assert.strictEqual(usage.firewallBlockedEvents, 30)
 
 			assert.strictEqual(usage.services.length, 2)
-			const zone = usage.services[0]!
+			const zone = usage.services[0]
 			assert.strictEqual(zone.kind, "zone")
 			assert.strictEqual(zone.serviceName, "cloudflare/example.com")
 			assert.strictEqual(zone.displayName, "example.com")
@@ -2774,7 +2774,7 @@ describe("CloudflareAnalyticsService", () => {
 			assert.strictEqual(zone.buckets[0]?.bucketStart, Date.parse("2026-07-02T10:00:00.000Z"))
 			assert.strictEqual(zone.buckets[0]?.requests, 100)
 
-			const worker = usage.services[1]!
+			const worker = usage.services[1]
 			assert.strictEqual(worker.kind, "worker")
 			assert.strictEqual(worker.displayName, "my-worker")
 			assert.strictEqual(worker.totalRequests, 42)
@@ -2864,7 +2864,7 @@ describe("CloudflareAnalyticsService", () => {
 			const usage = yield* service.getUsage(ORG)
 
 			assert.strictEqual(usage.services.length, 1)
-			const zone = usage.services[0]!
+			const zone = usage.services[0]
 			assert.strictEqual(zone.totalRequests, 150)
 			assert.strictEqual(zone.totalDatapoints, 34)
 			assert.strictEqual(zone.buckets.length, 2)

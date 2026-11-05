@@ -162,11 +162,11 @@ const severityRank = (severity: string): number => SEVERITY_RANK.get(Str.toUpper
 export const errorFirstLogs = <L extends { readonly severityText: string; readonly timestamp: string }>(
 	logs: ReadonlyArray<L>,
 ): ReadonlyArray<L> =>
-	[...logs].sort(
-		(a, b) =>
-			severityRank(a.severityText) - severityRank(b.severityText) ||
-			(a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0),
-	)
+	[...logs].sort((a, b) => {
+		const bySeverity = severityRank(a.severityText) - severityRank(b.severityText)
+		if (bySeverity !== 0) return bySeverity
+		return a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0
+	})
 
 const ANCHOR_SLACK_MS = 60 * 1000
 const RELATED_SLACK_MS = 5 * 60 * 1000

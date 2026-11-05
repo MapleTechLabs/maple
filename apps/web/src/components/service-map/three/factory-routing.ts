@@ -3,6 +3,7 @@ import { Order, Schema, Array as Arr, String as Str } from "effect"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import type { Edge3D, Topology3D } from "./types"
 import type { SpatialLayout } from "./spatial-layout"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 const encodePair = Schema.encodeSync(Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String])))
 const encodePoints = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.Array(Schema.Number))))
@@ -38,11 +39,11 @@ export function roundedRoute(points: THREE.Vector3[], radius = 0.65) {
 	const path = new THREE.CurvePath<THREE.Vector3>()
 	const first = points[0],
 		last = points.at(-1)
-	if (!first || !last) return path
+	if (first === undefined || !last) return path
 	let previous = first
 	for (const [i, corner] of points.entries()) {
 		const next = points[i + 1]
-		if (i === 0 || !next) continue
+		if (i === 0 || next === undefined) continue
 		const cut = Math.min(radius, corner.distanceTo(previous) * 0.45, corner.distanceTo(next) * 0.45)
 		const enter = corner.clone().lerp(previous, cut / Math.max(corner.distanceTo(previous), 0.001))
 		const leave = corner.clone().lerp(next, cut / Math.max(corner.distanceTo(next), 0.001))
@@ -87,7 +88,7 @@ export function factoryRoutes(topology: RoutingTopology, layout: SpatialLayout):
 		const a = new THREE.Vector3(...source),
 			b = new THREE.Vector3(...target)
 		const alongX = Math.abs(b.x - a.x) >= Math.abs(b.z - a.z)
-		const direction = Math.sign(alongX ? b.x - a.x : b.z - a.z) || 1
+		const direction = nonZeroOr(Math.sign(alongX ? b.x - a.x : b.z - a.z), 1)
 		const side = alongX ? "x" : "z"
 		a[side] += direction * 1.3
 		b[side] -= direction * 1.3
@@ -108,7 +109,7 @@ export function factoryRoutes(topology: RoutingTopology, layout: SpatialLayout):
 		const waypoints = [a, lead, middle, turn, tail, b]
 		const clean = Arr.filter(waypoints, (point, i) => {
 			const previous = waypoints[i - 1]
-			return !previous || point.distanceTo(previous) > 0.01
+			return previous === undefined || point.distanceTo(previous) > 0.01
 		})
 		const curve = roundedRoute(clean, 0.3)
 		return [

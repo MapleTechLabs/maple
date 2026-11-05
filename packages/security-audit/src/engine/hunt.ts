@@ -41,7 +41,15 @@ export const strongest = <E extends { readonly candidate: Candidate; readonly ag
 ) =>
 	[...entries].sort((a, b) => {
 		const [x, y] = [candidateRank(a), candidateRank(b)]
-		return x[0] - y[0] || x[1] - y[1] || (x[2] < y[2] ? -1 : x[2] > y[2] ? 1 : 0)
+		return x[0] !== y[0]
+			? x[0] - y[0]
+			: x[1] !== y[1]
+				? x[1] - y[1]
+				: x[2] < y[2]
+					? -1
+					: x[2] > y[2]
+						? 1
+						: 0
 	})[0]
 
 /**

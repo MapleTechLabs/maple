@@ -551,7 +551,8 @@ const indexTracesOf = <Bounds extends IndexBounds, Row extends { readonly traceI
 	sessionIds: readonly string[] | undefined,
 	select: ($: IndexColumns) => Row,
 ) => {
-	const values = (list: readonly string[] | undefined) => (list?.length ? list : undefined)
+	const values = (list: readonly string[] | undefined) =>
+		list !== undefined && list.length > 0 ? list : undefined
 	const search = opts.search === undefined ? undefined : Str.trim(opts.search) || undefined
 	const carries = (cond: CH.Condition) => CH.countIf(cond).gt(0)
 	return from(AiTraceIndex)
@@ -786,7 +787,7 @@ const pagePlan = (opts: AiSessionPageOpts) => {
 
 	// The `HAVING` and `WHERE` levels see the aliases by name only.
 	const column = {
-		sessionId: CH.dynamicColumn<string>("sessionId", T.string),
+		sessionId: CH.dynamicColumn("sessionId", T.string),
 		errorAgentSpans: CH.dynamicColumn<number>("errorAgentSpans", T.float64),
 		agentDurationMs: CH.dynamicColumn<number>("agentDurationMs", T.float64),
 		cost: CH.dynamicColumn<number>("cost", T.float64),

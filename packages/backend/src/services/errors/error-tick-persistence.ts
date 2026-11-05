@@ -370,10 +370,12 @@ const REKEY_STATE_RANK = {
 	done: 7,
 	cancelled: 8,
 } as const satisfies Readonly<Record<WorkflowState, number>>
-const rekeyOrder = (a: ErrorIssueRow, b: ErrorIssueRow) =>
-	REKEY_STATE_RANK[a.workflowState] - REKEY_STATE_RANK[b.workflowState] ||
-	b.occurrenceCount - a.occurrenceCount ||
-	a.firstSeenAt - b.firstSeenAt
+const rekeyOrder = (a: ErrorIssueRow, b: ErrorIssueRow) => {
+	const byState = REKEY_STATE_RANK[a.workflowState] - REKEY_STATE_RANK[b.workflowState]
+	if (byState !== 0) return byState
+	if (b.occurrenceCount !== a.occurrenceCount) return b.occurrenceCount - a.occurrenceCount
+	return a.firstSeenAt - b.firstSeenAt
+}
 
 /**
  * Hand a fingerprint version bump's new hashes to the issues their previous hashes

@@ -168,7 +168,7 @@ export function createWidgetAlertPrefill(
 				),
 		})
 
-		if (!selected) {
+		if (selected == null) {
 			return {
 				form: base,
 				notices: [

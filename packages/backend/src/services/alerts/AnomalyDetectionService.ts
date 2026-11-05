@@ -388,7 +388,7 @@ const make: Effect.Effect<
 				"maple.anomaly.active_orgs": byo.size,
 				"maple.anomaly.failed_closed": false,
 			})
-			return byo as ReadonlySet<string>
+			return byo
 		}
 
 		const startTime = formatWarehouseDateTime(nowMs - ANOMALY_ACTIVE_DISCOVERY_WINDOW_MS)
@@ -423,9 +423,9 @@ const make: Effect.Effect<
 				const active = new Set<string>(byo)
 				for (const row of [...tracesRows, ...logsRows]) {
 					const orgId = row.orgId
-					if (orgId) active.add(orgId)
+					if (orgId !== "") active.add(orgId)
 				}
-				return active as ReadonlySet<string>
+				return active
 			}),
 			Effect.tap((active) =>
 				Effect.annotateCurrentSpan({
@@ -468,7 +468,7 @@ const make: Effect.Effect<
 								"maple.anomaly.active_orgs": active.size,
 								"maple.anomaly.failed_closed": true,
 							})
-							return active as ReadonlySet<string>
+							return active
 						}),
 			),
 		)
@@ -503,7 +503,7 @@ const make: Effect.Effect<
 		nowMs: number,
 	) {
 		const existing = yield* loadSettingsRow(orgId)
-		if (existing) return existing
+		if (existing != null) return existing
 		yield* dbExecute((db) =>
 			db.run(
 				PG.insertInto(AnomalyDetectorSettings)
@@ -519,7 +519,7 @@ const make: Effect.Effect<
 			),
 		)
 		const refreshed = yield* loadSettingsRow(orgId)
-		if (!refreshed) {
+		if (refreshed == null) {
 			return yield* new AnomalyPersistenceError({ message: "Failed to create anomaly settings row" })
 		}
 		return refreshed
@@ -687,7 +687,7 @@ const make: Effect.Effect<
 			),
 		)
 		const row = rows[0]
-		if (!row) {
+		if (row === undefined) {
 			return yield* new AnomalyIncidentNotFoundError({
 				message: `No such anomaly incident: '${incidentId}'`,
 				incidentId,
@@ -2028,7 +2028,7 @@ const make: Effect.Effect<
 						// If the departing series was the primary, promote a remaining
 						// one — `detectorKey` must always point at a live series for the
 						// continue branch and manual resolve to find it.
-						const next = otherStates[0]!
+						const next = otherStates[0]
 						const nextEntry =
 							next.fingerprintHash === null || runtime === undefined
 								? Option.none<IncidentFingerprintEntry>()

@@ -300,7 +300,7 @@ const make: Effect.Effect<
 			),
 		)
 		const row = rows[0]
-		if (!row) {
+		if (row === undefined) {
 			return yield* new ErrorIssueNotFoundError({
 				message: "Error issue not found",
 				issueId,
@@ -415,7 +415,7 @@ const make: Effect.Effect<
 		"ErrorIssueWorkflowService.hydrateIssue",
 	)(function* (orgId, row) {
 		const hydrated = yield* hydrateIssueRows(orgId, [row])
-		return hydrated[0]!
+		return hydrated[0]
 	})
 
 	const buildEventInsert = (

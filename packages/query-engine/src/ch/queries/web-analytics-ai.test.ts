@@ -106,7 +106,7 @@ describe("AI traffic rows decode timestamps to DateTime.Utc", () => {
 			const [row] = yield* compiled.decodeRows([
 				{ bucket: "2026-09-19 00:00:00.000000000", product: "chatgpt", sessions: "3" },
 			])
-			expect(DateTime.toEpochMillis(row!.bucket)).toBe(Date.UTC(2026, 8, 19))
+			expect(DateTime.toEpochMillis(row.bucket)).toBe(Date.UTC(2026, 8, 19))
 		}),
 	)
 
@@ -123,7 +123,7 @@ describe("AI traffic rows decode timestamps to DateTime.Utc", () => {
 					lastSeen: "2026-09-20 08:00:00.500000000",
 				},
 			])
-			expect(DateTime.formatIso(row!.lastSeen)).toBe("2026-09-20T08:00:00.500Z")
+			expect(DateTime.formatIso(row.lastSeen)).toBe("2026-09-20T08:00:00.500Z")
 		}),
 	)
 })

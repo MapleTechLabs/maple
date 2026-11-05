@@ -67,7 +67,7 @@ const decodeArcs = (body: Uint8Array): ReadonlyArray<number> =>
 	body.reduce<{ arcs: ReadonlyArray<number>; pending: number }>(
 		(state, byte) => {
 			const pending = state.pending * 128 + (byte & 0x7f)
-			return byte & 0x80
+			return (byte & 0x80) !== 0
 				? { arcs: state.arcs, pending }
 				: { arcs: [...state.arcs, pending], pending: 0 }
 		},

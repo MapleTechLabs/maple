@@ -128,7 +128,7 @@ const download = (
 const sha256File = (path: string) =>
 	Effect.tryPromise({
 		try: async () => {
-			return await sha256FileAsync(path)
+			return sha256FileAsync(path)
 		},
 		catch: (error) => fail(`cannot read ${path}: ${String(error)}`),
 	})

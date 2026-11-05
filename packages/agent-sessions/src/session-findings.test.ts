@@ -88,9 +88,9 @@ describe("buildSessionFindings", () => {
 			spanId: "l-ctx",
 		})
 		// The terminal failure leads the list; the rate limit is its own finding.
-		expect(failed.findings[0]!.label).toBe("context_length_exceeded")
-		expect(failed.findings[0]!.severity).toBe("failure")
-		expect(failed.findings[0]!.turnText).toBe("Turn 2 (final)")
+		expect(failed.findings[0].label).toBe("context_length_exceeded")
+		expect(failed.findings[0].severity).toBe("failure")
+		expect(failed.findings[0].turnText).toBe("Turn 2 (final)")
 		expect(Arr.some(failed.findings, (finding) => finding.label === "rate_limit")).toBe(true)
 	})
 
@@ -112,7 +112,7 @@ describe("buildSessionFindings", () => {
 			]),
 		)
 
-		expect(failed.findings[0]!.detail).toBe("prompt grew 1K → 190K tokens across the session")
+		expect(failed.findings[0].detail).toBe("prompt grew 1K → 190K tokens across the session")
 	})
 
 	it("groups a tool's failures into one finding, counted, with the error text", () => {
@@ -395,10 +395,10 @@ describe("buildSessionFindings", () => {
 		expect(Arr.map(result.findings, (finding) => [finding.label, finding.count])).toEqual([
 			["tool_unavailable · sandbox_grep", 1],
 		])
-		expect(result.findings[0]!.detail).toBe(
+		expect(result.findings[0].detail).toBe(
 			"GitHub App is not configured (set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY)",
 		)
-		expect(result.findings[0]!.severity).toBe("failure")
+		expect(result.findings[0].severity).toBe("failure")
 	})
 
 	it("names the tool a parameter error is about, not the sibling stamped on the span", () => {
@@ -498,10 +498,10 @@ describe("buildSessionFindings", () => {
 		expect(
 			Arr.map(result.findings, (finding) => [finding.label, finding.count, finding.severity]),
 		).toEqual([["provider_retry", 3, "anomaly"]])
-		expect(result.findings[0]!.detail).toBe(
+		expect(result.findings[0].detail).toBe(
 			"429 ×2 · 502 ×1 — Crusoe, Fireworks, Friendli · all recovered",
 		)
-		expect(result.findings[0]!.spanId).toBe("att-0")
+		expect(result.findings[0].spanId).toBe("att-0")
 	})
 
 	it("keeps the generation that ran out of providers as its own provider_error", () => {

@@ -191,7 +191,7 @@ export const buildRawSpec = (params: Params, resolved: ResolvedQuery): Record<st
 		groupBy: isBreakdown ? groupBy : [groupBy],
 		...(isBreakdown
 			? { limit: params.limit }
-			: params.bucket_seconds
+			: (params.bucket_seconds ?? 0) > 0
 				? { bucketSeconds: params.bucket_seconds }
 				: undefined),
 	}
@@ -214,7 +214,7 @@ export const buildRawSpec = (params: Params, resolved: ResolvedQuery): Record<st
 						? { groupByResourceAttributeKey: groupKey }
 						: { groupByAttributeKeys: [groupKey] })),
 				...scopedAttributeFilters(params, attributeScope),
-				...(params.apdex_threshold_ms && { apdexThresholdMs: params.apdex_threshold_ms }),
+				...((params.apdex_threshold_ms ?? 0) > 0 && { apdexThresholdMs: params.apdex_threshold_ms }),
 			})
 		case "logs":
 			return withFilters({
@@ -301,8 +301,8 @@ const queryContextOf = (params: Params): Output["queryContext"] => {
 		...(params.page_path && { pagePath: params.page_path }),
 		...(params.metric_name && { metricName: params.metric_name }),
 		...(params.metric_type && { metricType: params.metric_type }),
-		...(params.apdex_threshold_ms && { apdexThresholdMs: params.apdex_threshold_ms }),
-		...(params.bucket_seconds && { bucketSeconds: params.bucket_seconds }),
+		...((params.apdex_threshold_ms ?? 0) > 0 && { apdexThresholdMs: params.apdex_threshold_ms }),
+		...((params.bucket_seconds ?? 0) > 0 && { bucketSeconds: params.bucket_seconds }),
 		...(params.kind === "breakdown" && { limit: params.limit }),
 		...(attributeFilter && { attributeFilters: [attributeFilter] }),
 	}

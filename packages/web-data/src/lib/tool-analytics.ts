@@ -312,7 +312,7 @@ export function toolSeriesColors(keys: ReadonlyArray<string>): ReadonlyMap<strin
 			out.set(key, OTHER_COLOR)
 			continue
 		}
-		out.set(key, TOOL_SERIES_COLOR_TOKENS[index % TOOL_SERIES_COLOR_TOKENS.length]!)
+		out.set(key, TOOL_SERIES_COLOR_TOKENS[index % TOOL_SERIES_COLOR_TOKENS.length])
 		index++
 	}
 	return out
@@ -337,7 +337,7 @@ export function rankSeriesKeys(points: ReadonlyArray<ToolSeriesPoint>): Readonly
 		calls.set(point.seriesKey, (calls.get(point.seriesKey) ?? 0) + point.calls)
 	}
 	return Arr.map(
-		[...calls.entries()].sort((a, b) => b[1] - a[1] || Str.localeCompare(b[0])(a[0])),
+		[...calls.entries()].sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : Str.localeCompare(b[0])(a[0]))),
 		([key]) => key,
 	)
 }

@@ -113,11 +113,11 @@ describe("AuditLogService (warehouse-backed)", () => {
 			)
 
 			expect(warehouse.ingested).toHaveLength(1)
-			expect(warehouse.ingested[0]!.datasource).toBe(AUDIT_LOG_DATASOURCE)
+			expect(warehouse.ingested[0].datasource).toBe(AUDIT_LOG_DATASOURCE)
 			// A lost audit row is a Warn, never an Error span that opens an issue.
-			expect(warehouse.ingested[0]!.bestEffort).toBe(true)
-			expect(warehouse.ingested[0]!.retryTransient).toBe(true)
-			const row = warehouse.ingested[0]!.rows[0]!
+			expect(warehouse.ingested[0].bestEffort).toBe(true)
+			expect(warehouse.ingested[0].retryTransient).toBe(true)
+			const row = warehouse.ingested[0].rows[0]
 			expect(row.OrgId).toBe(ORG)
 			expect(row.ActorType).toBe("user")
 			expect(row.UserId).toBe(USER)
@@ -247,7 +247,7 @@ describe("AuditLogService (warehouse-backed)", () => {
 			)
 
 			expect(rows).toHaveLength(1)
-			const entry = rows[0]!
+			const entry = rows[0]
 			expect(entry.orgId).toBe(ORG)
 			expect(entry.userId).toBe(USER)
 			expect(entry.apiKeyId).toBeNull()
@@ -274,9 +274,9 @@ describe("AuditLogService (warehouse-backed)", () => {
 					Layer.effect(AuditLogService, AuditLogService.make).pipe(Layer.provide(warehouse.layer)),
 				),
 			)
-			expect(rows[0]!.changes).toBeNull()
-			expect(rows[0]!.changedFields).toBeNull()
-			expect(rows[0]!.metadata).toBeNull()
+			expect(rows[0].changes).toBeNull()
+			expect(rows[0].changedFields).toBeNull()
+			expect(rows[0].metadata).toBeNull()
 		}),
 	)
 
@@ -359,7 +359,7 @@ describe("AuditLogService.layerMemory", () => {
 				"dashboard.created",
 			])
 
-			const oldest = rows[2]!
+			const oldest = rows[2]
 			expect(oldest.actorType).toBe("user")
 			expect(oldest.userId).toBe(USER)
 			expect(oldest.source).toBe("dashboard")
@@ -367,7 +367,7 @@ describe("AuditLogService.layerMemory", () => {
 			expect(oldest.resourceId).toBe(encodePublicId(PublicIdPrefixes.dashboard, DASHBOARD_ID))
 			expect(oldest.metadata).toEqual({ name: "First" })
 
-			const newest = rows[0]!
+			const newest = rows[0]
 			expect(newest.actorType).toBe("agent")
 			expect(newest.actorLabel).toBe("triage-bot")
 		}).pipe(Effect.provide(AuditLogService.layerMemory)),
@@ -392,7 +392,7 @@ describe("AuditLogService.layerMemory", () => {
 
 			const denied = yield* audit.list(ORG, { outcome: "denied", limit: 10, offset: 0 })
 			expect(Arr.map(denied, (row) => row.action)).toEqual(["alert_rule.deleted"])
-			expect(denied[0]!.denialReason).toBe("missing role: admin")
+			expect(denied[0].denialReason).toBe("missing role: admin")
 
 			const secondPage = yield* audit.list(ORG, { limit: 2, offset: 2 })
 			expect(Arr.map(secondPage, (row) => row.action)).toEqual([
@@ -416,8 +416,8 @@ describe("AuditLogService.layerMemory", () => {
 
 			const rows = yield* audit.list(ORG, { changedField: "name", limit: 10, offset: 0 })
 			expect(Arr.map(rows, (row) => row.action)).toEqual(["dashboard.updated"])
-			expect(rows[0]!.changedFields).toEqual(["name"])
-			expect(rows[0]!.changes).toEqual({
+			expect(rows[0].changedFields).toEqual(["name"])
+			expect(rows[0].changes).toEqual({
 				fields: ["name"],
 				before: { name: "a" },
 				after: { name: "b" },
@@ -468,7 +468,7 @@ describe("AuditLogService.layerMemory", () => {
 				const audit = yield* AuditLogService
 				yield* recordHttpAudit("dashboard.created", { resourceId: DASHBOARD_ID })
 				const rows = yield* audit.list(ORG, { limit: 1, offset: 0 })
-				return rows[0]!
+				return rows[0]
 			}).pipe(
 				Effect.provideService(CurrentTenant.Context, tenant),
 				Effect.provideService(CurrentAuditActor, info),

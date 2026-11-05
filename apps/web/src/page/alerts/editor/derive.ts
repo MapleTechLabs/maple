@@ -13,6 +13,7 @@ import {
 import { destinationProvider } from "../shared/providers"
 import type { RuleForm } from "./form"
 import { intervalWindowIssue, queryTimingIssue } from "./interval"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -73,7 +74,7 @@ export const recoveryLabel = (comparator: AlertComparator): string =>
 export const suggestCriticalThreshold = (form: RuleForm): string => {
 	const warning = Number(form.threshold)
 	if (Str.trim(form.threshold).length === 0 || !Number.isFinite(warning)) return ""
-	const step = Math.abs(warning) || 1
+	const step = nonZeroOr(Math.abs(warning), 1)
 	const worse = form.comparator === "gt" || form.comparator === "gte" ? warning + step : warning - step
 	return String(Number(worse.toPrecision(12)))
 }

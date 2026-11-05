@@ -68,7 +68,7 @@ const spanTooltipContent = (
 	const serviceColor = getServiceColor(span.serviceName)
 	const selfTime = calculateSelfTime(span, [...span.children])
 	const selfTimePercent = span.durationMs > 0 ? (selfTime / span.durationMs) * 100 : 0
-	const durationPercent = totalDurationMs ? (span.durationMs / totalDurationMs) * 100 : null
+	const durationPercent = totalDurationMs > 0 ? (span.durationMs / totalDurationMs) * 100 : null
 	const startOffset = traceStartTime ? spanStartMs(span) - new Date(traceStartTime).getTime() : null
 	return h.div(
 		[h.Class("space-y-2 font-mono text-xs")],

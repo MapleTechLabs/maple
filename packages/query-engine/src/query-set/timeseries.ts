@@ -83,7 +83,7 @@ export const runTimeseriesQuerySet = Effect.fnUntraced(function* <E>(
 	})
 	const isPlotted = (result: QueryRunResult): boolean => !hiddenResultIds.has(result.queryId)
 	const comparison = {
-		mode: querySet.comparison?.mode ?? ("none" as QueryComparisonMode),
+		mode: querySet.comparison?.mode ?? "none",
 		includePercentChange: querySet.comparison?.includePercentChange ?? true,
 	}
 

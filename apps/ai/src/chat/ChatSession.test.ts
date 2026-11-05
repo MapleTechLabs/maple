@@ -86,7 +86,7 @@ describe("ChatSession.history", () => {
 		const history = session.history()
 
 		assert.lengthOf(history, 1)
-		const message = history[0]!
+		const message = history[0]
 		assert.equal(message.text, "Looking.")
 		assert.lengthOf(message.toolCalls, 1)
 		assert.equal(message.toolCalls[0]?.id, "c1")
@@ -105,7 +105,7 @@ describe("ChatSession.history", () => {
 
 		// The two flat fields lose the interleaving; these offsets are what the client
 		// rebuilds it from, so a reloaded turn reads the way it was watched.
-		const calls = session.history()[0]!.toolCalls
+		const calls = session.history()[0].toolCalls
 		assert.deepEqual(
 			Arr.map(calls, (call) => call.textOffset),
 			["Looking.".length, "Looking. Now the errors.".length],
@@ -803,7 +803,7 @@ describe("ChatSession.history — sub-agent transcripts", () => {
 		assert.equal(task?.messages[0]?.text, "p99 is 4.2s in checkout-api.")
 		// The child's own tool call rides in the nested transcript, not the parent's.
 		assert.equal(task?.messages[0]?.toolCalls[0]?.output, "40k rows")
-		assert.lengthOf(history[0]!.toolCalls, 1)
+		assert.lengthOf(history[0].toolCalls, 1)
 	})
 
 	it("shows a sub-agent still running before its turn ends", () => {
@@ -851,7 +851,7 @@ describe("ChatSession.history — sub-agent transcripts", () => {
 		session.append({ type: "text-delta", messageId: "c1", text: "first", task: ref("t1") })
 		session.append({ type: "text-delta", messageId: "c2", text: "second", task: ref("t2") })
 
-		const calls = session.history()[0]!.toolCalls
+		const calls = session.history()[0].toolCalls
 		assert.equal(calls[0]?.task?.messages[0]?.text, "first")
 		assert.equal(calls[1]?.task?.messages[0]?.text, "second")
 	})
@@ -873,7 +873,7 @@ describe("ChatSession.history — sub-agent transcripts", () => {
 		})
 		session.append({ type: "text-delta", messageId: "c1", text: "the answer", task: ref() })
 
-		const message = session.history()[0]!
+		const message = session.history()[0]
 		assert.equal(message.text, "parent text")
 		assert.equal(message.toolCalls[0]?.task?.messages[0]?.text, "the answer")
 	})

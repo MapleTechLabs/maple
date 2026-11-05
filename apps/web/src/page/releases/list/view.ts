@@ -45,7 +45,7 @@ const chipsOf = (model: Model) => {
 	const { search } = model
 	return Arr.map(
 		[
-			...(search.excludedEnvironments?.length
+			...(search.excludedEnvironments !== undefined && search.excludedEnvironments.length > 0
 				? [
 						{
 							id: "excludedEnvironments" as const,
@@ -55,7 +55,7 @@ const chipsOf = (model: Model) => {
 						},
 					]
 				: []),
-			...(search.environments?.length
+			...(search.environments !== undefined && search.environments.length > 0
 				? [
 						{
 							id: "environments" as const,
@@ -65,7 +65,7 @@ const chipsOf = (model: Model) => {
 						},
 					]
 				: []),
-			...(search.services?.length
+			...(search.services !== undefined && search.services.length > 0
 				? [{ id: "services" as const, label: "Service", values: search.services, isNegated: false }]
 				: []),
 			...(search.impact !== undefined
