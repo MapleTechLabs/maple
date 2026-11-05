@@ -11,7 +11,7 @@ import { Route } from "foldkit"
 import { query, schemaSegment, slash } from "foldkit/route"
 import { AppRoute } from "./app-route"
 import * as Search from "./search"
-import { boundedSegment, path, restSegments, segment } from "./segment"
+import { boundedRestSegments, boundedSegment, path, restSegments, segment } from "./segment"
 import { tanstackSearch } from "./tanstack-search"
 
 const search = <A, I>(schema: Schema.Codec<A, I>) => query(tanstackSearch(schema))
@@ -282,7 +282,8 @@ const routers = {
 	Users: pipe(path("users"), search(Search.UsersSearch), Route.mapTo(AppRoute.Users)),
 	UserDetail: pipe(
 		path("users"),
-		slash(boundedSegment("userId", END_USER_ID_MAX_LENGTH)),
+		// The rest of the path: Cloudflare turns an encoded `%2F` in a user id back into a slash.
+		slash(boundedRestSegments("userId", END_USER_ID_MAX_LENGTH)),
 		search(Search.UserDetailSearch),
 		Route.mapTo(AppRoute.UserDetail),
 	),
