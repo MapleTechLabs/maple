@@ -129,12 +129,18 @@ describe("user issues", () => {
 		expect(sql).not.toContain("user_activity_hourly")
 	})
 
-	it("scopes namespaces through the services the rollup puts the user in, org-filtered too", () => {
-		const { sql } = compileUnsafe(userIssuesQuery(scope), params)
-		expect(sql).toMatch(/ServiceName IN \(SELECT[\s\S]*FROM user_activity_hourly/)
-		expect(sql).toContain("user_activity_hourly.OrgId = 'org_1'")
-		expect(sql).toMatch(/user_activity_hourly\.ServiceNamespace IN \('storefront', 'billing'\)/)
-		expect(sql).toContain("user_activity_hourly.UserId = 'u_42'")
+	it("scopes to the services a namespace resolved to, without the per-user rollup", () => {
+		const { sql } = compileUnsafe(
+			userIssuesQuery({ userId: "u_42", serviceNames: ["checkout", "cart"] }),
+			params,
+		)
+		expect(sql).toMatch(/error_events_by_time\.ServiceName IN \('checkout', 'cart'\)/)
+		expect(sql).not.toContain("user_activity_hourly")
+	})
+
+	it("reads nothing for a namespace that resolved to no service", () => {
+		const { sql } = compileUnsafe(userIssuesQuery({ userId: "u_42", serviceNames: [] }), params)
+		expect(sql).toContain("1 = 0")
 	})
 
 	it("reads an issue's users on the fingerprint-keyed table, skipping unidentified hits", () => {

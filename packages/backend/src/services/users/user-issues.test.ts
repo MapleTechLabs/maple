@@ -159,6 +159,57 @@ describe("readUserIssues", () => {
 		}).pipe(Effect.provide([warehouse([], ran, missingUserId), createTestDb(createdDbs).layer]))
 	})
 
+	it.effect(
+		"scopes a namespace by its services, so a cluster without the per-user rollup still attributes",
+		() => {
+			const sqls: Array<string> = []
+			const noRollup = Layer.succeed(
+				WarehouseQueryService,
+				makeWarehouseServiceStub({
+					compiledQuery: (_tenant, input, options) => {
+						const compiled = compiledQueryOf(input)
+						const context = options?.context ?? ""
+						sqls.push(compiled.sql)
+						if (Str.includes("user_activity_hourly")(compiled.sql))
+							return Effect.fail(
+								new WarehouseSchemaDriftError({
+									message: "Table user_activity_hourly does not exist",
+									pipeName: context,
+									clickhouseType: "UNKNOWN_TABLE",
+								}),
+							)
+						const found =
+							context === "usersServiceNamespaces"
+								? [
+										{ service: "checkout", namespace: "storefront", spans: "5" },
+										{ service: "billing", namespace: "payments", spans: "3" },
+									]
+								: context === "userIssues"
+									? [row("111", 4, "2026-11-05 09:00:00")]
+									: []
+						return compiled.decodeRows(found).pipe(Effect.orDie)
+					},
+				}),
+			)
+			return Effect.gen(function* () {
+				yield* seed
+				const scoped = new UserDetailRequest({ ...request, namespaces: ["storefront"] })
+				const response = yield* readUserIssues(tenant, scoped)
+				assert.isTrue(response.attributed)
+				assert.deepStrictEqual(
+					Arr.map(response.issues, (issue) => issue.issueId),
+					[KEPT],
+				)
+				const issuesSql = Arr.findFirst(sqls, (sql) => Str.includes("FROM error_events_by_time")(sql))
+				assert.isTrue(Option.isSome(issuesSql))
+				assert.include(
+					Option.getOrElse(issuesSql, () => ""),
+					"ServiceName IN ('checkout')",
+				)
+			}).pipe(Effect.provide([noRollup, createTestDb(createdDbs).layer]))
+		},
+	)
+
 	it.effect("surfaces any other schema drift", () => {
 		const ran: Ran = []
 		const drift = new WarehouseSchemaDriftError({
