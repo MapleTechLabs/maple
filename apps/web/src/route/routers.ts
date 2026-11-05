@@ -1,4 +1,10 @@
-import { AlertRuleId, AnomalyIncidentId, DashboardId, ErrorIssueId } from "@maple/domain/http"
+import {
+	AlertRuleId,
+	AnomalyIncidentId,
+	DashboardId,
+	END_USER_ID_MAX_LENGTH,
+	ErrorIssueId,
+} from "@maple/domain/http"
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { pipe, Schema, Record as Rec } from "effect"
 import { Route } from "foldkit"
@@ -276,7 +282,7 @@ const routers = {
 	Users: pipe(path("users"), search(Search.UsersSearch), Route.mapTo(AppRoute.Users)),
 	UserDetail: pipe(
 		path("users"),
-		slash(boundedSegment("userId", 512)),
+		slash(boundedSegment("userId", END_USER_ID_MAX_LENGTH)),
 		search(Search.UserDetailSearch),
 		Route.mapTo(AppRoute.UserDetail),
 	),
