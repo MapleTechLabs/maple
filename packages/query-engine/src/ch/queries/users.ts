@@ -328,8 +328,9 @@ export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, 
 		.having(($) => [
 			CH.when(filter.hasErrors === true ? true : undefined, () => CH.sum($.errors).gt(0)),
 			CH.when(filter.hasReplay === true ? true : undefined, () => CH.sum($.sessions).gt(0)),
+			// Any of the user's groups, not one arbitrary pick: a user can carry several.
 			filter.groups !== undefined && filter.groups.length > 0
-				? CH.inList(nonEmpty($.groupId), filter.groups)
+				? CH.countIf(CH.inList($.groupId, filter.groups)).gt(0)
 				: undefined,
 			CH.when(filter.search, (search) =>
 				CH.or(
