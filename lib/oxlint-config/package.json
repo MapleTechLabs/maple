@@ -1,0 +1,38 @@
+{
+	"name": "@maple-dev/oxlint-config",
+	"version": "0.1.0",
+	"description": "Strict oxlint presets for Effect + TypeScript codebases: @effect/tsgo at error, type-aware TS bug rules, anti-slop and test-slop plugins.",
+	"license": "MIT",
+	"files": [
+		"*.json",
+		"plugins",
+		"scripts",
+		"README.md"
+	],
+	"type": "module",
+	"exports": {
+		"./base.json": "./base.json",
+		"./effect.json": "./effect.json",
+		"./tests.json": "./tests.json",
+		"./react.json": "./react.json",
+		"./plugins/*": "./plugins/*"
+	},
+	"scripts": {
+		"sync:effect": "node scripts/sync-effect-preset.mjs",
+		"smoke": "node scripts/smoke.mjs"
+	},
+	"peerDependencies": {
+		"@effect/tsgo": ">=0.64.1",
+		"@oxlint/plugins": ">=1.90.0",
+		"oxlint": ">=1.90.0",
+		"oxlint-tsgolint": ">=7.0.0"
+	},
+	"peerDependenciesMeta": {
+		"@effect/tsgo": {
+			"optional": true
+		},
+		"oxlint-tsgolint": {
+			"optional": true
+		}
+	}
+}

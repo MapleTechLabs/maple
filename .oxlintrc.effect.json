@@ -150,6 +150,13 @@
 				"effecttsgo/global-json": "off"
 			}
 		},
+		// The shareable lint package's scripts read and write JSON config as plain Node.
+		{
+			"files": ["lib/oxlint-config/scripts/**"],
+			"rules": {
+				"effecttsgo/global-json": "off"
+			}
+		},
 		// Not Effect programs: packages without an `effect` dependency, the Astro site, and ops scripts,
 		// benches and build configs that run as plain async Node/Bun.
 		{
@@ -170,6 +177,7 @@
 				"packages/otel-collector-maple-exporter/**",
 				"packages/sdk-core/**",
 				"lib/ai-model-catalog/**",
+				"lib/oxlint-config/**",
 				"lib/grid-engine/**",
 				"lib/prometheus-otlp/**",
 				"lib/semconv/**"
@@ -253,6 +261,7 @@
 		".impeccable/**",
 		".superset/**",
 		"lib/thinking-orbs/**",
-		"scripts/oxlint-plugins/anti-slop/**"
+		"scripts/oxlint-plugins/anti-slop/**",
+		"lib/oxlint-config/plugins/anti-slop/**"
 	]
 }
