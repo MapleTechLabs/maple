@@ -109,7 +109,13 @@ export function makeErrorFilter(options: ErrorFilterOptions = {}): ErrorFilter {
 		}
 		if (options.ignore && matches(text, options.ignore)) return false
 		if (topUrl && options.denyUrls && matches(topUrl, options.denyUrls)) return false
-		if (topUrl && options.allowUrls?.length && !matches(topUrl, options.allowUrls)) return false
+		if (
+			topUrl &&
+			options.allowUrls !== undefined &&
+			options.allowUrls.length > 0 &&
+			!matches(topUrl, options.allowUrls)
+		)
+			return false
 		if (!options.beforeCapture) return true
 		try {
 			return options.beforeCapture(error, hint) !== false

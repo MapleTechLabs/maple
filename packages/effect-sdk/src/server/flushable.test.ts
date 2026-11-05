@@ -24,7 +24,7 @@ const setupFetch = (responder: (url: string) => Response = () => new Response(nu
 		} else if (initHeaders) {
 			Object.assign(headers, initHeaders)
 		}
-		const body = init?.body && typeof init.body === "string" ? JSON.parse(init.body) : undefined
+		const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
 		calls.push({ url, headers, body })
 		return responder(url)
 	}) as typeof fetch

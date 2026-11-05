@@ -132,7 +132,8 @@ export function consentRevokedAt(): number {
 	const inMemory = consentState().revokedAt
 	if (!mayUseStorage()) return inMemory
 	try {
-		return Math.max(inMemory, Number(localStorage.getItem(REVOKED_AT_KEY)) || 0)
+		const stored = Number(localStorage.getItem(REVOKED_AT_KEY))
+		return Math.max(inMemory, Number.isNaN(stored) ? 0 : stored)
 	} catch {
 		return inMemory
 	}

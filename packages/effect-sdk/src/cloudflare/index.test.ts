@@ -29,7 +29,7 @@ const setupFetch = (responder: (url: string) => Response = () => new Response(nu
 		} else if (initHeaders) {
 			Object.assign(headers, initHeaders)
 		}
-		const body = init?.body && typeof init.body === "string" ? JSON.parse(init.body) : undefined
+		const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
 		calls.push({ url, headers, body })
 		return responder(url)
 	}) as typeof fetch
@@ -279,7 +279,7 @@ describe("MapleCloudflareSDK.make", () => {
 			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 			calls.push({
 				url,
-				body: init?.body && typeof init.body === "string" ? JSON.parse(init.body) : undefined,
+				body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
 			})
 			await new Promise<void>((resolve) => setTimeout(resolve, 5))
 			return new Response(null, { status: 200 })
@@ -322,7 +322,7 @@ describe("MapleCloudflareSDK.make", () => {
 		restore = () => void (globalThis.fetch = original)
 		globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
 			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-			const body = init?.body && typeof init.body === "string" ? JSON.parse(init.body) : undefined
+			const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
 			calls.push({ url, body })
 			// The first POST belongs to the cancelled invocation and never settles.
 			return calls.length === 1 ? new Promise<Response>(() => {}) : Promise.resolve(new Response(null))
