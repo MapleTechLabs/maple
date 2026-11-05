@@ -2017,8 +2017,10 @@ describe("v2 users wire mapping over HTTP", () => {
 				errorLogCount: 2,
 				warnLogCount: 1,
 				sessionCount: 2,
-				topRoutes: [],
-				topRouteCounts: [],
+				topRoutes: ["GET /checkout"],
+				topRouteCounts: [23],
+				requestHours: [Date.UTC(2026, 10, 1, 8) / 1000, Date.UTC(2026, 10, 1, 20) / 1000],
+				requestHourCounts: [23, 29],
 				firstSeen: "2026-11-01 05:00:00",
 				lastSeen: "2026-11-01 13:00:00",
 			},
@@ -2103,6 +2105,7 @@ describe("v2 users wire mapping over HTTP", () => {
 		userMcpSessionList: [
 			{
 				sessionId: "mcp_sess_ada",
+				service: "maple-mcp",
 				client: "claude-code",
 				kind: "agent",
 				user: "u_ada",
