@@ -36,7 +36,9 @@ type LogColumns = ColumnAccessor<typeof Logs.columns>
 const NEVER = CH.rawCond("1 = 0")
 
 const namespaceCondition = (column: CH.Expr<string>, scope: UserNamespaceScope) =>
-	scope.namespaces?.length ? CH.inList(column, scope.namespaces) : undefined
+	scope.namespaces !== undefined && scope.namespaces.length > 0
+		? CH.inList(column, scope.namespaces)
+		: undefined
 
 const activityWindow = ($: ActivityColumns, scope: UserNamespaceScope) => [
 	$.OrgId.eq(orgIdParam),
@@ -297,7 +299,7 @@ export function userActivityTotalsQuery(opts: UserActivityTotalsOpts) {
 		}))
 		.where(($) => [
 			...activityWindow($, opts),
-			opts.userIds.length ? CH.inList($.UserId, opts.userIds) : NEVER,
+			opts.userIds.length > 0 ? CH.inList($.UserId, opts.userIds) : NEVER,
 		])
 		.groupBy("userId")
 		.limit(opts.userIds.length)
@@ -326,7 +328,7 @@ const logUserCondition = ($: LogColumns, userId: string) =>
 	)
 
 const servicesCondition = (column: CH.Expr<string>, serviceNames: readonly string[]) =>
-	serviceNames.length ? CH.inList(column, serviceNames) : NEVER
+	serviceNames.length > 0 ? CH.inList(column, serviceNames) : NEVER
 
 export interface UserTraceOutput {
 	readonly traceId: string
@@ -444,7 +446,7 @@ export function userLogsQuery(opts: UserRawReadOpts & { readonly minSeverity?: n
 /** Only decimal UInt64 hashes live in the warehouse; alert/integration keys would abort `toUInt64`. */
 const fingerprintHashesCondition = (column: CH.Expr<number>, hashes: readonly string[]) => {
 	const usable = Arr.filter(hashes, (hash) => /^[0-9]+$/.test(hash))
-	return usable.length
+	return usable.length > 0
 		? CH.inExprList(
 				column,
 				Arr.map(usable, (hash) => CH.toUInt64(CH.lit(hash))),
