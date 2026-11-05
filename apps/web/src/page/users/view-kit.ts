@@ -59,3 +59,14 @@ const SIGNAL_LABEL = {
 /** Which signals carry this user, as quiet tags. */
 export const signalTags = <M>(h: HtmlBuilder<M>, signals: ReadonlyArray<UserSignal>): ReadonlyArray<Html> =>
 	Arr.map(signals, (signal) => badge(h, { variant: "tag" }, [SIGNAL_LABEL[signal]]))
+
+/** How many signal tags a directory row shows before folding the rest into `+N`. */
+export const SIGNALS_SHOWN = 2
+
+/** The tags a fixed-width lane shows, and the labels folded into its `+N`. */
+export const signalLane = (
+	signals: ReadonlyArray<UserSignal>,
+): Readonly<{ shown: ReadonlyArray<UserSignal>; hidden: ReadonlyArray<string> }> => ({
+	shown: signals.slice(0, SIGNALS_SHOWN),
+	hidden: Arr.map(signals.slice(SIGNALS_SHOWN), (signal) => SIGNAL_LABEL[signal]),
+})

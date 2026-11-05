@@ -111,8 +111,10 @@ describe("usersListQuery", () => {
 		)
 		expect(sql).toContain("HAVING sum(signals.errors) > 0")
 		expect(sql).toContain("sum(signals.sessions) > 0")
-		// Any of the user's groups, not one arbitrary `anyIf` pick.
-		expect(sql).toContain("countIf(signals.groupId IN ('acme')) > 0")
+		// Each source counts its rows in the selected groups before it keeps one `groupId`.
+		expect(sql).toContain("countIf(product_events.GroupId IN ('acme'))")
+		expect(sql).toContain("countIf(sessions.groupId IN ('acme'))")
+		expect(sql).toContain("sum(signals.groupHits) > 0")
 		expect(sql).toMatch(/ORDER BY lastSeen DESC, userId ASC\s+LIMIT 50/)
 	})
 
