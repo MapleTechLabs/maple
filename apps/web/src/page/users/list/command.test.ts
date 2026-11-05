@@ -30,6 +30,11 @@ describe("listInputs", () => {
 		expect(inputs.groups).toHaveLength(50)
 	})
 
+	it("drops a group pick the API would refuse instead of failing the read", () => {
+		const inputs = listInputs({ groups: ["grp_acme", Str.repeat(501)("g"), ""] }, window, null)
+		expect(inputs.groups).toEqual(["grp_acme"])
+	})
+
 	it("cuts a pasted search to the length the API accepts", () => {
 		expect(listInputs({ q: Str.repeat(450)("a") }, window, null).search).toHaveLength(200)
 	})
