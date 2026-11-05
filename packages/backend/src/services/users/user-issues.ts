@@ -8,10 +8,7 @@ import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { makeErrorDatabaseExecute } from "@maple/backend/services/errors/error-persistence"
 import { issuesOwningHashes } from "@maple/backend/services/errors/issue-fingerprints"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import {
-	isMissingErrorEventsUserId,
-	isMissingUserActivityHourly,
-} from "@maple/backend/services/warehouse/missing-table"
+import { isMissingErrorEventsUserId } from "@maple/backend/services/warehouse/missing-table"
 
 // One user's issues: `userIssuesQuery` groups their occurrences by fingerprint, then each hash
 // resolves to the issue the errors tick lands it on (an alias first), the one the hub links to.
@@ -109,21 +106,50 @@ const owningIssues = Effect.fn("UsersReads.owningIssues")(function* (
 })
 
 /**
+ * The services a namespace scope covers, from the service-to-namespace map (no rollup); `undefined`
+ * when the request is unscoped, so the issue reads keep every service.
+ */
+const issueServices = Effect.fn("UsersReads.issueServices")(function* (
+	tenant: TenantContext,
+	payload: UserDetailRequest,
+) {
+	const namespaces = payload.namespaces ?? []
+	if (namespaces.length === 0) return undefined
+	const warehouse = yield* WarehouseQueryService
+	const rows = yield* warehouse.compiledQuery(
+		tenant,
+		CH.compile(CH.usersServiceNamespacesQuery(), {
+			orgId: tenant.orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+		{ profile: "list", context: "usersServiceNamespaces" },
+	)
+	return Arr.dedupe(
+		Arr.map(
+			Arr.filter(rows, (row) => Arr.contains(namespaces, row.namespace)),
+			(row) => row.service,
+		),
+	)
+})
+
+/**
  * The issues one user hit in the window and scope, `None` on a cluster whose `error_events` lacks
- * `UserId` (migration 0057), or whose scope subquery lacks `user_activity_hourly`.
+ * `UserId` (migration 0057).
  */
 export const readUserIssueItems = Effect.fn("UsersReads.issueItems")(function* (
 	tenant: TenantContext,
 	payload: UserDetailRequest,
 ) {
 	const warehouse = yield* WarehouseQueryService
+	const serviceNames = yield* issueServices(tenant, payload)
 	const rows = yield* warehouse
 		.compiledQuery(
 			tenant,
 			CH.compile(
 				CH.userIssuesQuery({
 					userId: payload.userId,
-					namespaces: payload.namespaces ?? [],
+					...(serviceNames !== undefined && { serviceNames }),
 					limit: USER_ISSUES_LIMIT,
 				}),
 				{ orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime },
@@ -133,7 +159,7 @@ export const readUserIssueItems = Effect.fn("UsersReads.issueItems")(function* (
 		.pipe(
 			Effect.map(Option.some),
 			Effect.catchIf(
-				(error) => isMissingErrorEventsUserId(error) || isMissingUserActivityHourly(error),
+				(error) => isMissingErrorEventsUserId(error),
 				() => Effect.succeed(Option.none<ReadonlyArray<CH.UserIssueOutput>>()),
 			),
 		)
@@ -175,11 +201,15 @@ export const readUserIssueTotalsRow = Effect.fn("UsersReads.issueTotals")(functi
 	payload: UserDetailRequest,
 ) {
 	const warehouse = yield* WarehouseQueryService
+	const serviceNames = yield* issueServices(tenant, payload)
 	return yield* warehouse
 		.compiledQuery(
 			tenant,
 			CH.compile(
-				CH.userIssueTotalsQuery({ userId: payload.userId, namespaces: payload.namespaces ?? [] }),
+				CH.userIssueTotalsQuery({
+					userId: payload.userId,
+					...(serviceNames !== undefined && { serviceNames }),
+				}),
 				{
 					orgId: tenant.orgId,
 					startTime: payload.startTime,
@@ -191,7 +221,7 @@ export const readUserIssueTotalsRow = Effect.fn("UsersReads.issueTotals")(functi
 		.pipe(
 			Effect.map((rows) => Option.some(rows[0])),
 			Effect.catchIf(
-				(error) => isMissingErrorEventsUserId(error) || isMissingUserActivityHourly(error),
+				(error) => isMissingErrorEventsUserId(error),
 				() => Effect.succeed(Option.none<CH.UserIssueTotalsOutput | undefined>()),
 			),
 		)
