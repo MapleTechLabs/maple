@@ -7,7 +7,7 @@ import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorI
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { IssueFixVerificationService } from "@maple/backend/services/errors/IssueFixVerificationService"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 
 export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (handlers) =>
 	Effect.gen(function* () {
@@ -215,11 +215,12 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-					yield* requireAdmin(
+					yield* Policy.check(
 						tenant.roles,
-						() =>
+						"error_policy:manage",
+						(denial) =>
 							new ErrorForbiddenError({
-								message: "Only org admins can manage the escalation policy",
+								message: denial.message,
 							}),
 					)
 					return yield* policies.upsertEscalationPolicy(tenant.orgId, tenant.userId, payload)
