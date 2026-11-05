@@ -170,11 +170,10 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 	const limit = payload.limit ?? DEFAULT_LIMIT
 	// One row of lookahead says whether a next page exists.
 	const fetched = yield* withRollupFallback(scope, [], (scope) =>
-		warehouse.compiledQuery(
-			tenant,
-			CH.compile(CH.usersListQuery(scope, filter, limit + 1, payload.offset ?? 0), params),
-			{ profile: "list", context: "usersList" },
-		),
+		warehouse.compiledQuery(tenant, CH.compile(CH.usersListQuery(scope, filter, limit + 1), params), {
+			profile: "list",
+			context: "usersList",
+		}),
 	)
 	const rows = fetched.slice(0, limit)
 	const last = rows.at(-1)

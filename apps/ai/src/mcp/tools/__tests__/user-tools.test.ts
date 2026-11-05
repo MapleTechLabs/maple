@@ -1,3 +1,4 @@
+import { noFailedRequestsText } from "../inspect-user"
 import { describe, expect, it } from "vitest"
 import { Context, Effect, Layer, Schema, Array as Arr } from "effect"
 import {
@@ -81,10 +82,15 @@ const reads = (
 	Layer.mock(UsersReadService)({
 		list: (_tenant, request) => {
 			seen.list = request
-			// Like the read: at most `limit` users, and `next` only when more match.
-			const all = opts.users ?? []
+			// Like the read: the users after the keyset, at most `limit`, and `next` only when more match.
+			const after = request.after
+			const from =
+				after === undefined
+					? []
+					: Arr.dropWhile(opts.users ?? [], (user) => user.userId !== after.userId)
+			const all = after === undefined ? (opts.users ?? []) : Arr.drop(from, 1)
 			const limit = request.limit ?? all.length
-			const page = all.slice(0, limit)
+			const page = Arr.take(all, limit)
 			const last = page.at(-1)
 			return Effect.succeed(
 				new UsersListResponse({
@@ -230,13 +236,30 @@ describe("list_users", () => {
 
 		const output = Schema.decodeUnknownSync(ListUsersOutput)(result.structuredContent)
 		expect(Arr.map(output.users, (user) => user.userId)).toEqual(["u_quiet", "u_ada"])
-		expect(output.pagination).toEqual({ offset: 0, limit: 2, hasMore: true, nextOffset: 2 })
+		expect(output.limit).toBe(2)
+		expect(output.nextCursor).toBeDefined()
 
 		const markdown = text(result)
 		expect(markdown).toContain("Ada Lovelace")
 		expect(markdown).toContain('list_users start_time="2026-11-01 00:00:00"')
-		expect(markdown).toContain("offset=2")
+		expect(markdown).toContain(`cursor="${output.nextCursor}"`)
+
+		// The cursor continues after the page's last user, whatever reordered in between.
+		const next = await ok(
+			"list_users",
+			{ ...WINDOW, limit: 2, cursor: output.nextCursor },
+			reads(seen, { users }),
+		)
+		expect(seen.list?.after).toEqual({ lastSeen: "2026-11-01 00:00:00.000000000", userId: "u_ada" })
+		const second = Schema.decodeUnknownSync(ListUsersOutput)(next.structuredContent)
+		expect(Arr.map(second.users, (user) => user.userId)).toEqual(["u_extra"])
+		expect(second.nextCursor).toBeUndefined()
 		expect(markdown).toMatch(/inspect_user user_id="u_ada".*what went wrong for Ada Lovelace/)
+	})
+
+	it("refuses a cursor it did not hand out", async () => {
+		const result = await run("list_users", { ...WINDOW, cursor: "not-a-cursor" }, reads({}))
+		expect(result._tag).toBe("Failure")
 	})
 
 	it("leaves has_errors=false out of the read, since only true filters", async () => {
@@ -328,5 +351,17 @@ describe("user tools under a scoped API key", () => {
 			),
 		)
 		expect(Arr.map(results, (result) => result._tag)).toEqual(Arr.map(results, () => "Success"))
+	})
+})
+
+describe("inspect_user failed requests", () => {
+	it("says a capped timeline hid the failures instead of claiming there were none", () => {
+		expect(noFailedRequestsText({ requests: 400, failedRate: 0.05 })).toBe(
+			"20 failed requests in the window, none among the timeline's most recent rows.",
+		)
+		expect(noFailedRequestsText({ requests: 400, failedRate: 0 })).toBe(
+			"No failed requests in the window.",
+		)
+		expect(noFailedRequestsText(null)).toBe("No failed requests among the timeline's most recent rows.")
 	})
 })
