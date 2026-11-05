@@ -669,7 +669,7 @@ const errorsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 			h,
 			"CircleWarningIcon",
 			"Errors are not linked to users here",
-			"This warehouse's error tables predate user ids. Apply the latest schema, and new errors name the user that hit them.",
+			"This warehouse's schema predates per-user errors. Apply the latest schema, and new errors name the user that hit them.",
 		)
 	if (Arr.isReadonlyArrayEmpty(detail.issues))
 		return noRows(h, `This user hit no errors in the window. ${ATTRIBUTION_NOTE}`)
