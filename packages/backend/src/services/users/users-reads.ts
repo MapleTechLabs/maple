@@ -704,23 +704,51 @@ export type SliceWindow = Readonly<{
 	endTime: string
 }>
 
+/** One service's hours holding the signal, as `sliceWindow` takes them. */
+export type ServiceHours = Readonly<{ serviceName: string; firstHour: DateTime.Utc; lastHour: DateTime.Utc }>
+
 /**
- * The rollup slices that hold the signal, narrowed to the services they name and the hours they
- * span inside the request window; `null` when none does, so the raw read is skipped.
+ * The services that hold the signal, and the hours they span inside the request window; `null`
+ * when none does, so the raw read is skipped.
  */
 export const sliceWindow = (
-	slices: ReadonlyArray<Readonly<{ hour: DateTime.Utc; serviceName: string }>>,
+	services: ReadonlyArray<ServiceHours>,
 	window: Readonly<{ startTime: string; endTime: string }>,
 ): SliceWindow | null => {
-	if (!Arr.isReadonlyArrayNonEmpty(slices)) return null
-	const hours = Arr.map(slices, (slice) => DateTime.toEpochMillis(slice.hour))
+	if (!Arr.isReadonlyArrayNonEmpty(services)) return null
+	const firsts = Arr.map(services, (service) => DateTime.toEpochMillis(service.firstHour))
+	const lasts = Arr.map(services, (service) => DateTime.toEpochMillis(service.lastHour))
 	const { startMs, endMs } = windowMs(window)
 	return {
-		serviceNames: Arr.dedupe(Arr.map(slices, (slice) => slice.serviceName)),
-		startTime: formatWarehouseDateTime(Math.max(startMs, Math.min(...hours))),
-		endTime: formatWarehouseDateTime(Math.min(endMs, Math.max(...hours) + HOUR_MS - 1000)),
+		serviceNames: Arr.dedupe(Arr.map(services, (service) => service.serviceName)),
+		startTime: formatWarehouseDateTime(Math.max(startMs, Math.min(...firsts))),
+		endTime: formatWarehouseDateTime(Math.min(endMs, Math.max(...lasts) + HOUR_MS - 1000)),
 	}
 }
+
+/** The services with requests, and their request hours. */
+export const requestHours = (
+	slices: ReadonlyArray<CH.UserActivitySliceOutput>,
+): ReadonlyArray<ServiceHours> =>
+	Arr.map(
+		Arr.filter(slices, (slice) => slice.requestCount > 0),
+		(slice) => ({
+			serviceName: slice.serviceName,
+			firstHour: slice.firstRequestHour,
+			lastHour: slice.lastRequestHour,
+		}),
+	)
+
+/** The services with log lines, and their log hours. */
+export const logHours = (slices: ReadonlyArray<CH.UserActivitySliceOutput>): ReadonlyArray<ServiceHours> =>
+	Arr.map(
+		Arr.filter(slices, (slice) => slice.logCount > 0),
+		(slice) => ({
+			serviceName: slice.serviceName,
+			firstHour: slice.firstLogHour,
+			lastHour: slice.lastLogHour,
+		}),
+	)
 
 /** The user's rollup slices in the namespace scope; none on a cluster without the rollup. */
 const readSlices = Effect.fn("UsersReads.slices")(function* (
@@ -785,10 +813,7 @@ const readTraceRows = Effect.fn("UsersReads.traceRows")(function* (
 	slices: ReadonlyArray<CH.UserActivitySliceOutput>,
 	options: RawReadOptions,
 ) {
-	const window = sliceWindow(
-		Arr.filter(slices, (slice) => slice.requestCount > 0),
-		payload,
-	)
+	const window = sliceWindow(requestHours(slices), payload)
 	if (window === null) return []
 	const warehouse = yield* WarehouseQueryService
 	const rows = yield* warehouse.compiledQuery(
@@ -814,10 +839,7 @@ const readLogRows = Effect.fn("UsersReads.logRows")(function* (
 	slices: ReadonlyArray<CH.UserActivitySliceOutput>,
 	options: RawReadOptions,
 ) {
-	const window = sliceWindow(
-		Arr.filter(slices, (slice) => slice.logCount > 0),
-		payload,
-	)
+	const window = sliceWindow(logHours(slices), payload)
 	if (window === null) return []
 	const warehouse = yield* WarehouseQueryService
 	const rows = yield* warehouse.compiledQuery(
