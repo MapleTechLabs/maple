@@ -1,4 +1,4 @@
-import { Schema, String as Str } from "effect"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 import { ADVISORY_SEVERITIES } from "./runtime-advisories"
 
 // Known vulnerabilities in a locked package version, read from OSV.dev for the dependency scanner.
@@ -34,4 +34,7 @@ export const packageKey = (ref: PackageRef): string => `${ref.ecosystem}:${ref.n
 
 /** The id shown to people: the CVE when there is one. */
 export const displayAdvisoryId = (advisory: Pick<PackageAdvisory, "id" | "aliases">): string =>
-	advisory.aliases.find((alias) => Str.startsWith("CVE-")(alias)) ?? advisory.id
+	Option.getOrElse(
+		Arr.findFirst(advisory.aliases, (alias) => Str.startsWith("CVE-")(alias)),
+		() => advisory.id,
+	)

@@ -267,8 +267,10 @@ const attachPanZoom = (
 
 /** A node wrapper's flow position, read back from its `translate(x, y)`. */
 const nodeOrigin = (node: HTMLElement): XY => {
-	const match = node.style.transform.match(/translate\(([-\d.e]+)px,\s*([-\d.e]+)px\)/)
-	return match === null ? { x: 0, y: 0 } : { x: Number(match[1]), y: Number(match[2]) }
+	return Option.match(Str.match(/translate\(([-\d.e]+)px,\s*([-\d.e]+)px\)/)(node.style.transform), {
+		onNone: () => ({ x: 0, y: 0 }),
+		onSome: (match) => ({ x: Number(match[1]), y: Number(match[2]) }),
+	})
 }
 
 type DragTarget = Pick<Window, "addEventListener" | "removeEventListener">

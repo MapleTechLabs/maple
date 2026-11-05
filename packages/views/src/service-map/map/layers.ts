@@ -1,7 +1,7 @@
 import { getServiceMapNodeColor } from "@maple/ui/components/service-map/service-map-utils"
 import { Option, Schema, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { handlePoint, type MeasuredNode } from "../xyflow/geometry"
+import { type HandleBounds, handlePoint, type MeasuredNode } from "../xyflow/geometry"
 import { edgesLayer, flowEdge, flowNode, nodesLayer } from "../xyflow/view"
 import { edgeGeometry, serviceMapEdge } from "./edge"
 import type { EffectiveGraph, FlowNode } from "./graph"
@@ -58,13 +58,23 @@ export const renderNodes = <M>(
 		),
 	])
 
+/** The node's handle of `type`: a plain scan, since this runs per edge on every render. */
+const handleOf = (
+	measured: MeasuredNode | undefined,
+	type: HandleBounds["type"],
+): HandleBounds | undefined => {
+	if (measured === undefined) return undefined
+	for (const handle of measured.handles) if (handle.type === type) return handle
+	return undefined
+}
+
 /** Each drawable edge with its endpoints, in render order. */
 const drawableEdges = (graph: EffectiveGraph, positions: Positions, measured: Measured) =>
 	Arr.flatMap(graph.edges, (edge, index) => {
 		const sourceMeasured = measured[edge.source]
 		const targetMeasured = measured[edge.target]
-		const sourceHandle = sourceMeasured?.handles.find((handle) => handle.type === "source")
-		const targetHandle = targetMeasured?.handles.find((handle) => handle.type === "target")
+		const sourceHandle = handleOf(sourceMeasured, "source")
+		const targetHandle = handleOf(targetMeasured, "target")
 		if (sourceHandle === undefined || targetHandle === undefined) return []
 		const at = (id: string, m: MeasuredNode) => ({
 			id,

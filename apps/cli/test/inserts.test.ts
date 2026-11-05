@@ -4,7 +4,7 @@ import {
 	buildInsertSql,
 	buildInsertStatements,
 } from "@maple/local-server/inserts"
-import { Array as Arr, String as Str } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 
 const line = (i: number, pad = 0) => JSON.stringify({ body: `row-${i}${Str.repeat(pad)("x")}` })
 
@@ -40,7 +40,7 @@ describe("buildInsertStatements", () => {
 		const rows = Array.from({ length: 50 }, (_, i) => line(i, 10_000))
 		const statements = buildInsertStatements("logs", Arr.join(rows, "\n"))
 		const payloads = Arr.map(statements, (s) => {
-			const start = s.sql.lastIndexOf(", '") + 3
+			const start = Option.getOrElse(Str.lastIndexOf(", '")(s.sql), () => -1) + 3
 			return Str.slice(start, -2)(s.sql)
 		})
 		expect(Arr.join(payloads, "\n")).toBe(Arr.join(rows, "\n"))

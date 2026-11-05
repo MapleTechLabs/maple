@@ -157,7 +157,12 @@ describe("service map page: requests", () => {
 		const model = windowed({ timePreset: "today" })
 		const rezoned = contextChanged(model, { ...context, timeZone: "Europe/Berlin" })
 		expect(
-			rezoned.commands?.find((command) => command.name === "ResolveServiceMapWindow")?.args,
+			Option.getOrUndefined(
+				Arr.findFirst(
+					rezoned.commands ?? [],
+					(command) => command.name === "ResolveServiceMapWindow",
+				),
+			)?.args,
 		).toMatchObject({
 			preset: "today",
 			timeZone: "Europe/Berlin",
@@ -310,7 +315,7 @@ describe("service map page: navigation", () => {
 			{ search: { environment: "production", timePreset: "1h" } },
 			context,
 		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveServiceMapWindow", "Refresh"],
 		])
 	})
@@ -442,7 +447,8 @@ describe("service map page: where a service runs", () => {
 			],
 		})
 		const runsOn = (id: string) =>
-			mapOf(model).source.rawNodes.find((node) => node.id === id)?.data.runsOn
+			Option.getOrUndefined(Arr.findFirst(mapOf(model).source.rawNodes, (node) => node.id === id))?.data
+				.runsOn
 		expect(runsOn("payments")).toBe("Cloud Run")
 		expect(runsOn("checkout")).toBeUndefined()
 	})

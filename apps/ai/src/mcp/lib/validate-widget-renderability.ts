@@ -10,7 +10,7 @@ import { dataSourceQuerySet, dataSourceRawSql, dataSourceTransform } from "@mapl
 import { FUNNEL_MAX_STEPS, PATHS_MAX_BRANCHES, PATHS_MAX_DEPTH } from "@maple/query-model"
 import { isGroupByRequested } from "./inspect-widget"
 import { stringifyJson } from "./json"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 type DashboardWidget = typeof DashboardWidgetSchema.Type
 
@@ -144,10 +144,13 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 				`A product-event funnel has at most ${FUNNEL_MAX_STEPS} steps, but \`display_json.funnel.steps\` has ${funnelSteps.length}.`,
 			)
 		}
-		const lateSession = funnelSteps.findIndex((step, index) => index > 0 && step.kind === "session")
-		if (lateSession !== -1) {
+		const lateSession = Arr.findFirstIndex(
+			funnelSteps,
+			(step, index) => index > 0 && step.kind === "session",
+		)
+		if (Option.isSome(lateSession)) {
 			fatal.push(
-				`A \`{ "kind": "session" }\` funnel step describes how the session was acquired, so it is only valid as step 1 — \`display_json.funnel.steps\` has one at step ${lateSession + 1}.`,
+				`A \`{ "kind": "session" }\` funnel step describes how the session was acquired, so it is only valid as step 1 — \`display_json.funnel.steps\` has one at step ${lateSession.value + 1}.`,
 			)
 		}
 		const windowSeconds = widget.display.funnel?.windowSeconds

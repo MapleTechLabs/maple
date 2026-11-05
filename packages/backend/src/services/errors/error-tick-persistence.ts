@@ -409,7 +409,7 @@ const rekeyOwners = (
 		)
 		const unowned = Arr.filter(
 			bumped,
-			(row) => !ownIssues.some((issue) => issue.fingerprintHash === row.fingerprintHash),
+			(row) => !Arr.some(ownIssues, (issue) => issue.fingerprintHash === row.fingerprintHash),
 		)
 		const previous = Arr.dedupe(Arr.flatMap(unowned, previousOf))
 		if (previous.length === 0) return new Map()

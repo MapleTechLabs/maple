@@ -200,6 +200,7 @@ const markdownToTelegramHtml = (markdown: string): string =>
 	Str.replace(
 		/\*\*([^*]+)\*\*/g,
 		"<b>$1</b>",
+		// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	)(escapeTelegramHtml(markdown)).replace(
 		/\[([^\]]+)\]\(([^)\s]+)\)/g,
 		(match, text: string, url: string) =>

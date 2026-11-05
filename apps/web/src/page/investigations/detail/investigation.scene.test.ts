@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { InvestigationRowSchema, rowsToInvestigation } from "@maple/web-data/collections/investigations"
-import { Effect, Result, Schema, Stream, Array as Arr } from "effect"
+import { Effect, Result, Schema, Stream, Array as Arr, Option } from "effect"
 import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -180,7 +180,12 @@ describe("investigation detail", () => {
 
 	test("the traces row follows the investigation's service over the same window's overview", () => {
 		const first = synced(entered(), investigationOf())
-		const traces = first.commands?.find((command) => command.name === "FetchInvestigationSignalTraces")
+		const traces = Option.getOrUndefined(
+			Arr.findFirst(
+				first.commands ?? [],
+				(command) => command.name === "FetchInvestigationSignalTraces",
+			),
+		)
 		const key = traces?.args !== undefined && "key" in traces.args ? String(traces.args.key) : ""
 		const rows = [
 			{ serviceName: "checkout-api", spanCount: 457, p95LatencyMs: 12, errorRate: 0 },
@@ -314,7 +319,12 @@ describe("investigation detail", () => {
 		const pinned: PageContext = { ...context, pinnedNamespace: "payments" }
 		const model = synced(entered(), investigationOf()).model
 		const repinned = contextChanged(model, pinned)
-		const traces = repinned.commands?.find((command) => command.name === "FetchInvestigationSignalTraces")
+		const traces = Option.getOrUndefined(
+			Arr.findFirst(
+				repinned.commands ?? [],
+				(command) => command.name === "FetchInvestigationSignalTraces",
+			),
+		)
 		expect(traces?.args).toMatchObject({ namespaces: ["payments"] })
 		expect(repinned.model.traces.key).not.toEqual(model.traces.key)
 	})

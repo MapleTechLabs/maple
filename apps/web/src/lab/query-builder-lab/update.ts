@@ -68,8 +68,10 @@ const withCommands = (step: Return, commands: ReadonlyArray<Cmd>): Return => ({
 
 /** `AutocompleteValuesProvider` (not lazy): every lookup over the current window. */
 const requestLookups = (model: Model, orgId: OrgId): Return =>
-	AUTOCOMPLETE_LOOKUPS.reduce<Return>(
-		(step, lookup) => {
+	Arr.reduce(
+		AUTOCOMPLETE_LOOKUPS,
+		{ model, commands: [] } satisfies Return,
+		(step: Return, lookup): Return => {
 			const key = requestKey(orgId, `autocomplete.${lookup}`, step.model.window)
 			const slot = step.model.autocomplete[lookup] ?? Keyed.idle()
 			return Option.match(Keyed.request(slot, key, "Load"), {
@@ -87,7 +89,6 @@ const requestLookups = (model: Model, orgId: OrgId): Return =>
 					),
 			})
 		},
-		{ model, commands: [] },
 	)
 
 const requestMetrics = (model: Model, orgId: OrgId, mode: Keyed.RequestMode): Return => {
@@ -162,10 +163,15 @@ const ran = (model: Model): Return => {
 }
 
 const cloned = (model: Model, queryId: string, id: string): Return => {
-	const source = model.queries.find((query) => query.id === queryId)
-	return source === undefined
-		? { model }
-		: { model: { ...model, queries: relabelQueries([...model.queries, { ...source, id }]) } }
+	return Option.match(
+		Arr.findFirst(model.queries, (query) => query.id === queryId),
+		{
+			onNone: (): Return => ({ model }),
+			onSome: (source): Return => ({
+				model: { ...model, queries: relabelQueries([...model.queries, { ...source, id }]) },
+			}),
+		},
+	)
 }
 
 const signedIn = (model: Model, orgId: OrgId): Return => {

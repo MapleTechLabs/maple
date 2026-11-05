@@ -31,6 +31,7 @@ import {
 	coverageOf,
 	latestDetailOf,
 	RUN_LIST_CAP,
+	repositoryOf,
 	runCountsOf,
 	runsForTab,
 	runsForTarget,
@@ -45,7 +46,7 @@ import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // The Runs tab: every run, newest first, narrowed to one target from the select.
 
@@ -143,7 +144,7 @@ const runRow = (
 ): Html => {
 	const nowMs = model.nowMs
 	const href = hrefOf(AppRoute.SecurityRun({ runId: run.id }))
-	const repository = targets.find((target) => target.id === run.targetId)?.repository ?? "Removed target"
+	const repository = repositoryOf(targets, run.targetId)
 	return tableRow(
 		h,
 		[
@@ -243,9 +244,7 @@ const toolbar = (
 				className: "h-7 w-auto min-w-40 text-xs",
 				renderValue: (value) => [
 					h.span([h.Class("text-muted-foreground")], ["Target "]),
-					value === "all"
-						? "All targets"
-						: (targets.find((target) => target.id === value)?.repository ?? "Removed target"),
+					value === "all" ? "All targets" : repositoryOf(targets, value),
 				],
 				toView: (parts) => h.div([h.Class("contents")], parts),
 			},
@@ -257,8 +256,9 @@ const toolbar = (
 /** "Start run" for the target the list is narrowed to. */
 export const startRunAction = (h: H, model: Model): Html | undefined => {
 	const targetId = model.runsSearch.target
-	const target = targetsOf(model).find((candidate) => candidate.id === targetId)
-	if (target === undefined || !model.isAdmin) return undefined
+	const found = Arr.findFirst(targetsOf(model), (candidate) => candidate.id === targetId)
+	if (Option.isNone(found) || !model.isAdmin) return undefined
+	const target = found.value
 	const isRunning = Arr.some(runsForTarget(model, target.id), isLive)
 	return button(
 		h,

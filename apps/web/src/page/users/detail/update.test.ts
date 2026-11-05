@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Array as Arr, Option, Schema } from "effect"
 import { fromString } from "foldkit/url"
 import { describe, expect, it } from "vitest"
 import { OrgId } from "@maple/domain/http"
@@ -102,7 +102,7 @@ describe("tabs and namespaces", () => {
 			{ userId: "user/42 ada", search: { namespace: "checkout" } },
 			context,
 		)
-		const names = (step.commands ?? []).map((command) => command.name)
+		const names = Arr.map(step.commands ?? [], (command) => command.name)
 		expect(names).toContain("FetchUserProfile")
 		expect(names).toContain("FetchUserActivity")
 	})

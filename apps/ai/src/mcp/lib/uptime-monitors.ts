@@ -1,5 +1,5 @@
 /** Pieces the uptime monitor MCP tools share: rows, target summaries, config building, errors. */
-import { Effect, Schema, Array as Arr, Record as Rec } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import type { UptimeMonitorRow } from "@maple/domain/mcp-outputs"
 import { UPTIME_DEFAULT_TIMEOUT_MS } from "@maple/domain/http/v2"
 import type { UptimeMonitorKind } from "@maple/domain/primitives"
@@ -176,15 +176,15 @@ const CLEAR_PAIRS: ReadonlyArray<readonly [keyof UptimeConfigFields, keyof Uptim
 
 /** A clear flag and the value it clears cannot both be set. */
 const rejectClearConflicts = (fields: UptimeConfigFields) => {
-	const conflict = CLEAR_PAIRS.find(
+	const conflict = Arr.findFirst(
+		CLEAR_PAIRS,
 		([clear, field]) => fields[clear] === true && fields[field] !== undefined,
 	)
-	return conflict === undefined
-		? Effect.void
-		: invalid(
-				`Pass ${conflict[1]} to set it, or ${conflict[0]}=true to remove it, not both.`,
-				conflict[0],
-			)
+	return Option.match(conflict, {
+		onNone: () => Effect.void,
+		onSome: ([clear, field]) =>
+			invalid(`Pass ${field} to set it, or ${clear}=true to remove it, not both.`, clear),
+	})
 }
 
 const isLatency = (assertion: UptimeAssertion) => assertion._tag === "latency"
@@ -198,15 +198,15 @@ const invalid = (message: string, parameter?: string) =>
 
 /** A field for another kind is a mistake to name, not to drop: the model meant something by it. */
 const rejectMisplaced = (kind: UptimeMonitorKind, fields: UptimeConfigFields) => {
-	const misplaced = FIELD_KINDS.find(
+	const misplaced = Arr.findFirst(
+		FIELD_KINDS,
 		([field, kinds]) => fields[field] !== undefined && !kinds.includes(kind),
 	)
-	return misplaced === undefined
-		? Effect.void
-		: invalid(
-				`${misplaced[0]} applies to ${Arr.join(misplaced[1], " and ")} monitors, not ${kind}.`,
-				misplaced[0],
-			)
+	return Option.match(misplaced, {
+		onNone: () => Effect.void,
+		onSome: ([field, kinds]) =>
+			invalid(`${field} applies to ${Arr.join(kinds, " and ")} monitors, not ${kind}.`, field),
+	})
 }
 
 const decodeConfig = (kind: UptimeMonitorKind, raw: unknown) =>
@@ -223,9 +223,14 @@ const withAssertion = (
 	matches: (assertion: UptimeAssertion) => boolean,
 ): ReadonlyArray<UptimeAssertion> => {
 	if (next === undefined) return assertions
-	const at = assertions.findIndex(matches)
 	const kept = Arr.filter(assertions, (assertion) => !matches(assertion))
-	return at === -1 ? [...kept, next] : [...kept.slice(0, at), next, ...kept.slice(at)]
+	return Option.match(
+		Arr.findFirstIndex(assertions, (assertion) => matches(assertion)),
+		{
+			onNone: () => [...kept, next],
+			onSome: (at) => [...kept.slice(0, at), next, ...kept.slice(at)],
+		},
+	)
 }
 
 const httpAssertions = (current: ReadonlyArray<UptimeAssertion>, fields: UptimeConfigFields) =>

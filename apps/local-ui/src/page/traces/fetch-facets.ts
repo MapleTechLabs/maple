@@ -122,10 +122,12 @@ export const fetchTraceFacets = (filters: TraceFilters, bounds: TimeBounds, apiB
 			{ concurrency: "unbounded" },
 		)
 		const rowsFor = (facetType: string): Array<FacetOption> => {
-			const index = active.findIndex((d) => d.facetType === facetType)
-			const rows = index === -1 ? mainRows : (ownRows[index] ?? [])
+			const rows = Option.match(
+				Arr.findFirstIndex(active, (d) => d.facetType === facetType),
+				{ onNone: () => mainRows, onSome: (index) => ownRows[index] ?? [] },
+			)
 			return Arr.map(
-				rows.filter((row) => row.facetType === facetType && row.name),
+				Arr.filter(rows, (row) => row.facetType === facetType && row.name !== ""),
 				(row) => ({ name: row.name, count: row.count }),
 			)
 		}
@@ -136,7 +138,10 @@ export const fetchTraceFacets = (filters: TraceFilters, bounds: TimeBounds, apiB
 			httpStatusCodes: rowsFor("httpStatus"),
 			deploymentEnvs: rowsFor("deploymentEnv"),
 			namespaces: rowsFor("serviceNamespace"),
-			errorCount: mainRows.find((row) => row.facetType === "errorCount")?.count ?? 0,
+			errorCount: Option.match(
+				Arr.findFirst(mainRows, (row) => row.facetType === "errorCount"),
+				{ onNone: () => 0, onSome: (row) => row.count },
+			),
 			maybeDurationStats: toDurationStats(statsRows[0]),
 		}
 		return facets

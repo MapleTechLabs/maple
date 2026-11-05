@@ -31,14 +31,19 @@ import { ciRunsSection, historySection, postMergeSection, productionSection } fr
 import { emptyMessage } from "@maple/views/ui/empty"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // `ReviewDetailContent`'s body.
 
 type H = HtmlBuilder<SheetMessage>
 
 const modelLabel = (model: string | null) =>
-	model === null ? EMPTY_VALUE : (PR_REVIEW_MODELS.find((entry) => entry.id === model)?.label ?? model)
+	model === null
+		? EMPTY_VALUE
+		: Arr.findFirst(PR_REVIEW_MODELS, (entry) => entry.id === model).pipe(
+				Option.flatMapNullishOr((found) => found.label),
+				Option.getOrElse(() => model),
+			)
 
 /** A dense StatRail tile: sheet-sized value that truncates instead of overflowing. */
 const stat = (h: H, label: string, value: string, tone?: string): Html =>

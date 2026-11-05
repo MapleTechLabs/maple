@@ -225,7 +225,7 @@ const followTrace = (model: Model, context: PageContext, trace: LoadedTrace): Re
 }
 
 const applySteps = (model: Model, steps: ReadonlyArray<Step>): Return => ({
-	model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
+	model: Arr.reduce<Step, Model>(steps, model, (next, step) => ({ ...next, ...step.patch })),
 	commands: Arr.map(steps, (step) => step.command),
 })
 
@@ -407,10 +407,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				model: { ...model, tabs: next.model },
 				commands: lift((m: Tabs.Message) => Message.GotTabsMessage({ message: m }))(next.commands),
 			}
-			const view = TAB_VALUES.find((value) => value === next.model.selected)
-			return view === undefined || view === viewOf(model)
-				? lifted
-				: chain(lifted, (m) => navigate(m, { ...m.search, view }))
+			return Option.match(
+				Arr.findFirst(
+					TAB_VALUES,
+					(value) => value === next.model.selected && value !== viewOf(model),
+				),
+				{
+					onNone: () => lifted,
+					onSome: (view) => chain(lifted, (m) => navigate(m, { ...m.search, view })),
+				},
+			)
 		},
 		// A layout made before the first measurement is redone once the width is known.
 		MeasuredSplitWidth: ({ width }) => {

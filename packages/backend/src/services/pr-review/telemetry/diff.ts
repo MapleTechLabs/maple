@@ -1,4 +1,4 @@
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 /**
  * The parts of a unified diff the telemetry analysis reads: each line, which side it is on, and
  * the new-side line a finding about it can anchor to.
@@ -72,7 +72,7 @@ export const STRING_LITERAL = /(["'`])((?:\\.|(?!\1)[^\\\n])*)\1/g
 
 export const literalsOf = (text: string): ReadonlyArray<Literal> => {
 	const out: Array<Literal> = []
-	for (const match of text.matchAll(STRING_LITERAL)) {
+	for (const match of Str.matchAll(STRING_LITERAL)(text)) {
 		const value = match[2] ?? ""
 		if (value.length < 3 || value.length > 160) continue
 		out.push({ value, index: match.index ?? 0, templated: match[1] === "`" && Str.includes("${")(value) })
@@ -161,8 +161,12 @@ export const lineEmitting = (
 	kind: EmittedName["kind"],
 ): number | undefined => {
 	const lines = Str.split("\n")(content)
-	const index = lines.findIndex((_, i) => emitsAt(lines, i, name, kind))
-	return index === -1 ? undefined : index + 1
+	return Option.getOrUndefined(
+		Option.map(
+			Arr.findFirstIndex(lines, (_, i) => emitsAt(lines, i, name, kind)),
+			(index) => index + 1,
+		),
+	)
 }
 
 /** Whether 1-based `line` of a file emits a name as a `kind`. */

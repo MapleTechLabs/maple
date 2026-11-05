@@ -50,7 +50,8 @@ export const ALERTING_SCHEDULE = {
 export type AlertingCron = keyof typeof ALERTING_SCHEDULE
 export type TickLane = (typeof ALERTING_SCHEDULE)[AlertingCron]["lanes"][number]
 
-const isAlertingCron = (cron: string): cron is AlertingCron => Object.hasOwn(ALERTING_SCHEDULE, cron)
+const isAlertingCron = (cron: string): cron is AlertingCron =>
+	Rec.has<string, unknown>(ALERTING_SCHEDULE, cron)
 
 export const ALERTING_CRONS: ReadonlyArray<AlertingCron> = Arr.filter(
 	Rec.keys(ALERTING_SCHEDULE),

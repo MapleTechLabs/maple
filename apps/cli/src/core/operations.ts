@@ -419,23 +419,27 @@ const localServiceMap = (p: { range: Range; service?: string; environment?: stri
 		const edges =
 			p.service === undefined
 				? yield* obsServiceMap({ timeRange: p.range, environment: p.environment })
-				: (yield* executor.compiledQuery(
-						CH.compile(
-							CH.serviceDependenciesInvolvingServiceQuery({
-								serviceName: p.service,
-								deploymentEnv: p.environment,
-							}),
-							params,
+				: yield* Effect.map(
+						executor.compiledQuery(
+							CH.compile(
+								CH.serviceDependenciesInvolvingServiceQuery({
+									serviceName: p.service,
+									deploymentEnv: p.environment,
+								}),
+								params,
+							),
+							{ profile: "aggregation", context: "cli.serviceMapEdges" },
 						),
-						{ profile: "aggregation", context: "cli.serviceMapEdges" },
-					)).map((e): ServiceEdge => ({
-						sourceService: e.sourceService,
-						targetService: e.targetService,
-						callCount: e.callCount,
-						errorCount: e.errorCount,
-						avgDurationMs: e.avgDurationMs,
-						maxDurationMs: e.maxDurationMs,
-					}))
+						(rows) =>
+							Arr.map(rows, (e): ServiceEdge => ({
+								sourceService: e.sourceService,
+								targetService: e.targetService,
+								callCount: e.callCount,
+								errorCount: e.errorCount,
+								avgDurationMs: e.avgDurationMs,
+								maxDurationMs: e.maxDurationMs,
+							})),
+					)
 		const databases = yield* executor.compiledQuery(
 			p.service === undefined
 				? CH.serviceDbEdgesSQL({ deploymentEnv: p.environment }, params)
@@ -820,7 +824,10 @@ export const bucketSecondsFor = (range: Range, points = 60): number => {
 	const startMs = parseTimestampMs(range.startTime) ?? 0
 	const endMs = parseTimestampMs(range.endTime) ?? startMs
 	const target = (endMs - startMs) / 1000 / points
-	return NICE_BUCKETS.find((b) => b >= target) ?? 86_400
+	return Option.getOrElse(
+		Arr.findFirst(NICE_BUCKETS, (b) => b >= target),
+		() => 86_400,
+	)
 }
 
 export interface MetricSeriesInput {
@@ -856,13 +863,14 @@ const localMetricSeries = (p: MetricSeriesInput) =>
 			),
 			{ profile: "list", context: "cli.metricEntry" },
 		)
-		const entry = catalog.find((m) => m.metricName === p.name)
-		if (entry === undefined) {
+		const found = Arr.findFirst(catalog, (m) => m.metricName === p.name)
+		if (Option.isNone(found)) {
 			return {
 				_tag: "missing",
 				similar: [...new Set(Arr.map(catalog, (m) => m.metricName))],
 			} satisfies MetricSeriesResult
 		}
+		const entry = found.value
 		const metricType = entry.metricType
 		if (!isMetricType(metricType)) return yield* unplottable(p.name, metricType)
 		const isMonotonic = asBoolean(entry.isMonotonic)
@@ -877,29 +885,37 @@ const localMetricSeries = (p: MetricSeriesInput) =>
 		const params = { ...window, bucketSeconds: p.bucketSeconds, metricName: p.name }
 		const options = { profile: "aggregation", context: "cli.metricSeries" } as const
 		const points = rate
-			? (yield* executor.compiledQuery(
-					CH.compile(
-						CH.metricsTimeseriesRateQuery({
-							metricName: p.name,
-							bucketSeconds: p.bucketSeconds,
-							...series,
-						}),
-						params,
+			? yield* Effect.map(
+					executor.compiledQuery(
+						CH.compile(
+							CH.metricsTimeseriesRateQuery({
+								metricName: p.name,
+								bucketSeconds: p.bucketSeconds,
+								...series,
+							}),
+							params,
+						),
+						options,
 					),
-					options,
-				)).map((r) => ({
-					bucket: DateTime.formatIso(r.bucket),
-					service: r.groupName,
-					value: r.rateValue,
-				}))
-			: (yield* executor.compiledQuery(
-					CH.compile(CH.metricsTimeseriesQuery({ metricType, ...series }), params),
-					options,
-				)).map((r) => ({
-					bucket: DateTime.formatIso(r.bucket),
-					service: r.groupName,
-					value: r.avgValue,
-				}))
+					(rows) =>
+						Arr.map(rows, (r) => ({
+							bucket: DateTime.formatIso(r.bucket),
+							service: r.groupName,
+							value: r.rateValue,
+						})),
+				)
+			: yield* Effect.map(
+					executor.compiledQuery(
+						CH.compile(CH.metricsTimeseriesQuery({ metricType, ...series }), params),
+						options,
+					),
+					(rows) =>
+						Arr.map(rows, (r) => ({
+							bucket: DateTime.formatIso(r.bucket),
+							service: r.groupName,
+							value: r.avgValue,
+						})),
+				)
 		return {
 			_tag: "found",
 			output: {
@@ -928,13 +944,14 @@ const remoteMetricSeries = (client: MapleV2Client, p: MetricSeriesInput) =>
 			service: p.service,
 			limit: 100,
 		})
-		const entry = list.find((m) => m.metricName === p.name)
-		if (entry === undefined) {
+		const found = Arr.findFirst(list, (m) => m.metricName === p.name)
+		if (Option.isNone(found)) {
 			return {
 				_tag: "missing",
 				similar: [...new Set(Arr.map(list, (m) => m.metricName))],
 			} satisfies MetricSeriesResult
 		}
+		const entry = found.value
 		const metricType = entry.metricType
 		if (!isMetricType(metricType)) return yield* unplottable(p.name, metricType)
 		const isMonotonic = asBoolean(entry.isMonotonic)

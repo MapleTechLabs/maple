@@ -593,11 +593,9 @@ describe("security dependencies tab", () => {
 			})),
 		)
 		const findings = findingsOf(NOW)
-		const extraFindings = Arr.filter(
-			findings.findings,
-			(finding) => finding.id === FINDING_IDS.axios,
-		).flatMap((axios) =>
-			extra.map((repository, index) => ({
+		const axiosFindings = Arr.filter(findings.findings, (finding) => finding.id === FINDING_IDS.axios)
+		const extraFindings = Arr.flatMap(axiosFindings, (axios) =>
+			Arr.map(extra, (repository, index) => ({
 				...axios,
 				id: Schema.decodeSync(DependencyFindingId)(`${Str.repeat(31)("e")}${index}`),
 				repositoryId: repository.id,

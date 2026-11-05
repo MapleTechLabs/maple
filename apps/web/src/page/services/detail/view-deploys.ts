@@ -5,7 +5,7 @@ import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { IssueSeverity } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Schema, Array as Arr, String as Str, Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
@@ -181,8 +181,10 @@ const deploysEmpty = (h: H): Html =>
 
 /** `ConnectRepoFooter`: one CTA when the first resolvable sha failed as "not connected". */
 const connectRepoFooter = (h: H, model: Model, deploys: ReadonlyArray<DeployEntry>): ReadonlyArray<Html> => {
-	const first = deploys.find((deploy) => isResolvableSha(deploy.sha))
-	const commit = first === undefined ? undefined : model.commits[first.sha]
+	const commit = Option.match(
+		Arr.findFirst(deploys, (deploy) => isResolvableSha(deploy.sha)),
+		{ onNone: () => undefined, onSome: (first) => model.commits[first.sha] },
+	)
 	const isNotConnected =
 		commit !== undefined &&
 		AsyncData.isFailure(commit) &&

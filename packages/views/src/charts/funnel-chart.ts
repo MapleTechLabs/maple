@@ -83,8 +83,12 @@ const legendRow = (
 type Flags = Readonly<{ unit: string | undefined; showShareOfFirst: boolean; showStepConversion: boolean }>
 
 const stageNumbers = (h: H, stage: Stage, hoverGroup: string | null, flags: Flags): ReadonlyArray<Html> => {
-	const hovered = hoverGroup === null ? undefined : stage.groups.find((group) => group.name === hoverGroup)
-	if (hovered !== undefined)
+	const found =
+		hoverGroup === null
+			? Option.none()
+			: Arr.findFirst(stage.groups, (group) => group.name === hoverGroup)
+	if (Option.isSome(found)) {
+		const hovered = found.value
 		return [
 			tooltipSwatch(h, "mr-1 inline-block size-2 rounded-xs align-middle", hovered.color),
 			h.span([h.Class("text-foreground-soft")], [fmtValue(hovered.value, flags.unit)]),
@@ -92,6 +96,7 @@ const stageNumbers = (h: H, stage: Stage, hoverGroup: string | null, flags: Flag
 				? [sep(h, "·"), h.span([], [formatPercent(hovered.pctOfFirst, PERCENT_FLOOR)])]
 				: []),
 		]
+	}
 	return [
 		h.span([h.Class("text-foreground-soft")], [fmtValue(stage.value, flags.unit)]),
 		...(flags.showShareOfFirst

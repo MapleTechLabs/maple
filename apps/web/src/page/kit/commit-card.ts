@@ -2,7 +2,7 @@ import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { copyableBadgeStyles } from "@maple/ui/styles/ui/copyable-badge"
-import { Effect, Predicate, Schema, String as Str } from "effect"
+import { Effect, Predicate, Schema, String as Str, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { VcsCommitDetailResponse, VcsCommitDetailsResponse } from "@maple/domain/http"
@@ -163,9 +163,15 @@ const commitCard = <M>(
 	clock: Clock,
 	onCopy: M | undefined,
 ): Html => {
-	const newline = commit.message.indexOf("\n")
-	const title = newline === -1 ? commit.message : Str.slice(0, newline)(commit.message)
-	const body = newline === -1 ? "" : Str.trim(Str.slice(newline + 1)(commit.message))
+	const newline = Str.indexOf("\n")(commit.message)
+	const title = Option.match(newline, {
+		onNone: () => commit.message,
+		onSome: (index) => Str.slice(0, index)(commit.message),
+	})
+	const body = Option.match(newline, {
+		onNone: () => "",
+		onSome: (index) => Str.trim(Str.slice(index + 1)(commit.message)),
+	})
 	const providerLabel = commit.provider === "github" ? "GitHub" : commit.provider
 	const author = commit.authorLogin ?? commit.authorName ?? "Unknown author"
 	const profileHref =

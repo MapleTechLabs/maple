@@ -118,6 +118,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const filtered = filteredOf(model, all)
 	const filters = filtersOf(model.search)
 	const chips = anomalyFilterChips(filters)
+	const excludedChips = Arr.filter(chips, (chip) => chip.negated)
 	const data = model.firstPage.data
 	const hasFirstPage = AsyncData.hasData(data) && !AsyncData.isFailure(data)
 	const body = AsyncData.match(data, {
@@ -136,7 +137,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					incidents: filtered,
 					status: statusOf(model.search),
 					hasActiveFilters: hasAnomalyFilters(filters),
-					excludedValues: Arr.filter(chips, (chip) => chip.negated).flatMap((chip) => chip.values),
+					excludedValues: Arr.flatMap(excludedChips, (chip) => chip.values),
 					hasMore: nextCursorOf(model) !== null,
 					timeZone: inputs.context.timeZone,
 				}),

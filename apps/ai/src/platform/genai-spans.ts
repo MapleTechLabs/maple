@@ -349,6 +349,7 @@ const modelCallTransformer =
 				: { [MAPLE_GENAI_MODEL_DURATION_MS_ATTR]: finishedMs - timing.startedMs }),
 			...telemetry.sessionAttributes,
 		}
+		// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 		for (const [key, value] of Object.entries(attributes)) {
 			if (value !== undefined) span.attribute(key, value)
 		}

@@ -1,4 +1,4 @@
-import { Option, Array as Arr } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -86,7 +86,7 @@ export const userHref =
 		)
 
 const textValue = (text: string): string | undefined => {
-	const trimmed = text.trim()
+	const trimmed = Str.trim(text)
 	return trimmed === "" ? undefined : trimmed
 }
 

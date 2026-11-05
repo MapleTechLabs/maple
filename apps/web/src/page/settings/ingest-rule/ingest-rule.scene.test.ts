@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { V2IngestRule } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { change, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ORG } from "../../alerts/shared/test-rows"
@@ -51,7 +51,7 @@ const withSamples = (model: Model): Model =>
 describe("ingest rule editor", () => {
 	test("a new rule reads recent logs for the preview", () => {
 		const entered = init({ _tag: "IngestRuleNew", search: {} }, context)
-		expect(entered.commands?.map(({ name }) => name)).toContain("FetchIngestRuleSamples")
+		expect(Arr.map(entered.commands ?? [], ({ name }) => name)).toContain("FetchIngestRuleSamples")
 	})
 
 	test("an empty drop rule lists what is missing and cannot be created", () => {

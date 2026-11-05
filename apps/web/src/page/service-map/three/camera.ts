@@ -1,4 +1,4 @@
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Schema, Array as Arr, String as Str, Option, Order } from "effect"
 import { connectedIds, type SpatialView } from "../../../components/service-map/three/spatial-layout"
 import type { Topology3D } from "../../../components/service-map/three/types"
 import * as THREE from "three"
@@ -137,7 +137,7 @@ export const cameraRig = (
 				? [[element.getAttribute(LABEL_ATTRIBUTE) ?? "", element] as const]
 				: [],
 		)
-		const projectionKey = `${frameKey}:${selectedId}:${labelRevision}:${labels.length}:${camera.zoom}:${camera.matrixWorld.elements.join(",")}`
+		const projectionKey = `${frameKey}:${selectedId}:${labelRevision}:${labels.length}:${camera.zoom}:${Arr.join(Arr.map(camera.matrixWorld.elements, String), ",")}`
 		if (state.lastProjection === projectionKey) return
 		state.lastProjection = projectionKey
 		projectLabels({
@@ -207,17 +207,26 @@ const projectLabels = ({
 							? 0.5
 							: 0
 	const entries = Arr.map(
-		labels.toSorted(
-			([a], [b]) =>
-				priority(b) - priority(a) ||
-				(nodesById.get(b)?.throughput ?? 0) - (nodesById.get(a)?.throughput ?? 0),
+		Arr.sort(
+			labels,
+			Order.combine(
+				Order.flip(Order.mapInput(Order.Number, ([id]: (typeof labels)[number]) => priority(id))),
+				Order.flip(
+					Order.mapInput(
+						Order.Number,
+						([id]: (typeof labels)[number]) => nodesById.get(id)?.throughput ?? 0,
+					),
+				),
+			),
 		),
 		([id, element]) => ({ id, element, width: element.offsetWidth, height: element.offsetHeight }),
 	)
 	for (const { id, element, width, height } of entries) {
 		const position = layout.positions.get(id)
 		const link = linksById.get(id)
-		const district = position ? undefined : layout.districts.find((item) => `district:${item.id}` === id)
+		const district = position
+			? undefined
+			: Option.getOrUndefined(Arr.findFirst(layout.districts, (item) => `district:${item.id}` === id))
 		if (position) probe.set(position[0], position[1], position[2] + 1.3)
 		else if (district)
 			probe.set(

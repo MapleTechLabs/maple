@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { isProtectedKey, type IngestRuleSpec } from "@maple/domain/ingest-rules"
-import type { Schema } from "effect"
+import { Array as Arr, type Schema, String as Str } from "effect"
 import { isJsonObject, member, runCase, type FixtureCase } from "./conformance"
 import { DETECTORS, findAll } from "./detectors"
 import { scanCut } from "./engine"
@@ -24,9 +24,11 @@ const withRules = (fixture: FuzzCase, rules: ReadonlyArray<IngestRuleSpec>): Fuz
 /** Every string in a JSON value, with the attribute key it sits under at the top level. */
 const strings = (value: Schema.Json | undefined, key = ""): Array<readonly [string, string]> => {
 	if (typeof value === "string") return [[key, value]]
-	if (Array.isArray(value)) return value.flatMap((item) => strings(item, key))
+	// @effect-diagnostics-next-line preferEffectArray:off -- Arr.isArray narrows to a mutable Array and loses the ReadonlyArray branch
+	if (Array.isArray(value)) return Arr.flatMap(value, (item) => strings(item, key))
 	if (typeof value === "object" && value !== null)
-		return Object.entries(value).flatMap(([inner, item]) => strings(item, key === "" ? inner : key))
+		// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
+		return Arr.flatMap(Object.entries(value), ([inner, item]) => strings(item, key === "" ? inner : key))
 	return []
 }
 
@@ -58,7 +60,9 @@ describe("ingest rule invariants", () => {
 		for (const part of ["resource", "attributes"] as const) {
 			const before = member(fixture.input, part)
 			const after = member(outcome, part)
-			for (const key of Object.keys(typeof before === "object" && before !== null ? before : {}).filter(
+			for (const key of Arr.filter(
+				// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
+				Object.keys(typeof before === "object" && before !== null ? before : {}),
 				isProtectedKey,
 			))
 				expect(member(after, key), `${part}.${key}`).toEqual(member(before, key))
@@ -69,22 +73,31 @@ describe("ingest rule invariants", () => {
 		const outcome = outcomeOf(withRules(fixture, [maskEmails(fixture)]))
 		const { regex, accept } = DETECTORS.email
 		const eventList = member(outcome, "events")
-		const events = Array.isArray(eventList) ? eventList.map((event) => member(event, "attributes")) : []
-		const leaks = [
-			member(outcome, "resource"),
-			member(outcome, "attributes"),
-			member(outcome, "body"),
-			...events,
-		]
-			.flatMap((part) => strings(part))
-			.filter(([key, text]) => !isProtectedKey(key) && text.length < 4096)
-			.filter(([, text]) => findAll(regex, text.slice(0, scanCut(text)), accept).length > 0)
+		// @effect-diagnostics-next-line preferEffectArray:off -- Arr.isArray narrows to a mutable Array and loses the ReadonlyArray branch
+		const events = Array.isArray(eventList)
+			? Arr.map(eventList, (event) => member(event, "attributes"))
+			: []
+		const leaks = Arr.filter(
+			Arr.filter(
+				Arr.flatMap(
+					[
+						member(outcome, "resource"),
+						member(outcome, "attributes"),
+						member(outcome, "body"),
+						...events,
+					],
+					(part) => strings(part),
+				),
+				([key, text]) => !isProtectedKey(key) && text.length < 4096,
+			),
+			([, text]) => findAll(regex, Str.slice(0, scanCut(text))(text), accept).length > 0,
+		)
 		expect(leaks).toEqual([])
 	})
 
 	// Custom patterns are left out: `\w+` also matches the `REDACTED` in its own mask.
 	it.prop("unconditional key and detector masking is idempotent", [fuzzCase], ([fixture]) => {
-		const rules = fixture.rules.flatMap((rule) =>
+		const rules = Arr.flatMap(fixture.rules, (rule) =>
 			rule.conditions.length === 0 &&
 			rule.action._tag === "redact" &&
 			rule.action.method !== "hash" &&
@@ -98,7 +111,7 @@ describe("ingest rule invariants", () => {
 	})
 
 	it.prop("rules for other signals leave the record untouched", [fuzzCase], ([fixture]) => {
-		const others = fixture.rules.filter((rule) => !rule.signals.includes(fixture.input.signal))
+		const others = Arr.filter(fixture.rules, (rule) => !rule.signals.includes(fixture.input.signal))
 		const outcome = outcomeOf(withRules(fixture, others))
 		expect(member(outcome, "dropped")).toBe(false)
 		expect(member(outcome, "resource")).toEqual(fixture.input.resource)

@@ -15,7 +15,7 @@ import { describeSpan } from "./span-category"
 import { typographyClass } from "../../ui/typography"
 import { toneBoxClass } from "../../ui/tone-box"
 import { hstack, vstack } from "../../ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 // `FlowSpanNode` (packages/ui `traces/flow-node.tsx`).
 
@@ -57,7 +57,7 @@ const REDIS_LAYERS = [
 ] as const
 
 const cacheSystemIcon = <M>(h: HtmlBuilder<M>, system: CacheInfo["system"], size: number): Html =>
-	system?.toLowerCase() === "redis"
+	system !== null && Str.toLowerCase(system) === "redis"
 		? h.svg(
 				[
 					h.Attribute("width", String(size)),
@@ -79,7 +79,7 @@ const cacheSystemIcon = <M>(h: HtmlBuilder<M>, system: CacheInfo["system"], size
 const primaryText = (span: FlowNodeData["span"], desc: SpanDescription): string => {
 	const { httpInfo, cacheInfo, category } = desc
 	if (category.id === "cache" && cacheInfo) {
-		const op = cacheInfo.operation?.toUpperCase()
+		const op = cacheInfo.operation === null ? undefined : Str.toUpperCase(cacheInfo.operation)
 		const name = cacheInfo.name ?? span.spanName
 		return op ? `${op} ${name}` : name
 	}

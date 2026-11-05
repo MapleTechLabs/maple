@@ -62,7 +62,7 @@ describe("the handshake", () => {
 			NOW,
 			config,
 		)
-		expect(hello.send?.map(sent)).toEqual([
+		expect(hello.send && Arr.map(hello.send, sent)).toEqual([
 			{ op: "IDENTIFY", botToken: "hzl_bot_token", resumeOffset: "now" },
 		])
 		expect(hello.heartbeatAt).toBe(NOW + 25_000)
@@ -77,7 +77,7 @@ describe("the handshake", () => {
 			NOW,
 			regional,
 		)
-		expect(fresh.send?.map(sent)).toEqual([
+		expect(fresh.send && Arr.map(fresh.send, sent)).toEqual([
 			{ op: "IDENTIFY", botToken: "hzl_bot_token", resumeOffset: "now", region: "eu" },
 		])
 		const resumed = gatewayProtocol.onFrame(
@@ -86,7 +86,7 @@ describe("the handshake", () => {
 			NOW,
 			regional,
 		)
-		expect(resumed.send?.map(sent)).toMatchObject([{ op: "RESUME", region: "eu" }])
+		expect(resumed.send && Arr.map(resumed.send, sent)).toMatchObject([{ op: "RESUME", region: "eu" }])
 	})
 
 	it("resumes a held session from the last acknowledged offset", () => {
@@ -96,7 +96,7 @@ describe("the handshake", () => {
 			NOW,
 			config,
 		)
-		expect(hello.send?.map(sent)).toEqual([
+		expect(hello.send && Arr.map(hello.send, sent)).toEqual([
 			{
 				op: "RESUME",
 				botToken: "hzl_bot_token",
@@ -127,7 +127,7 @@ describe("the handshake", () => {
 describe("dispatch", () => {
 	it("acknowledges each batch at once and remembers where it got to", () => {
 		const step = gatewayProtocol.onFrame(ready(), dispatch([]), NOW, config)
-		expect(step.send?.map(sent)).toEqual([
+		expect(step.send && Arr.map(step.send, sent)).toEqual([
 			{ op: "ACK", sessionId: "session-1", nextOffset: "0000000000000008" },
 		])
 		expect(step.state.offset).toBe("0000000000000008")
@@ -199,7 +199,8 @@ describe("dispatch", () => {
 			config,
 		)
 		expect(
-			step.events?.map((event) => event.type === "message" && [event.text, event.mentionsBot]),
+			step.events &&
+				Arr.map(step.events, (event) => event.type === "message" && [event.text, event.mentionsBot]),
 		).toEqual([["and the payments call?", false]])
 	})
 
@@ -252,7 +253,7 @@ describe("dispatch", () => {
 describe("keeping the connection", () => {
 	it("heartbeats on its session and reconnects when one goes unanswered", () => {
 		const beat = gatewayProtocol.heartbeat(ready(), NOW)
-		expect(beat.send?.map(sent)).toEqual([{ op: "HEARTBEAT", sessionId: "session-1" }])
+		expect(beat.send && Arr.map(beat.send, sent)).toEqual([{ op: "HEARTBEAT", sessionId: "session-1" }])
 		expect(beat.heartbeatAt).toBe(NOW + 25_000)
 		const acked = gatewayProtocol.onFrame(beat.state, frame({ op: "HEARTBEAT_ACK" }), NOW, config)
 		expect(acked.state.awaitingAck).toBe(false)

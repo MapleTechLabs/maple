@@ -9,7 +9,7 @@ import type { DuckClick } from "./critters"
 import { type Child, disposeTree, group, makeScope, type Scope } from "./kit"
 import { quacker } from "./quack"
 import { type Layout, layoutOf, sceneryKey, sceneryOf, worldOf } from "./world"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option, Order } from "effect"
 
 // The 3D service map: an orthographic, flat renderer (dpr 1 to 2, antialias, alpha), its demand
 // or always frame loop, the camera rig and machine picking. The lazy scene chunk's entry; the view owns all DOM.
@@ -88,13 +88,17 @@ const pick = (
 ): ReadonlyArray<string> => {
 	const raycaster = aim(camera, event, size)
 	return Arr.map(
-		Arr.filter(world.children, (node) => typeof node.userData.pickId === "string")
-			.flatMap((machine) =>
-				raycaster
-					.intersectObject(machine, true)
-					.map((hit) => ({ id: String(machine.userData.pickId), hit })),
-			)
-			.toSorted((a, b) => a.hit.distance - b.hit.distance),
+		Arr.sort(
+			Arr.flatMap(
+				Arr.filter(world.children, (node) => typeof node.userData.pickId === "string"),
+				(machine: THREE.Object3D) =>
+					Arr.map(raycaster.intersectObject(machine, true), (hit) => ({
+						id: String(machine.userData.pickId),
+						hit,
+					})),
+			),
+			Order.mapInput(Order.Number, (entry: { readonly hit: THREE.Intersection }) => entry.hit.distance),
+		),
 		({ id }) => id,
 	)
 }
@@ -112,8 +116,10 @@ const pickDuck = (
 		if (typeof node.userData.quack === "function") ducks.push(node)
 	})
 	const raycaster = aim(camera, event, size)
-	const hit = ducks.find((duck) => raycaster.intersectObject(duck, false).length > 0)
-	return hit === undefined ? null : hit.userData.quack
+	return Option.match(
+		Arr.findFirst(ducks, (duck) => raycaster.intersectObject(duck, false).length > 0),
+		{ onNone: () => null, onSome: (hit) => hit.userData.quack },
+	)
 }
 
 /** Builds (or keeps) the scenery and rebuilds the world for `input`. */

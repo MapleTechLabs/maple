@@ -366,8 +366,10 @@ function zonedPartsFormatter(timeZone: string): Intl.DateTimeFormat {
 export function zonedDateParts(epochMs: number, timeZone: string): ZonedDateParts {
 	const parts = zonedPartsFormatter(timeZone).formatToParts(new Date(epochMs))
 	const read = (type: Intl.DateTimeFormatPartTypes): number => {
-		const part = parts.find((candidate) => candidate.type === type)
-		return part ? Number.parseInt(part.value, 10) : 0
+		return Option.match(
+			Arr.findFirst(parts, (candidate) => candidate.type === type),
+			{ onNone: () => 0, onSome: (part) => Number.parseInt(part.value, 10) },
+		)
 	}
 	return {
 		year: read("year"),
@@ -417,7 +419,7 @@ export function zonedPartsToEpochMs(parts: ZonedDateParts, timeZone: string): nu
 			wall.second === target.getUTCSeconds()
 		)
 	}
-	return candidates.find(readsBack) ?? candidates.at(-1) ?? asUtc
+	return Option.getOrElse(Arr.findFirst(candidates, readsBack), () => candidates.at(-1) ?? asUtc)
 }
 
 /** `timeZone`'s offset from UTC at `epochMs`, in ms; positive east of Greenwich. */
@@ -829,9 +831,8 @@ export function computeBucketSeconds(
 	const ladder = Arr.filter(AUTO_BUCKET_LADDER, (candidate) => candidate >= minBucketSeconds)
 	const rungs = ladder.length > 0 ? ladder : [AUTO_BUCKET_LADDER[AUTO_BUCKET_LADDER.length - 1]]
 
-	let bucket: number = rungs.reduce<number>(
-		(best, candidate) => (Math.abs(candidate - raw) < Math.abs(best - raw) ? candidate : best),
-		rungs[0],
+	let bucket: number = Arr.reduce(rungs, rungs[0], (best, candidate) =>
+		Math.abs(candidate - raw) < Math.abs(best - raw) ? candidate : best,
 	)
 
 	// Never coarser than what keeps at least `minBuckets` buckets over the range.
@@ -988,9 +989,9 @@ export function computeBucketSecondsForWidth(
 	// The rounding can land below the raw width (e.g. 1400px over 7d → 432s → 5m
 	// = 2016 points); walk up the ladder until the window fits the budget.
 	while (Math.ceil(rangeSeconds / bucket) > MAX_AUTO_DATA_POINTS) {
-		const next = WIDTH_INTERVAL_LADDER.find(([, seconds]) => seconds > bucket)?.[1]
-		if (next === undefined) break
-		bucket = next
+		const next = Arr.findFirst(WIDTH_INTERVAL_LADDER, ([, seconds]) => seconds > bucket)
+		if (Option.isNone(next)) break
+		bucket = next.value[1]
 	}
 
 	// Never coarser than what keeps at least `minBuckets` buckets over the range.
@@ -1139,8 +1140,8 @@ export const nextSlowerAlertInterval = (
 	exceeded: "time" | "memory",
 ): number | null => {
 	const current = alertQueryLimits(intervalMinutes)
-	return (
-		ALERT_PICKABLE_INTERVALS.find((candidate) => {
+	return Option.getOrNull(
+		Arr.findFirst(ALERT_PICKABLE_INTERVALS, (candidate) => {
 			const limits = alertQueryLimits(candidate)
 			return (
 				candidate > intervalMinutes &&
@@ -1149,7 +1150,7 @@ export const nextSlowerAlertInterval = (
 					? limits.timeSeconds > current.timeSeconds
 					: limits.memoryBytes > current.memoryBytes)
 			)
-		}) ?? null
+		}),
 	)
 }
 
@@ -1157,7 +1158,7 @@ export const nextSlowerAlertInterval = (
 const alertRulePhase = (ruleId: string, intervalMinutes: number): number => {
 	let hash = 0x811c9dc5
 	for (let i = 0; i < ruleId.length; i++) {
-		hash = Math.imul(hash ^ ruleId.charCodeAt(i), 0x01000193)
+		hash = Math.imul(hash ^ Option.getOrElse(Str.charCodeAt(ruleId, i), () => 0), 0x01000193)
 	}
 	return (hash >>> 0) % intervalMinutes
 }

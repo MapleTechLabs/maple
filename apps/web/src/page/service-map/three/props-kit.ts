@@ -39,6 +39,7 @@ export type MapleFinish = MachineFinish & {
 export function seedOf(id: string) {
 	return (
 		Arr.reduce(Array.from(id), 2166136261, (hash, char) =>
+			// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 			Math.imul(hash ^ char.charCodeAt(0), 16777619),
 		) >>> 0
 	)

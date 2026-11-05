@@ -33,9 +33,7 @@ export const jsonDepth = (value: unknown): number => {
 		: typeof value === "object" && value !== null
 			? Rec.values(value)
 			: undefined
-	return children === undefined
-		? 0
-		: 1 + children.reduce<number>((max, v) => Math.max(max, jsonDepth(v)), 0)
+	return children === undefined ? 0 : 1 + Arr.reduce(children, 0, (max, v) => Math.max(max, jsonDepth(v)))
 }
 
 /**

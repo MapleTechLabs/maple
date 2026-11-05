@@ -1116,8 +1116,7 @@ describe("GithubConnectService", () => {
 				yield* markRemovedFor(repo, orgId, "7")
 				// getStatus surfaces removed repos (scope "all") by Maple id, with status.
 				const before = yield* svc.getStatus(orgId)
-				const removed = before.repositories.find((r) => r.id === repo7Id)
-				assert.ok(removed)
+				const removed = Option.getOrThrow(Arr.findFirst(before.repositories, (r) => r.id === repo7Id))
 				assert.strictEqual(removed.status, "removed")
 
 				const result = yield* svc.deleteRepository(orgId, repo7Id)

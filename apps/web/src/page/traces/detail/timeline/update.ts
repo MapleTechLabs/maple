@@ -38,7 +38,7 @@ import {
 } from "./layout"
 import { Message, OutMessage } from "./message"
 import type { Model, Viewport } from "./model"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 export type UpdateReturn = Readonly<{
 	model: Model
@@ -85,7 +85,10 @@ export const barsOf = (model: Model): ReadonlyArray<Bar> => {
 const legacyTree = (rootSpans: ReadonlyArray<SpanNodeData>) => Arr.map(rootSpans, toSpanNode)
 
 const indexOf = (model: Model, spanId: string): number =>
-	barsOf(model).findIndex((bar) => bar.span.spanId === spanId)
+	Option.getOrElse(
+		Arr.findFirstIndex(barsOf(model), (bar) => bar.span.spanId === spanId),
+		() => -1,
+	)
 
 export type InitInput = Readonly<{
 	trace: TraceData
@@ -195,8 +198,9 @@ const withExpanded = (model: Model, expanded: ReadonlySet<string>): Model => ({
 const toggleCollapse = (model: Model, spanId: string, wholeSubtree: boolean): Model => {
 	const next = new Set(model.expandedSpanIds)
 	const isExpanding = !next.has(spanId)
-	const node = barsOf(model).find((bar) => bar.span.spanId === spanId)?.span
-	const descendants = wholeSubtree && node !== undefined ? collectDescendantParentIds(toSpanNode(node)) : []
+	const bar = Arr.findFirst(barsOf(model), (candidate) => candidate.span.spanId === spanId)
+	const descendants =
+		wholeSubtree && Option.isSome(bar) ? collectDescendantParentIds(toSpanNode(bar.value.span)) : []
 	Arr.forEach([spanId, ...descendants], (id) => (isExpanding ? next.add(id) : next.delete(id)))
 	return withExpanded(model, next)
 }
@@ -292,7 +296,9 @@ const pressedKey = (model: Model, key: string, isShift: boolean): UpdateReturn =
 				focused ??
 				(model.selectedSpanId === null
 					? undefined
-					: bars.find((bar) => bar.span.spanId === model.selectedSpanId))
+					: Option.getOrUndefined(
+							Arr.findFirst(bars, (bar) => bar.span.spanId === model.selectedSpanId),
+						))
 			return {
 				model: target === undefined ? fit(model) : zoomToSpan(model, target.startMs, target.endMs),
 			}
@@ -342,8 +348,12 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		PressedTimelineKey: ({ key, isShift }) => pressedKey(model, key, isShift),
 		ClickedRow: ({ spanId }) => ({ model, outMessage: OutMessage.SelectedSpan({ spanId }) }),
 		DoubleClickedRow: ({ spanId }) => {
-			const bar = barsOf(model).find((candidate) => candidate.span.spanId === spanId)
-			return { model: bar === undefined ? model : zoomToSpan(model, bar.startMs, bar.endMs) }
+			return {
+				model: Option.match(
+					Arr.findFirst(barsOf(model), (candidate) => candidate.span.spanId === spanId),
+					{ onNone: () => model, onSome: (bar) => zoomToSpan(model, bar.startMs, bar.endMs) },
+				),
+			}
 		},
 		ClickedToggleCollapse: ({ spanId }) => ({ model: toggleCollapse(model, spanId, false) }),
 		AltClickedToggleCollapse: ({ spanId }) => ({ model: toggleCollapse(model, spanId, true) }),

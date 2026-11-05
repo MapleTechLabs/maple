@@ -4,7 +4,7 @@
 // strings (`'YYYY-MM-DD HH:MM:SS'`, UTC); chDB returns tz-less UTC strings too.
 // Everything the user reads is rendered in the browser's local zone.
 
-import { DateTime, Array as Arr, String as Str } from "effect"
+import { DateTime, Option, Array as Arr, String as Str } from "effect"
 import { computeBucketSeconds, formatWarehouseDateTime } from "@maple/query-engine"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
@@ -53,10 +53,9 @@ export function isRangeKey(value: string | null | undefined): value is string {
 }
 
 export function resolveRange(key: string | undefined): TimeRange {
-	return (
-		TIME_RANGES.find((r) => r.key === key) ??
-		TIME_RANGES.find((r) => r.key === DEFAULT_RANGE) ??
-		TIME_RANGES[0]
+	return Arr.findFirst(TIME_RANGES, (r) => r.key === key).pipe(
+		Option.orElse(() => Arr.findFirst(TIME_RANGES, (r) => r.key === DEFAULT_RANGE)),
+		Option.getOrElse(() => TIME_RANGES[0]),
 	)
 }
 

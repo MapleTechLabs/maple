@@ -52,10 +52,7 @@ export const metricOptionsOf = (rows: ReadonlyArray<MetricRow>): ReadonlyArray<M
 		const value = `${row.metricName}::${metricType}`
 		return [{ value, label: `${row.metricName} (${metricType})`, metricName: row.metricName, metricType }]
 	})
-	return Arr.filter(
-		options,
-		(option, index) => options.findIndex((other) => other.value === option.value) === index,
-	)
+	return Arr.dedupeWith(options, (a, b) => a.value === b.value)
 }
 
 /** `parseMetricSelection`: `name::type` back into its parts. */

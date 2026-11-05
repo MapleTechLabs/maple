@@ -8,7 +8,7 @@ import {
 	type SignalScalar,
 	type SignalSourceDefinition,
 } from "@maple/eventing-core"
-import { Effect, Result, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { OtlpFieldError, spanIdHex, traceIdHex, type AnyValue, type KeyValue } from "../otlp/encode"
 
 const NumberOrString = Schema.Union([Schema.String, Schema.Number])
@@ -252,9 +252,11 @@ const nanosToTimestamp = (nanos: bigint): string => {
 }
 
 const stringAttribute = (attrs: NormalizedAttributes, key: string): string | null => {
-	const scalar = attrs.scalars.find((entry) => entry.key === key)?.value
+	const scalar = Option.getOrUndefined(Arr.findFirst(attrs.scalars, (entry) => entry.key === key))?.value
 	return scalar?.type === "string" ? scalar.value : null
 }
+
+const trimOrNull = (value: string | null): string | null => (value === null ? null : Str.trim(value))
 
 const boundedIdentity = (value: string, prefix: string): string =>
 	value.length <= 256
@@ -262,11 +264,11 @@ const boundedIdentity = (value: string, prefix: string): string =>
 		: `${prefix}:sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`
 
 const sourceUri = (resource: NormalizedAttributes, record: NormalizedAttributes): string => {
-	const explicit = (
-		stringAttribute(record, "event.source") ?? stringAttribute(record, "cloudevents.source")
-	)?.trim()
+	const explicit = trimOrNull(
+		stringAttribute(record, "event.source") ?? stringAttribute(record, "cloudevents.source"),
+	)
 	if (explicit) return boundedIdentity(assertStringBound(explicit, "event source"), "urn:maple:source")
-	const service = stringAttribute(resource, "service.name")?.trim()
+	const service = trimOrNull(stringAttribute(resource, "service.name"))
 	const source = service
 		? `urn:maple:source:otel:${encodeURIComponent(service)}`
 		: "urn:maple:source:otel:local"
@@ -275,7 +277,7 @@ const sourceUri = (resource: NormalizedAttributes, record: NormalizedAttributes)
 
 const sourceOccurrenceId = (record: NormalizedAttributes): string | null => {
 	for (const key of ["event.id", "cloudevents.id"]) {
-		const value = stringAttribute(record, key)?.trim()
+		const value = trimOrNull(stringAttribute(record, key))
 		if (value) return boundedIdentity(value, "source")
 	}
 	return null
@@ -308,21 +310,21 @@ const recoveryIdentity = (
 ): OtlpRecoveryIdentity | null => {
 	let occurrenceId: string | null = null
 	for (const key of ["event.id", "cloudevents.id"]) {
-		const value = recoveryStringAttribute(log.attributes, key)?.trim()
+		const value = trimOrNull(recoveryStringAttribute(log.attributes, key))
 		if (!value) continue
 		occurrenceId = recoveryBoundedIdentity(value, "source")
 		break
 	}
 	if (occurrenceId === null) return null
 
-	const explicit = (
+	const explicit = trimOrNull(
 		recoveryStringAttribute(log.attributes, "event.source") ??
-		recoveryStringAttribute(log.attributes, "cloudevents.source")
-	)?.trim()
+			recoveryStringAttribute(log.attributes, "cloudevents.source"),
+	)
 	let source: string | null
 	if (explicit) source = recoveryBoundedIdentity(explicit, "urn:maple:source")
 	else {
-		const service = recoveryStringAttribute(resourceAttributes, "service.name")?.trim()
+		const service = trimOrNull(recoveryStringAttribute(resourceAttributes, "service.name"))
 		source = recoveryBoundedIdentity(
 			service ? `urn:maple:source:otel:${encodeURIComponent(service)}` : "urn:maple:source:otel:local",
 			"urn:maple:source",

@@ -19,11 +19,17 @@ export interface ReleaseNotes {
 export const parseChangelog = (markdown: string): ReadonlyArray<ReleaseNotes> =>
 	Arr.filter(
 		Arr.map(Str.split(/^## /m)(markdown).slice(1), (section) => {
-			const newline = section.indexOf("\n")
-			const heading = newline === -1 ? section : Str.slice(0, newline)(section)
+			const newline = Str.indexOf("\n")(section)
+			const heading = Option.match(newline, {
+				onNone: () => section,
+				onSome: (index) => Str.slice(0, index)(section),
+			})
 			return {
 				version: stripV(Str.trim(heading)),
-				notes: newline === -1 ? "" : Str.trim(Str.slice(newline + 1)(section)),
+				notes: Option.match(newline, {
+					onNone: () => "",
+					onSome: (index) => Str.trim(Str.slice(index + 1)(section)),
+				}),
 			}
 		}),
 		(release) => /^\d+\.\d+\.\d+/.test(release.version),

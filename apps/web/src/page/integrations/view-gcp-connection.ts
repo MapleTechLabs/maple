@@ -377,7 +377,7 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 			[
 				collects === ""
 					? "Collects nothing"
-					: Str.toUpperCase(collects.charAt(0)) + Str.slice(1)(collects),
+					: Str.toUpperCase(Str.slice(0, 1)(collects)) + Str.slice(1)(collects),
 				projects,
 				connector.scope_type === "project" ? null : `host ${connector.project_id}`,
 			],

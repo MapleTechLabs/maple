@@ -5,7 +5,7 @@ import {
 	EMPTY_TTL_OVERRIDES,
 	type RawTableTtlOverrides,
 } from "./ttl-override"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 const rawLogs = {
 	name: "logs",
@@ -42,9 +42,9 @@ describe("applyRawTtlOverrides", () => {
 			...EMPTY_TTL_OVERRIDES,
 			logsRetentionDays: 30,
 		})
-		const logs = result.find((r) => r.name === "logs")
-		const traces = result.find((r) => r.name === "traces")
-		const mv = result.find((r) => r.name === "service_map_spans")
+		const logs = Option.getOrUndefined(Arr.findFirst(result, (r) => r.name === "logs"))
+		const traces = Option.getOrUndefined(Arr.findFirst(result, (r) => r.name === "traces"))
+		const mv = Option.getOrUndefined(Arr.findFirst(result, (r) => r.name === "service_map_spans"))
 		expect(logs?.content).toContain("INTERVAL 30 DAY")
 		expect(logs?.content).not.toContain("INTERVAL 90 DAY")
 		expect(traces?.content).toBe(rawTraces.content)

@@ -1,5 +1,5 @@
 import type { V2ApiKey } from "@maple/domain/http/v2"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Order, String as Str } from "effect"
 
 /**
  * A key has exactly one status. "Expiring" still works, so it lists under Active, but it carries a
@@ -59,13 +59,16 @@ export function buildDeviceKeyRows(input: {
 	readonly apiKeys: ReadonlyArray<V2ApiKey>
 	readonly now: number
 }): ReadonlyArray<KeyRow> {
-	return Arr.filter(
-		Arr.map(
-			Arr.filter(input.apiKeys, (key) => key.kind === "device"),
-			(key): KeyRow => ({ id: key.id, type: "api", key, status: apiKeyStatus(key, input.now) }),
+	return Arr.sort(
+		Arr.filter(
+			Arr.map(
+				Arr.filter(input.apiKeys, (key) => key.kind === "device"),
+				(key): KeyRow => ({ id: key.id, type: "api", key, status: apiKeyStatus(key, input.now) }),
+			),
+			(row) => row.status === "active" || row.status === "expiring",
 		),
-		(row) => row.status === "active" || row.status === "expiring",
-	).toSorted((a, b) => Date.parse(b.key.created_at) - Date.parse(a.key.created_at))
+		Order.flip(Order.mapInput(Order.Number, (row: KeyRow) => Date.parse(row.key.created_at))),
+	)
 }
 
 const statusMatches = (row: KeyRow, status: KeyStatusFilter): boolean =>

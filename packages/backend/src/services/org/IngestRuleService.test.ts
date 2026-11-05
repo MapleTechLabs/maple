@@ -112,7 +112,7 @@ describe("IngestRuleService", () => {
 				"@maple/http/errors/IngestRuleValidationError",
 				"@maple/http/errors/IngestRuleValidationError",
 			])
-			expect((yield* service.list(ORG)).map((rule) => rule.name)).toEqual(["Second", "First"])
+			expect(Arr.map(yield* service.list(ORG), (rule) => rule.name)).toEqual(["Second", "First"])
 		}).pipe(Effect.provide(makeLayer())),
 	)
 

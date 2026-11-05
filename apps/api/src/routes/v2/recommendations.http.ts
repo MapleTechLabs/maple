@@ -27,15 +27,14 @@ const toV2Recommendation = (issue: RecommendationIssue): V2Recommendation => ({
  * against a concurrent reconciliation dropping it from the list.
  */
 const pickIssue = (issues: ReadonlyArray<RecommendationIssue>, id: RecommendationIssueId) => {
-	const issue = issues.find((candidate) => candidate.id === id)
-	return issue === undefined
-		? Effect.fail(
-				new RecommendationIssueNotFoundError({
-					message: "No such recommendation.",
-					id,
-				}),
-			)
-		: Effect.succeed(issue)
+	return Effect.fromOption(
+		Arr.findFirst(issues, (candidate) => candidate.id === id),
+		() =>
+			new RecommendationIssueNotFoundError({
+				message: "No such recommendation.",
+				id,
+			}),
+	)
 }
 
 export const HttpV2InstrumentationRecommendationsLive = HttpApiBuilder.group(

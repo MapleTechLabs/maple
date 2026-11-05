@@ -104,7 +104,12 @@ type TabOf<T extends TabModel["_tag"]> = Extract<TabModel, { readonly _tag: T }>
 
 /** The open tab or a kept one: a kept tab still takes the answers to what it asked for. */
 const tabNamed = <T extends TabModel["_tag"]>(model: Model, tag: T): TabOf<T> | undefined =>
-	[model.tab, ...model.kept].find((tab): tab is TabOf<T> => tab !== null && tab._tag === tag)
+	Option.getOrUndefined(
+		Array.findFirst(
+			[model.tab, ...model.kept],
+			(tab): tab is TabOf<T> => tab !== null && tab._tag === tag,
+		),
+	)
 
 /** Writes a tab back where it lives: open, or kept. */
 const putTab = (model: Model, tab: TabModel): Model =>
@@ -380,14 +385,18 @@ const revisitTab = (model: Model, kept: TabModel, context: PageContext): Return 
 /** Opens `tab`, keeping the one left: a kept tab comes back with its data, any other starts fresh. */
 const enterTab = (model: Model, tab: SettingsTab, context: PageContext): Return => {
 	const left = leaveTab(model)
-	const returning = left.kept.find((kept) => isTabCurrent(kept, tab))
-	return returning === undefined
-		? initTab(left, tab, context)
-		: revisitTab(
-				{ ...left, kept: Array.filter(left.kept, (kept) => kept !== returning) },
-				returning,
-				context,
-			)
+	return Option.match(
+		Array.findFirst(left.kept, (kept) => isTabCurrent(kept, tab)),
+		{
+			onNone: () => initTab(left, tab, context),
+			onSome: (returning) =>
+				revisitTab(
+					{ ...left, kept: Array.filter(left.kept, (kept) => kept !== returning) },
+					returning,
+					context,
+				),
+		},
+	)
 }
 
 /** Mounts the active tab's section once the nav can resolve it, keeping the previous one. */

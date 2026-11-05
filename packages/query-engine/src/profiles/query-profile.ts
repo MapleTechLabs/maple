@@ -1,5 +1,5 @@
 import { parseStatement, renderStatement, withSettings } from "@maple-dev/effect-orm/sql"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Record as Rec } from "effect"
 
 /**
  * ClickHouse query settings forwarded via inline `SETTINGS` clause.
@@ -144,7 +144,7 @@ export const stripTinybirdRestrictedSettings = (
 export const settingsClause = (settings: WarehouseQuerySettings | undefined): string | undefined => {
 	if (!settings) return undefined
 	const parts: string[] = []
-	for (const key of Object.keys(settings) as Array<keyof WarehouseQuerySettings>) {
+	for (const key of Rec.keys<string, unknown>(settings) as Array<keyof WarehouseQuerySettings>) {
 		const value = settings[key]
 		if (typeof value === "number" && Number.isFinite(value)) {
 			parts.push(`${settingToCh[key]}=${value}`)

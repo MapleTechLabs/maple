@@ -62,13 +62,17 @@ const step = (model: Model, message: Message): Step => {
 }
 
 const opened = () =>
-	[
-		Message.CompletedReadClock({ nowMs: Date.parse("2026-10-01T12:00:00Z") }),
-		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
-	].reduce<Step>((current, message) => step(current.model, message), {
-		model: init({ dashboardId: "dash_metrics", widgetId: "cpu", search: {} }, context).model,
-		names: [],
-	})
+	Arr.reduce<Message, Step>(
+		[
+			Message.CompletedReadClock({ nowMs: Date.parse("2026-10-01T12:00:00Z") }),
+			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
+		],
+		{
+			model: init({ dashboardId: "dash_metrics", widgetId: "cpu", search: {} }, context).model,
+			names: [],
+		},
+		(current, message) => step(current.model, message),
+	)
 
 describe("widget editor metric reads", () => {
 	test("a failed metric list or key lookup is asked again on the next edit", () => {

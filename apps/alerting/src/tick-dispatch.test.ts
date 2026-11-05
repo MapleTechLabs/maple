@@ -161,7 +161,7 @@ describe("dispatchTick", () => {
 			}).binding
 			const error = yield* dispatchFailure({ ...ENV, [SELF_BINDING]: binding })
 			expect(error.ray).toBe("8f00aa11bb22cc33-IAD")
-			expect(error.body?.startsWith("Worker exceeded resource limits")).toBe(true)
+			expect(Str.startsWith("Worker exceeded resource limits")(error.body ?? "")).toBe(true)
 			expect(error.body?.length).toBe(300)
 			expect(error.message).toBe("Placed tick answered 500")
 		}),

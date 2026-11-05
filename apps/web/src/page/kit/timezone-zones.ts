@@ -31,7 +31,13 @@ export const formatUtcOffset = (timeZone: string, atMs: number): string => {
 	const part = Option.match(offsetFormatter(timeZone), {
 		onNone: () => "GMT",
 		onSome: (formatter) =>
-			formatter.formatToParts(atMs).find((entry) => entry.type === "timeZoneName")?.value ?? "GMT",
+			Option.getOrElse(
+				Option.map(
+					Arr.findFirst(formatter.formatToParts(atMs), (entry) => entry.type === "timeZoneName"),
+					(entry) => entry.value,
+				),
+				() => "GMT",
+			),
 	})
 	const match = /^GMT([+-])(\d{1,2})(?::(\d{2}))?$/.exec(part)
 	if (match === null) return "UTC"
@@ -56,12 +62,13 @@ const formatClock = (timeZone: string, atMs: number): string =>
 
 /** `Europe/Berlin` → `Europe` + `Berlin`; `America/Argentina/San_Juan` → `America` + `Argentina / San Juan`. */
 const splitZone = (zone: string): { readonly region: string; readonly city: string } => {
-	const slash = zone.indexOf("/")
-	if (slash === -1) return { region: "Other", city: zone }
-	return {
-		region: Str.slice(0, slash)(zone),
-		city: Str.replaceAll("/", " / ")(Str.replaceAll("_", " ")(Str.slice(slash + 1)(zone))),
-	}
+	return Option.match(Str.indexOf("/")(zone), {
+		onNone: () => ({ region: "Other", city: zone }),
+		onSome: (slash) => ({
+			region: Str.slice(0, slash)(zone),
+			city: Str.replaceAll("/", " / ")(Str.replaceAll("_", " ")(Str.slice(slash + 1)(zone))),
+		}),
+	})
 }
 
 /** `itemLabel`: the option's text label. */

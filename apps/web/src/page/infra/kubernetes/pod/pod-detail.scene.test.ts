@@ -57,7 +57,7 @@ describe("pod detail", () => {
 			{ ...route, search: { namespace: "billing", timePreset: "6h" } },
 			context,
 		)
-		expect(represet.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(represet.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveInfraWindow", "Refresh"],
 		])
 	})

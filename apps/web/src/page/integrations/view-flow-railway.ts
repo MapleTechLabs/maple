@@ -21,7 +21,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { unsyncedEnvironments } from "./railway"
 import { railwayTokenForm } from "./view-railway-token"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Record as Rec, Option } from "effect"
 
 // Railway in the connect flow: paste a token, then watch the first sync land.
 
@@ -77,12 +77,13 @@ const showsUpRail = (h: H): Html =>
 
 /** Each project the token sees, with how many services it has. */
 const projectChips = (h: H, status: RailwayIntegrationStatus): Html => {
-	const services = status.environments.reduce<Record<string, number>>(
+	const services = Arr.reduce<(typeof status.environments)[number], Record<string, number>>(
+		status.environments,
+		{},
 		(acc, environment) => ({
 			...acc,
 			[environment.projectName]: (acc[environment.projectName] ?? 0) + environment.serviceCount,
 		}),
-		{},
 	)
 	return foundChips(
 		h,
@@ -195,7 +196,13 @@ const liveRows = (
 			? {
 					state: "failed",
 					title: "Backfilling the last hour",
-					detail: `${countLabel(failing, "environment")} failed: ${status.environments.find((environment) => environment.lastError !== null)?.lastError ?? ""}`,
+					detail: `${countLabel(failing, "environment")} failed: ${Arr.findFirst(
+						status.environments,
+						(environment) => environment.lastError !== null,
+					).pipe(
+						Option.flatMapNullishOr((found) => found.lastError),
+						Option.getOrElse(() => ""),
+					)}`,
 				}
 			: queued > 0
 				? {

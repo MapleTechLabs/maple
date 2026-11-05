@@ -296,7 +296,7 @@ describe("BillingOrgService", () => {
 				assert.strictEqual(world.cancelCalls, 1)
 				const service = yield* BillingOrgService
 				assert.deepStrictEqual(
-					(yield* service.members(PAYER)).map((row) => row.orgId),
+					Arr.map(yield* service.members(PAYER), (row) => row.orgId),
 					[MEMBER],
 				)
 				assert.deepStrictEqual(

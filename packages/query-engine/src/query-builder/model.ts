@@ -8,7 +8,7 @@ import {
 	quoteWhereValue,
 	splitCsv,
 } from "@maple/domain/where-clause"
-import { Match, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Match, Array as Arr, Record as Rec, String as Str, Option } from "effect"
 
 export type {
 	QueryBuilderDataSource,
@@ -343,12 +343,13 @@ function parseBucketSeconds(raw: string): number | undefined {
 	const trimmed = Str.toLowerCase(Str.trim(raw))
 	if (!trimmed) return undefined
 
-	const shorthand = trimmed.match(
+	const shorthandMatch = Str.match(
 		/^(\d+)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)?$/,
-	)
-	if (!shorthand) {
+	)(trimmed)
+	if (Option.isNone(shorthandMatch)) {
 		return undefined
 	}
+	const shorthand = shorthandMatch.value
 
 	const amount = Number.parseInt(shorthand[1], 10)
 	if (!Number.isFinite(amount) || amount <= 0) {
@@ -783,7 +784,7 @@ function applyLogsClause(
 
 function buildLogsSpecFilters(acc: LogsFilterAccumulator): Record<string, unknown> | undefined {
 	const filters: Record<string, unknown> = {}
-	for (const [field, value] of Object.entries(acc)) {
+	for (const [field, value] of Rec.toEntries<string, unknown>({ ...acc })) {
 		if (value !== undefined && !(Arr.isArray(value) && value.length === 0)) filters[field] = value
 	}
 	return Rec.keys(filters).length > 0 ? filters : undefined
@@ -871,7 +872,7 @@ function applyProductEventsClause(
 	const rawKey = Str.trim(clause.rawKey ?? clause.key)
 	const attributeKey = Str.startsWith("attr.")(key) ? Str.slice(5)(rawKey) : undefined
 
-	if (attributeKey === undefined && Object.hasOwn(PRODUCT_EVENT_LIST_FIELDS, key)) {
+	if (attributeKey === undefined && Rec.has<string, unknown>(PRODUCT_EVENT_LIST_FIELDS, key)) {
 		const [positive, negative] = PRODUCT_EVENT_LIST_FIELDS[key as keyof typeof PRODUCT_EVENT_LIST_FIELDS]
 		if (clause.operator !== "=" && clause.operator !== "!=") {
 			warnings.push(
@@ -887,7 +888,7 @@ function applyProductEventsClause(
 		return { ...filters, [target]: splitCsv(clause.value) }
 	}
 
-	if (attributeKey === undefined && Object.hasOwn(PRODUCT_EVENT_SESSION_FIELDS, key)) {
+	if (attributeKey === undefined && Rec.has<string, unknown>(PRODUCT_EVENT_SESSION_FIELDS, key)) {
 		if (clause.operator !== "=") {
 			warnings.push(`Product events filter ${clause.key} supports only =; ignoring ${clause.operator}`)
 			return filters
@@ -959,7 +960,7 @@ function buildProductEventsSpecFilters(
 ): Record<string, unknown> | undefined {
 	const { attributeFilters, ...rest } = acc
 	const filters: Record<string, unknown> = {}
-	for (const [field, value] of Object.entries(rest)) {
+	for (const [field, value] of Rec.toEntries<string, unknown>(rest)) {
 		if (value !== undefined && !(Arr.isArray(value) && value.length === 0)) filters[field] = value
 	}
 	if (attributeFilters.length > 0) filters.attributeFilters = attributeFilters
@@ -1242,14 +1243,14 @@ function resolveGroupByToken<K extends string>(
 		// Attribute Map keys are case-sensitive: keep the key as typed. Prefixes are ASCII, so the slice is safe.
 		const key = Str.slice(known.prefix.length)(Str.trim(raw))
 		if (!key) return { _tag: "Rejected", warning: `Invalid ${known.prefix}* group by ignored` }
-		const supported = spec.prefixes.find((p) => p.prefix === known.prefix)
-		if (!supported) {
+		const supported = Arr.findFirst(spec.prefixes, (p) => p.prefix === known.prefix)
+		if (Option.isNone(supported)) {
 			return {
 				_tag: "Rejected",
 				warning: `${source} source does not support ${known.prefix}* group by: ${raw}`,
 			}
 		}
-		return { _tag: "Prefixed", token: supported.token, bucket: supported.bucket, key }
+		return { _tag: "Prefixed", token: supported.value.token, bucket: supported.value.bucket, key }
 	}
 
 	const resolved = Rec.has(spec.aliases, token) ? spec.aliases[token] : undefined
@@ -1469,7 +1470,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 
 	// Opt-in top-N series cap. Parsed from the builder's string field; a blank,
 	// zero, negative, or non-integer value disables the cap.
-	const seriesLimitRaw = query.seriesLimit?.trim()
+	const seriesLimitRaw = query.seriesLimit === undefined ? undefined : Str.trim(query.seriesLimit)
 	const seriesLimitParsed = seriesLimitRaw ? Number.parseInt(seriesLimitRaw, 10) : Number.NaN
 	const seriesLimit =
 		Number.isInteger(seriesLimitParsed) && seriesLimitParsed > 0 ? seriesLimitParsed : undefined
@@ -1628,9 +1629,9 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 			}
 		}
 
-		const filters = clauses.reduce<ProductEventsFilterAccumulator>(
-			(acc, clause) => applyProductEventsClause(acc, clause, warnings),
-			{ attributeFilters: [] },
+		const initialFilters: ProductEventsFilterAccumulator = { attributeFilters: [] }
+		const filters = Arr.reduce(clauses, initialFilters, (acc, clause) =>
+			applyProductEventsClause(acc, clause, warnings),
 		)
 
 		const groupByKeys: ProductEventsGroupByKey[] = []
@@ -1776,7 +1777,10 @@ export function buildBreakdownQuerySpec(
 	if (spec.kind !== "timeseries") return timeseriesResult
 
 	const groupByArray = (spec as { groupBy?: string[] }).groupBy ?? []
-	const breakdownGroupBy = groupByArray.find((g) => g !== "none")
+	const breakdownGroupBy = Option.getOrElse(
+		Arr.findFirst(groupByArray, (g) => g !== "none"),
+		() => "",
+	)
 	if (!breakdownGroupBy) {
 		return {
 			query: null,

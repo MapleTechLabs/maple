@@ -115,7 +115,7 @@ const normalizeName = Effect.fnUntraced(function* (name: string) {
 })
 
 const normalizeDescription = Effect.fnUntraced(function* (description: string | null) {
-	const trimmed = description?.trim() ?? ""
+	const trimmed = typeof description === "string" ? Str.trim(description) : ""
 	if (trimmed.length > MAX_DESCRIPTION_LENGTH) {
 		return yield* invalid(`Description must be at most ${MAX_DESCRIPTION_LENGTH} characters`)
 	}

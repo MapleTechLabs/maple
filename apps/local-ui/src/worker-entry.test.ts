@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 import worker from "./worker-entry"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 // Serves `/index.html` and 404s everything else, like the ASSETS binding for a client route.
 const assets = {
@@ -13,10 +13,11 @@ const assets = {
 }
 
 const scriptSrc = (response: Response): string | undefined =>
-	response.headers
-		.get("content-security-policy")
-		?.split("; ")
-		.find((directive) => Str.startsWith("script-src ")(directive))
+	Option.getOrUndefined(
+		Option.flatMap(Option.fromNullishOr(response.headers.get("content-security-policy")), (csp) =>
+			Arr.findFirst(Str.split("; ")(csp), (directive) => Str.startsWith("script-src ")(directive)),
+		),
+	)
 
 describe("local-ui worker", () => {
 	Arr.forEach(["https://local.maple.dev/index.html", "https://local.maple.dev/traces/abc"], (url) =>

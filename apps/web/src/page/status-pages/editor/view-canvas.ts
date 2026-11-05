@@ -16,6 +16,7 @@ import {
 	COMPONENT_STATUS_TONE,
 	componentStatus,
 	isOpenIncident,
+	monitorStatusOf,
 } from "../shared/derive"
 import {
 	daysOf,
@@ -94,8 +95,7 @@ export const canvasDocument = (model: Model, page: V2StatusPage): string => {
 				name: component.name,
 				description: component.description,
 				group: component.group,
-				monitorStatus:
-					monitors.find((monitor) => monitor.id === component.monitor_id)?.state.status ?? null,
+				monitorStatus: monitorStatusOf(monitors, component.monitor_id),
 				manualStatus: component.manual_status,
 				showUptime: component.show_uptime,
 				monitored: component.monitor_id !== null,
@@ -314,12 +314,16 @@ const panelView = (h: H, model: Model, time: TimeInputs): ReadonlyArray<Html> =>
 	if (panel === null) return []
 	switch (panel._tag) {
 		case "Component": {
-			const component = componentsOf(model).find((row) => row.id === panel.componentId)
-			return component === undefined ? [] : [componentPanel(h, model, component)]
+			return Option.match(
+				Arr.findFirst(componentsOf(model), (row) => row.id === panel.componentId),
+				{ onNone: () => [], onSome: (component) => [componentPanel(h, model, component)] },
+			)
 		}
 		case "Incident": {
-			const incident = incidentsOf(model).find((row) => row.id === panel.incidentId)
-			return incident === undefined ? [] : [incidentPanel(h, model, incident, time)]
+			return Option.match(
+				Arr.findFirst(incidentsOf(model), (row) => row.id === panel.incidentId),
+				{ onNone: () => [], onSome: (incident) => [incidentPanel(h, model, incident, time)] },
+			)
 		}
 		case "Compose":
 			return [composerPanel(h, model, time.timeZone)]

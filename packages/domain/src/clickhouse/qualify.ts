@@ -35,11 +35,13 @@ export const qualifyStatementForDatabase = (stmt: string, database: string): str
 	if (database.length === 0) return stmt
 	const ident = (name: string) => `\`${database}\`.\`${name}\``
 
+	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	let result = stmt.replace(
 		/^(CREATE TABLE\s+(?:IF NOT EXISTS\s+)?)([A-Za-z_][A-Za-z0-9_]*)/,
 		(_match, prefix: string, name: string) => `${prefix}${ident(name)}`,
 	)
 
+	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	result = result.replace(
 		/^(CREATE MATERIALIZED VIEW\s+(?:IF NOT EXISTS\s+)?)([A-Za-z_][A-Za-z0-9_]*)(\s+TO\s+)([A-Za-z_][A-Za-z0-9_]*)/,
 		(_match, p1: string, view: string, mid: string, target: string) =>
@@ -47,6 +49,7 @@ export const qualifyStatementForDatabase = (stmt: string, database: string): str
 	)
 
 	for (const table of CLICKHOUSE_MV_SOURCE_TABLES) {
+		// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 		result = result.replace(
 			new RegExp(`(\\bFROM|\\bJOIN)\\s+${table}\\b`, "g"),
 			(_match, kw: string) => `${kw} ${ident(table)}`,

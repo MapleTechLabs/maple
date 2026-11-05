@@ -10,7 +10,7 @@
 // so it can be consumed from web and React Native alike.
 
 import { httpStatusTone } from "./http"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 /** Status members share `Tone`'s names; `emphasis`/`muted` are plain-chip weights, not statuses. */
 export type ChipTone = "crit" | "warn" | "emphasis" | "muted"
@@ -140,7 +140,11 @@ export function getChipTone(key: string, value: string, severityText: string, rp
 		if (Number.isFinite(n) && n !== 0) return "crit"
 	}
 
-	if (key === "rpc.response.status_code" && rpcSystem?.toLowerCase() === "grpc") {
+	if (
+		key === "rpc.response.status_code" &&
+		rpcSystem !== undefined &&
+		Str.toLowerCase(rpcSystem) === "grpc"
+	) {
 		const code = Str.toUpperCase(value)
 		if (GRPC_SERVER_ERROR_CODES.has(code)) return "crit"
 		if (GRPC_CODES.has(code) && code !== "OK" && code !== "0") return "warn"
@@ -225,8 +229,10 @@ export function groupAttributesByNamespace(attrs: Record<string, string>): Attri
 
 	for (const entry of Rec.toEntries(attrs)) {
 		const [key] = entry
-		const dot = key.indexOf(".")
-		const namespace = dot > 0 ? Str.slice(0, dot)(key) : "Other"
+		const namespace = Option.match(
+			Option.filter(Str.indexOf(".")(key), (dot) => dot > 0),
+			{ onNone: () => "Other", onSome: (dot) => Str.slice(0, dot)(key) },
+		)
 		const list = buckets.get(namespace)
 		if (list) list.push(entry)
 		else buckets.set(namespace, [entry])

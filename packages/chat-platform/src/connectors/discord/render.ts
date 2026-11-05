@@ -10,7 +10,7 @@
  */
 import { chatActionControlId, type ChatActionToken } from "../../action-token"
 import type { ChatAlertBlock, ChatBlock, ChatToolActivity } from "../../render/blocks"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /** https://discord.com/developers — Create/Edit Message JSON params, API v10. */
 export interface DiscordEmbed {
@@ -181,7 +181,10 @@ const embedCost = (embed: DiscordEmbed): number =>
  * the facts as inline fields, the links, the chart and a footer — with the state as the bar colour.
  */
 const alertEmbed = (block: ChatAlertBlock): DiscordEmbed => {
-	const primary = block.links.find((link) => link.primary) ?? block.links[0]
+	const primary = Option.getOrElse(
+		Arr.findFirst(block.links, (link) => link.primary),
+		() => block.links[0],
+	)
 	const links = Arr.join(
 		Arr.map(block.links, (link) => `[${link.label}](${link.url})`),
 		" · ",

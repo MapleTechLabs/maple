@@ -69,7 +69,10 @@ const legendOf = (legend: string | undefined): LegendPosition =>
 	legend === "hidden" ? "hidden" : legend === "right" ? "right" : legend === "visible" ? "bottom" : "hidden"
 
 const toStatAggregate = (value: unknown): EditorState["statAggregate"] =>
-	STAT_AGGREGATES.find((candidate) => candidate === value) ?? "first"
+	Option.getOrElse(
+		Arr.findFirst(STAT_AGGREGATES, (candidate) => candidate === value),
+		() => "first",
+	)
 
 /** The table's row limit input caps at this many rows. */
 export const ROW_LIMIT_MAX = 1000
@@ -423,10 +426,13 @@ const thresholdsOf = (state: EditorState) =>
 
 /** A grouped table's columns come from its group-by; an ungrouped one infers them. */
 const tableColumnsOf = (state: EditorState): Display["columns"] => {
-	const grouped = state.queries.find((query) => isVisibleQuery(query) && hasActiveGroupBy(query))
-	if (grouped === undefined) return undefined
-	const label =
-		grouped.groupBy.find((g) => Str.trim(g) !== "" && Str.toLowerCase(Str.trim(g)) !== "none") ?? "name"
+	const found = Arr.findFirst(state.queries, (query) => isVisibleQuery(query) && hasActiveGroupBy(query))
+	if (Option.isNone(found)) return undefined
+	const grouped = found.value
+	const label = Option.getOrElse(
+		Arr.findFirst(grouped.groupBy, (g) => Str.trim(g) !== "" && Str.toLowerCase(Str.trim(g)) !== "none"),
+		() => "name",
+	)
 	return [
 		{ field: "name", header: label, align: "left" },
 		{
@@ -519,7 +525,7 @@ const displayOf = (widget: Widget, state: EditorState, isSql: boolean): Display 
 	const showPoints = showPointsFromPointsMode(state.pointsMode)
 	const legend = state.legendPosition === "bottom" ? "visible" : state.legendPosition
 	const kept = Rec.fromEntries(
-		Arr.filter(Object.entries(widget.display), ([key]) => !OWNED_DISPLAY_KEYS.has(key)),
+		Arr.filter(Rec.toEntries<string, unknown>(widget.display), ([key]) => !OWNED_DISPLAY_KEYS.has(key)),
 	)
 	const { chartId } = fromPanelType(panelOf(state), state.chartId)
 	const title = Str.trim(state.title)
@@ -562,19 +568,21 @@ export const validationErrorOf = (state: EditorState): string | null => {
 	if (isProductEventsFunnel(state)) return funnelValidationError(state.funnel)
 	const active = Arr.filter(state.queries, (query) => query.enabled !== false)
 	if (active.length === 0) return "Add at least one query"
-	const invalid = Arr.map(active, (query) => ({ query, built: buildTimeseriesQuerySpec(query) })).find(
+	const invalid = Arr.findFirst(
+		Arr.map(active, (query) => ({ query, built: buildTimeseriesQuerySpec(query) })),
 		({ built }) => built.query === null,
 	)
-	if (invalid !== undefined) return `${invalid.query.name}: ${invalid.built.error ?? "invalid query"}`
+	if (Option.isSome(invalid))
+		return `${invalid.value.query.name}: ${invalid.value.built.error ?? "invalid query"}`
 	const visible = Arr.filter(active, isVisibleQuery)
 	const panel = panelOf(state)
 	if (WIDGET_TYPES[panel].requiresGroupBy && !Arr.some(visible, hasActiveGroupBy))
 		return "This visualization groups data into categories. Add a group-by field"
 	// An ungrouped histogram bucketizes a numeric column, and only traces have one.
 	if (panel === "histogram" && !Arr.some(visible, hasActiveGroupBy)) {
-		const unsupported = visible.find((query) => query.dataSource !== "traces")
-		if (unsupported !== undefined)
-			return `${unsupported.name}: a ${unsupported.dataSource} histogram needs a group-by field`
+		const unsupported = Arr.findFirst(visible, (query) => query.dataSource !== "traces")
+		if (Option.isSome(unsupported))
+			return `${unsupported.value.name}: a ${unsupported.value.dataSource} histogram needs a group-by field`
 	}
 	return null
 }

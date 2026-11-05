@@ -2,7 +2,7 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { AlertValidationError, WebhookAlertDestinationConfig } from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Cause, Duration, Effect, Exit, Schema, Array as Arr, String as Str, DateTime } from "effect"
+import { Cause, Duration, Effect, Exit, Schema, Array as Arr, String as Str, DateTime, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { projectAlertLifecycleEvent } from "@maple/alerting-core"
 import { AlertRuleUpsertRequest, OrgId, UserId } from "@maple/domain/http"
@@ -95,7 +95,7 @@ describe("AlertsService", () => {
 			)
 			assert.strictEqual(Arr.filter(exits, Exit.isSuccess).length, 1)
 			assert.strictEqual(Arr.filter(exits, Exit.isFailure).length, 1)
-			const error = getError(exits.find(Exit.isFailure)!)
+			const error = getError(Option.getOrUndefined(Arr.findFirst(exits, Exit.isFailure))!)
 			assert.instanceOf(error, AlertValidationError)
 			assert.include((error as AlertValidationError).message, "at most 100 active alert rules")
 			const rules = yield* alerts.listRules(orgId)
@@ -448,7 +448,8 @@ describe("AlertsService", () => {
 			assert.lengthOf(bodies, 1)
 			const payload = JSON.parse(bodies[0]!) as { linkUrl?: string }
 			assert.isTrue(
-				payload.linkUrl?.endsWith(`/alerts/incidents/${incidents.incidents[0]!.id}`),
+				payload.linkUrl !== undefined &&
+					Str.endsWith(`/alerts/incidents/${incidents.incidents[0]!.id}`)(payload.linkUrl),
 				payload.linkUrl,
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl })))
@@ -1994,8 +1995,11 @@ describe("AlertsService", () => {
 				assert.strictEqual(requestCount, 3)
 
 				const events = yield* alerts.listDeliveryEvents(orgId)
-				const skipped = events.events.find(
-					(event: { deliveryKey: string }) => event.deliveryKey === "dead-destination-4",
+				const skipped = Option.getOrUndefined(
+					Arr.findFirst(
+						events.events,
+						(event: { deliveryKey: string }) => event.deliveryKey === "dead-destination-4",
+					),
 				)
 				assert.strictEqual(skipped?.status, "failed")
 				assert.strictEqual(skipped?.errorMessage, "Destination disabled")
@@ -2190,7 +2194,9 @@ describe("AlertsService", () => {
 			assert.strictEqual(requestCount, 1)
 			assert.strictEqual(tickA.processedCount + tickB.processedCount, 1)
 			assert.strictEqual(
-				events.events.find((event) => event.deliveryKey === "shared-delivery-key")?.status,
+				Option.getOrUndefined(
+					Arr.findFirst(events.events, (event) => event.deliveryKey === "shared-delivery-key"),
+				)?.status,
 				"success",
 			)
 		})
@@ -2370,11 +2376,17 @@ describe("AlertsService", () => {
 				const events = yield* alerts.listDeliveryEvents(orgId)
 
 				assert.strictEqual(tick.deliveryFailureCount, 1)
-				const firstAttempt = events.events.find(
-					(event) => event.deliveryKey === deliveryKey && event.attemptNumber === 1,
+				const firstAttempt = Option.getOrUndefined(
+					Arr.findFirst(
+						events.events,
+						(event) => event.deliveryKey === deliveryKey && event.attemptNumber === 1,
+					),
 				)
-				const retryAttempt = events.events.find(
-					(event) => event.deliveryKey === deliveryKey && event.attemptNumber === 2,
+				const retryAttempt = Option.getOrUndefined(
+					Arr.findFirst(
+						events.events,
+						(event) => event.deliveryKey === deliveryKey && event.attemptNumber === 2,
+					),
 				)
 				assert.strictEqual(firstAttempt?.status, "failed")
 				assert.include(firstAttempt?.errorMessage ?? "", expectedMessage)
@@ -2496,11 +2508,17 @@ describe("AlertsService", () => {
 
 			assert.strictEqual(tick.processedCount, 1)
 			assert.strictEqual(tick.deliveryFailureCount, 1)
-			const timeoutEvent = events.events.find(
-				(event) => event.deliveryKey === "timeout-delivery-key" && event.attemptNumber === 1,
+			const timeoutEvent = Option.getOrUndefined(
+				Arr.findFirst(
+					events.events,
+					(event) => event.deliveryKey === "timeout-delivery-key" && event.attemptNumber === 1,
+				),
 			)
-			const retryEvent = events.events.find(
-				(event) => event.deliveryKey === "timeout-delivery-key" && event.attemptNumber === 2,
+			const retryEvent = Option.getOrUndefined(
+				Arr.findFirst(
+					events.events,
+					(event) => event.deliveryKey === "timeout-delivery-key" && event.attemptNumber === 2,
+				),
 			)
 			assert.strictEqual(timeoutEvent?.status, "failed")
 			assert.include(timeoutEvent?.errorMessage ?? "", "timed out")
@@ -2597,11 +2615,15 @@ describe("AlertsService", () => {
 			assert.strictEqual(tick.deliveryFailureCount, 1)
 			assert.strictEqual(requestCount, 1)
 			assert.strictEqual(
-				events.events.find((event) => event.deliveryKey === "bad-payload-key")?.status,
+				Option.getOrUndefined(
+					Arr.findFirst(events.events, (event) => event.deliveryKey === "bad-payload-key"),
+				)?.status,
 				"failed",
 			)
 			assert.strictEqual(
-				events.events.find((event) => event.deliveryKey === "good-payload-key")?.status,
+				Option.getOrUndefined(
+					Arr.findFirst(events.events, (event) => event.deliveryKey === "good-payload-key"),
+				)?.status,
 				"success",
 			)
 		}).pipe(

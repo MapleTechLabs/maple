@@ -72,13 +72,15 @@ const noTools: McpToolExecutorApi = {
 	execute: () => Effect.die("no tool call expected"),
 }
 
-const userText = (prompt: Prompt.Prompt): string =>
-	Arr.join(
-		Arr.filter(prompt.content, (message) => message.role === "user").flatMap((message) =>
-			message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])),
+const userText = (prompt: Prompt.Prompt): string => {
+	const userMessages = Arr.filter(prompt.content, (message) => message.role === "user")
+	return Arr.join(
+		Arr.flatMap(userMessages, (message) =>
+			Arr.flatMap(message.content, (part) => (part.type === "text" ? [part.text] : [])),
 		),
 		"",
 	)
+}
 
 describe("runChatTurn input", () => {
 	it("sends the turn's message verbatim, not as a JSON string literal", async () => {

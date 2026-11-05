@@ -1,6 +1,6 @@
 import type { V2AwsConnection, V2AwsIntegration } from "@maple/domain/http/v2"
 import { countLabel } from "@maple/ui/lib/format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { metricStreamOf, selectionOf } from "./aws"
 import { awsConditionOf, fold } from "./derive"
 import type { FlowSpec, LiveHealth } from "./flow"
@@ -31,8 +31,13 @@ export const awsFlowConnection = (model: Model): AwsFlowConnection => {
 	const card = model.awsCard
 	if (status === null || card.isAdding) return { _tag: "none" }
 	if (card.flowId !== null) {
-		const made = status.connections.find((connection) => connection.id === card.flowId)
-		return made === undefined ? { _tag: "loading" } : { _tag: "found", connection: made }
+		return Option.match(
+			Arr.findFirst(status.connections, (connection) => connection.id === card.flowId),
+			{
+				onNone: () => ({ _tag: "loading" }),
+				onSome: (made) => ({ _tag: "found", connection: made }),
+			},
+		)
 	}
 	const newest = status.connections.at(-1)
 	return newest === undefined ? { _tag: "none" } : { _tag: "found", connection: newest }

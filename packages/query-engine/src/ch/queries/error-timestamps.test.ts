@@ -171,7 +171,7 @@ describe("error queries decode timestamps to DateTime.Utc", () => {
 				const [decoded] = yield* compiled.decodeRows([row])
 				const actual = Rec.fromEntries(
 					Arr.map(
-						Arr.filter(Object.entries(decoded ?? {}), ([key]) => key in fields),
+						Arr.filter(Rec.toEntries<string, unknown>(decoded ?? {}), ([key]) => key in fields),
 						([key, value]) => [key, iso(value)],
 					),
 				)

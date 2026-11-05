@@ -14,7 +14,7 @@ import { sourceMark, SOURCE_TITLE } from "./source-mark"
 import type { SourceState } from "./state"
 import { typography } from "@maple/views/ui/typography"
 import { hstackClass, vstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Order } from "effect"
 
 /** The muted caption beside an overview section's title, set in the sans prose face. */
 export const sectionCaption = <M>(h: HtmlBuilder<M>, text: string): Html =>
@@ -159,8 +159,9 @@ export const needsAttention = <M>(
 	const isSettled = sources !== null && Arr.every(sources, ({ state }) => state.status !== "loading")
 	const rows = isSettled
 		? Arr.map(
-				Arr.flatMap(sources, ({ id, state }) => entriesOf(h, id, state, time)).toSorted(
-					(a, b) => a.rank - b.rank,
+				Arr.sort(
+					Arr.flatMap(sources, ({ id, state }) => entriesOf(h, id, state, time)),
+					Order.mapInput(Order.Number, (entry: { readonly rank: number }) => entry.rank),
 				),
 				({ row }) => row,
 			)

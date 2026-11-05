@@ -10,7 +10,7 @@
 // Framework-free and relative-imported: the Foldkit app imports it too.
 import type { ListPodsResponse } from "@maple/domain/http"
 import { formatWholePercent } from "../format"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 
 type PodRow = ListPodsResponse["data"][number]
 
@@ -110,7 +110,10 @@ function firstCrossingMs(points: ReadonlyArray<BucketPoint>, threshold: number):
  * only that no matching rise was found.
  */
 function median(values: ReadonlyArray<number>): number {
-	const sorted = Arr.filter(values, (v) => Number.isFinite(v)).toSorted((a, b) => a - b)
+	const sorted = Arr.sort(
+		Arr.filter(values, (v) => Number.isFinite(v)),
+		Order.Number,
+	)
 	if (sorted.length === 0) return 0
 	const mid = Math.floor(sorted.length / 2)
 	return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!

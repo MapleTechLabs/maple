@@ -14,7 +14,7 @@ import {
 	type UsersFacetsRequest,
 	type UsersListRequest,
 } from "@maple/domain/http"
-import { Array as Arr, Clock, DateTime, Effect } from "effect"
+import { Array as Arr, Clock, DateTime, Effect, Order } from "effect"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -247,50 +247,57 @@ export const mergeActivity = (
 	mcpSessions: ReadonlyArray<UserMcpSessionItem>,
 	limit: number = ACTIVITY_LIMIT,
 ): ReadonlyArray<UserActivityItem> =>
-	[
-		...Arr.map(sessions, (session): UserActivityItem => ({
-			kind: "session",
-			atMs: session.startedMs,
-			service: session.service,
-			title: session.entryPath === "" ? "Session" : `Session on ${session.entryPath}`,
-			detail: Arr.join(
-				[
-					plural(session.pages, "page"),
-					plural(session.errors, "error"),
-					...(session.device === "" ? [] : [session.device]),
-				],
-				" · ",
-			),
-			tone: session.errors > 0 ? "crit" : "neutral",
-			sessionId: session.sessionId,
-		})),
-		...Arr.map(events, (event): UserActivityItem => ({
-			kind: "event",
-			atMs: event.atMs,
-			service: event.service,
-			title: event.name,
-			detail: Arr.join(
-				Arr.filter([event.source, event.detail], (part) => part !== ""),
-				" · ",
-			),
-			tone: "neutral",
-			sessionId: null,
-		})),
-		...Arr.map(mcpSessions, (session): UserActivityItem => ({
-			kind: "mcp",
-			atMs: session.firstSeenMs,
-			service: session.service,
-			title: `${plural(session.calls, "tool call")} from ${session.client}`,
-			detail: Arr.join(
-				[session.service, plural(session.tools, "tool"), `${session.errors} failed`],
-				" · ",
-			),
-			tone: session.errors > 0 ? "crit" : "neutral",
-			sessionId: session.sessionId,
-		})),
-	]
-		.toSorted((a, b) => b.atMs - a.atMs)
-		.slice(0, limit)
+	Arr.take(
+		Arr.sort(
+			[
+				...Arr.map(sessions, (session): UserActivityItem => ({
+					kind: "session",
+					atMs: session.startedMs,
+					service: session.service,
+					title: session.entryPath === "" ? "Session" : `Session on ${session.entryPath}`,
+					detail: Arr.join(
+						[
+							plural(session.pages, "page"),
+							plural(session.errors, "error"),
+							...(session.device === "" ? [] : [session.device]),
+						],
+						" · ",
+					),
+					tone: session.errors > 0 ? "crit" : "neutral",
+					sessionId: session.sessionId,
+				})),
+				...Arr.map(events, (event): UserActivityItem => ({
+					kind: "event",
+					atMs: event.atMs,
+					service: event.service,
+					title: event.name,
+					detail: Arr.join(
+						Arr.filter([event.source, event.detail], (part) => part !== ""),
+						" · ",
+					),
+					tone: "neutral",
+					sessionId: null,
+				})),
+				...Arr.map(mcpSessions, (session): UserActivityItem => ({
+					kind: "mcp",
+					atMs: session.firstSeenMs,
+					service: session.service,
+					title: `${plural(session.calls, "tool call")} from ${session.client}`,
+					detail: Arr.join(
+						[session.service, plural(session.tools, "tool"), `${session.errors} failed`],
+						" · ",
+					),
+					tone: session.errors > 0 ? "crit" : "neutral",
+					sessionId: session.sessionId,
+				})),
+			],
+			NEWEST_FIRST,
+		),
+		limit,
+	)
+
+/** Newest first, by the moment a timeline row happened. */
+const NEWEST_FIRST = Order.flip(Order.mapInput(Order.Number, (item: { atMs: number }) => item.atMs))
 
 const detailParams = (tenant: TenantContext, payload: UserDetailRequest) => ({
 	orgId: tenant.orgId,
@@ -471,9 +478,18 @@ export const readUserActivity = Effect.fn("UsersReads.activity")(function* (
 					{ concurrency: USERS_READ_CONCURRENCY },
 				),
 				(perServer) =>
-					Arr.flatten(perServer)
-						.toSorted((a, b) => b.lastSeenMs - a.lastSeenMs)
-						.slice(0, USER_LIST_LIMIT),
+					Arr.take(
+						Arr.sort(
+							Arr.flatten(perServer),
+							Order.flip(
+								Order.mapInput(
+									Order.Number,
+									(session: { lastSeenMs: number }) => session.lastSeenMs,
+								),
+							),
+						),
+						USER_LIST_LIMIT,
+					),
 			),
 		],
 		{ concurrency: 3 },

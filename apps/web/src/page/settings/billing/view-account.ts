@@ -19,7 +19,7 @@ import { Message, type Model } from "./model"
 import { linkTargetOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -101,9 +101,11 @@ const volumeCell = (h: H, model: Model, member: BillingAccountOrg): Html =>
 		onLoading: () => skeleton(h, "h-3.5 w-20"),
 		onFailure: () => typography(h, { size: "sm", tone: "muted" }, [EMPTY_VALUE]),
 		onData: (usage) => {
-			const row = usage.orgs.find((org) => org.orgId === member.orgId)
 			return typography(h, { size: "sm", mono: true, numeric: true }, [
-				row === undefined ? EMPTY_VALUE : volumeLabel(row),
+				Option.match(
+					Arr.findFirst(usage.orgs, (org) => org.orgId === member.orgId),
+					{ onNone: () => EMPTY_VALUE, onSome: volumeLabel },
+				),
 			])
 		},
 	})
@@ -249,7 +251,9 @@ export const accountDialogs = (h: H, model: Model, account: BillingAccount | nul
 			? null
 			: account.role === "member"
 				? null
-				: (account.members.find((member) => member.orgId === model.unlinkOrgId) ?? null)
+				: Option.getOrNull(
+						Arr.findFirst(account.members, (member) => member.orgId === model.unlinkOrgId),
+					)
 	const payer = account === null ? "" : nameOf(account.billingOrg)
 	return [
 		confirmDialog(h, {

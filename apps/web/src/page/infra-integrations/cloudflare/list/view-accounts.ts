@@ -10,7 +10,7 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { Message } from "./model"
 import { ALL_ACCOUNTS, MANAGE_ACCOUNTS } from "./update"
 import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // Multi-account Cloudflare: these only render with two or more accounts; a single-account org keeps
 // a plain chip.
@@ -33,7 +33,7 @@ export const accountMenu = (
 	accounts: ReadonlyArray<CloudflareAccount>,
 	value: string | undefined,
 ): Html => {
-	const selected = accounts.find((account) => account.accountId === value)
+	const selected = Arr.findFirst(accounts, (account) => account.accountId === value)
 	return h.submodel({
 		slotId: "cloudflare-account-menu",
 		model: menu,
@@ -70,8 +70,11 @@ export const accountMenu = (
 								attributes: [h.DataAttribute("slot", "badge"), ...trigger],
 							},
 							heroFieldChipParts(h, {
-								label: selected === undefined ? "accounts" : "account",
-								value: selected === undefined ? `All ${accounts.length}` : selected.name,
+								label: Option.isNone(selected) ? "accounts" : "account",
+								value: Option.match(selected, {
+									onNone: () => `All ${accounts.length}`,
+									onSome: (account) => account.name,
+								}),
 								isPicker: true,
 							}),
 						),

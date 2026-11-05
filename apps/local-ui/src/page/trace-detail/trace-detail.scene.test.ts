@@ -191,6 +191,9 @@ describe("local trace detail", () => {
 			pageUpdate(loaded, Message.ClickedRefresh()).model,
 			Option.some(grown),
 		).model
-		expect(refetched.timeline?.rootSpans[0]?.children.map((node) => node.spanName)).toEqual(["db"])
+		const children = refetched.timeline?.rootSpans[0]?.children
+		expect(children === undefined ? undefined : Arr.map(children, (node) => node.spanName)).toEqual([
+			"db",
+		])
 	})
 })

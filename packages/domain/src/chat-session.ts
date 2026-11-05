@@ -45,14 +45,19 @@ export const makeChatSessionId = (orgId: string, tabId: string): ChatSessionId =
  * resolvable org, so callers must reject it rather than treat the whole string as the org.
  */
 export const orgIdFromChatSessionId = (sessionId: string): string | undefined => {
-	const index = sessionId.indexOf(":")
-	return index <= 0 ? undefined : Str.slice(0, index)(sessionId)
+	return Str.indexOf(":")(sessionId).pipe(
+		Option.filter((index) => index > 0),
+		Option.map((index) => Str.slice(0, index)(sessionId)),
+		Option.getOrUndefined,
+	)
 }
 
 /** Everything after the first `:`. The tab-id prefix encodes the conversation mode. */
 export const tabIdFromChatSessionId = (sessionId: string): string => {
-	const index = sessionId.indexOf(":")
-	return index === -1 ? "" : Str.slice(index + 1)(sessionId)
+	return Option.match(Str.indexOf(":")(sessionId), {
+		onNone: () => "",
+		onSome: (index) => Str.slice(index + 1)(sessionId),
+	})
 }
 
 /** Recover the investigation id from an `inv-<id>` tab. `undefined` for other modes. */

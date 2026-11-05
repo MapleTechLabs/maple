@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs"
 import * as PgliteClient from "@effect/sql-pglite/PgliteClient"
 import { PGlite } from "@electric-sql/pglite"
 import * as Migrate from "@maple-dev/effect-orm/migrate"
-import { Effect, Layer, Array as Arr, String as Str } from "effect"
+import { Effect, Layer, Option, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { bundledMigrations, listBundledMigrations, migrateBundled, readBundledMigrationsSql } from "./migrate"
 
@@ -106,7 +106,9 @@ describe("migrations", () => {
 				Migrate.baseline({ migrations, upTo: migrationNamed("cancellation_reviews").name }),
 			)
 			const baseline = migrationNamed("effect_orm_baseline").name
-			expect(recorded).toHaveLength(migrations.findIndex((migration) => migration.name === baseline))
+			expect(recorded).toHaveLength(
+				Option.getOrThrow(Arr.findFirstIndex(migrations, (migration) => migration.name === baseline)),
+			)
 			const ran = await migrateWith(pg, migrateBundled)
 			expect(Arr.map(ran, (migration) => migration.name)).toEqual(
 				Arr.map(

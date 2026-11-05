@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { eventDetail, mcpServersInScope, mergeActivity, resolveUsersScope, signalsOf } from "./users-reads"
 
@@ -80,7 +81,7 @@ describe("mergeActivity", () => {
 
 	it("merges every source newest first, an MCP session at its start", () => {
 		const items = mergeActivity([session], [event], [mcpSession])
-		expect(items.map((item) => [item.kind, item.atMs])).toEqual([
+		expect(Arr.map(items, (item) => [item.kind, item.atMs])).toEqual([
 			["event", 3_000],
 			["mcp", 2_000],
 			["session", 1_000],
@@ -101,6 +102,6 @@ describe("mergeActivity", () => {
 
 	it("keeps the latest rows when capped", () => {
 		const items = mergeActivity([session], [event], [mcpSession], 2)
-		expect(items.map((item) => item.kind)).toEqual(["event", "mcp"])
+		expect(Arr.map(items, (item) => item.kind)).toEqual(["event", "mcp"])
 	})
 })

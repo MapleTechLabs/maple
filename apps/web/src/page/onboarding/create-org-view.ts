@@ -29,7 +29,7 @@ type H = HtmlBuilder<Message>
 const nameOf = (name: string): string => Str.trim(name) || "your organization"
 
 /** The org's initial, as its avatar tile and the preview's switcher show it. */
-const initialOf = (name: string): string => Str.toUpperCase(nameOf(name).charAt(0))
+const initialOf = (name: string): string => Str.toUpperCase(Str.takeLeft(1)(nameOf(name)))
 
 const header = (h: H, email: string | null): Html =>
 	hstack(h, { gap: "4", justify: "between" }, [

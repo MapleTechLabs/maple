@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { String as Str } from "effect"
+import { Array as Arr, String as Str } from "effect"
 import { compileUnionUnsafe, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
 import {
@@ -174,7 +174,7 @@ describe("one user's reads", () => {
 			compileUnsafe(userServicesQuery(unscoped), userParams).sql,
 			compileUnsafe(userVisitorIdsQuery(), userParams).sql,
 		]
-		sqls.forEach((sql) => {
+		Arr.forEach(sqls, (sql) => {
 			expect(sql).toMatch(/OrgId = 'org_1'/)
 			expect(sql).toContain("'user_42'")
 		})

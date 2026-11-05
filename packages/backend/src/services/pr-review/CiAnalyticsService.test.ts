@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, RoleName, UserId, VcsInstallationId, VcsRepositoryId } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -186,7 +186,12 @@ describe("CiAnalyticsService.analytics", () => {
 				)
 				// Each week's row lands in its own bar; the weeks around it stay empty.
 				const failedIn = (weeksAgo: number) =>
-					analytics.series.find((bucket) => bucket.bucket === week(weeksAgo))?.failed
+					Option.getOrUndefined(
+						Option.map(
+							Arr.findFirst(analytics.series, (bucket) => bucket.bucket === week(weeksAgo)),
+							(bucket) => bucket.failed,
+						),
+					)
 				assert.deepStrictEqual([failedIn(41), failedIn(40), failedIn(3), failedIn(2)], [0, 2, 5, 0])
 			}),
 		)
@@ -270,7 +275,9 @@ describe("CiAnalyticsService.analytics", () => {
 						endTime: END,
 					})
 					// The red workflow's own runs are read, skipped ones left out.
-					const runsRead = reads.find((read) => read.context === "ciWorkflowRuns")
+					const runsRead = Option.getOrUndefined(
+						Arr.findFirst(reads, (read) => read.context === "ciWorkflowRuns"),
+					)
 					assert.include(runsRead?.sql ?? "", "ci_runs.Pipeline = 'CI'")
 					assert.include(runsRead?.sql ?? "", "ci_runs.Owner = 'acme'")
 					assert.include(runsRead?.sql ?? "", "!= 'skip'")
@@ -280,7 +287,9 @@ describe("CiAnalyticsService.analytics", () => {
 					assert.strictEqual(red?.firstFailedTraceId, traceId(2))
 					assert.strictEqual(red?.lastGreenRevision, "sha1")
 					assert.strictEqual(red?.lastGreenAt, END - 4 * HOUR)
-					const bucket = analytics.series.find((slot) => slot.bucket === END - 3 * HOUR)
+					const bucket = Option.getOrUndefined(
+						Arr.findFirst(analytics.series, (slot) => slot.bucket === END - 3 * HOUR),
+					)
 					assert.strictEqual(bucket?.failed, 1)
 					assert.strictEqual(bucket?.p50DurationMs, 60_000)
 				}),
@@ -316,7 +325,9 @@ describe("CiAnalyticsService.analytics streaks", () => {
 						endTime: END,
 					})
 					assert.strictEqual(analytics.pipelines[0]?.red, null)
-					assert.isUndefined(reads.find((read) => read.context === "ciWorkflowRuns"))
+					assert.isTrue(
+						Option.isNone(Arr.findFirst(reads, (read) => read.context === "ciWorkflowRuns")),
+					)
 				}),
 		),
 	)
@@ -398,7 +409,9 @@ describe("CiAnalyticsService.listRuns", () => {
 					)
 					assert.strictEqual(page.runs[1]?.pullRequest, null)
 					// Only the failed run's jobs are read.
-					const jobsRead = reads.find((read) => read.context === "ciFailedJobs")
+					const jobsRead = Option.getOrUndefined(
+						Arr.findFirst(reads, (read) => read.context === "ciFailedJobs"),
+					)
 					assert.include(jobsRead?.sql ?? "", traceId(3))
 					assert.notInclude(jobsRead?.sql ?? "", traceId(2))
 

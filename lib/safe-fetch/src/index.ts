@@ -216,6 +216,7 @@ const withoutCredentialHeaders = (request: HttpClientRequest.HttpClientRequest) 
 
 const withoutHeaders = (request: HttpClientRequest.HttpClientRequest, keep: ReadonlySet<string>) =>
 	Arr.reduce(
+		// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
 		Arr.filter(Object.keys(request.headers), (name) => !keep.has(Str.toLowerCase(name))),
 		request,
 		(next, name) => HttpClientRequest.removeHeader(next, name),
@@ -298,12 +299,15 @@ const pinTo =
 			const addresses = yield* resolve(hostname)
 			// Every answer is checked, so any is safe; IPv4 first because not every
 			// network that resolves AAAA can route IPv6.
-			const first = addresses.find((address) => !Str.includes(":")(address)) ?? addresses[0]
-			if (first === undefined || Arr.some(addresses, isPrivateAddress)) {
+			const preferred = Arr.findFirst(addresses, (address) => !Str.includes(":")(address)).pipe(
+				Option.orElse(() => Arr.head(addresses)),
+			)
+			if (Option.isNone(preferred) || Arr.some(addresses, isPrivateAddress)) {
 				return yield* new UrlValidationError({
 					message: `URL host '${url.hostname}' resolves to a loopback, private, or metadata address`,
 				})
 			}
+			const first = preferred.value
 			const pinned = new URL(url)
 			pinned.hostname = Str.includes(":")(first) ? `[${first}]` : first
 			return {

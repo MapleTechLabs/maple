@@ -37,7 +37,7 @@ const entered = (timeoutMs: number) =>
 	update(added(timeoutMs).model, ToastMessage.CompletedToastEnter({ toastId: "toasts-0" })).model
 
 const commandNames = (result: { commands?: ReadonlyArray<{ name: string }> }) =>
-	result.commands?.map((command) => command.name) ?? []
+	Arr.map(result.commands ?? [], (command) => command.name)
 
 describe("toast scene", () => {
 	test("an empty page still has both Notifications regions", () => {

@@ -144,7 +144,9 @@ const notes = (h: H, model: DetailsView, form: RuleForm): Html => {
 				h.Placeholder("Runbook links, ownership, or why this rule exists…"),
 				h.Rows(2),
 				// `autoFocus={!hasExistingNotes}`: opened from the button, the field takes focus.
-				...(model.mountedForm?.notes.trim().length === 0 ? [h.Autofocus(true)] : []),
+				...(model.mountedForm !== null && Str.trim(model.mountedForm.notes).length === 0
+					? [h.Autofocus(true)]
+					: []),
 				h.OnInput((value) => Message.ChangedField({ field: "notes", value })),
 			],
 		}),

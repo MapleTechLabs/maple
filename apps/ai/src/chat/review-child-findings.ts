@@ -10,7 +10,7 @@ import {
 	type PrReviewFinding,
 	type PrReviewFindingSubmission,
 } from "@maple/domain/http"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 export interface ChildFindings {
 	/** One child's answer, as the parent received it. */
@@ -85,9 +85,9 @@ export const unaccountedChildFindings = (
 	const accounts = [...Arr.filter(filed, (finding) => finding.severity !== "info"), ...dismissed]
 	return Arr.filter(children, (child) => {
 		if (child.severity === "info") return false
-		const match = accounts.find((entry) => !claimed.has(entry) && near(entry, child))
-		if (match !== undefined) claimed.add(match)
-		return match === undefined
+		const match = Arr.findFirst(accounts, (entry) => !claimed.has(entry) && near(entry, child))
+		if (Option.isSome(match)) claimed.add(match.value)
+		return Option.isNone(match)
 	})
 }
 

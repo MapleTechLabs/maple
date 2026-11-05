@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Schema, Struct, Array as Arr, Record as Rec, String as Str } from "effect"
 import { OpenApi } from "effect/http-api"
 import { MapleApiV2 } from "./api"
 import { V2AlertDestinationMutationResponse } from "./alert-destinations"
@@ -32,9 +32,11 @@ const doc = spec as GeneratedOpenApiObject
 const schemas = doc.components.schemas as GeneratedOpenApiObject
 const operation = (method: string, path: string): GeneratedOpenApiObject =>
 	(spec.paths as GeneratedOpenApiObject)[path][method]
+const afterLastSlash = (ref: string): number =>
+	Option.match(Str.lastIndexOf("/")(ref), { onNone: () => 0, onSome: (index) => index + 1 })
 const resolveSchema = (schema: GeneratedOpenApiObject): GeneratedOpenApiObject => {
 	const ref = schema.$ref as string | undefined
-	return ref === undefined ? schema : schemas[Str.slice(ref.lastIndexOf("/") + 1)(ref)]
+	return ref === undefined ? schema : schemas[Str.slice(afterLastSlash(ref))(ref)]
 }
 const schemaBranches = (schema: GeneratedOpenApiObject): ReadonlyArray<GeneratedOpenApiObject> => {
 	const resolved = resolveSchema(schema)
@@ -69,7 +71,7 @@ describe("MapleApiV2 OpenAPI", () => {
 	it("exposes exactly the committed v2 paths", () => {
 		const surface = Arr.flatMap(Rec.toEntries(spec.paths ?? {}), ([path, item]) =>
 			Arr.map(
-				Arr.filter(Object.keys(item ?? {}), (key) =>
+				Arr.filter(Struct.keys(item ?? {}), (key) =>
 					["get", "post", "put", "patch", "delete"].includes(key),
 				),
 				(method) => `${Str.toUpperCase(method)} ${path}`,
@@ -335,6 +337,7 @@ describe("MapleApiV2 OpenAPI", () => {
 	it("gives every operation complete metadata, security, and common error envelopes", () => {
 		const operations = Arr.flatMap(Rec.toEntries(spec.paths ?? {}), ([path, item]) =>
 			Arr.map(
+				// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 				Arr.filter(Object.entries(item ?? {}), ([method]) =>
 					["get", "post", "put", "patch", "delete"].includes(method),
 				),
@@ -508,6 +511,7 @@ describe("MapleApiV2 OpenAPI", () => {
 
 	it("gives every error response an exhaustive literal-tag union", () => {
 		for (const [path, item] of Rec.toEntries(spec.paths ?? {})) {
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 			for (const [method, candidate] of Object.entries(item ?? {})) {
 				if (!["get", "post", "put", "patch", "delete"].includes(method)) continue
 				const op = candidate as GeneratedOpenApiObject
@@ -703,10 +707,13 @@ describe("MapleApiV2 OpenAPI", () => {
 			expect(responseErrorTags(method, path, "503")).toContain(
 				"@maple/http/errors/WarehouseUpstreamError",
 			)
-			const declaredTags = Arr.filter(
-				["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"],
-				(status) => operation(method, path).responses[status] !== undefined,
-			).flatMap((status) => responseErrorTags(method, path, status))
+			const declaredTags = Arr.flatMap(
+				Arr.filter(
+					["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"],
+					(status) => operation(method, path).responses[status] !== undefined,
+				),
+				(status: string) => responseErrorTags(method, path, status),
+			)
 			expect(declaredTags, path).not.toContain(
 				"@maple/http/errors/OrgClickHouseSettingsPersistenceError",
 			)
@@ -800,10 +807,10 @@ describe("MapleApiV2 OpenAPI", () => {
 			["get", "/v2/dashboards/templates"],
 			["post", "/v2/dashboards/templates/{template_id}/preview"],
 		] as const) {
-			const tags = Arr.filter(
-				Rec.keys(operation(method, path).responses),
-				(status) => Number(status) >= 400,
-			).flatMap((status) => responseErrorTags(method, path, status))
+			const tags = Arr.flatMap(
+				Arr.filter(Rec.keys(operation(method, path).responses), (status) => Number(status) >= 400),
+				(status: string) => responseErrorTags(method, path, status),
+			)
 			expect(tags, path).not.toContain("@maple/http/errors/DashboardStoredConfigInvalidError")
 		}
 	})
@@ -813,10 +820,10 @@ describe("MapleApiV2 OpenAPI", () => {
 			["post", "/v2/investigations"],
 			["post", "/v2/investigations/{id}/restart"],
 		] as const) {
-			const tags = Arr.filter(
-				Rec.keys(operation(method, path).responses),
-				(status) => Number(status) >= 400,
-			).flatMap((status) => responseErrorTags(method, path, status))
+			const tags = Arr.flatMap(
+				Arr.filter(Rec.keys(operation(method, path).responses), (status) => Number(status) >= 400),
+				(status: string) => responseErrorTags(method, path, status),
+			)
 			for (const impossibleTag of [
 				"@maple/http/investigations/InvestigationQuotaError",
 				"@maple/http/investigations/InvestigationAutomationDisabledError",
@@ -878,25 +885,31 @@ describe("MapleApiV2 OpenAPI", () => {
 				"@maple/http/errors/AlertDestinationStoredConfigInvalidError",
 			],
 		] as const) {
-			const tags = Arr.filter(
-				Rec.keys(operation(method, path).responses),
-				(status) => Number(status) >= 400,
-			).flatMap((status) => responseErrorTags(method, path, status))
+			const tags = Arr.flatMap(
+				Arr.filter(Rec.keys(operation(method, path).responses), (status) => Number(status) >= 400),
+				(status: string) => responseErrorTags(method, path, status),
+			)
 			expect(tags, path).not.toContain(tag)
 		}
 
-		const previewTags = Arr.filter(
-			["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"],
-			(status) => operation("post", "/v2/alerts/rules/preview").responses[status] !== undefined,
-		).flatMap((status) => responseErrorTags("post", "/v2/alerts/rules/preview", status))
+		const previewTags = Arr.flatMap(
+			Arr.filter(
+				["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"],
+				(status) => operation("post", "/v2/alerts/rules/preview").responses[status] !== undefined,
+			),
+			(status: string) => responseErrorTags("post", "/v2/alerts/rules/preview", status),
+		)
 		expect(previewTags).not.toContain("@maple/http/errors/AlertPersistenceError")
 		expect(previewTags).not.toContain("@maple/http/errors/AlertDestinationDecryptionError")
 		expect(previewTags).not.toContain("@maple/http/errors/AlertDestinationStoredConfigInvalidError")
-		const destinationTestTags = Arr.filter(
-			["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"],
-			(status) =>
-				operation("post", "/v2/alerts/destinations/{id}/test").responses[status] !== undefined,
-		).flatMap((status) => responseErrorTags("post", "/v2/alerts/destinations/{id}/test", status))
+		const destinationTestTags = Arr.flatMap(
+			Arr.filter(
+				["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"],
+				(status) =>
+					operation("post", "/v2/alerts/destinations/{id}/test").responses[status] !== undefined,
+			),
+			(status: string) => responseErrorTags("post", "/v2/alerts/destinations/{id}/test", status),
+		)
 		expect(destinationTestTags).not.toContain("@maple/http/errors/AlertValidationError")
 	})
 
@@ -972,7 +985,9 @@ describe("MapleApiV2 OpenAPI", () => {
 		const hasNullBranch = (schema: GeneratedOpenApiObject): boolean => {
 			const resolved = resolveSchema(schema)
 			const members = resolved.anyOf as ReadonlyArray<GeneratedOpenApiObject> | undefined
-			return members?.some((member) => resolveSchema(member).type === "null") === true
+			return (
+				members !== undefined && Arr.some(members, (member) => resolveSchema(member).type === "null")
+			)
 		}
 
 		it("publishes no query parameter that accepts null", () => {
@@ -1021,7 +1036,9 @@ describe("MapleApiV2 OpenAPI", () => {
 		})
 
 		it("keeps the parameter's own documentation when it drops the null branch", () => {
-			const cursor = queryParameters().find((parameter) => parameter.name === "cursor")
+			const cursor = Option.getOrUndefined(
+				Arr.findFirst(queryParameters(), (parameter) => parameter.name === "cursor"),
+			)
 			expect(cursor?.schema).toMatchObject({
 				type: "string",
 				title: "Cursor",
@@ -1057,7 +1074,7 @@ describe("MapleApiV2 OpenAPI", () => {
 				const object = node as GeneratedOpenApiObject
 				const ref = object.$ref as string | undefined
 				if (ref !== undefined) {
-					const name = Str.slice(ref.lastIndexOf("/") + 1)(ref)
+					const name = Str.slice(afterLastSlash(ref))(ref)
 					if (!referenced.has(name)) {
 						referenced.add(name)
 						walk(schemas[name])

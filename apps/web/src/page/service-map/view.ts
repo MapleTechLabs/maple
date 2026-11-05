@@ -93,7 +93,10 @@ const headerActions = (h: H, model: Model): Html => {
 			className: "w-full min-w-0 @2xl/page:w-auto",
 			// `SelectValue` shows the raw value when it is not among the items (facets not loaded).
 			renderValue: (value) => [
-				environmentItems(model).find((item) => item.value === value)?.label ?? value,
+				Option.match(
+					Arr.findFirst(environmentItems(model), (item) => item.value === value),
+					{ onNone: () => value, onSome: (item) => item.label },
+				),
 			],
 			toView: (parts) => hstack(h, { gap: "2", wrap: true }, [views, ...parts, controls]),
 		},
@@ -118,7 +121,12 @@ const serviceDetail = (
 		map,
 		overviews: rows.overviews,
 		edges: rows.edges,
-		platform: rows.platforms.find((row) => row.serviceName === serviceId)?.platform,
+		platform: Option.getOrUndefined(
+			Option.map(
+				Arr.findFirst(rows.platforms, (row) => row.serviceName === serviceId),
+				(row) => row.platform,
+			),
+		),
 		durationSeconds,
 		dbEdges: rows.dbEdges,
 		serviceHref: (serviceName) => hrefOf(AppRoute.Service({ serviceName, search: {} })),
@@ -147,7 +155,9 @@ const detailPanel =
 	(selectedId: string): Html => {
 		if (!Str.startsWith(DB_NODE_PREFIX)(selectedId))
 			return serviceDetail(h, model, rows, durationSeconds, map, selectedId)
-		const node = map.source.rawNodes.find((candidate) => candidate.id === selectedId)
+		const node = Option.getOrUndefined(
+			Arr.findFirst(map.source.rawNodes, (candidate) => candidate.id === selectedId),
+		)
 		return databasePanel(h, model, {
 			nodeId: selectedId,
 			...parseDbNodeId(selectedId),

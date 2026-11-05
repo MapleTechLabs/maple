@@ -8,7 +8,7 @@ import {
 } from "@maple/domain/http"
 import { groupWidgetsByContainer } from "@maple/widgets/dashboard"
 import type { DocumentFields } from "./store"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option, Order } from "effect"
 
 // The pure layout and widget edits over the stored document.
 
@@ -37,10 +37,17 @@ const drawnKeyOf = (sections: ReadonlyArray<Section>) => {
 /** `containerRank`: root first, then sections and tabs in order; a vanished container ranks as root. */
 const containerRank = (widget: Widget, sections: ReadonlyArray<Section>): number => {
 	if (widget.sectionId === undefined || widget.tabId === undefined) return -1
-	const sectionIndex = sections.findIndex((section) => section.id === widget.sectionId)
-	if (sectionIndex === -1) return -1
-	const tabIndex = sections[sectionIndex]?.tabs.findIndex((tab) => tab.id === widget.tabId) ?? -1
-	return tabIndex === -1 ? -1 : sectionIndex * 1000 + tabIndex
+	const rank = Option.flatMap(
+		Arr.findFirstIndex(sections, (section) => section.id === widget.sectionId),
+		(sectionIndex) =>
+			Option.map(
+				Option.flatMap(Arr.get(sections, sectionIndex), (section) =>
+					Arr.findFirstIndex(section.tabs, (tab) => tab.id === widget.tabId),
+				),
+				(tabIndex) => sectionIndex * 1000 + tabIndex,
+			),
+	)
+	return Option.getOrElse(rank, () => -1)
 }
 
 /** `sortWidgetsForLayout`: array order matches visual order, container first. */
@@ -48,12 +55,14 @@ export const sortWidgetsForLayout = (
 	widgets: ReadonlyArray<Widget>,
 	sections: ReadonlyArray<Section>,
 ): ReadonlyArray<Widget> =>
-	widgets.toSorted((a, b) => {
-		const rankDelta = containerRank(a, sections) - containerRank(b, sections)
-		if (rankDelta !== 0) return rankDelta
-		if (a.layout.y !== b.layout.y) return a.layout.y - b.layout.y
-		return a.layout.x - b.layout.x
-	})
+	Arr.sort(
+		widgets,
+		Order.combineAll([
+			Order.mapInput(Order.Number, (widget: Widget) => containerRank(widget, sections)),
+			Order.mapInput(Order.Number, (widget: Widget) => widget.layout.y),
+			Order.mapInput(Order.Number, (widget: Widget) => widget.layout.x),
+		]),
+	)
 
 export type LayoutChange = Readonly<{ i: string; x: number; y: number; w: number; h: number }>
 
@@ -63,23 +72,29 @@ export const withLayouts = (
 	layouts: ReadonlyArray<LayoutChange>,
 	nowIso: DashboardDocument["updatedAt"],
 ): DocumentFields | null => {
-	const changed = Arr.some(document.widgets, (widget) => {
-		const layout = layouts.find((item) => item.i === widget.id)
-		return (
-			layout !== undefined &&
-			(widget.layout.x !== layout.x ||
+	const changed = Arr.some(document.widgets, (widget) =>
+		Option.exists(
+			Arr.findFirst(layouts, (item) => item.i === widget.id),
+			(layout) =>
+				widget.layout.x !== layout.x ||
 				widget.layout.y !== layout.y ||
 				widget.layout.w !== layout.w ||
-				widget.layout.h !== layout.h)
-		)
-	})
+				widget.layout.h !== layout.h,
+		),
+	)
 	if (!changed) return null
-	const widgets = Arr.map(document.widgets, (widget) => {
-		const layout = layouts.find((item) => item.i === widget.id)
-		return layout === undefined
-			? widget
-			: { ...widget, layout: { ...widget.layout, x: layout.x, y: layout.y, w: layout.w, h: layout.h } }
-	})
+	const widgets = Arr.map(document.widgets, (widget) =>
+		Option.match(
+			Arr.findFirst(layouts, (item) => item.i === widget.id),
+			{
+				onNone: () => widget,
+				onSome: (layout) => ({
+					...widget,
+					layout: { ...widget.layout, x: layout.x, y: layout.y, w: layout.w, h: layout.h },
+				}),
+			},
+		),
+	)
 	return {
 		...document,
 		widgets: sortWidgetsForLayout(widgets, document.sections ?? []),
@@ -105,8 +120,9 @@ export const withClone = (
 	newId: string,
 	nowIso: DashboardDocument["updatedAt"],
 ): DocumentFields => {
-	const source = document.widgets.find((widget) => widget.id === widgetId)
-	if (source === undefined) return document
+	const found = Arr.findFirst(document.widgets, (widget) => widget.id === widgetId)
+	if (Option.isNone(found)) return document
+	const source = found.value
 	// The copy lands where its source draws: a source in a vanished group draws (and copies) as root.
 	const isDrawnInGroup =
 		source.sectionId !== undefined &&
@@ -165,21 +181,18 @@ type Flow = Readonly<{
 
 /** One container re-flowed from (0, 0): left to right in reading order, wrapping at the canvas width. */
 const flowContainer = (bucket: ReadonlyArray<Widget>): Flow["placed"] =>
-	bucket.reduce<Flow>(
-		(flow, widget) => {
-			const { w, h } = widget.layout
-			const wraps = flow.x + w > CANONICAL_COLS
-			const x = wraps ? 0 : flow.x
-			const y = wraps ? flow.y + flow.rowHeight : flow.y
-			return {
-				x: x + w,
-				y,
-				rowHeight: wraps ? h : Math.max(flow.rowHeight, h),
-				placed: [...flow.placed, [widget, { ...widget, layout: { ...widget.layout, x, y } }]],
-			}
-		},
-		{ x: 0, y: 0, rowHeight: 0, placed: [] },
-	).placed
+	Arr.reduce<Widget, Flow>(bucket, { x: 0, y: 0, rowHeight: 0, placed: [] }, (flow, widget) => {
+		const { w, h } = widget.layout
+		const wraps = flow.x + w > CANONICAL_COLS
+		const x = wraps ? 0 : flow.x
+		const y = wraps ? flow.y + flow.rowHeight : flow.y
+		return {
+			x: x + w,
+			y,
+			rowHeight: wraps ? h : Math.max(flow.rowHeight, h),
+			placed: [...flow.placed, [widget, { ...widget, layout: { ...widget.layout, x, y } }]],
+		}
+	}).placed
 
 /**
  * `autoLayoutPerContainer`: every container re-flowed on its own, in the board's sorted order.

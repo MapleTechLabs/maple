@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { formatAgentDebugPrompt } from "./agent-debug-prompt"
-import { String as Str } from "effect"
+import { Option, String as Str } from "effect"
 
 describe("formatAgentDebugPrompt", () => {
 	it("interpolates the fingerprint into the error_detail step", () => {
@@ -35,7 +35,9 @@ describe("formatAgentDebugPrompt", () => {
 		expect(withIssue).toContain("1. Claim the issue with `claim_error_issue`")
 		expect(withIssue).not.toContain("Optionally claim")
 		expect(Str.endsWith("Start by claiming the issue.")(Str.trimEnd(withIssue))).toBe(true)
-		expect(withIssue.indexOf("claim_error_issue")).toBeLessThan(withIssue.indexOf("propose_fix"))
+		expect(Option.getOrThrow(Str.indexOf("claim_error_issue")(withIssue))).toBeLessThan(
+			Option.getOrThrow(Str.indexOf("propose_fix")(withIssue)),
+		)
 
 		const withoutIssue = formatAgentDebugPrompt({
 			fingerprintHash: "fp_abc123",

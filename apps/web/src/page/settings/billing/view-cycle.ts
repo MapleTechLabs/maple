@@ -119,7 +119,7 @@ const spendChart = (h: H, model: Model, spend: SpendModel, daily: DailySpendResp
 	const projected = spend.projectedCents / 100
 	const peak = Math.max(projected, ...Arr.map(data, (point) => point.total ?? 0), 1)
 	const yMax = Math.ceil((peak * 1.1) / 10) * 10
-	const latest = data.findLast((point) => !point.future)
+	const latest = Option.getOrUndefined(Arr.findLast(data, (point) => !point.future))
 	const lastPoint = data[data.length - 1]
 	const hasFuture = lastPoint !== undefined && lastPoint.future
 	const spec: ChartSpec = {

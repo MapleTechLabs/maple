@@ -181,18 +181,21 @@ const FetchOrgChoices = Command.define("FetchBillingOrgChoices", {
 	execute: currentClerkUser.pipe(
 		Effect.map((user): ReadonlyArray<OrgChoice> => {
 			const activeId = window.Clerk?.organization?.id
-			return Arr.map(
-				Arr.filter(
-					user.organizationMemberships ?? [],
-					(membership) =>
-						membership.role === "org:admin" && membership.organization.id !== activeId,
+			return Arr.sort(
+				Arr.map(
+					Arr.filter(
+						user.organizationMemberships ?? [],
+						(membership) =>
+							membership.role === "org:admin" && membership.organization.id !== activeId,
+					),
+					({ organization }) => ({
+						orgId: OrgId.make(organization.id),
+						name: organization.name,
+						imageUrl: organization.hasImage ? (organization.imageUrl ?? "") : "",
+					}),
 				),
-				({ organization }) => ({
-					orgId: OrgId.make(organization.id),
-					name: organization.name,
-					imageUrl: organization.hasImage ? (organization.imageUrl ?? "") : "",
-				}),
-			).toSorted((a, b) => Str.localeCompare(b.name)(a.name))
+				(a: OrgChoice, b: OrgChoice) => Str.localeCompare(b.name)(a.name),
+			)
 		}),
 		loaded((result) => Message.CompletedFetchOrgChoices({ result })),
 	),
@@ -431,8 +434,12 @@ const saveCap = (model: Model, customer: BillingCustomer | null, nowMs: number):
 	const parsed = parseCapInput(model.capDraft)
 	if (featureId === null || !parsed.valid || model.isSavingCap) return { model }
 	const label =
-		spendModelOf(model, customer, nowMs)?.features.find((feature) => feature.featureId === featureId)
-			?.label ?? ""
+		Option.getOrUndefined(
+			Arr.findFirst(
+				spendModelOf(model, customer, nowMs)?.features ?? [],
+				(feature) => feature.featureId === featureId,
+			),
+		)?.label ?? ""
 	return {
 		model: { ...model, isSavingCap: true },
 		commands: [SaveCap({ featureId, label, overageLimit: parsed.cap })],
@@ -545,7 +552,10 @@ const liftUnlinkDialog = (model: Model, step: ReturnType<typeof Dialog.update>):
 /** The org picked to pay for this one: the draft, else the first choice the select shows. */
 export const linkTargetOf = (model: Model): OrgChoice | null => {
 	const choices = AsyncData.getOrElse(model.orgChoices, () => [])
-	return choices.find((choice) => choice.orgId === model.linkOrgId) ?? choices[0] ?? null
+	return Option.getOrElse(
+		Arr.findFirst(choices, (choice) => choice.orgId === model.linkOrgId),
+		() => choices[0] ?? null,
+	)
 }
 
 /** The account changed hands: the customer, its usage and spend are now another org's. */
@@ -781,8 +791,17 @@ export const update = (
 		ClickedRetryAccountUsage: () =>
 			same({ model: { ...model, accountUsage: AsyncData.Loading() }, commands: [FetchAccountUsage()] }),
 		ChangedLinkOrg: ({ value }) => {
-			const choice = AsyncData.getOrElse(model.orgChoices, () => []).find((org) => org.orgId === value)
-			return same({ model: { ...model, linkOrgId: choice?.orgId ?? null, linkRejection: null } })
+			const choice = Arr.findFirst(
+				AsyncData.getOrElse(model.orgChoices, () => []),
+				(org) => org.orgId === value,
+			)
+			return same({
+				model: {
+					...model,
+					linkOrgId: Option.getOrNull(Option.map(choice, (org) => org.orgId)),
+					linkRejection: null,
+				},
+			})
 		},
 		ClickedLink: () =>
 			linkTargetOf(model) === null || model.isLinking

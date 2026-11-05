@@ -99,7 +99,7 @@ const makeQueryEngine = (
 })
 
 const hierarchyStatement = (statements: ReadonlyArray<string>) =>
-	statements.find((sql) => Str.includes("AS relationship")(sql))
+	Option.getOrUndefined(Arr.findFirst(statements, (sql) => Str.includes("AS relationship")(sql)))
 
 describe("makeDashboardReads.spanHierarchy", () => {
 	it.effect("reads the caller's window without probing", () =>

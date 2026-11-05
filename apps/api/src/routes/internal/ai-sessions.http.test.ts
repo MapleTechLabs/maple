@@ -650,7 +650,11 @@ describe("POST /internal/ai-sessions/details", () => {
 			expect(sql).toContain("Timestamp >= '2026-08-19 08:50:00.000000000'")
 			expect(sql).toContain("Timestamp <= '2026-08-19 11:40:00.000000000'")
 			expect(sql).not.toContain("INTERVAL")
-			expect(sql?.split("Timestamp >= '2026-08-19 09:50:00.000000000'").length).toBe(3)
+			expect(
+				sql === undefined
+					? undefined
+					: Str.split("Timestamp >= '2026-08-19 09:50:00.000000000'")(sql).length,
+			).toBe(3)
 			// Exactly the page's ids, and the page's counted filters, so a trace
 			// resolves to the session it was ranked into.
 			for (const sessionId of DETAILS_BODY.sessionIds) expect(sql).toContain(`'${sessionId}'`)
@@ -965,7 +969,8 @@ describe("POST /internal/ai-sessions/spans — pages and scopes", () => {
 			expect(sql()).toContain(`trace_index.TraceId IN ('${TRACE_ID}', '${other}')`)
 			expect(sql()).toContain("SpanAttributes['maple_ai.vendor.id'] = ''")
 			// The spans read alone: no session-detection read over `traces`.
-			expect(sql()?.split("FROM traces").length).toBe(2)
+			const spansSql = sql()
+			expect(spansSql === undefined ? undefined : Str.split("FROM traces")(spansSql).length).toBe(2)
 		} finally {
 			await harness.dispose()
 		}

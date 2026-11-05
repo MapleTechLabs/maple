@@ -21,7 +21,7 @@ import type { Model } from "./model"
 import { githubStatusOf, trackedBranchOf } from "./update-github"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // `ConnectedView`'s repository panels, `RepoRow` and `BranchSelector`.
 
@@ -367,9 +367,16 @@ export const repositoriesPanels = (
 /** The repository-delete and branch-change confirmations. */
 export const repoDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 	const status = githubStatusOf(model)
-	const toDelete = status?.repositories.find((repo) => repo.id === model.githubCard.repoToDelete)
+	const repoName = (repoId: string | null | undefined) =>
+		Option.getOrElse(
+			Option.map(
+				Arr.findFirst(status?.repositories ?? [], (repo) => repo.id === repoId),
+				(repo) => repo.fullName,
+			),
+			() => "",
+		)
 	const pending = model.githubCard.pendingBranch
-	const pendingRepo = status?.repositories.find((repo) => repo.id === pending?.repoId)
+
 	const strong = (text: string) => typography(h, { tone: "foreground", weight: "medium" }, [text])
 	return [
 		confirmDialog(h, {
@@ -380,7 +387,7 @@ export const repoDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 			description: [
 				"This permanently removes",
 				" ",
-				strong(toDelete?.fullName ?? ""),
+				strong(repoName(model.githubCard.repoToDelete)),
 				" and all of its synced commits from Maple. This cannot be undone. If you re-enable access in GitHub later, the repository will be re-synced from scratch.",
 			],
 			confirmLabel: "Delete repository",
@@ -394,7 +401,7 @@ export const repoDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 			title: "Change tracked branch?",
 			description: [
 				"This switches ",
-				strong(pendingRepo?.fullName ?? ""),
+				strong(repoName(pending?.repoId)),
 				" to track ",
 				strong(pending?.branch ?? ""),
 				". Maple deletes this repo's currently synced commits and re-syncs the last 90 days from",

@@ -48,7 +48,7 @@ const SERVICE = { name: "service", type: "query", source: { kind: "facet", facet
 
 /** A tile filtered by `$service`, revealed on a board whose `service` options are being fetched. */
 const throughputBoard = () => {
-	const board = Schema.decodeUnknownSync(DashboardDocument)({
+	const board = Schema.decodeSync(DashboardDocument)({
 		...Schema.encodeSync(DashboardDocument)(document([SERVICE])),
 		widgets: [
 			{

@@ -39,7 +39,7 @@ import { connectors } from "@maple/chat-platform/connectors"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect, Layer, Schema, Array as Arr } from "effect"
+import { Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { resolveConnectorConfig, type IngressConnector } from "../config.ts"
 import { InboundHandler } from "../inbound.ts"
@@ -440,8 +440,10 @@ export class ConnectorSocket {
 	private async resolve(): Promise<ResolvedConnector | undefined> {
 		const connectorId = await this.ctx.storage.get<string>(KEY.connectorId)
 		if (connectorId === undefined) return undefined
-		const connector = connectors.find((candidate) => candidate.id === connectorId)
-		if (connector === undefined || connector.ingress.kind !== "socket") return undefined
+		const found = Arr.findFirst(connectors, (candidate) => candidate.id === connectorId)
+		if (Option.isNone(found)) return undefined
+		const connector = found.value
+		if (connector.ingress.kind !== "socket") return undefined
 		const config = await Effect.runPromise(
 			resolveConnectorConfig(connector).pipe(Effect.provide(this.configLayer)),
 		)

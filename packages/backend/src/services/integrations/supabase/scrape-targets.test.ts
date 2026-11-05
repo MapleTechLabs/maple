@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import {
@@ -313,7 +313,8 @@ describe("Supabase managed scrape targets", () => {
 			return Effect.gen(function* () {
 				const scrapeTargets = yield* ScrapeTargetsService
 				yield* connect(fake)
-				const [row] = (yield* scrapeTargets.listAllEnabled()).filter(
+				const [row] = Arr.filter(
+					yield* scrapeTargets.listAllEnabled(),
 					(target) => target.targetType === "supabase",
 				)
 				assert.isDefined(row)

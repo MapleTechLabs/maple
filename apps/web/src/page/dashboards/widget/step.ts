@@ -1,6 +1,6 @@
 import { HEATMAP_COLOR_SCALES, isPanelType, type PanelType, STAT_AGGREGATES } from "@maple/domain/http"
 import { QUERY_BUILDER_DATA_SOURCES } from "@maple/query-model"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import * as Keyed from "@maple/views/data/keyed"
@@ -37,16 +37,19 @@ const applySelectValue = (state: EditorState, id: string, value: string): Editor
 		case "stat-aggregate":
 			return {
 				...state,
-				statAggregate:
-					STAT_AGGREGATES.find((aggregate) => aggregate === value) ?? state.statAggregate,
+				statAggregate: Option.getOrElse(
+					Arr.findFirst(STAT_AGGREGATES, (aggregate) => aggregate === value),
+					() => state.statAggregate,
+				),
 			}
 		case "stat-value-field":
 			return { ...state, statValueField: value }
 		// The step editor's source: any other brings the query set back, retargeted to it.
 		case "funnel-source": {
 			const first = state.queries[0]
-			const source = QUERY_BUILDER_DATA_SOURCES.find((candidate) => candidate === value)
-			if (first === undefined || source === undefined || source === "product_events") return state
+			const found = Arr.findFirst(QUERY_BUILDER_DATA_SOURCES, (candidate) => candidate === value)
+			if (first === undefined || Option.isNone(found) || found.value === "product_events") return state
+			const source = found.value
 			return setDataSource(
 				{ ...state, funnel: { ...state.funnel, source: "query_set" } },
 				first.id,
@@ -56,8 +59,10 @@ const applySelectValue = (state: EditorState, id: string, value: string): Editor
 		case "heatmap-colors":
 			return {
 				...state,
-				heatmapColorScale:
-					HEATMAP_COLOR_SCALES.find((scale) => scale === value) ?? state.heatmapColorScale,
+				heatmapColorScale: Option.getOrElse(
+					Arr.findFirst(HEATMAP_COLOR_SCALES, (scale) => scale === value),
+					() => state.heatmapColorScale,
+				),
 			}
 		default:
 			return Option.match(productSelectEdit(id, value), {

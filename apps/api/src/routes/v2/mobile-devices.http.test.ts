@@ -292,7 +292,9 @@ describe("v2 mobile devices", () => {
 					// Writes are org-scoped: another org naming this device id touches nothing.
 					yield* devices.disable(OTHER_ORG, device!.id, "Unregistered")
 					yield* devices.markPushed(OTHER_ORG, [device!.id])
-					expect((yield* devices.listForOrg(ORG)).map((listed) => listed.id)).toEqual([device!.id])
+					expect(Arr.map(yield* devices.listForOrg(ORG), (listed) => listed.id)).toEqual([
+						device!.id,
+					])
 					yield* devices.disable(ORG, device!.id, "Unregistered")
 					expect(yield* devices.listForOrg(ORG)).toEqual([])
 				}),

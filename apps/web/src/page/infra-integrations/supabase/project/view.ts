@@ -42,7 +42,7 @@ const THEME_TOKENS = [...INFRA_CHART_TOKENS, ...BAR_CHART_TOKENS]
 const discoveredOf = (model: Model): DiscoveredProject | null =>
 	Option.getOrNull(
 		Option.flatMap(AsyncData.getData(model.status.data), (status) =>
-			Option.fromNullishOr(status.projects.find((project) => project.ref === model.projectRef)),
+			Arr.findFirst(status.projects, (project) => project.ref === model.projectRef),
 		),
 	)
 
@@ -50,7 +50,7 @@ const discoveredOf = (model: Model): DiscoveredProject | null =>
 const summaryOf = (model: Model): SupabaseProjectRow | null =>
 	Option.getOrNull(
 		Option.flatMap(AsyncData.getData(model.projects.data), (rows) =>
-			Option.fromNullishOr(rows.find((row) => row.projectRef === model.projectRef)),
+			Arr.findFirst(rows, (row) => row.projectRef === model.projectRef),
 		),
 	)
 

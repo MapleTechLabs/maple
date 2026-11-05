@@ -1,6 +1,15 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import {
+	ConfigProvider,
+	Effect,
+	Layer,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+	Option,
+} from "effect"
 import { CreateScrapeTargetRequest, OrgId, PlanetScaleMetricsTokenRequest, UserId } from "@maple/domain/http"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -117,9 +126,14 @@ const stubPlanetScaleApi = (options?: {
 				{ status: 200, headers: { "content-type": "application/json" } },
 			)
 		}
-		const denied = Rec.toEntries(options?.deny ?? {}).find(([needle]) => Str.includes(needle)(requestUrl))
-		if (denied) {
-			return new Response("{}", { status: denied[1], headers: { "content-type": "application/json" } })
+		const denied = Arr.findFirst(Rec.toEntries(options?.deny ?? {}), ([needle]) =>
+			Str.includes(needle)(requestUrl),
+		)
+		if (Option.isSome(denied)) {
+			return new Response("{}", {
+				status: denied.value[1],
+				headers: { "content-type": "application/json" },
+			})
 		}
 		if (new URL(requestUrl).hostname !== "api.planetscale.com" && options?.denyDataPlaneBearer) {
 			const authorization = headers.get("authorization") ?? ""

@@ -17,7 +17,7 @@
  * it cannot name a verdict.
  */
 import { CHAT_PROPOSAL_DECISIONS, type ChatProposalDecision } from "@maple/domain/chat-session"
-import { Option, Schema, String as Str } from "effect"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 
 export const ChatActionToken = Schema.String.pipe(Schema.brand("@maple/ChatActionToken"))
 export type ChatActionToken = typeof ChatActionToken.Type
@@ -76,6 +76,6 @@ export const decodeChatActionControlId = (raw: string): Option.Option<ChatAction
  * that was forged or corrupted — which is worth a line in the log, not silence.
  */
 export const chatActionDecision = (raw: string): Option.Option<ChatProposalDecision> =>
-	Option.fromUndefinedOr(
-		CHAT_PROPOSAL_DECISIONS.find((candidate) => Str.startsWith(`${candidate}${DECISION_SEPARATOR}`)(raw)),
+	Arr.findFirst(CHAT_PROPOSAL_DECISIONS, (candidate) =>
+		Str.startsWith(`${candidate}${DECISION_SEPARATOR}`)(raw),
 	)

@@ -74,7 +74,7 @@ import {
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstackClass } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 // `GcpServicesTable`, `GcpSubscriptionsTable`, `GcpDatabasesTable` and `GcpServiceTable`.
 
@@ -452,7 +452,10 @@ const databaseMeta = (h: H, row: GcpDatabaseRow, showProject: boolean): Readonly
 	...placeItems(row, showProject),
 ]
 
-const isMysql = (row: GcpDatabaseRow) => row.instance?.databaseVersion?.startsWith("MYSQL") === true
+const isMysql = (row: GcpDatabaseRow) => {
+	const version = row.instance?.databaseVersion
+	return version !== null && version !== undefined && Str.startsWith("MYSQL")(version)
+}
 
 const queriesCell = (h: H, row: GcpDatabaseRow, ctx: RowsContext): Html =>
 	row.queries !== undefined

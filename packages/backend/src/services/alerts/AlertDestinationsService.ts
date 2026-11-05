@@ -77,7 +77,7 @@ const makeValidationError = (message: string, details: ReadonlyArray<string> = [
 	new AlertValidationError({ message, details, ...(!(cause === undefined) ? { cause } : undefined) })
 
 const normalizeOptionalString = (value: string | null | undefined) => {
-	const trimmed = value?.trim()
+	const trimmed = value == null ? undefined : Str.trim(value)
 	return trimmed && trimmed.length > 0 ? trimmed : null
 }
 

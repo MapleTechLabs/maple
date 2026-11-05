@@ -178,8 +178,9 @@ interface Trailer {
 export const parseTrailer = (
 	stdout: string,
 ): Option.Option<{ readonly body: string; readonly trailer: Trailer }> => {
-	const at = stdout.lastIndexOf(SANDBOX_TRAILER)
-	if (at === -1) return Option.none()
+	const found = Str.lastIndexOf(SANDBOX_TRAILER)(stdout)
+	if (Option.isNone(found)) return Option.none()
+	const at = found.value
 	const parts = Str.split(/\s+/)(Str.trim(Str.slice(at + SANDBOX_TRAILER.length)(stdout)))
 	const [exitCode, stdoutBytes, stderrBytes] = Arr.map(parts.slice(0, 3), Number)
 	const isolation = parts[3]
@@ -320,7 +321,12 @@ export const checkoutStatusScript = (sha: string): string => {
 			`  if [ -z "$(find ${s} -maxdepth 0 -mmin +2)" ]; then echo cloning; exit 0; fi`,
 			`  rm -rf ${s}`,
 			"fi",
-			`mkdir -p ${shellQuote(Str.slice(0, state.lastIndexOf("/"))(state))}`,
+			`mkdir -p ${shellQuote(
+				Str.slice(
+					0,
+					Option.getOrElse(Str.lastIndexOf("/")(state), () => -1),
+				)(state),
+			)}`,
 			`if mkdir ${s} 2>/dev/null; then echo claimed; else echo cloning; fi`,
 		],
 		"\n",

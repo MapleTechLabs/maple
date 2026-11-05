@@ -76,9 +76,13 @@ export const resolveCycleWindow = (
 	customer: BillingCustomer,
 	nowMs: number,
 ): { readonly startMs: number; readonly endMs: number; readonly nowMs: number } => {
-	const active = customer.subscriptions.find((sub) => sub.status === "active")
-	if (active?.currentPeriodStart != null && active.currentPeriodEnd != null) {
-		return { startMs: active.currentPeriodStart, endMs: active.currentPeriodEnd, nowMs }
+	const active = Arr.findFirst(customer.subscriptions, (sub) => sub.status === "active")
+	if (
+		Option.isSome(active) &&
+		active.value.currentPeriodStart != null &&
+		active.value.currentPeriodEnd != null
+	) {
+		return { startMs: active.value.currentPeriodStart, endMs: active.value.currentPeriodEnd, nowMs }
 	}
 	const now = new Date(nowMs)
 	return {
