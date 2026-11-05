@@ -260,6 +260,7 @@ const generateId = (len: number): string => {
 
 // A span whose failure is caused *entirely* by anticipated errors (no
 // defects/Die) records OTLP status `Ok` and emits no `exception` event.
+// BOUNDARY: `isAnticipated` classifies a cause's raw failure values.
 const isFullyAnticipated = (
 	cause: Cause.Cause<unknown>,
 	isAnticipated: ((error: unknown) => boolean) | undefined,

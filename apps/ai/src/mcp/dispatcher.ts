@@ -232,6 +232,7 @@ const callMcpToolUnscoped = (name: string, input: unknown, surface: McpToolSurfa
 	)
 
 export interface McpToolExecutorApi {
+	// BOUNDARY: tool input is unparsed until the tool's own schema decodes it.
 	readonly execute: (
 		tenant: TenantContext,
 		name: string,

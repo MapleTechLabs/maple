@@ -264,7 +264,6 @@
 		".impeccable/**",
 		".superset/**",
 		"lib/thinking-orbs/**",
-		"scripts/oxlint-plugins/anti-slop/**",
 		"lib/oxlint-config/plugins/anti-slop/**",
 		"lib/oxlint-config/plugins/anti-slop.mjs"
 	]

@@ -45,6 +45,7 @@ const decodeIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
 const parseJsonValue = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))
 const encodeJsonValue = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
+// BOUNDARY: `hint` reads the parsed JSON before the schema decodes it.
 const jsonTransformation = (hint: (value: unknown) => string | undefined) =>
 	SchemaTransformation.transformEffect<unknown, string>({
 		decode: (text) =>
