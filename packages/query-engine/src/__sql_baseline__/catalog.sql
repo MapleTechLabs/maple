@@ -10499,7 +10499,7 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- builder:users:usersListQuery:activityRollup  [8afc6f4c]
+-- builder:users:usersListQuery:activityRollup  [52ffde9d]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10508,6 +10508,7 @@ SELECT
           arraySort(groupUniqArrayIf(20)(signals.namespace, signals.namespace != '')) AS namespaces,
           min(signals.firstSeen) AS firstSeen,
           max(signals.lastSeen) AS lastSeen,
+          toString(max(signals.lastSeen)) AS lastSeenKey,
           sum(signals.sessions) AS sessions,
           sum(signals.errors) AS errors,
           sum(signals.requests) AS requests,
@@ -10608,11 +10609,11 @@ SELECT
         GROUP BY userId, namespace
 ) AS signals
         GROUP BY userId
-        ORDER BY lastSeen DESC
+        ORDER BY lastSeen DESC, userId ASC
         LIMIT 200
         FORMAT JSON
 
--- builder:users:usersListQuery:namespaceFiltered  [a95afe54]
+-- builder:users:usersListQuery:namespaceFiltered  [cbba6299]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10621,6 +10622,7 @@ SELECT
           arraySort(groupUniqArrayIf(20)(signals.namespace, signals.namespace != '')) AS namespaces,
           min(signals.firstSeen) AS firstSeen,
           max(signals.lastSeen) AS lastSeen,
+          toString(max(signals.lastSeen)) AS lastSeenKey,
           sum(signals.sessions) AS sessions,
           sum(signals.errors) AS errors,
           sum(signals.requests) AS requests,
@@ -10728,11 +10730,11 @@ SELECT
           AND sum(signals.sessions) > 0
           AND sum(signals.groupHits) > 0
           AND (positionCaseInsensitiveUTF8(signals.userId, 'ada') > 0 OR positionCaseInsensitiveUTF8(anyIf(signals.name, signals.name != ''), 'ada') > 0 OR positionCaseInsensitiveUTF8(anyIf(signals.email, signals.email != ''), 'ada') > 0)
-        ORDER BY lastSeen DESC
+        ORDER BY lastSeen DESC, userId ASC
         LIMIT 200
         FORMAT JSON
 
--- builder:users:usersListQuery:unscoped  [9e693e19]
+-- builder:users:usersListQuery:unscoped  [e895ff7c]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10741,6 +10743,7 @@ SELECT
           arraySort(groupUniqArrayIf(20)(signals.namespace, signals.namespace != '')) AS namespaces,
           min(signals.firstSeen) AS firstSeen,
           max(signals.lastSeen) AS lastSeen,
+          toString(max(signals.lastSeen)) AS lastSeenKey,
           sum(signals.sessions) AS sessions,
           sum(signals.errors) AS errors,
           sum(signals.requests) AS requests,
@@ -10833,7 +10836,7 @@ SELECT
         GROUP BY userId, namespace
 ) AS signals
         GROUP BY userId
-        ORDER BY lastSeen DESC
+        ORDER BY lastSeen DESC, userId ASC
         LIMIT 200
         FORMAT JSON
 

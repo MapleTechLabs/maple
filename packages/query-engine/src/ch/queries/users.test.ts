@@ -116,7 +116,24 @@ describe("usersListQuery", () => {
 		expect(sql).toContain("countIf(product_events.GroupId IN ('acme'))")
 		expect(sql).toContain("countIf(sessions.groupId IN ('acme'))")
 		expect(sql).toContain("sum(signals.groupHits) > 0")
-		expect(sql).toMatch(/ORDER BY lastSeen DESC\s+LIMIT 50/)
+		expect(sql).toMatch(/ORDER BY lastSeen DESC, userId ASC\s+LIMIT 50/)
+	})
+
+	it("pages the directory by keyset on the exact (lastSeen, userId) of the previous page's last row", () => {
+		const { sql } = compileUnsafe(
+			usersListQuery(
+				unscoped,
+				{ after: { lastSeen: "2026-11-01 10:00:00.123456789", userId: "u_b" } },
+				21,
+			),
+			params,
+		)
+		expect(sql).toContain(
+			"(max(signals.lastSeen) < '2026-11-01 10:00:00.123456789' OR (max(signals.lastSeen) = '2026-11-01 10:00:00.123456789' AND signals.userId > 'u_b'))",
+		)
+		expect(sql).toContain("toString(max(signals.lastSeen)) AS lastSeenKey")
+		expect(sql).toMatch(/ORDER BY lastSeen DESC, userId ASC\s+LIMIT 21/)
+		expect(sql).not.toContain("OFFSET")
 	})
 
 	it("reads spans and logs from the activity rollup in place of raw MCP spans", () => {

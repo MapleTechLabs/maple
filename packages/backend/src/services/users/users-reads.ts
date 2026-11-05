@@ -164,15 +164,23 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 		...(payload.hasErrors !== undefined && { hasErrors: payload.hasErrors }),
 		...(payload.hasReplay !== undefined && { hasReplay: payload.hasReplay }),
 		...(payload.groups !== undefined && { groups: payload.groups }),
+		...(payload.after !== undefined && { after: payload.after }),
 	}
 	const params = { orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime }
-	const rows = yield* withRollupFallback(scope, [], (scope) =>
-		warehouse.compiledQuery(
-			tenant,
-			CH.compile(CH.usersListQuery(scope, filter, payload.limit ?? DEFAULT_LIMIT), params),
-			{ profile: "list", context: "usersList" },
-		),
+	const limit = payload.limit ?? DEFAULT_LIMIT
+	// One row of lookahead says whether a next page exists.
+	const fetched = yield* withRollupFallback(scope, [], (scope) =>
+		warehouse.compiledQuery(tenant, CH.compile(CH.usersListQuery(scope, filter, limit + 1), params), {
+			profile: "list",
+			context: "usersList",
+		}),
 	)
+	const rows = fetched.slice(0, limit)
+	const last = rows.at(-1)
+	const next =
+		fetched.length > limit && last !== undefined
+			? { lastSeen: last.lastSeenKey, userId: last.userId }
+			: undefined
 	const totals =
 		rows.length === 0
 			? []
@@ -216,7 +224,7 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 		"maple.users.rows": users.length,
 		"maple.users.with_requests": totals.length,
 	})
-	return new UsersListResponse({ users })
+	return new UsersListResponse({ users, ...(next !== undefined && { next }) })
 })
 
 const EMPTY_FACETS = new UsersFacetsResponse({

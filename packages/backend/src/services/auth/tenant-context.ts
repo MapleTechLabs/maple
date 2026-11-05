@@ -33,4 +33,9 @@ export interface TenantContext {
 	 * Unset for full-access keys, OAuth tokens and sessions.
 	 */
 	readOnly?: true
+	/**
+	 * The scoped API key's scopes, for MCP tools that need a family beyond the toolset's own.
+	 * Unset for unscoped keys, OAuth tokens and sessions, which pass every such check.
+	 */
+	scopes?: ReadonlyArray<string>
 }

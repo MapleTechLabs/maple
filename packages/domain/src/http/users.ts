@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { Schema } from "effect"
+import { Schema, SchemaGetter } from "effect"
 import { McpClientKind, McpSessionSource } from "./mcp"
 import { ErrorIssueId, ServiceNamespace } from "../primitives"
 import { ErrorPersistenceError, WorkflowState } from "./errors"
@@ -47,6 +47,34 @@ export const UserListItem = Schema.Struct({
 })
 export type UserListItem = typeof UserListItem.Type
 
+/** The longest end-user id the API and the `/users/<id>` route accept. */
+export const END_USER_ID_MAX_LENGTH = 512
+
+/** An end user's id as the SDK sent it: opaque, matched exactly. */
+export const EndUserId = Schema.String.check(
+	Schema.isMinLength(1),
+	Schema.isMaxLength(END_USER_ID_MAX_LENGTH),
+)
+
+/**
+ * A keyset position in the directory: the `(lastSeen, userId)` of a page's last row. `lastSeen` is
+ * the warehouse's exact `toString` (up to 9 fraction digits), so ties at the boundary are not lost.
+ */
+export const UsersListKeyset = Schema.Struct({
+	lastSeen: Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})?$/u)),
+	userId: EndUserId,
+})
+export type UsersListKeyset = typeof UsersListKeyset.Type
+
+/** A {@link UsersListKeyset} as one opaque token (base64url JSON), for the MCP tool's `cursor`. */
+export const UsersListCursor = Schema.String.pipe(
+	Schema.decodeTo(Schema.String, {
+		decode: SchemaGetter.decodeBase64UrlString(),
+		encode: SchemaGetter.encodeBase64Url(),
+	}),
+	Schema.decodeTo(Schema.fromJsonString(UsersListKeyset)),
+).annotate({ identifier: "@maple/UsersListCursor", title: "Users List Cursor" })
+
 /** `hasErrors` / `hasReplay` only narrow: `true` keeps the users with one, absent keeps everyone. */
 export class UsersListRequest extends Schema.Class<UsersListRequest>("UsersListRequest")({
 	...windowFields,
@@ -55,10 +83,14 @@ export class UsersListRequest extends Schema.Class<UsersListRequest>("UsersListR
 	hasReplay: Schema.optionalKey(Schema.Literal(true)),
 	groups: Schema.optionalKey(Schema.Array(groupId).check(Schema.isMaxLength(50))),
 	limit: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 }))),
+	/** Only the users ordered after this position, for the public API's keyset cursor. */
+	after: Schema.optionalKey(UsersListKeyset),
 }) {}
 
 export class UsersListResponse extends Schema.Class<UsersListResponse>("UsersListResponse")({
 	users: Schema.Array(UserListItem),
+	/** The position after the last user, present only when another page exists. */
+	next: Schema.optionalKey(UsersListKeyset),
 }) {}
 
 const FacetOption = Schema.Struct({ name: Schema.String, count: Schema.Number })
@@ -84,15 +116,6 @@ export class UsersFacetsResponse extends Schema.Class<UsersFacetsResponse>("User
 // ---------------------------------------------------------------------------
 // /users/:userId
 // ---------------------------------------------------------------------------
-
-/** The longest end-user id the API and the `/users/<id>` route accept. */
-export const END_USER_ID_MAX_LENGTH = 512
-
-/** An end user's id as the SDK sent it: opaque, matched exactly. */
-export const EndUserId = Schema.String.check(
-	Schema.isMinLength(1),
-	Schema.isMaxLength(END_USER_ID_MAX_LENGTH),
-)
 
 export class UserDetailRequest extends Schema.Class<UserDetailRequest>("UserDetailRequest")({
 	...windowFields,

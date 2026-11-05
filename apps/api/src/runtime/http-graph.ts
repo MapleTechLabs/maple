@@ -75,6 +75,7 @@ import { HttpV2OnboardingChecklistLive } from "@/routes/v2/onboarding-checklist.
 import { HttpV2SupportChannelLive } from "@/routes/v2/support-channel.http"
 import { HttpV2TelemetrySignalsLive } from "@/routes/v2/telemetry-signals.http"
 import { HttpV2SessionReplaysLive } from "@/routes/v2/session-replays.http"
+import { HttpV2UsersLive } from "@/routes/v2/users.http"
 import {
 	HttpV2EnvironmentsLive,
 	HttpV2LogsLive,
@@ -208,6 +209,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2McpConnectionsLive,
 			HttpV2AgentFeedbackLive,
 			HttpV2SessionReplaysLive,
+			HttpV2UsersLive,
 			HttpV2TracesLive,
 			HttpV2LogsLive,
 			HttpV2MetricsLive,
