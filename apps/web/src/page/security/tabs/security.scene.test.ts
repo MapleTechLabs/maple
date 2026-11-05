@@ -481,8 +481,12 @@ describe("security tabs", () => {
 		}
 	})
 
-	test("a member sees no Add target or Start run control", () => {
-		const member = pageUpdate(loaded(), Message.CompletedReadGrants({ grants: MEMBER })).model
+	// Engineers triage findings, but targets and runs spend the audit budget (admins only).
+	test.each([
+		["member", MEMBER],
+		["engineer", Policy.grantsOf(["org:engineer"])],
+	])("a %s sees no Add target or Start run control", (_role, grants) => {
+		const member = pageUpdate(loaded(), Message.CompletedReadGrants({ grants })).model
 		scene(
 			{ update: pageUpdate, view },
 			given(member),

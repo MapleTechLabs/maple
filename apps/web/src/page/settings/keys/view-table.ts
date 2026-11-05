@@ -96,7 +96,7 @@ const apiRow = (
 ): Html => {
 	const key: V2ApiKey = row.key
 	const isDead = row.status === "revoked" || row.status === "expired"
-	const can = apiKeyRowPermissions(key, { isAdmin: canManage(model), userId: model.userId })
+	const can = apiKeyRowPermissions(key, { canManageKeys: canManage(model), userId: model.userId })
 	const entries: ReadonlyArray<MenuView.MenuEntry> = [
 		...(can.canRoll
 			? [{ _tag: "Item" as const, value: "roll", label: "Roll key", icon: "ArrowPathIcon" as const }]
@@ -231,7 +231,7 @@ const deviceRow = (
 	formatDate: (iso: string) => string,
 ): Html => {
 	const key: V2ApiKey = row.key
-	const can = apiKeyRowPermissions(key, { isAdmin: canManage(model), userId: model.userId })
+	const can = apiKeyRowPermissions(key, { canManageKeys: canManage(model), userId: model.userId })
 	const entries: ReadonlyArray<MenuView.MenuEntry> = can.canRevoke
 		? [
 				{

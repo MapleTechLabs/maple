@@ -67,7 +67,7 @@ import {
 	spendThisMonth,
 	targetsOf,
 } from "./derive"
-import { canManage, Message, type Model } from "./model"
+import { canRunAudits, Message, type Model } from "./model"
 import { bucketOf, countByBucket, isUnverified } from "../kit/findings"
 import { findingBadge } from "../kit/findings-view"
 import { auditSteps, emptyOnRamp } from "./view-empty"
@@ -147,7 +147,7 @@ const spendTile = (h: H, model: Model): Html => {
 		hint: `of ${formatUsd(limit)}`,
 		tone: isReached ? "warn" : undefined,
 		compact: true,
-		action: canManage(model)
+		action: canRunAudits(model)
 			? textLink(
 					h,
 					{ tone: "muted", className: "text-2xs", onClick: Message.ClickedSpendAndModels() },
@@ -652,7 +652,7 @@ export const overviewBody = (h: H, model: Model): ReadonlyArray<Html> =>
 
 /** Admins add targets; a member gets no control they would be refused. */
 export const addTargetButton = (h: H, model: Model): Html | undefined =>
-	canManage(model)
+	canRunAudits(model)
 		? button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedAddTarget())] }, [
 				icon(h, "PlusIcon"),
 				"Add target",

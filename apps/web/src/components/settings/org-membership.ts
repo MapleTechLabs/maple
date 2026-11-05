@@ -9,12 +9,14 @@ export const orgRoleKeys: ReadonlyArray<OrgRole> = Arr.map(Policy.assignableRole
 
 const [memberEntry] = Policy.assignableRoles
 
-/** A Clerk role string's entry; anything unknown reads as member, the safer reading. */
-const entryOf = (role: string): Policy.AssignableRole =>
-	Option.getOrElse(
-		Arr.findFirst(Policy.assignableRoles, (entry) => entry.clerkKey === role),
+/** A Clerk role string's entry, read through `Policy.roleOf` (unknown roles are members). */
+const entryOf = (role: string): Policy.AssignableRole => {
+	const policyRole = Policy.roleOf(role)
+	return Option.getOrElse(
+		Arr.findFirst(Policy.assignableRoles, (entry) => entry.role === policyRole),
 		(): Policy.AssignableRole => memberEntry,
 	)
+}
 
 export function toOrgRole(role: string): OrgRole {
 	return entryOf(role).clerkKey

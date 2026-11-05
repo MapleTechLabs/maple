@@ -40,7 +40,7 @@ export const Model = Schema.Struct({
 	deliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
 	/** The Routing tab's own `alertDeliveries.list` read, separate from `deliveries`. */
 	routingDeliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
-	/** `session.roles` has root or org:admin; `false` until the session answers. */
+	/** What the session may do (`Policy.grantsOf`); none until the session answers. */
 	grants: Schema.Array(Policy.PermissionName),
 	/** Rules tab: the search box and "Show all". */
 	rulesQuery: Schema.String,
