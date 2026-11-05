@@ -694,7 +694,7 @@ const SLOW_MS = 2000
 /** The user's requests, one row per entry span; each opens its trace. */
 const tracesBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
 	indexedTabState(detail.profile.traces, detail.traces) === "unindexed"
-		? pendingTab(h, "LayersIcon", "Requests are not indexed per user here", UNINDEXED_DESCRIPTION)
+		? unavailableTab(h, "LayersIcon", "Requests are not indexed per user here", UNINDEXED_DESCRIPTION)
 		: Arr.isReadonlyArrayEmpty(detail.traces)
 			? noRows(h, "No requests from this user in the window.")
 			: toolTable(h, [
@@ -733,7 +733,7 @@ const tracesBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 /** The user's log lines; one inside a trace opens it. */
 const logsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
 	indexedTabState(detail.profile.logs, detail.logs) === "unindexed"
-		? pendingTab(h, "FileIcon", "Logs are not indexed per user here", UNINDEXED_DESCRIPTION)
+		? unavailableTab(h, "FileIcon", "Logs are not indexed per user here", UNINDEXED_DESCRIPTION)
 		: Arr.isReadonlyArrayEmpty(detail.logs)
 			? noRows(h, "No logs from this user in the window.")
 			: toolTable(h, [
