@@ -282,7 +282,7 @@ const listCell = <M>(h: HtmlBuilder<M>, column: Column, index: number, row: Row)
 	const value = resolveFieldPath(row, column.field)
 	const display = Arr.isArray(value)
 		? Arr.join(
-				Arr.map(value, (item) => (item === null || item === undefined ? "" : String(item))),
+				Arr.map(value, (item) => (item === null || item === undefined ? "" : cellText(item))),
 				", ",
 			)
 		: formatCell(value, column.unit)
