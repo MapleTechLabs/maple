@@ -68,8 +68,20 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Users({ search }))
 
-/** The user page a directory row links to. */
-export const userHref = (userId: string): string => `/users/${encodeURIComponent(userId)}`
+/** The user page a directory row links to, over the directory's window. */
+export const userHref =
+	(search: Search) =>
+	(userId: string): string =>
+		hrefOf(
+			AppRoute.UserDetail({
+				userId,
+				search: {
+					startTime: search.startTime,
+					endTime: search.endTime,
+					timePreset: search.timePreset,
+				},
+			}),
+		)
 
 export const navigate = (model: Model, search: Search): Return => ({
 	model,
@@ -264,22 +276,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedSetup: () => ({
 			model,
 			outMessage: PageOutMessage.RequestedNavigation({ url: SETUP_HREF, isReplace: false }),
-		}),
-		ClickedUser: ({ userId }) => ({
-			model,
-			outMessage: PageOutMessage.RequestedNavigation({
-				url: hrefOf(
-					AppRoute.UserDetail({
-						userId,
-						search: {
-							startTime: model.search.startTime,
-							endTime: model.search.endTime,
-							timePreset: model.search.timePreset,
-						},
-					}),
-				),
-				isReplace: false,
-			}),
 		}),
 		GotFilterSectionsMessage: ({ message: inner }) => {
 			const next = FilterSections.update(model.filterSections, inner)
