@@ -191,7 +191,10 @@ const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 		statRailItem(h, {
 			eyebrow: "Requests",
 			value: formatNumber(profile.requests),
-			subline: `${formatPercent(profile.failedRate)} failed`,
+			subline:
+				profile.requests === 0
+					? "no requests in the window"
+					: `${formatPercent(profile.failedRate)} failed`,
 			spark: profile.activity,
 			compact: true,
 		}),
