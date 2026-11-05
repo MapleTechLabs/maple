@@ -127,7 +127,10 @@ export const previewIdentityKey = (form: RuleForm): string => {
 		thresholds,
 		...evaluated
 	} = buildRuleCreateParamsV2(form)
-	const tiers = thresholds?.map(({ destination_ids: _ids, ...tier }) => tier)
+	const tiers =
+		thresholds === undefined
+			? undefined
+			: Arr.map(thresholds, ({ destination_ids: _ids, ...tier }) => tier)
 	return encodeJson({ ...evaluated, tiers })
 }
 
@@ -135,7 +138,7 @@ export const previewIdentityKey = (form: RuleForm): string => {
 export const suggestedName = (form: RuleForm): string | null => {
 	if (Str.trim(form.name).length > 0) return null
 	const subject = conditionSubject(form)
-	const base = Str.toUpperCase(subject.charAt(0)) + Str.slice(1)(subject)
+	const base = Str.toUpperCase(Str.slice(0, 1)(subject)) + Str.slice(1)(subject)
 	const queryGroupBy =
 		form.signalType === "builder_query" && form.queryBuilderDraft.addOns.groupBy
 			? form.queryBuilderDraft.groupBy

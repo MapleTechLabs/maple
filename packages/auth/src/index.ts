@@ -888,8 +888,11 @@ const clerkLookup = <A>(
 	)
 
 const extractPrimaryEmail = (u: ClerkUser): string | null => {
-	const primary = u.emailAddresses?.find((e) => e.id === u.primaryEmailAddressId)
-	return primary?.emailAddress ?? u.emailAddresses?.[0]?.emailAddress ?? null
+	const primary = Arr.findFirst(u.emailAddresses ?? [], (e) => e.id === u.primaryEmailAddressId)
+	return Option.getOrElse(
+		Option.flatMapNullishOr(primary, (e) => e.emailAddress),
+		() => u.emailAddresses?.[0]?.emailAddress ?? null,
+	)
 }
 
 /** The primary address only once Clerk has verified it; never a fallback to another address. */
@@ -901,8 +904,13 @@ export const extractVerifiedPrimaryEmail = (u: {
 		readonly verification: { readonly status: string } | null
 	}>
 }): string | null => {
-	const primary = u.emailAddresses.find((e) => e.id === u.primaryEmailAddressId)
-	return primary?.verification?.status === "verified" ? primary.emailAddress : null
+	return Option.match(
+		Arr.findFirst(u.emailAddresses, (e) => e.id === u.primaryEmailAddressId),
+		{
+			onNone: () => null,
+			onSome: (primary) => (primary.verification?.status === "verified" ? primary.emailAddress : null),
+		},
+	)
 }
 
 const makeClerkClient = (

@@ -16,7 +16,7 @@
 // list query end to end over the same data.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Array as Arr, Effect, Option, Record as Rec, String as Str } from "effect"
 import { compileUnionUnsafe, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	MAPLE_AI_SESSION_ID_ATTR,
@@ -52,7 +52,8 @@ const BASE_MS = Math.floor((Date.now() - 2 * HOUR_MS) / 1000) * 1000
 // DateTime64(9) column and the fan-out is bounded by that literal, so a seed at
 // a fractional instant is the only thing that proves `Timestamp <= '{fanOutEnd}'`
 // still admits the very row that produced it.
-const chDateTime = (epochMs: number): string => new Date(epochMs).toISOString().replace("T", " ").slice(0, 23)
+const chDateTime = (epochMs: number): string =>
+	Str.slice(0, 23)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 
 /** The same instant as `ai_trace_index` renders it: DateTime64(9), so the
  *  millisecond literal above padded out to nanoseconds. */
@@ -60,7 +61,8 @@ const chTimestamp = (epochMs: number): string => `${chDateTime(epochMs)}000000`
 
 // Backslashes too: a JSON payload's `\n` has to reach the span as the two
 // characters it is, not as the newline a ClickHouse literal reads it as.
-const quote = (value: string): string => `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`
+const quote = (value: string): string =>
+	`'${Str.replaceAll("'", "\\'")(Str.replaceAll("\\", "\\\\")(value))}'`
 
 const FOREIGN_ORG_ID = "org_ai_trace_index_e2e_other"
 
@@ -668,24 +670,27 @@ const SESSION_RULE_ORG_SPANS: ReadonlyArray<SeedSpan> = [
 ]
 
 const chMap = (attrs: Readonly<Record<string, string>>): string =>
-	`map(${Object.entries(attrs)
-		.flatMap(([key, value]) => [quote(key), quote(value)])
-		.join(", ")})`
+	`map(${Arr.join(
+		Arr.flatMap(Rec.toEntries(attrs), ([key, value]) => [quote(key), quote(value)]),
+		", ",
+	)})`
 
 const seed = async (): Promise<void> => {
-	const rows = [
-		...SEED_SPANS.map((span) => [ORG_ID, span] as const),
-		[FOREIGN_ORG_ID, FOREIGN_SPAN] as const,
-		...TOOL_FAILURE_ORG_SPANS.map((span) => [TOOL_FAILURE_ORG_ID, span] as const),
-		...NETTING_ORG_SPANS.map((span) => [NETTING_ORG_ID, span] as const),
-		...WIDE_ORG_SPANS.map((span) => [WIDE_ORG_ID, span] as const),
-		...SESSION_RULE_ORG_SPANS.map((span) => [SESSION_RULE_ORG_ID, span] as const),
-	]
-		.map(
+	const rows = Arr.join(
+		Arr.map(
+			[
+				...Arr.map(SEED_SPANS, (span) => [ORG_ID, span] as const),
+				[FOREIGN_ORG_ID, FOREIGN_SPAN] as const,
+				...Arr.map(TOOL_FAILURE_ORG_SPANS, (span) => [TOOL_FAILURE_ORG_ID, span] as const),
+				...Arr.map(NETTING_ORG_SPANS, (span) => [NETTING_ORG_ID, span] as const),
+				...Arr.map(WIDE_ORG_SPANS, (span) => [WIDE_ORG_ID, span] as const),
+				...Arr.map(SESSION_RULE_ORG_SPANS, (span) => [SESSION_RULE_ORG_ID, span] as const),
+			],
 			([orgId, span]) =>
 				`(${quote(orgId)}, ${quote(chDateTime(span.ms))}, ${quote(span.traceId)}, ${quote(span.spanId)}, ${quote(span.parentSpanId ?? "")}, ${quote(span.name ?? "agent turn")}, 'Internal', ${quote(span.service)}, 1000000, ${quote(span.status)}, ${quote(span.statusMessage ?? "")}, 1, ${chMap(span.attrs)}, ${chMap(span.resource ?? {})})`,
-		)
-		.join("\n,")
+		),
+		"\n,",
+	)
 
 	await clickhouseExec(
 		`INSERT INTO traces
@@ -888,7 +893,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			 FROM ai_trace_index WHERE OrgId = ${quote(TOOL_FAILURE_ORG_ID)}`,
 		)
 		const fingerprint = (span: SeedSpan) =>
-			rows.find((row) => row.SpanId === span.spanId)?.ErrorFingerprint
+			Option.getOrUndefined(Arr.findFirst(rows, (row) => row.SpanId === span.spanId))?.ErrorFingerprint
 		const hashOf = async (row: {
 			readonly failedToolCallResult: string
 			readonly statusMessage: string
@@ -939,7 +944,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// `trace:` key, the session-bearing one under the vendor's id, and the
 		// plain trace and the foreign org's trace must not appear at all.
 		assert.deepStrictEqual(
-			page.map((row) => row.sessionId),
+			Arr.map(page, (row) => row.sessionId),
 			[`${MAPLE_AI_TRACE_SESSION_PREFIX}${SESSIONLESS_TRACE}`, SESSION_ID],
 		)
 
@@ -949,7 +954,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// session rather than of one trace. Not `EARLY_TURN_SPAN`, which carries
 		// the same session id three hours out and which the page never saw, so
 		// it did not stretch the bounds.
-		const eve = page.find((row) => row.sessionId === SESSION_ID)
+		const eve = Option.getOrUndefined(Arr.findFirst(page, (row) => row.sessionId === SESSION_ID))
 		assert.deepStrictEqual(
 			[eve?.agentStart, eve?.agentEnd],
 			[chTimestamp(BASE_MS), chTimestamp(BASE_MS + 30_001)],
@@ -968,7 +973,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			],
 			["eve", "1", 3, 7, ["agent-service", "openrouter"]],
 		)
-		const sessionless = page.find((row) => row.sessionId !== SESSION_ID)
+		const sessionless = Option.getOrUndefined(Arr.findFirst(page, (row) => row.sessionId !== SESSION_ID))
 		assert.deepStrictEqual(
 			[
 				sessionless?.vendorId,
@@ -994,8 +999,10 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 
 		// The client's own derivation, character for character — string bounds
 		// that sort as the instants do.
-		const fanOutStart = page.map((row) => row.agentStart).reduce((a, b) => (a < b ? a : b))
-		const fanOutEnd = page.map((row) => row.agentEnd).reduce((a, b) => (a < b ? b : a))
+		const starts = Arr.map(page, (row) => row.agentStart)
+		const ends = Arr.map(page, (row) => row.agentEnd)
+		const fanOutStart = Arr.reduce(starts, starts[0] ?? "", (a, b) => (a < b ? a : b))
+		const fanOutEnd = Arr.reduce(ends, ends[0] ?? "", (a, b) => (a < b ? b : a))
 		// The upper bound lands on a fractional instant — the sessionless span's
 		// end, its start plus 1ms — and the details read compares
 		// `Timestamp <= '{fanOutEnd}'` against the DateTime64(9) column it came
@@ -1003,7 +1010,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// outside it — the sessionless session below is the canary.
 		assert.strictEqual(fanOutStart, chTimestamp(BASE_MS))
 		assert.strictEqual(fanOutEnd, chTimestamp(BASE_MS + 60_124))
-		assert.ok(fanOutEnd.endsWith(".124000000"))
+		assert.ok(Str.endsWith(".124000000")(fanOutEnd))
 		// `orgId`, the page's two bounds and one slice of their padded extent —
 		// the details read takes no window param from the caller, so there is
 		// nothing else to pass. Run as the route runs it: once per slice, then
@@ -1011,31 +1018,38 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// the folded rows must equal — a slice boundary that dropped or
 		// double-counted a span would show here and nowhere else.
 		const details = Integrations.aiSessionDetailsQuery({
-			sessionIds: page.map((row) => row.sessionId),
+			sessionIds: Arr.map(page, (row) => row.sessionId),
 		})
 		const readDetails = async (slice: Integrations.AiSessionDetailsSlice) => {
 			const compiled = compileUnsafe(details, { orgId: ORG_ID, fanOutStart, fanOutEnd, ...slice })
 			return Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
 		}
 		const slices = Integrations.aiSessionDetailsSlices(fanOutStart, fanOutEnd)
-		const rows = Integrations.mergeAiSessionDetails(await Promise.all(slices.map(readDetails)))
+		const rows = Integrations.mergeAiSessionDetails(
+			await Promise.all(Arr.map(slices, (slice) => readDetails(slice))),
+		)
 		const whole = await readDetails({
 			spansStart: slices[0]!.spansStart,
 			spansEnd: slices[slices.length - 1]!.spansEnd,
 		})
 		const sorted = (list: ReadonlyArray<Integrations.AiSessionDetailsOutput>) =>
-			[...list]
-				.sort((a, b) => a.sessionId.localeCompare(b.sessionId))
-				.map((row) => ({ ...row, serviceNames: [...row.serviceNames].sort() }))
+			Arr.map(
+				[...list].sort((a, b) => Str.localeCompare(b.sessionId)(a.sessionId)),
+				(row) => ({ ...row, serviceNames: [...row.serviceNames].sort() }),
+			)
 		assert.deepStrictEqual(sorted(rows), sorted(whole))
 
 		// Merged by session id, as the client does — the same two sessions, now
 		// with the facts the index cannot answer.
-		const byId = new Map(rows.map((row) => [row.sessionId, row]))
+		const byId = new Map(Arr.map(rows, (row) => [row.sessionId, row]))
 		assert.deepStrictEqual(
-			page
-				.flatMap((row) => byId.get(row.sessionId) ?? [])
-				.map((row) => [row.sessionId, row.spanCount, [...row.serviceNames].sort()]),
+			Arr.map(
+				Arr.flatMap(page, (row) => {
+					const details = byId.get(row.sessionId)
+					return details === undefined ? [] : [details]
+				}),
+				(row) => [row.sessionId, row.spanCount, [...row.serviceNames].sort()],
+			),
 			[
 				// Survived the `<= fanOutEnd` boundary it defined.
 				[`${MAPLE_AI_TRACE_SESSION_PREFIX}${SESSIONLESS_TRACE}`, 1, ["agent-service"]],
@@ -1111,7 +1125,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 	})
 
 	it("applies each counted filter per trace, and each session filter on the ranked row", async () => {
-		const ids = async (opts: AiSessionPageOpts) => (await rankPage(opts)).map((row) => row.sessionId)
+		const ids = async (opts: AiSessionPageOpts) => Arr.map(await rankPage(opts), (row) => row.sessionId)
 
 		assert.deepStrictEqual(await ids({ models: ["gpt-5"] }), [TRACE_SESSION_ID])
 		assert.deepStrictEqual(await ids({ toolNames: ["search_traces"] }), [SESSION_ID])
@@ -1135,7 +1149,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// seeds share all but their last character, so a prefix that stops short
 		// of it matches every trace — which is the prefix rule working.
 		assert.deepStrictEqual(await ids({ search: `trace:${SESSIONLESS_TRACE}…` }), [TRACE_SESSION_ID])
-		assert.deepStrictEqual(await ids({ search: SESSIONLESS_TRACE.slice(0, 30) }), [
+		assert.deepStrictEqual(await ids({ search: Str.slice(0, 30)(SESSIONLESS_TRACE) }), [
 			TRACE_SESSION_ID,
 			SESSION_ID,
 		])
@@ -1167,7 +1181,9 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		})
 		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
 		const measures = (sessionId: string) => {
-			const row = rows.find((candidate) => candidate.sessionId === sessionId)
+			const row = Option.getOrUndefined(
+				Arr.findFirst(rows, (candidate) => candidate.sessionId === sessionId),
+			)
 			return [row?.llmCalls, row?.totalTokens, row?.inputTokens, row?.outputTokens]
 		}
 
@@ -1185,8 +1201,8 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// event-loop span started and before that span ended: the chat beneath
 		// it starts past the window, and no read may count it.
 		const windows = [WINDOW, { ...WINDOW, endTime: chDateTime(BASE_MS + 410_001) }]
-		for (const [orgId, bounds] of [ORG_ID, NETTING_ORG_ID].flatMap((org) =>
-			windows.map((window) => [org, window] as const),
+		for (const [orgId, bounds] of Arr.flatMap([ORG_ID, NETTING_ORG_ID], (org) =>
+			Arr.map(windows, (window) => [org, window] as const),
 		)) {
 			for (const opts of [
 				{},
@@ -1205,13 +1221,12 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 				const rows = compileUnsafe(
 					Integrations.aiSessionPageQuery({
 						...opts,
-						sessionIds: ranked.map((row) => row.sessionId),
+						sessionIds: Arr.map(ranked, (row) => row.sessionId),
 					}),
 					{
 						orgId,
-						fanOutStart: ranked.map((row) => row.agentStart).sort()[0]!,
-						fanOutEnd: ranked
-							.map((row) => row.agentEnd)
+						fanOutStart: Arr.map(ranked, (row) => row.agentStart).sort()[0]!,
+						fanOutEnd: Arr.map(ranked, (row) => row.agentEnd)
 							.sort()
 							.at(-1)!,
 						endTime: window.endTime,
@@ -1219,11 +1234,11 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 				)
 				// Sets come back in no order; everything else must match as it is.
 				const comparable = (page: ReadonlyArray<Record<string, unknown>>) =>
-					page.map((row) =>
-						Object.fromEntries(
-							Object.entries(row).map(([key, value]) => [
+					Arr.map(page, (row) =>
+						Rec.fromEntries(
+							Arr.map(Rec.toEntries(row), ([key, value]): readonly [string, unknown] => [
 								key,
-								Array.isArray(value) ? [...value].sort() : value,
+								Arr.isArray(value) ? [...value].sort() : value,
 							]),
 						),
 					)
@@ -1242,7 +1257,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		)
 
 		assert.deepStrictEqual(
-			rows.map((row) => [row.sessionId, row.llmCalls, row.totalTokens]),
+			Arr.map(rows, (row) => [row.sessionId, row.llmCalls, row.totalTokens]),
 			[[`${MAPLE_AI_TRACE_SESSION_PREFIX}${WIDE_TRACE}`, WIDE_TRACE_CALLS, WIDE_TRACE_CALLS * 12]],
 		)
 	})
@@ -1254,7 +1269,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// The advisor's trace is gone; the LangGraph trace stays on its named agent,
 		// and the tool server's trace on its one tool call.
 		assert.deepStrictEqual(
-			rows.map((row) => [row.sessionId, row.toolCalls]),
+			Arr.map(rows, (row) => [row.sessionId, row.toolCalls]),
 			[
 				[`${MAPLE_AI_TRACE_SESSION_PREFIX}${TOOL_ONLY_TRACE}`, 1],
 				[`${MAPLE_AI_TRACE_SESSION_PREFIX}${LANGGRAPH_TRACE}`, 2],
@@ -1262,10 +1277,13 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		)
 
 		const facets = compileUnionUnsafe(Integrations.aiSessionFacetsQuery(), sessionRule)
-		const vendors = Effect.runSync(facets.decodeRows(await runJson(facets.sql)))
-			.filter((row) => row.facetType === "vendor")
-			.map((row) => [row.name, row.count])
-			.sort()
+		const vendors = Arr.map(
+			Arr.filter(
+				Effect.runSync(facets.decodeRows(await runJson(facets.sql))),
+				(row) => row.facetType === "vendor",
+			),
+			(row) => [row.name, row.count],
+		).sort()
 		assert.deepStrictEqual(vendors, [
 			["langchain", 1],
 			["unknown:genai", 1],
@@ -1277,12 +1295,12 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		const compiled = compileUnsafe(Integrations.aiSessionDistributionsQuery(), WINDOW)
 		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
 		const distribution = (measure: Integrations.AiSessionDistributionMeasure) => {
-			const row = rows.find((candidate) => candidate.measure === measure)
-			return row === undefined
+			const row = Arr.findFirst(rows, (candidate) => candidate.measure === measure)
+			return Option.isNone(row)
 				? undefined
-				: Object.entries(row.buckets)
-						.map(([floor, count]) => [Number(floor), count])
-						.sort(([a], [b]) => a! - b!)
+				: Arr.map(Rec.toEntries(row.value.buckets), ([floor, count]) => [Number(floor), count]).sort(
+						([a], [b]) => a! - b!,
+					)
 		}
 
 		// The page's figures (see "measures each session off the index"), bucketed:
@@ -1302,7 +1320,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// Zeros have no bucket: the sessionless trace reported no cost and ran no tool.
 		assert.deepStrictEqual(distribution("cost"), [[2 ** -5.5, 1]])
 		assert.deepStrictEqual(distribution("toolCalls"), [[1, 1]])
-		const tokens = rows.find((row) => row.measure === "totalTokens")
+		const tokens = Option.getOrUndefined(Arr.findFirst(rows, (row) => row.measure === "totalTokens"))
 		assert.ok(tokens !== undefined && tokens.p50 >= 15 && tokens.p95 <= 150)
 	})
 
@@ -1310,10 +1328,10 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		const compiled = compileUnionUnsafe(Integrations.aiSessionFacetsQuery(), WINDOW)
 		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
 		const facet = (facetType: string) =>
-			rows
-				.filter((row) => row.facetType === facetType)
-				.map((row) => [row.name, row.count])
-				.sort()
+			Arr.map(
+				Arr.filter(rows, (row) => row.facetType === facetType),
+				(row) => [row.name, row.count],
+			).sort()
 
 		assert.deepStrictEqual(facet("environment"), [
 			["production", 1],

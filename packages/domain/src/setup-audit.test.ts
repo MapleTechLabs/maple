@@ -8,7 +8,7 @@ import {
 	runSetupAudit,
 } from "./setup-audit"
 import { buildIntegrationInventory, type IntegrationInventoryInputs } from "./integration-inventory"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 const NOW = Date.UTC(2026, 6, 27, 12, 0, 0)
 const HOUR = 60 * 60_000
@@ -159,7 +159,7 @@ const inputsWith = (
 ): SetupAuditInputs => ({ now: NOW, config: { ...healthyConfig, ...config }, warehouse })
 
 const check = (report: ReturnType<typeof runSetupAudit>, id: string): AuditCheckResult => {
-	const found = report.checks.find((row) => row.id === id)
+	const found = Option.getOrUndefined(Arr.findFirst(report.checks, (row) => row.id === id))
 	if (!found) throw new Error(`no check ${id} in report`)
 	return found
 }

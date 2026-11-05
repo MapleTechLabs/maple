@@ -140,8 +140,8 @@ export const scrubAttributes = (
 
 const scrubEvent = (event: SpanEvent): SpanEvent => {
 	// `Effect.log` inside a span becomes an event named after the message.
-	const level = event.attributes.find((attribute) => attribute.key === "effect.logLevel")
-	if (level !== undefined) return { ...event, name: "log", attributes: [level] }
+	const level = Arr.findFirst(event.attributes, (attribute) => attribute.key === "effect.logLevel")
+	if (Option.isSome(level)) return { ...event, name: "log", attributes: [level.value] }
 	return { ...event, attributes: scrubAttributes(event.attributes) }
 }
 

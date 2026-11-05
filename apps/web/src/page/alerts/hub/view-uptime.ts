@@ -420,12 +420,18 @@ const loadingState = (h: H): Html =>
 
 export const deleteMonitorDialog = (h: H, model: Model): Html => {
 	const monitors = AsyncData.getOrElse(model.monitors.data, () => [])
-	const target = monitors.find((monitor) => monitor.id === model.confirmDeleteMonitorId)
+	const targetName = Option.getOrElse(
+		Option.flatMapNullishOr(
+			Arr.findFirst(monitors, (monitor) => monitor.id === model.confirmDeleteMonitorId),
+			(monitor) => monitor.name,
+		),
+		() => "monitor",
+	)
 	return confirmDialog(h, {
 		slotId: "alerts-delete-monitor",
 		model: model.deleteMonitorDialog,
 		toParentMessage: (message) => Message.GotDeleteMonitorDialogMessage({ message }),
-		title: `Delete ${target?.name ?? "monitor"}?`,
+		title: `Delete ${targetName}?`,
 		description:
 			"Maple stops checking it and its incidents close. Recorded check traces stay. This cannot be undone.",
 		confirmLabel: "Delete monitor",

@@ -16,7 +16,7 @@
  * denylist would leak every future field by default, which is exactly the wrong
  * direction for a payload served without a session.
  */
-import { Schema, Array as Arr, Record as Rec } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
 import { dataSourceEndpoint, dataSourceQuerySet, dataSourceRawSql, dataSourceTransform } from "./access"
 import type { DashboardVariable } from "./shared/variables"
@@ -193,7 +193,7 @@ const redactWidget = (widget: ShareWidgetInput): RedactedWidget => {
  */
 const referencedVariableNames = (widget: ShareWidgetInput): ReadonlySet<string> => {
 	const names = new Set<string>()
-	for (const match of encodeJson(widget ?? null).matchAll(/\$\{?([A-Za-z][A-Za-z0-9_]*)\}?/g)) {
+	for (const match of Str.matchAll(/\$\{?([A-Za-z][A-Za-z0-9_]*)\}?/g)(encodeJson(widget ?? null))) {
 		const name = match[1]
 		if (name !== undefined) names.add(name)
 	}
@@ -241,8 +241,9 @@ export function redactForShare(
 	widgetId?: string | null,
 ): RedactedDashboard | null {
 	if (widgetId !== undefined && widgetId !== null) {
-		const widget = document.widgets.find((candidate) => candidate.id === widgetId)
-		if (widget === undefined) return null
+		const found = Arr.findFirst(document.widgets, (candidate) => candidate.id === widgetId)
+		if (Option.isNone(found)) return null
+		const widget = found.value
 		let redacted: RedactedDashboard = {
 			id: document.id,
 			name: document.name,

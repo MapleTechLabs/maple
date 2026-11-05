@@ -130,15 +130,18 @@ describe("AlertsService evaluation cadence", () => {
 			yield* alerts.runSchedulerTick()
 
 			// One of the next two minutes is off the rule's every-fifth-minute phase.
-			const idle = [1, 2].find(
-				(n) =>
-					!isAlertRuleDue({
-						ruleId: rule.id,
-						intervalMinutes: 5,
-						updatedAt: claimedAt,
-						lastClaimedAt: claimedAt,
-						windowEndMs: snapAlertWindowEndMs(claimedAt + n * 60_000),
-					}),
+			const idle = Option.getOrUndefined(
+				Arr.findFirst(
+					[1, 2],
+					(n) =>
+						!isAlertRuleDue({
+							ruleId: rule.id,
+							intervalMinutes: 5,
+							updatedAt: claimedAt,
+							lastClaimedAt: claimedAt,
+							windowEndMs: snapAlertWindowEndMs(claimedAt + n * 60_000),
+						}),
+				),
 			)!
 			yield* TestClock.adjust(Duration.minutes(idle))
 			// Back on an idle minute: an edit makes the rule due there.
@@ -811,7 +814,13 @@ describe("AlertsService scheduler pool", () => {
 			const recordWindowEnd = (orgId: string, sql: string) =>
 				Ref.update(windowEnds, (ends) => {
 					const latest = Arr.last(
-						Arr.sort(sql.match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/g) ?? [], Order.String),
+						Arr.sort(
+							Option.getOrElse(
+								Str.match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/g)(sql),
+								() => [],
+							),
+							Order.String,
+						),
 					)
 					return Option.match(latest, {
 						onNone: () => ends,
@@ -1059,9 +1068,12 @@ describe("AlertsService claim fence", () => {
 					Arr.map(incidents, (incident) => incident.id),
 				)
 
-				const lateGroup = incidents.find(
-					(incident) =>
-						incident.resolvedAt === DateTime.formatIso(DateTime.makeUnsafe(secondClaimAt)),
+				const lateGroup = Option.getOrUndefined(
+					Arr.findFirst(
+						incidents,
+						(incident) =>
+							incident.resolvedAt === DateTime.formatIso(DateTime.makeUnsafe(secondClaimAt)),
+					),
 				)!.groupKey
 				const lateState = yield* Effect.promise(() =>
 					queryFirstRow<{ lastEvaluatedAt: Date | null; consecutiveHealthy: number }>(

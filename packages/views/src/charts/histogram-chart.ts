@@ -43,9 +43,12 @@ const isPrebucketed = (rows: ReadonlyArray<Record<string, unknown>>): boolean =>
 const pickValueField = (rows: ReadonlyArray<Record<string, unknown>>): string => {
 	const first = rows[0]
 	if (first === undefined) return "value"
-	return (
-		Rec.keys(first).find((key) => key !== "name" && key !== "bucket" && typeof first[key] === "number") ??
-		"value"
+	return Option.getOrElse(
+		Arr.findFirst(
+			Rec.keys(first),
+			(key) => key !== "name" && key !== "bucket" && typeof first[key] === "number",
+		),
+		() => "value",
 	)
 }
 

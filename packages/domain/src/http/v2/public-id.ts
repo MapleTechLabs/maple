@@ -93,9 +93,9 @@ const base58Encode = (bytes: Uint8Array): string => {
 	}
 
 	let out = Str.repeat(zeros)("1")
-	// `charAt` rather than `[]`: every digit is already `% 58`, and it keeps the
-	// expression a `string` instead of a `string | undefined` to unwrap.
-	for (let i = digits.length - 1; i >= 0; i--) out += ALPHABET.charAt(digits[i] ?? 0)
+	// Every digit is already `% 58`, so the `""` fallback never applies.
+	for (let i = digits.length - 1; i >= 0; i--)
+		out += Option.getOrElse(Str.charAt(ALPHABET, digits[i] ?? 0), () => "")
 	return out
 }
 
@@ -107,7 +107,7 @@ const base58Decode = (input: string): Uint8Array | null => {
 
 	const bytes: number[] = []
 	for (let i = zeros; i < input.length; i++) {
-		const value = ALPHABET_MAP.get(input.charAt(i))
+		const value = ALPHABET_MAP.get(Option.getOrElse(Str.charAt(input, i), () => ""))
 		if (value === undefined) return null
 		let carry = value
 		for (let j = 0; j < bytes.length; j++) {

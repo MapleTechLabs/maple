@@ -267,7 +267,7 @@ export function splitGenAiAttributes(attributes: Record<string, string>): {
 function groupOf(key: string): string {
 	if (Rec.has(GROUP_OVERRIDES, key)) return GROUP_OVERRIDES[key]
 	const namespace = namespaceOf(key)
-	if (Object.hasOwn(GROUP_LABELS, namespace)) return namespace
+	if (Arr.some(Rec.keys(GROUP_LABELS), (id) => id === namespace)) return namespace
 	if (Rec.has(GROUP_ALIASES, namespace)) return GROUP_ALIASES[namespace]
 	return "other"
 }
@@ -295,7 +295,7 @@ function namespaceOf(key: string): string {
 function humanizeKeyPath(path: string): string {
 	const words = Arr.map(
 		Arr.filter(Str.split(/[._]/)(path), (part) => part !== ""),
-		(word) => (word === "id" ? "ID" : Str.toUpperCase(word.charAt(0)) + Str.slice(1)(word)),
+		(word) => (word === "id" ? "ID" : Str.toUpperCase(Str.slice(0, 1)(word)) + Str.slice(1)(word)),
 	)
 	return words.length === 0 ? path : Arr.join(words, " ")
 }

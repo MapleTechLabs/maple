@@ -3,7 +3,7 @@ import { BillingAccount, BillingAccountOrg } from "@maple/domain/http"
 import { OrgId } from "@maple/domain"
 import { V2McpConnection } from "@maple/domain/http/v2"
 import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
-import { Result, Schema, Array as Arr } from "effect"
+import { Result, Schema, Array as Arr, Option } from "effect"
 import {
 	click,
 	expect as expectView,
@@ -302,7 +302,9 @@ describe("settings page", () => {
 			away,
 			Message.CompletedFetchCustomer({ result: Result.succeed(subscribed) }),
 		)
-		const billing = settled.model.kept.find((tab) => tab._tag === "Billing")
+		const billing = Option.getOrUndefined(
+			Arr.findFirst(settled.model.kept, (tab) => tab._tag === "Billing"),
+		)
 		expect(billing?._tag === "Billing" && billing.model.checkoutReturn).toBe("Idle")
 		expect(settled.commands).toContainEqual(
 			expect.objectContaining({

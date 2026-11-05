@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Effect, Array as Arr, String as Str } from "effect"
+import { Effect, Array as Arr, String as Str, Option } from "effect"
 import { compileUnsafe, compileUnionUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	CLOUDFLARE_BREAKDOWN_DIMENSIONS,
@@ -131,7 +131,7 @@ describe("cloudflareZoneBreakdownCoverageSQL", () => {
 describe("cloudflareZoneFacetsQuery", () => {
 	it("unions one branch per facet, each tagged with its type", () => {
 		const { sql } = compileUnionUnsafe(cloudflareZoneFacetsQuery(), zoneParams)
-		expect(sql.match(/UNION ALL/g)?.length).toBe(7)
+		expect(Arr.fromIterable(Str.matchAll(/UNION ALL/g)(sql)).length).toBe(7)
 		for (const facetType of [
 			"host",
 			"cacheStatus",
@@ -155,16 +155,24 @@ describe("cloudflareZoneFacetsQuery", () => {
 			zoneParams,
 		)
 		const branches = Str.split("UNION ALL")(sql)
-		const pathBranch = branches.find((b) => Str.includes("'path' AS facetType")(b))!
-		const countryBranch = branches.find((b) => Str.includes("'country' AS facetType")(b))!
-		const hostBranch = branches.find((b) => Str.includes("'host' AS facetType")(b))!
+		const pathBranch = Option.getOrThrow(
+			Arr.findFirst(branches, (b) => Str.includes("'path' AS facetType")(b)),
+		)
+		const countryBranch = Option.getOrThrow(
+			Arr.findFirst(branches, (b) => Str.includes("'country' AS facetType")(b)),
+		)
+		const hostBranch = Option.getOrThrow(
+			Arr.findFirst(branches, (b) => Str.includes("'host' AS facetType")(b)),
+		)
 
 		// The path facet still lists every path…
 		expect(pathBranch).not.toContain("url.path'] IN")
 		// …and the host facet still lists every host…
 		expect(hostBranch).not.toContain("IN ('a.example')")
 		// …while the host filter narrows the other main-cube facets.
-		const cacheBranch = branches.find((b) => Str.includes("'cacheStatus' AS facetType")(b))!
+		const cacheBranch = Option.getOrThrow(
+			Arr.findFirst(branches, (b) => Str.includes("'cacheStatus' AS facetType")(b)),
+		)
 		expect(cacheBranch).toContain("IN ('a.example')")
 		// The country facet reads a family carrying neither key, so neither filter applies.
 		expect(countryBranch).not.toContain("url.path'] IN")

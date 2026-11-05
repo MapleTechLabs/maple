@@ -114,7 +114,12 @@ export const buildSankeySpike = (spec: SpikeSpec): BuiltChart<Datum, ChartValue,
 		Arr.map(FLOW_BANDS, (band) => band.key),
 	)
 	const bandColor = (band: (typeof FLOW_BANDS)[number]["key"]) =>
-		color(FLOW_BANDS.find((candidate) => candidate.key === band)?.token ?? "--chart-1")
+		color(
+			Option.match(
+				Arr.findFirst(FLOW_BANDS, (candidate) => candidate.key === band),
+				{ onNone: () => "--chart-1", onSome: (candidate) => candidate.token },
+			),
+		)
 	const strokeForEdge = (edge: SankeyEdge): string => {
 		const band = bandForEdge(edge)
 		return muted.has(band)

@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto"
 import type { AlertRuleId, OrgId } from "@maple/domain/primitives"
 import { ChartBreachSide, ChartUnit } from "@maple/domain/http"
-import { Result, Schema, String as Str } from "effect"
+import { Option, Result, Schema, String as Str } from "effect"
 
 const SHARE_TOKEN_PREFIX = "mshare_"
 
@@ -52,8 +52,9 @@ const signPayload = (label: string, payload: string, hmacKey: string): string =>
  * one — the caller gets no signal about which.
  */
 const verifiedPayload = (label: string, id: string, hmacKey: string): string | undefined => {
-	const separator = id.indexOf(".")
-	if (separator <= 0) return undefined
+	const found = Str.indexOf(".")(id)
+	if (Option.isNone(found) || found.value === 0) return undefined
+	const separator = found.value
 
 	const payload = Buffer.from(Str.slice(0, separator)(id), "base64url").toString("utf8")
 	if (payload.length === 0) return undefined

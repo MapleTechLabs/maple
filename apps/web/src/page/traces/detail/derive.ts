@@ -1,6 +1,6 @@
 import { spanStartMs } from "@maple/ui/lib/span-tree"
 import type { SpanNodeData } from "@maple/views/traces/trace-data"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 
 // copied: `computeServiceShares` (packages/ui/src/components/traces/service-spectrum-bar.tsx, a
 // React module). Wall-clock time per service: each instant goes to the innermost spans running.
@@ -19,19 +19,23 @@ const selfIntervals = (
 	end: number,
 	children: ReadonlyArray<SpanNodeData>,
 ): Array<Interval> => {
-	const covered = Arr.filter(
-		Arr.map(children, (child): Interval => {
-			const childStart = spanStartMs(child)
-			return [Math.max(childStart, start), Math.min(childStart + child.durationMs, end)]
-		}),
-		([s, e]) => e > s,
-	).toSorted((a, b) => a[0] - b[0])
-	const { gaps, cursor } = covered.reduce<{ gaps: Array<Interval>; cursor: number }>(
+	const covered = Arr.sort(
+		Arr.filter(
+			Arr.map(children, (child): Interval => {
+				const childStart = spanStartMs(child)
+				return [Math.max(childStart, start), Math.min(childStart + child.durationMs, end)]
+			}),
+			([s, e]) => e > s,
+		),
+		Order.mapInput(Order.Number, (interval: Interval) => interval[0]),
+	)
+	const { gaps, cursor } = Arr.reduce<Interval, { gaps: Array<Interval>; cursor: number }>(
+		covered,
+		{ gaps: [], cursor: start },
 		(acc, [s, e]) => ({
 			gaps: s > acc.cursor ? [...acc.gaps, [acc.cursor, s]] : acc.gaps,
 			cursor: Math.max(acc.cursor, e),
 		}),
-		{ gaps: [], cursor: start },
 	)
 	return end > cursor ? [...gaps, [cursor, end]] : gaps
 }
@@ -63,8 +67,12 @@ const eventsOf = (span: SpanNodeData, services: Set<string>): ReadonlyArray<Shar
 
 export const computeServiceShares = (rootSpans: ReadonlyArray<SpanNodeData>): ReadonlyArray<ServiceShare> => {
 	const services = new Set<string>()
-	const events = Arr.flatMap(rootSpans, (root) => eventsOf(root, services)).toSorted(
-		(a, b) => a.at - b.at || a.delta - b.delta,
+	const events = Arr.sort(
+		Arr.flatMap(rootSpans, (root) => eventsOf(root, services)),
+		Order.combine(
+			Order.mapInput(Order.Number, (event: ShareEvent) => event.at),
+			Order.mapInput(Order.Number, (event: ShareEvent) => event.delta),
+		),
 	)
 	const state = {
 		active: new Map<string, number>(),
@@ -89,12 +97,15 @@ export const computeServiceShares = (rootSpans: ReadonlyArray<SpanNodeData>): Re
 		state.activeTotal += event.delta
 	})
 	const total = Arr.reduce([...state.attributed.values()], 0, (sum, ms) => sum + ms)
-	return Arr.map([...services], (serviceName) => {
-		const durationMs = state.attributed.get(serviceName) ?? 0
-		return {
-			serviceName,
-			durationMs,
-			percent: total > 0 ? (durationMs / total) * 100 : 100 / services.size,
-		}
-	}).toSorted((a, b) => b.durationMs - a.durationMs)
+	return Arr.sort(
+		Arr.map([...services], (serviceName) => {
+			const durationMs = state.attributed.get(serviceName) ?? 0
+			return {
+				serviceName,
+				durationMs,
+				percent: total > 0 ? (durationMs / total) * 100 : 100 / services.size,
+			}
+		}),
+		Order.flip(Order.mapInput(Order.Number, (share: ServiceShare) => share.durationMs)),
+	)
 }

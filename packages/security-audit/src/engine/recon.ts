@@ -2,7 +2,7 @@
  * Phase 1: the strict budget gate, reconnaissance, synthesis into `architecture.md` and the seeded
  * ledger, and the prior-run rules that turn earlier ledgers and findings into current work.
  */
-import { Effect, Ref, Array as Arr, Record as Rec } from "effect"
+import { Effect, Option, Ref, Array as Arr, Record as Rec } from "effect"
 import { focusedReconPrompt, RECON_AGENTS, reconPrompt, synthesisPrompt } from "../prompts"
 import { SynthesisResult } from "../results"
 import type { CoverageUnit, Finding } from "../schema"
@@ -47,7 +47,10 @@ export const planFromPrior = (
 		// Every open record the unit links is carried together, or none is: a unit is either re-verified
 		// (all its records unchanged) or re-hunted (any of them changed), never half of each.
 		const open = Arr.filter(linked, (record) => record.verdict !== "rejected")
-		const strongest = open.find((record) => record.verdict === "confirmed") ?? open[0]
+		const strongest = Option.getOrElse(
+			Arr.findFirst(open, (record) => record.verdict === "confirmed"),
+			() => open[0],
+		)
 		if (strongest !== undefined) {
 			const confirmed = strongest.verdict === "confirmed"
 			if (Arr.some(open, (record) => changed(recordFiles(record)))) {
@@ -90,10 +93,10 @@ export const planFromPrior = (
 			(record) => [record.fingerprint, record] as const,
 		),
 	)
-	const counts = units.reduce<Record<string, number>>((acc, unit) => {
+	const counts = Arr.reduce<LedgerUnit, Record<string, number>>(units, {}, (acc, unit) => {
 		acc[unit.prior_status] = (acc[unit.prior_status] ?? 0) + 1
 		return acc
-	}, {})
+	})
 	const summary = `Prior run ${prior.runId} at ${prior.sourceRef}: ${prior.ledger.length} units (${Arr.join(
 		Arr.map(Rec.toEntries(counts), ([status, n]) => `${n} ${status}`),
 		", ",

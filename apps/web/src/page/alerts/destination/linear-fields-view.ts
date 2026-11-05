@@ -124,7 +124,7 @@ const teamField = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 	const { form, model } = inputs
 	const teams = AsyncData.getOrElse(model.teams.data, () => [])
 	const isLoading = isPending(model.teams.data) || AsyncData.isRefreshing(model.teams.data)
-	const selected = teams.find((team) => team.id === form.linearTeamId)
+	const selected = Arr.findFirst(teams, (team) => team.id === form.linearTeamId)
 	const placeholder = isLoading
 		? "Loading teams…"
 		: inputs.isEditing && form.linearTeamName !== ""
@@ -150,9 +150,10 @@ const teamField = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 				className: "w-full",
 				isDisabled: isLoading || teams.length === 0,
 				renderValue: () =>
-					selected === undefined
-						? [h.span([h.Class("text-muted-foreground")], [placeholder])]
-						: [teamLabel(selected)],
+					Option.match(selected, {
+						onNone: () => [h.span([h.Class("text-muted-foreground")], [placeholder])],
+						onSome: (team) => [teamLabel(team)],
+					}),
 				renderItem: (option) => [option.label],
 			},
 		}),

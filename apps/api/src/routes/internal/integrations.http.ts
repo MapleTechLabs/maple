@@ -277,7 +277,10 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						// Cloudflare applies these before ranking, which is the whole point: the live
 						// lookup can reach keys the stored per-window top-N folded into "other".
 						const filter = {
-							contains: payload.contains?.slice(0, 200),
+							contains:
+								payload.contains === undefined
+									? undefined
+									: Str.slice(0, 200)(payload.contains),
 							hosts: payload.hosts,
 							countries: payload.countries,
 							methods: payload.methods,

@@ -88,7 +88,9 @@ const activate = (
 ): { readonly model: Model; readonly commands: ReadonlyArray<Cmd> } => {
 	const window = model.window
 	if (window === null) return { model, commands: [] }
-	return ADVANCED_LOOKUPS.reduce<{ model: Model; commands: ReadonlyArray<Cmd> }>(
+	return Arr.reduce<(typeof ADVANCED_LOOKUPS)[number], { model: Model; commands: ReadonlyArray<Cmd> }>(
+		ADVANCED_LOOKUPS,
+		{ model, commands: [] },
 		(acc, lookup) => {
 			const key = requestKey(context.orgId, `autocomplete:${lookup}`, window)
 			const slot = acc.model.advanced.lookups[lookup] ?? Keyed.idle<LookupNames, LoadFailure>()
@@ -102,7 +104,6 @@ const activate = (
 				}),
 			})
 		},
-		{ model, commands: [] },
 	)
 }
 

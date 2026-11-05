@@ -8,7 +8,7 @@ import {
 	messagingDestinationExpr,
 } from "./semconv-renames"
 import { latestSnapshotStatements } from "../generated/clickhouse-schema"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 describe("semconv rename coalescing", () => {
 	// Byte-identity is load-bearing, not cosmetic: the service-map and
@@ -42,7 +42,12 @@ describe("semconv rename coalescing", () => {
 				),
 				(statement) => !Str.includes(MESSAGING_DESTINATION_SQL)(statement),
 			),
-			(statement) => statement.match(/VIEW IF NOT EXISTS (\w+)/)?.[1],
+			(statement) =>
+				Option.getOrUndefined(
+					Option.flatMap(Str.match(/VIEW IF NOT EXISTS (\w+)/)(statement), (match) =>
+						Option.fromNullishOr(match[1]),
+					),
+				),
 		)
 		expect(bare).toEqual([])
 	})
@@ -58,7 +63,12 @@ describe("semconv rename coalescing", () => {
 				),
 				(statement) => !Str.includes(`${DEPLOYMENT_ENV_SQL} AS DeploymentEnv`)(statement),
 			),
-			(statement) => statement.match(/VIEW IF NOT EXISTS (\w+)/)?.[1],
+			(statement) =>
+				Option.getOrUndefined(
+					Option.flatMap(Str.match(/VIEW IF NOT EXISTS (\w+)/)(statement), (match) =>
+						Option.fromNullishOr(match[1]),
+					),
+				),
 		)
 		expect(offenders).toEqual([])
 	})

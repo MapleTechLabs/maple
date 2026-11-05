@@ -152,7 +152,9 @@ const startEngine = <A>(
 	const tick = () => {
 		const total = readNumber(mount, TOTAL_ATTRIBUTE, engine.totalTimeMs + shift)
 		const current = now()
-		const gap = state.idle.find((interval) => current >= interval.start && current < interval.end)
+		const gap = Option.getOrUndefined(
+			Arr.findFirst(state.idle, (interval) => current >= interval.start && current < interval.end),
+		)
 		if (gap !== undefined && gap.end !== state.lastJumpedEnd) {
 			state.lastJumpedEnd = gap.end
 			engine.pause(toEngine(gap.end))

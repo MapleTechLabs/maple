@@ -10,6 +10,7 @@ import {
 	Record as Rec,
 	String as Str,
 	DateTime,
+	Option,
 } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
@@ -168,10 +169,14 @@ const stubFetch = (calls: StubCalls, options: StubOptions = {}) => {
 		}
 		if (Str.includes("projects(")(query)) {
 			const pages = options.projectPages ?? [[SHOP]]
-			const cursor = Rec.values(body.variables ?? {}).find(
+			const cursor = Arr.findFirst(
+				Rec.values(body.variables ?? {}),
 				(value): value is string => typeof value === "string" && Str.startsWith("cursor_")(value),
 			)
-			const page = cursor === undefined ? 0 : Number(Str.slice("cursor_".length)(cursor))
+			const page = Option.match(cursor, {
+				onNone: () => 0,
+				onSome: (value) => Number(Str.slice("cursor_".length)(value)),
+			})
 			const hasNextPage = page + 1 < pages.length
 			return json({
 				data: {
@@ -369,11 +374,16 @@ describe("RailwayMetricsService", () => {
 				const payload = Schema.decodeUnknownSync(Schema.fromJsonString(IngestPayload))(
 					calls.ingest[0]!.body,
 				)
-				const stamped = Arr.map(
-					payload.resourceMetrics,
-					(resource) =>
-						resource.resource.attributes.find((attr) => attr.key === "maple_source_id")?.value
-							.stringValue,
+				const stamped = Arr.map(payload.resourceMetrics, (resource) =>
+					Option.getOrUndefined(
+						Option.map(
+							Arr.findFirst(
+								resource.resource.attributes,
+								(attr) => attr.key === "maple_source_id",
+							),
+							(attr) => attr.value.stringValue,
+						),
+					),
 				)
 				assert.isAbove(stamped.length, 0)
 				const expected = publicSourceId(Schema.decodeSync(SourceId)(source!.id))

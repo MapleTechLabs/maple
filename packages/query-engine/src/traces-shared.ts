@@ -156,9 +156,8 @@ export function buildAttrFilterCondition(
 	 * `has(…, NULL)` rather than a wider read.
 	 */
 	const orOverKeys = (make: (key: string) => CH.Condition): CH.Condition | undefined =>
-		keys.reduce<CH.Condition | undefined>(
-			(acc, key) => (acc === undefined ? make(key) : acc.or(make(key))),
-			undefined,
+		Arr.reduce<string, CH.Condition | undefined>(keys, undefined, (acc, key) =>
+			acc === undefined ? make(key) : acc.or(make(key)),
 		)
 
 	const positive = ((): CH.Condition => {

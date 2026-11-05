@@ -357,9 +357,10 @@ export const auditActions = (): ReadonlyArray<string> =>
 		Arr.map(verbs, (verb) => `${resource}.${verb}`),
 	)
 
-const isAuditAction = (action: string): action is AuditAction => Object.hasOwn(AuditActionLabels, action)
+const isAuditAction = (action: string): action is AuditAction =>
+	Rec.has<string, string>(AuditActionLabels, action)
 const isAuditResourceType = (type: string): type is AuditResourceType =>
-	Object.hasOwn(AuditResourceLabels, type)
+	Rec.has<string, string>(AuditResourceLabels, type)
 
 /** Label for an action string read off a row; null for one this build does not know. */
 export const auditActionLabel = (action: string): string | null =>

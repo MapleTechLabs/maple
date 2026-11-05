@@ -1,7 +1,7 @@
 import { dependencyDrillWhereClause } from "../../../components/services/dependency-drill"
 import type { DependencyKind } from "./derive-panels"
 import type { DependencyBundle } from "./model-tabs"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option, Order } from "effect"
 
 // The rows, host folding and summary of the Dependencies tab.
 
@@ -142,7 +142,11 @@ export const foldHostRows = (rows: ReadonlyArray<DependencyRow>): ReadonlyArray<
 	const matchOf = (row: DependencyRow) =>
 		row.kind !== "http"
 			? undefined
-			: services.find((service) => Str.includes(service.lower)(Str.toLowerCase(row.name)))
+			: Option.getOrUndefined(
+					Arr.findFirst(services, (service) =>
+						Str.includes(service.lower)(Str.toLowerCase(row.name)),
+					),
+				)
 	const hostsFor = (name: string) => Arr.filter(rows, (row) => matchOf(row)?.canonical === name)
 	if (!Arr.some(rows, (row) => matchOf(row) !== undefined)) return rows
 	return Arr.flatMap(rows, (row) => {
@@ -173,10 +177,19 @@ export type DependencySummary = Readonly<{
 	topByLatency: DependencyRow
 }>
 
+const descBy = (f: (row: DependencyRow) => number): Order.Order<DependencyRow> =>
+	Order.flip(Order.mapInput(Order.Number, f))
+
 /** The summary strip's facts: the kind breakdown, the busiest, most failing and slowest targets. */
 export const dependencySummary = (rows: ReadonlyArray<DependencyRow>): DependencySummary | undefined => {
-	const topByCalls = rows.toSorted((a, b) => b.callsPerSec - a.callsPerSec)[0]
-	const topByLatency = rows.toSorted((a, b) => b.p95DurationMs - a.p95DurationMs)[0]
+	const topByCalls = Arr.sort(
+		rows,
+		descBy((row) => row.callsPerSec),
+	)[0]
+	const topByLatency = Arr.sort(
+		rows,
+		descBy((row) => row.p95DurationMs),
+	)[0]
 	if (topByCalls === undefined || topByLatency === undefined) return undefined
 	const breakdown = Arr.join(
 		Arr.flatMap(KIND_ORDER, (kind) => {
@@ -189,8 +202,9 @@ export const dependencySummary = (rows: ReadonlyArray<DependencyRow>): Dependenc
 	return {
 		breakdown,
 		topByCalls,
-		topByErrors: Arr.filter(rows, (row) => row.errorRate > 0).toSorted(
-			(a, b) => b.errorRate - a.errorRate,
+		topByErrors: Arr.sort(
+			Arr.filter(rows, (row) => row.errorRate > 0),
+			descBy((row) => row.errorRate),
 		)[0],
 		topByLatency,
 	}

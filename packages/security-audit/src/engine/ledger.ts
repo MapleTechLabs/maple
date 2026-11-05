@@ -111,34 +111,31 @@ export const admitUnits = (
 	readonly ledger: ReadonlyArray<LedgerUnit>
 	readonly refused: ReadonlyArray<{ readonly coverage_id: string; readonly reason: string }>
 } =>
-	units.reduce<{
-		ledger: ReadonlyArray<LedgerUnit>
-		refused: ReadonlyArray<{ coverage_id: string; reason: string }>
-	}>(
-		(acc, unit) => {
-			if (Arr.some(acc.ledger, (existing) => existing.coverage_id === unit.coverage_id)) {
-				return {
+	Arr.reduce<
+		LedgerUnit,
+		{
+			ledger: ReadonlyArray<LedgerUnit>
+			refused: ReadonlyArray<{ coverage_id: string; reason: string }>
+		}
+	>(units, { ledger: sortLedger(ledger), refused: [] }, (acc, unit) => {
+		if (Arr.some(acc.ledger, (existing) => existing.coverage_id === unit.coverage_id)) {
+			return {
+				...acc,
+				refused: [...acc.refused, { coverage_id: unit.coverage_id, reason: "duplicate coverage_id" }],
+			}
+		}
+		const next = sortLedger([...acc.ledger, unit])
+		const errors = ledgerErrors(next)
+		return errors.length === 0
+			? { ...acc, ledger: next }
+			: {
 					...acc,
 					refused: [
 						...acc.refused,
-						{ coverage_id: unit.coverage_id, reason: "duplicate coverage_id" },
+						{ coverage_id: unit.coverage_id, reason: Arr.join(errors.slice(0, 2), "; ") },
 					],
 				}
-			}
-			const next = sortLedger([...acc.ledger, unit])
-			const errors = ledgerErrors(next)
-			return errors.length === 0
-				? { ...acc, ledger: next }
-				: {
-						...acc,
-						refused: [
-							...acc.refused,
-							{ coverage_id: unit.coverage_id, reason: Arr.join(errors.slice(0, 2), "; ") },
-						],
-					}
-		},
-		{ ledger: sortLedger(ledger), refused: [] },
-	)
+	})
 
 const update = (
 	ledger: Ledger,

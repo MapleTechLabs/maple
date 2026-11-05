@@ -1,6 +1,6 @@
 import type { GridItem, Layout } from "@maple/grid-engine"
 import type { WidgetLayoutSchema } from "@maple/widgets/dashboard"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option, Order } from "effect"
 
 /**
  * The minimum a widget must expose to be placed on the grid.
@@ -64,7 +64,10 @@ export const GRID_TIERS: readonly GridTier[] = [
 ]
 
 export function tierForWidth(width: number): GridTier {
-	return GRID_TIERS.find((tier) => width > tier.minWidth) ?? GRID_TIERS[GRID_TIERS.length - 1]
+	return Option.getOrElse(
+		Arr.findFirst(GRID_TIERS, (tier) => width > tier.minWidth),
+		() => GRID_TIERS[GRID_TIERS.length - 1],
+	)
 }
 
 /** Column count for a container width — used by the template live preview. */
@@ -107,7 +110,13 @@ export function projectLayout(widgets: ReadonlyArray<PlacedWidget>, tier: GridTi
 	if (tier.canonical) return base
 
 	// Reading order: left-to-right within a row, then down.
-	const ordered = base.toSorted((a, b) => a.y - b.y || a.x - b.x)
+	const ordered = Arr.sort(
+		base,
+		Order.combine(
+			Order.mapInput(Order.Number, (item: { readonly x: number; readonly y: number }) => item.y),
+			Order.mapInput(Order.Number, (item: { readonly x: number; readonly y: number }) => item.x),
+		),
+	)
 
 	const projected: GridItem[] = []
 	let row: Array<{ i: string; w: number; h: number }> = []

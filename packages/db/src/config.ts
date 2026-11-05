@@ -20,7 +20,8 @@ const defaultLocalDataDir = () => {
 export const resolveMapleDbConfig = (
 	env: Record<string, string | undefined> = process.env,
 ): MapleDbConfig => {
-	const configured = env.MAPLE_DB_URL?.trim()
+	const raw = env.MAPLE_DB_URL
+	const configured = raw === undefined ? undefined : Str.trim(raw)
 	return {
 		dataDir: configured && configured.length > 0 ? configured : defaultLocalDataDir(),
 	}

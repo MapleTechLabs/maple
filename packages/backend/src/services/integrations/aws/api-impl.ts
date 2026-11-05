@@ -6,7 +6,7 @@
 import * as Credentials from "@distilled.cloud/aws/Credentials"
 import { UnknownAwsError } from "@distilled.cloud/aws/Errors"
 import * as IAM from "@distilled.cloud/aws/iam"
-import { Duration, Effect, Redacted, Schema, Stream, Array as Arr, String as Str } from "effect"
+import { Duration, Effect, Option, Redacted, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { AwsApiError } from "./errors"
 
@@ -93,7 +93,9 @@ const toReadError =
 	(what: string) =>
 	(error: { readonly _tag: string }): AwsApiError => {
 		const code = codeOf(error)
-		const detail = messageOf(error)?.slice(0, 300)
+		const detail = Option.getOrUndefined(
+			Option.map(Option.fromUndefinedOr(messageOf(error)), Str.slice(0, 300)),
+		)
 		const message = detail === undefined || detail === "" ? `${what}: ${code}` : `${what}: ${detail}`
 		if (THROTTLE_CODES.has(code)) return new AwsApiError({ message, kind: "throttled", code })
 		if (SESSION_CODES.has(code)) return new AwsApiError({ message, kind: "upstream", code })

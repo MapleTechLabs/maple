@@ -299,7 +299,7 @@ describe("logs list", () => {
 			{ search: { severities: ["ERROR"], timePreset: "1h" } },
 			context,
 		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveLogsWindow", "Refresh"],
 		])
 	})

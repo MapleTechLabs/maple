@@ -1,4 +1,4 @@
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 /**
  * Fixtures for the line, area and stacked-bar arms of `/lab/charts`.
  *
@@ -148,8 +148,9 @@ export function timeseriesAxisContext(rows: readonly TimeseriesSpikeRow[]): {
 export function splitAtFirstPartial<T extends { partial: boolean }>(
 	rows: readonly T[],
 ): { solid: readonly T[]; dashed: readonly T[] } {
-	const first = rows.findIndex((row) => row.partial)
-	if (first === -1) return { solid: rows, dashed: [] }
+	const found = Arr.findFirstIndex(rows, (row) => row.partial)
+	if (Option.isNone(found)) return { solid: rows, dashed: [] }
+	const first = found.value
 	// Nothing complete to bridge from: the whole series is in flight.
 	if (first === 0) return { solid: [], dashed: rows }
 	return { solid: rows.slice(0, first), dashed: rows.slice(first - 1) }

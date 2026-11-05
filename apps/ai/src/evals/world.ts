@@ -14,7 +14,7 @@ import { executeSql } from "@maple/backend/platform/test-pglite"
 import type { EvalRuntime } from "../mcp/__evals__/eval-runtime"
 import type { FixtureRule } from "../mcp/__evals__/fake-warehouse"
 import { FIXTURES } from "../mcp/__evals__/utils"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 interface WorldService {
 	readonly name: string
@@ -246,10 +246,11 @@ export const worldRules = (): FixtureRule[] => [
 		match: (sql) => Str.includes("FROM error_events")(sql) && Str.includes("AS noExceptionCount")(sql),
 		rows: (sql) => {
 			const fingerprint = /FingerprintHash = toUInt64\('(\d+)'\)/.exec(sql)?.[1]
-			const error = ERRORS.find((candidate) => candidate.fingerprintHash === fingerprint)
 			return [
-				error === undefined
-					? {
+				Option.match(
+					Arr.findFirst(ERRORS, (candidate) => candidate.fingerprintHash === fingerprint),
+					{
+						onNone: () => ({
 							occurrences: 0,
 							firstSeen: "1970-01-01 00:00:00",
 							lastSeen: "1970-01-01 00:00:00",
@@ -260,8 +261,8 @@ export const worldRules = (): FixtureRule[] => [
 							serviceCount: 0,
 							services: [],
 							noExceptionCount: 0,
-						}
-					: {
+						}),
+						onSome: (error) => ({
 							occurrences: error.count,
 							firstSeen: chTime(60 * 24 * 3),
 							lastSeen: chTime(2),
@@ -272,7 +273,9 @@ export const worldRules = (): FixtureRule[] => [
 							serviceCount: error.serviceNames.length,
 							services: error.serviceNames,
 							noExceptionCount: 0,
-						},
+						}),
+					},
+				),
 			]
 		},
 	},

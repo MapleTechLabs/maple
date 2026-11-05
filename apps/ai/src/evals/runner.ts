@@ -86,7 +86,7 @@ export interface RunSummary {
 const APP_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..")
 
 const git = (args: ReadonlyArray<string>): string =>
-	spawnSync("git", args, { cwd: APP_ROOT, encoding: "utf8" }).stdout?.trim() ?? ""
+	Str.trim(spawnSync("git", args, { cwd: APP_ROOT, encoding: "utf8" }).stdout ?? "")
 
 const slug = (value: string) => Str.replace(/[^a-zA-Z0-9.-]+/g, "_")(value)
 
@@ -136,9 +136,10 @@ const summarize = <T extends EvalTask>(
 		),
 		(tally) => ({
 			...tally,
-			example:
-				records.find((record) => record.task === tally.task && !record.grade.pass)?.grade
-					.explanation ?? "",
+			example: Option.match(
+				Arr.findFirst(records, (record) => record.task === tally.task && !record.grade.pass),
+				{ onNone: () => "", onSome: (record) => record.grade.explanation },
+			),
 		}),
 	)
 	return {

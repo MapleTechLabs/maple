@@ -13,7 +13,7 @@ import {
 	traceIdHex,
 } from "./encode"
 import { decodeMetricsRequest, decodeTraceRequest, encodeMetricsRequest, encodeTraceRequest } from "./proto"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 
 // Field-name set per datasource, parsed from the generated inputSchema string.
 // "start_time DateTime64(9), trace_id String, …" → { start_time, trace_id, … }
@@ -287,7 +287,10 @@ describe("value-level spot checks", () => {
 			],
 		})
 		const rows = Arr.map(
-			Str.split("\n")(batches.find((batch) => batch.datasource === "metrics_histogram")!.ndjson),
+			Str.split("\n")(
+				Option.getOrThrow(Arr.findFirst(batches, (batch) => batch.datasource === "metrics_histogram"))
+					.ndjson,
+			),
 			(line) => JSON.parse(line),
 		)
 		expect(Arr.map(rows, (row) => row.start_timestamp)).toEqual([

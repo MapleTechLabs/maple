@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { SpanId } from "@maple/domain"
 import type { SpanNode } from "@maple/query-engine/observability"
-import { Schema } from "effect"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 import {
 	buildTraceOverview,
 	renderTraceOverview,
@@ -85,11 +85,12 @@ describe("renderTraceOverview", () => {
 		// Dropped children are summarised, not dumped.
 		expect(text).toMatch(/… \+\d+ more spans/)
 		// The rollup covers every span, not just the rendered ones.
-		expect(overview.rollup?.find((r) => r.spanName === "batch")).toMatchObject({
+		const rollup = overview.rollup ?? []
+		expect(Option.getOrUndefined(Arr.findFirst(rollup, (r) => r.spanName === "batch"))).toMatchObject({
 			count: 20,
 			totalDurationMs: 20,
 		})
-		expect(overview.rollup?.reduce((n, r) => n + r.count, 0)).toBe(totalSpanCount)
+		expect(Arr.reduce(rollup, 0, (n, r) => n + r.count)).toBe(totalSpanCount)
 		expect(text).toContain(`Span names across all ${totalSpanCount} spans`)
 	})
 
@@ -106,7 +107,7 @@ describe("renderTraceOverview", () => {
 		]
 		const { text } = render({ ...base, spanCount: 2, spans, budget: 100 })
 		expect(text).toContain('span_name="http.server GET", duration not recorded')
-		expect(text.match(/service\.version=1\.2\.3/g)).toHaveLength(1)
+		expect(Arr.fromIterable(Str.matchAll(/service\.version=1\.2\.3/g)(text))).toHaveLength(1)
 		expect(text).toContain("`inspect_span` with a `span=` id lists every attribute")
 	})
 

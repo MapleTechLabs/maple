@@ -1,4 +1,4 @@
-import { Effect, Result, Schema, Stream, String as Str } from "effect"
+import { Effect, Option, Result, Schema, Stream, String as Str } from "effect"
 import { ClickHouseLimitError, ClickHouseProtocolError, ClickHouseServerError, serverError } from "./errors"
 
 export interface Limits {
@@ -135,7 +135,13 @@ class Decoder {
 			// otherwise the ensuing transport failure would hide the server error.
 			if (
 				Str.endsWith("\r\n__exception__\r\n")(this.invalid) &&
-				this.invalid.indexOf("__exception__\r\n") !== this.invalid.lastIndexOf("__exception__\r\n")
+				Option.exists(
+					Option.all([
+						Str.indexOf("__exception__\r\n")(this.invalid),
+						Str.lastIndexOf("__exception__\r\n")(this.invalid),
+					]),
+					([first, last]) => first !== last,
+				)
 			)
 				return yield* this.finish()
 			if (
@@ -155,11 +161,11 @@ class Decoder {
 			if (this.length > 0) yield* this.line(yield* this.takeLine(), out, false)
 			if (this.invalidBytes === 0) return out
 			const text = this.invalid
-			const marker = text.indexOf("__exception__\r\n")
-			if (marker >= 0) {
+			const marker = Str.indexOf("__exception__\r\n")(text)
+			if (Option.isSome(marker)) {
 				// A server exception may follow an unfinished JSON row. Validate the frame,
 				// its echoed header tag, and its UTF-8 byte length before extracting it.
-				const frame = Str.slice(marker)(text)
+				const frame = Str.slice(marker.value)(text)
 				const lines = Str.split("\r\n")(frame)
 				const tag = lines[1]
 				if (!tag || !/^[A-Za-z0-9_-]{1,128}$/.test(tag) || tag !== this.info.exceptionTag)
@@ -167,7 +173,10 @@ class Decoder {
 				if (!Str.endsWith("\r\n__exception__\r\n")(frame))
 					return yield* this.protocol("truncated exception frame")
 				const footerEnd = frame.length - "\r\n__exception__\r\n".length
-				const footerStart = frame.lastIndexOf("\n", footerEnd - 1) + 1
+				const footerStart = Option.match(Str.lastIndexOf("\n")(Str.slice(0, footerEnd)(frame)), {
+					onNone: () => 0,
+					onSome: (newline) => newline + 1,
+				})
 				const footer = Str.slice(footerStart, footerEnd)(frame)
 				const match = /^(\d+) ([A-Za-z0-9_-]+)$/.exec(footer)
 				if (!match || match[2] !== tag) return yield* this.protocol("invalid exception footer")

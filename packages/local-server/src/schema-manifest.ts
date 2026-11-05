@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import { encodeJson } from "./json"
 import { normalizedSchemaSql } from "./store-version"
-import { Array as Arr, String as Str } from "effect"
+import { Option, pipe, Array as Arr, String as Str } from "effect"
 
 export type LocalSchemaObjectKind = "table" | "materialized_view" | "view"
 
@@ -95,8 +95,8 @@ const topLevelKeyword = (declaration: string, keywords: ReadonlyArray<string>): 
 		if (char === ")") depth -= 1
 		if (depth !== 0 || !/\s/.test(char)) continue
 		const rest = Str.trimStart(Str.slice(i)(declaration))
-		const hit = keywords.find((keyword) => new RegExp(`^${keyword}\\b`, "i").test(rest))
-		if (hit !== undefined) return i + (Str.slice(i)(declaration).length - rest.length)
+		const hit = Arr.findFirst(keywords, (keyword) => new RegExp(`^${keyword}\\b`, "i").test(rest))
+		if (Option.isSome(hit)) return i + (Str.slice(i)(declaration).length - rest.length)
 	}
 	return -1
 }
@@ -104,10 +104,10 @@ const topLevelKeyword = (declaration: string, keywords: ReadonlyArray<string>): 
 const parseColumn = (line: string): LocalSchemaColumn | undefined => {
 	const trimmed = Str.trim(line)
 	if (/^INDEX\b/i.test(trimmed)) return undefined
-	const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\s+(.+)$/)
-	if (!match) return undefined
-	const name = match[1]!
-	const declaration = stripTrailingComma(match[2]!)
+	const found = Str.match(/^([A-Za-z_][A-Za-z0-9_]*)\s+(.+)$/)(trimmed)
+	if (Option.isNone(found)) return undefined
+	const name = found.value[1]!
+	const declaration = stripTrailingComma(found.value[2]!)
 	const stop = topLevelKeyword(declaration, ["DEFAULT", "MATERIALIZED", "ALIAS", "CODEC", "COMMENT"])
 	const type = normalize(stop === -1 ? declaration : Str.slice(0, stop)(declaration))
 	if (type.length === 0) return undefined
@@ -119,7 +119,7 @@ const parseColumn = (line: string): LocalSchemaColumn | undefined => {
 		(offset) => offset >= 0,
 	).sort((a, b) => a - b)[0]!
 	const defaultClause = Str.trim(Str.slice(0, defaultEnd)(attributes))
-	const defaultMatch = defaultClause.match(/^(DEFAULT|MATERIALIZED|ALIAS)\s+(.+)$/i)
+	const defaultMatch = Str.match(/^(DEFAULT|MATERIALIZED|ALIAS)\s+(.+)$/i)(defaultClause)
 	const codecClause =
 		codecOffset === -1
 			? undefined
@@ -127,10 +127,10 @@ const parseColumn = (line: string): LocalSchemaColumn | undefined => {
 	return {
 		name,
 		type,
-		...(!(defaultMatch === null)
+		...(Option.isSome(defaultMatch)
 			? {
-					defaultKind: Str.toUpperCase(defaultMatch[1]!),
-					defaultExpression: normalize(defaultMatch[2]!),
+					defaultKind: Str.toUpperCase(defaultMatch.value[1]!),
+					defaultExpression: normalize(defaultMatch.value[2]!),
 				}
 			: undefined),
 		...(!(codecClause === undefined) ? { codec: normalize(codecClause) } : undefined),
@@ -178,35 +178,51 @@ const splitStatements = (sql: string): ReadonlyArray<string> => {
 	return statements
 }
 
+const firstGroup = (value: string, pattern: RegExp): string | undefined =>
+	Option.getOrUndefined(Str.match(pattern)(value))?.[1]
+
 const parseStatement = (raw: string): LocalSchemaObject | undefined => {
 	const statement = Str.trim(Str.replace(/--[^\n]*/g, "")(raw))
-	const table = statement.match(/^CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+([A-Za-z_][A-Za-z0-9_]*)/i)
-	const materialized = statement.match(
+	const table = Str.match(/^CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+([A-Za-z_][A-Za-z0-9_]*)/i)(statement)
+	const materialized = Str.match(
 		/^CREATE\s+MATERIALIZED\s+VIEW\s+IF\s+NOT\s+EXISTS\s+([A-Za-z_][A-Za-z0-9_]*)/i,
+	)(statement)
+	const view = Str.match(/^CREATE\s+VIEW\s+IF\s+NOT\s+EXISTS\s+([A-Za-z_][A-Za-z0-9_]*)/i)(statement)
+	const found = pipe(
+		table,
+		Option.orElse(() => materialized),
+		Option.orElse(() => view),
 	)
-	const view = statement.match(/^CREATE\s+VIEW\s+IF\s+NOT\s+EXISTS\s+([A-Za-z_][A-Za-z0-9_]*)/i)
-	const match = table ?? materialized ?? view
-	if (!match) return undefined
-	const kind: LocalSchemaObjectKind = table ? "table" : materialized ? "materialized_view" : "view"
+	if (Option.isNone(found)) return undefined
+	const match = found.value
+	const kind: LocalSchemaObjectKind = Option.isSome(table)
+		? "table"
+		: Option.isSome(materialized)
+			? "materialized_view"
+			: "view"
 	const name = match[1]!
-	const open = statement.indexOf("(", match[0].length)
+	const open = Option.getOrElse(
+		Option.map(Str.indexOf("(")(Str.slice(match[0].length)(statement)), (at) => at + match[0].length),
+		() => -1,
+	)
 	const close = open === -1 ? -1 : matchingParen(statement, open)
 	const columns =
-		table && open !== -1 && close !== -1
+		Option.isSome(table) && open !== -1 && close !== -1
 			? Arr.filter(
 					Arr.map(Str.split("\n")(Str.slice(open + 1, close)(statement)), parseColumn),
 					(column): column is LocalSchemaColumn => column !== undefined,
 				)
 			: []
 	const clause = close === -1 ? statement : Str.slice(close + 1)(statement)
-	const engine = clause.match(/\bENGINE\s*=\s*([A-Za-z_][A-Za-z0-9_]*)/i)?.[1]
-	const partitionBy = clause.match(
+	const engine = firstGroup(clause, /\bENGINE\s*=\s*([A-Za-z_][A-Za-z0-9_]*)/i)
+	const partitionBy = firstGroup(
+		clause,
 		/\bPARTITION\s+BY\s+(.+?)(?=\bORDER\s+BY\b|\bPRIMARY\s+KEY\b|\bTTL\b|\bSETTINGS\b|$)/is,
-	)?.[1]
-	const orderBy = clause.match(/\bORDER\s+BY\s+(.+?)(?=\bPRIMARY\s+KEY\b|\bTTL\b|\bSETTINGS\b|$)/is)?.[1]
-	const ttl = clause.match(/\bTTL\s+(.+?)(?=\bSETTINGS\b|$)/is)?.[1]
+	)
+	const orderBy = firstGroup(clause, /\bORDER\s+BY\s+(.+?)(?=\bPRIMARY\s+KEY\b|\bTTL\b|\bSETTINGS\b|$)/is)
+	const ttl = firstGroup(clause, /\bTTL\s+(.+?)(?=\bSETTINGS\b|$)/is)
 	const indexes = Arr.map(
-		[...statement.matchAll(/^\s*INDEX\s+([A-Za-z_][A-Za-z0-9_]*)\b/gim)],
+		Arr.fromIterable(Str.matchAll(/^\s*INDEX\s+([A-Za-z_][A-Za-z0-9_]*)\b/gim)(statement)),
 		(match) => match[1]!,
 	)
 	return {
@@ -252,10 +268,14 @@ export const withRawTelemetryRetentionFloor = (
 		...manifest,
 		objects: Arr.map(manifest.objects, (object) => {
 			if (!floored.has(object.name) || object.ttl === undefined) return object
-			const raised = object.ttl.replace(/\bINTERVAL\s+(\d+)\s+DAY\b/i, (match, value: string) =>
-				Number(value) >= days ? match : `INTERVAL ${days} DAY`,
-			)
-			return raised === object.ttl ? object : { ...object, ttl: raised }
+			const ttl = object.ttl
+			const interval = /\bINTERVAL\s+(\d+)\s+DAY\b/i
+			const raised = Option.match(Str.match(interval)(ttl), {
+				onNone: () => ttl,
+				onSome: (match) =>
+					Number(match[1]) >= days ? ttl : Str.replace(interval, `INTERVAL ${days} DAY`)(ttl),
+			})
+			return raised === ttl ? object : { ...object, ttl: raised }
 		}),
 	}
 }
@@ -319,8 +339,9 @@ const compareExpression = (
  * qualification and in the injected column list, so only the query itself can
  * be compared across the two representations. */
 export const viewBody = (definition: string): string | undefined => {
-	const match = definition.match(/\bAS\s+(?=WITH\b|SELECT\b|\()/i)
-	return match?.index === undefined ? undefined : Str.slice(match.index + match[0].length)(definition)
+	const found = Str.match(/\bAS\s+(?=WITH\b|SELECT\b|\()/i)(definition)
+	if (Option.isNone(found) || found.value.index === undefined) return undefined
+	return Str.slice(found.value.index + found.value[0].length)(definition)
 }
 
 /** Compare a bundled structural manifest with an inspected chDB schema. This
@@ -362,8 +383,9 @@ export const comparePhysicalSchema = (
 				}
 			}
 			for (const column of desired.columns) {
-				const actual = found.columns.find((candidate) => candidate.name === column.name)
-				if (actual === undefined) continue
+				const match = Arr.findFirst(found.columns, (candidate) => candidate.name === column.name)
+				if (Option.isNone(match)) continue
+				const actual = match.value
 				if (!compareColumnAttribute(actual.defaultKind, column.defaultKind)) {
 					mismatches.push({
 						object: desired.name,
@@ -463,8 +485,10 @@ export const comparePhysicalSchema = (
 /** Retention in days from a TTL clause, e.g. `toDate(Timestamp) + INTERVAL 30 DAY`
  * or the `toIntervalDay(30)` form ClickHouse renders back. */
 export const ttlDaysFromDefinition = (definition: string): number | null => {
-	const match =
-		definition.match(/\bTTL\b[\s\S]*?\bINTERVAL\s+(\d+)\s+DAY\b/i) ??
-		definition.match(/\bTTL\b[\s\S]*?\btoIntervalDay\((\d+)\)/i)
-	return match?.[1] === undefined ? null : Number(match[1])
+	return pipe(
+		Str.match(/\bTTL\b[\s\S]*?\bINTERVAL\s+(\d+)\s+DAY\b/i)(definition),
+		Option.orElse(() => Str.match(/\bTTL\b[\s\S]*?\btoIntervalDay\((\d+)\)/i)(definition)),
+		Option.flatMap((match) => Option.fromUndefinedOr(match[1])),
+		Option.match({ onNone: () => null, onSome: (days) => Number(days) }),
+	)
 }

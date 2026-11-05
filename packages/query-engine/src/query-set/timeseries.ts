@@ -5,7 +5,7 @@
  * execute one `QuerySpec`.
  */
 
-import { Effect } from "effect"
+import { Effect, Array as Arr, Option, Predicate } from "effect"
 import type { QueryComparisonMode, QuerySet } from "@maple/query-model"
 import { parseWarehouseDateTime, formatWarehouseDateTime } from "../datetime"
 import type { FormulaDraft, QueryRunResult } from "../formula-results"
@@ -71,7 +71,7 @@ export const runTimeseriesQuerySet = Effect.fnUntraced(function* <E>(
 ) {
 	const { querySet } = input
 
-	const formulas: FormulaDraft[] = (querySet.formulas ?? []).map((formula) => ({
+	const formulas: FormulaDraft[] = Arr.map(querySet.formulas ?? [], (formula) => ({
 		id: formula.id,
 		name: formula.name,
 		expression: formula.expression,
@@ -89,7 +89,7 @@ export const runTimeseriesQuerySet = Effect.fnUntraced(function* <E>(
 
 	// `hidden` queries still run — a formula that references one needs its
 	// numbers — so only `enabled` filters here.
-	const enabledQueries = querySet.queries.filter((query) => query.enabled !== false)
+	const enabledQueries = Arr.filter(querySet.queries, (query) => query.enabled !== false)
 	if (enabledQueries.length === 0) {
 		return yield* new QuerySetInputError({
 			operation: OPERATION,
@@ -109,7 +109,7 @@ export const runTimeseriesQuerySet = Effect.fnUntraced(function* <E>(
 	})
 
 	if (countSuccessfulQuerySeries(currentWindow.queryResults) === 0) {
-		const details = currentWindow.queryResults.flatMap((result) =>
+		const details = Arr.flatMap(currentWindow.queryResults, (result) =>
 			typeof result.error === "string" && result.error.length > 0 ? [result.error] : [],
 		)
 		return yield* new QuerySetNoDataError({
@@ -120,8 +120,13 @@ export const runTimeseriesQuerySet = Effect.fnUntraced(function* <E>(
 
 	const allResults = currentWindow.allResults
 
-	if (!allResults.some((result) => result.status === "success" && hasAnySeriesData(result.data))) {
-		const firstError = allResults.find((result) => result.error)?.error
+	if (!Arr.some(allResults, (result) => result.status === "success" && hasAnySeriesData(result.data))) {
+		const firstError = Option.getOrUndefined(
+			Option.map(
+				Arr.findFirst(allResults, (result) => Predicate.isTruthy(result.error)),
+				(result) => result.error,
+			),
+		)
 		return yield* new QuerySetNoDataError({
 			message: firstError ?? "No successful query results",
 			details: firstError === undefined || firstError === null ? [] : [firstError],
@@ -131,8 +136,16 @@ export const runTimeseriesQuerySet = Effect.fnUntraced(function* <E>(
 	// Data came back, but nothing plottable did — say why rather than drawing an empty chart the
 	// reader would blame on the time range. On a ratio widget the plotted series is the formula,
 	// so its own failure (an unknown reference, no overlapping buckets) is the useful message.
-	if (!allResults.some((result) => isPlotted(result) && hasAnySeriesData(result.data))) {
-		const plottedError = allResults.find((result) => isPlotted(result) && result.error)?.error
+	if (!Arr.some(allResults, (result) => isPlotted(result) && hasAnySeriesData(result.data))) {
+		const plottedError = Option.getOrUndefined(
+			Option.map(
+				Arr.findFirst(
+					allResults,
+					(result: QueryRunResult) => isPlotted(result) && Predicate.isTruthy(result.error),
+				),
+				(result) => result.error,
+			),
+		)
 		return yield* new QuerySetInputError({
 			operation: OPERATION,
 			message: plottedError ?? "Every query and formula with data is hidden — nothing to plot",
@@ -141,7 +154,7 @@ export const runTimeseriesQuerySet = Effect.fnUntraced(function* <E>(
 
 	const displayNameById = toDisplayNameById([
 		...enabledQueries,
-		...formulas.map((formula) => ({
+		...Arr.map(formulas, (formula) => ({
 			id: formula.id,
 			name: formula.name,
 			legend: formula.legend,
@@ -152,7 +165,7 @@ export const runTimeseriesQuerySet = Effect.fnUntraced(function* <E>(
 	// claim its names before the previous one, or ` (prev)` series would take the
 	// unsuffixed spellings.
 	const usedSeriesNames = new Set<string>()
-	const mergedCurrent = mergeQueryRunResults(allResults.filter(isPlotted), displayNameById, {
+	const mergedCurrent = mergeQueryRunResults(Arr.filter(allResults, isPlotted), displayNameById, {
 		usedSeriesNames,
 	})
 	const mergedSets = [mergedCurrent]
@@ -185,7 +198,10 @@ export const runTimeseriesQuerySet = Effect.fnUntraced(function* <E>(
 		})
 		previousDiagnostics = previousWindow.diagnostics
 
-		const shiftedPreviousResults = shiftRunResults(previousWindow.allResults.filter(isPlotted), shiftMs)
+		const shiftedPreviousResults = shiftRunResults(
+			Arr.filter(previousWindow.allResults, isPlotted),
+			shiftMs,
+		)
 		mergedPrevious = mergeQueryRunResults(shiftedPreviousResults, displayNameById, {
 			seriesSuffix: " (prev)",
 			usedSeriesNames,

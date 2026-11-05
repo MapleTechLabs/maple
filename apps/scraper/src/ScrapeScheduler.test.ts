@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Exit, Layer, Redacted, Schema, Array as Arr, String as Str } from "effect"
+import { Duration, Effect, Exit, Layer, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { InternalScrapeTarget, type ScrapeResultReport } from "@maple/domain/http"
 import { ApiClient, ApiRequestError, type ApiClientApi } from "./ApiClient"
@@ -373,7 +373,9 @@ describe("ScrapeScheduler", () => {
 	describe("fair share", () => {
 		// More slow targets in one org than the whole pool has permits.
 		const busyOrgTargets = Arr.makeBy(12, (n) =>
-			mkTarget(`aaaaaaaa-aaaa-4aaa-8aaa-${String(n).padStart(12, "0")}`, 10, { orgId: "org_busy" }),
+			mkTarget(`aaaaaaaa-aaaa-4aaa-8aaa-${Str.padStart(12, "0")(String(n))}`, 10, {
+				orgId: "org_busy",
+			}),
 		)
 		const quietTarget = mkTarget(TARGET_B, 10, { orgId: "org_quiet" })
 
@@ -421,16 +423,18 @@ describe("ScrapeScheduler", () => {
 				// Both land within the first two report intervals.
 				yield* TestClock.adjust(Duration.seconds(12))
 
-				const ok = harness.reported.find((r) => r.targetId === TARGET_A)
-				assert.strictEqual(ok?.error, null)
-				assert.strictEqual(ok?.durationMs, 2000)
-				assert.strictEqual(ok?.samplesScraped, 3)
-				assert.strictEqual(ok?.samplesPostMetricRelabeling, 2)
+				const ok = Option.getOrThrow(Arr.findFirst(harness.reported, (r) => r.targetId === TARGET_A))
+				assert.strictEqual(ok.error, null)
+				assert.strictEqual(ok.durationMs, 2000)
+				assert.strictEqual(ok.samplesScraped, 3)
+				assert.strictEqual(ok.samplesPostMetricRelabeling, 2)
 
-				const failed = harness.reported.find((r) => r.targetId === TARGET_B)
-				assert.strictEqual(failed?.error, 'target "target-bbbb" (example.com) failed: target_error')
-				assert.strictEqual(failed?.durationMs, 2000)
-				assert.isUndefined(failed?.samplesScraped)
+				const failed = Option.getOrThrow(
+					Arr.findFirst(harness.reported, (r) => r.targetId === TARGET_B),
+				)
+				assert.strictEqual(failed.error, 'target "target-bbbb" (example.com) failed: target_error')
+				assert.strictEqual(failed.durationMs, 2000)
+				assert.isUndefined(failed.samplesScraped)
 			}),
 		)
 	})

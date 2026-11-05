@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { Effect, String as Str } from "effect"
+import { Effect, Option, Array as Arr, String as Str } from "effect"
 import { afterEach, expect } from "vitest"
 import { make } from "./flushable.js"
 import { clearIdentity, identify } from "./user.js"
@@ -38,7 +38,7 @@ const baseConfig = {
 }
 
 const firstSpanAttrs = (calls: Array<FetchCall>) => {
-	const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))!
+	const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
 	const span = (
 		traceCall.body as {
 			resourceSpans: Array<{
@@ -70,7 +70,7 @@ describe("withSessionLink — user.id span stamping", () => {
 		await telemetry.flush()
 
 		const attrs = firstSpanAttrs(calls)
-		expect(attrs.find((a) => a.key === "user.id")).toBeUndefined()
+		expect(Arr.some(attrs, (a) => a.key === "user.id")).toBe(false)
 	})
 
 	it("stamps user.id on spans after identify()", async () => {
@@ -85,7 +85,9 @@ describe("withSessionLink — user.id span stamping", () => {
 		await telemetry.flush()
 
 		const attrs = firstSpanAttrs(calls)
-		expect(attrs.find((a) => a.key === "user.id")?.value.stringValue).toBe("user_abc123")
+		expect(Option.getOrThrow(Arr.findFirst(attrs, (a) => a.key === "user.id")).value.stringValue).toBe(
+			"user_abc123",
+		)
 	})
 
 	// Runs after the identify() test above (module state persists within the
@@ -102,7 +104,7 @@ describe("withSessionLink — user.id span stamping", () => {
 		await telemetry.flush()
 
 		const attrs = firstSpanAttrs(calls)
-		expect(attrs.find((a) => a.key === "user.id")).toBeUndefined()
+		expect(Arr.some(attrs, (a) => a.key === "user.id")).toBe(false)
 	})
 
 	it("stops stamping user.id after identify(null)", async () => {
@@ -118,6 +120,6 @@ describe("withSessionLink — user.id span stamping", () => {
 		await telemetry.flush()
 
 		const attrs = firstSpanAttrs(calls)
-		expect(attrs.find((a) => a.key === "user.id")).toBeUndefined()
+		expect(Arr.some(attrs, (a) => a.key === "user.id")).toBe(false)
 	})
 })

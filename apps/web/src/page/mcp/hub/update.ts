@@ -1,6 +1,6 @@
 import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -103,7 +103,7 @@ const keyed = <A, E>(
 
 /** A blank box is no filter; the API takes at most 200 characters. */
 const blankToUndefined = (value: string | undefined) => {
-	const trimmed = value?.trim().slice(0, 200) ?? ""
+	const trimmed = value === undefined ? "" : Str.slice(0, 200)(Str.trim(value))
 	return trimmed === "" ? undefined : trimmed
 }
 
@@ -201,10 +201,15 @@ const WIDER_PRESETS = [
  * longer than the window. A preset's window is snapped, so its length alone can fall short of it.
  */
 export const widerPreset = (window: TimeWindow | null, preset: string | undefined): string | undefined => {
-	const shown = WIDER_PRESETS.findIndex(([name]) => name === preset)
-	if (shown !== -1) return WIDER_PRESETS[shown + 1]?.[0]
+	const shown = Arr.findFirstIndex(WIDER_PRESETS, ([name]) => name === preset)
+	if (Option.isSome(shown)) return WIDER_PRESETS[shown.value + 1]?.[0]
 	const length = window === null ? 0 : toEpochMs(window.endTime) - toEpochMs(window.startTime)
-	return WIDER_PRESETS.find(([, ms]) => ms > length * 1.01)?.[0]
+	return Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(WIDER_PRESETS, ([, ms]) => ms > length * 1.01),
+			([name]) => name,
+		),
+	)
 }
 
 /** The preset the page shows, or none for a custom range. */
@@ -337,7 +342,10 @@ const selectStep = (model: Model, facet: Facet, message: Select.Message): Return
 	const search: Search =
 		facet === "client"
 			? { ...model.search, client: value }
-			: { ...model.search, kind: MCP_CLIENT_KINDS.find((kind) => kind === value) }
+			: {
+					...model.search,
+					kind: Option.getOrUndefined(Arr.findFirst(MCP_CLIENT_KINDS, (kind) => kind === value)),
+				}
 	return { ...navigate(updated, search), commands }
 }
 
@@ -458,16 +466,22 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(m) => Message.GotPercentileMessage({ message: m }),
 				(current, next) => ({ ...current, percentileToggle: next }),
 				(value) => {
-					const percentile = (["p50", "p90", "p95"] as const).find(
-						(candidate) => candidate === value,
-					)
-					return percentile === undefined || percentile === (model.search.percentile ?? "p90")
-						? undefined
-						: {
+					return Option.getOrUndefined(
+						Option.map(
+							Option.filter(
+								Arr.findFirst(
+									["p50", "p90", "p95"] as const,
+									(candidate) => candidate === value,
+								),
+								(percentile) => percentile !== (model.search.percentile ?? "p90"),
+							),
+							(percentile) => ({
 								...model.search,
 								percentile: percentile === "p90" ? undefined : percentile,
 								metric: model.view._tag === "Server" ? "duration" : model.search.metric,
-							}
+							}),
+						),
+					)
 				},
 			),
 		GotClientToggleMessage: ({ message: inner }) =>

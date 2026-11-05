@@ -16,7 +16,7 @@ import {
 	type McpToolRequest,
 } from "@maple/domain/http"
 import { MCP_CLIENT_KINDS, UNKNOWN_MCP_CLIENT } from "@maple/domain/mcp-clients"
-import { Array as Arr, DateTime, Effect, Option } from "effect"
+import { Array as Arr, DateTime, Effect, Option, Order, pipe, Record as Rec, String as Str } from "effect"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 import { timestampMs } from "@maple/backend/platform/time"
@@ -59,7 +59,7 @@ const bucketsOf = (window: Window): ReadonlyArray<number> => {
 }
 
 const sumBy = <A>(rows: ReadonlyArray<A>, read: (row: A) => number) =>
-	rows.reduce((total, row) => total + read(row), 0)
+	Arr.reduce(rows, 0, (total, row) => total + read(row))
 
 type MergedRow = Readonly<{
 	bucket: string
@@ -75,8 +75,8 @@ const mergedSeries = (
 	buckets: ReadonlyArray<number>,
 	rows: ReadonlyArray<MergedRow>,
 ): ReadonlyArray<McpSeriesPoint> => {
-	const byBucket = new Map(rows.map((row) => [timestampMs(row.bucket), row]))
-	return buckets.map((bucket) => {
+	const byBucket = new Map(Arr.map(rows, (row) => [timestampMs(row.bucket), row]))
+	return Arr.map(buckets, (bucket) => {
 		const row = byBucket.get(bucket)
 		return {
 			bucket,
@@ -95,9 +95,9 @@ const splitSeries = (
 	buckets: ReadonlyArray<number>,
 	rows: ReadonlyArray<Readonly<{ bucket: string; key: string; calls: number; errors: number }>>,
 ): ReadonlyArray<McpSeriesPoint> =>
-	Object.entries(Arr.groupBy(rows, (row) => row.key)).flatMap(([seriesKey, keyed]) => {
-		const byBucket = new Map(keyed.map((row) => [timestampMs(row.bucket), row]))
-		return buckets.map((bucket) => ({
+	Arr.flatMap(Rec.toEntries(Arr.groupBy(rows, (row) => row.key)), ([seriesKey, keyed]) => {
+		const byBucket = new Map(Arr.map(keyed, (row) => [timestampMs(row.bucket), row]))
+		return Arr.map(buckets, (bucket) => ({
 			bucket,
 			seriesKey,
 			calls: byBucket.get(bucket)?.calls ?? 0,
@@ -118,7 +118,11 @@ type ClientReach = Readonly<{
 	lastSeen: DateTime.Utc
 }>
 
-const kindOf = (value: string) => MCP_CLIENT_KINDS.find((kind) => kind === value) ?? "unknown"
+const kindOf = (value: string) =>
+	Option.getOrElse(
+		Arr.findFirst(MCP_CLIENT_KINDS, (kind) => kind === value),
+		(): "unknown" => "unknown",
+	)
 
 /**
  * The reach rows the overview may list as connect-only: under the client and kind selection, and
@@ -130,7 +134,8 @@ export const quietClientsFor = (
 ): ReadonlyArray<ClientReach> =>
 	selection.search !== undefined || selection.failingOnly === true
 		? []
-		: reach.filter(
+		: Arr.filter(
+				reach,
 				(row) =>
 					(selection.client === undefined || row.client === selection.client) &&
 					(selection.kind === undefined || row.kind === selection.kind),
@@ -146,10 +151,10 @@ export const clientItems = (
 	reach: ReadonlyArray<ClientReach> = [],
 	quiet: ReadonlyArray<ClientReach> = [],
 ): ReadonlyArray<McpClientItem> => {
-	const reachOf = new Map(reach.map((row) => [row.client, row]))
-	const callers = new Set(rows.map((row) => row.client))
+	const reachOf = new Map(Arr.map(reach, (row) => [row.client, row]))
+	const callers = new Set(Arr.map(rows, (row) => row.client))
 	return [
-		...rows.map((row) => {
+		...Arr.map(rows, (row) => {
 			const seen = reachOf.get(row.client)
 			return {
 				name: row.client,
@@ -161,9 +166,9 @@ export const clientItems = (
 				lastSeenMs: seen === undefined ? 0 : toMs(seen.lastSeen),
 			}
 		}),
-		...quiet
-			.filter((row) => row.calls === 0 && row.connects > 0 && !callers.has(row.client))
-			.map((row) => ({
+		...Arr.map(
+			Arr.filter(quiet, (row) => row.calls === 0 && row.connects > 0 && !callers.has(row.client)),
+			(row) => ({
 				name: row.client,
 				kind: kindOf(row.kind),
 				calls: 0,
@@ -171,7 +176,8 @@ export const clientItems = (
 				connects: row.connects,
 				sources: row.sources,
 				lastSeenMs: toMs(row.lastSeen),
-			})),
+			}),
+		),
 	]
 }
 
@@ -187,7 +193,10 @@ export const readMcpServers = Effect.fn("McpReads.servers")(function* (
 		profile: "list",
 		context: "mcpServices",
 	})
-	const names = services.filter((row) => row.serverSpans > 0).map((row) => row.service)
+	const names = Arr.map(
+		Arr.filter(services, (row) => row.serverSpans > 0),
+		(row) => row.service,
+	)
 	yield* Effect.annotateCurrentSpan({ "maple.mcp.servers": names.length })
 	if (names.length === 0) return new McpServersResponse({ servers: [] })
 	const [stats, sparks, clients] = yield* Effect.all(
@@ -208,20 +217,20 @@ export const readMcpServers = Effect.fn("McpReads.servers")(function* (
 		{ concurrency: MCP_READ_CONCURRENCY },
 	)
 	const buckets = bucketsOf(window)
-	const servers = stats
-		.filter((row) => row.calls > 0)
-		.map((row) => {
+	const servers = Arr.map(
+		Arr.filter(stats, (row) => row.calls > 0),
+		(row) => {
 			const spark = new Map(
-				sparks
-					.filter((entry) => entry.service === row.service)
-					.map((entry) => [timestampMs(entry.bucket), entry.calls]),
+				Arr.map(
+					Arr.filter(sparks, (entry) => entry.service === row.service),
+					(entry) => [timestampMs(entry.bucket), entry.calls],
+				),
 			)
-			const top = clients
-				.filter((entry) => entry.service === row.service)
-				.reduce<Readonly<{ client: string; calls: number }>>(
-					(best, entry) => (entry.calls > best.calls ? entry : best),
-					{ client: "", calls: 0 },
-				)
+			const top = Arr.reduce<(typeof clients)[number], Readonly<{ client: string; calls: number }>>(
+				Arr.filter(clients, (entry) => entry.service === row.service),
+				{ client: "", calls: 0 },
+				(best, entry) => (entry.calls > best.calls ? entry : best),
+			)
 			return {
 				service: row.service,
 				protocolVersion: row.protocolVersion,
@@ -232,10 +241,10 @@ export const readMcpServers = Effect.fn("McpReads.servers")(function* (
 				topClient: top.client,
 				topClientShare: top.calls / row.calls,
 				lastCallMs: toMs(row.lastCall),
-				spark: buckets.map((bucket) => spark.get(bucket) ?? 0),
+				spark: Arr.map(buckets, (bucket) => spark.get(bucket) ?? 0),
 			}
-		})
-		.sort((a, b) => b.calls - a.calls)
+		},
+	).sort((a, b) => b.calls - a.calls)
 	return new McpServersResponse({ servers })
 })
 
@@ -338,9 +347,12 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 	const quiet = quietClientsFor(reach, payload)
 	const buckets = bucketsOf(window)
 	const sparks = Arr.groupBy(toolSeries, (row) => row.key)
-	const calls = summary.filter((row) => row.method === TOOLS_CALL)
-	const failedCalls = calls.filter((row) => row.errorType !== "")
-	const firstSpans = summary.map((row) => toMs(row.firstSpan)).filter((ms) => ms > 0)
+	const calls = Arr.filter(summary, (row) => row.method === TOOLS_CALL)
+	const failedCalls = Arr.filter(calls, (row) => row.errorType !== "")
+	const firstSpans = Arr.filter(
+		Arr.map(summary, (row) => toMs(row.firstSpan)),
+		(ms) => ms > 0,
+	)
 	const firstInWindow = firstSpans.length === 0 ? 0 : Math.min(...firstSpans)
 	// The rollup knows calls before the window; within it, the window's own first span is exact.
 	const firstHour = toMs(firstSeen[0]?.firstHour ?? DateTime.makeUnsafe(0))
@@ -348,11 +360,23 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 		firstHour > 0 && firstHour < parseWarehouseDateTime(window.startTime) ? firstHour : firstInWindow
 	// Rows arrive most frequent first, so a tool's first row is its top error.
 	const topErrors = new Map<string, string>()
-	toolErrors.forEach((row) => {
+	Arr.forEach(toolErrors, (row) => {
 		if (!topErrors.has(row.tool)) topErrors.set(row.tool, row.errorType)
 	})
-	const protocolVersion = summary.find((row) => row.protocolVersion !== "")?.protocolVersion ?? ""
-	const transport = summary.find((row) => row.transport !== "")?.transport ?? ""
+	const protocolVersion = Option.getOrElse(
+		Option.map(
+			Arr.findFirst(summary, (row) => row.protocolVersion !== ""),
+			(row) => row.protocolVersion,
+		),
+		() => "",
+	)
+	const transport = Option.getOrElse(
+		Option.map(
+			Arr.findFirst(summary, (row) => row.transport !== ""),
+			(row) => row.transport,
+		),
+		() => "",
+	)
 	const failures = Arr.groupBy(toolErrors, (row) => row.errorType)
 	const total = totals[0]
 	return new McpOverviewResponse({
@@ -371,9 +395,9 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 			p90: total?.p90 ?? 0,
 			p95: total?.p95 ?? 0,
 		},
-		tools: tools.map((row) => {
+		tools: Arr.map(tools, (row) => {
 			const spark = new Map(
-				(sparks[row.tool] ?? []).map((entry) => [timestampMs(entry.bucket), entry.calls]),
+				Arr.map(sparks[row.tool] ?? [], (entry) => [timestampMs(entry.bucket), entry.calls]),
 			)
 			return {
 				tool: row.tool,
@@ -384,16 +408,22 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 				p95: row.p95,
 				topError: topErrors.get(row.tool) ?? null,
 				lastCallMs: toMs(row.lastCall),
-				spark: buckets.map((bucket) => spark.get(bucket) ?? 0),
+				spark: Arr.map(buckets, (bucket) => spark.get(bucket) ?? 0),
 			}
 		}),
 		clients: clientItems(clients, reach, quiet),
 		allClients: clientItems(allClients, reach),
 		clientInfo,
-		failures: Object.entries(failures)
-			.map(([errorType, rows]) => ({ errorType, count: sumBy(rows, (row) => row.count) }))
-			.sort((a, b) => b.count - a.count),
-		methods: methods.map((row) => ({ method: row.method, calls: row.calls, p50: row.p50, p95: row.p95 })),
+		failures: Arr.map(Rec.toEntries(failures), ([errorType, rows]) => ({
+			errorType,
+			count: sumBy(rows, (row) => row.count),
+		})).sort((a, b) => b.count - a.count),
+		methods: Arr.map(methods, (row) => ({
+			method: row.method,
+			calls: row.calls,
+			p50: row.p50,
+			p95: row.p95,
+		})),
 		coverage: {
 			toolCalls: sumBy(calls, (row) => row.spans),
 			withToolName: sumBy(calls, (row) => row.withToolName),
@@ -483,7 +513,7 @@ export const readMcpTool = Effect.fn("McpReads.tool")(function* (
 					CH.compile(
 						CH.mcpErrorTrendQuery(
 							filter,
-							groups.map((group) => group.message),
+							Arr.map(groups, (group) => group.message),
 						),
 						params,
 					),
@@ -512,11 +542,15 @@ export const readMcpTool = Effect.fn("McpReads.tool")(function* (
 		series: mergedSeries(buckets, series),
 		clientSeries: splitSeries(buckets, clientSeries),
 		allClients: clientItems(allClients),
-		errorGroups: groups.map((group) => {
+		errorGroups: Arr.map(groups, (group) => {
 			const counts = new Map(
-				trend
-					.filter((row) => row.errorType === group.errorType && row.message === group.message)
-					.map((row) => [timestampMs(row.bucket), row.count]),
+				Arr.map(
+					Arr.filter(
+						trend,
+						(row) => row.errorType === group.errorType && row.message === group.message,
+					),
+					(row) => [timestampMs(row.bucket), row.count],
+				),
 			)
 			return {
 				errorType: group.errorType,
@@ -524,12 +558,12 @@ export const readMcpTool = Effect.fn("McpReads.tool")(function* (
 				count: group.count,
 				clients: group.clients,
 				lastSeenMs: toMs(group.lastSeen),
-				trend: buckets.map((bucket) => counts.get(bucket) ?? 0),
+				trend: Arr.map(buckets, (bucket) => counts.get(bucket) ?? 0),
 			}
 		}),
-		slowest: slowest.map(callItem),
-		failed: failed.map(callItem),
-		recent: recent.map(callItem),
+		slowest: Arr.map(slowest, callItem),
+		failed: Arr.map(failed, callItem),
+		recent: Arr.map(recent, callItem),
 	})
 })
 
@@ -555,14 +589,23 @@ const LATEST_KEY_START_MS = 253_402_300_799_999 - USER_SESSION_LOOKAHEAD_MS
 
 /** base64url: no `/`, `:` or `%`, which the key's separator and the route path would trip on. */
 const toKeyPart = (value: string): string =>
-	btoa(Array.from(new TextEncoder().encode(value), (byte) => String.fromCharCode(byte)).join(""))
-		.replace(/\+/g, "-")
-		.replace(/\//g, "_")
-		.replace(/=+$/, "")
+	pipe(
+		btoa(
+			Arr.join(
+				Array.from(new TextEncoder().encode(value), (byte) => String.fromCharCode(byte)),
+				"",
+			),
+		),
+		Str.replace(/\+/g, "-"),
+		Str.replace(/\//g, "_"),
+		Str.replace(/=+$/, ""),
+	)
 
 const fromKeyPart = Option.liftThrowable((part: string): string =>
 	new TextDecoder("utf-8", { fatal: true }).decode(
-		Uint8Array.from(atob(part.replace(/-/g, "+").replace(/_/g, "/")), (char) => char.charCodeAt(0)),
+		Uint8Array.from(atob(pipe(part, Str.replace(/-/g, "+"), Str.replace(/_/g, "/"))), (char) =>
+			Option.getOrElse(Str.charCodeAt(0)(char), () => 0),
+		),
 	),
 )
 
@@ -574,9 +617,9 @@ export const userSessionKey = (startMs: number, client: string, user: string): s
 export const parseUserSessionKey = (
 	key: string,
 ): Readonly<{ startMs: number; client: string; user: string }> | undefined => {
-	if (!key.startsWith(USER_SESSION_PREFIX)) return undefined
-	const parts = key.slice(USER_SESSION_PREFIX.length).split(":")
-	const [start = "", client = "", user = ""] = parts
+	if (!Str.startsWith(USER_SESSION_PREFIX)(key)) return undefined
+	const parts = Str.split(Str.slice(USER_SESSION_PREFIX.length)(key), ":")
+	const [start, client = "", user = ""] = parts
 	const startMs = Number(start)
 	// A start a date can hold: past it the warehouse time it formats to would throw.
 	if (
@@ -609,6 +652,12 @@ type ActivityRow = Readonly<{
 
 type UserSession = McpSessionItem & Readonly<{ user: string }>
 
+const activityOrder = Order.combineAll<ActivityRow>([
+	(a, b) => Str.localeCompare(b.user)(a.user),
+	(a, b) => Str.localeCompare(b.client)(a.client),
+	Order.mapInput(Order.Number, (row: ActivityRow) => toMs(row.firstSeen)),
+])
+
 /**
  * A stateless server's sessions: each user's minutes from one client, in order, split where the
  * user went quiet for `gapMs`.
@@ -617,56 +666,55 @@ export const stitchUserSessions = (
 	rows: ReadonlyArray<ActivityRow>,
 	gapMs: number = USER_SESSION_GAP_MS,
 ): ReadonlyArray<UserSession> =>
-	rows
-		.toSorted(
-			(a, b) =>
-				a.user.localeCompare(b.user) ||
-				a.client.localeCompare(b.client) ||
-				toMs(a.firstSeen) - toMs(b.firstSeen),
-		)
-		.reduce<Array<UserSession & { readonly toolSet: ReadonlySet<string> }>>((sessions, row) => {
-			const firstMs = toMs(row.firstSeen)
-			const lastMs = toMs(row.lastSeen)
-			const tools = row.tools.filter((tool): tool is string => tool !== null)
-			const open = sessions.at(-1)
-			if (
-				open !== undefined &&
-				open.user === row.user &&
-				open.client === row.client &&
-				firstMs - open.lastSeenMs < gapMs
-			) {
-				const toolSet = new Set([...open.toolSet, ...tools])
-				sessions[sessions.length - 1] = {
-					...open,
-					userName: open.userName ?? (row.userName === "" ? null : row.userName),
-					requests: open.requests + row.requests,
-					calls: open.calls + row.calls,
-					errors: open.errors + row.errors,
+	Arr.map(
+		Arr.reduce<ActivityRow, Array<UserSession & { readonly toolSet: ReadonlySet<string> }>>(
+			Arr.sort(rows, activityOrder),
+			[],
+			(sessions, row) => {
+				const firstMs = toMs(row.firstSeen)
+				const lastMs = toMs(row.lastSeen)
+				const tools = Arr.filter(row.tools, (tool): tool is string => tool !== null)
+				const open = sessions.at(-1)
+				if (
+					open !== undefined &&
+					open.user === row.user &&
+					open.client === row.client &&
+					firstMs - open.lastSeenMs < gapMs
+				) {
+					const toolSet = new Set([...open.toolSet, ...tools])
+					sessions[sessions.length - 1] = {
+						...open,
+						userName: open.userName ?? (row.userName === "" ? null : row.userName),
+						requests: open.requests + row.requests,
+						calls: open.calls + row.calls,
+						errors: open.errors + row.errors,
+						tools: toolSet.size,
+						toolSet,
+						lastSeenMs: Math.max(open.lastSeenMs, lastMs),
+					}
+					return sessions
+				}
+				const toolSet = new Set(tools)
+				sessions.push({
+					sessionId: userSessionKey(firstMs, row.client, row.user),
+					source: "user",
+					user: row.user,
+					userName: row.userName === "" ? null : row.userName,
+					client: row.client,
+					kind: kindOf(row.kind),
+					requests: row.requests,
+					calls: row.calls,
+					errors: row.errors,
 					tools: toolSet.size,
 					toolSet,
-					lastSeenMs: Math.max(open.lastSeenMs, lastMs),
-				}
+					firstSeenMs: firstMs,
+					lastSeenMs: lastMs,
+				})
 				return sessions
-			}
-			const toolSet = new Set(tools)
-			sessions.push({
-				sessionId: userSessionKey(firstMs, row.client, row.user),
-				source: "user",
-				user: row.user,
-				userName: row.userName === "" ? null : row.userName,
-				client: row.client,
-				kind: kindOf(row.kind),
-				requests: row.requests,
-				calls: row.calls,
-				errors: row.errors,
-				tools: toolSet.size,
-				toolSet,
-				firstSeenMs: firstMs,
-				lastSeenMs: lastMs,
-			})
-			return sessions
-		}, [])
-		.map(({ toolSet: _toolSet, ...session }) => session)
+			},
+		),
+		({ toolSet: _toolSet, ...session }) => session,
+	)
 
 export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
 	tenant: TenantContext,
@@ -722,11 +770,11 @@ export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
 	)
 	// One row past the limit says the read was cut; it is never stitched.
 	const userSessions = stitchUserSessions(activityRows.slice(0, USER_ACTIVITY_LIMIT))
-	const failingUserSessions = userSessions.filter((session) => session.errors > 0)
-	const calls = summary.filter((row) => row.method === TOOLS_CALL)
+	const failingUserSessions = Arr.filter(userSessions, (session) => session.errors > 0)
+	const calls = Arr.filter(summary, (row) => row.method === TOOLS_CALL)
 	const total = totals[0]
 	const sessions = [
-		...issued.map((row): McpSessionItem => ({
+		...Arr.map(issued, (row): McpSessionItem => ({
 			sessionId: row.sessionId,
 			source: "issued",
 			user: row.user === "" ? null : row.user,
@@ -744,7 +792,7 @@ export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
 	]
 		.sort((a, b) => b.lastSeenMs - a.lastSeenMs)
 		.slice(0, SESSION_LIST_LIMIT)
-	const activeBy = new Map(activity.map((row) => [timestampMs(row.bucket), row]))
+	const activeBy = new Map(Arr.map(activity, (row) => [timestampMs(row.bucket), row]))
 	yield* Effect.annotateCurrentSpan({
 		"maple.mcp.sessions": (total?.sessions ?? 0) + userSessions.length,
 		"maple.mcp.user_sessions": userSessions.length,
@@ -760,14 +808,14 @@ export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
 			calls: total?.calls ?? 0,
 			errors: total?.errors ?? 0,
 		},
-		activity: bucketsOf(window).map((bucket) => ({
+		activity: Arr.map(bucketsOf(window), (bucket) => ({
 			bucket,
 			sessions: activeBy.get(bucket)?.sessions ?? 0,
 			users: activeBy.get(bucket)?.users ?? 0,
 		})),
 		toolCalls: sumBy(calls, (row) => row.spans),
 		otherRequests: sumBy(
-			summary.filter((row) => row.method !== TOOLS_CALL),
+			Arr.filter(summary, (row) => row.method !== TOOLS_CALL),
 			(row) => row.spans,
 		),
 		withSession: sumBy(calls, (row) => row.withSession),
@@ -783,15 +831,17 @@ type SessionRow = Readonly<{ traceId: string; linkTraceId: string }>
 
 /** Each request's caller traces, its own first: `params._meta` parents the span, a link is the fallback. */
 const callerTraces = (row: SessionRow): ReadonlyArray<string> =>
-	[row.traceId, row.linkTraceId].filter((id) => id !== "")
+	Arr.filter([row.traceId, row.linkTraceId], (id) => id !== "")
 
 /** The Agent Session of each request: the first of its caller traces that one is filed under. */
 export const agentSessionsOf = (
 	rows: ReadonlyArray<SessionRow>,
 	filed: ReadonlyArray<Readonly<{ traceId: string; sessionId: string }>>,
 ): ReadonlyArray<string | null> => {
-	const sessionOf = new Map(filed.map((row) => [row.traceId, row.sessionId]))
-	return rows.map((row) => callerTraces(row).flatMap((id) => sessionOf.get(id) ?? [])[0] ?? null)
+	const sessionOf = new Map(Arr.map(filed, (row) => [row.traceId, row.sessionId]))
+	return Arr.map(rows, (row) =>
+		Option.getOrNull(Arr.findFirst(callerTraces(row), (id) => Option.fromNullishOr(sessionOf.get(id)))),
+	)
 }
 
 /**
@@ -818,7 +868,7 @@ const userSessionBounds = Effect.fn("McpReads.userSessionBounds")(function* (
 		}),
 		{ profile: "list", context: "mcpUserSessionBounds" },
 	)
-	return stitchUserSessions(rows).find((session) => session.firstSeenMs === key.startMs)
+	return Arr.findFirst(stitchUserSessions(rows), (session) => session.firstSeenMs === key.startMs)
 })
 
 export const readMcpSession = Effect.fn("McpReads.session")(function* (
@@ -833,14 +883,14 @@ export const readMcpSession = Effect.fn("McpReads.session")(function* (
 	})
 	const window = windowOf(payload)
 	const parsed = parseUserSessionKey(payload.sessionId)
-	const bounds = parsed === undefined ? undefined : yield* userSessionBounds(tenant, payload, parsed)
+	const bounds = parsed === undefined ? Option.none() : yield* userSessionBounds(tenant, payload, parsed)
 	// An issued id can look like a user session's key; with no such user session it is read as issued.
-	const userKey = bounds === undefined ? undefined : parsed
+	const userKey = Option.isNone(bounds) ? undefined : parsed
 	yield* Effect.annotateCurrentSpan({
 		"maple.mcp.session.source": userKey === undefined ? "issued" : "user",
 	})
 	const read =
-		userKey === undefined || bounds === undefined
+		userKey === undefined || Option.isNone(bounds)
 			? yield* warehouse.compiledQuery(
 					tenant,
 					CH.compile(CH.mcpSessionRequestsQuery(SESSION_REQUEST_LIMIT + 1), {
@@ -859,13 +909,13 @@ export const readMcpSession = Effect.fn("McpReads.session")(function* (
 						userId: userKey.user,
 						client: userKey.client,
 						// Whole seconds around the session's own first and last request.
-						startTime: formatWarehouseDateTime(bounds.firstSeenMs),
-						endTime: formatWarehouseDateTime(bounds.lastSeenMs + 1_000),
+						startTime: formatWarehouseDateTime(bounds.value.firstSeenMs),
+						endTime: formatWarehouseDateTime(bounds.value.lastSeenMs + 1_000),
 					}),
 					{ profile: "list", context: "mcpUserSessionRequests" },
 				)
 	const rows = read.slice(0, SESSION_REQUEST_LIMIT)
-	const traceIds = [...new Set(rows.flatMap(callerTraces))]
+	const traceIds = [...new Set(Arr.flatMap(rows, (row) => callerTraces(row)))]
 	const firstMs = rows[0] === undefined ? parseWarehouseDateTime(window.startTime) : toMs(rows[0].timestamp)
 	const lastRow = rows.at(-1)
 	const lastMs = lastRow === undefined ? 0 : toMs(lastRow.timestamp)
@@ -885,21 +935,45 @@ export const readMcpSession = Effect.fn("McpReads.session")(function* (
 					{ profile: "list", context: "mcpSessionAgentSessions" },
 				)
 	const agentSessions = agentSessionsOf(rows, filed)
-	const named = rows.find((row) => row.client !== UNKNOWN_MCP_CLIENT)
+	const named = Arr.findFirst(rows, (row) => row.client !== UNKNOWN_MCP_CLIENT)
 	yield* Effect.annotateCurrentSpan({
 		"maple.mcp.session.requests": rows.length,
-		"maple.mcp.session.agent_sessions": new Set(agentSessions.filter((id) => id !== null)).size,
+		"maple.mcp.session.agent_sessions": new Set(Arr.filter(agentSessions, (id) => id !== null)).size,
 	})
 	return new McpSessionResponse({
 		service: payload.service,
 		sessionId: payload.sessionId,
 		source: userKey === undefined ? "issued" : "user",
-		user: rows.find((row) => row.user !== "")?.user ?? null,
-		userName: rows.find((row) => row.userName !== "")?.userName ?? null,
-		client: named?.client ?? UNKNOWN_MCP_CLIENT,
-		kind: kindOf(named?.kind ?? "unknown"),
-		protocolVersion: rows.find((row) => row.protocolVersion !== "")?.protocolVersion ?? "",
-		requests: rows.map((row, index): McpSessionRequestItem => ({
+		user: Option.getOrNull(
+			Option.map(
+				Arr.findFirst(rows, (row) => row.user !== ""),
+				(row) => row.user,
+			),
+		),
+		userName: Option.getOrNull(
+			Option.map(
+				Arr.findFirst(rows, (row) => row.userName !== ""),
+				(row) => row.userName,
+			),
+		),
+		client: Option.getOrElse(
+			Option.map(named, (row) => row.client),
+			() => UNKNOWN_MCP_CLIENT,
+		),
+		kind: kindOf(
+			Option.getOrElse(
+				Option.map(named, (row) => row.kind),
+				() => "unknown",
+			),
+		),
+		protocolVersion: Option.getOrElse(
+			Option.map(
+				Arr.findFirst(rows, (row) => row.protocolVersion !== ""),
+				(row) => row.protocolVersion,
+			),
+			() => "",
+		),
+		requests: Arr.map(rows, (row, index): McpSessionRequestItem => ({
 			timeMs: toMs(row.timestamp),
 			method: row.method,
 			tool: row.tool === "" ? null : row.tool,

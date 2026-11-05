@@ -12,7 +12,7 @@ import {
 } from "@maple/domain/mcp-clients"
 import { ServiceOperationsHourly, Traces, orgIdParam, utcSecondsParam } from "../tables"
 import { finiteOrZero, isoBucket } from "./format"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 /** The toolbar's selection, applied in SQL so percentiles are measured over what is shown. */
 export interface McpCallFilter {
@@ -26,7 +26,7 @@ export interface McpCallFilter {
 	readonly failingOnly?: boolean
 }
 
-const likeLiteral = (value: string): string => value.replace(/[\\%_]/g, (c) => `\\${c}`)
+const likeLiteral = (value: string): string => Str.replace(/[\\%_]/g, "\\$&")(value)
 
 type TracesRow = ColumnAccessor<typeof Traces.columns>
 

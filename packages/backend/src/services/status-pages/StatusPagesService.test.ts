@@ -263,7 +263,7 @@ describe("StatusPagesService", () => {
 			yield* service.removeComponent(ORG, web.id)
 			const docs = yield* service.createComponent(ORG, page.id, { name: "Docs" })
 			assert.deepStrictEqual(
-				(yield* service.listComponents(ORG, page.id)).map((row) => [row.name, row.position]),
+				Arr.map(yield* service.listComponents(ORG, page.id), (row) => [row.name, row.position]),
 				[
 					["API", 1],
 					["Docs", 2],

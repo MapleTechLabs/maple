@@ -3,7 +3,7 @@
 // `readonly = 1` plus result caps, so enforcement does not rest on a regex.
 
 import { disallowedTableFunction } from "@maple/domain/raw-sql"
-import { Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { Chdb } from "./chdb"
 
 /** Body prefix clients map to a clean "not allowed" error. */
@@ -97,7 +97,7 @@ const scanWords = (sql: string): ReadonlyArray<Word> | undefined => {
 		return sql[k] === "("
 	}
 	while (i < sql.length) {
-		const c = sql.charAt(i)
+		const c = sql[i]
 		if (c === "'" || c === '"' || c === "`") {
 			let j = i + 1
 			while (j < sql.length && sql[j] !== c) j += sql[j] === "\\" ? 2 : 1
@@ -120,7 +120,7 @@ const scanWords = (sql: string): ReadonlyArray<Word> | undefined => {
 			i++
 		} else if (isWordStart(c)) {
 			let j = i + 1
-			while (j < sql.length && isWordPart(sql.charAt(j))) j++
+			while (j < sql.length && isWordPart(sql[j])) j++
 			words.push({
 				text: Str.slice(i, j)(sql),
 				start: i,
@@ -133,7 +133,7 @@ const scanWords = (sql: string): ReadonlyArray<Word> | undefined => {
 		} else if (/[0-9]/.test(c)) {
 			// Numeric literals such as 1e9 or 0x1F are not words.
 			let j = i + 1
-			while (j < sql.length && /[0-9A-Za-z_.]/.test(sql.charAt(j))) j++
+			while (j < sql.length && /[0-9A-Za-z_.]/.test(sql[j])) j++
 			i = j
 		} else i++
 	}
@@ -168,10 +168,9 @@ const peelTerminalClauses = (canonical: string, words: ReadonlyArray<Word>): Pee
 	const keyword = (word: Word | undefined, text: string) =>
 		word !== undefined && !word.quoted && word.text === text
 	const peelSettings = () => {
-		const last = topLevel()
-			.reverse()
-			.find((word) => keyword(word, "SETTINGS"))
-		if (last === undefined) return
+		const found = Arr.findLast(topLevel(), (word) => keyword(word, "SETTINGS"))
+		if (Option.isNone(found)) return
+		const last = found.value
 		const parsed = parseAssignments(Str.slice(last.end)(body))
 		if (parsed === undefined) return
 		settings.push(...parsed)

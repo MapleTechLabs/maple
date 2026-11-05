@@ -22,7 +22,7 @@ import { taxIdValue, view as detailsDialogView } from "./details/view"
 import { Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Order } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -366,10 +366,13 @@ export const detailsSection = (h: H, model: Model): Html => {
 
 /** Above everything else on the tab: what is owed and a direct way to pay it on Stripe's invoice page. */
 export const unpaidInvoicesNotice = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
-	const unpaid = Arr.filter(
-		AsyncData.getOrElse(model.invoices, () => []),
-		isUnpaid,
-	).toSorted((a, b) => a.createdAt - b.createdAt)
+	const unpaid = Arr.sort(
+		Arr.filter(
+			AsyncData.getOrElse(model.invoices, () => []),
+			isUnpaid,
+		),
+		Order.mapInput(Order.Number, (invoice: { readonly createdAt: number }) => invoice.createdAt),
+	)
 	const oldest = unpaid[0]
 	if (oldest === undefined) return []
 	const overdue = Arr.some(unpaid, (invoice) => Str.toLowerCase(invoice.status) !== "open")

@@ -10,7 +10,7 @@ import {
 	utcDay,
 } from "@maple/domain/status-page"
 import { INCIDENT_STATUS_LABEL, MONTHS } from "./format"
-import { Array as Arr, String as Str } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 
 // Paging and calendar rules for the page. The inline script mirrors `windowBounds`,
 // `monthCells` and the labels; `script.test.ts` holds the two to the same answers.
@@ -77,10 +77,17 @@ export const barComponents = (
 /** Windows worth paging through: back to the oldest day any component was checked, at least one. */
 export const windowCount = (components: ReadonlyArray<StatusPageSnapshotComponent>): number =>
 	Arr.reduce(barComponents(components), 1, (count, component) => {
-		const oldest = component.days.findIndex((bar) => bar.checks > 0)
-		return oldest === -1
-			? count
-			: Math.max(count, Math.floor((component.days.length - 1 - oldest) / STATUS_PAGE_WINDOW_DAYS) + 1)
+		return Option.match(
+			Arr.findFirstIndex(component.days, (bar) => bar.checks > 0),
+			{
+				onNone: () => count,
+				onSome: (oldest) =>
+					Math.max(
+						count,
+						Math.floor((component.days.length - 1 - oldest) / STATUS_PAGE_WINDOW_DAYS) + 1,
+					),
+			},
+		)
 	})
 
 /** Monday-first weeks of a month: day numbers, 0 for the padding cells. `month` is 1 to 12. */

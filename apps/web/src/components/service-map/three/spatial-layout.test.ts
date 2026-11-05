@@ -14,7 +14,9 @@ describe("spatial service map", () => {
 		const layout = spatialLayout(topology, view)
 		expect([...layout.positions.keys()].sort()).toEqual(Arr.map(topology.nodes, (node) => node.id).sort())
 		const positions = [...layout.positions.values()]
-		expect(new Set(Arr.map(positions, (position) => position.join(","))).size).toBe(topology.nodes.length)
+		expect(new Set(Arr.map(positions, (position) => Arr.join(Arr.map(position, String), ","))).size).toBe(
+			topology.nodes.length,
+		)
 		for (const position of positions) expect(Arr.every(position, Number.isFinite)).toBe(true)
 	})
 	it("keeps Atlas districts separate and their nodes inside the correct district", () => {

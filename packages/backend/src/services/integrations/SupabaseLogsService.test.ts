@@ -8,6 +8,7 @@ import {
 	Record as Rec,
 	String as Str,
 	DateTime,
+	Option,
 } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
@@ -190,7 +191,12 @@ const sentRecords = (world: World) =>
 	)
 
 const uidOf = (record: { attributes: ReadonlyArray<{ key: string; value: { stringValue: string } }> }) =>
-	record.attributes.find((attribute) => attribute.key === "log.record.uid")?.value.stringValue
+	Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(record.attributes, (attribute) => attribute.key === "log.record.uid"),
+			(attribute) => attribute.value.stringValue,
+		),
+	)
 
 /** `2026-10-21T17:55:00.000000`-style column text for an epoch ms. */
 const columnTime = (ms: number) => Str.replace("Z", "000")(DateTime.formatIso(DateTime.makeUnsafe(ms)))
@@ -216,11 +222,14 @@ describe("SupabaseLogsService", () => {
 		() => {
 			const testDb = createTestDb(trackedDbs)
 			const world = makeWorld()
-			const fixture = sampleRows.find(
-				(item) =>
-					item.source === "postgres_logs" &&
-					item.log_attributes["parsed.error_severity"] === "ERROR",
-			)!
+			const fixture = Option.getOrThrow(
+				Arr.findFirst(
+					sampleRows,
+					(item) =>
+						item.source === "postgres_logs" &&
+						item.log_attributes["parsed.error_severity"] === "ERROR",
+				),
+			)
 			world.supabase.state.logs = [
 				row("too-old", ENABLED_FROM - 1),
 				{ ...fixture, timestamp: "2026-10-21T17:55:30.123456" },
@@ -277,9 +286,11 @@ describe("SupabaseLogsService", () => {
 					assert.strictEqual(after.polled, NOW)
 
 					const status = yield* (yield* SupabaseConnectionService).getStatus(ORG)
-					const project = status.projects.find((item) => item.ref === REF_A)
+					const project = Option.getOrThrow(
+						Arr.findFirst(status.projects, (item) => item.ref === REF_A),
+					)
 					assert.deepStrictEqual(
-						[project?.logsEnabled, project?.logsLastPolledAt, project?.logsError],
+						[project.logsEnabled, project.logsLastPolledAt, project.logsError],
 						[true, NOW, null],
 					)
 				}),
@@ -364,7 +375,10 @@ describe("SupabaseLogsService", () => {
 				assert.strictEqual(after.watermark, ENABLED_FROM)
 				assert.strictEqual(after.error, "Supabase refused the logs query: Unknown field: log_level")
 				const status = yield* (yield* SupabaseConnectionService).getStatus(ORG)
-				assert.strictEqual(status.projects.find((item) => item.ref === REF_A)?.logsError, after.error)
+				assert.strictEqual(
+					Option.getOrThrow(Arr.findFirst(status.projects, (item) => item.ref === REF_A)).logsError,
+					after.error,
+				)
 			}),
 		)
 	})
@@ -596,8 +610,10 @@ describe("SupabaseLogsService", () => {
 					new SupabaseProjectUpdateRequest({ logsEnabled: true }),
 				)
 				yield* (yield* SupabaseLogsService).setLogsEnabled(ORG, asRef(REF_B), true)
-				const project = (yield* connection.getStatus(ORG)).projects.find((item) => item.ref === REF_B)
-				assert.deepStrictEqual([project?.logsEnabled, project?.logDrains], [true, []])
+				const project = Option.getOrThrow(
+					Arr.findFirst((yield* connection.getStatus(ORG)).projects, (item) => item.ref === REF_B),
+				)
+				assert.deepStrictEqual([project.logsEnabled, project.logDrains], [true, []])
 			}),
 		)
 	})
@@ -621,7 +637,10 @@ describe("SupabaseLogsService", () => {
 						logDrainEnabled: true,
 					}),
 				)
-				assert.isFalse(drained.projects.find((project) => project.ref === REF_A)?.logsEnabled ?? true)
+				assert.isFalse(
+					Option.getOrThrow(Arr.findFirst(drained.projects, (project) => project.ref === REF_A))
+						.logsEnabled,
+				)
 
 				const refused = yield* Effect.flip(logs.setLogsEnabled(ORG, asRef(REF_A), true))
 				assert.strictEqual(refused._tag, "@maple/http/errors/IntegrationsValidationError")
@@ -639,8 +658,10 @@ describe("SupabaseLogsService", () => {
 				)
 				yield* logs.setLogsEnabled(ORG, asRef(REF_A), true)
 				const status = yield* connection.getStatus(ORG)
-				const project = status.projects.find((item) => item.ref === REF_A)
-				assert.deepStrictEqual([project?.logDrainEnabled, project?.logsEnabled], [false, true])
+				const project = Option.getOrThrow(
+					Arr.findFirst(status.projects, (item) => item.ref === REF_A),
+				)
+				assert.deepStrictEqual([project.logDrainEnabled, project.logsEnabled], [false, true])
 			}),
 		)
 	})

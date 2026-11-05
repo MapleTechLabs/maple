@@ -9,7 +9,7 @@
 import { OrgId, UserId } from "@maple/domain"
 import type { SubmitPrReviewRequest } from "@maple/domain/http"
 import { prReviewSessionId } from "@maple/domain/chat-session"
-import { Effect, Exit, Layer, Schema, Stream, Array as Arr, String as Str } from "effect"
+import { Effect, Exit, Layer, Option, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { LanguageModel } from "effect/ai"
 import type { Response } from "effect/ai"
 import * as AiModel from "effect/ai/Model"
@@ -132,7 +132,9 @@ describe("runChatTurn review_files children", () => {
 			"the child's first call reaches the executor",
 		)
 
-		const worker = spans.find((span) => span.name === "invoke_agent pr-review-worker")
+		const worker = Option.getOrUndefined(
+			Arr.findFirst(spans, (span) => span.name === "invoke_agent pr-review-worker"),
+		)
 		assert.isDefined(worker, "the child ran")
 		assert.notStrictEqual(worker?.attributes.get("gen_ai.conversation.id"), REVIEW_SESSION)
 		assert.strictEqual(worker?.attributes.get("maple_ai.session.id"), REVIEW_SESSION)
@@ -264,7 +266,7 @@ describe("runChatTurn review_files children", () => {
 		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
 		assert.isTrue(childInterrupted, "the child's in-flight call was interrupted")
 		assert.strictEqual(observability.outcome, "aborted")
-		const turn = spans.find((span) => span.name === "chat.turn")
+		const turn = Option.getOrUndefined(Arr.findFirst(spans, (span) => span.name === "chat.turn"))
 		assert.strictEqual(turn?.attributes.get("maple.chat.outcome"), "aborted")
 		assert.strictEqual(turn?.attributes.get("maple.chat.abort_reason"), "superseded")
 	})

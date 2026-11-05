@@ -201,7 +201,11 @@ const workersAiRunModel = (url: string): Option.Option<string> =>
 		Option.filter(
 			(pathname) => Str.includes("/accounts/")(pathname) && Str.includes(RUN_MARKER)(pathname),
 		),
-		Option.map((pathname) => Str.slice(pathname.indexOf(RUN_MARKER) + RUN_MARKER.length)(pathname)),
+		Option.flatMap((pathname) =>
+			Option.map(Str.indexOf(RUN_MARKER)(pathname), (at) =>
+				Str.slice(at + RUN_MARKER.length)(pathname),
+			),
+		),
 		Option.flatMap((encoded) => Option.liftThrowable(decodeURIComponent)(encoded)),
 		Option.filter((model) => model !== ""),
 	)

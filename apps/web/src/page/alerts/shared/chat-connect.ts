@@ -125,10 +125,10 @@ export const linkedOf = (
 ): Option.Option<LinkedWorkspace> =>
 	Option.flatMap(Option.fromNullishOr(model.active), (active) =>
 		Option.map(
-			Option.fromNullishOr(
-				connectors
-					.find((entry) => entry.id === active.connector)
-					?.workspaces.find((workspace) => !active.knownIds.includes(workspace.id)),
+			Option.flatMap(
+				Arr.findFirst(connectors, (entry) => entry.id === active.connector),
+				(entry) =>
+					Arr.findFirst(entry.workspaces, (workspace) => !active.knownIds.includes(workspace.id)),
 			),
 			(workspace) => ({ connector: active.connector, id: workspace.id, name: workspace.name }),
 		),

@@ -131,8 +131,7 @@ export const formatDouble = (value: number): string => {
 	// Shortest round-trip digits, then shifted: `1e+21` is "1000000000000000000000", `1.5e-7` "0.00000015".
 	const [mantissa, exponentText = "0"] = Str.split("e")(text)
 	const digits = Str.replace(".", "")(mantissa)
-	const point =
-		(mantissa.indexOf(".") === -1 ? mantissa.length : mantissa.indexOf(".")) + Number(exponentText)
+	const point = Option.getOrElse(Str.indexOf(".")(mantissa), () => mantissa.length) + Number(exponentText)
 	const unsigned =
 		point >= digits.length
 			? digits + Str.repeat(point - digits.length)("0")
@@ -167,11 +166,15 @@ const SEVERITY_BY_NAME: ReadonlyMap<string, number> = new Map(Rec.toEntries(SEVE
 const severityOf = (record: RuleRecord): number | null => {
 	if (record.severityNumber !== undefined && record.severityNumber > 0) return record.severityNumber
 	const text = Str.toLowerCase(record.severityText ?? "")
-	return SEVERITY_PREFIXES.find(([prefix]) => Str.startsWith(prefix)(text))?.[1] ?? null
+	return Option.match(
+		Arr.findFirst(SEVERITY_PREFIXES, ([prefix]) => Str.startsWith(prefix)(text)),
+		{ onNone: () => null, onSome: ([, level]) => level },
+	)
 }
 
 /** Own keys only: an attribute named `constructor` is not inherited from `Object.prototype`. */
 const ownValue = (map: AttrMap, key: string): AttrValue | undefined =>
+	// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.has would need a cast
 	Object.hasOwn(map, key) ? map[key] : undefined
 
 /** `undefined` = missing, `null` = present but not comparable. */
@@ -250,11 +253,13 @@ export const scanCut = (text: string): number => {
 	let bytes = 0
 	let index = 0
 	while (index < text.length) {
+		// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 		const unit = text.charCodeAt(index)
 		const pair =
 			unit >= 0xd800 &&
 			unit <= 0xdbff &&
 			index + 1 < text.length &&
+			// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 			(text.charCodeAt(index + 1) & 0xfc00) === 0xdc00
 		const size = pair ? 4 : unit < 0x80 ? 1 : unit < 0x800 ? 2 : 3
 		if (bytes + size > cap) return index
@@ -326,12 +331,13 @@ const replaceSpans = (
 	spans: ReadonlyArray<Span>,
 	replace: (matched: string) => string,
 ): string =>
-	spans.reduceRight(
+	Arr.reduceRight(
+		spans,
+		text,
 		(acc, span) =>
 			Str.slice(0, span.start)(acc) +
 			replace(Str.slice(span.start, span.end)(acc)) +
 			Str.slice(span.end)(acc),
-		text,
 	)
 
 const scanString = (text: string, ctx: RedactContext): string => {
@@ -408,7 +414,12 @@ const redactRecord = (
 		attributes: scopeHas(rule, "attributes") ? redactMap(record.attributes, ctx) : record.attributes,
 		resource: scopeHas(rule, "resource") ? redactMap(record.resource, ctx) : record.resource,
 		events: scopeHas(rule, "events")
-			? record.events?.map((event) => ({ ...event, attributes: redactMap(event.attributes, ctx) }))
+			? record.events === undefined
+				? undefined
+				: Arr.map(record.events, (event) => ({
+						...event,
+						attributes: redactMap(event.attributes, ctx),
+					}))
 			: record.events,
 		body: scopeHas(rule, "body") && record.body !== undefined ? scanValue(record.body, ctx) : record.body,
 		statusMessage:
@@ -436,12 +447,13 @@ export const applyRules = (
 	// One draw per record, shared by every drop rule, as the gateway does for records without a trace id.
 	const draw: RecordDraw = {}
 	const once = () => (draw.value ??= random())
-	const dropper = matching.find(
+	const dropper = Arr.findFirst(
+		matching,
 		(rule) =>
 			rule.spec.action._tag === "drop" &&
 			!keepBySample(record.traceId, rule.spec.action.keepPercent, once),
 	)
-	if (dropper !== undefined) return { _tag: "dropped", ruleIndex: dropper.index, matched }
+	if (Option.isSome(dropper)) return { _tag: "dropped", ruleIndex: dropper.value.index, matched }
 	const redactions = new Map<number, number>()
 	const redacted = Arr.reduce(
 		Arr.filter(matching, (rule) => rule.spec.action._tag === "redact"),

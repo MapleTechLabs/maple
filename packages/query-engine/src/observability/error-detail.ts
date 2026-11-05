@@ -1,4 +1,4 @@
-import { Array as Arr, DateTime, Effect, pipe, String as Str } from "effect"
+import { Array as Arr, DateTime, Effect, pipe, String as Str, Option } from "effect"
 import type { ErrorDetailTracesOutput, ErrorsTimeseriesOutput, ListLogsOutput } from "@maple/domain/tinybird"
 import { parseWarehouseDateTime, formatWarehouseDateTime, warehouseDateTimeToIso } from "../datetime"
 import * as CH from "../ch"
@@ -214,14 +214,17 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 		),
 		{ profile: "list", context: "errorFingerprintSummary" },
 	)
-	const summaryRow = summaryRows.find((row) => row.occurrences > 0)
+	const summaryRow = Arr.findFirst(summaryRows, (row) => row.occurrences > 0)
 	const anchoredRange =
-		input.anchorWithin !== undefined && summaryRow !== undefined
-			? rangeEndingAt(input.timeRange, summaryRow.lastSeen)
+		input.anchorWithin !== undefined && Option.isSome(summaryRow)
+			? rangeEndingAt(input.timeRange, summaryRow.value.lastSeen)
 			: undefined
 	const sampleRange = anchoredRange ?? input.timeRange
 	yield* Effect.annotateCurrentSpan({
-		"maple.error_detail.occurrences": summaryRow?.occurrences ?? 0,
+		"maple.error_detail.occurrences": Option.match(summaryRow, {
+			onNone: () => 0,
+			onSome: (row) => row.occurrences,
+		}),
 		"maple.error_detail.anchored": anchoredRange !== undefined,
 	})
 
@@ -289,18 +292,18 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 				)
 		: undefined
 
-	const summary: ErrorDetailSummary | undefined =
-		summaryRow === undefined
-			? undefined
-			: {
-					timeRange: summaryRange,
-					occurrences: summaryRow.occurrences,
-					firstSeen: DateTime.formatIso(summaryRow.firstSeen),
-					lastSeen: DateTime.formatIso(summaryRow.lastSeen),
-					services: summaryRow.services,
-					serviceCount: summaryRow.serviceCount,
-					noExceptionCount: summaryRow.noExceptionCount,
-				}
+	const summary: ErrorDetailSummary | undefined = Option.match(summaryRow, {
+		onNone: () => undefined,
+		onSome: (row) => ({
+			timeRange: summaryRange,
+			occurrences: row.occurrences,
+			firstSeen: DateTime.formatIso(row.firstSeen),
+			lastSeen: DateTime.formatIso(row.lastSeen),
+			services: row.services,
+			serviceCount: row.serviceCount,
+			noExceptionCount: row.noExceptionCount,
+		}),
+	})
 
 	return {
 		fingerprintHash: input.fingerprintHash,
@@ -308,7 +311,7 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 		summary,
 		anchored: anchoredRange !== undefined,
 		related,
-		error: identityOf(traces[0], summaryRow),
+		error: identityOf(traces[0], Option.getOrUndefined(summaryRow)),
 		traces: pipe(
 			traces,
 			Arr.map((t, i): ErrorDetailTrace => ({

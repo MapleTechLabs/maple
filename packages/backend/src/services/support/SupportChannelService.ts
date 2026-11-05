@@ -225,13 +225,14 @@ const make = Effect.gen(function* () {
 			}
 			return slack.call("users.conversations", args).pipe(
 				Effect.map((response) => {
-					const found = response.channels?.find(
+					const found = Arr.findFirst(
+						response.channels ?? [],
 						(channel) => channel.name === name && channel.creator === botUserId,
 					)
 					const next = response.response_metadata?.next_cursor ?? ""
-					const more = found === undefined && next !== "" && page + 1 < MAX_CHANNEL_PAGES
+					const more = Option.isNone(found) && next !== "" && page + 1 < MAX_CHANNEL_PAGES
 					return [
-						found === undefined ? [] : [found],
+						Option.toArray(found),
 						more ? Option.some({ page: page + 1, cursor: next }) : Option.none(),
 					] as const
 				}),

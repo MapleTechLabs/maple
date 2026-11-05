@@ -65,7 +65,7 @@ const toOptions = (
 	rows: ReadonlyArray<{ readonly name: string; readonly count: number }>,
 ): Array<FacetOption> =>
 	Arr.map(
-		rows.filter((row) => row.name),
+		Arr.filter(rows, (row) => row.name !== ""),
 		(row) => ({ name: row.name, count: row.count }),
 	)
 

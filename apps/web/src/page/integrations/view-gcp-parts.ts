@@ -96,7 +96,7 @@ export const scriptBlock = (
 	leading: ReadonlyArray<Html>,
 ): Html => {
 	const shown = model.gcpCard.isScriptShown
-	const text = options.script?.trimEnd() ?? null
+	const text = options.script === null ? null : Str.trimEnd(options.script)
 	return vstack(h, { gap: "2" }, [
 		hstack(h, { wrap: true, className: "gap-x-3 gap-y-2" }, [
 			...leading,

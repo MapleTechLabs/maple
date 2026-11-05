@@ -81,7 +81,10 @@ const GLOBAL_BUCKET = "global"
 
 /** `channels/1`, `guilds/2`, `webhooks/3`: Discord buckets each route per its major parameter. */
 const majorParameter = (url: string): string =>
-	/\/(channels|guilds|webhooks)\/([^/?]+)/.exec(url)?.slice(1, 3).join("/") ?? "none"
+	Option.fromNullishOr(/\/(channels|guilds|webhooks)\/([^/?]+)/.exec(url)).pipe(
+		Option.map((match) => Arr.join(match.slice(1, 3), "/")),
+		Option.getOrElse(() => "none"),
+	)
 
 const isGlobalLimit = (response: HttpClientResponse.HttpClientResponse): boolean =>
 	response.headers["x-ratelimit-global"] === "true" || response.headers["x-ratelimit-scope"] === "global"
@@ -435,7 +438,8 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 				blocks: ReadonlyArray<ChatBlock>,
 			) {
 				// `<application id>/<interaction token>`, as the gateway half wrote it.
-				const [applicationId, interactionToken] = action.replyHandle?.split("/") ?? []
+				const [applicationId, interactionToken] =
+					action.replyHandle === undefined ? [] : Str.split("/")(action.replyHandle)
 				if (applicationId === undefined || interactionToken === undefined) {
 					return yield* failed("whisper", "This click carried no interaction to answer privately")
 				}

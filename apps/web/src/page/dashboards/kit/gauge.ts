@@ -1,5 +1,5 @@
 import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // The gauge widget's geometry: a 270 degree segmented
 // dial whose viewBox is fitted to what is drawn. The view is in ./tiles-gauge.ts.
@@ -37,11 +37,12 @@ const RAMP: ReadonlyArray<readonly [number, number, number, number]> = [
 
 const rampColor = (fraction: number): string => {
 	const x = fraction < 0 ? 0 : fraction > 1 ? 1 : fraction
-	const index = RAMP.findIndex(
+	const index = Arr.findFirstIndex(
+		RAMP,
 		(stop, i) => i < RAMP.length - 1 && x >= stop[0] && x <= (RAMP[i + 1]?.[0] ?? 1),
 	)
-	const lo = RAMP[index === -1 ? 0 : index] ?? [0, 0, 0, 0]
-	const hi = RAMP[index === -1 ? RAMP.length - 1 : index + 1] ?? lo
+	const lo = RAMP[Option.getOrElse(index, () => 0)] ?? [0, 0, 0, 0]
+	const hi = RAMP[Option.match(index, { onNone: () => RAMP.length - 1, onSome: (at) => at + 1 })] ?? lo
 	const t = (x - lo[0]) / (hi[0] - lo[0] || 1)
 	const channel = (i: 1 | 2 | 3) => Math.round(lo[i] + (hi[i] - lo[i]) * t)
 	return `rgb(${channel(1)}, ${channel(2)}, ${channel(3)})`
@@ -113,9 +114,12 @@ const arcs = (value: number | null, fraction: number) => {
 const scale = (min: number, max: number, span: number, options: GaugeOptions) => {
 	const angleFor = (tickValue: number) => START_ANGLE + ((tickValue - min) / span) * SWEEP
 	const ticks = Arr.map(
-		[min, max, ...Arr.map(options.thresholds ?? [], (threshold) => threshold.value)].filter(
-			(tickValue, index, all) =>
-				tickValue >= min && tickValue <= max && all.indexOf(tickValue) === index,
+		Arr.dedupeWith(
+			Arr.filter(
+				[min, max, ...Arr.map(options.thresholds ?? [], (threshold) => threshold.value)],
+				(tickValue) => tickValue >= min && tickValue <= max,
+			),
+			(a, b) => a === b,
 		),
 		(tickValue) => ({ value: tickValue, angle: angleFor(tickValue) }),
 	)
@@ -129,9 +133,9 @@ const scale = (min: number, max: number, span: number, options: GaugeOptions) =>
 		}
 	})
 	const labels = Arr.map(
-		Arr.filter(ticks, (tick) => tick.value !== min && tick.value !== max).reduce<
-			ReadonlyArray<{ value: number; angle: number }>
-		>(
+		Arr.reduce<{ value: number; angle: number }, ReadonlyArray<{ value: number; angle: number }>>(
+			Arr.filter(ticks, (tick) => tick.value !== min && tick.value !== max),
+			[],
 			(placed, tick) =>
 				Arr.some(
 					[START_ANGLE, END_ANGLE, ...Arr.map(placed, (p) => p.angle)],
@@ -139,7 +143,6 @@ const scale = (min: number, max: number, span: number, options: GaugeOptions) =>
 				)
 					? placed
 					: [...placed, tick],
-			[],
 		),
 		(tick): GaugeLabel => {
 			const point = polar(R_LABEL, tick.angle)

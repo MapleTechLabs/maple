@@ -21,7 +21,7 @@ import { destinationTarget } from "./derive"
 import { Message, type Tier } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // `DestinationList` and `AddDestinationMenu`: a tier's destinations and the menu that adds one.
 
@@ -201,7 +201,7 @@ const addMenu = (
 	)
 	const menuId = menuIdOf(tier)
 	const waitingId = model.chatConnectMenuId === menuId ? waitingFor(model.chatConnect) : null
-	const waiting = connectors.find((c) => c.id === waitingId)
+	const waiting = Arr.findFirst(connectors, (c) => c.id === waitingId)
 	const menu = model.menus[menuId] ?? Menu.init(menuId)
 	return h.submodel({
 		slotId: menuId,
@@ -227,9 +227,11 @@ const addMenu = (
 							},
 							[
 								icon(h, "PlusIcon", { size: 14 }),
-								waiting === undefined
-									? "Add destination"
-									: `Finish connecting ${waiting.name} in the other window…`,
+								Option.match(waiting, {
+									onNone: () => "Add destination",
+									onSome: (connector) =>
+										`Finish connecting ${connector.name} in the other window…`,
+								}),
 								h.span(
 									[h.AriaHidden(true), h.Class("ml-auto flex items-center gap-1.5")],
 									[

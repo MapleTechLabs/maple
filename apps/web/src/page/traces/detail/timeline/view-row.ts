@@ -13,7 +13,7 @@ import type { Bar } from "./layout"
 import { Message } from "./message"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstackClass } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // `TraceTimelineRow` (packages/ui/src/components/traces/trace-timeline-row.tsx).
 // TODO(tooltip): the hover span tooltip (`spanTooltipContent`, rich and pointer-following) is not
@@ -72,7 +72,10 @@ const LABEL_FIT = [
 ] as const
 const labelFit = (name: string) => {
 	const needed = name.length * 6.6 + 16
-	return LABEL_FIT.find((step) => needed <= step.upTo) ?? LABEL_FIT[LABEL_FIT.length - 1]
+	return Option.getOrElse(
+		Arr.findFirst(LABEL_FIT, (step) => needed <= step.upTo),
+		() => LABEL_FIT[LABEL_FIT.length - 1],
+	)
 }
 
 const attr = (h: H, value: string) => h.Attribute("class", value)

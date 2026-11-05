@@ -13,7 +13,7 @@ import {
 	type ChatEvent,
 	type ChatEventInput,
 } from "@maple/domain/chat-session"
-import { Duration, Effect, Fiber, Stream, Array as Arr, String as Str } from "effect"
+import { Duration, Effect, Fiber, Option, Stream, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { chatConnectorId } from "./connector"
 import { driveChatTurn } from "./driver"
@@ -224,7 +224,12 @@ describe("driveChatTurn", () => {
 
 			// The first thing the reader sees after the placeholder: the tool, and none of the
 			// narration the model wrote on its way into it.
-			expect(chat.calls.find((call) => working(call.blocks).length > 0)?.blocks).toEqual([
+			expect(
+				Arr.findFirst(chat.calls, (call) => working(call.blocks).length > 0).pipe(
+					Option.map((call) => call.blocks),
+					Option.getOrUndefined,
+				),
+			).toEqual([
 				{ kind: "activity", tools: [{ label: "Finding errors", status: "running", detail: null }] },
 			])
 			const lines = Arr.map(chat.calls, (call) => working(call.blocks))
@@ -232,7 +237,8 @@ describe("driveChatTurn", () => {
 			for (const line of lines) expect(line.length).toBeLessThanOrEqual(1)
 			// The two calls, in the order the turn made them. Repeats are a call whose status
 			// changed under the same name, which is one line either way.
-			expect(lines.flat().filter((label, index, all) => label !== all[index - 1])).toEqual([
+			const flat = Arr.flatten(lines)
+			expect(Arr.filter(flat, (label, index) => label !== flat[index - 1])).toEqual([
 				"Finding errors",
 				"Searching traces",
 			])
@@ -320,7 +326,12 @@ describe("driveChatTurn", () => {
 			yield* Fiber.join(fiber)
 
 			// The delegation is a line on the same status block, named for the agent it runs.
-			expect(chat.calls.find((call) => working(call.blocks).length > 0)?.blocks).toEqual([
+			expect(
+				Arr.findFirst(chat.calls, (call) => working(call.blocks).length > 0).pipe(
+					Option.map((call) => call.blocks),
+					Option.getOrUndefined,
+				),
+			).toEqual([
 				{
 					kind: "activity",
 					tools: [{ label: "Delegating to reviewer", status: "running", detail: "1 step" }],

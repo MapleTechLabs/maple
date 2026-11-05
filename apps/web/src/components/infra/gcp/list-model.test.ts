@@ -33,7 +33,7 @@ import {
 } from "./list-model"
 import type { GcpCloudSqlInstance } from "./inventory"
 import { gcpWorkloadId, type GcpMetricPoint } from "./tabs"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Option, Order, Record as Rec } from "effect"
 
 const point = (
 	keys: ReadonlyArray<string>,
@@ -103,14 +103,22 @@ describe("services", () => {
 		],
 	)
 	const health = (name: string) =>
-		rowHealth(GCP_SERVICE_RULES, rows.find((row) => row.name === name) ?? rows[0])
+		rowHealth(
+			GCP_SERVICE_RULES,
+			Option.getOrElse(
+				Arr.findFirst(rows, (row) => row.name === name),
+				() => rows[0],
+			),
+		)
 
 	it("merges Cloud Run services and 1st gen functions into one list", () => {
 		expect(Arr.map(rows, (row) => [row.name, row.service])).toContainEqual([
 			"image-resize",
 			"cloudFunctions",
 		])
-		expect(rows.find((row) => row.name === "image-resize")).toMatchObject({
+		expect(
+			Option.getOrUndefined(Arr.findFirst(rows, (row) => row.name === "image-resize")),
+		).toMatchObject({
 			requests: 1000,
 			failed: 100,
 			project: "acme-data",
@@ -130,7 +138,7 @@ describe("services", () => {
 
 	it("scopes slow by latency alone, also when the service serves 5xx", () => {
 		const slow = Arr.filter(rows, (row) => GCP_SERVICE_RULES.inScope(row, "slow"))
-		expect(names(slow).toSorted()).toEqual(["checkout-api", "search"])
+		expect(Arr.sort(names(slow), Order.String)).toEqual(["checkout-api", "search"])
 	})
 
 	it("lists problems first, then by requests", () => {
@@ -175,7 +183,11 @@ describe("Pub/Sub subscriptions", () => {
 		sparks,
 		DAY,
 	).pubsub
-	const find = (name: string) => rows.find((row) => row.name === name) ?? rows[0]
+	const find = (name: string) =>
+		Option.getOrElse(
+			Arr.findFirst(rows, (row) => row.name === name),
+			() => rows[0],
+		)
 
 	it("reads push failures as every attempt not acked, and a pull subscription as none", () => {
 		expect(find("orders-fulfil")).toMatchObject({ pushRequests: 1000, pushFailed: 10 })

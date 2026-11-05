@@ -2,7 +2,7 @@ import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
 import { formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { errorRate, formatDurationNs } from "@maple/web-data/lib/tool-analytics"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Schema, Array as Arr, String as Str, Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { eyebrow } from "@maple/views/ui/eyebrow"
@@ -601,8 +601,14 @@ const statusNote = (errors: number, statusErrors: number): string | undefined =>
 }
 
 /** The window's `initialize` requests: none on a stateless server (MCP 2026-07-28). */
-const handshakesOf = (data: McpServerOverview): number =>
-	data.methods.find((method) => method.method === "initialize")?.calls ?? 0
+const handshakesOf = (data: McpServerOverview): number => callsOf(data, "initialize")
+
+/** The window's calls of one JSON-RPC method, 0 when it was not called. */
+const callsOf = (data: McpServerOverview, name: string): number =>
+	Option.match(
+		Arr.findFirst(data.methods, (method) => method.method === name),
+		{ onNone: () => 0, onSome: (method) => method.calls },
+	)
 
 const clientsHalf = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: ServerBodyOptions<M>): Html => {
 	const handshakes = handshakesOf(data)
@@ -672,7 +678,7 @@ const clientsHalf = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 
 const detailGrid = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: ServerBodyOptions<M>): Html => {
 	const handshakes = handshakesOf(data)
-	const toolCalls = data.methods.find((method) => method.method === "tools/call")?.calls ?? 0
+	const toolCalls = callsOf(data, "tools/call")
 	const status = statusNote(data.totals.errors, data.totals.statusErrors)
 	return h.div(
 		[h.Class("grid @min-[900px]/page:grid-cols-2")],

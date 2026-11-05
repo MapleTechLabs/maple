@@ -182,7 +182,10 @@ export const completedCheck = (
 	connection: V2AwsConnection | null,
 	failure: LoadFailure | null,
 ): Return => {
-	const quiet = model.awsCard.checking.find((entry) => entry.id === id)?.quiet ?? sentQuiet
+	const quiet = Arr.findFirst(model.awsCard.checking, (entry) => entry.id === id).pipe(
+		Option.flatMapNullishOr((found) => found.quiet),
+		Option.getOrElse(() => sentQuiet),
+	)
 	const settled = withCard(model, {
 		checking: Arr.filter(model.awsCard.checking, (entry) => entry.id !== id),
 	})
@@ -191,8 +194,11 @@ export const completedCheck = (
 			? { model: settled }
 			: toast(settled, "error", "Couldn't check the AWS connection", failure.message)
 	}
-	const before = connectionsOf(model).find((entry) => entry.id === id)
-	const justVerified = before?.verified_at === null && connection?.verified_at != null
+	const justVerified =
+		Option.exists(
+			Arr.findFirst(connectionsOf(model), (entry) => entry.id === id),
+			(before) => before.verified_at === null,
+		) && connection?.verified_at != null
 	// Only the open setup's own connection closes it: a background check may verify another.
 	const isOpen = model.awsCard.setupId === id
 	return chain(settled, [
@@ -246,8 +252,9 @@ export const gotDisconnectDialog = (model: Model, message: Dialog.Message): Retu
 
 export const confirmedDisconnect = (model: Model): Return => {
 	const id = model.awsCard.disconnectId
-	const connection = connectionsOf(model).find((entry) => entry.id === id)
-	if (id === null || connection === undefined || model.awsCard.isDisconnecting) return { model }
+	const found = Arr.findFirst(connectionsOf(model), (entry) => entry.id === id)
+	if (id === null || Option.isNone(found) || model.awsCard.isDisconnecting) return { model }
+	const connection = found.value
 	return {
 		model: withCard(model, { isDisconnecting: true }),
 		commands: [DeleteAwsConnection({ id, accountId: connection.account_id })],
@@ -381,20 +388,27 @@ export const statusArrived = (
 	before: ReadonlyArray<V2AwsConnection>,
 ): Return => {
 	const setupId = model.awsCard.setupId
-	const was = before.find((entry) => entry.id === setupId)
-	const now = connectionsOf(model).find((entry) => entry.id === setupId)
-	const justVerified = was?.verified_at === null && now !== undefined && now.verified_at !== null
+	const wasUnverified = Option.exists(
+		Arr.findFirst(before, (entry) => entry.id === setupId),
+		(entry) => entry.verified_at === null,
+	)
+	const verified = Option.filter(
+		Arr.findFirst(connectionsOf(model), (entry) => entry.id === setupId),
+		(entry) => entry.verified_at !== null,
+	)
 	return chain(model, [
 		(next) => requestIngest(next, context, "Load"),
 		(next) =>
-			justVerified
-				? toast(
+			Option.match(wasUnverified ? verified : Option.none(), {
+				onNone: () => ({ model: next }),
+				onSome: (now) =>
+					toast(
 						withCard(next, { setupId: null }),
 						"success",
 						"AWS connected",
 						`Maple can read account ${now.account_id}.`,
-					)
-				: { model: next },
+					),
+			}),
 	])
 }
 
@@ -413,8 +427,9 @@ const toggled = (
 	id: AwsConnectionId,
 	change: (selection: AwsSelection) => AwsSelection,
 ): Return => {
-	const connection = connectionsOf(model).find((entry) => entry.id === id)
-	if (connection === undefined) return { model }
+	const found = Arr.findFirst(connectionsOf(model), (entry) => entry.id === id)
+	if (Option.isNone(found)) return { model }
+	const connection = found.value
 	return {
 		model: withCard(model, {
 			selection: change(selectionOf(connection, model.awsCard.selection)),
@@ -434,8 +449,9 @@ export const toggledNamespace = (model: Model, id: AwsConnectionId, namespace: A
 
 export const submittedMetrics = (model: Model, id: AwsConnectionId): Return => {
 	const card = model.awsCard
-	const connection = connectionsOf(model).find((entry) => entry.id === id)
-	if (connection === undefined || card.isSavingMetrics) return { model }
+	const found = Arr.findFirst(connectionsOf(model), (entry) => entry.id === id)
+	if (Option.isNone(found) || card.isSavingMetrics) return { model }
+	const connection = found.value
 	return Option.match(metricStreamOf(selectionOf(connection, card.selection)), {
 		onNone: () => ({ model: withCard(model, { metricsError: METRIC_SELECTION_HINT }) }),
 		onSome: (metricStream) => ({

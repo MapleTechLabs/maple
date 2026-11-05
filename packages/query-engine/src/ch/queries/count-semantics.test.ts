@@ -19,7 +19,7 @@ import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { tracesBreakdownQuery, tracesTimeseriesQuery } from "./traces"
 import type { TracesBaseWhereOpts } from "./query-helpers"
 import { OrgId } from "@maple/domain"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 const baseParams = {
 	orgId: OrgId.make("org_123"),
@@ -32,20 +32,22 @@ const baseParams = {
 function countExpr(sql: string): string {
 	// Scan by line rather than by regex over the whole string: the expression can
 	// itself contain commas (`if(sum(a) > 0, sum(a), sum(b))`).
-	const line = Str.split("\n")(sql).find((l) => / AS count\b/.test(l))
-	if (!line) throw new Error(`no count column in:\n${sql}`)
-	return Str.trim(Str.slice(0, line.indexOf(" AS count"))(line))
+	const found = Arr.findFirst(Str.split("\n")(sql), (l) => / AS count\b/.test(l))
+	if (Option.isNone(found)) throw new Error(`no count column in:\n${sql}`)
+	const line = found.value
+	return Str.trim(Str.slice(0, Option.getOrThrow(Str.indexOf(" AS count")(line)))(line))
 }
 
 /** The SELECT expression aliased as `spanCount`, e.g. `count()`. */
 function spanCountExpr(sql: string): string {
-	const line = Str.split("\n")(sql).find((l) => / AS spanCount\b/.test(l))
-	if (!line) throw new Error(`no spanCount column in:\n${sql}`)
-	return Str.trim(Str.slice(0, line.indexOf(" AS spanCount"))(line))
+	const found = Arr.findFirst(Str.split("\n")(sql), (l) => / AS spanCount\b/.test(l))
+	if (Option.isNone(found)) throw new Error(`no spanCount column in:\n${sql}`)
+	const line = found.value
+	return Str.trim(Str.slice(0, Option.getOrThrow(Str.indexOf(" AS spanCount")(line)))(line))
 }
 
 function sourceTable(sql: string): string {
-	const tables = Arr.map([...sql.matchAll(/FROM (\w+)/g)], (m) => m[1])
+	const tables = Arr.map(Arr.fromIterable(Str.matchAll(/FROM (\w+)/g)(sql)), (m) => m[1])
 	// Union/CTE shapes read several tables; the invariant cares about the set.
 	return Arr.join([...new Set(tables)].sort(), "+")
 }
@@ -204,7 +206,8 @@ const BREAKDOWN_DIMENSIONS = [
 
 describe("a breakdown totals the same regardless of the dimension", () => {
 	for (const filters of [{}, { rootOnly: true }, { serviceName: "api" }] as TracesBaseWhereOpts[]) {
-		const label = Object.keys(filters).length ? Arr.join(Object.keys(filters), "+") : "no filters"
+		const keys = Rec.keys<string, unknown>({ ...filters })
+		const label = keys.length ? Arr.join(keys, "+") : "no filters"
 
 		it(`uses one count definition and one population across dimensions (${label})`, () => {
 			const compiled = Arr.map(
@@ -350,6 +353,6 @@ describe("timeseries and breakdown agree for the same query", () => {
 	it("skips quantile state on both branches when the metric needs none", () => {
 		const sql = timeseriesSql("service", {}, 3600)
 		expect(sql).not.toContain("quantilesTDigest")
-		expect([...sql.matchAll(/'' AS bDurationQuantiles/g)]).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/'' AS bDurationQuantiles/g)(sql))).toHaveLength(2)
 	})
 })

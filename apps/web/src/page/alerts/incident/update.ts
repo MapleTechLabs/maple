@@ -128,7 +128,7 @@ const followData = (model: Model, context: PageContext): Return =>
 				),
 			]
 			return {
-				model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
+				model: Arr.reduce(steps, model, (next, step) => ({ ...next, ...step.patch })),
 				commands: Arr.flatMap(steps, (step) => step.commands),
 			}
 		},
@@ -174,7 +174,10 @@ const isSameRuleRows = Schema.toEquivalence(Schema.Array(AlertRuleRowSchema))
 const isSameStateRows = Schema.toEquivalence(Schema.Array(AlertRuleStateRowSchema))
 
 const incidentRuleIdOf = (model: Model) =>
-	model.incidents?.find((row) => row.id === model.incidentId)?.rule_id
+	Option.map(
+		Arr.findFirst(model.incidents ?? [], (row) => row.id === model.incidentId),
+		(row) => row.rule_id,
+	)
 
 /**
  * The live rules and states are the whole org's and change on every alert tick. Once the incident
@@ -186,8 +189,9 @@ const withRuleRows = (
 	orgId: string,
 	patch: Readonly<{ rules: NonNullable<Model["rules"]> } | { states: NonNullable<Model["states"]> }>,
 ): Return => {
-	const ruleId = incidentRuleIdOf(model)
-	if (orgId !== context.orgId || ruleId === undefined) return withRows(model, context, orgId, patch)
+	const foundRuleId = incidentRuleIdOf(model)
+	if (orgId !== context.orgId || Option.isNone(foundRuleId)) return withRows(model, context, orgId, patch)
+	const ruleId = foundRuleId.value
 	const isUnchanged =
 		"rules" in patch
 			? model.rules !== null &&
@@ -203,7 +207,7 @@ const withRuleRows = (
 	return isUnchanged ? { model } : withRows(model, context, orgId, patch)
 }
 const incidentRowOf = (model: Model, rows: Model["incidents"]) =>
-	Option.fromNullishOr((rows ?? []).find((row) => row.id === model.incidentId))
+	Arr.findFirst(rows ?? [], (row) => row.id === model.incidentId)
 
 /** `clockAtSync`: once the incident row itself changes, the minute clock is read again. */
 const withIncidents = (

@@ -58,11 +58,13 @@ export const renderTemplate = (template: string, context: TemplateContext): Rend
 	const missing = new Set<string>()
 
 	// 1. Resolve conditional blocks first; their inner tokens are substituted in step 2.
+	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	const withConditionals = template.replace(IF_BLOCK, (_match, key: string, inner: string) =>
 		isPresent(context[key]) ? inner : "",
 	)
 
 	// 2. Substitute remaining tokens.
+	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	const text = withConditionals.replace(TOKEN, (_match, key: string, fallback: string | undefined) => {
 		const value = context[key]
 		if (isPresent(value)) return value

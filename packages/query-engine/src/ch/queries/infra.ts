@@ -1518,10 +1518,9 @@ export function infraPresenceQuery(): CHUnionQuery<InfraPresenceOutput> {
 		presenceBranch("k8sNodes", NODE_FACET_PROBE_METRIC, ($) =>
 			$.ResourceAttributes.get("k8s.node.name").neq(""),
 		),
-		presenceBranch("k8sWorkloads", POD_FACET_PROBE_METRIC, ($) =>
-			Arr.map(WORKLOAD_OWNER_KEYS, (key) => $.ResourceAttributes.get(key).neq("")).reduce((a, b) =>
-				a.or(b),
-			),
-		),
+		presenceBranch("k8sWorkloads", POD_FACET_PROBE_METRIC, ($) => {
+			const owned = Arr.map(WORKLOAD_OWNER_KEYS, (key) => $.ResourceAttributes.get(key).neq(""))
+			return Arr.reduce(Arr.tailNonEmpty(owned), Arr.headNonEmpty(owned), (a, b) => a.or(b))
+		}),
 	).format("JSON")
 }

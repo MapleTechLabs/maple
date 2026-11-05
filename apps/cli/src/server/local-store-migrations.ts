@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto"
 import { existsSync, readFileSync, statfsSync } from "node:fs"
 import { lstat, readdir, stat } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
-import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Chdb } from "@maple/local-server/chdb"
 import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
 import {
@@ -826,7 +826,8 @@ const moduleForStep = (
 	step: MigrationStepJournal,
 	modules: ReadonlyArray<AnyLocalStoreMigrationModule>,
 ): AnyLocalStoreMigrationModule => {
-	const module = modules.find(
+	const module = Arr.findFirst(
+		modules,
 		(candidate) =>
 			candidate.id === step.id &&
 			candidate.moduleVersion === step.moduleVersion &&
@@ -839,8 +840,9 @@ const moduleForStep = (
 			candidate.to.digest === step.to.digest &&
 			candidate.to.chdb === step.to.chdb,
 	)
-	if (!module) throw new Error(`unfinished local migration step ${step.id} is not available in this build`)
-	return module
+	if (Option.isNone(module))
+		throw new Error(`unfinished local migration step ${step.id} is not available in this build`)
+	return module.value
 }
 
 const validateJournalModuleState = (

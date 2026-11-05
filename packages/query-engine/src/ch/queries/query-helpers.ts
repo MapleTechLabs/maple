@@ -279,7 +279,7 @@ export function severitySpellings(level: string): readonly string[] {
 	if (trimmed === "") return []
 	const upper = Str.toUpperCase(trimmed)
 	const lower = Str.toLowerCase(trimmed)
-	const title = upper.charAt(0) + Str.slice(1)(lower)
+	const title = Str.slice(0, 1)(upper) + Str.slice(1)(lower)
 	return [...new Set([upper, title, lower])]
 }
 

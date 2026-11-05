@@ -482,9 +482,9 @@ const normalizeBucket = (bucket: string | Date | DateTime.Utc): string => {
 		return raw
 	}
 
-	const tinybirdDateTimeMatch = raw.match(TINYBIRD_DATETIME_RE)
-	if (tinybirdDateTimeMatch) {
-		const [, datePart, timePart, fractional = ""] = tinybirdDateTimeMatch
+	const tinybirdDateTimeMatch = Str.match(TINYBIRD_DATETIME_RE)(raw)
+	if (Option.isSome(tinybirdDateTimeMatch)) {
+		const [, datePart, timePart, fractional = ""] = tinybirdDateTimeMatch.value
 		const normalized = new Date(`${datePart}T${timePart}${fractional}Z`)
 		if (!Number.isNaN(normalized.getTime())) {
 			return normalized.toISOString()
@@ -603,7 +603,8 @@ const validateProductEventsAttributeGrouping = Effect.fn(
 		return
 	const groupBy = query.kind === "timeseries" ? (query.groupBy ?? []) : [query.groupBy]
 	if (!groupBy.includes("attribute")) return
-	if (query.filters?.groupByAttributeKey?.trim()) return
+	const groupByAttributeKey = query.filters?.groupByAttributeKey
+	if (groupByAttributeKey !== undefined && Str.trim(groupByAttributeKey)) return
 	return yield* new QueryEngineValidationError({
 		message: "Invalid product events attribute grouping",
 		details: ["groupBy=attribute requires filters.groupByAttributeKey"],
@@ -1346,9 +1347,15 @@ function extractTracesFacetsOpts(filters: Record<string, unknown> | undefined): 
 	// ticks several facet values, as one `in` carrying the whole set. Negated
 	// entries are exclusions and must not be read as inclusions here.
 	const isPositiveHttp = (f: AttrFilterArray[number], key: string) => f.key === key && !f.negated
-	const httpMethodFilter = attrFilters.find((f) => isPositiveHttp(f, "http.method"))
-	const httpStatusFilter = attrFilters.find((f) => isPositiveHttp(f, "http.status_code"))
-	const customAttr = attrFilters.find((f) => f.key !== "http.method" && f.key !== "http.status_code")
+	const httpMethodFilter = Option.getOrUndefined(
+		Arr.findFirst(attrFilters, (f) => isPositiveHttp(f, "http.method")),
+	)
+	const httpStatusFilter = Option.getOrUndefined(
+		Arr.findFirst(attrFilters, (f) => isPositiveHttp(f, "http.status_code")),
+	)
+	const customAttr = Option.getOrUndefined(
+		Arr.findFirst(attrFilters, (f) => f.key !== "http.method" && f.key !== "http.status_code"),
+	)
 	const customRes = resFilters[0]
 
 	const envs = filters?.environments as string[] | undefined

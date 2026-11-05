@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { getActiveSink } from "@maple/browser-session"
-import { Effect, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Array as Arr, String as Str } from "effect"
 import { afterEach, beforeEach, expect, vi } from "vitest"
 import { make as makeTelemetry } from "./flushable.js"
 import { resetStandaloneSessionForTests } from "./standalone-session.js"
@@ -157,7 +157,9 @@ describe("standalone session emission (client)", () => {
 
 		const telemetry = make(baseConfig)
 		await new Promise((resolve) => setTimeout(resolve, 0))
-		const active = metaPosts.find((post) => post.row.session_id === "persisted-session")!
+		const active = Option.getOrThrow(
+			Arr.findFirst(metaPosts, (post) => post.row.session_id === "persisted-session"),
+		)
 		expect(active.row.click_count).toBe(7)
 		expect(active.row.error_count).toBe(3)
 
@@ -268,11 +270,10 @@ describe("standalone session emission (client)", () => {
 		)
 		await new Promise((resolve) => setTimeout(resolve, 0))
 
-		const ended = metaPosts.find((p) => p.row.status === "ended")
-		expect(ended).toBeDefined()
-		expect(ended!.row.session_id).toBe(firstSession)
-		expect(ended!.row.trace_ids.length).toBe(1)
-		expect(ended!.row.trace_ids[0]).toMatch(/^[0-9a-f]{32}$/i)
+		const ended = Option.getOrThrow(Arr.findFirst(metaPosts, (p) => p.row.status === "ended"))
+		expect(ended.row.session_id).toBe(firstSession)
+		expect(ended.row.trace_ids.length).toBe(1)
+		expect(ended.row.trace_ids[0]).toMatch(/^[0-9a-f]{32}$/i)
 
 		const secondActive = Arr.filter(metaPosts, (p) => p.row.status === "active").at(-1)!
 		expect(secondActive.row.session_id).not.toBe(firstSession)

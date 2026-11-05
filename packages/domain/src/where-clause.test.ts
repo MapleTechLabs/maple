@@ -291,7 +291,7 @@ describe("OR groups", () => {
 			orGroups,
 		)
 		expect(result.warnings).toEqual([])
-		expect(result.groups[0]?.map((c) => c.value)).toEqual(["buy and sell", "this or that"])
+		expect(Arr.map(result.groups[0] ?? [], (c) => c.value)).toEqual(["buy and sell", "this or that"])
 		expect(Arr.map(result.clauses, (c) => c.key)).toEqual(["x"])
 	})
 

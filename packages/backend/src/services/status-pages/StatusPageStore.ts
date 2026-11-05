@@ -5,7 +5,7 @@ import {
 	type StatusPageOverlayEntry,
 	type StatusPagePublisherHeartbeat,
 } from "@maple/domain/status-page"
-import { Context, Effect, Layer, Option, Ref, Schema, Array as Arr, String as Str } from "effect"
+import { Context, Effect, Layer, Option, Order, Ref, Schema, Array as Arr, String as Str } from "effect"
 
 // Edge storage for status pages: the snapshot (KV, mirrored to R2), routes, the publisher
 // heartbeat and the break-glass entries the status Worker writes while Maple is down.
@@ -106,12 +106,14 @@ export const parseOverlayKey = (
 ): Option.Option<{ readonly pageId: StatusPageId; readonly entryId: string }> => {
 	if (!Str.startsWith(StatusPageKeys.overlayAll)(key)) return Option.none()
 	const rest = Str.slice(StatusPageKeys.overlayAll.length)(key)
-	const split = rest.indexOf(":")
-	if (split <= 0 || split === rest.length - 1) return Option.none()
-	return Option.map(decodePageId(Str.slice(0, split)(rest)), (pageId) => ({
-		pageId,
-		entryId: Str.slice(split + 1)(rest),
-	}))
+	return Option.flatMap(
+		Option.filter(Str.indexOf(":")(rest), (split) => split > 0 && split !== rest.length - 1),
+		(split) =>
+			Option.map(decodePageId(Str.slice(0, split)(rest)), (pageId) => ({
+				pageId,
+				entryId: Str.slice(split + 1)(rest),
+			})),
+	)
 }
 
 /** Low-level key/value operations both layers implement. */
@@ -327,9 +329,10 @@ export class StatusPageStore extends Context.Service<StatusPageStore, StatusPage
 						Effect.map((map) => {
 							const size = options.listPageSize ?? STATUS_PAGE_KV_LIST_LIMIT
 							const offset = cursor === null ? 0 : Number(cursor)
-							const matching = Arr.filter([...map.keys()], (key) =>
-								Str.startsWith(prefix)(key),
-							).toSorted()
+							const matching = Arr.sort(
+								Arr.filter([...map.keys()], (key) => Str.startsWith(prefix)(key)),
+								Order.String,
+							)
 							const end = offset + size
 							return {
 								keys: matching.slice(offset, end),

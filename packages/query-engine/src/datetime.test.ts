@@ -35,7 +35,7 @@ import {
 	zonedDateParts,
 	zonedPartsToEpochMs,
 } from "./datetime"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 describe("warehouseDateTimeToIso", () => {
 	it("appends Z to a tz-less space-separated DateTime", () => {
@@ -439,9 +439,12 @@ describe("isAlertRuleDue", () => {
 	})
 
 	it("runs a rule edited since its last claim on the next tick", () => {
-		const notDue = [1001, 1002, 1003].find(
-			(n) => !isAlertRuleDue({ ...base, lastClaimedAt: minute(1000), windowEndMs: minute(n) }),
-		)!
+		const notDue = Option.getOrThrow(
+			Arr.findFirst(
+				[1001, 1002, 1003],
+				(n) => !isAlertRuleDue({ ...base, lastClaimedAt: minute(1000), windowEndMs: minute(n) }),
+			),
+		)
 		expect(
 			isAlertRuleDue({
 				...base,

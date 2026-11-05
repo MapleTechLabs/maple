@@ -166,7 +166,10 @@ const repoConfigBody = (h: H, model: Model): Html =>
 	})
 
 const repoDialog = (h: H, model: Model): Html => {
-	const repo = activeRepositories(model).find((candidate) => candidate.id === model.configuring)
+	const repoName = Option.match(
+		Arr.findFirst(activeRepositories(model), (candidate) => candidate.id === model.configuring),
+		{ onNone: () => "", onSome: (repo) => repo.fullName },
+	)
 	const id = model.dialog.id
 	return h.submodel({
 		slotId: `${id}-view`,
@@ -184,7 +187,7 @@ const repoDialog = (h: H, model: Model): Html => {
 						h,
 						"dialog",
 						id,
-						`${repo?.fullName ?? ""}. Anything left on the organization default follows the default review rules.`,
+						`${repoName}. Anything left on the organization default follows the default review rules.`,
 					),
 				]),
 				DialogView.dialogPanel(h, "dialog", id, [repoConfigBody(h, model)]),

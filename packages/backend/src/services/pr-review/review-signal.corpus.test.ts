@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { confidencePrReview } from "@maple/domain/http"
-import { Array as Arr, Record as Rec, Schema, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, Schema, String as Str } from "effect"
 import { assert, describe, it } from "vitest"
 import {
 	parseSummary,
@@ -46,11 +46,15 @@ const MAX_NEXT_FOUND_AT_9_10 = 0.1
 describe("the review comment on real pull requests", () => {
 	it("labels only pull requests and heads the corpus has", () => {
 		const unknown = Arr.flatMap(Rec.toEntries(labels), ([id, label]) => {
-			const item = scored.find((candidate) => candidate.id === id)
+			const item = Option.getOrUndefined(Arr.findFirst(scored, (candidate) => candidate.id === id))
 			return Arr.map(
 				Arr.filter(
 					label.missed,
-					(miss) => item?.reviews.some((review) => review.head === miss.head) !== true,
+					(miss) =>
+						!(
+							item !== undefined &&
+							Arr.some(item.reviews, (review) => review.head === miss.head)
+						),
 				),
 				(miss) => `${id}@${miss.head}`,
 			)

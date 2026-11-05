@@ -4,7 +4,7 @@
  */
 import { createHash } from "node:crypto"
 import { type AlertDeliveryFailure, AlertDeliveryTargetMissingError } from "@maple/domain/http"
-import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
+import { Clock, Effect, Order, Schema, Array as Arr, String as Str } from "effect"
 import { buildSummaryLine } from "../../AlertDeliveryDispatch"
 import { displayGroupKey, formatAlertHeadline, formatSeverityLabel, truncate } from "../../alert-formatting"
 import { timestampMs } from "@maple/backend/platform/time"
@@ -34,7 +34,7 @@ const SEND_TIMEOUT = "25 seconds"
 /** A UUID v4-shaped id (Linear requires v4) derived from `parts`, so the same event always maps to it. */
 export const linearEntityId = (...parts: ReadonlyArray<string>): string => {
 	const hex = createHash("sha256").update(Arr.join(parts, "\u0000")).digest("hex")
-	const variant = ((Number.parseInt(hex.charAt(16), 16) & 0x3) | 0x8).toString(16)
+	const variant = ((Number.parseInt(Str.slice(16, 17)(hex), 16) & 0x3) | 0x8).toString(16)
 	return `${Str.slice(0, 8)(hex)}-${Str.slice(8, 12)(hex)}-4${Str.slice(13, 16)(hex)}-${variant}${Str.slice(17, 20)(hex)}-${Str.slice(20, 32)(hex)}`
 }
 
@@ -313,7 +313,10 @@ const reopen = Effect.fn("LinearTransport.reopen")(function* (
 	const team = yield* fetchTeam(port, input)
 	const stateId =
 		(team.triageEnabled ? team.triageIssueState?.id : undefined) ??
-		team.states.nodes.toSorted((a, b) => a.position - b.position)[0]?.id
+		Arr.sort(
+			team.states.nodes,
+			Order.mapInput(Order.Number, (state: (typeof team.states.nodes)[number]) => state.position),
+		)[0]?.id
 	if (stateId === undefined) return false
 	yield* port.request(
 		input.context.destination.orgId,

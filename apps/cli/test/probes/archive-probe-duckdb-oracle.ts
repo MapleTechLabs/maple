@@ -16,7 +16,7 @@ import { execSync } from "node:child_process"
 import { ArchiveProbe, readRows } from "../archive-probe-helpers"
 import { archiveSignal } from "@maple/local-server/archives/signals"
 import { exportSignalShards } from "@maple/local-server/archives/export"
-import { Array as Arr, String as Str } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 
 const SCHEMA = `CREATE DATABASE IF NOT EXISTS default;
 CREATE TABLE IF NOT EXISTS default.traces (
@@ -141,8 +141,10 @@ try {
 		),
 	)
 	// DuckDB renders arrays as [1,1,1] or {1,1,1}; both contain three 1s.
-	const srcOnes = (srcBuckets.match(/1/g) || []).length
-	const duckOnes = (duckBuckets.match(/1/g) || []).length
+	const onesIn = (buckets: string) =>
+		Option.match(Str.match(/1/g)(buckets), { onNone: () => 0, onSome: (ones) => ones.length })
+	const srcOnes = onesIn(srcBuckets)
+	const duckOnes = onesIn(duckBuckets)
 	if (srcOnes !== duckOnes)
 		h.fail(`DuckDB BucketCounts ones ${duckOnes} != source ${srcOnes} (duck=${duckBuckets})`)
 

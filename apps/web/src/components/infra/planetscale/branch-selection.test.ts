@@ -11,7 +11,7 @@ import {
 	resolveSelectedBranch,
 	type BranchCandidate,
 } from "./branch-selection"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 const branch = (name: string, production = false, ready = true) => ({ id: name, name, production, ready })
 
@@ -90,20 +90,20 @@ describe("mergeBranchCandidates", () => {
 
 	it("adds branches the rollups saw but the inventory hasn't listed", () => {
 		const merged = mergeBranchCandidates([branch("main", true)], [stat("main", 18), stat("pr-9", 3)])
-		const extra = merged.find((c) => c.name === "pr-9")
+		const extra = Option.getOrUndefined(Arr.findFirst(merged, (c) => c.name === "pr-9"))
 		expect(extra?.unknownToInventory).toBe(true)
 		expect(extra?.stat?.connectionsAvg).toBe(3)
 	})
 
 	it("flags branches the scrape target excludes", () => {
 		const merged = mergeBranchCandidates([branch("main", true), branch("pr-246")], [], [], ["pr-*"])
-		expect(merged.find((c) => c.name === "main")?.excluded).toBe(false)
-		expect(merged.find((c) => c.name === "pr-246")?.excluded).toBe(true)
+		expect(Option.getOrUndefined(Arr.findFirst(merged, (c) => c.name === "main"))?.excluded).toBe(false)
+		expect(Option.getOrUndefined(Arr.findFirst(merged, (c) => c.name === "pr-246"))?.excluded).toBe(true)
 	})
 
 	it("treats an include list as authoritative", () => {
 		const merged = mergeBranchCandidates([branch("main", true), branch("staging")], [], ["main"], [])
-		expect(merged.find((c) => c.name === "staging")?.excluded).toBe(true)
+		expect(Option.getOrUndefined(Arr.findFirst(merged, (c) => c.name === "staging"))?.excluded).toBe(true)
 	})
 
 	it("ignores blank branch labels from the warehouse", () => {

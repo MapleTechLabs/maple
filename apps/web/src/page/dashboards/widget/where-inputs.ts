@@ -75,7 +75,8 @@ export const baseValuesOf = (model: Model, query: QueryDraft): WhereClauseAutoco
 }
 
 export const panelInputsOf = (model: Model, context: PageContext): PanelInputs => ({
-	queryOf: (queryId) => model.state?.queries.find((query) => query.id === queryId),
+	queryOf: (queryId) =>
+		Option.getOrUndefined(Arr.findFirst(model.state?.queries ?? [], (query) => query.id === queryId)),
 	baseValuesOf: (query) => baseValuesOf(model, query),
 	orgId: context.orgId,
 	window: autocompleteWindowOf(model, context),

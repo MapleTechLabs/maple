@@ -478,7 +478,7 @@ export function idSearchPattern(search: string): string {
 		needle = Str.slice(MAPLE_AI_TRACE_SESSION_PREFIX.length)(needle)
 	}
 	while (Str.endsWith("…")(needle)) needle = Str.slice(0, -1)(needle)
-	return `${needle.replace(/[\\%_]/g, (char) => `\\${char}`)}%`
+	return `${Str.replace(/[\\%_]/g, "\\$&")(needle)}%`
 }
 
 /** Distinct models/agents collected per trace for the list row. */
@@ -552,7 +552,7 @@ const indexTracesOf = <Bounds extends IndexBounds, Row extends { readonly traceI
 	select: ($: IndexColumns) => Row,
 ) => {
 	const values = (list: readonly string[] | undefined) => (list?.length ? list : undefined)
-	const search = opts.search?.trim() || undefined
+	const search = opts.search === undefined ? undefined : Str.trim(opts.search) || undefined
 	const carries = (cond: CH.Condition) => CH.countIf(cond).gt(0)
 	return from(AiTraceIndex)
 		.select(select)

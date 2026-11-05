@@ -14,7 +14,7 @@ import {
 } from "@maple/domain/http"
 import { formatCount, formatGb } from "./analyze"
 import { lineEmitsAt } from "./diff"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /** Calls a day past which a file's gaps are worth a warning rather than a note. */
 export const HOT_PER_DAY = 10_000
@@ -191,12 +191,12 @@ export const withDismissals = (
 		: new PrReviewTelemetryClass({
 				...telemetry,
 				contractBreaks: Arr.map(telemetry.contractBreaks, (item) => {
-					const proof = verified.find((dismissal) => dismissal.name === item.name)
-					return proof === undefined || item.dismissed !== undefined
+					const proof = Arr.findFirst(verified, (dismissal) => dismissal.name === item.name)
+					return Option.isNone(proof) || item.dismissed !== undefined
 						? item
 						: new PrReviewContractBreak({
 								...item,
-								dismissed: { path: proof.path, line: proof.line },
+								dismissed: { path: proof.value.path, line: proof.value.line },
 							})
 				}),
 			})
@@ -218,27 +218,30 @@ export const escapeCell = (value: string) =>
  * as the same row repeated, so they are summed.
  */
 const groupIssues = (issues: PrReviewTelemetry["linkedIssues"]) =>
-	issues.reduce<
-		Array<{ title: string; service: string; path: string; occurrences: number; count: number }>
-	>((rows, issue) => {
-		const row = rows.find(
-			(item) =>
-				item.title === issue.title && item.service === issue.service && item.path === issue.path,
-		)
-		if (row === undefined) {
-			rows.push({
-				title: issue.title,
-				service: issue.service,
-				path: issue.path,
-				occurrences: issue.occurrences,
-				count: 1,
-			})
-		} else {
-			row.occurrences += issue.occurrences
-			row.count += 1
-		}
-		return rows
-	}, [])
+	Arr.reduce(
+		issues,
+		Arr.empty<{ title: string; service: string; path: string; occurrences: number; count: number }>(),
+		(rows, issue) => {
+			const found = Arr.findFirst(
+				rows,
+				(item) =>
+					item.title === issue.title && item.service === issue.service && item.path === issue.path,
+			)
+			if (Option.isNone(found)) {
+				rows.push({
+					title: issue.title,
+					service: issue.service,
+					path: issue.path,
+					occurrences: issue.occurrences,
+					count: 1,
+				})
+			} else {
+				found.value.occurrences += issue.occurrences
+				found.value.count += 1
+			}
+			return rows
+		},
+	)
 
 /**
  * The section on production: what breaks, which open errors live in the changed files, and, on the

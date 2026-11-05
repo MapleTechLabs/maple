@@ -7,7 +7,7 @@ import * as Combobox from "@maple/views/ui/combobox"
 import * as Select from "@maple/views/ui/select"
 import { parseMetricSelection } from "./derive"
 import { Message, type Model } from "./model"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 // The lab's selects (`<field>:<query id>`) and group-by comboboxes, each kept by id.
 
@@ -71,8 +71,9 @@ export const groupByModelOf = (model: Model, query: QueryDraft): Combobox.Model 
 	Combobox.init(`group-by-${query.id}`, "single", { selected: query.groupBy.slice(0, 1) })
 
 export const groupByStep = (model: Model, queryId: string, message: Combobox.Message): Return => {
-	const query = model.queries.find((candidate) => candidate.id === queryId)
-	if (query === undefined) return { model }
+	const found = Arr.findFirst(model.queries, (candidate) => candidate.id === queryId)
+	if (Option.isNone(found)) return { model }
+	const query = found.value
 	const next = Combobox.update(groupByModelOf(model, query), message)
 	const lifted: Model = { ...model, groupBys: { ...model.groupBys, [queryId]: next.model } }
 	const commands = Command.mapMessages(next.commands ?? [], (inner) =>

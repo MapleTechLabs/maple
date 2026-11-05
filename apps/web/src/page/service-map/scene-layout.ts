@@ -6,7 +6,7 @@ import {
 	type SpatialView,
 } from "../../components/service-map/three/spatial-layout"
 import type { Edge3D, Node3DKind, Topology3D } from "../../components/service-map/three/types"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Schema, Array as Arr, String as Str, Order } from "effect"
 
 // The three-free half of the 3D layout (`ServiceMap3DViewport`'s memos), shared by the labels
 // in the view and the scene chunk, so both place the same districts and belts.
@@ -52,14 +52,20 @@ export interface LinkLabel {
 /** `factoryRoutes` + `decorateRoutes` without the curves: each belt's id, edge and prominence. */
 export const linkLabels = (topology: Topology3D, layout: SpatialLayout): ReadonlyArray<LinkLabel> => {
 	const layoutTopology = layoutTopologyOf(topologyKeyOf(topology))
-	const kinds = new Map<string, Node3DKind>(layoutTopology.nodes.map((node) => [node.id, node.kind]))
+	type Route = (typeof layoutTopology.edges)[number]
+	const layoutNodes: LayoutTopology["nodes"] = layoutTopology.nodes
+	const kinds = new Map<string, Node3DKind>(Arr.map(layoutNodes, (node) => [node.id, node.kind] as const))
 	const byId = new Map(Arr.map(topology.edges, (edge) => [encodeJson([edge.source, edge.target]), edge]))
 	const peak = Math.max(1, ...Arr.map(topology.edges, (edge) => edge.callsPerSecond))
 	return Arr.flatMap(
-		layoutTopology.edges.toSorted(
-			(a, b) => Str.localeCompare(b.source)(a.source) || Str.localeCompare(b.target)(a.target),
+		Arr.sort<Route, Route>(
+			layoutTopology.edges,
+			Order.combine(
+				(a: Route, b: Route) => Str.localeCompare(b.source)(a.source),
+				(a: Route, b: Route) => Str.localeCompare(b.target)(a.target),
+			),
 		),
-		(route) => {
+		(route: Route) => {
 			if (!layout.positions.get(route.source) || !layout.positions.get(route.target)) return []
 			const edge = byId.get(encodeJson([route.source, route.target]))
 			if (!edge) return []

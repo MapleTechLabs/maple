@@ -236,13 +236,14 @@ export const makeAlertRulePersistence = (options: {
 								.where(($) => [$.orgId.eq(orgId), $.id.in_(...normalized.destinationIds)]),
 						)
 						const existingIds = new Set(Arr.map(destinationRows, (destination) => destination.id))
-						const missingDestinationId = normalized.destinationIds.find(
+						const missingDestinationId = Arr.findFirst(
+							normalized.destinationIds,
 							(id) => !existingIds.has(id),
 						)
-						if (missingDestinationId !== undefined) {
+						if (Option.isSome(missingDestinationId)) {
 							return yield* new AlertRuleDestinationNotFoundError({
 								message: "Alert rule references an unknown destination",
-								destinationId: missingDestinationId,
+								destinationId: missingDestinationId.value,
 							})
 						}
 					}

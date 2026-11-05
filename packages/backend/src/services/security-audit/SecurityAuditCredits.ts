@@ -8,7 +8,7 @@ import { AI_CREDITS_FEATURE_ID } from "@maple/domain/billing"
 import { BillingCustomer } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
 import { EdgeCacheService } from "@maple/cache"
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { decodeUpstream, ensureOk, readCustomerCached } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
@@ -32,10 +32,14 @@ export class SecurityAuditNoCredits extends Schema.TaggedError<SecurityAuditNoCr
 /** When spent credits come back: the balance's own reset, else the plan's cycle, else the UTC month. */
 const creditsResetAt = (customer: BillingCustomer, nextResetAt: number | null | undefined, nowMs: number) => {
 	if (nextResetAt != null) return nextResetAt
-	const cycleEnd = customer.subscriptions.find(
-		(sub) => sub.addOn !== true && sub.currentPeriodEnd != null && sub.currentPeriodEnd > nowMs,
-	)?.currentPeriodEnd
-	if (cycleEnd != null) return cycleEnd
+	const cycleEnd = Option.flatMap(
+		Arr.findFirst(
+			customer.subscriptions,
+			(sub) => sub.addOn !== true && sub.currentPeriodEnd != null && sub.currentPeriodEnd > nowMs,
+		),
+		(sub) => Option.fromNullishOr(sub.currentPeriodEnd),
+	)
+	if (Option.isSome(cycleEnd)) return cycleEnd.value
 	const now = new Date(nowMs)
 	return Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)
 }

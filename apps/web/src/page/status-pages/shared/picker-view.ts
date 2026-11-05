@@ -13,7 +13,7 @@ import { checkedRows, monitorTarget, type Picker, PickerMessage, type PickerRow,
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { dividedList } from "@maple/views/ui/rule"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // The checklist view: checked rows rename, group and move in place; the URL field and the
 // add-by-hand row sit under it.
@@ -369,7 +369,12 @@ export const pickerView = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>):
 										h,
 										options,
 										row,
-										options.monitors.find((monitor) => monitor.id === row.monitorId),
+										Option.getOrUndefined(
+											Arr.findFirst(
+												options.monitors,
+												(monitor) => monitor.id === row.monitorId,
+											),
+										),
 										positionOf(row),
 									),
 						),

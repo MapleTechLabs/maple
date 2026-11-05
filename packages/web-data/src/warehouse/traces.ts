@@ -1,4 +1,4 @@
-import { Clock, Effect, Schema, Array as Arr, Record as Rec } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import {
 	QueryEngineExecuteRequest,
 	TracesFacetDimension,
@@ -460,12 +460,18 @@ const listTracesEffect = Effect.fn("QueryEngine.listTraces")(function* ({ data }
 
 	const toTransformError = (cause: Schema.SchemaError) =>
 		new WarehouseTransformError({ operation: "queryEngine.listTraces", message: cause.message, cause })
-	const scanned = groupByTrace
-		? (yield* decodeTraceListRows(response.result.data).pipe(Effect.mapError(toTransformError))).map(
-				transformTraceListRow,
+	const scanned = yield* groupByTrace
+		? decodeTraceListRows(response.result.data).pipe(
+				Effect.mapBoth({
+					onFailure: toTransformError,
+					onSuccess: (rows) => Arr.map(rows, transformTraceListRow),
+				}),
 			)
-		: (yield* decodeSpanListRows(response.result.data).pipe(Effect.mapError(toTransformError))).map(
-				transformSpanListRow,
+		: decodeSpanListRows(response.result.data).pipe(
+				Effect.mapBoth({
+					onFailure: toTransformError,
+					onSuccess: (rows) => Arr.map(rows, transformSpanListRow),
+				}),
 			)
 
 	const minSpanCount = groupByTrace ? input.minSpanCount : undefined
@@ -550,7 +556,7 @@ const getSpanHierarchyEffect = Effect.fn("QueryEngine.getSpanHierarchy")(functio
 	const traceStartTime =
 		spans.length === 0
 			? undefined
-			: spans.reduce((earliest, candidate) =>
+			: Arr.reduce(spans, spans[0], (earliest, candidate) =>
 					new Date(candidate.startTime) < new Date(earliest.startTime) ? candidate : earliest,
 				).startTime
 
@@ -753,7 +759,7 @@ const getTracesFacetsEffect = Effect.fn("QueryEngine.getTracesFacets")(function*
 			Arr.filter(facetsData, (r) => r.facetType === type),
 			toItem,
 		)
-	const errorRow = facetsData.find((r) => r.facetType === "errorCount")
+	const errorRow = Arr.findFirst(facetsData, (r) => r.facetType === "errorCount")
 
 	return {
 		data: {
@@ -763,7 +769,7 @@ const getTracesFacetsEffect = Effect.fn("QueryEngine.getTracesFacets")(function*
 			httpStatusCodes: byType("httpStatus"),
 			deploymentEnvs: byType("deploymentEnv"),
 			namespaces: byType("serviceNamespace"),
-			errorCount: errorRow ? Number(errorRow.count) : 0,
+			errorCount: Option.match(errorRow, { onNone: () => 0, onSome: (row) => Number(row.count) }),
 			durationStats: statsData,
 		} satisfies TracesFacets,
 	}

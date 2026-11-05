@@ -28,8 +28,9 @@ const UNIT_MS = { m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 } as co
 
 /** Parse a relative window like `30m`, `6h`, `7d`, `2w` to milliseconds. */
 export const sinceToMs = (since: string): number | null => {
-	const match = Str.trim(since).match(SINCE_RE)
-	if (!match) return null
+	const parsed = Str.match(SINCE_RE)(Str.trim(since))
+	if (Option.isNone(parsed)) return null
+	const match = parsed.value
 	const unit = match[2]
 	const n = Number(match[1])
 	return unit === "m" || unit === "h" || unit === "d" || unit === "w" ? n * UNIT_MS[unit] : null
@@ -54,9 +55,9 @@ const zoneOffsetMs = (zone: string | undefined): number => {
  * without a zone.
  */
 export const parseTimestampMs = (input: string): number | null => {
-	const match = Str.trim(input).match(TIMESTAMP_RE)
-	if (!match) return null
-	const [, y, mo, d, h = "00", mi = "00", s = "00", zone] = match
+	const parsed = Str.match(TIMESTAMP_RE)(Str.trim(input))
+	if (Option.isNone(parsed)) return null
+	const [, y, mo, d, h = "00", mi = "00", s = "00", zone] = parsed.value
 	const year = Number(y)
 	const month = Number(mo)
 	const day = Number(d)

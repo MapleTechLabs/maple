@@ -77,7 +77,7 @@ import {
 	type CHUnionQuery,
 } from "@maple-dev/effect-orm/clickhouse"
 import { AI_TOOLS_BREAKDOWN_MAX, AI_TOOLS_OTHER_SERIES_KEY, type AiToolsPeriod } from "@maple/domain/http"
-import { Array as Arr, type DateTime, Option, Schema, Record as Rec } from "effect"
+import { Array as Arr, type DateTime, Option, Schema, Record as Rec, String as Str } from "effect"
 import { QueryBuilderDefect, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
 import {
 	AiTraceIndex,
@@ -134,7 +134,7 @@ export interface AiToolsFilterOpts {
 }
 
 /** A search needle is a literal, so its `%`/`_` must not act as LIKE wildcards. */
-const likeLiteral = (value: string): string => value.replace(/[\\%_]/g, (c) => `\\${c}`)
+const likeLiteral = (value: string): string => Str.replace(/[\\%_]/g, "\\$&")(value)
 
 /**
  * Which pair of params bounds a read: the caller's window, or the window of
@@ -1099,8 +1099,16 @@ export const aiToolErrorPayload = (row: AiToolErrorPayloadsRow): AiToolErrorPayl
 	const args = payloadText(payload.arguments)
 	const result = payloadText(payload.result)
 	const bytes = (text: string): number =>
-		Rec.toEntries(row.cutAttributeBytes).find(([key]) => row.spanAttributes[key] === text)?.[1] ??
-		utf8.encode(text).length
+		Option.getOrElse(
+			Option.map(
+				Arr.findFirst(
+					Rec.toEntries(row.cutAttributeBytes),
+					([key]) => row.spanAttributes[key] === text,
+				),
+				([, size]) => size,
+			),
+			() => utf8.encode(text).length,
+		)
 	return {
 		traceId: row.traceId,
 		spanId: row.spanId,
@@ -1125,8 +1133,12 @@ export function aiToolErrorPayloadSlice(
 ): AiToolErrorPayloadSlice {
 	const timestamps = Arr.map(calls, (call) => call.timestamp)
 	return {
-		sliceStart: timestamps.reduce((min, ts) => (ts < min ? ts : min)),
-		sliceEnd: timestamps.reduce((max, ts) => (ts > max ? ts : max)),
+		sliceStart: Arr.reduce(Arr.tailNonEmpty(timestamps), Arr.headNonEmpty(timestamps), (min, ts) =>
+			ts < min ? ts : min,
+		),
+		sliceEnd: Arr.reduce(Arr.tailNonEmpty(timestamps), Arr.headNonEmpty(timestamps), (max, ts) =>
+			ts > max ? ts : max,
+		),
 	}
 }
 

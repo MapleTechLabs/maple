@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema, Array as Arr, String as Str } from "effect"
+import { Result, Schema, Array as Arr, String as Str, Option } from "effect"
 import {
 	click,
 	expect as expectView,
@@ -151,7 +151,7 @@ describe("releases list", () => {
 			{ search: { environments: ["production"], timePreset: "1h" } },
 			context,
 		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveReleasesWindow", "Refresh"],
 		])
 	})
@@ -213,7 +213,9 @@ describe("releases list", () => {
 
 	test("a health filter that matches nothing offers to clear it", () => {
 		const shown = new Set(Arr.map(deriveOf(data).groups, (group) => group.health))
-		const unmatched = RELEASE_HEALTH_ORDER.find((health) => !shown.has(health))
+		const unmatched = Option.getOrUndefined(
+			Arr.findFirst(RELEASE_HEALTH_ORDER, (health) => !shown.has(health)),
+		)
 		expect(unmatched).toBeDefined()
 		const filtered = { ...loaded(), search: { impact: unmatched } }
 		scene(

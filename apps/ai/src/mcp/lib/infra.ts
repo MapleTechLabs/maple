@@ -2,7 +2,7 @@
  * Infrastructure reads for the MCP tools: the queries behind the web app's Infrastructure pages,
  * flattened onto one row shape so an agent reads hosts, pods and containers the same way.
  */
-import { Array as Arr, DateTime, Effect, Record as Rec, String as Str } from "effect"
+import { Array as Arr, DateTime, Effect, Option, Record as Rec, String as Str } from "effect"
 import type { OrgId } from "@maple/domain"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
@@ -107,9 +107,8 @@ export const pressure = (row: InfraEntityRow): { readonly resource: string; read
 		["cpu", row.cpuPeak ?? row.cpu],
 		["disk", row.disk],
 	]
-	return candidates.reduce<{ resource: string; level: number }>(
-		(best, [resource, level]) => (level !== undefined && level > best.level ? { resource, level } : best),
-		{ resource: "cpu", level: 0 },
+	return Arr.reduce(candidates, { resource: "cpu", level: 0 }, (best, [resource, level]) =>
+		level !== undefined && level > best.level ? { resource, level } : best,
 	)
 }
 
@@ -509,9 +508,12 @@ export const busyFraction = (rows: ReadonlyArray<SeriesRow>) => {
 	const byBucket = Arr.groupBy(ungroupedWithState(rows), (row) => iso(row.bucket))
 	return Arr.map(Rec.values(byBucket), (states) => {
 		const first = states[0]
-		const idle = states.find((state) => state.state === "idle")
+		const idle = Arr.findFirst(states, (state) => state.state === "idle")
 		const busy = Arr.reduce(states, 0, (sum, state) => (state.state === "idle" ? sum : sum + state.value))
-		return { bucket: first.bucket, value: idle === undefined ? busy : Math.max(0, 1 - idle.value) }
+		return {
+			bucket: first.bucket,
+			value: Option.match(idle, { onNone: () => busy, onSome: (row) => Math.max(0, 1 - row.value) }),
+		}
 	})
 }
 
@@ -545,17 +547,19 @@ export const serviceInfrastructure = (service: string, window: InfraWindow) =>
 			{ profile: "aggregation", context: "serviceWorkloads" },
 		)
 		const workloads = Arr.filter(rows, (row) => row.workloadName !== "")
-		const dominant = workloads.find((row) => row.workloadKind !== "unknown")
+		const dominant = Arr.findFirst(workloads, (row) => row.workloadKind !== "unknown")
 		if (workloads.length === 0) return undefined
 		const pods =
-			dominant === undefined || dominant.workloadKind === "unknown"
+			Option.isNone(dominant) || dominant.value.workloadKind === "unknown"
 				? []
 				: (yield* listInfraKind("pods", {
 						window,
 						filters: {
-							workloadKind: dominant.workloadKind,
-							workload: dominant.workloadName,
-							...(dominant.namespace ? { namespace: dominant.namespace } : undefined),
+							workloadKind: dominant.value.workloadKind,
+							workload: dominant.value.workloadName,
+							...(dominant.value.namespace
+								? { namespace: dominant.value.namespace }
+								: undefined),
 						},
 						sort: "saturation",
 						limit: SERVICE_POD_LIMIT,

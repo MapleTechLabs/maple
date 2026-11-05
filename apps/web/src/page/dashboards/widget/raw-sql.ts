@@ -2,7 +2,7 @@ import { rawSqlDisplayTypeFor, widgetTypeByVisualization } from "@maple/domain/h
 import { rawSqlIssue } from "@maple/domain/raw-sql"
 import { RAW_SQL_TEMPLATES } from "../../../lib/raw-sql/templates"
 import { dataSourceRawSql, dataSourceTransform, makeRawSqlDataSource } from "@maple/widgets/dashboard"
-import { Array as Arr, Schema, String as Str } from "effect"
+import { Array as Arr, Schema, String as Str, Record as Rec } from "effect"
 import { toSeriesFieldOptions } from "./drafts"
 import type { EditorState } from "./editor-state"
 import type { Widget } from "./lowering"
@@ -97,7 +97,7 @@ export const rawSqlDataSourceOf = (
 		sql: draft.sql,
 		displayType: displayTypeOf(state),
 		...(draft.granularitySeconds === null ? undefined : { granularitySeconds: draft.granularitySeconds }),
-		...(Object.keys(transform).length === 0 ? undefined : { transform }),
+		...(Rec.keys<string, unknown>(transform).length === 0 ? undefined : { transform }),
 	})
 }
 

@@ -56,7 +56,8 @@ export const requireSecretEntry = (key: string): Config.Config<SecretEnv> =>
 export const optionalPlain = (key: string, fallback?: string): Config.Config<PlainEnv> =>
 	trimmedOption(key).pipe(
 		Config.map((value) => {
-			const resolved = Option.getOrUndefined(value) ?? fallback?.trim()
+			const resolved =
+				Option.getOrUndefined(value) ?? (fallback === undefined ? undefined : Str.trim(fallback))
 			return resolved ? { [key]: resolved } : {}
 		}),
 	)

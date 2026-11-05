@@ -2,7 +2,7 @@ import { ALERT_MAX_EVALUATION_INTERVAL_MINUTES, alertRuleIntervalMinutes } from 
 import type { AlertDeliveryEventDocument, AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 import type { AlertRuleStateRow } from "../collections/alerts"
 import { countLabel } from "@maple/ui/lib/format"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 /**
  * Derived health of an alert rule, in display-priority order:
@@ -110,8 +110,13 @@ export function deriveRuleStatus(input: {
 		}
 	}
 
-	const errorState = states.find((s) => s.last_error != null)
-	const errorMessage = errorState?.last_error ?? rule.lastEvaluationError
+	const errorMessage = Option.match(
+		Arr.findFirst(states, (s) => s.last_error != null),
+		{
+			onNone: () => rule.lastEvaluationError,
+			onSome: (state) => state.last_error ?? rule.lastEvaluationError,
+		},
+	)
 	if (errorMessage != null) {
 		return { status: "error", attention, reason: errorMessage }
 	}

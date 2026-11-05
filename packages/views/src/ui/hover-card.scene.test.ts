@@ -3,6 +3,7 @@ import { inertHtml as ih } from "foldkit/html"
 import { Command, expect, given, hover, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { expect as assert, describe, test } from "vitest"
 import { init, Message, MountHoverCard, update, view, WaitHoverDelay } from "./hover-card"
+import { Array as Arr } from "effect"
 
 /** Hover card: opens after the pointer rests on the trigger; leaving schedules the close. */
 const ID = "service"
@@ -49,7 +50,9 @@ describe("hover card scene", () => {
 	test("leaving the trigger closes it after the close delay, unless the pointer reaches the card", () => {
 		const open = init(ID, { isOpen: true })
 		const left = update(open, Message.LeftTrigger())
-		assert(left.commands?.map((command) => command.name)).toEqual(["WaitHoverDelay"])
+		assert(
+			left.commands === undefined ? undefined : Arr.map(left.commands, (command) => command.name),
+		).toEqual(["WaitHoverDelay"])
 		const onCard = update(left.model, Message.EnteredCard())
 		const kept = update(onCard.model, Message.ElapsedHoverDelay({ generation: 1, isOpening: false }))
 		assert(kept.model).toEqual(onCard.model)

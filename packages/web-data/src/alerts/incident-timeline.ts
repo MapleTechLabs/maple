@@ -11,7 +11,7 @@ import type { V2Investigation } from "@maple/domain/http/v2"
 import type { Tone } from "@maple/ui/lib/tone"
 import { UNGROUPED_GROUP_KEY } from "@maple/domain/http"
 import { formatAlertDuration, formatSignalValue, signalLabels } from "./form-utils"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 
 export interface IncidentTimelineEntry {
 	readonly key: string
@@ -239,5 +239,8 @@ export function buildIncidentTimeline(input: {
 	}
 
 	// Stable sort keeps the insertion order (opened first) for identical stamps.
-	return Arr.filter(events, (entry) => Number.isFinite(entry.at)).toSorted((a, b) => a.at - b.at)
+	return Arr.sort(
+		Arr.filter(events, (entry) => Number.isFinite(entry.at)),
+		Order.mapInput(Order.Number, (entry: { readonly at: number }) => entry.at),
+	)
 }

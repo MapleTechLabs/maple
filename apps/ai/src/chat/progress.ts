@@ -91,7 +91,7 @@ const word = (raw: string, first: boolean): string =>
 	ACRONYMS.has(raw)
 		? Str.toUpperCase(raw)
 		: first
-			? `${Str.toUpperCase(raw.charAt(0))}${Str.slice(1)(raw)}`
+			? `${Str.toUpperCase(Str.slice(0, 1)(raw))}${Str.slice(1)(raw)}`
 			: raw
 
 /**

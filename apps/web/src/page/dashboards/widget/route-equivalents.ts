@@ -3,7 +3,7 @@ import {
 	isWidgetDataSourceEndpoint,
 	type WidgetDataSourceEndpoint,
 } from "@maple/web-data/warehouse/widget-data-sources"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 import { legacyQueryDraft } from "./drafts"
 import type { EditorState, QueryDraft } from "./editor-state"
 
@@ -50,7 +50,7 @@ const builder = (
 }
 
 const stringParam = (value: unknown): string | undefined =>
-	typeof value === "string" && value.trim() !== "" ? value.trim() : undefined
+	typeof value === "string" && Str.trim(value) !== "" ? Str.trim(value) : undefined
 
 /** One service out of a `services` list; several have no single `service.name =` clause. */
 const singleService = (value: unknown): string | undefined | null => {

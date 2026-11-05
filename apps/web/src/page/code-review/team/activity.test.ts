@@ -1,6 +1,7 @@
 import { CodeReviewTeamActivity } from "@maple/domain/http"
 import { describe, expect, test } from "vitest"
 import { activityByDay, daysOf } from "./activity"
+import { Array as Arr } from "effect"
 
 const row = (day: string, login: string, repository: string, opened: number, merged: number) =>
 	new CodeReviewTeamActivity({ day, login, repository, opened, merged })
@@ -39,10 +40,13 @@ describe("activityByDay", () => {
 		]).get("2026-10-01")
 		expect(day?.opened).toBe(3)
 		expect(day?.merged).toBe(2)
-		expect(day?.people.map((person) => [person.key, person.opened, person.merged])).toEqual([
+		expect(Arr.map(day?.people ?? [], (person) => [person.key, person.opened, person.merged])).toEqual([
 			["lin", 2, 2],
 			["ada", 1, 0],
 		])
-		expect(day?.repositories.map((repository) => repository.key)).toEqual(["acme/web", "acme/api"])
+		expect(Arr.map(day?.repositories ?? [], (repository) => repository.key)).toEqual([
+			"acme/web",
+			"acme/api",
+		])
 	})
 })

@@ -39,8 +39,7 @@ const selectedIndexOf = (model: Model): number | undefined =>
 		onSome: (detail) => {
 			if (detail.log === null) return undefined
 			const key = logRecordKey(detail.log)
-			const index = rowsOf(model).findIndex((log) => logKey(log) === key)
-			return index === -1 ? undefined : index
+			return Option.getOrUndefined(Arr.findFirstIndex(rowsOf(model), (log) => logKey(log) === key))
 		},
 	})
 

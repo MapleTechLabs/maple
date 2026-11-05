@@ -64,7 +64,7 @@ export const groupMonitors = (
 	})
 	if (!Arr.some([...groups.keys()], (namespace) => namespace !== NO_NAMESPACE))
 		return [[NO_NAMESPACE, monitors]]
-	return [...groups].toSorted(([a], [b]) =>
+	return Arr.sort([...groups], ([a]: MonitorGroup, [b]: MonitorGroup) =>
 		a === NO_NAMESPACE ? 1 : b === NO_NAMESPACE ? -1 : Str.localeCompare(b)(a),
 	)
 }

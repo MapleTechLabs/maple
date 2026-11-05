@@ -6,7 +6,7 @@
 import { existsSync } from "node:fs"
 import { lstat, readdir, readFile, rm } from "node:fs/promises"
 import { basename, dirname, join, resolve } from "node:path"
-import { Option, Schema, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import {
 	checkpointQuarantineRoot,
 	listPreservedCheckpointPins,
@@ -118,9 +118,9 @@ const siblingLeftovers = async (dataDir: string): Promise<ReadonlyArray<Retained
 	]
 	const found: RetainedLeftover[] = []
 	for (const name of (await readdir(parent)).sort()) {
-		const match = patterns.find(([, pattern]) => pattern.test(name))
-		if (match === undefined) continue
-		const item = await leftover(match[0], join(parent, name))
+		const match = Arr.findFirst(patterns, ([, pattern]) => pattern.test(name))
+		if (Option.isNone(match)) continue
+		const item = await leftover(match.value[0], join(parent, name))
 		if (item !== null) found.push(item)
 	}
 	return found
