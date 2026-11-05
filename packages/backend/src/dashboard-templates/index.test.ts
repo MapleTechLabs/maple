@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { DashboardTemplatePreviewKind, type PortableDashboardDocument } from "@maple/domain/http"
 import { DASHBOARD_TEMPLATES, buildTemplatePreview, listTemplateMetadata } from "./index"
+import { serviceWhereClause } from "./helpers"
 import type { WidgetDef } from "./types"
 import { Array as Arr, Option } from "effect"
 
@@ -227,5 +228,11 @@ describe("dashboard template requirements", () => {
 				template.requirement ? [template.requirement.label] : [],
 			)
 		}
+	})
+})
+
+describe("serviceWhereClause", () => {
+	it("escapes every quote and backslash in the service name", () => {
+		expect(serviceWhereClause('a"b\\c"\\')).toBe('service.name = "a\\"b\\\\c\\"\\\\"')
 	})
 })

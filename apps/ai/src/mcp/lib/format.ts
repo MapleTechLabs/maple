@@ -62,10 +62,7 @@ export function truncate(str: string, maxLen = 80): string {
  */
 export function tableCell(text: string, max?: number): string {
 	const collapsed = Str.trim(Str.replace(/\s+/g, " ")(text))
-	return Str.replace(
-		/\|/g,
-		"\\|",
-	)(Str.replace(/\\/g, "\\\\")(max === undefined ? collapsed : truncate(collapsed, max)))
+	return Str.replace(/[\\|]/g, "\\$&")(max === undefined ? collapsed : truncate(collapsed, max))
 }
 
 /**

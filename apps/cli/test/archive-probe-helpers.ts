@@ -107,4 +107,4 @@ export const readRows = (text: string): ReadonlyArray<Record<string, unknown>> =
 export const firstRow = (text: string): Record<string, unknown> | undefined => readRows(text)[0]
 
 /** Escape a path for a ClickHouse single-quoted literal. */
-export const sqlLiteral = (path: string): string => Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(path))
+export const sqlLiteral = (path: string): string => Str.replace(/[\\']/g, "\\$&")(path)

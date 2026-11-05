@@ -82,6 +82,18 @@ describe("where clause autocomplete", () => {
 		expect(result.suggestions[0]?.insertText).toBe('"checkout"')
 	})
 
+	it("escapes every quote and backslash in a suggested value", () => {
+		const expression = "service.name = "
+		const result = getWhereClauseAutocomplete({
+			expression,
+			cursor: expression.length,
+			dataSource: "traces",
+			values: { services: ['a"b\\c"\\'] },
+		})
+
+		expect(result.suggestions[0]?.insertText).toBe('"a\\"b\\\\c\\"\\\\"')
+	})
+
 	it("suggests conjunction after a finished value", () => {
 		const expression = 'service.name = "checkout" '
 		const result = getWhereClauseAutocomplete({

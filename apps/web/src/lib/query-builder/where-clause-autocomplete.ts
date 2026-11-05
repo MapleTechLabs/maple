@@ -734,7 +734,7 @@ function toStringValueSuggestion(value: string, idPrefix: string): WhereClauseAu
 		id: `${idPrefix}:${value}`,
 		kind: "value",
 		label: value,
-		insertText: `"${Str.replace(/"/g, '\\\"')(Str.replace(/\\/g, "\\\\")(value))}"`,
+		insertText: `"${Str.replace(/[\\"]/g, "\\$&")(value)}"`,
 	}
 }
 

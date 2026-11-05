@@ -211,7 +211,7 @@ const settingsClause = (
 	return Result.succeed(Arr.join([...parts, "output_format_json_array_of_rows = 1", "readonly = 1"], ", "))
 }
 
-const escapeLiteral = (value: string) => Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))
+const escapeLiteral = (value: string) => Str.replace(/[\\']/g, "\\$&")(value)
 
 // The wrapper query is noise in a syntax error about the client's SQL.
 const cleanParseError = (message: string) =>

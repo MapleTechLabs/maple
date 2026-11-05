@@ -760,6 +760,10 @@ describe("SQL parity", () => {
 	// nothing could see drift. Assert the rendered SQL really does contain them.
 	const sql = ERROR_EVENTS_MV_SQL
 
+	it("escapes every quote and backslash when embedding a pattern in a string literal", () => {
+		expect(chPattern("it's \\d+'\\")).toBe("'it\\'s \\\\d+\\'\\\\'")
+	})
+
 	it("renders the frame matcher and every redaction from the shared constants", () => {
 		expect(sql).toContain(`match(line, ${chPattern(FRAME_LINE_PATTERN)})`)
 		expect(sql).toContain(`position(line, ${chPattern(EFFECT_SPAN_FRAME_MARKER)}) = 0`)

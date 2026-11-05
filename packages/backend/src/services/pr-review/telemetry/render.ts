@@ -209,9 +209,8 @@ export const lineStillEmits = (
 	kind: PrReviewTelemetryKind,
 ): boolean => lineEmitsAt(content, line, name, kind)
 
-/** Text for a markdown table cell: backslashes first, so an escaped pipe cannot be unescaped. */
-export const escapeCell = (value: string) =>
-	Str.replace(/\n/g, " ")(Str.replace(/\|/g, "\\|")(Str.replace(/\\/g, "\\\\")(value)))
+/** Text for a markdown table cell: backslashes escaped with the pipes, so an escaped pipe cannot be unescaped. */
+export const escapeCell = (value: string) => Str.replace(/\n/g, " ")(Str.replace(/[\\|]/g, "\\$&")(value))
 
 /**
  * Open issues as one row per title, service and file: separate fingerprints of the same error read
