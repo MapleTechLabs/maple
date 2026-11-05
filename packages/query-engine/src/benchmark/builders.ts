@@ -2239,7 +2239,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "userPage",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.mcpServersUserActivityQuery(["maple-ai", "docs-mcp"], { user: "user_42" }, 5_001),
+				CH.mcpServersUserActivityQuery(["maple-ai", "docs-mcp"], { user: "user_42" }, 5_000),
 				window,
 			),
 	},

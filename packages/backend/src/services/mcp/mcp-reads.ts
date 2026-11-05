@@ -735,7 +735,7 @@ export const readUserMcpSessions = Effect.fn("McpReads.userSessions")(function* 
 			warehouse.compiledQuery(
 				tenant,
 				CH.compile(
-					CH.mcpServersUserActivityQuery(selection.services, filter, ONE_USER_ACTIVITY_LIMIT + 1),
+					CH.mcpServersUserActivityQuery(selection.services, filter, ONE_USER_ACTIVITY_LIMIT),
 					params,
 				),
 				{ profile: "list", context: "userMcpActivity" },
@@ -743,7 +743,7 @@ export const readUserMcpSessions = Effect.fn("McpReads.userSessions")(function* 
 		],
 		{ concurrency: 2 },
 	)
-	const byService = Arr.groupBy(activityRows.slice(0, ONE_USER_ACTIVITY_LIMIT), (row) => row.service)
+	const byService = Arr.groupBy(activityRows, (row) => row.service)
 	const stitched = Arr.flatMap(Object.entries(byService), ([service, rows]) =>
 		Arr.map(stitchUserSessions(rows), (session): ServerUserSession => ({ ...session, service })),
 	)

@@ -3178,8 +3178,21 @@ SELECT
         GROUP BY service
         FORMAT JSON
 
--- builder:mcp:mcpServersUserActivityQuery:userPage  [b8d6cdd8]
+-- builder:mcp:mcpServersUserActivityQuery:userPage  [366340e8]
 SELECT
+          ranked.service AS service,
+          ranked.user AS user,
+          ranked.client AS client,
+          ranked.minute AS minute,
+          ranked.kind AS kind,
+          ranked.userName AS userName,
+          ranked.requests AS requests,
+          ranked.calls AS calls,
+          ranked.errors AS errors,
+          ranked.tools AS tools,
+          ranked.firstSeen AS firstSeen,
+          ranked.lastSeen AS lastSeen
+        FROM (SELECT
           traces.ServiceName AS service,
           if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS user,
           multiIf(positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-code/') = 1, 'Claude Code', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-user') = 1, 'Claude', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'openai-mcp/') = 1, 'Codex', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'cursor/') = 1, 'Cursor', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'windsurf/') = 1, 'Windsurf', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'vscode/') = 1, 'VS Code', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'omp/') = 1, 'omp', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'curl/') = 1, 'curl', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'bun/') = 1, 'Bun', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'undici') = 1, 'Node (undici)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'node') = 1, 'Node', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-httpx/') = 1, 'Python (httpx)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-requests/') = 1, 'Python (requests)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'aiohttp/') = 1, 'Python (aiohttp)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'go-http-client/') = 1, 'Go', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'executor') = 1, 'executor', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'estate-console/') = 1, 'estate-console', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'preview-verifier/') = 1, 'preview-verifier', extract(traces.SpanAttributes['user_agent.original'], '^[^/ ]+') = '', 'unknown', extract(traces.SpanAttributes['user_agent.original'], '^[^/ ]+')) AS client,
@@ -3191,7 +3204,8 @@ SELECT
           countIf((traces.SpanAttributes['mcp.method.name'] = 'tools/call' AND traces.SpanAttributes['error.type'] != '')) AS errors,
           groupUniqArray(nullIf(traces.SpanAttributes['gen_ai.tool.name'], '')) AS tools,
           min(traces.Timestamp) AS firstSeen,
-          max(traces.Timestamp) AS lastSeen
+          max(traces.Timestamp) AS lastSeen,
+          row_number() OVER (PARTITION BY service ORDER BY minute DESC) AS serviceRank
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -3202,9 +3216,9 @@ SELECT
           AND traces.SpanAttributes['mcp.session.id'] = ''
           AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != ''
           AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) = 'user_42'
-        GROUP BY service, user, client, minute
+        GROUP BY service, user, client, minute) AS ranked
+        WHERE ranked.serviceRank <= 5000
         ORDER BY minute DESC
-        LIMIT 5001
         FORMAT JSON
 
 -- builder:mcp:mcpServicesQuery:default  [083d9dc7]

@@ -3,7 +3,8 @@
 // is set; callers' own mistakes carry none. Clients are grouped by family in SQL, never by raw agent.
 
 import * as CH from "@maple-dev/effect-orm/expr"
-import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
+import { from, fromQuery, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 import {
 	KNOWN_MCP_CLIENTS,
 	MCP_CLIENT_TOKEN_PATTERN,
@@ -558,13 +559,21 @@ export function mcpServersSessionListQuery(
 }
 
 /** {@link mcpUserActivityQuery} over several servers at once, per (service, user, client, minute). */
+/** Each listed server's newest `limitPerService` (user, client, minute) rows, so a quiet server keeps its own. */
 export function mcpServersUserActivityQuery(
 	services: ReadonlyArray<string>,
 	filter: McpSessionFilter = {},
-	limit = 50_000,
+	limitPerService = 5_000,
 ) {
-	return from(Traces)
-		.select(($) => ({ service: $.ServiceName, ...userMinuteColumns($) }))
+	const ranked = from(Traces)
+		.select(($) => ({
+			service: $.ServiceName,
+			...userMinuteColumns($),
+			serviceRank: CH.rawExpr(
+				"row_number() OVER (PARTITION BY service ORDER BY minute DESC)",
+				T.uint64,
+			),
+		}))
 		.where(($) => [
 			...serversSpans($, services),
 			sessionId($).eq(""),
@@ -572,8 +581,23 @@ export function mcpServersUserActivityQuery(
 			...selected($, filter),
 		])
 		.groupBy("service", "user", "client", "minute")
+	return fromQuery(ranked, "ranked")
+		.select(($) => ({
+			service: $.service,
+			user: $.user,
+			client: $.client,
+			minute: $.minute,
+			kind: $.kind,
+			userName: $.userName,
+			requests: $.requests,
+			calls: $.calls,
+			errors: $.errors,
+			tools: $.tools,
+			firstSeen: $.firstSeen,
+			lastSeen: $.lastSeen,
+		}))
+		.where(($) => [$.serviceRank.lte(limitPerService)])
 		.orderBy(["minute", "desc"])
-		.limit(limit)
 		.format("JSON")
 }
 
