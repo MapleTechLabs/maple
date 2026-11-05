@@ -117,10 +117,13 @@ export const update = (model: Model, message: Message): Return =>
 				return item === undefined || item.isDisabled === true ? { model } : picked(model, item.value)
 			}
 			if (model.query === "" && /^[0-9]$/.test(key)) {
-				const item = items.find(
-					(candidate) => candidate.shortcut === key && candidate.isDisabled !== true,
+				return Option.match(
+					Arr.findFirst(
+						items,
+						(candidate) => candidate.shortcut === key && candidate.isDisabled !== true,
+					),
+					{ onNone: () => ({ model }), onSome: (item) => picked(model, item.value) },
 				)
-				return item === undefined ? { model } : picked(model, item.value)
 			}
 			return { model }
 		},

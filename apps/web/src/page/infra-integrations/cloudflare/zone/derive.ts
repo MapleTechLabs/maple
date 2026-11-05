@@ -19,7 +19,7 @@ import type {
 } from "../data"
 import { dataOf } from "../list/derive"
 import type { Model, ZoneTab } from "./model"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 const ZONE_SERVICE_PREFIX = "cloudflare/"
 /** Rows the server returns per dimension. */
@@ -61,8 +61,10 @@ export const DIMENSIONS: ReadonlyArray<DimensionDef> = [
 ]
 
 export const dimensionOf = (model: Model): DimensionDef =>
-	DIMENSIONS.find((dimension) => dimension.id === model.dimension) ??
-	DIMENSIONS[0] ?? {
+	Option.getOrElse(
+		Arr.findFirst(DIMENSIONS, (dimension) => dimension.id === model.dimension),
+		() => DIMENSIONS[0],
+	) ?? {
 		id: "path",
 		tab: "Paths",
 		column: "Path",
@@ -153,7 +155,9 @@ export const needsBreakdown = (model: Model): boolean => {
 }
 
 export const zoneRowOf = (model: Model): ZoneRow | null =>
-	dataOf(model.zones.data)?.find((zone) => zone.serviceName === serviceNameOf(model)) ?? null
+	Option.getOrNull(
+		Arr.findFirst(dataOf(model.zones.data) ?? [], (zone) => zone.serviceName === serviceNameOf(model)),
+	)
 
 export type ZoneAccount = Readonly<{ id: string; name: string; multi: boolean; zoneError: string | null }>
 
@@ -161,13 +165,17 @@ export const zoneAccountOf = (model: Model): ZoneAccount | null => {
 	const status = dataOf(model.status.data)
 	if (status === null) return null
 	const accounts = status.accounts ?? []
-	const account = accounts.find((a) => Arr.some(a.zones, (zone) => zone.name === model.zoneName))
-	if (account === undefined) return null
+	const found = Arr.findFirst(accounts, (a) => Arr.some(a.zones, (zone) => zone.name === model.zoneName))
+	if (Option.isNone(found)) return null
+	const account = found.value
 	return {
 		id: account.accountId,
 		name: account.accountName ?? account.accountId,
 		multi: accounts.length > 1,
-		zoneError: account.zones.find((zone) => zone.name === model.zoneName)?.lastError ?? null,
+		zoneError: Arr.findFirst(account.zones, (zone) => zone.name === model.zoneName).pipe(
+			Option.flatMapNullishOr((found) => found.lastError),
+			Option.getOrNull,
+		),
 	}
 }
 

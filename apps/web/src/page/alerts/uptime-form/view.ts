@@ -78,14 +78,20 @@ const kindPicker = (h: H, model: Model): Html =>
 					})),
 				}),
 				typography(h, { size: "xs", tone: "muted", as: "p" }, [
-					KINDS.find((option) => option.kind === model.form.kind)?.description ?? "",
+					Arr.findFirst(KINDS, (option) => option.kind === model.form.kind).pipe(
+						Option.flatMapNullishOr((found) => found.description),
+						Option.getOrElse(() => ""),
+					),
 				]),
 			]),
 		],
 	)
 
 const describeAssertion = (row: AssertionDraft): string => {
-	const op = ASSERTION_OPS[row.type].find((entry) => entry.value === row.op)?.label ?? row.op
+	const op = Arr.findFirst(ASSERTION_OPS[row.type], (entry) => entry.value === row.op).pipe(
+		Option.flatMapNullishOr((found) => found.label),
+		Option.getOrElse(() => row.op),
+	)
 	switch (row.type) {
 		case "status":
 			return `Status code ${op} ${row.value}`

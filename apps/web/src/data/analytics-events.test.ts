@@ -1,6 +1,6 @@
 import { OrgId, UserId } from "@maple/domain"
 import { V2ApiKey, V2ApiKeyWithSecret } from "@maple/domain/http/v2"
-import { Option, Result, Schema } from "effect"
+import { Array as Arr, Option, Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../page/contract"
 import { Message as IntegrationsMessage } from "../page/integrations/message"
@@ -16,7 +16,7 @@ import { identityOf, isSameIdentity } from "../platform/session-identity"
 
 type Commands = { readonly commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }> }
 const tracked = (result: Commands, name: string) =>
-	result.commands?.find((command) => command.name === name)?.args
+	Option.getOrUndefined(Arr.findFirst(result.commands ?? [], (command) => command.name === name))?.args
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }

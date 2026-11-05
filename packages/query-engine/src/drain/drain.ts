@@ -111,11 +111,7 @@ export class Drain {
 	}
 
 	private static hasNumbers(s: string): boolean {
-		for (let i = 0; i < s.length; i++) {
-			const c = s.charCodeAt(i)
-			if (c >= 48 && c <= 57) return true
-		}
-		return false
+		return /[0-9]/.test(s)
 	}
 
 	getContentAsTokens(content: string): string[] {

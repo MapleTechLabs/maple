@@ -27,6 +27,7 @@ const ibanValid = (raw: string): boolean => {
 	const compact = Str.replace(/ /g, "")(raw)
 	const rotated = Str.slice(4)(compact) + Str.slice(0, 4)(compact)
 	const remainder = Arr.reduce(Array.from(rotated), 0, (acc, char) => {
+		// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 		const code = isDigit(char) ? char : String(char.charCodeAt(0) - 55)
 		return Arr.reduce(Array.from(code), acc, (inner, digit) => (inner * 10 + Number(digit)) % 97)
 	})

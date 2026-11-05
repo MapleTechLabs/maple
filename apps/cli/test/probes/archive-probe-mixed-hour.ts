@@ -11,7 +11,7 @@ import { join } from "node:path"
 import { ArchiveProbe, firstRow, readRows } from "../archive-probe-helpers"
 import { archiveSignal } from "@maple/local-server/archives/signals"
 import { exportSignalShards } from "@maple/local-server/archives/export"
-import { Array as Arr, String as Str } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 
 const SCHEMA = `
 CREATE DATABASE IF NOT EXISTS default;
@@ -74,11 +74,13 @@ try {
 		h.fail(`source [${Arr.join(sourceSet, ",")}] != archived [${Arr.join(archivedSet, ",")}]`)
 	if (new Set(archivedSet).size !== archivedSet.length) h.fail(`duplicate rows in archive`)
 
-	const hour12 = written.find((s) => Str.startsWith("12-")(s.name))
-	if (!hour12) h.fail("no hour-12 shard produced")
+	const hour12 = Option.getOrElse(
+		Arr.findFirst(written, (s) => Str.startsWith("12-")(s.name)),
+		() => h.fail("no hour-12 shard produced"),
+	)
 	void firstRow
 	h.ok(
-		`mixed-hour non-contiguous offsets archived exactly; hour-12 in ${hour12!.name}, ${written.length} shards`,
+		`mixed-hour non-contiguous offsets archived exactly; hour-12 in ${hour12.name}, ${written.length} shards`,
 	)
 } catch (e) {
 	h.fail(e instanceof Error ? e.message : String(e))

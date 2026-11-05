@@ -12,7 +12,7 @@ import {
 	type SourceAttributeMode,
 	type SourceSignal,
 } from "@maple/domain/primitives"
-import { Option, Schema, Array as Arr } from "effect"
+import { Option, Schema, Array as Arr, Order } from "effect"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AppRoute, hrefOf } from "../../../route"
 import { SOURCE_TABS, type SourceTab } from "../../../route/search"
@@ -62,7 +62,10 @@ export const hasToken = (source: V2Source): boolean => source.key_prefix !== nul
 /** Default source first, then worst status first, then the API's order (newest first). */
 export const orderSources = (sources: ReadonlyArray<V2Source>): ReadonlyArray<V2Source> => [
 	...Arr.filter(sources, (source) => source.is_default),
-	...Arr.filter(sources, (source) => !source.is_default).toSorted((a, b) => statusRank(a) - statusRank(b)),
+	...Arr.sort(
+		Arr.filter(sources, (source) => !source.is_default),
+		Order.mapInput(Order.Number, statusRank),
+	),
 ]
 
 /** `/sources/$sourceId` in its public id form; the overview tab drops `tab`. */

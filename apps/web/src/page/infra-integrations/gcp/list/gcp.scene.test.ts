@@ -91,7 +91,7 @@ describe("google cloud list", () => {
 		expect(names(tabbed.commands)).not.toContain("ResolveGcpWindow")
 		expect(tabbed.model.window).toEqual(window)
 		const moved = routeChanged(tabbed.model, { search: { tab: "resources", timePreset: "6h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])?.[0]).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])[0]).toEqual([
 			"ResolveGcpWindow",
 			"Refresh",
 		])

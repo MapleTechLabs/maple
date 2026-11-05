@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer, Tracer, Array as Arr } from "effect"
+import { Effect, Layer, Option, Tracer, Array as Arr } from "effect"
 import { makeSpanBuffer, type OtlpSpan } from "../shared/flushable-tracer.js"
 import { makeArgsScrubber, REDACTED } from "./args.js"
 import { makeFoldkitTracing, NAVIGATION_ARG, nowNanos } from "./tracer.js"
@@ -35,9 +35,17 @@ const setup = (
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 5))
-const byName = (spans: ReadonlyArray<OtlpSpan>, name: string) => spans.find((span) => span.name === name)
+const byName = (spans: ReadonlyArray<OtlpSpan>, name: string) =>
+	Option.getOrUndefined(Arr.findFirst(spans, (span) => span.name === name))
 const attribute = (span: OtlpSpan | undefined, key: string) =>
-	span?.attributes.find((kv) => kv.key === key)?.value
+	span === undefined
+		? undefined
+		: Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(span.attributes, (kv) => kv.key === key),
+					(kv) => kv.value,
+				),
+			)
 
 describe("Foldkit command tracing", () => {
 	it("drops a Command that finished without a child span", async () => {

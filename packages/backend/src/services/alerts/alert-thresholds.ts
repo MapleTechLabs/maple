@@ -20,9 +20,13 @@ const destinationsUpTo = (
 	severity: AlertSeverity,
 ): ReadonlyArray<AlertDestinationId> =>
 	Arr.dedupe(
-		thresholds
-			.filter((tier) => ALERT_SEVERITY_RANK[tier.severity] <= ALERT_SEVERITY_RANK[severity])
-			.flatMap((tier) => tier.destinationIds),
+		Arr.flatMap(
+			Arr.filter(
+				thresholds,
+				(tier) => ALERT_SEVERITY_RANK[tier.severity] <= ALERT_SEVERITY_RANK[severity],
+			),
+			(tier: AlertThreshold) => tier.destinationIds,
+		),
 	)
 
 interface TieredRuleFields {
@@ -71,7 +75,7 @@ export const tierConditionChanged = (
 	const key = (rule: typeof a) =>
 		encodeJson([
 			rule.comparator,
-			rule.thresholds.map((t) => [t.severity, t.value, t.upper, t.recoveryValue]),
+			Arr.map(rule.thresholds, (t) => [t.severity, t.value, t.upper, t.recoveryValue]),
 		])
 	return key(a) !== key(b)
 }
@@ -92,13 +96,13 @@ export const validateThresholds = (
 	const { label } = options
 	const range = isRangeComparator(comparator)
 	const singleTierOnly = range || comparator === "eq" || comparator === "neq"
-	if (new Set(thresholds.map((tier) => tier.severity)).size !== thresholds.length) {
+	if (new Set(Arr.map(thresholds, (tier) => tier.severity)).size !== thresholds.length) {
 		details.push("thresholds must have at most one tier per severity")
 	}
 	if (thresholds.length > 1 && singleTierOnly) {
 		details.push(`only one threshold tier is supported with the ${comparator} comparator`)
 	}
-	thresholds.forEach((tier, index) => {
+	Arr.forEach(thresholds, (tier, index) => {
 		if (!Number.isFinite(tier.value)) details.push(`${label(index, "value")} must be a finite number`)
 		if (range) {
 			if (tier.upper == null || !Number.isFinite(tier.upper)) {

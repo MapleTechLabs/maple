@@ -1,6 +1,6 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 import { createHash } from "node:crypto"
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { decodeJsonEachRow, decodeJsonObjectRows } from "@maple/local-server/chdb-rows"
 import { LEGACY_LOCAL_SCHEMA, LOCAL_SCHEMA_V1 } from "@maple/local-server/schema-identity"
 import { LOCAL_SCHEMA_V1_MANIFEST, LOCAL_SCHEMA_V1_SQL } from "../schema-snapshots"
@@ -680,8 +680,9 @@ const recoverPendingBatch = async (
 ): Promise<RawReplayProgress> => {
 	const pending = progress.pendingBatch
 	if (!pending) return progress
-	const table = LEGACY_RAW_TABLES.find((candidate) => candidate.name === pending.table)
-	if (!table) throw new Error(`journal contains an unknown pending table: ${pending.table}`)
+	const found = Arr.findFirst(LEGACY_RAW_TABLES, (candidate) => candidate.name === pending.table)
+	if (Option.isNone(found)) throw new Error(`journal contains an unknown pending table: ${pending.table}`)
+	const table = found.value
 	const columns = await ensureSourceTargetColumns(context, table)
 	const current = await inventory(context, "target", table, columns, context.cutoffAt)
 	const previous = copyProgressFor(progress, table.name)

@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, Option } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -120,8 +120,9 @@ const fakePlanetScale = (options: {
 				],
 			})
 		}
-		const hook = url.pathname.match(/\/databases\/([^/]+)\/webhooks(?:\/([^/]+))?$/)
-		if (hook) {
+		const hookMatch = Str.match(/\/databases\/([^/]+)\/webhooks(?:\/([^/]+))?$/)(url.pathname)
+		if (Option.isSome(hookMatch)) {
+			const hook = hookMatch.value
 			const database = decodeURIComponent(hook[1]!)
 			const list = webhooks.get(database) ?? []
 			webhooks.set(database, list)
@@ -142,7 +143,10 @@ const fakePlanetScale = (options: {
 				list.push(created)
 				return json(created, 201)
 			}
-			const index = list.findIndex((existing) => existing.id === id)
+			const index = Option.getOrElse(
+				Arr.findFirstIndex(list, (existing) => existing.id === id),
+				() => -1,
+			)
 			if (request.method === "DELETE") {
 				list.splice(index, 1)
 				return new Response(null, { status: 204 })
@@ -201,17 +205,16 @@ describe("PlanetScaleWebhookService", () => {
 			const url = `${WEBHOOK_PREFIX}${connection.id}`
 
 			assert.deepStrictEqual(
-				store.get("shop")?.map((hook) => [hook.url, hook.enabled]),
+				Arr.map(store.get("shop") ?? [], (hook) => [hook.url, hook.enabled]),
 				[[url, true]],
 			)
 			assert.include(store.get("shop")?.[0]?.events ?? [], "deploy_request.schema_applied")
 			// Postgres has no deploy requests or keyspaces to subscribe to.
 			assert.deepStrictEqual(
-				store
-					.get("ledger")?.[0]
-					?.events.filter(
-						(event) => Str.startsWith("deploy_request.")(event) || event === "keyspace.storage",
-					),
+				Arr.filter(
+					Option.getOrThrow(Arr.head(store.get("ledger") ?? [])).events,
+					(event) => Str.startsWith("deploy_request.")(event) || event === "keyspace.storage",
+				),
 				[],
 			)
 			assert.include(store.get("ledger")?.[0]?.events ?? [], "branch.out_of_memory")
@@ -265,7 +268,7 @@ describe("PlanetScaleWebhookService", () => {
 			yield* webhooks.reconcile(connection)
 
 			assert.deepStrictEqual(
-				store.get("shop")?.map((hook) => [hook.url, hook.enabled]),
+				Arr.map(store.get("shop") ?? [], (hook) => [hook.url, hook.enabled]),
 				[
 					[url, true],
 					["https://example.com/hook", true],
@@ -347,7 +350,7 @@ describe("PlanetScaleWebhookService", () => {
 			yield* (yield* PlanetScaleConnectionService).disconnect(asOrgId("org_1"))
 
 			assert.deepStrictEqual(
-				store.get("shop")?.map((hook) => hook.id),
+				Arr.map(store.get("shop") ?? [], (hook) => hook.id),
 				["wh_theirs"],
 			)
 			assert.strictEqual(
@@ -368,10 +371,10 @@ describe("PlanetScaleWebhookService", () => {
 			const second = (yield* connect("org_2"))!
 			yield* (yield* PlanetScaleWebhookService).reconcile(first)
 
-			assert.sameMembers(store.get("shop")?.map((hook) => hook.url) ?? [], [
-				`${WEBHOOK_PREFIX}${first.id}`,
-				`${WEBHOOK_PREFIX}${second.id}`,
-			])
+			assert.sameMembers(
+				Arr.map(store.get("shop") ?? [], (hook) => hook.url),
+				[`${WEBHOOK_PREFIX}${first.id}`, `${WEBHOOK_PREFIX}${second.id}`],
+			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { datasources, pipes } from "../generated/tinybird-project-manifest"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 interface Resource {
 	readonly name: string
@@ -135,8 +135,10 @@ describe("materialized projection order", () => {
 		] as const
 
 		for (const [datasourceName, pipeName] of targets) {
-			const datasource = datasources.find((resource) => resource.name === datasourceName)
-			const pipe = pipes.find((resource) => resource.name === pipeName)
+			const datasource = Option.getOrUndefined(
+				Arr.findFirst(datasources, (resource) => resource.name === datasourceName),
+			)
+			const pipe = Option.getOrUndefined(Arr.findFirst(pipes, (resource) => resource.name === pipeName))
 			expect(datasource, `${datasourceName} datasource should exist`).toBeDefined()
 			expect(pipe, `${pipeName} pipe should exist`).toBeDefined()
 

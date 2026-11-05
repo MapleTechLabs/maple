@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema } from "effect"
+import { Array as Arr, Effect, Layer, Schema, String as Str } from "effect"
 import { OrgId, UserDetailRequest, UserId } from "@maple/domain/http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -102,7 +102,7 @@ describe("readUserActivity", () => {
 		Effect.gen(function* () {
 			const response = yield* run(request(), [])
 			assert.deepStrictEqual(
-				response.mcpSessions.map((session) => [session.service, session.source, session.calls]),
+				Arr.map(response.mcpSessions, (session) => [session.service, session.source, session.calls]),
 				[
 					["maple-ai", "issued", 3],
 					["docs-mcp", "user", 1],
@@ -110,7 +110,7 @@ describe("readUserActivity", () => {
 				],
 			)
 			const [, later, earlier] = response.mcpSessions
-			assert.isTrue(later?.sessionId.startsWith("user:"))
+			assert.isTrue(Str.startsWith("user:")(later?.sessionId ?? ""))
 			assert.strictEqual(earlier?.tools, 2)
 			assert.strictEqual(earlier?.errors, 1)
 		}),
@@ -120,7 +120,7 @@ describe("readUserActivity", () => {
 		Effect.gen(function* () {
 			const response = yield* run(request(), [])
 			assert.deepStrictEqual(
-				response.activity.map((item) => [item.kind, item.service, item.tone]),
+				Arr.map(response.activity, (item) => [item.kind, item.service, item.tone]),
 				[
 					["mcp", "maple-ai", "crit"],
 					["mcp", "docs-mcp", "neutral"],
@@ -136,10 +136,10 @@ describe("readUserActivity", () => {
 			const seen: Array<string> = []
 			const response = yield* run(request(["platform"]), seen)
 			assert.deepStrictEqual(
-				[...new Set(response.mcpSessions.map((session) => session.service))],
+				[...new Set(Arr.map(response.mcpSessions, (session) => session.service))],
 				["docs-mcp"],
 			)
-			assert.strictEqual(seen.filter((context) => context === "userMcpSessionList").length, 1)
+			assert.strictEqual(Arr.filter(seen, (context) => context === "userMcpSessionList").length, 1)
 		}),
 	)
 })

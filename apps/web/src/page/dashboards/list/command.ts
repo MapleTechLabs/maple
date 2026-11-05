@@ -140,8 +140,8 @@ export const refusalMessageOf = (error: unknown, depth = 0): Option.Option<strin
 export const isRejected = (error: unknown, depth = 0): boolean => {
 	if (depth > 5 || typeof error !== "object" || error === null) return false
 	if (
-		error instanceof DashboardUnreadableError ||
-		error instanceof DashboardConflictError ||
+		Schema.is(DashboardUnreadableError)(error) ||
+		Schema.is(DashboardConflictError)(error) ||
 		isRefusalEnvelope(error)
 	)
 		return true

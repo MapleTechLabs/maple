@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import * as Orm from "@maple-dev/effect-orm/database"
-import { Cause, Effect, Exit, Layer, Option, Tracer } from "effect"
+import { Cause, Effect, Exit, Layer, Option, Tracer, Array as Arr } from "effect"
 import { type DatabaseConnection, MapleDbConnection } from "./bindings"
 import { Database, executeWithSpan } from "./DatabaseLive"
 import { DatabasePgLive } from "./DatabasePgLive"
@@ -35,7 +35,9 @@ const makeRecordingTracer = () => {
 }
 
 const dbSpan = (spans: ReadonlyArray<Tracer.NativeSpan>) =>
-	spans.find((span) => span.attributes.get("db.system.name") === "postgresql")
+	Option.getOrUndefined(
+		Arr.findFirst(spans, (span) => span.attributes.get("db.system.name") === "postgresql"),
+	)
 
 const failureMessage = (exit: Exit.Exit<unknown, unknown>): string =>
 	Exit.isFailure(exit) ? String(Cause.squash(exit.cause)) : "<succeeded>"

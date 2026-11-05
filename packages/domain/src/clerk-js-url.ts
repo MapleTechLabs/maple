@@ -20,8 +20,8 @@ export async function computeClerkCookieSuffix(
 ): Promise<string> {
 	const digest = await subtle.digest("SHA-1", new TextEncoder().encode(publishableKey))
 	const bytes = Array.from(new Uint8Array(digest))
-	return Str.replace(
-		/\//g,
-		"_",
-	)(Str.replace(/\+/g, "-")(btoa(String.fromCharCode(...bytes)))).substring(0, 8)
+	return Str.substring(
+		0,
+		8,
+	)(Str.replace(/\//g, "_")(Str.replace(/\+/g, "-")(btoa(String.fromCharCode(...bytes)))))
 }

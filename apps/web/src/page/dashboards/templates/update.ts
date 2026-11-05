@@ -89,7 +89,7 @@ export const templatesOf = (model: Model): ReadonlyArray<V2DashboardTemplate> =>
 	Option.getOrElse(AsyncData.getData(model.templates.data), () => [])
 
 export const selectedOf = (model: Model): V2DashboardTemplate | null =>
-	templatesOf(model).find((template) => template.id === model.search.template) ?? null
+	Option.getOrNull(Arr.findFirst(templatesOf(model), (template) => template.id === model.search.template))
 
 export const PANEL_SHEET_ID = "dashboard-template-panel"
 

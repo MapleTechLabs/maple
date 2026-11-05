@@ -15,6 +15,7 @@ import {
 	Array as Arr,
 	Record as Rec,
 	String as Str,
+	Option,
 } from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
@@ -215,8 +216,12 @@ export const FetchCommitDetail = Command.define("FetchServicesCommitDetail", {
 
 // The first line of a commit message.
 const firstLine = (message: string): string => {
-	const index = message.indexOf("\n")
-	return Str.trim(index === -1 ? message : Str.slice(0, index)(message))
+	return Str.trim(
+		Option.match(Str.indexOf("\n")(message), {
+			onNone: () => message,
+			onSome: (index) => Str.slice(0, index)(message),
+		}),
+	)
 }
 
 /** Where a click in the table goes: a service link is the link's alone (the row ignores it). */

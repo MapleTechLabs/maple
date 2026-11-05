@@ -12,7 +12,7 @@ import {
 } from "@maple/domain/http"
 import { cleanErrorMessage, mapWarehouseError, toWarehouseQueryError } from "./errors"
 import { WarehouseDriverError } from "./driver-error"
-import { String as Str } from "effect"
+import { String as Str, Array as Arr } from "effect"
 
 // Promise-land inputs, lifted the way a Promise-based adapter lifts them.
 const classify = (pipe: string, error: unknown, authoredBy?: "maple" | "caller") =>
@@ -423,8 +423,8 @@ describe("cleanErrorMessage", () => {
 		const message = `Code: 47. DB::Exception: Unknown expression identifier 'n' in scope ${sql}. (UNKNOWN_IDENTIFIER)`
 		const cleaned = cleanErrorMessage(message)
 		expect(cleaned).toBe(message)
-		expect(cleaned.match(/TimeUnix <= /g)).toHaveLength(3)
-		expect(cleaned.match(/TimeUnix >= /g)).toHaveLength(3)
+		expect(Arr.fromIterable(Str.matchAll(/TimeUnix <= /g)(cleaned))).toHaveLength(3)
+		expect(Arr.fromIterable(Str.matchAll(/TimeUnix >= /g)(cleaned))).toHaveLength(3)
 	})
 
 	it("strips inline HTML tags outside a full page", () => {

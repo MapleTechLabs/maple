@@ -96,7 +96,8 @@ export const MAX_REGISTRY_CONFIG_READS = 60
 /** Broad files read after them, also shallowest first. */
 export const MAX_BROAD_CONFIG_READS = 40
 
-const basename = (path: string) => Str.slice(path.lastIndexOf("/") + 1)(path)
+const basename = (path: string) =>
+	Str.slice(Option.match(Str.lastIndexOf("/")(path), { onNone: () => 0, onSome: (at) => at + 1 }))(path)
 
 const matches = (name: string, pattern: string | RegExp) =>
 	typeof pattern === "string" ? name === pattern : pattern.test(name)
@@ -166,13 +167,14 @@ const URL_PATTERN = /\b(?:https?|ssh|git\+ssh|git\+https|sparse\+https):\/\/[^\s
 
 const hostOf = (url: string): string | undefined => {
 	const match = /^[a-z+]+:\/\/(?:[^@/]*@)?([^/:?#]+)/iu.exec(url)
-	return match?.[1]?.toLowerCase()
+	const host = match?.[1]
+	return host === undefined ? undefined : Str.toLowerCase(host)
 }
 
 /** URLs in `text` whose host is not a public registry. */
 const privateUrls = (text: string): ReadonlyArray<string> =>
 	Arr.filter(
-		Arr.map([...text.matchAll(URL_PATTERN)], (m) => m[0]),
+		Arr.map([...Str.matchAll(URL_PATTERN)(text)], (m) => m[0]),
 		(url) => {
 			const host = hostOf(url)
 			return host !== undefined && !PUBLIC_HOSTS.has(host)
@@ -202,8 +204,10 @@ const withoutXmlComments = (xml: string) =>
 	Arr.join(
 		Arr.map(Str.split("<!--")(xml), (part, index) => {
 			if (index === 0) return part
-			const end = part.indexOf("-->")
-			return end === -1 ? "" : Str.slice(end + 3)(part)
+			return Option.match(Str.indexOf("-->")(part), {
+				onNone: () => "",
+				onSome: (end) => Str.slice(end + 3)(part),
+			})
 		}),
 		"",
 	)
@@ -216,8 +220,10 @@ const repositoryBlocks = (xml: string) =>
 	Arr.join(
 		Arr.flatMap(REPOSITORY_TAGS, (tag) =>
 			Arr.flatMap(Str.split(`<${tag}>`)(xml).slice(1), (rest) => {
-				const end = rest.indexOf(`</${tag}>`)
-				return end === -1 ? [] : [`<${tag}>${Str.slice(0, end)(rest)}</${tag}>`]
+				return Option.match(Str.indexOf(`</${tag}>`)(rest), {
+					onNone: () => [],
+					onSome: (end) => [`<${tag}>${Str.slice(0, end)(rest)}</${tag}>`],
+				})
 			}),
 		),
 		"\n",
@@ -250,7 +256,7 @@ const sourceText = (name: string, text: string): string => {
 			)
 		case "Cargo.toml":
 			return Arr.join(
-				Arr.map([...text.matchAll(/\bgit\s*=\s*"([^"]+)"/gu)], (m) => m[1]),
+				Arr.map([...Str.matchAll(/\bgit\s*=\s*"([^"]+)"/gu)(text)], (m) => m[1]),
 				"\n",
 			)
 		default:
@@ -312,8 +318,10 @@ const uncommented = (text: string) =>
 		Arr.map(
 			Arr.filter(lines(text), (line) => !Str.startsWith("#")(line)),
 			(line) => {
-				const comment = line.search(/\s#/u)
-				return comment === -1 ? line : Str.trimEnd(Str.slice(0, comment)(line))
+				return Option.match(Str.search(/\s#/u)(line), {
+					onNone: () => line,
+					onSome: (comment) => Str.trimEnd(Str.slice(0, comment)(line)),
+				})
 			},
 		),
 		"\n",
@@ -324,7 +332,7 @@ const signalsIn = (path: string, text: string): ReadonlyArray<string> => {
 	const name = basename(path)
 	const at = (what: string) => `${path}: ${what}`
 	const sources = Arr.map(privateUrls(sourceText(name, text)), (url) => at(`private source ${hostOf(url)}`))
-	const goPrivate = Arr.map([...withoutLineComments(text).matchAll(GO_PRIVATE)], (m) =>
+	const goPrivate = Arr.map([...Str.matchAll(GO_PRIVATE)(withoutLineComments(text))], (m) =>
 		at(`${m[1]} set to ${m[2]}`),
 	)
 	if (isWorkflow(path)) return goPrivate
@@ -352,7 +360,15 @@ const signalsIn = (path: string, text: string): ReadonlyArray<string> => {
 				Arr.filter(
 					Arr.map(
 						Arr.filter(lines(text), (line) => /^url\s*=/u.test(line)),
-						(line) => Str.trim(Str.slice(line.indexOf("=") + 1)(line)),
+						(line) =>
+							Str.trim(
+								Str.slice(
+									Option.match(Str.indexOf("=")(line), {
+										onNone: () => 0,
+										onSome: (at) => at + 1,
+									}),
+								)(line),
+							),
 					),
 					(url) => !isPublicSubmodule(url),
 				),
@@ -369,7 +385,15 @@ const signalsIn = (path: string, text: string): ReadonlyArray<string> => {
 							Arr.filter(lines(text), (line) => !Str.startsWith("//")(line)),
 							(line) => Str.includes("=>")(line),
 						),
-						(line) => Str.trim(Str.slice(line.indexOf("=>") + 2)(line)),
+						(line) =>
+							Str.trim(
+								Str.slice(
+									Option.match(Str.indexOf("=>")(line), {
+										onNone: () => 1,
+										onSome: (at) => at + 2,
+									}),
+								)(line),
+							),
 					),
 					(target) => Str.startsWith(".")(target) || Str.startsWith("/")(target),
 				),

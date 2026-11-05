@@ -33,8 +33,10 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 const view = withViewInputs(pageView, { context })()
 
 const presetOf = (id: string) =>
-	[...statPresets, ...tablePresets].find((preset) => preset.id === id) ??
-	expect.unreachable(`no preset ${id}`)
+	Option.getOrElse(
+		Arr.findFirst([...statPresets, ...tablePresets], (preset) => preset.id === id),
+		() => expect.unreachable(`no preset ${id}`),
+	)
 
 /** A board holding one widget built from `dataSource`, opened in the editor. */
 const opened = (visualization: string, dataSource: unknown, display: Readonly<Record<string, unknown>>) => {

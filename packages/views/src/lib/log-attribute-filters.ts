@@ -27,6 +27,7 @@ export function decodeLogAttributeFilter(entry: string): LogAttributeFilter | un
 	const match = ENTRY.exec(entry)
 	if (!match) return undefined
 	const [, bang, scope, rawKey, value] = match
+	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	const key = rawKey.replace(/%(25|3D)/gi, (escape) => (escape === "%25" ? "%" : "="))
 	return { source: scope === "res" ? "resource" : "log", key, value, negated: bang === "!" }
 }

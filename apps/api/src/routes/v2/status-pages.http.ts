@@ -181,15 +181,14 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 		) =>
 			service.listComponents(orgId, pageId).pipe(
 				Effect.flatMap((components) => {
-					const component = components.find((candidate) => candidate.id === componentId)
-					return component === undefined
-						? Effect.fail(
-								new StatusPageComponentNotFoundError({
-									componentId,
-									message: "Status page component not found",
-								}),
-							)
-						: Effect.succeed(component)
+					return Effect.fromOption(
+						Arr.findFirst(components, (candidate) => candidate.id === componentId),
+						() =>
+							new StatusPageComponentNotFoundError({
+								componentId,
+								message: "Status page component not found",
+							}),
+					)
 				}),
 			)
 

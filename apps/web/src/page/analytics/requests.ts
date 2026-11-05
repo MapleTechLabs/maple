@@ -36,7 +36,10 @@ type Cmd = Command.Command<Message, never, Resources>
 const ANALYTICS_TABS = ["overview", "ai"] as const
 export type AnalyticsTab = (typeof ANALYTICS_TABS)[number]
 export const tabOf = (search: Search): AnalyticsTab =>
-	ANALYTICS_TABS.find((tab) => tab === search.tab) ?? "overview"
+	Option.getOrElse(
+		Arr.findFirst(ANALYTICS_TABS, (tab) => tab === search.tab),
+		() => "overview",
+	)
 
 export const filtersOf = (search: Search): AnalyticsFilters => filtersFromSearch({ ...search })
 
@@ -221,16 +224,19 @@ export const requestSlots = (
 	// Two slots asking the same atom (the mix under `traffic: all`) share one request.
 	const sent = new Set<string>()
 	const slots: Readonly<Record<SlotName, AnySlot>> = model
-	return requests.reduce<{ model: Model; commands: ReadonlyArray<Cmd> }>(
+	return Arr.reduce<(typeof requests)[number], { model: Model; commands: ReadonlyArray<Cmd> }>(
+		requests,
+		{ model, commands: [] },
 		(state, request) => {
 			const key = requestKey(context.orgId, request.fn, { data: request.input })
 			const current: AnySlot = state.model[request.slot]
 			// An atom another slot already holds answers from the cache, like a shared atom does.
-			const cached = Arr.map(SLOT_NAMES, (name) => slots[name]).find(
+			const cached = Arr.findFirst(
+				Arr.map(SLOT_NAMES, (name) => slots[name]),
 				(slot) => slot.key === key && AsyncData.isSuccess(slot.data),
 			)
-			if (mode === "Load" && current.key !== key && cached !== undefined)
-				return { ...state, model: { ...state.model, [request.slot]: cached } }
+			if (mode === "Load" && current.key !== key && Option.isSome(cached))
+				return { ...state, model: { ...state.model, [request.slot]: cached.value } }
 			// The page's own atoms (breakdowns, events) sit outside the header reload: only a new key refetches them.
 			const slotMode =
 				mode === "Refresh" && only === undefined && PAGE_SLOTS.includes(request.slot) ? "Load" : mode
@@ -245,6 +251,5 @@ export const requestSlots = (
 				}),
 			})
 		},
-		{ model, commands: [] },
 	)
 }

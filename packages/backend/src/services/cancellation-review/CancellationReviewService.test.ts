@@ -7,7 +7,7 @@ import {
 	OrgId,
 } from "@maple/domain/http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
-import { ConfigProvider, DateTime, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, DateTime, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
 import { Env } from "@maple/backend/platform/Env"
@@ -120,7 +120,7 @@ const freshWorld = (): World => ({
 
 const day = (daysAgo: number, logsGB: number) =>
 	new DailyVolume({
-		date: new Date(CANCELED_AT - daysAgo * DAY_MS).toISOString().slice(0, 10),
+		date: Str.slice(0, 10)(new Date(CANCELED_AT - daysAgo * DAY_MS).toISOString()),
 		logsGB,
 		tracesGB: 0,
 		metricsGB: 0,
@@ -183,19 +183,24 @@ const stubs = (world: World) =>
 						if (world.warehouseDown) return Effect.die(new Error("warehouse down"))
 						const sql = compiledQueryOf(compiled).sql
 						world.queries.push({ orgId: tenant.orgId, sql })
-						if (sql.includes("session_events")) {
-							const pagesOnly = sql.includes("'navigation'")
-							const events = world.sessionEvents
-								.filter((event) => (event.type === "navigation") === pagesOnly)
-								.map((event) => ({ netMethod: "GET", netUrl: "", netStatus: 0, ...event }))
-								.toReversed()
+						if (Str.includes("session_events")(sql)) {
+							const pagesOnly = Str.includes("'navigation'")(sql)
+							const events = Arr.reverse(
+								Arr.map(
+									Arr.filter(
+										world.sessionEvents,
+										(event) => (event.type === "navigation") === pagesOnly,
+									),
+									(event) => ({ netMethod: "GET", netUrl: "", netStatus: 0, ...event }),
+								),
+							)
 							return Effect.succeed(events as ReadonlyArray<never>)
 						}
-						if (sql.includes("session_replays")) {
+						if (Str.includes("session_replays")(sql)) {
 							return Effect.succeed(world.sessionRows as ReadonlyArray<never>)
 						}
 						// The second, unfiltered query is the "is this the right org at all" probe.
-						const rows = sql.includes(ORG)
+						const rows = Str.includes(ORG)(sql)
 							? world.visitRows
 							: world.anyPageViews
 								? [
@@ -232,7 +237,10 @@ const stubs = (world: World) =>
 								id: ORG,
 								stripeId: "cus_acme",
 								// One odd field on a subscription must not cost the report its guards.
-								subscriptions: world.subscriptions.map((sub) => ({ ...sub, pastDue: null })),
+								subscriptions: Arr.map(world.subscriptions, (sub) => ({
+									...sub,
+									pastDue: null,
+								})),
 								balances: {},
 								invoices: [
 									{ status: "paid", total: 39, currency: "usd", createdAt: 2 },
@@ -249,26 +257,27 @@ const stubs = (world: World) =>
 			// Filters the way the query does, before the limit.
 			list: (_orgId, filters) =>
 				Effect.succeed(
-					[
-						// An access record: never one of the changes the model reads.
-						{
-							action: "telemetry.read",
-							actorType: "user",
-							actorLabel: "a@acme.test",
-							outcome: "allowed",
-							occurredAt: new Date(CANCELED_AT - DAY_MS + 60_000),
-						} as never,
-						{
-							action: "ingest_key.revoke",
-							actorType: "user",
-							actorLabel: "a@acme.test",
-							outcome: "allowed",
-							occurredAt: new Date(CANCELED_AT - DAY_MS),
-						} as never,
-					].filter(
+					Arr.filter<never>(
+						[
+							// An access record: never one of the changes the model reads.
+							{
+								action: "telemetry.read",
+								actorType: "user",
+								actorLabel: "a@acme.test",
+								outcome: "allowed",
+								occurredAt: new Date(CANCELED_AT - DAY_MS + 60_000),
+							} as never,
+							{
+								action: "ingest_key.revoke",
+								actorType: "user",
+								actorLabel: "a@acme.test",
+								outcome: "allowed",
+								occurredAt: new Date(CANCELED_AT - DAY_MS),
+							} as never,
+						],
 						(entry: { action: string }) =>
-							!(filters.excludeActionSuffixes ?? []).some((suffix) =>
-								entry.action.endsWith(suffix),
+							!Arr.some(filters.excludeActionSuffixes ?? [], (suffix) =>
+								Str.endsWith(suffix)(entry.action),
 							),
 					),
 				),
@@ -570,7 +579,9 @@ describe("CancellationReviewService", () => {
 				comment: "No SSO",
 			})
 			assert.deepStrictEqual(
-				request?.sessions?.map((session) => session.pages),
+				request?.sessions == null
+					? request?.sessions
+					: Arr.map(request.sessions, (session) => session.pages),
 				[["/settings/members", "/billing"]],
 			)
 			assert.deepStrictEqual(request?.sessions?.[0]?.problems, ["SSO is not available on your plan"])
@@ -610,9 +621,10 @@ describe("CancellationReviewService", () => {
 			}
 			// The sessions are read under Maple's own org, never the customer's.
 			assert.isTrue(
-				world.queries
-					.filter((query) => query.sql.includes("session_"))
-					.every((query) => query.orgId === OWN_ORG),
+				Arr.every(
+					Arr.filter(world.queries, (query) => Str.includes("session_")(query.sql)),
+					(query) => query.orgId === OWN_ORG,
+				),
 			)
 
 			const post = world.posts[0]

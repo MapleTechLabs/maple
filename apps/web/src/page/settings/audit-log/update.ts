@@ -47,7 +47,10 @@ export const baseRequestOf = (filters: AuditLogFilters): PageRequest => {
 
 const presetMsOf = (range: AuditDateRange): number | null =>
 	range.kind === "preset"
-		? (AUDIT_RANGE_PRESETS.find((preset) => preset.value === range.preset)?.ms ?? null)
+		? Option.match(
+				Arr.findFirst(AUDIT_RANGE_PRESETS, (preset) => preset.value === range.preset),
+				{ onNone: () => null, onSome: (preset) => preset.ms ?? null },
+			)
 		: null
 
 const sameRequest = (a: PageRequest, b: PageRequest) =>
@@ -295,10 +298,14 @@ export const update = (model: Model, message: Message, search: SettingsSearch): 
 			}
 		},
 		ClickedRangePreset: ({ value }) => {
-			const preset = AUDIT_RANGE_PRESETS.find((option) => option.value === value)
 			const closed = Popover.close(model.dateRange)
-			const range: AuditDateRange =
-				preset === undefined ? { kind: "all" } : { kind: "preset", preset: preset.value }
+			const range: AuditDateRange = Option.match(
+				Arr.findFirst(AUDIT_RANGE_PRESETS, (option) => option.value === value),
+				{
+					onNone: (): AuditDateRange => ({ kind: "all" }),
+					onSome: (preset): AuditDateRange => ({ kind: "preset", preset: preset.value }),
+				},
+			)
 			return {
 				...navigateFilters({ ...model, dateRange: closed.model }, search, { ...filters, range }),
 				commands: Command.mapMessages(closed.commands ?? [], (inner) =>

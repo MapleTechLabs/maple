@@ -296,8 +296,9 @@ export { LONG_RANGE_PRESET_VALUES, PRESET_VALUES }
 /** The window a shorthand resolves to: minutes and hours roll, days and weeks count calendar days,
  * months count calendar months (`resolveRelativeRange`). Null for "today" and non-shorthand. */
 const windowIdentity = (shorthand: string): string | null => {
-	const match = Str.toLowerCase(Str.trim(shorthand)).match(/^(\d+)(mo|m|h|d|w)$/)
-	if (match === null) return null
+	const matched = Str.match(/^(\d+)(mo|m|h|d|w)$/)(Str.toLowerCase(Str.trim(shorthand)))
+	if (Option.isNone(matched)) return null
+	const match = matched.value
 	const amount = Number.parseInt(match[1] ?? "0", 10)
 	const unit = match[2]
 	if (unit === "m" || unit === "h") return `rolling:${unit === "h" ? amount * 60 : amount}`

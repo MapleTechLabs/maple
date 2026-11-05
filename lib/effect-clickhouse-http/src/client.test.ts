@@ -1,5 +1,17 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Cause, Deferred, Effect, Exit, Fiber, Layer, Redacted, Schema, Stream, String as Str } from "effect"
+import {
+	Cause,
+	Deferred,
+	Effect,
+	Exit,
+	Fiber,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Stream,
+	String as Str,
+} from "effect"
 import { FetchHttpClient } from "effect/http"
 import {
 	make,
@@ -65,7 +77,9 @@ describe("HTTP request contract", () => {
 					const header = new Headers(init?.headers).get("authorization")!
 					assert.strictEqual(
 						new TextDecoder().decode(
-							Uint8Array.from(atob(Str.slice(6)(header)), (c) => c.charCodeAt(0)),
+							Uint8Array.from(atob(Str.slice(6)(header)), (c) =>
+								Option.getOrElse(Str.charCodeAt(0)(c), () => 0),
+							),
 						),
 						"user:päss",
 					)

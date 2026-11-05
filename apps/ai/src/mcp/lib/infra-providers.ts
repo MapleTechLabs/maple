@@ -219,9 +219,15 @@ const fetchProviderRows = (kind: ProviderKind, window: InfraWindow) =>
 					Arr.filter([...databases], (database) => database !== ""),
 					(database) =>
 						planetscaleRow(database, {
-							gauges: gauges.find((row) => row.database === database),
-							connections: connections.find((row) => row.database === database),
-							storage: storage.find((row) => row.database === database),
+							gauges: Option.getOrUndefined(
+								Arr.findFirst(gauges, (row) => row.database === database),
+							),
+							connections: Option.getOrUndefined(
+								Arr.findFirst(connections, (row) => row.database === database),
+							),
+							storage: Option.getOrUndefined(
+								Arr.findFirst(storage, (row) => row.database === database),
+							),
 						}),
 				)
 			}

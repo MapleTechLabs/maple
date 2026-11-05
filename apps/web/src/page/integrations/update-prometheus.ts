@@ -54,7 +54,7 @@ export const prometheusTargets = (model: Model): ReadonlyArray<V2ScrapeTarget> =
 	})
 
 const targetOf = (model: Model, id: ScrapeTargetId) =>
-	prometheusTargets(model).find((target) => target.id === id)
+	Option.getOrUndefined(Arr.findFirst(prometheusTargets(model), (target) => target.id === id))
 
 const checksKey = (context: PageContext, id: ScrapeTargetId) =>
 	requestKey(context.orgId, "scrapeTargets.listChecks", { id })

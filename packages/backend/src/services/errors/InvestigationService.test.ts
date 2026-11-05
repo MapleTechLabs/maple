@@ -740,7 +740,7 @@ describe("InvestigationService", () => {
 			)
 
 			const summaries = Arr.map(
-				(yield* timeline).filter((e) => e.type === "ai_triage"),
+				Arr.filter(yield* timeline, (e) => e.type === "ai_triage"),
 				(e) => decodeTriagePayload(e.payloadJson).summary,
 			).sort()
 			assert.deepStrictEqual(summaries, [sampleReport().summary, followUp.summary].sort())

@@ -1,7 +1,7 @@
 import type { ServiceLatencyBaseline } from "@maple/web-data/warehouse/services"
 import type { AlertSignalType, AnomalySignalType } from "@maple/domain/http"
 import type { Tone } from "@maple/ui/lib/tone"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 /** Health rollup for a single service. */
 export type ServiceHealth = "healthy" | "degraded" | "unhealthy"
@@ -47,7 +47,12 @@ export function deriveServiceHealthFromCauses(causes: readonly ServiceHealthCaus
 export function primaryServiceHealthCause(
 	causes: readonly ServiceHealthCause[],
 ): ServiceHealthCause | undefined {
-	return causes.find((cause) => cause.severity === "critical") ?? causes[0]
+	return Option.getOrUndefined(
+		Option.orElse(
+			Arr.findFirst(causes, (cause) => cause.severity === "critical"),
+			() => Arr.head(causes),
+		),
+	)
 }
 
 export interface LatencyBaselineSignal {

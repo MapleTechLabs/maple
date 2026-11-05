@@ -1,6 +1,6 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { assert, describe, it } from "@effect/vitest"
-import { Cause, Effect, Exit, Option, Schema, String as Str } from "effect"
+import { Cause, Effect, Exit, Option, Schema, String as Str, Array as Arr } from "effect"
 import {
 	MAX_RAW_SQL_CELL_LENGTH,
 	MAX_RAW_SQL_LENGTH,
@@ -52,11 +52,15 @@ describe("prepareRawSql", () => {
 				`${branch("metrics_histogram")} UNION ALL ${branch("metrics_sum")} UNION ALL ${branch("metrics_gauge")} ORDER BY n DESC LIMIT 15`,
 			)
 			assert.strictEqual(
-				prepared.sql.match(/TimeUnix >= toDateTime\('2026-05-14 00:00:00'\)/g)?.length,
+				Arr.fromIterable(
+					Str.matchAll(/TimeUnix >= toDateTime\('2026-05-14 00:00:00'\)/g)(prepared.sql),
+				).length,
 				3,
 			)
 			assert.strictEqual(
-				prepared.sql.match(/TimeUnix <= toDateTime\('2026-05-14 06:00:00'\)/g)?.length,
+				Arr.fromIterable(
+					Str.matchAll(/TimeUnix <= toDateTime\('2026-05-14 06:00:00'\)/g)(prepared.sql),
+				).length,
 				3,
 			)
 			assert.include(prepared.sql, "FROM metrics_gauge")

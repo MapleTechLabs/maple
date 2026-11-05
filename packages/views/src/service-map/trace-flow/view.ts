@@ -4,7 +4,13 @@ import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
 import { flowIcon } from "./flow-icon"
 import type * as Canvas from "../xyflow/canvas"
-import { handlePoint, type PlacedNode, type Viewport } from "../xyflow/geometry"
+import {
+	type HandleBounds,
+	handlePoint,
+	type MeasuredNode,
+	type PlacedNode,
+	type Viewport,
+} from "../xyflow/geometry"
 import { controls, dotBackground, miniMap } from "../xyflow/panels"
 import { edgesLayer, flowCanvas, flowEdge, flowNode, nodesLayer } from "../xyflow/view"
 import { isRectVisible } from "../xyflow/viewport"
@@ -13,6 +19,16 @@ import { flowLegend } from "./legend"
 import { flowSpanNode } from "./node-card"
 import { type FlowGraph, isNodeSelected, MAX_FLOW_NODES, Message, type Model } from "./trace-flow"
 import { typography } from "../../ui/typography"
+
+/** The node's handle of `type`: a plain scan, since this runs per edge on every render. */
+const handleOf = (
+	measured: MeasuredNode | undefined,
+	type: HandleBounds["type"],
+): HandleBounds | undefined => {
+	if (measured === undefined) return undefined
+	for (const handle of measured.handles) if (handle.type === type) return handle
+	return undefined
+}
 
 type Pane = Canvas.Model["pane"]
 
@@ -85,8 +101,8 @@ const renderEdges = <M>(
 			const target = placed.get(edge.target)
 			if (source === undefined || target === undefined) return []
 			if (!edgeVisible(source, target, model.canvas.viewport, model.canvas.pane)) return []
-			const sourceHandle = source.measured?.handles.find((handle) => handle.type === "source")
-			const targetHandle = target.measured?.handles.find((handle) => handle.type === "target")
+			const sourceHandle = handleOf(source.measured, "source")
+			const targetHandle = handleOf(target.measured, "target")
 			if (sourceHandle === undefined || targetHandle === undefined) return []
 			return [
 				flowEdge(h, {

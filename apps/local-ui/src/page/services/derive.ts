@@ -28,7 +28,7 @@ export const visibleEntries = (
 	filters: ServicesFilters,
 ): ReadonlyArray<ServiceCatalogEntry> => {
 	const all = dataOf(model.catalog)
-	const needle = filters.search?.toLowerCase()
+	const needle = filters.search === undefined ? undefined : Str.toLowerCase(filters.search)
 	return needle ? Arr.filter(all, (entry) => Str.includes(needle)(Str.toLowerCase(entry.serviceName))) : all
 }
 

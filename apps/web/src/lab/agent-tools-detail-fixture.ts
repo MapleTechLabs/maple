@@ -1,7 +1,7 @@
 // The tool analytics fixture, detail half (`SESSION_SEEDS`, the error groups,
 // `buildToolErrorDetailFixture`, `buildToolDetailFixture`).
 
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import {
 	EMPTY_MEASURES,
 	type ToolErrorOccurrenceRow,
@@ -462,7 +462,9 @@ const fingerprintOf = (message: string, index: number) =>
 				Arr.reduce(
 					Array.from(message),
 					BigInt(index + 7),
-					(hash, char) => (hash * 31n + BigInt(char.charCodeAt(0))) % 18_446_744_073_709_551_557n,
+					(hash, char) =>
+						(hash * 31n + BigInt(Option.getOrElse(Str.charCodeAt(char, 0), () => 0))) %
+						18_446_744_073_709_551_557n,
 				),
 			)
 
@@ -517,11 +519,13 @@ export function buildToolErrorDetailFixture(
 	readonly occurrences: ReadonlyArray<ToolErrorOccurrenceRow>
 	readonly hasMore: boolean
 } {
-	const spec = (ERROR_GROUPS.get(tool) ?? []).find(
+	const found = Arr.findFirst(
+		ERROR_GROUPS.get(tool) ?? [],
 		(candidate, index) => fingerprintOf(candidate.message, index) === row.fingerprint,
 	)
-	if (spec === undefined)
+	if (Option.isNone(found))
 		return { detail: { sessions: [], variants: [], breakdown: [] }, occurrences: [], hasMore: false }
+	const spec = found.value
 	const variants = spec.variants ?? [{ message: spec.message, calls: spec.calls }]
 	const where = spec.where ?? [["z-ai/glm-5.3-flash:nitro", "maple-investigations", 1] as const]
 	const sessionIds = SAMPLE_SESSION_IDS.slice(0, Math.min(SAMPLE_SESSION_IDS.length, spec.sessions))

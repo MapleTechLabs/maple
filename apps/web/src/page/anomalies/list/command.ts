@@ -1,4 +1,4 @@
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Option, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
@@ -28,9 +28,13 @@ export const ScrollIncidentIntoView = Command.define("ScrollAnomalyIncidentIntoV
 	messages: [Message.CompletedScrollRow],
 	execute: ({ incidentId }) =>
 		Effect.sync(() => {
-			Array.from(document.querySelectorAll<HTMLElement>("[data-incident-id]"))
-				.find((row) => row.getAttribute("data-incident-id") === incidentId)
-				?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+			Option.map(
+				Arr.findFirst(
+					Array.from(document.querySelectorAll<HTMLElement>("[data-incident-id]")),
+					(row) => row.getAttribute("data-incident-id") === incidentId,
+				),
+				(row) => row.scrollIntoView({ block: "nearest", behavior: "smooth" }),
+			)
 			return Message.CompletedScrollRow()
 		}),
 })
@@ -44,14 +48,18 @@ export const FetchFirstPage = Command.define("FetchAnomalyIncidents", {
 	args: { key: Schema.String, status: StatusTab },
 	messages: [Message.CompletedFetchFirstPage],
 	execute: ({ key, status }) =>
-		Effect.map(fetchPage(status, undefined), (result) => Message.CompletedFetchFirstPage({ key, result })),
+		Effect.map(fetchPage(status, undefined), (result) =>
+			Message.CompletedFetchFirstPage({ key, result }),
+		),
 })
 
 export const LoadMoreIncidents = Command.define("LoadMoreAnomalyIncidents", {
 	args: { status: StatusTab, cursor: Schema.String },
 	messages: [Message.CompletedLoadMore],
 	execute: ({ status, cursor }) =>
-		Effect.map(fetchPage(status, cursor), (result) => Message.CompletedLoadMore({ status, cursor, result })),
+		Effect.map(fetchPage(status, cursor), (result) =>
+			Message.CompletedLoadMore({ status, cursor, result }),
+		),
 })
 
 export const LoadSignalPresence = Command.define("LoadAnomaliesSignalPresence", {

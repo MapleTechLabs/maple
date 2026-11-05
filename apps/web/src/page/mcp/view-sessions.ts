@@ -40,7 +40,7 @@ import {
 	sectionTitle,
 	RESULT_LANE,
 } from "./view-kit"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 
 // `/mcp-servers/:service/sessions` and one session: a server's requests grouped by `mcp.session.id`,
 // each session its requests in order, linked to the Agent Session whose trace made them.
@@ -171,7 +171,10 @@ const partialCoverage = <M>(h: HtmlBuilder<M>, data: McpSessionsResponse): Reado
 
 /** The median of the listed sessions' lengths; `undefined` for none. */
 export const medianLengthMs = (sessions: ReadonlyArray<McpSessionItem>): number | undefined => {
-	const lengths = Arr.map(sessions, (row) => row.lastSeenMs - row.firstSeenMs).toSorted((a, b) => a - b)
+	const lengths = Arr.sort(
+		Arr.map(sessions, (row) => row.lastSeenMs - row.firstSeenMs),
+		Order.Number,
+	)
 	const middle = Math.floor(lengths.length / 2)
 	return lengths.length === 0
 		? undefined

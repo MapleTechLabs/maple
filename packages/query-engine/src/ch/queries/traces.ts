@@ -55,7 +55,7 @@ import {
 	timeseriesBucket,
 	wholeRangeEnd,
 } from "./query-helpers"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Record as Rec } from "effect"
 
 /**
  * The two t-digest state types the timeseries branches must agree on.
@@ -499,7 +499,7 @@ export function canUseAnnualServiceOverview(opts: TracesTimeseriesOpts): boolean
 		!opts.excludedSpanNames?.length &&
 		!opts.attributeFilters?.length &&
 		!opts.resourceAttributeFilters?.length &&
-		!Object.values(opts.matchModes ?? {}).includes("contains")
+		!Rec.values<string, unknown>({ ...opts.matchModes }).includes("contains")
 	)
 }
 
@@ -1407,7 +1407,7 @@ export function traceSummariesQuery(opts: TraceSummariesOpts) {
 		matchModes: opts.matchModes,
 	}
 	// Match modes only shape the filters, so they never count as one.
-	const hasSpanFilters = Arr.some(Object.entries(spanFilters), ([key, value]) =>
+	const hasSpanFilters = Arr.some(Rec.toEntries<string, unknown>({ ...spanFilters }), ([key, value]) =>
 		key === "matchModes" ? false : Arr.isArray(value) ? value.length > 0 : value !== undefined,
 	)
 	// Keyset over (second, TraceId): the MV stores whole seconds, and the cursor is a page's last `startTime`.

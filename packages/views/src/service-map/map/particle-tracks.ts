@@ -80,6 +80,7 @@ export interface Track {
 
 const hash01 = (value: string): number => {
 	let h = 0
+	// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 	for (let i = 0; i < value.length; i++) h = (h * 31 + value.charCodeAt(i)) | 0
 	return (Math.abs(h) % 1000) / 1000
 }

@@ -1,5 +1,5 @@
 import type { LabEntry } from "./define"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 /**
  * One module per lab page in `./entries/<path>.ts` (`/lab/bench/logs` is `entries/bench/logs.ts`).
@@ -11,8 +11,9 @@ export const labEnabled = import.meta.env.DEV || import.meta.env.VITE_MAPLE_LAB 
 
 /** `/lab` itself is the index entry (`entries/index.ts`). */
 export const labPathOf = (pathname: string): string | undefined => {
-	const match = pathname.match(/^\/lab(?:\/(.+?))?\/?$/)
-	return match === null ? undefined : (match[1] ?? "index")
+	return Option.getOrUndefined(
+		Option.map(Str.match(/^\/lab(?:\/(.+?))?\/?$/)(pathname), (match) => match[1] ?? "index"),
+	)
 }
 
 /** Every lab page's path, `/lab/bench/logs` for `entries/bench/logs.ts`, read without loading any. */

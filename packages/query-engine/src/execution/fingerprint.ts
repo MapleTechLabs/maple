@@ -20,6 +20,7 @@ export const fingerprintSql = (s: string): string => {
 	const normalized = Str.replace(/\b\d+\b/g, "?")(Str.replace(/'[^']*'/g, "'?'")(s))
 	let h = 0x811c9dc5
 	for (let i = 0; i < normalized.length; i++) {
+		// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 		h ^= normalized.charCodeAt(i)
 		h = Math.imul(h, 0x01000193)
 	}

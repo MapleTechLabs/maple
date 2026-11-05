@@ -27,7 +27,18 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIncidents, type ErrorIncidentRow, ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
-import { Clock, Context, DateTime, Effect, Layer, Match, Option, Schema, Array as Arr } from "effect"
+import {
+	Clock,
+	Context,
+	DateTime,
+	Effect,
+	Layer,
+	Match,
+	Option,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -307,7 +318,7 @@ const make: Effect.Effect<
 		const endMs = finiteMs(opts.endTime)
 		const startMs = finiteMs(opts.startTime)
 		const sinceMs = finiteMs(opts.introducedAfter)
-		const pattern = opts.search ? `%${opts.search.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%` : undefined
+		const pattern = opts.search ? `%${Str.replace(/[\\%_]/g, "\\$&")(opts.search)}%` : undefined
 		const conditions: IssueConditions = ($) => [
 			$.orgId.eq(orgId),
 			opts.workflowState ? $.workflowState.eq(opts.workflowState) : undefined,

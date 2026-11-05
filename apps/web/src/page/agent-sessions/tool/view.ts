@@ -227,29 +227,31 @@ const errorModalView = (
 ): Html => {
 	const rows = AsyncData.getOrElse(model.errors.data, () => ({ data: [] })).data
 	const prepared = prepare(rows, range).rows
-	const index = prepared.findIndex((row) => row.fingerprint === model.errorModal.fingerprint)
-	const group = prepared[index]
+	const selected = Option.flatMap(
+		Arr.findFirstIndex(prepared, (row) => row.fingerprint === model.errorModal.fingerprint),
+		(index) => Option.map(Arr.get(prepared, index), (group) => ({ index, group })),
+	)
 	return h.submodel({
 		slotId: "agent-tool-error-modal-root",
 		model: model.errorModal,
 		view: ErrorModalView.view,
 		toParentMessage: (message: ErrorModal.Message) => Message.GotErrorModalMessage({ message }),
 		viewInputs: {
-			inputs:
-				group === undefined
-					? undefined
-					: {
-							tool: model.toolName,
-							group,
-							position: { index, total: prepared.length },
-							toolFailures: Arr.reduce(rows, 0, (sum, row) => sum + row.calls),
-							toolCalls: totals.current.calls,
-							range,
-							session: model.search.session,
-							variant: model.search.variant,
-							timeZone,
-							nowMs: model.nowMs,
-						},
+			inputs: Option.match(selected, {
+				onNone: () => undefined,
+				onSome: ({ index, group }) => ({
+					tool: model.toolName,
+					group,
+					position: { index, total: prepared.length },
+					toolFailures: Arr.reduce(rows, 0, (sum, row) => sum + row.calls),
+					toolCalls: totals.current.calls,
+					range,
+					session: model.search.session,
+					variant: model.search.variant,
+					timeZone,
+					nowMs: model.nowMs,
+				}),
+			}),
 		},
 	})
 }

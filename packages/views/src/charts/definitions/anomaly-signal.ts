@@ -7,7 +7,7 @@ import { areaY, type ChartValue, d3Curve, defineChart, lineY, rect, ruleY, text 
 import { decorative } from "@tanstack/charts/mark/decorative"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
-import { Option, Array as Arr } from "effect"
+import { Option, Order, Array as Arr } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { SERIES_STROKE_WIDTH, verticalGradient } from "./fixed-metric-axes"
@@ -57,7 +57,10 @@ const thresholdRules = (thresholds: ReadonlyArray<Threshold>, labelX: Date | und
 
 /** The points that parse, oldest first: what the chart draws (empty means the empty message). */
 export const sortedSignal = (points: ReadonlyArray<SignalPoint>): ReadonlyArray<SignalPoint> =>
-	points.toSorted((a, b) => toEpochMs(a.bucket) - toEpochMs(b.bucket))
+	Arr.sort(
+		points,
+		Order.mapInput(Order.Number, (point: SignalPoint) => toEpochMs(point.bucket)),
+	)
 
 export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPoint, ChartValue, number> => {
 	const color = (key: string) => spec.colors[key] ?? spec.colors.border ?? ""
@@ -74,10 +77,22 @@ export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPo
 	// Snap the incident window to actual bucket values so the shading lines up with the points.
 	const startMs = toEpochMs(spec.firstTriggeredAt)
 	const endMs = spec.resolvedAt !== null ? toEpochMs(spec.resolvedAt) : Infinity
-	const x1 =
-		data.find((point) => toEpochMs(point.bucket) >= startMs)?.bucket ?? data[data.length - 1]?.bucket
-	const x2Raw = data.findLast((point) => toEpochMs(point.bucket) <= endMs)?.bucket
-	const x2 = x2Raw === undefined || x1 === undefined || toEpochMs(x2Raw) < toEpochMs(x1) ? x1 : x2Raw
+	const x1 = Option.getOrUndefined(
+		Option.orElse(
+			Option.map(
+				Arr.findFirst(data, (point) => toEpochMs(point.bucket) >= startMs),
+				(point) => point.bucket,
+			),
+			() => Option.map(Arr.last(data), (point) => point.bucket),
+		),
+	)
+	const x2 = Option.match(
+		Arr.findLast(data, (point) => toEpochMs(point.bucket) <= endMs),
+		{
+			onNone: () => x1,
+			onSome: ({ bucket }) => (x1 === undefined || toEpochMs(bucket) < toEpochMs(x1) ? x1 : bucket),
+		},
+	)
 	const window = x1 === undefined || x2 === undefined ? null : { x1: bucketDate(x1), x2: bucketDate(x2) }
 
 	const maxVal = Arr.reduce(data, Math.max(spec.thresholdValue, spec.baselineMedian), (max, point) =>

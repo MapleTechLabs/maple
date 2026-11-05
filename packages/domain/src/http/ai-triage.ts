@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { Option, Schema, SchemaGetter, Array as Arr } from "effect"
+import { Option, Schema, SchemaGetter, Array as Arr, String as Str } from "effect"
 import { IsoDateTimeString, UserId } from "../primitives"
 import { SessionAuthorization } from "./current-tenant"
 import { IssueSeverity } from "./errors"
@@ -205,7 +205,7 @@ export const normalizeTriageSubmission = (
 ): { readonly report: AiTriageResult; readonly filled: ReadonlyArray<string> } => {
 	const filled: Array<string> = []
 	const text = (value: string | undefined, field: string): string => {
-		const trimmed = value?.trim()
+		const trimmed = value === undefined ? undefined : Str.trim(value)
 		if (trimmed !== undefined && trimmed.length > 0) return trimmed
 		filled.push(field)
 		return MISSING_PROSE

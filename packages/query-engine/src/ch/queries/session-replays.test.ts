@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect, Array as Arr, String as Str } from "effect"
+import { DateTime, Effect, Array as Arr, String as Str, Option } from "effect"
 import { compile, compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	getSessionReplayQuery,
@@ -16,7 +16,8 @@ const baseParams = { orgId: OrgId.make("org_1") }
 const sessionParams = { orgId: OrgId.make("org_1"), sessionId: "sess_1" }
 const WINDOW = { startTime: "2026-06-24 04:00:00", endTime: "2026-06-25 06:00:00" }
 /** The `facetType` literals a facets union emits, the values the sidebar groups rows by. */
-const facetTypes = (sql: string) => Arr.map([...sql.matchAll(/'(\w+)' AS facetType/g)], (m) => m[1])
+const facetTypes = (sql: string) =>
+	Arr.map(Arr.fromIterable(Str.matchAll(/'(\w+)' AS facetType/g)(sql)), (m) => m[1])
 const UTC_WINDOW = {
 	startTime: DateTime.makeUnsafe("2026-06-24T04:00:00Z"),
 	endTime: DateTime.makeUnsafe("2026-06-25T06:00:00Z"),
@@ -481,7 +482,7 @@ describe("sessionReplaysFacetsQuery duration distribution", () => {
 		const { sql } = compileUnionUnsafe(sessionReplaysFacetsQuery({}), { ...baseParams, ...WINDOW })
 		expect(sql).toContain("quantile(0.5)(assumeNotNull(session_replays.DurationMs))")
 		expect(sql).toContain("quantile(0.95)(assumeNotNull(session_replays.DurationMs))")
-		expect(sql.match(/'durationStat' AS facetType/g)).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/'durationStat' AS facetType/g)(sql))).toHaveLength(2)
 	})
 
 	// ClickHouse rejects a UNION ALL that mixes quantile()'s Float64 with the
@@ -503,7 +504,7 @@ describe("sessionReplaysFacetsQuery duration distribution", () => {
 		// Only the Version=2 row carries a DurationMs, so this is one row per
 		// finished session — no GROUP BY SessionId needed, and in-progress
 		// sessions (NULL duration) drop out as they do on the list.
-		expect(sql.match(/DurationMs > 0/g)).toHaveLength(3)
+		expect(Arr.fromIterable(Str.matchAll(/DurationMs > 0/g)(sql))).toHaveLength(3)
 	})
 
 	it("narrows the distribution by the other facet filters", () => {
@@ -585,7 +586,9 @@ describe("sessionReplaysListQuery keyset cursor", () => {
 			}),
 			{ ...baseParams, ...WINDOW },
 		)
-		expect(sql.indexOf("StartTime < '2026-09-01 12:00:00'")).toBeLessThan(sql.indexOf("GROUP BY"))
+		expect(Option.getOrThrow(Str.indexOf("StartTime < '2026-09-01 12:00:00'")(sql))).toBeLessThan(
+			Option.getOrThrow(Str.indexOf("GROUP BY")(sql)),
+		)
 	})
 })
 
@@ -680,7 +683,7 @@ describe("session tags", () => {
 	it("ranks bot first, then bounce, idle, glance, and falls back to engaged", () => {
 		const { sql } = compileUnsafe(sessionReplaysListQuery({}), params)
 		const order = Arr.map(["'bot'", "'bounce'", "'idle'", "'glance'", "'engaged'"], (tag) =>
-			sql.indexOf(tag),
+			Option.getOrThrow(Str.indexOf(tag)(sql)),
 		)
 		expect(Arr.every(order, (position) => position > 0)).toBe(true)
 		expect([...order].sort((a, b) => a - b)).toEqual(order)
@@ -695,7 +698,7 @@ describe("session tags", () => {
 
 	it("requires every requested tag through one semi-join over the same window", () => {
 		const { sql } = compileUnsafe(sessionReplaysListQuery({ tags: ["engaged", "signed_in"] }), params)
-		expect(sql.match(/FROM session_replays/g)).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/FROM session_replays/g)(sql))).toHaveLength(2)
 	})
 
 	it("applies no tag predicate when no tags are asked for", () => {
@@ -714,8 +717,10 @@ describe("session tags", () => {
 
 	it("counts sessions per tag in one facet branch", () => {
 		const sql = flat(compileUnionUnsafe(sessionReplaysFacetsQuery({}), params).sql)
-		const tagBranch = Str.split("UNION ALL")(sql).find((branch) =>
-			Str.includes("'tag' AS facetType")(branch),
+		const tagBranch = Option.getOrThrow(
+			Arr.findFirst(Str.split("UNION ALL")(sql), (branch) =>
+				Str.includes("'tag' AS facetType")(branch),
+			),
 		)
 		expect(tagBranch).toContain(
 			"arrayJoin(arrayFilter(tag -> tag != '', [t.quality, if(t.signedIn = 1, 'signed_in', ''), if(t.newVisitor = 1, 'new_visitor', '')])) AS name",
@@ -725,7 +730,9 @@ describe("session tags", () => {
 	it("narrows every other facet branch by the selected tags, but not the tag branch", () => {
 		const sql = flat(compileUnionUnsafe(sessionReplaysFacetsQuery({ tags: ["engaged"] }), params).sql)
 		const branches = Str.split("UNION ALL")(sql)
-		const tagBranch = branches.find((branch) => Str.includes("'tag' AS facetType")(branch))
+		const tagBranch = Option.getOrThrow(
+			Arr.findFirst(branches, (branch) => Str.includes("'tag' AS facetType")(branch)),
+		)
 		expect(tagBranch).not.toContain("WHERE t.quality = 'engaged'")
 		// Every other branch, including the hand-written error one, is narrowed by it.
 		const narrowed = Arr.filter(branches, (branch) => Str.includes("WHERE t.quality = 'engaged'")(branch))
@@ -736,8 +743,10 @@ describe("session tags", () => {
 		const sql = flat(
 			compileUnionUnsafe(sessionReplaysFacetsQuery({ tags: ["bot", "signed_in"] }), params).sql,
 		)
-		const tagBranch = Str.split("UNION ALL")(sql).find((branch) =>
-			Str.includes("'tag' AS facetType")(branch),
+		const tagBranch = Option.getOrThrow(
+			Arr.findFirst(Str.split("UNION ALL")(sql), (branch) =>
+				Str.includes("'tag' AS facetType")(branch),
+			),
 		)
 		// A tier is counted under the selected traits only: ticking a tier replaces the tier.
 		expect(tagBranch).toContain("if((t.quality != '' AND t.signedIn = 1), t.quality, '')")

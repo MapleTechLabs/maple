@@ -1605,17 +1605,27 @@ const make: Effect.Effect<
 						if (prior !== undefined && shouldReopen(prior, lastResolvedAt, nowMs)) {
 							let entries = parseRowFingerprints(prior)
 							if (evaluation.fingerprintHash !== null) {
-								const existing = entries.find(
+								const existing = Arr.findFirst(
+									entries,
 									(e) => e.fingerprintHash === evaluation.fingerprintHash,
 								)
 								entries = upsertFingerprintEntry(entries, {
 									fingerprintHash: evaluation.fingerprintHash,
-									errorIssueId: existing?.errorIssueId ?? errorIssueId,
+									errorIssueId: Option.match(existing, {
+										onNone: () => errorIssueId,
+										onSome: (e) => e.errorIssueId ?? errorIssueId,
+									}),
 									detectorKey: evaluation.detectorKey,
-									openedValue: existing?.openedValue ?? evaluation.value,
+									openedValue: Option.match(existing, {
+										onNone: () => evaluation.value,
+										onSome: (e) => e.openedValue,
+									}),
 									lastValue: evaluation.value,
 									severity: evaluation.severity,
-									attachedAt: existing?.attachedAt ?? nowMs,
+									attachedAt: Option.match(existing, {
+										onNone: () => nowMs,
+										onSome: (e) => e.attachedAt,
+									}),
 									resolvedAt: null,
 								})
 							}
@@ -1802,20 +1812,28 @@ const make: Effect.Effect<
 					const incidentId = openIncidentId
 					const runtime = incidentById.get(incidentId)
 					if (runtime !== undefined && evaluation.fingerprintHash !== null) {
-						const existing = runtime.entries.find(
-							(e) => e.fingerprintHash === evaluation.fingerprintHash,
+						const fingerprintHash = evaluation.fingerprintHash
+						const existing = Arr.findFirst(
+							runtime.entries,
+							(e) => e.fingerprintHash === fingerprintHash,
 						)
 						runtime.entries = upsertFingerprintEntry(runtime.entries, {
-							fingerprintHash: evaluation.fingerprintHash,
+							fingerprintHash,
 							errorIssueId:
-								existing?.errorIssueId ??
-								issueIdByFingerprint.get(evaluation.fingerprintHash) ??
+								Option.getOrNull(Option.flatMapNullishOr(existing, (e) => e.errorIssueId)) ??
+								issueIdByFingerprint.get(fingerprintHash) ??
 								null,
 							detectorKey: evaluation.detectorKey,
-							openedValue: existing?.openedValue ?? evaluation.value,
+							openedValue: Option.match(existing, {
+								onNone: () => evaluation.value,
+								onSome: (e) => e.openedValue,
+							}),
 							lastValue: evaluation.value,
 							severity: evaluation.severity,
-							attachedAt: existing?.attachedAt ?? nowMs,
+							attachedAt: Option.match(existing, {
+								onNone: () => nowMs,
+								onSome: (e) => e.attachedAt,
+							}),
 							resolvedAt: null,
 						})
 					}
@@ -1882,12 +1900,13 @@ const make: Effect.Effect<
 					const incidentId = openIncidentId
 					const runtime = incidentById.get(incidentId)
 					if (runtime !== undefined && evaluation.fingerprintHash !== null) {
-						const existing = runtime.entries.find(
+						const existing = Arr.findFirst(
+							runtime.entries,
 							(entry) => entry.fingerprintHash === evaluation.fingerprintHash,
 						)
-						if (existing !== undefined) {
+						if (Option.isSome(existing)) {
 							runtime.entries = upsertFingerprintEntry(runtime.entries, {
-								...existing,
+								...existing.value,
 								lastValue: evaluation.value,
 							})
 						}
@@ -1926,12 +1945,13 @@ const make: Effect.Effect<
 					const incidentId = openIncidentId
 					const runtime = incidentById.get(incidentId)
 					if (runtime !== undefined && evaluation.fingerprintHash !== null) {
-						const existing = runtime.entries.find(
+						const existing = Arr.findFirst(
+							runtime.entries,
 							(entry) => entry.fingerprintHash === evaluation.fingerprintHash,
 						)
-						if (existing !== undefined) {
+						if (Option.isSome(existing)) {
 							runtime.entries = upsertFingerprintEntry(runtime.entries, {
-								...existing,
+								...existing.value,
 								lastValue: evaluation.value,
 							})
 						}
@@ -2010,9 +2030,10 @@ const make: Effect.Effect<
 						// continue branch and manual resolve to find it.
 						const next = otherStates[0]!
 						const nextEntry =
-							next.fingerprintHash === null
-								? undefined
-								: runtime?.entries.find(
+							next.fingerprintHash === null || runtime === undefined
+								? Option.none<IncidentFingerprintEntry>()
+								: Arr.findFirst(
+										runtime.entries,
 										(entry) => entry.fingerprintHash === next.fingerprintHash,
 									)
 						const detachSet = {
@@ -2027,9 +2048,9 @@ const make: Effect.Effect<
 								? {
 										detectorKey: next.detectorKey,
 										fingerprintHash: next.fingerprintHash,
-										...(nextEntry !== undefined
+										...(Option.isSome(nextEntry)
 											? {
-													lastObservedValue: nextEntry.lastValue,
+													lastObservedValue: nextEntry.value.lastValue,
 													// The count comes from the promoted series' state row, not
 													// from the fingerprint entry — entries carry only a value.
 													// This previously read `nextEntry.lastValue`, i.e. the

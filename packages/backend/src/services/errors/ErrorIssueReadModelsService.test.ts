@@ -4,7 +4,7 @@ import { ErrorIncidentId, ErrorIssueId, OrgId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIncidents, ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
-import { Clock, Effect, Layer, Schema, Array as Arr, DateTime } from "effect"
+import { Clock, Effect, Layer, Schema, Array as Arr, DateTime, Order, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -227,9 +227,12 @@ describe("ErrorIssueReadModelsService", () => {
 			const listed = yield* readModels.listIssues(ORG, {
 				introducedAfter: DateTime.formatIso(DateTime.makeUnsafe(now - 120_000)),
 			})
-			expect(Arr.map(listed.issues, (issue) => issue.id).toSorted()).toEqual(
-				[fresh, regressed].toSorted(),
-			)
+			expect(
+				Arr.sort(
+					Arr.map(listed.issues, (issue) => issue.id),
+					Order.String,
+				),
+			).toEqual(Arr.sort([fresh, regressed], Order.String))
 		}).pipe(Effect.provide(makeLayer(contexts)))
 	})
 
@@ -329,7 +332,7 @@ describe("ErrorIssueReadModelsService", () => {
 				"3333333333333333333",
 			])
 			// Timeseries, samples and environments each ask for both hashes.
-			const issueReads = Arr.filter(sqls, (sql) => sql.includes("11111111111111111111"))
+			const issueReads = Arr.filter(sqls, (sql) => Str.includes("11111111111111111111")(sql))
 			assert.lengthOf(issueReads, 3)
 			for (const sql of issueReads) expect(sql).toContain("3333333333333333333")
 
@@ -368,7 +371,10 @@ describe("ErrorIssueReadModelsService", () => {
 
 			const users = yield* readModels.listIssueAffectedUsers(ORG, owner, window)
 			assert.isTrue(users.attributed)
-			assert.deepStrictEqual(contexts.toSorted(), ["issueAffectedUserCount", "issueAffectedUsers"])
+			assert.deepStrictEqual(Arr.sort(contexts, Order.String), [
+				"issueAffectedUserCount",
+				"issueAffectedUsers",
+			])
 			for (const sql of sqls) {
 				expect(sql).toContain("5555555555555555555")
 				expect(sql).toContain("6666666666666666666")

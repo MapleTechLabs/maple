@@ -271,12 +271,18 @@ describe("segment key stability under a sliding window", () => {
 		const base = 1_760_000_000_000
 
 		let changes = 0
-		let previous = segmentStartsFor(base - windowMs, base, segmentMs).join(",")
+		let previous = Arr.join(
+			Arr.map(segmentStartsFor(base - windowMs, base, segmentMs), (start) => `${start}`),
+			",",
+		)
 
 		// One hour of a dashboard refreshing every second.
 		for (let tick = 1; tick <= 3600; tick++) {
 			const endMs = base + tick * 1000
-			const current = segmentStartsFor(endMs - windowMs, endMs, segmentMs).join(",")
+			const current = Arr.join(
+				Arr.map(segmentStartsFor(endMs - windowMs, endMs, segmentMs), (start) => `${start}`),
+				",",
+			)
 			if (current !== previous) changes++
 			previous = current
 		}

@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Array as Arr, DateTime, Effect, Exit, Layer, Option, Schema, String as Str } from "effect"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import { ErrorIssueId, OrgId, UserDetailRequest, UserId, WarehouseSchemaDriftError } from "@maple/domain/http"
@@ -66,7 +66,7 @@ const warehouse = (rows: ReadonlyArray<unknown>, ran: Ran, failWith?: WarehouseS
 				const compiled = compiledQueryOf(input)
 				const context = options?.context ?? ""
 				ran.push(context)
-				if (failWith !== undefined && compiled.sql.includes("error_events"))
+				if (failWith !== undefined && Str.includes("error_events")(compiled.sql))
 					return Effect.fail(failWith)
 				return compiled.decodeRows(context === "userIssues" ? rows : []).pipe(Effect.orDie)
 			},
@@ -155,7 +155,7 @@ describe("readUserIssues", () => {
 			assert.isFalse(response.attributed)
 			assert.deepStrictEqual(response.issues, [])
 			const activity = yield* readUserActivity(tenant, request)
-			assert.isFalse(activity.activity.some((item) => item.kind === "error"))
+			assert.isFalse(Arr.some(activity.activity, (item) => item.kind === "error"))
 		}).pipe(Effect.provide([warehouse([], ran, missingUserId), createTestDb(createdDbs).layer]))
 	})
 
@@ -177,7 +177,7 @@ describe("readUserIssues", () => {
 		return Effect.gen(function* () {
 			yield* seed
 			const activity = yield* readUserActivity(tenant, request)
-			const errors = activity.activity.filter((item) => item.kind === "error")
+			const errors = Arr.filter(activity.activity, (item) => item.kind === "error")
 			expect(errors).toMatchObject([
 				{ issueId: null, title: "TypeError", tone: "crit" },
 				{ issueId: KEPT, title: "CheckoutError", detail: "4 hits · checkout · issue 111" },

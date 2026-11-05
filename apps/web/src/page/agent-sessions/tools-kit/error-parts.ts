@@ -14,7 +14,7 @@ import { inlineCodeClassName } from "@maple/views/ui/inline-code"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstackClass } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // The pieces the Errors table (and the error modal) draw a failure with.
 
@@ -74,14 +74,15 @@ const HEADING = "font-mono text-lg leading-6.5 font-semibold tracking-tight text
 
 /** `ErrorTextHeading`: the message whole, its path on a line of its own in the error colour. */
 export const errorTextHeading = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<ErrorTextToken>): Html => {
-	const pathIndex = tokens.findIndex((token) => token.kind === "path")
-	if (pathIndex < 0)
+	const foundPath = Arr.findFirstIndex(tokens, (token) => token.kind === "path")
+	if (Option.isNone(foundPath))
 		return heading(
 			h,
 			{ level: 2, variant: "code", className: "line-clamp-3 break-words" },
 			headingTokens(h, tokens),
 		)
 
+	const pathIndex = foundPath.value
 	const path = tokens[pathIndex]
 	const atIndex = tokens[pathIndex - 1]?.kind === "at" ? pathIndex - 1 : pathIndex
 	const tail = tokens.slice(pathIndex + 1)
@@ -141,9 +142,10 @@ export const errorTextLine = <M>(
 	tokens: ReadonlyArray<ErrorTextToken>,
 	className?: string,
 ): Html => {
-	const pathIndex = tokens.findIndex((token) => token.kind === "path")
-	if (pathIndex < 0)
+	const foundPath = Arr.findFirstIndex(tokens, (token) => token.kind === "path")
+	if (Option.isNone(foundPath))
 		return h.span([h.Class(cn("min-w-0 truncate whitespace-pre", className))], lineTokens(h, tokens))
+	const pathIndex = foundPath.value
 	const atIndex = tokens[pathIndex - 1]?.kind === "at" ? pathIndex - 1 : pathIndex
 	const tail = tokens.slice(pathIndex + 1)
 	return h.span(

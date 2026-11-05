@@ -10,7 +10,7 @@ import { SIGNAL_LABEL } from "@maple/web-data/anomalies/format"
 import { AsyncData } from "foldkit"
 import type { AnomaliesSearch } from "../../../route/search"
 import type { GroupKey, Model, StatusTab } from "./model"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option, Order } from "effect"
 
 export type Search = typeof AnomaliesSearch.Type
 
@@ -81,7 +81,7 @@ export const groupIncidents = (
 			if (current === undefined || Str.localeCompare(current)(incident.lastTriggeredAt) > 0)
 				latest.set(clusterKey(incident), incident.lastTriggeredAt)
 		})
-		const sorted = bucket.toSorted((a, b) => {
+		const sorted = Arr.sort(bucket, (a: AnomalyIncidentDocument, b: AnomalyIncidentDocument) => {
 			const clusterA = latest.get(clusterKey(a)) ?? ""
 			const clusterB = latest.get(clusterKey(b)) ?? ""
 			if (clusterA !== clusterB) return Str.localeCompare(clusterA)(clusterB)
@@ -103,28 +103,35 @@ export interface ServiceCluster {
 export const clusterByService = (
 	incidents: ReadonlyArray<AnomalyIncidentDocument>,
 ): ReadonlyArray<ServiceCluster> =>
-	incidents.reduce<ReadonlyArray<ServiceCluster>>((clusters, incident) => {
-		const key = clusterKey(incident)
-		const last = clusters[clusters.length - 1]
-		return last !== undefined && last.key === key
-			? [...clusters.slice(0, -1), { ...last, incidents: [...last.incidents, incident] }]
-			: [
-					...clusters,
-					{
-						key,
-						serviceName: incident.serviceName,
-						deploymentEnv: incident.deploymentEnv,
-						incidents: [incident],
-					},
-				]
-	}, [])
+	Arr.reduce<AnomalyIncidentDocument, ReadonlyArray<ServiceCluster>>(
+		incidents,
+		[],
+		(clusters, incident) => {
+			const key = clusterKey(incident)
+			const last = clusters[clusters.length - 1]
+			return last !== undefined && last.key === key
+				? [...clusters.slice(0, -1), { ...last, incidents: [...last.incidents, incident] }]
+				: [
+						...clusters,
+						{
+							key,
+							serviceName: incident.serviceName,
+							deploymentEnv: incident.deploymentEnv,
+							incidents: [incident],
+						},
+					]
+		},
+	)
 
 const SEVERITY_LABEL = { critical: "Critical", warning: "Warning" } as const
 
 const byCount = <K>(entries: ReadonlyArray<K>): ReadonlyArray<readonly [K, number]> => {
 	const counts = new Map<K, number>()
 	Arr.forEach(entries, (entry) => counts.set(entry, (counts.get(entry) ?? 0) + 1))
-	return [...counts.entries()].toSorted((a, b) => b[1] - a[1])
+	return Arr.sort(
+		[...counts.entries()],
+		Order.flip(Order.mapInput(Order.Number, (entry: readonly [K, number]) => entry[1])),
+	)
 }
 
 /** The sidebar facets, derived from the unfiltered incidents of the tab. */
@@ -144,8 +151,10 @@ export const facetsOf = (incidents: ReadonlyArray<AnomalyIncidentDocument>) => {
 		severityLabel: (name: string) =>
 			name === "critical" || name === "warning" ? SEVERITY_LABEL[name] : name,
 		signalLabel: (name: string) => {
-			const entry = signals.find(([signal]) => signal === name)
-			return entry === undefined ? name : SIGNAL_LABEL[entry[0] satisfies AnomalySignalType]
+			return Option.match(
+				Arr.findFirst(signals, ([signal]) => signal === name),
+				{ onNone: () => name, onSome: (entry) => SIGNAL_LABEL[entry[0] satisfies AnomalySignalType] },
+			)
 		},
 	}
 }

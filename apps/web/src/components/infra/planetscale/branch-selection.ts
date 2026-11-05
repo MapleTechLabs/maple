@@ -16,7 +16,7 @@
 import { matchesGlob } from "@maple/domain/glob"
 import type { V2PlanetScaleBranch } from "@maple/domain/http/v2"
 import type { PlanetScaleBranchStat } from "@maple/web-data/warehouse/service-map"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 export { matchesGlob }
 
@@ -132,10 +132,11 @@ export function resolveSelectedBranch(
 	const fallback = defaultBranch(candidates)
 
 	if (requested !== undefined && requested !== "") {
-		const match = candidates.find((c) => c.name === requested)
-		if (match === undefined) {
+		const found = Arr.findFirst(candidates, (c) => c.name === requested)
+		if (Option.isNone(found)) {
 			return { kind: "unknown", name: requested, fallback: fallback?.branch ?? null }
 		}
+		const match = found.value
 		return {
 			kind: "resolved",
 			branch: match,

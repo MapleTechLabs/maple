@@ -138,6 +138,7 @@ const MODEL_RECORD_FIELDS = new Set(["balances", "flags", "total"])
 const OPAQUE_FIELDS = new Set(["metadata", "properties", "grouped_values", "values", "filter_by"])
 
 const toCamel = (key: string): string =>
+	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	key.replace(/_([a-z0-9])/g, (_, char: string) => Str.toUpperCase(char))
 
 export const camelizeKeys = (value: unknown, renameOwnKeys = true): unknown => {

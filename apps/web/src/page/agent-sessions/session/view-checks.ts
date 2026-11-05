@@ -21,7 +21,7 @@ import { disclosureChevron } from "./view-kit"
 import { sectionHeading } from "../../kit/section-heading"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // The session checks: the verdict, what needs attention, the rest.
 // Headlines and actions are sentences, so they read in the prose face; codes and values stay mono.
@@ -42,7 +42,8 @@ const ROW_GRID = "grid grid-cols-[0.75rem_9.5rem_minmax(0,1fr)] items-baseline g
 /** `withCode`: backticked spans as code, an odd backtick count left as text. */
 const withCode = (h: H, text: string): ReadonlyArray<Html | string> => {
 	const parts = Str.split(/`([^`]+)`/)(text)
-	if (parts.length === 1 || (text.match(/`/g)?.length ?? 0) % 2 === 1) return [text]
+	const ticks = Option.match(Str.match(/`/g)(text), { onNone: () => 0, onSome: (found) => found.length })
+	if (parts.length === 1 || ticks % 2 === 1) return [text]
 	return Arr.map(parts, (part, index) =>
 		index % 2 === 1 ? inlineCode(h, { variant: "plain", className: "text-inherit" }, [part]) : part,
 	)

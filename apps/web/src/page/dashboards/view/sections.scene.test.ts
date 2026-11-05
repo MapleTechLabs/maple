@@ -197,9 +197,9 @@ describe("dashboard groups", () => {
 			nowIso,
 			() => "unused",
 		)
-		expect(next.sections?.[0]?.tabs.map((tab) => tab.id)).toEqual(["a"])
+		expect(Arr.map(next.sections?.[0]?.tabs ?? [], (tab) => tab.id)).toEqual(["a"])
 		expect(next.sections?.[0]?.title).toBe("Overview")
-		const moved = next.widgets.find((widget) => widget.id === "in-b")
+		const moved = Option.getOrUndefined(Arr.findFirst(next.widgets, (widget) => widget.id === "in-b"))
 		expect(moved?.tabId).toBe("a")
 		expect(moved?.layout.y).toBe(2)
 	})
@@ -211,7 +211,7 @@ describe("dashboard groups", () => {
 			nowIso,
 			() => "unused",
 		)
-		expect(next.sections?.map((section) => section.id)).toEqual(["s2"])
+		expect(Arr.map(next.sections ?? [], (section) => section.id)).toEqual(["s2"])
 		expect(
 			Arr.map(
 				Arr.filter(next.widgets, (widget) => widget.sectionId === undefined),

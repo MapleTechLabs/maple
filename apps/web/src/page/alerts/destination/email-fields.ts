@@ -50,13 +50,18 @@ export const FetchEmailMembers = Command.define("FetchAlertEmailMembers", {
 		),
 		Effect.mapBoth({
 			onSuccess: (result) =>
-				result.data.flatMap((member): ReadonlyArray<MemberOption> => {
+				Arr.flatMap(result.data, (member): ReadonlyArray<MemberOption> => {
 					const user = member.publicUserData
 					const userId = user?.userId
 					const email = user?.identifier
 					if (userId === undefined || userId === null || email === undefined || email === "")
 						return []
-					const name = [user?.firstName, user?.lastName].filter((part) => part).join(" ")
+					const name = Arr.join(
+						Arr.filter([user?.firstName, user?.lastName], (part): part is string =>
+							Boolean(part),
+						),
+						" ",
+					)
 					return [{ userId, label: name || email, meta: name ? email : null }]
 				}),
 			onFailure: (error) => error.message,
@@ -91,11 +96,11 @@ export const visibleIds = (
 	options: ReadonlyArray<MemberOption>,
 	inputValue: string,
 ): ReadonlyArray<string> => {
-	const query = Str.trim(inputValue).toLocaleLowerCase()
+	const query = Str.toLocaleLowerCase()(Str.trim(inputValue))
 	return Arr.map(
 		Arr.filter(
 			options,
-			(option) => query === "" || Str.includes(query)(option.label.toLocaleLowerCase()),
+			(option) => query === "" || Str.includes(query)(Str.toLocaleLowerCase()(option.label)),
 		),
 		(option) => option.userId,
 	)

@@ -1193,7 +1193,14 @@ describe("PrReviewService.submitReview", () => {
 				}),
 			)
 			assert.deepEqual(
-				Arr.map(published[0]!.comments, (comment) => comment.body.match(/<sub>(F\d+) · /)?.[1]),
+				Arr.map(published[0]!.comments, (comment) =>
+					Option.getOrUndefined(
+						Option.flatMapNullishOr(
+							Str.match(/<sub>(F\d+) · /)(comment.body),
+							(match) => match[1],
+						),
+					),
+				),
 				["F1", "F2"],
 			)
 
@@ -1236,7 +1243,7 @@ describe("PrReviewService.submitReview", () => {
 			)
 			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, second.reviewId!))
 			assert.deepEqual(
-				stored.report?.findings.map((f) => f.handle),
+				Arr.map(stored.report?.findings ?? [], (f) => f.handle),
 				["F3"],
 			)
 		}).pipe(Effect.provide(layerFor(testDb, { published, begun, threads, resolvedThreads, hidden })))
@@ -1449,7 +1456,7 @@ describe("PrReviewService.submitReview feedback filter", () => {
 			)
 			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
 			assert.deepEqual(
-				stored.report?.findings.map((finding) => [finding.handle, finding.title]),
+				Arr.map(stored.report?.findings ?? [], (finding) => [finding.handle, finding.title]),
 				[
 					["F1", "noisy token log"],
 					["F2", "noisy crash"],
@@ -1864,7 +1871,10 @@ describe("buildPublication", () => {
 			headSha: HEAD,
 			repositoryUrl: REPO_URL,
 		})
-		assert.isBelow(comment.indexOf("<b>Critical</b>"), comment.indexOf("<b>Note</b>"))
+		assert.isBelow(
+			Option.getOrElse(Str.indexOf("<b>Critical</b>")(comment), () => -1),
+			Option.getOrElse(Str.indexOf("<b>Note</b>")(comment), () => -1),
+		)
 		assert.include(comment, "<code>listKeys</code> skips the &lt;tenant&gt; filter</summary>")
 		assert.include(comment, "Adds one route.\n\n- `listKeys` reads from the new table")
 		assert.include(comment, "1 critical −3 · 1 note")
@@ -2085,7 +2095,10 @@ describe("buildReviewKickoff", () => {
 	it("states the rules first, so every review of the repository shares one cacheable prefix", () => {
 		const first = kickoff({ rules })
 		const second = kickoff({ rules, number: 8, headSha: HEAD_2, title: "Other", body: "Other." })
-		const prefix = Str.slice(0, first.indexOf("Review pull request #7"))(first)
+		const prefix = Str.slice(
+			0,
+			Option.getOrElse(Str.indexOf("Review pull request #7")(first), () => -1),
+		)(first)
 		assert.include(prefix, '<rules path="CLAUDE.md">\nUse Effect.\n</rules>')
 		assert.include(prefix, '<rules path=".maple/review.md">')
 		assert.notInclude(prefix, HEAD)
@@ -2144,7 +2157,7 @@ describe("PrReviewService telemetry", () => {
 				assert.include(publication.summaryComment.body, "This check fails")
 				const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
 				assert.deepStrictEqual(
-					stored.report?.findings.map((finding) => [finding.checkId, finding.severity]),
+					Arr.map(stored.report?.findings ?? [], (finding) => [finding.checkId, finding.severity]),
 					[["TEL-01", "critical"]],
 				)
 				assert.equal(stored.report?.telemetry?.contractBreaks.length, 1)
@@ -2376,7 +2389,10 @@ describe("PrReviewService before-merge checklist", () => {
 				const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
 				// BILLING_URL is already read on main; BILLING_REGION only matched a longer name there.
 				assert.deepStrictEqual(
-					stored.report?.beforeMerge?.map((step) => [step.kind, step.subject ?? step.title]),
+					Arr.map(stored.report?.beforeMerge ?? [], (step) => [
+						step.kind,
+						step.subject ?? step.title,
+					]),
 					[
 						["secret", "BILLING_TOKEN"],
 						["env", "BILLING_REGION"],
@@ -2428,7 +2444,7 @@ describe("PrReviewService before-merge checklist", () => {
 			)
 			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
 			assert.deepStrictEqual(
-				stored.report?.beforeMerge?.map((step) => step.title),
+				Arr.map(stored.report?.beforeMerge ?? [], (step) => step.title),
 				["Create the flag"],
 			)
 		}).pipe(Effect.provide(layerFor(testDb, {})))
@@ -2479,7 +2495,7 @@ describe("PrReviewService privacy scan", () => {
 			)
 			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
 			assert.deepStrictEqual(
-				stored.report?.findings.map((finding) => [
+				Arr.map(stored.report?.findings ?? [], (finding) => [
 					finding.line,
 					finding.severity,
 					finding.checkId,
@@ -2550,7 +2566,7 @@ describe("PrReviewService before-merge steps across pushes", () => {
 			yield* seed(true)
 			const first = yield* submitWith(Str.repeat(40)("a"))
 			assert.deepStrictEqual(
-				first.report?.beforeMerge?.map((step) => [step.key, step.done === true]),
+				Arr.map(first.report?.beforeMerge ?? [], (step) => [step.key, step.done === true]),
 				[["secret:BILLING_TOKEN", false]],
 			)
 			assert.include(published[0]!.summaryComment.body, "<!-- ms:secret:BILLING_TOKEN -->")
@@ -2559,7 +2575,11 @@ describe("PrReviewService before-merge steps across pushes", () => {
 			files.push(secretFile("BILLING_REGION_KEY"))
 			const second = yield* submitWith(Str.repeat(40)("b"))
 			assert.deepStrictEqual(
-				second.report?.beforeMerge?.map((step) => [step.key, step.done === true, step.doneBy]),
+				Arr.map(second.report?.beforeMerge ?? [], (step) => [
+					step.key,
+					step.done === true,
+					step.doneBy,
+				]),
 				[
 					["secret:BILLING_TOKEN", true, "christo"],
 					["secret:BILLING_REGION_KEY", false, undefined],

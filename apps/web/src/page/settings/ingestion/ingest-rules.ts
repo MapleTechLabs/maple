@@ -145,9 +145,11 @@ const rulesOf = (model: Model) => AsyncData.getOrElse(model.rules, () => [])
 
 /** Every rule id in the new order, with one rule moved one step; `[]` when it cannot move. */
 export const moved = (rules: ReadonlyArray<V2IngestRule>, id: string, step: -1 | 1) => {
-	const index = rules.findIndex((rule) => rule.id === id)
+	const found = Array.findFirstIndex(rules, (rule) => rule.id === id)
+	if (Option.isNone(found)) return []
+	const index = found.value
 	const target = index + step
-	if (index === -1 || target < 0 || target >= rules.length) return []
+	if (target < 0 || target >= rules.length) return []
 	return Array.flatMap(rules, (rule, position) => {
 		const next = position === index ? rules[target] : position === target ? rules[index] : rule
 		return next === undefined ? [] : [next.id]

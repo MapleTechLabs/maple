@@ -39,8 +39,9 @@ export function organizationRegionsFrom(metadata: unknown): readonly [MapleRegio
 			? metadata.regions
 			: undefined
 	const regions = Arr.isArray(raw)
-		? Arr.flatMap(raw, (value) => Option.toArray(decodeRegion(value))).filter(
-				(r, i, all) => all.indexOf(r) === i,
+		? Arr.dedupeWith(
+				Arr.flatMap(raw, (value) => Option.toArray(decodeRegion(value))),
+				(a, b) => a === b,
 			)
 		: []
 	const [first, ...rest] = regions

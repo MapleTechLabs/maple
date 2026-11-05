@@ -145,15 +145,18 @@ const summarySection = (h: H, model: Model, timeZone: string, isNarrow: boolean)
 							timeseries: [],
 							pageviews: dataOf(model.previousPageviews) ?? [],
 						}
-			const picked =
+			const picked = Option.filter(
 				model.pickedMetric === null
-					? undefined
-					: ANALYTICS_METRICS.find((m) => m.key === model.pickedMetric)
-			const metric =
-				picked !== undefined && isMetricAvailable(picked, source)
-					? picked
-					: (ANALYTICS_METRICS.find((candidate) => isMetricAvailable(candidate, source)) ??
-						findMetric("visitors"))
+					? Option.none()
+					: Arr.findFirst(ANALYTICS_METRICS, (m) => m.key === model.pickedMetric),
+				(candidate) => isMetricAvailable(candidate, source),
+			)
+			const metric = Option.getOrElse(
+				Option.orElse(picked, () =>
+					Arr.findFirst(ANALYTICS_METRICS, (candidate) => isMetricAvailable(candidate, source)),
+				),
+				() => findMetric("visitors"),
+			)
 			const mix = dataOf(model.mix) ?? (model.mix.key === model.summary.key ? summary : undefined)
 			const notice = mix === undefined ? null : botNotice(h, mix, filtersOf(model.search).traffic)
 			return [

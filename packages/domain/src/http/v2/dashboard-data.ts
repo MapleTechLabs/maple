@@ -61,8 +61,10 @@ const mapJsonKeys = (value: unknown, mapKey: (key: string) => string): Schema.Js
 	mapDecodedJsonKeys(decodeJsonValueSync(value), mapKey)
 
 const toSnakeKey = (key: string): string =>
+	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	key.replace(/[A-Z]/g, (character) => `_${Str.toLowerCase(character)}`)
 const toCamelKey = (key: string): string =>
+	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	key.replace(/_([a-z])/g, (_, character: string) => Str.toUpperCase(character))
 
 /** Opaque widget params still obey the v2 recursive snake_case wire convention. */

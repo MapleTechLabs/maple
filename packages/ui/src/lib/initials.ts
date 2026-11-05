@@ -20,5 +20,5 @@ export function initialsFrom(name: string | null | undefined, fallback = "?"): s
 	if (words.length === 0) return fallback
 	const first = firstGrapheme(words[0])
 	const last = words.length > 1 ? firstGrapheme(words[words.length - 1]) : ""
-	return `${first}${last}`.toLocaleUpperCase()
+	return Str.toLocaleUpperCase()(`${first}${last}`)
 }

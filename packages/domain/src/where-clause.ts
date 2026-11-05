@@ -1,4 +1,4 @@
-import { Match, Schema, Array as Arr, String as Str } from "effect"
+import { Match, Option, Schema, Array as Arr, String as Str } from "effect"
 
 // Schemas
 
@@ -159,10 +159,13 @@ const isParseWarning = Schema.is(WhereClauseParseWarning)
 const unsupported = (part: string) =>
 	new WhereClauseParseWarning({ message: `Unsupported clause syntax ignored: ${part}`, clause: part })
 
+const matchOrNull = (text: string, regex: RegExp): RegExpMatchArray | null =>
+	Option.getOrNull(Str.match(regex)(text))
+
 /** One `key op value` clause, or the warning explaining why it is not one. */
 function parseSimpleClause(part: string): ParsedClause | WhereClauseParseWarning {
 	// Match negated operators first so the shorter prefix cannot consume them.
-	const notExistsMatch = part.match(/^([a-zA-Z0-9_.-]+)\s+!\s*exists$/i)
+	const notExistsMatch = matchOrNull(part, /^([a-zA-Z0-9_.-]+)\s+!\s*exists$/i)
 	if (notExistsMatch) {
 		return {
 			key: Str.toLowerCase(Str.trim(notExistsMatch[1])),
@@ -172,7 +175,7 @@ function parseSimpleClause(part: string): ParsedClause | WhereClauseParseWarning
 		}
 	}
 
-	const existsMatch = part.match(/^([a-zA-Z0-9_.-]+)\s+exists$/i)
+	const existsMatch = matchOrNull(part, /^([a-zA-Z0-9_.-]+)\s+exists$/i)
 	if (existsMatch) {
 		return {
 			key: Str.toLowerCase(Str.trim(existsMatch[1])),
@@ -182,7 +185,8 @@ function parseSimpleClause(part: string): ParsedClause | WhereClauseParseWarning
 		}
 	}
 
-	const notContainsMatch = part.match(
+	const notContainsMatch = matchOrNull(
+		part,
 		/^([a-zA-Z0-9_.-]+)\s+!\s*contains\s+(?:"([^"]*)"|'([^']*)'|([^\s]+))$/i,
 	)
 	if (notContainsMatch) {
@@ -194,7 +198,10 @@ function parseSimpleClause(part: string): ParsedClause | WhereClauseParseWarning
 		}
 	}
 
-	const containsMatch = part.match(/^([a-zA-Z0-9_.-]+)\s+contains\s+(?:"([^"]*)"|'([^']*)'|([^\s]+))$/i)
+	const containsMatch = matchOrNull(
+		part,
+		/^([a-zA-Z0-9_.-]+)\s+contains\s+(?:"([^"]*)"|'([^']*)'|([^\s]+))$/i,
+	)
 	if (containsMatch) {
 		return {
 			key: Str.toLowerCase(Str.trim(containsMatch[1])),
@@ -204,7 +211,10 @@ function parseSimpleClause(part: string): ParsedClause | WhereClauseParseWarning
 		}
 	}
 
-	const compMatch = part.match(/^([a-zA-Z0-9_.-]+)\s*(!=|<=|>=|<|>|=)\s*(?:"([^"]*)"|'([^']*)'|([^\s]+))$/)
+	const compMatch = matchOrNull(
+		part,
+		/^([a-zA-Z0-9_.-]+)\s*(!=|<=|>=|<|>|=)\s*(?:"([^"]*)"|'([^']*)'|([^\s]+))$/,
+	)
 	if (compMatch) {
 		const unquotedToken = compMatch[5]
 		if (unquotedToken && (Str.startsWith('"')(unquotedToken) || Str.startsWith("'")(unquotedToken))) {

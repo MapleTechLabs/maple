@@ -38,7 +38,7 @@ const argumentLabel = (key: string): string => {
 		(word) => Str.toLowerCase(word),
 	)
 	const sentence = Arr.join(words, " ")
-	return Str.toUpperCase(sentence.charAt(0)) + Str.slice(1)(sentence)
+	return Str.toUpperCase(Str.slice(0, 1)(sentence)) + Str.slice(1)(sentence)
 }
 
 const formatValue = (value: unknown, timeZone: string): Formatted => {

@@ -1,4 +1,4 @@
-import { DateTime, Array as Arr, Record as Rec, String as Str } from "effect"
+import { DateTime, Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	alertChecksOf,
@@ -101,7 +101,12 @@ describe("resourceAttributesOf", () => {
 
 	it("reads either environment spelling as set, and a service setting both once", () => {
 		const environment = (rows: Parameters<typeof resourceAttributesOf>[0]) =>
-			resourceAttributesOf(rows, 1000).find((attribute) => attribute.key === "environment")
+			Option.getOrUndefined(
+				Arr.findFirst(
+					resourceAttributesOf(rows, 1000),
+					(attribute) => attribute.key === "environment",
+				),
+			)
 		// Only the older spelling: still fully set.
 		expect(
 			environment([{ attributeKey: "deployment.environment", attributeValue: "prod", spans: 1000 }]),
@@ -136,7 +141,9 @@ describe("resourceAttributesOf", () => {
 			})),
 			100,
 		)
-		const versions = attributes.find((attribute) => attribute.key === "telemetry.sdk.version")!
+		const versions = Option.getOrThrow(
+			Arr.findFirst(attributes, (attribute) => attribute.key === "telemetry.sdk.version"),
+		)
 		expect(Arr.map(versions.values, (value) => value.value)).toEqual([
 			"1.7.0",
 			"1.6.0",

@@ -17,7 +17,11 @@ export const boundsOf = (model: Model, context: PageContext): Option.Option<Time
 
 /** `["local", "services", "catalog", env, ns, boundsKey(bounds)]`. */
 const catalogKey = (env: string | undefined, ns: string | undefined, bounds: TimeBounds): string =>
-	keyOf("services-catalog", { env: env ?? null, ns: ns ?? null, bounds: `${bounds.startTime}/${bounds.endTime}` })
+	keyOf("services-catalog", {
+		env: env ?? null,
+		ns: ns ?? null,
+		bounds: `${bounds.startTime}/${bounds.endTime}`,
+	})
 
 type Step = Readonly<{ slot: Keyed<Catalog, LoadFailure>; fetch: boolean; readsCache: boolean }>
 
@@ -25,9 +29,18 @@ type Step = Readonly<{ slot: Keyed<Catalog, LoadFailure>; fetch: boolean; readsC
  * One slot onto `key`: unchanged when it holds it, served from the result cache when the
  * other slot already has that key's rows, else a fetch (or a forced refetch).
  */
-const stepSlot = (slot: Keyed<Catalog, LoadFailure>, key: string, cache: ReadonlyArray<Keyed<Catalog, LoadFailure>>, force: boolean): Step => {
-	const cached = cache.find((other) => other.key === key && Option.isSome(AsyncData.getData(other.data)))
-	if (!force && slot.key !== key && cached !== undefined) return { slot: cached, fetch: false, readsCache: false }
+const stepSlot = (
+	slot: Keyed<Catalog, LoadFailure>,
+	key: string,
+	cache: ReadonlyArray<Keyed<Catalog, LoadFailure>>,
+	force: boolean,
+): Step => {
+	const cached = Array.findFirst(
+		cache,
+		(other) => other.key === key && Option.isSome(AsyncData.getData(other.data)),
+	)
+	if (!force && slot.key !== key && Option.isSome(cached))
+		return { slot: cached.value, fetch: false, readsCache: false }
 	return Option.match(requestKeepingFailure(slot, key, force ? "Refresh" : "Load"), {
 		onNone: () => ({ slot, fetch: false, readsCache: false }),
 		onSome: (next) => ({ slot: next, fetch: true, readsCache: slot.key !== key }),
@@ -50,14 +63,34 @@ export const load = (
 			// With no filter both hooks read one key: the rows slot serves the facets.
 			const isFiltered = activeFilterCount(filters) > 0
 			const unfilteredKey = catalogKey(undefined, undefined, bounds)
-			const facets = isFiltered ? stepSlot(model.unfiltered, unfilteredKey, cache, force) : { slot: model.unfiltered, fetch: false, readsCache: false }
+			const facets = isFiltered
+				? stepSlot(model.unfiltered, unfilteredKey, cache, force)
+				: { slot: model.unfiltered, fetch: false, readsCache: false }
 			return {
 				model: { ...model, catalog: rows.slot, unfiltered: facets.slot },
 				commands: Array.getSomes([
 					rows.fetch
-						? Option.some(FetchCatalog({ key: filteredKey, env: filters.env ?? null, ns: filters.ns ?? null, ...args, readsCache: rows.readsCache }))
+						? Option.some(
+								FetchCatalog({
+									key: filteredKey,
+									env: filters.env ?? null,
+									ns: filters.ns ?? null,
+									...args,
+									readsCache: rows.readsCache,
+								}),
+							)
 						: Option.none(),
-					facets.fetch ? Option.some(FetchCatalog({ key: unfilteredKey, env: null, ns: null, ...args, readsCache: facets.readsCache })) : Option.none(),
+					facets.fetch
+						? Option.some(
+								FetchCatalog({
+									key: unfilteredKey,
+									env: null,
+									ns: null,
+									...args,
+									readsCache: facets.readsCache,
+								}),
+							)
+						: Option.none(),
 				]),
 			}
 		},

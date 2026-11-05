@@ -33,12 +33,15 @@ export const nextCursor = (model: Model): string | null => {
 
 /** `ReachEndSentinel` re-observes when `loading` or its `onReachEnd` deps change: the remount key. */
 export const listEndKey = (model: Model): string =>
-	[
-		model.pagination.generation,
-		model.pagination.isFetching ? "fetching" : "idle",
-		AsyncData.isSuccess(model.firstPage.data) ? "settled" : "waiting",
-		nextCursor(model) ?? "",
-	].join("|")
+	Arr.join(
+		[
+			String(model.pagination.generation),
+			model.pagination.isFetching ? "fetching" : "idle",
+			AsyncData.isSuccess(model.firstPage.data) ? "settled" : "waiting",
+			nextCursor(model) ?? "",
+		],
+		"|",
+	)
 
 export const isCapped = (model: Model): boolean => allRows(model).length >= MAX_RETAINED_REPLAYS
 
@@ -93,7 +96,10 @@ export const engagedCount = (model: Model): number | undefined => {
 	const facets = facetsOf(model)
 	if (selectedTags(model.search).includes("engaged")) return facets?.totalSessions
 	if (facets === undefined) return undefined
-	return facets.tags.find((tag) => tag.name === "engaged")?.count ?? 0
+	return Option.match(
+		Arr.findFirst(facets.tags, (tag) => tag.name === "engaged"),
+		{ onNone: () => 0, onSome: (tag) => tag.count },
+	)
 }
 
 /** A tier filter already decided what to show; folding its rows would hide the answer. */

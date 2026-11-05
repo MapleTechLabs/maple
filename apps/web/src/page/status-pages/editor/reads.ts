@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -27,17 +27,14 @@ const monitorsKey = (context: PageContext) =>
 
 /** Joins steps left to right: each one's Model feeds the next, Commands add up. */
 export const chain = (model: Model, ...steps: ReadonlyArray<(model: Model) => Return>): Return =>
-	steps.reduce<Return>(
-		(previous, step) => {
-			const next = step(previous.model)
-			return {
-				model: next.model,
-				commands: [...(previous.commands ?? []), ...(next.commands ?? [])],
-				outMessage: next.outMessage ?? previous.outMessage,
-			}
-		},
-		{ model },
-	)
+	Arr.reduce<(model: Model) => Return, Return>(steps, { model }, (previous, step) => {
+		const next = step(previous.model)
+		return {
+			model: next.model,
+			commands: [...(previous.commands ?? []), ...(next.commands ?? [])],
+			outMessage: next.outMessage ?? previous.outMessage,
+		}
+	})
 
 export const readPage =
 	(context: PageContext, mode: Keyed.ReadMode) =>

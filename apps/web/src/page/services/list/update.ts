@@ -113,7 +113,7 @@ const keyed = <A, E>(
 	})
 
 const applySteps = (model: Model, steps: ReadonlyArray<Step>): Return => ({
-	model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
+	model: Arr.reduce<Step, Model>(steps, model, (next, step) => ({ ...next, ...step.patch })),
 	commands: Arr.flatMap(steps, (step) => step.commands),
 })
 

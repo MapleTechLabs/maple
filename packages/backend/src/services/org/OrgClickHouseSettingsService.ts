@@ -772,7 +772,7 @@ const mapStatusToError = (
 	never,
 	OrgClickHouseSettingsUpstreamRejectedError | OrgClickHouseSettingsUpstreamUnavailableError
 > => {
-	const message = Str.split("\n")(text)[0]?.slice(0, 500) ?? ""
+	const message = Str.slice(0, 500)(Arr.headNonEmpty(Str.split("\n")(text)))
 	if (status === 401 || status === 403) {
 		return Effect.fail(
 			new OrgClickHouseSettingsUpstreamRejectedError({
@@ -910,11 +910,13 @@ const fetchActualSchema = (client: HttpClient.HttpClient, config: ClickHouseExec
 	})
 
 // Malformed rows are skipped: the response comes from our own queries against system.* tables.
-const parseJsonEachRow = <A>(text: string, decode: (line: string) => Option.Option<A>): ReadonlyArray<A> =>
-	Arr.filter(
+const parseJsonEachRow = <A>(text: string, decode: (line: string) => Option.Option<A>): ReadonlyArray<A> => {
+	const lines = Arr.filter(
 		Arr.map(Str.split("\n")(text), (line) => Str.trim(line)),
 		(line) => line.length > 0,
-	).flatMap((line) => Option.toArray(decode(line)))
+	)
+	return Arr.flatMap(lines, (line) => Option.toArray(decode(line)))
+}
 
 // The migration runner + backfill chunking now live in the background
 // schema-apply Workflow (apps/api/src/workflows/ClickHouseSchemaApplyWorkflow.run.ts),

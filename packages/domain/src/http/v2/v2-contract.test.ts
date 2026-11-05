@@ -653,6 +653,7 @@ describe("scopes", () => {
 	it("classifies every scope-protected v2 route template", () => {
 		let checked = 0
 		for (const group of Rec.values(MapleApiV2.groups)) {
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.values would need a cast
 			for (const endpoint of Object.values(group.endpoints)) {
 				const scoped = Arr.some(
 					Array.from(endpoint.middlewares),

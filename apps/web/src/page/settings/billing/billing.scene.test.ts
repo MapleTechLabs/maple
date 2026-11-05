@@ -240,7 +240,7 @@ describe("billing tab", () => {
 			0,
 		)
 		// oxlint-disable-next-line test-slop/no-exact-name-list -- tracking must run before the redirect unloads the page
-		expect(attached.step.commands?.map((command) => command.name)).toEqual([
+		expect(Arr.map(attached.step.commands ?? [], (command) => command.name)).toEqual([
 			"TrackBillingCheckout",
 			"RedirectToBilling",
 		])

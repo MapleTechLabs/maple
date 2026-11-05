@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Array as Arr, Option } from "effect"
 import { describe, expect, test } from "vitest"
 import * as Dialog from "@maple/views/ui/dialog"
 import { Message } from "../message"
@@ -18,7 +18,7 @@ const step = (model: Model, message: Message) => update(model, message)
 const toPalette = (message: Palette.Message) => Message.GotPaletteMessage({ message })
 
 const commandNames = (result: { commands?: ReadonlyArray<{ name: string }> }) =>
-	result.commands?.map((command) => command.name) ?? []
+	Arr.map(result.commands ?? [], (command) => command.name)
 
 describe("global shortcuts", () => {
 	test("Mod+K opens the palette, and pressed again keeps it as it is", () => {

@@ -20,7 +20,7 @@ import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import type { SpanId, TraceId } from "@maple/domain"
-import { Schema, type DateTime, Array as Arr } from "effect"
+import { Schema, type DateTime, Array as Arr, String as Str } from "effect"
 import {
 	ErrorEvents,
 	ErrorEventsByTime,
@@ -236,7 +236,7 @@ export function errorsByTypeQuery(opts: ErrorsByTypeOpts) {
 }
 
 /** A namespace prefix is a literal, so its `%`/`_` must not act as LIKE wildcards. */
-const likeLiteral = (value: string): string => value.replace(/[\\%_]/g, (c) => `\\${c}`)
+const likeLiteral = (value: string): string => Str.replace(/[\\%_]/g, "\\$&")(value)
 
 // Errors timeseries
 

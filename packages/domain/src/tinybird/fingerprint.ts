@@ -413,8 +413,10 @@ const leftCodePoints = (value: string, n: number): string => Arr.join(Array.from
 
 /** 1-based code-point position of `needle`, 0 when absent, as `positionUTF8` returns. */
 const positionCodePoints = (value: string, needle: string): number => {
-	const index = value.indexOf(needle)
-	return index === -1 ? 0 : Array.from(Str.slice(0, index)(value)).length + 1
+	return Option.match(Str.indexOf(needle)(value), {
+		onNone: () => 0,
+		onSome: (index) => Array.from(Str.slice(0, index)(value)).length + 1,
+	})
 }
 
 const FRAME_LINE_RE = new RegExp(FRAME_LINE_PATTERN, "u")
@@ -489,6 +491,7 @@ const readString = (s: string, at: number): Read<{ readonly text: string; readon
 	const raw = Str.replace(
 		/\u2029/g,
 		"\\u2029",
+		// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	)(Str.replace(/\u2028/g, "\\u2028")(encodeJson(text))).replace(/\\\\|\\u[0-9a-f]{4}/g, (escape) =>
 		Str.replace("\\U", "\\u")(Str.toUpperCase(escape)),
 	)
@@ -604,11 +607,16 @@ function jsonSignature(entries: ReadonlyArray<JsonEntry>): string {
  * compares UTF-16 units, and the two disagree once a key holds an astral character.
  */
 const compareCodePoints = (a: string, b: string): number => {
-	const left = Array.from(a, (ch) => ch.codePointAt(0) ?? 0)
-	const right = Array.from(b, (ch) => ch.codePointAt(0) ?? 0)
-	const at = left.findIndex((point, i) => point !== right[i])
-	if (at === -1) return left.length - right.length
-	return at >= right.length ? 1 : (left[at] ?? 0) - (right[at] ?? 0)
+	const codePoint = (ch: string) => Option.getOrElse(Str.codePointAt(ch, 0), () => 0)
+	const left = Array.from(a, codePoint)
+	const right = Array.from(b, codePoint)
+	return Option.match(
+		Arr.findFirstIndex(left, (point, i) => point !== right[i]),
+		{
+			onNone: () => left.length - right.length,
+			onSome: (at) => (at >= right.length ? 1 : (left[at] ?? 0) - (right[at] ?? 0)),
+		},
+	)
 }
 
 /** Mirrors the `_statusLabel` SQL multiIf (display-only). */
@@ -618,16 +626,22 @@ function statusLabel(statusMessage: string): string {
 	// Effect ParseError — not valid JSON; label by the first field. Must precede
 	// the JSON branch (these start with "{" but aren't JSON objects).
 	if (Str.startsWith("{ readonly")(statusMessage) || Str.includes("└─")(statusMessage)) {
-		const m = statusMessage.match(/readonly (\w+)/)
-		return m ? `Schema parse error: ${m[1]}` : "Schema parse error"
+		return Option.match(Str.match(/readonly (\w+)/)(statusMessage), {
+			onNone: () => "Schema parse error",
+			onSome: (m) => `Schema parse error: ${m[1]}`,
+		})
 	}
 
 	const entries = jsonObjectEntries(statusMessage)
 	if (entries !== undefined || Str.startsWith("[")(statusMessage)) {
 		// `JSONType` / `JSONExtractString` read the FIRST of duplicate keys.
-		const text = (key: string) => entries?.find((e) => e.key === key)?.text ?? ""
-		const label = Arr.map(JSON_LABEL_KEYS, text).find((v) => v !== "")
-		if (label !== undefined) return label
+		const text = (key: string) =>
+			(entries === undefined
+				? undefined
+				: Option.getOrUndefined(Arr.findFirst(entries, (e) => e.key === key))
+			)?.text ?? ""
+		const label = Arr.findFirst(Arr.map(JSON_LABEL_KEYS, text), (v) => v !== "")
+		if (Option.isSome(label)) return label.value
 		const type = text("type")
 		if (type !== "") return /([^/]+)$/u.exec(type)?.[1] ?? ""
 		return "JSON error"
@@ -686,13 +700,16 @@ export function computeFingerprintInputs(args: {
 	)
 	// Repeats collapse after normalizing (`at index.js` twice is two anonymous closures in
 	// one bundle, or recursion), so they do not use up the frames the hash keeps.
-	const distinctFrames = Arr.map(
-		(PYTHON_FRAME_RE.test(frameLines[0] ?? "") ? [...frameLines].reverse() : frameLines).slice(
-			0,
-			MAX_NORMALIZED_FRAMES,
+	const distinctFrames = Arr.dedupeAdjacentWith(
+		Arr.map(
+			(PYTHON_FRAME_RE.test(frameLines[0] ?? "") ? [...frameLines].reverse() : frameLines).slice(
+				0,
+				MAX_NORMALIZED_FRAMES,
+			),
+			normalizeFrame,
 		),
-		normalizeFrame,
-	).filter((frame, i, frames) => i === 0 || frame !== frames[i - 1])
+		(a, b) => a === b,
+	)
 	const appFrames = Arr.filter(distinctFrames, (frame) => !LIBRARY_FRAME_RE.test(frame))
 	const topFrames = (appFrames.length > 0 ? appFrames : distinctFrames).slice(0, maxFrames)
 	const topFrame = topFrames[0] ?? ""

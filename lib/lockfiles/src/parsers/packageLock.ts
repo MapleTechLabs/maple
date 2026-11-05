@@ -1,4 +1,4 @@
-import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { isRecord, isRegistryVersion, pkg, splitNameAt } from "../internal/collect.ts"
 import { decodeJson } from "../internal/decode.ts"
 import { readPackageJsons } from "../internal/manifests.ts"
@@ -46,8 +46,9 @@ const fromPackagesMap = (packages: Readonly<Record<string, PackageEntry>>): Read
 	// Workspaces hoist their dependencies into the root node_modules, so the root answers for all of them.
 	const hoisted = new Set(Arr.flatMap([...rootDeps.values()], (names) => [...names]))
 	return Arr.flatMap(Rec.toEntries(packages), ([path, entry]) => {
-		const at = path.lastIndexOf(NODE_MODULES)
-		if (at === -1 || entry.link === true || entry.version === undefined) return []
+		const found = Str.lastIndexOf(NODE_MODULES)(path)
+		if (Option.isNone(found) || entry.link === true || entry.version === undefined) return []
+		const at = found.value
 		const installName = Str.slice(at + NODE_MODULES.length)(path)
 		const name = entry.name ?? installName
 		if (!isRegistryVersion(entry.version)) return []

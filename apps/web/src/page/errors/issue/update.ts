@@ -1,5 +1,5 @@
 import { type ErrorIssueId, ErrorIssuePullRequestId, type IssueSeverity } from "@maple/domain/http"
-import { Option, Result, Schema, String as Str } from "effect"
+import { Option, Result, Schema, String as Str, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -85,12 +85,13 @@ const keyed = <A, E>(
 	})
 
 const applySteps = (model: Model, steps: ReadonlyArray<(model: Model) => Step>): Return =>
-	steps.reduce<{ model: Model; commands: ReadonlyArray<Cmd> }>(
+	Arr.reduce<(typeof steps)[number], { model: Model; commands: ReadonlyArray<Cmd> }>(
+		steps,
+		{ model, commands: [] },
 		(acc, step) => {
 			const next = step(acc.model)
 			return { model: { ...acc.model, ...next.patch }, commands: [...acc.commands, ...next.commands] }
 		},
-		{ model, commands: [] },
 	)
 
 const resolveCommand = (search: Search, context: PageContext, mode: RequestMode) =>

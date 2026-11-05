@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Layer, Order, Schema, Array as Arr, String as Str } from "effect"
 import {
 	GitCommitSha,
 	OrgId,
@@ -429,10 +429,10 @@ describe("PrReviewAnalyticsService", () => {
 						Arr.map(response.findings, (finding) => finding.handle),
 					)
 				assert.deepStrictEqual(yield* handles("finding 2"), ["F2"])
-				assert.deepStrictEqual((yield* handles("index.ts")).toSorted(), ["F1", "F2"])
-				assert.deepStrictEqual((yield* handles("10")).toSorted(), ["F1", "F2"])
-				assert.deepStrictEqual((yield* handles("pr 10")).toSorted(), ["F1", "F2"])
-				assert.deepStrictEqual((yield* handles("acme/web")).toSorted(), ["F1", "F2"])
+				assert.deepStrictEqual(Arr.sort(yield* handles("index.ts"), Order.String), ["F1", "F2"])
+				assert.deepStrictEqual(Arr.sort(yield* handles("10"), Order.String), ["F1", "F2"])
+				assert.deepStrictEqual(Arr.sort(yield* handles("pr 10"), Order.String), ["F1", "F2"])
+				assert.deepStrictEqual(Arr.sort(yield* handles("acme/web"), Order.String), ["F1", "F2"])
 				assert.deepStrictEqual(yield* handles("other/api"), [])
 			}),
 		),

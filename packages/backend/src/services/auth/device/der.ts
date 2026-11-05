@@ -1,4 +1,4 @@
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 /**
  * Just enough DER and X.509 to verify an App Attest chain: TLV walking, OIDs, times, SPKI,
  * extensions, and ECDSA signature conversion. Every reader returns `undefined` on malformed
@@ -79,7 +79,10 @@ export const decodeOid = (bytes: Uint8Array, tlv: Tlv): string | undefined => {
 	const [head, ...rest] = decodeArcs(value(bytes, tlv))
 	if (head === undefined) return undefined
 	const first = head < 80 ? Math.floor(head / 40) : 2
-	return [first, head - first * 40, ...rest].join(".")
+	return Arr.join(
+		Arr.map([first, head - first * 40, ...rest], (arc) => `${arc}`),
+		".",
+	)
 }
 
 const TIME = /^(\d{2}|\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})Z$/u
@@ -170,7 +173,7 @@ export const parseCertificate = (der: Uint8Array): Certificate | undefined => {
 	const [signatureOid] = children(der, signatureAlgorithm) ?? []
 	const extensions = parseExtensions(
 		der,
-		rest.find((field) => field.tag === TAG.context3),
+		Option.getOrUndefined(Arr.findFirst(rest, (field) => field.tag === TAG.context3)),
 	)
 	const notBeforeMs = notBefore === undefined ? undefined : decodeTime(der, notBefore)
 	const notAfterMs = notAfter === undefined ? undefined : decodeTime(der, notAfter)

@@ -24,7 +24,7 @@
 // wearing one name, and only the shape the fixture happens to select is ever
 // executed. `assertRouteCoverage` below fails when a route is never exercised.
 
-import { Effect, Array as Arr, String as Str } from "effect"
+import { Effect, Array as Arr, String as Str, Option } from "effect"
 import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	DeploymentEnvironment,
@@ -1095,14 +1095,16 @@ export const collectQueryCatalog = Effect.try({
 export const mergeQueryCatalogs = (...catalogs: ReadonlyArray<ReadonlyArray<CatalogEntry>>) => {
 	const entries = catalogs.flat()
 	const seen = new Set<string>()
-	const duplicate = entries.find((entry) => {
+	const duplicate = Arr.findFirst(entries, (entry) => {
 		if (seen.has(entry.id)) return true
 		seen.add(entry.id)
 		return false
 	})
-	return duplicate
-		? Effect.fail(new BenchmarkError({ message: `Duplicate query case ID: ${duplicate.id}` }))
-		: Effect.succeed(entries)
+	return Option.match(duplicate, {
+		onNone: () => Effect.succeed(entries),
+		onSome: (entry) =>
+			Effect.fail(new BenchmarkError({ message: `Duplicate query case ID: ${entry.id}` })),
+	})
 }
 
 /** The only conversion from compiled catalog cases to a serializable workload.

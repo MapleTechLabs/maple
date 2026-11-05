@@ -137,8 +137,11 @@ const runModelCall = <A extends { readonly type: string }, E, R>(
 			Effect.withTracer(recorder.tracer),
 		)
 
-		const span = recorder.spans.find(
-			(candidate) => candidate.attributes.get("gen_ai.operation.name") === "chat",
+		const span = Option.getOrUndefined(
+			Arr.findFirst(
+				recorder.spans,
+				(candidate) => candidate.attributes.get("gen_ai.operation.name") === "chat",
+			),
 		)
 		assert.isDefined(span, "no model-call span was opened")
 		return { exit, delivered, attributes: span?.endedWith ?? new Map<string, unknown>() }
@@ -217,7 +220,9 @@ const runFakeProviderCall = (parts: Stream.Stream<AiResponse.StreamPartEncoded>)
 			disableToolCallResolution: true,
 		}).pipe(Stream.runDrain, Effect.exit, Effect.provide(model), Effect.withTracer(recorder.tracer))
 
-		const attributes = recorder.spans.find((span) => span.name === "LanguageModel.streamText")?.endedWith
+		const attributes = Option.getOrUndefined(
+			Arr.findFirst(recorder.spans, (span) => span.name === "LanguageModel.streamText"),
+		)?.endedWith
 		assert.isDefined(attributes, "no model-call span was opened")
 		return { exit, attributes: attributes ?? new Map<string, unknown>() }
 	})
@@ -239,8 +244,11 @@ describe("the model-call span", () => {
 				Effect.withTracer(recorder.tracer),
 			)
 
-			const modelCall = recorder.spans.find(
-				(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+			const modelCall = Option.getOrUndefined(
+				Arr.findFirst(
+					recorder.spans,
+					(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+				),
 			)
 			assert.isDefined(modelCall, "no model-call span was opened")
 			assert.strictEqual(modelCall?.attributes.get("gen_ai.response.id"), "gen-1")
@@ -271,8 +279,11 @@ describe("the model-call span", () => {
 				Effect.withTracer(recorder.tracer),
 			)
 
-			const modelCall = recorder.spans.find(
-				(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+			const modelCall = Option.getOrUndefined(
+				Arr.findFirst(
+					recorder.spans,
+					(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+				),
 			)
 			assert.isDefined(modelCall, "no model-call span was opened")
 			assert.strictEqual(modelCall?.endedWith.get(MAPLE_NATIVE_SESSION_ID_ATTR), "org_1:inv-1")
@@ -325,8 +336,11 @@ describe("the model-call span", () => {
 				Effect.withTracer(recorder.tracer),
 			)
 
-			const attributes = recorder.spans.find(
-				(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+			const attributes = Option.getOrUndefined(
+				Arr.findFirst(
+					recorder.spans,
+					(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+				),
 			)?.endedWith
 			assert.isDefined(attributes, "no model-call span was opened")
 			const json = (key: string) => JSON.parse(String(attributes?.get(key)))

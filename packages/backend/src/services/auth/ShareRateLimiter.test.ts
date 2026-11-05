@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, String as Str } from "effect"
 import { ApiV2RateLimit, ShareLinkRateLimit, type RateLimiter } from "@maple/backend/platform/bindings"
 import { testEnv } from "@maple/backend/services/integrations/vcs/__tests__/harness"
 import { API_V2_RATE_LIMIT_REQUESTS } from "./ApiV2RateLimiter"
@@ -81,7 +81,7 @@ describe("ShareRateLimiter", () => {
 			)
 
 			expect(yield* limiter.check({ tokenHashPrefix: LINK, ip: "203.0.113.9" })).toBe("limited")
-			expect(yield* limiter.check({ tokenHashPrefix: "f".repeat(24), ip: "203.0.113.9" })).toBe(
+			expect(yield* limiter.check({ tokenHashPrefix: Str.repeat(24)("f"), ip: "203.0.113.9" })).toBe(
 				"allowed",
 			)
 		}).pipe(

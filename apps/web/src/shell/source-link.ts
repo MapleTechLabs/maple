@@ -36,7 +36,7 @@ export const summarySource = <E>(
 export type SourceLink = Readonly<{ label: string; href: string; source: V2Source | null }>
 
 const byPublicId = (sources: ReadonlyArray<V2Source>, publicId: string): V2Source | null =>
-	sources.find((source) => toPublicSourceId(source.id) === publicId) ?? null
+	Option.getOrNull(Arr.findFirst(sources, (source) => toPublicSourceId(source.id) === publicId))
 
 /** The list knows the source: a fresh connect or a new token is missing until a re-read. */
 export const isResolved = (ref: PageSourceRef, sources: ReadonlyArray<V2Source>): boolean =>

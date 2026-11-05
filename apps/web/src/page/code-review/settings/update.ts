@@ -43,7 +43,10 @@ export const MODEL_OPTIONS = Arr.filter(PR_REVIEW_MODELS, (model) => currentRegi
 export const modelLabel = (value: string) =>
 	value === DEFAULT_MODEL
 		? DEFAULT_MODEL_LABEL
-		: (MODEL_OPTIONS.find((model) => model.id === value)?.label ?? value)
+		: Arr.findFirst(MODEL_OPTIONS, (model) => model.id === value).pipe(
+				Option.flatMapNullishOr((found) => found.label),
+				Option.getOrElse(() => value),
+			)
 const isModel = Schema.is(PrReviewModel)
 // One instance, so the form's "the config changed" check does not fire on every answer.
 const EMPTY_CONFIG = new PrReviewRepositoryConfig({})
@@ -199,8 +202,14 @@ const serverValueOf = (
 	data: AsyncData.AsyncData<GithubIntegrationStatus, LoadFailure>,
 	repositoryId: string,
 ): boolean | undefined =>
-	Option.getOrUndefined(AsyncData.getData(data))?.repositories.find((repo) => repo.id === repositoryId)
-		?.prReviewEnabled
+	Option.getOrUndefined(
+		Option.flatMap(AsyncData.getData(data), (status) =>
+			Option.map(
+				Arr.findFirst(status.repositories, (repo) => repo.id === repositoryId),
+				(repo) => repo.prReviewEnabled,
+			),
+		),
+	)
 
 const combine = (first: Return, second: (model: Model) => Return): Return => {
 	const next = second(first.model)
@@ -266,16 +275,19 @@ const liftForm = (
 		const queued = enqueueSave(next, "defaults", "", withDefaults(baseSettings(model), saved.config))
 		return { ...queued, commands: [...commands, ...(queued.commands ?? [])] }
 	}
-	const repo = activeRepositories(model).find((candidate) => candidate.id === model.configuring)
-	return repo === undefined
-		? { model: next, commands }
-		: {
+	return Option.match(
+		Arr.findFirst(activeRepositories(model), (candidate) => candidate.id === model.configuring),
+		{
+			onNone: (): Return => ({ model: next, commands }),
+			onSome: (repo): Return => ({
 				model: next,
 				commands: [
 					...commands,
 					SaveRepoConfig({ repositoryId: repo.id, fullName: repo.fullName, config: saved.config }),
 				],
-			}
+			}),
+		},
+	)
 }
 
 /** A settings answer: the model select and the default rules follow it. */

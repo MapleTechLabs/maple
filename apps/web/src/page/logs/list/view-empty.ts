@@ -3,7 +3,7 @@ import { button } from "@maple/views/ui/button"
 import { excludedEmptyHint } from "@maple/views/ui/filters/excluded-empty-hint"
 import { docsLink, signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "@maple/views/data/signal-presence"
-import { canWidenRange, logFilterChips } from "./derive"
+import { canWidenRange, type LogFilterChip, logFilterChips } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { toolbar } from "./view-toolbar"
@@ -14,8 +14,9 @@ import { Array as Arr } from "effect"
 
 const exclusionsHint = (h: HtmlBuilder<Message>, model: Model): Html | null =>
 	excludedEmptyHint(h, {
-		excluded: Arr.filter(logFilterChips(model.search), (chip) => chip.negated).flatMap(
-			(chip) => chip.values,
+		excluded: Arr.flatMap(
+			Arr.filter(logFilterChips(model.search), (chip) => chip.negated),
+			(chip: LogFilterChip) => chip.values,
 		),
 		onClear: Message.ClickedClearExclusions(),
 		className: "max-w-lg",

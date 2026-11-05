@@ -6,7 +6,7 @@ import {
 	AlertDeliveryTargetMissingError,
 	type AlertDeliveryFailure,
 } from "@maple/domain/http"
-import { Duration, Effect, Result, Schema, String as Str } from "effect"
+import { Duration, Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { constTrue } from "effect/Function"
 import { HttpClient } from "effect/http"
 import { buildTelegramText, buildTelegramTextFromTemplate } from "../../AlertDeliveryDispatch"
@@ -278,7 +278,7 @@ const chatLabel = (chat: Schema.Schema.Type<typeof TelegramChatSchema>): string 
 	chat.title ?? chat.username ?? chat.first_name ?? `Chat ${chat.id}`
 
 const narrowChatType = (raw: string): TelegramChat["type"] | null =>
-	CHAT_TYPES.find((candidate) => candidate === raw) ?? null
+	Option.getOrNull(Arr.findFirst(CHAT_TYPES, (candidate) => candidate === raw))
 
 /**
  * The chats a bot can currently see, for the destination form's chat picker.

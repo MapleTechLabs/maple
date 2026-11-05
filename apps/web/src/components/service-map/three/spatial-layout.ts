@@ -7,7 +7,7 @@ import {
 import type { Edge3D, Node3D } from "./types"
 import { computeTiers } from "./graph"
 import type { Vec3 } from "./types"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, Order, String as Str } from "effect"
 
 export interface SpatialTopology {
 	nodes: ReadonlyArray<Pick<Node3D, "id" | "namespace">>
@@ -15,6 +15,10 @@ export interface SpatialTopology {
 }
 
 export type SpatialView = "atlas" | "cascade"
+
+type SpatialNode = SpatialTopology["nodes"][number]
+
+const byLocale = Order.make<string>((a, b) => Str.localeCompare(b)(a))
 export interface District {
 	id: string
 	label: string
@@ -34,8 +38,12 @@ export function spatialLayout(topology: SpatialTopology, view: SpatialView): Spa
 		const tiers = computeTiers(topology.nodes, topology.edges)
 		const namespaces = [...new Set(Arr.map(topology.nodes, (node) => node.namespace))]
 		const groups = Arr.map(namespaces, (namespace) => {
-			const nodes = Arr.filter(topology.nodes, (node) => node.namespace === namespace).toSorted(
-				(a, b) => (tiers.get(a.id) ?? 0) - (tiers.get(b.id) ?? 0) || Str.localeCompare(b.id)(a.id),
+			const nodes = Arr.sort(
+				Arr.filter(topology.nodes, (node) => node.namespace === namespace),
+				Order.combine(
+					Order.mapInput(Order.Number, (node: SpatialNode) => tiers.get(node.id) ?? 0),
+					Order.mapInput(byLocale, (node: SpatialNode) => node.id),
+				),
 			)
 			const columns = Math.max(1, Math.ceil(Math.sqrt(nodes.length)))
 			return {
@@ -61,8 +69,14 @@ export function spatialLayout(topology: SpatialTopology, view: SpatialView): Spa
 			depth: 0,
 		}))
 		for (const group of groups) {
-			const column = columns.toSorted((a, b) => a.depth - b.depth)[0]
-			if (!column) continue
+			const shallowest = Arr.head(
+				Arr.sort(
+					columns,
+					Order.mapInput(Order.Number, (candidate: { readonly depth: number }) => candidate.depth),
+				),
+			)
+			if (Option.isNone(shallowest)) continue
+			const column = shallowest.value
 			column.groups.push(group)
 			column.width = Math.max(column.width, group.width)
 			column.depth += group.depth + gap
@@ -99,8 +113,12 @@ export function spatialLayout(topology: SpatialTopology, view: SpatialView): Spa
 		const tiers = computeTiers(topology.nodes, topology.edges)
 		const count = Math.max(0, ...tiers.values()) + 1
 		for (let tier = 0; tier < count; tier++) {
-			const group = Arr.filter(topology.nodes, (node) => tiers.get(node.id) === tier).toSorted(
-				(a, b) => Str.localeCompare(b.namespace)(a.namespace) || Str.localeCompare(b.id)(a.id),
+			const group = Arr.sort(
+				Arr.filter(topology.nodes, (node) => tiers.get(node.id) === tier),
+				Order.combine(
+					Order.mapInput(byLocale, (node: SpatialNode) => node.namespace),
+					Order.mapInput(byLocale, (node: SpatialNode) => node.id),
+				),
 			)
 			if (!group.length) continue
 			const x = (tier - (count - 1) / 2) * 5.2

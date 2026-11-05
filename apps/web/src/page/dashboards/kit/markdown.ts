@@ -14,18 +14,19 @@ const LINK_RE = /^\[([^\]]+)\]\(([^)]+)\)$/
 
 /** `renderInline`: the text between tokens stays plain, each token its element. */
 const renderInline = <M>(h: HtmlBuilder<M>, text: string): ReadonlyArray<Html | string> => {
-	const matches = [...text.matchAll(INLINE_RE)]
-	const pieces = matches.reduce<{ cursor: number; nodes: ReadonlyArray<Html | string> }>(
-		(state, match) => {
-			const segment = match[0]
-			const before = match.index > state.cursor ? [Str.slice(state.cursor, match.index)(text)] : []
-			return {
-				cursor: match.index + segment.length,
-				nodes: [...state.nodes, ...before, ...inlineToken(h, segment)],
-			}
-		},
-		{ cursor: 0, nodes: [] },
-	)
+	const matches = [...Str.matchAll(INLINE_RE)(text)]
+	const pieces = Arr.reduce<
+		(typeof matches)[number],
+		{ cursor: number; nodes: ReadonlyArray<Html | string> }
+	>(matches, { cursor: 0, nodes: [] }, (state, match) => {
+		const segment = match[0]
+		const index = match.index ?? 0
+		const before = index > state.cursor ? [Str.slice(state.cursor, index)(text)] : []
+		return {
+			cursor: index + segment.length,
+			nodes: [...state.nodes, ...before, ...inlineToken(h, segment)],
+		}
+	})
 	return pieces.cursor < text.length ? [...pieces.nodes, Str.slice(pieces.cursor)(text)] : pieces.nodes
 }
 
@@ -142,10 +143,10 @@ const renderBlock = <M>(h: HtmlBuilder<M>, block: Block): Html => {
 
 /** `renderMarkdown`: the note's blocks in order. */
 export const renderMarkdown = <M>(h: HtmlBuilder<M>, content: string): ReadonlyArray<Html> => {
-	const parsed = Str.split(/\r?\n/)(content).reduce<ParseState>(parseLine, {
-		blocks: [],
-		paragraph: [],
-		list: null,
-	})
+	const parsed = Arr.reduce<string, ParseState>(
+		Str.split(/\r?\n/)(content),
+		{ blocks: [], paragraph: [], list: null },
+		parseLine,
+	)
 	return Arr.map(flushList(flushParagraph(parsed)).blocks, (block) => renderBlock(h, block))
 }

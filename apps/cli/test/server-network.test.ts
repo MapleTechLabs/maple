@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { ok, rejects, strictEqual } from "node:assert"
-import { Effect, Exit, Result, Tracer } from "effect"
+import { Effect, Exit, Option, Result, Tracer, Array as Arr, String as Str } from "effect"
 import { checkpointQueryUrl } from "@maple/local-server/checkpoints"
 import {
 	__testables,
@@ -31,8 +31,9 @@ describe("local HTTP server span status", () => {
 				.pipe(Effect.withSpan("POST /local/query", { kind: "server" }), Effect.withTracer(tracer))
 
 			strictEqual(response.status, 400)
-			const span = spans.find((candidate) => candidate.name === "POST /local/query")
-			ok(span)
+			const found = Arr.findFirst(spans, (candidate) => candidate.name === "POST /local/query")
+			ok(Option.isSome(found))
+			const span = found.value
 			strictEqual(span.attributes.get("error.type"), "HTTP 400")
 			ok(span.status._tag === "Ended" && Exit.isSuccess(span.status.exit))
 		}),
@@ -50,11 +51,12 @@ describe("local HTTP server span status", () => {
 				)
 
 			ok(Exit.isFailure(exit))
-			const span = spans.find((candidate) => candidate.name === "POST /local/query")
-			ok(span)
+			const found = Arr.findFirst(spans, (candidate) => candidate.name === "POST /local/query")
+			ok(Option.isSome(found))
+			const span = found.value
 			ok(span.status._tag === "Ended" && Exit.isFailure(span.status.exit))
 			// Response bodies can quote rows or SQL; only the status reaches the span.
-			ok(!JSON.stringify(exit).includes("database unavailable"))
+			ok(!Str.includes("database unavailable")(JSON.stringify(exit)))
 		}),
 	)
 })
@@ -204,7 +206,7 @@ describe("browser origin policy", () => {
 		strictEqual(allowed("http://127.0.0.1:4318/local/query", "https://tools.example.test", policy), true)
 		const invalid = makeBrowserOriginPolicy({ browserHosts, extraOrigins: "not a url" })
 		ok(Result.isFailure(invalid))
-		ok(invalid.failure.message.includes("MAPLE_LOCAL_ALLOWED_ORIGINS"))
+		ok(Str.includes("MAPLE_LOCAL_ALLOWED_ORIGINS")(invalid.failure.message))
 	})
 
 	it("accepts no hosted origin when the hosted UI is disabled", () => {
@@ -260,11 +262,11 @@ describe("browser origin policy", () => {
 
 	it("allows instrumented dashboard requests through the CORS preflight", () => {
 		const headers = new Headers(corsHeadersForAllowedOrigin(hostedOrigin))
-		const allowedHeaders = new Set(
-			headers
-				.get("access-control-allow-headers")
-				?.split(",")
-				.map((header) => header.trim().toLowerCase()),
+		const allowHeader = headers.get("access-control-allow-headers")
+		const allowedHeaders = new Set<string>(
+			allowHeader === null
+				? []
+				: Arr.map(Str.split(",")(allowHeader), (header) => Str.toLowerCase(Str.trim(header))),
 		)
 		for (const requested of [
 			"content-type",

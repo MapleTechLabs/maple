@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { String as Str } from "effect"
 import { Chdb, writeIngestConfig } from "@maple/local-server/chdb"
 import { describeWithChdb } from "./libchdb-test-support"
 
@@ -24,7 +25,9 @@ describeWithChdb("chDB ingest config", () => {
 	})
 
 	const value = (table: string, name: string) =>
-		db?.query(`SELECT value FROM system.${table} WHERE name = '${name}'`, "TSVRaw").trim()
+		db === undefined
+			? undefined
+			: Str.trim(db.query(`SELECT value FROM system.${table} WHERE name = '${name}'`, "TSVRaw"))
 
 	test("outdated parts are cleaned every second on a small pool", () => {
 		expect(value("merge_tree_settings", "cleanup_delay_period")).toBe("1")

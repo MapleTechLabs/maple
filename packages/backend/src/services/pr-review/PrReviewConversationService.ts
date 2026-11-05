@@ -167,9 +167,10 @@ export const applyEdits = (
 			continue
 		}
 		if (edit.oldText === "") return { error: "the file already exists; quote the text to replace" }
-		const first = content.indexOf(edit.oldText)
-		if (first === -1) return { error: "the text to replace is not in the file at the head" }
-		if (content.indexOf(edit.oldText, first + 1) !== -1)
+		const found = Str.indexOf(edit.oldText)(content)
+		if (Option.isNone(found)) return { error: "the text to replace is not in the file at the head" }
+		const first = found.value
+		if (Str.includes(edit.oldText, first + 1)(content))
 			return { error: "the text to replace occurs more than once; quote more of it" }
 		content = `${Str.slice(0, first)(content)}${edit.newText}${Str.slice(first + edit.oldText.length)(content)}`
 	}
