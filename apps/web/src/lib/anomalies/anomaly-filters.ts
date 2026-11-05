@@ -39,31 +39,34 @@ export function matchesAnomalyFilters(
 	)
 }
 
-export function hasAnomalyFilters(filters: AnomalyFilters): boolean {
-	const lists = [
-		filters.severity,
-		filters.signals,
-		filters.services,
-		filters.envs,
-		filters.excludedSeverity,
-		filters.excludedSignals,
-		filters.excludedServices,
-		filters.excludedEnvs,
-	]
-	return Arr.some(lists, (values) => (values?.length ?? 0) > 0)
+type Facet = {
+	readonly label: string
+	readonly include: keyof AnomalyFilters
+	readonly exclude: keyof AnomalyFilters
 }
 
+/** Rejects a facet table that leaves a key of `AnomalyFilters` unlisted, at compile time. */
+const coveringEveryFilter = <const T extends ReadonlyArray<Facet>>(
+	facets: T &
+		([Exclude<keyof AnomalyFilters, T[number]["include"] | T[number]["exclude"]>] extends [never]
+			? unknown
+			: never),
+): T => facets
+
 /** One facet, in both polarities. `label` matches the sidebar section title exactly. */
-const FACETS = [
+const FACETS = coveringEveryFilter([
 	{ label: "Severity", include: "severity", exclude: "excludedSeverity" },
 	{ label: "Signal", include: "signals", exclude: "excludedSignals" },
 	{ label: "Service", include: "services", exclude: "excludedServices" },
 	{ label: "Environment", include: "envs", exclude: "excludedEnvs" },
-] as const satisfies ReadonlyArray<{
-	label: string
-	include: keyof AnomalyFilters
-	exclude: keyof AnomalyFilters
-}>
+])
+
+export function hasAnomalyFilters(filters: AnomalyFilters): boolean {
+	return Arr.some(
+		FACETS,
+		(facet) => (filters[facet.include]?.length ?? 0) > 0 || (filters[facet.exclude]?.length ?? 0) > 0,
+	)
+}
 
 export interface AnomalyFilterChipDescriptor {
 	param: keyof AnomalyFilters
