@@ -265,19 +265,19 @@ export function splitGenAiAttributes(attributes: Record<string, string>): {
 
 /** The group the key belongs to: its own path segment unless it names another. */
 function groupOf(key: string): string {
-	const override = GROUP_OVERRIDES[key]
-	if (override !== undefined) return override
+	const override = Rec.get(GROUP_OVERRIDES, key)
+	if (Option.isSome(override)) return override.value
 	const namespace = namespaceOf(key)
 	if (Arr.some(Rec.keys(GROUP_LABELS), (id) => id === namespace)) return namespace
-	const alias = GROUP_ALIASES[namespace]
-	if (alias !== undefined) return alias
+	const alias = Rec.get(GROUP_ALIASES, namespace)
+	if (Option.isSome(alias)) return alias.value
 	return "other"
 }
 
 /** Table label, else one read off the key's own path. */
 function labelOf(key: string, group: string): string {
-	const known = GEN_AI_LABELS[key]
-	if (known) return known
+	const known = Rec.get(GEN_AI_LABELS, key)
+	if (Option.isSome(known)) return known.value
 	if (Str.startsWith(PROMPT_VARIABLE_PREFIX)(key)) return Str.slice(PROMPT_VARIABLE_PREFIX.length)(key)
 
 	const path = Str.slice(GEN_AI_PREFIX.length)(key)

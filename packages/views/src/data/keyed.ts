@@ -1,4 +1,4 @@
-import { Option, Result, Schema, String as Str } from "effect"
+import { Option, Record as Rec, Result, Schema, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { orgOfKey, type RequestKey } from "./request-key"
 
@@ -34,9 +34,9 @@ export const KeyedSchema = <A, AI, E, EI>(
 
 export const idle = <A, E>(): Keyed<A, E> => ({ key: null, data: AsyncData.Idle() })
 
-/** The slot stored under `key`, or an idle one when the record has none yet. */
+/** The slot stored under `key` (own keys only), or an idle one when the record has none yet. */
 export const at = <A, E>(slots: Readonly<Record<string, Keyed<A, E>>>, key: string): Keyed<A, E> =>
-	slots[key] ?? idle()
+	Option.getOrElse(Rec.get(slots, key), () => idle<A, E>())
 
 /** A superseding re-read's key: the request key plus a generation, so an older answer is dropped. */
 const GENERATION_SEPARATOR = "\u0001"
