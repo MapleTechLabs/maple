@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { filterUsers, scopeDetail, usersFacets } from "./users-filter"
-import { USER_DETAIL, USER_ROWS } from "./users-fixture"
+import { filterUsers, scopeDetail, usersFacets, usersSummary } from "./users-filter"
+import { USER_DETAIL, USER_ROWS, USERS_NOW } from "./users-fixture"
 
 const NO_FILTERS = { search: "", hasErrors: false, hasReplay: false, namespaces: [], groups: [] }
 
@@ -43,5 +43,17 @@ describe("users namespace scope", () => {
 
 	it("leaves the user whole when no namespace is in effect", () => {
 		expect(scopeDetail(USER_DETAIL, null)).toBe(USER_DETAIL)
+	})
+})
+
+describe("users summary under a pin", () => {
+	const orgWide = { identified: 1_284, activeToday: 312, withErrors: 41, anonymousVisitors: 9_870 }
+
+	it("keeps the org-wide totals unpinned and counts the pinned namespace's users when pinned", () => {
+		expect(usersSummary(USER_ROWS, null, orgWide, USERS_NOW)).toBe(orgWide)
+		const pinned = usersSummary(USER_ROWS, "storefront", orgWide, USERS_NOW)
+		const inNamespace = USER_ROWS.filter((row) => row.namespaces.includes("storefront"))
+		expect(pinned.identified).toBe(inNamespace.length)
+		expect(pinned.withErrors).toBe(inNamespace.filter((row) => row.errors > 0).length)
 	})
 })
