@@ -260,8 +260,10 @@ const entry = (
 		connectedAt: fields.connectedAt,
 		problem: status === "healthy" ? null : problem,
 		feeds: fields.feeds ?? INTEGRATION_FEEDS[provider],
-		resources: [...resources].sort(
-			(a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || Str.localeCompare(b.name)(a.name),
+		resources: [...resources].sort((a, b) =>
+			STATUS_RANK[a.status] !== STATUS_RANK[b.status]
+				? STATUS_RANK[a.status] - STATUS_RANK[b.status]
+				: Str.localeCompare(b.name)(a.name),
 		),
 	}
 }

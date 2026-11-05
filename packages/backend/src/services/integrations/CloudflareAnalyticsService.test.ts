@@ -326,7 +326,7 @@ const mockCloudflareFetch =
 			return jsonResponse({ data: null, errors: [{ message: "unknown query" }] })
 		}
 		if (Str.includes("/hyperdrive/configs")(url)) {
-			if (options.hyperdriveStatus) {
+			if (options.hyperdriveStatus !== undefined) {
 				return jsonResponse(
 					{
 						success: false,
@@ -364,7 +364,7 @@ const mockCloudflareFetch =
 			})
 		}
 		if (Str.includes("/zones")(url)) {
-			if (options.zonesStatus) {
+			if (options.zonesStatus !== undefined) {
 				return jsonResponse(
 					{
 						success: false,

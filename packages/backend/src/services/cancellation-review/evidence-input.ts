@@ -36,7 +36,11 @@ export const knownAtCancel = (atMs: number, ms: number): boolean => ms <= atMs +
  * Whole days from `ms` to the cancellation, rounded toward it: the same day is
  * 0 on either side, a day after is -1.
  */
-export const daysBeforeCancel = (atMs: number, ms: number): number => Math.trunc((atMs - ms) / DAY_MS) || 0
+export const daysBeforeCancel = (atMs: number, ms: number): number => {
+	const days = Math.trunc((atMs - ms) / DAY_MS)
+	// `Math.trunc` of a same-day negative gap is -0; report it as 0.
+	return days === 0 ? 0 : days
+}
 
 /**
  * Free text on its way to a third-party model: cut to `max` characters, with

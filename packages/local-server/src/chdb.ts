@@ -21,6 +21,10 @@ import { durableJson } from "./durable-files"
 import { markStoreClosed, markStoreOpen, storeHasData } from "./store-version"
 import { MAPLE_VERSION } from "./version"
 
+/** bun:ffi hands back a NULL pointer as `null`, a dereferenced one as 0. */
+const isNullPointer = (pointer: Pointer | bigint | null): pointer is null =>
+	pointer === null || pointer === 0 || pointer === 0n
+
 /** A chDB failure — locating libchdb, opening the connection, or bootstrapping
  *  the schema. Carries the underlying message verbatim. */
 export class ChdbError extends Schema.TaggedError<ChdbError>()("@maple/cli/ChdbError", {
@@ -417,7 +421,7 @@ export class Chdb {
 			argv[i] = BigInt(ptr(b))
 		})
 		const connPtrPtr = sym.chdb_connect(args.length, ptr(argv))
-		if (!connPtrPtr) {
+		if (isNullPointer(connPtrPtr)) {
 			throw new Error(
 				Chdb.#connectFailure(options.dataDir, "chdb_connect returned NULL", options.configFile),
 			)
@@ -425,7 +429,7 @@ export class Chdb {
 		// chdb_connect returns chdb_connection* (a double pointer); chdb_query
 		// wants chdb_connection — dereference once.
 		const conn = read.ptr(connPtrPtr, 0) as Pointer
-		if (!conn)
+		if (isNullPointer(conn))
 			throw new Error(
 				Chdb.#connectFailure(
 					options.dataDir,
@@ -530,17 +534,17 @@ export class Chdb {
 		const query = cstr(sql)
 		const outputFormat = cstr(format)
 		const res = this.#sym.chdb_query(this.#conn, ptr(query), ptr(outputFormat))
-		if (!res) throw new ChdbQueryError({ message: "chdb_query returned NULL" })
+		if (isNullPointer(res)) throw new ChdbQueryError({ message: "chdb_query returned NULL" })
 		let failure = ""
 		try {
 			const errPtr = this.#sym.chdb_result_error(res)
 			// chdb returns a non-null pointer to an EMPTY string on success; only a
 			// non-empty message is a real error (matches chdb-rust `check_error`).
-			failure = errPtr ? new CString(errPtr).toString() : ""
+			failure = !isNullPointer(errPtr) ? new CString(errPtr).toString() : ""
 			if (failure.length === 0) {
 				const len = Number(this.#sym.chdb_result_length(res))
 				const bufPtr = len === 0 ? null : this.#sym.chdb_result_buffer(res)
-				return bufPtr ? read(new Uint8Array(toArrayBuffer(bufPtr, 0, len))) : empty
+				return !isNullPointer(bufPtr) ? read(new Uint8Array(toArrayBuffer(bufPtr, 0, len))) : empty
 			}
 		} finally {
 			this.#sym.chdb_destroy_query_result(res)
@@ -555,9 +559,9 @@ export class Chdb {
 	#drainPartialOutput(): void {
 		for (let attempt = 0; attempt < 3; attempt++) {
 			const res = this.#sym.chdb_query(this.#conn, ptr(DRAIN_SQL), ptr(DRAIN_FORMAT))
-			if (!res) return
+			if (isNullPointer(res)) return
 			const errPtr = this.#sym.chdb_result_error(res)
-			const clean = !errPtr || new CString(errPtr).toString().length === 0
+			const clean = isNullPointer(errPtr) || new CString(errPtr).toString().length === 0
 			const len = Number(this.#sym.chdb_result_length(res))
 			this.#sym.chdb_destroy_query_result(res)
 			if (clean && len === DRAIN_SENTINEL.length) return

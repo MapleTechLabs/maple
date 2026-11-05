@@ -84,7 +84,7 @@ export function convertInsertHandler<
 
 		const result = exit.value
 
-		if (!result.txid) {
+		if (result.txid == null || result.txid === 0) {
 			throw new MissingTxIdError({
 				message: `Insert handler must return a txid`,
 				operation: "insert",
@@ -163,7 +163,7 @@ export function convertUpdateHandler<
 
 		const result = exit.value
 
-		if (!result.txid) {
+		if (result.txid == null || result.txid === 0) {
 			throw new MissingTxIdError({
 				message: `Update handler must return a txid`,
 				operation: "update",
@@ -242,7 +242,7 @@ export function convertDeleteHandler<
 
 		const result = exit.value
 
-		if (!result.txid) {
+		if (result.txid == null || result.txid === 0) {
 			throw new MissingTxIdError({
 				message: `Delete handler must return a txid`,
 				operation: "delete",

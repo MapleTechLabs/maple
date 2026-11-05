@@ -20,6 +20,7 @@ import {
 import { hash } from "./maple-scenery-sketch"
 import type { District } from "./spatial-layout"
 import { Array as Arr, Option } from "effect"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 /** Everything the planting avoids or follows: zones, belts, the meadow edge and the creek. */
 export interface World {
@@ -123,7 +124,7 @@ function blocked(marks: Landmarks, x: number, z: number) {
 	const [ax, az] = marks.fence.from,
 		[bx, bz] = marks.fence.to
 	const [dx, dz] = [bx - ax, bz - az]
-	const t = Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)))
+	const t = Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / nonZeroOr(dx * dx + dz * dz, 1)))
 	return Math.hypot(x - (ax + dx * t), z - (az + dz * t)) < 0.6
 }
 
@@ -295,7 +296,7 @@ function walkable(world: World, x: number, z: number) {
 
 /** A winding trail: a bowed curve between two points with a little noise along it. */
 function trail([ax, az]: Point, [bx, bz]: Point): Point[] {
-	const length = Math.hypot(bx - ax, bz - az) || 1
+	const length = nonZeroOr(Math.hypot(bx - ax, bz - az), 1)
 	const [px, pz] = [-(bz - az) / length, (bx - ax) / length]
 	const bow = (hash(ax, bz) - 0.5) * 2 * Math.min(1.2, length * 0.3)
 	const count = Math.max(6, Math.ceil(length / 0.3))

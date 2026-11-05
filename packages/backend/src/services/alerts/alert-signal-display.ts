@@ -115,7 +115,7 @@ const rawQueryDisplay = (reducer: string | null | undefined): SignalDisplay => (
 
 export const resolveSignalDisplay = (input: SignalDisplayInput): SignalDisplay => {
 	const preset = PRESET_SIGNALS[input.signalType]
-	if (preset) return preset
+	if (preset !== undefined) return preset
 	if (input.signalType === "builder_query" && input.queryBuilderDraft != null) {
 		return builderQueryDisplay(input.queryBuilderDraft)
 	}

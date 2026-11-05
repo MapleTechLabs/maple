@@ -416,7 +416,7 @@ export class McpOAuthService extends Context.Service<
 					),
 				)
 				const client = clients[0]
-				if (!client) return yield* protocolError("invalid_request", "Unknown client_id")
+				if (client === undefined) return yield* protocolError("invalid_request", "Unknown client_id")
 				if (
 					!client.redirectUris.some((registered) =>
 						matchesMcpOAuthRedirectUri(registered, input.redirectUri),
@@ -505,7 +505,7 @@ export class McpOAuthService extends Context.Service<
 						.limit(1),
 				),
 			)
-			if (!rows[0]) {
+			if (rows[0] === undefined) {
 				return yield* new McpOAuthAuthorizationNotFoundError({
 					message: "OAuth authorization request not found",
 				})
@@ -665,7 +665,7 @@ export class McpOAuthService extends Context.Service<
 				const row = rows[0]
 				const now = yield* Clock.currentTimeMillis
 				if (
-					!row ||
+					row === undefined ||
 					row.approvedAt === null ||
 					!row.approvedOrgId ||
 					!row.approvedUserId ||
@@ -768,7 +768,7 @@ export class McpOAuthService extends Context.Service<
 				const now = yield* Clock.currentTimeMillis
 				const requestedScopes = parseScopes(input.scope)
 				if (
-					!row ||
+					row === undefined ||
 					row.expiresAt <= now ||
 					row.clientId !== input.clientId ||
 					row.resource !== input.resource ||
@@ -803,7 +803,7 @@ export class McpOAuthService extends Context.Service<
 					),
 				)
 				const accessKeyRow = accessKeyRows[0]
-				if (!accessKeyRow || accessKeyRow.revoked) {
+				if (accessKeyRow === undefined || accessKeyRow.revoked) {
 					yield* dbExecute((db) => db.transaction(revokeRefreshFamily(db, row.familyId, now)))
 					return yield* protocolError(
 						"invalid_grant",
@@ -913,7 +913,7 @@ export class McpOAuthService extends Context.Service<
 					),
 				)
 				const row = rows[0]
-				if (row && row.clientId === clientId) {
+				if (row !== undefined && row.clientId === clientId) {
 					yield* dbExecute((db) => db.transaction(revokeRefreshFamily(db, row.familyId, now)))
 				}
 				return
@@ -930,7 +930,7 @@ export class McpOAuthService extends Context.Service<
 			const row = rows[0]
 			const metadata = row?.metadataJson
 			if (
-				row &&
+				row !== undefined &&
 				typeof metadata === "object" &&
 				metadata !== null &&
 				"source" in metadata &&
@@ -947,7 +947,7 @@ export class McpOAuthService extends Context.Service<
 									.where(($) => [$.accessKeyId.eq(row.id)])
 									.limit(1),
 							)
-							if (refreshRows[0]) {
+							if (refreshRows[0] !== undefined) {
 								yield* revokeRefreshFamily(db, refreshRows[0].familyId, now)
 								return
 							}

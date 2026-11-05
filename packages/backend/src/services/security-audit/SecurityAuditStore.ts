@@ -1524,12 +1524,13 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 							}
 							return { ...lifecycle, ...row, orgId, targetId: run.targetId }
 						})
-						.toSorted(
-							(a, b) =>
+						.toSorted((a, b) => {
+							const byRank =
 								findingRank(a.verdict, a.overallSeverity, a.estimatedSeverity) -
-									findingRank(b.verdict, b.overallSeverity, b.estimatedSeverity) ||
-								(a.fingerprint < b.fingerprint ? -1 : a.fingerprint > b.fingerprint ? 1 : 0),
-						)
+								findingRank(b.verdict, b.overallSeverity, b.estimatedSeverity)
+							if (byRank !== 0) return byRank
+							return a.fingerprint < b.fingerprint ? -1 : a.fingerprint > b.fingerprint ? 1 : 0
+						})
 				})
 
 				const countRunFindings: SecurityAuditOrgStore["countRunFindings"] = Effect.fn(

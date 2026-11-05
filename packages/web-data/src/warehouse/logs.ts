@@ -213,17 +213,19 @@ const getLogsCountEffect = Effect.fn("QueryEngine.getLogsCount")(function* ({
 					severities: input.severities,
 					traceId: input.traceId,
 					search: input.search,
-					environments: input.deploymentEnvs?.length
-						? input.deploymentEnvs
-						: input.deploymentEnv
-							? [input.deploymentEnv]
-							: undefined,
+					environments:
+						input.deploymentEnvs !== undefined && input.deploymentEnvs.length > 0
+							? input.deploymentEnvs
+							: input.deploymentEnv
+								? [input.deploymentEnv]
+								: undefined,
 					deploymentEnvMatchMode: input.deploymentEnvMatchMode,
-					namespaces: input.namespaces?.length
-						? input.namespaces
-						: input.namespace
-							? [input.namespace]
-							: undefined,
+					namespaces:
+						input.namespaces !== undefined && input.namespaces.length > 0
+							? input.namespaces
+							: input.namespace
+								? [input.namespace]
+								: undefined,
 					namespaceMatchMode: input.namespaceMatchMode,
 					excludedServiceNames: input.excludedServices,
 					excludedSeverities: input.excludedSeverities,
@@ -290,11 +292,12 @@ const getLogsFacetsEffect = Effect.fn("QueryEngine.getLogsFacets")(function* ({
 					severity: input.severity,
 					environments: input.deploymentEnv ? [input.deploymentEnv] : undefined,
 					deploymentEnvMatchMode: input.deploymentEnvMatchMode,
-					namespaces: input.namespaces?.length
-						? input.namespaces
-						: input.namespace
-							? [input.namespace]
-							: undefined,
+					namespaces:
+						input.namespaces !== undefined && input.namespaces.length > 0
+							? input.namespaces
+							: input.namespace
+								? [input.namespace]
+								: undefined,
 					namespaceMatchMode: input.namespaceMatchMode,
 					attributeFilters: input.attributeFilters,
 					resourceAttributeFilters: input.resourceAttributeFilters,

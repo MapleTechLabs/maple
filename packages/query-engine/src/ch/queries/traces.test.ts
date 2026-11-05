@@ -400,7 +400,7 @@ describe("traceListQuery", () => {
 		type Cursor = { timestamp: DateTime.Utc; traceId: string }
 		const second = (ts: DateTime.Utc) => Math.floor(DateTime.toEpochMillis(ts) / 1000) * 1000
 		const desc = (key: (r: Root) => number) => (a: Root, b: Root) =>
-			key(b) - key(a) || Str.localeCompare(a.traceId)(b.traceId)
+			key(b) !== key(a) ? key(b) - key(a) : Str.localeCompare(a.traceId)(b.traceId)
 
 		/** Evaluates one page the way ClickHouse would, reading stage 2's order off the SQL. */
 		const page = (cursor: Cursor | undefined): Root[] => {

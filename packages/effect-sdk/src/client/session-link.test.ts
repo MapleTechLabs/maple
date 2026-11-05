@@ -21,7 +21,7 @@ const setupFetch = () => {
 	const original = globalThis.fetch
 	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-		const body = init?.body && typeof init.body === "string" ? JSON.parse(init.body) : undefined
+		const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
 		calls.push({ url, body })
 		return new Response(null, { status: 200 })
 	}

@@ -22,6 +22,7 @@ import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { scrollRegion } from "@maple/views/ui/scroll-region"
 import { Array as Arr, Record as Rec } from "effect"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 // The rail's Session tab.
 
@@ -162,7 +163,7 @@ const summary = (h: H, session: ReplayDetail): Html => {
 			h.div(
 				[h.Class("mt-3 grid grid-cols-3 gap-1.5")],
 				[
-					stat(h, "FileIcon", "Pages", session.pageViews || 1),
+					stat(h, "FileIcon", "Pages", nonZeroOr(session.pageViews, 1)),
 					stat(h, "CursorPointerIcon", "Clicks", session.clickCount),
 					stat(
 						h,

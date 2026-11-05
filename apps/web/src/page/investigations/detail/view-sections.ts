@@ -216,7 +216,7 @@ const logsRow = (h: H, points: ReadonlyArray<typeof LogBucket.Type>): Html => {
 					bar.bucket,
 					[
 						h.Title(
-							`${formatNumber(bar.total)} lines${bar.errors ? ` · ${formatNumber(bar.errors)} errors` : ""}`,
+							`${formatNumber(bar.total)} lines${bar.errors > 0 ? ` · ${formatNumber(bar.errors)} errors` : ""}`,
 						),
 						h.Class("flex min-w-0 flex-1 flex-col justify-end overflow-hidden rounded-2xs"),
 						h.Style({

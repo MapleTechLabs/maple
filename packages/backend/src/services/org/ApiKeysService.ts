@@ -329,7 +329,8 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 				const keyHash = hashApiKey(rawKey, hmacKey)
 				const keyPrefix = rawKey.slice(0, 12) + "..."
 				const now = yield* Clock.currentTimeMillis
-				const expiresAt = params.expiresInSeconds ? now + params.expiresInSeconds * 1000 : undefined
+				const expiresAt =
+					params.expiresInSeconds !== undefined ? now + params.expiresInSeconds * 1000 : undefined
 				const kind: ApiKeyKind = params.kind ?? "standard"
 				const scopes = params.scopes == null ? null : [...params.scopes]
 				const createdByEmail = params.createdByEmail ?? null

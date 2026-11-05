@@ -489,7 +489,7 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 						const spans = services.reduce((sum, service) => sum + service.spanCount, 0)
 						return { row, order, services, score: riskScore(row, spans) }
 					})
-					.sort((a, b) => b.score - a.score || a.order - b.order)
+					.sort((a, b) => (b.score !== a.score ? b.score - a.score : a.order - b.order))
 					.slice(0, FINDINGS_LIMIT)
 				yield* Effect.annotateCurrentSpan({
 					"result.rowCount": ranked.length,

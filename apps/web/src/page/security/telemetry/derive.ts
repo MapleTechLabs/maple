@@ -147,7 +147,9 @@ const topSignaturesOf = (rows: ReadonlyArray<SignatureRow>, limit: number): Read
 		new Map(acc).set(row.signature, (acc.get(row.signature) ?? 0) + row.requests),
 	)
 	return Arr.map([...totals], ([signature, requests]) => ({ signature, requests }))
-		.sort((a, b) => b.requests - a.requests || Str.localeCompare(b.signature)(a.signature))
+		.sort((a, b) =>
+			b.requests !== a.requests ? b.requests - a.requests : Str.localeCompare(b.signature)(a.signature),
+		)
 		.slice(0, limit)
 }
 
@@ -299,14 +301,15 @@ export const runtimeEntries = (runtimes: Runtimes): ReadonlyArray<RuntimeEntry> 
 		posture: runtimePosture(row, releasesFor(runtimes)),
 		vulnerabilities: vulnerabilitiesOf(runtimes, row),
 		replaced: toEpochMs(row.lastSeen) < (newestSeen.get(deploymentKey(row)) ?? Number.NEGATIVE_INFINITY),
-	})).sort(
-		(a, b) =>
-			Number(a.replaced) - Number(b.replaced) ||
-			urgencyRank(a.vulnerabilities) - urgencyRank(b.vulnerabilities) ||
-			STATUS_RANK[a.posture.status] - STATUS_RANK[b.posture.status] ||
-			Str.localeCompare(b.row.service)(a.row.service) ||
-			Str.localeCompare(b.row.environment)(a.row.environment),
-	)
+	})).sort((a, b) => {
+		if (a.replaced !== b.replaced) return Number(a.replaced) - Number(b.replaced)
+		const byUrgency = urgencyRank(a.vulnerabilities) - urgencyRank(b.vulnerabilities)
+		if (byUrgency !== 0) return byUrgency
+		const byStatus = STATUS_RANK[a.posture.status] - STATUS_RANK[b.posture.status]
+		if (byStatus !== 0) return byStatus
+		const byService = Str.localeCompare(b.row.service)(a.row.service)
+		return byService !== 0 ? byService : Str.localeCompare(b.row.environment)(a.row.environment)
+	})
 }
 
 /** The versions services run now: what the totals and the upgrade list judge. */
@@ -401,11 +404,12 @@ export const criticalUpgrades = (entries: ReadonlyArray<RuntimeEntry>): Readonly
 				services: [...new Set(Arr.map(group, (member) => member.row.service))],
 			},
 		]
-	}).sort(
-		(a, b) =>
-			b.summary.counts.critical - a.summary.counts.critical ||
-			b.summary.counts.high - a.summary.counts.high ||
-			b.services.length - a.services.length ||
-			Str.localeCompare(b.key)(a.key),
-	)
+	}).sort((a, b) => {
+		const byCritical = b.summary.counts.critical - a.summary.counts.critical
+		if (byCritical !== 0) return byCritical
+		const byHigh = b.summary.counts.high - a.summary.counts.high
+		if (byHigh !== 0) return byHigh
+		if (b.services.length !== a.services.length) return b.services.length - a.services.length
+		return Str.localeCompare(b.key)(a.key)
+	})
 }

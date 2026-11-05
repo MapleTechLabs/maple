@@ -157,7 +157,7 @@ export function installNetworkCapture(
 	const uninstall: Array<() => void> = []
 	if (typeof window.fetch === "function") uninstall.push(patchMethod(window, "fetch", hooks, wrapFetch))
 	const XHR = window.XMLHttpRequest
-	if (XHR && typeof XHR.prototype.open === "function" && typeof XHR.prototype.send === "function") {
+	if (XHR != null && typeof XHR.prototype.open === "function" && typeof XHR.prototype.send === "function") {
 		uninstall.push(patchMethod(XHR.prototype, "open", hooks, wrapXhrOpen))
 		uninstall.push(patchMethod(XHR.prototype, "send", hooks, wrapXhrSend))
 	}

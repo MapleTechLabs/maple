@@ -868,7 +868,7 @@ WHERE name = 'enable_full_text_index'`,
 		yield* Effect.annotateCurrentSpan("pipe", payload.pipeName)
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 
-		if (!tenant.orgId || Str.trim(tenant.orgId) === "") {
+		if (Str.trim(tenant.orgId) === "") {
 			return yield* new WarehouseScopeError({
 				pipeName: payload.pipeName,
 				message: "org_id must not be empty",
@@ -962,7 +962,7 @@ WHERE name = 'enable_full_text_index'`,
 		tenantScope: TenantScope,
 		context: string,
 	) {
-		if (!tenant.orgId || Str.trim(tenant.orgId) === "") {
+		if (Str.trim(tenant.orgId) === "") {
 			return yield* new WarehouseScopeError({
 				pipeName: context,
 				message: `org_id must not be empty (${context})`,

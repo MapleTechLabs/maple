@@ -826,7 +826,11 @@ function computeLayers(
 				}
 				return 0
 			}
-			group.sort((a, b) => sortKey(a) - sortKey(b) || (baryIndex.get(a) ?? 0) - (baryIndex.get(b) ?? 0))
+			group.sort((a, b) =>
+				sortKey(a) !== sortKey(b)
+					? sortKey(a) - sortKey(b)
+					: (baryIndex.get(a) ?? 0) - (baryIndex.get(b) ?? 0),
+			)
 		}
 	}
 
@@ -922,7 +926,9 @@ export function computeFlatPositions(
 		const traversalOrder = new Map(Arr.map(connectedComponents, (c, i) => [c, i]))
 		const rankOf = (c: string[]) => rank.get(c) ?? Number.POSITIVE_INFINITY
 		const orderOf = (c: string[]) => traversalOrder.get(c) ?? 0
-		connectedComponents.sort((a, b) => rankOf(a) - rankOf(b) || orderOf(a) - orderOf(b))
+		connectedComponents.sort((a, b) =>
+			rankOf(a) !== rankOf(b) ? rankOf(a) - rankOf(b) : orderOf(a) - orderOf(b),
+		)
 	}
 
 	let currentYOffset = 0
@@ -1076,7 +1082,7 @@ export function computeNodePositions(
 			)
 		}
 		const rankOf = (ns: string) => rank.get(ns) ?? Number.POSITIVE_INFINITY
-		laneOrder.sort((a, b) => rankOf(a) - rankOf(b) || Str.localeCompare(b)(a))
+		laneOrder.sort((a, b) => (rankOf(a) !== rankOf(b) ? rankOf(a) - rankOf(b) : Str.localeCompare(b)(a)))
 	}
 
 	let yOffset = 0

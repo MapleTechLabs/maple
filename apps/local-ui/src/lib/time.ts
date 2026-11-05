@@ -82,7 +82,7 @@ export function boundsForRange(key: string | undefined, anchorMs = Date.now()): 
 export type WarehouseTime = DateTime.Utc | string | null | undefined
 
 export function parseClickHouseDateTime(chDateTime: WarehouseTime): number | null {
-	if (!chDateTime) return null
+	if (chDateTime == null || chDateTime === "") return null
 	const ms = DateTime.isDateTime(chDateTime) ? DateTime.toEpochMillis(chDateTime) : toEpochMs(chDateTime)
 	return Number.isFinite(ms) && ms > 0 ? ms : null
 }
@@ -113,7 +113,7 @@ export function formatLocalTimestamp(
 
 /** The stored value, verbatim and zone-marked, for `title` tooltips and copy. */
 export function formatUtcTitle(chDateTime: WarehouseTime): string {
-	if (!chDateTime) return ""
+	if (chDateTime == null || chDateTime === "") return ""
 	return DateTime.isDateTime(chDateTime) ? DateTime.formatIso(chDateTime) : `${chDateTime} UTC`
 }
 

@@ -55,7 +55,7 @@ const users = (await clerkFetch(`/users?email_address=${encodeURIComponent(email
 	id: string
 }>
 const user = users[0]
-if (!user) {
+if (user === undefined) {
 	console.error(`No user with email ${email} on this Clerk instance.`)
 	process.exit(1)
 }

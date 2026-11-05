@@ -18,7 +18,7 @@ const staticImports = (f) => [...(src[f]?.matchAll(/from"\.\/([^"]+\.js)"/g) ?? 
 const closure = (roots, edges) => {
 	const seen = new Set()
 	const q = [...roots]
-	while (q.length) {
+	while (q.length > 0) {
 		const f = q.pop()
 		if (seen.has(f)) continue
 		seen.add(f)
@@ -64,7 +64,7 @@ const result = {
 	evalMs: { startupGraph: startupMs, plusHttpGraph: httpGraphMs },
 	heapMB: { startupGraph: startupHeap, fullGraph: fullHeap },
 	registry: registry
-		? { file: registry, sizeMB: mb(size(registry)), inStartupGraph: !!startupHasRegistry }
+		? { file: registry, sizeMB: mb(size(registry)), inStartupGraph: startupHasRegistry === true }
 		: null,
 	verdict: {
 		startupEvalBudget: `${startupMs}ms / ${budgets.startupEvalMs}ms desktop proxy (${startupMs <= budgets.startupEvalMs ? "OK" : "OVER"})`,

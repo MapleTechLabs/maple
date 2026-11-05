@@ -162,12 +162,12 @@ export function buildSessionChecks(
 		...otherErrorsCheck(Arr.filter(errors, (finding) => finding.tool === undefined)),
 		stallCheck(of("stall")),
 		promptCacheCheck(cacheObservations(spans)),
-	].sort(
-		(a, b) =>
-			STATUS_RANK[a.status] - STATUS_RANK[b.status] ||
-			// The check that ended the run leads: it is what the headline names.
-			Number(endedTheRun(b.findings)) - Number(endedTheRun(a.findings)),
-	)
+	].sort((a, b) => {
+		const byStatus = STATUS_RANK[a.status] - STATUS_RANK[b.status]
+		if (byStatus !== 0) return byStatus
+		// The check that ended the run leads: it is what the headline names.
+		return Number(endedTheRun(b.findings)) - Number(endedTheRun(a.findings))
+	})
 
 	const counts = { failed: 0, warning: 0, passed: 0, skipped: 0 }
 	for (const check of checks) counts[check.status]++

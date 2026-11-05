@@ -565,11 +565,12 @@ export class PrReviewAnalyticsService extends Context.Service<
 									}),
 								],
 					)
-					.toSorted(
-						(a, b) =>
-							b.pullRequests - a.pullRequests ||
-							b.findings - a.findings ||
-							a.author.localeCompare(b.author),
+					.toSorted((a, b) =>
+						b.pullRequests !== a.pullRequests
+							? b.pullRequests - a.pullRequests
+							: b.findings !== a.findings
+								? b.findings - a.findings
+								: a.author.localeCompare(b.author),
 					)
 					.slice(0, TOP),
 			})

@@ -209,7 +209,7 @@ const getSub = (id: string) =>
 			),
 		)
 		const row = rows[0]
-		if (!row) {
+		if (row === undefined) {
 			return yield* Effect.die(`subscription ${id} not found`)
 		}
 		return row

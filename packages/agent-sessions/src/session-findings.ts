@@ -133,13 +133,13 @@ export function buildSessionFindings(
 		...retryFindings(spans, turns, turnIndexBySpan),
 		...truncationFindings(spans, turns, turnIndexBySpan),
 		...stallFindings(turns),
-	].sort(
-		(a, b) =>
-			severityRank(a.severity) - severityRank(b.severity) ||
-			// The terminal failure leads: it is the verdict's own evidence.
-			Number(b.terminal) - Number(a.terminal) ||
-			a.atMs - b.atMs,
-	)
+	].sort((a, b) => {
+		const bySeverity = severityRank(a.severity) - severityRank(b.severity)
+		if (bySeverity !== 0) return bySeverity
+		// The terminal failure leads: it is the verdict's own evidence.
+		if (a.terminal !== b.terminal) return Number(b.terminal) - Number(a.terminal)
+		return a.atMs - b.atMs
+	})
 
 	const verdict: SessionVerdict = summary.failed
 		? { status: "failed", spanId: causeSpanId }
@@ -257,7 +257,7 @@ function retryFindings(
 
 	const statuses = Arr.join(
 		Arr.map(
-			[...byStatus].sort((a, b) => b[1] - a[1] || Str.localeCompare(b[0])(a[0])),
+			[...byStatus].sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : Str.localeCompare(b[0])(a[0]))),
 			([status, count]) => `${status} ×${count}`,
 		),
 		" · ",

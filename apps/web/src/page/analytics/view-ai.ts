@@ -343,7 +343,10 @@ const aiKpis = (
 		}),
 		statRailItem(h, {
 			eyebrow: "Share of sessions",
-			value: referrals !== undefined && sessions ? formatPercent(visits / sessions) : EMPTY_VALUE,
+			value:
+				referrals !== undefined && sessions !== undefined && sessions > 0
+					? formatPercent(visits / sessions)
+					: EMPTY_VALUE,
 			subline: sessions === undefined ? undefined : `of ${formatNumber(sessions)} sessions`,
 			delay: 60,
 		}),

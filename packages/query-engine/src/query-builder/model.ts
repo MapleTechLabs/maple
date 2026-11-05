@@ -1420,16 +1420,21 @@ function buildTracesSpecFilters(acc: TracesFilterAccumulator): Record<string, un
 	// Tri-state: `has_error = false` must survive as an explicit filter (only
 	// non-errored spans), not collapse into "no filter".
 	if (acc.errorsOnly != null) filters.errorsOnly = acc.errorsOnly
-	if (acc.environments?.length) filters.environments = acc.environments
-	if (acc.commitShas?.length) filters.commitShas = acc.commitShas
+	if (acc.environments !== undefined && acc.environments.length > 0) filters.environments = acc.environments
+	if (acc.commitShas !== undefined && acc.commitShas.length > 0) filters.commitShas = acc.commitShas
 	if (acc.minDurationMs != null) filters.minDurationMs = acc.minDurationMs
 	if (acc.maxDurationMs != null) filters.maxDurationMs = acc.maxDurationMs
 	if (acc.matchModes) filters.matchModes = acc.matchModes
-	if (acc.excludedServiceNames?.length) filters.excludedServiceNames = acc.excludedServiceNames
-	if (acc.excludedSpanNames?.length) filters.excludedSpanNames = acc.excludedSpanNames
-	if (acc.excludedEnvironments?.length) filters.excludedEnvironments = acc.excludedEnvironments
-	if (acc.excludedCommitShas?.length) filters.excludedCommitShas = acc.excludedCommitShas
-	if (acc.groupByAttributeKeys?.length) filters.groupByAttributeKeys = acc.groupByAttributeKeys
+	if (acc.excludedServiceNames !== undefined && acc.excludedServiceNames.length > 0)
+		filters.excludedServiceNames = acc.excludedServiceNames
+	if (acc.excludedSpanNames !== undefined && acc.excludedSpanNames.length > 0)
+		filters.excludedSpanNames = acc.excludedSpanNames
+	if (acc.excludedEnvironments !== undefined && acc.excludedEnvironments.length > 0)
+		filters.excludedEnvironments = acc.excludedEnvironments
+	if (acc.excludedCommitShas !== undefined && acc.excludedCommitShas.length > 0)
+		filters.excludedCommitShas = acc.excludedCommitShas
+	if (acc.groupByAttributeKeys !== undefined && acc.groupByAttributeKeys.length > 0)
+		filters.groupByAttributeKeys = acc.groupByAttributeKeys
 	if (acc.attributeFilters.length > 0) filters.attributeFilters = acc.attributeFilters
 	if (acc.resourceAttributeFilters.length > 0)
 		filters.resourceAttributeFilters = acc.resourceAttributeFilters
@@ -1466,7 +1471,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 
 	const stepInterval = query.stepInterval ?? ""
 	const bucketSeconds = parseBucketSeconds(stepInterval)
-	if (Str.trim(stepInterval) && !bucketSeconds) {
+	if (Str.trim(stepInterval) && bucketSeconds === undefined) {
 		warnings.push("Invalid step interval ignored; auto interval will be used")
 	}
 
@@ -1528,7 +1533,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		)
 
 		const groupByKeys: TracesGroupByKey[] = []
-		if (query.addOns?.groupBy && (query.groupBy?.length ?? 0) > 0) {
+		if (query.addOns?.groupBy && query.groupBy !== undefined && query.groupBy.length > 0) {
 			for (const raw of query.groupBy ?? []) {
 				const resolved = resolveTracesGroupByToken(raw, filters, warnings)
 				if (resolved) groupByKeys.push(resolved)
@@ -1537,7 +1542,10 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 
 		const groupBy = groupByKeys.length > 0 ? dedupeGroupByKeys(groupByKeys) : undefined
 
-		if (groupByKeys.includes("attribute") && !filters.groupByAttributeKeys?.length) {
+		if (
+			groupByKeys.includes("attribute") &&
+			(filters.groupByAttributeKeys === undefined || filters.groupByAttributeKeys.length === 0)
+		) {
 			return {
 				query: null,
 				warnings,
@@ -1598,7 +1606,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		)
 
 		const logsGroupByKeys: LogsGroupByKey[] = []
-		if (query.addOns?.groupBy && (query.groupBy?.length ?? 0) > 0) {
+		if (query.addOns?.groupBy && query.groupBy !== undefined && query.groupBy.length > 0) {
 			for (const raw of query.groupBy ?? []) {
 				const resolved = resolveLogsGroupByToken(raw, warnings)
 				if (resolved) logsGroupByKeys.push(resolved)
@@ -1637,7 +1645,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		)
 
 		const groupByKeys: ProductEventsGroupByKey[] = []
-		if (query.addOns?.groupBy && (query.groupBy?.length ?? 0) > 0) {
+		if (query.addOns?.groupBy && query.groupBy !== undefined && query.groupBy.length > 0) {
 			for (const raw of query.groupBy ?? []) {
 				const resolved = resolveProductEventsGroupByToken(raw, filters, warnings)
 				if (resolved) groupByKeys.push(resolved)
@@ -1689,7 +1697,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 	)
 
 	const metricsGroupByKeys: MetricsGroupByKey[] = []
-	if (query.addOns?.groupBy && (query.groupBy?.length ?? 0) > 0) {
+	if (query.addOns?.groupBy && query.groupBy !== undefined && query.groupBy.length > 0) {
 		for (const raw of query.groupBy ?? []) {
 			const resolved = resolveMetricsGroupByToken(raw, metricsFilters, warnings)
 			if (resolved) metricsGroupByKeys.push(resolved)
@@ -1794,7 +1802,7 @@ export function buildBreakdownQuerySpec(
 	const limitRaw = query.addOns?.limit ? Str.trim(query.limit ?? "") : ""
 	const parsedLimit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined
 	const limit =
-		parsedLimit && Number.isFinite(parsedLimit) && parsedLimit > 0 && parsedLimit <= 100
+		parsedLimit !== undefined && Number.isFinite(parsedLimit) && parsedLimit > 0 && parsedLimit <= 100
 			? parsedLimit
 			: options?.defaultLimit
 
@@ -1830,7 +1838,7 @@ export function buildListQuerySpec(
 			source: spec.source,
 			filters: (spec as { filters?: unknown }).filters,
 			limit,
-			...(columns?.length ? { columns } : undefined),
+			...(columns !== undefined && columns.length > 0 ? { columns } : undefined),
 		} as QuerySpec,
 		warnings: timeseriesResult.warnings,
 		error: null,
@@ -1855,7 +1863,7 @@ interface FormattableAttrFilter {
 }
 
 function formatAttrFilterClause(prefix: string, af: FormattableAttrFilter): string {
-	if (af.or?.length) {
+	if (af.or !== undefined && af.or.length > 0) {
 		const { or, ...first } = af
 		return `(${Arr.join(
 			Arr.map([first, ...or], (member) => formatAttrFilterClause(prefix, member)),

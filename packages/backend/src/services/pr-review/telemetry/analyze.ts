@@ -380,12 +380,12 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 		services,
 		// Alerts first: a silent alert is worse than an empty chart.
 		contractBreaks: breaks
-			.sort(
-				(a, b) =>
+			.sort((a, b) => {
+				const byAlert =
 					Number(Arr.some(b.references, (ref) => ref.kind === "alert")) -
-						Number(Arr.some(a.references, (ref) => ref.kind === "alert")) ||
-					(b.perDay ?? 0) - (a.perDay ?? 0),
-			)
+					Number(Arr.some(a.references, (ref) => ref.kind === "alert"))
+				return byAlert !== 0 ? byAlert : (b.perDay ?? 0) - (a.perDay ?? 0)
+			})
 			.slice(0, MAX_BREAKS),
 		hotFiles: hotFiles.slice(0, MAX_HOT_FILES),
 		linkedIssues,

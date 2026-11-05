@@ -527,7 +527,9 @@ export const tracesTimeseries = (
 						aggregation,
 						filters,
 						...(group ? { group_by: group } : undefined),
-						...(p.bucketSeconds ? { bucket_seconds: p.bucketSeconds } : undefined),
+						...(p.bucketSeconds !== undefined && p.bucketSeconds > 0
+							? { bucket_seconds: p.bucketSeconds }
+							: undefined),
 					},
 				}),
 			),
@@ -574,7 +576,7 @@ export const tracesBreakdown = (
 						aggregation,
 						group_by: group,
 						filters,
-						...(p.limit ? { limit: p.limit } : undefined),
+						...(p.limit !== undefined && p.limit > 0 ? { limit: p.limit } : undefined),
 					},
 				}),
 			),

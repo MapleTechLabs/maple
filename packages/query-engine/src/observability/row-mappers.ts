@@ -38,7 +38,7 @@ export const toSpanResult = (t: ListTracesOutput): SpanResult => ({
 	spanName: t.rootSpanName,
 	serviceName: t.services[0] ?? "",
 	durationMs: t.durationMicros / 1000,
-	statusCode: t.rootSpanStatusCode || (t.hasError ? "Error" : "Unset"),
+	statusCode: t.rootSpanStatusCode || (t.hasError !== 0 ? "Error" : "Unset"),
 	statusMessage: t.rootSpanStatusMessage,
 	attributes: parseProjectedAttributes(t.rootSpanAttributes),
 	resourceAttributes: {

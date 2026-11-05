@@ -79,7 +79,7 @@ export function bottom(layout: ReadonlyArray<Box>): number {
 }
 
 function sortByRowCol<T extends Box>(layout: ReadonlyArray<T>): T[] {
-	return layout.toSorted((a, b) => a.y - b.y || a.x - b.x)
+	return layout.toSorted((a, b) => (a.y !== b.y ? a.y - b.y : a.x - b.x))
 }
 
 /** Pull items wider or further right than the grid back inside it. */

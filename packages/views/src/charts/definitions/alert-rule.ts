@@ -45,7 +45,9 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 	const yDomain: [number, number] = [0, spec.yMax]
 	const breachAbove = spec.comparator === "gt" || spec.comparator === "gte"
 	const breachBelow = spec.comparator === "lt" || spec.comparator === "lte"
-	const splitOffset = clamp01((yDomain[1] - spec.threshold) / (yDomain[1] - yDomain[0] || 1))
+	const splitOffset = clamp01(
+		(yDomain[1] - spec.threshold) / (yDomain[1] !== yDomain[0] ? yDomain[1] - yDomain[0] : 1),
+	)
 	const axisContext = {
 		rangeMs: spec.domainMax - spec.domainMin,
 		bucketSeconds: spec.bucketSeconds ?? undefined,

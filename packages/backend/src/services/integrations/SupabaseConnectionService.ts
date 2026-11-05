@@ -676,7 +676,10 @@ export class SupabaseConnectionService extends Context.Service<
 				lastDiscoveryError: connection.lastDiscoveryError,
 				projects: projects
 					.filter((row) => row.removedAt === null)
-					.sort((a, b) => a.name.localeCompare(b.name) || a.projectRef.localeCompare(b.projectRef))
+					.sort((a, b) => {
+						const byName = a.name.localeCompare(b.name)
+						return byName !== 0 ? byName : a.projectRef.localeCompare(b.projectRef)
+					})
 					.map(
 						(row) =>
 							new SupabaseProjectStatus({
