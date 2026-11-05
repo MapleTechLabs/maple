@@ -2083,12 +2083,15 @@ describe("v2 users wire mapping over HTTP", () => {
 		],
 		userActivitySlices: [
 			{
-				hour: "2026-11-01 15:00:00",
 				serviceName: "orders-api",
 				serviceNamespace: "storefront",
 				spanCount: 1,
 				requestCount: 1,
 				logCount: 0,
+				firstRequestHour: "2026-11-01 15:00:00",
+				lastRequestHour: "2026-11-01 15:00:00",
+				firstLogHour: "1970-01-01 00:00:00",
+				lastLogHour: "1970-01-01 00:00:00",
 			},
 		],
 		userNotableTraces: [
