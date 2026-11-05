@@ -10479,7 +10479,7 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- builder:users:usersListQuery:activityRollup  [5e634f72]
+-- builder:users:usersListQuery:activityRollup  [b8435e1d]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10584,11 +10584,12 @@ SELECT
         GROUP BY userId, namespace
 ) AS signals
         GROUP BY userId
-        ORDER BY lastSeen DESC
+        ORDER BY lastSeen DESC, userId ASC
         LIMIT 200
+        OFFSET 0
         FORMAT JSON
 
--- builder:users:usersListQuery:namespaceFiltered  [e1f09d51]
+-- builder:users:usersListQuery:namespaceFiltered  [8d2bc3a0]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10700,11 +10701,12 @@ SELECT
           AND sum(signals.sessions) > 0
           AND anyIf(signals.groupId, signals.groupId != '') IN ('acme')
           AND ((signals.userId ILIKE '%ada%' OR anyIf(signals.name, signals.name != '') ILIKE '%ada%') OR anyIf(signals.email, signals.email != '') ILIKE '%ada%')
-        ORDER BY lastSeen DESC
+        ORDER BY lastSeen DESC, userId ASC
         LIMIT 200
+        OFFSET 0
         FORMAT JSON
 
--- builder:users:usersListQuery:unscoped  [71404ca5]
+-- builder:users:usersListQuery:unscoped  [d42a2acc]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10802,8 +10804,9 @@ SELECT
         GROUP BY userId, namespace
 ) AS signals
         GROUP BY userId
-        ORDER BY lastSeen DESC
+        ORDER BY lastSeen DESC, userId ASC
         LIMIT 200
+        OFFSET 0
         FORMAT JSON
 
 -- builder:users:usersServiceNamespacesQuery:default  [7caa4563]
