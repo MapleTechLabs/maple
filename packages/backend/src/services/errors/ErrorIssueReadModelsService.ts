@@ -231,7 +231,7 @@ export const affectedUsersResponse = (
 /** A read naming `error_events.UserId`, `None` on a cluster that has not applied migration 0057. */
 const userIdRead = <A, E, R>(read: Effect.Effect<A, E, R>): Effect.Effect<Option.Option<A>, E, R> =>
 	read.pipe(
-		Effect.map(Option.some),
+		Effect.asSome,
 		Effect.catchIf(isMissingErrorEventsUserId, () => Effect.succeed(Option.none<A>())),
 	)
 

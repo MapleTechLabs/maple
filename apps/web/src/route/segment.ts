@@ -78,12 +78,11 @@ export const boundedRestSegments = <K extends string>(
 	return {
 		...rest,
 		parse: (segments) =>
-			Effect.flatMap(rest.parse(segments), (result) =>
-				result[0][name].length > maxLength
-					? Effect.fail(
-							new ParseError({ message: `${name} is longer than ${maxLength} characters` }),
-						)
-					: Effect.succeed(result),
+			rest.parse(segments).pipe(
+				Effect.filterOrFail(
+					(result) => result[0][name].length <= maxLength,
+					() => new ParseError({ message: `${name} is longer than ${maxLength} characters` }),
+				),
 			),
 	}
 }
