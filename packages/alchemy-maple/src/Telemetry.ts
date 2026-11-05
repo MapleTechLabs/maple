@@ -45,22 +45,22 @@ declare global {
 
 /**
  * A resource passed to the layer: the module-scope declaration (an Effect that
- * resolves to the instance) or an already-yielded instance.
+ * resolves to the instance) or an already-yielded instance. `Req` is the declaration's provider set.
  */
-export type ResourceInput<T> = T | Effect.Effect<T, never, unknown>
+export type ResourceInput<T, Req = unknown> = T | Effect.Effect<T, never, Req>
 
 /** The SDK options the layer forwards unchanged; the bound ones are declared on {@link TelemetryProps}. */
 export type TelemetrySdkOptions = Omit<MapleCloudflareSDK.Config, "ingestKey" | "endpoint" | "environment">
 
-export interface TelemetryProps extends TelemetrySdkOptions {
+export interface TelemetryProps<Req = unknown> extends TelemetrySdkOptions {
 	/** Shared Maple Local resource used only during `alchemy dev`; hosted settings remain deploy-only. */
-	readonly local?: ResourceInput<Local> | undefined
+	readonly local?: ResourceInput<Local, Req> | undefined
 	/**
 	 * Bound onto the host as the `MAPLE_INGEST_KEY` secret: the org's
 	 * {@link IngestKeys} resource (its private key is used), or a key in hand.
 	 */
 	readonly ingestKey?:
-		| ResourceInput<IngestKeys>
+		| ResourceInput<IngestKeys, Req>
 		| Redacted.Redacted
 		| Output.Output<Redacted.Redacted>
 		| undefined
@@ -70,9 +70,9 @@ export interface TelemetryProps extends TelemetrySdkOptions {
 	readonly environment?: string | Output.Output<string> | undefined
 }
 
-const ingestKeyOutput = (
-	ingestKey: NonNullable<TelemetryProps["ingestKey"]>,
-): Effect.Effect<Output.Output<Redacted.Redacted>, never, unknown> =>
+const ingestKeyOutput = <Req>(
+	ingestKey: NonNullable<TelemetryProps<Req>["ingestKey"]>,
+): Effect.Effect<Output.Output<Redacted.Redacted>, never, Req> =>
 	Effect.gen(function* () {
 		if (Output.isOutput(ingestKey) || Redacted.isRedacted(ingestKey)) return Output.asOutput(ingestKey)
 		// Declarations are yielded to instances (registering them on the Stack
@@ -114,7 +114,7 @@ const sdkRequestLayer = (telemetry: MapleCloudflareSDK.Telemetry) =>
 		),
 	)
 
-export const Telemetry = (props: TelemetryProps): Layer.Layer<never> => {
+export const Telemetry = <Req = never>(props: TelemetryProps<Req>): Layer.Layer<never> => {
 	const { local, ingestKey, endpoint, environment, ...config } = props
 	const telemetry = MapleCloudflareSDK.make(config)
 	const bind = Layer.effectDiscard(
