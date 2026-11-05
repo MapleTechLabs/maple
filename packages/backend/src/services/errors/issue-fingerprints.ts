@@ -58,7 +58,8 @@ export const issuesOwningHashes = (
 	MapleDbError
 > =>
 	Effect.gen(function* () {
-		if (hashes.length === 0) return new Map()
+		if (hashes.length === 0)
+			return new Map<string, { readonly issueId: ErrorIssueId; readonly firstSeenAt: number }>()
 		const primaries = yield* db.run(
 			PG.from(ErrorIssues)
 				.select(($) => ({ hash: $.fingerprintHash, issueId: $.id, firstSeenAt: $.firstSeenAt }))

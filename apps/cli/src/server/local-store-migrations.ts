@@ -927,8 +927,8 @@ export const executeMigrationModule = async (
 	if (step.status === "verified" || step.status === "completed") {
 		if (step.state === undefined)
 			throw new Error(`${migration.id} ${step.status} step has no recoverable persisted state`)
-		const state = migration.decodeState(step.state)
-		const progress = migration.decodeProgress(step.progress)
+		const state: unknown = migration.decodeState(step.state)
+		const progress: unknown = migration.decodeProgress(step.progress)
 		if (progress === undefined)
 			throw new Error(`${migration.id} ${step.status} step has no recoverable persisted progress`)
 		// Verification has already passed. The only remaining work is the

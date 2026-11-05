@@ -294,9 +294,9 @@ const gitDependencies = (text: string): ReadonlyArray<{ readonly name: string; r
 						manifest.optionalDependencies,
 						manifest.peerDependencies,
 					],
-					(deps) => Rec.toEntries(deps ?? {}),
+					(deps) => (deps === undefined ? [] : Rec.toEntries(deps)),
 				),
-				([name, spec]) =>
+				([name, spec]: readonly [string, unknown]) =>
 					typeof spec === "string" && GIT_DEPENDENCY.test(spec) ? [{ name, spec }] : [],
 			),
 	})
