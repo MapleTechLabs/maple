@@ -33,8 +33,7 @@ vi.mock("./otlp", async (original) => ({
 	},
 }))
 
-const { resourceAttributes, setupTracing, TraceContextPropagator, TraceIdCollector } =
-	await import("./tracing")
+const { resourceAttributes, setupTracing, TraceIdCollector } = await import("./tracing")
 
 const CONFIG = {
 	ingestKey: "k",
@@ -206,26 +205,32 @@ describe("setupTracing unload flush", () => {
 		expect(headers.baggage).toBe("tenant=acme")
 	})
 
-	it("keeps the sampling threshold off the wire, so CORS allowing only traceparent still passes", () => {
-		const propagator = new TraceContextPropagator()
-		const inject = (traceState: string) => {
-			const ctx = trace.setSpanContext(context.active(), {
-				traceId: "0123456789abcdef0123456789abcdef",
-				spanId: "0123456789abcdef",
-				traceFlags: 1,
-				traceState: new TraceState(traceState),
-			})
+	it("keeps the sampling threshold off cross-origin requests only, so CORS allowing traceparent still passes", () => {
+		shutdown = setupTracing(CONFIG)
+		// A sampled parent as `tracing.sampleRate: 0.25` makes it, plus a vendor's own member.
+		const parent = trace.setSpanContext(context.active(), {
+			traceId: "0123456789abcdef0123456789abcdef",
+			spanId: "0123456789abcdef",
+			traceFlags: 1,
+			traceState: new TraceState("vendor=abc,ot=th:c;rv:d5a8b2c1e3f405"),
+		})
+		const headersFor = (url: string) => {
+			const request = trace
+				.getTracer("test")
+				.startSpan("GET", { attributes: { "url.full": url } }, parent)
 			const headers: Record<string, string> = {}
-			propagator.inject(ctx, headers, { set: (carrier, key, value) => void (carrier[key] = value) })
+			propagation.inject(trace.setSpan(context.active(), request), headers)
+			request.end()
 			return headers
 		}
 
-		// What `tracing.sampleRate: 0.25` writes on every sampled span.
-		const sampled = inject("ot=th:c;rv:d5a8b2c1e3f405")
-		expect(sampled.traceparent).toBe("00-0123456789abcdef0123456789abcdef-0123456789abcdef-01")
-		expect(sampled).not.toHaveProperty("tracestate")
-		// A vendor's own member, extracted from a server-rendered parent, still travels.
-		expect(inject("vendor=abc,ot=th:c").tracestate).toBe("vendor=abc")
+		// Same origin: no CORS, and the server span keeps its sampling weight.
+		expect(headersFor(`${location.origin}/api/users`).tracestate).toBe(
+			"vendor=abc,ot=th:c;rv:d5a8b2c1e3f405",
+		)
+		const crossOrigin = headersFor("https://api.example.com/v1/users")
+		expect(crossOrigin.traceparent).toMatch(/^00-0123456789abcdef0123456789abcdef-[0-9a-f]{16}-01$/)
+		expect(crossOrigin.tracestate).toBe("vendor=abc")
 	})
 
 	it("parents a span started inside an active span through the context manager", async () => {

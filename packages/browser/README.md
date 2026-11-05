@@ -189,9 +189,11 @@ MapleBrowser.init({
 
 A string is a URL prefix: `"https://api.example.com"` covers every path on that
 origin, and `"https://api.example.com/v1"` only that path. Use a RegExp to match
-anything else. `tracing.sampleRate` never adds a `tracestate` header, so
-`traceparent` is the only header to allow (plus `baggage` if your app sets
-OpenTelemetry baggage).
+anything else. `tracing.sampleRate` does not add a `tracestate` header to
+cross-origin requests, so `traceparent` is the only header to allow (plus
+`baggage` if your app sets OpenTelemetry baggage). The cost: spans from that API
+don't inherit the browser's sampling weight, so with `sampleRate` below 1 their
+weighted counts read low by that rate.
 
 ## Navigations and data loading
 
