@@ -25,7 +25,7 @@ import {
 	parsePatch,
 } from "./diff"
 import { escapeRegExp, referencesFor, type ReferenceSource } from "./references"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /** One production operation over the catalog window. */
 export interface CatalogOperation {
@@ -323,12 +323,16 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 
 	// A file the frame names with its directory wins over one it names only by the same file name.
 	const matched = Arr.map(input.issues, (issue) => {
-		const byDirectory = files.find(
+		const byDirectory = Arr.findFirst(
+			files,
 			(candidate) => frameMatchOf(issue.topFrame, candidate.path) === "directory",
 		)
-		const file =
-			byDirectory ?? files.find((candidate) => frameMatchOf(issue.topFrame, candidate.path) === "name")
-		return { issue, file, byName: file !== undefined && byDirectory === undefined }
+		const file = Option.getOrUndefined(
+			Option.orElse(byDirectory, () =>
+				Arr.findFirst(files, (candidate) => frameMatchOf(issue.topFrame, candidate.path) === "name"),
+			),
+		)
+		return { issue, file, byName: file !== undefined && Option.isNone(byDirectory) }
 	})
 	const issuesPerService = new Map<string, number>()
 	const matchesPerFile = new Map<string, number>()

@@ -17,14 +17,17 @@ import * as Tooltip from "@maple/views/ui/tooltip"
 import { relativeTime } from "../../kit/relative-time"
 import { Message, type Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // `FindingRow` under one `RelativeTime` tooltip.
 
 type H = HtmlBuilder<Message>
 
 /** Last path segment: kept visible when a long path middle-truncates. */
-const basename = (path: string) => Str.slice(path.lastIndexOf("/") + 1)(path)
+const basename = (path: string) =>
+	Str.slice(Option.match(Str.lastIndexOf("/")(path), { onNone: () => 0, onSome: (slash) => slash + 1 }))(
+		path,
+	)
 
 const timeTriggerId = (finding: CodeReviewFinding) => `code-review-finding-time-${finding.id}`
 
@@ -93,10 +96,15 @@ export const findingsList = (
 		viewInputs: {
 			triggerIds: Arr.map(findings, timeTriggerId),
 			toContent: (triggerId) => {
-				const finding = findings.find((candidate) => timeTriggerId(candidate) === triggerId)
-				return finding === undefined
-					? []
-					: [formatTimestampInTimezone(finding.createdAt, { timeZone, withYear: true })]
+				return Option.match(
+					Arr.findFirst(findings, (candidate) => timeTriggerId(candidate) === triggerId),
+					{
+						onNone: () => [],
+						onSome: (finding) => [
+							formatTimestampInTimezone(finding.createdAt, { timeZone, withYear: true }),
+						],
+					},
+				)
 			},
 			toView: ({ trigger, portal }) =>
 				h.div(

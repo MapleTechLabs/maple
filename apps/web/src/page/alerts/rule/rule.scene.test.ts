@@ -153,7 +153,7 @@ describe("alert rule", () => {
 		expect(tabbed.commands ?? []).toEqual([])
 		expect(tabbed.model.search).toEqual({ tab: "history" })
 		const moved = routeChanged(tabbed.model, route({ tab: "history", timePreset: "1h" }), context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveAlertRuleWindow", "Refresh"],
 		])
 	})

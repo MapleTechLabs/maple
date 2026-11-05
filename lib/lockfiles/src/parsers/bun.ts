@@ -23,13 +23,13 @@ const BunLock = Schema.Struct({
 
 /** Package keys are install paths of dependency names (`express/debug`, `@fx/a/lodash`); split them. */
 const keySegments = (key: string): ReadonlyArray<string> =>
-	Str.split("/")(key).reduce<Array<string>>((segments, part) => {
+	Arr.reduce(Str.split("/")(key), Arr.empty<string>(), (segments, part) => {
 		const last = segments.at(-1)
 		if (last !== undefined && Str.startsWith("@")(last) && !Str.includes("/")(last))
 			segments[segments.length - 1] = `${last}/${part}`
 		else segments.push(part)
 		return segments
-	}, [])
+	})
 
 interface DepNames {
 	readonly direct: ReadonlySet<string>

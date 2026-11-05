@@ -15,7 +15,7 @@ import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
 import { ChatSessions, type ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
-import { Cause, Config, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Cause, Config, Effect, Layer, Option, Redacted, Schema, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
@@ -268,8 +268,9 @@ const ports = (
  * for, and the trigger already says so once per isolate.
  */
 export const runInboundEvent = async (host: RelayHost, event: InboundEvent): Promise<void> => {
-	const connector = connectors.find((candidate) => candidate.id === event.connector)
-	if (connector === undefined) return
+	const found = Arr.findFirst(connectors, (candidate) => candidate.id === event.connector)
+	if (Option.isNone(found)) return
+	const connector = found.value
 
 	await Effect.runPromise(
 		Effect.gen(function* () {
@@ -324,9 +325,9 @@ export const settleInboundTurn = async (
 	stored: unknown,
 ): Promise<SettleOutcome> => {
 	const checkpoint = decodeRelayTurnCheckpoint(stored)
-	const connector = Option.isNone(checkpoint)
-		? undefined
-		: connectors.find((candidate) => candidate.id === checkpoint.value.connector)
+	const connector = Option.flatMap(checkpoint, (turn) =>
+		Arr.findFirst(connectors, (candidate) => candidate.id === turn.connector),
+	)
 	const relayHost: RelayHost = {
 		...host,
 		announceUnlinked: Effect.succeed(false),
@@ -335,8 +336,10 @@ export const settleInboundTurn = async (
 	}
 	return Effect.runPromise(
 		Effect.gen(function* () {
-			const config = connector === undefined ? undefined : yield* resolveConnectorConfig(connector)
-			if (Option.isNone(checkpoint) || connector === undefined || config?._tag !== "ready") {
+			const config = Option.isNone(connector)
+				? undefined
+				: yield* resolveConnectorConfig(connector.value)
+			if (Option.isNone(checkpoint) || Option.isNone(connector) || config?._tag !== "ready") {
 				yield* Effect.logWarning("A turn checkpoint this build cannot settle was dropped")
 				return "done" satisfies SettleOutcome
 			}
@@ -347,12 +350,12 @@ export const settleInboundTurn = async (
 				lookupWorkspace(
 					relayHost,
 					environment.settings,
-					connector,
+					connector.value,
 					checkpoint.value.connector,
 					target.workspaceId,
 					undefined,
 				),
-				(resolveWorkspace) => ports(relayHost, environment, connector, resolveWorkspace),
+				(resolveWorkspace) => ports(relayHost, environment, connector.value, resolveWorkspace),
 				(settlePorts) => settleRelayedTurn(checkpoint.value, settlePorts),
 			)
 		}).pipe(inRuntime(host)),

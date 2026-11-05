@@ -52,17 +52,21 @@ const typeItem =
 	(h: H, summary: Option.Option<ReadonlyArray<SummaryRow>>) =>
 	(option: SelectOption): ReadonlyArray<Html | string> => {
 		const rows = Option.getOrUndefined(summary)
-		const row = rows?.find((candidate) => candidate.metricType === option.value)
+		const row = Option.flatMap(summary, (all) =>
+			Arr.findFirst(all, (candidate) => candidate.metricType === option.value),
+		)
 		const count =
 			rows === undefined
 				? undefined
 				: option.value === "all"
 					? Arr.reduce(rows, 0, (total, next) => total + next.metricCount)
-					: (row?.metricCount ?? 0)
+					: Option.match(row, { onNone: () => 0, onSome: (found) => found.metricCount })
 		const dataPoints =
 			option.value === "all"
-				? rows?.reduce((total, next) => total + next.dataPointCount, 0)
-				: row?.dataPointCount
+				? rows === undefined
+					? undefined
+					: Arr.reduce(rows, 0, (total, next) => total + next.dataPointCount)
+				: Option.getOrUndefined(Option.map(row, (found) => found.dataPointCount))
 		return [
 			h.span(
 				[

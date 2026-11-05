@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { DateTime } from "effect"
+import { Array as Arr, DateTime } from "effect"
 import {
 	bucketActivity,
 	eventDetail,
@@ -96,7 +96,7 @@ describe("mergeActivity", () => {
 
 	it("merges every source newest first, an MCP session at its start", () => {
 		const items = mergeActivity({ sessions: [session], events: [event], mcpSessions: [mcpSession] })
-		expect(items.map((item) => [item.kind, item.atMs])).toEqual([
+		expect(Arr.map(items, (item) => [item.kind, item.atMs])).toEqual([
 			["event", 3_000],
 			["mcp", 2_000],
 			["session", 1_000],
@@ -121,7 +121,7 @@ describe("mergeActivity", () => {
 
 	it("keeps the latest rows when capped", () => {
 		const items = mergeActivity({ sessions: [session], events: [event], mcpSessions: [mcpSession] }, 2)
-		expect(items.map((item) => item.kind)).toEqual(["event", "mcp"])
+		expect(Arr.map(items, (item) => item.kind)).toEqual(["event", "mcp"])
 	})
 
 	it("adds failed and slow requests and warnings, each opening its trace", () => {
@@ -142,7 +142,7 @@ describe("mergeActivity", () => {
 			traces: [trace(5_000, "Error", 120), trace(4_000, "Ok", 2_400)],
 			logs: [{ atMs: 6_000, severity: "WARN", service: "api", body: "card declined", traceId: "" }],
 		})
-		expect(items.map((item) => [item.kind, item.tone, item.traceId])).toEqual([
+		expect(Arr.map(items, (item) => [item.kind, item.tone, item.traceId])).toEqual([
 			["log", "warn", null],
 			["request", "crit", "t5000"],
 			["request", "warn", "t4000"],

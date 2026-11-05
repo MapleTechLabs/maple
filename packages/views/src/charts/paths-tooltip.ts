@@ -15,7 +15,7 @@ import {
 } from "./paths-layout"
 import { typography } from "../ui/typography"
 import { swatch } from "../ui/swatch"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 
 // The hover card of `PathsChart`: who reached the node, and the top three flows into it.
 
@@ -39,9 +39,10 @@ const cameFrom = (h: H, inputs: PathsTooltipInputs): ReadonlyArray<Html> => {
 		h.div([h.Class("-mx-2.5 my-1.5 h-px bg-border")]),
 		eyebrow(h, { as: "div", className: "mb-1" }, ["Came from"]),
 		...Arr.map(
-			Arr.filter(links, (link) => link.target === node.id)
-				.toSorted((a, b) => b.count - a.count)
-				.slice(0, 3),
+			Arr.sort(
+				Arr.filter(links, (link) => link.target === node.id),
+				Order.flip(Order.mapInput(Order.Number, (link: { readonly count: number }) => link.count)),
+			).slice(0, 3),
 			(link) => {
 				const from = graph.nodes.get(link.source)
 				const share = node.count > 0 ? link.count / node.count : 0

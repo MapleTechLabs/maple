@@ -5,7 +5,7 @@ import {
 	VcsCommitNotFoundError,
 	VcsCommitShaInvalidError,
 } from "@maple/domain/http"
-import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Layer, Schema, Array as Arr, String as Str, Option, Order } from "effect"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import type { HttpClient } from "effect/http"
@@ -48,8 +48,9 @@ const routedHttp = (resolvable: (repoName: string, sha: string) => boolean) => {
 		if (Str.includes("/access_tokens")(url) && method === "POST") {
 			return jsonResponse({ token: "ghs_test", expires_at: "2999-01-01T00:00:00Z" })
 		}
-		const match = url.match(/\/repos\/[^/]+\/([^/]+)\/commits\/([0-9a-fA-F]+)/)
-		if (match) {
+		const commitMatch = Str.match(/\/repos\/[^/]+\/([^/]+)\/commits\/([0-9a-fA-F]+)/)(url)
+		if (Option.isSome(commitMatch)) {
+			const match = commitMatch.value
 			calls.commitGets += 1
 			const [, repoName, sha] = match
 			return resolvable(repoName!, Str.toLowerCase(sha!))
@@ -301,7 +302,13 @@ describe("VcsCommitService.resolveCommitDetails", () => {
 
 			const details = yield* svc.resolveCommitDetails(orgId, SHAS)
 			assert.strictEqual(details.length, 3)
-			assert.deepStrictEqual(Arr.map(details, (d) => d.sha).toSorted(), [...SHAS].toSorted())
+			assert.deepStrictEqual(
+				Arr.sort(
+					Arr.map(details, (d) => d.sha),
+					Order.String,
+				),
+				Arr.sort(SHAS, Order.String),
+			)
 			assert.ok(Arr.every(details, (d) => d.resolved === "stored"))
 			assert.strictEqual(details[0]!.repoFullName, "octo/repo")
 			// The whole batch must be two reads, not one per SHA.
@@ -353,7 +360,7 @@ describe("VcsCommitService.resolveCommitDetails", () => {
 		// Everything resolves upstream, so only the cap limits the probe count.
 		const { layer, calls } = routedHttp(() => true)
 		// 12 distinct valid SHAs, none stored — above the BULK_PROBE_LIMIT of 8.
-		const SHAS = Arr.map("0123456789ab".split(""), (c) => Str.repeat(40)(c))
+		const SHAS = Arr.map(Str.split("")("0123456789ab"), (c) => Str.repeat(40)(c))
 		return Effect.gen(function* () {
 			const svc = yield* VcsCommitService
 			const repo = yield* VcsRepository

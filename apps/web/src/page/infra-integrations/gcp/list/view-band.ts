@@ -155,7 +155,7 @@ export const gcpBand = <R, S extends string, M>(
 		caption: spec.caption,
 		segments: [
 			{ key: "healthy", count: count("ok"), className: TONE_FILL.ok },
-			...Arr.map(rules.worst.toReversed(), (scope) => ({
+			...Arr.map(Arr.reverse(rules.worst), (scope) => ({
 				key: spec.cells[scope].segment,
 				count: count(scope),
 				className: TONE_FILL[spec.cells[scope].tone],

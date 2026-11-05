@@ -8,7 +8,7 @@
  * a shared second, the line that opens a step of the next step's kind is what moves them on.
  */
 import type { WorkflowJobJob } from "@maple/domain/http"
-import { Stream, Array as Arr, String as Str } from "effect"
+import { Order, Stream, Array as Arr, String as Str } from "effect"
 import { timestampMs } from "@maple/backend/platform/time"
 import {
 	type OtlpKeyValue,
@@ -132,8 +132,9 @@ export const jobLogRecords = <E, R>(
 	}
 	// A skipped step prints nothing, though the API stamps it with the next step's start.
 	const steps = Arr.map(
-		Arr.filter(job.steps, (step) => step.conclusion !== "skipped").toSorted(
-			(a, b) => a.number - b.number,
+		Arr.sort(
+			Arr.filter(job.steps, (step) => step.conclusion !== "skipped"),
+			Order.mapInput(Order.Number, (step: { readonly number: number }) => step.number),
 		),
 		(step) => ({ step, spanId: stepSpanId(job, step), kind: stepKind(step.name) }),
 	)

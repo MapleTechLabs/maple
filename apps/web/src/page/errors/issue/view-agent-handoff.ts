@@ -108,7 +108,7 @@ const agentLane = (h: H, model: Model, prompt: string): Html =>
 		],
 	})
 
-const sentenceCase = (text: string): string => Str.toUpperCase(text.charAt(0)) + Str.slice(1)(text)
+const sentenceCase = (text: string): string => Str.toUpperCase(Str.slice(0, 1)(text)) + Str.slice(1)(text)
 
 const investigationSummary = (investigation: V2Investigation): string =>
 	investigation.report?.suspectedCause ??

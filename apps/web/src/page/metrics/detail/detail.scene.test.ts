@@ -187,7 +187,7 @@ describe("metric detail", () => {
 			{ metricName: NAME, search: { ...search, timePreset: "1h" } },
 			context,
 		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveMetricWindow", "Refresh"],
 		])
 	})

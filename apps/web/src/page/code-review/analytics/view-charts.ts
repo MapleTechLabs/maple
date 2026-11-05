@@ -13,7 +13,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { repositoryList } from "./view-lists"
 import { vstack } from "@maple/views/ui/stack"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Record as Rec, Order } from "effect"
 
 // `VolumeCard` and `IssuesCard`.
 
@@ -86,9 +86,12 @@ const isSeverity = (value: string): value is keyof typeof SEVERITY_SERIES => val
 
 const topRepositories = (analytics: CodeReviewAnalytics, by: "reviews" | "findings") =>
 	Arr.map(
-		Arr.filter(analytics.repositories, (repo) => repo[by] > 0)
-			.toSorted((a, b) => b[by] - a[by])
-			.slice(0, 5),
+		Arr.sort(
+			Arr.filter(analytics.repositories, (repo) => repo[by] > 0),
+			Order.flip(
+				Order.mapInput(Order.Number, (repo: CodeReviewAnalytics["repositories"][number]) => repo[by]),
+			),
+		).slice(0, 5),
 		(repo) => ({ key: repo.repositoryId, name: repo.fullName, value: repo[by] }),
 	)
 

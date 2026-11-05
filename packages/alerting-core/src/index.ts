@@ -326,7 +326,7 @@ export const makeAlertDeliveryKey = (
 	destinationId: string,
 	eventType: AlertEventType,
 	scheduledAtMs: number,
-): string => [incidentId, destinationId, eventType, scheduledAtMs].join(":")
+): string => Arr.join([incidentId, destinationId, eventType, String(scheduledAtMs)], ":")
 
 export const canRetryAlertDelivery = (
 	attemptNumber: number,
@@ -398,7 +398,11 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 		const counters = input.state ?? { consecutiveBreaches: 0, consecutiveHealthy: 0, history: [] }
 		const seedSeverity =
 			current ??
-			policy.severities.reduce<AlertSeverity>((highest, s) => maxSeverity(highest, s) ?? s, "warning")
+			Arr.reduce<AlertSeverity, AlertSeverity>(
+				policy.severities,
+				"warning",
+				(highest, s) => maxSeverity(highest, s) ?? s,
+			)
 		const previous: AlertLifecycleState = {
 			consecutiveBreaches: counters.consecutiveBreaches,
 			consecutiveHealthy: counters.consecutiveHealthy,

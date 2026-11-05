@@ -8,7 +8,7 @@ import {
 	type RuleRecord,
 	spanSampleToRecord,
 } from "@maple/ingest-rules"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Schema, Array as Arr, String as Str, Struct } from "effect"
 
 const encodeAttrJson = Schema.encodeSync(
 	Schema.fromJsonString(Schema.Unknown, {
@@ -83,7 +83,7 @@ const show = (value: AttrValue | undefined): string =>
 	value === undefined ? "" : typeof value === "string" ? value : encodeAttrJson(value)
 
 const mapChanges = (where: string, before: AttrMap, after: AttrMap): ReadonlyArray<ValueChange> =>
-	Arr.flatMap(Object.keys(before), (key) => {
+	Arr.flatMap(Struct.keys(before), (key) => {
 		const was = show(before[key])
 		const now = key in after ? show(after[key]) : null
 		return now === was ? [] : [{ where, key, before: was, after: now }]
@@ -135,7 +135,7 @@ export const REPLACEMENT = /\[REDACTED(?::[a-z0-9_]+)?\]|hash:[0-9a-f]{16}/gu
 export type Segment = { readonly isReplacement: boolean; readonly text: string }
 
 export const segmentsOf = (value: string): ReadonlyArray<Segment> => {
-	const matches = [...value.matchAll(REPLACEMENT)]
+	const matches = [...Str.matchAll(REPLACEMENT)(value)]
 	const ends = Arr.map(matches, (match) => (match.index ?? 0) + match[0].length)
 	const segments = Arr.flatMap(matches, (match, index) => {
 		const start = match.index ?? 0

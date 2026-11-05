@@ -19,7 +19,7 @@ import { widgetOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { queryPanelBar } from "../../kit/query-panel-bar"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // `RawSqlEditorPanel` under the editor's Raw SQL
 // tab: the highlighted SQL, the macro and variable chips, the bucket, Run preview.
@@ -96,7 +96,10 @@ const chip = (h: H, token: string, className: string, trigger: ReadonlyArray<Chi
 
 /** What a chip's tooltip says: the macro's expansion, or how a variable expands. */
 const chipDescription = (chips: ReadonlyArray<readonly [string, string]>, triggerId: string): string =>
-	chips.find((_, index) => chipTriggerId(index) === triggerId)?.[1] ?? ""
+	Arr.findFirst(chips, (_, index) => chipTriggerId(index) === triggerId).pipe(
+		Option.flatMapNullishOr((found) => found[1]),
+		Option.getOrElse(() => ""),
+	)
 
 const IDLE: FieldState = {
 	isInvalid: false,

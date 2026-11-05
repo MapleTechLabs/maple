@@ -62,7 +62,7 @@ const COMPONENT_PREFIX = "#/components/schemas/"
 
 const componentName = (ref: JsonValue | undefined): string | undefined => {
 	const value = asString(ref)
-	return value?.startsWith(COMPONENT_PREFIX) === true
+	return value !== undefined && Str.startsWith(COMPONENT_PREFIX)(value)
 		? Str.slice(COMPONENT_PREFIX.length)(value)
 		: undefined
 }

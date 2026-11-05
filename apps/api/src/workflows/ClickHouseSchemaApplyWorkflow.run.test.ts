@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Cause, Effect, Exit, Layer, Schema } from "effect"
+import { Cause, Effect, Exit, Layer, Schema, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 
 import {
@@ -120,7 +120,7 @@ describe("runClickHouseSchemaApply failure bookkeeping", () => {
 	const failureMessage = (exit: Exit.Exit<unknown, unknown>): string => {
 		assert.isTrue(Exit.isFailure(exit))
 		if (!Exit.isFailure(exit)) return ""
-		assert.isDefined(exit.cause.reasons.find(Cause.isFailReason))
+		assert.isTrue(Arr.some(exit.cause.reasons, Cause.isFailReason))
 		const error = Cause.squash(exit.cause)
 		return error instanceof Error ? error.message : String(error)
 	}

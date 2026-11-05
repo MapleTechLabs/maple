@@ -3,9 +3,10 @@ import { chmodSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } 
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { execFileSync } from "node:child_process"
+import { String as Str } from "effect"
 import { ensureLocalToken, notPrivateReason } from "@maple/local-server/local-token"
 
-const TOKEN = "a".repeat(64)
+const TOKEN = Str.repeat(64)("a")
 const failure = (path: string) =>
 	ensureLocalToken(path, "maintenance token").then(
 		() => undefined,

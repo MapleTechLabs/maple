@@ -12,7 +12,7 @@ import type { QueryDraft } from "./draft"
 import { Message, type Model } from "./panel"
 import { whereEditor } from "./where-editor"
 import { whereSpecOf, whereTextareaId } from "./where"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Record as Rec, Option } from "effect"
 
 // The pieces of a `QueryPanel` body: the where clause, the add-on toggles and their sections.
 
@@ -41,9 +41,8 @@ export const panelSelect = (
 		toView: (parts: ReadonlyArray<Html>) => Html
 	}>,
 ): Html => {
-	const index = options.findIndex((option) => option.value === value)
-	const current =
-		model.selects[id] ?? Select.init(id, { value, selectedIndex: index === -1 ? null : index })
+	const index = Option.getOrNull(Arr.findFirstIndex(options, (option) => option.value === value))
+	const current = model.selects[id] ?? Select.init(id, { value, selectedIndex: index })
 	return h.submodel({
 		slotId: `${model.slotPrefix}-select-${id}`,
 		model: { ...current, value },

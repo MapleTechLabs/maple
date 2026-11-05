@@ -16,7 +16,7 @@ import { analyticsRowIcon, dimensionHasIcons } from "./view-icons"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // `AnalyticsBreakdownPanel`: one breakdown card.
 
@@ -52,13 +52,13 @@ const shareBarStyle = (share: number): Readonly<Record<string, string>> => {
 	}
 }
 
-const columnLabel = (noun: string): string => Str.toUpperCase(noun.charAt(0)) + Str.slice(1)(noun)
+const columnLabel = (noun: string): string => Str.toUpperCase(Str.slice(0, 1)(noun)) + Str.slice(1)(noun)
 
 /** The panel's resolved view: tab, rows filtered and shared, the sort in effect. */
 export const panelView = (state: PanelState, dimensions: ReadonlyArray<BreakdownDimension>) => {
-	const firstPopulated = Math.max(
-		dimensions.findIndex((dimension) => dimension.rows.length > 0),
-		0,
+	const firstPopulated = Option.getOrElse(
+		Arr.findFirstIndex(dimensions, (dimension) => dimension.rows.length > 0),
+		() => 0,
 	)
 	const activeTab = state.pickedTab ?? firstPopulated
 	const dimension = dimensions[activeTab] ?? dimensions[0]
@@ -71,7 +71,7 @@ export const panelView = (state: PanelState, dimensions: ReadonlyArray<Breakdown
 		Arr.filter(dimension.rows, (row) =>
 			needle
 				? Str.includes(needle)(Str.toLowerCase(label(row.name))) ||
-					(row.secondary?.toLowerCase().includes(needle) ?? false)
+					(row.secondary !== undefined && Str.includes(needle)(Str.toLowerCase(row.secondary)))
 				: true,
 		),
 		(row) => ({ ...row, share: total > 0 ? (hasViews ? (row.views ?? 0) : row.count) / total : 0 }),

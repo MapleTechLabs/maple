@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Cause, Effect, Exit, Fiber, Latch, Layer, Array as Arr } from "effect"
+import { Cause, Effect, Exit, Fiber, Latch, Layer, Order, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { env as workerEnv } from "../test/stubs/cloudflare-workers"
 import { scheduleFor } from "./schedule"
@@ -71,7 +71,7 @@ describe("alerting Effect root", () => {
 					yield* selectLaneProgram(cron, lane, recordingTicks(calls))
 					perLane.push(calls)
 				}
-				expect(perLane.flat().toSorted()).toEqual([...expected].toSorted())
+				expect(Arr.sort(Arr.flatten(perLane), Order.String)).toEqual(Arr.sort(expected, Order.String))
 				expect(Arr.every(perLane, (calls) => calls.length > 0)).toBe(true)
 			}),
 		)

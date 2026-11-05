@@ -40,6 +40,7 @@ export function matchesAnomalyFilters(
 }
 
 export function hasAnomalyFilters(filters: AnomalyFilters): boolean {
+	// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.values would need a cast
 	return Arr.some(Object.values(filters), (values) => (values?.length ?? 0) > 0)
 }
 

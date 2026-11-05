@@ -222,10 +222,11 @@ const pageData = (
 	days: ReadonlyMap<string, CalendarDay>,
 ) => {
 	const withBars = barComponents(snapshot.components)
-	const longest = withBars.reduce<StatusPageSnapshotComponent | undefined>(
+	const longest = Arr.reduce<StatusPageSnapshotComponent, StatusPageSnapshotComponent | undefined>(
+		withBars,
+		undefined,
 		(best, component) =>
 			best === undefined || component.days.length > best.days.length ? component : best,
-		undefined,
 	)
 	return {
 		end: longest?.days.at(-1)?.day ?? today,

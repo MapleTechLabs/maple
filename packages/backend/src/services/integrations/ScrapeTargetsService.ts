@@ -609,8 +609,8 @@ const validateBranchPatterns = (
 			}),
 		)
 	}
-	const tooLong = normalized.find((pattern) => pattern.length > MAX_BRANCH_PATTERN_LENGTH)
-	if (tooLong !== undefined) {
+	const tooLong = Arr.findFirst(normalized, (pattern) => pattern.length > MAX_BRANCH_PATTERN_LENGTH)
+	if (Option.isSome(tooLong)) {
 		return Effect.fail(
 			new ScrapeTargetValidationError({
 				message: `${field} patterns must be at most ${MAX_BRANCH_PATTERN_LENGTH} characters`,

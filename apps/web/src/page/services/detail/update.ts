@@ -2,7 +2,7 @@ import { UPTIME_LIST_LIMIT } from "../../alerts/shared/uptime-commands"
 import { ENDPOINTS_LIMIT } from "../../../components/services/service-endpoints"
 import { buildServiceOpenIssuesQuery } from "../../../lib/services/error-issues"
 import { parseWarehouseDateTime } from "@maple/query-engine"
-import { Option, type Result, Array as Arr, Record as Rec } from "effect"
+import { Option, type Result, Array as Arr, Record as Rec, Order } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -86,17 +86,14 @@ const keyed = <A, E>(
 
 /** Steps run in order, each against the Model the previous ones patched. */
 const runSteps = (model: Model, steps: ReadonlyArray<(model: Model) => Step>): Return =>
-	steps.reduce<Return>(
-		(result, step) => {
-			const next = step(result.model)
-			return {
-				...result,
-				model: { ...result.model, ...next.patch },
-				commands: [...(result.commands ?? []), ...next.commands],
-			}
-		},
-		{ model },
-	)
+	Arr.reduce<(model: Model) => Step, Return>(steps, { model }, (result, step) => {
+		const next = step(result.model)
+		return {
+			...result,
+			model: { ...result.model, ...next.patch },
+			commands: [...(result.commands ?? []), ...next.commands],
+		}
+	})
 
 /** `useEffectiveTimeRange(startTime, endTime, timePreset ?? "12h")`; snapped until a Reload. */
 export const windowOf = (model: Model, context: PageContext, nowMs: number): TimeWindow =>
@@ -339,15 +336,24 @@ const isCollapsedKind = (kind: string) => kind === "probes" || kind === "unroute
 export const seriesSpanNames = (model: Model): ReadonlyArray<string> =>
 	model.endpoints.retained === true
 		? []
-		: Arr.filter(
-				groupsOf(loadedEndpoints(model), model.sorts.endpoints),
-				(group) => !isCollapsedKind(group.kind),
+		: Arr.sort(
+				Arr.map(
+					Arr.sort(
+						Arr.flatMap(
+							Arr.filter(
+								groupsOf(loadedEndpoints(model), model.sorts.endpoints),
+								(group) => !isCollapsedKind(group.kind),
+							),
+							(group: ReturnType<typeof groupsOf>[number]) => group.endpoints,
+						),
+						Order.flip(
+							Order.mapInput(Order.Number, (endpoint: Endpoint) => endpoint.estimatedSpanCount),
+						),
+					).slice(0, SPARKLINE_ENDPOINTS),
+					(endpoint) => endpoint.spanName,
+				),
+				Order.String,
 			)
-				.flatMap((group) => group.endpoints)
-				.toSorted((a, b) => b.estimatedSpanCount - a.estimatedSpanCount)
-				.slice(0, SPARKLINE_ENDPOINTS)
-				.map((endpoint) => endpoint.spanName)
-				.toSorted()
 
 /** What `ServiceApiTab` mounts: the endpoints, the KPI overview, the status rows and the sparklines. */
 const apiTabSteps = (context: PageContext, window: TimeWindow, mode: RequestMode): Steps => [
@@ -453,8 +459,10 @@ const liftPeek = (model: Model, result: EndpointPeekUpdate.Return): Return => {
 
 const stepTarget = (model: Model, step: 1 | -1): string | undefined => {
 	const rows = tableRows(model)
-	const index = rows.findIndex((row) => row.spanName === model.search.endpoint)
-	return index < 0 ? undefined : rows[index + step]?.spanName
+	return Option.match(
+		Arr.findFirstIndex(rows, (row) => row.spanName === model.search.endpoint),
+		{ onNone: () => undefined, onSome: (index) => rows[index + step]?.spanName },
+	)
 }
 
 /**
@@ -467,10 +475,13 @@ const reconcilePeek = (model: Model): Readonly<{ model: Model; clear: boolean }>
 	if (spanName === undefined || tabOf(model.search) !== "api" || !AsyncData.isSuccess(model.endpoints.data))
 		return { model, clear: false }
 	if (Arr.some(tableRows(model), (row) => row.spanName === spanName)) return { model, clear: false }
-	const group = groupsOf(loadedEndpoints(model), model.sorts.endpoints).find(
-		(candidate) =>
-			isCollapsedKind(candidate.kind) &&
-			Arr.some(candidate.endpoints, (row) => row.spanName === spanName),
+	const group = Option.getOrUndefined(
+		Arr.findFirst(
+			groupsOf(loadedEndpoints(model), model.sorts.endpoints),
+			(candidate) =>
+				isCollapsedKind(candidate.kind) &&
+				Arr.some(candidate.endpoints, (row) => row.spanName === spanName),
+		),
 	)
 	return group === undefined || model.expandedEndpointGroups.includes(group.kind)
 		? { model, clear: true }

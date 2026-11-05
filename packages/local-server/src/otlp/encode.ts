@@ -19,7 +19,7 @@
  *   - attributes are arrays of `{ key, value: AnyValue }`
  */
 
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { encodeJson } from "../json"
 
 export interface EncodedBatch {
@@ -113,7 +113,7 @@ function base64ToBytes(b64: string): Uint8Array {
 	const binary = atob(b64)
 	const bytes = new Uint8Array(binary.length)
 	for (let i = 0; i < binary.length; i++) {
-		bytes[i] = binary.charCodeAt(i)
+		bytes[i] = Option.getOrThrow(Str.charCodeAt(binary, i))
 	}
 	return bytes
 }
@@ -301,11 +301,10 @@ function formatDouble(num: number): string {
 		return Object.is(num, -0) ? "-0" : "0"
 	}
 	const s = String(num)
-	const eIndex = s.indexOf("e")
-	if (eIndex === -1) {
-		return s
-	}
-	return expandExponential(s, eIndex)
+	return Option.match(Str.indexOf("e")(s), {
+		onNone: () => s,
+		onSome: (eIndex) => expandExponential(s, eIndex),
+	})
 }
 
 function expandExponential(s: string, eIndex: number): string {
@@ -320,15 +319,15 @@ function expandExponential(s: string, eIndex: number): string {
 		mantissa = Str.slice(1)(mantissa)
 	}
 
-	const dot = mantissa.indexOf(".")
+	const dot = Str.indexOf(".")(mantissa)
 	let intPart: string
 	let fracPart: string
-	if (dot === -1) {
+	if (Option.isNone(dot)) {
 		intPart = mantissa
 		fracPart = ""
 	} else {
-		intPart = Str.slice(0, dot)(mantissa)
-		fracPart = Str.slice(dot + 1)(mantissa)
+		intPart = Str.slice(0, dot.value)(mantissa)
+		fracPart = Str.slice(dot.value + 1)(mantissa)
 	}
 
 	// Combine into a single digit string with a tracked decimal-point position.
@@ -346,7 +345,7 @@ function expandExponential(s: string, eIndex: number): string {
 	}
 
 	// Trim redundant trailing zeros in any fractional part and a dangling dot.
-	if (result.indexOf(".") !== -1) {
+	if (Str.includes(".")(result)) {
 		result = Str.replace(/\.$/, "")(Str.replace(/0+$/, "")(result))
 	}
 	return sign + result

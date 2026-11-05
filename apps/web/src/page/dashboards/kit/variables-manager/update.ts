@@ -14,7 +14,7 @@ import {
 	withType,
 } from "./derive"
 import { type FormField, Message, type Model, OutMessage, type Variable } from "./model"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage>
 
@@ -188,8 +188,10 @@ const selectStep = (
 }
 
 const applyType = (draft: Variable, value: string): Variable => {
-	const type = VARIABLE_TYPES.find((candidate) => candidate === value)
-	return type === undefined ? draft : withType(draft, type)
+	return Option.match(
+		Arr.findFirst(VARIABLE_TYPES, (candidate) => candidate === value),
+		{ onNone: () => draft, onSome: (type) => withType(draft, type) },
+	)
 }
 
 const applySource = (draft: Variable, value: string): Variable =>

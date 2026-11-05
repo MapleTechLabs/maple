@@ -1,4 +1,4 @@
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 import { resolveWindow, type TimeWindow, type WindowRequest } from "../../data/time-range"
 import { PRESET_VALUES } from "../kit/time-range-picker"
 
@@ -7,7 +7,8 @@ import { PRESET_VALUES } from "../kit/time-range-picker"
 
 /** The window's start floored to its UTC hour (warehouse strings are `YYYY-MM-DD HH:MM:SS` UTC). */
 export const hourAlignedWindow = (window: TimeWindow): TimeWindow => ({
-	startTime: window.startTime.length === 19 ? `${window.startTime.slice(0, 14)}00:00` : window.startTime,
+	startTime:
+		window.startTime.length === 19 ? `${Str.slice(0, 14)(window.startTime)}00:00` : window.startTime,
 	endTime: window.endTime,
 })
 

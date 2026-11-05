@@ -1,4 +1,4 @@
-import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import {
 	StatusPageComponentId,
 	StatusPageComponentStatus,
@@ -426,11 +426,15 @@ export const contrastRatio = (a: string, b: string): number => {
 
 /** The most-blended mix of `fg` into `bg` (from 62% up to 100%) that keeps AA on `bg` and `card`. */
 const readableMix = (fg: string, bg: string, card: string): string =>
-	Arr.map(MUTED_WEIGHTS, (weight) => mixHex(fg, bg, weight)).find(
-		(muted) =>
-			contrastRatio(muted, bg) >= STATUS_PAGE_MIN_CONTRAST &&
-			contrastRatio(muted, card) >= STATUS_PAGE_MIN_CONTRAST,
-	) ?? fg
+	Option.getOrElse(
+		Arr.findFirst(
+			Arr.map(MUTED_WEIGHTS, (weight) => mixHex(fg, bg, weight)),
+			(muted) =>
+				contrastRatio(muted, bg) >= STATUS_PAGE_MIN_CONTRAST &&
+				contrastRatio(muted, card) >= STATUS_PAGE_MIN_CONTRAST,
+		),
+		() => fg,
+	)
 
 const MUTED_WEIGHTS = Array.from({ length: 39 }, (_, step) => 0.62 + step * 0.01)
 
@@ -460,9 +464,13 @@ const TINT_WEIGHTS = Array.from({ length: 10 }, (_, step) => 0.22 - step * 0.02)
 
 /** The strongest mix of `status` into `card` (22% down to 4%) that keeps `fg` text at AA on it. */
 const statusTint = (status: string, card: string, fg: string): string =>
-	Arr.map(TINT_WEIGHTS, (weight) => mixHex(status, card, weight)).find(
-		(tint) => contrastRatio(fg, tint) >= STATUS_PAGE_MIN_CONTRAST,
-	) ?? card
+	Option.getOrElse(
+		Arr.findFirst(
+			Arr.map(TINT_WEIGHTS, (weight) => mixHex(status, card, weight)),
+			(tint) => contrastRatio(fg, tint) >= STATUS_PAGE_MIN_CONTRAST,
+		),
+		() => card,
+	)
 
 /**
  * Links take the accent only where it stays readable on that mode's background; else the text
@@ -498,7 +506,7 @@ const withAccent = (tokens: StatusPageThemeTokens, accent: string | null): Resol
  */
 export const resolveStatusPageTheme = (theme: StatusPageTheme): ResolvedStatusPageTheme => {
 	const preset = PRESET_TOKENS[theme.preset]
-	const accent = theme.accent?.toLowerCase() ?? null
+	const accent = theme.accent == null ? null : Str.toLowerCase(theme.accent)
 	const forced = (mode: "light" | "dark") =>
 		theme.appearance === mode ? withOverrides(preset[mode], theme) : preset[mode]
 	return {
@@ -669,9 +677,11 @@ export const applyOverlay = (
 		(a, b) => a.at - b.at,
 	)
 	if (entries.length === 0) return snapshot
-	const incidents = entries.reduce<ReadonlyArray<StatusPageSnapshotIncident>>((list, entry) => {
+	const incidents = Arr.reduce(entries, snapshot.incidents, (list, entry) => {
 		const targetId = entry.incidentId ?? overlayIncidentId(entry.id)
-		const existing = list.find((incident) => matchesTarget(incident, targetId))
+		const existing = Option.getOrUndefined(
+			Arr.findFirst(list, (incident) => matchesTarget(incident, targetId)),
+		)
 		if (existing === undefined) {
 			const status =
 				entry.status !== null && statusFitsKind("incident", entry.status)
@@ -729,7 +739,7 @@ export const applyOverlay = (
 					}
 				: incident,
 		)
-	}, snapshot.incidents)
+	})
 	return { ...snapshot, incidents, components: withIncidentImpact(snapshot.components, incidents) }
 }
 
@@ -744,9 +754,10 @@ const STATUS_RANK = {
 } as const satisfies Record<StatusPageComponentStatus, number>
 
 export const worstStatus = (statuses: ReadonlyArray<StatusPageComponentStatus>): StatusPageComponentStatus =>
-	statuses.reduce<StatusPageComponentStatus>(
-		(worst, status) => (STATUS_RANK[status] > STATUS_RANK[worst] ? status : worst),
+	Arr.reduce<StatusPageComponentStatus, StatusPageComponentStatus>(
+		statuses,
 		"operational",
+		(worst, status) => (STATUS_RANK[status] > STATUS_RANK[worst] ? status : worst),
 	)
 
 const IMPACT_STATUS = {

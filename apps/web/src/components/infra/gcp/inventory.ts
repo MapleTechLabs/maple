@@ -16,7 +16,7 @@ import { appendWhereFilter } from "../../metrics/where-filter"
 import { encodeLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
 
 import { gcpWorkloadLocation, gcpWorkloadProject } from "./tabs"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 const RUN_SERVICE = "run.googleapis.com/Service"
 const FUNCTION = "cloudfunctions.googleapis.com/CloudFunction"
@@ -25,6 +25,10 @@ const INSTANCE = "compute.googleapis.com/Instance"
 const SQL_INSTANCE = "sqladmin.googleapis.com/Instance"
 const SUBSCRIPTION = "pubsub.googleapis.com/Subscription"
 const URL_MAP = "compute.googleapis.com/UrlMap"
+
+/** The part of `text` after the first `separator`; all of it when there is none. */
+const afterFirst = (text: string, separator: string) =>
+	Str.slice(Option.match(Str.indexOf(separator)(text), { onNone: () => 0, onSome: (at) => at + 1 }))(text)
 
 /** The inventory type behind a service's workloads, and the identity value that names the resource. */
 const RESOURCE_OF: Record<
@@ -37,7 +41,7 @@ const RESOURCE_OF: Record<
 	gke: { assetType: CLUSTER, name: (keys) => keys[2] },
 	computeEngine: { assetType: INSTANCE, name: (keys) => keys[0] },
 	// Cloud Monitoring names an instance `<project>:<instance>`.
-	cloudSql: { assetType: SQL_INSTANCE, name: (keys) => Str.slice(keys[0].indexOf(":") + 1)(keys[0]) },
+	cloudSql: { assetType: SQL_INSTANCE, name: (keys) => afterFirst(keys[0], ":") },
 	pubsub: { assetType: SUBSCRIPTION, name: (keys) => keys[0] },
 	loadBalancing: { assetType: URL_MAP, name: (keys) => keys[0] },
 } satisfies Record<
@@ -45,7 +49,8 @@ const RESOURCE_OF: Record<
 	{ readonly assetType: string; readonly name: (keys: ReadonlyArray<string>) => string }
 >
 
-const lastSegment = (name: string) => Str.slice(name.lastIndexOf("/") + 1)(name)
+const lastSegment = (name: string) =>
+	Str.slice(Option.match(Str.lastIndexOf("/")(name), { onNone: () => 0, onSome: (at) => at + 1 }))(name)
 
 /** A Cloud SQL instance's settings from the inventory, by the `<project>:<instance>` the metrics name it. */
 export interface GcpCloudSqlInstance extends GcpCloudSqlSettings {
@@ -211,7 +216,7 @@ export function gcpConsoleLinks(service: GcpInfraServiceId, keys: ReadonlyArray<
 		}
 		case "cloudSql": {
 			// The instance's id is `project:instance`.
-			const instance = Str.slice(name.indexOf(":") + 1)(name)
+			const instance = afterFirst(name, ":")
 			return {
 				page: {
 					label: "Cloud SQL instance",

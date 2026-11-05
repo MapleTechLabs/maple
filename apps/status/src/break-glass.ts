@@ -1,4 +1,8 @@
-import { StatusPageIncidentImpact, StatusPageIncidentStatus } from "@maple/domain/primitives"
+import {
+	StatusPageIncidentImpact,
+	type StatusPageIncidentKind,
+	StatusPageIncidentStatus,
+} from "@maple/domain/primitives"
 import {
 	sha256Base64Url,
 	STATUS_PAGE_OVERLAY_MAX_ENTRIES,
@@ -52,6 +56,7 @@ export const constantTimeEqual = (a: string, b: string): boolean =>
 	Arr.reduce(
 		Array.from(
 			{ length: Math.max(a.length, b.length) },
+			// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 			(_, index) => a.charCodeAt(index) ^ b.charCodeAt(index),
 		),
 		a.length ^ b.length,
@@ -152,10 +157,13 @@ export const postBreakGlassUpdate = (
 		const isNew = form.incidentId === NEW_INCIDENT || form.incidentId === ""
 		if (isNew && form.title === "") return yield* reject(400, "Give the new incident a title.")
 		const target = isNew
-			? undefined
-			: snapshot.incidents.find((incident) => incident.id === form.incidentId)
-		if (!isNew && target === undefined) return yield* reject(400, "That incident is not on this page.")
-		const kind = target?.kind ?? "incident"
+			? Option.none()
+			: Arr.findFirst(snapshot.incidents, (incident) => incident.id === form.incidentId)
+		if (!isNew && Option.isNone(target)) return yield* reject(400, "That incident is not on this page.")
+		const kind = Option.getOrElse(
+			Option.map(target, (incident) => incident.kind),
+			(): StatusPageIncidentKind => "incident",
+		)
 		if (form.status !== null && !statusFitsKind(kind, form.status)) {
 			return yield* reject(
 				400,

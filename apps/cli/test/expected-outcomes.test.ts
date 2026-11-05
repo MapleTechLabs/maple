@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import * as BunServices from "@effect/platform-bun/BunServices"
-import { Duration, Effect, String as Str } from "effect"
+import { Duration, Effect, Option, String as Str } from "effect"
 import { ok, strictEqual } from "node:assert"
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -120,7 +120,8 @@ describe("dirty-store recovery advice", () => {
 		})
 		ok(Str.includes("maple update --tag v0.0.22")(advice))
 		ok(Str.includes("maple restore --yes")(advice))
-		ok(advice.indexOf("maple update") < advice.indexOf("maple start --reset"))
+		const positionOf = (needle: string) => Option.getOrElse(Str.indexOf(needle)(advice), () => -1)
+		ok(positionOf("maple update") < positionOf("maple start --reset"))
 		ok(!Str.includes("unusable")(advice))
 		ok(!Str.includes("cannot be recovered")(advice))
 	})

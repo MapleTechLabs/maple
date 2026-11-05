@@ -13,7 +13,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Message } from "./message"
 import { hstack } from "@maple/views/ui/stack"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // The @maple/ui `TraceAnatomyStrip` as local mode renders it: no start time, no commit.
 // copied: the spectrum bar of apps/web/src/page/traces/detail/view-summary.ts.
@@ -30,7 +30,10 @@ export const traceHasError = (trace: TraceData): boolean =>
 
 /** The first real root: an orphan's synthetic "missing" parent can sort ahead of it. */
 export const rootSpanOf = (trace: TraceData): SpanNodeData | undefined =>
-	trace.rootSpans.find((span) => span.isMissing !== true) ?? trace.rootSpans[0]
+	Option.getOrElse(
+		Arr.findFirst(trace.rootSpans, (span) => span.isMissing !== true),
+		() => trace.rootSpans[0],
+	)
 
 export const httpInfoOf = (span: SpanNodeData) =>
 	getHttpInfo({

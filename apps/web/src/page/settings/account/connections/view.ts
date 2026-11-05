@@ -11,12 +11,14 @@ import type { AccountUser } from "../user"
 import { Message, type Model } from "./model"
 import { PROVIDERS, providerOf } from "./update"
 import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 type H = HtmlBuilder<Message>
 
 const providerRow = (h: H, model: Model, user: AccountUser, provider: (typeof PROVIDERS)[number]): Html => {
-	const account = user.externalAccounts.find((entry) => entry.provider === provider.id)
+	const account = Option.getOrUndefined(
+		Arr.findFirst(user.externalAccounts, (entry) => entry.provider === provider.id),
+	)
 	const isBusy = model.busy === provider.id
 	const ids = {
 		control: `connection-${provider.id}`,

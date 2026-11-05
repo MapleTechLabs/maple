@@ -57,7 +57,7 @@ import {
 	workersSelection,
 	zoneAnalyticsDocument,
 } from "./queries"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 const BUCKET = "2026-07-02T12:00:00Z"
 const BUCKET_TS = "2026-07-02 12:00:00.000"
@@ -105,28 +105,33 @@ describe("mapHttpGroups", () => {
 
 	it("scales the ABR count by sampleInterval and emits delta sums", () => {
 		const { sumRows } = mapHttpGroups(input)
-		const requests = sumRows.find((row) => row.metric_name === METRIC_HTTP_REQUESTS)
-		assert.isDefined(requests)
-		assert.strictEqual(requests!.value, 100)
-		assert.strictEqual(requests!.aggregation_temporality, 1)
-		assert.strictEqual(requests!.is_monotonic, true)
-		assert.strictEqual(requests!.timestamp, BUCKET_TS)
-		assert.strictEqual(requests!.service_name, "cloudflare/example.com")
-		assert.deepStrictEqual(requests!.metric_attributes, {
+		const requests = Option.getOrThrow(
+			Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_HTTP_REQUESTS),
+		)
+		assert.strictEqual(requests.value, 100)
+		assert.strictEqual(requests.aggregation_temporality, 1)
+		assert.strictEqual(requests.is_monotonic, true)
+		assert.strictEqual(requests.timestamp, BUCKET_TS)
+		assert.strictEqual(requests.service_name, "cloudflare/example.com")
+		assert.deepStrictEqual(requests.metric_attributes, {
 			"cache.status": "hit",
 			"http.status_class": "2xx",
 			"server.address": "unknown",
 		})
-		assert.strictEqual(requests!.resource_attributes.maple_org_id, "org_test")
-		assert.strictEqual(requests!.resource_attributes["service.name"], "cloudflare/example.com")
-		assert.strictEqual(requests!.resource_attributes["cloudflare.zone.id"], "zone-1")
-		assert.strictEqual(requests!.scope_name, SCOPE_NAME)
+		assert.strictEqual(requests.resource_attributes.maple_org_id, "org_test")
+		assert.strictEqual(requests.resource_attributes["service.name"], "cloudflare/example.com")
+		assert.strictEqual(requests.resource_attributes["cloudflare.zone.id"], "zone-1")
+		assert.strictEqual(requests.scope_name, SCOPE_NAME)
 
-		const bytes = sumRows.find((row) => row.metric_name === METRIC_HTTP_BYTES)
-		assert.strictEqual(bytes!.value, 5000)
-		assert.strictEqual(bytes!.metric_unit, "By")
-		const visits = sumRows.find((row) => row.metric_name === METRIC_HTTP_VISITS)
-		assert.strictEqual(visits!.value, 8)
+		const bytes = Option.getOrThrow(
+			Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_HTTP_BYTES),
+		)
+		assert.strictEqual(bytes.value, 5000)
+		assert.strictEqual(bytes.metric_unit, "By")
+		const visits = Option.getOrThrow(
+			Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_HTTP_VISITS),
+		)
+		assert.strictEqual(visits.value, 8)
 	})
 
 	it("emits quantile gauges keyed by the quantile attribute", () => {
@@ -271,8 +276,10 @@ describe("mapHttpPathGroups", () => {
 			groups: filler,
 			errors: [group("/rare", 1000)],
 		})
-		const errorRow = sumRows.find((row) => row.metric_name === METRIC_HTTP_ERRORS_BY_PATH)
-		assert.strictEqual(errorRow?.metric_attributes["url.path"], "/rare")
+		const errorRow = Option.getOrThrow(
+			Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_HTTP_ERRORS_BY_PATH),
+		)
+		assert.strictEqual(errorRow.metric_attributes["url.path"], "/rare")
 		// Ranking by combined weight pushes the lightest traffic path out instead.
 		const paths = new Set(
 			Arr.map(
@@ -309,11 +316,15 @@ describe("mapHttpDimensionGroups", () => {
 			],
 			clients: [],
 		})
-		const requests = sumRows.find((row) => row.metric_name === METRIC_HTTP_REQUESTS_BY_COUNTRY)
-		const bytes = sumRows.find((row) => row.metric_name === METRIC_HTTP_BYTES_BY_COUNTRY)
-		assert.strictEqual(requests?.value, 40)
-		assert.strictEqual(requests?.metric_attributes["geo.country_iso_code"], "DE")
-		assert.strictEqual(bytes?.value, 900)
+		const requests = Option.getOrThrow(
+			Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_HTTP_REQUESTS_BY_COUNTRY),
+		)
+		const bytes = Option.getOrThrow(
+			Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_HTTP_BYTES_BY_COUNTRY),
+		)
+		assert.strictEqual(requests.value, 40)
+		assert.strictEqual(requests.metric_attributes["geo.country_iso_code"], "DE")
+		assert.strictEqual(bytes.value, 900)
 	})
 
 	it("carries method, protocol and device on one cross-filterable series", () => {
@@ -384,21 +395,27 @@ describe("mapWorkersGroups", () => {
 
 	it("maps counters under cloudflare-worker/{script} with worker.status", () => {
 		const { sumRows } = mapWorkersGroups(input)
-		const requests = sumRows.find((row) => row.metric_name === METRIC_WORKER_REQUESTS)
-		assert.strictEqual(requests!.value, 42)
-		assert.strictEqual(requests!.service_name, "cloudflare-worker/my-worker")
-		assert.deepStrictEqual(requests!.metric_attributes, { "worker.status": "success" })
-		assert.strictEqual(requests!.resource_attributes["cloudflare.account.id"], "acct-1")
-		const errors = sumRows.find((row) => row.metric_name === METRIC_WORKER_ERRORS)
-		assert.strictEqual(errors!.value, 2)
+		const requests = Option.getOrThrow(
+			Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_WORKER_REQUESTS),
+		)
+		assert.strictEqual(requests.value, 42)
+		assert.strictEqual(requests.service_name, "cloudflare-worker/my-worker")
+		assert.deepStrictEqual(requests.metric_attributes, { "worker.status": "success" })
+		assert.strictEqual(requests.resource_attributes["cloudflare.account.id"], "acct-1")
+		const errors = Option.getOrThrow(
+			Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_WORKER_ERRORS),
+		)
+		assert.strictEqual(errors.value, 2)
 	})
 
 	it("emits subrequests as a sum with the same worker.status attributes", () => {
 		const { sumRows } = mapWorkersGroups(input)
-		const subrequests = sumRows.find((row) => row.metric_name === METRIC_WORKER_SUBREQUESTS)
-		assert.strictEqual(subrequests!.value, 5)
-		assert.strictEqual(subrequests!.service_name, "cloudflare-worker/my-worker")
-		assert.deepStrictEqual(subrequests!.metric_attributes, { "worker.status": "success" })
+		const subrequests = Option.getOrThrow(
+			Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_WORKER_SUBREQUESTS),
+		)
+		assert.strictEqual(subrequests.value, 5)
+		assert.strictEqual(subrequests.service_name, "cloudflare-worker/my-worker")
+		assert.deepStrictEqual(subrequests.metric_attributes, { "worker.status": "success" })
 	})
 
 	it("drops groups for scripts missing from the live-script set", () => {
@@ -519,13 +536,17 @@ describe("queue + durable object mappers", () => {
 			],
 		})
 		assert.strictEqual(backlog.sumRows.length, 0)
-		const messages = backlog.gaugeRows.find((row) => row.metric_name === METRIC_QUEUE_BACKLOG_MESSAGES)
+		const messages = Option.getOrThrow(
+			Arr.findFirst(backlog.gaugeRows, (row) => row.metric_name === METRIC_QUEUE_BACKLOG_MESSAGES),
+		)
 		// A drained queue (backlog 0) is a meaningful reading — gauges must not skip zeros.
-		assert.strictEqual(messages!.value, 0)
-		assert.strictEqual(messages!.service_name, "cloudflare-queue/queue-abc")
-		assert.strictEqual(messages!.resource_attributes["cloudflare.queue.id"], "queue-abc")
-		const bytes = backlog.gaugeRows.find((row) => row.metric_name === METRIC_QUEUE_BACKLOG_BYTES)
-		assert.strictEqual(bytes!.value, 1024)
+		assert.strictEqual(messages.value, 0)
+		assert.strictEqual(messages.service_name, "cloudflare-queue/queue-abc")
+		assert.strictEqual(messages.resource_attributes["cloudflare.queue.id"], "queue-abc")
+		const bytes = Option.getOrThrow(
+			Arr.findFirst(backlog.gaugeRows, (row) => row.metric_name === METRIC_QUEUE_BACKLOG_BYTES),
+		)
+		assert.strictEqual(bytes.value, 1024)
 
 		const consumers = mapQueueConsumersGroups({
 			orgId: "org_test",
@@ -560,8 +581,14 @@ describe("queue + durable object mappers", () => {
 			liveScripts: new Set(["my-worker"]),
 		})
 		assert.isTrue(Arr.every(sumRows, (row) => row.service_name === "cloudflare-worker/my-worker"))
-		assert.strictEqual(sumRows.find((row) => row.metric_name === METRIC_DO_REQUESTS)!.value, 10)
-		assert.strictEqual(sumRows.find((row) => row.metric_name === METRIC_DO_ERRORS)!.value, 1)
+		assert.strictEqual(
+			Option.getOrThrow(Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_DO_REQUESTS)).value,
+			10,
+		)
+		assert.strictEqual(
+			Option.getOrThrow(Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_DO_ERRORS)).value,
+			1,
+		)
 		const wallTimes = Arr.filter(gaugeRows, (row) => row.metric_name === METRIC_DO_WALL_TIME)
 		assert.deepStrictEqual(
 			Arr.map(wallTimes, (row) => [row.metric_attributes.quantile, row.value]),
@@ -576,7 +603,7 @@ describe("queue + durable object mappers", () => {
 describe("query documents", () => {
 	it("http latency selection stays dimension-light (no host dimension)", () => {
 		const doc = httpSelection({ withQuantiles: true })
-		const latency = Str.slice(doc.indexOf("latency:"))(doc)
+		const latency = Str.slice(Option.getOrThrow(Str.indexOf("latency:")(doc)))(doc)
 		assert.notInclude(latency, "clientRequestHTTPHost")
 	})
 
@@ -595,8 +622,11 @@ describe("query documents", () => {
 
 	it("dimension selection keeps country separate from the bounded client dimensions", () => {
 		const doc = httpDimensionsSelection({ withQuantiles: true })
-		const country = Str.slice(doc.indexOf("countryAgg:"), doc.indexOf("clientAgg:"))(doc)
-		const client = Str.slice(doc.indexOf("clientAgg:"))(doc)
+		const country = Str.slice(
+			Option.getOrThrow(Str.indexOf("countryAgg:")(doc)),
+			Option.getOrThrow(Str.indexOf("clientAgg:")(doc)),
+		)(doc)
+		const client = Str.slice(Option.getOrThrow(Str.indexOf("clientAgg:")(doc)))(doc)
 		assert.include(country, "clientCountryName")
 		assert.notInclude(country, "clientDeviceType")
 		assert.include(client, "clientRequestHTTPMethodName")
@@ -615,7 +645,7 @@ describe("query documents", () => {
 		for (const alias of ["groups:", "latency:", "paths:", "pathErrors:", "countryAgg:", "clientAgg:"]) {
 			assert.include(doc, alias)
 		}
-		assert.strictEqual(doc.match(/zones\(filter:/g)?.length, 1)
+		assert.strictEqual(Option.getOrThrow(Str.match(/zones\(filter:/g)(doc)).length, 1)
 	})
 
 	it("http query drops the quantile selection in degraded mode", () => {
@@ -646,7 +676,7 @@ describe("query documents", () => {
 		assert.include(filtered, "clientRequestPath_like: $pathLike")
 		assert.include(filtered, "clientCountryName_in: $countries")
 		// Filters apply to BOTH the total and the 5xx selection, or the error rate would be wrong.
-		assert.strictEqual(filtered.match(/clientRequestPath_like/g)?.length, 2)
+		assert.strictEqual(Option.getOrThrow(Str.match(/clientRequestPath_like/g)(filtered)).length, 2)
 		// Absent keys are omitted entirely — Cloudflare rejects explicit nulls inconsistently.
 		assert.notInclude(filtered, "cacheStatus_in")
 	})

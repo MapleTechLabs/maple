@@ -263,7 +263,7 @@ function classifyUnit(unit?: string): UnitClass {
  * Returns the advice string to surface, or `null` when the scale looks right.
  */
 export function percentScaleAdvice(stats: QueryStats, ctx: FlagContext = {}): string | null {
-	const unit = ctx.displayUnit?.trim()
+	const unit = ctx.displayUnit === undefined ? undefined : Str.trim(ctx.displayUnit)
 	if (unit !== "percent" && unit !== "percent_100") return null
 
 	let observedMax: number | null = null
@@ -370,10 +370,12 @@ export function computeFlags(stats: QueryStats, ctx: FlagContext = {}): ChartFla
 		flags.push("UNREALISTIC_MAGNITUDE")
 	}
 
-	if (seriesTotals.length >= 2) {
+	if (Arr.isArrayNonEmpty(seriesTotals) && seriesTotals.length >= 2) {
 		const grandTotal = Arr.reduce(seriesTotals, 0, (acc, s) => acc + Math.abs(s.total))
 		if (grandTotal > 0) {
-			const top = seriesTotals.reduce((max, s) => (Math.abs(s.total) > Math.abs(max.total) ? s : max))
+			const top = Arr.reduce(Arr.tailNonEmpty(seriesTotals), Arr.headNonEmpty(seriesTotals), (max, s) =>
+				Math.abs(s.total) > Math.abs(max.total) ? s : max,
+			)
 			if (Math.abs(top.total) / grandTotal > 0.99 && !flags.includes("SINGLE_SERIES_DOMINATES")) {
 				flags.push("SINGLE_SERIES_DOMINATES")
 			}

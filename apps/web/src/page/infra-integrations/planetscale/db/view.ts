@@ -62,7 +62,7 @@ import { absenceReason } from "../../../../components/infra/planetscale/branch-s
 import { removableChip } from "@maple/views/ui/removable-chip"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // `PlanetScaleDatabasePage`.
 // TODO(alert-menu): "Alert on this" renders its trigger; the suggestion menu and its prefilled
@@ -102,21 +102,26 @@ const tooltipContent = (model: Model, clock: Clock, id: string): ReadonlyArray<s
 	if (Str.endsWith("-all")(id)) return [CHART_SCOPE_EXPLANATION]
 	if (id === "ps-insights-fallback") return [FALLBACK_EXPLANATION.insights]
 	if (Str.endsWith("-fallback")(id)) return [FALLBACK_EXPLANATION.chart]
-	const event = AsyncData.getOrElse(model.events.data, () => []).find(
+	const event = Arr.findFirst(
+		AsyncData.getOrElse(model.events.data, () => []),
 		(entry) => eventTriggerId(entry) === id,
 	)
-	if (event !== undefined) return [formatAbsolute(event.occurredAt, clock.timeZone)]
-	const insight = AsyncData.match(model.insights.data, {
-		onIdle: () => undefined,
-		onLoading: () => undefined,
-		onFailure: () => undefined,
-		onStale: () => undefined,
-		onRefreshing: (data) => data.rows.find((row) => insightTriggerId(row.fingerprint) === id),
-		onSuccess: (data) => data.rows.find((row) => insightTriggerId(row.fingerprint) === id),
+	if (Option.isSome(event)) return [formatAbsolute(event.value.occurredAt, clock.timeZone)]
+	const rows = AsyncData.match(model.insights.data, {
+		onIdle: () => [],
+		onLoading: () => [],
+		onFailure: () => [],
+		onStale: () => [],
+		onRefreshing: (data) => data.rows,
+		onSuccess: (data) => data.rows,
 	})
-	return insight?.lastRunAt === undefined || insight.lastRunAt === null
-		? []
-		: [formatAbsolute(insight.lastRunAt, clock.timeZone)]
+	return Option.match(
+		Option.flatMapNullishOr(
+			Arr.findFirst(rows, (row) => insightTriggerId(row.fingerprint) === id),
+			(insight) => insight.lastRunAt,
+		),
+		{ onNone: () => [], onSome: (lastRunAt) => [formatAbsolute(lastRunAt, clock.timeZone)] },
+	)
 }
 
 const unknownBranchNotice = (h: H, name: string, fallback: string | null): Html =>
@@ -160,7 +165,9 @@ const dataSections = (
 	const selected = filters.branches ?? []
 	const candidates = applyBranchFilters(candidatesOf(model), filters)
 	const selectedBranch = selectedBranchOf(model)
-	const selectedCandidate = candidates.find((candidate) => candidate.name === selectedBranch?.name) ?? null
+	const selectedCandidate = Option.getOrNull(
+		Arr.findFirst(candidates, (candidate) => candidate.name === selectedBranch?.name),
+	)
 	const reason = selectedCandidate === null ? null : absenceReason(selectedCandidate)
 	const events =
 		AsyncData.isSuccess(model.events.data) || AsyncData.isRefreshing(model.events.data)
@@ -300,7 +307,10 @@ const branchSelect = (h: H, model: Model, timeControls: Html): Html => {
 			className: "w-44 font-mono text-xs",
 			renderItem: (option) => [
 				option.label,
-				...(candidates.find((c) => c.name === option.value)?.production === true
+				...(Option.exists(
+					Arr.findFirst(candidates, (c) => c.name === option.value),
+					(c) => c.production === true,
+				)
 					? [" · production"]
 					: []),
 			],

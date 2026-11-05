@@ -93,20 +93,20 @@ export const sessionListItems = (
 	sessions: ReadonlyArray<SessionRow>,
 	options: { readonly collapse: boolean; readonly expanded: ReadonlyArray<string>; readonly nowMs: number },
 ): ReadonlyArray<SessionListItem> => {
-	const folded = sessions.reduce<{ items: ReadonlyArray<SessionListItem>; run: ReadonlyArray<SessionRow> }>(
-		(state, session) => {
-			const lowSignal = isLowSignal(session, options.nowMs)
-			if (options.collapse && lowSignal) return { items: state.items, run: [...state.run, session] }
-			return {
-				items: [
-					...state.items,
-					...runItems(state.run, options.expanded),
-					{ kind: "session", session, lowSignal },
-				],
-				run: [],
-			}
-		},
-		{ items: [], run: [] },
-	)
+	const folded = Arr.reduce<
+		SessionRow,
+		{ items: ReadonlyArray<SessionListItem>; run: ReadonlyArray<SessionRow> }
+	>(sessions, { items: [], run: [] }, (state, session) => {
+		const lowSignal = isLowSignal(session, options.nowMs)
+		if (options.collapse && lowSignal) return { items: state.items, run: [...state.run, session] }
+		return {
+			items: [
+				...state.items,
+				...runItems(state.run, options.expanded),
+				{ kind: "session", session, lowSignal },
+			],
+			run: [],
+		}
+	})
 	return [...folded.items, ...runItems(folded.run, options.expanded)]
 }

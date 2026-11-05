@@ -163,9 +163,8 @@ export function traceUsageColumns($: {
 	// The first hop starts at the reporters' parents; each later one at where
 	// the hop before it arrived.
 	const parents = "arrayConcat(arrayMap(r -> r.2 * 2, usageSpans), arrayMap(r -> r.2 * 2 + 1, usageSpans))"
-	const ancestors = Array.from({ length: USAGE_LINK_HOPS }).reduce<string>(
-		(needles) => lookupExpr("usageLinks", needles, "toUInt64(0)"),
-		parents,
+	const ancestors = Arr.reduce(Array.from({ length: USAGE_LINK_HOPS }), parents, (needles) =>
+		lookupExpr("usageLinks", needles, "toUInt64(0)"),
 	)
 	return {
 		usageSpans: CH.untypedExpr(

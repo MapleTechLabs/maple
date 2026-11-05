@@ -125,7 +125,7 @@ export function compileFunnelStep(draft: FunnelStepDraft): FunnelFilterParse<Fun
 			}
 		}
 		case "page": {
-			const host = draft.host?.trim()
+			const host = draft.host === undefined ? undefined : Str.trim(draft.host)
 			return {
 				ok: true,
 				value: host

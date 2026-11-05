@@ -10,7 +10,7 @@ import {
 	size,
 	type VirtualElement,
 } from "@floating-ui/dom"
-import { Effect, Queue, Schema, Stream, String as Str } from "effect"
+import { Array as Arr, Effect, Option, Queue, Schema, Stream, String as Str } from "effect"
 
 /**
  * Base UI's `useAnchorPositioning` (internals/useAnchorPositioning.mjs, @base-ui/react 1.8) on
@@ -65,7 +65,10 @@ export type Placed = Readonly<{ side: Side; align: Align; isPlacedInstead: boole
 
 const SIDES: ReadonlyArray<Side> = ["top", "right", "bottom", "left"]
 const sideOf = (placement: Placement): Side =>
-	SIDES.find((side) => Str.startsWith(side)(placement)) ?? "bottom"
+	Option.getOrElse(
+		Arr.findFirst(SIDES, (side) => Str.startsWith(side)(placement)),
+		(): Side => "bottom",
+	)
 const alignOf = (placement: Placement): Align =>
 	Str.endsWith("-start")(placement) ? "start" : Str.endsWith("-end")(placement) ? "end" : "center"
 const placementOf = (side: Side, align: Align): Placement => (align === "center" ? side : `${side}-${align}`)

@@ -62,7 +62,7 @@ const decodeFailure: LoadFailure = toLoadFailure("The response could not be read
 
 /** Folds an answer into every slot that asked under its key, decoded with that slot's schema. */
 const settleSlots = (model: Model, key: string, result: Result.Result<unknown, LoadFailure>): Model =>
-	SLOTS.reduce<Model>((next, name) => {
+	Arr.reduce(SLOTS, model, (next, name) => {
 		if (next[name].key !== key) return next
 		const decoded = Result.match(result, {
 			onFailure: (failure) => Result.fail(failure),
@@ -74,7 +74,7 @@ const settleSlots = (model: Model, key: string, result: Result.Result<unknown, L
 		})
 		const slot: Keyed.Keyed<unknown, LoadFailure> = next[name]
 		return { ...next, [name]: Keyed.accept(slot, key, decoded) }
-	}, model)
+	})
 
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): Cmd =>
 	ResolveWindow({
@@ -126,12 +126,10 @@ const seedPanels = (model: Model): Model => {
 		["content", hasRows(model.pages)],
 		["events", hasRows(model.events)],
 	]
-	return seeds.reduce<Model>(
-		(next, [panel, hasViews]) =>
-			next.panels[panel] === undefined
-				? withPanel(next, panel, { sortKey: hasViews ? "views" : "count" })
-				: next,
-		model,
+	return Arr.reduce(seeds, model, (next, [panel, hasViews]) =>
+		next.panels[panel] === undefined
+			? withPanel(next, panel, { sortKey: hasViews ? "views" : "count" })
+			: next,
 	)
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import * as tables from "@maple/db/tables"
 import { ORG_DELETE_REGISTRY } from "./OrganizationService"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Record as Rec, Option } from "effect"
 
 /**
  * The fix that stays fixed: org deletion missed four credential tables because
@@ -24,7 +24,9 @@ const exportedTables = () =>
 const orgScopedTables = () => {
 	const found = new Map<string, string>()
 	for (const [exportName, table] of exportedTables()) {
-		const column = table.ddl.columns.find((item) => ORG_COLUMN_NAMES.has(item.name))
+		const column = Option.getOrUndefined(
+			Arr.findFirst(table.ddl.columns, (item) => ORG_COLUMN_NAMES.has(item.name)),
+		)
 		if (column !== undefined) found.set(exportName, column.name)
 	}
 	return found

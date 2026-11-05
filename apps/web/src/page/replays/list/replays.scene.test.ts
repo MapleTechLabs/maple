@@ -186,7 +186,7 @@ describe("replays list", () => {
 			{ search: { browser: "Safari", timePreset: "1h" } },
 			context,
 		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveReplaysWindow", "Refresh"],
 		])
 	})
@@ -241,7 +241,7 @@ describe("replays list", () => {
 			init({ search: { groupId } }, context).model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 		)
-		expect(resolved.commands?.map(({ args }) => args)).toEqual([
+		expect(Arr.map(resolved.commands ?? [], ({ args }) => args)).toEqual([
 			expect.objectContaining({ search: { groupId } }),
 			expect.objectContaining({ search: { groupId } }),
 		])

@@ -1,5 +1,5 @@
 import { ChatEvent } from "@maple/domain/chat-session"
-import { Effect, Result, Schema, Array as Arr, Record as Rec } from "effect"
+import { Effect, Result, Schema, Array as Arr, Record as Rec, Option, Order } from "effect"
 import { describe, expect, test } from "vitest"
 import { parseMarkdownTexts } from "../../kit/markdown"
 import { TURN_IN_FLIGHT_MESSAGE } from "./kit/chat-api"
@@ -280,7 +280,7 @@ describe("chat conversation", () => {
 		const early = step(failed, Message.ClickedSuggestion({ text: "Hi" }))
 		expect(early.commands ?? []).toEqual([])
 		const retried = step(failed, Message.ClickedRetryHistory())
-		expect(retried.commands?.map((command) => command.args)).toEqual([
+		expect(Arr.map(retried.commands ?? [], (command) => command.args)).toEqual([
 			{ sessionId: "org_acme:default", generation: 2 },
 		])
 		const earlier = {
@@ -314,17 +314,31 @@ describe("chat conversation", () => {
 		const delta = (seq: number, text: string) =>
 			events(sending.generation, [{ type: "text-delta", seq, messageId: "r", text }])
 		const first = step(accepted, delta(1, "All "))
-		expect(first.commands?.find((command) => command.name === "ParseChatMarkdown")?.args).toEqual({
+		expect(
+			Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(first.commands ?? [], (command) => command.name === "ParseChatMarkdown"),
+					(command) => command.args,
+				),
+			),
+		).toEqual({
 			texts: ["All "],
 		})
 		const second = step(first.model, delta(2, "good"))
 		expect(names(second.commands)).not.toContain("ParseChatMarkdown")
 		const parsed = await Effect.runPromise(parseMarkdownTexts(["Hi", "All "]))
 		const landed = step(second.model, Message.CompletedParseMarkdown({ parsed }))
-		expect(landed.commands?.find((command) => command.name === "ParseChatMarkdown")?.args).toEqual({
+		expect(
+			Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(landed.commands ?? [], (command) => command.name === "ParseChatMarkdown"),
+					(command) => command.args,
+				),
+			),
+		).toEqual({
 			texts: ["All good"],
 		})
-		expect(Rec.keys(landed.model.markdown).toSorted()).toEqual(["All good", "Hi"])
+		expect(Arr.sort(Rec.keys(landed.model.markdown), Order.String)).toEqual(["All good", "Hi"])
 		expect(landed.model.markdown["All good"]).toEqual({ document: parsed[1]?.document, isStale: true })
 	})
 })

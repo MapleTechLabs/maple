@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { deserialize } from "node:v8"
 import { PGlite } from "@electric-sql/pglite"
-import { Effect, Layer, Schema, Tracer, Array as Arr, String as Str } from "effect"
+import { Effect, Layer, Option, Schema, Tracer, Array as Arr, String as Str } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { inject } from "vitest"
 
@@ -50,10 +50,10 @@ export interface TestDb {
  * behind it — use `msToSqlTimestamp` there.
  */
 const assertNoDateParams = (sql: string, params: unknown[] | undefined): void => {
-	const index = params?.findIndex((param) => param instanceof Date) ?? -1
-	if (index === -1) return
+	const index = Arr.findFirstIndex(params ?? [], (param) => param instanceof Date)
+	if (Option.isNone(index)) return
 	throw new Error(
-		`Bound a Date as param $${index + 1}: raw \`sql\` fragments have no column type to serialize it. ` +
+		`Bound a Date as param $${index.value + 1}: raw \`sql\` fragments have no column type to serialize it. ` +
 			`Interpolate an ISO string (msToSqlTimestamp) into raw \`sql\` templates instead.\n${sql}`,
 	)
 }
@@ -129,13 +129,15 @@ export const makeStatementRecorder = () => {
 			return span
 		},
 	})
-	const verbs = () =>
-		Arr.map(
-			Arr.filter(spans, (span) => span.attributes.get("db.system.name") === "postgresql").flatMap(
-				(span) => decodeQueryText(span.attributes.get("db.query.text")).split(";\n"),
+	const verbs = () => {
+		const pgSpans = Arr.filter(spans, (span) => span.attributes.get("db.system.name") === "postgresql")
+		return Arr.map(
+			Arr.flatMap(pgSpans, (span) =>
+				Str.split(";\n")(decodeQueryText(span.attributes.get("db.query.text"))),
 			),
-			(statement) => Str.split(/\s+/)(Str.trim(statement))[0]?.toUpperCase() ?? "",
+			(statement) => Str.toUpperCase(Arr.headNonEmpty(Str.split(/\s+/)(Str.trim(statement)))),
 		)
+	}
 	return { tracer, verbs }
 }
 

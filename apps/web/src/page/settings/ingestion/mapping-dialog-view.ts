@@ -28,7 +28,7 @@ import {
 	sourceContextOf,
 } from "./mapping-dialog"
 import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -134,8 +134,18 @@ const keyField = (
 		},
 	})
 
+/** The operation option for a value, the first one for an unknown value. */
+const operationOption = (value: string) =>
+	Option.getOrElse(
+		Arr.findFirst(OPERATION_OPTIONS, (entry) => entry.value === value),
+		() => OPERATION_OPTIONS[0],
+	)
+
 const contextRow = (h: H, value: string) => {
-	const option = CONTEXT_OPTIONS.find((entry) => entry.value === value) ?? CONTEXT_OPTIONS[0]
+	const option = Option.getOrElse(
+		Arr.findFirst(CONTEXT_OPTIONS, (entry) => entry.value === value),
+		() => CONTEXT_OPTIONS[0],
+	)
 	return [
 		hstack(h, { gap: "2", as: "span" }, [
 			icon(h, option.icon, { className: "text-muted-foreground" }),
@@ -148,8 +158,7 @@ const preview = (h: H, model: Model): ReadonlyArray<Html> => {
 	const source = Str.trim(model.sourceKey.inputValue)
 	const target = Str.trim(model.targetKey.inputValue)
 	if (source.length === 0 || target.length === 0) return []
-	const operation =
-		OPERATION_OPTIONS.find((entry) => entry.value === operationOf(model)) ?? OPERATION_OPTIONS[0]
+	const operation = operationOption(operationOf(model))
 	return [
 		panel(h, { tone: "muted", className: "px-3 py-2.5" }, [
 			eyebrow(h, { as: "div", className: "mb-1.5" }, ["Preview"]),
@@ -221,8 +230,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ slotId: strin
 				label: "Operation",
 				entries: OPERATION_OPTIONS,
 				renderValue: (value) => {
-					const option =
-						OPERATION_OPTIONS.find((entry) => entry.value === value) ?? OPERATION_OPTIONS[0]
+					const option = operationOption(value)
 					return [
 						hstack(h, { gap: "2", as: "span" }, [
 							icon(h, option.icon, { className: option.tone }),
@@ -231,8 +239,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ slotId: strin
 					]
 				},
 				renderItem: (item) => {
-					const option =
-						OPERATION_OPTIONS.find((entry) => entry.value === item.value) ?? OPERATION_OPTIONS[0]
+					const option = operationOption(item.value)
 					return [
 						hstack(h, { gap: "2", as: "span" }, [
 							icon(h, option.icon, { className: option.tone }),

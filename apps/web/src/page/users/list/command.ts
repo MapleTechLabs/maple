@@ -1,5 +1,5 @@
 import { getUsersFacets, listUsers, USERS_SEARCH_MAX_LENGTH } from "@maple/web-data/warehouse/users"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Duration, Effect, Schema, String as Str } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { IdleTtl } from "../../../data/idle-ttl"
@@ -31,7 +31,7 @@ export const facetsInputs = (window: TimeWindow, pinnedNamespace: string | null)
 
 /** The typed search as the API takes it: trimmed, cut to its 200-character cap, absent when blank. */
 const searchText = (q: string | undefined): string | undefined => {
-	const text = (q ?? "").trim().slice(0, USERS_SEARCH_MAX_LENGTH).trim()
+	const text = Str.trim(Str.slice(0, USERS_SEARCH_MAX_LENGTH)(Str.trim(q ?? "")))
 	return text === "" ? undefined : text
 }
 

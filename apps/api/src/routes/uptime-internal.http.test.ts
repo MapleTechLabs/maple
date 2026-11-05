@@ -5,6 +5,7 @@ import {
 	Effect,
 	Layer,
 	ManagedRuntime,
+	Option,
 	Schema,
 	Array as Arr,
 	String as Str,
@@ -131,7 +132,14 @@ const createMonitors = Effect.gen(function* () {
 		createdBy: USER,
 	})
 	const url = heartbeat.heartbeatUrl ?? ""
-	return { http, heartbeat, token: Str.slice(url.lastIndexOf("/") + 1)(url) }
+	return {
+		http,
+		heartbeat,
+		token: Option.match(Str.lastIndexOf("/")(url), {
+			onNone: () => url,
+			onSome: (slash) => Str.slice(slash + 1)(url),
+		}),
+	}
 })
 
 const getMonitor = (id: UptimeMonitorId) =>
@@ -164,7 +172,7 @@ describe("uptime internal routes", () => {
 
 	it("refuses a token of the internal token's length in other characters", () =>
 		withHarness(async (harness) => {
-			const token = "\u00e9".repeat("sd-token".length)
+			const token = Str.repeat("sd-token".length)("\u00e9")
 			expect((await harness.request("GET", "/api/internal/uptime-targets", { token })).status).toBe(401)
 		}))
 

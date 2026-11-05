@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str, Option, Order } from "effect"
 // A live logs response (2026-10-21) with the project ref, client IPs, geo, ISP and JWT signature
 // fields replaced by placeholders (documentation IPs, "Example City", AS64500).
 import sample from "./__fixtures__/supabase-logs-sample.json" with { type: "json" }
@@ -95,11 +95,10 @@ describe("logsToOtlp", () => {
 	it("maps every fixture row, one record per row", () => {
 		assert.strictEqual(records.length, sample.result.length)
 		assert.deepStrictEqual(
-			[
-				...new Set(
-					Arr.map(records, (record) => attributeMap(record.attributes)["supabase.log.source"]),
-				),
-			].toSorted(),
+			Arr.sort(
+				new Set(Arr.map(records, (record) => attributeMap(record.attributes)["supabase.log.source"])),
+				Order.String,
+			),
 			[
 				"auth_logs",
 				"edge_logs",
@@ -119,10 +118,15 @@ describe("logsToOtlp", () => {
 			Str.slice(0, 30)(row.event_message),
 		])
 		const expectSeverity = (source: string, startsWith: string, severity: string) => {
-			const match = severities.find(
+			const match = Arr.findFirst(
+				severities,
 				(item) => item[0] === source && Str.startsWith(startsWith)(String(item[2])),
 			)
-			assert.strictEqual(match?.[1], severity, `${source} "${startsWith}"`)
+			assert.strictEqual(
+				Option.getOrUndefined(Option.map(match, (item) => item[1])),
+				severity,
+				`${source} "${startsWith}"`,
+			)
 		}
 		// postgres: parsed.error_severity (LOG -> INFO, ERROR -> ERROR)
 		expectSeverity("postgres_logs", "checkpoint complete", "INFO")
@@ -174,7 +178,7 @@ describe("logsToOtlp", () => {
 	})
 
 	it("keeps an auth log's JSON message as the body", () => {
-		const row = sample.result.find((item) => item.source === "auth_logs")!
+		const row = Option.getOrThrow(Arr.findFirst(sample.result, (item) => item.source === "auth_logs"))
 		const record = byId.get(row.id)!
 		assert.strictEqual(record.body.stringValue, row.event_message)
 		assert.strictEqual(attributeMap(record.attributes).msg, row.log_attributes.msg)

@@ -1,5 +1,5 @@
 import { resolveTimeRangeWindow } from "@maple/query-engine"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -47,7 +47,9 @@ export const eventNamesKeyOf = (orgId: string, window: TimeWindow): string => {
 export const requestSuggestions = (model: Model, context: PageContext): Return => {
 	const window = showsProductPanel(model) ? suggestionWindowOf(model, context) : null
 	if (window === null) return { model }
-	return SUGGESTION_LOOKUPS.reduce<Return>(
+	return Arr.reduce<(typeof SUGGESTION_LOOKUPS)[number], Return>(
+		SUGGESTION_LOOKUPS,
+		{ model, commands: [] },
 		(step, lookup) => {
 			const { operation, data } = suggestionRequestOf(lookup, window)
 			const key = requestKey(context.orgId, operation, { data })
@@ -66,7 +68,6 @@ export const requestSuggestions = (model: Model, context: PageContext): Return =
 				}),
 			})
 		},
-		{ model, commands: [] },
 	)
 }
 

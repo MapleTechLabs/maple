@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { filterUsers, scopeDetail, usersFacets, usersSummary } from "./users-filter"
 import { USER_DETAIL, USER_ROWS, USERS_NOW } from "./users-fixture"
@@ -7,12 +8,12 @@ const NO_FILTERS = { search: "", hasErrors: false, hasReplay: false, namespaces:
 describe("users namespace scope", () => {
 	it("keeps only users seen in a picked namespace", () => {
 		const rows = filterUsers(USER_ROWS, { ...NO_FILTERS, namespaces: ["payments"] }, null)
-		expect(rows.map((row) => row.userId)).toEqual(["usr_4b1x9q", "usr_7d0e55", "usr_bot_sync"])
+		expect(Arr.map(rows, (row) => row.userId)).toEqual(["usr_4b1x9q", "usr_7d0e55", "usr_bot_sync"])
 	})
 
 	it("lets the org pin override the rail's namespace picks", () => {
 		const rows = filterUsers(USER_ROWS, { ...NO_FILTERS, namespaces: ["payments"] }, "data")
-		expect(rows.map((row) => row.userId)).toEqual([
+		expect(Arr.map(rows, (row) => row.userId)).toEqual([
 			"usr_4b1x9q",
 			"usr_31ab90",
 			"usr_c09d77",
@@ -35,8 +36,8 @@ describe("users namespace scope", () => {
 
 	it("drops a user's rows from services outside the namespace and recounts the tabs", () => {
 		const scoped = scopeDetail(USER_DETAIL, "payments")
-		expect(scoped.issues.map((issue) => issue.service)).toEqual(["billing"])
-		expect(scoped.logs.every((log) => log.service === "billing")).toBe(true)
+		expect(Arr.map(scoped.issues, (issue) => issue.service)).toEqual(["billing"])
+		expect(Arr.every(scoped.logs, (log) => log.service === "billing")).toBe(true)
 		expect(scoped.sessions).toEqual([])
 		expect(scoped.profile.issues).toBe(1)
 	})
@@ -52,8 +53,8 @@ describe("users summary under a pin", () => {
 	it("keeps the org-wide totals unpinned and counts the pinned namespace's users when pinned", () => {
 		expect(usersSummary(USER_ROWS, null, orgWide, USERS_NOW)).toBe(orgWide)
 		const pinned = usersSummary(USER_ROWS, "storefront", orgWide, USERS_NOW)
-		const inNamespace = USER_ROWS.filter((row) => row.namespaces.includes("storefront"))
+		const inNamespace = Arr.filter(USER_ROWS, (row) => row.namespaces.includes("storefront"))
 		expect(pinned.identified).toBe(inNamespace.length)
-		expect(pinned.withErrors).toBe(inNamespace.filter((row) => row.errors > 0).length)
+		expect(pinned.withErrors).toBe(Arr.filter(inNamespace, (row) => row.errors > 0).length)
 	})
 })

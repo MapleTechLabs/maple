@@ -82,7 +82,9 @@ export const FetchDetails = Command.define("FetchAgentSessionDetails", {
 	execute: ({ detailsKey, search, window, rows }) =>
 		getAiSessionDetails({
 			data: {
+				// @effect-diagnostics-next-line preferEffectArray:off -- no initial value; Arr.reduce requires one
 				startTime: Arr.map(rows, (row) => row.startTime).reduce((a, b) => (a < b ? a : b)),
+				// @effect-diagnostics-next-line preferEffectArray:off -- no initial value; Arr.reduce requires one
 				endTime: Arr.map(rows, (row) => row.endTime).reduce((a, b) => (a < b ? b : a)),
 				sessionIds: Arr.map(rows, (row) => row.sessionId),
 				...countedFilters(filterInputs(search, window)),

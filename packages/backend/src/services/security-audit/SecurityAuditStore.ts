@@ -475,7 +475,7 @@ const eventId = (runId: SecurityAuditRunId, event: AuditEvent) =>
 				? `agent:${event.agentId}:${event.outcome}`
 				: event._tag === "Phase"
 					? `phase:${event.phase}`
-					: `note:${(yield* sha256Hex(event.message)).slice(0, 32)}`
+					: yield* Effect.map(sha256Hex(event.message), (hex) => `note:${Str.slice(0, 32)(hex)}`)
 		return yield* sha256Hex(`${runId}:${key}`)
 	})
 

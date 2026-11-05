@@ -7,7 +7,7 @@ import {
 	formatWarehouseDateTime,
 	resolveThroughput,
 } from "@maple/query-engine"
-import { Clock, Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Clock, Effect, Option, Order, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
 import {
 	buildBucketTimeline,
@@ -54,7 +54,9 @@ const asDeploymentEnv = Schema.decodeUnknownSync(DeploymentEnvironment)
 export const toEnvFilter = (
 	environments: ReadonlyArray<DeploymentEnvironment> | undefined,
 ): ReadonlyArray<DeploymentEnvironment> | undefined =>
-	environments?.map((e) => (e === "unknown" ? asDeploymentEnv("") : e))
+	environments === undefined
+		? undefined
+		: Arr.map(environments, (e) => (e === "unknown" ? asDeploymentEnv("") : e))
 
 // SpanMetrics connector metric names — namespaced first, then default. Both are
 // matched in a single `MetricName IN (...)` query (see `querySpanMetricsCalls`),
@@ -125,7 +127,7 @@ function querySpanMetricsCalls(params: {
 }
 
 function sortByBucket<T extends { bucket: string }>(rows: T[]): T[] {
-	return rows.toSorted((left, right) => Str.localeCompare(right.bucket)(left.bucket))
+	return Arr.sort(rows, (left: T, right: T) => Str.localeCompare(right.bucket)(left.bucket))
 }
 
 /**
@@ -751,8 +753,11 @@ function extractGroupedAllMetricsSeries(
 	for (const bucketPoint of response.result.data) {
 		const bucket = toIsoBucket(bucketPoint.bucket)
 		for (const [seriesKey, rawValue] of Rec.toEntries(bucketPoint.series)) {
-			const metric = GROUPED_ALL_METRICS_KEYS.find((key) => Str.startsWith(`${key}::`)(seriesKey))
-			if (!metric) continue
+			const found = Arr.findFirst(GROUPED_ALL_METRICS_KEYS, (key) =>
+				Str.startsWith(`${key}::`)(seriesKey),
+			)
+			if (Option.isNone(found)) continue
+			const metric = found.value
 
 			const service = Str.slice(metric.length + 2)(seriesKey)
 			let buckets = services.get(service)
@@ -787,7 +792,7 @@ export function buildServiceDetailPoints(
 	const allMetrics = extractAllMetricsSeries(allMetricsRes)
 
 	const points = Arr.map(
-		Array.from(allMetrics.keys()).toSorted(),
+		Arr.sort(allMetrics.keys(), Order.String),
 		(bucket): ServiceDetailTimeSeriesPoint => {
 			const m = allMetrics.get(bucket)
 			const rawCount = m?.count ?? 0
@@ -960,7 +965,7 @@ const getOverviewTimeSeriesEffect = Effect.fn("QueryEngine.getOverviewTimeSeries
 	const allMetrics = extractAllMetricsSeries(allMetricsRes)
 
 	const points = Arr.map(
-		Array.from(allMetrics.keys()).toSorted(),
+		Arr.sort(allMetrics.keys(), Order.String),
 		(bucket): ServiceDetailTimeSeriesPoint => {
 			const m = allMetrics.get(bucket)
 			const rawCount = m?.count ?? 0

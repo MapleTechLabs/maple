@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { OrgId } from "@maple/domain/http"
 import { compilePipeQuery as lowerPipeQuery } from "./pipe-dispatch"
 
@@ -116,7 +116,8 @@ describe("compilePipeQuery", () => {
 					pipe,
 					hasError === undefined ? baseParams() : { ...baseParams(), has_error: hasError },
 				)?.sql ?? ""
-			const statusFilters = (sql: string) => sql.match(/StatusCode (=|!=) 'Error'/g) ?? []
+			const statusFilters = (sql: string) =>
+				Arr.fromIterable(Str.matchAll(/StatusCode (=|!=) 'Error'/g)(sql))
 
 			it("applies no status filter when has_error is absent", () => {
 				const sql = sqlFor()

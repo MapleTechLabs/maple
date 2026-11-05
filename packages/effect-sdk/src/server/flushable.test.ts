@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Fiber, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Duration, Effect, Fiber, Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { afterEach, expect, vi } from "vitest"
 import { make } from "./flushable.js"
@@ -70,11 +70,10 @@ describe("MapleFlush.make (server)", () => {
 
 		await telemetry.flush()
 
-		const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
-		expect(traceCall).toBeDefined()
-		expect(traceCall!.url).toBe("https://collector.test/v1/traces")
-		expect(traceCall!.headers.authorization).toBe("Bearer secret")
-		const body = traceCall!.body as {
+		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
+		expect(traceCall.url).toBe("https://collector.test/v1/traces")
+		expect(traceCall.headers.authorization).toBe("Bearer secret")
+		const body = traceCall.body as {
 			resourceSpans: Array<{
 				resource: { attributes: Array<{ key: string; value: { stringValue?: string } }> }
 				scopeSpans: Array<{ spans: Array<{ name: string }> }>
@@ -110,9 +109,8 @@ describe("MapleFlush.make (server)", () => {
 
 		await telemetry.flush()
 
-		const logCall = calls.find((c) => Str.endsWith("/v1/logs")(c.url))
-		expect(logCall).toBeDefined()
-		const body = logCall!.body as {
+		const logCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/logs")(c.url)))
+		const body = logCall.body as {
 			resourceLogs: Array<{
 				scopeLogs: Array<{
 					logRecords: Array<{ severityText: string; body: { stringValue?: string } }>
@@ -144,12 +142,12 @@ describe("MapleFlush.make (server)", () => {
 
 			yield* Effect.promise(() => telemetry.flush())
 
-			const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
+			const traceCall = Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url))
 			expect(
-				traceCall,
+				Option.isSome(traceCall),
 				"expected traces to be POSTed even though the inner span was interrupted",
-			).toBeDefined()
-			const body = traceCall!.body as {
+			).toBe(true)
+			const body = Option.getOrThrow(traceCall).body as {
 				resourceSpans: Array<{
 					scopeSpans: Array<{
 						spans: Array<{
@@ -160,12 +158,18 @@ describe("MapleFlush.make (server)", () => {
 					}>
 				}>
 			}
-			const span = body.resourceSpans[0].scopeSpans[0].spans.find((s) => s.name === "slow-op")
-			expect(span, "slow-op span should be present in the export").toBeDefined()
-			assert.strictEqual(span!.status.code, 1)
-			assert.strictEqual(span!.status.message, undefined)
-			const interrupted = span!.attributes.find((a) => a.key === "maple.interrupted")
-			assert.strictEqual(interrupted?.value.boolValue, true)
+			const found = Arr.findFirst(
+				body.resourceSpans[0].scopeSpans[0].spans,
+				(s) => s.name === "slow-op",
+			)
+			expect(Option.isSome(found), "slow-op span should be present in the export").toBe(true)
+			const span = Option.getOrThrow(found)
+			assert.strictEqual(span.status.code, 1)
+			assert.strictEqual(span.status.message, undefined)
+			const interrupted = Option.getOrThrow(
+				Arr.findFirst(span.attributes, (a) => a.key === "maple.interrupted"),
+			)
+			assert.strictEqual(interrupted.value.boolValue, true)
 		}),
 	)
 
@@ -222,9 +226,11 @@ describe("MapleFlush.make (server)", () => {
 		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
-		const tracesCall = calls.find((c) => c.url === "http://localhost:4318/v1/traces")
-		expect(tracesCall?.body).toBeDefined()
-		expect(tracesCall?.headers).not.toHaveProperty("authorization")
+		const tracesCall = Option.getOrThrow(
+			Arr.findFirst(calls, (c) => c.url === "http://localhost:4318/v1/traces"),
+		)
+		expect(tracesCall.body).toBeDefined()
+		expect(tracesCall.headers).not.toHaveProperty("authorization")
 		expect(consoleInfoSpy).not.toHaveBeenCalled()
 	})
 
@@ -283,11 +289,10 @@ describe("MapleFlush.make (server)", () => {
 		)
 		await telemetry.flush()
 
-		const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
-		expect(traceCall).toBeDefined()
+		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
 		const names = Arr.map(
 			(
-				traceCall!.body as {
+				traceCall.body as {
 					resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
 				}
 			).resourceSpans[0].scopeSpans[0].spans,
@@ -322,8 +327,8 @@ describe("MapleFlush.make (server)", () => {
 		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
-		const traceCall = calls.find((c) => Str.includes("/v1/traces")(c.url))
-		expect(traceCall?.url).toBe("https://collector.test/v1/traces")
+		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.includes("/v1/traces")(c.url)))
+		expect(traceCall.url).toBe("https://collector.test/v1/traces")
 	})
 
 	it("does not start an auto-flush timer when autoFlushInterval is false", () => {
@@ -347,7 +352,7 @@ describe("MapleFlush.make (server)", () => {
 		await telemetry.flush()
 
 		const span = (
-			calls.find((c) => Str.endsWith("/v1/traces")(c.url))!.body as {
+			Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url))).body as {
 				resourceSpans: Array<{
 					scopeSpans: Array<{ spans: Array<{ traceId: string; spanId: string }> }>
 				}>
@@ -355,7 +360,7 @@ describe("MapleFlush.make (server)", () => {
 		).resourceSpans[0].scopeSpans[0].spans[0]
 
 		const record = (
-			calls.find((c) => Str.endsWith("/v1/logs")(c.url))!.body as {
+			Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/logs")(c.url))).body as {
 				resourceLogs: Array<{
 					scopeLogs: Array<{
 						logRecords: Array<{ traceId?: string; spanId?: string; severityNumber?: number }>

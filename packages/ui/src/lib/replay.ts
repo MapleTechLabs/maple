@@ -25,6 +25,7 @@ const AVATAR_GRADIENTS: readonly [string, ...string[]] = [
 /** Deterministic avatar gradient for a session, keyed by a stable seed. */
 export function gradientFor(seed: string): string {
 	let hash = 0
+	// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 	for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0
 	return AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length] ?? AVATAR_GRADIENTS[0]
 }

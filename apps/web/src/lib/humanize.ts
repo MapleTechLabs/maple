@@ -4,7 +4,7 @@ export function humanize(value: string): string {
 	return Arr.join(
 		Arr.map(
 			Arr.filter(Str.split(/[-_\s]+/)(value), Boolean),
-			(word) => Str.toUpperCase(word.charAt(0)) + Str.slice(1)(word),
+			(word) => Str.toUpperCase(Str.slice(0, 1)(word)) + Str.slice(1)(word),
 		),
 		" ",
 	)

@@ -335,7 +335,11 @@ describe("OnboardingChecklistService.read", () => {
 			const service = yield* OnboardingChecklistService
 			const report = yield* service.read(tenant)
 			assert.strictEqual(report.status, "in_progress")
-			assert.strictEqual(report.steps.find((step) => step.id === "create_alert_rule")?.completed, false)
+			assert.strictEqual(
+				Option.getOrUndefined(Arr.findFirst(report.steps, (step) => step.id === "create_alert_rule"))
+					?.completed,
+				false,
+			)
 			assert.strictEqual(report.completedCount, 3)
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
@@ -347,7 +351,11 @@ describe("OnboardingChecklistService.read", () => {
 			yield* connectGithub(testDb, "suspended")
 			const service = yield* OnboardingChecklistService
 			const report = yield* service.read(tenant)
-			assert.strictEqual(report.steps.find((step) => step.id === "connect_github")?.completed, false)
+			assert.strictEqual(
+				Option.getOrUndefined(Arr.findFirst(report.steps, (step) => step.id === "connect_github"))
+					?.completed,
+				false,
+			)
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
 
@@ -370,7 +378,8 @@ describe("OnboardingChecklistService.read", () => {
 			const service = yield* OnboardingChecklistService
 			const keys = yield* ApiKeysService
 			const mcpStep = (report: { steps: ReadonlyArray<{ id: string; completed: boolean }> }) =>
-				report.steps.find((step) => step.id === "connect_mcp_agent")?.completed
+				Option.getOrUndefined(Arr.findFirst(report.steps, (step) => step.id === "connect_mcp_agent"))
+					?.completed
 
 			assert.strictEqual(mcpStep(yield* service.read(tenant)), false)
 			const created = yield* keys.create(ORG, USER, { name: "cursor", kind: "mcp" })

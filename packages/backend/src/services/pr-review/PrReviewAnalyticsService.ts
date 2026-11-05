@@ -76,14 +76,14 @@ const decodeRows = <I, A>(rows: ReadonlyArray<I>, decode: (row: I) => Effect.Eff
 
 const encodeCursor = (createdAtMs: number, id: string) => `${createdAtMs}_${id}`
 const decodeCursor = (cursor: string) => {
-	const at = cursor.indexOf("_")
+	const at = Option.getOrElse(Str.indexOf("_")(cursor), () => -1)
 	return { createdAt: Number(Str.slice(0, at)(cursor)), id: Str.slice(at + 1)(cursor) }
 }
 /** A sorted list's cursor: `<value>:` (`n` for none) ahead of the row's `encodeCursor`. */
 const encodeSortedCursor = (value: number | null, createdAtMs: number, id: string) =>
 	`${value === null ? "n" : String(value)}:${encodeCursor(createdAtMs, id)}`
 const decodeSortedCursor = (cursor: string) => {
-	const colon = cursor.indexOf(":")
+	const colon = Option.getOrElse(Str.indexOf(":")(cursor), () => -1)
 	const head = colon === -1 ? undefined : Str.slice(0, colon)(cursor)
 	return {
 		value: head === undefined || head === "n" ? null : Number(head),
@@ -93,11 +93,11 @@ const decodeSortedCursor = (cursor: string) => {
 
 /** A list's `q`: a substring pattern (LIKE wildcards escaped), and the number when it reads as one. */
 const searchOf = (q: string | undefined) => {
-	const term = q?.trim() ?? ""
+	const term = q === undefined ? "" : Str.trim(q)
 	if (term === "") return undefined
 	const number = /^#?(\d{1,9})$/u.exec(term)?.[1]
 	return {
-		pattern: `%${term.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`,
+		pattern: `%${Str.replace(/[\\%_]/g, "\\$&")(term)}%`,
 		number: number === undefined ? undefined : Number(number),
 	}
 }

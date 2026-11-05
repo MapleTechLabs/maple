@@ -35,7 +35,7 @@ import {
 	type ListAiSessionsRequest,
 } from "@maple/domain/http"
 import { traceSessionTraceId } from "@maple/domain/gen-ai"
-import { Array as Arr, Effect, Record as Rec } from "effect"
+import { Array as Arr, Effect, Option, Order, Record as Rec } from "effect"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 // The warehouse's own tenant type, which both callers satisfy: the HTTP
@@ -226,7 +226,7 @@ export const listAiSessions = Effect.fn("AiSessionReads.list")(function* (
 					CH.compile(Integrations.aiSessionRankQuery(opts), window),
 					{ profile: "list", context: "aiSessionsRank" },
 				)
-				if (ranked.length === 0) return []
+				if (!Arr.isReadonlyArrayNonEmpty(ranked)) return []
 				return yield* readPage(
 					Integrations.aiSessionPageQuery({
 						...opts,
@@ -235,10 +235,14 @@ export const listAiSessions = Effect.fn("AiSessionReads.list")(function* (
 					{
 						orgId: tenant.orgId,
 						// Fixed-width literals, so they order as the instants do.
-						fanOutStart: Arr.map(ranked, (row) => row.agentStart).reduce((a, b) =>
-							a < b ? a : b,
+						fanOutStart: Arr.min(
+							Arr.map(ranked, (row) => row.agentStart),
+							Order.String,
 						),
-						fanOutEnd: Arr.map(ranked, (row) => row.agentEnd).reduce((a, b) => (a > b ? a : b)),
+						fanOutEnd: Arr.max(
+							Arr.map(ranked, (row) => row.agentEnd),
+							Order.String,
+						),
 						endTime: payload.endTime,
 					},
 				)
@@ -379,8 +383,9 @@ export const readAiSessionDistributions = Effect.fn("AiSessionReads.distribution
 		{ profile: "list", context: "aiSessionsDistributions" },
 	)
 	const distribution = (measure: Integrations.AiSessionDistributionMeasure) => {
-		const row = rows.find((candidate) => candidate.measure === measure)
-		if (row === undefined) return { buckets: [], p50: 0, p95: 0 }
+		const found = Arr.findFirst(rows, (candidate) => candidate.measure === measure)
+		if (Option.isNone(found)) return { buckets: [], p50: 0, p95: 0 }
+		const row = found.value
 		return {
 			buckets: Arr.map(Rec.toEntries(row.buckets), ([floor, count]) => ({
 				floor: Number(floor),
@@ -625,14 +630,19 @@ export const readAiToolsTotals = Effect.fn("AiSessionReads.toolsTotals")(functio
 	// nothing, so these two carry that contract unchanged. A period
 	// the caller did not ask for has no branch and no row, and is
 	// absent from the response rather than zeroed.
-	const current = rows.find((row) => row.period === "current")
-	const allSessions = rows.find((row) => row.period === "window")?.sessions
+	const current = Arr.findFirst(rows, (row) => row.period === "current")
+	const allSessions = Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(rows, (row) => row.period === "window"),
+			(row) => row.sessions,
+		),
+	)
 	return new AiToolsTotalsResponse({
 		current: aggregateOf(rows, "current"),
 		...(periods.includes("previous") && { previous: aggregateOf(rows, "previous") }),
 		...(allSessions !== undefined && { allSessions }),
-		firstSeen: current?.firstSeen ?? "",
-		lastSeen: current?.lastSeen ?? "",
+		firstSeen: Option.match(current, { onNone: () => "", onSome: (row) => row.firstSeen }),
+		lastSeen: Option.match(current, { onNone: () => "", onSome: (row) => row.lastSeen }),
 		...(description !== "" && { description }),
 	})
 })
@@ -888,8 +898,9 @@ const aggregateOf = (
 	rows: ReadonlyArray<Integrations.AiToolsTotalsOutput>,
 	period: AiToolsPeriod,
 ): AiToolsAggregate => {
-	const row = rows.find((candidate) => candidate.period === period)
-	if (row === undefined) return NO_TOOLS_AGGREGATE
+	const found = Arr.findFirst(rows, (candidate) => candidate.period === period)
+	if (Option.isNone(found)) return NO_TOOLS_AGGREGATE
+	const row = found.value
 	return {
 		calls: row.calls,
 		sessions: row.sessions,

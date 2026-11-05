@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { ChatAlertBlock, ChatBlock } from "../../render/blocks"
 import type { ChatActionToken } from "../../action-token"
 import { EMPTY_CONTENT, MAX_ACTION_ROWS, MAX_CONTENT_CHARS, renderDiscordMessage } from "./render"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 const token = (value: string) => value as ChatActionToken
 
@@ -156,7 +156,7 @@ describe("renderDiscordMessage", () => {
 		const payload = renderDiscordMessage(approvals)
 
 		expect(payload.components).toHaveLength(MAX_ACTION_ROWS)
-		expect(payload.content.match(/has to be approved in Maple/g)).toHaveLength(2)
+		expect(Option.getOrNull(Str.match(/has to be approved in Maple/g)(payload.content))).toHaveLength(2)
 	})
 
 	it("clamps embed fields the model had no reason to keep short", () => {

@@ -7,7 +7,7 @@ import {
 	tierForWidth,
 	type PlacedWidget,
 } from "./grid-breakpoints"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option, Order } from "effect"
 
 // No cast: placement reads `id` and `layout`, and nothing else. That is the
 // whole reason a redacted share widget can go through the same projection as a
@@ -58,8 +58,16 @@ describe("projectLayout", () => {
 			const projected = projectLayout(AUTHORED, tier)
 
 			it("keeps every widget exactly once", () => {
-				expect(Arr.map(projected, (l) => l.i).toSorted()).toEqual(
-					Arr.map(AUTHORED, (w) => w.id).toSorted(),
+				expect(
+					Arr.sort(
+						Arr.map(projected, (l) => l.i),
+						Order.String,
+					),
+				).toEqual(
+					Arr.sort(
+						Arr.map(AUTHORED, (w) => w.id),
+						Order.String,
+					),
 				)
 			})
 
@@ -77,7 +85,10 @@ describe("projectLayout", () => {
 					rows.set(item.y, [...(rows.get(item.y) ?? []), item])
 				}
 				for (const row of rows.values()) {
-					const ordered = row.toSorted((a, b) => a.x - b.x)
+					const ordered = Arr.sort(
+						row,
+						Order.mapInput(Order.Number, (l: { readonly x: number }) => l.x),
+					)
 					let cursor = 0
 					for (const item of ordered) {
 						// Abutting exactly proves no overlap and no gap in one check.
@@ -91,14 +102,26 @@ describe("projectLayout", () => {
 			it("preserves reading order", () => {
 				const authoredOrder = Arr.map(AUTHORED, (w) => w.id)
 				const projectedOrder = Arr.map(
-					projected.toSorted((a, b) => a.y - b.y || a.x - b.x),
+					Arr.sort(
+						projected,
+						Order.combine(
+							Order.mapInput(
+								Order.Number,
+								(l: { readonly x: number; readonly y: number }) => l.y,
+							),
+							Order.mapInput(
+								Order.Number,
+								(l: { readonly x: number; readonly y: number }) => l.x,
+							),
+						),
+					),
 					(l) => l.i,
 				)
 				expect(projectedOrder).toEqual(authoredOrder)
 			})
 
 			it("starts each row below the tallest widget of the row above", () => {
-				const rowTops = [...new Set(Arr.map(projected, (l) => l.y))].toSorted((a, b) => a - b)
+				const rowTops = Arr.sort([...new Set(Arr.map(projected, (l) => l.y))], Order.Number)
 				for (const [index, top] of rowTops.entries()) {
 					const next = rowTops[index + 1]
 					if (next === undefined) continue
@@ -124,7 +147,7 @@ describe("projectLayout", () => {
 
 			it("never shrinks a widget below its authored height", () => {
 				for (const item of projected) {
-					const source = AUTHORED.find((w) => w.id === item.i)
+					const source = Option.getOrUndefined(Arr.findFirst(AUTHORED, (w) => w.id === item.i))
 					expect(item.h).toBeGreaterThanOrEqual(source?.layout.h ?? 0)
 				}
 			})
@@ -132,7 +155,7 @@ describe("projectLayout", () => {
 	}
 
 	it("stacks every widget full width in a single column", () => {
-		const single = GRID_TIERS.find((tier) => tier.cols === 1)
+		const single = Option.getOrUndefined(Arr.findFirst(GRID_TIERS, (tier) => tier.cols === 1))
 		if (!single) throw new Error("expected a single-column tier")
 		const projected = projectLayout(AUTHORED, single)
 		expect(Arr.every(projected, (l) => l.x === 0 && l.w === 1)).toBe(true)
@@ -140,7 +163,7 @@ describe("projectLayout", () => {
 	})
 
 	it("honours the per-tier minimum span so narrow tiles never get narrower", () => {
-		const sixCol = GRID_TIERS.find((tier) => tier.cols === 6)
+		const sixCol = Option.getOrUndefined(Arr.findFirst(GRID_TIERS, (tier) => tier.cols === 6))
 		if (!sixCol) throw new Error("expected a six-column tier")
 		// Four w:2 stats would each scale to a single column (~17%) without the floor.
 		const stats = [

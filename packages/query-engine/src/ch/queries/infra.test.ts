@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect, Record as Rec } from "effect"
+import { DateTime, Effect, Record as Rec, Array as Arr, String as Str } from "effect"
 import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
@@ -110,7 +110,7 @@ describe("listPodsQuery", () => {
 		const { sql } = compileUnsafe(listPodsQuery({ sortBy: "podName" }), baseParams)
 		// podName defaults to ascending and must appear exactly once.
 		expect(sql).toContain("ORDER BY podName ASC, cpuUsagePeak DESC")
-		expect(sql.match(/podName (ASC|DESC)/g)).toHaveLength(1)
+		expect(Arr.fromIterable(Str.matchAll(/podName (ASC|DESC)/g)(sql))).toHaveLength(1)
 	})
 
 	it("applies search and single-node legacy filters", () => {
@@ -528,7 +528,7 @@ describe("conditional aggregates are NaN-guarded", () => {
 
 	for (const [name, sql] of queries) {
 		it(`${name} wraps every avgIf/maxIf in ifNotFinite`, () => {
-			const unguarded = [...sql.matchAll(/(?:^|[^(])\b(avgIf|maxIf)\(/g)]
+			const unguarded = Arr.fromIterable(Str.matchAll(/(?:^|[^(])\b(avgIf|maxIf)\(/g)(sql))
 			expect(unguarded, `unguarded conditional aggregate in ${name}`).toEqual([])
 			expect(sql).toMatch(/ifNotFinite\((?:avgIf|maxIf)\(/)
 		})
@@ -544,7 +544,7 @@ describe("infraPresenceQuery", () => {
 
 	it("short-circuits each branch instead of aggregating", () => {
 		expect(sql).not.toMatch(/\b(count|uniq|sum|avg|max|min)\w*\(/)
-		expect(sql.match(/LIMIT 1/g)).toHaveLength(5)
+		expect(Arr.fromIterable(Str.matchAll(/LIMIT 1/g)(sql))).toHaveLength(5)
 	})
 
 	it("pins one probe metric per branch rather than the surface's full set", () => {

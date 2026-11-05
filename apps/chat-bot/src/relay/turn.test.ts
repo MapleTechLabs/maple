@@ -480,8 +480,10 @@ describe("relaying a mention", () => {
 
 			yield* relayInboundEvent(mention, deployment.ports)
 
-			const chart = blocksOf(platform.calls).find((block) => block.kind === "chart")
-			expect(chart?.imageUrl).toBe("https://app.maple.dev/chat/chart/0.png")
+			const chart = Arr.findFirst(blocksOf(platform.calls), (block) => block.kind === "chart")
+			expect(Option.map(chart, (block) => block.imageUrl)).toEqual(
+				Option.some("https://app.maple.dev/chat/chart/0.png"),
+			)
 			// Signed for the org that owns the conversation, naming the reply it is a fence inside.
 			expect(deployment.charts[0]?.orgId).toBe(ORG)
 			expect(deployment.charts[0]?.ref).toMatchObject({ sessionId: SESSION_ID, chartIndex: 0 })
@@ -958,7 +960,8 @@ const refusalReason = (effect: Effect.Effect<void>) =>
 			},
 		})
 		yield* effect.pipe(Effect.provideContext(Context.make(Tracer.Tracer, tracer)))
-		return Arr.flatMap(spans, (span) => [span.attributes.get("maple.chat.approval")]).find(
+		return Arr.findFirst(
+			Arr.flatMap(spans, (span) => [span.attributes.get("maple.chat.approval")]),
 			(value) => value !== undefined,
 		)
 	})
@@ -1135,7 +1138,7 @@ describe("settling an approval somebody clicked", () => {
 				relayInboundEvent(click({ actor: { id: "", displayName: "Ada" } }), deployment.ports),
 			)
 
-			expect(reason).toBe("no_approver")
+			expect(reason).toEqual(Option.some("no_approver"))
 			expect(agent.settlements).toEqual([])
 			expect(platform.calls).toEqual([])
 		}),
@@ -1152,7 +1155,7 @@ describe("settling an approval somebody clicked", () => {
 
 				// Neither has an approver role to check or an org to change anything in, and the
 				// unlinked notice belongs to a mention rather than to a button nobody should have.
-				expect(reason).toBe("unavailable")
+				expect(reason).toEqual(Option.some("unavailable"))
 				expect(agent.settlements).toEqual([])
 				expect(platform.calls).toEqual([])
 			}

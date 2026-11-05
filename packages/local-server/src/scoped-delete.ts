@@ -226,7 +226,11 @@ const filterPredicate = (entry: ScopedPlan, request: ScopedDeleteRequest): strin
 	return Arr.join(parts, " AND ")
 }
 
-const hourList = (hours: ReadonlyArray<number>) => hours.join(", ")
+const hourList = (hours: ReadonlyArray<number>) =>
+	Arr.join(
+		Arr.map(hours, (hour) => `${hour}`),
+		", ",
+	)
 
 // ---------------------------------------------------------------------------
 // Schema graph and plan resolution.
@@ -253,12 +257,17 @@ const materializedViews = (manifest: LocalSchemaManifest): ReadonlyArray<ViewEdg
 		(o) => {
 			const body = viewBody(o.definition) ?? ""
 			const sources = Arr.filter(
-				Arr.map([...body.matchAll(/\bFROM\s+([A-Za-z_][A-Za-z0-9_]*)/gi)], (match) => match[1]!),
+				Arr.map(
+					Arr.fromIterable(Str.matchAll(/\bFROM\s+([A-Za-z_][A-Za-z0-9_]*)/gi)(body)),
+					(match) => match[1]!,
+				),
 				(name) => tables.has(name),
 			)
 			return {
 				name: o.name,
-				target: o.definition.match(/\bTO\s+([A-Za-z_][A-Za-z0-9_]*)/i)?.[1] ?? "",
+				target:
+					Option.getOrUndefined(Str.match(/\bTO\s+([A-Za-z_][A-Za-z0-9_]*)/i)(o.definition))?.[1] ??
+					"",
 				sources: [...new Set(sources)],
 				body,
 			}
@@ -268,7 +277,7 @@ const materializedViews = (manifest: LocalSchemaManifest): ReadonlyArray<ViewEdg
 
 const fromPattern = (source: string) => new RegExp(`\\bFROM\\s+${source}\\b`, "gi")
 const sourceReferences = (body: string, source: string): number =>
-	[...body.matchAll(fromPattern(source))].length
+	Arr.fromIterable(Str.matchAll(fromPattern(source))(body)).length
 
 interface Rebuild {
 	readonly table: string
@@ -322,25 +331,34 @@ const resolvePlan = (
 				entry.recompute === "views"
 					? Arr.filter(requested, (dimension) => declares(entry, dimension))
 					: [],
-			views: Arr.filter(views, (view) => view.target === table).flatMap((view) => {
-				const source = view.sources[0]
-				return source !== undefined &&
-					plans[source] !== undefined &&
-					plans[source]!.strategy !== "excluded"
-					? [{ ...view, source }]
-					: []
-			}),
+			views: Arr.flatMap(
+				Arr.filter(views, (view) => view.target === table),
+				(view: ViewEdge) => {
+					const source = view.sources[0]
+					return source !== undefined &&
+						plans[source] !== undefined &&
+						plans[source]!.strategy !== "excluded"
+						? [{ ...view, source }]
+						: []
+				},
+			),
 		})
 	}
 	const rebuilds: Rebuild[] = []
 	while (pending.length > 0) {
-		const ready = pending.findIndex(
+		const ready = Arr.findFirstIndex(
+			pending,
 			(rebuild) =>
 				!Arr.some(rebuild.views, (view) =>
 					Arr.some(pending, (other) => other !== rebuild && other.table === view.source),
 				),
 		)
-		rebuilds.push(...pending.splice(ready === -1 ? 0 : ready, 1))
+		rebuilds.push(
+			...pending.splice(
+				Option.getOrElse(ready, () => 0),
+				1,
+			),
+		)
 	}
 	return { filters, rebuilds, excluded, unsupported }
 }
@@ -402,7 +420,7 @@ export const validateDeletePlan = (
 			if (
 				rebuild.scope.includes("service") &&
 				target?.strategy === "scoped" &&
-				target.service?.join() !== "ServiceName"
+				(target.service === null ? undefined : Arr.join(target.service, ",")) !== "ServiceName"
 			)
 				problems.push(`${rebuild.table}: a service-scoped recompute must key on ServiceName alone`)
 			for (const view of rebuild.views) {
@@ -445,7 +463,11 @@ export const validateDeletePlan = (
 const columnProblems = (name: string, table: LocalSchemaObject, entry: ScopedPlan): ReadonlyArray<string> => {
 	const problems: string[] = []
 	const columns = new Set(Arr.map(table.columns, (c) => c.name))
-	const keyColumns = new Set(table.orderBy?.match(IDENTIFIER) ?? [])
+	const keyColumns = new Set(
+		table.orderBy === undefined
+			? []
+			: Option.getOrElse(Str.match(IDENTIFIER)(table.orderBy), (): ReadonlyArray<string> => []),
+	)
 	// Only a plain MergeTree row is one event; any other engine merges rows by key.
 	const merges = table.engine !== "MergeTree"
 	const needColumn = (column: string, role: string) => {
@@ -546,11 +568,10 @@ const affectedHours = (
 				: Arr.map(rebuild.views, (view) => view.source)
 		const hours = new Set<number>()
 		for (const source of new Set(sources)) {
-			const filter = plan.filters.find((candidate) => candidate.table === source)
-			const found =
-				filter === undefined
-					? (upstream.get(source) ?? [])
-					: yield* distinctHours(db, source, (yield* scopedPlan(source)).time, filter.predicate)
+			const filter = Arr.findFirst(plan.filters, (candidate) => candidate.table === source)
+			const found = Option.isNone(filter)
+				? (upstream.get(source) ?? [])
+				: yield* distinctHours(db, source, (yield* scopedPlan(source)).time, filter.value.predicate)
 			for (const hour of found) hours.add(hour)
 		}
 		if (rebuild.method === "service-map-rollup" && hours.size > 0) {
@@ -583,7 +604,12 @@ const recomputable = (
 			? [ROLLUP_SOURCE]
 			: Arr.map(rebuild.views, (view) => view.source)
 	const ttls = Arr.map(sources, (source) =>
-		ttlDaysFromDefinition(manifest.objects.find((o) => o.name === source)?.definition ?? ""),
+		ttlDaysFromDefinition(
+			Option.match(
+				Arr.findFirst(manifest.objects, (o) => o.name === source),
+				{ onNone: () => "", onSome: (o) => o.definition },
+			),
+		),
 	)
 	const kept: number[] = []
 	const skipped: number[] = []
@@ -638,15 +664,16 @@ const recomputeViaViews = (
 			days.set(day, [...(days.get(day) ?? []), hour])
 		}
 		for (const view of rebuild.views) {
-			const sourceColumns = manifest.objects
-				.find((o) => o.name === view.source)
-				?.columns.map((c) => c.name)
-				.join(", ")
+			const sourceObject = Arr.findFirst(manifest.objects, (o) => o.name === view.source)
 			const source = yield* scopedPlan(view.source)
-			if (sourceColumns === undefined)
+			if (Option.isNone(sourceObject))
 				return yield* new ScopedDeleteError({
 					message: `${view.name}: unknown source ${view.source}`,
 				})
+			const sourceColumns = Arr.join(
+				Arr.map(sourceObject.value.columns, (c) => c.name),
+				", ",
+			)
 			// The view's own output columns, so the INSERT matches by name, not position.
 			const columns = yield* run(`columns of ${view.name}`, () =>
 				Arr.map(

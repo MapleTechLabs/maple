@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
-import { Clock, Effect, Layer, Predicate, Schema } from "effect"
+import { Clock, Effect, Layer, Predicate, Schema, Array as Arr, Option } from "effect"
 import {
 	type ActorId,
 	ErrorIncidentId,
@@ -240,7 +240,9 @@ describe("ErrorIssueWorkflowService", () => {
 			assert.isNull(state?.openIncidentId)
 
 			const response = yield* workflow.listIssueEvents(ORG, issueId)
-			const stateChange = response.events.find((event) => event.type === "state_change")
+			const stateChange = Option.getOrUndefined(
+				Arr.findFirst(response.events, (event) => event.type === "state_change"),
+			)
 			assert.strictEqual(stateChange?.actor?.id, actor.id)
 			assert.strictEqual(stateChange?.fromState, "in_review")
 			assert.strictEqual(stateChange?.toState, "done")

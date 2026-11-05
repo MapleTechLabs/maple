@@ -69,16 +69,16 @@ export const focusPanel = (model: Model): Return => ({
 })
 
 export const selectComponent = (model: Model, componentId: StatusPageComponentId): Return => {
-	const component = componentsOf(model).find((row) => row.id === componentId)
-	return component === undefined
-		? { model }
-		: focusPanel({
-				...model,
-				panel: { _tag: "Component", componentId },
-				componentForm: componentFormOf(component),
-				componentSave: "idle",
-				componentFailure: null,
-			})
+	const found = Arr.findFirst(componentsOf(model), (row) => row.id === componentId)
+	if (Option.isNone(found)) return { model }
+	const component = found.value
+	return focusPanel({
+		...model,
+		panel: { _tag: "Component", componentId },
+		componentForm: componentFormOf(component),
+		componentSave: "idle",
+		componentFailure: null,
+	})
 }
 
 export const changeComponent = (model: Model, field: ComponentTextField, value: string): Return => ({
@@ -91,16 +91,17 @@ const isSame = (form: ComponentForm, component: V2StatusPageComponent): boolean 
 /** Saves the form when it differs from the component; a save in flight re-commits when it lands. */
 export const commitComponent = (model: Model): Return => {
 	const form = model.componentForm
-	const saved = componentsOf(model).find((row) => row.id === form.editingId)
+	const found = Arr.findFirst(componentsOf(model), (row) => row.id === form.editingId)
 	if (
 		!model.isAdmin ||
 		model.pageId === null ||
-		saved === undefined ||
+		Option.isNone(found) ||
 		model.componentSave === "saving" ||
 		Str.trim(form.name) === "" ||
-		isSame(form, saved)
+		isSame(form, found.value)
 	)
 		return { model }
+	const saved = found.value
 	return {
 		model: { ...model, componentSave: "saving", componentFailure: null },
 		commands: [
@@ -144,10 +145,12 @@ export const moved = <A extends { readonly id: StatusPageComponentId }>(
 	componentId: StatusPageComponentId,
 	offset: number,
 ): ReadonlyArray<A> | null => {
-	const from = components.findIndex((component) => component.id === componentId)
+	const found = Arr.findFirstIndex(components, (component) => component.id === componentId)
+	if (Option.isNone(found)) return null
+	const from = found.value
 	const to = from + offset
 	const item = components[from]
-	if (from < 0 || to < 0 || to >= components.length || item === undefined) return null
+	if (to < 0 || to >= components.length || item === undefined) return null
 	const rest = Arr.filter(components, (_, index) => index !== from)
 	return [...rest.slice(0, to), item, ...rest.slice(to)]
 }

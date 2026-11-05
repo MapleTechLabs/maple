@@ -80,7 +80,7 @@ describe("mutateDocumentIn when someone else saved first", () => {
 	const conflict = () =>
 		new UpdateError({ message: "Update operation failed", key: ID, cause: conflictEnvelope() })
 	const conflictEnvelope = () =>
-		Schema.decodeUnknownSync(publicError(DashboardConcurrencyError))({
+		Schema.decodeSync(publicError(DashboardConcurrencyError))({
 			error: publicHttpErrorBody(
 				new DashboardConcurrencyError({
 					dashboardId: DashboardId.make(ID),

@@ -60,7 +60,7 @@ export function cookieDomainCandidates(hostname: string): string[] {
 
 function parseCookieNames(cookieHeader: string): string[] {
 	return Arr.filter(
-		Arr.map(Str.split(";")(cookieHeader), (part) => Str.split("=")(part)[0]?.trim() ?? ""),
+		Arr.map(Str.split(";")(cookieHeader), (part) => Str.trim(Str.split("=")(part)[0])),
 		(name) => name.length > 0,
 	)
 }

@@ -12,7 +12,7 @@ import type { OrgId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PrReviewFindings, PrReviews, VcsRepositories } from "@maple/db/tables"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { Context, Effect, Layer, Array as Arr, String as Str } from "effect"
+import { Context, Effect, Layer, Order, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -40,7 +40,7 @@ export const isBotLogin = (login: string) => Str.endsWith("[bot]")(login)
 
 export const median = (values: ReadonlyArray<number>): number | null => {
 	if (values.length === 0) return null
-	const sorted = values.toSorted((a, b) => a - b)
+	const sorted = Arr.sort(values, Order.Number)
 	const mid = Math.floor(sorted.length / 2)
 	return sorted.length % 2 === 1 ? (sorted[mid] ?? null) : ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2
 }
@@ -154,12 +154,19 @@ export const buildActivity = (input: {
 			cellOf(pr.mergedAt, pr.author, repository).merged += 1
 	}
 	return Arr.map(
-		[...cells.values()].toSorted((a, b) =>
-			a.day === b.day
-				? a.login === b.login
-					? Str.localeCompare(b.repository)(a.repository)
-					: Str.localeCompare(b.login)(a.login)
-				: Str.localeCompare(b.day)(a.day),
+		Arr.sort(
+			[...cells.values()],
+			Order.make(
+				(
+					a: { readonly day: string; readonly login: string; readonly repository: string },
+					b: { readonly day: string; readonly login: string; readonly repository: string },
+				) =>
+					a.day === b.day
+						? a.login === b.login
+							? Str.localeCompare(b.repository)(a.repository)
+							: Str.localeCompare(b.login)(a.login)
+						: Str.localeCompare(b.day)(a.day),
+			),
 		),
 		(cell) => new CodeReviewTeamActivity(cell),
 	)
@@ -235,14 +242,22 @@ export const buildTeam = (input: {
 			runnerMs: Arr.reduce(input.ci, 0, (sum, row) => sum + row.runnerMs),
 			p95QueueMs: input.p95QueueMs,
 		}),
-		members: Arr.map(
-			[...members.values()],
-			(member) =>
-				new CodeReviewTeamMember({
-					...member,
-					medianMergeSeconds: median(mergeSeconds.get(member.login) ?? []),
-				}),
-		).toSorted((a, b) => a.login.localeCompare(b.login, "en", { sensitivity: "base" })),
+		members: Arr.sort(
+			Arr.map(
+				[...members.values()],
+				(member) =>
+					new CodeReviewTeamMember({
+						...member,
+						medianMergeSeconds: median(mergeSeconds.get(member.login) ?? []),
+					}),
+			),
+			Order.mapInput(
+				Order.make((a: string, b: string) =>
+					Str.localeCompare(b, ["en"], { sensitivity: "base" })(a),
+				),
+				(member: CodeReviewTeamMember) => member.login,
+			),
+		),
 		activityStartTime: input.activityStartTime,
 		activity: input.activity,
 	})

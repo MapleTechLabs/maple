@@ -14,7 +14,7 @@ import {
 	STACK_TOKENS,
 	type TokenWithFallback,
 } from "./spike-timeseries-tokens"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Option, Record as Rec } from "effect"
 
 // The prototypes the lab host draws (`spike-host.ts`), by arm: the tokens each resolves, its
 // accessible name and, for the legend arms, the series key under it.
@@ -113,10 +113,13 @@ const ARMS = {
 
 export const SPIKE_ARMS: ReadonlyMap<ChartsLabArm, SpikeArm> = new Map(
 	Arr.flatMap(Rec.toEntries(ARMS), ([arm, spike]) => {
-		const known = Arr.flatMap(SECTIONS, (section) => section.rows.flat()).find(
-			(candidate) => candidate === arm,
+		return Option.match(
+			Arr.findFirst(
+				Arr.flatMap(SECTIONS, (section) => section.rows.flat()),
+				(candidate) => candidate === arm,
+			),
+			{ onNone: () => [], onSome: (known) => [[known, spike] as const] },
 		)
-		return known === undefined ? [] : [[known, spike] as const]
 	}),
 )
 

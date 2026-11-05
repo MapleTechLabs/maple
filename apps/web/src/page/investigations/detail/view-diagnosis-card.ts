@@ -62,8 +62,9 @@ export const reportActions = (report: Report): ReadonlyArray<ActionNodeData> =>
 
 /** The card's own action sheet: the whole action and its evidence, from the card's local choice. */
 const reportSheet = (h: H, model: Model, report: Report, trigger: TipTrigger): Html => {
-	const action =
-		reportActions(report).find((candidate) => candidate.index === model.reportActionIndex) ?? null
+	const action = Option.getOrNull(
+		Arr.findFirst(reportActions(report), (candidate) => candidate.index === model.reportActionIndex),
+	)
 	const dialogId = model.reportSheet.id
 	return h.submodel({
 		slotId: `${dialogId}-slot`,
@@ -84,8 +85,9 @@ const reportSheet = (h: H, model: Model, report: Report, trigger: TipTrigger): H
 
 /** `DiagnosisReportCard`: cause, summary, scope, evidence and the recommended actions. */
 export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger: TipTrigger): Html => {
-	const evidence = report.evidence.filter(
-		(item) => item.note || item.traceIds.length > 0 || item.logPatterns.length > 0,
+	const evidence = Arr.filter(
+		report.evidence,
+		(item) => Boolean(item.note) || item.traceIds.length > 0 || item.logPatterns.length > 0,
 	)
 	const actions = reportActions(report)
 	return card(

@@ -231,7 +231,7 @@ describe("workload identity", () => {
 	it("marks the columns that are totals over the range", () => {
 		expect(
 			Arr.map(
-				GCP_INFRA_COLUMNS.computeEngine.filter((spec) => spec.total),
+				Arr.filter(GCP_INFRA_COLUMNS.computeEngine, (spec) => spec.total === true),
 				(spec) => spec.label,
 			),
 		).toEqual(["Network in", "Network out", "Disk read", "Disk write"])

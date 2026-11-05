@@ -3,7 +3,7 @@ import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { metricValue, toolChartTitle, toolMetricLabel } from "@maple/web-data/lib/tool-analytics"
 import { makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
-import { Option, Array as Arr, String as Str } from "effect"
+import { Option, Array as Arr, String as Str, Order } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
@@ -68,7 +68,10 @@ export type SeriesChartInputs = Readonly<{
 
 const rowsOf = (inputs: SeriesChartInputs) =>
 	Arr.map(
-		inputs.series.toSorted((a, b) => a.bucket - b.bucket),
+		Arr.sort(
+			inputs.series,
+			Order.mapInput(Order.Number, (point: ToolSeriesPoint) => point.bucket),
+		),
 		(point) => ({
 			bucket: formatWarehouseDateTime(point.bucket),
 			[inputs.metric]: metricValue(point, inputs.metric, inputs.percentile),

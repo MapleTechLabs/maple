@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as CH from "@maple/query-engine/ch"
-import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
 import { Chdb } from "@maple/local-server/chdb"
 import { LOCAL_ORG_ID } from "../src/core/executor"
@@ -96,8 +96,11 @@ describeWithChdb("local service map rollup", () => {
 		const rows = decodeEdges(
 			db.query(Str.replace(/\s+FORMAT\s+\w+\s*$/, "\nFORMAT JSONEachRow")(compiled.sql)),
 		)
-		const edge = rows.find((row) => row.sourceService === "frontend" && row.targetService === "api")
-		expect(Number(edge?.callCount)).toBe(3)
+		const edge = Arr.findFirst(
+			rows,
+			(row) => row.sourceService === "frontend" && row.targetService === "api",
+		)
+		expect(Number(Option.getOrUndefined(Option.map(edge, (found) => found.callCount)))).toBe(3)
 	})
 
 	test("a second tick is a no-op for sealed hours", async () => {

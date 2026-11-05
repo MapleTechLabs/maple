@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { facetsInputs, listInputs } from "./command"
 
@@ -23,7 +24,7 @@ describe("listInputs", () => {
 	})
 
 	it("cuts a pasted search to the length the API accepts", () => {
-		expect(listInputs({ q: "a".repeat(450) }, window, null).search).toHaveLength(200)
+		expect(listInputs({ q: Str.repeat(450)("a") }, window, null).search).toHaveLength(200)
 	})
 
 	it("keeps the rail's picks out of the facets, and only the pin in", () => {

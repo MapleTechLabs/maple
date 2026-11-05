@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { agentSpan, llmSpan, makeSpan, toolSpan } from "./span-test-support"
 import { buildSessionTurns } from "./session-turns"
 import { buildSessionSummary, countTurnTokens, findIdleGaps, type AgentTimeKind } from "./session-summary"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND
@@ -14,7 +14,13 @@ const summarize = (spans: Parameters<typeof buildSessionTurns>[0]) =>
 const segment = (
 	segments: readonly { readonly kind: AgentTimeKind; readonly ms: number }[],
 	kind: AgentTimeKind,
-) => segments.find((entry) => entry.kind === kind)?.ms
+) =>
+	Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(segments, (entry) => entry.kind === kind),
+			(entry) => entry.ms,
+		),
+	)
 
 describe("findIdleGaps", () => {
 	it("finds the stretches where nothing was running", () => {
@@ -1538,8 +1544,15 @@ describe("per-model cost, tools and failure groups", () => {
 		])
 
 		expect(summary.cost).toBeCloseTo(0.5)
-		expect(summary.models.find((model) => model.model === "claude-opus-5")?.cost).toBeCloseTo(0.5)
-		expect(summary.models.find((model) => model.model === "claude-haiku-4-5")?.cost).toBeUndefined()
+		expect(
+			Option.getOrThrow(Arr.findFirst(summary.models, (model) => model.model === "claude-opus-5")).cost,
+		).toBeCloseTo(0.5)
+		expect(
+			Arr.findFirst(summary.models, (model) => model.model === "claude-haiku-4-5").pipe(
+				Option.map((model) => model.cost),
+				Option.getOrUndefined,
+			),
+		).toBeUndefined()
 	})
 
 	it("nets a sub-agent's cost through its tool span, and past a zero-cost wrapper", () => {
@@ -1836,7 +1849,8 @@ describe("per-model cost, tools and failure groups", () => {
 
 		for (const tool of summary.tools) {
 			expect(tool.events[0]?.errorDetail?.length).toBe(140)
-			expect(tool.events[0]?.errorDetail?.endsWith("…")).toBe(true)
+			const detail = tool.events[0]?.errorDetail
+			expect(detail !== undefined && Str.endsWith("…")(detail)).toBe(true)
 		}
 	})
 

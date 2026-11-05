@@ -1,4 +1,4 @@
-import { Predicate, Record as Rec } from "effect"
+import { Array as Arr, Option, Predicate, Record as Rec, String as Str } from "effect"
 
 /**
  * Shared billing gate — the single source of truth for "is this an actively
@@ -26,7 +26,8 @@ export interface PlanGatingSubscription {
 export function isPlanSubscription(sub: PlanGatingSubscription | null | undefined): boolean {
 	if (!sub) return false
 	if (sub.addOn || sub.autoEnable) return false
-	if (sub.planId?.toLowerCase() === "free" || sub.plan?.name?.toLowerCase() === "free") return false
+	const isFree = (name: string | null | undefined) => name != null && Str.toLowerCase(name) === "free"
+	if (isFree(sub.planId) || isFree(sub.plan?.name)) return false
 	return true
 }
 
@@ -291,7 +292,11 @@ export const resolveSubscriptionPlan = <P extends PlanLike>(
 	const own = subscription.plan
 	if (own && (own.price != null || (own.items != null && own.items.length > 0))) return own
 	const planId = subscription.planId
-	return (planId ? catalog.find((plan) => plan.id === planId) : undefined) ?? own ?? null
+	return (
+		(planId ? Option.getOrUndefined(Arr.findFirst(catalog, (plan) => plan.id === planId)) : undefined) ??
+		own ??
+		null
+	)
 }
 
 /** Is this plan's pricing knowable — i.e. can we quote a bill from it at all? */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect, Schema, SchemaAST, Array as Arr } from "effect"
+import { DateTime, Effect, Option, Schema, SchemaAST, Array as Arr } from "effect"
 import { compile, from, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
@@ -31,9 +31,13 @@ const params = {
 /** One selected field's codec, read off the derived row schema. */
 const fieldCodec = (ast: SchemaAST.AST, field: string) => {
 	const property = SchemaAST.isObjects(ast)
-		? ast.propertySignatures.find((signature) => signature.name === field)
-		: undefined
-	return property && Schema.make<Schema.Codec<unknown, unknown, never, never>>(property.type)
+		? Arr.findFirst(ast.propertySignatures, (signature) => signature.name === field)
+		: Option.none()
+	return Option.getOrUndefined(
+		Option.map(property, (signature) =>
+			Schema.make<Schema.Codec<unknown, unknown, never, never>>(signature.type),
+		),
+	)
 }
 
 const decodesUtc = <Output>(

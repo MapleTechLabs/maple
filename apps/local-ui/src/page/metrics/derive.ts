@@ -12,10 +12,10 @@ export const sparklineWindow = (
 	bounds: TimeBounds,
 	nowMs: number,
 ): ChartWindow => {
-	const firstSeen = entries.reduce<number | null>((earliest, entry) => {
+	const firstSeen = Arr.reduce(entries, null, (earliest: number | null, entry) => {
 		const ms = parseClickHouseDateTime(entry.firstSeen)
 		return ms !== null && (earliest === null || ms < earliest) ? ms : earliest
-	}, null)
+	})
 	return chartWindow(bounds, firstSeen, nowMs)
 }
 

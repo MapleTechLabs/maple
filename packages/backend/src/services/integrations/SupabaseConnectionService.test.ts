@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId, SupabaseProjectUpdateRequest } from "@maple/domain/http"
@@ -1100,8 +1100,10 @@ describe("SupabaseConnectionService log drains", () => {
 				asRef(REF_A),
 				new SupabaseProjectUpdateRequest({ logDrainEnabled: true }),
 			)
-			const again = recreated.projects.find((project) => project.ref === REF_A)
-			assert.deepStrictEqual([again?.logDrainEnabled, again?.logDrainError], [true, null])
+			const again = Option.getOrThrow(
+				Arr.findFirst(recreated.projects, (project) => project.ref === REF_A),
+			)
+			assert.deepStrictEqual([again.logDrainEnabled, again.logDrainError], [true, null])
 			assert.strictEqual((fake.state.drains.get(REF_A) ?? []).length, 1)
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
 	})

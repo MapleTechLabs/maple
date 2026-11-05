@@ -72,28 +72,33 @@ const picked = (model: Model, menuId: string, value: string): Return => {
 		})
 	if (kind === "chat") {
 		const [connector = "", workspaceId = ""] = rest
-		const workspace = Arr.flatMap(model.connectors ?? [], (entry) => entry.workspaces).find(
-			(candidate) => candidate.id === workspaceId,
-		)
-		return workspace === undefined
-			? { model }
-			: liftDialog(
-					model,
-					DestinationDialog.openNew(
-						model.destinationDialog,
-						chatDestinationForm(connector, workspace.id),
+		return Option.match(
+			Arr.findFirst(
+				Arr.flatMap(model.connectors ?? [], (entry) => entry.workspaces),
+				(candidate) => candidate.id === workspaceId,
+			),
+			{
+				onNone: (): Return => ({ model }),
+				onSome: (workspace) =>
+					liftDialog(
+						model,
+						DestinationDialog.openNew(
+							model.destinationDialog,
+							chatDestinationForm(connector, workspace.id),
+						),
 					),
-				)
+			},
+		)
 	}
 	// `chatConnect.connect(connector)`: link a workspace in a popup first.
 	if (kind === "connect") {
-		const connector = (model.connectors ?? []).find((entry) => entry.id === Arr.join(rest, ":"))
-		return connector === undefined || ChatConnect.waitingFor(model.chatConnect) !== null
+		const connector = Arr.findFirst(model.connectors ?? [], (entry) => entry.id === Arr.join(rest, ":"))
+		return Option.isNone(connector) || ChatConnect.waitingFor(model.chatConnect) !== null
 			? { model }
 			: {
 					model: {
 						...model,
-						chatConnect: ChatConnect.start(model.chatConnect, connector),
+						chatConnect: ChatConnect.start(model.chatConnect, connector.value),
 						chatConnectMenuId: menuId,
 					},
 				}

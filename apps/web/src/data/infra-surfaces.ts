@@ -1,6 +1,6 @@
 import { InfraPresenceRequest, InfraPresenceResponse, type InfraSurfaceLiteral } from "@maple/domain/http"
 import { formatWarehouseDateTime } from "@maple/query-engine"
-import { Effect, Option } from "effect"
+import { Array as Arr, Effect, Option } from "effect"
 import { AsyncData } from "foldkit"
 import { MapleInternalApiClient } from "../platform/api-clients"
 import type { NavSurface } from "../shell/nav"
@@ -78,13 +78,12 @@ export type InfraSurfaces =
 export type PresenceProbe = ReadonlyArray<InfraSurfaceLiteral> | "failed" | null
 
 /** A probe's slot as `resolveInfraSurfaces` reads it; a re-read keeps the last answer. */
-export const probeOf = <E>(
-	data: AsyncData.AsyncData<ReadonlyArray<InfraSurfaceLiteral>, E>,
-): PresenceProbe => (AsyncData.isFailure(data) ? "failed" : Option.getOrNull(AsyncData.getData(data)))
+export const probeOf = <E>(data: AsyncData.AsyncData<ReadonlyArray<InfraSurfaceLiteral>, E>): PresenceProbe =>
+	AsyncData.isFailure(data) ? "failed" : Option.getOrNull(AsyncData.getData(data))
 
 /** Every integration status answered (a failed one counts as not connected). */
 export const integrationsAnswered = (integrations: IntegrationFlags): boolean =>
-	INTEGRATION_IDS.every((id) => integrations[id] !== null)
+	Arr.every(INTEGRATION_IDS, (id) => integrations[id] !== null)
 
 /** The live answer when it is complete, else the set remembered from the last visit. */
 export const resolveInfraSurfaces = (
@@ -93,12 +92,12 @@ export const resolveInfraSurfaces = (
 	remembered: ReadonlyArray<NavSurface> | undefined,
 ): InfraSurfaces => {
 	const isSettled = integrationsAnswered(integrations)
-	if (Array.isArray(probe) && isSettled)
+	if (Arr.isArray<PresenceProbe>(probe) && isSettled)
 		return {
 			_tag: "Only",
 			surfaces: new Set<NavSurface>([
 				...probe,
-				...INTEGRATION_IDS.filter((id) => integrations[id] === true),
+				...Arr.filter(INTEGRATION_IDS, (id) => integrations[id] === true),
 			]),
 		}
 	if (remembered !== undefined) return { _tag: "Only", surfaces: new Set(remembered) }

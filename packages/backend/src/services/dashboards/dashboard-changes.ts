@@ -1,5 +1,5 @@
 import type { DashboardDocument, DashboardVersionChangeKind } from "@maple/domain/http"
-import { Option, Schema, Array as Arr } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 type Widget = DashboardDocument["widgets"][number]
 
@@ -9,7 +9,7 @@ interface ChangeSummary {
 }
 
 const widgetTitle = (widget: Widget): string =>
-	widget.display.title?.trim() || widget.visualization || "widget"
+	Str.trim(widget.display.title ?? "") || widget.visualization || "widget"
 
 const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 

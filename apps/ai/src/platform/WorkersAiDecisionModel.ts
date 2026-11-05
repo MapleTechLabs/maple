@@ -50,7 +50,7 @@ type ClefQuestion =
 	  }
 
 /** `@cf/cloudflare/clef-flash` → `clef-flash`: the body names the variant, the URL the model. */
-const variantOf = (model: string): string => Str.slice(model.lastIndexOf("/") + 1)(model)
+const variantOf = (model: string): string => Arr.lastNonEmpty(Str.split("/")(model))
 
 const fail = (reason: AiError.AiErrorReason) => AiError.make({ module: MODULE, method: "decide", reason })
 

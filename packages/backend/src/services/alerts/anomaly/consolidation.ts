@@ -106,14 +106,17 @@ export function upsertFingerprintEntry(
 	entries: ReadonlyArray<IncidentFingerprintEntry>,
 	entry: IncidentFingerprintEntry,
 ): IncidentFingerprintEntry[] {
-	const existing = entries.findIndex((e) => e.fingerprintHash === entry.fingerprintHash)
-	if (existing >= 0) {
-		const next = [...entries]
-		next[existing] = entry
-		return next
-	}
-	if (entries.length >= MAX_FINGERPRINT_ENTRIES) return [...entries]
-	return [...entries, entry]
+	return Option.match(
+		Arr.findFirstIndex(entries, (e) => e.fingerprintHash === entry.fingerprintHash),
+		{
+			onSome: (existing) => {
+				const next = [...entries]
+				next[existing] = entry
+				return next
+			},
+			onNone: () => (entries.length >= MAX_FINGERPRINT_ENTRIES ? [...entries] : [...entries, entry]),
+		},
+	)
 }
 
 export function markFingerprintResolved(

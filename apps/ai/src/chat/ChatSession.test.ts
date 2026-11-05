@@ -7,7 +7,7 @@
  * headline one on the first run.
  */
 import { assert, beforeEach, describe, it } from "vitest"
-import { Effect, Array as Arr, String as Str } from "effect"
+import { Effect, Array as Arr, Option, String as Str } from "effect"
 import { encodeChatTurnTenant, type ChatTurnOrigin, type ChatTurnTenant } from "@maple/domain/chat-session"
 import { ChatSession, MAX_TURN_RESUMES, TURN_STALE_MS } from "./ChatSession"
 import type { RunChatSessionTurnInput } from "./turn-runner"
@@ -277,7 +277,9 @@ describe("ChatSession turn mutex", () => {
 		assert.isFalse(session.holdsTurn("u1"), "the user's message id must not own the turn")
 
 		const events = session.since(0)
-		const userMessage = events.find((event) => event.type === "user-message")
+		const userMessage = Option.getOrUndefined(
+			Arr.findFirst(events, (event) => event.type === "user-message"),
+		)
 		assert.equal(userMessage?.type === "user-message" ? userMessage.id : undefined, claimed?.messageId)
 
 		// The regression, caught only end-to-end: reusing the user's id meant `openAssistant` found
@@ -287,7 +289,7 @@ describe("ChatSession turn mutex", () => {
 		session.append({ type: "text-delta", messageId: "u1", text: "PING" })
 		const collided = session.history()
 		assert.equal(
-			collided.find((message) => message.role === "user")?.text,
+			Option.getOrUndefined(Arr.findFirst(collided, (message) => message.role === "user"))?.text,
 			"Say PONGPING",
 			"this is the shape the bug produced; the fix is that the turn never uses this id",
 		)
@@ -391,10 +393,11 @@ describe("ChatSession turn mutex", () => {
 		assert.isDefined(reclaimed, "the conversation recovers on its own")
 
 		// And the abandoned turn is closed out in the log, so a client isn't left streaming.
-		const abandoned = session
-			.since(0)
-			.find((event) => event.type === "turn-end" && event.messageId === turn)
-		assert.isDefined(abandoned)
+		const abandoned = Arr.findFirst(
+			session.since(0),
+			(event) => event.type === "turn-end" && event.messageId === turn,
+		)
+		assert.isTrue(Option.isSome(abandoned))
 	})
 })
 
@@ -504,9 +507,12 @@ describe("ChatSession eviction recovery", () => {
 		assert.deepEqual(revived.runs[0]?.resume, { userMessageId: "kickoff", text: KICKOFF, attempt: 1 })
 		assert.strictEqual(revived.runs[0]?.sessionId, REVIEW_SESSION)
 		// The dead attempt's message is closed, so a reader does not see it streaming forever.
-		const closed = revived.session
-			.since(0)
-			.find((event) => event.type === "turn-end" && event.messageId === orphaned)
+		const closed = Option.getOrUndefined(
+			Arr.findFirst(
+				revived.session.since(0),
+				(event) => event.type === "turn-end" && event.messageId === orphaned,
+			),
+		)
 		assert.strictEqual(closed?.type === "turn-end" ? closed.reason : undefined, "error")
 		// The restarted turn keeps the object alive like the first one did.
 		assert.lengthOf(state.alarms, 2)
@@ -583,7 +589,7 @@ describe("ChatSession abort interrupts the running turn", () => {
 				Effect.withTracer(tracer),
 			),
 		)
-		return spans.find((span) => span.name === "chat.turn")
+		return Option.getOrUndefined(Arr.findFirst(spans, (span) => span.name === "chat.turn"))
 	}
 
 	for (const reason of ["user", "superseded"] as const) {
@@ -674,7 +680,11 @@ describe("ChatSession.subscribe", () => {
 			Arr.filter(Str.split("\n\n")(text), (frame) => Str.startsWith("id:")(frame)),
 			(frame) => {
 				const data = Str.trimStart(
-					Str.slice(5)(Str.split("\n")(frame).find((line) => Str.startsWith("data:")(line))!),
+					Str.slice(5)(
+						Option.getOrThrow(
+							Arr.findFirst(Str.split("\n")(frame), (line) => Str.startsWith("data:")(line)),
+						),
+					),
 				)
 				const event = JSON.parse(data) as { seq: number; type: string }
 				return { seq: event.seq, type: event.type }

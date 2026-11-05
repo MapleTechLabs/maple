@@ -1,7 +1,7 @@
 import type { ErrorIssueId, OrgId, UserDetailRequest, UserIssueItem, WorkflowState } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssues } from "@maple/db/tables"
-import { Array as Arr, DateTime, Effect, Option } from "effect"
+import { Array as Arr, DateTime, Effect, Option, Order, Record as Rec } from "effect"
 import { CH } from "@maple/query-engine"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -42,8 +42,8 @@ export const foldUserIssues = (
 		const owner = owners.get(row.fingerprintHash)
 		return owner === undefined ? `fp:${row.fingerprintHash}` : `issue:${owner.id}`
 	})
-	const items = Arr.flatMap(Object.values(groups), (group): ReadonlyArray<UserIssueItem> => {
-		const members = (group ?? []).toSorted((a, b) => b.hits - a.hits)
+	const items = Arr.flatMap(Rec.values(groups), (group): ReadonlyArray<UserIssueItem> => {
+		const members = Arr.sort(group ?? [], MOST_HITS)
 		const lead = members[0]
 		if (lead === undefined) return []
 		const owner = owners.get(lead.fingerprintHash)
@@ -61,8 +61,16 @@ export const foldUserIssues = (
 			},
 		]
 	})
-	return items.toSorted((a, b) => b.hits - a.hits || b.lastSeenMs - a.lastSeenMs)
+	return Arr.sort(
+		items,
+		Order.combine(
+			MOST_HITS,
+			Order.flip(Order.mapInput(Order.Number, (item: UserIssueItem) => item.lastSeenMs)),
+		),
+	)
 }
+
+const MOST_HITS = Order.flip(Order.mapInput(Order.Number, (row: { hits: number }) => row.hits))
 
 /** Each hash's owning issue, with the fields the tab shows; hashes no issue owns are absent. */
 const owningIssues = Effect.fn("UsersReads.owningIssues")(function* (

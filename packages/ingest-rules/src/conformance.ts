@@ -1,5 +1,5 @@
 import { IngestRuleSpec } from "@maple/domain/ingest-rules"
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { applyRules, compileRules, isAttrList, type AttrMap, type AttrValue, type RuleRecord } from "./engine"
 
 // One shared-fixture case and its outcome in the JSON form both engines agree on. The fixture
@@ -41,7 +41,11 @@ export interface FixtureCase {
 	readonly expected?: unknown
 }
 
-const fromHex = (hex: string) => Uint8Array.from(hex.match(/../g) ?? [], (byte) => Number.parseInt(byte, 16))
+const fromHex = (hex: string) =>
+	Uint8Array.from(
+		Option.getOrElse(Str.match(/../g)(hex), (): ReadonlyArray<string> => []),
+		(byte) => Number.parseInt(byte, 16),
+	)
 const toHex = (bytes: Uint8Array) =>
 	Arr.join(
 		Array.from(bytes, (byte) => Str.padStart(2, "0")(byte.toString(16))),
@@ -69,7 +73,9 @@ const toJson = (value: AttrValue): Json => {
 const mapJson = (map: AttrMap): Json =>
 	Rec.fromEntries(Arr.map(Rec.toEntries(map), ([k, v]) => [k, toJson(v)]))
 const eventsJson = (record: RuleRecord) =>
-	record.events?.map((event) => ({ name: event.name, attributes: mapJson(event.attributes) }))
+	record.events === undefined
+		? undefined
+		: Arr.map(record.events, (event) => ({ name: event.name, attributes: mapJson(event.attributes) }))
 
 export const toRecord = (input: unknown): RuleRecord => {
 	const fixture = decodeRecord(input)
@@ -85,7 +91,13 @@ export const toRecord = (input: unknown): RuleRecord => {
 		spanKind: fixture.spanKind,
 		spanStatus: fixture.spanStatus,
 		statusMessage: fixture.statusMessage,
-		events: fixture.events?.map((event) => ({ name: event.name, attributes: toMap(event.attributes) })),
+		events:
+			fixture.events === undefined
+				? undefined
+				: Arr.map(fixture.events, (event) => ({
+						name: event.name,
+						attributes: toMap(event.attributes),
+					})),
 	}
 }
 

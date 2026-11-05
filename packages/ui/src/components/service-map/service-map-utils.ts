@@ -22,7 +22,7 @@ import {
 	type HyperdriveConfigInput,
 	type HyperdriveNodeInfo,
 } from "./service-map-hyperdrive"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 interface ServiceNodeInfra {
 	podCount: number
@@ -214,12 +214,13 @@ export const isNsAggregateId = (id: string) => Str.startsWith(NS_AGGREGATE_PREFI
  */
 export const parseDbNodeId = (id: string): { dbSystem: string; dbNamespace: string } => {
 	const rest = Str.slice(DB_NODE_PREFIX.length)(id)
-	const sep = rest.indexOf(":")
-	if (sep === -1) return { dbSystem: decodeURIComponent(rest), dbNamespace: "" }
-	return {
-		dbSystem: decodeURIComponent(Str.slice(0, sep)(rest)),
-		dbNamespace: decodeURIComponent(Str.slice(sep + 1)(rest)),
-	}
+	return Option.match(Str.indexOf(":")(rest), {
+		onNone: () => ({ dbSystem: decodeURIComponent(rest), dbNamespace: "" }),
+		onSome: (sep) => ({
+			dbSystem: decodeURIComponent(Str.slice(0, sep)(rest)),
+			dbNamespace: decodeURIComponent(Str.slice(sep + 1)(rest)),
+		}),
+	})
 }
 
 export const DEFAULT_LAYOUT_CONFIG = {
@@ -274,7 +275,7 @@ export function aggregateServiceOverviews<T extends ServiceMapOverviewRow & { p9
 	}
 	const out = new Map<string, T>()
 	for (const [name, group] of groups) {
-		const top = group.reduce((a, b) => (b.throughput > a.throughput ? b : a))
+		const top = Arr.reduce(group, group[0], (a, b) => (b.throughput > a.throughput ? b : a))
 		if (group.length === 1) {
 			out.set(name, top)
 			continue

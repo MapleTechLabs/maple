@@ -350,7 +350,7 @@ export const scrapeTargetsSection = (
 	const targets = focusId === null ? all : Arr.filter(all, (target) => target.id === focusId)
 	const isLoaded = AsyncData.isSuccess(data) || AsyncData.isRefreshing(data)
 	const isEmpty = isLoaded && targets.length === 0
-	const selected = targets.find((target) => target.id === model.prometheusCard.selectedId)
+	const selected = Arr.findFirst(targets, (target) => target.id === model.prometheusCard.selectedId)
 	const body = AsyncData.match(data, {
 		onIdle: () => skeletonList(h, { rows: 3, rowClassName: "h-[60px]", gap: "2" }),
 		onLoading: () => skeletonList(h, { rows: 3, rowClassName: "h-[60px]", gap: "2" }),
@@ -384,7 +384,10 @@ export const scrapeTargetsSection = (
 							{ className: "divide-y" },
 							Arr.map(targets, (target) => targetRow(h, model, target, timeZone)),
 						),
-						selected === undefined ? placeholder(h) : targetDetails(h, model, selected, timeZone),
+						Option.match(selected, {
+							onNone: () => placeholder(h),
+							onSome: (target) => targetDetails(h, model, target, timeZone),
+						}),
 					],
 				)
 	}

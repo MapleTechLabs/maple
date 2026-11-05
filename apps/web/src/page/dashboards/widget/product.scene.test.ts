@@ -46,10 +46,10 @@ const document = Schema.decodeSync(DashboardDocument)({
 type Step = Readonly<{ model: Model; commands: ReadonlyArray<{ readonly name: string }> }>
 
 const run = (step: Step, ...messages: ReadonlyArray<Message>): Step =>
-	messages.reduce<Step>((current, message) => {
+	Arr.reduce(messages, step, (current, message) => {
 		const next = update(current.model, message, context)
 		return { model: next.model, commands: [...current.commands, ...(next.commands ?? [])] }
-	}, step)
+	})
 
 const opened = (): Step =>
 	run(
@@ -75,7 +75,7 @@ describe("list, funnel and paths panels", () => {
 			edit(ProductEdit.ChangedListColumnText({ index: 4, field: "header", value: "Trace" })),
 		)
 		const state = step.model.state
-		expect(state?.listColumns.map((column) => column.header)).toEqual([
+		expect(Arr.map(state?.listColumns ?? [], (column) => column.header)).toEqual([
 			"Time",
 			"Severity",
 			"Service",
@@ -96,7 +96,7 @@ describe("list, funnel and paths panels", () => {
 		// Rows 40 px apart: the first row's centre dragged 85 px down passes the next two.
 		const to = targetIndex([20, 60, 100, 140], 0, 20 + 85)
 		const dragged = run(list, edit(ProductEdit.MovedListColumn({ index: 0, delta: to })))
-		expect(dragged.model.state?.listColumns.map((column) => column.header)).toEqual([
+		expect(Arr.map(dragged.model.state?.listColumns ?? [], (column) => column.header)).toEqual([
 			"Severity",
 			"Service",
 			"Time",
@@ -161,7 +161,10 @@ describe("list, funnel and paths panels", () => {
 			edit(ProductEdit.SetStepKind({ scope: "funnel", index: 0, kind: "session" })),
 			edit(ProductEdit.MovedStep({ index: 0, delta: 1 })),
 		)
-		expect(step.model.state?.funnel.steps.map((candidate) => candidate.kind)).toEqual(["event", "event"])
+		expect(Arr.map(step.model.state?.funnel.steps ?? [], (candidate) => candidate.kind)).toEqual([
+			"event",
+			"event",
+		])
 	})
 
 	test("the funnel's view writes only its rendering flags on a query-set funnel", () => {

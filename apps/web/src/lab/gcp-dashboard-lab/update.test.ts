@@ -5,7 +5,7 @@ import { Message } from "../../page/dashboards/view/message"
 import { optionsByNameOf, variablesOf } from "../../page/dashboards/view/plan"
 import { fixtureRows } from "./fixture"
 import { CONTEXT, init, update } from "./update"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Option, Order, Record as Rec } from "effect"
 
 const API = /^(FetchDashboard|SaveDashboard|UpdateDashboard)/
 const NOW = Date.UTC(2026, 9, 15)
@@ -65,8 +65,10 @@ describe("gcp dashboard lab", () => {
 		)
 		const picked = update(drafted.model, Message.CommittedVariableDraft({ name: "project" })).model
 		expect(variableValuesFromSearch(picked.search).project).toBe("acme-staging")
-		const widget = picked.document?.widgets.find((candidate) => candidate.id === "run-requests")
+		const widget = Option.getOrUndefined(
+			Arr.findFirst(picked.document?.widgets ?? [], (candidate) => candidate.id === "run-requests"),
+		)
 		const rows = widget === undefined ? [] : fixtureRows(widget, variablesOf(picked, CONTEXT).values)
-		expect(Rec.keys(rows[0] ?? {}).toSorted()).toEqual(["bucket", "checkout"])
+		expect(Arr.sort(Rec.keys(rows[0] ?? {}), Order.String)).toEqual(["bucket", "checkout"])
 	})
 })

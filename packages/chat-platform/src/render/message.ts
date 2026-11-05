@@ -25,7 +25,7 @@ import {
 import { delegatedAgentOf, type ChatMessage, type ChatToolCall } from "@maple/domain/chat-session"
 import { formatDuration, formatNumber } from "@maple/domain/format"
 import { encodeChatActionToken } from "../action-token"
-import { Option, Schema } from "effect"
+import { Array as Arr, Option, Record as Rec, Schema, String as Str } from "effect"
 import { approvalOutcome } from "./approval-outcome"
 import { type ChatBlock, type ChatEntityBlock, type ChatRenderContext, type ChatToolActivity } from "./blocks"
 
@@ -43,7 +43,7 @@ export const renderChatMessage = (
 
 	// The calls that ran. A proposed one has not, so it neither reports progress nor cuts the prose
 	// that explains it — it has a block of its own further down.
-	const calls = message.toolCalls.filter((call) => call.proposed !== true)
+	const calls = Arr.filter(message.toolCalls, (call) => call.proposed !== true)
 
 	// The latest one only, and only while the turn runs. A reader in a channel wants to know the
 	// bot is still working, not to keep a list of everything it touched on the way to an answer
@@ -55,7 +55,7 @@ export const renderChatMessage = (
 	// Whatever renders a chart's image numbers every fence in the WHOLE message, so prose dropped
 	// ahead of the answer still counts towards the index of a chart inside it. A fence left open
 	// across the cut is counted by this scan too, exactly as the whole-message scan counts it.
-	let chartIndex = chartFences(message.text.slice(0, start)).length
+	let chartIndex = chartFences(Str.slice(0, start)(message.text)).length
 
 	for (const part of splitChartFences(visibleText(message.text, calls, start))) {
 		if (part.kind === "chart") {
@@ -116,19 +116,21 @@ const CHART_FENCE = "```chart"
 const FENCE = "```"
 
 const pushProse = (blocks: Array<ChatBlock>, markdown: string): void => {
-	const trimmed = markdown.trim()
+	const trimmed = Str.trim(markdown)
 	if (trimmed.length > 0) blocks.push({ kind: "prose", markdown: trimmed })
 }
 
 /** What the plot would have shown, for a platform that has no image of it. */
 const chartSummary = (spec: ChartSpec): string => {
 	if (spec.type === "ranked") {
-		const highest = spec.data.reduce((top, point) => (point.value > top.value ? point : top))
+		const highest = Arr.reduce(spec.data, spec.data[0], (top, point) =>
+			point.value > top.value ? point : top,
+		)
 		return `${plural(spec.data.length, "item")}, highest ${highest.name} (${formatNumber(highest.value)})`
 	}
 	const series = new Set<string>()
-	for (const point of spec.data) for (const name of Object.keys(point.series)) series.add(name)
-	return `${[...series].join(", ")} across ${plural(spec.data.length, "point")}`
+	for (const point of spec.data) for (const name of Rec.keys(point.series)) series.add(name)
+	return `${Arr.join([...series], ", ")} across ${plural(spec.data.length, "point")}`
 }
 
 const entityBlock = (
@@ -146,7 +148,7 @@ const entityBlock = (
 				detail: joinDetail([
 					formatDuration(durationMs),
 					spanCount === undefined ? null : plural(spanCount, "span"),
-					services === undefined ? null : services.join(", "),
+					services === undefined ? null : Arr.join(services, ", "),
 					hasError === true ? "has errors" : null,
 				]),
 				url: `${app}/traces/${encodeURIComponent(id)}`,
@@ -175,7 +177,7 @@ const entityBlock = (
 				label: errorType,
 				detail: joinDetail([
 					count === undefined ? null : `${formatNumber(count)} ${count === 1 ? "event" : "events"}`,
-					affectedServices === undefined ? null : affectedServices.join(", "),
+					affectedServices === undefined ? null : Arr.join(affectedServices, ", "),
 				]),
 				// The app lists issues rather than error types, so there is no page to open for one.
 				url: null,
@@ -187,7 +189,7 @@ const entityBlock = (
 				kind: "entity",
 				entity: "log",
 				label: truncate(body, 160),
-				detail: joinDetail([severity.toUpperCase(), serviceName ?? null, timestamp ?? null]),
+				detail: joinDetail([Str.toUpperCase(severity), serviceName ?? null, timestamp ?? null]),
 				// A log record is addressed by a composite key the annotation does not carry; its
 				// trace is the page that holds it.
 				url: traceId === undefined ? null : `${app}/traces/${encodeURIComponent(traceId)}`,
@@ -197,8 +199,8 @@ const entityBlock = (
 }
 
 const joinDetail = (parts: ReadonlyArray<string | null>): string | null => {
-	const present = parts.filter((part): part is string => part !== null && part.length > 0)
-	return present.length === 0 ? null : present.join(" · ")
+	const present = Arr.filter(parts, (part): part is string => part !== null && part.length > 0)
+	return present.length === 0 ? null : Arr.join(present, " · ")
 }
 
 /**
@@ -214,21 +216,25 @@ const joinDetail = (parts: ReadonlyArray<string | null>): string | null => {
  * whole-message numbering the image endpoint uses.
  */
 const visibleText = (text: string, calls: ReadonlyArray<ChatToolCall>, start: number): string => {
-	const bounds = [...new Set(calls.map((call) => call.textOffset ?? text.length))]
-		.filter((at) => at > start && at < text.length)
-		.sort((left, right) => left - right)
+	const bounds = Arr.filter(
+		[...new Set(Arr.map(calls, (call) => call.textOffset ?? text.length))],
+		(at) => at > start && at < text.length,
+	).sort((left, right) => left - right)
 	const segments: Array<string> = []
 	let segment = ""
 	let from = start
 	for (const at of [...bounds, text.length]) {
-		segment += text.slice(from, at)
+		segment += Str.slice(from, at)(text)
 		from = at
 		if (hasOpenFence(segment)) continue
-		segments.push(segment.trim())
+		segments.push(Str.trim(segment))
 		segment = ""
 	}
-	segments.push(segment.trim())
-	return segments.filter((piece) => piece.length > 0).join("\n\n")
+	segments.push(Str.trim(segment))
+	return Arr.join(
+		Arr.filter(segments, (piece) => piece.length > 0),
+		"\n\n",
+	)
 }
 
 /**
@@ -246,7 +252,7 @@ const visibleText = (text: string, calls: ReadonlyArray<ChatToolCall>, start: nu
  * to the end of the text, as web does, so an old prose-then-calls turn still renders whole.
  */
 const answerOffset = (text: string, calls: ReadonlyArray<ChatToolCall>, running: boolean): number => {
-	const offsets = calls.map((call) => call.textOffset ?? text.length)
+	const offsets = Arr.map(calls, (call) => call.textOffset ?? text.length)
 	// Still running: the segment after the last call so far, which may yet be the answer. The next
 	// call is what turns it into narration, and re-rendering is what retracts it.
 	if (running) return offsets[offsets.length - 1] ?? 0
@@ -254,13 +260,13 @@ const answerOffset = (text: string, calls: ReadonlyArray<ChatToolCall>, running:
 	// but a turn that stopped without answering has nothing there, and the closest it came to an
 	// answer is the segment before.
 	for (let index = offsets.length - 1; index >= 0; index--) {
-		if (text.slice(offsets[index]).trim().length > 0) return offsets[index]
+		if (Str.trim(Str.slice(offsets[index])(text)).length > 0) return offsets[index]
 	}
 	return 0
 }
 
 /** The phrase the session recorded, or the tool's name in words for a call that has none. */
-const toolLabel = (call: ChatToolCall): string => call.label ?? `Using ${call.name.replaceAll("_", " ")}`
+const toolLabel = (call: ChatToolCall): string => call.label ?? `Using ${Str.replaceAll("_", " ")(call.name)}`
 
 const toolActivity = (call: ChatToolCall): ChatToolActivity => {
 	const agent = delegatedAgentOf(call.name)
@@ -294,6 +300,7 @@ const encodeJsonOption = Schema.encodeUnknownOption(Schema.fromJsonString(Schema
 export const summarizeToolInput = (input: unknown): string => {
 	if (input === null || typeof input !== "object") return truncate(String(input), MAX_SUMMARY_VALUE)
 	const parts: Array<string> = []
+	// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 	for (const [key, value] of Object.entries(input)) {
 		if (value === undefined || value === null) continue
 		if (parts.length === MAX_SUMMARY_ARGS) {
@@ -306,10 +313,10 @@ export const summarizeToolInput = (input: unknown): string => {
 				: String(value)
 		parts.push(`${key}: ${truncate(text, MAX_SUMMARY_VALUE)}`)
 	}
-	return parts.join(" · ")
+	return Arr.join(parts, " · ")
 }
 
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? "" : "s"}`
 
 const truncate = (text: string, max: number): string =>
-	text.length <= max ? text : `${text.slice(0, max - 1)}…`
+	text.length <= max ? text : `${Str.slice(0, max - 1)(text)}…`

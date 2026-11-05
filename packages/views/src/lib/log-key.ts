@@ -37,6 +37,7 @@ function toBase64Url(str: string): string {
 function fromBase64Url(token: string): string {
 	const padded = Str.replace(/_/g, "/")(Str.replace(/-/g, "+")(token))
 	const binary = atob(padded)
+	// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 	const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
 	return new TextDecoder().decode(bytes)
 }

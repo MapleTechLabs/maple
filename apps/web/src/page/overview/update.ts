@@ -115,14 +115,14 @@ const keyed = <A, E>(
 
 /** Steps run in order, each against the Model the previous ones patched. */
 const runSteps = (model: Model, steps: ReadonlyArray<(model: Model) => Step>, prior?: Return): Return =>
-	steps.reduce<Return>((result, step) => {
+	Arr.reduce<(model: Model) => Step, Return>(steps, prior ?? { model }, (result, step) => {
 		const next = step(result.model)
 		return {
 			...result,
 			model: { ...result.model, ...next.patch },
 			commands: [...(result.commands ?? []), ...next.commands],
 		}
-	}, prior ?? { model })
+	})
 
 const environmentsInput = (model: Model) => {
 	const environments = environmentFilter(model)

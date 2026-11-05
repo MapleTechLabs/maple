@@ -50,6 +50,7 @@ export const publicErrors = <const Errors extends ReadonlyArray<SelfDescribingHt
 			Schema.Schema<Errors[Index]>
 	}
 ): { readonly [Index in keyof Errors]: V2PublicErrorSchema<Errors[Index]> } =>
+	// @effect-diagnostics-next-line preferEffectArray:off -- mapped tuple; Arr.map loses the element type
 	errorClasses.map((errorClass) => publicError(errorClass)) as {
 		readonly [Index in keyof Errors]: V2PublicErrorSchema<Errors[Index]>
 	}

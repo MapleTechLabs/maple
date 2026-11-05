@@ -4,7 +4,7 @@ import { FILTER_MODES } from "./gcp-configure-copy"
 import type { ConfigureModel } from "./gcp-configure-schema"
 import { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // The `Select` of `GcpLogFilterField`: keep an existing sink's filter, or replace it.
 
@@ -17,8 +17,9 @@ const ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(FILTER_MODES, (mo
 
 /** `FilterMode`: the mode by name, with what it does beside it. */
 const filterMode = (h: H, value: string): ReadonlyArray<Html> => {
-	const mode = FILTER_MODES.find((entry) => entry.value === value)
-	if (mode === undefined) return []
+	const found = Arr.findFirst(FILTER_MODES, (entry) => entry.value === value)
+	if (Option.isNone(found)) return []
+	const mode = found.value
 	return [
 		h.span(
 			[h.Class("flex min-w-0 items-baseline gap-2.5")],

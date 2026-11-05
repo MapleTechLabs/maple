@@ -3,7 +3,7 @@
  * document is decoded through its real domain schema, so the fixture cannot
  * drift from the wire format, and the overview runs through `deriveOverview`.
  */
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Order, Schema, Array as Arr, String as Str } from "effect"
 
 import {
 	AlertDeliveryEventDocument,
@@ -647,7 +647,10 @@ const allDeliveries = (nowMs: number): AlertDeliveryEventDocument[] => {
 		failed: { code: 410, message: "HTTP 410 Gone" },
 	}))
 	return Arr.map(
-		[...specs, ...routine, ...legacy].toSorted((a, b) => b.atMs - a.atMs),
+		Arr.sort(
+			[...specs, ...routine, ...legacy],
+			Order.flip(Order.mapInput(Order.Number, (spec: { readonly atMs: number }) => spec.atMs)),
+		),
 		(spec, i) => deliveryFrom(spec, i),
 	)
 }
@@ -760,7 +763,10 @@ export function buildAlertsLabFixture(nowMs: number): AlertsLabFixture {
 	})
 
 	const chatRule = ruleById.get(RULE.errorRate) ?? rules[0]!
-	const chat = incidents.find((incident) => incident.id === INCIDENT.chat) ?? incidents[0]!
+	const chat = Option.getOrElse(
+		Arr.findFirst(incidents, (incident) => incident.id === INCIDENT.chat),
+		() => incidents[0]!,
+	)
 	const opened = Date.parse(chat.firstTriggeredAt)
 	const range = { start: opened - 30 * MIN, end: nowMs }
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { DashboardTemplatePreviewKind, type PortableDashboardDocument } from "@maple/domain/http"
 import { DASHBOARD_TEMPLATES, buildTemplatePreview, listTemplateMetadata } from "./index"
 import type { WidgetDef } from "./types"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 const PREVIEW_KINDS = new Set<string>(DashboardTemplatePreviewKind.literals)
 
@@ -12,7 +12,9 @@ const firstTabWidgets = ({ widgets, sections = [] }: PortableDashboardDocument) 
 		widgets,
 		(w) =>
 			w.sectionId === undefined ||
-			w.tabId === sections.find((section) => section.id === w.sectionId)?.tabs[0]?.id,
+			w.tabId ===
+				Option.getOrUndefined(Arr.findFirst(sections, (section) => section.id === w.sectionId))
+					?.tabs[0]?.id,
 	)
 
 function expectGaplessRows(templateId: string, widgets: ReadonlyArray<WidgetDef>) {
@@ -74,7 +76,7 @@ describe("dashboard template previews", () => {
 	})
 
 	it("stacks a tabbed template's preview below the root canvas, first tab only", () => {
-		const gcp = DASHBOARD_TEMPLATES.find((t) => t.id === "gcp")!
+		const gcp = Option.getOrUndefined(Arr.findFirst(DASHBOARD_TEMPLATES, (t) => t.id === "gcp"))!
 		const built = gcp.build({})
 		const preview = buildTemplatePreview(gcp)
 		const firstTab = built.sections?.[0]?.tabs[0]?.id
@@ -90,14 +92,18 @@ describe("dashboard template previews", () => {
 		const metadata = listTemplateMetadata()
 		expect(metadata.length).toBe(DASHBOARD_TEMPLATES.length)
 		for (const meta of metadata) {
-			const template = DASHBOARD_TEMPLATES.find((t) => t.id === meta.id)
+			const template = Option.getOrUndefined(
+				Arr.findFirst(DASHBOARD_TEMPLATES, (t) => t.id === meta.id),
+			)
 			expect(template).toBeDefined()
 			expect(meta.preview.length, meta.id).toBe(firstTabWidgets(template!.build({})).length)
 		}
 	})
 
 	it("maps chart display ids to line/area/bar kinds", () => {
-		const postgres = DASHBOARD_TEMPLATES.find((t) => t.id === "postgres-overview")!
+		const postgres = Option.getOrUndefined(
+			Arr.findFirst(DASHBOARD_TEMPLATES, (t) => t.id === "postgres-overview"),
+		)!
 		const kinds = Arr.map(buildTemplatePreview(postgres), (w) => w.kind)
 		expect(kinds).toContain("line")
 		expect(kinds).toContain("area")
@@ -213,7 +219,9 @@ describe("dashboard template requirements", () => {
 
 	it("derives the public requirements array from the structured requirement", () => {
 		for (const meta of listTemplateMetadata()) {
-			const template = DASHBOARD_TEMPLATES.find((t) => t.id === meta.id)!
+			const template = Option.getOrUndefined(
+				Arr.findFirst(DASHBOARD_TEMPLATES, (t) => t.id === meta.id),
+			)!
 			expect(meta.requirement, meta.id).toEqual(template.requirement ?? null)
 			expect(meta.requirements, meta.id).toEqual(
 				template.requirement ? [template.requirement.label] : [],

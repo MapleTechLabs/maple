@@ -197,9 +197,10 @@ function pathEventsBranch(opts: ProductEventsPathsOpts, filters: ProductEventsFi
 				],
 				(cond): cond is CH.Condition => cond !== undefined,
 			)
-			const narrowed = narrowing.reduce<CH.Condition | undefined>(
-				(acc, cond) => (acc ? acc.and(cond) : cond),
+			const narrowed = Arr.reduce<CH.Condition, CH.Condition | undefined>(
+				narrowing,
 				undefined,
+				(acc, cond) => (acc ? acc.and(cond) : cond),
 			)
 			return [
 				forward ? ts.gte(anchorTs) : ts.lte(anchorTs),

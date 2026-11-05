@@ -176,7 +176,7 @@ export const selectIncident = (model: Model, incidentId: StatusPageIncidentId): 
 		: { model }
 
 export const openUpdate = (model: Model, incidentId: StatusPageIncidentId, isResolving: boolean): Return => {
-	const incident = incidentsOf(model).find((row) => row.id === incidentId)
+	const incident = Option.getOrUndefined(Arr.findFirst(incidentsOf(model), (row) => row.id === incidentId))
 	return incident === undefined || !isOpenIncident(incident)
 		? { model }
 		: {

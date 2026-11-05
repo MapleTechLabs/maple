@@ -113,9 +113,13 @@ const headerActions = (h: H, model: Model, monitor: UptimeMonitor): Html =>
 const openIncidentId = (model: Model, monitor: UptimeMonitor): string | null =>
 	monitor.alert_rule_id === null
 		? null
-		: ((model.incidents ?? []).find(
+		: Arr.findFirst(
+				model.incidents ?? [],
 				(row) => row.rule_id === monitor.alert_rule_id && row.status === "open",
-			)?.id ?? null)
+			).pipe(
+				Option.flatMapNullishOr((found) => found.id),
+				Option.getOrNull,
+			)
 
 /** "Returning 503 since 14:02:18", the check's error, and the way to the failing trace. */
 const incidentBlock = (h: H, model: Model, monitor: UptimeMonitor, timeZone: string): Html => {

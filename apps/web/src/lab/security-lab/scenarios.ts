@@ -125,15 +125,16 @@ const fold = <M, Msg>(
 	) => { model: M; commands?: ReadonlyArray<Command.Command<Msg, never, Resources>> },
 	messages: ReadonlyArray<(model: M) => Msg>,
 ): Step<M, Msg> =>
-	messages.reduce<Step<M, Msg>>(
-		(step, toMessage) => {
+	Arr.reduce(
+		messages,
+		{ model: start.model, commands: Arr.filter(start.commands, isLocalCommand) } satisfies Step<M, Msg>,
+		(step: Step<M, Msg>, toMessage): Step<M, Msg> => {
 			const next = update(step.model, toMessage(step.model))
 			return {
 				model: next.model,
 				commands: [...step.commands, ...Arr.filter(next.commands ?? [], isLocalCommand)],
 			}
 		},
-		{ model: start.model, commands: Arr.filter(start.commands, isLocalCommand) },
 	)
 
 const targetId = (id: string) => Schema.decodeSync(SecurityAuditTargetId)(id)

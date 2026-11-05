@@ -70,7 +70,10 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		}),
 		sortSelect: Select.init("investigations-sort", {
 			value: sortValueOf(search),
-			selectedIndex: SORT_OPTIONS.findIndex((option) => option.value === sortValueOf(search)),
+			selectedIndex: Option.getOrElse(
+				Arr.findFirstIndex(SORT_OPTIONS, (option) => option.value === sortValueOf(search)),
+				() => -1,
+			),
 		}),
 	}
 	const loaded = loadFirstPage(model, context, "Load")

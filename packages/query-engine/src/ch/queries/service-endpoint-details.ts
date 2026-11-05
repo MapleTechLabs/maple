@@ -7,7 +7,7 @@
 // hours count whole. No raw edge, so nothing here splices and the boundary gate
 // never applies. The rollup holds Server spans with a response status only.
 
-import { Schema, type DateTime } from "effect"
+import { Schema, type DateTime, Array as Arr } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { from, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
@@ -110,7 +110,10 @@ export const serviceEndpointDistributionRowSchema = Schema.Struct({
 	userAgentCounts: Schema.Array(CHNumber),
 })
 
-const LATENCY_LEVELS_SQL = ENDPOINT_LATENCY_QUANTILE_LEVELS.join(", ")
+const LATENCY_LEVELS_SQL = Arr.join(
+	Arr.map(ENDPOINT_LATENCY_QUANTILE_LEVELS, (level) => `${level}`),
+	", ",
+)
 // An agent-less span still takes an approx_top_k slot as ''; it is not an agent.
 const TOP_AGENTS_SQL = "arrayFilter(x -> x.1 != '', approx_top_kMerge(10)(UserAgents))"
 

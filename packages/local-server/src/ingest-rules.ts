@@ -8,7 +8,7 @@ import {
 	type CompiledRules,
 	type RuleRecord,
 } from "@maple/ingest-rules"
-import { Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
+import { Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -126,7 +126,8 @@ export const makeLocalIngestRulesSource = (file: string) => {
 // OTLP AnyValue <-> engine values. Unchanged values keep their original AnyValue, so an
 // integral double is never rewritten as an int.
 
-const base64ToBytes = (value: string) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0))
+const base64ToBytes = (value: string) =>
+	Uint8Array.from(atob(value), (char) => Option.getOrThrow(Str.charCodeAt(char, 0)))
 const bytesToBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes))
 
 const toValue = (value: AnyValue | undefined): AttrValue => {
@@ -239,19 +240,14 @@ const writeResource = (
 ) => {
 	const changed = Arr.filter(records, (record) => record.resource !== before)
 	if (resource === undefined || changed.length === 0) return
-	const merged = changed.reduce<AttrMap>(
-		(acc, record) =>
-			Rec.fromEntries(
-				Arr.flatMap(
-					Rec.toEntries(acc),
-					([key, value]): ReadonlyArray<readonly [string, AttrValue]> => {
-						const next = record.resource[key]
-						if (next === undefined) return []
-						return [[key, next === before[key] ? value : next]]
-					},
-				),
-			),
-		before,
+	const merged = Arr.reduce(changed, before, (acc, record): AttrMap =>
+		Rec.fromEntries(
+			Arr.flatMap(Rec.toEntries(acc), ([key, value]): ReadonlyArray<readonly [string, AttrValue]> => {
+				const next = record.resource[key]
+				if (next === undefined) return []
+				return [[key, next === before[key] ? value : next]]
+			}),
+		),
 	)
 	resource.attributes = fromMap(merged, resource.attributes)
 }
@@ -282,7 +278,7 @@ const applyToTraces = (request: TraceRequest, run: Run) => {
 				span.attributes = fromMap(record.attributes, span.attributes)
 				if (span.status !== undefined && record.statusMessage !== span.status.message)
 					span.status.message = record.statusMessage
-				record.events?.forEach((event, index) => {
+				Arr.forEach(record.events ?? [], (event, index) => {
 					const original = span.events?.[index]
 					if (original !== undefined)
 						original.attributes = fromMap(event.attributes, original.attributes)
@@ -341,7 +337,7 @@ const applyToMetrics = (request: MetricsRequest, run: Run) => {
 				if (output === null) return false
 				kept.push(output.record)
 				point.attributes = fromMap(output.record.attributes, point.attributes)
-				point.exemplars?.forEach((exemplar) => {
+				Arr.forEach(point.exemplars ?? [], (exemplar) => {
 					exemplar.filteredAttributes = fromMap(
 						output.redactExtra(toMap(exemplar.filteredAttributes)),
 						exemplar.filteredAttributes,

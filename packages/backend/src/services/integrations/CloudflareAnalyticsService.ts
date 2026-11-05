@@ -323,8 +323,10 @@ const httpZoneSettingsNode = (
 	decoded: SettingsResponseContract,
 	row: CloudflareAnalyticsStateRow,
 ): DatasetSettingsContract | null | undefined => {
-	const zone = (decoded.viewer.zones ?? []).find((entry) => entry.zoneTag === row.zoneId)
-	return zone === undefined ? undefined : (zone.settings?.httpRequestsAdaptiveGroups ?? null)
+	return Option.match(
+		Arr.findFirst(decoded.viewer.zones ?? [], (entry) => entry.zoneTag === row.zoneId),
+		{ onNone: () => undefined, onSome: (zone) => zone.settings?.httpRequestsAdaptiveGroups ?? null },
+	)
 }
 
 const httpDataset: DatasetDef = {
@@ -455,8 +457,13 @@ const firewallDataset: DatasetDef = {
 			}),
 		),
 	settingsNode: (decoded, row) => {
-		const zone = (decoded.viewer.zones ?? []).find((entry) => entry.zoneTag === row.zoneId)
-		return zone === undefined ? undefined : (zone.settings?.firewallEventsAdaptiveGroups ?? null)
+		return Option.match(
+			Arr.findFirst(decoded.viewer.zones ?? [], (entry) => entry.zoneTag === row.zoneId),
+			{
+				onNone: () => undefined,
+				onSome: (zone) => zone.settings?.firewallEventsAdaptiveGroups ?? null,
+			},
+		)
 	},
 }
 
@@ -481,8 +488,10 @@ const dnsDataset: DatasetDef = {
 			}),
 		),
 	settingsNode: (decoded, row) => {
-		const zone = (decoded.viewer.zones ?? []).find((entry) => entry.zoneTag === row.zoneId)
-		return zone === undefined ? undefined : (zone.settings?.dnsAnalyticsAdaptiveGroups ?? null)
+		return Option.match(
+			Arr.findFirst(decoded.viewer.zones ?? [], (entry) => entry.zoneTag === row.zoneId),
+			{ onNone: () => undefined, onSome: (zone) => zone.settings?.dnsAnalyticsAdaptiveGroups ?? null },
+		)
 	},
 }
 
@@ -973,15 +982,15 @@ const partForError = (error: CloudflareGraphqlError, parts: ReadonlyArray<WorkPa
 	if (Arr.isArray(error.path)) {
 		for (const segment of error.path) {
 			if (typeof segment !== "string") continue
-			const part = parts.find((candidate) => candidate.dataset.aliases.includes(segment))
-			if (part) return part
+			const part = Arr.findFirst(parts, (candidate) => candidate.dataset.aliases.includes(segment))
+			if (Option.isSome(part)) return part.value
 		}
 	}
 	const message = Str.toLowerCase(error.message)
-	return (
-		parts.find((candidate) =>
+	return Option.getOrNull(
+		Arr.findFirst(parts, (candidate) =>
 			Arr.some(candidate.dataset.quantileNeedles, (needle) => Str.includes(needle)(message)),
-		) ?? null
+		),
 	)
 }
 

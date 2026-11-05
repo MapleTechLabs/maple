@@ -27,7 +27,7 @@ export const UserSessionAuthorizationLive = Layer.effect(
 			bearer: (httpEffect) =>
 				Effect.gen(function* () {
 					const request = yield* HttpServerRequest.HttpServerRequest
-					if (getBearerToken(request.headers)?.startsWith(API_KEY_PREFIX)) {
+					if (Str.startsWith(API_KEY_PREFIX)(getBearerToken(request.headers) ?? "")) {
 						return yield* new CurrentTenant.ApiKeyNotAcceptedError({
 							message: "API keys cannot call the internal API; use the /v2 API instead",
 						})
