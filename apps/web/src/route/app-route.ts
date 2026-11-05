@@ -1,4 +1,4 @@
-import { AlertRuleId, AnomalyIncidentId, DashboardId, ErrorIssueId } from "@maple/domain/http"
+import { AlertRuleId, AnomalyIncidentId, DashboardId, EndUserId, ErrorIssueId } from "@maple/domain/http"
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Schema } from "effect"
 import { defineRouteUnion } from "foldkit/route"
@@ -88,7 +88,7 @@ export const AppRoute = defineRouteUnion({
 	Services: { search: Search.ServicesSearch },
 	Traces: { search: Search.TracesSearch },
 	Users: { search: Search.UsersSearch },
-	UserDetail: { userId: Schema.String, search: Search.UserDetailSearch },
+	UserDetail: { userId: EndUserId, search: Search.UserDetailSearch },
 	AgentSessionTool: { toolName: Schema.String, search: Search.AgentSessionToolSearch },
 	McpServer: { serviceName: Schema.String, search: Search.McpServersSearch },
 	McpServerTool: { serviceName: Schema.String, toolName: Schema.String, search: Search.McpServersSearch },
