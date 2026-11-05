@@ -64,7 +64,10 @@ export const userNameBlock = <M>(h: HtmlBuilder<M>, user: UserRow): Html => {
 								mono: true,
 								truncate: true,
 								as: "span",
-								className: "max-w-1/2 shrink-0 @min-[880px]/panel:hidden",
+								className: cn(
+									"shrink-0 @min-[880px]/panel:hidden",
+									detail.length > 0 && "max-w-1/2",
+								),
 							},
 							[detail.length === 0 ? group : `· ${group}`],
 						),
