@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 import { init, itemTooltipTriggerId, Message, update } from "./menu"
 import * as Tooltip from "./tooltip"
+import { Array as Arr } from "effect"
 
 // A disabled item's tooltip (`<TooltipTrigger render={<div />}>` around the item).
 
@@ -11,18 +12,26 @@ const entered = () => {
 	const open = update(init(ID), Message.ClickedTrigger()).model
 	return update(
 		open,
-		Message.GotItemTooltipMessage({ message: Tooltip.Message.EnteredTrigger({ triggerId }), side: "left" }),
+		Message.GotItemTooltipMessage({
+			message: Tooltip.Message.EnteredTrigger({ triggerId }),
+			side: "left",
+		}),
 	)
 }
 
 describe("menu item tooltip", () => {
 	test("hovering the wrapper waits the open delay, then opens on the item's side", () => {
 		const step = entered()
-		expect(step.commands?.map((command) => command.name)).toEqual(["WaitOpenDelay"])
+		expect(
+			step.commands === undefined ? undefined : Arr.map(step.commands, (command) => command.name),
+		).toEqual(["WaitOpenDelay"])
 		const generation = step.model.itemTooltip.hoverGeneration
 		const opened = update(
 			step.model,
-			Message.GotItemTooltipMessage({ message: Tooltip.Message.ElapsedOpenDelay({ generation }), side: "left" }),
+			Message.GotItemTooltipMessage({
+				message: Tooltip.Message.ElapsedOpenDelay({ generation }),
+				side: "left",
+			}),
 		).model
 		expect(opened.itemTooltip.isOpen).toBe(true)
 		expect(opened.itemTooltip.requestedSide).toBe("left")

@@ -55,7 +55,10 @@ const asFiniteNumber = (value: unknown): number => {
 const pickValueField = (rows: ReadonlyArray<Record<string, unknown>>): string => {
 	const first = rows[0]
 	if (first === undefined) return "value"
-	return Rec.keys(first).find((key) => key !== "name" && typeof first[key] === "number") ?? "value"
+	return Option.getOrElse(
+		Arr.findFirst(Rec.keys(first), (key) => key !== "name" && typeof first[key] === "number"),
+		() => "value",
+	)
 }
 
 const fmtValue = (value: number, unit: string | undefined): string =>

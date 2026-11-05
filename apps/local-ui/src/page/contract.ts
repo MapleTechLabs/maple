@@ -55,7 +55,7 @@ export const withParams = (location: Location, updates: ParamUpdates): string =>
 		next.delete(key)
 		if (typeof value === "string") {
 			if (value !== "") next.set(key, value)
-		} else value?.forEach((entry) => next.append(key, entry))
+		} else if (value) Arr.forEach(value, (entry) => next.append(key, entry))
 	})
 	const search = next.toString()
 	return `#${location.path}${search ? `?${search}` : ""}`

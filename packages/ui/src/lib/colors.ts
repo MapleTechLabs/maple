@@ -1,4 +1,4 @@
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 /**
  * Chart color Tailwind classes for depth-based coloring in visualizations.
  * Maps to Tailwind classes: bg-chart-1 through bg-chart-5
@@ -58,15 +58,12 @@ const SERVICE_HUES = [
  */
 export function extractClassName(spanName: string): string | null {
 	// Match patterns like "Class.Method", "Namespace.Class.Method", "Class::Method"
-	const dotMatch = spanName.match(/^(.+?)\.[\w]+$/)
-	if (dotMatch) {
-		return dotMatch[1]
-	}
-	const colonMatch = spanName.match(/^(.+?)::[\w]+$/)
-	if (colonMatch) {
-		return colonMatch[1]
-	}
-	return null
+	return Option.getOrNull(
+		Option.map(
+			Option.orElse(Str.match(/^(.+?)\.[\w]+$/)(spanName), () => Str.match(/^(.+?)::[\w]+$/)(spanName)),
+			(match) => match[1],
+		),
+	)
 }
 
 /**

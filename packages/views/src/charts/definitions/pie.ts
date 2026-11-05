@@ -63,20 +63,25 @@ const wedgeFocus = (
 ): ChartFocusStrategy<PieSlice, number, number> => {
 	const wedgeAt = (points: readonly ChartPoint<PieSlice, number, number>[], x: number, y: number) => {
 		const layout = box.layout
-		if (layout === null) return undefined
+		if (layout === null) return Option.none()
 		const dx = x - layout.centerX
 		const dy = y - layout.centerY
 		const distance = Math.hypot(dx, dy)
-		if (distance < resolveInnerRadius(layout.radius, donut, innerRadius)) return undefined
-		if (distance > layout.radius * HOVER_GROWTH) return undefined
+		if (distance < resolveInnerRadius(layout.radius, donut, innerRadius)) return Option.none()
+		if (distance > layout.radius * HOVER_GROWTH) return Option.none()
 		const angle = pointerAngle(dx, dy)
-		return points.find((point) => point.datum.startAngle <= angle && angle < point.datum.endAngle)
+		return Arr.findFirst(
+			points,
+			(point) => point.datum.startAngle <= angle && angle < point.datum.endAngle,
+		)
 	}
 
 	return {
 		resolve: (points, context) => {
-			const point = wedgeAt(points, context.x, context.y)
-			return point ? [point] : []
+			return Option.match(wedgeAt(points, context.x, context.y), {
+				onNone: () => [],
+				onSome: (point) => [point],
+			})
 		},
 		group: (_points, context) => [context.point],
 		navigation: (points) => {

@@ -395,8 +395,10 @@ export function rawSqlHasValueColumn(sql: string): boolean {
 
 	if (/\bas\s+["`]?value["`]?\b/i.test(trimmed)) return true
 
-	const firstFrom = trimmed.search(/\bfrom\b/i)
-	const selectHead = firstFrom >= 0 ? Str.slice(0, firstFrom)(trimmed) : Str.slice(0, 500)(trimmed)
+	const selectHead = Option.match(Str.search(/\bfrom\b/i)(trimmed), {
+		onNone: () => Str.slice(0, 500)(trimmed),
+		onSome: (firstFrom) => Str.slice(0, firstFrom)(trimmed),
+	})
 	return /(?:\bselect\b|,)\s*["`]?value["`]?\s*(?:,|$)/i.test(selectHead)
 }
 
@@ -716,7 +718,11 @@ export function destinationToFormState(destination: AlertDestinationDocument): D
 		chatConnector: destination.chatConnector ?? "",
 		chatChannelId: "",
 		chatChannelName:
-			destination.type === "chat" ? (destination.channelLabel?.replace(/^#/, "") ?? "") : "",
+			destination.type === "chat"
+				? destination.channelLabel == null
+					? ""
+					: Str.replace(/^#/, "")(destination.channelLabel)
+				: "",
 		// The team's name is only in the server's "Linear · <team>" summary.
 		linearTeamId: destination.linearTeamId ?? "",
 		linearTeamName:
@@ -1006,7 +1012,7 @@ export function v2DeliveryToDocument(delivery: V2AlertDelivery): AlertDeliveryEv
 
 export function computeIncidentStats(incidents: AlertIncidentDocument[]) {
 	const totalTriggered = incidents.length
-	const resolvedIncidents = incidents.filter((i) => i.resolvedAt && i.firstTriggeredAt)
+	const resolvedIncidents = Arr.filter(incidents, (i) => Boolean(i.resolvedAt && i.firstTriggeredAt))
 	const avgResolutionMs =
 		resolvedIncidents.length > 0
 			? Arr.reduce(resolvedIncidents, 0, (sum, i) => {
