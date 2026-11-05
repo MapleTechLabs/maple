@@ -285,6 +285,14 @@ describe("one user's reads", () => {
 		expect(count(compileUnsafe(userServicesQuery(unscoped), userParams).sql, "UNION ALL")).toBe(2)
 		const sql = compileUnsafe(userServicesQuery({ ...unscoped, mcpServices: [] }), userParams).sql
 		expect(sql).not.toContain("FROM traces")
+
+describe("a namespace no service resolves to", () => {
+	const ghost: UsersScope = { ...unscoped, namespaces: ["ghost"], services: [], mcpServices: ["maple-ai"] }
+
+	it("reads no replays or events instead of emitting an empty IN list", () => {
+		const { sql } = compileUnsafe(usersAnonymousVisitorsQuery(ghost), params)
+		expect(sql).not.toContain("IN ()")
+		expect(sql).toContain("1 = 0")
 	})
 
 	it("reads MCP-only names within the namespace scope", () => {
