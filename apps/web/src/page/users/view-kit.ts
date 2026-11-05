@@ -65,7 +65,7 @@ export const userNameBlock = <M>(h: HtmlBuilder<M>, user: UserRow): Html => {
 								truncate: true,
 								as: "span",
 								className: cn(
-									"shrink-0 @min-[880px]/panel:hidden",
+									"max-w-full shrink-0 @min-[880px]/panel:hidden",
 									detail.length > 0 && "max-w-1/2",
 								),
 							},
