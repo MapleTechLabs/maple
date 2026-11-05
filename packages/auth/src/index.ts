@@ -369,7 +369,8 @@ type ClerkRequestState = {
 }
 
 type ClerkTokenType = "session_token" | "api_key" | "m2m_token" | "oauth_token"
-type ClerkAcceptsToken = ClerkTokenType | ReadonlyArray<ClerkTokenType>
+// Clerk takes `"any"` only on its own, never inside the array.
+type ClerkAcceptsToken = ClerkTokenType | ReadonlyArray<ClerkTokenType> | "any"
 
 type ClerkAuthenticateRequest = (
 	request: Request,
