@@ -2314,6 +2314,12 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "users",
+		name: "usersGroupNamesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.usersGroupNamesQuery(["grp_acme", "grp_globex"]), window),
+	},
+	{
+		module: "users",
 		name: "usersMcpNameSearchQuery",
 		label: "default",
 		compile: () => CH.compileUnsafe(CH.usersMcpNameSearchQuery(["maple-ai"], "ada"), window),

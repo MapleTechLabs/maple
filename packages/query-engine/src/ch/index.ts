@@ -720,6 +720,7 @@ export {
 	usersAnonymousVisitorsQuery,
 	usersFacetsQuery,
 	usersListQuery,
+	usersGroupNamesQuery,
 	usersMcpNamesQuery,
 	usersMcpNameSearchQuery,
 	usersServiceNamespacesQuery,

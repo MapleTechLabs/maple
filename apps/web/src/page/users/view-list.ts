@@ -30,7 +30,7 @@ import {
 import { pinnedNamespaceNotice } from "../kit/pinned-namespace-notice"
 import { listRelativeTime } from "../kit/relative-time"
 import { statRail, statRailItem, statRailItemSkeleton } from "../kit/stat-rail"
-import type { UserRow } from "./data"
+import { groupLabel, type UserRow } from "./data"
 import { signalLane, signalTags, userAvatar, userNameBlock } from "./view-kit"
 
 // `/users`: every end user the SDKs identified in the window, most recently seen first.
@@ -44,10 +44,13 @@ export type UsersFilters = Readonly<{
 	groups: ReadonlyArray<string>
 }>
 
+/** A group in the rail: `name` is its id, `label` its name when one was sent. */
+export type GroupOption = FilterOption & Readonly<{ label: string | null }>
+
 /** The rail's facets over the window: users per namespace and per group. */
 export type UsersFacets = Readonly<{
 	namespaces: ReadonlyArray<FilterOption>
-	groups: ReadonlyArray<FilterOption>
+	groups: ReadonlyArray<GroupOption>
 	withErrors: number
 	withReplay: number
 }>
@@ -120,6 +123,11 @@ const railStatus = <M>(h: HtmlBuilder<M>, facets: UsersRailFacets, onRetry: M): 
 export const usersFilterRail = <M>(h: HtmlBuilder<M>, options: UsersRailOptions<M>): Html => {
 	const ready = typeof options.facets === "string" ? undefined : options.facets
 	const facets = ready ?? NO_FACETS
+	const groupNames = new Map(
+		Arr.flatMap(facets.groups, (group) =>
+			group.label === null ? [] : [[group.name, group.label] as const],
+		),
+	)
 	return filterSidebarFrame(h, {}, [
 		filterSidebarHeader(h, hasRailFilters(options.filters) ? { onClear: options.onClearAll } : {}),
 		...filterSidebarBody(h, "users-filters", [
@@ -151,7 +159,10 @@ export const usersFilterRail = <M>(h: HtmlBuilder<M>, options: UsersRailOptions<
 					}),
 			filterSection(h, {
 				title: "Group",
+				description: "The company, team or tenant identify() put the user in.",
 				options: facets.groups,
+				getOptionLabel: (id) => groupNames.get(id) ?? id,
+				getOptionDescription: (id) => (groupNames.has(id) ? id : undefined),
 				selected: options.filters.groups,
 				isSearchable: true,
 				sections: options.sections,
@@ -287,6 +298,24 @@ const namespaceCell = <M>(h: HtmlBuilder<M>, namespaces: ReadonlyArray<string>):
 	])
 }
 
+/** The user's group by name, its id on hover; the id itself when no name was sent. */
+const groupCell = <M>(h: HtmlBuilder<M>, row: UserRow): Html => {
+	const label = groupLabel(row)
+	return typography(
+		h,
+		{
+			size: "xs",
+			mono: row.groupName === null,
+			tone: label === null ? "subtle" : "soft",
+			truncate: true,
+			as: "span",
+			className: "hidden w-36 shrink-0 @min-[880px]/panel:block",
+			...(row.groupId !== null && row.groupName !== null && { attributes: [h.Title(row.groupId)] }),
+		},
+		[label ?? EMPTY_VALUE],
+	)
+}
+
 /** The first signal tags, then `+N` naming the rest on hover, so five signals fit the lane. */
 const signalCell = <M>(
 	h: HtmlBuilder<M>,
@@ -325,6 +354,7 @@ const userRow = <M>(h: HtmlBuilder<M>, row: UserRow, options: UsersListOptions<M
 				{ gap: "2.5", shrink: true, grow: true, as: "span", className: columnClass({ min: "48" }) },
 				[userAvatar(h, row), userNameBlock(h, row)],
 			),
+			groupCell(h, row),
 			namespaceCell(h, row.namespaces),
 			h.span(
 				[h.Class("w-24 shrink-0 text-right")],
@@ -424,6 +454,11 @@ export const usersListBody = <M>(
 					toolTable(h, [
 						toolTableHead(h, [
 							th(h, { label: "User", width: columnClass({ min: "48" }) }),
+							th(h, {
+								label: "Group",
+								width: "w-36 shrink-0",
+								hidden: "hidden @min-[880px]/panel:flex",
+							}),
 							th(h, {
 								label: "Namespace",
 								width: "w-32 shrink-0",

@@ -194,6 +194,69 @@ describe("readUserProfile", () => {
 		}),
 	)
 
+	it.effect("names the group from its latest named replay when the latest session sent only the id", () =>
+		Effect.gen(function* () {
+			const seen: Array<string> = []
+			const replay = {
+				name: "Ada",
+				email: "",
+				groupId: "grp_acme",
+				groupName: "",
+				traitKeys: [],
+				traitValues: [],
+				country: "",
+				sessions: "1",
+				recordedMs: "0",
+				errors: "0",
+				firstSeen: "2026-11-01 09:00:00",
+				lastSeen: "2026-11-01 11:00:00",
+			}
+			const rows = new Map([
+				...sources,
+				["userReplayProfile", [replay]],
+				["usersGroupNames", [{ groupId: "grp_acme", groupName: "Acme Inc." }]],
+			])
+			const response = yield* readUserProfile(tenant, request()).pipe(
+				Effect.provide(warehouseOf(rows, seen)),
+			)
+			assert.strictEqual(response.profile?.groupName, "Acme Inc.")
+			assert.strictEqual(Arr.filter(seen, (context) => context === "usersGroupNames").length, 1)
+		}),
+	)
+
+	it.effect("names the group as the list does when another user's replay renamed it", () =>
+		Effect.gen(function* () {
+			const seen: Array<string> = []
+			const rows = new Map([
+				...sources,
+				[
+					"userReplayProfile",
+					[
+						{
+							name: "Ada",
+							email: "",
+							groupId: "grp_acme",
+							groupName: "Acme",
+							traitKeys: [],
+							traitValues: [],
+							country: "",
+							sessions: "1",
+							recordedMs: "0",
+							errors: "0",
+							firstSeen: "2026-11-01 09:00:00",
+							lastSeen: "2026-11-01 11:00:00",
+						},
+					],
+				],
+				["usersGroupNames", [{ groupId: "grp_acme", groupName: "Acme Inc." }]],
+			])
+			const response = yield* readUserProfile(tenant, request()).pipe(
+				Effect.provide(warehouseOf(rows, seen)),
+			)
+			assert.strictEqual(response.profile?.groupName, "Acme Inc.")
+		}),
+	)
+
 	it.effect("merges each source's bounds and takes the replay's identity first", () =>
 		Effect.gen(function* () {
 			const rows = new Map([
@@ -205,6 +268,7 @@ describe("readUserProfile", () => {
 							name: "Ada Lovelace",
 							email: "ada@example.com",
 							groupId: "grp_acme",
+							groupName: "Acme Inc.",
 							traitKeys: ["plan"],
 							traitValues: ["pro"],
 							country: "GB",
@@ -236,6 +300,7 @@ describe("readUserProfile", () => {
 			const profile = response.profile
 			assert.isNotNull(profile)
 			assert.strictEqual(profile?.name, "Ada Lovelace")
+			assert.strictEqual(profile?.groupName, "Acme Inc.")
 			assert.strictEqual(profile?.firstSeenMs, Date.parse("2026-11-01T08:30:00Z"))
 			assert.strictEqual(profile?.lastSeenMs, Date.parse("2026-11-01T12:15:00Z"))
 			assert.strictEqual(profile?.sessions, 2)

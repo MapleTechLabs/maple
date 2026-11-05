@@ -27,6 +27,7 @@ import { pressable } from "@maple/views/ui/pressable"
 import { selectableRow } from "@maple/views/ui/selectable-row"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
+import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { serviceDot } from "@maple/views/ui/values"
 import { Array as Arr, Option, Order } from "effect"
@@ -127,7 +128,18 @@ export const userTitle = <M>(h: HtmlBuilder<M>, profile: UserProfile, clock: Clo
 						typography(h, { mono: true, as: "span" }, [`user.id ${profile.userId}`]),
 						...(profile.groupId === null
 							? []
-							: [typography(h, { mono: true, as: "span" }, [profile.groupId])]),
+							: [
+									profile.groupName === null
+										? typography(h, { mono: true, as: "span" }, [profile.groupId])
+										: typography(
+												h,
+												{
+													as: "span",
+													attributes: [h.Title(`group ${profile.groupId}`)],
+												},
+												[profile.groupName],
+											),
+								]),
 						hstack(h, { gap: "1.5", as: "span" }, [
 							statusDot(h, { tone: "ok" }),
 							listRelativeTime(h, {
@@ -284,12 +296,43 @@ const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 const railValue = <M>(h: HtmlBuilder<M>, value: string, mono = true): Html =>
 	typography(h, { size: "xs", mono, tone: "soft", truncate: true, as: "span" }, [value])
 
+/** The group as a link to its users, then its id when the name stands in for it. */
+const groupRows = <M>(
+	h: HtmlBuilder<M>,
+	profile: UserProfile,
+	groupHref: string | null,
+): ReadonlyArray<Html> => {
+	if (profile.groupId === null) return []
+	const label = profile.groupName ?? profile.groupId
+	return [
+		detailRailRow(h, { label: "Group" }, [
+			groupHref === null
+				? railValue(h, label, profile.groupName === null)
+				: textLink(
+						h,
+						{
+							href: groupHref,
+							isMono: profile.groupName === null,
+							className: "min-w-0 truncate text-xs",
+							attributes: [h.Title(`Users in ${label}`)],
+						},
+						[label],
+					),
+		]),
+		...(profile.groupName === null
+			? []
+			: [detailRailRow(h, { label: "Group id" }, [railValue(h, profile.groupId)])]),
+	]
+}
+
 /** The right rail: identity, traits, the services the user's requests touched, and their devices. */
 export const userRail = <M>(
 	h: HtmlBuilder<M>,
 	profile: UserProfile,
 	clock: Clock,
 	scope: UserNamespaceScope<M>,
+	/** The directory filtered to the user's group; `null` draws the group as plain text. */
+	groupHref: string | null = null,
 ): Html =>
 	h.aside(
 		[h.AriaLabel("User details"), h.Class("flex flex-col")],
@@ -300,9 +343,7 @@ export const userRail = <M>(
 				...(profile.email === null
 					? []
 					: [detailRailRow(h, { label: "Email" }, [railValue(h, profile.email, false)])]),
-				...(profile.groupId === null
-					? []
-					: [detailRailRow(h, { label: "Group" }, [railValue(h, profile.groupId)])]),
+				...groupRows(h, profile, groupHref),
 				detailRailRow(h, { label: "First seen" }, [
 					listRelativeTime(h, {
 						value: profile.firstSeenMs,

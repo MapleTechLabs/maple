@@ -31,6 +31,8 @@ export const UserListItem = Schema.Struct({
 	name: Schema.NullOr(Schema.String),
 	email: Schema.NullOr(Schema.String),
 	groupId: Schema.NullOr(Schema.String),
+	/** The group's latest `identify({ groupName })`, `null` when no replay named it. */
+	groupName: Schema.NullOr(Schema.String),
 	namespaces: Schema.Array(Schema.String),
 	firstSeenMs: Schema.Number,
 	lastSeenMs: Schema.Number,
@@ -95,6 +97,14 @@ export class UsersListResponse extends Schema.Class<UsersListResponse>("UsersLis
 
 const FacetOption = Schema.Struct({ name: Schema.String, count: Schema.Number })
 
+/** A group in the rail: `name` is its id (what the filter sends), `label` its name when known. */
+export const UsersGroupOption = Schema.Struct({
+	name: Schema.String,
+	label: Schema.NullOr(Schema.String),
+	count: Schema.Number,
+})
+export type UsersGroupOption = typeof UsersGroupOption.Type
+
 /** `namespaces` is the org pin only: the rail's picks never change the facets. */
 export class UsersFacetsRequest extends Schema.Class<UsersFacetsRequest>("UsersFacetsRequest")({
 	...windowFields,
@@ -103,7 +113,7 @@ export class UsersFacetsRequest extends Schema.Class<UsersFacetsRequest>("UsersF
 export class UsersFacetsResponse extends Schema.Class<UsersFacetsResponse>("UsersFacetsResponse")({
 	/** Users per namespace over every namespace; empty under a pin. */
 	namespaces: Schema.Array(FacetOption),
-	groups: Schema.Array(FacetOption),
+	groups: Schema.Array(UsersGroupOption),
 	withErrors: Schema.Number,
 	withReplay: Schema.Number,
 	identified: Schema.Number,
@@ -142,6 +152,8 @@ export const UserProfileItem = Schema.Struct({
 	name: Schema.NullOr(Schema.String),
 	email: Schema.NullOr(Schema.String),
 	groupId: Schema.NullOr(Schema.String),
+	/** The group's name from the same session as `groupId`. */
+	groupName: Schema.NullOr(Schema.String),
 	/** `identify()` traits from the latest session. */
 	traits: Schema.Array(Schema.Struct({ key: Schema.String, value: Schema.String })),
 	/** Browser visitor ids linked to the user before sign-in. */

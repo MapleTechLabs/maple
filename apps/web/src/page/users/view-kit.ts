@@ -5,9 +5,9 @@ import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { typography } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
-import { type UserRow, type UserSignal, userLabel } from "./data"
+import { groupLabel, type UserRow, type UserSignal, userLabel } from "./data"
 
 // Pieces the users list and detail share: the avatar, the name block and the signal tags.
 
@@ -35,16 +35,44 @@ export const userAvatar = <M>(
 	)
 }
 
-/** The name over its detail: the email, else the id, plus the group when there is one. */
+/**
+ * The name over its detail: the email, else the id, then the group where the directory's Group
+ * column is hidden (a panel under 880px), so a narrow row still says which group it is.
+ */
 export const userNameBlock = <M>(h: HtmlBuilder<M>, user: UserRow): Html => {
 	const label = userLabel(user)
 	const detail = Arr.filter(
-		[label === user.email ? user.userId : (user.email ?? user.userId), user.groupId],
+		[label === user.email ? user.userId : (user.email ?? user.userId)],
 		(part): part is string => part !== null && part !== label,
 	)
+	const group = groupLabel(user)
 	return vstack(h, { gap: "0", shrink: true, className: "min-w-0" }, [
 		typography(h, { size: "xs", tone: "foreground", truncate: true }, [label]),
-		typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [Arr.join(detail, " · ")]),
+		hstack(h, { gap: "1", as: "span", className: "min-w-0" }, [
+			typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true, as: "span" }, [
+				Arr.join(detail, " · "),
+			]),
+			// Its own slot, so a long email cannot truncate the group away.
+			...(group === null
+				? []
+				: [
+						typography(
+							h,
+							{
+								size: "2xs",
+								tone: "muted",
+								mono: true,
+								truncate: true,
+								as: "span",
+								className: cn(
+									"max-w-full shrink-0 @min-[880px]/panel:hidden",
+									detail.length > 0 && "max-w-1/2",
+								),
+							},
+							[detail.length === 0 ? group : `· ${group}`],
+						),
+					]),
+		]),
 	])
 }
 

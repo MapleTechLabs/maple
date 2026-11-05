@@ -32,6 +32,7 @@ const listUser = (userId: string, errors: number): UserListItem => ({
 	name: userId === "u_ada" ? "Ada Lovelace" : null,
 	email: null,
 	groupId: "acme",
+	groupName: "Acme Inc.",
 	namespaces: ["storefront"],
 	firstSeenMs: AT - 3_600_000,
 	lastSeenMs: AT,
@@ -48,6 +49,7 @@ const profile: UserProfileItem = {
 	name: "Ada Lovelace",
 	email: "ada@acme.com",
 	groupId: "acme",
+	groupName: "Acme Inc.",
 	traits: [{ key: "plan", value: "pro" }],
 	visitorIds: ["v_1"],
 	firstSeenMs: AT - 3_600_000,
@@ -252,6 +254,7 @@ describe("list_users", () => {
 
 		const markdown = text(result)
 		expect(markdown).toContain("Ada Lovelace")
+		expect(markdown).toContain("Acme Inc. (acme)")
 		expect(markdown).toContain('list_users start_time="2026-11-01 00:00:00"')
 		expect(markdown).toContain(`cursor="${output.nextCursor}"`)
 
@@ -308,6 +311,7 @@ describe("inspect_user", () => {
 		const markdown = text(result)
 		expect(markdown).toContain("| maple-mcp | mcp_sess_9 | claude-code | agent |")
 		expect(markdown).toContain("plan=pro")
+		expect(markdown).toContain("Acme Inc. (acme)")
 		expect(markdown).toContain(`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-11-01 12:30:00"`)
 		expect(markdown).toContain(`error_detail issue_id="${ISSUE_ID}"`)
 		expect(markdown).toContain('get_session_transcript session_id="sess_1"')

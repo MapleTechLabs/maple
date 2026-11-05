@@ -1,5 +1,5 @@
 import type { FilterOption } from "@maple/views/ui/filters/filter-section"
-import { Array as Arr, Order, Record, String as Str } from "effect"
+import { Array as Arr, Option, Order, Record, String as Str } from "effect"
 import type { UserDetail, UserRow } from "../page/users/data"
 import type { UsersFacets, UsersFilters, UsersSummary } from "../page/users/view-list"
 
@@ -23,11 +23,20 @@ export const usersFacets = (all: ReadonlyArray<UserRow>, pinned: string | null):
 	const rows = pinned === null ? all : Arr.filter(all, (row) => row.namespaces.includes(pinned))
 	return {
 		namespaces: pinned === null ? facet(Arr.flatMap(rows, (row) => row.namespaces)) : [],
-		groups: facet(
-			Arr.filter(
-				Arr.map(rows, (row) => row.groupId),
-				(group): group is string => group !== null,
+		groups: Arr.map(
+			facet(
+				Arr.filter(
+					Arr.map(rows, (row) => row.groupId),
+					(group): group is string => group !== null,
+				),
 			),
+			(option) => ({
+				...option,
+				label: Arr.findFirst(
+					rows,
+					(row) => row.groupId === option.name && row.groupName !== null,
+				).pipe(Option.match({ onNone: () => null, onSome: (row) => row.groupName })),
+			}),
 		),
 		withErrors: Arr.filter(rows, (row) => row.errors > 0).length,
 		withReplay: Arr.filter(rows, (row) => row.signals.includes("replay")).length,

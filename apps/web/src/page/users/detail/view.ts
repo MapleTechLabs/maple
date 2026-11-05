@@ -15,7 +15,7 @@ import { type UserTab, userLabel } from "../data"
 import { userDetailBody, type UserDetailOptions, userRail, userTabs, userTitle } from "../view-detail"
 import { userDetailLoading, userRowsLoading } from "../view-states"
 import { activeNamespace } from "./command"
-import { toUserDetail } from "./data-map"
+import { groupUsersHref, toUserDetail } from "./data-map"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET, tabOf, userDetailHref } from "./update"
@@ -120,7 +120,13 @@ const userPage = (h: H, model: Model, profile: UserProfileItem, inputs: PageView
 			titleContent: userTitle(h, detail.profile, clock),
 			actions: actions(h, model),
 			tabs: userTabs(h, detail, options),
-			rightPanel: userRail(h, detail.profile, clock, namespace),
+			rightPanel: userRail(
+				h,
+				detail.profile,
+				clock,
+				namespace,
+				detail.profile.groupId === null ? null : groupUsersHref(detail.profile.groupId, model.search),
+			),
 			rightPanelWidth: "w-80",
 			scrollClassName: "p-0",
 		},
