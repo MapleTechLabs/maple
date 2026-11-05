@@ -180,7 +180,7 @@ const execClickHouse = (
 		if (response.status < 200 || response.status >= 300) {
 			return yield* new ClickHouseExecError({
 				status: response.status,
-				message: `ClickHouse ${response.status}: ${Str.split("\n")(text)[0]?.slice(0, 500) ?? ""}`,
+				message: `ClickHouse ${response.status}: ${Str.slice(0, 500)(Str.split("\n")(text)[0])}`,
 			})
 		}
 		return text
@@ -476,7 +476,8 @@ const reconcileSchemaSnapshot = (
 				return [qualifyStatementForDatabase(table.createStatement, cfg.database)]
 			}
 			if (entry.status !== "drifted" || entry.kind !== "table") return []
-			return Arr.filter(entry.columnDrifts, (drift) => drift.kind === "missing").flatMap((drift) => {
+			const missing = Arr.filter(entry.columnDrifts, (drift) => drift.kind === "missing")
+			return Arr.flatMap(missing, (drift) => {
 				const colDef = extractColumnDefinition(table.createStatement, drift.column)
 				return colDef
 					? [

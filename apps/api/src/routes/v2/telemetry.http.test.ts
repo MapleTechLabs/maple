@@ -644,15 +644,17 @@ describe("v2 telemetry reads over HTTP", () => {
 			end_time: "2026-07-15T12:00:01.100Z",
 		})
 		expect(logs.status).toBe(200)
-		const logSql = observedSql.find((sql) => Str.includes("FROM logs")(sql))
+		const logSql = Option.getOrUndefined(
+			Arr.findFirst(observedSql, (sql) => Str.includes("FROM logs")(sql)),
+		)
 		expect(logSql).toContain("'2026-07-15 12:00:00.900'")
 		expect(logSql).toContain("'2026-07-15 12:00:01.100'")
 
 		observedSql.length = 0
 		const trace = await harness.request("GET", `/v2/traces/${TRACE_ID}`, key.secret)
 		expect(trace.status).toBe(200)
-		const hierarchySql = observedSql.find(
-			(sql) => readsTraceSpans(sql) && Str.includes("AS relationship")(sql),
+		const hierarchySql = Option.getOrUndefined(
+			Arr.findFirst(observedSql, (sql) => readsTraceSpans(sql) && Str.includes("AS relationship")(sql)),
 		)
 		expect(hierarchySql).toContain(`trace_index.TraceId = '${TRACE_ID}'`)
 		expect(hierarchySql).not.toContain("Timestamp >=")
@@ -693,7 +695,9 @@ describe("v2 telemetry reads over HTTP", () => {
 
 		// The listing compiles two queries against the same rollups — the catalog
 		// and the latency baseline — so pick the catalog out by its own alias.
-		const catalogSql = observedSql.find((sql) => Str.includes("AS p95LatencyMs")(sql))
+		const catalogSql = Option.getOrUndefined(
+			Arr.findFirst(observedSql, (sql) => Str.includes("AS p95LatencyMs")(sql)),
+		)
 		expect(catalogSql).toBeDefined()
 		expect(catalogSql).toContain("'2026-07-15 12:00:00'")
 		expect(catalogSql).toContain("'2026-07-16 12:00:00'")
@@ -703,7 +707,9 @@ describe("v2 telemetry reads over HTTP", () => {
 		// The baseline covers the seven days before the window, hour-floored so
 		// the cache key survives a drifting client window — and second-precision
 		// for the same DateTime reason.
-		const baselineSql = observedSql.find((sql) => Str.includes("AS baselineP95LatencyMs")(sql))
+		const baselineSql = Option.getOrUndefined(
+			Arr.findFirst(observedSql, (sql) => Str.includes("AS baselineP95LatencyMs")(sql)),
+		)
 		expect(baselineSql).toBeDefined()
 		expect(baselineSql).toContain("'2026-07-08 12:00:00'")
 		expect(baselineSql).toContain("'2026-07-15 12:00:00'")
@@ -1109,8 +1115,8 @@ describe("v2 reads shared with the dashboard", () => {
 			{ route: "spanHierarchy", payload: { traceId: TRACE_ID } },
 		])
 		// An hour before the first span and an hour after the last, not an hour around the root.
-		const hierarchySql = observedSql.find(
-			(sql) => readsTraceSpans(sql) && Str.includes("AS relationship")(sql),
+		const hierarchySql = Option.getOrUndefined(
+			Arr.findFirst(observedSql, (sql) => readsTraceSpans(sql) && Str.includes("AS relationship")(sql)),
 		)
 		expect(hierarchySql).toContain("'2026-07-15 11:00:00'")
 		expect(hierarchySql).toContain("'2026-07-15 14:30:00'")
@@ -1148,7 +1154,9 @@ describe("v2 reads shared with the dashboard", () => {
 			"GET /checkout",
 		])
 		// The payload the dashboard's service page sends for the same window.
-		expect(calls.find((call) => call.route === "serviceOperations")).toEqual({
+		expect(
+			Option.getOrUndefined(Arr.findFirst(calls, (call) => call.route === "serviceOperations")),
+		).toEqual({
 			route: "serviceOperations",
 			payload: {
 				serviceName: "api",
@@ -1187,7 +1195,10 @@ describe("v2 reads shared with the dashboard", () => {
 		const response = await harness.request("GET", `/v2/services?${windowQuery}`, key.secret)
 		expect(response.status).toBe(200)
 		expect(response.body.data[0].baseline_p95_latency_ms).toBe(35)
-		expect(calls.find((call) => call.route === "serviceHealthBaseline")?.payload).toMatchObject({
+		expect(
+			Option.getOrUndefined(Arr.findFirst(calls, (call) => call.route === "serviceHealthBaseline"))
+				?.payload,
+		).toMatchObject({
 			definition: "serviceHealthBaseline",
 			input: { startTime: "2026-07-08 12:00:00", endTime: "2026-07-15 12:00:00" },
 		})
@@ -1241,7 +1252,10 @@ describe("v2 reads shared with the dashboard", () => {
 			previous: { start_time: "2026-07-15T11:00:00.000Z", end_time: START, services },
 		})
 		// The dashboard's baseline read: the 7 days before the window's hour.
-		expect(calls.find((call) => call.route === "serviceHealthBaseline")?.payload).toMatchObject({
+		expect(
+			Option.getOrUndefined(Arr.findFirst(calls, (call) => call.route === "serviceHealthBaseline"))
+				?.payload,
+		).toMatchObject({
 			definition: "serviceHealthBaseline",
 			input: {
 				startTime: "2026-07-08 12:00:00",
@@ -1424,7 +1438,9 @@ describe("v2 replay migration parity", () => {
 				group_id: "org_acme_1",
 			})
 			expect(search.status).toBe(200)
-			const replaysSql = observedSql.find((sql) => Str.includes("FROM session_replays")(sql))
+			const replaysSql = Option.getOrUndefined(
+				Arr.findFirst(observedSql, (sql) => Str.includes("FROM session_replays")(sql)),
+			)
 			expect(replaysSql).toContain("GroupId = 'org_acme_1'")
 		} finally {
 			await harness.dispose()

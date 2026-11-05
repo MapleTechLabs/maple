@@ -3,7 +3,7 @@
 // `severity` and `q` from the hash query.
 
 import { timestampMs } from "./output"
-import { Array as Arr, String as Str } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 
 /** The logs page's range picks, narrowest first (apps/local-ui/src/lib/time.ts). */
 const UI_RANGES: ReadonlyArray<readonly [key: string, ms: number]> = [
@@ -26,8 +26,8 @@ export const traceLink = (baseUrl: string, traceId: string): string =>
 export const uiRangeFor = (startTime: string, nowMs: number = Date.now()): string => {
 	const back = nowMs - timestampMs(startTime)
 	// `startTime` is whole seconds, so `--since 1h` reaches back up to 1h + 999ms.
-	const fit = UI_RANGES.find(([, ms]) => ms + 1_000 >= back)
-	return Number.isFinite(back) && fit !== undefined ? fit[0] : "30d"
+	const fit = Arr.findFirst(UI_RANGES, ([, ms]) => ms + 1_000 >= back)
+	return Number.isFinite(back) && Option.isSome(fit) ? fit.value[0] : "30d"
 }
 
 export const logsLink = (

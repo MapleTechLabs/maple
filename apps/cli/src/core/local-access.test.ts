@@ -5,7 +5,7 @@ import { chmodSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as BunServices from "@effect/platform-bun/BunServices"
-import { Effect, Layer, Option, Ref, Tracer } from "effect"
+import { Effect, Layer, Option, Ref, Tracer, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { cloudflaredAccessToken, localAccessClient, parseLocalHeaders } from "./local-access"
 import { Mode } from "./mode"
@@ -84,8 +84,13 @@ const lookup = (binary: string, timeout: number = 5_000) =>
 			Effect.provide(BunServices.layer),
 			Effect.withTracer(tracer),
 		)
-		const span = spans.find((candidate) => candidate.name === "LocalAccess.cloudflaredToken")
-		return { token, outcome: span?.attributes.get("maple.cli.cloudflared.outcome") }
+		const span = Arr.findFirst(spans, (candidate) => candidate.name === "LocalAccess.cloudflaredToken")
+		return {
+			token,
+			outcome: Option.getOrUndefined(
+				Option.map(span, (found) => found.attributes.get("maple.cli.cloudflared.outcome")),
+			),
+		}
 	})
 
 // Plain bun tests: under `bun test`, `it.effect`/`it.live` hang on a body that spawns a real process.
@@ -258,7 +263,9 @@ describe("a refused local query", () => {
 			)
 			strictEqual(error._tag, "@maple/cli/LocalServerAccessDeniedError")
 			strictEqual(
-				"hint" in error && error.hint?.includes("cloudflared access login https://maple.example.com"),
+				"hint" in error &&
+					error.hint !== undefined &&
+					Str.includes("cloudflared access login https://maple.example.com")(error.hint),
 				true,
 			)
 		}),
@@ -271,7 +278,12 @@ describe("a refused local query", () => {
 				() => new Response("sign in required", { status: 401 }),
 			)
 			strictEqual(error._tag, "@maple/cli/LocalServerAccessDeniedError")
-			strictEqual("hint" in error && error.hint?.includes("MAPLE_LOCAL_ACCESS_TOKEN"), true)
+			strictEqual(
+				"hint" in error &&
+					error.hint !== undefined &&
+					Str.includes("MAPLE_LOCAL_ACCESS_TOKEN")(error.hint),
+				true,
+			)
 		}),
 	)
 

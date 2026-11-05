@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, String as Str } from "effect"
 import { ScrapeResultReportList } from "@maple/domain/http"
 import { isValidInternalBearer } from "@maple/backend/services/auth/internal-auth"
 import { toInternalScrapeTarget } from "./scraper-internal.http"
@@ -11,7 +11,9 @@ describe("internal bearer auth", () => {
 		assert.isFalse(isValidInternalBearer(undefined, "secret-token"))
 		assert.isFalse(isValidInternalBearer("Bearer secret-token", undefined))
 		assert.isFalse(isValidInternalBearer("secret-token", "secret-token"))
-		assert.isFalse(isValidInternalBearer(`Bearer ${"\u00e9".repeat("secret-token".length)}`, "secret-token"))
+		assert.isFalse(
+			isValidInternalBearer(`Bearer ${Str.repeat("secret-token".length)("\u00e9")}`, "secret-token"),
+		)
 	})
 })
 

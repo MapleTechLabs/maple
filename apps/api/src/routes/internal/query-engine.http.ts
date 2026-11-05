@@ -127,7 +127,7 @@ import { AWS_INFRA_KIND_IDS, AWS_INFRA_KINDS } from "@maple/domain/aws-infra"
 import { GCP_INFRA_SERVICE_IDS, gcpInfraMetrics } from "@maple/domain/gcp-infra"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
 import { isAiContentFormat } from "@maple/domain/ai-traffic"
-import { DateTime, Duration, Effect, Option, Schema, Array as Arr } from "effect"
+import { DateTime, Duration, Effect, Option, Order, Schema, Array as Arr } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import {
 	isMissingProductEvents,
@@ -1133,13 +1133,13 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 										topKeys,
 									})
 						const coverage = coverageRows[0]
-						const zoneRequests = zoneRows.find((row) => row.serviceName === payload.serviceName)
+						const zoneRequests = Option.match(
+							Arr.findFirst(zoneRows, (row) => row.serviceName === payload.serviceName),
+							{ onNone: () => 0, onSome: (row) => row.requests ?? 0 },
+						)
 						// Breakdown metrics are a per-window top-N fold of what Cloudflare returned, so
 						// they can only ever undercount the zone. Clamp rather than surface a negative.
-						const unattributed = Math.max(
-							0,
-							(zoneRequests?.requests ?? 0) - (coverage?.attributedRequests ?? 0),
-						)
+						const unattributed = Math.max(0, zoneRequests - (coverage?.attributedRequests ?? 0))
 						return new CloudflareInfraZoneBreakdownResponse({
 							totals: Arr.map(totalRows, (row) => ({ ...row })),
 							buckets: Arr.map(bucketRows, (row) => ({ ...row })),
@@ -2676,13 +2676,16 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							return product === undefined || row.runtimeVersion === "" ? [] : [product]
 						})
 						// Busiest services first, so the read cap drops the quietest versions.
-						const targets = Arr.flatMap(
-							rows.toSorted((a, b) => (b.spans || 0) - (a.spans || 0)),
-							(row) => {
-								const target = advisoryTargetOf(row)
-								return target === undefined ? [] : [target]
-							},
+						const busiestFirst = Arr.sort(
+							rows,
+							Order.flip(
+								Order.mapInput(Order.Number, (row: (typeof rows)[number]) => row.spans || 0),
+							),
 						)
+						const targets = Arr.flatMap(busiestFirst, (row) => {
+							const target = advisoryTargetOf(row)
+							return target === undefined ? [] : [target]
+						})
 						const [releases, advisories] = yield* Effect.all(
 							[runtimeReleases.releases(products), runtimeAdvisories.advisories(targets)],
 							{ concurrency: 2 },
