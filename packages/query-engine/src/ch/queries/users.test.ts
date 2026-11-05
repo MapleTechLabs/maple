@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
+import { String as Str } from "effect"
 import { compileUnionUnsafe, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
 import {
@@ -38,7 +39,7 @@ const unscoped: UsersScope = {
 
 const storefront: UsersScope = { ...unscoped, namespaces: ["storefront"], services: ["web"] }
 
-const count = (sql: string, needle: string) => sql.split(needle).length - 1
+const count = (sql: string, needle: string) => Str.split(sql, needle).length - 1
 
 describe("usersListQuery", () => {
 	it("filters OrgId in every source", () => {
@@ -197,7 +198,7 @@ describe("usersListQuery", () => {
 describe("usersFacetsQuery", () => {
 	it("counts namespaces over its own scope and groups over the page's", () => {
 		const { sql } = compileUnionUnsafe(usersFacetsQuery(storefront, unscoped), params)
-		const [namespaces, groups] = sql.split("'namespace' AS facetType")
+		const [namespaces, groups] = Str.split(sql, "'namespace' AS facetType")
 		expect(groups).toContain("'group' AS facetType")
 		expect(groups).toContain("session_replays.ServiceName IN ('web')")
 		expect(namespaces).not.toContain("session_replays.ServiceName IN")
