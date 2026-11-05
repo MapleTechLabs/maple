@@ -335,6 +335,10 @@ export const userRail = <M>(
 const namespacesGroup = <M>(h: HtmlBuilder<M>, profile: UserProfile, scope: UserNamespaceScope<M>): Html => {
 	const namespaces = namespacesOf(profile)
 	const total = Arr.reduce(namespaces, 0, (sum, namespace) => sum + namespace.signals)
+	if (namespaces.length === 0)
+		return detailRailGroup(h, "Namespaces", [
+			typography(h, { size: "xs", tone: "subtle" }, ["No namespace recorded in the window"]),
+		])
 	return detailRailGroup(
 		h,
 		"Namespaces",
