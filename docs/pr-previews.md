@@ -88,8 +88,10 @@ and fails the job if a Postgres- or warehouse-backed route returns anything but 
    `INFISICAL_MACHINE_IDENTITY_ID`: an identity bound to
    `repo:MapleTechLabs/maple:environment:preview-tinybird` that reads `TINYBIRD_HOST`,
    `TINYBIRD_TOKEN` and `PREVIEW_HANDOFF_KEY` from `dev`.
-5. A dedicated Infisical environment for previews, then the repo variable
-   `PREVIEW_INFISICAL_ENV_SLUG`, so previews stop sharing every `dev` credential.
+5. A dedicated Infisical environment for previews without the parent Tinybird credentials, the
+   repo variable `PREVIEW_INFISICAL_ENV_SLUG` pointing at it, and the `pr-preview` identity's
+   role narrowed to that environment alone. The role is what counts: a PR can edit its workflow
+   to request `dev`, so the identity must not be able to read it.
 
 `pull_request` runs use the PR's own copy of the workflow, so a job that runs PR code can only be
 trusted with what the `pr-preview` environment hands out. Anything broader (the parent Tinybird

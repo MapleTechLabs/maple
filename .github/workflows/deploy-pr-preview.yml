@@ -158,9 +158,10 @@ jobs:
               env:
                   GH_TOKEN: ${{ github.token }}
                   REPO: ${{ github.repository }}
+                  EVENT_STAMP: ${{ github.event.pull_request.updated_at }}
               run: |
                   set -euo pipefail
-                  name="tinybird-branch-${PR_NUMBER}-${COMMIT_SHA}"
+                  name="tinybird-branch-${PR_NUMBER}-${COMMIT_SHA}-${EVENT_STAMP//[^0-9]/}"
                   # Transient API errors just wait for the next poll.
                   for _ in $(seq 1 60); do
                     found=$(gh api "repos/$REPO/actions/artifacts?name=$name&per_page=20" \
@@ -169,15 +170,16 @@ jobs:
                       [ -n "$artifact" ] || continue
                       origin=$(gh api "repos/$REPO/actions/runs/$run" --jq '.path + " " + .event' || true)
                       if [ "$origin" = ".github/workflows/preview-tinybird-branch.yml pull_request_target" ]; then
-                        gh api "repos/$REPO/actions/artifacts/$artifact/zip" > "$RUNNER_TEMP/tinybird-branch.zip"
-                        unzip -p "$RUNNER_TEMP/tinybird-branch.zip" tinybird-branch.sealed > "$RUNNER_TEMP/tinybird-branch.sealed"
-                        echo "using artifact $artifact from run $run"
-                        exit 0
+                        if gh api "repos/$REPO/actions/artifacts/$artifact/zip" > "$RUNNER_TEMP/tinybird-branch.zip" \
+                          && unzip -p "$RUNNER_TEMP/tinybird-branch.zip" tinybird-branch.sealed > "$RUNNER_TEMP/tinybird-branch.sealed"; then
+                          echo "using artifact $artifact from run $run"
+                          exit 0
+                        fi
                       fi
                     done <<< "$found"
                     sleep 10
                   done
-                  echo "::error::No Tinybird branch handoff for $COMMIT_SHA after 10 minutes; check the Preview Tinybird branch workflow."
+                  echo "::error::No Tinybird branch handoff ($name) after 10 minutes; check the Preview Tinybird branch run for this event."
                   exit 1
 
             # Deploys this PR's schema into the branch and overrides TINYBIRD_HOST/TOKEN so the
@@ -203,6 +205,14 @@ jobs:
                   API_URL: ${{ steps.deploy.outputs.api_url }}
                   WEB_URL: ${{ steps.deploy.outputs.web_url }}
               run: bun scripts/preview-seed-smoke.ts
+
+            # The stack config requires both keys, but nothing Tinybird is destroyed here (the
+            # branch workflow removes the branch), and the preview env need not carry them.
+            - name: Stand-in Tinybird env for the teardown
+              if: ${{ env.TEARDOWN == 'true' }}
+              run: |
+                  [ -n "${TINYBIRD_HOST:-}" ] || echo "TINYBIRD_HOST=https://unused.invalid" >> "$GITHUB_ENV"
+                  [ -n "${TINYBIRD_TOKEN:-}" ] || echo "TINYBIRD_TOKEN=unused" >> "$GITHUB_ENV"
 
             - name: Destroy PR preview stack with Alchemy
               id: destroy

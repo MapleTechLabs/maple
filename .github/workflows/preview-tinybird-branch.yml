@@ -54,6 +54,9 @@ jobs:
         env:
             PR_NUMBER: ${{ github.event.pull_request.number }}
             HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+            # The deploy run for the same event gets the same payload, so this names the
+            # handoff for exactly one event: a re-label never picks up an earlier one.
+            EVENT_STAMP: ${{ github.event.pull_request.updated_at }}
             TEARDOWN: >-
                 ${{ (github.event.action == 'closed'
                     || (github.event.action == 'unlabeled'
@@ -114,19 +117,23 @@ jobs:
                   secret-name: PREVIEW_HANDOFF_KEY
 
             - name: Create or refresh the branch
+              id: create
               if: ${{ env.TEARDOWN != 'true' }}
-              run: bun scripts/tinybird-pr-branch.ts create "$PR_NUMBER" "$RUNNER_TEMP/tinybird-branch.sealed"
+              run: |
+                  bun scripts/tinybird-pr-branch.ts create "$PR_NUMBER" "$RUNNER_TEMP/tinybird-branch.sealed"
+                  echo "artifact=tinybird-branch-${PR_NUMBER}-${HEAD_SHA}-${EVENT_STAMP//[^0-9]/}" >> "$GITHUB_OUTPUT"
 
-            # Named for the PR head, which the deploy job waits for. Sealed, because
+            # Named for this event, which the deploy job waits for. Sealed, because
             # artifacts of a public repo can be downloaded by anyone.
             - name: Hand the branch to the deploy job
               if: ${{ env.TEARDOWN != 'true' }}
               uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
               with:
-                  name: tinybird-branch-${{ env.PR_NUMBER }}-${{ env.HEAD_SHA }}
+                  name: ${{ steps.create.outputs.artifact }}
                   path: ${{ runner.temp }}/tinybird-branch.sealed
                   if-no-files-found: error
-                  retention-days: 1
+                  # Long enough to re-run a deploy; the branch token dies with the branch anyway.
+                  retention-days: 7
 
             # Branches share compute with production, so removal is not optional.
             - name: Remove the branch

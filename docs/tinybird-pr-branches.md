@@ -23,7 +23,8 @@ credentials never sit beside PR code:
       authorized by the parent workspace token).
     - Seals the branch's host, id and token with `PREVIEW_HANDOFF_KEY` (AES-256-GCM, bound to the
       branch name; `scripts/lib/preview-handoff.ts`) and uploads it as the artifact
-      `tinybird-branch-<pr>-<head sha>`. Artifacts of a public repo are downloadable by anyone,
+      `tinybird-branch-<pr>-<head sha>-<event stamp>` (the PR's `updated_at`, which both workflows
+      see for the same event). Artifacts of a public repo are downloadable by anyone,
       hence the seal.
 2. **`deploy <pr>`** in `deploy-pr-preview.yml` waits for that artifact, accepts it only from a
    `pull_request_target` run of the branch workflow, and opens it.
