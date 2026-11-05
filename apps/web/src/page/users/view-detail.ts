@@ -279,7 +279,7 @@ export const userRail = <M>(
 				h,
 				"Traits",
 				Arr.isReadonlyArrayEmpty(profile.traits)
-					? [typography(h, { size: "xs", tone: "subtle" }, ["identify() sent no traits"])]
+					? [typography(h, { size: "xs", tone: "subtle" }, ["No traits recorded for this user"])]
 					: Arr.map(profile.traits, ([key, value]) =>
 							detailRailRow(h, { label: key }, [railValue(h, value)]),
 						),
