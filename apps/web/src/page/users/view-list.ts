@@ -62,11 +62,10 @@ export type UsersListOptions<M> = Readonly<{
 	nowMs: number
 	timeZone: string
 	filters: UsersFilters
-	/** The namespaces the page is scoped to (the pin, or the rail's picks); empty is every namespace. */
+	/** The summary strip's scope: the org pin only, as the facets read it; empty is every namespace. */
 	scope: ReadonlyArray<string>
 	onSearch: (value: string) => M
 	onClearSearch: M
-	/** The user page a row links to. */
 	/** Where a row links; rows are plain until the user page exists. */
 	userHref?: (userId: string) => string
 }>
@@ -168,7 +167,11 @@ const summaryRail = <M>(h: HtmlBuilder<M>, summary: UsersSummary, scope: Readonl
 		}),
 	])
 
-const toolbar = <M>(h: HtmlBuilder<M>, options: UsersListOptions<M>): Html =>
+/** The directory's search box; it stays above the empty state a search with no matches shows. */
+export const usersToolbar = <M>(
+	h: HtmlBuilder<M>,
+	options: Pick<UsersListOptions<M>, "filters" | "onSearch" | "onClearSearch">,
+): Html =>
 	hstack(h, { gap: "2", wrap: true, className: "px-6 py-3" }, [
 		searchInput(h, {
 			id: "users-search",
@@ -331,7 +334,7 @@ export const usersListBody = <M>(
 		[h.Class("@container/panel flex min-w-0 flex-col")],
 		[
 			summaryRail(h, summary, options.scope),
-			toolbar(h, options),
+			usersToolbar(h, options),
 			h.section(
 				[h.AriaLabel("Users"), h.Class("min-w-0 px-6 pb-6")],
 				[
