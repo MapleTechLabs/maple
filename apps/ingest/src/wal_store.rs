@@ -310,7 +310,7 @@ impl WalSegmentStore {
             .put_with(&key, self.claim_body(), PutCondition::Absent)
             .await
         {
-            Ok(etag) => Self::held(owner, etag).map(Some),
+            Ok(etag) => self.held(owner, etag).await.map(Some),
             Err(error) if error.status() == Some(412) => {
                 let existing = self.s3.list(&key, 1).await?;
                 let Some(current) = existing.into_iter().find(|object| object.key == key) else {
@@ -320,12 +320,16 @@ impl WalSegmentStore {
                 if !is_older_than(&current, now, CLAIM_LEASE) {
                     return Ok(None);
                 }
-                let condition = current
-                    .etag
-                    .as_deref()
-                    .map_or(PutCondition::Always, PutCondition::Matches);
-                match self.s3.put_with(&key, self.claim_body(), condition).await {
-                    Ok(etag) => Self::held(owner, etag).map(Some),
+                // Without an ETag a takeover cannot be exclusive; leave the owner be.
+                let Some(etag) = current.etag else {
+                    return Ok(None);
+                };
+                match self
+                    .s3
+                    .put_with(&key, self.claim_body(), PutCondition::Matches(&etag))
+                    .await
+                {
+                    Ok(etag) => self.held(owner, etag).await.map(Some),
                     // Renewed, released or taken over by someone else meanwhile.
                     Err(error) if matches!(error.status(), Some(404 | 412)) => Ok(None),
                     Err(error) => Err(error),
@@ -340,10 +344,15 @@ impl WalSegmentStore {
         format!("{} {}", self.owner, uuid::Uuid::new_v4()).into_bytes()
     }
 
-    fn held(owner: &str, etag: Option<String>) -> Result<OwnerClaim, S3Error> {
-        let etag = etag.ok_or_else(|| {
-            S3Error::Transport("claim PUT returned no ETag to fence renewals with".to_owned())
-        })?;
+    async fn held(&self, owner: &str, etag: Option<String>) -> Result<OwnerClaim, S3Error> {
+        let Some(etag) = etag else {
+            // Unfenceable, so not ours to recover; drop the claim rather than
+            // block the owner for a whole lease. Best-effort.
+            drop(self.s3.delete(&self.claim_key(owner)).await);
+            return Err(S3Error::Transport(
+                "claim PUT returned no ETag to fence renewals with".to_owned(),
+            ));
+        };
         Ok(OwnerClaim {
             owner: owner.to_owned(),
             etag: std::sync::Mutex::new(etag),

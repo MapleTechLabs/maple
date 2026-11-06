@@ -8658,6 +8658,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_release_after_an_unnoticed_takeover_deletes_nothing() {
+        // The takeover happens after the last renewal tick: the release-time
+        // renewal is the fence that catches it.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let dead = "task-that-died";
+        let owner_key = format!("wal/v1/owners/{dead}");
+        let claim_key = format!("wal/v1/claims/{dead}");
+        bucket.put_aged(&owner_key, Vec::new(), chrono::Duration::hours(1));
+        let stale = test_wal_store(&endpoint);
+        let successor = test_wal_store(&endpoint);
+        let stale_claim = stale
+            .claim(dead, Utc::now())
+            .await
+            .unwrap()
+            .expect("claimed");
+        bucket.age(&claim_key, chrono::Duration::minutes(31));
+        successor
+            .claim(dead, Utc::now())
+            .await
+            .unwrap()
+            .expect("an expired claim is taken over");
+        let successor_body = bucket.get(&claim_key).unwrap();
+        assert!(
+            !stale_claim.is_lost(),
+            "nothing has told the stale holder yet"
+        );
+
+        assert_eq!(
+            stale.release_owner(&stale_claim).await.unwrap(),
+            ClaimRelease::Lost
+        );
+        assert!(stale_claim.is_lost());
+        assert!(bucket.get(&owner_key).is_some());
+        assert_eq!(bucket.get(&claim_key), Some(successor_body));
+    }
+
+    #[tokio::test]
     async fn two_takeovers_of_one_expired_claim_have_one_winner() {
         let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
         let first = test_wal_store(&endpoint);

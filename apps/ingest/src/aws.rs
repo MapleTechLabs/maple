@@ -402,8 +402,8 @@ pub enum PutCondition<'a> {
 /// An ETag as S3 sends it, quoted (and XML-escaped in a listing), reduced to its value.
 fn normalize_etag(raw: &str) -> String {
     raw.trim()
-        .trim_start_matches("&quot;")
-        .trim_end_matches("&quot;")
+        .replace("&quot;", "\"")
+        .replace("&#34;", "\"")
         .trim_matches('"')
         .to_owned()
 }
@@ -728,6 +728,12 @@ mod tests {
             "a listed ETag compares equal to the unquoted one a PUT returns"
         );
         assert_eq!(objects[1].etag, None);
+        assert_eq!(
+            normalize_etag("&#34;abc&#34;"),
+            "abc",
+            "numeric escaping too"
+        );
+        assert_eq!(normalize_etag("\"abc\""), "abc");
     }
 
     #[test]
