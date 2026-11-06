@@ -1645,6 +1645,18 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		}
 	}
 
+	// The engine refuses it too; failing here keeps such a draft from being saved.
+	if (
+		query.aggregation === "latest" &&
+		(query.metricType === "histogram" || query.metricType === "exponential_histogram")
+	) {
+		return {
+			query: null,
+			warnings,
+			error: "Histogram metrics do not support latest; use avg, sum, min, max or count",
+		}
+	}
+
 	const emptyMetrics: MetricsFilterAccumulator = {
 		metricName: query.metricName,
 		metricType: query.metricType ?? "gauge",

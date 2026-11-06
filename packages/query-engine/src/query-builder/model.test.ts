@@ -453,6 +453,14 @@ describe("metrics resource.* support", () => {
 		expect((result.query as { spaceAggregation?: string } | null)?.spaceAggregation).toBe("max")
 	})
 
+	it("a histogram draft asking for latest is refused, not saved to fail later", () => {
+		const result = buildTimeseriesQuerySpec(
+			metricsDraft({ metricType: "histogram", aggregation: "latest" }),
+		)
+		expect(result.query).toBeNull()
+		expect(result.error).toContain("latest")
+	})
+
 	it("histograms are not offered latest", () => {
 		const values = Arr.map(getMetricsAggregations("histogram"), (option) => option.value)
 		expect(values).not.toContain("latest")
