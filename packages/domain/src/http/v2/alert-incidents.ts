@@ -192,7 +192,8 @@ export const V2AlertIncidentEvent = Schema.Struct({
 					"`sent`; `queued` or `sending` while on its way; `failed` when the channel refused it; `skipped` when the incident was acknowledged or resolved first.",
 			}),
 			error_message: Schema.NullOr(Schema.String).annotate({
-				description: "Why a `failed` or `skipped` page was not delivered.",
+				description:
+					"Why a `failed` or `skipped` page was not delivered; on a `queued` page, why the last attempt failed before the retry.",
 			}),
 		}).annotate({ description: "Set on a `paged` event. Never carries the address." }),
 	),
