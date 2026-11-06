@@ -6,6 +6,7 @@ import {
 	AlertRuleUpsertRequest,
 	AnomalyIncidentId,
 	ErrorIssueId,
+	UNGROUPED_GROUP_KEY,
 	type AlertDestinationId,
 	type AlertThresholds,
 	type AnomalyIncidentSeverity,
@@ -164,6 +165,16 @@ const anomalyRule = (input: {
 		thresholds: input.thresholds,
 		...(input.serviceNames === undefined ? undefined : { serviceNames: input.serviceNames }),
 	})
+
+/** The org's state row keys, heartbeat first. */
+const stateKeys = (testDb: TestDb) =>
+	Effect.promise(() =>
+		queryFirstRow<{ keys: Array<string> | null }>(
+			testDb,
+			"select array_agg(group_key order by group_key = $2 desc, group_key) as keys from alert_rule_states where org_id = $1",
+			[orgId, UNGROUPED_GROUP_KEY],
+		),
+	).pipe(Effect.map((row) => row?.keys ?? []))
 
 const nextTick = Effect.gen(function* () {
 	yield* TestClock.adjust(Duration.minutes(1))
@@ -509,15 +520,8 @@ describe("AlertsService anomaly rules", () => {
 				Arr.map(incidents, (incident) => [incident.id, incident.status]),
 				[[opened?.id, "open"]],
 			)
-			// Housekeeping treats the rule as grouped, so its per-anomaly state survives each tick.
-			const states = yield* Effect.promise(() =>
-				queryFirstRow<{ keys: Array<string> }>(
-					testDb,
-					"select array_agg(group_key) as keys from alert_rule_states where org_id = $1",
-					[orgId],
-				),
-			)
-			assert.deepStrictEqual(states?.keys, [errorRateSpike.id])
+			// Housekeeping keeps the per-anomaly state beside the heartbeat on each tick.
+			assert.deepStrictEqual(yield* stateKeys(testDb), [UNGROUPED_GROUP_KEY, errorRateSpike.id])
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -554,4 +558,62 @@ describe("AlertsService anomaly rules", () => {
 			})
 		}).pipe(Effect.provide(layer))
 	})
+
+	it.effect("an idle rule records that it ran, without opening anything", () => {
+		const { testDb, layer } = harness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				anomalyRule({
+					name: "Checkout anomalies",
+					serviceNames: ["checkout"],
+					thresholds: criticalRouted(destination.id),
+				}),
+			)
+			assert.isNull(rule.lastEvaluatedAt)
+
+			yield* alerts.runSchedulerTick()
+
+			// The dashboard reads "last evaluated" from the rule's state rows.
+			const heartbeat = yield* Effect.promise(() =>
+				queryFirstRow<{ last_evaluated_at: string | null; last_status: string }>(
+					testDb,
+					"select last_evaluated_at, last_status from alert_rule_states where rule_id = $1 and group_key = $2",
+					[rule.id, UNGROUPED_GROUP_KEY],
+				),
+			)
+			assert.isNotNull(heartbeat?.last_evaluated_at ?? null)
+			assert.strictEqual(heartbeat?.last_status, "healthy")
+			assert.deepStrictEqual((yield* alerts.listIncidents(orgId)).incidents, [])
+			assert.deepStrictEqual(yield* stateKeys(testDb), [UNGROUPED_GROUP_KEY])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect(
+		"drops an ended anomaly's state row once its incident has closed, keeping the heartbeat",
+		() => {
+			const { testDb, layer } = harness()
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				yield* insertAnomaly(errorRateSpike)
+				yield* AnomalyAlertSource.use((source) => source.backfillDefaultRules)
+				yield* alerts.runSchedulerTick()
+				assert.deepStrictEqual(yield* stateKeys(testDb), [UNGROUPED_GROUP_KEY, errorRateSpike.id])
+
+				yield* updateAnomaly(testDb, errorRateSpike.id, "status = 'resolved'")
+				yield* nextTick
+				expect((yield* alerts.listIncidents(orgId)).incidents[0]).toMatchObject({
+					status: "resolved",
+				})
+				yield* nextTick
+				assert.deepStrictEqual(yield* stateKeys(testDb), [UNGROUPED_GROUP_KEY])
+			}).pipe(Effect.provide(layer))
+		},
+	)
 })
