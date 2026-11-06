@@ -104,6 +104,21 @@ describe("alert rule editor, escalation chains", () => {
 		expect(run(model, [pickChain("warning", "none")]).form?.escalationChainId).toBeNull()
 	})
 
+	test("a failed chain read keeps the tier's chain and says the list did not load, not that the chain is gone", () => {
+		const model = run(ready(), [
+			pickChain("warning", chainUuid(1)),
+			Message.CompletedFetchEscalationChains({ chains: null }),
+		])
+		expect(model.form?.escalationChainId).toBe(chainUuid(1))
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			themeResolved(),
+			expectView(text("Couldn't load escalation chains; reload the page to change this one")).toExist(),
+			expectView(text("Unavailable chain")).not.toExist(),
+		)
+	})
+
 	test("the critical tier needs a destination or a chain of its own", () => {
 		const tiered = run(ready(), [Message.ClickedAddCriticalTier()])
 		expect(issuesOf(tiered)).toContain("Critical destinations")

@@ -51,12 +51,12 @@ export const FetchEditorConnectors = Command.define("FetchAlertEditorConnectors"
 	}).pipe(Effect.orElseSucceed(() => Message.CompletedFetchConnectors({ connectors: [] }))),
 })
 
-/** The org's escalation chains for the tier pickers; a failed read offers none, as the connectors do. */
+/** The org's escalation chains for the tier pickers; `null` when the read failed. */
 export const FetchEditorChains = Command.define("FetchAlertEditorChains", {
 	messages: [Message.CompletedFetchEscalationChains],
 	execute: listEscalationChains.pipe(
 		Effect.map((chains) => Message.CompletedFetchEscalationChains({ chains })),
-		Effect.orElseSucceed(() => Message.CompletedFetchEscalationChains({ chains: [] })),
+		Effect.orElseSucceed(() => Message.CompletedFetchEscalationChains({ chains: null })),
 	),
 })
 

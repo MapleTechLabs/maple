@@ -40,6 +40,7 @@ type NotificationsView = NotifyView &
 		| "isMessageTemplateOpen"
 		| "mountedForm"
 		| "escalationChains"
+		| "isEscalationChainsFailed"
 		| "selects"
 	>
 type NotificationsForm = Pick<
@@ -121,13 +122,19 @@ const chainPicker = (
 			]),
 		],
 		onNone: () =>
-			chainId === null && destinationIds.length === 0
+			model.isEscalationChainsFailed && chainId !== null
 				? [
-						typography(h, { size: "xs", tone: "destructive", as: "p" }, [
-							"Pick a destination or an escalation chain",
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"Couldn't load escalation chains; reload the page to change this one",
 						]),
 					]
-				: [],
+				: chainId === null && destinationIds.length === 0
+					? [
+							typography(h, { size: "xs", tone: "destructive", as: "p" }, [
+								"Pick a destination or an escalation chain",
+							]),
+						]
+					: [],
 	})
 	return formSelect(h, model.selects[id], id, value, chainOptions(model, chainId), {
 		className: "h-9 w-full",
@@ -378,6 +385,7 @@ const viewOf = stableSlice((model: Model) =>
 		"chatConnectMenuId",
 		"brokenLogos",
 		"escalationChains",
+		"isEscalationChainsFailed",
 		"selects",
 	]),
 )
