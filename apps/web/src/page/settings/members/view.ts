@@ -1,5 +1,4 @@
 import * as Policy from "@maple/domain/policy"
-import { initialsFrom } from "@maple/ui/lib/initials"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { orgRoleLabel, roleChangePrompt, toOrgRole } from "../../../components/settings/org-membership"
@@ -8,8 +7,7 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
-import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
-import { avatarFallback } from "@maple/views/ui/display"
+import { personAvatar } from "@maple/views/ui/person-avatar"
 import { field, type FieldIds, fieldLabel, input, type FieldState } from "@maple/views/ui/field"
 import * as Field from "@maple/views/ui/field"
 import { formDialog } from "@maple/views/ui/form-dialog"
@@ -123,7 +121,7 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 		[
 			truncatedTableCell(h, [
 				hstack(h, { gap: "3" }, [
-					personAvatar(h, member.name, member.imageUrl),
+					personAvatar(h, { name: member.name, imageUrl: member.imageUrl }),
 					h.div(
 						[h.Class("min-w-0")],
 						[
@@ -247,18 +245,6 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 	]
 }
 
-/** The warm initials tile the sidebar draws, or the member's own uploaded image. */
-const personAvatar = (h: H, seed: string, imageUrl: string): Html =>
-	avatarFallback(
-		h,
-		{
-			className: "size-6 shrink-0",
-			fallbackClassName: `font-medium ${warmAvatarTone(seed)}`,
-			imageUrl,
-		},
-		initialsFrom(seed),
-	)
-
 export const description = "Admins manage billing, keys and members."
 
 /** The tab's primary action, drawn in the settings page header beside the `<h1>`. */
@@ -316,7 +302,7 @@ const invitationRow = (h: H, model: Model, invitation: InvitationRow, inputs: In
 		[
 			truncatedTableCell(h, [
 				hstack(h, { gap: "3" }, [
-					personAvatar(h, invitation.email, ""),
+					personAvatar(h, { name: invitation.email }),
 					truncatedText(h, { text: invitation.email, className: "text-xs" }),
 				]),
 			]),

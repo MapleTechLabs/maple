@@ -2,13 +2,9 @@ import type { AlertDestinationRow } from "@maple/web-data/collections/alerts"
 import { Array as Arr, Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "@maple/views/ui/icon"
-import { iconButton } from "@maple/views/ui/icon-button"
 import type * as Menu from "@maple/views/ui/menu"
-import * as MenuView from "@maple/views/ui/menu-view"
-import { panel } from "@maple/views/ui/panel"
-import { pressable } from "@maple/views/ui/pressable"
-import { hstack } from "@maple/views/ui/stack"
-import { typography } from "@maple/views/ui/typography"
+import type * as MenuView from "@maple/views/ui/menu-view"
+import { pickList } from "./pick-list"
 
 /**
  * `DestinationPicker`: the alert destinations a form notifies, each removable, then an "Add
@@ -41,66 +37,24 @@ export const destinationPicker = <M, Id extends string>(
 		),
 	}))
 	const available = Arr.filter(rows, (row) => !Arr.some(options.selectedIds, (id) => id === row.id))
-	return panel(h, { className: "divide-y shadow-none" }, [
-		...Arr.map(selected, (destination) =>
-			hstack(h, { gap: "2", className: "px-3 py-2", attributes: [h.Key(destination.id)] }, [
-				icon(h, "BellIcon", { className: "text-muted-foreground" }),
-				typography(h, { size: "sm", truncate: true, className: "min-w-0 flex-1" }, [
-					destination.name,
-				]),
-				iconButton(
-					h,
-					{
-						label: `Stop notifying ${destination.name}`,
-						className: "text-muted-foreground",
-						attributes: [h.OnClick(options.onRemove(destination.id))],
-					},
-					[icon(h, "XmarkIcon")],
-				),
-			]),
-		),
-		...(selected.length === 0
-			? [
-					typography(h, { size: "sm", tone: "muted", as: "p", className: "px-3 py-2.5" }, [
-						options.emptyText,
-					]),
-				]
-			: []),
-		...(available.length === 0
-			? []
-			: [
-					h.submodel({
-						slotId: options.menu.id,
-						model: options.menu,
-						view: MenuView.view,
-						viewInputs: {
-							entries: Arr.map(available, (row): MenuView.MenuEntry => ({
-								_tag: "Item",
-								value: row.id,
-								label: row.name,
-							})),
-							align: "start",
-							className: "w-72",
-							toView: ({ trigger, withTrigger }) =>
-								h.span(
-									[h.Class("contents")],
-									withTrigger(
-										pressable(
-											h,
-											{
-												className:
-													"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
-												attributes: trigger,
-											},
-											[icon(h, "PlusIcon", { size: 14 }), "Add destination"],
-										),
-									),
-								),
-						},
-						toParentMessage: options.toMenuMessage,
-					}),
-				]),
-	])
+	return pickList(h, {
+		entries: Arr.map(selected, (destination) => ({
+			key: destination.id,
+			label: destination.name,
+			media: icon(h, "BellIcon", { className: "text-muted-foreground" }),
+			removeLabel: `Stop notifying ${destination.name}`,
+			onRemove: options.onRemove(destination.id),
+		})),
+		emptyText: options.emptyText,
+		menu: options.menu,
+		toMenuMessage: options.toMenuMessage,
+		addEntries: Arr.map(available, (row): MenuView.MenuEntry => ({
+			_tag: "Item",
+			value: row.id,
+			label: row.name,
+		})),
+		addLabel: "Add destination",
+	})
 }
 
 /** The destination a menu pick added, if it is a synced one not already chosen. */

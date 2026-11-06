@@ -12,7 +12,13 @@ import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import { formActionBar, formCard, formSection, managersOnlyPage } from "../../kit/form-section"
+import {
+	formActionBar,
+	formCard,
+	formScrollArea,
+	formSection,
+	managersOnlyPage,
+} from "../../kit/form-section"
 import { failureMessage, type LoadFailure } from "@maple/views/data/load-failure"
 import { LIMIT_REACHED_CODE, monitorHref, uptimeTabHref } from "../shared/uptime-commands"
 import { formatMs } from "../shared/uptime-derive"
@@ -296,33 +302,27 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		notifySection(h, model),
 	])
 	return dashboardPage(h, { ...header, fill: true }, [
-		h.div(
-			[h.DataAttribute("slot", "page-scroll-area"), h.Class("min-h-0 flex-1 overflow-auto p-4")],
-			[
-				isHttp
-					? h.div(
-							[h.Class(cn("grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]", widthClass))],
-							[
-								card,
-								h.div([h.Class("lg:sticky lg:top-0 lg:self-start")], [testPanel(h, model)]),
-							],
-						)
-					: h.div(
-							[h.Class(cn(vstackClass({ gap: "2" }), widthClass))],
-							[
-								card,
-								...(isEdit
-									? []
-									: [
-											h.p(
-												[h.Class("px-1 text-xs text-muted-foreground")],
-												[afterSaveNote(model.form.kind)],
-											),
-										]),
-							],
-						),
-			],
-		),
+		formScrollArea(h, [
+			isHttp
+				? h.div(
+						[h.Class(cn("grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]", widthClass))],
+						[card, h.div([h.Class("lg:sticky lg:top-0 lg:self-start")], [testPanel(h, model)])],
+					)
+				: h.div(
+						[h.Class(cn(vstackClass({ gap: "2" }), widthClass))],
+						[
+							card,
+							...(isEdit
+								? []
+								: [
+										h.p(
+											[h.Class("px-1 text-xs text-muted-foreground")],
+											[afterSaveNote(model.form.kind)],
+										),
+									]),
+						],
+					),
+		]),
 		actionBar(h, model, widthClass),
 	])
 })
