@@ -41,9 +41,9 @@ const tenant: TenantContext = {
 const MINUTE_MS = 60_000
 // Second-aligned, now-relative (the tables enforce a TTL at insert time) and
 // deliberately not minute-aligned, so edge buckets are partial.
-// Aligned to the widest fuzzed bucket (900 s, a multiple of every other) so a
+// Aligned to 1800 s, the least common multiple of the fuzzed bucket widths, so a
 // replayed seed sees the same bucket phase.
-const WINDOW_START_MS = Math.floor((Date.now() - 6 * 60 * MINUTE_MS) / 900_000) * 900_000 + 17_000
+const WINDOW_START_MS = Math.floor((Date.now() - 6 * 60 * MINUTE_MS) / 1_800_000) * 1_800_000 + 17_000
 const WINDOW_MS = 90 * MINUTE_MS
 
 const chDateTime = (ms: number): string => Str.slice(0, 19)(Str.replace("T", " ")(new Date(ms).toISOString()))

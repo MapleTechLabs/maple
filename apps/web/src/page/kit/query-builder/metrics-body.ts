@@ -113,7 +113,10 @@ const groupByFields = (h: H, model: Model, query: MetricsQuery, keys: MetricKeys
 			items: Arr.filter(offered, (field) => !selected.includes(field)),
 			placeholder: selected.length === 0 ? "Everything (no breakdown)" : "",
 			ariaLabel: "Group series by",
-			emptyText: selected.length > 0 ? "All fields selected" : "No fields found",
+			// The list is empty for a search with no match too; only say "all" when it is true.
+			emptyText: Arr.every(offered, (field) => selected.includes(field))
+				? "All fields selected"
+				: "No fields found",
 			className: "text-xs font-mono",
 			toView: (parts) => h.div([h.Class("flex-1 min-w-[220px]")], parts),
 		},
