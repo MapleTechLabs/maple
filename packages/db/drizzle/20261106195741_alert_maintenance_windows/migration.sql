@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS "alert_maintenance_windows" (
 	"schedule_json" jsonb NOT NULL,
 	"exclude_from_baselines" boolean NOT NULL DEFAULT true,
 	"enabled" boolean NOT NULL DEFAULT true,
+	"once_ends_at" timestamp with time zone,
 	"created_at" timestamp with time zone NOT NULL,
 	"updated_at" timestamp with time zone NOT NULL,
 	"created_by" text NOT NULL,
@@ -17,6 +18,9 @@ CREATE TABLE IF NOT EXISTS "alert_maintenance_windows" (
 --> statement-breakpoint
 -- metadata
 ALTER TABLE "alert_silences" ADD COLUMN IF NOT EXISTS "maintenance_window_id" text;
+--> statement-breakpoint
+-- metadata
+ALTER TABLE "alert_silences" ADD COLUMN IF NOT EXISTS "exclude_from_baselines" boolean NOT NULL DEFAULT false;
 --> statement-breakpoint
 -- metadata
 CREATE INDEX IF NOT EXISTS "alert_maintenance_windows_enabled_idx" ON "alert_maintenance_windows" USING btree ("enabled", "id");

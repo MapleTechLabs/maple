@@ -1511,6 +1511,19 @@ describe("v2 alerts over HTTP", () => {
 		expect(occurrences.length).toBeGreaterThan(0)
 		expect(occurrences[0].reason).toBe("Maintenance: Nightly vacuum")
 
+		// The window owns its silences: ending or editing one through the silence API is refused.
+		const silenceId: string = occurrences[0].id
+		const endRefused = await harness.request("POST", `/v2/alerts/silences/${silenceId}/end`, key.secret)
+		const editRefused = await harness.request("PATCH", `/v2/alerts/silences/${silenceId}`, key.secret, {
+			reason: "mine now",
+		})
+		for (const refused of [endRefused, editRefused]) {
+			expect(refused.status).toBe(400)
+			expect(refused.body.error.message).toBe(
+				"This silence belongs to maintenance window Nightly vacuum; edit or disable the window instead",
+			)
+		}
+
 		const updated = await harness.request("PATCH", `/v2/alerts/maintenance_windows/${id}`, key.secret, {
 			reason: "Weekly index rebuild",
 		})

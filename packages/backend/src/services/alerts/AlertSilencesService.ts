@@ -17,7 +17,7 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { AlertRules, AlertSilences, type AlertSilenceRow } from "@maple/db/tables"
+import { AlertMaintenanceWindows, AlertRules, AlertSilences, type AlertSilenceRow } from "@maple/db/tables"
 import { Array as Arr, Context, Effect, Layer, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -76,7 +76,7 @@ export interface AlertSilencesServiceApi {
 		silenceId: AlertSilenceId,
 	) => Effect.Effect<
 		AlertSilenceDocument,
-		AlertForbiddenError | AlertPersistenceError | AlertSilenceNotFoundError
+		AlertForbiddenError | AlertValidationError | AlertPersistenceError | AlertSilenceNotFoundError
 	>
 }
 
@@ -156,6 +156,27 @@ export class AlertSilencesService extends Context.Service<AlertSilencesService, 
 				}
 			})
 
+			/** A silence a maintenance window wrote is changed through the window, which would undo the edit. */
+			const requireUnmanaged = Effect.fn("AlertSilencesService.requireUnmanaged")(function* (
+				orgId: OrgId,
+				row: StoredSilenceRow,
+			) {
+				const windowId = row.maintenanceWindowId
+				if (windowId === null) return
+				const windows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(AlertMaintenanceWindows)
+							.select("name")
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(windowId)])
+							.limit(1),
+					),
+				)
+				const name = windows[0]?.name ?? windowId
+				return yield* validationError(
+					`This silence belongs to maintenance window ${name}; edit or disable the window instead`,
+				)
+			})
+
 			const validateWindow = (startsAtMs: number, endsAtMs: number, nowMs: number) => {
 				if (endsAtMs <= startsAtMs)
 					return Effect.fail(validationError("endsAt must be after startsAt"))
@@ -219,7 +240,12 @@ export class AlertSilencesService extends Context.Service<AlertSilencesService, 
 					db.run(
 						PG.from(AlertSilences)
 							.select("id")
-							.where(($) => [$.orgId.eq(orgId), $.endsAt.gt(nowMs)])
+							// A maintenance window's occurrences have their own cap and do not count.
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.endsAt.gt(nowMs),
+								$.maintenanceWindowId.isNull(),
+							])
 							.limit(MAX_OPEN_SILENCES_PER_ORG),
 					),
 				)
@@ -236,6 +262,7 @@ export class AlertSilencesService extends Context.Service<AlertSilencesService, 
 					startsAt: startsAtMs,
 					endsAt: endsAtMs,
 					maintenanceWindowId: null,
+					excludeFromBaselines: false,
 					createdAt: nowMs,
 					updatedAt: nowMs,
 					createdBy: userId,
@@ -256,6 +283,7 @@ export class AlertSilencesService extends Context.Service<AlertSilencesService, 
 				yield* requireManage(roles)
 				const nowMs = yield* runtime.now
 				const current = yield* findRow(orgId, silenceId)
+				yield* requireUnmanaged(orgId, current)
 				if (current.endsAt <= nowMs)
 					return yield* validationError("An ended silence cannot be changed")
 				const started = current.startsAt <= nowMs
@@ -307,6 +335,7 @@ export class AlertSilencesService extends Context.Service<AlertSilencesService, 
 				yield* requireManage(roles)
 				const nowMs = yield* runtime.now
 				const current = yield* findRow(orgId, silenceId)
+				yield* requireUnmanaged(orgId, current)
 				if (current.endsAt <= nowMs) return yield* toDocument(current, nowMs)
 				// A scheduled silence that never started collapses to an empty window at now.
 				const startsAt = Math.min(current.startsAt, nowMs)

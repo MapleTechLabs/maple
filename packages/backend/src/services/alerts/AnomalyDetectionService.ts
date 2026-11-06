@@ -81,10 +81,7 @@ import {
 	type GoldenSignalSeries,
 	type LogVolumeSeries,
 } from "./anomaly/detection"
-import {
-	maintenanceBaselineExclusions,
-	selectBaselineMaintenanceWindows,
-} from "./alert-maintenance-window-store"
+import { selectBaselineExclusions } from "./alert-maintenance-window-store"
 import { issueSeverityFromAlert } from "@maple/backend/services/errors/severity-map"
 import {
 	batchDetectorStates,
@@ -1319,12 +1316,9 @@ const make: Effect.Effect<
 		// Baseline reads go first: queued behind the fan-out's warehouse queries they
 		// time out, and a timed-out read recomputes the 7-day scan.
 		const cachedBaselines = yield* readCachedBaselines(orgId, nowMs)
-		// One read of the org's maintenance windows; their occurrences over the lookback are computed once.
-		const maintenanceWindows = yield* dbExecute((db) => selectBaselineMaintenanceWindows(db, orgId))
-		const exclusions = maintenanceBaselineExclusions(
-			maintenanceWindows,
-			nowMs - BASELINE_WINDOW_MS - HOUR_MS,
-			currentHourStartMs,
+		// One read of the maintenance occurrences that ran over the lookback.
+		const exclusions = yield* dbExecute((db) =>
+			selectBaselineExclusions(db, orgId, nowMs - BASELINE_WINDOW_MS - HOUR_MS, currentHourStartMs),
 		)
 		yield* Effect.annotateCurrentSpan({ "maple.anomaly.maintenance_exclusions": exclusions.length })
 		const [goldenSeries, logSeries, spikes] = yield* Effect.all(

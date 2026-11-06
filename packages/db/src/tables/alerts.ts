@@ -370,6 +370,8 @@ const alertSilencesColumns = {
 	maintenanceWindowId: PG.column(PG.nullable(PG.brand(PG.text, AlertMaintenanceWindowId)), {
 		name: "maintenance_window_id",
 	}),
+	/** A window occurrence's baseline opt-out, fixed when written so editing the window keeps history. */
+	excludeFromBaselines: PG.column(PG.bool, { name: "exclude_from_baselines", default: false }),
 	createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 	updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	createdBy: PG.column(PG.text, { name: "created_by" }),
@@ -407,6 +409,8 @@ export const AlertMaintenanceWindows = PG.table("alert_maintenance_windows", {
 		scheduleJson: PG.column(PG.jsonb(StoredAlertMaintenanceSchedule), { name: "schedule_json" }),
 		excludeFromBaselines: PG.column(PG.bool, { name: "exclude_from_baselines", default: true }),
 		enabled: PG.column(PG.bool, { default: true }),
+		/** A one-off window's end; null for a weekly one. Lets scans and the org cap skip ended windows. */
+		onceEndsAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "once_ends_at" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 		createdBy: PG.column(PG.text, { name: "created_by" }),

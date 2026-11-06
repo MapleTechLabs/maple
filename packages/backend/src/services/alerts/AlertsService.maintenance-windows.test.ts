@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Duration, Effect } from "effect"
 import { TestClock } from "effect/testing"
-import { AlertMaintenanceWindowCreateRequest } from "@maple/domain/http"
+import { AlertMaintenanceWindowCreateRequest, AlertMaintenanceWindowUpdateRequest } from "@maple/domain/http"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AlertsService, type AlertsServiceApi } from "./AlertsService"
 import { AlertMaintenanceWindowsService } from "./AlertMaintenanceWindowsService"
@@ -111,6 +111,55 @@ describe("maintenance windows hold back alerts", () => {
 				const silence = yield* AlertSilencesService.use((silences) => silences.get(orgId, silenceId))
 				assert.strictEqual(silence.maintenanceWindowId, window.id)
 			}
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("holds the page through a disable and re-enable, then sends it once at the real end", () => {
+		const { sent, layer } = setup()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const windows = yield* AlertMaintenanceWindowsService
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+			const window = yield* windows.create(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertMaintenanceWindowCreateRequest({
+					name: "Nightly deploy",
+					matchers: { services: ["checkout"] },
+					schedule: {
+						_tag: "weekly",
+						timeZone: "UTC",
+						days: ["tue"],
+						startTime: "22:00",
+						durationMinutes: 30,
+					},
+				}),
+			)
+			yield* ticks(alerts, 2)
+
+			// Off and on again between two checks: the occurrence's silence ends, then reopens.
+			const toggle = (enabled: boolean) =>
+				windows.update(
+					orgId,
+					userId,
+					adminRoles,
+					window.id,
+					new AlertMaintenanceWindowUpdateRequest({ enabled }),
+				)
+			yield* toggle(false)
+			yield* toggle(true)
+			yield* ticks(alerts, 5)
+			const [held] = (yield* alerts.listIncidents(orgId)).incidents
+			assert.isNotNull(held?.silencedAt)
+			assert.deepStrictEqual(sent, [])
+
+			// 22:13 + 7 minutes so far; past 22:30 the page goes out once.
+			yield* ticks(alerts, 15)
+			assert.deepStrictEqual(yield* deliveries(alerts), ["trigger:silenced", "trigger:success"])
+			assert.deepStrictEqual(sent, ["trigger"])
 		}).pipe(Effect.provide(layer))
 	})
 })

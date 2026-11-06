@@ -303,6 +303,8 @@ const maintenanceWindowsTick = makeTick(
 					maintenanceWindows: result.windows,
 					maintenanceSilencesUpserted: result.silencesUpserted,
 					maintenanceWindowFailures: result.failures,
+					maintenanceWindowPages: result.pages,
+					maintenanceWindowBudgetExhausted: result.budgetExhausted,
 				}
 			: undefined,
 )

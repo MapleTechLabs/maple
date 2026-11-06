@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "c5bcb859e31b989d6710a1c0788e8fcf41c406088109a5e3855ab6384eaacb84",
+	"id": "d827eb70b6a457bd350b5b0f4a90825a5a7a83d71cd776fb992866fded387ef7",
 	"prevIds": [
 		"739d574878ec6441261d585e9850a90950750552456730812038a7f04f57b4d2"
 	],
@@ -2514,17 +2514,17 @@
 		{
 			"kind": "column",
 			"table": "alert_maintenance_windows",
-			"name": "created_at",
+			"name": "once_ends_at",
 			"position": 8,
 			"type": "timestamp with time zone",
-			"notNull": true,
+			"notNull": false,
 			"default": null,
 			"identity": null
 		},
 		{
 			"kind": "column",
 			"table": "alert_maintenance_windows",
-			"name": "updated_at",
+			"name": "created_at",
 			"position": 9,
 			"type": "timestamp with time zone",
 			"notNull": true,
@@ -2534,8 +2534,18 @@
 		{
 			"kind": "column",
 			"table": "alert_maintenance_windows",
-			"name": "created_by",
+			"name": "updated_at",
 			"position": 10,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_maintenance_windows",
+			"name": "created_by",
+			"position": 11,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -2545,7 +2555,7 @@
 			"kind": "column",
 			"table": "alert_maintenance_windows",
 			"name": "updated_by",
-			"position": 11,
+			"position": 12,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -3194,17 +3204,17 @@
 		{
 			"kind": "column",
 			"table": "alert_silences",
-			"name": "created_at",
+			"name": "exclude_from_baselines",
 			"position": 7,
-			"type": "timestamp with time zone",
+			"type": "boolean",
 			"notNull": true,
-			"default": null,
+			"default": "false",
 			"identity": null
 		},
 		{
 			"kind": "column",
 			"table": "alert_silences",
-			"name": "updated_at",
+			"name": "created_at",
 			"position": 8,
 			"type": "timestamp with time zone",
 			"notNull": true,
@@ -3214,8 +3224,18 @@
 		{
 			"kind": "column",
 			"table": "alert_silences",
-			"name": "created_by",
+			"name": "updated_at",
 			"position": 9,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_silences",
+			"name": "created_by",
+			"position": 10,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -3225,7 +3245,7 @@
 			"kind": "column",
 			"table": "alert_silences",
 			"name": "updated_by",
-			"position": 10,
+			"position": 11,
 			"type": "text",
 			"notNull": true,
 			"default": null,

@@ -8,8 +8,8 @@ import {
 	type OrgId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { AlertMaintenanceWindows, type AlertMaintenanceWindowRow } from "@maple/db/tables"
-import type { MapleDb } from "@maple/db/client"
+import { AlertMaintenanceWindows, AlertSilences, type AlertMaintenanceWindowRow } from "@maple/db/tables"
+import type { MapleDb, MapleDbError } from "@maple/db/client"
 import { Array as Arr, Effect, Option, Schema } from "effect"
 import type { BaselineExclusion } from "./anomaly/detection"
 
@@ -79,34 +79,58 @@ export const maintenanceWindowToDocument = (
 		updatedAt: iso(window.row.updatedAt),
 	})
 
-/** Windows that can affect a baseline: enabled, opted in, and naming a service or environment. */
-export const selectBaselineMaintenanceWindows = (db: MapleDb, orgId: OrgId) =>
+/**
+ * Baseline exclusions from the maintenance occurrences that actually ran in [fromMs, nowMs):
+ * window-owned silences that started, opted out of baselines when written. Reading the
+ * silences rather than the windows keeps history fixed when a window is edited or deleted.
+ */
+export const selectBaselineExclusions = (
+	db: MapleDb,
+	orgId: OrgId,
+	fromMs: number,
+	nowMs: number,
+): Effect.Effect<ReadonlyArray<BaselineExclusion>, MapleDbError> =>
 	db
 		.run(
-			selectMaintenanceWindows().where(($) => [
-				$.orgId.eq(orgId),
-				$.enabled.eq(true),
-				$.excludeFromBaselines.eq(true),
-			]),
+			PG.from(AlertSilences)
+				.select(($) => ({
+					startsAt: $.startsAt,
+					endsAt: $.endsAt,
+					matchersJson: PG.undecoded($.matchersJson),
+				}))
+				.where(($) => [
+					$.orgId.eq(orgId),
+					$.endsAt.gt(fromMs),
+					$.startsAt.lt(nowMs),
+					$.maintenanceWindowId.isNotNull(),
+					$.excludeFromBaselines.eq(true),
+				]),
 		)
-		.pipe(Effect.map((rows) => Arr.getSomes(Arr.map(rows, decodeMaintenanceWindow))))
-
-/** The baseline ranges each window excludes over [fromMs, toMs), as plain data for the detector. */
-export const maintenanceBaselineExclusions = (
-	windows: ReadonlyArray<DecodedMaintenanceWindow>,
-	fromMs: number,
-	toMs: number,
-): ReadonlyArray<BaselineExclusion> =>
-	Arr.flatMap(windows, (window) => {
-		if ((window.matchers.services?.length ?? 0) + (window.matchers.environments?.length ?? 0) === 0)
-			return []
-		const ranges = maintenanceOccurrences(window.schedule, fromMs, toMs)
-		if (ranges.length === 0) return []
-		return [
-			{
-				covers: (serviceName: string, environment: string) =>
-					maintenanceWindowCoversSeries(window.matchers, serviceName, environment),
-				ranges,
-			},
-		]
-	})
+		.pipe(
+			Effect.map((rows) =>
+				Arr.flatMap(rows, (row) =>
+					Option.match(decodeMatchers(row.matchersJson), {
+						onNone: () => [],
+						onSome: (matchers) =>
+							(matchers.services?.length ?? 0) + (matchers.environments?.length ?? 0) === 0
+								? []
+								: [
+										{
+											covers: (serviceName: string, environment: string) =>
+												maintenanceWindowCoversSeries(
+													matchers,
+													serviceName,
+													environment,
+												),
+											ranges: [
+												{
+													startsAtMs: row.startsAt,
+													endsAtMs: Math.min(row.endsAt, nowMs),
+												},
+											],
+										},
+									],
+					}),
+				),
+			),
+		)

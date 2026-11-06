@@ -179,4 +179,30 @@ describe("maintenance window tools", () => {
 			)
 		}).pipe(Effect.provide(layerFor(testDb)))
 	})
+
+	it.effect("end_alert_silence refuses a silence a maintenance window owns", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const created = yield* call("create_maintenance_window", { ...weekly, tags: ["db"] })
+			if (created._tag !== "Success") return assert.fail("create failed")
+			const { window } = Schema.decodeUnknownSync(MaintenanceWindowMutationOutput)(
+				created.success.structuredContent,
+			)
+			const silences = yield* AlertSilencesService.use((service) => service.list(ORG))
+			const owned = silences.silences.find((silence) => silence.maintenanceWindowId === window.id)
+			if (owned === undefined) return assert.fail("no occurrence silence")
+
+			const refused = yield* call("end_alert_silence", { silence_id: owned.id })
+			assert.strictEqual(refused._tag, "Failure")
+			if (refused._tag !== "Failure") return
+			assert.strictEqual(
+				refused.failure.message,
+				"This silence belongs to maintenance window Nightly vacuum; edit or disable the window instead",
+			)
+			assert.strictEqual(
+				"parameter" in refused.failure ? refused.failure.parameter : undefined,
+				"silence_id",
+			)
+		}).pipe(Effect.provide(layerFor(testDb)))
+	})
 })

@@ -4,37 +4,27 @@ import {
 	AlertMaintenanceWindowNotFoundError,
 	AlertMaintenanceWindowsListResponse,
 	AlertPersistenceError,
-	AlertSilenceId as AlertSilenceIdSchema,
 	AlertValidationError,
-	MAINTENANCE_MATERIALIZE_HORIZON_MS,
-	maintenanceOccurrences,
-	maintenanceSilenceReason,
 	toStoredMaintenanceSchedule,
 	type AlertMaintenanceWindowCreateRequest,
 	type AlertMaintenanceWindowDocument,
 	type AlertMaintenanceWindowId,
 	type AlertMaintenanceWindowUpdateRequest,
-	type AlertSilenceId,
 	type AlertSilenceMatchers,
-	type MaintenanceOccurrence,
 	type OrgId,
 	type RoleName,
 	type StoredAlertMaintenanceSchedule,
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import {
-	AlertMaintenanceWindows,
-	AlertRules,
-	AlertSilences,
-	type AlertMaintenanceWindowRow,
-} from "@maple/db/tables"
-import { Array as Arr, Context, Effect, Layer, Option, Schema } from "effect"
+import { AlertMaintenanceWindows, AlertRules, type AlertMaintenanceWindowRow } from "@maple/db/tables"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import * as Policy from "@maple/domain/policy"
 import { makePersistenceError } from "./alert-persistence"
 import { AlertRuntime } from "./AlertRuntime"
+import { retireSilences, syncWindow } from "./alert-maintenance-window-sync"
 import {
 	decodeMaintenanceWindow,
 	maintenanceWindowToDocument,
@@ -43,19 +33,26 @@ import {
 	type StoredMaintenanceWindowRow,
 } from "./alert-maintenance-window-store"
 
-/** Windows an org may hold at once. */
+/** Windows an org may hold at once; one-off windows that have ended do not count. */
 const MAX_WINDOWS_PER_ORG = 100
-/** Windows one materialize pass reads; more are logged and wait for a later pass. */
-const MATERIALIZE_BATCH = 2_000
+/** Windows one keyset page of the materialize pass reads. */
+const MATERIALIZE_PAGE = 500
 const MATERIALIZE_CONCURRENCY = 4
+/** The pass stops paging after this long, inside the 15-minute lane's 10-minute deadline. */
+const MATERIALIZE_BUDGET_MS = 8 * 60_000
+
+const onceEndsAtOf = (schedule: StoredAlertMaintenanceSchedule): number | null =>
+	schedule._tag === "once" ? schedule.endsAt : null
 
 const decodeWindowIdSync = Schema.decodeUnknownSync(AlertMaintenanceWindowIdSchema)
-const decodeSilenceIdSync = Schema.decodeUnknownSync(AlertSilenceIdSchema)
 
 export interface MaterializeResult {
 	readonly windows: number
 	readonly silencesUpserted: number
 	readonly failures: number
+	/** Keyset pages read; the pass stopped early when `budgetExhausted`. */
+	readonly pages: number
+	readonly budgetExhausted: boolean
 }
 
 export interface AlertMaintenanceWindowsServiceApi {
@@ -103,7 +100,10 @@ export interface AlertMaintenanceWindowsServiceApi {
 		AlertForbiddenError | AlertPersistenceError | AlertMaintenanceWindowNotFoundError
 	>
 	/** Writes every enabled window's occurrences in [now, now + 48h) as silences, across all orgs. */
-	readonly materialize: (nowMs: number) => Effect.Effect<MaterializeResult, AlertPersistenceError>
+	readonly materialize: (
+		nowMs: number,
+		options?: { readonly pageSize?: number },
+	) => Effect.Effect<MaterializeResult, AlertPersistenceError>
 }
 
 const validationError = (message: string) => new AlertValidationError({ message, details: [message] })
@@ -192,143 +192,16 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 				? Effect.fail(validationError("A one-off maintenance window must end in the future"))
 				: Effect.void
 
-		const silenceFields = (window: DecodedMaintenanceWindow, nowMs: number) => ({
-			reason: maintenanceSilenceReason(window.row.name, window.row.reason),
-			matchersJson: window.matchers,
-			updatedAt: nowMs,
-			updatedBy: window.row.updatedBy,
-		})
-
-		/** Ends a running occurrence now (its owed page then goes out) and drops the ones ahead. */
-		const retireSilences = Effect.fn("AlertMaintenanceWindowsService.retireSilences")(function* (
-			orgId: OrgId,
-			windowId: AlertMaintenanceWindowId,
-			nowMs: number,
-			updatedBy: string,
-		) {
-			yield* dropFutureSilences(orgId, windowId, nowMs)
-			yield* dbExecute((db) =>
-				db.run(
-					PG.update(AlertSilences)
-						.set({ endsAt: nowMs, updatedAt: nowMs, updatedBy })
-						.where(($) => [
-							$.orgId.eq(orgId),
-							$.maintenanceWindowId.eq(windowId),
-							$.startsAt.lte(nowMs),
-							$.endsAt.gt(nowMs),
-						]),
-				),
-			)
-		})
-
-		const dropFutureSilences = (orgId: OrgId, windowId: AlertMaintenanceWindowId, nowMs: number) =>
-			dbExecute((db) =>
-				db.run(
-					PG.deleteFrom(AlertSilences).where(($) => [
-						$.orgId.eq(orgId),
-						$.maintenanceWindowId.eq(windowId),
-						$.startsAt.gt(nowMs),
-					]),
-				),
-			)
-
-		const upsertOccurrence = (
-			window: DecodedMaintenanceWindow,
-			occurrence: MaintenanceOccurrence,
-			nowMs: number,
-		) => {
-			const fields = silenceFields(window, nowMs)
-			const insert = PG.insertInto(AlertSilences).values({
-				id: decodeSilenceIdSync(runtime.makeUuid()),
-				orgId: window.row.orgId,
-				maintenanceWindowId: window.row.id,
-				startsAt: occurrence.startsAtMs,
-				endsAt: occurrence.endsAtMs,
-				createdAt: nowMs,
-				createdBy: window.row.updatedBy,
-				...fields,
-			})
-			// A started occurrence is never rewritten here; one ahead takes the window's current shape.
-			return dbExecute((db) =>
-				db.run(
-					occurrence.startsAtMs <= nowMs
-						? insert.onConflictDoNothing({
-								target: ["maintenanceWindowId", "startsAt"],
-								targetWhere: ($) => $.maintenanceWindowId.isNotNull(),
-							})
-						: insert.onConflictDoUpdate({
-								target: ["maintenanceWindowId", "startsAt"],
-								targetWhere: ($) => $.maintenanceWindowId.isNotNull(),
-								set: { endsAt: occurrence.endsAtMs, ...fields },
-								where: ($) => $.startsAt.gt(nowMs),
-							}),
-				),
-			)
-		}
-
-		/**
-		 * Writes the window's occurrences in [now, now + 48h). An occurrence already running
-		 * keeps its row; `refresh` (after an edit) gives it the window's new matchers and end.
-		 */
+		/** `syncWindow` in a transaction of its own, with span attributes. */
 		const materializeWindow = Effect.fn("AlertMaintenanceWindowsService.materializeWindow")(function* (
 			window: DecodedMaintenanceWindow,
 			nowMs: number,
-			refresh: boolean,
 		) {
-			const { orgId, id } = window.row
-			const occurrences = maintenanceOccurrences(
-				window.schedule,
-				nowMs,
-				nowMs + MAINTENANCE_MATERIALIZE_HORIZON_MS,
+			const upserted = yield* dbExecute((db) =>
+				db.transaction(syncWindow(db, runtime.makeUuid, window, nowMs, false)),
 			)
-			const running = yield* dbExecute((db) =>
-				db.run(
-					PG.from(AlertSilences)
-						.select("id", "startsAt", "endsAt")
-						.where(($) => [
-							$.orgId.eq(orgId),
-							$.maintenanceWindowId.eq(id),
-							$.startsAt.lte(nowMs),
-							$.endsAt.gt(nowMs),
-						]),
-				),
-			)
-			if (refresh && running.length > 0) {
-				yield* dbExecute((db) =>
-					db.run(
-						PG.update(AlertSilences)
-							.set(silenceFields(window, nowMs))
-							.where(($) => [
-								$.orgId.eq(orgId),
-								$.id.in_(...Arr.map(running, (row) => row.id)),
-							]),
-					),
-				)
-			}
-			const current = Arr.head(running)
-			// The running row takes its occurrence's end, so an edit that moves the end applies now.
-			const syncRunning = (
-				row: { readonly id: AlertSilenceId; readonly endsAt: number },
-				endsAtMs: number,
-			) =>
-				row.endsAt === endsAtMs
-					? Effect.succeed(0)
-					: dbExecute((db) =>
-							db.run(
-								PG.update(AlertSilences)
-									.set({ endsAt: endsAtMs, updatedAt: nowMs })
-									.where(($) => [$.orgId.eq(orgId), $.id.eq(row.id)]),
-							),
-						).pipe(Effect.as(1))
-			const writes = yield* Effect.forEach(occurrences, (occurrence) =>
-				occurrence.startsAtMs <= nowMs && Option.isSome(current)
-					? syncRunning(current.value, occurrence.endsAtMs)
-					: upsertOccurrence(window, occurrence, nowMs).pipe(Effect.as(1)),
-			)
-			const upserted = Arr.reduce(writes, 0, (sum, count) => sum + count)
 			yield* Effect.annotateCurrentSpan({
-				"maple.maintenance_window.id": id,
-				"maple.maintenance_window.occurrences": occurrences.length,
+				"maple.maintenance_window.id": window.row.id,
 				"maple.maintenance_window.silences_upserted": upserted,
 			})
 			return upserted
@@ -379,7 +252,10 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 				db.run(
 					PG.from(AlertMaintenanceWindows)
 						.select("id")
-						.where(($) => [$.orgId.eq(orgId)])
+						.where(($) => [
+							$.orgId.eq(orgId),
+							PG.or($.onceEndsAt.isNull(), $.onceEndsAt.gt(nowMs)),
+						])
 						.limit(MAX_WINDOWS_PER_ORG),
 				),
 			)
@@ -397,16 +273,28 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 				scheduleJson: schedule,
 				excludeFromBaselines: request.excludeFromBaselines ?? true,
 				enabled: request.enabled ?? true,
+				onceEndsAt: onceEndsAtOf(schedule),
 				createdAt: nowMs,
 				updatedAt: nowMs,
 				createdBy: userId,
 				updatedBy: userId,
 			}
-			yield* dbExecute((db) => db.run(PG.insertInto(AlertMaintenanceWindows).values(row)))
-			yield* Effect.annotateCurrentSpan({ "maple.maintenance_window.id": row.id })
 			const window: DecodedMaintenanceWindow = { row, matchers: request.matchers, schedule }
-			// Right away, so an occurrence starting before the next cron pass is not missed.
-			if (row.enabled) yield* materializeWindow(window, nowMs, false)
+			// Occurrences are written right away, so one starting before the next pass is not missed.
+			yield* dbExecute((db) =>
+				db.transaction(
+					db
+						.run(PG.insertInto(AlertMaintenanceWindows).values(row))
+						.pipe(
+							Effect.andThen(
+								row.enabled
+									? syncWindow(db, runtime.makeUuid, window, nowMs, false)
+									: Effect.void,
+							),
+						),
+				),
+			)
+			yield* Effect.annotateCurrentSpan({ "maple.maintenance_window.id": row.id })
 			return yield* toDocument(window, nowMs)
 		})
 
@@ -436,6 +324,7 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 					enabled: request.enabled ?? current.row.enabled,
 					matchersJson: request.matchers ?? current.matchers,
 					scheduleJson: schedule,
+					onceEndsAt: onceEndsAtOf(schedule),
 					updatedAt: nowMs,
 					updatedBy: userId,
 				},
@@ -443,27 +332,28 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 				schedule,
 			}
 			yield* dbExecute((db) =>
-				db.run(
-					PG.update(AlertMaintenanceWindows)
-						.set({
-							name: next.row.name,
-							reason: next.row.reason,
-							matchersJson: next.matchers,
-							scheduleJson: next.schedule,
-							excludeFromBaselines: next.row.excludeFromBaselines,
-							enabled: next.row.enabled,
-							updatedAt: nowMs,
-							updatedBy: userId,
-						})
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(windowId)]),
+				db.transaction(
+					Effect.gen(function* () {
+						yield* db.run(
+							PG.update(AlertMaintenanceWindows)
+								.set({
+									name: next.row.name,
+									reason: next.row.reason,
+									matchersJson: next.matchers,
+									scheduleJson: next.schedule,
+									excludeFromBaselines: next.row.excludeFromBaselines,
+									enabled: next.row.enabled,
+									onceEndsAt: next.row.onceEndsAt,
+									updatedAt: nowMs,
+									updatedBy: userId,
+								})
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(windowId)]),
+						)
+						if (next.row.enabled) yield* syncWindow(db, runtime.makeUuid, next, nowMs, true)
+						else yield* retireSilences(db, orgId, windowId, nowMs, userId)
+					}),
 				),
 			)
-			if (next.row.enabled) {
-				yield* dropFutureSilences(orgId, windowId, nowMs)
-				yield* materializeWindow(next, nowMs, true)
-			} else {
-				yield* retireSilences(orgId, windowId, nowMs, userId)
-			}
 			return yield* toDocument(next, nowMs)
 		})
 
@@ -476,69 +366,120 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 			yield* requireManage(roles)
 			const nowMs = yield* runtime.now
 			const current = yield* findRow(orgId, windowId)
-			yield* retireSilences(orgId, windowId, nowMs, userId)
 			yield* dbExecute((db) =>
-				db.run(
-					PG.deleteFrom(AlertMaintenanceWindows).where(($) => [
-						$.orgId.eq(orgId),
-						$.id.eq(windowId),
-					]),
+				db.transaction(
+					retireSilences(db, orgId, windowId, nowMs, userId).pipe(
+						Effect.andThen(
+							db.run(
+								PG.deleteFrom(AlertMaintenanceWindows).where(($) => [
+									$.orgId.eq(orgId),
+									$.id.eq(windowId),
+								]),
+							),
+						),
+					),
 				),
 			)
 			return yield* toDocument({ ...current, row: { ...current.row, enabled: false } }, nowMs)
 		})
 
-		const materialize = Effect.fn("AlertMaintenanceWindowsService.materialize")(function* (
-			nowMs: number,
-		) {
-			// Deliberate cross-org system scan: the cron writes every org's occurrences.
-			const rows = yield* dbExecute((db) =>
-				db.run(
-					selectMaintenanceWindows()
-						.where(($) => [$.enabled.eq(true)])
-						.orderBy(["id", "asc"])
-						.limit(MATERIALIZE_BATCH),
-				),
-			)
-			if (rows.length >= MATERIALIZE_BATCH)
-				yield* Effect.logWarning("Maintenance windows exceed one materialize batch").pipe(
-					Effect.annotateLogs({ "maple.maintenance_window.batch": MATERIALIZE_BATCH }),
-				)
-			const results = yield* Effect.forEach(
-				rows,
-				(row) =>
-					Option.match(decodeMaintenanceWindow(row), {
-						onNone: () =>
-							Effect.logWarning("Skipping an unreadable maintenance window").pipe(
-								Effect.annotateLogs({ "maple.maintenance_window.id": row.id }),
+		const materializeOne = (row: StoredMaintenanceWindowRow, nowMs: number) =>
+			Option.match(decodeMaintenanceWindow(row), {
+				onNone: () =>
+					Effect.logWarning("Skipping an unreadable maintenance window").pipe(
+						Effect.annotateLogs({ "maple.maintenance_window.id": row.id }),
+						Effect.as({ upserted: 0, failed: 1 }),
+					),
+				onSome: (window) =>
+					materializeWindow(window, nowMs).pipe(
+						Effect.map((upserted) => ({ upserted, failed: 0 })),
+						// One window failing must not hold back every other org's.
+						Effect.catch((error) =>
+							Effect.logError("Maintenance window materialize failed").pipe(
+								Effect.annotateLogs({
+									"maple.maintenance_window.id": row.id,
+									"error.message": error.message,
+								}),
 								Effect.as({ upserted: 0, failed: 1 }),
 							),
-						onSome: (window) =>
-							materializeWindow(window, nowMs, false).pipe(
-								Effect.map((upserted) => ({ upserted, failed: 0 })),
-								// One window failing must not hold back every other org's.
-								Effect.catch((error) =>
-									Effect.logError("Maintenance window materialize failed").pipe(
-										Effect.annotateLogs({
-											"maple.maintenance_window.id": row.id,
-											"error.message": error.message,
-										}),
-										Effect.as({ upserted: 0, failed: 1 }),
-									),
-								),
-							),
-					}),
-				{ concurrency: MATERIALIZE_CONCURRENCY },
+						),
+					),
+			})
+
+		const emptyResult: MaterializeResult = {
+			windows: 0,
+			silencesUpserted: 0,
+			failures: 0,
+			pages: 0,
+			budgetExhausted: false,
+		}
+
+		/** One keyset page and the pages after it, until the windows or the time budget run out. */
+		const materializeFrom = (
+			cursor: AlertMaintenanceWindowId | null,
+			nowMs: number,
+			pageSize: number,
+			deadlineMs: number,
+			sofar: MaterializeResult,
+		): Effect.Effect<MaterializeResult, AlertPersistenceError> =>
+			Effect.gen(function* () {
+				if ((yield* Clock.currentTimeMillis) >= deadlineMs) return { ...sofar, budgetExhausted: true }
+				// Deliberate cross-org system scan: the pass writes every org's occurrences.
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						selectMaintenanceWindows()
+							.where(($) => [
+								$.enabled.eq(true),
+								// A one-off window that has ended has nothing left to write.
+								PG.or($.onceEndsAt.isNull(), $.onceEndsAt.gt(nowMs)),
+								...(cursor === null ? [] : [$.id.gt(cursor)]),
+							])
+							.orderBy(["id", "asc"])
+							.limit(pageSize),
+					),
+				)
+				const results = yield* Effect.forEach(rows, (row) => materializeOne(row, nowMs), {
+					concurrency: MATERIALIZE_CONCURRENCY,
+				})
+				const next: MaterializeResult = {
+					windows: sofar.windows + rows.length,
+					silencesUpserted: Arr.reduce(
+						results,
+						sofar.silencesUpserted,
+						(sum, r) => sum + r.upserted,
+					),
+					failures: Arr.reduce(results, sofar.failures, (sum, r) => sum + r.failed),
+					pages: sofar.pages + 1,
+					budgetExhausted: false,
+				}
+				const last = Arr.last(rows)
+				return rows.length < pageSize || Option.isNone(last)
+					? next
+					: yield* materializeFrom(last.value.id, nowMs, pageSize, deadlineMs, next)
+			})
+
+		const materialize = Effect.fn("AlertMaintenanceWindowsService.materialize")(function* (
+			nowMs: number,
+			options: { readonly pageSize?: number } = {},
+		) {
+			const startedAt = yield* Clock.currentTimeMillis
+			const result = yield* materializeFrom(
+				null,
+				nowMs,
+				options.pageSize ?? MATERIALIZE_PAGE,
+				startedAt + MATERIALIZE_BUDGET_MS,
+				emptyResult,
 			)
-			const result: MaterializeResult = {
-				windows: rows.length,
-				silencesUpserted: Arr.reduce(results, 0, (sum, r) => sum + r.upserted),
-				failures: Arr.reduce(results, 0, (sum, r) => sum + r.failed),
-			}
+			if (result.budgetExhausted)
+				yield* Effect.logWarning(
+					"Maintenance window pass ran out of time; the rest waits for the next",
+				).pipe(Effect.annotateLogs({ "maple.maintenance_window.window_count": result.windows }))
 			yield* Effect.annotateCurrentSpan({
 				"maple.maintenance_window.window_count": result.windows,
 				"maple.maintenance_window.silences_upserted": result.silencesUpserted,
 				"maple.maintenance_window.failures": result.failures,
+				"maple.maintenance_window.pages": result.pages,
+				"maple.maintenance_window.budget_exhausted": result.budgetExhausted,
 			})
 			return result
 		})

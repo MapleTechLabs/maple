@@ -224,13 +224,13 @@ export class V2AlertSilencesApiGroup extends HttpApiGroup.make("alertSilences")
 		HttpApiEndpoint.post("end", "/:id/end", {
 			params: { id: AlertSilencePublicId },
 			success: V2AlertSilence,
-			error: [alertForbidden, alertPersistence, alertSilenceNotFound],
+			error: [alertForbidden, alertValidation, alertPersistence, alertSilenceNotFound],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "endAlertSilence",
 				summary: "End an alert silence",
 				description:
-					"Ends an active silence now, or cancels a scheduled one. Silences are kept, not deleted, so incident history can still name them. Requires the `alerts:write` scope.",
+					"Ends an active silence now, or cancels a scheduled one. Silences are kept, not deleted, so incident history can still name them. A maintenance window's silence is refused: edit or disable the window. Requires the `alerts:write` scope.",
 			}),
 		),
 	)

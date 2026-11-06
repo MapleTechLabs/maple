@@ -94,23 +94,32 @@ const seedSettings = (testDb: TestDb) =>
 		[ORG],
 	)
 
-/** A one-off window over the four maintenance days, on `services` (or a tag only). */
-const seedWindow = (testDb: TestDb, currentHourStartMs: number, matchers: Record<string, unknown>) =>
+interface Occurrence {
+	readonly matchers: Record<string, unknown>
+	readonly excludeFromBaselines?: boolean
+	/** A plain silence, not one a maintenance window wrote. */
+	readonly plain?: boolean
+}
+
+/**
+ * The silence a maintenance occurrence over the four maintenance days left behind. No window
+ * row exists: the window was deleted since, and its history must still hold.
+ */
+const seedOccurrence = (testDb: TestDb, currentHourStartMs: number, occurrence: Occurrence) =>
 	executeSql(
 		testDb,
-		`INSERT INTO alert_maintenance_windows
-		   (id, org_id, name, reason, matchers_json, schedule_json, exclude_from_baselines, enabled,
-		    created_at, updated_at, created_by, updated_by)
-		 VALUES ('0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80', $1, 'Migrations', null, $2::jsonb, $3::jsonb,
-		         true, true, now(), now(), 'user_1', 'user_1')`,
+		`INSERT INTO alert_silences
+		   (id, org_id, reason, matchers_json, starts_at, ends_at, maintenance_window_id,
+		    exclude_from_baselines, created_at, updated_at, created_by, updated_by)
+		 VALUES ('1b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80', $1, 'Maintenance: Migrations', $2::jsonb,
+		         to_timestamp($3 / 1000.0), to_timestamp($4 / 1000.0), $5, $6, now(), now(), 'user_1', 'user_1')`,
 		[
 			ORG,
-			JSON.stringify(matchers),
-			JSON.stringify({
-				_tag: "once",
-				startsAt: currentHourStartMs - 4 * DAY_MS - 2 * HOUR_MS,
-				endsAt: currentHourStartMs - DAY_MS + 2 * HOUR_MS,
-			}),
+			JSON.stringify(occurrence.matchers),
+			currentHourStartMs - 4 * DAY_MS - 2 * HOUR_MS,
+			currentHourStartMs - DAY_MS + 2 * HOUR_MS,
+			occurrence.plain === true ? null : "0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80",
+			occurrence.excludeFromBaselines ?? true,
 		],
 	)
 
@@ -121,13 +130,14 @@ const errorRateState = (testDb: TestDb) =>
 		[ORG],
 	)
 
-const runWith = (matchers: Record<string, unknown> | null) =>
+const runWith = (occurrence: Occurrence | null) =>
 	Effect.gen(function* () {
 		const testDb = createTestDb(createdDbs)
 		const nowMs = yield* Clock.currentTimeMillis
 		const currentHourStartMs = Math.floor(nowMs / HOUR_MS) * HOUR_MS
 		yield* Effect.promise(() => seedSettings(testDb))
-		if (matchers !== null) yield* Effect.promise(() => seedWindow(testDb, currentHourStartMs, matchers))
+		if (occurrence !== null)
+			yield* Effect.promise(() => seedOccurrence(testDb, currentHourStartMs, occurrence))
 		yield* AnomalyDetectionService.use((service) => service.runTick).pipe(
 			Effect.provide(makeLayer(testDb, currentHourStartMs)),
 		)
@@ -143,17 +153,29 @@ describe("AnomalyDetectionService maintenance baseline exclusion", () => {
 		}),
 	)
 
-	it.live("leaves the window's hours out of the baseline, so the anomaly breaches", () =>
+	it.live("leaves a past occurrence's hours out of the baseline, even after its window is gone", () =>
 		Effect.gen(function* () {
-			const state = yield* runWith({ services: ["payments"] })
+			const state = yield* runWith({ matchers: { services: ["payments"] } })
 			expect(state).toMatchObject({ last_status: "breached", baseline_median: 0.01 })
 		}),
 	)
 
 	it.live("ignores a window that names no service or environment", () =>
 		Effect.gen(function* () {
-			const state = yield* runWith({ tags: ["db"] })
+			const state = yield* runWith({ matchers: { tags: ["db"] } })
 			expect(state).toMatchObject({ last_status: "healthy", baseline_median: 0.3 })
+		}),
+	)
+
+	it.live("keeps hours of an occurrence written without the baseline opt-out, and of plain silences", () =>
+		Effect.gen(function* () {
+			const optedIn = yield* runWith({
+				matchers: { services: ["payments"] },
+				excludeFromBaselines: false,
+			})
+			const plain = yield* runWith({ matchers: { services: ["payments"] }, plain: true })
+			expect(optedIn).toMatchObject({ last_status: "healthy", baseline_median: 0.3 })
+			expect(plain).toMatchObject({ last_status: "healthy", baseline_median: 0.3 })
 		}),
 	)
 })
