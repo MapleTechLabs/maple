@@ -1,4 +1,5 @@
 import { OrgId } from "@maple/domain"
+import * as Policy from "@maple/domain/policy"
 import { AlertRulePreviewResponse } from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
 import {
@@ -310,5 +311,58 @@ describe("alert incident", () => {
 		expect(done.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/investigations/inv-1", isReplace: false }),
 		)
+	})
+})
+
+describe("alert incident, silences", () => {
+	const loaded = (roles: ReadonlyArray<string>, withRules = true) =>
+		Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow({ group_key: "checkout" })] }),
+				...(withRules
+					? [
+							Message.UpdatedRules({
+								orgId: ORG,
+								rows: [ruleRow(2, { group_by: JSON.stringify(["service.name"]) })],
+							}),
+						]
+					: []),
+				Message.CompletedFetchSession({ grants: Policy.grantsOf(roles) }),
+			],
+			init(route(), context).model,
+			(model, message) => step(model, message).model,
+		)
+
+	test("Silence on a service-grouped rule's incident silences only that group", () => {
+		const opened = step(loaded(["org:engineer"]), Message.ClickedSilence()).model
+		expect(opened.silenceDialog.scope).toEqual({
+			_tag: "Fixed",
+			label: "Rule 2 · checkout",
+			matchers: { rule_ids: [ruleRow(2).id], services: ["checkout"] },
+		})
+	})
+
+	test("offers Silence to managers once the rule is known, and never to members", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(["org:engineer"])),
+			themeResolved(),
+			expectView(role("button", { name: "Silence" })).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(["org:engineer"], false)),
+			themeResolved(),
+			expectView(role("button", { name: "Silence" })).toBeDisabled(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(["org:member"])),
+			themeResolved(),
+			expectView(role("button", { name: "Silence" })).not.toExist(),
+		)
+		// Before rules load a click does nothing, so the group can't be silenced as the whole rule.
+		expect(step(loaded(["org:engineer"], false), Message.ClickedSilence()).commands ?? []).toEqual([])
 	})
 })
