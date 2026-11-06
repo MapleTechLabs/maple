@@ -1879,5 +1879,40 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
 		],
 	},
+	{
+		// Metadata-only request channel counts; both views are recreated to write them. Existing
+		// hours read 0 classified requests and are not backfilled, so the channel shares skip them.
+		id: "local-0049-to-0050-user-activity-channels",
+		from: 49,
+		to: 50,
+		description:
+			"Add the classified, web and mobile request counts to user_activity_hourly and recreate its views",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [
+			addColumns("user_activity_hourly", [
+				["ClassifiedRequestCount", "SimpleAggregateFunction(sum, UInt64) DEFAULT 0"],
+				["WebRequestCount", "SimpleAggregateFunction(sum, UInt64) DEFAULT 0"],
+				["MobileRequestCount", "SimpleAggregateFunction(sum, UInt64) DEFAULT 0"],
+			]),
+			dropTables("user_activity_hourly_traces_mv", "user_activity_hourly_logs_mv"),
+		],
+		plan: [
+			[
+				"add-user-activity-channels",
+				"Add the request channel counts to user_activity_hourly and recreate its two views so new requests are classified",
+			],
+		],
+		verifies: "Verify the v50 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "user_activity_hourly",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"The channel counts are added as metadata-only defaults; existing rows keep every value and read them as 0.",
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

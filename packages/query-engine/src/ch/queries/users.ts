@@ -44,6 +44,8 @@ export interface UsersScope {
 	readonly mcpServices: ReadonlyArray<string>
 	/** Read `user_activity_hourly` (spans and logs with `user.id`); off on a cluster without migration 0056. */
 	readonly activityRollup?: boolean
+	/** Read the rollup's request channel counts (migration 0058); only the directory list asks. */
+	readonly requestChannels?: boolean
 }
 
 /** The directory's filters, applied per user after every source is merged. */
@@ -219,6 +221,7 @@ const replayUsers = (scope: UsersScope) =>
 			events: zero(),
 			spans: zero(),
 			logLines: zero(),
+			...noChannels(),
 			groupIds: sourceGroups($.groupId),
 			nameAt: seenAt($.userName, $.lastActivity),
 			emailAt: seenAt($.userEmail, $.lastActivity),
@@ -244,6 +247,7 @@ const eventUsers = (scope: UsersScope) =>
 			events: CH.count(),
 			spans: zero(),
 			logLines: zero(),
+			...noChannels(),
 			groupIds: sourceGroups($.GroupId),
 			nameAt: neverSeen(),
 			emailAt: neverSeen(),
@@ -276,6 +280,11 @@ const mcpUsers = (scope: UsersScope) =>
 			events: zero(),
 			spans: zero(),
 			logLines: zero(),
+			// Every request here is an MCP request.
+			classifiedRequests: CH.toUInt64(CH.count()),
+			mcpRequests: CH.toUInt64(CH.count()),
+			webRequests: zero(),
+			mobileRequests: zero(),
 			groupIds: noGroups(),
 			nameAt: seenAt($.SpanAttributes.get("user.name"), $.Timestamp),
 			emailAt: seenAt($.SpanAttributes.get("user.email"), $.Timestamp),
@@ -398,6 +407,34 @@ export function usersMcpNameSearchQuery(
 	)
 }
 
+/** A source that classifies no requests: its rows add nothing to the channel shares. */
+const noChannels = () => ({
+	classifiedRequests: zero(),
+	mcpRequests: zero(),
+	webRequests: zero(),
+	mobileRequests: zero(),
+})
+
+/**
+ * The rollup's requests by channel. A request on an MCP server is MCP whatever its client; of the
+ * rest, the rollup marks the web and mobile ones and the remainder is API. Off, no channel is read.
+ */
+const activityChannels = ($: ColumnAccessor<typeof UserActivityHourly.columns>, scope: UsersScope) => {
+	if (scope.requestChannels !== true) return noChannels()
+	const onMcp = CH.inList($.ServiceName, scope.mcpServices)
+	const offMcp = (count: CH.Expr<number>) =>
+		scope.mcpServices.length === 0
+			? CH.toUInt64(CH.sum(count))
+			: CH.toUInt64(CH.sumIf(count, CH.not(onMcp)))
+	return {
+		classifiedRequests: CH.toUInt64(CH.sum($.ClassifiedRequestCount)),
+		mcpRequests:
+			scope.mcpServices.length === 0 ? zero() : CH.toUInt64(CH.sumIf($.ClassifiedRequestCount, onMcp)),
+		webRequests: offMcp($.WebRequestCount),
+		mobileRequests: offMcp($.MobileRequestCount),
+	}
+}
+
 /**
  * Spans and logs with `user.id` from the rollup: entry-point requests, failed ones as errors, and
  * spans on an MCP server as MCP activity (MCP spans carry the same user id).
@@ -433,6 +470,7 @@ const activityUsers = (scope: UsersScope) =>
 			events: zero(),
 			spans: CH.toUInt64(CH.sum($.SpanCount)),
 			logLines: CH.toUInt64(CH.sum($.LogCount)),
+			...activityChannels($, scope),
 			groupIds: noGroups(),
 			nameAt: neverSeen(),
 			emailAt: neverSeen(),
@@ -487,6 +525,10 @@ const usersPerUser = (scope: UsersScope, filter: UsersListFilter) =>
 			events: CH.sum($.events),
 			spans: CH.sum($.spans),
 			logLines: CH.sum($.logLines),
+			classifiedRequests: CH.sum($.classifiedRequests),
+			mcpRequests: CH.sum($.mcpRequests),
+			webRequests: CH.sum($.webRequests),
+			mobileRequests: CH.sum($.mobileRequests),
 		}))
 		.groupBy("userId")
 		.having(($) => [
