@@ -51,6 +51,16 @@ describe("routes", () => {
 		expect(hrefOf(monitor)).toBe("/alerts/uptime/upm_abc")
 	})
 
+	test("SLO routes parse ahead of a rule id and print back", () => {
+		expect(parse("/alerts/slos/new?serviceName=%22checkout%22")).toMatchObject({
+			_tag: "AlertsSloNew",
+			search: { serviceName: "checkout" },
+		})
+		const slo = parse("/alerts/slos/slo_abc")
+		expect(slo).toMatchObject({ _tag: "AlertsSlo", sloId: "slo_abc" })
+		expect(hrefOf(slo)).toBe("/alerts/slos/slo_abc")
+	})
+
 	test("status page routes parse, the builder ahead of a page id, and print back", () => {
 		expect(parse("/status-pages")._tag).toBe("StatusPages")
 		expect(parse("/status-pages/new")._tag).toBe("StatusPageNew")

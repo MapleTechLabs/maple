@@ -45,6 +45,7 @@ export const PublicIdPrefixes = {
 	anomalyIncident: "anom",
 	scrapeTarget: "scrp",
 	uptimeMonitor: "upm",
+	slo: "slo",
 	statusPage: "stp",
 	statusPageComponent: "stc",
 	statusPageIncident: "sti",

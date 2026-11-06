@@ -15,6 +15,8 @@ import {
 	type AlertRuleUpsertRequest,
 	type OrgId,
 	type UserId,
+	isManagedSignalType,
+	MANAGED_SIGNAL_TYPES,
 } from "@maple/domain/http"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -40,7 +42,7 @@ import {
 	rowToRuleDocument,
 	selectStoredAlertRules,
 	storedRuleCondition,
-	UPTIME_RULE_MANAGED_MESSAGE,
+	managedRuleMessage,
 	type RuleEvaluationState,
 } from "./AlertRuleModel"
 import { tierConditionChanged } from "./alert-thresholds"
@@ -273,11 +275,11 @@ export const makeAlertRulePersistence = (options: {
 						const activeRows = yield* db.run(
 							PG.from(AlertRules)
 								.select("id")
-								// Monitors' backing rules are capped by the monitor allowance instead.
+								// Managed rules (monitors, SLOs) are not counted against the rule cap.
 								.where(($) => [
 									$.orgId.eq(orgId),
 									$.enabled.eq(true),
-									$.signalType.neq("uptime"),
+									$.signalType.notIn(...MANAGED_SIGNAL_TYPES),
 								]),
 						)
 						const alreadyActive =
@@ -385,7 +387,7 @@ export const makeAlertRulePersistence = (options: {
 			db.run(
 				// Monitors' backing rules are managed through the monitor, so the rule list hides them.
 				selectStoredAlertRules()
-					.where(($) => [$.orgId.eq(orgId), $.signalType.neq("uptime")])
+					.where(($) => [$.orgId.eq(orgId), $.signalType.notIn(...MANAGED_SIGNAL_TYPES)])
 					.orderBy(["createdAt", "desc"], ["id", "desc"]),
 			),
 		)
@@ -435,9 +437,9 @@ export const makeAlertRulePersistence = (options: {
 	) {
 		yield* requireAlertsPermission(roles)
 		const row = yield* requireRuleRow(orgId, ruleId)
-		// Hidden from the generic rule APIs: a monitor's rule is deleted with its monitor.
-		if (row.signalType === "uptime") {
-			return yield* new AlertRuleNotFoundError({ message: UPTIME_RULE_MANAGED_MESSAGE, ruleId })
+		// Hidden from the generic rule APIs: a managed rule is deleted with its owner.
+		if (isManagedSignalType(row.signalType)) {
+			return yield* new AlertRuleNotFoundError({ message: managedRuleMessage(row.signalType), ruleId })
 		}
 		const deleted = yield* dbExecute((db) => db.transaction(deleteRuleRows(db, orgId, ruleId)))
 		const txid = readTxid(deleted)

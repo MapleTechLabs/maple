@@ -77,6 +77,8 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { HttpV2ScrapeTargetsLive } from "./scrape-targets.http"
 import { HttpV2UptimeMonitorsLive } from "./uptime-monitors.http"
+import { HttpV2SlosLive } from "./slos.http"
+import { SlosService } from "@maple/backend/services/slos/SlosService"
 import { HttpV2StatusPageIncidentsLive, HttpV2StatusPagesLive } from "./status-pages.http"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
@@ -201,6 +203,8 @@ const v2GroupLayersExceptOnboardingChecklist = (
 		HttpV2AuditLogLive.pipe(Layer.provide(Layer.merge(auditLog, OrgMembersServiceStubLayer))),
 		HttpV2ScrapeTargetsLive,
 		HttpV2UptimeMonitorsLive.pipe(Layer.provide(uptimeMonitors)),
+		// Real service over whichever `WarehouseQueryService` stub the test provides.
+		HttpV2SlosLive.pipe(Layer.provide(Layer.effect(SlosService, SlosService.make))),
 		// Real service: it needs only the Database every harness already provides.
 		Layer.mergeAll(HttpV2StatusPagesLive, HttpV2StatusPageIncidentsLive).pipe(
 			Layer.provide(

@@ -112,6 +112,8 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/ShareVariableInvalidError",
 	"@maple/http/errors/ShareWidgetNotFoundError",
 	"@maple/http/errors/ShareWrongOrgError",
+	"@maple/http/errors/SloNotFoundError",
+	"@maple/http/errors/SloValidationError",
 	"@maple/http/errors/SourceNotFoundError",
 	"@maple/http/errors/SourceValidationError",
 	"@maple/http/errors/StatusPageComponentNotFoundError",

@@ -13,9 +13,13 @@ export const HEALTH_TONE: Record<ServiceHealth, Tone> = {
 	unhealthy: "crit",
 } satisfies Record<ServiceHealth, Tone>
 
-/** The health cause an open alert incident reads as: a monitor's failing check, or a rule firing. */
+/** The health cause an open alert incident reads as: a failing check, a burning SLO, or a rule firing. */
 export const alertIncidentCauseLabel = (signalType: AlertSignalType): string =>
-	signalType === "uptime" ? "Uptime check failing" : "Alert firing"
+	signalType === "uptime"
+		? "Uptime check failing"
+		: signalType === "slo_burn_rate"
+			? "SLO burning error budget"
+			: "Alert firing"
 
 export interface ServiceHealthCause {
 	severity: "warning" | "critical"

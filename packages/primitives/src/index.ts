@@ -337,6 +337,27 @@ export const UptimeIntervalSeconds = Schema.Number.check(
 )
 export type UptimeIntervalSeconds = Schema.Schema.Type<typeof UptimeIntervalSeconds>
 
+export const SloId = MapleUuidId("@maple/SloId", "SLO ID")
+export type SloId = Schema.Schema.Type<typeof SloId>
+
+/** The rolling window an SLO's error budget is measured over. */
+export const SloWindowDays = Schema.Literals([7, 28, 30]).annotate({
+	identifier: "@maple/SloWindowDays",
+	title: "SLO Window Days",
+})
+export type SloWindowDays = Schema.Schema.Type<typeof SloWindowDays>
+
+/**
+ * Latency SLI thresholds: the ladder the service rollups count spans under, so any
+ * threshold on it reads the rollups instead of raw spans.
+ */
+export const SLO_LATENCY_THRESHOLDS_MS = [50, 100, 250, 500, 1000, 2500, 5000, 10000] as const
+export const SloLatencyThresholdMs = Schema.Literals(SLO_LATENCY_THRESHOLDS_MS).annotate({
+	identifier: "@maple/SloLatencyThresholdMs",
+	title: "SLO Latency Threshold (ms)",
+})
+export type SloLatencyThresholdMs = Schema.Schema.Type<typeof SloLatencyThresholdMs>
+
 export const StatusPageId = MapleUuidId("@maple/StatusPageId", "Status Page ID")
 export type StatusPageId = Schema.Schema.Type<typeof StatusPageId>
 

@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "82f424c799908655a6841b74922baf95292238868d3334b18eecdfb160b1c73b",
+	"id": "b5de2fc1c65ab81b0c3eb069af5eaeb488195db0ee8089281eb8c0b3248c6048",
 	"prevIds": [
-		"735b86449ab62a2a8b8163dbb4278bca8e991f0dfafc0f3b7c2418ea6b2446b9"
+		"c17d814b80b3c744f9918aeef7c5edd59881efdcf959113f7259615b0b8bc7b5"
 	],
 	"entities": [
 		{
@@ -976,6 +976,16 @@
 				"columns": [
 					"run_id",
 					"coverage_id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "slos",
+			"primaryKey": {
+				"name": "slos_pkey",
+				"columns": [
+					"id"
 				]
 			}
 		},
@@ -14093,6 +14103,146 @@
 		},
 		{
 			"kind": "column",
+			"table": "slos",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "name",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "description",
+			"position": 3,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "service_name",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "environments_json",
+			"position": 5,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "sli_json",
+			"position": 6,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "target_percent",
+			"position": 7,
+			"type": "double precision",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "window_days",
+			"position": 8,
+			"type": "integer",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "alert_rule_id",
+			"position": 9,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "created_by",
+			"position": 10,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "updated_by",
+			"position": 11,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "created_at",
+			"position": 12,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "slos",
+			"name": "updated_at",
+			"position": 13,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
 			"table": "sources",
 			"name": "id",
 			"position": 0,
@@ -18570,6 +18720,29 @@
 				"\"org_id\"",
 				"\"repository\"",
 				"\"branch\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "slos",
+			"name": "slos_org_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "slos",
+			"name": "slos_org_name_unq",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"name\""
 			],
 			"where": null
 		},

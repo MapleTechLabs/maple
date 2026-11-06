@@ -6,6 +6,7 @@ import { requestKey } from "@maple/views/data/request-key"
 import type { AppRoute } from "../../../route"
 import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { pickedDestination } from "../../kit/destination-picker"
 import { monitorHref, monitorIdFromUrl } from "../shared/uptime-commands"
 import {
 	FetchExistingMonitor,
@@ -120,20 +121,13 @@ const updateDestinationMenu = (model: Model, message: Menu.Message): Return => {
 		Message.GotDestinationMenuMessage({ message: child }),
 	)
 	const next = { ...model, destinationMenu: result.model }
-	const picked = result.outMessage?._tag === "SelectedItem" ? result.outMessage.value : null
-	const isKnown = Arr.some(model.destinations ?? [], (destination) => destination.id === picked)
-	return Option.match(isKnown ? decodeDestinationId(picked) : Option.none(), {
+	const picked = pickedDestination(result.outMessage, model.destinations, model.form.destinationIds)
+	return Option.match(Option.flatMap(picked, decodeDestinationId), {
 		onNone: () => ({ model: next, commands }),
-		onSome: (id) =>
-			model.form.destinationIds.includes(id)
-				? { model: next, commands }
-				: {
-						model: {
-							...next,
-							form: { ...next.form, destinationIds: [...next.form.destinationIds, id] },
-						},
-						commands,
-					},
+		onSome: (id) => ({
+			model: { ...next, form: { ...next.form, destinationIds: [...next.form.destinationIds, id] } },
+			commands,
+		}),
 	})
 }
 

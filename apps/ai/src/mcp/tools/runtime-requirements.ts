@@ -21,6 +21,7 @@ import type { ScrapeTargetsService } from "@maple/backend/services/integrations/
 import type { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import type { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import type { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
+import type { SlosService } from "@maple/backend/services/slos/SlosService"
 import type { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import type { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
@@ -69,6 +70,7 @@ export type McpToolRuntimeRequirements =
 	| ScrapeTargetsService
 	| SecurityAuditStore
 	| SetupAuditService
+	| SlosService
 	| StatusPageSnapshotBuilder
 	| StatusPagesService
 	| OrganizationFeatureFlagsService
