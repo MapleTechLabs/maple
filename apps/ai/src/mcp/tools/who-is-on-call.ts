@@ -1,7 +1,6 @@
 import type { McpToolRegistrar } from "./types"
 import { Array as Arr, Clock, Effect, Option, Schema } from "effect"
 import { parseWarehouseDateTime } from "@maple/query-engine"
-import { ONCALL_LOOKAROUND_MS } from "@maple/domain/http"
 import { WhoIsOnCallOutput } from "@maple/domain/mcp-outputs"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
@@ -40,24 +39,37 @@ export function registerWhoIsOnCallTool(server: McpToolRegistrar) {
 				params.at === undefined ? yield* Clock.currentTimeMillis : parseWarehouseDateTime(params.at)
 			const toError = Effect.mapError(toMcpHttpError("who_is_on_call"))
 			const current = yield* schedules.onCallAt(tenant.orgId, schedule.id, atMs).pipe(toError)
+			// Next is the shift holding the instant the current one really ends; across a gap,
+			// the first shift within the horizon, re-read for its real bounds.
 			const nextFrom = current.shift === null ? atMs : isoMs(current.shift.endsAt)
-			// A shift that ends at the lookaround edge was clamped there, not handed off: the
-			// "next" one would only be the same shift continuing.
-			const clamped = nextFrom >= atMs + ONCALL_LOOKAROUND_MS
-			const upcoming = clamped
-				? null
-				: yield* schedules
-						.shifts(tenant.orgId, schedule.id, nextFrom, nextFrom + NEXT_SHIFT_HORIZON_MS)
-						.pipe(
-							Effect.catchTag("@maple/http/errors/AlertValidationError", () =>
-								Effect.succeed(null),
-							),
-							toError,
-						)
+			const atHandoff =
+				current.shift === null
+					? null
+					: (yield* schedules.onCallAt(tenant.orgId, schedule.id, nextFrom).pipe(toError)).shift
 			const next =
-				upcoming === null
-					? Option.none()
-					: Arr.findFirst(upcoming.final, (s) => isoMs(s.startsAt) >= nextFrom)
+				atHandoff !== null
+					? Option.some(atHandoff)
+					: yield* schedules
+							.shifts(tenant.orgId, schedule.id, nextFrom, nextFrom + NEXT_SHIFT_HORIZON_MS)
+							.pipe(
+								Effect.map((upcoming) =>
+									Arr.findFirst(upcoming.final, (s) => isoMs(s.startsAt) >= nextFrom),
+								),
+								Effect.flatMap(
+									Option.match({
+										onNone: () => Effect.succeedNone,
+										onSome: (shift) =>
+											schedules
+												.onCallAt(tenant.orgId, schedule.id, isoMs(shift.startsAt))
+												.pipe(Effect.map((at) => Option.fromNullOr(at.shift))),
+									}),
+								),
+								Effect.catchTag(
+									"@maple/http/errors/AlertValidationError",
+									() => Effect.succeedNone,
+								),
+								toError,
+							)
 			const names = yield* memberNames(tenant.orgId)
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
