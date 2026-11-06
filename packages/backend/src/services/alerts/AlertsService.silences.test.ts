@@ -269,6 +269,60 @@ describe("alert silences", () => {
 	})
 })
 
+describe("alert silences, pages in flight and reminders", () => {
+	it.effect("sends the all-clear to a destination whose pre-silence trigger is still retrying", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
+		// The webhook is down for the whole test: the trigger stays queued for a retry.
+		const fetchImpl = (async () => new Response("down", { status: 503 })) as typeof fetch
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			yield* createRule(alerts)
+			yield* ticks(alerts, 2)
+			yield* silence({ services: ["checkout"] })
+
+			state.tracesAggregateRows = errorRateRows(0.5)
+			yield* ticks(alerts, 2)
+
+			const events = (yield* alerts.listDeliveryEvents(orgId)).events
+			const resolves = Arr.filter(events, (event) => event.eventType === "resolve")
+			assert.isNotEmpty(resolves)
+			assert.isTrue(Arr.every(resolves, (event) => event.status !== "silenced"))
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl })))
+	})
+
+	it.effect("owes a held-back reminder and sends it as a reminder once the silence ends", () => {
+		const { sent, layer } = setup()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const silences = yield* AlertSilencesService
+			yield* createRule(alerts)
+			yield* ticks(alerts, 2)
+			const created = yield* silence({ services: ["checkout"] }, 120)
+			const before = (yield* alerts.listIncidents(orgId)).incidents[0]
+
+			// Past the 30-minute reminder: it is held back and owed, and moves no anchor.
+			yield* ticks(alerts, 35)
+			const held = (yield* alerts.listIncidents(orgId)).incidents[0]
+			assert.strictEqual(held?.silenceId, created.id)
+			assert.isNotNull(held?.silencedAt)
+			assert.strictEqual(held?.lastNotifiedAt, before?.lastNotifiedAt)
+
+			yield* silences.end(orgId, userId, adminRoles, created.id)
+			yield* ticks(alerts, 2)
+			assert.deepStrictEqual(yield* deliveries(alerts), [
+				"trigger:success",
+				"renotify:silenced",
+				"renotify:success",
+			])
+			assert.deepStrictEqual(sent, ["trigger", "renotify"])
+			assert.isNull((yield* alerts.listIncidents(orgId)).incidents[0]?.silencedAt)
+		}).pipe(Effect.provide(layer))
+	})
+})
+
 describe("AlertSilencesService", () => {
 	it.effect("validates the window, the rule ids and the caller's role", () => {
 		const { layer } = setup()

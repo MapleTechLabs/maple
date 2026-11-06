@@ -1382,10 +1382,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					...priorDeliveries.map((row) => row.destinationId),
 				])
 				if (destinationIds.length === 0) return []
-				// Under a silence, a resolve still reaches whoever was paged before it began.
+				// Under a silence, a resolve still reaches whoever was paged, or is still being paged
+				// (a queued or retrying trigger), before it began.
 				const pagedDestinationIds = new Set(
 					priorDeliveries
-						.filter((row) => row.status === "success" && row.eventType !== "resolve")
+						.filter((row) => row.status !== "silenced" && row.eventType !== "resolve")
 						.map((row) => row.destinationId),
 				)
 				const silenceFor = (destinationId: AlertDestinationId): AlertSilenceId | null =>
@@ -1563,7 +1564,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					eventType: AlertEventTypeValue,
 					scheduledAt: number,
 					pushBudget: IncidentPushBudget | null,
-					// The silence in force, looked up by the caller before it moved the incident.
+					// The silence in force, looked up by the caller before it moved the incident. The
+					// caller records it on the incident; this only writes the held-back rows.
 					silence: MatchedSilence | null,
 					resolvedAfterHold: ResolvedAfterHold | null = null,
 				) {
@@ -1582,20 +1584,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					)
 					if (deliveries.length > 0)
 						yield* dbExecute((db) => insertIncidentDeliveries(db, deliveries))
-					if (silence !== null) {
-						yield* dbExecute((db) =>
-							db.run(
-								PG.update(AlertIncidents)
-									.set({
-										silenceId: silence.id,
-										...(eventType === "resolve"
-											? undefined
-											: { silencedAt: incident.silencedAt ?? scheduledAt }),
-									})
-									.where(($) => [$.orgId.eq(orgId), $.id.eq(incident.id)]),
-							),
-						)
-					}
 					if (silenceId !== null) {
 						yield* Metric.update(AlertingMetrics.notificationsSilencedTotal, 1)
 						yield* Effect.logInfo("Alert notification held back by a silence").pipe(
@@ -3409,6 +3397,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 												? timestamp
 												: openIncident.lastNotifiedAt,
 										...(catchUp ? { silencedAt: null } : undefined),
+										// The first page this silence holds back is owed from now on; written
+										// with the refresh, under the claim, so it cannot be lost apart from it.
+										...(silence !== null && planned !== null && !owed
+											? { silenceId: silence.id, silencedAt: timestamp }
+											: undefined),
 									})
 									.where(($) => [$.id.eq(openIncident.id), $.status.eq("open")])
 									.returning("id"),
