@@ -1,4 +1,5 @@
 import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
+import { anomalyScopeSummary } from "@maple/web-data/alerts/anomaly-rule"
 import { comparatorLabels, formatSignalValue, signalLabels } from "@maple/web-data/alerts/form-utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -41,6 +42,8 @@ type Tab = (typeof TABS)[number]
 const activeTabOf = (model: Model): Tab => (model.search.tab === "history" ? "history" : "overview")
 
 export const ruleSubtitle = (rule: AlertRuleDocument): string => {
+	// An anomaly rule has no threshold or window: what it pages on is the whole story.
+	if (rule.signalType === "anomaly") return `Pages on anomalies in ${anomalyScopeSummary(rule)}`
 	const tiers = Arr.join(
 		Arr.map(rule.thresholds, (tier) =>
 			rule.thresholds.length > 1
@@ -71,7 +74,13 @@ const ruleSilence = (
 				Arr.flatMap(openIncidents, (incident) =>
 					Option.toArray(
 						Option.map(
-							activeSilenceFor(silences, rule, incident.groupKey, model.nowMs),
+							activeSilenceFor(
+								silences,
+								rule,
+								incident.groupKey,
+								model.nowMs,
+								incident.labels ?? null,
+							),
 							(silence) => ({
 								silence,
 								group: incidentGroup(incident),

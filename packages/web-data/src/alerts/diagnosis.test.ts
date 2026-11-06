@@ -312,3 +312,21 @@ describe("scheduled but never evaluated", () => {
 		expect(diagnosisVerdict(stages).status).toBe("warn")
 	})
 })
+
+describe("buildDiagnosis for anomaly rules", () => {
+	const anomalyRule = (overrides: Record<string, unknown> = {}) =>
+		makeRule({ signalType: "anomaly", comparator: "gte", threshold: 1, destinationIds: [], ...overrides })
+
+	it("drops the data and threshold stages: the detector decides, not a query or threshold", () => {
+		const ids = Arr.map(diagnose({ rule: anomalyRule() }), (s) => s.id)
+		expect(ids).not.toContain("data")
+		expect(ids).not.toContain("threshold")
+	})
+
+	it("an unrouted default rule passes notification as opt-in; an unrouted scoped one still fails", () => {
+		expect(stage(diagnose({ rule: anomalyRule() }), "notification").status).toBe("pass")
+		expect(
+			stage(diagnose({ rule: anomalyRule({ serviceNames: ["checkout"] }) }), "notification").status,
+		).toBe("fail")
+	})
+})

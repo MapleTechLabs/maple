@@ -98,6 +98,17 @@ export const updateTierIds = (
 					},
 				}
 
+/**
+ * A destination picked for one tier leaves the other: critical pages already reach the warning
+ * destinations, so being on both only doubles the notification.
+ */
+export const assignToTier = (form: RuleForm, tier: Tier, id: AlertDestinationId): RuleForm =>
+	updateTierIds(
+		updateTierIds(form, tier === "warning" ? "critical" : "warning", removeId(id)),
+		tier,
+		addId(id),
+	)
+
 export const addId = (id: AlertDestinationId) => (ids: ReadonlyArray<AlertDestinationId>) => [
 	...new Set([...ids, id]),
 ]

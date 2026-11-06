@@ -84,7 +84,12 @@ const tabBar = (
 							})
 			return {
 				key: tab.value,
-				href: alertsHref({ ...model.search, tab: tab.value }),
+				// The Anomalies view belongs to the Inbox: other tabs drop its filters.
+				href: alertsHref(
+					tab.value === "inbox"
+						? { ...model.search, tab: tab.value }
+						: { ...model.search, tab: tab.value, signal: undefined, anomalyStatus: undefined },
+				),
 				label: tab.label,
 				count: count !== undefined && count > 0 ? count : undefined,
 				countTone: tab.value === "inbox" ? "error" : "muted",

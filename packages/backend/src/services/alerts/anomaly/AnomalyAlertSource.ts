@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { AlertIncidents, AlertRules, AnomalyIncidents } from "@maple/db/tables"
+import { AlertIncidents, AlertRules, AnomalyDetectorSettings, AnomalyIncidents } from "@maple/db/tables"
 import type { MapleDb } from "@maple/db/client"
 import {
 	AlertPersistenceError,
@@ -92,6 +92,19 @@ const lowestSeverityCode = (rule: { readonly severity: string; readonly threshol
 			}),
 	})
 
+const DETECTION_OFF_DETAIL = "Anomaly detection is turned off"
+
+/** The org's detector switch; no settings row means detection is on. */
+const detectionSettings = (db: MapleDb, orgId: OrgId) =>
+	db.run(
+		PG.from(AnomalyDetectorSettings)
+			.select("enabled")
+			.where(($) => [$.orgId.eq(orgId)]),
+	)
+
+const detectionEnabled = (rows: ReadonlyArray<{ readonly enabled: boolean }>): boolean =>
+	rows[0]?.enabled ?? true
+
 /** Names the backfill tries in order, so a user rule holding one never blocks the default. */
 const DEFAULT_RULE_NAMES = [
 	DEFAULT_ANOMALY_RULE_NAME,
@@ -115,8 +128,9 @@ export class AnomalyAlertSource extends Context.Service<AnomalyAlertSource, Anom
 				ruleId: AlertRuleId,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.rule_id": ruleId })
-				const { rules, anomalies, openAlertIncidents } = yield* dbExecute((db) =>
+				const { rules, anomalies, openAlertIncidents, settings } = yield* dbExecute((db) =>
 					Effect.all({
+						settings: detectionSettings(db, orgId),
 						rules: db.run(
 							PG.from(AlertRules)
 								.select(
@@ -171,7 +185,9 @@ export class AnomalyAlertSource extends Context.Service<AnomalyAlertSource, Anom
 							: Result.succeed([incident.groupKey, incident.ruleId] as const),
 					),
 				)
-				const assigned = Arr.filter(anomalies, (incident) =>
+				// With detection off, nothing fires and every open alert incident below resolves.
+				const detectionOn = detectionEnabled(settings)
+				const assigned = Arr.filter(detectionOn ? anomalies : [], (incident) =>
 					Option.exists(
 						assignAnomalyRule(
 							candidates,
@@ -235,7 +251,7 @@ export class AnomalyAlertSource extends Context.Service<AnomalyAlertSource, Anom
 						return {
 							groupKey,
 							value: 0,
-							detail: "The anomaly ended",
+							detail: detectionOn ? "The anomaly ended" : DETECTION_OFF_DETAIL,
 							anomalyIncidentId: null,
 							errorIssueId: null,
 							serviceName: "",
@@ -247,8 +263,11 @@ export class AnomalyAlertSource extends Context.Service<AnomalyAlertSource, Anom
 					return {
 						groupKey,
 						value: 0,
-						detail:
-							row.status === "open" ? "The anomaly moved off this rule" : "The anomaly ended",
+						detail: !detectionOn
+							? DETECTION_OFF_DETAIL
+							: row.status === "open"
+								? "The anomaly moved off this rule"
+								: "The anomaly ended",
 						anomalyIncidentId: row.id,
 						errorIssueId: row.errorIssueId,
 						serviceName: row.serviceName,
@@ -369,23 +388,28 @@ export class AnomalyAlertSource extends Context.Service<AnomalyAlertSource, Anom
 				scope: AnomalyRuleScope,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				const anomalies = yield* dbExecute((db) =>
-					db.run(
-						PG.from(AnomalyIncidents)
-							.select(
-								"id",
-								"signalType",
-								"serviceName",
-								"deploymentEnv",
-								"severity",
-								"lastObservedValue",
-								"baselineMedian",
-								"errorIssueId",
-							)
-							.where(($) => [$.orgId.eq(orgId), $.status.eq("open")]),
-					),
+				const { anomalies, settings } = yield* dbExecute((db) =>
+					Effect.all({
+						settings: detectionSettings(db, orgId),
+						anomalies: db.run(
+							PG.from(AnomalyIncidents)
+								.select(
+									"id",
+									"signalType",
+									"serviceName",
+									"deploymentEnv",
+									"severity",
+									"lastObservedValue",
+									"baselineMedian",
+									"errorIssueId",
+								)
+								.where(($) => [$.orgId.eq(orgId), $.status.eq("open")]),
+						),
+					}),
 				)
-				const inScope = Arr.filter(anomalies, (incident) => anomalyScopeCovers(scope, incident))
+				const inScope = detectionEnabled(settings)
+					? Arr.filter(anomalies, (incident) => anomalyScopeCovers(scope, incident))
+					: []
 				yield* Effect.annotateCurrentSpan("maple.alert.observation_count", inScope.length)
 				return Arr.map(inScope, (incident): AnomalyAlertObservation => ({
 					groupKey: incident.id,

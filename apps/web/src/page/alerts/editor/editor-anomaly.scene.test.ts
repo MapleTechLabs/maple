@@ -47,6 +47,13 @@ const opened = (
 		Message.UpdatedRules({ orgId: ORG, rows: rules }),
 	])
 
+/** A pick from a tier's "Add destination" menu of a destination the org already has. */
+const pickExisting = (tier: "warning" | "critical", id: string) =>
+	Message.GotMenuMessage({
+		id: menuIdOf(tier),
+		message: Menu.Message.ClickedItem({ index: 0, item: { kind: "Item", value: `existing:${id}` } }),
+	})
+
 const DESCRIPTION = /^Pages when Maple detects unusual error rate, latency, throughput/
 const DEFAULT_NOTE = /^This is the default anomaly rule/
 
@@ -73,6 +80,7 @@ describe("alert rule editor: anomaly rules", () => {
 			Message.ChangedField({ field: "name", value: "Checkout anomalies" }),
 			Message.ToggledAnomalySignal({ signal: "error_spike" }),
 			Message.ToggledAnomalySignal({ signal: "error_rate" }),
+			pickExisting("critical", DESTINATION),
 		])
 		// Kept in the editor's order, whatever the click order.
 		expect(anomaly.form?.anomalySignals).toEqual(["error_rate", "error_spike"])
@@ -116,6 +124,8 @@ describe("alert rule editor: anomaly rules", () => {
 			themeResolved(),
 			expectView(text("No changes")).toExist(),
 			expectView(text(DEFAULT_NOTE)).not.toExist(),
+			// Each chip's remove button names its chip.
+			expectView(role("button", { name: "Remove checkout" })).toExist(),
 			expectView(role("button", { name: "Error rate" })).not.toBeDisabled(),
 		)
 	})
@@ -173,6 +183,7 @@ describe("alert rule editor: anomaly rules", () => {
 		const NEW_ID = Schema.decodeSync(AlertDestinationId)("0199a001-0000-7000-8000-000000000009")
 		const draft = run(opened({ template: "anomaly", serviceName: "checkout" }), [
 			Message.ChangedField({ field: "name", value: "Checkout anomalies" }),
+			pickExisting("warning", DESTINATION),
 		])
 		const opening = run(draft, [
 			Message.GotMenuMessage({
@@ -220,6 +231,7 @@ describe("alert rule editor: anomaly rules", () => {
 	test("a new anomaly rule needs a service, environment or signal; the default rule covers the rest", () => {
 		const unscoped = run(opened({ template: "anomaly" }), [
 			Message.ChangedField({ field: "name", value: "Everything" }),
+			pickExisting("critical", DESTINATION),
 		])
 		scene(
 			{ update: pageUpdate, view },
@@ -241,5 +253,50 @@ describe("alert rule editor: anomaly rules", () => {
 			themeResolved(),
 			expectView(placeholder("Checkout anomalies")).toExist(),
 		)
+	})
+
+	test("a new anomaly rule pages nobody until picked, and a destination picked for Critical leaves Warning", () => {
+		const fresh = opened({ template: "anomaly", serviceName: "checkout" })
+		// Anomaly paging is opt-in: the org's usual destination is not pre-selected.
+		expect(fresh.form?.destinationIds).toEqual([])
+		expect(fresh.form?.escalation?.destinationIds).toEqual([])
+		const onWarning = run(fresh, [pickExisting("warning", DESTINATION)])
+		expect(onWarning.form?.destinationIds).toEqual([DESTINATION])
+		const moved = run(onWarning, [pickExisting("critical", DESTINATION)])
+		expect(moved.form?.destinationIds).toEqual([])
+		expect(moved.form?.escalation?.destinationIds).toEqual([DESTINATION])
+	})
+
+	test("a failed Send test says the notification failed, not the preview", () => {
+		const draft = run(opened({ template: "anomaly", serviceName: "checkout" }), [
+			Message.ChangedField({ field: "name", value: "Checkout anomalies" }),
+			pickExisting("critical", DESTINATION),
+		])
+		const sending = pageUpdate(draft, Message.ClickedSendTest())
+		expect(sending.commands?.[0]?.name).toBe("RunAlertRuleTest")
+		const failed = pageUpdate(
+			sending.model,
+			Message.CompletedTest({
+				isSending: true,
+				key: "",
+				result: Result.fail({
+					title: "Alert provider rejected the request",
+					message: "The alert provider rejected the request.",
+				}),
+			}),
+		)
+		expect(failed.outMessage).toMatchObject({
+			title: "Couldn't send test notification",
+			description: "The alert provider rejected the request.",
+		})
+		const dryRun = pageUpdate(
+			draft,
+			Message.CompletedTest({
+				isSending: false,
+				key: "",
+				result: Result.fail({ title: "Bad", message: "The query timed out." }),
+			}),
+		)
+		expect(dryRun.outMessage).toMatchObject({ title: "Couldn't preview rule" })
 	})
 })

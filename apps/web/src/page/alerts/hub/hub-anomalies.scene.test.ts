@@ -243,4 +243,19 @@ describe("alerts hub: anomalies", () => {
 			expectView(text("Search anomalies")).toExist(),
 		)
 	})
+
+	test("leaving the Inbox drops the Anomalies view's filters from the tab links", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ signal: "anomaly", anomalyStatus: "resolved", serviceName: "checkout" })),
+			expectView(role("link", { name: /^Rules/ })).toHaveAttr(
+				"href",
+				"/alerts?tab=rules&serviceName=checkout",
+			),
+			expectView(role("link", { name: /^Inbox/ })).toHaveAttr(
+				"href",
+				"/alerts?tab=inbox&serviceName=checkout&signal=anomaly&anomalyStatus=resolved",
+			),
+		)
+	})
 })

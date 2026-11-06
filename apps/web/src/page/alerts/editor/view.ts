@@ -163,7 +163,7 @@ const surface = (h: H, model: Model, form: RuleForm, timeZone: string): Readonly
 							),
 						]),
 				h.div(
-					[h.Class("grid gap-6 border-t pt-8 lg:grid-cols-2 lg:items-start")],
+					[h.Class("grid grid-cols-1 gap-6 border-t pt-8 lg:grid-cols-2 lg:items-start")],
 					[
 						ruleStep(
 							h,

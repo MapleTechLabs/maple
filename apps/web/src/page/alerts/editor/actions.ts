@@ -50,7 +50,11 @@ export const completeTest = (model: Model, message: Extract<Message, { _tag: "Co
 		}),
 		onFailure: (error) => ({
 			model: settled,
-			outMessage: errorToast("Couldn't preview rule", error.message),
+			// A failed Send test is a delivery failure, not a preview one: say which.
+			outMessage: errorToast(
+				message.isSending ? "Couldn't send test notification" : "Couldn't preview rule",
+				error.message,
+			),
 		}),
 	})
 }

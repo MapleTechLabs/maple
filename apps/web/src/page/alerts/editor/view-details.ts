@@ -16,6 +16,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { fieldStateOf, idsOf } from "./view-fields"
 import { hstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 
 // `DetailsSection` and `TagInput`: the rule's name, description and tags.
 
@@ -91,8 +92,8 @@ const nameField = (h: H, model: DetailsView, form: RuleForm): Html => {
 	const state = fieldStateOf(form.name, model.mountedForm?.name)
 	const ids = idsOf("rule-name", false)
 	return field(h, { className: "items-stretch gap-1.5", state }, [
-		hstack(h, { gap: "2", justify: "between" }, [
-			fieldLabel(h, { ids, state }, "Rule name"),
+		hstack(h, { gap: "2", justify: "between", className: "min-w-0" }, [
+			fieldLabel(h, { ids, state, className: "shrink-0" }, "Rule name"),
 			...(isSuggesting
 				? [
 						button(
@@ -100,10 +101,14 @@ const nameField = (h: H, model: DetailsView, form: RuleForm): Html => {
 							{
 								variant: "ghost",
 								size: "xs",
-								className: "px-1.5 text-2xs",
-								attributes: [h.OnClick(Message.ClickedSuggestName())],
+								// A long suggestion truncates instead of widening the card past a phone's width.
+								className: "min-w-0 shrink px-1.5 text-2xs",
+								attributes: [
+									h.OnClick(Message.ClickedSuggestName()),
+									h.Title(suggestion ?? ""),
+								],
 							},
-							["Suggest: ", suggestion ?? ""],
+							[typography(h, { truncate: true }, ["Suggest: ", suggestion ?? ""])],
 						),
 					]
 				: []),

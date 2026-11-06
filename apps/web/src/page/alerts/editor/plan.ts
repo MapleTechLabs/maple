@@ -103,6 +103,8 @@ export const applyDefaultDestination = (model: Model): Model => {
 	if (
 		model.isDefaultDestinationApplied ||
 		model.form === null ||
+		// Anomaly paging is opt-in: a new anomaly rule pages nobody until someone is picked.
+		model.form.signalType === "anomaly" ||
 		destinations.length === 0 ||
 		model.rules === null
 	)
