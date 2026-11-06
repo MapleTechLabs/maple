@@ -5,8 +5,9 @@ import {
 	SLO_BURN_TIERS,
 	SLO_BURN_LOOKBACK_MINUTES,
 	burnWindowOf,
-	tierBreached,
-	tierObserved,
+	sloRuleName,
+	tierState,
+	windowLabel,
 	type SloBurnTier,
 	type SloBurnWindow,
 } from "@maple/domain/slo"
@@ -14,9 +15,6 @@ import { Array as Arr, Option } from "effect"
 import { MANAGED_RULE_PLAN } from "@maple/backend/services/alerts/AlertRuleModel"
 
 const [CRITICAL_TIER, WARNING_TIER] = SLO_BURN_TIERS
-
-/** The rule's name: it titles incidents and notifications, so it says what is burning. */
-export const sloRuleName = (sloName: string) => `SLO burn: ${sloName}`
 
 export interface SloRuleInput {
 	readonly name: string
@@ -92,10 +90,9 @@ const describeTier = (tier: SloBurnTier, windows: ReadonlyArray<SloBurnWindow>) 
 		Option.match(burnWindowOf(windows, minutes), { onNone: () => 0, onSome: (window) => window.burnRate })
 	const long = rate(tier.longWindowMinutes)
 	const short = rate(tier.shortWindowMinutes)
-	const label = (minutes: number) => (minutes >= 60 ? `${minutes / 60}h` : `${minutes}m`)
 	return {
 		long,
-		text: `burning the error budget at ${formatRate(long)} over ${label(tier.longWindowMinutes)} and ${formatRate(short)} over ${label(tier.shortWindowMinutes)} (${tier.severity} at ${tier.factor}x)`,
+		text: `burning the error budget at ${formatRate(long)} over ${windowLabel(tier.longWindowMinutes)} and ${formatRate(short)} over ${windowLabel(tier.shortWindowMinutes)} (${tier.severity} at ${tier.factor}x)`,
 	}
 }
 
@@ -109,11 +106,7 @@ export const evaluateSloBurn = (windows: ReadonlyArray<SloBurnWindow>): AlertEva
 	const tiers = [WARNING_TIER, CRITICAL_TIER]
 	const levels = Arr.map(tiers, (tier) => ({
 		severity: tier.severity,
-		status: !tierObserved(tier, windows)
-			? ("hold" as const)
-			: tierBreached(tier, windows)
-				? ("breach" as const)
-				: ("clear" as const),
+		status: tierState(tier, windows),
 	}))
 	const hour = Option.getOrUndefined(burnWindowOf(windows, CRITICAL_TIER.longWindowMinutes))
 	const base = {
