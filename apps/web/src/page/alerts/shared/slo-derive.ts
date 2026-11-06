@@ -65,12 +65,6 @@ export const budgetTone = (budget: number): Tone =>
 export const sliTone = (slo: Pick<Slo, "target_percent">, sli: number | null): Tone =>
 	sli === null ? "neutral" : sli * 100 >= slo.target_percent ? "ok" : "crit"
 
-/** The tier colours follow the alert pages: critical red, warning amber. */
-export const TIER_TONE = { critical: "crit", warning: "warn" } as const satisfies Record<
-	SloTier["severity"],
-	Tone
->
-
 export const burnTone = (rate: number): Tone =>
 	rate >= (SLO_BURN_TIERS[0]?.factor ?? Infinity)
 		? "crit"

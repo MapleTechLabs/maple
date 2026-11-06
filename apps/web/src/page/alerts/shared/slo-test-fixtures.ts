@@ -7,7 +7,6 @@ import { DESTINATION_ID, NOW, ruleId } from "./test-rows"
 export const sloUuid = (n: number) => `0199a00a-0000-7000-8000-00000000000${n}`
 /** The burn-rate rule behind the default SLO; its incidents carry it as `rule_id`. */
 export const SLO_RULE_UUID = ruleId(8)
-export const WARNING_DESTINATION_UUID = "0199a001-0000-7000-8000-000000000002"
 
 const decodeSlo = Schema.decodeUnknownSync(V2Slo)
 const decodeStatus = Schema.decodeUnknownSync(V2SloStatus)
