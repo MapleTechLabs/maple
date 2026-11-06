@@ -18,12 +18,12 @@ import { detailActions, detailTitle } from "../../kit/detail-header"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
 import { platformMeta, platformTile } from "../kit/platforms"
-import { effectiveTab, hasToken, integrationPlatformOf, focusIdOf, sourceHref, tabsOf } from "../kit/shared"
+import { effectiveTab, hasToken, integrationPlatformOf, focusIdOf, sourceHref } from "../kit/shared"
 import { actionsEmbed, cardEmbed } from "../../integrations/embed"
 import { sourceStatusBadge } from "../kit/status"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
-import { sourceOf } from "./update"
+import { shownTabsOf, sourceOf } from "./update"
 import { integrationActions, sourceActions } from "./view-actions"
 import { overviewTab } from "./view-overview"
 import { settingsTab, setupTab } from "./view-tabs"
@@ -121,10 +121,8 @@ const headerActions = (h: H, model: Model, source: V2Source, timeZone: string): 
 const found = (h: H, model: Model, source: V2Source, inputs: PageViewInputs, nowMs: number): Html => {
 	const shown = model.revealed !== null && model.revealed.sourceId === source.id ? model.revealed : null
 	const timeZone = inputs.context.timeZone
-	// Settings only changes the source, so members without `sources:manage` see the rest.
-	const shownTabs = canManage(model) ? tabsOf(source) : Arr.filter(tabsOf(source), (t) => t !== "settings")
-	const requested = effectiveTab(source, model.tab)
-	const tab = shownTabs.includes(requested) ? requested : "overview"
+	const shownTabs = shownTabsOf(model, source)
+	const tab = effectiveTab(source, model.tab)
 	return dashboardPage(
 		h,
 		{
@@ -163,7 +161,10 @@ const found = (h: H, model: Model, source: V2Source, inputs: PageViewInputs, now
 			...(tab === "connection"
 				? [connectionPart(h, model, source, timeZone, "card") ?? loading(h)]
 				: []),
-			...(tab === "settings" ? [settingsTab(h, model, source, timeZone)] : []),
+			// Settings waits for the grants: an engineer gets the form, a member the overview.
+			...(tab === "settings"
+				? [canManage(model) ? settingsTab(h, model, source, timeZone) : loading(h)]
+				: []),
 		],
 	)
 }

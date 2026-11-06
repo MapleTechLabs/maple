@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -5,7 +6,9 @@ import type { BreadcrumbEntry } from "../../../shell"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { linkButton } from "@maple/views/ui/button"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { pageTitle } from "@maple/views/ui/page-layout"
 import { platformMeta } from "../kit/platforms"
 import { Message } from "./message"
@@ -78,9 +81,35 @@ export const stepBody = (h: H, model: Model, timeZone: string, host: FlowHost): 
 				? integrationStep(h, model, model.integration, timeZone, host)
 				: platformPicker(h, model)
 
+/** A member without `sources:manage` reaching the page by URL: what they can do instead. */
+const notPermitted = (h: H): Html =>
+	empty(
+		h,
+		[
+			emptyHeader(h, [
+				emptyMedia(h, { variant: "icon" }, [icon(h, "ConnectionIcon", { size: 16 })]),
+				emptyTitle(h, ["Only org admins and engineers can connect sources"]),
+				emptyDescription(h, [
+					"Ask one of them to connect it, or browse the sources already sending data.",
+				]),
+			]),
+			linkButton(h, { href: hrefOf(AppRoute.Sources()), size: "sm", variant: "outline" }, [
+				"View sources",
+			]),
+		],
+		"py-8",
+	)
+
+const pageBody = (h: H, model: Model, timeZone: string): Html =>
+	model.grants === null
+		? skeleton(h, "h-48 w-full")
+		: Policy.has(model.grants, "sources:manage")
+			? stepBody(h, model, timeZone, "page")
+			: notPermitted(h)
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	dashboardPage(h, { titleContent: titleContent(h, model), actions: cancel(h) }, [
-		stepBody(h, model, inputs.context.timeZone, "page"),
+		pageBody(h, model, inputs.context.timeZone),
 	]),
 )
 

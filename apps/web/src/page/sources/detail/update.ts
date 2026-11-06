@@ -7,6 +7,7 @@ import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute, hrefOf } from "../../../route"
+import type { SourceTab } from "../../../route/search"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
@@ -23,6 +24,7 @@ import {
 	hasToken,
 	integrationPlatformOf,
 	scrapeTargetIdOf,
+	tabsOf,
 } from "../kit/shared"
 import { initEmbedded } from "../../integrations/embed"
 import * as Integrations from "../../integrations/update"
@@ -43,7 +45,7 @@ import {
 } from "./command"
 import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
 import { Message } from "./message"
-import type { Model, SettingsForm } from "./model"
+import { canManage, type Model, type SettingsForm } from "./model"
 
 type Return = PageReturn<Model, Message>
 type SourceRoute = Extract<AppRoute, { readonly _tag: "Source" }>
@@ -104,11 +106,21 @@ export const isSettingsDirty = (form: SettingsForm): boolean => {
 	)
 }
 
+/** The tabs this viewer gets: Settings only changes the source, so it needs `sources:manage`. */
+export const shownTabsOf = (model: Model, source: V2Source): ReadonlyArray<SourceTab> =>
+	canManage(model) ? tabsOf(source) : Arr.filter(tabsOf(source), (tab) => tab !== "settings")
+
+/** `?tab=` for this viewer; Settings waits for the grants before falling back to the overview. */
+const openTab = (model: Model, source: V2Source): SourceTab => {
+	const tab = effectiveTab(source, model.tab)
+	return tab === "settings" && model.grants !== null && !canManage(model) ? "overview" : tab
+}
+
 /** The open tab's state, built as its component mounts; Settings rebuilds when `updated_at` moves. */
 const withTabState = (model: Model): Model =>
 	Option.match(sourceOf(model), {
 		onNone: () => model,
-		onSome: (source) => withSourceTab({ ...model, tab: effectiveTab(source, model.tab) }, source),
+		onSome: (source) => withSourceTab({ ...model, tab: openTab(model, source) }, source),
 	})
 
 const withSourceTab = (model: Model, source: V2Source): Model => ({
@@ -184,7 +196,7 @@ export const init = (route: SourceRoute, context: PageContext): Return => {
 	const model: Model = {
 		sourceId: Option.getOrNull(fromPublicSourceId(route.sourceId)),
 		tab: route.search.tab ?? "overview",
-		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
+		grants: isClerkAuthEnabled ? null : Policy.allPermissions,
 		nowMs: null,
 		list: Keyed.idle(),
 		usage: Keyed.idle(),
@@ -440,7 +452,8 @@ const clickedDelete = (model: Model, context: PageContext): Return => {
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
+		// A member sent to Settings lands on the overview, which reads its usage then.
+		CompletedReadGrants: ({ grants }) => loadUsage(withTabState({ ...model, grants }), context),
 		CompletedFetchList: ({ key, result }) =>
 			andThen(
 				loadUsage(withTabState({ ...model, list: Keyed.accept(model.list, key, result) }), context),

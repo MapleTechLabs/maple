@@ -138,6 +138,21 @@ describe("source detail", () => {
 		expect(names(routeChanged(onSetup, route(), context).commands)).toEqual(["FetchSourceUsage"])
 	})
 
+	test("a member sent to Settings reads the overview, without the source's actions", () => {
+		const step = pageUpdate(loaded(source(), "settings"), Message.CompletedReadGrants({ grants: [] }))
+		expect(step.model.tab).toBe("overview")
+		expect(names(step.commands)).toEqual(["FetchSourceUsage"])
+		scene(
+			{ update: pageUpdate, view },
+			given(step.model),
+			resolveTheme,
+			expectView(role("tab", { name: "Overview" })).toExist(),
+			expectView(role("tab", { name: "Settings" })).not.toExist(),
+			expectView(role("button", { name: "Delete" })).not.toExist(),
+			expectView(role("button", { name: "Roll token" })).not.toExist(),
+		)
+	})
+
 	test("a push source the gateway refuses shows Failing and why", () => {
 		const refused = source({
 			health: {

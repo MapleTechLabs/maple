@@ -44,8 +44,8 @@ export const Model = Schema.Struct({
 	/** `fromPublicSourceId(sourceId)`: `null` for an id that does not decode (not found, no request). */
 	sourceId: Schema.NullOr(SourceId),
 	tab: Schema.Literals(SOURCE_TABS),
-	/** The session's permissions: anyone reads a source, `sources:manage` changes it. */
-	grants: Schema.Array(Policy.PermissionName),
+	/** The session's permissions (`null` until read): anyone reads a source, `sources:manage` changes it. */
+	grants: Schema.NullOr(Schema.Array(Policy.PermissionName)),
 	/** `Date.now()` at render, read once on entry for the relative times. */
 	nowMs: Schema.NullOr(Schema.Number),
 	list: KeyedSchema(SourceList, LoadFailure),
@@ -68,4 +68,5 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
-export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "sources:manage")
+export const canManage = (model: Pick<Model, "grants">): boolean =>
+	model.grants !== null && Policy.has(model.grants, "sources:manage")
