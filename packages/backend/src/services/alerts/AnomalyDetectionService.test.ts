@@ -615,3 +615,136 @@ describe("AnomalyDetectionService.runTick outbound budget", () => {
 		}),
 	)
 })
+
+/**
+ * Runs `sideSql` once, right before the first statement `match` accepts: a write that lands in the
+ * window between the tick's read and its UPDATE, as a concurrent request or overlapping tick would.
+ */
+const interleaveBefore = (
+	testDb: TestDb,
+	match: (sql: string, params: ReadonlyArray<unknown>) => boolean,
+	sideSql: string,
+	sideParams: unknown[],
+) => {
+	const original = testDb.pglite.query.bind(testDb.pglite)
+	let fired = false
+	Object.defineProperty(testDb.pglite, "query", {
+		configurable: true,
+		value: (sql: string, params: unknown[] = [], ...rest: unknown[]) => {
+			if (fired || !match(sql, params)) return original(sql, params, ...rest)
+			fired = true
+			return original(sideSql, sideParams).then(() => original(sql, params, ...rest))
+		},
+	})
+	return () => fired
+}
+
+const isNoDataResolve = (sql: string, params: ReadonlyArray<unknown>) =>
+	Str.startsWith('UPDATE "anomaly_incidents"')(sql) && params.includes("no_data")
+
+const STALE_INCIDENT = {
+	n: 7,
+	orgId: ORG,
+	serviceName: "payments",
+	deploymentEnv: "production",
+	signalType: "error_rate",
+	severity: "warning",
+	status: "open",
+} as const
+const STALE_INCIDENT_ID = asIncidentId("00000000-0000-4000-8000-000000000007")
+const STALE_DETECTOR_KEY = "error_rate:payments:production:7"
+
+const seedDetectorState = (testDb: TestDb) =>
+	executeSql(
+		testDb,
+		`INSERT INTO anomaly_detector_states
+		   (org_id, detector_key, signal_type, service_name, deployment_env, open_incident_id,
+		    last_evaluated_at, updated_at)
+		 VALUES ($1, $2, 'error_rate', 'payments', 'production', $3, now(), now())`,
+		[ORG, STALE_DETECTOR_KEY, STALE_INCIDENT_ID],
+	)
+
+const readIncident = (testDb: TestDb) =>
+	Effect.promise(() =>
+		testDb.pglite.query<{ status: string; resolve_reason: string | null; resolved_at: Date | null }>(
+			"SELECT status, resolve_reason, resolved_at FROM anomaly_incidents WHERE id = $1",
+			[STALE_INCIDENT_ID],
+		),
+	).pipe(Effect.map((result) => result.rows[0]))
+
+const readDetectorPointer = (testDb: TestDb) =>
+	Effect.promise(() =>
+		testDb.pglite.query<{ open_incident_id: string | null }>(
+			"SELECT open_incident_id FROM anomaly_detector_states WHERE org_id = $1 AND detector_key = $2",
+			[ORG, STALE_DETECTOR_KEY],
+		),
+	).pipe(Effect.map((result) => result.rows[0]?.open_incident_id))
+
+const runTickWith = (testDb: TestDb) =>
+	AnomalyDetectionService.pipe(
+		Effect.flatMap((service) => service.runTick),
+		Effect.provide(makeLayer(testDb)),
+	)
+
+describe("AnomalyDetectionService.runTick no-data sweep races", () => {
+	it.live("resolves a silent incident as no_data and clears the detector pointer", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			yield* Effect.promise(async () => {
+				await seedIncident(testDb, STALE_INCIDENT)
+				await seedDetectorState(testDb)
+			})
+
+			const result = yield* runTickWith(testDb)
+
+			expect(result.incidentsResolved).toBe(1)
+			expect((yield* readIncident(testDb))?.resolve_reason).toBe("no_data")
+			expect(yield* readDetectorPointer(testDb)).toBeNull()
+		})
+	})
+
+	it.live("a manual resolve that lands first keeps its reason and time", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			yield* Effect.promise(() => seedIncident(testDb, STALE_INCIDENT))
+			const manualAt = "2026-07-20T10:00:00.000Z"
+			const fired = interleaveBefore(
+				testDb,
+				isNoDataResolve,
+				"UPDATE anomaly_incidents SET status = 'resolved', resolve_reason = 'manual', resolved_at = $2 WHERE id = $1",
+				[STALE_INCIDENT_ID, manualAt],
+			)
+
+			const result = yield* runTickWith(testDb)
+
+			expect(fired()).toBe(true)
+			expect(result.incidentsResolved).toBe(0)
+			const incident = yield* readIncident(testDb)
+			expect(incident?.resolve_reason).toBe("manual")
+			expect(incident?.resolved_at?.toISOString()).toBe(manualAt)
+		})
+	})
+
+	it.live("an overlapping tick that saw the series fire keeps the incident open and pointed at", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			yield* Effect.promise(async () => {
+				await seedIncident(testDb, STALE_INCIDENT)
+				await seedDetectorState(testDb)
+			})
+			const fired = interleaveBefore(
+				testDb,
+				isNoDataResolve,
+				"UPDATE anomaly_incidents SET last_triggered_at = now() WHERE id = $1",
+				[STALE_INCIDENT_ID],
+			)
+
+			const result = yield* runTickWith(testDb)
+
+			expect(fired()).toBe(true)
+			expect(result.incidentsResolved).toBe(0)
+			expect((yield* readIncident(testDb))?.status).toBe("open")
+			expect(yield* readDetectorPointer(testDb)).toBe(STALE_INCIDENT_ID)
+		})
+	})
+})

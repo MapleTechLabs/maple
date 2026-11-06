@@ -34,9 +34,20 @@ import { evaluateEscalationPolicy } from "@maple/backend/services/alerts/escalat
 import { makePersistenceError } from "./alert-persistence"
 import { NotificationDispatcher, type NotificationRequest } from "./NotificationDispatcher"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { transitionRow } from "@maple/backend/platform/transition-row"
 
 const ESCALATIONS_PER_TICK = 50
 const MAX_ATTEMPTS = 3
+// A claim that never reaches its pre-dispatch "sent" flip (a defect) frees the row after this.
+const CLAIM_LEASE_MS = 5 * 60 * 1000
+
+type EscalationStatus = IssueEscalationRow["status"]
+
+/** A tick's claim on a row: its attempts value fences every later write against a newer claim. */
+interface EscalationClaim {
+	readonly row: IssueEscalationRow
+	readonly attempt: number
+}
 
 const decodePolicyRules = Schema.decodeUnknownOption(Schema.Array(IssueEscalationPolicyRule))
 const decodeSignalType = Schema.decodeUnknownOption(AlertSignalType)
@@ -81,25 +92,47 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 				),
 			).pipe(Effect.map((rows) => rows[0] ?? null))
 
+		/**
+		 * Moves a claimed row, guarded on the claim still holding (attempts) and the status it
+		 * expects. False when another claim took the row; nothing is written then.
+		 */
 		const finalize = (
-			row: IssueEscalationRow,
-			status: "sent" | "skipped" | "failed" | "queued",
+			claim: EscalationClaim,
+			from: Arr.NonEmptyReadonlyArray<EscalationStatus>,
+			status: EscalationStatus,
 			timestamp: number,
 			error?: string,
 			deliveryResults?: unknown,
 		) =>
-			dbExecute((db) =>
-				db.run(
-					PG.update(IssueEscalations)
-						.set({
-							status,
-							error: error ?? null,
-							...(!(deliveryResults === undefined)
-								? { deliveryResultsJson: deliveryResults }
-								: undefined),
-							...(!(status === "queued") ? { processedAt: timestamp } : undefined),
-						})
-						.where(($) => [$.id.eq(row.id)]),
+			transitionRow({ table: "issue_escalations", id: claim.row.id, from, to: status }, (from) =>
+				dbExecute((db) =>
+					db.run(
+						PG.update(IssueEscalations)
+							.set({
+								status,
+								error: error ?? null,
+								...(!(deliveryResults === undefined)
+									? { deliveryResultsJson: deliveryResults }
+									: undefined),
+								// A requeue releases the lease so the next tick can retry at once.
+								...(status === "queued" ? { claimedAt: null } : { processedAt: timestamp }),
+							})
+							.where(($) => [
+								$.orgId.eq(claim.row.orgId),
+								$.id.eq(claim.row.id),
+								$.status.in_(...from),
+								$.attempts.eq(claim.attempt),
+							])
+							.returning("id"),
+					),
+				),
+			).pipe(
+				Effect.as(true),
+				Effect.catchTag("@maple/backend/TransitionConflictError", (conflict) =>
+					Effect.logWarning("Escalation claim lost before finalize").pipe(
+						Effect.annotateLogs({ escalationId: claim.row.id, message: conflict.message }),
+						Effect.as(false),
+					),
 				),
 			)
 
@@ -109,13 +142,29 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 		) {
 			const timestamp = yield* Clock.currentTimeMillis
 
-			// Optimistic claim: bump attempts iff nobody else already has. A
-			// concurrent tick loses the CAS and skips the row.
+			// Lease claim: only a queued row with no live lease, at the attempts this tick read. A
+			// concurrent tick loses the CAS and skips; an expired lease (a claim that died) is fair game.
+			// A claim that died still spent its attempt, so an exhausted row fails instead.
+			const exhausted = row.attempts >= MAX_ATTEMPTS
 			const claimed = yield* dbExecute((db) =>
 				db.run(
 					PG.update(IssueEscalations)
-						.set({ attempts: row.attempts + 1 })
-						.where(($) => [$.id.eq(row.id), $.status.eq("queued"), $.attempts.eq(row.attempts)])
+						.set(
+							exhausted
+								? {
+										status: "failed",
+										error: "max_attempts_exceeded",
+										processedAt: timestamp,
+									}
+								: { attempts: row.attempts + 1, claimedAt: timestamp },
+						)
+						.where(($) => [
+							$.orgId.eq(row.orgId),
+							$.id.eq(row.id),
+							$.status.eq("queued"),
+							$.attempts.eq(row.attempts),
+							PG.or($.claimedAt.isNull(), $.claimedAt.lt(timestamp - CLAIM_LEASE_MS)),
+						])
 						// The returned row is the claim: empty means the CAS lost.
 						.returning("id"),
 				),
@@ -123,6 +172,10 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 			if (claimed.length === 0) {
 				return "contended" as const
 			}
+			if (exhausted) {
+				return "failed" as const
+			}
+			const claim: EscalationClaim = { row, attempt: row.attempts + 1 }
 
 			let policy = policyCache.get(row.orgId)
 			if (policy === undefined) {
@@ -167,8 +220,8 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 				"maple.escalation.destination_count": decision.destinationIds.length,
 			})
 			if (decision.outcome === "skip") {
-				yield* finalize(row, "skipped", timestamp, decision.skipReason)
-				return "skipped" as const
+				const moved = yield* finalize(claim, ["queued"], "skipped", timestamp, decision.skipReason)
+				return moved ? ("skipped" as const) : ("contended" as const)
 			}
 
 			const issueRows = yield* dbExecute((db) =>
@@ -181,8 +234,8 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 			)
 			const issue = issueRows[0]
 			if (issue === undefined) {
-				yield* finalize(row, "skipped", timestamp, "issue_missing")
-				return "skipped" as const
+				const moved = yield* finalize(claim, ["queued"], "skipped", timestamp, "issue_missing")
+				return moved ? ("skipped" as const) : ("contended" as const)
 			}
 
 			const sourceRef =
@@ -241,39 +294,46 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 			// At-most-once: flip to "sent" BEFORE dispatching. With the old
 			// dispatch-then-finalize order, a finalize failure after a successful
 			// delivery left the row queued and the next tick re-paged everyone.
-			// Now the failure window drops the escalation instead — the design
+			// Now the failure window drops the escalation instead; the design
 			// explicitly prefers a rare drop over a duplicate page. The row being
 			// "sent" also keeps a concurrent tick's claim CAS (status = queued)
-			// from picking it up mid-dispatch.
-			yield* finalize(row, "sent", timestamp)
+			// from picking it up mid-dispatch. A lost lease means another tick owns it: never dispatch.
+			const flipped = yield* finalize(claim, ["queued"], "sent", timestamp)
+			if (!flipped) {
+				return "contended" as const
+			}
 			const result = yield* dispatcher.dispatch(row.orgId, decision.destinationIds, request)
-			yield* finalize(row, "sent", timestamp, undefined, result.destinations)
+			yield* finalize(claim, ["sent"], "sent", timestamp, undefined, result.destinations)
 
 			if (result.delivered > 0) {
 				return "sent" as const
 			}
 			if (result.failed === 0) {
-				// No enabled destinations matched — nothing to retry.
-				yield* finalize(row, "skipped", timestamp, "no_enabled_destinations")
+				// No enabled destinations matched, nothing to retry.
+				yield* finalize(claim, ["sent"], "skipped", timestamp, "no_enabled_destinations")
 				return "skipped" as const
 			}
-			if (row.attempts + 1 >= MAX_ATTEMPTS) {
-				yield* finalize(row, "failed", timestamp, "delivery_failed")
+			if (claim.attempt >= MAX_ATTEMPTS) {
+				yield* finalize(claim, ["sent"], "failed", timestamp, "delivery_failed")
 				return "failed" as const
 			}
 			// Genuine delivery failure (dispatch reported it, nothing was sent):
 			// surrender the early "sent" and requeue; next tick retries with the
 			// already-bumped attempts counter.
-			yield* finalize(row, "queued", timestamp, "delivery_failed_will_retry")
+			yield* finalize(claim, ["sent"], "queued", timestamp, "delivery_failed_will_retry")
 			return "retried" as const
 		})
 
 		const runEscalationTick: EscalationServiceApi["runEscalationTick"] = Effect.gen(function* () {
+			const now = yield* Clock.currentTimeMillis
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(IssueEscalations)
 						.select()
-						.where(($) => [$.status.eq("queued")])
+						.where(($) => [
+							$.status.eq("queued"),
+							PG.or($.claimedAt.isNull(), $.claimedAt.lt(now - CLAIM_LEASE_MS)),
+						])
 						.orderBy(["createdAt", "asc"])
 						.limit(ESCALATIONS_PER_TICK),
 				),
@@ -281,10 +341,10 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 
 			const policyCache = new Map<OrgId, IssueEscalationPolicyRow | null>()
 			// catchCause isolates defects: a dying processOne is logged and
-			// counted as "failed", and the row keeps whatever state it reached —
-			// still "queued" (attempts bumped) before the pre-dispatch sent-flip,
-			// so the next tick retries it; "sent" after the flip, so it is never
-			// re-delivered (at-most-once). Scheduler interruption is re-raised.
+			// counted as "failed", and the row keeps whatever state it reached:
+			// still "queued" and leased before the pre-dispatch sent-flip, so a tick
+			// after the lease retries it (up to MAX_ATTEMPTS); "sent" after the flip,
+			// so it is never re-delivered (at-most-once). Interruption is re-raised.
 			const outcomes = yield* Effect.forEach(rows, (row) =>
 				processOne(row, policyCache).pipe(
 					Effect.catchCause((cause) =>

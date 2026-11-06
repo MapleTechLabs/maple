@@ -63,6 +63,7 @@ import { issuesOwningHashes } from "@maple/backend/services/errors/issue-fingerp
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
+import { transitionRow } from "@maple/backend/platform/transition-row"
 import { timestampMs } from "@maple/backend/platform/time"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
@@ -298,6 +299,47 @@ const make: Effect.Effect<
 	const chatSessions = Option.getOrUndefined(chatSessionsOption)
 
 	const dbExecute = makeDbExecute(database, "AnomalyDetectionService", makePersistenceError)
+
+	/**
+	 * Tick-side resolve, guarded on the incident still being open (plus the reopen count or staleness
+	 * the tick read). A manual resolve or an overlapping tick's reopen wins: false, nothing written.
+	 */
+	const resolveOpenIncident = (
+		orgId: OrgId,
+		incidentId: AnomalyIncidentRow["id"],
+		set: Omit<Partial<AnomalyIncidentRow>, "status">,
+		guard: { readonly reopenCount?: number; readonly triggeredBefore?: number },
+	) =>
+		transitionRow(
+			{ table: "anomaly_incidents", id: incidentId, from: ["open"], to: "resolved" },
+			(from) =>
+				dbExecute((db) =>
+					db.run(
+						PG.update(AnomalyIncidents)
+							.set({ ...set, status: "resolved" })
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.id.eq(incidentId),
+								$.status.in_(...from),
+								...(guard.reopenCount === undefined
+									? []
+									: [$.reopenCount.eq(guard.reopenCount)]),
+								...(guard.triggeredBefore === undefined
+									? []
+									: [$.lastTriggeredAt.lt(guard.triggeredBefore)]),
+							])
+							.returning("id"),
+					),
+				),
+		).pipe(
+			Effect.as(true),
+			Effect.catchTag("@maple/backend/TransitionConflictError", (conflict) =>
+				Effect.logInfo("Skipped anomaly resolve: the incident changed since the tick read it").pipe(
+					Effect.annotateLogs({ orgId, incidentId, message: conflict.message }),
+					Effect.as(false),
+				),
+			),
+		)
 
 	// Built with the service, which the alerting lane builds once per invocation.
 	const outboundPermits = yield* Semaphore.make(ANOMALY_OUTBOUND_PERMITS)
@@ -1995,27 +2037,28 @@ const make: Effect.Effect<
 						incidentId,
 					})
 					const [nextState] = otherStates
+					let keepPointer = false
 					if (nextState === undefined) {
-						yield* dbExecute((db) =>
-							db.run(
-								PG.update(AnomalyIncidents)
-									.set({
-										status: "resolved",
-										resolveReason: "returned_to_baseline",
-										resolvedAt: nowMs,
-										...(isPrimary
-											? {
-													lastObservedValue: evaluation.value,
-													lastSampleCount: evaluation.sampleCount,
-												}
-											: undefined),
-										updatedAt: nowMs,
-										...(runtime !== undefined && runtime.entries.length > 0
-											? { fingerprintsJson: runtime.entries }
-											: undefined),
-									})
-									.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)]),
-							),
+						// A lost race (manual resolve, overlapping reopen) leaves the row to its
+						// winner; this series still drops its pointer below.
+						const resolved = yield* resolveOpenIncident(
+							orgId,
+							incidentId,
+							{
+								resolveReason: "returned_to_baseline",
+								resolvedAt: nowMs,
+								...(isPrimary
+									? {
+											lastObservedValue: evaluation.value,
+											lastSampleCount: evaluation.sampleCount,
+										}
+									: undefined),
+								updatedAt: nowMs,
+								...(runtime !== undefined && runtime.entries.length > 0
+									? { fingerprintsJson: runtime.entries }
+									: undefined),
+							},
+							runtime === undefined ? {} : { reopenCount: runtime.row.reopenCount },
 						)
 						incidentById.delete(incidentId)
 						if (runtime !== undefined && runtime.row.signalType === "error_spike") {
@@ -2024,7 +2067,20 @@ const make: Effect.Effect<
 								openSpikeByServiceEnv.delete(attachKey)
 							}
 						}
-						stats.incidentsResolved += 1
+						if (resolved) {
+							stats.incidentsResolved += 1
+						} else {
+							// Reopened by an overlapping tick: keep pointing at it so the row is not orphaned.
+							const current = yield* dbExecute((db) =>
+								db.run(
+									PG.from(AnomalyIncidents)
+										.select("status")
+										.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)])
+										.limit(1),
+								),
+							)
+							keepPointer = current[0]?.status === "open"
+						}
 					} else {
 						// Other fingerprints are still firing: the incident stays open.
 						// If the departing series was the primary, promote a remaining
@@ -2069,15 +2125,21 @@ const make: Effect.Effect<
 							db.run(
 								PG.update(AnomalyIncidents)
 									.set(detachSet)
-									.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)]),
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.id.eq(incidentId),
+										$.status.eq("open"),
+									]),
 							),
 						)
 						if (runtime !== undefined) {
 							runtime.row = { ...runtime.row, ...detachSet }
 						}
 					}
-					openIncidentId = null
-					lastResolvedAt = nowMs
+					if (!keepPointer) {
+						openIncidentId = null
+						lastResolvedAt = nowMs
+					}
 					lastIncidentId = incidentId
 				}
 
@@ -2122,18 +2184,15 @@ const make: Effect.Effect<
 		yield* Effect.forEach(
 			staleIncidents,
 			Effect.fnUntraced(function* (incident) {
-				yield* dbExecute((db) =>
-					db.run(
-						PG.update(AnomalyIncidents)
-							.set({
-								status: "resolved",
-								resolveReason: "no_data",
-								resolvedAt: nowMs,
-								updatedAt: nowMs,
-							})
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(incident.id)]),
-					),
+				// Re-checks staleness: an overlapping tick's continue or reopen bumps lastTriggeredAt,
+				// and a manual resolve keeps its reason. Detector states clear only when this row moved.
+				const resolved = yield* resolveOpenIncident(
+					orgId,
+					incident.id,
+					{ resolveReason: "no_data", resolvedAt: nowMs, updatedAt: nowMs },
+					{ triggeredBefore: nowMs - NO_DATA_RESOLVE_MS },
 				)
+				if (!resolved) return
 				// Matched on openIncidentId so every series feeding a consolidated
 				// incident is cleared, not just the primary.
 				yield* dbExecute((db) =>
