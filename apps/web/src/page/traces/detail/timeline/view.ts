@@ -53,7 +53,9 @@ const alignedStrip = (h: H, spacerClass: string, rowClass: string, cellClass: st
 		],
 	)
 
+// Keyed by `index % 256`, not span id: keys are never evicted, and a window never holds 256 rows.
 const rowSlots = createKeyedLazy()
+const ROW_SLOTS = 256
 
 // Primitive args so an unchanged row reuses its VNode; `top` is an arg, so a reused row never moves.
 const memoRow = (
@@ -104,7 +106,7 @@ const body = (
 		const spanId = bar.span.spanId
 		const isMatched = isSearchActive && matches.has(spanId)
 		return [
-			rowSlots(spanId, memoRow, [
+			rowSlots(index % ROW_SLOTS, memoRow, [
 				h,
 				bar,
 				index * ROW_PITCH,
