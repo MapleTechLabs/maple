@@ -1,7 +1,7 @@
 import * as Policy from "@maple/domain/policy"
 import { UptimeMonitorId } from "@maple/domain"
 import { AlertDeliveryEventDocument, AlertDestinationId, AlertRuleId } from "@maple/domain/http"
-import { V2UptimeMonitor } from "@maple/domain/http/v2"
+import { V2Slo, V2SloStatus, V2UptimeMonitor } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -25,6 +25,10 @@ const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
 export const UptimeStatusFilter = Schema.Literals(["all", "down", "degraded", "paused"])
 export const UptimeKindFilter = Schema.Literals(["all", "http", "tcp", "dns", "heartbeat"])
 export type UptimeKindFilter = typeof UptimeKindFilter.Type
+
+/** An SLO beside its status (`listSloRows`); `status` is `null` when that read failed. */
+export const SloListRow = Schema.Struct({ slo: V2Slo, status: Schema.NullOr(V2SloStatus) })
+export type SloListRow = typeof SloListRow.Type
 
 export const TestOutcome = Schema.Struct({ message: Schema.String, success: Schema.Boolean })
 
@@ -74,6 +78,8 @@ export const Model = Schema.Struct({
 	deletingMonitorId: Schema.NullOr(UptimeMonitorId),
 	confirmDeleteMonitorId: Schema.NullOr(UptimeMonitorId),
 	deleteMonitorDialog: Dialog.Model,
+	/** SLOs tab: `slos.list` and each SLO's status, read only while the tab is open. */
+	slos: KeyedSchema(Schema.Array(SloListRow), LoadFailure),
 })
 export type Model = typeof Model.Type
 

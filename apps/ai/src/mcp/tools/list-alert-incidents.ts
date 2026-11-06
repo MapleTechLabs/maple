@@ -6,6 +6,7 @@ import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { ackLabel, ALERT_INCIDENT_STATUSES, ALERT_SEVERITIES, formatCondition } from "../lib/alert-rules"
 import * as P from "../lib/params"
+import { onlySloIncidents, sloIncidentNext } from "../lib/slos"
 import { doc } from "../lib/tool-doc"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 
@@ -256,7 +257,10 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 									"inspect this alert group",
 								),
 							)
-						: [doc.next("list_alert_rules", {}, "review alert configuration")]),
+						: onlySloIncidents(output.incidents)
+							? []
+							: [doc.next("list_alert_rules", {}, "review alert configuration")]),
+					...sloIncidentNext(output.incidents),
 					// Uptime incidents come from monitors, whose rules list_alert_rules hides.
 					...(Arr.some(output.incidents, (i) => i.signalType === "uptime")
 						? [doc.next("list_uptime_monitors", {}, "the uptime monitors behind these incidents")]
