@@ -100,17 +100,25 @@ const notPermitted = (h: H): Html =>
 		"py-8",
 	)
 
+const isRefused = (model: Model): boolean =>
+	model.grants !== null && !Policy.has(model.grants, "sources:manage")
+
 const pageBody = (h: H, model: Model, timeZone: string): Html =>
 	model.grants === null
 		? skeleton(h, "h-48 w-full")
-		: Policy.has(model.grants, "sources:manage")
-			? stepBody(h, model, timeZone, "page")
-			: notPermitted(h)
+		: isRefused(model)
+			? notPermitted(h)
+			: stepBody(h, model, timeZone, "page")
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
-	dashboardPage(h, { titleContent: titleContent(h, model), actions: cancel(h) }, [
-		pageBody(h, model, inputs.context.timeZone),
-	]),
+	dashboardPage(
+		h,
+		// A member has no steps to take, so no trail either.
+		isRefused(model)
+			? { title: titleOf(model), actions: cancel(h) }
+			: { titleContent: titleContent(h, model), actions: cancel(h) },
+		[pageBody(h, model, inputs.context.timeZone)],
+	),
 )
 
 export const breadcrumbsOf = (model: Model): ReadonlyArray<BreadcrumbEntry> => [
