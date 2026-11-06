@@ -450,6 +450,33 @@ describe("ErrorIssueWorkflowService", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
+	it.effect("a snooze wakeup loses to a snooze renewed after it was read", () =>
+		Effect.gen(function* () {
+			const workflow = yield* ErrorIssueWorkflowService
+			const database = yield* Database
+			const now = yield* Clock.currentTimeMillis
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId, { workflowState: "wontfix", snoozeUntil: now - 1_000 })
+			const readByTick = yield* workflow.requireIssue(ORG, issueId)
+			// A person re-snoozes it before the tick writes.
+			yield* database.execute((db) =>
+				db.run(
+					PG.update(ErrorIssues)
+						.set({ snoozeUntil: now + 3_600_000 })
+						.where(($) => [$.id.eq(issueId)]),
+				),
+			)
+
+			const lost = yield* Effect.flip(
+				workflow.applyTransition(ORG, null, readByTick, "triage", { snoozeElapsedBy: now }),
+			)
+			assert.strictEqual(lost._tag, "@maple/http/errors/ErrorIssueTransitionError")
+			const after = yield* workflow.requireIssue(ORG, issueId)
+			assert.strictEqual(after.workflowState, "wontfix")
+			assert.strictEqual(after.snoozeUntil, now + 3_600_000)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
 	// The lease used to advance only via an explicit `heartbeat` call, which agents
 	// never made: `claim` was used 11 times in 8 days, `heartbeat` zero. Issues were
 	// claimed, worked, and silently dropped back to `todo` when the lease lapsed.

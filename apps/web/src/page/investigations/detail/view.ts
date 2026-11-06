@@ -90,7 +90,9 @@ const headerActions = (h: H, model: Model, investigation: V2Investigation): Html
 	const manualMoves: ReadonlyArray<InvestigationStatus> = MANUAL_INVESTIGATION_TRANSITIONS[status]
 	const restartable: ReadonlyArray<InvestigationStatus> = RESTARTABLE_INVESTIGATION_STATUSES
 	const canResolve = manualMoves.includes("resolved")
-	const canRestart = restartable.includes(status)
+	// A run whose start never claimed it (no `started_at`) is not in flight and can be restarted.
+	const canRestart =
+		restartable.includes(status) || (status === "investigating" && investigation.started_at === null)
 	const primary =
 		status === "failed"
 			? { label: "Retry", variant: "default" as const }

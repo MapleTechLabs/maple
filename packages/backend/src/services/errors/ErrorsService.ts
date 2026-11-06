@@ -1044,8 +1044,8 @@ const make: Effect.Effect<
 	})
 
 	/**
-	 * Skip a system transition that lost to a concurrent move (wontfix to triage and
-	 * in_progress to todo are always legal, so the refusal is the race), and keep ticking.
+	 * Skip a system transition that lost to a concurrent move (it is only ever attempted from a
+	 * state where the move is legal, so a refusal is the race), and keep ticking.
 	 */
 	const skipLostTransition =
 		(issueId: ErrorIssueId, via: string) =>
@@ -1075,7 +1075,8 @@ const make: Effect.Effect<
 		yield* Effect.forEach(expired, (row) =>
 			Effect.gen(function* () {
 				const prevActorId = row.leaseHolderActorId
-				yield* dbExecute((db) =>
+				// Still expired: a heartbeat committed since the preamble read keeps the lease.
+				const cleared = yield* dbExecute((db) =>
 					db.run(
 						PG.update(ErrorIssues)
 							.set({
@@ -1084,15 +1085,19 @@ const make: Effect.Effect<
 								claimedAt: null,
 								updatedAt: nowMs,
 							})
-							.where(($) => [$.id.eq(row.id)]),
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(row.id), $.leaseExpiresAt.lt(nowMs)])
+							.returning("id"),
 					),
 				)
+				if (cleared.length === 0) return
 				yield* recordEvent(orgId, row.id, systemActor.id, "lease_expired", {
 					payload: { previousHolderActorId: prevActorId },
 					timestamp: nowMs,
 				})
-				if (row.workflowState === "in_progress") {
-					const refreshed = yield* requireIssue(orgId, row.id)
+				// Only an issue still `in_progress` drops back to `todo`; one the holder already moved
+				// on (to review, verifying, triage) keeps its new state.
+				const refreshed = yield* requireIssue(orgId, row.id)
+				if (refreshed.workflowState === "in_progress") {
 					yield* applyTransition(orgId, systemActor.id, refreshed, "todo", {
 						payload: { viaLeaseExpiry: true },
 						timestamp: nowMs,
