@@ -1527,4 +1527,30 @@ describe("v2 alerts over HTTP", () => {
 
 		await harness.dispose()
 	})
+
+	it("refuses to delete a destination only an escalation chain uses, naming chains in the conflict", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const primary = await createWebhook(harness, key.secret, "primary")
+		const chain = await harness.request("POST", "/v2/alerts/escalation_chains", key.secret, {
+			name: "Chain only",
+			steps: [
+				{ targets: [{ type: "destination", destination_id: primary.body.id }], wait_minutes: 10 },
+			],
+		})
+		expect(chain.status, JSON.stringify(chain.body)).toBe(200)
+
+		const conflicted = await harness.request(
+			"DELETE",
+			`/v2/alerts/destinations/${primary.body.id}`,
+			key.secret,
+		)
+		expect([conflicted.status, conflicted.body.error.code, conflicted.body.error.message]).toEqual([
+			409,
+			"alert_destination_in_use",
+			"The alert destination is currently used by one or more alert rules or escalation chains.",
+		])
+
+		await harness.dispose()
+	})
 })

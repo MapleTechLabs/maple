@@ -1489,7 +1489,7 @@ export class AlertDestinationInUseError extends HttpTaggedError<AlertDestination
 		status: 409,
 		code: "alert_destination_in_use",
 		title: "Alert destination is in use",
-		message: "The alert destination is currently used by one or more alert rules.",
+		message: "The alert destination is currently used by one or more alert rules or escalation chains.",
 		retry: "never",
 		recovery: "fix_request",
 		exposure: "redacted",
