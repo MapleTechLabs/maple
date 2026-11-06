@@ -2,7 +2,7 @@
  * SLOs: a target share of good entry-point spans for one service over a rolling window, with a
  * hidden burn-rate alert rule. Anyone may read them; writes need `alerts:manage`, like the REST routes.
  */
-import { Effect, Order, Schema, Array as Arr } from "effect"
+import { Effect, Order, Result, Schema, Array as Arr } from "effect"
 import {
 	DeleteSloOutput,
 	InspectSloOutput,
@@ -170,40 +170,37 @@ export function registerSloTools(server: McpToolRegistrar) {
 				slos,
 				(slo) => params.service === undefined || slo.serviceName === params.service,
 			)
-			// One SLO's failed read leaves its status empty instead of failing the whole list.
-			const rows = yield* Effect.forEach(
-				shown,
-				(slo) =>
-					service.status(tenant, slo.id).pipe(
-						Effect.match({
-							onFailure: (error): typeof SloListRow.Type => ({
-								...toSloConfigRow(slo),
-								sli: null,
-								budgetRemaining: null,
-								worstBurnRate: null,
-								worstBurnWindow: null,
-								burning: null,
-								holding: false,
-								statusError: error.message,
-							}),
-							onSuccess: (status): typeof SloListRow.Type => {
-								const worst = worstWindow(status.burnWindows)
-								return {
-									...toSloConfigRow(slo),
-									sli: status.sli,
-									budgetRemaining: status.budgetRemaining,
-									worstBurnRate: worst?.burnRate ?? null,
-									worstBurnWindow:
-										worst === undefined ? null : windowLabel(worst.windowMinutes),
-									burning: burningTier(status.burnWindows),
-									holding: anyTierHolding(status.burnWindows),
-									statusError: null,
-								}
-							},
-						}),
-					),
-				{ concurrency: 4 },
+			// One batched read for every SLO; if it fails, the list still shows each SLO's config.
+			const statuses = yield* service.statuses(tenant).pipe(
+				Effect.map((read) => new Map(Arr.map(read, (row) => [row.slo.id, row.status] as const))),
+				Effect.result,
 			)
+			const rows = Arr.map(shown, (slo): typeof SloListRow.Type => {
+				const status = Result.isSuccess(statuses) ? statuses.success.get(slo.id) : undefined
+				if (status === undefined) {
+					return {
+						...toSloConfigRow(slo),
+						sli: null,
+						budgetRemaining: null,
+						worstBurnRate: null,
+						worstBurnWindow: null,
+						burning: null,
+						holding: false,
+						statusError: Result.isFailure(statuses) ? statuses.failure.message : "No status read",
+					}
+				}
+				const worst = worstWindow(status.burnWindows)
+				return {
+					...toSloConfigRow(slo),
+					sli: status.sli,
+					budgetRemaining: status.budgetRemaining,
+					worstBurnRate: worst?.burnRate ?? null,
+					worstBurnWindow: worst === undefined ? null : windowLabel(worst.windowMinutes),
+					burning: burningTier(status.burnWindows),
+					holding: anyTierHolding(status.burnWindows),
+					statusError: null,
+				}
+			})
 			const sorted = Arr.sort(rows, LIST_ORDER)
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "result.rowCount": sorted.length })
 			return {

@@ -236,6 +236,16 @@ export const V2SloStatus = Schema.Struct({
 })
 export type V2SloStatus = Schema.Schema.Type<typeof V2SloStatus>
 
+export const V2SloStatusList = Schema.Struct({
+	object: Schema.Literal("slo.status_list"),
+	data: Schema.Array(V2SloStatus).annotate({ description: "One status per SLO, in list order." }),
+}).annotate({
+	identifier: "SloStatusList",
+	title: "SLO status list",
+	description: "Every SLO's status at once, read together rather than one request per SLO.",
+})
+export type V2SloStatusList = Schema.Schema.Type<typeof V2SloStatusList>
+
 export const V2SloHistoryPoint = Schema.Struct({
 	at: Timestamp,
 	sli: Schema.NullOr(Schema.Number).annotate({
@@ -282,6 +292,19 @@ export class V2SlosApiGroup extends HttpApiGroup.make("slos")
 				summary: "List SLOs",
 				description:
 					"Returns your organization's SLOs, most recently created first. Cursor-paginated.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.get("statuses", "/statuses", {
+			success: V2SloStatusList,
+			error: [sloPersistence, ...V2WarehouseReadErrors],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "listSloStatuses",
+				summary: "List every SLO's status",
+				description:
+					"Returns the SLI, budget left and burn windows of every SLO in the organization, read together.",
 			}),
 		),
 	)

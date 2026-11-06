@@ -8,12 +8,12 @@ import {
 	sloSliToWire,
 	V2InsufficientPermissions,
 } from "@maple/domain/http/v2"
-import type { V2Slo, V2SloAlertingParams } from "@maple/domain/http/v2"
+import type { V2Slo, V2SloAlertingParams, V2SloStatus } from "@maple/domain/http/v2"
 import { Effect, Array as Arr } from "effect"
 import { auditDiff } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import * as Policy from "@maple/domain/policy"
-import { type SloRecord, SlosService } from "@maple/backend/services/slos/SlosService"
+import { type SloRecord, type SloStatus, SlosService } from "@maple/backend/services/slos/SlosService"
 
 // An SLO owns a burn-rate alert rule, so writes need the same permission as alert rules.
 
@@ -35,6 +35,22 @@ export const toV2Slo = (slo: SloRecord): V2Slo => ({
 	},
 	created_at: isoTimestamp(slo.createdAt),
 	updated_at: isoTimestamp(slo.updatedAt),
+})
+
+const toV2Status = (sloId: SloRecord["id"], status: SloStatus): V2SloStatus => ({
+	object: "slo.status",
+	slo_id: sloId,
+	as_of: isoTimestamp(status.asOfMs),
+	total_events: status.total,
+	good_events: status.good,
+	sli: status.sli,
+	budget_remaining: status.budgetRemaining,
+	burn_windows: Arr.map(status.burnWindows, (window) => ({
+		window_minutes: window.windowMinutes,
+		burn_rate: window.burnRate,
+		total_events: window.total,
+		good_events: window.good,
+	})),
 })
 
 const sloAuditDiff = auditDiff({
@@ -158,20 +174,16 @@ export const HttpV2SlosLive = HttpApiBuilder.group(MapleApiV2, "slos", (handlers
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const status = yield* service.status(tenant, params.id)
+					return toV2Status(params.id, status)
+				}),
+			)
+			.handle("statuses", () =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const rows = yield* service.statuses(tenant)
 					return {
-						object: "slo.status" as const,
-						slo_id: params.id,
-						as_of: isoTimestamp(status.asOfMs),
-						total_events: status.total,
-						good_events: status.good,
-						sli: status.sli,
-						budget_remaining: status.budgetRemaining,
-						burn_windows: Arr.map(status.burnWindows, (window) => ({
-							window_minutes: window.windowMinutes,
-							burn_rate: window.burnRate,
-							total_events: window.total,
-							good_events: window.good,
-						})),
+						object: "slo.status_list" as const,
+						data: Arr.map(rows, (row) => toV2Status(row.slo.id, row.status)),
 					}
 				}),
 			)
