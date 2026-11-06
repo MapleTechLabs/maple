@@ -6,6 +6,7 @@ import {
 	AlertRuleUpsertRequest,
 	AnomalyIncidentId,
 	ErrorIssueId,
+	UNGROUPED_GROUP_KEY,
 	type AlertDestinationId,
 	type AlertThresholds,
 	type AnomalyIncidentSeverity,
@@ -15,6 +16,7 @@ import { Array as Arr, Clock, Duration, Effect, Layer, Result, Schema } from "ef
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { fakeChatSessions } from "@maple/backend/platform/chat-sessions-fake"
+import type { IncidentPushEvent } from "@maple/backend/services/push/MobilePushService"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -61,13 +63,17 @@ const harness = () => {
 			return { cursor: 0, messageId: input.messageId, turnMessageId: input.messageId }
 		},
 	}))
+	const pushes: Array<IncidentPushEvent> = []
 	const layer = Layer.mergeAll(
-		makeLayer(testDb, makeWarehouseStub({}), { fetch: fetchImpl, chatSessions }),
+		makeLayer(testDb, makeWarehouseStub({}), { fetch: fetchImpl, chatSessions, pushes }),
 		AnomalyAlertSource.layer.pipe(Layer.provide(testDb.layer)),
 		testDb.layer,
 	)
-	return { testDb, bodies, turns, layer }
+	return { testDb, bodies, turns, pushes, layer }
 }
+
+const pushedEvents = (pushes: ReadonlyArray<IncidentPushEvent>) =>
+	Arr.map(pushes, (push) => `${push.eventType}:${push.severity}`)
 
 interface SeededAnomaly {
 	readonly id: string
@@ -165,6 +171,16 @@ const anomalyRule = (input: {
 		...(input.serviceNames === undefined ? undefined : { serviceNames: input.serviceNames }),
 	})
 
+/** The org's state row keys, heartbeat first. */
+const stateKeys = (testDb: TestDb) =>
+	Effect.promise(() =>
+		queryFirstRow<{ keys: Array<string> | null }>(
+			testDb,
+			"select array_agg(group_key order by group_key = $2 desc, group_key) as keys from alert_rule_states where org_id = $1",
+			[orgId, UNGROUPED_GROUP_KEY],
+		),
+	).pipe(Effect.map((row) => row?.keys ?? []))
+
 const nextTick = Effect.gen(function* () {
 	yield* TestClock.adjust(Duration.minutes(1))
 	const alerts = yield* AlertsService
@@ -212,8 +228,24 @@ describe("AlertsService anomaly rules", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("an unrouted tier never pushes to phones, even for a critical anomaly", () => {
+		const { pushes, layer } = harness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			yield* insertAnomaly({ ...errorRateSpike, severity: "critical" })
+			yield* AnomalyAlertSource.use((source) => source.backfillDefaultRules)
+
+			yield* alerts.runSchedulerTick()
+			yield* nextTick
+
+			expect((yield* alerts.listIncidents(orgId)).incidents[0]).toMatchObject({ severity: "critical" })
+			assert.deepStrictEqual(pushes, [])
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("a routed critical tier pages its destination with the anomaly's own sentence", () => {
-		const { bodies, layer } = harness()
+		const { bodies, pushes, layer } = harness()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			const alerts = yield* AlertsService
@@ -239,6 +271,7 @@ describe("AlertsService anomaly rules", () => {
 				Arr.map(events, (event) => [event.eventType, event.destinationId]),
 				[["trigger", destination.id]],
 			)
+			assert.deepStrictEqual(pushedEvents(pushes), ["trigger:critical"])
 			const trigger = Schema.decodeSync(
 				Schema.fromJsonString(
 					Schema.Struct({
@@ -261,7 +294,7 @@ describe("AlertsService anomaly rules", () => {
 	})
 
 	it.effect("follows the anomaly from warning to critical and resolves with it", () => {
-		const { testDb, layer } = harness()
+		const { testDb, pushes, layer } = harness()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			const alerts = yield* AlertsService
@@ -282,6 +315,8 @@ describe("AlertsService anomaly rules", () => {
 			const opened = (yield* alerts.listIncidents(orgId)).incidents
 			expect(opened[0]).toMatchObject({ status: "open", severity: "warning" })
 			assert.strictEqual(yield* countRows(testDb, "alert_delivery_events"), 0)
+			// The warning tier is unrouted, so the phone stays quiet until it escalates.
+			assert.deepStrictEqual(pushes, [])
 
 			yield* updateAnomaly(testDb, errorRateSpike.id, "severity = 'critical'")
 			yield* nextTick
@@ -292,6 +327,8 @@ describe("AlertsService anomaly rules", () => {
 				severity: "critical",
 				peakSeverity: "critical",
 			})
+			assert.isNotEmpty(pushes)
+			assert.isTrue(Arr.every(pushes, (push) => push.severity === "critical"))
 
 			yield* updateAnomaly(testDb, errorRateSpike.id, "status = 'resolved'")
 			yield* nextTick
@@ -509,15 +546,8 @@ describe("AlertsService anomaly rules", () => {
 				Arr.map(incidents, (incident) => [incident.id, incident.status]),
 				[[opened?.id, "open"]],
 			)
-			// Housekeeping treats the rule as grouped, so its per-anomaly state survives each tick.
-			const states = yield* Effect.promise(() =>
-				queryFirstRow<{ keys: Array<string> }>(
-					testDb,
-					"select array_agg(group_key) as keys from alert_rule_states where org_id = $1",
-					[orgId],
-				),
-			)
-			assert.deepStrictEqual(states?.keys, [errorRateSpike.id])
+			// Housekeeping keeps the per-anomaly state beside the heartbeat on each tick.
+			assert.deepStrictEqual(yield* stateKeys(testDb), [UNGROUPED_GROUP_KEY, errorRateSpike.id])
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -552,6 +582,115 @@ describe("AlertsService anomaly rules", () => {
 				value: 0,
 				reason: "No open anomaly in this rule's scope",
 			})
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("an idle rule records that it ran, without opening anything", () => {
+		const { testDb, layer } = harness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				anomalyRule({
+					name: "Checkout anomalies",
+					serviceNames: ["checkout"],
+					thresholds: criticalRouted(destination.id),
+				}),
+			)
+			assert.isNull(rule.lastEvaluatedAt)
+
+			yield* alerts.runSchedulerTick()
+
+			// The dashboard reads "last evaluated" from the rule's state rows.
+			const heartbeat = yield* Effect.promise(() =>
+				queryFirstRow<{ last_evaluated_at: string | null; last_status: string }>(
+					testDb,
+					"select last_evaluated_at, last_status from alert_rule_states where rule_id = $1 and group_key = $2",
+					[rule.id, UNGROUPED_GROUP_KEY],
+				),
+			)
+			assert.isNotNull(heartbeat?.last_evaluated_at ?? null)
+			assert.strictEqual(heartbeat?.last_status, "healthy")
+			assert.deepStrictEqual((yield* alerts.listIncidents(orgId)).incidents, [])
+			assert.deepStrictEqual(yield* stateKeys(testDb), [UNGROUPED_GROUP_KEY])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect(
+		"drops an ended anomaly's state row once its incident has closed, keeping the heartbeat",
+		() => {
+			const { testDb, layer } = harness()
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				yield* insertAnomaly(errorRateSpike)
+				yield* AnomalyAlertSource.use((source) => source.backfillDefaultRules)
+				yield* alerts.runSchedulerTick()
+				assert.deepStrictEqual(yield* stateKeys(testDb), [UNGROUPED_GROUP_KEY, errorRateSpike.id])
+
+				yield* updateAnomaly(testDb, errorRateSpike.id, "status = 'resolved'")
+				yield* nextTick
+				expect((yield* alerts.listIncidents(orgId)).incidents[0]).toMatchObject({
+					status: "resolved",
+				})
+				yield* nextTick
+				assert.deepStrictEqual(yield* stateKeys(testDb), [UNGROUPED_GROUP_KEY])
+			}).pipe(Effect.provide(layer))
+		},
+	)
+
+	it.effect("turning detection off resolves the alert side, though the anomaly stays open", () => {
+		const { testDb, layer } = harness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				anomalyRule({
+					name: "Checkout anomalies",
+					serviceNames: ["checkout"],
+					thresholds: [
+						{ ...criticalTier(destination.id), severity: "warning", value: 1 },
+						criticalTier(destination.id),
+					],
+				}),
+			)
+			yield* insertAnomaly(errorRateSpike)
+			yield* alerts.runSchedulerTick()
+			expect((yield* alerts.listIncidents(orgId)).incidents[0]).toMatchObject({ status: "open" })
+
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"insert into anomaly_detector_settings (org_id, enabled, created_at, updated_at) values ($1, false, now(), now())",
+					[orgId],
+				),
+			)
+			// Past the 30 minute reminder, which a still-open incident would have owed.
+			yield* TestClock.adjust(Duration.minutes(40))
+			yield* nextTick
+
+			expect((yield* alerts.listIncidents(orgId)).incidents[0]).toMatchObject({ status: "resolved" })
+			const events = Arr.map(
+				(yield* alerts.listDeliveryEvents(orgId)).events,
+				(event) => event.eventType,
+			)
+			assert.sameMembers(events, ["trigger", "resolve"])
+			const anomaly = yield* Effect.promise(() =>
+				queryFirstRow<{ status: string }>(
+					testDb,
+					"select status from anomaly_incidents where id = $1",
+					[errorRateSpike.id],
+				),
+			)
+			assert.strictEqual(anomaly?.status, "open")
 		}).pipe(Effect.provide(layer))
 	})
 })

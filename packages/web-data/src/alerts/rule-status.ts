@@ -32,6 +32,14 @@ export interface DerivedRuleStatus {
  * scheduler outages for up to 3x the window (72h on a daily rule).
  * Shared with the diagnosis panel so both surfaces agree on "stale".
  */
+const isDefaultAnomalyRule = (
+	rule: Pick<AlertRuleDocument, "signalType" | "serviceNames" | "environments" | "anomalySignals">,
+): boolean =>
+	rule.signalType === "anomaly" &&
+	rule.serviceNames.length === 0 &&
+	rule.environments.length === 0 &&
+	(rule.anomalySignals ?? []).length === 0
+
 export const staleThresholdMs = (
 	rule: Pick<AlertRuleDocument, "windowMinutes" | "evaluationIntervalMinutes" | "slowedIntervalMinutes">,
 ): number => 3 * Math.max(ALERT_MAX_EVALUATION_INTERVAL_MINUTES, alertRuleIntervalMinutes(rule)) * 60_000
@@ -93,7 +101,8 @@ export function deriveRuleStatus(input: {
 
 	const latestDelivery = deliveryEvents[0] ?? null
 	const attention: RuleAttention = {
-		noDestinations: rule.enabled && rule.destinationIds.length === 0,
+		// The default anomaly rule (unscoped) is unrouted by design: it shows anomalies in the app only.
+		noDestinations: rule.enabled && rule.destinationIds.length === 0 && !isDefaultAnomalyRule(rule),
 		recentDeliveryFailure: latestDelivery?.status === "failed",
 		slowedDown: rule.enabled && rule.slowedIntervalMinutes !== null,
 	}
