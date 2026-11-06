@@ -163,7 +163,7 @@ const reasonForFailure = (
 			PERMANENT_ERROR_CODES.has(value)
 				? "rejected"
 				: RETRYABLE_ERROR_CODES.has(value)
-					? undefined
+					? "rate_limited"
 					: reasonForStatus(status),
 	})
 
@@ -270,6 +270,7 @@ class DiscordRateLimited extends Schema.TaggedError<DiscordRateLimited>()(
 export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCredentials> = {
 	connectorId: DISCORD_CONNECTOR_ID,
 	limits: { maxMessageChars: MAX_MESSAGE_CHARS, minEditInterval: MIN_EDIT_INTERVAL },
+	directMessages: true,
 	requiredConfig: [{ name: BOT_TOKEN_CONFIG, secret: true }],
 	transport: Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
@@ -394,6 +395,7 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 									? Effect.fail(
 											failed(operation, "Discord kept rate limiting this message", {
 												status: 429,
+												reason: "rate_limited",
 											}),
 										)
 									: tryOnce(count + 1),
