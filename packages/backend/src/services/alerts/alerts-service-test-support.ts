@@ -33,6 +33,7 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { AlertRuntime, type AlertRuntimeApi, AlertsService, type AlertsServiceApi } from "./AlertsService"
 import { AlertDestinationsService } from "./AlertDestinationsService"
 import { AlertReadModelsService } from "./AlertReadModelsService"
+import { AlertSilencesService } from "./AlertSilencesService"
 import { AlertRulesService } from "./AlertRulesService"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import { BucketCacheService } from "@maple/query-engine/caching"
@@ -329,9 +330,16 @@ export const makeLayer = (
 		Layer.provide(UptimeAlertSource.layer.pipe(Layer.provide(databaseLive))),
 		Layer.provide(chatSessions === undefined ? Layer.empty : Layer.succeed(ChatSessions, chatSessions)),
 	)
-	return Layer.mergeAll(alertDestinationsLive, alertReadModelsLive, alertRulesLive, alertsLive).pipe(
-		Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)),
+	const alertSilencesLive = AlertSilencesService.layer.pipe(
+		Layer.provide(Layer.mergeAll(databaseLive, runtimeLive)),
 	)
+	return Layer.mergeAll(
+		alertDestinationsLive,
+		alertReadModelsLive,
+		alertRulesLive,
+		alertSilencesLive,
+		alertsLive,
+	).pipe(Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)))
 }
 
 export const asOrgId = Schema.decodeUnknownSync(OrgId)

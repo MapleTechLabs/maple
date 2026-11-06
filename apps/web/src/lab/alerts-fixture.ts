@@ -543,6 +543,8 @@ const incidentFrom = (spec: IncidentSpec, rule: AlertRuleDocument, nowMs: number
 		holdReason: spec.held ? "volume_collapsed" : null,
 		heldSince: spec.held ? iso(nowMs - 58 * MIN) : null,
 		errorIssueId: null,
+		silenceId: null,
+		silencedAt: null,
 	})
 }
 

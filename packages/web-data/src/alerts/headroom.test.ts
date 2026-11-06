@@ -130,6 +130,8 @@ describe("quietForMs", () => {
 			holdReason: null,
 			heldSince: null,
 			errorIssueId: null,
+			silenceId: null,
+			silencedAt: null,
 		})
 
 	it("counts from the latest resolve", () => {

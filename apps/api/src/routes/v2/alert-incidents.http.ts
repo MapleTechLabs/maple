@@ -2,7 +2,7 @@ import { HttpApiBuilder } from "effect/http-api"
 import type { AlertIncidentDocument } from "@maple/domain/http"
 import { CurrentTenant } from "@maple/domain/http"
 import type { V2AlertIncident } from "@maple/domain/http/v2"
-import { MapleApiV2, paginateOffsetQuery } from "@maple/domain/http/v2"
+import { MapleApiV2, paginateOffsetQuery, timestampOrNull } from "@maple/domain/http/v2"
 import { Effect, Array as Arr } from "effect"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 
@@ -30,6 +30,8 @@ const toV2Incident = (doc: AlertIncidentDocument): V2AlertIncident => ({
 	hold_reason: doc.holdReason,
 	held_since: doc.heldSince,
 	error_issue_id: doc.errorIssueId,
+	silence_id: doc.silenceId,
+	silenced_at: timestampOrNull(doc.silencedAt),
 })
 
 export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertIncidents", (handlers) =>

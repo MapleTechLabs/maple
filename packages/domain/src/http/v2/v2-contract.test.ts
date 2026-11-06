@@ -479,6 +479,8 @@ describe("V2 alerts wire format", () => {
 			hold_reason: null,
 			held_since: null,
 			error_issue_id: null,
+			silence_id: null,
+			silenced_at: null,
 		})
 		expect(incident.id).toBe(INCIDENT_UUID)
 		expect(incident.rule_id).toBe(UUID)

@@ -76,6 +76,8 @@ function incident(groupKey: string | null, status = "open"): AlertIncidentDocume
 		holdReason: null,
 		heldSince: null,
 		errorIssueId: null,
+		silenceId: null,
+		silencedAt: null,
 	})
 }
 

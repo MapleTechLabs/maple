@@ -201,6 +201,8 @@ const anomalyFixture = new AnomalyIncidentDocument({
 	deploymentEnv: "production",
 	fingerprintHash: null,
 	errorIssueId: null,
+	silenceId: null,
+	silencedAt: null,
 	status: "open",
 	severity: "critical",
 	openedValue: 0.12,

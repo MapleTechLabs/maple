@@ -1103,6 +1103,7 @@ export const deliveryStatusMeta: Record<
 	failed: { label: "Failed", variant: "crit" },
 	processing: { label: "Sending", variant: "warn" },
 	queued: { label: "Queued", variant: "outline" },
+	silenced: { label: "Silenced", variant: "outline" },
 } satisfies Record<AlertDeliveryStatus, { label: string; variant: DeliveryStatusVariant }>
 
 export interface DeliveryEventDayGroup {
