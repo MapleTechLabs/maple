@@ -1,6 +1,7 @@
 import { PGlite } from "@electric-sql/pglite"
 import { describe, expect, it } from "vitest"
 import { readBundledMigrationsSql } from "./migrate"
+import { Array as Arr, Record as Rec } from "effect"
 
 /**
  * Columns consumed by an external, read-only system.
@@ -60,7 +61,7 @@ describe("externally consumed columns", () => {
 		const pg = new PGlite()
 		await pg.exec(readBundledMigrationsSql())
 
-		const tables = Object.keys(EXTERNALLY_CONSUMED)
+		const tables = Rec.keys(EXTERNALLY_CONSUMED)
 		const result = await pg.query<ColumnRow>(
 			`select table_name, column_name
 			   from information_schema.columns
@@ -78,7 +79,7 @@ describe("externally consumed columns", () => {
 		// Collect every missing column before failing, so a rename that touches
 		// several tables reports all of them in one run instead of one per fix.
 		const missing: string[] = []
-		for (const [table, columns] of Object.entries(EXTERNALLY_CONSUMED)) {
+		for (const [table, columns] of Rec.toEntries(EXTERNALLY_CONSUMED)) {
 			const actual = present.get(table)
 			if (!actual) {
 				missing.push(`${table} (table missing entirely)`)
@@ -91,7 +92,7 @@ describe("externally consumed columns", () => {
 
 		expect(
 			missing,
-			`Missing columns consumed by an external read-only system:\n  ${missing.join("\n  ")}\n\n` +
+			`Missing columns consumed by an external read-only system:\n  ${Arr.join(missing, "\n  ")}\n\n` +
 				"If this rename or drop is intentional, the external consumer must ship its side\n" +
 				"first, then this list is updated in the same PR as the migration.",
 		).toEqual([])

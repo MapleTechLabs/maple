@@ -12,6 +12,8 @@ pub struct ResourceConfig {
     pub service_instance_id: String,
     pub deployment_env: String,
     pub internal_org_id: String,
+    /// Host identity from `host_identity::detect`, read once at startup.
+    pub host_attributes: Vec<KeyValue>,
 }
 
 pub fn build_resource(cfg: ResourceConfig) -> Resource {
@@ -46,6 +48,8 @@ pub fn build_resource(cfg: ResourceConfig) -> Resource {
         attrs.push(KeyValue::new("vcs.ref.head.revision", revision));
     }
     attrs.extend(detect_platform());
+    // Last, so ECS task metadata overrides the env-derived platform keys.
+    attrs.extend(cfg.host_attributes);
     Resource::builder().with_attributes(attrs).build()
 }
 
@@ -226,7 +230,7 @@ fn rustc_version() -> &'static str {
 /// happened and can batch smaller — rather than a healthy exporter shipping into
 /// a void.
 pub fn rejection_loses_data(error_type: &str) -> bool {
-    matches!(error_type, "bad_request" | "decode" | "enrich")
+    matches!(error_type, "bad_request" | "decode" | "enrich" | "rules_scan_budget")
 }
 
 /// Record a failed stage on `span`.
@@ -307,7 +311,11 @@ pub fn grpc_server_span(rpc_service: &'static str, signal_path: &'static str) ->
         "maple.signal" = signal_path,
         "maple.org_id" = Empty,
         "maple.ingest.key_type" = Empty,
+        "maple.source.id" = Empty,
         "maple.ingest.destination" = Empty,
+        "maple.ingest.rules.count" = Empty,
+        "maple.ingest.rules.dropped_items" = Empty,
+        "maple.ingest.rules.redacted_values" = Empty,
     )
 }
 
@@ -325,6 +333,7 @@ pub fn auth_internal_span() -> Span {
         "maple.ingest.cache_hit" = Empty,
         "maple.ingest.key_type" = Empty,
         "maple.ingest.key_id" = Empty,
+        "maple.source.id" = Empty,
         "maple.org_id" = Empty,
         "maple.ingest.self_managed" = Empty,
         "maple.ingest.clickhouse_ready" = Empty,
@@ -340,6 +349,7 @@ pub fn entitlement_internal_span(signal_path: &'static str) -> Span {
         "maple.signal" = signal_path,
         "maple.ingest.cache_hit" = Empty,
         "maple.billing.allowed" = Empty,
+        "maple.billing_org_id" = Empty,
     )
 }
 
@@ -370,6 +380,7 @@ pub fn parse_internal_span(payload_format: &'static str, signal_path: &'static s
         "maple.ingest.payload_format" = payload_format,
         "maple.signal" = signal_path,
         "maple.ingest.item_count" = Empty,
+        "maple.ingest.decode_heap_estimate" = Empty,
     )
 }
 
@@ -430,6 +441,11 @@ pub fn wal_commit_internal_span(destination: &'static str) -> Span {
         // "nothing landed" and "half the payload landed".
         "maple.ingest.frames_committed" = Empty,
         "maple.ingest.queued_bytes" = Empty,
+        // Group commit: the largest sync batch a frame joined, and the time
+        // spent on the lane lock and waiting for covering syncs, summed.
+        "maple.ingest.wal_batch_frames" = Empty,
+        "maple.ingest.wal_lock_wait_ms" = Empty,
+        "maple.ingest.wal_sync_wait_ms" = Empty,
         // Only set on the failing frame.
         "maple.ingest.shard" = Empty,
         "maple.ingest.lane" = Empty,
@@ -445,8 +461,9 @@ pub fn wal_commit_internal_span(destination: &'static str) -> Span {
 ///
 /// One span per *attempt*, not per batch, so a retry storm is visible as a
 /// sequence rather than one long opaque span. `maple.ingest.outcome` is the
-/// field to filter on: `delivered` | `retry` | `dropped` | `shed_circuit_open`.
-/// Only a terminal `dropped` sets `Error` — a retry that later succeeds is not
+/// field to filter on: `delivered` | `retry` | `dropped` | `deferred_circuit_open` |
+/// `shed_circuit_open`.
+/// Only a terminal `dropped` or `shed_circuit_open` sets `Error`: a retry that later succeeds is not
 /// a failure of the batch, and marking every attempt `Error` would turn a
 /// self-healing blip into an error-rate spike.
 pub fn export_client_span(
@@ -640,11 +657,15 @@ mod tests {
 
     #[test]
     fn entitlement_span_declares_fields_recorded_by_the_billing_gate() {
-        // `maple.ingest.cache_hit` is recorded from inside
-        // AutumnEntitlements::is_allowed.
+        // `maple.ingest.cache_hit` and `maple.billing_org_id` are recorded from
+        // inside AutumnEntitlements::is_allowed.
         assert_declares(
             &entitlement_internal_span("traces"),
-            &["maple.ingest.cache_hit", "maple.billing.allowed"],
+            &[
+                "maple.ingest.cache_hit",
+                "maple.billing.allowed",
+                "maple.billing_org_id",
+            ],
         );
     }
 
@@ -713,6 +734,7 @@ mod tests {
             service_instance_id: "test-instance".to_owned(),
             deployment_env: "test".to_owned(),
             internal_org_id: "internal".to_owned(),
+            host_attributes: Vec::new(),
         });
         assert_eq!(
             find_attr(&resource, "process.runtime.name").as_deref(),

@@ -1,7 +1,12 @@
 // Metadata-only session emission for the Effect client SDK. The lifecycle is
 // implemented in @maple/browser-session so it stays identical to the browser
 // SDK's unsampled path (including idle rotation and cumulative counters).
-import { readSessionSink, startMetadataSession, type MetadataSessionHandle } from "@maple/browser-session"
+import {
+	MAX_TRACE_IDS_PER_SESSION,
+	readSessionSink,
+	startMetadataSession,
+	type MetadataSessionHandle,
+} from "@maple/browser-session"
 import { getCurrentIdentity } from "./user.js"
 import { CLIENT_SDK_HINT } from "../version.js"
 
@@ -49,6 +54,9 @@ const leaseCurrent = (): MetadataSessionHandle | undefined => {
 		get sessionId() {
 			return owned.sessionId
 		},
+		announce: () => {
+			if (!released) owned.announce()
+		},
 		shutdown: async (options) => {
 			if (released) return
 			released = true
@@ -68,6 +76,9 @@ export const noteStandaloneSpan = (sessionId: string, traceId: string): void => 
 		ids = new Set()
 		observedBySession.set(sessionId, ids)
 	}
+	// Keep-first, as the browser SDK's sink does: the ids ride the `ended` row, which
+	// goes out with keepalive and is dropped whole once it outgrows the 64 KiB budget.
+	if (ids.size >= MAX_TRACE_IDS_PER_SESSION && !ids.has(traceId)) return
 	ids.add(traceId)
 }
 

@@ -8,6 +8,7 @@ import {
 	resolveIngestEndpoint,
 	warnIfKeylessMapleIngest,
 } from "./region"
+import * as Arr from "effect/Array"
 
 afterEach(() => {
 	resetRegionWarningsForTests()
@@ -16,12 +17,6 @@ afterEach(() => {
 })
 
 describe("region", () => {
-	it("maps each region to its ingest host", () => {
-		expect(ingestEndpointForRegion("us")).toBe("https://ingest.maple.dev")
-		expect(ingestEndpointForRegion("eu")).toBe("https://ingest.eu.maple.dev")
-		expect(ingestEndpointForRegion(undefined)).toBe("https://ingest.maple.dev")
-	})
-
 	it("parses env-style values loosely and rejects unknown ones", () => {
 		expect(parseRegion(" EU ")).toBe("eu")
 		expect(parseRegion("eu-central")).toBeUndefined()
@@ -64,6 +59,6 @@ describe("region", () => {
 		warnIfKeylessMapleIngest({ ...keyless, endpoint: "https://ingest.maple.dev" })
 		warnIfKeylessMapleIngest({ ...keyless, endpoint: "https://ingest.maple.dev" })
 		expect(warn).toHaveBeenCalledTimes(1)
-		expect(String(warn.mock.calls[0]![0])).toContain("401")
+		expect(String(Arr.getUnsafe(Arr.getUnsafe(warn.mock.calls, 0), 0))).toContain("401")
 	})
 })

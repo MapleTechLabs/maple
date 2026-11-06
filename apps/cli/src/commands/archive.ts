@@ -1,25 +1,29 @@
-import { Effect, Option } from "effect"
-import * as Command from "effect/unstable/cli/Command"
-import * as Flag from "effect/unstable/cli/Flag"
-import * as Argument from "effect/unstable/cli/Argument"
+import { Effect, Option, Array as Arr, String as Str } from "effect"
+import * as Command from "effect/cli/Command"
+import * as Flag from "effect/cli/Flag"
+import * as Argument from "effect/cli/Argument"
 import { randomUUID } from "node:crypto"
 import { homedir } from "node:os"
 import { join, resolve } from "node:path"
-import { createArchiveGeneration, runArchiveReconciliation } from "../server/archives/generation"
+import { createArchiveGeneration, runArchiveReconciliation } from "@maple/local-server/archives/generation"
 import {
 	listActiveGenerations,
 	activeParquetPaths,
 	rebuildCatalogWithMaintenanceLock,
 	verifyActiveGenerations,
-} from "../server/archives/listing"
-import { runArchiveGc } from "../server/archives/gc"
-import { resolveArchiveTuning, tuningRecord } from "../server/archives/config"
-import { ARCHIVE_SIGNALS, isArchiveSignalName, type ArchiveSignalName } from "../server/archives/signals"
-import { expireArchiveDay, readRetiredDayLedger, retireLiveDay } from "../server/archives/retention"
-import { validateRangeDate } from "../server/archives/paths"
-import { maintenanceOperation } from "../server/checkpoints"
+} from "@maple/local-server/archives/listing"
+import { runArchiveGc } from "@maple/local-server/archives/gc"
+import { resolveArchiveTuning, tuningRecord } from "@maple/local-server/archives/config"
+import {
+	ARCHIVE_SIGNALS,
+	isArchiveSignalName,
+	type ArchiveSignalName,
+} from "@maple/local-server/archives/signals"
+import { expireArchiveDay, readRetiredDayLedger, retireLiveDay } from "@maple/local-server/archives/retention"
+import { validateRangeDate } from "@maple/local-server/archives/paths"
+import { maintenanceOperation } from "@maple/local-server/checkpoints"
 import { amber, bold, dim, green, red } from "../lib/style"
-import { ArchiveError } from "../server/archives/errors"
+import { ArchiveError } from "@maple/local-server/archives/errors"
 import { debugLog } from "../lib/debug"
 import { jsonFormatRequested, writeJson } from "./json-output"
 
@@ -29,7 +33,7 @@ const defaultScratchRoot = (): string => join(homedir(), ".maple", "scratch")
 
 const prettyPath = (p: string): string => {
 	const home = homedir()
-	return p.startsWith(home) ? `~${p.slice(home.length)}` : p
+	return Str.startsWith(home)(p) ? `~${Str.slice(home.length)(p)}` : p
 }
 
 const dataDirFlag = Flag.optional(
@@ -106,7 +110,12 @@ const rangeDateArgument = Argument.String("range-date").pipe(
 )
 
 const signalArgument = Argument.String("signal").pipe(
-	Argument.withDescription(`One of: ${ARCHIVE_SIGNALS.map((s) => s.name).join(", ")}`),
+	Argument.withDescription(
+		`One of: ${Arr.join(
+			Arr.map(ARCHIVE_SIGNALS, (s) => s.name),
+			", ",
+		)}`,
+	),
 )
 
 const outputFlag = Flag.Literals("output", ["summary", "paths", "json"]).pipe(
@@ -144,7 +153,10 @@ export const archiveCreate = Command.make("create", {
 		Effect.fnUntraced(function* (a) {
 			if (!isArchiveSignalName(a.signal)) {
 				return yield* new ArchiveError({
-					message: `unknown signal '${a.signal}'; expected one of ${ARCHIVE_SIGNALS.map((s) => s.name).join(", ")}`,
+					message: `unknown signal '${a.signal}'; expected one of ${Arr.join(
+						Arr.map(ARCHIVE_SIGNALS, (s) => s.name),
+						", ",
+					)}`,
 				})
 			}
 			const rangeDate = yield* Effect.try({
@@ -155,7 +167,7 @@ export const archiveCreate = Command.make("create", {
 					}),
 			})
 			const { dataDir, archiveDir, scratchRoot } = resolveRoots(a.dataDir, a.archiveDir, a.scratchRoot)
-			if (readRetiredDayLedger(dataDir).retiredDays.some((day) => day.rangeDate === rangeDate)) {
+			if (Arr.some(readRetiredDayLedger(dataDir).retiredDays, (day) => day.rangeDate === rangeDate)) {
 				return yield* new ArchiveError({
 					message: `refusing archive create: UTC day ${rangeDate} is permanently retired`,
 				})
@@ -229,7 +241,12 @@ export const archiveCreate = Command.make("create", {
 
 const signalFlag = Flag.optional(
 	Flag.String("signal").pipe(
-		Flag.withDescription(`One of: ${ARCHIVE_SIGNALS.map((s) => s.name).join(", ")}`),
+		Flag.withDescription(
+			`One of: ${Arr.join(
+				Arr.map(ARCHIVE_SIGNALS, (s) => s.name),
+				", ",
+			)}`,
+		),
 	),
 )
 
@@ -249,7 +266,10 @@ export const archiveList = Command.make("list", {
 				const signalOpt = Option.getOrUndefined(a.signal)
 				if (!signalOpt || !isArchiveSignalName(signalOpt)) {
 					return yield* new ArchiveError({
-						message: `--output paths requires a signal argument; expected one of ${ARCHIVE_SIGNALS.map((s) => s.name).join(", ")}`,
+						message: `--output paths requires a signal argument; expected one of ${Arr.join(
+							Arr.map(ARCHIVE_SIGNALS, (s) => s.name),
+							", ",
+						)}`,
 					})
 				}
 				const paths = yield* Effect.try({
@@ -261,7 +281,14 @@ export const archiveList = Command.make("list", {
 							cause: error instanceof Error ? error.stack : undefined,
 						}),
 				})
-				yield* Effect.sync(() => process.stdout.write(`${paths.map((p) => `"${p}"`).join(",")}\n`))
+				yield* Effect.sync(() =>
+					process.stdout.write(
+						`${Arr.join(
+							Arr.map(paths, (p) => `"${p}"`),
+							",",
+						)}\n`,
+					),
+				)
 				return
 			}
 			const listing = yield* Effect.try({
@@ -275,9 +302,13 @@ export const archiveList = Command.make("list", {
 			})
 			if (json) return yield* writeJson(listing)
 			if (listing.errors.length > 0) {
-				const detail = listing.errors
-					.map((error) => `${error.signal}/${error.rangeStart || "(root)"}: ${error.error}`)
-					.join("; ")
+				const detail = Arr.join(
+					Arr.map(
+						listing.errors,
+						(error) => `${error.signal}/${error.rangeStart || "(root)"}: ${error.error}`,
+					),
+					"; ",
+				)
 				return yield* new ArchiveError({
 					operation: "list summary",
 					message: `refusing archive summary because ${listing.errors.length} malformed range(s) were found: ${detail}`,
@@ -289,16 +320,17 @@ export const archiveList = Command.make("list", {
 				)
 				return
 			}
-			const lines = listing.active.map(
+			const lines = Arr.map(
+				listing.active,
 				(summary) =>
-					`  ${dim(summary.signal.padEnd(34))} ${summary.rangeStart}  ` +
-					`${summary.archivedRowCount.toString().padStart(10)} rows  ` +
-					`${summary.shardCount} shards  ${summary.generationId.slice(0, 8)}`,
+					`  ${dim(Str.padEnd(34)(summary.signal))} ${summary.rangeStart}  ` +
+					`${Str.padStart(10)(summary.archivedRowCount.toString())} rows  ` +
+					`${summary.shardCount} shards  ${Str.slice(0, 8)(summary.generationId)}`,
 			)
 			yield* Effect.sync(() =>
 				process.stdout.write(
 					`${green("✓")} ${listing.active.length} active generation(s) in ${prettyPath(archiveDir)} ` +
-						`(metadata only; run 'maple archive verify' for SHA-256)\n${lines.join("\n")}\n`,
+						`(metadata only; run 'maple archive verify' for SHA-256)\n${Arr.join(lines, "\n")}\n`,
 				),
 			)
 		}),
@@ -316,7 +348,10 @@ export const archiveVerify = Command.make("verify", {
 			const signalOpt = Option.getOrUndefined(a.signal)
 			if (signalOpt !== undefined && !isArchiveSignalName(signalOpt)) {
 				return yield* new ArchiveError({
-					message: `unknown signal '${signalOpt}'; expected one of ${ARCHIVE_SIGNALS.map((s) => s.name).join(", ")}`,
+					message: `unknown signal '${signalOpt}'; expected one of ${Arr.join(
+						Arr.map(ARCHIVE_SIGNALS, (s) => s.name),
+						", ",
+					)}`,
 				})
 			}
 			const result = yield* Effect.tryPromise({
@@ -345,7 +380,10 @@ export const archiveRebuild = Command.make("rebuild", {
 		Effect.fnUntraced(function* (a) {
 			if (!isArchiveSignalName(a.signal)) {
 				return yield* new ArchiveError({
-					message: `unknown signal '${a.signal}'; expected one of ${ARCHIVE_SIGNALS.map((s) => s.name).join(", ")}`,
+					message: `unknown signal '${a.signal}'; expected one of ${Arr.join(
+						Arr.map(ARCHIVE_SIGNALS, (s) => s.name),
+						", ",
+					)}`,
 				})
 			}
 			const dataDir = resolve(Option.getOrUndefined(a.dataDir) ?? defaultDataDir())
@@ -405,7 +443,7 @@ export const archiveReconcile = Command.make("reconcile", {
 			}
 			if (a.dryRun) {
 				if (decision.kind === "FailClosed") {
-					return yield* new ArchiveError({ message: renderDecision(decision).trim() })
+					return yield* new ArchiveError({ message: Str.trim(renderDecision(decision)) })
 				}
 				yield* Effect.sync(() =>
 					process.stdout.write(
@@ -415,7 +453,7 @@ export const archiveReconcile = Command.make("reconcile", {
 				return
 			}
 			if (decision.kind === "FailClosed") {
-				return yield* new ArchiveError({ message: renderDecision(decision).trim() })
+				return yield* new ArchiveError({ message: Str.trim(renderDecision(decision)) })
 			}
 			yield* Effect.sync(() =>
 				process.stderr.write(
@@ -465,12 +503,14 @@ export const archiveGc = Command.make("gc", {
 							`  ${dim("keep")}        ${plan.keep} newest superseded per range\n` +
 							(plan.deleteSet.length === 0
 								? `  ${dim("note")}      nothing to reclaim\n`
-								: plan.deleteSet
-										.map(
+								: Arr.join(
+										Arr.map(
+											plan.deleteSet,
 											(c) =>
 												`  ${dim("delete")}    ${c.signal}/${c.rangeStart}/${c.generationId} (${formatBytes(c.bytes)})`,
-										)
-										.join("\n") + "\n") +
+										),
+										"\n",
+									) + "\n") +
 							(plan.excludedSignals.length + plan.excludedRanges.length === 0
 								? ""
 								: `${red("!")} ${plan.excludedSignals.length + plan.excludedRanges.length} range(s)/signal(s) excluded (over-retained)\n`) +

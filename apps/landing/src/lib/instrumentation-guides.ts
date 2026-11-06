@@ -1,5 +1,5 @@
 // Cards on /docs/instrumentation, grouped by ecosystem. Every entry points at
-// a shipping doc page (or a section of one) — this is an inventory of what is
+// a shipping doc page (or a section of one). This is an inventory of what is
 // documented, not a roadmap.
 import type { BrandMarkId } from "./brand-marks"
 import { languageById, type LanguageId } from "./docs-languages"
@@ -16,7 +16,7 @@ export interface GuideCard {
 export interface GuideSection {
 	/** Stable key used by the filter chips and `data-guide-section`. */
 	id: string
-	/** Section heading — also the chip label unless `chip` is set. */
+	/** Section heading, also the chip label unless `chip` is set. */
 	title: string
 	chip?: string
 	cards: GuideCard[]
@@ -90,13 +90,13 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
 			lang("effect", "Official SDK · Node, Bun, Deno"),
 			{
 				name: "Cloudflare Workers",
-				hint: "Effect SDK · flush in waitUntil",
+				hint: "With the Effect SDK · flush in waitUntil",
 				href: "/docs/sdks/effect-cloudflare",
 				icon: { mark: "cloudflare" },
 			},
 			{
 				name: "Cloudflare Workers (native)",
-				hint: "Any Worker · OTLP destinations, no SDK",
+				hint: "Any Worker, no SDK · native OTLP export",
 				href: "/docs/guides/instrumentation-cloudflare-workers",
 				icon: { mark: "cloudflare" },
 			},
@@ -175,7 +175,14 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
 				href: "/docs/session-replay/browser-sdk",
 				icon: { mark: "javascript" },
 			},
-			lang("effect", "Effect SDK in the browser", "/docs/sdks/effect-client"),
+			{
+				...lang("effect", "Effect SDK in the browser", "/docs/sdks/effect-client"),
+				name: "Effect (browser)",
+			},
+			{
+				...lang("effect", "Effect SDK for Foldkit apps", "/docs/sdks/effect-foldkit"),
+				name: "Foldkit",
+			},
 			{
 				name: "Product events API",
 				hint: "Server-side track() over NDJSON",

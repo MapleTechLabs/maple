@@ -1,5 +1,6 @@
 import type { PlotColorToken } from "./theme"
 import { scaleSequential, scaleSequentialLog, type ScaleSequentialBase } from "d3-scale"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * Sequential colour scales for the TanStack charts spike.
@@ -85,7 +86,7 @@ const RAMP_KEYS: readonly RampKey[] = ["s0", "s1", "s2", "s3", "s4"]
 
 /** Flatten a `usePlotColors` result back into ordered ramp stops. */
 export function rampStops(colors: Readonly<Record<RampKey, string>>): readonly string[] {
-	return RAMP_KEYS.map((key) => colors[key])
+	return Arr.map(RAMP_KEYS, (key) => colors[key])
 }
 
 interface Oklch {
@@ -97,7 +98,7 @@ interface Oklch {
 const OKLCH_RE = /^oklch\(\s*([\d.]+%?)\s+([\d.]+%?)\s+([-\d.]+)/i
 
 function parsePercentOrUnit(raw: string, full: number): number {
-	return raw.endsWith("%") ? (Number.parseFloat(raw) / 100) * full : Number.parseFloat(raw)
+	return Str.endsWith("%")(raw) ? (Number.parseFloat(raw) / 100) * full : Number.parseFloat(raw)
 }
 
 /**
@@ -108,15 +109,15 @@ function parsePercentOrUnit(raw: string, full: number): number {
  * is the exact failure mode d3 would have had.
  */
 function parseOklch(color: string): Oklch | null {
-	const oklch = OKLCH_RE.exec(color.trim())
-	if (oklch) {
-		const l = parsePercentOrUnit(oklch[1], 1)
-		const c = parsePercentOrUnit(oklch[2], 0.4)
-		const h = Number.parseFloat(oklch[3])
+	const [, lightness, chroma, hue] = OKLCH_RE.exec(Str.trim(color)) ?? []
+	if (lightness !== undefined && chroma !== undefined && hue !== undefined) {
+		const l = parsePercentOrUnit(lightness, 1)
+		const c = parsePercentOrUnit(chroma, 0.4)
+		const h = Number.parseFloat(hue)
 		if (!Number.isFinite(l) || !Number.isFinite(c) || !Number.isFinite(h)) return null
 		return { l, c, h }
 	}
-	return parseHexToOklch(color.trim())
+	return parseHexToOklch(Str.trim(color))
 }
 
 function srgbToLinear(channel: number): number {
@@ -124,10 +125,12 @@ function srgbToLinear(channel: number): number {
 }
 
 function parseHexToOklch(color: string): Oklch | null {
-	if (!color.startsWith("#")) return null
-	const body = color.slice(1)
+	if (!Str.startsWith("#")(color)) return null
+	const body = Str.slice(1)(color)
 	const expanded =
-		body.length === 3 ? `${body[0]}${body[0]}${body[1]}${body[1]}${body[2]}${body[2]}` : body.slice(0, 6)
+		body.length === 3
+			? `${body[0]}${body[0]}${body[1]}${body[1]}${body[2]}${body[2]}`
+			: Str.slice(0, 6)(body)
 	if (expanded.length !== 6) return null
 	const int = Number.parseInt(expanded, 16)
 	if (!Number.isFinite(int)) return null
@@ -298,7 +301,7 @@ export function createSequentialColorScale(
 ): ScaleSequentialBase<string> {
 	const { stops, scaleType } = options
 	const resolved = resolveSequentialDomain(options.domain, scaleType)
-	const parsed = stops.map(parseOklch)
+	const parsed = Arr.map(stops, parseOklch)
 
 	// The theme-aware half: a closure over the resolved token literals, in the
 	// `(t: number) => string` shape `scaleSequential` takes as its interpolator.

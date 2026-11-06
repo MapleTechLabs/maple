@@ -1,16 +1,14 @@
 import { Layer } from "effect"
-import { McpToolExecutor } from "../mcp/dispatcher"
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
+import { McpServicesLive } from "./mcp-tool-graph"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { Env } from "@maple/backend/platform/Env"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
+import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { PrReviewService } from "@maple/backend/services/pr-review/PrReviewService"
 import { PrReviewConversationService } from "@maple/backend/services/pr-review/PrReviewConversationService"
-
-export const McpServicesLive = McpToolExecutor.layer.pipe(
-	Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),
-)
 
 /**
  * What applying a proposal somebody approved from a chat platform needs, and nothing else.
@@ -32,10 +30,16 @@ export const ChatApplyServicesLive = Layer.mergeAll(
 /** What a chat turn's runtime needs beyond the tools: the two completion tools' services. */
 export const InvestigationServicesLive = Layer.mergeAll(
 	McpServicesLive,
-	// The turn resolves its own actor before the run: a connector turn acts as the connector's
-	// agent, which the toolkit and the audit log both read off the tenant.
+	// The turn resolves its own actor before the run: a connector turn acts as the linked Maple
+	// user under their current roles, or as the connector's agent when nobody is linked.
 	ErrorActorsService.layer,
+	OrgMembershipService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
 	InvestigationService.layer.pipe(Layer.provide(Env.layer)),
-	PrReviewService.layer.pipe(Layer.provide(Env.layer)),
-	PrReviewConversationService.layer.pipe(Layer.provide(Env.layer)),
+	// The review reads production telemetry through the warehouse, which caches at the edge.
+	PrReviewService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
+	PrReviewConversationService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
+	// The org's own OpenRouter key, when it holds the add-on; the add-on check reads the cached customer.
+	OrgOpenRouterKeyService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
+	// Which org pays for the turn: a member org's AI credits are its billing org's.
+	BillingCustomerResolver.layer.pipe(Layer.provide(EdgeCacheServiceLive)),
 )

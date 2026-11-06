@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { formatSql } from "./sql-format"
+import { Array as Arr } from "effect"
 
 describe("formatSql", () => {
 	it("reflows the canonical alert query onto clause/column/condition lines", () => {
@@ -7,17 +8,20 @@ describe("formatSql", () => {
 			"SELECT quantile(0.95)(Duration / 1e6) AS value, count() AS samples FROM traces WHERE ServiceName = 'api-v2' AND SpanName = 'ChartService.getChartData' AND SpanAttributes['cache.fluxSeconds'] = '604800' AND $__timeFilter(Timestamp) AND $__orgFilter"
 
 		expect(formatSql(input)).toBe(
-			[
-				"SELECT",
-				"  quantile(0.95)(Duration / 1e6) AS value,",
-				"  count() AS samples",
-				"FROM traces",
-				"WHERE ServiceName = 'api-v2'",
-				"  AND SpanName = 'ChartService.getChartData'",
-				"  AND SpanAttributes['cache.fluxSeconds'] = '604800'",
-				"  AND $__timeFilter(Timestamp)",
-				"  AND $__orgFilter",
-			].join("\n"),
+			Arr.join(
+				[
+					"SELECT",
+					"  quantile(0.95)(Duration / 1e6) AS value,",
+					"  count() AS samples",
+					"FROM traces",
+					"WHERE ServiceName = 'api-v2'",
+					"  AND SpanName = 'ChartService.getChartData'",
+					"  AND SpanAttributes['cache.fluxSeconds'] = '604800'",
+					"  AND $__timeFilter(Timestamp)",
+					"  AND $__orgFilter",
+				],
+				"\n",
+			),
 		)
 	})
 
@@ -25,7 +29,7 @@ describe("formatSql", () => {
 		const out = formatSql("SELECT quantile(0.95)(Duration / 1e6) AS v FROM t")
 		expect(out).toContain("quantile(0.95)(Duration / 1e6)")
 		// the only newline-introduced column line is the single SELECT item
-		expect(out).toBe(["SELECT", "  quantile(0.95)(Duration / 1e6) AS v", "FROM t"].join("\n"))
+		expect(out).toBe(Arr.join(["SELECT", "  quantile(0.95)(Duration / 1e6) AS v", "FROM t"], "\n"))
 	})
 
 	it("keeps map access and string literals intact", () => {
@@ -43,12 +47,12 @@ describe("formatSql", () => {
 		const out = formatSql("SELECT 'a, from b WHERE c' AS lit FROM t")
 		expect(out).toContain("'a, from b WHERE c'")
 		// the literal's lowercase from/where must not be treated as clauses
-		expect(out).toBe(["SELECT", "  'a, from b WHERE c' AS lit", "FROM t"].join("\n"))
+		expect(out).toBe(Arr.join(["SELECT", "  'a, from b WHERE c' AS lit", "FROM t"], "\n"))
 	})
 
 	it("only breaks top-level AND, not those nested in parentheses", () => {
 		const out = formatSql("SELECT a FROM t WHERE (x AND y) AND z")
-		expect(out).toBe(["SELECT", "  a", "FROM t", "WHERE (x AND y)", "  AND z"].join("\n"))
+		expect(out).toBe(Arr.join(["SELECT", "  a", "FROM t", "WHERE (x AND y)", "  AND z"], "\n"))
 	})
 
 	it("does not break GROUP BY columns or the BY keyword", () => {

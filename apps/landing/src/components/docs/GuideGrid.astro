@@ -1,7 +1,7 @@
 ---
-// One ecosystem's cards on /docs/instrumentation (or a given card list, as on /docs/frontend). Styled with scoped CSS on
-// purpose: the page sits inside `.docs-content`, whose descendant rules for
-// `a`/`p` beat plain Tailwind utilities (see `local/InstallTabs.astro`).
+// One ecosystem's cards on /docs/instrumentation (or a given card list, as on /docs/agent-tracing). Styled with scoped
+// CSS on purpose: the page sits inside `.docs-content`, whose descendant rules for
+// `a`/`p` beat plain Tailwind utilities.
 import { type GuideCard, GUIDE_SECTIONS } from "../../lib/instrumentation-guides";
 import BrandMarkIcon from "../BrandMarkIcon.astro";
 import LanguageLogo from "./LanguageLogo.astro";
@@ -15,11 +15,17 @@ interface Props {
 const { section, cards } = Astro.props;
 const data = cards ? { cards } : GUIDE_SECTIONS.find((s) => s.id === section);
 if (!data) throw new Error(`Unknown guide section: ${section}`);
+
+// The last card stretches over a short last row (2 columns on phones, 3 from
+// `sm`), so the grid never shows empty cells.
+const count = data.cards.length;
+const lastSpan = (columns: number) => columns - ((count - 1) % columns);
+const lastStyle = `--span-sm: ${lastSpan(2)}; --span-lg: ${lastSpan(3)}`;
 ---
 
 <ul class="guide-grid" role="list">
-    {data.cards.map((card) => (
-        <li class="guide-grid__cell">
+    {data.cards.map((card, i) => (
+        <li class="guide-grid__cell" style={i === count - 1 ? lastStyle : undefined}>
             <a href={card.href} class="guide-card">
                 <span class="guide-card__icon" aria-hidden="true">
                     {"lang" in card.icon ? (
@@ -55,13 +61,18 @@ if (!data) throw new Error(`Unknown guide section: ${section}`);
             grid-template-columns: repeat(3, minmax(0, 1fr));
         }
     }
-    /* Each cell draws its own frame so a short last row reads as empty
-       cells rather than a block of border colour. */
+    /* Each cell draws its own frame; the last one spans what its row has left. */
     .guide-grid__cell {
+        grid-column: span var(--span-sm, 1);
         margin: 0;
         padding: 0;
         line-height: normal;
         box-shadow: 0 0 0 1px var(--border);
+    }
+    @media (min-width: 640px) {
+        .guide-grid__cell {
+            grid-column: span var(--span-lg, 1);
+        }
     }
     .guide-card {
         display: flex;

@@ -1,0 +1,94 @@
+import { button } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { scrollRegion } from "@maple/views/ui/scroll-region"
+import { spinner } from "@maple/views/ui/spinner"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { Option } from "effect"
+import { AsyncData, Submodel } from "foldkit"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
+import type { PageViewInputs } from "../kit/inputs"
+import type { TimeFormat } from "../kit/local-time"
+import { loadingFill } from "../kit/page-body"
+import { refreshButton } from "../kit/toolbar"
+import { Message } from "./message"
+import type { Model, SessionDetail } from "./model"
+import { card } from "./view-bits"
+import { clientCard, tracesCard } from "./view-client"
+import { hero, statTiles } from "./view-hero"
+import { transcript } from "./view-transcript"
+
+// The session detail page.
+
+const transcriptBody = (h: HtmlBuilder<Message>, model: Model, session: SessionDetail): Html => {
+	if (isAwaitingFirstData(model.transcript)) return spinner(h, "size-4")
+	const failure = failureWithoutData(model.transcript)
+	if (Option.isSome(failure)) return errorState(h, { failure: failure.value, title: "Couldn’t load transcript" })
+	const events = Option.getOrElse(AsyncData.getData(model.transcript.data), () => [])
+	if (events.length === 0) return typography(h, { as: "p", size: "sm", tone: "muted" }, ["No distilled events for this session."])
+	return transcript(h, events, session.startTime)
+}
+
+const sessionBody = (h: HtmlBuilder<Message>, model: Model, session: SessionDetail, timeFormat: TimeFormat): Html => {
+	const label = session.userName || session.userEmail || session.userId || "Anonymous"
+	return h.div(
+		[h.Class("mx-auto max-w-5xl px-4 py-5")],
+		[
+			hero(h, model, session, label, timeFormat),
+			statTiles(h, session),
+			h.div(
+				[h.Class("mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]")],
+				[
+					vstack(h, { gap: "5" }, [clientCard(h, session, label), tracesCard(h, model, session.traceIds)]),
+					card(h, "Event transcript", [transcriptBody(h, model, session)]),
+				],
+			),
+		],
+	)
+}
+
+const content = (h: HtmlBuilder<Message>, model: Model, timeFormat: TimeFormat): Html => {
+	if (isAwaitingFirstData(model.detail)) return loadingFill(h)
+	const failure = failureWithoutData(model.detail)
+	if (Option.isSome(failure))
+		return errorState(h, {
+			failure: failure.value, title: "Couldn’t load session",
+			onRetry: Message.ClickedRetryDetail(),
+		})
+	const session = Option.getOrNull(AsyncData.getData(model.detail.data))
+	if (session === null)
+		return hstack(h, { justify: "center", className: "h-full text-sm text-muted-foreground" }, ["Session not found."])
+	return sessionBody(h, model, session, timeFormat)
+}
+
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((opened, inputs, h) => {
+	// "Live" and "started 3m ago" follow the root's clock.
+	const model = { ...opened, nowMs: Math.max(opened.nowMs, inputs.clockMs) }
+	return vstack(
+		h,
+		{ className: "h-full" },
+		[
+			hstack(
+				h,
+				{ gap: "3", className: "shrink-0 border-b px-4 py-2" },
+				[
+					button(h, { variant: "ghost", size: "sm", className: "gap-1.5", attributes: [h.OnClick(Message.ClickedBack())] }, [
+						icon(h, "ArrowLeftIcon"),
+						inputs.context.canGoBack ? "Back" : "Sessions",
+					]),
+					truncatedText(h, { text: model.sessionId, mono: true, className: typographyClass({ size: "xs", tone: "muted" }) }, [model.sessionId]),
+					refreshButton(h, {
+						isSpinning: model.isRefreshing,
+						hasNewData: inputs.hasNewDataSince(model.detailUpdatedAtMs),
+						onRefresh: Message.ClickedRefresh(),
+						className: "ml-auto",
+					}),
+				],
+			),
+			scrollRegion(h, {}, [content(h, model, inputs.context.timeFormat)]),
+		],
+	)
+})

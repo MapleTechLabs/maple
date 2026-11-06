@@ -1,4 +1,15 @@
-import { Clock, Effect, Result, Schema, SchemaIssue, SchemaTransformation } from "effect"
+import {
+	Clock,
+	DateTime,
+	Effect,
+	Result,
+	Schema,
+	SchemaIssue,
+	SchemaTransformation,
+	Array as Arr,
+	String as Str,
+} from "effect"
+import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { randomUUID } from "node:crypto"
 import {
 	DashboardId,
@@ -19,7 +30,9 @@ import {
 	withWidgets,
 } from "@maple/domain/http"
 import type { DashboardRow } from "@maple/domain/mcp-outputs"
+import { WIDGET_DATA_SOURCE_KINDS } from "@maple/widgets/dashboard"
 import { CurrentMcpTenant } from "./query-warehouse"
+import { stringifyJson } from "./json"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { McpInvalidInputError, McpQueryError } from "../tools/types"
 
@@ -30,7 +43,9 @@ export type DashboardWidget = typeof DashboardWidgetSchema.Type
 const decodeIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
 
 const parseJsonValue = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))
+const encodeJsonValue = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
+// BOUNDARY: `hint` reads the parsed JSON before the schema decodes it.
 const jsonTransformation = (hint: (value: unknown) => string | undefined) =>
 	SchemaTransformation.transformEffect<unknown, string>({
 		decode: (text) =>
@@ -43,7 +58,7 @@ const jsonTransformation = (hint: (value: unknown) => string | undefined) =>
 						: Effect.fail(new SchemaIssue.InvalidValue({ message }, value))
 				}),
 			),
-		encode: (value) => Effect.succeed(JSON.stringify(value)),
+		encode: (value) => encodeJsonValue(value).pipe(Effect.mapError((error) => error.issue)),
 	})
 
 const noHint = (): undefined => undefined
@@ -59,7 +74,7 @@ const JSON_MEDIA_TYPE = "application/json"
  * a parsed value with a corrective message before the schema's own (much longer) failure.
  */
 // BOUNDARY: `hint` reads the parsed JSON before the schema decodes it.
-export const jsonText = <S extends Schema.Codec<unknown, unknown, never, never>>(
+export const jsonText = <S extends Schema.Codec<unknown, unknown>>(
 	schema: S,
 	description: string,
 	hint: (value: unknown) => string | undefined = noHint,
@@ -73,7 +88,7 @@ export const jsonText = <S extends Schema.Codec<unknown, unknown, never, never>>
  * `Schema.Class`, the data-source union) publishes as a `$ref`, which would otherwise carry it.
  */
 // BOUNDARY: `hint` reads the parsed JSON before the schema decodes it.
-export const optionalJsonText = <S extends Schema.Codec<unknown, unknown, never, never>>(
+export const optionalJsonText = <S extends Schema.Codec<unknown, unknown>>(
 	schema: S,
 	description: string,
 	hint: (value: unknown) => string | undefined = noHint,
@@ -110,12 +125,12 @@ export const legacyDataSourceHint = (value: unknown): string | undefined => {
 
 	const { endpoint } = decoded.success
 	const equivalent =
-		endpoint === "markdown_static"
+		endpoint === "markdown_static" || endpoint === "markdown"
 			? '{"kind":"static"}'
 			: endpoint === "raw_sql_chart"
 				? '{"kind":"raw_sql","sql":"SELECT …"}'
-				: endpoint.startsWith("custom_query_builder_")
-					? `{"kind":"query","resultShape":"${endpoint.slice("custom_query_builder_".length)}","queries":[…]}`
+				: Str.startsWith("custom_query_builder_")(endpoint)
+					? `{"kind":"query","resultShape":"${Str.slice("custom_query_builder_".length)(endpoint)}","queries":[…]}`
 					: `{"kind":"route","endpoint":"${endpoint}","params":{…}}`
 
 	return (
@@ -126,28 +141,57 @@ export const legacyDataSourceHint = (value: unknown): string | undefined => {
 	)
 }
 
+/** Every data-source arm with its minimal shape, for errors that would otherwise list union failures. */
+export const DATA_SOURCE_VARIANTS =
+	'`{"kind":"query","resultShape":"timeseries"|"breakdown"|"list"|...,"queries":[...]}` (query builder), ' +
+	'`{"kind":"raw_sql","sql":"SELECT ... WHERE $__orgFilter"}`, `{"kind":"route","endpoint":"...","params":{...}}`, ' +
+	'or `{"kind":"static"}` (markdown note: panel_type markdown with display `{"markdown":{"content":"..."}}`)'
+
+const decodeKindField = Schema.decodeUnknownResult(Schema.Struct({ kind: Schema.Unknown }))
+const decodeObject = Schema.decodeUnknownResult(Schema.Record(Schema.String, Schema.Unknown))
+
+/** A data source whose `kind` is missing or unknown: name the arms instead of four union failures. */
+export const dataSourceKindHint = (value: unknown): string | undefined => {
+	const legacy = legacyDataSourceHint(value)
+	if (legacy !== undefined) return legacy
+	if (Result.isFailure(decodeObject(value))) return undefined
+	const decoded = decodeKindField(value)
+	const kind = Result.isFailure(decoded) ? undefined : decoded.success.kind
+	if (Arr.some(WIDGET_DATA_SOURCE_KINDS, (known) => known === kind)) return undefined
+	return `${kind === undefined ? "The data source has no `kind`" : `Unknown data-source kind ${stringifyJson(kind)}`}. Valid shapes: ${DATA_SOURCE_VARIANTS}.`
+}
+
 /** The same hint, one level in: a whole widget whose `dataSource` is the v2 shape. */
 const decodeWidgetDataSourceField = Schema.decodeUnknownResult(Schema.Struct({ dataSource: Schema.Unknown }))
 
 export const legacyWidgetDataSourceHint = (value: unknown): string | undefined => {
 	const decoded = decodeWidgetDataSourceField(value)
-	return Result.isFailure(decoded) ? undefined : legacyDataSourceHint(decoded.success.dataSource)
+	if (Result.isSuccess(decoded)) return dataSourceKindHint(decoded.success.dataSource)
+	// The oldest shape put `endpoint`/`params` on the widget itself, with no `dataSource` at all.
+	const legacy = legacyDataSourceHint(value)
+	return legacy === undefined
+		? undefined
+		: `The widget has no \`dataSource\`; its \`endpoint\` sits on the widget itself. ${legacy}`
 }
 
 /** `data_source_json`: a v3 data source, with the v2 shape rejected by name. */
 export const dataSourceJson = (description: string) =>
-	jsonText(WidgetDataSourceSchema, description, legacyDataSourceHint)
+	jsonText(WidgetDataSourceSchema, description, dataSourceKindHint)
 
 export const optionalDataSourceJson = (description: string) =>
-	optionalJsonText(WidgetDataSourceSchema, description, legacyDataSourceHint)
+	optionalJsonText(WidgetDataSourceSchema, description, dataSourceKindHint)
 
 /** `widget_json`: one whole widget. */
 export const widgetJson = (description: string) =>
 	jsonText(DashboardWidgetSchema, description, legacyWidgetDataSourceHint)
 
+export const optionalWidgetJson = (description: string) =>
+	optionalJsonText(DashboardWidgetSchema, description, legacyWidgetDataSourceHint)
+
 /** The {@link DashboardRow} every dashboard tool reports. */
 export const toDashboardRow = (dashboard: DashboardDocument): typeof DashboardRow.Type => ({
 	id: dashboard.id,
+	publicId: encodePublicId(PublicIdPrefixes.dashboard, dashboard.id),
 	name: dashboard.name,
 	...(dashboard.description === undefined ? undefined : { description: dashboard.description }),
 	...(dashboard.tags === undefined ? undefined : { tags: [...dashboard.tags] }),
@@ -181,7 +225,7 @@ export const toMcpDashboardError =
 					message:
 						error.details.length === 0
 							? error.message
-							: `${error.message}\n- ${error.details.join("\n- ")}`,
+							: `${error.message}\n- ${Arr.join(error.details, "\n- ")}`,
 				})
 			default:
 				return new McpQueryError({ message: error.message, pipeName: tool, cause: error })
@@ -220,6 +264,23 @@ export const defaultSizeForPanelType = (panelType: PanelType): { w: number; h: n
  */
 export { findNextPosition as findNextWidgetPosition }
 
+/** One dashboard of the tenant's org by id; a malformed id is the same not-found as a missing one. */
+export const loadDashboard = Effect.fn("McpDashboardMutations.loadDashboard")(function* (
+	dashboardId: string,
+	tool: string,
+) {
+	const tenant = yield* CurrentMcpTenant
+	const persistence = yield* DashboardPersistenceService
+	const id = yield* decodeDashboardId(dashboardId).pipe(
+		Effect.mapError(() => dashboardNotFound(dashboardId)),
+	)
+	return yield* persistence
+		.get(tenant.orgId, id)
+		.pipe(
+			Effect.mapBoth({ onSuccess: (stored) => stored.document, onFailure: toMcpDashboardError(tool) }),
+		)
+})
+
 /**
  * Shared workflow: resolve tenant, load dashboard by id, run a pure transform
  * over its widgets, and persist the result. The transform receives the
@@ -234,7 +295,7 @@ export { findNextPosition as findNextWidgetPosition }
  * receives a `DashboardConcurrencyError` (mapped here to `McpQueryError`),
  * which is preferable to a silent lost update.
  */
-export const withDashboardMutation = Effect.fn("withDashboardMutation")(function* (
+export const withDashboardMutation = Effect.fn("McpDashboardMutations.withDashboardMutation")(function* (
 	dashboardId: string,
 	tool: string,
 	transform: (
@@ -259,7 +320,7 @@ export const withDashboardMutation = Effect.fn("withDashboardMutation")(function
 			Effect.gen(function* () {
 				const nextWidgets = yield* transform(existing.widgets)
 				const nowMillis = yield* Clock.currentTimeMillis
-				const now = decodeIsoDateTimeString(new Date(nowMillis).toISOString())
+				const now = decodeIsoDateTimeString(DateTime.formatIso(DateTime.makeUnsafe(nowMillis)))
 
 				// Everything but the widgets and `updatedAt` is carried forward
 				// wholesale. Naming the fields here is exactly what used to drop
@@ -269,8 +330,10 @@ export const withDashboardMutation = Effect.fn("withDashboardMutation")(function
 			}),
 		)
 		.pipe(
-			Effect.mapError((error) =>
-				error instanceof McpInvalidInputError ? error : toMcpDashboardError(tool)(error),
-			),
+			Effect.mapBoth({
+				onSuccess: (stored) => stored.document,
+				onFailure: (error) =>
+					Schema.is(McpInvalidInputError)(error) ? error : toMcpDashboardError(tool)(error),
+			}),
 		)
 })

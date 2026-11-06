@@ -34,8 +34,10 @@ import {
 	Schedule,
 	Schema,
 	Semaphore,
+	Array as Arr,
+	String as Str,
 } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { SDK_VERSION } from "../version.js"
 import { resolveResource } from "./resource.js"
 import type { MapleRegion } from "@maple/browser-session/region"
@@ -50,6 +52,8 @@ const DEFAULT_MAX_BATCH_SIZE = 100
 const MAX_BUFFERED_EVENTS = 1_000
 /** How often a failing endpoint may warn. */
 const WARN_INTERVAL_MS = 30_000
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 export interface MapleEventsConfig {
 	/**
@@ -148,7 +152,7 @@ export const make = Effect.fn("MapleEvents.make")(function* (config: MapleEvents
 		ingestKey: config.ingestKey,
 		sdkType: "server",
 	})
-	const url = `${resolved.endpoint.replace(/\/$/, "")}${config.eventsPath ?? "/v1/events"}`
+	const url = `${Str.replace(/\/$/, "")(resolved.endpoint)}${config.eventsPath ?? "/v1/events"}`
 	const ingestKey = resolved.ingestKey ? Redacted.value(resolved.ingestKey) : undefined
 	const serviceName = resolved.resource.serviceName
 	const maxBatchSize = Math.max(1, config.maxBatchSize ?? DEFAULT_MAX_BATCH_SIZE)
@@ -191,7 +195,10 @@ export const make = Effect.fn("MapleEvents.make")(function* (config: MapleEvents
 				"user-agent": `maple-effect-sdk-server/${SDK_VERSION}`,
 			}),
 			HttpClientRequest.bodyText(
-				`${lines.map((line) => JSON.stringify(line)).join("\n")}\n`,
+				`${Arr.join(
+					Arr.map(lines, (line) => encodeJson(line)),
+					"\n",
+				)}\n`,
 				"application/x-ndjson",
 			),
 			client.execute,
@@ -239,13 +246,13 @@ export const make = Effect.fn("MapleEvents.make")(function* (config: MapleEvents
 
 	const track = (name: string, options: TrackOptions = {}): Effect.Effect<void> =>
 		Effect.sync(() => {
-			const trimmed = typeof name === "string" ? name.trim() : ""
+			const trimmed = typeof name === "string" ? Str.trim(name) : ""
 			if (trimmed.length === 0) {
 				warnEmptyName()
 				return false
 			}
 			buffer.push({
-				name: trimmed.slice(0, MAX_EVENT_NAME_LENGTH),
+				name: Str.slice(0, MAX_EVENT_NAME_LENGTH)(trimmed),
 				timestamp: toTimestamp(options.timestamp),
 				source: "server",
 				service_name: serviceName,

@@ -1,11 +1,10 @@
 {
-	"include": ["**/*.ts", "**/*.tsx"],
-	"exclude": ["**/__tests__/**"],
+	"include": ["**/*.ts"],
 	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
 		"target": "ES2022",
 		"module": "ESNext",
 		"lib": ["ES2022", "DOM", "DOM.Iterable"],
-		"jsx": "react-jsx",
 		"moduleResolution": "bundler",
 		"allowImportingTsExtensions": true,
 		"verbatimModuleSyntax": true,

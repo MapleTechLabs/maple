@@ -15,7 +15,7 @@
  * IDENTIFY/RESUME handshake, the jittered first heartbeat, the zombie-connection
  * rule, `resume_gateway_url`, and the close-code table.
  */
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 import type { ConnectorConfig, SocketDirective, SocketIngressDefinition, SocketStep } from "../../ingress.ts"
 import { BOT_TOKEN_CONFIG } from "./api.ts"
 import { mapDispatch } from "./gateway-events.ts"
@@ -87,7 +87,9 @@ const initialState: GatewayState = { awaitingAck: false }
 
 const reconnect: SocketDirective = { _tag: "reconnect", closeCode: RECONNECT_CLOSE_CODE }
 
-const frame = (op: number, d: unknown): string => JSON.stringify({ op, d })
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
+const frame = (op: number, d: unknown): string => encodeJson({ op, d })
 
 const heartbeatFrame = (state: GatewayState): string => frame(OP.heartbeat, state.sequence ?? null)
 
@@ -119,7 +121,7 @@ const withoutSession = (state: GatewayState): GatewayState => ({
 
 const connectUrl = (state: GatewayState): string =>
 	resumable(state) && state.resumeUrl !== undefined
-		? `${state.resumeUrl.replace(/\/+$/u, "")}/${GATEWAY_QUERY}`
+		? `${Str.replace(/\/+$/u, "")(state.resumeUrl)}/${GATEWAY_QUERY}`
 		: GATEWAY_URL
 
 /**

@@ -1,8 +1,25 @@
-import type { ServiceLatencyBaseline } from "@/api/warehouse/services"
-import type { AnomalySignalType } from "@maple/domain/http"
+import type { ServiceLatencyBaseline } from "@maple/web-data/warehouse/services"
+import type { AlertSignalType, AnomalySignalType } from "@maple/domain/http"
+import type { Tone } from "@maple/ui/lib/tone"
+import { Array as Arr, Option } from "effect"
 
 /** Health rollup for a single service. */
 export type ServiceHealth = "healthy" | "degraded" | "unhealthy"
+
+/** The one health-to-colour mapping: dots, tints and legends key off this. */
+export const HEALTH_TONE: Record<ServiceHealth, Tone> = {
+	healthy: "ok",
+	degraded: "warn",
+	unhealthy: "crit",
+} satisfies Record<ServiceHealth, Tone>
+
+/** The health cause an open alert incident reads as: a failing check, a burning SLO, or a rule firing. */
+export const alertIncidentCauseLabel = (signalType: AlertSignalType): string =>
+	signalType === "uptime"
+		? "Uptime check failing"
+		: signalType === "slo_burn_rate"
+			? "SLO burning error budget"
+			: "Alert firing"
 
 export interface ServiceHealthCause {
 	severity: "warning" | "critical"
@@ -26,7 +43,7 @@ export function anomalyDirection(signalType: AnomalySignalType): "up" | "down" {
  * detector.
  */
 export function deriveServiceHealthFromCauses(causes: readonly ServiceHealthCause[]): ServiceHealth {
-	if (causes.some((cause) => cause.severity === "critical")) return "unhealthy"
+	if (Arr.some(causes, (cause) => cause.severity === "critical")) return "unhealthy"
 	if (causes.length > 0) return "degraded"
 	return "healthy"
 }
@@ -34,7 +51,12 @@ export function deriveServiceHealthFromCauses(causes: readonly ServiceHealthCaus
 export function primaryServiceHealthCause(
 	causes: readonly ServiceHealthCause[],
 ): ServiceHealthCause | undefined {
-	return causes.find((cause) => cause.severity === "critical") ?? causes[0]
+	return Option.getOrUndefined(
+		Option.orElse(
+			Arr.findFirst(causes, (cause) => cause.severity === "critical"),
+			() => Arr.head(causes),
+		),
+	)
 }
 
 export interface LatencyBaselineSignal {

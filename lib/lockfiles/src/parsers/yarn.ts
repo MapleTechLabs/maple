@@ -1,0 +1,151 @@
+import { Effect, Array as Arr, Record as Rec, String as Str } from "effect"
+import { isRecord, isRegistryVersion, pkg, splitNameAt } from "../internal/collect.ts"
+import { parseYamlText } from "../internal/decode.ts"
+import { readPackageJsons, type ManifestDeps } from "../internal/manifests.ts"
+import type { LockedPackage, LockfileInput, Relation } from "../types.ts"
+import { LockfileParseError } from "../errors.ts"
+import type { ParserOutput } from "./types.ts"
+import { replaceWith } from "@maple/strings"
+
+interface Specifier {
+	readonly name: string
+	readonly range: string
+}
+
+interface Block {
+	readonly specifiers: ReadonlyArray<Specifier>
+	readonly version: string | undefined
+}
+
+const unquote = (s: string): string => Str.replace(/^"(.*)"$/, "$1")(Str.trim(s))
+
+const parseSpecifiers = (header: string): ReadonlyArray<Specifier> =>
+	Arr.flatMap(Str.split(",")(Str.replace(/:\s*$/, "")(header)), (raw) => {
+		const at = splitNameAt(unquote(raw))
+		return at === undefined ? [] : [{ name: at.name, range: at.rest }]
+	})
+
+/** `version "1.2.3"`, or `"version" "1.2.3"` as npm 7+ rewrites a yarn.lock. */
+const VERSION_LINE = /^ {2}"?version"?:? +"?([^"\s]+)"?\s*$/
+
+/** yarn v1: unindented `"a@^1", a@^1.2:` headers, each followed by an indented `version "1.2.3"`. */
+const parseV1Blocks = (content: string): ReadonlyArray<Block> =>
+	Arr.reduce(Str.split(/\r?\n/)(content), Arr.empty<Block>(), (blocks, line) => {
+		if (line === "" || Str.startsWith("#")(line)) return blocks
+		if (!/^\s/.test(line)) {
+			blocks.push({ specifiers: parseSpecifiers(line), version: undefined })
+			return blocks
+		}
+		const version = VERSION_LINE.exec(line)?.[1]
+		const last = blocks.at(-1)
+		if (version !== undefined && last !== undefined && last.version === undefined) {
+			blocks[blocks.length - 1] = { ...last, version }
+		}
+		return blocks
+	})
+
+/** Real registry name of a specifier: `alias@npm:real@^1` names `real`; non-registry ranges have none. */
+const registryName = (spec: Specifier): string | undefined => {
+	if (Str.startsWith("npm:")(spec.range)) {
+		const real = splitNameAt(Str.slice(4)(spec.range))
+		return real === undefined ? spec.name : real.name
+	}
+	return /[:/]/.test(spec.range) ? undefined : spec.name
+}
+
+const requestedBy = (ranges: ManifestDeps["direct"], spec: Specifier): boolean => {
+	const wanted = ranges.get(spec.name)
+	return (
+		wanted !== undefined &&
+		(wanted.has(spec.range) ||
+			(Str.startsWith("npm:")(spec.range) && wanted.has(Str.slice(4)(spec.range))))
+	)
+}
+
+const relationOf = (manifest: ManifestDeps, specs: ReadonlyArray<Specifier>): Relation =>
+	!manifest.found
+		? "unknown"
+		: Arr.some(specs, (s) => requestedBy(manifest.direct, s))
+			? "direct"
+			: Arr.some(specs, (s) => requestedBy(manifest.dev, s))
+				? "dev"
+				: "transitive"
+
+const parseYarnV1 = (blocks: ReadonlyArray<Block>, manifest: ManifestDeps) => {
+	const packages = Arr.flatMap(blocks, (block): ReadonlyArray<LockedPackage> => {
+		const first = block.specifiers[0]
+		const name = first === undefined ? undefined : registryName(first)
+		if (name === undefined || block.version === undefined || !isRegistryVersion(block.version)) return []
+		return [pkg("npm", name, block.version, relationOf(manifest, block.specifiers))]
+	})
+	return { packages, skipped: blocks.length - packages.length }
+}
+
+/** decodeURIComponent throws on stray `%`; this cannot. */
+const percentDecode = (s: string): string =>
+	replaceWith(s, /%([0-9A-Fa-f]{2})/g, (_, hex = "") => String.fromCharCode(Number.parseInt(hex, 16)))
+
+/** Berry `resolution`: `name@npm:1.0.0`, an alias, or a patch wrapping one (`name@patch:name@npm%3A1.0.0#...`). */
+const berryRegistryName = (resolution: string): string | undefined => {
+	const at = splitNameAt(resolution)
+	if (at === undefined) return undefined
+	// An alias resolves as `alias@npm:real@1.0.0`; a plain entry as `name@npm:1.0.0`.
+	if (Str.startsWith("npm:")(at.rest))
+		return splitNameAt(Str.slice("npm:".length)(at.rest))?.name ?? at.name
+	if (!Str.startsWith("patch:")(at.rest)) return undefined
+	const inner = Str.split("#")(Str.slice("patch:".length)(at.rest))[0] ?? ""
+	return berryRegistryName(percentDecode(inner))
+}
+
+const parseYarnBerry = (doc: Record<string, unknown>, manifest: ManifestDeps) => {
+	const entries = Arr.filter(Rec.toEntries(doc), ([key]) => key !== "__metadata")
+	const packages = Arr.flatMap(entries, ([key, value]): ReadonlyArray<LockedPackage> => {
+		if (!isRecord(value) || typeof value.resolution !== "string") return []
+		const name = berryRegistryName(value.resolution)
+		const version = typeof value.version === "string" ? value.version : ""
+		if (name === undefined || !isRegistryVersion(version)) return []
+		return [pkg("npm", name, version, relationOf(manifest, parseSpecifiers(key)))]
+	})
+	const workspaces = Arr.filter(entries, ([key]) => Str.includes("@workspace:")(key)).length
+	return { packages, skipped: entries.length - packages.length - workspaces }
+}
+
+const berryResult = Effect.fn(function* (input: LockfileInput, manifest: ManifestDeps) {
+	// Yarn reads a lockfile whose merge left an entry twice; so must we.
+	const doc = yield* parseYamlText(input.path, input.content, { uniqueKeys: false })
+	if (!isRecord(doc))
+		return yield* new LockfileParseError({ path: input.path, message: "yarn.lock is not a YAML mapping" })
+	return parseYarnBerry(doc, manifest)
+})
+
+const v1Result = Effect.fn(function* (input: LockfileInput, manifest: ManifestDeps) {
+	const blocks = parseV1Blocks(input.content)
+	if (Arr.some(blocks, (b) => b.specifiers.length === 0 || b.version === undefined)) {
+		return yield* new LockfileParseError({
+			path: input.path,
+			message: "yarn.lock has an entry without specifiers or version",
+		})
+	}
+	return parseYarnV1(blocks, manifest)
+})
+
+const isBerry = (content: string): boolean => /^__metadata:/m.test(content)
+
+export const parseYarnLock = Effect.fn("lockfiles.parseYarnLock")(function* (input: LockfileInput) {
+	const manifest = yield* readPackageJsons(input.manifests)
+	const berry = isBerry(input.content)
+	const result = berry ? yield* berryResult(input, manifest) : yield* v1Result(input, manifest)
+	const warnings = [
+		...manifest.warnings,
+		...(manifest.found ? [] : ["no package.json provided: relations are unknown"]),
+		...(result.skipped > 0
+			? [`skipped ${result.skipped} non-registry packages (git, tarball or local)`]
+			: []),
+	]
+	const output: ParserOutput = {
+		kind: berry ? "yarn-berry" : "yarn-v1",
+		packages: result.packages,
+		warnings,
+	}
+	return output
+})

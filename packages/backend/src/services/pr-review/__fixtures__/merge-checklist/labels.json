@@ -1,0 +1,217 @@
+{
+	"maple-908": {
+		"expected": [],
+		"acceptable": [
+			"env:MAPLE_DEPLOY_EU",
+			"infra:alchemy.run.ts",
+			"infra:apps/electric/alchemy.run.ts",
+			"infra:apps/ingest/alchemy.run.ts",
+			"infra:apps/sandbox/alchemy.run.ts"
+		],
+		"note": "MAPLE_DEPLOY_EU is a switch left off until the EU accounts exist."
+	},
+	"maple-949": {
+		"expected": [],
+		"acceptable": [
+			"env:MAPLE_DECISION_MODEL"
+		],
+		"note": "Optional judge-model override; the default works."
+	},
+	"maple-973": {
+		"expected": [],
+		"acceptable": [
+			"infra:alchemy.run.ts"
+		]
+	},
+	"maple-993": {
+		"expected": [
+			"secret:MAPLE_SLACK_CLIENT_SECRET",
+			"secret:MAPLE_SLACK_SIGNING_SECRET",
+			"env:MAPLE_SLACK_CLIENT_ID",
+			"migration:packages/db/drizzle/20260923192225_chat_workspace_credentials/migration.sql"
+		],
+		"acceptable": [],
+		"note": "The Slack app's credentials are read through *_CONFIG constants."
+	},
+	"maple-1001": {
+		"expected": [
+			"migration:packages/db/drizzle/20260923215808_pr_review_general_verdicts/migration.sql",
+			"migration:packages/db/drizzle/20260923215809_pr_review_agent/migration.sql"
+		],
+		"acceptable": [],
+		"note": "Also needed GitHub App permissions (contents: write, comment events): a reviewer step, not a detector's."
+	},
+	"maple-1002": {
+		"expected": [],
+		"acceptable": []
+	},
+	"maple-1036": {
+		"expected": [],
+		"acceptable": [
+			"env:MAPLE_REVIEW_MODEL_OPENROUTER"
+		],
+		"note": "A model override with a default in code; nothing has to be set."
+	},
+	"maple-1038": {
+		"expected": [
+			"migration:packages/db/drizzle/20260924110710_drop_legacy_slack/migration.sql"
+		],
+		"acceptable": [],
+		"note": "Drops the legacy Slack tables."
+	},
+	"maple-1077": {
+		"expected": [
+			"secret:MAPLE_RELEASE_SIGNING_KEY"
+		],
+		"acceptable": [],
+		"note": "MAPLE_INTERNAL_PID_HANDOVER is set by the CLI for its own child process: listing it is a false positive."
+	},
+	"maple-1081": {
+		"expected": [
+			"secret:MAPLE_SUPPORT_SLACK_BOT_TOKEN",
+			"env:MAPLE_SUPPORT_SLACK_TEAM_USER_IDS",
+			"migration:packages/db/drizzle/20260926182446_org_support_channels/migration.sql"
+		],
+		"acceptable": []
+	},
+	"maple-1163": {
+		"expected": [
+			"migration:packages/db/drizzle/20260929213113_pr_review_settings/migration.sql"
+		],
+		"acceptable": []
+	},
+	"maple-1164": {
+		"expected": [],
+		"acceptable": []
+	},
+	"maple-1211": {
+		"expected": [
+			"migration:packages/db/drizzle/20261002173832_code_review_analytics/migration.sql"
+		],
+		"acceptable": []
+	},
+	"maple-1218": {
+		"expected": [
+			"migration:packages/db/drizzle/20261003134813_railway_integration/migration.sql"
+		],
+		"acceptable": [],
+		"note": "Railway tokens are per connection in the database; no deploy secret."
+	},
+	"maple-1237": {
+		"expected": [],
+		"acceptable": [
+			"infra:alchemy.run.ts",
+			"infra:apps/electric/alchemy.run.ts",
+			"infra:apps/ingest/alchemy.run.ts"
+		],
+		"note": "A refactor of how bindings are passed; nothing to set."
+	},
+	"maple-1246": {
+		"expected": [],
+		"acceptable": [
+			"infra:alchemy.run.ts",
+			"infra:apps/electric/alchemy.run.ts",
+			"infra:apps/ingest/alchemy.run.ts",
+			"infra:apps/sandbox/alchemy.run.ts"
+		],
+		"note": "Deletes retired infrastructure."
+	},
+	"maple-1274": {
+		"expected": [
+			"migration:packages/db/drizzle/20261006214557_pr_review_telemetry/migration.sql"
+		],
+		"acceptable": []
+	},
+	"maple-1276": {
+		"expected": [
+			"migration:packages/db/drizzle/20261006231211_pr_review_confidence_ten/migration.sql"
+		],
+		"acceptable": []
+	},
+	"maple-1289": {
+		"expected": [
+			"env:MAPLE_CANCELLATION_SLACK_CHANNEL_ID",
+			"migration:packages/db/drizzle/20261007125056_cancellation_reviews/migration.sql"
+		],
+		"acceptable": [],
+		"note": "The cancellation posts stay off until the channel id is set."
+	},
+	"maple-1290": {
+		"expected": [
+			"secret:NEON_API_KEY",
+			"env:NEON_PROJECT_ID"
+		],
+		"acceptable": [
+			"env:PREVIEW_INFISICAL_ENV_SLUG",
+			"env:VITE_MAPLE_SELF_INGEST_URL",
+			"infra:alchemy.run.ts",
+			"infra:apps/electric/alchemy.run.ts",
+			"infra:apps/ingest/alchemy.run.ts"
+		],
+		"note": "Previews need the Neon project and key first; the Infisical slug defaults to dev and the self-ingest URL falls back to the ingest URL."
+	},
+	"maple-1293": {
+		"expected": [],
+		"acceptable": []
+	},
+	"maple-1299": {
+		"expected": [],
+		"acceptable": []
+	},
+	"maple-1300": {
+		"expected": [],
+		"acceptable": []
+	},
+	"maple-1302": {
+		"expected": [],
+		"acceptable": []
+	},
+	"maple-1304": {
+		"expected": [],
+		"acceptable": []
+	},
+	"maple-1308": {
+		"expected": [],
+		"acceptable": []
+	},
+	"maple-1309": {
+		"expected": [],
+		"acceptable": []
+	},
+	"maple-1310": {
+		"expected": [],
+		"acceptable": []
+	},
+	"maple-1312": {
+		"expected": [],
+		"acceptable": []
+	},
+	"maple-1323": {
+		"expected": [],
+		"acceptable": []
+	},
+	"maple-1327": {
+		"expected": [],
+		"acceptable": []
+	},
+	"maple-1330": {
+		"expected": [],
+		"acceptable": []
+	},
+	"maple-1339": {
+		"expected": [],
+		"acceptable": []
+	},
+	"maple-1342": {
+		"expected": [],
+		"acceptable": []
+	},
+	"maple-1344": {
+		"expected": [],
+		"acceptable": []
+	},
+	"maple-1347": {
+		"expected": [],
+		"acceptable": []
+	}
+}

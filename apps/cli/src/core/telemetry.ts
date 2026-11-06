@@ -1,8 +1,9 @@
 import { getAutoPlatformAttributes } from "@maple-dev/effect-sdk/server"
-import { Layer } from "effect"
-import { FetchHttpClient, HttpBody } from "effect/unstable/http"
-import { OtlpMetrics, OtlpResource, OtlpSerialization, OtlpTracer } from "effect/unstable/observability"
-import { MAPLE_VERSION } from "../version"
+import { Config, Effect, Layer, Option, Redacted, Array as Arr, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import { FetchHttpClient, HttpBody } from "effect/http"
+import { OtlpMetrics, OtlpResource, OtlpSerialization, OtlpTracer } from "effect/observability"
+import { MAPLE_VERSION } from "@maple/local-server/version"
 
 // Publishable ("pk") ingest token, baked into the distributed binary so CLI
 // telemetry works on a fresh install with zero config. The `maple_pk_` class is
@@ -10,6 +11,10 @@ import { MAPLE_VERSION } from "../version"
 // Maple's internal workspace, never a privileged key. Rotation means shipping a
 // new CLI release. An explicit `MAPLE_INGEST_KEY` still wins (see below).
 const DEFAULT_INGEST_KEY = "maple_pk_bwGJomBwDO4B15sopcuinQVqNFCDjhE2"
+
+/** Unset and empty both read as absent, matching the old truthiness checks. */
+const nonEmptyString = (key: string) =>
+	Config.option(Config.String(key)).pipe(Config.map(Option.filter((value) => value.length > 0)))
 
 /**
  * Where this invocation is running.
@@ -24,19 +29,34 @@ const DEFAULT_INGEST_KEY = "maple_pk_bwGJomBwDO4B15sopcuinQVqNFCDjhE2"
  * `CI` is the de-facto standard variable, set by GitHub Actions, GitLab, CircleCI
  * and Buildkite alike. An explicit `MAPLE_ENVIRONMENT` still wins.
  */
-const resolveEnvironment = (): string => {
-	if (process.env.MAPLE_ENVIRONMENT) return process.env.MAPLE_ENVIRONMENT
-	return process.env.CI ? "ci" : "cli"
-}
+const resolveEnvironment = Config.all({
+	environment: nonEmptyString("MAPLE_ENVIRONMENT"),
+	ci: nonEmptyString("CI"),
+}).pipe(
+	Config.map(({ environment, ci }) =>
+		Option.getOrElse(environment, () => (Option.isSome(ci) ? "ci" : "cli")),
+	),
+)
 
 /** Same precedence as the SDK: an explicit endpoint, then the region's ingest. */
-const resolveEndpoint = (): string => {
-	const explicit = process.env.MAPLE_ENDPOINT || process.env.OTEL_EXPORTER_OTLP_ENDPOINT
-	if (explicit) return explicit.replace(/\/+$/, "")
-	return process.env.MAPLE_REGION?.trim().toLowerCase() === "eu"
-		? "https://ingest.eu.maple.dev"
-		: "https://ingest.maple.dev"
-}
+const resolveEndpoint = Config.all({
+	maple: nonEmptyString("MAPLE_ENDPOINT"),
+	otel: nonEmptyString("OTEL_EXPORTER_OTLP_ENDPOINT"),
+	region: Config.String("MAPLE_REGION").pipe(Config.withDefault("")),
+}).pipe(
+	Config.map(({ maple, otel, region }) =>
+		Option.match(
+			Option.orElse(maple, () => otel),
+			{
+				onSome: (explicit) => Str.replace(/\/+$/, "")(explicit),
+				onNone: () =>
+					Str.toLowerCase(Str.trim(region)) === "eu"
+						? "https://ingest.eu.maple.dev"
+						: "https://ingest.maple.dev",
+			},
+		),
+	),
+)
 
 // Scrubbing. The CLI exports to Maple's cloud, so nothing a user typed or
 // stored may leave: SQL text, filter values, error messages (chDB quotes rows
@@ -55,10 +75,14 @@ const DROPPED_KEYS = new Set([
 	"url.query",
 	"http.request.body",
 	"http.response.body",
-	// User-typed filter values from query-engine operations.
+	// User-typed filter values from query-engine operations (bare keys kept for older emitters).
 	"service",
 	"spanName",
 	"sessionId",
+	"maple.query.service",
+	"maple.query.span_name",
+	"maple.query.attribute_key",
+	"maple.session.id",
 ])
 const DROPPED_KEY_PATTERN = /sql|^query\.filter\./i
 
@@ -76,63 +100,66 @@ export const sanitizeArgv = (argv: string): string => {
 	const kept: string[] = []
 	let commandWords = 0
 	let leading = true
-	for (const token of argv.split(/\s+/)) {
+	for (const token of Str.split(/\s+/)(argv)) {
 		if (token === "") continue
-		if (token.startsWith("-")) {
-			kept.push(token.split("=")[0] ?? token)
+		if (Str.startsWith("-")(token)) {
+			kept.push(Str.split("=")(token)[0] ?? token)
 			leading = false
 		} else if (leading && commandWords < 2 && /^[a-z][a-z-]*$/.test(token)) {
 			kept.push(token)
 			commandWords++
 		} else leading = false
 	}
-	return kept.join(" ")
+	return Arr.join(kept, " ")
 }
 
 /** Stack frames without the message lines or directory prefixes. */
 export const sanitizeStack = (stack: string): string =>
-	stack
-		.split("\n")
-		.filter((line) => /^\s+at\s/.test(line))
-		.map((line) => line.replace(/(?:[A-Za-z]:)?[\\/][^\s():]*[\\/]([^\\/\s():]+)/g, "$1"))
-		.join("\n")
+	Arr.join(
+		Arr.map(
+			Arr.filter(Str.split("\n")(stack), (line) => /^\s+at\s/.test(line)),
+			(line) => Str.replace(/(?:[A-Za-z]:)?[\\/][^\s():]*[\\/]([^\\/\s():]+)/g, "$1")(line),
+		),
+		"\n",
+	)
 
 export const scrubAttributes = (
 	attributes: ReadonlyArray<OtlpResource.KeyValue>,
 ): Array<OtlpResource.KeyValue> =>
-	attributes.flatMap((attribute): Array<OtlpResource.KeyValue> => {
+	Arr.flatMap(attributes, (attribute): Array<OtlpResource.KeyValue> => {
 		const { key } = attribute
 		if (DROPPED_KEYS.has(key) || DROPPED_KEY_PATTERN.test(key)) return []
 		const value = attributeString(attribute)
 		if (key === "cli.argv" && value !== undefined) return [withString(key, sanitizeArgv(value))]
 		if (key === "exception.stacktrace" && value !== undefined)
 			return [withString(key, sanitizeStack(value))]
-		if (key === "url.full" && value !== undefined) return [withString(key, value.replace(/[?#].*$/, ""))]
+		if (key === "url.full" && value !== undefined)
+			return [withString(key, Str.replace(/[?#].*$/, "")(value))]
 		return [attribute]
 	})
 
 const scrubEvent = (event: SpanEvent): SpanEvent => {
 	// `Effect.log` inside a span becomes an event named after the message.
-	const level = event.attributes.find((attribute) => attribute.key === "effect.logLevel")
-	if (level !== undefined) return { ...event, name: "log", attributes: [level] }
+	const level = Arr.findFirst(event.attributes, (attribute) => attribute.key === "effect.logLevel")
+	if (Option.isSome(level)) return { ...event, name: "log", attributes: [level.value] }
 	return { ...event, attributes: scrubAttributes(event.attributes) }
 }
 
 export const scrubSpan = (span: OtlpSpan): OtlpSpan => ({
 	...span,
 	attributes: scrubAttributes(span.attributes),
-	events: span.events.map(scrubEvent),
-	links: span.links.map((link) => ({ ...link, attributes: scrubAttributes(link.attributes) })),
+	events: Arr.map(span.events, scrubEvent),
+	links: Arr.map(span.links, (link) => ({ ...link, attributes: scrubAttributes(link.attributes) })),
 	// The status message is the first error's message; the type is on the event.
 	status: { code: span.status.code },
 })
 
 export const scrubTraceData = (data: TraceData): TraceData => ({
-	resourceSpans: data.resourceSpans.map((resourceSpan) => ({
+	resourceSpans: Arr.map(data.resourceSpans, (resourceSpan) => ({
 		...resourceSpan,
-		scopeSpans: resourceSpan.scopeSpans.map((scopeSpan) => ({
+		scopeSpans: Arr.map(resourceSpan.scopeSpans, (scopeSpan) => ({
 			...scopeSpan,
-			spans: scopeSpan.spans.map(scrubSpan),
+			spans: Arr.map(scopeSpan.spans, scrubSpan),
 		})),
 	})),
 })
@@ -152,30 +179,51 @@ const ScrubbedSerialization = Layer.succeed(OtlpSerialization.OtlpSerialization,
  * errors hub as a `maple-cli` issue (hundreds of `deployment.environment=ci`
  * events a week nobody could act on). Ordinary CI use of the CLI stays on.
  */
-const telemetryOff = process.env.MAPLE_TELEMETRY === "off"
+const telemetryOff = Config.String("MAPLE_TELEMETRY").pipe(
+	Config.map((value) => value === "off"),
+	Config.withDefault(false),
+)
 
-const makeTelemetryLayer = (): Layer.Layer<never> => {
-	const endpoint = resolveEndpoint()
-	const environment = resolveEnvironment()
+const ingestKey = Config.Redacted("MAPLE_INGEST_KEY").pipe(
+	Config.withDefault(Redacted.make(DEFAULT_INGEST_KEY)),
+)
+
+const makeTelemetryLayer = Effect.gen(function* () {
+	const endpoint = yield* resolveEndpoint
+	const environment = yield* resolveEnvironment
+	const key = yield* ingestKey
+	const instanceId = yield* SecureRandom.make(SecureRandom.randomBytesUnsafe).uuidV4()
 	const resource = {
 		serviceName: "maple-cli",
 		serviceVersion: MAPLE_VERSION,
 		attributes: {
 			...getAutoPlatformAttributes(),
 			"maple.sdk.type": "server",
-			"service.instance.id": crypto.randomUUID(),
+			"service.instance.id": instanceId,
 			"service.namespace": "core",
 			"deployment.environment": environment,
 			"deployment.environment.name": environment,
 			"vcs.repository.url.full": "https://github.com/MapleTechLabs/maple",
 		},
 	}
-	const headers = { Authorization: `Bearer ${process.env.MAPLE_INGEST_KEY ?? DEFAULT_INGEST_KEY}` }
+	const headers = { Authorization: `Bearer ${Redacted.value(key)}` }
 	return Layer.mergeAll(
-		OtlpTracer.layer({ url: `${endpoint}/v1/traces`, resource, headers, shutdownTimeout: "3 seconds" }),
-		OtlpMetrics.layer({ url: `${endpoint}/v1/metrics`, resource, headers, shutdownTimeout: "3 seconds" }),
+		OtlpTracer.layer({
+			url: `${endpoint}/v1/traces`,
+			resource,
+			headers,
+			compression: "gzip",
+			shutdownTimeout: "3 seconds",
+		}),
+		OtlpMetrics.layer({
+			url: `${endpoint}/v1/metrics`,
+			resource,
+			headers,
+			compression: "gzip",
+			shutdownTimeout: "3 seconds",
+		}),
 	).pipe(Layer.provide(ScrubbedSerialization), Layer.provide(FetchHttpClient.layer))
-}
+})
 
 /**
  * OpenTelemetry layer for the CLI: traces and metrics about the CLI itself and,
@@ -184,4 +232,8 @@ const makeTelemetryLayer = (): Layer.Layer<never> => {
  * `OTEL_EXPORTER_OTLP_ENDPOINT` redirect it, `MAPLE_INGEST_KEY` replaces the
  * key). Spans pass through the scrubber above; logs are not exported.
  */
-export const TelemetryLayer: Layer.Layer<never> = telemetryOff ? Layer.empty : makeTelemetryLayer()
+export const TelemetryLayer: Layer.Layer<never> = Layer.unwrap(
+	Effect.gen(function* () {
+		return (yield* telemetryOff) ? Layer.empty : yield* makeTelemetryLayer
+	}).pipe(Effect.orElseSucceed(() => Layer.empty)),
+)

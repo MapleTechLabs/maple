@@ -1,0 +1,34 @@
+{
+	"include": ["src/**/*.ts", "vitest.config.ts"],
+	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
+		"target": "ES2023",
+		"module": "ESNext",
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
+		"types": ["node"],
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"verbatimModuleSyntax": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"strict": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedSideEffectImports": true,
+		"paths": {
+			"@maple/ui/*": ["../ui/src/*"]
+		},
+		"plugins": [
+			{
+				"name": "@effect/language-service",
+				"ignoreEffectWarningsInTscExitCode": true,
+				"includeSuggestionsInTsc": false,
+				"diagnosticSeverity": {
+					"unstableApiUsage": "off",
+					"schemaNumber": "off",
+					"schemaClassMissingBrand": "off",
+					"schemaSync": "off"
+				}
+			}
+		]
+	}
+}

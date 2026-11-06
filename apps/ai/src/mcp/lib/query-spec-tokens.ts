@@ -1,9 +1,10 @@
+import { Array as Arr } from "effect"
 /**
  * The `metric` and `group_by` tokens `query_data` accepts, per `source` × `kind`.
  *
  * These cannot be `Schema.Literals` on the MCP input struct, because the valid set
- * depends on two OTHER parameters — `source=metrics, kind=timeseries` accepts
- * `rate`, `source=metrics, kind=breakdown` does not. So the tool takes free-form
+ * depends on two OTHER parameters (`source=logs` accepts only `count`,
+ * `group_by=none` is timeseries-only). So the tool takes free-form
  * strings and the real narrowing happens downstream in `QuerySpec`.
  *
  * That left agents guessing: every `query_data` failure in production was a valid-
@@ -56,14 +57,12 @@ const TOKENS = {
 		metrics: ["count"],
 		groupBys: ["service", "severity"],
 	},
-	// Deliberately narrower than the timeseries set: no min/max/rate/increase.
-	// This asymmetry is the single most common query_data failure in production.
 	"metrics:breakdown": {
-		metrics: ["avg", "sum", "count"],
+		metrics: ["avg", "sum", "min", "max", "count", "latest", "rate", "increase"],
 		groupBys: ["service", "attribute", "resource_attribute"],
 	},
 	"metrics:timeseries": {
-		metrics: ["avg", "sum", "min", "max", "count", "rate", "increase"],
+		metrics: ["avg", "sum", "min", "max", "count", "latest", "rate", "increase"],
 		groupBys: ["service", "attribute", "resource_attribute", "none"],
 	},
 	"product_events:timeseries": {
@@ -91,7 +90,11 @@ const TOKENS = {
 export const tokensFor = (source: QuerySpecSource, kind: QuerySpecKind): TokenSet =>
 	TOKENS[`${source}:${kind}`]
 
-const quote = (values: ReadonlyArray<string>): string => values.map((v) => `"${v}"`).join(", ")
+const quote = (values: ReadonlyArray<string>): string =>
+	Arr.join(
+		Arr.map(values, (v) => `"${v}"`),
+		", ",
+	)
 
 /**
  * An actionable replacement for a raw `SchemaError`, naming the tokens valid for

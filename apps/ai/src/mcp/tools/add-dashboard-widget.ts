@@ -1,5 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import {
 	MCP_PANEL_TYPES,
 	MCP_VISUALIZATIONS,
@@ -10,6 +10,7 @@ import {
 } from "@maple/domain/http"
 import { AddDashboardWidgetOutput } from "@maple/domain/mcp-outputs"
 import {
+	DATA_SOURCE_VARIANTS,
 	defaultSizeForPanelType,
 	findNextWidgetPosition,
 	generateWidgetId,
@@ -44,6 +45,7 @@ const invalid = (message: string, example?: string, parameter?: string) =>
 export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
+		title: "Add Dashboard Widget",
 		// The panel-type list is the `panel_type` enum, where it is binding; do not repeat it here.
 		description:
 			"Add one widget to a dashboard. Pick `panel_type`, then one of: `data_source_json` plus `display_json` (query builder); " +
@@ -52,7 +54,7 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 			"Read describe_dashboard_schema before authoring: data-source kinds, units (`percent` is a 0-1 fraction, `percent_100` is 0-100, the reverse of Grafana), aggregations, group-by tokens. " +
 			"Layout is auto-placed unless layout_json is given. The result carries a validation verdict; suspicious or broken means the chart will not render meaningfully as saved.",
 		parameters: Schema.Struct({
-			dashboard_id: P.text("Dashboard ID (ids from list_dashboards)"),
+			dashboard_id: P.resourceId("dashboard", "Dashboard ID (ids from list_dashboards)"),
 			// The enum is the list: a newly `mcpExposed` widget type is advertised and accepted
 			// from the same table.
 			panel_type: P.optionalOneOf(
@@ -129,14 +131,19 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 			// Likewise a paths widget: `display_json.paths` is the whole definition.
 			const pathsDefinition = decodedDisplay.paths
 
+			// A markdown note reads nothing, so its data source is always `{ kind: "static" }`.
+			const isMarkdown = panel_type === "markdown" || visualization === "markdown"
 			if (
 				!useRawSql &&
+				!isMarkdown &&
 				funnelDefinition === undefined &&
 				pathsDefinition === undefined &&
 				(!data_source_json || !display_json)
 			) {
 				return yield* invalid(
-					"add_dashboard_widget requires either `sql` (raw ClickHouse SQL path), both `data_source_json` and `display_json` (structured-query path), a `display_json.funnel.steps` definition (product-event funnel), or a `display_json.paths` definition (paths).",
+					"add_dashboard_widget requires either `sql` (raw ClickHouse SQL path), both `data_source_json` and `display_json` (structured-query path), a `display_json.funnel.steps` definition (product-event funnel), or a `display_json.paths` definition (paths). " +
+						'A markdown note is `panel_type: "markdown"` with `display_json: {"markdown":{"content":"..."}}` (its data source is `{"kind":"static"}`). ' +
+						`data_source_json shapes: ${DATA_SOURCE_VARIANTS}.`,
 					'{ "sql": "SELECT count() FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)" }',
 				)
 			}
@@ -208,6 +215,8 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 					)
 				}
 				dataSource = makeProductEventsPathsDataSource(pathsDefinition)
+			} else if (isMarkdown && data_source_json === undefined) {
+				dataSource = { kind: "static" }
 			} else {
 				if (data_source_json === undefined) {
 					return yield* invalid(
@@ -249,7 +258,7 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 			const blockingWarnings = yield* collectBlockingBuilderWarnings(dataSource)
 			if (blockingWarnings.length > 0) {
 				return yield* invalid(
-					`This widget's query has clauses the engine can't honor, which would silently change what the chart shows (the widget was NOT saved):\n- ${blockingWarnings.join("\n- ")}\n\nFix and retry. Notes: span/resource attributes work automatically (e.g. \`query.context = "x"\`) but cap at 5 attr filters; logs/metrics accept only a fixed set of filter/groupBy keys; prefix non-allowlisted groupBy keys with \`attr.\`.`,
+					`This widget's query has clauses the engine can't honor, which would silently change what the chart shows (the widget was NOT saved):\n- ${Arr.join(blockingWarnings, "\n- ")}\n\nFix and retry. Notes: span/resource attributes work automatically (e.g. \`query.context = "x"\`) but cap at 5 attr filters; logs/metrics accept only a fixed set of filter/groupBy keys; prefix non-allowlisted groupBy keys with \`attr.\`.`,
 				)
 			}
 
@@ -260,9 +269,9 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 
 			const dashboard = yield* withDashboardMutation(dashboard_id, TOOL, (existingWidgets) =>
 				Effect.gen(function* () {
-					if (existingWidgets.some((w) => w.id === newId)) {
+					if (Arr.some(existingWidgets, (w) => w.id === newId)) {
 						return yield* invalid(
-							`Widget id "${newId}" already exists on dashboard ${dashboard_id}. Pass a different widget_id or omit it to auto-generate one.`,
+							`Widget id "${newId}" already exists on dashboard ${dashboard_id}. To change that widget use update_dashboard_widget widget_id="${newId}" (title, chart_id or patch_json for a partial edit); to add another, pass a different widget_id or omit it.`,
 							undefined,
 							"widget_id",
 						)

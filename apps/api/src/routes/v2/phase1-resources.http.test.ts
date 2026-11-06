@@ -1,7 +1,18 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import {
+	ConfigProvider,
+	Context,
+	Effect,
+	Layer,
+	ManagedRuntime,
+	Ref,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
+import { HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import {
 	ActorDocument,
 	ActorId,
@@ -19,6 +30,7 @@ import {
 	ErrorIssueDocument,
 	ErrorIssueId,
 	ErrorIssueNotFoundError,
+	ErrorIssueTransitionError,
 	ErrorPersistenceError,
 	ErrorIssueSampleTrace,
 	ErrorIssueEnvironment,
@@ -40,15 +52,19 @@ import {
 	UserId,
 	OrgClickHouseSettingsEncryptionError,
 	OrgClickHouseSettingsPersistenceError,
+	WarehouseUpstreamError,
 } from "@maple/domain/http"
 import { MapleApiV2, encodePublicId } from "@maple/domain/http/v2"
 import { WarehouseResponseLimitError } from "@maple/query-engine/execution"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { Database } from "@maple/backend/platform/DatabaseLive"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { ErrorIssues } from "@maple/db/tables"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { Env } from "@maple/backend/platform/Env"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
-import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -57,6 +73,7 @@ import { SharedDashboardService } from "@maple/backend/services/dashboards/Share
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
+import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
@@ -274,6 +291,8 @@ const errorIssueFixture = new ErrorIssueDocument({
 	id: decodeIssueId(ISS_UUID),
 	kind: "error",
 	fingerprintHash: "1234",
+	fingerprintHashes: ["1234"],
+	mergedIntoIssueId: null,
 	serviceName: "checkout-api",
 	exceptionType: "TimeoutError",
 	exceptionMessage: "upstream timed out",
@@ -328,6 +347,9 @@ const errorIssueDetailFixture = new ErrorIssueDetailResponse({
 })
 
 const die = () => Effect.die(new Error("not exercised in this test harness"))
+const dieSync = (): never => {
+	throw new Error("not exercised in this test harness")
+}
 
 /** Empty warehouse — enough to exercise the session_replays envelope + 404 paths. */
 const warehouseStub = makeWarehouseServiceStub({
@@ -336,7 +358,7 @@ const warehouseStub = makeWarehouseServiceStub({
 	// Replay payload reads go through the bounded variant (they carry an explicit
 	// response-byte ceiling), so the stub has to answer it too.
 	compiledQueryBounded: (_tenant, compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
-	compiledQueryFirst: () => Effect.succeed(Option.none()),
+	compiledQueryFirst: () => Effect.succeedNone,
 	// Handlers warm the org route before fanning out; the real one resolves
 	// route + capabilities, which this stub has nothing to resolve.
 	warmRoute: () => Effect.void,
@@ -359,11 +381,15 @@ const testConfig = () =>
 		}),
 	)
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_phase1_e2e")
-const USER = Schema.decodeUnknownSync(UserId)("user_phase1_e2e")
+const ORG = Schema.decodeSync(OrgId)("org_phase1_e2e")
+const USER = Schema.decodeSync(UserId)("user_phase1_e2e")
 
 type InvestigationStartMode = "success" | "unavailable" | "restart_not_found"
-type IssueReadFailure = "none" | "persistence" | "warehouse_config_lookup" | "warehouse_config_decryption"
+type IssueReadFailure =
+	| "none"
+	| "persistence"
+	| "warehouse_settings_unavailable"
+	| "warehouse_config_decryption"
 
 const makeHarness = (
 	warehouseService: WarehouseQueryServiceApi = warehouseStub,
@@ -385,10 +411,15 @@ const makeHarness = (
 	} | null = null
 	const issueReadFailureEffect = () => {
 		switch (issueReadFailure) {
-			case "warehouse_config_lookup":
+			// What WarehouseQueryService reports when the org's saved settings can't be read.
+			case "warehouse_settings_unavailable":
 				return Effect.fail(
-					new OrgClickHouseSettingsPersistenceError({
+					new WarehouseUpstreamError({
 						message: "SECRET_CONFIG_LOOKUP_FAILURE",
+						pipeName: "errorIssues",
+						cause: new OrgClickHouseSettingsPersistenceError({
+							message: "SECRET_CONFIG_LOOKUP_FAILURE",
+						}),
 					}),
 				)
 			case "warehouse_config_decryption":
@@ -401,6 +432,18 @@ const makeHarness = (
 				return Effect.fail(new ErrorPersistenceError({ message: "database unavailable" }))
 		}
 	}
+	// One issue whose workflow actions mutate it, so a test can read the change back.
+	const storedIssue = Ref.makeUnsafe(errorIssueFixture)
+	const issueActions: Array<Record<string, unknown>> = []
+	const ensuredUsers: Array<string> = []
+	const requireStoredIssue = (
+		issueId: ErrorIssueId,
+	): Effect.Effect<ErrorIssueDocument, ErrorIssueNotFoundError> =>
+		issueId === errorIssueFixture.id
+			? Ref.get(storedIssue)
+			: Effect.fail(ErrorIssueNotFoundError.forIssue(issueId))
+	const updateStoredIssue = (patch: Partial<ErrorIssueDocument>) =>
+		Ref.updateAndGet(storedIssue, (current) => new ErrorIssueDocument({ ...current, ...patch }))
 	const startInvestigation = () => {
 		switch (investigationStartMode) {
 			case "unavailable":
@@ -447,7 +490,7 @@ const makeHarness = (
 			submitDiagnosis: die,
 		}),
 		Layer.succeed(AnomalyDetectionService, {
-			runTick: die,
+			runTick: die(),
 			listIncidents: (_org, options) => {
 				const offset = options?.offset ?? 0
 				return Effect.succeed(
@@ -507,27 +550,89 @@ const makeHarness = (
 						: Effect.fail(ErrorIssueNotFoundError.forIssue(issueId))
 			},
 			countOpenIssuesByService: () => Effect.succeed([]),
+			countIssues: () => Effect.succeed(0),
 			listIssueIncidents: die,
 			listOpenIncidents: die,
 		}),
 		// The anomalies group still exercises the issue-link audit mutation.
 		Layer.succeed(ErrorsService, {
-			transitionIssue: die,
-			claimIssue: die,
+			transitionIssue: (_org, actorId, issueId, toState, opts) =>
+				Effect.gen(function* () {
+					const current = yield* requireStoredIssue(issueId)
+					// `wontfix` stands in for a move the workflow refuses.
+					if (toState === "wontfix") {
+						return yield* new ErrorIssueTransitionError({
+							message: `Cannot move from ${current.workflowState} to ${toState}`,
+							issueId,
+							fromState: current.workflowState,
+							toState,
+						})
+					}
+					issueActions.push({ action: "transition", actorId, opts })
+					return yield* updateStoredIssue({ workflowState: toState, notes: opts?.note ?? null })
+				}),
+			claimIssue: (_org, actorId, issueId, leaseDurationMs) =>
+				requireStoredIssue(issueId).pipe(
+					Effect.tap(() =>
+						Effect.sync(() => issueActions.push({ action: "claim", actorId, leaseDurationMs })),
+					),
+					Effect.andThen(
+						updateStoredIssue({
+							workflowState: "in_progress",
+							leaseHolder: actorFixture,
+							claimedAt: decodeIso("2026-07-15T10:00:00.000Z"),
+						}),
+					),
+				),
 			proposeFix: die,
 			recordAnomalyLinkEvent: () => Effect.void,
-			runTick: die,
+			runTick: die(),
+		}),
+		Layer.succeed(ErrorIssueWorkflowService, {
+			rowToIssue: dieSync,
+			requireIssue: die,
+			issuesWithOpenIncidents: die,
+			hydrateIssueRows: die,
+			hydrateIssue: die,
+			recordEvent: die,
+			buildEvent: dieSync,
+			applyTransition: die,
+			heartbeatIssue: die,
+			releaseIssue: (_org, actorId, issueId, opts) =>
+				Effect.gen(function* () {
+					const current = yield* requireStoredIssue(issueId)
+					issueActions.push({ action: "release", actorId, opts })
+					return yield* updateStoredIssue({
+						workflowState: opts?.transitionTo ?? current.workflowState,
+						leaseHolder: null,
+						claimedAt: null,
+					})
+				}),
+			assignIssue: die,
+			setSeverity: (_org, actorId, issueId, severity, opts) =>
+				requireStoredIssue(issueId).pipe(
+					Effect.tap(() =>
+						Effect.sync(() => issueActions.push({ action: "severity", actorId, opts })),
+					),
+					Effect.andThen(
+						updateStoredIssue({ severity, severitySource: severity === null ? null : "manual" }),
+					),
+				),
+			commentOnIssue: die,
+			listIssueEvents: die,
 		}),
 		Layer.succeed(ErrorActorsService, {
 			registerAgent: die,
 			listAgents: die,
 			lookupActor: die,
-			ensureUserActor: () => Effect.succeed(actorFixture),
+			ensureUserActor: (_org, userId) =>
+				Effect.sync(() => ensuredUsers.push(userId)).pipe(Effect.as(actorFixture)),
 			actorExists: die,
 			ensureSystemActor: die,
 			ensureAgentActor: die,
 			touchActor: die,
 			collectActorDocs: die,
+			findOwnedAgentActor: die,
 		}),
 		Layer.succeed(OrganizationService, {
 			retrieve: (orgId) =>
@@ -557,7 +662,7 @@ const makeHarness = (
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
-		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),
@@ -605,11 +710,27 @@ const makeHarness = (
 			}),
 		)
 
+	// A self-hosted root session: a dashboard user, which carries no scopes.
+	const bootstrapSession = () =>
+		runtime.runPromise(
+			Effect.gen(function* () {
+				const auth = yield* AuthService
+				return (yield* auth.loginSelfHosted("test-root-password")).token
+			}),
+		)
+
+	/** Runs a write against the harness's own database, to seed rows a read joins to. */
+	const seedDb = <A, E>(effect: Effect.Effect<A, E, Database>) => runtime.runPromise(effect)
+
 	return {
 		request,
 		bootstrapKey,
+		bootstrapSession,
+		seedDb,
 		lastIssueListCall: () => lastIssueListCall,
 		lastIssueDetailCall: () => lastIssueDetailCall,
+		issueActions: () => issueActions,
+		ensuredUsers: () => ensuredUsers,
 		dispose: async () => {
 			await disposeHandler()
 			await runtime.dispose()
@@ -705,6 +826,72 @@ describe("v2 error_issues over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("triages an issue as the caller: transition, claim, severity, release", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["error_issues:write"])
+		const call = (method: string, action: string, body: unknown) =>
+			harness.request(method, `/v2/error_issues/${ISS_ID}/${action}`, { token: key.secret, body })
+
+		const transitioned = await call("POST", "transitions", { to_state: "todo", note: "looking" })
+		expect(transitioned.status).toBe(200)
+		expect(transitioned.body).toMatchObject({
+			id: ISS_ID,
+			object: "error_issue",
+			workflow_state: "todo",
+			notes: "looking",
+		})
+
+		const claimed = await call("POST", "claim", { lease_duration_seconds: 600 })
+		expect(claimed.status).toBe(200)
+		expect(claimed.body).toMatchObject({ workflow_state: "in_progress", lease_holder: { id: ACTOR_ID } })
+
+		const severity = await call("PUT", "severity", { severity: "low" })
+		expect(severity.status).toBe(200)
+		expect(severity.body).toMatchObject({ severity: "low", severity_source: "manual" })
+
+		const released = await call("POST", "release", { transition_to: "in_review" })
+		expect(released.status).toBe(200)
+		expect(released.body).toMatchObject({ workflow_state: "in_review", lease_holder: null })
+
+		// Every action ran as the caller's user actor, with the wire fields translated.
+		expect(harness.issueActions()).toEqual([
+			{ action: "transition", actorId: actorFixture.id, opts: { note: "looking" } },
+			{ action: "claim", actorId: actorFixture.id, leaseDurationMs: 600_000 },
+			{ action: "severity", actorId: actorFixture.id, opts: { source: "manual" } },
+			{ action: "release", actorId: actorFixture.id, opts: { transitionTo: "in_review" } },
+		])
+		expect(harness.ensuredUsers()).toHaveLength(4)
+		await harness.dispose()
+	})
+
+	it("maps refused transitions to 409, missing issues to 404, and needs write scope", async () => {
+		const harness = makeHarness()
+		const reader = await harness.bootstrapKey(["error_issues:read"])
+		const readOnly = await harness.request("POST", `/v2/error_issues/${ISS_ID}/claim`, {
+			token: reader.secret,
+			body: {},
+		})
+		expect(readOnly.status).toBe(403)
+
+		const key = await harness.bootstrapKey(["error_issues:write"])
+		const refused = await harness.request("POST", `/v2/error_issues/${ISS_ID}/transitions`, {
+			token: key.secret,
+			body: { to_state: "wontfix" },
+		})
+		expect(refused.status).toBe(409)
+		expect(refused.body.error.code).toBe("error_issue_transition_invalid")
+
+		const missingId = encodePublicId("iss", "99999999-9999-4999-8999-999999999991")
+		const missing = await harness.request("PUT", `/v2/error_issues/${missingId}/severity`, {
+			token: key.secret,
+			body: { severity: null },
+		})
+		expect(missing.status).toBe(404)
+		expect(missing.body.error.code).toBe("error_issue_not_found")
+		expect(harness.issueActions()).toEqual([])
+		await harness.dispose()
+	})
+
 	it("maps list and rich-retrieve dependency failures to v2 503 errors", async () => {
 		const harness = makeHarness(warehouseStub, "persistence")
 		const key = await harness.bootstrapKey(["error_issues:read"])
@@ -722,15 +909,15 @@ describe("v2 error_issues over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("preserves exact warehouse failures instead of relabeling them as persistence", async () => {
-		const harness = makeHarness(warehouseStub, "warehouse_config_lookup")
+	it("answers an unreadable warehouse settings row as a retryable warehouse outage", async () => {
+		const harness = makeHarness(warehouseStub, "warehouse_settings_unavailable")
 		const key = await harness.bootstrapKey(["error_issues:read"])
 		const response = await harness.request("GET", "/v2/error_issues", { token: key.secret })
 
 		expect(response.status).toBe(503)
 		expect(response.body.error).toMatchObject({
-			_tag: "@maple/http/errors/OrgClickHouseSettingsPersistenceError",
-			code: "clickhouse_settings_unavailable",
+			_tag: "@maple/http/errors/WarehouseUpstreamError",
+			code: "warehouse_unavailable",
 			retryable: true,
 			recovery: "retry",
 		})
@@ -926,6 +1113,54 @@ describe("v2 investigations over HTTP", () => {
 		)
 		expect(unavailable.body.error.retryable).toBe(true)
 		await unavailableHarness.dispose()
+	})
+
+	it("starts a run only for callers that can read everything the agent reads", async () => {
+		const harness = makeHarness()
+		const start = (token: string) =>
+			Promise.all([
+				harness.request("POST", "/v2/investigations", {
+					token,
+					body: { subject: { type: "freeform", title: "t", prompt: "p", context_refs: [] } },
+				}),
+				harness.request("POST", `/v2/investigations/${INV_ID}/restart`, { token }),
+			]).then((responses) => Arr.map(responses, (response) => response.status))
+
+		const narrow = await harness.bootstrapKey(["investigations:write"])
+		expect(await start(narrow.secret)).toEqual([403, 403])
+		const telemetryOnly = await harness.bootstrapKey([
+			"investigations:write",
+			"traces:read",
+			"logs:read",
+			"metrics:read",
+		])
+		expect(await start(telemetryOnly.secret)).toEqual([403, 403])
+
+		const reads = Arr.map(
+			[
+				"traces",
+				"logs",
+				"metrics",
+				"services",
+				"service_map",
+				"error_issues",
+				"session_replays",
+				"alerts",
+				"anomalies",
+				"dashboards",
+				"sources",
+				"instrumentation",
+				"integrations",
+			],
+			(family) => `${family}:read`,
+		)
+		const covered = await harness.bootstrapKey(["investigations:write", ...reads])
+		const unscoped = await harness.bootstrapKey()
+		const session = await harness.bootstrapSession()
+		for (const token of [covered.secret, unscoped.secret, session]) {
+			expect(await start(token)).toEqual([200, 200])
+		}
+		await harness.dispose()
 	})
 })
 
@@ -1162,7 +1397,7 @@ describe("v2 session_replays over HTTP", () => {
 
 	it("paginates transcripts beyond the query engine's old 100-row default", async () => {
 		const transcriptRows = Array.from({ length: 105 }, (_, seq) => ({
-			timestamp: `2026-07-15T09:12:${String(seq % 60).padStart(2, "0")}.000Z`,
+			timestamp: `2026-07-15T09:12:${Str.padStart(2, "0")(String(seq % 60))}.000Z`,
 			seq,
 			type: seq % 2 === 0 ? "navigation" : "network",
 			url: "https://example.com",
@@ -1218,6 +1453,23 @@ describe("v2 session_replays over HTTP", () => {
 		expect(second.body.data[0].seq).toBe(100)
 		expect(second.body.has_more).toBe(false)
 		expect(second.body.next_cursor).toBeNull()
+
+		// A transcript page goes past the shared list cap, so the dashboard reads it in one trip.
+		const whole = await harness.request("GET", `/v2/session_replays/${sessionId}/transcript?limit=1000`, {
+			token: key.secret,
+		})
+		expect(whole.status).toBe(200)
+		expect(whole.body.data).toHaveLength(105)
+		expect(whole.body.has_more).toBe(false)
+
+		const tooWide = await harness.request(
+			"GET",
+			`/v2/session_replays/${sessionId}/transcript?limit=1001`,
+			{
+				token: key.secret,
+			},
+		)
+		expect(tooWide.status).toBe(400)
 		await harness.dispose()
 	})
 
@@ -1259,9 +1511,10 @@ describe("v2 session_replays over HTTP", () => {
 				const to = Number(/ChunkSeq <= (\d+)/.exec(sql)?.[1] ?? Number.MAX_SAFE_INTEGER)
 				const limit = Number(/LIMIT\s+(\d+)/i.exec(sql)?.[1] ?? chunkRows.length)
 				const offset = Number(/OFFSET\s+(\d+)/i.exec(sql)?.[1] ?? 0)
-				return chunkRows
-					.filter((row) => row.chunkSeq >= from && row.chunkSeq <= to)
-					.slice(offset, offset + limit)
+				return Arr.filter(chunkRows, (row) => row.chunkSeq >= from && row.chunkSeq <= to).slice(
+					offset,
+					offset + limit,
+				)
 			}
 			return {
 				...warehouseStub,
@@ -1337,7 +1590,7 @@ describe("v2 session_replays over HTTP", () => {
 			// The SDK's over-cap buffer guard drops the batch holding the opening
 			// snapshot, so some existing recordings have no checkpoint anywhere.
 			// The manifest must still describe them — the client anchors on chunk 0.
-			const legacyRows = chunkRows.map((row) => ({ ...row, isCheckpoint: 0 }))
+			const legacyRows = Arr.map(chunkRows, (row) => ({ ...row, isCheckpoint: 0 }))
 			const harness = makeHarness({
 				...warehouseStub,
 				compiledQuery: (_tenant, compiled) =>
@@ -1361,7 +1614,7 @@ describe("v2 session_replays over HTTP", () => {
 			// Backends that refuse `output_format_json_quote_64bit_integers=0` return
 			// UInt64s as strings. Schema.Number rejects those, which would surface as
 			// a bodyless 500 — hence the Number() coercion in both handlers.
-			const quotedRows = chunkRows.slice(0, 2).map((row) => ({
+			const quotedRows = Arr.map(chunkRows.slice(0, 2), (row) => ({
 				...row,
 				byteSize: String(row.byteSize) as number,
 				eventCount: String(row.eventCount) as number,
@@ -1400,7 +1653,7 @@ describe("v2 session_replays over HTTP", () => {
 			// 60 chunks: more than one capped page, so a page that claims to be the
 			// last one is provably wrong.
 			const manyRows = Array.from({ length: 60 }, (_, seq) => ({
-				...chunkRows[0]!,
+				...chunkRows[0],
 				chunkSeq: seq,
 			}))
 			const harness = makeHarness({
@@ -1438,7 +1691,7 @@ describe("v2 session_replays over HTTP", () => {
 			// nothing and would wave this through. `byteSize` is the uncompressed
 			// payload size and is right there in the index, so the range is refused
 			// without fetching a single object.
-			const hugeBlobRows = chunkRows.slice(0, 4).map((row) => ({
+			const hugeBlobRows = Arr.map(chunkRows.slice(0, 4), (row) => ({
 				...row,
 				events: "",
 				byteSize: 5_000_000,
@@ -1462,7 +1715,11 @@ describe("v2 session_replays over HTTP", () => {
 		})
 
 		it("serves a blob-backed range that fits the budget", async () => {
-			const blobRows = chunkRows.slice(0, 4).map((row) => ({ ...row, events: "", byteSize: 100_000 }))
+			const blobRows = Arr.map(chunkRows.slice(0, 4), (row) => ({
+				...row,
+				events: "",
+				byteSize: 100_000,
+			}))
 			const harness = makeHarness({
 				...warehouseStub,
 				compiledQueryBounded: (_tenant, compiled) =>
@@ -1514,5 +1771,598 @@ describe("v2 session_replays over HTTP", () => {
 			expect(response.body.error.message).toContain("narrower chunk range")
 			await harness.dispose()
 		})
+	})
+})
+
+describe("v2 users over HTTP", () => {
+	const WINDOW = "start_time=2026-11-01T00:00:00.000Z&end_time=2026-11-02T00:00:00.000Z"
+
+	it("serves empty envelopes for a quiet window and 404s a user nothing carries", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["users:read"])
+
+		const list = await harness.request(
+			"GET",
+			`/v2/users?${WINDOW}&namespace=storefront,billing&limit=5`,
+			{
+				token: key.secret,
+			},
+		)
+		expect(list.status).toBe(200)
+		expect(list.body).toEqual({ object: "list", data: [], has_more: false, next_cursor: null })
+
+		const missing = await harness.request("GET", `/v2/users/${encodeURIComponent("user 42")}?${WINDOW}`, {
+			token: key.secret,
+		})
+		expect(missing.status).toBe(404)
+		expect(missing.body.error.code).toBe("user_not_found")
+
+		const activity = await harness.request("GET", `/v2/users/user_42/activity?${WINDOW}`, {
+			token: key.secret,
+		})
+		expect(activity.status).toBe(200)
+		expect(activity.body).toEqual({
+			object: "user.activity",
+			user_id: "user_42",
+			sessions: [],
+			events: [],
+			mcp_sessions: [],
+			timeline: [],
+		})
+
+		const issues = await harness.request("GET", `/v2/users/user_42/issues?${WINDOW}`, {
+			token: key.secret,
+		})
+		expect(issues.status).toBe(200)
+		expect(issues.body).toMatchObject({ object: "list", data: [], has_more: false, next_cursor: null })
+		expect(typeof issues.body.attributed).toBe("boolean")
+		await harness.dispose()
+	})
+
+	it("pages populated users by keyset, continuing after a lastSeen tie without repeats", async () => {
+		// Two users share the boundary lastSeen to the nanosecond; only userId orders them.
+		const tie = "2026-11-01 10:00:00.123456789"
+		const fixture = [
+			{ userId: "u_a", lastSeenKey: "2026-11-01 11:00:00.000000001" },
+			{ userId: "u_b", lastSeenKey: tie },
+			{ userId: "u_c", lastSeenKey: tie },
+		]
+		const row = (user: (typeof fixture)[number]) => ({
+			...user,
+			name: "",
+			email: "",
+			groupId: "",
+			groupIds: [],
+			namespaces: [],
+			firstSeen: "2026-11-01 01:00:00.000000000",
+			lastSeen: user.lastSeenKey,
+			sessions: 1,
+			errors: 0,
+			requests: 0,
+			mcpSpans: 0,
+			events: 0,
+			spans: 0,
+			logLines: 0,
+			classifiedRequests: 0,
+			mcpRequests: 0,
+			webRequests: 0,
+			mobileRequests: 0,
+		})
+		// Answers the list like the warehouse would: the keyset HAVING, then the LIMIT.
+		const usersWarehouse: WarehouseQueryServiceApi = {
+			...warehouseStub,
+			compiledQuery: (_tenant, compiled, options) => {
+				const query = compiledQueryOf(compiled)
+				if (options?.context !== "usersList") return query.decodeRows([]).pipe(Effect.orDie)
+				const after = /signals\.lastSeen\) < '([^']+)'.*signals\.userId > '([^']+)'/s.exec(query.sql)
+				const limit = Number(/LIMIT\s+(\d+)/i.exec(query.sql)?.[1] ?? 200)
+				const kept = Arr.filter(
+					fixture,
+					(user) =>
+						after === null ||
+						user.lastSeenKey < (after[1] ?? "") ||
+						(user.lastSeenKey === after[1] && user.userId > (after[2] ?? "")),
+				)
+				return query.decodeRows(Arr.map(kept.slice(0, limit), row)).pipe(Effect.orDie)
+			},
+		}
+		const harness = makeHarness(usersWarehouse)
+		const key = await harness.bootstrapKey(["users:read"])
+
+		const first = await harness.request("GET", `/v2/users?${WINDOW}&limit=2`, { token: key.secret })
+		expect(first.status).toBe(200)
+		expect(Arr.map(first.body.data, (user: { id: string }) => user.id)).toEqual(["u_a", "u_b"])
+		expect(first.body.has_more).toBe(true)
+		expect(typeof first.body.next_cursor).toBe("string")
+
+		const second = await harness.request(
+			"GET",
+			`/v2/users?${WINDOW}&limit=2&cursor=${encodeURIComponent(first.body.next_cursor)}`,
+			{ token: key.secret },
+		)
+		expect(second.status).toBe(200)
+		expect(Arr.map(second.body.data, (user: { id: string }) => user.id)).toEqual(["u_c"])
+		expect(second.body.has_more).toBe(false)
+		expect(second.body.next_cursor).toBeNull()
+
+		const forged = await harness.request("GET", `/v2/users?${WINDOW}&cursor=usr_bm90LWpzb24`, {
+			token: key.secret,
+		})
+		expect(forged.status).toBe(400)
+		expect(forged.body.error.code).toBe("cursor_invalid")
+		await harness.dispose()
+	})
+
+	it("needs users:read", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["traces:read"])
+		const denied = await harness.request("GET", `/v2/users?${WINDOW}`, { token: key.secret })
+		expect(denied.status).toBe(403)
+		expect(denied.body.error.code).toBe("insufficient_scope")
+		await harness.dispose()
+	})
+
+	it("refuses an inverted or over-wide window and an offset cursor", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey()
+
+		const inverted = await harness.request(
+			"GET",
+			"/v2/users?start_time=2026-11-02T00:00:00.000Z&end_time=2026-11-01T00:00:00.000Z",
+			{ token: key.secret },
+		)
+		expect(inverted.status).toBe(400)
+		expect(inverted.body.error.code).toBe("invalid_time_range")
+
+		const wide = await harness.request(
+			"GET",
+			"/v2/users/user_42?start_time=2026-08-01T00:00:00.000Z&end_time=2026-11-01T00:00:00.000Z",
+			{ token: key.secret },
+		)
+		expect(wide.status).toBe(400)
+		expect(wide.body.error.code).toBe("time_range_too_large")
+
+		const deep = await harness.request("GET", `/v2/users?${WINDOW}&cursor=off_zzzzz`, {
+			token: key.secret,
+		})
+		expect(deep.status).toBe(400)
+		expect(deep.body.error.type).toBe("invalid_request_error")
+		await harness.dispose()
+	})
+})
+
+describe("v2 users wire mapping over HTTP", () => {
+	const WINDOW = "start_time=2026-11-01T00:00:00.000Z&end_time=2026-11-02T00:00:00.000Z"
+	const ISSUE_ID = Schema.decodeSync(ErrorIssueId)("00000000-0000-4000-8000-0000000000a1")
+	const HASH = "11640295108927840024"
+
+	// One row per query, every field a value no other field shares, so a swapped mapping shows.
+	const rows = {
+		usersServiceNamespaces: [{ service: "web", namespace: "storefront", spans: 1 }],
+		mcpServices: [{ service: "maple-mcp", serverSpans: 1 }],
+		usersList: [
+			{
+				userId: "u_ada",
+				name: "Ada Lovelace",
+				email: "ada@acme.test",
+				groupId: "grp_acme",
+				groupIds: ["grp_acme"],
+				namespaces: ["storefront"],
+				firstSeen: "2026-11-01 01:00:00",
+				lastSeen: "2026-11-01 09:00:00",
+				lastSeenKey: "2026-11-01 09:00:00.000000000",
+				sessions: 3,
+				errors: 5,
+				requests: 7,
+				mcpSpans: 11,
+				events: 13,
+				spans: 17,
+				logLines: 19,
+				classifiedRequests: 7,
+				mcpRequests: 1,
+				webRequests: 4,
+				mobileRequests: 0,
+			},
+		],
+		userActivityTotals: [
+			{
+				userId: "u_ada",
+				topRoute: "GET /checkout",
+				requestHours: [Date.UTC(2026, 10, 1, 8) / 1000, Date.UTC(2026, 10, 1, 20) / 1000],
+				requestHourCounts: [23, 29],
+				requestCount: 23,
+				failedRequestCount: 2,
+				errorSpanCount: 1,
+				errorLogCount: 1,
+				logCount: 4,
+				firstSeen: "2026-11-01 08:00:00",
+				lastSeen: "2026-11-01 08:30:00",
+			},
+		],
+		usersGroupNames: [{ groupId: "grp_acme", groupName: "Acme Inc." }],
+		userReplayProfile: [
+			{
+				name: "Ada Replay",
+				email: "ada.replay@acme.test",
+				groupId: "grp_replay",
+				groupName: "Replay Group",
+				sessions: 29,
+				recordedMs: 31_000,
+				errors: 37,
+				country: "GB",
+				traitKeys: ["plan"],
+				traitValues: ["pro"],
+				firstSeen: "2026-11-01 02:00:00",
+				lastSeen: "2026-11-01 10:00:00",
+			},
+		],
+		userDevices: [{ browser: "Firefox", os: "Linux", sessions: 41 }],
+		userEventsSummary: [
+			{
+				events: 43,
+				distinctEvents: 47,
+				firstSeen: "2026-11-01 03:00:00",
+				lastSeen: "2026-11-01 11:00:00",
+			},
+		],
+		userMcpSummary: [
+			{
+				requests: 53,
+				calls: 59,
+				name: "",
+				email: "",
+				firstSeen: "2026-11-01 04:00:00",
+				lastSeen: "2026-11-01 12:00:00",
+			},
+		],
+		userServices: [{ service: "web", namespace: "storefront", signals: 61 }],
+		userVisitorIds: [{ visitorId: "v_visitor", firstSeen: "2026-11-01 02:00:00" }],
+		userActivitySummary: [
+			{
+				requestCount: 80,
+				failedRequestCount: 20,
+				p50DurationMs: 120,
+				p95DurationMs: 830,
+				traceCount: 71,
+				spanCount: 79,
+				logCount: 73,
+				errorSpanCount: 3,
+				errorLogCount: 2,
+				warnLogCount: 1,
+				sessionCount: 2,
+				topRoutes: ["GET /checkout"],
+				topRouteCounts: [23],
+				requestHours: [Date.UTC(2026, 10, 1, 8) / 1000, Date.UTC(2026, 10, 1, 20) / 1000],
+				requestHourCounts: [23, 29],
+				firstSeen: "2026-11-01 05:00:00",
+				lastSeen: "2026-11-01 13:00:00",
+			},
+		],
+		userIssues: [
+			{
+				fingerprintHash: HASH,
+				serviceName: "warehouse-svc",
+				exceptionType: "WarehouseError",
+				exceptionMessage: "warehouse message",
+				errorLabel: "",
+				hits: 89,
+				firstSeen: "2026-11-01 06:00:00",
+				lastSeen: "2026-11-01 14:00:00",
+			},
+		],
+		// Uncapped totals, distinct from the listed issue's hits so the profile shows which it read.
+		userIssueTotals: [{ hits: 97, errorGroups: 1 }],
+		userSessions: [
+			{
+				sessionId: "sess_ada",
+				serviceName: "web",
+				startTime: "2026-11-01 07:00:00",
+				endTime: "2026-11-01 07:05:00",
+				lastActivityAt: "2026-11-01 07:05:00",
+				durationMs: 97_000,
+				pageViews: 101,
+				errorCount: 103,
+				entryPath: "/pricing",
+				browserName: "Safari",
+				osName: "iOS",
+				status: "ended",
+				userId: "u_ada",
+				userName: "",
+				userEmail: "",
+				groupId: "",
+				groupName: "",
+				visitorId: "v_visitor",
+				utmSource: "",
+				urlInitial: "",
+				deviceType: "mobile",
+				country: "GB",
+				clickCount: 0,
+				traceCount: 0,
+				recorded: "true",
+				quality: "normal",
+				visitorIsNew: 0,
+			},
+		],
+		userEvents: [
+			{
+				timestamp: "2026-11-01 07:30:00",
+				name: "plan_upgraded",
+				source: "server",
+				service: "billing",
+				pagePath: "/upgrade",
+				propertyKeys: [],
+				propertyValues: [],
+			},
+		],
+		userActivitySlices: [
+			{
+				serviceName: "orders-api",
+				serviceNamespace: "storefront",
+				spanCount: 1,
+				requestCount: 1,
+				logCount: 0,
+				firstRequestHour: "2026-11-01 15:00:00",
+				lastRequestHour: "2026-11-01 15:00:00",
+				firstLogHour: "1970-01-01 00:00:00",
+				lastLogHour: "1970-01-01 00:00:00",
+			},
+		],
+		userNotableTraces: [
+			{
+				traceId: "7f3a4b5c6d7e8f901234567890abcdef",
+				spanId: "a1b2c3d4e5f60718",
+				timestamp: "2026-11-01 15:10:00.000000000",
+				serviceName: "orders-api",
+				spanName: "POST /orders",
+				spanKind: "Server",
+				durationMs: 912,
+				statusCode: "Error",
+				isRoot: 1,
+			},
+		],
+		userMcpSessionList: [
+			{
+				sessionId: "mcp_sess_ada",
+				service: "maple-mcp",
+				client: "claude-code",
+				kind: "agent",
+				user: "u_ada",
+				userName: "",
+				requests: 107,
+				calls: 109,
+				errors: 113,
+				tools: 127,
+				firstSeen: "2026-11-01 08:10:00",
+				lastSeen: "2026-11-01 08:20:00",
+			},
+		],
+	} satisfies Record<string, ReadonlyArray<unknown>>
+	const rowsByContext = new Map<string, ReadonlyArray<unknown>>(Rec.toEntries(rows))
+
+	const usersWarehouse: WarehouseQueryServiceApi = {
+		...warehouseStub,
+		compiledQuery: (_tenant, compiled, options) =>
+			compiledQueryOf(compiled)
+				.decodeRows(rowsByContext.get(options?.context ?? "") ?? [])
+				.pipe(Effect.orDie),
+	}
+
+	const seedIssue = Effect.gen(function* () {
+		const database = yield* Database
+		yield* database.execute((db) =>
+			db.run(
+				PG.insertInto(ErrorIssues).values({
+					id: ISSUE_ID,
+					orgId: ORG,
+					fingerprintHash: HASH,
+					serviceName: "checkout-api",
+					exceptionType: "CheckoutError",
+					exceptionMessage: "cart is undefined",
+					topFrame: "cart.ts:1",
+					workflowState: "in_progress",
+					firstSeenAt: 0,
+					lastSeenAt: 0,
+					createdAt: 0,
+					updatedAt: 0,
+				}),
+			),
+		)
+	})
+
+	it("maps each read's fields onto their own wire fields", async () => {
+		const harness = makeHarness(usersWarehouse)
+		await harness.seedDb(seedIssue)
+		const key = await harness.bootstrapKey(["users:read"])
+		const get = (path: string) => harness.request("GET", `${path}?${WINDOW}`, { token: key.secret })
+
+		const list = await get("/v2/users")
+		expect(list.status).toBe(200)
+		expect(list.body).toEqual({
+			object: "list",
+			data: [
+				{
+					id: "u_ada",
+					object: "user",
+					name: "Ada Lovelace",
+					email: "ada@acme.test",
+					group_id: "grp_acme",
+					group_name: "Acme Inc.",
+					first_seen_at: "2026-11-01T01:00:00.000Z",
+					last_seen_at: "2026-11-01T09:00:00.000Z",
+					session_count: 3,
+					top_route: "GET /checkout",
+					activity: [0, 0, 23, 0, 0, 29, 0],
+					signals: ["replay", "events", "mcp", "traces", "logs"],
+					namespaces: ["storefront"],
+					error_count: 5,
+					request_count: 7,
+					channels: [
+						{ channel: "web", request_count: 4 },
+						{ channel: "api", request_count: 2 },
+						{ channel: "mcp", request_count: 1 },
+					],
+				},
+			],
+			has_more: false,
+			next_cursor: null,
+		})
+
+		const profile = await get("/v2/users/u_ada")
+		expect(profile.status).toBe(200)
+		expect(profile.body).toEqual({
+			id: "u_ada",
+			object: "user",
+			name: "Ada Replay",
+			email: "ada.replay@acme.test",
+			group_id: "grp_replay",
+			group_name: "Replay Group",
+			// The earliest and latest any source saw the user: the replay and the issue.
+			first_seen_at: "2026-11-01T02:00:00.000Z",
+			last_seen_at: "2026-11-01T14:00:00.000Z",
+			session_count: 29,
+			top_route: "GET /checkout",
+			activity: [0, 0, 23, 0, 0, 29, 0],
+			signals: ["replay", "events", "mcp", "traces", "logs"],
+			traits: { plan: "pro" },
+			visitor_ids: ["v_visitor"],
+			recorded_ms: 31_000,
+			replay_error_count: 37,
+			event_count: 43,
+			distinct_event_count: 47,
+			mcp_request_count: 53,
+			mcp_call_count: 59,
+			devices: [{ browser: "Firefox", os: "Linux", session_count: 41 }],
+			country: "GB",
+			services: [{ service_name: "web", namespace: "storefront", signal_count: 61 }],
+			request_count: 80,
+			failed_request_rate: 0.25,
+			p95_duration_ms: 830,
+			trace_count: 71,
+			log_count: 73,
+			issue_count: 1,
+			issue_hit_count: 97,
+		})
+
+		const activity = await get("/v2/users/u_ada/activity")
+		const replayId = encodePublicId("srep", "sess_ada")
+		const issueId = encodePublicId("iss", ISSUE_ID)
+		const entry = { session_replay_id: null, mcp_session_id: null, trace_id: null, issue_id: null }
+		expect(activity.status).toBe(200)
+		expect(activity.body).toEqual({
+			object: "user.activity",
+			user_id: "u_ada",
+			sessions: [
+				{
+					id: replayId,
+					service_name: "web",
+					start_time: "2026-11-01T07:00:00.000Z",
+					duration_ms: 97_000,
+					page_views: 101,
+					error_count: 103,
+					entry_path: "/pricing",
+					device: "Safari · iOS",
+				},
+			],
+			events: [
+				{
+					timestamp: "2026-11-01T07:30:00.000Z",
+					name: "plan_upgraded",
+					source: "server",
+					service_name: "billing",
+					detail: "/upgrade",
+				},
+			],
+			mcp_sessions: [
+				{
+					service_name: "maple-mcp",
+					session_id: "mcp_sess_ada",
+					source: "issued",
+					client: "claude-code",
+					client_kind: "agent",
+					request_count: 107,
+					call_count: 109,
+					error_count: 113,
+					tool_count: 127,
+					first_seen_at: "2026-11-01T08:10:00.000Z",
+					last_seen_at: "2026-11-01T08:20:00.000Z",
+				},
+			],
+			timeline: [
+				{
+					...entry,
+					kind: "request",
+					timestamp: "2026-11-01T15:10:00.000Z",
+					service_name: "orders-api",
+					title: "POST /orders",
+					detail: "Failed · 912 ms · orders-api",
+					tone: "crit",
+					trace_id: "7f3a4b5c6d7e8f901234567890abcdef",
+				},
+				{
+					...entry,
+					kind: "error",
+					timestamp: "2026-11-01T14:00:00.000Z",
+					service_name: "checkout-api",
+					title: "CheckoutError",
+					detail: "89 hits · checkout-api · cart is undefined",
+					tone: "crit",
+					issue_id: issueId,
+				},
+				{
+					...entry,
+					kind: "mcp",
+					timestamp: "2026-11-01T08:10:00.000Z",
+					service_name: "maple-mcp",
+					title: "109 tool calls from claude-code",
+					detail: "maple-mcp · 127 tools · 113 failed",
+					tone: "crit",
+					mcp_session_id: "mcp_sess_ada",
+				},
+				{
+					...entry,
+					kind: "event",
+					timestamp: "2026-11-01T07:30:00.000Z",
+					service_name: "billing",
+					title: "plan_upgraded",
+					detail: "server · /upgrade",
+					tone: "neutral",
+				},
+				{
+					...entry,
+					kind: "session",
+					timestamp: "2026-11-01T07:00:00.000Z",
+					service_name: "web",
+					title: "Session on /pricing",
+					detail: "101 pages · 103 errors · Safari · iOS",
+					tone: "crit",
+					session_replay_id: replayId,
+				},
+			],
+		})
+
+		// The issue's own fields win over the warehouse's latest occurrence; hits and bounds stay its.
+		const issues = await get("/v2/users/u_ada/issues")
+		expect(issues.status).toBe(200)
+		expect(issues.body).toEqual({
+			object: "list",
+			data: [
+				{
+					object: "user.issue",
+					issue_id: issueId,
+					fingerprint_hash: HASH,
+					type: "CheckoutError",
+					message: "cart is undefined",
+					service_name: "checkout-api",
+					hit_count: 89,
+					first_seen_at: "2026-11-01T06:00:00.000Z",
+					last_seen_at: "2026-11-01T14:00:00.000Z",
+					workflow_state: "in_progress",
+				},
+			],
+			has_more: false,
+			next_cursor: null,
+			attributed: true,
+		})
+		await harness.dispose()
 	})
 })

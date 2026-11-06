@@ -1,6 +1,18 @@
-import { Context, Duration, Effect, Layer, Option, Predicate, Redacted, Schema } from "effect"
+import {
+	Config,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Predicate,
+	Redacted,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FileSystem } from "effect/FileSystem"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import * as os from "node:os"
 import * as path from "node:path"
 import { MapleConfig } from "./config"
@@ -28,7 +40,7 @@ type ResolvedMode =
 // parsing accepts them and `--help` lists them); the decision reads argv here
 // because the executor layer is constructed outside the parsed-flag context.
 const hasFlag = (name: string): boolean =>
-	typeof process !== "undefined" && Array.isArray(process.argv) && process.argv.includes(name)
+	typeof process !== "undefined" && Arr.isArray(process.argv) && process.argv.includes(name)
 
 /** What answered at the local URL. */
 export type ProbeResult = "maple" | "busy" | "absent" | "foreign"
@@ -53,7 +65,7 @@ export const probeLocal = (
 	baseUrl: string,
 	timeout: Duration.Duration = PROBE_TIMEOUT,
 ): Effect.Effect<ProbeResult> => {
-	const base = baseUrl.replace(/\/$/, "")
+	const base = Str.replace(/\/$/, "")(baseUrl)
 	const get = (route: string) =>
 		client.execute(HttpClientRequest.get(`${base}${route}`)).pipe(
 			Effect.flatMap((response) =>
@@ -66,7 +78,7 @@ export const probeLocal = (
 	const ok = (status: number) => status >= 200 && status < 300
 	const legacyHealth = get("/health").pipe(
 		Effect.map(({ status, body }): ProbeResult =>
-			ok(status) && body.trim() === "OK" ? "maple" : "foreign",
+			ok(status) && Str.trim(body) === "OK" ? "maple" : "foreign",
 		),
 	)
 	return get("/local/status").pipe(
@@ -133,10 +145,10 @@ export const discoverServers = (fs: FileSystem, dir: string = MAPLE_DIR): Effect
 		if (Option.isSome(primary)) return { url: primary, ambiguous: [] }
 		const names = yield* fs.readDirectory(dir).pipe(Effect.orElseSucceed((): Array<string> => []))
 		const found = yield* Effect.forEach(
-			names.filter((name) => name.endsWith(".maple-server.json")).sort(),
+			Arr.filter(names, (name) => Str.endsWith(".maple-server.json")(name)).sort(),
 			(name) => discoverLocalUrl(fs, path.join(dir, name)),
 		)
-		const urls = found.flatMap((url) => (Option.isSome(url) ? [url.value] : []))
+		const urls = Arr.flatMap(found, (url) => (Option.isSome(url) ? [url.value] : []))
 		const only = urls.length === 1 ? urls[0] : undefined
 		return only === undefined
 			? { url: Option.none(), ambiguous: urls }
@@ -167,6 +179,16 @@ export const probeFailure = (result: Exclude<ProbeResult, "maple">, url: string)
 	}
 }
 
+/**
+ * Auto mode's pick once no flag or stored preference decided. An explicitly set
+ * `MAPLE_LOCAL_URL` names the server to use, so it wins over a stored login;
+ * otherwise a login means remote, and with neither the local URL is probed.
+ */
+export const autoBackend = (p: {
+	readonly localUrlFromEnv: boolean
+	readonly remoteConfigured: boolean
+}): "local" | "remote" | "probe" => (p.localUrlFromEnv ? "local" : p.remoteConfigured ? "remote" : "probe")
+
 export interface ModeApi {
 	/** Resolve the active backend. Fails with `ModeError` if none is available. */
 	readonly resolve: Effect.Effect<ResolvedMode, ModeError>
@@ -177,6 +199,9 @@ export class Mode extends Context.Service<Mode, ModeApi>()("@maple/cli/Mode", {
 		const config = yield* MapleConfig
 		const client = yield* HttpClient.HttpClient
 		const fs = yield* FileSystem
+		const localUrlFromEnv = yield* Config.option(Config.String("MAPLE_LOCAL_URL")).pipe(
+			Config.map(Option.isSome),
+		)
 
 		const remoteConfig = Option.map(
 			Option.all({ apiUrl: config.apiUrl, token: config.token }),
@@ -191,19 +216,18 @@ export class Mode extends Context.Service<Mode, ModeApi>()("@maple/cli/Mode", {
 
 		// MAPLE_LOCAL_URL wins; otherwise a running `maple start` on a non-default
 		// port is found through its discovery file.
-		const localUrl: Effect.Effect<string> =
-			process.env.MAPLE_LOCAL_URL === undefined
-				? Effect.flatMap(discoverServers(fs), (found) =>
-						Effect.sync(() => {
-							if (found.ambiguous.length > 1) {
-								process.stderr.write(
-									`note: several Maple servers are running (${found.ambiguous.join(", ")}); using ${config.localUrl}. Set MAPLE_LOCAL_URL to pick one.\n`,
-								)
-							}
-							return Option.getOrElse(found.url, () => config.localUrl)
-						}),
-					)
-				: Effect.succeed(config.localUrl)
+		const localUrl: Effect.Effect<string> = !localUrlFromEnv
+			? Effect.flatMap(discoverServers(fs), (found) =>
+					Effect.sync(() => {
+						if (found.ambiguous.length > 1) {
+							process.stderr.write(
+								`note: several Maple servers are running (${found.ambiguous.join(", ")}); using ${config.localUrl}. Set MAPLE_LOCAL_URL to pick one.\n`,
+							)
+						}
+						return Option.getOrElse(found.url, () => config.localUrl)
+					}),
+				)
+			: Effect.succeed(config.localUrl)
 		const local = Effect.map(localUrl, (baseUrl): ResolvedMode => ({ _tag: "local", baseUrl }))
 
 		const resolveOnce: Effect.Effect<ResolvedMode, ModeError> = Effect.gen(function* () {
@@ -231,9 +255,23 @@ export class Mode extends Context.Service<Mode, ModeApi>()("@maple/cli/Mode", {
 			if (Option.contains(config.defaultMode, "remote") && remote !== undefined) return remote
 			if (Option.contains(config.defaultMode, "local")) return yield* local
 
-			// Auto-detect: a configured token implies remote; otherwise probe for a
-			// running local binary.
-			if (remote !== undefined) return remote
+			const pick = autoBackend({
+				localUrlFromEnv,
+				remoteConfigured: remote !== undefined,
+			})
+			if (pick === "local") return yield* local
+			if (pick === "remote" && remote?._tag === "remote") {
+				// Logged in with a local server running is the easy way to query prod by
+				// mistake. The discovery files are local reads, so checking costs nothing.
+				const running = yield* discoverServers(fs)
+				const localRunning = Option.getOrUndefined(running.url) ?? running.ambiguous[0]
+				if (localRunning !== undefined) {
+					process.stderr.write(
+						`note: querying the workspace at ${remote.apiUrl} because you are logged in; a local server is running at ${localRunning}. Pass --local, or run \`maple use local\`.\n`,
+					)
+				}
+				return remote
+			}
 			const baseUrl = yield* localUrl
 			const probe = yield* probeLocal(client, baseUrl)
 			if (probe === "maple") return { _tag: "local", baseUrl } satisfies ResolvedMode

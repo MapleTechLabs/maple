@@ -1,5 +1,5 @@
-import { describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { assert, describe, it } from "@effect/vitest"
+import { Effect, Option, Array as Arr, String as Str } from "effect"
 import { afterEach, expect } from "vitest"
 import { make } from "./flushable.js"
 import { clearIdentity, identify } from "./user.js"
@@ -19,12 +19,12 @@ interface FetchCall {
 const setupFetch = () => {
 	const calls: Array<FetchCall> = []
 	const original = globalThis.fetch
-	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-		const body = init?.body && typeof init.body === "string" ? JSON.parse(init.body) : undefined
+		const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
 		calls.push({ url, body })
 		return new Response(null, { status: 200 })
-	}) as typeof fetch
+	}
 	return { calls, restore: () => void (globalThis.fetch = original) }
 }
 
@@ -38,16 +38,28 @@ const baseConfig = {
 }
 
 const firstSpanAttrs = (calls: Array<FetchCall>) => {
-	const traceCall = calls.find((c) => c.url.endsWith("/v1/traces"))!
-	const span = (
-		traceCall.body as {
-			resourceSpans: Array<{
-				scopeSpans: Array<{
-					spans: Array<{ attributes: Array<{ key: string; value: { stringValue?: string } }> }>
-				}>
-			}>
-		}
-	).resourceSpans[0].scopeSpans[0].spans[0]
+	const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
+	const span = Arr.getUnsafe(
+		Arr.getUnsafe(
+			Arr.getUnsafe(
+				(
+					traceCall.body as {
+						resourceSpans: Array<{
+							scopeSpans: Array<{
+								spans: Array<{
+									attributes: Array<{ key: string; value: { stringValue?: string } }>
+								}>
+							}>
+						}>
+					}
+				).resourceSpans,
+				0,
+			).scopeSpans,
+			0,
+		).spans,
+		0,
+	)
+	assert.isDefined(span)
 	return span.attributes
 }
 
@@ -65,12 +77,12 @@ describe("withSessionLink — user.id span stamping", () => {
 		const telemetry = make(baseConfig)
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("anon-op"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("anon-op"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 
 		const attrs = firstSpanAttrs(calls)
-		expect(attrs.find((a) => a.key === "user.id")).toBeUndefined()
+		expect(Arr.some(attrs, (a) => a.key === "user.id")).toBe(false)
 	})
 
 	it("stamps user.id on spans after identify()", async () => {
@@ -80,12 +92,14 @@ describe("withSessionLink — user.id span stamping", () => {
 		const telemetry = make(baseConfig)
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("known-op"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("known-op"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 
 		const attrs = firstSpanAttrs(calls)
-		expect(attrs.find((a) => a.key === "user.id")?.value.stringValue).toBe("user_abc123")
+		expect(Option.getOrThrow(Arr.findFirst(attrs, (a) => a.key === "user.id")).value.stringValue).toBe(
+			"user_abc123",
+		)
 	})
 
 	// Runs after the identify() test above (module state persists within the
@@ -97,12 +111,12 @@ describe("withSessionLink — user.id span stamping", () => {
 		const telemetry = make(baseConfig)
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("signed-out-op"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("signed-out-op"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 
 		const attrs = firstSpanAttrs(calls)
-		expect(attrs.find((a) => a.key === "user.id")).toBeUndefined()
+		expect(Arr.some(attrs, (a) => a.key === "user.id")).toBe(false)
 	})
 
 	it("stops stamping user.id after identify(null)", async () => {
@@ -113,14 +127,11 @@ describe("withSessionLink — user.id span stamping", () => {
 		const telemetry = make(baseConfig)
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(
-				Effect.withSpan("null-cleared-op"),
-				Effect.provide(telemetry.layer),
-			),
+			Effect.undefined.pipe(Effect.withSpan("null-cleared-op"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 
 		const attrs = firstSpanAttrs(calls)
-		expect(attrs.find((a) => a.key === "user.id")).toBeUndefined()
+		expect(Arr.some(attrs, (a) => a.key === "user.id")).toBe(false)
 	})
 })

@@ -2,14 +2,13 @@
  * `/pricing.md`: the agent-readable twin of `/pricing`.
  *
  * Reads the same `getOffer()` the page does, so the two can't disagree. The
- * meter becomes a table, the FAQ becomes `###` sections, and the enterprise
- * rail keeps its "From $2,000" anchor because that number is what makes $39
- * read as nothing.
+ * meter becomes a table and the FAQ becomes `###` sections.
  */
 import type { APIRoute } from "astro"
 import { blocks, docHeader, markdown, table } from "../lib/page-markdown"
 import {
 	getOffer,
+	isUsageCredit,
 	money,
 	platformFeatures,
 	rateBlock,
@@ -19,6 +18,8 @@ import {
 } from "../lib/pricing-offer"
 import * as m from "../paraglide/messages.js"
 import { pricingFaq } from "../lib/pricing-faq"
+import { complianceMarkdown } from "../lib/compliance"
+import { Array as Arr } from "effect"
 
 /** "GB", "session", or "1,000 events": the block the rate is quoted per. */
 const unitLabel = (a: Allotment) =>
@@ -29,19 +30,21 @@ export const GET: APIRoute = async () => {
 
 	const meter = table(
 		["Signal", "Included every month", "Then"],
-		offer.allotments.map((a) => [
+		Arr.map(offer.allotments, (a) => [
 			a.label,
 			volume(a, a.included),
 			a.unlimited
 				? m.pricing_free_beta()
-				: a.rate === undefined
-					? "n/a"
-					: `${rateLabel(a.rate)} / ${unitLabel(a)}`,
+				: isUsageCredit(a)
+					? m.pricing_rate_ai_usage()
+					: a.rate === undefined
+						? "n/a"
+						: `${rateLabel(a.rate)} / ${unitLabel(a)}`,
 		]),
 	)
 
 	const trial =
-		offer.hasTrial && offer.trialDuration
+		offer.hasTrial && (offer.trialDuration ?? 0) > 0
 			? m.pricing_trial_reassure({ duration: String(offer.trialDuration) })
 			: undefined
 
@@ -93,18 +96,24 @@ export const GET: APIRoute = async () => {
 		blocks(
 			docHeader("Maple Pricing", m.pricing_hero_title()),
 			lede,
-			claims.map((c) => `- ${c}`).join("\n"),
+			Arr.join(
+				Arr.map(claims, (c) => `- ${c}`),
+				"\n",
+			),
 			m.pricing_rates_retention({ days: String(RETENTION_DAYS) }),
 
 			`## ${offer.name}: ${money(offer.price)}${offer.interval ?? ""}`,
 			m.pricing_everything_included(),
 			meter,
 			`No per-host, per-seat or per-query fees: $0 ${m.pricing_zero_host()}, $0 ${m.pricing_zero_seat()}, $0 ${m.pricing_zero_query()}.`,
-			`Included: ${platformFeatures().join(" · ")}.`,
+			`Included: ${Arr.join(platformFeatures(), " · ")}.`,
 			trial,
 			"Start at [app.maple.dev](https://app.maple.dev).",
 
-			`## ${m.pricing_enterprise()}: ${m.pricing_enterprise_price()}`,
+			`## ${m.compliance_title()}`,
+			complianceMarkdown(),
+
+			`## ${m.pricing_enterprise()}`,
 			m.pricing_enterprise_rail(),
 			"Talk to a founder: [cal.com/david-granzin](https://cal.com/david-granzin/30min?overlayCalendar=true).",
 
@@ -129,7 +138,7 @@ export const GET: APIRoute = async () => {
 			"Formula for the Maple column: plan price + Σ per signal max(0, volume − included) × rate. Try it at [maple.dev/pricing#calculator](https://maple.dev/pricing#calculator).",
 
 			`## ${m.faq_heading()}`,
-			...faq.map(({ question, answer }) => `### ${question}\n\n${answer}`),
+			...Arr.map(faq, ({ question, answer }) => `### ${question}\n\n${answer}`),
 		),
 	)
 }

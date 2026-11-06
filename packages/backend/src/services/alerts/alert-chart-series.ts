@@ -35,10 +35,10 @@ import {
 	type ChartPoint,
 	type ChartUnit,
 } from "@maple/widgets/chart/static-chart"
-import { Array as Arr, Duration, Effect, Option, Order, Result, Schema } from "effect"
+import { Array as Arr, DateTime, Duration, Effect, Order, Result, Schema, String as Str } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { describeCause } from "@maple/backend/platform/describe-cause"
 
 /**
  * Points to draw. More than this and a 720px-wide card is drawing sub-pixel
@@ -118,7 +118,7 @@ export const chartWindow = (options: {
  * `output_format_json_quote_64bit_integers=0` sends quoted numbers.
  */
 const CheckRow = Schema.Struct({
-	timestamp: Schema.String,
+	timestamp: Schema.DateTimeUtc,
 	observedValue: Schema.NullOr(CHNumber),
 })
 const decodeCheckRow = Schema.decodeUnknownResult(CheckRow)
@@ -139,16 +139,11 @@ const toChartPoint = (row: unknown): Result.Result<ChartPoint, string> => {
 	// that as 0 would draw a recovery that never happened.
 	if (observedValue === null) return Result.fail("no observed value")
 
-	const at = Date.parse(timestamp)
-	return Number.isNaN(at) ? Result.fail("unparseable timestamp") : Result.succeed([at, observedValue])
+	return Result.succeed([DateTime.toEpochMillis(timestamp), observedValue])
 }
 
 /** The query pages newest-first for the checks table; a chart reads left to right. */
 const byTimestamp = Order.mapInput(Order.Number, (point: ChartPoint) => point[0])
-
-/** `alert_checks` is DateTime64(3) on the wire: "YYYY-MM-DD HH:MM:SS.mmm" UTC. */
-const toWarehouseDateTime = (epochMs: number): string =>
-	new Date(epochMs).toISOString().replace("T", " ").replace("Z", "")
 
 /**
  * The one warehouse method this module calls.
@@ -174,27 +169,53 @@ export interface LoadChartSeriesOptions {
 }
 
 /**
- * The rule's observed values over a window, or `null` when there is nothing
- * worth drawing.
- *
- * `null` — never a failure — for a warehouse error, a timeout, or a series so
- * short that a chart of it would be a single dot. Callers treat it as "no
- * chart" and carry on.
+ * The series could not be read: the warehouse failed, or did not answer within
+ * `SERIES_TIMEOUT`. Distinct from `null`, which means there is nothing to draw.
  */
-export const loadChartSeries = (
-	warehouse: ChartSeriesWarehouse,
-	tenant: TenantContext,
-	options: LoadChartSeriesOptions,
-): Effect.Effect<AlertChartSeries | null> =>
-	Effect.gen(function* () {
+export class AlertChartSeriesUnavailableError extends Schema.TaggedError<AlertChartSeriesUnavailableError>()(
+	"@maple/backend/alerts/AlertChartSeriesUnavailableError",
+	{
+		message: Schema.String,
+		reason: Schema.Literals(["timeout", "failed"]),
+		cause: Schema.optionalKey(Schema.String),
+	},
+) {}
+
+const timedOut = () =>
+	Effect.fail(
+		new AlertChartSeriesUnavailableError({
+			message: "Alert chart series read timed out",
+			reason: "timeout",
+		}),
+	)
+
+const readFailed = (cause: unknown) => {
+	const described = describeCause(cause)
+	return Effect.fail(
+		new AlertChartSeriesUnavailableError({
+			message: "Alert chart series read failed",
+			reason: "failed",
+			...(described === undefined ? undefined : { cause: described }),
+		}),
+	)
+}
+
+/**
+ * The rule's observed values over a window, `null` for a series so short that a
+ * chart of it would be a single dot, or `AlertChartSeriesUnavailableError` when
+ * it could not be read. The failure is recorded on this span.
+ */
+export const readChartSeries = Effect.fn("AlertChartSeries.read")(
+	function* (warehouse: ChartSeriesWarehouse, tenant: TenantContext, options: LoadChartSeriesOptions) {
+		yield* Effect.annotateCurrentSpan({ orgId: options.orgId, "maple.alert.rule_id": options.ruleId })
 		const compiled = CH.compile(
 			CH.listRuleChecksQuery({
 				limit: MAX_CHECK_ROWS,
 				...(options.groupKey != null && options.groupKey !== ""
 					? { groupKey: options.groupKey }
 					: undefined),
-				since: toWarehouseDateTime(options.fromMs),
-				until: toWarehouseDateTime(options.toMs),
+				since: DateTime.makeUnsafe(options.fromMs),
+				until: DateTime.makeUnsafe(options.toMs),
 			}),
 			{
 				orgId: options.orgId,
@@ -202,8 +223,8 @@ export const loadChartSeries = (
 				...(options.groupKey != null && options.groupKey !== ""
 					? { groupKey: options.groupKey }
 					: undefined),
-				since: toWarehouseDateTime(options.fromMs),
-				until: toWarehouseDateTime(options.toMs),
+				since: DateTime.makeUnsafe(options.fromMs),
+				until: DateTime.makeUnsafe(options.toMs),
 			},
 		)
 
@@ -224,21 +245,35 @@ export const loadChartSeries = (
 		const drawn = downsample(points, MAX_CHART_POINTS, breachSide)
 		return {
 			points: drawn,
-			sparkline: sparkline(drawn.map((p) => p[1])),
+			sparkline: sparkline(Arr.map(drawn, (p) => p[1])),
 			threshold: options.threshold,
 			breachSide,
-		}
-	}).pipe(
-		Effect.timeoutOption(SERIES_TIMEOUT),
-		Effect.map(Option.getOrNull),
-		// An enrichment must never take a page down with it: a bad rowSchema, a
-		// warehouse outage and a decode failure all land here as "no chart".
-		Effect.catchCause((cause) =>
+		} satisfies AlertChartSeries
+	},
+	// A bad rowSchema, a warehouse outage and a decode failure all read as "failed".
+	Effect.catch(readFailed),
+	Effect.catchDefect(readFailed),
+	Effect.timeoutOrElse({ duration: SERIES_TIMEOUT, orElse: timedOut }),
+)
+
+/**
+ * `readChartSeries` for a notification, where `null` stands for every problem:
+ * a chart is an enrichment, and a page late because a warehouse read was slow is
+ * worse than a page with no picture on it.
+ */
+export const loadChartSeries = (
+	warehouse: ChartSeriesWarehouse,
+	tenant: TenantContext,
+	options: LoadChartSeriesOptions,
+): Effect.Effect<AlertChartSeries | null> =>
+	readChartSeries(warehouse, tenant, options).pipe(
+		Effect.catchTag("@maple/backend/alerts/AlertChartSeriesUnavailableError", (error) =>
 			Effect.logWarning("Alert chart series unavailable; notifying without one").pipe(
 				Effect.annotateLogs({
 					orgId: options.orgId,
 					"maple.alert.rule_id": options.ruleId,
-					cause: summarizeCause(cause),
+					reason: error.reason,
+					cause: error.cause ?? "(none)",
 				}),
 				Effect.as(null),
 			),
@@ -280,7 +315,7 @@ export const chartImageUrl = (options: {
 			toMs: options.toMs,
 			// Bounded before signing: the id travels in a URL, and a rule with a
 			// paragraph for a name must not be able to grow it without limit.
-			title: options.title.slice(0, 120),
+			title: Str.slice(0, 120)(options.title),
 			unit: options.unit,
 			threshold: options.threshold,
 			breachSide: options.breachSide,

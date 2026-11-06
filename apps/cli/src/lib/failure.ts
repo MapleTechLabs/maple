@@ -2,7 +2,9 @@
 // line>` plus an optional `hint:` line; causes, stacks, and SQL stay behind
 // `--debug`. Pure so the rules are testable (bin.ts runs at import time).
 
-import { Predicate } from "effect"
+import { Option, Predicate, Array as Arr, String as Str } from "effect"
+import { SIGN_IN_REQUIRED } from "@maple/local-server/remote-auth"
+import { isRemoteHttps } from "@maple/local-server/local-address"
 
 export interface FailureReport {
 	/** The failure's `_tag`, recorded as `maple.cli.outcome` on the root span. */
@@ -51,9 +53,9 @@ export const causeChain = (error: unknown): ReadonlyArray<unknown> => {
 }
 
 export const findInChain = (error: unknown, tag: string): TaggedLink | undefined =>
-	causeChain(error)
-		.filter(isTaggedLink)
-		.find((link) => link._tag === tag)
+	Option.getOrUndefined(
+		Arr.findFirst(Arr.filter(causeChain(error), isTaggedLink), (link) => link._tag === tag),
+	)
 
 /** The reason `/local/query` gave for refusing a write, if that is what failed. */
 export const readOnlyRejection = (error: unknown): string | undefined => {
@@ -62,7 +64,9 @@ export const readOnlyRejection = (error: unknown): string | undefined => {
 	if (stringField(failed, "type") === "READONLY") return "writes and table functions are not allowed"
 	const detail = stringField(failed, "detail")
 	if (numberField(failed, "status") !== 400 || detail === undefined) return undefined
-	return detail.startsWith(READ_ONLY_PREFIX) ? detail.slice(READ_ONLY_PREFIX.length).trim() : undefined
+	return Str.startsWith(READ_ONLY_PREFIX)(detail)
+		? Str.trim(Str.slice(READ_ONLY_PREFIX.length)(detail))
+		: undefined
 }
 
 /** The local binary never answered (connection refused, socket dropped). */
@@ -76,10 +80,33 @@ const NOT_MAPLE_STATUSES: ReadonlySet<number | undefined> = new Set([404, 405, 5
 export const isNotMapleServer = (error: unknown): boolean =>
 	NOT_MAPLE_STATUSES.has(numberField(findInChain(error, "@maple/query-engine/LocalQueryFailed"), "status"))
 
+/** Who refused a local query for want of credentials, and with which status. */
+export interface LocalAccessDenial {
+	readonly by: "maple" | "proxy"
+	readonly status: number
+}
+
+/**
+ * Maple's own 401 names itself in its body. Any other 401, 403 or redirect is
+ * a proxy's, but only in front of an https server on another host: on loopback
+ * nothing sits between the CLI and the server.
+ */
+export const localAccessDenial = (error: unknown, baseUrl: string): LocalAccessDenial | undefined => {
+	const failed = findInChain(error, "@maple/query-engine/LocalQueryFailed")
+	const status = numberField(failed, "status")
+	if (status === undefined) return undefined
+	if (status === 401 && stringField(failed, "detail") === SIGN_IN_REQUIRED) return { by: "maple", status }
+	const refused = status === 401 || status === 403 || (status >= 300 && status < 400)
+	return refused && isRemoteHttps(baseUrl) ? { by: "proxy", status } : undefined
+}
+
 /** First line only: warehouse messages can carry a multi-line ClickHouse trace. */
 const firstLine = (message: string): string => {
-	const line = message.split("\n").find((l) => l.trim() !== "") ?? message
-	return line.trim()
+	const line = Option.getOrElse(
+		Arr.findFirst(Str.split("\n")(message), (l) => Str.trim(l) !== ""),
+		() => message,
+	)
+	return Str.trim(line)
 }
 
 /**
@@ -87,12 +114,22 @@ const firstLine = (message: string): string => {
  * token it would have accepted: `Syntax error: failed at position 7 ... (SYNTAX_ERROR)`.
  */
 export const cleanQueryMessage = (message: string): string =>
-	firstLine(message)
-		.replace(/^Local query failed \(\d+\):\s*/, "")
-		.replace(/^query failed:\s*/, "")
-		.replace(/^Code:\s*\d+\.\s*DB::Exception:\s*/, "")
-		.replace(/\.\s*Expected one of:.*?(\([A-Z][A-Z0-9_]+\))?$/, ". $1")
-		.trim()
+	Str.trim(
+		Str.replace(
+			/\.\s*Expected one of:.*?(\([A-Z][A-Z0-9_]+\))?$/,
+			". $1",
+		)(
+			Str.replace(
+				/^Code:\s*\d+\.\s*DB::Exception:\s*/,
+				"",
+			)(
+				Str.replace(
+					/^query failed:\s*/,
+					"",
+				)(Str.replace(/^Local query failed \(\d+\):\s*/, "")(firstLine(message))),
+			),
+		),
+	)
 
 /**
  * The human sentence in a failure. v2 API errors arrive as an `{ error: {...} }`
@@ -113,9 +150,10 @@ export const messageOf = (u: unknown): string => {
 
 /** A v2 401/403: the stored credential is missing, expired, or revoked. */
 const isAuthRejection = (error: unknown): boolean =>
-	causeChain(error).some((link) => {
+	Arr.some(causeChain(error), (link) => {
 		const inner = Predicate.hasProperty(link, "error") ? link.error : undefined
-		return [link, inner].some(
+		return Arr.some(
+			[link, inner],
 			(u) =>
 				/Unauthorized|Forbidden/.test(tagOf(u) ?? "") ||
 				stringField(u, "code") === "invalid_credentials",
@@ -129,6 +167,7 @@ const EXPECTED_TAGS = new Set([
 	"@maple/cli/UsageError",
 	"@maple/cli/NotFoundError",
 	"@maple/cli/LocalServerUnreachableError",
+	"@maple/cli/LocalServerAccessDeniedError",
 	"@maple/cli/ReadOnlyQueryError",
 	"@maple/cli/ServerStateError",
 	"@maple/cli/CheckpointPreconditionError",
@@ -163,7 +202,7 @@ export const describeFailure = (error: unknown): FailureReport => {
 		}
 	}
 
-	if (tag.startsWith("@maple/http/errors/Warehouse")) {
+	if (Str.startsWith("@maple/http/errors/Warehouse")(tag)) {
 		if (isAuthRejection(error)) {
 			return {
 				tag,

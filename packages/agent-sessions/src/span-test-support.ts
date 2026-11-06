@@ -7,6 +7,7 @@
 
 import type { AiSessionGenAiValues, AiSessionSpan } from "@maple/domain/http"
 import { formatWarehouseDateTimeMs } from "@maple/query-engine"
+import { Array as Arr } from "effect"
 
 /** Session start, fixed so offsets in the tests read as seconds into the session. */
 export const T0 = Date.UTC(2026, 7, 19, 10, 0, 0)
@@ -110,6 +111,66 @@ interface OtelMessage {
 export function userMessages(...texts: readonly string[]): readonly OtelMessage[] {
 	return [
 		{ role: "system", parts: [{ type: "text", content: "you are a helpful agent" }] },
-		...texts.map((text): OtelMessage => ({ role: "user", parts: [{ type: "text", content: text }] })),
+		...Arr.map(texts, (text): OtelMessage => ({
+			role: "user",
+			parts: [{ type: "text", content: text }],
+		})),
 	]
+}
+
+/**
+ * A LangGraph ReAct thread through the OpenInference LangChain instrumentor,
+ * one trace per invoke, each invoke passing the whole conversation so far (as
+ * captured from blind-py-langchain). The agent root records only the first
+ * message of its input — nothing on turn 1, the thread's opening prompt on every
+ * later turn — while each `ChatOpenAI` call carries the full history ending on
+ * the turn's prompt.
+ */
+export function langGraphThreadSpans(prompts: readonly string[]): readonly AiSessionSpan[] {
+	const user = (content: string): OtelMessage => ({ role: "user", parts: [{ type: "text", content }] })
+	const reply = (turn: number): OtelMessage => ({
+		role: "assistant",
+		parts: [{ type: "text", content: `answer ${turn + 1}` }],
+	})
+	return Arr.flatMap(prompts, (prompt, turn) => {
+		const traceId = `trace-${turn + 1}`
+		const startMs = turn * 10_000
+		const history = Arr.flatMap(prompts.slice(0, turn), (earlier, i) => [user(earlier), reply(i)])
+		return [
+			agentSpan({
+				spanId: `agent-${turn + 1}`,
+				traceId,
+				spanName: "ReAct Agent",
+				startMs,
+				durationMs: 3_000,
+				vendorId: "langchain",
+				agentName: "ReAct Agent",
+				genAi: turn === 0 ? {} : { inputMessages: [user(Arr.getUnsafe(prompts, 0))] },
+			}),
+			makeSpan({
+				spanId: `call-model-${turn + 1}`,
+				parentSpanId: `agent-${turn + 1}`,
+				traceId,
+				spanName: "call_model",
+				startMs: startMs + 1,
+				durationMs: 2_000,
+				vendorId: "langchain",
+				genAi: { operationName: "invoke_workflow" },
+			}),
+			llmSpan({
+				spanId: `chat-${turn + 1}`,
+				parentSpanId: `call-model-${turn + 1}`,
+				traceId,
+				spanName: "ChatOpenAI",
+				startMs: startMs + 200,
+				durationMs: 1_500,
+				vendorId: "langchain",
+				model: "openai/gpt-5-mini",
+				genAi: {
+					inputMessages: [...userMessages(), ...history, user(prompt)],
+					outputMessages: [reply(turn)],
+				},
+			}),
+		]
+	})
 }

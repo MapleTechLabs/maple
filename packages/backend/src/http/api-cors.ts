@@ -1,5 +1,6 @@
+import { Array as Arr } from "effect"
 export const API_CORS_OPTIONS = {
-	allowedOrigins: ["*"],
+	allowedOrigins: Arr.of("*"),
 	allowedMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 	// `Authorization` must be listed EXPLICITLY — the Fetch spec deliberately
 	// excludes it from the `*` wildcard. With only `*`, Chrome still lets the
@@ -23,10 +24,13 @@ export const API_CORS_OPTIONS = {
 
 /** Headers Effect's CORS middleware adds to every non-OPTIONS response. */
 export const API_CORS_RESPONSE_HEADERS = {
-	"access-control-allow-origin": API_CORS_OPTIONS.allowedOrigins[0],
+	"access-control-allow-origin": Arr.headNonEmpty(API_CORS_OPTIONS.allowedOrigins),
 	vary: "Origin",
-	"access-control-expose-headers": API_CORS_OPTIONS.exposedHeaders.join(","),
+	"access-control-expose-headers": Arr.join(API_CORS_OPTIONS.exposedHeaders, ","),
 } as const
+
+/** Without it the browser reports every cross-origin timing phase as 0. */
+export const API_TIMING_ALLOW_ORIGIN = Arr.join(API_CORS_OPTIONS.allowedOrigins, ",")
 
 /**
  * Bootstrap-safe equivalent of Effect's global CORS middleware for OPTIONS.
@@ -41,8 +45,8 @@ export const apiCorsPreflightResponse = (): Response =>
 		status: 204,
 		headers: {
 			...API_CORS_RESPONSE_HEADERS,
-			"access-control-allow-methods": API_CORS_OPTIONS.allowedMethods.join(", "),
-			"access-control-allow-headers": API_CORS_OPTIONS.allowedHeaders.join(","),
+			"access-control-allow-methods": Arr.join(API_CORS_OPTIONS.allowedMethods, ", "),
+			"access-control-allow-headers": Arr.join(API_CORS_OPTIONS.allowedHeaders, ","),
 			"access-control-max-age": String(API_CORS_OPTIONS.maxAge),
 		},
 	})

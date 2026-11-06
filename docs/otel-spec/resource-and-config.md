@@ -126,7 +126,7 @@ Source: https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-v
 | Variable                  | Default                 | Notes                                                                                                                                                                  |
 | ------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `OTEL_TRACES_SAMPLER`     | `parentbased_always_on` | e.g. `parentbased_traceidratio`, `always_on`, `always_off`, `traceidratio`.                                                                                            |
-| `OTEL_TRACES_SAMPLER_ARG` | _(unset)_               | Argument shape depends on the sampler (e.g. a ratio `0.1` for `traceidratio`/`parentbased_traceidratio`). `apps/ingest` sets its head sampling through these two vars. |
+| `OTEL_TRACES_SAMPLER_ARG` | _(unset)_               | Argument shape depends on the sampler (e.g. a ratio `0.1` for `traceidratio`/`parentbased_traceidratio`). `apps/ingest` ignores both: its head sampling is `INGEST_SELF_TRACE_SAMPLE_RATIO`, which also stamps `SampleRate`. |
 
 ### Batch Span Processor (BSP)
 

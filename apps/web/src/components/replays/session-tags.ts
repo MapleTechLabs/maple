@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import {
 	SESSION_QUALITY_TAGS,
 	SESSION_TAG_THRESHOLDS,
@@ -29,27 +29,27 @@ export const SESSION_TAG_DESCRIPTIONS = {
 	new_visitor: "First visit from this browser",
 } satisfies Record<SessionTag, string>
 
-/** Pill colours: green for the sessions worth opening, a hue per noise tier so a
- *  run of them reads at a glance, and blue/pink for the visitor traits. */
+/** Pill colours: the ok green for the sessions worth opening, a chart hue per
+ *  noise tier, neutral for bots and idle tabs, and two more chart hues for the visitor traits. */
 export const SESSION_TAG_STYLES = {
-	engaged: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-	glance: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
-	idle: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-	bounce: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
-	bot: "bg-violet-500/15 text-violet-600 dark:text-violet-300",
-	signed_in: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-	new_visitor: "bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400",
+	engaged: "bg-severity-info-a2 text-severity-info",
+	glance: "bg-chart-2/12 text-chart-2",
+	idle: "bg-muted text-muted-foreground",
+	bounce: "bg-chart-1/12 text-chart-1",
+	bot: "bg-muted text-muted-foreground",
+	signed_in: "bg-chart-5/12 text-chart-5",
+	new_visitor: "bg-chart-4/12 text-chart-4",
 } satisfies Record<SessionTag, string>
 
 /** Dot colour per tag, for places too small for a pill. */
 export const SESSION_TAG_DOTS = {
-	engaged: "bg-emerald-500",
-	glance: "bg-sky-500",
-	idle: "bg-amber-500",
-	bounce: "bg-orange-500",
-	bot: "bg-violet-500",
-	signed_in: "bg-blue-500",
-	new_visitor: "bg-fuchsia-500",
+	engaged: "bg-severity-info",
+	glance: "bg-chart-2",
+	idle: "bg-muted-foreground",
+	bounce: "bg-chart-1",
+	bot: "bg-muted-foreground",
+	signed_in: "bg-chart-5",
+	new_visitor: "bg-chart-4",
 } satisfies Record<SessionTag, string>
 
 /** Display order: the tier you most likely want first, then the traits. */
@@ -58,17 +58,18 @@ export const SESSION_TAG_ORDER: ReadonlyArray<SessionTag> = SESSION_TAGS
 const isSessionTag = Schema.is(SessionTag)
 
 /** `name` as a tag, or undefined for anything the vocabulary does not know. */
-export const asSessionTag = (name: string): SessionTag | undefined => SESSION_TAGS.find((tag) => tag === name)
+export const asSessionTag = (name: string): SessionTag | undefined =>
+	Option.getOrUndefined(Arr.findFirst(SESSION_TAGS, (tag) => tag === name))
 
 /** The valid tags in a URL param; a hand-edited URL cannot send the API an unknown tag. */
 export const sessionTagsFromSearch = (
 	tags: ReadonlyArray<string> | undefined,
 ): Array<SessionTag> | undefined => {
-	const valid = (tags ?? []).filter(isSessionTag)
+	const valid = Arr.filter(tags ?? [], isSessionTag)
 	return valid.length > 0 ? valid : undefined
 }
 
-export const isQualityTier = (tag: SessionTag) => SESSION_QUALITY_TAGS.some((quality) => quality === tag)
+export const isQualityTier = (tag: SessionTag) => Arr.some(SESSION_QUALITY_TAGS, (quality) => quality === tag)
 
 /**
  * The selection after a checkbox change. A newly ticked tier drops any other tier,
@@ -79,10 +80,15 @@ export const nextTagSelection = (
 	values: ReadonlyArray<string>,
 ): Array<SessionTag> => {
 	const next = sessionTagsFromSearch(values) ?? []
-	const addedTier = next.find((tag) => isQualityTier(tag) && !previous.includes(tag))
-	return addedTier === undefined ? next : next.filter((tag) => !isQualityTier(tag) || tag === addedTier)
+	return Option.match(
+		Arr.findFirst(next, (tag) => isQualityTier(tag) && !previous.includes(tag)),
+		{
+			onNone: () => next,
+			onSome: (addedTier) => Arr.filter(next, (tag) => !isQualityTier(tag) || tag === addedTier),
+		},
+	)
 }
 
 /** The quality tier worth flagging on a row: everything but `engaged`. */
 export const noiseTierOf = (tags: ReadonlyArray<SessionTag>): SessionTag | undefined =>
-	tags.find((tag) => tag !== "engaged" && isQualityTier(tag))
+	Option.getOrUndefined(Arr.findFirst(tags, (tag) => tag !== "engaged" && isQualityTier(tag)))

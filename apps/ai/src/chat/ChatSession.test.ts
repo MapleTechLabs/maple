@@ -7,11 +7,13 @@
  * headline one on the first run.
  */
 import { assert, beforeEach, describe, it } from "vitest"
+import { Effect, Array as Arr, Option, String as Str } from "effect"
 import { encodeChatTurnTenant, type ChatTurnOrigin, type ChatTurnTenant } from "@maple/domain/chat-session"
-import { ChatSession, TURN_STALE_MS } from "./ChatSession"
-import { installSchedulerWait, makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
-
-installSchedulerWait()
+import { ChatSession, MAX_TURN_RESUMES, TURN_STALE_MS } from "./ChatSession"
+import type { RunChatSessionTurnInput } from "./turn-runner"
+import { interruptOnAbort, makeTurnObservability, turnSpanAttributes } from "./turn-outcome"
+import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
+import { makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
 
 // Encoded, because that is what actually crosses the Durable Object boundary: RPC serializes with
 // structured clone, which refuses class instances.
@@ -45,17 +47,6 @@ const makeSession = () => {
 	return { session, state, turnId }
 }
 
-interface ChatSessionWaiterHarness {
-	readonly waiters: Set<() => void>
-	readonly waitForAppend: (timeoutMs: number) => Promise<boolean>
-}
-
-const waiterHarness = (session: ChatSession): ChatSessionWaiterHarness => {
-	// SAFETY: this test intentionally exercises ChatSession's private waiter lifecycle; the
-	// interface mirrors the two members declared by ChatSession and never escapes the test.
-	return session as ChatSessionWaiterHarness
-}
-
 describe("ChatSession.history", () => {
 	it("folds a streamed turn into ONE assistant message", () => {
 		const { session } = makeSession()
@@ -72,7 +63,7 @@ describe("ChatSession.history", () => {
 		// because the fold replaced the array slot and then looked the *old* object up again.
 		assert.lengthOf(history, 2)
 		assert.deepEqual(
-			history.map((m) => m.role),
+			Arr.map(history, (m) => m.role),
 			["user", "assistant"],
 		)
 		assert.equal(history[1]?.text, "Checking the traces.")
@@ -95,12 +86,13 @@ describe("ChatSession.history", () => {
 		const history = session.history()
 
 		assert.lengthOf(history, 1)
-		const message = history[0]!
+		const message = history[0]
+		assert.isDefined(message)
 		assert.equal(message.text, "Looking.")
 		assert.lengthOf(message.toolCalls, 1)
-		assert.equal(message.toolCalls[0]?.id, "c1")
+		assert.equal(Arr.getUnsafe(message.toolCalls, 0)?.id, "c1")
 		// Dropped silently when the deltas had already shredded the message it belonged to.
-		assert.equal(message.toolCalls[0]?.output, "3 traces")
+		assert.equal(Arr.getUnsafe(message.toolCalls, 0)?.output, "3 traces")
 	})
 
 	it("records how much prose had streamed when each call was made", () => {
@@ -114,9 +106,9 @@ describe("ChatSession.history", () => {
 
 		// The two flat fields lose the interleaving; these offsets are what the client
 		// rebuilds it from, so a reloaded turn reads the way it was watched.
-		const calls = session.history()[0]!.toolCalls
+		const calls = Arr.getUnsafe(session.history(), 0).toolCalls
 		assert.deepEqual(
-			calls.map((call) => call.textOffset),
+			Arr.map(calls, (call) => call.textOffset),
 			["Looking.".length, "Looking. Now the errors.".length],
 		)
 	})
@@ -238,7 +230,7 @@ describe("ChatSession cursor and replay", () => {
 
 		const all = session.since(0)
 		assert.deepEqual(
-			all.map((event) => event.seq),
+			Arr.map(all, (event) => event.seq),
 			[1, 2, 3],
 		)
 	})
@@ -286,7 +278,9 @@ describe("ChatSession turn mutex", () => {
 		assert.isFalse(session.holdsTurn("u1"), "the user's message id must not own the turn")
 
 		const events = session.since(0)
-		const userMessage = events.find((event) => event.type === "user-message")
+		const userMessage = Option.getOrUndefined(
+			Arr.findFirst(events, (event) => event.type === "user-message"),
+		)
 		assert.equal(userMessage?.type === "user-message" ? userMessage.id : undefined, claimed?.messageId)
 
 		// The regression, caught only end-to-end: reusing the user's id meant `openAssistant` found
@@ -296,7 +290,7 @@ describe("ChatSession turn mutex", () => {
 		session.append({ type: "text-delta", messageId: "u1", text: "PING" })
 		const collided = session.history()
 		assert.equal(
-			collided.find((message) => message.role === "user")?.text,
+			Option.getOrUndefined(Arr.findFirst(collided, (message) => message.role === "user"))?.text,
 			"Say PONGPING",
 			"this is the shape the bug produced; the fix is that the turn never uses this id",
 		)
@@ -400,10 +394,11 @@ describe("ChatSession turn mutex", () => {
 		assert.isDefined(reclaimed, "the conversation recovers on its own")
 
 		// And the abandoned turn is closed out in the log, so a client isn't left streaming.
-		const abandoned = session
-			.since(0)
-			.find((event) => event.type === "turn-end" && event.messageId === turn)
-		assert.isDefined(abandoned)
+		const abandoned = Arr.findFirst(
+			session.since(0),
+			(event) => event.type === "turn-end" && event.messageId === turn,
+		)
+		assert.isTrue(Option.isSome(abandoned))
 	})
 })
 
@@ -466,6 +461,207 @@ describe("ChatSession turn heartbeat", () => {
 	})
 })
 
+describe("ChatSession eviction recovery", () => {
+	const REVIEW_SESSION = "org_test:pr-rev_1"
+	const KICKOFF = "Review pull request #7"
+
+	/** A session whose turns are recorded rather than run: a run never settles, like a live one. */
+	const recording = (state = makeFakeDurableObjectState()) => {
+		const runs: Array<RunChatSessionTurnInput> = []
+		const session = new ChatSession(state, {}, undefined, (input) => {
+			runs.push(input)
+			return new Promise<void>(() => undefined)
+		})
+		return { session, state, runs }
+	}
+
+	const claimedTurn = (state: ReturnType<typeof makeFakeDurableObjectState>): string | undefined =>
+		(
+			state.storage.sql.exec("SELECT running_message_id FROM session WHERE id = 1").toArray()[0] as
+				| { running_message_id: string | null }
+				| undefined
+		)?.running_message_id ?? undefined
+
+	const beginReview = (session: ChatSession) =>
+		session.beginTurn({
+			sessionId: REVIEW_SESSION,
+			messageId: "kickoff",
+			text: KICKOFF,
+			tenant: TENANT,
+			origin: { kind: "autonomous" },
+		})
+
+	/** A deploy resets the object; the alarm is what reaches the new activation. */
+	it("starts an evicted autonomous review again from its kickoff", () => {
+		const { session, state } = recording()
+		beginReview(session)
+		const orphaned = claimedTurn(state)!
+
+		const revived = recording(state)
+		revived.session.alarm()
+
+		assert.isTrue(revived.session.running())
+		const restarted = claimedTurn(state)!
+		assert.notStrictEqual(restarted, orphaned)
+		assert.lengthOf(revived.runs, 1)
+		assert.strictEqual(revived.runs[0]?.messageId, restarted)
+		assert.deepEqual(revived.runs[0]?.resume, { userMessageId: "kickoff", text: KICKOFF, attempt: 1 })
+		assert.strictEqual(revived.runs[0]?.sessionId, REVIEW_SESSION)
+		// The dead attempt's message is closed, so a reader does not see it streaming forever.
+		const closed = Option.getOrUndefined(
+			Arr.findFirst(
+				revived.session.since(0),
+				(event) => event.type === "turn-end" && event.messageId === orphaned,
+			),
+		)
+		assert.strictEqual(closed?.type === "turn-end" ? closed.reason : undefined, "error")
+		// The restarted turn keeps the object alive like the first one did.
+		assert.lengthOf(state.alarms, 2)
+		// And a heartbeat on the activation that runs it is just a heartbeat.
+		revived.session.alarm()
+		assert.strictEqual(claimedTurn(state), restarted)
+	})
+
+	it("gives the review up, and says so, once it has been evicted too often", () => {
+		const first = recording()
+		beginReview(first.session)
+		let state = first.state
+		for (let attempt = 1; attempt <= MAX_TURN_RESUMES; attempt++) {
+			const revived = recording(state)
+			revived.session.alarm()
+			assert.strictEqual(revived.runs[0]?.resume?.attempt, attempt)
+			state = revived.state
+		}
+		const last = claimedTurn(state)!
+
+		const final = recording(state)
+		final.session.alarm()
+
+		assert.isFalse(final.session.running())
+		assert.lengthOf(final.runs, 1)
+		assert.strictEqual(final.runs[0]?.abandoned, true)
+		assert.strictEqual(final.runs[0]?.messageId, last)
+		// A later turn on the same session starts from a clean count.
+		beginReview(final.session)
+		const again = recording(state)
+		again.session.alarm()
+		assert.strictEqual(again.runs[0]?.resume?.attempt, 1)
+	})
+
+	/** A person's chat turn is theirs to retry: released, not re-run. */
+	it("does not start an evicted chat turn again", () => {
+		const { session, state } = recording()
+		session.beginTurn({
+			sessionId: "org_test:tab",
+			messageId: "u1",
+			text: "hi",
+			tenant: TENANT,
+			origin: APP,
+		})
+
+		const revived = recording(state)
+		revived.session.alarm()
+
+		assert.isFalse(revived.session.running())
+		assert.lengthOf(revived.runs, 0)
+	})
+})
+
+describe("ChatSession abort interrupts the running turn", () => {
+	const recording = (state = makeFakeDurableObjectState()) => {
+		const runs: Array<RunChatSessionTurnInput> = []
+		const session = new ChatSession(state, {}, undefined, (input) => {
+			runs.push(input)
+			return new Promise<void>(() => undefined)
+		})
+		return { session, state, runs }
+	}
+
+	const begin = (session: ChatSession, messageId: string) =>
+		session.beginTurn({ sessionId: "org_test:tab", messageId, text: "hi", tenant: TENANT, origin: APP })
+
+	/** The span a turn records when its run is interrupted by the session's signal. */
+	const interruptedSpan = async (signal: AbortSignal | undefined) => {
+		const { spans, tracer } = makeRecordingTracer()
+		await Effect.runPromise(
+			Effect.never.pipe(
+				interruptOnAbort(signal, makeTurnObservability()),
+				Effect.withSpan("chat.turn"),
+				Effect.withTracer(tracer),
+			),
+		)
+		return Option.getOrUndefined(Arr.findFirst(spans, (span) => span.name === "chat.turn"))
+	}
+
+	for (const reason of ["user", "superseded"] as const) {
+		it(`interrupts the run and records why on an abort by ${reason}`, async () => {
+			const { session, runs } = recording()
+			begin(session, "u1")
+			const signal = runs[0]?.signal
+
+			const span = interruptedSpan(signal)
+			session.abort(reason)
+
+			assert.strictEqual(signal?.reason, reason)
+			const turn = await span
+			assert.strictEqual(turn?.attributes.get("maple.chat.outcome"), "aborted")
+			assert.strictEqual(turn?.attributes.get("maple.chat.abort_reason"), reason)
+		})
+	}
+
+	it("calls an abort from an older caller, with no reason, a user's", () => {
+		const { session, runs } = recording()
+		begin(session, "u1")
+		session.abort()
+		assert.strictEqual(runs[0]?.signal?.reason, "user")
+	})
+
+	it("interrupts a turn whose claim went stale", async () => {
+		const { session, state, runs } = recording()
+		begin(session, "u1")
+		const span = interruptedSpan(runs[0]?.signal)
+		state.storage.sql.exec(
+			"UPDATE session SET running_since = ? WHERE id = 1",
+			Date.now() - TURN_STALE_MS - 1,
+		)
+
+		assert.isFalse(session.running())
+
+		assert.strictEqual((await span)?.attributes.get("maple.chat.abort_reason"), "stale")
+	})
+
+	it("never interrupts a newer turn on behalf of an older one", () => {
+		const { session, runs } = recording()
+		begin(session, "u1")
+		session.abort("superseded")
+		begin(session, "u2")
+
+		assert.isFalse(runs[1]?.signal?.aborted)
+		session.abort("user")
+		assert.strictEqual(runs[0]?.signal?.reason, "superseded")
+		assert.strictEqual(runs[1]?.signal?.reason, "user")
+	})
+
+	it("records an evicted turn's abandonment as an eviction", () => {
+		const attributes = turnSpanAttributes({ outcome: "abandoned" }, undefined)
+		assert.strictEqual(attributes["maple.chat.abort_reason"], "evicted")
+	})
+
+	it("leaves a turn that finished on its own without an abort reason", async () => {
+		const { session, runs } = recording()
+		begin(session, "u1")
+		const { spans, tracer } = makeRecordingTracer()
+		await Effect.runPromise(
+			Effect.void.pipe(
+				interruptOnAbort(runs[0]?.signal, makeTurnObservability()),
+				Effect.withSpan("chat.turn"),
+				Effect.withTracer(tracer),
+			),
+		)
+		assert.isFalse(spans[0]?.attributes.has("maple.chat.abort_reason"))
+	})
+})
+
 describe("ChatSession.subscribe", () => {
 	/** Read the whole subscription, which ends at `turn-end`. */
 	const drain = async (stream: ReadableStream<Uint8Array>): Promise<string> => {
@@ -481,18 +677,20 @@ describe("ChatSession.subscribe", () => {
 
 	/** Frames as `[seq, event]` pairs, skipping the leading `retry:` hint. */
 	const framesOf = (text: string): Array<{ seq: number; type: string }> =>
-		text
-			.split("\n\n")
-			.filter((frame) => frame.startsWith("id:"))
-			.map((frame) => {
-				const data = frame
-					.split("\n")
-					.find((line) => line.startsWith("data:"))!
-					.slice(5)
-					.trimStart()
+		Arr.map(
+			Arr.filter(Str.split("\n\n")(text), (frame) => Str.startsWith("id:")(frame)),
+			(frame) => {
+				const data = Str.trimStart(
+					Str.slice(5)(
+						Option.getOrThrow(
+							Arr.findFirst(Str.split("\n")(frame), (line) => Str.startsWith("data:")(line)),
+						),
+					),
+				)
 				const event = JSON.parse(data) as { seq: number; type: string }
 				return { seq: event.seq, type: event.type }
-			})
+			},
+		)
 
 	it("replays from the cursor as SSE frames and closes on turn-end", async () => {
 		const { session } = makeSession()
@@ -503,7 +701,7 @@ describe("ChatSession.subscribe", () => {
 		const text = await drain(session.subscribe(1))
 
 		// The `retry:` hint is what keeps a browser's own reconnect logic from hammering the DO.
-		assert.isTrue(text.startsWith("retry: 1000\n\n"))
+		assert.isTrue(Str.startsWith("retry: 1000\n\n")(text))
 		assert.deepEqual(framesOf(text), [
 			{ seq: 2, type: "text-delta" },
 			{ seq: 3, type: "turn-end" },
@@ -526,7 +724,7 @@ describe("ChatSession.subscribe", () => {
 
 		const frames = framesOf(await collected)
 		assert.deepEqual(
-			frames.map((frame) => frame.type),
+			Arr.map(frames, (frame) => frame.type),
 			["turn-start", "turn-end"],
 		)
 		assert.isBelow(Date.now() - started, 40, "a push must not pay the old poll interval")
@@ -548,11 +746,10 @@ describe("ChatSession.subscribe", () => {
 
 	it("removes a timed-out waiter before the next idle reconnect", async () => {
 		const { session } = makeSession()
-		const harness = waiterHarness(session)
-
+		// Element access reaches the private waiter lifecycle this test pins, without a cast.
 		for (let reconnect = 0; reconnect < 3; reconnect++) {
-			assert.isFalse(await harness.waitForAppend.call(session, 0))
-			assert.equal(harness.waiters.size, 0)
+			assert.isFalse(await Effect.runPromise(session["waitForAppend"](session["appends"], 0)))
+			assert.equal(session["waiters"].size, 0)
 		}
 	})
 })
@@ -607,7 +804,7 @@ describe("ChatSession.history — sub-agent transcripts", () => {
 		assert.equal(task?.messages[0]?.text, "p99 is 4.2s in checkout-api.")
 		// The child's own tool call rides in the nested transcript, not the parent's.
 		assert.equal(task?.messages[0]?.toolCalls[0]?.output, "40k rows")
-		assert.lengthOf(history[0]!.toolCalls, 1)
+		assert.lengthOf(Arr.getUnsafe(history, 0).toolCalls, 1)
 	})
 
 	it("shows a sub-agent still running before its turn ends", () => {
@@ -655,7 +852,7 @@ describe("ChatSession.history — sub-agent transcripts", () => {
 		session.append({ type: "text-delta", messageId: "c1", text: "first", task: ref("t1") })
 		session.append({ type: "text-delta", messageId: "c2", text: "second", task: ref("t2") })
 
-		const calls = session.history()[0]!.toolCalls
+		const calls = Arr.getUnsafe(session.history(), 0).toolCalls
 		assert.equal(calls[0]?.task?.messages[0]?.text, "first")
 		assert.equal(calls[1]?.task?.messages[0]?.text, "second")
 	})
@@ -677,7 +874,8 @@ describe("ChatSession.history — sub-agent transcripts", () => {
 		})
 		session.append({ type: "text-delta", messageId: "c1", text: "the answer", task: ref() })
 
-		const message = session.history()[0]!
+		const message = session.history()[0]
+		assert.isDefined(message)
 		assert.equal(message.text, "parent text")
 		assert.equal(message.toolCalls[0]?.task?.messages[0]?.text, "the answer")
 	})

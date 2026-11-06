@@ -1,8 +1,47 @@
-import { Duration, Effect } from "effect"
-import { displayGroupKey, truncate } from "../../alert-formatting"
-import type { HttpTransport, RenderInput, SecretConfigOf } from "../Transport"
+import { Duration, Effect, Schema, Array as Arr, String as Str } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { displayGroupKey, formatAlertHeadline, truncate, uptimeSummaryLine } from "../../alert-formatting"
+import type { DispatchContext } from "../context"
+import {
+	closesCriticalKey,
+	criticalDedupKey,
+	criticalHasOwnKey,
+	keySeverity,
+	pagingDedupKey,
+	primaryDedupKey,
+} from "../paging-dedup"
+import type { HttpRequestSpec, HttpTransport, RenderInput, SecretConfigOf } from "../Transport"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type Config = SecretConfigOf<"pagerduty">
+
+const EVENTS_URL = "https://events.pagerduty.com/v2/enqueue"
+
+const actionRequest = (
+	integrationKey: string,
+	action: "resolve" | "acknowledge",
+	dedupKey: string,
+): HttpRequestSpec => ({
+	url: EVENTS_URL,
+	headers: { "content-type": "application/json" },
+	guarded: false,
+	sensitivePath: false,
+	body: encodeJson({ routing_key: integrationKey, event_action: action, dedup_key: dedupKey }),
+})
+
+/**
+ * An acknowledgement covers every alert the incident may hold open: its base key, and the critical
+ * key when the rule pages critical under its own key or the incident ever reached critical (the
+ * rule may have dropped that tier since). PagerDuty ignores an acknowledge for a key it has no
+ * open alert for. There is no un-acknowledge in the Events API.
+ */
+export const pagerDutyAcknowledgeKeys = (
+	context: Pick<DispatchContext, "dedupeKey" | "ruleSeverities" | "incidentPeakSeverity">,
+): ReadonlyArray<string> =>
+	criticalHasOwnKey(context) || context.incidentPeakSeverity === "critical"
+		? [context.dedupeKey, criticalDedupKey(context.dedupeKey)]
+		: [context.dedupeKey]
 
 /**
  * PagerDuty Events API v2. The body is machine-facing, so `custom_details`
@@ -17,26 +56,40 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 	providerLabel: "PagerDuty",
 	render: (input: RenderInput<Config>) => {
 		const { context, templated, linkUrl, chatUrl } = input
+		if (context.eventType === "acknowledge") {
+			const [primary = context.dedupeKey] = pagerDutyAcknowledgeKeys(context)
+			return actionRequest(input.config.integrationKey, "acknowledge", primary)
+		}
 		return {
 			// Fixed vendor host: nothing user-supplied to guard against, and the
 			// path carries no credential (the routing key rides in the body).
-			url: "https://events.pagerduty.com/v2/enqueue",
+			url: EVENTS_URL,
 			headers: { "content-type": "application/json" },
 			guarded: false,
 			sensitivePath: false,
-			body: JSON.stringify({
+			body: encodeJson({
 				routing_key: input.config.integrationKey,
 				event_action: context.eventType === "resolve" ? "resolve" : "trigger",
-				dedup_key: context.dedupeKey,
+				// A resolve closes the warning-keyed alert here and the critical one
+				// in `followUps`.
+				dedup_key: primaryDedupKey(context),
 				payload: {
-					summary: truncate(templated?.title ?? `${context.ruleName} ${context.eventType}`, 1024),
+					summary: truncate(
+						templated?.title ??
+							(context.signalType === "uptime"
+								? `${formatAlertHeadline(context)}: ${uptimeSummaryLine(context)}`
+								: `${context.ruleName} ${context.eventType}`),
+						1024,
+					),
 					source: displayGroupKey(context.groupKey) ?? "maple-alerts",
-					severity: context.severity === "critical" ? "critical" : "warning",
+					// The tier the key was chosen for, so a stale critical event cannot raise the warning alert.
+					severity: keySeverity(context) === "critical" ? "critical" : "warning",
 					custom_details: {
 						...(templated ? { message: templated.body } : undefined),
 						ruleName: context.ruleName,
 						signalType: context.signalType,
 						value: context.value,
+						...(context.detail == null ? undefined : { detail: context.detail }),
 						threshold: context.threshold,
 						thresholdUpper: context.thresholdUpper,
 						comparator: context.comparator,
@@ -45,16 +98,28 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 						chatUrl,
 					},
 				},
-				links: [
-					{ href: linkUrl, text: "Open in Maple" },
-					{ href: chatUrl, text: "Ask Maple AI" },
-				],
+				links: [{ href: linkUrl, text: "Open in Maple" }],
 			}),
 		}
 	},
+	// The critical alert closes when the incident resolves or falls back to warning.
+	followUps: (input) => {
+		const { context } = input
+		if (context.eventType === "acknowledge") {
+			return Arr.map(Arr.drop(pagerDutyAcknowledgeKeys(context), 1), (key) =>
+				actionRequest(input.config.integrationKey, "acknowledge", key),
+			)
+		}
+		return closesCriticalKey(context)
+			? [actionRequest(input.config.integrationKey, "resolve", criticalDedupKey(context.dedupeKey))]
+			: []
+	},
 	ack: (input) => ({
-		providerMessage: "Delivered to PagerDuty",
-		providerReference: input.context.dedupeKey,
+		providerMessage:
+			input.context.eventType === "acknowledge"
+				? "Acknowledged in PagerDuty"
+				: "Delivered to PagerDuty",
+		providerReference: pagingDedupKey(input.context, keySeverity(input.context)),
 	}),
 }
 
@@ -84,27 +149,29 @@ export type PagerDutyKeyVerification =
  */
 export const verifyPagerDutyRoutingKey = (
 	integrationKey: string,
-	fetchFn: typeof fetch,
 	timeoutMs: number,
 	dedupKey: string,
-): Effect.Effect<PagerDutyKeyVerification> =>
-	Effect.tryPromise(() =>
-		fetchFn("https://events.pagerduty.com/v2/enqueue", {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({
-				routing_key: integrationKey,
-				event_action: "resolve",
-				dedup_key: dedupKey,
-			}),
-		}),
+): Effect.Effect<PagerDutyKeyVerification, never, HttpClient.HttpClient> =>
+	HttpClient.execute(
+		HttpClientRequest.post("https://events.pagerduty.com/v2/enqueue").pipe(
+			HttpClientRequest.bodyText(
+				encodeJson({
+					routing_key: integrationKey,
+					event_action: "resolve",
+					dedup_key: dedupKey,
+				}),
+				"application/json",
+			),
+		),
 	).pipe(
 		Effect.flatMap((response) => {
-			if (response.ok) return Effect.succeed<PagerDutyKeyVerification>({ status: "valid" })
+			if (response.status >= 200 && response.status < 300) {
+				return Effect.succeed<PagerDutyKeyVerification>({ status: "valid" })
+			}
 			if (response.status === 400) {
-				return Effect.promise(() => response.text().catch(() => "")).pipe(
+				return Effect.orElseSucceed(response.text, () => "").pipe(
 					Effect.map((body): PagerDutyKeyVerification => {
-						const reason = truncate(body.trim().replace(/\s+/g, " "), 500)
+						const reason = truncate(Str.replace(/\s+/g, " ")(Str.trim(body)), 500)
 						return { status: "invalid", reason: reason || "Invalid routing key" }
 					}),
 				)

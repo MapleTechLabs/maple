@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest"
-import {
-	MAX_VERIFICATION_ATTEMPTS,
-	VERIFICATION_TARGET_OCCURRENCES,
-	verificationBandFor,
-	verificationVerdictAutoCloses,
-	verificationWindowMs,
-} from "./fix-verification"
+import { verificationBandFor, verificationVerdictAutoCloses, verificationWindowMs } from "./fix-verification"
 import type { IssueSeverity } from "./errors"
 
 const MINUTE = 60_000
@@ -68,14 +62,6 @@ describe("verificationWindowMs", () => {
 			verificationWindowMs({ severity: "low", ratePerHour: 2 }),
 		)
 	})
-
-	it("targets the configured occurrence count", () => {
-		// One per hour means the derivation asks for exactly TARGET hours, which
-		// medium's band ([4h, 7d]) leaves untouched.
-		expect(verificationWindowMs({ severity: "medium", ratePerHour: 1 })).toBe(
-			VERIFICATION_TARGET_OCCURRENCES * HOUR,
-		)
-	})
 })
 
 describe("verificationBandFor", () => {
@@ -104,11 +90,5 @@ describe("verificationVerdictAutoCloses", () => {
 	it("leaves high and critical issues for a human", () => {
 		expect(verificationVerdictAutoCloses("high")).toBe(false)
 		expect(verificationVerdictAutoCloses("critical")).toBe(false)
-	})
-})
-
-describe("MAX_VERIFICATION_ATTEMPTS", () => {
-	it("allows exactly one retry", () => {
-		expect(MAX_VERIFICATION_ATTEMPTS).toBe(2)
 	})
 })

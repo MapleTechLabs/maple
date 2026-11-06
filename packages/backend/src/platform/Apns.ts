@@ -1,5 +1,16 @@
-import { Clock, Context, Effect, Layer, Option, Redacted, Ref, Schema, Semaphore } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import {
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Ref,
+	Schema,
+	Semaphore,
+	String as Str,
+} from "effect"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import type { MobilePushEnvironment } from "@maple/domain/http"
 import { Env, type EnvConfig } from "./Env"
 
@@ -10,7 +21,7 @@ import { Env, type EnvConfig } from "./Env"
  * production, so this is a plain HTTP client; the known gap is *local*
  * `workerd`, which speaks HTTP/1.1 outbound and gets the connection dropped
  * — hence `ApnsUnavailable` rather than a hard failure when the send blows up
- * in dev. Do not route this through the SSRF-guarded `safeFetch`: the host is
+ * in dev. Do not route this through the SSRF `guard` client: the host is
  * ours, fixed, and must be reachable over HTTP/2.
  *
  * Auth is an ES256 JWT (`iss` = team id, `kid` = key id) minted at most once
@@ -18,7 +29,7 @@ import { Env, type EnvConfig } from "./Env"
  * clients that mint one per request.
  */
 
-export class ApnsError extends Schema.TaggedError<ApnsError>()("@maple/api/platform/ApnsError", {
+export class ApnsError extends Schema.TaggedError<ApnsError>()("@maple/backend/platform/ApnsError", {
 	message: Schema.String,
 	/** APNs `reason` from the response body, when the send reached Apple. */
 	reason: Schema.optionalKey(Schema.String),
@@ -31,6 +42,11 @@ export interface ApnsAlert {
 	readonly subtitle?: string | undefined
 	readonly body: string
 }
+
+const encodeJwtPart = (part: Record<string, unknown>) =>
+	Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(part).pipe(
+		Effect.mapError((cause) => new ApnsError({ message: "Failed to encode APNs JWT", cause })),
+	)
 
 export interface ApnsPush {
 	readonly deviceToken: string
@@ -174,10 +190,10 @@ const base64UrlString = (value: string) => Buffer.from(value, "utf8").toString("
 const base64UrlBytes = (value: ArrayBuffer) => Buffer.from(value).toString("base64url")
 
 const pemToPkcs8 = (pem: string): ArrayBuffer => {
-	const body = pem
-		.replace(/-----BEGIN[^-]+-----/g, "")
-		.replace(/-----END[^-]+-----/g, "")
-		.replace(/\s+/g, "")
+	const body = Str.replace(
+		/\s+/g,
+		"",
+	)(Str.replace(/-----END[^-]+-----/g, "")(Str.replace(/-----BEGIN[^-]+-----/g, "")(pem)))
 	const buf = Buffer.from(body, "base64")
 	return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
 }
@@ -196,7 +212,9 @@ const resolveConfig = (env: EnvConfig): ApnsConfig | null => {
 	return { teamId, keyId, privateKeyPem: Redacted.value(key) }
 }
 
-const decodeReason = Schema.decodeUnknownOption(Schema.Struct({ reason: Schema.String }))
+const decodeReason = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Struct({ reason: Schema.String })),
+)
 
 /**
  * TTL cache around `mint` with single-flight refresh. MobilePushService fans
@@ -241,7 +259,7 @@ export const makeSingleFlightTokenCache = <E, R>(
 	)
 
 export class ApnsClient extends Context.Service<ApnsClient, ApnsClientApi>()(
-	"@maple/api/platform/ApnsClient",
+	"@maple/backend/platform/ApnsClient",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env
@@ -281,10 +299,13 @@ export class ApnsClient extends Context.Service<ApnsClient, ApnsClientApi>()(
 
 			const mintToken = Effect.fn("ApnsClient.mintToken")(function* () {
 				const nowMs = yield* Clock.currentTimeMillis
-				const header = base64UrlString(JSON.stringify({ alg: "ES256", kid: config.keyId }))
-				const payload = base64UrlString(
-					JSON.stringify({ iss: config.teamId, iat: Math.floor(nowMs / 1000) }),
-				)
+				const headerJson = yield* encodeJwtPart({ alg: "ES256", kid: config.keyId })
+				const payloadJson = yield* encodeJwtPart({
+					iss: config.teamId,
+					iat: Math.floor(nowMs / 1000),
+				})
+				const header = base64UrlString(headerJson)
+				const payload = base64UrlString(payloadJson)
 				const signingInput = `${header}.${payload}`
 				// WebCrypto ECDSA emits the raw r||s form, which is exactly JWS ES256.
 				const key = yield* signingKey
@@ -417,13 +438,7 @@ export class ApnsClient extends Context.Service<ApnsClient, ApnsClientApi>()(
 				}
 
 				const text = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
-				const parsed = (() => {
-					try {
-						return decodeReason(JSON.parse(text))
-					} catch {
-						return Option.none()
-					}
-				})()
+				const parsed = decodeReason(text)
 				const reason = Option.map(parsed, (r) => r.reason).pipe(
 					Option.getOrElse(() => `HTTP ${response.status}`),
 				)

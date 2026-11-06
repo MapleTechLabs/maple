@@ -6,6 +6,7 @@ import {
 	ONBOARDING_REWARD_WINDOW_MS,
 	type OnboardingChecklistInputs,
 } from "./onboarding-checklist"
+import { Array as Arr, Option } from "effect"
 
 const CREATED = Date.parse("2026-07-27T00:00:00.000Z")
 const NOW = CREATED + 6 * 60 * 60 * 1000
@@ -32,7 +33,7 @@ describe("evaluateOnboardingChecklist", () => {
 			},
 			NOW,
 		)
-		expect(report.steps.map((step) => step.id)).toEqual([...ONBOARDING_CHECKLIST_STEP_IDS])
+		expect(Arr.map(report.steps, (step) => step.id)).toEqual([...ONBOARDING_CHECKLIST_STEP_IDS])
 		expect(report.status).toBe("in_progress")
 		expect(report.completedCount).toBe(0)
 		expect(report.totalCount).toBe(4)
@@ -68,8 +69,12 @@ describe("evaluateOnboardingChecklist", () => {
 
 	it("needs both a rule and a destination for the alert step", () => {
 		const step = (inputs: OnboardingChecklistInputs) =>
-			evaluateOnboardingChecklist(inputs, NOW).steps.find((s) => s.id === "create_alert_rule")
-				?.completed
+			Option.getOrUndefined(
+				Arr.findFirst(
+					evaluateOnboardingChecklist(inputs, NOW).steps,
+					(s) => s.id === "create_alert_rule",
+				),
+			)?.completed
 		expect(step({ ...allDone, alertDestinationCount: 0 })).toBe(false)
 		expect(step({ ...allDone, alertRuleCount: 0 })).toBe(false)
 		expect(step(allDone)).toBe(true)
@@ -77,8 +82,11 @@ describe("evaluateOnboardingChecklist", () => {
 
 	it("counts a teammate only beyond the founding member", () => {
 		const step = (memberCount: number) =>
-			evaluateOnboardingChecklist({ ...allDone, memberCount }, NOW).steps.find(
-				(s) => s.id === "invite_teammate",
+			Option.getOrUndefined(
+				Arr.findFirst(
+					evaluateOnboardingChecklist({ ...allDone, memberCount }, NOW).steps,
+					(s) => s.id === "invite_teammate",
+				),
 			)?.completed
 		expect(step(1)).toBe(false)
 		expect(step(2)).toBe(true)
@@ -86,7 +94,7 @@ describe("evaluateOnboardingChecklist", () => {
 
 	it("shows the Slack step only where channels can be created, and never requires it", () => {
 		const ids = (inputs: OnboardingChecklistInputs) =>
-			evaluateOnboardingChecklist(inputs, NOW).steps.map((s) => s.id)
+			Arr.map(evaluateOnboardingChecklist(inputs, NOW).steps, (s) => s.id)
 		expect(ids({ ...allDone, supportChannelAvailable: false })).not.toContain("join_slack_channel")
 		expect(ids(allDone).at(-1)).toBe("join_slack_channel")
 		const withoutChannel = evaluateOnboardingChecklist({ ...allDone, supportChannelCreated: false }, NOW)

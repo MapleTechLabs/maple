@@ -1,4 +1,4 @@
-import { Effect, Result } from "effect"
+import { Effect, Result, Array as Arr, Record as Rec, String as Str } from "effect"
 import { deepStrictEqual, ok, strictEqual, throws } from "node:assert"
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -13,9 +13,9 @@ import {
 	type SignalProjectionSpec,
 	type SignalScalar,
 } from "@maple/eventing-core"
-import { normalizeOtlpLogs, normalizeOtlpLogsWithDiagnostics } from "../src/server/eventing/otlp"
-import { sourceOccurrenceFingerprint } from "../src/server/eventing/runtime"
-import { encodeLogs } from "../src/server/otlp/encode"
+import { normalizeOtlpLogs, normalizeOtlpLogsWithDiagnostics } from "@maple/local-server/eventing/otlp"
+import { sourceOccurrenceFingerprint } from "@maple/local-server/eventing/runtime"
+import { encodeLogs } from "@maple/local-server/otlp/encode"
 import { makeRuntime, metricRecorder, openStore, run } from "./eventing-test-support"
 
 const withDataDir = async (run: (dataDir: string) => Promise<void>): Promise<void> => {
@@ -74,7 +74,7 @@ const exampleRecordObserved = {
 }
 
 const firstLogRecord = (request: typeof exampleRecordObserved) =>
-	request.resourceLogs[0]!.scopeLogs[0]!.logRecords[0]!
+	Arr.getUnsafe(Arr.getUnsafe(Arr.getUnsafe(request.resourceLogs, 0).scopeLogs, 0).logRecords, 0)
 
 const projection = (overrides: Partial<SignalProjectionSpec> = {}): SignalProjectionSpec => ({
 	id: "example-record-observed",
@@ -123,21 +123,21 @@ const stringField = (
 	namespace: "resource" | "attribute",
 	key: string,
 	required = false,
-): string | undefined => {
+): string | null => {
 	const value = signalField(signal, namespace, key)
 	if (value === undefined) {
 		if (required) throw new Error(`example event is missing ${key}`)
-		return undefined
+		return null
 	}
 	if (value.type !== "string") throw new Error(`example event ${key} must be a string`)
 	return value.value
 }
 
-const int64Field = (signal: NormalizedSignal, key: string, required = false): string | undefined => {
+const int64Field = (signal: NormalizedSignal, key: string, required = false): string | null => {
 	const value = signalField(signal, "attribute", key)
 	if (value === undefined) {
 		if (required) throw new Error(`example event is missing ${key}`)
-		return undefined
+		return null
 	}
 	if (value.type !== "int64") throw new Error(`example event ${key} must be an int64`)
 	return value.value
@@ -156,7 +156,7 @@ const exampleProjectors = (): ProjectorRegistry =>
 				return value
 			},
 			decodeConfig: (value) => {
-				if (typeof value !== "object" || value === null || Array.isArray(value))
+				if (typeof value !== "object" || value === null || Arr.isArray(value))
 					throw new Error("example projector config must be an object")
 				return {}
 			},
@@ -226,14 +226,19 @@ describe("LocalEventingRuntime", () => {
 				strictEqual(observed(runtime.evaluateOtlp("logs", exampleRecordObserved)).events.length, 1)
 
 				const malformed = structuredClone(exampleRecordObserved)
-				firstLogRecord(malformed).attributes = firstLogRecord(malformed).attributes.filter(
+				firstLogRecord(malformed).attributes = Arr.filter(
+					firstLogRecord(malformed).attributes,
 					({ key }) => key !== "example.collection.name",
 				)
 				strictEqual(observed(runtime.evaluateOtlp("logs", malformed)).failures.length, 1)
 
 				const mismatched = structuredClone(exampleRecordObserved)
-				firstLogRecord(mismatched).attributes = firstLogRecord(mismatched).attributes.map((entry) =>
-					entry.key === "example.record.sequence" ? attr(entry.key, { stringValue: "42" }) : entry,
+				firstLogRecord(mismatched).attributes = Arr.map(
+					firstLogRecord(mismatched).attributes,
+					(entry) =>
+						entry.key === "example.record.sequence"
+							? attr(entry.key, { stringValue: "42" })
+							: entry,
 				)
 				deepStrictEqual(observed(runtime.evaluateOtlp("logs", mismatched)).typeMismatchFields, [
 					"attribute:example.record.sequence",
@@ -254,10 +259,10 @@ describe("LocalEventingRuntime", () => {
 				ok(operationOutcomes.includes("projection:failure"))
 				ok(operationOutcomes.includes("selector_type_mismatch:observed"))
 				const serialized = metrics.attributes()
-				strictEqual(serialized.includes("Observe example events"), false)
-				strictEqual(serialized.includes("01K20EXAMPLERECORD42"), false)
-				strictEqual(serialized.includes("example-record-observed"), false)
-				strictEqual(serialized.includes("example.record.sequence"), false)
+				strictEqual(Str.includes("Observe example events")(serialized), false)
+				strictEqual(Str.includes("01K20EXAMPLERECORD42")(serialized), false)
+				strictEqual(Str.includes("example-record-observed")(serialized), false)
+				strictEqual(Str.includes("example.record.sequence")(serialized), false)
 			} finally {
 				await store.close()
 			}
@@ -275,7 +280,7 @@ describe("LocalEventingRuntime", () => {
 		const batches = encodeLogs(exampleRecordObserved)
 		strictEqual(batches.length, 1)
 		strictEqual(batches[0]?.rowCount, 1)
-		strictEqual(JSON.parse(batches[0]!.ndjson).log_attributes["example.record.sequence"], "42")
+		strictEqual(JSON.parse(batches[0].ndjson).log_attributes["example.record.sequence"], "42")
 	})
 
 	it("uses the first nonblank occurrence alias and derives identity when every alias is blank", () => {
@@ -284,7 +289,10 @@ describe("LocalEventingRuntime", () => {
 		aliasedRecord.attributes = [
 			attr("event.id", { stringValue: "   " }),
 			attr("cloudevents.id", { stringValue: " cloud-event-42 " }),
-			...aliasedRecord.attributes.filter(({ key }) => !["event.id", "cloudevents.id"].includes(key)),
+			...Arr.filter(
+				aliasedRecord.attributes,
+				({ key }) => !["event.id", "cloudevents.id"].includes(key),
+			),
 		]
 		const [aliasedSignal] = run(normalizeOtlpLogs(aliased, "2026-08-07T20:00:00Z"))
 		strictEqual(aliasedSignal?.occurrenceId, "cloud-event-42")
@@ -292,7 +300,7 @@ describe("LocalEventingRuntime", () => {
 
 		const derivedA = structuredClone(aliased)
 		const derivedARecord = firstLogRecord(derivedA)
-		derivedARecord.attributes = derivedARecord.attributes.map((entry) =>
+		derivedARecord.attributes = Arr.map(derivedARecord.attributes, (entry) =>
 			["event.id", "cloudevents.id"].includes(entry.key)
 				? attr(entry.key, { stringValue: entry.key === "event.id" ? "" : " \t " })
 				: entry,
@@ -303,7 +311,12 @@ describe("LocalEventingRuntime", () => {
 		const [signalB] = run(normalizeOtlpLogs(derivedB, "2026-08-07T20:00:00Z"))
 		strictEqual(signalA?.identityQuality, "derived")
 		strictEqual(signalB?.identityQuality, "derived")
-		strictEqual(signalA?.occurrenceId?.startsWith("derived:sha256:"), true)
+		strictEqual(
+			signalA?.occurrenceId !== undefined &&
+				signalA.occurrenceId !== null &&
+				Str.startsWith("derived:sha256:")(signalA.occurrenceId),
+			true,
+		)
 		strictEqual(signalA?.occurrenceId === signalB?.occurrenceId, false)
 	})
 
@@ -337,11 +350,12 @@ describe("LocalEventingRuntime", () => {
 
 	it("uses a locale-independent source-fingerprint field order", () => {
 		const [signal] = run(normalizeOtlpLogs(exampleRecordObserved, "2026-08-07T20:00:00Z"))
-		const fields = new Map(signal!.fields)
+		ok(signal !== undefined)
+		const fields = new Map(signal.fields)
 		fields.set("attribute:ä", { type: "string", value: "umlaut" })
 		fields.set("attribute:z", { type: "string", value: "ascii" })
-		const forward = { ...signal!, fields }
-		const reverse = { ...signal!, fields: new Map([...fields].reverse()) }
+		const forward = { ...signal, fields }
+		const reverse = { ...signal, fields: new Map([...fields].reverse()) }
 		strictEqual(
 			Result.getOrThrow(sourceOccurrenceFingerprint(forward)),
 			Result.getOrThrow(sourceOccurrenceFingerprint(reverse)),
@@ -363,17 +377,19 @@ describe("LocalEventingRuntime", () => {
 			}),
 		)
 		const [signal] = run(normalizeOtlpLogs(request, "2026-08-07T20:00:00Z"))
-		const record = (signal!.data as { record: { attributes: Record<string, JsonValue> } }).record
-		ok(Object.prototype.hasOwnProperty.call(record.attributes, "__proto__"))
+		ok(signal !== undefined)
+		const record = (signal.data as { record: { attributes: Record<string, JsonValue> } }).record
+		ok(Rec.has(record.attributes, "__proto__"))
 		// Attribute maps are null-prototype on purpose, so a `__proto__` key stays data.
 		deepStrictEqual(
 			record.attributes["__proto__"],
 			Object.assign(Object.create(null), { nested: "top-level" }),
 		)
 		const safe = record.attributes.safe as Record<string, JsonValue>
-		ok(Object.prototype.hasOwnProperty.call(safe, "__proto__"))
+		ok(Rec.has(safe, "__proto__"))
 		strictEqual(safe["__proto__"], "nested")
-		strictEqual(Object.prototype.hasOwnProperty.call({}, "nested"), false)
+		const empty: Record<string, JsonValue> = {}
+		strictEqual(Rec.has(empty, "nested"), false)
 	})
 
 	it("catalogs only the scalar body field that the OTLP adapter can populate", async () =>
@@ -423,7 +439,7 @@ describe("LocalEventingRuntime", () => {
 				strictEqual(first.events.length, 1)
 				deepStrictEqual(first.events[0], {
 					specversion: "1.0",
-					id: first.events[0]!.id,
+					id: Arr.getUnsafe(first.events, 0).id,
 					source: "https://events.example.test",
 					type: "dev.maple.example.record.observed.v1",
 					subject: "example/widgets/records/42",
@@ -453,7 +469,7 @@ describe("LocalEventingRuntime", () => {
 				strictEqual(staged.inserted, 1)
 				strictEqual(run(runtime.listReady()).events.length, 0)
 				deepStrictEqual(
-					run(runtime.listStaged()).events.map(({ event }) => event),
+					Arr.map(run(runtime.listStaged()).events, ({ event }) => event),
 					first.events,
 				)
 				run(runtime.activate(projection({ revision: 2, enabled: false })))
@@ -482,7 +498,7 @@ describe("LocalEventingRuntime", () => {
 				deepStrictEqual(retry.recoveredEventIds, staged.eventIds)
 				run(runtime.markReady(retry.recoveredEventIds))
 				deepStrictEqual(
-					run(runtime.listReady()).events.map(({ event }) => event),
+					Arr.map(run(runtime.listReady()).events, ({ event }) => event),
 					first.events,
 				)
 				deepStrictEqual(run(runtime.listStaged()).events, [])
@@ -501,12 +517,12 @@ describe("LocalEventingRuntime", () => {
 				const first = firstLogRecord(request)
 				first.attributes.push(attr("example.projector.ignored", { stringValue: "first" }))
 				const second = structuredClone(first)
-				second.attributes = second.attributes.map((entry) =>
+				second.attributes = Arr.map(second.attributes, (entry) =>
 					entry.key === "example.projector.ignored"
 						? attr(entry.key, { stringValue: "second" })
 						: entry,
 				)
-				request.resourceLogs[0]!.scopeLogs[0]!.logRecords.push(second)
+				Arr.getUnsafe(Arr.getUnsafe(request.resourceLogs, 0).scopeLogs, 0).logRecords.push(second)
 				throws(
 					() => run(runtime.evaluateOtlp("logs", request)),
 					/source occurrence collision within one ingest batch/,
@@ -527,7 +543,7 @@ describe("LocalEventingRuntime", () => {
 				const request = structuredClone(exampleRecordObserved)
 				const sibling = structuredClone(firstLogRecord(request))
 				sibling.eventName = "example.record.ignored"
-				request.resourceLogs[0]!.scopeLogs[0]!.logRecords.push(sibling)
+				Arr.getUnsafe(Arr.getUnsafe(request.resourceLogs, 0).scopeLogs, 0).logRecords.push(sibling)
 				throws(
 					() => run(runtime.evaluateOtlp("logs", request)),
 					/source occurrence collision within one ingest batch/,
@@ -552,7 +568,7 @@ describe("LocalEventingRuntime", () => {
 						attr(`projection-only-sibling-${index}`, { stringValue: "warehouse-valid" }),
 					),
 				)
-				request.resourceLogs[0]!.scopeLogs[0]!.logRecords.push(sibling)
+				Arr.getUnsafe(Arr.getUnsafe(request.resourceLogs, 0).scopeLogs, 0).logRecords.push(sibling)
 				throws(
 					() => run(runtime.evaluateOtlp("logs", request)),
 					/source occurrence collision with an unprojectable record within one ingest batch/,
@@ -574,7 +590,7 @@ describe("LocalEventingRuntime", () => {
 				const request = structuredClone(exampleRecordObserved)
 				const sibling = structuredClone(firstLogRecord(request))
 				sibling.eventName = "example.record.alternate"
-				request.resourceLogs[0]!.scopeLogs[0]!.logRecords.push(sibling)
+				Arr.getUnsafe(Arr.getUnsafe(request.resourceLogs, 0).scopeLogs, 0).logRecords.push(sibling)
 				throws(
 					() => run(runtime.evaluateOtlp("logs", request)),
 					/source occurrence collision within one ingest batch/,

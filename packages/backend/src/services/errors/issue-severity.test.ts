@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { AiTriageResult } from "@maple/domain/http"
 import { ErrorIssueId, OrgId } from "@maple/domain/primitives"
-import { actors, errorIssues, errorIssueEvents, issueEscalations } from "@maple/db"
-import { eq } from "drizzle-orm"
-import { Effect, Schema } from "effect"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { Actors, ErrorIssueEvents, ErrorIssues, IssueEscalations } from "@maple/db/tables"
+import { Effect, Schema, Array as Arr, Clock } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
@@ -33,21 +33,23 @@ const ORG = asOrgId("org_severity_test")
 const setup = Effect.gen(function* () {
 	const database = yield* Database
 	const issueId = asIssueId(randomUUID())
-	const now = new Date()
+	const now = yield* Clock.currentTimeMillis
 	yield* database.execute((db) =>
-		db.insert(errorIssues).values({
-			id: issueId,
-			orgId: ORG,
-			fingerprintHash: "12345678901234567890",
-			serviceName: "checkout-api",
-			exceptionType: "TimeoutError",
-			exceptionMessage: "upstream timed out",
-			topFrame: "",
-			firstSeenAt: now,
-			lastSeenAt: now,
-			createdAt: now,
-			updatedAt: now,
-		}),
+		db.run(
+			PG.insertInto(ErrorIssues).values({
+				id: issueId,
+				orgId: ORG,
+				fingerprintHash: "12345678901234567890",
+				serviceName: "checkout-api",
+				exceptionType: "TimeoutError",
+				exceptionMessage: "upstream timed out",
+				topFrame: "",
+				firstSeenAt: now,
+				lastSeenAt: now,
+				createdAt: now,
+				updatedAt: now,
+			}),
+		),
 	)
 
 	const baseInput = (overrides: Partial<ApplyTriageSeverityInput> = {}): ApplyTriageSeverityInput => ({
@@ -68,20 +70,44 @@ const setup = Effect.gen(function* () {
 		severitySource: "manual" | "detector",
 	) =>
 		database.execute((db) =>
-			db.update(errorIssues).set({ severity, severitySource }).where(eq(errorIssues.id, issueId)),
+			db.run(
+				PG.update(ErrorIssues)
+					.set({ severity, severitySource })
+					.where(($) => [$.id.eq(issueId)]),
+			),
 		)
 
 	const loadIssue = Effect.map(
-		database.execute((db) => db.select().from(errorIssues).where(eq(errorIssues.id, issueId))),
+		database.execute((db) =>
+			db.run(
+				PG.from(ErrorIssues)
+					.select()
+					.where(($) => [$.id.eq(issueId)]),
+			),
+		),
 		(rows) => rows[0],
 	)
 	const loadEvents = database.execute((db) =>
-		db.select().from(errorIssueEvents).where(eq(errorIssueEvents.issueId, issueId)),
+		db.run(
+			PG.from(ErrorIssueEvents)
+				.select()
+				.where(($) => [$.issueId.eq(issueId)]),
+		),
 	)
 	const loadEscalations = database.execute((db) =>
-		db.select().from(issueEscalations).where(eq(issueEscalations.issueId, issueId)),
+		db.run(
+			PG.from(IssueEscalations)
+				.select()
+				.where(($) => [$.issueId.eq(issueId)]),
+		),
 	)
-	const loadAgents = database.execute((db) => db.select().from(actors).where(eq(actors.orgId, ORG)))
+	const loadAgents = database.execute((db) =>
+		db.run(
+			PG.from(Actors)
+				.select()
+				.where(($) => [$.orgId.eq(ORG)]),
+		),
+	)
 
 	return { apply, setIssueSeverity, loadIssue, loadEvents, loadEscalations, loadAgents }
 })
@@ -144,8 +170,8 @@ describe("applyTriageSeverity", () => {
 
 				const agentRows = yield* t.loadAgents
 				expect(agentRows).toHaveLength(1)
-				expect(agentRows[0]?.createdAt.getTime()).toBe(timestamp)
-				expect(agentRows[0]?.lastActiveAt?.getTime()).toBe(timestamp)
+				expect(agentRows[0]?.createdAt).toBe(timestamp)
+				expect(agentRows[0]?.lastActiveAt).toBe(timestamp)
 			}),
 		),
 	)
@@ -241,7 +267,7 @@ describe("applyTriageSeverity", () => {
 					expect(issue?.severitySource).toBe("ai")
 
 					const events = yield* t.loadEvents
-					expect(events.some((e) => e.type === "severity_change")).toBe(false)
+					expect(Arr.some(events, (e) => e.type === "severity_change")).toBe(false)
 
 					// Same-level confirmation: no escalation either (upward-only rule).
 					expect(yield* t.loadEscalations).toHaveLength(0)

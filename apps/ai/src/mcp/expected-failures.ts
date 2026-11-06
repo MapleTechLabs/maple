@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Record as Rec, String as Str } from "effect"
 
 /**
  * MCP failures that are expected 4xx client outcomes, not bugs: a bad or absent
@@ -17,7 +17,7 @@ import { Effect } from "effect"
  * they are real failures and keep their Error spans.
  */
 const MCP_EXPECTED_FAILURE_STATUS = {
-	"@maple/mcp/decode-error": 400,
+	"@maple/mcp/errors/McpDecodeError": 400,
 	"@maple/mcp/errors/McpAuthMissingError": 401,
 	"@maple/mcp/errors/McpAuthInvalidError": 401,
 	// The call was well-formed JSON but the tool will not do what it asks.
@@ -32,10 +32,12 @@ const MCP_EXPECTED_FAILURE_STATUS = {
 
 // Keyed by a plain string so a `_tag` off any failure can be looked up without
 // narrowing it into the literal union first.
-const expectedStatusByTag = new Map<string, number>(Object.entries(MCP_EXPECTED_FAILURE_STATUS))
+const expectedStatusByTag = new Map<string, number>(Rec.toEntries(MCP_EXPECTED_FAILURE_STATUS))
 
 /** Spread into `anticipatedErrorIdentifiers` next to `ANTICIPATED_ERROR_IDENTIFIERS`. */
 export const MCP_ANTICIPATED_ERROR_IDENTIFIERS: ReadonlyArray<string> = [...expectedStatusByTag.keys()]
+
+const MAX_SPAN_MESSAGE_CHARS = 500
 
 /**
  * Record an expected MCP 4xx on the current span and log it at Warn.
@@ -54,6 +56,8 @@ export const recordExpectedMcpFailure = (
 	return Effect.annotateCurrentSpan({
 		"error.type": error._tag,
 		"http.response.status_code": status,
+		// On the span too, so a tool's failure reasons are one query rather than a join to logs.
+		"maple.mcp.error.message": Str.slice(0, MAX_SPAN_MESSAGE_CHARS)(error.message),
 	}).pipe(
 		Effect.andThen(
 			Effect.logWarning(logMessage).pipe(

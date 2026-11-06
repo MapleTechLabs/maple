@@ -1,0 +1,125 @@
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { AppRoute, hrefOf } from "../../../route"
+import type { IconName } from "@maple/views/ui/icon"
+import { dashboardPage } from "../../kit/dashboard-page"
+import { linkTabStrip } from "../../kit/underline-tabs"
+import type { WindowSearch } from "./frame"
+import { hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, Record as Rec, Option } from "effect"
+
+// `CodeReviewLayout`, `CodeReviewTabs` and `NothingInWindow`.
+
+export type CodeReviewTab = "analytics" | "pull-requests" | "ci" | "team" | "issues" | "settings"
+
+export type CarriedSearch = WindowSearch & Readonly<{ repo?: string; author?: string }>
+
+const TABS: ReadonlyArray<{ tab: CodeReviewTab; path: string; label: string; icon: IconName }> = [
+	{ tab: "analytics", path: "/code-review", label: "Analytics", icon: "ChartBarIcon" },
+	{
+		tab: "pull-requests",
+		path: "/code-review/pull-requests",
+		label: "Pull requests",
+		icon: "PullRequestIcon",
+	},
+	{ tab: "ci", path: "/code-review/ci", label: "CI", icon: "PlayRotateClockwiseIcon" },
+	{ tab: "team", path: "/code-review/team", label: "Team", icon: "UsersIcon" },
+	{ tab: "issues", path: "/code-review/issues", label: "Issues", icon: "CircleWarningIcon" },
+	{ tab: "settings", path: "/code-review/settings", label: "Settings", icon: "GearIcon" },
+]
+
+export const tabLabel = (tab: CodeReviewTab): string =>
+	Arr.findFirst(TABS, (entry) => entry.tab === tab).pipe(
+		Option.flatMapNullishOr((found) => found.label),
+		Option.getOrElse(() => ""),
+	)
+
+export const breadcrumbsOf = (tab: CodeReviewTab) => [
+	{ label: "Code review", href: "/code-review" },
+	{ label: tabLabel(tab) },
+]
+
+/** Defined keys only, in the order given: TanStack drops `undefined` search values. */
+const defined = (search: Readonly<Record<string, string | undefined>>): Readonly<Record<string, string>> =>
+	Rec.fromEntries(
+		Arr.flatMap(Rec.toEntries(search), ([key, value]) =>
+			value === undefined ? [] : [[key, value] as const],
+		),
+	)
+
+const hrefFor = (tab: CodeReviewTab, search: Readonly<Record<string, string | undefined>>): string => {
+	switch (tab) {
+		case "analytics":
+			return hrefOf(AppRoute.CodeReview({ search }))
+		case "pull-requests":
+			return hrefOf(AppRoute.CodeReviewPullRequests({ search }))
+		case "ci":
+			return hrefOf(AppRoute.CodeReviewCi({ search }))
+		case "team":
+			return hrefOf(AppRoute.CodeReviewTeam({ search }))
+		case "issues":
+			return hrefOf(AppRoute.CodeReviewIssues({ search }))
+		case "settings":
+			return hrefOf(AppRoute.CodeReviewSettings())
+	}
+}
+
+export type LayoutOptions<M> = Readonly<{
+	active: CodeReviewTab
+	search: CarriedSearch & Readonly<Record<string, unknown>>
+	/** Header actions: the window, reload and create. */
+	toolbar?: Html
+	/** Every filter of the tab, on one row under the tabs. */
+	filters?: ReadonlyArray<Html>
+	/** The page's own sheet or dialog, rendered after the content. */
+	overlay?: Html
+	h: HtmlBuilder<M>
+}>
+
+const tabs = <M>(options: LayoutOptions<M>): Html => {
+	const { h, search, active } = options
+	const carried = {
+		startTime: search.startTime,
+		endTime: search.endTime,
+		timePreset: search.timePreset,
+		repo: search.repo,
+		author: search.author,
+	}
+	return linkTabStrip(
+		h,
+		"Code review views",
+		Arr.map(TABS, (entry) => {
+			const linkSearch = defined(entry.tab === "settings" ? {} : carried)
+			return {
+				key: entry.tab,
+				href: hrefFor(entry.tab, linkSearch),
+				label: entry.label,
+				icon: entry.icon,
+				isCurrent: entry.tab === active,
+				isRouteActive: entry.tab === active,
+			}
+		}),
+	)
+}
+
+/** The frame every Code Review tab renders in. */
+export const codeReviewLayout = <M>(options: LayoutOptions<M>, children: ReadonlyArray<Html>): Html => {
+	const page = dashboardPage(
+		options.h,
+		{
+			title: "Code review",
+			actions: options.toolbar,
+			tabs: tabs(options),
+			gap: "lg",
+			scrollClassName: "pb-8",
+		},
+		options.filters === undefined || options.filters.length === 0
+			? children
+			: [
+					options.h.div([options.h.Class(hstackClass({ gap: "2", wrap: true }))], options.filters),
+					...children,
+				],
+	)
+	return options.overlay === undefined
+		? page
+		: options.h.div([options.h.Class("contents")], [page, options.overlay])
+}

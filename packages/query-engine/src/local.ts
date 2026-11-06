@@ -3,13 +3,20 @@
 // The endpoint runs raw SQL through the in-process chDB session and returns a
 // bare JSON array.
 //
-// The output FORMAT is owned by the server: `apps/cli/src/server/query-guard.ts`
+// The output FORMAT is owned by the server: `packages/local-server/src/query-guard.ts`
 // peels whatever trailing `FORMAT <fmt>` the compiler emitted (`CH.compile(...)`
 // appends `FORMAT JSON`) and runs the single read-only statement as JSON rows.
 // So callers POST `compiled.sql` verbatim.
 
-import { Effect, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { Effect, Schema, String as Str, Option } from "effect"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { OrgId } from "@maple/domain/primitives"
+
+/**
+ * Local mode's single synthetic tenant. The ingest binary writes every span,
+ * log and metric under this `OrgId`, so every local query compiles with it.
+ */
+export const LOCAL_ORG_ID = OrgId.make("local")
 
 /**
  * The local server refused the query. Its own tag, and structured fields, so
@@ -67,7 +74,7 @@ export const executeLocalQuery = (
 		Effect.gen(function* () {
 			const http = yield* HttpClient.HttpClient
 			const request = HttpClientRequest.post(`${baseUrl}/local/query`).pipe(
-				HttpClientRequest.bodyText(JSON.stringify({ sql }), "application/json"),
+				HttpClientRequest.bodyJsonUnsafe({ sql }),
 			)
 			const response = yield* HttpClient.withScope(http)
 				.execute(request)
@@ -81,7 +88,10 @@ export const executeLocalQuery = (
 					),
 				)
 			if (response.status < 200 || response.status >= 300) {
-				const detail = (yield* response.text.pipe(Effect.orElseSucceed(() => ""))).trim()
+				const detail = yield* response.text.pipe(
+					Effect.orElseSucceed(() => ""),
+					Effect.map(Str.trim),
+				)
 				return yield* new LocalQueryFailed({
 					status: response.status,
 					detail,
@@ -123,9 +133,6 @@ export const runLocalQuery = (
 	baseUrl = "",
 	signal?: AbortSignal,
 ): Promise<ReadonlyArray<LocalQueryRow>> =>
-	// This is the SPA's entry point into Effect: each call is its own root, so
-	// the fetch layer is provided here rather than composed higher up.
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
 	Effect.runPromise(executeLocalQuery(sql, baseUrl).pipe(Effect.provide(FetchHttpClient.layer)), { signal })
 
 /**
@@ -139,11 +146,11 @@ const clickHouseErrorFields = (detail: string): ChdbErrorIdentity => {
 	// Assigned rather than spread conditionally: both are `optionalKey`, so an
 	// explicit `undefined` is not the same as an absent key.
 	const fields: ChdbErrorIdentity = {}
-	const code = detail.match(/\bCode:\s*(\d+)/)?.[1]
-	if (code !== undefined) fields.code = code
+	const code = Str.match(/\bCode:\s*(\d+)/)(detail)
+	if (Option.isSome(code) && code.value[1] !== undefined) fields.code = code.value[1]
 	// The type is the trailing parenthesised SCREAMING_CASE token; chDB puts it
 	// last, after the human sentence.
-	const type = detail.match(/\(([A-Z][A-Z0-9_]{2,})\)\s*$/)?.[1]
-	if (type !== undefined) fields.type = type
+	const type = Str.match(/\(([A-Z][A-Z0-9_]{2,})\)\s*$/)(detail)
+	if (Option.isSome(type) && type.value[1] !== undefined) fields.type = type.value[1]
 	return fields
 }

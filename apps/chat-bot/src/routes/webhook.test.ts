@@ -1,8 +1,18 @@
 import type { InboundEvent } from "@maple/chat-platform"
 import type { IngressConnector } from "../config.ts"
 import { chatConnectorId } from "@maple/chat-platform"
-import { Context, Effect, Exit, Layer, Tracer } from "effect"
-import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
+import {
+	ConfigProvider,
+	Context,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Tracer,
+	Array as Arr,
+	Record as Rec,
+} from "effect"
+import { HttpRouter, HttpServerResponse } from "effect/http"
 import { describe, expect, it } from "vitest"
 import { InboundHandler, type InboundHandlerApi } from "../inbound.ts"
 import {
@@ -69,15 +79,18 @@ const call = async (
 	}
 	const { ended, context } = capturingTracer()
 	const web = HttpRouter.toWebHandler(
-		connectorWebhookRouter(env, registry).pipe(
+		connectorWebhookRouter(registry).pipe(
 			Layer.provideMerge(Layer.succeed(InboundHandler)(inbound)),
 			Layer.provideMerge(HttpRouter.layer),
+			Layer.provideMerge(ConfigProvider.layer(ConfigProvider.fromUnknown(env))),
 			Layer.provideMerge(Layer.succeedContext(context)),
 		),
 	)
 	const response = await web.handler(request)
 	await web.dispose()
-	const span = ended.find((candidate) => candidate.name === "chat_bot.connector_webhook")
+	const span = Option.getOrUndefined(
+		Arr.findFirst(ended, (candidate) => candidate.name === "chat_bot.connector_webhook"),
+	)
 	return { response, received, span }
 }
 
@@ -144,7 +157,7 @@ describe("the generic connector webhook route", () => {
 			}),
 		)
 		const { received } = await call([connector], configured, post("/connectors/testhook/webhook"))
-		expect(received.map((event) => (event.type === "message" ? event.messageId : ""))).toEqual([
+		expect(Arr.map(received, (event) => (event.type === "message" ? event.messageId : ""))).toEqual([
 			"message-1",
 			"message-2",
 		])
@@ -184,7 +197,7 @@ describe("what the route's span says happened", () => {
 			const { response, span } = await call([connector], configured, post(path))
 			expect(response.status).toBe(status)
 			expect(span && Exit.isSuccess(span.exit)).toBe(true)
-			expect(Object.fromEntries(span?.attributes ?? new Map())).toMatchObject({
+			expect(Rec.fromEntries(span?.attributes ?? new Map())).toMatchObject({
 				"error.type": errorType,
 				"http.response.status_code": status,
 			})
@@ -199,7 +212,7 @@ describe("what the route's span says happened", () => {
 		)
 		expect(response.status).toBe(503)
 		expect(span && Exit.isFailure(span.exit)).toBe(true)
-		expect(Object.fromEntries(span?.attributes ?? new Map())).toMatchObject({
+		expect(Rec.fromEntries(span?.attributes ?? new Map())).toMatchObject({
 			"error.type": "@maple/chat-bot/ConnectorUnavailable",
 			"http.response.status_code": 503,
 		})

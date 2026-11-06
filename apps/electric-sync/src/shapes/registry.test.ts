@@ -6,12 +6,14 @@ import {
 	SUBSCRIPTION_NAMES,
 	subscriptionScopeColumn,
 } from "./registry"
+import { String as Str } from "effect"
 
 describe("isShapeName", () => {
 	it("accepts whitelisted shapes and rejects everything else", () => {
 		assert.isTrue(isSubscriptionName("dashboards"))
 		assert.isTrue(isSubscriptionName("alert_rules"))
 		assert.isTrue(isSubscriptionName("alert_destinations"))
+		assert.isTrue(isSubscriptionName("alert_destinations_v2"))
 		assert.isTrue(isSubscriptionName("api_keys"))
 		// Pruned from both the whitelist and the publication (0022) once their
 		// client collections were removed — they must not resolve as shapes.
@@ -29,12 +31,6 @@ describe("isShapeName", () => {
 })
 
 describe("lookupShape", () => {
-	it("resolves a definition with a table for every whitelisted subscription", () => {
-		for (const subscription of SUBSCRIPTION_NAMES) {
-			assert.isString(lookupSubscription(subscription).table, subscription)
-		}
-	})
-
 	it("keeps the PK in every column projection (Electric requires it)", () => {
 		for (const subscription of SUBSCRIPTION_NAMES) {
 			const columns = lookupSubscription(subscription).columns
@@ -58,7 +54,7 @@ describe("scoped shapes", () => {
 	it("rejects an absent or unbounded scope value", () => {
 		assert.isFalse(isValidScopeValue(null))
 		assert.isFalse(isValidScopeValue(""))
-		assert.isFalse(isValidScopeValue("x".repeat(129)))
+		assert.isFalse(isValidScopeValue(Str.repeat(129)("x")))
 		assert.isTrue(isValidScopeValue("inv_YofPTrK9782DWwcnXhpcCw"))
 	})
 })

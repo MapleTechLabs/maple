@@ -1,27 +1,30 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { serviceOperationsSummaryQuery } from "./service-operations"
 import {
 	serviceEndpointsSummaryQuery,
 	serviceEndpointsSummaryRawQuery,
 	splitEndpointName,
 } from "./service-endpoints"
+import { OrgId } from "@maple/domain"
+import { String as Str } from "effect"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 }
 
-const HTTP_FILTER = "match(SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')"
+const httpFilter = (table: string) => `match(${table}.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')`
 
 describe("serviceEndpointsSummaryQuery", () => {
 	it("filters every splice branch to HTTP endpoint names", () => {
 		const { sql } = compileUnsafe(serviceEndpointsSummaryQuery({ serviceName: "api" }), baseParams)
 		// Three branches: the raw edge matches on the computed display name, the
 		// two rollup tiers on the name they already store normalized.
-		expect(sql.split(HTTP_FILTER).length - 1).toBe(2)
-		expect(sql).toContain("match(if(((SpanName LIKE 'http.server %'")
+		expect(sql).toContain(httpFilter("service_operations_hourly"))
+		expect(sql).toContain(httpFilter("service_operations_minutely"))
+		expect(sql).toContain("match(if(((traces.SpanName LIKE 'http.server %'")
 	})
 
 	it("leaves the unfiltered Operations query untouched", () => {
@@ -32,7 +35,6 @@ describe("serviceEndpointsSummaryQuery", () => {
 	it("reports p50/p95/p99 out of two-level stored t-digest state", () => {
 		const { sql } = compileUnsafe(serviceEndpointsSummaryQuery({ serviceName: "api" }), baseParams)
 		expect(sql).toContain("quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles)")
-		expect(sql).toContain("AS p99DurationMs")
 	})
 
 	it("scopes to the org on every branch", () => {
@@ -40,15 +42,24 @@ describe("serviceEndpointsSummaryQuery", () => {
 			serviceEndpointsSummaryQuery({ serviceName: "api", environments: ["production"] }),
 			baseParams,
 		)
-		expect(sql.split("OrgId = 'org_1'").length - 1).toBe(3)
+		expect(Str.split("OrgId = 'org_1'")(sql).length - 1).toBe(3)
 	})
 
 	it("keeps the all-raw rollback path HTTP-filtered too", () => {
 		const { sql } = compileUnsafe(serviceEndpointsSummaryRawQuery({ serviceName: "api" }), baseParams)
 		expect(sql).toContain("FROM traces")
 		expect(sql).not.toContain("service_operations_minutely")
-		expect(sql).toContain("match(if(((SpanName LIKE 'http.server %'")
-		expect(sql).toContain("quantile(0.99)(Duration)")
+		expect(sql).toContain("match(if(((traces.SpanName LIKE 'http.server %'")
+		// One tier covers the whole window, so there is no splice boundary.
+		expect(sql).not.toContain("INTERVAL 1 MINUTE")
+	})
+
+	it("carries the HTTP status and body measures on every tier", () => {
+		const { sql } = compileUnsafe(serviceEndpointsSummaryQuery({ serviceName: "api" }), baseParams)
+		expect(sql).toContain("sum(service_operations_hourly.Http4xxCount)")
+		expect(sql).toContain("sum(service_operations_minutely.RequestBodyBytes)")
+		// The raw edge computes the same measure the view writes, Server spans only.
+		expect(sql).toContain("countIf(SpanKind = 'Server' AND toUInt16OrZero(")
 	})
 })
 

@@ -39,7 +39,7 @@ const decodeCredentials = <S extends Schema.Top>(schema: S, credentialsJson: str
 		Effect.mapError(() => toEncryptionError("Failed to decode auth credentials")),
 	)
 
-export const buildScrapeAuthHeaders = Effect.fn("buildScrapeAuthHeaders")(function* (
+export const buildScrapeAuthHeaders = Effect.fn("ScrapeAuth.buildScrapeAuthHeaders")(function* (
 	row: ScrapeAuthRowLike,
 	encryptionKey: Buffer,
 ) {

@@ -1,4 +1,5 @@
-import { orgSupportChannels, type OrgSupportChannelRow } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { OrgSupportChannels, type OrgSupportChannelRow } from "@maple/db/tables"
 import type { OrgId, UserId } from "@maple/domain/http"
 import {
 	SupportChannelBusyError,
@@ -7,9 +8,21 @@ import {
 	supportChannelName,
 	SupportChannelUnavailableError,
 } from "@maple/domain/support-channel"
-import { and, eq, isNull, lt, or } from "drizzle-orm"
-import { Clock, Context, Effect, Layer, Option, Schedule } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Result,
+	Schedule,
+	Stream,
+	String as Str,
+} from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
@@ -89,7 +102,7 @@ const toActive = (row: OrgSupportChannelRow): SupportChannelView =>
 				status: "active",
 				channelId: row.slackChannelId,
 				channelName: row.slackChannelName,
-				createdAtMs: row.createdAt.getTime(),
+				createdAtMs: row.createdAt,
 			}
 		: { status: "not_created" }
 
@@ -102,17 +115,21 @@ const persistenceError = (operation: string) => (cause: unknown) =>
 
 const make = Effect.gen(function* () {
 	const database = yield* Database
+	const dbExecute = (operation: string) =>
+		makeDbExecute(database, "SupportChannelService", persistenceError(operation))
 	const slack = yield* SupportSlackClient
 	const members = yield* OrgMembersService
 	const organizations = yield* OrganizationService
+	const random = yield* SecureRandom.SecureRandom
 
 	const findRow = (orgId: OrgId) =>
-		database
-			.execute((db) => db.select().from(orgSupportChannels).where(eq(orgSupportChannels.orgId, orgId)))
-			.pipe(
-				Effect.map((rows) => Option.fromNullishOr(rows[0])),
-				Effect.mapError(persistenceError("find")),
-			)
+		dbExecute("find")((db) =>
+			db.run(
+				PG.from(OrgSupportChannels)
+					.select()
+					.where(($) => [$.orgId.eq(orgId)]),
+			),
+		).pipe(Effect.map((rows) => Option.fromNullishOr(rows[0])))
 
 	const retrieve = Effect.fn("SupportChannelService.retrieve")(function* (orgId: OrgId) {
 		if (!slack.configured) return { status: "unavailable" } satisfies SupportChannelView
@@ -129,65 +146,60 @@ const make = Effect.gen(function* () {
 	 */
 	const reserve = Effect.fn("SupportChannelService.reserve")(function* (orgId: OrgId, userId: UserId) {
 		const now = yield* Clock.currentTimeMillis
-		const reservationId = crypto.randomUUID()
-		const inserted = yield* database
-			.execute((db) =>
-				db
-					.insert(orgSupportChannels)
+		const reservationId = yield* random.uuidV4()
+		const inserted = yield* dbExecute("reserve")((db) =>
+			db.run(
+				PG.insertInto(OrgSupportChannels)
 					.values({
 						orgId,
 						reservationId,
-						reservedAt: new Date(now),
+						reservedAt: now,
 						createdByUserId: userId,
-						createdAt: new Date(now),
-						updatedAt: new Date(now),
+						createdAt: now,
+						updatedAt: now,
 					})
 					.onConflictDoNothing()
-					.returning({ orgId: orgSupportChannels.orgId }),
-			)
-			.pipe(Effect.mapError(persistenceError("reserve")))
+					.returning("orgId"),
+			),
+		)
 		if (inserted.length > 0) return Option.some(reservationId)
-		const takenOver = yield* database
-			.execute((db) =>
-				db
-					.update(orgSupportChannels)
+		const takenOver = yield* dbExecute("reserve")((db) =>
+			db.run(
+				PG.update(OrgSupportChannels)
 					.set({
 						reservationId,
-						reservedAt: new Date(now),
+						reservedAt: now,
 						createdByUserId: userId,
-						updatedAt: new Date(now),
+						updatedAt: now,
 					})
-					.where(
-						and(
-							eq(orgSupportChannels.orgId, orgId),
-							isNull(orgSupportChannels.slackChannelId),
-							or(
-								isNull(orgSupportChannels.reservedAt),
-								lt(orgSupportChannels.reservedAt, new Date(now - CREATE_LEASE_MS)),
-							),
-						),
-					)
-					.returning({ orgId: orgSupportChannels.orgId }),
-			)
-			.pipe(Effect.mapError(persistenceError("reserve")))
+					.where(($) => [
+						$.orgId.eq(orgId),
+						$.slackChannelId.isNull(),
+						PG.or($.reservedAt.isNull(), $.reservedAt.lt(now - CREATE_LEASE_MS)),
+					])
+					.returning("orgId"),
+			),
+		)
 		return takenOver.length > 0 ? Option.some(reservationId) : Option.none()
 	})
 
 	/** Rows this reservation still owns and that have no channel yet. */
-	const ownedBy = (orgId: OrgId, reservationId: string) =>
-		and(
-			eq(orgSupportChannels.orgId, orgId),
-			eq(orgSupportChannels.reservationId, reservationId),
-			isNull(orgSupportChannels.slackChannelId),
-		)
+	const ownedBy =
+		(orgId: OrgId, reservationId: string) =>
+		($: PG.ColumnAccessor<typeof OrgSupportChannels.columns>) => [
+			$.orgId.eq(orgId),
+			$.reservationId.eq(reservationId),
+			$.slackChannelId.isNull(),
+		]
 
 	const releaseReservation = (orgId: OrgId, reservationId: string) =>
 		database
 			.execute((db) =>
-				db
-					.update(orgSupportChannels)
-					.set({ reservedAt: null, reservationId: null })
-					.where(ownedBy(orgId, reservationId)),
+				db.run(
+					PG.update(OrgSupportChannels)
+						.set({ reservedAt: null, reservationId: null })
+						.where(ownedBy(orgId, reservationId)),
+				),
 			)
 			.pipe(Effect.ignore)
 
@@ -199,39 +211,45 @@ const make = Effect.gen(function* () {
 	const findUnrecordedChannel = Effect.fn("SupportChannelService.findUnrecordedChannel")(function* (
 		name: string,
 	) {
-		// Only channels the bot created: it can be a member of any private channel in the
-		// workspace, and a name alone would let an org name steer an invite into one of those.
+		// Only channels the bot created: it can be a member of other channels in the workspace,
+		// and a name alone would let an org name steer an invite into one of those.
 		const botUserId = (yield* slack.call("auth.test", {})).user_id
 		if (botUserId === undefined) return Option.none<SlackChannelRef>()
-		let cursor = ""
-		for (let page = 0; page < MAX_CHANNEL_PAGES; page++) {
+		// Pages stop at the first page holding a match; the stream is read lazily.
+		const match = yield* Stream.paginate({ page: 0, cursor: "" }, ({ page, cursor }) => {
 			const args: UsersConversationsArgs = {
-				types: "private_channel",
+				types: "public_channel",
 				exclude_archived: true,
 				limit: 200,
+				...(cursor !== "" ? { cursor } : undefined),
 			}
-			if (cursor !== "") args.cursor = cursor
-			const response = yield* slack.call("users.conversations", args)
-			const match = response.channels?.find(
-				(channel) => channel.name === name && channel.creator === botUserId,
-			)
-			if (match !== undefined) {
-				const recorded = yield* database
-					.execute((db) =>
-						db
-							.select({ orgId: orgSupportChannels.orgId })
-							.from(orgSupportChannels)
-							.where(eq(orgSupportChannels.slackChannelId, match.id)),
+			return slack.call("users.conversations", args).pipe(
+				Effect.map((response) => {
+					const found = Arr.findFirst(
+						response.channels ?? [],
+						(channel) => channel.name === name && channel.creator === botUserId,
 					)
-					.pipe(Effect.mapError(persistenceError("findUnrecordedChannel")))
-				return recorded.length === 0
-					? Option.some<SlackChannelRef>(match)
-					: Option.none<SlackChannelRef>()
-			}
-			cursor = response.response_metadata?.next_cursor ?? ""
-			if (cursor === "") break
-		}
-		return Option.none<SlackChannelRef>()
+					const next = response.response_metadata?.next_cursor ?? ""
+					const more = Option.isNone(found) && next !== "" && page + 1 < MAX_CHANNEL_PAGES
+					return [
+						Option.toArray(found),
+						more ? Option.some({ page: page + 1, cursor: next }) : Option.none(),
+					] as const
+				}),
+			)
+		}).pipe(Stream.runHead)
+		if (Option.isNone(match)) return Option.none<SlackChannelRef>()
+
+		const recorded = yield* dbExecute("findUnrecordedChannel")((db) =>
+			db.run(
+				PG.from(OrgSupportChannels)
+					.select("orgId")
+					.where(($) => [$.slackChannelId.eq(match.value.id)]),
+			),
+		)
+		return recorded.length === 0
+			? Option.some<SlackChannelRef>(match.value)
+			: Option.none<SlackChannelRef>()
 	})
 
 	/** `conversations.create`, stepping past names another channel already holds. */
@@ -242,33 +260,39 @@ const make = Effect.gen(function* () {
 			Effect.map((org) => org.name),
 			Effect.orElseSucceed(() => null),
 		)
-		for (let attempt = 0; attempt < MAX_NAME_ATTEMPTS; attempt++) {
-			const name = supportChannelName(orgName, orgId, attempt)
-			const created = yield* slack.call("conversations.create", { name, is_private: true }).pipe(
-				Effect.map(Option.some),
-				Effect.catchTag("@maple/backend/support/SupportSlackRefusedError", (refused) =>
-					refused.error === "name_taken"
-						? findUnrecordedChannel(name).pipe(
-								Effect.catchTag("@maple/backend/support/SupportSlackRefusedError", () =>
-									Effect.succeed(Option.none<SlackChannelRef>()),
+		const channel = yield* Effect.findFirstFilter(
+			Arr.makeBy(MAX_NAME_ATTEMPTS, (attempt) => attempt),
+			(attempt) => {
+				const name = supportChannelName(orgName, orgId, attempt)
+				return slack.call("conversations.create", { name, is_private: false }).pipe(
+					Effect.asSome,
+					Effect.catchTag("@maple/backend/support/SupportSlackRefusedError", (refused) =>
+						refused.error === "name_taken"
+							? findUnrecordedChannel(name).pipe(
+									Effect.catchTag("@maple/backend/support/SupportSlackRefusedError", () =>
+										Effect.succeed(Option.none<SlackChannelRef>()),
+									),
+									Effect.map((adopted) =>
+										Option.map(adopted, (channel) => ({ ok: true, channel })),
+									),
+								)
+							: Effect.fail(
+									new SupportChannelUnavailableError({
+										message: refused.message,
+										operation: refused.method,
+										slackError: refused.error,
+									}),
 								),
-								Effect.map((adopted) =>
-									Option.map(adopted, (channel) => ({ ok: true, channel })),
-								),
-							)
-						: Effect.fail(
-								new SupportChannelUnavailableError({
-									message: refused.message,
-									operation: refused.method,
-									slackError: refused.error,
-								}),
-							),
-				),
-			)
-			if (Option.isSome(created) && created.value.channel !== undefined) {
-				return { channel: created.value.channel, orgName }
-			}
-		}
+					),
+					Effect.map((created) =>
+						Option.isSome(created) && typeof created.value.channel === "object"
+							? Result.succeed(created.value.channel)
+							: Result.failVoid,
+					),
+				)
+			},
+		)
+		if (Option.isSome(channel)) return { channel: channel.value, orgName }
 		return yield* new SupportChannelUnavailableError({
 			message: `Every candidate channel name for ${orgId} is taken`,
 			operation: "conversations.create",
@@ -281,7 +305,10 @@ const make = Effect.gen(function* () {
 		function* (channelId: string, orgName: string | null) {
 			if (slack.teamUserIds.length > 0) {
 				yield* slack
-					.call("conversations.invite", { channel: channelId, users: slack.teamUserIds.join(",") })
+					.call("conversations.invite", {
+						channel: channelId,
+						users: Arr.join(slack.teamUserIds, ","),
+					})
 					.pipe(
 						Effect.tapError((error) =>
 							Effect.logWarning("Support channel team invite failed", error),
@@ -346,33 +373,31 @@ const make = Effect.gen(function* () {
 				).pipe(Effect.tapError(() => releaseReservation(orgId, reservationId)))
 				yield* Effect.annotateCurrentSpan({ "maple.support_channel.id": channel.id })
 				const now = yield* Clock.currentTimeMillis
-				const [row] = yield* database
-					.execute((db) =>
-						db
-							.update(orgSupportChannels)
+				const [row] = yield* dbExecute("finalize")((db) =>
+					db.run(
+						PG.update(OrgSupportChannels)
 							.set({
 								slackChannelId: channel.id,
 								slackChannelName: channel.name,
 								reservedAt: null,
 								reservationId: null,
-								createdAt: new Date(now),
-								updatedAt: new Date(now),
+								createdAt: now,
+								updatedAt: now,
 							})
 							.where(ownedBy(orgId, reservationId))
 							.returning(),
-					)
-					.pipe(
-						Effect.mapError(persistenceError("finalize")),
-						// A transient write failure must not strand a channel Slack already made.
-						Effect.retry({ times: 3, schedule: Schedule.exponential("200 millis") }),
-						// The channel exists in Slack but not here; name it so it can be cleaned up.
-						Effect.tapError(() =>
-							Effect.logError("Support channel created but not recorded", {
-								orgId,
-								channelId: channel.id,
-							}),
-						),
-					)
+					),
+				).pipe(
+					// A transient write failure must not strand a channel Slack already made.
+					Effect.retry({ times: 3, schedule: Schedule.exponential("200 millis") }),
+					// The channel exists in Slack but not here; name it so it can be cleaned up.
+					Effect.tapError(() =>
+						Effect.logError("Support channel created but not recorded", {
+							orgId,
+							channelId: channel.id,
+						}),
+					),
+				)
 				return { channel, orgName, row }
 			}),
 		)
@@ -409,7 +434,7 @@ const make = Effect.gen(function* () {
 			}),
 		)
 		const email = resolved[0]?.email
-		if (email === undefined || !email.includes("@")) {
+		if (email === undefined || !Str.includes("@")(email)) {
 			return yield* new SupportChannelNoEmailError({ message: `No email for ${tenant.userId}` })
 		}
 		return email
@@ -463,7 +488,12 @@ export class SupportChannelService extends Context.Service<SupportChannelService
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
-			Layer.mergeAll(SupportSlackClient.layer, OrgMembersService.layer, OrganizationService.layer),
+			Layer.mergeAll(
+				SupportSlackClient.layer,
+				OrgMembersService.layer,
+				OrganizationService.layer,
+				SecureRandom.layerWebCrypto,
+			),
 		),
 	)
 }

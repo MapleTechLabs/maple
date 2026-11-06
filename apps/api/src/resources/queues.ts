@@ -1,14 +1,12 @@
-/**
- * The api Worker's queues, declared once at module scope and inert until a
- * Worker yields them: the init consumes them (`worker/consumers.ts`) and the
- * props bind them for the producers. Under `alchemy dev` both halves are
- * emulated in-process from these same declarations.
- */
+/** The api Worker's queues, inert until yielded (consumers in `worker/consumers.ts`). */
 import { stageNamed } from "@maple/infra/cloudflare"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 
-/** Vendor-agnostic VCS sync jobs (commit backfill + webhook deltas). */
+/** Vendor-agnostic VCS webhook deltas: pushes, pull request and CI events. */
 export const VcsSyncQueue = Cloudflare.Queues.Queue("vcs-sync", stageNamed("vcs-sync"))
+
+/** Bulk VCS refreshes, on their own queue so a scheduled sync never delays a webhook. */
+export const VcsBackfillQueue = Cloudflare.Queues.Queue("vcs-backfill", stageNamed("vcs-backfill"))
 
 /** PlanetScale webhook deliveries, decoupled from the receiving request. */
 export const PlanetScaleWebhookQueue = Cloudflare.Queues.Queue(
@@ -16,12 +14,14 @@ export const PlanetScaleWebhookQueue = Cloudflare.Queues.Queue(
 	stageNamed("planetscale-webhooks"),
 )
 
+/** Cancelled plans the Autumn webhook read, reviewed off its request. */
+export const CancellationReviewsQueue = Cloudflare.Queues.Queue(
+	"cancellation-reviews",
+	stageNamed("cancellation-reviews"),
+)
+
 /** Org audit-log entries on their way to the warehouse. */
 export const AuditEventsQueue = Cloudflare.Queues.Queue("audit-events", stageNamed("audit-events"))
 
-/**
- * Parking lot for audit entries that exhausted their retries. Deliberately
- * has no consumer: an entry landing here is a lost audit record, and the
- * point is that it survives for inspection instead of being dropped.
- */
+/** Audit entries that exhausted retries. No consumer on purpose: kept for inspection. */
 export const AuditEventsDlq = Cloudflare.Queues.Queue("audit-events-dlq", stageNamed("audit-events-dlq"))

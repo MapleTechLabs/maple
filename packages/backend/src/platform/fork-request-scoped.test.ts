@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Fiber } from "effect"
+import { Effect, Fiber, Clock } from "effect"
 import { forkRequestScoped } from "./fork-request-scoped"
 import { makeMaplePgClient } from "@maple/db/client"
 import {
@@ -75,7 +75,7 @@ describe("forkRequestScoped", () => {
 	it.live("still interrupts forked work that has not reached the database", () =>
 		Effect.gen(function* () {
 			const { scope, runs } = refusingScope()
-			const startedAt = Date.now()
+			const startedAt = yield* Clock.currentTimeMillis
 
 			yield* withPgConnectionScopeOf(
 				scope,
@@ -83,7 +83,7 @@ describe("forkRequestScoped", () => {
 			)
 
 			// The response is not held for work that is not yet a DB call.
-			assert.isBelow(Date.now() - startedAt, 1000)
+			assert.isBelow((yield* Clock.currentTimeMillis) - startedAt, 1000)
 			assert.strictEqual(runs(), 0)
 		}),
 	)
@@ -105,7 +105,7 @@ describe("forkRequestScoped", () => {
 						yield* forkRequestScoped(
 							dbCall.pipe(
 								Effect.tap(() => Effect.sync(() => (outcome = "ok"))),
-								Effect.catchTag("@maple/api/lib/DatabaseError", () =>
+								Effect.catchTag("@maple/backend/lib/DatabaseError", () =>
 									Effect.sync(() => (outcome = "closed")),
 								),
 							),

@@ -74,18 +74,23 @@ A typical Collector pipeline:
 
 ```yaml
 connectors:
-    spanmetrics:
+    span_metrics:
         namespace: span.metrics
+    forward/sampled: {}
 
 service:
     pipelines:
         traces:
             receivers: [otlp]
-            processors: [batch]
-            exporters: [otlp, spanmetrics] # fork to both export + metrics
+            exporters: [span_metrics, forward/sampled] # every span reaches both
+        traces/sampled:
+            receivers: [forward/sampled]
+            processors: [tail_sampling, batch]
+            exporters: [otlp_http]
         metrics:
-            receivers: [spanmetrics]
-            exporters: [otlp]
+            receivers: [span_metrics]
+            processors: [batch]
+            exporters: [otlp_http]
 ```
 
-The metrics pipeline sees every request while the traces pipeline samples as aggressively as you like.
+The first pipeline has no processors, so `span_metrics` counts every span. The `forward/sampled` connector hands the same spans to `traces/sampled`, where `tail_sampling` drops as many as you like before export. A sampler in the first pipeline would run before `span_metrics` and shrink the counts. Configure `tail_sampling` with your policies and `otlp_http` with the Maple endpoint and key. Older Collector releases name the connector `spanmetrics`, the processor `tailsampling` and the exporter `otlphttp`.

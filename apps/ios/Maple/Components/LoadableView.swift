@@ -42,12 +42,30 @@ extension LoadState: Sendable where Value: Sendable {}
 ///
 /// A `nil` loader is the frame before the screen's model exists; it renders
 /// the same skeleton the loader's `.loading` renders, so nothing flashes.
-struct LoadableView<Value: Sendable, Skeleton: View, Content: View>: View {
+struct LoadableView<Value: Sendable, Skeleton: View, Content: View, Header: View>: View {
 	let loader: ScreenLoader<Value>?
 	let emptyTitle: String
 	let emptyMessage: String
-	@ViewBuilder let skeleton: () -> Skeleton
-	@ViewBuilder let content: (Value) -> Content
+	/// A tab root's org / environment bar and title, above every state.
+	let header: Header
+	let skeleton: () -> Skeleton
+	let content: (Value) -> Content
+
+	init(
+		loader: ScreenLoader<Value>?,
+		emptyTitle: String,
+		emptyMessage: String,
+		@ViewBuilder header: () -> Header,
+		@ViewBuilder skeleton: @escaping () -> Skeleton,
+		@ViewBuilder content: @escaping (Value) -> Content
+	) {
+		self.loader = loader
+		self.emptyTitle = emptyTitle
+		self.emptyMessage = emptyMessage
+		self.header = header()
+		self.skeleton = skeleton
+		self.content = content
+	}
 
 	private var state: LoadState<Value> { loader?.state ?? .loading }
 
@@ -65,6 +83,7 @@ struct LoadableView<Value: Sendable, Skeleton: View, Content: View>: View {
 	var body: some View {
 		ScrollView {
 			VStack(spacing: 0) {
+				header
 				if let loader, let error = loader.refreshError, loader.state.hasContent {
 					RefreshFailedStrip(error: error, retry: loader.retry)
 						.transition(.move(edge: .top).combined(with: .opacity))
@@ -82,11 +101,13 @@ struct LoadableView<Value: Sendable, Skeleton: View, Content: View>: View {
 					EmptyStateView(title: emptyTitle, message: emptyMessage)
 						.containerRelativeFrame(.vertical) { height, _ in height * 0.7 }
 						.transition(.opacity)
+						.onAppear { loader?.markPainted() }
 
 				case .failed(let error):
 					ErrorStateView(error: error, retry: { loader?.retry() })
 						.containerRelativeFrame(.vertical) { height, _ in height * 0.7 }
 						.transition(.opacity)
+						.onAppear { loader?.markPainted() }
 
 				case .loaded(let value):
 					content(value)
@@ -96,6 +117,7 @@ struct LoadableView<Value: Sendable, Skeleton: View, Content: View>: View {
 						.opacity(loader?.isReplacing == true ? 0.5 : 1)
 						.allowsHitTesting(loader?.isReplacing != true)
 						.transition(.opacity)
+						.onAppear { loader?.markPainted() }
 				}
 			}
 			.animation(.easeOut(duration: 0.2), value: phase)
@@ -103,10 +125,26 @@ struct LoadableView<Value: Sendable, Skeleton: View, Content: View>: View {
 			.animation(.easeOut(duration: 0.2), value: loader?.refreshError == nil)
 		}
 		.scrollContentBackground(.hidden)
+		.onDisappear { loader?.abandonReady() }
 		.refreshable {
 			if let loader { Telemetry.track(Telemetry.Event.screenRefreshed, ["screen": loader.screen]) }
 			await loader?.load(.refresh)
 		}
+	}
+}
+
+extension LoadableView where Header == EmptyView {
+	init(
+		loader: ScreenLoader<Value>?,
+		emptyTitle: String,
+		emptyMessage: String,
+		@ViewBuilder skeleton: @escaping () -> Skeleton,
+		@ViewBuilder content: @escaping (Value) -> Content
+	) {
+		self.init(
+			loader: loader, emptyTitle: emptyTitle, emptyMessage: emptyMessage,
+			header: { EmptyView() }, skeleton: skeleton, content: content
+		)
 	}
 }
 
@@ -117,14 +155,31 @@ extension LoadableView where Skeleton == SkeletonList {
 		emptyTitle: String,
 		emptyMessage: String,
 		skeletonRowHeight: CGFloat = 64,
+		@ViewBuilder header: () -> Header,
 		@ViewBuilder content: @escaping (Value) -> Content
 	) {
 		self.init(
 			loader: loader,
 			emptyTitle: emptyTitle,
 			emptyMessage: emptyMessage,
+			header: header,
 			skeleton: { SkeletonList(rowHeight: skeletonRowHeight) },
 			content: content
+		)
+	}
+}
+
+extension LoadableView where Skeleton == SkeletonList, Header == EmptyView {
+	init(
+		loader: ScreenLoader<Value>?,
+		emptyTitle: String,
+		emptyMessage: String,
+		skeletonRowHeight: CGFloat = 64,
+		@ViewBuilder content: @escaping (Value) -> Content
+	) {
+		self.init(
+			loader: loader, emptyTitle: emptyTitle, emptyMessage: emptyMessage,
+			skeletonRowHeight: skeletonRowHeight, header: { EmptyView() }, content: content
 		)
 	}
 }

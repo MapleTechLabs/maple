@@ -12,8 +12,8 @@
  * `../worker.ts`.
  */
 import { connectors as registeredConnectors } from "@maple/chat-platform/connectors"
-import { Effect, Schema } from "effect"
-import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
+import { ConfigProvider, Effect, Option, Schema, Array as Arr } from "effect"
+import { HttpRouter, HttpServerResponse } from "effect/http"
 import { resolveConnectorConfig, type IngressConnector } from "../config.ts"
 import { InboundHandler } from "../inbound.ts"
 
@@ -30,7 +30,11 @@ import { InboundHandler } from "../inbound.ts"
 class ConnectorUnavailable extends Schema.TaggedError<ConnectorUnavailable>()(
 	"@maple/chat-bot/ConnectorUnavailable",
 	{ connector: Schema.String, missing: Schema.Array(Schema.String) },
-) {}
+) {
+	override get message(): string {
+		return `Connector ${this.connector} is unavailable: missing ${Arr.join(this.missing, ", ")}`
+	}
+}
 
 const problem = (status: number, detail: string) =>
 	Effect.as(
@@ -42,13 +46,16 @@ const problem = (status: number, detail: string) =>
 const rejectCaller = (status: number, errorType: string, detail: string) =>
 	Effect.annotateCurrentSpan("error.type", errorType).pipe(Effect.andThen(problem(status, detail)))
 
-export const connectorWebhookRouter = (
-	env: Record<string, unknown>,
-	registry: ReadonlyArray<IngressConnector> = registeredConnectors,
-) =>
+/**
+ * Connector configuration resolves through the `ConfigProvider` the router's layer was built with
+ * (the Worker env's, via `workerEnvLayer`), captured here because route handlers run on the
+ * request's fiber rather than the layer's.
+ */
+export const connectorWebhookRouter = (registry: ReadonlyArray<IngressConnector> = registeredConnectors) =>
 	HttpRouter.use((router) =>
 		Effect.gen(function* () {
 			const inbound = yield* InboundHandler
+			const configProvider = yield* ConfigProvider.ConfigProvider
 
 			yield* router.add("POST", "/connectors/:connectorId/webhook", (request) =>
 				Effect.gen(function* () {
@@ -58,12 +65,18 @@ export const connectorWebhookRouter = (
 					// attributable to the id that was asked for rather than anonymous.
 					yield* Effect.annotateCurrentSpan("maple.chat.connector", connectorId)
 
-					const connector = registry.find((candidate) => candidate.id === connectorId)
-					if (connector === undefined || connector.ingress.kind !== "webhook") {
+					const found = Arr.findFirst(registry, (candidate) => candidate.id === connectorId)
+					if (Option.isNone(found)) {
+						return yield* rejectCaller(404, "ConnectorNotFound", "No such connector")
+					}
+					const connector = found.value
+					if (connector.ingress.kind !== "webhook") {
 						return yield* rejectCaller(404, "ConnectorNotFound", "No such connector")
 					}
 
-					const config = resolveConnectorConfig(env, connector)
+					const config = yield* resolveConnectorConfig(connector).pipe(
+						Effect.provideService(ConfigProvider.ConfigProvider, configProvider),
+					)
 					if (config._tag === "missing") {
 						return yield* new ConnectorUnavailable({
 							connector: connectorId,
@@ -89,7 +102,7 @@ export const connectorWebhookRouter = (
 						Effect.logWarning("Chat connector webhook is not configured").pipe(
 							Effect.annotateLogs({
 								"maple.chat.connector": error.connector,
-								"maple.chat.missing_config": error.missing.join(","),
+								"maple.chat.missing_config": Arr.join(error.missing, ","),
 							}),
 							Effect.andThen(
 								Effect.annotateCurrentSpan({

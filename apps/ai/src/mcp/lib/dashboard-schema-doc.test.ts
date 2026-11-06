@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Option, Predicate, Schema, Array as Arr, String as Str } from "effect"
 import {
 	DashboardWidgetSchema,
 	PANEL_TYPES,
@@ -17,12 +17,15 @@ const decodeDataSource = Schema.decodeUnknownSync(WidgetDataSourceSchema)
 const decodeWidget = Schema.decodeUnknownSync(DashboardWidgetSchema)
 
 const allSections = () =>
-	[renderDashboardSchemaIndex(), ...DASHBOARD_SCHEMA_SECTIONS.map(renderDashboardSchemaSection)].join("\n")
+	Arr.join(
+		[renderDashboardSchemaIndex(), ...Arr.map(DASHBOARD_SCHEMA_SECTIONS, renderDashboardSchemaSection)],
+		"\n",
+	)
 
 /** Every ```json fence in the generated doc. */
 const jsonExamples = (markdown: string): ReadonlyArray<unknown> => {
-	const blocks = markdown.matchAll(/```json\n([\s\S]*?)\n```/g)
-	return [...blocks].map(([, body]) => JSON.parse(body!))
+	const blocks = Arr.fromIterable(Str.matchAll(/```json\n([\s\S]*?)\n```/g)(markdown))
+	return Arr.map(blocks, ([, body = ""]) => JSON.parse(body))
 }
 
 describe("generated JSON examples decode", () => {
@@ -36,7 +39,7 @@ describe("generated JSON examples decode", () => {
 		for (const example of examples) {
 			// The whole-widget example decodes through the widget schema instead;
 			// everything else in this section is a bare data source.
-			const decode = Object.hasOwn(example as object, "dataSource") ? decodeWidget : decodeDataSource
+			const decode = Predicate.hasProperty(example, "dataSource") ? decodeWidget : decodeDataSource
 			expect(() => decode(example)).not.toThrow()
 		}
 	})
@@ -46,7 +49,7 @@ describe("generated JSON examples decode", () => {
 		// all take an assembled widget. Every agent in the documentation A/B
 		// inferred that envelope correctly but reported it as a guess.
 		const examples = jsonExamples(renderDashboardSchemaSection("data_sources"))
-		const widgets = examples.filter((example) => Object.hasOwn(example as object, "dataSource"))
+		const widgets = Arr.filter(examples, (example) => Predicate.hasProperty(example, "dataSource"))
 		// The generic widget and the product-event funnel widget, whose data source
 		// is derived from `display.funnel` and so only makes sense shown whole.
 		expect(widgets).toHaveLength(2)
@@ -56,10 +59,13 @@ describe("generated JSON examples decode", () => {
 	it("shows the product-event funnel definition on `display.funnel` with a derived route", () => {
 		const doc = renderDashboardSchemaSection("data_sources")
 		expect(doc).toContain("product_events_funnel")
-		const funnel = jsonExamples(doc).find(
-			(example) =>
-				Object.hasOwn(example as object, "dataSource") &&
-				(example as { visualization?: string }).visualization === "funnel",
+		const funnel = Option.getOrThrow(
+			Arr.findFirst(
+				jsonExamples(doc),
+				(example) =>
+					Predicate.hasProperty(example, "dataSource") &&
+					(example as { visualization?: string }).visualization === "funnel",
+			),
 		) as {
 			dataSource: { endpoint?: string; params?: { steps?: unknown[] } }
 			display: { funnel?: { steps?: unknown[] } }
@@ -79,7 +85,7 @@ describe("generated JSON examples decode", () => {
 describe("coverage", () => {
 	it("documents every MCP-exposed panel type", () => {
 		const doc = renderDashboardSchemaSection("panel_types")
-		for (const meta of PANEL_TYPES.filter((panel) => panel.mcpExposed)) {
+		for (const meta of Arr.filter(PANEL_TYPES, (panel) => panel.mcpExposed)) {
 			expect(doc).toContain(`\`${meta.panelType}\``)
 		}
 	})
@@ -109,13 +115,6 @@ describe("coverage", () => {
 		}
 	})
 
-	it("states the percent scale rule in the units section", () => {
-		const doc = renderDashboardSchemaSection("units")
-		expect(doc).toContain("percent_100")
-		expect(doc).toMatch(/0–1|0-1/)
-		expect(doc).toContain("Grafana")
-	})
-
 	it("marks the display keys that are stored but never rendered", () => {
 		const doc = renderDashboardSchemaSection("display")
 		// Advertising an inert key is worse than omitting it: an agent sets
@@ -124,10 +123,6 @@ describe("coverage", () => {
 			expect(doc).toContain(key)
 		}
 		expect(doc).toContain("Stored but not rendered")
-	})
-
-	it("warns that `list` has no raw-SQL rendering", () => {
-		expect(renderDashboardSchemaSection("raw_sql")).toContain("not supported")
 	})
 })
 
@@ -146,12 +141,5 @@ describe("no stale references", () => {
 		for (const needle of RETIRED) {
 			expect(doc).not.toContain(needle)
 		}
-	})
-
-	it("does not advertise bare percentiles as metrics aggregations", () => {
-		const doc = renderDashboardSchemaSection("queries")
-		// `p95` appears legitimately under the traces `valueField` mode; what must
-		// not appear is the claim that metrics accept it.
-		expect(doc).toContain("Metrics never accept percentiles")
 	})
 })

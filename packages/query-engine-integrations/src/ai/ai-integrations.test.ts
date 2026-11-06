@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { genAiIntegration, mapAiSpan, mapAiSpans, resolveAiIntegration } from "./ai-integrations"
 import { AI_GENAI_FIELDS, type AiGenAiField } from "@maple/domain/gen-ai"
 import type { AiSessionSpansOutput } from "./ai-sessions"
+import { Array as Arr, Record as Rec } from "effect"
 
 const row = (
 	spanAttributes: Record<string, string>,
@@ -87,16 +88,16 @@ describe("the catalog is the contract", () => {
 	// Driven from `AI_GENAI_FIELDS` itself rather than a hand-written list, so a
 	// field added to the catalog without a source mapping fails here instead of
 	// silently returning `undefined` in the UI forever.
-	for (const [field, def] of Object.entries(AI_GENAI_FIELDS)) {
+	for (const [field, def] of Rec.toEntries(AI_GENAI_FIELDS)) {
 		it(`maps the canonical key ${def.key} to ${field}`, () => {
 			const mapped = mapAiSpan(row({ [def.key]: SAMPLE_ATTRIBUTE_VALUE[def.type] }))
 
-			expect(mapped.genAi[field as AiGenAiField]).toEqual(SAMPLE_DECODED_VALUE[def.type])
+			expect(mapped.genAi[field]).toEqual(SAMPLE_DECODED_VALUE[def.type])
 		})
 	}
 
 	it("declares a source list for every catalog field", () => {
-		expect(Object.keys(genAiIntegration.sources).sort()).toEqual(Object.keys(AI_GENAI_FIELDS).sort())
+		expect(Rec.keys(genAiIntegration.sources).sort()).toEqual(Rec.keys(AI_GENAI_FIELDS).sort())
 	})
 })
 
@@ -147,13 +148,13 @@ describe("value decoding", () => {
 		expect(mapped.genAi.toolCallId).toBe("call_uKgzomwVJhP3bYZ0fxvwUe86")
 	})
 
-	it("yields no field for malformed JSON rather than throwing", () => {
+	it("keeps malformed JSON as its raw text rather than throwing", () => {
 		// One truncated attribute must not cost the caller the rest of the span.
 		const mapped = mapAiSpan(
 			row({ "gen_ai.tool.call.arguments": '{"emoji":', "gen_ai.tool.name": "add_reaction" }),
 		)
 
-		expect(mapped.genAi.toolCallArguments).toBeUndefined()
+		expect(mapped.genAi.toolCallArguments).toBe('{"emoji":')
 		expect(mapped.genAi.toolName).toBe("add_reaction")
 	})
 
@@ -162,12 +163,49 @@ describe("value decoding", () => {
 		expect(mapAiSpan(row({ "gen_ai.request.model": "   " })).genAi.requestModel).toBeUndefined()
 	})
 
-	it("keeps only objects and arrays for a JSON field", () => {
-		// `"null"`, `"0"` and `"false"` all parse cleanly into values that would
-		// reach the UI where a message list belongs.
+	it("names the agent the ingest gateway named, as the list does", () => {
+		// OpenAI Agents through OpenInference names its agent only in the AGENT
+		// span's graph node, which the gateway reads and no dialect key carries.
+		const agent = mapAiSpan(
+			row({
+				"maple_ai.vendor.id": "openai_agents_sdk",
+				"openinference.span.kind": "AGENT",
+				"graph.node.id": "Triage Agent",
+				"maple_ai.agent.name": "Triage Agent",
+			}),
+		)
+		expect(agent.genAi.agentName).toBe("Triage Agent")
+	})
+
+	it("treats JSON null as not captured", () => {
 		expect(mapAiSpan(row({ "gen_ai.input.messages": "null" })).genAi.inputMessages).toBeUndefined()
-		expect(mapAiSpan(row({ "gen_ai.input.messages": "0" })).genAi.inputMessages).toBeUndefined()
-		expect(mapAiSpan(row({ "gen_ai.input.messages": "false" })).genAi.inputMessages).toBeUndefined()
+	})
+
+	it("keeps plain-text values of a JSON field as their text", () => {
+		// Real values from the verification captures: an OpenAI Agents tool that
+		// returns a string, one that returns a number, and Mastra's system prompt.
+		// The convention types tool payloads as any value, so none is malformed.
+		const tool = mapAiSpan(
+			row({
+				"gen_ai.tool.name": "delete_file",
+				"gen_ai.tool.call.arguments": '{"path":"/tmp/scratch-notes.txt"}',
+				"gen_ai.tool.call.result": "deleted /tmp/scratch-notes.txt",
+			}),
+		)
+		expect(tool.genAi.toolCallArguments).toEqual({ path: "/tmp/scratch-notes.txt" })
+		expect(tool.genAi.toolCallResult).toBe("deleted /tmp/scratch-notes.txt")
+
+		expect(mapAiSpan(row({ "gen_ai.tool.call.result": "391" })).genAi.toolCallResult).toBe("391")
+		expect(mapAiSpan(row({ "gen_ai.tool.call.arguments": '"Berlin"' })).genAi.toolCallArguments).toBe(
+			"Berlin",
+		)
+		expect(
+			mapAiSpan(
+				row({
+					"gen_ai.system_instructions": "You are a concise assistant. Use tools when relevant.",
+				}),
+			).genAi.systemInstructions,
+		).toBe("You are a concise assistant. Use tools when relevant.")
 	})
 
 	it("falls through to the next alias when the first key does not decode", () => {
@@ -251,6 +289,42 @@ describe("legacy aliases", () => {
 		})
 		expect(mapped.isAiSpan).toBe(true)
 	})
+
+	it("unwraps the OpenRouter Broadcast message envelopes", () => {
+		// Trimmed from a Broadcast `LLM Generation` span: the request as
+		// `{messages}`, the reply as `{completion, reasoning}` beside the request.
+		const mapped = mapAiSpan(
+			row({
+				"maple_ai.vendor.id": "openrouter",
+				"gen_ai.prompt":
+					'{"messages":[{"role":"system","content":[{"type":"text","text":"You are Maple AI"}]},{"role":"user","content":"test"}]}',
+				"gen_ai.completion":
+					'{"completion":"Received — Maple AI is responding.","reasoning":"**Responding to a test message**","rawRequest":{"model":"openai/gpt-5.6-luna","stream":true}}',
+			}),
+		)
+
+		expect(mapped.genAi.inputMessages).toEqual([
+			{ role: "system", content: [{ type: "text", text: "You are Maple AI" }] },
+			{ role: "user", content: "test" },
+		])
+		expect(mapped.genAi.outputMessages).toEqual([
+			{
+				role: "assistant",
+				parts: [
+					{ type: "reasoning", content: "**Responding to a test message**" },
+					{ type: "text", content: "Received — Maple AI is responding." },
+				],
+			},
+		])
+
+		// A reply that only called tools has an empty completion.
+		const toolsOnly = mapAiSpan(
+			row({ "gen_ai.completion": '{"completion":"","reasoning":"**Exploring MCP commands**"}' }),
+		)
+		expect(toolsOnly.genAi.outputMessages).toEqual([
+			{ role: "assistant", parts: [{ type: "reasoning", content: "**Exploring MCP commands**" }] },
+		])
+	})
 })
 
 describe("value normalisation", () => {
@@ -285,6 +359,70 @@ describe("value normalisation", () => {
 		const mapped = mapAiSpan(row({ "gen_ai.response.finish_reasons": '["tool_calls","stop"]' }))
 
 		expect(mapped.genAi.responseFinishReasons).toEqual(["tool_call", "stop"])
+	})
+
+	it("reads one bare OpenAI message as a one-message reply", () => {
+		// A smolagents `OpenAIModel.generate` output: one message, content null,
+		// the reply entirely in `tool_calls`.
+		const message = {
+			role: "assistant",
+			content: null,
+			tool_calls: [
+				{
+					function: { arguments: '{"answer":"391"}', name: "final_answer", description: null },
+					id: "call_Mx0pfPCI8tppc9j4qopqc08x",
+					type: "function",
+				},
+			],
+		}
+		const mapped = mapAiSpan(row({ "gen_ai.output.messages": JSON.stringify(message) }))
+
+		expect(mapped.genAi.outputMessages).toEqual([message])
+	})
+
+	it("unwraps a LangChain ToolMessage tool result to what the tool returned", () => {
+		// An OpenInference LangChain tool span's dual-written result.
+		const mapped = mapAiSpan(
+			row({
+				"gen_ai.tool.name": "get_weather",
+				"gen_ai.tool.call.result":
+					'{"type": "tool", "data": {"content": "{\\"city\\": \\"Berlin\\", \\"temperature_c\\": 21, \\"condition\\": \\"partly cloudy\\"}", "additional_kwargs": {}, "response_metadata": {}, "type": "tool", "name": "get_weather", "id": null, "tool_call_id": "call_zORApUOSWyMXFIrtijncLEqV", "artifact": null, "status": "success"}}',
+			}),
+		)
+		expect(mapped.genAi.toolCallResult).toBe(
+			'{"city": "Berlin", "temperature_c": 21, "condition": "partly cloudy"}',
+		)
+
+		// Any other object carrying a `type` stays whole.
+		expect(
+			mapAiSpan(row({ "gen_ai.tool.call.result": '{"type":"tool","data":{"rows":3}}' })).genAi
+				.toolCallResult,
+		).toEqual({ type: "tool", data: { rows: 3 } })
+	})
+
+	it("reads finish reasons off the output messages when the span has none of its own", () => {
+		// A Strands `chat` span: the reason sits only on the output message.
+		const strands = mapAiSpan(
+			row({
+				"gen_ai.output.messages":
+					'[{"role": "assistant", "parts": [{"type": "tool_call", "name": "get_weather", "id": "call_A3DZfiI43bAI2CSBuQ5qtpqh", "arguments": {"city": "Berlin"}}], "finish_reason": "tool_use"}]',
+			}),
+		)
+		expect(strands.genAi.responseFinishReasons).toEqual(["tool_use"])
+
+		// The span's own attribute wins; a streamed chunk's empty reason is no reason.
+		const both = mapAiSpan(
+			row({
+				"gen_ai.response.finish_reasons": '["stop"]',
+				"gen_ai.output.messages": '[{"role":"assistant","parts":[],"finish_reason":"length"}]',
+			}),
+		)
+		expect(both.genAi.responseFinishReasons).toEqual(["stop"])
+		expect(
+			mapAiSpan(
+				row({ "gen_ai.output.messages": '[{"role":"assistant","parts":[],"finish_reason":""}]' }),
+			).genAi.responseFinishReasons,
+		).toBeUndefined()
 	})
 })
 
@@ -385,7 +523,7 @@ describe("span envelope", () => {
 			row(NON_AI_ATTRS, { spanName: "workflow.stream.flush" }),
 		])
 
-		expect(mapped.map((span) => span.isAiSpan)).toEqual([true, false])
+		expect(Arr.map(mapped, (span) => span.isAiSpan)).toEqual([true, false])
 	})
 })
 
@@ -442,5 +580,28 @@ describe("stringArray decoding rejects malformed arrays", () => {
 		)
 
 		expect(mapped.genAi.responseFinishReasons).toEqual(["length"])
+	})
+})
+
+describe("MCP tool calls", () => {
+	const TOOL_CALL = {
+		"mcp.method.name": "tools/call",
+		"gen_ai.operation.name": "execute_tool",
+		"gen_ai.tool.name": "run_sql",
+	}
+
+	it("leave the server side of a shared trace as the app's own work", () => {
+		const [client, server] = mapAiSpans([
+			row({ ...TOOL_CALL, "maple_ai.vendor.id": "unknown:genai" }, { spanKind: "Client" }),
+			row(TOOL_CALL, { spanKind: "Server" }),
+		])
+		expect({ isAiSpan: client?.isAiSpan, operation: client?.genAi.operationName }).toEqual({
+			isAiSpan: true,
+			operation: "execute_tool",
+		})
+		expect({ isAiSpan: server?.isAiSpan, operation: server?.genAi.operationName }).toEqual({
+			isAiSpan: false,
+			operation: undefined,
+		})
 	})
 })

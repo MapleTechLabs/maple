@@ -11,11 +11,12 @@
 //     Building it from metrics alone silently drops branches excluded from
 //     scraping or asleep, leaving no way to tell "no such branch" from "no data".
 //
-// Pure — no React, no atoms — so the precedence rules are testable on their own.
+// Pure, so the precedence rules are testable on their own.
 
 import { matchesGlob } from "@maple/domain/glob"
 import type { V2PlanetScaleBranch } from "@maple/domain/http/v2"
-import type { PlanetScaleBranchStat } from "@/api/warehouse/service-map"
+import type { PlanetScaleBranchStat } from "@maple/web-data/warehouse/service-map"
+import { Array as Arr, Option, String as Str } from "effect"
 
 export { matchesGlob }
 
@@ -43,8 +44,8 @@ export const isExcluded = (
 	excludeBranches: ReadonlyArray<string>,
 ): boolean => {
 	// An include list, when present, is authoritative: anything outside it is excluded.
-	if (includeBranches.length > 0 && !includeBranches.some((p) => matchesGlob(p, name))) return true
-	return excludeBranches.some((p) => matchesGlob(p, name))
+	if (includeBranches.length > 0 && !Arr.some(includeBranches, (p) => matchesGlob(p, name))) return true
+	return Arr.some(excludeBranches, (p) => matchesGlob(p, name))
 }
 
 /**
@@ -58,8 +59,8 @@ export function mergeBranchCandidates(
 	includeBranches: ReadonlyArray<string> = [],
 	excludeBranches: ReadonlyArray<string> = [],
 ): ReadonlyArray<BranchCandidate> {
-	const statByName = new Map(stats.map((row) => [row.branch, row]))
-	const candidates: BranchCandidate[] = inventoryBranches.map((branch) => ({
+	const statByName = new Map(Arr.map(stats, (row) => [row.branch, row]))
+	const candidates: BranchCandidate[] = Arr.map(inventoryBranches, (branch) => ({
 		name: branch.name,
 		production: branch.production,
 		ready: branch.ready,
@@ -68,7 +69,7 @@ export function mergeBranchCandidates(
 		unknownToInventory: false,
 	}))
 
-	const known = new Set(candidates.map((c) => c.name))
+	const known = new Set(Arr.map(candidates, (c) => c.name))
 	for (const row of stats) {
 		if (row.branch === "" || known.has(row.branch)) continue
 		known.add(row.branch)
@@ -101,20 +102,24 @@ export function defaultBranch(
 	candidates: ReadonlyArray<BranchCandidate>,
 ): { readonly branch: BranchCandidate; readonly role: "production" | "busiest" } | null {
 	if (candidates.length === 0) return null
-	const production = candidates.filter((c) => c.production)
+	const production = Arr.filter(candidates, (c) => c.production)
 	if (production.length > 0) {
 		// A promote in flight can briefly show two production branches; the busier
 		// one is the one actually serving. Both keep their badge in the table —
 		// this picks a default, it does not hide the anomaly.
-		const branch = [...production].sort(
-			(a, b) => connectionsOf(b) - connectionsOf(a) || a.name.localeCompare(b.name),
-		)[0]!
-		return { branch, role: "production" }
+		const branch = [...production].sort((a, b) =>
+			connectionsOf(b) !== connectionsOf(a)
+				? connectionsOf(b) - connectionsOf(a)
+				: Str.localeCompare(b.name)(a.name),
+		)[0]
+		if (branch !== undefined) return { branch, role: "production" }
 	}
-	const branch = [...candidates].sort(
-		(a, b) => connectionsOf(b) - connectionsOf(a) || a.name.localeCompare(b.name),
-	)[0]!
-	return { branch, role: "busiest" }
+	const branch = [...candidates].sort((a, b) =>
+		connectionsOf(b) !== connectionsOf(a)
+			? connectionsOf(b) - connectionsOf(a)
+			: Str.localeCompare(b.name)(a.name),
+	)[0]
+	return branch === undefined ? null : { branch, role: "busiest" }
 }
 
 /**
@@ -131,10 +136,11 @@ export function resolveSelectedBranch(
 	const fallback = defaultBranch(candidates)
 
 	if (requested !== undefined && requested !== "") {
-		const match = candidates.find((c) => c.name === requested)
-		if (match === undefined) {
+		const found = Arr.findFirst(candidates, (c) => c.name === requested)
+		if (Option.isNone(found)) {
 			return { kind: "unknown", name: requested, fallback: fallback?.branch ?? null }
 		}
+		const match = found.value
 		return {
 			kind: "resolved",
 			branch: match,
@@ -162,6 +168,6 @@ export function orderBranches(candidates: ReadonlyArray<BranchCandidate>): Reado
 		if (a.production !== b.production) return a.production ? -1 : 1
 		const diff = connectionsOf(b) - connectionsOf(a)
 		if (diff !== 0) return diff
-		return a.name.localeCompare(b.name)
+		return Str.localeCompare(b.name)(a.name)
 	})
 }

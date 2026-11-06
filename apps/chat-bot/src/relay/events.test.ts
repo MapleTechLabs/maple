@@ -13,8 +13,12 @@ import {
 	type ChatEvent,
 	type ChatEventInput,
 } from "@maple/domain/chat-session"
-import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
-import { Effect, Fiber, Stream } from "effect"
+import {
+	type ChatSessionClient,
+	type ChatSessionStub,
+	chatSessionClientFromStub,
+} from "@maple/domain/chat-session-stub"
+import { Effect, Fiber, Stream, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { chatTurnEvents, ChatSessionUnreachable } from "./events.ts"
 
@@ -40,10 +44,13 @@ const frames = (payload: string): ReadableStream<Uint8Array> => {
 const sse = (events: ReadonlyArray<ChatEvent>): ReadableStream<Uint8Array> =>
 	frames(
 		"retry: 1000\n\n" +
-			events.map((next) => `id: ${next.seq}\ndata: ${JSON.stringify(next)}\n\n`).join(""),
+			Arr.join(
+				Arr.map(events, (next) => `id: ${next.seq}\ndata: ${JSON.stringify(next)}\n\n`),
+				"",
+			),
 	)
 
-const stub = (connections: ReadonlyArray<ReadonlyArray<ChatEvent>>): ChatSessionStub => {
+const promiseStub = (connections: ReadonlyArray<ReadonlyArray<ChatEvent>>): ChatSessionStub => {
 	let opened = 0
 	return {
 		cursor: () => Promise.resolve(0),
@@ -59,6 +66,9 @@ const stub = (connections: ReadonlyArray<ReadonlyArray<ChatEvent>>): ChatSession
 		subscribe: () => Promise.resolve(sse(connections[Math.min(opened++, connections.length - 1)] ?? [])),
 	}
 }
+
+const stub = (connections: ReadonlyArray<ReadonlyArray<ChatEvent>>): ChatSessionClient =>
+	chatSessionClientFromStub(promiseStub(connections))
 
 describe("chatTurnEvents", () => {
 	it.effect("decodes the frames of one connection", () =>
@@ -77,7 +87,7 @@ describe("chatTurnEvents", () => {
 				).pipe(Stream.takeUntil((next) => next.type === "turn-end")),
 			)
 
-			expect(events.map((next) => next.seq)).toEqual([1, 2, 3])
+			expect(Arr.map(events, (next) => next.seq)).toEqual([1, 2, 3])
 		}),
 	)
 
@@ -88,18 +98,18 @@ describe("chatTurnEvents", () => {
 			const unknown = `id: 1\ndata: {"seq":1,"type":"turn-whatever","messageId":"a1"}\n\n`
 			const ending = event(2, { type: "turn-end", messageId: "a1", reason: "stop" })
 			const session: ChatSessionStub = {
-				...stub([[]]),
+				...promiseStub([[]]),
 				subscribe: () =>
 					Promise.resolve(frames(`${unknown}id: 2\ndata: ${JSON.stringify(ending)}\n\n`)),
 			}
 
 			const events = yield* Stream.runCollect(
-				chatTurnEvents(session, SESSION_ID, 0).pipe(
+				chatTurnEvents(chatSessionClientFromStub(session), SESSION_ID, 0).pipe(
 					Stream.takeUntil((next) => next.type === "turn-end"),
 				),
 			)
 
-			expect(events.map((next) => next.seq)).toEqual([2])
+			expect(Arr.map(events, (next) => next.seq)).toEqual([2])
 		}),
 	)
 
@@ -109,7 +119,7 @@ describe("chatTurnEvents", () => {
 			let opened = 0
 			const cursors: Array<number> = []
 			const session: ChatSessionStub = {
-				...stub([[]]),
+				...promiseStub([[]]),
 				subscribe: (cursor) => {
 					cursors.push(cursor)
 					return Promise.resolve(
@@ -132,7 +142,7 @@ describe("chatTurnEvents", () => {
 
 			const collecting = yield* Effect.forkChild(
 				Stream.runCollect(
-					chatTurnEvents(session, SESSION_ID, 0).pipe(
+					chatTurnEvents(chatSessionClientFromStub(session), SESSION_ID, 0).pipe(
 						Stream.takeUntil((next) => next.type === "turn-end"),
 					),
 				),
@@ -143,7 +153,7 @@ describe("chatTurnEvents", () => {
 
 			// The turn was still running, so the answer continues on the next connection rather than
 			// ending on a dropped socket.
-			expect(events.map((next) => next.seq)).toEqual([3])
+			expect(Arr.map(events, (next) => next.seq)).toEqual([3])
 			// Nothing is lost: an event the dropped connection never finished delivering did not move
 			// the cursor, so the connection that follows asks for it again.
 			expect(cursors).toEqual([0, 0])
@@ -153,11 +163,13 @@ describe("chatTurnEvents", () => {
 	it.effect("reports a session it cannot subscribe to, so the turn can say so", () =>
 		Effect.gen(function* () {
 			const session: ChatSessionStub = {
-				...stub([[]]),
+				...promiseStub([[]]),
 				subscribe: () => Promise.reject(new Error("no such object")),
 			}
 
-			const error = yield* Effect.flip(Stream.runCollect(chatTurnEvents(session, SESSION_ID, 0)))
+			const error = yield* Effect.flip(
+				Stream.runCollect(chatTurnEvents(chatSessionClientFromStub(session), SESSION_ID, 0)),
+			)
 
 			expect(error).toBeInstanceOf(ChatSessionUnreachable)
 		}),

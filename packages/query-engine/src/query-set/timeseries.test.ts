@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, Array as Arr, Option } from "effect"
 import type { QueryEngineResult } from "@maple/domain/query-engine"
 import type { QueryBuilderQueryDraftPayload, QuerySet } from "@maple/query-model"
 import { LAB_EMPTY_RANGE_STRATEGY } from "./bucketing"
@@ -47,14 +47,13 @@ const makeExecutor = (respond: (request: QuerySetExecuteRequest) => FakeResponse
 	return { executor, requests }
 }
 
-const draft = (overrides: Partial<QueryBuilderQueryDraftPayload> = {}): QueryBuilderQueryDraftPayload =>
-	({
-		id: "q-1",
-		name: "A",
-		dataSource: "traces",
-		aggregation: "count",
-		...overrides,
-	}) as QueryBuilderQueryDraftPayload
+const draft = (overrides: Partial<QueryBuilderQueryDraftPayload> = {}): QueryBuilderQueryDraftPayload => ({
+	id: "q-1",
+	name: "A",
+	dataSource: "traces",
+	aggregation: "count",
+	...overrides,
+})
 
 const set = (overrides: Partial<QuerySet> = {}): QuerySet => ({
 	queries: [draft()],
@@ -88,11 +87,19 @@ describe("runQuerySetWindow", () => {
 
 			assert.strictEqual(requests.length, 1)
 			assert.strictEqual(result.queryResults.length, 2)
-			assert.strictEqual(result.queryResults[0].status, "success")
-			assert.strictEqual(result.queryResults[1].status, "error")
+			assert.strictEqual(Arr.getUnsafe(result.queryResults, 0).status, "success")
+			assert.strictEqual(Arr.getUnsafe(result.queryResults, 1).status, "error")
 			// A build failure records a diagnostic with no spec, which is how a debug
 			// panel tells "never ran" apart from "ran and failed".
-			assert.isNull(result.diagnostics.find((d) => d.queryId === "bad")?.spec ?? null)
+			assert.isNull(
+				Option.match(
+					Arr.findFirst(result.diagnostics, (d) => d.queryId === "bad"),
+					{
+						onNone: () => null,
+						onSome: (d) => d.spec ?? null,
+					},
+				),
+			)
 		}),
 	)
 
@@ -108,9 +115,9 @@ describe("runQuerySetWindow", () => {
 				...WINDOW,
 			})
 
-			assert.strictEqual(result.queryResults[0].status, "success")
-			assert.strictEqual(result.queryResults[1].status, "error")
-			assert.strictEqual(result.queryResults[1].error, "logs are down")
+			assert.strictEqual(Arr.getUnsafe(result.queryResults, 0).status, "success")
+			assert.strictEqual(Arr.getUnsafe(result.queryResults, 1).status, "error")
+			assert.strictEqual(Arr.getUnsafe(result.queryResults, 1).error, "logs are down")
 		}),
 	)
 
@@ -124,8 +131,8 @@ describe("runQuerySetWindow", () => {
 				...WINDOW,
 			})
 
-			assert.strictEqual(result.queryResults[0].status, "success")
-			assert.deepStrictEqual(result.queryResults[0].data, [])
+			assert.strictEqual(Arr.getUnsafe(result.queryResults, 0).status, "success")
+			assert.deepStrictEqual(Arr.getUnsafe(result.queryResults, 0).data, [])
 		}),
 	)
 
@@ -180,9 +187,12 @@ describe("runQuerySetWindow", () => {
 				fallback: LAB_EMPTY_RANGE_STRATEGY,
 			})
 
-			assert.strictEqual(result.queryResults[0].status, "success")
-			assert.isTrue(result.diagnostics[0].fallbackUsed)
-			assert.include(result.queryResults[0].warnings.join(" "), "used fallback window")
+			assert.strictEqual(Arr.getUnsafe(result.queryResults, 0).status, "success")
+			assert.isTrue(Arr.getUnsafe(result.diagnostics, 0).fallbackUsed)
+			assert.include(
+				Arr.join(Arr.getUnsafe(result.queryResults, 0).warnings, " "),
+				"used fallback window",
+			)
 		}),
 	)
 
@@ -198,8 +208,8 @@ describe("runQuerySetWindow", () => {
 			})
 
 			assert.strictEqual(requests.length, 1)
-			assert.strictEqual(result.queryResults[0].status, "error")
-			assert.strictEqual(result.queryResults[0].error, "boom")
+			assert.strictEqual(Arr.getUnsafe(result.queryResults, 0).status, "error")
+			assert.strictEqual(Arr.getUnsafe(result.queryResults, 0).error, "boom")
 		}),
 	)
 })
@@ -329,7 +339,7 @@ describe("runTimeseriesQuerySet", () => {
 				})
 
 				assert.deepStrictEqual(
-					requests.map((r) => r.startTime),
+					Arr.map(requests, (r) => r.startTime),
 					[WINDOW.startTime, "2026-01-01 23:00:00"],
 				)
 				assert.deepStrictEqual(result.rows, [
@@ -385,7 +395,7 @@ describe("runTimeseriesQuerySet", () => {
 				// Primary succeeded on its first try, so the only other request is the
 				// single un-widened previous window.
 				assert.deepStrictEqual(
-					requests.map((r) => r.startTime),
+					Arr.map(requests, (r) => r.startTime),
 					[WINDOW.startTime, "2026-01-01 23:00:00"],
 				)
 			}),

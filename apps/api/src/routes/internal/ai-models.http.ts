@@ -1,7 +1,7 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { detectAiModel } from "@maple/ai-model-catalog"
 import { CurrentTenant, DetectAiModelResponse, MapleInternalApi } from "@maple/domain/http"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 
 /**
  * Model string → vendor and display name, for the Agent Sessions surfaces.
@@ -31,7 +31,8 @@ export const HttpAiModelsInternalLive = HttpApiBuilder.group(
 			.handle("detectMany", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const detected = payload.models.map(
+					const detected = Arr.map(
+						payload.models,
 						(model) => new DetectAiModelResponse(detectAiModel(model)),
 					)
 					// The batch's shape rather than each model's: an unresolved count
@@ -40,8 +41,10 @@ export const HttpAiModelsInternalLive = HttpApiBuilder.group(
 					yield* Effect.annotateCurrentSpan({
 						orgId: tenant.orgId,
 						"maple.ai_model.count": detected.length,
-						"maple.ai_model.unknown_count": detected.filter((model) => model.source === "unknown")
-							.length,
+						"maple.ai_model.unknown_count": Arr.filter(
+							detected,
+							(model) => model.source === "unknown",
+						).length,
 					})
 					return detected
 				}),

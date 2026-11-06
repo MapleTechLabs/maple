@@ -1,6 +1,6 @@
 import { McpQueryError, type McpToolRegistrar } from "./types"
 import { truncate } from "../lib/format"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListAlertChecksOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
@@ -13,16 +13,46 @@ const WINDOW = P.timeWindow({ defaultHours: 7 * 24 })
 /** Rows the text shows; the rest stay in the structured output. */
 const SHOWN_ROWS = 100
 
-/** Window bounds are `YYYY-MM-DD HH:mm:ss` UTC; the read model parses ISO 8601. */
-const toIso = (value: string): string => `${value.replace(" ", "T")}Z`
+/** What the Value column shows for a skipped check, in place of its missing value. */
+const skipReasonLabel = (reason: string): string => {
+	switch (reason) {
+		case "no_data":
+			return "no data"
+		case "below_min_samples":
+			return "below min samples"
+		case "no_value":
+			return "no value"
+		default:
+			return reason
+	}
+}
+
+/** Skipped checks are not healthy ones, so the summary says why they skipped. */
+const formatSkipped = (output: {
+	readonly skipped: number
+	readonly noData: number
+	readonly belowMinSamples: number
+}): string => {
+	const parts = Arr.filter(
+		[
+			output.noData > 0 ? `${output.noData} no data` : undefined,
+			output.belowMinSamples > 0 ? `${output.belowMinSamples} below min samples` : undefined,
+		],
+		(part) => part !== undefined,
+	)
+	return parts.length > 0
+		? `${output.skipped} skipped [${Arr.join(parts, ", ")}]`
+		: `${output.skipped} skipped`
+}
 
 export function registerListAlertChecksTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_alert_checks",
+		title: "List Alert Checks",
 		description:
 			"List a rule's recent checks (one row per evaluation) with observed value, threshold, sample count and incident transition. Use it to tune thresholds, diagnose flapping, or see the near-misses before a breach.",
 		parameters: Schema.Struct({
-			rule_id: P.text("Alert rule ID"),
+			rule_id: P.resourceId("alertRule", "Alert rule ID"),
 			group_key: P.optionalText("Only checks for this exact group key"),
 			status: P.optionalOneOf(ALERT_CHECK_STATUSES, "Only checks with this status"),
 			...WINDOW.fields,
@@ -43,8 +73,8 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 				.listRuleChecks(tenant.orgId, ruleId, {
 					groupKey: params.group_key,
 					status: params.status,
-					since: toIso(st),
-					until: toIso(et),
+					since: st,
+					until: et,
 					limit: params.limit,
 				})
 				.pipe(
@@ -63,12 +93,12 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 				)
 
 			const checks = result.checks
-			const count = (status: string) => checks.filter((c) => c.status === status).length
+			const count = (status: string) => Arr.filter(checks, (c) => c.status === status).length
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				ruleId: params.rule_id,
-				status: params.status ?? "all",
+				"maple.alert.rule_id": params.rule_id,
+				"maple.ai.status": params.status ?? "all",
 				"result.rowCount": checks.length,
 			})
 
@@ -78,12 +108,15 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 				breached: count("breached"),
 				healthy: count("healthy"),
 				skipped: count("skipped"),
+				noData: Arr.filter(checks, (c) => c.skipReason === "no_data").length,
+				belowMinSamples: Arr.filter(checks, (c) => c.skipReason === "below_min_samples").length,
 				errored: count("error"),
-				transitions: checks.filter((c) => c.incidentTransition !== "none").length,
-				checks: checks.map((c) => ({
+				transitions: Arr.filter(checks, (c) => c.incidentTransition !== "none").length,
+				checks: Arr.map(checks, (c) => ({
 					timestamp: c.timestamp,
 					groupKey: c.groupKey,
 					status: c.status,
+					skipReason: c.skipReason,
 					observedValue: c.observedValue,
 					threshold: c.threshold,
 					comparator: c.comparator,
@@ -131,6 +164,23 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 					),
 				)
 			}
+			if (output.noData > 0 && output.noData === output.total) {
+				next.push(
+					doc.next(
+						"preview_alert_rule",
+						{ rule_id: output.ruleId },
+						"every check had no data (the query matched nothing), so the rule is blind, not healthy: replay it with adjusted filters",
+					),
+				)
+			} else if (output.belowMinSamples > 0) {
+				next.push(
+					doc.next(
+						"get_alert_rule",
+						{ rule_id: output.ruleId },
+						"checks skipped below the minimum sample count: compare minimumSampleCount with the observed samples",
+					),
+				)
+			}
 			if (next.length === 0) {
 				next.push(
 					doc.next(
@@ -168,7 +218,7 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 						? []
 						: [
 								doc.text(
-									`Total: ${output.total} (${output.breached} breached, ${output.healthy} healthy, ${output.skipped} skipped, ${output.errored} errored, ${output.transitions} incident transitions)`,
+									`Total: ${output.total} (${output.breached} breached, ${output.healthy} healthy, ${formatSkipped(output)}, ${output.errored} errored, ${output.transitions} incident transitions)`,
 								),
 								doc.table(
 									[
@@ -181,14 +231,16 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 										"Transition",
 										"Eval ms",
 									],
-									shown.map((c) => [
-										c.timestamp.slice(0, 19),
+									Arr.map(shown, (c) => [
+										Str.slice(0, 19)(c.timestamp),
 										c.status,
 										c.status === "error" && c.errorMessage != null
 											? truncate(c.errorMessage, 40)
-											: c.observedValue != null
-												? String(c.observedValue)
-												: "-",
+											: c.status === "skipped" && c.skipReason != null
+												? skipReasonLabel(c.skipReason)
+												: c.observedValue != null
+													? String(c.observedValue)
+													: "-",
 										String(c.threshold),
 										String(c.sampleCount),
 										truncate(c.groupKey || "all", 20),
@@ -211,9 +263,10 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 												{
 													rule_id: output.ruleId,
 													start_time: output.timeRange.start,
-													end_time: oldestShown.timestamp
-														.slice(0, 19)
-														.replace("T", " "),
+													end_time: Str.replace(
+														"T",
+														" ",
+													)(Str.slice(0, 19)(oldestShown.timestamp)),
 													group_key: output.groupKey,
 													status: output.status,
 												},

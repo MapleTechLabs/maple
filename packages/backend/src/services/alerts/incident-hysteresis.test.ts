@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest"
 import { foldObservation, type HysteresisConfig, type HysteresisRow } from "./incident-hysteresis"
 
 /**
- * Parity harness. The machine replaces two hand-rolled implementations, so the
- * bar is not "the machine looks right" — it is "the machine decides exactly
- * what both predecessors decided", over sequences neither suite covers.
+ * Parity harness. The fold replaces two hand-rolled implementations, so the
+ * bar is not "the fold looks right" but "the fold decides exactly what both
+ * predecessors decided", over sequences neither suite covers.
  */
 
 type Status = "breached" | "healthy" | "skipped"
@@ -310,8 +310,10 @@ describe("host-neutral alert lifecycle parity", () => {
 				const actual = planAlertLifecycle({
 					policy: {
 						consecutiveBreachesRequired: 3,
+						breachWindow: 3,
 						consecutiveHealthyRequired: 2,
 						renotifyIntervalMinutes: 60,
+						severities: ["warning"],
 					},
 					evaluation: {
 						status,
@@ -322,6 +324,15 @@ describe("host-neutral alert lifecycle parity", () => {
 						comparator: "gte",
 						reason: "parity",
 						derivedFromNoData: false,
+						levels:
+							status === "skipped"
+								? []
+								: [
+										{
+											severity: "warning",
+											status: status === "breached" ? "breach" : "clear",
+										},
+									],
 					},
 					state: {
 						consecutiveBreaches: row.consecutiveBreaches,
@@ -329,6 +340,7 @@ describe("host-neutral alert lifecycle parity", () => {
 					},
 					openIncident: row.incidentOpen
 						? {
+								severity: "warning",
 								firstTriggeredAtMs: START_MS,
 								lastNotifiedAtMs: START_MS,
 								lastDeliveredEventType: "trigger",
@@ -336,7 +348,9 @@ describe("host-neutral alert lifecycle parity", () => {
 						: null,
 					nowMs,
 				})
-				expect(actual.state).toEqual({
+				// The state is rebuilt from counters alone each tick, so this also
+				// proves a pre-history row replays exactly.
+				expect(actual.state).toMatchObject({
 					consecutiveBreaches: expected.consecutiveBreaches,
 					consecutiveHealthy: expected.consecutiveHealthy,
 				})
@@ -347,7 +361,8 @@ describe("host-neutral alert lifecycle parity", () => {
 				)
 				row = {
 					...row,
-					...actual.state,
+					consecutiveBreaches: actual.state.consecutiveBreaches,
+					consecutiveHealthy: actual.state.consecutiveHealthy,
 					incidentOpen:
 						actual.transition === "opened" ||
 						(row.incidentOpen && actual.transition !== "resolved"),

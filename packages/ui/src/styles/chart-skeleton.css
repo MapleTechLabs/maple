@@ -1,0 +1,51 @@
+/* Chart loading ghosts for `chartSkeleton` (packages/views/src/ui/chart-skeleton.ts).
+   Shared because the dashboard and Maple Local both render it; import after tailwindcss. */
+/* One motion for every ghost: the shapes hold still and a soft band of light
+   passes left to right, then rests. It fades in after a beat so a fast query
+   swaps straight to the chart without flashing a skeleton. */
+@keyframes chart-skeleton-sweep {
+	0% {
+		mask-position: 100% 0;
+	}
+	70%,
+	100% {
+		mask-position: 0% 0;
+	}
+}
+
+@keyframes chart-skeleton-enter {
+	from {
+		opacity: 0;
+	}
+}
+
+.chart-skeleton {
+	mask-image: linear-gradient(90deg, rgb(0 0 0 / 0.55) 40%, #000 50%, rgb(0 0 0 / 0.55) 60%);
+	mask-size: 300% 100%;
+	mask-position: 100% 0;
+	animation:
+		chart-skeleton-enter 240ms ease-out 120ms backwards,
+		chart-skeleton-sweep 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	/* The dim level the shapes rest at between sweeps, without the sweep. */
+	.chart-skeleton {
+		mask-image: none;
+		opacity: 0.55;
+		animation: chart-skeleton-enter 240ms ease-out 120ms backwards;
+	}
+}
+
+/* `skeletonSlowNote`: hidden until a skeleton has been up for 8s, then shown at once.
+   A visibility step, not motion, so it holds under reduced motion too. */
+@keyframes skeleton-slow-reveal {
+	to {
+		visibility: visible;
+	}
+}
+
+.skeleton-slow-note {
+	visibility: hidden;
+	animation: skeleton-slow-reveal 1ms linear 8s forwards;
+}

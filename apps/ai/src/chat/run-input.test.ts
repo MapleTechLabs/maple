@@ -8,14 +8,15 @@
  * investigation's opening prompt came to render as an escaped blob.
  */
 import { OrgId, UserId } from "@maple/domain"
-import { Effect, Layer, Schema, Stream } from "effect"
-import { LanguageModel } from "effect/unstable/ai"
-import type { Prompt, Response } from "effect/unstable/ai"
-import * as AiModel from "effect/unstable/ai/Model"
+import { Effect, Layer, Schema, Stream, Array as Arr } from "effect"
+import { LanguageModel } from "effect/ai"
+import type { Prompt, Response } from "effect/ai"
+import * as AiModel from "effect/ai/Model"
 import { assert, describe, it } from "vitest"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
-import type { ResolvedModel } from "../platform/Llm"
+import { noRepositoryWarmup } from "../../test/chat/tool-executor"
+import { layerLlm, type ResolvedModel } from "../platform/Llm"
 import { runChatTurn } from "./run"
 import { makeRunUsage } from "./tools"
 
@@ -37,6 +38,9 @@ const ANSWER: ReadonlyArray<Response.StreamPartEncoded> = [
 	},
 ]
 
+/** Placeholder provider clients the scripted model never calls; `runChatTurn` requires them. */
+const llmClients = layerLlm({})
+
 /** A model that answers once, recording the prompt it was sent. */
 const recordingModel = () => {
 	const prompts: Array<Prompt.Prompt> = []
@@ -54,7 +58,7 @@ const recordingModel = () => {
 			Layer.effect(
 				LanguageModel.LanguageModel,
 				LanguageModel.make({
-					generateText: (options) => Effect.succeed([...respond(options)]),
+					generateText: () => Effect.die("the turn streams; generateText is never called"),
 					streamText: (options) => Stream.suspend(() => Stream.fromIterable(respond(options))),
 				}),
 			),
@@ -63,13 +67,20 @@ const recordingModel = () => {
 	return { model, prompts }
 }
 
-const noTools: McpToolExecutorApi = { execute: () => Effect.die("no tool call expected") }
+const noTools: McpToolExecutorApi = {
+	...noRepositoryWarmup,
+	execute: () => Effect.die("no tool call expected"),
+}
 
-const userText = (prompt: Prompt.Prompt): string =>
-	prompt.content
-		.filter((message) => message.role === "user")
-		.flatMap((message) => message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])))
-		.join("")
+const userText = (prompt: Prompt.Prompt): string => {
+	const userMessages = Arr.filter(prompt.content, (message) => message.role === "user")
+	return Arr.join(
+		Arr.flatMap(userMessages, (message) =>
+			Arr.flatMap(message.content, (part) => (part.type === "text" ? [part.text] : [])),
+		),
+		"",
+	)
+}
 
 describe("runChatTurn input", () => {
 	it("sends the turn's message verbatim, not as a JSON string literal", async () => {
@@ -91,10 +102,10 @@ describe("runChatTurn input", () => {
 				usage: makeRunUsage(),
 				holdsTurn: () => true,
 				append: () => {},
-			}),
+			}).pipe(Effect.provide(llmClients)),
 		)
 
 		assert.lengthOf(prompts, 1)
-		assert.equal(userText(prompts[0]!), text)
+		assert.equal(userText(Arr.getUnsafe(prompts, 0)), text)
 	})
 })

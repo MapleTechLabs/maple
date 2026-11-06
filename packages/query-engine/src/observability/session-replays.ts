@@ -11,8 +11,8 @@ const MAX_TRACE_LIMIT = 100
 
 /**
  * Bound the number of correlated trace ids summarized in one call. A long
- * session can observe many traces, and each id widens the `TraceId IN (...)`
- * scan over `trace_detail_spans`, so we cap the fan-out (matching the
+ * session can observe many traces, and each id widens the `trace_index` seek
+ * over `traces`, so we cap the fan-out (matching the
  * list-query guardrail applied throughout the MCP layer).
  */
 function clampTraceLimit(value: number | undefined): number {
@@ -49,7 +49,7 @@ export interface SessionTracesOutput {
  * confirms it *is* a browser session) plus a summary of each backend trace it
  * observed. Two warehouse reads: the session row (O(log N) by the
  * `(OrgId, SessionId)` sort-key prefix), then one grouped pass over
- * `trace_detail_spans` for the correlated trace ids.
+ * `traces` for the correlated trace ids.
  *
  * This is the session→traces counterpart to `searchSessions(traceId=...)`
  * (which goes trace→session). Mirrors the web replay route's `getReplay` +
@@ -59,7 +59,7 @@ export const getSessionTraces = Effect.fn("Observability.getSessionTraces")(func
 	input: SessionTracesInput,
 ) {
 	const executor = yield* WarehouseExecutor
-	yield* Effect.annotateCurrentSpan({ orgId: executor.orgId, sessionId: input.sessionId })
+	yield* Effect.annotateCurrentSpan({ orgId: executor.orgId, "maple.session.id": input.sessionId })
 
 	// 1) Session metadata (+ full TraceIds array) and the active/idle breakdown
 	// from a second pass over session_events. Both are single-session sort-key
@@ -95,8 +95,8 @@ export const getSessionTraces = Effect.fn("Observability.getSessionTraces")(func
 	const activity = Option.getOrNull(maybeActivity)
 	const session: SessionWithActivity = {
 		...sessionRow,
-		activeTimeMs: activity ? Number(activity.activeTimeMs) : null,
-		idleTimeMs: activity ? Number(activity.idleTimeMs) : null,
+		activeTimeMs: activity ? activity.activeTimeMs : null,
+		idleTimeMs: activity ? activity.idleTimeMs : null,
 	}
 
 	const totalTraceCount = session.traceIds.length
@@ -109,9 +109,13 @@ export const getSessionTraces = Effect.fn("Observability.getSessionTraces")(func
 	}
 
 	// 2) Per-trace summaries (root span name/service, duration, error, span count).
-	const summariesCompiled = CH.compile(CH.sessionTraceSummariesQuery({ traceIds }), {
-		orgId: executor.orgId,
-	})
+	const summariesCompiled = CH.compile(
+		CH.sessionTraceSummariesQuery({
+			traceIds,
+			...CH.sessionTraceWindow(session.startTime, session.endTime),
+		}),
+		{ orgId: executor.orgId },
+	)
 	const traces = yield* executor.compiledQuery(summariesCompiled, {
 		profile: "list",
 		context: "sessionTraceSummaries",

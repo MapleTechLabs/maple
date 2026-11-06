@@ -1,5 +1,5 @@
 import { Clock, Effect, Schema } from "effect"
-import { HttpClient } from "effect/unstable/http"
+import { HttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
 import {
 	makeWarehouseExecutor,
@@ -12,8 +12,8 @@ import { executeLocalQuery, type LocalQueryError } from "@maple/query-engine/loc
 import { debugLog } from "../lib/debug"
 
 /** The single tenant every local store is written under. */
-export const LOCAL_ORG_ID = Schema.decodeUnknownSync(OrgId)("local")
-const LOCAL_USER_ID = Schema.decodeUnknownSync(UserId)("local")
+export const LOCAL_ORG_ID = Schema.decodeSync(OrgId)("local")
+const LOCAL_USER_ID = Schema.decodeSync(UserId)("local")
 const LOCAL_TENANT = { orgId: LOCAL_ORG_ID, userId: LOCAL_USER_ID, authMode: "local" as const }
 
 /**
@@ -47,8 +47,7 @@ const localChdbClient = (baseUrl: string, http: HttpClient.HttpClient): Warehous
 		Effect.gen(function* () {
 			const startedAtMs = yield* Clock.currentTimeMillis
 			return yield* executeLocalQuery(statement.text, baseUrl).pipe(
-				Effect.map((data) => ({ data })),
-				Effect.mapError(localDriverError),
+				Effect.mapBoth({ onSuccess: (data) => ({ data }), onFailure: localDriverError }),
 				Effect.ensuring(
 					Clock.currentTimeMillis.pipe(
 						Effect.map((nowMs) =>

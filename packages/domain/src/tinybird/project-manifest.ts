@@ -1,15 +1,11 @@
 import { createHash } from "node:crypto"
-import { resolve } from "node:path"
-import { fileURLToPath, pathToFileURL } from "node:url"
+import type { SchemaDefinitionError } from "@maple-dev/effect-orm/schema"
+import { buildProject, type Datafile } from "@maple-dev/effect-orm/tinybird"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import * as Datasources from "./datasources"
+import * as Materializations from "./materializations"
 
-// The SDK doesn't re-export `buildFromInclude` (or the generator resource
-// types) from its main entry point, so we load the JS module dynamically at
-// runtime and keep a minimal structural type covering the fields we consume.
-
-export interface GeneratedResource {
-	readonly name: string
-	readonly content: string
-}
+export type GeneratedResource = Datafile
 
 export interface TinybirdProjectManifest {
 	readonly projectRevision: string
@@ -17,79 +13,56 @@ export interface TinybirdProjectManifest {
 	readonly pipes: ReadonlyArray<GeneratedResource>
 }
 
-interface TinybirdBuildResult {
-	readonly resources: {
-		readonly datasources: ReadonlyArray<GeneratedResource>
-		readonly pipes: ReadonlyArray<GeneratedResource>
-	}
-}
-
-interface TinybirdGeneratorModule {
-	readonly buildFromInclude: (options: {
-		readonly includePaths: string[]
-		readonly cwd: string
-	}) => Promise<TinybirdBuildResult>
-}
-
-const REPO_ROOT = resolve(fileURLToPath(new URL("../../../../", import.meta.url)))
-const INCLUDE_PATHS = [
-	resolve(REPO_ROOT, "packages/domain/src/tinybird/datasources.ts"),
-	resolve(REPO_ROOT, "packages/domain/src/tinybird/endpoints.ts"),
-	resolve(REPO_ROOT, "packages/domain/src/tinybird/materializations.ts"),
-] as const
-
-const loadTinybirdGenerator = async (): Promise<TinybirdGeneratorModule> =>
-	import(
-		pathToFileURL(resolve(REPO_ROOT, "node_modules/@tinybirdco/sdk/dist/generator/index.js")).href
-	) as Promise<TinybirdGeneratorModule>
-
-const toResource = (resource: GeneratedResource): GeneratedResource => ({
-	name: resource.name,
-	content: resource.content,
-})
-
 export const createTinybirdProjectRevision = (
 	datasources: ReadonlyArray<GeneratedResource>,
 	pipes: ReadonlyArray<GeneratedResource>,
 ): string => {
 	const digest = createHash("sha256")
 
-	for (const resource of [...datasources].sort((left, right) => left.name.localeCompare(right.name))) {
+	for (const resource of [...datasources].sort((left, right) => Str.localeCompare(right.name)(left.name))) {
 		digest.update(`datasource:${resource.name}\n${resource.content}\n`)
 	}
 
-	for (const resource of [...pipes].sort((left, right) => left.name.localeCompare(right.name))) {
+	for (const resource of [...pipes].sort((left, right) => Str.localeCompare(right.name)(left.name))) {
 		digest.update(`pipe:${resource.name}\n${resource.content}\n`)
 	}
 
 	return digest.digest("hex")
 }
 
-export const buildTinybirdProjectManifest = async (): Promise<TinybirdProjectManifest> => {
-	const generator = await loadTinybirdGenerator()
-	const buildResult = await generator.buildFromInclude({
-		includePaths: [...INCLUDE_PATHS],
-		cwd: REPO_ROOT,
+// Rollups whose first deploy must not replay raw history through their views:
+// Tinybird ignores `BACKFILL skip` once the datasource exists, so it stays harmless.
+const SKIP_BACKFILL: ReadonlySet<string> = new Set([
+	Datasources.sourceUsageHourly._name,
+	Datasources.serviceMapDbEdgesMinutely._name,
+	Datasources.scannerRequests._name,
+	Datasources.serviceRuntimesHourly._name,
+	// Backfilled by hand in day-sized chunks instead: a replay of 30 days of traces and logs is a CPU burst.
+	Datasources.userActivityHourly._name,
+])
+
+const withBackfillSkip = (datasource: GeneratedResource): GeneratedResource =>
+	SKIP_BACKFILL.has(datasource.name)
+		? { ...datasource, content: `${datasource.content}\n\nBACKFILL skip` }
+		: datasource
+
+export const buildTinybirdProjectManifest: Effect.Effect<TinybirdProjectManifest, SchemaDefinitionError> =
+	Effect.map(buildProject(Datasources, Materializations), ({ datasources: built, pipes }) => {
+		const datasources = Arr.map(built, withBackfillSkip)
+		return { datasources, pipes, projectRevision: createTinybirdProjectRevision(datasources, pipes) }
 	})
 
-	const datasources = buildResult.resources.datasources.map(toResource)
-	const pipes = buildResult.resources.pipes.map(toResource)
-
-	return {
-		datasources,
-		pipes,
-		projectRevision: createTinybirdProjectRevision(datasources, pipes),
-	}
-}
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 export const renderTinybirdProjectManifestModule = (manifest: TinybirdProjectManifest): string => {
-	const datasources = JSON.stringify(manifest.datasources, null, 2)
-	const pipes = JSON.stringify(manifest.pipes, null, 2)
+	const datasources = encodeJsonPretty(manifest.datasources)
+	const pipes = encodeJsonPretty(manifest.pipes)
 
 	return `// This file is generated by scripts/generate-tinybird-project-manifest.ts
 // Do not edit manually.
 
-export const projectRevision = ${JSON.stringify(manifest.projectRevision)} as const
+export const projectRevision = ${encodeJson(manifest.projectRevision)} as const
 
 export const datasources = ${datasources} as const
 

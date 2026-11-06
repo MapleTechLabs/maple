@@ -16,8 +16,8 @@
 // list query end to end over the same data.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
-import { compileUnionUnsafe, compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { Array as Arr, Effect, Option, Record as Rec, String as Str } from "effect"
+import { compileUnionUnsafe, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	MAPLE_AI_SESSION_ID_ATTR,
 	MAPLE_AI_TRACE_SESSION_PREFIX,
@@ -29,6 +29,7 @@ import * as Integrations from "@maple/query-engine-integrations"
 import type { AiSessionPageOpts } from "@maple/query-engine-integrations"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import {
+	aiGatewayStamps,
 	applyRealMigrations,
 	clickhouseE2eEnabled,
 	clickhouseExec,
@@ -51,7 +52,8 @@ const BASE_MS = Math.floor((Date.now() - 2 * HOUR_MS) / 1000) * 1000
 // DateTime64(9) column and the fan-out is bounded by that literal, so a seed at
 // a fractional instant is the only thing that proves `Timestamp <= '{fanOutEnd}'`
 // still admits the very row that produced it.
-const chDateTime = (epochMs: number): string => new Date(epochMs).toISOString().replace("T", " ").slice(0, 23)
+const chDateTime = (epochMs: number): string =>
+	Str.slice(0, 23)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 
 /** The same instant as `ai_trace_index` renders it: DateTime64(9), so the
  *  millisecond literal above padded out to nanoseconds. */
@@ -59,7 +61,8 @@ const chTimestamp = (epochMs: number): string => `${chDateTime(epochMs)}000000`
 
 // Backslashes too: a JSON payload's `\n` has to reach the span as the two
 // characters it is, not as the newline a ClickHouse literal reads it as.
-const quote = (value: string): string => `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`
+const quote = (value: string): string =>
+	`'${Str.replaceAll("'", "\\'")(Str.replaceAll("\\", "\\\\")(value))}'`
 
 const FOREIGN_ORG_ID = "org_ai_trace_index_e2e_other"
 
@@ -92,7 +95,8 @@ const PRODUCTION = { "deployment.environment.name": "production" }
 // carries the session key, which is why resolution is per-TRACE. It names the
 // agent, and it ROLLS UP the usage of the chat call beneath it, bucket for
 // bucket — the shape several frameworks emit, and the reason a naive sum reads
-// 300 tokens where 150 were billed.
+// 300 tokens where 150 were billed. The gateway stamps usage on the chat alone,
+// so this row reads none.
 const AGENT_TURN_SPAN: SeedSpan = {
 	traceId: AGENT_TRACE,
 	spanId: "span-agent-1",
@@ -112,6 +116,7 @@ const AGENT_TURN_SPAN: SeedSpan = {
 		"gen_ai.usage.output_tokens": "50",
 		"gen_ai.usage.reasoning.output_tokens": "10",
 		"gen_ai.usage.cost": "0.02",
+		...aiGatewayStamps({ agentName: "slack-agent" }),
 	},
 	resource: PRODUCTION,
 }
@@ -119,8 +124,8 @@ const AGENT_TURN_SPAN: SeedSpan = {
 // The model call under the turn span: the index row that carries the model,
 // and the deepest reporter of the 150 tokens the turn span repeats. Served
 // through OpenRouter, whose prompt figure already contains the cached tokens
-// and whose completion figure contains the reasoning — so the 40 and the 10
-// reported beside them are NOT added again, and the row still reads 150.
+// and whose completion figure contains the reasoning — so the gateway carved
+// the 40 and the 10 back out of them, and the row still reads 150.
 const AGENT_CHAT_SPAN: SeedSpan = {
 	traceId: AGENT_TRACE,
 	spanId: "span-chat-1",
@@ -141,6 +146,13 @@ const AGENT_CHAT_SPAN: SeedSpan = {
 		"gen_ai.usage.output_tokens": "50",
 		"gen_ai.usage.reasoning.output_tokens": "10",
 		"gen_ai.usage.cost": "0.02",
+		...aiGatewayStamps({
+			llmCall: true,
+			model: "claude-sonnet-5-20260101",
+			responseId: "gen-e2e-1",
+			usage: [60, 40, 0, 40, 10],
+			cost: "0.02",
+		}),
 	},
 	resource: PRODUCTION,
 }
@@ -170,6 +182,13 @@ const MIRROR_CALL_SPAN: SeedSpan = {
 		"gen_ai.usage.output_tokens": "50",
 		"gen_ai.usage.output_tokens.reasoning": "10",
 		"gen_ai.usage.total_cost": "0.03",
+		...aiGatewayStamps({
+			llmCall: true,
+			model: "claude-sonnet-5-20260101",
+			responseId: "gen-e2e-1",
+			usage: [60, 40, 0, 40, 10],
+			cost: "0.03",
+		}),
 	},
 }
 
@@ -188,6 +207,7 @@ const MIRROR_ATTEMPT_SPAN: SeedSpan = {
 		[MAPLE_AI_VENDOR_ID_ATTR]: "openrouter",
 		"gen_ai.operation.name": "chat",
 		"gen_ai.response.id": "gen-e2e-1:attempt-0",
+		...aiGatewayStamps({ llmCall: true, responseId: "gen-e2e-1:attempt-0" }),
 	},
 }
 
@@ -210,6 +230,12 @@ const AGENT_TOOL_SPAN: SeedSpan = {
 		"gen_ai.tool.name": "search_traces",
 		"error.type": "TimeoutError",
 		"gen_ai.tool.description": "Search traces by attribute.",
+		...aiGatewayStamps({
+			toolCall: true,
+			error: true,
+			toolName: "search_traces",
+			toolDescription: "Search traces by attribute.",
+		}),
 	},
 	resource: PRODUCTION,
 }
@@ -225,11 +251,15 @@ const AGENT_SDK_SPAN: SeedSpan = {
 	ms: BASE_MS + 5_000,
 	service: "agent-service",
 	status: "Ok",
-	attrs: { [MAPLE_AI_VENDOR_ID_ATTR]: "vercel_ai_sdk", [MAPLE_AI_VENDOR_VERSION_ATTR]: "5" },
+	attrs: {
+		[MAPLE_AI_VENDOR_ID_ATTR]: "vercel_ai_sdk",
+		[MAPLE_AI_VENDOR_VERSION_ATTR]: "5",
+		...aiGatewayStamps({}),
+	},
 }
 
 // A plain child of the agent trace, BEFORE its first agent span: no `maple_ai.*`
-// at all, so it is in `trace_detail_spans` and NOT in the index. It is what the
+// at all, so it is in `traces` and NOT in the index. It is what the
 // fan-out's pad exists for, and what makes `spanCount` bigger than the number of
 // agent spans — the full agent context the page promises.
 const AGENT_CHILD_SPAN: SeedSpan = {
@@ -258,6 +288,7 @@ const AGENT_TURN_2_SPAN: SeedSpan = {
 		[MAPLE_AI_VENDOR_ID_ATTR]: "eve",
 		[MAPLE_AI_SESSION_ID_ATTR]: SESSION_ID,
 		"gen_ai.agent.name": "critic-agent",
+		...aiGatewayStamps({ agentName: "critic-agent" }),
 	},
 }
 
@@ -266,9 +297,10 @@ const AGENT_TURN_2_SPAN: SeedSpan = {
 // `Timestamp <= '{fanOutEnd}'` has to admit the row it was measured from. A
 // millisecond dropped anywhere in that round trip erases this session.
 //
-// Vercel AI SDK dialect with no operation name: classified by the span-name
-// rules, identified by `ai.model.id`, measured by `ai.usage.*`, and in the
-// environment under the DEPRECATED semconv spelling.
+// Vercel AI SDK dialect with no operation name: the model call by the
+// gateway's legacy-scope rule (`ai.*.doGenerate`), identified by `ai.model.id`,
+// measured off `ai.usage.*`, and in the environment under the DEPRECATED
+// semconv spelling.
 const SESSIONLESS_SPAN: SeedSpan = {
 	traceId: SESSIONLESS_TRACE,
 	spanId: "span-agent-2",
@@ -283,6 +315,7 @@ const SESSIONLESS_SPAN: SeedSpan = {
 		// The SDK re-sums the prompt, so the 4 cached are inside the 10.
 		"ai.usage.cachedInputTokens": "4",
 		"ai.usage.completionTokens": "5",
+		...aiGatewayStamps({ llmCall: true, error: true, model: "gpt-5", usage: [6, 4, 0, 5, 0] }),
 	},
 	resource: { "deployment.environment": "staging" },
 }
@@ -310,6 +343,7 @@ const EARLY_TURN_SPAN: SeedSpan = {
 	attrs: {
 		[MAPLE_AI_VENDOR_ID_ATTR]: "eve",
 		[MAPLE_AI_SESSION_ID_ATTR]: SESSION_ID,
+		...aiGatewayStamps({}),
 	},
 }
 
@@ -336,7 +370,7 @@ const FOREIGN_SPAN: SeedSpan = {
 	ms: BASE_MS + 180_000,
 	service: "agent-service",
 	status: "Ok",
-	attrs: { [MAPLE_AI_VENDOR_ID_ATTR]: "eve" },
+	attrs: { [MAPLE_AI_VENDOR_ID_ATTR]: "eve", ...aiGatewayStamps({}) },
 }
 
 // One tool's calls under a third org, so no session read above sees them. The
@@ -365,30 +399,52 @@ const toolCallSpan = (
 		[MAPLE_AI_VENDOR_ID_ATTR]: "eve",
 		"gen_ai.operation.name": "execute_tool",
 		"gen_ai.tool.name": "submit_findings",
+		...aiGatewayStamps({ toolCall: true, toolName: "submit_findings" }),
 		...fields.attrs,
 	},
 })
 
 const MISSING_KEY_0_SPAN = toolCallSpan("span-tool-failure-1", 0, {
 	status: "Ok",
-	attrs: { "error.type": "tool_error", "gen_ai.tool.call.result": missingKeyResult(0) },
+	attrs: {
+		"error.type": "tool_error",
+		"gen_ai.tool.call.result": missingKeyResult(0),
+		...aiGatewayStamps({
+			toolCall: true,
+			error: true,
+			toolName: "submit_findings",
+			toolErrorResult: missingKeyResult(0),
+		}),
+	},
 })
 const MISSING_KEY_1_SPAN = toolCallSpan("span-tool-failure-2", 1_000, {
 	status: "Ok",
-	attrs: { "error.type": "tool_error", "gen_ai.tool.call.result": missingKeyResult(1) },
+	attrs: {
+		"error.type": "tool_error",
+		"gen_ai.tool.call.result": missingKeyResult(1),
+		...aiGatewayStamps({
+			toolCall: true,
+			error: true,
+			toolName: "submit_findings",
+			toolErrorResult: missingKeyResult(1),
+		}),
+	},
 })
 // A failure described only by its status, as other frameworks record one: no
 // result, so the status message is what it is fingerprinted by.
 const STATUS_ONLY_FAILURE_SPAN = toolCallSpan("span-tool-failure-3", 2_000, {
 	status: "Error",
 	statusMessage: "effect-agent.execute_tool: Tool execution reached a failed terminal state",
-	attrs: {},
+	attrs: aiGatewayStamps({ toolCall: true, error: true, toolName: "submit_findings" }),
 })
 // A call that succeeded: its result is a payload, not a failure, so the index
 // carries neither the result nor a fingerprint.
 const TOOL_SUCCESS_SPAN = toolCallSpan("span-tool-success-1", 3_000, {
 	status: "Ok",
-	attrs: { "gen_ai.tool.call.result": JSON.stringify({ result: "3 findings recorded" }) },
+	attrs: {
+		"gen_ai.tool.call.result": JSON.stringify({ result: "3 findings recorded" }),
+		...aiGatewayStamps({ toolCall: true, toolName: "submit_findings" }),
+	},
 })
 
 const TOOL_FAILURE_ORG_SPANS: ReadonlyArray<SeedSpan> = [
@@ -398,22 +454,243 @@ const TOOL_FAILURE_ORG_SPANS: ReadonlyArray<SeedSpan> = [
 	TOOL_SUCCESS_SPAN,
 ]
 
+// The netting shapes, under a fourth org so no read above sees them.
+//
+// A reused Strands agent across two requests: each `invoke_agent` reports the
+// agent's accumulated usage, over an event-loop span that reports nothing, over
+// the one chat it ran — 204 + 44 + 269 + 78 = 595 tokens, where the roll-ups
+// alone claim 843 more. The gateway stamps usage on the chats alone, so the
+// list sums them with nothing to net.
+//
+// And a gateway request that failed at every provider: the generation and its
+// provider attempt are both model spans with no usage, one call.
+const NETTING_ORG_ID = "org_ai_trace_index_e2e_netting"
+const NETTING_SESSION_ID = `${NETTING_ORG_ID}:strands-reused`
+const FAILED_GATEWAY_TRACE = "aitraceindexe2e000000000000000010"
+
+const strandsTurn = (turn: number, agent: [number, number], chat: [number, number]): SeedSpan[] => {
+	const traceId = `aitraceindexe2e00000000000000002${turn}`
+	const strands = { [MAPLE_AI_VENDOR_ID_ATTR]: "strands" }
+	return [
+		{
+			traceId,
+			spanId: `span-strands-agent-${turn}`,
+			name: "invoke_agent assistant",
+			ms: BASE_MS + 400_000 + turn * 10_000,
+			service: "strands-service",
+			status: "Ok",
+			attrs: {
+				...strands,
+				[MAPLE_AI_SESSION_ID_ATTR]: NETTING_SESSION_ID,
+				"gen_ai.operation.name": "invoke_agent",
+				"gen_ai.agent.name": "assistant",
+				"gen_ai.usage.input_tokens": String(agent[0]),
+				"gen_ai.usage.output_tokens": String(agent[1]),
+				...aiGatewayStamps({ agentName: "assistant" }),
+			},
+		},
+		{
+			traceId,
+			spanId: `span-strands-cycle-${turn}`,
+			parentSpanId: `span-strands-agent-${turn}`,
+			name: "execute_event_loop_cycle",
+			ms: BASE_MS + 400_000 + turn * 10_000 + 1,
+			service: "strands-service",
+			status: "Ok",
+			attrs: {
+				...strands,
+				"gen_ai.operation.name": "execute_event_loop_cycle",
+				...aiGatewayStamps({}),
+			},
+		},
+		{
+			traceId,
+			spanId: `span-strands-chat-${turn}`,
+			parentSpanId: `span-strands-cycle-${turn}`,
+			name: "chat",
+			ms: BASE_MS + 400_000 + turn * 10_000 + 2,
+			service: "strands-service",
+			status: "Ok",
+			attrs: {
+				...strands,
+				"gen_ai.operation.name": "chat",
+				"gen_ai.request.model": "gpt-4o-mini",
+				"gen_ai.usage.input_tokens": String(chat[0]),
+				"gen_ai.usage.output_tokens": String(chat[1]),
+				...aiGatewayStamps({
+					llmCall: true,
+					model: "gpt-4o-mini",
+					usage: [chat[0], 0, 0, chat[1], 0],
+				}),
+			},
+		},
+	]
+}
+
+const NETTING_ORG_SPANS: ReadonlyArray<SeedSpan> = [
+	...strandsTurn(0, [204, 44], [204, 44]),
+	...strandsTurn(1, [473, 122], [269, 78]),
+	{
+		traceId: FAILED_GATEWAY_TRACE,
+		spanId: "span-gateway-generation",
+		name: "LLM Generation",
+		ms: BASE_MS + 500_000,
+		service: "openrouter",
+		status: "Error",
+		attrs: {
+			[MAPLE_AI_VENDOR_ID_ATTR]: "openrouter",
+			"gen_ai.operation.name": "chat",
+			"gen_ai.request.model": "openai/gpt-4o-mini",
+			"gen_ai.response.id": "gen-e2e-failed",
+			...aiGatewayStamps({
+				llmCall: true,
+				error: true,
+				model: "openai/gpt-4o-mini",
+				responseId: "gen-e2e-failed",
+			}),
+		},
+	},
+	{
+		traceId: FAILED_GATEWAY_TRACE,
+		spanId: "span-gateway-attempt",
+		parentSpanId: "span-gateway-generation",
+		name: "provider attempt 1: OpenAI",
+		ms: BASE_MS + 500_001,
+		service: "openrouter",
+		status: "Error",
+		attrs: {
+			[MAPLE_AI_VENDOR_ID_ATTR]: "openrouter",
+			"gen_ai.operation.name": "chat",
+			"gen_ai.response.id": "gen-e2e-failed:attempt-0",
+			...aiGatewayStamps({ llmCall: true, error: true, responseId: "gen-e2e-failed:attempt-0" }),
+		},
+	},
+]
+
+// One long agent run, under an org of its own: a single trace whose agent span
+// wraps a model call per step. The netting looks every reporter's ancestors
+// and claims up in tables as long as the trace, and a lookup that copied the
+// table per reporter put a trace this size past the list read's memory
+// ceiling in production.
+const WIDE_ORG_ID = "org_ai_trace_index_e2e_wide"
+const WIDE_TRACE = "aitraceindexe2e000000000000000030"
+const WIDE_TRACE_CALLS = 1_500
+const WIDE_ORG_SPANS: ReadonlyArray<SeedSpan> = [
+	{
+		traceId: WIDE_TRACE,
+		spanId: "span-wide-agent",
+		name: "invoke_agent crawler",
+		ms: BASE_MS + 600_000,
+		service: "strands-service",
+		status: "Ok",
+		attrs: {
+			[MAPLE_AI_VENDOR_ID_ATTR]: "strands",
+			"gen_ai.operation.name": "invoke_agent",
+			"gen_ai.agent.name": "crawler",
+			...aiGatewayStamps({ agentName: "crawler" }),
+		},
+	},
+	...Array.from({ length: WIDE_TRACE_CALLS }, (_, call) => ({
+		traceId: WIDE_TRACE,
+		spanId: `span-wide-chat-${call}`,
+		parentSpanId: "span-wide-agent",
+		name: "chat",
+		ms: BASE_MS + 600_001 + call,
+		service: "strands-service",
+		status: "Ok",
+		attrs: {
+			[MAPLE_AI_VENDOR_ID_ATTR]: "strands",
+			"gen_ai.operation.name": "chat",
+			"gen_ai.request.model": "gpt-4o-mini",
+			...aiGatewayStamps({ llmCall: true, model: "gpt-4o-mini", usage: [10, 0, 0, 2, 0] }),
+		},
+	})),
+]
+
+// Traces the session rule sorts, under a fifth org, stamped as the gateway
+// stamps them: a sessionless plumbing span (a Spring AI advisor) that is no
+// session, a LangSmith OTel `chain` over LangGraph's `tools` node beside the
+// real tool calls, and a tool server's lone tool call.
+const SESSION_RULE_ORG_ID = "org_ai_trace_index_e2e_session_rule"
+const PLUMBING_TRACE = "aitraceindexe2e000000000000000030"
+const LANGGRAPH_TRACE = "aitraceindexe2e000000000000000031"
+/** A tool server's own trace: one tool call, no session id, model or agent. */
+const TOOL_ONLY_TRACE = "aitraceindexe2e000000000000000032"
+
+const sessionRuleSpan = (
+	traceId: string,
+	spanId: string,
+	name: string,
+	offsetMs: number,
+	vendor: string,
+	attrs: Readonly<Record<string, string>>,
+): SeedSpan => ({
+	traceId,
+	spanId,
+	name,
+	ms: BASE_MS + 600_000 + offsetMs,
+	service: "session-rule-service",
+	status: "Ok",
+	attrs: { [MAPLE_AI_VENDOR_ID_ATTR]: vendor, ...attrs },
+})
+
+const SESSION_RULE_ORG_SPANS: ReadonlyArray<SeedSpan> = [
+	sessionRuleSpan(
+		PLUMBING_TRACE,
+		"span-advisor",
+		"spring_ai chat_client advisor",
+		0,
+		"spring_ai",
+		aiGatewayStamps({}),
+	),
+	sessionRuleSpan(LANGGRAPH_TRACE, "span-lg-agent", "invoke_agent weather", 10, "langchain", {
+		"gen_ai.operation.name": "invoke_agent",
+		...aiGatewayStamps({ agentName: "weather" }),
+	}),
+	sessionRuleSpan(LANGGRAPH_TRACE, "span-lg-tools", "tools", 11, "langchain", {
+		"gen_ai.operation.name": "chain",
+		...aiGatewayStamps({}),
+	}),
+	sessionRuleSpan(LANGGRAPH_TRACE, "span-lg-tool", "get_weather", 13, "langchain", {
+		"gen_ai.operation.name": "execute_tool",
+		...aiGatewayStamps({ toolCall: true, toolName: "get_weather" }),
+	}),
+	sessionRuleSpan(
+		LANGGRAPH_TRACE,
+		"span-lg-sdk-tool",
+		"ai.toolCall",
+		14,
+		"vercel_ai_sdk",
+		aiGatewayStamps({ toolCall: true }),
+	),
+	sessionRuleSpan(TOOL_ONLY_TRACE, "span-tool-only", "execute_tool search", 20, "unknown:genai", {
+		"gen_ai.operation.name": "execute_tool",
+		...aiGatewayStamps({ toolCall: true, toolName: "search" }),
+	}),
+]
+
 const chMap = (attrs: Readonly<Record<string, string>>): string =>
-	`map(${Object.entries(attrs)
-		.flatMap(([key, value]) => [quote(key), quote(value)])
-		.join(", ")})`
+	`map(${Arr.join(
+		Arr.flatMap(Rec.toEntries(attrs), ([key, value]) => [quote(key), quote(value)]),
+		", ",
+	)})`
 
 const seed = async (): Promise<void> => {
-	const rows = [
-		...SEED_SPANS.map((span) => [ORG_ID, span] as const),
-		[FOREIGN_ORG_ID, FOREIGN_SPAN] as const,
-		...TOOL_FAILURE_ORG_SPANS.map((span) => [TOOL_FAILURE_ORG_ID, span] as const),
-	]
-		.map(
+	const rows = Arr.join(
+		Arr.map(
+			[
+				...Arr.map(SEED_SPANS, (span) => [ORG_ID, span] as const),
+				[FOREIGN_ORG_ID, FOREIGN_SPAN] as const,
+				...Arr.map(TOOL_FAILURE_ORG_SPANS, (span) => [TOOL_FAILURE_ORG_ID, span] as const),
+				...Arr.map(NETTING_ORG_SPANS, (span) => [NETTING_ORG_ID, span] as const),
+				...Arr.map(WIDE_ORG_SPANS, (span) => [WIDE_ORG_ID, span] as const),
+				...Arr.map(SESSION_RULE_ORG_SPANS, (span) => [SESSION_RULE_ORG_ID, span] as const),
+			],
 			([orgId, span]) =>
 				`(${quote(orgId)}, ${quote(chDateTime(span.ms))}, ${quote(span.traceId)}, ${quote(span.spanId)}, ${quote(span.parentSpanId ?? "")}, ${quote(span.name ?? "agent turn")}, 'Internal', ${quote(span.service)}, 1000000, ${quote(span.status)}, ${quote(span.statusMessage ?? "")}, 1, ${chMap(span.attrs)}, ${chMap(span.resource ?? {})})`,
-		)
-		.join("\n,")
+		),
+		"\n,",
+	)
 
 	await clickhouseExec(
 		`INSERT INTO traces
@@ -423,10 +700,14 @@ const seed = async (): Promise<void> => {
 	)
 }
 
-const runJson = async (sql: string): Promise<ReadonlyArray<Record<string, unknown>>> => {
+const runJson = async (
+	sql: string,
+	settings: Readonly<Record<string, string>> = {},
+): Promise<ReadonlyArray<Record<string, unknown>>> => {
 	const body = await clickhouseExec(normalizeSqlForClickHouseClient(sql), database, {
 		default_format: "JSON",
 		output_format_json_quote_64bit_integers: "0",
+		...settings,
 	})
 	const parsed = JSON.parse(body) as {
 		readonly data?: ReadonlyArray<Record<string, unknown>>
@@ -453,7 +734,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			        VendorVersion, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens,
 			        ErrorType, StatusMessage, ToolDescription,
 			        FailedToolCallResult, ErrorFingerprint != 0 AS HasErrorFingerprint
-			 FROM ai_trace_index ORDER BY Timestamp ASC`,
+			 FROM ai_trace_index WHERE OrgId NOT IN (${quote(NETTING_ORG_ID)}, ${quote(WIDE_ORG_ID)}, ${quote(SESSION_RULE_ORG_ID)}) ORDER BY Timestamp ASC`,
 		)
 
 		/** The index row a seed span is expected to produce, by name — the
@@ -524,16 +805,14 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// per TRACE rather than per span.
 		assert.deepStrictEqual(rows, [
 			indexRow(ORG_ID, EARLY_TURN_SPAN),
-			// OpenRouter nests the cache in the prompt and the reasoning in the
-			// completion, so the buckets carve both out and still sum to `Tokens`.
+			// The roll-up the gateway stamped no usage on: whatever its
+			// `gen_ai.usage.*` repeats, the row reports nothing.
 			indexRow(ORG_ID, AGENT_TURN_SPAN, {
 				DeploymentEnv: "production",
 				AgentName: "slack-agent",
-				Tokens: 150,
-				Cost: 0.02,
-				buckets: [60, 40, 0, 40, 10],
 			}),
-			// Response model over request model; the one model call.
+			// Every column below is the gateway's stamp, projected; the buckets sum
+			// to `Tokens`.
 			indexRow(ORG_ID, AGENT_CHAT_SPAN, {
 				DeploymentEnv: "production",
 				Model: "claude-sonnet-5-20260101",
@@ -570,9 +849,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			// "agent turn" by name, no model, no usage: an agent span, not a call.
 			indexRow(ORG_ID, AGENT_SDK_SPAN),
 			indexRow(ORG_ID, AGENT_TURN_2_SPAN, { AgentName: "critic-agent" }),
-			// The Vercel AI SDK dialect resolves to the same columns, the deprecated
-			// environment spelling still resolves, and the name rules classify a
-			// span with no operation name as the model call it is.
+			// The deprecated environment spelling still resolves.
 			indexRow(ORG_ID, SESSIONLESS_SPAN, {
 				DeploymentEnv: "staging",
 				Model: "gpt-5",
@@ -616,7 +893,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			 FROM ai_trace_index WHERE OrgId = ${quote(TOOL_FAILURE_ORG_ID)}`,
 		)
 		const fingerprint = (span: SeedSpan) =>
-			rows.find((row) => row.SpanId === span.spanId)?.ErrorFingerprint
+			Option.getOrUndefined(Arr.findFirst(rows, (row) => row.SpanId === span.spanId))?.ErrorFingerprint
 		const hashOf = async (row: {
 			readonly failedToolCallResult: string
 			readonly statusMessage: string
@@ -667,7 +944,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// `trace:` key, the session-bearing one under the vendor's id, and the
 		// plain trace and the foreign org's trace must not appear at all.
 		assert.deepStrictEqual(
-			page.map((row) => row.sessionId),
+			Arr.map(page, (row) => row.sessionId),
 			[`${MAPLE_AI_TRACE_SESSION_PREFIX}${SESSIONLESS_TRACE}`, SESSION_ID],
 		)
 
@@ -677,7 +954,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// session rather than of one trace. Not `EARLY_TURN_SPAN`, which carries
 		// the same session id three hours out and which the page never saw, so
 		// it did not stretch the bounds.
-		const eve = page.find((row) => row.sessionId === SESSION_ID)
+		const eve = Option.getOrUndefined(Arr.findFirst(page, (row) => row.sessionId === SESSION_ID))
 		assert.deepStrictEqual(
 			[eve?.agentStart, eve?.agentEnd],
 			[chTimestamp(BASE_MS), chTimestamp(BASE_MS + 30_001)],
@@ -696,7 +973,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			],
 			["eve", "1", 3, 7, ["agent-service", "openrouter"]],
 		)
-		const sessionless = page.find((row) => row.sessionId !== SESSION_ID)
+		const sessionless = Option.getOrUndefined(Arr.findFirst(page, (row) => row.sessionId !== SESSION_ID))
 		assert.deepStrictEqual(
 			[
 				sessionless?.vendorId,
@@ -722,8 +999,10 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 
 		// The client's own derivation, character for character — string bounds
 		// that sort as the instants do.
-		const fanOutStart = page.map((row) => row.agentStart).reduce((a, b) => (a < b ? a : b))
-		const fanOutEnd = page.map((row) => row.agentEnd).reduce((a, b) => (a < b ? b : a))
+		const starts = Arr.map(page, (row) => row.agentStart)
+		const ends = Arr.map(page, (row) => row.agentEnd)
+		const fanOutStart = Arr.reduce(starts, starts[0] ?? "", (a, b) => (a < b ? a : b))
+		const fanOutEnd = Arr.reduce(ends, ends[0] ?? "", (a, b) => (a < b ? b : a))
 		// The upper bound lands on a fractional instant — the sessionless span's
 		// end, its start plus 1ms — and the details read compares
 		// `Timestamp <= '{fanOutEnd}'` against the DateTime64(9) column it came
@@ -731,7 +1010,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// outside it — the sessionless session below is the canary.
 		assert.strictEqual(fanOutStart, chTimestamp(BASE_MS))
 		assert.strictEqual(fanOutEnd, chTimestamp(BASE_MS + 60_124))
-		assert.ok(fanOutEnd.endsWith(".124000000"))
+		assert.ok(Str.endsWith(".124000000")(fanOutEnd))
 		// `orgId`, the page's two bounds and one slice of their padded extent —
 		// the details read takes no window param from the caller, so there is
 		// nothing else to pass. Run as the route runs it: once per slice, then
@@ -739,31 +1018,38 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// the folded rows must equal — a slice boundary that dropped or
 		// double-counted a span would show here and nowhere else.
 		const details = Integrations.aiSessionDetailsQuery({
-			sessionIds: page.map((row) => row.sessionId),
+			sessionIds: Arr.map(page, (row) => row.sessionId),
 		})
 		const readDetails = async (slice: Integrations.AiSessionDetailsSlice) => {
 			const compiled = compileUnsafe(details, { orgId: ORG_ID, fanOutStart, fanOutEnd, ...slice })
 			return Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
 		}
 		const slices = Integrations.aiSessionDetailsSlices(fanOutStart, fanOutEnd)
-		const rows = Integrations.mergeAiSessionDetails(await Promise.all(slices.map(readDetails)))
+		const rows = Integrations.mergeAiSessionDetails(
+			await Promise.all(Arr.map(slices, (slice) => readDetails(slice))),
+		)
 		const whole = await readDetails({
-			spansStart: slices[0]!.spansStart,
-			spansEnd: slices[slices.length - 1]!.spansEnd,
+			spansStart: slices[0].spansStart,
+			spansEnd: slices[slices.length - 1].spansEnd,
 		})
 		const sorted = (list: ReadonlyArray<Integrations.AiSessionDetailsOutput>) =>
-			[...list]
-				.sort((a, b) => a.sessionId.localeCompare(b.sessionId))
-				.map((row) => ({ ...row, serviceNames: [...row.serviceNames].sort() }))
+			Arr.map(
+				[...list].sort((a, b) => Str.localeCompare(b.sessionId)(a.sessionId)),
+				(row) => ({ ...row, serviceNames: [...row.serviceNames].sort() }),
+			)
 		assert.deepStrictEqual(sorted(rows), sorted(whole))
 
 		// Merged by session id, as the client does — the same two sessions, now
 		// with the facts the index cannot answer.
-		const byId = new Map(rows.map((row) => [row.sessionId, row]))
+		const byId = new Map(Arr.map(rows, (row) => [row.sessionId, row]))
 		assert.deepStrictEqual(
-			page
-				.flatMap((row) => byId.get(row.sessionId) ?? [])
-				.map((row) => [row.sessionId, row.spanCount, [...row.serviceNames].sort()]),
+			Arr.map(
+				Arr.flatMap(page, (row) => {
+					const details = byId.get(row.sessionId)
+					return details === undefined ? [] : [details]
+				}),
+				(row) => [row.sessionId, row.spanCount, [...row.serviceNames].sort()],
+			),
 			[
 				// Survived the `<= fanOutEnd` boundary it defined.
 				[`${MAPLE_AI_TRACE_SESSION_PREFIX}${SESSIONLESS_TRACE}`, 1, ["agent-service"]],
@@ -795,19 +1081,19 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 	it("measures each session off the index the way the detail page does", async () => {
 		const [sessionless, session] = await rankPage()
 
-		// Name-classified inference: no operation name, but a model and no
-		// tool/agent words in the span name.
+		// The gateway's model call: a legacy-scope `doGenerate` with no
+		// operation name.
 		assert.deepStrictEqual(
-			[sessionless!.models, sessionless!.agentNames, sessionless!.llmCalls, sessionless!.toolCalls],
+			[sessionless.models, sessionless.agentNames, sessionless.llmCalls, sessionless.toolCalls],
 			[["gpt-5"], [], 1, 0],
 		)
-		assert.strictEqual(sessionless!.totalTokens, 15)
-		assert.strictEqual(sessionless!.cost, 0)
-		assert.strictEqual(sessionless!.errorAgentSpans, 1)
+		assert.strictEqual(sessionless.totalTokens, 15)
+		assert.strictEqual(sessionless.cost, 0)
+		assert.strictEqual(sessionless.errorAgentSpans, 1)
 		// The one failed span is a model call: a turn failure, not a tool's.
-		assert.deepStrictEqual([sessionless!.toolErrors, sessionless!.turnErrors], [0, 1])
+		assert.deepStrictEqual([sessionless.toolErrors, sessionless.turnErrors], [0, 1])
 		// One span of 1ms: the extent is its own duration.
-		assert.strictEqual(sessionless!.agentDurationMs, 1)
+		assert.strictEqual(sessionless.agentDurationMs, 1)
 
 		// The roll-up: the turn span reported the chat call's 150 tokens and
 		// $0.02 again; the deepest reporter is counted once. The gateway's mirror
@@ -817,29 +1103,29 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// under a reporting parent, is not a call. The lambdas are raw SQL the
 		// builder cannot type-check, so this is where they are proven.
 		assert.deepStrictEqual(
-			[session!.models, [...session!.agentNames].sort(), session!.llmCalls, session!.toolCalls],
+			[session.models, [...session.agentNames].sort(), session.llmCalls, session.toolCalls],
 			[["claude-sonnet-5-20260101"], ["critic-agent", "slack-agent"], 1, 1],
 		)
 		// The name the row goes by. `agentNames` is a set, and `critic-agent` sorts
 		// first in it; the session's earliest NAMED span is the `slack-agent` turn,
 		// on the other trace, 30 seconds before it. Taking the heading off the set
 		// titled a multi-agent session differently in the list and on its own page.
-		assert.strictEqual(session!.firstAgentName, "slack-agent")
+		assert.strictEqual(session.firstAgentName, "slack-agent")
 		// A session that named no agent leaves it blank rather than falling back to
 		// a span with no name — the sentinel keeps unnamed spans out of the argMin.
-		assert.strictEqual(sessionless!.firstAgentName, "")
-		assert.strictEqual(session!.totalTokens, 150)
-		assert.strictEqual(session!.cost, 0.03)
-		assert.strictEqual(session!.errorAgentSpans, 1)
+		assert.strictEqual(sessionless.firstAgentName, "")
+		assert.strictEqual(session.totalTokens, 150)
+		assert.strictEqual(session.cost, 0.03)
+		assert.strictEqual(session.errorAgentSpans, 1)
 		// The failed tool span under an `Ok` turn: one tool error, and no turn
 		// error echoed off it. The failure lambda is raw SQL too.
-		assert.deepStrictEqual([session!.toolErrors, session!.turnErrors], [1, 0])
+		assert.deepStrictEqual([session.toolErrors, session.turnErrors], [1, 0])
 		// From the first turn span to the end of the second trace's turn span.
-		assert.strictEqual(session!.agentDurationMs, 30_001)
+		assert.strictEqual(session.agentDurationMs, 30_001)
 	})
 
 	it("applies each counted filter per trace, and each session filter on the ranked row", async () => {
-		const ids = async (opts: AiSessionPageOpts) => (await rankPage(opts)).map((row) => row.sessionId)
+		const ids = async (opts: AiSessionPageOpts) => Arr.map(await rankPage(opts), (row) => row.sessionId)
 
 		assert.deepStrictEqual(await ids({ models: ["gpt-5"] }), [TRACE_SESSION_ID])
 		assert.deepStrictEqual(await ids({ toolNames: ["search_traces"] }), [SESSION_ID])
@@ -863,7 +1149,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// seeds share all but their last character, so a prefix that stops short
 		// of it matches every trace — which is the prefix rule working.
 		assert.deepStrictEqual(await ids({ search: `trace:${SESSIONLESS_TRACE}…` }), [TRACE_SESSION_ID])
-		assert.deepStrictEqual(await ids({ search: SESSIONLESS_TRACE.slice(0, 30) }), [
+		assert.deepStrictEqual(await ids({ search: Str.slice(0, 30)(SESSIONLESS_TRACE) }), [
 			TRACE_SESSION_ID,
 			SESSION_ID,
 		])
@@ -886,16 +1172,135 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		])
 	})
 
+	// The netting lambdas are raw SQL the builder cannot type-check, and the
+	// unit tests compare their text; this is where their numbers are proven.
+	it("nets usage past spans that reported nothing, and a failed request is one call", async () => {
+		const compiled = compileUnsafe(Integrations.aiSessionPageQuery(), {
+			...WINDOW,
+			orgId: NETTING_ORG_ID,
+		})
+		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
+		const measures = (sessionId: string) => {
+			const row = Option.getOrUndefined(
+				Arr.findFirst(rows, (candidate) => candidate.sessionId === sessionId),
+			)
+			return [row?.llmCalls, row?.totalTokens, row?.inputTokens, row?.outputTokens]
+		}
+
+		assert.deepStrictEqual(measures(NETTING_SESSION_ID), [2, 595, 473, 122])
+		assert.deepStrictEqual(
+			measures(`${MAPLE_AI_TRACE_SESSION_PREFIX}${FAILED_GATEWAY_TRACE}`),
+			[1, 0, 0, 0],
+		)
+	})
+
+	it("reads a ranked page to the same rows as the one read that ranks and nets together", async () => {
+		// The list's two reads: which sessions, over the window; then their rows,
+		// over the extent of the ranked sessions alone.
+		// The second window ends inside the second Strands turn, after its
+		// event-loop span started and before that span ended: the chat beneath
+		// it starts past the window, and no read may count it.
+		const windows = [WINDOW, { ...WINDOW, endTime: chDateTime(BASE_MS + 410_001) }]
+		for (const [orgId, bounds] of Arr.flatMap([ORG_ID, NETTING_ORG_ID], (org) =>
+			Arr.map(windows, (window) => [org, window] as const),
+		)) {
+			for (const opts of [
+				{},
+				{ limit: 1 },
+				{ limit: 1, offset: 1 },
+				{ sortBy: "durationMs" },
+			] as const) {
+				const window = { ...bounds, orgId }
+				const whole = compileUnsafe(Integrations.aiSessionPageQuery(opts), window)
+				const rank = compileUnsafe(Integrations.aiSessionRankQuery(opts), window)
+				const ranked = Effect.runSync(rank.decodeRows(await runJson(rank.sql)))
+				if (ranked.length === 0) {
+					assert.deepStrictEqual(await runJson(whole.sql), [])
+					continue
+				}
+				const rows = compileUnsafe(
+					Integrations.aiSessionPageQuery({
+						...opts,
+						sessionIds: Arr.map(ranked, (row) => row.sessionId),
+					}),
+					{
+						orgId,
+						fanOutStart: Arr.map(ranked, (row) => row.agentStart).sort()[0],
+						fanOutEnd: Arr.map(ranked, (row) => row.agentEnd)
+							.sort()
+							.at(-1)!,
+						endTime: window.endTime,
+					},
+				)
+				// Sets come back in no order; everything else must match as it is.
+				const comparable = (page: ReadonlyArray<Record<string, unknown>>) =>
+					Arr.map(page, (row) =>
+						Rec.fromEntries(
+							Arr.map(Rec.toEntries(row), ([key, value]): readonly [string, unknown] => [
+								key,
+								Arr.isArray(value) ? [...value].sort() : value,
+							]),
+						),
+					)
+				assert.deepStrictEqual(
+					comparable(await runJson(rows.sql)),
+					comparable(await runJson(whole.sql)),
+				)
+			}
+		}
+	})
+
+	it("nets a trace of many model calls inside a fraction of the list read's memory", async () => {
+		const compiled = compileUnsafe(Integrations.aiSessionPageQuery(), { ...WINDOW, orgId: WIDE_ORG_ID })
+		const rows = Effect.runSync(
+			compiled.decodeRows(await runJson(compiled.sql, { max_memory_usage: "100000000" })),
+		)
+
+		assert.deepStrictEqual(
+			Arr.map(rows, (row) => [row.sessionId, row.llmCalls, row.totalTokens]),
+			[[`${MAPLE_AI_TRACE_SESSION_PREFIX}${WIDE_TRACE}`, WIDE_TRACE_CALLS, WIDE_TRACE_CALLS * 12]],
+		)
+	})
+
+	it("files a sessionless trace with no model call, tool call or named agent under no session", async () => {
+		const sessionRule = { ...WINDOW, orgId: SESSION_RULE_ORG_ID }
+		const page = compileUnsafe(Integrations.aiSessionPageQuery(), sessionRule)
+		const rows = Effect.runSync(page.decodeRows(await runJson(page.sql)))
+		// The advisor's trace is gone; the LangGraph trace stays on its named agent,
+		// and the tool server's trace on its one tool call.
+		assert.deepStrictEqual(
+			Arr.map(rows, (row) => [row.sessionId, row.toolCalls]),
+			[
+				[`${MAPLE_AI_TRACE_SESSION_PREFIX}${TOOL_ONLY_TRACE}`, 1],
+				[`${MAPLE_AI_TRACE_SESSION_PREFIX}${LANGGRAPH_TRACE}`, 2],
+			],
+		)
+
+		const facets = compileUnionUnsafe(Integrations.aiSessionFacetsQuery(), sessionRule)
+		const vendors = Arr.map(
+			Arr.filter(
+				Effect.runSync(facets.decodeRows(await runJson(facets.sql))),
+				(row) => row.facetType === "vendor",
+			),
+			(row) => [row.name, row.count],
+		).sort()
+		assert.deepStrictEqual(vendors, [
+			["langchain", 1],
+			["unknown:genai", 1],
+			["vercel_ai_sdk", 1],
+		])
+	})
+
 	it("distributes the sessions over each range the way the page measures them", async () => {
 		const compiled = compileUnsafe(Integrations.aiSessionDistributionsQuery(), WINDOW)
 		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
 		const distribution = (measure: Integrations.AiSessionDistributionMeasure) => {
-			const row = rows.find((candidate) => candidate.measure === measure)
-			return row === undefined
+			const row = Arr.findFirst(rows, (candidate) => candidate.measure === measure)
+			return Option.isNone(row)
 				? undefined
-				: Object.entries(row.buckets)
-						.map(([floor, count]) => [Number(floor), count])
-						.sort(([a], [b]) => a! - b!)
+				: Arr.map(Rec.toEntries(row.value.buckets), ([floor, count]) => [Number(floor), count]).sort(
+						([a], [b]) => a - b,
+					)
 		}
 
 		// The page's figures (see "measures each session off the index"), bucketed:
@@ -915,7 +1320,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// Zeros have no bucket: the sessionless trace reported no cost and ran no tool.
 		assert.deepStrictEqual(distribution("cost"), [[2 ** -5.5, 1]])
 		assert.deepStrictEqual(distribution("toolCalls"), [[1, 1]])
-		const tokens = rows.find((row) => row.measure === "totalTokens")
+		const tokens = Option.getOrUndefined(Arr.findFirst(rows, (row) => row.measure === "totalTokens"))
 		assert.ok(tokens !== undefined && tokens.p50 >= 15 && tokens.p95 <= 150)
 	})
 
@@ -923,10 +1328,10 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		const compiled = compileUnionUnsafe(Integrations.aiSessionFacetsQuery(), WINDOW)
 		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
 		const facet = (facetType: string) =>
-			rows
-				.filter((row) => row.facetType === facetType)
-				.map((row) => [row.name, row.count])
-				.sort()
+			Arr.map(
+				Arr.filter(rows, (row) => row.facetType === facetType),
+				(row) => [row.name, row.count],
+			).sort()
 
 		assert.deepStrictEqual(facet("environment"), [
 			["production", 1],

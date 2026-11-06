@@ -1,0 +1,139 @@
+---
+/**
+ * Product events · the three ways an event gets in.
+ *
+ * Browser, span, server. The span column is the argument: no other product
+ * analytics tool can turn telemetry you already emit into an event. Snippets
+ * are copied from the docs (`/docs/product-events/overview`) and must stay
+ * runnable, so they are literal and never go through Paraglide.
+ *
+ * The cards share one subgrid so header, body, code and link rows line up
+ * across all three, and the code frames stretch to the tallest snippet.
+ */
+import { getRelativeLocaleUrl } from "astro:i18n";
+import { Code } from "astro:components";
+import * as m from "../../../paraglide/messages.js";
+import { codeTheme } from "../../../lib/code-theme.mjs";
+import PixelIcon, { type PixelIconName } from "../../icons/PixelIcon.astro";
+
+const locale = Astro.currentLocale ?? "en";
+
+const sources: {
+	label: string;
+	icon: PixelIconName;
+	title: string;
+	body: string;
+	file: string;
+	lang: "ts" | "bash";
+	code: string;
+	href: string;
+}[] = [
+	{
+		label: "browser",
+		icon: "globe",
+		title: m.pe_src_browser_title(),
+		body: m.pe_src_browser_body(),
+		file: "checkout.tsx",
+		lang: "ts",
+		code: 'MapleBrowser.track("checkout_completed", {\n  plan: "pro",\n  seats: 12,\n})',
+		href: "/docs/session-replay/browser-sdk#custom-events",
+	},
+	{
+		label: "span",
+		icon: "sitemap",
+		title: m.pe_src_span_title(),
+		body: m.pe_src_span_body(),
+		file: "billing.ts",
+		lang: "ts",
+		code: 'span.setAttributes({\n  "maple.product_event.name": "plan_started",\n  "maple.product_event.user_id": user.id,\n})',
+		href: "/docs/product-events/from-traces",
+	},
+	{
+		label: "server",
+		icon: "cloud",
+		title: m.pe_src_server_title(),
+		body: m.pe_src_server_body(),
+		file: "terminal",
+		lang: "bash",
+		code: 'curl https://ingest.maple.dev/v1/events \\\n  -H "Authorization: Bearer $INGEST_KEY" \\\n  -H "Content-Type: application/x-ndjson" \\\n  -d \'{"name":"plan_started","user_id":"u_123"}\'',
+		href: "/docs/product-events/api",
+	},
+];
+---
+
+<section class="border-t border-border bg-bg">
+	<div class="shell py-16 md:py-24">
+		<div class="mb-10 max-w-2xl md:mb-14">
+			<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.pe_src_eyebrow()}</p>
+			<h2
+				class="mt-4 font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
+			>
+				{m.pe_src_title()}
+			</h2>
+			<p class="mt-5 max-w-[62ch] text-sm leading-relaxed text-fg-muted md:text-[15px]">{m.pe_src_lede()}</p>
+		</div>
+
+		<div class="pe-src grid gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid-cols-3">
+			{
+				sources.map((source) => (
+					<div class="pe-src__card bg-bg p-6">
+						<div class="flex items-center gap-3">
+							<span class="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-bg-elevated text-primary">
+								<PixelIcon name={source.icon} class="size-4" />
+							</span>
+							<div class="min-w-0">
+								<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">
+									{source.label}
+								</p>
+								<h3 class="mt-0.5 text-[15px] font-medium text-fg">{source.title}</h3>
+							</div>
+						</div>
+
+						<p class="mt-4 text-[13px] leading-relaxed text-fg-muted">{source.body}</p>
+
+						<div class="pe-src__code mt-5 flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-bg-deep">
+							<div class="flex items-center justify-between border-b border-border bg-bg-elevated px-3.5 py-2 font-mono text-[10px] text-fg-muted">
+								<span>{source.file}</span>
+								<span class="uppercase tracking-[0.08em]">{source.lang}</span>
+							</div>
+							<Code code={source.code} lang={source.lang} theme={codeTheme} />
+						</div>
+
+						<a
+							href={getRelativeLocaleUrl(locale, source.href)}
+							class="mt-5 inline-flex w-fit text-[13px] text-fg-muted transition-colors hover:text-fg"
+						>
+							{m.pe_src_docs_link()}
+						</a>
+					</div>
+				))
+			}
+		</div>
+	</div>
+</section>
+
+<style>
+	/* Four shared rows (header, body, code, link) so every card's parts line
+	   up and the code frames all take the tallest snippet's height. */
+	@media (min-width: 1024px) {
+		.pe-src {
+			grid-template-rows: auto auto 1fr auto;
+		}
+		.pe-src__card {
+			display: grid;
+			grid-row: span 4;
+			grid-template-rows: subgrid;
+			row-gap: 0;
+		}
+	}
+	.pe-src__code :global(pre) {
+		flex: 1;
+		margin: 0;
+		padding: 14px 16px;
+		font-size: 12px;
+		line-height: 1.65;
+		overflow-x: auto;
+		/* Shiki paints its own theme background; the frame owns the surface. */
+		background: transparent !important;
+	}
+</style>

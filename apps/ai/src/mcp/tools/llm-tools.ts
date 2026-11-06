@@ -12,8 +12,18 @@
  * The tenant is provided per call rather than ambiently so an agent can never widen its own scope:
  * every tool executes under exactly the org the run was started for.
  */
-import { Cause, Effect, Option, Schema } from "effect"
-import { Tool, Toolkit } from "effect/unstable/ai"
+import {
+	Cause,
+	Effect,
+	MutableHashMap,
+	Option,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
+import { Tool, Toolkit } from "effect/ai"
+import { AgentSpawner } from "@yielded/agent/agent-runtime"
 import type { McpToolExecutorApi } from "../dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { mapleToolCatalogFor, toInputSchema } from "./registry"
@@ -35,7 +45,7 @@ const LegacyUiBlock = Schema.fromJsonString(
 )
 const decodeLegacyUiBlock = Schema.decodeUnknownOption(LegacyUiBlock)
 
-const isLegacyUiBlock = (text: string): boolean => text.startsWith(`{"${UI_MARKER}":true`)
+const isLegacyUiBlock = (text: string): boolean => Str.startsWith(`{"${UI_MARKER}":true`)(text)
 
 /**
  * The model's text and the UI's payload, split. The payload is never shown to a model: it doubled
@@ -55,21 +65,15 @@ export const splitToolResult = (
 			: legacy === undefined
 				? undefined
 				: Option.getOrUndefined(decodeLegacyUiBlock(legacy.text))
-	const text = result.content
-		.filter((block) => !isLegacyUiBlock(block.text))
-		.map((block) => block.text)
-		.join("\n\n")
+	const text = Arr.join(
+		Arr.map(
+			Arr.filter(result.content, (block) => !isLegacyUiBlock(block.text)),
+			(block) => block.text,
+		),
+		"\n\n",
+	)
 	return { text, ui }
 }
-
-/**
- * Serialize an MCP tool result for the model: its text blocks only.
- *
- * Bounded here, at creation, and never again — see `./tool-output.ts` for why that matters more than
- * the token saving. A warehouse query with no `limit` used to enter the transcript whole.
- */
-export const toolResultText = (result: { content: ReadonlyArray<{ text: string }> }): string =>
-	truncateToolOutput(splitToolResult("", result).text).text
 
 /**
  * Capped, because "one line" is a convention the error's author never agreed to: a ClickHouse syntax
@@ -81,7 +85,7 @@ const MAX_FAILURE_MESSAGE_CHARS = 500
 const cap = (message: string): string =>
 	message.length <= MAX_FAILURE_MESSAGE_CHARS
 		? message
-		: `${message.slice(0, MAX_FAILURE_MESSAGE_CHARS)}…[truncated]`
+		: `${Str.slice(0, MAX_FAILURE_MESSAGE_CHARS)(message)}…[truncated]`
 
 /**
  * Typed failures only. A defect is an internal breakage the model can do nothing with, and its
@@ -89,7 +93,7 @@ const cap = (message: string): string =>
  * are filtered out before rendering rather than summarized.
  */
 export const summarizeToolFailure = (cause: Cause.Cause<unknown>): string => {
-	const failures = Cause.prettyErrors(Cause.fromReasons(cause.reasons.filter(Cause.isFailReason)))
+	const failures = Cause.prettyErrors(Cause.fromReasons(Arr.filter(cause.reasons, Cause.isFailReason)))
 	const first = failures[0]
 	return first === undefined ? "the tool failed" : cap(first.message)
 }
@@ -127,7 +131,23 @@ export interface BuildMapleToolsOptions {
 	/** Sees every successful answer this build dispatches; a review pass tracks what it read here. */
 	readonly onAnswer?: (tool: string, answer: string) => void
 	/** Receives each successful call's UI payload, keyed by the call it belongs to. */
-	readonly onUi?: (toolCallId: string, ui: ToolUiPayload) => void
+	readonly onUi?: (toolCallId: string, ui: ToolUiPayload, call: UiSource) => void
+	/**
+	 * Arguments the run already knows, laid over whatever the model sent for that tool: a review's
+	 * own repository and pull request number, so a misspelled or missing one is not a failed call.
+	 */
+	readonly pinned?: (tool: string) => Readonly<Record<string, unknown>> | undefined
+}
+
+const isPlainObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
+	typeof value === "object" && value !== null && !Arr.isArray(value)
+
+/** The call a UI payload came from: what a reader needs to draw a call no event announced. */
+export interface UiSource {
+	readonly name: string
+	readonly input: unknown
+	/** The answer the caller got, already bounded. */
+	readonly text: string
 }
 
 /**
@@ -175,17 +195,30 @@ const ToolFailure = Schema.Union([MapleToolFailure, ApprovalRequired])
 const IDENTICAL_CALL_LIMIT = 3
 
 /**
- * How many times this exact call has been dispatched, counting the one being asked about.
+ * How many times this exact call has been dispatched in this run, counting the one being asked about.
  *
- * Keyed on the encoded arguments, so a repeat with one field changed is a different call and does
- * not count. The arguments came off the wire as JSON, so re-encoding them cannot fail.
+ * Keyed structurally on the arguments (`Equal`/`Hash` compare plain objects by value), so a repeat
+ * with one field changed is a different call, and the same arguments in another key order are not.
  */
-const repeats = (dispatched: Map<string, number>, name: string, params: unknown): number => {
-	const key = `${name}:${JSON.stringify(params)}`
-	const seen = (dispatched.get(key) ?? 0) + 1
-	dispatched.set(key, seen)
+interface CallKey {
+	readonly runId: string
+	readonly tool: string
+	readonly params: unknown
+}
+
+const repeats = (dispatched: MutableHashMap.MutableHashMap<CallKey, number>, key: CallKey): number => {
+	const seen = Option.getOrElse(MutableHashMap.get(dispatched, key), () => 0) + 1
+	MutableHashMap.set(dispatched, key, seen)
 	return seen
 }
+
+/**
+ * The engine run dispatching the call. The engine provides `AgentSpawner` to every run, bound to
+ * that run's identity, so a child sees its own run id; outside an engine run there is one run.
+ */
+const currentRunId = Effect.map(Effect.serviceOption(AgentSpawner), (spawner) =>
+	Option.match(spawner, { onNone: () => "", onSome: (service) => service.parent.runId }),
+)
 
 /**
  * The registry entries this build exposes: what the surface may see at all, then
@@ -193,7 +226,10 @@ const repeats = (dispatched: Map<string, number>, name: string, params: unknown)
  * allows `*` cannot widen a build past its audience.
  */
 const exposed = (options: BuildMapleToolsOptions) =>
-	mapleToolCatalogFor(options.surface).filter((definition) => options.include?.(definition.name) ?? true)
+	Arr.filter(
+		mapleToolCatalogFor(options.surface),
+		(definition) => options.include?.(definition.name) ?? true,
+	)
 
 /**
  * The Maple MCP registry as an Effect AI toolkit plus its handler layer.
@@ -208,7 +244,7 @@ export const buildMapleToolkit = (
 	options: BuildMapleToolsOptions,
 ) => {
 	const definitions = exposed(options)
-	const tools = definitions.map((definition) => {
+	const tools = Arr.map(definitions, (definition) => {
 		const gated = options.gate?.(definition.name) ?? false
 		return Tool.dynamic(definition.name, {
 			description: describe(definition, gated),
@@ -220,11 +256,12 @@ export const buildMapleToolkit = (
 		})
 	})
 	const toolkit = Toolkit.make(...tools)
-	// Per build, which is per run: two turns of one conversation are two builds, so a model may ask
-	// the same question again in a later turn. Repeating it inside one turn is the loop.
-	const dispatched = new Map<string, number>()
-	const handlers = Object.fromEntries(
-		definitions.map((definition) => {
+	// Per build and per run: two turns of one conversation are two builds, so a model may ask the
+	// same question again in a later turn. The `review_files` children share the parent's build, and
+	// each one asking for the changed files is not a loop, so the count is per engine run.
+	const dispatched = MutableHashMap.empty<CallKey, number>()
+	const handlers = Rec.fromEntries(
+		Arr.map(definitions, (definition) => {
 			const gated = options.gate?.(definition.name) ?? false
 			const dispatch = (params: unknown, toolCallId: string | undefined) =>
 				executor.execute(tenant, definition.name, params, options.surface).pipe(
@@ -235,15 +272,22 @@ export const buildMapleToolkit = (
 						const { text, ui } = splitToolResult(definition.name, result)
 						const bounded = truncateToolOutput(text).text
 						if (result.isError) return fail(bounded)
-						if (ui !== undefined && toolCallId !== undefined) options.onUi?.(toolCallId, ui)
+						if (ui !== undefined && toolCallId !== undefined)
+							options.onUi?.(toolCallId, ui, {
+								name: definition.name,
+								input: params,
+								text: bounded,
+							})
 						return Effect.succeed(bounded)
 					}),
 					Effect.tap((answer) => Effect.sync(() => options.onAnswer?.(definition.name, answer))),
 				)
+			const pin = options.pinned?.(definition.name)
 			const handle = (
-				params: unknown,
+				sent: unknown,
 				toolCallId: string | undefined,
 			): Effect.Effect<string, typeof ToolFailure.Type> => {
+				const params = pin === undefined ? sent : isPlainObject(sent) ? { ...sent, ...pin } : pin
 				if (gated) {
 					return Effect.fail(
 						new ApprovalRequired({
@@ -251,13 +295,14 @@ export const buildMapleToolkit = (
 						}),
 					)
 				}
-				if (repeats(dispatched, definition.name, params) > IDENTICAL_CALL_LIMIT) {
-					return fail(
-						`${definition.name} has already been called ${IDENTICAL_CALL_LIMIT} times with these ` +
-							"exact arguments in this turn. Read the result you already have, or call it differently.",
-					)
-				}
-				return dispatch(params, toolCallId)
+				return Effect.flatMap(currentRunId, (runId) =>
+					repeats(dispatched, { runId, tool: definition.name, params }) > IDENTICAL_CALL_LIMIT
+						? fail(
+								`${definition.name} has already been called ${IDENTICAL_CALL_LIMIT} times with these ` +
+									"exact arguments in this turn. Read the result you already have, or call it differently.",
+							)
+						: dispatch(params, toolCallId),
+				)
 			}
 			return [
 				definition.name,

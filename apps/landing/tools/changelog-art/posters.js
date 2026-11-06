@@ -31,8 +31,6 @@ const T = {
 	amberSoft: "#f0b070",
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-
 /** getShaderNoiseTexture() hands back an <img> that ShaderMount refuses until it has decoded. */
 let noiseTex = null
 async function loadNoise() {

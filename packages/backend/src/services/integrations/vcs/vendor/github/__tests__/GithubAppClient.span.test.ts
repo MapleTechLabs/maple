@@ -1,13 +1,10 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
-import { ConfigProvider, Effect, Layer, Tracer } from "effect"
+import { ConfigProvider, Effect, Layer, Tracer, Array as Arr, String as Str, Option } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
-import {
-	GithubHttp,
-	type GithubHttpApi,
-} from "@maple/backend/services/integrations/vcs/vendor/github/GithubHttp"
+import { fakeGithubHttp } from "@maple/backend/services/integrations/vcs/__tests__/harness"
 
 // The GitHub REST call must be a Client-kind span carrying `peer.service` —
 // that pair is what draws the GitHub node and its edge on the service map. An
@@ -44,8 +41,7 @@ const requestSpans = (spans: ReadonlyArray<Tracer.NativeSpan>) => spansNamed(spa
 const jsonResponse = (body: unknown, status = 200) =>
 	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
-const stubHttp = (respond: () => Response) =>
-	Layer.succeed(GithubHttp, { fetch: async () => respond() } satisfies GithubHttpApi)
+const stubHttp = (respond: () => Response) => fakeGithubHttp(() => respond())
 
 describe("GithubAppClient request span", () => {
 	it.effect("emits a Client-kind span with peer.service and HTTP attributes", () => {
@@ -122,16 +118,25 @@ describe("GithubAppClient request span", () => {
 				.searchCode("42", "octo", "shop", "card declined", undefined, 5)
 				.pipe(Effect.withTracer(tracer), Effect.exit)
 
-			const searchSpan = requestSpans(spans).find((span) =>
-				String(span.attributes.get("url.path")).includes("/search/code"),
+			const searchSpan = Option.getOrThrow(
+				Arr.findFirst(requestSpans(spans), (span) =>
+					Str.includes("/search/code")(String(span.attributes.get("url.path"))),
+				),
 			)
-			assert.isDefined(searchSpan)
 			// `url.path` on purpose, never `url.full`: the query carries the caller's
 			// raw search text, which has no business in telemetry.
-			assert.isUndefined(searchSpan?.attributes.get("url.full"))
-			for (const value of searchSpan?.attributes.values() ?? []) {
+			assert.isUndefined(searchSpan.attributes.get("url.full"))
+			for (const value of searchSpan.attributes.values()) {
 				assert.notInclude(String(value), "card declined")
 			}
+			// HttpClient's own `http.client` span records `url.full` with the encoded query; it must stay suppressed.
+			assert.deepStrictEqual(
+				Arr.map(
+					Arr.filter(spans, (span) => Str.startsWith("http.client")(span.name)),
+					(span) => span.name,
+				),
+				[],
+			)
 		}).pipe(Effect.provide(layer))
 	})
 })

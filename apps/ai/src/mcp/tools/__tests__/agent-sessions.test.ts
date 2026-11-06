@@ -1,13 +1,22 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
 import { AI_SESSION_SPANS_MAX_SPANS } from "@maple/domain/http"
 import { mapleToolCatalog, toInputSchema } from "../registry"
-import { clipPayload, MCP_AGENT_SESSION_MAX_SPANS } from "../../lib/agent-sessions"
-import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "../../__evals__/fake-warehouse"
+import { clipPayload, MCP_AGENT_SESSION_MAX_SPANS, offsetLabel } from "../../lib/agent-sessions"
+import {
+	installFakeWarehouse,
+	readsTraceSpans,
+	restoreWarehouse,
+	type FixtureRule,
+} from "../../__evals__/fake-warehouse"
 import { aiSpanRow } from "../../__evals__/fixtures"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 import type { McpToolResult } from "../types"
-import { Schema } from "effect"
-import { GetAgentSessionOutput, ListAgentSessionsOutput } from "@maple/domain/mcp-outputs"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import {
+	GetAgentSessionOutput,
+	GetAgentSessionTranscriptOutput,
+	ListAgentSessionsOutput,
+} from "@maple/domain/mcp-outputs"
 
 const SESSION_ID = "wrun_01KZTEST"
 const EMPTY_SESSION_ID = "wrun_01KZEMPTY"
@@ -17,40 +26,6 @@ const TRACE_ID = "7f3a4b5c6d7e8f901234567890abcdef"
 /** Only reachable through a CSV filter that reached the SQL as trimmed entries. */
 const CSV_SESSION_ID = "wrun_01KZCSV"
 const WINDOW = { start_time: "2026-08-19 09:00:00", end_time: "2026-08-19 12:00:00" }
-
-// Registration
-
-const AGENT_SESSION_TOOLS: ReadonlyArray<{
-	readonly name: string
-	readonly required: ReadonlyArray<string>
-	readonly enums: Readonly<Record<string, ReadonlyArray<string>>>
-}> = [
-	{
-		name: "list_agent_sessions",
-		required: [],
-		// The values a model may send are the schema's job, not a branch in the
-		// handler: published as enums they are visible before the call.
-		enums: { sort_dir: ["asc", "desc"] },
-	},
-	{ name: "get_agent_session", required: ["session_id"], enums: {} },
-]
-
-describe("agent session tool registration", () => {
-	it("registers both with their required params, framing and published enums", () => {
-		for (const tool of AGENT_SESSION_TOOLS) {
-			const definition = mapleToolCatalog.find((entry) => entry.name === tool.name)
-			expect(definition, tool.name).toBeDefined()
-			const schema = toInputSchema(definition!.schema)
-			expect(schema.type, tool.name).toBe("object")
-			expect(schema.required ?? [], tool.name).toEqual(tool.required)
-			expect(definition!.description, tool.name).toMatch(/AI agent session/i)
-			const properties = schema.properties as Record<string, Record<string, unknown>>
-			for (const [param, values] of Object.entries(tool.enums)) {
-				expect(properties[param]?.enum, `${tool.name}.${param}`).toEqual(values)
-			}
-		}
-	})
-})
 
 // Warehouse rows, in their wire shapes
 
@@ -148,7 +123,9 @@ const sessionSpanRows = [
 
 /** A page that fills the read plus the row that proves a page follows — one
  *  turn, so the fixture stays about paging rather than about turns. */
-const bigSpanId = (index: number) => `b${index.toString(16).padStart(15, "0")}`
+const bigSpanId = (index: number) => `b${Str.padStart(15, "0")(index.toString(16))}`
+const bigSpanTimestamp = (index: number) =>
+	`2026-08-19 10:${Str.padStart(2, "0")(String(Math.floor(index / 60)))}:${Str.padStart(2, "0")(String(index % 60))}.000000000`
 const bigSessionSpanRows = [
 	sessionSpan(
 		bigSpanId(0),
@@ -161,9 +138,7 @@ const bigSessionSpanRows = [
 		sessionSpan(
 			bigSpanId(index + 1),
 			"chat gpt-5",
-			`2026-08-19 10:${String(Math.floor((index + 1) / 60)).padStart(2, "0")}:${String(
-				(index + 1) % 60,
-			).padStart(2, "0")}.000000000`,
+			bigSpanTimestamp(index + 1),
 			{ "gen_ai.operation.name": "chat", "gen_ai.response.model": "gpt-5" },
 			{ sessionId: BIG_SESSION_ID },
 		),
@@ -172,12 +147,12 @@ const bigSessionSpanRows = [
 /** The cursor the first page ends on — the second page's SQL names it. */
 const BIG_PAGE_CURSOR_SPAN_ID = bigSpanId(AI_SESSION_SPANS_MAX_SPANS - 1)
 
-// First match wins: the reads over `trace_detail_spans` are told apart by the
+// First match wins: the span reads over `traces` are told apart by the
 // session ids their SQL names.
 const fixtures: FixtureRule[] = [
-	{ match: (sql) => sql.includes(EMPTY_SESSION_ID), rows: [] },
-	{ match: (sql) => sql.includes(BIG_SESSION_ID), rows: bigSessionSpanRows },
-	{ match: (sql) => sql.includes("trace_detail_spans"), rows: sessionSpanRows },
+	{ match: (sql) => Str.includes(EMPTY_SESSION_ID)(sql), rows: [] },
+	{ match: (sql) => Str.includes(BIG_SESSION_ID)(sql), rows: bigSessionSpanRows },
+	{ match: (sql) => readsTraceSpans(sql), rows: sessionSpanRows },
 	{
 		match: (sql) => /\bfrom\s+traces\b/i.test(sql),
 		rows: [
@@ -192,10 +167,10 @@ const fixtures: FixtureRule[] = [
 	},
 	// The CSV filter, as the SQL names its entries: trimmed and one per value.
 	{
-		match: (sql) => sql.includes("'run_sql'") && sql.includes("'search_logs'"),
+		match: (sql) => Str.includes("'run_sql'")(sql) && Str.includes("'search_logs'")(sql),
 		rows: [{ ...listRow, sessionId: CSV_SESSION_ID }],
 	},
-	{ match: (sql) => sql.includes("ai_trace_index"), rows: [listRow] },
+	{ match: (sql) => Str.includes("ai_trace_index")(sql), rows: [listRow] },
 ]
 
 /** SQL the warehouse aborts on rather than answering with rows — a 413 is a
@@ -226,16 +201,10 @@ const rendered = async (name: string, params: Record<string, unknown>): Promise<
 
 /** The cells of the rendered table row that opens with `first`. */
 const rowCells = (text: string, first: string): ReadonlyArray<string> | undefined =>
-	text
-		.split("\n")
-		.filter((line) => line.startsWith("| "))
-		.map((line) =>
-			line
-				.slice(1, -1)
-				.split(" | ")
-				.map((cell) => cell.trim()),
-		)
-		.find((cells) => cells[0] === first)
+	Arr.map(
+		Arr.filter(Str.split("\n")(text), (line) => Str.startsWith("| ")(line)),
+		(line) => Arr.map(Str.split(" | ")(Str.slice(1, -1)(line)), (cell) => Str.trim(cell)),
+	).find((cells) => cells[0] === first)
 
 // Parameters
 
@@ -255,36 +224,35 @@ describe("agent session parameter validation", () => {
 		)
 	})
 
-	// The bounds reach a column comparison, so a negative or fractional one is a
-	// malformed request rather than a silently clamped filter.
-	it("rejects a negative range bound and a fractional count bound", async () => {
-		expect(markdown(await result("list_agent_sessions", { cost_min: -5 }))).toContain(
-			"Invalid parameters",
-		)
-		expect(markdown(await result("list_agent_sessions", { tokens_min: 1.5 }))).toContain(
-			"Invalid parameters",
-		)
+	// Agents reach for the singular more often than the list.
+	it("takes `service` as the `services` list", async () => {
+		const output = await rendered("list_agent_sessions", { ...WINDOW, service: "agent-runner" })
+		expect(rowCells(output, SESSION_ID)).toBeDefined()
+		expect(output).not.toContain("Invalid parameters")
 	})
 
-	// The bounds publish as number-or-numeric-string, like limit/offset — and the
-	// bound applies to the string branch too.
-	it("takes a bound as a numeric string, still bounded", async () => {
-		const output = await rendered("list_agent_sessions", { ...WINDOW, tokens_min: "1000" })
-		expect(rowCells(output, SESSION_ID)).toBeDefined()
-		expect(markdown(await result("list_agent_sessions", { cost_min: "-5" }))).toContain(
-			"Invalid parameters",
-		)
+	it("does not publish the min/max bounds the page filters on", () => {
+		const definition = mapleToolCatalog.find((entry) => entry.name === "list_agent_sessions")!
+		const properties = Rec.keys(toInputSchema(definition.schema).properties ?? {})
+		expect(Arr.filter(properties, (name) => /_(min|max)(_ms)?$/.test(name))).toEqual([])
 	})
 })
 
 describe("clipPayload", () => {
 	it("clips to the character budget and reports the true size in bytes", () => {
-		expect(clipPayload(`${"a".repeat(20)}é`, 5)).toBe("aaaaa… (22 bytes total)")
+		expect(clipPayload(`${Str.repeat(20)("a")}é`, 5)).toBe("aaaaa… (22 bytes total)")
 		expect(clipPayload("short", 5)).toBe("short")
 	})
 })
 
 // Rendering
+
+describe("offsetLabel", () => {
+	it("carries seconds that round up to a minute into the minute", () => {
+		expect(offsetLabel(119_600)).toBe("+2m0s")
+		expect(offsetLabel(61_000)).toBe("+1m1s")
+	})
+})
 
 describe("list_agent_sessions rendering", () => {
 	it("renders the row and hands the session's own window to the next step", async () => {
@@ -318,7 +286,7 @@ describe("list_agent_sessions rendering", () => {
 
 	it("parses a comma-separated filter into the entries the SQL matches on", async () => {
 		const output = await rendered("list_agent_sessions", { ...WINDOW, tools: "run_sql, search_logs" })
-		expect(rowCells(output, CSV_SESSION_ID)).toBeDefined()
+		expect(rowCells(output, CSV_SESSION_ID)?.[1]).toBe("maple")
 	})
 })
 
@@ -331,17 +299,18 @@ describe("get_agent_session rendering", () => {
 		expect(structured.verdict.status).not.toBe("clean")
 		expect(structured.evidence?.traceId).toBe(TRACE_ID)
 		const output = markdown(answer)
-		expect(output).toContain("### Verdict")
 		// The checks are the reading: a heading with the counts even when nothing
 		// needs attention, the failed tool as a row with what to do, and the
-		// checks that passed as bullets with the fact each measured.
+		// checks that passed named on one line.
 		expect(output).toMatch(/### Checks \(\d+ failed · \d+ warnings? · \d+ passed · \d+ not checked\)/)
 		expect(output).toMatch(
 			/^\| (failed|warning) \| Tool errors \| .+ \| Fix the tool, or make its error text say what to do next\. \|$/m,
 		)
-		expect(output).toMatch(/^- Rate limits \(passed\): No model call was rate-limited$/m)
+		// A passed check is its name, on one line with the others that passed.
+		expect(output).toMatch(/^Passed: .*Rate limits.*\.$/m)
+		expect(Arr.every(structured.checks, (check) => check.status !== "passed")).toBe(true)
+		expect(structured.passedChecks).toContain("Rate limits")
 		expect(output).toContain("tool_error")
-		expect(output).toContain("### Tokens")
 		expect(rowCells(output, "run_sql")?.[2]).toBe("1")
 		expect(output).toContain("2 LLM calls")
 		expect(output).toContain(`inspect_span trace_id="${TRACE_ID}"`)
@@ -361,17 +330,15 @@ describe("get_agent_session rendering", () => {
 	// A 413 on a page after the first is what the cap describes: the pages in
 	// hand are the session's beginning, and the answer says so.
 	it("keeps the pages in hand when a later page cannot be read", async () => {
-		responseTooLargeFor = (sql) => sql.includes(BIG_PAGE_CURSOR_SPAN_ID)
+		responseTooLargeFor = (sql) => Str.includes(BIG_PAGE_CURSOR_SPAN_ID)(sql)
 		const output = await rendered("get_agent_session", { session_id: BIG_SESSION_ID, ...WINDOW })
 		expect(output).toContain(
 			`Loaded the first ${AI_SESSION_SPANS_MAX_SPANS.toLocaleString("en-US")} spans; the rest exceeded the response byte limit.`,
 		)
 		// The way out names an absolute bound: the last span in hand, so the next
 		// call has something to narrow from.
-		const lastLoaded = bigSessionSpanRows[AI_SESSION_SPANS_MAX_SPANS - 1]
-		expect(output).toContain(
-			`Pass start_time="${lastLoaded.timestamp.slice(0, 19)}" with the same end_time`,
-		)
+		const lastLoaded = bigSpanTimestamp(AI_SESSION_SPANS_MAX_SPANS - 1)
+		expect(output).toContain(`Pass start_time="${Str.slice(0, 19)(lastLoaded)}" with the same end_time`)
 	})
 
 	// Every page ends on a cursor, so the read stops on the span cap rather than
@@ -388,17 +355,125 @@ describe("get_agent_session rendering", () => {
 	// exactly the heavy ones — the same page at half the rows is the read the 413
 	// asks for, and the session still loads whole.
 	it("halves the page and retries when the first page is too large", async () => {
-		responseTooLargeFor = (sql) => sql.includes(`LIMIT ${AI_SESSION_SPANS_MAX_SPANS + 1}`)
+		responseTooLargeFor = (sql) => Str.includes(`LIMIT ${AI_SESSION_SPANS_MAX_SPANS + 1}`)(sql)
 		const output = await rendered("get_agent_session", { session_id: SESSION_ID, ...WINDOW })
-		expect(output).toContain("### Verdict")
 		expect(rowCells(output, "run_sql")?.[2]).toBe("1")
 		expect(output).not.toContain("exceeded the response byte limit")
 	})
 
 	it("answers a first-page 413 with a way out", async () => {
-		responseTooLargeFor = (sql) => sql.includes(BIG_SESSION_ID)
+		responseTooLargeFor = (sql) => Str.includes(BIG_SESSION_ID)(sql)
 		const answer = await result("get_agent_session", { session_id: BIG_SESSION_ID, ...WINDOW })
 		expect(answer.isError).toBe(true)
 		expect(markdown(answer)).toContain("start_time/end_time")
+	})
+})
+
+describe("get_agent_session_transcript", () => {
+	it("reads the session step by step: prompt, the call that asked for a tool, the failed tool with its result", async () => {
+		const answer = await result("get_agent_session_transcript", { session_id: SESSION_ID, ...WINDOW })
+		const structured = Schema.decodeUnknownSync(GetAgentSessionTranscriptOutput)(answer.structuredContent)
+		const kinds = Arr.map(structured.rows, (row) => row.kind)
+		expect(kinds[0]).toBe("turn")
+		expect(kinds).toContain("user")
+		const tool = structured.rows.find((row) => row.kind === "tool")
+		expect(tool?.toolName).toBe("run_sql")
+		expect(tool?.failed).toBe(true)
+		expect(tool?.result).toContain("table orders does not exist")
+		expect(tool?.spanId).toBe("3333333333333333")
+		expect(tool?.traceId).toBe(TRACE_ID)
+
+		const output = markdown(answer)
+		expect(output).toContain("user: why is checkout failing?")
+		expect(output).toMatch(/tool run_sql FAILED .*table orders does not exist.* · span 3333333333333333/)
+		expect(output).toContain(`inspect_span trace_id="${TRACE_ID}" span_id="3333333333333333"`)
+	})
+
+	it("lists the session's failures in time order when asked, each tagged with its turn", async () => {
+		const answer = await result("get_agent_session_transcript", {
+			session_id: SESSION_ID,
+			...WINDOW,
+			failed_only: true,
+		})
+		const structured = Schema.decodeUnknownSync(GetAgentSessionTranscriptOutput)(answer.structuredContent)
+		expect(
+			Arr.map(
+				Arr.filter(structured.rows, (row) => row.kind !== "turn"),
+				(row) => row.kind,
+			),
+		).toEqual(["tool"])
+		const output = markdown(answer)
+		expect(output).toMatch(/turn 1 · \[\+2\.0s\] tool run_sql FAILED/)
+	})
+
+	it("keeps a turn's failures under its header when one turn is asked for", async () => {
+		const answer = await result("get_agent_session_transcript", {
+			session_id: SESSION_ID,
+			...WINDOW,
+			failed_only: true,
+			turn: 1,
+		})
+		const structured = Schema.decodeUnknownSync(GetAgentSessionTranscriptOutput)(answer.structuredContent)
+		expect(structured.rows.at(-1)?.kind).toBe("tool")
+		expect(markdown(answer)).not.toContain("Failures in time order")
+	})
+
+	it("does not call the first page a continuation", async () => {
+		expect(
+			await rendered("get_agent_session_transcript", { session_id: SESSION_ID, ...WINDOW }),
+		).not.toContain("(continued)")
+		const second = await rendered("get_agent_session_transcript", {
+			session_id: SESSION_ID,
+			...WINDOW,
+			limit: 2,
+			offset: 2,
+		})
+		expect(second).toContain("Turn 1 of 1 (continued)")
+	})
+
+	it("filters by text, and says so when nothing matches", async () => {
+		const hit = Schema.decodeUnknownSync(GetAgentSessionTranscriptOutput)(
+			(
+				await result("get_agent_session_transcript", {
+					session_id: SESSION_ID,
+					...WINDOW,
+					search: "ORDERS",
+				})
+			).structuredContent,
+		)
+		expect(Arr.some(hit.rows, (row) => row.kind === "tool")).toBe(true)
+		const miss = await rendered("get_agent_session_transcript", {
+			session_id: SESSION_ID,
+			...WINDOW,
+			search: "no such words",
+		})
+		expect(miss).toContain('No step mentions "no such words"')
+	})
+
+	it("pages the steps and hands over the call for the next page", async () => {
+		const output = await rendered("get_agent_session_transcript", {
+			session_id: SESSION_ID,
+			...WINDOW,
+			limit: 2,
+		})
+		expect(output).toMatch(/get_agent_session_transcript session_id="wrun_01KZTEST" .*limit=2 offset=2/)
+	})
+
+	it("rejects a turn the session does not have, naming the range", async () => {
+		const answer = await result("get_agent_session_transcript", {
+			session_id: SESSION_ID,
+			...WINDOW,
+			turn: 9,
+		})
+		expect(answer.isError).toBe(true)
+		expect(markdown(answer)).toContain("numbered 1 to 1")
+	})
+
+	it("answers an unknown session without inventing one", async () => {
+		const output = await rendered("get_agent_session_transcript", {
+			session_id: EMPTY_SESSION_ID,
+			...WINDOW,
+		})
+		expect(output).toContain("No spans for AI agent session")
 	})
 })

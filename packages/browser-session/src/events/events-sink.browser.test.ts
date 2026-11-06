@@ -7,11 +7,12 @@ vi.mock("../session/session", () => ({
 }))
 vi.mock("../platform/transport", async (importOriginal) => ({
 	...(await importOriginal<typeof import("../platform/transport")>()),
-	postSessionEvents: vi.fn(async () => {}),
+	postSessionEvents: vi.fn(async () => "accepted" as const),
 }))
 
 const { resetSinkForTests, startEventSink } = await import("./events-sink")
 const { postSessionEvents } = await import("../platform/transport")
+const session = await import("../session/session")
 const { resetVisitorCacheForTests, setVisitorTracking } = await import("../identity/visitor")
 
 const CONFIG = {
@@ -41,7 +42,7 @@ describe("startEventSink baseline counters", () => {
 
 	it("counts unhandled rejections as errors", () => {
 		const sink = startEventSink(CONFIG, "sess-2")
-		window.dispatchEvent(new Event("unhandledrejection") as PromiseRejectionEvent)
+		window.dispatchEvent(new Event("unhandledrejection"))
 
 		expect(sink.getErrorCount()).toBe(1)
 		sink.stop()
@@ -152,5 +153,296 @@ describe("startEventSink identity stamping", () => {
 			expect(row.group_id).toBe("")
 		}
 		sink.stop()
+	})
+})
+
+// A flush that gets no response while the page stays in view is the one failure
+// the sink resends. `session_events` has no dedup, so every other one is a drop.
+describe("startEventSink resend after a failed flush", () => {
+	const post = vi.mocked(postSessionEvents)
+	const rowsOf = (call: number) => post.mock.calls[call]?.[1] ?? []
+	const messagesOf = (call: number) => rowsOf(call).map((row) => row.message)
+
+	beforeEach(() => {
+		resetSinkForTests()
+		post.mockReset().mockResolvedValue("accepted")
+	})
+
+	it("resends the same rows once, with the next flush", async () => {
+		const sink = startEventSink(CONFIG, "sess-retry-1")
+		post.mockResolvedValueOnce("failed").mockResolvedValueOnce("failed")
+		sink.emit({ type: "custom", message: "first" })
+		await sink.flush()
+		await new Promise((resolve) => setTimeout(resolve, 5))
+		sink.emit({ type: "custom", message: "second" })
+		await sink.flush()
+		await sink.flush()
+		await sink.flush()
+
+		// Unchanged from the first attempt (same seq and timestamp), ahead of the newer row.
+		expect(rowsOf(1).slice(0, rowsOf(0).length)).toEqual(rowsOf(0))
+		// The second failure re-queues only the row that had not been resent yet.
+		expect(messagesOf(2)).toEqual(["second"])
+		expect(post).toHaveBeenCalledTimes(3)
+		sink.stop()
+	})
+
+	it("keeps one POST in flight, sending what arrived meanwhile right after it", async () => {
+		const sink = startEventSink(CONFIG, "sess-retry-2")
+		let settle = () => {}
+		post.mockImplementationOnce(() => new Promise((resolve) => (settle = () => resolve("failed"))))
+		sink.emit({ type: "custom", message: "first" })
+		const first = sink.flush()
+		sink.emit({ type: "custom", message: "second" })
+		const second = sink.flush()
+		expect(post).toHaveBeenCalledTimes(1)
+		settle()
+		await Promise.all([first, second])
+
+		// The follow-up carries the failed rows once more and the newer one.
+		expect(post).toHaveBeenCalledTimes(2)
+		expect(
+			rowsOf(1)
+				.map((row) => row.seq)
+				.sort(),
+		).toEqual([0, 1, 2])
+		sink.stop()
+	})
+
+	it("does not resend a batch ingest answered, whatever the status", async () => {
+		const sink = startEventSink(CONFIG, "sess-retry-3")
+		post.mockResolvedValueOnce("rejected")
+		await sink.flush()
+		await sink.flush()
+
+		expect(post).toHaveBeenCalledTimes(1)
+		sink.stop()
+	})
+
+	it("does not re-queue a keepalive flush", async () => {
+		const sink = startEventSink(CONFIG, "sess-retry-4")
+		post.mockResolvedValueOnce("failed")
+		await sink.flush(true)
+		await sink.flush()
+
+		expect(post).toHaveBeenCalledTimes(1)
+		sink.stop()
+	})
+
+	it("keeps queued rows out of a keepalive flush, for the next periodic one", async () => {
+		const sink = startEventSink(CONFIG, "sess-retry-5")
+		post.mockResolvedValueOnce("failed")
+		sink.emit({ type: "custom", message: "first" })
+		await sink.flush()
+		sink.emit({ type: "custom", message: "second" })
+		await sink.flush(true)
+		await sink.flush()
+
+		expect(messagesOf(1)).toEqual(["second"])
+		expect(rowsOf(2)).toEqual(rowsOf(0))
+		sink.stop()
+	})
+
+	// The page going away cuts the POST off whether or not ingest stored it.
+	it.each(["beforeunload", "visibilitychange", "pagehide"])(
+		"does not re-queue a flush in flight across %s",
+		async (type) => {
+			const sink = startEventSink(CONFIG, `sess-retry-${type}`)
+			post.mockImplementationOnce(async () => {
+				document.dispatchEvent(new Event(type, { bubbles: true }))
+				return "failed"
+			})
+			await sink.flush()
+			await sink.flush()
+
+			expect(post).toHaveBeenCalledTimes(1)
+			sink.stop()
+		},
+	)
+
+	it("does not re-queue a flush cut off by the unload of an already hidden page", async () => {
+		const sink = startEventSink(CONFIG, "sess-retry-hidden")
+		// Hidden before the POST starts, so the unload brings no `visibilitychange`.
+		document.dispatchEvent(new Event("visibilitychange", { bubbles: true }))
+		post.mockImplementationOnce(async () => {
+			window.dispatchEvent(new Event("pagehide"))
+			return "failed"
+		})
+		await sink.flush()
+		await sink.flush()
+
+		expect(post).toHaveBeenCalledTimes(1)
+		sink.stop()
+	})
+
+	it("keeps the queue and resends as usual after a navigation that was cancelled", async () => {
+		const sink = startEventSink(CONFIG, "sess-retry-cancelled")
+		post.mockResolvedValueOnce("failed").mockResolvedValueOnce("failed")
+		await sink.flush()
+		// The navigation starts and the user stays: no `pagehide` follows.
+		window.dispatchEvent(new Event("beforeunload"))
+		sink.emit({ type: "custom", message: "later" })
+		await sink.flush()
+		await sink.flush()
+
+		expect(rowsOf(1).slice(0, rowsOf(0).length)).toEqual(rowsOf(0))
+		expect(messagesOf(2)).toEqual(["later"])
+		sink.stop()
+	})
+
+	it("drops queued rows on pagehide", async () => {
+		// A navigation can abort the POST before `pagehide` fires.
+		const sink = startEventSink(CONFIG, "sess-retry-6")
+		post.mockResolvedValueOnce("failed")
+		await sink.flush()
+		window.dispatchEvent(new Event("pagehide"))
+		await sink.flush()
+
+		expect(post).toHaveBeenCalledTimes(1)
+		sink.stop()
+	})
+
+	it("backs off after ingest asks for a retry, then resends those rows once", async () => {
+		vi.useFakeTimers()
+		try {
+			const sink = startEventSink(CONFIG, "sess-retry-backoff")
+			post.mockResolvedValueOnce("retry")
+			sink.emit({ type: "custom", message: "first" })
+			await sink.flush()
+			await sink.flush()
+			expect(post).toHaveBeenCalledTimes(1)
+			await vi.advanceTimersByTimeAsync(5_000)
+			await sink.flush()
+			expect(post).toHaveBeenCalledTimes(2)
+			expect(rowsOf(1)).toEqual(rowsOf(0))
+			sink.stop()
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
+	it("sends rows ingest asked to retry with the keepalive flush, even after pagehide", async () => {
+		const sink = startEventSink(CONFIG, "sess-retry-unload")
+		post.mockResolvedValueOnce("retry")
+		sink.emit({ type: "custom", message: "first" })
+		await sink.flush()
+		window.dispatchEvent(new Event("pagehide"))
+		await sink.flush(true)
+		expect(rowsOf(1)).toEqual(rowsOf(0))
+		expect(post.mock.calls[1]?.[2]).toBe(true)
+		sink.stop()
+	})
+
+	it("keeps rows a keepalive flush got a retry answer for, when the page stays (a tab switch)", async () => {
+		vi.useFakeTimers()
+		try {
+			const sink = startEventSink(CONFIG, "sess-retry-hidden")
+			post.mockResolvedValueOnce("retry")
+			sink.emit({ type: "custom", message: "first" })
+			await sink.flush(true)
+			await vi.advanceTimersByTimeAsync(5_000)
+			await sink.flush()
+			expect(post).toHaveBeenCalledTimes(2)
+			expect(rowsOf(1)).toEqual(rowsOf(0))
+			sink.stop()
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
+	it("stops buffering for the page once ingest refuses the key", async () => {
+		const sink = startEventSink(CONFIG, "sess-refused")
+		post.mockResolvedValueOnce("refused")
+		await sink.flush()
+		sink.emit({ type: "custom", message: "later" })
+		await sink.flush()
+		await sink.flush(true)
+		expect(post).toHaveBeenCalledTimes(1)
+		sink.stop()
+	})
+})
+
+describe("startEventSink in an error loop", () => {
+	const post = vi.mocked(postSessionEvents)
+
+	beforeEach(() => {
+		resetSinkForTests()
+		post.mockReset().mockResolvedValue("accepted")
+	})
+
+	it("keeps a few of an error repeated every frame, while still counting them all", async () => {
+		const sink = startEventSink(CONFIG, "sess-loop")
+		for (let frame = 0; frame < 120; frame++) {
+			sink.emit({
+				type: "error",
+				message: "Cannot read properties of undefined",
+				errorStack: "at tick",
+			})
+		}
+		sink.emit({ type: "error", message: "a different error" })
+		await sink.flush()
+		const rows = post.mock.calls.flatMap((call) => call[1])
+		const errors = rows.filter((row) => row.type === "error").map((row) => row.message)
+		expect(errors).toEqual([
+			...Array.from({ length: 5 }, () => "Cannot read properties of undefined"),
+			"a different error",
+		])
+		expect(sink.getErrorCount()).toBe(121)
+		sink.stop()
+	})
+})
+
+describe("startEventSink activity", () => {
+	beforeEach(() => {
+		resetSinkForTests()
+		vi.mocked(session.markActivity).mockClear()
+		vi.mocked(postSessionEvents).mockReset().mockResolvedValue("accepted")
+	})
+
+	it("treats only what a person does as activity, and drops page noise once the session is idle", async () => {
+		const sink = startEventSink(CONFIG, "sess-activity")
+		vi.mocked(session.markActivity).mockClear()
+		sink.emit({ type: "console", level: "log", message: "poll" })
+		sink.emit({ type: "network", net: { method: "GET", url: "/poll", status: 200, durationMs: 3 } })
+		sink.emit({ type: "click", targetSelector: "button" })
+		expect(vi.mocked(session.markActivity).mock.calls).toEqual([["passive"], ["passive"], ["input"]])
+
+		// The stored session has gone idle.
+		vi.mocked(session.markActivity).mockReturnValueOnce(null)
+		sink.emit({ type: "console", level: "log", message: "poll while idle" })
+		await sink.flush()
+		const messages = vi
+			.mocked(postSessionEvents)
+			.mock.calls.flatMap((call) => call[1].map((row) => row.message))
+		expect(messages).not.toContain("poll while idle")
+		expect(messages).toContain("poll")
+		sink.stop()
+	})
+})
+
+describe("startEventSink history wrapper", () => {
+	beforeEach(() => resetSinkForTests())
+
+	it("leaves a router's history wrapper working after the sink stops", () => {
+		const sink = startEventSink(CONFIG, "sess-history")
+		const underneath = history.pushState
+		const routed: string[] = []
+		const routerPush: History["pushState"] = function (this: History, data, unused, url) {
+			routed.push(String(url))
+			underneath.call(this, data, unused, url)
+		}
+		history.pushState = routerPush
+		sink.stop()
+		expect(history.pushState).toBe(routerPush)
+		history.pushState(null, "", "/after-stop")
+		expect(routed).toEqual(["/after-stop"])
+		expect(location.pathname).toBe("/after-stop")
+		// Restart under the router: the wrapper underneath is reused, not stacked.
+		const next = startEventSink(CONFIG, "sess-history-2")
+		expect(history.pushState).toBe(routerPush)
+		history.pushState(null, "", "/counted")
+		expect(next.getPageViews()).toBe(2)
+		next.stop()
+		history.pushState = underneath
 	})
 })

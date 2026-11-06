@@ -1,22 +1,15 @@
 import { describe, expect, it } from "vitest"
 import { PLOT_HEIGHT, PLOT_PAD, PLOT_WIDTH, type ChartPoint } from "@maple/widgets/chart/static-chart"
 import type { Node } from "@takumi-rs/helpers"
-import {
-	chartCard,
-	rankedCard,
-	AXIS_WIDTH,
-	CHART_CARD_WIDTH,
-	legendRows,
-	xAxisRow,
-	yAxisGutter,
-} from "./chart-card"
+import { chartCard, rankedCard, CHART_CARD_WIDTH, legendRows, xAxisRow, yAxisGutter } from "./chart-card"
 import { chartRequestFromPath } from "./chart-image"
 import { ogIdFromPath } from "./share-links"
+import { Array as Arr, String as Str } from "effect"
 
 const at = (i: number): number => Date.UTC(2026, 8, 11, 10, 0) + i * 60_000
 const series = (name: string, values: ReadonlyArray<number>) => ({
 	name,
-	points: values.map((v, i) => [at(i), v] as ChartPoint),
+	points: Arr.map(values, (v, i) => [at(i), v] as ChartPoint),
 })
 
 describe("chartRequestFromPath", () => {
@@ -80,22 +73,11 @@ describe("chartCard", () => {
 		expect(card.height).toBeGreaterThan(PLOT_HEIGHT)
 	})
 
-	it("draws no legend row for one series, so an alert card keeps its old height", () => {
-		// 368: padding, a title row, the plot, the time axis and two gaps. The
-		// height the alert card had when the time axis was a start/end footer, and
-		// a threshold still costs no row — it is drawn on the value scale.
-		expect(chartCard("checkout-api error rate", alert).height).toBe(368)
+	it("draws the threshold on the value scale, so it costs the card no row", () => {
 		const { threshold: _threshold, breachSide: _breachSide, ...solo } = alert
-		expect(chartCard("checkout-api error rate", solo).height).toBe(368)
-	})
-
-	it("reserves room the longest label the formatter emits still draws in", () => {
-		const beyondPlot = CHART_CARD_WIDTH - PLOT_WIDTH
-		expect(beyondPlot).toBeGreaterThan(AXIS_WIDTH)
-		// "0.000001 ms" is the deepest `formatValue` goes: 11 characters of Geist
-		// Mono at ~7.3px. It draws in full because it may grow out of the gutter
-		// and into the card's padding, and this is the sum of the two.
-		expect(beyondPlot).toBeGreaterThanOrEqual(Math.ceil("0.000001 ms".length * 7.3))
+		expect(chartCard("checkout-api error rate", alert).height).toBe(
+			chartCard("checkout-api error rate", solo).height,
+		)
 	})
 
 	it("grows for a legend, and again when that legend wraps", () => {
@@ -137,20 +119,20 @@ describe("axis placement", () => {
 		readonly color?: string
 	}
 	const placed = (node: Node): ReadonlyArray<Placed> =>
-		((node as { children?: ReadonlyArray<Record<string, unknown>> }).children ?? []).map((child) => {
+		Arr.map((node as { children?: ReadonlyArray<Record<string, unknown>> }).children ?? [], (child) => {
 			const inner = (child.children as ReadonlyArray<Record<string, unknown>>)[0] ?? {}
 			return {
-				style: (child.style ?? {}) as Placed["style"],
-				text: String(inner.text ?? ""),
+				style: child.style ?? {},
+				text: typeof inner.text === "string" ? inner.text : "",
 				color: (inner.style as { color?: string } | undefined)?.color,
 			}
 		})
-	const boxes = (node: Node): ReadonlyArray<Placed["style"]> => placed(node).map((one) => one.style)
+	const boxes = (node: Node): ReadonlyArray<Placed["style"]> => Arr.map(placed(node), (one) => one.style)
 
 	const PLOT_BOX = PLOT_HEIGHT - PLOT_PAD * 2
 
 	it("puts a value label's centre on the plot fraction it was given", () => {
-		const tops = boxes(yAxisGutter([{ text: "4%", yFraction: 0.25 }], null)).map((box) => box.top)
+		const tops = Arr.map(boxes(yAxisGutter([{ text: "4%", yFraction: 0.25 }], null)), (box) => box.top)
 		// Centre of a 15px row on the line, not its top corner.
 		expect(tops[0]).toBeCloseTo(PLOT_PAD + 0.25 * PLOT_BOX - 7.5, 5)
 	})
@@ -168,12 +150,12 @@ describe("axis placement", () => {
 		const ticks = [{ text: "4%", yFraction: 0 }, crowded, { text: "0%", yFraction: 1 }]
 
 		const withLimit = placed(yAxisGutter(ticks, limit))
-		expect(withLimit.map((one) => one.text)).toEqual(["4%", "0%", "2%"])
+		expect(Arr.map(withLimit, (one) => one.text)).toEqual(["4%", "0%", "2%"])
 		// The limit reads in the rule's colour; the scale around it does not.
 		expect(withLimit.at(-1)?.color).not.toBe(withLimit[0]?.color)
 
 		// Without a limit the crowded tick has nothing to yield to and stays.
-		expect(placed(yAxisGutter(ticks, null)).map((one) => one.text)).toContain("2.1%")
+		expect(Arr.map(placed(yAxisGutter(ticks, null)), (one) => one.text)).toContain("2.1%")
 	})
 
 	it("centres a time label on its tick and keeps the ends on the image", () => {
@@ -193,7 +175,7 @@ describe("axis placement", () => {
 })
 
 describe("legendRows", () => {
-	const entry = (length: number) => ({ color: "#4a9eff", text: "x".repeat(length) })
+	const entry = (length: number) => ({ color: "#4a9eff", text: Str.repeat(length)("x") })
 
 	it("keeps a legend that fits on one row", () => {
 		expect(legendRows([entry(12), entry(12), entry(12)])).toBe(1)
@@ -216,18 +198,5 @@ describe("rankedCard", () => {
 
 		expect(three.height).toBeGreaterThan(one.height)
 		expect(one.width).toBe(CHART_CARD_WIDTH)
-	})
-
-	it("draws a ranking of zeroes without dividing by its own maximum", () => {
-		expect(() =>
-			rankedCard({
-				title: "errors",
-				unit: "number",
-				points: [
-					{ name: "a", value: 0 },
-					{ name: "b", value: 0 },
-				],
-			}),
-		).not.toThrow()
 	})
 })

@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 export const RAW_DATASOURCE_NAMES = {
 	logs: ["logs"] as const,
 	traces: ["traces"] as const,
@@ -16,7 +17,7 @@ export const EMPTY_TTL_OVERRIDES: RawTableTtlOverrides = {
 	metricsRetentionDays: null,
 }
 
-const DAY_INTERVAL_REGEX = /(ENGINE_TTL\s+"[^"]*INTERVAL\s+)\d+(\s+DAY)/g
+const DAY_INTERVAL_REGEX = /(?<prefix>ENGINE_TTL\s+"[^"]*INTERVAL\s+)\d+(?<suffix>\s+DAY)/g
 
 const overrideForDatasource = (name: string, overrides: RawTableTtlOverrides): number | null => {
 	if (RAW_DATASOURCE_NAMES.logs.includes(name as never)) {
@@ -46,13 +47,11 @@ export const applyRawTtlOverrides = <T extends TtlTransformableResource>(
 		overrides.metricsRetentionDays !== null
 	if (!hasAnyOverride) return datasources
 
-	return datasources.map((datasource) => {
+	return Arr.map(datasources, (datasource) => {
 		const days = overrideForDatasource(datasource.name, overrides)
 		if (days === null) return datasource
-		const next = datasource.content.replace(
-			DAY_INTERVAL_REGEX,
-			(_match, prefix: string, suffix: string) => `${prefix}${days}${suffix}`,
-		)
+		// Named groups keep the day count from reading as part of a `$1` group reference.
+		const next = Str.replace(DAY_INTERVAL_REGEX, `$<prefix>${days}$<suffix>`)(datasource.content)
 		if (next === datasource.content) return datasource
 		return { ...datasource, content: next }
 	})
@@ -71,5 +70,5 @@ export const computeEffectiveRevision = (baseRevision: string, overrides: RawTab
 		`t=${formatOverride(overrides.tracesRetentionDays)}`,
 		`m=${formatOverride(overrides.metricsRetentionDays)}`,
 	]
-	return `${baseRevision}:${parts.join(":")}`
+	return `${baseRevision}:${Arr.join(parts, ":")}`
 }

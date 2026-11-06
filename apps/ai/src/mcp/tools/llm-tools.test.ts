@@ -7,11 +7,15 @@
  * tool failure the model can read rather than an authorization denial that ends the turn.
  */
 import { OrgId, UserId } from "@maple/domain"
-import { Effect, Result, Schema } from "effect"
+import { DateTime, Effect, Result, Schema, Scope, String as Str } from "effect"
 import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "../dispatcher"
+import { noRepositoryWarmup } from "../../../test/chat/tool-executor"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
+import { AgentSpawner } from "@yielded/agent/agent-runtime"
+import { AgentId, RunId, ThreadId } from "@yielded/agent/identifiers"
+import { agentForSession, agentPolicyFor } from "../../chat/agents"
 import { APPROVAL_NOTE, buildMapleToolkit, splitToolResult, type ToolUiPayload } from "./llm-tools"
 
 const TENANT: TenantContext = {
@@ -24,6 +28,7 @@ const TENANT: TenantContext = {
 const countingExecutor = () => {
 	let dispatched = 0
 	const executor: McpToolExecutorApi = {
+		...noRepositoryWarmup,
 		execute: (_tenant, name) => {
 			dispatched += 1
 			return Effect.succeed({ content: [{ type: "text" as const, text: `${name} ran` }] })
@@ -32,22 +37,44 @@ const countingExecutor = () => {
 	return { executor, dispatched: () => dispatched }
 }
 
+/** The engine run a call is dispatched from; only its identity matters to the guard. */
+const inRun = (runId: string) =>
+	Effect.provideService(
+		AgentSpawner,
+		AgentSpawner.of({
+			scope: Scope.makeUnsafe(),
+			policy: agentPolicyFor(agentForSession("org_test:tab-1")),
+			durationDeadline: DateTime.nowUnsafe(),
+			depth: 0,
+			parent: {
+				agentId: Schema.decodeSync(AgentId)("pr-review"),
+				threadId: Schema.decodeSync(ThreadId)("thread-1"),
+				runId: Schema.decodeSync(RunId)(runId),
+			},
+			spawn: () => Effect.die("no child spawns in this test"),
+		}),
+	)
+
 const handlerFor = (executor: McpToolExecutorApi, name: string) => {
 	const built = buildMapleToolkit(executor, TENANT, { surface: "chat" })
 	const handler = built.handlers[name]
 	assert.isDefined(handler, `no handler for ${name}`)
-	return handler!
+	return handler
 }
 
 describe("buildMapleToolkit", () => {
-	it("offers internal tools to the agents and to no other surface", () => {
+	it("offers agent tools to the agents and the bot, internal tools to the agents only", () => {
 		const { executor } = countingExecutor()
 		const chat = buildMapleToolkit(executor, TENANT, { surface: "chat" }).handlers
 		const workflow = buildMapleToolkit(executor, TENANT, { surface: "workflow" }).handlers
+		const bot = buildMapleToolkit(executor, TENANT, { surface: "bot" }).handlers
 		const mcp = buildMapleToolkit(executor, TENANT, { surface: "mcp" }).handlers
 		assert.isDefined(chat.sandbox_exec)
 		assert.isDefined(workflow.sandbox_exec)
+		assert.isDefined(bot.sandbox_exec)
 		assert.isUndefined(mcp.sandbox_exec)
+		assert.isDefined(chat.pr_file_diff)
+		assert.isUndefined(bot.pr_file_diff)
 		// A ruleset allowing everything does not widen a build past its audience.
 		assert.isUndefined(
 			buildMapleToolkit(executor, TENANT, { surface: "mcp", include: () => true }).handlers
@@ -74,6 +101,7 @@ describe("buildMapleToolkit", () => {
 	it("hands every successful answer to onAnswer and never a failed one", async () => {
 		const seen: Array<string> = []
 		const executor: McpToolExecutorApi = {
+			...noRepositoryWarmup,
 			execute: (_tenant, name) =>
 				Effect.succeed(
 					name === "run_sql"
@@ -85,13 +113,16 @@ describe("buildMapleToolkit", () => {
 			surface: "chat",
 			onAnswer: (tool, answer) => seen.push(`${tool}: ${answer}`),
 		})
-		await Effect.runPromise(handlers.list_services!({}, {} as never))
-		await Effect.runPromise(Effect.result(handlers.run_sql!({ sql: "select 1" }, {} as never)))
+		assert.isDefined(handlers.list_services)
+		assert.isDefined(handlers.run_sql)
+		await Effect.runPromise(handlers.list_services({}, {}))
+		await Effect.runPromise(Effect.result(handlers.run_sql({ sql: "select 1" }, {})))
 		assert.deepEqual(seen, ["list_services: list_services ran"])
 	})
 
 	it("gives the model text only and hands the typed output to the UI under its call id", async () => {
 		const executor: McpToolExecutorApi = {
+			...noRepositoryWarmup,
 			execute: () =>
 				Effect.succeed({
 					content: [{ type: "text" as const, text: "## Services" }],
@@ -103,7 +134,8 @@ describe("buildMapleToolkit", () => {
 			surface: "chat",
 			onUi: (callId, ui) => uis.push([callId, ui]),
 		})
-		const answer = await Effect.runPromise(handlers.list_services!({}, { toolCallId: "call-1" } as never))
+		assert.isDefined(handlers.list_services)
+		const answer = await Effect.runPromise(handlers.list_services({}, { toolCallId: "call-1" }))
 		assert.equal(answer, "## Services")
 		assert.deepEqual(uis, [
 			["call-1", { __maple_ui: true, tool: "list_services", data: { services: [] } }],
@@ -113,10 +145,7 @@ describe("buildMapleToolkit", () => {
 	it("strips a legacy UI block from the model's text and still recovers it for the UI", () => {
 		const legacy = JSON.stringify({ __maple_ui: true, tool: "list_services", data: { services: [] } })
 		const split = splitToolResult("list_services", {
-			content: [
-				{ type: "text", text: "## Services" },
-				{ type: "text", text: legacy },
-			],
+			content: [{ text: "## Services" }, { text: legacy }],
 		})
 		assert.equal(split.text, "## Services")
 		assert.deepEqual(split.ui, { __maple_ui: true, tool: "list_services", data: { services: [] } })
@@ -124,6 +153,7 @@ describe("buildMapleToolkit", () => {
 
 	it("fails a tool that reported an error with its message", async () => {
 		const executor: McpToolExecutorApi = {
+			...noRepositoryWarmup,
 			execute: () =>
 				Effect.succeed({
 					isError: true,
@@ -133,7 +163,7 @@ describe("buildMapleToolkit", () => {
 				}),
 		}
 		const result = await Effect.runPromise(
-			Effect.result(handlerFor(executor, "run_sql")({ sql: "select 1" }, {} as never)),
+			Effect.result(handlerFor(executor, "run_sql")({ sql: "select 1" }, {})),
 		)
 		assert.isTrue(Result.isFailure(result))
 		assert.equal(
@@ -144,10 +174,11 @@ describe("buildMapleToolkit", () => {
 
 	it("fails a tool that died with a summary, never the cause", async () => {
 		const executor: McpToolExecutorApi = {
+			...noRepositoryWarmup,
 			execute: () => Effect.die(new Error("connection reset")),
 		}
 		const result = await Effect.runPromise(
-			Effect.result(handlerFor(executor, "list_services")({ limit: 10 }, {} as never)),
+			Effect.result(handlerFor(executor, "list_services")({ limit: 10 }, {})),
 		)
 		assert.isTrue(Result.isFailure(result))
 		assert.include(Result.isFailure(result) ? result.failure.message : "", "Tool failed")
@@ -161,19 +192,21 @@ describe("buildMapleToolkit", () => {
 		const { spans, tracer } = makeRecordingTracer()
 
 		await Effect.runPromise(
-			Effect.result(handler!({ limit: 10 }, {} as never)).pipe(
+			Effect.result(handler({ limit: 10 }, {})).pipe(
 				Effect.withSpan("execute_tool list_services"),
 				Effect.withTracer(tracer),
 			),
 		)
 
-		assert.isTrue(String(spans[0]?.attributes.get("gen_ai.tool.description")).endsWith(APPROVAL_NOTE))
+		assert.isTrue(
+			Str.endsWith(APPROVAL_NOTE)(String(spans[0]?.attributes.get("gen_ai.tool.description"))),
+		)
 	})
 
 	it("refuses the identical call once it has run three times", async () => {
 		const { executor, dispatched } = countingExecutor()
 		const handler = handlerFor(executor, "list_services")
-		const call = () => Effect.runPromise(Effect.result(handler({ limit: 10 }, {} as never)))
+		const call = () => Effect.runPromise(Effect.result(handler({ limit: 10 }, {})))
 
 		for (let attempt = 0; attempt < 3; attempt += 1) {
 			const result = await call()
@@ -192,10 +225,26 @@ describe("buildMapleToolkit", () => {
 		const handler = handlerFor(executor, "list_services")
 
 		for (let limit = 0; limit < 6; limit += 1) {
-			await Effect.runPromise(handler({ limit }, {} as never))
+			await Effect.runPromise(handler({ limit }, {}))
 		}
 
 		assert.equal(dispatched(), 6)
+	})
+
+	it("counts the same arguments in another key order as the same call", async () => {
+		const { executor, dispatched } = countingExecutor()
+		const handler = handlerFor(executor, "list_services")
+		const orders = [
+			{ limit: 10, offset: 0 },
+			{ offset: 0, limit: 10 },
+			{ limit: 10, offset: 0 },
+		]
+
+		for (const params of orders) await Effect.runPromise(handler(params, {}))
+		const fourth = await Effect.runPromise(Effect.result(handler({ offset: 0, limit: 10 }, {})))
+
+		assert.isTrue(Result.isFailure(fourth))
+		assert.equal(dispatched(), 3)
 	})
 
 	it("counts per build, so the next turn may ask the same question again", async () => {
@@ -203,9 +252,29 @@ describe("buildMapleToolkit", () => {
 
 		for (let turn = 0; turn < 4; turn += 1) {
 			const handler = handlerFor(executor, "list_services")
-			await Effect.runPromise(handler({ limit: 10 }, {} as never))
+			await Effect.runPromise(handler({ limit: 10 }, {}))
 		}
 
 		assert.equal(dispatched(), 4)
+	})
+
+	it("counts per engine run, so review_files children sharing the build each get the full budget", async () => {
+		const { executor, dispatched } = countingExecutor()
+		const handler = handlerFor(executor, "list_services")
+		const call = (runId: string) =>
+			Effect.runPromise(Effect.result(handler({ limit: 10 }, {}).pipe(inRun(runId))))
+
+		// The parent spends its budget, then four children launched together ask the same question.
+		for (let attempt = 0; attempt < 3; attempt += 1) await call("run_parent")
+		for (const child of ["run_a", "run_b", "run_c", "run_d"]) {
+			const first = await call(child)
+			assert.isTrue(Result.isSuccess(first), `${child}'s first call should have run`)
+		}
+		assert.equal(dispatched(), 7)
+
+		// Each run still has its own guard.
+		const parentAgain = await call("run_parent")
+		assert.isTrue(Result.isFailure(parentAgain))
+		assert.equal(dispatched(), 7)
 	})
 })

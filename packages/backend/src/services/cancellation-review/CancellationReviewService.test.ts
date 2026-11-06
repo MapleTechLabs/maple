@@ -1,0 +1,885 @@
+import { afterEach, assert, describe, it } from "@effect/vitest"
+import {
+	CancellationModelRead,
+	type CancellationModelRequest,
+	DailySpendResponse,
+	DailyVolume,
+	OrgId,
+} from "@maple/domain/http"
+import { compiledQueryOf } from "@maple/query-engine/execution"
+import { ConfigProvider, DateTime, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import { TestClock } from "effect/testing"
+import { Env } from "@maple/backend/platform/Env"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
+import { StripeClient } from "@maple/backend/services/billing/stripe-http"
+import { DailySpendService } from "@maple/backend/services/billing/DailySpendService"
+import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
+import {
+	type HomeAnswer,
+	OrganizationRegionService,
+} from "@maple/backend/services/org/OrganizationRegionService"
+import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
+import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
+import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
+import { SupportChannelUnavailableError } from "@maple/domain/support-channel"
+import {
+	SupportSlackClient,
+	SupportSlackRefusedError,
+} from "@maple/backend/services/support/SupportSlackClient"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
+import { CancellationReader } from "./CancellationReader"
+import { CancellationAppEvidenceReader } from "./evidence-app"
+import { CancellationBillingEvidenceReader } from "./evidence-billing"
+import { CancellationCompanyEvidenceReader } from "./evidence-company"
+import type { CancellationEvidenceInput } from "./evidence-input"
+import { CancellationTelemetryEvidenceReader } from "./evidence-telemetry"
+import { CancellationReviewService, type CancellationToReview } from "./CancellationReviewService"
+
+const trackedDbs: TestDb[] = []
+afterEach(() => cleanupTestDbs(trackedDbs))
+
+const ORG = Schema.decodeSync(OrgId)("org_leaving")
+const OWN_ORG = Schema.decodeSync(OrgId)("org_maple")
+const CANCELED_AT = Date.parse("2026-10-07T15:30:00Z")
+const DAY_MS = 86_400_000
+
+const job: CancellationToReview = {
+	orgId: ORG,
+	planId: "startup",
+	phase: "scheduled",
+	startedAt: CANCELED_AT - 240 * DAY_MS,
+	canceledAt: CANCELED_AT,
+	expiresAt: CANCELED_AT + 12 * DAY_MS,
+	trial: false,
+	pastDue: false,
+	receivedAt: CANCELED_AT + 1_000,
+}
+
+interface World {
+	channel: string | null
+	/** What the region lookup answers. */
+	home: HomeAnswer
+	/** Autumn's HTTP status, and the subscriptions it reports the org holding now. */
+	autumnStatus: number
+	subscriptions: Array<{ planId: string; status: string; addOn?: boolean }>
+	/** `refused`: Slack answered no. `unreachable`: it did not answer. */
+	slack: "ok" | "refused" | "unreachable"
+	warehouseDown: boolean
+	/** The org's own page views, and whether anyone at all has page views under Maple's org. */
+	visitRows: Array<{ bucket: DateTime.Utc; groupName: string; value: number; eventCount: number }>
+	anyPageViews: boolean
+	/** The org's browser sessions under Maple's org, and the events of each. */
+	sessionRows: Array<Record<string, unknown>>
+	/** Oldest first; the warehouse stub answers newest first, as the query asks. */
+	sessionEvents: Array<{ type: string; url: string; message: string; netStatus?: number }>
+	/** Stripe's subscription list body, camelised. */
+	stripeSubscriptions: Array<Record<string, unknown>>
+	/** What the model answers; null is no answer. */
+	modelRead: CancellationModelRead | null
+	modelRequests: Array<CancellationModelRequest>
+	/** What each evidence reader was asked, by section. */
+	evidenceInputs: Array<{ section: string; input: CancellationEvidenceInput }>
+	/** The evidence readers fail, as a down source would. */
+	evidenceDown: boolean
+	queries: Array<{ orgId: string; sql: string }>
+	posts: Array<Record<string, unknown>>
+}
+
+const freshWorld = (): World => ({
+	channel: "C_CANCELLATIONS",
+	home: "here",
+	autumnStatus: 200,
+	subscriptions: [{ planId: "startup", status: "active" }],
+	slack: "ok",
+	warehouseDown: false,
+	visitRows: [
+		{ bucket: DateTime.makeUnsafe("2026-09-17T00:00:00Z"), groupName: "", value: 3, eventCount: 40 },
+	],
+	anyPageViews: true,
+	sessionRows: [],
+	sessionEvents: [],
+	stripeSubscriptions: [],
+	modelRead: null,
+	modelRequests: [],
+	evidenceInputs: [],
+	evidenceDown: false,
+	queries: [],
+	posts: [],
+})
+
+const day = (daysAgo: number, logsGB: number) =>
+	new DailyVolume({
+		date: Str.slice(0, 10)(new Date(CANCELED_AT - daysAgo * DAY_MS).toISOString()),
+		logsGB,
+		tracesGB: 0,
+		metricsGB: 0,
+		browserSessions: 0,
+	})
+
+const stubs = (world: World) =>
+	Layer.mergeAll(
+		Layer.mock(OrganizationRegionService)({
+			region: "us",
+			servedHere: () => Effect.succeed(world.home),
+		}),
+		Layer.mock(OrganizationService)({
+			retrieve: (orgId) =>
+				Effect.succeed({
+					id: orgId,
+					name: "Acme Inc.",
+					slug: "acme",
+					imageUrl: null,
+					createdAtMs: CANCELED_AT - 300 * DAY_MS,
+				}),
+		}),
+		Layer.mock(OrgMembersService)({
+			listMembers: () =>
+				Effect.succeed([
+					{ userId: "user_1", email: "a@acme.test", name: null, imageUrl: null },
+					{ userId: "user_2", email: "b@acme.test", name: null, imageUrl: null },
+				]),
+			listOrganizationsOf: (userId) =>
+				Effect.succeed([
+					{ orgId: ORG, name: "Acme Inc.", createdAtMs: 0, membersCount: 2 },
+					...(userId === "user_1"
+						? [
+								{
+									orgId: "org_acme_new",
+									name: "Acme New",
+									createdAtMs: CANCELED_AT - DAY_MS,
+									membersCount: 1,
+								},
+							]
+						: []),
+				]),
+		}),
+		Layer.succeed(DailySpendService, {
+			get: () =>
+				Effect.succeed(
+					new DailySpendResponse({
+						// 42 GB the month before, then a trickle that stopped 24 days ago.
+						days: [day(45, 42), day(24, 3)],
+						cycleStart: 0,
+						cycleEnd: 0,
+					}),
+				),
+		}),
+		Layer.succeed(
+			WarehouseQueryService,
+			makeWarehouseServiceStub({
+				compiledQuery: (tenant, compiled) =>
+					Effect.suspend(() => {
+						if (world.warehouseDown) return Effect.die(new Error("warehouse down"))
+						const sql = compiledQueryOf(compiled).sql
+						world.queries.push({ orgId: tenant.orgId, sql })
+						if (Str.includes("session_events")(sql)) {
+							const pagesOnly = Str.includes("'navigation'")(sql)
+							const events = Arr.reverse(
+								Arr.map(
+									Arr.filter(
+										world.sessionEvents,
+										(event) => (event.type === "navigation") === pagesOnly,
+									),
+									(event) => ({ netMethod: "GET", netUrl: "", netStatus: 0, ...event }),
+								),
+							)
+							return Effect.succeed(events as ReadonlyArray<never>)
+						}
+						if (Str.includes("session_replays")(sql)) {
+							return Effect.succeed(world.sessionRows as ReadonlyArray<never>)
+						}
+						// The second, unfiltered query is the "is this the right org at all" probe.
+						const rows = Str.includes(ORG)(sql)
+							? world.visitRows
+							: world.anyPageViews
+								? [
+										{
+											bucket: DateTime.makeUnsafe("2026-08-08T00:00:00Z"),
+											groupName: "",
+											value: 9,
+											eventCount: 900,
+										},
+									]
+								: []
+						return Effect.succeed(rows as ReadonlyArray<never>)
+					}),
+			}),
+		),
+		Layer.mock(OrgIngestKeysService)({
+			resolveIngestKey: () =>
+				Effect.succeedSome({ orgId: OWN_ORG, keyType: "private" as const, keyId: "key_1" }),
+		}),
+		Layer.mock(AutumnClient)({
+			getOrCreateCustomer: (customerId) =>
+				customerId === "org_acme_new"
+					? Effect.succeed({
+							statusCode: 200,
+							response: {
+								id: customerId,
+								stripeId: "cus_acme_new",
+								subscriptions: [{ planId: "pro", status: "active" }],
+							},
+						})
+					: Effect.succeed({
+							statusCode: world.autumnStatus,
+							response: {
+								id: ORG,
+								stripeId: "cus_acme",
+								// One odd field on a subscription must not cost the report its guards.
+								subscriptions: Arr.map(world.subscriptions, (sub) => ({
+									...sub,
+									pastDue: null,
+								})),
+								balances: {},
+								invoices: [
+									{ status: "paid", total: 39, currency: "usd", createdAt: 2 },
+									{ status: "paid", total: 39, currency: "usd", createdAt: 1 },
+								],
+							},
+						}),
+		}),
+		Layer.mock(StripeClient)({
+			listSubscriptions: () =>
+				Effect.succeed({ statusCode: 200, response: { data: world.stripeSubscriptions } }),
+		}),
+		Layer.mock(AuditLogService)({
+			// Filters the way the query does, before the limit.
+			list: (_orgId, filters) =>
+				Effect.succeed(
+					Arr.filter<never>(
+						[
+							// An access record: never one of the changes the model reads.
+							{
+								action: "telemetry.read",
+								actorType: "user",
+								actorLabel: "a@acme.test",
+								outcome: "allowed",
+								occurredAt: new Date(CANCELED_AT - DAY_MS + 60_000),
+							} as never,
+							{
+								action: "ingest_key.revoke",
+								actorType: "user",
+								actorLabel: "a@acme.test",
+								outcome: "allowed",
+								occurredAt: new Date(CANCELED_AT - DAY_MS),
+							} as never,
+						],
+						(entry: { action: string }) =>
+							!Arr.some(filters.excludeActionSuffixes ?? [], (suffix) =>
+								Str.endsWith(suffix)(entry.action),
+							),
+					),
+				),
+		}),
+		...evidenceStubs(world),
+		Layer.succeed(CancellationReader, {
+			read: (request) =>
+				Effect.sync(() => {
+					world.modelRequests.push(request)
+					return world.modelRead
+				}),
+		}),
+		Layer.succeed(SupportSlackClient, {
+			configured: true,
+			teamUserIds: [],
+			call: (method, body) =>
+				Effect.suspend(() => {
+					if (world.slack === "refused") {
+						return Effect.fail(
+							new SupportSlackRefusedError({
+								message: "refused",
+								method,
+								error: "not_in_channel",
+							}),
+						)
+					}
+					if (world.slack === "unreachable") {
+						return Effect.fail(
+							new SupportChannelUnavailableError({
+								message: "Slack did not answer",
+								operation: method,
+							}),
+						)
+					}
+					world.posts.push(body)
+					return Effect.succeed({ ok: true })
+				}),
+		}),
+	)
+
+/** Each section stands for itself (the readers are tested on their own): read, nothing found. */
+const EVIDENCE = {
+	company: {
+		orgName: "Acme Inc.",
+		orgNameIsPersonal: false,
+		region: "us",
+		billing: null,
+		emailDomains: null,
+		homepage: null,
+		people: null,
+	},
+	billing: { subscriptions: null, invoices: null, billingControls: null, charges: null },
+	app: {
+		integrations: [],
+		onboarding: null,
+		alerts: null,
+		anomalies: null,
+		investigations: null,
+		errorIssues: null,
+		agentFeedback: [],
+		priorCancellations: [],
+		scrapeTargets: null,
+		apiKeys: null,
+		digest: null,
+	},
+	telemetry: {
+		services: null,
+		resourceAttributes: [],
+		alertChecks: null,
+		errors: null,
+		productEvents: [],
+		auditActions: [],
+		auditActors: null,
+		toolCalls: [],
+	},
+} as const
+
+const evidenceReader = <K extends keyof typeof EVIDENCE>(world: World, section: K) => ({
+	read: (input: CancellationEvidenceInput) =>
+		Effect.suspend(() => {
+			world.evidenceInputs.push({ section, input })
+			return world.evidenceDown ? Effect.die("down") : Effect.succeed(EVIDENCE[section])
+		}),
+})
+
+const evidenceStubs = (world: World) => [
+	Layer.succeed(CancellationCompanyEvidenceReader, evidenceReader(world, "company")),
+	Layer.succeed(CancellationBillingEvidenceReader, evidenceReader(world, "billing")),
+	Layer.succeed(CancellationAppEvidenceReader, evidenceReader(world, "app")),
+	Layer.succeed(CancellationTelemetryEvidenceReader, evidenceReader(world, "telemetry")),
+]
+
+const makeLayer = (world: World, testDb: TestDb) =>
+	Layer.effect(CancellationReviewService, CancellationReviewService.make).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				stubs(world),
+				OnboardingService.layer.pipe(Layer.provide(testDb.layer)),
+				IntegrationInventoryService.layer.pipe(Layer.provide(testDb.layer)),
+				testDb.layer,
+				SecureRandom.layerWebCrypto,
+			),
+		),
+		Layer.provide(Env.layer),
+		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config(world)))),
+	)
+
+const BASE_CONFIG = {
+	PORT: "3472",
+	TINYBIRD_HOST: "https://api.tinybird.co",
+	TINYBIRD_TOKEN: "test-token",
+	MAPLE_AUTH_MODE: "self_hosted",
+	MAPLE_ROOT_PASSWORD: "test-root-password",
+	MAPLE_DEFAULT_ORG_ID: "default",
+	MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 5).toString("base64"),
+	MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
+	MAPLE_INGEST_KEY: "maple_sk_test",
+}
+
+const config = (world: World) =>
+	world.channel === null
+		? BASE_CONFIG
+		: { ...BASE_CONFIG, MAPLE_CANCELLATION_SLACK_CHANNEL_ID: world.channel }
+
+const review = (
+	world: World,
+	testDb: TestDb,
+	input: CancellationToReview = job,
+	nowMs = CANCELED_AT + 1_000,
+) =>
+	Effect.gen(function* () {
+		yield* TestClock.setTime(nowMs)
+		return yield* CancellationReviewService.use((service) => service.review(input))
+	}).pipe(Effect.provide(makeLayer(world, testDb)))
+
+/** The step a review failed at. */
+const failedStep = (world: World, testDb: TestDb, input: CancellationToReview = job) =>
+	review(world, testDb, input).pipe(
+		Effect.flip,
+		Effect.map((error) => error.step),
+	)
+
+const seed = (testDb: TestDb) =>
+	Effect.promise(async () => {
+		await executeSql(
+			testDb,
+			`INSERT INTO org_onboarding_state (org_id, email, created_at, updated_at)
+			 VALUES ($1, 'founder@acme.test', now(), now())`,
+			[ORG],
+		)
+		// One dashboard for the org, one for somebody else.
+		for (const orgId of [ORG, "org_someone_else"]) {
+			await executeSql(
+				testDb,
+				`INSERT INTO dashboards (org_id, id, name, payload_json, created_at, updated_at, created_by, updated_by)
+				 VALUES ($1, 'dash_1', 'Overview', '{}', now(), now(), 'user_1', 'user_1')`,
+				[orgId],
+			)
+		}
+	})
+
+const storedReview = (testDb: TestDb) =>
+	Effect.promise(() =>
+		queryFirstRow<{
+			rule_reason: string | null
+			posted_at: string | null
+			snapshot_json: unknown
+			model_read: unknown
+		}>(
+			testDb,
+			"SELECT rule_reason, posted_at, snapshot_json, model_read FROM cancellation_reviews WHERE org_id = $1",
+			[ORG],
+		),
+	)
+
+describe("CancellationReviewService", () => {
+	it.effect("gathers the snapshot, posts the report and records the review", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			const testDb = createTestDb(trackedDbs)
+			yield* seed(testDb)
+
+			// Processed three days after the org cancelled: the windows are anchored
+			// on the cancellation, the access left on today.
+			const lateJob = { ...job, receivedAt: CANCELED_AT + 3 * DAY_MS }
+			assert.strictEqual(yield* review(world, testDb, lateJob, CANCELED_AT + 3 * DAY_MS), "posted")
+
+			assert.strictEqual(world.posts.length, 1)
+			const post = world.posts[0]
+			assert.strictEqual(post?.channel, "C_CANCELLATIONS")
+			assert.strictEqual(post?.text, "Acme Inc. cancelled the startup plan (Stopped sending telemetry)")
+			const blocks = String(post?.blocks)
+			assert.include(blocks, "42 GB · last data 24 days ago")
+			assert.include(blocks, "last visit 20 days ago")
+			assert.include(blocks, "founder@acme.test")
+			assert.include(blocks, "Access until Oct 19 (9d left)")
+			assert.notInclude(blocks, "Could not read")
+			assert.include(blocks, '"url":"https://dashboard.stripe.com/customers/cus_acme"')
+			assert.include(blocks, `"url":"https://app.useautumn.com/customers/${ORG}"`)
+			assert.include(
+				blocks,
+				`"url":"https://dashboard.clerk.com/last-active?path=organizations/${ORG}"`,
+			)
+			assert.include(blocks, "None connected")
+			// The other org is named once, through the member in it; the org itself is not "other".
+			assert.include(blocks, "*Acme New*  `org_acme_new`")
+			assert.include(
+				blocks,
+				"Created Oct 6  ·  1 member  ·  `pro`  ·  via a@acme.test  ·  <https://dashboard.clerk.com/last-active?path=organizations/org_acme_new|Clerk>  ·  <https://dashboard.stripe.com/customers/cus_acme_new|Stripe>  ·  <https://app.useautumn.com/customers/org_acme_new|Autumn>",
+			)
+			assert.notInclude(blocks, `*Acme Inc.*  \`${ORG}\``)
+
+			// The org's visits and sessions are read from Maple's own org, filtered to the customer.
+			assert.strictEqual(world.queries.length, 2)
+			for (const query of world.queries) {
+				assert.strictEqual(query.orgId, OWN_ORG)
+				assert.include(query.sql, ORG)
+			}
+			// The model had nothing to say, so the report says nothing for it.
+			assert.notInclude(blocks, ":robot_face:")
+			assert.notInclude(blocks, "Told Stripe")
+
+			const stored = yield* storedReview(testDb)
+			assert.strictEqual(stored?.rule_reason, "stopped_sending")
+			assert.isNotNull(stored?.posted_at)
+			assert.deepNestedInclude(stored?.snapshot_json, {
+				"plan.tenureDays": 240,
+				"plan.daysUntilEnd": 9,
+				"org.members": 2,
+				// From the telemetry itself: nothing writes the onboarding column this once read.
+				"org.everReceivedData": true,
+				"ingest.daysSinceLastData": 24,
+				"visits.daysSinceLastVisit": 20,
+				"adoption.dashboards": 1,
+				"billing.lastInvoiceTotal": 39,
+			})
+		}),
+	)
+
+	it.effect("asks the model with the Stripe survey, sessions and audit log, and shows its read", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.stripeSubscriptions = [
+				{
+					created: 1,
+					canceledAt: CANCELED_AT / 1000,
+					cancellationDetails: { feedback: "missing_features", comment: "No SSO", reason: null },
+				},
+			]
+			world.sessionRows = [
+				{
+					sessionId: "s_1",
+					startTime: DateTime.makeUnsafe(CANCELED_AT - DAY_MS),
+					endTime: DateTime.makeUnsafe(CANCELED_AT - DAY_MS + 60_000),
+					durationMs: 60_000,
+					userEmail: "a@acme.test",
+					quality: "engaged",
+					pageViews: 3,
+					clickCount: 9,
+				},
+				{
+					sessionId: "s_bot",
+					startTime: DateTime.makeUnsafe(CANCELED_AT - 2 * DAY_MS),
+					endTime: null,
+					durationMs: null,
+					userEmail: "",
+					quality: "bot",
+					pageViews: 1,
+					clickCount: 0,
+				},
+			]
+			world.sessionEvents = [
+				{ type: "navigation", url: "https://app.maple.dev/settings/members", message: "" },
+				{ type: "navigation", url: "https://app.maple.dev/settings/members?tab=sso", message: "" },
+				{ type: "error", url: "", message: "SSO is not available on your plan" },
+				{ type: "navigation", url: "https://app.maple.dev/billing", message: "" },
+			]
+			world.modelRead = new CancellationModelRead({
+				company: {
+					name: "Acme Robotics",
+					oneLiner: "Warehouse robots",
+					location: null,
+					confidence: "medium",
+					basis: "domain",
+				},
+				findings: ["Hit the SSO paywall on the members page the day before cancelling."],
+				verdict: "override",
+				category: "missing_features",
+				reason: "Needed SSO",
+				conclusion: "Left because SSO is not on their plan.",
+				model: "test-model",
+			})
+			const testDb = createTestDb(trackedDbs)
+			assert.strictEqual(yield* review(world, testDb), "posted")
+
+			const request = world.modelRequests[0]
+			assert.deepStrictEqual(request?.stripeFeedback, {
+				feedback: "missing_features",
+				comment: "No SSO",
+			})
+			assert.deepStrictEqual(
+				request?.sessions == null
+					? request?.sessions
+					: Arr.map(request.sessions, (session) => session.pages),
+				[["/settings/members", "/billing"]],
+			)
+			assert.deepStrictEqual(request?.sessions?.[0]?.problems, ["SSO is not available on your plan"])
+			assert.deepStrictEqual(request?.auditLog?.[0], {
+				at: DateTime.formatIso(DateTime.makeUnsafe(CANCELED_AT - DAY_MS)),
+				daysBeforeCancel: 1,
+				action: "ingest_key.revoke",
+				actor: "user",
+				outcome: "allowed",
+			})
+			// The members' other org, as the report lists it, without the member.
+			assert.deepStrictEqual(request?.otherOrgs, {
+				total: 1,
+				orgs: [
+					{
+						name: "Acme New",
+						nameIsPersonal: false,
+						createdDaysBeforeCancel: 1,
+						members: 1,
+						sharedMembers: 1,
+						billing: { plan: "pro" },
+					},
+				],
+			})
+			// No person's email reaches the model.
+			assert.notInclude(JSON.stringify(request), "@acme.test")
+			assert.strictEqual(request?.ruleReason, "stopped_sending")
+			// Every section reaches the model, and every reader got the org, its members and Stripe.
+			assert.deepStrictEqual(
+				[request?.company, request?.billing, request?.app, request?.telemetry],
+				[EVIDENCE.company, EVIDENCE.billing, EVIDENCE.app, EVIDENCE.telemetry],
+			)
+			for (const { input } of world.evidenceInputs) {
+				assert.strictEqual(input.orgId, ORG)
+				assert.strictEqual(input.ownOrgId, OWN_ORG)
+				assert.isAbove(input.members?.length ?? 0, 0)
+			}
+			// The sessions are read under Maple's own org, never the customer's.
+			assert.isTrue(
+				Arr.every(
+					Arr.filter(world.queries, (query) => Str.includes("session_")(query.sql)),
+					(query) => query.orgId === OWN_ORG,
+				),
+			)
+
+			const post = world.posts[0]
+			assert.strictEqual(post?.text, "Acme Inc. cancelled the startup plan (Needed SSO)")
+			const blocks = String(post?.blocks)
+			assert.include(
+				blocks,
+				"*Likely reason:* Needed SSO  _(model's read; rules said: Stopped sending telemetry)_",
+			)
+			assert.include(blocks, ":office: *Acme Robotics*: Warehouse robots")
+			assert.include(blocks, "Hit the SSO paywall on the members page")
+			assert.include(blocks, ":robot_face: *Model's read:* Left because SSO is not on their plan.")
+			assert.include(blocks, "*Told Stripe:* missing features “No SSO”")
+			assert.include(
+				blocks,
+				`"url":"http://127.0.0.1:3471/replays?groupId=${ORG}&startTime=2026-09-07+15%3A30%3A00&endTime=2026-10-07+16%3A30%3A00"`,
+			)
+			const stored = yield* storedReview(testDb)
+			assert.deepInclude(stored?.model_read, {
+				verdict: "override",
+				category: "missing_features",
+				reason: "Needed SSO",
+			})
+		}),
+	)
+
+	it.effect("ignores a Stripe survey from an earlier cancellation", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.stripeSubscriptions = [
+				{
+					created: 1,
+					canceledAt: (CANCELED_AT - 90 * DAY_MS) / 1000,
+					cancellationDetails: { feedback: "switched_service", comment: "Datadog", reason: null },
+				},
+			]
+			const testDb = createTestDb(trackedDbs)
+			assert.strictEqual(yield* review(world, testDb), "posted")
+			assert.deepStrictEqual(world.modelRequests[0]?.stripeFeedback, { feedback: null, comment: null })
+			assert.notInclude(String(world.posts[0]?.blocks), "Datadog")
+		}),
+	)
+
+	it.effect("reports a subscription once: the redelivery and the later expiry are no-ops", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			const testDb = createTestDb(trackedDbs)
+
+			assert.strictEqual(yield* review(world, testDb), "posted")
+			assert.strictEqual(yield* review(world, testDb), "duplicate")
+			world.subscriptions = [{ planId: "startup", status: "expired" }]
+			assert.strictEqual(yield* review(world, testDb, { ...job, phase: "ended" }), "duplicate")
+			assert.strictEqual(world.posts.length, 1)
+		}),
+	)
+
+	it.effect("reviews a subscription again when it is cancelled a second time", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			const testDb = createTestDb(trackedDbs)
+			const again = { ...job, canceledAt: CANCELED_AT + 90 * DAY_MS }
+
+			assert.strictEqual(yield* review(world, testDb), "posted")
+			// Kept the plan after all, then cancelled it again three months on.
+			assert.strictEqual(yield* review(world, testDb, again), "posted")
+			assert.strictEqual(yield* review(world, testDb, again), "duplicate")
+			// A stale redelivery of the first cancellation does not reopen it.
+			assert.strictEqual(yield* review(world, testDb), "duplicate")
+			assert.strictEqual(world.posts.length, 2)
+		}),
+	)
+
+	it.effect("keys a subscription Autumn sent no start for on its cancellation time", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			const testDb = createTestDb(trackedDbs)
+			const first = { ...job, startedAt: null }
+			const second = { ...first, canceledAt: CANCELED_AT + 90 * DAY_MS }
+
+			assert.strictEqual(yield* review(world, testDb, first), "posted")
+			assert.strictEqual(yield* review(world, testDb, first), "duplicate")
+			assert.strictEqual(yield* review(world, testDb, second), "posted")
+		}),
+	)
+
+	it.effect("does not review a plan that ended while the org holds an active one", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.subscriptions = [
+				{ planId: "startup", status: "expired" },
+				{ planId: "scale", status: "active" },
+			]
+			const outcome = yield* review(world, createTestDb(trackedDbs), { ...job, phase: "ended" })
+			assert.strictEqual(outcome, "still_subscribed")
+			assert.strictEqual(world.posts.length, 0)
+		}),
+	)
+
+	it.effect("reviews an ended plan when only an add-on is still active", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.subscriptions = [
+				{ planId: "startup", status: "expired" },
+				{ planId: "bringyourowncloud", status: "active", addOn: true },
+			]
+			const outcome = yield* review(world, createTestDb(trackedDbs), { ...job, phase: "ended" })
+			assert.strictEqual(outcome, "posted")
+		}),
+	)
+
+	it.effect("does not review an add-on going away", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.subscriptions = [{ planId: "startup", status: "active", addOn: true }]
+			assert.strictEqual(yield* review(world, createTestDb(trackedDbs)), "not_a_plan")
+			assert.strictEqual(world.posts.length, 0)
+		}),
+	)
+
+	it.effect("posts without the sections it could not read", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.warehouseDown = true
+			const testDb = createTestDb(trackedDbs)
+
+			assert.strictEqual(yield* review(world, testDb), "posted")
+			assert.include(String(world.posts[0]?.blocks), "Could not read: app visits")
+
+			const blind = freshWorld()
+			blind.evidenceDown = true
+			assert.strictEqual(yield* review(blind, createTestDb(trackedDbs)), "posted")
+			assert.include(
+				String(blind.posts[0]?.blocks),
+				"company, billing history, app state, telemetry detail",
+			)
+			assert.isNull(blind.modelRequests[0]?.company)
+		}),
+	)
+
+	it.effect("says nobody opened the app only when the org it read has page views at all", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.visitRows = []
+			assert.strictEqual(yield* review(world, createTestDb(trackedDbs)), "posted")
+			assert.include(String(world.posts[0]?.blocks), "no visit in 60 days")
+
+			// No page views from anyone: the key points at an org the app does not report to.
+			const elsewhere = freshWorld()
+			elsewhere.visitRows = []
+			elsewhere.anyPageViews = false
+			assert.strictEqual(yield* review(elsewhere, createTestDb(trackedDbs)), "posted")
+			assert.include(String(elsewhere.posts[0]?.blocks), "Could not read: app visits")
+			assert.notInclude(String(elsewhere.posts[0]?.blocks), "no visit in 60 days")
+		}),
+	)
+
+	it.effect("fails a report Slack could not be reached for, and posts it on the next attempt", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.slack = "unreachable"
+			const testDb = createTestDb(trackedDbs)
+
+			assert.strictEqual(yield* failedStep(world, testDb), "post")
+			assert.isNull((yield* storedReview(testDb))?.posted_at)
+
+			// The failed attempt handed its claim back: the retry need not wait out the lease.
+			world.slack = "ok"
+			assert.strictEqual(yield* review(world, testDb), "posted")
+			assert.strictEqual(world.posts.length, 1)
+		}),
+	)
+
+	it.effect("waits while another delivery holds the claim, and takes it over once the lease is over", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			const testDb = createTestDb(trackedDbs)
+			// Another delivery claimed the review a moment ago and is still gathering it.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO cancellation_reviews (id, org_id, plan_id, subscription_started_at, canceled_at, created_at, updated_at)
+					 VALUES ('other', $1, $2, $3, $4, $5, $5)`,
+					[ORG, job.planId, job.startedAt, job.canceledAt, CANCELED_AT],
+				),
+			)
+
+			assert.strictEqual(yield* failedStep(world, testDb), "claim")
+			assert.strictEqual(world.posts.length, 0)
+			assert.strictEqual(yield* review(world, testDb, job, CANCELED_AT + 6 * 60_000), "posted")
+		}),
+	)
+
+	it.effect("does not ask for a redelivery when Slack answers no, and tries again at expiry", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.slack = "refused"
+			const testDb = createTestDb(trackedDbs)
+
+			// Bot not in the channel: a retry changes nothing, so the webhook is not held up.
+			assert.strictEqual(yield* review(world, testDb), "refused")
+			assert.isNull((yield* storedReview(testDb))?.posted_at)
+
+			world.slack = "ok"
+			world.subscriptions = [{ planId: "startup", status: "expired" }]
+			const expiry = { ...job, phase: "ended" as const }
+			assert.strictEqual(yield* review(world, testDb, expiry, CANCELED_AT + 12 * DAY_MS), "posted")
+		}),
+	)
+
+	it.effect("retries, with nothing claimed or posted, when Autumn does not answer", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.autumnStatus = 500
+			const testDb = createTestDb(trackedDbs)
+
+			assert.strictEqual(yield* failedStep(world, testDb), "billing")
+			assert.isUndefined(yield* storedReview(testDb))
+			assert.strictEqual(world.posts.length, 0)
+		}),
+	)
+
+	it.effect("waits rather than guesses when the org's region is unknown", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.home = "unknown"
+			assert.strictEqual(yield* failedStep(world, createTestDb(trackedDbs)), "region")
+			assert.strictEqual(world.posts.length, 0)
+		}),
+	)
+
+	it.effect("leaves an org on another region's instance to that instance", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.home = "elsewhere"
+			assert.strictEqual(yield* review(world, createTestDb(trackedDbs)), "other_region")
+			assert.strictEqual(world.posts.length, 0)
+		}),
+	)
+
+	it.effect("settles a deleted org's cancellation instead of waiting for a region", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.home = "deleted"
+			assert.strictEqual(yield* review(world, createTestDb(trackedDbs)), "org_deleted")
+			assert.strictEqual(world.posts.length, 0)
+		}),
+	)
+
+	it.effect("does nothing on a deployment with no channel configured", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.channel = null
+			const testDb = createTestDb(trackedDbs)
+			assert.strictEqual(yield* review(world, testDb), "not_configured")
+			assert.isUndefined(yield* storedReview(testDb))
+		}),
+	)
+})

@@ -20,6 +20,7 @@
  */
 import * as m from "../paraglide/messages.js"
 import type { Feature } from "./page-registry"
+import { Array as Arr } from "effect"
 
 export const features: Feature[] = [
 	{
@@ -58,6 +59,32 @@ export const features: Feature[] = [
 			wide: true,
 		},
 		extraSections: [],
+		gallery: [
+			{
+				id: "gallery-traces-list",
+				route: "/traces",
+				title: "One row per trace",
+				alt: "The trace list with one row per request, its services, span count, duration and status",
+			},
+			{
+				id: "surface-traces-peek",
+				route: "/traces",
+				title: "Peek without leaving the list",
+				alt: "A failed checkout opened in the peek sheet beside the trace list",
+			},
+			{
+				id: "gallery-trace-waterfall",
+				route: "/traces/:id",
+				title: "Where the 5 seconds went",
+				alt: "A failed checkout's waterfall, with the payment insert waiting five seconds for a pool connection",
+			},
+			{
+				id: "gallery-trace-flow",
+				route: "/traces/:id",
+				title: "Services the request touched",
+				alt: "The same trace reduced to the services it passed through",
+			},
+		],
 		capTitle: m.feat_tracing_cap_title,
 		capabilities: [
 			{ op: "/traces", title: m.feat_tracing_cap_1_title, body: m.feat_tracing_cap_1_body },
@@ -106,6 +133,7 @@ export const features: Feature[] = [
 			wide: true,
 		},
 		extraSections: [],
+		gallery: [],
 		capTitle: m.feat_sessions_cap_title,
 		capabilities: [
 			{ op: "event stream", title: m.feat_sessions_cap_1_title, body: m.feat_sessions_cap_1_body },
@@ -114,7 +142,41 @@ export const features: Feature[] = [
 			{ op: "http.status_code", title: m.feat_sessions_cap_4_title, body: m.feat_sessions_cap_4_body },
 			{ op: "mask rules", title: m.feat_sessions_cap_5_title, body: m.feat_sessions_cap_5_body },
 		],
-		related: ["distributed-tracing", "error-tracking", "log-management"],
+		related: ["distributed-tracing", "error-tracking", "product-events"],
+		relatedUseCases: ["ecommerce-observability"],
+		locales: ["en", "ja", "ko"],
+	},
+
+	{
+		slug: "product-events",
+		// No engraving yet: the prompt is in public/art/features/product-events-prompt.md.
+		navLabel: m.nav_product_events,
+		navDesc: m.nav_desc_product_events,
+		seoTitle: m.feat_pe_seo_title,
+		seoDescription: m.feat_pe_seo_desc,
+		heroTitle: m.feat_pe_hero_title,
+		heroLede: m.feat_pe_hero_lede,
+		// No panel: there is no funnel capture in the library yet. The live funnel
+		// carries the surface, and the sources section shows how events get in.
+		panel: null,
+		artifact: {
+			id: "funnel",
+			title: m.feat_pe_artifact_title,
+			lede: m.feat_pe_artifact_lede,
+			wide: true,
+		},
+		extraSections: ["product-events-sources"],
+		gallery: [],
+		capTitle: m.feat_pe_cap_title,
+		capabilities: [
+			{ op: "$pageview", title: m.feat_pe_cap_1_title, body: m.feat_pe_cap_1_body },
+			{ op: "maple.product_event.name", title: m.feat_pe_cap_2_title, body: m.feat_pe_cap_2_body },
+			{ op: "identify()", title: m.feat_pe_cap_3_title, body: m.feat_pe_cap_3_body },
+			{ op: "drop-off · paths", title: m.feat_pe_cap_4_title, body: m.feat_pe_cap_4_body },
+			{ op: "source: product_events", title: m.feat_pe_cap_5_title, body: m.feat_pe_cap_5_body },
+			{ op: "query_funnel()", title: m.feat_pe_cap_6_title, body: m.feat_pe_cap_6_body },
+		],
+		related: ["browser-sessions", "metrics-dashboards", "distributed-tracing"],
 		relatedUseCases: ["ecommerce-observability"],
 		locales: ["en", "ja", "ko"],
 	},
@@ -154,6 +216,20 @@ export const features: Feature[] = [
 			lede: m.feat_logs_artifact_lede,
 		},
 		extraSections: [],
+		gallery: [
+			{
+				id: "gallery-logs-errors",
+				route: "/logs",
+				title: "ERROR across every service",
+				alt: "Log search filtered to ERROR, with the volume chart and the lines that explain each failure",
+			},
+			{
+				id: "gallery-logs-service",
+				route: "/logs",
+				title: "Warnings before the failures",
+				alt: "WARN lines: payment-svc reporting 20 of 20 pool connections in use, and slow requests upstream",
+			},
+		],
 		capTitle: m.feat_logs_cap_title,
 		capabilities: [
 			{ op: "/logs?q=", title: m.feat_logs_cap_1_title, body: m.feat_logs_cap_1_body },
@@ -201,6 +277,32 @@ export const features: Feature[] = [
 			lede: m.feat_metrics_artifact_lede,
 		},
 		extraSections: [],
+		gallery: [
+			{
+				id: "gallery-metrics-list",
+				route: "/metrics",
+				title: "Every metric, typed",
+				alt: "The metric explorer listing each metric with its type, service and last seen time",
+			},
+			{
+				id: "gallery-metric-latency",
+				route: "/metrics/:name",
+				title: "Request duration",
+				alt: "http.server.request.duration charted over six hours, with the jump after the bad deploy",
+			},
+			{
+				id: "gallery-metric-pool",
+				route: "/metrics/:name",
+				title: "Requests waiting on the pool",
+				alt: "db.client.connection.pending_requests for payment-svc: zero until the deploy, then 30 to 40 requests waiting for a connection",
+			},
+			{
+				id: "gallery-dashboard-templates",
+				route: "/dashboards/templates",
+				title: "Templates your data supports",
+				alt: "Dashboard templates sorted by which ones the incoming telemetry can fill",
+			},
+		],
 		capTitle: m.feat_metrics_cap_title,
 		capabilities: [
 			{ op: "time series", title: m.feat_metrics_cap_1_title, body: m.feat_metrics_cap_1_body },
@@ -252,6 +354,32 @@ export const features: Feature[] = [
 			wide: true,
 		},
 		extraSections: [],
+		gallery: [
+			{
+				id: "gallery-service-operations",
+				route: "/services/:name",
+				title: "Operations, slowest first",
+				alt: "payment-svc operations: the payments queries and POST /charges at 10 to 12% errors and a 5 second p95",
+			},
+			{
+				id: "surface-service-map",
+				route: "/service-map",
+				title: "Built from real calls",
+				alt: "The service map grouped by namespace, with databases, caches and the failing edge in red",
+			},
+			{
+				id: "surface-service-detail",
+				route: "/services/:name",
+				title: "Deploy on the chart",
+				alt: "payment-svc latency, Apdex and error rate with the 3.5.0 deploy marked",
+			},
+			{
+				id: "gallery-service-dependencies",
+				route: "/services/:name",
+				title: "What it calls",
+				alt: "payment-svc dependencies: Postgres at 7.8% errors and a 5 second p95, and api.stripe.com",
+			},
+		],
 		capTitle: m.feat_catalog_cap_title,
 		capabilities: [
 			{ op: "edges", title: m.feat_catalog_cap_1_title, body: m.feat_catalog_cap_1_body },
@@ -260,7 +388,7 @@ export const features: Feature[] = [
 			{ op: "service.name", title: m.feat_catalog_cap_4_title, body: m.feat_catalog_cap_4_body },
 			{ op: "service.version", title: m.feat_catalog_cap_5_title, body: m.feat_catalog_cap_5_body },
 		],
-		related: ["distributed-tracing", "kubernetes-monitoring", "metrics-dashboards"],
+		related: ["anomalies", "kubernetes-monitoring", "uptime-monitoring"],
 		relatedUseCases: ["microservices-debugging"],
 		locales: ["en", "ja", "ko"],
 	},
@@ -279,8 +407,8 @@ export const features: Feature[] = [
 			constant: "ConnectionTimeout · payment-svc",
 			plate: {
 				src: "/screenshots/surface-errors.webp",
-				width: 2560,
-				height: 1320,
+				width: 2880,
+				height: 1620,
 				alt: "Errors grouped by type with counts, affected services and last-seen times",
 			},
 			facts: [
@@ -298,6 +426,20 @@ export const features: Feature[] = [
 		// live artifact would be animation for its own sake.
 		artifact: null,
 		extraSections: [],
+		gallery: [
+			{
+				id: "gallery-issue-detail",
+				route: "/errors/issues/:id",
+				title: "One issue, every occurrence",
+				alt: "The ConnectionTimeout issue open with its stack trace, trend and affected traces",
+			},
+			{
+				id: "surface-traces-peek",
+				route: "/traces",
+				title: "The trace behind it",
+				alt: "A failing checkout opened from the issue, showing the span that threw",
+			},
+		],
 		capTitle: m.feat_errors_cap_title,
 		capabilities: [
 			{ op: "fingerprint", title: m.feat_errors_cap_1_title, body: m.feat_errors_cap_1_body },
@@ -306,7 +448,7 @@ export const features: Feature[] = [
 			{ op: "claim", title: m.feat_errors_cap_4_title, body: m.feat_errors_cap_4_body },
 			{ op: "set severity", title: m.feat_errors_cap_5_title, body: m.feat_errors_cap_5_body },
 		],
-		related: ["distributed-tracing", "alerts", "ai-mcp-integration"],
+		related: ["github", "anomalies", "ai-mcp-integration"],
 		relatedUseCases: ["ecommerce-observability"],
 		locales: ["en", "ja", "ko"],
 	},
@@ -347,6 +489,20 @@ export const features: Feature[] = [
 			wide: true,
 		},
 		extraSections: [],
+		gallery: [
+			{
+				id: "gallery-alert-create",
+				route: "/alerts/create",
+				title: "Preview before you save",
+				alt: "A high error rate rule on payment-svc, previewed against the last day of data",
+			},
+			{
+				id: "surface-service-detail",
+				route: "/services/:name",
+				title: "What it would have caught",
+				alt: "payment-svc error rate climbing after the 3.5.0 deploy",
+			},
+		],
 		capTitle: m.feat_alerts_cap_title,
 		capabilities: [
 			{ op: "query builder", title: m.feat_alerts_cap_1_title, body: m.feat_alerts_cap_1_body },
@@ -355,7 +511,77 @@ export const features: Feature[] = [
 			{ op: "check log", title: m.feat_alerts_cap_4_title, body: m.feat_alerts_cap_4_body },
 			{ op: "renotify 30m", title: m.feat_alerts_cap_5_title, body: m.feat_alerts_cap_5_body },
 		],
-		related: ["error-tracking", "metrics-dashboards", "distributed-tracing"],
+		related: ["error-tracking", "uptime-monitoring", "product-events"],
+		relatedUseCases: ["api-performance"],
+		locales: ["en", "ja", "ko"],
+	},
+
+	{
+		slug: "uptime-monitoring",
+		navLabel: m.nav_uptime,
+		navDesc: m.nav_desc_uptime,
+		seoTitle: m.feat_uptime_seo_title,
+		seoDescription: m.feat_uptime_seo_desc,
+		heroTitle: m.feat_uptime_hero_title,
+		heroLede: m.feat_uptime_hero_lede,
+		// No panel: there is no uptime capture yet. The live monitor list carries the
+		// surface, and the check-as-trace section carries the argument.
+		panel: null,
+		artifact: {
+			id: "uptime",
+			title: m.feat_uptime_artifact_title,
+			lede: m.feat_uptime_artifact_lede,
+			wide: true,
+		},
+		extraSections: ["uptime-check-trace"],
+		gallery: [],
+		capTitle: m.feat_uptime_cap_title,
+		capabilities: [
+			{ op: "http", title: m.feat_uptime_cap_1_title, body: m.feat_uptime_cap_1_body },
+			{ op: "tcp", title: m.feat_uptime_cap_2_title, body: m.feat_uptime_cap_2_body },
+			{ op: "dns", title: m.feat_uptime_cap_3_title, body: m.feat_uptime_cap_3_body },
+			{ op: "/hb/<token>", title: m.feat_uptime_cap_4_title, body: m.feat_uptime_cap_4_body },
+			{ op: "failures_to_down", title: m.feat_uptime_cap_5_title, body: m.feat_uptime_cap_5_body },
+			{
+				op: "create_uptime_monitor()",
+				title: m.feat_uptime_cap_6_title,
+				body: m.feat_uptime_cap_6_body,
+			},
+		],
+		related: ["alerts", "distributed-tracing", "service-catalog"],
+		relatedUseCases: ["api-performance"],
+		locales: ["en", "ja", "ko"],
+	},
+
+	{
+		slug: "anomalies",
+		navLabel: m.nav_anomalies,
+		navDesc: m.nav_desc_anomalies,
+		seoTitle: m.feat_anomalies_seo_title,
+		seoDescription: m.feat_anomalies_seo_desc,
+		heroTitle: m.feat_anomalies_hero_title,
+		heroLede: m.feat_anomalies_hero_lede,
+		// No panel: there is no anomalies capture yet. The live artifact is the detail page's
+		// chart and rail, with the detector's real thresholds.
+		panel: null,
+		artifact: {
+			id: "anomaly",
+			title: m.feat_anomalies_artifact_title,
+			lede: m.feat_anomalies_artifact_lede,
+			wide: true,
+		},
+		extraSections: [],
+		gallery: [],
+		capTitle: m.feat_anomalies_cap_title,
+		capabilities: [
+			{ op: "error_rate", title: m.feat_anomalies_cap_1_title, body: m.feat_anomalies_cap_1_body },
+			{ op: "latency_p95", title: m.feat_anomalies_cap_2_title, body: m.feat_anomalies_cap_2_body },
+			{ op: "throughput", title: m.feat_anomalies_cap_3_title, body: m.feat_anomalies_cap_3_body },
+			{ op: "error_spike", title: m.feat_anomalies_cap_4_title, body: m.feat_anomalies_cap_4_body },
+			{ op: "log_volume", title: m.feat_anomalies_cap_5_title, body: m.feat_anomalies_cap_5_body },
+			{ op: "investigate", title: m.feat_anomalies_cap_6_title, body: m.feat_anomalies_cap_6_body },
+		],
+		related: ["alerts", "error-tracking", "service-catalog"],
 		relatedUseCases: ["api-performance"],
 		locales: ["en", "ja", "ko"],
 	},
@@ -396,6 +622,7 @@ export const features: Feature[] = [
 			wide: true,
 		},
 		extraSections: [],
+		gallery: [],
 		capTitle: m.feat_mcp_cap_title,
 		capabilities: [
 			{ op: "diagnose_service()", title: m.feat_mcp_cap_1_title, body: m.feat_mcp_cap_1_body },
@@ -404,7 +631,7 @@ export const features: Feature[] = [
 			{ op: "claim_error_issue()", title: m.feat_mcp_cap_4_title, body: m.feat_mcp_cap_4_body },
 			{ op: "org scope", title: m.feat_mcp_cap_5_title, body: m.feat_mcp_cap_5_body },
 		],
-		related: ["error-tracking", "distributed-tracing", "service-catalog"],
+		related: ["error-tracking", "github", "service-catalog"],
 		relatedUseCases: ["api-performance"],
 		locales: ["en", "ja", "ko"],
 	},
@@ -429,6 +656,7 @@ export const features: Feature[] = [
 			wide: true,
 		},
 		extraSections: ["k8s-console", "k8s-views", "k8s-correlation", "k8s-install"],
+		gallery: [],
 		capTitle: m.feat_k8s_cap_title,
 		capabilities: [
 			{ op: "helm install", title: m.page_k8s_helm, body: m.page_k8s_helm_desc },
@@ -442,8 +670,61 @@ export const features: Feature[] = [
 		relatedUseCases: ["microservices-debugging"],
 		locales: ["en", "ja", "ko"],
 	},
+
+	{
+		slug: "github",
+		navLabel: m.nav_github,
+		navDesc: m.nav_desc_github,
+		seoTitle: m.feat_github_seo_title,
+		seoDescription: m.feat_github_seo_desc,
+		heroTitle: m.feat_github_hero_title,
+		heroLede: m.feat_github_hero_lede,
+		panel: {
+			route: "/code-review",
+			constant: "acme · 41 PRs reviewed · 30d",
+			plate: {
+				src: "/screenshots/surface-code-review.webp",
+				width: 2880,
+				height: 1620,
+				alt: "Code Review analytics: pull requests reviewed and issues caught per day, with the repositories that had the most issues",
+			},
+			facts: [
+				{ key: "writes", value: "summary comment · inline review · check run" },
+				{ key: "lenses", value: "correctness · security · performance · observability · tests" },
+				{ key: "reads", value: "traces · open errors · alerts · dashboards" },
+				{ key: "blocks", value: "telemetry an alert or dashboard reads" },
+				{ key: "after", value: "production, an hour after the deploy" },
+				{ key: "rules", value: "org defaults · repo overrides" },
+			],
+			title: m.feat_github_panel_title,
+			lede: m.feat_github_panel_lede,
+		},
+		artifact: {
+			id: "pr-review",
+			title: m.feat_github_artifact_title,
+			lede: m.feat_github_artifact_lede,
+		},
+		// The CI captures live in their section rather than the gallery: the tab, the run's
+		// trace and the PR sheet read as one story about a red build.
+		extraSections: ["github-ci", "github-after-merge"],
+		gallery: [],
+		capTitle: m.feat_github_cap_title,
+		capabilities: [
+			{ op: "github.app", title: m.feat_github_cap_1_title, body: m.feat_github_cap_1_body },
+			{ op: "pull_request", title: m.feat_github_cap_2_title, body: m.feat_github_cap_2_body },
+			{ op: "before_merge", title: m.feat_github_cap_3_title, body: m.feat_github_cap_3_body },
+			{ op: "telemetry.contract", title: m.feat_github_cap_4_title, body: m.feat_github_cap_4_body },
+			{ op: "workflow_run", title: m.feat_github_cap_5_title, body: m.feat_github_cap_5_body },
+			{ op: "ci_runs()", title: m.feat_github_cap_6_title, body: m.feat_github_cap_6_body },
+			{ op: "read_source_file()", title: m.feat_github_cap_7_title, body: m.feat_github_cap_7_body },
+			{ op: "review.rules", title: m.feat_github_cap_8_title, body: m.feat_github_cap_8_body },
+		],
+		related: ["error-tracking", "ai-mcp-integration", "distributed-tracing"],
+		relatedUseCases: ["api-performance"],
+		locales: ["en", "ja", "ko"],
+	},
 ]
 
-export const featureSlugs = features.map((feature) => feature.slug)
+export const featureSlugs = Arr.map(features, (feature) => feature.slug)
 
 export const featureBySlug = (slug: string) => features.find((feature) => feature.slug === slug)

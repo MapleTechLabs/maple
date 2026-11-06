@@ -20,8 +20,20 @@
  * than read directly.
  */
 import { ChatConversationKey } from "@maple/primitives"
-import { Array as Arr, Duration, Effect, Option, Order, Redacted, Schema } from "effect"
-import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/unstable/http"
+import {
+	Array as Arr,
+	Clock,
+	Duration,
+	Effect,
+	Option,
+	Order,
+	Redacted,
+	Ref,
+	Schema,
+	Semaphore,
+	String as Str,
+} from "effect"
+import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import type { ConnectorConfig, InboundAction, InboundMessage } from "../../ingress"
 import {
 	ChatOutboundError,
@@ -49,7 +61,7 @@ import { renderDiscordMessage } from "./render"
  * half's, so one secret under one name serves both. A host that has not resolved it posts with an
  * empty token, and Discord's 401 reports that as the auth failure it is.
  */
-const botToken = (config: ConnectorConfig): Redacted.Redacted<string> =>
+const botToken = (config: ConnectorConfig): Redacted.Redacted =>
 	Redacted.make(config.get(BOT_TOKEN_CONFIG) ?? "")
 
 /**
@@ -63,6 +75,19 @@ const MAX_MESSAGE_CHARS = 1800
  * channel. Editing a streaming turn twice a second leaves room for that and still reads as live.
  */
 const MIN_EDIT_INTERVAL = Duration.millis(500)
+
+/** The bucket key every route shares while a global 429 is in force. */
+const GLOBAL_BUCKET = "global"
+
+/** `channels/1`, `guilds/2`, `webhooks/3`: Discord buckets each route per its major parameter. */
+const majorParameter = (url: string): string =>
+	Option.fromNullishOr(/\/(channels|guilds|webhooks)\/([^/?]+)/.exec(url)).pipe(
+		Option.map((match) => Arr.join(match.slice(1, 3), "/")),
+		Option.getOrElse(() => "none"),
+	)
+
+const isGlobalLimit = (response: HttpClientResponse.HttpClientResponse): boolean =>
+	response.headers["x-ratelimit-global"] === "true" || response.headers["x-ratelimit-scope"] === "global"
 
 /** How many times a 429 is waited out before the turn gives up on the message. */
 const MAX_RATE_LIMIT_ATTEMPTS = 3
@@ -171,7 +196,7 @@ const DEFAULT_THREAD_NAME = "Maple"
  * turn the thread into a 400 and the answer into no answer at all.
  */
 const threadName = (title: string): string => {
-	const trimmed = title.trim().slice(0, MAX_THREAD_NAME_CHARS)
+	const trimmed = Str.slice(0, MAX_THREAD_NAME_CHARS)(Str.trim(title))
 	return trimmed.length === 0 ? DEFAULT_THREAD_NAME : trimmed
 }
 
@@ -205,11 +230,15 @@ const decodeHeaderRetryAfter = Schema.decodeUnknownOption(
 	),
 )
 
-/** Internal to the retry loop: a 429 and how long it asked for. Never leaves this module. */
+/** Internal to the retry loop: a 429, how long it asked for, and whether it was global. */
 class DiscordRateLimited extends Schema.TaggedError<DiscordRateLimited>()(
 	"@maple/chat-platform/connectors/discord/RateLimited",
-	{ wait: Schema.Duration },
-) {}
+	{ wait: Schema.Duration, global: Schema.Boolean },
+) {
+	override get message(): string {
+		return `Discord rate limited; retry after ${Duration.format(this.wait)}`
+	}
+}
 
 export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCredentials> = {
 	connectorId: DISCORD_CONNECTOR_ID,
@@ -218,7 +247,8 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 	transport: Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
 		// Per call, not here: acquiring the transport must not cost the host its credential read.
-		const token = Effect.map(yield* ConnectorCredentials, botToken)
+		const credentials = yield* ConnectorCredentials
+		const token = Effect.map(credentials, botToken)
 
 		/**
 		 * One HTTP attempt, as one client span.
@@ -228,7 +258,7 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 		 * nesting three deep under the first one.
 		 */
 		const attempt = Effect.fn("Discord.request", { kind: "client" })(function* (
-			bearer: Redacted.Redacted<string>,
+			bearer: Redacted.Redacted,
 			operation: ChatOutboundOperation,
 			route: string,
 			request: HttpClientRequest.HttpClientRequest,
@@ -254,7 +284,10 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 				)
 			yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
 			if (response.status === 429)
-				return yield* new DiscordRateLimited({ wait: yield* retryAfter(response) })
+				return yield* new DiscordRateLimited({
+					wait: yield* retryAfter(response),
+					global: isGlobalLimit(response),
+				})
 			if (response.status >= 300) {
 				const reason = reasonForStatus(response.status)
 				return yield* failed(operation, `Discord answered ${response.status}`, {
@@ -265,27 +298,69 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 			return response
 		})
 
+		// When each bucket (route + major parameter, or global) next has budget, in epoch ms.
+		const buckets = yield* Ref.make(new Map<string, number>())
+		// One request in flight per channel, so a burst queues here instead of racing into 429s.
+		const lanes = yield* Ref.make(new Map<string, Semaphore.Semaphore>())
+
+		const hold = (bucket: string, wait: Duration.Duration) =>
+			Effect.flatMap(Clock.currentTimeMillis, (now) =>
+				Ref.update(buckets, (map) => new Map(map).set(bucket, now + Duration.toMillis(wait))),
+			)
+
+		const awaitBudget = (bucket: string) =>
+			Effect.gen(function* () {
+				const now = yield* Clock.currentTimeMillis
+				const map = yield* Ref.get(buckets)
+				const resumeAt = Math.max(map.get(bucket) ?? 0, map.get(GLOBAL_BUCKET) ?? 0)
+				if (resumeAt > now)
+					yield* Effect.sleep(Duration.min(Duration.millis(resumeAt - now), MAX_RETRY_AFTER))
+			})
+
+		// A success that spent the bucket's last request: the next one waits out the reset.
+		const noteRemaining = (bucket: string, response: HttpClientResponse.HttpClientResponse) => {
+			const resetAfter = decodeHeaderRetryAfter(response.headers["x-ratelimit-reset-after"])
+			return response.headers["x-ratelimit-remaining"] === "0" && Option.isSome(resetAfter)
+				? hold(bucket, Duration.seconds(resetAfter.value))
+				: Effect.void
+		}
+
+		const laneFor = (key: string) =>
+			Effect.flatMap(Semaphore.make(1), (fresh) =>
+				Ref.modify(lanes, (map) => {
+					const existing = map.get(key)
+					return existing === undefined ? [fresh, new Map(map).set(key, fresh)] : [existing, map]
+				}),
+			)
+
 		const send = (
 			operation: ChatOutboundOperation,
 			route: string,
 			request: HttpClientRequest.HttpClientRequest,
 		): Effect.Effect<HttpClientResponse.HttpClientResponse, ChatOutboundError> =>
 			Effect.flatMap(token, (bearer) => {
+				const major = majorParameter(request.url)
+				const bucket = `${route} ${major}`
 				const tryOnce = (
 					count: number,
 				): Effect.Effect<HttpClientResponse.HttpClientResponse, ChatOutboundError> =>
-					attempt(bearer, operation, route, request).pipe(
+					awaitBudget(bucket).pipe(
+						Effect.andThen(attempt(bearer, operation, route, request)),
+						Effect.tap((response) => noteRemaining(bucket, response)),
 						Effect.catchTag("@maple/chat-platform/connectors/discord/RateLimited", (limited) =>
-							count >= MAX_RATE_LIMIT_ATTEMPTS
-								? Effect.fail(
-										failed(operation, "Discord kept rate limiting this message", {
-											status: 429,
-										}),
-									)
-								: Effect.sleep(limited.wait).pipe(Effect.andThen(tryOnce(count + 1))),
+							Effect.andThen(
+								hold(limited.global ? GLOBAL_BUCKET : bucket, limited.wait),
+								count >= MAX_RATE_LIMIT_ATTEMPTS
+									? Effect.fail(
+											failed(operation, "Discord kept rate limiting this message", {
+												status: 429,
+											}),
+										)
+									: tryOnce(count + 1),
+							),
 						),
 					)
-				return tryOnce(1)
+				return Effect.flatMap(laneFor(major), (lane) => lane.withPermit(tryOnce(1)))
 			})
 
 		const body = (blocks: ReadonlyArray<ChatBlock>) =>
@@ -363,7 +438,8 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 				blocks: ReadonlyArray<ChatBlock>,
 			) {
 				// `<application id>/<interaction token>`, as the gateway half wrote it.
-				const [applicationId, interactionToken] = action.replyHandle?.split("/") ?? []
+				const [applicationId, interactionToken] =
+					action.replyHandle === undefined ? [] : Str.split("/")(action.replyHandle)
 				if (applicationId === undefined || interactionToken === undefined) {
 					return yield* failed("whisper", "This click carried no interaction to answer privately")
 				}
@@ -457,14 +533,17 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 						failed("destinations", "Discord did not answer with a list of channels", { cause }),
 					),
 				)
-				return Arr.sort(
-					channels.filter((channel) => POSTABLE_CHANNEL_TYPES.has(channel.type)),
-					byPosition,
-				).map((channel): ChatDestination => ({
-					id: channel.id,
-					name: channel.name ?? channel.id,
-					private: false,
-				}))
+				return Arr.map(
+					Arr.sort(
+						Arr.filter(channels, (channel) => POSTABLE_CHANNEL_TYPES.has(channel.type)),
+						byPosition,
+					),
+					(channel): ChatDestination => ({
+						id: channel.id,
+						name: channel.name ?? channel.id,
+						private: false,
+					}),
+				)
 			}),
 
 			/**
@@ -571,6 +650,8 @@ const retryAfter = (response: HttpClientResponse.HttpClientResponse) =>
 	)
 
 const headerRetryAfter = (response: HttpClientResponse.HttpClientResponse): Duration.Duration => {
-	const seconds = decodeHeaderRetryAfter(response.headers["retry-after"])
+	const seconds = Option.orElse(decodeHeaderRetryAfter(response.headers["x-ratelimit-reset-after"]), () =>
+		decodeHeaderRetryAfter(response.headers["retry-after"]),
+	)
 	return Option.isSome(seconds) ? Duration.seconds(seconds.value) : DEFAULT_RETRY_AFTER
 }

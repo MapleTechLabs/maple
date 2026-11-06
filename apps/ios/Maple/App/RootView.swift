@@ -24,6 +24,14 @@ struct RootView: View {
 
 			case .signedOut:
 				AuthView()
+				#if DEBUG
+					// `MAPLE_DEBUG_SIGNIN_TICKET`: a Clerk sign-in token minted by
+					// `scripts/measure-latency.sh`, so the harness can sign in unattended.
+					.task {
+						guard let ticket = ProcessInfo.processInfo.environment["MAPLE_DEBUG_SIGNIN_TICKET"] else { return }
+						_ = try? await clerk.auth.signInWithTicket(ticket)
+					}
+				#endif
 
 			case .needsOrganization:
 				OrganizationPickerView(mode: .gate)
@@ -51,6 +59,9 @@ struct RootView: View {
 		// A widget tap arrives here whatever the phase is; the tabs may not
 		// exist yet, and `AppNavigation` holds the destination until they do.
 		.onOpenURL { url in
+			#if DEBUG
+				if DebugRoute.open(url, navigation: navigation, session: session) { return }
+			#endif
 			Task { await opener.open(url, source: .widget) }
 		}
 		.onAppear {
@@ -79,9 +90,8 @@ struct RootView: View {
 	}
 }
 
-/// Three tabs, in the order the questions get asked: is anything wrong
-/// (Home), which service (Services), why (Alerts). Everything the web app does
-/// beyond those stays on the web.
+/// Four tabs mirroring the web sidebar: Overview, Services (Monitor), Triage,
+/// Explore (Analyze), plus search. Editing and settings stay on the web.
 struct MainTabView: View {
 	@Environment(AppNavigation.self) private var navigation
 	@Environment(SessionController.self) private var session
@@ -95,15 +105,27 @@ struct MainTabView: View {
 	var body: some View {
 		@Bindable var navigation = navigation
 		TabView(selection: $navigation.tab) {
-			Tab("Home", systemImage: "waveform.path.ecg", value: AppTab.home) {
+			Tab("Overview", image: PixelIcon.house.assetName, value: AppTab.home) {
 				HomeView()
 			}
-			Tab("Services", systemImage: "square.stack.3d.up", value: AppTab.services) {
+			Tab("Services", image: PixelIcon.layers.assetName, value: AppTab.services) {
 				ServicesListView()
 			}
-			Tab("Alerts", systemImage: "bell", value: AppTab.alerts) {
+			Tab("Triage", image: PixelIcon.bell.assetName, value: AppTab.alerts) {
 				AlertsHubView()
 			}
+			Tab("Explore", image: PixelIcon.chartLine.assetName, value: AppTab.explore) {
+				ExploreView()
+			}
+			// iOS 26 draws a search-role tab as its own circle beside the bar.
+			Tab(value: AppTab.search, role: .search) {
+				SearchView()
+			}
+		}
+		// Foreground only: a background app has no screen to load for.
+		.task(id: "\(scenePhase == .active)|\(session.currentOrganizationId ?? "")") {
+			guard scenePhase == .active else { return }
+			await session.keepTokenWarm()
 		}
 		// One PUT per change in (token, org, permission, preferences): the key
 		// folds all four, so a token arriving after launch or an org switch

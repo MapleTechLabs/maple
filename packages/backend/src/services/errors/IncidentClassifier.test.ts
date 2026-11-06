@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { IncidentTriageRequest, IncidentTriageVerdict } from "@maple/domain/http"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { envPorts } from "@maple/backend/platform/env-ports"
 import { ConfigProvider, Effect, Layer } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { IncidentClassifier } from "./IncidentClassifier"
@@ -47,7 +47,7 @@ const verdict = {
 	severityConfidence: 0.7,
 	userImpact: 0.1,
 	matchedPrior: null,
-	model: "~typesafe/jev-latest",
+	model: "@cf/cloudflare/clef",
 }
 
 /** A service binding: the calls it saw, and what it answers. */
@@ -68,7 +68,7 @@ const fakeAiWorker = (answer: () => Response) => {
 
 const layerFor = (env: Record<string, unknown>, withToken = true) =>
 	IncidentClassifier.layer.pipe(
-		Layer.provide(Layer.succeed(WorkerEnvironment, env)),
+		Layer.provide(envPorts(env)),
 		Layer.provide(Env.layer.pipe(Layer.provide(config(withToken)))),
 	)
 

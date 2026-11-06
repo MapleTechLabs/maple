@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { cloudflareZoneCacheTimeseriesSQL } from "./cloudflare-infra"
 import { cloudflareZoneBreakdownTotalsSQL } from "./cloudflare-infra-breakdowns"
 import { cloudflareZoneFirewallTopSQL } from "./cloudflare-infra-extended"
 import { CF_METRIC, cloudflareIgnoredFilters, cloudflareIgnoredFiltersFor } from "./cloudflare-infra-filters"
+import { OrgId } from "@maple/domain"
 
 const zoneParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	serviceName: "cloudflare/example.com",
 	startTime: "2026-07-02 00:00:00.000",
 	endTime: "2026-07-03 00:00:00.000",
@@ -36,9 +37,9 @@ describe("cloudflareFilterConditions", () => {
 	it("routes the host filter through the same transitional coalesce as the grouping key", () => {
 		// A host read off a chart built on pre-rename rows must still filter to those rows.
 		const { sql } = compileUnsafe(cloudflareZoneFirewallTopSQL({ hosts: ["a.example.com"] }), zoneParams)
-		expect(sql).toContain("server.address']")
-		expect(sql).toContain("http.host']")
-		expect(sql).toContain("IN ('a.example.com')")
+		expect(sql).toContain(
+			"if(metrics_sum.Attributes['server.address'] != '', metrics_sum.Attributes['server.address'], metrics_sum.Attributes['http.host']) IN ('a.example.com')",
+		)
 	})
 
 	it("compiles pathContains to a case-insensitive substring match", () => {

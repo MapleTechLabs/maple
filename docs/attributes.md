@@ -87,7 +87,7 @@ Filtering on these scans a small column instead of doing a per-row map lookup. T
 
 ### Status badge tiers
 
-`http.status_code` / `http.response.status_code` renders as a colored badge in the trace list (`HttpStatusBadge` in [traces-table.tsx](../apps/web/src/components/traces/traces-table.tsx)):
+`http.status_code` / `http.response.status_code` renders as a colored badge in the trace list (`traceStatusBadge` in [trace-badges.ts](../packages/views/src/ui/trace-badges.ts)):
 
 | Status range | Tone                      |
 | ------------ | ------------------------- |
@@ -139,7 +139,7 @@ SELECT * FROM users  (span.kind=Client, db.system.name=postgresql, db.namespace=
 
 ### 3. External targets
 
-`Client` and `Producer` spans without `db.system.name` land in `service_external_edges_hourly` and show on the service's Dependencies tab. The target is the messaging destination (or `messaging.system`), then `rpc.service` (or `rpc.system`), then `server.address` → `http.host` → `url.authority`.
+`Client` and `Producer` spans without `db.system.name` or `db.system` land in `service_external_edges_hourly` and show on the service's Dependencies tab. The target is the messaging destination (or `messaging.system`), then `rpc.service` (or `rpc.system`), then `server.address` → `http.host` → `url.authority`.
 
 Keep `service.name` spelling consistent across deployments of the same service. `users`, `Users` and `users-svc` become three separate nodes.
 
@@ -171,7 +171,7 @@ Source: `getCacheInfo` in [cache.ts](../packages/ui/src/lib/cache.ts).
 
 ## Errors & exceptions
 
-Drives the error banner in the log detail view ([log-error-banner.tsx](../apps/web/src/components/logs/log-error-banner.tsx)) and the highest-priority log chip.
+Drives the error banner in the log detail view ([view-panels.ts](../packages/views/src/logs/log-sheet/view-panels.ts)) and the highest-priority log chip.
 
 | Attribute           | What Maple does with it                                                                                         |
 | ------------------- | --------------------------------------------------------------------------------------------------------------- |
@@ -206,6 +206,12 @@ Promotes user and customer context into the log chips so it's visible at a glanc
 
 Source: [log-attributes.ts](../packages/ui/src/lib/log-attributes.ts).
 
+On MCP server spans (`mcp.method.name` set), `user.id` (else `enduser.id`) is the session's user on
+`/mcp-servers/:service/sessions`: a column, a search, user counts, and, on a stateless server with no
+`mcp.session.id`, the key its sessions are built from (one user and client, split after 30 idle
+minutes). `user.name`, else `user.email`, is how the user is shown. Source:
+[mcp.ts](../packages/query-engine/src/ch/queries/mcp.ts).
+
 ## Log severity
 
 For log records (not spans). Drives the per-row color in the log list and the trace detail timeline.
@@ -219,7 +225,7 @@ For log records (not spans). Drives the per-row color in the log list and the tr
 | `ERROR`                  | severity-error |
 | `FATAL`                  | severity-fatal |
 
-Matching is case-insensitive. Source: `SEVERITY_COLORS` in [severity.ts](../packages/ui/src/lib/severity.ts). `ERROR` and `FATAL` also render the error banner at the top of the log detail view ([log-detail-sheet.tsx](../apps/web/src/components/logs/log-detail-sheet.tsx)).
+Matching is case-insensitive. Source: `SEVERITY_COLORS` in [severity.ts](../packages/ui/src/lib/severity.ts). `ERROR` and `FATAL` also render the error banner at the top of the log detail view ([log-sheet/view.ts](../packages/views/src/logs/log-sheet/view.ts)).
 
 ## Kubernetes & infrastructure
 

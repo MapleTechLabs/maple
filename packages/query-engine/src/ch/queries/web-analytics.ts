@@ -8,10 +8,11 @@
 // use `uniq[If](SessionId)`. Page views come from append-only navigation events.
 // WHERE clauses use only columns written identically to both session versions.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param, from, inSubquery, unionAll, compileFnCall } from "@maple-dev/effect-clickhouse"
-import type { ColumnAccessor, CHQuery, CHUnionQuery } from "@maple-dev/effect-clickhouse"
-import { SessionReplays, SessionEvents, ProductEvents } from "../tables"
+import type { DateTime } from "effect"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param, from, inSubquery, unionAll, compileFnCall } from "@maple-dev/effect-orm/clickhouse"
+import type { ColumnAccessor, CHQuery, ColumnDefs, CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
+import { SessionReplays, SessionEvents, ProductEvents, orgIdParam, utcSecondsParam } from "../tables"
 import { isBotCond } from "../user-agent"
 import type { FacetOutput } from "./query-helpers"
 import { SESSION_LIVE_WINDOW_SECONDS, WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
@@ -161,9 +162,9 @@ function eventConditionsRaw(
 	only?: "host" | "pagePath",
 ): Array<CH.Condition | undefined> {
 	return [
-		$.OrgId.eq(param.string("orgId")),
-		$.Timestamp.gte(param.dateTimeString("startTime")),
-		$.Timestamp.lte(param.dateTimeString("endTime")),
+		$.OrgId.eq(orgIdParam),
+		$.Timestamp.gte(param.dateTime("startTime")),
+		$.Timestamp.lte(param.dateTime("endTime")),
 		$.Type.eq(kind),
 		only === "pagePath" ? undefined : CH.when(filters.host, (v: string) => CH.domain_($.Url).eq(v)),
 		only === "host" ? undefined : CH.when(filters.pagePath, (v: string) => CH.path_($.Url).eq(v)),
@@ -196,9 +197,9 @@ function eventConditionsRollup(
 	only?: "host" | "pagePath",
 ): Array<CH.Condition | undefined> {
 	return [
-		$.OrgId.eq(param.string("orgId")),
-		$.Timestamp.gte(param.dateTimeString("startTime")),
-		$.Timestamp.lte(param.dateTimeString("endTime")),
+		$.OrgId.eq(orgIdParam),
+		$.Timestamp.gte(param.dateTime("startTime")),
+		$.Timestamp.lte(param.dateTime("endTime")),
 		$.Kind.eq(kind),
 		only === "pagePath" ? undefined : CH.when(filters.host, (v: string) => $.Host.eq(v)),
 		only === "host" ? undefined : CH.when(filters.pagePath, (v: string) => $.PagePath.eq(v)),
@@ -230,7 +231,7 @@ function eventConditionsRollup(
 function navigationSessionsSubquery(
 	filters: WebAnalyticsFilters,
 	only?: "host" | "pagePath",
-): CHQuery<any, { readonly sessionId: string }, any> {
+): CHQuery<ColumnDefs, { readonly sessionId: string }> {
 	return filters.useProductEvents
 		? from(ProductEvents)
 				.select(($) => ({ sessionId: $.SessionId }))
@@ -255,7 +256,7 @@ function navigationSessionsSubquery(
 function eventSessionsSubquery(
 	filters: WebAnalyticsFilters,
 	eventName: string,
-): CHQuery<any, { readonly sessionId: string }, any> {
+): CHQuery<ColumnDefs, { readonly sessionId: string }> {
 	return filters.useProductEvents
 		? from(ProductEvents)
 				.select(($) => ({ sessionId: $.SessionId }))
@@ -336,9 +337,9 @@ export function replaysWhere(
 			: undefined
 
 	return [
-		$.OrgId.eq(param.string("orgId")),
-		$.StartTime.gte(param.dateTimeString("startTime")),
-		$.StartTime.lte(param.dateTimeString("endTime")),
+		$.OrgId.eq(orgIdParam),
+		$.StartTime.gte(param.dateTime("startTime")),
+		$.StartTime.lte(param.dateTime("endTime")),
 		navigationFilter,
 		exclude === "referrerHost"
 			? undefined
@@ -507,7 +508,7 @@ export interface WebAnalyticsSummaryOutput {
  */
 export function webAnalyticsSummaryQuery(
 	filters: WebAnalyticsFilters = {},
-): CHQuery<any, WebAnalyticsSummaryOutput, any> {
+): CHQuery<ColumnDefs, WebAnalyticsSummaryOutput> {
 	return from(SessionReplays)
 		.select(($) => ({
 			visitors: CH.uniqIf($.VisitorId, $.VisitorId.neq("")),
@@ -560,7 +561,7 @@ export interface WebAnalyticsLiveOutput {
  */
 export function webAnalyticsLiveQuery(
 	opts: WebAnalyticsLiveOpts = {},
-): CHQuery<any, WebAnalyticsLiveOutput, any> {
+): CHQuery<ColumnDefs, WebAnalyticsLiveOutput> {
 	const windowSeconds = opts.windowSeconds ?? SESSION_LIVE_WINDOW_SECONDS
 	return from(SessionReplays)
 		.select(($) => ({
@@ -570,7 +571,7 @@ export function webAnalyticsLiveQuery(
 		.where(($) => [
 			...replaysWhere($, opts),
 			CH.coalesce($.LastActivityAt, $.StartTime).gte(
-				CH.intervalSub(CH.toDateTime(param.dateTimeString("endTime")), windowSeconds),
+				CH.intervalSub(CH.toDateTime(utcSecondsParam("endTime")), windowSeconds),
 			),
 		])
 		.format("JSON")
@@ -583,7 +584,7 @@ export interface WebAnalyticsTimeseriesOpts extends WebAnalyticsFilters {
 }
 
 export interface WebAnalyticsTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly visitors: number
 	readonly sessions: number
 	readonly newSessions: number
@@ -616,7 +617,7 @@ export interface WebAnalyticsTimeseriesOutput {
  */
 export function webAnalyticsTimeseriesQuery(
 	opts: WebAnalyticsTimeseriesOpts = {},
-): CHQuery<any, WebAnalyticsTimeseriesOutput, any> {
+): CHQuery<ColumnDefs, WebAnalyticsTimeseriesOutput> {
 	const bucketSeconds = opts.bucketSeconds ?? 3600
 	return from(SessionReplays)
 		.select(($) => ({
@@ -647,7 +648,7 @@ export interface WebAnalyticsPageviewsTimeseriesOpts extends WebAnalyticsFilters
 }
 
 export interface WebAnalyticsPageviewsTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly pageViews: number
 	readonly sessions: number
 }
@@ -662,7 +663,7 @@ export interface WebAnalyticsPageviewsTimeseriesOutput {
  */
 export function webAnalyticsPageviewsTimeseriesQuery(
 	opts: WebAnalyticsPageviewsTimeseriesOpts = {},
-): CHQuery<any, WebAnalyticsPageviewsTimeseriesOutput, any> {
+): CHQuery<ColumnDefs, WebAnalyticsPageviewsTimeseriesOutput> {
 	const bucketSeconds = opts.bucketSeconds ?? 3600
 	return opts.useProductEvents
 		? from(ProductEvents)
@@ -714,7 +715,7 @@ export interface WebAnalyticsPagesOutput {
  */
 export function webAnalyticsPagesQuery(
 	opts: WebAnalyticsPagesOpts = {},
-): CHQuery<any, WebAnalyticsPagesOutput, any> {
+): CHQuery<ColumnDefs, WebAnalyticsPagesOutput> {
 	const limit = opts.limit ?? 100
 	return opts.useProductEvents
 		? from(ProductEvents)
@@ -771,7 +772,7 @@ export interface WebAnalyticsEventsOutput {
  */
 export function webAnalyticsEventsQuery(
 	opts: WebAnalyticsEventsOpts = {},
-): CHQuery<any, WebAnalyticsEventsOutput, any> {
+): CHQuery<ColumnDefs, WebAnalyticsEventsOutput> {
 	const limit = opts.limit ?? 100
 	return opts.useProductEvents
 		? from(ProductEvents)

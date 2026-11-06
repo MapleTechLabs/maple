@@ -6,17 +6,18 @@
 //     denominator — never a division. The builder's arithmetic follows SQL precedence rather than
 //     call order, and mixing Float64 quotients into otherwise-integer result sets is how UNION type
 //     unification breaks; returning counts sidesteps both, and `nan`/`ifNotFinite` handling with it.
-//  2. **Pre-aggregated MVs over raw scans.** Only `auditLogCorrelationQuery` touches a raw table, and
-//     it reads three narrow columns over a hard-clamped window. Attribute *values* are never scanned
-//     org-wide: a `Map` re-read at that scale is what previously exhausted query memory.
+//  2. **Pre-aggregated MVs over raw scans.** Only `auditLogCorrelationQuery` and
+//     `auditRootlessTracesSQL` touch a raw table, each reading a few narrow columns over a
+//     hard-clamped window. Attribute *values* are never scanned org-wide: a `Map` re-read at that
+//     scale is what previously exhausted query memory.
 //
 // Every builder filters `OrgId` (enforced at execution) and every count/sum/uniq column needs
 // `CHNumber` in the caller's `rowSchema` — ClickHouse serializes 64-bit integers as JSON strings, so
 // a BYO-ClickHouse org otherwise fails to decode.
 
-import * as CH from "@maple-dev/effect-clickhouse"
-import { compile, from, fromQuery, param, type CompiledQuery } from "@maple-dev/effect-clickhouse"
-import { Schema, Effect } from "effect"
+import * as CH from "@maple-dev/effect-orm/clickhouse"
+import { compile, from, fromQuery, param, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
+import { Schema, Effect, Array as Arr } from "effect"
 import {
 	AttributeKeysHourly,
 	AttributeValuesHourly,
@@ -27,12 +28,16 @@ import {
 	ServiceMapSpans,
 	ServiceOverviewHourly,
 	TraceListMv,
+	Traces,
 	TracesAggregatesHourly,
+	orgIdParam,
+	utcSecondsParam,
 } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
-import { hourFloor } from "@maple/query-engine/ch/query-helpers"
-import * as T from "@maple-dev/effect-clickhouse/types"
-import type { QueryBuilderError } from "@maple-dev/effect-clickhouse"
+import { utcHourFloor } from "@maple/query-engine/ch/query-helpers"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
+import type { OrgId } from "@maple/domain"
 
 /** Snaps a window bound to its hour floor so any overlapping hour of an hourly MV contributes. */
 
@@ -40,7 +45,11 @@ import type { QueryBuilderError } from "@maple-dev/effect-clickhouse"
 const VALID_SPAN_KINDS = ["Server", "Client", "Producer", "Consumer", "Internal", ""]
 const VALID_STATUS_CODES = ["Ok", "Error", "Unset", ""]
 
-const quoteList = (values: ReadonlyArray<string>) => values.map((value) => `'${value}'`).join(", ")
+const quoteList = (values: ReadonlyArray<string>) =>
+	Arr.join(
+		Arr.map(values, (value) => `'${value}'`),
+		", ",
+	)
 
 // A2 — attribute key inventory (all scopes, one scan)
 
@@ -72,10 +81,10 @@ export function auditAttributeKeyInventoryQuery(opts: { limit?: number } = {}) {
 			usageCount: CH.sum($.UsageCount),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			CH.inList($.AttributeScope, ["span", "resource", "log", "metric"]),
-			$.Hour.gte(param.dateTimeString("startTime")),
-			$.Hour.lte(param.dateTimeString("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("scope", "attributeKey")
 		.orderBy(["usageCount", "desc"])
@@ -143,9 +152,9 @@ export function auditSpanProfileByServiceQuery(opts: { limit?: number } = {}) {
 			),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
 		])
 		.groupBy("serviceName")
 		.orderBy(["weightedSpanCount", "desc"])
@@ -186,9 +195,9 @@ export function auditSamplingByServiceQuery(opts: { limit?: number } = {}) {
 			commitTaggedSpanCount: CH.sumIf($.SpanCount, $.CommitSha.neq("")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
 		])
 		.groupBy("serviceName")
 		.orderBy(["spanCount", "desc"])
@@ -222,9 +231,9 @@ export function auditLogSeverityByServiceQuery(opts: { limit?: number } = {}) {
 			logCount: CH.sum($.Count),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
 		])
 		.groupBy("serviceName", "severityText")
 		.orderBy(["logCount", "desc"])
@@ -262,10 +271,10 @@ export function auditMetricLabelCardinalityQuery(opts: { limit?: number } = {}) 
 			usageCount: CH.sum($.UsageCount),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.AttributeScope.eq("metric"),
-			$.Hour.gte(param.dateTimeString("startTime")),
-			$.Hour.lte(param.dateTimeString("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("attributeKey")
 		.orderBy(["valueCardinality", "desc"])
@@ -277,10 +286,12 @@ export function auditMetricLabelCardinalityQuery(opts: { limit?: number } = {}) 
 
 /** Keys whose *values* name a dependency, where inconsistent spelling fragments a service-map node. */
 export const AUDIT_PEER_KEYS = [
+	"service.peer.name",
 	"peer.service",
 	"db.system",
 	"db.system.name",
 	"messaging.system",
+	"rpc.system.name",
 	"rpc.system",
 ] as const
 
@@ -298,7 +309,7 @@ export const auditPeerValueRowSchema = Schema.Struct({
 
 /**
  * The distinct values behind each dependency-naming key. Case-collision detection (`tinybird` vs
- * `Tinybird`) happens app-side; the query just enumerates. Restricted to five keys, so this is a
+ * `Tinybird`) happens app-side; the query just enumerates. Restricted to seven keys, so this is a
  * bounded read of `attribute_values_hourly` rather than an attribute-value scan.
  */
 export function auditPeerValueInventoryQuery(opts: { limit?: number } = {}) {
@@ -309,11 +320,11 @@ export function auditPeerValueInventoryQuery(opts: { limit?: number } = {}) {
 			usageCount: CH.sum($.UsageCount),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.AttributeScope.eq("span"),
 			CH.inList($.AttributeKey, [...AUDIT_PEER_KEYS]),
-			$.Hour.gte(param.dateTimeString("startTime")),
-			$.Hour.lte(param.dateTimeString("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
 			$.AttributeValue.neq(""),
 		])
 		.groupBy("attributeKey", "attributeValue")
@@ -351,9 +362,9 @@ export function auditDbEdgeIdentityQuery(opts: { limit?: number } = {}) {
 			unknownNamespaceCallCount: CH.sumIf($.CallCount, $.DbNamespace.eq("")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
 			$.DbSystem.neq(""),
 		])
 		.groupBy("serviceName", "dbSystem")
@@ -403,11 +414,11 @@ export function auditLogCorrelationQuery() {
 			uncorrelatedErrorCount: CH.countIf($.TraceId.eq("").and(isErrorSeverity)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimestampTime.gte(param.dateTimeString("startTime")),
-			$.TimestampTime.lte(param.dateTimeString("endTime")),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.TimestampTime.gte(utcSecondsParam("startTime")),
+			$.TimestampTime.lte(utcSecondsParam("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 		])
 		.groupBy("serviceName")
 		.orderBy(["logCount", "desc"])
@@ -417,10 +428,11 @@ export function auditLogCorrelationQuery() {
 
 // B2 / B3 — trace completeness
 //
-// Both mirror the service-map edge join, which is the same join over the same two tables and the
-// same window size that `ServiceMapRollupService` already runs once per org per hour in production.
-// That is the cost precedent these rely on — do not widen the window, and never put them on a
-// dashboard-polled path.
+// The orphan join mirrors the service-map edge join, which is the same join over the same two tables
+// and the same window size that `ServiceMapRollupService` already runs once per org per hour in
+// production. The rootless join reads raw `traces` over the same two hours, narrow columns only, so
+// trace sampling bounds its hash side but not its scan. Do not widen either window, and never put
+// them on a dashboard-polled path.
 //
 // What they can and cannot say: the warehouse only ever sees what arrived, so neither query can
 // detect ingest loss. They are *internal consistency* checks — spans that reference a parent nobody
@@ -466,7 +478,7 @@ export interface AuditOrphanSpanRow {
 }
 
 export interface AuditTraceWindowParams {
-	readonly orgId: string
+	readonly orgId: OrgId
 	/** Children considered, half-open: `[childStart, childEnd)`. */
 	readonly childStart: string
 	readonly childEnd: string
@@ -503,9 +515,9 @@ export function auditOrphanSpansSQL(
 			TraceState: $.TraceState,
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeString("childStart")),
-			$.Timestamp.lt(param.dateTimeString("childEnd")),
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(utcSecondsParam("childStart")),
+			$.Timestamp.lt(utcSecondsParam("childEnd")),
 			$.ParentSpanId.neq(""),
 			modulusFilter($.TraceId, modulus),
 		])
@@ -513,9 +525,9 @@ export function auditOrphanSpansSQL(
 	const parents = from(ServiceMapSpans)
 		.select(($) => ({ TraceId: $.TraceId, SpanId: $.SpanId }))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeString("parentStart")),
-			$.Timestamp.lt(param.dateTimeString("childEnd")),
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(utcSecondsParam("parentStart")),
+			$.Timestamp.lt(utcSecondsParam("childEnd")),
 			modulusFilter($.TraceId, modulus),
 		])
 
@@ -550,51 +562,88 @@ export function auditOrphanSpansSQL(
 	})
 }
 
+/**
+ * Spans the org's ingest sampler keeps even from traces it drops (`org_ingest_sampling_policies`).
+ * A rootless trace made only of such spans is the sampler's doing, not a lost root.
+ */
+export interface AuditSamplingOverrides {
+	readonly keepErrorSpans: boolean
+	readonly slowSpanNs: number | null
+}
+
 export interface AuditRootlessTraceRow {
 	readonly entryService: string
 	readonly traceCount: number
 	readonly rootlessCount: number
 	readonly sampledRootlessCount: number
+	/** Org-wide totals over every service, including those past the row cap. */
+	readonly orgTraceCount: number
+	readonly orgRootlessCount: number
+	readonly orgSampledRootlessCount: number
 }
 
 /**
- * Traces observed with no root span anywhere. `trace_list_mv` is populated strictly from
- * `ParentSpanId = ''` spans of every kind, so it *is* the root-span index — the join is a lookup, not
- * a scan.
+ * Every trace that starts in the window, and whether its root span ever arrived. `trace_list_mv` is
+ * populated strictly from `ParentSpanId = ''` spans of every kind, so it *is* the root-span index —
+ * the join is a lookup, not a scan.
+ *
+ * The trace side reads every span from `traces`, not just entry spans: the commonest gap is a root
+ * that was never exported (a serverless runtime frozen before the root span ended and flushed), and
+ * those traces may hold no other Server/Consumer span at all. It reads from `parentStart` and keeps
+ * only traces whose first span is inside the window, so a long-running trace that began earlier is
+ * not mistaken for one whose root went missing. The `org*` columns are window totals over every
+ * service, so the org-wide rate holds even past the row cap.
+ *
+ * `sampledRootlessCount` covers both ways a sampler explains a missing root: a `th:` TraceState, and
+ * a trace made only of spans the ingest sampler keeps from dropped traces (`overrides`).
  *
  * Attribution uses `argMin(ServiceName, Timestamp)`: the earliest service Maple actually observed.
  * When the true root belongs to an uninstrumented upstream, that names the first instrumented hop,
- * which is exactly where the fix goes. The systemic case — an edge proxy or gateway injecting
- * `traceparent` without exporting spans — shows up as a near-total, uniform rootless rate, and the
- * caller collapses it into one finding rather than one per service.
+ * which is exactly where the fix goes.
  */
 export function auditRootlessTracesSQL(
 	params: AuditTraceWindowParams,
+	overrides: AuditSamplingOverrides | null,
 ): Effect.Effect<CompiledQuery<AuditRootlessTraceRow>, QueryBuilderError> {
 	const modulus = normalizeModulus(params.traceSampleModulus)
 
-	const traces = from(ServiceMapChildren)
-		.select(($) => ({
-			TraceId: $.TraceId,
-			entryService: CH.argMin($.ServiceName, $.Timestamp),
-			// `match` returns UInt8, so max() over the trace's spans is "any span
-			// carried a sampling threshold".
-			isSampled: CH.max(CH.match($.TraceState, SAMPLED_TRACE_STATE_PATTERN)),
-		}))
+	const traces = from(Traces)
+		.select(($) => {
+			const kept = Arr.filter(
+				[
+					overrides?.keepErrorSpans === true ? $.StatusCode.eq("Error") : undefined,
+					overrides?.slowSpanNs != null ? $.Duration.gte(overrides.slowSpanNs) : undefined,
+				],
+				(condition) => condition !== undefined,
+			)
+			const keptBySampler = Arr.isReadonlyArrayNonEmpty(kept)
+				? Arr.reduce(Arr.tailNonEmpty(kept), Arr.headNonEmpty(kept), (a, b) => a.or(b))
+				: undefined
+			return {
+				TraceId: $.TraceId,
+				entryService: CH.argMin($.ServiceName, $.Timestamp),
+				// `match` returns UInt8, so max() over the trace's spans is "any span
+				// carried a sampling threshold".
+				thresholdSampled: CH.max(CH.match($.TraceState, SAMPLED_TRACE_STATE_PATTERN)),
+				// Zero when every span is one the ingest sampler keeps from dropped traces.
+				unkeptSpans: keptBySampler === undefined ? CH.count() : CH.countIf(CH.not(keptBySampler)),
+			}
+		})
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeString("childStart")),
-			$.Timestamp.lt(param.dateTimeString("childEnd")),
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(utcSecondsParam("parentStart")),
+			$.Timestamp.lt(utcSecondsParam("childEnd")),
 			modulusFilter($.TraceId, modulus),
 		])
 		.groupBy("TraceId")
+		.having(($) => [CH.min($.Timestamp).gte(utcSecondsParam("childStart"))])
 
 	const roots = from(TraceListMv)
 		.select(($) => ({ TraceId: $.TraceId }))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeString("parentStart")),
-			$.Timestamp.lt(param.dateTimeString("childEnd")),
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(utcSecondsParam("parentStart")),
+			$.Timestamp.lt(utcSecondsParam("childEnd")),
 			modulusFilter($.TraceId, modulus),
 		])
 		.groupBy("TraceId")
@@ -604,16 +653,28 @@ export function auditRootlessTracesSQL(
 		.select(($) => {
 			// `join_use_nulls = 0` turns a miss into '' — see auditOrphanSpansSQL.
 			const noRoot = $.r.TraceId.eq("")
+			const traceCount = CH.count()
+			const rootlessCount = CH.countIf(noRoot)
+			const sampledRootlessCount = CH.countIf(
+				noRoot.and($.thresholdSampled.eq(1).or($.unkeptSpans.eq(0))),
+			)
+			const allServices = CH.windowSpec({
+				frame: CH.rowsBetween(CH.unboundedPreceding, CH.unboundedFollowing),
+			})
 			return {
 				entryService: $.entryService,
-				traceCount: CH.count(),
-				rootlessCount: CH.countIf(noRoot),
-				sampledRootlessCount: CH.countIf(noRoot.and($.isSampled.eq(1))),
+				traceCount,
+				rootlessCount,
+				sampledRootlessCount,
+				orgTraceCount: CH.over(CH.sum(traceCount), allServices),
+				orgRootlessCount: CH.over(CH.sum(rootlessCount), allServices),
+				orgSampledRootlessCount: CH.over(CH.sum(sampledRootlessCount), allServices),
 			}
 		})
 		.groupBy("entryService")
-		.orderBy(["rootlessCount", "desc"])
-		.limit(200)
+		// Past the cap, keep the services with the most traces; the rate comes from the org* totals.
+		.orderBy(["traceCount", "desc"])
+		.limit(1000)
 		.format("JSON")
 
 	return compile(query, {

@@ -1,6 +1,6 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
-import { isValidRawSql, RawSqlText, rawSqlIssue } from "./raw-sql"
+import { rawAlertPerformanceHints, rawAlertSampleCountWarning, RawSqlText, rawSqlIssue } from "./raw-sql"
 
 const ok = "SELECT count() FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)"
 
@@ -32,7 +32,9 @@ describe("rawSqlIssue", () => {
 
 	it("rejects an empty or oversized query", () => {
 		expect(rawSqlIssue("")?.code).toBe("ResourceLimit")
-		expect(rawSqlIssue(`SELECT '${"x".repeat(32_768)}' WHERE $__orgFilter`)?.code).toBe("ResourceLimit")
+		expect(rawSqlIssue(`SELECT '${Str.repeat(32_768)("x")}' WHERE $__orgFilter`)?.code).toBe(
+			"ResourceLimit",
+		)
 	})
 
 	it("rejects a non-identifier macro argument", () => {
@@ -138,16 +140,64 @@ describe("rawSqlIssue", () => {
 		expect(rawSqlIssue("SELECT 1 WHERE $__orgFilter FORMAT JSONEachRow")).toBeNull()
 	})
 
-	it("does not mistake a column named settings or format for a clause", () => {
-		expect(rawSqlIssue("SELECT settings, format FROM t WHERE $__orgFilter")).toBeNull()
+	it("does not mistake a column named format, or a quoted settings, for a clause", () => {
+		expect(rawSqlIssue("SELECT `settings`, format FROM t WHERE $__orgFilter")).toBeNull()
 	})
-})
 
-describe("isValidRawSql", () => {
-	it("mirrors rawSqlIssue", () => {
-		expect(isValidRawSql(ok)).toBe(true)
-		expect(isValidRawSql("SELECT 1")).toBe(false)
-		expect(isValidRawSql("SELECT count() FROM logs WHERE $__orgFilter", "alert")).toBe(false)
+	// A SETTINGS in a subquery applies to the whole query context, so it is refused at any depth.
+	it.each([
+		"SELECT 1 FROM traces WHERE $__orgFilter AND SpanId IN (SELECT SpanId FROM traces SETTINGS max_execution_time=3000)",
+		"SELECT * FROM (SELECT 1 FROM traces SETTINGS max_memory_usage=0) WHERE $__orgFilter",
+	])("rejects a nested SETTINGS clause: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.message).toContain("SETTINGS is managed by Maple")
+	})
+
+	it.each([
+		"SELECT * FROM cosn('https://x/y.parquet') WHERE $__orgFilter",
+		"SELECT * FROM oss('https://x/y.parquet') WHERE $__orgFilter",
+		"SELECT * FROM paimonS3('https://x/y') WHERE $__orgFilter",
+		"SELECT * FROM traces WHERE $__orgFilter AND SpanId IN (SELECT query FROM merge('db', '^q'))",
+		"SELECT * FROM traces WHERE $__orgFilter AND SpanId IN (SELECT * FROM mergeTreeIndex('db', 't'))",
+	])("rejects further table functions: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("DisallowedFunction")
+	})
+
+	it("names an exact-match table function in its message", () => {
+		expect(rawSqlIssue("SELECT * FROM url('http://x/') WHERE $__orgFilter")?.message).toContain(
+			"Table function 'url'",
+		)
+	})
+
+	// The masker blanks quoted identifiers, so a quoted name was invisible to the function check.
+	it.each([
+		"SELECT * FROM `url`('http://x/', JSONEachRow) WHERE $__orgFilter",
+		"SELECT * FROM \"file\"('/etc/hosts', LineAsString) WHERE $__orgFilter",
+		"SELECT * FROM default.`s3` /* c */ ('https://x/y') WHERE $__orgFilter",
+	])("rejects a quoted function name: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("DisallowedFunction")
+	})
+
+	// Syntax the masker does not lex, so it and the server would disagree on what is code.
+	it.each([
+		["SELECT 1 FROM traces WHERE $__orgFilter # trailing", "'#' comments"],
+		["#!/x\nSELECT 1 FROM traces WHERE $__orgFilter", "'#' comments"],
+		["SELECT $$it's$$ FROM traces WHERE $__orgFilter", "Heredoc strings"],
+		["SELECT $q$x$q$ FROM traces WHERE $__orgFilter", "Heredoc strings"],
+		["SELECT 1 FROM traces /* a /* b */ c */ WHERE $__orgFilter", "Nested /* */ comments"],
+	])("rejects syntax the validator cannot see through: %s", (sql, message) => {
+		const issue = rawSqlIssue(sql)
+		expect(issue?.code).toBe("DisallowedStatement")
+		expect(issue?.message).toContain(message)
+	})
+
+	it.each([
+		"SELECT '#1' AS tag FROM traces WHERE $__orgFilter",
+		"SELECT '$$' AS s, '$x$' AS t, '*/' AS u FROM traces WHERE $__orgFilter",
+		'SELECT `file`, "url" FROM traces WHERE $__orgFilter -- # not code',
+		"SELECT `Url` AS u, count(`Url`) AS c FROM traces WHERE $__orgFilter /* $$ */",
+		"SELECT urlHash(Url) AS h FROM traces WHERE $__orgFilter AND Url IN ('a', \"b\")",
+	])("still accepts these characters in literals, comments and plain identifiers: %s", (sql) => {
+		expect(rawSqlIssue(sql)).toBeNull()
 	})
 })
 
@@ -163,5 +213,171 @@ describe("RawSqlText", () => {
 		expect(() => decode("SELECT 1 WHERE $__orgFilter SETTINGS max_threads=8")).toThrow(
 			/SETTINGS is managed by Maple/,
 		)
+	})
+})
+
+describe("rawAlertSampleCountWarning", () => {
+	const noSamples = "SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)"
+	const withSamples =
+		"SELECT countIf(StatusCode = 'Error') / count() AS value, count() AS samples FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)"
+
+	it("warns when a minimum above 1 would count rows", () => {
+		expect(rawAlertSampleCountWarning(noSamples, 50)).toMatch(/counts returned rows/)
+	})
+
+	it("stays quiet when the query selects samples or the minimum is trivial", () => {
+		expect(rawAlertSampleCountWarning(withSamples, 50)).toBeNull()
+		expect(rawAlertSampleCountWarning(noSamples, 1)).toBeNull()
+		expect(rawAlertSampleCountWarning(noSamples, 0)).toBeNull()
+	})
+
+	it("accepts a quoted alias and rejects one the engine would not read", () => {
+		const quoted = (alias: string) =>
+			`SELECT count() AS value, count() AS ${alias} FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)`
+		expect(rawAlertSampleCountWarning(quoted("`samples`"), 10)).toBeNull()
+		expect(rawAlertSampleCountWarning(quoted('"samples"'), 10)).toBeNull()
+		expect(rawAlertSampleCountWarning(quoted("Samples"), 10)).not.toBeNull()
+		expect(rawAlertSampleCountWarning(quoted("samples_total"), 10)).not.toBeNull()
+		expect(rawAlertSampleCountWarning(`${noSamples} AND t.samples > 0`, 10)).not.toBeNull()
+	})
+
+	it("ignores samples mentioned only in a comment or string", () => {
+		expect(rawAlertSampleCountWarning(`${noSamples} -- samples`, 10)).not.toBeNull()
+		expect(
+			rawAlertSampleCountWarning(Str.replace("count()", "countIf(x = 'samples')")(noSamples), 10),
+		).not.toBeNull()
+	})
+})
+
+describe("rawSqlIssue org filter placement", () => {
+	it.each([
+		"SELECT 1 FROM traces WHERE $__orgFilter AND SpanName = 'a' OR (ServiceName = 'b')",
+		"SELECT 1 FROM traces WHERE a = 1 OR b = 2 AND $__orgFilter",
+		"SELECT 1 FROM traces WHERE ($__orgFilter AND a = 1) OR b = 2",
+		"SELECT 1 FROM traces WHERE NOT $__orgFilter",
+		"SELECT 1 FROM traces WHERE not($__orgFilter)",
+		"SELECT 1 FROM traces WHERE $__orgFilter OR 1 = 1 GROUP BY 1",
+		"SELECT 1 FROM traces WHERE $__orgFilter AND toStartOfHour(Timestamp) > x OR Environment = 'prod'",
+		"SELECT 1 FROM traces WHERE $__orgFilter AND (x = 1) OR y = 2",
+	])("rejects an org filter an OR can bypass: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("InvalidMacro")
+	})
+
+	it.each([
+		"SELECT a OR b FROM traces WHERE $__orgFilter AND (x = 1 OR y = 2) GROUP BY 1",
+		"SELECT 1 FROM traces WHERE ($__orgFilter) AND x = 1",
+		"SELECT 1 FROM traces WHERE $__orgFilter AND (x IN (SELECT x FROM logs WHERE $__orgFilter) OR y = 1)",
+		"SELECT 1 FROM traces t JOIN logs l ON t.TraceId = l.TraceId AND $__orgFilter(l) WHERE $__orgFilter(t) AND (a OR b)",
+		"SELECT 1 FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp) HAVING count() > 1 OR 1 = 1",
+	])("accepts an org filter that is a top-level AND condition: %s", (sql) => {
+		expect(rawSqlIssue(sql)).toBeNull()
+	})
+
+	it.each([
+		"SELECT * FROM traces t CROSS JOIN (SELECT 'org_abc' AS OrgId) f WHERE $__orgFilter(f)",
+		"WITH f AS (SELECT 'org_abc' AS OrgId) SELECT * FROM traces t, f WHERE $__orgFilter(f)",
+		"WITH f AS (SELECT 'org_abc' AS OrgId) SELECT * FROM traces t JOIN f ON 1 = 1 WHERE $__orgFilter(f)",
+		"SELECT * FROM traces t JOIN numbers(1) n ON 1 = 1 WHERE $__orgFilter(n)",
+		"SELECT * FROM traces t WHERE $__orgFilter(x)",
+		// An unaliased first table must not let a joined subquery's alias bind.
+		"SELECT * FROM traces JOIN (SELECT 'org_abc' AS OrgId) f ON 1 = 1 WHERE $__orgFilter(f)",
+		"SELECT * FROM traces CROSS JOIN (SELECT 'org_abc' AS OrgId) f WHERE $__orgFilter(f)",
+	])("rejects an alias that is not a table read in FROM/JOIN: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.message).toContain("must name a table read in FROM or JOIN")
+	})
+
+	it.each([
+		"SELECT 1 FROM traces AS t WHERE $__orgFilter(t)",
+		"SELECT 1 FROM traces WHERE $__orgFilter(traces)",
+		"SELECT 1 FROM maple.traces t FINAL WHERE $__orgFilter(t)",
+		"SELECT 1 FROM traces t LEFT JOIN logs AS l ON t.TraceId = l.TraceId WHERE $__orgFilter(t) AND $__orgFilter(l)",
+		"SELECT 1 FROM traces JOIN logs l ON traces.TraceId = l.TraceId WHERE $__orgFilter(traces) AND $__orgFilter(l)",
+		"SELECT 1 FROM traces FINAL JOIN logs l ON traces.TraceId = l.TraceId WHERE $__orgFilter(traces) AND $__orgFilter(l)",
+	])("accepts an alias bound to a table: %s", (sql) => {
+		expect(rawSqlIssue(sql)).toBeNull()
+	})
+
+	it("rejects a non-identifier alias", () => {
+		expect(rawSqlIssue("SELECT 1 FROM traces WHERE $__orgFilter(t OR 1)")?.code).toBe("InvalidMacro")
+	})
+
+	it("points system-table reads at the catalog", () => {
+		expect(rawSqlIssue("SELECT name FROM system.columns WHERE $__orgFilter")?.message).toContain(
+			"describe_warehouse_tables",
+		)
+	})
+})
+
+describe("rawSqlIssue org filter review follow-ups", () => {
+	it.each([
+		"SELECT 1 FROM traces WHERE coalesce($__orgFilter, 0) OR SpanName = 'x'",
+		"SELECT 1 FROM traces WHERE if(SpanName = 'x', $__orgFilter, 1)",
+		"SELECT 1 FROM traces WHERE multiIf(a = 1, $__orgFilter, 1)",
+		"SELECT 1 FROM traces WHERE toUInt8($__orgFilter) AND x = 1",
+	])("rejects an org filter wrapped in a function call: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("InvalidMacro")
+	})
+
+	it("still accepts an org filter scoped to an IN subquery", () => {
+		expect(
+			rawSqlIssue(
+				"SELECT 1 FROM traces WHERE $__orgFilter AND x IN (SELECT x FROM logs WHERE $__orgFilter)",
+			),
+		).toBeNull()
+	})
+
+	it.each([
+		"SELECT 1 FROM traces t, logs l WHERE $__orgFilter(t) AND $__orgFilter(l)",
+		"SELECT 1 FROM traces AS t, default.logs AS l, metrics_sum m WHERE $__orgFilter(t) AND $__orgFilter(l) AND $__orgFilter(m)",
+	])("binds aliases from a comma-separated FROM list: %s", (sql) => {
+		expect(rawSqlIssue(sql)).toBeNull()
+	})
+
+	it.each([
+		"SELECT 1 FROM traces t, (SELECT 1 AS OrgId) l WHERE $__orgFilter(t) AND $__orgFilter(l)",
+		"SELECT 1 FROM traces t, numbers(10) l WHERE $__orgFilter(t) AND $__orgFilter(l)",
+		"WITH c AS (SELECT 1 AS OrgId) SELECT 1 FROM traces t, c l WHERE $__orgFilter(t) AND $__orgFilter(l)",
+	])("still rejects a comma item that is not a table: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("InvalidMacro")
+	})
+})
+
+describe("rawAlertPerformanceHints", () => {
+	const codes = (sql: string) => Arr.map(rawAlertPerformanceHints(sql), (hint) => [hint.code, hint.line])
+
+	it("asks for a service filter on logs and traces, at the FROM line", () => {
+		expect(
+			codes("SELECT count() AS value\nFROM logs\nWHERE $__orgFilter AND $__timeFilter(Timestamp)"),
+		).toEqual([["no_service_filter", 2]])
+		expect(codes("SELECT count() AS value FROM default.traces WHERE $__orgFilter")).toEqual([
+			["no_service_filter", 1],
+		])
+	})
+
+	it("flags a Body match that starts with a wildcard", () => {
+		const sql = Arr.join(
+			[
+				"SELECT count() AS value FROM logs",
+				"WHERE $__orgFilter AND ServiceName = 'api'",
+				"  AND Body ILIKE '%webhook%failed%'",
+			],
+			"\n",
+		)
+		expect(codes(sql)).toEqual([["body_wildcard_match", 3]])
+	})
+
+	it("stays quiet on a query that already filters well", () => {
+		expect(
+			codes(
+				"SELECT count() AS value FROM logs WHERE $__orgFilter AND ServiceName = 'api' AND Body LIKE 'webhook failed%'",
+			),
+		).toEqual([])
+		expect(codes("SELECT count() AS value FROM metrics_sum WHERE $__orgFilter")).toEqual([])
+	})
+
+	it("ignores table names and patterns inside strings and comments", () => {
+		expect(
+			codes("SELECT 'FROM logs' AS value FROM metrics_gauge WHERE $__orgFilter -- Body ILIKE '%x'"),
+		).toEqual([])
 	})
 })

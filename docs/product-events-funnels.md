@@ -26,8 +26,8 @@ rather than by a separate `drop_web_events` migration.
    to set unless the datasource name differs.
 5. Publish `@maple-dev/effect-sdk` / `@maple-dev/browser` so customers' events start carrying
    identity; older builds keep writing (all new columns default).
-6. **Billing**: `bun run --cwd apps/api atmn push` (no package script exists; `atmn` is an
-   `apps/api` dependency) so the `product_events` feature and its `startup` plan item exist in
+6. **Billing**: `bun run --cwd apps/api atmn push` (`scripts/atmn.sh` runs `atmn`
+   through bunx) so the `product_events` feature and its `startup` plan item exist in
    Autumn before the gateway starts reserving against it. Until pushed, Autumn answers
    `allowed: false` for the unknown feature. That is a real denial, not an error, so `is_allowed`'s
    fail-open does NOT rescue it. Neither event path rejects on `product_events` for exactly that
@@ -44,11 +44,10 @@ rows in the batch (a browser `track()` call is the same unit as a server-side ev
 entitlement REJECTION on `browser_sessions`. **Neither path rejects on `product_events`**: an
 exhausted (or un-provisioned) product-events allowance bills usage-based overage instead of 402-ing
 a whole session transcript or a backend's buffered batch. Automatic session events (clicks,
-navigations, ...) stay unmetered. **Beta pricing (2026-08-17): the `startup` item is
-`unlimited: true` with no price.** Usage is tracked in Autumn (and shown on the billing page as
-"Unlimited · free during beta") so real volumes are known before a price is set. To start
-charging, swap `unlimited` for an `included` allowance + `price` in `apps/api/autumn.config.ts` (the commented example is $0.05 per 1,000 events past 1M/month) and
-push. `DailySpendService` emits `DailyVolume.productEvents` from `product_events`
+navigations, ...) stay unmetered. **Pricing (2026-10-15): 1M events/month included, then $5 per
+million**, configured as `$0.005` per 1,000 in `apps/api/autumn.config.ts` because Autumn rounds
+overage up to whole billing blocks. The landing page and billing UI quote it per 1M. It was
+`unlimited: true` during the beta (2026-08-17 to 2026-10-15). `DailySpendService` emits `DailyVolume.productEvents` from `product_events`
 (`Kind != 'navigation'`, matching what the gateway meters).
 
 ## Where we are

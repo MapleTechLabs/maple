@@ -1,7 +1,7 @@
 import type { TenantContext } from "@maple/auth"
 import { OrgId, UnauthorizedError, UserId } from "@maple/domain/http"
 import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
+import { HttpRouter } from "effect/http"
 import { TenantResolver, type TenantResolverApi } from "./auth/TenantResolver"
 import {
 	ElectricClient,
@@ -41,11 +41,9 @@ export interface RecordedRequest {
  * records what was sent and returns a canned `Response`, so assertions are made
  * on the real upstream request rather than on a mock's call log.
  */
-export const stubFetch = (
-	recorded: Array<RecordedRequest>,
-	respond: (url: string) => Response,
-): typeof globalThis.fetch =>
-	(async (input: string | URL | Request, init?: RequestInit) => {
+export const stubFetch =
+	(recorded: Array<RecordedRequest>, respond: (url: string) => Response): typeof globalThis.fetch =>
+	async (input: string | URL | Request, init?: RequestInit) => {
 		const url = input instanceof Request ? input.url : String(input)
 		const headers: Record<string, string> = {}
 		new Headers(init?.headers).forEach((value, key) => {
@@ -58,13 +56,13 @@ export const stubFetch = (
 			body: typeof init?.body === "string" ? init.body : null,
 		})
 		return respond(url)
-	}) as typeof globalThis.fetch
+	}
 
 /** A resolver that always authenticates, as `orgId`. */
 export const fixedTenantLayer = (orgId: string) => {
 	const tenant: TenantContext = {
-		orgId: Schema.decodeUnknownSync(OrgId)(orgId),
-		userId: Schema.decodeUnknownSync(UserId)("user_test"),
+		orgId: Schema.decodeSync(OrgId)(orgId),
+		userId: Schema.decodeSync(UserId)("user_test"),
 		roles: [],
 		authMode: "self_hosted",
 	}

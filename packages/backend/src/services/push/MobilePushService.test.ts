@@ -1,7 +1,7 @@
 import { assert, describe, expect, it } from "@effect/vitest"
 import { encodePublicId } from "@maple/domain/http/v2"
 import { MobileDeviceId, OrgId, UserId } from "@maple/domain/primitives"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr } from "effect"
 import {
 	ApnsClient,
 	type ApnsBackgroundPush,
@@ -20,10 +20,9 @@ import {
 	type IncidentPushEvent,
 } from "./MobilePushService"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_push_test")
-const USER = Schema.decodeUnknownSync(UserId)("user_push_test")
-const deviceId = (n: number) =>
-	Schema.decodeUnknownSync(MobileDeviceId)(`00000000-0000-4000-8000-00000000000${n}`)
+const ORG = Schema.decodeSync(OrgId)("org_push_test")
+const USER = Schema.decodeSync(UserId)("user_push_test")
+const deviceId = (n: number) => Schema.decodeSync(MobileDeviceId)(`00000000-0000-4000-8000-00000000000${n}`)
 
 const device = (n: number, overrides: Partial<MobileDevice> = {}): MobileDevice => ({
 	id: deviceId(n),
@@ -96,7 +95,8 @@ const makeLayer = (
 	devices: ReadonlyArray<MobileDevice>,
 	sendImpl: (push: ApnsPush) => ApnsSendResult,
 	sent: Array<ApnsPush>,
-	disabled: Array<string>,
+	// Device writes as `disable:<org>:<id>:<reason>` and `pushed:<org>:<ids>`, so the org each write is scoped to is asserted.
+	deviceWrites: Array<string>,
 	configured = true,
 	live: LiveActivityRecorder = { pushes: [], ended: [] },
 	running: ReadonlyArray<LiveActivity> = [],
@@ -129,11 +129,14 @@ const makeLayer = (
 					find: () => Effect.die("unused"),
 					listForUser: () => Effect.die("unused"),
 					listForOrg: () => Effect.succeed(devices),
-					disable: (id, reason) => {
-						disabled.push(`${id}:${reason}`)
+					disable: (orgId, id, reason) => {
+						deviceWrites.push(`disable:${orgId}:${id}:${reason}`)
 						return Effect.void
 					},
-					markPushed: () => Effect.void,
+					markPushed: (orgId, ids) => {
+						deviceWrites.push(`pushed:${orgId}:${Arr.join(ids, ",")}`)
+						return Effect.void
+					},
 				}),
 				Layer.succeed(LiveActivitiesService, {
 					register: () => Effect.die("unused"),
@@ -278,13 +281,13 @@ describe("MobilePushService.notifyIncident", () => {
 			const summary = yield* push.notifyIncident(event())
 			assert.deepStrictEqual(summary, { sent: 2, failed: 0, unregistered: 0, skipped: 1 })
 			assert.deepStrictEqual(
-				sent.map((p) => [p.deviceToken, p.environment, p.collapseId, p.threadId]),
+				Arr.map(sent, (p) => [p.deviceToken, p.environment, p.collapseId, p.threadId]),
 				[
 					["token-1", "production", "rule-1:__total__", "rule-1"],
 					["token-3", "sandbox", "rule-1:__total__", "rule-1"],
 				],
 			)
-			assert.deepStrictEqual(sent[0]!.data, {
+			assert.deepStrictEqual(sent[0].data, {
 				maple_kind: "alert_incident",
 				maple_event: "trigger",
 				// Public ids, not the internal ones: the phone hands these back to
@@ -299,12 +302,15 @@ describe("MobilePushService.notifyIncident", () => {
 
 	it.effect("disables a device Apple says is gone and keeps going for the rest", () => {
 		const sent: Array<ApnsPush> = []
-		const disabled: Array<string> = []
+		const deviceWrites: Array<string> = []
 		return Effect.gen(function* () {
 			const push = yield* MobilePushService
 			const summary = yield* push.notifyIncident(event({ eventType: "resolve" }))
 			assert.deepStrictEqual(summary, { sent: 1, failed: 1, unregistered: 1, skipped: 0 })
-			assert.deepStrictEqual(disabled, [`${deviceId(2)}:Unregistered`])
+			assert.deepStrictEqual(deviceWrites, [
+				`disable:${ORG}:${deviceId(2)}:Unregistered`,
+				`pushed:${ORG}:${deviceId(1)}`,
+			])
 		}).pipe(
 			Effect.provide(
 				makeLayer(
@@ -321,7 +327,7 @@ describe("MobilePushService.notifyIncident", () => {
 									}
 								: { outcome: "sent", apnsId: null },
 					sent,
-					disabled,
+					deviceWrites,
 				),
 			),
 		)
@@ -344,13 +350,13 @@ describe("MobilePushService.notifyIncident", () => {
 			assert.deepStrictEqual(quiet, { sent: 0, failed: 0, unregistered: 0, skipped: 1 })
 			assert.strictEqual(sent.length, 0)
 			assert.deepStrictEqual(
-				live.pushes.map((p) => p.event),
+				Arr.map(live.pushes, (p) => p.event),
 				["update"],
 			)
 
 			yield* push.notifyIncident(event({ eventType: "resolve", openForMs: 90 * 60_000 }))
 			assert.deepStrictEqual(
-				sent.map((p) => [p.threadId, p.sound]),
+				Arr.map(sent, (p) => [p.threadId, p.sound]),
 				[["rule-1:resolved", null]],
 			)
 		}).pipe(
@@ -409,27 +415,27 @@ describe("MobilePushService live activities", () => {
 			const push = yield* MobilePushService
 			yield* push.notifyIncident(event({ recentValues: Effect.succeed([0.074, 0.052, 0.031]) }))
 			assert.deepStrictEqual(
-				live.pushes.map((p) => [p.pushToken, p.event, p.environment]),
+				Arr.map(live.pushes, (p) => [p.pushToken, p.event, p.environment]),
 				[
 					["start-1", "start", "production"],
 					["start-3", "start", "sandbox"],
 				],
 			)
 			const [first] = live.pushes
-			assert.strictEqual(first!.attributesType, "IncidentActivityAttributes")
-			assert.deepStrictEqual(first!.attributes, {
+			assert.strictEqual(first.attributesType, "IncidentActivityAttributes")
+			assert.deepStrictEqual(first.attributes, {
 				incident_id: encodePublicId("inc", "inc-1"),
 				rule_name: "Checkout error rate",
 				service: "checkout-api",
 				signal_label: "Error Rate",
 				// Epoch seconds, never an ISO string — ActivityKit decodes this
 				// dictionary with a plain JSONDecoder.
-				started_at: first!.attributes!.started_at,
+				started_at: first.attributes!.started_at,
 				organization_id: ORG,
 			})
-			assert.strictEqual(typeof first!.attributes!.started_at, "number")
+			assert.strictEqual(typeof first.attributes!.started_at, "number")
 			assert.deepStrictEqual(
-				{ ...first!.contentState, updated_at: 0 },
+				{ ...first.contentState, updated_at: 0 },
 				{
 					value: "9.1%",
 					threshold: "> 5%",
@@ -469,10 +475,10 @@ describe("MobilePushService live activities", () => {
 			yield* push.notifyIncident(event({ recentValues: Effect.die("the warehouse is having a day") }))
 			// Started anyway, with just the current value as the series.
 			assert.deepStrictEqual(
-				live.pushes.map((p) => p.event),
+				Arr.map(live.pushes, (p) => p.event),
 				["start"],
 			)
-			assert.deepStrictEqual(live.pushes[0]!.contentState.series, [0.091])
+			assert.deepStrictEqual(live.pushes[0].contentState.series, [0.091])
 		}).pipe(
 			Effect.provide(
 				makeLayer([device(1)], () => ({ outcome: "sent", apnsId: null }), [], [], true, live),
@@ -500,13 +506,13 @@ describe("MobilePushService live activities", () => {
 			const push = yield* MobilePushService
 			yield* push.notifyIncident(event({ eventType: "renotify" }))
 			assert.deepStrictEqual(
-				live.pushes.map((p) => [p.pushToken, p.event, p.dismissAfterSeconds]),
+				Arr.map(live.pushes, (p) => [p.pushToken, p.event, p.dismissAfterSeconds]),
 				[["update-1", "update", undefined]],
 			)
 			assert.deepStrictEqual(live.ended, [])
 
 			yield* push.notifyIncident(event({ eventType: "resolve", value: 0.012 }))
-			const end = live.pushes[1]!
+			const end = live.pushes[1]
 			assert.strictEqual(end.event, "end")
 			assert.strictEqual(end.contentState.status, "resolved")
 			assert.strictEqual(end.contentState.value, "1.2%")
@@ -560,7 +566,7 @@ describe("MobilePushService live activities", () => {
 			const summary = yield* push.notifyIncident(event({ eventType: "resolve" }))
 			assert.deepStrictEqual(summary, { sent: 0, failed: 0, unregistered: 0, skipped: 1 })
 			assert.deepStrictEqual(
-				live.pushes.map((p) => p.event),
+				Arr.map(live.pushes, (p) => p.event),
 				["end"],
 			)
 		}).pipe(
@@ -589,14 +595,14 @@ describe("MobilePushService widget refresh", () => {
 			const summary = yield* push.refreshWidgets(ORG, "manual")
 			assert.deepStrictEqual(summary, { sent: 3, failed: 0, unregistered: 0, skipped: 0 })
 			assert.deepStrictEqual(
-				background.map((p) => [p.deviceToken, p.environment, p.collapseId]),
+				Arr.map(background, (p) => [p.deviceToken, p.environment, p.collapseId]),
 				[
 					["token-1", "production", `widget-refresh:${ORG}`],
 					["token-2", "production", `widget-refresh:${ORG}`],
 					["token-3", "sandbox", `widget-refresh:${ORG}`],
 				],
 			)
-			assert.deepStrictEqual(background[0]!.data, {
+			assert.deepStrictEqual(background[0].data, {
 				maple_kind: "widget_refresh",
 				maple_org_id: ORG,
 				maple_reason: "manual",
@@ -623,7 +629,7 @@ describe("MobilePushService widget refresh", () => {
 			const push = yield* MobilePushService
 			yield* push.notifyIncident(event())
 			assert.strictEqual(background.length, 1)
-			assert.strictEqual(background[0]!.data.maple_reason, "incident_trigger")
+			assert.strictEqual(background[0].data.maple_reason, "incident_trigger")
 		}).pipe(Effect.provide(makeLayer([device(1)], () => ({ outcome: "sent", apnsId: null }), sent, [])))
 	})
 

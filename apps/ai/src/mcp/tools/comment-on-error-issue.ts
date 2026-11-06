@@ -1,5 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { CommentOnErrorIssueOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { resolveActorId } from "../lib/resolve-actor"
@@ -11,6 +11,7 @@ import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorI
 export function registerCommentOnErrorIssueTool(server: McpToolRegistrar) {
 	server.define({
 		name: "comment_on_error_issue",
+		title: "Comment on Error Issue",
 		description:
 			"Add a comment to an issue's timeline. Use `kind=agent_note` for automated reasoning steps: they stay in the audit log but the UI styles them apart from human comments. Commenting renews your lease if you hold one.",
 		parameters: Schema.Struct({
@@ -30,7 +31,7 @@ export function registerCommentOnErrorIssueTool(server: McpToolRegistrar) {
 		phrases: ["Commenting on an issue"],
 		handler: Effect.fn("McpTool.commentOnErrorIssue")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
-			if (params.body.trim().length === 0) {
+			if (Str.trim(params.body).length === 0) {
 				return yield* new McpInvalidInputError({
 					message: "Comment body must not be empty.",
 					parameter: "body",

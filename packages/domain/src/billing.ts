@@ -1,3 +1,5 @@
+import { Array as Arr, Option, Predicate, Record as Rec, String as Str } from "effect"
+
 /**
  * Shared billing gate — the single source of truth for "is this an actively
  * selected paid plan?", used by both the web redirect gate
@@ -24,7 +26,8 @@ export interface PlanGatingSubscription {
 export function isPlanSubscription(sub: PlanGatingSubscription | null | undefined): boolean {
 	if (!sub) return false
 	if (sub.addOn || sub.autoEnable) return false
-	if (sub.planId?.toLowerCase() === "free" || sub.plan?.name?.toLowerCase() === "free") return false
+	const isFree = (name: string | null | undefined) => name != null && Str.toLowerCase(name) === "free"
+	if (isFree(sub.planId) || isFree(sub.plan?.name)) return false
 	return true
 }
 
@@ -32,6 +35,57 @@ export function isPlanSubscription(sub: PlanGatingSubscription | null | undefine
 export function isActivePlanSubscription(sub: PlanGatingSubscription | null | undefined): boolean {
 	return isPlanSubscription(sub) && sub?.status === "active"
 }
+
+/**
+ * The OpenRouter key add-on: the plan an org attaches and the boolean feature it grants. With it,
+ * the org's AI turns run on its own OpenRouter key and Maple stops metering their tokens.
+ */
+export const OPENROUTER_BYOK_ADDON_ID = "openrouter_byok"
+export const OPENROUTER_BYOK_FEATURE_ID = "openrouter_byok"
+
+/**
+ * Lets an org pay for other orgs (sub-orgs keep their data, their billing rolls up here). Granted
+ * by hand on the billing org's plan in Autumn: pooling allowances across orgs is a pricing decision.
+ */
+export const BILLING_SUB_ORGS_FEATURE_ID = "billing_sub_orgs"
+
+/** AI usage in dollars: one credit is one dollar. Chat, triage, reviews and security audits draw on it. */
+export const AI_CREDITS_FEATURE_ID = "ai_credits"
+
+/** Uptime monitors an org has, metered as continuous use: +1 on create, -1 on delete. */
+export const UPTIME_MONITORS_FEATURE_ID = "uptime_monitors"
+
+/** Percent Autumn adds to a model's token price on `ai_credits`; audits apply it to their own cost. */
+export const AI_CREDITS_MARKUP_PERCENT = 20
+
+/** What a provider charged, as the AI credits an org pays for it. */
+export const aiCreditsUsd = (providerUsd: number): number =>
+	providerUsd * (1 + AI_CREDITS_MARKUP_PERCENT / 100)
+
+/**
+ * The plan features a pricing card lists, in display order. An allowlist on purpose: a feature
+ * added to a plan for metering or gating (raw AI tokens) stays off every card
+ * until it is added here.
+ */
+export const PRICING_CARD_FEATURE_IDS = [
+	"logs",
+	"traces",
+	"metrics",
+	"browser_sessions",
+	"product_events",
+	"ai_credits",
+] as const
+
+const pricingCardFeatureIds: ReadonlySet<string> = new Set(PRICING_CARD_FEATURE_IDS)
+
+export const isPricingCardFeature = (featureId: string | null | undefined): featureId is string =>
+	featureId !== null && featureId !== undefined && pricingCardFeatureIds.has(featureId)
+
+/** Does a raw Autumn customer carry this boolean feature? Autumn keys granted ones under `flags`. */
+export const customerHasFlag = (response: unknown, featureId: string): boolean =>
+	Predicate.isObject(response) &&
+	Predicate.isObject(response.flags) &&
+	Predicate.isObject(response.flags[featureId])
 
 // Cycle pricing
 //
@@ -58,6 +112,11 @@ export interface FeatureUsagePricing {
 	 * it per feature on the customer's balances.
 	 */
 	readonly overageAllowed?: boolean
+	/**
+	 * The org's overage cap for this feature, in units past the allotment. Usage
+	 * beyond it is rejected at the gateway, so it bounds both spend and projection.
+	 */
+	readonly overageLimit?: number | undefined
 }
 
 export interface CycleSpend {
@@ -86,11 +145,12 @@ export const meteredUsage = (
 	aggregate: number | null | undefined,
 ): number => balance?.usage ?? aggregate ?? 0
 
-/** Units of `feature` beyond its included allotment. Never negative. */
+/** Units of `feature` beyond its included allotment, up to its overage cap. Never negative. */
 export function overageUnits(feature: FeatureUsagePricing): number {
 	if (feature.unlimited) return 0
 	if (feature.included == null) return 0
-	return Math.max(0, feature.used - feature.included)
+	const over = Math.max(0, feature.used - feature.included)
+	return feature.overageLimit === undefined ? over : Math.min(over, Math.max(0, feature.overageLimit))
 }
 
 /** Can this feature bill past its allotment at all? */
@@ -116,7 +176,7 @@ export function cycleSpend({
 	const overageByFeature: Record<string, number> = {}
 	let overageCentsExact = 0
 
-	for (const [featureId, feature] of Object.entries(features)) {
+	for (const [featureId, feature] of Rec.toEntries(features)) {
 		const units = overageUnits(feature)
 		if (units <= 0) {
 			overageByFeature[featureId] = 0
@@ -176,7 +236,7 @@ export function projectCycleSpend({
 }): number {
 	const remaining = elapsedMs <= 0 || totalMs <= elapsedMs ? 0 : (totalMs - elapsedMs) / elapsedMs
 	const projected: Record<string, FeatureUsagePricing> = {}
-	for (const [featureId, feature] of Object.entries(features)) {
+	for (const [featureId, feature] of Rec.toEntries(features)) {
 		const paced = Math.min(cycleUsage?.[featureId] ?? feature.used, feature.used)
 		projected[featureId] = { ...feature, used: feature.used + paced * remaining }
 	}
@@ -232,7 +292,11 @@ export const resolveSubscriptionPlan = <P extends PlanLike>(
 	const own = subscription.plan
 	if (own && (own.price != null || (own.items != null && own.items.length > 0))) return own
 	const planId = subscription.planId
-	return (planId ? catalog.find((plan) => plan.id === planId) : undefined) ?? own ?? null
+	return (
+		(planId ? Option.getOrUndefined(Arr.findFirst(catalog, (plan) => plan.id === planId)) : undefined) ??
+		own ??
+		null
+	)
 }
 
 /** Is this plan's pricing knowable — i.e. can we quote a bill from it at all? */

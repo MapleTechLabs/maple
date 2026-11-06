@@ -1,4 +1,5 @@
 import { inferBucketSeconds, parseBucketMs } from "../../lib/format"
+import { Array as Arr, Option } from "effect"
 
 /**
  * A row that can be tested for partiality. `partial` is the authoritative flag
@@ -24,8 +25,8 @@ export function findFirstPartialIndex(
 ): number {
 	if (rows.length === 0) return -1
 
-	const flagged = rows.findIndex((row) => row.partial === true)
-	if (flagged !== -1) return flagged
+	const flagged = Arr.findFirstIndex(rows, (row) => row.partial === true)
+	if (Option.isSome(flagged)) return flagged.value
 
 	const bucketSeconds = inferBucketSeconds(rows)
 	if (bucketSeconds == null) return -1
@@ -33,8 +34,8 @@ export function findFirstPartialIndex(
 	const nowMs = options?.now ?? Date.now()
 	const intervalMs = bucketSeconds * 1000
 
-	for (let index = 0; index < rows.length; index += 1) {
-		const bucketMs = parseBucketMs(rows[index].bucket)
+	for (const [index, row] of rows.entries()) {
+		const bucketMs = parseBucketMs(row.bucket)
 		if (bucketMs == null) continue
 		if (bucketMs + intervalMs > nowMs) return index
 	}
@@ -84,13 +85,17 @@ export function trimEmptyTrailingBuckets<T extends PartialCandidateRow>(
 	const isEmptyRow =
 		options?.isEmpty ??
 		((row: T): boolean =>
-			valueKeys.every((key) => {
+			Arr.every(valueKeys, (key) => {
 				const value = (row as Record<string, unknown>)[key]
 				return value === null || value === undefined || value === 0
 			}))
 
 	let end = rows.length
-	while (end > firstPartialIndex && end > 1 && isEmptyRow(rows[end - 1])) {
+	for (
+		let last = rows[end - 1];
+		end > firstPartialIndex && end > 1 && last !== undefined && isEmptyRow(last);
+		last = rows[end - 1]
+	) {
 		end -= 1
 	}
 	return end === rows.length ? rows : rows.slice(0, end)

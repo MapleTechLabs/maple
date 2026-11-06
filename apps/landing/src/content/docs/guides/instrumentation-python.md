@@ -19,7 +19,8 @@ To have a coding agent do this setup, use the [maple-onboard](https://github.com
 ## Install
 
 ```bash
-pip install opentelemetry-sdk opentelemetry-exporter-otlp-proto-http
+pip install opentelemetry-sdk opentelemetry-exporter-otlp-proto-http \
+  opentelemetry-instrumentation-logging
 ```
 
 ## Configure
@@ -36,7 +37,8 @@ from opentelemetry._logs import set_logger_provider
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.instrumentation.logging.handler import LoggingHandler
+from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
@@ -193,6 +195,39 @@ def process_order(order_id: str):
 
 Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map).
 
+## Attributes Maple uses
+
+Most attributes are optional. These unlock specific features.
+
+### Commits and GitHub
+
+Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the Releases page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. The resource in [Configure](#configure) already sets both. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
+
+```bash
+export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=$GITHUB_SHA"
+```
+
+### Databases
+
+Database instrumentation sets these attributes for you. For a driver without instrumentation, set them on a `Client` span:
+
+```python
+from opentelemetry.trace import SpanKind
+
+with tracer.start_as_current_span(
+    "SELECT users",
+    kind=SpanKind.CLIENT,
+    attributes={
+        "db.system.name": "postgresql",
+        "db.namespace": "app",
+        "db.query.text": "SELECT * FROM users WHERE id = %s",
+    },
+):
+    cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+```
+
+`db.system.name` and `db.namespace` draw the database node on the [service map](/docs/explore/service-map). `db.query.text` groups statements into query shapes, so record it with placeholders, not bound values. See [Database queries](/docs/concepts/otel-conventions#database-queries) for the full list.
+
 ## Log correlation
 
 `telemetry.py` attaches a `LoggingHandler` to the root logger. Records logged during an active span carry its trace and span IDs, so Maple links each log line to its trace:
@@ -203,7 +238,7 @@ import logging
 logging.getLogger(__name__).warning("Payment retry for order %s", order_id)
 ```
 
-The root logger's level still applies. Python defaults it to `WARNING`, so call `logging.basicConfig(level=logging.INFO)` or set the level yourself to send `INFO` records.
+The root logger's level still applies. Python defaults it to `WARNING`, so call `logging.getLogger().setLevel(logging.INFO)` to send `INFO` records. `logging.basicConfig(level=...)` does nothing once the root logger has a handler, so after `import telemetry` it no longer sets the level. See [Python logging levels](/guides/python-logging-levels) for per-module and per-handler levels.
 
 ## Verify
 

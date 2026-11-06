@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Array as Arr, Option, Schema } from "effect"
 
 /**
  * How much of a person a browser session holds, first match wins: a bot, then a
@@ -28,8 +28,8 @@ export const sessionTagsOf = (row: {
 	readonly visitorIsNew: number | string
 }): Array<SessionTag> => {
 	const tags: Array<SessionTag> = []
-	const quality = SESSION_QUALITY_TAGS.find((tag) => tag === row.quality)
-	if (quality !== undefined) tags.push(quality)
+	const quality = Arr.findFirst(SESSION_QUALITY_TAGS, (tag) => tag === row.quality)
+	if (Option.isSome(quality)) tags.push(quality.value)
 	if (row.userId !== "") tags.push("signed_in")
 	if (Number(row.visitorIsNew) === 1) tags.push("new_visitor")
 	return tags

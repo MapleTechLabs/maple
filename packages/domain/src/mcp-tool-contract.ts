@@ -10,6 +10,7 @@ import { Schema } from "effect"
 
 /** MCP tool annotations, spelled as the protocol spells them. */
 export interface McpToolAnnotations {
+	readonly title: string
 	readonly readOnlyHint: boolean
 	readonly destructiveHint: boolean
 	readonly idempotentHint: boolean
@@ -18,6 +19,7 @@ export interface McpToolAnnotations {
 
 export interface McpToolDescriptor {
 	readonly name: string
+	readonly title: string
 	readonly description: string
 	readonly inputSchema: Record<string, unknown>
 	/** The JSON Schema `structuredContent` conforms to. */
@@ -28,7 +30,7 @@ export interface McpToolDescriptor {
 export class McpToolNotFoundError extends Schema.TaggedError<McpToolNotFoundError>()(
 	"@maple/mcp/ToolNotFoundError",
 	{
-		name: Schema.String,
+		toolName: Schema.String,
 		message: Schema.String,
 	},
 ) {}

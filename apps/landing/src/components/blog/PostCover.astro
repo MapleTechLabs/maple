@@ -31,7 +31,7 @@ const aspect =
     variant === "banner"
         ? "aspect-[16/9] md:aspect-[5/2]"
         : variant === "featured"
-          ? "aspect-[16/10] md:h-full"
+          ? "w-full aspect-[40/21] lg:h-full"
           : "aspect-[16/9]";
 
 // Icon tint follows the cover surface.
@@ -44,13 +44,13 @@ const focalClass = [
 ---
 
 {cover ? (
-    <div class:list={["relative overflow-hidden", aspect, className]}>
+    <div class:list={["relative overflow-hidden bg-bg-deep", aspect, className]}>
         <img
             src={cover}
             alt={coverAlt ?? `Cover image for ${title}`}
             loading={eager ? "eager" : "lazy"}
             decoding="async"
-            class="absolute inset-0 h-full w-full object-cover"
+            class="absolute inset-0 h-full w-full object-cover object-left"
         />
     </div>
 ) : (

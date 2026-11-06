@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant } from "@maple/domain/http"
 import type { V2WidgetSummaryService } from "@maple/domain/http/v2"
 import {
@@ -11,13 +11,16 @@ import {
 	WIDGET_SUMMARY_SERVICE_LIMIT,
 	WIDGET_SUMMARY_THROUGHPUT_WINDOW_SECONDS,
 } from "@maple/domain/http/v2"
-import { CH, formatWarehouseDateTime, QueryEngineExecuteRequest } from "@maple/query-engine"
+import { formatWarehouseDateTime, QueryEngineExecuteRequest } from "@maple/query-engine"
 import { computeBucketSeconds } from "@maple/query-engine/runtime"
-import { Effect, Schema } from "effect"
+import { Clock, DateTime, Effect, Schema, Array as Arr, Record as Rec } from "effect"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
-import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { toService, type ServiceBaselines } from "./telemetry.http"
+import {
+	TelemetryReadService,
+	type ServiceBaselines,
+} from "@maple/backend/services/warehouse/TelemetryReadService"
+import { toService } from "./telemetry.http"
 
 /**
  * The one read behind the iOS Home Screen widgets.
@@ -65,17 +68,17 @@ const bucketCounts = (
 	data: ReadonlyArray<{ readonly bucket: string; readonly series: Readonly<Record<string, number>> }>,
 	group: string | undefined,
 ): ReadonlyArray<number> =>
-	data.map((point) => {
+	Arr.map(data, (point) => {
 		// An ungrouped series carries exactly one key, whose name the engine
 		// picks; naming it here would couple this file to that choice.
-		const value = group === undefined ? Object.values(point.series)[0] : point.series[group]
+		const value = group === undefined ? Rec.values(point.series)[0] : point.series[group]
 		return Number(value ?? 0)
 	})
 
 export const HttpV2WidgetSummaryLive = HttpApiBuilder.group(MapleApiV2, "widgetSummary", (handlers) =>
 	Effect.gen(function* () {
 		const readModels = yield* ErrorIssueReadModelsService
-		const warehouse = yield* WarehouseQueryService
+		const telemetry = yield* TelemetryReadService
 		const queryEngine = yield* QueryEngineService
 
 		return handlers.handle("retrieve", ({ query }) =>
@@ -85,11 +88,11 @@ export const HttpV2WidgetSummaryLive = HttpApiBuilder.group(MapleApiV2, "widgetS
 				// half filtered to staging next to a half that is not would render as
 				// an error rate the traffic underneath it cannot produce.
 				const deploymentEnv = query.deployment_environment
-				// One clock for the whole response. Two `Date.now()` calls would let
+				// One clock read for the whole response. Two reads would let
 				// the issues window and the throughput window describe times that do
 				// not line up, which is the sort of skew a widget renders as a
 				// contradiction between its two halves.
-				const nowMs = Date.now()
+				const nowMs = yield* Clock.currentTimeMillis
 				const issuesStartMs = nowMs - WIDGET_SUMMARY_ISSUES_WINDOW_SECONDS * 1000
 				const throughputStartMs = nowMs - WIDGET_SUMMARY_THROUGHPUT_WINDOW_SECONDS * 1000
 
@@ -101,28 +104,22 @@ export const HttpV2WidgetSummaryLive = HttpApiBuilder.group(MapleApiV2, "widgetS
 					// documented on `listIssues` and both are the right trade here: a
 					// widget filtered to staging must not count production's issues.
 					deploymentEnv,
-					startTime: new Date(issuesStartMs).toISOString(),
-					endTime: new Date(nowMs).toISOString(),
+					startTime: DateTime.formatIso(DateTime.makeUnsafe(issuesStartMs)),
+					endTime: DateTime.formatIso(DateTime.makeUnsafe(nowMs)),
 					limit: WIDGET_SUMMARY_ISSUE_LIMIT,
 				})
 
 				// Whole seconds: the catalog reads the hourly rollups, whose
 				// Timestamp is a plain `DateTime` and rejects a fractional literal.
-				const compiled = CH.compile(
-					CH.serviceCatalogQuery({
-						limit: WIDGET_SUMMARY_SERVICE_LIMIT,
-						deploymentEnvironment: deploymentEnv,
-					}),
+				const catalog = telemetry.serviceCatalog(
+					tenant,
+					{ limit: WIDGET_SUMMARY_SERVICE_LIMIT, deploymentEnvironment: deploymentEnv },
 					{
-						orgId: tenant.orgId,
 						startTime: formatWarehouseDateTime(throughputStartMs),
 						endTime: formatWarehouseDateTime(nowMs),
 					},
+					"v2WidgetSummaryServices",
 				)
-				const catalog = warehouse.compiledQuery(tenant, compiled, {
-					profile: "aggregation",
-					context: "v2WidgetSummaryServices",
-				})
 
 				const bucketSeconds = computeBucketSeconds(throughputStartMs, nowMs)
 				const timeseries = (groupByService: boolean) =>
@@ -170,7 +167,7 @@ export const HttpV2WidgetSummaryLive = HttpApiBuilder.group(MapleApiV2, "widgetS
 				const seriesBucketSeconds = grouped.length > 0 || total.length > 0 ? bucketSeconds : null
 
 				const rangeSeconds = WIDGET_SUMMARY_THROUGHPUT_WINDOW_SECONDS
-				const services: ReadonlyArray<V2WidgetSummaryService> = serviceRows.map((row) => {
+				const services: ReadonlyArray<V2WidgetSummaryService> = Arr.map(serviceRows, (row) => {
 					const service = toService(row, rangeSeconds, NO_BASELINES)
 					return {
 						name: service.name,
@@ -184,13 +181,13 @@ export const HttpV2WidgetSummaryLive = HttpApiBuilder.group(MapleApiV2, "widgetS
 				return {
 					object: "widget_summary" as const,
 					schema_version: WIDGET_SUMMARY_SCHEMA_VERSION,
-					generated_at: timestamp(new Date(nowMs).toISOString()),
+					generated_at: timestamp(DateTime.formatIso(DateTime.makeUnsafe(nowMs))),
 					organization_id: tenant.orgId,
 					deployment_environment: deploymentEnv ?? null,
 					issues: {
 						window_seconds: WIDGET_SUMMARY_ISSUES_WINDOW_SECONDS,
 						has_more: issuesPage.nextCursor !== undefined,
-						data: issuesPage.issues.map((issue) => ({
+						data: Arr.map(issuesPage.issues, (issue) => ({
 							id: issue.id,
 							exception_type: issue.exceptionType,
 							error_label: issue.errorLabel,

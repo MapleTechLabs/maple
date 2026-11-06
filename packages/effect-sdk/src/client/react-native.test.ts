@@ -1,5 +1,6 @@
 // SAFETY-FILE: OTLP payloads are produced by the real SDK and decoded only for assertions.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { Array as Arr } from "effect"
 
 interface Attribute {
 	readonly key: string
@@ -94,36 +95,37 @@ describe("React Native client telemetry", () => {
 				}
 			}
 
-			const spans = posts.flatMap(
-				({ body }) =>
-					body.resourceSpans?.flatMap((resource) =>
-						resource.scopeSpans.flatMap((scope) => scope.spans),
-					) ?? [],
+			const spans = Arr.flatMap(posts, ({ body }) =>
+				Arr.flatMap(body.resourceSpans ?? [], (resource) =>
+					Arr.flatMap(resource.scopeSpans, (scope) => scope.spans),
+				),
 			)
-			expect(spans.map((span) => span.name)).toEqual(["native-span", "anonymous-span"])
-			expect(spans[0].attributes).toContainEqual({
+			expect(Arr.map(spans, (span) => span.name)).toEqual(["native-span", "anonymous-span"])
+			expect(Arr.getUnsafe(spans, 0).attributes).toContainEqual({
 				key: "user.id",
 				value: { stringValue: "native-user" },
 			})
-			expect(spans[1].attributes.some((attribute) => attribute.key === "user.id")).toBe(false)
 			expect(
-				spans.every((span) => span.attributes.every((attribute) => attribute.key !== "session.id")),
+				Arr.some(Arr.getUnsafe(spans, 1).attributes, (attribute) => attribute.key === "user.id"),
+			).toBe(false)
+			expect(
+				Arr.every(spans, (span) =>
+					Arr.every(span.attributes, (attribute) => attribute.key !== "session.id"),
+				),
 			).toBe(true)
-			const logs = posts.flatMap(
-				({ body }) =>
-					body.resourceLogs?.flatMap((resource) =>
-						resource.scopeLogs.flatMap((scope) => scope.logRecords),
-					) ?? [],
+			const logs = Arr.flatMap(posts, ({ body }) =>
+				Arr.flatMap(body.resourceLogs ?? [], (resource) =>
+					Arr.flatMap(resource.scopeLogs, (scope) => scope.logRecords),
+				),
 			)
 			expect(logs).toContainEqual(expect.objectContaining({ body: { stringValue: "native-log" } }))
-			const metrics = posts.flatMap(
-				({ body }) =>
-					body.resourceMetrics?.flatMap((resource) =>
-						resource.scopeMetrics.flatMap((scope) => scope.metrics),
-					) ?? [],
+			const metrics = Arr.flatMap(posts, ({ body }) =>
+				Arr.flatMap(body.resourceMetrics ?? [], (resource) =>
+					Arr.flatMap(resource.scopeMetrics, (scope) => scope.metrics),
+				),
 			)
 			expect(metrics).toContainEqual(expect.objectContaining({ name: "native_counter" }))
-			expect(new Set(posts.map(({ request }) => request.url))).toEqual(
+			expect(new Set(Arr.map(posts, ({ request }) => request.url))).toEqual(
 				new Set([
 					"https://collector.test/v1/traces",
 					"https://collector.test/v1/logs",

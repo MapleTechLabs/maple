@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { ApiKeyPersistenceError } from "../api-keys"
 import { OrgId } from "../../primitives"
@@ -30,9 +30,10 @@ import { publicError } from "./public-error"
  * scopes, a longer life, or more authority than the person running the app.
  */
 export const InstallationId = Schema.String.check(
-	Schema.isMinLength(8),
+	// Code points: the same as length for this ASCII id, and exportable as an exact `minLength`.
+	Schema.isMinCodePoints(8),
 	Schema.isMaxLength(128),
-	Schema.isPattern(/^[A-Za-z0-9_-]+$/, {
+	Schema.isPattern(/^[A-Za-z0-9_-]+$/u, {
 		description: "an opaque installation identifier (letters, digits, `_` and `-`)",
 	}),
 ).annotate({
@@ -76,7 +77,7 @@ export const V2WidgetCredential = Schema.Struct({
 			secret: "maple_ak_1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7081",
 			organization_id: "org_2abcDEF",
 			scopes: ["widget_summary:read"],
-			expires_at: "2026-09-20T09:10:00.000Z",
+			expires_at: "2026-09-04T09:10:00.000Z",
 			created_at: "2026-08-21T09:10:00.000Z",
 		}),
 	],

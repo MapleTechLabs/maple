@@ -8,7 +8,7 @@ import {
 	type PodInfraTimeseriesRequest,
 	type WorkloadInfraTimeseriesRequest,
 } from "@maple/domain/http"
-import { Effect, Schema } from "effect"
+import { Array as Arr, Effect, Result } from "effect"
 
 /**
  * Helpers shared between the query-engine handlers and the app-side query
@@ -93,6 +93,20 @@ export const nodeMetricSpec = (metric: NodeInfraTimeseriesRequest["metric"]) => 
 	switch (metric) {
 		case "cpu_usage":
 			return { metricName: "k8s.node.cpu.usage", unit: "cores" as const }
+		case "cpu_utilization":
+			return {
+				metricName: "k8s.node.cpu.usage",
+				capacityMetricName: "k8s.node.allocatable_cpu",
+				unit: "percent" as const,
+			}
+		case "memory_usage":
+			return { metricName: "k8s.node.memory.working_set", unit: "bytes" as const }
+		case "memory_utilization":
+			return {
+				metricName: "k8s.node.memory.working_set",
+				capacityMetricName: "k8s.node.allocatable_memory",
+				unit: "percent" as const,
+			}
 		case "uptime":
 			return { metricName: "k8s.node.uptime", unit: "seconds" as const }
 	}
@@ -129,6 +143,8 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.cpu.utilization",
 				groupByAttributeKey: "state",
+				attributeIn: undefined,
+				attributeNotIn: undefined,
 				unit: "percent" as const,
 				isNetwork: false,
 			}
@@ -136,6 +152,8 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.memory.utilization",
 				groupByAttributeKey: "state",
+				attributeIn: undefined,
+				attributeNotIn: undefined,
 				unit: "percent" as const,
 				isNetwork: false,
 			}
@@ -143,6 +161,10 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.filesystem.utilization",
 				groupByAttributeKey: "mountpoint",
+				// The used share per mount, whether or not the collector splits rows by state.
+				attributeIn: { key: "state", values: CH.FILESYSTEM_USED_STATES },
+				// Read-only and virtual mounts always read ~100%; the headline disk % drops them too.
+				attributeNotIn: { key: "type", values: CH.PSEUDO_FS_TYPES },
 				unit: "percent" as const,
 				isNetwork: false,
 			}
@@ -150,6 +172,8 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.cpu.load_average.15m",
 				groupByAttributeKey: undefined,
+				attributeIn: undefined,
+				attributeNotIn: undefined,
 				unit: "load" as const,
 				isNetwork: false,
 			}
@@ -157,6 +181,8 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.network.io",
 				groupByAttributeKey: "direction",
+				attributeIn: undefined,
+				attributeNotIn: undefined,
 				unit: "bytes_per_second" as const,
 				isNetwork: true,
 			}
@@ -172,7 +198,7 @@ export const containerMetricSpec = (metric: ContainerInfraTimeseriesRequest["met
 	switch (metric) {
 		case "cpu":
 			return {
-				metricNames: ["container.cpu.utilization"],
+				metricNames: Arr.make("container.cpu.utilization"),
 				unit: "percent" as const,
 				isSum: false,
 				average: undefined,
@@ -182,7 +208,7 @@ export const containerMetricSpec = (metric: ContainerInfraTimeseriesRequest["met
 			}
 		case "memory_percent":
 			return {
-				metricNames: ["container.memory.percent"],
+				metricNames: Arr.make("container.memory.percent"),
 				unit: "percent" as const,
 				isSum: false,
 				average: undefined,
@@ -192,7 +218,7 @@ export const containerMetricSpec = (metric: ContainerInfraTimeseriesRequest["met
 			}
 		case "uptime":
 			return {
-				metricNames: ["container.uptime"],
+				metricNames: Arr.make("container.uptime"),
 				unit: "seconds" as const,
 				isSum: false,
 				average: undefined,
@@ -204,7 +230,7 @@ export const containerMetricSpec = (metric: ContainerInfraTimeseriesRequest["met
 			// Sampled bytes, not a cumulative counter — summing a bucket's samples
 			// would inflate the chart by samples-per-bucket.
 			return {
-				metricNames: ["container.memory.usage.total"],
+				metricNames: Arr.make("container.memory.usage.total"),
 				unit: "bytes" as const,
 				isSum: true,
 				average: true,
@@ -214,7 +240,10 @@ export const containerMetricSpec = (metric: ContainerInfraTimeseriesRequest["met
 			}
 		case "network":
 			return {
-				metricNames: ["container.network.io.usage.rx_bytes", "container.network.io.usage.tx_bytes"],
+				metricNames: Arr.make(
+					"container.network.io.usage.rx_bytes",
+					"container.network.io.usage.tx_bytes",
+				),
 				unit: "bytes" as const,
 				isSum: true,
 				average: undefined,
@@ -227,7 +256,7 @@ export const containerMetricSpec = (metric: ContainerInfraTimeseriesRequest["met
 			}
 		case "disk_io":
 			return {
-				metricNames: ["container.blockio.io_service_bytes_recursive"],
+				metricNames: Arr.make("container.blockio.io_service_bytes_recursive"),
 				unit: "bytes" as const,
 				isSum: true,
 				average: undefined,
@@ -238,55 +267,41 @@ export const containerMetricSpec = (metric: ContainerInfraTimeseriesRequest["met
 	}
 }
 
-const isProductEventsFunnelError = Schema.is(CH.ProductEventsFunnelError)
-
 /**
  * A funnel definition the query builder cannot compile is a caller error, not a
- * warehouse one. The builders validate synchronously and throw
- * `ProductEventsFunnelError`; the registry's `compile` would turn that into a
- * defect (a 500 with no remediation), so the definition is checked here first
- * and the reason lands in the 400 envelope. Anything else thrown is a genuine
- * defect and stays one. Shared by the internal endpoint and the share API's
- * `product_events_funnel` route plan.
+ * warehouse one: the builder's `ProductEventsFunnelError` lands in the 400
+ * envelope here, before the registry's `compile` would treat it as a defect.
+ * Shared by the internal endpoint and the share API's `product_events_funnel`
+ * route plan.
  *
  * Breakdown options are checked through the BREAKDOWN builder: `limit` is
  * validated there and nowhere else, so validating the plain funnel for a
- * breakdown request would let `InvalidLimit` through to `compile` — the exact
- * defect this helper exists to prevent.
+ * breakdown request would let `InvalidLimit` through to `compile`.
  */
 export const validateFunnelDefinition = (
 	opts: CH.ProductEventsFunnelOpts | CH.ProductEventsFunnelBreakdownOpts,
 	/** The drop-off details builders need two steps; check through one of them. */
 	variant: "counts" | "details" = "counts",
 ): Effect.Effect<void, QueryEngineValidationError> =>
-	validateThroughBuilder(() => {
-		if ("breakdownBy" in opts) CH.productEventsFunnelBreakdownQuery(opts)
-		else if (variant === "details") CH.productEventsFunnelTimingQuery(opts)
-		else CH.productEventsFunnelQuery(opts)
-	})
+	validateThroughBuilder(
+		"breakdownBy" in opts
+			? CH.productEventsFunnelBreakdownQuery(opts)
+			: variant === "details"
+				? CH.productEventsFunnelTimingQuery(opts)
+				: CH.productEventsFunnelQuery(opts),
+	)
 
 /** The paths builder's own checks (depth, branches, window, a named anchor), as a 400. */
 export const validatePathsDefinition = (
 	opts: CH.ProductEventsPathsOpts,
-): Effect.Effect<void, QueryEngineValidationError> =>
-	validateThroughBuilder(() => {
-		CH.productEventsPathsQuery(opts)
-	})
+): Effect.Effect<void, QueryEngineValidationError> => validateThroughBuilder(CH.productEventsPathsQuery(opts))
 
-const validateThroughBuilder = (build: () => void): Effect.Effect<void, QueryEngineValidationError> =>
-	Effect.try({
-		try: build,
-		catch: (error) => error,
-	}).pipe(
-		Effect.catch((error) =>
-			// The builder throws its own tagged error for a definition it cannot
-			// compile, which is the caller's 400. Anything else is a bug in the
-			// builder rather than something the request could be rewritten to avoid.
-			isProductEventsFunnelError(error)
-				? Effect.fail(
-						new QueryEngineValidationError({ message: error.message, details: [error.reason] }),
-					)
-				: // oxlint-disable-next-line maple/no-effect-die
-					Effect.die(error),
+const validateThroughBuilder = (
+	built: Result.Result<unknown, CH.ProductEventsFunnelError>,
+): Effect.Effect<void, QueryEngineValidationError> =>
+	Effect.fromResult(built).pipe(
+		Effect.asVoid,
+		Effect.mapError(
+			(error) => new QueryEngineValidationError({ message: error.message, details: [error.reason] }),
 		),
 	)

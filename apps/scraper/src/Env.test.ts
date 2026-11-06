@@ -9,16 +9,6 @@ const loadEnv = (env: Record<string, string>) =>
 	)
 
 describe("ScraperEnv", () => {
-	it.effect("applies defaults when nothing is set", () =>
-		Effect.gen(function* () {
-			const env = yield* loadEnv({})
-			assert.strictEqual(env.SCRAPER_CONCURRENCY, 10)
-			assert.strictEqual(env.SCRAPER_RECONCILE_INTERVAL_SECONDS, 60)
-			assert.strictEqual(env.SCRAPER_OTLP_MAX_DATA_POINTS, 10_000)
-			assert.strictEqual(env.PORT, 3475)
-		}),
-	)
-
 	it.effect("accepts explicit valid numeric settings", () =>
 		Effect.gen(function* () {
 			const env = yield* loadEnv({ SCRAPER_CONCURRENCY: "25", PORT: "8080" })

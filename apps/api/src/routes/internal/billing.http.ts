@@ -1,9 +1,12 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
-import { Clock, Effect, Option, Schema } from "effect"
+import { HttpApiBuilder } from "effect/http-api"
+import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
 import { EdgeCacheService } from "@maple/cache"
 import {
 	AttachResult,
+	BillingAccountOrgUsage,
+	BillingAccountUsageResponse,
 	BillingCustomer,
+	type BillingCustomerId,
 	BillingForbiddenError,
 	BillingInvoice,
 	BillingInvoicesResponse,
@@ -11,8 +14,11 @@ import {
 	BillingUsage,
 	CurrentTenant,
 	CustomerPortalResult,
+	DailySpendResponse,
+	DailyVolume,
 	MapleInternalApi,
 	mergeSpendLimits,
+	type OrgId,
 	PreviewAttachResult,
 } from "@maple/domain/http"
 import {
@@ -28,6 +34,7 @@ import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing
 import { StripeClient } from "@maple/backend/services/billing/stripe-http"
 import {
 	ensureStripeCustomerId,
+	failIfCustomerMissing,
 	isAlreadyRemoved,
 	readBillingProfile,
 	readStripeCustomerId,
@@ -36,8 +43,12 @@ import {
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { emitPlanStartedFromAttach } from "@maple/backend/services/billing/plan-events"
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { DailySpendService } from "@maple/backend/services/billing/DailySpendService"
+import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
+import { BillingOrgService } from "@maple/backend/services/billing/BillingOrgService"
+import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
 
 // Pull the `invoices` array off a raw expanded `getOrCreateCustomer` response.
 // Exported for tests. Autumn omits the key for a customer with no invoices, so
@@ -65,9 +76,13 @@ export const resolveCycleWindow = (
 	customer: BillingCustomer,
 	nowMs: number,
 ): { readonly startMs: number; readonly endMs: number; readonly nowMs: number } => {
-	const active = customer.subscriptions.find((sub) => sub.status === "active")
-	if (active?.currentPeriodStart != null && active.currentPeriodEnd != null) {
-		return { startMs: active.currentPeriodStart, endMs: active.currentPeriodEnd, nowMs }
+	const active = Arr.findFirst(customer.subscriptions, (sub) => sub.status === "active")
+	if (
+		Option.isSome(active) &&
+		active.value.currentPeriodStart != null &&
+		active.value.currentPeriodEnd != null
+	) {
+		return { startMs: active.value.currentPeriodStart, endMs: active.value.currentPeriodEnd, nowMs }
 	}
 	const now = new Date(nowMs)
 	return {
@@ -78,6 +93,41 @@ export const resolveCycleWindow = (
 	}
 }
 
+/** One series for several orgs' daily volume, day by day. Every series spans the same cycle. */
+export const sumDailySpend = (
+	first: DailySpendResponse,
+	rest: ReadonlyArray<DailySpendResponse>,
+): DailySpendResponse =>
+	new DailySpendResponse({
+		cycleStart: first.cycleStart,
+		cycleEnd: first.cycleEnd,
+		days: Arr.map(first.days, (day, index) =>
+			Arr.reduce(rest, day, (sum, other) => {
+				const next = other.days[index]
+				return next === undefined || next.date !== day.date
+					? sum
+					: new DailyVolume({
+							date: day.date,
+							logsGB: sum.logsGB + next.logsGB,
+							tracesGB: sum.tracesGB + next.tracesGB,
+							metricsGB: sum.metricsGB + next.metricsGB,
+							browserSessions: sum.browserSessions + next.browserSessions,
+							productEvents: (sum.productEvents ?? 0) + (next.productEvents ?? 0),
+						})
+			}),
+		),
+	})
+
+const orgUsageTotals = (orgId: OrgId, spend: DailySpendResponse) =>
+	new BillingAccountOrgUsage({
+		orgId,
+		logsGB: Arr.reduce(spend.days, 0, (sum, day) => sum + day.logsGB),
+		tracesGB: Arr.reduce(spend.days, 0, (sum, day) => sum + day.tracesGB),
+		metricsGB: Arr.reduce(spend.days, 0, (sum, day) => sum + day.metricsGB),
+		browserSessions: Arr.reduce(spend.days, 0, (sum, day) => sum + day.browserSessions),
+		productEvents: Arr.reduce(spend.days, 0, (sum, day) => sum + (day.productEvents ?? 0)),
+	})
+
 export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing", (handlers) =>
 	Effect.gen(function* () {
 		const edgeCache = yield* EdgeCacheService
@@ -85,26 +135,73 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 		const autumn = yield* AutumnClient
 		const stripe = yield* StripeClient
 		const productEvents = yield* ProductEventsService
+		const organizations = yield* OrganizationService
+		const billingCustomers = yield* BillingCustomerResolver
+		const billingOrgs = yield* BillingOrgService
 
 		// Invalidate on any 2xx, matching `ensureOk` — otherwise a 201/204 from
 		// attach/openCustomerPortal would decode as success yet leave the stale
 		// cached customer in place for up to the TTL.
-		const invalidateCustomer = (orgId: string, result: AutumnResult) =>
+		const invalidateCustomer = (customerId: BillingCustomerId, result: AutumnResult) =>
 			result.statusCode >= 200 && result.statusCode < 300
-				? edgeCache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: orgId })
+				? edgeCache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: customerId })
 				: Effect.void
+
+		// The customer this org reads its plan from: its billing org's, for a member.
+		const readCustomer = (orgId: OrgId) =>
+			Effect.gen(function* () {
+				const customerId = yield* billingCustomers.customerFor(orgId)
+				const cached = yield* readCustomerCached(
+					edgeCache,
+					customerId,
+					// The customer's OWN plan: for a custom-priced or grandfathered plan it is the
+					// only source of their real price and allotments. Without it the page would
+					// quote the public catalog's rates at them.
+					autumn.getOrCreateCustomer(customerId, { expand: ["subscriptions.plan"] }),
+				)
+				return { customerId, ...cached }
+			})
+
+		// Autumn names an unnamed customer after whoever pays at checkout, so the org's
+		// billing showed up under a person. Stamp the org name on first; best-effort,
+		// a naming hiccup must never block a checkout or the portal.
+		const nameCustomerAfterOrg = (orgId: OrgId, customerId: BillingCustomerId) =>
+			organizations.retrieve(orgId).pipe(
+				Effect.flatMap((org) =>
+					org.name
+						? autumn.updateCustomerName(customerId, org.name).pipe(
+								// No customer yet (a 404 from the update): create it already named,
+								// or attach would create it unnamed.
+								Effect.filterOrElse(
+									(result) => result.statusCode !== 404,
+									() =>
+										autumn.getOrCreateCustomer(customerId, {
+											expand: [],
+											customerData: { name: org.name },
+										}),
+								),
+								Effect.flatMap(ensureOk),
+							)
+						: Effect.void,
+				),
+				// Runs ahead of the Subscribe click's checkout, where a stall reads as a failed payment.
+				Effect.timeout("3 seconds"),
+				Effect.catch((error) => Effect.logWarning("Failed to name Autumn customer after org", error)),
+				Effect.withSpan("HttpBilling.nameCustomerAfterOrg"),
+			)
 
 		// The billing-details writes share one preamble: admins only, and a Stripe
 		// customer to write to (created through Autumn on first use).
 		const stripeCustomerForWrite = (tenant: CurrentTenant.TenantSchema) =>
 			Effect.gen(function* () {
-				yield* requireAdmin(
+				yield* Policy.check(
 					tenant.roles,
-					() =>
-						new BillingForbiddenError({ message: "Only org admins can manage billing details" }),
+					"billing:manage",
+					(denial) => new BillingForbiddenError({ message: denial.message }),
 				)
 				yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-				return yield* ensureStripeCustomerId(edgeCache, autumn, tenant.orgId)
+				const customerId = yield* billingCustomers.requireOwnBilling(tenant.orgId)
+				return yield* ensureStripeCustomerId(edgeCache, autumn, customerId)
 			})
 
 		return (
@@ -112,17 +209,10 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 				.handle("getCustomer", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const { result, hit } = yield* readCustomerCached(
-							edgeCache,
-							tenant.orgId,
-							// The customer's OWN plan: for a custom-priced or grandfathered
-							// plan it is the only source of their real price and allotments.
-							// Without it the page would quote the public catalog's rates at
-							// them.
-							autumn.getOrCreateCustomer(tenant.orgId, { expand: ["subscriptions.plan"] }),
-						)
+						const { customerId, result, hit } = yield* readCustomer(tenant.orgId)
 						yield* Effect.annotateCurrentSpan({
 							orgId: tenant.orgId,
+							"maple.billing.customer_id": customerId,
 							"cache.hit": hit,
 							// The plan gate is derived from these rows; without them a
 							// wrongly-gated org can only be diagnosed by asking the customer
@@ -140,18 +230,13 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						// chart. Autumn's named `1bc` range looks BACKWARD one cycle-length
 						// from now rather than forward from the reset, so mid-cycle it
 						// folded most of the previous cycle into "this cycle's usage".
-						const { result: customerResult } = yield* readCustomerCached(
-							edgeCache,
-							tenant.orgId,
-							autumn.getOrCreateCustomer(tenant.orgId, { expand: ["subscriptions.plan"] }),
-						)
-						const customer = yield* decodeUpstream(
-							BillingCustomer,
-							yield* ensureOk(customerResult),
-						)
-						const cycle = resolveCycleWindow(customer, yield* Clock.currentTimeMillis)
+						const { customerId, result: customerResult } = yield* readCustomer(tenant.orgId)
+						const okCustomer = yield* ensureOk(customerResult)
+						const customer = yield* decodeUpstream(BillingCustomer, okCustomer)
+						const now = yield* Clock.currentTimeMillis
+						const cycle = resolveCycleWindow(customer, now)
 						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-						const result = yield* autumn.aggregateEvents(tenant.orgId, {
+						const result = yield* autumn.aggregateEvents(customerId, {
 							featureId: query.featureId,
 							customRange: { start: cycle.startMs, end: cycle.endMs },
 						})
@@ -166,7 +251,8 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 				.handle("listInvoices", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const result = yield* autumn.getOrCreateCustomer(tenant.orgId, {
+						const customerId = yield* billingCustomers.requireOwnBilling(tenant.orgId)
+						const result = yield* autumn.getOrCreateCustomer(customerId, {
 							expand: ["invoices"],
 						})
 						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
@@ -180,40 +266,51 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						// The cycle window comes from the subscription, not the calendar:
 						// an org that subscribed mid-month is billed on its own anniversary
 						// and a calendar-month chart would disagree with the invoice.
-						const { result } = yield* readCustomerCached(
-							edgeCache,
-							tenant.orgId,
-							// The customer's OWN plan: for a custom-priced or grandfathered
-							// plan it is the only source of their real price and allotments.
-							// Without it the page would quote the public catalog's rates at
-							// them.
-							autumn.getOrCreateCustomer(tenant.orgId, { expand: ["subscriptions.plan"] }),
-						)
+						const { result } = yield* readCustomer(tenant.orgId)
 						const response = yield* ensureOk(result)
 						const customer = yield* decodeUpstream(BillingCustomer, response)
-						const cycle = resolveCycleWindow(customer, yield* Clock.currentTimeMillis)
+						const now = yield* Clock.currentTimeMillis
+						const cycle = resolveCycleWindow(customer, now)
 						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-						return yield* dailySpend.get(tenant, cycle)
+						// A billing org's invoice carries its members' usage, so its chart does too.
+						const members = yield* billingOrgs.members(tenant.orgId)
+						if (members.length === 0) return yield* dailySpend.get(tenant, cycle)
+						const [own, memberSeries] = yield* Effect.all(
+							[
+								dailySpend.get(tenant, cycle),
+								Effect.forEach(
+									members,
+									(member) => dailySpend.get(systemTenant(member.orgId), cycle),
+									{
+										concurrency: 4,
+									},
+								),
+							],
+							{ concurrency: "unbounded" },
+						)
+						return sumDailySpend(own, memberSeries)
 					}),
 				)
 				.handle("updateBillingControls", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(
+						yield* Policy.check(
 							tenant.roles,
-							() =>
+							"billing:manage",
+							(denial) =>
 								new BillingForbiddenError({
-									message: "Only org admins can manage billing controls",
+									message: denial.message,
 								}),
 						)
 						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+						const customerId = yield* billingCustomers.requireOwnBilling(tenant.orgId)
 						// Read uncached: the merge must start from the caps Autumn holds now,
 						// or a stale copy would resurrect a cap that was just removed.
-						const current = yield* autumn.getOrCreateCustomer(tenant.orgId, { expand: [] }).pipe(
+						const current = yield* autumn.getOrCreateCustomer(customerId, { expand: [] }).pipe(
 							Effect.flatMap(ensureOk),
 							Effect.flatMap((response) => decodeUpstream(BillingCustomer, response)),
 						)
-						const result = yield* autumn.updateCustomerBillingControls(tenant.orgId, {
+						const result = yield* autumn.updateCustomerBillingControls(customerId, {
 							spendLimits: mergeSpendLimits(
 								current.billingControls?.spendLimits ?? [],
 								payload.spendLimits,
@@ -225,8 +322,8 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						// Caller input: a rejected control is about what THEY asked for, so
 						// the classified 4xx survives to the client instead of a blanket 502.
 						yield* classifyAutumn(result)
-						yield* invalidateCustomer(tenant.orgId, result)
-						const refreshed = yield* autumn.getOrCreateCustomer(tenant.orgId, {
+						yield* invalidateCustomer(customerId, result)
+						const refreshed = yield* autumn.getOrCreateCustomer(customerId, {
 							expand: ["subscriptions.plan"],
 						})
 						return yield* ensureOk(refreshed).pipe(
@@ -239,24 +336,23 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						const tenant = yield* CurrentTenant.Context
 						// Starting or changing a plan is an org-wide spend decision, so
 						// it is gated like every other billing write in this group.
-						yield* requireAdmin(
+						yield* Policy.check(
 							tenant.roles,
-							() =>
+							"billing:manage",
+							(denial) =>
 								new BillingForbiddenError({
-									message: "Only org admins can change the subscription",
+									message: denial.message,
 								}),
 						)
-						// No buyer identity rides along: `/v1/billing.attach` carries no
-						// identity fields in Autumn 2.3.0, and the `customerData` we used to
-						// hand `autumnHandler` here was silently discarded by it. Seeding
-						// the Stripe checkout with the Clerk email would need a separate
-						// `customers.get_or_create` on this path — a behaviour change, not
-						// part of this port.
+						// `/v1/billing.attach` carries no identity fields in Autumn 2.3.0, so
+						// the org name goes on through `nameCustomerAfterOrg` beforehand.
 						yield* Effect.annotateCurrentSpan({
 							orgId: tenant.orgId,
-							"billing.plan_id": payload.planId,
+							"maple.billing.plan_id": payload.planId,
 						})
-						const result = yield* autumn.attach(tenant.orgId, {
+						const customerId = yield* billingCustomers.requireOwnBilling(tenant.orgId)
+						yield* nameCustomerAfterOrg(tenant.orgId, customerId)
+						const result = yield* autumn.attach(customerId, {
 							planId: payload.planId,
 							successUrl: payload.successUrl,
 						})
@@ -275,7 +371,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 								// plan is this a success; any other conflict still surfaces.
 								(conflict) =>
 									resolveAttachConflict(
-										autumn.getOrCreateCustomer(tenant.orgId, {
+										autumn.getOrCreateCustomer(customerId, {
 											expand: ["subscriptions.plan"],
 										}),
 										payload.planId,
@@ -283,7 +379,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 									),
 							),
 						)
-						yield* invalidateCustomer(tenant.orgId, result)
+						yield* invalidateCustomer(customerId, result)
 						const attached = yield* decodeUpstream(AttachResult, response)
 						// Inline (no-redirect) plan start; the Autumn webhook covers the
 						// Stripe-checkout path. Never fails the request.
@@ -312,7 +408,8 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 				.handle("previewAttach", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const result = yield* autumn.previewAttach(tenant.orgId, {
+						const customerId = yield* billingCustomers.requireOwnBilling(tenant.orgId)
+						const result = yield* autumn.previewAttach(customerId, {
 							planId: payload.planId,
 						})
 						// Caller input (a plan id): keep the classified rejection.
@@ -326,18 +423,21 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						// The Stripe portal can cancel the subscription and exposes the
 						// payment methods and invoice history — admin-only, like the
 						// billing-details writes it overlaps with.
-						yield* requireAdmin(
+						yield* Policy.check(
 							tenant.roles,
-							() =>
+							"billing:manage",
+							(denial) =>
 								new BillingForbiddenError({
-									message: "Only org admins can open the billing portal",
+									message: denial.message,
 								}),
 						)
-						const result = yield* autumn.openCustomerPortal(tenant.orgId, {
+						const customerId = yield* billingCustomers.requireOwnBilling(tenant.orgId)
+						yield* nameCustomerAfterOrg(tenant.orgId, customerId)
+						const result = yield* autumn.openCustomerPortal(customerId, {
 							returnUrl: payload.returnUrl,
 						})
 						const response = yield* ensureOk(result)
-						yield* invalidateCustomer(tenant.orgId, result)
+						yield* invalidateCustomer(customerId, result)
 						return yield* decodeUpstream(CustomerPortalResult, response)
 					}),
 				)
@@ -345,9 +445,10 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-						const stripeCustomerId = yield* readStripeCustomerId(edgeCache, autumn, tenant.orgId)
+						const customerId = yield* billingCustomers.requireOwnBilling(tenant.orgId)
+						const stripeCustomerId = yield* readStripeCustomerId(edgeCache, autumn, customerId)
 						yield* Effect.annotateCurrentSpan({
-							"billing.stripe_linked": Option.isSome(stripeCustomerId),
+							"maple.billing.stripe_linked": Option.isSome(stripeCustomerId),
 						})
 						if (Option.isNone(stripeCustomerId)) return unlinkedProfile()
 						return yield* readBillingProfile(stripe, stripeCustomerId.value)
@@ -361,6 +462,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 							name: payload.name,
 							address: payload.address,
 						})
+						yield* failIfCustomerMissing(result)
 						// Caller input: Stripe's rejection (a bad country code, say) is about
 						// what THEY sent, so the classified 4xx survives to the client.
 						yield* classifyAutumn(result)
@@ -373,11 +475,12 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						const stripeCustomerId = yield* stripeCustomerForWrite(tenant)
 						// The type is a catalog identifier; the value is customer data and
 						// stays off the span.
-						yield* Effect.annotateCurrentSpan({ "billing.tax_id_type": payload.type })
+						yield* Effect.annotateCurrentSpan({ "maple.billing.tax_id_type": payload.type })
 						const result = yield* stripe.createTaxId(stripeCustomerId, {
 							type: payload.type,
 							value: payload.value,
 						})
+						yield* failIfCustomerMissing(result)
 						// `tax_id_invalid` lands here with Stripe's own wording, which is the
 						// only place the format expectation is spelled out.
 						yield* classifyAutumn(result)
@@ -391,6 +494,77 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						const result = yield* stripe.deleteTaxId(stripeCustomerId, params.taxIdId)
 						if (!isAlreadyRemoved(result)) yield* classifyAutumn(result)
 						return yield* readBillingProfile(stripe, stripeCustomerId)
+					}),
+				)
+				.handle("getBillingAccount", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+						return yield* billingOrgs.account(tenant.orgId)
+					}),
+				)
+				.handle("getBillingAccountUsage", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						// Volume per org for the billing org's own page; a member sees billing there.
+						const customerId = yield* billingCustomers.requireOwnBilling(tenant.orgId).pipe(
+							Effect.catchTag("@maple/http/errors/BillingManagedByBillingOrgError", () =>
+								Effect.fail(
+									new BillingForbiddenError({
+										message:
+											"Usage per organization is shown to the organization that pays",
+									}),
+								),
+							),
+						)
+						const { result } = yield* readCustomerCached(
+							edgeCache,
+							customerId,
+							autumn.getOrCreateCustomer(customerId, { expand: ["subscriptions.plan"] }),
+						)
+						const okCustomer = yield* ensureOk(result)
+						const customer = yield* decodeUpstream(BillingCustomer, okCustomer)
+						const now = yield* Clock.currentTimeMillis
+						const cycle = resolveCycleWindow(customer, now)
+						const members = yield* billingOrgs.members(tenant.orgId)
+						yield* Effect.annotateCurrentSpan({
+							orgId: tenant.orgId,
+							"maple.billing.member_count": members.length,
+						})
+						const orgs = yield* Effect.forEach(
+							[tenant, ...Arr.map(members, (member) => systemTenant(member.orgId))],
+							(orgTenant) =>
+								dailySpend
+									.get(orgTenant, cycle)
+									.pipe(Effect.map((spend) => orgUsageTotals(orgTenant.orgId, spend))),
+							{ concurrency: 4 },
+						)
+						return new BillingAccountUsageResponse({
+							cycleStartMs: cycle.startMs,
+							cycleEndMs: cycle.endMs,
+							orgs,
+						})
+					}),
+				)
+				.handle("linkBillingOrg", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* billingOrgs.link({
+							orgId: tenant.orgId,
+							userId: tenant.userId,
+							roles: tenant.roles,
+							billingOrgId: payload.billingOrgId,
+						})
+					}),
+				)
+				.handle("unlinkBillingOrg", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* billingOrgs.unlink({
+							orgId: tenant.orgId,
+							roles: tenant.roles,
+							memberOrgId: params.orgId,
+						})
 					}),
 				)
 		)

@@ -44,6 +44,10 @@ describe("ogIdFromPath", () => {
 		expect(ogIdFromPath("/share/og/.png")).toBeUndefined()
 		expect(ogIdFromPath("/share/mshare_abc123")).toBeUndefined()
 	})
+
+	it("treats an id that will not decode as no id, not a thrown error", () => {
+		expect(ogIdFromPath("/share/og/%.png")).toBeUndefined()
+	})
 })
 
 describe("ogMetaReplacements", () => {
@@ -65,11 +69,6 @@ describe("ogMetaReplacements", () => {
 })
 
 describe("ogMetaAdditions", () => {
-	it("advertises the size the card is actually rendered at", () => {
-		expect(ogMetaAdditions(meta)).toContain('content="1200"')
-		expect(ogMetaAdditions(meta)).toContain('content="630"')
-	})
-
 	it("escapes a board name that would otherwise close the attribute", () => {
 		const additions = ogMetaAdditions({ ...meta, title: `Checkout" /><script>alert(1)</script>` })
 

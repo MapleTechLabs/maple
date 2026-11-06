@@ -1,6 +1,6 @@
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { assert, describe, it } from "@effect/vitest"
-import { Cause, Effect, Exit, Option } from "effect"
+import { Cause, Effect, Exit, Option, Schema, String as Str, Array as Arr } from "effect"
 import {
 	MAX_RAW_SQL_CELL_LENGTH,
 	MAX_RAW_SQL_LENGTH,
@@ -9,9 +9,10 @@ import {
 	RawSqlValidationError,
 } from "@maple/domain/http"
 import { makeExecuteRawSql, prepareRawSql } from "./raw-sql"
+import { OrgId } from "@maple/domain"
 
 const baseInput = {
-	orgId: "org_abc",
+	orgId: OrgId.make("org_abc"),
 	startTime: "2026-05-14 00:00:00",
 	endTime: "2026-05-14 06:00:00",
 	granularitySeconds: 60,
@@ -29,7 +30,7 @@ const prepareFail = (sql: string, workload: "interactive" | "alert" = "interacti
 	Effect.gen(function* () {
 		const exit = yield* Effect.exit(prepareRawSql({ ...baseInput, sql, workload }))
 		const error = getError(exit)
-		if (!(error instanceof RawSqlValidationError)) {
+		if (!Schema.is(RawSqlValidationError)(error)) {
 			throw new Error(`expected RawSqlValidationError, got: ${String(error)}`)
 		}
 		return error
@@ -40,6 +41,29 @@ describe("prepareRawSql", () => {
 		Effect.gen(function* () {
 			const error = yield* prepareFail("SELECT 1 FROM Logs")
 			assert.strictEqual(error.code, "MissingOrgFilter")
+		}),
+	)
+
+	it.effect("expands every $__timeFilter across UNION branches with both comparisons", () =>
+		Effect.gen(function* () {
+			const branch = (t: string) =>
+				`SELECT ServiceName, count() n FROM ${t} WHERE $__orgFilter AND $__timeFilter(TimeUnix) GROUP BY 1`
+			const prepared = yield* prepareOk(
+				`${branch("metrics_histogram")} UNION ALL ${branch("metrics_sum")} UNION ALL ${branch("metrics_gauge")} ORDER BY n DESC LIMIT 15`,
+			)
+			assert.strictEqual(
+				Arr.fromIterable(
+					Str.matchAll(/TimeUnix >= toDateTime\('2026-05-14 00:00:00'\)/g)(prepared.sql),
+				).length,
+				3,
+			)
+			assert.strictEqual(
+				Arr.fromIterable(
+					Str.matchAll(/TimeUnix <= toDateTime\('2026-05-14 06:00:00'\)/g)(prepared.sql),
+				).length,
+				3,
+			)
+			assert.include(prepared.sql, "FROM metrics_gauge")
 		}),
 	)
 
@@ -55,7 +79,8 @@ describe("prepareRawSql", () => {
 		Effect.gen(function* () {
 			assert.strictEqual((yield* prepareFail("")).code, "ResourceLimit")
 			assert.strictEqual(
-				(yield* prepareFail(`SELECT '${"x".repeat(MAX_RAW_SQL_LENGTH)}' WHERE $__orgFilter`)).code,
+				(yield* prepareFail(`SELECT '${Str.repeat(MAX_RAW_SQL_LENGTH)("x")}' WHERE $__orgFilter`))
+					.code,
 				"ResourceLimit",
 			)
 			const exit = yield* Effect.exit(
@@ -165,7 +190,7 @@ describe("prepareRawSql", () => {
 		Effect.gen(function* () {
 			const result = yield* prepareRawSql({
 				...baseInput,
-				orgId: "org'); DROP TABLE Logs --",
+				orgId: OrgId.make("org'); DROP TABLE Logs --"),
 				sql: "SELECT 1 FROM Logs WHERE $__orgFilter",
 			})
 			assert.include(result.sql, "OrgId = 'org\\')\\x3B DROP TABLE Logs --'")
@@ -236,10 +261,31 @@ it.effect("does not expand replacement patterns in interpolated values", () =>
 	Effect.gen(function* () {
 		const prepared = yield* prepareRawSql({
 			...baseInput,
-			orgId: "org_$'_$&",
+			orgId: OrgId.make("org_$'_$&"),
 			sql: "SELECT count() FROM Logs WHERE $__orgFilter AND Body = 'tail'",
 		})
 		assert.include(prepared.sql, "OrgId = 'org_$\\'_$&'")
+	}),
+)
+
+it.effect("expands $__orgFilter to a parenthesised predicate, alias-qualified when given one", () =>
+	Effect.gen(function* () {
+		const prepared = yield* prepareOk(
+			"SELECT 1 FROM traces t JOIN logs l ON t.TraceId = l.TraceId AND $__orgFilter(l) WHERE $__orgFilter(t) AND $__orgFilter",
+		)
+		assert.include(
+			prepared.sql,
+			"AND (l.OrgId = 'org_abc') WHERE (t.OrgId = 'org_abc') AND (OrgId = 'org_abc')",
+		)
+	}),
+)
+
+it.effect("rejects an org filter a sibling OR escapes", () =>
+	Effect.gen(function* () {
+		const error = yield* prepareFail(
+			"SELECT 1 FROM traces WHERE $__orgFilter AND SpanName = 'Database.execute' OR (ServiceName = 'maple-api')",
+		)
+		assert.strictEqual(error.code, "InvalidMacro")
 	}),
 )
 
@@ -265,7 +311,7 @@ describe("makeExecuteRawSql", () => {
 	it.effect("rejects oversized cells, encoded output, and unserializable values", () =>
 		Effect.gen(function* () {
 			const cellError = yield* Effect.flip(
-				executeRows([{ value: "x".repeat(MAX_RAW_SQL_CELL_LENGTH + 1) }]),
+				executeRows([{ value: Str.repeat(MAX_RAW_SQL_CELL_LENGTH + 1)("x") }]),
 			)
 			assert.strictEqual(cellError._tag, "@maple/http/errors/RawSqlValidationError")
 			assert.strictEqual(cellError.code, "ResourceLimit")
@@ -275,7 +321,7 @@ describe("makeExecuteRawSql", () => {
 				executeRows(
 					Array.from({ length: 100 }, (_, value) => ({
 						value,
-						payload: "x".repeat(Math.ceil(MAX_RAW_SQL_RESULT_BYTES / 100)),
+						payload: Str.repeat(Math.ceil(MAX_RAW_SQL_RESULT_BYTES / 100))("x"),
 					})),
 				),
 			)

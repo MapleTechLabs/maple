@@ -1,8 +1,9 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { configurePrivacy, resetConsentForTests, setConsent } from "@maple/browser-session"
-import { HttpClientRequest } from "effect/unstable/http"
+import { HttpClientRequest } from "effect/http"
 import { filterOtlpRequestForConsent } from "./consent-http-client.js"
+import { Array as Arr } from "effect"
 
 const traceRequest = (spans: Array<{ name: string; startTimeUnixNano: string }>) =>
 	HttpClientRequest.post("https://collector.test/v1/traces").pipe(
@@ -54,8 +55,8 @@ describe("consent OTLP transport", () => {
 		)
 
 		expect(filtered).toBeDefined()
-		const spans = readJson(filtered!).resourceSpans[0].scopeSpans[0].spans
-		expect(spans.map((span) => span.name)).toEqual(["after"])
+		const spans = Arr.getUnsafe(Arr.getUnsafe(readJson(filtered!).resourceSpans, 0).scopeSpans, 0).spans
+		expect(Arr.map(spans, (span) => span.name)).toEqual(["after"])
 	})
 
 	it("removes spans from a previous grant after a revoke/re-grant cycle", () => {
@@ -82,8 +83,8 @@ describe("consent OTLP transport", () => {
 		)
 
 		expect(filtered).toBeDefined()
-		const spans = readJson(filtered!).resourceSpans[0].scopeSpans[0].spans
-		expect(spans.map((span) => span.name)).toEqual(["second-grant"])
+		const spans = Arr.getUnsafe(Arr.getUnsafe(readJson(filtered!).resourceSpans, 0).scopeSpans, 0).spans
+		expect(Arr.map(spans, (span) => span.name)).toEqual(["second-grant"])
 	})
 
 	it("fails closed for cumulative metrics under explicit consent gating", () => {

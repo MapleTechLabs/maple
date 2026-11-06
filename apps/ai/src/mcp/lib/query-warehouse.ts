@@ -1,5 +1,6 @@
-import { HttpServerRequest } from "effect/unstable/http"
+import { HttpServerRequest } from "effect/http"
 import type { WarehouseQueryName } from "@maple/domain"
+import { WarehouseQueryRequest } from "@maple/domain/http"
 import { Context, Effect } from "effect"
 import { resolveMcpTenantContext } from "./resolve-tenant"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -10,7 +11,7 @@ import { WarehouseExecutor } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 export class CurrentMcpTenant extends Context.Service<CurrentMcpTenant, TenantContext>()(
-	"@maple/api/mcp/CurrentMcpTenant",
+	"@maple/ai/mcp/CurrentMcpTenant",
 ) {}
 
 /**
@@ -23,7 +24,7 @@ export class CurrentMcpTenant extends Context.Service<CurrentMcpTenant, TenantCo
  * and the public MCP adapter passes the value to the closed executor explicitly.
  */
 export class CurrentMcpRequestTenant extends Context.Reference<TenantContext | undefined>(
-	"@maple/api/mcp/CurrentMcpRequestTenant",
+	"@maple/ai/mcp/CurrentMcpRequestTenant",
 	{ defaultValue: () => undefined },
 ) {}
 
@@ -36,21 +37,24 @@ export const resolveHttpMcpTenant = Effect.gen(function* () {
 })
 
 /** Infrastructure binding: resolves the tenant and installs its WarehouseExecutor facade. */
-export const withTenantExecutor = Effect.fn("withTenantExecutor")(function* <A, E>(
+export const withTenantExecutor = Effect.fn("McpWarehouse.withTenantExecutor")(function* <A, E>(
 	effect: Effect.Effect<A, E, WarehouseExecutor>,
 ) {
 	const tenant = yield* CurrentMcpTenant
 	return yield* effect.pipe(provideWarehouseExecutorFromTenant(tenant))
 })
 
-export const queryWarehouse = Effect.fn("queryWarehouse")(function* <T = any>(
+export const queryWarehouse = Effect.fn("McpWarehouse.queryWarehouse")(function* <T = unknown>(
 	pipe: WarehouseQueryName,
 	params?: Record<string, unknown>,
 ) {
 	const tenant = yield* CurrentMcpTenant
 	const service = yield* WarehouseQueryService
 	const response = yield* service
-		.query(tenant, { pipeName: pipe, params })
+		.query(
+			tenant,
+			new WarehouseQueryRequest({ pipeName: pipe, ...(params === undefined ? undefined : { params }) }),
+		)
 		.pipe(Effect.mapError(toMcpQueryError(pipe)))
 
 	return { data: response.data as T[] }

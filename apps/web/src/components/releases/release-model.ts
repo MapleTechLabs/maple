@@ -1,10 +1,12 @@
-// Pure derivations for the Releases pages. Kept free of React so the
+// Pure derivations for the Releases pages, so the
 // thresholds unit-test cleanly and the list, the swimlanes and the detail page
 // all describe a release the same way.
 
 import { startOfDayInTimeZone } from "@maple/query-engine/datetime"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import type { Release, ReleaseTimelineBucket } from "@/api/warehouse/releases"
+import type { Release, ReleaseTimelineBucket } from "@maple/web-data/warehouse/releases"
+import { shortId } from "@maple/ui/lib/ids"
+import { Array as Arr, Option, Order, String as Str } from "effect"
 
 /**
  * Health, worst first. A single band per release so the sidebar facet and the
@@ -82,7 +84,7 @@ export interface ReleaseGroup {
 	commitSha: string
 	/** Earliest first-seen across services. */
 	firstSeen: string
-	services: ReleaseServiceImpact[]
+	services: Arr.NonEmptyArray<ReleaseServiceImpact>
 	spanCount: number
 	errorCount: number
 	errorRate: number
@@ -175,13 +177,15 @@ export function deriveReleaseImpacts(
 
 	const impacts: ReleaseServiceImpact[] = []
 	for (const rows of byService.values()) {
-		const ordered = rows.toSorted(compareFirstSeen)
+		const ordered = Arr.sort(rows, compareFirstSeen)
 		const newestFirstSeen = ordered.at(-1)?.firstSeen ?? ""
 		for (const row of rows) {
 			// Strictly earlier: versions first seen in the same second have no known
 			// order, so neither is the other's predecessor.
-			const previous = ordered.findLast((candidate) => candidate.firstSeen < row.firstSeen)
-			const baseline = previous === undefined ? undefined : toBaseline(previous)
+			const baseline = Option.match(
+				Arr.findLast(ordered, (candidate) => candidate.firstSeen < row.firstSeen),
+				{ onNone: () => undefined, onSome: toBaseline },
+			)
 			const errorRate = rate(row.errorCount, row.spanCount)
 			const comparable =
 				baseline !== undefined &&
@@ -242,7 +246,7 @@ function toBaseline(row: Release): ReleaseBaseline {
 
 /** Fold per-service impacts into one group per commit, newest first. */
 export function groupReleases(impacts: ReadonlyArray<ReleaseServiceImpact>): ReleaseGroup[] {
-	const bySha = new Map<string, ReleaseServiceImpact[]>()
+	const bySha = new Map<string, Arr.NonEmptyArray<ReleaseServiceImpact>>()
 	for (const impact of impacts) {
 		const list = bySha.get(impact.commitSha)
 		if (list === undefined) bySha.set(impact.commitSha, [impact])
@@ -250,23 +254,25 @@ export function groupReleases(impacts: ReadonlyArray<ReleaseServiceImpact>): Rel
 	}
 	const groups: ReleaseGroup[] = []
 	for (const [commitSha, services] of bySha) {
-		const sorted = services.toSorted((a, b) => b.spanCount - a.spanCount)
-		const spanCount = sorted.reduce((sum, s) => sum + s.spanCount, 0)
-		const errorCount = sorted.reduce((sum, s) => sum + s.errorCount, 0)
+		const sorted = Arr.sort(
+			services,
+			Order.flip(Order.mapInput(Order.Number, (s: ReleaseServiceImpact) => s.spanCount)),
+		)
+		const spanCount = Arr.reduce(sorted, 0, (sum, s) => sum + s.spanCount)
+		const errorCount = Arr.reduce(sorted, 0, (sum, s) => sum + s.errorCount)
 		groups.push({
 			commitSha,
-			firstSeen: sorted.reduce(
-				(min, s) => (s.firstSeen < min ? s.firstSeen : min),
-				sorted[0]!.firstSeen,
+			firstSeen: Arr.reduce(sorted, Arr.headNonEmpty(sorted).firstSeen, (min, s) =>
+				s.firstSeen < min ? s.firstSeen : min,
 			),
 			services: sorted,
 			spanCount,
 			errorCount,
 			errorRate: rate(errorCount, spanCount),
-			health: worstHealth(sorted.map((s) => s.health)),
+			health: worstHealth(Arr.map(sorted, (s) => s.health)),
 		})
 	}
-	return groups.toSorted((a, b) => (a.firstSeen < b.firstSeen ? 1 : a.firstSeen > b.firstSeen ? -1 : 0))
+	return Arr.sort(groups, Order.flip(Order.mapInput(Order.String, (g: ReleaseGroup) => g.firstSeen)))
 }
 
 export interface ReleaseFacetCounts {
@@ -289,15 +295,27 @@ export function releaseFacetCounts(groups: ReadonlyArray<ReleaseGroup>): Release
 		}
 	}
 	const toSorted = (map: Map<string, number>) =>
-		[...map.entries()]
-			.map(([name, count]) => ({ name, count }))
-			.toSorted((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+		Arr.sort(
+			Arr.map([...map.entries()], ([name, count]) => ({ name, count })),
+			Order.combine(
+				Order.flip(
+					Order.mapInput(
+						Order.Number,
+						(entry: { readonly name: string; readonly count: number }) => entry.count,
+					),
+				),
+				Order.mapInput(
+					Order.make<string>((a, b) => Str.localeCompare(b)(a)),
+					(entry: { readonly name: string; readonly count: number }) => entry.name,
+				),
+			),
+		)
 	return { health, services: toSorted(services), environments: toSorted(environments) }
 }
 
 /** A 40-hex git sha reads as its 7-char short form; tags and versions stay verbatim. */
 export function shortReleaseLabel(sha: string): string {
-	return /^[0-9a-f]{40}$/i.test(sha) ? sha.slice(0, 7) : sha
+	return /^[0-9a-f]{40}$/i.test(sha) ? shortId(sha, "sha") : sha
 }
 
 /**
@@ -320,7 +338,7 @@ export function releaseDayLabel(iso: string, nowMs: number, timeZone: string): s
  */
 export function releaseHeadline(group: ReleaseGroup): ReleaseServiceImpact {
 	const rank = (impact: ReleaseServiceImpact) => RELEASE_HEALTH_ORDER.indexOf(impact.health)
-	return group.services.reduce((best, impact) => {
+	return Arr.reduce(Arr.tailNonEmpty(group.services), Arr.headNonEmpty(group.services), (best, impact) => {
 		if (rank(impact) !== rank(best)) return rank(impact) < rank(best) ? impact : best
 		if ((impact.errorRatio ?? 0) !== (best.errorRatio ?? 0))
 			return (impact.errorRatio ?? 0) > (best.errorRatio ?? 0) ? impact : best
@@ -390,7 +408,7 @@ export function countIssues<T extends IntroducedIssue>(
 	attributed: ReadonlyMap<string, ReleaseIssues<T>>,
 ): Map<string, ReleaseIssueCounts> {
 	return new Map(
-		[...attributed].map(([sha, issues]) => [
+		Arr.map([...attributed], ([sha, issues]) => [
 			sha,
 			{ fresh: issues.fresh.length, regressed: issues.regressed.length },
 		]),
@@ -417,20 +435,21 @@ export function liveVersions(
 	const shares = lastBucketShares(timeline)
 	const live = new Map<string, { commitSha: string; share: number }>()
 	for (const [key, share] of shares) {
-		const split = key.lastIndexOf(" ")
-		const serviceName = key.slice(0, split)
-		const commitSha = key.slice(split + 1)
+		const split = Option.getOrElse(Str.lastIndexOf(" ")(key), () => -1)
+		const serviceName = Str.slice(0, split)(key)
+		const commitSha = Str.slice(split + 1)(key)
 		const current = live.get(serviceName)
 		if (current === undefined || share > current.share) live.set(serviceName, { commitSha, share })
 	}
-	const groupBySha = new Map(groups.map((group) => [group.commitSha, group]))
+	const groupBySha = new Map(Arr.map(groups, (group) => [group.commitSha, group]))
 	const result: LiveVersion[] = []
 	for (const [serviceName, { commitSha, share }] of live) {
 		const liveGroup = groupBySha.get(commitSha)
 		const siblings = new Set(
-			(liveGroup?.services ?? [])
-				.map((impact) => impact.serviceName)
-				.filter((name) => name !== serviceName),
+			Arr.filter(
+				Arr.map(liveGroup?.services ?? [], (impact) => impact.serviceName),
+				(name) => name !== serviceName,
+			),
 		)
 		// Only releases some sibling is already serving count: one still rolling
 		// out elsewhere would otherwise mark every service behind for minutes.
@@ -442,16 +461,28 @@ export function liveVersions(
 		const behind =
 			liveGroup === undefined || siblings.size === 0
 				? 0
-				: groups.filter(
+				: Arr.filter(
+						groups,
 						(group) =>
 							group.firstSeen > liveGroup.firstSeen &&
 							group.firstSeen <= siblingsNewest &&
-							!group.services.some((impact) => impact.serviceName === serviceName) &&
-							group.services.some((impact) => siblings.has(impact.serviceName)),
+							!Arr.some(group.services, (impact) => impact.serviceName === serviceName) &&
+							Arr.some(group.services, (impact: ReleaseServiceImpact) =>
+								siblings.has(impact.serviceName),
+							),
 					).length
 		result.push({ serviceName, commitSha, share, behind })
 	}
-	return result.toSorted((a, b) => b.behind - a.behind || a.serviceName.localeCompare(b.serviceName))
+	return Arr.sort(
+		result,
+		Order.combine(
+			Order.flip(Order.mapInput(Order.Number, (version: LiveVersion) => version.behind)),
+			Order.mapInput(
+				Order.make<string>((a, b) => Str.localeCompare(b)(a)),
+				(version: LiveVersion) => version.serviceName,
+			),
+		),
+	)
 }
 
 /**

@@ -1,7 +1,7 @@
 import { AuditActorType, AuditChanges, AuditLogSource, AuditOutcome } from "@maple/domain/http"
 import { ActorId, ApiKeyId, AuditLogEntryId, OrgId, UserId } from "@maple/domain/primitives"
 import type { AuditLogRow } from "@maple/domain/tinybird"
-import { Schema, SchemaTransformation } from "effect"
+import { DateTime, Schema, SchemaTransformation } from "effect"
 import { warehouseDateTime64 } from "@maple/query-engine/datetime"
 import { msToDate } from "@maple/backend/platform/time"
 
@@ -35,6 +35,7 @@ export class AuditLogEvent extends Schema.Class<AuditLogEvent>("AuditLogEvent")(
 
 export const decodeAuditLogEvent = Schema.decodeUnknownEffect(AuditLogEvent)
 export const encodeAuditLogEventSync = Schema.encodeSync(AuditLogEvent)
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /**
  * One stored audit entry, as the service hands it to readers. Absent values are
@@ -85,8 +86,8 @@ export const auditEventToRow = (event: AuditLogEvent, recordedAtMs: number): Aud
 	ResourceType: event.resourceType ?? "",
 	ResourceId: event.resourceId ?? "",
 	ChangedFields: event.changes === undefined ? [] : [...event.changes.fields],
-	Changes: event.changes === undefined ? "" : JSON.stringify(event.changes),
-	Metadata: event.metadata === undefined ? "" : JSON.stringify(event.metadata),
+	Changes: event.changes === undefined ? "" : encodeJson(event.changes),
+	Metadata: event.metadata === undefined ? "" : encodeJson(event.metadata),
 	RequestId: event.requestId ?? "",
 	OriginIp: event.originIp ?? "",
 	OriginCountry: event.originCountry ?? "",
@@ -121,7 +122,7 @@ export const auditEventToEntry = (event: AuditLogEvent, recordedAtMs: number): A
 const JsonRecord = Schema.Record(Schema.String, Schema.Unknown)
 
 /** `''` in the warehouse row is "absent"; everything else decodes through `schema`. */
-const emptyAsNull = <S extends Schema.Codec<any, string, any, any>>(schema: S) =>
+const emptyAsNull = <S extends Schema.Codec<unknown, string, unknown, unknown>>(schema: S) =>
 	Schema.String.pipe(
 		Schema.decodeTo(
 			Schema.NullOr(Schema.String),
@@ -138,19 +139,11 @@ const nullableText = emptyAsNull(Schema.String)
 /** JSON document columns: `''` when absent, otherwise a JSON string of `schema`. */
 const jsonDocument = <S extends Schema.Top>(schema: S) => emptyAsNull(Schema.fromJsonString(schema))
 
-/**
- * `YYYY-MM-DD HH:mm:ss.SSS` (UTC, as the warehouse emits DateTime64) ⇄ `Date`;
- * an ISO rendering with `T`/`Z` is accepted as-is should a backend emit one.
- */
-const warehouseDateTime64Column = Schema.String.pipe(
+/** The warehouse column, already decoded to `DateTime.Utc`, as the entry's `Date`. */
+const utcAsDate = Schema.DateTimeUtc.pipe(
 	Schema.decodeTo(
 		Schema.Date,
-		SchemaTransformation.transform({
-			decode: (value: string) => new Date(/[TZ]/.test(value) ? value : `${value.replace(" ", "T")}Z`),
-			// The brand is the minting side's guarantee; a codec encodes to the
-			// wire type, which is a plain string.
-			encode: (value: Date): string => warehouseDateTime64(value.getTime()),
-		}),
+		SchemaTransformation.transform({ decode: DateTime.toDateUtc, encode: DateTime.fromDateUnsafe }),
 	),
 )
 
@@ -160,8 +153,8 @@ const warehouseDateTime64Column = Schema.String.pipe(
  */
 export const StoredAuditLogEntry = Schema.Struct({
 	id: AuditLogEntryId,
-	occurredAt: warehouseDateTime64Column,
-	recordedAt: warehouseDateTime64Column,
+	occurredAt: utcAsDate,
+	recordedAt: utcAsDate,
 	actorType: AuditActorType,
 	userId: emptyAsNull(UserId),
 	apiKeyId: emptyAsNull(ApiKeyId),

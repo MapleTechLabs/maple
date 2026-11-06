@@ -4,8 +4,9 @@
 // strings (`'YYYY-MM-DD HH:MM:SS'`, UTC); chDB returns tz-less UTC strings too.
 // Everything the user reads is rendered in the browser's local zone.
 
+import { DateTime, Option, Array as Arr, String as Str } from "effect"
 import { computeBucketSeconds, formatWarehouseDateTime } from "@maple/query-engine"
-import { formatRelativeFrom, toEpochMs } from "@maple/ui/lib/time-format"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 /** Format an epoch-ms instant as a ClickHouse DateTime string (UTC, second precision). */
 export function toClickHouseDateTime(epochMs: number): string {
@@ -25,9 +26,13 @@ export interface TimeRange {
 	readonly minutes: number
 }
 
-export const TIME_RANGES: ReadonlyArray<TimeRange> = [
+export const TIME_RANGES: Arr.NonEmptyReadonlyArray<TimeRange> = [
+	{ key: "5m", label: "5M", minutes: 5 },
+	{ key: "15m", label: "15M", minutes: 15 },
+	{ key: "30m", label: "30M", minutes: 30 },
 	{ key: "1h", label: "1H", minutes: 60 },
 	{ key: "6h", label: "6H", minutes: 6 * 60 },
+	{ key: "12h", label: "12H", minutes: 12 * 60 },
 	{ key: "24h", label: "24H", minutes: 24 * 60 },
 	{ key: "7d", label: "7D", minutes: 7 * 24 * 60 },
 	{ key: "30d", label: "30D", minutes: 30 * 24 * 60 },
@@ -44,11 +49,14 @@ const MINUTE_MS = 60 * 1000
 const END_PAD_MS = 60 * MINUTE_MS
 
 export function isRangeKey(value: string | null | undefined): value is string {
-	return TIME_RANGES.some((range) => range.key === value)
+	return Arr.some(TIME_RANGES, (range) => range.key === value)
 }
 
 export function resolveRange(key: string | undefined): TimeRange {
-	return TIME_RANGES.find((r) => r.key === key) ?? TIME_RANGES[0]
+	return Arr.findFirst(TIME_RANGES, (r) => r.key === key).pipe(
+		Option.orElse(() => Arr.findFirst(TIME_RANGES, (r) => r.key === DEFAULT_RANGE)),
+		Option.getOrElse(() => Arr.headNonEmpty(TIME_RANGES)),
+	)
 }
 
 /** Floor an instant to its minute, so anchors taken seconds apart share one query key. */
@@ -70,19 +78,16 @@ export function boundsForRange(key: string | undefined, anchorMs = Date.now()): 
  * Returns `null` for empty/invalid input or the zero date chDB emits for an
  * empty aggregate.
  */
-export function parseClickHouseDateTime(chDateTime: string | null | undefined): number | null {
-	if (!chDateTime) return null
-	const ms = toEpochMs(chDateTime)
+/** A warehouse timestamp: a decoded `DateTime.Utc`, or the string ClickHouse sent. */
+export type WarehouseTime = DateTime.Utc | string | null | undefined
+
+export function parseClickHouseDateTime(chDateTime: WarehouseTime): number | null {
+	if (chDateTime == null || chDateTime === "") return null
+	const ms = DateTime.isDateTime(chDateTime) ? DateTime.toEpochMillis(chDateTime) : toEpochMs(chDateTime)
 	return Number.isFinite(ms) && ms > 0 ? ms : null
 }
 
-/** Compact relative-time label ("3m ago") from a ClickHouse DateTime string. */
-export function formatRelativeTime(chDateTime: string | null | undefined): string {
-	const ms = parseClickHouseDateTime(chDateTime)
-	return ms === null ? "-" : formatRelativeFrom(ms)
-}
-
-const pad = (value: number, width = 2) => String(value).padStart(width, "0")
+const pad = (value: number, width = 2) => Str.padStart(width, "0")(String(value))
 
 function isSameLocalDay(a: Date, b: Date): boolean {
 	return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
@@ -106,18 +111,10 @@ export function formatLocalTimestamp(
 	return `${day} ${time}`
 }
 
-/** Full local date and time with millis, for detail panels. */
-export function formatLocalDateTime(chDateTime: string | null | undefined): string {
-	const ms = parseClickHouseDateTime(chDateTime)
-	if (ms === null) return "-"
-	const date = new Date(ms)
-	const day = date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
-	return `${day} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}`
-}
-
 /** The stored value, verbatim and zone-marked, for `title` tooltips and copy. */
-export function formatUtcTitle(chDateTime: string | null | undefined): string {
-	return chDateTime ? `${chDateTime} UTC` : ""
+export function formatUtcTitle(chDateTime: WarehouseTime): string {
+	if (chDateTime == null || chDateTime === "") return ""
+	return DateTime.isDateTime(chDateTime) ? DateTime.formatIso(chDateTime) : `${chDateTime} UTC`
 }
 
 export interface ChartWindow {
@@ -136,11 +133,17 @@ export function chartWindow(bounds: TimeBounds, firstSeenMs: number | null, nowM
 	const rangeStart = toEpochMs(bounds.startTime)
 	const endMs = Math.min(toEpochMs(bounds.endTime), nowMs)
 	const dataStart = firstSeenMs !== null && firstSeenMs > rangeStart ? firstSeenMs : rangeStart
-	// Keep at least ten minutes on screen so a first burst still reads as a line.
-	const startMs = Math.min(dataStart, endMs - 10 * MINUTE_MS)
+	// Keep at least ten minutes on screen so a first burst still reads as a line,
+	// unless the range itself is shorter.
+	const startMs = Math.min(dataStart, endMs - Math.min(10 * MINUTE_MS, endMs - rangeStart))
 	return {
 		startMs,
 		endMs,
-		bucketSeconds: computeBucketSeconds(startMs, endMs, { targetPoints: 60, minBuckets: 6 }),
+		// Never below a minute: the minutely rollups can't fill a finer bucket.
+		bucketSeconds: computeBucketSeconds(startMs, endMs, {
+			targetPoints: 60,
+			minBuckets: 6,
+			minBucketSeconds: 60,
+		}),
 	}
 }

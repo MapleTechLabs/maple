@@ -1,21 +1,25 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
 import {
+	context,
 	diag,
 	DiagLogLevel,
 	INVALID_SPAN_CONTEXT,
+	propagation,
 	type Span as ApiSpan,
 	trace,
 	type Tracer,
 	type TracerProvider,
 } from "@opentelemetry/api"
-import type { ReadableSpan, Span } from "@opentelemetry/sdk-trace-base"
+import { TraceState } from "@opentelemetry/core"
+import type { ReadableSpan, Span } from "@opentelemetry/sdk-trace"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 // Capture what the batch processor actually hands to the exporter, so the
 // unload flush can be asserted on exported spans rather than on a spy.
 const exported: ReadableSpan[] = []
-vi.mock("@opentelemetry/exporter-trace-otlp-http", () => ({
-	OTLPTraceExporter: class {
+vi.mock("./otlp", async (original) => ({
+	...(await original<typeof import("./otlp")>()),
+	OtlpExporter: class {
 		export(spans: ReadableSpan[], callback: (result: { code: number }) => void): void {
 			exported.push(...spans)
 			callback({ code: 0 })
@@ -29,7 +33,7 @@ vi.mock("@opentelemetry/exporter-trace-otlp-http", () => ({
 	},
 }))
 
-const { setupTracing, TraceIdCollector } = await import("./tracing")
+const { resourceAttributes, setupTracing, TraceIdCollector } = await import("./tracing")
 
 const CONFIG = {
 	ingestKey: "k",
@@ -44,15 +48,31 @@ const CONFIG = {
 	tracingCaptureErrors: false,
 	replayEnabled: false,
 	replaySampleRate: 0,
+	replayOnErrorSampleRate: 0,
+	canvasFps: undefined,
+	networkBodies: undefined,
+	captureHeaders: { request: [], response: [] },
+	longFrames: false,
+	slowInteractions: false,
 	maskAllInputs: true,
 	maskAllText: false,
 	persistVisitorId: true,
+	persistence: "browser" as const,
 	crossSubdomainCookie: true,
 	cookieDomain: undefined,
 	requireConsent: false,
 	captureUserEmail: true,
 	respectDoNotTrack: false,
 	propagateTraceHeaderCorsUrls: [],
+	tracingSampleRate: 1,
+	tracingInstrumentXhr: false,
+	errorFilters: {},
+	webVitals: false,
+	breadcrumbs: false,
+	captureConsole: [],
+	reportCsp: false,
+	reportBrowser: false,
+	offlineQueue: false,
 	sanitizeUrl: undefined,
 }
 
@@ -101,6 +121,26 @@ describe("TraceIdCollector", () => {
 	})
 })
 
+describe("resourceAttributes", () => {
+	it("states the SDK, as the resource conventions require", () => {
+		expect(resourceAttributes(CONFIG)).toMatchObject({
+			"telemetry.sdk.name": "@maple-dev/browser",
+			"telemetry.sdk.language": "webjs",
+			"telemetry.sdk.version": expect.stringMatching(/^\d+\.\d+\.\d+/),
+		})
+	})
+
+	it("stamps only a commit-shaped serviceVersion as the head revision", () => {
+		const revision = (serviceVersion: string) =>
+			resourceAttributes({ ...CONFIG, serviceVersion })["vcs.ref.head.revision"]
+		expect(revision("20261030")).toBeUndefined()
+		expect(revision("1234567")).toBeUndefined()
+		expect(revision("1.4.2")).toBeUndefined()
+		expect(revision("3f9c2ab")).toBe("3f9c2ab")
+		expect(revision("1".repeat(40))).toBe("1".repeat(40))
+	})
+})
+
 describe("setupTracing unload flush", () => {
 	let shutdown: (() => Promise<void>) | undefined
 
@@ -112,6 +152,7 @@ describe("setupTracing unload flush", () => {
 		shutdown = undefined
 		exported.length = 0
 		trace.disable()
+		vi.unstubAllGlobals()
 	})
 
 	const endOneSpan = (): void => {
@@ -149,6 +190,64 @@ describe("setupTracing unload flush", () => {
 		expect(exported).toHaveLength(0)
 	})
 
+	it("registers W3C trace context and baggage propagation for the app's own requests", () => {
+		shutdown = setupTracing(CONFIG)
+		const span = trace.getTracer("test").startSpan("request")
+		const active = propagation.setBaggage(
+			trace.setSpan(context.active(), span),
+			propagation.createBaggage({ tenant: { value: "acme" } }),
+		)
+		const headers: Record<string, string> = {}
+		propagation.inject(active, headers)
+		span.end()
+
+		expect(headers.traceparent).toMatch(new RegExp(`^00-${span.spanContext().traceId}-[0-9a-f]{16}-01$`))
+		expect(headers.baggage).toBe("tenant=acme")
+	})
+
+	it("keeps the sampling threshold off cross-origin requests only, so CORS allowing traceparent still passes", () => {
+		shutdown = setupTracing(CONFIG)
+		// A sampled parent as `tracing.sampleRate: 0.25` makes it, plus a vendor's own member.
+		const parent = trace.setSpanContext(context.active(), {
+			traceId: "0123456789abcdef0123456789abcdef",
+			spanId: "0123456789abcdef",
+			traceFlags: 1,
+			traceState: new TraceState("vendor=abc,ot=th:c;rv:d5a8b2c1e3f405"),
+		})
+		const headersFor = (url: string) => {
+			const request = trace
+				.getTracer("test")
+				.startSpan("GET", { attributes: { "url.full": url } }, parent)
+			const headers: Record<string, string> = {}
+			propagation.inject(trace.setSpan(context.active(), request), headers)
+			request.end()
+			return headers
+		}
+
+		// Same origin: no CORS, and the server span keeps its sampling weight.
+		expect(headersFor(`${location.origin}/api/users`).tracestate).toBe(
+			"vendor=abc,ot=th:c;rv:d5a8b2c1e3f405",
+		)
+		const crossOrigin = headersFor("https://api.example.com/v1/users")
+		expect(crossOrigin.traceparent).toMatch(/^00-0123456789abcdef0123456789abcdef-[0-9a-f]{16}-01$/)
+		expect(crossOrigin.tracestate).toBe("vendor=abc")
+	})
+
+	it("parents a span started inside an active span through the context manager", async () => {
+		shutdown = setupTracing(CONFIG)
+		const tracer = trace.getTracer("test")
+		tracer.startActiveSpan("parent", (parent) => {
+			tracer.startSpan("child").end()
+			parent.end()
+		})
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(2))
+
+		const parent = exported.find((span) => span.name === "parent")
+		const child = exported.find((span) => span.name === "child")
+		expect(child?.parentSpanContext?.spanId).toBe(parent?.spanContext().spanId)
+	})
+
 	it("exports spans again after init → shutdown → init, without a manual trace.disable", async () => {
 		// The global OTel registration is first-write-wins: unless shutdown
 		// releases it, the proxy keeps delegating to the shut-down provider and a
@@ -169,8 +268,9 @@ describe("setupTracing unload flush", () => {
 		// A host that registered its own provider owns the globals; losing them
 		// (trace.disable) would break the host's tracing, not just ours.
 		const hostSpan: ApiSpan = trace.wrapSpanContext(INVALID_SPAN_CONTEXT)
+		const startSpan = vi.fn(() => hostSpan)
 		const hostTracer: Tracer = {
-			startSpan: vi.fn(() => hostSpan),
+			startSpan,
 			startActiveSpan: vi.fn(),
 		}
 		const hostProvider: TracerProvider = { getTracer: () => hostTracer }
@@ -180,7 +280,7 @@ describe("setupTracing unload flush", () => {
 		await teardown()
 
 		expect(trace.getTracer("host").startSpan("still-host")).toBeDefined()
-		expect(hostTracer.startSpan).toHaveBeenCalledWith("still-host")
+		expect(startSpan).toHaveBeenCalledWith("still-host")
 	})
 
 	it("exports a fetch span that settled just before pagehide", async () => {
@@ -200,6 +300,212 @@ describe("setupTracing unload flush", () => {
 		window.dispatchEvent(new Event("pagehide"))
 		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
 		expect(exported[0]?.attributes["url.full"]).toBe(url)
+		URL.revokeObjectURL(url)
+	})
+
+	it("spans an XMLHttpRequest and ends it on pagehide like a fetch", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentXhr: true })
+		const url = URL.createObjectURL(new Blob(["ok"]))
+
+		const xhr = new XMLHttpRequest()
+		xhr.open("GET", url)
+		await new Promise<void>((resolve) => {
+			xhr.addEventListener("loadend", () => resolve())
+			xhr.send()
+		})
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBeGreaterThan(0), poll)
+
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+		expect(exported[0]?.attributes["url.full"] ?? exported[0]?.attributes["http.url"]).toBe(url)
+		URL.revokeObjectURL(url)
+	})
+
+	it("records allowlisted headers as semconv attributes, never credentials", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({
+			...CONFIG,
+			tracingInstrumentFetch: true,
+			captureHeaders: { request: ["x-request-id"], response: ["content-type"] },
+		})
+		const url = URL.createObjectURL(new Blob(["ok"], { type: "text/plain" }))
+
+		await (
+			await fetch(url, { headers: { "x-request-id": "req-1", authorization: "Bearer secret" } })
+		).text()
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		const attributes = exported[0]?.attributes ?? {}
+		expect(attributes["http.request.header.x-request-id"]).toEqual(["req-1"])
+		expect(attributes["http.response.header.content-type"]).toEqual(["text/plain"])
+		expect(Object.keys(attributes).some((key) => key.includes("authorization"))).toBe(false)
+		URL.revokeObjectURL(url)
+	})
+
+	it("marks a fetch that never got a response as an error", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+		const url = URL.createObjectURL(new Blob(["gone"]))
+		URL.revokeObjectURL(url)
+
+		await expect(fetch(url)).rejects.toThrow(TypeError)
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status.code).toBe(2)
+		expect(exported[0]?.attributes["error.type"]).toBe("TypeError")
+		// No response, so no status code: the instrumentation's 0 is not a status.
+		expect(exported[0]?.attributes).not.toHaveProperty("http.response.status_code")
+		// error.message is deprecated in the conventions; error.type carries the class of failure.
+		expect(exported[0]?.attributes["error.message"]).toBeUndefined()
+	})
+
+	// A fetch whose rejection the test controls, installed before the instrumentation wraps it.
+	const stubPendingFetch = () => {
+		const rejections: Array<(cause: unknown) => void> = []
+		vi.stubGlobal("fetch", () => new Promise<Response>((_, reject) => void rejections.push(reject)))
+		return { reject: (cause: unknown) => rejections.forEach((reject) => reject(cause)) }
+	}
+
+	it("leaves a fetch the page unloaded under Unset, with the reason", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		const pending = stubPendingFetch()
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+
+		const request = fetch("https://api.test/things")
+		window.dispatchEvent(new Event("pagehide"))
+		pending.reject(new TypeError("Failed to fetch"))
+		await expect(request).rejects.toThrow(TypeError)
+		// Past the instrumentation's deferred end, then flush.
+		await vi.advanceTimersByTimeAsync(400)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status.code).toBe(0)
+		expect(exported[0]?.attributes["maple.connection_lost"]).toBe("page_unload")
+		expect(exported[0]?.attributes["error.type"]).toBeUndefined()
+	})
+
+	it("still marks a fetch an error when the connection dropped only before it started", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		const pending = stubPendingFetch()
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+		window.dispatchEvent(new Event("offline"))
+
+		const request = fetch("https://api.test/things")
+		pending.reject(new TypeError("Failed to fetch"))
+		await expect(request).rejects.toThrow(TypeError)
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status.code).toBe(2)
+		expect(exported[0]?.attributes["maple.connection_lost"]).toBeUndefined()
+	})
+
+	it("marks a fetch an error when it failed in a tab that was already hidden", async () => {
+		// A dashboard polling in a background tab: its DNS and CORS failures are real.
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden")
+		const pending = stubPendingFetch()
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+
+		const request = fetch("https://api.test/poll")
+		pending.reject(new TypeError("Failed to fetch"))
+		await expect(request).rejects.toThrow(TypeError)
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status.code).toBe(2)
+		expect(exported[0]?.attributes["maple.connection_lost"]).toBeUndefined()
+	})
+
+	it("leaves an XMLHttpRequest the page unloaded under Unset, with the reason", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentXhr: true })
+		const url = URL.createObjectURL(new Blob(["gone"]))
+		URL.revokeObjectURL(url)
+
+		const xhr = new XMLHttpRequest()
+		xhr.open("GET", url)
+		const settled = new Promise<void>((resolve) => xhr.addEventListener("loadend", () => resolve()))
+		xhr.send()
+		window.dispatchEvent(new Event("pagehide"))
+		await settled
+		await vi.advanceTimersByTimeAsync(400)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status.code).toBe(0)
+		expect(exported[0]?.attributes["maple.connection_lost"]).toBe("page_unload")
+		expect(exported[0]?.attributes["error.type"]).toBeUndefined()
+	})
+
+	it("still marks an XMLHttpRequest that failed on a live page as an error", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentXhr: true })
+		const url = URL.createObjectURL(new Blob(["gone"]))
+		URL.revokeObjectURL(url)
+
+		const xhr = new XMLHttpRequest()
+		xhr.open("GET", url)
+		await new Promise<void>((resolve) => {
+			xhr.addEventListener("loadend", () => resolve())
+			xhr.send()
+		})
+		await vi.advanceTimersByTimeAsync(400)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status.code).toBe(2)
+		expect(exported[0]?.attributes["error.type"]).toBe("error")
+	})
+
+	it("counts a fetch that timed out through AbortSignal.timeout() as an error", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+		const url = URL.createObjectURL(new Blob(["slow"]))
+		const signal = AbortSignal.abort(new DOMException("signal timed out", "TimeoutError"))
+
+		await expect(fetch(url, { signal })).rejects.toThrow("signal timed out")
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status.code).toBe(2)
+		expect(exported[0]?.attributes["error.type"]).toBe("TimeoutError")
+		URL.revokeObjectURL(url)
+	})
+
+	it("does not count a fetch aborted with a custom reason as a network failure", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+		const url = URL.createObjectURL(new Blob(["ok"]))
+		const controller = new AbortController()
+		controller.abort(new Error("unmounted"))
+
+		await expect(fetch(url, { signal: controller.signal })).rejects.toThrow("unmounted")
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status.code).toBe(0)
+		expect(exported[0]?.attributes["error.type"]).toBeUndefined()
 		URL.revokeObjectURL(url)
 	})
 

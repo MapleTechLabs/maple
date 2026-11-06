@@ -1,4 +1,4 @@
-import { Match, Option, pipe } from "effect"
+import { Match, Option, pipe, Array as Arr, String as Str } from "effect"
 import { normalizeSpanKind } from "./span-kind"
 
 export const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const
@@ -19,7 +19,7 @@ export interface HttpSpanInput {
 	spanKind?: string
 }
 
-const isHttpMethod = (s: string): s is HttpMethod => HTTP_METHODS.includes(s.toUpperCase() as HttpMethod)
+const isHttpMethod = (s: string): s is HttpMethod => HTTP_METHODS.includes(Str.toUpperCase(s) as HttpMethod)
 
 /**
  * Reads the first of `keys` whose value is present and non-blank. Some emitters send
@@ -29,12 +29,12 @@ const isHttpMethod = (s: string): s is HttpMethod => HTTP_METHODS.includes(s.toU
 const attr = (attrs: Record<string, string>, ...keys: string[]): Option.Option<string> => {
 	for (const key of keys) {
 		const value = attrs[key]
-		if (value != null && value.trim() !== "") return Option.some(value)
+		if (value != null && Str.trim(value) !== "") return Option.some(value)
 	}
 	return Option.none()
 }
 
-const nonEmpty = (s: string): Option.Option<string> => (s.trim() !== "" ? Option.some(s) : Option.none())
+const nonEmpty = (s: string): Option.Option<string> => (Str.trim(s) !== "" ? Option.some(s) : Option.none())
 
 const tryParseUrl = Option.liftThrowable((s: string) => new URL(s))
 
@@ -50,7 +50,7 @@ interface NameInfo {
 }
 
 const parseSpanName = (name: string): Option.Option<NameInfo> => {
-	const parts = name.split(" ")
+	const parts = Str.split(" ")(name)
 	return Match.value(parts).pipe(
 		Match.when(
 			(p): p is [string, string, ...string[]] =>
@@ -58,22 +58,22 @@ const parseSpanName = (name: string): Option.Option<NameInfo> => {
 			([, method, ...rest]) =>
 				Option.some<NameInfo>({
 					method,
-					routeHint: rest.length > 0 ? Option.some(rest.join(" ")) : Option.none(),
+					routeHint: rest.length > 0 ? Option.some(Arr.join(rest, " ")) : Option.none(),
 				}),
 		),
 		Match.when(
 			(p): p is [string, string, ...string[]] => p.length >= 2 && isHttpMethod(p[0]),
 			([method, ...rest]) =>
 				Option.some<NameInfo>({
-					method: method.toUpperCase(),
-					routeHint: Option.some(rest.join(" ")),
+					method: Str.toUpperCase(method),
+					routeHint: Option.some(Arr.join(rest, " ")),
 				}),
 		),
 		Match.when(
 			(p): p is [string] => p.length === 1 && isHttpMethod(p[0]),
 			([method]) =>
 				Option.some<NameInfo>({
-					method: method.toUpperCase(),
+					method: Str.toUpperCase(method),
 					routeHint: Option.none(),
 				}),
 		),
@@ -89,7 +89,7 @@ const clientRouteFromAttrs = (attrs: Record<string, string>): Option.Option<stri
 
 	const host = pipe(
 		attr(attrs, "server.address", "net.peer.name"),
-		Option.map((h) => h.replace(/^https?:\/\//, "")),
+		Option.map((h) => Str.replace(/^https?:\/\//, "")(h)),
 		Option.flatMap(nonEmpty),
 	)
 	const path = attr(attrs, "url.path", "http.target")
@@ -128,7 +128,7 @@ export function getHttpInfo({ spanName, spanAttributes, spanKind }: HttpSpanInpu
 	const kind: "client" | "server" = Match.value(normalizeSpanKind(spanKind)).pipe(
 		Match.when("CLIENT", () => "client" as const),
 		Match.when("SERVER", () => "server" as const),
-		Match.orElse(() => (spanName.startsWith("http.client ") ? "client" : "server")),
+		Match.orElse(() => (Str.startsWith("http.client ")(spanName) ? "client" : "server")),
 	)
 	// server spans can legitimately emit url.full too, but if they do we still want to
 	// fall back to host+path composition.
@@ -158,11 +158,18 @@ export function getHttpInfo({ spanName, spanAttributes, spanKind }: HttpSpanInpu
 		Option.getOrNull,
 	)
 
-	const rawStatus = attrs["http.status_code"] ?? attrs["http.response.status_code"]
-	const statusCode = rawStatus ? parseInt(rawStatus, 10) || null : null
+	// `attr` skips blanks: projected attribute maps carry every key, absent ones as "".
+	const statusCode = pipe(
+		attr(attrs, "http.status_code", "http.response.status_code"),
+		Option.map((raw) => {
+			const code = parseInt(raw, 10)
+			return Number.isNaN(code) || code === 0 ? null : code
+		}),
+		Option.getOrNull,
+	)
 
 	return {
-		method: method.value.toUpperCase(),
+		method: Str.toUpperCase(method.value),
 		route,
 		statusCode,
 		isError: statusCode != null && statusCode >= 500,
@@ -184,15 +191,22 @@ export const HTTP_METHOD_HEX: Record<string, string> = {
 	OPTIONS: "#5A5248",
 } satisfies Record<string, string>
 
-// Kept as literals (not derived from HTTP_METHOD_HEX) because Tailwind's JIT
-// scanner can't see class names built from template strings. A colocated test
-// asserts the two maps agree.
+// The `--color-http-*` tokens in tokens.css carry the HTTP_METHOD_HEX values (`check:tokens` keeps
+// them equal). Literals because Tailwind's JIT scanner can't see class names built from templates.
 export const HTTP_METHOD_COLORS: Record<string, string> = {
-	GET: "bg-[#4A9EFF]",
-	POST: "bg-[#E8872B]",
-	PUT: "bg-[#4AA865]",
-	PATCH: "bg-[#8A7F72]",
-	DELETE: "bg-[#E85D4A]",
-	HEAD: "bg-[#8A7F72]",
-	OPTIONS: "bg-[#5A5248]",
+	GET: "bg-http-get",
+	POST: "bg-http-post",
+	PUT: "bg-http-put",
+	PATCH: "bg-http-patch",
+	DELETE: "bg-http-delete",
+	HEAD: "bg-http-head",
+	OPTIONS: "bg-http-options",
 } satisfies Record<string, string>
+
+/** HTTP status → tone: 5xx is critical, 4xx a warning, everything else quiet. */
+export function httpStatusTone(code: number | null | undefined): "crit" | "warn" | "neutral" {
+	if (code == null || !Number.isFinite(code)) return "neutral"
+	if (code >= 500) return "crit"
+	if (code >= 400) return "warn"
+	return "neutral"
+}

@@ -1,8 +1,9 @@
-// BOUNDARY: Test doubles mirror intentionally untyped external callbacks.
+// BOUNDARY-FILE: Test doubles mirror intentionally untyped external callbacks.
 import { describe, it } from "@effect/vitest"
 import { expect } from "vitest"
 import { Effect, Layer, Redacted } from "effect"
-import type { ScopedPlanStatusSession } from "alchemy/Report"
+import { noopSession } from "alchemy/Report"
+import { AlertDestination, AlertDestinationProvider } from "../src/AlertDestination"
 import { ApiKey, ApiKeyProvider } from "../src/ApiKey"
 import { Dashboard, DashboardProvider } from "../src/Dashboard"
 import { MapleApi, type MapleApiContract } from "../src/MapleApi"
@@ -43,11 +44,7 @@ const makeStub = (
 	}
 }
 
-const session: ScopedPlanStatusSession = {
-	emit: () => Effect.void,
-	done: () => Effect.void,
-	note: () => Effect.void,
-}
+const session = noopSession
 
 const wireDashboard = {
 	id: "dash_abc",
@@ -65,12 +62,11 @@ const wireDashboard = {
 const runWithProvider = <A, E, R>(api: MapleApiContract, program: Effect.Effect<A, E, R>) => {
 	const apiLayer = Layer.succeed(MapleApi, api)
 	return program.pipe(
-		Effect.provide(
-			Layer.mergeAll(
-				DashboardProvider().pipe(Layer.provide(apiLayer)),
-				ApiKeyProvider().pipe(Layer.provide(apiLayer)),
-			),
-		),
+		Effect.provide([
+			DashboardProvider().pipe(Layer.provide(apiLayer)),
+			ApiKeyProvider().pipe(Layer.provide(apiLayer)),
+			AlertDestinationProvider().pipe(Layer.provide(apiLayer)),
+		]),
 	)
 }
 
@@ -329,6 +325,154 @@ describe("ApiKeyProvider", () => {
 				}),
 			)
 			expect(attributes.keyId).toBe("key_new")
+		}),
+	)
+})
+
+describe("AlertDestinationProvider", () => {
+	const wireLinear = (teamId: string) => ({
+		id: "dest_lin",
+		object: "alert_destination",
+		name: "Engineering triage",
+		type: "linear",
+		enabled: true,
+		summary: "Linear · Engineering",
+		channel_label: "ENG",
+		linear_team_id: teamId,
+	})
+	const props = { type: "linear" as const, name: "Engineering triage", team_id: "team_1" }
+	const output = {
+		destinationId: "dest_lin",
+		name: "Engineering triage",
+		type: "linear",
+		enabled: true,
+		channelLabel: "ENG",
+	}
+
+	const reconcile = (stub: ReturnType<typeof makeStub>) =>
+		runWithProvider(
+			stub.api,
+			Effect.gen(function* () {
+				const provider = yield* AlertDestination.Provider
+				return yield* provider.reconcile({
+					id: "linear",
+					fqn: "test/linear",
+					instanceId: "i-1",
+					news: props,
+					olds: props,
+					output,
+					session,
+					bindings: [],
+				})
+			}),
+		)
+
+	it.live("leaves a Linear destination alone when its team matches", () =>
+		Effect.gen(function* () {
+			const stub = makeStub({
+				"GET /v2/alerts/destinations/dest_lin": () => Effect.succeed(wireLinear("team_1")),
+			})
+			yield* reconcile(stub)
+			expect(stub.calls).toEqual(["GET /v2/alerts/destinations/dest_lin"])
+		}),
+	)
+
+	it.live("patches a Linear destination whose team was changed outside IaC", () =>
+		Effect.gen(function* () {
+			const stub = makeStub({
+				"GET /v2/alerts/destinations/dest_lin": () => Effect.succeed(wireLinear("team_other")),
+				"PATCH /v2/alerts/destinations/dest_lin": (body) => {
+					expect(body).toEqual(expect.objectContaining({ team_id: "team_1" }))
+					return Effect.succeed(wireLinear("team_1"))
+				},
+			})
+			yield* reconcile(stub)
+			expect(stub.calls).toContain("PATCH /v2/alerts/destinations/dest_lin")
+		}),
+	)
+})
+
+describe("AlertDestinationProvider: incident.io", () => {
+	const wireIncidentIo = (sourceId: string) => ({
+		id: "dest_inc",
+		object: "alert_destination",
+		name: "Paging",
+		type: "incident-io",
+		enabled: true,
+		summary: `Alert source ${sourceId}`,
+		channel_label: sourceId,
+	})
+	const props = {
+		type: "incident-io" as const,
+		name: "Paging",
+		alert_source_config_id: " 01GW2G3V0S59R238FAHPDS1R66 ",
+		token: Redacted.make("inc-token"),
+	}
+	const output = {
+		destinationId: "dest_inc",
+		name: "Paging",
+		type: "incident-io",
+		enabled: true,
+		channelLabel: "01GW2G3V0S59R238FAHPDS1R66",
+	}
+
+	it.live("reads the alert source ID back, so a change outside IaC is drift", () =>
+		Effect.gen(function* () {
+			const stub = makeStub({
+				"GET /v2/alerts/destinations/dest_inc": () => Effect.succeed(wireIncidentIo("01HZOTHER")),
+			})
+			const attributes = yield* runWithProvider(
+				stub.api,
+				Effect.gen(function* () {
+					const { read } = yield* AlertDestination.Provider
+					if (read === undefined) return yield* Effect.die("AlertDestination has no read")
+					return yield* read({ id: "inc", fqn: "test/inc", instanceId: "i-1", olds: props, output })
+				}),
+			)
+			expect(attributes?.channelLabel).toBe("01HZOTHER")
+		}),
+	)
+
+	it.live("converges on a padded source ID and patches one changed outside IaC", () =>
+		Effect.gen(function* () {
+			const reconcile = (stub: ReturnType<typeof makeStub>) =>
+				runWithProvider(
+					stub.api,
+					Effect.gen(function* () {
+						const provider = yield* AlertDestination.Provider
+						return yield* provider.reconcile({
+							id: "inc",
+							fqn: "test/inc",
+							instanceId: "i-1",
+							news: props,
+							olds: props,
+							output,
+							session,
+							bindings: [],
+						})
+					}),
+				)
+			const same = makeStub({
+				"GET /v2/alerts/destinations/dest_inc": () =>
+					Effect.succeed(wireIncidentIo("01GW2G3V0S59R238FAHPDS1R66")),
+			})
+			yield* reconcile(same)
+			expect(same.calls).toEqual(["GET /v2/alerts/destinations/dest_inc"])
+
+			const moved = makeStub({
+				"GET /v2/alerts/destinations/dest_inc": () => Effect.succeed(wireIncidentIo("01HZOTHER")),
+				"PATCH /v2/alerts/destinations/dest_inc": (body) => {
+					expect(body).toEqual(
+						expect.objectContaining({
+							alert_source_config_id: "01GW2G3V0S59R238FAHPDS1R66",
+							token: "inc-token",
+						}),
+					)
+					return Effect.succeed(wireIncidentIo("01GW2G3V0S59R238FAHPDS1R66"))
+				},
+			})
+			yield* reconcile(moved)
+			expect(moved.calls).toContain("PATCH /v2/alerts/destinations/dest_inc")
 		}),
 	)
 })

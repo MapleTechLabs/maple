@@ -1,0 +1,216 @@
+import type { AnomalyIncidentDocument, ErrorIssueDocument } from "@maple/domain/http"
+import { errorIssueFromV2 } from "../../../lib/services/error-issues"
+import { AsyncData } from "foldkit"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import * as Combobox from "@maple/views/ui/combobox"
+import { textLink } from "@maple/views/ui/text-link"
+import {
+	commandEmpty,
+	commandGroup,
+	commandHiddenInput,
+	commandInput,
+	commandListbox,
+	commandOption,
+} from "@maple/views/ui/command"
+import { view as dialogView } from "@maple/views/ui/dialog-view"
+import { scrollArea } from "@maple/views/ui/scroll-area"
+import { spinner } from "@maple/views/ui/spinner"
+import { relativeTime } from "../../kit/relative-time"
+import { workflowRingIcon } from "../../errors/kit/workflow"
+import { shortIssueId } from "../kit/row"
+import { Message } from "./message"
+import type { Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr, String as Str } from "effect"
+
+// `AnomalyLinkIssueDialog`: a command
+// dialog over the service's issues, filtered here (`filter={null}`), the linked one left out.
+
+type H = HtmlBuilder<Message>
+
+const toCombobox = (message: Combobox.Message) => Message.GotLinkComboboxMessage({ message })
+
+const filteredOf = (model: Model, incident: AnomalyIncidentDocument): ReadonlyArray<ErrorIssueDocument> => {
+	const issues = Arr.map(
+		AsyncData.getOrElse(model.linkIssues.data, () => []),
+		errorIssueFromV2,
+	)
+	const q = Str.toLowerCase(Str.trim(model.linkCombobox.inputValue))
+	const matches =
+		q.length === 0
+			? issues
+			: Arr.filter(
+					issues,
+					(issue) =>
+						Str.includes(q)(Str.toLowerCase(issue.exceptionType)) ||
+						Str.includes(q)(Str.toLowerCase(issue.exceptionMessage)) ||
+						Str.includes(q)(Str.toLowerCase(issue.serviceName)) ||
+						Str.includes(q)(Str.toLowerCase(shortIssueId(issue.id))),
+				)
+	return Arr.filter(matches, (issue) => issue.id !== incident.errorIssueId)
+}
+
+const item = (h: H, model: Model, issue: ErrorIssueDocument, index: number, timeZone: string): Html =>
+	commandOption(
+		h,
+		{
+			attributes: [
+				h.Key(issue.id),
+				...(model.linkCombobox.highlighted === index ? [h.DataAttribute("highlighted", "")] : []),
+				h.Id(Combobox.itemId(model.linkCombobox.id, index)),
+				h.OnMouseMove(toCombobox(Combobox.Message.HighlightedItem({ index }))),
+				h.OnClick(Message.SelectedLinkIssue({ issueId: issue.id })),
+			],
+		},
+		[
+			h.span(
+				[h.Class("flex min-w-0 flex-1 items-center gap-2")],
+				[
+					workflowRingIcon(h, issue.workflowState, 14),
+					typography(h, { tone: "foreground", truncate: true }, [
+						issue.exceptionType || "Unknown error",
+					]),
+					...(issue.exceptionMessage
+						? [typography(h, { tone: "muted", truncate: true }, [issue.exceptionMessage])]
+						: []),
+				],
+			),
+			h.span(
+				[h.Class("ml-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground")],
+				[
+					h.code(
+						[h.Class(typographyClass({ mono: true, numeric: true }))],
+						[shortIssueId(issue.id)],
+					),
+					relativeTime(h, {
+						value: issue.lastSeenAt,
+						nowMs: model.nowMs,
+						timeZone,
+						tooltip: "title",
+						className: "tabular-nums",
+					}),
+				],
+			),
+		],
+	)
+
+const listBody = (
+	h: H,
+	model: Model,
+	incident: AnomalyIncidentDocument,
+	timeZone: string,
+): ReadonlyArray<Html> => {
+	const query = model.linkCombobox.inputValue
+	if (AsyncData.isLoading(model.linkIssues.data) || AsyncData.isIdle(model.linkIssues.data))
+		return [
+			h.div(
+				[h.Class("flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground")],
+				[spinner(h, "size-3.5"), " Loading issues…"],
+			),
+		]
+	const filtered = filteredOf(model, incident)
+	if (filtered.length === 0)
+		return [
+			commandEmpty(h, {}, [
+				query.length > 0
+					? `No issues matching “${query}”`
+					: model.linkAllServices
+						? "No issues found"
+						: `No issues for ${incident.serviceName}`,
+			]),
+		]
+	const labelId = `${model.linkCombobox.id}-group-0`
+	return [
+		commandGroup(
+			h,
+			{ labelId, label: model.linkAllServices ? "All services" : incident.serviceName },
+			Arr.map(filtered, (issue, index) => item(h, model, issue, index, timeZone)),
+		),
+	]
+}
+
+export const linkIssueDialog = (
+	h: H,
+	model: Model,
+	incident: AnomalyIncidentDocument,
+	timeZone: string,
+): Html =>
+	h.submodel({
+		slotId: "anomaly-link-issue-dialog",
+		model: model.linkDialog,
+		view: dialogView,
+		viewInputs: {
+			hasTrigger: false,
+			// The dialog has no trigger: closing leaves focus on the body.
+			isReturningFocus: false,
+			toView: ({ portal }) => portal,
+			toContent: () =>
+				model.linkDialog.isOpen
+					? [
+							commandInput(
+								h,
+								model.linkCombobox,
+								{
+									hasDismissButton: true,
+									isUnfiltered: true,
+									placeholder: `Search issues${model.linkAllServices ? "" : ` in ${incident.serviceName}`}…`,
+									groups: [
+										{
+											label: "",
+											items: Arr.map(filteredOf(model, incident), (issue) => ({
+												title: String(issue.id),
+											})),
+										},
+									],
+								},
+								toCombobox,
+							),
+							scrollArea(
+								h,
+								{
+									idPrefix: `${model.linkCombobox.id}-scroll`,
+									scrollFade: true,
+									scrollbarGutter: true,
+								},
+								[
+									commandListbox(
+										h,
+										{
+											attributes: [
+												h.DataAttribute("empty", ""),
+												h.Id(Combobox.listId(model.linkCombobox.id)),
+											],
+										},
+										listBody(h, model, incident, timeZone),
+									),
+								],
+							),
+							h.div(
+								[
+									h.Class(
+										"flex items-center justify-between border-t border-border-subtle px-3 py-2",
+									),
+								],
+								[
+									typography(h, { size: "xs", tone: "muted" }, [
+										model.linkAllServices
+											? "Showing issues across all services"
+											: `Scoped to ${incident.serviceName}`,
+									]),
+									textLink(
+										h,
+										{ className: "text-xs", onClick: Message.ToggledLinkScope() },
+										[
+											model.linkAllServices
+												? `Only ${incident.serviceName}`
+												: "Search all services",
+										],
+									),
+								],
+							),
+							commandHiddenInput(h, model.linkCombobox),
+						]
+					: [],
+		},
+		toParentMessage: (message) => Message.GotLinkDialogMessage({ message }),
+	})

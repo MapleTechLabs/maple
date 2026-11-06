@@ -36,27 +36,41 @@ export const TRACE_LIST_MV_RESOURCE_MAP: Record<string, string> = {
 
 // Attribute filter → typed Condition
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
+import * as CH from "@maple-dev/effect-orm/expr"
 import { normalizedSpanNameExpr } from "@maple/domain/tinybird/span-display-name"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import { Array as Arr } from "effect"
 
 // Semconv rename coalescing
 //
-// OpenTelemetry renamed several HTTP span attributes in the stable semconv:
-//   http.method      → http.request.method
-//   http.status_code → http.response.status_code
-// `trace_list_mv` coalesces both spellings when it pre-extracts its columns
-// (see materializations.ts), so the quick-filter facet counts cover spans that
-// use *either* key. Filters that read the raw `traces` table must coalesce the
-// same way — otherwise a facet shows a count while applying it matches zero
-// rows (the data carries the new key, the filter looked up the old one).
+// OpenTelemetry renamed several span attributes:
+//   http.method           → http.request.method
+//   http.status_code      → http.response.status_code
+//   db.system             → db.system.name
+//   messaging.destination → messaging.destination.name
+//   rpc.system            → rpc.system.name
+//   http.host             → server.address (and url.authority, the service map's last fallback)
+// A filter on either spelling matches spans that carry either key. The key the
+// user typed is read first, so a saved filter on a legacy key keeps matching a
+// span that dual-emits a different value under the new key (`db.system=mssql`
+// next to `db.system.name=microsoft.sql_server`). HTTP method and status are
+// legacy-first under both spellings because that is how `trace_list_mv`
+// pre-extracts them, and the facet counts must agree with the filter.
 
-const HTTP_SEMCONV_ALIASES: Record<string, readonly string[]> = {
+const SPAN_SEMCONV_ALIASES: Record<string, Arr.NonEmptyReadonlyArray<string>> = {
 	"http.method": ["http.method", "http.request.method"],
 	"http.request.method": ["http.method", "http.request.method"],
 	"http.status_code": ["http.status_code", "http.response.status_code"],
 	"http.response.status_code": ["http.status_code", "http.response.status_code"],
-} satisfies Record<string, readonly string[]>
+	"db.system": ["db.system", "db.system.name"],
+	"db.system.name": ["db.system.name", "db.system"],
+	"messaging.destination": ["messaging.destination", "messaging.destination.name"],
+	"messaging.destination.name": ["messaging.destination.name", "messaging.destination"],
+	"rpc.system": ["rpc.system", "rpc.system.name"],
+	"rpc.system.name": ["rpc.system.name", "rpc.system"],
+	"server.address": ["server.address", "http.host", "url.authority"],
+	"http.host": ["http.host", "server.address", "url.authority"],
+} satisfies Record<string, Arr.NonEmptyReadonlyArray<string>>
 
 /**
  * The same treatment for the one renamed *resource* attribute: the registry
@@ -66,28 +80,34 @@ const HTTP_SEMCONV_ALIASES: Record<string, readonly string[]> = {
  * key — so either filter spelling has to match either stored key. Canonical
  * first, matching `DEPLOYMENT_ENV_SQL`'s coalesce order.
  */
-const RESOURCE_SEMCONV_ALIASES: Record<string, readonly string[]> = {
+const RESOURCE_SEMCONV_ALIASES: Record<string, Arr.NonEmptyReadonlyArray<string>> = {
 	"deployment.environment": ["deployment.environment.name", "deployment.environment"],
 	"deployment.environment.name": ["deployment.environment.name", "deployment.environment"],
-} satisfies Record<string, readonly string[]>
+} satisfies Record<string, Arr.NonEmptyReadonlyArray<string>>
 
 /** `if(map[k0] != '', map[k0], if(map[k1] != '', …))` — first non-empty alias. */
-function coalescedMapGet(mapExpr: CH.Expr<Record<string, string>>, keys: readonly string[]): CH.Expr<string> {
-	let expr = CH.mapGet(mapExpr, keys[keys.length - 1])
-	for (let i = keys.length - 2; i >= 0; i--) {
-		const candidate = CH.mapGet(mapExpr, keys[i])
-		expr = CH.if_(candidate.neq(""), candidate, expr)
-	}
-	return expr
+function coalescedMapGet(
+	mapExpr: CH.Expr<Record<string, string>>,
+	keys: Arr.NonEmptyReadonlyArray<string>,
+): CH.Expr<string> {
+	return Arr.reduceRight(
+		Arr.initNonEmpty(keys),
+		CH.mapGet(mapExpr, Arr.lastNonEmpty(keys)),
+		(expr, key) => {
+			const candidate = CH.mapGet(mapExpr, key)
+			return CH.if_(candidate.neq(""), candidate, expr)
+		},
+	)
 }
 
 /** `mapContains(map, k0) OR mapContains(map, k1) OR …` */
-function anyMapContains(mapExpr: CH.Expr<Record<string, string>>, keys: readonly string[]): CH.Condition {
-	let cond = CH.mapContains(mapExpr, keys[0])
-	for (let i = 1; i < keys.length; i++) {
-		cond = cond.or(CH.mapContains(mapExpr, keys[i]))
-	}
-	return cond
+function anyMapContains(
+	mapExpr: CH.Expr<Record<string, string>>,
+	keys: Arr.NonEmptyReadonlyArray<string>,
+): CH.Condition {
+	return Arr.reduce(Arr.tailNonEmpty(keys), CH.mapContains(mapExpr, Arr.headNonEmpty(keys)), (cond, key) =>
+		cond.or(CH.mapContains(mapExpr, key)),
+	)
 }
 
 /**
@@ -109,7 +129,17 @@ export function buildAttrFilterCondition(
 	mapName: "SpanAttributes" | "LogAttributes" | "ResourceAttributes" | "Attributes",
 	requestedIndexMode: AttributeIndexMode = "none",
 ): CH.Condition {
-	// `product_events.Attributes` carries no skip index, so the exact predicate stands alone.
+	// An `(a OR b)` group. Each member keeps its own exact predicate; the index
+	// prefilters are skipped, since an OR of per-member candidates is no narrower
+	// than the exact OR and only adds granule reads.
+	if (af.or !== undefined && af.or.length > 0) {
+		const { or, ...first } = af
+		// One flat OR: a chained `.or()` per member nests past ClickHouse's max_parser_depth.
+		return CH.or(
+			...Arr.map([first, ...or], (member) => buildAttrFilterCondition(member, mapName, "none")),
+		)
+	}
+	// `Attributes` (product events, metric datapoints) carries no skip index, so the exact predicate stands alone.
 	const indexMode: AttributeIndexMode = mapName === "Attributes" ? "none" : requestedIndexMode
 	const mapExpr = CH.dynamicColumn<Record<string, string>>(mapName)
 	// Attributes renamed across OTel semconv versions match either spelling,
@@ -117,11 +147,11 @@ export function buildAttrFilterCondition(
 	// `DeploymentEnv` (resource attributes).
 	const aliasTable =
 		mapName === "SpanAttributes"
-			? HTTP_SEMCONV_ALIASES
+			? SPAN_SEMCONV_ALIASES
 			: mapName === "ResourceAttributes"
 				? RESOURCE_SEMCONV_ALIASES
 				: undefined
-	const keys = aliasTable?.[af.key] ?? [af.key]
+	const keys: Arr.NonEmptyReadonlyArray<string> = aliasTable?.[af.key] ?? [af.key]
 	const colExpr: CH.Expr<string> = coalescedMapGet(mapExpr, keys)
 	const value = af.value ?? ""
 
@@ -132,9 +162,8 @@ export function buildAttrFilterCondition(
 	 * `has(…, NULL)` rather than a wider read.
 	 */
 	const orOverKeys = (make: (key: string) => CH.Condition): CH.Condition | undefined =>
-		keys.reduce<CH.Condition | undefined>(
-			(acc, key) => (acc === undefined ? make(key) : acc.or(make(key))),
-			undefined,
+		Arr.reduce<string, CH.Condition | undefined>(keys, undefined, (acc, key) =>
+			acc === undefined ? make(key) : acc.or(make(key)),
 		)
 
 	const positive = ((): CH.Condition => {
@@ -164,18 +193,14 @@ export function buildAttrFilterCondition(
 			if (values.length === 0) return CH.rawCond("0")
 			return CH.inList(colExpr, values)
 		}
-		if (af.mode === "gt") {
-			return CH.toFloat64OrZero(colExpr).gt(Number(value))
-		}
-		if (af.mode === "gte") {
-			return CH.toFloat64OrZero(colExpr).gte(Number(value))
-		}
-		if (af.mode === "lt") {
-			return CH.toFloat64OrZero(colExpr).lt(Number(value))
-		}
-		if (af.mode === "lte") {
-			return CH.toFloat64OrZero(colExpr).lte(Number(value))
-		}
+		// A missing key reads as "" and would coerce to 0, so `attr.x < 5` must not
+		// match rows that lack `x`.
+		const numeric = CH.toFloat64OrZero(colExpr)
+		const present = colExpr.neq("")
+		if (af.mode === "gt") return present.and(numeric.gt(Number(value)))
+		if (af.mode === "gte") return present.and(numeric.gte(Number(value)))
+		if (af.mode === "lt") return present.and(numeric.lt(Number(value)))
+		if (af.mode === "lte") return present.and(numeric.lte(Number(value)))
 		// equals (default)
 		const exact = colExpr.eq(value)
 		// Empty values intentionally share ClickHouse Map's "missing key returns

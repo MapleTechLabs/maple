@@ -1,4 +1,5 @@
 import type { AnomalyIncidentDocument, AnomalySignalType } from "@maple/domain/http"
+import { Array as Arr } from "effect"
 
 export type AnomalySeverity = "warning" | "critical"
 
@@ -38,21 +39,34 @@ export function matchesAnomalyFilters(
 	)
 }
 
-export function hasAnomalyFilters(filters: AnomalyFilters): boolean {
-	return Object.values(filters).some((values) => (values?.length ?? 0) > 0)
+type Facet = {
+	readonly label: string
+	readonly include: keyof AnomalyFilters
+	readonly exclude: keyof AnomalyFilters
 }
 
+/** Rejects a facet table that leaves a key of `AnomalyFilters` unlisted, at compile time. */
+const coveringEveryFilter = <const T extends ReadonlyArray<Facet>>(
+	facets: T &
+		([Exclude<keyof AnomalyFilters, T[number]["include"] | T[number]["exclude"]>] extends [never]
+			? unknown
+			: never),
+): T => facets
+
 /** One facet, in both polarities. `label` matches the sidebar section title exactly. */
-const FACETS = [
+const FACETS = coveringEveryFilter([
 	{ label: "Severity", include: "severity", exclude: "excludedSeverity" },
 	{ label: "Signal", include: "signals", exclude: "excludedSignals" },
 	{ label: "Service", include: "services", exclude: "excludedServices" },
 	{ label: "Environment", include: "envs", exclude: "excludedEnvs" },
-] as const satisfies ReadonlyArray<{
-	label: string
-	include: keyof AnomalyFilters
-	exclude: keyof AnomalyFilters
-}>
+])
+
+export function hasAnomalyFilters(filters: AnomalyFilters): boolean {
+	return Arr.some(
+		FACETS,
+		(facet) => (filters[facet.include]?.length ?? 0) > 0 || (filters[facet.exclude]?.length ?? 0) > 0,
+	)
+}
 
 export interface AnomalyFilterChipDescriptor {
 	param: keyof AnomalyFilters
@@ -66,13 +80,13 @@ export function anomalyFilterChips(filters: AnomalyFilters): AnomalyFilterChipDe
 	const chips: AnomalyFilterChipDescriptor[] = []
 	for (const facet of FACETS) {
 		const excluded = filters[facet.exclude]
-		if (excluded?.length) {
+		if (excluded !== undefined && excluded.length > 0) {
 			chips.push({ param: facet.exclude, label: facet.label, values: excluded, negated: true })
 		}
 	}
 	for (const facet of FACETS) {
 		const included = filters[facet.include]
-		if (included?.length) {
+		if (included !== undefined && included.length > 0) {
 			chips.push({ param: facet.include, label: facet.label, values: included, negated: false })
 		}
 	}

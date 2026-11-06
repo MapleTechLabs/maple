@@ -3,10 +3,17 @@
  * and tool results run to 50k, so these paths run in production far more often than the happy one.
  */
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
-import { Tool } from "effect/unstable/ai"
+import { Array as Arr, Effect, Exit, Option, Schema, String as Str } from "effect"
+import { Tool } from "effect/ai"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
-import { invokeAgentAttributes, messagesJson, toolCallJson, withToolCallContent } from "./genai-spans"
+import {
+	invokeAgentAttributes,
+	messagesJson,
+	toolCallJson,
+	withReturnedToolFailuresOk,
+	withRunSessionAttributes,
+	withToolCallContent,
+} from "./genai-spans"
 
 const TRUNCATION_MARKER = "…[truncated]"
 
@@ -15,7 +22,7 @@ const userText = (content: string) => ({ role: "user", parts: [{ type: "text" as
 describe("messagesJson", () => {
 	it("drops whole oldest messages to fit, and counts them", () => {
 		const { json, dropped } = messagesJson(
-			[userText("a".repeat(600)), userText("b".repeat(600)), userText("c")],
+			[userText(Str.repeat(600)("a")), userText(Str.repeat(600)("b")), userText("c")],
 			1_000,
 		)
 
@@ -34,7 +41,7 @@ describe("messagesJson", () => {
 			[
 				{
 					role: "tool",
-					parts: [{ type: "tool_call_response", id: "t1", response: "x".repeat(5_000) }],
+					parts: [{ type: "tool_call_response", id: "t1", response: Str.repeat(5_000)("x") }],
 				},
 			],
 			1_000,
@@ -42,7 +49,7 @@ describe("messagesJson", () => {
 
 		assert.strictEqual(dropped, 0)
 		assert.isBelow(json.length, 1_000)
-		assert.isTrue(String(JSON.parse(json)[0].parts[0].response).endsWith(TRUNCATION_MARKER))
+		assert.isTrue(Str.endsWith(TRUNCATION_MARKER)(String(JSON.parse(json)[0].parts[0].response)))
 	})
 
 	it("splits a message's allowance across its parts, so parallel tool results share one", () => {
@@ -53,7 +60,7 @@ describe("messagesJson", () => {
 					parts: Array.from({ length: 20 }, (_, index) => ({
 						type: "tool_call_response" as const,
 						id: `t${index}`,
-						response: "x".repeat(5_000),
+						response: Str.repeat(5_000)("x"),
 					})),
 				},
 			],
@@ -84,22 +91,22 @@ describe("messagesJson", () => {
 
 describe("toolCallJson", () => {
 	it("wraps a string result, truncating the text before wrapping it", () => {
-		const result = String(JSON.parse(toolCallJson("x".repeat(20_000))).result)
+		const result = String(JSON.parse(toolCallJson(Str.repeat(20_000)("x"))).result)
 
-		assert.isTrue(result.startsWith("xxx"))
-		assert.isTrue(result.endsWith(TRUNCATION_MARKER))
+		assert.isTrue(Str.startsWith("xxx")(result))
+		assert.isTrue(Str.endsWith(TRUNCATION_MARKER)(result))
 	})
 
 	it("holds a string result to the budget once escaped", () => {
 		// Maple's tool results are JSON and tables: quotes and newlines double in length when wrapped.
-		const json = toolCallJson('{"row":"a"}\n'.repeat(2_000))
+		const json = toolCallJson(Str.repeat(2_000)('{"row":"a"}\n'))
 
 		assert.isAtMost(json.length, 8_000)
-		assert.isTrue(String(JSON.parse(json).result).endsWith(TRUNCATION_MARKER))
+		assert.isTrue(Str.endsWith(TRUNCATION_MARKER)(String(JSON.parse(json).result)))
 	})
 
 	it("holds an oversized object to the budget as a truncated prefix", () => {
-		const json = toolCallJson({ rows: '"quoted"'.repeat(5_000) })
+		const json = toolCallJson({ rows: Str.repeat(5_000)('"quoted"') })
 
 		assert.isAtMost(json.length, 8_000)
 		assert.strictEqual(JSON.parse(json).truncated, true)
@@ -107,7 +114,7 @@ describe("toolCallJson", () => {
 	})
 
 	it("cuts an escape-heavy object by what its encoding costs, not to nothing", () => {
-		const json = toolCallJson({ rows: '\\"'.repeat(6_000) })
+		const json = toolCallJson({ rows: Str.repeat(6_000)('\\"') })
 
 		assert.isAtMost(json.length, 8_000)
 		assert.isAbove(JSON.parse(json).prefix.length, 3_000)
@@ -131,7 +138,7 @@ describe("invokeAgentAttributes", () => {
 			model: "test-model",
 			tools: Array.from({ length: 40 }, (_, index) =>
 				Tool.make(`tool_${index}`, {
-					description: "d".repeat(1_000),
+					description: Str.repeat(1_000)("d"),
 					parameters: Schema.Struct({ query: Schema.String }),
 				}),
 			),
@@ -140,7 +147,7 @@ describe("invokeAgentAttributes", () => {
 
 		assert.strictEqual(definitions.length, 40)
 		assert.notProperty(definitions[0], "parameters")
-		assert.strictEqual(definitions[0].description, `${"d".repeat(128)}${TRUNCATION_MARKER}`)
+		assert.strictEqual(definitions[0].description, `${Str.repeat(128)("d")}${TRUNCATION_MARKER}`)
 		assert.notProperty(attributes, "gen_ai.agent.description")
 	})
 })
@@ -172,6 +179,85 @@ describe("withToolCallContent", () => {
 
 			assert.strictEqual(spans[0]?.attributes.get("maple_ai.session.id"), "org_1:inv-abc")
 			assert.strictEqual(spans[0]?.attributes.get("maple_ai.turn.id"), "msg_1")
+		}),
+	)
+})
+
+describe("withReturnedToolFailuresOk", () => {
+	// The engine writes `failure_handling` on the span before it ends it with a failed exit.
+	const endedSpan = (name: string, failureHandling: string) =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			yield* Effect.annotateCurrentSpan({ "effect_agent.tool.failure_handling": failureHandling }).pipe(
+				Effect.andThen(Effect.fail("bad sql")),
+				Effect.withSpan(name),
+				Effect.withTracer(withReturnedToolFailuresOk(tracer)),
+				Effect.exit,
+			)
+			const span = spans[0]
+			assert.isDefined(span)
+			assert.strictEqual(span.status._tag, "Ended")
+			return { span, failed: span.status._tag === "Ended" && Exit.isFailure(span.status.exit) }
+		})
+
+	it.effect("ends a failure returned to the model as Ok, with error.type", () =>
+		Effect.gen(function* () {
+			const { span, failed } = yield* endedSpan("execute_tool run_sql", "returned-to-model")
+			assert.isFalse(failed)
+			assert.strictEqual(span.attributes.get("error.type"), "ToolCallFailed")
+		}),
+	)
+
+	it.effect("ends a failure returned to a run_code program as Ok, with error.type", () =>
+		Effect.gen(function* () {
+			const { span, failed } = yield* endedSpan("execute_tool run_sql", "returned-to-caller")
+			assert.isFalse(failed)
+			assert.strictEqual(span.attributes.get("error.type"), "ToolCallFailed")
+		}),
+	)
+
+	it.effect("keeps a propagated failure as Error", () =>
+		Effect.gen(function* () {
+			const { span, failed } = yield* endedSpan("execute_tool run_sql", "propagated")
+			assert.isTrue(failed)
+			assert.isUndefined(span.attributes.get("error.type"))
+		}),
+	)
+
+	it.effect("leaves spans other than execute_tool alone", () =>
+		Effect.gen(function* () {
+			const { failed } = yield* endedSpan("chat.turn", "returned-to-model")
+			assert.isTrue(failed)
+		}),
+	)
+})
+
+describe("withRunSessionAttributes", () => {
+	const SESSION = { "maple_ai.session.id": "review_1", "maple_ai.turn.id": "turn_1" }
+
+	it.effect("files a child agent's spans under the run's session, over its own thread", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			// The engine labels a child's spans with the child's own thread, as it does in production.
+			yield* Effect.void.pipe(
+				Effect.withSpan("execute_tool pr_changed_files", {
+					attributes: { "gen_ai.conversation.id": "thread-id_child" },
+				}),
+				Effect.withSpan("invoke_agent pr-review-worker", {
+					attributes: { "gen_ai.conversation.id": "thread-id_child" },
+				}),
+				Effect.withSpan("http.request"),
+				Effect.withTracer(withRunSessionAttributes(tracer, SESSION)),
+			)
+
+			const byName = (name: string) =>
+				Option.getOrUndefined(Arr.findFirst(spans, (span) => span.name === name))
+			for (const name of ["invoke_agent pr-review-worker", "execute_tool pr_changed_files"]) {
+				assert.strictEqual(byName(name)?.attributes.get("maple_ai.session.id"), "review_1", name)
+				assert.strictEqual(byName(name)?.attributes.get("maple_ai.turn.id"), "turn_1", name)
+			}
+			// Nothing wider: an HTTP span is not an agent span.
+			assert.isUndefined(byName("http.request")?.attributes.get("maple_ai.session.id"))
 		}),
 	)
 })

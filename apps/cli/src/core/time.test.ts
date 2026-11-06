@@ -5,14 +5,12 @@ import { normalizeTimestamp, parseTimestampMs, resolveRangeChecked, sinceToMs } 
 
 // Plain promises: `it.effect` hangs under `bun test`. None of these cases read the clock.
 const resolve = (a: { since?: string; start?: string; end?: string }) =>
-	Effect.runPromise(
-		Effect.exit(
-			resolveRangeChecked({
-				since: a.since ?? "6h",
-				start: Option.fromNullishOr(a.start),
-				end: Option.fromNullishOr(a.end),
-			}),
-		),
+	Effect.runPromiseExit(
+		resolveRangeChecked({
+			since: a.since ?? "6h",
+			start: Option.fromNullishOr(a.start),
+			end: Option.fromNullishOr(a.end),
+		}),
 	)
 
 describe("time ranges", () => {

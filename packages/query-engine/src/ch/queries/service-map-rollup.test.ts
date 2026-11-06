@@ -12,6 +12,7 @@ import {
 	serviceMapRollupMissingHours,
 	serviceMapRollupWindowParams,
 } from "./service-map-rollup"
+import { OrgId } from "@maple/domain"
 
 describe("service-map rollup hour planning", () => {
 	const hour = 3_600_000
@@ -30,13 +31,13 @@ describe("service-map rollup hour planning", () => {
 	})
 
 	it("formats hour and window bounds as warehouse datetimes", () => {
-		expect(serviceMapRollupHourParams("org_1", base)).toEqual({
-			orgId: "org_1",
+		expect(serviceMapRollupHourParams(OrgId.make("org_1"), base)).toEqual({
+			orgId: OrgId.make("org_1"),
 			hourStart: "2024-01-01 00:00:00",
 			hourEnd: "2024-01-01 01:00:00",
 		})
-		expect(serviceMapRollupWindowParams("org_1", base, base + 3 * hour)).toEqual({
-			orgId: "org_1",
+		expect(serviceMapRollupWindowParams(OrgId.make("org_1"), base, base + 3 * hour)).toEqual({
+			orgId: OrgId.make("org_1"),
 			startTime: "2024-01-01 00:00:00",
 			endTime: "2024-01-01 03:00:00",
 		})
@@ -44,7 +45,7 @@ describe("service-map rollup hour planning", () => {
 })
 
 const hourParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	hourStart: "2024-01-01 00:00:00",
 	hourEnd: "2024-01-01 01:00:00",
 }
@@ -53,7 +54,7 @@ describe("service-map rollup compiled row schemas", () => {
 	it.effect("decodes existing-hour rows with numeric strings", () =>
 		Effect.gen(function* () {
 			const compiled = yield* serviceMapEdgesExistingHoursSQL({
-				orgId: "org_1",
+				orgId: OrgId.make("org_1"),
 				startTime: "2024-01-01 00:00:00",
 				endTime: "2024-01-02 00:00:00",
 			})
@@ -137,7 +138,7 @@ describe("service-map rollup compiled row schemas", () => {
 
 describe("service-map rollup routing", () => {
 	const windowParams = {
-		orgId: "org_1",
+		orgId: OrgId.make("org_1"),
 		startTime: "2024-01-01 00:00:00",
 		endTime: "2024-01-02 00:00:00",
 	}

@@ -6,7 +6,7 @@
  * schema varies by plan (free plans lack the timing-quantile fields entirely), so every metric
  * field is optional/nullable and the mapping layer treats absence as "don't emit that metric".
  */
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 export const HTTP_DATASET = "http_requests"
 export const HTTP_PATHS_DATASET = "http_paths"
@@ -140,7 +140,7 @@ export const zoneAnalyticsDocument = (selections: ReadonlyArray<string>): string
   viewer {
     zones(filter: { zoneTag_in: $zoneTags }) {
       zoneTag
-${selections.join("\n")}
+${Arr.join(selections, "\n")}
     }
   }
 }`
@@ -149,7 +149,7 @@ export const accountAnalyticsDocument = (selections: ReadonlyArray<string>): str
 	`query MapleCfAccountAnalytics($accountTag: string!, $start: Time!, $end: Time!) {
   viewer {
     accounts(filter: { accountTag: $accountTag }) {
-${selections.join("\n")}
+${Arr.join(selections, "\n")}
     }
   }
 }`
@@ -618,9 +618,15 @@ export const topTrafficQuery = (options: {
 	const dimension = options.dimension === "host" ? "clientRequestHTTPHost" : "clientRequestPath"
 	const limit = Math.floor(options.limit)
 	const filter = options.filter ?? {}
-	const active = TOP_TRAFFIC_FILTERS.filter(([, , , read]) => read(filter) !== undefined)
-	const varDecls = active.map(([, variable, type]) => `, $${variable}: ${type}`).join("")
-	const predicates = active.map(([key, variable]) => `, ${key}: $${variable}`).join("")
+	const active = Arr.filter(TOP_TRAFFIC_FILTERS, ([, , , read]) => read(filter) !== undefined)
+	const varDecls = Arr.join(
+		Arr.map(active, ([, variable, type]) => `, $${variable}: ${type}`),
+		"",
+	)
+	const predicates = Arr.join(
+		Arr.map(active, ([key, variable]) => `, ${key}: $${variable}`),
+		"",
+	)
 	return `query MapleCfTopTraffic($zoneTags: [string!], $start: Time!, $end: Time!${varDecls}) {
   viewer {
     zones(filter: { zoneTag_in: $zoneTags }) {
@@ -678,4 +684,4 @@ export const decodeTopTrafficResponse = Schema.decodeUnknownEffect(TopTrafficRes
 
 /** Cloudflare's `Time` scalar accepts RFC 3339; second precision keeps documents stable. */
 export const toGraphqlTime = (epochMs: number): string =>
-	new Date(Math.floor(epochMs / 1000) * 1000).toISOString().replace(".000Z", "Z")
+	Str.replace(".000Z", "Z")(new Date(Math.floor(epochMs / 1000) * 1000).toISOString())

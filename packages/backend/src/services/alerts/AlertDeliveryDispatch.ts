@@ -1,5 +1,5 @@
 /**
- * Message RENDERING for the chat-style providers, plus the "Ask Maple AI"
+ * Message RENDERING for the chat-style providers, plus the alert rule
  * deep-link and the template resolver.
  *
  * Transport — which provider gets which request, how it is sent, how failures
@@ -7,13 +7,9 @@
  * is a value in, a value out, which is what makes the Discord/Telegram
  * output assertable without any HTTP stub.
  */
-import type {
-	AlertComparator,
-	AlertDestinationType,
-	AlertEventType,
-	AlertSignalType,
-	AlertSeverity,
-} from "@maple/domain/http"
+import { Option, pipe, Array as Arr, String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
+import type { AlertDestinationType, AlertEventType } from "@maple/domain/http"
 import type { DispatchContext } from "./delivery/context"
 import {
 	comparatorBreachPhrase,
@@ -21,6 +17,7 @@ import {
 	displayGroupKey,
 	eventTypeEmoji,
 	formatComparator,
+	formatAlertHeadline,
 	formatEventTypeLabel,
 	formatObservedSummary,
 	formatSeverityLabel,
@@ -30,6 +27,7 @@ import {
 	formatWindow,
 	signalDisplayOf,
 	truncate,
+	uptimeSummaryLine,
 	type TemplateRenderContext,
 } from "./alert-formatting"
 import { DEFAULT_BODY_TEMPLATE, DEFAULT_TITLE_TEMPLATE } from "./alert-templating/defaultTemplates"
@@ -41,63 +39,20 @@ import {
 } from "./alert-templating/renderer"
 
 /* -------------------------------------------------------------------------- */
-/*  Chat deep-link helper                                                     */
+/*  Alert deep-link helper                                                    */
 /* -------------------------------------------------------------------------- */
 
-export interface ChatUrlContext {
-	readonly ruleId: string
-	readonly ruleName: string
-	readonly incidentId: string | null
-	readonly dedupeKey: string
-	readonly eventType: AlertEventType
-	readonly signalType: AlertSignalType
-	readonly severity: AlertSeverity
-	readonly comparator: AlertComparator
-	readonly threshold: number
-	readonly thresholdUpper: number | null
-	readonly value: number | null
-	readonly windowMinutes: number
-	readonly groupKey: string | null
-	readonly sampleCount: number | null
-}
-
-const toBase64Url = (raw: string): string =>
-	Buffer.from(raw, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
-
 /**
- * "Ask Maple AI" deep-link. Points at the incident-scoped diagnosis page, which
- * auto-generates the AI diagnosis and hosts the alert chat alongside it. The
- * encoded alert context is carried so the page renders + seeds the chat without
- * a round-trip. When there is no incident row yet (e.g. a `test` notification)
- * we fall back to the generic chat surface.
+ * The alert rule's page: the webhook's `chatUrl` and the template's `links.chat`. A `test`
+ * notification's rule id is made up, so it opens the alerts list instead.
  */
-export const buildAlertChatUrl = (baseUrl: string, context: ChatUrlContext): string => {
-	const alertJson = JSON.stringify({
-		ruleId: context.ruleId,
-		ruleName: context.ruleName,
-		incidentId: context.incidentId,
-		eventType: context.eventType,
-		signalType: context.signalType,
-		severity: context.severity,
-		comparator: context.comparator,
-		threshold: context.threshold,
-		thresholdUpper: context.thresholdUpper,
-		value: context.value,
-		windowMinutes: context.windowMinutes,
-		groupKey: context.groupKey,
-		sampleCount: context.sampleCount,
-	})
-	const encoded = toBase64Url(alertJson)
-	if (context.incidentId) {
-		return `${baseUrl}/alerts/incidents/${encodeURIComponent(context.incidentId)}?alert=${encoded}`
-	}
-	const params = new URLSearchParams({
-		mode: "alert",
-		tab: `alert-${context.dedupeKey}`,
-		alert: encoded,
-	})
-	return `${baseUrl}/chat?${params.toString()}`
-}
+export const buildAlertRuleUrl = (
+	baseUrl: string,
+	context: { readonly ruleId: string; readonly eventType: AlertEventType },
+): string =>
+	context.eventType === "test"
+		? `${baseUrl}/alerts`
+		: `${baseUrl}/alerts/${encodeURIComponent(context.ruleId)}`
 
 /**
  * One human-readable sentence describing what happened — the message lead
@@ -114,6 +69,7 @@ type SummaryLineContext = Pick<
 	| "thresholdUpper"
 	| "value"
 	| "windowMinutes"
+	| "detail"
 >
 
 /**
@@ -125,6 +81,10 @@ type SummaryLineContext = Pick<
  * that HTML mode would otherwise read as tags.
  */
 export const buildSummaryLine = (context: SummaryLineContext, em: (value: string) => string): string => {
+	if (context.signalType === "uptime") return em(uptimeSummaryLine(context))
+	// An SLO's check names both windows and the tier, which one value and window cannot.
+	if (context.signalType === "slo_burn_rate" && context.detail != null && context.eventType !== "test")
+		return em(context.detail)
 	const signal = formatSignalLabel(context)
 	const observed = formatSignalMetric(context.value, signalDisplayOf(context))
 	const window = formatWindow(context.windowMinutes)
@@ -134,6 +94,10 @@ export const buildSummaryLine = (context: SummaryLineContext, em: (value: string
 	if (context.eventType === "resolve") {
 		const now = context.value != null ? ` — now ${em(observed)}` : ""
 		return `${em(signal)} is back within its threshold (${formatThresholdSummary(context)})${now}.`
+	}
+	// A breach without a value is a rule that alerts when its window has no data.
+	if (context.value == null) {
+		return `${em(signal)} has no data over the last ${window} (alert threshold ${formatThresholdSummary(context)}).`
 	}
 	return `${em(signal)} is ${em(observed)} — ${comparatorBreachPhrase(context)}, measured over the last ${window}.`
 }
@@ -150,9 +114,9 @@ const discordImage = (context: Pick<DispatchContext, "chartUrl">) =>
 const discordFooterText = (context: Pick<DispatchContext, "sparkline">): string =>
 	context.sparkline ? `\u{1F341} Maple Alerts  ·  ${context.sparkline}` : "\u{1F341} Maple Alerts"
 
-export const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string, chatUrl: string) => [
+export const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string) => [
 	{
-		title: `${eventTypeEmoji(context.eventType)} ${context.ruleName} — ${formatEventTypeLabel(context.eventType)}`,
+		title: `${eventTypeEmoji(context.eventType)} ${formatAlertHeadline(context)}`,
 		url: linkUrl,
 		color: discordEmbedColor(context.eventType, context.severity),
 		fields: [
@@ -163,7 +127,7 @@ export const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string, ch
 			{ name: "Window", value: formatWindow(context.windowMinutes), inline: true },
 			{
 				name: "Links",
-				value: `[Open in Maple](${linkUrl}) · [Ask Maple AI](${chatUrl})`,
+				value: `[Open in Maple](${linkUrl})`,
 				inline: false,
 			},
 		],
@@ -185,7 +149,7 @@ export const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string, ch
  * produces `> 5%`, which is a parse failure unescaped.
  */
 const escapeTelegramHtml = (value: string): string =>
-	value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+	Str.replace(/>/g, "&gt;")(Str.replace(/</g, "&lt;")(Str.replace(/&/g, "&amp;")(value)))
 
 /** Telegram's hard cap on `sendMessage.text`. */
 const TELEGRAM_TEXT_LIMIT = 4096
@@ -195,7 +159,7 @@ const telegramFooter = (context: Pick<DispatchContext, "sentAtMs" | "incidentId"
 	if (context.sparkline) parts.push(`<code>${escapeTelegramHtml(context.sparkline)}</code>`)
 	if (context.incidentId) parts.push(`Incident <code>${escapeTelegramHtml(context.incidentId)}</code>`)
 	if (context.sentAtMs != null) parts.push(new Date(context.sentAtMs).toISOString())
-	return parts.join("  \u{00B7}  ")
+	return Arr.join(parts, "  \u{00B7}  ")
 }
 
 const telegramDetailLine = (
@@ -207,15 +171,18 @@ const telegramDetailLine = (
 		`<b>Window</b> ${escapeTelegramHtml(formatWindow(context.windowMinutes))}`,
 	]
 	if (group != null) parts.push(`<b>Group</b> <code>${escapeTelegramHtml(group)}</code>`)
-	return parts.join("  \u{00B7}  ")
+	return Arr.join(parts, "  \u{00B7}  ")
 }
 
 const telegramBody = (title: string, lines: ReadonlyArray<string>): string =>
-	truncate([title, "", ...lines].join("\n"), TELEGRAM_TEXT_LIMIT)
+	truncate(Arr.join([title, "", ...lines], "\n"), TELEGRAM_TEXT_LIMIT)
 
 /** No link arguments: Telegram carries both links in the inline keyboard. */
 export const buildTelegramText = (context: DispatchContext): string => {
-	const title = `${eventTypeEmoji(context.eventType)} <b>${escapeTelegramHtml(context.ruleName)}</b> \u{2014} ${escapeTelegramHtml(formatEventTypeLabel(context.eventType))}`
+	const title =
+		context.signalType === "uptime"
+			? `${eventTypeEmoji(context.eventType)} <b>${escapeTelegramHtml(formatAlertHeadline(context))}</b>`
+			: `${eventTypeEmoji(context.eventType)} <b>${escapeTelegramHtml(context.ruleName)}</b> \u{2014} ${escapeTelegramHtml(formatEventTypeLabel(context.eventType))}`
 	return telegramBody(title, [
 		escapeTelegramHtml(buildSummaryLine(context, (value) => value)),
 		"",
@@ -234,11 +201,13 @@ export const buildTelegramText = (context: DispatchContext): string => {
  * let a template author aim a button at an arbitrary in-app action.
  */
 const markdownToTelegramHtml = (markdown: string): string =>
-	escapeTelegramHtml(markdown)
-		.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
-		.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, text: string, url: string) =>
-			/^https?:\/\//i.test(url) ? `<a href="${url.replaceAll('"', "%22")}">${text}</a>` : match,
-		)
+	pipe(
+		escapeTelegramHtml(markdown),
+		Str.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>"),
+		replaceWith(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, text = "", url = "") =>
+			/^https?:\/\//i.test(url) ? `<a href="${Str.replaceAll('"', "%22")(url)}">${text}</a>` : match,
+		),
+	)
 
 export const buildTelegramTextFromTemplate = (
 	title: string,
@@ -303,6 +272,22 @@ export const buildTemplateContext = (
 	}
 }
 
+const renderResolved = Option.liftThrowable(
+	(
+		resolved: ReturnType<typeof resolveTemplate>,
+		context: TemplateRenderContext,
+		linkUrl: string,
+		chatUrl: string,
+	): { title: string; body: string } => {
+		const templateCtx = buildTemplateContext(context, linkUrl, chatUrl)
+		const title =
+			Str.trim(renderTemplate(resolved.title ?? DEFAULT_TITLE_TEMPLATE, templateCtx).text) ||
+			context.ruleName
+		const body = renderTemplate(resolved.body ?? DEFAULT_BODY_TEMPLATE, templateCtx).text
+		return { title, body }
+	},
+)
+
 /**
  * Resolve + render the effective title/body for a destination. Returns `null`
  * when the rule has no custom template (caller falls back to the hardcoded
@@ -317,16 +302,7 @@ export const renderTitleBody = (
 ): { title: string; body: string } | null => {
 	const resolved = resolveTemplate(context.template, destinationType)
 	if (!hasCustomTemplate(resolved)) return null
-	try {
-		const templateCtx = buildTemplateContext(context, linkUrl, chatUrl)
-		const title =
-			renderTemplate(resolved.title ?? DEFAULT_TITLE_TEMPLATE, templateCtx).text.trim() ||
-			context.ruleName
-		const body = renderTemplate(resolved.body ?? DEFAULT_BODY_TEMPLATE, templateCtx).text
-		return { title, body }
-	} catch {
-		return null
-	}
+	return Option.getOrNull(renderResolved(resolved, context, linkUrl, chatUrl))
 }
 
 export const buildDiscordEmbedsFromTemplate = (
@@ -334,7 +310,6 @@ export const buildDiscordEmbedsFromTemplate = (
 	body: string,
 	context: Pick<DispatchContext, "eventType" | "severity" | "sparkline" | "chartUrl">,
 	linkUrl: string,
-	chatUrl: string,
 ) => [
 	{
 		title: truncate(title, 256),
@@ -344,7 +319,7 @@ export const buildDiscordEmbedsFromTemplate = (
 		fields: [
 			{
 				name: "Links",
-				value: `[Open in Maple](${linkUrl}) · [Ask Maple AI](${chatUrl})`,
+				value: `[Open in Maple](${linkUrl})`,
 				inline: false,
 			},
 		],

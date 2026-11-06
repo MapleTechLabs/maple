@@ -3,9 +3,9 @@
  * week (four headline stats, top pages, top sources, AI traffic), with the app
  * one click away for everything else.
  *
- * The markup lives in `emails/web-analytics-digest.vue` and is compiled to
- * `src/generated/web-analytics-digest.ts` by Maizzle (`bun run --cwd
- * packages/email build`). This module only splices those strings together.
+ * The markup lives in `templates/` and is compiled to
+ * `src/generated/web-analytics-digest.ts` (`bun run --cwd packages/email build`).
+ * This module only splices those strings together.
  */
 import { FRAGMENTS, PAGE } from "./generated/web-analytics-digest"
 import { C, deltaPalette, deltaParts, rowBorder, trendColor } from "./delta-render"
@@ -21,6 +21,7 @@ import {
 	type WebAnalyticsDigestProps,
 	type WebAnalyticsRankRow,
 } from "./web-analytics-digest-core"
+import { Array as Arr } from "effect"
 
 export {
 	deriveWebAnalyticsHeadline,
@@ -76,14 +77,14 @@ function rankTable(
 	rows: ReadonlyArray<WebAnalyticsRankRow>,
 ): string {
 	if (rows.length === 0) return ""
-	const top = Math.max(1, ...rows.map((row) => row.value))
+	const top = Math.max(1, ...Arr.map(rows, (row) => row.value))
 	return fill(
 		FRAGMENTS.rankTable,
 		{ valueHeading: columns.value, asideHeading: columns.aside },
 		{
 			head,
-			rankRows: rows
-				.map((row, index) =>
+			rankRows: Arr.join(
+				Arr.map(rows, (row, index) =>
 					fill(
 						FRAGMENTS.rankRow,
 						{
@@ -96,8 +97,9 @@ function rankTable(
 						},
 						{ rowIcon: row.icon === null ? "" : fill(FRAGMENTS.rowIcon, { icon: row.icon }) },
 					),
-				)
-				.join("\n"),
+				),
+				"\n",
+			),
 		},
 	)
 }
@@ -114,15 +116,16 @@ function aiColumn(
 		{ icon: emailIcon(icon), label, value: fmtNum(total.value), hint: rows.length === 0 ? "" : hint },
 		{
 			deltaPill: deltaPill(total.delta),
-			rows: rows
-				.map((row) =>
+			rows: Arr.join(
+				Arr.map(rows, (row) =>
 					fill(FRAGMENTS.compactRow, {
 						icon: row.icon ?? emailIcon("ai"),
 						label: truncate(row.label, 16),
 						value: fmtNum(row.value),
 					}),
-				)
-				.join(""),
+				),
+				"",
+			),
 		},
 	)
 }
@@ -131,24 +134,27 @@ function aiSection(props: WebAnalyticsDigestProps): string {
 	const { referrals, crawlers } = props.ai
 	const quiet = referrals.sessions === 0 && (crawlers === null || crawlers.requests === 0)
 
-	const columns = [
-		aiColumn(
-			"sparkle",
-			"AI visits",
-			{ value: referrals.sessions, delta: referrals.delta },
-			"Clicked through from",
-			referrals.byProduct,
-		),
-		crawlers === null
-			? ""
-			: aiColumn(
-					"crawler",
-					"Crawler fetches",
-					{ value: crawlers.requests, delta: crawlers.delta },
-					"Read by",
-					crawlers.byCrawler,
-				),
-	].join("")
+	const columns = Arr.join(
+		[
+			aiColumn(
+				"sparkle",
+				"AI visits",
+				{ value: referrals.sessions, delta: referrals.delta },
+				"Clicked through from",
+				referrals.byProduct,
+			),
+			crawlers === null
+				? ""
+				: aiColumn(
+						"crawler",
+						"Crawler fetches",
+						{ value: crawlers.requests, delta: crawlers.delta },
+						"Read by",
+						crawlers.byCrawler,
+					),
+		],
+		"",
+	)
 
 	return fill(
 		FRAGMENTS.aiSection,

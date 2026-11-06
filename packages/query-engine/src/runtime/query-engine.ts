@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 // Query Engine — lowering core
 //
 // Validation, QuerySpec → CH lowering, row shaping, and the alert evaluate /
@@ -16,6 +16,8 @@ import {
 	type QueryEngineExecuteRequest,
 	type QuerySpec,
 	type TimeseriesPoint,
+	type AttributeFilter,
+	MAX_METRICS_GROUP_BY_KEYS,
 } from "@maple/domain/query-engine"
 import {
 	QueryEngineTimeoutError,
@@ -27,7 +29,18 @@ import {
 	type WarehouseReadError,
 } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain"
-import { Array as Arr, Duration, Effect, Match, Option, Result, Schema } from "effect"
+import {
+	Array as Arr,
+	DateTime,
+	Duration,
+	Effect,
+	Match,
+	Option,
+	Result,
+	Schema,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import type { QueryProfileName, SqlQueryOptions, WarehouseQuerySettings } from "../profiles"
 import { canonicalJSON } from "../canonical-json"
 import { memoizeAlertBuckets } from "./alert-evaluation-scope"
@@ -36,6 +49,7 @@ import {
 	BUCKET_POLICIES,
 	computeBucketSeconds,
 	formatWarehouseDateTime,
+	parseUtc,
 	parseWarehouseDateTime,
 } from "../datetime"
 import { ENGINE_UNGROUPED_GROUP_KEY } from "../group-key"
@@ -47,7 +61,13 @@ import {
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 	formatRangeSeconds,
 } from "../limits"
-import { attributeIndexMode, logBodySearchMode, type WarehouseCapabilities } from "../capabilities"
+import { rawBreakdownSpanVerdict, spanBudgetApplies } from "./breakdown-span-budget"
+import {
+	attributeIndexMode,
+	hasWarehouseTable,
+	logBodySearchMode,
+	type WarehouseCapabilities,
+} from "../capabilities"
 import { makeExecuteRawSql } from "./raw-sql"
 import {
 	logsCount,
@@ -91,6 +111,7 @@ export {
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 	formatRangeSeconds,
 	maxRangeSecondsForKind,
+	timeWindowViolation,
 	validateRelativeRange,
 } from "../limits"
 export { relativeRangeSeconds, resolveRelativeRange, resolveRelativeRangeToWarehouse } from "../datetime"
@@ -110,7 +131,11 @@ export interface QueryEngineWarehouse<T extends QueryTenant = QueryTenant> {
 	readonly rawSqlQuery: (
 		tenant: T,
 		sql: string,
-		options: { readonly profile: QueryProfileName; readonly context: string },
+		options: {
+			readonly profile: QueryProfileName
+			readonly context: string
+			readonly settings?: WarehouseQuerySettings
+		},
 	) => Effect.Effect<
 		ReadonlyArray<Record<string, unknown>>,
 		WarehouseQueryPathError | RawSqlValidationError
@@ -140,17 +165,6 @@ interface BucketFillOptions {
 	readonly startMs: number
 	readonly endMs: number
 	readonly bucketSeconds: number
-}
-
-interface MetricTimeseriesRow {
-	readonly bucket: string | Date
-	readonly serviceName: string
-	readonly attributeValue: string
-	readonly avgValue: number
-	readonly minValue: number
-	readonly maxValue: number
-	readonly sumValue: number
-	readonly dataPointCount: number
 }
 
 type AlertObservation = QueryEngineAlertObservation
@@ -228,16 +242,15 @@ export const withTimeout = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 		}),
 	)
 
-export const toEpochMs = (value: string): number => new Date(value.replace(" ", "T") + "Z").getTime()
+export const toEpochMs = (value: string): number => new Date(Str.replace(" ", "T")(value) + "Z").getTime()
 const TINYBIRD_DATETIME_RE = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(\.\d+)?$/
 
 export const msToTinybirdDateTime = (ms: number): string => {
 	const iso = new Date(ms).toISOString()
-	return `${iso.slice(0, 10)} ${iso.slice(11, 19)}`
+	return `${Str.slice(0, 10)(iso)} ${Str.slice(11, 19)(iso)}`
 }
 
 const CACHE_SNAP_S = 15
-const TRACE_SERVICE_PARTITION_BUFFER_MS = 24 * 60 * 60 * 1000
 
 // Re-exported so `@maple/query-engine/runtime` consumers keep one import site;
 // the definition is in the driver-free `../group-key` because the query-set merge
@@ -245,22 +258,20 @@ const TRACE_SERVICE_PARTITION_BUFFER_MS = 24 * 60 * 60 * 1000
 export { ENGINE_UNGROUPED_GROUP_KEY } from "../group-key"
 
 /**
- * Bound the service-enrichment lookup to the daily partitions surrounding the
- * rows already selected for this page. A one-day cushion covers traces that
- * cross the requested range boundary without probing the full 30-day
- * retention window of `service_map_spans`.
+ * The time span of the rows already selected for this page. The services lookup
+ * pads it ±1h itself, as for every trace-id read.
  */
-function traceServicePartitionWindow(
-	rows: ReadonlyArray<{ readonly timestamp: unknown }>,
+function pageTimeWindow(
+	rows: ReadonlyArray<{ readonly timestamp: DateTime.Utc }>,
 	fallback: { readonly startTime: string; readonly endTime: string },
 ): { readonly startTime: string; readonly endTime: string } {
-	const pageTimes = rows.map((row) => parseWarehouseDateTime(String(row.timestamp))).filter(Number.isFinite)
+	const pageTimes = Arr.map(rows, (row) => DateTime.toEpochMillis(row.timestamp))
 
 	if (pageTimes.length === 0) return fallback
 
 	return {
-		startTime: formatWarehouseDateTime(Math.min(...pageTimes) - TRACE_SERVICE_PARTITION_BUFFER_MS),
-		endTime: formatWarehouseDateTime(Math.max(...pageTimes) + TRACE_SERVICE_PARTITION_BUFFER_MS),
+		startTime: formatWarehouseDateTime(Math.min(...pageTimes)),
+		endTime: formatWarehouseDateTime(Math.max(...pageTimes)),
 	}
 }
 
@@ -278,7 +289,7 @@ function parseProjectedAttributes(raw: unknown): Record<string, string> {
 	const parsed = decodeProjectedAttributes(raw)
 	if (Option.isNone(parsed)) return {}
 	const out: Record<string, string> = {}
-	for (const [key, value] of Object.entries(parsed.value)) {
+	for (const [key, value] of Rec.toEntries(parsed.value)) {
 		if (typeof value === "string" && value.length > 0) out[key] = value
 	}
 	return out
@@ -307,14 +318,12 @@ export function snapToWindow(dateStr: string, windowSeconds: number): string {
 	if (windowSeconds <= 0 || windowSeconds > 3600) return dateStr
 	// Snap by deriving epoch ms, flooring, formatting back. Handles cross-minute
 	// and cross-hour boundaries cleanly for windows up to 1h.
-	const ms = Date.parse(dateStr.replace(" ", "T") + "Z")
+	const ms = parseWarehouseDateTime(dateStr)
 	if (Number.isNaN(ms)) return dateStr
 	const snappedMs = Math.floor(ms / (windowSeconds * 1000)) * (windowSeconds * 1000)
 	const iso = new Date(snappedMs).toISOString()
-	return `${iso.slice(0, 10)} ${iso.slice(11, 19)}`
+	return `${Str.slice(0, 10)(iso)} ${Str.slice(11, 19)(iso)}`
 }
-
-const snapSeconds = (dateStr: string): string => snapToWindow(dateStr, CACHE_SNAP_S)
 
 /**
  * Discovery queries (attribute keys/values, facets) change slowly because
@@ -366,16 +375,6 @@ export function buildCacheKey(orgId: string, request: QueryEngineExecuteRequest)
 	return `${orgId}:${snapToWindow(request.startTime, snap)}:${snapToWindow(request.endTime, snap)}:${canonicalJSON(request.query)}`
 }
 
-export function buildEvaluateCacheKey(orgId: string, request: AlertEvaluateRequest): string {
-	// `source.kind` is part of the key so a spec plan and a raw-SQL plan can
-	// never share an entry.
-	const source =
-		request.source.kind === "spec"
-			? `spec:${canonicalJSON(request.source.query)}`
-			: `raw:${request.source.windowMinutes}:${request.source.sql}`
-	return `eval:${orgId}:${snapSeconds(request.startTime)}:${snapSeconds(request.endTime)}:${request.reducer}:${request.sampleCountStrategy}:${source}`
-}
-
 const DIRECT_CACHE_SNAP_KEYS = new Set(["startTime", "endTime"])
 const DIRECT_CACHE_SET_KEYS = new Set([
 	"commitShas",
@@ -386,6 +385,11 @@ const DIRECT_CACHE_SET_KEYS = new Set([
 	"spanNames",
 ])
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+/** `JSON.stringify`: an absent payload keys as `undefined`, as it always has. */
+const stringifyJson = (value: unknown): string | undefined => Option.getOrUndefined(encodeJsonOption(value))
+
 function normalizeDirectCacheValue(value: unknown, snapWindowSeconds: number, parentKey?: string): unknown {
 	if (value == null) return value
 	if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
@@ -395,33 +399,36 @@ function normalizeDirectCacheValue(value: unknown, snapWindowSeconds: number, pa
 		return value
 	}
 
-	if (Array.isArray(value)) {
-		const normalized = value.map((item) => normalizeDirectCacheValue(item, snapWindowSeconds))
+	if (Arr.isArray(value)) {
+		const normalized = Arr.map(value, (item) => normalizeDirectCacheValue(item, snapWindowSeconds))
 		if (
 			parentKey &&
 			DIRECT_CACHE_SET_KEYS.has(parentKey) &&
-			normalized.every((item) => ["string", "number", "boolean"].includes(typeof item))
+			Arr.every(normalized, (item) => ["string", "number", "boolean"].includes(typeof item))
 		) {
-			return [...new Map(normalized.map((item) => [JSON.stringify(item), item])).values()].sort(
-				(a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)),
+			return [...new Map(Arr.map(normalized, (item) => [encodeJson(item), item])).values()].sort(
+				(a, b) => Str.localeCompare(encodeJson(b))(encodeJson(a)),
 			)
 		}
 		return normalized
 	}
 
 	if (typeof value === "object") {
-		return Object.fromEntries(
-			Object.entries(value as Record<string, unknown>)
-				.filter(([, nestedValue]) => nestedValue !== undefined)
-				.sort(([left], [right]) => left.localeCompare(right))
-				.map(([key, nestedValue]) => [
-					key,
-					normalizeDirectCacheValue(nestedValue, snapWindowSeconds, key),
-				]),
+		return Rec.fromEntries(
+			Arr.map(
+				Arr.filter(
+					Rec.toEntries(value as Record<string, unknown>),
+					([, nestedValue]) => nestedValue !== undefined,
+				).sort(([left], [right]) => Str.localeCompare(right)(left)),
+				([key, nestedValue]) => [key, normalizeDirectCacheValue(nestedValue, snapWindowSeconds, key)],
+			),
 		)
 	}
 
-	return String(value)
+	// bigint, symbol or function: every other type returned above.
+	return typeof value === "bigint" || typeof value === "symbol" || typeof value === "function"
+		? value.toString()
+		: value
 }
 
 export function buildDirectRouteCacheKey(
@@ -431,7 +438,7 @@ export function buildDirectRouteCacheKey(
 	policyInput: DirectRouteCachePolicyInput = CACHE_SNAP_S,
 ): string {
 	const policy = resolveDirectRouteCachePolicy(policyInput)
-	return `direct:v${policy.version}:${orgId}:${routeName}:${JSON.stringify(normalizeDirectCacheValue(payload, policy.snapWindowSeconds))}`
+	return `direct:v${policy.version}:${orgId}:${routeName}:${stringifyJson(normalizeDirectCacheValue(payload, policy.snapWindowSeconds))}`
 }
 
 const floorToBucketMs = (epochMs: number, bucketSeconds: number): number => {
@@ -452,19 +459,22 @@ const buildBucketTimeline = (startMs: number, endMs: number, bucketSeconds: numb
 	return timeline
 }
 
-const normalizeBucket = (bucket: string | Date): string => {
+const normalizeBucket = (bucket: string | Date | DateTime.Utc): string => {
+	if (DateTime.isDateTime(bucket)) {
+		return DateTime.formatIso(bucket)
+	}
 	if (bucket instanceof Date) {
 		return bucket.toISOString()
 	}
 
-	const raw = String(bucket).trim()
+	const raw = Str.trim(bucket)
 	if (!raw) {
 		return raw
 	}
 
-	const tinybirdDateTimeMatch = raw.match(TINYBIRD_DATETIME_RE)
-	if (tinybirdDateTimeMatch) {
-		const [, datePart, timePart, fractional = ""] = tinybirdDateTimeMatch
+	const tinybirdDateTimeMatch = Str.match(TINYBIRD_DATETIME_RE)(raw)
+	if (Option.isSome(tinybirdDateTimeMatch)) {
+		const [, datePart, timePart, fractional = ""] = tinybirdDateTimeMatch.value
 		const normalized = new Date(`${datePart}T${timePart}${fractional}Z`)
 		if (!Number.isNaN(normalized.getTime())) {
 			return normalized.toISOString()
@@ -521,8 +531,14 @@ const validateTraceAttributeFilters = Effect.fn("QueryEngineService.validateTrac
 		if (query.kind !== "timeseries" && query.kind !== "breakdown") return
 
 		const details: string[] = []
-		if (query.groupBy?.includes("attribute") && !query.filters?.groupByAttributeKeys?.length) {
-			details.push("groupBy=attribute requires filters.groupByAttributeKeys")
+		if (
+			query.groupBy?.includes("attribute") &&
+			(query.filters?.groupByAttributeKeys?.length ?? 0) === 0 &&
+			!query.filters?.groupByResourceAttributeKey
+		) {
+			details.push(
+				"groupBy=attribute requires filters.groupByAttributeKeys or filters.groupByResourceAttributeKey",
+			)
 		}
 
 		if (details.length > 0) {
@@ -541,32 +557,44 @@ const validateMetricsAttributeFilters = Effect.fn("QueryEngineService.validateMe
 
 		// `groupBy` is an array for timeseries, a single literal for breakdown.
 		const groupBy = query.groupBy
-		const wantsAttribute = Array.isArray(groupBy)
-			? groupBy.includes("attribute")
-			: groupBy === "attribute"
-		const wantsResourceAttribute = Array.isArray(groupBy)
+		const wantsAttribute = Arr.isArray(groupBy) ? groupBy.includes("attribute") : groupBy === "attribute"
+		const wantsResourceAttribute = Arr.isArray(groupBy)
 			? groupBy.includes("resource_attribute")
 			: groupBy === "resource_attribute"
-		if (wantsAttribute && !query.filters.groupByAttributeKey) {
+		const filters = query.filters
+		const attributeKeys = filters.groupByAttributeKeys ?? Arr.fromNullishOr(filters.groupByAttributeKey)
+		const resourceKeys =
+			filters.groupByResourceAttributeKeys ?? Arr.fromNullishOr(filters.groupByResourceAttributeKey)
+		if (wantsAttribute && attributeKeys.length === 0) {
 			// Mirror the traces guard: never silently downgrade an attribute grouping
 			// to a service grouping — the agent asked for a label breakdown.
 			return yield* new QueryEngineValidationError({
 				message: "Invalid metrics attribute grouping",
-				details: ["groupBy=attribute requires filters.groupByAttributeKey"],
+				details: ["groupBy=attribute requires filters.groupByAttributeKey or groupByAttributeKeys"],
 			})
 		}
-		if (wantsResourceAttribute && !query.filters.groupByResourceAttributeKey) {
+		if (wantsResourceAttribute && resourceKeys.length === 0) {
 			return yield* new QueryEngineValidationError({
 				message: "Invalid metrics attribute grouping",
-				details: ["groupBy=resource_attribute requires filters.groupByResourceAttributeKey"],
+				details: [
+					"groupBy=resource_attribute requires filters.groupByResourceAttributeKey or groupByResourceAttributeKeys",
+				],
 			})
 		}
-		if (wantsAttribute && wantsResourceAttribute) {
-			// The metrics queries carry a single attributeValue group column — one
-			// attribute dimension per query.
+		const keyCount =
+			(wantsAttribute ? attributeKeys.length : 0) + (wantsResourceAttribute ? resourceKeys.length : 0)
+		if (keyCount > MAX_METRICS_GROUP_BY_KEYS) {
 			return yield* new QueryEngineValidationError({
 				message: "Invalid metrics attribute grouping",
-				details: ["groupBy cannot combine attribute and resource_attribute"],
+				details: [`Metrics queries group by at most ${MAX_METRICS_GROUP_BY_KEYS} attribute keys`],
+			})
+		}
+		const isHistogram =
+			filters.metricType === "histogram" || filters.metricType === "exponential_histogram"
+		if (isHistogram && query.metric === "latest") {
+			return yield* new QueryEngineValidationError({
+				message: "Invalid metrics aggregation",
+				details: ["Histogram metrics do not support latest; use avg, sum, min, max or count"],
 			})
 		}
 	},
@@ -579,7 +607,8 @@ const validateProductEventsAttributeGrouping = Effect.fn(
 		return
 	const groupBy = query.kind === "timeseries" ? (query.groupBy ?? []) : [query.groupBy]
 	if (!groupBy.includes("attribute")) return
-	if (query.filters?.groupByAttributeKey?.trim()) return
+	const groupByAttributeKey = query.filters?.groupByAttributeKey
+	if (groupByAttributeKey !== undefined && Str.trim(groupByAttributeKey)) return
 	return yield* new QueryEngineValidationError({
 		message: "Invalid product events attribute grouping",
 		details: ["groupBy=attribute requires filters.groupByAttributeKey"],
@@ -647,24 +676,24 @@ function hasNarrowingFilter(request: QueryEngineExecuteRequest): boolean {
 		return true
 	}
 	const envs = filters.environments
-	if (Array.isArray(envs) && envs.length > 0) return true
+	if (Arr.isArray(envs) && envs.length > 0) return true
 	const services = filters.services
-	if (Array.isArray(services) && services.length > 0) return true
+	if (Arr.isArray(services) && services.length > 0) return true
 	const serviceNames = filters.serviceNames
-	if (Array.isArray(serviceNames) && serviceNames.length > 0) return true
+	if (Arr.isArray(serviceNames) && serviceNames.length > 0) return true
 	const spanNames = filters.spanNames
-	if (Array.isArray(spanNames) && spanNames.length > 0) return true
+	if (Arr.isArray(spanNames) && spanNames.length > 0) return true
 	const namespaces = filters.namespaces
-	if (Array.isArray(namespaces) && namespaces.length > 0) return true
+	if (Arr.isArray(namespaces) && namespaces.length > 0) return true
 	const attributeFilters = filters.attributeFilters
-	if (Array.isArray(attributeFilters) && attributeFilters.length > 0) return true
+	if (Arr.isArray(attributeFilters) && attributeFilters.length > 0) return true
 	// product_events: any row-side equality narrows the scan the way a service does.
 	for (const key of ["eventNames", "kinds", "sources", "hosts", "pagePaths", "userIds", "groupIds"]) {
 		const values = filters[key]
-		if (Array.isArray(values) && values.length > 0) return true
+		if (Arr.isArray(values) && values.length > 0) return true
 	}
 	const resourceAttributeFilters = filters.resourceAttributeFilters
-	if (Array.isArray(resourceAttributeFilters) && resourceAttributeFilters.length > 0) return true
+	if (Arr.isArray(resourceAttributeFilters) && resourceAttributeFilters.length > 0) return true
 	return false
 }
 
@@ -688,6 +717,7 @@ const validateBreakdownQuery = Effect.fn("QueryEngineService.validateBreakdownQu
 				`Breakdown queries support a maximum range of ${formatRangeSeconds(MAX_BREAKDOWN_RANGE_SECONDS)}`,
 				"Narrow the time range or use a timeseries query for wider trends",
 			],
+			fittingRangeSeconds: MAX_BREAKDOWN_RANGE_SECONDS,
 		})
 	}
 
@@ -698,11 +728,12 @@ const validateBreakdownQuery = Effect.fn("QueryEngineService.validateBreakdownQu
 				`Breakdowns spanning more than ${formatRangeSeconds(MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS)} require a serviceName, environment, or similar filter`,
 				"Add a filter or narrow the time range",
 			],
+			fittingRangeSeconds: MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 		})
 	}
 })
 
-function groupTimeSeriesRows<T extends { bucket: string | Date; groupName: string }>(
+function groupTimeSeriesRows<T extends { bucket: string | Date | DateTime.Utc; groupName: string }>(
 	rows: ReadonlyArray<T>,
 	valueExtractor: (row: T) => number,
 	fillOptions?: BucketFillOptions,
@@ -735,7 +766,7 @@ function groupTimeSeriesRows<T extends { bucket: string | Date; groupName: strin
 
 	// Every ordered bucket was either seeded above or written while iterating
 	// rows; an empty series is the honest value for one that was neither.
-	return bucketOrder.map((bucket) => ({
+	return Arr.map(bucketOrder, (bucket) => ({
 		bucket,
 		series: bucketMap.get(bucket) ?? {},
 	}))
@@ -743,7 +774,7 @@ function groupTimeSeriesRows<T extends { bucket: string | Date; groupName: strin
 
 function groupAllMetricsTimeSeriesRows<
 	T extends {
-		bucket: string | Date
+		bucket: string | Date | DateTime.Utc
 		groupName: string
 		count: number
 		avgDuration: number
@@ -769,7 +800,7 @@ function groupAllMetricsTimeSeriesRows<
 	const bucketOrder: string[] = fillOptions
 		? buildBucketTimeline(fillOptions.startMs, fillOptions.endMs, fillOptions.bucketSeconds)
 		: []
-	const isGrouped = rows.some((row) => row.groupName !== ENGINE_UNGROUPED_GROUP_KEY)
+	const isGrouped = Arr.some(rows, (row) => row.groupName !== ENGINE_UNGROUPED_GROUP_KEY)
 	const metricKey = (metric: string, groupName: string) =>
 		isGrouped ? `${metric}::${groupName || ENGINE_UNGROUPED_GROUP_KEY}` : metric
 
@@ -780,14 +811,14 @@ function groupAllMetricsTimeSeriesRows<
 			series = {}
 			bucketMap.set(bucket, series)
 		}
-		series[metricKey("count", row.groupName)] = Number(row.count)
-		series[metricKey("avg_duration", row.groupName)] = Number(row.avgDuration)
-		series[metricKey("p50_duration", row.groupName)] = Number(row.p50Duration)
-		series[metricKey("p95_duration", row.groupName)] = Number(row.p95Duration)
-		series[metricKey("p99_duration", row.groupName)] = Number(row.p99Duration)
-		series[metricKey("error_rate", row.groupName)] = Number(row.errorRate)
-		series[metricKey("apdex", row.groupName)] = Number(row.apdexScore)
-		series[metricKey("estimated_span_count", row.groupName)] = Number(row.estimatedSpanCount)
+		series[metricKey("count", row.groupName)] = row.count
+		series[metricKey("avg_duration", row.groupName)] = row.avgDuration
+		series[metricKey("p50_duration", row.groupName)] = row.p50Duration
+		series[metricKey("p95_duration", row.groupName)] = row.p95Duration
+		series[metricKey("p99_duration", row.groupName)] = row.p99Duration
+		series[metricKey("error_rate", row.groupName)] = row.errorRate
+		series[metricKey("apdex", row.groupName)] = row.apdexScore
+		series[metricKey("estimated_span_count", row.groupName)] = row.estimatedSpanCount
 		if (!fillOptions && !bucketOrder.includes(bucket)) {
 			bucketOrder.push(bucket)
 		}
@@ -803,62 +834,10 @@ function groupAllMetricsTimeSeriesRows<
 
 	// Every ordered bucket was either seeded above or written while iterating
 	// rows; an empty series is the honest value for one that was neither.
-	return bucketOrder.map((bucket) => ({
+	return Arr.map(bucketOrder, (bucket) => ({
 		bucket,
 		series: bucketMap.get(bucket) ?? {},
 	}))
-}
-
-function collapseMetricTimeseriesRows(
-	rows: ReadonlyArray<MetricTimeseriesRow>,
-	metric: Extract<QuerySpec, { metric: string }>["metric"],
-): Array<{ bucket: string; groupName: typeof ENGINE_UNGROUPED_GROUP_KEY; value: number }> {
-	const bucketMap = new Map<
-		string,
-		{
-			sumValue: number
-			dataPointCount: number
-			minValue: number
-			maxValue: number
-		}
-	>()
-
-	for (const row of rows) {
-		const bucket = normalizeBucket(row.bucket)
-		const current = bucketMap.get(bucket)
-		if (current) {
-			current.sumValue += Number(row.sumValue)
-			current.dataPointCount += Number(row.dataPointCount)
-			current.minValue = Math.min(current.minValue, Number(row.minValue))
-			current.maxValue = Math.max(current.maxValue, Number(row.maxValue))
-		} else {
-			bucketMap.set(bucket, {
-				sumValue: Number(row.sumValue),
-				dataPointCount: Number(row.dataPointCount),
-				minValue: Number(row.minValue),
-				maxValue: Number(row.maxValue),
-			})
-		}
-	}
-
-	return [...bucketMap.entries()]
-		.sort(([left], [right]) => left.localeCompare(right))
-		.map(([bucket, value]) => ({
-			bucket,
-			groupName: ENGINE_UNGROUPED_GROUP_KEY,
-			value:
-				metric === "count"
-					? value.dataPointCount
-					: metric === "sum"
-						? value.sumValue
-						: metric === "min"
-							? value.minValue
-							: metric === "max"
-								? value.maxValue
-								: value.dataPointCount > 0
-									? value.sumValue / value.dataPointCount
-									: 0,
-		}))
 }
 
 const validateExecute = Effect.fn("QueryEngineService.validateExecute")(function* (
@@ -901,12 +880,15 @@ const annotateWarehouseError = <A, Error extends { readonly _tag: string; readon
 	effect.pipe(
 		Effect.tapError((error) =>
 			Effect.annotateCurrentSpan({
-				"error.context": context,
-				"error.tag": error._tag,
+				"maple.query_engine.error_context": context,
+				"maple.query_engine.error_tag": error._tag,
 				"error.message": error.message,
 			}),
 		),
 	)
+
+/** A query `compile` accepts, for helpers generic over its output. */
+type SelectQuery<Output extends object> = CH.CHQuery<CH.ColumnDefs, Output> & CH.NeedsSelect<Output>
 
 /**
  * Compile a CHQuery, execute it via the warehouse SQL executor, and return typed rows.
@@ -915,13 +897,13 @@ const annotateWarehouseError = <A, Error extends { readonly _tag: string; readon
  * SqlQueryOptions so it lands on the same span instead of an extra wrapper.
  */
 const executeCHQuery = Effect.fnUntraced(function* <
-	Output extends Record<string, any>,
-	Params extends Record<string, any>,
+	Output extends object,
+	Params extends Record<string, unknown>,
 	T extends QueryTenant,
 >(
 	warehouse: QueryEngineWarehouse<T>,
 	tenant: T,
-	query: CH.CHQuery<any, Output> | ((capabilities: WarehouseCapabilities) => CH.CHQuery<any, Output>),
+	query: SelectQuery<Output> | ((capabilities: WarehouseCapabilities) => SelectQuery<Output>),
 	params: Params,
 	context: string,
 	profile: QueryProfileName = "aggregation",
@@ -943,79 +925,211 @@ const executeCHQuery = Effect.fnUntraced(function* <
 	return yield* annotateWarehouseError(warehouse.compiledQuery(tenant, compiled, options), context)
 })
 
+/**
+ * Refuse a raw-`traces` breakdown whose window holds more spans than one query can
+ * aggregate in time: a 400 naming a window that fits, not a 30s timeout. Fails open.
+ */
+const enforceRawBreakdownSpanBudget = Effect.fn("QueryEngineService.enforceRawBreakdownSpanBudget")(
+	function* <T extends QueryTenant>(
+		warehouse: QueryEngineWarehouse<T>,
+		tenant: T,
+		request: QueryEngineExecuteRequest,
+		range: TimeRangeBounds,
+		filter: Parameters<typeof rawBreakdownSpanVerdict>[1],
+	) {
+		const compiled = CH.compile(
+			CH.traceSpanVolumeByServiceQuery(),
+			{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
+			{ rowSchema: CH.traceSpanVolumeRowSchema },
+		)
+		const rows = yield* warehouse
+			.compiledQuery(tenant, compiled, { profile: "list", context: "breakdownSpanEstimate" })
+			.pipe(
+				Effect.catch((error) =>
+					Effect.as(
+						Effect.annotateCurrentSpan("maple.query_engine.span_estimate_error", error._tag),
+						undefined,
+					),
+				),
+			)
+		if (rows === undefined) return
+
+		const verdict = rawBreakdownSpanVerdict(rows, filter, range)
+		yield* Effect.annotateCurrentSpan({
+			"maple.query_engine.estimated_spans": verdict.estimatedSpans,
+			"maple.query_engine.span_budget_exceeded": verdict.exceeded !== undefined,
+		})
+		if (verdict.exceeded) {
+			return yield* new QueryEngineValidationError({
+				message: verdict.exceeded.message,
+				details: [...verdict.exceeded.details],
+				...(verdict.exceeded.fittingRangeSeconds === undefined
+					? undefined
+					: { fittingRangeSeconds: verdict.exceeded.fittingRangeSeconds }),
+			})
+		}
+	},
+)
+
+// A whole-range counter needs each series' last sample before the window. Two
+// widths reach at least as far back as the epoch-aligned grid (and its hourly rollup) did.
+const wholeRangeCounterLookbackSeconds = (range: {
+	readonly startTime: string
+	readonly endTime: string
+	readonly bucketSeconds: number
+}): number =>
+	2 *
+	Math.max(range.bucketSeconds, Math.ceil((toEpochMs(range.endTime) - toEpochMs(range.startTime)) / 1000))
+
 type MetricsTimeseriesSpec = Extract<QuerySpec, { readonly source: "metrics"; readonly kind: "timeseries" }>
 
 const executeMetricsTimeseriesRows = Effect.fnUntraced(function* <T extends QueryTenant>(
 	warehouse: QueryEngineWarehouse<T>,
 	tenant: T,
-	query: MetricsTimeseriesSpec,
-	range: { readonly startTime: string; readonly endTime: string; readonly bucketSeconds: number },
+	query: Pick<MetricsTimeseriesSpec, "metric" | "spaceAggregation" | "groupBy" | "filters" | "seriesLimit">,
+	range: {
+		readonly startTime: string
+		readonly endTime: string
+		readonly bucketSeconds: number
+		readonly wholeRange?: boolean
+		readonly lookbackSeconds?: number
+	},
 	contexts: { readonly value: string; readonly rate: string },
 ) {
-	const groupByAttributeKey = query.groupBy?.includes("attribute")
-		? query.filters.groupByAttributeKey
-		: undefined
-	const groupByResourceAttributeKey = query.groupBy?.includes("resource_attribute")
-		? query.filters.groupByResourceAttributeKey
-		: undefined
-	const attributeFilter = query.filters.attributeFilters?.[0]
+	const filters = query.filters
+	const groupBy = query.groupBy ?? []
 	const options = {
-		serviceName: query.filters.serviceName,
-		environments: query.filters.environments,
-		groupByAttributeKey,
-		groupByResourceAttributeKey,
-		attributeKey: attributeFilter?.key,
-		attributeValue: attributeFilter?.value,
-		resourceAttributeFilters: query.filters.resourceAttributeFilters,
-		groupBy: query.groupBy,
+		serviceName: filters.serviceName,
+		environments: filters.environments,
+		groupBy,
+		...(groupBy.includes("attribute")
+			? {
+					groupByAttributeKey: filters.groupByAttributeKey,
+					groupByAttributeKeys: filters.groupByAttributeKeys,
+				}
+			: undefined),
+		...(groupBy.includes("resource_attribute")
+			? {
+					groupByResourceAttributeKey: filters.groupByResourceAttributeKey,
+					groupByResourceAttributeKeys: filters.groupByResourceAttributeKeys,
+				}
+			: undefined),
+		attributeFilters: filters.attributeFilters,
+		resourceAttributeFilters: filters.resourceAttributeFilters,
 		seriesLimit: query.seriesLimit,
+		spaceAggregation: query.spaceAggregation,
+		wholeRange: range.wholeRange,
 	}
 	const params = {
 		orgId: tenant.orgId,
-		metricName: query.filters.metricName,
-		...range,
+		metricName: filters.metricName,
+		startTime: range.startTime,
+		endTime: range.endTime,
+		bucketSeconds: range.bucketSeconds,
 	}
-	const groupByKey = groupByAttributeKey ?? groupByResourceAttributeKey
 
 	if (query.metric === "rate" || query.metric === "increase") {
-		const rows = yield* executeCHQuery(
+		return yield* executeCHQuery(
 			warehouse,
 			tenant,
 			CH.metricsTimeseriesRateQuery({
 				...options,
-				metricName: query.filters.metricName,
-				metricNames: query.filters.metricNames,
+				metric: query.metric,
+				metricName: filters.metricName,
+				metricNames: filters.metricNames,
+				metricType: filters.metricType,
 				bucketSeconds: range.bucketSeconds,
+				lookbackSeconds:
+					range.lookbackSeconds ??
+					(range.wholeRange ? wholeRangeCounterLookbackSeconds(range) : undefined),
 			}),
 			params,
 			contexts.rate,
 		)
-		return { kind: "rate" as const, rows, groupByKey }
 	}
 
-	const rows = yield* executeCHQuery(
+	return yield* executeCHQuery(
 		warehouse,
 		tenant,
-		CH.metricsTimeseriesQuery({ ...options, metricType: query.filters.metricType }),
+		CH.metricsTimeseriesQuery({ ...options, metric: query.metric, metricType: filters.metricType }),
 		params,
 		contexts.value,
 	)
-	return { kind: "value" as const, rows, groupByKey }
+})
+
+/** The series a metrics row draws as: one series when ungrouped, else its group. */
+const metricsSeriesName = (groupBy: ReadonlyArray<string> | undefined, groupName: string): string =>
+	groupBy === undefined || !Arr.some(groupBy, (dim) => dim !== "none")
+		? ENGINE_UNGROUPED_GROUP_KEY
+		: groupName || "(empty)"
+
+type MetricsBreakdownSpec = Extract<QuerySpec, { readonly source: "metrics"; readonly kind: "breakdown" }>
+
+// Previous-sample lookback for a whole-window counter breakdown. A full-window
+// lookback would double the scan; 10 minutes covers common scrape intervals.
+const METRICS_BREAKDOWN_LOOKBACK_SECONDS = 600
+
+/**
+ * A breakdown is the timeseries with one bucket spanning the window, so its two
+ * aggregation stages are the ones the chart uses. Series missing the label are
+ * left out (the chart draws them as "(empty)"), as breakdowns always did, so an
+ * unlabelled bucket never dominates the pie.
+ */
+const executeMetricsBreakdownRows = Effect.fnUntraced(function* <T extends QueryTenant>(
+	warehouse: QueryEngineWarehouse<T>,
+	tenant: T,
+	query: MetricsBreakdownSpec,
+	range: { readonly startTime: string; readonly endTime: string; readonly rangeSeconds: number },
+) {
+	const windowSeconds = Math.max(1, Math.ceil(range.rangeSeconds))
+	const rows = yield* executeMetricsTimeseriesRows(
+		warehouse,
+		tenant,
+		{
+			...query,
+			// The one dimension the spec names (with all of its keys), capped in SQL
+			// so a high-cardinality label never ships every group to the worker. One
+			// spare row covers an empty group the ranking drops below.
+			groupBy: [query.groupBy],
+			seriesLimit: (query.limit ?? 10) + 1,
+		},
+		{
+			startTime: range.startTime,
+			endTime: range.endTime,
+			bucketSeconds: windowSeconds,
+			wholeRange: true,
+			lookbackSeconds: METRICS_BREAKDOWN_LOOKBACK_SECONDS,
+		},
+		{ value: "metricsBreakdown", rate: "metricsBreakdownRateIncrease" },
+	)
+	return Arr.map(
+		Arr.filter(rows, (row) => row.groupName !== ""),
+		(row) => ({ name: row.groupName, value: Number(row.value) }),
+	)
+		.sort((a, b) => b.value - a.value)
+		.slice(0, query.limit ?? 10)
 })
 
 /** Same as executeCHQuery but for union queries. */
 const executeCHUnionQuery = Effect.fnUntraced(function* <
-	Output extends Record<string, any>,
-	Params extends Record<string, any>,
+	Output extends object,
+	Params extends Record<string, unknown>,
 	T extends QueryTenant,
 >(
 	warehouse: QueryEngineWarehouse<T>,
 	tenant: T,
-	query: CH.CHUnionQuery<Output>,
+	query: CH.CHUnionQuery<Output> | ((capabilities: WarehouseCapabilities) => CH.CHUnionQuery<Output>),
 	params: Params,
 	context: string,
 	profile: QueryProfileName = "aggregation",
 ) {
+	if (typeof query === "function") {
+		const compile = (capabilities: WarehouseCapabilities) => CH.compileUnion(query(capabilities), params)
+		return yield* annotateWarehouseError(
+			warehouse.compiledQueryWithCapabilities(tenant, compile, { profile, context }),
+			context,
+		)
+	}
 	const compiled = CH.compileUnion(query, params)
 	return yield* annotateWarehouseError(
 		warehouse.compiledQuery(tenant, compiled, { profile, context }),
@@ -1046,36 +1160,13 @@ const tracesAggregateValueForMetric = (
 	},
 ): number => Number(row[tracesMetricFieldMap[metric]])
 
-const metricsAggregateValueForMetric = (
-	metric: Extract<QuerySpec, { source: "metrics"; metric: string }>["metric"],
-	row: {
-		readonly avgValue?: number
-		readonly minValue?: number
-		readonly maxValue?: number
-		readonly sumValue?: number
-		readonly dataPointCount?: number
-		readonly rateValue?: number
-		readonly increaseValue?: number
-	},
-): number =>
-	Match.value(metric).pipe(
-		Match.when("avg", () => Number(row.avgValue)),
-		Match.when("min", () => Number(row.minValue)),
-		Match.when("max", () => Number(row.maxValue)),
-		Match.when("sum", () => Number(row.sumValue)),
-		Match.when("count", () => Number(row.dataPointCount)),
-		Match.when("rate", () => Number(row.rateValue)),
-		Match.when("increase", () => Number(row.increaseValue)),
-		Match.exhaustive,
-	)
-
 const applyAlertReducer = (
 	observations: ReadonlyArray<AlertObservation>,
 	reducer: QueryEngineAlertReducer,
 ): number | null => {
 	const values = Arr.filterMap(observations, (observation) =>
 		observation.hasData && observation.value != null
-			? Result.succeed(observation.value as number)
+			? Result.succeed(observation.value)
 			: Result.failVoid,
 	)
 
@@ -1104,13 +1195,7 @@ function resolveAttributeScope(
 	return scope === "resource" ? "resource" : "span"
 }
 
-type AttrFilterArray = Array<{
-	key: string
-	value?: string
-	values?: readonly string[]
-	mode: "equals" | "exists" | "gt" | "gte" | "lt" | "lte" | "contains" | "in"
-	negated?: boolean
-}>
+type AttrFilterArray = Array<AttributeFilter>
 
 function extractTracesOpts(filters: Record<string, unknown> | undefined) {
 	return {
@@ -1137,6 +1222,7 @@ function extractTracesOpts(filters: Record<string, unknown> | undefined) {
 		attributeFilters: filters?.attributeFilters as AttrFilterArray | undefined,
 		resourceAttributeFilters: filters?.resourceAttributeFilters as AttrFilterArray | undefined,
 		groupByAttributeKeys: filters?.groupByAttributeKeys as string[] | undefined,
+		groupByResourceAttributeKey: filters?.groupByResourceAttributeKey as string | undefined,
 		excludedServiceNames: filters?.excludedServiceNames as readonly string[] | undefined,
 		excludedSpanNames: filters?.excludedSpanNames as readonly string[] | undefined,
 		excludedEnvironments: filters?.excludedEnvironments as readonly string[] | undefined,
@@ -1150,16 +1236,30 @@ function extractTracesOpts(filters: Record<string, unknown> | undefined) {
  * TracesFilters stores http filters as attributeFilters entries; facets opts want them as top-level fields.
  */
 function extractTracesFacetsOpts(filters: Record<string, unknown> | undefined): CH.TracesFacetsOpts {
-	const attrFilters = (filters?.attributeFilters ?? []) as AttrFilterArray
-	const resFilters = (filters?.resourceAttributeFilters ?? []) as AttrFilterArray
+	// Facet opts take single filters; an `(a OR b)` group has no such shape, so
+	// facet counts ignore it rather than read one member as the whole filter.
+	const attrFilters = Arr.filter(
+		(filters?.attributeFilters ?? []) as AttrFilterArray,
+		(f) => f.or === undefined || f.or.length === 0,
+	)
+	const resFilters = Arr.filter(
+		(filters?.resourceAttributeFilters ?? []) as AttrFilterArray,
+		(f) => f.or === undefined || f.or.length === 0,
+	)
 
 	// Positive http filters arrive either as a single `equals` or, when the user
 	// ticks several facet values, as one `in` carrying the whole set. Negated
 	// entries are exclusions and must not be read as inclusions here.
 	const isPositiveHttp = (f: AttrFilterArray[number], key: string) => f.key === key && !f.negated
-	const httpMethodFilter = attrFilters.find((f) => isPositiveHttp(f, "http.method"))
-	const httpStatusFilter = attrFilters.find((f) => isPositiveHttp(f, "http.status_code"))
-	const customAttr = attrFilters.find((f) => f.key !== "http.method" && f.key !== "http.status_code")
+	const httpMethodFilter = Option.getOrUndefined(
+		Arr.findFirst(attrFilters, (f) => isPositiveHttp(f, "http.method")),
+	)
+	const httpStatusFilter = Option.getOrUndefined(
+		Arr.findFirst(attrFilters, (f) => isPositiveHttp(f, "http.status_code")),
+	)
+	const customAttr = Option.getOrUndefined(
+		Arr.findFirst(attrFilters, (f) => f.key !== "http.method" && f.key !== "http.status_code"),
+	)
 	const customRes = resFilters[0]
 
 	const envs = filters?.environments as string[] | undefined
@@ -1211,44 +1311,6 @@ function extractTracesDurationStatsOpts(
 	}
 }
 
-function signatureMetricsGroupRows<
-	T extends { bucket: string | Date; serviceName: string; attributeValue: string },
->(
-	rows: ReadonlyArray<T>,
-	valueExtractor: (row: T) => number,
-	groupBy: readonly string[] | undefined,
-	groupByAttributeKey: string | undefined,
-	fillOptions: BucketFillOptions | undefined,
-): Array<TimeseriesPoint> {
-	if (groupBy?.includes("none") || !groupBy?.length) {
-		return groupTimeSeriesRows(
-			rows.map((row) => ({
-				bucket: row.bucket,
-				groupName: ENGINE_UNGROUPED_GROUP_KEY,
-				value: valueExtractor(row),
-			})),
-			(r) => r.value,
-			fillOptions,
-		)
-	}
-	if (groupByAttributeKey) {
-		return groupTimeSeriesRows(
-			rows.map((row) => ({
-				bucket: row.bucket,
-				groupName: row.attributeValue || "(empty)",
-				value: valueExtractor(row),
-			})),
-			(r) => r.value,
-			fillOptions,
-		)
-	}
-	return groupTimeSeriesRows(
-		rows.map((row) => ({ bucket: row.bucket, groupName: row.serviceName, value: valueExtractor(row) })),
-		(r) => r.value,
-		fillOptions,
-	)
-}
-
 /**
  * Per-call routing overrides. Not part of the request contract: these are retry
  * knobs a caller sets after a first attempt failed, never something a client
@@ -1295,10 +1357,10 @@ const isMissingTraceFacetsRollup = (error: unknown): boolean => {
 /**
  * `trace_facets_hourly` ships in a `requiredForIngest: false` migration (0034),
  * so a BYO cluster may not have it yet; the sidebar then reads `trace_list_mv`.
- * Only a read that actually included the rollup can be missing it.
+ * The capability probe skips it up front; this retry covers an unprobed cluster.
  */
 const withTraceFacetsFallback = <A, E, R>(
-	orgId: string,
+	orgId: OrgId,
 	usesRollup: boolean,
 	run: (rawOnly: boolean) => Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> =>
@@ -1330,12 +1392,12 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 		}
 		if ("filters" in request.query && request.query.filters) {
 			const filters = request.query.filters as Record<string, unknown>
-			if (filters.serviceName)
-				yield* Effect.annotateCurrentSpan("query.filter.serviceName", String(filters.serviceName))
-			if (filters.spanName)
-				yield* Effect.annotateCurrentSpan("query.filter.spanName", String(filters.spanName))
-			if (filters.metricName)
-				yield* Effect.annotateCurrentSpan("query.filter.metricName", String(filters.metricName))
+			if (typeof filters.serviceName === "string" && filters.serviceName !== "")
+				yield* Effect.annotateCurrentSpan("query.filter.serviceName", filters.serviceName)
+			if (typeof filters.spanName === "string" && filters.spanName !== "")
+				yield* Effect.annotateCurrentSpan("query.filter.spanName", filters.spanName)
+			if (typeof filters.metricName === "string" && filters.metricName !== "")
+				yield* Effect.annotateCurrentSpan("query.filter.metricName", filters.metricName)
 		}
 
 		const range = yield* validateExecute(request)
@@ -1359,7 +1421,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 
 		if (request.query.source === "traces" && request.query.kind === "timeseries") {
 			const tracesQuery = request.query
-			const opts = extractTracesOpts(request.query.filters as Record<string, unknown>)
+			const opts = extractTracesOpts(request.query.filters)
 
 			if (tracesQuery.allMetrics) {
 				const runAllMetrics = (overviewTiers: "hour" | "minute" | undefined) =>
@@ -1373,7 +1435,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 								metric: tracesQuery.metric,
 								allMetrics: true,
 								needsSampling: true,
-								groupBy: tracesQuery.groupBy as string[] | undefined,
+								groupBy: tracesQuery.groupBy,
 								apdexThresholdMs:
 									tracesQuery.metric === "apdex" ? tracesQuery.apdexThresholdMs : undefined,
 								bucketSeconds,
@@ -1405,18 +1467,18 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				// other rollup fallbacks so the retry happens *before* the response
 				// cache: the value stored is the one that succeeded.
 				const rows = yield* runAllMetrics(options?.overviewTiers).pipe(
-					Effect.catch((error) => {
-						if (options?.overviewTiers === "hour" || !isMissingServiceOverviewMinutely(error)) {
-							return Effect.fail(error)
-						}
-						return Effect.gen(function* () {
-							yield* Effect.logWarning(
-								"service_overview_minutely is absent on this cluster; restricting to the hourly tier. Apply ClickHouse schema to restore the fast path.",
-							).pipe(Effect.annotateLogs({ orgId: tenant.orgId }))
-							yield* Effect.annotateCurrentSpan("query.rollup.fallback", true)
-							return yield* runAllMetrics("hour")
-						})
-					}),
+					Effect.catchIf(
+						(error) =>
+							options?.overviewTiers !== "hour" && isMissingServiceOverviewMinutely(error),
+						() =>
+							Effect.gen(function* () {
+								yield* Effect.logWarning(
+									"service_overview_minutely is absent on this cluster; restricting to the hourly tier. Apply ClickHouse schema to restore the fast path.",
+								).pipe(Effect.annotateLogs({ orgId: tenant.orgId }))
+								yield* Effect.annotateCurrentSpan("query.rollup.fallback", true)
+								return yield* runAllMetrics("hour")
+							}),
+					),
 				)
 
 				return new QueryEngineExecuteResponse({
@@ -1437,7 +1499,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						attributeIndexMode: attributeIndexMode(capabilities, "traces"),
 						metric: tracesQuery.metric,
 						needsSampling: false,
-						groupBy: tracesQuery.groupBy as string[] | undefined,
+						groupBy: tracesQuery.groupBy,
 						apdexThresholdMs:
 							tracesQuery.metric === "apdex" ? tracesQuery.apdexThresholdMs : undefined,
 						bucketSeconds,
@@ -1477,7 +1539,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "timeseries",
 					source: "logs",
-					data: groupTimeSeriesRows(rows, (row) => Number(row.count), fillOptions),
+					data: groupTimeSeriesRows(rows, (row) => row.count, fillOptions),
 				},
 			})
 		}
@@ -1502,13 +1564,14 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "timeseries",
 					source: "product_events",
-					data: groupTimeSeriesRows(rows, (row) => Number(row.value), fillOptions),
+					data: groupTimeSeriesRows(rows, (row) => row.value, fillOptions),
 				},
 			})
 		}
 
 		if (request.query.source === "metrics" && request.query.kind === "timeseries") {
-			const execution = yield* executeMetricsTimeseriesRows(
+			const groupBy = request.query.groupBy
+			const rows = yield* executeMetricsTimeseriesRows(
 				warehouse,
 				tenant,
 				request.query,
@@ -1520,57 +1583,19 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				{ value: "metricsTimeseries", rate: "metricsRateIncrease" },
 			)
 
-			if (execution.kind === "rate") {
-				const rateValueField = request.query.metric === "rate" ? "rateValue" : "increaseValue"
-				const data = signatureMetricsGroupRows(
-					execution.rows,
-					(row) => Number(row[rateValueField]),
-					request.query.groupBy,
-					execution.groupByKey,
-					fillOptions,
-				)
-
-				return new QueryEngineExecuteResponse({
-					result: {
-						kind: "timeseries",
-						source: "metrics",
-						data,
-					},
-				})
-			}
-
-			const metricValueField = {
-				avg: "avgValue",
-				sum: "sumValue",
-				min: "minValue",
-				max: "maxValue",
-				count: "dataPointCount",
-			} as const
-			const valueField = metricValueField[request.query.metric as keyof typeof metricValueField]
-
-			const data =
-				request.query.groupBy?.includes("none") || !request.query.groupBy?.length
-					? groupTimeSeriesRows(
-							collapseMetricTimeseriesRows(
-								execution.rows as ReadonlyArray<MetricTimeseriesRow>,
-								request.query.metric,
-							),
-							(row) => row.value,
-							fillOptions,
-						)
-					: signatureMetricsGroupRows(
-							execution.rows,
-							(row) => Number(row[valueField]),
-							request.query.groupBy,
-							execution.groupByKey,
-							fillOptions,
-						)
-
 			return new QueryEngineExecuteResponse({
 				result: {
 					kind: "timeseries",
 					source: "metrics",
-					data,
+					data: groupTimeSeriesRows(
+						Arr.map(rows, (row) => ({
+							bucket: row.bucket,
+							groupName: metricsSeriesName(groupBy, row.groupName),
+							value: Number(row.value),
+						})),
+						(row) => row.value,
+						fillOptions,
+					),
 				},
 			})
 		}
@@ -1620,10 +1645,10 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				const points = pointsByMetric.get(row.metricName) ?? []
 				if (points.length === 0) pointsByMetric.set(row.metricName, points)
 				points.push({
-					bucket: String(row.bucket),
-					avgValue: Number(row.avgValue),
-					sumValue: Number(row.sumValue),
-					dataPointCount: Number(row.dataPointCount),
+					bucket: DateTime.formatIso(row.bucket),
+					avgValue: row.avgValue,
+					sumValue: row.sumValue,
+					dataPointCount: row.dataPointCount,
 				})
 			}
 
@@ -1631,7 +1656,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "sparklines",
 					source: "metrics",
-					data: metricNames.map((metricName) => ({
+					data: Arr.map(metricNames, (metricName) => ({
 						metricName,
 						points: pointsByMetric.get(metricName) ?? [],
 					})),
@@ -1641,7 +1666,17 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 
 		if (request.query.source === "traces" && request.query.kind === "breakdown") {
 			const tracesQuery = request.query
-			const opts = extractTracesOpts(request.query.filters as Record<string, unknown>)
+			const opts = extractTracesOpts(request.query.filters)
+			if (
+				spanBudgetApplies(opts, range.rangeSeconds) &&
+				CH.tracesBreakdownReadsRaw({
+					...opts,
+					metric: tracesQuery.metric,
+					groupBy: tracesQuery.groupBy,
+				})
+			) {
+				yield* enforceRawBreakdownSpanBudget(warehouse, tenant, request, range, opts)
+			}
 			const rows = yield* executeCHQuery(
 				warehouse,
 				tenant,
@@ -1653,6 +1688,10 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						groupBy: tracesQuery.groupBy,
 						groupByAttributeKey:
 							tracesQuery.groupBy === "attribute" ? opts.groupByAttributeKeys?.[0] : undefined,
+						groupByResourceAttributeKey:
+							tracesQuery.groupBy === "attribute"
+								? opts.groupByResourceAttributeKey
+								: undefined,
 						limit: tracesQuery.limit,
 						apdexThresholdMs:
 							tracesQuery.metric === "apdex" ? tracesQuery.apdexThresholdMs : undefined,
@@ -1666,7 +1705,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "breakdown",
 					source: "traces",
-					data: rows.map((row) => ({
+					data: Arr.map(rows, (row) => ({
 						name: row.name,
 						value: Number(row[field]),
 					})),
@@ -1682,7 +1721,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				tenant,
 				(capabilities) =>
 					CH.logsBreakdownQuery({
-						groupBy: logsQuery.groupBy as "service" | "severity",
+						groupBy: logsQuery.groupBy,
 						...opts,
 						attributeIndexMode: attributeIndexMode(capabilities, "logs"),
 						bodySearchMode: logBodySearchMode(capabilities),
@@ -1696,9 +1735,9 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "breakdown",
 					source: "logs",
-					data: rows.map((row) => ({
+					data: Arr.map(rows, (row) => ({
 						name: row.name,
-						value: Number(row.count),
+						value: row.count,
 					})),
 				},
 			})
@@ -1718,63 +1757,25 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "breakdown",
 					source: "product_events",
-					data: rows.map((row) => ({ name: row.name, value: Number(row.value) })),
+					data: Arr.map(rows, (row) => ({ name: row.name, value: row.value })),
 				},
 			})
 		}
 
 		if (request.query.source === "metrics" && request.query.kind === "breakdown") {
-			const rows = yield* executeCHQuery(
-				warehouse,
-				tenant,
-				CH.metricsBreakdownQuery({
-					metricType: request.query.filters.metricType,
-					...(request.query.groupBy === "attribute" && request.query.filters.groupByAttributeKey
-						? {
-								groupByAttributeKey: request.query.filters.groupByAttributeKey,
-							}
-						: undefined),
-					...(request.query.groupBy === "resource_attribute" &&
-					request.query.filters.groupByResourceAttributeKey
-						? {
-								groupByResourceAttributeKey:
-									request.query.filters.groupByResourceAttributeKey,
-							}
-						: undefined),
-					resourceAttributeFilters: request.query.filters.resourceAttributeFilters,
-					limit: request.query.limit,
-				}),
-				{
-					orgId: tenant.orgId,
-					metricName: request.query.filters.metricName,
-					startTime: request.startTime,
-					endTime: request.endTime,
-				},
-				"metricsBreakdown",
-			)
-
-			const valueFieldMap = {
-				avg: "avgValue",
-				sum: "sumValue",
-				count: "count",
-			} as const
-			const valueField = valueFieldMap[request.query.metric]
-
+			const data = yield* executeMetricsBreakdownRows(warehouse, tenant, request.query, {
+				startTime: request.startTime,
+				endTime: request.endTime,
+				rangeSeconds: range.rangeSeconds,
+			})
 			return new QueryEngineExecuteResponse({
-				result: {
-					kind: "breakdown",
-					source: "metrics",
-					data: rows.map((row) => ({
-						name: row.name,
-						value: Number(row[valueField]),
-					})),
-				},
+				result: { kind: "breakdown", source: "metrics", data },
 			})
 		}
 
 		if (request.query.source === "traces" && request.query.kind === "list") {
 			const tracesQuery = request.query
-			const opts = extractTracesOpts(request.query.filters as Record<string, unknown>)
+			const opts = extractTracesOpts(request.query.filters)
 			const requestedColumns = (tracesQuery as { columns?: readonly string[] }).columns
 
 			if (tracesQuery.groupByTrace) {
@@ -1805,18 +1806,18 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					result: {
 						kind: "list",
 						source: "traces",
-						data: rows.map((row) => ({
+						data: Arr.map(rows, (row) => ({
 							traceId: row.traceId,
-							startTime: String(row.startTime),
-							endTime: String(row.endTime),
-							durationMs: Number(row.durationMicros) / 1000,
-							spanCount: Number(row.spanCount),
-							services: row.services.map(String),
+							startTime: DateTime.formatIso(row.startTime),
+							endTime: DateTime.formatIso(row.endTime),
+							durationMs: row.durationMicros / 1000,
+							spanCount: row.spanCount,
+							services: Arr.map(row.services, String),
 							rootSpanName: row.rootSpanName,
 							rootSpanKind: row.rootSpanKind,
 							rootSpanStatusCode: row.rootSpanStatusCode,
 							rootSpanAttributes: parseProjectedAttributes(row.rootSpanAttributes),
-							hasError: Number(row.hasError) === 1,
+							hasError: row.hasError === 1,
 						})),
 					},
 				})
@@ -1826,13 +1827,21 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			const hasIndexedFilter = !!(
 				opts.serviceName ||
 				opts.spanName ||
-				opts.serviceNames?.length ||
-				opts.spanNames?.length ||
+				(opts.serviceNames !== undefined && opts.serviceNames.length > 0) ||
+				(opts.spanNames !== undefined && opts.spanNames.length > 0) ||
 				opts.errorsOnly ||
 				opts.rootOnly
 			)
 			const maxLimit = hasIndexedFilter ? 200 : 50
 			const clampedLimit = Math.min(tracesQuery.limit ?? 25, maxLimit)
+			const cursor =
+				tracesQuery.cursor === undefined ? Option.none() : Option.some(parseUtc(tracesQuery.cursor))
+			if (Option.isSome(cursor) && Option.isNone(cursor.value)) {
+				return yield* new QueryEngineValidationError({
+					message: "Invalid traces list cursor",
+					details: ["`cursor` must be a timestamp from a previous page's last row"],
+				})
+			}
 
 			const rows = yield* executeCHQuery(
 				warehouse,
@@ -1843,10 +1852,10 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						attributeIndexMode: attributeIndexMode(capabilities, "traces"),
 						limit: clampedLimit,
 						offset: tracesQuery.offset,
-						cursor: tracesQuery.cursor,
+						cursor: Option.getOrUndefined(Option.flatten(cursor)),
 						sortBy: tracesQuery.sortBy,
 						sortDir: tracesQuery.sortDir,
-						columns: requestedColumns as string[] | undefined,
+						columns: requestedColumns,
 					}),
 				{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
 				"tracesList",
@@ -1854,7 +1863,12 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			)
 
 			const traceIds = Array.from(
-				new Set(rows.map((row) => String(row.traceId)).filter((traceId) => traceId.length > 0)),
+				new Set(
+					Arr.filter(
+						Arr.map(rows, (row) => row.traceId),
+						(traceId) => traceId.length > 0,
+					),
+				),
 			)
 			const wantsTraceServices = requestedColumns?.includes("services") === true
 			const serviceRows: ReadonlyArray<CH.TraceServicesByTraceIdsOutput> =
@@ -1865,7 +1879,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 							CH.traceServicesByTraceIdsQuery({ traceIds }),
 							{
 								orgId: tenant.orgId,
-								...traceServicePartitionWindow(rows, {
+								...pageTimeWindow(rows, {
 									startTime: request.startTime,
 									endTime: request.endTime,
 								}),
@@ -1878,7 +1892,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 									"Trace-list service enrichment failed; using row services",
 								).pipe(
 									Effect.annotateLogs({
-										"error.tag": error._tag,
+										"maple.query_engine.error_tag": error._tag,
 										"error.message": error.message,
 									}),
 									Effect.as([] as ReadonlyArray<CH.TraceServicesByTraceIdsOutput>),
@@ -1887,30 +1901,27 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						)
 					: []
 			const servicesByTraceId = new Map(
-				serviceRows.map((row) => [String(row.traceId), row.services.map(String)] as const),
+				Arr.map(serviceRows, (row) => [row.traceId, Arr.map(row.services, String)] as const),
 			)
 
 			return new QueryEngineExecuteResponse({
 				result: {
 					kind: "list",
 					source: "traces",
-					data: rows.map((row) => ({
+					data: Arr.map(rows, (row) => ({
 						traceId: row.traceId,
-						timestamp: String(row.timestamp),
+						timestamp: DateTime.formatIso(row.timestamp),
 						spanId: row.spanId,
 						// Empty for a root span. Lets the traces list tell a child-span row
 						// apart from a root one and deep-link `?spanId=` only for children.
 						parentSpanId: row.parentSpanId,
 						serviceName: row.serviceName,
 						spanName: row.spanName,
-						durationMs: Number(row.durationMs),
+						durationMs: row.durationMs,
 						statusCode: row.statusCode,
 						spanKind: row.spanKind,
-						hasError: Number(row.hasError) === 1,
-						services: servicesForTraceRow(
-							String(row.serviceName),
-							servicesByTraceId.get(String(row.traceId)),
-						),
+						hasError: row.hasError === 1,
+						services: servicesForTraceRow(row.serviceName, servicesByTraceId.get(row.traceId)),
 						spanAttributes: row.spanAttributes ?? {},
 						resourceAttributes: row.resourceAttributes ?? {},
 					})),
@@ -1932,8 +1943,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "list",
 					source: "product_events",
-					data: rows.map((row) => ({
-						timestamp: String(row.timestamp),
+					data: Arr.map(rows, (row) => ({
+						timestamp: DateTime.formatIso(row.timestamp),
 						eventName: row.eventName,
 						kind: row.kind,
 						source: row.source,
@@ -1966,7 +1977,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "attributeKeys",
 					source: "product_events",
-					data: rows.map((row) => ({ key: row.attributeKey, count: Number(row.usageCount) })),
+					data: Arr.map(rows, (row) => ({ key: row.attributeKey, count: row.usageCount })),
 				},
 			})
 		}
@@ -1987,7 +1998,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "attributeValues",
 					source: "product_events",
-					data: rows.map((row) => ({ value: row.attributeValue, count: Number(row.usageCount) })),
+					data: Arr.map(rows, (row) => ({ value: row.attributeValue, count: row.usageCount })),
 				},
 			})
 		}
@@ -2007,6 +2018,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				metricScoped
 					? CH.metricScopedAttributeKeysQuery({
 							metricType: metricScoped.metricType,
+							scope: request.query.scope === "resource" ? "resource" : "metric",
 							limit: request.query.limit,
 						})
 					: CH.attributeKeysQuery({
@@ -2027,9 +2039,9 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "attributeKeys",
 					source: request.query.source,
-					data: rows.map((row) => ({
+					data: Arr.map(rows, (row) => ({
 						key: row.attributeKey,
-						count: Number(row.usageCount),
+						count: row.usageCount,
 					})),
 				},
 			})
@@ -2039,9 +2051,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			const baseParams = { orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime }
 
 			if (request.query.source === "traces") {
-				const opts = extractTracesFacetsOpts(
-					request.query.filters as Record<string, unknown> | undefined,
-				)
+				const opts = extractTracesFacetsOpts(request.query.filters)
 				const facet = request.query.facet
 				const rows = yield* withTraceFacetsFallback(
 					tenant.orgId,
@@ -2050,7 +2060,13 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						executeCHUnionQuery(
 							warehouse,
 							tenant,
-							CH.tracesFacetsQuery({ ...opts, facet, rawOnly }),
+							(capabilities) =>
+								CH.tracesFacetsQuery({
+									...opts,
+									facet,
+									rawOnly:
+										rawOnly || !hasWarehouseTable(capabilities, "trace_facets_hourly"),
+								}),
 							baseParams,
 							facet ? `tracesFacets:${facet}` : "tracesFacets",
 							"discovery",
@@ -2060,10 +2076,10 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					result: {
 						kind: "facets",
 						source: "traces",
-						data: rows.map((row) => ({
+						data: Arr.map(rows, (row) => ({
 							facetType: row.facetType,
 							name: row.name,
-							count: Number(row.count),
+							count: row.count,
 						})),
 					},
 				})
@@ -2083,6 +2099,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 							environments: options.environments,
 							namespaces: options.namespaces,
 							matchModes: options.matchModes,
+							attributeFilters: options.attributeFilters,
+							resourceAttributeFilters: options.resourceAttributeFilters,
 						},
 						facet,
 					),
@@ -2094,7 +2112,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					result: {
 						kind: "facets",
 						source: "logs",
-						data: rows.map((row) => ({
+						data: Arr.map(rows, (row) => ({
 							facetType: row.facetType,
 							name:
 								row.facetType === "severity"
@@ -2104,7 +2122,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 										: row.facetType === "namespace"
 											? row.namespace
 											: row.serviceName,
-							count: Number(row.count),
+							count: row.count,
 						})),
 					},
 				})
@@ -2138,10 +2156,10 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					result: {
 						kind: "facets",
 						source: "errors",
-						data: rows.map((row) => ({
+						data: Arr.map(rows, (row) => ({
 							facetType: row.facetType,
 							name: row.name,
-							count: Number(row.count),
+							count: row.count,
 						})),
 					},
 				})
@@ -2160,10 +2178,10 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					result: {
 						kind: "facets",
 						source: "services",
-						data: rows.map((row) => ({
+						data: Arr.map(rows, (row) => ({
 							facetType: row.facetType,
 							name: row.name,
-							count: Number(row.count),
+							count: row.count,
 						})),
 					},
 				})
@@ -2171,9 +2189,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 		}
 
 		if (request.query.source === "traces" && request.query.kind === "stats") {
-			const opts = extractTracesDurationStatsOpts(
-				request.query.filters as Record<string, unknown> | undefined,
-			)
+			const opts = extractTracesDurationStatsOpts(request.query.filters)
 			const rows = yield* withTraceFacetsFallback(
 				tenant.orgId,
 				CH.canUseTraceFacetsRollup(opts),
@@ -2181,7 +2197,11 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					executeCHQuery(
 						warehouse,
 						tenant,
-						CH.tracesDurationStatsQuery({ ...opts, rawOnly }),
+						(capabilities) =>
+							CH.tracesDurationStatsQuery({
+								...opts,
+								rawOnly: rawOnly || !hasWarehouseTable(capabilities, "trace_facets_hourly"),
+							}),
 						{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
 						"tracesDurationStats",
 					),
@@ -2191,23 +2211,25 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "stats",
 					source: "traces",
-					data: row
-						? {
-								minDurationMs: Number(row.minDurationMs),
-								maxDurationMs: Number(row.maxDurationMs),
-								p50DurationMs: Number(row.p50DurationMs),
-								p95DurationMs: Number(row.p95DurationMs),
-							}
-						: { minDurationMs: 0, maxDurationMs: 0, p50DurationMs: 0, p95DurationMs: 0 },
+					data:
+						row !== undefined
+							? {
+									minDurationMs: row.minDurationMs,
+									maxDurationMs: row.maxDurationMs,
+									p50DurationMs: row.p50DurationMs,
+									p95DurationMs: row.p95DurationMs,
+								}
+							: { minDurationMs: 0, maxDurationMs: 0, p50DurationMs: 0, p95DurationMs: 0 },
 				},
 			})
 		}
 
 		if (request.query.kind === "attributeValues") {
 			// Per-metric scoping reads the raw metric table (see attributeKeys above).
+			const { metricName, metricNames, metricType } = request.query
 			const metricScoped =
-				request.query.source === "metrics" && request.query.metricName && request.query.metricType
-					? { metricName: request.query.metricName, metricType: request.query.metricType }
+				request.query.source === "metrics" && (metricName || metricNames) && metricType
+					? { metricName, metricNames, metricType }
 					: undefined
 			const queryFn = Match.value(request.query.scope).pipe(
 				Match.when("resource", () => CH.resourceAttributeValuesQuery),
@@ -2221,6 +2243,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				metricScoped
 					? CH.metricScopedAttributeValuesQuery({
 							metricType: metricScoped.metricType,
+							metricNames: metricScoped.metricNames,
+							scope: request.query.scope === "resource" ? "resource" : "metric",
 							attributeKey: request.query.attributeKey,
 							limit: request.query.limit,
 						})
@@ -2229,7 +2253,9 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					orgId: tenant.orgId,
 					startTime: request.startTime,
 					endTime: request.endTime,
-					...(metricScoped ? { metricName: metricScoped.metricName } : undefined),
+					...(metricScoped?.metricName && !metricScoped.metricNames
+						? { metricName: metricScoped.metricName }
+						: undefined),
 				},
 				metricScoped ? "attributeValues:metric-scoped" : `attributeValues:${request.query.scope}`,
 				"discovery",
@@ -2238,7 +2264,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "attributeValues",
 					source: request.query.source,
-					data: rows.map((row) => ({ value: row.attributeValue, count: Number(row.usageCount) })),
+					data: Arr.map(rows, (row) => ({ value: row.attributeValue, count: row.usageCount })),
 				},
 			})
 		}
@@ -2257,7 +2283,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "count",
 					source: "logs",
-					data: { total: rows[0] ? Number(rows[0].total) : 0 },
+					data: { total: rows[0] !== undefined ? Number(rows[0].total) : 0 },
 				},
 			})
 		}
@@ -2281,8 +2307,8 @@ export const reducePerGroupObservations = (
 	const result: Array<GroupedAlertObservation> = []
 	for (const [groupKey, observations] of byGroup.entries()) {
 		const reducedValue = applyAlertReducer(observations, reducer)
-		const totalSampleCount = observations.reduce((sum, o) => sum + Number(o.sampleCount), 0)
-		const hasData = observations.some((o) => o.hasData)
+		const totalSampleCount = Arr.reduce(observations, 0, (sum, o) => sum + o.sampleCount)
+		const hasData = Arr.some(observations, (o) => o.hasData)
 		result.push({
 			groupKey,
 			value: reducedValue,
@@ -2291,25 +2317,6 @@ export const reducePerGroupObservations = (
 		})
 	}
 	return result
-}
-
-/** Compose a JS-side composite group key for metrics, which doesn't emit groupName from SQL. */
-const composeMetricsGroupKey = (
-	groupBy: ReadonlyArray<string> | undefined,
-	serviceName: string,
-	attributeValue: string,
-): string => {
-	if (!groupBy || groupBy.length === 0 || groupBy.includes("none")) return ENGINE_UNGROUPED_GROUP_KEY
-	const parts: string[] = []
-	for (const dim of groupBy) {
-		if (dim === "service") parts.push(serviceName || "")
-		// Both attribute dimensions surface through the query's single
-		// attributeValue column (only one can be active per query).
-		else if (dim === "attribute" || dim === "resource_attribute") parts.push(attributeValue || "")
-	}
-	const filtered = parts.filter((p) => p.length > 0)
-	if (filtered.length === 0) return ENGINE_UNGROUPED_GROUP_KEY
-	return filtered.join(" \u00b7 ")
 }
 
 /**
@@ -2333,13 +2340,21 @@ const RawSqlAlertRowSchema = Schema.Struct({
  */
 export type AlertBucketSource =
 	| { readonly kind: "spec"; readonly query: QuerySpec }
-	| { readonly kind: "raw_sql"; readonly sql: string; readonly windowMinutes: number }
+	| {
+			readonly kind: "raw_sql"
+			readonly sql: string
+			readonly windowMinutes: number
+			/** The rule's check interval, which sets the query's time and memory limits. */
+			readonly intervalMinutes: number
+	  }
 
 /** Structural request slice that {@link computeAlertBuckets} needs for one range. */
 export interface AlertBucketRequest {
 	readonly source: AlertBucketSource
 	readonly startTime: string
 	readonly endTime: string
+	/** One bucket per group spanning [startTime, endTime], instead of the epoch-aligned grid. */
+	readonly wholeRange?: boolean
 }
 
 /** One warehouse row's contribution to an alert evaluation. */
@@ -2348,6 +2363,8 @@ export interface BucketGroupObs {
 	readonly groupKey: string
 	readonly value: number | null
 	readonly sampleCount: number
+	/** A raw-SQL row without a `bucket` column: one aggregate over the whole range, not a window. */
+	readonly untimed?: true
 }
 
 /**
@@ -2377,11 +2394,11 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 	// QuerySpec union (discriminated on both `kind` and `source`) so the per-source
 	// branches can read `filters`/`metric`/`groupBy`.
 	if (query.kind !== "timeseries") {
-		return obs as ReadonlyArray<BucketGroupObs>
+		return obs
 	}
 
 	if (query.source === "traces") {
-		const opts = extractTracesOpts(query.filters as Record<string, unknown>)
+		const opts = extractTracesOpts(query.filters)
 		const rows = yield* executeCHQuery(
 			warehouse,
 			tenant,
@@ -2391,9 +2408,10 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 					attributeIndexMode: attributeIndexMode(capabilities, "traces"),
 					metric: query.metric,
 					needsSampling: false,
-					groupBy: query.groupBy as readonly string[] | undefined,
+					groupBy: query.groupBy,
 					apdexThresholdMs: query.metric === "apdex" ? query.apdexThresholdMs : undefined,
 					bucketSeconds,
+					wholeRange: request.wholeRange,
 				}),
 			{
 				orgId: tenant.orgId,
@@ -2408,7 +2426,7 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 			// confidence guard and must see rows actually observed. They differ only
 			// under sampling, and only the hourly rollup (which stores no raw count)
 			// falls back to the estimate.
-			const sampleCount = Number(row.spanCount ?? row.count ?? 0)
+			const sampleCount = row.spanCount
 			const value = sampleCount > 0 ? tracesAggregateValueForMetric(query.metric, row) : null
 			obs.push({
 				bucket: normalizeBucket(row.bucket),
@@ -2423,12 +2441,18 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 				warehouse,
 				logsTimeseries,
 				tenant,
-				toLogsTimeseriesInput(request.startTime, request.endTime, query, bucketSeconds),
+				toLogsTimeseriesInput(
+					request.startTime,
+					request.endTime,
+					query,
+					bucketSeconds,
+					request.wholeRange,
+				),
 			),
 			logsTimeseries.id,
 		)
 		for (const row of rows) {
-			const sampleCount = Number(row.count ?? 0)
+			const sampleCount = row.count
 			obs.push({
 				bucket: normalizeBucket(row.bucket),
 				groupKey: row.groupName || ENGINE_UNGROUPED_GROUP_KEY,
@@ -2442,47 +2466,115 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 				warehouse,
 				productEventsTimeseries,
 				tenant,
-				toProductEventsTimeseriesInput(request.startTime, request.endTime, query, bucketSeconds),
+				toProductEventsTimeseriesInput(
+					request.startTime,
+					request.endTime,
+					query,
+					bucketSeconds,
+					request.wholeRange,
+				),
 			),
 			productEventsTimeseries.id,
 		)
 		for (const row of rows) {
 			// `value` may be a uniq; the sample count is the rows behind it.
-			const sampleCount = Number(row.eventCount ?? 0)
+			const sampleCount = row.eventCount
 			obs.push({
 				bucket: normalizeBucket(row.bucket),
 				groupKey: row.groupName || ENGINE_UNGROUPED_GROUP_KEY,
-				value: sampleCount > 0 ? Number(row.value ?? 0) : null,
+				value: sampleCount > 0 ? row.value : null,
 				sampleCount,
 			})
 		}
 	} else {
-		const execution = yield* executeMetricsTimeseriesRows(
+		const rows = yield* executeMetricsTimeseriesRows(
 			warehouse,
 			tenant,
 			query,
-			{ startTime: request.startTime, endTime: request.endTime, bucketSeconds },
+			{
+				startTime: request.startTime,
+				endTime: request.endTime,
+				bucketSeconds,
+				wholeRange: request.wholeRange,
+			},
 			{ value: "metricsAlertEval", rate: "metricsRateIncreaseAlertEval" },
 		)
-		for (const row of execution.rows) {
-			const sampleCount = Number(row.dataPointCount ?? 0)
-			const value = sampleCount > 0 ? metricsAggregateValueForMetric(query.metric, row) : null
-			const groupKey = composeMetricsGroupKey(
-				query.groupBy as readonly string[] | undefined,
-				row.serviceName ?? "",
-				row.attributeValue ?? "",
-			)
+		for (const row of rows) {
+			const sampleCount = Number(row.dataPointCount)
 			obs.push({
 				bucket: normalizeBucket(row.bucket),
-				groupKey,
-				value,
+				groupKey: row.groupName || ENGINE_UNGROUPED_GROUP_KEY,
+				value: sampleCount > 0 ? Number(row.value) : null,
 				sampleCount,
 			})
 		}
 	}
 
-	return obs as ReadonlyArray<BucketGroupObs>
+	return obs
 })
+
+/**
+ * Validate raw-SQL alert rows into bucket observations. Pure: the first invalid
+ * row (or the group cap) fails the whole set.
+ */
+const rawSqlRowsToObs = (
+	rows: ReadonlyArray<typeof RawSqlAlertRowSchema.Type>,
+	windowStart: string,
+): Result.Result<ReadonlyArray<BucketGroupObs>, QueryEngineValidationError> => {
+	const obs: BucketGroupObs[] = []
+	const seenGroups = new Set<string>()
+	for (const row of rows) {
+		const rawGroup = row.group
+		const groupKey =
+			typeof rawGroup === "string" && rawGroup.length > 0 ? rawGroup : ENGINE_UNGROUPED_GROUP_KEY
+		if (groupKey.length > MAX_RAW_SQL_GROUP_KEY_LENGTH) {
+			return Result.fail(
+				new QueryEngineValidationError({
+					message: "Invalid raw SQL alert query",
+					details: [
+						`Raw SQL alert group keys may contain at most ${MAX_RAW_SQL_GROUP_KEY_LENGTH} characters.`,
+					],
+				}),
+			)
+		}
+		const numValue = row.value == null ? null : Number(row.value)
+		const value = numValue != null && Number.isFinite(numValue) ? numValue : null
+		const rawSamples = row.samples == null ? 1 : Number(row.samples)
+		if (!Number.isFinite(rawSamples) || rawSamples < 0) {
+			return Result.fail(
+				new QueryEngineValidationError({
+					message: "Invalid raw SQL alert query",
+					details: ["Raw SQL alert samples must be finite and nonnegative."],
+				}),
+			)
+		}
+		if (!seenGroups.has(groupKey)) {
+			if (seenGroups.size >= MAX_RAW_SQL_ALERT_GROUPS) {
+				return Result.fail(
+					new QueryEngineValidationError({
+						message: "Invalid raw SQL alert query",
+						details: [`Raw SQL alerts may return at most ${MAX_RAW_SQL_ALERT_GROUPS} groups.`],
+					}),
+				)
+			}
+			seenGroups.add(groupKey)
+		}
+		const timed = typeof row.bucket === "string" || row.bucket instanceof Date
+		obs.push({
+			// A query without `$__timeGroup` has no bucket column: the whole window
+			// collapses into one synthetic bucket at its start. Normalize either way
+			// — `windowStart` is a Tinybird datetime, and consumers key buckets
+			// by `Date.parse`, which would read that space-separated form as local
+			// time rather than UTC.
+			bucket: normalizeBucket(timed ? row.bucket : windowStart),
+			groupKey,
+			value,
+			sampleCount: value == null ? 0 : rawSamples,
+			...(timed ? undefined : { untimed: true as const }),
+		})
+	}
+	return Result.succeed(obs)
+}
 
 /**
  * The `raw_sql` arm of {@link computeAlertBuckets}, split out only because it
@@ -2503,7 +2595,7 @@ const computeRawSqlBuckets = Effect.fnUntraced(function* <T extends QueryTenant>
 	warehouse: QueryEngineWarehouse<T>,
 	tenant: T,
 	source: Extract<AlertBucketSource, { kind: "raw_sql" }>,
-	range: { readonly startTime: string; readonly endTime: string },
+	range: { readonly startTime: string; readonly endTime: string; readonly wholeRange?: boolean },
 ) {
 	const executeRawSql = makeExecuteRawSql<T, WarehouseQueryPathError | RawSqlValidationError>(warehouse)
 	// The same rule `prepareAlertEvaluation` applies to a spec source, and it has
@@ -2520,6 +2612,8 @@ const computeRawSqlBuckets = Effect.fnUntraced(function* <T extends QueryTenant>
 		granularitySeconds,
 		workload: "alert",
 		context: "alertRawQuery",
+		alertIntervalMinutes: source.intervalMinutes,
+		wholeRange: range.wholeRange,
 	}).pipe(
 		Effect.catchTag("@maple/http/errors/RawSqlValidationError", (error) =>
 			Effect.fail(
@@ -2541,54 +2635,7 @@ const computeRawSqlBuckets = Effect.fnUntraced(function* <T extends QueryTenant>
 		),
 	)
 
-	const obs: BucketGroupObs[] = []
-	const seenGroups = new Set<string>()
-	for (const row of rows) {
-		const rawGroup = row.group
-		const groupKey =
-			typeof rawGroup === "string" && rawGroup.length > 0 ? rawGroup : ENGINE_UNGROUPED_GROUP_KEY
-		if (groupKey.length > MAX_RAW_SQL_GROUP_KEY_LENGTH) {
-			return yield* new QueryEngineValidationError({
-				message: "Invalid raw SQL alert query",
-				details: [
-					`Raw SQL alert group keys may contain at most ${MAX_RAW_SQL_GROUP_KEY_LENGTH} characters.`,
-				],
-			})
-		}
-		const numValue = row.value == null ? null : Number(row.value)
-		const value = numValue != null && Number.isFinite(numValue) ? numValue : null
-		const rawSamples = row.samples == null ? 1 : Number(row.samples)
-		if (!Number.isFinite(rawSamples) || rawSamples < 0) {
-			return yield* new QueryEngineValidationError({
-				message: "Invalid raw SQL alert query",
-				details: ["Raw SQL alert samples must be finite and nonnegative."],
-			})
-		}
-		if (!seenGroups.has(groupKey)) {
-			if (seenGroups.size >= MAX_RAW_SQL_ALERT_GROUPS) {
-				return yield* new QueryEngineValidationError({
-					message: "Invalid raw SQL alert query",
-					details: [`Raw SQL alerts may return at most ${MAX_RAW_SQL_ALERT_GROUPS} groups.`],
-				})
-			}
-			seenGroups.add(groupKey)
-		}
-		obs.push({
-			// A query without `$__timeGroup` has no bucket column: the whole window
-			// collapses into one synthetic bucket at its start. Normalize either way
-			// — `range.startTime` is a Tinybird datetime, and consumers key buckets
-			// by `Date.parse`, which would read that space-separated form as local
-			// time rather than UTC.
-			bucket: normalizeBucket(
-				typeof row.bucket === "string" || row.bucket instanceof Date ? row.bucket : range.startTime,
-			),
-			groupKey,
-			value,
-			sampleCount: value == null ? 0 : rawSamples,
-		})
-	}
-
-	return obs as ReadonlyArray<BucketGroupObs>
+	return yield* Effect.fromResult(rawSqlRowsToObs(rows, range.startTime))
 })
 
 /**
@@ -2630,10 +2677,10 @@ const prepareAlertEvaluation = Effect.fnUntraced(function* (request: AlertEvalua
 		if ("metric" in query && query.metric) {
 			yield* Effect.annotateCurrentSpan("query.metric", query.metric)
 		}
-		if ("groupBy" in query && query.groupBy) {
+		if ("groupBy" in query && query.groupBy !== undefined) {
 			yield* Effect.annotateCurrentSpan(
 				"query.groupBy",
-				(query.groupBy as ReadonlyArray<string>).join(","),
+				Arr.join(query.groupBy as ReadonlyArray<string>, ","),
 			)
 		}
 	}
@@ -2687,14 +2734,17 @@ export const makeQueryEngineEvaluate = <T extends QueryTenant>(warehouse: QueryE
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 		const bucketSeconds = yield* prepareAlertEvaluation(request)
 
+		// The scheduler's window slides by the minute, so it rarely starts on the
+		// epoch grid; one bucket over exactly the range is the value it observes.
 		const bucketRequest = {
 			source: request.source,
 			startTime: request.startTime,
 			endTime: request.endTime,
+			wholeRange: true,
 		}
 		const load = computeAlertBuckets(warehouse, tenant, bucketRequest, bucketSeconds)
-		// Raw SQL may contain volatile functions. Keep its existing whole-result
-		// cache policy; only structured queries share buckets across reducers.
+		// Raw SQL may contain volatile functions, so it always runs; only
+		// structured queries share buckets across reducers.
 		const obs = yield* request.source.kind === "spec"
 			? memoizeAlertBuckets(
 					warehouse,

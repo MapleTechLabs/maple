@@ -1,12 +1,15 @@
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema, DateTime, Array as Arr } from "effect"
+import { TestClock } from "effect/testing"
 import {
 	DashboardId,
 	DashboardDocument,
+	DashboardConcurrencyError,
 	DashboardNotFoundError,
 	DashboardPersistenceError,
 	DashboardStoredConfigInvalidError,
+	DashboardValidationError,
 	IsoDateTimeString,
 	OrgId,
 	PortableDashboardDocument,
@@ -15,7 +18,7 @@ import {
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { DashboardPersistenceService } from "./DashboardPersistenceService"
 import { Env } from "@maple/backend/platform/Env"
-import { CURRENT_DASHBOARD_SCHEMA_VERSION, upgradeStoredDocument } from "@maple/widgets/dashboard"
+import { CURRENT_DASHBOARD_SCHEMA_VERSION } from "@maple/widgets/dashboard"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -75,20 +78,8 @@ const asDashboardId = Schema.decodeUnknownSync(DashboardId)
 const asIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
-
-const makeDashboard = (overrides: Partial<DashboardDocument> = {}): DashboardDocument =>
-	new DashboardDocument({
-		id: asDashboardId("dash-1"),
-		name: "Dashboard",
-		timeRange: {
-			type: "relative",
-			value: "12h",
-		},
-		widgets: [],
-		createdAt: asIsoDateTimeString(new Date("2026-01-01T00:00:00.000Z").toISOString()),
-		updatedAt: asIsoDateTimeString(new Date("2026-01-01T00:00:00.000Z").toISOString()),
-		...overrides,
-	})
+const org = asOrgId("org_a")
+const user = asUserId("user_a")
 
 const makePortableDashboard = (
 	overrides: Partial<PortableDashboardDocument> = {},
@@ -108,47 +99,44 @@ describe("DashboardPersistenceService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			yield* DashboardPersistenceService.upsert(
+			const persistence = yield* DashboardPersistenceService
+			const { document: orgA } = yield* persistence.create(
 				asOrgId("org_a"),
 				asUserId("user_a"),
-				makeDashboard({ id: asDashboardId("a-1"), name: "Org A" }),
+				makePortableDashboard({ name: "Org A" }),
 			)
-			yield* DashboardPersistenceService.upsert(
+			yield* persistence.create(
 				asOrgId("org_b"),
 				asUserId("user_b"),
-				makeDashboard({ id: asDashboardId("b-1"), name: "Org B" }),
+				makePortableDashboard({ name: "Org B" }),
 			)
-			const dashboards = yield* DashboardPersistenceService.list(asOrgId("org_a"))
+			const dashboards = yield* persistence.list(asOrgId("org_a"))
 
 			assert.strictEqual(dashboards.dashboards.length, 1)
-			assert.strictEqual(dashboards.dashboards[0]!.id, asDashboardId("a-1"))
-			assert.strictEqual(dashboards.dashboards[0]!.name, "Org A")
+			assert.strictEqual(dashboards.dashboards[0].document.id, orgA.id)
+			assert.strictEqual(dashboards.dashboards[0].document.name, "Org A")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
-	it.effect("upserts by replacing existing dashboard rows for the same org/id", () => {
+	it.effect("mutate replaces the stored document for the same org/id", () => {
 		const testDb = createTestDb(trackedDbs)
-
-		const original = makeDashboard({
-			id: asDashboardId("dash-1"),
-			name: "First Name",
-			updatedAt: asIsoDateTimeString(new Date("2026-01-01T00:00:00.000Z").toISOString()),
-		})
-
-		const updated = makeDashboard({
-			id: asDashboardId("dash-1"),
-			name: "Second Name",
-			updatedAt: asIsoDateTimeString(new Date("2026-01-01T01:00:00.000Z").toISOString()),
-		})
+		const later = asIsoDateTimeString(DateTime.formatIso(DateTime.makeUnsafe("2026-01-01T01:00:00.000Z")))
 
 		return Effect.gen(function* () {
-			yield* DashboardPersistenceService.upsert(asOrgId("org_a"), asUserId("user_a"), original)
-			yield* DashboardPersistenceService.upsert(asOrgId("org_a"), asUserId("user_a"), updated)
-			const dashboards = yield* DashboardPersistenceService.list(asOrgId("org_a"))
+			const persistence = yield* DashboardPersistenceService
+			const { document: created } = yield* persistence.create(
+				org,
+				user,
+				makePortableDashboard({ name: "First Name" }),
+			)
+			yield* persistence.mutate(org, user, created.id, (current) =>
+				Effect.succeed(new DashboardDocument({ ...current, name: "Second Name", updatedAt: later })),
+			)
+			const dashboards = yield* persistence.list(org)
 
 			assert.strictEqual(dashboards.dashboards.length, 1)
-			assert.strictEqual(dashboards.dashboards[0]!.name, "Second Name")
-			assert.strictEqual(dashboards.dashboards[0]!.updatedAt, updated.updatedAt)
+			assert.strictEqual(dashboards.dashboards[0].document.name, "Second Name")
+			assert.strictEqual(dashboards.dashboards[0].document.updatedAt, later)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -156,7 +144,8 @@ describe("DashboardPersistenceService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const created = yield* DashboardPersistenceService.create(
+			const persistence = yield* DashboardPersistenceService
+			const { document: created } = yield* persistence.create(
 				asOrgId("org_a"),
 				asUserId("user_a"),
 				makePortableDashboard({
@@ -166,7 +155,7 @@ describe("DashboardPersistenceService", () => {
 				}),
 			)
 
-			const listed = yield* DashboardPersistenceService.list(asOrgId("org_a"))
+			const listed = yield* persistence.list(asOrgId("org_a"))
 
 			assert.strictEqual(typeof created.id, "string")
 			assert.strictEqual(created.name, "Imported Dashboard")
@@ -176,7 +165,7 @@ describe("DashboardPersistenceService", () => {
 			assert.strictEqual(typeof created.createdAt, "string")
 			assert.strictEqual(typeof created.updatedAt, "string")
 			assert.strictEqual(listed.dashboards.length, 1)
-			assert.strictEqual(listed.dashboards[0]!.id, created.id)
+			assert.strictEqual(listed.dashboards[0].document.id, created.id)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -187,19 +176,20 @@ describe("DashboardPersistenceService", () => {
 		// omits both here. The create path must not forward their `undefined` values
 		// into `new DashboardDocument(...)`, which the Schema.Class constructor rejects.
 		return Effect.gen(function* () {
-			const created = yield* DashboardPersistenceService.create(
+			const persistence = yield* DashboardPersistenceService
+			const { document: created } = yield* persistence.create(
 				asOrgId("org_a"),
 				asUserId("user_a"),
 				makePortableDashboard({ name: "No Tags" }),
 			)
 
-			const listed = yield* DashboardPersistenceService.list(asOrgId("org_a"))
+			const listed = yield* persistence.list(asOrgId("org_a"))
 
 			assert.strictEqual(created.name, "No Tags")
 			assert.strictEqual(created.description, undefined)
 			assert.strictEqual(created.tags, undefined)
 			assert.strictEqual(listed.dashboards.length, 1)
-			assert.strictEqual(listed.dashboards[0]!.id, created.id)
+			assert.strictEqual(listed.dashboards[0].document.id, created.id)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -207,9 +197,8 @@ describe("DashboardPersistenceService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const exit = yield* Effect.exit(
-				DashboardPersistenceService.delete(asOrgId("org_a"), asDashboardId("missing")),
-			)
+			const persistence = yield* DashboardPersistenceService
+			const exit = yield* Effect.exit(persistence.delete(asOrgId("org_a"), asDashboardId("missing")))
 			const failure = getError(exit)
 
 			assert.isTrue(Exit.isFailure(exit))
@@ -221,7 +210,8 @@ describe("DashboardPersistenceService", () => {
 		const failingLayer = DashboardPersistenceService.layer.pipe(Layer.provide(failingDatabaseLayer))
 
 		return Effect.gen(function* () {
-			const exit = yield* Effect.exit(DashboardPersistenceService.list(asOrgId("org_a")))
+			const persistence = yield* DashboardPersistenceService
+			const exit = yield* Effect.exit(persistence.list(asOrgId("org_a")))
 			const failure = getError(exit)
 
 			assert.isTrue(Exit.isFailure(exit))
@@ -230,7 +220,7 @@ describe("DashboardPersistenceService", () => {
 	})
 
 	// `validatePayload` is the single jsonb write choke point, so repairing the
-	// section invariants there covers v1 upsert, v2 PATCH, MCP, template
+	// section invariants there covers v2 PATCH, MCP, template
 	// instantiate, Perses import and version restore at once.
 	it.effect("repairs dangling section membership before persisting", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -245,11 +235,11 @@ describe("DashboardPersistenceService", () => {
 		})
 
 		return Effect.gen(function* () {
-			yield* DashboardPersistenceService.upsert(
-				asOrgId("org_a"),
-				asUserId("user_a"),
-				makeDashboard({
-					id: asDashboardId("dash-sections"),
+			const persistence = yield* DashboardPersistenceService
+			yield* persistence.create(
+				org,
+				user,
+				makePortableDashboard({
 					widgets: [
 						widget("orphan", { sectionId: "deleted", tabId: "t1" }),
 						widget("dangling-tab", { sectionId: "s1", tabId: "gone" }),
@@ -258,17 +248,17 @@ describe("DashboardPersistenceService", () => {
 				}),
 			)
 
-			const listed = yield* DashboardPersistenceService.list(asOrgId("org_a"))
-			const stored = listed.dashboards[0]!
+			const listed = yield* persistence.list(asOrgId("org_a"))
+			const stored = listed.dashboards[0].document
 			const [orphan, dangling] = stored.widgets
 
 			// A widget pointing at a section that is gone becomes ungrouped, and
 			// the keys are absent rather than `undefined` — they are optionalKey.
-			assert.isFalse("sectionId" in orphan!)
-			assert.isFalse("tabId" in orphan!)
+			assert.isFalse("sectionId" in orphan)
+			assert.isFalse("tabId" in orphan)
 			// A dangling tab snaps to the section's first tab rather than vanishing.
-			assert.strictEqual(dangling!.sectionId, "s1")
-			assert.strictEqual(dangling!.tabId, "t1")
+			assert.strictEqual(dangling.sectionId, "s1")
+			assert.strictEqual(dangling.tabId, "t1")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -276,13 +266,10 @@ describe("DashboardPersistenceService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			yield* DashboardPersistenceService.upsert(
-				asOrgId("org_a"),
-				asUserId("user_a"),
-				makeDashboard({ id: asDashboardId("dash-flat"), name: "Flat" }),
-			)
-			const listed = yield* DashboardPersistenceService.list(asOrgId("org_a"))
-			assert.isFalse("sections" in listed.dashboards[0]!)
+			const persistence = yield* DashboardPersistenceService
+			yield* persistence.create(org, user, makePortableDashboard({ name: "Flat" }))
+			const listed = yield* persistence.list(asOrgId("org_a"))
+			assert.isFalse("sections" in listed.dashboards[0].document)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -294,7 +281,8 @@ describe("DashboardPersistenceService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const created = yield* DashboardPersistenceService.create(
+			const persistence = yield* DashboardPersistenceService
+			const { document: created } = yield* persistence.create(
 				asOrgId("org_a"),
 				asUserId("user_a"),
 				makePortableDashboard({
@@ -319,8 +307,8 @@ describe("DashboardPersistenceService", () => {
 			assert.strictEqual(created.widgets[0]?.sectionId, "s1")
 
 			// And it survives the round-trip through storage, not just the response.
-			const listed = yield* DashboardPersistenceService.list(asOrgId("org_a"))
-			assert.strictEqual(listed.dashboards[0]?.sections?.length, 1)
+			const listed = yield* persistence.list(asOrgId("org_a"))
+			assert.strictEqual(listed.dashboards[0]?.document.sections?.length, 1)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -346,8 +334,8 @@ describe("DashboardPersistenceService", () => {
 						id,
 						"Legacy",
 						JSON.stringify(payload),
-						new Date("2026-01-01T00:00:00.000Z"),
-						new Date("2026-01-01T00:00:00.000Z"),
+						"2026-01-01T00:00:00.000Z",
+						"2026-01-01T00:00:00.000Z",
 						"user_a",
 						"user_a",
 						1,
@@ -382,13 +370,10 @@ describe("DashboardPersistenceService", () => {
 			const testDb = createTestDb(trackedDbs)
 
 			return Effect.gen(function* () {
-				yield* DashboardPersistenceService.upsert(
-					asOrgId("org_a"),
-					asUserId("user_a"),
-					makeDashboard({ id: asDashboardId("dash-stamp") }),
-				)
+				const persistence = yield* DashboardPersistenceService
+				const { document: created } = yield* persistence.create(org, user, makePortableDashboard())
 
-				const row = yield* readStoredPayload(testDb, "dash-stamp")
+				const row = yield* readStoredPayload(testDb, created.id)
 				assert.strictEqual(row?.payload_json.schemaVersion, CURRENT_DASHBOARD_SCHEMA_VERSION)
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
@@ -403,10 +388,11 @@ describe("DashboardPersistenceService", () => {
 			const testDb = createTestDb(trackedDbs)
 
 			return Effect.gen(function* () {
+				const persistence = yield* DashboardPersistenceService
 				yield* insertRawDashboard(testDb, "dash-legacy", legacyPayload("dash-legacy"))
 
 				const outcome = yield* Effect.exit(
-					DashboardPersistenceService.get(asOrgId("org_a"), asDashboardId("dash-legacy")),
+					persistence.get(asOrgId("org_a"), asDashboardId("dash-legacy")),
 				)
 
 				// Loudly, not silently. A half-decoded document would be persisted by
@@ -415,41 +401,16 @@ describe("DashboardPersistenceService", () => {
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
 
-		it.effect("reads that same row once the backfill transform has been applied", () => {
-			const testDb = createTestDb(trackedDbs)
-
-			return Effect.gen(function* () {
-				// Exactly what `backfill-dashboard-datasource-v3.ts` writes back.
-				yield* insertRawDashboard(
-					testDb,
-					"dash-backfilled",
-					upgradeStoredDocument(legacyPayload("dash-backfilled")) as Record<string, unknown>,
-				)
-
-				const dashboard = yield* DashboardPersistenceService.get(
-					asOrgId("org_a"),
-					asDashboardId("dash-backfilled"),
-				)
-
-				assert.strictEqual(dashboard.name, "Legacy")
-				const dataSource = dashboard.widgets[0]?.dataSource
-				assert.strictEqual(dataSource?.kind, "query")
-				// The queries survive the reshaping; only the envelope changed.
-				assert.deepStrictEqual(dataSource.kind === "query" ? dataSource.queries : undefined, [
-					{ id: "a", name: "A", dataSource: "traces", aggregation: "count" },
-				])
-			}).pipe(Effect.provide(makeLayer(testDb)))
-		})
-
 		it.effect("refuses a stored payload it cannot fully decode", () => {
 			const testDb = createTestDb(trackedDbs)
 
 			return Effect.gen(function* () {
+				const persistence = yield* DashboardPersistenceService
 				const corrupt = { ...legacyPayload("dash-corrupt"), widgets: [{ id: "no-layout" }] }
 				yield* insertRawDashboard(testDb, "dash-corrupt", corrupt)
 
 				const exit = yield* Effect.exit(
-					DashboardPersistenceService.get(asOrgId("org_a"), asDashboardId("dash-corrupt")),
+					persistence.get(asOrgId("org_a"), asDashboardId("dash-corrupt")),
 				)
 
 				assert.isTrue(Exit.isFailure(exit))
@@ -459,5 +420,291 @@ describe("DashboardPersistenceService", () => {
 				assert.strictEqual(error.error.retryable, false)
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
+
+		it.effect("lists the readable dashboards when one stored payload does not decode", () => {
+			const testDb = createTestDb(trackedDbs)
+
+			return Effect.gen(function* () {
+				const persistence = yield* DashboardPersistenceService
+				yield* insertRawDashboard(testDb, "dash-corrupt", {
+					...legacyPayload("dash-corrupt"),
+					widgets: [{}],
+				})
+				const { document: good } = yield* persistence.create(
+					org,
+					user,
+					makePortableDashboard({ name: "Good" }),
+				)
+
+				const listed = yield* persistence.list(org)
+				assert.deepStrictEqual(
+					Arr.map(listed.dashboards, (d) => d.document.id),
+					[good.id],
+				)
+				const page = yield* persistence.listPage(org, { limit: 10 })
+				assert.deepStrictEqual(
+					Arr.map(page.dashboards, (d) => d.document.id),
+					[good.id],
+				)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+	})
+
+	describe("optimistic concurrency", () => {
+		const rename = (name: string) => (current: DashboardDocument) =>
+			Effect.succeed(new DashboardDocument({ ...current, name }))
+
+		it.effect("rejects an edit based on a stale version with a 409 conflict", () => {
+			const testDb = createTestDb(trackedDbs)
+
+			return Effect.gen(function* () {
+				const persistence = yield* DashboardPersistenceService
+				const { document: created } = yield* persistence.create(
+					org,
+					user,
+					makePortableDashboard({ name: "v1" }),
+				)
+				// Both editors loaded version 1; the first save wins.
+				yield* persistence.mutate(org, user, created.id, rename("first"), { expectedVersion: 1 })
+				const exit = yield* Effect.exit(
+					persistence.mutate(org, user, created.id, rename("second"), { expectedVersion: 1 }),
+				)
+
+				const error = getError(exit)
+				assert.instanceOf(error, DashboardConcurrencyError)
+				assert.strictEqual(error.error.code, "dashboard_concurrent_update")
+				const { document: stored } = yield* persistence.get(org, created.id)
+				assert.strictEqual(stored.name, "first")
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("keeps last-write-wins for a caller that sends no expected version", () => {
+			const testDb = createTestDb(trackedDbs)
+
+			return Effect.gen(function* () {
+				const persistence = yield* DashboardPersistenceService
+				const { document: created } = yield* persistence.create(
+					org,
+					user,
+					makePortableDashboard({ name: "v1" }),
+				)
+				yield* persistence.mutate(org, user, created.id, rename("first"), { expectedVersion: 1 })
+				yield* persistence.mutate(org, user, created.id, rename("second"))
+
+				const { document: stored } = yield* persistence.get(org, created.id)
+				assert.strictEqual(stored.name, "second")
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("returns the committed version from every read and write", () => {
+			const testDb = createTestDb(trackedDbs)
+
+			return Effect.gen(function* () {
+				const persistence = yield* DashboardPersistenceService
+				const created = yield* persistence.create(org, user, makePortableDashboard({ name: "v1" }))
+				assert.strictEqual(created.version, 1)
+				const saved = yield* persistence.mutate(org, user, created.document.id, rename("first"), {
+					expectedVersion: created.version,
+				})
+				assert.strictEqual(saved.version, 2)
+				assert.strictEqual((yield* persistence.get(org, created.document.id)).version, 2)
+				const page = yield* persistence.listPage(org, { limit: 10 })
+				assert.deepStrictEqual(
+					Arr.map(page.dashboards, (d) => d.version),
+					[2],
+				)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("rolls the dashboard write back when its history row cannot be written", () => {
+			const testDb = createTestDb(trackedDbs)
+
+			return Effect.gen(function* () {
+				const persistence = yield* DashboardPersistenceService
+				const { document: created } = yield* persistence.create(
+					org,
+					user,
+					makePortableDashboard({ name: "v1" }),
+				)
+				// Every history write fails from here on, after the dashboard row was updated.
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`CREATE FUNCTION refuse_history() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'history unavailable'; END $$ LANGUAGE plpgsql`,
+					),
+				)
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						"CREATE TRIGGER refuse_history BEFORE INSERT OR UPDATE ON dashboard_versions FOR EACH ROW EXECUTE FUNCTION refuse_history()",
+					),
+				)
+
+				const exit = yield* Effect.exit(persistence.mutate(org, user, created.id, rename("lost")))
+
+				assert.instanceOf(getError(exit), DashboardPersistenceError)
+				const stored = yield* persistence.get(org, created.id)
+				assert.strictEqual(stored.document.name, "v1")
+				assert.strictEqual(stored.version, 1)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+	})
+
+	it.effect("rejects a document with duplicate widget ids", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const persistence = yield* DashboardPersistenceService
+			const exit = yield* Effect.exit(
+				persistence.create(
+					org,
+					user,
+					makePortableDashboard({
+						widgets: [
+							{
+								id: "same",
+								visualization: "chart",
+								dataSource: { kind: "query", resultShape: "timeseries", queries: [] },
+								display: {},
+								layout: { x: 0, y: 0, w: 4, h: 4 },
+							},
+							{
+								id: "same",
+								visualization: "chart",
+								dataSource: { kind: "query", resultShape: "timeseries", queries: [] },
+								display: {},
+								layout: { x: 0, y: 0, w: 4, h: 4 },
+							},
+						],
+					}),
+				),
+			)
+
+			const error = getError(exit)
+			assert.instanceOf(error, DashboardValidationError)
+			assert.deepStrictEqual(error.details, ["Duplicate widget id: same"])
+			assert.strictEqual((yield* persistence.list(org)).dashboards.length, 0)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("keeps a board stored with duplicate widget ids editable", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const persistence = yield* DashboardPersistenceService
+			const { document: created } = yield* persistence.create(
+				org,
+				user,
+				makePortableDashboard({
+					widgets: [
+						{
+							id: "same",
+							visualization: "chart",
+							dataSource: { kind: "query", resultShape: "timeseries", queries: [] },
+							display: {},
+							layout: { x: 0, y: 0, w: 4, h: 4 },
+						},
+					],
+				}),
+			)
+			// Stored before the rule existed: the widget appears twice.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`UPDATE dashboards SET payload_json = jsonb_set(payload_json, '{widgets}', (payload_json->'widgets') || (payload_json->'widgets')) WHERE id = $1`,
+					[created.id],
+				),
+			)
+
+			yield* persistence.mutate(org, user, created.id, (current) =>
+				Effect.succeed(new DashboardDocument({ ...current, name: "renamed" })),
+			)
+
+			const { document: stored } = yield* persistence.get(org, created.id)
+			assert.strictEqual(stored.name, "renamed")
+			assert.strictEqual(stored.widgets.length, 2)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("deletes a dashboard together with its version history", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const persistence = yield* DashboardPersistenceService
+			const { document: created } = yield* persistence.create(org, user, makePortableDashboard())
+			yield* persistence.delete(org, created.id)
+
+			const remaining = yield* Effect.promise(() =>
+				queryFirstRow<{ count: number }>(
+					testDb,
+					"SELECT count(*)::int AS count FROM dashboard_versions WHERE dashboard_id = $1",
+					[created.id],
+				),
+			)
+			assert.strictEqual(remaining?.count, 0)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("cuts a new history version every window under a steady stream of edits", () => {
+		const testDb = createTestDb(trackedDbs)
+		const rename = (name: string) => (current: DashboardDocument) =>
+			Effect.succeed(new DashboardDocument({ ...current, name }))
+
+		return Effect.gen(function* () {
+			const persistence = yield* DashboardPersistenceService
+			const { document: created } = yield* persistence.create(
+				org,
+				user,
+				makePortableDashboard({ name: "v0" }),
+			)
+			// Renames 3s apart: each is inside the window of the previous edit, but the
+			// third is 6s after the version it would merge into.
+			yield* TestClock.adjust("3 seconds")
+			yield* persistence.mutate(org, user, created.id, rename("v1"))
+			yield* TestClock.adjust("3 seconds")
+			yield* persistence.mutate(org, user, created.id, rename("v2"))
+			yield* TestClock.adjust("3 seconds")
+			yield* persistence.mutate(org, user, created.id, rename("v3"))
+
+			const history = yield* persistence.listVersions(org, created.id)
+			assert.deepStrictEqual(
+				Arr.map(history.versions, (version) => [version.versionNumber, version.changeKind]),
+				[
+					[3, "renamed"],
+					[2, "renamed"],
+					[1, "created"],
+				],
+			)
+			const latest = yield* persistence.getVersion(org, created.id, history.versions[0].id)
+			assert.strictEqual(latest.snapshot.name, "v3")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("pages the list in SQL newest first, ties broken by id", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const persistence = yield* DashboardPersistenceService
+			// Two created in the same millisecond share updatedAt, so only the id orders them.
+			const { document: a } = yield* persistence.create(org, user, makePortableDashboard({ name: "a" }))
+			const { document: b } = yield* persistence.create(org, user, makePortableDashboard({ name: "b" }))
+			yield* TestClock.adjust("1 second")
+			const { document: newest } = yield* persistence.create(
+				org,
+				user,
+				makePortableDashboard({ name: "c" }),
+			)
+
+			const first = yield* persistence.listPage(org, { limit: 2 })
+			assert.isNotNull(first.next)
+			const second = yield* persistence.listPage(org, { limit: 2, after: first.next })
+			assert.isNull(second.next)
+
+			const tied = [a.id, b.id].sort().reverse()
+			assert.deepStrictEqual(
+				Arr.map([...first.dashboards, ...second.dashboards], (d) => d.document.id),
+				[newest.id, ...tied],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 })

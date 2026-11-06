@@ -10,7 +10,7 @@
 // The page-view queries themselves live in `web-analytics.ts` and read the
 // same table (`useProductEvents`); this module owns everything funnel-shaped.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
+import * as CH from "@maple-dev/effect-orm/expr"
 import {
 	param,
 	from,
@@ -19,13 +19,18 @@ import {
 	unionAll,
 	inSubquery,
 	compileFnCall,
-} from "@maple-dev/effect-clickhouse"
-import type { CHQuery, ColumnAccessor, ColumnDefs, JoinedColumnAccessor } from "@maple-dev/effect-clickhouse"
-import { Schema } from "effect"
-import { ProductEvents, IdentityLinks, SessionReplays } from "../tables"
+} from "@maple-dev/effect-orm/clickhouse"
+import type {
+	CHQuery,
+	ColumnAccessor,
+	ColumnDefs,
+	JoinedColumnAccessor,
+} from "@maple-dev/effect-orm/clickhouse"
+import { type DateTime, Result, Schema, Array as Arr, Record as Rec, String as Str, Option } from "effect"
+import { ProductEvents, IdentityLinks, SessionReplays, orgIdParam } from "../tables"
 import { CHNumber } from "../schema"
 import { replaysWhere, needsSessionSemiJoin, type ProductEventsFilters } from "./web-analytics"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 
 export type { ProductEventsFilters } from "./web-analytics"
 
@@ -36,7 +41,7 @@ export type { ProductEventsFilters } from "./web-analytics"
 
 // toUInt8(cond) — a condition as a projectable 0/1 column.
 export function flag(cond: CH.Condition): CH.Expr<number> {
-	return CH.compileTypedFnCall<number>("toUInt8", T.uint8.schema, cond)
+	return CH.compileTypedFnCall("toUInt8", T.uint8.schema, cond)
 }
 
 // toUInt64(toUnixTimestamp64Milli(ts)) — `windowFunnel` accepts Date, DateTime
@@ -44,14 +49,14 @@ export function flag(cond: CH.Condition): CH.Expr<number> {
 // timestamp as epoch milliseconds and the window is `windowSeconds * 1000`.
 // Milliseconds rather than `toDateTime()` so two events in the same second
 // (page load → track()) keep their real order instead of tying.
-export function epochMs(ts: CH.Expr<string>): CH.Expr<number> {
+export function epochMs(ts: CH.Expr<DateTime.Utc>): CH.Expr<number> {
 	return CH.toUInt64(compileFnCall<number>("toUnixTimestamp64Milli", ts))
 }
 
 // argMinIf(value, orderBy, cond) — the `value` on the earliest row matching
 // `cond`. Returns one of its inputs unchanged, so it decodes as that input does.
 export function argMinIf<T>(value: CH.Expr<T>, orderBy: CH.Expr<unknown>, cond: CH.Condition): CH.Expr<T> {
-	return CH.compileTypedFnCall<T>("argMinIf", CH.schemaOf<T>(value), value, orderBy, cond)
+	return CH.compileTypedFnCall("argMinIf", CH.schemaOf<T>(value), value, orderBy, cond)
 }
 
 // Every UNION ALL branch below is built from a different table, and the shape
@@ -161,7 +166,7 @@ export type ProductEventNamesOutput = typeof productEventNamesRowSchema.Type
 
 // Validation
 
-/** A funnel definition the builder cannot compile. Thrown, since builders are synchronous. */
+/** A funnel definition the builder cannot compile; the builders return it as a `Result` failure. */
 export class ProductEventsFunnelError extends Schema.TaggedError<ProductEventsFunnelError>()(
 	"@maple/query-engine/ProductEventsFunnelError",
 	{
@@ -180,30 +185,36 @@ export class ProductEventsFunnelError extends Schema.TaggedError<ProductEventsFu
 export const FUNNEL_MAX_STEPS = 10
 export const FUNNEL_BREAKDOWN_MAX_GROUPS = 20
 
-function validate(opts: ProductEventsFunnelOpts): void {
+function validate(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | undefined {
 	if (opts.steps.length === 0) {
-		throw new ProductEventsFunnelError({ reason: "NoSteps", message: "a funnel needs at least one step" })
+		return new ProductEventsFunnelError({
+			reason: "NoSteps",
+			message: "a funnel needs at least one step",
+		})
 	}
 	if (opts.steps.length > FUNNEL_MAX_STEPS) {
-		throw new ProductEventsFunnelError({
+		return new ProductEventsFunnelError({
 			reason: "TooManySteps",
 			message: `a funnel has at most ${FUNNEL_MAX_STEPS} steps, got ${opts.steps.length}`,
 		})
 	}
-	opts.steps.forEach((step, index) => {
-		if (step.kind === "session" && index !== 0) {
-			throw new ProductEventsFunnelError({
-				reason: "SessionStepNotFirst",
-				message: `a session step is only valid as step 1, found one at step ${index + 1}`,
-			})
-		}
-	})
+	const misplacedSession = Arr.findFirstIndex(
+		opts.steps,
+		(step, index) => step.kind === "session" && index !== 0,
+	)
+	if (Option.isSome(misplacedSession)) {
+		return new ProductEventsFunnelError({
+			reason: "SessionStepNotFirst",
+			message: `a session step is only valid as step 1, found one at step ${misplacedSession.value + 1}`,
+		})
+	}
 	if (!Number.isFinite(opts.windowSeconds) || opts.windowSeconds <= 0) {
-		throw new ProductEventsFunnelError({
+		return new ProductEventsFunnelError({
 			reason: "InvalidWindow",
 			message: `windowSeconds must be a positive number, got ${String(opts.windowSeconds)}`,
 		})
 	}
+	return undefined
 }
 
 // Shared pieces
@@ -247,7 +258,7 @@ export function identityLinksByVisitor() {
 			UserId: $.UserId,
 			FirstSeen: CH.min_($.FirstSeen),
 		}))
-		.where(($) => [$.OrgId.eq(param.string("orgId"))])
+		.where(($) => [$.OrgId.eq(orgIdParam)])
 		.groupBy("VisitorId", "UserId")
 
 	return fromQuery(firstSeenPerPair, "pair_links")
@@ -302,7 +313,7 @@ export function eventStepCondition($: EventsAccessor, step: FunnelStep): CH.Cond
 	switch (step.kind) {
 		case "event": {
 			let cond = $.EventName.eq(step.eventName)
-			for (const [key, value] of Object.entries(step.attributeEquals ?? {})) {
+			for (const [key, value] of Rec.toEntries(step.attributeEquals ?? {})) {
 				cond = cond.and($.Attributes.get(key).eq(value))
 			}
 			return cond
@@ -353,7 +364,7 @@ function stepFlags(
 	steps: ReadonlyArray<FunnelStep>,
 	value: (step: FunnelStep, index: number) => CH.Expr<number>,
 ): Record<string, CH.Expr<number>> {
-	return Object.fromEntries(steps.map((step, index) => [stepColumn(index), value(step, index)]))
+	return Rec.fromEntries(Arr.map(steps, (step, index) => [stepColumn(index), value(step, index)]))
 }
 
 /**
@@ -389,7 +400,7 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 	// `host` is a session dimension too, but product_events carries it on every
 	// browser row, so it is read there rather than joined in.
 	const sessionDimension =
-		dim !== undefined && !dim.startsWith("attribute:") && dim !== "host"
+		dim !== undefined && !Str.startsWith("attribute:")(dim) && dim !== "host"
 			? (dim as FunnelSessionDimension)
 			: undefined
 
@@ -402,9 +413,9 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 					Value: CH.max_(sessionDimensionColumn($, sessionDimension)),
 				}))
 				.where(($) => [
-					$.OrgId.eq(param.string("orgId")),
-					$.StartTime.gte(param.dateTimeString("startTime")),
-					$.StartTime.lte(param.dateTimeString("endTime")),
+					$.OrgId.eq(orgIdParam),
+					$.StartTime.gte(param.dateTime("startTime")),
+					$.StartTime.lte(param.dateTime("endTime")),
 				])
 				.groupBy("SessionId")
 		: undefined
@@ -424,9 +435,11 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 
 	const dimExpr = ($: OpenJoinAccessor<typeof ProductEvents.columns>): CH.Expr<string> | undefined => {
 		if (dim === undefined) return undefined
-		if (dim.startsWith("attribute:")) return $.Attributes.get(dim.slice("attribute:".length))
+		if (Str.startsWith("attribute:")(dim)) return $.Attributes.get(Str.slice("attribute:".length)(dim))
 		if (dim === "host") return $.Host
-		return compileFnCall<string>("coalesce", $.sd.Value, CH.lit(""))
+		// The session-dimension join is attached only for a session breakdown.
+		const sd = $.sd
+		return sd === undefined ? undefined : compileFnCall<string>("coalesce", sd.Value, CH.lit(""))
 	}
 
 	return base
@@ -442,17 +455,15 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 		})
 		.where(($) => {
 			const key = personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined)
-			const stepConditions = opts.steps
-				.map((step) => eventStepCondition($, step))
-				.filter((cond): cond is CH.Condition => cond !== undefined)
-			const anyStep = stepConditions.reduce<CH.Condition | undefined>(
-				(acc, cond) => (acc ? acc.or(cond) : cond),
-				undefined,
+			const stepConditions = Arr.filter(
+				Arr.map(opts.steps, (step) => eventStepCondition($, step)),
+				(cond): cond is CH.Condition => cond !== undefined,
 			)
+			const anyStep = stepConditions.length === 0 ? undefined : CH.or(...stepConditions)
 			return [
-				$.OrgId.eq(param.string("orgId")),
-				$.Timestamp.gte(param.dateTimeString("startTime")),
-				$.Timestamp.lte(param.dateTimeString("endTime")),
+				$.OrgId.eq(orgIdParam),
+				$.Timestamp.gte(param.dateTime("startTime")),
+				$.Timestamp.lte(param.dateTime("endTime")),
 				anyStep,
 				key.neq(""),
 				hasPopulationFilter(filters)
@@ -473,7 +484,7 @@ function sessionEntryBranch(plan: FunnelPlan, step: Extract<FunnelStep, { kind: 
 	const keyBy = opts.keyBy
 	const dim = breakdownBy
 	const sessionDimension =
-		dim !== undefined && !dim.startsWith("attribute:") ? (dim as FunnelSessionDimension) : undefined
+		dim !== undefined && !Str.startsWith("attribute:")(dim) ? (dim as FunnelSessionDimension) : undefined
 
 	let base: OpenJoinQuery<typeof SessionReplays.columns> = from(SessionReplays, "s")
 	if (keyBy === "person") {
@@ -499,9 +510,9 @@ function sessionEntryBranch(plan: FunnelPlan, step: Extract<FunnelStep, { kind: 
 		.where(($) => {
 			const key = personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined)
 			return [
-				$.OrgId.eq(param.string("orgId")),
-				$.StartTime.gte(param.dateTimeString("startTime")),
-				$.StartTime.lte(param.dateTimeString("endTime")),
+				$.OrgId.eq(orgIdParam),
+				$.StartTime.gte(param.dateTime("startTime")),
+				$.StartTime.lte(param.dateTime("endTime")),
 				sessionDimensionColumn($, step.dimension).eq(step.value),
 				key.neq(""),
 				hasPopulationFilter(filters)
@@ -525,11 +536,11 @@ function sessionEntryBranch(plan: FunnelPlan, step: Extract<FunnelStep, { kind: 
  */
 function levelsQuery(plan: FunnelPlan) {
 	const { opts } = plan
-	const hasEventStep = opts.steps.some((step) => step.kind !== "session")
+	const hasEventStep = Arr.some(opts.steps, (step) => step.kind !== "session")
 	const source = plan.sessionStep
 		? hasEventStep
 			? fromUnion(
-					unionAll<FunnelEventRow>(sessionEntryBranch(plan, plan.sessionStep), eventsBranch(plan)),
+					unionAll(sessionEntryBranch(plan, plan.sessionStep), eventsBranch(plan)),
 					"funnel_events",
 				)
 			: fromQuery(sessionEntryBranch(plan, plan.sessionStep), "funnel_events")
@@ -538,7 +549,9 @@ function levelsQuery(plan: FunnelPlan) {
 	return source
 		.select(($) => {
 			const ts = $.ts as CH.Expr<number>
-			const conditions = opts.steps.map((_, index) => ($[stepColumn(index)] as CH.Expr<number>).eq(1))
+			const conditions = Arr.map(opts.steps, (_, index) =>
+				($[stepColumn(index)] as CH.Expr<number>).eq(1),
+			)
 			const row = {
 				key: $.key as CH.Expr<string>,
 				level: CH.windowFunnel(opts.windowSeconds * 1000)(ts, ...conditions),
@@ -574,8 +587,9 @@ function stepIndex(stepCount: number): CH.Expr<number> {
  */
 export function productEventsFunnelQuery(
 	opts: ProductEventsFunnelOpts,
-): CHQuery<any, ProductEventsFunnelOutput, any> {
-	validate(opts)
+): Result.Result<CHQuery<ColumnDefs, ProductEventsFunnelOutput>, ProductEventsFunnelError> {
+	const invalid = validate(opts)
+	if (invalid !== undefined) return Result.fail(invalid)
 	const filters = opts.filters ?? {}
 	const first = opts.steps[0]
 	const plan: FunnelPlan = {
@@ -587,13 +601,15 @@ export function productEventsFunnelQuery(
 
 	const totals = fromQuery(levelsQuery(plan), "levels").select(() => ({ counts: stepCounts(n) }))
 
-	return fromQuery(totals, "totals")
-		.select(($) => ({
-			step: stepIndex(n),
-			count: CH.arrayElement($.counts, CH.dynamicColumn<number>("step")),
-		}))
-		.orderBy(["step", "asc"])
-		.format("JSON")
+	return Result.succeed(
+		fromQuery(totals, "totals")
+			.select(($) => ({
+				step: stepIndex(n),
+				count: CH.arrayElement($.counts, CH.dynamicColumn<number>("step")),
+			}))
+			.orderBy(["step", "asc"])
+			.format("JSON"),
+	)
 }
 
 /**
@@ -612,14 +628,17 @@ export function productEventsFunnelQuery(
  */
 export function productEventsFunnelBreakdownQuery(
 	opts: ProductEventsFunnelBreakdownOpts,
-): CHQuery<any, ProductEventsFunnelBreakdownOutput, any> {
-	validate(opts)
+): Result.Result<CHQuery<ColumnDefs, ProductEventsFunnelBreakdownOutput>, ProductEventsFunnelError> {
+	const invalid = validate(opts)
+	if (invalid !== undefined) return Result.fail(invalid)
 	const limit = opts.limit ?? 10
 	if (!Number.isInteger(limit) || limit < 1 || limit > FUNNEL_BREAKDOWN_MAX_GROUPS) {
-		throw new ProductEventsFunnelError({
-			reason: "InvalidLimit",
-			message: `breakdown limit must be an integer in 1..${FUNNEL_BREAKDOWN_MAX_GROUPS}, got ${String(limit)}`,
-		})
+		return Result.fail(
+			new ProductEventsFunnelError({
+				reason: "InvalidLimit",
+				message: `breakdown limit must be an integer in 1..${FUNNEL_BREAKDOWN_MAX_GROUPS}, got ${String(limit)}`,
+			}),
+		)
 	}
 	const filters = opts.filters ?? {}
 	const first = opts.steps[0]
@@ -636,7 +655,7 @@ export function productEventsFunnelBreakdownQuery(
 			// Not `$.group`: the inner SELECT's shape is a union — the breakdown
 			// branch has this column and the plain branch does not — so it is not
 			// on the accessor's type even though this code path always emits it.
-			group: CH.dynamicColumn<string>("group", T.string),
+			group: CH.dynamicColumn("group", T.string),
 			counts: stepCounts(n),
 			entered: CH.countIf(CH.dynamicColumn<number>("level").gte(1)),
 		}))
@@ -644,14 +663,16 @@ export function productEventsFunnelBreakdownQuery(
 		.orderBy(["entered", "desc"], ["group", "asc"])
 		.limit(limit)
 
-	return fromQuery(perGroup, "groups")
-		.select(($) => ({
-			group: $.group,
-			step: stepIndex(n),
-			count: CH.arrayElement($.counts, CH.dynamicColumn<number>("step")),
-		}))
-		.orderBy(["group", "asc"], ["step", "asc"])
-		.format("JSON")
+	return Result.succeed(
+		fromQuery(perGroup, "groups")
+			.select(($) => ({
+				group: $.group,
+				step: stepIndex(n),
+				count: CH.arrayElement($.counts, CH.dynamicColumn<number>("step")),
+			}))
+			.orderBy(["group", "asc"], ["step", "asc"])
+			.format("JSON"),
+	)
 }
 
 /**
@@ -665,7 +686,7 @@ export function productEventsFunnelBreakdownQuery(
  */
 export function productEventNamesQuery(
 	opts: ProductEventNamesOpts = {},
-): CHQuery<any, ProductEventNamesOutput, any> {
+): CHQuery<ColumnDefs, ProductEventNamesOutput> {
 	const filters: ProductEventsFilters = { ...opts.filters, useProductEvents: true }
 	const limit = opts.limit ?? 100
 	return from(ProductEvents)
@@ -677,9 +698,9 @@ export function productEventNamesQuery(
 			persons: CH.uniq(CH.if_($.UserId.neq(""), $.UserId, $.VisitorId)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			CH.when(filters.host, (v: string) => $.Host.eq(v)),
 			needsSessionSemiJoin(filters) || filters.pagePath !== undefined
 				? inSubquery(
@@ -706,7 +727,7 @@ export function productEventNamesQuery(
 // already derives, so a declared copy would only drift.
 
 export interface ProductEventForTraceOutput {
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 	readonly eventName: string
 	readonly spanId: string
 	readonly serviceName: string
@@ -729,7 +750,7 @@ export interface ProductEventsForTraceOpts {
  */
 export function productEventsForTraceQuery(
 	opts: ProductEventsForTraceOpts = {},
-): CHQuery<any, ProductEventForTraceOutput, any> {
+): CHQuery<ColumnDefs, ProductEventForTraceOutput> {
 	return from(ProductEvents)
 		.select(($) => ({
 			timestamp: $.Timestamp,
@@ -743,9 +764,9 @@ export function productEventsForTraceQuery(
 			attributes: $.Attributes,
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			$.TraceId.eq(param.string("traceId")),
 		])
 		.orderBy(["timestamp", "asc"], ["spanId", "asc"])
@@ -756,7 +777,7 @@ export function productEventsForTraceQuery(
 export interface ProductEventTraceSampleOutput {
 	readonly traceId: string
 	readonly spanId: string
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 	readonly serviceName: string
 	readonly userId: string
 	readonly visitorId: string
@@ -773,7 +794,7 @@ export interface ProductEventTraceSamplesOpts {
  */
 export function productEventTraceSamplesQuery(
 	opts: ProductEventTraceSamplesOpts = {},
-): CHQuery<any, ProductEventTraceSampleOutput, any> {
+): CHQuery<ColumnDefs, ProductEventTraceSampleOutput> {
 	return from(ProductEvents)
 		.select(($) => ({
 			traceId: $.TraceId,
@@ -784,9 +805,9 @@ export function productEventTraceSamplesQuery(
 			visitorId: $.VisitorId,
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			$.EventName.eq(param.string("eventName")),
 			$.TraceId.neq(""),
 		])
@@ -825,9 +846,9 @@ function personEventsBranch(plan: FunnelPlan) {
 		.where(($) => {
 			const key = personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined)
 			return [
-				$.OrgId.eq(param.string("orgId")),
-				$.Timestamp.gte(param.dateTimeString("startTime")),
-				$.Timestamp.lte(param.dateTimeString("endTime")),
+				$.OrgId.eq(orgIdParam),
+				$.Timestamp.gte(param.dateTime("startTime")),
+				$.Timestamp.lte(param.dateTime("endTime")),
 				key.neq(""),
 				hasPopulationFilter(filters)
 					? inSubquery(key, matchingPersonsSubquery(keyBy, filters))
@@ -860,20 +881,25 @@ function chainQuery(plan: FunnelPlan) {
 	const perPerson = fromQuery(eventsBranch(plan), "funnel_events")
 		.select(($) => {
 			const ts = $.ts as CH.Expr<number>
-			const conditions = opts.steps.map((_, index) => ($[stepColumn(index)] as CH.Expr<number>).eq(1))
-			const tuple = ["ts", "seq", ...opts.steps.map((_, index) => stepColumn(index))].join(", ")
+			const conditions = Arr.map(opts.steps, (_, index) =>
+				($[stepColumn(index)] as CH.Expr<number>).eq(1),
+			)
+			const tuple = Arr.join(
+				["ts", "seq", ...Arr.map(opts.steps, (_, index) => stepColumn(index))],
+				", ",
+			)
 			return {
 				key: $.key as CH.Expr<string>,
 				level: CH.windowFunnel(windowMs)(ts, ...conditions),
 				// `Seq` breaks ties inside a millisecond, as the table's sorting key does.
-				evs: CH.untypedExpr<unknown>(`arraySort(x -> (x.1, x.2), groupArray(tuple(${tuple})))`),
+				evs: CH.untypedExpr(`arraySort(x -> (x.1, x.2), groupArray(tuple(${tuple})))`),
 			}
 		})
 		.groupBy("key")
 
 	return fromQuery(perPerson, "chain_events").select(($) => {
-		const times = Object.fromEntries(
-			opts.steps.map((_, index) => {
+		const times = Rec.fromEntries(
+			Arr.map(opts.steps, (_, index) => {
 				// Tuple element index: 1 is `ts`, 2 is `seq`, k + 3 is the flag of step k (0-based).
 				const flagIndex = index + 3
 				// A step only counts once the previous one was found: with `t_{k-1}`
@@ -889,18 +915,20 @@ function chainQuery(plan: FunnelPlan) {
 				]
 			}),
 		)
-		return { key: $.key as CH.Expr<string>, level: $.level as CH.Expr<number>, ...times }
+		return { key: $.key, level: $.level, ...times }
 	})
 }
 
-function validateDetails(opts: ProductEventsFunnelOpts): void {
-	validate(opts)
+function validateDetails(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | undefined {
+	const invalid = validate(opts)
+	if (invalid !== undefined) return invalid
 	if (opts.steps.length < 2) {
-		throw new ProductEventsFunnelError({
+		return new ProductEventsFunnelError({
 			reason: "TooFewSteps",
 			message: `drop-off details need at least two steps, got ${opts.steps.length}`,
 		})
 	}
+	return undefined
 }
 
 export const productEventsFunnelTimingRowSchema = Schema.Struct({
@@ -918,34 +946,40 @@ export type ProductEventsFunnelTimingOutput = typeof productEventsFunnelTimingRo
  */
 export function productEventsFunnelTimingQuery(
 	opts: ProductEventsFunnelOpts,
-): CHQuery<any, ProductEventsFunnelTimingOutput, any> {
-	validateDetails(opts)
+): Result.Result<CHQuery<ColumnDefs, ProductEventsFunnelTimingOutput>, ProductEventsFunnelError> {
+	const invalid = validateDetails(opts)
+	if (invalid !== undefined) return Result.fail(invalid)
 	const filters = opts.filters ?? {}
 	const first = opts.steps[0]
 	const plan: FunnelPlan = { opts, filters, sessionStep: first?.kind === "session" ? first : undefined }
 	const n = opts.steps.length
 
 	const quantileArray = (q: number): string =>
-		`[0, ${Array.from({ length: n - 1 }, (_, i) => {
-			const step = i + 2
-			const to = stepTimeColumn(step - 1)
-			const fromCol = stepTimeColumn(step - 2)
-			return `ifNotFinite(quantileIf(${q})(toFloat64(${to} - ${fromCol}), level >= ${step} AND ${to} > 0), 0)`
-		}).join(", ")}]`
+		`[0, ${Arr.join(
+			Array.from({ length: n - 1 }, (_, i) => {
+				const step = i + 2
+				const to = stepTimeColumn(step - 1)
+				const fromCol = stepTimeColumn(step - 2)
+				return `ifNotFinite(quantileIf(${q})(toFloat64(${to} - ${fromCol}), level >= ${step} AND ${to} > 0), 0)`
+			}),
+			", ",
+		)}]`
 
 	const totals = fromQuery(chainQuery(plan), "chain").select(() => ({
 		p50s: CH.rawExpr<ReadonlyArray<number>>(quantileArray(0.5), T.array(T.float64)),
 		p90s: CH.rawExpr<ReadonlyArray<number>>(quantileArray(0.9), T.array(T.float64)),
 	}))
 
-	return fromQuery(totals, "totals")
-		.select(($) => ({
-			step: CH.arrayJoin(CH.arrayOf(...Array.from({ length: n - 1 }, (_, i) => CH.lit(i + 2)))),
-			p50Ms: CH.arrayElement($.p50s, CH.dynamicColumn<number>("step")),
-			p90Ms: CH.arrayElement($.p90s, CH.dynamicColumn<number>("step")),
-		}))
-		.orderBy(["step", "asc"])
-		.format("JSON")
+	return Result.succeed(
+		fromQuery(totals, "totals")
+			.select(($) => ({
+				step: CH.arrayJoin(CH.arrayOf(...Array.from({ length: n - 1 }, (_, i) => CH.lit(i + 2)))),
+				p50Ms: CH.arrayElement($.p50s, CH.dynamicColumn<number>("step")),
+				p90Ms: CH.arrayElement($.p90s, CH.dynamicColumn<number>("step")),
+			}))
+			.orderBy(["step", "asc"])
+			.format("JSON"),
+	)
 }
 
 export const productEventsFunnelLeaversRowSchema = Schema.Struct({
@@ -970,13 +1004,17 @@ export const FUNNEL_LEAVERS_PER_STEP = 6
  */
 export function productEventsFunnelLeaversQuery(
 	opts: ProductEventsFunnelOpts,
-): CHQuery<any, ProductEventsFunnelLeaversOutput, any> {
-	validateDetails(opts)
+): Result.Result<CHQuery<ColumnDefs, ProductEventsFunnelLeaversOutput>, ProductEventsFunnelError> {
+	const invalid = validateDetails(opts)
+	if (invalid !== undefined) return Result.fail(invalid)
 	const filters = opts.filters ?? {}
 	const first = opts.steps[0]
 	const plan: FunnelPlan = { opts, filters, sessionStep: first?.kind === "session" ? first : undefined }
 	const n = opts.steps.length
-	const timeColumns = opts.steps.map((_, index) => stepTimeColumn(index)).join(", ")
+	const timeColumns = Arr.join(
+		Arr.map(opts.steps, (_, index) => stepTimeColumn(index)),
+		", ",
+	)
 
 	const dropped = fromQuery(chainQuery(plan), "chain")
 		.select(($) => ({
@@ -1014,7 +1052,7 @@ export function productEventsFunnelLeaversQuery(
 	const ranked = fromQuery(counted, "counted")
 		.select(($) => ({
 			step: $.step,
-			head: CH.untypedExpr<unknown>(
+			head: CH.untypedExpr(
 				`arraySlice(arrayReverseSort(x -> x.2, groupArray(tuple(next, count))), 1, ${FUNNEL_LEAVERS_PER_STEP})`,
 			),
 		}))
@@ -1022,15 +1060,17 @@ export function productEventsFunnelLeaversQuery(
 
 	const hops = fromQuery(ranked, "ranked").select(($) => ({
 		step: $.step,
-		hop: CH.untypedExpr<unknown>("arrayJoin(head)"),
+		hop: CH.untypedExpr("arrayJoin(head)"),
 	}))
 
-	return fromQuery(hops, "hops")
-		.select(($) => ({
-			step: $.step,
-			next: CH.rawExpr<string>("tupleElement(hop, 1)", T.string),
-			count: CH.rawExpr<number>("tupleElement(hop, 2)", T.uint64),
-		}))
-		.orderBy(["step", "asc"], ["count", "desc"], ["next", "asc"])
-		.format("JSON")
+	return Result.succeed(
+		fromQuery(hops, "hops")
+			.select(($) => ({
+				step: $.step,
+				next: CH.rawExpr<string>("tupleElement(hop, 1)", T.string),
+				count: CH.rawExpr<number>("tupleElement(hop, 2)", T.uint64),
+			}))
+			.orderBy(["step", "asc"], ["count", "desc"], ["next", "asc"])
+			.format("JSON"),
+	)
 }

@@ -1,4 +1,5 @@
-import { digestSubscriptions } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { DigestSubscriptions } from "@maple/db/tables"
 import {
 	DigestNotConfiguredError,
 	DigestPersistenceError,
@@ -11,8 +12,7 @@ import {
 import type { RoleName as RoleNameType } from "@maple/domain/http"
 import { AI_CRAWLERS, AI_PRODUCTS, aiProductById } from "@maple/domain/ai-traffic"
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
-import { and, eq, inArray, isNull, lt, or } from "drizzle-orm"
-import { Array as Arr, Cause, Clock, Context, Effect, Layer } from "effect"
+import { Array as Arr, Cause, Clock, Context, DateTime, Effect, Layer, Redacted, String as Str } from "effect"
 import {
 	aiProductIcon,
 	computeDelta,
@@ -29,6 +29,7 @@ import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import type { CompiledQueryInput } from "@maple/query-engine/ch"
 import { EdgeCacheService } from "@maple/cache"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -42,7 +43,9 @@ import {
 	isOrgWarehouseQuarantined,
 	quarantineOnConfigClassCause,
 } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
+import { digestResendCutoffMs, isDigestDue, lastDigestActivity } from "./digest-schedule"
 import { resolveOrgName } from "./resolve-org-name"
+import { unsubscribeLinks } from "./unsubscribe-token"
 
 const DAY_MS = 24 * 60 * 60 * 1000
 /** The email is a glance: three rows per list, the app has the rest. */
@@ -60,15 +63,17 @@ const toPersistenceError = (error: unknown) =>
 		message: error instanceof Error ? error.message : `Web analytics digest error: ${String(error)}`,
 	})
 
-const crawlerProduct = new Map(AI_CRAWLERS.map((crawler) => [crawler.name, crawler.product]))
+const crawlerProduct = new Map(Arr.map(AI_CRAWLERS, (crawler) => [crawler.name, crawler.product]))
 const referrerProduct = new Map(
-	AI_PRODUCTS.flatMap((product) => product.referrerHosts.map((host) => [host, product.id] as const)),
+	Arr.flatMap(AI_PRODUCTS, (product) =>
+		Arr.map(product.referrerHosts, (host) => [host, product.id] as const),
+	),
 )
 
 /** Direct traffic, an AI assistant's mark, the site's favicon, or a generic link. */
 function sourceIcon(referrerHost: string): string {
 	if (referrerHost === WEB_ANALYTICS_UNSET) return emailIcon("direct")
-	const host = referrerHost.toLowerCase().replace(/^www\./, "")
+	const host = Str.replace(/^www\./, "")(Str.toLowerCase(referrerHost))
 	const product = referrerProduct.get(host)
 	if (product !== undefined) return aiProductIcon(product)
 	return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host) ? faviconIcon(host) : emailIcon("source")
@@ -85,24 +90,30 @@ function withShares(
 	rows: ReadonlyArray<{ icon: string | null; label: string; value: number; delta?: Delta }>,
 	total: number,
 ): Array<WebAnalyticsRankRow> {
-	return rows.map((row) => ({ ...row, share: total > 0 ? row.value / total : 0 }))
+	return Arr.map(rows, (row) => ({ ...row, share: total > 0 ? row.value / total : 0 }))
 }
 
 /** `/pricing`, or `docs.acme.com/pricing` once more than one host is in the list. */
 function pageLabels<T extends { host: string; path: string }>(rows: ReadonlyArray<T>) {
-	const multiHost = new Set(rows.map((row) => row.host)).size > 1
+	const multiHost = new Set(Arr.map(rows, (row) => row.host)).size > 1
 	return (row: T) => (multiHost ? `${row.host}${row.path}` : row.path)
 }
 
 export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDigestService>()(
-	"@maple/api/services/WebAnalyticsDigestService",
+	"@maple/backend/services/WebAnalyticsDigestService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
+			const dbExecute = makeDbExecute(database, "WebAnalyticsDigestService", toPersistenceError)
 			const email = yield* EmailService
 			const env = yield* Env
 			const warehouse = yield* WarehouseQueryService
 			const edgeCache = yield* EdgeCacheService
+			const linkConfig = {
+				secret: Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+				appBaseUrl: env.MAPLE_APP_BASE_URL,
+				apiBaseUrl: env.MAPLE_API_BASE_URL,
+			}
 
 			const generateData = Effect.fn("WebAnalyticsDigestService.generateData")(function* (
 				orgId: OrgId,
@@ -144,11 +155,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				// `session_events` on a cluster that has not applied it (same rule as
 				// the query-engine routes).
 				const withRollup = <A, E, R>(read: (useProductEvents: boolean) => Effect.Effect<A, E, R>) =>
-					read(true).pipe(
-						Effect.catch((error) =>
-							isMissingProductEvents(error) ? read(false) : Effect.fail(error),
-						),
-					)
+					read(true).pipe(Effect.catchIf(isMissingProductEvents, () => read(false)))
 
 				const [
 					curSummary,
@@ -245,45 +252,40 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					// Only a missing table drops the card. Any other failure fails the
 					// org, like the rest of the queries, rather than sending a week with
 					// crawler figures silently missing.
-					Effect.catch((error) =>
-						isMissingAiCrawlerRequests(error)
-							? Effect.logInfo(
-									"ai_crawler_requests absent; sending without crawler stats",
-								).pipe(Effect.annotateLogs({ orgId }), Effect.as(null))
-							: Effect.fail(error),
+					Effect.catchIf(isMissingAiCrawlerRequests, () =>
+						Effect.logInfo("ai_crawler_requests absent; sending without crawler stats").pipe(
+							Effect.annotateLogs({ orgId }),
+							Effect.as(null),
+						),
 					),
 				)
 
 				// Summary
 				const summaryOf = (rows: ReadonlyArray<CH.WebAnalyticsSummaryOutput>) => {
 					const row = rows[0]
-					const identified = Number(row?.identifiedSessions) || 0
+					const identified = row?.identifiedSessions ?? 0
 					return {
-						visitors: Number(row?.visitors) || 0,
-						sessions: Number(row?.sessions) || 0,
+						visitors: row?.visitors ?? 0,
+						sessions: row?.sessions ?? 0,
 						identified,
 						// Bounce is only measurable over sessions that report page views.
-						bounceRate:
-							identified > 0 ? ((Number(row?.bouncedSessions) || 0) / identified) * 100 : null,
-						avgDurationMs: Number(row?.avgDurationMs) || 0,
+						bounceRate: identified > 0 ? ((row?.bouncedSessions ?? 0) / identified) * 100 : null,
+						avgDurationMs: row?.avgDurationMs ?? 0,
 					}
 				}
 				const cur = summaryOf(curSummary)
 				const prev = summaryOf(prevSummary)
 
-				let curPageViews = 0
-				let prevPageViews = 0
-				for (const row of pageviewSeries) {
-					const views = Number(row.pageViews) || 0
-					if (String(row.bucket).slice(0, 10) >= currentStartDate) curPageViews += views
-					else prevPageViews += views
-				}
+				const inCurrentWeek = (row: (typeof pageviewSeries)[number]) =>
+					DateTime.formatIso(row.bucket).slice(0, 10) >= currentStartDate
+				const sumViews = (rows: ReadonlyArray<(typeof pageviewSeries)[number]>) =>
+					rows.reduce((sum, row) => sum + row.pageViews, 0)
+				const curPageViews = sumViews(pageviewSeries.filter(inCurrentWeek))
+				const prevPageViews = sumViews(pageviewSeries.filter((row) => !inCurrentWeek(row)))
 
 				// Pages
 				const prevViewsByPage = new Map(
-					prevPages.map(
-						(row) => [`${row.host}${row.pagePath}`, Number(row.pageViews) || 0] as const,
-					),
+					prevPages.map((row) => [`${row.host}${row.pagePath}`, row.pageViews] as const),
 				)
 				// Last week's list is capped, so a page missing from a FULL list may
 				// just have ranked lower: its baseline is unknown, not zero.
@@ -296,7 +298,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				const pageLabel = pageLabels(curPages.map((row) => ({ host: row.host, path: row.pagePath })))
 				const topPages = withShares(
 					curPages.map((row) => {
-						const views = Number(row.pageViews) || 0
+						const views = row.pageViews
 						return {
 							icon: null,
 							label: pageLabel({ host: row.host, path: row.pagePath }),
@@ -313,9 +315,9 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					breakdowns
 						.filter((row) => row.facetType === "referrerHost")
 						.map((row) => ({
-							icon: sourceIcon(String(row.name)),
-							label: row.name === WEB_ANALYTICS_UNSET ? "Direct" : String(row.name),
-							value: Number(row.count) || 0,
+							icon: sourceIcon(row.name),
+							label: row.name === WEB_ANALYTICS_UNSET ? "Direct" : row.name,
+							value: row.count,
 						}))
 						.sort((a, b) => b.value - a.value)
 						.slice(0, TOP_ROWS),
@@ -326,8 +328,9 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				const referralsBy = (inCurrent: boolean) => {
 					const totals = new Map<string, number>()
 					for (const row of aiReferrals) {
-						if (String(row.bucket).slice(0, 10) >= currentStartDate !== inCurrent) continue
-						totals.set(row.product, (totals.get(row.product) ?? 0) + (Number(row.sessions) || 0))
+						if (DateTime.formatIso(row.bucket).slice(0, 10) >= currentStartDate !== inCurrent)
+							continue
+						totals.set(row.product, (totals.get(row.product) ?? 0) + row.sessions)
 					}
 					return totals
 				}
@@ -350,18 +353,15 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 
 				let crawlerStats: WebAnalyticsDigestProps["ai"]["crawlers"] = null
 				if (crawlers !== null) {
-					const requests = sum(crawlers.cur.map((row) => Number(row.requests) || 0))
+					const requests = sum(crawlers.cur.map((row) => row.requests))
 					crawlerStats = {
 						requests,
-						delta: computeDelta(
-							requests,
-							sum(crawlers.prev.map((row) => Number(row.requests) || 0)),
-						),
+						delta: computeDelta(requests, sum(crawlers.prev.map((row) => row.requests))),
 						byCrawler: withShares(
 							crawlers.cur.slice(0, TOP_ROWS).map((row) => ({
 								icon: aiProductIcon(crawlerProduct.get(row.crawler) ?? ""),
 								label: row.crawler,
-								value: Number(row.requests) || 0,
+								value: row.requests,
 							})),
 							requests,
 						),
@@ -410,7 +410,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					baseUrl: env.MAPLE_APP_BASE_URL,
 					analyticsUrl,
 					aiUrl: `${analyticsUrl}&tab=ai`,
-					unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/settings/notifications`,
+					unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/account?tab=email-preferences`,
 				}
 
 				yield* Effect.annotateCurrentSpan({
@@ -446,31 +446,29 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 
 			/**
 			 * Runs on the ops digest's 15-minute tick, after it, so the Clerk member
-			 * sweep has already seeded any new subscriber rows. Same weekday and
-			 * once-a-day claim as the ops digest, on this email's own columns.
+			 * sweep has already seeded any new subscriber rows. Same schedule and
+			 * once-a-window claim as the ops digest, on this email's own columns.
 			 */
 			const runTick = Effect.fn("WebAnalyticsDigestService.runTick")(function* () {
 				if (!email.isConfigured) return { sentCount: 0, errorCount: 0, skipped: true }
 
 				const now = yield* Clock.currentTimeMillis
-				const sevenDaysAgo = now - 7 * DAY_MS
-				const todayStartMs = now - (now % DAY_MS)
-				const currentDayOfWeek = new Date(now).getUTCDay()
+				const resendCutoffMs = digestResendCutoffMs(now)
 
-				const subs = yield* database
-					.execute((db) =>
-						db
+				const subs = yield* dbExecute((db) =>
+					db.run(
+						PG.from(DigestSubscriptions)
 							.select()
-							.from(digestSubscriptions)
-							.where(eq(digestSubscriptions.webAnalyticsEnabled, true)),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+							.where(($) => [$.webAnalyticsEnabled.eq(true)]),
+					),
+				)
 
-				const due = subs.filter(
-					(s) =>
-						s.dayOfWeek === currentDayOfWeek &&
-						(s.webAnalyticsLastSentAt == null ||
-							s.webAnalyticsLastSentAt.getTime() < sevenDaysAgo),
+				const due = subs.filter((s) =>
+					isDigestDue(
+						s,
+						lastDigestActivity(s.webAnalyticsLastSentAt, s.webAnalyticsLastAttemptedAt),
+						now,
+					),
 				)
 				if (due.length === 0) return { sentCount: 0, errorCount: 0, skipped: false }
 
@@ -483,29 +481,23 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 							const orgId = OrgId.make(rawOrgId)
 							if (yield* isOrgWarehouseQuarantined(edgeCache, rawOrgId)) return []
 
-							const claim = yield* database
-								.execute((db) =>
-									db
-										.update(digestSubscriptions)
-										.set({ webAnalyticsLastAttemptedAt: new Date(now) })
-										.where(
-											and(
-												inArray(
-													digestSubscriptions.id,
-													orgSubs.map((s) => s.id),
-												),
-												or(
-													isNull(digestSubscriptions.webAnalyticsLastAttemptedAt),
-													lt(
-														digestSubscriptions.webAnalyticsLastAttemptedAt,
-														new Date(todayStartMs),
-													),
-												),
+							const claim = yield* dbExecute((db) =>
+								db.run(
+									PG.update(DigestSubscriptions)
+										.set({ webAnalyticsLastAttemptedAt: now })
+										.where(($) => [
+											PG.inList(
+												$.id,
+												orgSubs.map((s) => s.id),
 											),
-										)
-										.returning({ id: digestSubscriptions.id }),
-								)
-								.pipe(Effect.mapError(toPersistenceError))
+											PG.or(
+												$.webAnalyticsLastAttemptedAt.isNull(),
+												$.webAnalyticsLastAttemptedAt.lte(resendCutoffMs),
+											),
+										])
+										.returning("id"),
+								),
+							)
 							const claimed = new Set(claim.map((c) => c.id))
 							const claimedSubs = orgSubs.filter((s) => claimed.has(s.id))
 							if (claimedSubs.length === 0) return []
@@ -514,21 +506,30 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 							// Only orgs whose browser SDK reported visits hear from us.
 							if (!hasWebAnalyticsContent(props)) return []
 
-							const html = yield* render(props)
 							const { subject } = deriveWebAnalyticsHeadline(props)
 
 							return yield* Effect.forEach(
 								claimedSubs,
 								(sub) =>
-									email.send(sub.email, subject, html).pipe(
+									Effect.gen(function* () {
+										const links = unsubscribeLinks(linkConfig, "web-analytics", sub.id)
+										const html = yield* render({
+											...props,
+											unsubscribeUrl: links.pageUrl,
+										})
+										yield* email.send(sub.email, subject, html, {
+											headers: links.headers,
+										})
+									}).pipe(
 										Effect.tap(() =>
 											Clock.currentTimeMillis.pipe(
 												Effect.flatMap((sentAt) =>
 													database.execute((db) =>
-														db
-															.update(digestSubscriptions)
-															.set({ webAnalyticsLastSentAt: new Date(sentAt) })
-															.where(eq(digestSubscriptions.id, sub.id)),
+														db.run(
+															PG.update(DigestSubscriptions)
+																.set({ webAnalyticsLastSentAt: sentAt })
+																.where(($) => [$.id.eq(sub.id)]),
+														),
 													),
 												),
 												// Already sent; the attempt claim still blocks a same-day resend.
@@ -584,7 +585,10 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				const all = results.flat()
 				const sentCount = all.filter((r) => r.sent).length
 				const errorCount = all.length - sentCount
-				yield* Effect.annotateCurrentSpan({ sentCount, errorCount })
+				yield* Effect.annotateCurrentSpan({
+					"maple.web_analytics_digest.sent_count": sentCount,
+					"maple.web_analytics_digest.error_count": errorCount,
+				})
 				return { sentCount, errorCount, skipped: false }
 			})
 

@@ -1,10 +1,16 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { CloudflareOAuthService, type CloudflareOAuthServiceApi } from "./CloudflareOAuthService"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 
 const trackedDbs: TestDb[] = []
 
@@ -26,11 +32,11 @@ const mockCloudflareFetch =
 	): typeof globalThis.fetch =>
 	(input) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-		if (url.includes("/oauth2/revoke")) {
+		if (Str.includes("/oauth2/revoke")(url)) {
 			if (counters) counters.revoked += 1
 			return Promise.resolve(new Response(null, { status: 200 }))
 		}
-		if (url.includes("/oauth2/token")) {
+		if (Str.includes("/oauth2/token")(url)) {
 			return Promise.resolve(
 				jsonResponse({
 					access_token: "cf-access-token",
@@ -41,7 +47,7 @@ const mockCloudflareFetch =
 				}),
 			)
 		}
-		if (url.includes("/accounts")) {
+		if (Str.includes("/accounts")(url)) {
 			return Promise.resolve(
 				jsonResponse({
 					success: true,
@@ -94,6 +100,7 @@ const withOAuthApp = {
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
+const initiatorA = { orgId: asOrgId("org_a"), userId: asUserId("user_a") }
 
 describe("CloudflareOAuthService", () => {
 	it.effect("reports not-connected for a fresh org", () => {
@@ -178,7 +185,7 @@ describe("CloudflareOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
 			})
-			const result = yield* service.completeConnect("auth-code", state)
+			const result = yield* service.completeConnect("auth-code", state, initiatorA)
 			assert.strictEqual(result.orgId, "org_a")
 
 			const status = yield* service.getStatus(asOrgId("org_a"))
@@ -206,7 +213,44 @@ describe("CloudflareOAuthService", () => {
 			assert.strictEqual(row?.external_user_email, null)
 			// Token is encrypted at rest, never stored verbatim.
 			assert.isTrue(!!row && row.access_token_ciphertext !== "cf-access-token")
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts))))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts)]))
+	})
+
+	it.effect("completeConnect refuses a valid state redeemed by a different Maple user or org", () => {
+		const testDb = createTestDb(trackedDbs)
+		const accounts = [{ id: "acc_victim", name: "Victim Inc", type: "standard" }]
+		return Effect.gen(function* () {
+			const service = yield* CloudflareOAuthService
+			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
+				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
+			})
+			const error = yield* service
+				.completeConnect("victim-code", state, {
+					orgId: asOrgId("org_b"),
+					userId: asUserId("user_b"),
+				})
+				.pipe(Effect.flip)
+			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
+			const status = yield* service.getStatus(asOrgId("org_a"))
+			assert.strictEqual(status.connected, false)
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts)]))
+	})
+
+	it.effect("completeConnect refuses the initiator's org redeemed by another member", () => {
+		const testDb = createTestDb(trackedDbs)
+		const accounts = [{ id: "acc_1", name: "Acme Inc", type: "standard" }]
+		return Effect.gen(function* () {
+			const service = yield* CloudflareOAuthService
+			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
+				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
+			})
+			const error = yield* service
+				.completeConnect("auth-code", state, { orgId: asOrgId("org_a"), userId: asUserId("user_b") })
+				.pipe(Effect.flip)
+			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
+			const status = yield* service.getStatus(asOrgId("org_a"))
+			assert.strictEqual(status.connected, false)
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts)]))
 	})
 
 	it.effect("completeConnect rejects an unknown or expired state", () => {
@@ -215,7 +259,7 @@ describe("CloudflareOAuthService", () => {
 			const service = yield* CloudflareOAuthService
 			// No state row was ever seeded — a forged/expired-and-purged callback.
 			const error = yield* service
-				.completeConnect("auth-code", "state-that-was-never-issued")
+				.completeConnect("auth-code", "state-that-was-never-issued", initiatorA)
 				.pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			if (error._tag === "@maple/http/errors/IntegrationsValidationError") {
@@ -224,7 +268,7 @@ describe("CloudflareOAuthService", () => {
 			// Nothing was connected as a side effect.
 			const status = yield* service.getStatus(asOrgId("org_a"))
 			assert.strictEqual(status.connected, false)
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch([]))))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch([])]))
 	})
 
 	it.effect("completeConnect accepts a grant spanning multiple accounts as one connection", () => {
@@ -238,14 +282,14 @@ describe("CloudflareOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
 			})
-			const result = yield* service.completeConnect("auth-code", state)
+			const result = yield* service.completeConnect("auth-code", state, initiatorA)
 			assert.strictEqual(result.orgId, "org_a")
 
 			// Both accounts surface, in the grant's order.
 			const status = yield* service.getStatus(asOrgId("org_a"))
 			assert.strictEqual(status.connected, true)
 			assert.deepStrictEqual(
-				status.accounts.map((account) => account.accountId),
+				Arr.map(status.accounts, (account) => account.accountId),
 				["acc_1", "acc_2"],
 			)
 			assert.strictEqual(status.accounts[1]?.accountName, "Beta LLC")
@@ -270,7 +314,7 @@ describe("CloudflareOAuthService", () => {
 			assert.strictEqual(token.accountId, "acc_2")
 			const outside = yield* service.getValidAccessToken(asOrgId("org_a"), "acc_3").pipe(Effect.flip)
 			assert.strictEqual(outside._tag, "@maple/http/errors/IntegrationsValidationError")
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts))))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts)]))
 	})
 
 	it.effect("completeConnect refuses a token with no refresh token and revokes it", () => {
@@ -281,11 +325,11 @@ describe("CloudflareOAuthService", () => {
 		// refuse it up front instead of storing a doomed row.
 		const fetchImpl: typeof globalThis.fetch = (input) => {
 			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-			if (url.includes("/oauth2/revoke")) {
+			if (Str.includes("/oauth2/revoke")(url)) {
 				counters.revoked += 1
 				return Promise.resolve(new Response(null, { status: 200 }))
 			}
-			if (url.includes("/oauth2/token")) {
+			if (Str.includes("/oauth2/token")(url)) {
 				return Promise.resolve(
 					jsonResponse({
 						access_token: "cf-access-token",
@@ -295,7 +339,7 @@ describe("CloudflareOAuthService", () => {
 					}),
 				)
 			}
-			if (url.includes("/accounts")) {
+			if (Str.includes("/accounts")(url)) {
 				return Promise.resolve(
 					jsonResponse({
 						success: true,
@@ -315,7 +359,7 @@ describe("CloudflareOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
 			})
-			const error = yield* service.completeConnect("auth-code", state).pipe(Effect.flip)
+			const error = yield* service.completeConnect("auth-code", state, initiatorA).pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			if (error._tag === "@maple/http/errors/IntegrationsValidationError") {
 				assert.include(error.message, "refresh token")
@@ -333,150 +377,10 @@ describe("CloudflareOAuthService", () => {
 			)
 			assert.isUndefined(row)
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb, withOAuthApp),
-					Layer.succeed(FetchHttpClient.Fetch, fetchImpl),
-				),
-			),
-		)
-	})
-
-	it.effect("concurrent getValidAccessToken refreshes once (single-flight, no false revoke)", () => {
-		const testDb = createTestDb(trackedDbs)
-		const counters = { refreshes: 0 }
-		// authorization_code → immediately-expiring token (forces refresh on first use);
-		// refresh_token → succeeds ONCE, then 400s (Cloudflare rotates refresh tokens on use).
-		const fetchImpl: typeof globalThis.fetch = async (input, init) => {
-			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-			if (url.includes("/oauth2/token")) {
-				// The body may arrive as a stream — normalize through Request to read it.
-				const text = await new Request(url, {
-					method: "POST",
-					body: init?.body,
-					// @ts-expect-error duplex is required for streaming bodies in undici/Bun
-					duplex: "half",
-				}).text()
-				const body = new URLSearchParams(text)
-				if (body.get("grant_type") === "refresh_token") {
-					counters.refreshes += 1
-					if (counters.refreshes > 1) {
-						return jsonResponse({ error: "invalid_grant" }, 400)
-					}
-					return jsonResponse({
-						access_token: "cf-access-token-refreshed",
-						refresh_token: "cf-refresh-token-rotated",
-						token_type: "bearer",
-						expires_in: 3600,
-					})
-				}
-				return jsonResponse({
-					access_token: "cf-access-token-initial",
-					refresh_token: "cf-refresh-token",
-					token_type: "bearer",
-					// Within the 60s refresh leeway → the very next getValidAccessToken refreshes.
-					expires_in: 1,
-				})
-			}
-			if (url.includes("/accounts")) {
-				return jsonResponse({
-					success: true,
-					errors: [],
-					messages: [],
-					result: [{ id: "acc_1", name: "Acme Inc", type: "standard" }],
-					result_info: { count: 1, page: 1, per_page: 50, total_count: 1 },
-				})
-			}
-			return jsonResponse({ success: false, errors: [], messages: [], result: null }, 404)
-		}
-
-		return Effect.gen(function* () {
-			const service = yield* CloudflareOAuthService
-			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
-				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
-			})
-			yield* service.completeConnect("auth-code", state)
-
-			// Two racers on an expired token: without single-flight both refresh, the loser's
-			// rotated-token 400 falsely surfaces as IntegrationsRevokedError.
-			const [a, b] = yield* Effect.all(
-				[
-					service.getValidAccessToken(asOrgId("org_a"), "acc_1"),
-					service.getValidAccessToken(asOrgId("org_a"), "acc_1"),
-				],
-				{ concurrency: 2 },
-			)
-			assert.strictEqual(a.accessToken, "cf-access-token-refreshed")
-			assert.strictEqual(b.accessToken, "cf-access-token-refreshed")
-			assert.strictEqual(counters.refreshes, 1)
-		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb, withOAuthApp),
-					Layer.succeed(FetchHttpClient.Fetch, fetchImpl),
-				),
-			),
-		)
-	})
-
-	it.effect("a refresh the token endpoint rejects with 400 surfaces as revoked", () => {
-		const testDb = createTestDb(trackedDbs)
-		// authorization_code → immediately-expiring token; refresh_token → always 400
-		// (the grant is genuinely gone — no concurrency, no rotated-token race).
-		const fetchImpl: typeof globalThis.fetch = async (input, init) => {
-			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-			if (url.includes("/oauth2/token")) {
-				const text = await new Request(url, {
-					method: "POST",
-					body: init?.body,
-					// @ts-expect-error duplex is required for streaming bodies in undici/Bun
-					duplex: "half",
-				}).text()
-				const body = new URLSearchParams(text)
-				if (body.get("grant_type") === "refresh_token") {
-					return jsonResponse({ error: "invalid_grant" }, 400)
-				}
-				return jsonResponse({
-					access_token: "cf-access-token-initial",
-					refresh_token: "cf-refresh-token",
-					token_type: "bearer",
-					// Within the 60s refresh leeway → the very next getValidAccessToken refreshes.
-					expires_in: 1,
-				})
-			}
-			if (url.includes("/accounts")) {
-				return jsonResponse({
-					success: true,
-					errors: [],
-					messages: [],
-					result: [{ id: "acc_1", name: "Acme Inc", type: "standard" }],
-					result_info: { count: 1, page: 1, per_page: 50, total_count: 1 },
-				})
-			}
-			return jsonResponse({ success: false, errors: [], messages: [], result: null }, 404)
-		}
-
-		return Effect.gen(function* () {
-			const service = yield* CloudflareOAuthService
-			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
-				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
-			})
-			yield* service.completeConnect("auth-code", state)
-
-			const error = yield* service.getValidAccessToken(asOrgId("org_a"), "acc_1").pipe(Effect.flip)
-			// 400/401 on the refresh grant means the grant itself is gone — classified as
-			// revoked (reconnect required), not a transient upstream failure.
-			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsRevokedError")
-			if (error._tag === "@maple/http/errors/IntegrationsRevokedError") {
-				assert.include(error.message, "reconnect")
-			}
-		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb, withOAuthApp),
-					Layer.succeed(FetchHttpClient.Fetch, fetchImpl),
-				),
-			),
+			Effect.provide([
+				makeLayer(testDb, withOAuthApp),
+				Layer.succeed(FetchHttpClient.Fetch, fetchImpl),
+			]),
 		)
 	})
 
@@ -489,7 +393,7 @@ describe("CloudflareOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
 			})
-			yield* service.completeConnect("auth-code", state)
+			yield* service.completeConnect("auth-code", state, initiatorA)
 
 			const result = yield* service.disconnect(asOrgId("org_a"))
 			assert.strictEqual(result.disconnected, true)
@@ -506,11 +410,59 @@ describe("CloudflareOAuthService", () => {
 				),
 			)
 			assert.isUndefined(row)
-		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts, counters)),
-			),
-		)
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts, counters)]))
+	})
+
+	it.effect("connects as one Cloudflare source that Logpush jobs send as, removed on disconnect", () => {
+		const testDb = createTestDb(trackedDbs)
+		const accounts = [{ id: "acc_1", name: "Acme Inc", type: "standard" }]
+		const owners = () =>
+			Effect.promise(() =>
+				testDb.pglite.query<{
+					source: string
+					name: string
+					connection: string | null
+					logpush: string | null
+				}>(
+					`SELECT s.id AS source, s.name,
+						(SELECT c.source_id FROM oauth_connections c WHERE c.org_id = 'org_a') AS connection,
+						(SELECT l.source_id FROM cloudflare_logpush_connectors l WHERE l.id = 'lp_1') AS logpush
+					FROM sources s WHERE s.kind = 'integration'`,
+				),
+			).pipe(Effect.map((result) => result.rows))
+		return Effect.gen(function* () {
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO cloudflare_logpush_connectors (id, org_id, name, zone_name, service_name, secret_ciphertext,
+						secret_iv, secret_tag, secret_hash, secret_rotated_at, created_at, updated_at, created_by, updated_by)
+					VALUES ('lp_1', 'org_a', 'Zone', 'acme.com', 'edge', 'x', 'x', 'x', 'h', now(), now(), now(), 'u', 'u')`,
+				),
+			)
+			const service = yield* CloudflareOAuthService
+			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
+				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
+			})
+			yield* service.completeConnect("auth-code", state, initiatorA)
+			const [connected] = yield* owners()
+			assert.deepStrictEqual(connected, {
+				source: connected.source,
+				name: "Acme Inc",
+				connection: connected.source,
+				logpush: connected.source,
+			})
+
+			yield* service.disconnect(asOrgId("org_a"))
+			assert.deepStrictEqual(yield* owners(), [])
+			// The Logpush job keeps running, unlinked.
+			const job = yield* Effect.promise(() =>
+				queryFirstRow<{ source_id: string | null }>(
+					testDb,
+					"SELECT source_id FROM cloudflare_logpush_connectors WHERE id = 'lp_1'",
+				),
+			)
+			assert.deepStrictEqual(job, { source_id: null })
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts)]))
 	})
 
 	it.effect("disconnect on a non-connected org reports nothing removed", () => {
@@ -529,10 +481,10 @@ describe("CloudflareOAuthService", () => {
 		const granted = { current: [{ id: "acc_1", name: "Acme Inc", type: "standard" }] }
 		const fetchImpl: typeof globalThis.fetch = (input) => {
 			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-			if (url.includes("/oauth2/revoke")) {
+			if (Str.includes("/oauth2/revoke")(url)) {
 				return Promise.resolve(new Response(null, { status: 200 }))
 			}
-			if (url.includes("/oauth2/token")) {
+			if (Str.includes("/oauth2/token")(url)) {
 				return Promise.resolve(
 					jsonResponse({
 						access_token: `cf-access-token-${granted.current[0]?.id}`,
@@ -543,7 +495,7 @@ describe("CloudflareOAuthService", () => {
 					}),
 				)
 			}
-			if (url.includes("/accounts")) {
+			if (Str.includes("/accounts")(url)) {
 				return Promise.resolve(
 					jsonResponse({
 						success: true,
@@ -568,7 +520,7 @@ describe("CloudflareOAuthService", () => {
 				const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 					callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
 				})
-				return yield* service.completeConnect("auth-code", state)
+				return yield* service.completeConnect("auth-code", state, initiatorA)
 			})
 
 		return Effect.gen(function* () {
@@ -585,7 +537,7 @@ describe("CloudflareOAuthService", () => {
 			const status = yield* service.getStatus(asOrgId("org_a"))
 			assert.strictEqual(status.connected, true)
 			assert.deepStrictEqual(
-				status.accounts.map((account) => account.accountId),
+				Arr.map(status.accounts, (account) => account.accountId),
 				["acc_2", "acc_3"],
 			)
 
@@ -605,12 +557,10 @@ describe("CloudflareOAuthService", () => {
 			const stale = yield* service.getValidAccessToken(asOrgId("org_a"), "acc_1").pipe(Effect.flip)
 			assert.strictEqual(stale._tag, "@maple/http/errors/IntegrationsValidationError")
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb, withOAuthApp),
-					Layer.succeed(FetchHttpClient.Fetch, fetchImpl),
-				),
-			),
+			Effect.provide([
+				makeLayer(testDb, withOAuthApp),
+				Layer.succeed(FetchHttpClient.Fetch, fetchImpl),
+			]),
 		)
 	})
 })

@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import {
 	FUNNEL_MAX_STEPS,
 	FunnelBreakdownBy,
@@ -14,6 +14,7 @@ import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import { formatNumber, formatPercent, truncate } from "../lib/format"
+import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -44,6 +45,7 @@ const fmtPct = (fraction: number | null): string => (fraction === null ? "—" :
 export function registerQueryFunnelTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
+		title: "Query Funnel",
 		description:
 			"Conversion funnel over product events (page views, browser `track()` events and server-side events), stitched per person. Reports each step's count, share of step 1, step-to-step conversion and drop-off, optionally per `breakdown_by` group. An event step needs the exact name `list_product_events` lists. The host, page, referrer, country, utm, device and browser filters narrow the population to persons with a matching session.",
 		parameters: Schema.Struct({
@@ -141,10 +143,10 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				steps: steps.length,
-				keyBy,
-				windowSeconds,
-				breakdownBy: breakdownBy ?? "none",
+				"maple.ai.steps": steps.length,
+				"maple.ai.key_by": keyBy,
+				"maple.ai.window_seconds": windowSeconds,
+				"maple.ai.breakdown_by": breakdownBy ?? "none",
 			})
 
 			const definition = { steps, keyBy, windowSeconds, filters, startTime: st, endTime: et }
@@ -163,10 +165,10 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 					),
 				),
 			)
-			const counts = new Map(outcome.map((row) => [Number(row.step), Number(row.count) || 0]))
+			const counts = new Map(Arr.map(outcome, (row) => [row.step, row.count]))
 
 			const first = counts.get(1) ?? 0
-			const stepData = steps.map((step, index) => {
+			const stepData = Arr.map(steps, (step, index) => {
 				const count = counts.get(index + 1) ?? 0
 				const previous = index === 0 ? null : (counts.get(index) ?? 0)
 				return {
@@ -180,6 +182,22 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			})
 			const last = stepData[stepData.length - 1]
 			const conversion = steps.length < 2 || last === undefined ? null : ratio(last.count, first)
+
+			// An empty VisitorId/UserId makes a visitor/user funnel match nobody and a person funnel
+			// collapse to one "person"; a per-session count of step 1 tells the two apart.
+			const sessionFirst =
+				keyBy === "session" || first > 1
+					? undefined
+					: yield* withTenantExecutor(
+							productEventsFunnel({ ...definition, keyBy: "session" }),
+						).pipe(
+							Effect.map((rows) => rows.find((row) => row.step === 1)?.count ?? 0),
+							Effect.orElseSucceed(() => undefined),
+						)
+			const identityNote =
+				sessionFirst !== undefined && sessionFirst > Math.max(first, 1)
+					? `Step 1 matched ${sessionFirst} sessions but ${first} ${KEY_BY_NOUN[keyBy]}: the events carry no ${keyBy === "user" ? "UserId" : keyBy === "visitor" ? "VisitorId" : "VisitorId or UserId"}, so they cannot be stitched by ${keyBy}. Use key_by="session", or send a visitor/user id with the events.`
+					: undefined
 
 			const breakdown =
 				breakdownBy === undefined || first === 0
@@ -200,16 +218,15 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 							Effect.map((groupRows) => {
 								const byGroup = new Map<string, number[]>()
 								for (const row of groupRows) {
-									const group = String(row.group)
+									const group = row.group
 									const arr =
 										byGroup.get(group) ??
 										Array.from<number>({ length: steps.length }).fill(0)
 									byGroup.set(group, arr)
-									const index = Number(row.step) - 1
-									if (index >= 0 && index < steps.length)
-										arr[index] = Number(row.count) || 0
+									const index = row.step - 1
+									if (index >= 0 && index < steps.length) arr[index] = row.count
 								}
-								const groups = [...byGroup.entries()].map(([group, groupCounts]) => ({
+								const groups = Arr.map([...byGroup.entries()], ([group, groupCounts]) => ({
 									group,
 									counts: groupCounts,
 									conversion:
@@ -232,6 +249,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 				conversion,
 				...(breakdown === undefined ? undefined : { breakdown }),
 				definition: steps,
+				...(identityNote === undefined ? undefined : { identityNote }),
 			}
 		}),
 		render: (output) => {
@@ -240,16 +258,18 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			const first = steps[0]
 			const last = steps[steps.length - 1]
 			const window = { start_time: output.timeRange.start, end_time: output.timeRange.end }
-			const stepsJson = JSON.stringify(output.definition)
+			const stepsJson = stringifyJson(output.definition)
 			return {
 				title: `Funnel (${steps.length} step${steps.length === 1 ? "" : "s"}, by ${output.keyBy}, within ${output.windowSeconds}s)`,
 				scope: [["Time range", `${output.timeRange.start} to ${output.timeRange.end}`]],
+				...(output.identityNote === undefined ? undefined : { notices: [output.identityNote] }),
 				...(first === undefined || first.count === 0
 					? {
 							empty: {
 								message: `Nobody matched step 1${first === undefined ? "" : ` (${first.label})`} in this window.`,
 								hints: [
-									"Widen start_time/end_time, or check the step against `list_product_events`.",
+									output.identityNote ??
+										"Widen start_time/end_time, or check the step against `list_product_events`.",
 								],
 							},
 						}
@@ -262,12 +282,12 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 									[
 										"#",
 										"Step",
-										noun.charAt(0).toUpperCase() + noun.slice(1),
+										Str.toUpperCase(noun.charAt(0)) + Str.slice(1)(noun),
 										"Of first",
 										"Of previous",
 										"Drop-off",
 									],
-									steps.map((stat) => [
+									Arr.map(steps, (stat) => [
 										String(stat.step),
 										truncate(stat.label, 60),
 										formatNumber(stat.count),
@@ -290,12 +310,12 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 											doc.table(
 												[
 													breakdown.by,
-													...steps.map((stat) => `Step ${stat.step}`),
+													...Arr.map(steps, (stat) => `Step ${stat.step}`),
 													"Conv.",
 												],
-												breakdown.groups.map((group) => [
+												Arr.map(breakdown.groups, (group) => [
 													group.group === "" ? "(none)" : truncate(group.group, 40),
-													...group.counts.map((count) => formatNumber(count)),
+													...Arr.map(group.counts, (count) => formatNumber(count)),
 													fmtPct(group.conversion),
 												]),
 											),

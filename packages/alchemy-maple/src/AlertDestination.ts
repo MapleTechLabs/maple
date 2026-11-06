@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import * as Effect from "effect/Effect"
 import * as Config from "effect/Config"
 import * as Redacted from "effect/Redacted"
@@ -9,9 +9,10 @@ import { isOutput } from "alchemy/Output"
 import { listAll, MapleApi } from "./MapleApi"
 import { MapleErrorTags } from "./errors"
 import type { Providers } from "./Providers"
+import type { ExclusiveVariant } from "./variants"
 
 /** A write-only channel secret: plain string or `Redacted` (recommended). */
-type SecretInput = string | Redacted.Redacted<string>
+type SecretInput = string | Redacted.Redacted
 
 interface DestinationBaseProps {
 	/** Human-readable label for the destination. */
@@ -31,14 +32,16 @@ type DestinationVariant =
 	| (DestinationBaseProps & { type: "webhook"; url: string; signing_secret?: SecretInput })
 	| (DestinationBaseProps & { type: "discord"; webhook_url: SecretInput })
 	| (DestinationBaseProps & { type: "telegram"; bot_token: SecretInput; chat_id: string })
+	/** A Google Chat space's incoming webhook URL. */
+	| (DestinationBaseProps & { type: "google-chat"; webhook_url: SecretInput })
+	/** A Teams channel's Workflows webhook URL (`*.environment.api.powerplatform.com`). */
+	| (DestinationBaseProps & { type: "microsoft-teams"; webhook_url: SecretInput })
+	/** An incident.io HTTP alert source: its config ID and secret token. */
+	| (DestinationBaseProps & { type: "incident-io"; alert_source_config_id: string; token: SecretInput })
 	| (DestinationBaseProps & { type: "email"; member_user_ids: string[] })
+	/** A team in the Linear workspace connected on Maple's Integrations page. */
+	| (DestinationBaseProps & { type: "linear"; team_id: string })
 
-// Explicitly exclude other variants' fields: Input wraps the discriminant too,
-// so TypeScript's usual excess-property check alone cannot keep them separate.
-type VariantKeys<T> = T extends unknown ? keyof T : never
-type ExclusiveVariant<T, All = T> = T extends unknown
-	? T & Partial<Record<Exclude<VariantKeys<All>, keyof T>, never>>
-	: never
 export type AlertDestinationProps = ExclusiveVariant<DestinationVariant>
 
 export type AlertDestination = Resource<
@@ -50,15 +53,21 @@ export type AlertDestination = Resource<
 		name: string
 		type: string
 		enabled: boolean
+		/**
+		 * The non-secret channel handle (a Telegram chat ID, an incident.io alert source ID), or null.
+		 * In the attributes so a change made outside IaC shows up as drift.
+		 */
+		channelLabel: string | null
 	},
 	never,
 	Providers
 >
 
 /**
- * A notification channel (PagerDuty, webhook, Discord, Telegram, or
- * workspace-member email) that `Maple.AlertRule`s deliver to. Chat-connector and
- * Hazel destinations use integrations linked in Maple and are managed there.
+ * A notification channel (PagerDuty, incident.io, webhook, Discord, Telegram, Google Chat,
+ * Microsoft Teams, workspace-member email, or a Linear team) that `Maple.AlertRule`s deliver to. Linear needs the
+ * workspace connected in Maple first. Chat-connector destinations use workspaces
+ * linked in Maple and are managed there.
  *
  * @example
  * ```typescript
@@ -77,6 +86,7 @@ const WireDestination = Schema.Struct({
 	type: Schema.String,
 	enabled: Schema.Boolean,
 	channel_label: Schema.NullOr(Schema.String),
+	linear_team_id: Schema.optionalKey(Schema.String),
 })
 const decodeWireDestination = Schema.decodeUnknownEffect(WireDestination)
 
@@ -98,7 +108,13 @@ const desiredBody = (props: AlertDestinationProps): Record<string, unknown> => {
 			if (props.signing_secret !== undefined) body.signing_secret = unwrap(props.signing_secret)
 			break
 		case "discord":
+		case "google-chat":
+		case "microsoft-teams":
 			body.webhook_url = unwrap(props.webhook_url)
+			break
+		case "incident-io":
+			body.alert_source_config_id = Str.trim(props.alert_source_config_id)
+			body.token = unwrap(props.token)
 			break
 		case "telegram":
 			body.bot_token = unwrap(props.bot_token)
@@ -106,6 +122,9 @@ const desiredBody = (props: AlertDestinationProps): Record<string, unknown> => {
 			break
 		case "email":
 			body.member_user_ids = props.member_user_ids
+			break
+		case "linear":
+			body.team_id = props.team_id
 			break
 	}
 	return body
@@ -118,13 +137,20 @@ const desiredBody = (props: AlertDestinationProps): Record<string, unknown> => {
 const drifted = (
 	props: AlertDestinationProps,
 	observed: Schema.Schema.Type<typeof WireDestination>,
-): boolean => props.name !== observed.name || (props.enabled ?? true) !== observed.enabled
+): boolean =>
+	props.name !== observed.name ||
+	(props.enabled ?? true) !== observed.enabled ||
+	// The Linear team is not a secret, so a team changed outside IaC is drift like a rename.
+	(props.type === "linear" && props.team_id !== observed.linear_team_id) ||
+	// The alert source id comes back as `channel_label`; the token is write-only.
+	(props.type === "incident-io" && Str.trim(props.alert_source_config_id) !== observed.channel_label)
 
 const toAttributes = (observed: Schema.Schema.Type<typeof WireDestination>) => ({
 	destinationId: observed.id,
 	name: observed.name,
 	type: observed.type,
 	enabled: observed.enabled,
+	channelLabel: observed.channel_label,
 })
 
 export const AlertDestinationProvider = () =>
@@ -156,8 +182,9 @@ export const AlertDestinationProvider = () =>
 						const fetched = yield* api
 							.get(`/v2/alerts/destinations/${output.destinationId}`)
 							.pipe(
-								Effect.catchTag(MapleErrorTags.alertDestinationNotFound, () =>
-									Effect.succeed(undefined),
+								Effect.catchTag(
+									MapleErrorTags.alertDestinationNotFound,
+									() => Effect.undefined,
 								),
 							)
 						if (fetched !== undefined) observed = yield* decodeWireDestination(fetched)
@@ -191,12 +218,11 @@ export const AlertDestinationProvider = () =>
 					const fetched = yield* api
 						.get(`/v2/alerts/destinations/${output.destinationId}`)
 						.pipe(
-							Effect.catchTag(MapleErrorTags.alertDestinationNotFound, () =>
-								Effect.succeed(undefined),
-							),
+							Effect.catchTag(MapleErrorTags.alertDestinationNotFound, () => Effect.undefined),
 						)
 					if (fetched === undefined) return undefined
-					return toAttributes(yield* decodeWireDestination(fetched))
+					const decoded = yield* decodeWireDestination(fetched)
+					return toAttributes(decoded)
 				}),
 				list: Effect.fn(function* () {
 					const items = yield* listAll(api, "/v2/alerts/destinations")

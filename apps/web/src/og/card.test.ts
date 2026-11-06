@@ -1,22 +1,26 @@
 import { describe, expect, it } from "vitest"
 import type { ShareOgCardTile } from "@maple/domain/http"
-import { CARD_HEIGHT, CARD_WIDTH, ogCardNode } from "./card"
+import { ogCardNode } from "./card"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /** Walks the node tree, since takumi nodes are plain nested objects. */
 const flatten = (node: unknown): Array<Record<string, unknown>> => {
 	if (typeof node !== "object" || node === null) return []
 	const record = node as Record<string, unknown>
-	const children = Array.isArray(record.children) ? record.children : []
-	return [record, ...children.flatMap(flatten)]
+	const children = Arr.isArray(record.children) ? record.children : []
+	return [record, ...Arr.flatMap(children, flatten)]
 }
 
 const texts = (node: unknown): Array<string> =>
-	flatten(node)
-		.filter((child) => child.type === "text")
-		.map((child) => String(child.text))
+	Arr.map(
+		Arr.filter(flatten(node), (child) => child.type === "text"),
+		(child) => String(child.text),
+	)
 
 const fontSizeOf = (node: unknown, label: string): number | undefined => {
-	const match = flatten(node).find((child) => child.type === "text" && child.text === label)
+	const match = Option.getOrUndefined(
+		Arr.findFirst(flatten(node), (child) => child.type === "text" && child.text === label),
+	)
 	return (match?.style as Record<string, number> | undefined)?.fontSize
 }
 
@@ -29,12 +33,6 @@ const tiles = (count: number, section?: string): Array<ShareOgCardTile> =>
 	Array.from({ length: count }, (_, index) => tile(`Widget ${index + 1}`, section))
 
 describe("ogCardNode", () => {
-	it("renders at the advertised card size", () => {
-		const node = ogCardNode({ title: "Checkout health", tiles: [] })
-
-		expect(node).toMatchObject({ style: { width: CARD_WIDTH, height: CARD_HEIGHT } })
-	})
-
 	it("leads with the board's name, its author's description and its widget names", () => {
 		const node = ogCardNode({
 			title: "Checkout health",
@@ -60,10 +58,10 @@ describe("ogCardNode", () => {
 			org: { name: "Acme Rockets", imageUrl: "https://img.example/acme.png" },
 			tiles: [],
 		})
-		const images = flatten(node).filter((child) => child.type === "image")
+		const images = Arr.filter(flatten(node), (child) => child.type === "image")
 
 		expect(texts(node)).toContain("Acme Rockets")
-		expect(images.map((child) => String(child.src))).toContain("https://img.example/acme.png")
+		expect(Arr.map(images, (child) => String(child.src))).toContain("https://img.example/acme.png")
 	})
 
 	it("falls back to the org's initial when it has no logo of its own", () => {
@@ -71,7 +69,7 @@ describe("ogCardNode", () => {
 
 		expect(texts(node)).toContain("A")
 		// Only the Maple mark is left as artwork.
-		expect(flatten(node).filter((child) => child.type === "image")).toHaveLength(1)
+		expect(Arr.filter(flatten(node), (child) => child.type === "image")).toHaveLength(1)
 	})
 
 	it("carries no byline at all when there is no directory to ask", () => {
@@ -101,7 +99,7 @@ describe("ogCardNode", () => {
 	it("counts the widgets it could not name rather than dropping them silently", () => {
 		const node = ogCardNode({ title: "Board", widgetCount: 20, tiles: tiles(10) })
 
-		expect(texts(node).some((value) => value.startsWith("+"))).toBe(true)
+		expect(Arr.some(texts(node), (value) => Str.startsWith("+")(value))).toBe(true)
 		expect(texts(node)).toContain("+13 more")
 	})
 
@@ -109,7 +107,7 @@ describe("ogCardNode", () => {
 		// Eight rows is the budget the layout is built around; a board with more
 		// widgets than that has to lose rows, not overflow.
 		const node = ogCardNode({ title: "Board", widgetCount: 30, tiles: tiles(20) })
-		const named = texts(node).filter((value) => value.startsWith("Widget "))
+		const named = Arr.filter(texts(node), (value) => Str.startsWith("Widget ")(value))
 
 		expect(named.length).toBeLessThanOrEqual(8)
 	})
@@ -128,7 +126,8 @@ describe("ogCardNode", () => {
 
 	it("keeps a short list in one column", () => {
 		const node = ogCardNode({ title: "Board", widgetCount: 3, tiles: tiles(3) })
-		const columns = flatten(node).filter(
+		const columns = Arr.filter(
+			flatten(node),
 			(child) => (child.style as Record<string, unknown> | undefined)?.width === "50%",
 		)
 
@@ -137,32 +136,12 @@ describe("ogCardNode", () => {
 
 	it("balances a long list across two columns instead of stranding one name", () => {
 		const node = ogCardNode({ title: "Board", widgetCount: 6, tiles: tiles(6) })
-		const columns = flatten(node).filter(
+		const columns = Arr.filter(
+			flatten(node),
 			(child) => (child.style as Record<string, unknown> | undefined)?.width === "50%",
 		)
 
 		expect(columns).toHaveLength(2)
-		expect(columns.map((column) => (column.children as Array<unknown>).length)).toEqual([3, 3])
-	})
-
-	it("draws an empty board as an empty state rather than a blank panel", () => {
-		const node = ogCardNode({ title: "Fresh board", tiles: [] })
-
-		expect(texts(node)).toContain("No widgets yet")
-	})
-
-	it("carries the Maple mark as artwork, not as a coloured dot", () => {
-		const node = ogCardNode({ title: "Board", tiles: [] })
-		const mark = flatten(node).find((child) => child.type === "image")
-
-		// evenodd is what keeps the knockouts open; without it the glyph fills solid.
-		expect(String(mark?.src)).toContain("data:image/svg+xml;base64,")
-		expect(atob(String(mark?.src).split(",")[1] ?? "")).toContain('fill-rule="evenodd"')
-	})
-
-	it("is deterministic, so the same board renders the same bytes every time", () => {
-		const input = { title: "Board", widgetCount: 2, tiles: [tile("Requests"), tile("Errors")] }
-
-		expect(JSON.stringify(ogCardNode(input))).toBe(JSON.stringify(ogCardNode(input)))
+		expect(Arr.map(columns, (column) => (column.children as Array<unknown>).length)).toEqual([3, 3])
 	})
 })

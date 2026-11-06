@@ -15,7 +15,8 @@
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Chdb } from "../src/server/chdb"
+import { Chdb } from "@maple/local-server/chdb"
+import { Array as Arr, String as Str } from "effect"
 
 export interface ArchiveProbeHandle {
 	/** The probe's owned root directory (created via mkdtemp, unique per run). */
@@ -40,7 +41,7 @@ export interface ArchiveProbeHandle {
 	cleanup: () => void
 }
 
-const slug = (name: string): string => name.replace(/[^a-z0-9-]/gi, "-").slice(0, 48)
+const slug = (name: string): string => Str.slice(0, 48)(Str.replace(/[^a-z0-9-]/gi, "-")(name))
 
 export const ArchiveProbe = {
 	/** Create an owned, unique probe workspace under the system temp dir. */
@@ -94,14 +95,16 @@ export const ArchiveProbe = {
 
 /** Parse JSONEachRow text into an array of objects. */
 export const readRows = (text: string): ReadonlyArray<Record<string, unknown>> =>
-	text
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0)
-		.map((line) => JSON.parse(line) as Record<string, unknown>)
+	Arr.map(
+		Arr.filter(
+			Arr.map(Str.split("\n")(text), (line) => Str.trim(line)),
+			(line) => line.length > 0,
+		),
+		(line) => JSON.parse(line) as Record<string, unknown>,
+	)
 
 /** First JSONEachRow row, or undefined. */
 export const firstRow = (text: string): Record<string, unknown> | undefined => readRows(text)[0]
 
 /** Escape a path for a ClickHouse single-quoted literal. */
-export const sqlLiteral = (path: string): string => path.replace(/\\/g, "\\\\").replace(/'/g, "\\'")
+export const sqlLiteral = (path: string): string => Str.replace(/[\\']/g, "\\$&")(path)

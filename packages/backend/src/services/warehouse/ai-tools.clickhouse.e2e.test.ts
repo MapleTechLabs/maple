@@ -28,12 +28,13 @@
 // prove the scope.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { Array as Arr, Effect } from "effect"
-import { compileUnionUnsafe, compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { Array as Arr, Effect, Option, Record as Rec, String as Str } from "effect"
+import { compileUnionUnsafe, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { MAPLE_AI_SESSION_ID_ATTR, MAPLE_AI_VENDOR_ID_ATTR } from "@maple/domain/gen-ai"
 import * as Integrations from "@maple/query-engine-integrations"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import {
+	aiGatewayStamps,
 	applyRealMigrations,
 	clickhouseE2eEnabled,
 	clickhouseExec,
@@ -54,7 +55,7 @@ const BASE_MS = Math.floor((Date.now() - 2 * HOUR_MS) / 1000) * 1000
 const LATER_MS = BASE_MS + 1_800_000
 
 /** One tool's two failures, a day apart by the calendar and both well before the
- *  window the rest of this suite reads. `trace_detail_spans` and
+ *  window the rest of this suite reads. `traces` and
  *  `ai_trace_index` partition by `toDate(Timestamp)`, so these sit in different
  *  partitions — which is the shape the failure reads had to stop paying for. */
 const FLAKY_RECENT_MS = BASE_MS - 26 * HOUR_MS
@@ -95,6 +96,9 @@ const TRACE_IDS_AT_1 = missingKey('["evidence"][1]["traceIds"]')
 const LOG_PATTERNS_AT_0 = missingKey('["evidence"][0]["logPatterns"]')
 /** A failure that says why in its status message alone. */
 const REFUSED = "sandbox refused the command"
+/** `flaky_tool`'s parameter schema. */
+const FLAKY_SCHEMA =
+	'{"properties": {"retries": {"type": "integer"}}, "required": ["retries"], "type": "object"}'
 
 interface SeedSpan {
 	readonly traceId: string
@@ -133,6 +137,7 @@ const submitCandidate = (
 		"gen_ai.operation.name": "execute_tool",
 		"gen_ai.tool.name": "submit_candidate",
 		"gen_ai.tool.call.arguments": "{}",
+		...aiGatewayStamps({ toolCall: true, toolName: "submit_candidate" }),
 		...attrs,
 	}),
 })
@@ -152,6 +157,7 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 			[MAPLE_AI_SESSION_ID_ATTR]: SESSION_ID,
 			"gen_ai.operation.name": "invoke_agent",
 			"gen_ai.agent.name": "slack-agent",
+			...aiGatewayStamps({ agentName: "slack-agent" }),
 		}),
 	},
 	{
@@ -162,7 +168,11 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 		ms: BASE_MS + 100,
 		durationNs: 4_000_000,
 		status: "Ok",
-		attrs: agentSpan({ "gen_ai.operation.name": "chat", "gen_ai.response.model": GPT }),
+		attrs: agentSpan({
+			"gen_ai.operation.name": "chat",
+			"gen_ai.response.model": GPT,
+			...aiGatewayStamps({ llmCall: true, model: GPT }),
+		}),
 	},
 	// Parent IS the model call: attributed to gpt-5 by the join.
 	{
@@ -178,6 +188,12 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 			"gen_ai.tool.name": "search_traces",
 			"gen_ai.tool.description": "Search traces.",
 			"gen_ai.agent.name": "slack-agent",
+			...aiGatewayStamps({
+				toolCall: true,
+				toolName: "search_traces",
+				toolDescription: "Search traces.",
+				agentName: "slack-agent",
+			}),
 		}),
 	},
 	// Parent is the TURN span, which carries no model — so this one can only be
@@ -191,7 +207,11 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 		ms: BASE_MS + 300,
 		durationNs: 5_000_000,
 		status: "Error",
-		attrs: agentSpan({ "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": "run_sql" }),
+		attrs: agentSpan({
+			"gen_ai.operation.name": "execute_tool",
+			"gen_ai.tool.name": "run_sql",
+			...aiGatewayStamps({ toolCall: true, error: true, toolName: "run_sql" }),
+		}),
 	},
 	// TRACE_FALLBACK — no session id anywhere, so the whole trace is one
 	// `trace:` session, and its tool call is attributed through its parent.
@@ -202,7 +222,11 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 		ms: BASE_MS + 400,
 		durationNs: 6_000_000,
 		status: "Ok",
-		attrs: agentSpan({ "gen_ai.operation.name": "chat", "gen_ai.response.model": CLAUDE }),
+		attrs: agentSpan({
+			"gen_ai.operation.name": "chat",
+			"gen_ai.response.model": CLAUDE,
+			...aiGatewayStamps({ llmCall: true, model: CLAUDE }),
+		}),
 	},
 	{
 		traceId: TRACE_FALLBACK,
@@ -216,6 +240,11 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 			"gen_ai.operation.name": "execute_tool",
 			"gen_ai.tool.name": "search_traces",
 			"gen_ai.tool.description": "Search traces by attribute.",
+			...aiGatewayStamps({
+				toolCall: true,
+				toolName: "search_traces",
+				toolDescription: "Search traces by attribute.",
+			}),
 		}),
 	},
 	// TRACE_FLAKY_* — one tool, two failures, one per calendar day, both outside
@@ -238,6 +267,12 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 			"error.type": "TimeoutError",
 			"gen_ai.tool.call.arguments": '{"retries":3}',
 			"gen_ai.tool.call.result": "",
+			...aiGatewayStamps({
+				toolCall: true,
+				error: true,
+				toolName: "flaky_tool",
+				toolDescription: "Calls the flaky upstream.",
+			}),
 		}),
 	},
 	{
@@ -248,11 +283,24 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 		durationNs: 8_000_000,
 		status: "Error",
 		statusMessage: "upstream returned 503",
+		// An OpenInference tool span whose GenAI dual-write copied the parameter
+		// schema into the arguments slot: the payload read shows `input.value`,
+		// as the session page does.
 		attrs: agentSpan({
+			[MAPLE_AI_VENDOR_ID_ATTR]: "openai_agents_sdk",
+			"openinference.span.kind": "TOOL",
 			"gen_ai.operation.name": "execute_tool",
 			"gen_ai.tool.name": "flaky_tool",
-			"gen_ai.tool.call.arguments": '{"retries":1}',
+			"tool.parameters": FLAKY_SCHEMA,
+			"gen_ai.tool.call.arguments": FLAKY_SCHEMA,
+			"input.value": '{"retries":1}',
 			"gen_ai.tool.call.result": '{"error":"503"}',
+			...aiGatewayStamps({
+				toolCall: true,
+				error: true,
+				toolName: "flaky_tool",
+				toolErrorResult: '{"error":"503"}',
+			}),
 		}),
 	},
 	// TRACE_GROUPS — `[0]` and `[1]` of one missing key, a missing key at another
@@ -262,16 +310,43 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 		[MAPLE_AI_SESSION_ID_ATTR]: GROUPS_SESSION_ID,
 		"error.type": "tool_error",
 		"gen_ai.tool.call.result": TRACE_IDS_AT_0,
+		...aiGatewayStamps({
+			toolCall: true,
+			error: true,
+			toolName: "submit_candidate",
+			toolErrorResult: TRACE_IDS_AT_0,
+		}),
 	}),
 	submitCandidate("tools-groups-2", 60_000, "Error", {
 		"error.type": "tool_error",
 		"gen_ai.tool.call.result": TRACE_IDS_AT_1,
+		...aiGatewayStamps({
+			toolCall: true,
+			error: true,
+			toolName: "submit_candidate",
+			toolErrorResult: TRACE_IDS_AT_1,
+		}),
 	}),
 	submitCandidate("tools-groups-3", 120_000, "Error", {
 		"error.type": "tool_error",
 		"gen_ai.tool.call.result": LOG_PATTERNS_AT_0,
+		...aiGatewayStamps({
+			toolCall: true,
+			error: true,
+			toolName: "submit_candidate",
+			toolErrorResult: LOG_PATTERNS_AT_0,
+		}),
 	}),
-	submitCandidate("tools-groups-4", 180_000, "Error", { "error.type": "ToolCallFailed" }, REFUSED),
+	submitCandidate(
+		"tools-groups-4",
+		180_000,
+		"Error",
+		{
+			"error.type": "ToolCallFailed",
+			...aiGatewayStamps({ toolCall: true, error: true, toolName: "submit_candidate" }),
+		},
+		REFUSED,
+	),
 	submitCandidate("tools-groups-5", 240_000, "Ok", { "gen_ai.tool.call.result": '{"accepted":true}' }),
 	// TRACE_UNATTRIBUTED — a tool call with no model anywhere in its trace, at a
 	// zero duration (the structured-output pseudo-tool shape). It is a call: it
@@ -283,7 +358,11 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 		ms: LATER_MS,
 		durationNs: 0,
 		status: "Ok",
-		attrs: agentSpan({ "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": "search_traces" }),
+		attrs: agentSpan({
+			"gen_ai.operation.name": "execute_tool",
+			"gen_ai.tool.name": "search_traces",
+			...aiGatewayStamps({ toolCall: true, toolName: "search_traces" }),
+		}),
 	},
 ]
 
@@ -299,26 +378,36 @@ const FOREIGN_SPAN: SeedSpan = {
 		"gen_ai.operation.name": "execute_tool",
 		"gen_ai.tool.name": "search_traces",
 		"gen_ai.tool.description": "Another org's search.",
+		...aiGatewayStamps({
+			toolCall: true,
+			toolName: "search_traces",
+			toolDescription: "Another org's search.",
+		}),
 	}),
 }
 
-const quote = (value: string): string => `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`
-const chDateTime = (epochMs: number): string => new Date(epochMs).toISOString().replace("T", " ").slice(0, 23)
+const quote = (value: string): string =>
+	`'${Str.replaceAll("'", "\\'")(Str.replaceAll("\\", "\\\\")(value))}'`
+const chDateTime = (epochMs: number): string =>
+	Str.slice(0, 23)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 const chMap = (attrs: Readonly<Record<string, string>>): string =>
-	`map(${Object.entries(attrs)
-		.flatMap(([key, value]) => [quote(key), quote(value)])
-		.join(", ")})`
+	`map(${Arr.join(
+		Arr.flatMap(Rec.toEntries(attrs), ([key, value]) => [quote(key), quote(value)]),
+		", ",
+	)})`
 
 const seed = async (): Promise<void> => {
-	const rows = [
-		...SEED_SPANS.map((span) => [ORG_ID, span] as const),
-		[FOREIGN_ORG_ID, FOREIGN_SPAN] as const,
-	]
-		.map(
+	const rows = Arr.join(
+		Arr.map(
+			[
+				...Arr.map(SEED_SPANS, (span) => [ORG_ID, span] as const),
+				[FOREIGN_ORG_ID, FOREIGN_SPAN] as const,
+			],
 			([orgId, span]) =>
 				`(${quote(orgId)}, ${quote(chDateTime(span.ms))}, ${quote(span.traceId)}, ${quote(span.spanId)}, ${quote(span.parentSpanId ?? "")}, ${quote(span.name)}, 'Internal', 'agent-service', ${span.durationNs}, ${quote(span.status)}, ${quote(span.statusMessage ?? "")}, 1, ${chMap(span.attrs)}, ${chMap({ "deployment.environment.name": "production" })})`,
-		)
-		.join("\n,")
+		),
+		"\n,",
+	)
 
 	await clickhouseExec(
 		`INSERT INTO traces
@@ -386,7 +475,7 @@ const readErrorGroups = async (
 		{ rowSchema: Integrations.aiToolErrorsRowSchema },
 	)
 	// The table reads the index alone, however many partitions its window opens.
-	assert.isFalse(compiled.sql.includes("trace_detail_spans"))
+	assert.isFalse(/\bFROM traces\b/.test(compiled.sql))
 	return Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
 }
 
@@ -408,7 +497,7 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		// Three sessions invoked `search_traces` once each; `run_sql` ran once and
 		// failed. The foreign org's identical tool call is in neither.
 		assert.deepStrictEqual(
-			rows.map((row) => ({
+			Arr.map(rows, (row) => ({
 				key: row.key,
 				calls: row.calls,
 				sessions: row.sessions,
@@ -445,7 +534,7 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		// Two buckets: three calls in the first, the zero-duration one half an
 		// hour later in its own. Sessions are counted per bucket and per key.
 		assert.deepStrictEqual(
-			rows.map((row) => ({ seriesKey: row.seriesKey, calls: row.calls, sessions: row.sessions })),
+			Arr.map(rows, (row) => ({ seriesKey: row.seriesKey, calls: row.calls, sessions: row.sessions })),
 			[
 				{ seriesKey: "search_traces", calls: 2, sessions: 2 },
 				{ seriesKey: "run_sql", calls: 1, sessions: 1 },
@@ -454,7 +543,7 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		)
 		// ISO-8601 with a literal Z, fixed width — so the strings sort as the
 		// instants do, which is what lets the client plot them without parsing.
-		assert.isTrue(rows[0]!.bucket < rows[2]!.bucket, `${rows[0]!.bucket} < ${rows[2]!.bucket}`)
+		assert.isTrue(rows[0].bucket < rows[2].bucket, `${rows[0].bucket} < ${rows[2].bucket}`)
 
 		// A tool selected and no model: the same calls, now split by the model
 		// each was attributed to.
@@ -463,14 +552,15 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 			bucketSeconds: 3_600,
 		})
 		const modelRows = Effect.runSync(perModel.decodeRows(await runJson(perModel.sql)))
-		assert.deepStrictEqual([...modelRows].map((row) => row.seriesKey).sort(), ["", CLAUDE, GPT])
+		assert.deepStrictEqual(Arr.map([...modelRows], (row) => row.seriesKey).sort(), ["", CLAUDE, GPT])
 	})
 
 	it("measures the window and the one before it in one read", async () => {
 		const compiled = compileUnionUnsafe(Integrations.aiToolsTotalsQuery(), compareWindow)
 		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
 
-		const period = (name: string) => rows.find((row) => row.period === name)
+		const period = (name: string) =>
+			Option.getOrUndefined(Arr.findFirst(rows, (row) => row.period === name))
 		// Four tool calls across three sessions, one of them failed.
 		assert.deepStrictEqual(
 			{
@@ -497,7 +587,7 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		const toolCalls = async (opts: Parameters<typeof Integrations.aiToolsBreakdownsQuery>[0]) => {
 			const compiled = compileUnsafe(Integrations.aiToolsBreakdownsQuery(opts), window)
 			const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
-			return rows.map((row) => ({ key: row.key, calls: row.calls }))
+			return Arr.map(rows, (row) => ({ key: row.key, calls: row.calls }))
 		}
 
 		// A substring, case-insensitively — the toolbar is a search box, not a
@@ -519,7 +609,7 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 			compareWindow,
 		)
 		const totalRows = Effect.runSync(totals.decodeRows(await runJson(totals.sql)))
-		const current = totalRows.find((row) => row.period === "current")
+		const current = Option.getOrUndefined(Arr.findFirst(totalRows, (row) => row.period === "current"))
 		assert.deepStrictEqual({ calls: current?.calls, errors: current?.errors }, { calls: 1, errors: 1 })
 	})
 
@@ -531,7 +621,7 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
 
 		assert.deepStrictEqual(
-			rows.map((row) => ({ key: row.key, calls: row.calls })),
+			Arr.map(rows, (row) => ({ key: row.key, calls: row.calls })),
 			[
 				{ key: "run_sql", calls: 1 },
 				{ key: "search_traces", calls: 1 },
@@ -542,7 +632,7 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 	it("groups failures that differ only by an array index, and splits the ones that differ by path", async () => {
 		const rows = await readErrorGroups({ tool: "submit_candidate" }, groupsWindow)
 		const group = (predicate: (row: (typeof rows)[number]) => boolean) => {
-			const row = rows.find(predicate)
+			const row = Option.getOrUndefined(Arr.findFirst(rows, predicate))
 			return row === undefined
 				? undefined
 				: {
@@ -552,13 +642,13 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 						sessions: row.sessions,
 						variants: row.variants,
 						callsSince: row.callsSince,
-						trendCalls: Object.values(row.trend).reduce((sum, calls) => sum + calls, 0),
+						trendCalls: Arr.reduce(Rec.values(row.trend), 0, (sum, calls) => sum + calls),
 					}
 		}
 
 		// Four groups, each keyed by a decimal UInt64 the JSON wire cannot corrupt.
 		assert.strictEqual(rows.length, 4)
-		assert.strictEqual(new Set(rows.map((row) => row.fingerprint)).size, 4)
+		assert.strictEqual(new Set(Arr.map(rows, (row) => row.fingerprint)).size, 4)
 		for (const row of rows) assert.match(row.fingerprint, /^\d+$/)
 
 		// `[0]` and `[1]` of one missing key: one group, titled by its latest text,
@@ -576,7 +666,9 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 				trendCalls: 2,
 			},
 		)
-		assert.isUndefined(rows.find((row) => row.message === TRACE_IDS_AT_0))
+		assert.isUndefined(
+			Option.getOrUndefined(Arr.findFirst(rows, (row) => row.message === TRACE_IDS_AT_0)),
+		)
 		// The same missing key at another path is another bug.
 		assert.deepInclude(
 			group((row) => row.message === LOG_PATTERNS_AT_0),
@@ -604,19 +696,25 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 			{ tool: "submit_candidate", failingOnly: true },
 			groupsWindow,
 		)
-		assert.strictEqual(failingOnly.find((row) => row.message === TRACE_IDS_AT_1)?.callsSince, 3)
+		assert.strictEqual(
+			Option.getOrUndefined(Arr.findFirst(failingOnly, (row) => row.message === TRACE_IDS_AT_1))
+				?.callsSince,
+			3,
+		)
 	})
 
 	it("reads one group's sessions, variants and breakdown, and its samples a page at a time", async () => {
 		const groups = await readErrorGroups({ tool: "submit_candidate" }, groupsWindow)
-		const fingerprint = groups.find((row) => row.message === TRACE_IDS_AT_1)!.fingerprint
+		const fingerprint = Option.getOrThrow(
+			Arr.findFirst(groups, (row) => row.message === TRACE_IDS_AT_1),
+		).fingerprint
 		const selection = { tool: "submit_candidate", fingerprint }
 
 		const sessions = compileUnsafe(Integrations.aiToolErrorSessionsQuery(selection), groupsWindow, {
 			rowSchema: Integrations.aiToolErrorSessionsRowSchema,
 		})
 		assert.deepStrictEqual(
-			Effect.runSync(sessions.decodeRows(await runJson(sessions.sql))).map((row) => ({
+			Arr.map(Effect.runSync(sessions.decodeRows(await runJson(sessions.sql))), (row) => ({
 				sessionId: row.sessionId,
 				service: row.service,
 				hits: row.hits,
@@ -628,7 +726,7 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 			rowSchema: Integrations.aiToolErrorVariantsRowSchema,
 		})
 		assert.deepStrictEqual(
-			Effect.runSync(variants.decodeRows(await runJson(variants.sql))).map((row) => [
+			Arr.map(Effect.runSync(variants.decodeRows(await runJson(variants.sql))), (row) => [
 				row.message,
 				row.calls,
 			]),
@@ -657,24 +755,24 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		// Newest first, one row a page, each page strictly past the last one's row.
 		const first = await page({ limit: 1 })
 		assert.deepStrictEqual(
-			first.map((row) => row.spanId),
+			Arr.map(first, (row) => row.spanId),
 			["tools-groups-2"],
 		)
 		const second = await page({
 			limit: 1,
-			before: { timestamp: first[0]!.timestamp, spanId: first[0]!.spanId },
+			before: { timestamp: first[0].timestamp, spanId: first[0].spanId },
 		})
 		assert.deepStrictEqual(
-			second.map((row) => row.spanId),
+			Arr.map(second, (row) => row.spanId),
 			["tools-groups-1"],
 		)
 		assert.deepStrictEqual(
-			await page({ limit: 1, before: { timestamp: second[0]!.timestamp, spanId: second[0]!.spanId } }),
+			await page({ limit: 1, before: { timestamp: second[0].timestamp, spanId: second[0].spanId } }),
 			[],
 		)
 		// A variant narrows the samples to the calls that said exactly that.
 		assert.deepStrictEqual(
-			(await page({ variant: TRACE_IDS_AT_0 })).map((row) => row.spanId),
+			Arr.map(await page({ variant: TRACE_IDS_AT_0 }), (row) => row.spanId),
 			["tools-groups-1"],
 		)
 		// The pre-0032 group opens like any other.
@@ -684,7 +782,7 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 			{ rowSchema: Integrations.aiToolErrorOccurrencesRowSchema },
 		)
 		assert.deepStrictEqual(
-			Effect.runSync(ungrouped.decodeRows(await runJson(ungrouped.sql))).map((row) => row.spanId),
+			Arr.map(Effect.runSync(ungrouped.decodeRows(await runJson(ungrouped.sql))), (row) => row.spanId),
 			["tools-pre-grouping"],
 		)
 	})
@@ -695,28 +793,32 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		// The older call's result is its text, whatever its status said; the newer
 		// one carried a status message alone. Two texts, two groups.
 		assert.deepStrictEqual(
-			rows
-				.map((row) => ({ errorType: row.errorType, calls: row.calls, message: row.message }))
-				.sort((a, b) => a.message.localeCompare(b.message)),
+			Arr.map(rows, (row) => ({
+				errorType: row.errorType,
+				calls: row.calls,
+				message: row.message,
+			})).sort((a, b) => Str.localeCompare(b.message)(a.message)),
 			[
 				{ errorType: "", calls: 1, message: '{"error":"503"}' },
 				{ errorType: "TimeoutError", calls: 1, message: "upstream timed out after 30s" },
 			],
 		)
 		// A calendar day apart: two different day buckets.
-		assert.strictEqual(new Set(rows.flatMap((row) => Object.keys(row.trend))).size, 2)
+		assert.strictEqual(new Set(Arr.flatMap(rows, (row) => Rec.keys(row.trend))).size, 2)
 	})
 
 	it("lists the sessions and the samples of one group, then their payloads", async () => {
 		const groups = await readErrorGroups({ tool: "flaky_tool" }, flakyWindow, 86_400)
-		const fingerprint = groups.find((row) => row.errorType === "TimeoutError")!.fingerprint
+		const fingerprint = Option.getOrThrow(
+			Arr.findFirst(groups, (row) => row.errorType === "TimeoutError"),
+		).fingerprint
 		const selection = { tool: "flaky_tool", fingerprint }
 
 		const sessions = compileUnsafe(Integrations.aiToolErrorSessionsQuery(selection), flakyWindow, {
 			rowSchema: Integrations.aiToolErrorSessionsRowSchema,
 		})
 		assert.deepStrictEqual(
-			Effect.runSync(sessions.decodeRows(await runJson(sessions.sql))).map((row) => ({
+			Arr.map(Effect.runSync(sessions.decodeRows(await runJson(sessions.sql))), (row) => ({
 				sessionId: row.sessionId,
 				vendorId: row.vendorId,
 				hits: row.hits,
@@ -729,7 +831,7 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		})
 		const calls = Effect.runSync(occurrences.decodeRows(await runJson(occurrences.sql)))
 		assert.deepStrictEqual(
-			calls.map((row) => ({ spanId: row.spanId, errorType: row.errorType, message: row.message })),
+			Arr.map(calls, (row) => ({ spanId: row.spanId, errorType: row.errorType, message: row.message })),
 			[
 				{
 					spanId: "tools-flaky-1",
@@ -749,15 +851,21 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 			{ orgId: ORG_ID, ...slice },
 			{ rowSchema: Integrations.aiToolErrorPayloadsRowSchema },
 		)
-		assert.isFalse(payloads.sql.includes(flakyWindow.startTime))
+		assert.isFalse(Str.includes(flakyWindow.startTime)(payloads.sql))
 		assert.deepStrictEqual(
-			Effect.runSync(payloads.decodeRows(await runJson(payloads.sql))).map((row) => ({
-				spanId: row.spanId,
-				statusCode: row.statusCode,
-				arguments: row.arguments,
-				argumentsBytes: row.argumentsBytes,
-				resultBytes: row.resultBytes,
-			})),
+			Arr.map(
+				Arr.map(
+					Effect.runSync(payloads.decodeRows(await runJson(payloads.sql))),
+					Integrations.aiToolErrorPayload,
+				),
+				(row) => ({
+					spanId: row.spanId,
+					statusCode: row.statusCode,
+					arguments: row.arguments,
+					argumentsBytes: row.argumentsBytes,
+					resultBytes: row.resultBytes,
+				}),
+			),
 			[
 				{
 					spanId: "tools-flaky-1",
@@ -782,13 +890,13 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		const calls = Effect.runSync(occurrences.decodeRows(await runJson(occurrences.sql)))
 		// Newest first.
 		assert.deepStrictEqual(
-			calls.map((row) => row.spanId),
+			Arr.map(calls, (row) => row.spanId),
 			["tools-flaky-1", "tools-flaky-2"],
 		)
 
 		if (!Arr.isReadonlyArrayNonEmpty(calls)) return assert.fail("expected occurrences")
 		const slice = Integrations.aiToolErrorPayloadSlice(calls)
-		const partitionOf = (literal: string) => literal.slice(0, 10)
+		const partitionOf = (literal: string) => Str.slice(0, 10)(literal)
 		assert.notStrictEqual(partitionOf(slice.sliceStart), partitionOf(slice.sliceEnd))
 
 		const payloads = compileUnsafe(
@@ -796,11 +904,15 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 			{ orgId: ORG_ID, ...slice },
 			{ rowSchema: Integrations.aiToolErrorPayloadsRowSchema },
 		)
-		const rows = Effect.runSync(payloads.decodeRows(await runJson(payloads.sql)))
+		const rows = Arr.map(
+			Effect.runSync(payloads.decodeRows(await runJson(payloads.sql))),
+			Integrations.aiToolErrorPayload,
+		)
 		assert.deepStrictEqual(
-			[...rows]
-				.sort((a, b) => a.spanId.localeCompare(b.spanId))
-				.map((row) => ({ spanId: row.spanId, arguments: row.arguments, result: row.result })),
+			Arr.map(
+				[...rows].sort((a, b) => Str.localeCompare(b.spanId)(a.spanId)),
+				(row) => ({ spanId: row.spanId, arguments: row.arguments, result: row.result }),
+			),
 			[
 				{ spanId: "tools-flaky-1", arguments: '{"retries":3}', result: "" },
 				{ spanId: "tools-flaky-2", arguments: '{"retries":1}', result: '{"error":"503"}' },

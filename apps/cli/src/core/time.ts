@@ -1,7 +1,7 @@
 // Time-range resolution for the CLI commands. Every bound leaves here as a
 // ClickHouse-style `YYYY-MM-DD HH:mm:ss` UTC string, whatever the user typed.
 
-import { Clock, Effect, Option, Result, Schema } from "effect"
+import { Clock, Effect, Option, Result, Schema, String as Str } from "effect"
 
 export interface Range {
 	readonly startTime: string
@@ -14,19 +14,23 @@ export class TimeRangeError extends Schema.TaggedError<TimeRangeError>()("@maple
 	hint: Schema.optionalKey(Schema.String),
 }) {}
 
-const pad = (n: number): string => String(n).padStart(2, "0")
+const pad = (n: number): string => Str.padStart(2, "0")(String(n))
 
 export const formatDateTimeUTC = (d: Date): string =>
 	`${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
 	`${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`
+
+/** `formatDateTimeUTC` for an epoch-millisecond instant. */
+export const formatEpochMsUTC = (ms: number): string => formatDateTimeUTC(new Date(ms))
 
 const SINCE_RE = /^(\d+)(m|h|d|w)$/
 const UNIT_MS = { m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 } as const
 
 /** Parse a relative window like `30m`, `6h`, `7d`, `2w` to milliseconds. */
 export const sinceToMs = (since: string): number | null => {
-	const match = since.trim().match(SINCE_RE)
-	if (!match) return null
+	const parsed = Str.match(SINCE_RE)(Str.trim(since))
+	if (Option.isNone(parsed)) return null
+	const match = parsed.value
 	const unit = match[2]
 	const n = Number(match[1])
 	return unit === "m" || unit === "h" || unit === "d" || unit === "w" ? n * UNIT_MS[unit] : null
@@ -40,9 +44,9 @@ const TIMESTAMP_RE =
 
 const zoneOffsetMs = (zone: string | undefined): number => {
 	if (zone === undefined || zone === "Z" || zone === "z") return 0
-	const sign = zone.startsWith("-") ? -1 : 1
-	const digits = zone.slice(1).replace(":", "")
-	return sign * (Number(digits.slice(0, 2)) * 60 + Number(digits.slice(2, 4))) * 60_000
+	const sign = Str.startsWith("-")(zone) ? -1 : 1
+	const digits = Str.replace(":", "")(Str.slice(1)(zone))
+	return sign * (Number(Str.slice(0, 2)(digits)) * 60 + Number(Str.slice(2, 4)(digits))) * 60_000
 }
 
 /**
@@ -51,9 +55,9 @@ const zoneOffsetMs = (zone: string | undefined): number => {
  * without a zone.
  */
 export const parseTimestampMs = (input: string): number | null => {
-	const match = input.trim().match(TIMESTAMP_RE)
-	if (!match) return null
-	const [, y, mo, d, h = "00", mi = "00", s = "00", zone] = match
+	const parsed = Str.match(TIMESTAMP_RE)(Str.trim(input))
+	if (Option.isNone(parsed)) return null
+	const [, y, mo, d, h = "00", mi = "00", s = "00", zone] = parsed.value
 	const year = Number(y)
 	const month = Number(mo)
 	const day = Number(d)
@@ -85,7 +89,7 @@ export const normalizeTimestamp = (input: string, flag: string): Result.Result<s
 					message: `invalid ${flag} "${input}": expected 'YYYY-MM-DD HH:mm:ss' (UTC) or ISO-8601 like 2026-09-25T22:00:00Z`,
 				}),
 			)
-		: Result.succeed(formatDateTimeUTC(new Date(ms)))
+		: Result.succeed(formatEpochMsUTC(ms))
 }
 
 /**
@@ -129,8 +133,8 @@ export const resolveRangeChecked = (a: {
 			const nowMs = yield* Clock.currentTimeMillis
 			const endMs = end === undefined ? nowMs : (parseTimestampMs(end) ?? nowMs)
 			range = {
-				startTime: start ?? formatDateTimeUTC(new Date(endMs - ms)),
-				endTime: end ?? formatDateTimeUTC(new Date(nowMs)),
+				startTime: start ?? formatEpochMsUTC(endMs - ms),
+				endTime: end ?? formatEpochMsUTC(nowMs),
 			}
 		}
 		// Same-format UTC strings order lexicographically.

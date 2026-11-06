@@ -1,5 +1,5 @@
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
-import { Schema, SchemaGetter } from "effect"
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
+import { Schema, SchemaGetter, Array as Arr, Record as Rec } from "effect"
 import {
 	ActorId,
 	AlertDestinationId,
@@ -17,7 +17,7 @@ import {
 	UserId,
 } from "../primitives"
 import { AuditedRead } from "./audit-log"
-import { Authorization } from "./current-tenant"
+import { SessionAuthorization } from "./current-tenant"
 import { AlertSeverity } from "./alerts"
 import {
 	PullRequestLinkSource,
@@ -27,6 +27,8 @@ import {
 } from "./fix-verification"
 import { VcsProviderId } from "./vcs"
 import { HttpTaggedError } from "./error-policy"
+import { TinybirdDateTime } from "../query-engine"
+import { warehouseReadHttpErrors } from "./warehouse"
 
 // Workflow state machine literals
 
@@ -129,8 +131,10 @@ export const MACHINE_OWNED_WORKFLOW_STATES: ReadonlySet<WorkflowState> = new Set
 export const allowedTransitionsForAll = (from: Iterable<WorkflowState>): ReadonlyArray<WorkflowState> => {
 	const rows = Array.from(from, (state) => WORKFLOW_TRANSITIONS[state])
 	if (rows.length === 0) return []
-	return WORKFLOW_STATE_ORDER.filter(
-		(target) => !MACHINE_OWNED_WORKFLOW_STATES.has(target) && rows.every((row) => row.includes(target)),
+	return Arr.filter(
+		WORKFLOW_STATE_ORDER,
+		(target) =>
+			!MACHINE_OWNED_WORKFLOW_STATES.has(target) && Arr.every(rows, (row) => row.includes(target)),
 	)
 }
 
@@ -186,14 +190,23 @@ export const canReachInReview = (from: WorkflowState): boolean =>
  * an instruction to make a call that could only fail.
  */
 export const describeWorkflowTransitions = (): string =>
-	Object.entries(WORKFLOW_TRANSITIONS)
-		.map(
-			([from, targets]) =>
-				[from, targets.filter((target) => !MACHINE_OWNED_WORKFLOW_STATES.has(target))] as const,
-		)
-		.filter(([, targets]) => targets.length > 0)
-		.map(([from, targets]) => `${from}→(${targets.join("|")})`)
-		.join("; ")
+	Arr.join(
+		Arr.map(
+			Arr.filter(
+				Arr.map(
+					Rec.toEntries(WORKFLOW_TRANSITIONS),
+					([from, targets]) =>
+						[
+							from,
+							Arr.filter(targets, (target) => !MACHINE_OWNED_WORKFLOW_STATES.has(target)),
+						] as const,
+				),
+				([, targets]) => targets.length > 0,
+			),
+			([from, targets]) => `${from}→(${Arr.join(targets, "|")})`,
+		),
+		"; ",
+	)
 
 export const ActorType = Schema.Literals(["user", "agent"]).annotate({
 	identifier: "@maple/ActorType",
@@ -236,6 +249,13 @@ export const IssueKind = Schema.Literals(["error", "alert", "integration"]).anno
 })
 export type IssueKind = Schema.Schema.Type<typeof IssueKind>
 
+/** Why an issue owns a fingerprint beyond its own: someone merged it in, or a version bump re-keyed it. */
+export const IssueFingerprintSource = Schema.Literals(["merge", "rekey"]).annotate({
+	identifier: "@maple/IssueFingerprintSource",
+	title: "Issue Fingerprint Source",
+})
+export type IssueFingerprintSource = Schema.Schema.Type<typeof IssueFingerprintSource>
+
 export const ErrorIssueEventType = Schema.Literals([
 	"created",
 	"state_change",
@@ -257,6 +277,8 @@ export const ErrorIssueEventType = Schema.Literals([
 	"pr_merged",
 	"verification_started",
 	"verification_verdict",
+	"merge",
+	"unmerge",
 ]).annotate({
 	identifier: "@maple/ErrorIssueEventType",
 	title: "Error Issue Event Type",
@@ -304,6 +326,8 @@ export class ErrorIssueDocument extends Schema.Class<ErrorIssueDocument>("ErrorI
 	id: ErrorIssueId,
 	kind: IssueKind,
 	fingerprintHash: Schema.String,
+	/** Every fingerprint the issue owns, its own first. Warehouse reads for the issue filter on all of them. */
+	fingerprintHashes: Schema.Array(Schema.String),
 	serviceName: Schema.String,
 	exceptionType: Schema.String,
 	exceptionMessage: Schema.String,
@@ -335,6 +359,8 @@ export class ErrorIssueDocument extends Schema.Class<ErrorIssueDocument>("ErrorI
 	resolvedVersions: Schema.Array(Schema.String),
 	snoozeUntil: Schema.NullOr(IsoDateTimeString),
 	archivedAt: Schema.NullOr(IsoDateTimeString),
+	/** Set when this issue was merged into another; it is archived and its hashes land there. */
+	mergedIntoIssueId: Schema.NullOr(ErrorIssueId),
 	hasOpenIncident: Schema.Boolean,
 	// Activity rollups for list surfaces: is anyone talking about this issue,
 	// and where do its linked PRs stand — without a per-issue events fetch.
@@ -451,12 +477,6 @@ export class ErrorIssueReleaseRequest extends Schema.Class<ErrorIssueReleaseRequ
 	note: Schema.optionalKey(Schema.String),
 }) {}
 
-export class ErrorIssueAssignRequest extends Schema.Class<ErrorIssueAssignRequest>("ErrorIssueAssignRequest")(
-	{
-		actorId: Schema.NullOr(ActorId),
-	},
-) {}
-
 export class ErrorIssueCommentRequest extends Schema.Class<ErrorIssueCommentRequest>(
 	"ErrorIssueCommentRequest",
 )({
@@ -465,19 +485,22 @@ export class ErrorIssueCommentRequest extends Schema.Class<ErrorIssueCommentRequ
 	kind: Schema.optionalKey(Schema.Literals(["comment", "agent_note"])),
 }) {}
 
-export class ErrorIssueProposeFixRequest extends Schema.Class<ErrorIssueProposeFixRequest>(
-	"ErrorIssueProposeFixRequest",
-)({
-	patchSummary: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4_000)),
-	prUrl: Schema.optionalKey(Schema.String),
-	artifacts: Schema.optionalKey(Schema.Array(Schema.String)),
-}) {}
-
 export class ErrorIssueSetSeverityRequest extends Schema.Class<ErrorIssueSetSeverityRequest>(
 	"ErrorIssueSetSeverityRequest",
 )({
 	severity: Schema.NullOr(IssueSeverity),
 	note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_000))),
+}) {}
+
+/** How many issues one merge folds into the kept one. */
+export const MAX_ISSUE_MERGE_SOURCES = 50
+
+/** Fold these issues into the one in the path; each is archived pointing at it. */
+export class ErrorIssueMergeRequest extends Schema.Class<ErrorIssueMergeRequest>("ErrorIssueMergeRequest")({
+	sourceIssueIds: Schema.Array(ErrorIssueId).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(MAX_ISSUE_MERGE_SOURCES),
+	),
 }) {}
 
 // Pull request links + fix verification
@@ -554,12 +577,6 @@ export class ErrorIssueVerificationsResponse extends Schema.Class<ErrorIssueVeri
 	"ErrorIssueVerificationsResponse",
 )({
 	verifications: Schema.Array(ErrorIssueVerificationDocument),
-}) {}
-
-export class RegisterAgentRequest extends Schema.Class<RegisterAgentRequest>("RegisterAgentRequest")({
-	name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
-	model: Schema.optionalKey(Schema.String),
-	capabilities: Schema.optionalKey(Schema.Array(Schema.String)),
 }) {}
 
 // Notification policy
@@ -670,32 +687,33 @@ export const IssueSeverityListCursor = Schema.String.pipe(
 	Schema.decodeTo(Schema.fromJsonString(IssueSeverityListCursorFields)),
 ).annotate({ identifier: "@maple/IssueSeverityListCursor", title: "Issue Severity List Cursor" })
 
-const IssueListQuery = Schema.Struct({
-	cursor: Schema.optional(IssueListCursor),
-	workflowState: Schema.optional(WorkflowState),
-	severity: Schema.optional(Schema.Union([IssueSeverity, Schema.Literal("unset")])),
-	kind: Schema.optional(IssueKind),
-	service: Schema.optional(Schema.String),
-	deploymentEnv: Schema.optional(Schema.String),
-	assignedActorId: Schema.optional(ActorId),
-	includeArchived: Schema.optional(Schema.Literals(["0", "1"])),
-	startTime: Schema.optional(IsoDateTimeString),
-	endTime: Schema.optional(IsoDateTimeString),
-	limit: Schema.optional(
-		Schema.NumberFromString.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 500 })),
-	),
+const IssueAffectedUsersQuery = Schema.Struct({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
 })
 
-const IssueDetailQuery = Schema.Struct({
-	startTime: Schema.optional(IsoDateTimeString),
-	endTime: Schema.optional(IsoDateTimeString),
-	bucketSeconds: Schema.optional(
-		Schema.NumberFromString.check(Schema.isInt(), Schema.isBetween({ minimum: 60, maximum: 86_400 })),
-	),
-	sampleLimit: Schema.optional(
-		Schema.NumberFromString.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 100 })),
-	),
+export const IssueAffectedUser = Schema.Struct({
+	userId: Schema.String,
+	hits: Schema.Number,
+	lastSeenMs: Schema.Number,
 })
+export type IssueAffectedUser = typeof IssueAffectedUser.Type
+
+/**
+ * The end users an issue hit in a window, over its own fingerprint and its aliases. `hitsWithUser`
+ * over `hits` is the coverage: occurrences from spans without a user id count only in `hits`.
+ */
+export class ErrorIssueAffectedUsersResponse extends Schema.Class<ErrorIssueAffectedUsersResponse>(
+	"ErrorIssueAffectedUsersResponse",
+)({
+	affectedUsers: Schema.Number,
+	hitsWithUser: Schema.Number,
+	hits: Schema.Number,
+	/** Most hits first, capped. */
+	users: Schema.Array(IssueAffectedUser),
+	/** `false` on a cluster whose `error_events` predates `UserId`, and for non-error issues. */
+	attributed: Schema.Boolean,
+}) {}
 
 const IssueEventsQuery = Schema.Struct({
 	limit: Schema.optional(
@@ -791,6 +809,16 @@ export class ErrorValidationError extends Schema.TaggedError<ErrorValidationErro
 	{ httpApiStatus: 400 },
 ) {}
 
+/** The notification policy names destinations this org does not have. */
+export class ErrorNotificationUnknownDestinationError extends Schema.TaggedError<ErrorNotificationUnknownDestinationError>()(
+	"@maple/http/errors/ErrorNotificationUnknownDestinationError",
+	{
+		message: Schema.String,
+		destinationIds: Schema.Array(AlertDestinationId),
+	},
+	{ httpApiStatus: 400 },
+) {}
+
 export class ErrorIssuePullRequestInvalidError extends Schema.TaggedError<ErrorIssuePullRequestInvalidError>()(
 	"@maple/http/errors/ErrorIssuePullRequestInvalidError",
 	{
@@ -876,22 +904,12 @@ export class ActorNotFoundError extends Schema.TaggedError<ActorNotFoundError>()
 
 // API group
 
+/**
+ * Dashboard issue workflow: transitions, comments, severity, lease coordination,
+ * PR links, and escalation policy. Internal transport; agents reach the same
+ * operations through the MCP tools, and `/v2/error_issues` is the public read surface.
+ */
 export class ErrorsApiGroup extends HttpApiGroup.make("errors")
-	.add(
-		HttpApiEndpoint.get("listIssues", "/issues", {
-			query: IssueListQuery,
-			success: ErrorIssuesListResponse,
-			error: ErrorPersistenceError,
-		}).annotate(AuditedRead, "telemetry.read"),
-	)
-	.add(
-		HttpApiEndpoint.get("getIssue", "/issues/:issueId", {
-			params: { issueId: ErrorIssueId },
-			query: IssueDetailQuery,
-			success: ErrorIssueDetailResponse,
-			error: [ErrorPersistenceError, ErrorIssueNotFoundError],
-		}).annotate(AuditedRead, "telemetry.read"),
-	)
 	.add(
 		HttpApiEndpoint.post("transitionIssue", "/issues/:issueId/transitions", {
 			params: { issueId: ErrorIssueId },
@@ -947,37 +965,26 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 		}),
 	)
 	.add(
-		HttpApiEndpoint.post("proposeFix", "/issues/:issueId/propose-fix", {
-			params: { issueId: ErrorIssueId },
-			payload: ErrorIssueProposeFixRequest,
-			success: ErrorIssueDocument,
-			// `ErrorIssueLeaseConflictError`: proposing a fix takes the lease, so it
-			// can collide with whoever is already working the issue.
-			error: [
-				ErrorPersistenceError,
-				ErrorIssueNotFoundError,
-				ErrorIssueTransitionError,
-				ErrorIssueLeaseConflictError,
-				// A `prUrl` that is not a pull request URL is a 400, not a silent
-				// no-op that reports the fix as attached.
-				ErrorIssuePullRequestInvalidError,
-			],
-		}),
-	)
-	.add(
-		HttpApiEndpoint.put("assignIssue", "/issues/:issueId/assignee", {
-			params: { issueId: ErrorIssueId },
-			payload: ErrorIssueAssignRequest,
-			success: ErrorIssueDocument,
-			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ActorNotFoundError],
-		}),
-	)
-	.add(
 		HttpApiEndpoint.put("setIssueSeverity", "/issues/:issueId/severity", {
 			params: { issueId: ErrorIssueId },
 			payload: ErrorIssueSetSeverityRequest,
 			success: ErrorIssueDocument,
 			error: [ErrorPersistenceError, ErrorIssueNotFoundError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("mergeIssues", "/issues/:issueId/merge", {
+			params: { issueId: ErrorIssueId },
+			payload: ErrorIssueMergeRequest,
+			success: ErrorIssueDocument,
+			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ErrorValidationError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("unmergeIssue", "/issues/:issueId/unmerge", {
+			params: { issueId: ErrorIssueId },
+			success: ErrorIssueDocument,
+			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ErrorValidationError],
 		}),
 	)
 	.add(
@@ -989,43 +996,12 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 		}).annotate(AuditedRead, "telemetry.read"),
 	)
 	.add(
-		HttpApiEndpoint.get("listIssueIncidents", "/issues/:issueId/incidents", {
+		HttpApiEndpoint.get("listIssueAffectedUsers", "/issues/:issueId/affected-users", {
 			params: { issueId: ErrorIssueId },
-			success: ErrorIncidentsListResponse,
-			error: [ErrorPersistenceError, ErrorIssueNotFoundError],
+			query: IssueAffectedUsersQuery,
+			success: ErrorIssueAffectedUsersResponse,
+			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ...warehouseReadHttpErrors],
 		}).annotate(AuditedRead, "telemetry.read"),
-	)
-	.add(
-		HttpApiEndpoint.get("listOpenIncidents", "/incidents", {
-			success: ErrorIncidentsListResponse,
-			error: ErrorPersistenceError,
-		}).annotate(AuditedRead, "telemetry.read"),
-	)
-	.add(
-		HttpApiEndpoint.post("registerAgent", "/agents", {
-			payload: RegisterAgentRequest,
-			success: ActorDocument,
-			error: [ErrorPersistenceError, ErrorValidationError],
-		}),
-	)
-	.add(
-		HttpApiEndpoint.get("listAgents", "/agents", {
-			success: ActorsListResponse,
-			error: ErrorPersistenceError,
-		}),
-	)
-	.add(
-		HttpApiEndpoint.get("getNotificationPolicy", "/policy", {
-			success: ErrorNotificationPolicyDocument,
-			error: ErrorPersistenceError,
-		}),
-	)
-	.add(
-		HttpApiEndpoint.put("upsertNotificationPolicy", "/policy", {
-			payload: ErrorNotificationPolicyUpsertRequest,
-			success: ErrorNotificationPolicyDocument,
-			error: [ErrorForbiddenError, ErrorPersistenceError, ErrorValidationError],
-		}),
 	)
 	.add(
 		HttpApiEndpoint.get("getEscalationPolicy", "/escalation-policy", {
@@ -1097,5 +1073,5 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 			error: [ErrorPersistenceError, ErrorIssueNotFoundError],
 		}),
 	)
-	.prefix("/api/errors")
-	.middleware(Authorization) {}
+	.prefix("/internal/errors")
+	.middleware(SessionAuthorization) {}

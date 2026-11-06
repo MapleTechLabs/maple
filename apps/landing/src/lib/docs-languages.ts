@@ -20,6 +20,12 @@ export const LANGUAGE_IDS = [
 
 export type LanguageId = (typeof LANGUAGE_IDS)[number]
 
+/** Ids `LanguageLogo` draws: every language above, plus TypeScript, which labels
+ * tabs and filters on the agent guides but has no instrumentation guide of its own. */
+export const LOGO_IDS = [...LANGUAGE_IDS, "typescript"] as const
+
+export type LogoId = (typeof LOGO_IDS)[number]
+
 export interface Language {
 	id: LanguageId
 	name: string

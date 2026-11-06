@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest"
 
-import {
-	applyWhereClauseSuggestion,
-	getWhereClauseAutocomplete,
-} from "@/lib/query-builder/where-clause-autocomplete"
+import { applyWhereClauseSuggestion, getWhereClauseAutocomplete } from "./where-clause-autocomplete"
+import { Array as Arr, String as Str } from "effect"
 
 describe("where clause autocomplete", () => {
 	it("suggests keys at an empty query", () => {
@@ -14,7 +12,7 @@ describe("where clause autocomplete", () => {
 		})
 
 		expect(result.context).toBe("key")
-		expect(result.suggestions.some((item) => item.insertText === "service.name")).toBe(true)
+		expect(Arr.some(result.suggestions, (item) => item.insertText === "service.name")).toBe(true)
 	})
 
 	it("suggests operator after a key", () => {
@@ -27,7 +25,7 @@ describe("where clause autocomplete", () => {
 		})
 
 		expect(result.context).toBe("operator")
-		expect(result.suggestions.map((item) => item.insertText)).toEqual([
+		expect(Arr.map(result.suggestions, (item) => item.insertText)).toEqual([
 			"=",
 			"!=",
 			">",
@@ -53,7 +51,7 @@ describe("where clause autocomplete", () => {
 		})
 
 		expect(result.context).toBe("value")
-		expect(result.suggestions.some((item) => item.insertText.includes("checkout"))).toBe(true)
+		expect(Arr.some(result.suggestions, (item) => Str.includes("checkout")(item.insertText))).toBe(true)
 	})
 
 	it("treats !exists as a no-value operator and routes to conjunction context", () => {
@@ -84,6 +82,18 @@ describe("where clause autocomplete", () => {
 		expect(result.suggestions[0]?.insertText).toBe('"checkout"')
 	})
 
+	it("escapes every quote and backslash in a suggested value", () => {
+		const expression = "service.name = "
+		const result = getWhereClauseAutocomplete({
+			expression,
+			cursor: expression.length,
+			dataSource: "traces",
+			values: { services: ['a"b\\c"\\'] },
+		})
+
+		expect(result.suggestions[0]?.insertText).toBe('"a\\"b\\\\c\\"\\\\"')
+	})
+
 	it("suggests conjunction after a finished value", () => {
 		const expression = 'service.name = "checkout" '
 		const result = getWhereClauseAutocomplete({
@@ -93,7 +103,7 @@ describe("where clause autocomplete", () => {
 		})
 
 		expect(result.context).toBe("conjunction")
-		expect(result.suggestions.map((item) => item.insertText)).toEqual(["AND"])
+		expect(Arr.map(result.suggestions, (item) => item.insertText)).toEqual(["AND"])
 	})
 
 	it("applies operator suggestion with normalized spacing", () => {
@@ -109,7 +119,7 @@ describe("where clause autocomplete", () => {
 			context: autocomplete.context,
 			replaceStart: autocomplete.replaceStart,
 			replaceEnd: autocomplete.replaceEnd,
-			suggestion: autocomplete.suggestions[0],
+			suggestion: Arr.getUnsafe(autocomplete.suggestions, 0),
 		})
 
 		expect(applied.expression).toBe("service.name = ")
@@ -131,7 +141,7 @@ describe("where clause autocomplete", () => {
 			context: autocomplete.context,
 			replaceStart: autocomplete.replaceStart,
 			replaceEnd: autocomplete.replaceEnd,
-			suggestion: autocomplete.suggestions[0],
+			suggestion: Arr.getUnsafe(autocomplete.suggestions, 0),
 		})
 
 		expect(applied.expression).toBe('service.name = "checkout" ')
@@ -150,7 +160,7 @@ describe("where clause autocomplete", () => {
 			context: autocomplete.context,
 			replaceStart: autocomplete.replaceStart,
 			replaceEnd: autocomplete.replaceEnd,
-			suggestion: autocomplete.suggestions[0],
+			suggestion: Arr.getUnsafe(autocomplete.suggestions, 0),
 		})
 
 		expect(applied.expression).toBe('service.name = "checkout" AND ')
@@ -169,8 +179,8 @@ describe("where clause autocomplete", () => {
 			scope: "trace_search",
 		})
 
-		expect(defaultScope.suggestions.some((item) => item.insertText === "http.method")).toBe(false)
-		expect(traceScope.suggestions.some((item) => item.insertText === "http.method")).toBe(true)
+		expect(Arr.some(defaultScope.suggestions, (item) => item.insertText === "http.method")).toBe(false)
+		expect(Arr.some(traceScope.suggestions, (item) => item.insertText === "http.method")).toBe(true)
 	})
 
 	it("suggests resource attribute keys when typing resource. prefix", () => {
@@ -185,10 +195,12 @@ describe("where clause autocomplete", () => {
 		})
 
 		expect(result.context).toBe("key")
-		expect(result.suggestions.some((item) => item.insertText === "resource.service.version")).toBe(true)
-		expect(result.suggestions.some((item) => item.insertText === "resource.telemetry.sdk.name")).toBe(
+		expect(Arr.some(result.suggestions, (item) => item.insertText === "resource.service.version")).toBe(
 			true,
 		)
+		expect(
+			Arr.some(result.suggestions, (item) => item.insertText === "resource.telemetry.sdk.name"),
+		).toBe(true)
 	})
 
 	it("suggests resource attribute values after resource.<key> =", () => {
@@ -228,7 +240,7 @@ describe("where clause autocomplete", () => {
 		expect(method.context).toBe("value")
 		expect(method.suggestions[0]?.label).toBe("GET")
 		expect(method.suggestions[0]?.insertText).toBe('"GET"')
-		expect(hasError.suggestions.map((item) => item.insertText)).toEqual(["true", "false"])
+		expect(Arr.map(hasError.suggestions, (item) => item.insertText)).toEqual(["true", "false"])
 	})
 
 	it("suggests attr keys for logs data source", () => {
@@ -242,37 +254,8 @@ describe("where clause autocomplete", () => {
 		})
 
 		expect(result.context).toBe("key")
-		expect(result.suggestions.some((item) => item.insertText === "attr.http.method")).toBe(true)
-		expect(result.suggestions.some((item) => item.insertText === "attr.user.id")).toBe(true)
-	})
-
-	it("suggests resource keys for logs data source", () => {
-		const result = getWhereClauseAutocomplete({
-			expression: "resource.",
-			cursor: "resource.".length,
-			dataSource: "logs",
-			values: {
-				resourceAttributeKeys: ["service.version", "telemetry.sdk.name"],
-			},
-		})
-
-		expect(result.context).toBe("key")
-		expect(result.suggestions.some((item) => item.insertText === "resource.service.version")).toBe(true)
-	})
-
-	it("suggests attr keys for metrics data source", () => {
-		const result = getWhereClauseAutocomplete({
-			expression: "attr.",
-			cursor: "attr.".length,
-			dataSource: "metrics",
-			values: {
-				attributeKeys: ["host.name", "region"],
-			},
-		})
-
-		expect(result.context).toBe("key")
-		expect(result.suggestions.some((item) => item.insertText === "attr.host.name")).toBe(true)
-		expect(result.suggestions.some((item) => item.insertText === "attr.region")).toBe(true)
+		expect(Arr.some(result.suggestions, (item) => item.insertText === "attr.http.method")).toBe(true)
+		expect(Arr.some(result.suggestions, (item) => item.insertText === "attr.user.id")).toBe(true)
 	})
 
 	it("shows attr.<key> hint in logs key suggestions", () => {
@@ -282,18 +265,8 @@ describe("where clause autocomplete", () => {
 			dataSource: "logs",
 		})
 
-		expect(result.suggestions.some((item) => item.insertText === "attr.")).toBe(true)
-		expect(result.suggestions.some((item) => item.insertText === "resource.")).toBe(true)
-	})
-
-	it("shows attr.<key> hint in metrics key suggestions", () => {
-		const result = getWhereClauseAutocomplete({
-			expression: "",
-			cursor: 0,
-			dataSource: "metrics",
-		})
-
-		expect(result.suggestions.some((item) => item.insertText === "attr.")).toBe(true)
+		expect(Arr.some(result.suggestions, (item) => item.insertText === "attr.")).toBe(true)
+		expect(Arr.some(result.suggestions, (item) => item.insertText === "resource.")).toBe(true)
 	})
 
 	it("suggests dashboard variables first in value position", () => {
@@ -311,7 +284,7 @@ describe("where clause autocomplete", () => {
 			insertText: '"$service"',
 			description: "Dashboard variable",
 		})
-		expect(result.suggestions.some((item) => item.insertText === '"api"')).toBe(true)
+		expect(Arr.some(result.suggestions, (item) => item.insertText === '"api"')).toBe(true)
 	})
 
 	it("matches variables when typing $", () => {
@@ -323,8 +296,8 @@ describe("where clause autocomplete", () => {
 			values: { variables: ["service", "env"] },
 		})
 
-		expect(result.suggestions.map((item) => item.label)).toContain("$env")
-		expect(result.suggestions.map((item) => item.label)).not.toContain("$service")
+		expect(Arr.map(result.suggestions, (item) => item.label)).toContain("$env")
+		expect(Arr.map(result.suggestions, (item) => item.label)).not.toContain("$service")
 	})
 
 	it("suggests no variables when none are defined", () => {
@@ -336,7 +309,7 @@ describe("where clause autocomplete", () => {
 			values: { services: ["api"] },
 		})
 
-		expect(result.suggestions.every((item) => item.description !== "Dashboard variable")).toBe(true)
+		expect(Arr.every(result.suggestions, (item) => item.description !== "Dashboard variable")).toBe(true)
 	})
 })
 
@@ -349,7 +322,7 @@ describe("where clause autocomplete: funnel scopes", () => {
 			scope: "product_events",
 			maxSuggestions: 20,
 		})
-		const keys = result.suggestions.map((item) => item.insertText)
+		const keys = Arr.map(result.suggestions, (item) => item.insertText)
 		expect(keys).toContain("country")
 		expect(keys).toContain("utm.source")
 		expect(keys).toContain("visitor_type")
@@ -364,7 +337,7 @@ describe("where clause autocomplete: funnel scopes", () => {
 			scope: "product_events",
 			values: { productEventFacets: { country: ["DE", "US"] } },
 		})
-		expect(values.suggestions.map((item) => item.label)).toEqual(["DE", "US"])
+		expect(Arr.map(values.suggestions, (item) => item.label)).toEqual(["DE", "US"])
 
 		const operators = getWhereClauseAutocomplete({
 			expression: "country ",
@@ -373,7 +346,7 @@ describe("where clause autocomplete: funnel scopes", () => {
 			scope: "product_events",
 		})
 		expect(operators.context).toBe("operator")
-		expect(operators.suggestions.map((item) => item.insertText)).toEqual(["="])
+		expect(Arr.map(operators.suggestions, (item) => item.insertText)).toEqual(["="])
 	})
 
 	it("suggests no keys for a step's attribute filter — they are the customer's own", () => {

@@ -1,7 +1,7 @@
-// BOUNDARY: Test doubles mirror intentionally untyped external callbacks.
+// BOUNDARY-FILE: Test doubles mirror intentionally untyped external callbacks.
 import { describe, expect, it } from "vitest"
-import { Schema, Effect } from "effect"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { Schema, Effect, Array as Arr, Record as Rec, String as Str } from "effect"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	auditAttributeKeyInventoryQuery,
 	auditAttributeKeyInventoryRowSchema,
@@ -23,9 +23,10 @@ import {
 	auditSpanProfileByServiceQuery,
 	auditSpanProfileRowSchema,
 } from "./setup-audit"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 }
@@ -64,9 +65,13 @@ describe("auditSpanShapeByServiceQuery", () => {
 	it("splits weighted counts by span kind and flags non-Title-Case literals", () => {
 		const { sql } = compileUnsafe(auditSpanProfileByServiceQuery(), baseParams)
 		expect(sql).toContain("FROM traces_aggregates_hourly")
-		expect(sql).toContain("sumIf(WeightedCount, SpanKind = 'Server')")
-		expect(sql).toContain("sumIf(WeightedCount, DeploymentEnv = '')")
-		expect(sql).toContain("uniq(SpanName)")
+		expect(sql).toContain(
+			"sumIf(traces_aggregates_hourly.WeightedCount, traces_aggregates_hourly.SpanKind = 'Server')",
+		)
+		expect(sql).toContain(
+			"sumIf(traces_aggregates_hourly.WeightedCount, traces_aggregates_hourly.DeploymentEnv = '')",
+		)
+		expect(sql).toContain("uniq(traces_aggregates_hourly.SpanName)")
 		expect(sql).toContain("StatusCode NOT IN ('Ok', 'Error', 'Unset', '')")
 		expect(sql).toContain("SpanKind NOT IN ('Server', 'Client', 'Producer', 'Consumer', 'Internal', '')")
 	})
@@ -82,9 +87,11 @@ describe("auditSamplingByServiceQuery", () => {
 	it("returns raw and extrapolated counts separately rather than a ratio", () => {
 		const { sql } = compileUnsafe(auditSamplingByServiceQuery(), baseParams)
 		expect(sql).toContain("FROM service_overview_hourly")
-		expect(sql).toContain("sum(SpanCount)")
-		expect(sql).toContain("sum(EstimatedSpanCount)")
-		expect(sql).toContain("sumIf(SpanCount, CommitSha != '')")
+		expect(sql).toContain("sum(service_overview_hourly.SpanCount)")
+		expect(sql).toContain("sum(service_overview_hourly.EstimatedSpanCount)")
+		expect(sql).toContain(
+			"sumIf(service_overview_hourly.SpanCount, service_overview_hourly.CommitSha != '')",
+		)
 		// The ratio is computed app-side; builder arithmetic follows SQL precedence, not call order.
 		expect(sql).not.toContain("/")
 	})
@@ -94,7 +101,7 @@ describe("auditMetricLabelCardinalityQuery", () => {
 	it("uses approximate uniq so an exploded-label org cannot exhaust query memory", () => {
 		const { sql } = compileUnsafe(auditMetricLabelCardinalityQuery(), baseParams)
 		expect(sql).toContain("AttributeScope = 'metric'")
-		expect(sql).toContain("uniq(AttributeValue)")
+		expect(sql).toContain("uniq(attribute_values_hourly.AttributeValue)")
 		expect(sql).not.toContain("uniqExact")
 	})
 })
@@ -104,7 +111,7 @@ describe("auditPeerValueInventoryQuery", () => {
 		const { sql } = compileUnsafe(auditPeerValueInventoryQuery(), baseParams)
 		expect(sql).toContain("AttributeScope = 'span'")
 		expect(sql).toContain(
-			"AttributeKey IN ('peer.service', 'db.system', 'db.system.name', 'messaging.system', 'rpc.system')",
+			"AttributeKey IN ('service.peer.name', 'peer.service', 'db.system', 'db.system.name', 'messaging.system', 'rpc.system.name', 'rpc.system')",
 		)
 		expect(sql).toContain("AttributeValue != ''")
 		expect(sql).toContain("GROUP BY attributeKey, attributeValue")
@@ -115,7 +122,9 @@ describe("auditDbEdgeIdentityQuery", () => {
 	it("counts calls whose database namespace is empty", () => {
 		const { sql } = compileUnsafe(auditDbEdgeIdentityQuery(), baseParams)
 		expect(sql).toContain("FROM service_map_db_edges_hourly")
-		expect(sql).toContain("sumIf(CallCount, DbNamespace = '')")
+		expect(sql).toContain(
+			"sumIf(service_map_db_edges_hourly.CallCount, service_map_db_edges_hourly.DbNamespace = '')",
+		)
 		expect(sql).toContain("DbSystem != ''")
 	})
 })
@@ -124,9 +133,9 @@ describe("auditLogCorrelationQuery", () => {
 	it("reads narrow columns and prunes on both timestamp columns", () => {
 		const { sql } = compileUnsafe(auditLogCorrelationQuery(), baseParams)
 		expect(sql).toContain("FROM logs")
-		expect(sql).toContain("countIf(TraceId = '')")
+		expect(sql).toContain("countIf(logs.TraceId = '')")
 		expect(sql).toContain("countIf(upper(SeverityText) IN ('ERROR', 'FATAL'))")
-		expect(sql).toContain("countIf((TraceId = '' AND upper(SeverityText) IN ('ERROR', 'FATAL')))")
+		expect(sql).toContain("countIf((logs.TraceId = '' AND upper(SeverityText) IN ('ERROR', 'FATAL')))")
 		// TimestampTime prunes day partitions; Timestamp narrows within them.
 		expect(sql).toContain("TimestampTime >= '2024-01-01 00:00:00'")
 		expect(sql).toContain("Timestamp >= '2024-01-01 00:00:00'")
@@ -148,7 +157,7 @@ describe("auditTraceSampleModulus", () => {
 
 describe("trace-completeness joins", () => {
 	const window = {
-		orgId: "org_1",
+		orgId: OrgId.make("org_1"),
 		childStart: "2024-01-01 10:00:00",
 		childEnd: "2024-01-01 11:00:00",
 		parentStart: "2024-01-01 09:00:00",
@@ -157,25 +166,48 @@ describe("trace-completeness joins", () => {
 	it("auditOrphanSpansSQL left-joins children to parents over a lagged window", () => {
 		const { sql } = Effect.runSync(auditOrphanSpansSQL(window))
 		expect(sql).toContain("FROM service_map_children")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- an inner join would count no orphans
 		expect(sql).toContain("LEFT JOIN")
 		expect(sql).toContain("FROM service_map_spans")
 		expect(sql).toContain("ON (c.TraceId = p.TraceId AND c.ParentSpanId = p.SpanId)")
 		// join_use_nulls = 0 makes a miss an empty string, not NULL.
 		expect(sql).toContain("countIf(p.SpanId = '')")
 		// Both sides scoped to the org; the parent side reaches further back for long spans.
-		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(sql))).toHaveLength(2)
 		expect(sql).toContain("Timestamp >= '2024-01-01 09:00:00'")
 		expect(sql).toContain("Timestamp >= '2024-01-01 10:00:00'")
 		// Sampling-marked orphans are split out rather than counted as defects.
 		expect(sql).toContain("sampledOrphanCount")
 	})
 
-	it("auditRootlessTracesSQL joins observed traces against the root-span index", () => {
-		const { sql } = Effect.runSync(auditRootlessTracesSQL(window))
+	it("auditRootlessTracesSQL joins every observed trace against the root-span index", () => {
+		const { sql } = Effect.runSync(auditRootlessTracesSQL(window, null))
 		expect(sql).toContain("FROM trace_list_mv")
-		expect(sql).toContain("argMin(ServiceName, Timestamp) AS entryService")
+		// Every span, not only entry spans: a trace whose lost root was its only Server span still counts.
+		expect(sql).toContain("FROM traces\n")
+		expect(sql).toContain("argMin(traces.ServiceName, traces.Timestamp) AS entryService")
 		expect(sql).toContain("countIf(r.TraceId = '')")
 		expect(sql).toContain("GROUP BY TraceId")
+	})
+
+	it("auditRootlessTracesSQL only counts traces that start inside the window", () => {
+		const { sql } = Effect.runSync(auditRootlessTracesSQL(window, null))
+		// Read from the parent lookback, so a trace with spans before `childStart` is seen as older.
+		expect(sql).toContain("traces.Timestamp >= '2024-01-01 09:00:00'")
+		expect(sql).toContain("HAVING min(traces.Timestamp) >= '2024-01-01 10:00:00'")
+	})
+
+	it("auditRootlessTracesSQL treats traces made only of sampler-kept spans as sampled", () => {
+		const none = Effect.runSync(auditRootlessTracesSQL(window, null)).sql
+		expect(none).not.toContain("StatusCode")
+
+		const { sql } = Effect.runSync(
+			auditRootlessTracesSQL(window, { keepErrorSpans: true, slowSpanNs: 2_000_000_000 }),
+		)
+		expect(sql).toContain(
+			"countIf(NOT ((traces.StatusCode = 'Error' OR traces.Duration >= 2000000000))) AS unkeptSpans",
+		)
+		expect(sql).toContain("(t.thresholdSampled = 1 OR t.unkeptSpans = 0)")
 	})
 
 	it("applies the trace-sampling modulus to both sides of each join, or neither", () => {
@@ -184,10 +216,12 @@ describe("trace-completeness joins", () => {
 
 		for (const sql of [
 			Effect.runSync(auditOrphanSpansSQL({ ...window, traceSampleModulus: 16 })).sql,
-			Effect.runSync(auditRootlessTracesSQL({ ...window, traceSampleModulus: 16 })).sql,
+			Effect.runSync(auditRootlessTracesSQL({ ...window, traceSampleModulus: 16 }, null)).sql,
 		]) {
 			// Both sides, so every span of a kept trace survives and per-trace correctness is exact.
-			expect(sql.match(/cityHash64\(TraceId\) % 16 = 0/g)).toHaveLength(2)
+			expect(Arr.fromIterable(Str.matchAll(/cityHash64\(\w+\.TraceId\) % 16 = 0/g)(sql))).toHaveLength(
+				2,
+			)
 		}
 	})
 
@@ -196,7 +230,7 @@ describe("trace-completeness joins", () => {
 			"cityHash64",
 		)
 		expect(Effect.runSync(auditOrphanSpansSQL({ ...window, traceSampleModulus: 99_999 })).sql).toContain(
-			"cityHash64(TraceId) % 1024 = 0",
+			"cityHash64(service_map_children.TraceId) % 1024 = 0",
 		)
 	})
 
@@ -205,12 +239,12 @@ describe("trace-completeness joins", () => {
 		// both join sides being scoped. Asserting it by hand is what these used to
 		// do, and an omitted filter would have sailed through the executor's gate.
 		expect(Effect.runSync(auditOrphanSpansSQL(window)).tenantScope).toBe("single-tenant")
-		expect(Effect.runSync(auditRootlessTracesSQL(window)).tenantScope).toBe("single-tenant")
+		expect(Effect.runSync(auditRootlessTracesSQL(window, null)).tenantScope).toBe("single-tenant")
 	})
 
 	it("escapes the org id so an embedded quote cannot terminate the literal", () => {
 		const { sql } = Effect.runSync(
-			auditOrphanSpansSQL({ ...window, orgId: "org_'; DROP TABLE traces; --" }),
+			auditOrphanSpansSQL({ ...window, orgId: OrgId.make("org_'; DROP TABLE traces; --") }),
 		)
 		// The injected quote is escaped, so the whole payload stays inside one string literal.
 		expect(sql).toContain("OrgId = 'org_\\'\\x3B DROP TABLE traces\\x3B --'")
@@ -224,20 +258,22 @@ describe("trace-completeness joins", () => {
  */
 describe("row schemas decode both ClickHouse and Tinybird numeric encodings", () => {
 	/** Decoding the quoted form must equal decoding the native form, field for field. */
-	const expectBothEncodings = (
+	const decodeBothEncodings = (
 		decode: (input: unknown) => unknown,
 		strings: Record<string, unknown>,
 		numbers: Record<string, number>,
-	) => {
-		const quoted = Object.fromEntries(Object.entries(numbers).map(([key, value]) => [key, String(value)]))
-		expect(decode({ ...strings, ...quoted })).toEqual(decode({ ...strings, ...numbers }))
+	): readonly [unknown, unknown] => {
+		const quoted = Rec.fromEntries(
+			Arr.map(Rec.toEntries(numbers), ([key, value]) => [key, String(value)]),
+		)
+		return [decode({ ...strings, ...quoted }), decode({ ...strings, ...numbers })]
 	}
 
-	const cases: ReadonlyArray<readonly [string, () => void]> = [
+	const cases: ReadonlyArray<readonly [string, () => readonly [unknown, unknown]]> = [
 		[
 			"attributeKeyInventory",
 			() =>
-				expectBothEncodings(
+				decodeBothEncodings(
 					Schema.decodeUnknownSync(auditAttributeKeyInventoryRowSchema),
 					{ scope: "span", attributeKey: "http.method" },
 					{ usageCount: 12 },
@@ -246,7 +282,7 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 		[
 			"spanShape",
 			() =>
-				expectBothEncodings(
+				decodeBothEncodings(
 					Schema.decodeUnknownSync(auditSpanProfileRowSchema),
 					{ serviceName: "api", badStatusCodes: ["ERROR"], badSpanKinds: [] },
 					{
@@ -264,7 +300,7 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 		[
 			"sampling",
 			() =>
-				expectBothEncodings(
+				decodeBothEncodings(
 					Schema.decodeUnknownSync(auditSamplingRowSchema),
 					{ serviceName: "api" },
 					{ spanCount: 10, estimatedSpanCount: 100, commitTaggedSpanCount: 10 },
@@ -273,7 +309,7 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 		[
 			"logSeverity",
 			() =>
-				expectBothEncodings(
+				decodeBothEncodings(
 					Schema.decodeUnknownSync(auditLogSeverityRowSchema),
 					{ serviceName: "api", severityText: "INFO" },
 					{ logCount: 42 },
@@ -282,7 +318,7 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 		[
 			"metricLabel",
 			() =>
-				expectBothEncodings(
+				decodeBothEncodings(
 					Schema.decodeUnknownSync(auditMetricLabelRowSchema),
 					{ attributeKey: "user_id" },
 					{ valueCardinality: 90_000, usageCount: 90_000 },
@@ -291,7 +327,7 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 		[
 			"peerValue",
 			() =>
-				expectBothEncodings(
+				decodeBothEncodings(
 					Schema.decodeUnknownSync(auditPeerValueRowSchema),
 					{ attributeKey: "peer.service", attributeValue: "tinybird" },
 					{ usageCount: 7 },
@@ -300,7 +336,7 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 		[
 			"dbEdge",
 			() =>
-				expectBothEncodings(
+				decodeBothEncodings(
 					Schema.decodeUnknownSync(auditDbEdgeRowSchema),
 					{ serviceName: "api", dbSystem: "postgresql" },
 					{ callCount: 500, unknownNamespaceCallCount: 500 },
@@ -309,7 +345,7 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 		[
 			"logCorrelation",
 			() =>
-				expectBothEncodings(
+				decodeBothEncodings(
 					Schema.decodeUnknownSync(auditLogCorrelationRowSchema),
 					{ serviceName: "api" },
 					{ logCount: 100, uncorrelatedCount: 99, errorLogCount: 5, uncorrelatedErrorCount: 5 },
@@ -317,5 +353,8 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 		],
 	]
 
-	it.each(cases)("%s", (_name, run) => run())
+	it.each(cases)("%s", (_name, run) => {
+		const [quoted, numeric] = run()
+		expect(quoted).toEqual(numeric)
+	})
 })

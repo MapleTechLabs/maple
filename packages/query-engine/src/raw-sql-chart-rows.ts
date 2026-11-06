@@ -1,3 +1,4 @@
+import { Array as Arr, Record as Rec } from "effect"
 /**
  * Raw-SQL widget rows, reshaped for the renderer.
  *
@@ -45,22 +46,21 @@ function pickBucketColumn(columns: ReadonlyArray<string>, firstRow: Record<strin
 export function toLineChartRows(
 	rows: ReadonlyArray<Record<string, unknown>>,
 ): Array<Record<string, string | number>> {
-	if (rows.length === 0) return []
-	const columns = Object.keys(rows[0])
-	const bucketCol = pickBucketColumn(columns, rows[0])
+	const [first] = rows
+	if (first === undefined) return []
+	const columns = Rec.keys(first)
+	const bucketCol = pickBucketColumn(columns, first)
 	if (!bucketCol) {
 		// Couldn't infer a time axis — return rows untouched so the user can debug
 		// in the table view. The chart renderer will simply render an empty plot.
 		return rows as Array<Record<string, string | number>>
 	}
 
-	const seriesCols = columns.filter((c) => c !== bucketCol)
+	const seriesCols = Arr.filter(columns, (c) => c !== bucketCol)
 
-	return rows.map((row) => {
+	return Arr.map(rows, (row) => {
 		const out: Record<string, string | number> = {
-			bucket: String(
-				row[bucketCol] instanceof Date ? (row[bucketCol] as Date).toISOString() : row[bucketCol],
-			),
+			bucket: String(row[bucketCol] instanceof Date ? row[bucketCol].toISOString() : row[bucketCol]),
 		} satisfies Record<string, string | number>
 		for (const col of seriesCols) {
 			const value = row[col]

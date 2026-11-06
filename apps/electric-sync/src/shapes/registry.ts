@@ -1,5 +1,5 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
-import { Schema } from "effect"
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
+import { Schema, Record as Rec } from "effect"
 
 /**
  * The server-pinned shape whitelist and the predicates over it.
@@ -54,8 +54,8 @@ const SUBSCRIPTIONS = {
 			"created_by_email",
 		],
 	},
-	// `config_json` holds only public config (summary / channel label / hazel
-	// metadata); the encrypted webhook secrets live in separate `secret_*` columns
+	// `config_json` holds only public config (summary / channel label / chat
+	// workspace); the encrypted webhook secrets live in separate `secret_*` columns
 	// that MUST NOT reach the browser, so the projection drops them (and the
 	// unused `created_by`/`updated_by`). The PK `id` is required in the projection.
 	alert_destinations: {
@@ -69,6 +69,25 @@ const SUBSCRIPTIONS = {
 			"config_json",
 			"last_tested_at",
 			"last_test_error",
+			"created_at",
+			"updated_at",
+		],
+	},
+	// `_v2` adds the auto-disable state, so the browser can say why Maple stopped
+	// delivering. The v1 shape stays for clients still on the previous build.
+	alert_destinations_v2: {
+		table: "alert_destinations",
+		columns: [
+			"id",
+			"org_id",
+			"name",
+			"type",
+			"enabled",
+			"config_json",
+			"last_tested_at",
+			"last_test_error",
+			"disabled_at",
+			"disabled_reason",
 			"created_at",
 			"updated_at",
 		],
@@ -136,7 +155,7 @@ const SUBSCRIPTION_DEFS: Record<SubscriptionName, SubscriptionDefinition> = SUBS
 >
 
 /** Every whitelisted shape, so tests can assert invariants across the whole set. */
-export const SUBSCRIPTION_NAMES = Object.keys(SUBSCRIPTIONS) as ReadonlyArray<SubscriptionName>
+export const SUBSCRIPTION_NAMES = Rec.keys(SUBSCRIPTIONS) as ReadonlyArray<SubscriptionName>
 
 /**
  * The shape selector as a schema, so the whitelist is a literal union rather than

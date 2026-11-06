@@ -1,0 +1,46 @@
+import { Schema, Array as Arr } from "effect"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+
+export type McpClient = "claude-code" | "cursor" | "windsurf" | "other"
+
+export const MCP_CLIENTS: ReadonlyArray<{ readonly id: McpClient; readonly label: string }> = [
+	{ id: "claude-code", label: "Claude Code" },
+	{ id: "cursor", label: "Cursor" },
+	{ id: "windsurf", label: "Windsurf" },
+	{ id: "other", label: "Other" },
+]
+
+export const isMcpClient = (value: unknown): value is McpClient =>
+	Arr.some(MCP_CLIENTS, (client) => client.id === value)
+
+const authHeaders = (apiKey: string | undefined) =>
+	apiKey ? { headers: { Authorization: `Bearer ${apiKey}` } } : undefined
+
+/**
+ * The `mcpServers` entry each client reads. Claude Code needs `type: "http"`, Windsurf names the
+ * URL `serverUrl`, Cursor infers the transport from `url`. An MCP key adds a bearer header.
+ */
+export function mcpClientConfig(client: McpClient, endpoint: string, apiKey?: string): string {
+	const server =
+		client === "windsurf"
+			? { serverUrl: endpoint, ...authHeaders(apiKey) }
+			: client === "cursor"
+				? { url: endpoint, ...authHeaders(apiKey) }
+				: { type: "http", url: endpoint, ...authHeaders(apiKey) }
+	return encodePrettyJson({ mcpServers: { maple: server } })
+}
+
+export function claudeCodeCommand(endpoint: string, apiKey?: string): string {
+	const base = `claude mcp add --transport http maple ${endpoint}`
+	return apiKey ? `${base} \\\n  --header "Authorization: Bearer ${apiKey}"` : base
+}
+
+/** Cursor's one-click install deeplink: the server entry, base64 JSON. */
+export const cursorInstallUrl = (endpoint: string): string =>
+	`cursor://anysphere.cursor-deeplink/mcp/install?name=maple&config=${encodeURIComponent(btoa(encodeJson({ url: endpoint })))}`
+
+/** VS Code's one-click install link: the named server entry, URL-encoded JSON. */
+export const vscodeInstallUrl = (endpoint: string): string =>
+	`vscode:mcp/install?${encodeURIComponent(encodeJson({ name: "maple", type: "http", url: endpoint }))}`

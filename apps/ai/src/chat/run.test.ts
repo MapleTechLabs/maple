@@ -5,24 +5,34 @@
  * all it does: summarizing across turns was half-built here once, behind a durable event nothing
  * ever wrote, and is gone.
  */
-import type { ChatMessage } from "@maple/domain/chat-session"
+import { ChatMessage, ChatToolCall } from "@maple/domain/chat-session"
 import { assert, describe, it } from "vitest"
 import { promptFromHistory } from "./run"
+import { Array as Arr, String as Str } from "effect"
 
 let seq = 0
 
-const message = (role: "user" | "assistant", text: string, toolCalls: unknown[] = []): ChatMessage =>
-	({
+const message = (
+	role: "user" | "assistant",
+	text: string,
+	toolCalls: ReadonlyArray<ChatToolCall> = [],
+): ChatMessage =>
+	new ChatMessage({
 		id: `m${(seq += 1)}`,
 		role,
 		text,
 		toolCalls,
 		createdAt: seq,
 		startSeq: seq,
-	}) as ChatMessage
+	})
 
 const textOf = (messages: ReadonlyArray<{ content: ReadonlyArray<unknown> }>) =>
-	messages.map((m) => m.content.map((part) => (part as { text?: string }).text ?? "").join(""))
+	Arr.map(messages, (m) =>
+		Arr.join(
+			Arr.map(m.content, (part) => (part as { text?: string }).text ?? ""),
+			"",
+		),
+	)
 
 describe("promptFromHistory", () => {
 	it("replays the conversation in order", () => {
@@ -35,7 +45,7 @@ describe("promptFromHistory", () => {
 
 		assert.deepEqual(textOf(replayed), ["why is checkout slow?", "Looking.", "and payments?"])
 		assert.deepEqual(
-			replayed.map((m) => m.role),
+			Arr.map(replayed, (m) => m.role),
 			["user", "assistant", "user"],
 		)
 	})
@@ -44,7 +54,7 @@ describe("promptFromHistory", () => {
 		seq = 0
 		const replayed = promptFromHistory([
 			message("user", "check it"),
-			message("assistant", "", [{ id: "c1" }]),
+			message("assistant", "", [new ChatToolCall({ id: "c1", name: "list_services", input: {} })]),
 			message("assistant", "Done."),
 		])
 
@@ -65,7 +75,7 @@ describe("promptFromHistory", () => {
 		// The `kept.length > 0` guard: otherwise a single pasted stack trace replays as *nothing*,
 		// and the model answers the next question with no context at all.
 		seq = 0
-		const replayed = promptFromHistory([message("user", "x".repeat(80_000))])
+		const replayed = promptFromHistory([message("user", Str.repeat(80_000)("x"))])
 
 		assert.lengthOf(replayed, 1)
 	})

@@ -150,7 +150,7 @@ export const processPlanetScaleWebhookBatch = (batch: QueueBatch) =>
 											}),
 										)
 							return yield* annotateJob.pipe(
-								Effect.flatMap(() => persist),
+								Effect.andThen(persist),
 								Effect.matchEffect({
 									onFailure: (error) =>
 										Effect.logError("PlanetScale webhook persistence failed").pipe(
@@ -193,7 +193,7 @@ export const processPlanetScaleWebhookBatch = (batch: QueueBatch) =>
 							)
 						}).pipe(
 							Effect.catchTag(
-								"@maple/api/planetscale/PlanetScaleWebhookProjectionInvalid",
+								"@maple/backend/planetscale/PlanetScaleWebhookProjectionInvalid",
 								(error) =>
 									Effect.logWarning(error.message).pipe(
 										Effect.annotateLogs({

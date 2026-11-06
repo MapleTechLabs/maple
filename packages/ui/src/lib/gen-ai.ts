@@ -10,10 +10,11 @@
 // plus the legacy aliases real spans still emit. The labels live here because a
 // label is a UI decision the convention does not make.
 
-import { Option } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
-import { trySync } from "./try-sync"
 import { formatDuration } from "./format"
+
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 const GEN_AI_PREFIX = "gen_ai."
 
@@ -175,7 +176,7 @@ export const GEN_AI_LABELS: Record<string, string> = {
 
 /** Field order within a group, precomputed from the label table. */
 const FIELD_ORDER: ReadonlyMap<string, number> = new Map(
-	Object.keys(GEN_AI_LABELS).map((key, index) => [key, index]),
+	Arr.map(Rec.keys(GEN_AI_LABELS), (key, index) => [key, index]),
 )
 
 /**
@@ -240,8 +241,8 @@ export function splitGenAiAttributes(attributes: Record<string, string>): {
 	const rest: Record<string, string> = {}
 	const byGroup = new Map<string, GenAiField[]>()
 
-	for (const [key, rawValue] of Object.entries(attributes)) {
-		if (!key.startsWith(GEN_AI_PREFIX) || rawValue.trim() === "") {
+	for (const [key, rawValue] of Rec.toEntries(attributes)) {
+		if (!Str.startsWith(GEN_AI_PREFIX)(key) || Str.trim(rawValue) === "") {
 			rest[key] = rawValue
 			continue
 		}
@@ -252,7 +253,7 @@ export function splitGenAiAttributes(attributes: Record<string, string>): {
 	}
 
 	const groups: GenAiGroup[] = []
-	for (const [id, label] of Object.entries(GROUP_LABELS)) {
+	for (const [id, label] of Rec.toEntries(GROUP_LABELS)) {
 		const fields = byGroup.get(id)
 		if (fields === undefined) continue
 		fields.sort(compareFields)
@@ -264,41 +265,41 @@ export function splitGenAiAttributes(attributes: Record<string, string>): {
 
 /** The group the key belongs to: its own path segment unless it names another. */
 function groupOf(key: string): string {
-	if (Object.hasOwn(GROUP_OVERRIDES, key)) return GROUP_OVERRIDES[key]
+	const override = Rec.get(GROUP_OVERRIDES, key)
+	if (Option.isSome(override)) return override.value
 	const namespace = namespaceOf(key)
-	if (Object.hasOwn(GROUP_LABELS, namespace)) return namespace
-	if (Object.hasOwn(GROUP_ALIASES, namespace)) return GROUP_ALIASES[namespace]
+	if (Arr.some(Rec.keys(GROUP_LABELS), (id) => id === namespace)) return namespace
+	const alias = Rec.get(GROUP_ALIASES, namespace)
+	if (Option.isSome(alias)) return alias.value
 	return "other"
 }
 
 /** Table label, else one read off the key's own path. */
 function labelOf(key: string, group: string): string {
-	const known = GEN_AI_LABELS[key]
-	if (known) return known
-	if (key.startsWith(PROMPT_VARIABLE_PREFIX)) return key.slice(PROMPT_VARIABLE_PREFIX.length)
+	const known = Rec.get(GEN_AI_LABELS, key)
+	if (Option.isSome(known)) return known.value
+	if (Str.startsWith(PROMPT_VARIABLE_PREFIX)(key)) return Str.slice(PROMPT_VARIABLE_PREFIX.length)(key)
 
-	const path = key.slice(GEN_AI_PREFIX.length)
+	const path = Str.slice(GEN_AI_PREFIX.length)(key)
 	// Inside a named group the header already says the namespace, so the leaf
 	// alone is the label — `gen_ai.usage.reasoning_tokens` reads as "Reasoning
 	// Tokens" under "Token usage", beside the counts it belongs with.
 	const namespace = namespaceOf(key)
-	const remainder = group === "other" ? path : path.slice(namespace.length + 1)
+	const remainder = group === "other" ? path : Str.slice(namespace.length + 1)(path)
 	return humanizeKeyPath(remainder === "" ? path : remainder)
 }
 
 function namespaceOf(key: string): string {
-	return key.slice(GEN_AI_PREFIX.length).split(".")[0] ?? ""
+	return Str.split(".")(Str.slice(GEN_AI_PREFIX.length)(key))[0] ?? ""
 }
 
 /** `reasoning_tokens` → `Reasoning Tokens`; `call.id` → `Call ID`. */
 function humanizeKeyPath(path: string): string {
-	const words = path
-		.split(/[._]/)
-		.filter((part) => part !== "")
-		// `id` is the one word that loses its meaning in lower case, and it ends
-		// half the keys in the convention.
-		.map((word) => (word === "id" ? "ID" : word.charAt(0).toUpperCase() + word.slice(1)))
-	return words.length === 0 ? path : words.join(" ")
+	const words = Arr.map(
+		Arr.filter(Str.split(/[._]/)(path), (part) => part !== ""),
+		(word) => (word === "id" ? "ID" : Str.toUpperCase(Str.slice(0, 1)(word)) + Str.slice(1)(word)),
+	)
+	return words.length === 0 ? path : Arr.join(words, " ")
 }
 
 /** Table order first; unlisted keys after it, alphabetically. */
@@ -306,7 +307,7 @@ function compareFields(a: GenAiField, b: GenAiField): number {
 	const orderA = FIELD_ORDER.get(a.key) ?? Number.MAX_SAFE_INTEGER
 	const orderB = FIELD_ORDER.get(b.key) ?? Number.MAX_SAFE_INTEGER
 	if (orderA !== orderB) return orderA - orderB
-	return a.key.localeCompare(b.key)
+	return Str.localeCompare(b.key)(a.key)
 }
 
 /** Reading text for a raw attribute string — the key decides, never the value. */
@@ -322,16 +323,16 @@ function formatValue(key: string, rawValue: string): string {
 	if (LIST_KEYS.has(key)) {
 		const flat = parseFlatArray(rawValue)
 		// An empty array keeps its raw "[]" — a blank value cell reads as missing.
-		return flat === null || flat.length === 0 ? rawValue : flat.join(", ")
+		return flat === null || flat.length === 0 ? rawValue : Arr.join(flat, ", ")
 	}
 	return rawValue
 }
 
 /** An array of primitives, else null — an array of objects stays JSON. */
 function parseFlatArray(rawValue: string): string[] | null {
-	if (rawValue.trimStart()[0] !== "[") return null
-	const parsed = Option.getOrNull(trySync<unknown>(() => JSON.parse(rawValue)))
-	if (!Array.isArray(parsed)) return null
-	if (!parsed.every((item) => item === null || typeof item !== "object")) return null
-	return parsed.map((item) => String(item))
+	if (Str.trimStart(rawValue)[0] !== "[") return null
+	const parsed = Option.getOrNull(decodeJson(rawValue))
+	if (!Arr.isArray(parsed)) return null
+	if (!Arr.every(parsed, (item) => item === null || typeof item !== "object")) return null
+	return Arr.map(parsed, (item) => String(item))
 }

@@ -1,9 +1,14 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Clock, Effect, Schema } from "effect"
+import { Clock, DateTime, Effect, Schema, String as Str } from "effect"
 import { UpdateDashboardOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
-import { DashboardDocument, DashboardId, PortableDashboardDocument } from "@maple/domain/http"
+import {
+	DashboardId,
+	PortableDashboardDocument,
+	withDocumentFields,
+	withPortableContent,
+} from "@maple/domain/http"
 import { IsoDateTimeString } from "@maple/domain"
 import { validateDashboardTimeRange } from "../lib/resolve-dashboard-time-range"
 import { MAX_QUERY_RANGE_SECONDS, formatRangeSeconds } from "@maple/query-engine"
@@ -25,10 +30,11 @@ const decodeDashboardId = Schema.decodeUnknownEffect(DashboardId)
 export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
+		title: "Update Dashboard",
 		description:
 			"Change a dashboard's name, description or time_range. For widgets use add_dashboard_widget, update_dashboard_widget, remove_dashboard_widget, reorder_dashboard_widgets, or replace_dashboard_widgets for a validated rewrite of the whole list. `dashboard_json` replaces everything unvalidated; use it only to restore a saved document.",
 		parameters: Schema.Struct({
-			dashboard_id: P.text("Dashboard ID (ids from list_dashboards)"),
+			dashboard_id: P.resourceId("dashboard", "Dashboard ID (ids from list_dashboards)"),
 			name: P.optionalText("New dashboard name"),
 			description: P.optionalText("New dashboard description"),
 			time_range: P.optionalText(
@@ -68,48 +74,27 @@ export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 			)
 
 			const nowMillis = yield* Clock.currentTimeMillis
-			const now = decodeIsoDateTimeString(new Date(nowMillis).toISOString())
+			const now = decodeIsoDateTimeString(DateTime.formatIso(DateTime.makeUnsafe(nowMillis)))
 
-			const dashboard = yield* persistence
+			const { document: dashboard } = yield* persistence
 				.mutate(tenant.orgId, tenant.userId, dashboardIdBranded, (existing) =>
-					Effect.sync(() => {
-						// `description`/`tags` are `Schema.optionalKey` on `DashboardDocument`: the
-						// constructor rejects a present `undefined`, so omit the key instead.
-						if (portable) {
-							return new DashboardDocument({
-								id: existing.id,
-								name: portable.name,
-								...(portable.description !== undefined && {
-									description: portable.description,
-								}),
-								...(portable.tags !== undefined && { tags: portable.tags }),
-								timeRange: portable.timeRange,
-								widgets: portable.widgets,
-								createdAt: existing.createdAt,
-								updatedAt: now,
-							})
-						}
-
-						const timeRange = time_range
-							? {
-									type: "relative" as const,
-									value: time_range,
-								}
-							: existing.timeRange
-
-						const nextDescription = description ?? existing.description
-
-						return new DashboardDocument({
-							id: existing.id,
-							name: name ?? existing.name,
-							...(nextDescription !== undefined && { description: nextDescription }),
-							...(existing.tags !== undefined && { tags: existing.tags }),
-							timeRange,
-							widgets: existing.widgets,
-							createdAt: existing.createdAt,
-							updatedAt: now,
-						})
-					}),
+					Effect.sync(() =>
+						// Both branches carry the stored document forward through the shared
+						// helpers, so sections, variables and refresh survive every edit.
+						portable
+							? withPortableContent(existing, portable, now)
+							: withDocumentFields(
+									existing,
+									{
+										...(name === undefined ? undefined : { name }),
+										...(description === undefined ? undefined : { description }),
+										...(time_range
+											? { timeRange: { type: "relative", value: time_range } }
+											: undefined),
+									},
+									now,
+								),
+					),
 				)
 				.pipe(Effect.mapError(toMcpDashboardError(TOOL)))
 
@@ -129,7 +114,7 @@ export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 					["Name", output.dashboard.name],
 					["Description", output.dashboard.description],
 					["Widgets", output.dashboard.widgetCount],
-					["Updated", output.dashboard.updatedAt.slice(0, 19)],
+					["Updated", Str.slice(0, 19)(output.dashboard.updatedAt)],
 				]),
 				...(output.renderWarnings.length > 0
 					? [doc.heading("Render warnings (saved anyway)"), doc.list(output.renderWarnings)]

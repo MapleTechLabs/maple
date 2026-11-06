@@ -28,8 +28,8 @@ MapleBrowser.init({
 
 That single call:
 
-- starts OTel browser tracing, auto-instrumenting `fetch`, exporting to Maple's
-  ingest (`POST /v1/traces`);
+- starts OTel browser tracing, auto-instrumenting `fetch` and `XMLHttpRequest`,
+  exporting to Maple's ingest (`POST /v1/traces`);
 - records the session with rrweb, chunking events (~5s / 100KB windows),
   gzipping them with the native `CompressionStream`, and uploading to
   `POST /v1/sessionReplays/blob`. rrweb ships in a lazy code-split chunk loaded
@@ -57,6 +57,11 @@ try {
 }
 ```
 
+`captureException` is safe before `init()`: calls are held (up to 30) and recorded when it runs.
+A thrown value that is not an `Error` (`throw "boom"`, `throw { code: 1 }`) is recorded with its
+fields as the message, and an uncaught one gets a single frame at the throw site rather than a
+stack from inside the SDK.
+
 Opt out of the global handlers with `tracing: { captureErrors: false }` — worth
 doing only when another tracker already owns them, or the same crash is recorded
 twice.
@@ -66,15 +71,31 @@ stack and no filename. Those are dropped rather than recorded: they all
 fingerprint to one contentless issue that buries the real ones. Add
 `crossorigin` to the script tag to get the real error instead.
 
+### Failed HTTP requests
+
+`fetch`/XHR responses with a 4xx or 5xx status are errors, typed by status, as the HTTP semantic
+conventions say for client spans. Narrow that with `errors: { captureHttpStatus: [[500, 599]] }`.
+A request that never got a response is an error too, unless the connection went away while it was
+in flight: the page unloaded or was hidden, or the browser went offline (or was offline when it
+failed). Those stay `Unset` with `maple.connection_lost` set to `page_unload`, `page_hidden` or
+`offline`, since the browser cancelled them, not your API.
+
+### Breadcrumbs
+
+The last 50 clicks, inputs, navigations and console lines are kept in memory and exported, as OTel
+log records linked to the error's span, only when an error is recorded. `breadcrumbs: false` turns
+this off; `logs: { captureConsole: ["warn", "error"] }` sends those console levels as logs right away.
+
 ## Bundle size
 
 Bundled, minified and gzipped, as your bundler would ship it:
 
 |                  | gzipped | what it is                                                |
 | ---------------- | ------- | --------------------------------------------------------- |
-| **eager**        | ~36 kB  | every page load, before any sampling decision             |
-| ↳ our code alone | ~13 kB  | the marginal cost if your app already ships OpenTelemetry |
-| **lazy**         | ~61 kB  | rrweb — downloaded only by sessions sampled into replay   |
+| **eager**        | ~44 kB  | every page load, before any sampling decision             |
+| ↳ our code alone | ~25 kB  | the marginal cost if your app already ships OpenTelemetry |
+| **deferred**     | ~14 kB  | logs SDK, Web Vitals, document timing, after `init()`     |
+| **lazy**         | ~64 kB  | rrweb — downloaded only by sessions sampled into replay   |
 
 The eager figure is ~90% OpenTelemetry. If your app already uses the OTel web
 SDK, your bundler should dedupe it and you pay closer to the second row; if it
@@ -86,9 +107,10 @@ in production.
 
 ## Identifying users
 
-Pass `userId` to `init()` when you already know the signed-in user, or call
-`MapleBrowser.identify(user.id)` later. The id is attached to future session
-metadata rows and stamped as `user.id` on future browser-created spans.
+Pass `user` to `init()` when you already know the signed-in user
+(`user: { id: user.id, email: user.email }`), or call `MapleBrowser.identify(user.id)` later.
+The id is attached to future session metadata rows and stamped as `user.id` on future
+browser-created spans.
 
 ```ts
 MapleBrowser.identify(user.id)
@@ -118,6 +140,33 @@ a separate analytics silo. Calls before `init()` finishes are queued.
 MapleBrowser.track("checkout_completed", { plan: "pro", seats: 12 })
 ```
 
+## Logs
+
+`MapleBrowser.logger` writes OpenTelemetry log records, linked to the active span and the session.
+Calls before `init()` are queued.
+
+```ts
+MapleBrowser.logger.info("checkout started", { "cart.items": 3 })
+```
+
+## Web Vitals
+
+LCP, CLS, INP, FCP and TTFB are reported as `browser.web_vital` OpenTelemetry log events
+(browser semantic conventions), linked to the `pageload` span and the session. Opt out with
+`webVitals: false`.
+
+## Replay on error
+
+`replay: { sampleRate: 0.05, onErrorSampleRate: 1 }` records 5% of sessions, and has every other
+session keep the last minute in memory, uploading it and recording the rest of the session only if
+an error is recorded.
+
+## Trace sampling
+
+`tracing: { sampleRate: 0.25 }` exports the traces of ~25% of sessions. The decision is per
+session, so a sampled session keeps all of its traces. Reported errors (uncaught errors, unhandled
+rejections, `captureException`) are always exported.
+
 ## Regions
 
 Maple runs separate US and EU instances, and an ingest key only works in the
@@ -127,22 +176,31 @@ explicit `endpoint` (a proxy, or self-hosted ingest) always wins over `region`.
 
 ## Tracing across origins
 
-`fetch` spans carry the W3C `traceparent` header to same-origin requests only.
+`fetch` and XHR spans carry the W3C `traceparent` header to same-origin requests only.
 When your API lives on another origin, list it so browser and backend spans
 join one trace, and allow the `traceparent` header in the API's CORS policy:
 
 ```ts
 MapleBrowser.init({
 	// ...
-	tracing: { propagateTraceHeaderCorsUrls: [/^https:\/\/api\.example\.com\//] },
+	tracing: { propagateTraceHeaderCorsUrls: ["https://api.example.com"] },
 })
 ```
+
+A string is a URL prefix: `"https://api.example.com"` covers every path on that
+origin, and `"https://api.example.com/v1"` that path and the ones below it. Use a
+RegExp to match anything else. `tracing.sampleRate` does not add a `tracestate`
+header to cross-origin requests, so `traceparent` is the only header to allow,
+plus `baggage` if your app sets OpenTelemetry baggage and `tracestate` if your
+traces carry another vendor's trace state. The cost: spans from that API
+don't inherit the browser's sampling weight, so with `sampleRate` below 1 their
+weighted counts read low by that rate.
 
 ## Navigations and data loading
 
 Call these from your router's hooks to make one click one trace: a navigation
 span, the data-loading spans under it, and the `fetch` spans they start.
-[maple.dev/docs/frontend](https://maple.dev/docs/frontend) shows where for each
+[maple.dev/docs/session-replay/browser-sdk](https://maple.dev/docs/session-replay/browser-sdk#framework-examples) shows where for each
 framework.
 
 ```ts
@@ -156,12 +214,35 @@ MapleBrowser.endNavigation("/projects/:id") // the route is ready: its template
 - The first `startNavigation` opens a `pageload` span, joined to the server
   render's trace from a `Server-Timing: traceparent;desc="…"` entry or a
   `<meta name="traceparent">` tag; later calls open `navigate` spans, and end
-  one still open as `app.navigation.interrupted`.
-- `traced` returns `fn`'s result and rethrows its error unchanged. Only requests
+  one still open, marked `maple.navigation.interrupted`.
+- The document's `pageload` starts at navigation start, and gets child spans
+  from the Navigation Timing entry once the page has loaded: `documentFetch`
+  (with `dns`, `connect`, `request` and `response` under it), `domProcessing`
+  and `loadEvent`.
+- `traced` takes a sync or async `fn`, returns its result and rethrows its error unchanged. Only requests
   started before `fn`'s first `await` nest under its span. An error it recorded
   isn't reported again by `captureException` or the global handlers.
 - All three are no-ops on the server, before `init()`, with tracing disabled or
   without consent (`traced` then only runs `fn`).
+
+## React
+
+`@maple-dev/browser/react` has `MapleErrorBoundary`, `mapleReactErrorHandler()` for React 19's
+`createRoot` error options, and router adapters that call `startNavigation`/`endNavigation` for you:
+
+```ts
+import { instrumentReactRouter, instrumentTanStackRouter } from "@maple-dev/browser/react"
+
+instrumentReactRouter(createBrowserRouter(routes)) // navigate /projects/:id
+instrumentTanStackRouter(router) // navigate /projects/$projectId
+```
+
+Attach them after `MapleBrowser.init`: a navigation reported earlier uses up the page load.
+Attaching the same router twice (React StrictMode, HMR) keeps one instrumentation, and the
+unsubscribe they return ends a navigation still open as interrupted.
+
+`mapleReactErrorHandler(source, next)` replaces React's own console logging for that callback, so
+it hands the error on to `next` afterwards, `console.error` by default.
 
 ## Linking a marketing site to your app
 

@@ -1,9 +1,20 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Context, Effect, Layer, Logger, References, Schema, Tracer } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
-import { V1SchemaErrors, V1UnexpectedErrors } from "@maple/domain/http"
-import { V1ErrorBoundaryLive } from "./error-boundary"
+import {
+	Context,
+	Effect,
+	Layer,
+	Logger,
+	References,
+	Schema,
+	Tracer,
+	Array as Arr,
+	String as Str,
+	Option,
+} from "effect"
+import { HttpRouter } from "effect/http"
+import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
+import { ApiSchemaErrors, ApiUnexpectedErrors } from "@maple/domain/http"
+import { ApiErrorBoundaryLive } from "./error-boundary"
 
 /** A declared failure the endpoint answers with a 502 — the shape every warehouse error takes. */
 class UpstreamError extends Schema.TaggedError<UpstreamError>()(
@@ -37,8 +48,8 @@ const BoundaryGroup = HttpApiGroup.make("boundary")
 
 class BoundaryApi extends HttpApi.make("BoundaryApi")
 	.add(BoundaryGroup)
-	.middleware(V1SchemaErrors)
-	.middleware(V1UnexpectedErrors) {}
+	.middleware(ApiSchemaErrors)
+	.middleware(ApiUnexpectedErrors) {}
 
 const BoundaryHandlersLive = HttpApiBuilder.group(BoundaryApi, "boundary", (handlers) =>
 	Effect.succeed(
@@ -87,7 +98,7 @@ const makeRecordingContext = () => {
 const makeHarness = () => {
 	const routes = HttpApiBuilder.layer(BoundaryApi).pipe(
 		Layer.provide(BoundaryHandlersLive),
-		Layer.provide(V1ErrorBoundaryLive),
+		Layer.provide(ApiErrorBoundaryLive),
 	)
 	const { handler, dispose } = HttpRouter.toWebHandler(routes, { disableLogger: true })
 	const request = async (
@@ -112,7 +123,7 @@ const makeHarness = () => {
 	return { request, dispose }
 }
 
-describe("v1 HTTP error boundary", () => {
+describe("unversioned HTTP error boundary", () => {
 	it("returns a structured, path-anchored 400 for every request decode failure", async () => {
 		const harness = makeHarness()
 		try {
@@ -152,7 +163,11 @@ describe("v1 HTTP error boundary", () => {
 			const response = await harness.request("GET", "/declared", undefined, { context })
 			expect(response.status).toBe(502)
 
-			const log = logs.find((entry) => entry.message.includes("Route answered with a server error"))
+			const log = Option.getOrUndefined(
+				Arr.findFirst(logs, (entry) =>
+					Str.includes("Route answered with a server error")(entry.message),
+				),
+			)
 			expect(log).toBeDefined()
 			expect(log?.level).toBe("Error")
 			expect(log?.annotations).toMatchObject({
@@ -163,7 +178,9 @@ describe("v1 HTTP error boundary", () => {
 				message: "SELECT failed: memory limit exceeded",
 			})
 
-			const span = spans.find((s) => s.attributes.get("error.type") === "@maple/test/UpstreamError")
+			const span = Option.getOrUndefined(
+				Arr.findFirst(spans, (s) => s.attributes.get("error.type") === "@maple/test/UpstreamError"),
+			)
 			expect(span).toBeDefined()
 			expect(span?.attributes.get("http.response.status_code")).toBe(502)
 		} finally {
@@ -180,8 +197,8 @@ describe("v1 HTTP error boundary", () => {
 				context,
 			})
 			expect(response.status).toBe(409)
-			expect(logs.filter((entry) => entry.level === "Error")).toEqual([])
-			expect(spans.some((s) => s.attributes.has("error.type"))).toBe(false)
+			expect(Arr.filter(logs, (entry) => entry.level === "Error")).toEqual([])
+			expect(Arr.some(spans, (s) => s.attributes.has("error.type"))).toBe(false)
 		} finally {
 			await harness.dispose()
 		}

@@ -7,39 +7,31 @@ navLabel: "Effect"
 sdk: "effect"
 ---
 
-`@maple-dev/effect-sdk` is Maple's SDK for Effect applications. It provides an Effect Layer that sets up OpenTelemetry traces, logs and metrics, fills in resource attributes from the runtime, and sends everything to Maple's ingest for your region. In most setups an ingest key from **Settings → Ingestion** is the only configuration it needs.
-
-<div class="flex flex-wrap gap-2 mb-8 not-prose">
-    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Node.js</span>
-    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Bun</span>
-    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Deno</span>
-    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Browsers</span>
-    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Cloudflare Workers</span>
-</div>
+`@maple-dev/effect-sdk` is Maple's SDK for Effect applications. It runs on Node.js, Bun, Deno, browsers and Cloudflare Workers, and provides an Effect Layer that sets up OpenTelemetry traces, logs and metrics, fills in resource attributes from the runtime, and sends everything to Maple's ingest for your region. In most setups an ingest key from **Settings → Ingestion** is the only configuration it needs.
 
 ## Install
 
-**Effect 4** (`effect` 4.0.0-rc.113 or later)
+For Effect 4 (`effect` 4.0.0 or later):
 
 ```bash
 npm install @maple-dev/effect-sdk effect
 ```
 
-**Effect 3**
+On Effect 3, install the `effect-v3` npm tag with the platform packages it needs. That build is older than the Effect 4 release, and the options on these pages describe the Effect 4 release.
 
 ```bash
-npm install @maple-dev/effect-sdk@effect-v3 effect @effect/platform @effect/opentelemetry
+npm install @maple-dev/effect-sdk@effect-v3 effect @effect/platform \
+  @effect/opentelemetry
 ```
-
-> The Effect 3 build is published under the `effect-v3` npm tag and is older than the Effect 4 release. The options on these pages describe the Effect 4 release.
 
 ## Pick your platform
 
-The SDK ships three entry points, each with its own page:
+The SDK ships four entry points, each with its own page:
 
 - [**Server**](/docs/sdks/effect-server): Node.js, Bun, Deno. Background export fiber, configuration from environment variables, graceful shutdown.
 - [**Browser**](/docs/sdks/effect-client): single-page apps. Configuration passed in code, browser metadata added to resource attributes, session replay.
 - [**Cloudflare Workers**](/docs/sdks/effect-cloudflare): short-lived isolates. In-isolate buffering, `flush()` in `ctx.waitUntil`, configuration read from the Worker `env` on first flush.
+- [**Foldkit**](/docs/sdks/effect-foldkit): Foldkit apps. Wraps the browser entry point and groups Command spans under page loads and navigations, with crash reports and slow-phase spans.
 
 ## Custom spans
 
@@ -75,27 +67,51 @@ Logs emitted inside spans are correlated with the active trace in the Maple dash
 
 ## Configuration reference
 
-Options for `Maple.layer()` on the server and browser entry points, and for `make()` on the Cloudflare entry point. The Cloudflare-only options are on the [Cloudflare page](/docs/sdks/effect-cloudflare#cloudflare-specific-config).
+Options for `Maple.layer()` on the server and browser entry points, and for `make()` on the Cloudflare entry point. The span options apply to every entry point. The Cloudflare-only options are on the [Cloudflare page](/docs/sdks/effect-cloudflare#cloudflare-specific-config).
 
-| Option                  | Type                      | Entry points       | Description                                                                                                                                                                                                       |
-| ----------------------- | ------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `serviceName`           | `string`                  | all                | Service name on traces, logs and metrics. Required in the browser. On the server and Cloudflare it falls back to `OTEL_SERVICE_NAME`, then `"unknown"`                                                            |
-| `region`                | `"us" \| "eu"`            | all                | Region of your Maple organization. Defaults to `"us"`. Server and Cloudflare fall back to `MAPLE_REGION`. Ignored when an endpoint is set in config or env                                                        |
-| `endpoint`              | `string`                  | all                | Ingest base URL, for a proxy, collector or [Maple Local](/docs/local-mode). Overrides `region`. Server and Cloudflare fall back to `MAPLE_ENDPOINT`, then `OTEL_EXPORTER_OTLP_ENDPOINT`, then the region's ingest |
-| `ingestKey`             | `string`                  | all                | Ingest key, sent as `Authorization: Bearer`. Server and Cloudflare fall back to `MAPLE_INGEST_KEY`. Maple's hosted ingest rejects requests without one                                                            |
-| `serviceVersion`        | `string`                  | all                | Service version. Server and Cloudflare fall back to the commit SHA from the environment                                                                                                                           |
-| `serviceNamespace`      | `string`                  | all                | Logical group, emitted as the `service.namespace` resource attribute                                                                                                                                              |
-| `environment`           | `string`                  | all                | Deployment environment. Server and Cloudflare fall back to `MAPLE_ENVIRONMENT`, `RAILWAY_ENVIRONMENT_NAME`, `DEPLOYMENT_ENV`, then `"development"`                                                                |
-| `repositoryUrl`         | `string`                  | server, Cloudflare | Repository URL, emitted as `vcs.repository.url.full`. Falls back to `MAPLE_REPOSITORY_URL`, then GitHub Actions or Vercel git metadata                                                                            |
-| `attributes`            | `Record<string, unknown>` | all                | Extra resource attributes. They take precedence over `OTEL_RESOURCE_ATTRIBUTES` entries with the same key                                                                                                         |
-| `privacy`               | `PrivacyOptions`          | browser            | Consent gating, visitor-id storage and email capture. See [Privacy](/docs/sdks/effect-client#privacy)                                                                                                             |
-| `replay`                | `ClientReplayConfig`      | browser            | Session replay settings. See [Session Replay & Sessions](/docs/sdks/effect-client#session-replay-and-sessions)                                                                                                    |
-| `emitSessionMeta`       | `boolean`                 | browser            | Post session metadata rows for sessions without a recording. Default `true`                                                                                                                                       |
-| `maxBatchSize`          | `number`                  | server, browser    | Max telemetry items per export batch                                                                                                                                                                              |
-| `loggerExportInterval`  | `Duration.Input`          | server, browser    | Export interval for logs                                                                                                                                                                                          |
-| `metricsExportInterval` | `Duration.Input`          | server, browser    | Export interval for metrics                                                                                                                                                                                       |
-| `tracerExportInterval`  | `Duration.Input`          | server, browser    | Export interval for traces                                                                                                                                                                                        |
-| `shutdownTimeout`       | `Duration.Input`          | server, browser    | Graceful shutdown timeout                                                                                                                                                                                         |
+| Option                        | Type                              | Entry points       | Description                                                                                                                                                                                                       |
+| ----------------------------- | --------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `serviceName`                 | `string`                          | all                | Service name on traces, logs and metrics. Required in the browser. On the server and Cloudflare it falls back to `OTEL_SERVICE_NAME`, then `"unknown"`                                                            |
+| `region`                      | `"us" \| "eu"`                    | all                | Region of your Maple organization. Defaults to `"us"`. Server and Cloudflare fall back to `MAPLE_REGION`. Ignored when an endpoint is set in config or env                                                        |
+| `endpoint`                    | `string`                          | all                | Ingest base URL, for a proxy, collector or [Maple Local](/docs/local-mode). Overrides `region`. Server and Cloudflare fall back to `MAPLE_ENDPOINT`, then `OTEL_EXPORTER_OTLP_ENDPOINT`, then the region's ingest |
+| `ingestKey`                   | `string`                          | all                | Ingest key, sent as `Authorization: Bearer`. Server and Cloudflare fall back to `MAPLE_INGEST_KEY`. Maple's hosted ingest rejects requests without one                                                            |
+| `serviceVersion`              | `string`                          | all                | Service version. Server and Cloudflare fall back to the commit SHA from the environment                                                                                                                           |
+| `serviceNamespace`            | `string`                          | all                | Logical group, emitted as the `service.namespace` resource attribute                                                                                                                                              |
+| `environment`                 | `string`                          | all                | Deployment environment. Server and Cloudflare fall back to `MAPLE_ENVIRONMENT`, `RAILWAY_ENVIRONMENT_NAME`, `DEPLOYMENT_ENV`, then `"development"`                                                                |
+| `repositoryUrl`               | `string`                          | server, Cloudflare | Repository URL, emitted as `vcs.repository.url.full`. Falls back to `MAPLE_REPOSITORY_URL`, then GitHub Actions or Vercel git metadata                                                                            |
+| `attributes`                  | `Record<string, unknown>`         | all                | Extra resource attributes. They take precedence over `OTEL_RESOURCE_ATTRIBUTES` entries with the same key                                                                                                         |
+| `privacy`                     | `PrivacyOptions`                  | browser            | Consent gating, visitor-id storage and email capture. See [Privacy](/docs/sdks/effect-client#privacy)                                                                                                             |
+| `replay`                      | `ClientReplayConfig`              | browser            | Session replay settings. See [Session Replay & Sessions](/docs/sdks/effect-client#session-replay-and-sessions)                                                                                                    |
+| `emitSessionMeta`             | `boolean`                         | browser            | Post session metadata rows for sessions without a recording. Default `true`                                                                                                                                       |
+| `maxBatchSize`                | `number`                          | server, browser    | Max telemetry items per export batch                                                                                                                                                                              |
+| `loggerExportInterval`        | `Duration.Input`                  | server, browser    | Export interval for logs                                                                                                                                                                                          |
+| `metricsExportInterval`       | `Duration.Input`                  | server, browser    | Export interval for metrics                                                                                                                                                                                       |
+| `tracerExportInterval`        | `Duration.Input`                  | server, browser    | Export interval for traces                                                                                                                                                                                        |
+| `shutdownTimeout`             | `Duration.Input`                  | server, browser    | Graceful shutdown timeout                                                                                                                                                                                         |
+| `excludeLogSpans`             | `boolean`                         | all                | Skip Effect log spans in OTLP log attributes. Default `false`                                                                                                                                                     |
+| `dropSpanNames`               | `ReadonlyArray<string>`           | all                | Drop spans whose name starts with any of these prefixes. Only the matching span is dropped; its children still export                                                                                             |
+| `dropSpanSubtrees`            | `ReadonlyArray<string>`           | all                | Drop spans whose name starts with any of these prefixes, together with every span under them. See [Dropping spans](#dropping-spans)                                                                               |
+| `dropSpan`                    | `(span: FinishedSpan) => boolean` | all                | Called with each finished span (`name`, `kind`, `attributes`, `exit`). Return `true` to drop it                                                                                                                   |
+| `anticipatedErrorIdentifiers` | `ReadonlyArray<string>`           | all                | `_tag` / `Error.name` values of expected failures. Spans failing only with these export as `Ok`, with no `exception` event                                                                                        |
+| `isAnticipatedError`          | `(error: unknown) => boolean`     | all                | Predicate form of `anticipatedErrorIdentifiers`, for failures a tag can't single out                                                                                                                              |
+
+### Dropping spans
+
+Use `dropSpanNames` to remove a span on its own, for example protocol chatter. Use `dropSpanSubtrees` to remove a noisy loop entirely, such as an idle job-queue poll and every query it runs:
+
+```typescript
+const TracerLive = Maple.layer({
+	serviceName: "worker",
+	dropSpanSubtrees: ["JobQueue.poll"],
+	anticipatedErrorIdentifiers: ["DuplicateDocument"],
+})
+```
+
+A dropped subtree starts unsampled. Outgoing HTTP calls under it send `traceparent` with the sampled flag off, so downstream services that honour the flag drop their part of the trace too. Errors inside the subtree never reach error tracking, so keep real work (processing a job the poll found) outside the dropped span, or drop only the empty polls with `dropSpan`. Effect's span levels give the same result without a Maple option: `Effect.withSpan("JobQueue.poll", { level: "Debug" })` with `Tracer.MinimumTraceLevel` set to `"Info"`.
+
+### Expected failures
+
+`anticipatedErrorIdentifiers` and `isAnticipatedError` keep expected outcomes (a duplicate, a not-found, a rejected login) visible as traces without counting them as errors. A span still exports as `Error` if its cause contains a defect, or if it is a server span that answered with a 5xx. Spans whose failure carries Effect's `ErrorReporter.ignore` flag, such as unmatched-route 404s, are dropped.
 
 > In Effect 3, duration fields use the `Duration.DurationInput` type instead of `Duration.Input`.
 

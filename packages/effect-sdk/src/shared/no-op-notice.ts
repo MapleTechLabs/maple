@@ -1,8 +1,8 @@
 // One-shot "telemetry disabled" notice.
 //
-// The env-driven presets (server layer, server flushable, Cloudflare) disable
-// themselves on the same condition — no ingest key resolved — and each needs to
-// say so exactly once, so a developer running locally sees why nothing arrives
+// The env-driven flushable presets (server flushable, Cloudflare) disable
+// themselves on the same condition, no ingest key resolved for Maple's hosted
+// ingest, and each needs to say so exactly once, so a developer running locally sees why nothing arrives
 // instead of silently believing telemetry works. Sharing the wording keeps that
 // message identical across presets. The browser client never disables: its key
 // is auth only (see `buildResolved`'s `keyless`).

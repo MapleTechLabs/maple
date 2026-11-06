@@ -1,4 +1,4 @@
-import { Match, pipe } from "effect"
+import { Match, Option, pipe, Array as Arr, String as Str } from "effect"
 
 import { toEpochMs } from "./time-format"
 
@@ -7,6 +7,11 @@ import { toEpochMs } from "./time-format"
 import { formatDuration, formatNumber } from "@maple/domain/format"
 
 export { formatDuration, formatNumber }
+
+// A leaf module so time-format can use it without an import cycle through this file.
+import { EMPTY_VALUE } from "./empty-value"
+
+export { EMPTY_VALUE }
 
 /**
  * Format a duration for an axis tick, at a precision derived from the tick spacing.
@@ -19,7 +24,7 @@ export { formatDuration, formatNumber }
  * follows the *step*, so a 0.001 ms step still reads "1234μs" rather than "1.234000ms".
  */
 export function formatDurationAtStep(ms: number, stepMs: number): string {
-	if (!Number.isFinite(ms)) return "—"
+	if (!Number.isFinite(ms)) return EMPTY_VALUE
 	const step = Number.isFinite(stepMs) && stepMs > 0 ? stepMs : 1
 	// Decimals needed to separate two ticks one step apart. The epsilon absorbs the float noise
 	// in log10(0.001) = -3.0000000000000004, which would otherwise ask for one extra digit.
@@ -34,7 +39,7 @@ export function formatDurationAtStep(ms: number, stepMs: number): string {
 	if (Math.abs(ms) < 60_000) {
 		return `${(ms / 1000).toFixed(Math.min(3, decimalsFor(step / 1000)))}s`
 	}
-	return `${(ms / 60_000).toFixed(Math.min(2, decimalsFor(step / 60_000)))}min`
+	return `${(ms / 60_000).toFixed(Math.min(2, decimalsFor(step / 60_000)))}m`
 }
 
 // Two byte formatters, not one with a `base` option: the choice between them is
@@ -42,19 +47,23 @@ export function formatDurationAtStep(ms: number, stepMs: number): string {
 // customer is billed for is quoted in decimal units, and quietly showing
 // "976.6 KB" where an invoice says "1.0 MB" is a support ticket.
 
-const BINARY_UNITS = ["B", "KB", "MB", "GB", "TB"] as const
-const DECIMAL_UNITS = ["B", "KB", "MB", "GB", "TB"] as const
+const BINARY_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const
+const DECIMAL_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const
 
-/** Binary (1024-based) byte size — memory, disk, page weight. */
+/** One decimal under 100, whole numbers from 100 up: the rule every byte-like unit shares. */
+const byteDigits = (value: number): string => (value >= 100 ? value.toFixed(0) : value.toFixed(1))
+
+/** Binary (1024-based) byte size: memory, disk, page weight. A negative size is bad data and reads as the placeholder. */
 export function formatBytes(bytes: number): string {
-	if (!Number.isFinite(bytes) || bytes <= 0) return "0 B"
+	if (!Number.isFinite(bytes) || bytes < 0) return EMPTY_VALUE
+	if (bytes === 0) return "0 B"
 	let value = bytes
 	let unit = 0
 	while (value >= 1024 && unit < BINARY_UNITS.length - 1) {
 		value /= 1024
 		unit += 1
 	}
-	return `${value >= 100 ? value.toFixed(0) : value.toFixed(1)} ${BINARY_UNITS[unit]}`
+	return `${byteDigits(value)} ${BINARY_UNITS[unit]}`
 }
 
 /** Decimal (1000-based) byte size — warehouse storage and anything billed. */
@@ -66,12 +75,12 @@ export function formatStorageBytes(bytes: number): string {
 		value /= 1000
 		unit += 1
 	}
-	return `${value >= 100 ? value.toFixed(0) : value.toFixed(1)} ${DECIMAL_UNITS[unit]}`
+	return `${byteDigits(value)} ${DECIMAL_UNITS[unit]}`
 }
 
 /** Binary (1024-based) throughput. */
 export function formatBytesPerSecond(bytes: number): string {
-	if (!Number.isFinite(bytes) || bytes === 0) return "0 B/s"
+	if (!Number.isFinite(bytes) || bytes <= 0) return "0 B/s"
 	const units = ["B/s", "KB/s", "MB/s", "GB/s"]
 	let value = bytes
 	let unit = 0
@@ -79,75 +88,81 @@ export function formatBytesPerSecond(bytes: number): string {
 		value /= 1024
 		unit++
 	}
-	return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`
+	return `${byteDigits(value)} ${units[unit]}`
 }
 
 /**
- * Format a 0–1 fraction as a utilization percentage. Distinct from
- * `formatErrorRate`: this floors to "0%" below 0.05% and drops to whole numbers
- * past 10%, which suits gauges and resource bars. Error rates want the opposite
- * (a visible "<0.01%" so a rare failure never reads as zero).
+ * A percentage on the table rule: exact zero is "0%", a non-zero share under 0.01% is
+ * "<0.01%", two decimals under 1% (a low error rate's second digit matters), one decimal under
+ * 100, whole numbers from 100 up, so a column stays scannable ("88.0%" above "1.0%").
  */
-export function formatPercent(fraction: number): string {
-	if (!Number.isFinite(fraction)) return "—"
-	const pct = fraction * 100
-	if (pct < 0.05) return "0%"
-	if (pct < 10) return `${pct.toFixed(1)}%`
+const tablePercentText = (pct: number): string => {
+	if (pct === 0) return "0%"
+	if (pct < 0.01) return "<0.01%"
+	if (Number(pct.toFixed(2)) < 1) return `${pct.toFixed(2)}%`
+	if (Number(pct.toFixed(1)) < 100) return `${pct.toFixed(1)}%`
 	return `${pct.toFixed(0)}%`
+}
+
+/**
+ * Format a 0–1 fraction as a utilization percentage for gauges and prose: two decimals under
+ * 0.1%, one under 10%, whole numbers past that. A table column uses `formatPercentColumn`.
+ */
+export function formatPercent(fraction: number, options?: { readonly floor?: number }): string {
+	if (!Number.isFinite(fraction)) return EMPTY_VALUE
+	// `floor` (a fraction) renders a non-zero value under it as "<0.1%" instead of "0%".
+	const floor = options?.floor
+	if (floor !== undefined && fraction > 0 && fraction < floor) return `<${+(floor * 100).toFixed(4)}%`
+	if (fraction < 0) return `-${formatPercent(-fraction, options)}`
+	const pct = fraction * 100
+	if (pct >= 0.01 && Number(pct.toFixed(1)) >= 10) return `${pct.toFixed(0)}%`
+	return tablePercentText(pct)
+}
+
+/**
+ * A 0–1 fraction in a table column, on the same rule as `formatErrorRate` so a column reads
+ * "88.0%" above "1.0%" and "0%", never "88%" above "1.0%".
+ */
+export function formatPercentColumn(fraction: number): string {
+	if (!Number.isFinite(fraction)) return EMPTY_VALUE
+	if (fraction < 0) return `-${formatPercentColumn(-fraction)}`
+	return tablePercentText(fraction * 100)
 }
 
 /** Two-decimal load average. */
 export function formatLoad(load: number): string {
-	if (!Number.isFinite(load)) return "—"
+	if (!Number.isFinite(load)) return EMPTY_VALUE
 	return load.toFixed(2)
 }
 
-/** Coarse uptime: minutes, then hours, then `"3d 4h"`. */
+/** Coarse uptime: `"<1m"`, minutes, hours, `"3d 4h"`, then `"2y 14d"`; a zero trailing part is dropped (`"3y"`). */
 export function formatUptime(seconds: number): string {
-	if (!Number.isFinite(seconds) || seconds <= 0) return "—"
+	if (!Number.isFinite(seconds) || seconds <= 0) return EMPTY_VALUE
 	const m = Math.floor(seconds / 60)
+	if (m < 1) return "<1m"
 	if (m < 60) return `${m}m`
 	const h = Math.floor(m / 60)
 	if (h < 24) return `${h}h`
 	const d = Math.floor(h / 24)
-	return `${d}d ${h % 24}h`
+	const pair = (big: string, small: number, unit: string) => (small === 0 ? big : `${big} ${small}${unit}`)
+	if (d < 365) return pair(`${d}d`, h % 24, "h")
+	return pair(`${Math.floor(d / 365)}y`, d % 365, "d")
 }
 
-/**
- * Format a latency value in milliseconds to a human-readable string.
- */
+/** A latency in milliseconds; the duration ladder with a placeholder for missing values. */
 export function formatLatency(ms: number): string {
-	if (ms == null || Number.isNaN(ms)) {
-		return "-"
-	}
-	if (ms < 1) {
-		return `${(ms * 1000).toFixed(0)}μs`
-	}
-	if (ms < 1000) {
-		return `${ms.toFixed(1)}ms`
-	}
-	if (ms < 60_000) {
-		return `${(ms / 1000).toFixed(2)}s`
-	}
-	if (ms < 3_600_000) {
-		return `${(ms / 60_000).toFixed(1)}min`
-	}
-	return `${(ms / 3_600_000).toFixed(1)}h`
+	if (ms == null || Number.isNaN(ms)) return EMPTY_VALUE
+	return formatDuration(ms)
 }
 
 /**
- * Format an error rate (0–1 ratio) as a percentage string.
+ * Format an error rate (0–1 ratio) as a percentage string. A rare failure reads "<0.01%",
+ * never a flat zero.
  */
 export function formatErrorRate(rate: number): string {
-	const pct = rate * 100
-	if (pct === 0) {
-		return "0%"
-	}
-	if (pct > 0 && pct < 0.01) return "<0.01%"
-	if (pct < 1) {
-		return `${pct.toFixed(2)}%`
-	}
-	return `${pct.toFixed(1)}%`
+	if (!Number.isFinite(rate)) return EMPTY_VALUE
+	if (rate < 0) return `-${formatErrorRate(-rate)}`
+	return tablePercentText(rate * 100)
 }
 
 /**
@@ -155,9 +170,10 @@ export function formatErrorRate(rate: number): string {
  * Expects data with a `bucket` string timestamp field.
  */
 export function inferBucketSeconds(data: ReadonlyArray<{ bucket: string }>): number | undefined {
-	if (data.length < 2) return undefined
-	const t0 = toEpochMs(data[0].bucket)
-	const t1 = toEpochMs(data[1].bucket)
+	const [first, second] = data
+	if (first === undefined || second === undefined) return undefined
+	const t0 = toEpochMs(first.bucket)
+	const t1 = toEpochMs(second.bucket)
 	const diffMs = t1 - t0
 	if (diffMs <= 0 || Number.isNaN(diffMs)) return undefined
 	return diffMs / 1000
@@ -180,24 +196,30 @@ export function parseBucketMs(value: unknown): number | null {
  * Infer the total time range in milliseconds from an array of data points with a `bucket` key.
  */
 export function inferRangeMs(data: ReadonlyArray<Record<string, unknown>>): number {
-	const bucketTimes = data
-		.map((row) => parseBucketMs(row.bucket))
-		.filter((value): value is number => value != null)
+	const bucketTimes = Arr.filter(
+		Arr.map(data, (row) => parseBucketMs(row.bucket)),
+		(value): value is number => value != null,
+	)
 
 	if (bucketTimes.length < 2) return 0
 	return Math.max(...bucketTimes) - Math.min(...bucketTimes)
 }
 
+/** Whether `date` reads 00:00 on the clock of `timeZone` (the browser's when undefined). */
+const isZonedMidnight = (date: Date, timeZone: string | undefined): boolean =>
+	date.toLocaleTimeString("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) ===
+	"00:00"
+
 /**
  * Format a bucket timestamp label that adapts based on the overall time range:
- * - >= 24h with daily buckets: "Feb 14"
+ * - >= 24h with daily buckets, or a tick on midnight: "Feb 14"
  * - >= 24h with sub-day buckets: "Feb 14, 02:00 PM"
  * - 30min - 24h: "02:00 PM"
  * - <= 30min: "02:00:30 PM"
  */
 export function formatBucketLabel(
 	value: unknown,
-	context: { rangeMs: number; bucketSeconds: number | undefined; timeZone?: string },
+	context: { rangeMs: number; bucketSeconds: number | undefined; timeZone?: string; locale?: string },
 	mode: "tick" | "tooltip",
 ): string {
 	if (typeof value !== "string") return ""
@@ -212,11 +234,13 @@ export function formatBucketLabel(
 	// The viewer's selected zone when the chart sits under a `PlotTimeZoneProvider`;
 	// the browser's otherwise.
 	const timeZone = context.timeZone
+	// The browser's locale unless the caller read one (Foldkit views stay pure).
+	const locale = context.locale
 
 	if (mode === "tooltip") {
 		// The tooltip header always carries the full date — ticks stay terse, but a
 		// hovered point should never make the reader work out which day it was.
-		return date.toLocaleString(undefined, {
+		return date.toLocaleString(locale, {
 			timeZone,
 			year: "numeric",
 			month: "short",
@@ -228,28 +252,35 @@ export function formatBucketLabel(
 	}
 
 	if (includeDate) {
-		if ((context.bucketSeconds ?? 0) >= 24 * 60 * 60) {
-			return date.toLocaleDateString(undefined, { timeZone, month: "short", day: "numeric" })
+		// A tick on midnight names the day alone, so a week axis reads "Oct 20", not "Oct 20, 12:00 AM".
+		if ((context.bucketSeconds ?? 0) >= 24 * 60 * 60 || isZonedMidnight(date, timeZone)) {
+			return date.toLocaleDateString(locale, { timeZone, month: "short", day: "numeric" })
 		}
-		return date
-			.toLocaleString(undefined, {
+		return Str.replace(
+			/ 24:/,
+			" 00:",
+		)(
+			date.toLocaleString(locale, {
 				timeZone,
 				month: "short",
 				day: "numeric",
 				hour: "2-digit",
 				minute: "2-digit",
-			})
-			.replace(/ 24:/, " 00:")
+			}),
+		)
 	}
 
-	return date
-		.toLocaleTimeString(undefined, {
+	return Str.replace(
+		/^24:/,
+		"00:",
+	)(
+		date.toLocaleTimeString(locale, {
 			timeZone,
 			hour: "2-digit",
 			minute: "2-digit",
 			second: includeSeconds ? "2-digit" : undefined,
-		})
-		.replace(/^24:/, "00:")
+		}),
+	)
 }
 
 const bucketLabelMap: Record<number, string> = {
@@ -273,7 +304,21 @@ export function bucketIntervalLabel(seconds: number | undefined): string {
  * Format a throughput value with a rate suffix for chart axes.
  */
 export function formatThroughput(value: number, suffix: string): string {
-	return `${formatNumber(value)}${suffix}`
+	return `${formatRate(value)}${suffix}`
+}
+
+/**
+ * A per-second (or per-anything) rate at reading precision: compacted past 1K, whole above 100,
+ * one decimal above 1, two significant digits below. `formatNumber` keeps three decimals, which
+ * turns a request rate into "12.346".
+ */
+export function formatRate(value: number): string {
+	if (!Number.isFinite(value)) return EMPTY_VALUE
+	const abs = Math.abs(value)
+	if (abs >= 1_000) return formatNumber(value)
+	if (abs >= 100) return Math.round(value).toLocaleString()
+	if (abs >= 1) return value.toLocaleString(undefined, { maximumFractionDigits: 1 })
+	return value.toLocaleString(undefined, { maximumSignificantDigits: 2 })
 }
 
 /** Decimals a percentage may grow to before the number stops being readable. */
@@ -329,3 +374,151 @@ export const formatValueByUnit: (num: number, unit?: string) => string = (num, u
 		Match.when("bytes", () => formatStorageBytes(num)),
 		Match.orElse(() => formatNumber(num)),
 	)
+
+const DURATION_TO_MS = new Map([
+	["duration_ms", 1],
+	["duration_us", 0.001],
+	["duration_s", 1000],
+	["duration_ns", 0.000_001],
+])
+
+/** d3's tick step for about `count` ticks across `span`: 1, 2 or 5 times a power of ten. */
+const tickStep = (span: number, count: number): number => {
+	const raw = span / Math.max(1, count)
+	const power = 10 ** Math.floor(Math.log10(raw))
+	const error = raw / power
+	return (error >= 7.07 ? 10 : error >= 3.16 ? 5 : error >= 1.41 ? 2 : 1) * power
+}
+
+/** Decimals that keep two ticks one `step` apart distinct; the epsilon absorbs log10 float noise. */
+const stepDecimals = (step: number, cap: number): number =>
+	Math.min(cap, Math.max(0, -Math.floor(Math.log10(step) + 1e-9)))
+
+const DURATION_AXIS_UNITS = [
+	{ suffix: "μs", ms: 0.001, below: 1 },
+	{ suffix: "ms", ms: 1, below: 1000 },
+	{ suffix: "s", ms: 1000, below: 60_000 },
+	{ suffix: "m", ms: 60_000, below: 3_600_000 },
+	{ suffix: "h", ms: 3_600_000, below: Number.POSITIVE_INFINITY },
+] as const
+
+/** The next nice step up: 1 to 2, 2 to 5, 5 to 10, at any power of ten. */
+const nextNiceStep = (step: number): number => {
+	const power = 10 ** Math.floor(Math.log10(step) + 1e-9)
+	const multiple = step / power
+	return (multiple < 1.5 ? 2 : multiple < 3.5 ? 5 : 10) * power
+}
+
+const ticksBetween = (lo: number, hi: number, step: number): number =>
+	Math.floor(hi / step + 1e-9) - Math.ceil(lo / step - 1e-9) + 1
+
+/**
+ * The tick step for `domain`. With `max`, the step grows to the next nice one until at most
+ * `max` ticks fit, so a short chart reads "0, 1s, 2s" instead of five crammed labels.
+ */
+const axisStep = (domain: readonly [number, number], count: number, max: number | undefined): number => {
+	const lo = Math.min(domain[0], domain[1])
+	const hi = Math.max(domain[0], domain[1])
+	const base = tickStep(hi - lo, count)
+	if (max === undefined) return base
+	const widest = nextNiceStep(nextNiceStep(base))
+	const steps = [base, nextNiceStep(base), widest]
+	return Option.getOrElse(
+		Arr.findFirst(steps, (step) => ticksBetween(lo, hi, step) <= max),
+		() => nextNiceStep(widest),
+	)
+}
+
+export interface AxisTickOptions {
+	/** The most ticks the axis may draw; the step coarsens to stay under it. */
+	readonly max?: number
+}
+
+/** Tick values one step apart inside `domain`, so labels from `axisTickFormatter` match the ticks drawn. */
+export function axisTickValues(
+	domain: readonly [number, number],
+	count = 5,
+	options?: AxisTickOptions,
+): ReadonlyArray<number> {
+	const lo = Math.min(domain[0], domain[1])
+	const hi = Math.max(domain[0], domain[1])
+	if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi === lo) return [lo]
+	const step = axisStep(domain, count, options?.max)
+	const first = Math.ceil(lo / step - 1e-9)
+	const last = Math.floor(hi / step + 1e-9)
+	// Multiply rather than accumulate, so 0.1 steps never drift to 0.30000000000000004.
+	return Array.from({ length: last - first + 1 }, (_, i) => Number(((first + i) * step).toPrecision(12)))
+}
+
+/**
+ * Tick labels for a y axis: every tick in the largest tick's unit, at one shared precision
+ * derived from the tick step, so an axis reads "0, 250ms, 500ms" or "0, 1s, 2s" instead of mixing "0μs",
+ * "500.0ms" and "1.00s". Units without an axis rule fall back to `formatValueByUnit`.
+ */
+export function axisTickFormatter(
+	unit: string | undefined,
+	domain: readonly [number, number],
+	count = 5,
+	options?: AxisTickOptions,
+): (value: number) => string {
+	// The zero tick reads "0" on every axis, never "0/s", "0.00" or "0μs".
+	const byUnit = (value: number) => (value === 0 ? "0" : formatValueByUnit(value, unit))
+	const span = Math.abs(domain[1] - domain[0])
+	if (!Number.isFinite(span) || span === 0) return byUnit
+	const step = axisStep(domain, count, options?.max)
+	const toMs = unit === undefined ? undefined : DURATION_TO_MS.get(unit)
+	if (toMs !== undefined) {
+		// The unit follows the largest tick drawn, not the domain top, so an axis that stops
+		// under 1s reads in ms ("0, 250ms, 500ms").
+		const ticks = axisTickValues(domain, count, options)
+		const largest = Math.max(...Arr.map(ticks, (t) => Math.abs(t))) * toMs
+		const axisUnit = Option.getOrElse(
+			Arr.findFirst(DURATION_AXIS_UNITS, (u) => largest < u.below),
+			() => DURATION_AXIS_UNITS[4],
+		)
+		const decimals = stepDecimals((step * toMs) / axisUnit.ms, 3)
+		return (value) =>
+			!Number.isFinite(value)
+				? EMPTY_VALUE
+				: value === 0
+					? "0"
+					: `${((value * toMs) / axisUnit.ms).toFixed(decimals)}${axisUnit.suffix}`
+	}
+	if (unit === "percent" || unit === "percent_100") {
+		const scale = unit === "percent" ? 100 : 1
+		const decimals = stepDecimals(step * scale, PERCENT_MAX_DIGITS)
+		return (value) =>
+			!Number.isFinite(value)
+				? EMPTY_VALUE
+				: value === 0
+					? "0"
+					: `${(value * scale).toFixed(decimals)}%`
+	}
+	return byUnit
+}
+
+/**
+ * The noun for a count: `pluralize(1, "host")` is "host", `pluralize(3, "host")` is "hosts".
+ * Pass `plural` for irregular nouns (`pluralize(n, "query", "queries")`).
+ */
+export function pluralize(count: number, singular: string, plural: string = `${singular}s`): string {
+	return count === 1 ? singular : plural
+}
+
+/** A count with its noun: `countLabel(3, "host")` is "3 hosts". The number is not compacted. */
+export function countLabel(count: number, singular: string, plural?: string, locale?: string): string {
+	return `${count.toLocaleString(locale)} ${pluralize(count, singular, plural)}`
+}
+
+/**
+ * A per-hour rate in whatever unit reads naturally. "0.02 times per hour" is
+ * technically right and useless; "3 times a week" is the same number said in a
+ * way a reader can picture.
+ */
+export function formatRatePerHour(perHour: number): string {
+	const round = (n: number) => (n >= 10 ? Math.round(n) : Math.round(n * 10) / 10)
+	if (perHour >= 1) return `${round(perHour)}× an hour`
+	const perDay = perHour * 24
+	if (perDay >= 1) return `${round(perDay)}× a day`
+	return `${round(perDay * 7)}× a week`
+}

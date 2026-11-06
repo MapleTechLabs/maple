@@ -19,9 +19,9 @@ export type IngestKeys = Resource<
 	IngestKeysProps,
 	{
 		/** The `maple_pk_…` public ingest key (safe for client-side senders). */
-		publicKey: Redacted.Redacted<string>
+		publicKey: Redacted.Redacted
 		/** The `maple_sk_…` private ingest key (server-side senders only). */
-		privateKey: Redacted.Redacted<string>
+		privateKey: Redacted.Redacted
 		publicRotatedAt: string
 		privateRotatedAt: string
 	},
@@ -63,7 +63,8 @@ export const IngestKeysProvider = () =>
 			const api = yield* MapleApi
 			const fetchKeys = Effect.gen(function* () {
 				const fetched = yield* api.get("/v2/ingest_keys")
-				return toAttributes(yield* decodeWireIngestKeys(fetched))
+				const decoded = yield* decodeWireIngestKeys(fetched)
+				return toAttributes(decoded)
 			})
 			return {
 				// Always-present org configuration: deleting the resource only stops

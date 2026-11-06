@@ -1,0 +1,24 @@
+---
+// An npm install command with pnpm and bun twins, in a package-manager switcher
+// that shares its remembered pick with the docs' install blocks.
+// `variants` overrides the conversion for commands it can't handle (npx, pipes).
+import LanguageTabs from "./LanguageTabs.astro";
+import LanguageTab from "./LanguageTab.astro";
+import { installVariants } from "../../lib/remark-install-tabs.mjs";
+import { highlight } from "../../lib/guide-highlight";
+
+interface Props {
+    command?: string;
+    variants?: Array<{ id: string; value: string }>;
+}
+
+const { command = "", variants = installVariants(command)?.variants ?? [{ id: "npm", value: command }] } = Astro.props;
+---
+
+<LanguageTabs label="Package manager" group="maple-docs-js-package-manager" tabs={variants.map(({ id }) => ({ id, label: id }))}>
+    {variants.map((v) => (
+        <LanguageTab id={v.id}>
+            <pre><code set:html={highlight(v.value, "shell")} /></pre>
+        </LanguageTab>
+    ))}
+</LanguageTabs>

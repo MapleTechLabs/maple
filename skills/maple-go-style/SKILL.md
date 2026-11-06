@@ -120,11 +120,12 @@ Wire from `main`:
 ```go
 func main() {
 	ctx := context.Background()
-	shutdown, err := telemetry.Init(ctx)
-	if err != nil {
-		log.Fatal(err)
+	// A telemetry setup error is logged, never fatal: the app runs without export.
+	if shutdown, err := telemetry.Init(ctx); err != nil {
+		log.Printf("telemetry disabled: %v", err)
+	} else {
+		defer shutdown(ctx)
 	}
-	defer shutdown(ctx)
 
 	// app start
 }

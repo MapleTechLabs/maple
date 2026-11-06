@@ -1,3 +1,4 @@
+import { Schema, Array as Arr, String as Str } from "effect"
 import { LogCluster } from "./log-cluster"
 import { LruCache } from "./lru-cache"
 import { Node } from "./node"
@@ -14,6 +15,17 @@ const childAt = (node: Node, key: string): Node => {
 	node.keyToChildNode.set(key, created)
 	return created
 }
+
+/**
+ * A Drain call the algorithm cannot run. Only a bug in this module or its fixed
+ * config produces one, so it is thrown and surfaces as a defect.
+ */
+export class DrainInvariantError extends Schema.TaggedError<DrainInvariantError>()(
+	"@maple/query-engine/drain/DrainInvariantError",
+	{ message: Schema.String },
+) {}
+
+export type FullSearchStrategy = "always" | "never" | "fallback"
 
 export class Drain {
 	logClusterDepth: number
@@ -44,7 +56,7 @@ export class Drain {
 		parametrizeNumericTokens: boolean = true,
 	) {
 		if (depth < 3) {
-			throw new Error("depth argument must be at least 3")
+			throw new DrainInvariantError({ message: "depth argument must be at least 3" })
 		}
 
 		this.logClusterDepth = depth
@@ -99,25 +111,21 @@ export class Drain {
 	}
 
 	private static hasNumbers(s: string): boolean {
-		for (let i = 0; i < s.length; i++) {
-			const c = s.charCodeAt(i)
-			if (c >= 48 && c <= 57) return true
-		}
-		return false
+		return /[0-9]/.test(s)
 	}
 
 	getContentAsTokens(content: string): string[] {
-		let c = content.trim()
+		let c = Str.trim(content)
 		for (const delimiter of this.extraDelimiters) {
-			c = c.split(delimiter).join(" ")
+			c = Arr.join(Str.split(delimiter)(c), " ")
 		}
 		if (c.length === 0) return []
-		return c.split(/\s+/)
+		return Str.split(/\s+/)(c)
 	}
 
 	getSeqDistance(seq1: string[], seq2: string[], includeParams: boolean): [number, number] {
 		if (seq1.length !== seq2.length) {
-			throw new Error("seq1 and seq2 must have equal length")
+			throw new DrainInvariantError({ message: "seq1 and seq2 must have equal length" })
 		}
 		if (seq1.length === 0) return [1.0, 0]
 
@@ -143,9 +151,9 @@ export class Drain {
 
 	createTemplate(seq1: string[], seq2: string[]): string[] {
 		if (seq1.length !== seq2.length) {
-			throw new Error("seq1 and seq2 must have equal length")
+			throw new DrainInvariantError({ message: "seq1 and seq2 must have equal length" })
 		}
-		return seq1.map((t1, i) => (t1 === seq2[i] ? seq2[i] : this.paramStr))
+		return Arr.map(seq1, (t1, i) => (t1 === seq2[i] ? seq2[i] : this.paramStr))
 	}
 
 	private fastMatch(
@@ -224,7 +232,7 @@ export class Drain {
 		let currentDepth = 1
 		for (const token of templateTokens) {
 			if (currentDepth >= this.maxNodeDepth || currentDepth >= tokenCount) {
-				const newClusterIds = curNode.clusterIds.filter((cid) => this.clusterContains(cid))
+				const newClusterIds = Arr.filter(curNode.clusterIds, (cid) => this.clusterContains(cid))
 				newClusterIds.push(clusterId)
 				curNode.clusterIds = newClusterIds
 				break
@@ -271,7 +279,7 @@ export class Drain {
 
 		const updateType =
 			newTemplateTokens.length === existingCluster.logTemplateTokens.length &&
-			newTemplateTokens.every((t, i) => t === existingCluster.logTemplateTokens[i])
+			Arr.every(newTemplateTokens, (t, i) => t === existingCluster.logTemplateTokens[i])
 				? "none"
 				: "cluster_template_changed"
 
@@ -300,11 +308,7 @@ export class Drain {
 		return ids
 	}
 
-	match(content: string, fullSearchStrategy: string = "never"): LogCluster | null {
-		if (!["always", "never", "fallback"].includes(fullSearchStrategy)) {
-			throw new Error(`Invalid full_search_strategy: ${fullSearchStrategy}`)
-		}
-
+	match(content: string, fullSearchStrategy: FullSearchStrategy = "never"): LogCluster | null {
 		const contentTokens = this.getContentAsTokens(content)
 		const requiredSimTh = 1.0
 

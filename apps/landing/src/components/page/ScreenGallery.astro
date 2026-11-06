@@ -1,0 +1,52 @@
+---
+/**
+ * ScreenGallery: the rest of a feature's surface, after the panel and the
+ * artifact. Each capture is one `.live-frame` (route left, subject right) with
+ * the shot as its body, two to a row on desktop. The shots come from the
+ * seeded demo world, so a page shows one consistent story across all of them.
+ */
+import type { GalleryShot } from "../../lib/page-registry";
+import { GALLERY_SHOT_SIZE } from "../../lib/page-registry";
+
+interface Props {
+	eyebrow: string;
+	title: string;
+	shots: GalleryShot[];
+	class?: string;
+}
+
+const { eyebrow, title, shots, class: className = "" } = Astro.props;
+---
+
+<section class={`bg-bg ${className}`}>
+	<div class="shell py-16 md:py-24">
+		<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{eyebrow}</p>
+		<h2
+			class="mt-4 max-w-[24ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
+		>
+			{title}
+		</h2>
+		<div class="mt-10 grid gap-6 md:mt-14 lg:grid-cols-2">
+			{
+				shots.map((shot) => (
+					<figure class="live-frame min-w-0">
+						<figcaption class="live-frame__head">
+							<span>{shot.route}</span>
+							<span class="text-fg normal-case tracking-normal">{shot.title}</span>
+						</figcaption>
+						<img
+							src={`/screenshots/${shot.id}.webp`}
+							alt={shot.alt}
+							width={GALLERY_SHOT_SIZE.width}
+							height={GALLERY_SHOT_SIZE.height}
+							loading="lazy"
+							decoding="async"
+							data-zoomable=""
+							class="block h-auto w-full"
+						/>
+					</figure>
+				))
+			}
+		</div>
+	</div>
+</section>

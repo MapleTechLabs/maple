@@ -12,6 +12,7 @@ import {
 } from "@maple/domain/http"
 import { cleanErrorMessage, mapWarehouseError, toWarehouseQueryError } from "./errors"
 import { WarehouseDriverError } from "./driver-error"
+import { String as Str, Array as Arr } from "effect"
 
 // Promise-land inputs, lifted the way a Promise-based adapter lifts them.
 const classify = (pipe: string, error: unknown, authoredBy?: "maple" | "caller") =>
@@ -99,6 +100,19 @@ describe("mapWarehouseError", () => {
 				expect(mapped).not.toBeInstanceOf(WarehouseQueryError)
 			})
 
+			// Production: `EventsName != ''` on an Array column, written by the chat agent.
+			it("reports a literal the column cannot read as invalid SQL", () => {
+				const mapped = classify(
+					"rawSqlQuery",
+					{
+						message:
+							"Array does not start with '[' character: while converting '' to Array(String) (CANNOT_READ_ARRAY_FROM_TEXT)",
+					},
+					"caller",
+				)
+				expect(mapped).toBeInstanceOf(WarehouseInvalidSqlError)
+			})
+
 			// The stale `FROM web_events` left in a saved raw_sql widget by the
 			// product_events rename: the author's to fix, not a Maple 5xx.
 			it("reports a table dropped out from under a saved widget to the author", () => {
@@ -112,6 +126,86 @@ describe("mapWarehouseError", () => {
 				)
 				expect(mapped).toBeInstanceOf(WarehouseInvalidSqlError)
 				expect(mapped.message).toContain("web_events")
+			})
+
+			// Agent SQL from prod, as Tinybird returns it: the exception type only in the text.
+			it.each([
+				"[Error] Unknown expression identifier `Status` in scope SELECT * FROM traces FORMAT JSON. (UNKNOWN_IDENTIFIER)",
+				"[Error] Function with name `toStartOfTenSeconds` does not exist. In scope SELECT 1. (UNKNOWN_FUNCTION)",
+				"[Error] Illegal type DateTime64(9) of argument of function intDiv. (ILLEGAL_TYPE_OF_ARGUMENT)",
+				"[Error] Column `SpanName` is not under aggregate function and not in GROUP BY keys. (NOT_AN_AGGREGATE)",
+				"[Error] Cannot parse string '2026-10-04T00:00:00Z' as DateTime64(9). (CANNOT_PARSE_DATETIME)",
+				"[Error] Table expression modifiers FINAL are not supported for subquery SELECT * FROM (SELECT * FROM session_replays) AS session_replays. (UNSUPPORTED_METHOD)",
+			])("reports agent SQL the warehouse refused as invalid SQL: %s", (message) => {
+				expect(classify("rawSqlQuery", { message }, "caller")).toBeInstanceOf(
+					WarehouseInvalidSqlError,
+				)
+			})
+
+			// Run_sql failures from prod (2026-11-01/02), as Tinybird returns them: the type
+			// followed by `(version ...)` or `(query_id=...)`, or no type in the text at all.
+			const tinybirdSuffixed = [
+				"[Error] You cannot use the aggregate function 'any(LogAttributes) AS LogAttributes is found in GROUP BY in query. (ILLEGAL_AGGREGATION) (version 25.8.40.3 (official build))\\n'' or its alias inside another aggregate function. (query_id=01M6F82AEM8S814XAYWXPNP6EB)",
+				"[Error] Cannot load time zone %Asia/Tokyo: In scope SELECT min(formatDateTime(toDateTime(Timestamp, '%Asia/Tokyo'), '%H:%i')) AS f FROM logs WHERE $__orgFilter LIMIT 20. (BAD_ARGUMENTS) (query_id=01M6DDV3RJZY99C4238Z06TZ3J)",
+				"[Error] Cannot determine join keys in JOIN ON expression [Predcates: () Residual filter: ((less(abs(dateDiff('millisecond'_String, __table5.Timestamp, __table2.Timestamp)), 1500_UInt16)))]. (INVALID_JOIN_ON_EXPRESSION) (query_id=01M6C4Q99ZD7YNSK69C0AXQFT7)",
+				"[Error] You cannot use the aggregate function 'median(n)' or its alias inside another aggregate function. (query_id=01M6DRGTQTDNMDG6T67C3CA3KQ)",
+				"[Error] Neither IPv4 nor IPv6 address: '' (query_id=01M6F9GZN546YBS057R6GEXWC3)",
+			]
+
+			it.each(tinybirdSuffixed)("reports caller SQL Tinybird refused as invalid SQL: %s", (message) => {
+				expect(classify("rawSqlQuery", { message, status: 400 }, "caller")).toBeInstanceOf(
+					WarehouseInvalidSqlError,
+				)
+			})
+
+			it("reads the exception type past Tinybird's version and query_id groups", () => {
+				expect(
+					classify("rawSqlQuery", { message: tinybirdSuffixed[0] }, "caller").clickhouseType,
+				).toBe("ILLEGAL_AGGREGATION")
+				expect(
+					classify("rawSqlQuery", { message: tinybirdSuffixed[2] }, "caller").clickhouseType,
+				).toBe("INVALID_JOIN_ON_EXPRESSION")
+			})
+
+			it("keeps an upper-case group inside echoed SQL from posing as the type", () => {
+				expect(
+					classify("rawSqlQuery", {
+						message: "[Error] boom near (FOO_BAR) in SELECT 1. (query_id=abc)",
+					}).clickhouseType,
+				).toBeUndefined()
+			})
+
+			it.each(tinybirdSuffixed)(
+				"leaves the same message in Maple's own SQL unclaimed as invalid SQL: %s",
+				(message) => {
+					expect(classify("p", { message, status: 400 }, "maple")).not.toBeInstanceOf(
+						WarehouseInvalidSqlError,
+					)
+				},
+			)
+
+			// A 500 must not make a typo transient: only WarehouseUpstreamError is retried.
+			const typed500 = {
+				message:
+					"[Error] Unknown expression identifier `Status` in scope SELECT 1. (UNKNOWN_IDENTIFIER)",
+				status: 500,
+			}
+
+			it("lets a message-borne type outrank a 500 on caller SQL, so it is not retried", () => {
+				const mapped = classify("rawSqlQuery", typed500, "caller")
+				expect(mapped).toBeInstanceOf(WarehouseInvalidSqlError)
+				expect(mapped).not.toBeInstanceOf(WarehouseUpstreamError)
+			})
+
+			it("keeps a Maple query's untyped 500 a transient upstream failure", () => {
+				expect(classify("p", typed500, "maple")).toBeInstanceOf(WarehouseUpstreamError)
+			})
+
+			// The message-borne type is read for caller SQL only; Maple's own queries keep their rules.
+			it("does not read the exception type out of a Maple query's message", () => {
+				expect(
+					classify("p", "[Error] Unknown expression identifier `x`. (UNKNOWN_IDENTIFIER)", "maple"),
+				).not.toBeInstanceOf(WarehouseInvalidSqlError)
 			})
 
 			it("defaults to caller authorship, the conservative reading", () => {
@@ -285,6 +379,14 @@ describe("mapWarehouseError", () => {
 })
 
 describe("cleanErrorMessage", () => {
+	it("drops the vendor's plan upsell", () => {
+		expect(
+			cleanErrorMessage(
+				"[Error] Memory limit exceeded. Upgrade your plan for higher capacity. (MEMORY_LIMIT_EXCEEDED)",
+			),
+		).toBe("[Error] Memory limit exceeded. (MEMORY_LIMIT_EXCEEDED)")
+	})
+
 	it("retains the authentication diagnostic without the echoed token", () => {
 		const message =
 			"invalid authentication token. Invalid token b'opaque-secret': Signature verification failed"
@@ -314,13 +416,40 @@ describe("cleanErrorMessage", () => {
 		expect(cleaned).toBe("Request failed with status 503")
 	})
 
+	it("keeps comparison operators in echoed SQL across UNION branches", () => {
+		const branch = (t: string) =>
+			`SELECT count() FROM ${t} WHERE TimeUnix >= toDateTime('2026-10-01 12:00:00') AND TimeUnix <= toDateTime('2026-10-01 12:10:00')`
+		const sql = `${branch("metrics_histogram")} UNION ALL ${branch("metrics_sum")} UNION ALL ${branch("metrics_gauge")} AND a < 5 AND b > 3`
+		const message = `Code: 47. DB::Exception: Unknown expression identifier 'n' in scope ${sql}. (UNKNOWN_IDENTIFIER)`
+		const cleaned = cleanErrorMessage(message)
+		expect(cleaned).toBe(message)
+		expect(Arr.fromIterable(Str.matchAll(/TimeUnix <= /g)(cleaned))).toHaveLength(3)
+		expect(Arr.fromIterable(Str.matchAll(/TimeUnix >= /g)(cleaned))).toHaveLength(3)
+	})
+
+	it("strips inline HTML tags outside a full page", () => {
+		expect(cleanErrorMessage('Bad gateway <b>upstream</b> <p class="x">down</p>')).toBe(
+			"Bad gateway upstream down",
+		)
+	})
+
+	it("strips a doctype and unquoted attributes but keeps tag-like SQL comparisons", () => {
+		expect(cleanErrorMessage("Request failed with status 503: <!DOCTYPE html>\n<html><head>")).toBe(
+			"Request failed with status 503",
+		)
+		expect(cleanErrorMessage("Bad gateway <p class=x>down</p>")).toBe("Bad gateway down")
+		expect(cleanErrorMessage("Syntax error near WHERE x<b AND y>3")).toBe(
+			"Syntax error near WHERE x<b AND y>3",
+		)
+	})
+
 	it("trims a trailing colon", () => {
 		expect(cleanErrorMessage("Request failed with status 500:")).toBe("Request failed with status 500")
 	})
 
 	it("falls back to the first 200 chars when cleaning empties the message", () => {
-		const raw = `<html>${"x".repeat(300)}`
-		expect(cleanErrorMessage(raw)).toBe(raw.slice(0, 200))
+		const raw = `<html>${Str.repeat(300)("x")}`
+		expect(cleanErrorMessage(raw)).toBe(Str.slice(0, 200)(raw))
 	})
 })
 

@@ -5,7 +5,7 @@ import {
 	type AlertSeverity,
 	type AlertSignalType,
 } from "@maple/domain/http"
-import { Match, Option } from "effect"
+import { Match, Option, String as Str } from "effect"
 import { resolveSignalDisplay, type SignalDisplay } from "./alert-signal-display"
 import type { NotificationTemplateConfig } from "./alert-templating/renderer"
 
@@ -26,6 +26,8 @@ export interface TemplateRenderContext {
 	readonly thresholdUpper: number | null
 	readonly value: number | null
 	readonly sampleCount: number | null
+	/** Uptime rules only: the failing check's error, e.g. `Status 503, expected 2xx`. */
+	readonly detail?: string | null
 	readonly groupKey: string | null
 	readonly windowMinutes: number
 	readonly incidentId: string | null
@@ -59,7 +61,7 @@ export const displayGroupKey = (groupKey: string | null): string | null =>
 
 /** Clamp to a provider's field limit, marking the cut with an ellipsis. */
 export const truncate = (value: string, max: number): string =>
-	value.length > max ? `${value.slice(0, max - 1)}…` : value
+	value.length > max ? `${Str.slice(0, max - 1)(value)}…` : value
 
 /** Thousands separators — an unpunctuated `1041923` is unreadable at a glance. */
 const grouped = (value: number): string =>
@@ -128,9 +130,10 @@ export const formatSignalMetric = (value: number | null, display: SignalDisplay)
 			Match.value(display.unit).pipe(
 				Match.when("ratio", () => `${round(metric * 100, 1)}%`),
 				Match.when("ms", () => `${grouped(metric)}ms`),
-				Match.when("apdex", () => `${round(metric, 3)}`),
+				Match.when("apdex", () => round(metric, 3)),
 				Match.when("rpm", () => `${grouped(metric)} rpm`),
 				Match.whenOr("count", "plain", () => grouped(metric)),
+				Match.when("burn", () => `${round(metric, 1)}x`),
 				Match.exhaustive,
 			),
 	})
@@ -170,7 +173,7 @@ export const discordEmbedColor = (eventType: string, severity: string): number =
 }
 
 type ObservedContext = SignalContext &
-	Pick<TemplateRenderContext, "value" | "comparator" | "threshold" | "thresholdUpper">
+	Pick<TemplateRenderContext, "value" | "comparator" | "threshold" | "thresholdUpper" | "detail">
 type ThresholdContext = Omit<ObservedContext, "value">
 
 export const formatThresholdSummary = (context: ThresholdContext): string => {
@@ -180,8 +183,45 @@ export const formatThresholdSummary = (context: ThresholdContext): string => {
 		: `${formatComparator(context.comparator)} ${formatSignalMetric(context.threshold, display)}`
 }
 
+/** An uptime rule's value is 1 while down; what it says is the check's own error. */
+const uptimeObserved = (context: Pick<ObservedContext, "value" | "detail">): string =>
+	context.detail ?? (context.value === 1 ? "The check is failing" : "The check is passing")
+
+/** A breach without a value is a rule alerting on an empty window. */
 export const formatObservedSummary = (context: ObservedContext): string =>
-	`${formatSignalMetric(context.value, signalDisplayOf(context))} ${formatThresholdSummary(context)}`
+	context.signalType === "uptime"
+		? uptimeObserved(context)
+		: context.signalType === "slo_burn_rate" && context.detail != null
+			? context.detail
+			: context.value === null
+				? `No data (threshold ${formatThresholdSummary(context)})`
+				: `${formatSignalMetric(context.value, signalDisplayOf(context))} ${formatThresholdSummary(context)}`
+
+/**
+ * A notification's subject line without its emoji: `checkout-api is down` for an uptime rule,
+ * the rule name and event label for the rest. A resolve with no measured value was a config change.
+ */
+export const formatAlertHeadline = (
+	context: Pick<TemplateRenderContext, "signalType" | "ruleName" | "eventType" | "value">,
+): string => {
+	if (context.signalType === "uptime") {
+		if (context.eventType === "trigger") return `${context.ruleName} is down`
+		if (context.eventType === "renotify") return `${context.ruleName} is still down`
+		if (context.eventType === "resolve" && context.value === 0) return `${context.ruleName} is back up`
+	}
+	return `${context.ruleName} \u2014 ${formatEventTypeLabel(context.eventType)}`
+}
+
+/** One sentence for an uptime rule's notification body. */
+export const uptimeSummaryLine = (
+	context: Pick<TemplateRenderContext, "eventType" | "value" | "detail">,
+): string => {
+	if (context.eventType === "test") {
+		return "This is a test notification. Live alerts fire when this monitor goes down."
+	}
+	const text = uptimeObserved(context)
+	return /[.!?]$/u.test(text) ? text : `${text}.`
+}
 
 export const comparatorBreachPhrase = (context: ThresholdContext): string => {
 	const display = signalDisplayOf(context)

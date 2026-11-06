@@ -1,8 +1,8 @@
 import { AlertValidationError } from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { alertDestinations } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { AlertDestinations } from "@maple/db/tables"
 import { AlertDestinationId, ChatWorkspaceId, OrgId } from "@maple/domain/http"
-import { eq } from "drizzle-orm"
 import { Effect, Schema } from "effect"
 import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -47,24 +47,26 @@ const seedDestination = (options: {
 			ENCRYPTION_KEY,
 			(message) => new AlertValidationError({ message, details: [] }),
 		)
-		const now = new Date(0)
+		const now = 0
 		yield* database.execute((db) =>
-			db.insert(alertDestinations).values({
-				id: options.id,
-				orgId: ORG,
-				name: `destination-${options.type}`,
-				type: options.type,
-				enabled: true,
-				// Stored as an object, exactly as AlertsService writes it.
-				configJson: options.publicConfig,
-				secretCiphertext: encrypted.ciphertext,
-				secretIv: encrypted.iv,
-				secretTag: encrypted.tag,
-				createdAt: now,
-				updatedAt: now,
-				createdBy: "test",
-				updatedBy: "test",
-			}),
+			db.run(
+				PG.insertInto(AlertDestinations).values({
+					id: options.id,
+					orgId: ORG,
+					name: `destination-${options.type}`,
+					type: options.type,
+					enabled: true,
+					// Stored as an object, exactly as AlertsService writes it.
+					configJson: options.publicConfig,
+					secretCiphertext: encrypted.ciphertext,
+					secretIv: encrypted.iv,
+					secretTag: encrypted.tag,
+					createdAt: now,
+					updatedAt: now,
+					createdBy: "test",
+					updatedBy: "test",
+				}),
+			),
 		)
 	})
 
@@ -72,7 +74,11 @@ const loadDestination = (id: AlertDestinationId) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		const rows = yield* database.execute((db) =>
-			db.select().from(alertDestinations).where(eq(alertDestinations.id, id)),
+			db.run(
+				PG.from(AlertDestinations)
+					.select()
+					.where(($) => [$.id.eq(id)]),
+			),
 		)
 		const row = rows[0]
 		assert.isDefined(row)
@@ -139,7 +145,7 @@ describe("hydrateDestinationRow", () => {
 	it.effect("hydrates a chat destination carrying optional public config keys", () => {
 		const testDb = createTestDb(createdDbs)
 		const id = asDestinationId("00000000-0000-4000-8000-000000000002")
-		const workspaceId = Schema.decodeUnknownSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
+		const workspaceId = Schema.decodeSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
 		const secretConfig: DestinationSecretConfig = {
 			type: "chat",
 			workspaceId,

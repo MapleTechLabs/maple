@@ -111,6 +111,69 @@ static CLOUDFLARE_RECORDS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
         .build()
 });
 
+static GCP_ENTRIES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_gcp_entries_total")
+        .with_description("Cloud Logging entries accepted from GCP Pub/Sub pushes")
+        .build()
+});
+
+static GCP_AUTH_FAILURES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_gcp_auth_failures_total")
+        .with_description("GCP Pub/Sub pushes rejected for bad auth")
+        .build()
+});
+
+static GCP_PARSE_FAILURES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_gcp_parse_failures_total")
+        .with_description("GCP Pub/Sub pushes acked and dropped: body was not a LogEntry")
+        .build()
+});
+
+static GCP_DISABLED_DROPS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_gcp_disabled_drops_total")
+        .with_description("GCP Pub/Sub pushes acked and dropped: log forwarding is off")
+        .build()
+});
+
+static SOURCE_PAUSED_DROPS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_source_paused_drops_total")
+        .with_description("Requests from a paused source, answered with success and dropped")
+        .build()
+});
+
+static INGEST_RULES_FETCH_FAILED_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_rules_fetch_failed_total")
+        .with_description("Ingest rule lookups that failed; the last-known rules were served")
+        .build()
+});
+
+static INGEST_RULES_INVALID_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_rules_invalid_total")
+        .with_description("Stored ingest rules that failed to parse or compile and were skipped")
+        .build()
+});
+
+static INGEST_RULES_DROPPED_BYTES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_rules_dropped_bytes_total")
+        .with_description("Encoded bytes of records an ingest drop rule removed before storage")
+        .build()
+});
+
+static INGEST_RULE_STATS_DROPPED_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_rule_stats_dropped_total")
+        .with_description("Ingest rule stat rows discarded after repeated failed flushes")
+        .build()
+});
+
 static SENTINEL_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
     METER
         .u64_counter("ingest_sentinel_total")
@@ -275,6 +338,14 @@ static REQUESTS_IN_FLIGHT: LazyLock<UpDownCounter<i64>> = LazyLock::new(|| {
         .build()
 });
 
+static DECODE_MEMORY_RESERVED_BYTES: LazyLock<Gauge<u64>> = LazyLock::new(|| {
+    METER
+        .u64_gauge("ingest_decode_memory_reserved_bytes")
+        .with_description("Memory reserved by request bodies being decoded, process-wide")
+        .with_unit("By")
+        .build()
+});
+
 static ORG_REQUESTS_IN_FLIGHT: LazyLock<Gauge<u64>> = LazyLock::new(|| {
     METER
         .u64_gauge("ingest_org_requests_in_flight")
@@ -366,7 +437,26 @@ static WAL_APPEND_DURATION_SECONDS: LazyLock<Histogram<f64>> = LazyLock::new(|| 
     METER
         .f64_histogram("ingest_wal_append_duration_seconds")
         .with_unit("s")
-        .with_description("Total WAL append latency: lock wait, write and fsync")
+        .with_description("Total WAL append latency: lock wait, write and the covering sync")
+        .build()
+});
+
+/// From an append's write to the sync that covers it: the in-flight sync it
+/// queued behind, plus its own batch's sync.
+static WAL_SYNC_WAIT_DURATION_SECONDS: LazyLock<Histogram<f64>> = LazyLock::new(|| {
+    METER
+        .f64_histogram("ingest_wal_sync_wait_duration_seconds")
+        .with_unit("s")
+        .with_description("Time a written WAL frame waited for the sync that made it durable")
+        .build()
+});
+
+/// Frames one group-commit sync made durable. Its count is the fsync count.
+static WAL_SYNC_BATCH_FRAMES: LazyLock<Histogram<u64>> = LazyLock::new(|| {
+    METER
+        .u64_histogram("ingest_wal_sync_batch_frames")
+        .with_description("WAL frames made durable by one group-commit sync")
+        .with_boundaries(vec![1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0])
         .build()
 });
 
@@ -382,7 +472,7 @@ static WAL_FSYNC_DURATION_SECONDS: LazyLock<Histogram<f64>> = LazyLock::new(|| {
     METER
         .f64_histogram("ingest_wal_fsync_duration_seconds")
         .with_unit("s")
-        .with_description("Time spent in sync_data on a WAL segment")
+        .with_description("Time spent in one sync_data on a WAL segment, once per batch")
         .build()
 });
 
@@ -543,9 +633,51 @@ pub fn replay_blob_put_failed(org_id: &str) {
     REPLAY_BLOB_PUT_FAILED_TOTAL.add(1, &[KeyValue::new("org_id", org_id.to_owned())]);
 }
 
+/// Memory request bodies being decoded hold right now; requests are shed near the budget.
+pub fn decode_memory_reserved(bytes: u64) {
+    DECODE_MEMORY_RESERVED_BYTES.record(bytes, &[]);
+}
+
 /// Current in-flight request count for an org.
 pub fn org_requests_in_flight(org_id: &str, value: u64) {
     ORG_REQUESTS_IN_FLIGHT.record(value, &[KeyValue::new("org_id", org_id.to_owned())]);
+}
+
+/// A paused source's request was accepted and its data dropped.
+pub fn source_paused_drop(org_id: &str, signal: &str) {
+    SOURCE_PAUSED_DROPS_TOTAL.add(
+        1,
+        &[
+            KeyValue::new("org_id", org_id.to_owned()),
+            KeyValue::new("signal", signal.to_owned()),
+        ],
+    );
+}
+
+/// An org's ingest rules could not be loaded.
+pub fn ingest_rules_fetch_failed(org_id: &str) {
+    INGEST_RULES_FETCH_FAILED_TOTAL.add(1, &[KeyValue::new("org_id", org_id.to_owned())]);
+}
+
+/// Stored rules of an org that were skipped as invalid.
+pub fn ingest_rules_invalid(org_id: &str, count: u64) {
+    INGEST_RULES_INVALID_TOTAL.add(count, &[KeyValue::new("org_id", org_id.to_owned())]);
+}
+
+/// Bytes an org's drop rules removed from one payload.
+pub fn ingest_rules_dropped_bytes(org_id: &str, signal: &str, bytes: u64) {
+    INGEST_RULES_DROPPED_BYTES_TOTAL.add(
+        bytes,
+        &[
+            KeyValue::new("org_id", org_id.to_owned()),
+            KeyValue::new("signal", signal.to_owned()),
+        ],
+    );
+}
+
+/// Rule stat rows given up on after repeated failed flushes.
+pub fn ingest_rule_stats_dropped(rows: u64) {
+    INGEST_RULE_STATS_DROPPED_TOTAL.add(rows, &[]);
 }
 
 /// A request used the sentinel test token.
@@ -595,6 +727,27 @@ pub fn cloudflare_parse_failure(dataset: &str) {
 /// Log records parsed from a Cloudflare Logpush batch.
 pub fn cloudflare_records(dataset: &str, count: u64) {
     CLOUDFLARE_RECORDS_TOTAL.add(count, &[KeyValue::new("dataset", dataset.to_owned())]);
+}
+
+/// A Cloud Logging entry pushed by GCP Pub/Sub was accepted.
+pub fn gcp_entry() {
+    GCP_ENTRIES_TOTAL.add(1, &[]);
+}
+
+/// A GCP Pub/Sub push failed authentication.
+pub fn gcp_auth_failure() {
+    GCP_AUTH_FAILURES_TOTAL.add(1, &[]);
+}
+
+/// A GCP Pub/Sub push was acked and dropped because its body was not a LogEntry.
+pub fn gcp_parse_failure() {
+    GCP_PARSE_FAILURES_TOTAL.add(1, &[]);
+}
+
+/// A GCP Pub/Sub push was acked and dropped because the connector has log
+/// forwarding turned off.
+pub fn gcp_disabled_drop() {
+    GCP_DISABLED_DROPS_TOTAL.add(1, &[]);
 }
 
 /// A WAL append was rejected because the lane file is full. `shard` is the real
@@ -656,7 +809,7 @@ pub fn wal_append_durations(
     shard: usize,
     destination: &str,
     lock_wait_seconds: f64,
-    fsync_seconds: f64,
+    sync_wait_seconds: f64,
     total_seconds: f64,
 ) {
     let labels = [
@@ -664,8 +817,18 @@ pub fn wal_append_durations(
         KeyValue::new("destination", destination.to_owned()),
     ];
     WAL_LOCK_WAIT_DURATION_SECONDS.record(lock_wait_seconds, &labels);
-    WAL_FSYNC_DURATION_SECONDS.record(fsync_seconds, &labels);
+    WAL_SYNC_WAIT_DURATION_SECONDS.record(sync_wait_seconds, &labels);
     WAL_APPEND_DURATION_SECONDS.record(total_seconds, &labels);
+}
+
+/// One group-commit sync on a WAL lane and how many frames it covered.
+pub fn wal_sync(shard: usize, destination: &str, fsync_seconds: f64, frames: u64) {
+    let labels = [
+        KeyValue::new("shard", shard.to_string()),
+        KeyValue::new("destination", destination.to_owned()),
+    ];
+    WAL_FSYNC_DURATION_SECONDS.record(fsync_seconds, &labels);
+    WAL_SYNC_BATCH_FRAMES.record(frames, &labels);
 }
 
 /// Bytes a WAL lane currently holds on disk, exported prefix included.

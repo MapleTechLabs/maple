@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { doc, filterNextCalls, renderToolDoc } from "./tool-doc"
+import { Array as Arr } from "effect"
 
 describe("renderToolDoc", () => {
 	it("renders sections in a fixed order", () => {
@@ -9,7 +10,8 @@ describe("renderToolDoc", () => {
 				["Time range", "a to b"],
 				["Service", undefined],
 			],
-			notices: ["`servce` is not a parameter"],
+			warnings: ["`servce` is not a parameter"],
+			notices: ["Window narrowed"],
 			blocks: [doc.table(["Error", "Count"], [["Boom | pipe", "3"]])],
 			truncation: {
 				shown: 1,
@@ -20,14 +22,18 @@ describe("renderToolDoc", () => {
 			next: [doc.next("error_detail", { fingerprint: "123", service: undefined }, "sample traces")],
 		})
 		expect(text).toBe(
-			[
-				"## Errors by Type",
-				"Time range: a to b",
-				"Note: `servce` is not a parameter",
-				"| Error | Count |\n|---|---|\n| Boom \\| pipe | 3 |",
-				"Showing 1 of 9 error types. Next page: `find_errors offset=1`: the next page",
-				'Next:\n- `error_detail fingerprint="123"`: sample traces',
-			].join("\n\n"),
+			Arr.join(
+				[
+					"## Errors by Type",
+					"Warning: `servce` is not a parameter",
+					"Time range: a to b",
+					"Note: Window narrowed",
+					"| Error | Count |\n|---|---|\n| Boom \\| pipe | 3 |",
+					"Showing 1 of 9 error types. Next page: `find_errors offset=1`: the next page",
+					'Next:\n- `error_detail fingerprint="123"`: sample traces',
+				],
+				"\n\n",
+			),
 		)
 	})
 

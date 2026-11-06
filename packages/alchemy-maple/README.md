@@ -7,7 +7,7 @@ npm install @maple-dev/alchemy alchemy effect
 ```
 
 `alchemy` and `effect` are peer dependencies — this release is built and tested against
-`alchemy@2.0.0-beta.74` and `effect@4.0.0-rc.111`, the minimum supported versions.
+`alchemy@2.0.0-beta.80` and `effect@4.0.0`, the minimum supported versions.
 
 ## Usage
 
@@ -81,7 +81,7 @@ overrides them:
 ```typescript
 import * as Maple from "@maple-dev/alchemy"
 import { Layer, Redacted } from "effect"
-import { HttpClient } from "effect/unstable/http"
+import { HttpClient } from "effect/http"
 
 const mapleProviders = Maple.providersWithDependencies().pipe(
 	Layer.provide(
@@ -99,13 +99,69 @@ seam when constructing the API client without the Alchemy provider collection.
 
 ## Resources
 
-| Resource                 | Semantics                                                                                                                                                                                                                                                          |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Maple.Dashboard`        | Full CRUD. Props are the v2 wire shape (`snake_case`, see `/v2/docs`); widget/variable documents pass through verbatim. Updates PATCH in place.                                                                                                                    |
-| `Maple.AlertDestination` | Full CRUD for declaratively provisionable types (PagerDuty, webhook, Discord, email). Channel secrets are write-only — accept `Redacted` values. Chat-connector and Hazel destinations use integrations linked in Maple. Changing `type` replaces the destination. |
-| `Maple.AlertRule`        | Full CRUD. `destination_ids` accepts outputs from `Maple.AlertDestination`. Lost state is recovered only when the rule's ownership tag matches the stack, stage, and logical resource. Other rules require explicit adoption.                                      |
-| `Maple.ApiKey`           | Create / roll / revoke (the API has no key update). Changing props replaces the key; bumping the `rotate` prop rolls it in place (same name/scopes, new secret). `secret` is captured once and preserved in Alchemy state — it can never be re-read from the API.  |
-| `Maple.IngestKeys`       | Read-only per-org singleton. Surfaces `publicKey` / `privateKey` as `Redacted` outputs; delete only stops tracking it.                                                                                                                                             |
+| Resource                 | Semantics                                                                                                                                                                                                                                                                                                             |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Maple.Dashboard`        | Full CRUD over typed native v2 dashboard data (`snake_case`, see `/v2/docs`). Updates PATCH in place. Set `dashboardId` to adopt an existing dashboard, and `refresh_interval_seconds` to manage its refresh cadence.                                                                                                 |
+| `Maple.AlertDestination` | Full CRUD for declaratively provisionable types (PagerDuty, incident.io, webhook, Discord, Telegram, Google Chat, Microsoft Teams, email, Linear). Channel secrets are write-only and accept `Redacted` values. Chat-connector destinations use workspaces linked in Maple. Changing `type` replaces the destination. |
+| `Maple.AlertRule`        | Full CRUD. `destination_ids` accepts outputs from `Maple.AlertDestination`. Lost state is recovered only when the rule's ownership tag matches the stack, stage, and logical resource. Other rules require explicit adoption.                                                                                         |
+| `Maple.ApiKey`           | Create / roll / revoke (the API has no key update). Changing props replaces the key; bumping the `rotate` prop rolls it in place (same name/scopes, new secret). `secret` is captured once and preserved in Alchemy state; it can never be re-read from the API.                                                      |
+| `Maple.IngestKeys`       | Read-only per-org singleton. Surfaces `publicKey` / `privateKey` as `Redacted` outputs; delete only stops tracking it.                                                                                                                                                                                                |
+
+## Typed dashboard data
+
+`Maple.Dashboard` props are typed against the API's own dashboard schemas, in
+the v2 wire shape (`snake_case`, as `/v2/docs` documents it). A widget with an
+unknown `visualization`, a `raw_sql` source without `sql`, or a refresh interval
+the API doesn't offer fails type checking instead of deployment.
+
+To share panels and dashboards across stacks, build them as values.
+`DashboardData`, `DashboardWidget`, `DashboardSection`, `DashboardVariable` and
+`DashboardTimeRange` are Effect schemas whose `.make` validates a definition
+where you write it; decode external data with Effect Schema's decoders. The
+schemas ship inside this package, so it depends on no private Maple package.
+
+```typescript
+const requests = Maple.DashboardWidget.make({
+	id: "requests",
+	visualization: "stat",
+	data_source: {
+		kind: "raw_sql",
+		sql: "SELECT count() AS value FROM traces WHERE $__orgFilter",
+		transform: { reduce_to_value: { field: "value", aggregate: "first" } },
+	},
+	display: { title: "Requests" },
+	layout: { x: 0, y: 0, w: 3, h: 4 },
+})
+
+const health = Maple.DashboardData.make({
+	name: "Service health",
+	refresh_interval_seconds: 60,
+	time_range: { type: "relative", value: "24h" },
+	widgets: [requests],
+})
+
+export const program = Effect.gen(function* () {
+	yield* Maple.Dashboard("service-health", health)
+})
+```
+
+`refresh_interval_seconds` takes `0`, `5`, `10`, `30`, `60`, `300`, `900` or
+`null`; `0` and `null` turn automatic refresh off.
+
+## Adopting an existing dashboard
+
+A dashboard made in the UI has no tag or name Alchemy could find it by, so name
+it by its ID:
+
+```typescript
+Maple.Dashboard("service-health", { ...health, dashboardId: "dash_…" })
+```
+
+- The first deploy takes that dashboard over and updates it in place. A missing
+  or mistyped ID fails the deploy; it never creates a new dashboard in its place.
+- From then on the resource owns it: destroying the resource deletes it.
+- The ID can't change once deployed, and changing it fails the deploy. Removing
+  the prop keeps the adopted dashboard.
 
 ## Worker telemetry
 
@@ -133,9 +189,61 @@ export default Cloudflare.Worker(
 ```
 
 The `@maple-dev/alchemy/telemetry` subpath keeps the API client out of the Worker bundle.
-Omit `ingestKey` when the Worker's env already carries `MAPLE_INGEST_KEY`; the remaining
+Omit `ingestKey` when the Worker's env already carries `MAPLE_INGEST_KEY`, or when `endpoint`
+points at a local `maple start` or your own collector, which take keyless writes; the remaining
 options (`anticipatedErrorIdentifiers`, `dropSpanNames`, `serviceNamespace`, …) are the SDK's
 Cloudflare options, forwarded unchanged.
+
+Full docs: [maple.dev/docs/iac/alchemy](https://maple.dev/docs/iac/alchemy).
+
+## Local development
+
+`Local` runs Maple Local inside `alchemy dev`: an embedded OTLP collector, query API and
+chDB store that every Worker in the stack exports to, with no Maple account or keys. Declare it
+once and pass it to each Worker's `Telemetry`:
+
+```typescript
+// observability.ts
+import { Local } from "@maple-dev/alchemy/local"
+export const Observability = Local("observability")
+
+// alchemy.run.ts
+import { localProviders } from "@maple-dev/alchemy/local"
+// providers: Layer.mergeAll(Cloudflare.providers(), localProviders())
+
+// api.ts (and every other Worker)
+}).pipe(Effect.provide(Telemetry({ serviceName: "api", local: Observability }))),
+```
+
+Open the dashboard at the `dashboardUrl` output (`https://local.maple.dev`, reading from your
+machine); ingest and queries never leave it.
+
+- **Dev only.** Under `alchemy dev` the Workers export keylessly to the local endpoint and
+  `ingestKey`/`endpoint` are ignored. On deploy `Local` starts nothing, its outputs are
+  `undefined`, and `Telemetry` uses `ingestKey` and `endpoint` as usual, so one stack can keep both.
+  `localProviders()` needs no Maple credentials.
+- **One server per stack.** Every Worker that passes the same `Local` shares it; the server
+  survives stack hot reloads and closes its store when `alchemy dev` exits.
+- **Storage.** Data persists per stack, stage and resource under
+  `.alchemy/maple-local/<hash>/data`. Set `dataDir` to keep it elsewhere.
+- **Several `alchemy dev` sessions.** The listener takes `4318`, or any free port when another
+  project or worktree already holds it; the Workers get the bound endpoint either way. Setting
+  `port` binds exactly that port and fails if it is taken. A second session of the same stack and
+  stage shares the running server instead of opening the store again, and takes the store over on
+  the same port when the first session exits.
+- **libchdb.** On first use the sidecar downloads the chDB release Maple pins (the same one the
+  `maple` CLI ships with), verifies its sha256, and caches it in `~/.maple/cache/libchdb`
+  (~330 MB, shared by every project). Set `MAPLE_LIBCHDB` to use a library you already have; a
+  different chDB release is refused before the store is touched.
+- **Unclean shutdowns.** Maple Local closes its store on exits observed by the JavaScript
+  runtime, including another handler calling `process.exit()` before Alchemy finishes teardown.
+  A death the runtime cannot observe (SIGKILL of the sidecar itself, an OOM kill, or power loss)
+  can still leave it unclean. Reopening such a store can crash chDB, so it is refused. A sharing
+  session logs a dirty-store takeover refusal and recovery instructions once, then stops trying
+  to take over. Set `onDirtyStore: "wipe"` on `Local` to discard its data and start fresh; that
+  change restarts the server and is safe to leave set.
+- **Requirements.** Bun (the sidecar uses Bun's FFI), on macOS or Linux, x64 or arm64.
+  Periodic checkpoints are a `maple start` feature; this store keeps none.
 
 ## Notes
 

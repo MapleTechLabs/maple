@@ -1,5 +1,5 @@
-import * as Command from "effect/unstable/cli/Command"
-import * as Argument from "effect/unstable/cli/Argument"
+import * as Command from "effect/cli/Command"
+import * as Argument from "effect/cli/Argument"
 import { Effect, Option } from "effect"
 import * as f from "../lib/flags"
 import { printResult } from "../lib/output"

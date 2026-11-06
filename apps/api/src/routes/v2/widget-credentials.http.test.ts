@@ -2,11 +2,11 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
-import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -34,8 +34,8 @@ import {
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_widget_cred")
-const USER = Schema.decodeUnknownSync(UserId)("user_widget_cred")
+const ORG = Schema.decodeSync(OrgId)("org_widget_cred")
+const USER = Schema.decodeSync(UserId)("user_widget_cred")
 const INSTALLATION = "F9E1B4C0-8F2A-4C6D-9E1B-4C08F2A4C6D9"
 const OTHER_INSTALLATION = "A1B2C3D4-8F2A-4C6D-9E1B-4C08F2A4C6D9"
 
@@ -75,7 +75,7 @@ const makeHarness = () => {
 		Layer.provide(Phase1ResourceStubsLayer),
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
-		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),
@@ -130,7 +130,10 @@ describe("v2 widget credentials", () => {
 			expect(minted.body.organization_id).toBe(ORG)
 			// The caller asked for none of this.
 			expect(minted.body.scopes).toEqual(["widget_summary:read"])
-			expect(Date.parse(minted.body.expires_at)).toBeGreaterThan(Date.now())
+			// Two weeks, so a key lifted off a lost phone dies on its own.
+			expect(Date.parse(minted.body.expires_at) - Date.parse(minted.body.created_at)).toBe(
+				14 * 86_400_000,
+			)
 		} finally {
 			await harness.dispose()
 		}
@@ -153,6 +156,21 @@ describe("v2 widget credentials", () => {
 				const denied = await harness.request("GET", path, minted.body.secret)
 				expect(denied.status).toBe(403)
 			}
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("does not inherit the scope exemption standard keys get for feedback", async () => {
+		const harness = makeHarness()
+		try {
+			const key = await harness.bootstrapKey()
+			const minted = await harness.mint(key.secret)
+
+			const listed = await harness.request("GET", "/v2/agent_feedback", minted.body.secret)
+			expect(listed.status).toBe(403)
+			const sent = await harness.request("POST", "/v2/agent_feedback", minted.body.secret)
+			expect(sent.status).toBe(403)
 		} finally {
 			await harness.dispose()
 		}

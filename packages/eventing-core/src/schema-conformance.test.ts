@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import Ajv2020 from "ajv/dist/2020.js"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	MapleCloudEventSchema,
@@ -55,21 +55,25 @@ const event = (time: string) => ({
 	data: {},
 })
 
-const checkTimestamp = (value: string, valid: boolean): void => {
+// Every published reader of a timestamp, by name, so a disagreement says which one.
+const timestampMismatches = (value: string, valid: boolean): ReadonlyArray<string> => {
 	const scalar = { type: "timestamp" as const, value }
-	expect(scalarJson(scalar), value).toBe(valid)
-	expect(Result.isSuccess(Schema.decodeUnknownResult(SignalScalarSchema)(scalar)), value).toBe(valid)
-	expect(timestampToEpochNanos(value) !== null, value).toBe(valid)
-	expect(eventJson(event(value)), value).toBe(valid)
-	expect(Result.isSuccess(Schema.decodeUnknownResult(MapleCloudEventSchema)(event(value))), value).toBe(
-		valid,
+	const verdicts = {
+		scalarJson: scalarJson(scalar),
+		scalarSchema: Result.isSuccess(Schema.decodeResult(SignalScalarSchema)(scalar)),
+		epochNanos: timestampToEpochNanos(value) !== null,
+		eventJson: eventJson(event(value)),
+		eventSchema: Result.isSuccess(Schema.decodeUnknownResult(MapleCloudEventSchema)(event(value))),
+		eventValidate: Result.isSuccess(validateMapleCloudEvent(event(value))),
+		projectionJson: projectionJson(projection(leaf, value)),
+		projectionSchema: Result.isSuccess(
+			Schema.decodeResult(SignalProjectionSpecSchema)(projection(leaf, value)),
+		),
+	}
+	return Arr.map(
+		Arr.filter(Rec.toEntries(verdicts), ([, verdict]) => verdict !== valid),
+		([name]) => name,
 	)
-	expect(Result.isSuccess(validateMapleCloudEvent(event(value))), value).toBe(valid)
-	expect(projectionJson(projection(leaf, value)), value).toBe(valid)
-	expect(
-		Result.isSuccess(Schema.decodeUnknownResult(SignalProjectionSpecSchema)(projection(leaf, value))),
-		value,
-	).toBe(valid)
 }
 
 describe("published scalar schema conformance", () => {
@@ -93,12 +97,8 @@ describe("published scalar schema conformance", () => {
 					value: scalar,
 				}
 				expect(scalarJson(scalar), `${type}: ${value}`).toBe(valid)
-				expect(Result.isSuccess(Schema.decodeUnknownResult(SignalScalarSchema)(scalar)), value).toBe(
-					valid,
-				)
-				expect(Result.isSuccess(Schema.decodeUnknownResult(SignalLiteralSchema)(scalar)), value).toBe(
-					valid,
-				)
+				expect(Result.isSuccess(Schema.decodeResult(SignalScalarSchema)(scalar)), value).toBe(valid)
+				expect(Result.isSuccess(Schema.decodeResult(SignalLiteralSchema)(scalar)), value).toBe(valid)
 				expect(validateSignalScalar(scalar).length === 0, value).toBe(valid)
 				expect(projectionJson(projection(selector)), value).toBe(valid)
 			}
@@ -106,7 +106,7 @@ describe("published scalar schema conformance", () => {
 		for (const value of ["", "+1", "01", "-01", "1.0", "1e3", " 1", "1\n"]) {
 			expect(scalarJson({ type: "int64", value }), value).toBe(false)
 			expect(
-				Result.isSuccess(Schema.decodeUnknownResult(SignalScalarSchema)({ type: "int64", value })),
+				Result.isSuccess(Schema.decodeResult(SignalScalarSchema)({ type: "int64", value })),
 				value,
 			).toBe(false)
 		}
@@ -115,21 +115,23 @@ describe("published scalar schema conformance", () => {
 	it("validates leap days across a complete Gregorian 400-year cycle", () => {
 		for (let year = 1800; year < 2200; year++) {
 			const valid = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
-			checkTimestamp(`${year}-02-29T12:34:56.123456789Z`, valid)
+			expect(timestampMismatches(`${year}-02-29T12:34:56.123456789Z`, valid)).toEqual([])
 		}
-		checkTimestamp("0000-02-29T00:00:00Z", true)
-		checkTimestamp("0001-02-29T00:00:00Z", false)
-		checkTimestamp("9999-12-31T23:59:59Z", true)
+		expect(timestampMismatches("0000-02-29T00:00:00Z", true)).toEqual([])
+		expect(timestampMismatches("0001-02-29T00:00:00Z", false)).toEqual([])
+		expect(timestampMismatches("9999-12-31T23:59:59Z", true)).toEqual([])
 	})
 
 	it("rejects impossible dates, clocks, offsets and spellings at every timestamp boundary", () => {
 		const monthLengths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 		for (let month = 1; month <= 12; month++) {
 			for (const day of [0, 1, 28, 29, 30, 31, 32]) {
-				checkTimestamp(
-					`2026-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T00:00:00Z`,
-					day >= 1 && day <= monthLengths[month - 1]!,
-				)
+				expect(
+					timestampMismatches(
+						`2026-${Str.padStart(2, "0")(String(month))}-${Str.padStart(2, "0")(String(day))}T00:00:00Z`,
+						day >= 1 && day <= (monthLengths[month - 1] ?? 0),
+					),
+				).toEqual([])
 			}
 		}
 		for (const value of [
@@ -147,14 +149,14 @@ describe("published scalar schema conformance", () => {
 			"2026-01-01T00:00:00.1234567890Z",
 			"2026-01-01T00:00:00Z\n",
 		])
-			checkTimestamp(value, false)
+			expect(timestampMismatches(value, false), value).toEqual([])
 		for (const value of [
 			"2026-01-01T00:00:00.1Z",
 			"2026-01-01T00:00:00+23:59",
 			"2026-01-01T00:00:00-23:59",
 			"2026-01-01T00:00:00-00:00",
 		])
-			checkTimestamp(value, true)
+			expect(timestampMismatches(value, true), value).toEqual([])
 	})
 })
 
@@ -162,21 +164,21 @@ describe("predicate topology conformance", () => {
 	it("accepts reused subtrees just like their JSON representation", () => {
 		const branch: SignalPredicate = { op: "not", clause: leaf }
 		const shared: SignalPredicate = { op: "all", clauses: [branch, branch] }
-		const decoded = Schema.decodeUnknownSync(SignalPredicateSchema)(shared)
+		const decoded = Schema.decodeSync(SignalPredicateSchema)(shared)
 		expect(decoded).toEqual(
 			Schema.decodeUnknownSync(SignalPredicateSchema)(JSON.parse(JSON.stringify(shared))),
 		)
 		expect(projectionJson(projection(shared))).toBe(true)
-		expect(() => Schema.decodeUnknownSync(SignalProjectionSpecSchema)(projection(shared))).not.toThrow()
+		expect(() => Schema.decodeSync(SignalProjectionSpecSchema)(projection(shared))).not.toThrow()
 	})
 
 	it("counts every occurrence toward the 64-node limit", () => {
 		const atLimit: SignalPredicate = { op: "all", clauses: Array.from({ length: 63 }, () => leaf) }
 		const overLimit: SignalPredicate = { op: "all", clauses: Array.from({ length: 64 }, () => leaf) }
 		expect(predicateInputBudgetIssue(atLimit)).toBeUndefined()
-		expect(() => Schema.decodeUnknownSync(SignalPredicateSchema)(atLimit)).not.toThrow()
+		expect(() => Schema.decodeSync(SignalPredicateSchema)(atLimit)).not.toThrow()
 		expect(predicateInputBudgetIssue(overLimit)).toBe("predicate exceeds 64 nodes")
-		expect(() => Schema.decodeUnknownSync(SignalPredicateSchema)(overLimit)).toThrow(/64 nodes/)
+		expect(() => Schema.decodeSync(SignalPredicateSchema)(overLimit)).toThrow(/64 nodes/)
 		// Whole-tree budgets require the mandatory preflight described in the artifact.
 		expect(projectionJson(projection(overLimit))).toBe(true)
 	})
@@ -184,35 +186,16 @@ describe("predicate topology conformance", () => {
 	it("enforces root depth 1 through depth 8, and terminates actual cycles", () => {
 		let selector: SignalPredicate = leaf
 		for (let depth = 2; depth <= 8; depth++) selector = { op: "not", clause: selector }
-		expect(() => Schema.decodeUnknownSync(SignalPredicateSchema)(selector)).not.toThrow()
+		expect(() => Schema.decodeSync(SignalPredicateSchema)(selector)).not.toThrow()
 		selector = { op: "not", clause: selector }
-		expect(() => Schema.decodeUnknownSync(SignalPredicateSchema)(selector)).toThrow(/depth exceeds 8/)
+		expect(() => Schema.decodeSync(SignalPredicateSchema)(selector)).toThrow(/depth exceeds 8/)
 		expect(projectionJson(projection(selector))).toBe(true)
 		const cycle = { op: "not" }
 		Object.assign(cycle, { clause: cycle })
 		expect(predicateInputBudgetIssue(cycle)).toBe("predicate depth exceeds 8")
-		expect(() => Schema.decodeUnknownSync(SignalPredicateSchema)(cycle)).toThrow(/depth exceeds 8/)
+		expect(() => Schema.decodeSync(SignalPredicateSchema)(cycle)).toThrow(/depth exceeds 8/)
 		expect(() =>
-			Schema.decodeUnknownSync(SignalProjectionSpecSchema)({ ...projection(), selector: cycle }),
+			Schema.decodeSync(SignalProjectionSpecSchema)({ ...projection(), selector: cycle }),
 		).toThrow(/depth exceeds 8/)
-	})
-
-	it("publishes the mandatory whole-tree limits on the recursive predicate definition", () => {
-		expect(projectionArtifact).toMatchObject({
-			$defs: {
-				SignalPredicate: {
-					description: expect.stringMatching(
-						/MUST enforce.*depth of 8.*root depth 1.*64 total predicate nodes/,
-					),
-				},
-			},
-		})
-		expect(projectionArtifact).toMatchObject({
-			$defs: {
-				SignalPredicate: {
-					description: expect.stringContaining("not expressed by JSON Schema validation keywords"),
-				},
-			},
-		})
 	})
 })

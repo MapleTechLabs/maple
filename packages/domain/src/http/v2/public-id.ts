@@ -1,4 +1,13 @@
-import { Effect, Option, Schema, SchemaAST, SchemaGetter, SchemaIssue } from "effect"
+import {
+	Effect,
+	Option,
+	Schema,
+	SchemaAST,
+	SchemaGetter,
+	SchemaIssue,
+	Array as Arr,
+	String as Str,
+} from "effect"
 
 /**
  * Stripe-style prefixed public object IDs for the v2 API.
@@ -34,13 +43,25 @@ export const PublicIdPrefixes = {
 	investigation: "inv",
 	anomalyIncident: "anom",
 	scrapeTarget: "scrp",
+	uptimeMonitor: "upm",
+	slo: "slo",
+	statusPage: "stp",
+	statusPageComponent: "stc",
+	statusPageIncident: "sti",
+	statusPageIncidentUpdate: "stu",
 	recommendation: "rec",
 	ingestKey: "ingk",
+	source: "src",
 	attributeMapping: "amap",
+	ingestRule: "irule",
 	sessionReplay: "srep",
 	mobileDevice: "mdev",
 	chatWorkspace: "chatw",
 	agentFeedback: "afb",
+	gcpConnector: "gcpc",
+	awsConnection: "awsc",
+	mcpConnection: "mcpc",
+	deviceCredential: "dcred",
 	/** Synthetic identity for logs, which have no native OTel record id. */
 	log: "log",
 	/** Reserved for the future events/webhooks system. */
@@ -52,7 +73,7 @@ export type PublicIdPrefix = (typeof PublicIdPrefixes)[keyof typeof PublicIdPref
 
 // Bitcoin base58 alphabet (no 0/O/I/l).
 const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-const ALPHABET_MAP = new Map([...ALPHABET].map((char, index) => [char, index]))
+const ALPHABET_MAP = new Map(Arr.map(Array.from(ALPHABET), (char, index) => [char, index]))
 
 const base58Encode = (bytes: Uint8Array): string => {
 	let zeros = 0
@@ -72,10 +93,10 @@ const base58Encode = (bytes: Uint8Array): string => {
 		}
 	}
 
-	let out = "1".repeat(zeros)
-	// `charAt` rather than `[]`: every digit is already `% 58`, and it keeps the
-	// expression a `string` instead of a `string | undefined` to unwrap.
-	for (let i = digits.length - 1; i >= 0; i--) out += ALPHABET.charAt(digits[i] ?? 0)
+	let out = Str.repeat(zeros)("1")
+	// Every digit is already `% 58`, so the `""` fallback never applies.
+	for (let i = digits.length - 1; i >= 0; i--)
+		out += Option.getOrElse(Str.charAt(ALPHABET, digits[i] ?? 0), () => "")
 	return out
 }
 
@@ -87,7 +108,7 @@ const base58Decode = (input: string): Uint8Array | null => {
 
 	const bytes: number[] = []
 	for (let i = zeros; i < input.length; i++) {
-		const value = ALPHABET_MAP.get(input.charAt(i))
+		const value = ALPHABET_MAP.get(Option.getOrElse(Str.charAt(input, i), () => ""))
 		if (value === undefined) return null
 		let carry = value
 		for (let j = 0; j < bytes.length; j++) {
@@ -112,22 +133,22 @@ const MODE_UUID = 0x01
 const MODE_UTF8 = 0x02
 
 const uuidToBytes = (uuid: string): Uint8Array => {
-	const hex = uuid.replaceAll("-", "")
+	const hex = Str.replaceAll("-", "")(uuid)
 	const bytes = new Uint8Array(16)
-	for (let i = 0; i < 16; i++) bytes[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16)
+	for (let i = 0; i < 16; i++) bytes[i] = Number.parseInt(Str.slice(i * 2, i * 2 + 2)(hex), 16)
 	return bytes
 }
 
 const bytesToUuid = (bytes: Uint8Array): string => {
 	let hex = ""
-	for (const byte of bytes) hex += byte.toString(16).padStart(2, "0")
-	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+	for (const byte of bytes) hex += Str.padStart(2, "0")(byte.toString(16))
+	return `${Str.slice(0, 8)(hex)}-${Str.slice(8, 12)(hex)}-${Str.slice(12, 16)(hex)}-${Str.slice(16, 20)(hex)}-${Str.slice(20)(hex)}`
 }
 
 /** Encode an internal ID (raw UUID or free-form string) as a `<prefix>_…` public ID. */
 export const encodePublicId = (prefix: PublicIdPrefix, internalId: string): string => {
 	const isUuid = UUID_RE.test(internalId)
-	const idBytes = isUuid ? uuidToBytes(internalId.toLowerCase()) : new TextEncoder().encode(internalId)
+	const idBytes = isUuid ? uuidToBytes(Str.toLowerCase(internalId)) : new TextEncoder().encode(internalId)
 	const bytes = new Uint8Array(1 + idBytes.length)
 	bytes[0] = isUuid ? MODE_UUID : MODE_UTF8
 	bytes.set(idBytes, 1)
@@ -136,8 +157,8 @@ export const encodePublicId = (prefix: PublicIdPrefix, internalId: string): stri
 
 /** Decode a `<prefix>_…` public ID back to its internal ID. Returns null on any mismatch. */
 export const decodePublicId = (prefix: PublicIdPrefix, publicId: string): string | null => {
-	if (!publicId.startsWith(`${prefix}_`)) return null
-	const body = publicId.slice(prefix.length + 1)
+	if (!Str.startsWith(`${prefix}_`)(publicId)) return null
+	const body = Str.slice(prefix.length + 1)(publicId)
 	if (body.length === 0) return null
 
 	const bytes = base58Decode(body)
@@ -154,9 +175,7 @@ export const decodePublicId = (prefix: PublicIdPrefix, publicId: string): string
 		// silently emitting U+FFFD, which would turn a corrupt ID into a
 		// plausible-looking one.
 		return Option.getOrNull(
-			Effect.runSync(
-				Effect.option(Effect.try(() => new TextDecoder("utf-8", { fatal: true }).decode(idBytes))),
-			),
+			Option.liftThrowable(() => new TextDecoder("utf-8", { fatal: true }).decode(idBytes))(),
 		)
 	}
 	return null
@@ -168,7 +187,7 @@ export const decodePublicId = (prefix: PublicIdPrefix, publicId: string): string
  * Decoding a malformed or wrong-prefix ID fails schema decode, which the v2
  * error middleware surfaces as an `invalid_request_error`.
  */
-export const PublicId = <S extends Schema.Codec<any, string>>(prefix: PublicIdPrefix, internal: S) => {
+export const PublicId = <S extends Schema.Codec<unknown, string>>(prefix: PublicIdPrefix, internal: S) => {
 	const example = encodePublicId(prefix, "018f2b3c-4d5e-6f70-8192-a3b4c5d6e7f8")
 	return (
 		// Annotate the *encoded* base string: the OpenAPI schema renders the wire
@@ -184,12 +203,15 @@ export const PublicId = <S extends Schema.Codec<any, string>>(prefix: PublicIdPr
 			.pipe(
 				Schema.decodeTo(Schema.String, {
 					decode: SchemaGetter.transformEffect((publicId: string) => {
-						const internalId = decodePublicId(prefix, publicId)
+						// A raw UUID is the internal id itself, which MCP tools and older clients hold.
+						const internalId =
+							decodePublicId(prefix, publicId) ??
+							(UUID_RE.test(publicId) ? Str.toLowerCase(publicId) : null)
 						return internalId === null
 							? Effect.fail(
 									new SchemaIssue.InvalidValue(
 										{
-											message: `Invalid ID: expected an ID with prefix "${prefix}_"`,
+											message: `Invalid ID: expected an ID with prefix "${prefix}_" or a UUID`,
 										},
 										publicId,
 									),

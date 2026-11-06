@@ -1,5 +1,5 @@
 import type { McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListDashboardsOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -13,6 +13,7 @@ const TOOL = "list_dashboards"
 export function registerListDashboardsTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
+		title: "List Dashboards",
 		description:
 			"List all dashboards with widget counts and timestamps. Use get_dashboard to see full widget configuration.",
 		parameters: Schema.Struct({
@@ -30,19 +31,20 @@ export function registerListDashboardsTool(server: McpToolRegistrar) {
 				.pipe(Effect.mapError(toMcpDashboardError(TOOL)))
 
 			const lowerSearch = search?.toLowerCase()
+			const all = Arr.map(result.dashboards, (stored) => stored.document)
 			const dashboards =
 				lowerSearch === undefined
-					? result.dashboards
-					: result.dashboards.filter((d) => d.name.toLowerCase().includes(lowerSearch))
+					? all
+					: Arr.filter(all, (d) => Str.includes(lowerSearch)(Str.toLowerCase(d.name)))
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				search: search ?? "none",
+				"maple.ai.search": search ?? "none",
 				"result.rowCount": dashboards.length,
 			})
 
 			return {
-				dashboards: dashboards.map(toDashboardRow),
+				dashboards: Arr.map(dashboards, toDashboardRow),
 				total: dashboards.length,
 				...(search === undefined ? undefined : { search }),
 			}
@@ -73,21 +75,20 @@ export function registerListDashboardsTool(server: McpToolRegistrar) {
 						: [
 								doc.text(`Total: ${output.total} dashboard${output.total !== 1 ? "s" : ""}`),
 								doc.table(
-									["ID", "Name", "Widgets", "Updated"],
-									output.dashboards.map((d) => [
+									["ID", "REST id", "Name", "Widgets", "Updated"],
+									Arr.map(output.dashboards, (d) => [
 										d.id,
+										d.publicId,
 										d.name,
 										String(d.widgetCount),
-										d.updatedAt.slice(0, 19),
+										Str.slice(0, 19)(d.updatedAt),
 									]),
 								),
 							],
 				next: [
-					...output.dashboards
-						.slice(0, 3)
-						.map((d) =>
-							doc.next("get_dashboard", { dashboard_id: d.id }, "view dashboard configuration"),
-						),
+					...Arr.map(output.dashboards.slice(0, 3), (d) =>
+						doc.next("get_dashboard", { dashboard_id: d.id }, "view dashboard configuration"),
+					),
 					doc.next(
 						"create_dashboard",
 						{ name: "New dashboard", template: exampleTemplate },

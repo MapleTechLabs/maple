@@ -18,11 +18,11 @@
  * the wire and the mode is derived from it server-side. Every mode names an agent, by
  * construction; `agents.test.ts` fails if one is ever added without one.
  */
-import * as Agent from "effect-agent/agent"
-import { AgentPolicy } from "effect-agent/agent-policy"
-import * as Output from "effect-agent/output"
+import * as Agent from "@yielded/agent/agent"
+import { AgentPolicy } from "@yielded/agent/agent-policy"
+import * as Output from "@yielded/agent/output"
 import { Schema } from "effect"
-import type { Toolkit } from "effect/unstable/ai"
+import type { Toolkit } from "effect/ai"
 import { chatModeFromSessionId, type ChatMode } from "@maple/domain/chat-session"
 // The specific file, not the `./loop` barrel: the barrel re-exports `turn.ts`, which imports this
 // module back. `budgets.ts` depends on nothing but `effect`.
@@ -33,6 +33,7 @@ import {
 	PR_REPLY_BUDGET,
 	PR_REVIEW_BUDGET,
 	liveContextLimit,
+	MODEL_RETRIES,
 	REPEATED_TOOL_CALLS,
 	TOOL_CONCURRENCY,
 } from "./budgets"
@@ -61,7 +62,16 @@ export interface AgentDefinition {
 	 * different work; they shared one budget until 2026-09-20, and it was the investigation's.
 	 */
 	readonly budget: AgentBudget
+	/**
+	 * Which model the agent runs on: `review` is the organization's pick for pull request work
+	 * (`resolveReviewModel`), `triage` the deployment's chat and investigation model.
+	 */
+	readonly model: AgentModel
+	/** Offer `run_code` over the turn's read-only tools, where the runtime has a code executor. */
+	readonly codeMode?: boolean
 }
+
+export type AgentModel = "triage" | "review"
 
 /**
  * Keyed by `ChatMode`, not by `string`: a new mode is then a compile error here rather than an
@@ -74,20 +84,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		prompt: SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
 		budget: CHAT_BUDGET,
-	},
-	alert: {
-		name: "alert",
-		description: "Assists with an alert in context.",
-		prompt: SYSTEM_PROMPT,
-		permission: DEFAULT_RULESET,
-		budget: CHAT_BUDGET,
-	},
-	"widget-fix": {
-		name: "widget-fix",
-		description: "Repairs a dashboard widget in context.",
-		prompt: SYSTEM_PROMPT,
-		permission: DEFAULT_RULESET,
-		budget: CHAT_BUDGET,
+		model: "triage",
 	},
 	investigate: {
 		name: "investigate",
@@ -97,6 +94,8 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		// further by its origin — see `profileForTurn` in `./profiles`.
 		permission: DEFAULT_RULESET,
 		budget: INVESTIGATION_BUDGET,
+		model: "triage",
+		codeMode: true,
 	},
 	"pr-review": {
 		name: "pr-review",
@@ -107,6 +106,8 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		// nothing else: every unoffered schema is prompt it does not pay for on each call.
 		autonomousPermission: PR_REVIEW_RULESET,
 		budget: PR_REVIEW_BUDGET,
+		model: "review",
+		codeMode: true,
 	},
 	"pr-reply": {
 		name: "pr-reply",
@@ -115,6 +116,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		permission: DEFAULT_RULESET,
 		autonomousPermission: PR_REPLY_RULESET,
 		budget: PR_REPLY_BUDGET,
+		model: "review",
 	},
 } as const satisfies Readonly<Record<ChatMode, AgentDefinition>>
 
@@ -138,7 +140,12 @@ export const buildSystemPrompt = (agent: AgentDefinition): string => agent.promp
  * 2026-09-20, put the limit an order of magnitude above any prompt the agent sends, so compaction
  * never ran. `liveContextLimit` explains both bounds.
  */
-export const agentPolicyFor = (agent: AgentDefinition, contextTokens?: number): AgentPolicy => {
+export const agentPolicyFor = (
+	agent: AgentDefinition,
+	contextTokens?: number,
+	/** Only an unattended pass gets the run-status line; an attended follow-up must answer, not file. */
+	autonomous = false,
+): AgentPolicy => {
 	const budget = agent.budget
 	return AgentPolicy.make({
 		maxTurns: budget.maxToolCalls,
@@ -148,11 +155,12 @@ export const agentPolicyFor = (agent: AgentDefinition, contextTokens?: number): 
 		completionReserveTokens: budget.completionReserveTokens,
 		toolConcurrency: TOOL_CONCURRENCY,
 		repeatedFailureLimit: REPEATED_TOOL_CALLS,
+		modelRetries: MODEL_RETRIES,
 		// The closing step, as policy: a turn that runs out of turns, or out of tokens, gets one
 		// more without tools, to answer from what it found rather than stopping on a wall of tool
 		// rows. This is also what makes `tokenBudget` a deadline rather than a way to lose a run.
 		onExhaustion: "final-answer",
-		...(budget.runStatus === true ? { runStatus: "appended" as const } : undefined),
+		...(budget.runStatus === true && autonomous ? { runStatus: "appended" as const } : undefined),
 		...(contextTokens === undefined ? undefined : { contextTokenLimit: liveContextLimit(contextTokens) }),
 	})
 }
@@ -160,17 +168,17 @@ export const agentPolicyFor = (agent: AgentDefinition, contextTokens?: number): 
 /**
  * A chat agent: prose in, prose out.
  *
- * `Output.text` rather than a JSON output schema because the answer *is* the assistant message. An
- * investigation session declares `submit_diagnosis` as its completion tool as well: a call to it
- * settles the run, and the turn runner closes out a pass that never made one.
+ * `Output.text` rather than a JSON output schema because the answer *is* the assistant message.
+ * `submit_diagnosis` and the other submit tools are ordinary tools here: the engine would require a
+ * declared completion tool on every model call, so `run.ts` settles the run when one lands.
  */
 export const chatAgent = (
 	agent: AgentDefinition,
 	toolkit: Toolkit.Any,
 	model: ResolvedModel,
 	options: {
-		/** Set when a call to this tool settles the run. Never engine-required; see `tools.ts`. */
-		readonly completion?: { readonly tool: string; readonly required: boolean }
+		/** The turn is a machine-started pass; see {@link agentPolicyFor}. */
+		readonly autonomous?: boolean
 	} = {},
 ) =>
 	// `withModel` rather than providing the model Layer around the run: the engine builds the model
@@ -186,17 +194,7 @@ export const chatAgent = (
 			instructions: buildSystemPrompt(agent),
 			description: agent.description,
 			toolkit,
-			policy: agentPolicyFor(agent, model.limits.context),
-			...(options.completion === undefined
-				? undefined
-				: {
-						completion: {
-							tool: options.completion.tool,
-							required: options.completion.required,
-							project: ({ parameters }: { readonly parameters: unknown }) =>
-								JSON.stringify(parameters),
-						},
-					}),
+			policy: agentPolicyFor(agent, model.limits.context, options.autonomous === true),
 		}),
 		model.layer,
 	)

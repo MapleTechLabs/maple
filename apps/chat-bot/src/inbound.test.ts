@@ -11,10 +11,9 @@
  * off it: an addressed message reaches the conversation's relay, and an unaddressed one does not.
  */
 import type { InboundEvent } from "@maple/chat-platform"
-import { Context, Effect, Logger, References, Tracer } from "effect"
+import { Context, Effect, Logger, References, Tracer, Array as Arr, Record as Rec } from "effect"
 import { describe, expect, it } from "vitest"
-import { inboundHandler } from "./inbound.ts"
-import type { ConnectorRelayStub } from "./relay/stub.ts"
+import { inboundHandler, type InboundRelay } from "./inbound.ts"
 import { testMessage } from "./test-support.ts"
 
 interface Recorded {
@@ -53,23 +52,18 @@ const handleAndRecord = async (
 ): Promise<Recorded & { everything: string; delivered: Array<InboundEvent> }> => {
 	const { recorded, context } = record()
 	const delivered: Array<InboundEvent> = []
-	const relay: ConnectorRelayStub = {
-		deliver: (inbound) => {
-			delivered.push(inbound)
-			return Promise.resolve()
-		},
-		remember: () => Promise.resolve(),
+	const relay: InboundRelay = {
+		deliver: (inbound) =>
+			Effect.sync(() => {
+				delivered.push(inbound)
+			}),
 	}
-	await Effect.runPromise(
-		inboundHandler({ forEvent: () => relay })
-			.handle(event)
-			.pipe(Effect.provideContext(context)),
-	)
+	await Effect.runPromise(inboundHandler(relay).handle(event).pipe(Effect.provideContext(context)))
 	const everything = JSON.stringify({
 		logs: recorded.logs,
-		spans: recorded.spans.map((span) => ({
+		spans: Arr.map(recorded.spans, (span) => ({
 			name: span.name,
-			attributes: Object.fromEntries(span.attributes),
+			attributes: Rec.fromEntries(span.attributes),
 		})),
 	})
 	return { ...recorded, everything, delivered }
@@ -89,7 +83,7 @@ describe("recording an inbound event", () => {
 		expect(everything).toContain(testMessage.workspaceId)
 		const [span] = spans
 		expect(span?.name).toBe("chat_bot.inbound_event")
-		expect(Object.fromEntries(span?.attributes ?? new Map())).toMatchObject({
+		expect(Rec.fromEntries(span?.attributes ?? new Map())).toMatchObject({
 			"maple.chat.event": "message",
 			"maple.chat.workspace_id": testMessage.workspaceId,
 		})

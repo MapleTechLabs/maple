@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
 	adoptReplayDecision,
+	claimReplayMode,
 	claimReplaySample,
 	getSession,
 	getSessionId,
 	isNewVisitorSession,
+	isReplayHalted,
 	markActivity,
+	markReplayHalted,
+	markReplayTriggered,
 	nextChunkSeq,
 	nextMetaVersion,
 	onSessionRotate,
@@ -15,6 +19,7 @@ import {
 	resolveBillable,
 } from "./session"
 import { resetVisitorCacheForTests } from "../identity/visitor"
+import { configurePersistence, resetPersistenceForTests } from "../platform/persistence"
 
 // Minimal in-memory sessionStorage standing in for the browser's, so the
 // rotation logic can be exercised under Node with a controllable clock.
@@ -64,6 +69,30 @@ beforeEach(() => {
 afterEach(() => {
 	vi.useRealTimers()
 	vi.unstubAllGlobals()
+	resetPersistenceForTests()
+})
+
+describe("memory-only persistence", () => {
+	it("keeps the session in memory and ignores a record from an earlier page", () => {
+		const local = new FakeStorage()
+		vi.stubGlobal("window", { sessionStorage: storage, localStorage: local })
+		const earlier = getSession()
+		// A new page load: the record from the earlier one is still in sessionStorage.
+		resetSessionStorageStateForTests()
+		resetTabLeaseForTests()
+		local.clear()
+
+		configurePersistence("memory")
+		const current = getSession()
+		vi.advanceTimersByTime(10 * MINUTE)
+		markActivity()
+
+		expect(current.id).not.toBe(earlier.id)
+		expect(getSession().id).toBe(current.id)
+		// Nothing new written: the earlier record is untouched and no tab lease exists.
+		expect(storage.getItem(STORAGE_KEY)).toBe(JSON.stringify(earlier))
+		expect(local.length).toBe(0)
+	})
 })
 
 describe("getSession", () => {
@@ -152,8 +181,8 @@ describe("getSessionId", () => {
 
 	it("reuses a record written by getSession (browser SDK path) and preserves chunkSeq", () => {
 		const s = getSession()
-		nextChunkSeq()
-		nextChunkSeq()
+		nextChunkSeq(s.id)
+		nextChunkSeq(s.id)
 		vi.advanceTimersByTime(5 * MINUTE)
 		expect(getSessionId()).toBe(s.id)
 		const stored = JSON.parse(storage.getItem(STORAGE_KEY)!)
@@ -165,7 +194,7 @@ describe("getSessionId", () => {
 		vi.advanceTimersByTime(5 * MINUTE)
 		const s = getSession()
 		expect(s.id).toBe(id)
-		expect(nextChunkSeq()).toBe(0)
+		expect(nextChunkSeq(s.id)).toBe(0)
 	})
 
 	it("throttles the activity touch-write under 5s", () => {
@@ -212,35 +241,70 @@ describe("getSessionId", () => {
 
 describe("nextChunkSeq", () => {
 	it("is monotonic and continues across a reload within the window", () => {
-		getSession()
-		expect(nextChunkSeq()).toBe(0)
-		expect(nextChunkSeq()).toBe(1)
-		expect(nextChunkSeq()).toBe(2)
+		const { id } = getSession()
+		expect(nextChunkSeq(id)).toBe(0)
+		expect(nextChunkSeq(id)).toBe(1)
+		expect(nextChunkSeq(id)).toBe(2)
 
 		// Reload within the window: seq must continue, not restart at 0.
 		vi.advanceTimersByTime(5 * MINUTE)
 		const reused = getSession()
 		expect(reused.chunkSeq).toBe(3)
-		expect(nextChunkSeq()).toBe(3)
-		expect(nextChunkSeq()).toBe(4)
+		expect(nextChunkSeq(id)).toBe(3)
+		expect(nextChunkSeq(id)).toBe(4)
 	})
 
 	it("restarts at 0 for a rotated session", () => {
-		getSession()
-		nextChunkSeq()
-		nextChunkSeq()
+		const first = getSession()
+		nextChunkSeq(first.id)
+		nextChunkSeq(first.id)
 		vi.advanceTimersByTime(31 * MINUTE)
-		getSession() // rotates
-		expect(nextChunkSeq()).toBe(0)
+		const rotated = getSession()
+		expect(nextChunkSeq(rotated.id)).toBe(0)
+	})
+
+	it("never hands a rotated-out session the new session's counter", () => {
+		const first = getSession()
+		nextChunkSeq(first.id)
+		vi.advanceTimersByTime(31 * MINUTE)
+		const rotated = getSession()
+		// A recorder of the old session flushing late continues its own sequence.
+		expect(nextChunkSeq(first.id)).toBe(1)
+		expect(nextChunkSeq(rotated.id)).toBe(0)
+		expect(nextChunkSeq("never-seen")).toBeUndefined()
+	})
+})
+
+describe("a host app clearing sessionStorage (logout)", () => {
+	it("keeps the session and its counters from memory instead of minting a new one", () => {
+		const rotations = vi.fn()
+		onSessionRotate(rotations)
+		const { id } = getSession()
+		expect(nextChunkSeq(id)).toBe(0)
+		expect(nextMetaVersion(id)).toBe(1)
+
+		storage.clear()
+		expect(markActivity()?.id).toBe(id)
+		expect(nextChunkSeq(id)).toBe(1)
+		expect(nextMetaVersion(id)).toBe(2)
+		expect(rotations).not.toHaveBeenCalled()
+		// Written back, so the next load of the tab resumes it too.
+		expect(JSON.parse(storage.getItem(STORAGE_KEY)!).id).toBe(id)
+	})
+
+	it("does not adopt the memory of another document's storage", () => {
+		const { id } = getSession()
+		vi.stubGlobal("window", { sessionStorage: new FakeStorage(), localStorage: new FakeStorage() })
+		expect(getSession().id).not.toBe(id)
 	})
 })
 
 describe("nextMetaVersion", () => {
 	it("starts at 1 for a fresh session and increments monotonically", () => {
-		getSession()
-		expect(nextMetaVersion()).toBe(1)
-		expect(nextMetaVersion()).toBe(2)
-		expect(nextMetaVersion()).toBe(3)
+		const { id } = getSession()
+		expect(nextMetaVersion(id)).toBe(1)
+		expect(nextMetaVersion(id)).toBe(2)
+		expect(nextMetaVersion(id)).toBe(3)
 	})
 
 	it("resumes at 3 for a legacy record without the counter (v1 active + v2 ended already posted)", () => {
@@ -248,24 +312,36 @@ describe("nextMetaVersion", () => {
 			STORAGE_KEY,
 			JSON.stringify({ id: "legacy", startedAt: Date.now(), lastActivityAt: Date.now(), chunkSeq: 5 }),
 		)
-		expect(nextMetaVersion()).toBe(3)
-		expect(nextMetaVersion()).toBe(4)
+		expect(nextMetaVersion("legacy")).toBe(3)
+		expect(nextMetaVersion("legacy")).toBe(4)
 	})
 
 	it("survives a reload within the window and restarts for a rotated session", () => {
-		getSession()
-		nextMetaVersion() // 1
-		nextMetaVersion() // 2
+		const { id } = getSession()
+		nextMetaVersion(id) // 1
+		nextMetaVersion(id) // 2
 		vi.advanceTimersByTime(5 * MINUTE)
 		getSession() // reload within window keeps the counter
-		expect(nextMetaVersion()).toBe(3)
+		expect(nextMetaVersion(id)).toBe(3)
 		vi.advanceTimersByTime(31 * MINUTE)
-		getSession() // rotation resets it
-		expect(nextMetaVersion()).toBe(1)
+		const rotated = getSession() // rotation resets it
+		expect(nextMetaVersion(rotated.id)).toBe(1)
 	})
 })
 
 describe("markActivity", () => {
+	it("leaves the session untouched for passive events, and reports an idle one as gone", () => {
+		const first = getSession()
+		vi.advanceTimersByTime(20 * MINUTE)
+		// A DOM mutation or a polling request: not activity.
+		expect(markActivity("passive")?.id).toBe(first.id)
+		vi.advanceTimersByTime(11 * MINUTE)
+		expect(markActivity("passive")).toBeNull()
+		// Neither rotated: the next real input does.
+		expect(peekSession()?.id).toBe(first.id)
+		expect(markActivity("input")?.id).not.toBe(first.id)
+	})
+
 	it("pushes back the idle deadline so a session is not rotated", () => {
 		const first = getSession()
 		vi.advanceTimersByTime(20 * MINUTE)
@@ -396,18 +472,29 @@ describe("duplicated tabs", () => {
 
 	it("starts its own session instead of sharing the copied one", () => {
 		const original = getSession()
-		nextChunkSeq()
+		nextChunkSeq(original.id)
 		becomeDuplicateTab()
 		const duplicate = getSession()
 		expect(duplicate.id).not.toBe(original.id)
-		expect(nextChunkSeq()).toBe(0)
+		expect(nextChunkSeq(duplicate.id)).toBe(0)
 	})
 
 	it("keeps the session when the other tab's lease has aged out", () => {
 		const original = getSession()
+		// The tab crashed: nothing refreshes its lease any more.
+		resetTabLeaseForTests()
 		vi.advanceTimersByTime(3 * MINUTE)
 		becomeDuplicateTab()
 		expect(getSession().id).toBe(original.id)
+	})
+
+	it("starts its own session when the original tab sat hidden and idle past the lease lifetime", () => {
+		resetTabLeaseForTests()
+		const original = getSession()
+		// No session writes at all for ten minutes, as in a background tab.
+		vi.advanceTimersByTime(10 * MINUTE)
+		becomeDuplicateTab()
+		expect(getSession().id).not.toBe(original.id)
 	})
 
 	it("keeps the session for another SDK copy in the same tab", () => {
@@ -433,23 +520,80 @@ describe("replay sampling", () => {
 	})
 })
 
+describe("claimReplayMode", () => {
+	it("records at the sample rate, else buffers for errors, and keeps the answer", () => {
+		getSession()
+		expect(claimReplayMode(0, 1)).toBe("buffer")
+		expect(claimReplayMode(1, 0)).toBe("buffer")
+	})
+
+	it("is off when neither rate claims the session", () => {
+		getSession()
+		expect(claimReplayMode(0, 0)).toBe("off")
+		expect(claimReplayMode(0, 1)).toBe("off")
+	})
+
+	it("records later loads of a session an error triggered", () => {
+		const session = getSession()
+		expect(claimReplayMode(0, 1)).toBe("buffer")
+		markReplayTriggered(session.id)
+		expect(claimReplayMode(0, 1)).toBe("record")
+		expect(peekSession()?.replayTrigger).toBe("error")
+	})
+
+	it("keeps a record whose trigger a newer SDK wrote, instead of starting a new session", () => {
+		const now = Date.now()
+		storage.setItem(
+			STORAGE_KEY,
+			JSON.stringify({
+				id: "newer",
+				startedAt: now,
+				lastActivityAt: now,
+				chunkSeq: 0,
+				replayTrigger: "manual",
+			}),
+		)
+		expect(getSession().id).toBe("newer")
+		expect(peekSession()?.replayTrigger).toBeUndefined()
+	})
+
+	it("pins a rotated session to buffering when the page buffers", () => {
+		const session = getSession()
+		adoptReplayDecision(session.id, false, true)
+		expect(claimReplayMode(0, 0)).toBe("buffer")
+	})
+})
+
 describe("quota exhaustion", () => {
 	it("keeps nextMetaVersion advancing when reads work but writes throw", () => {
 		// Pinned at 1, every heartbeat was billed as a new session.
-		getSession()
+		const { id } = getSession()
 		storage.writesThrow = true
-		expect([nextMetaVersion(), nextMetaVersion(), nextMetaVersion()]).toEqual([1, 2, 3])
+		expect([nextMetaVersion(id), nextMetaVersion(id), nextMetaVersion(id)]).toEqual([1, 2, 3])
 	})
 
 	it("hands control back to storage once writes recover", () => {
-		getSession()
+		const { id } = getSession()
 		storage.writesThrow = true
-		nextMetaVersion()
-		nextMetaVersion()
+		nextMetaVersion(id)
+		nextMetaVersion(id)
 		storage.writesThrow = false
 
-		expect(nextMetaVersion()).toBe(3)
+		expect(nextMetaVersion(id)).toBe(3)
 		expect(JSON.parse(storage.getItem(STORAGE_KEY)!).metaVersion).toBe(3)
+	})
+})
+
+describe("replay halt", () => {
+	it("is remembered across a reload, for that session only", () => {
+		const first = getSession()
+		markReplayHalted(first.id)
+		resetSessionStorageStateForTests()
+		expect(isReplayHalted(first.id)).toBe(true)
+		vi.advanceTimersByTime(31 * MINUTE)
+		const next = getSession()
+		expect(isReplayHalted(next.id)).toBe(false)
+		expect(isReplayHalted(first.id)).toBe(false)
 	})
 })
 

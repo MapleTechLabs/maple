@@ -26,6 +26,8 @@
 //     cannot coincide.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
+import { SLO_LATENCY_THRESHOLDS_MS } from "@maple/domain/primitives"
+import { SLO_LATENCY_COVERAGE_COLUMN, sloLatencyColumnName } from "@maple/domain/tinybird/datasources"
 import * as CH from "@maple/query-engine/ch"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import {
@@ -34,6 +36,7 @@ import {
 	clickhouseExec,
 	uniqueDatabase,
 } from "./clickhouse-e2e-support"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 const database = uniqueDatabase("maple_service_overview_parity_e2e")
 const ORG_ID = "org_service_overview_parity"
@@ -52,7 +55,8 @@ const HOUR_MS = 3_600_000
 const MINUTE_MS = 60_000
 const SECOND_MS = 1000
 
-const chDateTime = (epochMs: number): string => new Date(epochMs).toISOString().replace("T", " ").slice(0, 19)
+const chDateTime = (epochMs: number): string =>
+	Str.slice(0, 19)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 
 /** Midnight, three days back — comfortably inside the TTL horizon on both ends. */
 const BASE_MS = Math.floor((Date.now() - 3 * DAY_MS) / DAY_MS) * DAY_MS
@@ -170,15 +174,18 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 ]
 
 /** Rows the query window actually covers — the denominator for the tripwire. */
-const IN_WINDOW_SPANS = SEED_SPANS.filter((row) => row.ms >= START_MS && row.ms <= END_MS)
+const IN_WINDOW_SPANS = Arr.filter(SEED_SPANS, (row) => row.ms >= START_MS && row.ms <= END_MS)
 
-const quote = (value: string): string => `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
+const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
 
 const seed = async (): Promise<void> => {
-	const rows = SEED_SPANS.map((row, index) => {
-		const resourceAttributes = `map('deployment.environment', ${quote(row.environment)}, 'service.namespace', ${quote(row.namespace)}, 'vcs.ref.head.revision', ${quote(row.commitSha)})`
-		return `(${quote(ORG_ID)}, ${quote(chDateTime(row.ms))}, ${quote(`trace-${index}`)}, ${quote(`span-${index}`)}, '', ${quote("GET /x")}, 'Server', ${quote(row.service)}, ${row.durationNs}, ${quote(row.status)}, ${row.sampleRate}, ${resourceAttributes})`
-	}).join(",\n")
+	const rows = Arr.join(
+		Arr.map(SEED_SPANS, (row, index) => {
+			const resourceAttributes = `map('deployment.environment', ${quote(row.environment)}, 'service.namespace', ${quote(row.namespace)}, 'vcs.ref.head.revision', ${quote(row.commitSha)})`
+			return `(${quote(ORG_ID)}, ${quote(chDateTime(row.ms))}, ${quote(`trace-${index}`)}, ${quote(`span-${index}`)}, '', ${quote("GET /x")}, 'Server', ${quote(row.service)}, ${row.durationNs}, ${quote(row.status)}, ${row.sampleRate}, ${resourceAttributes})`
+		}),
+		",\n",
+	)
 
 	await clickhouseExec(
 		`INSERT INTO traces
@@ -273,8 +280,10 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 		// which is exactly what a TTL-expired seed produces, silently.
 		const [spans, minutely, hourly] = await Promise.all([
 			runJson("SELECT count() AS n FROM service_overview_spans"),
-			runJson("SELECT sum(SpanCount) AS n FROM service_overview_minutely"),
-			runJson("SELECT sum(SpanCount) AS n FROM service_overview_hourly"),
+			runJson(
+				`SELECT sum(SpanCount) AS n FROM service_overview_minutely WHERE OrgId = ${quote(ORG_ID)}`,
+			),
+			runJson(`SELECT sum(SpanCount) AS n FROM service_overview_hourly WHERE OrgId = ${quote(ORG_ID)}`),
 		])
 
 		assert.strictEqual(
@@ -286,6 +295,75 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 		// including the two outside the query window.
 		assert.strictEqual(num(minutely[0]?.n), SEED_SPANS.length, "service_overview_minutely is empty")
 		assert.strictEqual(num(hourly[0]?.n), SEED_SPANS.length, "service_overview_hourly is empty")
+	})
+
+	it("counts the SLO latency ladder in both rollups exactly as a raw scan does", async () => {
+		// Per rung: sampling-weighted entry-point spans strictly under the threshold, any status.
+		const ladder = (column: (ms: number) => string) =>
+			Arr.join(
+				Arr.map(SLO_LATENCY_THRESHOLDS_MS, (ms) => `toFloat64(${column(ms)}) AS r${ms}`),
+				", ",
+			)
+		const coverage = `toFloat64(sum(${SLO_LATENCY_COVERAGE_COLUMN})) AS coverage`
+		const rollup = (table: string) =>
+			runJson(
+				`SELECT ${coverage}, ${ladder((ms) => `sum(${sloLatencyColumnName(ms)})`)} FROM ${table} WHERE OrgId = ${quote(ORG_ID)}`,
+			)
+		const [raw, minutely, hourly] = await Promise.all([
+			runJson(
+				`SELECT toFloat64(sum(SampleRate)) AS coverage, ${ladder((ms) => `sumIf(SampleRate, Duration < ${ms * 1_000_000})`)} FROM service_overview_spans WHERE OrgId = ${quote(ORG_ID)}`,
+			),
+			rollup("service_overview_minutely"),
+			rollup("service_overview_hourly"),
+		])
+		const rungs = (row: Record<string, unknown> | undefined) => [
+			num(row?.coverage),
+			...Arr.map(SLO_LATENCY_THRESHOLDS_MS, (ms) => num(row?.[`r${ms}`])),
+		]
+		// Every seed row is a root Server span, so the oracle is the seed itself.
+		const covered = Arr.reduce(SEED_SPANS, 0, (sum, row) => sum + row.sampleRate)
+		const expected = Arr.map(SLO_LATENCY_THRESHOLDS_MS, (ms) =>
+			Arr.reduce(SEED_SPANS, 0, (sum, row) =>
+				row.durationNs < ms * 1_000_000 ? sum + row.sampleRate : sum,
+			),
+		)
+		assert.isAbove(Arr.getUnsafe(expected, 0), 0)
+		assert.isBelow(Arr.getUnsafe(expected, 0), Arr.getUnsafe(expected, expected.length - 1))
+		// Head-sampled rows make the coverage total exceed the raw span count.
+		assert.isAbove(covered, SEED_SPANS.length)
+		assert.deepStrictEqual(rungs(raw[0]), [covered, ...expected])
+		assert.deepStrictEqual(rungs(minutely[0]), rungs(raw[0]))
+		assert.deepStrictEqual(rungs(hourly[0]), rungs(raw[0]))
+	})
+
+	it("reads a bucket written before 0059 as uncovered: zero coverage and zero on every rung", async () => {
+		// The pre-0059 views named only these columns; the ALTER defaults the rest to 0.
+		const legacyOrg = "org_service_overview_pre_0059"
+		const legacy = (table: string, time: string) =>
+			clickhouseExec(
+				`INSERT INTO ${table} (OrgId, ${time}, ServiceName, DeploymentEnv, ServiceNamespace, CommitSha, SpanCount, EstimatedSpanCount, ErrorCount, EstimatedErrorCount, DurationSum, FirstSeen, ApdexSatisfiedCount, ApdexToleratingCount)
+				 VALUES (${quote(legacyOrg)}, ${quote(chDateTime(FIRST_FULL_HOUR_MS))}, 'api', 'production', 'checkout', 'abc123', 5, 50, 0, 0, 1000000, ${quote(chDateTime(FIRST_FULL_HOUR_MS))}, 5, 0)`,
+				database,
+			)
+		await legacy("service_overview_hourly", "Hour")
+		await legacy("service_overview_minutely", "Minute")
+		const read = (table: string) =>
+			runJson(
+				`SELECT toFloat64(sum(SpanCount)) AS spans, toFloat64(sum(${SLO_LATENCY_COVERAGE_COLUMN})) AS coverage, toFloat64(sum(${sloLatencyColumnName(10000)})) AS slowest FROM ${table} WHERE OrgId = ${quote(legacyOrg)}`,
+			)
+		for (const rows of await Promise.all([
+			read("service_overview_hourly"),
+			read("service_overview_minutely"),
+		])) {
+			assert.deepStrictEqual(
+				{
+					spans: num(rows[0]?.spans),
+					coverage: num(rows[0]?.coverage),
+					slowest: num(rows[0]?.slowest),
+				},
+				{ spans: 5, coverage: 0, slowest: 0 },
+			)
+		}
 	})
 
 	it("puts rows on every seam the splice depends on", async () => {
@@ -300,7 +378,7 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 		}
 	})
 
-	for (const metric of Object.keys(METRIC_FIELDS) as Array<keyof typeof METRIC_FIELDS>) {
+	for (const metric of Rec.keys(METRIC_FIELDS)) {
 		for (const needsSampling of [false, true]) {
 			// Hour-multiple single-metric requests deliberately use the separate
 			// weighted aggregate route, with different sample-count semantics.
@@ -323,14 +401,14 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 						),
 					])
 					assert.isAbove(selected.length, 0)
-					assert.deepEqual(selected.map(key), all.map(key))
+					assert.deepEqual(Arr.map(selected, key), Arr.map(all, key))
 					const used = new Set<string>([
 						"count",
 						"spanCount",
 						"estimatedSpanCount",
 						...METRIC_FIELDS[metric],
 					])
-					const fields = new Set(Object.values(METRIC_FIELDS).flat())
+					const fields = new Set(Rec.values(METRIC_FIELDS).flat())
 					for (let i = 0; i < selected.length; i++) {
 						for (const field of used) {
 							const expected = num(all[i][field])
@@ -350,8 +428,8 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 						}
 					}
 					assert.isAbove(
-						all.reduce((n, row) => n + num(row.count), 0),
-						all.reduce((n, row) => n + num(row.spanCount), 0),
+						Arr.reduce(all, 0, (n, row) => n + num(row.count)),
+						Arr.reduce(all, 0, (n, row) => n + num(row.spanCount)),
 						"sampling seed must distinguish weighted counts from confidence counts",
 					)
 				})
@@ -377,11 +455,11 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 					`bucket/group count differs — the tiers do not tile the window (${label})`,
 				)
 
-				const truthByKey = new Map(truth.map((row) => [key(row), row]))
+				const truthByKey = new Map(Arr.map(truth, (row) => [key(row), row]))
 				for (const row of spliced) {
 					const expected = truthByKey.get(key(row))
 					assert.isDefined(expected, `spliced produced a bucket the flat scan did not: ${key(row)}`)
-					if (!expected) continue
+					if (expected == null) continue
 
 					// Counts must be EXACT. These are the ones a boundary inequality
 					// corrupts, and they corrupt by a whole bucket, not by rounding.
@@ -431,7 +509,7 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 		// on a cluster missing migration 0015 — it must not change the answer.
 		const sumOf = async (sql: string): Promise<number> => {
 			const rows = await runJson(sql)
-			return rows.reduce((total, row) => total + num(row.spanCount), 0)
+			return Arr.reduce(rows, 0, (total, row) => total + num(row.spanCount))
 		}
 
 		const threeTier = await sumOf(splicedSql(3600, false))
@@ -464,9 +542,11 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 
 	it("merges tDigest states rather than averaging namespace quantiles", async () => {
 		const rows = await runJson(CH.compileUnsafe(CH.serviceOverviewQuery({}), window).sql)
-		const skewed = rows.find((row) => String(row.serviceName) === "skewed")
+		const skewed = Option.getOrUndefined(
+			Arr.findFirst(rows, (row) => String(row.serviceName) === "skewed"),
+		)
 		assert.isDefined(skewed, "the skewed-namespace seed did not reach serviceOverviewQuery")
-		if (!skewed) return
+		if (skewed == null) return
 
 		// What the client used to compute: a span-count-weighted mean of each
 		// namespace's own p95.
@@ -484,10 +564,11 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 		`)
 		assert.lengthOf(perNamespace, 2, "the skew seed must produce two namespaces")
 
-		const totalSpans = perNamespace.reduce((total, row) => total + num(row.spanCount), 0)
-		const weightedMeanP95 = perNamespace.reduce(
-			(total, row) => total + num(row.p95) * (num(row.spanCount) / totalSpans),
+		const totalSpans = Arr.reduce(perNamespace, 0, (total, row) => total + num(row.spanCount))
+		const weightedMeanP95 = Arr.reduce(
+			perNamespace,
 			0,
+			(total, row) => total + num(row.p95) * (num(row.spanCount) / totalSpans),
 		)
 		const mergedP95 = num(skewed.p95LatencyMs)
 
@@ -513,13 +594,15 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 
 	it("collapses namespace variants into one row per service and environment", async () => {
 		const rows = await runJson(CH.compileUnsafe(CH.serviceOverviewQuery({}), window).sql)
-		const skewed = rows.filter((row) => String(row.serviceName) === "skewed")
+		const skewed = Arr.filter(rows, (row) => String(row.serviceName) === "skewed")
 		assert.lengthOf(skewed, 1, "namespace variants must not surface as separate rows")
 		// argMax on estimated span count — `slow` carries 200 spans to `fast`'s 20.
 		assert.strictEqual(String(skewed[0]?.serviceNamespace), "slow")
 
 		// Commits ride along as a capped, count-descending tuple array.
-		const worker = rows.find((row) => String(row.serviceName) === "worker")
+		const worker = Option.getOrUndefined(
+			Arr.findFirst(rows, (row) => String(row.serviceName) === "worker"),
+		)
 		assert.isDefined(worker, "the worker seed did not reach serviceOverviewQuery")
 		const commits = (worker?.commits ?? []) as ReadonlyArray<ReadonlyArray<unknown>>
 		assert.lengthOf(commits, 2, "worker was seeded with exactly two commits")

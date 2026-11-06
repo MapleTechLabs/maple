@@ -1,5 +1,16 @@
-import { Context, Duration, Effect, Layer, Option, Redacted, Result } from "effect"
-import { HttpClient } from "effect/unstable/http"
+import {
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Result,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
+import { HttpClient } from "effect/http"
 import { SyncConfig } from "../config"
 import { ElectricNotConfigured, ElectricUpstreamError, ElectricUpstreamUnreachable } from "../errors"
 import { lookupSubscription } from "../shapes/registry"
@@ -37,7 +48,7 @@ const UPSTREAM_TIMEOUT = Duration.seconds(30)
  * so any failure string that reaches a span or a log has to come through here
  * first. Applied to the FULLY composed string — see `describeUpstreamFailure`.
  */
-const redactSecrets = (text: string): string => text.replace(/(secret=)[^&\s)]*/g, "$1REDACTED")
+const redactSecrets = (text: string): string => Str.replace(/(secret=)[^&\s)]*/g, "$1REDACTED")(text)
 
 /**
  * Renders an upstream failure for a span message and a log.
@@ -54,7 +65,10 @@ export const describeUpstreamFailure = (error: unknown): string => {
 	// `undefined` into a span: not every failure reaching here carries a message,
 	// and one that does not used to be the timeout itself.
 	const text = error instanceof Error ? error.message || error.name || String(error) : String(error)
-	const cause = error instanceof Error && error.cause !== undefined ? String(error.cause) : undefined
+	const cause =
+		error instanceof Error && (error.cause instanceof Error || typeof error.cause === "string")
+			? String(error.cause)
+			: undefined
 	// Redact AFTER composing, never per-part: a fetch failure's cause commonly
 	// embeds the request URL too, so redacting only the outer text would leak the
 	// exact credential this exists to protect.
@@ -75,7 +89,7 @@ export const sanitizedUpstreamAttributes = (upstreamUrl: string, shape: string):
 		"http.request.method": "GET",
 		"server.address": url.host,
 		"url.path": url.pathname,
-		"url.scheme": url.protocol.slice(0, -1),
+		"url.scheme": Str.slice(0, -1)(url.protocol),
 		"peer.service": "electric",
 		"maple.electric.shape": shape,
 	}
@@ -117,25 +131,28 @@ export const buildUpstreamSyncUrl = (args: {
 	// something a client cannot influence.
 	const pinned: Record<string, string> = {
 		table: def.table,
-		where: [
-			// Column names come from our own whitelist and values go in positionally,
-			// so neither half of any predicate is ever client-authored SQL.
-			...bindings.map(({ column }, index) => `"${column}" = $${positional(index)}`),
-			// A shape's own `extraWhere` may only narrow further, never replace.
-			...(def.extraWhere ? [def.extraWhere] : []),
-		].join(" AND "),
-		...Object.fromEntries(bindings.map(({ value }, index) => [`params[${positional(index)}]`, value])),
+		where: Arr.join(
+			[
+				// Column names come from our own whitelist and values go in positionally,
+				// so neither half of any predicate is ever client-authored SQL.
+				...Arr.map(bindings, ({ column }, index) => `"${column}" = $${positional(index)}`),
+				// A shape's own `extraWhere` may only narrow further, never replace.
+				...(def.extraWhere ? [def.extraWhere] : []),
+			],
+			" AND ",
+		),
+		...Rec.fromEntries(Arr.map(bindings, ({ value }, index) => [`params[${positional(index)}]`, value])),
 		// The projection is pinned too — a shape that drops secret / oversized
 		// columns must never let the client widen it back to `SELECT *`.
-		...(def.columns ? { columns: def.columns.join(",") } : undefined),
+		...(def.columns ? { columns: Arr.join(def.columns, ",") } : undefined),
 		// `source_id` is Electric Cloud only; `secret` is sent by both (Cloud's
 		// source secret, or self-hosted `ELECTRIC_SECRET`).
 		...(args.sourceId ? { source_id: args.sourceId } : undefined),
 		...(args.secret ? { secret: args.secret } : undefined),
 	} satisfies Record<string, string>
 
-	const url = new URL(`${args.electricUrl.replace(/\/+$/, "")}/v1/shape`)
-	for (const [key, value] of Object.entries(pinned)) url.searchParams.set(key, value)
+	const url = new URL(`${Str.replace(/\/+$/, "")(args.electricUrl)}/v1/shape`)
+	for (const [key, value] of Rec.toEntries(pinned)) url.searchParams.set(key, value)
 
 	// Client params go on last but can never overwrite a pinned key — the
 	// passthrough list and the pinned keys are disjoint by construction.

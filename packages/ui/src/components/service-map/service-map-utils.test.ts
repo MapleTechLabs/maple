@@ -4,12 +4,10 @@ import {
 	computeFlatPositions,
 	computeNodePositions,
 	dbNodeId,
-	getHealthColor,
 	getPlatformColor,
 	getServiceMapNodeColor,
 	parseDbNodeId,
 	topologyKey,
-	type ServiceNodeData,
 } from "./service-map-utils"
 import type {
 	ServiceMapDbEdgeRow,
@@ -17,6 +15,7 @@ import type {
 	ServiceMapOverviewRow,
 	ServicePlatform,
 } from "./service-map-types"
+import { Array as Arr, String as Str, Option } from "effect"
 
 const baseEdge = (overrides: Partial<ServiceMapEdgeRow> = {}): ServiceMapEdgeRow => ({
 	sourceService: "api",
@@ -69,16 +68,20 @@ describe("buildFlowElements", () => {
 			durationSeconds: 60,
 		})
 
-		const dbNode = result.nodes.find((n) => n.id === dbNodeId("clickhouse", ""))
+		const dbNode = Option.getOrUndefined(
+			Arr.findFirst(result.nodes, (n) => n.id === dbNodeId("clickhouse", "")),
+		)
 		expect(dbNode).toBeDefined()
-		const data = dbNode!.data as ServiceNodeData
+		const data = dbNode!.data
 		expect(data.kind).toBe("database")
 		expect(data.label).toBe("clickhouse")
 		expect(data.dbSystem).toBe("clickhouse")
 		expect(data.throughput).toBeCloseTo(50 / 60)
 		expect(data.avgLatencyMs).toBe(8)
 
-		const dbEdge = result.edges.find((e) => e.target === dbNodeId("clickhouse", ""))
+		const dbEdge = Option.getOrUndefined(
+			Arr.findFirst(result.edges, (e) => e.target === dbNodeId("clickhouse", "")),
+		)
 		expect(dbEdge).toBeDefined()
 		expect(dbEdge!.source).toBe("api")
 	})
@@ -97,7 +100,7 @@ describe("buildFlowElements", () => {
 			]),
 			hyperdriveConfigs: [
 				{
-					id: "a".repeat(32),
+					id: Str.repeat(32)("a"),
 					name: "maple-db",
 					originHost: "aws.connect.psdb.cloud",
 					originPort: 3306,
@@ -108,17 +111,23 @@ describe("buildFlowElements", () => {
 			],
 		})
 
-		const hyperdriveNode = result.nodes.find((n) => n.id === dbNodeId("postgresql", "hyperdrive"))
+		const hyperdriveNode = Option.getOrUndefined(
+			Arr.findFirst(result.nodes, (n) => n.id === dbNodeId("postgresql", "hyperdrive")),
+		)
 		expect(hyperdriveNode).toBeDefined()
-		const data = hyperdriveNode!.data as ServiceNodeData
+		const data = hyperdriveNode!.data
 		expect(data.hyperdrive).toHaveLength(1)
-		expect(data.hyperdrive![0]!.matched).toEqual({ name: "maple", kind: "mysql" })
+		expect(Arr.getUnsafe(data.hyperdrive!, 0).matched).toEqual({ name: "maple", kind: "mysql" })
 
 		// Other db nodes stay clean.
-		const psNode = result.nodes.find((n) => n.id === dbNodeId("mysql", "maple"))
-		expect((psNode!.data as ServiceNodeData).hyperdrive).toBeUndefined()
+		const psNode = Option.getOrUndefined(
+			Arr.findFirst(result.nodes, (n) => n.id === dbNodeId("mysql", "maple")),
+		)
+		expect(psNode!.data.hyperdrive).toBeUndefined()
 
-		const originEdge = result.edges.find((e) => e.data?.relation === "hyperdrive-origin")
+		const originEdge = Option.getOrUndefined(
+			Arr.findFirst(result.edges, (e) => e.data?.relation === "hyperdrive-origin"),
+		)
 		expect(originEdge).toBeDefined()
 		expect(originEdge!.source).toBe(dbNodeId("postgresql", "hyperdrive"))
 		expect(originEdge!.target).toBe(dbNodeId("mysql", "maple"))
@@ -136,7 +145,7 @@ describe("buildFlowElements", () => {
 			]),
 			hyperdriveConfigs: [
 				{
-					id: "a".repeat(32),
+					id: Str.repeat(32)("a"),
 					name: "maple-db",
 					originHost: "aws.connect.psdb.cloud",
 					originPort: 3306,
@@ -148,10 +157,12 @@ describe("buildFlowElements", () => {
 		})
 
 		// The panel data is still attached…
-		const hyperdriveNode = result.nodes.find((n) => n.id === dbNodeId("postgresql", "hyperdrive"))
-		expect((hyperdriveNode!.data as ServiceNodeData).hyperdrive).toHaveLength(1)
+		const hyperdriveNode = Option.getOrUndefined(
+			Arr.findFirst(result.nodes, (n) => n.id === dbNodeId("postgresql", "hyperdrive")),
+		)
+		expect(hyperdriveNode!.data.hyperdrive).toHaveLength(1)
 		// …but no synthetic edge points at a node that doesn't exist.
-		expect(result.edges.some((e) => e.data?.relation === "hyperdrive-origin")).toBe(false)
+		expect(Arr.some(result.edges, (e) => e.data?.relation === "hyperdrive-origin")).toBe(false)
 	})
 
 	it("attaches platform info to service nodes", () => {
@@ -167,10 +178,10 @@ describe("buildFlowElements", () => {
 			platforms,
 		})
 
-		const apiNode = result.nodes.find((n) => n.id === "api")
-		const authNode = result.nodes.find((n) => n.id === "auth")
-		expect((apiNode!.data as ServiceNodeData).platform).toBe("cloudflare")
-		expect((authNode!.data as ServiceNodeData).platform).toBe("kubernetes")
+		const apiNode = Option.getOrUndefined(Arr.findFirst(result.nodes, (n) => n.id === "api"))
+		const authNode = Option.getOrUndefined(Arr.findFirst(result.nodes, (n) => n.id === "auth"))
+		expect(apiNode!.data.platform).toBe("cloudflare")
+		expect(authNode!.data.platform).toBe("kubernetes")
 	})
 
 	it("aggregates multiple callers into one db node", () => {
@@ -184,12 +195,12 @@ describe("buildFlowElements", () => {
 			durationSeconds: 60,
 		})
 
-		const dbNodes = result.nodes.filter((n) => n.id.startsWith("db:"))
+		const dbNodes = Arr.filter(result.nodes, (n) => Str.startsWith("db:")(n.id))
 		expect(dbNodes).toHaveLength(1)
-		const data = dbNodes[0].data as ServiceNodeData
+		const data = Arr.getUnsafe(dbNodes, 0).data
 		expect(data.errorRate).toBeCloseTo(3 / 80)
 
-		const dbEdges = result.edges.filter((e) => e.target === dbNodeId("clickhouse", ""))
+		const dbEdges = Arr.filter(result.edges, (e) => e.target === dbNodeId("clickhouse", ""))
 		expect(dbEdges).toHaveLength(2)
 	})
 
@@ -205,20 +216,22 @@ describe("buildFlowElements", () => {
 			durationSeconds: 60,
 		})
 
-		const dbNodes = result.nodes.filter((n) => n.id.startsWith("db:"))
-		expect(dbNodes.map((n) => n.id).sort()).toEqual([
+		const dbNodes = Arr.filter(result.nodes, (n) => Str.startsWith("db:")(n.id))
+		expect(Arr.map(dbNodes, (n) => n.id).sort()).toEqual([
 			dbNodeId("postgresql", "billing"),
 			dbNodeId("postgresql", "orders"),
 		])
-		const orders = result.nodes.find((n) => n.id === dbNodeId("postgresql", "orders"))
-		const data = orders!.data as ServiceNodeData
+		const orders = Option.getOrUndefined(
+			Arr.findFirst(result.nodes, (n) => n.id === dbNodeId("postgresql", "orders")),
+		)
+		const data = orders!.data
 		// Named databases show the namespace as the node label…
 		expect(data.label).toBe("orders")
 		expect(data.dbSystem).toBe("postgresql")
 		expect(data.dbNamespace).toBe("orders")
 		// …and both callers of "orders" target the same node.
-		const orderEdges = result.edges.filter((e) => e.target === dbNodeId("postgresql", "orders"))
-		expect(orderEdges.map((e) => e.source).sort()).toEqual(["api", "worker"])
+		const orderEdges = Arr.filter(result.edges, (e) => e.target === dbNodeId("postgresql", "orders"))
+		expect(Arr.map(orderEdges, (e) => e.source).sort()).toEqual(["api", "worker"])
 	})
 
 	it("round-trips db node ids through parseDbNodeId, including ':' in components", () => {
@@ -254,7 +267,7 @@ describe("buildFlowElements database node metrics", () => {
 			durationSeconds: 1,
 		})
 
-		const db = nodes.find((n) => n.id === dbNodeId("scylladb", "events"))
+		const db = Option.getOrUndefined(Arr.findFirst(nodes, (n) => n.id === dbNodeId("scylladb", "events")))
 		expect(db?.data.throughput).toBe(30_000)
 		expect(db?.data.tracedThroughput).toBe(3_000)
 		expect(db?.data.hasSampling).toBe(true)
@@ -282,7 +295,7 @@ describe("buildFlowElements database node metrics", () => {
 			durationSeconds: 1,
 		})
 
-		const db = nodes.find((n) => n.id === dbNodeId("scylladb", "events"))
+		const db = Option.getOrUndefined(Arr.findFirst(nodes, (n) => n.id === dbNodeId("scylladb", "events")))
 		expect(db?.data.p95LatencyMs).toBe(7)
 		expect(db?.data.maxLatencyMs).toBe(3_000)
 	})
@@ -305,7 +318,7 @@ describe("buildFlowElements database node metrics", () => {
 			durationSeconds: 1,
 		})
 
-		const db = nodes.find((n) => n.id === dbNodeId("scylladb", "events"))
+		const db = Option.getOrUndefined(Arr.findFirst(nodes, (n) => n.id === dbNodeId("scylladb", "events")))
 		expect(db?.data.p95LatencyMs).toBeUndefined()
 		expect(db?.data.maxLatencyMs).toBe(3_000)
 	})
@@ -318,7 +331,7 @@ describe("buildFlowElements database node metrics", () => {
 			durationSeconds: 1,
 		})
 
-		const db = nodes.find((n) => n.id === dbNodeId("scylladb", "events"))
+		const db = Option.getOrUndefined(Arr.findFirst(nodes, (n) => n.id === dbNodeId("scylladb", "events")))
 		expect(db?.data.maxLatencyMs).toBe(3_000)
 	})
 
@@ -351,7 +364,7 @@ describe("buildFlowElements database node metrics", () => {
 			durationSeconds: 1,
 		})
 
-		const db = nodes.find((n) => n.id === dbNodeId("scylladb", "events"))
+		const db = Option.getOrUndefined(Arr.findFirst(nodes, (n) => n.id === dbNodeId("scylladb", "events")))
 		expect(db?.data.throughput).toBe(1_200)
 		expect(db?.data.tracedThroughput).toBe(300)
 		expect(db?.data.hasSampling).toBe(true)
@@ -370,10 +383,12 @@ describe("buildFlowElements namespace", () => {
 			serviceOverviews: [baseOverview({ serviceName: "api", serviceNamespace: "backend" })],
 			durationSeconds: 60,
 		})
-		const apiNode = result.nodes.find((n) => n.id === "api")
-		const dbNode = result.nodes.find((n) => n.id === dbNodeId("postgresql", ""))
-		expect((apiNode!.data as ServiceNodeData).namespace).toBe("backend")
-		expect((dbNode!.data as ServiceNodeData).namespace).toBeUndefined()
+		const apiNode = Option.getOrUndefined(Arr.findFirst(result.nodes, (n) => n.id === "api"))
+		const dbNode = Option.getOrUndefined(
+			Arr.findFirst(result.nodes, (n) => n.id === dbNodeId("postgresql", "")),
+		)
+		expect(apiNode!.data.namespace).toBe("backend")
+		expect(dbNode!.data.namespace).toBeUndefined()
 	})
 
 	it("treats an empty namespace string as no namespace", () => {
@@ -382,8 +397,8 @@ describe("buildFlowElements namespace", () => {
 			serviceOverviews: [baseOverview({ serviceName: "api", serviceNamespace: "" })],
 			durationSeconds: 60,
 		})
-		const apiNode = result.nodes.find((n) => n.id === "api")
-		expect((apiNode!.data as ServiceNodeData).namespace).toBeUndefined()
+		const apiNode = Option.getOrUndefined(Arr.findFirst(result.nodes, (n) => n.id === "api"))
+		expect(apiNode!.data.namespace).toBeUndefined()
 	})
 })
 
@@ -413,7 +428,7 @@ describe("computeNodePositions namespace clustering", () => {
 		})
 		const pos = computeNodePositions(nodes, edges)
 		const bandOf = (ids: string[]) => {
-			const ys = ids.map((id) => pos.get(id)!.y)
+			const ys = Arr.map(ids, (id) => pos.get(id)!.y)
 			return { min: Math.min(...ys), max: Math.max(...ys) }
 		}
 		const backend = bandOf(["api", "auth"])
@@ -478,12 +493,6 @@ describe("getServiceMapNodeColor", () => {
 		const authColor = getServiceMapNodeColor({ label: "auth", kind: "service", errorRate: 0 }, "service")
 		expect(apiColor).not.toBe(authColor)
 	})
-
-	it("getHealthColor matches the bucket boundaries used by the helper", () => {
-		expect(getHealthColor(0.0)).toBe("var(--severity-info)")
-		expect(getHealthColor(0.011)).toBe("var(--severity-warn)")
-		expect(getHealthColor(0.06)).toBe("var(--severity-error)")
-	})
 })
 
 describe("topologyKey", () => {
@@ -540,7 +549,7 @@ describe("layout anchoring on the synchronous fallback", () => {
 			edges: [
 				baseEdge({ sourceService: "api", targetService: "auth" }),
 				baseEdge({ sourceService: "web", targetService: "cart" }),
-				...extra.map((name) => baseEdge({ sourceService: name, targetService: `${name}-db` })),
+				...Arr.map(extra, (name) => baseEdge({ sourceService: name, targetService: `${name}-db` })),
 			],
 			serviceOverviews: [],
 			durationSeconds: 3600,
@@ -559,19 +568,20 @@ describe("layout anchoring on the synchronous fallback", () => {
 
 		// Previous layout with the two components swapped top-to-bottom.
 		const flipped = new Map(
-			[...natural].map(([id, at]) => [
+			Arr.map([...natural], ([id, at]) => [
 				id,
 				{ x: at.x, y: ["api", "auth"].includes(id) ? at.y + 10_000 : at.y - 10_000 },
 			]),
 		)
 		const anchored = computeFlatPositions(nodes, edges, undefined, flipped)
 
-		const midY = (ids: string[]) => ids.reduce((sum, id) => sum + anchored.get(id)!.y, 0) / ids.length
+		const midY = (ids: string[]) =>
+			Arr.reduce(ids, 0, (sum, id) => sum + anchored.get(id)!.y) / ids.length
 		// The anchored layout follows the previous order: web/cart above api/auth.
 		expect(midY(["web", "cart"])).toBeLessThan(midY(["api", "auth"]))
 		// ...which is the opposite of what it produces unanchored.
 		const naturalMid = (ids: string[]) =>
-			ids.reduce((sum, id) => sum + natural.get(id)!.y, 0) / ids.length
+			Arr.reduce(ids, 0, (sum, id) => sum + natural.get(id)!.y) / ids.length
 		expect(naturalMid(["api", "auth"])).toBeLessThan(naturalMid(["web", "cart"]))
 	})
 
@@ -581,13 +591,13 @@ describe("layout anchoring on the synchronous fallback", () => {
 
 		// A third component appears — the kind of delta a sliding time window makes.
 		const after = twoComponents(["billing"])
-		const survivors = [...previous.keys()].filter((id) => after.nodes.some((n) => n.id === id))
+		const survivors = Arr.filter([...previous.keys()], (id) => Arr.some(after.nodes, (n) => n.id === id))
 		const drift = (positions: Map<string, { x: number; y: number }>) =>
-			survivors.reduce((sum, id) => {
+			Arr.reduce(survivors, 0, (sum, id) => {
 				const from = previous.get(id)!
 				const to = positions.get(id)!
 				return sum + Math.hypot(to.x - from.x, to.y - from.y)
-			}, 0) / survivors.length
+			}) / survivors.length
 
 		const unanchored = drift(computeFlatPositions(after.nodes, after.edges))
 		const anchored = drift(computeFlatPositions(after.nodes, after.edges, undefined, previous))

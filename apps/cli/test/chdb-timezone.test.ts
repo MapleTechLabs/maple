@@ -2,7 +2,7 @@ import { describe, it } from "@effect/vitest"
 import { dlopen, FFIType, ptr } from "bun:ffi"
 import { CString } from "bun:ffi"
 import { strictEqual } from "node:assert"
-import { pinProcessTimezoneToUtc } from "../src/server/chdb"
+import { pinProcessTimezoneToUtc } from "@maple/local-server/chdb"
 
 /**
  * libchdb resolves its SERVER timezone from the process environment at init,

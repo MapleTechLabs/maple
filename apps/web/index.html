@@ -57,11 +57,11 @@
 		<!-- Pre-paint cold-boot splash. The app is client-rendered (createRoot,
 		     no SSR) and styles.css/Geist load with the JS bundle, so the first
 		     paint would otherwise be a blank #app. This self-contained, JS-free
-		     copy of <BootSplash /> (apps/web/src/components/boot-splash.tsx)
-		     paints immediately, themed via the html.dark/.light class the head
-		     script already set. It lives inside #app, so React's first commit
-		     replaces it with the identical-looking React splash — no blank
-		     frame, no flash. Keep it in visual sync with boot-splash.tsx. -->
+		     copy of the boot splash (src/layout/boot-splash.ts) paints
+		     immediately, themed via the html.dark/.light class the head script
+		     already set. It lives inside #app, so the app's first render
+		     replaces it with the identical-looking splash: no blank frame, no
+		     flash. Keep it in visual sync with boot-splash.ts. -->
 		<div id="app">
 			<div class="maple-bootshell" role="status" aria-label="Loading Maple">
 				<style>
@@ -481,7 +481,7 @@
 						/>
 						<!-- Blink lids — unclipped and over-covering onto the canopy on purpose;
 							     clipping them to the eye curve rings each shut eye with an
-							     antialiasing seam. See boot-splash.tsx for the full note. -->
+							     antialiasing seam. -->
 						<rect
 							class="maple-bootshell__lid"
 							x="119"
@@ -516,6 +516,6 @@
 				<p class="maple-bootshell__caption">Collecting spans…</p>
 			</div>
 		</div>
-		<script type="module" src="/src/main.tsx"></script>
+		<script type="module" src="/src/entry.ts"></script>
 	</body>
 </html>

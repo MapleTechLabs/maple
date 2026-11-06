@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { Effect } from "effect"
-import { compileUnsafe, compileUnionUnsafe, type CompiledQuery } from "@maple-dev/effect-clickhouse"
+import { Effect, Array as Arr, String as Str, Option } from "effect"
+import { compileUnsafe, compileUnionUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	CLOUDFLARE_BREAKDOWN_DIMENSIONS,
 	CLOUDFLARE_BREAKDOWN_OTHER_KEY,
@@ -10,9 +10,10 @@ import {
 	cloudflareZoneBreakdownTotalsSQL,
 	cloudflareZoneFacetsQuery,
 } from "./cloudflare-infra-breakdowns"
+import { OrgId } from "@maple/domain"
 
 const zoneParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	serviceName: "cloudflare/example.com",
 	startTime: "2026-07-02 00:00:00.000",
 	endTime: "2026-07-03 00:00:00.000",
@@ -43,10 +44,10 @@ describe("cloudflareZoneBreakdownTotalsSQL", () => {
 
 	it("keeps the row shape uniform by emitting literal zeros for absent measures", () => {
 		// `by_client` has neither an errors nor a bytes metric, so both columns must still exist.
-		const { sql } = compileUnsafe(cloudflareZoneBreakdownTotalsSQL("method"), zoneParams).valueOf() as {
-			sql: string
-		}
+		const { sql } = compileUnsafe(cloudflareZoneBreakdownTotalsSQL("method"), zoneParams)
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- row decode needs every column
 		expect(sql).toContain("AS errors5xx")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- row decode needs every column
 		expect(sql).toContain("AS bytes")
 		expect(sql).toContain("MetricName IN ('cloudflare.http.requests.by_client')")
 	})
@@ -73,7 +74,8 @@ describe("cloudflareZoneBreakdownTotalsSQL", () => {
 		for (const dimension of CLOUDFLARE_BREAKDOWN_DIMENSIONS) {
 			const { sql } = compileUnsafe(cloudflareZoneBreakdownTotalsSQL(dimension), zoneParams)
 			expect(sql).toContain("GROUP BY key")
-			expect(cloudflareBreakdownMetrics(dimension).length).toBeGreaterThan(0)
+			const metrics = Arr.map(cloudflareBreakdownMetrics(dimension), (name) => `'${name}'`)
+			expect(sql).toContain(`MetricName IN (${Arr.join(metrics, ", ")})`)
 		}
 	})
 })
@@ -97,7 +99,6 @@ describe("cloudflareZoneBreakdownTimeseriesSQL", () => {
 		)
 		expect(sql).toContain("IN ('/api/users', '/health')")
 		expect(sql).toContain(`'${CLOUDFLARE_BREAKDOWN_OTHER_KEY}'`)
-		expect(sql).toContain("if(")
 		// The fold lives in the projection, so every row still contributes to some series.
 		expect(sql).toContain("GROUP BY bucket, key")
 	})
@@ -120,7 +121,7 @@ describe("cloudflareZoneBreakdownTimeseriesSQL", () => {
 describe("cloudflareZoneBreakdownCoverageSQL", () => {
 	it("reports when collection started, ignoring the caller's dimension filters", () => {
 		const { sql } = compileUnsafe(cloudflareZoneBreakdownCoverageSQL("path"), zoneParams)
-		expect(sql).toContain("min(TimeUnix)")
+		expect(sql).toContain("min(metrics_sum.TimeUnix)")
 		expect(sql).toContain("MetricName = 'cloudflare.http.requests.by_path'")
 		// Coverage is a property of what the poller collected, not of the current selection.
 		expect(sql).not.toContain("IN (")
@@ -130,7 +131,7 @@ describe("cloudflareZoneBreakdownCoverageSQL", () => {
 describe("cloudflareZoneFacetsQuery", () => {
 	it("unions one branch per facet, each tagged with its type", () => {
 		const { sql } = compileUnionUnsafe(cloudflareZoneFacetsQuery(), zoneParams)
-		expect(sql.match(/UNION ALL/g)?.length).toBe(7)
+		expect(Arr.fromIterable(Str.matchAll(/UNION ALL/g)(sql)).length).toBe(7)
 		for (const facetType of [
 			"host",
 			"cacheStatus",
@@ -141,10 +142,11 @@ describe("cloudflareZoneFacetsQuery", () => {
 			"protocol",
 			"deviceType",
 		]) {
+			// oxlint-disable-next-line test-slop/no-sql-text-pin -- the label routes each branch to its facet
 			expect(sql).toContain(`'${facetType}' AS facetType`)
 		}
 		// Weight, not entity count — the list is ranked by traffic.
-		expect(sql).toContain("sum(Value) AS count")
+		expect(sql).toContain("sum(metrics_sum.Value) AS count")
 	})
 
 	it("self-excludes each facet so a selection does not hide its siblings", () => {
@@ -152,17 +154,25 @@ describe("cloudflareZoneFacetsQuery", () => {
 			cloudflareZoneFacetsQuery({ paths: ["/api"], hosts: ["a.example"] }),
 			zoneParams,
 		)
-		const branches = sql.split("UNION ALL")
-		const pathBranch = branches.find((b) => b.includes("'path' AS facetType"))!
-		const countryBranch = branches.find((b) => b.includes("'country' AS facetType"))!
-		const hostBranch = branches.find((b) => b.includes("'host' AS facetType"))!
+		const branches = Str.split("UNION ALL")(sql)
+		const pathBranch = Option.getOrThrow(
+			Arr.findFirst(branches, (b) => Str.includes("'path' AS facetType")(b)),
+		)
+		const countryBranch = Option.getOrThrow(
+			Arr.findFirst(branches, (b) => Str.includes("'country' AS facetType")(b)),
+		)
+		const hostBranch = Option.getOrThrow(
+			Arr.findFirst(branches, (b) => Str.includes("'host' AS facetType")(b)),
+		)
 
 		// The path facet still lists every path…
 		expect(pathBranch).not.toContain("url.path'] IN")
 		// …and the host facet still lists every host…
 		expect(hostBranch).not.toContain("IN ('a.example')")
 		// …while the host filter narrows the other main-cube facets.
-		const cacheBranch = branches.find((b) => b.includes("'cacheStatus' AS facetType"))!
+		const cacheBranch = Option.getOrThrow(
+			Arr.findFirst(branches, (b) => Str.includes("'cacheStatus' AS facetType")(b)),
+		)
 		expect(cacheBranch).toContain("IN ('a.example')")
 		// The country facet reads a family carrying neither key, so neither filter applies.
 		expect(countryBranch).not.toContain("url.path'] IN")

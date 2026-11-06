@@ -15,19 +15,22 @@ import {
 	renderPullRequestContext,
 	reviewablePathsInListing,
 } from "./pull-request"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { PrChangedFilesOutput, PrFileDiffOutput } from "@maple/domain/mcp-outputs"
 
 describe("annotatePatch", () => {
 	it("numbers additions and context on the new side and leaves deletions unnumbered", () => {
-		const patch = [
-			"@@ -10,3 +10,4 @@ export const handler",
-			" const a = 1",
-			"-const b = 2",
-			"+const b = 3",
-			"+const c = 4",
-			" return a",
-		].join("\n")
+		const patch = Arr.join(
+			[
+				"@@ -10,3 +10,4 @@ export const handler",
+				" const a = 1",
+				"-const b = 2",
+				"+const b = 3",
+				"+const c = 4",
+				" return a",
+			],
+			"\n",
+		)
 		const { lines, truncated } = annotatePatch(patch)
 		assert.isFalse(truncated)
 		assert.deepEqual(lines, [
@@ -41,7 +44,7 @@ describe("annotatePatch", () => {
 	})
 
 	it("restarts numbering at every hunk header", () => {
-		const patch = ["@@ -1,1 +1,1 @@", "+first", "@@ -40,1 +50,2 @@", "+second", " ctx"].join("\n")
+		const patch = Arr.join(["@@ -1,1 +1,1 @@", "+first", "@@ -40,1 +50,2 @@", "+second", " ctx"], "\n")
 		const { lines } = annotatePatch(patch)
 		assert.include(lines, "    1 + first")
 		assert.include(lines, "   50 + second")
@@ -54,7 +57,8 @@ describe("annotatePatch", () => {
 	})
 
 	it("cuts a diff past the line bound and says so", () => {
-		const patch = ["@@ -1,0 +1,2000 @@", ...Array.from({ length: 2_000 }, (_, i) => `+line ${i}`)].join(
+		const patch = Arr.join(
+			["@@ -1,0 +1,2000 @@", ...Array.from({ length: 2_000 }, (_, i) => `+line ${i}`)],
 			"\n",
 		)
 		const { lines, truncated } = annotatePatch(patch)
@@ -124,7 +128,8 @@ describe("renderFileDiffs", () => {
 		status: "modified" as const,
 		additions: size,
 		deletions: 0,
-		patch: ["@@ -1,0 +1," + size + " @@", ...Array.from({ length: size }, (_, i) => `+line ${i}`)].join(
+		patch: Arr.join(
+			["@@ -1,0 +1," + size + " @@", ...Array.from({ length: size }, (_, i) => `+line ${i}`)],
 			"\n",
 		),
 	})
@@ -144,7 +149,7 @@ describe("renderFileDiffs", () => {
 			renderFileDiffs(
 				"octo/shop",
 				7,
-				paths.map((path) => file(path, 3_000)),
+				Arr.map(paths, (path) => file(path, 3_000)),
 				paths,
 			).content[0]?.text ?? ""
 		assert.include(text, "## a.ts")
@@ -165,7 +170,7 @@ describe("renderPullRequestContext", () => {
 	it("lists failing checks first and clips long comments", () => {
 		const result = renderPullRequestContext("octo/shop", 7, {
 			commits: [{ sha: "abcdef1234567890", message: "feat: add orders\n\nbody" }],
-			comments: [{ author: "octo", path: "src/a.ts", line: 3, body: "x".repeat(1_000) }],
+			comments: [{ author: "octo", path: "src/a.ts", line: 3, body: Str.repeat(1_000)("x") }],
 			checks: [
 				{ name: "lint", status: "completed", conclusion: "success", title: null },
 				{ name: "typecheck", status: "completed", conclusion: "failure", title: "2 errors" },
@@ -174,7 +179,7 @@ describe("renderPullRequestContext", () => {
 		const text = result.content[0]?.text ?? ""
 		assert.include(text, "- abcdef1 feat: add orders")
 		assert.include(text, "- @octo on src/a.ts:3: ")
-		assert.notInclude(text, "x".repeat(500))
+		assert.notInclude(text, Str.repeat(500)("x"))
 		assert.isBelow(text.indexOf("typecheck: failure · 2 errors"), text.indexOf("lint: success"))
 	})
 })
@@ -191,16 +196,17 @@ describe("reading the answers back", () => {
 	})
 
 	it("finds the reviewed files that have a patch in a pr_changed_files answer", () => {
-		const answer = renderChangedFiles("octo/shop", 7, [
-			file("src/orders.ts"),
-			file("src/orders.test.ts"),
-			file("src/moved.ts", { previousPath: "src/old.ts" }),
-			file("infra/alchemy.run.ts"),
-			file("package.json"),
-			file("docs/orders.md"),
-			file("bun.lock"),
-			file("assets/logo.ts", { patch: null }),
-		]).content[0]!.text
+		const answer =
+			renderChangedFiles("octo/shop", 7, [
+				file("src/orders.ts"),
+				file("src/orders.test.ts"),
+				file("src/moved.ts", { previousPath: "src/old.ts" }),
+				file("infra/alchemy.run.ts"),
+				file("package.json"),
+				file("docs/orders.md"),
+				file("bun.lock"),
+				file("assets/logo.ts", { patch: null }),
+			]).content[0]?.text ?? ""
 		assert.deepEqual(reviewablePathsInListing(answer), [
 			"src/orders.ts",
 			"src/orders.test.ts",
@@ -213,14 +219,15 @@ describe("reading the answers back", () => {
 	it("finds only the files whose diff a pr_file_diff answer showed", () => {
 		const big = {
 			...file("src/big.ts"),
-			patch: `@@ -1,0 +1,1400 @@\n${`+${"x".repeat(60)}\n`.repeat(1400)}`,
+			patch: `@@ -1,0 +1,1400 @@\n${Str.repeat(1400)(`+${Str.repeat(60)("x")}\n`)}`,
 		}
-		const answer = renderFileDiffs(
-			"octo/shop",
-			7,
-			[file("src/a.ts"), big, file("src/c.ts")],
-			["src/a.ts", "src/missing.ts", "src/big.ts", "src/c.ts"],
-		).content[0]!.text
+		const answer =
+			renderFileDiffs(
+				"octo/shop",
+				7,
+				[file("src/a.ts"), big, file("src/c.ts")],
+				["src/a.ts", "src/missing.ts", "src/big.ts", "src/c.ts"],
+			).content[0]?.text ?? ""
 		assert.include(answer, "Not included")
 		const shown = pathsInDiffAnswer(answer)
 		// The unknown path shows nothing, and the deferred one is named without its diff.
@@ -236,22 +243,23 @@ describe("the typed outputs", () => {
 		status: "modified" as const,
 		additions: size,
 		deletions: 0,
-		patch: ["@@ -1,0 +1," + size + " @@", ...Array.from({ length: size }, (_, i) => `+line ${i}`)].join(
+		patch: Arr.join(
+			["@@ -1,0 +1," + size + " @@", ...Array.from({ length: size }, (_, i) => `+line ${i}`)],
 			"\n",
 		),
 	})
 
 	it("encode through their schemas", () => {
 		const listing = changedFilesOutput("octo/shop", 7, [file("src/a.ts"), file("bun.lock")])
-		const decoded = Schema.decodeUnknownSync(PrChangedFilesOutput)(
+		const decoded = Schema.decodeSync(PrChangedFilesOutput)(
 			Schema.encodeUnknownSync(PrChangedFilesOutput)(listing),
 		)
 		assert.deepEqual(
-			decoded.files.map((entry) => entry.kind),
+			Arr.map(decoded.files, (entry) => entry.kind),
 			["source", "lockfile"],
 		)
 		const diffs = fileDiffsOutput("octo/shop", 7, [file("src/a.ts")], ["src/a.ts", "nope.ts"])
-		const decodedDiffs = Schema.decodeUnknownSync(PrFileDiffOutput)(
+		const decodedDiffs = Schema.decodeSync(PrFileDiffOutput)(
 			Schema.encodeUnknownSync(PrFileDiffOutput)(diffs),
 		)
 		assert.deepEqual(decodedDiffs.notChanged, ["nope.ts"])
@@ -263,7 +271,7 @@ describe("the typed outputs", () => {
 			fileDiffsOutput(
 				"octo/shop",
 				7,
-				paths.map((path) => file(path, 3_000)),
+				Arr.map(paths, (path) => file(path, 3_000)),
 				paths,
 			),
 		)

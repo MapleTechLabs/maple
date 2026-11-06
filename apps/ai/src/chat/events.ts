@@ -9,8 +9,10 @@
  * variant should make this file fail to compile, not silently vanish from the transcript.
  */
 import type { ChatEvent, ChatTaskRef } from "@maple/domain/chat-session"
-import type * as RunEvent from "effect-agent/run-event"
-import { APPROVAL_REQUIRED, type ToolUiPayload } from "../mcp/tools/llm-tools"
+import type * as RunEvent from "@yielded/agent/run-event"
+import { APPROVAL_REQUIRED, type ToolUiPayload, type UiSource } from "../mcp/tools/llm-tools"
+import { Array as Arr, Option, String as Str } from "effect"
+import { indexOfFrom } from "@maple/strings"
 
 /** Events the session log accepts. `seq` belongs to the Durable Object, which owns the ordering. */
 type WithoutSeq<T> = T extends unknown ? Omit<T, "seq"> : never
@@ -37,9 +39,39 @@ export interface AdapterContext {
 	 * result stays text; the payload rides on the wire event beside it as `{ text, ui }`.
 	 */
 	readonly uiOf?: (toolCallId: string) => ToolUiPayload | undefined
+	/**
+	 * The calls a `run_code` program made that produced a UI payload, taken once when the program
+	 * settles. The engine announces none of them, so without this their payloads never reach a reader.
+	 */
+	readonly programCallsOf?: (toolCallId: string) => ReadonlyArray<ProgramCall>
 	/** One {@link makeTextSanitizer} per run: the state it keeps spans deltas. */
 	readonly sanitizer: TextSanitizer
 }
+
+/** One call a `run_code` program made, with the UI payload its answer carried. */
+export interface ProgramCall extends UiSource {
+	readonly callId: string
+	readonly ui: ToolUiPayload
+}
+
+/** A program's calls as ordinary settled tool calls, written just before the program's own result. */
+const programCallEvents = (context: AdapterContext, toolCallId: string): ReadonlyArray<ChatTurnEvent> =>
+	Arr.flatMap(context.programCallsOf?.(toolCallId) ?? [], (call) => [
+		tagged(context, {
+			type: "tool-call",
+			messageId: context.messageId,
+			callId: call.callId,
+			name: call.name,
+			input: call.input,
+			...optionalLabel(context.labelOf?.(call.name)),
+		}),
+		tagged(context, {
+			type: "tool-result",
+			messageId: context.messageId,
+			callId: call.callId,
+			output: { text: call.text, ui: call.ui },
+		}),
+	])
 
 /**
  * Markup a model writes into `content` that is not for the reader.
@@ -68,13 +100,13 @@ const HIDDEN_BLOCKS: ReadonlyArray<{
 	{ open: "<|tool_call_begin|>", close: "<|tool_call_end|>", leak: true },
 ]
 
-const LONGEST_OPEN = Math.max(...HIDDEN_BLOCKS.map(({ open }) => open.length))
+const LONGEST_OPEN = Math.max(...Arr.map(HIDDEN_BLOCKS, ({ open }) => open.length))
 
 /** How much of the tail could still grow into an opener, and so must not be emitted yet. */
 const heldTail = (text: string): number => {
 	for (let size = Math.min(LONGEST_OPEN - 1, text.length); size > 0; size--) {
-		const tail = text.slice(-size)
-		if (HIDDEN_BLOCKS.some(({ open }) => open.startsWith(tail))) return size
+		const tail = Str.slice(-size)(text)
+		if (Arr.some(HIDDEN_BLOCKS, ({ open }) => Str.startsWith(tail)(open))) return size
 	}
 	return 0
 }
@@ -120,33 +152,34 @@ export const makeTextSanitizer = (): TextSanitizer => {
 			const emit = (value: string) => {
 				if (value === "") return
 				out += value
-				previous = value.slice(-1)
+				previous = Str.slice(-1)(value)
 			}
 			for (;;) {
 				if (closing !== undefined) {
-					const end = buffer.indexOf(closing.close)
+					const end = Str.indexOf(closing.close)(buffer)
 					// Nothing inside a block is emitted; keep only what could still close it. A block
 					// the turn never closes takes the rest of the turn's text with it, which is what
 					// an unparsed tool call at the end of a reply deserves.
-					if (end === -1) {
-						buffer = buffer.slice(Math.max(0, buffer.length - closing.close.length + 1))
+					if (Option.isNone(end)) {
+						buffer = Str.slice(Math.max(0, buffer.length - closing.close.length + 1))(buffer)
 						return out
 					}
-					buffer = buffer.slice(end + closing.close.length)
+					buffer = Str.slice(end.value + closing.close.length)(buffer)
 					closing = undefined
 					from = 0
 					continue
 				}
-				const opened = HIDDEN_BLOCKS.map((block) => ({
-					at: buffer.indexOf(block.open, from),
-					block,
-				}))
-					.filter(({ at }) => at !== -1)
-					.sort((left, right) => left.at - right.at)[0]
+				const opened = Arr.filter(
+					Arr.map(HIDDEN_BLOCKS, (block) => ({
+						at: indexOfFrom(buffer, block.open, from),
+						block,
+					})),
+					({ at }) => at !== -1,
+				).sort((left, right) => left.at - right.at)[0]
 				if (opened === undefined) {
 					const held = heldTail(buffer)
-					emit(buffer.slice(0, buffer.length - held))
-					buffer = buffer.slice(buffer.length - held)
+					emit(Str.slice(0, buffer.length - held)(buffer))
+					buffer = Str.slice(buffer.length - held)(buffer)
 					return out
 				}
 				// A tag in a code span is the model talking ABOUT markup, which is prose — and the
@@ -159,9 +192,9 @@ export const makeTextSanitizer = (): TextSanitizer => {
 				// The text before the block keeps its own held tail rather than being flushed
 				// whole, so cutting out what sits between two halves of a tag cannot splice them
 				// into a complete one on the way out.
-				const before = buffer.slice(0, opened.at)
-				emit(before.slice(0, before.length - heldTail(before)))
-				buffer = buffer.slice(opened.at + opened.block.open.length)
+				const before = Str.slice(0, opened.at)(buffer)
+				emit(Str.slice(0, before.length - heldTail(before))(before))
+				buffer = Str.slice(opened.at + opened.block.open.length)(buffer)
 				from = 0
 				closing = opened.block
 				if (opened.block.leak) leaked ??= opened.block.open
@@ -206,9 +239,7 @@ const childEvent = (
 				readonly reason: "stop" | "error" | "aborted" | "max-steps"
 				readonly error?: string
 		  },
-): ReadonlyArray<ChatTurnEvent> => [
-	{ ...body, messageId: event.toolCallId, task: childTask(event, context) } as ChatTurnEvent,
-]
+): ReadonlyArray<ChatTurnEvent> => [{ ...body, messageId: event.toolCallId, task: childTask(event, context) }]
 
 /**
  * The turn's last text, ahead of the event that ends it.
@@ -220,6 +251,12 @@ const flushed = (context: AdapterContext): ReadonlyArray<ChatTurnEvent> => {
 	const text = context.sanitizer.flush()
 	return text === "" ? [] : [tagged(context, { type: "text-delta", messageId: context.messageId, text })]
 }
+
+/** The end of a turn that a landed submit tool settled, in place of the engine's `RunCompleted`. */
+export const settledTurnEnd = (context: AdapterContext): ReadonlyArray<ChatTurnEvent> => [
+	...flushed(context),
+	tagged(context, { type: "turn-end", messageId: context.messageId, reason: "stop" }),
+]
 
 /** Stamp an event with the ref that routes it into a parent's task card. */
 const tagged = <E extends ChatTurnEvent>(context: AdapterContext, event: E): E =>
@@ -272,6 +309,7 @@ export const toChatEvents = (
 		case "ToolCallSucceeded": {
 			const ui = context.uiOf?.(event.toolCallId)
 			return [
+				...programCallEvents(context, event.toolCallId),
 				tagged(context, {
 					type: "tool-result",
 					messageId: context.messageId,
@@ -286,6 +324,7 @@ export const toChatEvents = (
 			// approval was refused as already settled.
 			if (event.errorTag === APPROVAL_REQUIRED) return []
 			return [
+				...programCallEvents(context, event.toolCallId),
 				tagged(context, {
 					type: "tool-result",
 					messageId: context.messageId,
@@ -351,6 +390,8 @@ export const toChatEvents = (
 		case "ApprovalRequested":
 		case "TurnStarted":
 		case "ModelStarted":
+		// Only emitted under `restartOnJoinedInput`, which no Maple policy sets.
+		case "ModelRestarted":
 		case "ReasoningDelta":
 		case "ToolCallStarted":
 		case "ToolProgress":

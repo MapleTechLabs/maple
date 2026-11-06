@@ -1,0 +1,408 @@
+import { describe, expect, it } from "vitest"
+import {
+	convertFamiliesToOtlp,
+	countDataPoints,
+	encodeExportRequestChunks,
+	mergeExportRequests,
+	splitExportRequest,
+	toUnixNano,
+	type OtlpExportRequest,
+	type OtlpMetric,
+	type ScrapeOtlpContext,
+} from "./otlp"
+import { parsePrometheusText } from "./parser"
+
+const ctx: ScrapeOtlpContext = {
+	resource: { "service.name": "node", "scrape.target": "Node Exporter" },
+	scopeName: "test-scraper",
+	job: "node",
+	instance: "node.example.com:9100",
+	targetLabels: { env: "prod" },
+	scrapeTimeMs: 1750000000000,
+}
+
+const convert = (body: string) => convertFamiliesToOtlp(parsePrometheusText(body).families, ctx)
+
+const at = <T>(items: ReadonlyArray<T>, index: number): T => {
+	const item = items[index]
+	if (item === undefined) throw new Error(`no element at ${index}`)
+	return item
+}
+
+const metricByName = (metrics: ReadonlyArray<OtlpMetric>, name: string): OtlpMetric => {
+	const metric = metrics.find((m) => m.name === name)
+	if (!metric) throw new Error(`metric ${name} not found`)
+	return metric
+}
+
+const metricsOf = (body: string): ReadonlyArray<OtlpMetric> => {
+	const { request } = convert(body)
+	if (request === null) throw new Error("expected a request")
+	return at(at(request.resourceMetrics, 0).scopeMetrics, 0).metrics
+}
+
+const attrsToRecord = (attributes: ReadonlyArray<{ key: string; value: { stringValue: string } }>) =>
+	Object.fromEntries(attributes.map((attr) => [attr.key, attr.value.stringValue]))
+
+describe("toUnixNano", () => {
+	it("converts epoch ms to a ns string without float precision loss", () => {
+		// 1781077905732 ms * 1e6 = 1.78e18 ns > Number.MAX_SAFE_INTEGER — must
+		// be exact, which rules out JS number arithmetic.
+		expect(toUnixNano(1781077905732)).toBe("1781077905732000000")
+		expect(toUnixNano(0)).toBe("0")
+	})
+})
+
+describe("convertFamiliesToOtlp", () => {
+	it("returns null request for empty scrapes", () => {
+		const result = convert("")
+		expect(result.request).toBeNull()
+		expect(result.dataPointCounts).toEqual({ sum: 0, gauge: 0, histogram: 0 })
+	})
+
+	it("emits exactly the caller's resource attributes, in order, and scope name", () => {
+		const { request } = convert("# TYPE up gauge\nup 1")
+		const resource = at(request!.resourceMetrics, 0).resource.attributes
+		expect(resource.map((attr) => attr.key)).toEqual(["service.name", "scrape.target"])
+		expect(attrsToRecord(resource)).toEqual({ "service.name": "node", "scrape.target": "Node Exporter" })
+		expect(at(at(request!.resourceMetrics, 0).scopeMetrics, 0).scope.name).toBe("test-scraper")
+	})
+
+	it("converts counters to cumulative monotonic sums", () => {
+		const metrics = metricsOf(
+			'# TYPE requests counter\n# HELP requests Total.\nrequests_total{code="200"} 100',
+		)
+		const metric = metricByName(metrics, "requests_total")
+		expect(metric.description).toBe("Total.")
+		expect(metric.sum).toBeDefined()
+		expect(metric.sum!.aggregationTemporality).toBe(2)
+		expect(metric.sum!.isMonotonic).toBe(true)
+		const point = at(metric.sum!.dataPoints, 0)
+		expect(point.asDouble).toBe(100)
+		expect(point.startTimeUnixNano).toBe("0")
+		expect(point.timeUnixNano).toBe(toUnixNano(ctx.scrapeTimeMs))
+	})
+
+	it("uses the sample timestamp when present", () => {
+		const metrics = metricsOf('# TYPE g gauge\ng{a="1"} 1 1712345678901')
+		expect(at(metricByName(metrics, "g").gauge!.dataPoints, 0).timeUnixNano).toBe(
+			toUnixNano(1712345678901),
+		)
+	})
+
+	it("merges target labels and sample labels into data point attributes, system labels win", () => {
+		const metrics = metricsOf(
+			'# TYPE g gauge\ng{job="evil",instance="evil",env="staging",custom="yes"} 1',
+		)
+		const attrs = attrsToRecord(at(metricByName(metrics, "g").gauge!.dataPoints, 0).attributes)
+		expect(attrs).toEqual({
+			env: "staging",
+			custom: "yes",
+			job: "node",
+			instance: "node.example.com:9100",
+		})
+	})
+
+	it("de-cumulates histogram buckets, excludes +Inf from explicitBounds, keeps numeric counts", () => {
+		const metrics = metricsOf(
+			[
+				"# TYPE lat histogram",
+				'lat_bucket{le="0.1"} 1',
+				'lat_bucket{le="1"} 4',
+				'lat_bucket{le="5"} 9',
+				'lat_bucket{le="+Inf"} 10',
+				"lat_sum 42.5",
+				"lat_count 10",
+			].join("\n"),
+		)
+		const metric = metricByName(metrics, "lat")
+		expect(metric.histogram!.aggregationTemporality).toBe(2)
+		const point = at(metric.histogram!.dataPoints, 0)
+		expect(point.explicitBounds).toEqual([0.1, 1, 5])
+		expect(point.bucketCounts).toEqual([1, 3, 5, 1])
+		// opentelemetry-proto's serde expects count/bucketCounts as JSON numbers (NOT
+		// the spec's strings) and timeUnixNano as a string — pin both.
+		expect(typeof point.count).toBe("number")
+		expect(point.bucketCounts.every((count) => typeof count === "number")).toBe(true)
+		expect(typeof point.timeUnixNano).toBe("string")
+		expect(point.count).toBe(10)
+		expect(point.sum).toBe(42.5)
+		expect(point.bucketCounts.reduce((a, b) => a + b, 0)).toBe(point.count)
+		expect(point.bucketCounts.length).toBe(point.explicitBounds.length + 1)
+	})
+
+	it("groups histogram series by label set (minus le) into one metric", () => {
+		const metrics = metricsOf(
+			[
+				"# TYPE lat histogram",
+				'lat_bucket{path="/a",le="1"} 2',
+				'lat_bucket{path="/a",le="+Inf"} 3',
+				'lat_sum{path="/a"} 1.2',
+				'lat_count{path="/a"} 3',
+				'lat_bucket{path="/b",le="1"} 5',
+				'lat_bucket{path="/b",le="+Inf"} 5',
+				'lat_sum{path="/b"} 2.5',
+				'lat_count{path="/b"} 5',
+			].join("\n"),
+		)
+		const metric = metricByName(metrics, "lat")
+		expect(metric.histogram!.dataPoints).toHaveLength(2)
+		const byPath = Object.fromEntries(
+			metric.histogram!.dataPoints.map((point) => [attrsToRecord(point.attributes).path, point]),
+		)
+		expect(byPath["/a"]?.count).toBe(3)
+		expect(byPath["/a"]?.bucketCounts).toEqual([2, 1])
+		expect(byPath["/b"]?.bucketCounts).toEqual([5, 0])
+		expect(attrsToRecord(byPath["/a"].attributes)).not.toHaveProperty("le")
+	})
+
+	it("clamps negative bucket deltas and tolerates a missing _count via the +Inf bucket", () => {
+		const clamped = metricsOf(
+			[
+				"# TYPE a histogram",
+				'a_bucket{le="1"} 5',
+				'a_bucket{le="2"} 3',
+				'a_bucket{le="+Inf"} 5',
+				"a_count 5",
+				"a_sum 1",
+			].join("\n"),
+		)
+		expect(at(metricByName(clamped, "a").histogram!.dataPoints, 0).bucketCounts).toEqual([5, 0, 2])
+
+		const viaInf = metricsOf(
+			["# TYPE b histogram", 'b_bucket{le="1"} 1', 'b_bucket{le="+Inf"} 4', "b_sum 2"].join("\n"),
+		)
+		expect(at(metricByName(viaInf, "b").histogram!.dataPoints, 0).count).toBe(4)
+
+		const incomplete = convert(["# TYPE c histogram", 'c_bucket{le="1"} 1', "c_sum 2"].join("\n"))
+		expect(incomplete.request).toBeNull()
+		expect(incomplete.droppedSeriesCount).toBe(1)
+	})
+
+	it("omits the histogram sum field when the scrape lacks one", () => {
+		const metrics = metricsOf(["# TYPE h histogram", 'h_bucket{le="+Inf"} 2', "h_count 2"].join("\n"))
+		expect(metricByName(metrics, "h").histogram!.dataPoints[0]).not.toHaveProperty("sum")
+	})
+
+	it("degrades summaries: _sum/_count as sums, quantiles as a gauge", () => {
+		const metrics = metricsOf(
+			["# TYPE rpc summary", 'rpc{quantile="0.5"} 0.05', "rpc_sum 102.1", "rpc_count 800"].join("\n"),
+		)
+		expect(metricByName(metrics, "rpc_sum").sum!.isMonotonic).toBe(false)
+		expect(metricByName(metrics, "rpc_count").sum!.isMonotonic).toBe(true)
+		const quantiles = metricByName(metrics, "rpc").gauge!.dataPoints
+		expect(attrsToRecord(at(quantiles, 0).attributes).quantile).toBe("0.5")
+	})
+
+	it("drops non-finite values everywhere and counts them", () => {
+		const result = convert(
+			[
+				"# TYPE c counter",
+				"c_total NaN",
+				"# TYPE g gauge",
+				'g{kind="inf"} +Inf',
+				'g{kind="ok"} 1',
+				"# TYPE s summary",
+				's{quantile="0.5"} NaN',
+				"s_count 5",
+			].join("\n"),
+		)
+		expect(result.droppedSeriesCount).toBe(3)
+		expect(result.dataPointCounts).toEqual({ sum: 1, gauge: 1, histogram: 0 })
+		// The serialized payload must be valid JSON with no NaN/Infinity leakage.
+		const roundTripped = JSON.parse(JSON.stringify(result.request)) as unknown
+		expect(roundTripped).toEqual(result.request)
+	})
+})
+
+describe("splitExportRequest", () => {
+	const numberPoints = (count: number, offset = 0) =>
+		Array.from({ length: count }, (_, index) => ({
+			attributes: [{ key: "shard", value: { stringValue: String(offset + index) } }],
+			startTimeUnixNano: "0",
+			timeUnixNano: "1750000000000000000",
+			asDouble: offset + index,
+		}))
+
+	const gaugeMetric = (name: string, count: number): OtlpMetric => ({
+		name,
+		description: "",
+		unit: "",
+		gauge: { dataPoints: numberPoints(count) },
+	})
+
+	const requestOf = (metrics: ReadonlyArray<OtlpMetric>) => ({
+		resourceMetrics: [
+			{
+				resource: { attributes: [{ key: "service.name", value: { stringValue: "scylla" } }] },
+				scopeMetrics: [{ scope: { name: "test-scraper" }, metrics }],
+			},
+		],
+	})
+
+	const metricsIn = (request: OtlpExportRequest) =>
+		at(at(request.resourceMetrics, 0).scopeMetrics, 0).metrics
+
+	it("returns the request untouched when it fits the budget", () => {
+		const request = requestOf([gaugeMetric("up", 10)])
+		const chunks = splitExportRequest(request, 100)
+		expect(chunks).toHaveLength(1)
+		expect(chunks[0]).toBe(request)
+	})
+
+	it("splits a single oversized metric across chunks, preserving every data point", () => {
+		// The case that took Scylla down: one family fans out to a series per
+		// shard per table, so metric-level splitting would not have helped.
+		const request = requestOf([gaugeMetric("scylla_reactor_utilization", 25)])
+		const chunks = splitExportRequest(request, 10)
+
+		expect(chunks).toHaveLength(3)
+		expect(chunks.map((chunk) => countDataPoints(chunk))).toEqual([10, 10, 5])
+		expect(chunks.flatMap((chunk) => metricsIn(chunk).flatMap((m) => m.gauge!.dataPoints))).toEqual(
+			metricsIn(request).flatMap((m) => m.gauge!.dataPoints),
+		)
+	})
+
+	it("packs several metrics per chunk and repeats resource and scope in each", () => {
+		const request = requestOf([gaugeMetric("a", 4), gaugeMetric("b", 4), gaugeMetric("c", 4)])
+		const chunks = splitExportRequest(request, 5)
+
+		expect(chunks.map((chunk) => countDataPoints(chunk))).toEqual([5, 5, 2])
+		for (const chunk of chunks) {
+			expect(at(chunk.resourceMetrics, 0).resource).toEqual(at(request.resourceMetrics, 0).resource)
+			expect(at(at(chunk.resourceMetrics, 0).scopeMetrics, 0).scope.name).toBe("test-scraper")
+		}
+		// `b` straddles the first two chunks: 4 of `a` + 1 of `b`, then the rest.
+		expect(metricsIn(at(chunks, 0)).map((m) => m.name)).toEqual(["a", "b"])
+		expect(metricsIn(at(chunks, 1)).map((m) => m.name)).toEqual(["b", "c"])
+	})
+
+	it("keeps a sum's temporality and monotonicity on every slice", () => {
+		const request = requestOf([
+			{
+				name: "scylla_transport_requests_served",
+				description: "",
+				unit: "",
+				sum: { dataPoints: numberPoints(6), aggregationTemporality: 2, isMonotonic: true },
+			},
+		])
+		const chunks = splitExportRequest(request, 4)
+
+		expect(chunks).toHaveLength(2)
+		for (const chunk of chunks) {
+			const sum = at(metricsIn(chunk), 0).sum!
+			expect(sum.aggregationTemporality).toBe(2)
+			expect(sum.isMonotonic).toBe(true)
+		}
+	})
+
+	it("splits histogram data points without losing buckets", () => {
+		const histogramPoint = (index: number) => ({
+			attributes: [{ key: "shard", value: { stringValue: String(index) } }],
+			startTimeUnixNano: "0",
+			timeUnixNano: "1750000000000000000",
+			count: 10,
+			sum: 42.5,
+			bucketCounts: [1, 9],
+			explicitBounds: [0.1],
+		})
+		const request = requestOf([
+			{
+				name: "scylla_storage_proxy_write_latency",
+				description: "",
+				unit: "",
+				histogram: {
+					dataPoints: [histogramPoint(0), histogramPoint(1), histogramPoint(2)],
+					aggregationTemporality: 2,
+				},
+			},
+		])
+		const chunks = splitExportRequest(request, 2)
+
+		expect(chunks.map((chunk) => countDataPoints(chunk))).toEqual([2, 1])
+		for (const chunk of chunks) {
+			const histogram = at(metricsIn(chunk), 0).histogram!
+			expect(histogram.aggregationTemporality).toBe(2)
+			expect(at(histogram.dataPoints, 0).bucketCounts).toEqual([1, 9])
+		}
+	})
+
+	it("packs points from many resources into shared chunks, keeping each point's resource", () => {
+		const branch = (name: string) => ({
+			resource: { attributes: [{ key: "branch", value: { stringValue: name } }] },
+			scopeMetrics: [{ scope: { name: "test-scraper" }, metrics: [gaugeMetric(`${name}_up`, 3)] }],
+		})
+		const request = mergeExportRequests(
+			[1, 2, 3, 4, 5].map((n) => ({ resourceMetrics: [branch(`b${n}`)] })),
+		)
+		const chunks = splitExportRequest(request, 7)
+
+		// 15 points over 5 resources: one chunk per 7 points, not one per resource.
+		expect(chunks.map((chunk) => countDataPoints(chunk))).toEqual([7, 7, 1])
+		const pointsByBranch = (requests: ReadonlyArray<OtlpExportRequest>) =>
+			requests.flatMap((r) =>
+				r.resourceMetrics.flatMap((rm) =>
+					rm.scopeMetrics.flatMap((sm) =>
+						sm.metrics.flatMap((m) =>
+							m.gauge!.dataPoints.map(
+								(p) =>
+									`${at(rm.resource.attributes, 0).value.stringValue}:${m.name}:${p.asDouble}`,
+							),
+						),
+					),
+				),
+			)
+		expect(pointsByBranch(chunks)).toEqual(pointsByBranch([request]))
+	})
+
+	it("treats a non-positive budget as no splitting rather than looping forever", () => {
+		const request = requestOf([gaugeMetric("up", 5)])
+		expect(splitExportRequest(request, 0)).toEqual([request])
+		expect(splitExportRequest(request, -1)).toEqual([request])
+	})
+})
+
+describe("encodeExportRequestChunks", () => {
+	const wideMetric = (count: number): OtlpMetric => ({
+		name: "planetscale_vtgate_queries",
+		description: "",
+		unit: "",
+		gauge: {
+			dataPoints: Array.from({ length: count }, (_, index) => ({
+				attributes: [{ key: "table", value: { stringValue: `table_${index}_${"x".repeat(200)}` } }],
+				startTimeUnixNano: "0",
+				timeUnixNano: "1750000000000000000",
+				asDouble: index,
+			})),
+		},
+	})
+	const requestOf = (count: number): OtlpExportRequest => ({
+		resourceMetrics: [
+			{
+				resource: { attributes: [{ key: "service.name", value: { stringValue: "db" } }] },
+				scopeMetrics: [{ scope: { name: "test-scraper" }, metrics: [wideMetric(count)] }],
+			},
+		],
+	})
+	const decode = (body: Uint8Array): OtlpExportRequest => JSON.parse(new TextDecoder().decode(body))
+
+	it("keeps every body under the byte budget when the point budget alone would not", () => {
+		const request = requestOf(500)
+		const bodies = encodeExportRequestChunks(request, { maxDataPoints: 10_000, maxBytes: 20_000 })
+
+		expect(bodies.length).toBeGreaterThan(1)
+		for (const body of bodies) expect(body.byteLength).toBeLessThanOrEqual(20_000)
+		expect(bodies.reduce((total, body) => total + countDataPoints(decode(body)), 0)).toBe(500)
+	})
+
+	it("sends one body when the request fits both budgets", () => {
+		const request = requestOf(5)
+		const bodies = encodeExportRequestChunks(request, { maxDataPoints: 10_000, maxBytes: 1_000_000 })
+		expect(bodies.map(decode)).toEqual([request])
+	})
+
+	it("emits a single point over the byte budget alone rather than dropping it", () => {
+		const bodies = encodeExportRequestChunks(requestOf(3), { maxDataPoints: 10_000, maxBytes: 10 })
+		expect(bodies.map((body) => countDataPoints(decode(body)))).toEqual([1, 1, 1])
+	})
+})

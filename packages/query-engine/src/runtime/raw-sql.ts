@@ -1,13 +1,16 @@
-import { Effect, Option } from "effect"
+import { Effect, Option, Schema, Record as Rec, String as Str, Array as Arr } from "effect"
 import {
 	MAX_RAW_SQL_CELL_LENGTH,
 	MAX_RAW_SQL_RESULT_BYTES,
 	MAX_RAW_SQL_RESULT_ROWS,
 	RawSqlValidationError,
 } from "@maple/domain/http"
-import { rawSqlIssue, type RawSqlWorkload } from "@maple/domain/raw-sql"
-import type { QueryProfileName } from "../profiles"
-import { escapeClickHouseString, splitTerminalClauses } from "@maple-dev/effect-clickhouse/sql"
+import { ORG_FILTER_MACRO_RE, rawSqlIssue, type RawSqlWorkload } from "@maple/domain/raw-sql"
+import type { QueryProfileName, WarehouseQuerySettings } from "../profiles"
+import { alertQueryLimits } from "../datetime"
+import { escapeClickHouseString, splitTerminalClauses } from "@maple-dev/effect-orm/sql"
+import type { OrgId } from "@maple/domain"
+import { replaceWith } from "@maple/strings"
 
 // User-authored ClickHouse SQL: validation, macro expansion, and execution.
 //
@@ -24,11 +27,15 @@ export type { RawSqlWorkload }
 
 export interface PrepareRawSqlInput {
 	readonly sql: string
-	readonly orgId: string
+	readonly orgId: OrgId
 	readonly startTime: string
 	readonly endTime: string
 	readonly granularitySeconds: number
 	readonly workload: RawSqlWorkload
+	/** `$__timeGroup` keys every row at the range start: one bucket per group. Alert evaluation sets it. */
+	readonly wholeRange?: boolean
+	/** Return the first 1,000 rows of a longer result instead of failing on the cap. */
+	readonly truncateAtCap?: boolean
 }
 
 export interface PreparedRawSql {
@@ -38,6 +45,8 @@ export interface PreparedRawSql {
 
 export interface ExecuteRawSqlInput extends PrepareRawSqlInput {
 	readonly context: string
+	/** An alert rule's check interval, which sets its time and memory limits. Alert workload only. */
+	readonly alertIntervalMinutes?: number
 }
 
 export interface ExecuteRawSqlResult {
@@ -52,12 +61,38 @@ export interface RawSqlWarehouse<TTenant, E> {
 	readonly rawSqlQuery: (
 		tenant: TTenant,
 		sql: string,
-		options: { readonly profile: QueryProfileName; readonly context: string },
+		options: {
+			readonly profile: QueryProfileName
+			readonly context: string
+			readonly settings?: WarehouseQuerySettings
+		},
 	) => Effect.Effect<ReadonlyArray<Record<string, unknown>>, E>
+}
+
+/**
+ * `$__timeGroup` on a grid of range-wide buckets anchored at the range start, so every
+ * row in [start, end) groups at start and a predicate on the macro still reads each
+ * row. Arithmetic, not `toStartOfInterval`'s origin argument, which 24.8 lacks.
+ */
+const rangeAlignedGroup = (column: string, startLiteral: string, endLiteral: string): string => {
+	const start = `toInt64(toUnixTimestamp(${startLiteral}))`
+	const width = `greatest(toInt64(toUnixTimestamp(${endLiteral})) - ${start}, 1)`
+	const offset = `toInt64(floor((toInt64(toUnixTimestamp(${column})) - ${start}) / ${width}))`
+	return `toDateTime(${start} + ${offset} * ${width})`
 }
 
 const fail = (code: RawSqlValidationError["code"], message: string) =>
 	Effect.fail(new RawSqlValidationError({ code, message }))
+
+// Literal splices, never `String.replace` patterns: see the `$` note in `prepareRawSql`.
+const replaceAllLiteral = (text: string, search: string, replacement: string): string =>
+	Arr.join(Str.split(search)(text), replacement)
+
+const replaceFirstLiteral = (text: string, search: string, replacement: string): string =>
+	Option.match(Str.indexOf(search)(text), {
+		onNone: () => text,
+		onSome: (at) => Str.slice(0, at)(text) + replacement + Str.slice(at + search.length)(text),
+	})
 
 /**
  * Validate and expand a raw query without accessing the warehouse.
@@ -84,27 +119,43 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	// `escapeClickHouseString` escapes quotes and backslashes but not `$`. With a
 	// string replacement, `$'` would splice the rest of the statement into the
 	// literal — quotes and all.
-	sql = sql.replaceAll("$__orgFilter", () => `OrgId = ${orgLiteral}`)
-	sql = sql.replaceAll("$__startTime", () => startLiteral)
-	sql = sql.replaceAll("$__endTime", () => endLiteral)
-	sql = sql.replaceAll("$__interval_s", () => String(granularity))
+	// Parenthesised so the predicate is one operand wherever it lands; `rawSqlIssue`
+	// already rejected an org filter that sits beside a top-level OR.
+	sql = replaceWith(sql, ORG_FILTER_MACRO_RE, (_match, alias: string | undefined) =>
+		alias === undefined ? `(OrgId = ${orgLiteral})` : `(${Str.trim(alias)}.OrgId = ${orgLiteral})`,
+	)
+	sql = replaceAllLiteral(sql, "$__startTime", startLiteral)
+	sql = replaceAllLiteral(sql, "$__endTime", endLiteral)
+	sql = replaceAllLiteral(sql, "$__interval_s", String(granularity))
 
+	// An alert window is half-open; interactive ranges keep their inclusive end.
+	const endOperator = input.wholeRange ? "<" : "<="
 	// Materialized before the loop mutates `sql`: the matches are positions in the
 	// text as it was when `matchAll` was called.
-	const timeFilterMatches = [...sql.matchAll(/\$__timeFilter\(([^)]*)\)/g)]
+	const timeFilterMatches = Arr.fromIterable(Str.matchAll(/\$__timeFilter\(([^)]*)\)/g)(sql))
 	for (const match of timeFilterMatches) {
-		const column = match[1].trim()
-		sql = sql.replace(match[0], () => `${column} >= ${startLiteral} AND ${column} <= ${endLiteral}`)
+		const column = Str.trim(match[1] ?? "")
+		sql = replaceFirstLiteral(
+			sql,
+			match[0],
+			`${column} >= ${startLiteral} AND ${column} ${endOperator} ${endLiteral}`,
+		)
 	}
 
 	// Bucketing macro. An alert query that selects `$__timeGroup(Timestamp) AS bucket`
 	// returns one row per evaluation window, so the preview chart renders a real
 	// series instead of a single point; without it the whole range collapses into
 	// one synthetic bucket, which reduces to exactly the same scalar.
-	const timeGroupMatches = [...sql.matchAll(/\$__timeGroup\(([^)]*)\)/g)]
+	const timeGroupMatches = Arr.fromIterable(Str.matchAll(/\$__timeGroup\(([^)]*)\)/g)(sql))
 	for (const match of timeGroupMatches) {
-		const column = match[1].trim()
-		sql = sql.replace(match[0], () => `toStartOfInterval(${column}, INTERVAL ${granularity} SECOND)`)
+		const column = Str.trim(match[1] ?? "")
+		sql = replaceFirstLiteral(
+			sql,
+			match[0],
+			input.wholeRange
+				? rangeAlignedGroup(column, startLiteral, endLiteral)
+				: `toStartOfInterval(${column}, INTERVAL ${granularity} SECOND)`,
+		)
 	}
 
 	// A trailing FORMAT is dropped rather than rejected: the wire format belongs
@@ -118,10 +169,12 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	// modifiers attached to the inner result (`WITH TOTALS`, `LIMIT BY`,
 	// `WITH FILL`) are discarded by the outer SELECT.
 	return {
-		sql: `SELECT * FROM (\n${splitTerminalClauses(sql).body.trim()}\n) AS maple_raw_sql_limited\nLIMIT ${RAW_SQL_FETCH_ROW_LIMIT}`,
+		sql: `SELECT * FROM (\n${Str.trim(splitTerminalClauses(sql).body)}\n) AS maple_raw_sql_limited\nLIMIT ${input.truncateAtCap === true ? MAX_RAW_SQL_RESULT_ROWS : RAW_SQL_FETCH_ROW_LIMIT}`,
 		granularitySeconds: granularity,
 	} satisfies PreparedRawSql
 })
+
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 
 const rawSqlResultLimitError = (rows: ReadonlyArray<Record<string, unknown>>): string | null => {
 	if (rows.length > MAX_RAW_SQL_RESULT_ROWS) {
@@ -130,15 +183,15 @@ const rawSqlResultLimitError = (rows: ReadonlyArray<Record<string, unknown>>): s
 
 	let totalBytes = 2
 	for (const row of rows) {
-		for (const value of Object.values(row)) {
+		for (const value of Rec.values(row)) {
 			if (typeof value === "string" && value.length > MAX_RAW_SQL_CELL_LENGTH) {
 				return `Raw SQL result cells may contain at most ${MAX_RAW_SQL_CELL_LENGTH} characters`
 			}
 		}
 
-		// A cyclic value or a BigInt cell throws out of `JSON.stringify` rather
-		// than returning, and the caller owes the user that as a 400.
-		const encoded = Effect.runSync(Effect.option(Effect.try(() => JSON.stringify(row) ?? "null")))
+		// A cyclic value or a BigInt cell fails to encode, and the caller owes
+		// the user that as a 400.
+		const encoded = encodeJsonOption(row)
 		if (Option.isNone(encoded)) return "Raw SQL results must be JSON serializable"
 		totalBytes += new TextEncoder().encode(encoded.value).byteLength + 1
 		if (totalBytes > MAX_RAW_SQL_RESULT_BYTES) {
@@ -146,6 +199,11 @@ const rawSqlResultLimitError = (rows: ReadonlyArray<Record<string, unknown>>): s
 		}
 	}
 	return null
+}
+
+const alertQuerySettings = (intervalMinutes: number): WarehouseQuerySettings => {
+	const limits = alertQueryLimits(intervalMinutes)
+	return { maxExecutionTime: limits.timeSeconds, maxMemoryUsage: limits.memoryBytes }
 }
 
 /**
@@ -169,6 +227,9 @@ export const makeExecuteRawSql = <TTenant, E>(warehouse: RawSqlWarehouse<TTenant
 		const rows = yield* warehouse.rawSqlQuery(tenant, prepared.sql, {
 			profile: input.workload === "alert" ? "rawAlert" : "rawInteractive",
 			context: input.context,
+			...(input.workload === "alert" && input.alertIntervalMinutes !== undefined
+				? { settings: alertQuerySettings(input.alertIntervalMinutes) }
+				: undefined),
 		})
 
 		const limitError = rawSqlResultLimitError(rows)
@@ -178,7 +239,7 @@ export const makeExecuteRawSql = <TTenant, E>(warehouse: RawSqlWarehouse<TTenant
 
 		return {
 			rows,
-			columns: rows.length > 0 ? Object.keys(rows[0]) : [],
+			columns: rows[0] === undefined ? [] : Rec.keys(rows[0]),
 			rowCount: rows.length,
 			expandedSql: prepared.sql,
 			granularitySeconds: prepared.granularitySeconds,

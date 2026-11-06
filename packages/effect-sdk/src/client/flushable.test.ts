@@ -1,7 +1,15 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
-import { describe, it } from "@effect/vitest"
-import { resetConsentForTests, setConsent } from "@maple/browser-session"
-import { Effect, Metric } from "effect"
+import { assert, describe, it } from "@effect/vitest"
+import {
+	OTLP_KEEPALIVE_BYTES,
+	OTLP_UNLOAD_TAIL_BYTES,
+	postToIngest,
+	resetConsentForTests,
+	setConsent,
+} from "@maple/browser-session"
+import { Deferred, Effect, Fiber, Metric, Option, Array as Arr, Record as Rec, String as Str } from "effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as HttpClient from "effect/http/HttpClient"
 import { afterEach, expect, vi } from "vitest"
 import { make } from "./flushable.js"
 
@@ -10,28 +18,82 @@ interface FetchCall {
 	readonly headers: Record<string, string>
 	readonly body: unknown
 	readonly keepalive: boolean | undefined
+	readonly bytes: number
 }
 
-const setupFetch = (responder: (url: string) => Response = () => new Response(null, { status: 200 })) => {
+const setupFetch = (
+	responder: (url: string, init?: RequestInit) => Response | Promise<Response> = () =>
+		new Response(null, { status: 200 }),
+) => {
 	const calls: Array<FetchCall> = []
 	const original = globalThis.fetch
-	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		const headers: Record<string, string> = {}
 		const initHeaders = init?.headers
 		if (initHeaders instanceof Headers) {
 			initHeaders.forEach((v, k) => (headers[k] = v))
-		} else if (Array.isArray(initHeaders)) {
+		} else if (Arr.isArray(initHeaders)) {
 			for (const [k, v] of initHeaders) headers[k] = v
 		} else if (initHeaders) {
 			Object.assign(headers, initHeaders)
 		}
-		const body = init?.body && typeof init.body === "string" ? JSON.parse(init.body) : undefined
-		calls.push({ url, headers, body, keepalive: init?.keepalive })
-		return responder(url)
-	}) as typeof fetch
+		const text = typeof init?.body === "string" ? init.body : ""
+		calls.push({
+			url,
+			headers,
+			body: text ? JSON.parse(text) : undefined,
+			keepalive: init?.keepalive,
+			bytes: new TextEncoder().encode(text).byteLength,
+		})
+		return responder(url, init)
+	}
 	return { calls, restore: () => void (globalThis.fetch = original) }
 }
+
+/** A responder whose requests stay in flight until the test settles them. */
+const pendingResponses = () => {
+	const pending: Array<{ resolve: (response: Response) => void; reject: (cause: unknown) => void }> = []
+	return {
+		responder: () => new Promise<Response>((resolve, reject) => pending.push({ resolve, reject })),
+		resolveAll: () =>
+			Arr.forEach(pending.splice(0), (p) => p.resolve(new Response(null, { status: 200 }))),
+		rejectAll: () => Arr.forEach(pending.splice(0), (p) => p.reject(new TypeError("Failed to fetch"))),
+	}
+}
+
+const recordSpans = (telemetry: ReturnType<typeof make>, names: ReadonlyArray<string>) =>
+	Effect.runPromise(
+		Effect.forEach(names, (name) => Effect.undefined.pipe(Effect.withSpan(name)), {
+			discard: true,
+		}).pipe(Effect.provide(telemetry.layer)),
+	)
+
+const numbered = (prefix: string, count: number) => Array.from({ length: count }, (_, i) => `${prefix}-${i}`)
+
+const traceCalls = (calls: ReadonlyArray<FetchCall>) =>
+	Arr.filter(calls, (c) => Str.endsWith("/v1/traces")(c.url))
+
+const spanNames = (calls: ReadonlyArray<FetchCall>): Array<string> =>
+	Arr.flatMap(traceCalls(calls), (c) =>
+		Arr.map(
+			Arr.getUnsafe(
+				Arr.getUnsafe(
+					(
+						c.body as {
+							resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
+						}
+					).resourceSpans,
+					0,
+				).scopeSpans,
+				0,
+			).spans,
+			(span) => span.name,
+		),
+	)
+
+/** The `ErrorEvent` / `PromiseRejectionEvent` fields the global error handlers read. */
+type ShimEvent = Readonly<{ error?: Error | null; message?: string; filename?: string; reason?: Error }>
 
 // Minimal DOM event shim — vitest runs in node, where globalThis isn't an
 // EventTarget. Lets us drive `pagehide` / `visibilitychange` without jsdom.
@@ -55,8 +117,22 @@ const setupDom = () => {
 		fire: (type: string) => {
 			for (const fn of listeners[type] ?? []) (fn as () => void)()
 		},
+		dispatch: (type: string, event: ShimEvent) => {
+			for (const fn of listeners[type] ?? []) (fn as (event: ShimEvent) => void)(event)
+		},
+		// A browser runs a microtask checkpoint after each listener; `fire` does not.
+		fireWithCheckpoints: async (type: string) => {
+			for (const fn of listeners[type] ?? []) {
+				;(fn as () => void)()
+				for (let turn = 0; turn < 50; turn++) await Promise.resolve()
+			}
+		},
+		listen: (type: string, fn: () => void) => void (listeners[type] ??= new Set()).add(fn),
 		setHidden: () => {
 			doc.visibilityState = "hidden"
+		},
+		setVisible: () => {
+			doc.visibilityState = "visible"
 		},
 		listenerCount: (type: string) => listeners[type]?.size ?? 0,
 		restore: () => {
@@ -84,6 +160,9 @@ describe("MapleFlush.make (client)", () => {
 	afterEach(() => {
 		restore?.()
 		delete (globalThis as Record<string, unknown>)["__MAPLE_BROWSER_SESSION__"]
+		// Tests that leave requests in flight would otherwise leak their reservation.
+		delete (globalThis as Record<string, unknown>)["__MAPLE_KEEPALIVE_INFLIGHT__"]
+		vi.restoreAllMocks()
 		setConsent(false)
 		resetConsentForTests()
 		vi.useRealTimers()
@@ -95,25 +174,26 @@ describe("MapleFlush.make (client)", () => {
 		const telemetry = make(baseConfig)
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-1"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-1"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 
-		const traceCall = calls.find((c) => c.url.endsWith("/v1/traces"))
-		expect(traceCall).toBeDefined()
-		expect(traceCall!.url).toBe("https://collector.test/v1/traces")
-		expect(traceCall!.headers.authorization).toBe("Bearer secret")
+		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
+		expect(traceCall.url).toBe("https://collector.test/v1/traces")
+		expect(traceCall.headers.authorization).toBe("Bearer secret")
 		// Must use fetch(keepalive), not sendBeacon — see flushable.ts header.
-		expect(traceCall!.keepalive).toBe(true)
-		const body = traceCall!.body as {
+		expect(traceCall.keepalive).toBe(true)
+		const body = traceCall.body as {
 			resourceSpans: Array<{
 				resource: { attributes: Array<{ key: string; value: { stringValue?: string } }> }
 				scopeSpans: Array<{ spans: Array<{ name: string }> }>
 			}>
 		}
-		expect(body.resourceSpans[0].scopeSpans[0].spans.map((s) => s.name)).toEqual(["op-1"])
-		const attrs = body.resourceSpans[0].resource.attributes
-		const attrMap = Object.fromEntries(attrs.map((a) => [a.key, a.value.stringValue]))
+		expect(
+			Arr.map(Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0).scopeSpans, 0).spans, (s) => s.name),
+		).toEqual(["op-1"])
+		const attrs = Arr.getUnsafe(body.resourceSpans, 0).resource.attributes
+		const attrMap = Rec.fromEntries(Arr.map(attrs, (a) => [a.key, a.value.stringValue]))
 		expect(attrMap["service.name"]).toBe("unit-test")
 		expect(attrMap["maple.sdk.type"]).toBe("client")
 		expect(attrMap["deployment.environment"]).toBe("test")
@@ -133,29 +213,32 @@ describe("MapleFlush.make (client)", () => {
 
 		await Effect.runPromise(
 			Effect.all([
-				Effect.succeed(undefined).pipe(Effect.withSpan("before-consent")),
+				Effect.undefined.pipe(Effect.withSpan("before-consent")),
 				Metric.update(counter, 5),
 			]).pipe(Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
-		expect(calls.some((call) => call.url.endsWith("/v1/traces"))).toBe(false)
+		expect(Arr.some(calls, (call) => Str.endsWith("/v1/traces")(call.url))).toBe(false)
 		expect(recordTraceId).not.toHaveBeenCalled()
 
 		setConsent(true)
 		await Effect.runPromise(
 			Effect.all([
-				Effect.succeed(undefined).pipe(Effect.withSpan("after-consent")),
+				Effect.undefined.pipe(Effect.withSpan("after-consent")),
 				Metric.update(counter, 2),
 			]).pipe(Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
-		const traceCall = calls.find((call) => call.url.endsWith("/v1/traces"))
-		expect(traceCall).toBeDefined()
-		const spans = (traceCall!.body as any).resourceSpans[0].scopeSpans[0].spans
+		const traceCall = Option.getOrThrow(
+			Arr.findFirst(calls, (call) => Str.endsWith("/v1/traces")(call.url)),
+		)
+		const spans = (traceCall.body as any).resourceSpans[0].scopeSpans[0].spans
 		expect(spans.map((span: { name: string }) => span.name)).toEqual(["after-consent"])
 		expect(recordTraceId).toHaveBeenCalledTimes(1)
-		const metricCall = calls.find((call) => call.url.endsWith("/v1/metrics"))
-		const metrics = (metricCall!.body as any).resourceMetrics[0].scopeMetrics[0].metrics
+		const metricCall = Option.getOrThrow(
+			Arr.findFirst(calls, (call) => Str.endsWith("/v1/metrics")(call.url)),
+		)
+		const metrics = (metricCall.body as any).resourceMetrics[0].scopeMetrics[0].metrics
 		expect(
 			metrics.find((metric: { name: string }) => metric.name === "consent_counter").sum.dataPoints[0]
 				.asDouble,
@@ -172,7 +255,7 @@ describe("MapleFlush.make (client)", () => {
 		setConsent(true)
 		await Effect.runPromise(Metric.update(counter, 5).pipe(Effect.provide(telemetry.layer)))
 		await telemetry.flush()
-		expect(calls.some((call) => call.url.endsWith("/v1/metrics"))).toBe(true)
+		expect(Arr.some(calls, (call) => Str.endsWith("/v1/metrics")(call.url))).toBe(true)
 		calls.length = 0
 
 		setConsent(false)
@@ -183,7 +266,7 @@ describe("MapleFlush.make (client)", () => {
 		// A counter that reached 5 under the first grant still reads 5, so the
 		// post-re-grant snapshot would carry the revoked-era total. Spans and logs
 		// resume (their buffers are droppable); metrics stay off for the page.
-		expect(calls.some((call) => call.url.endsWith("/v1/metrics"))).toBe(false)
+		expect(Arr.some(calls, (call) => Str.endsWith("/v1/metrics")(call.url))).toBe(false)
 		await telemetry.dispose()
 	})
 
@@ -199,8 +282,18 @@ describe("MapleFlush.make (client)", () => {
 		await Effect.runPromise(Metric.update(counter, 3).pipe(Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
-		const metricCall = calls.find((call) => call.url.endsWith("/v1/metrics"))
-		expect(metricCall).toBeDefined()
+		const metricCall = Option.getOrThrow(
+			Arr.findFirst(calls, (call) => Str.endsWith("/v1/metrics")(call.url)),
+		)
+		expect(metricCall.body).toMatchObject({
+			resourceMetrics: [
+				{
+					scopeMetrics: [
+						{ metrics: [{ name: "late_grant_counter", sum: { dataPoints: [{ asDouble: 3 }] } }] },
+					],
+				},
+			],
+		})
 		await telemetry.dispose()
 	})
 
@@ -214,24 +307,26 @@ describe("MapleFlush.make (client)", () => {
 		}
 		const telemetry = make(baseConfig)
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
-		const traceCall = calls.find((c) => c.url.endsWith("/v1/traces"))!
-		const attrs = (
-			traceCall.body as {
-				resourceSpans: Array<{
-					resource: { attributes: Array<{ key: string; value: { stringValue?: string } }> }
-				}>
-			}
-		).resourceSpans[0].resource.attributes
-		const attrMap = Object.fromEntries(attrs.map((a) => [a.key, a.value.stringValue]))
+		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
+		const attrs = Arr.getUnsafe(
+			(
+				traceCall.body as {
+					resourceSpans: Array<{
+						resource: { attributes: Array<{ key: string; value: { stringValue?: string } }> }
+					}>
+				}
+			).resourceSpans,
+			0,
+		).resource.attributes
+		const attrMap = Rec.fromEntries(Arr.map(attrs, (a) => [a.key, a.value.stringValue]))
 		expect(attrMap["user_agent.original"]).toBe("TestAgent/1.0")
 		expect(attrMap["browser.language"]).toBe("en-GB")
 		// Intl is always present in node/browsers; just assert it's a non-empty string.
-		expect(typeof attrMap["browser.timezone"]).toBe("string")
+		expect(typeof attrMap["maple.browser.timezone"]).toBe("string")
+		expect(attrMap["telemetry.sdk.language"]).toBe("webjs")
 	})
 
 	it("links the active replay session: records the trace id + stamps session.id", async () => {
@@ -245,26 +340,36 @@ describe("MapleFlush.make (client)", () => {
 		}
 		const telemetry = make(baseConfig)
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
 		expect(recordTraceId).toHaveBeenCalledTimes(1)
-		expect(recordTraceId.mock.calls[0][0]).toMatch(/^[0-9a-f]{32}$/i)
+		expect(Arr.getUnsafe(Arr.getUnsafe(recordTraceId.mock.calls, 0), 0)).toMatch(/^[0-9a-f]{32}$/i)
 
-		const traceCall = calls.find((c) => c.url.endsWith("/v1/traces"))!
-		const span = (
-			traceCall.body as {
-				resourceSpans: Array<{
-					scopeSpans: Array<{
-						spans: Array<{ attributes: Array<{ key: string; value: { stringValue?: string } }> }>
-					}>
-				}>
-			}
-		).resourceSpans[0].scopeSpans[0].spans[0]
-		const sessionAttr = span.attributes.find((a) => a.key === "session.id")
-		expect(sessionAttr?.value.stringValue).toBe("sess-123")
+		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
+		const span = Arr.getUnsafe(
+			Arr.getUnsafe(
+				Arr.getUnsafe(
+					(
+						traceCall.body as {
+							resourceSpans: Array<{
+								scopeSpans: Array<{
+									spans: Array<{
+										attributes: Array<{ key: string; value: { stringValue?: string } }>
+									}>
+								}>
+							}>
+						}
+					).resourceSpans,
+					0,
+				).scopeSpans,
+				0,
+			).spans,
+			0,
+		)
+		assert.isDefined(span)
+		const sessionAttr = Option.getOrThrow(Arr.findFirst(span.attributes, (a) => a.key === "session.id"))
+		expect(sessionAttr.value.stringValue).toBe("sess-123")
 	})
 
 	it("stamps session.id from the self-managed session when no sink is published", async () => {
@@ -293,28 +398,35 @@ describe("MapleFlush.make (client)", () => {
 		const telemetry = make({ ...baseConfig, replay: { enabled: false } })
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-a"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-a"), Effect.provide(telemetry.layer)),
 		)
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-b"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-b"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 
 		const stored = JSON.parse(store.get("maple.session")!) as { id: string }
-		const traceCall = calls.find((c) => c.url.endsWith("/v1/traces"))!
-		const spans = (
-			traceCall.body as {
-				resourceSpans: Array<{
-					scopeSpans: Array<{
-						spans: Array<{ attributes: Array<{ key: string; value: { stringValue?: string } }> }>
+		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
+		const spans = Arr.flatMap(
+			(
+				traceCall.body as {
+					resourceSpans: Array<{
+						scopeSpans: Array<{
+							spans: Array<{
+								attributes: Array<{ key: string; value: { stringValue?: string } }>
+							}>
+						}>
 					}>
-				}>
-			}
-		).resourceSpans.flatMap((r) => r.scopeSpans.flatMap((s) => s.spans))
+				}
+			).resourceSpans,
+			(r) => Arr.flatMap(r.scopeSpans, (s) => s.spans),
+		)
 		expect(spans.length).toBeGreaterThanOrEqual(2)
 		for (const span of spans) {
-			const sessionAttr = span.attributes.find((a) => a.key === "session.id")
-			expect(sessionAttr?.value.stringValue).toBe(stored.id)
+			const sessionAttr = Option.getOrThrow(
+				Arr.findFirst(span.attributes, (a) => a.key === "session.id"),
+			)
+			expect(sessionAttr.value.stringValue).toBe(stored.id)
 		}
 		await telemetry.dispose()
 	})
@@ -328,19 +440,79 @@ describe("MapleFlush.make (client)", () => {
 		}
 		const telemetry = make({ ...baseConfig, flushOnUnload: true })
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 
 		expect(dom.listenerCount("pagehide")).toBe(1)
+		expect(dom.listenerCount("pageshow")).toBe(1)
 		// No manual flush — the unload handler should do it.
 		dom.fire("pagehide")
 		await tick()
-		expect(calls.some((c) => c.url.endsWith("/v1/traces"))).toBe(true)
+		expect(Arr.some(calls, (c) => Str.endsWith("/v1/traces")(c.url))).toBe(true)
 
 		await telemetry.dispose()
 		expect(dom.listenerCount("pagehide")).toBe(0)
+		expect(dom.listenerCount("pageshow")).toBe(0)
 		expect(dom.listenerCount("visibilitychange")).toBe(0)
+	})
+
+	it("reports the app's uncaught errors and drops extension and ResizeObserver noise", async () => {
+		const { calls, restore: rf } = setupFetch()
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make(baseConfig)
+		const extensionFrame = new Error("Failed to connect to MetaMask")
+		extensionFrame.stack =
+			"i: Failed to connect to MetaMask\n    at Object.connect (chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/scripts/inpage.js:12:4822)"
+
+		dom.dispatch("error", {
+			error: null,
+			message: "ResizeObserver loop completed with undelivered notifications.",
+			filename: "https://app.test/",
+		})
+		dom.dispatch("error", { error: new Error("boom"), filename: "chrome-extension://abc/content.js" })
+		dom.dispatch("unhandledrejection", { reason: extensionFrame })
+		dom.dispatch("error", { error: new TypeError("app bug"), filename: "https://app.test/assets/app.js" })
+		dom.dispatch("unhandledrejection", { reason: new Error("app rejection") })
+		await telemetry.flush()
+
+		expect(spanNames(calls)).toEqual(["browser.uncaught_error", "browser.unhandled_rejection"])
+		await telemetry.dispose()
+	})
+
+	it("redacts credentials from the page URL and script path on uncaught errors", async () => {
+		const { calls, restore: rf } = setupFetch()
+		const dom = setupDom()
+		vi.stubGlobal("location", { href: "https://app.test/reset?token=s3cr3t&tab=1" })
+		restore = () => {
+			rf()
+			dom.restore()
+			vi.unstubAllGlobals()
+		}
+		const telemetry = make(baseConfig)
+
+		dom.dispatch("error", {
+			error: new TypeError("app bug"),
+			filename: "https://app.test/assets/app.js?api_key=k3y",
+		})
+		await telemetry.flush()
+
+		const body = Arr.getUnsafe(traceCalls(calls), 0).body as {
+			resourceSpans: Array<{
+				scopeSpans: Array<{
+					spans: Array<{ attributes: Array<{ key: string; value: { stringValue?: string } }> }>
+				}>
+			}>
+		}
+		const span = Arr.getUnsafe(Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0).scopeSpans, 0).spans, 0)
+		const attr = (key: string) =>
+			Option.getOrThrow(Arr.findFirst(span.attributes, (a) => a.key === key)).value.stringValue
+		expect(attr("url.full")).not.toContain("s3cr3t")
+		expect(attr("url.full")).toContain("tab=1")
+		expect(attr("code.file.path")).not.toContain("k3y")
+		await telemetry.dispose()
 	})
 
 	it("auto-flushes on the interval, and dispose() stops the timer", async () => {
@@ -350,11 +522,11 @@ describe("MapleFlush.make (client)", () => {
 		const telemetry = make({ ...baseConfig, autoFlushInterval: 5_000 })
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("timed-op"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("timed-op"), Effect.provide(telemetry.layer)),
 		)
 
 		await vi.advanceTimersByTimeAsync(5_000)
-		expect(calls.some((c) => c.url.endsWith("/v1/traces"))).toBe(true)
+		expect(Arr.some(calls, (c) => Str.endsWith("/v1/traces")(c.url))).toBe(true)
 		const afterAuto = calls.length
 
 		await telemetry.dispose()
@@ -371,19 +543,19 @@ describe("MapleFlush.make (client)", () => {
 
 		await Effect.runPromise(Metric.update(counter, 1).pipe(Effect.provide(telemetry.layer)))
 		await vi.advanceTimersByTimeAsync(5_000)
-		expect(calls.filter((call) => call.url.endsWith("/v1/metrics"))).toHaveLength(1)
+		expect(Arr.filter(calls, (call) => Str.endsWith("/v1/metrics")(call.url))).toHaveLength(1)
 
 		// The metric is cumulative, but it has not changed. Subsequent trace/log
 		// flush ticks must not generate duplicate metrics requests.
 		await vi.advanceTimersByTimeAsync(15_000)
-		expect(calls.filter((call) => call.url.endsWith("/v1/metrics"))).toHaveLength(1)
+		expect(Arr.filter(calls, (call) => Str.endsWith("/v1/metrics")(call.url))).toHaveLength(1)
 
 		await Effect.runPromise(Metric.update(counter, 1).pipe(Effect.provide(telemetry.layer)))
 		await vi.advanceTimersByTimeAsync(5_000)
-		expect(calls.filter((call) => call.url.endsWith("/v1/metrics"))).toHaveLength(2)
+		expect(Arr.filter(calls, (call) => Str.endsWith("/v1/metrics")(call.url))).toHaveLength(2)
 
 		await telemetry.dispose()
-		expect(calls.filter((call) => call.url.endsWith("/v1/metrics"))).toHaveLength(2)
+		expect(Arr.filter(calls, (call) => Str.endsWith("/v1/metrics")(call.url))).toHaveLength(2)
 	})
 
 	it("still exports without Authorization when no ingest key is set, for a proxy to add", async () => {
@@ -400,14 +572,11 @@ describe("MapleFlush.make (client)", () => {
 			flushOnUnload: false,
 		})
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
-		const traces = calls.find((call) => call.url.endsWith("/v1/traces"))
-		expect(traces).toBeDefined()
-		expect(traces!.headers).not.toHaveProperty("authorization")
+		const traces = Option.getOrThrow(Arr.findFirst(calls, (call) => Str.endsWith("/v1/traces")(call.url)))
+		expect(traces.headers).not.toHaveProperty("authorization")
 		// A custom endpoint is a proxy or collector: keyless is legitimate there.
 		expect(warnSpy).not.toHaveBeenCalled()
 	})
@@ -421,28 +590,34 @@ describe("MapleFlush.make (client)", () => {
 		}
 		const telemetry = make({ ...baseConfig, flushOnUnload: true })
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 
 		// Still visible → the handler must not flush.
 		dom.fire("visibilitychange")
 		await tick()
-		expect(calls.some((c) => c.url.endsWith("/v1/traces"))).toBe(false)
+		expect(Arr.some(calls, (c) => Str.endsWith("/v1/traces")(c.url))).toBe(false)
 
 		// Hidden → flush the tail before the tab is backgrounded.
 		dom.setHidden()
 		dom.fire("visibilitychange")
 		await tick()
-		expect(calls.some((c) => c.url.endsWith("/v1/traces"))).toBe(true)
+		expect(Arr.some(calls, (c) => Str.endsWith("/v1/traces")(c.url))).toBe(true)
 	})
 
-	it("registers no unload listeners when flushOnUnload is false", () => {
+	it("does not flush on unload when flushOnUnload is false", async () => {
+		const { calls, restore: rf } = setupFetch()
 		const dom = setupDom()
-		restore = dom.restore
-		make({ ...baseConfig, flushOnUnload: false })
-		expect(dom.listenerCount("pagehide")).toBe(0)
-		expect(dom.listenerCount("visibilitychange")).toBe(0)
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: false })
+		await recordSpans(telemetry, ["op"])
+		dom.setHidden()
+		dom.fire("visibilitychange")
+		dom.fire("pagehide")
+		await tick()
+		expect(traceCalls(calls)).toHaveLength(0)
 	})
 
 	it("dispose() flushes buffered spans even without a manual flush", async () => {
@@ -451,11 +626,550 @@ describe("MapleFlush.make (client)", () => {
 		const telemetry = make(baseConfig) // autoFlushInterval + flushOnUnload both off
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("late-op"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("late-op"), Effect.provide(telemetry.layer)),
 		)
 		// No manual flush, no timer, no unload event — dispose must still drain.
 		expect(calls.length).toBe(0)
 		await telemetry.dispose()
-		expect(calls.some((c) => c.url.endsWith("/v1/traces"))).toBe(true)
+		expect(Arr.some(calls, (c) => Str.endsWith("/v1/traces")(c.url))).toBe(true)
+	})
+
+	it("sends a batch over the keepalive ceiling as a plain request, and keeps flushing after it", async () => {
+		const { calls, restore: r } = setupFetch()
+		restore = r
+		const telemetry = make(baseConfig)
+
+		await recordSpans(telemetry, numbered("big", 400))
+		await telemetry.flush()
+		expect(traceCalls(calls)).toHaveLength(1)
+		expect(Arr.getUnsafe(traceCalls(calls), 0).bytes).toBeGreaterThan(OTLP_KEEPALIVE_BYTES)
+		// The browser would reject this body with keepalive set, whatever the server says.
+		expect(Arr.getUnsafe(traceCalls(calls), 0).keepalive).toBe(false)
+
+		await recordSpans(telemetry, ["small"])
+		await telemetry.flush()
+		expect(traceCalls(calls)).toHaveLength(2)
+		expect(Arr.getUnsafe(traceCalls(calls), 1).keepalive).toBe(true)
+		expect(spanNames(calls)).toHaveLength(401)
+	})
+
+	it("aborts a POST that never answers, restores its batch, and lets the queue continue", async () => {
+		vi.useFakeTimers()
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+		let answer = false
+		const { calls, restore: r } = setupFetch((_url, init) =>
+			answer
+				? new Response(null, { status: 200 })
+				: new Promise<Response>((_resolve, reject) => {
+						init?.signal?.addEventListener("abort", () => reject(init.signal?.reason))
+					}),
+		)
+		restore = r
+		const telemetry = make(baseConfig)
+
+		await recordSpans(telemetry, ["stuck"])
+		const stuck = telemetry.flush()
+		const queued = telemetry.flush()
+		await vi.advanceTimersByTimeAsync(31_000)
+		await Promise.all([stuck, queued])
+
+		expect(calls).toHaveLength(1)
+		expect(String(errorSpy.mock.calls[0]?.[1])).toContain("OTLP POST timed out after 30s")
+
+		answer = true
+		// The aborted request gave its reservation back: a body the size of the whole budget fits.
+		await postToIngest(
+			"https://collector.test/x",
+			{},
+			JSON.stringify(Str.repeat(48 * 1024 - 2)("x")),
+			true,
+		)
+		expect(calls.pop()?.keepalive).toBe(true)
+		await vi.advanceTimersByTimeAsync(60_000)
+		await telemetry.flush()
+		expect(spanNames(calls.slice(1))).toEqual(["stuck"])
+		// An answered POST leaves no timeout behind.
+		expect(vi.getTimerCount()).toBe(0)
+	})
+
+	it("flushes on pagehide while a periodic flush is still in flight", async () => {
+		const inflight = pendingResponses()
+		const { calls, restore: rf } = setupFetch(inflight.responder)
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+		await recordSpans(telemetry, ["periodic"])
+		const periodic = telemetry.flush()
+		await tick()
+		expect(spanNames(calls)).toEqual(["periodic"])
+		await recordSpans(telemetry, ["tail"])
+		dom.fire("pagehide")
+		// No await: the request has to leave inside the event handler.
+		expect(spanNames(calls)).toEqual(["periodic", "tail"])
+
+		inflight.resolveAll()
+		await periodic
+	})
+
+	it("during a cooldown a hidden tab sends nothing, and pagehide still sends", async () => {
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+		let status = 503
+		const { calls, restore: rf } = setupFetch(() => new Response(null, { status }))
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+		await recordSpans(telemetry, ["rejected"])
+		await telemetry.flush()
+		expect(errorSpy).toHaveBeenCalledTimes(1)
+
+		status = 200
+		dom.setHidden()
+		dom.fire("visibilitychange")
+		expect(traceCalls(calls)).toHaveLength(1)
+		expect(warnSpy).toHaveBeenCalledTimes(1)
+
+		dom.fire("pagehide")
+		expect(spanNames(traceCalls(calls).slice(1))).toEqual(["rejected"])
+	})
+
+	it("sends a backlog on pagehide as two requests per signal, the newest items first with keepalive", async () => {
+		const inflight = pendingResponses()
+		const { calls, restore: rf } = setupFetch(inflight.responder)
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+		const names = numbered("backlog", 5_000)
+
+		await recordSpans(telemetry, names)
+		await Effect.runPromise(
+			Effect.all([
+				Effect.logInfo("last words"),
+				Metric.update(Metric.counter("unload_counter"), 1),
+			]).pipe(Effect.provide(telemetry.layer)),
+		)
+		dom.fire("pagehide")
+
+		// All in the one handler: traces, then logs, then metrics.
+		expect(Arr.map(calls, (call) => Str.replace("https://collector.test/v1/", "")(call.url))).toEqual([
+			"traces",
+			"traces",
+			"logs",
+			"metrics",
+		])
+		const [newest, older] = traceCalls(calls)
+		assert.isDefined(older)
+		assert.isDefined(newest)
+		const tail = spanNames([newest])
+		expect(tail.length).toBeGreaterThan(1)
+		expect(tail).toEqual(names.slice(-tail.length))
+		expect(newest.bytes).toBeLessThanOrEqual(OTLP_UNLOAD_TAIL_BYTES)
+		expect(newest.keepalive).toBe(true)
+		// Everything older is one request, which no keepalive budget could hold.
+		expect(spanNames([older])).toEqual(names.slice(0, -tail.length))
+		expect(older.keepalive).toBe(false)
+
+		inflight.resolveAll()
+		await tick()
+	})
+
+	it("leaves room for the metrics request next to two full newest-first bodies", async () => {
+		// Effect's default logger prints every log line.
+		vi.spyOn(console, "log").mockImplementation(() => {})
+		const inflight = pendingResponses()
+		const { calls, restore: rf } = setupFetch(inflight.responder)
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+		await recordSpans(telemetry, numbered("span", 200))
+		await Effect.runPromise(
+			Effect.all([
+				Effect.forEach(
+					numbered("log", 40),
+					(line) => Effect.logInfo(`${line} ${Str.repeat(1024)("x")}`),
+					{
+						discard: true,
+					},
+				),
+				Metric.update(Metric.counter("unload_counter"), 1),
+			]).pipe(Effect.provide(telemetry.layer)),
+		)
+		dom.fire("pagehide")
+
+		expect(
+			Arr.map(calls, (call) => [
+				Str.replace("https://collector.test/v1/", "")(call.url),
+				call.keepalive,
+			]),
+		).toEqual([
+			["traces", true],
+			["traces", false],
+			["logs", true],
+			["logs", false],
+			["metrics", true],
+		])
+		// Both newest-first bodies are full, the older parts are too large for what
+		// is left, and OTLP's share still holds the metrics snapshot.
+		const keepalive = Arr.filter(calls, (call) => call.keepalive === true)
+		expect(Arr.getUnsafe(keepalive, 0).bytes + Arr.getUnsafe(keepalive, 1).bytes).toBeGreaterThan(
+			24 * 1024,
+		)
+		expect(Arr.reduce(keepalive, 0, (sum, call) => sum + call.bytes)).toBeLessThanOrEqual(
+			OTLP_KEEPALIVE_BYTES,
+		)
+
+		inflight.resolveAll()
+		await tick()
+	})
+
+	it("sends the older part with keepalive too when it fits what is left", async () => {
+		const inflight = pendingResponses()
+		const { calls, restore: rf } = setupFetch(inflight.responder)
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+		await recordSpans(telemetry, numbered("span", 62))
+		dom.fire("pagehide")
+
+		const [newest, older] = traceCalls(calls)
+		assert.isDefined(older)
+		assert.isDefined(newest)
+		expect(newest.keepalive).toBe(true)
+		expect(newest.bytes).toBeLessThanOrEqual(OTLP_UNLOAD_TAIL_BYTES)
+		// A plain request issued at unload is often lost, so room that is left is used.
+		expect(spanNames([newest, older])).toHaveLength(62)
+		expect(newest.bytes + older.bytes).toBeLessThanOrEqual(OTLP_KEEPALIVE_BYTES)
+		expect(older.keepalive).toBe(true)
+
+		inflight.resolveAll()
+		await tick()
+	})
+
+	it("sizes the newest-first request to the keepalive room a periodic flush leaves", async () => {
+		const inflight = pendingResponses()
+		const { calls, restore: rf } = setupFetch(inflight.responder)
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+		const names = numbered("tail", 40)
+
+		await recordSpans(telemetry, numbered("periodic", 70))
+		const periodic = telemetry.flush()
+		await tick()
+		await recordSpans(telemetry, names)
+		dom.fire("pagehide")
+
+		const [inFlight, newest, older] = traceCalls(calls)
+		assert.isDefined(older)
+		assert.isDefined(newest)
+		assert.isDefined(inFlight)
+		expect(inFlight.keepalive).toBe(true)
+		// The newest spans take what is left of OTLP's share; the older ones go plain.
+		const tail = spanNames([newest])
+		expect(tail).toEqual(names.slice(-tail.length))
+		expect(newest.keepalive).toBe(true)
+		expect(inFlight.bytes + newest.bytes).toBeLessThanOrEqual(OTLP_KEEPALIVE_BYTES)
+		expect(spanNames([older])).toEqual(names.slice(0, -tail.length))
+		expect(older.keepalive).toBe(false)
+
+		// OTLP's share leaves room for the session's final row.
+		const row = JSON.stringify(Str.repeat(8 * 1024)("x"))
+		const sessionRow = postToIngest("https://collector.test/v1/sessionReplays/meta", {}, row, true)
+		expect(calls.at(-1)?.keepalive).toBe(true)
+
+		inflight.resolveAll()
+		await Promise.all([periodic, sessionRow])
+	})
+
+	it("still gets keepalive when session writes reserved first", async () => {
+		const inflight = pendingResponses()
+		const { calls, restore: rf } = setupFetch(inflight.responder)
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+		const rows = JSON.stringify(Str.repeat(30 * 1024)("x"))
+		const sessionRows = postToIngest("https://collector.test/v1/sessionEvents", {}, rows, true)
+		await recordSpans(telemetry, numbered("span", 40))
+		dom.fire("pagehide")
+
+		// Session bytes count against the shared total, not against OTLP's share.
+		expect(traceCalls(calls)).toHaveLength(1)
+		expect(Arr.getUnsafe(traceCalls(calls), 0).keepalive).toBe(true)
+
+		inflight.resolveAll()
+		await sessionRows
+	})
+
+	it("ignores a periodic POST the browser rejects before this pagehide listener has run", async () => {
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+		const inflight = pendingResponses()
+		const { calls, restore: rf } = setupFetch(inflight.responder)
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		// Another listener of the same event runs first, and the rejection is
+		// handled at the microtask checkpoint right after it.
+		dom.listen("pagehide", inflight.rejectAll)
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+		await recordSpans(telemetry, ["periodic"])
+		const periodic = telemetry.flush()
+		await tick()
+		await dom.fireWithCheckpoints("pagehide")
+		await periodic
+
+		// Sent once: not put back for the pagehide flush or for a later one.
+		dom.fire("pageshow")
+		await telemetry.flush()
+		expect(spanNames(calls)).toEqual(["periodic"])
+		expect(errorSpy).not.toHaveBeenCalled()
+		expect(warnSpy).not.toHaveBeenCalled()
+	})
+
+	it("ignores a rejection seen after pagehide, until pageshow", async () => {
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+		const inflight = pendingResponses()
+		const { calls, restore: rf } = setupFetch(inflight.responder)
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+		await recordSpans(telemetry, ["periodic"])
+		const periodic = telemetry.flush()
+		await tick()
+		await recordSpans(telemetry, ["tail"])
+		dom.fire("pagehide")
+		// An unloading document rejects keepalive fetches the server still receives.
+		inflight.rejectAll()
+		await periodic
+		await tick()
+		expect(errorSpy).not.toHaveBeenCalled()
+
+		// Restored from the back/forward cache: nothing was put back or is cooling
+		// down, and a failure counts again.
+		dom.fire("pageshow")
+		await recordSpans(telemetry, ["after-restore"])
+		const next = telemetry.flush()
+		await tick()
+		inflight.rejectAll()
+		await next
+		expect(spanNames(calls)).toEqual(["periodic", "tail", "after-restore"])
+		expect(warnSpy).not.toHaveBeenCalled()
+		expect(errorSpy).toHaveBeenCalledTimes(1)
+	})
+
+	it("still treats an error status after pagehide as a failed flush", async () => {
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+		const { restore: rf } = setupFetch(() => new Response(null, { status: 503 }))
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+		await recordSpans(telemetry, ["refused"])
+		dom.fire("pagehide")
+		await tick()
+		// Ingest answered, so this is not the unloading document's own rejection.
+		expect(errorSpy).toHaveBeenCalledTimes(1)
+	})
+
+	it("restores and cools down when the flush fails on a page that is only hidden", async () => {
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+		vi.useFakeTimers({ toFake: ["Date"] })
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+		let fail = true
+		const { calls, restore: rf } = setupFetch(() =>
+			fail ? Promise.reject(new TypeError("Failed to fetch")) : new Response(null, { status: 200 }),
+		)
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+		await recordSpans(telemetry, ["hidden"])
+		dom.setHidden()
+		dom.fire("visibilitychange")
+		// The rejection is judged one task after it arrives.
+		await tick()
+		await tick()
+		expect(errorSpy).toHaveBeenCalledTimes(1)
+
+		fail = false
+		await telemetry.flush()
+		expect(warnSpy).toHaveBeenCalledTimes(1)
+		expect(traceCalls(calls)).toHaveLength(1)
+		vi.advanceTimersByTime(60_000)
+		await telemetry.flush()
+		expect(spanNames(traceCalls(calls).slice(1))).toEqual(["hidden"])
+	})
+
+	it("sends nothing on pagehide or hide without consent", async () => {
+		const { calls, restore: rf } = setupFetch()
+		const dom = setupDom()
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: true, privacy: { requireConsent: true } })
+
+		await recordSpans(telemetry, ["before-consent"])
+		dom.setHidden()
+		dom.fire("visibilitychange")
+		dom.fire("pagehide")
+		await tick()
+		expect(calls).toHaveLength(0)
+
+		// Dropped, not held back for a later grant.
+		setConsent(true)
+		await telemetry.flush()
+		expect(calls).toHaveLength(0)
+		await telemetry.dispose()
+	})
+
+	describe("a request failing in transport", () => {
+		interface ExportedSpan {
+			readonly kind: number
+			readonly status: { readonly code: number }
+			readonly attributes: ReadonlyArray<{ key: string; value: { stringValue?: string } }>
+		}
+		const exportedClientSpan = (calls: ReadonlyArray<FetchCall>) =>
+			Option.getOrThrow(
+				Arr.findFirst(
+					Arr.flatMap(
+						traceCalls(calls),
+						(c) =>
+							Arr.getUnsafe(
+								Arr.getUnsafe(
+									(
+										c.body as {
+											resourceSpans: Array<{
+												scopeSpans: Array<{ spans: Array<ExportedSpan> }>
+											}>
+										}
+									).resourceSpans,
+									0,
+								).scopeSpans,
+								0,
+							).spans,
+					),
+					(span) => span.kind === 3 /* client */,
+				),
+			)
+
+		// Runs one HttpClient request whose fetch rejects only after `during` has run.
+		const failRequest = (telemetry: ReturnType<typeof make>, during: () => void) =>
+			Effect.gen(function* () {
+				const started = yield* Deferred.make<void>()
+				const fetch = () =>
+					new Promise<Response>((_, reject) => {
+						Deferred.doneUnsafe(started, Effect.void)
+						setTimeout(() => reject(new TypeError("Failed to fetch")), 5)
+					})
+				const fiber = yield* HttpClient.get("https://api.test/v1/things").pipe(
+					Effect.provide(FetchHttpClient.layer),
+					Effect.provideService(FetchHttpClient.Fetch, fetch),
+					Effect.provide(telemetry.layer),
+					Effect.exit,
+					Effect.forkChild,
+				)
+				yield* Deferred.await(started)
+				during()
+				yield* Fiber.await(fiber)
+			})
+
+		it("exports a request the page unloaded under as Unset, not as an error", async () => {
+			const { calls, restore: rf } = setupFetch()
+			const dom = setupDom()
+			restore = () => {
+				rf()
+				dom.restore()
+			}
+			const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+			await Effect.runPromise(failRequest(telemetry, () => dom.fire("pagehide")))
+			dom.fire("pageshow")
+			await telemetry.flush()
+
+			const span = exportedClientSpan(calls)
+			expect(span.status.code).toBe(0)
+			expect(
+				Option.getOrThrow(Arr.findFirst(span.attributes, (a) => a.key === "maple.connection_lost"))
+					.value.stringValue,
+			).toBe("page_unload")
+			await telemetry.dispose()
+		})
+
+		it("still recognises an unload when unload flushing is off", async () => {
+			const { calls, restore: rf } = setupFetch()
+			const dom = setupDom()
+			restore = () => {
+				rf()
+				dom.restore()
+			}
+			const telemetry = make({ ...baseConfig, flushOnUnload: false })
+
+			await Effect.runPromise(failRequest(telemetry, () => dom.fire("pagehide")))
+			dom.fire("pageshow")
+			await telemetry.flush()
+
+			expect(exportedClientSpan(calls).status.code).toBe(0)
+			await telemetry.dispose()
+		})
+
+		it("keeps a request that fails on a visible page an error, after an earlier hide", async () => {
+			const { calls, restore: rf } = setupFetch()
+			const dom = setupDom()
+			restore = () => {
+				rf()
+				dom.restore()
+			}
+			const telemetry = make({ ...baseConfig, flushOnUnload: true })
+			dom.setHidden()
+			dom.fire("visibilitychange")
+			dom.setVisible()
+
+			await Effect.runPromise(failRequest(telemetry, () => {}))
+			await telemetry.flush()
+
+			expect(exportedClientSpan(calls).status.code).toBe(2)
+			await telemetry.dispose()
+		})
 	})
 })

@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 /**
  * Deterministic stringification for cache keys.
  *
@@ -14,6 +14,10 @@
  * safe for the driver-free root barrel.
  */
 
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+
 /**
  * Recursively sort object keys and drop `undefined`. Arrays preserve order —
  * element order is meaningful in a `QuerySpec` (an ORDER BY list is not a set),
@@ -22,26 +26,27 @@
  * `null` so a malformed input can never hang the key path.
  */
 export const canonicalJSON = (value: unknown): string => {
-	const seen = new WeakSet<object>()
+	const seen = new WeakSet()
 	const walk = (v: unknown): unknown => {
 		if (v === null) return null
 		if (v === undefined) return undefined
-		const t = typeof v
-		if (t === "string" || t === "number" || t === "boolean") return v
-		if (t === "bigint") return v.toString()
-		if (Array.isArray(v)) {
-			return v.map((item) => walk(item))
+		if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return v
+		if (typeof v === "bigint") return v.toString()
+		if (Arr.isArray(v)) {
+			return Arr.map(v, (item) => walk(item))
 		}
-		if (t === "object") {
-			if (seen.has(v as object)) return null
-			seen.add(v as object)
-			const entries = Object.entries(v as Record<string, unknown>)
-				.filter(([, nested]) => nested !== undefined)
-				.map(([key, nested]) => [key, walk(nested)] as const)
-				.sort(([a], [b]) => a.localeCompare(b))
-			return Object.fromEntries(entries)
+		if (typeof v === "object") {
+			if (seen.has(v)) return null
+			seen.add(v)
+			const entries = Arr.map(
+				Arr.filter(Rec.toEntries(v), ([, nested]) => nested !== undefined),
+				([key, nested]) => [key, walk(nested)] as const,
+			).sort(([a], [b]) => Str.localeCompare(b)(a))
+			return Rec.fromEntries(entries)
 		}
-		return String(v)
+		// symbol or function: every other type returned above.
+		return typeof v === "symbol" || typeof v === "function" ? v.toString() : null
 	}
-	return JSON.stringify(walk(value))
+	// Only a top-level `undefined` has no JSON form; it keys as `null`.
+	return Option.getOrElse(encodeJsonOption(walk(value)), () => "null")
 }

@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest"
 import { decodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { ErrorIssueEventType } from "@maple/domain/http"
 import { AuditResources, auditResourceFields } from "./audit-actions"
+import { Record as Rec } from "effect"
 
 describe("AuditResources", () => {
 	it("names every resource in the `<resource>.<verb>` snake_case shape the rows store", () => {
-		for (const [resource, { verbs }] of Object.entries(AuditResources)) {
+		for (const [resource, { verbs }] of Rec.toEntries(AuditResources)) {
 			expect(resource).toMatch(/^[a-z][a-z0-9_]*$/)
 			for (const verb of verbs) expect(verb).toMatch(/^[a-z][a-z0-9_]*$/)
 		}

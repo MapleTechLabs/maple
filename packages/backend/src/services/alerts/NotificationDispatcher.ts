@@ -1,5 +1,5 @@
-import type { AlertDestinationRow } from "@maple/db"
-import { alertDestinations } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { AlertDestinations, type AlertDestinationRow } from "@maple/db/tables"
 import {
 	AlertDeliveryError,
 	type AlertComparator,
@@ -9,18 +9,14 @@ import {
 	type AlertSignalType,
 	type OrgId,
 } from "@maple/domain/http"
-import { and, eq, inArray } from "drizzle-orm"
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { buildAlertChatUrl } from "./AlertDeliveryDispatch"
+import { DateTime, Clock, Context, Effect, Layer, Option, Redacted, Schema, Array as Arr } from "effect"
+import { HttpClient } from "effect/http"
 import { dispatchDelivery as dispatchDeliveryImpl } from "./delivery/dispatch"
 import type { DispatchContext } from "./delivery/context"
-import {
-	hydrateDestinationRow,
-	type DestinationSecretConfig,
-	type EnrichedDestinationSecretConfig,
-} from "./AlertDestinationHydration"
+import { hydrateDestinationRow } from "./AlertDestinationHydration"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { ChatAlertPoster } from "./ChatAlertPoster"
+import { LinearIssueTracker } from "./LinearIssueTracker"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
@@ -34,12 +30,14 @@ const DELIVERY_TIMEOUT_MS = 15_000
 const NOTIFICATION_DELIVERY_CONCURRENCY = 5
 
 class NotificationDispatchError extends Schema.TaggedError<NotificationDispatchError>()(
-	"@maple/api/services/NotificationDispatchError",
+	"@maple/backend/services/NotificationDispatchError",
 	{
 		message: Schema.String,
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
+
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
 export interface NotificationRequest {
 	readonly deliveryKey: string
@@ -107,12 +105,14 @@ export interface NotificationDestinationResult {
 const make: Effect.Effect<
 	NotificationDispatcherApi,
 	NotificationDispatchError,
-	Database | Env | EmailService | ChatAlertPoster
+	Database | Env | EmailService | ChatAlertPoster | LinearIssueTracker | HttpClient.HttpClient
 > = Effect.gen(function* () {
 	const database = yield* Database
+	const httpClient = yield* HttpClient.HttpClient
 	const env = yield* Env
 	const email = yield* EmailService
 	const chatAlertPoster = yield* ChatAlertPoster
+	const linear = yield* LinearIssueTracker
 
 	const encryptionKey = yield* parseBase64Aes256GcmKey(
 		Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
@@ -131,14 +131,6 @@ const make: Effect.Effect<
 				),
 			)
 
-	const enrichSecretConfig = (
-		_row: AlertDestinationRow,
-		secretConfig: DestinationSecretConfig,
-	): Effect.Effect<EnrichedDestinationSecretConfig, NotificationDispatchError> =>
-		// Hazel-OAuth webhooks now embed their delivery token in the URL path,
-		// so no enrichment is required at dispatch time.
-		Effect.succeed(secretConfig)
-
 	const dispatchOne = Effect.fn("NotificationDispatcher.dispatchOne")(function* (
 		row: AlertDestinationRow,
 		request: NotificationRequest,
@@ -155,11 +147,10 @@ const make: Effect.Effect<
 			onSecretConfigInvalid: () =>
 				new NotificationDispatchError({ message: "Stored destination secret is invalid" }),
 		})
-		const enrichedSecret = yield* enrichSecretConfig(row, hydrated.secretConfig)
 		const context: DispatchContext = {
 			destination: row,
 			publicConfig: hydrated.publicConfig,
-			secretConfig: enrichedSecret,
+			secretConfig: hydrated.secretConfig,
 			deliveryKey: request.deliveryKey,
 			ruleId: request.ruleId,
 			ruleName: request.ruleName,
@@ -177,11 +168,10 @@ const make: Effect.Effect<
 			value: request.value,
 			sampleCount: request.sampleCount,
 		}
-		const chatUrl = buildAlertChatUrl(env.MAPLE_APP_BASE_URL, {
-			...request,
-			thresholdUpper: request.thresholdUpper ?? null,
-		})
-		const payloadJson = JSON.stringify({
+		// Every request here is an error issue or its escalation, which no alert incident or rule page has.
+		const chatUrl = request.linkUrl
+		const sentAtMs = yield* Clock.currentTimeMillis
+		const payloadJson = yield* encodeJson({
 			eventType: request.escalation ? "escalation" : request.eventType,
 			...(request.escalation ? { escalation: request.escalation } : undefined),
 			incidentId: request.incidentId,
@@ -204,17 +194,27 @@ const make: Effect.Effect<
 			},
 			linkUrl: request.linkUrl,
 			chatUrl,
-			sentAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
-		})
+			sentAt: DateTime.formatIso(DateTime.makeUnsafe(sentAtMs)),
+		}).pipe(
+			Effect.mapError(
+				(cause) =>
+					new NotificationDispatchError({
+						message: "Failed to encode notification payload",
+						cause,
+					}),
+			),
+		)
 		const result = yield* dispatchDeliveryImpl(
 			context,
 			payloadJson,
-			globalThis.fetch,
 			DELIVERY_TIMEOUT_MS,
 			request.linkUrl,
 			chatUrl,
-			{ sendEmail, postChatAlert: chatAlertPoster.post },
-		).pipe(Effect.tapError(() => Effect.annotateCurrentSpan({ "maple.delivery.outcome": "failed" })))
+			{ sendEmail, postChatAlert: chatAlertPoster.post, linear },
+		).pipe(
+			Effect.provideService(HttpClient.HttpClient, httpClient),
+			Effect.tapError(() => Effect.annotateCurrentSpan({ "maple.delivery.outcome": "failed" })),
+		)
 		yield* Effect.annotateCurrentSpan({
 			"maple.delivery.outcome": "delivered",
 			...(result.responseCode != null
@@ -234,15 +234,11 @@ const make: Effect.Effect<
 
 			const rowsOption = yield* database
 				.execute((db) =>
-					db
-						.select()
-						.from(alertDestinations)
-						.where(
-							and(
-								eq(alertDestinations.orgId, orgId),
-								inArray(alertDestinations.id, [...destinationIds]),
-							),
-						),
+					db.run(
+						PG.from(AlertDestinations)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), $.id.in_(...destinationIds)]),
+					),
 				)
 				.pipe(
 					Effect.tapError((error) =>
@@ -255,14 +251,14 @@ const make: Effect.Effect<
 					// not exist": "missing" is terminal to every consumer (escalation
 					// outbox, error policies), while "failed" keeps their retry
 					// machinery in play for what is a transient database error.
-					Effect.catchTag("@maple/api/lib/DatabaseError", () => Effect.succeedNone),
+					Effect.catchTag("@maple/backend/lib/DatabaseError", () => Effect.succeedNone),
 				)
 
 			if (Option.isNone(rowsOption)) {
 				return {
 					delivered: 0,
 					failed: destinationIds.length,
-					destinations: destinationIds.map((destinationId): NotificationDestinationResult => ({
+					destinations: Arr.map(destinationIds, (destinationId): NotificationDestinationResult => ({
 						destinationId,
 						destinationName: null,
 						status: "failed",
@@ -271,7 +267,7 @@ const make: Effect.Effect<
 				}
 			}
 
-			const rowsById = new Map(rowsOption.value.map((row) => [row.id, row]))
+			const rowsById = new Map(Arr.map(rowsOption.value, (row) => [row.id, row]))
 			const results = yield* Effect.forEach(
 				destinationIds,
 				(destinationId) => {
@@ -310,7 +306,7 @@ const make: Effect.Effect<
 							),
 						),
 						Effect.catchTags({
-							"@maple/api/services/NotificationDispatchError": (error) =>
+							"@maple/backend/services/NotificationDispatchError": (error) =>
 								failedResult(row, error),
 							// Every delivery failure class reports the same way here. The
 							// distinction between them exists to drive the delivery
@@ -328,8 +324,8 @@ const make: Effect.Effect<
 			)
 
 			return {
-				delivered: results.filter((result) => result.status === "delivered").length,
-				failed: results.filter((result) => result.status === "failed").length,
+				delivered: Arr.filter(results, (result) => result.status === "delivered").length,
+				failed: Arr.filter(results, (result) => result.status === "failed").length,
 				destinations: results,
 			}
 		},
@@ -341,11 +337,12 @@ const make: Effect.Effect<
 export class NotificationDispatcher extends Context.Service<
 	NotificationDispatcher,
 	NotificationDispatcherApi
->()("@maple/api/services/NotificationDispatcher", { make }) {
+>()("@maple/backend/services/NotificationDispatcher", { make }) {
 	// The chat poster is self-provided (it needs only what every caller already
 	// supplies) so wiring stays unchanged in app.ts and the alerting worker.
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(EmailService.layer),
+		Layer.provide(LinearIssueTracker.layer),
 	)
 }

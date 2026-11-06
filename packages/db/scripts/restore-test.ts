@@ -50,7 +50,10 @@
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import * as Predicate from "effect/Predicate"
-import postgres from "postgres"
+import * as PgClient from "@effect/sql-pg/PgClient"
+import { Effect, ManagedRuntime, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
+import type * as Statement from "effect/sql/Statement"
 import { fail, resolveDatabase, runPscale, withBranchConnection } from "./planetscale-connection"
 
 const READY_TIMEOUT_MS = 25 * 60 * 1000
@@ -97,25 +100,19 @@ interface Check {
 
 type JsonObject = Record<string, unknown>
 
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+
 const parseObject = (raw: string, what: string): JsonObject => {
-	try {
-		const value: unknown = JSON.parse(raw)
-		if (!Predicate.isObject(value)) throw new TypeError("not an object")
-		return value
-	} catch {
-		return fail(`Could not parse ${what} as a JSON object`)
-	}
+	const value = Option.getOrUndefined(decodeJson(raw))
+	return Predicate.isObject(value) ? value : fail(`Could not parse ${what} as a JSON object`)
 }
 
 const parseObjectArray = (raw: string, what: string): ReadonlyArray<JsonObject> => {
-	try {
-		const value: unknown = JSON.parse(raw)
-		if (!Array.isArray(value) || !value.every(Predicate.isObject))
-			throw new TypeError("not an object array")
-		return value
-	} catch {
-		return fail(`Could not parse ${what} as a JSON object array`)
-	}
+	const value = Option.getOrUndefined(decodeJson(raw))
+	return Arr.isArray(value) && Arr.every(value, Predicate.isObject)
+		? value
+		: fail(`Could not parse ${what} as a JSON object array`)
 }
 
 const str = (o: JsonObject, key: string): string | null => {
@@ -135,7 +132,7 @@ const magnitude = (n: number): string => (n <= 0 ? "0" : `≥ ${10 ** Math.floor
  * may delete is one it named itself, and never the branch it restored from.
  */
 const assertThrowaway = (branch: string, source: string): void => {
-	if (!branch.startsWith(BRANCH_PREFIX) || branch === source || branch === "main") {
+	if (!Str.startsWith(BRANCH_PREFIX)(branch) || branch === source || branch === "main") {
 		fail(`Refusing to touch branch "${branch}": not a ${BRANCH_PREFIX}* branch`)
 	}
 }
@@ -172,18 +169,16 @@ const describeBranch = (database: string, branch: string): BranchInfo => {
 const listBackups = (database: string, branch: string): ReadonlyArray<Backup> => {
 	const list = runPscale(["backup", "list", database, branch, "--format", "json"], { secret: true })
 	if (list.exitCode !== 0) fail(`Could not list backups of ${database}/${branch}`)
-	return parseObjectArray(list.stdout, "backup list")
-		.map((b): Backup => ({
-			id: str(b, "id") ?? "",
-			name: str(b, "name") ?? "",
-			state: str(b, "state") ?? "unknown",
-			size: typeof b.size === "number" ? b.size : 0,
-			created_at: str(b, "created_at") ?? "",
-			started_at: str(b, "started_at"),
-			completed_at: str(b, "completed_at"),
-			expires_at: str(b, "expires_at"),
-		}))
-		.sort((a, b) => ms(b.created_at) - ms(a.created_at))
+	return Arr.map(parseObjectArray(list.stdout, "backup list"), (b): Backup => ({
+		id: str(b, "id") ?? "",
+		name: str(b, "name") ?? "",
+		state: str(b, "state") ?? "unknown",
+		size: typeof b.size === "number" ? b.size : 0,
+		created_at: str(b, "created_at") ?? "",
+		started_at: str(b, "started_at"),
+		completed_at: str(b, "completed_at"),
+		expires_at: str(b, "expires_at"),
+	})).sort((a, b) => ms(b.created_at) - ms(a.created_at))
 }
 
 /**
@@ -194,16 +189,16 @@ const listBackups = (database: string, branch: string): ReadonlyArray<Backup> =>
  */
 const summarizeSchedule = (backups: ReadonlyArray<Backup>) => {
 	const median = (xs: number[]): number | null => {
-		const s = xs.filter(Number.isFinite).sort((a, b) => a - b)
+		const s = Arr.filter(xs, Number.isFinite).sort((a, b) => a - b)
 		return s.length === 0 ? null : (s[Math.floor(s.length / 2)] ?? null)
 	}
-	const gaps = backups
-		.slice(0, -1)
-		.map((b, i) => hours(ms(b.created_at), ms(backups[i + 1]?.created_at ?? null)))
-	const retention = backups.map((b) => hours(ms(b.expires_at), ms(b.created_at)))
+	const gaps = Arr.map(backups.slice(0, -1), (b, i) =>
+		hours(ms(b.created_at), ms(backups[i + 1]?.created_at ?? null)),
+	)
+	const retention = Arr.map(backups, (b) => hours(ms(b.expires_at), ms(b.created_at)))
 	return {
 		backups_listed: backups.length,
-		successful: backups.filter((b) => b.state === "success").length,
+		successful: Arr.filter(backups, (b) => b.state === "success").length,
 		observed_cadence_hours: median(gaps),
 		observed_retention_hours: median(retention),
 	}
@@ -269,7 +264,10 @@ interface Verification {
 }
 
 const verify = async (connectionUrl: string, backup: Backup): Promise<Verification> => {
-	const sql = postgres(connectionUrl, { max: 1, fetch_types: false })
+	// The script owns its one connection; a failed connect rejects every query.
+	const db = ManagedRuntime.make(PgClient.layer({ url: Redacted.make(connectionUrl), maxConnections: 1 }))
+	const query = <A extends object>(statement: (sql: SqlClient.SqlClient) => Statement.Statement<A>) =>
+		db.runPromise(Effect.flatMap(SqlClient.SqlClient, statement))
 	const checks: Check[] = []
 	// A query that fails is a failed check with the report still written, not
 	// a crash that loses the report.
@@ -283,9 +281,11 @@ const verify = async (connectionUrl: string, backup: Backup): Promise<Verificati
 	}
 	try {
 		const mig = await checked("migrations journal restored", async () => {
-			const [row] = await sql<Array<{ applied: number; latest_at: string | null }>>`
+			const [row] = await query(
+				(sql) => sql<{ applied: number; latest_at: string | null }>`
 				SELECT count(*)::int AS applied, max(created_at)::text AS latest_at
-				FROM drizzle.__drizzle_migrations`
+				FROM drizzle.__drizzle_migrations`,
+			)
 			return row
 		})
 		const migrations = {
@@ -302,19 +302,25 @@ const verify = async (connectionUrl: string, backup: Backup): Promise<Verificati
 
 		const publicTables =
 			(await checked("public tables", async () => {
-				const [row] = await sql<Array<{ n: number }>>`
+				const [row] = await query(
+					(sql) => sql<{ n: number }>`
 					SELECT count(*)::int AS n FROM information_schema.tables
-					WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`
+					WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,
+				)
 				return row?.n ?? 0
 			})) ?? 0
 
 		const rowCounts: Record<string, string> = {}
 		for (const { name, nonEmpty } of CRITICAL_TABLES) {
 			const n = await checked(`table ${name}`, async () => {
-				const [exists] = await sql<Array<{ present: boolean }>>`
-					SELECT to_regclass(${`public.${name}`}) IS NOT NULL AS present`
+				const [exists] = await query(
+					(sql) => sql<{ present: boolean }>`
+					SELECT to_regclass(${`public.${name}`}) IS NOT NULL AS present`,
+				)
 				if (!exists?.present) return null
-				const [row] = await sql<Array<{ n: number }>>`SELECT count(*)::int AS n FROM ${sql(name)}`
+				const [row] = await query(
+					(sql) => sql<{ n: number }>`SELECT count(*)::int AS n FROM ${sql(name)}`,
+				)
 				return row?.n ?? 0
 			})
 			if (n === undefined) continue
@@ -334,12 +340,14 @@ const verify = async (connectionUrl: string, backup: Backup): Promise<Verificati
 		// backup's own window (not after it completed, not stale before it
 		// started) — this is what shows the branch holds the backup's snapshot.
 		const newestAt = await checked("newest record inside the backup window", async () => {
-			const [row] = await sql<Array<{ newest: string | null }>>`
+			const [row] = await query(
+				(sql) => sql<{ newest: string | null }>`
 				SELECT greatest(
 					(SELECT max(created_at) FROM error_issue_events),
 					(SELECT max(updated_at) FROM alert_rules),
 					(SELECT max(updated_at) FROM dashboards)
-				)::text AS newest`
+				)::text AS newest`,
+			)
 			return row?.newest ? new Date(row.newest).toISOString() : null
 		})
 		if (newestAt !== undefined) {
@@ -356,10 +364,12 @@ const verify = async (connectionUrl: string, backup: Backup): Promise<Verificati
 		}
 
 		const orphans = await checked("dashboard_versions → dashboards integrity", async () => {
-			const [row] = await sql<Array<{ n: number }>>`
+			const [row] = await query(
+				(sql) => sql<{ n: number }>`
 				SELECT count(*)::int AS n FROM dashboard_versions v
 				LEFT JOIN dashboards d ON d.id = v.dashboard_id
-				WHERE d.id IS NULL`
+				WHERE d.id IS NULL`,
+			)
 			return row?.n ?? 0
 		})
 		if (orphans !== undefined) {
@@ -371,19 +381,22 @@ const verify = async (connectionUrl: string, backup: Backup): Promise<Verificati
 		}
 
 		const sample = await checked("sample record readable with its history", async () => {
-			const [row] = await sql<Array<{ version_count: number }>>`
+			const [row] = await query(
+				(sql) => sql<{ version_count: number }>`
 				SELECT count(v.id)::int AS version_count
 				FROM dashboards d LEFT JOIN dashboard_versions v ON v.dashboard_id = d.id
-				GROUP BY d.id ORDER BY max(d.updated_at) DESC NULLS LAST LIMIT 1`
+				GROUP BY d.id ORDER BY max(d.updated_at) DESC NULLS LAST LIMIT 1`,
+			)
 			return row ?? null
 		})
 		if (sample !== undefined) {
 			checks.push({
 				name: "sample record readable with its history",
 				pass: sample !== null,
-				detail: sample
-					? `most recently updated dashboard read back with ${sample.version_count} versions`
-					: "no dashboards found",
+				detail:
+					sample !== null
+						? `most recently updated dashboard read back with ${sample.version_count} versions`
+						: "no dashboards found",
 			})
 		}
 
@@ -395,7 +408,7 @@ const verify = async (connectionUrl: string, backup: Backup): Promise<Verificati
 			newest_record_at: newestAt ?? null,
 		}
 	} finally {
-		await sql.end()
+		await db.dispose()
 	}
 }
 
@@ -423,7 +436,7 @@ interface Report {
 const renderMarkdown = (r: Report): string => {
 	const icon = (ok: boolean) => (ok ? "✅" : "❌")
 	const lines = [
-		`# Backup restore drill — ${r.status.toUpperCase()}`,
+		`# Backup restore drill — ${Str.toUpperCase(r.status)}`,
 		"",
 		`Generated ${r.generated_at} for PlanetScale database \`${r.database}\` branch \`${r.source_branch.name ?? "?"}\` ` +
 			`(${r.source_branch.cluster ?? "?"}, ${r.source_branch.region ?? "?"}, ${r.source_branch.replicas ?? "?"} replicas).`,
@@ -436,7 +449,8 @@ const renderMarkdown = (r: Report): string => {
 		"",
 		"| Backup | State | Size (MB) | Completed | Expires |",
 		"| --- | --- | --- | --- | --- |",
-		...r.backup_configuration.backups.map(
+		...Arr.map(
+			r.backup_configuration.backups,
 			(b) =>
 				`| ${b.id} | ${b.state} | ${(b.size / 1_000_000).toFixed(1)} | ${b.completed_at ?? "—"} | ${b.expires_at ?? "—"} |`,
 		),
@@ -450,18 +464,18 @@ const renderMarkdown = (r: Report): string => {
 		"",
 		"| Check | Result | Detail |",
 		"| --- | --- | --- |",
-		...r.verification.checks.map((c) => `| ${c.name} | ${icon(c.pass)} | ${c.detail} |`),
+		...Arr.map(r.verification.checks, (c) => `| ${c.name} | ${icon(c.pass)} | ${c.detail} |`),
 		"",
 		`Public tables: ${r.verification.public_tables} · migrations applied: ${r.verification.migrations.applied}`,
 		"",
 	]
-	return lines.join("\n")
+	return Arr.join(lines, "\n")
 }
 
 const writeReport = (dir: string, report: Report): string => {
 	mkdirSync(dir, { recursive: true })
 	const json = resolve(dir, "restore-test-report.json")
-	writeFileSync(json, `${JSON.stringify(report, null, 2)}\n`)
+	writeFileSync(json, `${encodeJsonPretty(report)}\n`)
 	writeFileSync(resolve(dir, "restore-test-report.md"), renderMarkdown(report))
 	return json
 }
@@ -481,13 +495,13 @@ const main = async (): Promise<void> => {
 
 	const source = describeBranch(database, sourceBranch)
 	const backups = listBackups(database, sourceBranch)
-	const latest = backups.find((b) => b.state === "success" && b.completed_at)
+	const latest = backups.find((b) => b.state === "success" && b.completed_at !== null)
 	if (!latest) return fail(`No successful backup of ${database}/${sourceBranch} to restore`)
 	console.log(
 		`✓ Newest successful backup: ${latest.id} (${latest.name}, completed ${latest.completed_at})\n`,
 	)
 
-	const stamp = startedAt.toISOString().replace(/[-:]/g, "").slice(0, 13).replace("T", "-")
+	const stamp = Str.replace("T", "-")(Str.slice(0, 13)(Str.replace(/[-:]/g, "")(startedAt.toISOString())))
 	const branch = `${BRANCH_PREFIX}${stamp}`
 	assertThrowaway(branch, sourceBranch)
 
@@ -527,7 +541,7 @@ const main = async (): Promise<void> => {
 	try {
 		if (await waitUntilReady(database, branch)) {
 			readyAfterSeconds = Math.round((Date.now() - startedAt.getTime()) / 1000)
-			await withBranchConnection(branch, async (url) => {
+			await withBranchConnection(branch, "read", async (url) => {
 				verification = await verify(url, latest)
 			})
 		}
@@ -550,7 +564,7 @@ const main = async (): Promise<void> => {
 		}
 	}
 
-	const status: Report["status"] = verification.checks.every((c) => c.pass) ? "pass" : "fail"
+	const status: Report["status"] = Arr.every(verification.checks, (c) => c.pass) ? "pass" : "fail"
 	const report: Report = {
 		version: 1,
 		status,
@@ -589,7 +603,7 @@ const main = async (): Promise<void> => {
 				},
 			]
 	const finalChecks = [...verification.checks, ...cleanup]
-	const finalStatus: Report["status"] = finalChecks.every((c) => c.pass) ? "pass" : "fail"
+	const finalStatus: Report["status"] = Arr.every(finalChecks, (c) => c.pass) ? "pass" : "fail"
 	const finalReport: Report = {
 		...report,
 		status: finalStatus,

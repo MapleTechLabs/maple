@@ -61,7 +61,7 @@ export function withScalarReduction(dataSource: WidgetDataSource, isScalar: bool
 	return {
 		...dataSource,
 		transform: { ...existing, reduceToValue: { field: "value", aggregate: "first" } },
-	} as WidgetDataSource
+	}
 }
 
 /**

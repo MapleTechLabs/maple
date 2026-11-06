@@ -8,15 +8,16 @@
 // existing infra detail routes.
 //
 // This is the SINGLE source of truth for both the tab-visibility gate and the
-// panel renderer, so the two never drift. Keep it React-free — it is unit
-// tested directly.
+// panel renderer, so the two never drift. Keep it pure: it is unit tested
+// directly.
 
+import { Array as Arr, Option } from "effect"
 import type {
 	ContainerInfraMetric,
 	HostInfraMetric,
 	NodeInfraMetric,
 	PodInfraMetric,
-} from "@/api/warehouse/infra"
+} from "@maple/web-data/warehouse/infra"
 
 interface InfraCorrelationBase {
 	/** Display heading for the group ("Container" | "Pod" | "Node" | "Host"). */
@@ -74,7 +75,8 @@ const POD_CHARTS: ReadonlyArray<{ label: string; metric: PodInfraMetric }> = [
 
 const NODE_CHARTS: ReadonlyArray<{ label: string; metric: NodeInfraMetric }> = [
 	{ label: "CPU cores", metric: "cpu_usage" },
-	{ label: "Uptime", metric: "uptime" },
+	{ label: "CPU / allocatable", metric: "cpu_utilization" },
+	{ label: "Memory / allocatable", metric: "memory_utilization" },
 ]
 
 const HOST_CHARTS: ReadonlyArray<{ label: string; metric: HostInfraMetric }> = [
@@ -125,9 +127,8 @@ export function getActiveInfraCorrelations(
 	// and a declared non-docker runtime (containerd, cri-o, …) has no docker
 	// metrics either — both would render an empty duplicate chart stack.
 	const containerName = attr(resourceAttributes, CONTAINER_NAME_KEY)
-	const containerRuntime = CONTAINER_RUNTIME_KEYS.reduce<string | undefined>(
-		(found, key) => found ?? attr(resourceAttributes, key),
-		undefined,
+	const containerRuntime = Option.getOrUndefined(
+		Arr.findFirst(CONTAINER_RUNTIME_KEYS, (key) => Option.fromUndefinedOr(attr(resourceAttributes, key))),
 	)
 	if (containerName && !podName && (containerRuntime === undefined || containerRuntime === "docker")) {
 		out.push({

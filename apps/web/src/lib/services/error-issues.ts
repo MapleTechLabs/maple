@@ -18,7 +18,7 @@ import {
 	type V2ErrorIssueDetail,
 } from "@maple/domain/http/v2"
 import { warehouseDateTimeToIso } from "@maple/query-engine"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 
 const asIso = Schema.decodeUnknownSync(IsoDateTimeString)
 const asIsoOrNull = (value: string | null) => (value === null ? null : asIso(value))
@@ -79,7 +79,7 @@ export const appendUniqueErrorIssues = (
 	current: ReadonlyArray<ErrorIssueDocument>,
 	incoming: ReadonlyArray<ErrorIssueDocument>,
 ): ReadonlyArray<ErrorIssueDocument> => {
-	const byId = new Map(current.map((issue) => [issue.id, issue]))
+	const byId = new Map(Arr.map(current, (issue) => [issue.id, issue]))
 	for (const issue of incoming) if (!byId.has(issue.id)) byId.set(issue.id, issue)
 	return [...byId.values()]
 }
@@ -100,6 +100,8 @@ export const errorIssueFromV2 = (issue: V2ErrorIssue): ErrorIssueDocument =>
 		id: issue.id,
 		kind: issue.kind,
 		fingerprintHash: issue.fingerprint_hash,
+		// Absent from an API deployed before merges existed: the issue owns its own hash only.
+		fingerprintHashes: issue.fingerprint_hashes ?? [issue.fingerprint_hash],
 		serviceName: issue.service_name,
 		exceptionType: issue.exception_type,
 		exceptionMessage: issue.exception_message,
@@ -125,6 +127,7 @@ export const errorIssueFromV2 = (issue: V2ErrorIssue): ErrorIssueDocument =>
 		resolvedVersions: issue.resolved_versions,
 		snoozeUntil: asIsoOrNull(issue.snooze_until),
 		archivedAt: asIsoOrNull(issue.archived_at),
+		mergedIntoIssueId: issue.merged_into_issue_id ?? null,
 		hasOpenIncident: issue.has_open_incident,
 		commentCount: issue.comment_count,
 		openPullRequestCount: issue.open_pull_request_count,
@@ -134,10 +137,12 @@ export const errorIssueFromV2 = (issue: V2ErrorIssue): ErrorIssueDocument =>
 export const errorIssueDetailFromV2 = (detail: V2ErrorIssueDetail): ErrorIssueDetailResponse =>
 	new ErrorIssueDetailResponse({
 		issue: errorIssueFromV2(detail),
-		timeseries: detail.timeseries.map(
+		timeseries: Arr.map(
+			detail.timeseries,
 			(point) => new ErrorIssueTimeseriesPoint({ bucket: asIso(point.bucket), count: point.count }),
 		),
-		sampleTraces: detail.sample_traces.map(
+		sampleTraces: Arr.map(
+			detail.sample_traces,
 			(trace) =>
 				new ErrorIssueSampleTrace({
 					traceId: trace.trace_id,
@@ -148,7 +153,8 @@ export const errorIssueDetailFromV2 = (detail: V2ErrorIssueDetail): ErrorIssueDe
 					durationMicros: trace.duration_micros,
 				}),
 		),
-		incidents: detail.incidents.map(
+		incidents: Arr.map(
+			detail.incidents,
 			(incident) =>
 				new ErrorIncidentDocument({
 					id: incident.id,
@@ -161,7 +167,8 @@ export const errorIssueDetailFromV2 = (detail: V2ErrorIssueDetail): ErrorIssueDe
 					occurrenceCount: incident.occurrence_count,
 				}),
 		),
-		environments: detail.environments.map(
+		environments: Arr.map(
+			detail.environments,
 			(env) => new ErrorIssueEnvironment({ name: env.name, count: env.count }),
 		),
 	})

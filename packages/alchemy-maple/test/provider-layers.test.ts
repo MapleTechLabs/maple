@@ -1,6 +1,6 @@
-import type { ScopedPlanStatusSession } from "alchemy/Report"
-import { ConfigProvider, Effect, Layer, Redacted } from "effect"
-import { HttpClient, HttpClientResponse } from "effect/unstable/http"
+import { noopSession } from "alchemy/Report"
+import { ConfigProvider, Effect, Layer, Redacted, Record as Rec } from "effect"
+import { HttpClient, HttpClientResponse } from "effect/http"
 import { describe, it } from "@effect/vitest"
 import { expect } from "vitest"
 import { Dashboard, type Dashboard as DashboardResource } from "../src/Dashboard"
@@ -14,11 +14,7 @@ const stackLayer = Layer.mergeAll(
 	Layer.succeed(Stage, "test"),
 )
 
-const session: ScopedPlanStatusSession = {
-	emit: () => Effect.void,
-	done: () => Effect.void,
-	note: () => Effect.void,
-}
+const session = noopSession
 
 const wireDashboard = {
 	id: "dash_override",
@@ -110,7 +106,7 @@ describe("Maple provider layers", () => {
 
 			const providerTypes = yield* Effect.gen(function* () {
 				const collection = yield* Providers
-				return Object.keys(collection.providers).sort()
+				return Rec.keys(collection.providers).sort()
 			}).pipe(Effect.provide(defaultProviders))
 
 			expect(providerTypes).toEqual([

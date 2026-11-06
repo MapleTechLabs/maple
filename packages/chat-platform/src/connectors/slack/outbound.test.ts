@@ -3,9 +3,9 @@
  * demand: a 429, a 200 that means failure, and a workspace with no stored token at all.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Fiber, Layer } from "effect"
+import { Effect, Fiber, Layer, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
-import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import type { InboundAction, InboundMessage } from "../../ingress"
 import { ConnectorCredentials, WORKSPACE_CREDENTIALS } from "../../outbound"
 import { encodeSlackCredentials } from "./credentials"
@@ -79,7 +79,7 @@ describe("slack transport", () => {
 
 			expect(ref).toEqual({ target, messageId: "1700000000.000200" })
 			expect(http.seen[0]?.headers["authorization"]).toBe("Bearer xoxb-a-workspaces-own-token")
-			expect(sentBody(http.seen[0]!)).toMatchObject({
+			expect(sentBody(Arr.getUnsafe(http.seen, 0))).toMatchObject({
 				channel: "C1",
 				thread_ts: "1700000000.000100",
 				text: "hello",
@@ -103,8 +103,8 @@ describe("slack transport", () => {
 			const transport = yield* slackOutbound.transport
 			yield* transport.whisper(click, [{ kind: "prose", markdown: "only you" }])
 
-			expect(http.seen[0].url).toBe("https://slack.com/api/chat.postEphemeral")
-			expect(sentBody(http.seen[0])).toMatchObject({
+			expect(Arr.getUnsafe(http.seen, 0).url).toBe("https://slack.com/api/chat.postEphemeral")
+			expect(sentBody(Arr.getUnsafe(http.seen, 0))).toMatchObject({
 				channel: "C1",
 				user: "U2",
 				thread_ts: "1700000000.000100",
@@ -119,7 +119,7 @@ describe("slack transport", () => {
 			yield* transport.post({ workspaceId: "T1", channelId: "C1" }, [
 				{ kind: "prose", markdown: "hello" },
 			])
-			expect("thread_ts" in sentBody(http.seen[0]!)).toBe(false)
+			expect("thread_ts" in sentBody(Arr.getUnsafe(http.seen, 0))).toBe(false)
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -131,7 +131,10 @@ describe("slack transport", () => {
 				{ kind: "prose", markdown: "revised" },
 			])
 			expect(http.seen[0]?.url).toContain("chat.update")
-			expect(sentBody(http.seen[0]!)).toMatchObject({ channel: "C1", ts: "1700000000.000200" })
+			expect(sentBody(Arr.getUnsafe(http.seen, 0))).toMatchObject({
+				channel: "C1",
+				ts: "1700000000.000200",
+			})
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -315,7 +318,7 @@ describe("slack transport", () => {
 				{ displayName: "U1", isBot: false, text: "first", at: 1_700_000_000_000 },
 			])
 			expect(http.seen[0]?.url).toContain("conversations.replies")
-			expect(sentBody(http.seen[0]!)).toEqual({
+			expect(sentBody(Arr.getUnsafe(http.seen, 0))).toEqual({
 				channel: "C1",
 				// A full page, not the caller's 10 — see the thread-paging case below.
 				limit: 200,
@@ -339,7 +342,7 @@ describe("slack transport", () => {
 				},
 			)
 			expect(http.seen[0]?.url).toContain("conversations.history")
-			expect("ts" in sentBody(http.seen[0]!)).toBe(false)
+			expect("ts" in sentBody(Arr.getUnsafe(http.seen, 0))).toBe(false)
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -348,7 +351,7 @@ describe("slack transport", () => {
 		return Effect.gen(function* () {
 			const transport = yield* slackOutbound.transport
 			yield* transport.history(target, { limit: 100_000, before: "1700000000.000400" })
-			expect(sentBody(http.seen[0]!)).toMatchObject({ limit: 200 })
+			expect(sentBody(Arr.getUnsafe(http.seen, 0))).toMatchObject({ limit: 200 })
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -374,8 +377,8 @@ describe("slack transport", () => {
 			const history = yield* transport.history(target, { limit: 2, before: "1700000004.000000" })
 
 			// The bound still cuts to two — at the right end.
-			expect(history.map((message) => message.text)).toEqual(["newest", "newer"])
-			expect(sentBody(http.seen[0]!)).toMatchObject({ limit: 200 })
+			expect(Arr.map(history, (message) => message.text)).toEqual(["newest", "newer"])
+			expect(sentBody(Arr.getUnsafe(http.seen, 0))).toMatchObject({ limit: 200 })
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -390,7 +393,7 @@ describe("slack transport", () => {
 					before: "1700000000.000400",
 				},
 			)
-			expect(sentBody(http.seen[0]!)).toMatchObject({ limit: 5 })
+			expect(sentBody(Arr.getUnsafe(http.seen, 0))).toMatchObject({ limit: 5 })
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -428,7 +431,7 @@ describe("slack transport", () => {
 		return Effect.gen(function* () {
 			const transport = yield* slackOutbound.transport
 			const history = yield* transport.history(target, { limit: 10, before: "1700000000.000500" })
-			expect(history.map((message) => message.text)).toEqual(["", "kept"])
+			expect(Arr.map(history, (message) => message.text)).toEqual(["", "kept"])
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -519,6 +522,7 @@ describe("slack transport", () => {
 			{ status: 200, body: '{"ok":false,"error":"token_revoked"}' },
 			{ status: 200, body: '{"ok":false,"error":"not_in_channel"}' },
 			{ status: 200, body: '{"ok":false,"error":"invalid_blocks"}' },
+			{ status: 200, body: '{"ok":false,"error":"invalid_attachments"}' },
 			{ status: 200, body: '{"ok":false,"error":"fatal_error"}' },
 		])
 		return Effect.gen(function* () {
@@ -526,6 +530,8 @@ describe("slack transport", () => {
 			const post = () => Effect.flip(transport.post(target, [{ kind: "prose", markdown: "x" }]))
 			expect(yield* post()).toMatchObject({ reason: "auth" })
 			expect(yield* post()).toMatchObject({ reason: "not_found" })
+			expect(yield* post()).toMatchObject({ reason: "rejected" })
+			// An alert card's image Slack could not fetch: the same message is refused every time.
 			expect(yield* post()).toMatchObject({ reason: "rejected" })
 			// Nothing the caller can act on: no reason, so it is retried like an outage.
 			expect("reason" in (yield* post())).toBe(false)
@@ -564,12 +570,12 @@ describe("slack transport", () => {
 				{ id: "G1", name: "oncall", private: true },
 			])
 			expect(http.seen).toHaveLength(2)
-			const first = new URL(http.seen[0]!.url)
+			const first = new URL(Arr.getUnsafe(http.seen, 0).url)
 			expect(first.pathname).toBe("/api/conversations.list")
 			expect(first.searchParams.get("types")).toBe("public_channel,private_channel")
 			expect(first.searchParams.get("exclude_archived")).toBe("true")
 			expect(http.seen[0]?.method).toBe("GET")
-			expect(new URL(http.seen[1]!.url).searchParams.get("cursor")).toBe("page-2")
+			expect(new URL(Arr.getUnsafe(http.seen, 1).url).searchParams.get("cursor")).toBe("page-2")
 			expect(http.seen[0]?.headers["authorization"]).toBe("Bearer xoxb-a-workspaces-own-token")
 		}).pipe(Effect.provide(http.layer))
 	})

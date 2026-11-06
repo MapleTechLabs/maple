@@ -1,5 +1,5 @@
-import * as Command from "effect/unstable/cli/Command"
-import * as Flag from "effect/unstable/cli/Flag"
+import * as Command from "effect/cli/Command"
+import * as Flag from "effect/cli/Flag"
 import { Effect, Option } from "effect"
 import * as f from "../lib/flags"
 import { CliUsageError } from "../lib/errors"

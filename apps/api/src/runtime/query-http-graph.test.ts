@@ -1,7 +1,7 @@
 import { makeLoginSelfHosted } from "@maple/auth"
 import { describe, expect, it } from "vitest"
-import { Context, Effect, Layer, Option, Redacted, Scope } from "effect"
-import * as Cloudflare from "alchemy/Cloudflare"
+import { Context, Effect, Layer, Option, Redacted, Scope, Array as Arr, String as Str } from "effect"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import type { HttpEffect } from "alchemy/Http"
 import { buildApp, makeAppGraphs } from "../worker/http"
 import { offlinePorts } from "../../test/offline-http-ports"
@@ -19,7 +19,7 @@ const request = (handler: HttpEffect, path: string, headers?: Record<string, str
 							headers: { "content-type": "application/json", ...headers },
 							body,
 						}),
-					})!
+					})
 				const response = yield* responseEffect
 				return {
 					status: response.status,
@@ -83,7 +83,7 @@ describe("dashboard query graph", () => {
 					{ authorization: `Bearer ${session.token}` },
 					payload,
 				)
-				expect(answer.status, `${order.join("→")}: ${answer.body}`).not.toBe(500)
+				expect(answer.status, `${Arr.join(order, "→")}: ${answer.body}`).not.toBe(500)
 				expect(JSON.parse(answer.body)._tag).not.toBe("@maple/http/v1/V1UnexpectedError")
 			}
 		}
@@ -111,10 +111,10 @@ describe("dashboard query graph", () => {
 					const b = await request(second, path, headers)
 					expect(a).toEqual(b)
 					expect(a.status).toBe(
-						path.endsWith("not-a-route")
+						Str.endsWith("not-a-route")(path)
 							? 404
 							: headers
-								? headers.authorization.startsWith("Bearer maple_ak_")
+								? Str.startsWith("Bearer maple_ak_")(headers.authorization)
 									? 403
 									: 400
 								: 401,

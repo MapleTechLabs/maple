@@ -1,0 +1,442 @@
+/**
+ * A pull request's diff read against the organization's telemetry: what it stops emitting that
+ * someone reads, which production operations it touches, which open errors live in its files, and
+ * what its new logs cost. Pure, so the same inputs always give the same facts.
+ */
+import {
+	PrReviewContractBreak,
+	PrReviewCostNote,
+	PrReviewHotFile,
+	PrReviewLinkedIssue,
+	PrReviewOperationTraffic,
+	PrReviewTelemetry,
+	PrReviewTelemetryChange,
+	type PrReviewTelemetryKind,
+	type PullRequestFile,
+} from "@maple/domain/http"
+import {
+	type DiffLine,
+	emittedNames,
+	isCommentLine,
+	isLogCall,
+	isMockData,
+	isRuntimeSource,
+	literalsOf,
+	parsePatch,
+} from "./diff"
+import { escapeRegExp, referencesFor, type ReferenceSource } from "./references"
+import { Array as Arr, Option, String as Str } from "effect"
+
+/** One production operation over the catalog window. */
+export interface CatalogOperation {
+	readonly service: string
+	readonly spanName: string
+	readonly count: number
+	readonly errorCount: number
+	readonly p95Ms: number
+}
+
+/** What the organization emitted over the last `windowDays`. */
+export interface TelemetryCatalog {
+	readonly windowDays: number
+	readonly operations: ReadonlyArray<CatalogOperation>
+	/** Span and resource attribute keys, with how often each was set. */
+	readonly attributeKeys: ReadonlyMap<string, number>
+	/** Metric names, with how many data points each wrote. */
+	readonly metricNames: ReadonlyMap<string, number>
+	/** The organization's average log record size, for cost estimates. */
+	readonly bytesPerLogRecord: number
+}
+
+export interface CatalogIssue {
+	readonly id: string
+	readonly fingerprintHash: string
+	readonly title: string
+	readonly service: string
+	readonly topFrame: string
+	readonly occurrences: number
+	readonly lastSeenAt: number
+}
+
+/** Used when the organization has sent no logs to average over. */
+export const DEFAULT_BYTES_PER_LOG_RECORD = 500
+
+export const EMPTY_CATALOG: TelemetryCatalog = {
+	windowDays: 7,
+	operations: [],
+	attributeKeys: new Map(),
+	metricNames: new Map(),
+	bytesPerLogRecord: DEFAULT_BYTES_PER_LOG_RECORD,
+}
+
+const MAX_BREAKS = 20
+const MAX_HOT_FILES = 15
+const MAX_OPERATIONS_PER_FILE = 5
+const MAX_ISSUES = 10
+const MAX_COST_NOTES = 10
+const MAX_CHANGES = 30
+/** A log line is worth a note when it would ingest at least this much a month. */
+const COST_NOTE_MIN_GB = 0.1
+
+/** File names too common to tie a stack frame to one changed file on their own. */
+const GENERIC_BASENAME =
+	/^(index|main|app|server|worker|handler|handlers|utils?|helpers?|mod|lib|types|routes?|api|client|service|init|__init__)$/i
+
+const stripExtension = (name: string) => Str.replace(/\.[^.]+$/, "")(name)
+
+/**
+ * A changed file that at least this many, and this share, of one service's open issues point at by
+ * name alone is where the service's frames land, not where its errors come from: a bundle shipped
+ * without source maps names its entry file in every frame. A frame with the file's directory is
+ * source-located and always kept.
+ */
+const CATCH_ALL_MIN_ISSUES = 5
+const CATCH_ALL_SHARE = 0.5
+
+/**
+ * Whether a normalized top frame points at a changed file: by its last directory and name (any
+ * extension, since a frame may be the compiled `.js` of a `.ts` file), or by a distinctive name
+ * alone.
+ */
+export const frameMatchesPath = (frame: string, path: string): boolean =>
+	frameMatchOf(frame, path) !== undefined
+
+/** How a top frame names a changed file: with its directory, by its name alone, or not at all. */
+const frameMatchOf = (frame: string, path: string): "directory" | "name" | undefined => {
+	const haystack = Str.replace(/\\/g, "/")(Str.toLowerCase(frame))
+	const segments = Str.split("/")(Str.toLowerCase(path))
+	const name = stripExtension(segments.at(-1) ?? "")
+	if (name.length === 0) return undefined
+	const dir = segments.at(-2)
+	// The whole directory segment: `api/worker-app.` must not match inside `public-api/worker-app.`.
+	if (
+		dir !== undefined &&
+		new RegExp(`(^|[/\\s(@])${escapeRegExp(dir)}/${escapeRegExp(name)}\\.`).test(haystack)
+	) {
+		return "directory"
+	}
+	return !GENERIC_BASENAME.test(name) &&
+		name.length >= 6 &&
+		new RegExp(`[/\\s(@]${escapeRegExp(name)}\\.`).test(haystack)
+		? "name"
+		: undefined
+}
+
+/**
+ * Resource keys every OTel SDK sets on its own, whatever the code does. One file dropping a literal
+ * can never stop them arriving; keys a service may set by hand are not here.
+ */
+const UNIVERSAL_RESOURCE_KEYS: ReadonlySet<string> = new Set([
+	"service.name",
+	"telemetry.sdk.name",
+	"telemetry.sdk.language",
+	"telemetry.sdk.version",
+])
+
+const perDay = (count: number, windowDays: number) => Math.round(count / Math.max(1, windowDays))
+
+/** The operations a literal names: a span name exactly, or a route (`/checkout`) inside `POST /checkout`. */
+const operationsNamed = (value: string, operations: ReadonlyArray<CatalogOperation>) =>
+	Arr.filter(
+		operations,
+		(operation) =>
+			operation.spanName === value ||
+			(Str.startsWith("/")(value) && value.length > 1 && Str.endsWith(` ${value}`)(operation.spanName)),
+	)
+
+export interface AnalyzeTelemetryInput {
+	readonly files: ReadonlyArray<PullRequestFile>
+	readonly catalog: TelemetryCatalog
+	readonly sources: ReadonlyArray<ReferenceSource>
+	readonly issues: ReadonlyArray<CatalogIssue>
+}
+
+export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetry => {
+	const { catalog } = input
+	const spanCounts = new Map<string, number>()
+	for (const operation of catalog.operations) {
+		spanCounts.set(operation.spanName, (spanCounts.get(operation.spanName) ?? 0) + operation.count)
+	}
+	const kindOf = (value: string): { kind: PrReviewTelemetryKind; count: number } | undefined => {
+		const span = spanCounts.get(value)
+		if (span !== undefined) return { kind: "span", count: span }
+		const attribute = catalog.attributeKeys.get(value)
+		if (attribute !== undefined) return { kind: "attribute", count: attribute }
+		const metric = catalog.metricNames.get(value)
+		if (metric !== undefined) return { kind: "metric", count: metric }
+		return undefined
+	}
+
+	const countAs = (kind: PrReviewTelemetryKind, value: string): number | undefined =>
+		kind === "span"
+			? spanCounts.get(value)
+			: kind === "attribute"
+				? catalog.attributeKeys.get(value)
+				: catalog.metricNames.get(value)
+
+	const files = Arr.map(
+		Arr.filter(
+			input.files,
+			(file) => isRuntimeSource(file.path) && !isMockData(file.path) && file.patch !== null,
+		),
+		(file) => ({ path: file.path, lines: parsePatch(file.patch) }),
+	)
+
+	// A name added anywhere in the pull request is moved, not removed. A comment or a log message
+	// that merely quotes it emits nothing, so it does not count as adding it back.
+	const addedValues = new Set<string>()
+	const removedValues = new Set<string>()
+	for (const file of files) {
+		for (const line of file.lines) {
+			const target =
+				line.kind === "add" && !isCommentLine(line.text) && !isLogCall(line.text)
+					? addedValues
+					: line.kind === "del"
+						? removedValues
+						: undefined
+			if (target === undefined) continue
+			for (const literal of literalsOf(line.text)) target.add(literal.value)
+		}
+	}
+
+	const removed: Array<PrReviewTelemetryChange> = []
+	const breaks: Array<PrReviewContractBreak> = []
+	const seenRemoved = new Set<string>()
+	// Only a name the removed line handed to the telemetry API, as the kind production knows it by:
+	// `method: "POST"` matches the span name `POST` but emits nothing.
+	for (const file of files) {
+		Arr.forEach(file.lines, (line, index) => {
+			if (line.kind !== "del" || isCommentLine(line.text)) return
+			for (const emitted of emittedNames(line.text, oldNearbyText(file.lines, index))) {
+				const name = emitted.value
+				if (emitted.templated || addedValues.has(name) || seenRemoved.has(name)) continue
+				if (emitted.kind === "attribute" && UNIVERSAL_RESOURCE_KEYS.has(name)) continue
+				const count = countAs(emitted.kind, name)
+				if (count === undefined) continue
+				seenRemoved.add(name)
+				const daily = perDay(count, catalog.windowDays)
+				removed.push(
+					new PrReviewTelemetryChange({
+						kind: emitted.kind,
+						name,
+						path: file.path,
+						line: line.newLine,
+						perDay: daily,
+					}),
+				)
+				const references = referencesFor(name, input.sources)
+				if (references.length > 0) {
+					breaks.push(
+						new PrReviewContractBreak({
+							kind: emitted.kind,
+							name,
+							path: file.path,
+							line: line.newLine,
+							references,
+							perDay: daily,
+						}),
+					)
+				}
+			}
+		})
+	}
+
+	const added: Array<PrReviewTelemetryChange> = []
+	const seenAdded = new Set<string>()
+	const costNotes: Array<PrReviewCostNote> = []
+	const hotFiles: Array<PrReviewHotFile> = []
+	for (const file of files) {
+		const operations = new Map<string, CatalogOperation>()
+		for (const line of file.lines) {
+			for (const literal of literalsOf(line.text)) {
+				for (const operation of operationsNamed(literal.value, catalog.operations)) {
+					operations.set(`${operation.service}\u0000${operation.spanName}`, operation)
+				}
+			}
+		}
+		const traffic = Arr.filter(
+			Arr.map(
+				[...operations.values()],
+				(operation) =>
+					new PrReviewOperationTraffic({
+						service: operation.service,
+						spanName: operation.spanName,
+						perDay: perDay(operation.count, catalog.windowDays),
+						errorRate: operation.count === 0 ? 0 : operation.errorCount / operation.count,
+						p95Ms: Math.round(operation.p95Ms),
+					}),
+			),
+			(operation) => operation.perDay > 0,
+		).sort((a, b) => b.perDay - a.perDay)
+		const filePerDay = Arr.reduce(traffic, 0, (sum, operation) => sum + operation.perDay)
+		if (traffic.length > 0) {
+			hotFiles.push(
+				new PrReviewHotFile({
+					path: file.path,
+					perDay: filePerDay,
+					operations: traffic.slice(0, MAX_OPERATIONS_PER_FILE),
+				}),
+			)
+		}
+
+		Arr.forEach(file.lines, (line, index) => {
+			if (line.kind !== "add") return
+			const nearby = nearbyText(file.lines, index)
+			for (const name of emittedNames(line.text, nearby)) {
+				if (name.templated) {
+					if (name.kind === "span")
+						costNotes.push(templatedSpanNote(file.path, line.newLine, name.value))
+					continue
+				}
+				if (
+					seenAdded.has(name.value) ||
+					removedValues.has(name.value) ||
+					kindOf(name.value) !== undefined
+				)
+					continue
+				seenAdded.add(name.value)
+				added.push(
+					new PrReviewTelemetryChange({
+						kind: name.kind,
+						name: name.value,
+						path: file.path,
+						line: line.newLine,
+					}),
+				)
+			}
+			if (filePerDay > 0 && isLogCall(line.text)) {
+				const gbPerMonth = (filePerDay * 30 * catalog.bytesPerLogRecord) / 1e9
+				if (gbPerMonth >= COST_NOTE_MIN_GB) {
+					costNotes.push(
+						new PrReviewCostNote({
+							path: file.path,
+							line: line.newLine,
+							kind: "log",
+							gbPerMonth: Math.round(gbPerMonth * 10) / 10,
+							note: `If this logs once per call, about ${formatGb(gbPerMonth)}/month: the file's operations run ${formatCount(filePerDay)} times a day.`,
+						}),
+					)
+				}
+			}
+		})
+	}
+
+	// A file the frame names with its directory wins over one it names only by the same file name.
+	const matched = Arr.map(input.issues, (issue) => {
+		const byDirectory = Arr.findFirst(
+			files,
+			(candidate) => frameMatchOf(issue.topFrame, candidate.path) === "directory",
+		)
+		const file = Option.getOrUndefined(
+			Option.orElse(byDirectory, () =>
+				Arr.findFirst(files, (candidate) => frameMatchOf(issue.topFrame, candidate.path) === "name"),
+			),
+		)
+		return { issue, file, byName: file !== undefined && Option.isNone(byDirectory) }
+	})
+	const issuesPerService = new Map<string, number>()
+	const matchesPerFile = new Map<string, number>()
+	for (const { issue, file, byName } of matched) {
+		issuesPerService.set(issue.service, (issuesPerService.get(issue.service) ?? 0) + 1)
+		if (file === undefined || !byName) continue
+		const key = `${issue.service}\u0000${file.path}`
+		matchesPerFile.set(key, (matchesPerFile.get(key) ?? 0) + 1)
+	}
+	const isCatchAll = (service: string, path: string) => {
+		const count = matchesPerFile.get(`${service}\u0000${path}`) ?? 0
+		return (
+			count >= CATCH_ALL_MIN_ISSUES && count >= CATCH_ALL_SHARE * (issuesPerService.get(service) ?? 0)
+		)
+	}
+
+	const linkedIssues = Arr.flatMap(matched, ({ issue, file, byName }) =>
+		file === undefined || (byName && isCatchAll(issue.service, file.path))
+			? []
+			: [
+					new PrReviewLinkedIssue({
+						issueId: issue.id,
+						fingerprintHash: issue.fingerprintHash,
+						title: issue.title,
+						service: issue.service,
+						path: file.path,
+						topFrame: issue.topFrame,
+						occurrences: issue.occurrences,
+						lastSeenAt: issue.lastSeenAt,
+					}),
+				],
+	)
+		.sort((a, b) => b.occurrences - a.occurrences)
+		.slice(0, MAX_ISSUES)
+
+	hotFiles.sort((a, b) => b.perDay - a.perDay)
+	const services = [
+		...new Set(
+			Arr.flatMap(hotFiles, (file) => Arr.map(file.operations, (operation) => operation.service)),
+		),
+	].slice(0, 10)
+
+	return new PrReviewTelemetry({
+		windowDays: catalog.windowDays,
+		services,
+		// Alerts first: a silent alert is worse than an empty chart.
+		contractBreaks: breaks
+			.sort((a, b) => {
+				const byAlert =
+					Number(Arr.some(b.references, (ref) => ref.kind === "alert")) -
+					Number(Arr.some(a.references, (ref) => ref.kind === "alert"))
+				return byAlert !== 0 ? byAlert : (b.perDay ?? 0) - (a.perDay ?? 0)
+			})
+			.slice(0, MAX_BREAKS),
+		hotFiles: hotFiles.slice(0, MAX_HOT_FILES),
+		linkedIssues,
+		costNotes: costNotes
+			.sort(
+				(a, b) =>
+					(b.gbPerMonth ?? Number.POSITIVE_INFINITY) - (a.gbPerMonth ?? Number.POSITIVE_INFINITY),
+			)
+			.slice(0, MAX_COST_NOTES),
+		added: added.slice(0, MAX_CHANGES),
+		removed: removed.slice(0, MAX_CHANGES),
+	})
+}
+
+const nearbyText = (lines: ReadonlyArray<DiffLine>, index: number) =>
+	Arr.join(
+		Arr.map(
+			Arr.filter(lines.slice(Math.max(0, index - 4), index), (line) => line.kind !== "del"),
+			(line) => line.text,
+		),
+		"\n",
+	)
+
+/** The old side's lines above a removed one, so a removed attribute object is still recognized. */
+const oldNearbyText = (lines: ReadonlyArray<DiffLine>, index: number) =>
+	Arr.join(
+		Arr.map(
+			Arr.filter(lines.slice(Math.max(0, index - 4), index), (line) => line.kind !== "add"),
+			(line) => line.text,
+		),
+		"\n",
+	)
+
+const templatedSpanNote = (path: string, line: number, value: string) =>
+	new PrReviewCostNote({
+		path,
+		line,
+		kind: "span_name",
+		note: `The span name \`${Str.slice(0, 80)(value)}\` is built from a runtime value, so every value becomes its own operation: grouping, rollups and alerts by span name stop working. Keep the name fixed and put the value in an attribute.`,
+	})
+
+export const formatCount = (value: number): string =>
+	value >= 1_000_000
+		? `${(value / 1_000_000).toFixed(1)}M`
+		: value >= 1_000
+			? `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}k`
+			: String(Math.round(value))
+
+export const formatGb = (value: number): string =>
+	value >= 10
+		? `${Math.round(value)} GB`
+		: value >= 1
+			? `${value.toFixed(1)} GB`
+			: `${Math.round(value * 1000)} MB`

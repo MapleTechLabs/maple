@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { DashboardDocument, PortableDashboardDocument } from "@maple/widgets/dashboard"
+import { DashboardDocument } from "@maple/widgets/dashboard"
 import {
 	DashboardId,
 	DashboardTemplateCategory,
@@ -55,37 +55,10 @@ export {
 	WidgetDisplayConfigSchema,
 	type WidgetUnitMeta,
 	WidgetLayoutSchema,
+	withDocumentFields,
+	withPortableContent,
 	withWidgets,
 } from "@maple/widgets/dashboard"
-
-export class DashboardsListResponse extends Schema.Class<DashboardsListResponse>("DashboardsListResponse")({
-	dashboards: Schema.Array(DashboardDocument),
-}) {}
-
-export class DashboardUpsertRequest extends Schema.Class<DashboardUpsertRequest>("DashboardUpsertRequest")(
-	{ dashboard: DashboardDocument },
-	{ parseOptions: { reportInput: true } },
-) {}
-
-export class DashboardCreateRequest extends Schema.Class<DashboardCreateRequest>("DashboardCreateRequest")(
-	{ dashboard: PortableDashboardDocument },
-	{ parseOptions: { reportInput: true } },
-) {}
-
-export class DashboardPersesImportRequest extends Schema.Class<DashboardPersesImportRequest>(
-	"DashboardPersesImportRequest",
-)({
-	dashboard: Schema.Record(Schema.String, Schema.Unknown),
-}) {}
-
-export class DashboardPersesImportResponse extends Schema.Class<DashboardPersesImportResponse>(
-	"DashboardPersesImportResponse",
-)({
-	dashboard: DashboardDocument,
-	warnings: Schema.Array(Schema.String),
-	// Txid of the import write, for the Electric collection's onInsert handler.
-	txid: Schema.optionalKey(PostgresTransactionId),
-}) {}
 
 export class DashboardDeleteResponse extends Schema.Class<DashboardDeleteResponse>("DashboardDeleteResponse")(
 	{
@@ -323,9 +296,8 @@ export const DashboardTemplateRequirement = Schema.Struct({
 	/** Full prose; the same string the `requirements` array carries. */
 	label: Schema.String,
 	/**
-	 * Row-sized statement of what's missing ("not connected"). Absent for
-	 * `metrics`, where clients derive `no <prefix>*` from
-	 * `requiredMetricPrefixes`.
+	 * Row-sized statement of what's missing ("no metrics"). Usually absent;
+	 * clients derive `no <prefix>*` from `requiredMetricPrefixes`.
 	 */
 	missing: Schema.optionalKey(Schema.String),
 	/** Noun phrase read as "Collected by {collector}." */

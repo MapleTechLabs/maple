@@ -1,6 +1,18 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Cause, Deferred, Effect, Exit, Fiber, Layer, Redacted, Stream } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import {
+	Cause,
+	Deferred,
+	Effect,
+	Exit,
+	Fiber,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Stream,
+	String as Str,
+} from "effect"
+import { FetchHttpClient } from "effect/http"
 import {
 	make,
 	ClickHouseClient,
@@ -30,7 +42,7 @@ describe("HTTP request contract", () => {
 			const requests: Array<{ url: URL; init?: RequestInit }> = []
 			const request: typeof fetch = async (input, init) => {
 				requests.push({
-					url: new URL(String(input)),
+					url: new URL(input instanceof Request ? input.url : input),
 					init: { ...init, body: await new Response(init?.body).text() },
 				})
 				return response()
@@ -50,7 +62,9 @@ describe("HTTP request contract", () => {
 					const result = yield* query
 					assert.deepStrictEqual(result.data, [{ n: "42" }])
 					assert.strictEqual(result.queryId, "my query")
-					const { url, init } = requests[0]!
+					const request = requests[0]
+					assert.isDefined(request)
+					const { url, init } = request
 					assert.strictEqual(url.pathname, "/proxy/ch")
 					assert.strictEqual(url.searchParams.get("custom"), "keep")
 					assert.strictEqual(url.searchParams.get("database"), "analytics")
@@ -65,7 +79,9 @@ describe("HTTP request contract", () => {
 					const header = new Headers(init?.headers).get("authorization")!
 					assert.strictEqual(
 						new TextDecoder().decode(
-							Uint8Array.from(atob(header.slice(6)), (c) => c.charCodeAt(0)),
+							Uint8Array.from(atob(Str.slice(6)(header)), (c) =>
+								Option.getOrElse(Str.charCodeAt(0)(c), () => 0),
+							),
 						),
 						"user:päss",
 					)
@@ -86,7 +102,7 @@ describe("HTTP request contract", () => {
 				assert.deepStrictEqual(ids, [a.queryId, b.queryId])
 			}),
 			async (input) => {
-				ids.push(new URL(String(input)).searchParams.get("query_id")!)
+				ids.push(new URL(input instanceof Request ? input.url : input).searchParams.get("query_id")!)
 				return response()
 			},
 		)
@@ -162,7 +178,7 @@ describe("response errors and resource ownership", () => {
 					const client = yield* make(config)
 					const error = yield* Effect.flip(client.query({ sql: "SELECT 1" }))
 					assert.instanceOf(error, ClickHouseRedirectError)
-					if (error instanceof ClickHouseRedirectError)
+					if (Schema.is(ClickHouseRedirectError)(error))
 						assert.strictEqual(error.location, "http://internal/")
 					assert.isTrue(signal?.aborted)
 				}),
@@ -199,7 +215,7 @@ describe("response errors and resource ownership", () => {
 					const client = yield* make(config)
 					const error = yield* Effect.flip(client.query({ sql: "SELECT 1", queryId: "sent-id" }))
 					assert.instanceOf(error, ClickHouseServerError)
-					if (error instanceof ClickHouseServerError) {
+					if (Schema.is(ClickHouseServerError)(error)) {
 						assert.strictEqual(error.status, status)
 						assert.strictEqual(error.code, expectedCode)
 						assert.strictEqual(error.type, expectedType)
@@ -285,9 +301,8 @@ describe("response errors and resource ownership", () => {
 			return withFetch(
 				Effect.gen(function* () {
 					const client = yield* make(config)
-					assert.isTrue(
-						(yield* Effect.flip(client.query({ sql: "SELECT 1", limits }))) instanceof expected,
-					)
+					const error = yield* Effect.flip(client.query({ sql: "SELECT 1", limits }))
+					assert.isTrue(Schema.is(expected)(error))
 					assert.isTrue(signal?.aborted)
 				}),
 				async (_input, init) => {
@@ -339,7 +354,7 @@ describe("response errors and resource ownership", () => {
 			}),
 			(_input, init) =>
 				new Promise((_resolve, reject) => {
-					const signal = init?.signal!
+					const signal = init!.signal!
 					signal.addEventListener("abort", () => reject(signal.reason), { once: true })
 					Deferred.doneUnsafe(started, Effect.succeed(signal))
 				}),
@@ -397,7 +412,7 @@ describe("absent HTTP response bodies", () => {
 				const client = yield* make(config)
 				const error = yield* Effect.flip(client.query({ sql: "SELECT 1" }))
 				assert.instanceOf(error, ClickHouseServerError)
-				if (error instanceof ClickHouseServerError) {
+				if (Schema.is(ClickHouseServerError)(error)) {
 					assert.strictEqual(error.status, 500)
 					assert.match(error.message, /HTTP 500/)
 				}

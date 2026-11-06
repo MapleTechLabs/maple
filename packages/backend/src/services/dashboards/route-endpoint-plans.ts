@@ -52,7 +52,8 @@ import {
 	type PathsWidgetRow,
 } from "@maple/query-model"
 import { PRODUCT_EVENTS_FUNNEL_ENDPOINT, PRODUCT_EVENTS_PATHS_ENDPOINT } from "@maple/widgets/dashboard"
-import { Effect, Schema } from "effect"
+import { TELEMETRY_READ_FAMILIES } from "@maple/domain/http/v2"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	coerceErrorsByTypeRows,
 	coerceErrorsSummary,
@@ -81,7 +82,13 @@ export interface RouteEndpointContext {
 	readonly window: { readonly startTime: string; readonly endTime: string }
 }
 
+export type TelemetryReadFamily = (typeof TELEMETRY_READ_FAMILIES)[number]
+
+const ALL_FAMILIES: ReadonlyArray<TelemetryReadFamily> = TELEMETRY_READ_FAMILIES
+
 export interface RouteEndpointPlan {
+	/** The telemetry families the plan reads, so a scoped key is refused what it could not query. */
+	readonly families: ReadonlyArray<TelemetryReadFamily>
 	readonly run: (
 		params: Record<string, unknown>,
 		context: RouteEndpointContext,
@@ -91,6 +98,12 @@ export interface RouteEndpointPlan {
 interface RouteEndpointPlanRegistry {
 	readonly [endpoint: string]: RouteEndpointPlan
 }
+
+/** Own keys only, so a stored endpoint like "constructor" finds no plan instead of `Object`. */
+export const routeEndpointPlan = (endpoint: string): RouteEndpointPlan | undefined =>
+	Rec.has<string, RouteEndpointPlan>(ROUTE_ENDPOINT_PLANS, endpoint)
+		? ROUTE_ENDPOINT_PLANS[endpoint]
+		: undefined
 
 /**
  * What a plan hands the tile: the browser's server function's return value for
@@ -115,12 +128,14 @@ type RouteEndpointRowMapper<Payload, Row> = (
  * mapper the browser applies to that definition's rows.
  */
 const readModelPlan = <Payload, Row>(
-	payloadSchema: Schema.Codec<Payload, unknown, never, never>,
+	families: ReadonlyArray<TelemetryReadFamily>,
+	payloadSchema: Schema.Codec<Payload, unknown>,
 	definition: QueryDefinition<Payload, Row>,
 	toResponse: RouteEndpointRowMapper<Payload, Row>,
 ): RouteEndpointPlan => {
 	const decode = Schema.decodeUnknownEffect(payloadSchema)
 	return {
+		families,
 		run: (params, context) =>
 			Effect.gen(function* () {
 				// Decoding is the boundary check, not a formality: a stored params bag
@@ -154,16 +169,24 @@ const decodeProductEventsFunnelLeavers = Schema.decodeUnknownEffect(ProductEvent
 const decodeProductEventsPathsWidgetParams = Schema.decodeUnknownEffect(ProductEventsPathsWidgetParams)
 const decodeProductEventsPaths = Schema.decodeUnknownEffect(ProductEventsPathsRequest)
 
+// Error events derive from spans and logs. Product events sit outside the three
+// families, so they need all of them.
 export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
-	errors_by_type: readModelPlan(ErrorsByTypeRequest, Queries.errorsByType, (rows) => ({
+	errors_by_type: readModelPlan(["traces", "logs"], ErrorsByTypeRequest, Queries.errorsByType, (rows) => ({
 		data: coerceErrorsByTypeRows(asRows(rows)),
 	})),
 	// One row, rendered as a scalar object — the browser's `getErrorsSummary`
 	// returns `data: summary | null`, never a one-row list.
-	errors_summary: readModelPlan(ErrorsSummaryRequest, Queries.errorsSummary, (rows) => ({
-		data: coerceErrorsSummary(asRows(rows)[0]),
-	})),
+	errors_summary: readModelPlan(
+		["traces", "logs"],
+		ErrorsSummaryRequest,
+		Queries.errorsSummary,
+		(rows) => ({
+			data: coerceErrorsSummary(asRows(rows)[0]),
+		}),
+	),
 	service_overview: readModelPlan(
+		["traces"],
 		ServiceOverviewRequest,
 		Queries.serviceOverview,
 		(rows, _payload, context) => ({
@@ -173,7 +196,7 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 			),
 		}),
 	),
-	service_usage: readModelPlan(ServiceUsageRequest, Queries.serviceUsage, (rows, payload) => {
+	service_usage: readModelPlan(ALL_FAMILIES, ServiceUsageRequest, Queries.serviceUsage, (rows, payload) => {
 		const usageRows = asRows(rows)
 		if (usageRows.length === 0) return { data: [] }
 		const wantsPrevious = payload.previousStartTime != null && payload.previousEndTime != null
@@ -182,10 +205,11 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 			data: coerceServiceUsageRows(usageRows),
 		}
 	}),
-	list_logs: readModelPlan(ListLogsRequest, Queries.listLogs, (rows, payload) => {
+	list_logs: readModelPlan(["logs"], ListLogsRequest, Queries.listLogs, (rows, payload) => {
 		const logs = coerceLogRows(asRows(rows))
 		const limit = payload.limit
-		const cursor = logs.length === limit && logs.length > 0 ? logs[logs.length - 1].timestamp : null
+		const last = logs.at(-1)
+		const cursor = logs.length === limit && last !== undefined ? last.timestamp : null
 		return { data: logs, meta: { limit, cursor } }
 	}),
 	// The product-event funnel widget. The stored params are the flat
@@ -195,6 +219,7 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 	// `getProductEventsFunnelWidget` exactly, so a shared funnel tile draws the
 	// same bars as the signed-in one.
 	[PRODUCT_EVENTS_FUNNEL_ENDPOINT]: {
+		families: ALL_FAMILIES,
 		run: (params, context) =>
 			Effect.gen(function* () {
 				const widgetParams = yield* decodeProductEventsFunnelWidgetParams(params)
@@ -232,17 +257,17 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 					return {
 						data: funnelWidgetBreakdownRows(
 							payload.steps,
-							rows.map((row) => ({
-								group: String(row.group),
-								step: Number(row.step),
-								count: Number(row.count) || 0,
+							Arr.map(rows, (row) => ({
+								group: row.group,
+								step: row.step,
+								count: row.count,
 							})),
 						),
 					}
 				}
 				yield* validateFunnelDefinition(productEventsFunnelOpts(payload))
 				const rows = yield* runQuery(Queries.productEventsFunnel, context.tenant, payload)
-				const counts = rows.map((row) => ({ step: Number(row.step), count: Number(row.count) || 0 }))
+				const counts = Arr.map(rows, (row) => ({ step: row.step, count: row.count }))
 				// The drop-off view's extras. A one-step funnel has no "between"
 				// and no leavers, so it draws with counts alone.
 				if (details !== true || payload.steps.length < 2) {
@@ -262,15 +287,15 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 						payload.steps,
 						counts,
 						funnelStepDetails(
-							timing.map((row) => ({
-								step: Number(row.step),
-								p50Ms: Number(row.p50Ms) || 0,
-								p90Ms: Number(row.p90Ms) || 0,
+							Arr.map(timing, (row) => ({
+								step: row.step,
+								p50Ms: row.p50Ms,
+								p90Ms: row.p90Ms,
 							})),
-							leavers.map((row) => ({
-								step: Number(row.step),
-								next: String(row.next),
-								count: Number(row.count) || 0,
+							Arr.map(leavers, (row) => ({
+								step: row.step,
+								next: row.next,
+								count: row.count,
 							})),
 						),
 					),
@@ -281,6 +306,7 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 	// route's defaults for what is unset — the same defaults the browser's
 	// `getProductEventsPathsWidget` applies.
 	[PRODUCT_EVENTS_PATHS_ENDPOINT]: {
+		families: ALL_FAMILIES,
 		run: (params, context) =>
 			Effect.gen(function* () {
 				const widgetParams = yield* decodeProductEventsPathsWidgetParams(params)
@@ -291,7 +317,7 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 					widgetParams.anchor.kind === "event"
 						? widgetParams.anchor.eventName
 						: widgetParams.anchor.pagePath
-				if (anchorName.trim() === "") return { data: [] }
+				if (Str.trim(anchorName) === "") return { data: [] }
 				const payload = yield* decodeProductEventsPaths({
 					direction: "after",
 					depth: DEFAULT_PATHS_DEPTH,
@@ -308,11 +334,11 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 					queryEngine: context.queryEngine,
 				})
 				const rows = yield* runQuery(Queries.productEventsPaths, context.tenant, payload)
-				const data: ReadonlyArray<PathsWidgetRow> = rows.map((row) => ({
-					hop: Number(row.hop) || 0,
-					fromNode: String(row.fromNode),
-					toNode: String(row.toNode),
-					count: Number(row.count) || 0,
+				const data: ReadonlyArray<PathsWidgetRow> = Arr.map(rows, (row) => ({
+					hop: row.hop,
+					fromNode: row.fromNode,
+					toNode: row.toNode,
+					count: row.count,
 				}))
 				return { data }
 			}),

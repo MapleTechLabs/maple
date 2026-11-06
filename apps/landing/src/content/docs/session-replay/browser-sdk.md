@@ -1,11 +1,11 @@
 ---
 title: "Browser SDK"
-description: "Instrument a website with OpenTelemetry tracing, error capture and session replay using the @maple-dev/browser SDK."
+description: "Instrument a website with OpenTelemetry tracing, logs, Web Vitals, error capture and session replay using the @maple-dev/browser SDK."
 group: "Session Replay"
 order: 1
 ---
 
-`@maple-dev/browser` adds OpenTelemetry tracing, error capture and session replay to a website in one package. Every span and every replay event carries the same `session.id`, so a trace links to the replay that produced it, and a replay links to its traces.
+`@maple-dev/browser` adds OpenTelemetry tracing, logs, Web Vitals, error capture and session replay to a website in one package. Everything it sends is OpenTelemetry (OTLP traces and logs), apart from the replay recording itself. Every span and every replay event carries the same `session.id`, so a trace links to the replay that produced it, and a replay links to its traces.
 
 <div class="flex flex-wrap gap-2 mb-8 not-prose">
     <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Browsers</span>
@@ -34,7 +34,7 @@ MapleBrowser.init({
 })
 ```
 
-Use a **public** ingest key (`maple_pk_…`) from **Settings → Ingestion**. It is safe to ship in browser code. Ingest keys belong to one region, so set `region: "eu"` if your organization is in the EU region.
+Use a **public** ingest key (`maple_pk_…`) from **Settings → Ingestion**, or the public token of a **Browser** source you connect under **Sources** (`maple_src_pk_…`). Both are safe to ship in browser code. Ingest keys belong to one region, so set `region: "eu"` if your organization is in the EU region.
 
 That single call:
 
@@ -51,32 +51,48 @@ The SDK is best-effort. A telemetry network failure never throws into your app.
 
 Every field accepted by `MapleBrowser.init`:
 
-| Option                                 | Type                      | Default       | Description                                                                                                                                                                |
-| -------------------------------------- | ------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `serviceName`                          | `string`                  | none          | **Required.** Service name reported on traces and stored on replay sessions.                                                                                               |
-| `ingestKey`                            | `string`                  | none          | Public ingest key (`maple_pk_...`), sent as `Authorization: Bearer`. Leave it unset only when `endpoint` points at your own proxy that adds the key.                       |
-| `region`                               | `"us"` \| `"eu"`          | `"us"`        | Region of your Maple organization. `"us"` sends to `https://ingest.maple.dev`, `"eu"` to `https://ingest.eu.maple.dev`. Ignored when `endpoint` is set.                    |
-| `endpoint`                             | `string`                  | from `region` | Ingest base URL. Overrides `region`. Use it for a proxy.                                                                                                                   |
-| `serviceNamespace`                     | `string`                  | none          | Logical group this service belongs to, sent as the `service.namespace` resource attribute on traces.                                                                       |
-| `serviceVersion`                       | `string`                  | none          | Service version or commit SHA, attached to traces.                                                                                                                         |
-| `environment`                          | `string`                  | none          | Deployment environment, for example `"production"`.                                                                                                                        |
-| `user`                                 | `object`                  | none          | End-user identity: `id`, `email`, `username`, `groupId`, `groupName`, `traits`. Attached to the session and to browser spans. See [Identifying users](#identifying-users). |
-| `userId`                               | `string`                  | none          | **Deprecated.** A bare user id. Use `user` instead. When both are set, `user` wins.                                                                                        |
-| `tracing.enabled`                      | `boolean`                 | `true`        | Enable OpenTelemetry browser tracing.                                                                                                                                      |
-| `tracing.instrumentFetch`              | `boolean`                 | `true`        | Create spans for `fetch()` calls. Set `false` when another tracer (such as the Effect client SDK) already instruments requests, to avoid duplicate network spans.          |
-| `tracing.captureErrors`                | `boolean`                 | `true`        | Record uncaught errors and unhandled promise rejections as error spans. Turn it off only when another tool owns the page's global error handlers.                          |
-| `tracing.propagateTraceHeaderCorsUrls` | `Array<string \| RegExp>` | `[]`          | Cross-origin URLs whose `fetch()` requests carry the `traceparent` header. See [Connect browser and backend traces](#connect-browser-and-backend-traces).                  |
-| `replay.enabled`                       | `boolean`                 | `true`        | Enable session recording.                                                                                                                                                  |
-| `replay.sampleRate`                    | `number`                  | `1`           | Fraction of sessions to record, `0` to `1`. See [Sampling](#sampling).                                                                                                     |
-| `privacy.maskAllInputs`                | `boolean`                 | `true`        | Mask all `<input>` values in the recording.                                                                                                                                |
-| `privacy.maskAllText`                  | `boolean`                 | `false`       | Mask all text in the recording, and omit captured click-target text from session events.                                                                                   |
-| `privacy.sanitizeUrl`                  | `(url: string) => string` | none          | Rewrite every URL before it leaves the page. See [Redacting URLs](#redacting-urls).                                                                                        |
-| `privacy.persistVisitorId`             | `boolean`                 | `true`        | Store a persistent visitor id (localStorage and cookie) so unique and returning visitors can be counted. Turning it off also deletes any id already stored.                |
-| `privacy.crossSubdomainCookie`         | `boolean`                 | `true`        | Scope the visitor-id cookie to the registered domain so sibling subdomains share it. See [Linking a marketing site to your app](#linking-a-marketing-site-to-your-app).    |
-| `privacy.cookieDomain`                 | `string`                  | probed        | Explicit cookie `Domain=` (no leading dot). `""` forces a host-only cookie.                                                                                                |
-| `privacy.requireConsent`               | `boolean`                 | `false`       | Capture nothing until `MapleBrowser.setConsent(true)`. See [Consent](#consent).                                                                                            |
-| `privacy.captureUserEmail`             | `boolean`                 | `true`        | Store the email passed to `identify()`.                                                                                                                                    |
-| `privacy.respectDoNotTrack`            | `boolean`                 | `false`       | Treat `navigator.doNotTrack` like Global Privacy Control (suppresses the persistent visitor id).                                                                           |
+| Option                                 | Type                                                     | Default                                   | Description                                                                                                                                                                |
+| -------------------------------------- | -------------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `serviceName`                          | `string`                                                 | none                                      | **Required.** Service name reported on traces and stored on replay sessions.                                                                                               |
+| `ingestKey`                            | `string`                                                 | none                                      | Public ingest key (`maple_pk_...`), sent as `Authorization: Bearer`. Leave it unset only when `endpoint` points at your own proxy that adds the key.                       |
+| `region`                               | `"us"` \| `"eu"`                                         | `"us"`                                    | Region of your Maple organization. `"us"` sends to `https://ingest.maple.dev`, `"eu"` to `https://ingest.eu.maple.dev`. Ignored when `endpoint` is set.                    |
+| `endpoint`                             | `string`                                                 | from `region`                             | Ingest base URL. Overrides `region`. Use it for a proxy.                                                                                                                   |
+| `serviceNamespace`                     | `string`                                                 | none                                      | Logical group this service belongs to, sent as the `service.namespace` resource attribute on traces.                                                                       |
+| `serviceVersion`                       | `string`                                                 | none                                      | Service version or commit SHA, attached to traces.                                                                                                                         |
+| `environment`                          | `string`                                                 | none                                      | Deployment environment, for example `"production"`.                                                                                                                        |
+| `user`                                 | `object`                                                 | none                                      | End-user identity: `id`, `email`, `username`, `groupId`, `groupName`, `traits`. Attached to the session and to browser spans. See [Identifying users](#identifying-users). |
+| `userId`                               | `string`                                                 | none                                      | **Deprecated.** A bare user id. Use `user` instead. When both are set, `user` wins.                                                                                        |
+| `tracing.enabled`                      | `boolean`                                                | `true`                                    | Enable OpenTelemetry browser tracing.                                                                                                                                      |
+| `tracing.instrumentFetch`              | `boolean`                                                | `true`                                    | Create spans for `fetch()` calls. Set `false` when another tracer (such as the Effect client SDK) already instruments requests, to avoid duplicate network spans.          |
+| `tracing.instrumentXhr`                | `boolean`                                                | `true`                                    | Create spans for `XMLHttpRequest` calls (axios and older clients). Turn it off for the same reason as `instrumentFetch`.                                                   |
+| `tracing.captureErrors`                | `boolean`                                                | `true`                                    | Record uncaught errors and unhandled promise rejections as error spans. Turn it off only when another tool owns the page's global error handlers.                          |
+| `tracing.propagateTraceHeaderCorsUrls` | `Array<string \| RegExp>`                                | `[]`                                      | Cross-origin URLs whose `fetch()` and XHR requests carry the `traceparent` header. See [Connect browser and backend traces](#connect-browser-and-backend-traces).          |
+| `tracing.sampleRate`                   | `number`                                                 | `1`                                       | Fraction of sessions whose traces are exported, `0` to `1`. Error spans are always exported. See [Sampling](#sampling).                                                    |
+| `tracing.captureHeaders`               | `{ request?, response? }`                                | none                                      | Header names to record on `fetch`/XHR spans. See [Request and response detail](#request-and-response-detail).                                                              |
+| `tracing.longFrames`                   | `boolean`                                                | `false`                                   | Span main-thread frames of 100ms or more. See [Jank](#jank).                                                                                                               |
+| `tracing.slowInteractions`             | `boolean`                                                | `false`                                   | Span interactions of 200ms or more. See [Jank](#jank).                                                                                                                     |
+| `errors`                               | `object`                                                 | see [Filtering errors](#filtering-errors) | `ignore`, `denyUrls`, `allowUrls`, `beforeCapture`, `defaultFilters` and `captureHttpStatus`.                                                                              |
+| `breadcrumbs`                          | `boolean`                                                | `true`                                    | Keep the last clicks, inputs, navigations and console lines, and send them with the next error. See [Breadcrumbs](#breadcrumbs).                                           |
+| `webVitals`                            | `boolean`                                                | `true`                                    | Report Core Web Vitals. See [Web Vitals](#web-vitals).                                                                                                                     |
+| `logs.captureConsole`                  | `Array<"debug" \| "log" \| "info" \| "warn" \| "error">` | `[]`                                      | Console levels sent as logs as they happen. See [Logs](#logs).                                                                                                             |
+| `reporting.csp`                        | `boolean`                                                | `true`                                    | Content Security Policy violations as logs. See [Browser reports](#browser-reports).                                                                                       |
+| `reporting.browserReports`             | `boolean`                                                | `false`                                   | Browser deprecation and intervention reports as logs.                                                                                                                      |
+| `transport.offline`                    | `boolean`                                                | `false`                                   | Keep batches that could not be sent and send them later. See [Offline](#offline).                                                                                          |
+| `replay.enabled`                       | `boolean`                                                | `true`                                    | Enable session recording.                                                                                                                                                  |
+| `replay.sampleRate`                    | `number`                                                 | `1`                                       | Fraction of sessions to record, `0` to `1`. See [Sampling](#sampling).                                                                                                     |
+| `replay.onErrorSampleRate`             | `number`                                                 | `0`                                       | Fraction of the sessions not recorded that keep the last minute in memory and upload it only if an error happens. See [Replay on error](#replay-on-error).                 |
+| `replay.canvasFps`                     | `number`                                                 | off                                       | Record `<canvas>` content at this many frames per second. Never with `privacy.maskAllText`.                                                                                |
+| `replay.networkBodies`                 | `{ urls, maxLength? }`                                   | none                                      | Keep request and response bodies of these URLs in the replay. See [Request and response detail](#request-and-response-detail).                                             |
+| `privacy.maskAllInputs`                | `boolean`                                                | `true`                                    | Mask all `<input>` values in the recording.                                                                                                                                |
+| `privacy.maskAllText`                  | `boolean`                                                | `false`                                   | Mask all text in the recording, and omit captured click-target text from session events.                                                                                   |
+| `privacy.sanitizeUrl`                  | `(url: string) => string`                                | none                                      | Rewrite every URL before it leaves the page. See [Redacting URLs](#redacting-urls).                                                                                        |
+| `privacy.persistVisitorId`             | `boolean`                                                | `true`                                    | Store a persistent visitor id (localStorage and cookie) so unique and returning visitors can be counted. Turning it off also deletes any id already stored.                |
+| `privacy.persistence`                  | `"browser" \| "memory"`                                  | `"browser"`                               | `"memory"` keeps everything in memory: no cookies, Web Storage or IndexedDB, and no visitor id. See [Memory-only mode](#memory-only-mode).                                 |
+| `privacy.crossSubdomainCookie`         | `boolean`                                                | `true`                                    | Scope the visitor-id cookie to the registered domain so sibling subdomains share it. See [Linking a marketing site to your app](#linking-a-marketing-site-to-your-app).    |
+| `privacy.cookieDomain`                 | `string`                                                 | probed                                    | Explicit cookie `Domain=` (no leading dot). `""` forces a host-only cookie.                                                                                                |
+| `privacy.requireConsent`               | `boolean`                                                | `false`                                   | Capture nothing until `MapleBrowser.setConsent(true)`. See [Consent](#consent).                                                                                            |
+| `privacy.captureUserEmail`             | `boolean`                                                | `true`                                    | Store the email passed to `identify()`.                                                                                                                                    |
+| `privacy.respectDoNotTrack`            | `boolean`                                                | `false`                                   | Treat `navigator.doNotTrack` like Global Privacy Control (suppresses the persistent visitor id).                                                                           |
 
 A fully-specified call:
 
@@ -106,7 +122,9 @@ Every span and replay event the SDK emits carries one **`session.id`** (a `crypt
 
 The session is stored in `sessionStorage` under the key `maple.session`, so it **survives reloads within a tab**. `sessionStorage` is per tab, so **each tab or window gets its own session**. When `sessionStorage` is unavailable (for example in some private-browsing modes), the SDK keeps the session in memory for the life of the page.
 
-Client-side route changes in a single-page app do **not** start a new session. The SDK tracks no router events. Session boundaries are purely time-based.
+The replay chunk a page is still sending when it unloads is kept in `sessionStorage` under `maple.replay.pending` and sent by the next page of the same session in that tab, if that page starts recording within ten minutes. Revoking consent removes it; with `privacy.requireConsent`, it is sent once consent is granted on that next page, unless it was revoked in between.
+
+Client-side route changes in a single-page app do **not** start a new session. Session boundaries are purely time-based.
 
 ### Rotation
 
@@ -210,6 +228,44 @@ The same error object is recorded once, even if your code reports it and then re
 
 A cross-origin script that throws shows up in the browser as a bare "Script error." with no details, and the SDK skips it. Add the `crossorigin` attribute to the script tag to get the real error.
 
+`error.cause` chains and the errors inside an `AggregateError` (up to five) are added to the stack trace as `Caused by:` blocks, after the error's own frames.
+
+### Filtering errors
+
+Filters run before an error is recorded, so a dropped error costs nothing and never opens an issue. They apply to the global handlers and to `captureException`.
+
+```ts
+MapleBrowser.init({
+	// ...
+	errors: {
+		ignore: ["ChunkLoadError", /^AbortError: /], // matched against "Name: message"
+		denyUrls: [/widgets\.example\.net/], // matched against the top frame's script URL
+		allowUrls: [/^https:\/\/app\.example\.com\//], // errors with no stack frames are kept
+		beforeCapture: (error, { source, originalError }) => !error.message.includes("401"),
+	},
+})
+```
+
+Errors thrown by browser extensions and the harmless `ResizeObserver loop` notices are dropped by default. Set `errors.defaultFilters: false` to keep them.
+
+### Failed HTTP requests
+
+`fetch` and `XMLHttpRequest` spans follow the OpenTelemetry HTTP conventions for client requests: a response with a 4xx or 5xx status marks the span as an error, with `error.type` set to the status code (`"404"`, `"503"`). A 5xx opens an issue, grouped by status code. A 4xx with no exception attached is marked `Error` on the trace but does not open an issue.
+
+To count fewer statuses, narrow the list (the default is `[[400, 599]]`). A status left out is not an error:
+
+```ts
+errors: {
+	captureHttpStatus: [[500, 599], 429]
+} // a 404 from a search box is expected here
+```
+
+A request that gets no response at all (offline, DNS, CORS, or a timeout from `AbortSignal.timeout()`) is always an error. A request your code aborts with its own `AbortController` is not.
+
+### Breadcrumbs
+
+The SDK keeps the last 50 clicks, inputs, navigations and console lines in memory. Nothing is sent until an error is recorded. Then the trail is sent as OpenTelemetry log records linked to the error, so you see what the user did right before it on the error's trace. Each breadcrumb is sent once. Clicks and inputs are recorded as a short selector (`button#save`), never with input values. Turn it off with `breadcrumbs: false`.
+
 ## Connect browser and backend traces
 
 For a request to the same origin as the page, the `fetch()` span sends a W3C `traceparent` header, and your backend's span joins the same trace. For a request to another origin, such as `https://api.example.com` from `https://app.example.com`, the header is not sent unless you list the URL:
@@ -228,9 +284,63 @@ Your API must also allow the header in its CORS configuration. Add `traceparent`
 
 Your backend must be instrumented with OpenTelemetry and read `traceparent`, which every OpenTelemetry HTTP server instrumentation does.
 
+## Logs
+
+`MapleBrowser.logger` writes OpenTelemetry log records, each linked to the span that was active when it was written and to the session:
+
+```ts
+MapleBrowser.logger.info("checkout started", { "cart.items": 3 })
+MapleBrowser.logger.error("payment declined", { "payment.provider": "card" })
+```
+
+To send console output as logs, list the levels: `logs: { captureConsole: ["warn", "error"] }`. Calls before `init()` are queued.
+
+## Web Vitals
+
+LCP, CLS, INP, FCP and TTFB are reported as OpenTelemetry log events named `browser.web_vital`, with the `browser.web_vital.name`, `value`, `delta`, `rating`, `id` and `navigation_type` attributes from the OpenTelemetry browser conventions, plus `url.path`. Each is linked to the page load's trace when you use [navigation spans](#navigation-and-data-loading-spans). CLS, INP and LCP are final when the page is hidden, so they arrive then. Turn them off with `webVitals: false`.
+
+## Jank
+
+Two opt-in options show where the main thread got stuck:
+
+```ts
+tracing: { longFrames: true, slowInteractions: true }
+```
+
+- `longFrames` records every frame of 100ms or more as a `longAnimationFrame` span, with the script that ran longest (file, function and what invoked it, such as `BUTTON#save.onclick`). Browsers without the Long Animation Frames API record `longtask` spans instead.
+- `slowInteractions` records every interaction of 200ms or more as an `interaction click` (or `keydown`, ...) span, split into input delay, processing and presentation time, with the element that was used.
+
+Both nest under the open navigation span, and include what happened before the SDK finished loading.
+
+## Request and response detail
+
+List the headers to record on `fetch` and XHR spans:
+
+```ts
+tracing: { captureHeaders: { request: ["x-request-id"], response: ["x-cache", "server-timing"] } }
+```
+
+They are stored as `http.request.header.<name>` and `http.response.header.<name>`. `authorization`, `proxy-authorization`, `cookie` and `set-cookie` are never recorded, even when listed. XHR spans get response headers only, and a cross-origin response only exposes the headers its server lists in `Access-Control-Expose-Headers`.
+
+Request and response bodies can be kept in the session replay's network events, for the URLs you list only:
+
+```ts
+replay: {
+	networkBodies: {
+		urls: [/^https:\/\/api\.example\.com\/checkout/]
+	}
+}
+```
+
+Only text and JSON bodies are kept, cut to `maxLength` characters (1,000 by default, which is also the most Maple stores), and nothing is kept with `privacy.maskAllText`. Bodies can contain personal data, so list only endpoints whose payloads you are allowed to record.
+
+## Browser reports
+
+Content Security Policy violations are sent as `maple.browser.csp_violation` warning logs, with the directive, the blocked URL and, when known, the script location. Set `reporting.browserReports: true` to also get the browser's deprecation and intervention reports. These are logs, not errors, so they never open an issue. Each kind of report is sent once per page.
+
 ## Navigation and data-loading spans
 
-Three calls turn one click into one trace: a navigation span, the data-loading spans under it, the `fetch()` spans those make, and the backend spans behind them. Call them from your router's hooks. The [frontend guides](/docs/frontend) show where for each framework.
+Three calls turn one click into one trace: a navigation span, the data-loading spans under it, the `fetch()` spans those make, and the backend spans behind them. Call them from your router's hooks. The [framework examples](#framework-examples) show where for React and Next.js.
 
 ```ts
 // the router starts a navigation
@@ -245,9 +355,12 @@ const project = await MapleBrowser.traced("loader /projects/:id", () => fetchPro
 MapleBrowser.endNavigation("/projects/:id")
 ```
 
-- `startNavigation(path)` opens a `pageload` span on the first call and a `navigate` span on every later one, with the path as `url.path`. A navigation still open is ended with `app.navigation.interrupted: true`. The page load joins the server render's trace when the document response has a `Server-Timing: traceparent;desc="…"` entry or the page a `<meta name="traceparent">` tag.
+- `startNavigation(path)` opens a `pageload` span on the first call and a `navigate` span on every later one, with the path as `url.path`. A navigation still open is ended with `maple.navigation.interrupted: true`. The page load joins the server render's trace when the document response has a `Server-Timing: traceparent;desc="…"` entry or the page a `<meta name="traceparent">` tag.
+- The page load starts at the browser's navigation start, and once the page has loaded it gets child spans for fetching the HTML (`documentFetch`, with `dns`, `connect`, `request` and `response` under it), `domProcessing` and `loadEvent`.
 - `endNavigation(route?)` renames the span to `navigate <route>` (or `pageload <route>`) and ends it. It does nothing when no navigation is open.
 - `traced(name, fn, options?)` runs `fn` in a span under the open navigation and returns its result unchanged. A throw is recorded on the span, marks it `Error`, and is rethrown; `isFailure` returning `false` leaves the span `Ok`. An error `traced` recorded isn't reported again by `captureException` or the global handlers.
+
+Using React Router or TanStack Router? `instrumentReactRouter` and `instrumentTanStackRouter` from `@maple-dev/browser/react` make these calls for you. See [React](#react).
 
 The browser has no async context: only requests `fn` starts before its first `await` nest under its span. Start independent requests together, with `Promise.all`.
 
@@ -296,6 +409,22 @@ MapleBrowser.setConsent(true)
 
 Revoking stops capture without uploading what is buffered, and a later grant starts a new session. Global Privacy Control is honored regardless of `requireConsent`. It suppresses the persistent visitor id (the one cross-session identifier the SDK stores) and leaves session-scoped capture alone. `doNotTrack` is ignored unless you set `privacy.respectDoNotTrack`. `privacy.persistVisitorId: false` turns the visitor id off entirely and deletes any already stored. `privacy.captureUserEmail: false` keeps the email from `identify()` out of Maple.
 
+### Memory-only mode
+
+For sites that must not store anything on the device, set `privacy.persistence: "memory"`:
+
+```ts
+MapleBrowser.init({ ingestKey, serviceName, privacy: { persistence: "memory" } })
+```
+
+The SDK then writes no cookies, localStorage, sessionStorage or IndexedDB. Sessions, replays, traces, errors and `track()` events still work within a page load. What you give up:
+
+- **Each page load is a new session.** A reload or a full-page navigation starts a new session and a new replay. Single-page apps keep one session across client-side navigation.
+- **No visitor id.** Unique, new and returning visitors are not counted, and an anonymous visit cannot be linked to the account it becomes. `identify()` still attaches the user to the current session.
+- **Nothing is kept for later.** `transport.offline` stores no failed batches, and the last replay chunk of a closing page is sent only if the upload finishes before the page unloads.
+
+Turning it on also deletes the visitor id and visit cookies from an earlier configuration. The setting only tightens: if two SDKs on a page disagree, memory-only wins.
+
 ## Privacy and masking
 
 `maskAllInputs` is **on by default**, so every `<input>` value is masked before it leaves the browser. Set `maskAllText: true` to also mask all rendered text.
@@ -341,6 +470,22 @@ MapleBrowser.init({
 
 A value outside `0` to `1` is clamped, with a console warning.
 
+`tracing.sampleRate` samples traces the same way. The decision is made once per session, so a sampled session keeps all of its traces and its replay never links to a missing one. Errors reported as their own spans (uncaught errors, unhandled rejections, `captureException` and failures inside `traced()`) are always sent. Failed request spans follow the session's sampling like any other span. Sampled traces carry their sampling rate so request counts in Maple stay accurate.
+
+### Replay on error
+
+`replay.onErrorSampleRate` covers the sessions `replay.sampleRate` leaves out. Those sessions record into memory only, keeping roughly the last minute, and upload nothing. When an error is recorded, the buffered minute is uploaded and the rest of the session is recorded normally, including its later page loads.
+
+```ts
+replay: { sampleRate: 0.05, onErrorSampleRate: 1 } // 5% of sessions, plus every session with an error
+```
+
+These sessions download the recorder like recorded ones, and keep up to 4 MB in memory.
+
+## Offline
+
+The SDK retries a failed send for a few seconds. With `transport: { offline: true }`, a batch of spans or logs that still could not be sent is kept in IndexedDB and sent again when the browser is back online or on the next page load. At most 100 batches are kept, for up to 24 hours, and revoking consent deletes them.
+
 ## Session size limit
 
 A single session records at most **1 GiB** of decompressed replay data. Past that, the recording is cut at a chunk boundary: earlier chunks stay playable, later ones are dropped, and the session is still listed with its metadata and linked traces.
@@ -385,6 +530,33 @@ import { App } from "./App"
 
 createRoot(document.getElementById("root")!).render(<App />)
 ```
+
+### React
+
+`@maple-dev/browser/react` adds an error boundary, a handler for React 19's root error options, and router integrations that record navigations for you:
+
+```tsx
+import { createBrowserRouter, RouterProvider } from "react-router"
+import { instrumentReactRouter, mapleReactErrorHandler, MapleErrorBoundary } from "@maple-dev/browser/react"
+
+const router = createBrowserRouter(routes)
+instrumentReactRouter(router) // or instrumentTanStackRouter(router)
+
+createRoot(document.getElementById("root")!, {
+	onCaughtError: mapleReactErrorHandler(),
+	onUncaughtError: mapleReactErrorHandler(),
+}).render(
+	<MapleErrorBoundary fallback={({ reset }) => <button onClick={reset}>Try again</button>}>
+		<RouterProvider router={router} />
+	</MapleErrorBoundary>,
+)
+```
+
+- `MapleErrorBoundary` reports a render error once, with the component stack, and renders `fallback`.
+- `instrumentReactRouter` works with data routers (`createBrowserRouter`). A navigation starts when the router starts loading and ends when its loaders finish, named after the route (`navigate /projects/:id`).
+- `instrumentTanStackRouter` does the same, named after the route's full path (`navigate /projects/$projectId`). Changing only search params is not a navigation.
+
+With a router integration, don't call `startNavigation` and `endNavigation` yourself.
 
 ### Next.js
 

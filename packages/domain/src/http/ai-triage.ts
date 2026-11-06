@@ -1,5 +1,5 @@
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
-import { Schema } from "effect"
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
+import { Option, Schema, SchemaGetter, Array as Arr, String as Str } from "effect"
 import { IsoDateTimeString, UserId } from "../primitives"
 import { SessionAuthorization } from "./current-tenant"
 import { IssueSeverity } from "./errors"
@@ -119,6 +119,42 @@ export const AiTriageEvidenceSubmission = Schema.Struct({
 	note: Schema.optionalKey(Schema.String),
 })
 
+/** A bare string where an evidence entry belongs is that entry's note. */
+const AiTriageEvidenceItem = Schema.Union([AiTriageEvidenceSubmission, Schema.String]).pipe(
+	Schema.decodeTo(Schema.toType(AiTriageEvidenceSubmission), {
+		decode: SchemaGetter.transform((value) => (typeof value === "string" ? { note: value } : value)),
+		encode: SchemaGetter.passthroughSubtype(),
+	}),
+)
+
+/**
+ * A list the model may also send as one item, a bare string or a JSON-encoded list. Prod saw all
+ * three on `evidence` and `suggestedActions`, and each rejection cost the turn.
+ */
+const lenientList = <T, E>(item: Schema.Codec<T, E>, fromText: (text: string) => E) => {
+	const items = Schema.Array(item)
+	const wireItems = Schema.toEncoded(items)
+	const wireItem = Schema.toEncoded(item)
+	const isWireList = Schema.is(wireItems)
+	const parseList = Schema.decodeUnknownOption(Schema.fromJsonString(wireItems))
+	const parseItem = Schema.decodeUnknownOption(Schema.fromJsonString(wireItem))
+	const fromString = (text: string): ReadonlyArray<E> =>
+		Option.getOrElse(parseList(text), () =>
+			Option.match(parseItem(text), { onSome: (one) => [one], onNone: () => [fromText(text)] }),
+		)
+	return Schema.Union([wireItems, wireItem, Schema.String]).pipe(
+		Schema.decodeTo(items, {
+			decode: SchemaGetter.transform((value) => {
+				if (isWireList(value)) return value
+				return typeof value === "string" ? fromString(value) : [value]
+			}),
+			encode: SchemaGetter.passthroughSubtype(),
+		}),
+	)
+}
+
+const lenientStrings = lenientList(Schema.String, (text) => text)
+
 export const AiTriageSubmission = Schema.Struct({
 	headline: Schema.optionalKey(Schema.String),
 	summary: Schema.optionalKey(Schema.String),
@@ -130,11 +166,21 @@ export const AiTriageSubmission = Schema.Struct({
 	 */
 	severityAssessment: Schema.optionalKey(Schema.Union([IssueSeverity, Schema.String])),
 	affectedScope: Schema.optionalKey(Schema.String),
-	evidence: Schema.optionalKey(Schema.Array(AiTriageEvidenceSubmission)),
-	suggestedActions: Schema.optionalKey(Schema.Array(Schema.String)),
+	evidence: Schema.optionalKey(
+		lenientList(AiTriageEvidenceItem, (note) => note).annotate({
+			description:
+				'An ARRAY of objects, e.g. [{"traceIds": ["abc"], "logPatterns": ["CONNECT_TIMEOUT"], ' +
+				'"relatedServices": ["api"], "note": "what this shows"}]. Every key is optional.',
+		}),
+	),
+	suggestedActions: Schema.optionalKey(
+		lenientStrings.annotate({
+			description: 'An ARRAY of strings, one step each, e.g. ["Roll back api to v41", "Add a retry"].',
+		}),
+	),
 	confidence: Schema.optionalKey(Schema.Union([Schema.Literals(["high", "medium", "low"]), Schema.String])),
-	ruledOut: Schema.optionalKey(Schema.Array(Schema.String)),
-	unchecked: Schema.optionalKey(Schema.Array(Schema.String)),
+	ruledOut: Schema.optionalKey(lenientStrings.annotate({ description: "An ARRAY of strings." })),
+	unchecked: Schema.optionalKey(lenientStrings.annotate({ description: "An ARRAY of strings." })),
 })
 export type AiTriageSubmission = Schema.Schema.Type<typeof AiTriageSubmission>
 
@@ -159,7 +205,7 @@ export const normalizeTriageSubmission = (
 ): { readonly report: AiTriageResult; readonly filled: ReadonlyArray<string> } => {
 	const filled: Array<string> = []
 	const text = (value: string | undefined, field: string): string => {
-		const trimmed = value?.trim()
+		const trimmed = value === undefined ? undefined : Str.trim(value)
 		if (trimmed !== undefined && trimmed.length > 0) return trimmed
 		filled.push(field)
 		return MISSING_PROSE
@@ -185,7 +231,7 @@ export const normalizeTriageSubmission = (
 	// Indexed paths, because `evidence[0].logPatterns` is one of the four keys prod actually saw
 	// missing. Recording the entry as present while silently completing the arrays inside it would
 	// hide the omission this list exists to measure.
-	const evidence = (submission.evidence ?? []).map((entry, index) => {
+	const evidence = Arr.map(submission.evidence ?? [], (entry, index) => {
 		const supplied = <A>(value: A | undefined, key: string, fallback: A): A => {
 			if (value !== undefined) return value
 			filled.push(`evidence[${index}].${key}`)

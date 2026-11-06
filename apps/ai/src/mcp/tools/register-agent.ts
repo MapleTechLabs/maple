@@ -1,5 +1,5 @@
 import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { RegisterAgentOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
@@ -11,6 +11,7 @@ import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsSe
 export function registerRegisterAgentTool(server: McpToolRegistrar) {
 	server.define({
 		name: "register_agent",
+		title: "Register Agent",
 		description:
 			"Register an LLM agent with the error-issue system so it can claim and transition issues. Must be called from a human session (not an agent API key). Returns an actor ID to pin via API-key metadata.",
 		parameters: Schema.Struct({
@@ -32,7 +33,7 @@ export function registerRegisterAgentTool(server: McpToolRegistrar) {
 					capability: "human_session",
 				})
 			}
-			if (params.name.trim().length === 0) {
+			if (Str.trim(params.name).length === 0) {
 				return yield* new McpInvalidInputError({
 					message: "Agent name must not be empty.",
 					parameter: "name",
@@ -79,7 +80,7 @@ export function registerRegisterAgentTool(server: McpToolRegistrar) {
 					["Model", output.model ?? undefined],
 					[
 						"Capabilities",
-						output.capabilities.length > 0 ? output.capabilities.join(", ") : undefined,
+						output.capabilities.length > 0 ? Arr.join(output.capabilities, ", ") : undefined,
 					],
 				]),
 				doc.text(

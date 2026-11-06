@@ -1,17 +1,19 @@
 import { browserLocation, browserNavigator } from "../platform/browser-globals"
 import type { ResolvedIdentity } from "../identity/identity"
+import { stringifyWellFormed } from "../platform/json"
 import { type IngestConfig, ingestHeaders, postToIngest } from "../platform/transport"
 import type { EntryContext } from "../session/session"
 import { parseUserAgent } from "../platform/user-agent"
 import { scrubUrl } from "../platform/url-privacy"
+import { isCommitSha } from "../platform/commit-sha"
 
 /** ClickHouse-style `YYYY-MM-DD HH:MM:SS.mmm` in UTC (matches the ingest gateway). */
 export function formatCHDateTime(date: Date): string {
 	const pad = (n: number, width = 2) => String(n).padStart(width, "0")
 	return (
-		`${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ` +
+		`${pad(date.getUTCFullYear(), 4)}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ` +
 		`${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}.` +
-		`${pad(date.getUTCMilliseconds(), 3)}`
+		pad(date.getUTCMilliseconds(), 3)
 	)
 }
 
@@ -60,6 +62,8 @@ export interface SessionMetaRowInput {
 	 * rendering a player with nothing to play.
 	 */
 	readonly recorded: boolean
+	/** Why a recording exists when it did not start with the session: an error triggered it. */
+	readonly replayTrigger?: "error" | undefined
 	/**
 	 * Whether this session owns its visit claim. The gateway bills
 	 * `billable_start == 1 && version == 1`, and falls back to `version == 1`
@@ -119,6 +123,11 @@ export function buildSessionMetaRow(input: SessionMetaRowInput): SessionMetaRow 
 			// first, and treats an absent key as "rrweb" — every session recorded
 			// before this marker existed is a browser recording.
 			"maple.session.replay_format": "rrweb",
+			// Replay buffered in memory and uploaded because an error happened: the
+			// recording starts up to a minute before the error, not at session start.
+			...(input.recorded && input.replayTrigger
+				? { "maple.session.replay_trigger": input.replayTrigger }
+				: undefined),
 			// Storage-blocked visitors get an in-memory id, so their sessions each
 			// look like a distinct visitor. Flag it rather than inflate silently.
 			...(input.visitorId && input.visitorIdPersisted === false
@@ -132,7 +141,7 @@ export function buildSessionMetaRow(input: SessionMetaRowInput): SessionMetaRow 
 					}
 				: undefined),
 			// Only a SHA-shaped version is a head revision; a semver string stays out of `vcs.*`.
-			...(input.serviceVersion && /^[0-9a-f]{7,40}$/i.test(input.serviceVersion)
+			...(isCommitSha(input.serviceVersion)
 				? { "vcs.ref.head.revision": input.serviceVersion }
 				: undefined),
 		},
@@ -202,7 +211,9 @@ export async function postSessionMetaRow(
 	row: Record<string, unknown>,
 	keepalive = false,
 ): Promise<void> {
-	const body = `${JSON.stringify(row)}\n`
+	// Well-formed even for a lone surrogate the host app put in an identity or URL:
+	// ingest's parser would otherwise reject the row.
+	const body = `${stringifyWellFormed(row)}\n`
 	await postToIngest(
 		`${target.endpoint.replace(/\/$/, "")}/v1/sessionReplays/meta`,
 		{ ...ingestHeaders(target), "content-type": "application/x-ndjson" },

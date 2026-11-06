@@ -1,22 +1,42 @@
-import { Effect } from "effect"
+import { Array as Arr, Effect, Option, String as Str } from "effect"
 import { WarehouseDriverError, WarehouseResponseLimitError } from "@maple/query-engine/execution"
 import { __testables } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeLargeTraceSpans, makeTraceLogs } from "./fixtures"
+import { FIXTURES } from "./utils"
 
-export interface FixtureRule {
+export type FixtureRule = {
 	/** Match against the compiled SQL the WarehouseQueryService would execute. */
 	readonly match: (sql: string) => boolean
-	readonly rows: ReadonlyArray<unknown>
-}
+} & (
+	| {
+			/** Fixed rows, or rows computed from the SQL (to honor a service filter, say). */
+			readonly rows: ReadonlyArray<unknown> | ((sql: string) => ReadonlyArray<unknown>)
+	  }
+	| {
+			/** Fail the statement as ClickHouse would, with this message and error type. */
+			readonly failure: { readonly message: string; readonly type: string }
+	  }
+)
+
+/** A read of known traces' spans: `traces` seeked through the `trace_index` subquery. */
+export const readsTraceSpans = (sql: string): boolean =>
+	/\bFROM traces\b/.test(sql) && Str.includes("FROM trace_index")(sql)
 
 /**
  * Default fixtures for the large-trace `inspect_trace` scenario. Both the
  * `span_hierarchy` and `list_logs` pipes compile to SQL referencing their CH
  * table, so we route by table name.
  */
-const defaultTraceFixtures = (): FixtureRule[] => [
-	{ match: (sql) => sql.includes("trace_detail_spans"), rows: makeLargeTraceSpans() },
-	{ match: (sql) => /\bfrom\s+logs\b/i.test(sql), rows: makeTraceLogs() },
+export const defaultTraceFixtures = (): FixtureRule[] => [
+	{
+		match: (sql) => readsTraceSpans(sql) && Str.includes(FIXTURES.traceId)(sql),
+		rows: makeLargeTraceSpans(),
+	},
+	// Only the fixture trace's logs: a bare `FROM logs` also matches log search and analytics.
+	{
+		match: (sql) => /\bfrom\s+logs\b/i.test(sql) && Str.includes(FIXTURES.traceId)(sql),
+		rows: makeTraceLogs(),
+	},
 ]
 
 /**
@@ -35,6 +55,8 @@ export const installFakeWarehouse = (
 	 *  cached for the runtime's lifetime, so a test switches the failure from
 	 *  inside this hook rather than by re-installing. */
 	failWhen?: (sql: string) => boolean,
+	/** What unmatched SQL gets: a loud failure (default), or no rows, for suites that only need tools to run. */
+	unmatched: "fail" | "empty" = "fail",
 ): void => {
 	__testables.setClientFactory(() =>
 		Effect.succeed({
@@ -53,16 +75,29 @@ export const installFakeWarehouse = (
 								}),
 							)
 						}
-						const rule = rules.find((r) => r.match(sql))
-						if (!rule) {
+						const found = Arr.findFirst(rules, (r) => r.match(sql))
+						if (Option.isNone(found) && unmatched === "empty") return Effect.succeed({ data: [] })
+						if (Option.isNone(found)) {
 							return Effect.fail(
 								new WarehouseDriverError({
 									reason: "unknown",
-									message: `[eval fake warehouse] no fixture matched SQL:\n${sql.slice(0, 600)}`,
+									message: `[eval fake warehouse] no fixture matched SQL:\n${Str.slice(0, 600)(sql)}`,
 								}),
 							)
 						}
-						return Effect.succeed({ data: rule.rows as ReadonlyArray<Record<string, unknown>> })
+						const rule = found.value
+						if ("failure" in rule) {
+							return Effect.fail(
+								new WarehouseDriverError({
+									reason: "server",
+									status: 400,
+									message: rule.failure.message,
+									type: rule.failure.type,
+								}),
+							)
+						}
+						const rows = typeof rule.rows === "function" ? rule.rows(sql) : rule.rows
+						return Effect.succeed({ data: rows as ReadonlyArray<Record<string, unknown>> })
 					},
 				),
 			insert: () => Effect.void,

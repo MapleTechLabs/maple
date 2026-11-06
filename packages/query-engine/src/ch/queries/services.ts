@@ -2,10 +2,10 @@
 //
 // DSL-based query definitions for service overview, releases, apdex, and usage.
 
-import { Schema } from "effect"
-import * as T from "@maple-dev/effect-clickhouse/types"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
+import { type DateTime, Schema } from "effect"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param } from "@maple-dev/effect-orm/clickhouse"
 import {
 	from,
 	fromQuery,
@@ -13,19 +13,27 @@ import {
 	type CHQuery,
 	type ColumnAccessor,
 	type CompiledQueryRowSchema,
-} from "@maple-dev/effect-clickhouse"
-import { unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
-import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
+} from "@maple-dev/effect-orm/clickhouse"
+import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
+import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import {
 	ServiceOverviewHourly,
 	ServiceOverviewMinutely,
 	ServiceOverviewSpans,
 	ServiceUsage,
 	TracesAggregatesHourly,
+	orgIdParam,
 } from "../tables"
 import { CHNumber } from "../schema"
-import { apdexExprs, serviceOverviewWhereConditions, hourFloor, type FacetOutput } from "./query-helpers"
-import { edgeCondition, hourGrain, interiorConditions, minuteGrain } from "./rollup-splice"
+import { DateTimeUtcFromWarehouse } from "../../datetime"
+import {
+	apdexExprs,
+	serviceOverviewWhereConditions,
+	utcHourCeil,
+	utcHourFloor,
+	type FacetOutput,
+} from "./query-helpers"
+import { edgeCondition, hourGrain, minuteGrain, utcInteriorConditions } from "./rollup-splice"
 
 // Service overview
 
@@ -46,7 +54,7 @@ export const DURATION_STATE = T.aggregateState("quantilesTDigest(0.5, 0.95, 0.99
 const COMMIT_TUPLE = T.array(
 	T.custom(
 		"Tuple(String, UInt64, UInt64, String)",
-		Schema.Tuple([Schema.String, CHNumber, CHNumber, Schema.String]),
+		Schema.Tuple([Schema.String, CHNumber, CHNumber, DateTimeUtcFromWarehouse]),
 	),
 )
 
@@ -61,7 +69,7 @@ export interface ServiceWindowFilters {
 }
 
 /**
- * The bucket grain a service-history stream is reconstructed at.
+ * The bucket grain (`grain`) a service-history stream is reconstructed at.
  *
  * `"hour"` is the two-tier splice: raw partial boundary hours + the hourly
  * rollup's interior. Correct for any query that aggregates the whole window, and
@@ -73,19 +81,21 @@ export interface ServiceWindowFilters {
  * `bucketSeconds` is not a multiple of 3600 — an hour-floored row landing in a
  * sub-hour bucket puts a whole hour of traffic on the bucket containing `:00`
  * and leaves the rest of the hour reading zero.
+ *
+ * The hour grain always splices the hourly tier; only the minute grain can drop it.
  */
-export type OverviewGrain = "hour" | "minute"
-
-export interface ServiceWindowTiers {
-	readonly grain?: OverviewGrain
-	/**
-	 * Include the hourly tier. Must be `false` when the caller buckets the result
-	 * with a `bucketSeconds` that is not a whole multiple of 3600 — an hourly row
-	 * carries no sub-hour position, so `toStartOfInterval` would pile the whole
-	 * hour onto the bucket containing `:00`.
-	 */
-	readonly includeHourly?: boolean
-}
+export type ServiceWindowTiers =
+	| { readonly grain?: "hour"; readonly includeHourly?: true }
+	| {
+			readonly grain: "minute"
+			/**
+			 * Include the hourly tier. Must be `false` when the caller buckets the result
+			 * with a `bucketSeconds` that is not a whole multiple of 3600: an hourly row
+			 * carries no sub-hour position, so `toStartOfInterval` would pile the whole
+			 * hour onto the bucket containing `:00`.
+			 */
+			readonly includeHourly?: boolean
+	  }
 
 /**
  * Tier selection for a caller that buckets the stream by `bucketSeconds`.
@@ -135,20 +145,26 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 	>(
 		$: A,
 	) => [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		CH.when(filters.serviceName, (value: string) => $.ServiceName.eq(value)),
-		filters.environments?.length ? CH.inList($.DeploymentEnv, filters.environments) : undefined,
-		filters.namespaces?.length ? CH.inList($.ServiceNamespace, filters.namespaces) : undefined,
-		filters.commitShas?.length ? CH.inList($.CommitSha, filters.commitShas) : undefined,
+		filters.environments !== undefined && filters.environments.length > 0
+			? CH.inList($.DeploymentEnv, filters.environments)
+			: undefined,
+		filters.namespaces !== undefined && filters.namespaces.length > 0
+			? CH.inList($.ServiceNamespace, filters.namespaces)
+			: undefined,
+		filters.commitShas !== undefined && filters.commitShas.length > 0
+			? CH.inList($.CommitSha, filters.commitShas)
+			: undefined,
 		// All three are top-level columns on both the raw table and the rollup, so an exclusion
 		// keeps whichever tier the splice picked.
-		filters.excludedEnvironments?.length
+		filters.excludedEnvironments !== undefined && filters.excludedEnvironments.length > 0
 			? CH.notInList($.DeploymentEnv, filters.excludedEnvironments)
 			: undefined,
-		filters.excludedNamespaces?.length
+		filters.excludedNamespaces !== undefined && filters.excludedNamespaces.length > 0
 			? CH.notInList($.ServiceNamespace, filters.excludedNamespaces)
 			: undefined,
-		filters.excludedCommitShas?.length
+		filters.excludedCommitShas !== undefined && filters.excludedCommitShas.length > 0
 			? CH.notInList($.CommitSha, filters.excludedCommitShas)
 			: undefined,
 	]
@@ -195,13 +211,10 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 			bApdexSatisfiedCount: CH.sum($.ApdexSatisfiedCount),
 			bApdexToleratingCount: CH.sum($.ApdexToleratingCount),
 		}))
-		.where(($) => [...rollupFilters($), ...interiorConditions($.Hour)])
+		.where(($) => [...rollupFilters($), ...utcInteriorConditions($.Hour)])
 		.groupBy(...SERVICE_WINDOW_GROUP_KEYS)
 
 	if (grain === "hour") {
-		if (!includeHourly) {
-			throw new Error("serviceOverviewWindows: hour grain requires the hourly tier")
-		}
 		return fromUnion(unionAll(rawEdges, hourlyInterior), "service_windows")
 	}
 
@@ -230,7 +243,7 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 		}))
 		.where(($) => [
 			...rollupFilters($),
-			...interiorConditions($.Minute, minuteGrain),
+			...utcInteriorConditions($.Minute, minuteGrain),
 			includeHourly ? edgeCondition("Minute", hourGrain) : undefined,
 		])
 		.groupBy(...SERVICE_WINDOW_GROUP_KEYS)
@@ -262,7 +275,7 @@ export type ServiceCommitTuple = readonly [
 	commitSha: string,
 	spanCount: number,
 	errorCount: number,
-	firstSeen: string,
+	firstSeen: DateTime.Utc,
 ]
 
 export interface ServiceOverviewOutput {
@@ -277,7 +290,7 @@ export interface ServiceOverviewOutput {
 	readonly p95LatencyMs: number
 	readonly p99LatencyMs: number
 	readonly estimatedSpanCount: number
-	readonly firstSeen: string
+	readonly firstSeen: DateTime.Utc
 	/** Sorted by span count descending, capped at {@link SERVICE_OVERVIEW_COMMIT_CAP}. */
 	readonly commits: readonly ServiceCommitTuple[]
 }
@@ -294,11 +307,11 @@ export const serviceOverviewRowSchema = Schema.Struct({
 	p95LatencyMs: CHNumber,
 	p99LatencyMs: CHNumber,
 	estimatedSpanCount: CHNumber,
-	firstSeen: Schema.String,
+	firstSeen: DateTimeUtcFromWarehouse,
 	// `CHNumber`, never `Schema.Number`: the counts are UInt64, and a
 	// gateway/readonly cluster that refuses `output_format_json_quote_64bit_integers=0`
 	// returns them as quoted strings.
-	commits: Schema.Array(Schema.Tuple([Schema.String, CHNumber, CHNumber, Schema.String])),
+	commits: Schema.Array(Schema.Tuple([Schema.String, CHNumber, CHNumber, DateTimeUtcFromWarehouse])),
 }) satisfies CompiledQueryRowSchema<ServiceOverviewOutput>
 
 export interface ServiceCatalogOpts {
@@ -459,6 +472,32 @@ export function serviceOverviewQuery(opts: ServiceOverviewOpts) {
 		.format("JSON")
 }
 
+// Service presence
+
+export interface ServicePresenceOutput {
+	readonly spanCount: number
+}
+
+/**
+ * Span count for one service over the window, from the same tiers as
+ * `serviceOverviewQuery`. Group-less, so it always returns one row and is not
+ * bounded by the overview's row limit; the sorting keys lead with
+ * (OrgId, ServiceName), so the scan stays narrow.
+ */
+export function servicePresenceQuery(opts: { serviceName: string }) {
+	return (
+		serviceOverviewWindows({ serviceName: opts.serviceName })
+			.select(($) => ({ spanCount: CH.sum($.bSpanCount) }))
+			// The window builder drops a falsy name filter; pin it here so "" can't count every service.
+			.where(($) => [$.bServiceName.eq(opts.serviceName)])
+			.format("JSON")
+	)
+}
+
+export const servicePresenceRowSchema = Schema.Struct({
+	spanCount: CHNumber,
+}) satisfies CompiledQueryRowSchema<ServicePresenceOutput>
+
 // Service health snapshot
 
 export interface ServiceHealthSnapshotOpts {
@@ -484,9 +523,9 @@ export interface ServiceHealthSnapshotOutput {
  * also avoids the mathematically-invalid weighted average of per-commit p95s
  * used by the richer service catalog response.
  *
- * Hour bounds are floored because the aggregate is hour-grain. The main
- * overview uses multi-hour presets; including both boundary hours is the
- * least-surprising approximation and keeps the current partial hour visible.
+ * The aggregate is hour-grain, so the read covers whole hours [floor(start), ceil(end)):
+ * the current partial hour stays visible, and back-to-back windows never share an hour.
+ * `serviceHealthSnapshotHours` gives callers the same span to divide rates by.
  */
 export function serviceHealthSnapshotQuery(opts: ServiceHealthSnapshotOpts) {
 	return from(TracesAggregatesHourly)
@@ -501,11 +540,13 @@ export function serviceHealthSnapshotQuery(opts: ServiceHealthSnapshotOpts) {
 			),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.IsEntryPoint.eq(1),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
-			opts.environments?.length ? CH.inList($.DeploymentEnv, opts.environments) : undefined,
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lt(utcHourCeil("endTime")),
+			opts.environments !== undefined && opts.environments.length > 0
+				? CH.inList($.DeploymentEnv, opts.environments)
+				: undefined,
 		])
 		.groupBy("serviceName", "environment")
 		.orderBy(["requestCount", "desc"], ["serviceName", "asc"])
@@ -568,7 +609,7 @@ export interface ServiceReleasesTimelineOpts {
 }
 
 export interface ServiceReleasesTimelineOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly commitSha: string
 	readonly count: number
 	readonly errorCount: number
@@ -581,7 +622,7 @@ export interface ServiceReleasesTimelineOutput {
  */
 function serviceReleasesTimelineRawQuery(
 	opts: ServiceReleasesTimelineOpts,
-): CHQuery<ColumnDefs, ServiceReleasesTimelineOutput, {}> {
+): CHQuery<ColumnDefs, ServiceReleasesTimelineOutput> {
 	return from(ServiceOverviewSpans)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
@@ -596,12 +637,12 @@ function serviceReleasesTimelineRawQuery(
 		.groupBy("bucket", "commitSha")
 		.orderBy(["bucket", "asc"])
 		.limit(1000)
-		.format("JSON") as CHQuery<ColumnDefs, ServiceReleasesTimelineOutput, {}>
+		.format("JSON")
 }
 
 export function serviceReleasesTimelineQuery(
 	opts: ServiceReleasesTimelineOpts,
-): CHQuery<ColumnDefs, ServiceReleasesTimelineOutput, {}> {
+): CHQuery<ColumnDefs, ServiceReleasesTimelineOutput> {
 	// Sub-hour buckets (the default here is 300s) cannot read the hourly tier: an
 	// hour-floored row carries no position inside the hour, so `toStartOfInterval`
 	// would put every interior hour on the bucket containing `:00` and leave the
@@ -620,7 +661,7 @@ export function serviceReleasesTimelineQuery(
 		.groupBy("bucket", "commitSha")
 		.orderBy(["bucket", "asc"])
 		.limit(1000)
-		.format("JSON") as CHQuery<ColumnDefs, ServiceReleasesTimelineOutput, {}>
+		.format("JSON")
 }
 
 // Service environments
@@ -667,6 +708,7 @@ export function serviceEnvironmentsQuery(opts: ServiceEnvironmentsOpts = {}) {
 
 export interface ServiceApdexTimeseriesOpts {
 	serviceName: string
+	environments?: readonly string[]
 	apdexThresholdMs?: number
 	/**
 	 * The bucket width the result is grouped into. Needed at build time, not just
@@ -677,7 +719,7 @@ export interface ServiceApdexTimeseriesOpts {
 }
 
 export interface ServiceApdexTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly totalCount: number
 	readonly satisfiedCount: number
 	readonly toleratingCount: number
@@ -686,7 +728,7 @@ export interface ServiceApdexTimeseriesOutput {
 
 export function serviceApdexTimeseriesQuery(
 	opts: ServiceApdexTimeseriesOpts,
-): CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput, {}> {
+): CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput> {
 	const thresholdMs = opts.apdexThresholdMs ?? 500
 
 	// Sub-hour buckets (the default here is 60s) cannot read the hourly tier: an
@@ -696,7 +738,10 @@ export function serviceApdexTimeseriesQuery(
 	const tiers = serviceWindowTiersForBucket(opts.bucketSeconds)
 
 	if (thresholdMs === 500 && tiers !== "raw") {
-		return serviceOverviewWindows({ serviceName: opts.serviceName }, tiers)
+		return serviceOverviewWindows(
+			{ serviceName: opts.serviceName, environments: opts.environments },
+			tiers,
+		)
 			.select(($) => {
 				const total = CH.sum($.bSpanCount)
 				const satisfied = CH.sum($.bApdexSatisfiedCount)
@@ -715,7 +760,7 @@ export function serviceApdexTimeseriesQuery(
 			})
 			.groupBy("bucket")
 			.orderBy(["bucket", "asc"])
-			.format("JSON") as CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput, {}>
+			.format("JSON") as CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput>
 	}
 
 	// Routes through `service_overview_spans` (the entry-point MV) rather than
@@ -731,10 +776,15 @@ export function serviceApdexTimeseriesQuery(
 			totalCount: CH.count(),
 			...apdexExprs($.Duration.div(1000000), thresholdMs, $.StatusCode.eq("Error")),
 		}))
-		.where(($) => serviceOverviewWhereConditions($, { serviceName: opts.serviceName }))
+		.where(($) =>
+			serviceOverviewWhereConditions($, {
+				serviceName: opts.serviceName,
+				environments: opts.environments,
+			}),
+		)
 		.groupBy("bucket")
 		.orderBy(["bucket", "asc"])
-		.format("JSON") as CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput, {}>
+		.format("JSON") as CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput>
 }
 
 // Service usage
@@ -809,7 +859,7 @@ export function serviceUsageQuery(opts: ServiceUsageOpts) {
 				.add(CH.sum($.ExpHistogramMetricSizeBytes)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			// `service_usage` is keyed on top-of-hour `Hour`. Comparing to the raw
 			// `startTime` / `endTime` literals misses every sub-hour window — e.g.
 			// "last 15 min" at 22:23–22:38 returns no rows because `Hour=22:00 <
@@ -817,14 +867,48 @@ export function serviceUsageQuery(opts: ServiceUsageOpts) {
 			// the requested window contributes. The cards over-report toward the
 			// edges (they show the full enclosing hour, not just the partial
 			// window) which is the only sensible answer when the MV is hourly.
-			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(param.dateTimeString("startTime")))),
-			$.Hour.lte(CH.toStartOfHour(CH.toDateTime(param.dateTimeString("endTime")))),
-			opts.serviceNames?.length
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
+			opts.serviceNames !== undefined && opts.serviceNames.length > 0
 				? CH.inList($.ServiceName, opts.serviceNames)
 				: CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 		])
 		.groupBy("serviceName")
 		.orderBy(["totalSizeBytes", "desc"])
+		.format("JSON")
+}
+
+export interface TraceSpanVolumeOutput {
+	readonly serviceName: string
+	/** Stored spans (not sample-weighted): what a raw `traces` scan reads. */
+	readonly spanCount: number
+	/** The share of `spanCount` in the window's first and last hour, which it only partly covers. */
+	readonly firstHourSpanCount: number
+	readonly lastHourSpanCount: number
+}
+
+export const traceSpanVolumeRowSchema = Schema.Struct({
+	serviceName: Schema.String,
+	spanCount: CHNumber,
+	firstHourSpanCount: CHNumber,
+	lastHourSpanCount: CHNumber,
+}) satisfies CompiledQueryRowSchema<TraceSpanVolumeOutput>
+
+/** Stored spans per service over every hour overlapping the window: sizes a raw `traces` scan before it runs. */
+export function traceSpanVolumeByServiceQuery() {
+	return from(ServiceUsage)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			spanCount: CH.sum($.TraceCount),
+			firstHourSpanCount: CH.sumIf($.TraceCount, $.Hour.eq(utcHourFloor("startTime"))),
+			lastHourSpanCount: CH.sumIf($.TraceCount, $.Hour.eq(utcHourFloor("endTime"))),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
+		])
+		.groupBy("serviceName")
 		.format("JSON")
 }
 
@@ -849,9 +933,9 @@ export interface ServiceUsageWithPreviousOutput extends ServiceUsageOutput {
  */
 export function serviceUsageWithPreviousQuery(opts: ServiceUsageOpts) {
 	const inCurrent = ($: ColumnAccessor<typeof ServiceUsage.columns>) =>
-		$.Hour.gte(hourFloor("startTime")).and($.Hour.lte(hourFloor("endTime")))
+		$.Hour.gte(utcHourFloor("startTime")).and($.Hour.lte(utcHourFloor("endTime")))
 	const inPrevious = ($: ColumnAccessor<typeof ServiceUsage.columns>) =>
-		$.Hour.gte(hourFloor("previousStartTime")).and($.Hour.lte(hourFloor("previousEndTime")))
+		$.Hour.gte(utcHourFloor("previousStartTime")).and($.Hour.lte(utcHourFloor("previousEndTime")))
 
 	return from(ServiceUsage)
 		.select(($) => ({
@@ -888,12 +972,12 @@ export function serviceUsageWithPreviousQuery(opts: ServiceUsageOpts) {
 				.add(CH.sumIf($.ExpHistogramMetricSizeBytes, inPrevious($))),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			// Scan the union window [previousStartTime, endTime] once; sumIf splits
 			// it into the two periods. Hour-floored bounds match serviceUsageQuery.
-			$.Hour.gte(hourFloor("previousStartTime")),
-			$.Hour.lte(hourFloor("endTime")),
-			opts.serviceNames?.length
+			$.Hour.gte(utcHourFloor("previousStartTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
+			opts.serviceNames !== undefined && opts.serviceNames.length > 0
 				? CH.inList($.ServiceName, opts.serviceNames)
 				: CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 		])

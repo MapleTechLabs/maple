@@ -8,29 +8,30 @@
 // There is no separate endpoints rollup and there should not be one. The
 // normalized name `service_operations_minutely/_hourly` already stores IS the
 // endpoint identity for HTTP spans, so this is a filter over an aggregate we
-// pay for on every insert — see `httpOnly` in ./service-operations.
+// pay for on every insert. The splice itself lives in ./service-api.
 
 import {
-	serviceOperationsSummaryQuery,
-	serviceOperationsSummaryRawQuery,
-	serviceOperationsSummaryRowSchema,
-	type ServiceOperationsSummaryOpts,
-	type ServiceOperationsSummaryOutput,
-} from "./service-operations"
+	serviceEndpointsWithHttpQuery,
+	serviceEndpointsWithHttpRowSchema,
+	type ServiceEndpointsWithHttpOpts,
+	type ServiceEndpointsWithHttpOutput,
+} from "./service-api"
+import { String as Str, Option } from "effect"
 
-export type ServiceEndpointsSummaryOpts = Omit<ServiceOperationsSummaryOpts, "httpOnly">
+export type ServiceEndpointsSummaryOpts = Omit<ServiceEndpointsWithHttpOpts, "tiers">
 
-export type ServiceEndpointsSummaryOutput = ServiceOperationsSummaryOutput
+/** The operations summary row plus migration 0048's HTTP status and body measures. */
+export type ServiceEndpointsSummaryOutput = ServiceEndpointsWithHttpOutput
 
-export const serviceEndpointsSummaryRowSchema = serviceOperationsSummaryRowSchema
+export const serviceEndpointsSummaryRowSchema = serviceEndpointsWithHttpRowSchema
 
 export function serviceEndpointsSummaryQuery(opts: ServiceEndpointsSummaryOpts) {
-	return serviceOperationsSummaryQuery({ ...opts, httpOnly: true })
+	return serviceEndpointsWithHttpQuery({ ...opts, tiers: "spliced" })
 }
 
-/** All-raw rollback companion, for clusters without migration 0008. */
+/** All-raw rollback companion, for clusters without the rollups or migration 0048. */
 export function serviceEndpointsSummaryRawQuery(opts: ServiceEndpointsSummaryOpts) {
-	return serviceOperationsSummaryRawQuery({ ...opts, httpOnly: true })
+	return serviceEndpointsWithHttpQuery({ ...opts, tiers: "raw" })
 }
 
 export interface EndpointName {
@@ -50,7 +51,14 @@ export interface EndpointName {
  * so a malformed row renders as a route rather than throwing.
  */
 export function splitEndpointName(spanName: string): EndpointName {
-	const separator = spanName.indexOf(" ")
-	if (separator <= 0) return { method: "", route: spanName }
-	return { method: spanName.slice(0, separator), route: spanName.slice(separator + 1) }
+	return Option.match(
+		Option.filter(Str.indexOf(" ")(spanName), (separator) => separator > 0),
+		{
+			onNone: () => ({ method: "", route: spanName }),
+			onSome: (separator) => ({
+				method: Str.slice(0, separator)(spanName),
+				route: Str.slice(separator + 1)(spanName),
+			}),
+		},
+	)
 }

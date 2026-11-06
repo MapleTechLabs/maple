@@ -1,0 +1,32 @@
+{
+	"include": ["src/**/*.ts", "src/**/*.tsx"],
+	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
+		"target": "ES2022",
+		"module": "ESNext",
+		"jsx": "react-jsx",
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"types": ["node", "@cloudflare/workers-types"],
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"verbatimModuleSyntax": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"strict": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedSideEffectImports": true,
+		"plugins": [
+			{
+				"name": "@effect/language-service",
+				"ignoreEffectWarningsInTscExitCode": true,
+				"includeSuggestionsInTsc": false,
+				"diagnosticSeverity": {
+					"unstableApiUsage": "off",
+					"schemaNumber": "off",
+					"schemaClassMissingBrand": "off",
+					"schemaSync": "off"
+				}
+			}
+		]
+	}
+}

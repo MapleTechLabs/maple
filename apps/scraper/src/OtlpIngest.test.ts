@@ -1,11 +1,12 @@
+import { gunzipSync } from "node:zlib"
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Exit, Fiber, Layer, Redacted } from "effect"
+import { Duration, Effect, Exit, Fiber, Layer, Redacted, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { OtlpIngest } from "./OtlpIngest"
 import { ScraperEnv, type ScraperEnvConfig } from "./Env"
 import { endedSpansNamed, makeCapturingTracer } from "./testing/capturing-tracer"
-import type { OtlpExportRequest } from "./prometheus/otlp"
+import type { OtlpExportRequest } from "@maple/prometheus-otlp"
 
 const testEnv: ScraperEnvConfig = {
 	MAPLE_API_URL: "http://api.test",
@@ -14,12 +15,24 @@ const testEnv: ScraperEnvConfig = {
 	SCRAPER_CONCURRENCY: 10,
 	SCRAPER_RECONCILE_INTERVAL_SECONDS: 60,
 	SCRAPER_OTLP_MAX_DATA_POINTS: 10_000,
+	SCRAPER_OTLP_MAX_BODY_BYTES: 4 * 1024 * 1024,
+	UPTIME_CONCURRENCY: 20,
 	PORT: 0,
 }
 
 const TestLayer = OtlpIngest.layer.pipe(
 	Layer.provide(Layer.mergeAll(FetchHttpClient.layer, Layer.succeed(ScraperEnv, testEnv))),
 )
+
+/**
+ * Lets the stubbed fetch settle on the real event loop and moves the test clock past a backoff,
+ * until `fiber` exits. A fixed tick count races the libuv gzip when the machine is loaded.
+ */
+const advanceUntilDone = (fiber: Fiber.Fiber<unknown, unknown>, by: Duration.Input = "2 seconds") =>
+	Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 0))).pipe(
+		Effect.andThen(TestClock.adjust(by)),
+		Effect.repeat({ until: () => fiber.pollUnsafe() !== undefined, times: 100 }),
+	)
 
 const SAMPLE_REQUEST: OtlpExportRequest = {
 	resourceMetrics: [
@@ -55,25 +68,33 @@ interface RecordedRequest {
 	url: string
 	method: string
 	headers: Record<string, string>
+	/** Decompressed. */
 	body: string | null
+	wireBytes: number
 }
 
-const stubFetch = (recorded: Array<RecordedRequest>, respond: () => Response): typeof globalThis.fetch =>
+const stubFetch = (
+	recorded: Array<RecordedRequest>,
+	respond: () => Response | Promise<Response>,
+): typeof globalThis.fetch =>
 	(async (input: string | URL | Request, init?: RequestInit) => {
 		const headers: Record<string, string> = {}
 		new Headers(init?.headers).forEach((value, key) => {
 			headers[key] = value
 		})
 		recorded.push({
-			url: String(input),
+			url: input instanceof Request ? input.url : input.toString(),
 			method: init?.method ?? "GET",
 			headers,
 			body:
 				typeof init?.body === "string"
 					? init.body
 					: init?.body instanceof Uint8Array
-						? new TextDecoder().decode(init.body)
+						? new TextDecoder().decode(
+								headers["content-encoding"] === "gzip" ? gunzipSync(init.body) : init.body,
+							)
 						: null,
+			wireBytes: init?.body instanceof Uint8Array ? init.body.byteLength : 0,
 		})
 		return respond()
 	}) as typeof globalThis.fetch
@@ -94,6 +115,7 @@ describe("OtlpIngest", () => {
 			assert.strictEqual(recorded[0]?.method, "POST")
 			assert.strictEqual(recorded[0]?.headers.authorization, "Bearer maple_pk_test_key")
 			assert.strictEqual(recorded[0]?.headers["content-type"], "application/json")
+			assert.strictEqual(recorded[0]?.headers["content-encoding"], "gzip")
 			assert.deepStrictEqual(JSON.parse(recorded[0]?.body ?? "{}"), SAMPLE_REQUEST)
 		}).pipe(Effect.provide(TestLayer)),
 	)
@@ -108,29 +130,94 @@ describe("OtlpIngest", () => {
 				),
 				Effect.flip,
 			)
-			assert.strictEqual(error._tag, "@maple/scraper/OtlpIngestError")
-			assert.strictEqual(error.status, 402)
+			assert.strictEqual(error.reason, "delivery_blocked")
+			assert.strictEqual(error.statusCode, 402)
 			assert.include(error.message, "billing limit")
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
-	it.effect("fails with a typed error on other non-2xx responses", () =>
+	// Any other rejection loses the export (bad key, oversized body), so it is a
+	// real failure: it errors the span and holds cadence.
+	it.effect("fails and errors its span on any other non-2xx response", () =>
 		Effect.gen(function* () {
+			const tracer = makeCapturingTracer()
 			const otlp = yield* OtlpIngest
 			const error = yield* otlp.send("maple_pk_test_key", SAMPLE_REQUEST).pipe(
 				Effect.provideService(
 					FetchHttpClient.Fetch,
 					stubFetch([], () => new Response("nope", { status: 401 })),
 				),
+				Effect.provide(tracer.layer),
 				Effect.flip,
 			)
-			assert.strictEqual(error.status, 401)
+			assert.strictEqual(error.reason, "scrape_failed")
+			assert.strictEqual(error.statusCode, 401)
+			const [span] = endedSpansNamed(tracer.ended, "OtlpIngest.send")
+			assert.isDefined(span)
+			assert.isTrue(Exit.isFailure(span.exit))
+			assert.strictEqual(span.attributes.get("http.response.status_code"), 401)
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
-	// A 4xx is the gateway telling us about the *caller*, not a fault of this
-	// send — only 5xx is `Error` (CLAUDE.md). The typed error still reaches the
-	// caller; it just must not be blamed on the span.
+	it.effect("retries a gateway 503 and delivers the export", () =>
+		Effect.gen(function* () {
+			const recorded: Array<RecordedRequest> = []
+			const otlp = yield* OtlpIngest
+			const fiber = yield* Effect.forkChild(
+				otlp.send("maple_pk_test_key", SAMPLE_REQUEST).pipe(
+					Effect.provideService(
+						FetchHttpClient.Fetch,
+						stubFetch(recorded, () =>
+							recorded.length === 1
+								? new Response("deploying", { status: 503 })
+								: Response.json({ partialSuccess: {} }),
+						),
+					),
+				),
+			)
+			yield* advanceUntilDone(fiber)
+			yield* Fiber.join(fiber)
+			assert.lengthOf(recorded, 2)
+		}).pipe(Effect.provide(TestLayer)),
+	)
+
+	it.effect("errors no span for a dropped connection the retry recovers from", () =>
+		Effect.gen(function* () {
+			const recorded: Array<RecordedRequest> = []
+			const tracer = makeCapturingTracer()
+			const otlp = yield* OtlpIngest
+			const fiber = yield* Effect.forkChild(
+				otlp.send("maple_pk_test_key", SAMPLE_REQUEST).pipe(
+					Effect.provideService(
+						FetchHttpClient.Fetch,
+						stubFetch(recorded, () =>
+							recorded.length === 1
+								? Promise.reject(new TypeError("socket closed"))
+								: Response.json({ partialSuccess: {} }),
+						),
+					),
+					Effect.provide(tracer.layer),
+				),
+			)
+			yield* advanceUntilDone(fiber)
+			yield* Fiber.join(fiber)
+
+			assert.lengthOf(recorded, 2)
+			assert.isTrue(Arr.every(tracer.ended, (span) => Exit.isSuccess(span.exit)))
+			const attempts = endedSpansNamed(tracer.ended, "POST")
+			assert.lengthOf(attempts, 2)
+			assert.strictEqual(Arr.getUnsafe(attempts, 0).attributes.get("error.type"), "TransportError")
+			assert.strictEqual(Arr.getUnsafe(attempts, 1).attributes.get("http.response.status_code"), 200)
+			const [chunk] = endedSpansNamed(tracer.ended, "OtlpIngest.send_chunk")
+			assert.isDefined(chunk)
+			assert.isTrue(Arr.every(attempts, (attempt) => attempt.parentSpanId === chunk.spanId))
+			// Each attempt propagates its own span, so ingest's server span parents to it.
+			assert.include(Arr.getUnsafe(recorded, 1).headers.traceparent, Arr.getUnsafe(attempts, 1).spanId)
+		}).pipe(Effect.provide(TestLayer)),
+	)
+
+	// A billing block is the expected, caller-side outcome for an org over its
+	// limit: the typed error still reaches the caller, but the span stays Ok.
 	it.effect("annotates rather than errors its span on a billing rejection (402)", () =>
 		Effect.gen(function* () {
 			const tracer = makeCapturingTracer()
@@ -146,30 +233,12 @@ describe("OtlpIngest", () => {
 
 			const spans = endedSpansNamed(tracer.ended, "OtlpIngest.send")
 			assert.lengthOf(spans, 1)
-			assert.isTrue(Exit.isSuccess(spans[0]!.exit))
-			assert.strictEqual(spans[0]!.attributes.get("error.type"), "delivery_blocked")
-			assert.strictEqual(spans[0]!.attributes.get("http.response.status_code"), 402)
+			assert.isTrue(Exit.isSuccess(Arr.getUnsafe(spans, 0).exit))
+			assert.strictEqual(Arr.getUnsafe(spans, 0).attributes.get("error.type"), "delivery_blocked")
+			assert.strictEqual(Arr.getUnsafe(spans, 0).attributes.get("http.response.status_code"), 402)
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
-	it.effect("still errors its span when the gateway itself fails (5xx)", () =>
-		Effect.gen(function* () {
-			const tracer = makeCapturingTracer()
-			const otlp = yield* OtlpIngest
-			yield* otlp.send("maple_pk_test_key", SAMPLE_REQUEST).pipe(
-				Effect.provideService(
-					FetchHttpClient.Fetch,
-					stubFetch([], () => new Response("boom", { status: 500 })),
-				),
-				Effect.provide(tracer.layer),
-				Effect.flip,
-			)
-
-			const spans = endedSpansNamed(tracer.ended, "OtlpIngest.send")
-			assert.lengthOf(spans, 1)
-			assert.isTrue(Exit.isFailure(spans[0]!.exit))
-		}).pipe(Effect.provide(TestLayer)),
-	)
 	// A gateway that accepts the connection but never answers must not pin the
 	// scrape (and its global concurrency permit) forever — the send times out
 	// as a retryable typed error.
@@ -186,10 +255,11 @@ describe("OtlpIngest", () => {
 					.pipe(Effect.provideService(FetchHttpClient.Fetch, stalled), Effect.flip),
 				{ startImmediately: true },
 			)
-			yield* TestClock.adjust("31 seconds")
+			// Each of the three attempts times out at 30s, with a backoff between them.
+			yield* advanceUntilDone(fiber, "35 seconds")
 			const error = yield* Fiber.join(fiber)
-			assert.strictEqual(error._tag, "@maple/scraper/OtlpIngestError")
-			assert.strictEqual(error.status, null)
+			assert.strictEqual(error.reason, "scrape_failed")
+			assert.strictEqual(error.statusCode, null)
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
@@ -200,6 +270,15 @@ describe("OtlpIngest", () => {
 				Layer.mergeAll(
 					FetchHttpClient.layer,
 					Layer.succeed(ScraperEnv, { ...testEnv, SCRAPER_OTLP_MAX_DATA_POINTS: 2 }),
+				),
+			),
+		)
+
+		const ByteCappedLayer = OtlpIngest.layer.pipe(
+			Layer.provide(
+				Layer.mergeAll(
+					FetchHttpClient.layer,
+					Layer.succeed(ScraperEnv, { ...testEnv, SCRAPER_OTLP_MAX_BODY_BYTES: 600 }),
 				),
 			),
 		)
@@ -238,9 +317,9 @@ describe("OtlpIngest", () => {
 			// Annotated rather than asserted: `JSON.parse` is `any`, and the body is
 			// the request this test just handed to the client.
 			const parsed: OtlpExportRequest = JSON.parse(body ?? '{"resourceMetrics":[]}')
-			return parsed.resourceMetrics.flatMap((resourceMetrics) =>
-				resourceMetrics.scopeMetrics.flatMap((scopeMetrics) =>
-					scopeMetrics.metrics.flatMap((metric) => metric.gauge?.dataPoints ?? []),
+			return Arr.flatMap(parsed.resourceMetrics, (resourceMetrics) =>
+				Arr.flatMap(resourceMetrics.scopeMetrics, (scopeMetrics) =>
+					Arr.flatMap(scopeMetrics.metrics, (metric) => metric.gauge?.dataPoints ?? []),
 				),
 			)
 		}
@@ -261,17 +340,45 @@ describe("OtlpIngest", () => {
 
 				assert.lengthOf(recorded, 3)
 				assert.deepStrictEqual(
-					recorded.map((request) => pointsIn(request.body).length),
+					Arr.map(recorded, (request) => pointsIn(request.body).length),
 					[2, 2, 1],
 				)
 				assert.deepStrictEqual(
-					recorded.flatMap((request) => pointsIn(request.body).map((point) => point.asDouble)),
+					Arr.flatMap(recorded, (request) =>
+						Arr.map(pointsIn(request.body), (point) => point.asDouble),
+					),
 					[0, 1, 2, 3, 4],
 				)
 				for (const request of recorded) {
 					assert.strictEqual(request.headers.authorization, "Bearer maple_pk_test_key")
 				}
 			}).pipe(Effect.provide(ChunkedLayer)),
+		)
+
+		// A whole discovery cycle is one export: attribute-heavy points can blow past
+		// the gateway limit well inside the point budget, so bytes cap chunks too.
+		it.effect("also splits by uncompressed body size, under the point budget", () =>
+			Effect.gen(function* () {
+				const recorded: Array<RecordedRequest> = []
+				const otlp = yield* OtlpIngest
+				yield* otlp.send("maple_pk_test_key", LARGE_REQUEST).pipe(
+					Effect.provideService(
+						FetchHttpClient.Fetch,
+						stubFetch(recorded, () => Response.json({ partialSuccess: {} })),
+					),
+				)
+
+				assert.isAbove(recorded.length, 1)
+				for (const request of recorded) {
+					assert.isAtMost(new TextEncoder().encode(request.body ?? "").byteLength, 600)
+				}
+				assert.deepStrictEqual(
+					Arr.flatMap(recorded, (request) =>
+						Arr.map(pointsIn(request.body), (point) => point.asDouble),
+					),
+					[0, 1, 2, 3, 4],
+				)
+			}).pipe(Effect.provide(ByteCappedLayer)),
 		)
 
 		it.effect("stops at the first rejected chunk and keeps the earlier ones delivered", () =>
@@ -292,13 +399,13 @@ describe("OtlpIngest", () => {
 					Effect.flip,
 				)
 
-				assert.strictEqual(error.status, 402)
+				assert.strictEqual(error.statusCode, 402)
 				// Chunk 3 is never attempted — the org is over its limit.
 				assert.lengthOf(recorded, 2)
 			}).pipe(Effect.provide(ChunkedLayer)),
 		)
 
-		it.effect("keeps the parent span Ok on a 4xx and records how much was delivered", () =>
+		it.effect("keeps the parent span Ok on a 402 and records how much was delivered", () =>
 			Effect.gen(function* () {
 				const tracer = makeCapturingTracer()
 				let call = 0
@@ -318,11 +425,12 @@ describe("OtlpIngest", () => {
 				)
 
 				const [span] = endedSpansNamed(tracer.ended, "OtlpIngest.send")
-				assert.isTrue(Exit.isSuccess(span!.exit))
-				assert.strictEqual(span!.attributes.get("error.type"), "delivery_blocked")
-				assert.strictEqual(span!.attributes.get("maple.otlp.data_points"), 5)
-				assert.strictEqual(span!.attributes.get("maple.otlp.chunk_count"), 3)
-				assert.strictEqual(span!.attributes.get("maple.otlp.chunks_delivered"), 1)
+				assert.isDefined(span)
+				assert.isTrue(Exit.isSuccess(span.exit))
+				assert.strictEqual(span.attributes.get("error.type"), "delivery_blocked")
+				assert.strictEqual(span.attributes.get("maple.otlp.data_points"), 5)
+				assert.strictEqual(span.attributes.get("maple.otlp.chunk_count"), 3)
+				assert.strictEqual(span.attributes.get("maple.otlp.chunks_delivered"), 1)
 				assert.lengthOf(endedSpansNamed(tracer.ended, "OtlpIngest.send_chunk"), 2)
 			}).pipe(Effect.provide(ChunkedLayer)),
 		)
@@ -342,8 +450,9 @@ describe("OtlpIngest", () => {
 
 				assert.lengthOf(recorded, 1)
 				const [span] = endedSpansNamed(tracer.ended, "OtlpIngest.send")
-				assert.strictEqual(span!.attributes.get("maple.otlp.chunk_count"), 1)
-				assert.strictEqual(span!.attributes.get("maple.otlp.chunks_delivered"), 1)
+				assert.isDefined(span)
+				assert.strictEqual(span.attributes.get("maple.otlp.chunk_count"), 1)
+				assert.strictEqual(span.attributes.get("maple.otlp.chunks_delivered"), 1)
 			}).pipe(Effect.provide(TestLayer)),
 		)
 	})

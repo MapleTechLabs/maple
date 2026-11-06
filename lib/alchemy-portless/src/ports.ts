@@ -1,6 +1,7 @@
 import { createServer } from "node:net"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import { codeUnitAt } from "@maple/strings"
 
 const RANGE_SIZE = 10000
 const PROBE_WIDTH = 16
@@ -11,7 +12,7 @@ export const PortRange = { route: 40000, worker: 50000 } as const
 const fnv1a = (input: string): number => {
 	let hash = 0x811c9dc5
 	for (let i = 0; i < input.length; i++) {
-		hash ^= input.charCodeAt(i)
+		hash ^= codeUnitAt(input, i)
 		hash = Math.imul(hash, 0x01000193) >>> 0
 	}
 	return hash
@@ -22,15 +23,18 @@ export const preferredPort = (key: string, base: number = PortRange.route): numb
 	base + (fnv1a(key) % RANGE_SIZE)
 
 /** Bind-probe `port` on loopback (`0` = any free one); resolves the bound port. */
-const tryListen = (port: number): Promise<number | undefined> =>
-	new Promise((resolve) => {
+const tryListen = (port: number): Effect.Effect<number | undefined> =>
+	Effect.callback<number | undefined>((resume) => {
 		const server = createServer()
 		server.unref()
-		server.on("error", () => resolve(undefined))
+		server.on("error", () => resume(Effect.undefined))
 		server.listen({ host: "127.0.0.1", port }, () => {
 			const address = server.address()
 			const bound = address !== null && typeof address !== "string" ? address.port : undefined
-			server.close(() => resolve(bound))
+			server.close(() => resume(Effect.succeed(bound)))
+		})
+		return Effect.sync(() => {
+			server.close()
 		})
 	})
 
@@ -44,10 +48,10 @@ export const choosePort = (key: string): Effect.Effect<number, NoFreePortError> 
 	Effect.gen(function* () {
 		const preferred = preferredPort(key)
 		for (let offset = 0; offset < PROBE_WIDTH; offset++) {
-			const bound = yield* Effect.promise(() => tryListen(preferred + offset))
+			const bound = yield* tryListen(preferred + offset)
 			if (bound !== undefined) return bound
 		}
-		const random = yield* Effect.promise(() => tryListen(0))
+		const random = yield* tryListen(0)
 		if (random === undefined) {
 			return yield* new NoFreePortError({ key, message: `could not find a free port for ${key}` })
 		}

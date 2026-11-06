@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 
 /**
  * A string to a `URL`, or `Option.none` when it is not one — the same shape and
@@ -21,7 +21,7 @@ const PUBLIC_GITHUB_WEB = "https://github.com"
  * GitHub splits the two across `api.github.com` and `github.com`.
  */
 export const githubWebBaseUrl = (apiBaseUrl: string): string => {
-	const decoded = decodeUrl(apiBaseUrl.trim())
+	const decoded = decodeUrl(Str.trim(apiBaseUrl))
 	if (Option.isNone(decoded)) return PUBLIC_GITHUB_WEB
 	const url = decoded.value
 
@@ -29,6 +29,6 @@ export const githubWebBaseUrl = (apiBaseUrl: string): string => {
 
 	// Everything else is Enterprise Server, whose web root is the API URL minus
 	// its `/api/v3` (GraphQL: `/api/graphql`) suffix.
-	const path = url.pathname.replace(/\/(api\/v3|api\/graphql|api)\/?$/, "")
-	return `${url.origin}${path}`.replace(/\/+$/, "")
+	const path = Str.replace(/\/(api\/v3|api\/graphql|api)\/?$/, "")(url.pathname)
+	return Str.replace(/\/+$/, "")(`${url.origin}${path}`)
 }

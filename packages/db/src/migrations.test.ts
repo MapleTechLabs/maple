@@ -1,182 +1,131 @@
-// SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
-import { createHash } from "node:crypto"
-import { cpSync, mkdtempSync, rmSync } from "node:fs"
 import { readFileSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { dirname, resolve } from "node:path"
+import * as PgliteClient from "@effect/sql-pglite/PgliteClient"
 import { PGlite } from "@electric-sql/pglite"
-import { drizzle } from "drizzle-orm/pglite"
-import { migrate } from "drizzle-orm/pglite/migrator"
+import * as Migrate from "@maple-dev/effect-orm/migrate"
+import { Effect, Layer, Option, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
-import { listBundledMigrations, readBundledMigrationsSql } from "./migrate"
+import { bundledMigrations, listBundledMigrations, migrateBundled, readBundledMigrationsSql } from "./migrate"
 
 /** The folder for a migration by its name (the part after the kit's timestamp prefix). */
 const migrationNamed = (name: string) => {
-	const matches = listBundledMigrations().filter((migration) => migration.name.endsWith(`_${name}`))
-	if (matches.length !== 1)
+	const matches = Arr.filter(listBundledMigrations(), (migration) =>
+		Str.endsWith(`_${name}`)(migration.name),
+	)
+	const [match] = matches
+	if (matches.length !== 1 || match === undefined)
 		throw new Error(`expected exactly one migration named ${name}, found ${matches.length}`)
-	return matches[0]!
+	return match
 }
 
 const readMigrationSql = (name: string): string => readFileSync(migrationNamed(name).sqlPath, "utf8")
 
 const readMigrationSqlBefore = (name: string): string => {
 	const stop = migrationNamed(name).name
-	return listBundledMigrations()
-		.filter((migration) => migration.name < stop)
-		.map((migration) => readFileSync(migration.sqlPath, "utf8"))
-		.join("\n")
+	return Arr.join(
+		Arr.map(
+			Arr.filter(listBundledMigrations(), (migration) => migration.name < stop),
+			(migration) => readFileSync(migration.sqlPath, "utf8"),
+		),
+		"\n",
+	)
 }
 
-describe("drizzle migrations", () => {
+describe("migrations", () => {
 	it("keeps migration folders in a strictly increasing timestamp order", () => {
 		const migrations = listBundledMigrations()
 		expect(migrations.length).toBeGreaterThan(0)
 
-		for (let i = 1; i < migrations.length; i++) {
-			// The v1 migrator orders folders by name, and the kit derives the
+		for (const [previous, current] of Arr.zip(migrations, migrations.slice(1))) {
+			// The deploy orders folders by name, and both kits derive the
 			// 14-digit prefix from the migration timestamp. A folder that sorts
-			// before an already-deployed one still applies (v1 applies every missing
-			// migration), but the replay order in fresh databases would differ from
+			// before an already-deployed one still applies (every missing migration
+			// applies), but the replay order in fresh databases would differ from
 			// production's, which is how a dependency between two migrations hides.
 			expect(
-				migrations[i]!.name.slice(0, 14) >= migrations[i - 1]!.name.slice(0, 14),
-				`${migrations[i]!.name} must not predate ${migrations[i - 1]!.name}`,
+				Str.slice(0, 14)(current.name) >= Str.slice(0, 14)(previous.name),
+				`${current.name} must not predate ${previous.name}`,
 			).toBe(true)
 		}
 	})
 
-	/**
-	 * Production's first v1 run: the table is still on the 0.x shape. The upgrade
-	 * must match every row by its second (0.x stored the journal's millis) or, for
-	 * a same-second pair, by hash, and apply nothing. The last rows use the
-	 * preflight's pre-upgrade INSERT, which has no `name` column to fill.
-	 */
-	const legacyTable = async (pg: PGlite) => {
-		await pg.exec(`
-			CREATE SCHEMA drizzle;
-			CREATE TABLE drizzle.__drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint);
-		`)
-		return listBundledMigrations().map((migration) => {
-			const stamp = migration.name.slice(0, 14)
-			return {
-				name: migration.name,
-				hash: createHash("sha256").update(readFileSync(migration.sqlPath)).digest("hex"),
-				millis: Date.UTC(
-					Number(stamp.slice(0, 4)),
-					Number(stamp.slice(4, 6)) - 1,
-					Number(stamp.slice(6, 8)),
-					Number(stamp.slice(8, 10)),
-					Number(stamp.slice(10, 12)),
-					Number(stamp.slice(12, 14)),
+	const migrateWith = <A, E>(pg: PGlite, effect: Effect.Effect<A, E, Migrate.MigrationDriver>) =>
+		Effect.runPromise(
+			effect.pipe(
+				Effect.provide(
+					Migrate.layerSqlClient().pipe(Layer.provide(PgliteClient.layer({ liveClient: pg }))),
 				),
-			}
-		})
-	}
+			),
+		)
 
-	it("upgrades a 0.x migrations table in place without replaying anything", async () => {
-		const pg = new PGlite()
-		try {
-			const locals = await legacyTable(pg)
-			const preflightRecorded = 3
-			for (const [index, local] of locals.entries()) {
-				const createdAt =
-					index < locals.length - preflightRecorded ? local.millis + 437 : local.millis
-				await pg.query(
-					"INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)",
-					[local.hash, createdAt],
-				)
-			}
-			const full = dirname(dirname(listBundledMigrations()[0]!.sqlPath))
-			// No schema exists, so replaying any migration would fail on a missing table.
-			await migrate(drizzle({ client: pg }), { migrationsFolder: full })
-
-			const rows = await pg.query<{ name: string | null }>(
-				"SELECT name FROM drizzle.__drizzle_migrations ORDER BY id",
+	const ledgerCount = async (pg: PGlite) =>
+		(
+			await pg.query<{ count: number }>(
+				`SELECT count(*)::int AS count FROM "${Migrate.LEDGER_TABLES.migrations}"`,
 			)
-			expect(rows.rows.map((row) => row.name)).toEqual(locals.map((local) => local.name))
-			const tables = await pg.query<{ count: number }>(
-				"SELECT count(*)::int AS count FROM information_schema.tables WHERE table_schema = 'public'",
-			)
-			expect(tables.rows[0]?.count).toBe(0)
-		} finally {
-			await pg.close()
-		}
-	}, 30_000)
-
-	it("refuses a 0.x table with a row no folder matches and leaves it untouched", async () => {
-		const pg = new PGlite()
-		try {
-			const locals = await legacyTable(pg)
-			for (const local of locals)
-				await pg.query(
-					"INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)",
-					[local.hash, local.millis],
-				)
-			await pg.query("INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)", [
-				"0".repeat(64),
-				Date.UTC(2026, 0, 1),
-			])
-			const full = dirname(dirname(listBundledMigrations()[0]!.sqlPath))
-			await expect(migrate(drizzle({ client: pg }), { migrationsFolder: full })).rejects.toThrow()
-
-			const columns = await pg.query<{ column_name: string }>(
-				"SELECT column_name FROM information_schema.columns WHERE table_schema = 'drizzle' AND table_name = '__drizzle_migrations' ORDER BY ordinal_position",
-			)
-			expect(columns.rows.map((row) => row.column_name)).toEqual(["id", "hash", "created_at"])
-		} finally {
-			await pg.close()
-		}
-	}, 30_000)
+		).rows[0]?.count
 
 	it("upgrades a database at the incident-hold head to receipts and safely re-runs", async () => {
-		// A database migrated up to `alert_incident_hold` (production's head before
-		// this line of work), then migrated with the full folder: the receipts table
-		// and its predecessors land, a row written between the two runs survives a
-		// third run, and the migrations table ends up with one row per folder.
-		const directory = mkdtempSync(resolve(tmpdir(), "maple-receipts-upgrade-"))
+		// A database migrated up to `alert_incident_hold`, then with the full folder: the
+		// receipts table and its predecessors land, a row written between the two runs
+		// survives a third run, and the ledger ends up with one row per folder.
 		const pg = new PGlite()
 		try {
 			const head = migrationNamed("alert_incident_hold").name
-			const migrations = listBundledMigrations()
-			const upTo = migrations.filter((migration) => migration.name <= head)
-			for (const migration of upTo) {
-				cpSync(dirname(migration.sqlPath), resolve(directory, migration.name), { recursive: true })
-			}
-			const db = drizzle({ client: pg })
-			await migrate(db, { migrationsFolder: directory })
-			const before = await pg.query<{ count: number }>(
-				"SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations",
-			)
-			expect(before.rows[0]?.count).toBe(upTo.length)
+			const migrations = await Effect.runPromise(bundledMigrations)
+			const upTo = Arr.filter(migrations, (migration) => migration.name <= head)
+			await migrateWith(pg, Migrate.run({ migrations: upTo, strict: true }))
+			expect(await ledgerCount(pg)).toBe(upTo.length)
 
-			const full = dirname(dirname(migrations[0]!.sqlPath))
-			await migrate(db, { migrationsFolder: full })
+			await migrateWith(pg, migrateBundled)
 			await pg.exec(
 				"INSERT INTO planetscale_issue_receipts (org_id, event_id, processed_at) VALUES ('org-upgrade', 'event-upgrade', now())",
 			)
-			await migrate(db, { migrationsFolder: full })
+			expect(await migrateWith(pg, migrateBundled)).toEqual([])
 			const receipts = await pg.query<{ event_id: string }>(
 				"SELECT event_id FROM planetscale_issue_receipts",
 			)
 			expect(receipts.rows).toEqual([{ event_id: "event-upgrade" }])
-			const after = await pg.query<{ count: number }>(
-				"SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations",
-			)
-			expect(after.rows[0]?.count).toBe(migrations.length)
+			expect(await ledgerCount(pg)).toBe(migrations.length)
 			const holdColumns = await pg.query<{ column_name: string }>(
 				"SELECT column_name FROM information_schema.columns WHERE table_name = 'alert_incidents' AND column_name IN ('hold_reason', 'held_since') ORDER BY column_name",
 			)
-			expect(holdColumns.rows.map((row) => row.column_name)).toEqual(["held_since", "hold_reason"])
+			expect(Arr.map(holdColumns.rows, (row) => row.column_name)).toEqual(["held_since", "hold_reason"])
 		} finally {
 			await pg.close()
-			rmSync(directory, { recursive: true, force: true })
+		}
+	}, 30_000)
+
+	it("adopts a database another tool migrated: baseline records, then only what is newer runs", async () => {
+		// A local database drizzle-kit migrated up to `cancellation_reviews` and that
+		// has no effect-orm ledger: replaying anything would fail on existing tables.
+		const pg = new PGlite()
+		try {
+			await pg.exec(readMigrationSqlBefore("effect_orm_baseline"))
+			const migrations = await Effect.runPromise(bundledMigrations)
+			const recorded = await migrateWith(
+				pg,
+				Migrate.baseline({ migrations, upTo: migrationNamed("cancellation_reviews").name }),
+			)
+			const baseline = migrationNamed("effect_orm_baseline").name
+			expect(recorded).toHaveLength(
+				Option.getOrThrow(Arr.findFirstIndex(migrations, (migration) => migration.name === baseline)),
+			)
+			const ran = await migrateWith(pg, migrateBundled)
+			expect(Arr.map(ran, (migration) => migration.name)).toEqual(
+				Arr.map(
+					Arr.filter(migrations, (migration) => migration.name >= baseline),
+					(migration) => migration.name,
+				),
+			)
+			expect(await ledgerCount(pg)).toBe(migrations.length)
+		} finally {
+			await pg.close()
 		}
 	}, 30_000)
 
 	/**
-	 * A migration is only recorded in `drizzle.__drizzle_migrations` after the
-	 * whole file succeeds, so one that dies halfway leaves the branch with some of
+	 * A migration is only recorded in the deploy's ledger after the whole file
+	 * succeeds, so one that dies halfway leaves the branch with some of
 	 * its DDL applied and no record of it — and every retry replays from the top
 	 * and fails on what it already created. `planned_investigations` (0035) hit exactly that on `main`
 	 * (`42701 duplicate_column` on `lens_name`), and the only fixes that do not
@@ -239,12 +188,12 @@ describe("bundled migrations", () => {
 		await expect(pg.exec(readBundledMigrationsSql())).resolves.toBeDefined()
 
 		const pubs = await pg.query<{ pubname: string }>("select pubname from pg_publication")
-		expect(pubs.rows.map((r) => r.pubname)).toContain("electric_publication_default")
+		expect(Arr.map(pubs.rows, (r) => r.pubname)).toContain("electric_publication_default")
 
 		const members = await pg.query<{ tablename: string }>(
 			"select tablename from pg_publication_tables where pubname = 'electric_publication_default'",
 		)
-		expect(members.rows.map((r) => r.tablename).sort()).toEqual([...SYNCED_TABLES].sort())
+		expect(Arr.map(members.rows, (r) => r.tablename).sort()).toEqual([...SYNCED_TABLES].sort())
 
 		// relreplident 'f' = FULL. Electric refuses to serve a shape over a table that
 		// is not FULL — verified empirically against electricsql/electric:latest, which
@@ -276,7 +225,7 @@ describe("bundled migrations", () => {
 		// The scheduler claim lock (0027) must stay out of the publication: it is
 		// written once per enabled rule per minute, which is precisely the churn that
 		// splitting it off `alert_rules` was meant to keep off the replication stream.
-		expect(members.rows.map((r) => r.tablename)).not.toContain("alert_rule_claims")
+		expect(Arr.map(members.rows, (r) => r.tablename)).not.toContain("alert_rule_claims")
 
 		// 'd' = DEFAULT (primary key only). An unpublished table must not keep paying
 		// FULL's WAL cost — writing the whole old row on every UPDATE/DELETE.
@@ -284,29 +233,31 @@ describe("bundled migrations", () => {
 			`select relname, relreplident from pg_class where relname = any($1)`,
 			[UNSYNCED_TABLES],
 		)
-		expect(pruned.rows.map((r) => r.relname).sort()).toEqual([...UNSYNCED_TABLES].sort())
+		expect(Arr.map(pruned.rows, (r) => r.relname).sort()).toEqual([...UNSYNCED_TABLES].sort())
 		for (const row of pruned.rows) {
 			expect(row.relreplident, `${row.relname} replica identity`).toBe("d")
 		}
 	}, 30_000)
 
 	const publishedTables = async (pg: PGlite) =>
-		(
-			await pg.query<{ tablename: string }>(
-				"select tablename from pg_publication_tables where pubname = 'electric_publication_default'",
-			)
-		).rows
-			.map((r) => r.tablename)
-			.sort()
+		Arr.map(
+			(
+				await pg.query<{ tablename: string }>(
+					"select tablename from pg_publication_tables where pubname = 'electric_publication_default'",
+				)
+			).rows,
+			(r) => r.tablename,
+		).sort()
 
 	const fullTables = async (pg: PGlite) =>
-		(
-			await pg.query<{ relname: string }>(
-				"select relname from pg_class where relkind = 'r' and relreplident = 'f' and relnamespace = 'public'::regnamespace",
-			)
-		).rows
-			.map((r) => r.relname)
-			.sort()
+		Arr.map(
+			(
+				await pg.query<{ relname: string }>(
+					"select relname from pg_class where relkind = 'r' and relreplident = 'f' and relnamespace = 'public'::regnamespace",
+				)
+			).rows,
+			(r) => r.relname,
+		).sort()
 
 	// The fresh EU database had an empty publication before the first migration ran,
 	// so 0009's CREATE PUBLICATION hit duplicate_object and its handler rolled back the
@@ -497,5 +448,338 @@ describe("bundled migrations", () => {
 		expect(deliveries.rows).toEqual([])
 		const table = await pg.query("SELECT to_regclass('public.slack_workspaces') AS name")
 		expect(table.rows).toEqual([{ name: null }])
+	}, 30_000)
+
+	it("retires hazel-oauth destinations and every reference to them", async () => {
+		const pg = new PGlite()
+		await pg.exec(readMigrationSqlBefore("drop_hazel_oauth_destinations"))
+
+		const now = "2026-11-01T00:00:00.000Z"
+		await pg.query(
+			`INSERT INTO alert_destinations (
+				id, org_id, name, type, config_json, secret_ciphertext, secret_iv, secret_tag,
+				created_at, updated_at, created_by, updated_by
+			) VALUES
+				('dest_hazel', 'org_1', 'Hazel', 'hazel-oauth', '{}', 'x', 'x', 'x', $1, $1, 'user_1', 'user_1'),
+				('dest_webhook', 'org_1', 'Webhook', 'webhook', '{}', 'x', 'x', 'x', $1, $1, 'user_1', 'user_1')`,
+			[now],
+		)
+		const tier = (severity: string, destinationIds: unknown) => ({
+			severity,
+			value: 1,
+			upper: null,
+			recoveryValue: null,
+			destinationIds,
+		})
+		const rule = (id: string, enabled: boolean, destinationIds: unknown, thresholds: unknown) =>
+			pg.query(
+				`INSERT INTO alert_rules (
+					id, org_id, name, enabled, severity, signal_type, comparator, threshold, window_minutes,
+					destination_ids_json, thresholds_json, query_spec_json, reducer, no_data_behavior,
+					created_at, updated_at, created_by, updated_by
+				) VALUES ($1, 'org_1', $1, $2, 'warning', 'error_rate', 'gt', 0.1, 5, $3, $4, '{}', 'max', 'skip',
+					$5, $5, 'user_1', 'user_1')`,
+				[id, enabled, JSON.stringify(destinationIds), JSON.stringify(thresholds), now],
+			)
+		await rule(
+			"rule_mixed",
+			true,
+			["dest_hazel", "dest_webhook"],
+			[tier("warning", ["dest_webhook"]), tier("critical", ["dest_hazel", "dest_webhook"])],
+		)
+		await rule("rule_hazel_only", true, ["dest_hazel"], [tier("warning", ["dest_hazel"])])
+		await rule("rule_untouched", true, ["dest_webhook"], null)
+		await rule("rule_corrupt", true, { not: "an array" }, [tier("warning", "dest_hazel")])
+		await pg.query(
+			`INSERT INTO error_notification_policies (org_id, destination_ids_json, updated_at, updated_by) VALUES
+				('org_1', '["dest_hazel", "dest_webhook"]', $1, 'user_1'),
+				('org_2', '"not an array"', $1, 'user_1')`,
+			[now],
+		)
+		await pg.query(
+			`INSERT INTO issue_escalation_policies (org_id, enabled, rules_json, updated_at, updated_by) VALUES
+				('org_1', true, $1, $3, 'user_1'),
+				('org_2', true, $2, $3, 'user_1')`,
+			[
+				JSON.stringify([
+					{ severity: "critical", destinationIds: ["dest_hazel"], minConfidence: "high" },
+					{ severity: "high", destinationIds: ["dest_webhook", "dest_hazel"] },
+				]),
+				JSON.stringify([
+					{ severity: "critical", destinationIds: ["dest_hazel"] },
+					{ severity: "high", destinationIds: "not an array" },
+				]),
+				now,
+			],
+		)
+		await pg.query(
+			`INSERT INTO alert_delivery_events (
+				id, org_id, incident_id, rule_id, destination_id, delivery_key, event_type,
+				attempt_number, status, scheduled_at, payload_json, created_at, updated_at
+			) VALUES
+				('delivery_hazel', 'org_1', 'inc_1', 'rule_mixed', 'dest_hazel', 'k1', 'trigger', 1, 'queued', $1, '{}', $1, $1),
+				('delivery_webhook', 'org_1', 'inc_1', 'rule_mixed', 'dest_webhook', 'k2', 'trigger', 1, 'queued', $1, '{}', $1, $1)`,
+			[now],
+		)
+
+		await pg.exec(readMigrationSql("drop_hazel_oauth_destinations"))
+
+		const rules = await pg.query<{
+			id: string
+			enabled: boolean
+			destination_ids_json: unknown
+			thresholds_json: unknown
+		}>("SELECT id, enabled, destination_ids_json, thresholds_json FROM alert_rules ORDER BY id")
+		expect(rules.rows).toEqual([
+			// Malformed jsonb is left for the readers that already tolerate it.
+			{
+				id: "rule_corrupt",
+				enabled: true,
+				destination_ids_json: { not: "an array" },
+				thresholds_json: [tier("warning", "dest_hazel")],
+			},
+			{
+				id: "rule_hazel_only",
+				enabled: false,
+				destination_ids_json: [],
+				thresholds_json: [tier("warning", [])],
+			},
+			{
+				id: "rule_mixed",
+				enabled: true,
+				destination_ids_json: ["dest_webhook"],
+				thresholds_json: [tier("warning", ["dest_webhook"]), tier("critical", ["dest_webhook"])],
+			},
+			{
+				id: "rule_untouched",
+				enabled: true,
+				destination_ids_json: ["dest_webhook"],
+				thresholds_json: null,
+			},
+		])
+		const errorPolicies = await pg.query<{ org_id: string; destination_ids_json: unknown }>(
+			"SELECT org_id, destination_ids_json FROM error_notification_policies ORDER BY org_id",
+		)
+		expect(errorPolicies.rows).toEqual([
+			{ org_id: "org_1", destination_ids_json: ["dest_webhook"] },
+			{ org_id: "org_2", destination_ids_json: "not an array" },
+		])
+		const escalations = await pg.query<{ org_id: string; rules_json: unknown }>(
+			"SELECT org_id, rules_json FROM issue_escalation_policies ORDER BY org_id",
+		)
+		expect(escalations.rows).toEqual([
+			{ org_id: "org_1", rules_json: [{ severity: "high", destinationIds: ["dest_webhook"] }] },
+			{
+				org_id: "org_2",
+				rules_json: [
+					{ severity: "critical", destinationIds: ["dest_hazel"] },
+					{ severity: "high", destinationIds: "not an array" },
+				],
+			},
+		])
+		const destinations = await pg.query<{ id: string }>("SELECT id FROM alert_destinations")
+		expect(destinations.rows).toEqual([{ id: "dest_webhook" }])
+		const deliveries = await pg.query<{ id: string }>("SELECT id FROM alert_delivery_events")
+		expect(deliveries.rows).toEqual([{ id: "delivery_webhook" }])
+	}, 30_000)
+
+	it("links every integration row to the source it sends as", async () => {
+		const pg = new PGlite()
+		await pg.exec(readMigrationSqlBefore("source_ownership"))
+
+		const now = "2026-10-20T00:00:00.000Z"
+		await pg.query(
+			`INSERT INTO sources (id, org_id, name, platform, is_default, key_hash, integration_id, paused_at, created_at, updated_at) VALUES
+				('src_default', 'org_1', 'Default', 'opentelemetry', true, NULL, NULL, NULL, $1, $1),
+				('src_token', 'org_1', 'API', 'nodejs', false, 'hash', NULL, NULL, $1, $1),
+				('src_t1', 'org_1', 'Target one', 'prometheus', false, NULL, 't1', $1, $1, $1),
+				('src_gone', 'org_1', 'Deleted target', 'prometheus', false, NULL, 'gone', NULL, $1, $1)`,
+			[now],
+		)
+		await pg.query(
+			`INSERT INTO scrape_targets (id, org_id, name, url, managed_by, created_at, updated_at) VALUES
+				('t1', 'org_1', 'Target one', 'http://one', NULL, $1, $1),
+				('t2', 'org_1', 'Target two', 'http://two', NULL, $1, $1),
+				('t3', 'org_1', 'PlanetScale main', 'http://ps', 'planetscale:ps1', $1, $1)`,
+			[now],
+		)
+		await pg.query(
+			`INSERT INTO planetscale_connections (id, org_id, ps_organization, connected_by_user_id, created_at, updated_at)
+			VALUES ('ps1', 'org_1', 'acme', 'user_1', $1, $1)`,
+			[now],
+		)
+		await pg.query(
+			`INSERT INTO gcp_connectors (id, org_id, scope_type, scope_id, project_id, secret_ciphertext, secret_iv,
+				secret_tag, secret_hash, created_by, created_at, updated_at)
+			VALUES ('g1', 'org_1', 'project', 'acme-prod', 'acme-prod', 'x', 'x', 'x', 'h1', 'user_1', $1, $1)`,
+			[now],
+		)
+		await pg.query(
+			`INSERT INTO railway_connections (id, org_id, token_ciphertext, token_iv, token_tag, connected_by_user_id,
+				workspace_names, created_at, updated_at)
+			VALUES ('r1', 'org_1', 'x', 'x', 'x', 'user_1', NULL, $1, $1)`,
+			[now],
+		)
+		await pg.query(
+			`INSERT INTO oauth_connections (id, org_id, provider, external_user_id, connected_by_user_id,
+				access_token_ciphertext, access_token_iv, access_token_tag, external_account_name, created_at, updated_at)
+			VALUES
+				('cf1', 'org_1', 'cloudflare', 'u', 'user_1', 'x', 'x', 'x', 'Acme', $1, $1),
+				('psoauth', 'org_1', 'planetscale', 'u', 'user_1', 'x', 'x', 'x', NULL, $1, $1)`,
+			[now],
+		)
+		await pg.query(
+			`INSERT INTO vcs_installations (id, org_id, provider, external_installation_id, account_login, account_type,
+				external_account_id, installed_by_user_id, created_at, updated_at)
+			VALUES ('v1', 'org_1', 'github', '42', 'acme', 'Organization', '7', 'user_1', $1, $1)`,
+			[now],
+		)
+		await pg.query(
+			`INSERT INTO cloudflare_logpush_connectors (id, org_id, name, zone_name, service_name, secret_ciphertext,
+				secret_iv, secret_tag, secret_hash, secret_rotated_at, created_at, updated_at, created_by, updated_by)
+			VALUES
+				('l1', 'org_1', 'Zone', 'acme.com', 'edge', 'x', 'x', 'x', 'lh1', $1, $1, $1, 'user_1', 'user_1'),
+				('l2', 'org_2', 'Zone', 'other.com', 'edge', 'x', 'x', 'x', 'lh2', $1, $1, $1, 'user_1', 'user_1')`,
+			[now],
+		)
+
+		await pg.exec(readMigrationSql("source_ownership"))
+
+		const sources = await pg.query<{ id: string; kind: string; platform: string; name: string }>(
+			"SELECT id, kind, platform, name FROM sources",
+		)
+		const byId = new Map(Arr.map(sources.rows, (row) => [row.id, row]))
+		expect(byId.get("src_default")?.kind).toBe("default")
+		expect(byId.get("src_token")?.kind).toBe("token")
+		expect(byId.has("src_gone")).toBe(false)
+
+		const owner = async (table: string, id: string) =>
+			(
+				await pg.query<{ source_id: string | null }>(`SELECT source_id FROM ${table} WHERE id = $1`, [
+					id,
+				])
+			).rows[0]?.source_id ?? null
+		const sourceOf = async (table: string, id: string) => {
+			const sourceId = await owner(table, id)
+			return sourceId === null ? undefined : byId.get(sourceId)
+		}
+
+		// An existing source keeps its id, so its pause and rules survive.
+		expect(await owner("scrape_targets", "t1")).toBe("src_t1")
+		expect(await sourceOf("scrape_targets", "t2")).toMatchObject({
+			kind: "integration",
+			platform: "prometheus",
+			name: "Target two",
+		})
+		expect(await sourceOf("gcp_connectors", "g1")).toMatchObject({
+			platform: "gcp",
+			name: "Google Cloud acme-prod",
+		})
+		expect(await sourceOf("railway_connections", "r1")).toMatchObject({
+			platform: "railway",
+			name: "Railway",
+		})
+		expect(await sourceOf("planetscale_connections", "ps1")).toMatchObject({
+			platform: "planetscale",
+			name: "PlanetScale acme",
+		})
+		expect(await sourceOf("oauth_connections", "cf1")).toMatchObject({
+			platform: "cloudflare",
+			name: "Acme",
+		})
+		expect(await sourceOf("vcs_installations", "v1")).toMatchObject({
+			platform: "github",
+			name: "GitHub acme",
+		})
+
+		// A PlanetScale-managed target sends as its connection; other OAuth providers own no source.
+		expect(await owner("scrape_targets", "t3")).toBe(await owner("planetscale_connections", "ps1"))
+		expect(await owner("oauth_connections", "psoauth")).toBeNull()
+		expect(await owner("cloudflare_logpush_connectors", "l1")).toBe(
+			await owner("oauth_connections", "cf1"),
+		)
+		expect(await owner("cloudflare_logpush_connectors", "l2")).toBeNull()
+
+		// A source inserted the old way, without `kind`, still gets one.
+		await pg.query(
+			`INSERT INTO sources (id, org_id, name, platform, is_default, key_hash, created_at, updated_at)
+			VALUES ('src_old', 'org_2', 'Old', 'nodejs', false, 'old-hash', $1, $1)`,
+			[now],
+		)
+		expect((await pg.query("SELECT kind FROM sources WHERE id = 'src_old'")).rows).toEqual([
+			{ kind: "token" },
+		])
+
+		// Deleting a source deletes the integration row that owns it.
+		await pg.query("DELETE FROM sources WHERE id = $1", [await owner("railway_connections", "r1")])
+		expect((await pg.query("SELECT id FROM railway_connections")).rows).toEqual([])
+		// A Logpush job outlives its Cloudflare source, unlinked.
+		await pg.query("DELETE FROM sources WHERE id = $1", [await owner("oauth_connections", "cf1")])
+		expect(await owner("cloudflare_logpush_connectors", "l1")).toBeNull()
+		await pg.close()
+	}, 30_000)
+
+	it("links what old code left unlinked before source_id becomes required", async () => {
+		const pg = new PGlite()
+		await pg.exec(readMigrationSqlBefore("source_ownership_contract"))
+
+		const now = "2026-10-21T00:00:00.000Z"
+		// Written the old way after the expand: no `kind`, no link.
+		await pg.query(
+			`INSERT INTO sources (id, org_id, name, platform, is_default, integration_id, created_at, updated_at) VALUES
+				('src_gone', 'org_1', 'Deleted target', 'prometheus', false, 'gone', $1, $1),
+				('src_t1', 'org_1', 'Target one', 'prometheus', false, 't1', $1, $1)`,
+			[now],
+		)
+		await pg.query(
+			`INSERT INTO scrape_targets (id, org_id, name, url, managed_by, created_at, updated_at) VALUES
+				('t1', 'org_1', 'Target one', 'http://one', NULL, $1, $1),
+				('t2', 'org_1', 'Target two', 'http://two', NULL, $1, $1),
+				('t3', 'org_1', 'Old PlanetScale', 'http://ps', 'planetscale:ps_gone', $1, $1),
+				('t4', 'org_1', 'PlanetScale', 'http://ps2', 'planetscale:ps_live', $1, $1)`,
+			[now],
+		)
+		await pg.query(
+			`INSERT INTO planetscale_connections (id, org_id, ps_organization, connected_by_user_id, created_at, updated_at)
+			VALUES ('ps_live', 'org_1', 'acme', 'user_1', $1, $1)`,
+			[now],
+		)
+		await pg.query(
+			`INSERT INTO railway_connections (id, org_id, token_ciphertext, token_iv, token_tag, connected_by_user_id,
+				created_at, updated_at)
+			VALUES ('r1', 'org_1', 'x', 'x', 'x', 'user_1', $1, $1)`,
+			[now],
+		)
+
+		await pg.exec(readMigrationSql("source_ownership_contract"))
+
+		const owners = await pg.query<{
+			id: string
+			managed_by: string | null
+			platform: string
+			kind: string
+		}>(
+			`SELECT t.id, t.managed_by, s.platform, s.kind FROM scrape_targets t JOIN sources s ON s.id = t.source_id
+			UNION ALL SELECT r.id, NULL, s.platform, s.kind FROM railway_connections r JOIN sources s ON s.id = r.source_id
+			ORDER BY 1`,
+		)
+		expect(owners.rows).toEqual([
+			{ id: "r1", managed_by: null, platform: "railway", kind: "integration" },
+			// An existing source is kept; a target whose PlanetScale connection is gone becomes the user's.
+			{ id: "t1", managed_by: null, platform: "prometheus", kind: "integration" },
+			{ id: "t2", managed_by: null, platform: "prometheus", kind: "integration" },
+			{ id: "t3", managed_by: null, platform: "prometheus", kind: "integration" },
+			// A live connection linked in the same migration still takes its managed target along.
+			{ id: "t4", managed_by: "planetscale:ps_live", platform: "planetscale", kind: "integration" },
+		])
+		expect((await pg.query("SELECT source_id FROM scrape_targets WHERE id = 't1'")).rows).toEqual([
+			{ source_id: "src_t1" },
+		])
+		expect((await pg.query("SELECT id FROM sources WHERE id = 'src_gone'")).rows).toEqual([])
+		const columns = await pg.query(
+			"SELECT column_name FROM information_schema.columns WHERE table_name = 'sources' AND column_name IN ('is_default', 'integration_id')",
+		)
+		expect(columns.rows).toEqual([])
+		await pg.close()
 	}, 30_000)
 })

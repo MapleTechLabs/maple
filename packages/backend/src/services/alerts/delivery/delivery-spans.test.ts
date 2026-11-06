@@ -1,22 +1,38 @@
-import type { AlertDestinationRow } from "@maple/db"
+import type { AlertDestinationRow } from "@maple/db/tables"
+import { OrgId } from "@maple/domain/primitives"
 import { AlertDeliveryError, AlertDestinationId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
-import { dispatchDelivery } from "./dispatch"
+import { dispatchDelivery as dispatchDeliveryRaw } from "./dispatch"
+import { FetchHttpClient } from "effect/http"
 import type { EffectTransportDeps } from "./Transport"
 import type { DispatchContext } from "./context"
 
+type DispatchArgs = Parameters<typeof dispatchDeliveryRaw>
+
+/** The runtime provides the HTTP client; each test fakes the wire as `FetchHttpClient.Fetch`. */
+const dispatchDelivery = (
+	context: DispatchArgs[0],
+	payloadJson: DispatchArgs[1],
+	fetchFn: typeof fetch,
+	...rest: [DispatchArgs[2], DispatchArgs[3], DispatchArgs[4], DispatchArgs[5]]
+) =>
+	dispatchDeliveryRaw(context, payloadJson, ...rest).pipe(
+		Effect.provide(FetchHttpClient.layer),
+		Effect.provideService(FetchHttpClient.Fetch, fetchFn),
+	)
+
 /**
  * The outbound provider call must be a **Client-kind span carrying
- * `peer.service`** — that pair is what draws PagerDuty/Discord/Hazel/Telegram as
+ * `peer.service`**: that pair is what draws PagerDuty/Discord/Telegram as
  * nodes on the service map and makes their latency and status attributable.
  * Before the transport registry existed, `dispatchDelivery` had no span at all
  * and no provider arm had one, so every provider dependency was invisible.
  * These assertions are the regression guard for that (same reasoning as
  * `GithubAppClient.span.test.ts`).
  *
- * They also guard the secret-leak rule: Discord and Hazel webhook URLs embed
+ * They also guard the secret-leak rule: Discord and Telegram embed
  * their delivery token in the PATH, so those transports must annotate
  * `server.address` only — never `url.path`, and never `url.full`.
  */
@@ -25,13 +41,13 @@ import type { DispatchContext } from "./context"
 const failingChatPost = () =>
 	Effect.fail(new AlertDeliveryError({ message: "unexpected postChatAlert", destinationType: "chat" }))
 
-const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
+const DESTINATION_ID = Schema.decodeSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
 const HTTP_SPAN = "AlertDelivery.http"
 
 const destinationRow: AlertDestinationRow = {
 	id: DESTINATION_ID,
-	orgId: "org_1" as AlertDestinationRow["orgId"],
+	orgId: Schema.decodeSync(OrgId)("org_1"),
 	name: "Destination",
 	type: "webhook",
 	enabled: true,
@@ -41,8 +57,12 @@ const destinationRow: AlertDestinationRow = {
 	secretTag: "",
 	lastTestedAt: null,
 	lastTestError: null,
-	createdAt: new Date(0),
-	updatedAt: new Date(0),
+	consecutiveFailures: 0,
+	lastFailureAt: null,
+	disabledAt: null,
+	disabledReason: null,
+	createdAt: 0,
+	updatedAt: 0,
 	createdBy: "user_1",
 	updatedBy: "user_1",
 }
@@ -89,7 +109,7 @@ const dispatch = (context: DispatchContext, fetchFn: typeof fetch) =>
 		fetchFn,
 		5_000,
 		"https://web.localhost/alerts",
-		"https://web.localhost/chat",
+		"https://web.localhost/alerts/rule_1",
 		deps,
 	)
 
@@ -129,23 +149,6 @@ describe("AlertDelivery.http span", () => {
 			respond: () => new Response(null, { status: 204 }),
 		},
 		{
-			name: "hazel-oauth",
-			config: {
-				type: "hazel-oauth",
-				hazelOrganizationId: "o",
-				hazelOrganizationName: "Acme",
-				hazelChannelId: "c",
-				hazelChannelName: "incidents",
-				webhookId: "wh_1",
-				webhookUrl: "https://hazel.test/api/webhooks/wh_1/s3cr3t-token",
-				webhookToken: "s3cr3t-token",
-			} as const,
-			peerService: "hazel",
-			host: "hazel.test",
-			expectPath: null,
-			respond: () => new Response("", { status: 200 }),
-		},
-		{
 			name: "telegram",
 			config: { type: "telegram", botToken: "123456789:s3cr3t-token", chatId: "-100123" } as const,
 			peerService: "telegram",
@@ -173,22 +176,22 @@ describe("AlertDelivery.http span", () => {
 				// `Effect.fn` — that emits two spans that disagree on timeout.
 				assert.deepStrictEqual(rest, [], "exactly one provider span per delivery")
 
-				assert.strictEqual(span!.kind, "client")
-				assert.strictEqual(span!.attributes.get("peer.service"), testCase.peerService)
-				assert.strictEqual(span!.attributes.get("server.address"), testCase.host)
-				assert.strictEqual(span!.attributes.get("http.request.method"), "POST")
-				assert.isUndefined(span!.attributes.get("url.full"))
+				assert.strictEqual(span.kind, "client")
+				assert.strictEqual(span.attributes.get("peer.service"), testCase.peerService)
+				assert.strictEqual(span.attributes.get("server.address"), testCase.host)
+				assert.strictEqual(span.attributes.get("http.request.method"), "POST")
+				assert.isUndefined(span.attributes.get("url.full"))
 
 				if (testCase.expectPath === null) {
 					assert.isUndefined(
-						span!.attributes.get("url.path"),
+						span.attributes.get("url.path"),
 						"the webhook token is a path segment — the path must stay off the span",
 					)
 				} else {
-					assert.strictEqual(span!.attributes.get("url.path"), testCase.expectPath)
+					assert.strictEqual(span.attributes.get("url.path"), testCase.expectPath)
 				}
 
-				for (const value of span!.attributes.values()) {
+				for (const value of span.attributes.values()) {
 					assert.notInclude(String(value), "s3cr3t")
 					assert.notInclude(String(value), "xoxb-token")
 				}
@@ -215,8 +218,8 @@ describe("AlertDelivery.http span", () => {
 			// upstream 5xx is attributable without parsing the error message.
 			const [span] = spansNamed(spans, HTTP_SPAN)
 			assert.isDefined(span)
-			assert.strictEqual(span!.attributes.get("http.response.status_code"), 503)
-			assert.strictEqual(span!.attributes.get("peer.service"), "webhook")
+			assert.strictEqual(span.attributes.get("http.response.status_code"), 503)
+			assert.strictEqual(span.attributes.get("peer.service"), "webhook")
 		}),
 	)
 
@@ -234,7 +237,7 @@ describe("AlertDelivery.http span", () => {
 				respondWith(() => new Response("", { status: 200 })),
 				5_000,
 				"https://web.localhost/alerts",
-				"https://web.localhost/chat",
+				"https://web.localhost/alerts/rule_1",
 				{ ...deps, sendEmail: () => Effect.void },
 			).pipe(Effect.withTracer(tracer))
 

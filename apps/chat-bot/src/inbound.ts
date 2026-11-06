@@ -13,26 +13,30 @@
  */
 import type { InboundEvent, InboundMessage } from "@maple/chat-platform"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { Context, Effect, Layer } from "effect"
-import { connectorRelayStub, type ConnectorRelayStub } from "./relay/stub.ts"
+import { Context, Effect, Layer, String as Str } from "effect"
+import { connectorRelayName, type ConnectorRelayClient } from "./relay/stub.ts"
 
 export interface InboundHandlerApi {
 	readonly handle: (event: InboundEvent) => Effect.Effect<void>
 }
 
-/** How the handler reaches a conversation's relay. The Worker env in production; a fake in tests. */
-export interface InboundRelay {
-	readonly forEvent: (event: InboundEvent) => ConnectorRelayStub | undefined
+/** How the handler reaches a conversation's relay. The alchemy namespace client in production; a fake in tests. */
+export interface InboundRelay<E = never> {
+	readonly deliver: (event: InboundEvent) => Effect.Effect<void, E>
 }
 
 export class InboundHandler extends Context.Service<InboundHandler, InboundHandlerApi>()(
 	"@maple/chat-bot/InboundHandler",
 ) {
-	/** The handler this Worker runs: over the relay objects its own env binds. */
-	static readonly layer = (env: Record<string, unknown>): Layer.Layer<InboundHandler> =>
+	/** The handler this Worker runs: over the relay objects alchemy binds (`ConnectorRelayObject`). */
+	static readonly layerFromRelays = (relays: ConnectorRelayClient): Layer.Layer<InboundHandler> =>
 		Layer.succeed(
 			InboundHandler,
-			InboundHandler.of(inboundHandler({ forEvent: (event) => connectorRelayStub(env, event) })),
+			InboundHandler.of(
+				inboundHandler({
+					deliver: (event) => relays.getByName(connectorRelayName(event)).deliver(event),
+				}),
+			),
 		)
 }
 
@@ -47,12 +51,12 @@ export class InboundHandler extends Context.Service<InboundHandler, InboundHandl
  * message in every channel the bot can see.
  */
 const worthRelaying = (message: InboundMessage): boolean =>
-	message.mentionsBot || (!message.author.isBot && message.text.trim() !== "")
+	message.mentionsBot || (!message.author.isBot && Str.trim(message.text) !== "")
 
 /**
  * The handler over one way of reaching the relay.
  */
-export const inboundHandler = (relay: InboundRelay): InboundHandlerApi => ({
+export const inboundHandler = <E>(relay: InboundRelay<E>): InboundHandlerApi => ({
 	handle: (event) => {
 		const attributes = {
 			"maple.chat.event": event.type,
@@ -62,15 +66,9 @@ export const inboundHandler = (relay: InboundRelay): InboundHandlerApi => ({
 		return Effect.gen(function* () {
 			yield* Effect.logInfo("Chat connector event").pipe(Effect.annotateLogs(attributes))
 			if (event.type === "message" && !worthRelaying(event)) return
-			const stub = relay.forEvent(event)
-			if (stub === undefined) {
-				return yield* Effect.logError("No relay binding on this deployment").pipe(
-					Effect.annotateLogs(attributes),
-				)
-			}
-			yield* Effect.tryPromise(() => stub.deliver(event)).pipe(
+			yield* relay.deliver(event).pipe(
 				// The cause is summarized, never rendered: everything this Worker fails on carries the
-				// conversation somewhere inside it.
+				// conversation somewhere inside it. The RPC stub fails with `RpcCallError` on transport.
 				Effect.catchCause((cause) =>
 					Effect.logError("Chat connector event could not be delivered").pipe(
 						Effect.annotateLogs({ ...attributes, "error.type": summarizeCause(cause) }),

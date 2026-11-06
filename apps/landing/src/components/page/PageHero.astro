@@ -17,13 +17,14 @@
  * The breadcrumb renders inside this component so it sits on the same axis as
  * everything else. It keeps its own BreadcrumbList JSON-LD.
  */
-import { buttonVariants } from "@maple/ui/components/ui/button";
+import { buttonVariants } from "@maple/ui/styles/ui/button";
 import * as m from "../../paraglide/messages.js";
 import Breadcrumb from "../Breadcrumb.astro";
-import { HeroCta } from "../HeroCta";
+import HeroCta from "../HeroCta.astro";
 
 interface Props {
-	eyebrow: string;
+	/** Omitted on feature pages, where the breadcrumb already names the page. */
+	eyebrow?: string;
 	title: string;
 	lede: string;
 	illustration?: string;
@@ -61,10 +62,10 @@ const hasAside = Astro.slots.has("aside");
 			]}
 		>
 		<div class:list={["min-w-0", illustration && "page-hero__copy"]}>
-			<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{eyebrow}</p>
+			{eyebrow && <p class="mb-5 text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{eyebrow}</p>}
 
 			<h1
-				class="mt-5 max-w-[20ch] font-display text-[2.375rem] font-semibold leading-[1.03] tracking-[-0.025em] text-fg sm:text-5xl lg:text-6xl"
+				class="max-w-[20ch] font-display text-[2.375rem] font-semibold leading-[1.03] tracking-[-0.025em] text-fg sm:text-5xl lg:text-6xl"
 			>
 				{title}
 			</h1>
@@ -81,7 +82,7 @@ const hasAside = Astro.slots.has("aside");
 			}
 
 			<div class="mt-10 flex flex-wrap items-center gap-3">
-				<HeroCta client:load className={buttonVariants({ size: "xl" })} />
+				<HeroCta class={buttonVariants({ size: "xl" })} />
 				<a
 					href="https://github.com/MapleTechLabs/maple"
 					target="_blank"

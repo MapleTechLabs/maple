@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 // Builds an LLM-ready debugging prompt from an error message plus the handful of
 // telemetry attributes that usually matter. Shared by the log error banner and
 // the span detail panel's "Copy as prompt" action.
@@ -10,19 +11,27 @@ export interface ErrorPromptInput {
 	attributes?: Record<string, string>
 }
 
+// Current semconv key first, its deprecated spelling after, so spans from
+// either generation of instrumentation keep their context.
 const RELEVANT_KEYS = [
+	"http.request.method",
 	"http.method",
+	"url.full",
 	"http.url",
 	"http.route",
+	"http.response.status_code",
 	"http.status_code",
 	"db.system.name",
 	"db.system",
 	"db.query.text",
 	"db.statement",
+	"rpc.system.name",
 	"rpc.method",
 	"rpc.service",
 	"messaging.system",
+	"messaging.operation.type",
 	"messaging.operation",
+	"messaging.destination.name",
 ]
 
 export function formatErrorPrompt({ message, serviceName, operation, attributes }: ErrorPromptInput): string {
@@ -45,7 +54,7 @@ ${
 	contextLines.length > 0
 		? `
 **Context:**
-${contextLines.join("\n")}
+${Arr.join(contextLines, "\n")}
 `
 		: ""
 }

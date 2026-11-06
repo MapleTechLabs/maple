@@ -8,8 +8,8 @@
  * stage. It is moved here unchanged so that stage is a rename, not a move.
  */
 import type { AlertComparator, AlertEventType, AlertSeverity, AlertSignalType } from "@maple/domain/http"
-import type { AlertDestinationRow } from "@maple/db"
-import type { EnrichedDestinationSecretConfig } from "../AlertDestinationHydration"
+import type { AlertDestinationRow } from "@maple/db/tables"
+import type { DestinationSecretConfig } from "../AlertDestinationHydration"
 import type { SignalDisplay } from "../alert-signal-display"
 import type { NotificationTemplateConfig } from "../alert-templating/renderer"
 
@@ -18,11 +18,14 @@ interface DestinationPublicConfig {
 	readonly channelLabel: string | null
 }
 
+/** The destination columns transports read. */
+export type DispatchDestination = Pick<AlertDestinationRow, "id" | "orgId" | "name" | "type">
+
 export interface DispatchContext {
 	readonly deliveryKey: string
-	readonly destination: AlertDestinationRow
+	readonly destination: DispatchDestination
 	readonly publicConfig: DestinationPublicConfig
-	readonly secretConfig: EnrichedDestinationSecretConfig
+	readonly secretConfig: DestinationSecretConfig
 	readonly ruleId: string
 	readonly ruleName: string
 	readonly groupKey: string | null
@@ -35,16 +38,33 @@ export interface DispatchContext {
 	 */
 	readonly signalDisplay?: SignalDisplay | null
 	readonly severity: AlertSeverity
+	/**
+	 * The rule's tier severities. A rule with both a warning and a critical tier
+	 * pages critical under its own PagerDuty dedup key. Absent on the
+	 * escalation/error paths, which dispatch without an alert rule.
+	 */
+	readonly ruleSeverities?: ReadonlyArray<AlertSeverity>
+	/**
+	 * The open incident's severity at dispatch, which can differ from the
+	 * queued event's `severity`; absent when no incident is open.
+	 */
+	readonly incidentSeverity?: AlertSeverity
+	/** Highest severity the incident reached; absent when the delivery has no incident. */
+	readonly incidentPeakSeverity?: AlertSeverity
 	readonly comparator: AlertComparator
 	readonly threshold: number
 	readonly thresholdUpper: number | null
 	readonly eventType: AlertEventType
 	readonly incidentId: string | null
 	readonly incidentStatus: string
+	/** Who acknowledged the open incident, as a name to show; absent or null while unacknowledged. */
+	readonly incidentAcknowledgedBy?: string | null
 	readonly dedupeKey: string
 	readonly windowMinutes: number
 	readonly value: number | null
 	readonly sampleCount: number | null
+	/** Uptime rules only: the failing check's error, snapshotted with the event. */
+	readonly detail?: string | null
 	/**
 	 * User-customized notification template (title + Markdown body, optional
 	 * per-destination overrides). `null`/absent → the built-in hardcoded format.

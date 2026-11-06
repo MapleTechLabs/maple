@@ -1,0 +1,181 @@
+---
+title: "Porting 287,000 lines of React in 3 days. The hard part was proving nothing changed."
+description: "How Claude ported every screen of Maple's React app to Foldkit, and the pixel, behavior and accessibility harness that decided when each screen was done."
+date: 2026-10-23
+author: "David Granzin"
+authorRole: "Founder, Maple"
+category: "engineering"
+cover: "/blog/react-to-foldkit.png"
+coverAlt: "Two dithered amber strands drift apart on the left and merge into one bright band on the right, beside the title: 287,000 lines of React, ported in 3 days. Proven pixel for pixel."
+draft: false
+---
+
+import BigStats from "../../components/blog/foldkit/BigStats.astro"
+import ParityBar from "../../components/blog/foldkit/ParityBar.astro"
+import PerfBars from "../../components/blog/foldkit/PerfBars.astro"
+import ParityBench from "../../components/blog/foldkit/ParityBench.astro"
+import TraceWaterfall from "../../components/blog/foldkit/TraceWaterfall.astro"
+
+In October we moved Maple's web app off React. It was 287,000 lines across 131 routes, and Claude did the port in three days. The review rounds and the fixes after our first deploy, both covered further down, came on top of that. Writing the new code turned out to be the easy part. Most of our own work went into a tool that compared the two apps and told us whether the port was right. The port and the harness are in [PR #1539](https://github.com/MapleTechLabs/maple/pull/1539), and the cutover that deleted the React app, and the harness with it, is in [PR #1589](https://github.com/MapleTechLabs/maple/pull/1589).
+
+<BigStats
+	items={[
+		{ value: "3", unit: "days", label: "from first commit to every screen ported", tone: "primary" },
+		{ value: "287k", unit: "lines", label: "of React replaced, 131 routes", tone: "blue" },
+		{ value: "2,600+", label: "screen variants compared on every run", tone: "violet" },
+		{
+			value: "0",
+			unit: "px",
+			label: "perceptual difference allowed for a screen to count as done",
+			tone: "green",
+		},
+	]}
+/>
+
+## Why we left React
+
+The React app worked, but changing it had gotten expensive. Data on a page came from atom hooks, each with its own cache key and lifetime, and there were about 520 of those hook calls spread over 208 files. If you wanted to know what happens when someone switches org while a query is still running, you had to read every component on the page and work out the order they render in.
+
+In August the errors page crashed in production with React error #301. A helper created a new wrapper atom on every render, a hook compared it by identity and set state during render, and the two kept triggering each other. We fixed that one in a day, but nothing stopped the next one from being written.
+
+Everything else in Maple is built on [Effect](https://effect.website), and more and more of the frontend is written by agents, which make the same hook mistakes we do.
+
+## Why Foldkit
+
+In our React app, state lived all over the place: in hooks, in atoms, in components, and it changed whenever something happened to render. [Foldkit](https://foldkit.dev) is The Elm Architecture on top of Effect, and it works the other way around. All state sits in one Model, and only one function is allowed to change it. A click, a response or a timer shows up as a Message with a past-tense name like `ClickedRow` or `SucceededLoadLogs`. `update` takes the Model and a Message and hands back the next Model, plus any Commands it wants run. Commands are the only code that gets to talk to the network, and whatever they get back comes in as another Message. If you've written Elm or Redux, none of this is new. Honestly, that was the appeal. I love how explicit it is and how easy it is to reason about, and it fits the way I build software these days a lot better than React did.
+
+There are no hooks and no component state, so the org-switch question has one answer, and it's a single case in `update`. Foldkit's Scene tests run `update` in Node without a DOM, so we can test that case directly.
+
+Tracing came almost for free, which matters when the product you sell is observability. Foldkit runs every Command inside an Effect span named after it, so the frontend already speaks OpenTelemetry the same way our backend does. We added a small adapter to our Effect SDK, `@maple-dev/effect-sdk/foldkit`, that groups those Command spans under the page load or navigation that caused them, drops Commands that finished without doing any real work (a focus move, a scroll), and records `update`, `view` and DOM patches that run over budget. The HTTP client sends `traceparent`, so one trace runs from the click in the browser to the warehouse query.
+
+<TraceWaterfall
+	caption="navigate Services, one trace"
+	note="An illustrative trace: span names come from the app, timings are representative."
+	total={420}
+	spans={[
+		{
+			name: "navigate Services",
+			depth: 0,
+			start: 0,
+			end: 408,
+			kind: "browser",
+			attr: "url.path /services",
+		},
+		{ name: "ResolveServicesWindow", depth: 1, start: 2, end: 4, kind: "dropped" },
+		{
+			name: "FetchServiceOverview",
+			depth: 1,
+			start: 6,
+			end: 244,
+			kind: "browser",
+			attr: "maple.foldkit.message ChangedUrl",
+		},
+		{ name: "POST …/execute-batch", depth: 2, start: 22, end: 241, kind: "http" },
+		{ name: "queryEngine.executeBatch", depth: 3, start: 31, end: 233, kind: "server" },
+		{ name: "warehouse serviceOverview", depth: 4, start: 40, end: 226, kind: "db" },
+		{ name: "FetchServiceSparklines", depth: 1, start: 7, end: 296, kind: "browser" },
+		{ name: "POST …/execute-batch", depth: 2, start: 24, end: 292, kind: "http" },
+		{ name: "warehouse serviceSparklines", depth: 3, start: 45, end: 281, kind: "db" },
+		{
+			name: "foldkit.view",
+			depth: 1,
+			start: 300,
+			end: 362,
+			kind: "phase",
+			attr: "over the 50 ms budget",
+		},
+	]}
+/>
+
+It wasn't free. Foldkit can't split code by route, so our startup bundle goes from 703 KB to an estimated 1.43 to 1.58 MB gzipped.
+
+## You can't review a rewrite
+
+The finished diff touched 3,393 files. Nobody can review that by reading it, and nobody can click through 131 routes in two themes, on desktop and mobile, in every empty, loading and error state, and honestly say it all looks the same. So before porting anything, we wrote down when a screen counts as done:
+
+> A screen is ported when every scenario for its route reports `identical` (or `pass` with 0 perceptual pixels), with 0 behavior diffs, no console errors and no unmocked endpoints.
+
+Then we needed something that could check it.
+
+## The harness
+
+The harness is a package called `@maple/ui-parity`. It builds both apps, drives them with Playwright and compares the results. The source is public at [MapleTechLabs/maple-ui-parity](https://github.com/MapleTechLabs/maple-ui-parity).
+
+<ParityBench />
+
+Both builds are production builds served from the same origin, and both talk to one fixture backend. It isn't a folder of JSON mocks. It implements our real `@maple/domain` API groups, and warehouse queries go through our real query engine into chDB, an in-process ClickHouse. If the port builds a slightly different query, the chart comes out different and so does the request log. Any request the backend doesn't know about fails the screen.
+
+Every capture has to be deterministic, or a diff means nothing. Time is frozen at the dataset's `now`, `Math.random` is seeded, the browser runs in UTC at DPR 1, animations stop at their end state, and carets and scrollbars are hidden. Before we trust a run, `parity selfcheck` compares the old app with itself and has to find zero differences. We tested the opposite too, by changing one class in `packages/ui` and checking that the harness flagged it.
+
+A screenshot is only taken once the page has settled. The harness waits for fonts and images, then for 400 ms with no DOM changes, then for two frames in which no canvas pixel hash changes, since our charts draw on canvas. After that it keeps taking screenshots until two in a row are byte-identical.
+
+Each pair of captures is then compared in four ways:
+
+- Pixels, with a strict diff and a perceptual one.
+- Structure. Every piece of text and every control is recorded with its position and computed styles, and matched between the two apps by its text or by its accessible role and name. When the same style change shows up in many places it's reported once, so a wrong class on nine buttons comes back as `{padding-left: 16px → 12px} on 9: button "Save" | ...` instead of nine separate diffs.
+- The request log. Every request, including each warehouse query, is compared per endpoint, ignoring order because concurrent requests race. A screen that looks right but fetches twice still fails.
+- Accessibility, by diffing ARIA snapshots. This one only reports unless we pass `--strict-a11y`.
+
+Every variant comes out as `identical`, `pass` or `fail`, and a page goes back to its agent until every variant on it passes.
+
+Scenarios are written once and only use accessible locators like `getByRole` and `getByText`, so the same script drives both apps. If a step finds a button in React but not in Foldkit, the Foldkit button is missing its label. There are more than 50 scenario files covering every route in light and dark, plus mobile for responsive pages, which comes to over 2,600 variants per run.
+
+Loading and error states are scenarios as well. A scenario can delay or fail any endpoint, for example holding `queryEngine.executeBatch` for 60 seconds or answering it with a 502. For a loading screen, the harness waits until the only open requests are the ones being held, so the spinner is captured at the same moment every time.
+
+## How Claude did the port
+
+We started with eight small spikes. Each one answered a question that could have sunk the project and ended in a short decision record. Could Foldkit render one of our screens identically? Sign-in matched to the pixel on the first try. What would losing route splitting cost? Could it handle our charts, the logs table, the service map, our data layer and our overlays? The last spike produced the page template that every agent later copied.
+
+The logs table spike matched the React version on all 12 variants, and it was faster too.
+
+<PerfBars
+	caption="Logs table, 2,000 rows, p50 of 5 runs"
+	before="React"
+	after="Foldkit"
+	rows={[
+		{ metric: "Scroll script time", unit: "ms", before: 429, after: 316 },
+		{ metric: "Scroll task time", unit: "ms", before: 1240, after: 1099 },
+		{ metric: "Time to first rows", unit: "ms", before: 198, after: 176 },
+		{ metric: "JS heap after GC, scrolled", unit: "MB", before: 28.9, after: 26.6 },
+		{ metric: "Frame p95", unit: "ms", before: 16.7, after: 16.7 },
+	]}
+/>
+
+Every porting agent got the same brief. The most important rule in it was that an agent must never edit the baseline, a scenario or a tolerance to make a diff go away. The fix always goes in the port, and the baseline is pinned to a specific commit, so it can't drift.
+
+Up to four agents worked at once, each on one area of the app in its own git worktree, with its own ports for the harness so their runs didn't collide. A separate integrator agent did all the merging and re-ran parity afterwards. Over the three days we used close to 40 agents. Twice a usage limit stopped all of them at once, and each picked up again from its worktree. Running several parity jobs side by side pushed the machine's load average past 40, so toward the end we merged in batches. Early on, two agents built the same UI primitives independently, and after that every primitive had one owner.
+
+The harness caught things a reviewer would never see. In the overlays spike, a toast label was a single text node in Foldkit and three text nodes in React, and that alone moved 13 pixels. It only checks what the scenarios cover, though. The command palette had no scenario, and we didn't notice it was never ported until the second night.
+
+## Bugs we found in the React app
+
+Because the new app had to make exactly the same requests as the old one, a few old bugs showed up as diffs.
+
+- The infrastructure view sent one query with an empty workload name before the workload had loaded.
+- The dashboards Reconnect button didn't do anything visible, because the app kept reading the old collections.
+- Two dashboard editors crashed in situations the scenarios happened to cover.
+
+## What the harness missed
+
+Matching pixels and requests didn't catch everything. A first review of the merged code found about 40 defects that happen between screenshots, like messages reaching the wrong page instance, writes without an in-flight guard and pagination edge cases. A final review by six agents found about 140 more, four of them serious, in checkout and settings. Our first real deploy also turned up what the fixtures stub out, namely Clerk's prebuilt components and product analytics. And in four places we chose to behave differently from React on purpose, for example by refusing to send a chat message before its history has loaded.
+
+The last check before cutover is a preview with both apps running against a real backend. There, Foldkit made 389 requests and React made 393.
+
+<ParityBar caption="Last parity run (5 of 7 chunks), React vs Foldkit" identical={2188} pass={485} fail={9} />
+
+The 485 variants marked `pass` differ only in anti-aliasing, with zero perceptual pixels changed, so we count them as passing but not identical. Of the 9 failures, one also fails on the old app, one was fixed after this run, and four are request-log differences we haven't fully explained yet. One of those is the Reconnect bug above, which we decided not to copy.
+
+## By the numbers
+
+<BigStats
+	items={[
+		{ value: "~700", label: "commits on the migration branch", tone: "primary" },
+		{ value: "2,000+", label: "TypeScript files in the Foldkit app", tone: "blue" },
+		{ value: "1,200+", label: "Scene and unit tests, no DOM needed", tone: "green" },
+		{ value: "~30k", unit: "lines", label: "of parity harness", tone: "violet" },
+		{ value: "~40", label: "Claude agents across the port", tone: "primary" },
+		{ value: "4", label: "bugs found in the old React app", tone: "amber" },
+		{ value: "389", unit: "/ 393", label: "requests on the preview, Foldkit vs React", tone: "blue" },
+		{ value: "133", unit: "/ 121 ms", label: "p50 on the preview, Foldkit vs React", tone: "red" },
+	]}
+/>

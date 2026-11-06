@@ -1,4 +1,5 @@
 import type { DashboardDocument, DashboardVersionChangeKind } from "@maple/domain/http"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 type Widget = DashboardDocument["widgets"][number]
 
@@ -8,9 +9,13 @@ interface ChangeSummary {
 }
 
 const widgetTitle = (widget: Widget): string =>
-	widget.display.title?.trim() || widget.visualization || "widget"
+	Str.trim(widget.display.title ?? "") || widget.visualization || "widget"
 
-const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+
+// `undefined` encodes to none, so two absent values still compare equal.
+const sameJson = (a: unknown, b: unknown): boolean =>
+	Option.getOrUndefined(encodeJsonOption(a)) === Option.getOrUndefined(encodeJsonOption(b))
 
 // Section membership counts as layout: `layout.x/y` are relative to whichever
 // container the widget names, so moving a tile between groups genuinely is a
@@ -76,25 +81,25 @@ export const summarizeDashboardChange = (
 	const prevSections = prev.sections ?? []
 	const nextSections = next.sections ?? []
 	if (!sameJson(prevSections, nextSections)) {
-		const prevSectionIds = new Set(prevSections.map((section) => section.id))
-		const nextSectionIds = new Set(nextSections.map((section) => section.id))
-		const addedSections = nextSections.filter((section) => !prevSectionIds.has(section.id))
-		const removedSections = prevSections.filter((section) => !nextSectionIds.has(section.id))
+		const prevSectionIds = new Set(Arr.map(prevSections, (section) => section.id))
+		const nextSectionIds = new Set(Arr.map(nextSections, (section) => section.id))
+		const addedSections = Arr.filter(nextSections, (section) => !prevSectionIds.has(section.id))
+		const removedSections = Arr.filter(prevSections, (section) => !nextSectionIds.has(section.id))
 
 		if (addedSections.length > 0) {
 			kinds.add("section_added")
 			detail =
 				detail ??
-				(addedSections.length === 1
-					? `Added group "${addedSections[0]!.title}"`
+				(addedSections.length === 1 && addedSections[0] !== undefined
+					? `Added group "${addedSections[0].title}"`
 					: `Added ${addedSections.length} groups`)
 		}
 		if (removedSections.length > 0) {
 			kinds.add("section_removed")
 			detail =
 				detail ??
-				(removedSections.length === 1
-					? `Removed group "${removedSections[0]!.title}"`
+				(removedSections.length === 1 && removedSections[0] !== undefined
+					? `Removed group "${removedSections[0].title}"`
 					: `Removed ${removedSections.length} groups`)
 		}
 		// Renames, tab edits, reordering and the stored collapse default all land
@@ -105,25 +110,27 @@ export const summarizeDashboardChange = (
 		}
 	}
 
-	const prevById = new Map(prev.widgets.map((w) => [w.id, w] as const))
-	const nextById = new Map(next.widgets.map((w) => [w.id, w] as const))
+	const prevById = new Map(Arr.map(prev.widgets, (w) => [w.id, w] as const))
+	const nextById = new Map(Arr.map(next.widgets, (w) => [w.id, w] as const))
 
-	const added = next.widgets.filter((w) => !prevById.has(w.id))
-	const removed = prev.widgets.filter((w) => !nextById.has(w.id))
+	const added = Arr.filter(next.widgets, (w) => !prevById.has(w.id))
+	const removed = Arr.filter(prev.widgets, (w) => !nextById.has(w.id))
 
 	if (added.length > 0) {
 		kinds.add("widget_added")
 		detail =
 			detail ??
-			(added.length === 1 ? `Added "${widgetTitle(added[0]!)}"` : `Added ${added.length} widgets`)
+			(added.length === 1 && added[0] !== undefined
+				? `Added "${widgetTitle(added[0])}"`
+				: `Added ${added.length} widgets`)
 	}
 
 	if (removed.length > 0) {
 		kinds.add("widget_removed")
 		detail =
 			detail ??
-			(removed.length === 1
-				? `Removed "${widgetTitle(removed[0]!)}"`
+			(removed.length === 1 && removed[0] !== undefined
+				? `Removed "${widgetTitle(removed[0])}"`
 				: `Removed ${removed.length} widgets`)
 	}
 
@@ -157,7 +164,8 @@ export const summarizeDashboardChange = (
 		detail = detail ?? "Layout changed"
 	}
 
-	if (kinds.size === 0) {
+	const [kind] = kinds
+	if (kind === undefined) {
 		return { kind: "multiple", summary: "No changes" }
 	}
 
@@ -165,6 +173,5 @@ export const summarizeDashboardChange = (
 		return { kind: "multiple", summary: "Multiple changes" }
 	}
 
-	const [kind] = kinds
-	return { kind: kind!, summary: detail ?? "Updated" }
+	return { kind, summary: detail ?? "Updated" }
 }

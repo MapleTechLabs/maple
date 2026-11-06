@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -12,7 +13,7 @@ const outputPath = fileURLToPath(
 )
 const checkMode = process.argv.includes("--check")
 
-const manifest = await buildTinybirdProjectManifest()
+const manifest = Effect.runSync(buildTinybirdProjectManifest)
 const renderedModuleResult = await format(outputPath, renderTinybirdProjectManifestModule(manifest), {
 	printWidth: 110,
 	semi: false,
@@ -21,7 +22,7 @@ const renderedModuleResult = await format(outputPath, renderTinybirdProjectManif
 })
 if (renderedModuleResult.errors.length > 0) {
 	throw new Error(
-		`Failed to format generated Tinybird project manifest: ${renderedModuleResult.errors[0]!.message}`,
+		`Failed to format generated Tinybird project manifest: ${renderedModuleResult.errors[0].message}`,
 	)
 }
 const renderedModule = renderedModuleResult.code

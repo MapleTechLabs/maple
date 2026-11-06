@@ -3,8 +3,8 @@ use std::fs::{File, OpenOptions};
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use crate::clickhouse_insert_mappings::{self, InsertMapping};
@@ -12,7 +12,8 @@ use crate::metrics;
 use crate::otel::{
     encode_rows_internal_span, export_client_span, record_stage_error, wal_commit_internal_span,
 };
-use crate::wal_store::WalSegmentStore;
+use crate::outbound;
+use crate::wal_store::{OrphanedSegment, WalSegmentStore};
 use chrono::Utc;
 use crc32fast::Hasher as Crc32;
 use dashmap::DashMap;
@@ -28,7 +29,11 @@ use opentelemetry_proto::tonic::metrics::v1::{
     metric, number_data_point, Exemplar, NumberDataPoint,
 };
 use opentelemetry_proto::tonic::trace::v1::{span, status, Span};
+#[cfg(test)]
 use reqwest::Client;
+
+/// How much of an export error body is kept for logs and spans; the rest is never read.
+const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;
 
 /// The shared outbound HTTP client type: plain `reqwest::Client` in normal
 /// builds, hotpath's instrumented wrapper (same request API) under
@@ -205,6 +210,9 @@ enum ClickHouseExportOutcome {
     Dropped,
 }
 
+/// Upper bound on how long one batch waits on an open breaker before shedding.
+const MAX_BREAKER_DEFERRAL: Duration = Duration::from_secs(30);
+
 /// Tuning for the per-org ClickHouse circuit breaker.
 #[derive(Clone, Copy, Debug)]
 pub struct ClickHouseBreakerConfig {
@@ -212,8 +220,8 @@ pub struct ClickHouseBreakerConfig {
     /// `0` disables the breaker entirely (every batch is allowed to run its
     /// full retry budget).
     pub failure_threshold: u32,
-    /// How long the breaker stays open (fast-shedding batches) before it lets a
-    /// single probe batch through to re-test the target.
+    /// How long the breaker stays open (deferring batches without calling the
+    /// target) before it lets a single probe batch through to re-test it.
     pub cooldown: Duration,
 }
 
@@ -221,9 +229,8 @@ impl Default for ClickHouseBreakerConfig {
     fn default() -> Self {
         Self {
             // Trip after 2 consecutive failures (not 4) so a stalled BYO-ClickHouse
-            // target enters fast-shed quickly, keeping the single-threaded lane
-            // worker draining instead of holding batches through the retry budget
-            // (which backs the bounded channel up into accept-path 503s).
+            // target stops being hammered quickly instead of each batch burning the
+            // retry budget against it.
             failure_threshold: 2,
             cooldown: Duration::from_secs(30),
         }
@@ -234,8 +241,8 @@ impl Default for ClickHouseBreakerConfig {
 enum BreakerDecision {
     /// The target looks healthy enough to attempt an export.
     Allow,
-    /// The target is in the open state; drop the batch immediately instead of
-    /// holding the lane worker through the retry budget.
+    /// The target is in the open state; make no attempt. The caller defers the
+    /// batch for one short window, then sheds it.
     Shed,
 }
 
@@ -247,6 +254,9 @@ struct BreakerState {
     /// When the in-flight half-open probe was admitted. `None` when no probe is
     /// outstanding. Only meaningful while `opened_at` is set.
     probe_started_at: Option<Instant>,
+    /// A batch already waited out a full deferral window in this outage, so later
+    /// batches shed at once instead of each holding the lane again. Cleared on success.
+    deferral_spent: bool,
 }
 
 /// Pure transition: should the next attempt run, given the current state? Kept
@@ -300,6 +310,43 @@ impl ClickHouseBreakerRegistry {
         self.cfg.failure_threshold > 0
     }
 
+    /// How long one batch may wait on an open breaker before it sheds. Kept to one
+    /// cooldown (at most 30s) and well under the max queue age, because every other
+    /// org on the lane waits behind it and would otherwise age out.
+    fn deferral_window(&self, queue_max_age: Duration) -> Duration {
+        let window = self.cfg.cooldown.min(MAX_BREAKER_DEFERRAL);
+        if queue_max_age.is_zero() {
+            window
+        } else {
+            window.min(queue_max_age / 4)
+        }
+    }
+
+    fn deferral_spent(&self, org_id: &str) -> bool {
+        self.states.get(org_id).is_some_and(|state| {
+            state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .deferral_spent
+        })
+    }
+
+    fn mark_deferral_spent(&self, org_id: &str) {
+        let state = self.state_for(org_id);
+        state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .deferral_spent = true;
+    }
+
+    /// How often a breaker-deferred batch re-checks for a half-open probe slot.
+    fn poll_interval(&self) -> Duration {
+        self.cfg
+            .cooldown
+            .min(Duration::from_secs(1))
+            .max(Duration::from_millis(10))
+    }
+
     fn state_for(&self, org_id: &str) -> Arc<Mutex<BreakerState>> {
         self.states
             .entry(org_id.to_owned())
@@ -341,6 +388,7 @@ impl ClickHouseBreakerRegistry {
             guard.consecutive_failures = 0;
             guard.opened_at = None;
             guard.probe_started_at = None;
+            guard.deferral_spent = false;
         }
     }
 
@@ -489,6 +537,10 @@ pub struct TinybirdConfig {
     /// bounded channel up into accept-path backpressure.
     pub clickhouse_export_timeout: Duration,
     pub clickhouse_breaker: ClickHouseBreakerConfig,
+    /// Export to loopback/private endpoint addresses. Off for the managed deployment,
+    /// where a BYO endpoint is tenant-controlled and this process sits in a private
+    /// network; self-hosted installs opt in (`INGEST_CLICKHOUSE_ALLOW_PRIVATE_ENDPOINTS`).
+    pub clickhouse_allow_private_endpoints: bool,
     pub datasources: DatasourceNames,
     pub datasource_session_replays: String,
     pub datasource_session_replay_events: String,
@@ -803,8 +855,12 @@ impl TelemetryPipeline {
         // batch — and the request — follow it into the internal network.
         // Refusing redirects outright is the fix; a ClickHouse endpoint has no
         // legitimate reason to bounce an INSERT somewhere else.
-        let clickhouse_http: HttpClient = Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
+        // Its resolver also refuses names that resolve to non-public addresses,
+        // so a name validated at save time cannot later be rebound inward,
+        // unless the deployment opted into private ClickHouse endpoints.
+        let resolver =
+            (!cfg.clickhouse_allow_private_endpoints).then(outbound::PublicOnlyResolver::system);
+        let clickhouse_http: HttpClient = outbound::tenant_client_builder(resolver)
             .pool_max_idle_per_host(64)
             .pool_idle_timeout(Duration::from_secs(30))
             .build()
@@ -876,9 +932,9 @@ impl TelemetryPipeline {
     /// this task as alive.
     ///
     /// Shutdown calls this once the drain has done what it can: whatever did not
-    /// export is now in the object store under an owner whose heartbeat is gone,
-    /// so the next task claims it immediately instead of waiting out the
-    /// staleness window. Returns the bytes shipped.
+    /// export is now in the object store under a retired owner, which the next
+    /// task to boot claims without waiting out the staleness window. A clean
+    /// drain ships nothing. Returns the bytes shipped.
     pub async fn flush_wal_to_object_store(&self) -> u64 {
         let shipped = self.inner.wal.flush_to_object_store().await;
         if let Some(store) = self.inner.wal.store.get() {
@@ -1063,6 +1119,9 @@ impl TelemetryPipeline {
         let frame_count = frames.len();
         let mut committed_bytes = 0u64;
         let mut frames_committed = 0usize;
+        let mut batch_frames = 0u64;
+        let mut lock_wait = Duration::ZERO;
+        let mut sync_wait = Duration::ZERO;
         // Captured before entering the WAL span so the link points at the
         // request's server span, not at `ingest.wal_commit` itself. An unsampled
         // context would produce a link to a span that was never exported.
@@ -1100,42 +1159,36 @@ impl TelemetryPipeline {
                 let queued_bytes = frame.payload.len() as u64;
                 self.reserve_org_queue_bytes(&frame.org_id, queued_bytes)
                     .inspect_err(|_| record_failing_frame(shard, lane, &frame.datasource))?;
-                // Every exit from here to `commit()` — the error below, an early
-                // return above it, or this future being dropped mid-append —
-                // releases the reservation.
+                // The delivery owns the reservation: it commits when the frame
+                // reaches the lane, and dropping it instead (a failed encode, or a
+                // refused or failed append) releases it.
                 let reservation = OrgBytesReservation {
-                    counters: &self.inner.org_queue_bytes,
-                    org_id: &frame.org_id,
+                    counters: Arc::clone(&self.inner.org_queue_bytes),
+                    org_id: frame.org_id.clone(),
                     bytes: queued_bytes,
                     committed: false,
                 };
-                let (segment, start, end) = match self.inner.wal.append(lane, &frame).await {
-                    Ok(position) => {
-                        reservation.commit();
-                        position
-                    }
-                    Err(error) => {
-                        record_failing_frame(shard, lane, &frame.datasource);
-                        return Err(PipelineError::QueueUnavailable(error));
-                    }
-                };
+                let datasource = frame.datasource.clone();
+                let encoded = encode_wal_frame(&frame).map_err(|error| {
+                    record_failing_frame(shard, lane, &datasource);
+                    PipelineError::QueueUnavailable(error)
+                })?;
+                let deliver =
+                    queued_delivery(frame, shard, permit, reservation, source_span.clone());
+                let appended = self
+                    .inner
+                    .wal
+                    .append_delivering(lane, encoded, true, deliver)
+                    .await
+                    .map_err(|error| {
+                        record_failing_frame(shard, lane, &datasource);
+                        PipelineError::QueueUnavailable(error)
+                    })?;
                 committed_bytes += queued_bytes;
                 frames_committed += 1;
-                permit.send(QueuedFrame {
-                    shard,
-                    segment,
-                    start,
-                    end,
-                    org_id: frame.org_id,
-                    queued_bytes,
-                    signal: frame.signal,
-                    destination: frame.destination,
-                    datasource: frame.datasource,
-                    row_count: frame.row_count,
-                    payload: frame.payload,
-                    source_span: source_span.clone(),
-                    enqueued_at: Instant::now(),
-                });
+                batch_frames = batch_frames.max(appended.batch_frames);
+                lock_wait += appended.lock_wait;
+                sync_wait += appended.sync_wait;
             }
 
             Ok(())
@@ -1146,6 +1199,17 @@ impl TelemetryPipeline {
         span_handle.record("maple.ingest.frame_count", frame_count);
         span_handle.record("maple.ingest.frames_committed", frames_committed);
         span_handle.record("maple.ingest.queued_bytes", committed_bytes);
+        if frames_committed > 0 {
+            span_handle.record("maple.ingest.wal_batch_frames", batch_frames);
+            span_handle.record(
+                "maple.ingest.wal_lock_wait_ms",
+                lock_wait.as_secs_f64() * 1e3,
+            );
+            span_handle.record(
+                "maple.ingest.wal_sync_wait_ms",
+                sync_wait.as_secs_f64() * 1e3,
+            );
+        }
         if let Err(error) = &result {
             record_stage_error(
                 &span_handle,
@@ -1298,11 +1362,76 @@ struct WalLane {
     committed_bytes: AtomicU64,
     exported_bytes: AtomicU64,
     append: Mutex<LaneAppend>,
+    /// Signalled whenever a sync finishes, so waiters re-check their batch.
+    synced: Condvar,
     export: Mutex<LaneExport>,
     /// Set once, if a durability tier is configured, before any traffic is
     /// accepted. Segments are announced to it as they seal and as they are
     /// unlinked.
     shipper: OnceLock<mpsc::Sender<SegmentEvent>>,
+    /// Makes written bytes durable. `File::sync_data` outside the WAL benchmark,
+    /// which injects a device with a fixed fsync latency.
+    sync: WalSync,
+}
+
+/// How a lane makes its written bytes durable.
+#[doc(hidden)]
+pub type WalSync = Arc<dyn Fn(&File) -> std::io::Result<()> + Send + Sync>;
+
+fn sync_data_wal() -> WalSync {
+    Arc::new(File::sync_data)
+}
+
+/// Cleared when the append's caller is dropped, so its delivery is skipped.
+struct WaitingCaller(Arc<AtomicBool>);
+
+impl Drop for WaitingCaller {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+/// `deliver`, run only while the returned guard is alive. Skipped, the inner
+/// delivery is dropped, which releases its org reservation.
+fn while_caller_waits(deliver: Delivery) -> (WaitingCaller, Delivery) {
+    let waiting = WaitingCaller(Arc::new(AtomicBool::new(true)));
+    let still_waiting = Arc::clone(&waiting.0);
+    let guarded: Delivery = Box::new(move |segment, start, end| {
+        if still_waiting.load(Ordering::Acquire) {
+            deliver(segment, start, end);
+        }
+    });
+    (waiting, guarded)
+}
+
+/// Hands a durable frame to its lane's export channel, committing its org
+/// reservation. Dropped unrun, the reservation releases instead.
+fn queued_delivery(
+    frame: EncodedFrame,
+    shard: usize,
+    permit: mpsc::OwnedPermit<QueuedFrame>,
+    reservation: OrgBytesReservation,
+    source_span: Option<SpanContext>,
+) -> Delivery {
+    Box::new(move |segment, start, end| {
+        let queued_bytes = reservation.bytes;
+        reservation.commit();
+        permit.send(QueuedFrame {
+            shard,
+            segment,
+            start,
+            end,
+            org_id: frame.org_id,
+            queued_bytes,
+            signal: frame.signal,
+            destination: frame.destination,
+            datasource: frame.datasource,
+            row_count: frame.row_count,
+            payload: frame.payload,
+            source_span,
+            enqueued_at: Instant::now(),
+        });
+    })
 }
 
 /// A segment's lifecycle as the object-store shipper sees it. Events for one
@@ -1318,11 +1447,41 @@ enum SegmentEvent {
 
 struct LaneAppend {
     seq: u64,
-    file: File,
+    /// Shared so a batch leader can fsync it with the lane lock released.
+    file: Arc<File>,
     /// Bytes written to `file`. The handle is append-only and nothing else
     /// writes it, so this is the offset every frame in it is addressed by.
     len: u64,
+    /// A sync is in flight. Appends that land meanwhile join `open`.
+    syncing: bool,
+    /// Frames written since the in-flight sync started, waiting for the next.
+    open: Option<SyncBatch>,
 }
+
+/// Runs once its frame is durable, with the position it landed at.
+type Delivery = Box<dyn FnOnce(u64, u64, u64) + Send>;
+
+/// Frames that share one sync. Every appender in it holds `outcome` and waits
+/// until the leader that synced them sets it to the batch's frame count.
+#[derive(Default)]
+struct SyncBatch {
+    outcome: Arc<OnceLock<Result<u64, String>>>,
+    /// In write order. Run under the lane lock after the sync, so frames reach
+    /// the export channel in the order they sit in the segment.
+    deliveries: Vec<Box<dyn FnOnce() + Send>>,
+    frames: u64,
+    bytes: u64,
+}
+
+/// What a durable append waited on. Where it landed goes to its `Delivery`.
+struct Appended {
+    /// Frames made durable by the same sync as this one.
+    batch_frames: u64,
+    lock_wait: Duration,
+    sync_wait: Duration,
+}
+
+type AppendGuard<'a> = std::sync::MutexGuard<'a, LaneAppend>;
 
 struct LaneExport {
     /// Oldest segment still on disk. Sequences are contiguous, so this and the
@@ -1390,11 +1549,13 @@ impl WalLane {
     fn open(
         shard: usize,
         destination: ExportDestination,
-        cfg: &TinybirdConfig,
+        queue_dir: &Path,
+        segment_max_bytes: u64,
         max_bytes: u64,
+        sync: WalSync,
     ) -> Result<Self, String> {
         let lane_key = format!("shard-{shard:03}-{}", destination.as_str());
-        let dir = cfg.queue_dir.join(&lane_key);
+        let dir = queue_dir.join(&lane_key);
         std::fs::create_dir_all(&dir)
             .map_err(|error| format!("create ingest WAL lane {}: {error}", dir.display()))?;
         let cursor_path = dir.join("lane.cursor");
@@ -1443,7 +1604,7 @@ impl WalLane {
             dir,
             cursor_path,
             max_bytes,
-            segment_max_bytes: cfg.wal_segment_max_bytes,
+            segment_max_bytes,
             active_seq: AtomicU64::new(next_seq),
             live_bytes: AtomicU64::new(on_disk),
             // Whatever survived the last boot is backlog this lane still owes.
@@ -1451,34 +1612,41 @@ impl WalLane {
             exported_bytes: AtomicU64::new(0),
             append: Mutex::new(LaneAppend {
                 seq: next_seq,
-                file,
+                file: Arc::new(file),
                 len: 0,
+                syncing: false,
+                open: None,
             }),
+            synced: Condvar::new(),
             export: Mutex::new(LaneExport {
                 next_delete: cursor.seq,
                 cursor,
             }),
             shipper: OnceLock::new(),
+            sync,
         })
     }
 
-    /// Append one encoded frame and return where it landed. `enforce_cap` is
-    /// false only for frames being relocated from an older WAL layout, which
+    /// Append one encoded frame and return once a sync covers it. `enforce_cap`
+    /// is false only for frames being relocated from an older WAL layout, which
     /// were already accepted and must not be rejected now.
+    ///
+    /// Group commit: frames written while a sync is in flight share the next
+    /// one, so a slow fsync costs each append about two syncs, not one per
+    /// append queued ahead of it. `deliver` runs once the frame is durable.
     fn append_blocking(
         &self,
         encoded: &[u8],
         enforce_cap: bool,
-    ) -> Result<(u64, u64, u64), String> {
+        deliver: Delivery,
+    ) -> Result<Appended, String> {
         let added = encoded.len() as u64;
         let append_started = Instant::now();
-        let mut state = self
-            .append
-            .lock()
-            .map_err(|_| "WAL lane mutex poisoned".to_owned())?;
+        let state = self.lock_append()?;
         // Everything before this point was queueing behind other appenders on
         // this lane; everything after is this append's own work.
         let lock_wait = append_started.elapsed();
+        let mut state = self.wait_for_room(state)?;
         if enforce_cap
             && self
                 .live_bytes
@@ -1489,45 +1657,139 @@ impl WalLane {
             metrics::wal_shard_full(self.shard, self.destination.as_str());
             return Err("Telemetry WAL lane is full".to_owned());
         }
-        state
-            .file
+        (&*state.file)
             .write_all(encoded)
             .map_err(|error| format!("write WAL: {error}"))?;
-        let fsync_started = Instant::now();
-        state
-            .file
-            .sync_data()
-            .map_err(|error| format!("sync WAL: {error}"))?;
-        let fsync = fsync_started.elapsed();
         let seq = state.seq;
         let start = state.len;
         let end = start + added;
         state.len = end;
         let live = self.live_bytes.fetch_add(added, Ordering::Relaxed) + added;
-        self.committed_bytes.fetch_add(added, Ordering::Relaxed);
-        // Sealing is an open() and a directory fsync, paid once per segment —
-        // versus the tail rewrite the previous layout paid here under this lock.
-        if end >= self.segment_max_bytes {
-            self.seal(&mut state)?;
-        }
+        let batch = state.open.get_or_insert_with(SyncBatch::default);
+        batch.frames += 1;
+        batch.bytes += added;
+        batch
+            .deliveries
+            .push(Box::new(move || deliver(seq, start, end)));
+        let outcome = Arc::clone(&batch.outcome);
+        let written = Instant::now();
+
+        let batch_frames = loop {
+            if let Some(result) = outcome.get() {
+                break result.clone()?;
+            }
+            // Not syncing means no batch is in flight, so ours is the open one.
+            state = if state.syncing {
+                self.wait_synced(state)?
+            } else {
+                self.sync_open_batch(state)?
+            };
+        };
         drop(state);
 
+        let sync_wait = written.elapsed();
         metrics::wal_commit_bytes(self.shard, self.destination.as_str(), added);
         metrics::wal_shard_bytes(self.shard, self.destination.as_str(), live);
-        // Recorded after the lock is released: the append is done, and holding it
-        // to emit metrics would make the very contention this measures worse.
+        // Recorded after the lock is released: holding it to emit metrics
+        // would make the very contention this measures worse.
         metrics::wal_append_durations(
             self.shard,
             self.destination.as_str(),
             lock_wait.as_secs_f64(),
-            fsync.as_secs_f64(),
+            sync_wait.as_secs_f64(),
             append_started.elapsed().as_secs_f64(),
         );
-        Ok((seq, start, end))
+        Ok(Appended {
+            batch_frames,
+            lock_wait,
+            sync_wait,
+        })
+    }
+
+    fn lock_append(&self) -> Result<AppendGuard<'_>, String> {
+        self.append
+            .lock()
+            .map_err(|_| "WAL lane mutex poisoned".to_owned())
+    }
+
+    fn wait_synced<'a>(&'a self, state: AppendGuard<'a>) -> Result<AppendGuard<'a>, String> {
+        self.synced
+            .wait(state)
+            .map_err(|_| "WAL lane mutex poisoned".to_owned())
+    }
+
+    /// A segment at its seal threshold takes no more frames: it is synced and
+    /// sealed first, which keeps the overshoot to one frame, as before.
+    fn wait_for_room<'a>(&'a self, mut state: AppendGuard<'a>) -> Result<AppendGuard<'a>, String> {
+        while state.len >= self.segment_max_bytes {
+            if state.syncing {
+                state = self.wait_synced(state)?;
+            } else if state.open.is_some() {
+                state = self.sync_open_batch(state)?;
+            } else {
+                self.seal(&mut state)?;
+            }
+        }
+        Ok(state)
+    }
+
+    /// Lead one sync: take the open batch, fsync with the lock released, then
+    /// deliver its frames in order and wake everyone waiting on it. A failed
+    /// sync drops the deliveries, which releases their reservations.
+    fn sync_open_batch<'a>(
+        &'a self,
+        mut state: AppendGuard<'a>,
+    ) -> Result<AppendGuard<'a>, String> {
+        // Callers lead only when no sync is in flight and frames are waiting,
+        // so a missing batch is a bug; failing beats spinning on it.
+        let Some(batch) = state.open.take() else {
+            return Err("WAL sync batch missing".to_owned());
+        };
+        state.syncing = true;
+        let file = Arc::clone(&state.file);
+        drop(state);
+
+        let fsync_started = Instant::now();
+        let synced = (self.sync)(&file).map_err(|error| format!("sync WAL: {error}"));
+        let fsync = fsync_started.elapsed();
+
+        let mut state = self.lock_append()?;
+        state.syncing = false;
+        let SyncBatch {
+            outcome,
+            deliveries,
+            frames,
+            bytes,
+        } = batch;
+        if synced.is_ok() {
+            self.committed_bytes.fetch_add(bytes, Ordering::Relaxed);
+            for deliver in deliveries {
+                deliver();
+            }
+            // Sealed now rather than by the next append, so a quiet lane still
+            // ships its full segment.
+            if state.open.is_none() && state.len >= self.segment_max_bytes {
+                if let Err(error) = self.seal(&mut state) {
+                    warn!(shard = self.shard, %error, "Failed to seal a full WAL segment");
+                }
+            }
+        } else {
+            drop(deliveries);
+        }
+        drop(outcome.set(synced.map(|()| frames)));
+        self.synced.notify_all();
+        metrics::wal_sync(
+            self.shard,
+            self.destination.as_str(),
+            fsync.as_secs_f64(),
+            frames,
+        );
+        Ok(state)
     }
 
     /// Close the active segment and open the next one. The caller holds
-    /// `append`; every frame in the outgoing segment is already `sync_data`d.
+    /// `append` with no sync in flight; every frame in the outgoing segment was
+    /// synced, or refused to its appender because its sync failed.
     fn seal(&self, state: &mut LaneAppend) -> Result<(), String> {
         let sealed = state.seq;
         let next = sealed + 1;
@@ -1536,7 +1798,7 @@ impl WalLane {
         // is looking at a segment whose length can no longer change.
         self.active_seq.store(next, Ordering::Release);
         state.seq = next;
-        state.file = file;
+        state.file = Arc::new(file);
         state.len = 0;
         metrics::wal_segment_sealed(self.shard, self.destination.as_str());
         self.notify(SegmentEvent::Sealed {
@@ -1563,20 +1825,32 @@ impl WalLane {
 
     /// Whether the exporter has already moved past this segment.
     fn is_exported(&self, seq: u64) -> bool {
-        self.export.lock().is_ok_and(|state| seq < state.cursor.seq)
+        self.export
+            .lock()
+            .is_ok_and(|state| self.is_behind(state.cursor, seq))
+    }
+
+    /// Whether `cursor` has consumed all of sealed segment `seq`. A cursor
+    /// parked at the end of a segment that sealed after its last export (the
+    /// shutdown seal, typically) counts: it holds nothing left to replay.
+    fn is_behind(&self, cursor: SegmentCursor, seq: u64) -> bool {
+        seq < cursor.seq
+            || (seq == cursor.seq
+                && seq < self.active_seq.load(Ordering::Acquire)
+                && cursor.offset >= file_len(&segment_path(&self.dir, seq)))
     }
 
     /// Sealed segments this lane still owes, oldest first.
     fn unexported_segments(&self) -> Vec<u64> {
-        let cursor_seq = match self.export.lock() {
-            Ok(state) => state.cursor.seq,
+        let cursor = match self.export.lock() {
+            Ok(state) => state.cursor,
             Err(_) => return Vec::new(),
         };
         let active = self.active_seq.load(Ordering::Acquire);
         list_segments(&self.dir)
             .unwrap_or_default()
             .into_iter()
-            .filter(|seq| *seq >= cursor_seq && *seq < active)
+            .filter(|seq| *seq < active && !self.is_behind(cursor, *seq))
             .collect()
     }
 
@@ -1670,6 +1944,16 @@ impl WalLane {
     }
 }
 
+/// What WAL orphan recovery did with one segment's source object.
+enum SegmentRecovery {
+    /// Re-committed, re-shipped under this owner, and deleted.
+    Released,
+    /// Left in the bucket for a later boot.
+    Kept,
+    /// Left in the bucket, and recovery of this owner stops here.
+    Halted,
+}
+
 impl ShardedWal {
     fn open(cfg: &TinybirdConfig) -> Result<Self, String> {
         let num_lanes = cfg.wal_shards * LANES_PER_SHARD;
@@ -1681,8 +1965,10 @@ impl ShardedWal {
                 lanes.push(Arc::new(WalLane::open(
                     shard,
                     destination,
-                    cfg,
+                    &cfg.queue_dir,
+                    cfg.wal_segment_max_bytes,
                     max_bytes_per_lane,
+                    sync_data_wal(),
                 )?));
             }
         }
@@ -1830,7 +2116,7 @@ impl ShardedWal {
                 };
                 // Bypass the per-lane byte cap: these frames were already accepted
                 // and are merely being relocated, so we must not reject them.
-                if let Err(error) = self.append_inner(lane, &encoded, false).await {
+                if let Err(error) = self.append_relocated(lane, &encoded).await {
                     warn!(shard, error = %error, "Failed to migrate legacy ingest WAL frame; will retry next boot");
                     migrated = false;
                     break;
@@ -1888,6 +2174,10 @@ impl ShardedWal {
     /// by the same replay path as anything this task's own disk was holding.
     /// Every step is best-effort: a bucket that is unreachable must not stop the
     /// gateway from booting and accepting traffic.
+    ///
+    /// One segment at a time: fetched, re-committed, re-shipped under our own
+    /// owner id and only then deleted, so memory holds one segment however large
+    /// the dead owner's backlog is, and the frames are never only on this disk.
     #[expect(
         clippy::cognitive_complexity,
         reason = "WAL recovery: the branches are the recovery cases, and each needs the others' \
@@ -1902,6 +2192,17 @@ impl ShardedWal {
                 return;
             }
         };
+        // Segments this host kept from its last boot sealed before any shipper
+        // was attached, so nothing else ever ships them. Best-effort, and done
+        // before recovery appends anything.
+        self.flush_segments_to(store).await;
+        // Per lane, the first segment recovery has not re-shipped, seeded at the
+        // active segment: every segment from there on is one recovery wrote.
+        let mut reshipped_below: Vec<u64> = self
+            .lanes
+            .iter()
+            .map(|lane| lane.active_seq.load(Ordering::Acquire))
+            .collect();
         for owner in owners {
             match store.claim(&owner, now).await {
                 Ok(true) => {}
@@ -1914,73 +2215,179 @@ impl ShardedWal {
                     continue;
                 }
             }
-            let segments = match store.take_segments(&owner).await {
+            let segments = match store.list_segments(&owner).await {
                 Ok(segments) => segments,
                 Err(error) => {
-                    warn!(owner, error = %error, "Failed to read orphaned WAL segments");
+                    warn!(owner, error = %error, "Failed to list orphaned WAL segments");
                     continue;
                 }
             };
             let mut recovered_frames = 0usize;
-            let mut keys = Vec::with_capacity(segments.len());
+            // Segments still in the bucket after this pass. Any at all keeps the
+            // owner discoverable so a later boot retries them.
+            let mut left_behind = 0usize;
             for segment in segments {
-                let Some(lane) = Self::lane_for_key(&segment.lane_key, cfg) else {
-                    warn!(
-                        owner,
-                        lane_key = segment.lane_key,
-                        "Skipping an orphaned WAL segment for an unknown lane"
-                    );
-                    continue;
-                };
-                let frames = decode_segment_frames(&segment.bytes);
-                let mut committed = true;
-                for frame in frames {
-                    let encoded = EncodedFrame {
-                        routing_key: 0, // the lane is already decided by the key
-                        org_id: frame.org_id,
-                        signal: frame.signal,
-                        destination: frame.destination,
-                        datasource: frame.datasource,
-                        row_count: frame.row_count,
-                        payload: frame.payload,
-                    };
-                    // Bypass the lane cap: these frames were accepted by the
-                    // task that died, and rejecting them here is the loss this
-                    // whole tier exists to prevent.
-                    if let Err(error) = self.append_inner(lane, &encoded, false).await {
-                        warn!(owner, error = %error, "Failed to re-commit an orphaned WAL frame");
-                        committed = false;
+                let (frames, outcome) = self
+                    .recover_segment(cfg, store, &owner, &segment, &mut reshipped_below)
+                    .await;
+                recovered_frames += frames;
+                match outcome {
+                    SegmentRecovery::Released => {}
+                    SegmentRecovery::Kept => left_behind += 1,
+                    // Local disk or re-shipping is failing: carrying on would
+                    // only pile the rest onto this disk for a later boot to
+                    // replay again.
+                    SegmentRecovery::Halted => {
+                        left_behind += 1;
                         break;
                     }
-                    recovered_frames += 1;
-                }
-                if committed {
-                    keys.push(segment.key);
                 }
             }
-            if recovered_frames == 0 && keys.is_empty() {
-                drop(store.release_owner(&owner).await);
-                continue;
-            }
-            // Sealed and re-shipped under our own owner id *before* the source
-            // objects are dropped, so the frames are never only on this task's
-            // disk.
-            self.flush_segments_to(store).await;
-            for key in keys {
-                if let Err(error) = store.release_key(&key).await {
-                    warn!(owner, key, error = %error, "Failed to delete a recovered WAL segment");
-                }
-            }
-            if let Err(error) = store.release_owner(&owner).await {
+            if left_behind > 0 {
+                warn!(
+                    owner,
+                    left_behind,
+                    "Keeping a WAL owner so a later boot retries its remaining segments"
+                );
+            } else if let Err(error) = store.release_owner(&owner).await {
                 warn!(owner, error = %error, "Failed to retire a recovered WAL owner");
             }
-            metrics::wal_frames_recovered(recovered_frames as u64);
-            info!(
-                owner,
-                frames = recovered_frames,
-                "Recovered orphaned WAL segments from the object store"
-            );
+            if recovered_frames > 0 {
+                metrics::wal_frames_recovered(recovered_frames as u64);
+                info!(
+                    owner,
+                    frames = recovered_frames,
+                    "Recovered orphaned WAL segments from the object store"
+                );
+            }
         }
+    }
+
+    /// Re-commit one orphaned segment to its local lane, re-ship that lane, and
+    /// only then delete the source. Returns the frames committed and what became
+    /// of the source object.
+    #[expect(
+        clippy::cognitive_complexity,
+        reason = "WAL recovery: each early return is a case where the source must stay"
+    )]
+    async fn recover_segment(
+        &self,
+        cfg: &TinybirdConfig,
+        store: &WalSegmentStore,
+        owner: &str,
+        segment: &OrphanedSegment,
+        reshipped_below: &mut [u64],
+    ) -> (usize, SegmentRecovery) {
+        let Some(lane) = Self::lane_for_key(&segment.lane_key, cfg) else {
+            warn!(
+                owner,
+                lane_key = segment.lane_key,
+                "Skipping an orphaned WAL segment for an unknown lane"
+            );
+            return (0, SegmentRecovery::Kept);
+        };
+        let frames = match store.fetch_segment(segment).await {
+            Ok(bytes) => decode_segment_frames(&bytes),
+            Err(error) => {
+                warn!(
+                    owner,
+                    key = segment.key,
+                    error = %error,
+                    "Failed to read an orphaned WAL segment"
+                );
+                return (0, SegmentRecovery::Kept);
+            }
+        };
+        let mut recovered = 0usize;
+        let mut committed = true;
+        for frame in frames {
+            let encoded = EncodedFrame {
+                routing_key: 0, // the lane is already decided by the key
+                org_id: frame.org_id,
+                signal: frame.signal,
+                destination: frame.destination,
+                datasource: frame.datasource,
+                row_count: frame.row_count,
+                payload: frame.payload,
+            };
+            // Bypass the lane cap: these frames were accepted by the task that
+            // died, and rejecting them here is the loss this whole tier exists
+            // to prevent.
+            if let Err(error) = self.append_relocated(lane, &encoded).await {
+                warn!(
+                    owner,
+                    key = segment.key,
+                    error = %error,
+                    "Failed to re-commit an orphaned WAL frame"
+                );
+                committed = false;
+                break;
+            }
+            recovered += 1;
+        }
+        // Sealed and re-shipped even after a partial commit, so whatever did
+        // land is exported; the source stays for a later boot.
+        let reshipped = self
+            .reship_lane(store, lane, &mut reshipped_below[lane])
+            .await;
+        if !(committed && reshipped) {
+            return (recovered, SegmentRecovery::Halted);
+        }
+        if let Err(error) = store.release_key(&segment.key).await {
+            warn!(
+                owner,
+                key = segment.key,
+                error = %error,
+                "Failed to delete a recovered WAL segment"
+            );
+            return (recovered, SegmentRecovery::Kept);
+        }
+        (recovered, SegmentRecovery::Released)
+    }
+
+    /// Seal `lane` and ship every segment from `*reshipped_below` up to the new
+    /// active one, advancing it past each that lands. False when any did not,
+    /// so the caller keeps the source object those frames came from.
+    async fn reship_lane(
+        &self,
+        store: &WalSegmentStore,
+        lane: usize,
+        reshipped_below: &mut u64,
+    ) -> bool {
+        let Ok(lane) = self.lane(lane) else {
+            return false;
+        };
+        if let Err(error) = lane.seal_if_dirty() {
+            warn!(
+                shard = lane.shard,
+                destination = lane.destination.as_str(),
+                %error,
+                "Failed to seal a WAL lane segment after recovery"
+            );
+            return false;
+        }
+        // Nothing exports during recovery, so each of these is still on disk.
+        let active = lane.active_seq.load(Ordering::Acquire);
+        for seq in *reshipped_below..active {
+            let Some(bytes) = lane.read_segment(seq) else {
+                return false;
+            };
+            let len = bytes.len() as u64;
+            if let Err(error) = store.put_segment(&lane.lane_key, seq, bytes).await {
+                warn!(
+                    shard = lane.shard,
+                    destination = lane.destination.as_str(),
+                    segment = seq,
+                    error_kind = error.error_kind(),
+                    %error,
+                    "Failed to re-ship a recovered WAL segment"
+                );
+                return false;
+            }
+            metrics::wal_segment_shipped(lane.shard, lane.destination.as_str(), len);
+            *reshipped_below = seq + 1;
+        }
+        true
     }
 
     fn lane(&self, lane: usize) -> Result<Arc<WalLane>, String> {
@@ -1990,22 +2397,49 @@ impl ShardedWal {
             .ok_or_else(|| format!("invalid WAL lane {lane}"))
     }
 
+    #[cfg(test)]
     async fn append(&self, lane: usize, frame: &EncodedFrame) -> Result<(u64, u64, u64), String> {
-        self.append_inner(lane, frame, true).await
+        let (sender, landed) = std::sync::mpsc::channel();
+        let deliver: Delivery = Box::new(move |seq, start, end| {
+            sender.send((seq, start, end)).ok();
+        });
+        self.append_delivering(lane, encode_wal_frame(frame)?, true, deliver)
+            .await?;
+        landed
+            .recv()
+            .map_err(|_| "a durable append was never delivered".to_owned())
     }
 
+    /// Frames relocated at boot: no cap, and nothing to deliver, because the
+    /// lane replays them from disk.
+    async fn append_relocated(&self, lane: usize, frame: &EncodedFrame) -> Result<(), String> {
+        let encoded = encode_wal_frame(frame)?;
+        self.append_delivering(lane, encoded, false, Box::new(|_, _, _| {}))
+            .await
+            .map(|_| ())
+    }
+
+    /// Append an encoded frame and return once it is durable. `deliver` runs
+    /// first, from the blocking task, so it still runs if this future is dropped.
     #[hotpath::measure]
-    async fn append_inner(
+    async fn append_delivering(
         &self,
         lane: usize,
-        frame: &EncodedFrame,
+        encoded: Vec<u8>,
         enforce_cap: bool,
-    ) -> Result<(u64, u64, u64), String> {
+        deliver: Delivery,
+    ) -> Result<Appended, String> {
         let lane_ref = self.lane(lane)?;
-        let encoded = encode_wal_frame(frame)?;
-        tokio::task::spawn_blocking(move || lane_ref.append_blocking(&encoded, enforce_cap))
-            .await
-            .map_err(|error| format!("join WAL append: {error}"))?
+        // A caller dropped mid-append (a request timeout) has already answered
+        // with a retryable error, so its frame must not reach export as well.
+        let (waiting, deliver) = while_caller_waits(deliver);
+        let appended = tokio::task::spawn_blocking(move || {
+            lane_ref.append_blocking(&encoded, enforce_cap, deliver)
+        })
+        .await
+        .map_err(|error| format!("join WAL append: {error}"))?;
+        drop(waiting);
+        appended
     }
 
     /// Bytes committed but not yet exported across every lane.
@@ -2031,6 +2465,51 @@ impl ShardedWal {
         tokio::task::spawn_blocking(move || lane_ref.mark_exported_blocking(cursor, bytes))
             .await
             .map_err(|error| format!("join WAL cursor: {error}"))?
+    }
+}
+
+/// One WAL lane driven directly, for `benches/wal_append_bench.rs`: the real
+/// append path with an injected fsync, without an export pipeline behind it.
+#[doc(hidden)]
+pub struct WalLaneBench {
+    lane: WalLane,
+}
+
+impl std::fmt::Debug for WalLaneBench {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WalLaneBench")
+            .field("dir", &self.lane.dir)
+            .finish()
+    }
+}
+
+impl WalLaneBench {
+    pub fn open(queue_dir: &Path, segment_max_bytes: u64, sync: WalSync) -> Result<Self, String> {
+        let lane = WalLane::open(
+            0,
+            ExportDestination::Tinybird,
+            queue_dir,
+            segment_max_bytes,
+            u64::MAX,
+            sync,
+        )?;
+        Ok(Self { lane })
+    }
+
+    /// Append one frame carrying `payload`; returns once it is durable.
+    pub fn append(&self, payload: Vec<u8>) -> Result<(), String> {
+        let encoded = encode_wal_frame(&EncodedFrame {
+            routing_key: 0,
+            org_id: "org_bench".to_owned(),
+            signal: TelemetrySignal::Logs,
+            destination: ExportDestination::Tinybird,
+            datasource: "logs".to_owned(),
+            row_count: 1,
+            payload,
+        })?;
+        self.lane
+            .append_blocking(&encoded, true, Box::new(|_, _, _| {}))
+            .map(|_| ())
     }
 }
 
@@ -2490,26 +2969,25 @@ fn add_org_queue_bytes(counters: &Arc<DashMap<String, Arc<AtomicU64>>>, org_id: 
 /// timeout fires. Dropped there, nobody released the bytes and nobody ever
 /// would, so the org's counter drifted up permanently until it was throttled by
 /// a queue that did not exist.
-struct OrgBytesReservation<'a> {
-    counters: &'a Arc<DashMap<String, Arc<AtomicU64>>>,
-    org_id: &'a str,
+struct OrgBytesReservation {
+    counters: Arc<DashMap<String, Arc<AtomicU64>>>,
+    org_id: String,
     bytes: u64,
     committed: bool,
 }
 
-impl OrgBytesReservation<'_> {
+impl OrgBytesReservation {
     /// The frame is on its way to the lane; the export worker owns the release
-    /// from here. Consumes the guard so the borrow ends and the frame's fields
-    /// can be moved into the `QueuedFrame`.
+    /// from here.
     fn commit(mut self) {
         self.committed = true;
     }
 }
 
-impl Drop for OrgBytesReservation<'_> {
+impl Drop for OrgBytesReservation {
     fn drop(&mut self) {
         if !self.committed {
-            release_org_queue_bytes(self.counters, self.org_id, self.bytes);
+            release_org_queue_bytes(&self.counters, &self.org_id, self.bytes);
         }
     }
 }
@@ -2853,7 +3331,7 @@ impl ExportWorker {
                 }
                 Ok(response) if response.status().is_client_error() => {
                     let status = response.status().as_u16();
-                    let body = response.text().await.unwrap_or_default();
+                    let body = outbound::read_body_capped(response, MAX_ERROR_BODY_BYTES).await;
                     span_handle.record("http.response.status_code", status);
                     span_handle.record("maple.ingest.outcome", "dropped");
                     // Terminal: these rows are gone. 4xx from Tinybird means we
@@ -2954,31 +3432,62 @@ impl ExportWorker {
         // exhausted (which can only happen after at least one failure).
         let mut last_status: String;
 
+        let deferral_window = self
+            .clickhouse_breakers
+            .deferral_window(self.cfg.queue_max_age);
+        let mut deferred_since: Option<Instant> = None;
+        let mut waited_on_breaker = false;
         loop {
-            // Fast-shed before doing any work: if this org's target has been
-            // failing, drop the batch instead of holding the lane worker through
-            // the retry budget. This bounds how long one unhealthy BYO-ClickHouse
-            // target can starve co-sharded ClickHouse orgs.
-            if self.clickhouse_breakers.decide(org_id, Instant::now()) == BreakerDecision::Shed {
-                // A shed makes no HTTP call, but it silently discards customer
-                // data — emit a span anyway or the drop is invisible in traces.
-                let span = clickhouse_export_span(org_id, datasource, attempt, rows, &compressed);
-                span.record("maple.ingest.outcome", "shed_circuit_open");
-                record_stage_error(&span, "circuit_open", "target circuit breaker open", true);
-                metrics::clickhouse_export_dropped(datasource, "circuit_open", rows as u64);
-                warn!(
-                    org_id,
-                    datasource,
-                    rows,
-                    attempt,
-                    "Shedding ClickHouse batch: target circuit breaker open"
-                );
-                return Ok(ClickHouseExportOutcome::Dropped);
+            // An open breaker first defers the batch (cursor held) for one short window,
+            // so a blip is delivered without loss; past it the batch sheds, which bounds
+            // how long co-sharded orgs on this lane wait behind a broken target.
+            let now = Instant::now();
+            if self.clickhouse_breakers.decide(org_id, now) == BreakerDecision::Shed {
+                let window_spent = self.clickhouse_breakers.deferral_spent(org_id)
+                    || deferred_since
+                        .is_some_and(|since| now.duration_since(since) >= deferral_window);
+                if window_spent {
+                    self.clickhouse_breakers.mark_deferral_spent(org_id);
+                    // A shed makes no HTTP call, but it discards customer data, so it
+                    // still gets a span or the drop is invisible in traces.
+                    let span =
+                        clickhouse_export_span(org_id, datasource, attempt, rows, &compressed);
+                    span.record("maple.ingest.outcome", "shed_circuit_open");
+                    record_stage_error(&span, "circuit_open", "target circuit breaker open", true);
+                    metrics::clickhouse_export_dropped(datasource, "circuit_open", rows as u64);
+                    warn!(
+                        org_id,
+                        datasource,
+                        rows,
+                        attempt,
+                        "Shedding ClickHouse batch: target circuit breaker open"
+                    );
+                    return Ok(ClickHouseExportOutcome::Dropped);
+                }
+                let since = *deferred_since.get_or_insert_with(|| {
+                    // One span per deferred batch, left Unset: waiting is not a failure.
+                    let span =
+                        clickhouse_export_span(org_id, datasource, attempt, rows, &compressed);
+                    span.record("maple.ingest.outcome", "deferred_circuit_open");
+                    metrics::clickhouse_export_retry(datasource, "circuit_open");
+                    warn!(
+                        org_id,
+                        datasource,
+                        rows,
+                        attempt,
+                        "Deferring ClickHouse batch: target circuit breaker open"
+                    );
+                    now
+                });
+                waited_on_breaker = true;
+                let remaining = deferral_window.saturating_sub(now.duration_since(since));
+                sleep(self.clickhouse_breakers.poll_interval().min(remaining)).await;
+                continue;
             }
             // Backoff is taken here (before the attempt) so that when the breaker
-            // trips mid-batch the shed-check above can bail without first sleeping
-            // out the previous failure's backoff.
-            if attempt > 0 {
+            // trips mid-batch the shed-check above can wait without first sleeping
+            // out the previous failure's backoff; a breaker wait replaces it.
+            if attempt > 0 && !std::mem::take(&mut waited_on_breaker) {
                 backoff(attempt).await;
             }
 
@@ -3104,6 +3613,20 @@ impl ExportWorker {
                 );
                 return Ok(ClickHouseExportOutcome::Dropped);
             }
+            if !self.cfg.clickhouse_allow_private_endpoints {
+                if let Some(blocked) = outbound::blocked_literal_host(&request_url) {
+                    span.record("maple.ingest.outcome", "dropped");
+                    record_stage_error(&span, "blocked_address", &blocked.to_string(), true);
+                    metrics::clickhouse_export_dropped(datasource, "blocked_address", rows as u64);
+                    error!(
+                        org_id,
+                        datasource,
+                        rows,
+                        "Dropping ClickHouse batch because the endpoint is not a public address"
+                    );
+                    return Ok(ClickHouseExportOutcome::Dropped);
+                }
+            }
             {
                 let mut query = request_url.query_pairs_mut();
                 query
@@ -3152,7 +3675,7 @@ impl ExportWorker {
                         .and_then(|value| value.to_str().ok())
                         .unwrap_or("")
                         .to_owned();
-                    let body = response.text().await.unwrap_or_default();
+                    let body = outbound::read_body_capped(response, MAX_ERROR_BODY_BYTES).await;
                     span.record("http.response.status_code", status_code);
                     if status.is_redirection() {
                         // The client refuses to follow these, so a redirect is a
@@ -3162,7 +3685,11 @@ impl ExportWorker {
                         // "non_retryable 4xx" would bury that.
                         span.record("maple.ingest.outcome", "dropped");
                         record_stage_error(&span, "redirect_refused", &body, true);
-                        metrics::clickhouse_export_dropped(datasource, "redirect_refused", rows as u64);
+                        metrics::clickhouse_export_dropped(
+                            datasource,
+                            "redirect_refused",
+                            rows as u64,
+                        );
                         warn!(
                             org_id,
                             datasource,
@@ -3203,6 +3730,20 @@ impl ExportWorker {
                     );
                     self.clickhouse_breakers.on_failure(org_id, Instant::now());
                     last_status = bucket.to_owned();
+                }
+                Err(error) if outbound::is_blocked_address(&error) => {
+                    // A name that resolves inward is a config fault no retry clears.
+                    span.record("maple.ingest.outcome", "dropped");
+                    record_stage_error(&span, "blocked_address", &error.to_string(), true);
+                    metrics::clickhouse_export_dropped(datasource, "blocked_address", rows as u64);
+                    error!(
+                        org_id,
+                        datasource,
+                        rows,
+                        error = %error,
+                        "Dropping ClickHouse batch because the endpoint resolves to a non-public address"
+                    );
+                    return Ok(ClickHouseExportOutcome::Dropped);
                 }
                 Err(error) => {
                     span.record("maple.ingest.outcome", "retry");
@@ -4010,24 +4551,53 @@ fn attr_map(attributes: &[KeyValue]) -> Map<String, Value> {
     out
 }
 
-fn any_value_string(value: &AnyValue) -> String {
+pub(crate) fn any_value_string(value: &AnyValue) -> String {
     match value.value.as_ref() {
         Some(any_value::Value::StringValue(value)) => value.clone(),
         Some(any_value::Value::BoolValue(value)) => value.to_string(),
         Some(any_value::Value::IntValue(value)) => value.to_string(),
         Some(any_value::Value::DoubleValue(value)) => value.to_string(),
-        Some(any_value::Value::BytesValue(value)) => bytes_hex(value),
-        Some(any_value::Value::ArrayValue(value)) => {
-            let values: Vec<String> = value.values.iter().map(any_value_string).collect();
-            serde_json::to_string(&values).unwrap_or_default()
-        }
-        Some(any_value::Value::KvlistValue(value)) => {
-            let attrs = attr_map(&value.values);
-            serde_json::to_string(&attrs).unwrap_or_default()
+        // Text sent as bytes (LangSmith's prompt and completion) stays
+        // readable. Binary is hex, including binary that happens to be valid
+        // UTF-8: a control character other than whitespace marks it.
+        Some(any_value::Value::BytesValue(value)) => match std::str::from_utf8(value) {
+            Ok(text)
+                if !text
+                    .chars()
+                    .any(|c| c.is_control() && !matches!(c, '\t' | '\n' | '\r')) =>
+            {
+                text.to_owned()
+            }
+            _ => bytes_hex(value),
+        },
+        Some(any_value::Value::ArrayValue(_) | any_value::Value::KvlistValue(_)) => {
+            serde_json::to_string(&any_value_json(value)).unwrap_or_default()
         }
         // String-table references (OTLP 1.9 experimental encoding) cannot be resolved
         // without the sender's dictionary, which the gateway does not accept yet.
         Some(any_value::Value::StringValueStrindex(_)) | None => String::new(),
+    }
+}
+
+/// An array or map as JSON. Scalars keep their string form, as flat arrays and
+/// maps always have, but a nested array or map stays JSON instead of becoming
+/// a string of escaped JSON (structured `gen_ai.input.messages`).
+fn any_value_json(value: &AnyValue) -> Value {
+    match value.value.as_ref() {
+        Some(any_value::Value::ArrayValue(array)) => {
+            Value::Array(array.values.iter().map(any_value_json).collect())
+        }
+        Some(any_value::Value::KvlistValue(kvlist)) => Value::Object(
+            kvlist
+                .values
+                .iter()
+                .map(|kv| {
+                    let value = kv.value.as_ref().map_or(Value::from(""), any_value_json);
+                    (kv.key.clone(), value)
+                })
+                .collect(),
+        ),
+        _ => Value::String(any_value_string(value)),
     }
 }
 
@@ -4076,15 +4646,16 @@ fn bytes_hex(bytes: &[u8]) -> String {
 }
 
 fn format_timestamp_nano(unix_nano: u64) -> String {
+    // DateTime64(9) is an Int64 of nanoseconds: anything past i64::MAX (year 2262+)
+    // fails the whole insert with DECIMAL_OVERFLOW, so it maps to epoch like 0 does.
+    let Ok(unix_nano) = i64::try_from(unix_nano) else {
+        return "1970-01-01 00:00:00.000000000".to_owned();
+    };
     if unix_nano == 0 {
         return "1970-01-01 00:00:00.000000000".to_owned();
     }
-    #[expect(
-        clippy::cast_possible_wrap,
-        reason = "u64 nanoseconds divided by a billion cannot reach i64::MAX seconds"
-    )]
-    let secs = (unix_nano / 1_000_000_000) as i64;
-    let nanos = (unix_nano % 1_000_000_000) as u32;
+    let secs = unix_nano / 1_000_000_000;
+    let nanos = u32::try_from(unix_nano % 1_000_000_000).unwrap_or_default();
     let Some(dt) = chrono::DateTime::from_timestamp(secs, nanos) else {
         return "1970-01-01 00:00:00.000000000".to_owned();
     };
@@ -4124,8 +4695,13 @@ mod tests {
     use axum::http::{HeaderMap, StatusCode};
     use axum::routing::post;
     use axum::Router;
-    use flate2::read::GzDecoder;
-    use opentelemetry_proto::tonic::common::v1::InstrumentationScope;
+
+    /// Fake sinks expect gzip NDJSON; anything else fails the test.
+    fn gunzip_text(body: &[u8]) -> String {
+        let bytes = crate::decompress::gunzip_bounded(body, usize::MAX).expect("gzip NDJSON");
+        String::from_utf8(bytes).expect("UTF-8 NDJSON")
+    }
+    use opentelemetry_proto::tonic::common::v1::{ArrayValue, InstrumentationScope, KeyValueList};
     use opentelemetry_proto::tonic::metrics::v1::{
         exponential_histogram_data_point, metric, AggregationTemporality, ExponentialHistogram,
         ExponentialHistogramDataPoint, Gauge, Histogram, HistogramDataPoint, Metric, Sum,
@@ -4245,6 +4821,7 @@ mod tests {
             export_max_attempts: 20,
             clickhouse_export_timeout: Duration::from_secs(5),
             clickhouse_breaker: ClickHouseBreakerConfig::default(),
+            clickhouse_allow_private_endpoints: true,
             datasources: DatasourceNames::defaults(),
             datasource_session_replays: "session_replays".to_owned(),
             datasource_session_replay_events: "session_replay_events".to_owned(),
@@ -4303,10 +4880,7 @@ mod tests {
         headers: HeaderMap,
         body: Bytes,
     ) -> StatusCode {
-        let mut decoded = String::new();
-        GzDecoder::new(&body[..])
-            .read_to_string(&mut decoded)
-            .expect("fake Tinybird should receive gzip NDJSON");
+        let decoded = gunzip_text(&body);
 
         drop(
             tx.send(FakeTinybirdImport {
@@ -4334,10 +4908,7 @@ mod tests {
         headers: HeaderMap,
         body: Bytes,
     ) -> StatusCode {
-        let mut decoded = String::new();
-        GzDecoder::new(&body[..])
-            .read_to_string(&mut decoded)
-            .expect("fake ClickHouse should receive gzip NDJSON");
+        let decoded = gunzip_text(&body);
 
         drop(
             tx.send(FakeClickHouseImport {
@@ -4433,10 +5004,89 @@ mod tests {
     }
 
     #[test]
+    fn bytes_attributes_decode_as_text_when_valid_utf8() {
+        let bytes = |value: &[u8]| AnyValue {
+            value: Some(any_value::Value::BytesValue(value.to_vec())),
+        };
+        // docs_langchain_ls: LangSmith sends `gen_ai.prompt` as UTF-8 JSON bytes.
+        assert_eq!(
+            any_value_string(&bytes(br#"{"messages":[{"content":"Hi"}]}"#)),
+            r#"{"messages":[{"content":"Hi"}]}"#
+        );
+        assert_eq!(any_value_string(&bytes(&[0xff, 0xfe, 0x01])), "fffe01");
+        // Valid UTF-8 that is really binary stays hex (all zero stays "").
+        assert_eq!(any_value_string(&bytes(&[0x01, 0x02, 0x7f])), "01027f");
+        assert_eq!(any_value_string(&bytes(&[0; 4])), "");
+        assert_eq!(any_value_string(&bytes(b"a\tb\r\nc")), "a\tb\r\nc");
+        // A leading BOM is kept, as the local-mode port keeps it.
+        assert_eq!(any_value_string(&bytes(b"\xef\xbb\xbfa")), "\u{feff}a");
+    }
+
+    #[test]
+    fn structured_attributes_stay_json_when_nested() {
+        let any = |value: any_value::Value| AnyValue { value: Some(value) };
+        let text = |value: &str| any(any_value::Value::StringValue(value.to_owned()));
+        let array =
+            |values: Vec<AnyValue>| any(any_value::Value::ArrayValue(ArrayValue { values }));
+        let map = |pairs: Vec<(&str, AnyValue)>| {
+            any(any_value::Value::KvlistValue(KeyValueList {
+                values: pairs
+                    .into_iter()
+                    .map(|(key, value)| KeyValue {
+                        key: key.to_owned(),
+                        key_strindex: 0,
+                        value: Some(value),
+                    })
+                    .collect(),
+            }))
+        };
+        // Flat arrays and maps are unchanged: scalars as strings.
+        assert_eq!(
+            any_value_string(&array(vec![
+                text("stop"),
+                any(any_value::Value::IntValue(1))
+            ])),
+            r#"["stop","1"]"#
+        );
+        assert_eq!(
+            any_value_string(&map(vec![("n", any(any_value::Value::BoolValue(true)))])),
+            r#"{"n":"true"}"#
+        );
+        // Structured messages decode as the JSON a reader expects, not as an
+        // array of escaped JSON strings.
+        let messages = array(vec![map(vec![
+            ("role", text("user")),
+            (
+                "parts",
+                array(vec![map(vec![
+                    ("type", text("text")),
+                    ("content", text("hi")),
+                ])]),
+            ),
+        ])]);
+        assert_eq!(
+            any_value_string(&messages),
+            r#"[{"parts":[{"content":"hi","type":"text"}],"role":"user"}]"#
+        );
+    }
+
+    #[test]
     fn timestamp_has_nano_precision() {
         assert_eq!(
             format_timestamp_nano(1_700_000_000_123_456_789),
             "2023-11-14 22:13:20.123456789"
+        );
+    }
+
+    #[test]
+    fn timestamp_outside_datetime64_range_maps_to_epoch() {
+        let epoch = "1970-01-01 00:00:00.000000000";
+        assert_eq!(format_timestamp_nano(0), epoch);
+        assert_eq!(format_timestamp_nano(u64::MAX), epoch);
+        assert_eq!(format_timestamp_nano(9_223_372_036_854_775_808), epoch);
+        assert_eq!(
+            format_timestamp_nano(9_223_372_036_854_775_807),
+            "2262-04-11 23:47:16.854775807"
         );
     }
 
@@ -5137,6 +5787,56 @@ mod tests {
         drop(std::fs::remove_dir_all(queue_dir));
     }
 
+    #[tokio::test]
+    async fn clickhouse_export_drops_a_batch_for_a_private_endpoint_address() {
+        // Production refuses non-public endpoint addresses at export time, not
+        // only at save time; this target counts any request that slips through.
+        let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let ch_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let ch_addr = ch_listener.local_addr().unwrap();
+        let ch_app = Router::new()
+            .route("/", post(counting_failing_clickhouse_handler))
+            .with_state(Arc::clone(&count));
+        tokio::spawn(async move {
+            axum::serve(ch_listener, ch_app).await.unwrap();
+        });
+
+        let queue_dir = unique_test_dir("fake-clickhouse-private-address");
+        let mut cfg = test_cfg();
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+        cfg.export_max_attempts = 3;
+        cfg.clickhouse_allow_private_endpoints = false;
+
+        let provider = Arc::new(StaticClickHouseTargetProvider {
+            target: ClickHouseTarget {
+                endpoint: format!("http://{ch_addr}"),
+                user: "ingest".to_owned(),
+                password: String::new(),
+                database: "maple".to_owned(),
+            },
+        });
+        let pipeline = TelemetryPipeline::new_with_clickhouse(cfg, Client::new(), Some(provider))
+            .await
+            .unwrap();
+        pipeline
+            .accept_logs_to(
+                "org_ready",
+                &populated_log_request(),
+                ExportDestination::ClickHouse,
+            )
+            .await
+            .unwrap();
+
+        wait_for_export_drain(queue_dir.clone(), 0, ExportDestination::ClickHouse).await;
+        assert_eq!(count.load(Ordering::SeqCst), 0);
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
     /// Holds the request open ~forever so the ClickHouse lane worker stays
     /// blocked in-flight, mimicking a slow/stalled BYO-ClickHouse target.
     async fn slow_clickhouse_handler(_body: Bytes) -> StatusCode {
@@ -5248,9 +5948,8 @@ mod tests {
     #[tokio::test]
     async fn clickhouse_breaker_sheds_after_threshold_failures() {
         // A persistently failing target must not burn the full retry budget on
-        // every batch: after `failure_threshold` failures the breaker bails the
-        // current batch and fast-sheds subsequent batches without touching the
-        // target, bounding how long it can hold the lane worker.
+        // every batch: after `failure_threshold` failures the breaker stops calling
+        // it, the batch sheds after one deferral window, and later batches shed at once.
         let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let ch_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
@@ -5270,6 +5969,7 @@ mod tests {
         cfg.queue_dir = queue_dir.clone();
         cfg.wal_shards = 1;
         cfg.batch_max_wait = Duration::from_millis(1);
+        cfg.queue_max_age = Duration::from_millis(300);
         // Generous retry budget so the breaker — not the budget — is what stops
         // the hammering.
         cfg.export_max_attempts = 20;
@@ -5331,6 +6031,195 @@ mod tests {
             2,
             "breaker-open batches must shed without hitting the target"
         );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    /// ClickHouse target that answers 503 until `healthy` flips, then 200,
+    /// counting each kind of answer.
+    #[derive(Clone, Default)]
+    struct RecoveringClickHouse {
+        healthy: Arc<std::sync::atomic::AtomicBool>,
+        failed: Arc<std::sync::atomic::AtomicUsize>,
+        delivered: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    async fn recovering_clickhouse_handler(
+        State(target): State<RecoveringClickHouse>,
+        _body: Bytes,
+    ) -> StatusCode {
+        if target.healthy.load(Ordering::SeqCst) {
+            target.delivered.fetch_add(1, Ordering::SeqCst);
+            StatusCode::OK
+        } else {
+            target.failed.fetch_add(1, Ordering::SeqCst);
+            StatusCode::SERVICE_UNAVAILABLE
+        }
+    }
+
+    #[tokio::test]
+    async fn clickhouse_breaker_open_holds_wal_cursor_until_target_recovers() {
+        // Regression for the 2026-10-13 BYO-ClickHouse 503 window: an open breaker
+        // dropped batches and advanced the cursor past them. It must hold them.
+        let target = RecoveringClickHouse::default();
+        let ch_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let ch_addr = ch_listener.local_addr().unwrap();
+        let ch_app = Router::new()
+            .route("/", post(recovering_clickhouse_handler))
+            .with_state(target.clone());
+        tokio::spawn(async move {
+            axum::serve(ch_listener, ch_app).await.unwrap();
+        });
+
+        let queue_dir = unique_test_dir("ch-breaker-holds");
+        let mut cfg = test_cfg();
+        cfg.endpoint = String::new();
+        cfg.token = String::new();
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+        cfg.clickhouse_breaker = ClickHouseBreakerConfig {
+            failure_threshold: 2,
+            cooldown: Duration::from_millis(400),
+        };
+        let provider = Arc::new(StaticClickHouseTargetProvider {
+            target: ClickHouseTarget {
+                endpoint: format!("http://{ch_addr}"),
+                user: "ingest".to_owned(),
+                password: String::new(),
+                database: "maple".to_owned(),
+            },
+        });
+        let pipeline = TelemetryPipeline::new_with_clickhouse_validation(
+            cfg,
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+            Some(provider),
+            false,
+        )
+        .await
+        .unwrap();
+
+        pipeline
+            .accept_logs_to(
+                "org_flap",
+                &populated_log_request(),
+                ExportDestination::ClickHouse,
+            )
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while target.failed.load(Ordering::SeqCst) < 2 {
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the target should fail enough to trip the breaker");
+        sleep(Duration::from_millis(100)).await;
+
+        let cursor_path = queue_dir.join("shard-000-clickhouse").join("lane.cursor");
+        assert_eq!(
+            read_cursor(&cursor_path),
+            SegmentCursor::default(),
+            "an open breaker must not advance the WAL cursor"
+        );
+        assert_eq!(target.delivered.load(Ordering::SeqCst), 0);
+
+        target.healthy.store(true, Ordering::SeqCst);
+        wait_for_export_drain(queue_dir.clone(), 0, ExportDestination::ClickHouse).await;
+        assert_eq!(
+            target.delivered.load(Ordering::SeqCst),
+            1,
+            "the held batch should be exported once the breaker closes"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    /// Fails every insert for `org_broken` and accepts everything else, counting
+    /// the accepted ones. The org is read from the INSERT's query string.
+    async fn one_org_broken_clickhouse_handler(
+        State(delivered): State<Arc<std::sync::atomic::AtomicUsize>>,
+        uri: axum::http::Uri,
+        _body: Bytes,
+    ) -> StatusCode {
+        if uri.query().unwrap_or_default().contains("org_broken") {
+            StatusCode::SERVICE_UNAVAILABLE
+        } else {
+            delivered.fetch_add(1, Ordering::SeqCst);
+            StatusCode::OK
+        }
+    }
+
+    #[tokio::test]
+    async fn clickhouse_breaker_deferral_does_not_age_out_cosharded_orgs() {
+        // One lane exports every org's ClickHouse groups in turn, so a broken org's
+        // deferral must stay short enough that a healthy org behind it is not shed.
+        let delivered = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let ch_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let ch_addr = ch_listener.local_addr().unwrap();
+        let ch_app = Router::new()
+            .route("/", post(one_org_broken_clickhouse_handler))
+            .with_state(Arc::clone(&delivered));
+        tokio::spawn(async move {
+            axum::serve(ch_listener, ch_app).await.unwrap();
+        });
+
+        let queue_dir = unique_test_dir("ch-breaker-cosharded");
+        let mut cfg = test_cfg();
+        cfg.endpoint = String::new();
+        cfg.token = String::new();
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+        // Deferral window is a quarter of this (1s); one breaker cooldown is far longer.
+        cfg.queue_max_age = Duration::from_secs(4);
+        cfg.clickhouse_breaker = ClickHouseBreakerConfig {
+            failure_threshold: 2,
+            cooldown: Duration::from_secs(30),
+        };
+        let provider = Arc::new(StaticClickHouseTargetProvider {
+            target: ClickHouseTarget {
+                endpoint: format!("http://{ch_addr}"),
+                user: "ingest".to_owned(),
+                password: String::new(),
+                database: "maple".to_owned(),
+            },
+        });
+        let pipeline = TelemetryPipeline::new_with_clickhouse_validation(
+            cfg,
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+            Some(provider),
+            false,
+        )
+        .await
+        .unwrap();
+
+        // Separate batches, so the healthy frame is age-checked after the broken wait.
+        for org in ["org_broken", "org_healthy"] {
+            pipeline
+                .accept_logs_to(org, &populated_log_request(), ExportDestination::ClickHouse)
+                .await
+                .unwrap();
+            sleep(Duration::from_millis(50)).await;
+        }
+        // Two failures (one 500ms backoff) plus the 1s window, far short of the 4s age.
+        tokio::time::timeout(Duration::from_millis(2500), async {
+            while delivered.load(Ordering::SeqCst) == 0 {
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("a healthy org must wait at most one deferral window behind a broken one");
 
         drop(std::fs::remove_dir_all(queue_dir));
     }
@@ -6689,6 +7578,149 @@ mod tests {
         queue_dir.join("shard-000-tinybird")
     }
 
+    /// A lane whose sync takes `delay`, records the file length each sync
+    /// started from (all of it is covered), and fails while `fail` is set.
+    struct SlowSync {
+        syncs: AtomicU64,
+        durable_len: AtomicU64,
+        fail: std::sync::atomic::AtomicBool,
+    }
+
+    fn slow_sync_lane(name: &str, delay: Duration) -> (WalLane, Arc<SlowSync>, PathBuf) {
+        let queue_dir = unique_test_dir(name);
+        let probe = Arc::new(SlowSync {
+            syncs: AtomicU64::new(0),
+            durable_len: AtomicU64::new(0),
+            fail: std::sync::atomic::AtomicBool::new(false),
+        });
+        let sync: WalSync = {
+            let probe = Arc::clone(&probe);
+            Arc::new(move |file: &File| {
+                let covered = file.metadata()?.len();
+                std::thread::sleep(delay);
+                probe.syncs.fetch_add(1, Ordering::SeqCst);
+                if probe.fail.load(Ordering::SeqCst) {
+                    return Err(std::io::Error::other("injected fsync failure"));
+                }
+                probe.durable_len.fetch_max(covered, Ordering::SeqCst);
+                Ok(())
+            })
+        };
+        let lane = WalLane::open(
+            0,
+            ExportDestination::Tinybird,
+            &queue_dir,
+            u64::MAX,
+            u64::MAX,
+            sync,
+        )
+        .expect("open lane");
+        (lane, probe, queue_dir)
+    }
+
+    fn encoded_test_frame(payload_bytes: usize) -> Vec<u8> {
+        encode_wal_frame(&wal_test_frame(payload_bytes)).expect("encode")
+    }
+
+    #[test]
+    fn concurrent_appends_share_syncs_and_return_only_once_covered() {
+        const WRITERS: usize = 32;
+        let (lane, probe, queue_dir) =
+            slow_sync_lane("wal-group-commit", Duration::from_millis(20));
+        let delivered = Arc::new(Mutex::new(Vec::new()));
+        std::thread::scope(|scope| {
+            (0..WRITERS).for_each(|_| {
+                scope.spawn(|| {
+                    let (sender, landed) = std::sync::mpsc::channel();
+                    let delivered = Arc::clone(&delivered);
+                    let deliver: Delivery = Box::new(move |_, start, end| {
+                        delivered.lock().expect("delivered").push(start);
+                        sender.send(end).ok();
+                    });
+                    lane.append_blocking(&encoded_test_frame(256), true, deliver)
+                        .expect("append");
+                    // Delivered before the append returned, and only after a
+                    // sync that started with this frame's bytes in the file.
+                    let end = landed.try_recv().expect("delivered before return");
+                    assert!(probe.durable_len.load(Ordering::SeqCst) >= end);
+                });
+            });
+        });
+
+        let syncs = probe.syncs.load(Ordering::SeqCst);
+        assert!(
+            syncs < WRITERS as u64,
+            "{WRITERS} concurrent appends took {syncs} syncs"
+        );
+        let delivered = delivered.lock().expect("delivered").clone();
+        let mut in_segment_order = delivered.clone();
+        in_segment_order.sort_unstable();
+        assert_eq!(
+            delivered, in_segment_order,
+            "frames reach the lane in file order"
+        );
+        assert_eq!(delivered.len(), WRITERS);
+        assert_eq!(lane.backlog_bytes(), file_len(&segment_path(&lane.dir, 0)));
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[test]
+    fn a_frame_whose_caller_gave_up_is_not_delivered() {
+        let (lane, _probe, queue_dir) = slow_sync_lane("wal-caller-gone", Duration::ZERO);
+        let ran = Arc::new(AtomicU64::new(0));
+        let counting = || -> Delivery {
+            let ran = Arc::clone(&ran);
+            Box::new(move |_, _, _| {
+                ran.fetch_add(1, Ordering::SeqCst);
+            })
+        };
+
+        let (gone, deliver) = while_caller_waits(counting());
+        drop(gone);
+        lane.append_blocking(&encoded_test_frame(64), true, deliver)
+            .expect("the frame is still made durable");
+        assert_eq!(ran.load(Ordering::SeqCst), 0, "but never reaches export");
+
+        let (waiting, deliver) = while_caller_waits(counting());
+        lane.append_blocking(&encoded_test_frame(64), true, deliver)
+            .expect("append");
+        drop(waiting);
+        assert_eq!(
+            ran.load(Ordering::SeqCst),
+            1,
+            "a waiting caller's frame is delivered"
+        );
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[test]
+    fn a_failed_sync_refuses_its_batch_and_the_lane_recovers() {
+        let (lane, probe, queue_dir) = slow_sync_lane("wal-group-commit-fail", Duration::ZERO);
+        probe.fail.store(true, Ordering::SeqCst);
+        let ran = Arc::new(AtomicU64::new(0));
+        let counting = || -> Delivery {
+            let ran = Arc::clone(&ran);
+            Box::new(move |_, _, _| {
+                ran.fetch_add(1, Ordering::SeqCst);
+            })
+        };
+        lane.append_blocking(&encoded_test_frame(64), true, counting())
+            .err()
+            .expect("an unsynced frame is not acknowledged");
+        assert_eq!(
+            ran.load(Ordering::SeqCst),
+            0,
+            "a refused frame is never delivered"
+        );
+        assert_eq!(lane.backlog_bytes(), 0, "nor counted as backlog");
+
+        probe.fail.store(false, Ordering::SeqCst);
+        lane.append_blocking(&encoded_test_frame(64), true, counting())
+            .expect("the next sync succeeds");
+        assert_eq!(ran.load(Ordering::SeqCst), 1);
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
     #[tokio::test]
     async fn wal_reclaims_segments_once_the_cursor_passes_them() {
         // The lane cap counts bytes on disk, so a lane only keeps accepting
@@ -6951,9 +7983,21 @@ mod tests {
         #[derive(Clone, Default)]
         pub(super) struct FakeS3 {
             objects: Arc<StdMutex<Objects>>,
+            /// Every object request, as `"<METHOD> <key>"`, in arrival order.
+            requests: Arc<StdMutex<Vec<String>>>,
+            /// PUTs to keys under this prefix answer 500.
+            failing_puts: Arc<StdMutex<Option<String>>>,
         }
 
         impl FakeS3 {
+            pub(super) fn requests(&self) -> Vec<String> {
+                self.requests.lock().unwrap().clone()
+            }
+
+            pub(super) fn fail_puts_under(&self, prefix: &str) {
+                *self.failing_puts.lock().unwrap() = Some(prefix.to_owned());
+            }
+
             pub(super) fn keys(&self) -> Vec<String> {
                 self.objects.lock().unwrap().keys().cloned().collect()
             }
@@ -6983,9 +8027,18 @@ mod tests {
             method: axum::http::Method,
             body: AxumBytes,
         ) -> (StatusCode, Vec<u8>) {
+            state
+                .requests
+                .lock()
+                .unwrap()
+                .push(format!("{method} {key}"));
             let mut objects = state.objects.lock().unwrap();
             match method {
                 axum::http::Method::PUT => {
+                    let failing = state.failing_puts.lock().unwrap().clone();
+                    if failing.is_some_and(|prefix| key.starts_with(&prefix)) {
+                        return (StatusCode::INTERNAL_SERVER_ERROR, Vec::new());
+                    }
                     // Real S3 refuses a PUT without Content-Length (411
                     // MissingContentLength); accepting one hid the heartbeat bug.
                     if !headers.contains_key("content-length") {
@@ -7189,6 +8242,168 @@ mod tests {
         drop(std::fs::remove_dir_all(queue_dir));
     }
 
+    /// Stage a dead owner with one two-frame segment per sequence on lane
+    /// `shard-000-tinybird`, and return the segment keys.
+    fn stage_dead_owner(bucket: &fake_s3::FakeS3, owner: &str, seqs: &[u64]) -> Vec<String> {
+        let frame = wal_test_frame(64);
+        let mut segment = encode_wal_frame(&frame).unwrap();
+        segment.extend(encode_wal_frame(&frame).unwrap());
+        let long_dead = chrono::Duration::hours(1);
+        bucket.put_aged(&format!("wal/v1/owners/{owner}"), Vec::new(), long_dead);
+        seqs.iter()
+            .map(|seq| {
+                let key = format!("wal/v1/segments/{owner}/shard-000-tinybird/{seq:012}.seg");
+                bucket.put_aged(&key, segment.clone(), long_dead);
+                key
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn recovery_releases_each_segment_before_fetching_the_next() {
+        // Fetching a dead owner's whole backlog before replaying any of it held
+        // all of it in memory at once. Each segment must be re-committed,
+        // re-shipped and deleted before the next one is read.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let keys = stage_dead_owner(&bucket, "task-that-died", &[3, 4, 5]);
+
+        let queue_dir = unique_test_dir("wal-streamed-recovery");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let wal = ShardedWal::open(&cfg).expect("open WAL");
+        let store = test_wal_store(&endpoint);
+        let reship_prefix = format!("PUT wal/v1/segments/{}/", store.owner());
+        wal.recover_orphans(&cfg, &store).await;
+
+        assert_eq!(wal.replay(0).await.expect("replay").len(), 6);
+        let requests = bucket.requests();
+        let at = |request: &str| {
+            requests
+                .iter()
+                .position(|seen| seen == request)
+                .unwrap_or_else(|| panic!("no {request} in {requests:?}"))
+        };
+        for (index, key) in keys.iter().enumerate() {
+            let fetched = at(&format!("GET {key}"));
+            let deleted = at(&format!("DELETE {key}"));
+            let reshipped = requests[fetched..deleted]
+                .iter()
+                .filter(|request| request.starts_with(&reship_prefix))
+                .count();
+            assert_eq!(
+                reshipped, 1,
+                "{key} is re-shipped before it is deleted: {requests:?}"
+            );
+            if let Some(next) = keys.get(index + 1) {
+                assert!(
+                    deleted < at(&format!("GET {next}")),
+                    "{key} is released before {next} is fetched: {requests:?}"
+                );
+            }
+        }
+        assert!(
+            bucket
+                .keys()
+                .iter()
+                .all(|key| !key.contains("task-that-died")),
+            "{:?}",
+            bucket.keys()
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_source_that_spans_two_local_segments_re_ships_both() {
+        // A segment cap under one frame seals after every append, so the source's
+        // two frames land in two local segments and both must ship first.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let keys = stage_dead_owner(&bucket, "task-that-died", &[3]);
+
+        let queue_dir = unique_test_dir("wal-recovery-two-segments");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, 16);
+        let wal = ShardedWal::open(&cfg).expect("open WAL");
+        let store = test_wal_store(&endpoint);
+        let reship_prefix = format!("PUT wal/v1/segments/{}/", store.owner());
+        wal.recover_orphans(&cfg, &store).await;
+
+        assert_eq!(wal.replay(0).await.expect("replay").len(), 2);
+        let requests = bucket.requests();
+        let deleted = requests
+            .iter()
+            .position(|request| *request == format!("DELETE {}", keys[0]))
+            .unwrap_or_else(|| panic!("the source is released: {requests:?}"));
+        let reshipped = requests[..deleted]
+            .iter()
+            .filter(|request| request.starts_with(&reship_prefix))
+            .count();
+        assert_eq!(reshipped, 2, "{requests:?}");
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn segments_left_on_disk_by_the_last_boot_are_shipped_at_recovery() {
+        // A boot opens a fresh segment above the ones it found, and the shipper
+        // only hears about segments sealed after it attaches.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let queue_dir = unique_test_dir("wal-leftover-segments");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let leftover = {
+            let wal = ShardedWal::open(&cfg).expect("open WAL");
+            wal.append(0, &wal_test_frame(64)).await.expect("append").0
+        };
+
+        let wal = ShardedWal::open(&cfg).expect("reopen WAL");
+        let store = test_wal_store(&endpoint);
+        wal.recover_orphans(&cfg, &store).await;
+
+        let shipped = format!(
+            "wal/v1/segments/{}/shard-000-tinybird/{leftover:012}.seg",
+            store.owner()
+        );
+        assert!(bucket.get(&shipped).is_some(), "{:?}", bucket.keys());
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_segment_that_fails_to_re_ship_keeps_its_source() {
+        // Deleting the source after a failed re-ship left the frames only on this
+        // task's disk, which is exactly what the durability tier rules out.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let keys = stage_dead_owner(&bucket, "task-that-died", &[3, 4]);
+
+        let queue_dir = unique_test_dir("wal-reship-fails");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let wal = ShardedWal::open(&cfg).expect("open WAL");
+        let store = test_wal_store(&endpoint);
+        bucket.fail_puts_under(&format!("wal/v1/segments/{}/", store.owner()));
+        wal.recover_orphans(&cfg, &store).await;
+
+        assert_eq!(
+            wal.replay(0).await.expect("replay").len(),
+            2,
+            "the frames are still committed locally"
+        );
+        let remaining = bucket.keys();
+        assert!(remaining.contains(&keys[0]), "{remaining:?}");
+        assert!(remaining.contains(&keys[1]), "{remaining:?}");
+        assert!(
+            !bucket.requests().contains(&format!("GET {}", keys[1])),
+            "recovery of the owner stops at the first failed re-ship"
+        );
+        assert!(
+            remaining.contains(&"wal/v1/owners/task-that-died".to_owned()),
+            "the owner stays discoverable for a later retry: {remaining:?}"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
     #[tokio::test]
     async fn only_one_task_can_claim_an_owner() {
         // Two tasks booting into the same bucket at once must not both replay the
@@ -7235,21 +8450,150 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn a_clean_drain_ships_nothing_but_an_unexported_tail_still_ships() {
+        // The shutdown seal leaves the cursor parked at the end of a segment it
+        // fully exported; shipping that one only buys duplicates on recovery.
+        let queue_dir = unique_test_dir("wal-clean-drain");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let wal = ShardedWal::open(&cfg).expect("open WAL");
+        wal.attach_object_store(&test_wal_store(&endpoint));
+        let frame = wal_test_frame(200);
+
+        let (seq, _, end) = wal.append(0, &frame).await.expect("append");
+        wal.mark_exported(0, SegmentCursor { seq, offset: end }, end)
+            .await
+            .expect("mark_exported");
+        assert_eq!(
+            wal.flush_to_object_store().await,
+            0,
+            "a drained lane owes nothing"
+        );
+
+        let (_, _, tail) = wal.append(0, &frame).await.expect("append tail");
+        assert_eq!(
+            wal.flush_to_object_store().await,
+            tail,
+            "the unexported tail ships"
+        );
+        sleep(Duration::from_millis(100)).await;
+        let segments: Vec<_> = bucket
+            .keys()
+            .into_iter()
+            .filter(|key| key.contains("/segments/"))
+            .collect();
+        assert_eq!(
+            segments.len(),
+            1,
+            "only the tail is in the bucket: {segments:?}"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn segments_shipped_at_shutdown_are_claimed_by_the_next_boot() {
+        // Retiring used to only delete the heartbeat, which left the owner
+        // invisible to recovery and its shutdown segments stranded in the bucket.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let frame = wal_test_frame(64);
+
+        let old_dir = unique_test_dir("wal-retired-owner");
+        std::fs::create_dir_all(&old_dir).unwrap();
+        let old_cfg = segmented_cfg(old_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let old_wal = ShardedWal::open(&old_cfg).expect("open WAL");
+        // No shipper attached, so its async upload cannot race the cleanup.
+        let old_store = test_wal_store(&endpoint);
+        old_store.heartbeat().await.expect("heartbeat");
+        old_wal.append(0, &frame).await.expect("append");
+        assert!(
+            old_wal.flush_segments_to(&old_store).await > 0,
+            "the undrained tail ships"
+        );
+        old_store.retire().await.expect("retire");
+        let retired = old_store.owner().to_owned();
+
+        // Booting right away: no staleness window to wait out.
+        let new_dir = unique_test_dir("wal-retired-successor");
+        std::fs::create_dir_all(&new_dir).unwrap();
+        let new_cfg = segmented_cfg(new_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let new_wal = ShardedWal::open(&new_cfg).expect("open WAL");
+        new_wal
+            .recover_orphans(&new_cfg, &test_wal_store(&endpoint))
+            .await;
+
+        let replayed = new_wal.replay(0).await.expect("replay");
+        assert_eq!(replayed.len(), 1, "the shipped frame is recovered");
+        let keys = bucket.keys();
+        assert!(
+            keys.iter().all(|key| !key.contains(&retired)),
+            "the retired owner's segments and markers are cleaned up: {keys:?}"
+        );
+
+        drop(std::fs::remove_dir_all(old_dir));
+        drop(std::fs::remove_dir_all(new_dir));
+    }
+
+    #[tokio::test]
+    async fn an_owner_with_unrecovered_segments_stays_claimable() {
+        // Releasing the owner after a partial recovery dropped its last discovery
+        // path, so the segments it still held were never retried.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let frame = wal_test_frame(64);
+
+        let old_dir = unique_test_dir("wal-partial-owner");
+        std::fs::create_dir_all(&old_dir).unwrap();
+        let old_cfg = segmented_cfg(old_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let old_wal = ShardedWal::open(&old_cfg).expect("open WAL");
+        let old_store = test_wal_store(&endpoint);
+        old_store.heartbeat().await.expect("heartbeat");
+        old_wal.append(0, &frame).await.expect("append");
+        assert!(old_wal.flush_segments_to(&old_store).await > 0);
+        // A lane this binary cannot place, so recovery has to leave it behind.
+        old_store
+            .put_segment("shard-000-unknown", 0, b"unplaceable".to_vec())
+            .await
+            .expect("put unknown-lane segment");
+        old_store.retire().await.expect("retire");
+        let retired = old_store.owner().to_owned();
+
+        let new_dir = unique_test_dir("wal-partial-successor");
+        std::fs::create_dir_all(&new_dir).unwrap();
+        let new_cfg = segmented_cfg(new_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let new_wal = ShardedWal::open(&new_cfg).expect("open WAL");
+        new_wal
+            .recover_orphans(&new_cfg, &test_wal_store(&endpoint))
+            .await;
+
+        assert_eq!(new_wal.replay(0).await.expect("replay").len(), 1);
+        let keys = bucket.keys();
+        assert!(
+            keys.iter()
+                .any(|key| key.ends_with(&format!("/retired/{retired}"))),
+            "the retired marker survives while a segment is left: {keys:?}"
+        );
+
+        drop(std::fs::remove_dir_all(old_dir));
+        drop(std::fs::remove_dir_all(new_dir));
+    }
+
     /// Cross-language contract with the Prometheus scraper (apps/scraper).
     ///
     /// The scraper converts scraped exposition text into OTLP/JSON
-    /// (`convertFamiliesToOtlp` in apps/scraper/src/prometheus/otlp.ts) and
-    /// POSTs it to this gateway's `/v1/metrics` with the org's public ingest
-    /// key, so scraped metrics are billed and warehouse-routed like customer
-    /// traffic. The fixture below is generated by that converter and pinned
-    /// on the TS side in apps/scraper/src/prometheus/otlp.test.ts ("gateway
-    /// contract fixture"). If either side changes shape, both tests must be
-    /// updated together.
+    /// (`convertFamiliesToOtlp` in lib/prometheus-otlp, with the scraper's
+    /// `otlpContext`) and POSTs it to this gateway's `/v1/metrics` with the
+    /// org's public ingest key, so scraped metrics are billed and
+    /// warehouse-routed like customer traffic. The fixture below is pinned on
+    /// the TS side in apps/scraper/src/Scraper.test.ts ("gateway contract
+    /// fixture"). If either side changes shape, both tests must be updated
+    /// together.
     mod scraper_contract {
         use super::*;
 
         const SCRAPER_FIXTURE: &str =
-            include_str!("../../scraper/src/prometheus/__fixtures__/otlp-export.json");
+            include_str!("../../scraper/src/__fixtures__/otlp-export.json");
 
         fn rows_by_datasource(frames: Vec<EncodedFrame>) -> BTreeMap<String, Vec<Value>> {
             frames
@@ -7266,6 +8610,29 @@ mod tests {
                     (frame.datasource, rows)
                 })
                 .collect()
+        }
+
+        /// Integer points sent over OTLP/JSON, as a number or a decimal string,
+        /// must reach the row as that value. They used to land as 0.
+        #[test]
+        fn otlp_json_int_points_encode_their_value() {
+            let mut json: Value = serde_json::from_str(
+                r#"{"resourceMetrics":[{"resource":{"attributes":[{"key":"maple_org_id","value":{"stringValue":"org_1"}}]},"scopeMetrics":[{"metrics":[{"name":"probe.gauge","gauge":{"dataPoints":[{"timeUnixNano":"1753660000000000000","asInt":42},{"timeUnixNano":"1753660000000000001","asInt":"43"}]}},{"name":"probe.sum","sum":{"aggregationTemporality":2,"isMonotonic":true,"dataPoints":[{"timeUnixNano":"1753660000000000000","asInt":44},{"timeUnixNano":"1753660000000000001","asInt":"45"}]}}]}]}]}"#,
+            )
+            .unwrap();
+            crate::otlp_json::normalize(&mut json, "resourceMetrics");
+            let request: ExportMetricsServiceRequest = serde_json::from_value(json).unwrap();
+
+            let (frames, _) = encode_metrics(&test_cfg().datasources, "org_1", &request).unwrap();
+            let rows = rows_by_datasource(frames);
+            let values = |datasource: &str| {
+                rows[datasource]
+                    .iter()
+                    .map(|row| row["value"].clone())
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(values("metrics_gauge"), vec![json!(42.0), json!(43.0)]);
+            assert_eq!(values("metrics_sum"), vec![json!(44.0), json!(45.0)]);
         }
 
         #[test]

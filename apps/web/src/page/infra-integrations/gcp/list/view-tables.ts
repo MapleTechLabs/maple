@@ -1,0 +1,740 @@
+import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
+import {
+	gcpQueryInsightsConsoleUrl,
+	gcpSqlEngine,
+	gcpSqlSize,
+} from "../../../../components/infra/gcp/cloud-sql-signals"
+import {
+	GCP_DATABASE_RULES,
+	GCP_FILLING_FRACTION,
+	GCP_LIMIT_FRACTION,
+	GCP_REPLICA_LAG_SECONDS,
+	GCP_SERVICE_RULES,
+	GCP_SLOW_P95_SECONDS,
+	GCP_STALE_SECONDS,
+	GCP_SUBSCRIPTION_RULES,
+	GCP_WORKLOAD_RULES,
+	gcpBacklogGrowth,
+	gcpConnectionShare,
+	gcpQueryInsightsOff,
+	gcpRatedShare,
+	rowHealth,
+	type GcpDatabaseRow,
+	type GcpServiceRow,
+	type GcpSubscriptionRow,
+	type GcpWorkloadRow,
+	type GcpWorkloadScope,
+} from "../../../../components/infra/gcp/list-model"
+import { formatGcpValue, GCP_INFRA_COLUMNS, type GcpColumn } from "../../../../components/infra/gcp/tabs"
+import { BAR_VALUE_TONE } from "../../../../components/infra/severity-tokens"
+import { errorRateClass } from "@maple/ui/lib/error-rate"
+import {
+	EMPTY_VALUE,
+	formatErrorRate,
+	formatLatency,
+	formatNumber,
+	formatPercentColumn,
+} from "@maple/ui/lib/format"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { utilizationLevel } from "@maple/ui/lib/utilization"
+import { cn } from "@maple/ui/lib/utils"
+import type { Html } from "foldkit/html"
+import { meter, segmentedBar } from "@maple/views/ui/meter"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { textLinkClass } from "@maple/views/ui/text-link"
+import {
+	columnHead,
+	dataTable,
+	dataTableEmpty,
+	skeletonRows,
+	ROW_LINK_CLASS,
+} from "../../../infra/kit/data-table"
+import { type MetaItem, metaLine } from "../../../infra/kit/meta-line"
+import { gcpServiceIcon } from "../service-icon"
+import {
+	GCP_DATABASE_BAND,
+	GCP_SERVICE_BAND,
+	GCP_SUBSCRIPTION_BAND,
+	type GcpBandSpec,
+	healthDot,
+} from "./view-band"
+import {
+	type H,
+	NAME,
+	NUMBER,
+	type RowsContext,
+	rowSlot,
+	spark,
+	SUB,
+	volumeCell,
+	volumeHead,
+	workloadHref,
+	workloadRow,
+} from "./view-rows"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstackClass } from "@maple/views/ui/stack"
+import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr, String as Str } from "effect"
+
+// `GcpServicesTable`, `GcpSubscriptionsTable`, `GcpDatabasesTable` and `GcpServiceTable`.
+
+const seconds = (value: number) => formatLatency(value * 1000)
+const head = (h: H, label: string, width: string, align?: "right", hidden?: string) =>
+	columnHead(h, { label, width, align, hidden })
+const dotLane = (h: H) => h.div([h.Class("w-2 shrink-0")])
+
+const placeItems = (
+	row: { readonly region: string | undefined; readonly project: string | undefined },
+	showProject: boolean,
+): ReadonlyArray<MetaItem> => [row.region, showProject ? row.project : undefined]
+
+const rowsOrEmpty = (h: H, rows: ReadonlyArray<Html>, emptyMessage: string) =>
+	rows.length === 0 ? [dataTableEmpty(h, [emptyMessage])] : rows
+
+// Services ---------------------------------------------------------------------------------------
+
+const SERVICE_KIND = { cloudRun: "Cloud Run", cloudFunctions: "Function 1st gen" } as const
+
+const statusMix = (h: H, row: GcpServiceRow): Html => {
+	// An idle service still bills instance time; say so here, not in the sub-line, so the place fits.
+	if (row.requests === 0)
+		return GCP_SERVICE_RULES.inScope(row, "idle")
+			? h.div(
+					[
+						h.Class(cn(columnClass({ width: "44", from: "md" }), SUB)),
+						h.Title("No requests, instance time billed"),
+					],
+					["idle, still billed"],
+				)
+			: h.div([h.Class(cn(columnClass({ width: "44", from: "md" }), SUB))], ["no traffic"])
+	const failedShare = row.failed / row.requests
+	const clientShare = row.clientErrors / row.requests
+	const rated = GCP_SERVICE_RULES.inScope(row, "serving5xx")
+	const failedWord = row.service === "cloudRun" ? "5xx" : "failed"
+	const label =
+		row.failed > 0 && (rated || clientShare === 0)
+			? {
+					text: `${formatPercentColumn(failedShare)} ${failedWord}`,
+					className: rated ? TONE_TEXT.crit : undefined,
+				}
+			: clientShare > 0
+				? { text: `${formatPercentColumn(clientShare)} 4xx`, className: undefined }
+				: { text: row.service === "cloudRun" ? "no errors" : "all ok", className: undefined }
+	const ok = row.requests - row.clientErrors - row.failed
+	return h.div(
+		[h.Class("hidden w-44 items-center gap-2.5 md:flex")],
+		[
+			segmentedBar(h, {
+				className: "w-20 shrink-0 gap-px bg-transparent",
+				minVisible: 2,
+				label: `ok ${ok}, 4xx ${row.clientErrors}, ${failedWord} ${row.failed}`,
+				segments: [
+					{ key: "ok", value: ok, className: "bg-severity-info" },
+					{ key: "4xx", value: row.clientErrors, className: "bg-severity-warn" },
+					{ key: "failed", value: row.failed, className: "bg-severity-error" },
+				],
+			}),
+			h.span(
+				[
+					h.Class(
+						cn(
+							"whitespace-nowrap font-mono text-2xs tabular-nums text-muted-foreground",
+							label.className,
+						),
+					),
+				],
+				[label.text],
+			),
+		],
+	)
+}
+
+/** Below `md` the Status cell is hidden, so the idle billing note rides on the sub-line there. */
+/** The idle note rides inside the last item, separator included, so hiding it at `md` leaves no stray dot. */
+const serviceMeta = (h: H, row: GcpServiceRow, showProject: boolean): ReadonlyArray<MetaItem> => {
+	// Only items metaLine will draw: the note joins the last shown one, never an empty slot.
+	const items = Arr.filter(
+		[SERVICE_KIND[row.service], ...placeItems(row, showProject)],
+		(item): item is Html | string => item !== null && item !== undefined && item !== false && item !== "",
+	)
+	if (!GCP_SERVICE_RULES.inScope(row, "idle")) return items
+	// Flex drops a leading space, so the note carries its own separator and gap, like metaLine's.
+	const note = h.span(
+		[h.Class("flex items-center gap-x-2 md:hidden")],
+		[h.span([h.Class("text-foreground-faint")], ["·"]), "idle, still billed"],
+	)
+	const last = items.at(-1)
+	if (last === undefined) return [note]
+	// A string keeps metaLine's 28ch cap, which it applies only to plain strings.
+	const capped = typeof last === "string" ? h.span([h.Class("max-w-[28ch] truncate")], [last]) : last
+	return [...items.slice(0, -1), h.span([h.Class("flex min-w-0 items-center gap-x-2")], [capped, note])]
+}
+
+export const servicesTable = (
+	h: H,
+	rows: ReadonlyArray<GcpServiceRow>,
+	emptyMessage: string,
+	ctx: RowsContext,
+): Html =>
+	dataTable(
+		h,
+		{ ariaLabel: "Services" },
+		[
+			dotLane(h),
+			head(h, "Service", NAME),
+			volumeHead(h, "Requests"),
+			head(h, "Status mix", "w-44", undefined, "hidden md:flex"),
+			head(h, "5xx", "w-16", "right"),
+			head(h, "Latency p95", "w-24", "right"),
+			head(h, "Instances", "w-20", "right", "hidden lg:flex"),
+			head(h, "CPU p95", "w-16", "right", "hidden md:flex"),
+		],
+		rowsOrEmpty(
+			h,
+			Arr.map(rows, (row) => {
+				const rate = gcpRatedShare(row.failed, row.requests)
+				const cpuLevel = utilizationLevel(row.cpuP95 ?? 0)
+				return workloadRow(
+					h,
+					{
+						row,
+						rules: GCP_SERVICE_RULES,
+						spec: GCP_SERVICE_BAND,
+						meta: serviceMeta(h, row, ctx.showProject),
+						timeSearch: ctx.timeSearch,
+					},
+					[
+						volumeCell(
+							h,
+							ctx,
+							rowSlot(`gcp-svc-${row.service}`, row.keys),
+							row.requests,
+							row.volume,
+						),
+						statusMix(h, row),
+						h.div(
+							[
+								h.Class(
+									cn(
+										"w-16",
+										NUMBER,
+										rate === undefined ? "text-muted-foreground" : errorRateClass(rate),
+									),
+								),
+							],
+							[rate === undefined ? EMPTY_VALUE : formatErrorRate(rate)],
+						),
+						h.div(
+							[
+								h.Class(
+									cn(
+										"w-24",
+										NUMBER,
+										(row.latencyP95 ?? 0) >= GCP_SLOW_P95_SECONDS
+											? TONE_TEXT.warn
+											: "text-foreground-soft",
+									),
+								),
+							],
+							[row.latencyP95 === undefined ? EMPTY_VALUE : seconds(row.latencyP95)],
+						),
+						h.div(
+							[h.Class(cn("hidden w-20 text-foreground-soft lg:block", NUMBER))],
+							[
+								row.instances === undefined
+									? EMPTY_VALUE
+									: row.instances.toLocaleString(ctx.locale, { maximumFractionDigits: 1 }),
+							],
+						),
+						h.div(
+							[h.Class(cn("hidden w-16 md:block", NUMBER, BAR_VALUE_TONE[cpuLevel]))],
+							[row.cpuP95 === undefined ? EMPTY_VALUE : formatPercentColumn(row.cpuP95)],
+						),
+					],
+				)
+			}),
+			emptyMessage,
+		),
+	)
+
+// Pub/Sub subscriptions --------------------------------------------------------------------------
+
+const growthLabel = (growth: number) =>
+	growth > 0 ? `+${formatNumber(growth)}` : growth < 0 ? `−${formatNumber(-growth)}` : "steady"
+
+export const subscriptionsTable = (
+	h: H,
+	rows: ReadonlyArray<GcpSubscriptionRow>,
+	emptyMessage: string,
+	ctx: RowsContext,
+): Html =>
+	dataTable(
+		h,
+		{ ariaLabel: "Pub/Sub subscriptions" },
+		[
+			dotLane(h),
+			head(h, "Subscription", NAME),
+			volumeHead(h, "Delivered"),
+			head(h, "Backlog", "w-52"),
+			head(h, "Oldest unacked", "w-28", "right"),
+			head(h, "Push failed", "w-20", "right", "hidden md:flex"),
+			head(h, "Dead-lettered", "w-24", "right", "hidden md:flex"),
+		],
+		rowsOrEmpty(
+			h,
+			Arr.map(rows, (row) => {
+				const growing = GCP_SUBSCRIPTION_RULES.inScope(row, "backlogGrowing")
+				const growth = gcpBacklogGrowth(row)
+				const pushRate = gcpRatedShare(row.pushFailed, row.pushRequests)
+				return workloadRow(
+					h,
+					{
+						row,
+						rules: GCP_SUBSCRIPTION_RULES,
+						spec: GCP_SUBSCRIPTION_BAND,
+						meta: [
+							row.pushRequests > 0 ? "push" : "pull",
+							ctx.showProject ? row.project : undefined,
+						],
+						timeSearch: ctx.timeSearch,
+					},
+					[
+						volumeCell(
+							h,
+							ctx,
+							rowSlot("gcp-sub-delivered", row.keys),
+							row.delivered,
+							row.deliveredSpark,
+						),
+						h.div(
+							[h.Class("flex w-52 items-center gap-3")],
+							[
+								h.div(
+									[h.Class("flex w-16 shrink-0 flex-col")],
+									[
+										h.span(
+											[
+												h.Class(
+													cn(
+														typographyClass({
+															size: "xs",
+															mono: true,
+															numeric: true,
+														}),
+														growing ? TONE_TEXT.crit : "text-foreground-soft",
+													),
+												),
+											],
+											[
+												row.backlog === undefined
+													? EMPTY_VALUE
+													: formatNumber(row.backlog),
+											],
+										),
+										...(growth === undefined
+											? []
+											: [h.span([h.Class(SUB)], [growthLabel(growth)])]),
+									],
+								),
+								spark(
+									h,
+									ctx,
+									rowSlot("gcp-sub-backlog", row.keys),
+									row.backlogSpark,
+									growing ? "--severity-error" : "--muted-foreground",
+								),
+							],
+						),
+						h.div(
+							[
+								h.Class(
+									cn(
+										"w-28",
+										NUMBER,
+										(row.oldestUnackedSeconds ?? 0) >= GCP_STALE_SECONDS
+											? TONE_TEXT.warn
+											: "text-foreground-soft",
+									),
+								),
+							],
+							[
+								row.oldestUnackedSeconds === undefined
+									? EMPTY_VALUE
+									: seconds(row.oldestUnackedSeconds),
+							],
+						),
+						h.div(
+							[
+								h.Class(
+									cn(
+										"hidden w-20 md:block",
+										NUMBER,
+										pushRate === undefined
+											? "text-muted-foreground"
+											: errorRateClass(pushRate),
+									),
+								),
+							],
+							[
+								row.pushRequests === 0
+									? "pull"
+									: pushRate === undefined
+										? EMPTY_VALUE
+										: formatErrorRate(pushRate),
+							],
+						),
+						h.div(
+							[
+								h.Class(
+									cn(
+										"hidden w-24 md:block",
+										NUMBER,
+										row.deadLettered > 0 ? TONE_TEXT.crit : "text-foreground-soft",
+									),
+								),
+							],
+							[formatNumber(row.deadLettered)],
+						),
+					],
+				)
+			}),
+			emptyMessage,
+		),
+	)
+
+// Cloud SQL instances ----------------------------------------------------------------------------
+
+const quotaTone = (value: number) =>
+	value >= GCP_LIMIT_FRACTION ? "crit" : value >= GCP_FILLING_FRACTION ? "warn" : "neutral"
+
+const quotaText = (value: number | undefined) => {
+	const tone = quotaTone(value ?? 0)
+	return tone === "neutral" ? "text-foreground-soft" : TONE_TEXT[tone]
+}
+
+const quotaCell = (h: H, value: number | undefined, hidden?: string): Html =>
+	h.div(
+		[h.Class(cn("flex w-20 flex-col items-end gap-1", hidden))],
+		[
+			h.span(
+				[h.Class(cn(typographyClass({ size: "xs", mono: true, numeric: true }), quotaText(value)))],
+				[value === undefined ? EMPTY_VALUE : formatPercentColumn(value)],
+			),
+			meter(h, { value: value ?? 0, tone: quotaTone(value ?? 0), className: "w-14" }),
+		],
+	)
+
+const replicasItem = (h: H, row: GcpDatabaseRow): MetaItem => {
+	if (row.replicas.length === 0) {
+		if (row.replicaLagSeconds === undefined) return undefined
+		return h.span(row.replicaLagSeconds >= GCP_REPLICA_LAG_SECONDS ? [h.Class(TONE_TEXT.warn)] : [], [
+			"replica, lag ",
+			seconds(row.replicaLagSeconds),
+		])
+	}
+	const lags = Arr.flatMap(row.replicas, (replica) =>
+		replica.lagSeconds === undefined ? [] : [replica.lagSeconds],
+	)
+	const worst = lags.length === 0 ? undefined : Math.max(...lags)
+	const count = row.replicas.length === 1 ? "1 replica" : `${row.replicas.length} replicas`
+	return h.span((worst ?? 0) >= GCP_REPLICA_LAG_SECONDS ? [h.Class(TONE_TEXT.warn)] : [], [
+		worst === undefined
+			? count
+			: `${count}, lag ${row.replicas.length === 1 ? "" : "up to "}${seconds(worst)}`,
+	])
+}
+
+const databaseMeta = (h: H, row: GcpDatabaseRow, showProject: boolean): ReadonlyArray<MetaItem> => [
+	gcpSqlEngine(row.engine ?? null),
+	row.instance === undefined ? undefined : gcpSqlSize(row.instance),
+	replicasItem(h, row),
+	...placeItems(row, showProject),
+]
+
+const isMysql = (row: GcpDatabaseRow) => {
+	const version = row.instance?.databaseVersion
+	return version !== null && version !== undefined && Str.startsWith("MYSQL")(version)
+}
+
+const queriesCell = (h: H, row: GcpDatabaseRow, ctx: RowsContext): Html =>
+	row.queries !== undefined
+		? h.div(
+				[h.Class("hidden md:block")],
+				[volumeCell(h, ctx, rowSlot("gcp-sql-queries", row.keys), row.queries, row.queriesSpark)],
+			)
+		: h.div(
+				[h.Class("hidden w-44 items-center gap-3 md:flex")],
+				[
+					h.span(
+						[h.Class("w-[56px] shrink-0 font-mono text-xs text-muted-foreground")],
+						[EMPTY_VALUE],
+					),
+					...(gcpQueryInsightsOff(row) ? [h.span([h.Class(SUB)], ["Insights off"])] : []),
+				],
+			)
+
+const queryP95Cell = (h: H, row: GcpDatabaseRow): Html => {
+	const slow = (row.queryP95 ?? 0) >= GCP_SLOW_P95_SECONDS
+	return h.div(
+		[h.Class("flex w-20 flex-col items-end")],
+		[
+			h.span(
+				[h.Class(cn(NUMBER, slow ? TONE_TEXT.warn : "text-foreground-soft"))],
+				[row.queryP95 === undefined ? EMPTY_VALUE : seconds(row.queryP95)],
+			),
+			...(isMysql(row) || row.slowQueries > 0
+				? [
+						h.span(
+							[h.Class(cn(SUB, row.slowQueries > 0 && TONE_TEXT.warn))],
+							[formatNumber(row.slowQueries), " slow"],
+						),
+					]
+				: []),
+		],
+	)
+}
+
+const connectionsCell = (h: H, row: GcpDatabaseRow, locale: string): Html => {
+	const max = row.instance?.maxConnections ?? null
+	const share = gcpConnectionShare(row)
+	const idle = Math.round(row.idleInTransaction ?? 0)
+	const count = (value: number) => value.toLocaleString(locale, { maximumFractionDigits: 0 })
+	return h.div(
+		[h.Class("flex w-36 flex-col items-end")],
+		[
+			h.span(
+				[h.Class(cn(NUMBER, quotaText(share)))],
+				[
+					row.connections === undefined
+						? EMPTY_VALUE
+						: max === null
+							? count(row.connections)
+							: `${count(row.connections)} / ${count(max)}`,
+				],
+			),
+			...(idle > 0
+				? [h.span([h.Class(cn(SUB, TONE_TEXT.warn))], [formatNumber(idle), " idle in transaction"])]
+				: row.instance !== undefined && max === null
+					? [h.span([h.Class(SUB)], ["no max reported"])]
+					: []),
+		],
+	)
+}
+
+const databasesFooter = (h: H, rows: ReadonlyArray<GcpDatabaseRow>): ReadonlyArray<Html> => {
+	const replicas = Arr.flatMap(rows, (row) => row.replicas)
+	const off = Arr.filter(rows, gcpQueryInsightsOff)
+	if (replicas.length === 0 && off.length === 0) return []
+	return [
+		h.div(
+			[
+				h.Class(
+					"flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-2.5 font-mono text-2xs text-muted-foreground",
+				),
+			],
+			[
+				h.span(
+					[],
+					replicas.length === 0
+						? []
+						: [
+								Arr.join(
+									[
+										"Read replicas fold into their primary",
+										...Arr.map(replicas, (replica) =>
+											replica.lagSeconds === undefined
+												? replica.name
+												: `${replica.name} lags ${seconds(replica.lagSeconds)}`,
+										),
+									],
+									" · ",
+								),
+							],
+				),
+				h.span(
+					[h.Class("flex flex-wrap gap-x-4")],
+					Arr.map(off, (row) =>
+						h.a(
+							[
+								h.Class(textLinkClass()),
+								h.Href(gcpQueryInsightsConsoleUrl(row.project ?? "", row.name)),
+								h.Rel("noreferrer"),
+								h.Target("_blank"),
+							],
+							["Enable Query Insights on ", row.name],
+						),
+					),
+				),
+			],
+		),
+	]
+}
+
+export const databasesTable = (
+	h: H,
+	rows: ReadonlyArray<GcpDatabaseRow>,
+	emptyMessage: string,
+	ctx: RowsContext,
+): Html =>
+	dataTable(
+		h,
+		{ ariaLabel: "Cloud SQL instances" },
+		[
+			dotLane(h),
+			head(h, "Instance", NAME),
+			volumeHead(h, "Queries", "hidden md:flex"),
+			head(h, "Query p95", "w-20", "right"),
+			head(h, "CPU", "w-20", "right"),
+			head(h, "Memory", "w-20", "right", "hidden md:flex"),
+			head(h, "Disk", "w-20", "right"),
+			head(h, "Connections", "w-36", "right"),
+		],
+		[
+			...rowsOrEmpty(
+				h,
+				Arr.map(rows, (row) =>
+					workloadRow(
+						h,
+						{
+							row,
+							rules: GCP_DATABASE_RULES,
+							spec: GCP_DATABASE_BAND,
+							meta: databaseMeta(h, row, ctx.showProject),
+							timeSearch: ctx.timeSearch,
+						},
+						[
+							queriesCell(h, row, ctx),
+							queryP95Cell(h, row),
+							quotaCell(h, row.cpu),
+							quotaCell(h, row.memory, "hidden md:flex"),
+							quotaCell(h, row.disk),
+							connectionsCell(h, row, ctx.locale),
+						],
+					),
+				),
+				emptyMessage,
+			),
+			...databasesFooter(h, rows),
+		],
+	)
+
+// The other services (GKE, Compute Engine, Load Balancing) ---------------------------------------
+
+const GENERIC_NAME = columnClass({ min: "60" })
+const VALUE_WIDTH = "w-28"
+
+const genericHead = (h: H, service: GcpInfraServiceId): ReadonlyArray<Html> => [
+	dotLane(h),
+	head(h, GCP_INFRA_SERVICES[service].identity[0]?.[0] ?? "", GENERIC_NAME),
+	...Arr.map(GCP_INFRA_COLUMNS[service], (column) => head(h, column.label, VALUE_WIDTH, "right")),
+]
+
+/** `GcpServiceTableLoading`. */
+export const serviceTableLoading = (h: H, service: GcpInfraServiceId): Html =>
+	dataTable(
+		h,
+		{ ariaLabel: GCP_INFRA_SERVICES[service].title },
+		genericHead(h, service),
+		skeletonRows(h, 5, () => [
+			dotLane(h),
+			h.div(
+				[h.Class(cn(GENERIC_NAME, hstackClass({ gap: "3" })))],
+				[
+					skeleton(h, "size-7 shrink-0 rounded-md"),
+					h.div([], [skeleton(h, "h-4 w-40"), skeleton(h, "mt-1.5 h-3 w-28")]),
+				],
+			),
+			...Arr.map(GCP_INFRA_COLUMNS[service], () => skeleton(h, cn("h-3", VALUE_WIDTH))),
+		]),
+	)
+
+export const valueClass = (spec: GcpColumn, value: number | undefined): string => {
+	if (value !== undefined && spec.format === "errorRate") return errorRateClass(value)
+	if (value !== undefined && spec.format === "percent" && utilizationLevel(value) !== "ok") {
+		return BAR_VALUE_TONE[utilizationLevel(value)]
+	}
+	return "text-foreground-soft"
+}
+
+/** `GcpServiceTable`: a service without a list of its own, its curated columns. */
+export const serviceTable = (
+	h: H,
+	service: GcpInfraServiceId,
+	rows: ReadonlyArray<GcpWorkloadRow>,
+	spec: GcpBandSpec<GcpWorkloadScope>,
+	emptyMessage: string,
+	ctx: RowsContext,
+): Html => {
+	const { title, identity } = GCP_INFRA_SERVICES[service]
+	const columns = GCP_INFRA_COLUMNS[service]
+	return dataTable(
+		h,
+		{ ariaLabel: title },
+		genericHead(h, service),
+		rowsOrEmpty(
+			h,
+			Arr.map(rows, (row) => {
+				const line = metaLine(h, row.keys.slice(1), {
+					title: Arr.join(
+						Arr.map(
+							identity.slice(1),
+							([label], index) => `${label}: ${row.keys[index + 1] ?? ""}`,
+						),
+						" · ",
+					),
+				})
+				return h.a(
+					[h.Class(ROW_LINK_CLASS), h.Href(workloadHref(service, row.keys, ctx.timeSearch))],
+					[
+						healthDot(h, spec, rowHealth(GCP_WORKLOAD_RULES, row)),
+						h.div(
+							[h.Class(cn(GENERIC_NAME, hstackClass({ gap: "3" })))],
+							[
+								gcpServiceIcon(h, { service }),
+								h.div(
+									[h.Class("min-w-0 flex-1")],
+									[
+										typography(
+											h,
+											{
+												size: "xs",
+												tone: "foreground",
+												weight: "medium",
+												mono: true,
+												truncate: true,
+												as: "div",
+												className: "transition-colors group-hover:text-primary",
+											},
+											[row.name],
+										),
+										...(line === null ? [] : [line]),
+									],
+								),
+							],
+						),
+						...Arr.map(columns, (column, index) =>
+							h.div(
+								[
+									h.Class(
+										cn(
+											typographyClass({
+												size: "xs",
+												mono: true,
+												numeric: true,
+												className: "text-right",
+											}),
+											VALUE_WIDTH,
+											valueClass(column, row.workload.values[index]),
+										),
+									),
+								],
+								[formatGcpValue(column.format, row.workload.values[index])],
+							),
+						),
+					],
+				)
+			}),
+			emptyMessage,
+		),
+	)
+}

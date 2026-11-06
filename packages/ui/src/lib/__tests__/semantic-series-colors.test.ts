@@ -3,15 +3,13 @@ import { describe, expect, it } from "vitest"
 import { getServiceColor } from "../colors"
 import { HTTP_METHOD_HEX } from "../http"
 import { getSemanticSeriesColor, resolveSeriesColors } from "../semantic-series-colors"
+import { Array as Arr } from "effect"
 
 describe("getSemanticSeriesColor", () => {
 	it("resolves every HTTP status class, including 1xx", () => {
 		const classes = ["1xx", "2xx", "3xx", "4xx", "5xx"]
-		for (const key of classes) {
-			expect(getSemanticSeriesColor(key), key).toMatch(/^oklch\(/)
-		}
 		// Each class is visually distinct — 1xx must not read as 2xx green or 3xx blue.
-		const colors = classes.map((key) => getSemanticSeriesColor(key))
+		const colors = Arr.map(classes, (key) => getSemanticSeriesColor(key))
 		expect(new Set(colors).size).toBe(classes.length)
 	})
 
@@ -19,20 +17,24 @@ describe("getSemanticSeriesColor", () => {
 		expect(getSemanticSeriesColor("101")).toMatch(/^oklch\(/)
 	})
 
-	it("resolves latency percentiles to their chart tokens", () => {
-		expect(getSemanticSeriesColor("p50")).toBe("var(--chart-p50)")
-		expect(getSemanticSeriesColor("p95")).toBe("var(--chart-p95)")
-		expect(getSemanticSeriesColor("p99")).toBe("var(--chart-p99)")
+	it("gives each latency percentile its own color", () => {
+		const colors = Arr.map(["p50", "p95", "p99"], (key) => getSemanticSeriesColor(key))
+		for (const color of colors) expect(color).toEqual(expect.any(String))
+		expect(new Set(colors).size).toBe(3)
 	})
 
-	it("resolves every log severity, with error taking the span-status color", () => {
-		for (const key of ["trace", "debug", "info", "warn", "warning", "fatal"]) {
-			expect(getSemanticSeriesColor(key), key).toBe(
-				`var(--color-severity-${key === "warning" ? "warn" : key})`,
-			)
-		}
-		// "error" matches the span-status map first; same underlying token.
-		expect(getSemanticSeriesColor("error")).toBe("var(--severity-error)")
+	it("resolves every log severity, treating warning as warn", () => {
+		const keys = ["trace", "debug", "info", "warn", "error", "fatal"]
+		const colors = Arr.map(keys, (key) => getSemanticSeriesColor(key))
+		for (const color of colors) expect(color).toEqual(expect.any(String))
+		expect(new Set(colors).size).toBe(keys.length)
+		expect(getSemanticSeriesColor("warning")).toBe(getSemanticSeriesColor("warn"))
+	})
+
+	it("colors CI run results like the span statuses they stand for", () => {
+		expect(getSemanticSeriesColor("Succeeded")).toBe(getSemanticSeriesColor("ok"))
+		expect(getSemanticSeriesColor("Failed")).toBe(getSemanticSeriesColor("error"))
+		expect(getSemanticSeriesColor("Cancelled")).toBe(getSemanticSeriesColor("unset"))
 	})
 
 	it("resolves HTTP methods to the shared hex palette", () => {

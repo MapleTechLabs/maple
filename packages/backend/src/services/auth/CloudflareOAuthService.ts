@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto"
+import { randomBytes } from "node:crypto"
 import {
 	IntegrationsNotConnectedError,
 	IntegrationsPersistenceError,
@@ -8,14 +8,21 @@ import {
 	OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import { oauthAuthStates } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { CloudflareLogpushConnectors, OAuthAuthStates } from "@maple/db/tables"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { listAccounts } from "@maple/backend/services/integrations/CloudflareApi"
+import { integrationSourceName } from "@maple/backend/services/org/integration-sources"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
-import { makeOAuthConnectionHelpers, OAUTH_STATE_TTL_MS } from "./oauth/connection-helpers"
+import {
+	deriveCodeChallenge,
+	generateCodeVerifier,
+	makeOAuthConnectionHelpers,
+	OAUTH_STATE_TTL_MS,
+} from "./oauth/connection-helpers"
+import type { OAuthFlowInitiator } from "./oauth/oauth-state"
 
 const CLOUDFLARE_PROVIDER = "cloudflare"
 
@@ -29,6 +36,7 @@ const decodeOrgId = Schema.decodeUnknownSync(OrgId)
  */
 const GrantedAccounts = Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.NullOr(Schema.String) }))
 const decodeGrantedAccounts = Schema.decodeUnknownOption(Schema.fromJsonString(GrantedAccounts))
+const encodeGrantedAccounts = Schema.encodeSync(Schema.fromJsonString(GrantedAccounts))
 
 interface GrantedAccount {
 	readonly id: string
@@ -55,19 +63,10 @@ const grantedAccountsOfRow = (row: {
 	})
 }
 
-/**
- * PKCE (RFC 7636). Cloudflare's OAuth requires PKCE (S256) for public clients — a multi-tenant SaaS
- * that any Cloudflare user can connect — and accepts it for confidential clients too, so we always
- * send it. The `code_verifier` is stashed on the auth-state row and replayed at token exchange.
- */
-const generateCodeVerifier = (): string => randomBytes(32).toString("base64url")
-const deriveCodeChallenge = (verifier: string): string =>
-	createHash("sha256").update(verifier).digest("base64url")
-
 interface ResolvedCloudflareOAuthConfig {
 	readonly clientId: string
 	/** null for a public (PKCE-only) client — Cloudflare's default for third-party SaaS apps. Redacted until the wire. */
-	readonly clientSecret: Redacted.Redacted<string> | null
+	readonly clientSecret: Redacted.Redacted | null
 	readonly authorizeUrl: string
 	readonly tokenUrl: string
 	readonly revokeUrl: string
@@ -77,15 +76,13 @@ interface ResolvedCloudflareOAuthConfig {
 const resolveConfig = Effect.fn("CloudflareOAuthService.resolveConfig")(function* (env: EnvConfig) {
 	// Only the client id is mandatory. Cloudflare public clients (any-user SaaS) authenticate the
 	// token exchange with PKCE alone and carry no secret; confidential clients add one via env.
-	const clientId = yield* Option.match(env.CLOUDFLARE_OAUTH_CLIENT_ID, {
-		onNone: () =>
-			Effect.fail(
-				new IntegrationsValidationError({
-					message: "CLOUDFLARE_OAUTH_CLIENT_ID is required to use the Cloudflare integration",
-				}),
-			),
-		onSome: (value) => Effect.succeed(value),
-	})
+	const clientId = yield* Effect.fromOption(
+		env.CLOUDFLARE_OAUTH_CLIENT_ID,
+		() =>
+			new IntegrationsValidationError({
+				message: "CLOUDFLARE_OAUTH_CLIENT_ID is required to use the Cloudflare integration",
+			}),
+	)
 
 	return {
 		clientId,
@@ -149,6 +146,7 @@ export interface CloudflareOAuthServiceApi {
 	readonly completeConnect: (
 		code: string,
 		state: string,
+		initiator: OAuthFlowInitiator,
 	) => Effect.Effect<
 		{ readonly orgId: OrgId; readonly returnTo: string | null },
 		| IntegrationsValidationError
@@ -190,7 +188,7 @@ export interface CloudflareOAuthServiceApi {
 export class CloudflareOAuthService extends Context.Service<
 	CloudflareOAuthService,
 	CloudflareOAuthServiceApi
->()("@maple/api/services/CloudflareOAuthService", {
+>()("@maple/backend/services/CloudflareOAuthService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
@@ -199,6 +197,17 @@ export class CloudflareOAuthService extends Context.Service<
 			providerLabel: "Cloudflare",
 			database,
 			env,
+			source: {
+				platform: "cloudflare",
+				name: integrationSourceName.cloudflare,
+				// Logpush jobs set up before the connection send as it from now on.
+				link: (db, orgId, sourceId) =>
+					db.run(
+						PG.update(CloudflareLogpushConnectors)
+							.set({ sourceId })
+							.where(($) => [$.orgId.eq(orgId), $.sourceId.isNull()]),
+					),
+			},
 		})
 
 		/** Best-effort token revocation on disconnect — failures are logged, never surfaced. */
@@ -221,22 +230,25 @@ export class CloudflareOAuthService extends Context.Service<
 			yield* Effect.annotateCurrentSpan({ orgId })
 			const config = yield* resolveConfig(env)
 			const state = randomBytes(24).toString("base64url")
+			// Cloudflare requires PKCE (S256) for public clients and accepts it for confidential ones.
 			const codeVerifier = generateCodeVerifier()
 			const currentTime = yield* Clock.currentTimeMillis
 
 			yield* oauth.purgeExpiredStates(currentTime)
 			yield* oauth.dbExecute((db) =>
-				db.insert(oauthAuthStates).values({
-					state,
-					orgId,
-					provider: CLOUDFLARE_PROVIDER,
-					initiatedByUserId: userId,
-					redirectUri: options.callbackUrl,
-					returnTo: options.returnTo ?? null,
-					codeVerifier,
-					createdAt: msToDate(currentTime),
-					expiresAt: msToDate(currentTime + OAUTH_STATE_TTL_MS),
-				}),
+				db.run(
+					PG.insertInto(OAuthAuthStates).values({
+						state,
+						orgId,
+						provider: CLOUDFLARE_PROVIDER,
+						initiatedByUserId: userId,
+						redirectUri: options.callbackUrl,
+						returnTo: options.returnTo ?? null,
+						codeVerifier,
+						createdAt: currentTime,
+						expiresAt: currentTime + OAUTH_STATE_TTL_MS,
+					}),
+				),
 			)
 
 			// Cloudflare issues a refresh token only when `offline_access` is REQUESTED here — the
@@ -259,17 +271,15 @@ export class CloudflareOAuthService extends Context.Service<
 		const completeConnect = Effect.fn("CloudflareOAuthService.completeConnect")(function* (
 			code: string,
 			state: string,
+			initiator: OAuthFlowInitiator,
 		) {
 			const config = yield* resolveConfig(env)
-			const stateRow = yield* oauth.requireStateRow(state)
-			yield* oauth.deleteAuthState(state)
+			const stateRow = yield* oauth.consumeStateRow(state, initiator)
 
 			if (!stateRow.codeVerifier) {
-				return yield* Effect.fail(
-					new IntegrationsValidationError({
-						message: "OAuth state is missing its PKCE verifier — restart the connect flow",
-					}),
-				)
+				return yield* new IntegrationsValidationError({
+					message: "OAuth state is missing its PKCE verifier — restart the connect flow",
+				})
 			}
 
 			const tokenResponse = yield* oauth.exchangeAuthorizationCode(config, code, stateRow.redirectUri, {
@@ -286,11 +296,9 @@ export class CloudflareOAuthService extends Context.Service<
 			)
 			if (!Arr.isReadonlyArrayNonEmpty(accounts)) {
 				yield* revokeToken(config, tokenResponse.access_token)
-				return yield* Effect.fail(
-					new IntegrationsValidationError({
-						message: "The Cloudflare authorization granted access to no accounts",
-					}),
-				)
+				return yield* new IntegrationsValidationError({
+					message: "The Cloudflare authorization granted access to no accounts",
+				})
 			}
 			const primaryAccount = Arr.headNonEmpty(accounts)
 
@@ -315,12 +323,10 @@ export class CloudflareOAuthService extends Context.Service<
 					{ orgId, expiresAt },
 				)
 				yield* revokeToken(config, tokenResponse.access_token)
-				return yield* Effect.fail(
-					new IntegrationsValidationError({
-						message:
-							"Cloudflare returned no refresh token, so this connection would stop working within a day. Confirm the OAuth app grants ‘offline_access’, then reconnect.",
-					}),
-				)
+				return yield* new IntegrationsValidationError({
+					message:
+						"Cloudflare returned no refresh token, so this connection would stop working within a day. Confirm the OAuth app grants ‘offline_access’, then reconnect.",
+				})
 			}
 
 			yield* oauth.upsertConnection(orgId, currentTime, {
@@ -330,7 +336,7 @@ export class CloudflareOAuthService extends Context.Service<
 				externalAccountName: primaryAccount.name,
 				// The full account fan-out of the grant; externalUserId keeps the first account for
 				// the shared helpers' single-principal columns.
-				grantedAccountsJson: JSON.stringify(
+				grantedAccountsJson: encodeGrantedAccounts(
 					accounts.map((account) => ({ id: account.id, name: account.name })),
 				),
 				connectedByUserId: stateRow.initiatedByUserId,
@@ -341,7 +347,7 @@ export class CloudflareOAuthService extends Context.Service<
 				refreshTokenCiphertext: refreshEnc?.ciphertext ?? null,
 				refreshTokenIv: refreshEnc?.iv ?? null,
 				refreshTokenTag: refreshEnc?.tag ?? null,
-				expiresAt: msToDate(expiresAt),
+				expiresAt,
 			})
 
 			return { orgId, returnTo: stateRow.returnTo ?? null }
@@ -357,18 +363,16 @@ export class CloudflareOAuthService extends Context.Service<
 			// A token is always addressed to one account of the grant. Callers name it — there is
 			// no "the org's account" to fall back to once a grant can cover several.
 			if (!Arr.some(grantedAccountsOfRow(row), (account) => account.id === accountId)) {
-				return yield* Effect.fail(
-					new IntegrationsValidationError({
-						message: "The Cloudflare grant does not cover the requested account",
-					}),
-				)
+				return yield* new IntegrationsValidationError({
+					message: "The Cloudflare grant does not cover the requested account",
+				})
 			}
 			return { accessToken, accountId, scope: row.scope } satisfies CloudflareAccessToken
 		})
 
 		const getStatus = Effect.fn("CloudflareOAuthService.getStatus")(function* (orgId: OrgId) {
 			const row = yield* oauth.loadConnection(orgId)
-			if (!row) {
+			if (row == null) {
 				return {
 					connected: false,
 					accounts: [],
@@ -377,7 +381,7 @@ export class CloudflareOAuthService extends Context.Service<
 			}
 			return {
 				connected: true,
-				connectedAt: dateToMs(row.createdAt),
+				connectedAt: row.createdAt,
 				// `Arr.map` carries the non-emptiness through, so the connected branch keeps its
 				// at-least-one-account guarantee.
 				accounts: Arr.map(grantedAccountsOfRow(row), (account): CloudflareConnectedAccount => ({
@@ -395,7 +399,7 @@ export class CloudflareOAuthService extends Context.Service<
 			// Best-effort upstream token revocation before we drop the row. Never let a revoke
 			// failure block the disconnect — the deleted row is the real backstop.
 			const row = yield* oauth.loadConnection(orgId)
-			if (row) {
+			if (row != null) {
 				const config = yield* resolveConfig(env).pipe(Effect.option)
 				const accessToken = yield* oauth
 					.decryptValue({

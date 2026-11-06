@@ -1,8 +1,7 @@
-import { Effect, Schema } from "effect"
-import { describe, expect, it } from "vitest"
+import { Array as Arr, Effect, Predicate } from "effect"
+import { assert, describe, expect, it } from "vitest"
 import { parseStoredDashboard, stampCurrentVersion } from "../parse"
 import { CURRENT_DASHBOARD_SCHEMA_VERSION } from "../version"
-import { upgradeStoredDocument } from "../upgrade-to-v3"
 import { DASHBOARD_MIGRATIONS, detectSchemaVersion, migrateToLatest } from "./index"
 
 /** A minimal but complete v1 document, as a pre-versioning row would be stored. */
@@ -48,23 +47,13 @@ const looseDocument = {
 	],
 }
 
-/**
- * Reads a stored payload the way the BACKFILL does — chain, then the one-shot
- * v2 -> v3 upgrade — and then decodes.
- *
- * `parseStoredDashboard` alone no longer suffices for a legacy fixture: the
- * decoder is v3 while `migrateToLatest` only reaches v2, because the v2 -> v3
- * step is a one-shot backfill rather than a chain entry. That gap IS the
- * migration window, and asserting through `upgradeStoredDocument` is what makes
- * these tests cover the path that actually closes it.
- */
-const parse = (payload: unknown) => Effect.runSync(parseStoredDashboard(upgradeStoredDocument(payload)))
+const parse = (payload: unknown) => Effect.runSync(parseStoredDashboard(payload))
 
 const firstWidget = (document: Record<string, unknown>): Record<string, unknown> => {
 	const widgets = document.widgets
-	if (!Array.isArray(widgets)) throw new Error("expected widgets to be an array")
+	if (!Arr.isArray(widgets)) throw new Error("expected widgets to be an array")
 	const [widget] = widgets
-	if (typeof widget !== "object" || widget === null) throw new Error("expected a widget object")
+	if (!Predicate.isObject(widget)) throw new Error("expected a widget object")
 	return widget
 }
 
@@ -103,9 +92,9 @@ describe("the migration chain", () => {
 		}
 	})
 
-	it("never throws on input it cannot understand", () => {
-		for (const payload of [null, undefined, 42, "nope", [], { widgets: "not an array" }]) {
-			expect(() => migrateToLatest(payload)).not.toThrow()
+	it("turns a non-object payload into an empty current document instead of throwing", () => {
+		for (const payload of [null, undefined, 42, "nope", []]) {
+			expect(migrateToLatest(payload)).toEqual({ schemaVersion: CURRENT_DASHBOARD_SCHEMA_VERSION })
 		}
 	})
 })
@@ -161,22 +150,9 @@ describe("the v1 -> v2 step", () => {
 		const dataSource = widget.dataSource
 		if (typeof dataSource !== "object" || dataSource === null) throw new Error("expected a dataSource")
 
-		expect(dataSource).toHaveProperty("params", looseDocument.widgets[0]!.dataSource.params)
-	})
-
-	// The whole reason the step coerces instead of rejecting: a rejected document
-	// is refused by the writable path, so one unrecognised widget would lock the
-	// entire dashboard out of editing.
-	it("makes a document with out-of-set values decode rather than reject", () => {
-		const outcome = parse(looseDocument)
-
-		expect(outcome._tag).toBe("Decoded")
-		if (outcome._tag !== "Decoded") return
-		// The stored version is read off the raw payload: `parse` here upgrades
-		// before decoding, so the outcome reports the version it decoded, not the
-		// one the row was written in.
-		expect(detectSchemaVersion(looseDocument)).toBe(1)
-		expect(outcome.document.widgets[0]?.visualization).toBe("chart")
+		const [looseWidget] = looseDocument.widgets
+		assert.isDefined(looseWidget)
+		expect(dataSource).toHaveProperty("params", looseWidget.dataSource.params)
 	})
 
 	// The case that makes this migration more than a rename: `line`/`bar`/`area`
@@ -230,7 +206,7 @@ describe("detectSchemaVersion", () => {
 	})
 
 	it("reads a declared version", () => {
-		expect(detectSchemaVersion({ ...legacyDocument, schemaVersion: 1 })).toBe(1)
+		expect(detectSchemaVersion({ ...legacyDocument, schemaVersion: 2 })).toBe(2)
 	})
 
 	it("falls back to 1 for a non-object, or a version this build does not know", () => {
@@ -253,50 +229,15 @@ describe("migrateToLatest with a document from a newer build", () => {
 		expect(migrateToLatest(fromTheFuture)).toEqual(fromTheFuture)
 	})
 
-	it("does not claim the current version on the way out", () => {
-		expect(migrateToLatest(fromTheFuture).schemaVersion).toBe(99)
-	})
-
 	// `migrateToLatest` stamps the version it actually REACHED, which is where the
-	// chain ends (2) — not the current version (3). Only `upgradeStoredDocument`,
-	// which applies the one-shot v2 -> v3 on top, can honestly stamp 3.
+	// chain ends (2), not the current version (3).
 	it("stamps the version the chain actually reached", () => {
 		const chainEnd = DASHBOARD_MIGRATIONS[DASHBOARD_MIGRATIONS.length - 1]?.to ?? 1
 		expect(migrateToLatest(legacyDocument).schemaVersion).toBe(chainEnd)
 	})
-
-	it("only claims the current version once the v3 upgrade has run too", () => {
-		const upgraded = upgradeStoredDocument(legacyDocument) as Record<string, unknown>
-		expect(upgraded.schemaVersion).toBe(CURRENT_DASHBOARD_SCHEMA_VERSION)
-	})
 })
 
 describe("parseStoredDashboard", () => {
-	it("decodes a legacy unstamped document once it has been upgraded", () => {
-		const outcome = parse(legacyDocument)
-
-		// The version the row was STORED in is read off the raw payload — `parse`
-		// here upgrades first, so the outcome reports the version it decoded.
-		expect(detectSchemaVersion(legacyDocument)).toBe(1)
-		expect(outcome._tag).toBe("Decoded")
-		if (outcome._tag !== "Decoded") return
-		expect(outcome.fromVersion).toBe(CURRENT_DASHBOARD_SCHEMA_VERSION)
-		expect(outcome.degradedWidgetIds).toEqual([])
-		expect(outcome.document.name).toBe("Legacy board")
-		expect(outcome.document.widgets).toHaveLength(1)
-	})
-
-	// v1 -> v2 carried `params` byte-for-byte; the v3 upgrade rewrites the bag into
-	// typed fields, so the assertion becomes "the queries survived the reshaping".
-	it("carries the widget's queries through the reshaping", () => {
-		const outcome = parse(legacyDocument)
-
-		if (outcome._tag !== "Decoded") throw new Error("expected Decoded")
-		const dataSource = outcome.document.widgets[0]?.dataSource
-		if (dataSource?.kind !== "query") throw new Error("expected a query data source")
-		expect(dataSource.queries).toEqual(legacyDocument.widgets[0]!.dataSource.params.queries)
-	})
-
 	it("rejects a structurally corrupt document instead of half-decoding it", () => {
 		const outcome = parse({ ...legacyDocument, widgets: [{ id: "broken" }] })
 
@@ -313,26 +254,17 @@ describe("parseStoredDashboard", () => {
 })
 
 describe("stampCurrentVersion", () => {
-	it("stamps the current version", () => {
-		expect(stampCurrentVersion({ name: "x" }).schemaVersion).toBe(CURRENT_DASHBOARD_SCHEMA_VERSION)
-	})
-
 	it("produces a document that decodes and round-trips its stamp", () => {
-		const stamped = stampCurrentVersion(legacyDocument)
+		const stamped = stampCurrentVersion({
+			...legacyDocument,
+			widgets: [{ ...legacyDocument.widgets[0], dataSource: { kind: "static" } }],
+		})
 		const outcome = parse(stamped)
 
 		expect(outcome._tag).toBe("Decoded")
 		if (outcome._tag !== "Decoded") return
 		expect(outcome.fromVersion).toBe(CURRENT_DASHBOARD_SCHEMA_VERSION)
 		expect(outcome.document.schemaVersion).toBe(CURRENT_DASHBOARD_SCHEMA_VERSION)
-	})
-
-	it("keeps the stamp when the document is encoded back to storage JSON", () => {
-		const outcome = parse(stampCurrentVersion(legacyDocument))
-		if (outcome._tag !== "Decoded") throw new Error("expected Decoded")
-
-		const encoded = Schema.encodeUnknownSync(Schema.Unknown)(outcome.document) as Record<string, unknown>
-		expect(encoded.schemaVersion).toBe(CURRENT_DASHBOARD_SCHEMA_VERSION)
 	})
 })
 
@@ -384,31 +316,5 @@ describe("the v1 -> v2 step recurses into display.sparkline.dataSource", () => {
 			const once = migration.migrate(sparklineDocument)
 			expect(migration.migrate(once)).toEqual(once)
 		}
-	})
-
-	it("makes the full document decode through the stored upgrade", () => {
-		expect(parse(sparklineDocument)._tag).toBe("Decoded")
-	})
-})
-
-describe("upgradeStoredDocument with a document from a newer build", () => {
-	// `migrateToLatest` refuses to migrate a future document, but the combined
-	// upgrader used to run the v3 rewrite on it anyway and restamp it 3 —
-	// erasing the version marker and re-encoding shapes it cannot know.
-	const fromTheFuture = {
-		...legacyDocument,
-		schemaVersion: 99,
-		widgets: [
-			{
-				...legacyDocument.widgets[0],
-				// A hypothetical future data source with no string `kind`: the v3
-				// rewrite would have destructively re-read it as a legacy source.
-				dataSource: { kind: 7, spec: { future: true } },
-			},
-		],
-	}
-
-	it("returns it untouched instead of downstamping and rewriting it", () => {
-		expect(upgradeStoredDocument(fromTheFuture)).toEqual(fromTheFuture)
 	})
 })

@@ -1,0 +1,181 @@
+import { describe, expect, it } from "@effect/vitest"
+import { Effect, String as Str } from "effect"
+import { authorizeTickRequest, dispatchTick, SELF_BINDING, TICK_PATH } from "./tick-dispatch"
+import * as Arr from "effect/Array"
+
+const TOKEN = "secret-token"
+const ENV = { INTERNAL_SERVICE_TOKEN: TOKEN }
+
+const tickRequest = (init: {
+	cron?: string
+	lane?: string
+	authorization?: string
+	method?: string
+	path?: string
+}) => {
+	const url = new URL(`https://maple-alerting.internal${init.path ?? TICK_PATH}`)
+	if (init.cron !== undefined) url.searchParams.set("cron", init.cron)
+	if (init.lane !== undefined) url.searchParams.set("lane", init.lane)
+	return new Request(url, {
+		method: init.method ?? "POST",
+		headers: init.authorization === undefined ? {} : { authorization: init.authorization },
+	})
+}
+
+/** A service binding that answers with `status` and records what it was sent. */
+const fakeBinding = (status: number, answer: { body?: string; headers?: HeadersInit } = {}) => {
+	const seen: Array<Request> = []
+	const binding = {
+		fetch: (input: RequestInfo, init?: RequestInit) => {
+			seen.push(new Request(input, init))
+			return Promise.resolve(new Response(answer.body ?? null, { status, headers: answer.headers }))
+		},
+	}
+	return { binding, seen }
+}
+
+/** The refusal status for `request`, failing the test if it was authorized. */
+const refusedStatus = (request: Request, env: Record<string, unknown>) =>
+	authorizeTickRequest(request, env).pipe(
+		Effect.flip,
+		Effect.map((error) => {
+			expect(error._tag).toBe("@maple/alerting/errors/TickRequestRefused")
+			return error.status
+		}),
+	)
+
+describe("authorizeTickRequest", () => {
+	it.effect("accepts a known cron and lane with the internal bearer", () =>
+		Effect.gen(function* () {
+			const tick = yield* authorizeTickRequest(
+				tickRequest({
+					cron: "0 * * * *",
+					lane: "service_map_rollup",
+					authorization: `Bearer ${TOKEN}`,
+				}),
+				ENV,
+			)
+			expect(tick).toEqual({
+				cron: "0 * * * *",
+				lane: "service_map_rollup",
+			})
+		}),
+	)
+
+	it.effect("refuses a wrong token, a missing token config, and an unknown cron or lane", () =>
+		Effect.gen(function* () {
+			const authorized = `Bearer ${TOKEN}`
+			expect(
+				yield* refusedStatus(
+					tickRequest({ cron: "* * * * *", lane: "alert", authorization: "Bearer nope" }),
+					ENV,
+				),
+			).toBe(401)
+			expect(
+				yield* refusedStatus(
+					tickRequest({ cron: "* * * * *", lane: "alert", authorization: authorized }),
+					{},
+				),
+			).toBe(401)
+			expect(
+				yield* refusedStatus(
+					tickRequest({ cron: "*/7 * * * *", lane: "alert", authorization: authorized }),
+					ENV,
+				),
+			).toBe(400)
+			expect(
+				yield* refusedStatus(tickRequest({ cron: "* * * * *", authorization: authorized }), ENV),
+			).toBe(400)
+			expect(
+				yield* refusedStatus(
+					tickRequest({ cron: "0 * * * *", lane: "alert", authorization: authorized }),
+					ENV,
+				),
+			).toBe(400)
+			expect(yield* refusedStatus(tickRequest({ method: "GET" }), ENV)).toBe(404)
+			expect(yield* refusedStatus(tickRequest({ path: "/" }), ENV)).toBe(404)
+		}),
+	)
+})
+
+/** The real failure of a dispatch; an unavailable dispatch fails the test. */
+const dispatchFailure = (env: Record<string, unknown>) =>
+	dispatchTick("* * * * *", "alert", env).pipe(
+		Effect.catchTag("@maple/alerting/errors/TickDispatchUnavailable", Effect.die),
+		Effect.flip,
+	)
+
+describe("dispatchTick", () => {
+	it.effect("posts the cron and lane to the self binding with the internal bearer", () =>
+		Effect.gen(function* () {
+			const { binding, seen } = fakeBinding(204)
+			yield* dispatchTick("*/5 * * * *", "anomaly", { ...ENV, [SELF_BINDING]: binding })
+			expect(seen).toHaveLength(1)
+			const tick = yield* authorizeTickRequest(Arr.getUnsafe(seen, 0), ENV)
+			expect(tick).toMatchObject({ cron: "*/5 * * * *", lane: "anomaly" })
+		}),
+	)
+
+	it.effect("is unavailable without a binding or a token, or when the handler refuses", () =>
+		Effect.gen(function* () {
+			const unavailableReason = (env: Record<string, unknown>) =>
+				dispatchTick("* * * * *", "alert", env).pipe(
+					Effect.catchTag("@maple/alerting/errors/TickDispatchError", Effect.die),
+					Effect.flip,
+					Effect.map((error) => error.reason),
+				)
+			expect(yield* unavailableReason(ENV)).toBe("no-binding")
+			const { binding, seen } = fakeBinding(204)
+			expect(yield* unavailableReason({ [SELF_BINDING]: binding })).toBe("no-token")
+			expect(seen).toHaveLength(0)
+			expect(yield* unavailableReason({ ...ENV, [SELF_BINDING]: fakeBinding(401).binding })).toBe(
+				"refused-401",
+			)
+			expect(yield* unavailableReason({ ...ENV, [SELF_BINDING]: fakeBinding(404).binding })).toBe(
+				"refused-404",
+			)
+		}),
+	)
+
+	it.effect("does not follow a redirect, so the bearer stays on the hop", () =>
+		Effect.gen(function* () {
+			const { binding, seen } = fakeBinding(302)
+			const error = yield* dispatchFailure({ ...ENV, [SELF_BINDING]: binding })
+			expect(seen[0]?.redirect).toBe("manual")
+			expect(error.status).toBe(302)
+		}),
+	)
+
+	it.effect("fails on a handler error, so the caller does not rerun a partial tick", () =>
+		Effect.gen(function* () {
+			const error = yield* dispatchFailure({ ...ENV, [SELF_BINDING]: fakeBinding(500).binding })
+			expect(error._tag).toBe("@maple/alerting/errors/TickDispatchError")
+			expect(error.status).toBe(500)
+		}),
+	)
+
+	it.effect("names what killed the placed invocation, from the answer it left", () =>
+		Effect.gen(function* () {
+			const binding = fakeBinding(500, {
+				body: `  Worker exceeded resource limits ${Str.repeat(1_000_000)("x")}`,
+				headers: { "cf-ray": "8f00aa11bb22cc33-IAD" },
+			}).binding
+			const error = yield* dispatchFailure({ ...ENV, [SELF_BINDING]: binding })
+			expect(error.ray).toBe("8f00aa11bb22cc33-IAD")
+			expect(Str.startsWith("Worker exceeded resource limits")(error.body ?? "")).toBe(true)
+			expect(error.body?.length).toBe(300)
+			expect(error.message).toBe("Placed tick answered 500")
+		}),
+	)
+
+	it.effect("keeps what the fetch threw when the hop never answered", () =>
+		Effect.gen(function* () {
+			const binding = {
+				fetch: () => Promise.reject(new Error("Worker exceeded CPU time limit.")),
+			}
+			const error = yield* dispatchFailure({ ...ENV, [SELF_BINDING]: binding })
+			expect(error.message).toBe("Placed tick request failed")
+			expect(error.failure).toBe("Worker exceeded CPU time limit.")
+		}),
+	)
+})

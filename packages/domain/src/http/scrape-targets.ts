@@ -150,6 +150,23 @@ export class ScrapeTargetValidationError extends HttpTaggedError<ScrapeTargetVal
 	},
 ) {}
 
+/** The org already has as many scrape targets as one organization may hold. */
+export class ScrapeTargetLimitReachedError extends HttpTaggedError<ScrapeTargetLimitReachedError>()(
+	"@maple/http/errors/ScrapeTargetLimitReachedError",
+	{
+		message: Schema.String,
+		limit: Schema.Number,
+	},
+	{
+		status: 409,
+		code: "scrape_target_limit_reached",
+		title: "Scrape target limit reached",
+		retry: "never",
+		recovery: "none",
+		exposure: "public_message",
+	},
+) {}
+
 export class ScrapeTargetEncryptionError extends HttpTaggedError<ScrapeTargetEncryptionError>()(
 	"@maple/http/errors/ScrapeTargetEncryptionError",
 	{
@@ -196,9 +213,9 @@ export class ScrapeTargetStoredConfigInvalidError extends HttpTaggedError<Scrape
 ) {}
 
 /**
- * Legacy v1 scrape-auth envelope. V2 preserves managed OAuth failures as their
- * exact integration tags; this remains for v1 compatibility and direct manual
- * credential rejection on the internal scrape proxy.
+ * Generic scrape-auth envelope. V2 preserves managed OAuth failures as their
+ * exact integration tags; this remains for direct manual credential rejection
+ * on the internal scrape proxy.
  */
 export class ScrapeTargetAuthError extends HttpTaggedError<ScrapeTargetAuthError>()(
 	"@maple/http/errors/ScrapeTargetAuthError",

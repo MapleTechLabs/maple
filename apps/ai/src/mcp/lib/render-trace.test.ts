@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { SpanId } from "@maple/domain"
 import type { SpanNode } from "@maple/query-engine/observability"
-import { Schema } from "effect"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 import {
 	buildTraceOverview,
 	renderTraceOverview,
@@ -20,9 +20,11 @@ function span(
 		spanId: decodeSpanId(id),
 		parentSpanId: opts.parentSpanId ?? "",
 		spanName: opts.spanName ?? id,
+		...(opts.rawSpanName === undefined ? undefined : { rawSpanName: opts.rawSpanName }),
 		serviceName: opts.serviceName ?? "svc",
 		spanKind: opts.spanKind ?? "Internal",
 		durationMs: opts.durationMs ?? 1,
+		startTime: opts.startTime ?? "2026-01-01 00:00:00",
 		statusCode: opts.statusCode ?? "Unset",
 		statusMessage: opts.statusMessage ?? "",
 		attributes: opts.attributes ?? {},
@@ -57,7 +59,9 @@ describe("renderTraceOverview", () => {
 	})
 
 	it("bounds a large trace and emits a Showing N of M note + collapse markers", () => {
-		const children = Array.from({ length: 20 }, (_, i) => span(`b${i}`, { durationMs: 1 }))
+		const children = Array.from({ length: 20 }, (_, i) =>
+			span(`b${i}`, { spanName: "batch", durationMs: 1 }),
+		)
 		const spans = [
 			span("root", {
 				durationMs: 100,
@@ -80,6 +84,43 @@ describe("renderTraceOverview", () => {
 		expect(text).toContain("[Error]")
 		// Dropped children are summarised, not dumped.
 		expect(text).toMatch(/… \+\d+ more spans/)
+		// The rollup covers every span, not just the rendered ones.
+		const rollup = overview.rollup ?? []
+		expect(Option.getOrUndefined(Arr.findFirst(rollup, (r) => r.spanName === "batch"))).toMatchObject({
+			count: 20,
+			totalDurationMs: 20,
+		})
+		expect(Arr.reduce(rollup, 0, (n, r) => n + r.count)).toBe(totalSpanCount)
+		expect(text).toContain(`Span names across all ${totalSpanCount} spans`)
+	})
+
+	it("shows the stored span name, resource attributes once per service, and unrecorded parent durations", () => {
+		const resourceAttributes = { "service.version": "1.2.3" }
+		const spans = [
+			span("root", {
+				spanName: "GET /users/:id",
+				rawSpanName: "http.server GET",
+				durationMs: 0,
+				resourceAttributes,
+				children: [span("child", { resourceAttributes, durationMs: 5 })],
+			}),
+		]
+		const { text } = render({ ...base, spanCount: 2, spans, budget: 100 })
+		expect(text).toContain('span_name="http.server GET", duration not recorded')
+		expect(Arr.fromIterable(Str.matchAll(/service\.version=1\.2\.3/g)(text))).toHaveLength(1)
+		expect(text).toContain("`inspect_span` with a `span=` id lists every attribute")
+	})
+
+	it("says which window an empty read scanned", () => {
+		const { text } = render({
+			...base,
+			spanCount: 0,
+			spans: [],
+			budget: 100,
+			timestamp: "2026-06-02 10:00:00",
+			scanned: { startTime: "2026-05-03 09:00:00", endTime: "2026-06-02 11:00:00", widened: true },
+		})
+		expect(text).toContain("scanned 2026-05-03 09:00:00 to 2026-06-02 11:00:00, widened")
 	})
 
 	it("renders related logs with a severity marker and span ref", () => {
@@ -104,7 +145,7 @@ describe("renderTraceOverview", () => {
 
 		expect(text).toContain("Related Logs (2):")
 		expect(text).toContain("● ") // ERROR marker
-		expect(text).toContain("span:deadbeef") // short span ref for the error log
+		expect(text).toContain("span=deadbeefcafef00d") // full span id, never a prefix
 	})
 })
 

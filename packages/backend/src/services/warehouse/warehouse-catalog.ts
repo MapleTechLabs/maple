@@ -1,5 +1,11 @@
-import { getColumnJsonPath, getColumnType, getTinybirdType, isDatasourceDefinition } from "@tinybirdco/sdk"
+import {
+	getColumnJsonPath,
+	getColumnType,
+	getTinybirdType,
+	isDatasourceDefinition,
+} from "@maple-dev/effect-orm/tinybird"
 import * as Datasources from "@maple/domain/tinybird"
+import { Array as Arr, Option, Order, Record as Rec, String as Str } from "effect"
 
 // Live introspection of the `defineDatasource` exports in
 // packages/domain/src/tinybird/datasources.ts. This neutral catalog powers
@@ -17,8 +23,7 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"`SeverityText` casing varies by SDK ('Error' from Effect services, 'ERROR' from OTel SDKs), so filter on the OTel level number instead: `SeverityNumber BETWEEN 17 AND 20` is ERROR, 13-16 WARN, 9-12 INFO, 5-8 DEBUG, 1-4 TRACE, 21-24 FATAL. Where you must use text, use `upper(SeverityText) = 'ERROR'`.",
 		"`SeverityNumber` follows OTel: 1-4 Trace, 5-8 Debug, 9-12 Info, 13-16 Warn, 17-20 Error, 21-24 Fatal.",
 		"`ResourceAttributes` and `LogAttributes` are `Map(LowCardinality(String), String)` — access with `LogAttributes['key']`; missing keys return '' (empty string), not NULL.",
-		"Use `TimestampTime` (DateTime) for `$__timeFilter(TimestampTime)` if you want sort-key-prefix-friendly filtering; `Timestamp` is DateTime64 (nanosecond precision).",
-		"Sorting key: `(OrgId, ServiceName, TimestampTime, Timestamp)` — adding `ServiceName = '…'` to the WHERE clause speeds queries dramatically.",
+		"Sorting key: `(OrgId, toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)`: filter on a `Timestamp` window and `ServiceName = '…'`. Partitions are daily on `TimestampTime` (DateTime), so `$__timeFilter(TimestampTime)` also skips whole days. `Timestamp` is DateTime64 (nanosecond precision).",
 	],
 	traces: [
 		"`StatusCode` values are Title Case: 'Ok', 'Error', 'Unset'. Filter with `StatusCode = 'Error'` (NOT `'ERROR'`).",
@@ -26,18 +31,23 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"`Duration` is in NANOSECONDS (UInt64). Divide by 1e6 for milliseconds, 1e9 for seconds.",
 		"`SpanAttributes` and `ResourceAttributes` are `Map(LowCardinality(String), String)` — access with `SpanAttributes['http.route']`; missing keys return '' not NULL.",
 		"`SampleRate` defaults to 1.0; multiply counts by `SampleRate` for unbiased throughput estimates.",
-		"Sorting key starts with `(OrgId, ServiceName, Timestamp)` — filter on these first.",
-		"For service-level metrics (per-service throughput, latency), prefer `service_overview_spans` — it's pre-filtered to entry-point spans and ~10× smaller.",
+		"Sorting key: `(OrgId, ServiceName, toStartOfFiveMinutes(Timestamp), TraceId)` — filter on `ServiceName` and a `Timestamp` window first.",
+		"To read whole traces by id, seek them through `trace_index`: `(ServiceName, toStartOfFiveMinutes(Timestamp), TraceId) IN (SELECT ServiceName, Bucket, TraceId FROM trace_index WHERE OrgId = … AND TraceId IN (…))`. A bare `TraceId = …` probes every daily partition.",
+		"Before scanning raw spans, check the rollups: per-service requests, errors and latency are in `service_overview_minutely` / `service_overview_hourly`, per span name in `service_operations_minutely` / `service_operations_hourly`, per HTTP route and status in `service_endpoint_details_hourly`, agent spans in `ai_trace_index`. Raw `traces` reads of the attribute maps run out of time past about a day without a `ServiceName` filter.",
 	],
 	ai_trace_index: [
 		"GenAI agent spans ONLY (every row carries a non-empty `VendorId`), with the `maple_ai.*` identity pre-extracted to plain columns. ALWAYS prefer this over `traces` + `mapContains(SpanAttributes, 'maple_ai.…')` for finding agent traces/sessions — the raw-traces scan reads the full attribute Map per span and times out on day-plus windows.",
 		"`SessionId` is '' on most rows: vendors stamp the session key only on turn-owning spans. Resolve a trace's session as `max(SessionId) GROUP BY TraceId`, and treat a trace whose max is '' as a sessionless single-trace session.",
-		"`DeploymentEnv`, `Model`, `AgentName` and `ToolName` are the span's environment and GenAI identity, coalesced across dialects at insert (`gen_ai.*`, Vercel AI SDK `ai.*`, OpenInference `llm.*`/`tool.*`). '' where the span carries no such fact — a chat span has no tool — and on rows materialized before migration 0026. Filter and facet on these here rather than on `trace_detail_spans` attributes.",
-		"`IsLlmCall`, `IsToolCall`, `IsError` (UInt8 flags), `Tokens`, `Cost` (Float64) are the span's kind, failure and reported usage; `SpanId`/`ParentSpanId`/`Duration` are its own. `Tokens` is the span's billed total under the reporter's own convention — a prompt figure that already contains its cached tokens (OpenAI, OpenRouter, Gemini) or a completion figure that contains its reasoning is NOT double counted, so it can read below `input + cache_read + output + reasoning` summed off the raw attributes. Sum per session here for calls, failures, tokens and cost — but a wrapper span often repeats its children's usage, so subtract a child reporter's tokens from its parent (`ParentSpanId = SpanId`) before summing, or the total doubles.",
-		"`VendorVersion` (LowCardinality String) is the framework's version beside `VendorId`, and `InputTokens`, `CacheReadTokens`, `CacheWriteTokens`, `OutputTokens`, `ReasoningTokens` (Float64) are the disjoint split of `Tokens` — '' / 0 on rows materialized before migration 0031.",
-		"`ErrorType` (LowCardinality String, `error.type`), `StatusMessage` and `ToolDescription` (`gen_ai.tool.description`, tool spans only) are the span's own failure reason and tool documentation, truncated at insert — '' on rows materialized before migration 0032. Group failures by `ErrorType` here rather than reading `trace_detail_spans` for it. `FailedToolCallResult` (String) is a failed tool call's result, where many frameworks put the error — '' on every other row — and `ErrorFingerprint` (UInt64, select it as `toString(ErrorFingerprint)`) groups failures by that result, else the status message, with volatile values redacted; 0 on rows that did not fail.",
-		"Holds only the agent spans, and only their identity — for every span of a detected trace, or for anything it does not carry (`StatusCode`, the tool call's arguments and result, `gen_ai.usage.*` per key), collect `TraceId`s here first, then read `trace_detail_spans` with `TraceId IN (…)` AND a `Timestamp` window.",
+		"`DeploymentEnv`, `Model`, `AgentName` and `ToolName` are the span's environment and GenAI identity; `Model`, `AgentName` and `ToolName` are stamped by the ingest gateway (`maple_ai.model`, `maple_ai.agent.name`, `maple_ai.tool.name`), which reads every dialect (`gen_ai.*`, Vercel AI SDK `ai.*`, OpenInference `llm.*`/`tool.*`). '' where the span carries no such fact — a chat span has no tool — and on rows materialized before migration 0026. Filter and facet on these here rather than on `traces` attributes.",
+		"`IsLlmCall`, `IsToolCall`, `IsError` (UInt8 flags), `Tokens`, `Cost` (Float64) are the span's kind, failure and usage as the ingest gateway stamped them (`maple_ai.llm_call`, `maple_ai.tool_call`, `maple_ai.error`, `maple_ai.usage.*`); a tool call paused for a human's approval is no call until it runs, so its paused copy has `IsToolCall` 0; `SpanId`/`ParentSpanId`/`Duration` are its own. `Tokens` is the sum of the five disjoint buckets the gateway normalised into `maple_ai.usage.*` — a prompt figure that already contains its cached tokens (OpenAI, OpenRouter, Gemini) or a completion figure that contains its reasoning is NOT double counted, so it can read below `input + cache_read + output + reasoning` summed off the raw `gen_ai.usage.*` attributes. Only the model-call span carries usage, so sum per session here for calls, failures, tokens and cost. Rows materialized before migration 0035 keep the view's older figures, where a wrapper span could repeat its children's usage: net a child reporter's tokens off its parent (`ParentSpanId = SpanId`) on those rows only.",
+		"`VendorVersion` (LowCardinality String) is the framework's version beside `VendorId`, and `InputTokens`, `CacheReadTokens`, `CacheWriteTokens`, `OutputTokens`, `ReasoningTokens` (Float64) are the disjoint split of `Tokens`, read from the gateway's normalised `maple_ai.usage.*` — '' / 0 on rows materialized before migration 0031.",
+		"`ErrorType` (LowCardinality String, `error.type`), `StatusMessage` and `ToolDescription` (`gen_ai.tool.description`, tool spans only) are the span's own failure reason and tool documentation, truncated at insert — '' on rows materialized before migration 0032. Group failures by `ErrorType` here rather than reading `traces` for it. `FailedToolCallResult` (String) is a failed tool call's result, where many frameworks put the error — '' on every other row — and `ErrorFingerprint` (UInt64, select it as `toString(ErrorFingerprint)`) groups failures by that result, else the status message, with volatile values redacted; 0 on rows that did not fail.",
+		"Holds only the agent spans, and only their identity — for every span of a detected trace, or for anything it does not carry (`StatusCode`, the tool call's arguments and result, `gen_ai.usage.*` per key), collect `TraceId`s here first, then read their spans from `traces` through `trace_index` (see the `traces` notes) AND a `Timestamp` window.",
 		"Sorting key: `(OrgId, Timestamp, TraceId)`; filled forward by its MV, so windows predating the cluster's schema apply under-report.",
+	],
+	trace_index: [
+		"Where each trace's spans live in `traces`: one row per (TraceId, ServiceName, 5-minute `Bucket`), with `MinTimestamp`/`MaxTimestamp` of the spans in that bucket. No span data; use it to locate traces, then read `traces`.",
+		"A trace's time range: `SELECT min(MinTimestamp), max(MaxTimestamp) FROM trace_index WHERE OrgId = … AND TraceId = … GROUP BY TraceId`.",
 	],
 	ai_crawler_requests: [
 		"Server spans whose user agent names an AI crawler (GPTBot, OAI-SearchBot, ChatGPT-User, ClaudeBot, Claude-SearchBot, Claude-User, PerplexityBot, Meta-ExternalAgent, Bytespider, CCBot, Amazonbot, ...), with `Crawler` (display name), `Host`, `Path` (no query string) and `HttpStatus` pre-extracted. ALWAYS prefer this over `traces` + `SpanAttributes['user_agent.original']`, which times out past about two days.",
@@ -45,11 +55,57 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"Scanners borrow crawler user agents and mostly get 404s: count pages actually read with `HttpStatus < 400` (0 means the span carried no status).",
 		"Sorting key: `(OrgId, Timestamp, TraceId)`; filled forward by its MV from migration 0033, never backfilled.",
 	],
+	scanner_requests: [
+		"Server spans that probe for something an application should not serve (`.env`, `.git/`, `/actuator/env`, `phpinfo`, path traversal, `/phpmyadmin`, WordPress paths, known exploit paths) or whose user agent names a scanning tool (ZGrab, Nuclei, Masscan, sqlmap, Censys, ...). ALWAYS prefer this over `traces` + `SpanAttributes['url.path']` for scanner activity.",
+		"`Signature` is the matched path token ('' when only the user agent matched), `Scanner` the tool's name ('' when only the path matched); `Host`, `Path` (no query string), `HttpStatus` (0 = no status), `ClientAddress` and `UserAgent` (cut to 256 characters) are pre-extracted.",
+		"One row per SPAN: count requests as `uniq(TraceId)`. A probe that answered 2xx on a secrets, source-control or debug signature is the one to look at.",
+		"Sorting key: `(OrgId, Timestamp, TraceId)`; filled forward by its MV from migration 0050, never backfilled.",
+	],
+	service_runtimes_hourly: [
+		"Span counts per (hour, service, environment, `RuntimeName`, `RuntimeVersion`, `ExecutableName`, `SdkLanguage`, `SdkName`, `SdkVersion`), from the resource attributes `process.runtime.*`, `process.executable.name` and `telemetry.sdk.*`. Bun and Deno under the stock OTel JS SDK report `RuntimeName = 'nodejs'` and differ only by `ExecutableName`. '' where the service sets none. Values cut to 64 characters.",
+		"SummingMergeTree: always `sum(SpanCount)`. Sorting key: `(OrgId, Hour, ServiceName, DeploymentEnv, RuntimeName, RuntimeVersion, ExecutableName, SdkLanguage, SdkName, SdkVersion)`; filled forward from migration 0050.",
+	],
+	ci_runs: [
+		"One row per CI workflow run attempt: the root span of a `github-actions` trace, with `Owner`, `Repository`, `Pipeline` (workflow name), `Result` (success, failure, timeout, error, cancellation, skip), `Branch`, `Revision`, `PullRequest` (0 = none) and `Attempt` pre-extracted. ALWAYS prefer this over `traces` + `SpanAttributes['cicd.pipeline.*']`.",
+		"`Duration` is NANOSECONDS. Leave out `Result = 'skip'` for durations and success rates: a skipped run did nothing.",
+		"Keeps 365 days, past the 30-day raw trace its `TraceId` links to. Sorting key: `(OrgId, Timestamp, TraceId)`.",
+	],
+	ci_jobs: [
+		"One row per CI job (a child of a run span; steps and runner waits are not included), with `Job`, `Result`, `QueueMs` (wait for a runner), `RunnerName`, `RunnerLabels` and `FailureReason` pre-extracted. Join to `ci_runs` on `TraceId`.",
+		"`Duration` is NANOSECONDS and includes the queue wait. A skipped job, or one cancelled before a runner took it (`Duration = 0`), never ran.",
+		"Keeps 365 days. Sorting key: `(OrgId, Timestamp, TraceId)`.",
+	],
+	service_endpoint_details_hourly: [
+		"`HttpStatusCode` is a String: compare it as text (`HttpStatusCode = '500'`) or convert it (`toUInt16OrZero(HttpStatusCode) >= 500`).",
+		"HTTP Server spans with a response status, one row per (service, hour, env, normalized `SpanName` = `METHOD /route`, `HttpStatusCode`, `ErrorType` = `error.type`). ALWAYS prefer this over `traces` + `SpanAttributes['http.response.status_code']` for per-endpoint status, error-type, latency, body-size and user-agent breakdowns.",
+		"Aggregate state columns: merge `DurationQuantiles` with `quantilesTDigestMerge(0.5, 0.95, 0.99)` (NANOSECONDS), `BodySizeQuantiles` with `quantilesTDigestIfMerge(0.5, 0.95, 0.99)` (bytes), `UserAgents` with `approx_top_kMerge(10)`, and `SlowestTraceId`/`SlowestTimestamp`/`SlowestBodySize` with `argMaxMerge` (`SlowestBodySize` -1 = no body size). Sum `SpanCount`/`EstimatedSpanCount`/`BodyCount`.",
+		"Keeps 90 days at hour grain. Sorting key: `(OrgId, ServiceName, Hour, DeploymentEnv, SpanName, HttpStatusCode, ErrorType)`.",
+	],
+	user_activity_hourly: [
+		"One row per (`ServiceNamespace`, `UserId`, `Hour`, `ServiceName`) of spans and logs carrying `user.id` (else `enduser.id`). ALWAYS prefer this over `traces` + `SpanAttributes['user.id']` for per-user request, error and log counts.",
+		"Sum `SpanCount`, `ErrorSpanCount`, `RequestCount` (entry-point spans), `FailedRequestCount`, `LogCount`, `WarnLogCount`, `ErrorLogCount`; `min(FirstSeen)` / `max(LastSeen)`. Merge `TraceIds` / `SessionIds` with `uniqIfMerge`, `RequestDurationQuantiles` with `quantilesTDigestIfMerge(0.5, 0.95)` (NANOSECONDS), `TopRoutes` with `approx_top_kMerge(10)` (drop the '' entry).",
+		"Keeps 90 days at hour grain: snap range bounds with `toStartOfHour`. Sorting key: `(OrgId, ServiceNamespace, UserId, Hour, ServiceName)`.",
+	],
+	service_operations_hourly: [
+		"One row per (service, env, hour, `SpanName`). Sum `SpanCount` / `ErrorCount`; p50 / p95 in NANOSECONDS are `quantilesTDigestMerge(0.5, 0.95)(DurationQuantiles)[1]` / `[2]`.",
+		"No `CommitSha`, `ServiceNamespace`, `SpanKind` or attributes here: per-commit numbers are in `service_overview_hourly`.",
+	],
+	service_operations_minutely: [
+		"`service_operations_hourly` at minute grain (`Minute`), 90-day TTL. Same columns and the same `quantilesTDigestMerge(0.5, 0.95)(DurationQuantiles)` merge; no `CommitSha`.",
+	],
+	service_overview_hourly: [
+		"One row per (service, hour, env, namespace, `CommitSha`) of entry-point spans. Sum `SpanCount` / `ErrorCount`; p50 / p95 / p99 in NANOSECONDS are `quantilesTDigestMerge(0.5, 0.95, 0.99)(DurationQuantiles)[1]` / `[2]` / `[3]`.",
+		"No `SpanName`: per-operation numbers are in `service_operations_hourly`. `CommitSha` is `vcs.ref.head.revision`.",
+	],
+	service_overview_minutely: [
+		"`service_overview_hourly` at minute grain (`Minute`), 90-day TTL, with the same columns and `quantilesTDigestMerge(0.5, 0.95, 0.99)(DurationQuantiles)` merge.",
+	],
 	service_overview_spans: [
 		"Pre-materialized projection of entry-point spans only (Server/Consumer kinds + root spans). Use for per-service request count, error rate, p50/p95/p99 latency.",
 		"`Duration` is NANOSECONDS — divide by 1e6 for ms.",
 		"`StatusCode` is Title Case: 'Ok', 'Error', 'Unset'.",
 		"Does NOT include `SpanAttributes`/`ResourceAttributes` — query `traces` if you need attribute access.",
+		"`SpanKind` ('Server', 'Consumer', or another kind for a root span) and `IsRoot` (UInt8) say why a row is an entry point; filter on them to split request traffic from consumers or background roots. Both are ''/0 on rows materialized before migration 0037 (the table keeps 30 days).",
 	],
 	error_events: [
 		"Per-error-occurrence rows with the OTel `exception` event unwrapped — surfaces `ExceptionType`, `ExceptionMessage`, `Stacktrace`, and a stable `FingerprintHash` for grouping.",
@@ -57,12 +113,16 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 	],
 	metrics_sum: [
 		"Cumulative or delta counter metrics. Use `rate(Value) OVER (PARTITION BY MetricName ORDER BY TimeUnix)` for rate-of-change when `IsMonotonic=1`.",
+		"Cumulative rows (temporality 2) carry a running total in every point, so never `sum(Value)` across points: take `max(Value) - min(Value)` per series, or the window function above.",
 		"`Attributes` is a Map — filter with `Attributes['service.name']`.",
 		"Check `AggregationTemporality` before choosing an aggregation: delta rows (temporality 1) already carry the per-interval increment, so `sum(Value)` per bucket is exact and a rate/lag reconstruction would double-difference them. Only cumulative rows (temporality 2) need the window function above.",
 		"`maple_ingest_org_bytes_total` / `maple_ingest_org_items_total` are delta counters written under Maple's internal org, carrying `Attributes['org_id']` (the *tenant* org whose data was ingested) and `Attributes['signal']` ('logs' | 'traces' | 'metrics'). Bytes are the real decoded payload size metered to billing — divide by 1e9 for GB. Sum them; never rate them.",
 		"An `Attributes['otel.metric.overflow'] = 'true'` datapoint means the SDK exceeded its per-interval series limit and collapsed the excess — per-org attribution is incomplete for that interval, so surface it rather than silently including it in a total.",
 	],
 	metrics_gauge: ["Point-in-time numeric values. Aggregate with avg/min/max/last over time buckets."],
+	product_events: [
+		"Event properties live in `Attributes` (Map(String, String)), read with `Attributes['plan']`. There is no `Properties` column.",
+	],
 	metrics_histogram: [
 		"Pre-aggregated histograms (bucket counts + sum + count). Reconstruct percentiles with `quantilesExact`/`quantileBFloat16` if needed.",
 	],
@@ -83,8 +143,14 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"`Hour` is a top-of-hour DateTime. Snap both range bounds to their hour floor (`toStartOfHour`) or sub-hour windows return no rows at all; this necessarily over-reports at the window edges.",
 		"The `*SizeBytes` columns are STORAGE ESTIMATES, not measured bytes — the materialized views compute them as `length(Body) + 200` (logs), `length(SpanName) + 300` (spans) and flat per-point constants (metrics). They will NOT reconcile with an Autumn invoice and must never be presented as billed usage.",
 		"For real billed bytes use `metrics_sum` / `maple_ingest_org_bytes_total`, which records the decoded payload size the gateway actually metered. Counts here are also post-sampling and post-drop, i.e. what was stored, not what was accepted.",
+		"`TraceCount` counts stored SPANS (not distinct traces) and `LogCount` log records; there is no `SpanCount` column.",
 		"Metric counts are split across four columns by point type (`SumMetricCount`, `GaugeMetricCount`, `HistogramMetricCount`, `ExpHistogramMetricCount`) — add all four for a total metric-point count.",
 		"Has no `DeploymentEnv` dimension, so prod-vs-staging splits are impossible here; use `logs_aggregates_hourly` / `traces_aggregates_hourly` for that.",
+	],
+	source_usage_hourly: [
+		"Hourly per-source rollup of STORED rows, keyed by `SourceId`, the public `src_…` id the ingest gateway stamps as `ResourceAttributes['maple_source_id']`. Rows without a source id are not counted here.",
+		"`SpanCount`, `LogCount` and `MetricCount` (data points across every metric type) with `*SizeBytes` STORAGE ESTIMATES computed like `service_usage`'s; never present them as billed usage.",
+		"Filled forward by its views from migration 0046, never backfilled, 90-day TTL.",
 	],
 } satisfies Record<string, ReadonlyArray<string>>
 
@@ -98,6 +164,59 @@ export interface TableSummary {
 	readonly name: string
 	readonly description?: string
 	readonly columnCount: number
+	/** The column `$__timeFilter` belongs on; agents guess it wrong more than any other name. */
+	readonly timeColumn?: string
+}
+
+const TIME_COLUMN_PREFERENCE = ["Timestamp", "Hour", "Minute", "TimeUnix", "StartTime"] as const
+
+const timeColumnOf = (columnNames: ReadonlyArray<string>): string | undefined =>
+	Option.getOrUndefined(Arr.findFirst(TIME_COLUMN_PREFERENCE, (name) => columnNames.includes(name)))
+
+/** How to read each rollup engine; a plain read of one double counts or under-counts. */
+const ENGINE_NOTES: ReadonlyMap<string, string> = new Map([
+	[
+		"SummingMergeTree",
+		"SummingMergeTree: rows for one key may not be merged yet, so always `sum()` the count columns with GROUP BY rather than reading single rows.",
+	],
+	[
+		"AggregatingMergeTree",
+		"AggregatingMergeTree rollup: aggregate on read with GROUP BY, `sum()` for SimpleAggregateFunction(sum) columns and `-Merge` combinators (e.g. `quantilesMerge`) for AggregateFunction columns.",
+	],
+	[
+		"ReplacingMergeTree",
+		"ReplacingMergeTree: superseded versions of a row may still be present; take `argMax(col, Version)` per key. `FINAL` is refused on the managed warehouse, which reads every table through a per-org subquery.",
+	],
+])
+
+// Names agents reach for from other OTel schemas, mapped to Maple's table.
+const TABLE_NAME_ALIASES: ReadonlyMap<string, ReadonlyArray<string>> = new Map([
+	["otel_traces", ["traces"]],
+	["otel_spans", ["traces"]],
+	["spans", ["traces"]],
+	["span", ["traces"]],
+	["trace", ["traces"]],
+	["otel_logs", ["logs"]],
+	["log", ["logs"]],
+	["metrics", ["metrics_sum", "metrics_gauge", "metrics_histogram"]],
+	["otel_metrics", ["metrics_sum", "metrics_gauge", "metrics_histogram"]],
+	["errors", ["error_events"]],
+	["exceptions", ["error_events"]],
+	["sessions", ["session_replays"]],
+	["events", ["product_events"]],
+])
+
+/** Real tables an unknown table name most likely meant, best first; empty when nothing fits. */
+export function suggestWarehouseTables(name: string): ReadonlyArray<string> {
+	const known = new Set(Arr.map(listWarehouseTables(), (t) => t.name))
+	const bare = Str.toLowerCase(Arr.lastNonEmpty(Str.split(".")(Str.replace(/[`"]/g, "")(name))))
+	for (const candidate of [bare, Str.replace(/^otel_/, "")(bare)]) {
+		if (known.has(candidate)) return [candidate]
+		const aliases = TABLE_NAME_ALIASES.get(candidate)
+		const aliased = aliases === undefined ? [] : Arr.filter(aliases, (t) => known.has(t))
+		if (aliased.length > 0) return aliased
+	}
+	return []
 }
 
 export interface TableInfo extends TableSummary {
@@ -121,19 +240,22 @@ function collectDatasources() {
 	// functions, and constant lookup tables. `isDatasourceDefinition` is the
 	// runtime filter; we cast to `unknown` first because the static union of all
 	// exports is too wide for TS to narrow with the predicate.
-	return (Object.values(Datasources) as ReadonlyArray<unknown>)
-		.filter(isDatasourceDefinition)
-		.filter((ds) => !RAW_SQL_HIDDEN_DATASOURCES.has(ds._name))
+	return Arr.filter(
+		Arr.filter(Rec.values(Datasources) as ReadonlyArray<unknown>, isDatasourceDefinition),
+		(ds) => !RAW_SQL_HIDDEN_DATASOURCES.has(ds._name),
+	)
 }
 
 export function listWarehouseTables(): ReadonlyArray<TableSummary> {
-	return collectDatasources()
-		.map((ds) => ({
+	return Arr.map(collectDatasources(), (ds) => {
+		const timeColumn = timeColumnOf(Rec.keys(ds._schema))
+		return {
 			name: ds._name,
 			description: ds.options.description,
-			columnCount: Object.keys(ds._schema).length,
-		}))
-		.sort((a, b) => a.name.localeCompare(b.name))
+			columnCount: Rec.keys(ds._schema).length,
+			...(timeColumn === undefined ? undefined : { timeColumn }),
+		}
+	}).sort((a, b) => Str.localeCompare(b.name)(a.name))
 }
 
 /**
@@ -144,34 +266,48 @@ export function listWarehouseTables(): ReadonlyArray<TableSummary> {
  * rather than leaking cross-tenant rows.
  */
 export function listOrgScopedDatasourceNames(): ReadonlyArray<string> {
-	return collectDatasources()
-		.filter((ds) => "OrgId" in ds._schema)
-		.map((ds) => ds._name)
-		.sort((a, b) => a.localeCompare(b))
+	// Code-unit order: `localeCompare` builds an ICU collator on first use, a cold-start cost.
+	return Arr.sort(
+		Arr.map(
+			Arr.filter(collectDatasources(), (ds) => "OrgId" in ds._schema),
+			(ds) => ds._name,
+		),
+		Order.String,
+	)
 }
 
 export function describeWarehouseTable(name: string): TableInfo | null {
-	const ds = collectDatasources().find((d) => d._name === name)
-	if (!ds) return null
+	const found = Arr.findFirst(collectDatasources(), (d) => d._name === name)
+	if (Option.isNone(found)) return null
+	const ds = found.value
 
-	const columns: ColumnInfo[] = Object.entries(ds._schema).map(([colName, colDef]) => {
+	const columns: ColumnInfo[] = Arr.map(Rec.toEntries(ds._schema), ([colName, colDef]) => {
 		const validator = getColumnType(colDef)
 		const type = getTinybirdType(validator)
 		const jsonPath = getColumnJsonPath(colDef)
 		return jsonPath ? { name: colName, type, jsonPath } : { name: colName, type }
 	})
 
-	const engine = ds.options.engine as
-		| { sortingKey?: ReadonlyArray<string> | string; partitionKey?: string }
-		| undefined
+	const engine = ds.options.engine
+	const keys = engine === undefined || engine.type === "Null" ? undefined : engine
+	const timeColumn = timeColumnOf(Arr.map(columns, (c) => c.name))
+	const engineNote = engine?.type === undefined ? undefined : ENGINE_NOTES.get(engine.type)
+	const notes = [
+		...(timeColumn === undefined
+			? []
+			: [`Time column: \`${timeColumn}\`. Filter with \`$__timeFilter(${timeColumn})\`.`]),
+		...(engineNote === undefined ? [] : [engineNote]),
+		...(TABLE_NOTES[ds._name] ?? []),
+	]
 
 	return {
 		name: ds._name,
 		description: ds.options.description,
 		columnCount: columns.length,
+		...(timeColumn === undefined ? undefined : { timeColumn }),
 		columns,
-		notes: TABLE_NOTES[ds._name],
-		sortingKey: engine?.sortingKey,
-		partitionKey: engine?.partitionKey,
+		notes: notes.length > 0 ? notes : undefined,
+		sortingKey: keys?.sortingKey,
+		partitionKey: keys?.partitionKey,
 	}
 }

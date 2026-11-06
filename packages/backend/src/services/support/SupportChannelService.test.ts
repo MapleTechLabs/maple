@@ -1,5 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Exit, Layer, Schema } from "effect"
+import { Effect, Exit, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { OrgId, UserId } from "@maple/domain/http"
 import { supportChannelName } from "@maple/domain/support-channel"
 import {
@@ -18,8 +19,8 @@ import { SupportSlackClient, SupportSlackRefusedError, type SupportSlackMethod }
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_support")
-const USER = Schema.decodeUnknownSync(UserId)("user_support")
+const ORG = Schema.decodeSync(OrgId)("org_support")
+const USER = Schema.decodeSync(UserId)("user_support")
 const tenant: TenantContext = { orgId: ORG, userId: USER, roles: [], authMode: "clerk" }
 
 const die = () => Effect.die(new Error("not exercised by this test"))
@@ -89,9 +90,11 @@ const stubs = (world: World) =>
 		}),
 		Layer.succeed(OrgMembersService, {
 			listMembers: die,
+			listOrganizationsOf: die,
+			listMemberActivity: die,
 			resolveMembers: (_orgId, userIds) =>
 				Effect.succeed(
-					userIds.map((userId) => ({
+					Arr.map(userIds, (userId) => ({
 						userId,
 						email: `${userId}@acme.com`,
 						name: null,
@@ -116,10 +119,10 @@ const stubs = (world: World) =>
 
 const makeLayer = (world: World, testDb: TestDb) =>
 	Layer.effect(SupportChannelService, SupportChannelService.make).pipe(
-		Layer.provide(Layer.mergeAll(stubs(world), testDb.layer)),
+		Layer.provide(Layer.mergeAll(stubs(world), testDb.layer, SecureRandom.layerWebCrypto)),
 	)
 
-const methods = (world: World) => world.calls.map((call) => call.method)
+const methods = (world: World) => Arr.map(world.calls, (call) => call.method)
 
 /** What the route does: ensure, then invite. */
 const invite = (tenant: TenantContext) =>
@@ -142,7 +145,7 @@ describe("supportChannelName", () => {
 	})
 
 	it("stays within Slack's 80 characters", () => {
-		assert.isAtMost(supportChannelName("a".repeat(200), "org_1", 3).length, 80)
+		assert.isAtMost(supportChannelName(Str.repeat(200)("a"), "org_1", 3).length, 80)
 	})
 })
 
@@ -219,7 +222,9 @@ describe("SupportChannelService", () => {
 			const result = yield* invite(tenant)
 			assert.notStrictEqual(result.channel.channelId, "C_internal")
 			assert.strictEqual(result.channel.channelName, "maple-acme-inc-2")
-			const invited = world.calls.find((call) => call.method === "conversations.inviteShared")
+			const invited = Option.getOrUndefined(
+				Arr.findFirst(world.calls, (call) => call.method === "conversations.inviteShared"),
+			)
 			assert.notStrictEqual(invited?.body.channel, "C_internal")
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})

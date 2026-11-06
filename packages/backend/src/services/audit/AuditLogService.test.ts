@@ -1,15 +1,22 @@
 import { describe, expect, it } from "@effect/vitest"
+import { AfterResponse } from "@maple/backend/platform/after-response"
 import { AuditEventsQueueProducer, QueueSendError } from "@maple/backend/platform/bindings"
 import { CurrentTenant } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
 import type { AuditLogRow } from "@maple/domain/tinybird"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr } from "effect"
+import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { TestClock } from "effect/testing"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { type AuditActorInfo, CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { AUDIT_LOG_DATASOURCE, AuditLogService, recordHttpAudit } from "./AuditLogService"
+import {
+	AUDIT_ACCESS_ACTION_SUFFIXES,
+	AUDIT_LOG_DATASOURCE,
+	AuditLogService,
+	recordHttpAudit,
+} from "./AuditLogService"
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
@@ -17,7 +24,7 @@ const asUserId = Schema.decodeUnknownSync(UserId)
 const ORG = asOrgId("org_audit_log_test")
 const USER = asUserId("user_audit_log_test")
 const DASHBOARD_ID = "3f1b7c02-9a44-4d1e-8b2f-0c5d6e7a8b91"
-const API_KEY = Schema.decodeUnknownSync(ApiKeyId)("7b2e4c10-55aa-4d3e-9f21-1a2b3c4d5e6f")
+const API_KEY = Schema.decodeSync(ApiKeyId)("7b2e4c10-55aa-4d3e-9f21-1a2b3c4d5e6f")
 
 /**
  * A warehouse that records what `ingest` receives and answers `compiledQuery`
@@ -25,22 +32,34 @@ const API_KEY = Schema.decodeUnknownSync(ApiKeyId)("7b2e4c10-55aa-4d3e-9f21-1a2b
  * filters the listing bound.
  */
 const recordingWarehouse = (rows: ReadonlyArray<Record<string, unknown>> = []) => {
-	const ingested: Array<{ datasource: string; rows: ReadonlyArray<AuditLogRow> }> = []
+	const ingested: Array<{
+		datasource: string
+		rows: ReadonlyArray<AuditLogRow>
+		bestEffort: boolean
+		retryTransient: boolean
+	}> = []
 	const sql: Array<string> = []
 	const layer = Layer.succeed(
 		WarehouseQueryService,
 		makeWarehouseServiceStub({
-			ingest: (_tenant, datasource, batch) =>
+			ingest: (_tenant, datasource, batch, options) =>
 				Effect.sync(() => {
-					// SAFETY: this stub only ever receives the audit datasource's rows.
-					ingested.push({ datasource, rows: batch as ReadonlyArray<AuditLogRow> })
+					ingested.push({
+						datasource,
+						// SAFETY: this stub only ever receives the audit datasource's rows.
+						rows: batch as ReadonlyArray<AuditLogRow>,
+						bestEffort: options?.bestEffort === true,
+						retryTransient: options?.retryTransient === true,
+					})
 				}),
 			compiledQuery: ((_tenant: unknown, compiled: unknown) =>
 				Effect.gen(function* () {
 					const query = Effect.isEffect(compiled) ? yield* compiled : compiled
-					// SAFETY: every compiled query carries its SQL text.
-					sql.push((query as { readonly sql: string }).sql)
-					return rows
+					// SAFETY: the audit listing hands the stub a compiled query.
+					const compiledQuery = query as CompiledQuery<unknown>
+					sql.push(compiledQuery.sql)
+					// Decode as the real executor does, so timestamps arrive as `DateTime.Utc`.
+					return yield* compiledQuery.decodeRows(rows)
 				})) as never,
 		}),
 	)
@@ -94,8 +113,11 @@ describe("AuditLogService (warehouse-backed)", () => {
 			)
 
 			expect(warehouse.ingested).toHaveLength(1)
-			expect(warehouse.ingested[0]!.datasource).toBe(AUDIT_LOG_DATASOURCE)
-			const row = warehouse.ingested[0]!.rows[0]!
+			expect(warehouse.ingested[0].datasource).toBe(AUDIT_LOG_DATASOURCE)
+			// A lost audit row is a Warn, never an Error span that opens an issue.
+			expect(warehouse.ingested[0].bestEffort).toBe(true)
+			expect(warehouse.ingested[0].retryTransient).toBe(true)
+			const row = warehouse.ingested[0].rows[0]
 			expect(row.OrgId).toBe(ORG)
 			expect(row.ActorType).toBe("user")
 			expect(row.UserId).toBe(USER)
@@ -140,6 +162,41 @@ describe("AuditLogService (warehouse-backed)", () => {
 			expect(sent[0]).toMatchObject({ orgId: ORG, action: "dashboard.created" })
 			// The consumer performs the write; nothing reaches the warehouse directly.
 			expect(warehouse.ingested).toEqual([])
+		}),
+	)
+
+	it.effect("sends the entry after the response when the request can defer it", () =>
+		Effect.gen(function* () {
+			const warehouse = recordingWarehouse()
+			const sent: unknown[] = []
+			const deferred: Array<Effect.Effect<void>> = []
+			yield* Effect.gen(function* () {
+				const audit = yield* AuditLogService
+				yield* audit.record({
+					orgId: ORG,
+					actor: { type: "user", userId: USER },
+					source: "dashboard",
+					action: "dashboard.created",
+				})
+			}).pipe(
+				Effect.provideService(AfterResponse, (work) => Effect.sync(() => deferred.push(work))),
+				Effect.provide(
+					Layer.effect(AuditLogService, AuditLogService.make).pipe(
+						Layer.provide(warehouse.layer),
+						Layer.provide(
+							Layer.succeed(AuditEventsQueueProducer, {
+								sendBatch: (messages) =>
+									Effect.sync(() => Arr.forEach(messages, (m) => sent.push(m.body))),
+							}),
+						),
+					),
+				),
+			)
+			// The response is not held for the send.
+			expect(sent).toEqual([])
+			yield* Effect.forEach(deferred, (work) => work, { discard: true })
+			expect(sent).toHaveLength(1)
+			expect(sent[0]).toMatchObject({ orgId: ORG, action: "dashboard.created" })
 		}),
 	)
 
@@ -190,7 +247,7 @@ describe("AuditLogService (warehouse-backed)", () => {
 			)
 
 			expect(rows).toHaveLength(1)
-			const entry = rows[0]!
+			const entry = rows[0]
 			expect(entry.orgId).toBe(ORG)
 			expect(entry.userId).toBe(USER)
 			expect(entry.apiKeyId).toBeNull()
@@ -217,9 +274,9 @@ describe("AuditLogService (warehouse-backed)", () => {
 					Layer.effect(AuditLogService, AuditLogService.make).pipe(Layer.provide(warehouse.layer)),
 				),
 			)
-			expect(rows[0]!.changes).toBeNull()
-			expect(rows[0]!.changedFields).toBeNull()
-			expect(rows[0]!.metadata).toBeNull()
+			expect(rows[0].changes).toBeNull()
+			expect(rows[0].changedFields).toBeNull()
+			expect(rows[0].metadata).toBeNull()
 		}),
 	)
 
@@ -231,6 +288,7 @@ describe("AuditLogService (warehouse-backed)", () => {
 				yield* audit.list(ORG, { limit: 10, offset: 0 })
 				yield* audit.list(ORG, {
 					actorType: "api_key",
+					excludeActionSuffixes: [".called"],
 					changedField: "scopes",
 					sinceMs: Date.UTC(2026, 7, 29, 9, 12, 0, 412),
 					limit: 5,
@@ -246,9 +304,11 @@ describe("AuditLogService (warehouse-backed)", () => {
 			expect(plain).toContain(`OrgId = '${ORG}'`)
 			expect(plain).not.toContain("ActorType =")
 			expect(plain).not.toContain("has(ChangedFields")
+			expect(plain).not.toContain("endsWith(")
 			expect(plain).toMatch(/ORDER BY occurredAt DESC, id DESC/)
 			expect(filtered).toContain("ActorType = 'api_key'")
 			expect(filtered).toContain("has(ChangedFields, 'scopes')")
+			expect(filtered).toContain("NOT (endsWith(audit_log.Action, '.called'))")
 			expect(filtered).toContain("OccurredAt >= '2026-08-29 09:12:00.412'")
 			expect(filtered).toMatch(/LIMIT 5\s+OFFSET 5/)
 			// Never routed to an org's BYO warehouse.
@@ -293,13 +353,13 @@ describe("AuditLogService.layerMemory", () => {
 			yield* seedThree
 
 			const rows = yield* audit.list(ORG, { limit: 10, offset: 0 })
-			expect(rows.map((row) => row.action)).toEqual([
+			expect(Arr.map(rows, (row) => row.action)).toEqual([
 				"error_issue.state_change",
 				"alert_rule.updated",
 				"dashboard.created",
 			])
 
-			const oldest = rows[2]!
+			const oldest = rows[2]
 			expect(oldest.actorType).toBe("user")
 			expect(oldest.userId).toBe(USER)
 			expect(oldest.source).toBe("dashboard")
@@ -307,7 +367,7 @@ describe("AuditLogService.layerMemory", () => {
 			expect(oldest.resourceId).toBe(encodePublicId(PublicIdPrefixes.dashboard, DASHBOARD_ID))
 			expect(oldest.metadata).toEqual({ name: "First" })
 
-			const newest = rows[0]!
+			const newest = rows[0]
 			expect(newest.actorType).toBe("agent")
 			expect(newest.actorLabel).toBe("triage-bot")
 		}).pipe(Effect.provide(AuditLogService.layerMemory)),
@@ -327,15 +387,18 @@ describe("AuditLogService.layerMemory", () => {
 			})
 
 			const apiKeyRows = yield* audit.list(ORG, { actorType: "api_key", limit: 10, offset: 0 })
-			expect(apiKeyRows.map((row) => row.action)).toEqual(["alert_rule.updated"])
+			expect(Arr.map(apiKeyRows, (row) => row.action)).toEqual(["alert_rule.updated"])
 			expect(yield* audit.list(ORG, { actorType: "system", limit: 10, offset: 0 })).toEqual([])
 
 			const denied = yield* audit.list(ORG, { outcome: "denied", limit: 10, offset: 0 })
-			expect(denied.map((row) => row.action)).toEqual(["alert_rule.deleted"])
-			expect(denied[0]!.denialReason).toBe("missing role: admin")
+			expect(Arr.map(denied, (row) => row.action)).toEqual(["alert_rule.deleted"])
+			expect(denied[0].denialReason).toBe("missing role: admin")
 
 			const secondPage = yield* audit.list(ORG, { limit: 2, offset: 2 })
-			expect(secondPage.map((row) => row.action)).toEqual(["alert_rule.updated", "dashboard.created"])
+			expect(Arr.map(secondPage, (row) => row.action)).toEqual([
+				"alert_rule.updated",
+				"dashboard.created",
+			])
 		}).pipe(Effect.provide(AuditLogService.layerMemory)),
 	)
 
@@ -352,9 +415,9 @@ describe("AuditLogService.layerMemory", () => {
 			})
 
 			const rows = yield* audit.list(ORG, { changedField: "name", limit: 10, offset: 0 })
-			expect(rows.map((row) => row.action)).toEqual(["dashboard.updated"])
-			expect(rows[0]!.changedFields).toEqual(["name"])
-			expect(rows[0]!.changes).toEqual({
+			expect(Arr.map(rows, (row) => row.action)).toEqual(["dashboard.updated"])
+			expect(rows[0].changedFields).toEqual(["name"])
+			expect(rows[0].changes).toEqual({
 				fields: ["name"],
 				before: { name: "a" },
 				after: { name: "b" },
@@ -366,6 +429,32 @@ describe("AuditLogService.layerMemory", () => {
 	// The credential and the surface are the two facts a mutation handler cannot
 	// re-derive, and getting them wrong is what made API-key and MCP actions read
 	// back as dashboard sessions.
+	it.effect("leaves out access entries before the limit, so changes behind many reads still list", () =>
+		Effect.gen(function* () {
+			const audit = yield* AuditLogService
+			yield* seedThree
+			for (const action of [
+				"mcp_tool.called",
+				"telemetry.read",
+				"telemetry.sql_executed",
+				"api.request",
+			] as const) {
+				yield* TestClock.adjust("1 second")
+				yield* audit.record({ orgId: ORG, actor: { type: "agent" }, source: "mcp", action })
+			}
+
+			const changes = yield* audit.list(ORG, {
+				excludeActionSuffixes: AUDIT_ACCESS_ACTION_SUFFIXES,
+				limit: 2,
+				offset: 0,
+			})
+			expect(Arr.map(changes, (row) => row.action)).toEqual([
+				"error_issue.state_change",
+				"alert_rule.updated",
+			])
+		}).pipe(Effect.provide(AuditLogService.layerMemory)),
+	)
+
 	describe("recordHttpAudit attribution", () => {
 		const tenant = new CurrentTenant.TenantSchema({
 			orgId: ORG,
@@ -379,7 +468,7 @@ describe("AuditLogService.layerMemory", () => {
 				const audit = yield* AuditLogService
 				yield* recordHttpAudit("dashboard.created", { resourceId: DASHBOARD_ID })
 				const rows = yield* audit.list(ORG, { limit: 1, offset: 0 })
-				return rows[0]!
+				return rows[0]
 			}).pipe(
 				Effect.provideService(CurrentTenant.Context, tenant),
 				Effect.provideService(CurrentAuditActor, info),

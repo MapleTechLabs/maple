@@ -1,6 +1,6 @@
 import { McpQueryError, type McpToolRegistrar } from "./types"
 import { formatNumber } from "../lib/format"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr } from "effect"
 import { GetInstrumentationRecommendationsOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
@@ -69,13 +69,16 @@ export interface CoverageGap {
 export const deriveCoverageGaps = (
 	resourceKeys: ReadonlyArray<{ readonly key: string }>,
 ): ReadonlyArray<CoverageGap> => {
-	const present = new Set(resourceKeys.map((row) => row.key))
-	return COVERAGE_CHECKS.filter((check) => !check.keys.some((key) => present.has(key))).map((check) => ({
-		checkId: check.checkId,
-		attribute: check.label,
-		severity: "warn" as const,
-		reason: check.reason,
-	}))
+	const present = new Set(Arr.map(resourceKeys, (row) => row.key))
+	return Arr.map(
+		Arr.filter(COVERAGE_CHECKS, (check) => !Arr.some(check.keys, (key) => present.has(key))),
+		(check) => ({
+			checkId: check.checkId,
+			attribute: check.label,
+			severity: "warn" as const,
+			reason: check.reason,
+		}),
+	)
 }
 
 // v2 candidates (each needs a new warehouse aggregate, deliberately not in v1):
@@ -85,6 +88,7 @@ export const deriveCoverageGaps = (
 export function registerGetInstrumentationRecommendationsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_instrumentation_recommendations",
+		title: "Instrumentation Recommendations",
 		description:
 			"Span attribute issues found in the org's live data (deprecated semconv keys to rename, keys emitted under " +
 			"both old and new names, non-conforming names) plus org-wide resource attribute gaps (deployment " +
@@ -108,7 +112,7 @@ export function registerGetInstrumentationRecommendationsTool(server: McpToolReg
 		}) {
 			const tenant = yield* CurrentMcpTenant
 			const statusFilter = status ?? "open"
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, status: statusFilter })
+			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.ai.status": statusFilter })
 
 			// Reconciles live span keys against persisted issues: calling this tool refreshes
 			// usage counts and auto-resolves fixed issues, same as the dashboard settings page.
@@ -124,7 +128,8 @@ export function registerGetInstrumentationRecommendationsTool(server: McpToolReg
 				),
 			)
 
-			const issues = reconciled.issues.filter(
+			const issues = Arr.filter(
+				reconciled.issues,
 				(issue) => statusFilter === "all" || issue.status === statusFilter,
 			)
 			yield* Effect.annotateCurrentSpan("result.rowCount", issues.length)
@@ -147,7 +152,7 @@ export function registerGetInstrumentationRecommendationsTool(server: McpToolReg
 				: Option.none()
 
 			return {
-				issues: issues.map((issue) => ({
+				issues: Arr.map(issues, (issue) => ({
 					id: issue.id,
 					number: issue.number,
 					recommendationKey: issue.recommendationKey,
@@ -183,7 +188,7 @@ export function registerGetInstrumentationRecommendationsTool(server: McpToolReg
 								? doc.text("All recommended resource attributes are arriving.")
 								: doc.table(
 										["Check", "Missing attribute", "Severity", "Impact"],
-										coverage.gaps.map((gap) => [
+										Arr.map(coverage.gaps, (gap) => [
 											gap.checkId,
 											gap.attribute,
 											gap.severity,
@@ -192,12 +197,12 @@ export function registerGetInstrumentationRecommendationsTool(server: McpToolReg
 									),
 					]
 			const guidance = [
-				...(issues.some((issue) => issue.kind === "rename")
+				...(Arr.some(issues, (issue) => issue.kind === "rename")
 					? [
 							"Rename issues: fix at the SDK (preferred) or accept the issue in Maple Settings → Ingestion to create an ingest attribute mapping.",
 						]
 					: []),
-				...(issues.some((issue) => issue.kind === "double-emission")
+				...(Arr.some(issues, (issue) => issue.kind === "double-emission")
 					? [
 							"Double-emission issues: standardize on the canonical key at the SDK; a mapping can't merge keys.",
 						]
@@ -223,7 +228,7 @@ export function registerGetInstrumentationRecommendationsTool(server: McpToolReg
 									"Status",
 									"Fix via",
 								],
-								issues.map((issue) => [
+								Arr.map(issues, (issue) => [
 									`#${issue.number}`,
 									issue.kind,
 									issue.severity,

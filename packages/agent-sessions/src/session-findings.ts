@@ -9,10 +9,10 @@
 import type { AiSessionSpan } from "@maple/domain/http"
 
 import { formatNumber, formatSessionDuration } from "@maple/domain/format"
-import { canonicalJSON } from "@maple/query-engine"
 import { clipDetail, failureDetailText } from "./failure-text"
 import {
 	failureEvents,
+	finishReasonsIn,
 	findIdleGaps,
 	isProviderAttempt,
 	shadowedAncestorIds,
@@ -21,23 +21,14 @@ import {
 	type SessionSummary,
 } from "./session-summary"
 import {
-	classifyAiSpan,
+	finalTurnIndex,
 	isLlmCall,
 	spanEndMs,
 	spanFailed,
 	spanStartMs,
 	type SessionTurn,
 } from "./session-turns"
-
-/** Same tool this often within one turn reads as the agent going in circles. */
-const REPEATED_TOOL_MIN_CALLS = 8
-
-/**
- * The same call — tool and arguments — this many times in a row, with nothing
- * between, is a loop whatever the tool's total. One unchanged retry after a
- * failure is not: a transient 429 or timeout is retried exactly that way.
- */
-const IDENTICAL_RUN_MIN_CALLS = 3
+import { Array as Arr, Option, String as Str } from "effect"
 
 /**
  * A hole this long INSIDE a turn is the framework stalled mid-flight. Gaps
@@ -46,8 +37,9 @@ const IDENTICAL_RUN_MIN_CALLS = 3
  */
 const MID_TURN_STALL_MIN_MS = 30_000
 
-/** Finish reasons that mean the reply was cut off at the output token limit. */
-const TRUNCATION_FINISH_REASONS = new Set(["length", "max_tokens", "max_output_tokens"])
+/** Finish reasons that mean the reply was cut off at the output token limit,
+ *  as `finishReasonsIn` keys. */
+const TRUNCATION_FINISH_REASONS = new Set(["length", "maxtokens", "maxoutputtokens"])
 
 /**
  * Failure kinds that need a fix whether or not the run survived them: the
@@ -62,6 +54,7 @@ const FAILURE_KINDS: ReadonlySet<SessionFailureKind> = new Set([
 	"invalidOutput",
 	"toolUnavailable",
 	"incomplete",
+	"agentLimit",
 ])
 
 /** Red or amber: whether the thing found ended the run or names a class that
@@ -69,9 +62,9 @@ const FAILURE_KINDS: ReadonlySet<SessionFailureKind> = new Set([
  *  split reads the same field, so the two never disagree. */
 export type FindingSeverity = "failure" | "anomaly"
 
-/** Which detector produced the row: a failure kind, or one of the four
+/** Which detector produced the row: a failure kind, or one of the three
  *  session-shape detectors below. What the checklist groups rows on. */
-export type SessionFindingKind = SessionFailureKind | "providerRetry" | "truncation" | "repetition" | "stall"
+export type SessionFindingKind = SessionFailureKind | "providerRetry" | "truncation" | "stall"
 
 export interface SessionFinding {
 	readonly id: string
@@ -120,36 +113,36 @@ export function buildSessionFindings(
 	turns: readonly SessionTurn[],
 	summary: SessionSummary,
 ): SessionFindingsReport {
-	const spans = turns.flatMap((turn) => turn.spans).sort((a, b) => spanStartMs(a) - spanStartMs(b))
+	const spans = Arr.flatMap(turns, (turn) => turn.spans).sort((a, b) => spanStartMs(a) - spanStartMs(b))
 	const turnIndexBySpan = new Map<string, number>()
-	turns.forEach((turn, index) => {
+	Arr.forEach(turns, (turn, index) => {
 		for (const span of turn.spans) turnIndexBySpan.set(span.spanId, index)
 	})
-	const lastTurnIndex = turns.length - 1
+	const lastTurnIndex = finalTurnIndex(turns)
 	const events = failureEvents(spans)
 
 	// The LAST failure event in the final turn is the one the turn died on — an
 	// earlier rate-limited retry in the same turn is a finding, not the cause.
 	const cause = summary.failed
-		? events.findLast((event) => turnIndexBySpan.get(event.span.spanId) === lastTurnIndex)
-		: undefined
+		? Arr.findLast(events, (event) => turnIndexBySpan.get(event.span.spanId) === lastTurnIndex)
+		: Option.none()
+	const causeSpanId = Option.getOrUndefined(Option.map(cause, (event) => event.span.spanId))
 
 	const findings = [
-		...failureFindings(events, turns, turnIndexBySpan, cause?.span.spanId, spans),
+		...failureFindings(events, turns, turnIndexBySpan, causeSpanId, spans),
 		...retryFindings(spans, turns, turnIndexBySpan),
 		...truncationFindings(spans, turns, turnIndexBySpan),
-		...repetitionFindings(turns),
 		...stallFindings(turns),
-	].sort(
-		(a, b) =>
-			severityRank(a.severity) - severityRank(b.severity) ||
-			// The terminal failure leads: it is the verdict's own evidence.
-			Number(b.terminal) - Number(a.terminal) ||
-			a.atMs - b.atMs,
-	)
+	].sort((a, b) => {
+		const bySeverity = severityRank(a.severity) - severityRank(b.severity)
+		if (bySeverity !== 0) return bySeverity
+		// The terminal failure leads: it is the verdict's own evidence.
+		if (a.terminal !== b.terminal) return Number(b.terminal) - Number(a.terminal)
+		return a.atMs - b.atMs
+	})
 
 	const verdict: SessionVerdict = summary.failed
-		? { status: "failed", spanId: cause?.span.spanId }
+		? { status: "failed", spanId: causeSpanId }
 		: { status: findings.length > 0 ? "attention" : "clean", spanId: undefined }
 
 	return { verdict, findings }
@@ -176,26 +169,28 @@ function failureFindings(
 		{
 			kind: SessionFailureKind
 			tool: string | undefined
-			members: { span: AiSessionSpan; turnIndex: number }[]
+			members: Arr.NonEmptyArray<{ span: AiSessionSpan; turnIndex: number }>
 		}
 	>()
 	for (const event of events) {
-		const turnIndex = turnIndexBySpan.get(event.span.spanId) ?? 0
-		const group = byLabel.get(event.label) ?? { kind: event.kind, tool: event.tool, members: [] }
-		group.members.push({ span: event.span, turnIndex })
-		byLabel.set(event.label, group)
+		const member = { span: event.span, turnIndex: turnIndexBySpan.get(event.span.spanId) ?? 0 }
+		const group = byLabel.get(event.label)
+		if (group === undefined)
+			byLabel.set(event.label, { kind: event.kind, tool: event.tool, members: [member] })
+		else group.members.push(member)
 	}
 
-	return [...byLabel].map(([label, group]) => {
-		const turnIndices = distinctSorted(group.members.map((member) => member.turnIndex))
+	return Arr.map([...byLabel], ([label, group]) => {
+		const turnIndices = distinctSorted(Arr.map(group.members, (member) => member.turnIndex))
 		// The terminal group links the span the turn died on; a recovered group
 		// links its first event, where the trouble began.
 		const cause =
 			causeSpanId === undefined
-				? undefined
-				: group.members.find((member) => member.span.spanId === causeSpanId)
-		const terminal = cause !== undefined
-		const linked = cause ?? group.members[0]
+				? Option.none()
+				: Arr.findFirst(group.members, (member) => member.span.spanId === causeSpanId)
+		const terminal = Option.isSome(cause)
+		const first = Arr.headNonEmpty(group.members)
+		const linked = Option.getOrElse(cause, () => first)
 		return {
 			id: `failure:${label}`,
 			kind: group.kind,
@@ -208,11 +203,11 @@ function failureFindings(
 			detail:
 				(group.kind === "contextExceeded" ? promptGrowth(spans) : undefined) ??
 				failureDetail(
-					group.members.map((member) => member.span),
+					Arr.map(group.members, (member) => member.span),
 					label,
 				),
 			spanId: linked.span.spanId,
-			atMs: spanStartMs(group.members[0].span),
+			atMs: spanStartMs(first.span),
 		}
 	})
 }
@@ -242,8 +237,8 @@ function retryFindings(
 	turns: readonly SessionTurn[],
 	turnIndexBySpan: ReadonlyMap<string, number>,
 ): SessionFinding[] {
-	const byId = new Map(spans.map((span) => [span.spanId, span]))
-	const attempts = spans.filter((span) => isProviderAttempt(span) && spanFailed(span))
+	const byId = new Map(Arr.map(spans, (span) => [span.spanId, span]))
+	const attempts = Arr.filter(spans, (span) => isProviderAttempt(span) && spanFailed(span))
 	const first = attempts[0]
 	if (first === undefined) return []
 
@@ -262,11 +257,14 @@ function retryFindings(
 		if (spanFailed(parent)) failedGenerations.add(parent.spanId)
 	}
 
-	const statuses = [...byStatus]
-		.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-		.map(([status, count]) => `${status} ×${count}`)
-		.join(" · ")
-	const where = providers.size === 0 ? "" : ` — ${[...providers].sort().join(", ")}`
+	const statuses = Arr.join(
+		Arr.map(
+			[...byStatus].sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : Str.localeCompare(b[0])(a[0]))),
+			([status, count]) => `${status} ×${count}`,
+		),
+		" · ",
+	)
+	const where = providers.size === 0 ? "" : ` — ${Arr.join([...providers].sort(), ", ")}`
 	const outcome =
 		generations.size === 0
 			? ""
@@ -283,7 +281,7 @@ function retryFindings(
 			tool: undefined,
 			count: attempts.length,
 			turnText: turnListText(
-				distinctSorted(attempts.map((span) => turnIndexBySpan.get(span.spanId) ?? 0)),
+				distinctSorted(Arr.map(attempts, (span) => turnIndexBySpan.get(span.spanId) ?? 0)),
 				turns,
 				false,
 			),
@@ -301,12 +299,16 @@ function retryFindings(
  * plus both cache buckets: what the model actually had in front of it).
  */
 function promptGrowth(spans: readonly AiSessionSpan[]): string | undefined {
-	const promptSizes = spans
-		.filter(isLlmCall)
-		.map(spanTokenBuckets)
-		.filter((buckets) => buckets !== undefined)
-		.map((buckets) => buckets.input + buckets.cacheRead + buckets.cacheWrite)
-		.filter((size) => size > 0)
+	const promptSizes = Arr.filter(
+		Arr.map(
+			Arr.filter(
+				Arr.map(Arr.filter(spans, isLlmCall), spanTokenBuckets),
+				(buckets) => buckets !== undefined,
+			),
+			(buckets) => buckets.input + buckets.cacheRead + buckets.cacheWrite,
+		),
+		(size) => size > 0,
+	)
 	const first = promptSizes[0]
 	const last = promptSizes[promptSizes.length - 1]
 	if (first === undefined || last === undefined || promptSizes.length < 2 || last <= first) {
@@ -321,7 +323,7 @@ function truncationFindings(
 	turnIndexBySpan: ReadonlyMap<string, number>,
 ): SessionFinding[] {
 	const shadowed = shadowedAncestorIds(spans, truncationSignal)
-	const members = spans.flatMap((span) => {
+	const members = Arr.flatMap(spans, (span) => {
 		const reason = truncationSignal(span)
 		return reason === undefined || shadowed.has(span.spanId) ? [] : [{ span, reason }]
 	})
@@ -338,7 +340,7 @@ function truncationFindings(
 			tool: undefined,
 			count: members.length,
 			turnText: turnListText(
-				distinctSorted(members.map(({ span }) => turnIndexBySpan.get(span.spanId) ?? 0)),
+				distinctSorted(Arr.map(members, ({ span }) => turnIndexBySpan.get(span.spanId) ?? 0)),
 				turns,
 				false,
 			),
@@ -351,107 +353,19 @@ function truncationFindings(
 }
 
 function truncationSignal(span: AiSessionSpan): string | undefined {
-	const reasons = (span.genAi.responseFinishReasons ?? [])
-		.map((reason) => reason.toLowerCase())
-		.filter((reason) => TRUNCATION_FINISH_REASONS.has(reason))
-	return reasons.length === 0 ? undefined : reasons.join(",")
-}
-
-function repetitionFindings(turns: readonly SessionTurn[]): SessionFinding[] {
-	const findings: SessionFinding[] = []
-	turns.forEach((turn, index) => {
-		const calls = turn.spans.filter((span) => classifyAiSpan(span) === "tool")
-		const byTool = new Map<string, AiSessionSpan[]>()
-		for (const span of calls) {
-			const name = toolNameOf(span)
-			const list = byTool.get(name) ?? []
-			list.push(span)
-			byTool.set(name, list)
-		}
-		const runs = longestIdenticalRuns(calls)
-		for (const [name, toolCalls] of byTool) {
-			const run = runs.get(name) ?? []
-			const looped = run.length >= IDENTICAL_RUN_MIN_CALLS
-			if (toolCalls.length < REPEATED_TOOL_MIN_CALLS && !looped) continue
-			// The row links where the loop began, else the tool's first call.
-			const first = looped ? run[0] : toolCalls[0]
-			findings.push({
-				id: `repetition:${turn.id}:${name}`,
-				kind: "repetition",
-				severity: "anomaly",
-				label: name,
-				tool: name,
-				count: 1,
-				turnText: turnListText([index], turns, false),
-				terminal: false,
-				detail: looped
-					? spanFailed(run[0])
-						? `retried ${run.length - 1}× unchanged after it failed`
-						: `called ${toolCalls.length}× within one turn, ${run.length} in a row with identical arguments`
-					: `called ${toolCalls.length}× within one turn`,
-				spanId: first.spanId,
-				atMs: spanStartMs(first),
-			})
-		}
-	})
-	return findings
-}
-
-function toolNameOf(span: AiSessionSpan): string {
-	return span.genAi.toolName ?? span.spanName
-}
-
-/**
- * Per tool, the longest run of back-to-back calls that sent the same
- * arguments — back-to-back across every tool call of the turn, in start
- * order, with nothing at all between. A test suite re-run after a write sends
- * the same arguments over new code, which is progress; the same call three
- * times with nothing between is not. A tool whose calls never recorded
- * arguments has no run. Among runs of equal length the one that opened with a
- * failure wins, since that is the one the row should say retried. Arguments
- * compare as canonical JSON so key order cannot split a run.
- */
-function longestIdenticalRuns(
-	calls: readonly AiSessionSpan[],
-): ReadonlyMap<string, readonly AiSessionSpan[]> {
-	const longest = new Map<string, readonly AiSessionSpan[]>()
-	let run: AiSessionSpan[] = []
-	let key: string | undefined
-	for (const span of calls) {
-		// `?? undefined`: a JSON `null` is a call that recorded nothing.
-		const args = span.genAi.toolCallArguments ?? undefined
-		const name = toolNameOf(span)
-		const next = args === undefined ? undefined : `${name}\u0000${canonicalJSON(args)}`
-		if (next !== undefined && next === key) {
-			run.push(span)
-		} else {
-			run = next === undefined ? [] : [span]
-			key = next
-		}
-		if (run.length === 0) continue
-		const best = longest.get(name)
-		if (
-			best === undefined ||
-			run.length > best.length ||
-			(run.length === best.length && spanFailed(run[0]) && !spanFailed(best[0]))
-		) {
-			// A copy: the run keeps growing after it is recorded.
-			longest.set(name, [...run])
-		}
-	}
-	return longest
+	return finishReasonsIn(span, TRUNCATION_FINISH_REASONS)
 }
 
 function stallFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 	const findings: SessionFinding[] = []
-	turns.forEach((turn, index) => {
+	Arr.forEach(turns, (turn, index) => {
 		for (const gap of findIdleGaps(turn.spans)) {
 			if (gap.durationMs < MID_TURN_STALL_MIN_MS) continue
 			// The row links the span the session went quiet after — the closest
 			// thing the capture has to what it was stuck on.
-			const before = [...turn.spans]
-				.filter((span) => spanEndMs(span) <= gap.startMs)
-				.sort((a, b) => spanEndMs(b) - spanEndMs(a))[0]
+			const before = Arr.filter([...turn.spans], (span) => spanEndMs(span) <= gap.startMs).sort(
+				(a, b) => spanEndMs(b) - spanEndMs(a),
+			)[0]
 			findings.push({
 				id: gap.id,
 				kind: "stall",
@@ -478,12 +392,16 @@ function stallFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 /** `Turn 4 (final)`, `Turns 9, 11`, `Segments 1, 2`, `6 of 14 turns`. */
 function turnListText(indices: readonly number[], turns: readonly SessionTurn[], terminal: boolean): string {
 	const word = turns[0]?.anchorKind === "trace" ? "Segment" : "Turn"
-	if (indices.length === 1) {
-		const one = `${word} ${turns[indices[0]]?.index ?? indices[0] + 1}`
+	const [only] = indices
+	if (indices.length === 1 && only !== undefined) {
+		const one = `${word} ${turns[only]?.index ?? only + 1}`
 		return terminal ? `${one} (final)` : one
 	}
-	if (indices.length > 4) return `${indices.length} of ${turns.length} ${word.toLowerCase()}s`
-	const numbers = indices.map((index) => turns[index]?.index ?? index + 1).join(", ")
+	if (indices.length > 4) return `${indices.length} of ${turns.length} ${Str.toLowerCase(word)}s`
+	const numbers = Arr.join(
+		Arr.map(indices, (index) => `${turns[index]?.index ?? index + 1}`),
+		", ",
+	)
 	return `${word}s ${numbers}${terminal ? " (final)" : ""}`
 }
 

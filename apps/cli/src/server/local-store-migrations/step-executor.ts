@@ -2,16 +2,17 @@
 // The one executor behind every row of `steps.ts`: clone the stopped store, alter
 // the clone, bootstrap the target snapshot over it, verify, and never touch the source.
 import { resolve } from "node:path"
-import { Schema } from "effect"
-import { readRawTelemetryRetentionDays, type Chdb } from "../chdb"
-import { decodeJsonObjectRows } from "../chdb-rows"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { readRawTelemetryRetentionDays, type Chdb } from "@maple/local-server/chdb"
+import { decodeJsonObjectRows } from "@maple/local-server/chdb-rows"
 import type {
 	LocalStoreMigrationModule,
 	MigrationOperation,
 	StateDispositionEntry,
 } from "../local-store-migration-module"
-import { localSchemaIdentity, localSchemaSnapshot } from "../schema-identity"
-import { assertPhysicalSchema } from "../schema-physical"
+import { localSchemaIdentity } from "@maple/local-server/schema-identity"
+import { localSchemaSnapshot } from "../schema-snapshots"
+import { assertPhysicalSchema } from "@maple/local-server/schema-physical"
 import {
 	cloneStoreForStaging,
 	expectedManifest,
@@ -48,6 +49,7 @@ export type StepOperation =
 	| { readonly op: "drop-columns"; readonly table: string; readonly columns: ReadonlyArray<string> }
 	| { readonly op: "drop"; readonly kind: "TABLE" | "VIEW"; readonly names: ReadonlyArray<string> }
 	| { readonly op: "backfill"; readonly statements: ReadonlyArray<string> }
+	| { readonly op: "modify-ttl"; readonly table: string; readonly ttl: string }
 
 export const addColumns = (
 	table: string,
@@ -81,28 +83,35 @@ export const backfill = (...statements: ReadonlyArray<string>): StepOperation =>
 	statements,
 })
 
+/** `ttl` is the full TTL expression; MODIFY TTL replaces the table's previous one. */
+export const modifyTtl = (table: string, ttl: string): StepOperation => ({ op: "modify-ttl", table, ttl })
+
 const operationSql = (operation: StepOperation): ReadonlyArray<string> => {
 	switch (operation.op) {
 		case "add-columns":
-			return operation.columns.map(
+			return Arr.map(
+				operation.columns,
 				([name, type]) => `ALTER TABLE ${operation.table} ADD COLUMN IF NOT EXISTS ${name} ${type}`,
 			)
 		case "add-index":
 			return [`ALTER TABLE ${operation.table} ADD INDEX IF NOT EXISTS ${operation.index}`]
 		case "drop-columns":
-			return operation.columns.map(
+			return Arr.map(
+				operation.columns,
 				(column) => `ALTER TABLE ${operation.table} DROP COLUMN IF EXISTS ${column}`,
 			)
 		case "drop":
-			return operation.names.map((name) => `DROP ${operation.kind} IF EXISTS ${name}`)
+			return Arr.map(operation.names, (name) => `DROP ${operation.kind} IF EXISTS ${name}`)
 		case "backfill":
 			return operation.statements
+		case "modify-ttl":
+			return [`ALTER TABLE ${operation.table} MODIFY TTL ${operation.ttl}`]
 	}
 }
 
 /** The exact statements a list of operations runs, in order. */
 export const stepStatements = (operations: ReadonlyArray<StepOperation>): ReadonlyArray<string> =>
-	operations.flatMap(operationSql)
+	Arr.flatMap(operations, operationSql)
 
 /** A count compared on the target in verify against the value the source recorded. */
 export interface CountCheck {
@@ -145,14 +154,14 @@ export type StepProgress = { readonly [field: string]: string | number | boolean
 export interface StepCustom {
 	/** Strictly decodes the journaled progress; `apply` returns the same shape. */
 	readonly progress: Schema.Codec<StepProgress, unknown>
-	readonly apply: (db: Chdb, state: StepState) => StepProgress
-	readonly verify: (db: Chdb, state: StepState, progress: StepProgress) => void
+	readonly apply: (db: Pick<Chdb, "query" | "exec">, state: StepState) => StepProgress
+	readonly verify: (db: Pick<Chdb, "query" | "exec">, state: StepState, progress: StepProgress) => void
 }
 
 export const customStep = <Progress extends StepProgress>(custom: {
 	readonly progress: Schema.Codec<Progress, unknown>
-	readonly apply: (db: Chdb, state: StepState) => Progress
-	readonly verify: (db: Chdb, state: StepState, progress: Progress) => void
+	readonly apply: (db: Pick<Chdb, "query" | "exec">, state: StepState) => Progress
+	readonly verify: (db: Pick<Chdb, "query" | "exec">, state: StepState, progress: Progress) => void
 }): StepCustom => {
 	const decodeProgress = strictDecoder(custom.progress)
 	return {
@@ -182,7 +191,7 @@ export interface StepSpec {
 }
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 const isCount = (value: unknown): value is string => typeof value === "string" && /^\d+$/.test(value)
 
@@ -196,7 +205,7 @@ export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState,
 	const fail = (message: string): never => {
 		throw new LocalMigrationStepError({ message, moduleId: spec.id })
 	}
-	const countKeys = spec.counts?.measure.map(([key]) => key) ?? []
+	const countKeys = spec.counts === undefined ? [] : Arr.map(spec.counts.measure, ([key]) => key)
 	const measureSql = new Map(spec.counts?.measure ?? [])
 
 	// Messages and check order match the hand-written decoders these steps replaced.
@@ -208,14 +217,14 @@ export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState,
 			if (!isCount(count)) return fail(`${label} rawRows.${table} must be an unsigned decimal string`)
 			counts[table] = count
 		}
-		if (Object.keys(value).some((table) => !RAW_TABLES.includes(table)))
+		if (Arr.some(Rec.keys(value), (table) => !RAW_TABLES.includes(table)))
 			return fail(`${label} rawRows contains an unknown table`)
 		return counts
 	}
 
 	const decodeCountGroup = (group: string, value: unknown): ReadonlyMap<string, string> => {
 		if (!isRecord(value)) return fail(`${label} ${group} must be an object`)
-		if (Object.keys(value).some((key) => !countKeys.includes(key)))
+		if (Arr.some(Rec.keys(value), (key) => !countKeys.includes(key)))
 			return fail(`${label} ${group} contains an unknown field`)
 		const counts = new Map<string, string>()
 		for (const key of countKeys) {
@@ -248,7 +257,7 @@ export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState,
 		if (!isRecord(value)) return fail(`${label} state must be an object`)
 		const allowed = new Set(["module", "version", "rawRows", "retentionDays", "countedOn"])
 		if (spec.counts !== undefined) allowed.add(spec.counts.group)
-		if (Object.keys(value).some((key) => !allowed.has(key)))
+		if (Arr.some(Rec.keys(value), (key) => !allowed.has(key)))
 			return fail(`${label} state contains an unknown field`)
 		if (value.module !== spec.id || value.version !== 1)
 			return fail(`${label} state has an unsupported module or version`)
@@ -268,7 +277,7 @@ export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState,
 		const counts =
 			spec.counts === undefined
 				? undefined
-				: Object.fromEntries(decodeCountGroup(spec.counts.group, value[spec.counts.group]))
+				: Rec.fromEntries(decodeCountGroup(spec.counts.group, value[spec.counts.group]))
 		return makeState(rawRows, counts, retentionDays, countedOn)
 	}
 
@@ -278,25 +287,28 @@ export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState,
 		if (decodeCustomProgress !== undefined) return decodeCustomProgress(value)
 		if (
 			!isRecord(value) ||
-			Object.keys(value).some((key) => key !== "installed") ||
+			Arr.some(Rec.keys(value), (key) => key !== "installed") ||
 			value.installed !== true
 		)
 			return fail(`${label} progress is invalid`)
 		return INSTALLED
 	}
 
-	const scalarCount = (db: Chdb, sql: string): string => {
+	const scalarCount = (db: Pick<Chdb, "query" | "exec">, sql: string): string => {
 		const count = decodeJsonObjectRows(db.query(sql))[0]?.count
 		return isCount(count) ? count : fail(`${label} count query returned no row: ${sql}`)
 	}
 
-	const run = (db: Chdb, operations: ReadonlyArray<StepOperation> | undefined): void => {
+	const run = (
+		db: Pick<Chdb, "query" | "exec">,
+		operations: ReadonlyArray<StepOperation> | undefined,
+	): void => {
 		for (const statement of stepStatements(operations ?? [])) db.exec(statement)
 	}
 
-	const verifyCounts = (db: Chdb, counts: StepCounts, state: StepState): void => {
+	const verifyCounts = (db: Pick<Chdb, "query" | "exec">, counts: StepCounts, state: StepState): void => {
 		const expected = decodeCountGroup(counts.group, state[counts.group])
-		const found = counts.checks.map((check) => ({
+		const found = Arr.map(counts.checks, (check) => ({
 			check,
 			count: scalarCount(
 				db,
@@ -325,7 +337,7 @@ export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState,
 			requiresQuiescence: true,
 			phase: "target-created",
 		},
-		...spec.plan.map(([id, description]): MigrationOperation => ({
+		...Arr.map(spec.plan, ([id, description]): MigrationOperation => ({
 			id,
 			description,
 			requiresQuiescence: true,
@@ -360,16 +372,20 @@ export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState,
 		preflight: async (context) => {
 			await context.ensureCapacity()
 			const retentionDays = readRawTelemetryRetentionDays(context.dataDir)
-			const countedOn = new Date().toISOString().slice(0, 10)
+			const countedOn = Str.slice(0, 10)(new Date().toISOString())
 			const measured = await context.openSource(
 				(db) => {
 					const manifest = expectedManifest(source.manifest, retentionDays)
 					assertPhysicalSchema(db, manifest)
 					const rawRows = retainedRawRowCounts(db, manifest, countedOn)
-					const counts = spec.counts?.measure.map(
-						([key, sql]) => [key, scalarCount(db, sql)] as const,
-					)
-					return { rawRows, counts: counts === undefined ? undefined : Object.fromEntries(counts) }
+					const counts =
+						spec.counts === undefined
+							? undefined
+							: Arr.map(
+									spec.counts.measure,
+									([key, sql]) => [key, scalarCount(db, sql)] as const,
+								)
+					return { rawRows, counts: counts === undefined ? undefined : Rec.fromEntries(counts) }
 				},
 				{ schemaSql: source.sql, bootstrapSchema: false },
 			)

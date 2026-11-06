@@ -11,14 +11,16 @@
 
 import type { QueryRunResult, TimeseriesPoint } from "../formula-results"
 import { isEngineUngroupedKey } from "../group-key"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 /** A point carries data when its `series` map is non-empty. */
 export function hasAnySeriesData(points: ReadonlyArray<TimeseriesPoint>): boolean {
-	return points.some((point) => Object.keys(point.series).length > 0)
+	return Arr.some(points, (point) => Rec.keys(point.series).length > 0)
 }
 
 export function countSuccessfulQuerySeries(results: ReadonlyArray<QueryRunResult>): number {
-	return results.filter((result) => result.status === "success" && hasAnySeriesData(result.data)).length
+	return Arr.filter(results, (result) => result.status === "success" && hasAnySeriesData(result.data))
+		.length
 }
 
 /**
@@ -36,8 +38,14 @@ export function collectHiddenResultIds(input: {
 	formulas?: ReadonlyArray<{ id: string; hidden?: boolean }>
 }): Set<string> {
 	return new Set([
-		...input.queries.filter((query) => query.hidden).map((query) => query.id),
-		...(input.formulas ?? []).filter((formula) => formula.hidden).map((formula) => formula.id),
+		...Arr.map(
+			Arr.filter(input.queries, (query) => query.hidden === true),
+			(query) => query.id,
+		),
+		...Arr.map(
+			Arr.filter(input.formulas ?? [], (formula) => formula.hidden === true),
+			(formula) => formula.id,
+		),
 	])
 }
 
@@ -48,7 +56,7 @@ export function toDisplayNameById(
 	const map = new Map<string, string>()
 
 	for (const entry of entries) {
-		const trimmedLegend = (entry.legend ?? "").trim()
+		const trimmedLegend = Str.trim(entry.legend ?? "")
 		map.set(entry.id, trimmedLegend || entry.name)
 	}
 
@@ -72,7 +80,7 @@ export function toSeriesDescriptor(
 	stableGroupKey: string
 	seriesLabel: string
 } {
-	const normalizedGroupName = rawGroupName.trim() || "unnamed"
+	const normalizedGroupName = Str.trim(rawGroupName) || "unnamed"
 	const isAllGroup = isEngineUngroupedKey(normalizedGroupName)
 	const isFormulaSelfNamed = result.source === "formula" && normalizedGroupName === displayName
 
@@ -137,7 +145,8 @@ export function mergeQueryRunResults(
 	// A single plotted query labels its series by group name alone; two or more
 	// prefix the query's display name, or "500" from one query and "500" from
 	// another would collide into one column.
-	const successfulResultCount = results.filter(
+	const successfulResultCount = Arr.filter(
+		results,
 		(r) => r.status === "success" && r.data.length > 0 && hasAnySeriesData(r.data),
 	).length
 	const singleQuery = successfulResultCount <= 1
@@ -155,8 +164,8 @@ export function mergeQueryRunResults(
 
 		for (const point of result.data) {
 			const row = rowsByBucket.get(point.bucket) ?? { bucket: point.bucket }
-			if (Object.keys(point.series).length > 0) {
-				for (const [groupName, rawValue] of Object.entries(point.series)) {
+			if (Rec.keys(point.series).length > 0) {
+				for (const [groupName, rawValue] of Rec.toEntries(point.series)) {
 					const value = typeof rawValue === "number" ? rawValue : Number(rawValue)
 					if (!Number.isFinite(value)) {
 						continue
@@ -226,7 +235,7 @@ export function combineRows(
 	}
 
 	return Array.from(rowsByBucket.values()).sort((left, right) =>
-		String(left.bucket).localeCompare(String(right.bucket)),
+		Str.localeCompare(String(right.bucket))(String(left.bucket)),
 	)
 }
 
@@ -244,14 +253,14 @@ export function shiftResultPoints(
 	points: ReadonlyArray<TimeseriesPoint>,
 	offsetMs: number,
 ): TimeseriesPoint[] {
-	return points.map((point) => ({
+	return Arr.map(points, (point) => ({
 		bucket: shiftBucket(point.bucket, offsetMs),
 		series: { ...point.series },
 	}))
 }
 
 export function shiftRunResults(results: ReadonlyArray<QueryRunResult>, shiftMs: number): QueryRunResult[] {
-	return results.map((result) => ({
+	return Arr.map(results, (result) => ({
 		...result,
 		data: shiftResultPoints(result.data, shiftMs),
 	}))

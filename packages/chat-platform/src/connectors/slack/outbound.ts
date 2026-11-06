@@ -20,8 +20,8 @@
  * up to 1000 per page.
  */
 import { ChatConversationKey } from "@maple/primitives"
-import { Array as Arr, Duration, Effect, Option, Order, Redacted, Schema } from "effect"
-import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/unstable/http"
+import { Array as Arr, Duration, Effect, Option, Order, Redacted, Schema, Stream } from "effect"
+import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import type { ConnectorConfig, InboundAction, InboundMessage } from "../../ingress"
 import {
 	ChatOutboundError,
@@ -144,6 +144,12 @@ const CHANNELS_PER_PAGE = 1000
  */
 const MAX_CHANNEL_PAGES = 5
 
+/** Where a `conversations.list` walk resumes: Slack's cursor and the page index. */
+interface ChannelPageCursor {
+	readonly cursor: string | undefined
+	readonly page: number
+}
+
 /**
  * The `ok: false` codes that say something a caller can act on, by what they mean.
  *
@@ -151,28 +157,39 @@ const MAX_CHANNEL_PAGES = 5
  * holds a token without it, and only reinstalling the app grants it.
  */
 const FAILURE_REASONS: ReadonlyMap<string, ChatOutboundFailureReason> = new Map([
-	...[
-		"invalid_auth",
-		"not_authed",
-		"account_inactive",
-		"token_revoked",
-		"token_expired",
-		"missing_scope",
-		"no_permission",
-		"not_allowed_token_type",
-		"team_access_not_granted",
-		"ekm_access_denied",
-	].map((code) => [code, "auth"] as const),
-	...["channel_not_found", "not_in_channel", "is_archived"].map((code) => [code, "not_found"] as const),
-	...[
-		"invalid_blocks",
-		"invalid_blocks_format",
-		"msg_too_long",
-		"no_text",
-		"too_many_attachments",
-		"invalid_arguments",
-		"restricted_action",
-	].map((code) => [code, "rejected"] as const),
+	...Arr.map(
+		[
+			"invalid_auth",
+			"not_authed",
+			"account_inactive",
+			"token_revoked",
+			"token_expired",
+			"missing_scope",
+			"no_permission",
+			"not_allowed_token_type",
+			"team_access_not_granted",
+			"ekm_access_denied",
+		],
+		(code) => [code, "auth"] as const,
+	),
+	...Arr.map(
+		["channel_not_found", "not_in_channel", "is_archived"],
+		(code) => [code, "not_found"] as const,
+	),
+	...Arr.map(
+		[
+			"invalid_blocks",
+			"invalid_blocks_format",
+			// Blocks inside an attachment, an alert card's image among them (one Slack could not fetch).
+			"invalid_attachments",
+			"msg_too_long",
+			"no_text",
+			"too_many_attachments",
+			"invalid_arguments",
+			"restricted_action",
+		],
+		(code) => [code, "rejected"] as const,
+	),
 ])
 
 /** Slack's two spellings for the same thing, both of which it documents. */
@@ -203,7 +220,11 @@ const decodeConversationKey = Schema.decodeUnknownOption(ChatConversationKey)
 class SlackRateLimited extends Schema.TaggedError<SlackRateLimited>()(
 	"@maple/chat-platform/connectors/slack/RateLimited",
 	{ wait: Schema.Duration },
-) {}
+) {
+	override get message(): string {
+		return `Slack rate limited; retry after ${Duration.format(this.wait)}`
+	}
+}
 
 /** A Web API call with a JSON body — every method this connector calls except the listing. */
 const jsonRequest = (url: string, payload: SlackApiRequest) =>
@@ -220,7 +241,8 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 	transport: Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
 		// Per call, not here: acquiring the transport must not cost the host its credential read.
-		const token = Effect.map(yield* ConnectorCredentials, (config: ConnectorConfig) =>
+		const credentials = yield* ConnectorCredentials
+		const token = Effect.map(credentials, (config: ConnectorConfig) =>
 			Option.map(decodeSlackCredentials(config.get(WORKSPACE_CREDENTIALS)), (value) =>
 				Redacted.make(value.bot_token),
 			),
@@ -234,7 +256,7 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 		 * three deep under the first one.
 		 */
 		const attempt = Effect.fn("Slack.request", { kind: "client" })(function* (
-			bearer: Redacted.Redacted<string>,
+			bearer: Redacted.Redacted,
 			operation: ChatOutboundOperation,
 			method: string,
 			request: HttpClientRequest.HttpClientRequest,
@@ -421,39 +443,47 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 			 * The walk stops at {@link MAX_CHANNEL_PAGES}; a longer workspace lists a prefix.
 			 */
 			destinations: Effect.fn("Slack.destinations")(function* (_workspaceId: string) {
-				const channels: Array<ChatDestination> = []
-				let cursor: string | undefined
-				let pages = 0
-				for (; pages < MAX_CHANNEL_PAGES; pages++) {
+				const first: ChannelPageCursor = { cursor: undefined, page: 0 }
+				const pages = yield* Stream.paginate(first, ({ cursor, page }) => {
 					const params = new URLSearchParams({
 						types: "public_channel,private_channel",
 						exclude_archived: "true",
 						limit: String(CHANNELS_PER_PAGE),
 					})
 					if (cursor !== undefined) params.set("cursor", cursor)
-					const result = yield* send(
+					return send(
 						"destinations",
 						"conversations.list",
 						HttpClientRequest.get(`${CONVERSATIONS_LIST_URL}?${params.toString()}`),
+					).pipe(
+						Effect.map((result) => {
+							const channels = Arr.map(
+								Arr.getSomes(Arr.map(result.channels ?? [], (raw) => decodeChannel(raw))),
+								(channel): ChatDestination => ({
+									id: channel.id,
+									name: channel.name ?? channel.id,
+									private: channel.is_private === true,
+								}),
+							)
+							const next = result.response_metadata?.next_cursor
+							const more = next !== undefined && next !== "" && page + 1 < MAX_CHANNEL_PAGES
+							return [
+								[{ channels, next }],
+								more ? Option.some({ cursor: next, page: page + 1 }) : Option.none(),
+							] as const
+						}),
 					)
-					for (const channel of Arr.getSomes(
-						Arr.map(result.channels ?? [], (raw) => decodeChannel(raw)),
-					)) {
-						channels.push({
-							id: channel.id,
-							name: channel.name ?? channel.id,
-							private: channel.is_private === true,
-						})
-					}
-					cursor = result.response_metadata?.next_cursor
-					if (cursor === undefined || cursor === "") break
-				}
+				}).pipe(Stream.runCollect)
+				const lastCursor = pages.at(-1)?.next
 				// A cursor still in hand after the last page is a workspace listed only in part.
 				yield* Effect.annotateCurrentSpan({
-					"chat.destinations.pages": Math.min(pages + 1, MAX_CHANNEL_PAGES),
-					"chat.destinations.truncated": cursor !== undefined && cursor !== "",
+					"maple.chat.destinations.pages": pages.length,
+					"maple.chat.destinations.truncated": lastCursor !== undefined && lastCursor !== "",
 				})
-				return Arr.sort(channels, byName)
+				return Arr.sort(
+					Arr.flatMap(pages, (page) => page.channels),
+					byName,
+				)
 			}),
 
 			/**

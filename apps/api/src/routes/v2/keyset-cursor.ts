@@ -1,6 +1,10 @@
-import { Effect, Encoding, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema, String as Str } from "effect"
+import { Base64Url } from "effect/encoding"
 import { V2CursorInvalid } from "@maple/domain/http/v2"
-import { WarehouseDateTime } from "@maple/query-engine"
+import { parseUtc } from "@maple/query-engine"
+
+const CursorPartsJson = Schema.fromJsonString(Schema.Array(Schema.String))
+const encodeCursorParts = Schema.encodeSync(CursorPartsJson)
 
 /**
  * Opaque keyset cursors for the v2 list endpoints backed by warehouse queries.
@@ -13,38 +17,48 @@ import { WarehouseDateTime } from "@maple/query-engine"
  * previous page already showed.
  */
 export const encodeKeysetCursor = (prefix: string, parts: ReadonlyArray<string>) =>
-	`${prefix}_${Encoding.encodeBase64Url(JSON.stringify(parts))}`
+	`${prefix}_${Base64Url.encode(encodeCursorParts(parts))}`
+
+const WAREHOUSE_CURSOR_TIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})?$/u
+
+const decodeCursorParts = Schema.decodeUnknownResult(CursorPartsJson)
+
+/** A cursor's parts as a tuple of exactly `N` strings. */
+export type CursorParts<
+	N extends number,
+	Acc extends ReadonlyArray<string> = readonly [],
+> = Acc["length"] extends N ? Acc : CursorParts<N, readonly [...Acc, string]>
+
+const hasLength = <N extends number>(parts: ReadonlyArray<string>, length: N): parts is CursorParts<N> =>
+	parts.length === length
 
 /**
  * Decode a keyset cursor into its parts.
  *
  * Element 0 is always the timestamp the keyset walks back from, and it is
- * checked against `WarehouseDateTime` here rather than trusted. It reaches the
+ * checked here rather than trusted: the warehouse shape, with or without the
+ * fraction a `DateTime64` row carries. It reaches the
  * query builder as a `DateTime` comparison, which encodes it through the
  * column's codec while the query is still being *built* — before `CH.compile`,
  * so outside the Effect that would have turned the failure into a value. A
  * forged cursor was therefore a 500 rather than the 400 this function already
  * knows how to return.
  */
-export const decodeKeysetCursor = (value: string | undefined, prefix: string, length: number) => {
+export const decodeKeysetCursor = <N extends number>(
+	value: string | undefined,
+	prefix: string,
+	length: N,
+) => {
 	const invalid = Effect.fail(V2CursorInvalid.make(undefined, { param: "cursor" }))
-	if (value === undefined) return Effect.succeed<ReadonlyArray<string> | undefined>(undefined)
-	if (!value.startsWith(`${prefix}_`)) return invalid
-	const decoded = Encoding.decodeBase64UrlString(value.slice(prefix.length + 1))
+	if (value === undefined) return Effect.succeed<CursorParts<N> | undefined>(undefined)
+	if (!Str.startsWith(`${prefix}_`)(value)) return invalid
+	const decoded = Base64Url.decodeString(Str.slice(prefix.length + 1)(value))
 	if (Result.isFailure(decoded)) return invalid
-	const parsed = Result.try({
-		try: () => JSON.parse(decoded.success) as unknown,
-		catch: () => undefined,
-	})
+	const parsed = decodeCursorParts(decoded.success)
 	if (Result.isFailure(parsed)) return invalid
 	const parts = parsed.success
-	if (
-		!Array.isArray(parts) ||
-		parts.length !== length ||
-		!parts.every((part) => typeof part === "string")
-	) {
-		return invalid
-	}
-	if (Result.isFailure(Schema.decodeUnknownResult(WarehouseDateTime)(parts[0]))) return invalid
-	return Effect.succeed(parts as ReadonlyArray<string>)
+	const at = parts[0]
+	if (!hasLength(parts, length)) return invalid
+	if (at === undefined || !WAREHOUSE_CURSOR_TIME.test(at) || Option.isNone(parseUtc(at))) return invalid
+	return Effect.succeed<CursorParts<N> | undefined>(parts)
 }

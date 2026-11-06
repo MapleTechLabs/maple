@@ -1,6 +1,12 @@
 import * as THREE from "three"
+import { Order, Schema, Array as Arr, String as Str } from "effect"
+import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import type { Edge3D, Topology3D } from "./types"
 import type { SpatialLayout } from "./spatial-layout"
+import { nonZeroOr } from "@maple/ui/lib/number"
+
+const encodePair = Schema.encodeSync(Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String])))
+const encodePoints = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.Array(Schema.Number))))
 
 export interface FactoryRoute {
 	id: string
@@ -23,17 +29,21 @@ export interface RoutingTopology {
 	edges: ReadonlyArray<Pick<Edge3D, "source" | "target">>
 }
 
+type RoutingEdge = RoutingTopology["edges"][number]
+
+const byLocale = Order.make<string>((a, b) => Str.localeCompare(b)(a))
+
 /** Round a Manhattan route into actual elbows, without the overshoot of a
  * free spline. All distances are physical scene units. */
 export function roundedRoute(points: THREE.Vector3[], radius = 0.65) {
 	const path = new THREE.CurvePath<THREE.Vector3>()
 	const first = points[0],
 		last = points.at(-1)
-	if (!first || !last) return path
+	if (first === undefined || !last) return path
 	let previous = first
 	for (const [i, corner] of points.entries()) {
 		const next = points[i + 1]
-		if (i === 0 || !next) continue
+		if (i === 0 || next === undefined) continue
 		const cut = Math.min(radius, corner.distanceTo(previous) * 0.45, corner.distanceTo(next) * 0.45)
 		const enter = corner.clone().lerp(previous, cut / Math.max(corner.distanceTo(previous), 0.001))
 		const leave = corner.clone().lerp(next, cut / Math.max(corner.distanceTo(next), 0.001))
@@ -59,66 +69,69 @@ export class CurveSection extends THREE.Curve<THREE.Vector3> {
 }
 
 export function factoryRoutes(topology: RoutingTopology, layout: SpatialLayout): FactoryRoute[] {
-	const nodes = new Map(topology.nodes.map((node) => [node.id, node]))
-	return topology.edges
-		.toSorted((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target))
-		.flatMap((edge, index) => {
-			const source = layout.positions.get(edge.source),
-				target = layout.positions.get(edge.target)
-			if (!source || !target) return []
-			const kind =
-				nodes.get(edge.source)?.kind === "queue" || nodes.get(edge.target)?.kind === "queue"
-					? "conveyor"
-					: "pipe"
-			const a = new THREE.Vector3(...source),
-				b = new THREE.Vector3(...target)
-			const alongX = Math.abs(b.x - a.x) >= Math.abs(b.z - a.z)
-			const direction = Math.sign(alongX ? b.x - a.x : b.z - a.z) || 1
-			const side = alongX ? "x" : "z"
-			a[side] += direction * 1.3
-			b[side] -= direction * 1.3
-			a.y += 0.72
-			b.y += 0.72
-			const lead = a.clone()
-			lead[side] += direction * 0.6
-			const tail = b.clone()
-			tail[side] -= direction * 0.6
-			const high = Math.max(a.y, b.y) + (kind === "pipe" ? 0.75 + (index % 3) * 0.22 : 0)
-			const entry = lead.clone().setY(high),
-				exit = tail.clone().setY(high)
-			const middle = entry.clone()
-			middle[side] = (entry[side] + exit[side]) / 2
-			const turn = exit.clone()
-			turn[side] = middle[side]
-			const waypoints =
-				kind === "conveyor"
-					? [a, lead, middle, turn, tail, b]
-					: [a, lead, entry, middle, turn, exit, tail, b]
-			const clean = waypoints.filter((point, i) => {
-				const previous = waypoints[i - 1]
-				return !previous || point.distanceTo(previous) > 0.01
-			})
-			const curve = roundedRoute(clean, kind === "conveyor" ? 1.1 : 0.5)
-			return [
-				{
-					id: `link:${JSON.stringify([edge.source, edge.target])}`,
-					source: edge.source,
-					target: edge.target,
-					geometryKey: JSON.stringify(clean.map((point) => point.toArray())),
-					kind,
-					curve,
-					signPosition: curve.getPointAt(0.5).add(new THREE.Vector3(0, 0.9, 0)),
-				},
-			]
+	const nodes = new Map(Arr.map(topology.nodes, (node) => [node.id, node]))
+	const edges = Arr.sort(
+		topology.edges,
+		Order.combine(
+			Order.mapInput(byLocale, (edge: RoutingEdge) => edge.source),
+			Order.mapInput(byLocale, (edge: RoutingEdge) => edge.target),
+		),
+	)
+	return Arr.flatMap(edges, (edge, index) => {
+		const source = layout.positions.get(edge.source),
+			target = layout.positions.get(edge.target)
+		if (!source || !target) return []
+		const kind =
+			nodes.get(edge.source)?.kind === "queue" || nodes.get(edge.target)?.kind === "queue"
+				? "conveyor"
+				: "pipe"
+		const a = new THREE.Vector3(...source),
+			b = new THREE.Vector3(...target)
+		const alongX = Math.abs(b.x - a.x) >= Math.abs(b.z - a.z)
+		const direction = nonZeroOr(Math.sign(alongX ? b.x - a.x : b.z - a.z), 1)
+		const side = alongX ? "x" : "z"
+		a[side] += direction * 1.3
+		b[side] -= direction * 1.3
+		// Belts run on the ground plane. A hair of height per lane keeps
+		// overlapping decks from flickering where routes share a corridor.
+		a.y += 0.07 + (index % 4) * 0.004
+		b.y += 0.07 + (index % 4) * 0.004
+		const lead = a.clone()
+		lead[side] += direction * 0.6
+		const tail = b.clone()
+		tail[side] -= direction * 0.6
+		const middle = lead.clone().setY(Math.max(a.y, b.y))
+		// Stagger where lanes cross over, never past either end of the run.
+		const span = Math.abs(tail[side] - lead[side])
+		middle[side] = (lead[side] + tail[side]) / 2 + ((index % 3) - 1) * Math.min(0.55, span / 4)
+		const turn = tail.clone().setY(middle.y)
+		turn[side] = middle[side]
+		const waypoints = [a, lead, middle, turn, tail, b]
+		const clean = Arr.filter(waypoints, (point, i) => {
+			const previous = waypoints[i - 1]
+			return previous === undefined || point.distanceTo(previous) > 0.01
 		})
+		const curve = roundedRoute(clean, 0.3)
+		return [
+			{
+				id: `link:${encodePair([edge.source, edge.target])}`,
+				source: edge.source,
+				target: edge.target,
+				geometryKey: encodePoints(Arr.map(clean, (point) => point.toArray())),
+				kind,
+				curve,
+				signPosition: curve.getPointAt(0.5).add(new THREE.Vector3(0, 0.9, 0)),
+			},
+		]
+	})
 }
 
 /** Metrics update independently of route geometry and its GPU resources. */
 export function decorateRoutes(routes: FactoryRoute[], edges: ReadonlyArray<Edge3D>): FactoryLink[] {
-	const byId = new Map(edges.map((edge) => [JSON.stringify([edge.source, edge.target]), edge]))
-	const peak = Math.max(1, ...edges.map((edge) => edge.callsPerSecond))
-	return routes.flatMap((route) => {
-		const edge = byId.get(JSON.stringify([route.source, route.target]))
+	const byId = new Map(Arr.map(edges, (edge) => [encodePair([edge.source, edge.target]), edge]))
+	const peak = Math.max(1, ...Arr.map(edges, (edge) => edge.callsPerSecond))
+	return Arr.flatMap(routes, (route) => {
+		const edge = byId.get(encodePair([route.source, route.target]))
 		if (!edge) return []
 		return [
 			{
@@ -129,7 +142,7 @@ export function decorateRoutes(routes: FactoryRoute[], edges: ReadonlyArray<Edge
 					!edge.relation &&
 					(route.kind === "conveyor" ||
 						edge.callsPerSecond >= peak * 0.15 ||
-						edge.errorRate >= 0.015),
+						errorRateLevel(edge.errorRate) !== "neutral"),
 			},
 		]
 	})

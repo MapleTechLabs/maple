@@ -20,8 +20,8 @@
 // vacuously.
 
 import { BunRuntime } from "@effect/platform-bun"
-import { Effect } from "effect"
-import { maintenanceOperation, withMaintenanceLock } from "../../src/server/checkpoints"
+import { Effect, Schema } from "effect"
+import { maintenanceOperation, withMaintenanceLock } from "@maple/local-server/checkpoints"
 
 const arg = (name: string): string | undefined => {
 	const index = process.argv.indexOf(`--${name}`)
@@ -45,9 +45,17 @@ const locked = () =>
 		process.stdout.write("COMPLETED\n")
 	})
 
+class ProbeLockedSectionError extends Schema.TaggedError<ProbeLockedSectionError>()(
+	"@maple/cli/test/ProbeLockedSectionError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
+const lockedSectionError = (cause: unknown) =>
+	new ProbeLockedSectionError({ message: "locked section failed", cause })
+
 const program =
 	boundary === "bare"
-		? Effect.tryPromise({ try: locked, catch: (error) => error })
-		: maintenanceOperation({ operation: "probe.sigint", try: locked, catch: (error) => error })
+		? Effect.tryPromise({ try: locked, catch: lockedSectionError })
+		: maintenanceOperation({ operation: "probe.sigint", try: locked, catch: lockedSectionError })
 
 BunRuntime.runMain(program)

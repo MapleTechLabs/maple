@@ -14,6 +14,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs"
 import { basename, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
+import { Array as Arr, String as Str } from "effect"
 
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url))
 
@@ -26,7 +27,7 @@ const GUARDED_ROOTS = ["packages/chat-platform/src", "apps/chat-bot/src"]
  * belongs on this list; that is what makes the guard cover it.
  */
 const GUARDED_FILES = [
-	"packages/db/src/schema/chat-workspaces.ts",
+	"packages/db/src/tables/chat-workspaces.ts",
 	"packages/domain/src/http/v2/integrations-chat.ts",
 	"packages/backend/src/services/integrations/ChatWorkspaceService.ts",
 	"packages/backend/src/services/integrations/ChatWorkspaceService.test.ts",
@@ -39,45 +40,37 @@ const GUARDED_FILES = [
 	"packages/backend/src/services/alerts/ChatAlertPoster.ts",
 	"packages/backend/src/services/alerts/ChatAlertPoster.test.ts",
 	// The user-linking half: one table, its queries, and the revocation that ends a link.
-	"packages/db/src/schema/chat-identities.ts",
+	"packages/db/src/tables/chat-identities.ts",
 	"packages/backend/src/services/integrations/chat-identity-rows.ts",
 	"packages/backend/src/services/auth/MembershipRevocationService.ts",
 	"apps/api/src/routes/v2/integrations-chat.http.ts",
-	"apps/api/src/routes/v1/chat-integration.http.ts",
-	"apps/web/src/components/integrations/chat-integration-card.tsx",
-	// The per-organization gate: the connector's own id derives its metadata key.
-	"apps/web/src/lib/organization-feature-flags.ts",
-	"apps/web/src/hooks/use-organization-feature-flags.ts",
+	"apps/api/src/routes/chat-integration.http.ts",
+	// The dashboard's integrations page: the catalog and the chat card, dialog and callback.
+	"apps/web/src/page/integrations/catalog.ts",
+	"apps/web/src/page/integrations/chat.ts",
+	"apps/web/src/page/integrations/chat-callback.ts",
+	"apps/web/src/page/integrations/update-chat.ts",
+	"apps/web/src/page/integrations/view-chat.ts",
+	"apps/web/src/page/integrations/view-chat-card.ts",
 ]
 
-/**
- * Files this feature only *touched*, which name a vendor for reasons that predate it — the
- * integrations catalog has carried a Slack card for a year. They stay guarded against every OTHER
- * vendor, which is what stops a `connector === "…"` branch appearing in the generic chat code they
- * now also hold.
- */
-const PARTIALLY_GUARDED: ReadonlyArray<{ readonly path: string; readonly allow: ReadonlyArray<string> }> = [
-	{ path: "apps/web/src/components/integrations/integration-catalog.tsx", allow: ["slack"] },
-	{ path: "apps/web/src/routes/integrations.tsx", allow: ["slack"] },
-]
-
-const VENDORS = ["discord", "slack", "teams", "telegram", "whatsapp"]
+const VENDORS = ["discord", "hazel", "slack", "teams", "telegram", "whatsapp"]
 
 const SELF = fileURLToPath(import.meta.url)
 
 const sourcesUnder = (dir: string): Array<string> =>
-	readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+	Arr.flatMap(readdirSync(dir, { withFileTypes: true }), (entry) => {
 		const full = join(dir, entry.name)
 		// A directory whose parent is `connectors` IS a connector: everything in it is vendor code.
 		if (entry.isDirectory()) return basename(dir) === "connectors" ? [] : sourcesUnder(full)
-		return entry.name.endsWith(".ts") ? [full] : []
+		return Str.endsWith(".ts")(entry.name) ? [full] : []
 	})
 
 /** The registries name what they register; nothing else on those lines does anything else. */
 const isRegistration = (line: string): boolean =>
-	line.startsWith("import ") ||
-	line.includes("export const connectors") ||
-	line.includes("export const chatConnectorManifests")
+	Str.startsWith("import ")(line) ||
+	Str.includes("export const connectors")(line) ||
+	Str.includes("export const chatConnectorManifests")(line)
 
 const offendingLines = (
 	file: string,
@@ -85,14 +78,12 @@ const offendingLines = (
 	exempt: (line: string) => boolean,
 ): Array<string> => {
 	const offenders: Array<string> = []
-	readFileSync(file, "utf8")
-		.split("\n")
-		.forEach((line, index) => {
-			const lowered = line.toLowerCase()
-			if (!VENDORS.some((vendor) => !allow.includes(vendor) && lowered.includes(vendor))) return
-			if (exempt(line)) return
-			offenders.push(`${relative(repoRoot, file)}:${index + 1}: ${line.trim()}`)
-		})
+	Arr.forEach(Str.split("\n")(readFileSync(file, "utf8")), (line, index) => {
+		const lowered = Str.toLowerCase(line)
+		if (!Arr.some(VENDORS, (vendor) => !allow.includes(vendor) && Str.includes(vendor)(lowered))) return
+		if (exempt(line)) return
+		offenders.push(`${relative(repoRoot, file)}:${index + 1}: ${Str.trim(line)}`)
+	})
 	return offenders
 }
 
@@ -116,11 +107,10 @@ describe("vendor isolation", () => {
 				join(repoRoot, root, "connectors", "index.ts"),
 				join(repoRoot, root, "connectors", "manifests.ts"),
 			]
-			const offenders = sourcesUnder(join(repoRoot, root))
-				.filter((file) => file !== SELF)
-				.flatMap((file) =>
-					offendingLines(file, [], registries.includes(file) ? isRegistration : never),
-				)
+			const sources = Arr.filter(sourcesUnder(join(repoRoot, root)), (file) => file !== SELF)
+			const offenders = Arr.flatMap(sources, (file) =>
+				offendingLines(file, [], registries.includes(file) ? isRegistration : never),
+			)
 
 			expect(offenders).toEqual([])
 		})
@@ -131,32 +121,31 @@ describe("vendor isolation", () => {
 		 * lives only in the file name. `connectors/<vendor>-helpers.ts` is the case.
 		 */
 		it(`keeps ${root} free of vendor file names`, () => {
-			const offenders = sourcesUnder(join(repoRoot, root))
-				.filter((file) => file !== SELF)
-				.filter((file) => {
-					const name = basename(file).toLowerCase()
-					return VENDORS.some((vendor) => name.includes(vendor))
-				})
-				.map((file) => relative(repoRoot, file))
+			const offenders = Arr.map(
+				Arr.filter(
+					Arr.filter(sourcesUnder(join(repoRoot, root)), (file: string) => file !== SELF),
+					(file) => {
+						const name = Str.toLowerCase(basename(file))
+						return Arr.some(VENDORS, (vendor) => Str.includes(vendor)(name))
+					},
+				),
+				(file) => relative(repoRoot, file),
+			)
 
 			expect(offenders).toEqual([])
 		})
 	}
 
 	it("keeps the files this feature owns elsewhere free of vendor names", () => {
-		const offenders = GUARDED_FILES.flatMap((path) => offendingLines(join(repoRoot, path), [], never))
-		expect(offenders).toEqual([])
-	})
-
-	it("keeps the shared dashboard files free of every vendor they did not already carry", () => {
-		const offenders = PARTIALLY_GUARDED.flatMap((guarded) =>
-			offendingLines(join(repoRoot, guarded.path), guarded.allow, never),
+		const offenders = Arr.flatMap(GUARDED_FILES, (path) =>
+			offendingLines(join(repoRoot, path), [], never),
 		)
 		expect(offenders).toEqual([])
 	})
 
 	it("guards files that exist", () => {
-		const missing = [...GUARDED_FILES, ...PARTIALLY_GUARDED.map((guarded) => guarded.path)].filter(
+		const missing = Arr.filter(
+			GUARDED_FILES,
 			(path) => statSync(join(repoRoot, path), { throwIfNoEntry: false }) === undefined,
 		)
 		expect(missing).toEqual([])

@@ -7,6 +7,9 @@ import {
 	type PullRequestHead,
 	type PullRequestReviewThread,
 	mentionsReviewer,
+	mergeStepTickChanges,
+	PR_REVIEW_COMMENT_MARKER_PREFIX,
+	reviewerMention as reviewerMentionFor,
 	type PullRequestSummary,
 	type RepoUpsertInput,
 	type VcsInstallation,
@@ -22,7 +25,19 @@ import {
 	VcsWebhookParseError,
 	VcsWebhookSignatureError,
 } from "@maple/domain/http"
-import { Clock, Context, Effect, Layer, Match, Option, Redacted, Schema } from "effect"
+import {
+	DateTime,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Match,
+	Option,
+	Redacted,
+	Schema,
+	Stream,
+	String as Str,
+} from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import type {
 	PullRequestDelta,
@@ -38,7 +53,11 @@ import {
 	type GithubApiPullRequest,
 	GithubAppClient,
 	GithubAppError,
+	isBlockedRepository,
+	isGoneStatus,
+	type RepositoryListingError,
 } from "./GithubAppClient"
+import { timestampMs } from "@maple/backend/platform/time"
 
 const PROVIDER: VcsProviderId = "github"
 
@@ -107,6 +126,7 @@ const PullRequestPayload = Schema.Struct({
 		title: Schema.optionalKey(Schema.NullOr(Schema.String)),
 		body: Schema.optionalKey(Schema.NullOr(Schema.String)),
 		user: Schema.optionalKey(Schema.NullOr(Schema.Struct({ login: Schema.optionalKey(Schema.String) }))),
+		author_association: Schema.optionalKey(Schema.String),
 		merged: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
 		merge_commit_sha: Schema.optionalKey(Schema.NullOr(Schema.String)),
 		merged_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -158,6 +178,12 @@ const IssueCommentPayload = Schema.Struct({
 	}),
 	repository: Schema.Struct({ id: Schema.Number, full_name: Schema.String }),
 	installation: Schema.Struct({ id: Schema.Number }),
+	/** On `edited`: the body before the edit, which is how a ticked box is told from a re-render. */
+	changes: Schema.optionalKey(
+		Schema.Struct({ body: Schema.optionalKey(Schema.Struct({ from: Schema.String })) }),
+	),
+	/** Who did it; on `edited`, the editor rather than the comment's author. */
+	sender: Schema.optionalKey(CommentUser),
 })
 
 // `pull_request_review_comment`: a comment on a line of the diff, possibly a reply in a thread.
@@ -177,6 +203,92 @@ const ReviewCommentPayload = Schema.Struct({
 	repository: Schema.Struct({ id: Schema.Number, full_name: Schema.String }),
 	installation: Schema.Struct({ id: Schema.Number }),
 })
+
+// `workflow_run` / `workflow_job`: CI runs and jobs, mapped only once `completed`. Timestamps
+// stay strings here and are parsed by the mapper, which skips an event it cannot place in time.
+const WorkflowRunPayload = Schema.Struct({
+	action: Schema.String,
+	workflow_run: Schema.Struct({
+		id: Schema.Number,
+		name: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		path: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		run_number: Schema.Number,
+		run_attempt: Schema.optionalKey(Schema.Number),
+		event: Schema.String,
+		conclusion: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		head_branch: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		head_sha: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		html_url: Schema.String,
+		created_at: Schema.String,
+		run_started_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		updated_at: Schema.String,
+		actor: Schema.optionalKey(Schema.NullOr(Schema.Struct({ login: Schema.optionalKey(Schema.String) }))),
+		triggering_actor: Schema.optionalKey(
+			Schema.NullOr(
+				Schema.Struct({
+					login: Schema.optionalKey(Schema.String),
+					type: Schema.optionalKey(Schema.String),
+				}),
+			),
+		),
+		head_repository: Schema.optionalKey(
+			Schema.NullOr(Schema.Struct({ full_name: Schema.optionalKey(Schema.String) })),
+		),
+		pull_requests: Schema.optionalKey(Schema.Array(Schema.Struct({ number: Schema.Number }))),
+	}),
+	repository: Schema.Struct({ id: Schema.Number, full_name: Schema.String }),
+	installation: Schema.Struct({ id: Schema.Number }),
+})
+
+const WorkflowJobStepPayload = Schema.Struct({
+	number: Schema.Number,
+	name: Schema.String,
+	conclusion: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	started_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	completed_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
+})
+
+const WorkflowJobPayload = Schema.Struct({
+	action: Schema.String,
+	workflow_job: Schema.Struct({
+		id: Schema.Number,
+		run_id: Schema.Number,
+		run_attempt: Schema.optionalKey(Schema.Number),
+		name: Schema.String,
+		workflow_name: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		conclusion: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		head_branch: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		head_sha: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		html_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		created_at: Schema.String,
+		started_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		completed_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		runner_name: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		labels: Schema.optionalKey(Schema.Array(Schema.String)),
+		steps: Schema.optionalKey(Schema.Array(WorkflowJobStepPayload)),
+	}),
+	repository: Schema.Struct({ id: Schema.Number, full_name: Schema.String }),
+	installation: Schema.Struct({ id: Schema.Number }),
+})
+
+// A job's steps ride in one queue message, so their count and names are bounded to stay under
+// QUEUE_MESSAGE_LIMIT_BYTES whatever the workflow looks like.
+const MAX_WORKFLOW_STEPS = 300
+const MAX_WORKFLOW_NAME_LENGTH = 200
+const boundName = (name: string) =>
+	name.length > MAX_WORKFLOW_NAME_LENGTH ? `${Str.slice(0, MAX_WORKFLOW_NAME_LENGTH)(name)}...` : name
+
+const decodeWorkflowRun = Schema.decodeUnknownEffect(WorkflowRunPayload)
+// Run triggers that belong to a pull request, so an approval of one vouches for its author.
+const CI_APPROVAL_EVENTS: ReadonlySet<string> = new Set(["pull_request", "pull_request_target"])
+const decodeWorkflowJob = Schema.decodeUnknownEffect(WorkflowJobPayload)
+
+/** A GitHub timestamp as epoch ms, or null when absent or unparseable. */
+const optionalTimestampMs = (value: string | null | undefined): number | null => {
+	if (value === null || value === undefined) return null
+	const ms = timestampMs(value)
+	return Number.isFinite(ms) ? ms : null
+}
 
 const decodeGitShaOption = Schema.decodeUnknownOption(GitCommitSha)
 const decodeIssueComment = Schema.decodeUnknownEffect(IssueCommentPayload)
@@ -213,42 +325,34 @@ const parsePayload = <A, E>(event: string, decoded: Effect.Effect<A, E>) =>
 	)
 
 // Classify a GitHub HTTP failure into a semantic VCS error. HTTP-status
-// knowledge lives here, in the provider — the orchestrator only ever sees the
-// semantic outcome. A rate limit (carrying `retryAfterSeconds`) becomes a
+// knowledge lives here and in the client, never in the orchestrator, which only
+// sees the semantic outcome. A rate limit (carrying `retryAfterSeconds`) becomes a
 // VcsRateLimitedError; a gone/410 on the installation-auth call is the
 // authoritative disconnect signal; on a repo call it means the repo is gone;
-// everything else (incl. 401/403/5xx) is transient and retryable.
-const isGone = (status?: number) => status === 404 || status === 410
-
-// GitHub answers 451 for a repository taken down for legal reasons, and carries
-// the same `{"block":{"reason":"dmca"}}` body on the 403 variant. Neither clears
-// on retry, so both are terminal — matched on the body rather than on 403 alone,
-// which is otherwise an ordinary (retryable) permission failure.
-const BLOCK_BODY = /"block"\s*:|Repository access blocked/
-const isBlocked = (error: GithubAppError) =>
-	error.status === 451 || (error.status === 403 && BLOCK_BODY.test(error.message))
-
+// everything else (incl. 401/403/5xx) is transient and retryable. The repository
+// listings classify gone and blocked repos themselves and pass them through.
 const toVcsError = (
-	error: GithubAppError,
+	error: RepositoryListingError,
 ):
 	| VcsProviderError
 	| VcsInstallationGoneError
 	| VcsRepoUnavailableError
 	| VcsRepositoryBlockedError
 	| VcsRateLimitedError => {
+	if (!Schema.is(GithubAppError)(error)) return error
 	if (error.retryAfterSeconds !== undefined) {
 		return new VcsRateLimitedError({
 			message: error.message,
 			retryAfterSeconds: error.retryAfterSeconds,
 		})
 	}
-	if (isBlocked(error)) {
+	if (isBlockedRepository(error)) {
 		return new VcsRepositoryBlockedError({
 			message: error.message,
 			...(!(error.status === undefined) ? { status: error.status } : undefined),
 		})
 	}
-	if (isGone(error.status)) {
+	if (isGoneStatus(error.status)) {
 		if (error.scope === "installation") return new VcsInstallationGoneError({ message: error.message })
 		if (error.scope === "repository") return new VcsRepoUnavailableError({ message: error.message })
 	}
@@ -263,7 +367,7 @@ const toVcsError = (
 // so a rate-limit error never reaches this path. Narrow the mapper accordingly so
 // `fetchCommits` keeps the port's 3-way error channel (no VcsRateLimitedError).
 const toVcsCommitError = (
-	error: GithubAppError,
+	error: RepositoryListingError,
 ): VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError => {
 	const mapped = toVcsError(error)
 	return mapped._tag === "@maple/http/errors/VcsRateLimitedError"
@@ -272,6 +376,11 @@ const toVcsCommitError = (
 }
 
 const finiteOrNull = (value: number) => (Number.isFinite(value) ? value : null)
+
+const decodeJsonBody = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))
+const JsonText = Schema.fromJsonString(Schema.Unknown)
+const encodeJsonSync = Schema.encodeSync(JsonText)
+const encodeJson = Schema.encodeEffect(JsonText)
 
 // GitHub serves a stable avatar for any login at `<host>/<login>.png`, redirecting
 // to that user's current avatar. Derive one from a login so commits whose ingestion
@@ -282,11 +391,9 @@ const finiteOrNull = (value: number) => (Number.isFinite(value) ? value : null)
 // dashboard renders with an initials fallback.
 const githubAvatarUrl = (htmlUrl: string, login: string | null): string | null => {
 	if (!login) return null
-	try {
-		return new URL(`/${encodeURIComponent(login)}.png?size=64`, htmlUrl).href
-	} catch {
-		return null
-	}
+	return Option.liftThrowable(
+		() => new URL(`/${encodeURIComponent(login)}.png?size=64`, htmlUrl).href,
+	)().pipe(Option.getOrNull)
 }
 
 const installationReason = (action: string): VcsInstallationSyncReason | null => {
@@ -304,19 +411,23 @@ const installationReason = (action: string): VcsInstallationSyncReason | null =>
 	}
 }
 
+const WEBHOOK_SIGNATURE_HEADER = "x-hub-signature-256"
+
 const timingSafeEqual = (a: string, b: string): boolean => {
 	const ba = Buffer.from(a)
 	const bb = Buffer.from(b)
 	if (ba.length !== bb.length) return false
 	let mismatch = 0
-	for (let i = 0; i < ba.length; i += 1) mismatch |= ba[i]! ^ bb[i]!
+	for (const [i, byte] of ba.entries()) mismatch |= byte ^ (bb[i] ?? 0)
 	return mismatch === 0
 }
 
 const normalizeFetchedCommit = (commit: GithubApiCommit, now: number): CommitUpsertInput => {
-	const authoredAt = commit.commit.author?.date ? finiteOrNull(Date.parse(commit.commit.author.date)) : null
+	const authoredAt = commit.commit.author?.date
+		? finiteOrNull(timestampMs(commit.commit.author.date))
+		: null
 	const committedAt = commit.commit.committer?.date
-		? finiteOrNull(Date.parse(commit.commit.committer.date))
+		? finiteOrNull(timestampMs(commit.commit.committer.date))
 		: null
 	return {
 		sha: commit.sha,
@@ -334,12 +445,42 @@ const normalizeFetchedCommit = (commit: GithubApiCommit, now: number): CommitUps
 	}
 }
 
+/**
+ * Greedily pack commits into slices whose job stays under PUSH_JOB_MAX_BYTES. Every commit
+ * lands in a slice (guaranteed progress), and the result always holds at least one slice.
+ */
+const packCommits = (
+	commits: ReadonlyArray<CommitUpsertInput>,
+	envelopeBytes: number,
+): Array<Array<CommitUpsertInput>> => {
+	const slices: Array<Array<CommitUpsertInput>> = []
+	let slice: CommitUpsertInput[] = []
+	let sliceBytes = envelopeBytes
+	for (const c of commits) {
+		const commitBytes = Buffer.byteLength(encodeJsonSync(c)) + 1 // +1: array comma
+		if (slice.length > 0 && sliceBytes + commitBytes > PUSH_JOB_MAX_BYTES) {
+			slices.push(slice)
+			slice = []
+			sliceBytes = envelopeBytes
+		}
+		slice.push(c)
+		sliceBytes += commitBytes
+	}
+	slices.push(slice)
+	return slices
+}
 export class GithubProvider extends Context.Service<GithubProvider, VcsProviderClient>()(
-	"@maple/api/services/vcs/vendor/github/GithubProvider",
+	"@maple/backend/services/vcs/vendor/github/GithubProvider",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env
 			const client = yield* GithubAppClient
+			const reviewerMention = reviewerMentionFor(Option.getOrUndefined(env.GITHUB_APP_SLUG))
+			/** The login the App comments as; unknown without a slug, when any bot's comment is read. */
+			const appBotLogin = Option.match(env.GITHUB_APP_SLUG, {
+				onNone: () => undefined,
+				onSome: (slug) => `${slug}[bot]`,
+			})
 
 			// Stamp the (low-cardinality) signature *result* on the active span. NEVER
 			// records the signature value or the secret — only the outcome enum. The
@@ -461,7 +602,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						return [job]
 					}
 					const commits: ReadonlyArray<CommitUpsertInput> = (payload.commits ?? []).map((c) => {
-						const ts = c.timestamp ? finiteOrNull(Date.parse(c.timestamp)) : null
+						const ts = c.timestamp ? finiteOrNull(timestampMs(c.timestamp)) : null
 						return {
 							sha: c.id,
 							message: c.message,
@@ -496,27 +637,14 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						commits: slice,
 					})
 					// Greedily pack commits into jobs that each stay under the queue cap.
-					// `JSON.stringify` byte length is a conservative proxy for the wire size
+					// The JSON byte length is a conservative proxy for the wire size
 					// (CommitUpsertInput encodes 1:1, and the queue's v8 serialization is no
 					// larger for this string-heavy shape). Each commit is always placed in a
 					// job (guaranteed progress), so a lone commit bigger than the budget — a
 					// pathologically huge message, which the branch's commit backfill re-fetches
 					// in full anyway — gets its own job rather than stalling the loop.
-					const envelopeBytes = Buffer.byteLength(JSON.stringify(makeJob([])))
-					const jobs: VcsSyncJob[] = []
-					let slice: CommitUpsertInput[] = []
-					let sliceBytes = envelopeBytes
-					for (const c of commits) {
-						const commitBytes = Buffer.byteLength(JSON.stringify(c)) + 1 // +1: array comma
-						if (slice.length > 0 && sliceBytes + commitBytes > PUSH_JOB_MAX_BYTES) {
-							jobs.push(makeJob(slice))
-							slice = []
-							sliceBytes = envelopeBytes
-						}
-						slice.push(c)
-						sliceBytes += commitBytes
-					}
-					jobs.push(makeJob(slice))
+					const envelopeJson = yield* encodeJson(makeJob([])).pipe(Effect.orDie)
+					const jobs = packCommits(commits, Buffer.byteLength(envelopeJson)).map(makeJob)
 					yield* Effect.annotateCurrentSpan({
 						"vcs.webhook.outcome": "handled",
 						"vcs.webhook.jobs": jobs.length,
@@ -640,7 +768,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					// need it, and the review trigger treats its absence as "nothing to review".
 					const headSha = Option.getOrUndefined(decodeGitShaOption(pr.head?.sha))
 					const baseSha = Option.getOrUndefined(decodeGitShaOption(pr.base?.sha))
-					const mergedAtMs = pr.merged_at ? finiteOrNull(Date.parse(pr.merged_at)) : null
+					const mergedAtMs = pr.merged_at ? finiteOrNull(timestampMs(pr.merged_at)) : null
 					yield* Effect.annotateCurrentSpan({
 						"vcs.webhook.outcome": "handled",
 						"vcs.pull_request.merged": merged,
@@ -657,6 +785,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						title: pr.title ?? null,
 						body: pr.body ?? null,
 						authorLogin: pr.user?.login ?? null,
+						...(pr.author_association === undefined
+							? undefined
+							: { authorAssociation: pr.author_association }),
 						merged,
 						mergeCommitSha: pr.merge_commit_sha ?? null,
 						mergedAtMs,
@@ -680,16 +811,62 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					"vcs.webhook.skip_reason": reason,
 				}).pipe(Effect.as<ReadonlyArray<VcsSyncJob>>([]))
 
+			/**
+			 * A person ticked a box on one of our review comments. Only the App's own comments count,
+			 * only a person's edit, and only an edit that changed a tagged "Before merge" box: GitHub
+			 * also sends `edited` for every re-render the App does itself.
+			 */
+			const mapChecklistEdit = (payload: typeof IssueCommentPayload.Type) =>
+				Effect.gen(function* () {
+					const author = payload.comment.user
+					const ours =
+						author !== null &&
+						author.type === "Bot" &&
+						(appBotLogin === undefined || author.login === appBotLogin) &&
+						(payload.comment.body ?? "").startsWith(PR_REVIEW_COMMENT_MARKER_PREFIX)
+					if (
+						!ours ||
+						payload.issue.pull_request === undefined ||
+						payload.issue.pull_request === null
+					)
+						return yield* commentSkip("edit_not_review_comment")
+					const editor = payload.sender
+					if (editor === undefined || editor.type === "Bot")
+						return yield* commentSkip("comment_by_bot")
+					const before = payload.changes?.body?.from
+					const ticks =
+						before === undefined ? [] : mergeStepTickChanges(before, payload.comment.body ?? "")
+					if (ticks.length === 0) return yield* commentSkip("checklist_unchanged")
+					yield* Effect.annotateCurrentSpan({
+						"vcs.webhook.outcome": "handled",
+						"vcs.pull_request.number": payload.issue.number,
+					})
+					const job: VcsSyncJob = {
+						kind: "pull-request-checklist",
+						provider: PROVIDER,
+						externalInstallationId: String(payload.installation.id),
+						externalRepoId: String(payload.repository.id),
+						repoFullName: payload.repository.full_name,
+						number: payload.issue.number,
+						commentId: String(payload.comment.id),
+						editorLogin: editor.login,
+						ticks,
+					}
+					return [job]
+				})
+
 			const mapIssueComment = (raw: unknown) =>
 				Effect.gen(function* () {
 					const payload = yield* parsePayload("issue_comment", decodeIssueComment(raw))
 					const body = payload.comment.body ?? ""
+					if (payload.action === "edited") return yield* mapChecklistEdit(payload)
 					if (payload.action !== "created") return yield* commentSkip("comment_action")
 					if (payload.issue.pull_request === undefined || payload.issue.pull_request === null)
 						return yield* commentSkip("issue_comment_not_pull_request")
 					if (payload.comment.user === null || payload.comment.user.type === "Bot")
 						return yield* commentSkip("comment_by_bot")
-					if (!mentionsReviewer(body)) return yield* commentSkip("comment_no_mention")
+					if (!mentionsReviewer(body, reviewerMention))
+						return yield* commentSkip("comment_no_mention")
 					yield* Effect.annotateCurrentSpan({
 						"vcs.webhook.outcome": "handled",
 						"vcs.pull_request.number": payload.issue.number,
@@ -721,7 +898,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					if (payload.action !== "created") return yield* commentSkip("comment_action")
 					if (payload.comment.user === null || payload.comment.user.type === "Bot")
 						return yield* commentSkip("comment_by_bot")
-					if (!mentionsReviewer(body)) return yield* commentSkip("comment_no_mention")
+					if (!mentionsReviewer(body, reviewerMention))
+						return yield* commentSkip("comment_no_mention")
 					yield* Effect.annotateCurrentSpan({
 						"vcs.webhook.outcome": "handled",
 						"vcs.pull_request.number": payload.pull_request.number,
@@ -748,6 +926,158 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					return [job]
 				})
 
+			const workflowSkip = (reason: string) =>
+				Effect.annotateCurrentSpan({
+					"vcs.webhook.outcome": "skipped",
+					"vcs.webhook.skip_reason": reason,
+				}).pipe(Effect.as<ReadonlyArray<VcsSyncJob>>([]))
+
+			/**
+			 * A pull request's run that someone other than its author let go: approving a fork's
+			 * workflows re-attempts the held run with the approver as `triggering_actor`, and a re-run
+			 * does the same. A run held for approval completes as `action_required` and is no approval.
+			 */
+			const ciApproval = (payload: typeof WorkflowRunPayload.Type): ReadonlyArray<VcsSyncJob> => {
+				const run = payload.workflow_run
+				if (payload.action !== "in_progress" && payload.action !== "completed") return []
+				if (!CI_APPROVAL_EVENTS.has(run.event) || run.conclusion === "action_required") return []
+				const approver = run.triggering_actor
+				const author = run.actor?.login
+				const headSha = Option.getOrUndefined(decodeGitShaOption(run.head_sha))
+				const headRepoFullName = run.head_repository?.full_name
+				if (
+					approver?.login === undefined ||
+					approver.type === "Bot" ||
+					author === undefined ||
+					approver.login.toLowerCase() === author.toLowerCase() ||
+					headSha === undefined ||
+					!run.head_branch ||
+					headRepoFullName === undefined
+				)
+					return []
+				return [
+					{
+						kind: "pull-request-ci-approved",
+						provider: PROVIDER,
+						externalInstallationId: String(payload.installation.id),
+						externalRepoId: String(payload.repository.id),
+						repoFullName: payload.repository.full_name,
+						runId: String(run.id),
+						headSha,
+						headBranch: run.head_branch,
+						headRepoFullName,
+						approverLogin: approver.login,
+						authorLogin: author,
+						pullRequestNumbers: (run.pull_requests ?? []).map((pr) => pr.number),
+					},
+				]
+			}
+
+			// A finished workflow run becomes the root span of its CI trace.
+			const mapWorkflowRun = (raw: unknown) =>
+				Effect.gen(function* () {
+					const payload = yield* parsePayload("workflow_run", decodeWorkflowRun(raw))
+					const run = payload.workflow_run
+					yield* Effect.annotateCurrentSpan({
+						"vcs.provider.installation_id": String(payload.installation.id),
+						"vcs.repository.external_id": String(payload.repository.id),
+						"vcs.webhook.action": payload.action,
+					})
+					const approval = ciApproval(payload)
+					yield* Effect.annotateCurrentSpan({ "vcs.workflow.ci_approval": approval.length > 0 })
+					if (payload.action !== "completed") {
+						if (approval.length === 0) return yield* workflowSkip("workflow_not_completed")
+						yield* Effect.annotateCurrentSpan({ "vcs.webhook.outcome": "handled" })
+						return approval
+					}
+					const startedAtMs = optionalTimestampMs(run.run_started_at ?? run.created_at)
+					const completedAtMs = optionalTimestampMs(run.updated_at)
+					if (startedAtMs === null || completedAtMs === null)
+						return yield* workflowSkip("workflow_unparseable_time")
+					yield* Effect.annotateCurrentSpan({ "vcs.webhook.outcome": "handled" })
+					const job: VcsSyncJob = {
+						kind: "workflow-run",
+						provider: PROVIDER,
+						externalInstallationId: String(payload.installation.id),
+						externalRepoId: String(payload.repository.id),
+						repoFullName: payload.repository.full_name,
+						runId: String(run.id),
+						runAttempt: run.run_attempt ?? 1,
+						runNumber: run.run_number,
+						workflowName: run.name ?? run.path ?? "workflow",
+						workflowPath: run.path ?? null,
+						triggerEvent: run.event,
+						conclusion: run.conclusion ?? null,
+						headBranch: run.head_branch ?? null,
+						headSha: run.head_sha ?? null,
+						actorLogin: run.actor?.login ?? null,
+						pullRequestNumbers: (run.pull_requests ?? []).map((pr) => pr.number),
+						url: run.html_url,
+						startedAtMs,
+						completedAtMs: Math.max(startedAtMs, completedAtMs),
+					}
+					return [job, ...approval]
+				})
+
+			// A finished job becomes a child span of its run, with a span per step that ran.
+			const mapWorkflowJob = (raw: unknown) =>
+				Effect.gen(function* () {
+					const payload = yield* parsePayload("workflow_job", decodeWorkflowJob(raw))
+					const ciJob = payload.workflow_job
+					yield* Effect.annotateCurrentSpan({
+						"vcs.provider.installation_id": String(payload.installation.id),
+						"vcs.repository.external_id": String(payload.repository.id),
+						"vcs.webhook.action": payload.action,
+					})
+					if (payload.action !== "completed") return yield* workflowSkip("workflow_not_completed")
+					const queuedAtMs = optionalTimestampMs(ciJob.created_at)
+					const completedAtMs = optionalTimestampMs(ciJob.completed_at)
+					if (queuedAtMs === null || completedAtMs === null)
+						return yield* workflowSkip("workflow_unparseable_time")
+					// A job skipped before it reached a runner has no start; it then spans nothing.
+					const startedAtMs = optionalTimestampMs(ciJob.started_at) ?? completedAtMs
+					// Steps that never ran carry no times and are left out.
+					const steps = (ciJob.steps ?? []).slice(0, MAX_WORKFLOW_STEPS).flatMap((step) => {
+						const stepStart = optionalTimestampMs(step.started_at)
+						const stepEnd = optionalTimestampMs(step.completed_at)
+						return stepStart === null || stepEnd === null
+							? []
+							: [
+									{
+										number: step.number,
+										name: boundName(step.name),
+										conclusion: step.conclusion ?? null,
+										startedAtMs: stepStart,
+										completedAtMs: Math.max(stepStart, stepEnd),
+									},
+								]
+					})
+					yield* Effect.annotateCurrentSpan({ "vcs.webhook.outcome": "handled" })
+					const job: VcsSyncJob = {
+						kind: "workflow-job",
+						provider: PROVIDER,
+						externalInstallationId: String(payload.installation.id),
+						externalRepoId: String(payload.repository.id),
+						repoFullName: payload.repository.full_name,
+						runId: String(ciJob.run_id),
+						runAttempt: ciJob.run_attempt ?? 1,
+						jobId: String(ciJob.id),
+						name: boundName(ciJob.name),
+						workflowName: ciJob.workflow_name ?? null,
+						conclusion: ciJob.conclusion ?? null,
+						headBranch: ciJob.head_branch ?? null,
+						headSha: ciJob.head_sha ?? null,
+						runnerName: ciJob.runner_name ?? null,
+						labels: ciJob.labels ?? [],
+						url: ciJob.html_url ?? "",
+						queuedAtMs,
+						startedAtMs: Math.max(queuedAtMs, startedAtMs),
+						completedAtMs: Math.max(queuedAtMs, startedAtMs, completedAtMs),
+						steps,
+					}
+					return [job]
+				})
+
 			// Dispatch a verified, parsed event to its mapper. Annotations (outcome /
 			// skip_reason / identifiers) are made by each mapper onto the surrounding
 			// `webhookToJobs` span.
@@ -761,6 +1091,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					Match.when("installation_repositories", () => mapInstallationRepositories(parsed)),
 					Match.when("create", () => mapRefEvent("created")(parsed)),
 					Match.when("delete", () => mapRefEvent("deleted")(parsed)),
+					Match.when("workflow_run", () => mapWorkflowRun(parsed)),
+					Match.when("workflow_job", () => mapWorkflowJob(parsed)),
 					Match.orElse(() =>
 						// ping and unhandled events are accepted no-ops.
 						Effect.annotateCurrentSpan({
@@ -772,11 +1104,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 
 			const webhookToJobs = (input: VcsWebhookRequest) =>
 				Effect.gen(function* () {
-					yield* verifySignature(input.rawBody, input.headers["x-hub-signature-256"])
-					const parsed = yield* Effect.try({
-						try: () => JSON.parse(input.rawBody) as unknown,
-						catch: () => parseError("Invalid JSON body"),
-					}).pipe(
+					yield* verifySignature(input.rawBody, input.headers[WEBHOOK_SIGNATURE_HEADER])
+					const parsed = yield* decodeJsonBody(input.rawBody).pipe(
+						Effect.mapError(() => parseError("Invalid JSON body")),
 						Effect.tapError(() =>
 							Effect.annotateCurrentSpan({
 								"vcs.webhook.outcome": "rejected",
@@ -804,19 +1134,20 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 
 			const fetchRepositories = (installation: VcsInstallation) =>
 				client.listInstallationRepositories(installation.externalInstallationId).pipe(
-					Effect.map((repos): ReadonlyArray<RepoUpsertInput> =>
-						repos.map((r) => ({
-							externalRepoId: String(r.id),
-							owner: r.owner.login,
-							name: r.name,
-							fullName: r.full_name,
-							defaultBranch: r.default_branch ?? "main",
-							htmlUrl: r.html_url,
-							isPrivate: r.private,
-							isArchived: r.archived ?? false,
-						})),
-					),
-					Effect.mapError(toVcsError),
+					Effect.mapBoth({
+						onSuccess: (repos): ReadonlyArray<RepoUpsertInput> =>
+							repos.map((r) => ({
+								externalRepoId: String(r.id),
+								owner: r.owner.login,
+								name: r.name,
+								fullName: r.full_name,
+								defaultBranch: r.default_branch ?? "main",
+								htmlUrl: r.html_url,
+								isPrivate: r.private,
+								isArchived: r.archived ?? false,
+							})),
+						onFailure: toVcsError,
+					}),
 				)
 
 			const fetchCommits = (
@@ -831,10 +1162,10 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					const result = yield* client
 						.listCommits(installation.externalInstallationId, repo.owner, repo.name, {
 							sha: opts.branch,
-							sinceIso: new Date(opts.sinceMs).toISOString(),
+							sinceIso: DateTime.formatIso(DateTime.makeUnsafe(opts.sinceMs)),
 							...(!(opts.untilMs === undefined)
 								? {
-										untilIso: new Date(opts.untilMs).toISOString(),
+										untilIso: DateTime.formatIso(DateTime.makeUnsafe(opts.untilMs)),
 									}
 								: undefined),
 						})
@@ -873,25 +1204,21 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					return yield* client
 						.getCommit(installation.externalInstallationId, repo.owner, repo.name, sha)
 						.pipe(
-							Effect.map((commit) => Option.some(normalizeFetchedCommit(commit, now))),
-							// A 404 means this repo doesn't contain the SHA (or access was lost),
-							// and a 422 ("No commit found for SHA") is GitHub's answer for a
-							// well-formed SHA that names nothing — an unpushed or rewritten
-							// commit reported by a deploy. For a SHA-only probe both are "look
-							// in the next repo", not a failure. Every other GitHub failure is
-							// mapped to the port's semantic errors.
-							Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
-								error.status === 404 || error.status === 422
-									? Effect.succeed(Option.none<CommitUpsertInput>())
-									: Effect.fail(toVcsCommitError(error)),
-							),
+							// The client answers none for a SHA this repo lacks (404) or that names
+							// nothing (422): "look in the next repo", not a failure.
+							Effect.mapBoth({
+								onSuccess: Option.map((commit) => normalizeFetchedCommit(commit, now)),
+								onFailure: toVcsCommitError,
+							}),
 						)
 				})
 
 			const fetchBranches = (installation: VcsInstallation, repo: VcsRepositoryRef) =>
 				client.listBranches(installation.externalInstallationId, repo.owner, repo.name).pipe(
-					Effect.map(
-						(result): { branches: ReadonlyArray<BranchUpsertInput>; truncated: boolean } => ({
+					Effect.mapBoth({
+						onSuccess: (
+							result,
+						): { branches: ReadonlyArray<BranchUpsertInput>; truncated: boolean } => ({
 							// Names + head only — which branch is "default" is the repo layer's
 							// concern (a display hint it derives from the repo's defaultBranch).
 							branches: result.branches.map((b) => ({
@@ -900,8 +1227,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 							})),
 							truncated: result.truncated,
 						}),
-					),
-					Effect.mapError(toVcsError),
+						onFailure: toVcsError,
+					}),
 				)
 
 			// GitHub reports open/closed in `state` and merged-ness separately in
@@ -909,9 +1236,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			// two here is the same rule `mapPullRequest` applies to a webhook payload —
 			// the port only ever speaks the three-way `PullRequestLinkState`.
 			const normalizePullRequest = (pr: GithubApiPullRequest): PullRequestSummary => {
-				const mergedAtMs = pr.merged_at === null ? null : Date.parse(pr.merged_at)
+				const mergedAtMs = pr.merged_at === null ? null : timestampMs(pr.merged_at)
 				const merged = mergedAtMs !== null && Number.isFinite(mergedAtMs)
-				const updatedAtMs = Date.parse(pr.updated_at)
+				const updatedAtMs = timestampMs(pr.updated_at)
 				return {
 					number: pr.number,
 					title: pr.title,
@@ -929,10 +1256,18 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 
 			const fetchPullRequests: VcsProviderClient["fetchPullRequests"] = (installation, repo, opts) =>
 				client
-					.listPullRequests(installation.externalInstallationId, repo.owner, repo.name, opts.limit)
+					.listPullRequests(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						opts.limit,
+						opts.head,
+					)
 					.pipe(
-						Effect.map((prs) => prs.map(normalizePullRequest)),
-						Effect.mapError(toVcsError),
+						Effect.mapBoth({
+							onSuccess: (prs) => prs.map(normalizePullRequest),
+							onFailure: toVcsError,
+						}),
 					)
 
 			const fetchPullRequest: VcsProviderClient["fetchPullRequest"] = (installation, repo, number) =>
@@ -941,12 +1276,13 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.pipe(
 						// The client already turns a 404 into `null` — no such PR in this
 						// repo is an expected answer, not a failure.
-						Effect.map((pr) =>
-							pr === null
-								? Option.none<PullRequestSummary>()
-								: Option.some(normalizePullRequest(pr)),
-						),
-						Effect.mapError(toVcsError),
+						Effect.mapBoth({
+							onSuccess: (pr) =>
+								pr === null
+									? Option.none<PullRequestSummary>()
+									: Option.some(normalizePullRequest(pr)),
+							onFailure: toVcsError,
+						}),
 					)
 
 			const searchCode: VcsProviderClient["searchCode"] = (installation, repo, query, opts) =>
@@ -960,23 +1296,24 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						opts.limit,
 					)
 					.pipe(
-						Effect.map((result) =>
-							result.items.map((item) => ({
-								path: item.path,
-								sha: item.sha,
-								htmlUrl: item.html_url,
-								snippets: (item.text_matches ?? []).map((match) => match.fragment),
-							})),
-						),
-						Effect.mapError(toVcsError),
+						Effect.mapBoth({
+							onSuccess: (result) =>
+								result.items.map((item) => ({
+									path: item.path,
+									sha: item.sha,
+									htmlUrl: item.html_url,
+									snippets: (item.text_matches ?? []).map((match) => match.fragment),
+								})),
+							onFailure: toVcsError,
+						}),
 					)
 
 			const fetchSourceFile: VcsProviderClient["fetchSourceFile"] = (installation, repo, path, ref) =>
 				client
 					.getSourceFile(installation.externalInstallationId, repo.owner, repo.name, path, ref)
 					.pipe(
-						Effect.map((file) =>
-							Option.some({
+						Effect.mapBoth({
+							onSuccess: Option.map((file) => ({
 								path: file.path,
 								sha: file.sha,
 								htmlUrl: file.html_url ?? `${repo.owner}/${repo.name}/${file.path}`,
@@ -987,25 +1324,58 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 												"utf8",
 											)
 										: file.content,
-							}),
-						),
-						Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
-							error.status === 404
-								? Effect.succeed(Option.none())
-								: Effect.fail(toVcsCommitError(error)),
-						),
+							})),
+							onFailure: toVcsCommitError,
+						}),
 					)
+
+			const fetchTreeFiles: VcsProviderClient["fetchTreeFiles"] = (installation, repo, commitSha) =>
+				client
+					.getRecursiveTree(installation.externalInstallationId, repo.owner, repo.name, commitSha)
+					.pipe(
+						Effect.mapBoth({
+							onSuccess: (listing) => ({
+								truncated: listing.truncated,
+								files: listing.tree.flatMap((entry) =>
+									entry.type === "blob"
+										? [{ path: entry.path, sha: entry.sha, size: entry.size ?? 0 }]
+										: [],
+								),
+							}),
+							onFailure: toVcsCommitError,
+						}),
+					)
+
+			const fetchBlobText: VcsProviderClient["fetchBlobText"] = (
+				installation,
+				repo,
+				blobSha,
+				maxBytes,
+			) =>
+				client
+					.getBlobText(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						blobSha,
+						maxBytes,
+					)
+					.pipe(Effect.mapError(toVcsCommitError))
 
 			const resolveRef: VcsProviderClient["resolveRef"] = (installation, repo, ref) =>
 				client.getCommit(installation.externalInstallationId, repo.owner, repo.name, ref).pipe(
-					Effect.map((commit) => Option.some(commit.sha)),
-					Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
-						// 422 is GitHub's answer for a ref that parses but names nothing.
-						error.status === 404 || error.status === 422
-							? Effect.succeed(Option.none())
-							: Effect.fail(toVcsCommitError(error)),
-					),
+					// None when the ref is absent (404) or parses but names nothing (422).
+					Effect.mapBoth({
+						onSuccess: Option.map((commit) => commit.sha),
+						onFailure: toVcsCommitError,
+					}),
 				)
+
+			// GitHub's `size` is KiB of the packed repository.
+			const repositorySizeBytes: VcsProviderClient["repositorySizeBytes"] = (installation, repo) =>
+				client
+					.getRepositorySizeKib(installation.externalInstallationId, repo.owner, repo.name)
+					.pipe(Effect.mapBoth({ onSuccess: (kib) => kib * 1024, onFailure: toVcsCommitError }))
 
 			const normalizeFileStatus = (status: string): PullRequestFile["status"] => {
 				switch (status) {
@@ -1030,17 +1400,18 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				client
 					.listPullRequestFiles(installation.externalInstallationId, repo.owner, repo.name, number)
 					.pipe(
-						Effect.map((files) =>
-							files.map((file): PullRequestFile => ({
-								path: file.filename,
-								previousPath: file.previous_filename ?? null,
-								status: normalizeFileStatus(file.status),
-								additions: file.additions,
-								deletions: file.deletions,
-								patch: file.patch ?? null,
-							})),
-						),
-						Effect.mapError(toVcsError),
+						Effect.mapBoth({
+							onSuccess: (files) =>
+								files.map((file): PullRequestFile => ({
+									path: file.filename,
+									previousPath: file.previous_filename ?? null,
+									status: normalizeFileStatus(file.status),
+									additions: file.additions,
+									deletions: file.deletions,
+									patch: file.patch ?? null,
+								})),
+							onFailure: toVcsError,
+						}),
 					)
 
 			const fetchReviewThreads: VcsProviderClient["fetchReviewThreads"] = (
@@ -1051,27 +1422,47 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				client
 					.listReviewThreads(installation.externalInstallationId, repo.owner, repo.name, number)
 					.pipe(
-						Effect.map((threads) =>
-							threads.map((thread): PullRequestReviewThread => ({
-								id: thread.id,
-								isResolved: thread.isResolved,
-								comments: thread.comments.nodes.map((comment) => {
-									const count = (content: string) =>
-										comment.reactionGroups?.find((group) => group.content === content)
-											?.reactors.totalCount ?? 0
-									return {
-										commentId:
-											comment.databaseId === null ? null : String(comment.databaseId),
-										author: comment.author?.login ?? "(deleted user)",
-										body: comment.body,
-										thumbsUp: count("THUMBS_UP"),
-										thumbsDown: count("THUMBS_DOWN"),
-									}
-								}),
-							})),
-						),
-						Effect.mapError(toVcsError),
+						Effect.mapBoth({
+							onSuccess: (threads) =>
+								threads.map((thread): PullRequestReviewThread => ({
+									id: thread.id,
+									isResolved: thread.isResolved,
+									comments: thread.comments.nodes.map((comment) => {
+										const count = (content: string) =>
+											comment.reactionGroups?.find((group) => group.content === content)
+												?.reactors.totalCount ?? 0
+										return {
+											commentId:
+												comment.databaseId === null
+													? null
+													: String(comment.databaseId),
+											author: comment.author?.login ?? "(deleted user)",
+											body: comment.body,
+											thumbsUp: count("THUMBS_UP"),
+											thumbsDown: count("THUMBS_DOWN"),
+										}
+									}),
+								})),
+							onFailure: toVcsError,
+						}),
 					)
+
+			// Needs `pull_requests: write`, like the comments it hides.
+			const hideEarlierComments: VcsProviderClient["hideEarlierComments"] = (
+				installation,
+				repo,
+				input,
+			) =>
+				client
+					.minimizeEarlierComments(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						input.number,
+						input.prefix,
+						input.keep,
+					)
+					.pipe(Effect.mapError(toVcsError))
 
 			const resolveReviewThread: VcsProviderClient["resolveReviewThread"] = (
 				installation,
@@ -1197,8 +1588,10 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 							input.body,
 						)
 				).pipe(
-					Effect.map((comment) => ({ url: comment.html_url })),
-					Effect.mapError(toVcsError),
+					Effect.mapBoth({
+						onSuccess: (comment) => ({ url: comment.html_url }),
+						onFailure: toVcsError,
+					}),
 				)
 
 			const reactToComment: VcsProviderClient["reactToComment"] = (installation, repo, input) =>
@@ -1240,25 +1633,27 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				client
 					.getPullRequestContext(installation.externalInstallationId, repo.owner, repo.name, number)
 					.pipe(
-						Effect.map((raw): PullRequestContext => ({
-							commits: raw.commits.map((commit) => ({
-								sha: commit.sha,
-								message: commit.commit.message,
-							})),
-							comments: raw.comments.map((comment) => ({
-								author: comment.user?.login ?? "(deleted user)",
-								path: comment.path ?? null,
-								line: comment.line ?? null,
-								body: comment.body ?? "",
-							})),
-							checks: raw.checks.map((check) => ({
-								name: check.name,
-								status: check.status,
-								conclusion: check.conclusion,
-								title: check.output?.title ?? null,
-							})),
-						})),
-						Effect.mapError(toVcsError),
+						Effect.mapBoth({
+							onSuccess: (raw): PullRequestContext => ({
+								commits: raw.commits.map((commit) => ({
+									sha: commit.sha,
+									message: commit.commit.message,
+								})),
+								comments: raw.comments.map((comment) => ({
+									author: comment.user?.login ?? "(deleted user)",
+									path: comment.path ?? null,
+									line: comment.line ?? null,
+									body: comment.body ?? "",
+								})),
+								checks: raw.checks.map((check) => ({
+									name: check.name,
+									status: check.status,
+									conclusion: check.conclusion,
+									title: check.output?.title ?? null,
+								})),
+							}),
+							onFailure: toVcsError,
+						}),
 					)
 
 			// The check run first: it is what the PR's checks tab shows and it never fails on a bad
@@ -1288,7 +1683,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 								id: run.id,
 								html_url: run.html_url,
 							})),
-							Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
+							Effect.catchTag("@maple/backend/vcs/GithubAppError", (error) =>
 								// A secondary rate limit is also a 403, but carries a retry time.
 								error.status === 403 && error.retryAfterSeconds === undefined
 									? Effect.annotateCurrentSpan(
@@ -1368,8 +1763,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 							},
 						)
 						.pipe(
-							Effect.map((posted) => Option.some(posted)),
-							Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
+							Effect.asSome,
+							Effect.catchTag("@maple/backend/vcs/GithubAppError", (error) =>
 								error.status === 422
 									? Effect.annotateCurrentSpan(
 											"vcs.pull_request.review_comments_rejected",
@@ -1428,8 +1823,10 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						input.body,
 					)
 					.pipe(
-						Effect.map((comment) => ({ url: comment?.html_url ?? null })),
-						Effect.mapError(toVcsError),
+						Effect.mapBoth({
+							onSuccess: (comment) => ({ url: comment?.html_url ?? null }),
+							onFailure: toVcsError,
+						}),
 						Effect.withSpan("GithubProvider.writePullRequestSummaryComment", {
 							attributes: {
 								"vcs.owner.name": repo.owner,
@@ -1450,8 +1847,10 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						annotations: [],
 					})
 					.pipe(
-						Effect.map((run) => ({ url: run.html_url })),
-						Effect.mapError(toVcsError),
+						Effect.mapBoth({
+							onSuccess: (run) => ({ url: run.html_url }),
+							onFailure: toVcsError,
+						}),
 						Effect.withSpan("GithubProvider.writePullRequestCheck", {
 							attributes: {
 								"vcs.owner.name": repo.owner,
@@ -1466,8 +1865,63 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.mintCloneCredentials(installation.externalInstallationId, repo.owner, repo.name)
 					.pipe(Effect.mapError(toVcsCommitError))
 
+			const streamWorkflowJobLog: VcsProviderClient["streamWorkflowJobLog"] = (
+				installation,
+				repo,
+				jobId,
+			) =>
+				client
+					.streamJobLog(installation.externalInstallationId, repo.owner, repo.name, jobId)
+					.pipe(Stream.mapError(toVcsCommitError))
+
+			const canReadWorkflowLogs: VcsProviderClient["canReadWorkflowLogs"] = (installation) =>
+				client
+					.canReadActions(installation.externalInstallationId)
+					.pipe(Effect.mapError(toVcsCommitError))
+
+			const fetchWorkflowJobAnnotations: VcsProviderClient["fetchWorkflowJobAnnotations"] = (
+				installation,
+				repo,
+				jobId,
+			) =>
+				client
+					.listCheckRunAnnotations(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						jobId,
+					)
+					.pipe(
+						Effect.mapBoth({
+							onSuccess: (annotations) =>
+								annotations.flatMap((annotation) =>
+									annotation.message === null || annotation.message === undefined
+										? []
+										: [
+												{
+													level: annotation.annotation_level ?? "failure",
+													message: annotation.message,
+													title: annotation.title ?? null,
+													path: annotation.path ?? null,
+													startLine: annotation.start_line ?? null,
+												},
+											],
+								),
+							onFailure: toVcsCommitError,
+						}),
+						Effect.withSpan("GithubProvider.fetchWorkflowJobAnnotations", {
+							attributes: {
+								"vcs.owner.name": repo.owner,
+								"vcs.repository.name": repo.name,
+								"cicd.pipeline.task.run.id": jobId,
+							},
+						}),
+					)
+
 			return {
 				id: PROVIDER,
+				reviewerMention,
+				webhookSignatureHeader: WEBHOOK_SIGNATURE_HEADER,
 				webhookToJobs,
 				fetchRepositories,
 				fetchCommits,
@@ -1479,6 +1933,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchPullRequestContext,
 				fetchReviewThreads,
 				resolveReviewThread,
+				hideEarlierComments,
 				fetchChangesSince,
 				fetchPullRequestHead,
 				postPullRequestReply,
@@ -1491,7 +1946,13 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				searchCode,
 				fetchSourceFile,
 				resolveRef,
+				fetchTreeFiles,
+				fetchBlobText,
+				repositorySizeBytes,
 				fetchCloneCredentials,
+				fetchWorkflowJobAnnotations,
+				streamWorkflowJobLog,
+				canReadWorkflowLogs,
 			} satisfies VcsProviderClient
 		}),
 	},

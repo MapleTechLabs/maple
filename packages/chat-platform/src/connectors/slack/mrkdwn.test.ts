@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from "vitest"
 import { escapeMrkdwn, toMrkdwn } from "./mrkdwn"
+import { Array as Arr } from "effect"
 
 describe("escaping", () => {
 	it("neutralizes Slack's three control characters, ampersand first", () => {
@@ -100,9 +101,13 @@ describe("what mrkdwn does not have", () => {
 	})
 
 	it("fences a table so its columns still line up", () => {
-		const table = ["| service | p99 |", "| --- | --- |", "| checkout | 2.1s |", "", "after"].join("\n")
+		const table = Arr.join(
+			["| service | p99 |", "| --- | --- |", "| checkout | 2.1s |", "", "after"],
+			"\n",
+		)
 		expect(toMrkdwn(table)).toBe(
-			["```", "| service | p99 |", "| --- | --- |", "| checkout | 2.1s |", "```", "", "after"].join(
+			Arr.join(
+				["```", "| service | p99 |", "| --- | --- |", "| checkout | 2.1s |", "```", "", "after"],
 				"\n",
 			),
 		)
@@ -121,8 +126,8 @@ describe("what mrkdwn does not have", () => {
 
 describe("code", () => {
 	it("keeps a fenced block verbatim and drops the language tag", () => {
-		const source = ["```sql", "SELECT **a** FROM t -- [x](y)", "```"].join("\n")
-		expect(toMrkdwn(source)).toBe(["```", "SELECT **a** FROM t -- [x](y)", "```"].join("\n"))
+		const source = Arr.join(["```sql", "SELECT **a** FROM t -- [x](y)", "```"], "\n")
+		expect(toMrkdwn(source)).toBe(Arr.join(["```", "SELECT **a** FROM t -- [x](y)", "```"], "\n"))
 	})
 
 	it("closes a block the model never closed", () => {

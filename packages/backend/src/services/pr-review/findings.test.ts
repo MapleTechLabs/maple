@@ -11,8 +11,10 @@ import {
 	renderIgnoredPaths,
 	resolvedByHandle,
 	type TrackedFinding,
+	uncheckedFixes,
 	withoutRepeats,
 } from "./findings"
+import { Array as Arr } from "effect"
 
 const tracked = (overrides: Partial<TrackedFinding> = {}): TrackedFinding => ({
 	id: "row-1",
@@ -37,8 +39,16 @@ const thread = (overrides: Partial<PullRequestReviewThread> = {}): PullRequestRe
 })
 
 describe("dismissedFindings", () => {
-	it("dismisses a finding whose thread a person resolved", () => {
-		assert.lengthOf(dismissedFindings([tracked()], [thread({ isResolved: true })]), 1)
+	it("dismisses a finding whose thread a person resolved without touching its file", () => {
+		const resolved = thread({ isResolved: true })
+		assert.lengthOf(dismissedFindings([tracked()], [resolved], new Set(["src/other.ts"])), 1)
+	})
+
+	// Authors resolve the thread once they push the fix; the reviewer decides whether it is fixed.
+	it("leaves a resolved thread open when its file changed or the changes are unknown", () => {
+		const resolved = thread({ isResolved: true })
+		assert.lengthOf(dismissedFindings([tracked()], [resolved], new Set(["src/a.ts"])), 0)
+		assert.lengthOf(dismissedFindings([tracked()], [resolved], undefined), 0)
 	})
 
 	it("never dismisses on a question or a negation", () => {
@@ -53,7 +63,7 @@ describe("dismissedFindings", () => {
 					{ commentId: "101", author: "alice", body, thumbsUp: 0, thumbsDown: 0 },
 				],
 			})
-			assert.lengthOf(dismissedFindings([tracked()], [replied]), 0, body)
+			assert.lengthOf(dismissedFindings([tracked()], [replied], undefined), 0, body)
 		}
 	})
 
@@ -70,19 +80,22 @@ describe("dismissedFindings", () => {
 				},
 			],
 		})
-		assert.lengthOf(dismissedFindings([tracked()], [replied]), 1)
+		assert.lengthOf(dismissedFindings([tracked()], [replied], undefined), 1)
 		const botReply = thread({
 			comments: [
 				{ commentId: "100", author: "maple[bot]", body: "finding", thumbsUp: 0, thumbsDown: 0 },
 				{ commentId: "101", author: "maple[bot]", body: "not an issue", thumbsUp: 0, thumbsDown: 0 },
 			],
 		})
-		assert.lengthOf(dismissedFindings([tracked()], [botReply]), 0)
+		assert.lengthOf(dismissedFindings([tracked()], [botReply], undefined), 0)
 	})
 
 	it("keeps a finding with no thread or an open, quiet one", () => {
-		assert.lengthOf(dismissedFindings([tracked({ commentId: null })], [thread({ isResolved: true })]), 0)
-		assert.lengthOf(dismissedFindings([tracked()], [thread()]), 0)
+		assert.lengthOf(
+			dismissedFindings([tracked({ commentId: null })], [thread({ isResolved: true })], new Set()),
+			0,
+		)
+		assert.lengthOf(dismissedFindings([tracked()], [thread()], new Set()), 0)
 	})
 })
 
@@ -113,7 +126,7 @@ describe("withoutRepeats", () => {
 		)
 		assert.equal(repeated, 2)
 		assert.deepEqual(
-			fresh.map((f) => [f.line, f.category]),
+			Arr.map(fresh, (f) => [f.line, f.category]),
 			[[11, "security"]],
 		)
 	})
@@ -142,7 +155,7 @@ describe("handles", () => {
 	it("resolves only handles that are open", () => {
 		const open = [tracked(), tracked({ id: "row-2", handle: "F2" })]
 		assert.deepEqual(
-			resolvedByHandle(["f2", "F9"], open).map((f) => f.handle),
+			Arr.map(resolvedByHandle(["f2", "F9"], open), (f) => f.handle),
 			["F2"],
 		)
 	})
@@ -160,11 +173,14 @@ describe("pathIgnored", () => {
 
 describe("renderFollowUp", () => {
 	it("names the changed files and the open handles, and asks for a judgement per finding", () => {
-		const text = renderFollowUp({
-			previousSha: "abcdef1234",
-			changes: { paths: ["src/a.ts"], rewritten: false },
-			open: [tracked()],
-		}).join("\n")
+		const text = Arr.join(
+			renderFollowUp({
+				previousSha: "abcdef1234",
+				changes: { paths: ["src/a.ts"], rewritten: false },
+				open: [tracked()],
+			}),
+			"\n",
+		)
 		assert.include(text, "reviewed before, at abcdef1")
 		assert.include(text, "the rest was already reviewed: src/a.ts.")
 		assert.include(text, "Lines being modified is not enough")
@@ -173,30 +189,83 @@ describe("renderFollowUp", () => {
 	})
 
 	it("says a rebase was compared file by file", () => {
-		const text = renderFollowUp({
-			previousSha: "abcdef1234",
-			changes: { paths: ["src/b.ts"], rewritten: true },
-			open: [],
-		}).join("\n")
+		const text = Arr.join(
+			renderFollowUp({
+				previousSha: "abcdef1234",
+				changes: { paths: ["src/b.ts"], rewritten: true },
+				open: [],
+			}),
+			"\n",
+		)
 		assert.include(text, "rebased or force-pushed")
 		assert.include(text, "the rest was already reviewed: src/b.ts.")
 	})
 
+	it("asks for the whole diff after an unchecked fix, whatever changed since", () => {
+		const followUp = renderFollowUp({
+			previousSha: "abcdef1234",
+			changes: { paths: ["src/a.ts"], rewritten: false },
+			open: [],
+			recheck: true,
+		})
+		assert.include(Arr.join(followUp, "\n"), "review the whole diff")
+		assert.isUndefined(followUpScope(Arr.join(["Review pull request #7.", ...followUp], "\n")))
+	})
+
 	it("asks for the whole diff when the change could not be compared", () => {
 		for (const changes of [undefined, { paths: undefined, rewritten: true }]) {
-			const text = renderFollowUp({ previousSha: "abcdef1234", changes, open: [] }).join("\n")
+			const text = Arr.join(renderFollowUp({ previousSha: "abcdef1234", changes, open: [] }), "\n")
 			assert.include(text, "review the whole diff")
 		}
 	})
 })
 
+describe("uncheckedFixes", () => {
+	const fixedAt = (resolvedSha: string, overrides: Partial<TrackedFinding> = {}) =>
+		tracked({ status: "resolved", resolvedSha, ...overrides })
+	const delta = (headSha: string) => ({ headSha, wholeDiff: false })
+	const whole = (headSha: string) => ({ headSha, wholeDiff: true })
+
+	it("counts defects fixed by passes since the last whole-diff read", () => {
+		const reviews = [delta("c"), delta("b"), whole("a")]
+		assert.equal(uncheckedFixes(reviews, [fixedAt("b"), fixedAt("c", { handle: "F2" })]), 2)
+	})
+
+	it("drops fixes a whole-diff pass has read since, including one it fixed itself", () => {
+		assert.equal(uncheckedFixes([delta("c"), whole("b"), delta("a")], [fixedAt("a")]), 0)
+		assert.equal(uncheckedFixes([whole("b"), delta("a")], [fixedAt("b")]), 0)
+	})
+
+	it("counts every fix when no pass read the whole diff, as on reviews stored before the flag", () => {
+		assert.equal(
+			uncheckedFixes([delta("b"), delta("a")], [fixedAt("a"), fixedAt("b", { handle: "F2" })]),
+			2,
+		)
+	})
+
+	it("ignores open, dismissed and non-defect findings", () => {
+		const reviews = [delta("b")]
+		assert.equal(
+			uncheckedFixes(reviews, [
+				tracked({ resolvedSha: "b" }),
+				tracked({ status: "dismissed", resolvedSha: "b" }),
+				fixedAt("b", { category: "maintainability" }),
+			]),
+			0,
+		)
+	})
+})
+
 describe("followUpScope", () => {
 	const kickoff = (paths: ReadonlyArray<string> | undefined, rewritten = false) =>
-		[
-			"Review pull request #7 of octo/shop.",
-			"",
-			...renderFollowUp({ previousSha: "abcdef1234", changes: { paths, rewritten }, open: [] }),
-		].join("\n")
+		Arr.join(
+			[
+				"Review pull request #7 of octo/shop.",
+				"",
+				...renderFollowUp({ previousSha: "abcdef1234", changes: { paths, rewritten }, open: [] }),
+			],
+			"\n",
+		)
 
 	it("reads back the files renderFollowUp names", () => {
 		assert.deepEqual(followUpScope(kickoff(["src/a.ts", "src/b.ts"])), ["src/a.ts", "src/b.ts"])
@@ -222,7 +291,8 @@ describe("followUpScope", () => {
 
 describe("ignoredPathsInKickoff", () => {
 	it("reads back the patterns the kickoff states", () => {
-		const kickoff = ["Review pull request #7.", renderIgnoredPaths(["generated/", "*.pb.go"]), ""].join(
+		const kickoff = Arr.join(
+			["Review pull request #7.", renderIgnoredPaths(["generated/", "*.pb.go"]), ""],
 			"\n",
 		)
 		assert.deepEqual(ignoredPathsInKickoff(kickoff), ["generated/", "*.pb.go"])
@@ -248,7 +318,7 @@ describe("mergeSavedFindings", () => {
 			finding(40, "Tenant filter missing from `listKeys`"),
 		])
 		assert.deepEqual(
-			merged.map((item) => item.line),
+			Arr.map(merged, (item) => item.line),
 			[10, 40],
 		)
 	})

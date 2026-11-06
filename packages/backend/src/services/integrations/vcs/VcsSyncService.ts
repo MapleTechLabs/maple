@@ -1,8 +1,10 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import {
 	type BranchEventJob,
 	type InstallationSyncJob,
 	isInstallationProcessable,
+	type PullRequestChecklistJob,
+	type PullRequestCiApprovedJob,
 	type PullRequestCommentJob,
 	type PullRequestEventJob,
 	type PushJob,
@@ -17,15 +19,28 @@ import {
 	type VcsRepoDecodeError,
 	type VcsRepoPersistenceError,
 	type VcsRepositoryBlockedError,
+	type VcsRepositoryRef,
 	type VcsRepoUnavailableError,
 	VcsSyncJob,
+	type WorkflowJobAnnotation,
+	type WorkflowJobJob,
+	type WorkflowRunJob,
+	type DependencyScanJob,
+	type DependencyScanTrigger,
 } from "@maple/domain/http"
-import { Clock, Effect, Context, Layer, Option, Schema, Match } from "effect"
+import { Clock, Duration, Effect, Context, Layer, Option, Schema, Match } from "effect"
 import type { VcsProviderClient } from "./VcsProviderClient"
-import { PullRequestCommentSink, PullRequestEventSink } from "./PullRequestEventSink"
+import {
+	DependencyScanSink,
+	PullRequestChecklistSink,
+	PullRequestCiApprovalSink,
+	PullRequestCommentSink,
+	PullRequestEventSink,
+} from "./PullRequestEventSink"
 import { VcsProviderRegistry } from "./VcsProviderRegistry"
 import { VcsRepository } from "./VcsRepository"
 import { VcsSyncQueue } from "./VcsSyncQueue"
+import { WorkflowEventSink } from "./WorkflowEventSink"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 // Vendor-agnostic sync orchestrator. Decodes a queue message, resolves the
@@ -43,6 +58,18 @@ export const BACKFILL_WINDOW_MS = 90 * 86_400_000 // 90 days
 export const MAX_BACKFILL_STALL_RETRIES = 10
 
 const decodeJob = Schema.decodeUnknownEffect(VcsSyncJob)
+
+/** CI job conclusions worth asking the provider why about. */
+const WORKFLOW_FAILED_CONCLUSIONS: ReadonlySet<string> = new Set(["failure", "timed_out", "startup_failure"])
+/** How long a CI job waits on its annotations before going out without them. */
+const WORKFLOW_ANNOTATIONS_BUDGET = Duration.seconds(10)
+/**
+ * How long a CI job's log may hold the consumer, which runs a batch's messages one after another:
+ * the permission check, about 14s waiting for GitHub to publish the log, up to 7s riding out a busy
+ * log store, then the download and ingest. Past it, the batches already sent stay and the rest of
+ * the log is dropped.
+ */
+const WORKFLOW_LOG_BUDGET = Duration.seconds(30)
 
 // VcsInstallationGoneError is handled internally (→ disconnect) and never
 // surfaces here. VcsProviderError / VcsRepoUnavailableError that aren't caught
@@ -66,14 +93,46 @@ export interface VcsSyncServiceApi {
 }
 
 export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServiceApi>()(
-	"@maple/api/services/vcs/VcsSyncService",
+	"@maple/backend/services/vcs/VcsSyncService",
 	{
 		make: Effect.gen(function* () {
 			const repo = yield* VcsRepository
 			const registry = yield* VcsProviderRegistry
 			const queue = yield* VcsSyncQueue
 			const sink = yield* PullRequestEventSink
-			const commentSink = Option.getOrUndefined(yield* Effect.serviceOption(PullRequestCommentSink))
+			const commentSink = yield* Effect.serviceOption(PullRequestCommentSink).pipe(
+				Effect.map(Option.getOrUndefined),
+			)
+			const checklistSink = yield* Effect.serviceOption(PullRequestChecklistSink).pipe(
+				Effect.map(Option.getOrUndefined),
+			)
+			const ciApprovalSink = yield* Effect.serviceOption(PullRequestCiApprovalSink).pipe(
+				Effect.map(Option.getOrUndefined),
+			)
+			const workflowSink = yield* Effect.serviceOption(WorkflowEventSink).pipe(
+				Effect.map(Option.getOrUndefined),
+			)
+			const scanSink = yield* Effect.serviceOption(DependencyScanSink).pipe(
+				Effect.map(Option.getOrUndefined),
+			)
+
+			/** A scan of each repository's tracked branch head; none in a root without the scanner. */
+			const enqueueScans = (
+				installation: VcsInstallation,
+				externalRepoIds: ReadonlyArray<string>,
+				trigger: DependencyScanTrigger,
+			) =>
+				scanSink === undefined || externalRepoIds.length === 0
+					? Effect.void
+					: queue.sendBatch(
+							externalRepoIds.map((externalRepoId): VcsSyncJob => ({
+								kind: "dependency-scan",
+								provider: installation.provider,
+								externalInstallationId: installation.externalInstallationId,
+								externalRepoId,
+								trigger,
+							})),
+						)
 
 			// The repo's single tracked branch, with the default-branch fallback for a
 			// row whose `trackedBranch` was never set (legacy) — the one place the
@@ -387,6 +446,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					})
 					return
 				}
+				yield* enqueueScans(installation, [repository.externalRepoId], "push")
 				// The tracked branch was pushed. A normal push is best-effort enrichment:
 				// upsert its commits onto the repo (the backfill remains authoritative).
 				if (!job.forced) {
@@ -566,7 +626,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			//  - soft-removed repo: paused until access is re-granted (which flips it active).
 			const resolveRepositoryForJob = Effect.fn("VcsSyncService.resolveRepositoryForJob")(function* (
 				installation: VcsInstallation,
-				job: PushJob | SyncCommitsJob | SyncBranchesJob | BranchEventJob,
+				job: PushJob | SyncCommitsJob | SyncBranchesJob | BranchEventJob | DependencyScanJob,
 			) {
 				const repositoryOpt = yield* repo.resolveRepository(
 					installation.orgId,
@@ -743,6 +803,17 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 							name: r.name,
 						})),
 					)
+					yield* enqueueScans(
+						installation,
+						repos.map((r) => r.externalRepoId),
+						"schedule",
+					)
+					if (job.requestId !== undefined) {
+						yield* repo.finishRepositoryDiscovery(installation.id, {
+							_tag: "Complete",
+							requestId: job.requestId,
+						})
+					}
 					yield* Effect.annotateCurrentSpan({
 						"vcs.installation_sync.outcome": "handled",
 						"vcs.installation_sync.reason": job.reason,
@@ -751,19 +822,28 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				// The repository *listing* is installation-scoped, so a legal block there is
 				// not attributable to one repo row — there is nothing to mark. It is still
 				// terminal: drain rather than let the queue retry it forever.
-				(effect) =>
+				(effect, _provider, installation, job) =>
 					Effect.catchTag(effect, "@maple/http/errors/VcsRepositoryBlockedError", (error) =>
-						Effect.annotateCurrentSpan({
-							"vcs.installation_sync.outcome": "skipped",
-							"vcs.installation_sync.reason": "repository_blocked",
-							"error.type": "vcs_repository_blocked",
-						}).pipe(
-							Effect.andThen(
-								Effect.logWarning(
-									"[VCS] Provider blocked the repository listing — installation sync skipped",
-								).pipe(Effect.annotateLogs({ "error.message": error.message })),
-							),
-						),
+						Effect.gen(function* () {
+							if (job.requestId !== undefined) {
+								yield* repo.finishRepositoryDiscovery(installation.id, {
+									_tag: "Failed",
+									requestId: job.requestId,
+									message: error.message,
+								})
+							}
+							yield* Effect.annotateCurrentSpan({
+								"vcs.installation_sync.outcome": "skipped",
+								"vcs.installation_sync.reason": "repository_blocked",
+								"error.type": "vcs_repository_blocked",
+							}).pipe(
+								Effect.andThen(
+									Effect.logWarning(
+										"[VCS] Provider blocked the repository listing — installation sync skipped",
+									).pipe(Effect.annotateLogs({ "error.message": error.message })),
+								),
+							)
+						}),
 					),
 			)
 
@@ -797,6 +877,21 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				const repositoryOpt = yield* resolveRepositoryForJob(installation, job)
 				if (Option.isNone(repositoryOpt)) return
 				yield* applyPush(installation, repositoryOpt.value, job)
+			})
+
+			const handleDependencyScan = Effect.fn("VcsSyncService.handleDependencyScan")(function* (
+				installation: VcsInstallation,
+				job: DependencyScanJob,
+			) {
+				yield* Effect.annotateCurrentSpan({
+					"vcs.repository.external_id": job.externalRepoId,
+					"maple.depscan.trigger": job.trigger,
+					"maple.depscan.forwarded": scanSink !== undefined,
+				})
+				if (scanSink === undefined || !(yield* ensureProcessable(installation, job.kind))) return
+				const repositoryOpt = yield* resolveRepositoryForJob(installation, job)
+				if (Option.isNone(repositoryOpt)) return
+				yield* scanSink.onScanRequested(installation, repositoryOpt.value, job)
 			})
 
 			const handleBranchEvent = Effect.fn("VcsSyncService.handleBranchEvent")(function* (
@@ -846,9 +941,137 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					yield* commentSink.onPullRequestComment(installation.orgId, job)
 			})
 
+			const handlePullRequestChecklist = Effect.fn("VcsSyncService.handlePullRequestChecklist")(
+				function* (installation: VcsInstallation, job: PullRequestChecklistJob) {
+					yield* Effect.annotateCurrentSpan({
+						"vcs.repository.external_id": job.externalRepoId,
+						"vcs.pull_request.number": job.number,
+						"vcs.pull_request.checklist_forwarded": checklistSink !== undefined,
+					})
+					if (checklistSink !== undefined)
+						yield* checklistSink.onMergeStepsTicked(installation.orgId, job)
+				},
+			)
+
+			const handlePullRequestCiApproved = Effect.fn("VcsSyncService.handlePullRequestCiApproved")(
+				function* (installation: VcsInstallation, job: PullRequestCiApprovedJob) {
+					yield* Effect.annotateCurrentSpan({
+						"vcs.repository.external_id": job.externalRepoId,
+						"cicd.pipeline.run.id": job.runId,
+						"vcs.pull_request.ci_approval_forwarded": ciApprovalSink !== undefined,
+					})
+					if (ciApprovalSink !== undefined)
+						yield* ciApprovalSink.onCiApproved(installation.orgId, job)
+				},
+			)
+
+			// CI runs and jobs touch no VCS table: they resolve the org and go to the sink, which turns
+			// them into spans. Not behind `ensureProcessable`, since CI traces need no synced commits.
+			// An org that turned CI traces off drops them here, before any span is built.
+			const forwardsWorkflows = (installation: VcsInstallation) =>
+				workflowSink !== undefined && installation.ciTracesEnabled
+			const handleWorkflowRun = Effect.fn("VcsSyncService.handleWorkflowRun")(function* (
+				installation: VcsInstallation,
+				job: WorkflowRunJob,
+			) {
+				yield* Effect.annotateCurrentSpan({
+					"vcs.repository.external_id": job.externalRepoId,
+					"cicd.pipeline.run.id": job.runId,
+					"vcs.workflow.forwarded": forwardsWorkflows(installation),
+				})
+				if (workflowSink !== undefined && installation.ciTracesEnabled)
+					yield* workflowSink.onWorkflowRun(installation.orgId, job)
+			})
+
+			const workflowRepoRef = (job: WorkflowJobJob): VcsRepositoryRef | undefined => {
+				const slash = job.repoFullName.indexOf("/")
+				if (slash === -1) return undefined
+				return {
+					externalRepoId: job.externalRepoId,
+					owner: job.repoFullName.slice(0, slash),
+					name: job.repoFullName.slice(slash + 1),
+				}
+			}
+
+			// A failed job's annotations say why it failed. Best effort: a job whose annotations
+			// cannot be read still becomes spans, just without the reason.
+			const workflowJobAnnotations = (
+				provider: VcsProviderClient,
+				installation: VcsInstallation,
+				job: WorkflowJobJob,
+			) => {
+				const ref = workflowRepoRef(job)
+				if (!WORKFLOW_FAILED_CONCLUSIONS.has(job.conclusion ?? "") || ref === undefined)
+					return Effect.succeed<ReadonlyArray<WorkflowJobAnnotation>>([])
+				return provider.fetchWorkflowJobAnnotations(installation, ref, job.jobId).pipe(
+					// Rate-limit backoff can wait inline; the reason is not worth holding the job's spans.
+					Effect.timeoutOrElse({
+						duration: WORKFLOW_ANNOTATIONS_BUDGET,
+						orElse: () =>
+							Effect.annotateCurrentSpan({
+								"vcs.workflow.annotations_error": "timed out",
+							}).pipe(Effect.as<ReadonlyArray<WorkflowJobAnnotation>>([])),
+					}),
+					Effect.tap((annotations) =>
+						Effect.annotateCurrentSpan({
+							"vcs.workflow.annotation_count": annotations.length,
+						}),
+					),
+					Effect.catchCause((cause) =>
+						Effect.annotateCurrentSpan({
+							"vcs.workflow.annotations_error": summarizeCause(cause),
+						}).pipe(Effect.as<ReadonlyArray<WorkflowJobAnnotation>>([])),
+					),
+				)
+			}
+
+			const handleWorkflowJob = Effect.fn("VcsSyncService.handleWorkflowJob")(function* (
+				provider: VcsProviderClient,
+				installation: VcsInstallation,
+				job: WorkflowJobJob,
+			) {
+				yield* Effect.annotateCurrentSpan({
+					"vcs.repository.external_id": job.externalRepoId,
+					"cicd.pipeline.run.id": job.runId,
+					"cicd.pipeline.task.run.id": job.jobId,
+					"vcs.workflow.forwarded": forwardsWorkflows(installation),
+				})
+				if (workflowSink === undefined || !installation.ciTracesEnabled) return
+				const annotations = yield* workflowJobAnnotations(provider, installation, job)
+				yield* workflowSink.onWorkflowJob(installation.orgId, job, annotations)
+				// Logs ride on the spans just written. A job with no step that ran has nothing worth
+				// reading, and GitHub may have no log for it at all.
+				const ref = workflowRepoRef(job)
+				yield* Effect.annotateCurrentSpan({ "vcs.workflow.log_forwarded": false })
+				if (job.steps.length === 0 || ref === undefined) return
+				// One budget for the permission check and the log: a throttled token mint waits inline,
+				// and must not hold the rest of the batch any longer than a slow log would.
+				yield* Effect.gen(function* () {
+					// An installation without access to logs would 403 on every download, so skip it.
+					const canRead = yield* provider
+						.canReadWorkflowLogs(installation)
+						.pipe(Effect.orElseSucceed(() => true))
+					if (!canRead)
+						return yield* Effect.annotateCurrentSpan({
+							"vcs.workflow.log_error": "installation has not granted actions: read",
+						})
+					yield* Effect.annotateCurrentSpan({ "vcs.workflow.log_forwarded": true })
+					yield* workflowSink.onWorkflowJobLog(
+						installation.orgId,
+						job,
+						provider.streamWorkflowJobLog(installation, ref, job.jobId),
+					)
+				}).pipe(
+					Effect.timeoutOrElse({
+						duration: WORKFLOW_LOG_BUDGET,
+						orElse: () => Effect.annotateCurrentSpan({ "vcs.workflow.log_error": "timed out" }),
+					}),
+				)
+			})
+
 			const processMessage = Effect.fn("VcsSyncService.processMessage")(function* (raw: unknown) {
 				const jobOpt = yield* decodeJob(raw).pipe(
-					Effect.map(Option.some),
+					Effect.asSome,
 					Effect.catch((cause) =>
 						Effect.annotateCurrentSpan({
 							"vcs.process.outcome": "dropped",
@@ -920,6 +1143,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						handleSyncBranches(provider, installation, job),
 					),
 					Match.discriminator("kind")("push", (job) => handlePush(installation, job)),
+					Match.discriminator("kind")("dependency-scan", (job) =>
+						handleDependencyScan(installation, job),
+					),
 					Match.discriminator("kind")("branch-event", (job) =>
 						handleBranchEvent(installation, job),
 					),
@@ -929,6 +1155,18 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					Match.discriminator("kind")("pull-request-comment", (job) =>
 						handlePullRequestComment(installation, job),
 					),
+					Match.discriminator("kind")("pull-request-checklist", (job) =>
+						handlePullRequestChecklist(installation, job),
+					),
+					Match.discriminator("kind")("pull-request-ci-approved", (job) =>
+						handlePullRequestCiApproved(installation, job),
+					),
+					Match.discriminator("kind")("workflow-run", (job) =>
+						handleWorkflowRun(installation, job),
+					),
+					Match.discriminator("kind")("workflow-job", (job) =>
+						handleWorkflowJob(provider, installation, job),
+					),
 					Match.exhaustive,
 				)
 
@@ -936,23 +1174,33 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				// authoritative gone signal — never on a raw HTTP status.
 				return yield* run.pipe(
 					Effect.catchTag("@maple/http/errors/VcsInstallationGoneError", () =>
-						Effect.annotateCurrentSpan({
-							"vcs.process.outcome": "handled",
-							"vcs.process.reason": "installation_gone",
-							"vcs.installation.transition": "disconnected",
-						}).pipe(
-							Effect.andThen(repo.markInstallationStatus(installation.id, "disconnected")),
-							Effect.flatMap(() =>
-								Effect.logWarning(
-									"[VCS] VCS installation reported gone by provider — marked disconnected",
-								).pipe(
-									Effect.annotateLogs({
-										provider: installation.provider,
-										externalInstallationId: installation.externalInstallationId,
-									}),
+						Effect.gen(function* () {
+							if (job.kind === "installation-sync" && job.requestId !== undefined) {
+								yield* repo.finishRepositoryDiscovery(installation.id, {
+									_tag: "Failed",
+									requestId: job.requestId,
+									message:
+										"The GitHub installation is no longer available. Reconnect to retry.",
+								})
+							}
+							yield* Effect.annotateCurrentSpan({
+								"vcs.process.outcome": "handled",
+								"vcs.process.reason": "installation_gone",
+								"vcs.installation.transition": "disconnected",
+							}).pipe(
+								Effect.andThen(repo.markInstallationStatus(installation.id, "disconnected")),
+								Effect.flatMap(() =>
+									Effect.logWarning(
+										"[VCS] VCS installation reported gone by provider — marked disconnected",
+									).pipe(
+										Effect.annotateLogs({
+											provider: installation.provider,
+											externalInstallationId: installation.externalInstallationId,
+										}),
+									),
 								),
-							),
-						),
+							)
+						}),
 					),
 				)
 			})
@@ -961,16 +1209,20 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			// to be dropped — there is no dead-letter queue). For a commit-sync job this
 			// records a terminal `error` status so a repo can never get stuck showing
 			// "backfilling" after the engine has given up; the periodic installation-sync
-			// will later attempt a fresh backfill. Other job kinds own no `sync_status`,
-			// so they're a no-op. Total + best-effort: every internal failure is swallowed
+			// will later attempt a fresh backfill. Connect jobs instead settle their own
+			// repository-discovery request as Failed. Other kinds are a no-op.
+			// Total + best-effort: every internal failure is swallowed
 			// and logged, since this runs as the consumer's very last step.
 			const recordExhaustedFailure = (raw: unknown) =>
 				Effect.gen(function* () {
 					const jobOpt = yield* decodeJob(raw).pipe(
-						Effect.map(Option.some),
+						Effect.asSome,
 						Effect.orElseSucceed(() => Option.none<VcsSyncJob>()),
 					)
-					if (Option.isNone(jobOpt) || jobOpt.value.kind !== "sync-commits") {
+					if (
+						Option.isNone(jobOpt) ||
+						(jobOpt.value.kind !== "sync-commits" && jobOpt.value.kind !== "installation-sync")
+					) {
 						yield* Effect.annotateCurrentSpan({
 							"vcs.exhausted.outcome": "noop",
 							"vcs.exhausted.reason": "not_sync_commits_job",
@@ -981,8 +1233,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					yield* Effect.annotateCurrentSpan({
 						"vcs.provider": job.provider,
 						"vcs.job.kind": job.kind,
-						"vcs.repository.external_id": job.externalRepoId,
 					})
+					if (job.kind === "sync-commits")
+						yield* Effect.annotateCurrentSpan("vcs.repository.external_id", job.externalRepoId)
 					const installationOpt = yield* repo.resolveInstallation(
 						job.provider,
 						job.externalInstallationId,
@@ -992,6 +1245,16 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 							"vcs.exhausted.outcome": "noop",
 							"vcs.exhausted.reason": "installation_unknown",
 						})
+						return
+					}
+					if (job.kind === "installation-sync") {
+						if (job.requestId !== undefined) {
+							yield* repo.finishRepositoryDiscovery(installationOpt.value.id, {
+								_tag: "Failed",
+								requestId: job.requestId,
+								message: "Repository discovery exhausted its retries. Reconnect to retry.",
+							})
+						}
 						return
 					}
 					const repositoryOpt = yield* resolveRepositoryForJob(installationOpt.value, job)

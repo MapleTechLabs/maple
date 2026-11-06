@@ -4,6 +4,7 @@ import * as CH from "../ch"
 import { LOGS_BODY_SEARCH_SETTINGS } from "../profiles"
 import { timeRangeCache } from "../runtime/cache-policy"
 import { defineQuery, makeTimeBucketQueryCachePolicy } from "./query-definition"
+import type { OrgId } from "@maple/domain"
 
 export const logsQueryOptions = (filters: LogsFilters | undefined) => {
 	const deploymentEnv = filters?.deploymentEnvMatchMode
@@ -44,6 +45,7 @@ export interface LogsTimeseriesInput extends LogsCountInput {
 	readonly bucketSeconds: number
 	readonly groupBy?: LogsTimeseriesQuery["groupBy"]
 	readonly seriesLimit?: number
+	readonly wholeRange?: boolean
 }
 
 export const toLogsCountInput = (
@@ -61,6 +63,7 @@ export const toLogsTimeseriesInput = (
 	endTime: string,
 	query: LogsTimeseriesQuery,
 	bucketSeconds: number,
+	wholeRange?: boolean,
 ): LogsTimeseriesInput => ({
 	startTime,
 	endTime,
@@ -68,6 +71,7 @@ export const toLogsTimeseriesInput = (
 	filters: query.filters,
 	groupBy: query.groupBy,
 	seriesLimit: query.seriesLimit,
+	...(wholeRange ? { wholeRange } : undefined),
 })
 
 export const logsCount = defineQuery({
@@ -77,7 +81,7 @@ export const logsCount = defineQuery({
 	cache: timeRangeCache,
 	capabilityAware: true,
 	settings: (input: LogsCountInput) => (input.filters?.search ? LOGS_BODY_SEARCH_SETTINGS : undefined),
-	compile: (input: LogsCountInput, orgId: string, capabilities) =>
+	compile: (input: LogsCountInput, orgId: OrgId, capabilities) =>
 		CH.compile(
 			CH.logsCountQuery({
 				...logsQueryOptions(input.filters),
@@ -93,11 +97,16 @@ export const logsTimeseries = defineQuery({
 	revision: 1,
 	profile: "aggregation",
 	cache: makeTimeBucketQueryCachePolicy<LogsTimeseriesInput>({
-		identity: ({ filters, groupBy, seriesLimit }) => ({ filters, groupBy, seriesLimit }),
+		identity: ({ filters, groupBy, seriesLimit, wholeRange }) => ({
+			filters,
+			groupBy,
+			seriesLimit,
+			...(wholeRange ? { wholeRange } : undefined),
+		}),
 		fallback: 15,
 	}),
 	capabilityAware: true,
-	compile: (input: LogsTimeseriesInput, orgId: string, capabilities) =>
+	compile: (input: LogsTimeseriesInput, orgId: OrgId, capabilities) =>
 		CH.compile(
 			CH.logsTimeseriesQuery({
 				...logsQueryOptions(input.filters),
@@ -106,6 +115,7 @@ export const logsTimeseries = defineQuery({
 				groupBy: input.groupBy,
 				bucketSeconds: input.bucketSeconds,
 				seriesLimit: input.seriesLimit,
+				wholeRange: input.wholeRange,
 			}),
 			{
 				orgId,

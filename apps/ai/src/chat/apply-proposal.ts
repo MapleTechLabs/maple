@@ -11,7 +11,6 @@
  * connector half of the approval policy; a connector approver's chat account rides along as
  * forensic context on the audit entry.
  */
-import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import {
 	connectorApprovalTenant,
 	decidedBy,
@@ -21,25 +20,33 @@ import {
 import { OrgId } from "@maple/domain/primitives"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
-import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
-import { Cause, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
+import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
+import { envPorts } from "@maple/backend/platform/env-ports"
+import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
+import { Cause, Effect, Layer, ManagedRuntime, Option, Schema, Array as Arr } from "effect"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
-import { toTenantContext, withConnectorActor } from "./turn-actor"
+import { linkedUserTenant, toTenantContext, withConnectorActor } from "./turn-actor"
+
+/** Disposing the proposal's runtime or flushing its spans rejected; both are best effort. */
+class ProposalCleanupError extends Schema.TaggedError<ProposalCleanupError>()(
+	"@maple/ai/chat/ProposalCleanupError",
+	{
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
 
 /** Its own instance, at module scope, so an approval exports its spans from the isolate it ran in. */
-const telemetry = MapleCloudflareSDK.make(
-	workerTelemetryConfig({
-		serviceName: "maple-chat",
-		anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
-	}),
-)
+const telemetry = runtimeTelemetry({
+	serviceName: "maple-chat",
+	anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
+})
 
 export type ApplyChatProposalInput = ChatProposalApproval & {
 	readonly env: Record<string, unknown>
+	/** This Worker's `ChatSession` namespace, from the activation; the graph's `ChatSessions` port. */
+	readonly chatSessions?: ChatSessionNamespace
 	/** `"<orgId>:<tabId>"` — the org the change is made in. */
 	readonly sessionId: string
 	/** The tool and arguments the session read out of its own log, never off the wire. */
@@ -66,29 +73,8 @@ const UNCERTAIN = "Maple couldn't confirm the change went through — check it i
 const decodeOrgId = Schema.decodeUnknownOption(OrgId)
 
 /**
- * Nobody is linked, and nothing can be found out — the two are different and both refuse.
- *
- * Fail closed on purpose: a Clerk blip must not silently downgrade an approval to the org-level
- * identity, which carries `org:admin`.
- */
-class ApproverNotPermitted extends Schema.TaggedError<ApproverNotPermitted>()(
-	"@maple/ai/ApproverNotPermitted",
-	{
-		message: Schema.String,
-		/** Which of the two it was — they read the same to the clicker and not to an operator. */
-		reason: Schema.Literals(["not_a_member", "unavailable"]),
-		cause: Schema.optionalKey(Schema.Defect()),
-	},
-) {}
-
-/**
  * Who the change runs as — which the caller decided before the session was ever reached. A person
  * in the app acts as themselves; see `ChatConnector.identity` for the connector cases.
- *
- * The linked user's roles come from the membership directory at approval time, not frozen at link
- * time. That read is cached (a per-isolate memo, then a shared tier), so a demotion lands within
- * the cache's revocation window rather than instantly; the membership webhook closes it from the
- * other side.
  */
 export const resolveTenant = Effect.fnUntraced(function* (orgId: OrgId, input: ApplyChatProposalInput) {
 	// The route authenticated them and resolved their roles; the audit entry names them.
@@ -106,33 +92,9 @@ export const resolveTenant = Effect.fnUntraced(function* (orgId: OrgId, input: A
 		return yield* withConnectorActor(tenant, input.approver)
 	}
 
-	const memberships = yield* OrgMembershipService
-	const membership = yield* memberships.verify(input.actingUserId, orgId).pipe(
-		Effect.mapError(
-			(cause) =>
-				new ApproverNotPermitted({
-					reason: "unavailable",
-					message: "Maple could not check whether you are still a member of this organization.",
-					cause,
-				}),
-		),
-	)
-	if (Option.isNone(membership)) {
-		return yield* new ApproverNotPermitted({
-			reason: "not_a_member",
-			message: "The Maple account this chat account is linked to is no longer in this organization.",
-		})
-	}
+	const tenant = yield* linkedUserTenant(orgId, input.actingUserId, input.approver)
 	yield* Effect.annotateCurrentSpan("maple.chat.apply.as", "user")
-	// No `actorId`: a real user acted, so the audit log names them rather than the connector's
-	// agent. `turnOrigin` still rides along, which is what records WHICH chat account it was.
-	return {
-		orgId,
-		userId: input.actingUserId,
-		roles: [membership.value.role],
-		authMode: "self_hosted" as const,
-		turnOrigin: input.approver,
-	} satisfies TenantContext
+	return tenant
 })
 
 /**
@@ -166,7 +128,7 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 
 	// `ErrorActorsService` is deliberately absent: `./turn-actor` already puts it in this module's
 	// static graph, so deferring it would only re-resolve a module that is loaded anyway.
-	const [{ ChatApplyServicesLive }, { layerPg }, { mapleDbConnectionLayer }, { McpToolExecutor }] =
+	const [{ ChatApplyServicesLive }, { DatabasePgLive }, { layerMapleDbConnection }, { McpToolExecutor }] =
 		await Promise.all([
 			import("../runtime/mcp-service-graph"),
 			import("@maple/backend/platform/DatabasePgLive"),
@@ -176,9 +138,10 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 
 	const runtime = ManagedRuntime.make(
 		ChatApplyServicesLive.pipe(
-			Layer.provideMerge(layerPg),
-			Layer.provideMerge(mapleDbConnectionLayer(input.env)),
-			Layer.provideMerge(workerEnvLayer(input.env)),
+			Layer.provideMerge(DatabasePgLive),
+			Layer.provideMerge(layerMapleDbConnection(input.env)),
+			Layer.provideMerge(envPorts(input.env)),
+			Layer.provideMerge(chatSessionsLayerIfBound(input.chatSessions, input.env)),
 			Layer.provideMerge(telemetry.layer),
 		),
 	)
@@ -192,7 +155,10 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 		const tenant = yield* resolveTenant(orgId, input)
 		const surface = approver.kind === "app" ? "chat" : "bot"
 		const result = yield* executor.execute(tenant, input.tool, input.input, surface)
-		const content = result.content.map((entry) => entry.text).join("\n")
+		const content = Arr.join(
+			Arr.map(result.content, (entry) => entry.text),
+			"\n",
+		)
 		const refused = result.isError === true
 		yield* Effect.annotateCurrentSpan("maple.chat.apply", refused ? "refused" : "applied")
 		return {
@@ -217,7 +183,7 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 		}),
 		// The tool never ran on this one, so the hedged copy below would be wrong twice over — and
 		// its own message is the only thing that tells the clicker what to do about it.
-		Effect.catchTag("@maple/ai/ApproverNotPermitted", (refusal) =>
+		Effect.catchTag("@maple/ai/LinkedUserNotPermitted", (refusal) =>
 			Effect.annotateCurrentSpan("maple.chat.apply", `refused_${refusal.reason}`).pipe(
 				Effect.as(failure(refusal.message)),
 			),
@@ -242,10 +208,28 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 		),
 	)
 
-	try {
-		return await runtime.runPromise(program)
-	} finally {
-		await runtime.dispose().catch(() => undefined)
-		await telemetry.flush(input.env).catch(() => undefined)
-	}
+	// The outcome (an interrupt included, which the session settles with its own copy) is replayed
+	// after the runtime is disposed and the spans flushed, both best effort.
+	return Effect.runPromise(
+		Effect.promise(() => runtime.runPromiseExit(program)).pipe(
+			Effect.ensuring(
+				Effect.tryPromise({
+					try: () => runtime.dispose(),
+					catch: (cause) =>
+						new ProposalCleanupError({
+							message: "Failed to dispose the proposal runtime",
+							cause,
+						}),
+				}).pipe(Effect.ignore),
+			),
+			Effect.ensuring(
+				Effect.tryPromise({
+					try: () => telemetry.flush(input.env),
+					catch: (cause) =>
+						new ProposalCleanupError({ message: "Failed to flush the proposal spans", cause }),
+				}).pipe(Effect.ignore),
+			),
+			Effect.flatten,
+		),
+	)
 }

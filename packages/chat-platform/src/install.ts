@@ -1,6 +1,6 @@
 import { ChatConnectorId } from "./connector"
 import { Effect, Redacted, Schema } from "effect"
-import type { HttpClient } from "effect/unstable/http"
+import type { HttpClient } from "effect/http"
 import type { ConnectorConfigKey } from "./ingress"
 
 /**
@@ -25,7 +25,7 @@ import type { ConnectorConfigKey } from "./ingress"
  * install exchanges an OAuth client secret against a provider that answers with
  * failures, and a redacted value cannot be carried into one by accident.
  */
-export type ChatConnectorConfig = ReadonlyMap<string, Redacted.Redacted<string>>
+export type ChatConnectorConfig = ReadonlyMap<string, Redacted.Redacted>
 
 /**
  * Connector-defined workspace settings, as the settings form posts them and as
@@ -91,11 +91,6 @@ export interface ChatConnectorManifest {
 	/** Brand accent for the icon plate wash, as a CSS color. */
 	readonly accent: string
 	readonly settingsFields: ReadonlyArray<ChatConnectorSettingsField>
-	/**
-	 * Shown to every organization. Without it the dashboard offers the connector
-	 * only to organizations whose `<id>_bot` rollout flag is set.
-	 */
-	readonly released?: boolean
 }
 
 export interface ChatInstallStart {

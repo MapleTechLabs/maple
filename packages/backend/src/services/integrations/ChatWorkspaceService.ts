@@ -14,22 +14,34 @@ import {
 	UserId,
 	type OAuthStatePersistenceError,
 } from "@maple/domain/http"
-import { chatWorkspaces, type ChatWorkspaceRow } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { ChatWorkspaces, type ChatWorkspaceRow } from "@maple/db/tables"
 import {
 	isConnectorConfigured,
 	type ChatConnector,
 	type ChatDestination,
 	type ChatWorkspaceSettings,
 } from "@maple/chat-platform"
-import { and, asc, eq } from "drizzle-orm"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { FetchHttpClient, HttpClient } from "effect/unstable/http"
+import {
+	Array as Arr,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Record as Rec,
+	String as Str,
+} from "effect"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { sealChatWorkspaceCredentials } from "@maple/backend/services/integrations/chat-workspace-credentials"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
+import type { OAuthFlowInitiator } from "@maple/backend/services/auth/oauth/oauth-state"
 import {
 	linkChatIdentity,
 	listChatIdentities,
@@ -91,17 +103,8 @@ const newWorkspaceId = () => Schema.decodeSync(ChatWorkspaceId)(randomUUID())
 /** Same for the identity row. */
 const newChatIdentityId = () => Schema.decodeSync(ChatIdentityId)(randomUUID())
 
-/**
- * Stored settings are decoded rather than trusted: the column's type is a cast,
- * and a value that is not a string map would otherwise surface as a 500 when the
- * response is encoded instead of as this service's own persistence failure.
- */
-const decodeStoredSettings = Schema.decodeUnknownEffect(Schema.Record(Schema.String, Schema.String))
-
 const decodeOrgId = Schema.decodeUnknownEffect(OrgId)
 const decodeUserId = Schema.decodeUnknownEffect(UserId)
-const decodeChatWorkspaceId = Schema.decodeUnknownEffect(ChatWorkspaceId)
-const decodeConnectorId = Schema.decodeUnknownEffect(ChatConnectorId)
 
 export interface ChatWorkspaceSummary {
 	readonly id: ChatWorkspaceId
@@ -146,6 +149,8 @@ export interface ChatWorkspaceServiceApi {
 	readonly completeInstall: (
 		connectorId: ChatConnectorId,
 		params: URLSearchParams,
+		/** The signed-in Maple user finishing the flow; must be the one who started it. */
+		initiator: OAuthFlowInitiator,
 	) => Effect.Effect<
 		{ readonly orgId: OrgId; readonly name: string },
 		| IntegrationsNotFoundError
@@ -168,6 +173,8 @@ export interface ChatWorkspaceServiceApi {
 	readonly completeLink: (
 		connectorId: ChatConnectorId,
 		params: URLSearchParams,
+		/** The signed-in Maple user finishing the flow; must be the one who started it. */
+		initiator: OAuthFlowInitiator,
 	) => Effect.Effect<
 		{ readonly orgId: OrgId; readonly displayName?: string | undefined },
 		| IntegrationsNotFoundError
@@ -253,16 +260,28 @@ const make: Effect.Effect<
 
 	const toPersistenceError = (error: DatabaseError | OAuthStatePersistenceError) =>
 		new IntegrationsPersistenceError({ message: `${error._tag}: ${error.message}` })
+	const dbExecute = makeDbExecute(database, "ChatWorkspaceService", toPersistenceError)
 
 	const notFound = (message: string) => new IntegrationsNotFoundError({ message })
 
+	/** Redeem the callback's state: single-use, and only for the identity that started the flow. */
+	const consumeState = (params: URLSearchParams, provider: string, initiator: OAuthFlowInitiator) => {
+		const state = params.get("state")
+		return state === null
+			? Effect.fail(new IntegrationsValidationError({ message: "The callback carried no state" }))
+			: states
+					.consume({ state, provider, initiator })
+					.pipe(
+						Effect.catchTag("@maple/http/errors/OAuthStatePersistenceError", (error) =>
+							Effect.fail(toPersistenceError(error)),
+						),
+					)
+	}
+
 	const requireConnector = (connectorId: ChatConnectorId) =>
-		Option.match(
+		Effect.fromOption(
 			Arr.findFirst(registry, (connector) => connector.id === connectorId),
-			{
-				onNone: () => Effect.fail(notFound(`No chat connector named ${connectorId}`)),
-				onSome: (connector) => Effect.succeed(connector),
-			},
+			() => notFound(`No chat connector named ${connectorId}`),
 		)
 
 	/** The identity half of a connector, or the failure a connector without one earns. */
@@ -279,53 +298,39 @@ const make: Effect.Effect<
 	const validateSettings = (connector: ChatConnector<unknown>, settings: ChatWorkspaceSettings) =>
 		connector.install
 			.decodeSettings(
-				Object.fromEntries(
-					Object.entries(settings).flatMap(([key, value]) =>
-						value.trim().length > 0 ? [[key, value.trim()] as const] : [],
+				Rec.fromEntries(
+					Arr.flatMap(Rec.toEntries(settings), ([key, value]) =>
+						Str.trim(value).length > 0 ? [[key, Str.trim(value)] as const] : [],
 					),
 				),
 			)
 			.pipe(Effect.mapError((error) => new IntegrationsValidationError({ message: error.message })))
 
-	const toSummary = (
-		row: ChatWorkspaceRow,
-	): Effect.Effect<ChatWorkspaceSummary, IntegrationsPersistenceError> =>
-		Effect.all({
-			id: decodeChatWorkspaceId(row.id),
-			connector: decodeConnectorId(row.connector),
-			settings: decodeStoredSettings(row.settings),
-		}).pipe(
-			Effect.mapError(
-				(error) =>
-					new IntegrationsPersistenceError({
-						message: `Stored chat workspace is unreadable: ${error.message}`,
-					}),
-			),
-			Effect.map(({ id, connector, settings }) => ({
-				id,
-				connector,
-				externalWorkspaceId: row.externalWorkspaceId,
-				name: row.name,
-				settings,
-				createdAt: dateToMs(row.createdAt),
-			})),
-		)
+	// The table codecs decode the id, connector and settings, so an unreadable row fails the
+	// read as a persistence error rather than surfacing as a 500 when the response is encoded.
+	const toSummary = (row: ChatWorkspaceRow): ChatWorkspaceSummary => ({
+		id: row.id,
+		connector: row.connector,
+		externalWorkspaceId: row.externalWorkspaceId,
+		name: row.name,
+		settings: row.settings,
+		createdAt: row.createdAt,
+	})
 
 	const rowsForOrg = (orgId: OrgId) =>
-		database
-			.execute((db) =>
-				db
+		dbExecute((db) =>
+			db.run(
+				PG.from(ChatWorkspaces)
 					.select()
-					.from(chatWorkspaces)
-					.where(eq(chatWorkspaces.orgId, orgId))
-					.orderBy(asc(chatWorkspaces.createdAt)),
-			)
-			.pipe(Effect.mapError(toPersistenceError))
+					.where(($) => [$.orgId.eq(orgId)])
+					.orderBy(["createdAt", "asc"]),
+			),
+		)
 
 	const list = Effect.fn("ChatWorkspaceService.list")(function* (orgId: OrgId, userId?: UserId) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const rows = yield* rowsForOrg(orgId)
-		const summaries = yield* Effect.forEach(rows, toSummary)
+		const summaries = Arr.map(rows, toSummary)
 		// One query for every connector's link rather than one per connector: a
 		// person holds at most one link each, and the card reads them together.
 		const identities = userId === undefined ? [] : yield* listChatIdentities(database, orgId, userId)
@@ -346,7 +351,7 @@ const make: Effect.Effect<
 		connectorId: ChatConnectorId,
 		callbackUrl: string,
 	) {
-		yield* Effect.annotateCurrentSpan({ orgId, "chat.connector": connectorId })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.chat.connector": connectorId })
 		const connector = yield* requireConnector(connectorId)
 		const state = randomBytes(24).toString("base64url")
 		// The URL first: an unconfigured connector fails here, before a state row
@@ -364,54 +369,26 @@ const make: Effect.Effect<
 				initiatedByUserId: userId,
 				redirectUri: callbackUrl,
 				returnTo: null,
-				createdAt: msToDate(now),
-				expiresAt: msToDate(now + STATE_TTL_MS),
+				createdAt: now,
+				expiresAt: now + STATE_TTL_MS,
 			})
 			.pipe(Effect.mapError(toPersistenceError))
 		return { url }
 	})
 
-	// The same known gap the other OAuth install service in this directory
-	// documents: `state` is unguessable, single-use and TTL-bounded, but it is not
-	// bound to the browser that started the install, so an attacker who gets a
-	// chat-workspace manager to complete THEIR authorize URL links that manager's
-	// workspace to the attacker's org. Closing it is the same architecture call,
-	// unmade for the same reason — that service's `completeInstall` lists the three
-	// options. What is closed here: the workspace identity comes from the
-	// connector, which must read it from whatever the platform bound to the
-	// callback credential, and a workspace already linked to another org is
-	// rejected below rather than moved.
+	// The state only redeems for the signed-in Maple user and org that began the
+	// install, so an authorize URL forwarded to a chat-workspace manager links
+	// nothing to the sender's org. The workspace identity comes from the connector,
+	// and a workspace already linked to another org is rejected below, not moved.
 	const completeInstall = Effect.fn("ChatWorkspaceService.completeInstall")(function* (
 		connectorId: ChatConnectorId,
 		params: URLSearchParams,
+		initiator: OAuthFlowInitiator,
 	) {
-		yield* Effect.annotateCurrentSpan({ "chat.connector": connectorId })
+		yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connectorId })
 		const connector = yield* requireConnector(connectorId)
-		const state = params.get("state")
-		if (state === null) {
-			return yield* Effect.fail(
-				new IntegrationsValidationError({ message: "The callback carried no state" }),
-			)
-		}
-		const stateRow = yield* states.findByState(state).pipe(Effect.mapError(toPersistenceError))
-		if (Option.isNone(stateRow) || stateRow.value.provider !== stateProvider(connectorId)) {
-			return yield* Effect.fail(
-				new IntegrationsValidationError({
-					message: "Install state not recognized — start the install again",
-				}),
-			)
-		}
-		const row = stateRow.value
+		const row = yield* consumeState(params, stateProvider(connectorId), initiator)
 		const now = yield* Clock.currentTimeMillis
-		// Single-use: burn the state before doing any side effects.
-		yield* states.deleteByState(state).pipe(Effect.mapError(toPersistenceError))
-		if (dateToMs(row.expiresAt) < now) {
-			return yield* Effect.fail(
-				new IntegrationsValidationError({
-					message: "Install state expired — start the install again",
-				}),
-			)
-		}
 		const orgId = yield* decodeOrgId(row.orgId).pipe(
 			Effect.mapError(
 				(error) =>
@@ -465,10 +442,9 @@ const make: Effect.Effect<
 			credentialsTag: sealed?.tag ?? null,
 		}
 
-		const inserted = yield* database
-			.execute((db) =>
-				db
-					.insert(chatWorkspaces)
+		const inserted = yield* dbExecute((db) =>
+			db.run(
+				PG.insertInto(ChatWorkspaces)
 					.values({
 						id: newWorkspaceId(),
 						orgId,
@@ -477,19 +453,19 @@ const make: Effect.Effect<
 						name: installed.name,
 						settings: {},
 						...credentialColumns,
-						createdAt: msToDate(now),
+						createdAt: now,
 					})
 					.onConflictDoUpdate({
-						target: [chatWorkspaces.connector, chatWorkspaces.externalWorkspaceId],
+						target: ["connector", "externalWorkspaceId"],
 						// A re-install refreshes the org's own row (the name and the credential may
 						// both have changed) and keeps its settings. Another org's row is left alone:
 						// the update is skipped, and zero returned rows is the conflict.
-						setWhere: eq(chatWorkspaces.orgId, orgId),
+						where: ($) => $.orgId.eq(orgId),
 						set: { name: installed.name, ...credentialColumns },
 					})
-					.returning({ id: chatWorkspaces.id }),
-			)
-			.pipe(Effect.mapError(toPersistenceError))
+					.returning("id"),
+			),
+		)
 		if (inserted.length === 0) {
 			// The branch the conflict guard exists to produce: this workspace is
 			// already linked to a different org. Worth counting, so it is logged.
@@ -498,7 +474,7 @@ const make: Effect.Effect<
 				connector: connectorId,
 				externalWorkspaceId: installed.externalWorkspaceId,
 			})
-			return yield* Effect.fail(new IntegrationsForbiddenError({ message: CROSS_ORG_CONFLICT_MESSAGE }))
+			return yield* new IntegrationsForbiddenError({ message: CROSS_ORG_CONFLICT_MESSAGE })
 		}
 		yield* Effect.logInfo("Chat workspace linked", {
 			orgId,
@@ -514,8 +490,9 @@ const make: Effect.Effect<
 		connectorId: ChatConnectorId,
 		callbackUrl: string,
 	) {
-		yield* Effect.annotateCurrentSpan({ orgId, "chat.connector": connectorId })
-		const identity = yield* requireIdentity(yield* requireConnector(connectorId))
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.chat.connector": connectorId })
+		const connector = yield* requireConnector(connectorId)
+		const identity = yield* requireIdentity(connector)
 		const state = randomBytes(24).toString("base64url")
 		// The URL first, as the install does: an unconfigured connector fails here,
 		// before a state row nobody will ever redeem is written.
@@ -533,8 +510,8 @@ const make: Effect.Effect<
 				initiatedByUserId: userId,
 				redirectUri: callbackUrl,
 				returnTo: null,
-				createdAt: msToDate(now),
-				expiresAt: msToDate(now + STATE_TTL_MS),
+				createdAt: now,
+				expiresAt: now + STATE_TTL_MS,
 			})
 			.pipe(Effect.mapError(toPersistenceError))
 		return { url }
@@ -543,44 +520,20 @@ const make: Effect.Effect<
 	/**
 	 * Bind the chat account that just authorized to the Maple user who started the link.
 	 *
-	 * That user comes from the state row's `initiatedByUserId`, never from the session on the
-	 * callback request. The callback is a top-level redirect the chat platform issues, so the
-	 * browser that opens it need not be the browser that began the link — binding on a cookie
-	 * would let somebody finish a link in a different session, onto whichever Maple user happened
-	 * to be signed in there. The state row is the only thing that knows both halves, and it is
-	 * unguessable, single-use and TTL-bounded.
+	 * The state row names that user, and it only redeems when `initiator` (the session finishing
+	 * the link) is the same user and org, so a link URL forwarded to a colleague binds nothing.
+	 * The provider namespace keeps install and link states from redeeming each other.
 	 */
 	const completeLink = Effect.fn("ChatWorkspaceService.completeLink")(function* (
 		connectorId: ChatConnectorId,
 		params: URLSearchParams,
+		initiator: OAuthFlowInitiator,
 	) {
-		yield* Effect.annotateCurrentSpan({ "chat.connector": connectorId })
-		const identity = yield* requireIdentity(yield* requireConnector(connectorId))
-		const state = params.get("state")
-		if (state === null) {
-			return yield* Effect.fail(
-				new IntegrationsValidationError({ message: "The callback carried no state" }),
-			)
-		}
-		const stateRow = yield* states.findByState(state).pipe(Effect.mapError(toPersistenceError))
-		// The provider check is what keeps the two halves apart: an install's state names
-		// `chat:<connector>` and is refused here, and the reverse holds in `completeInstall`.
-		if (Option.isNone(stateRow) || stateRow.value.provider !== identityStateProvider(connectorId)) {
-			return yield* Effect.fail(
-				new IntegrationsValidationError({
-					message: "Link state not recognized — start the link again",
-				}),
-			)
-		}
-		const row = stateRow.value
+		yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connectorId })
+		const connector = yield* requireConnector(connectorId)
+		const identity = yield* requireIdentity(connector)
+		const row = yield* consumeState(params, identityStateProvider(connectorId), initiator)
 		const now = yield* Clock.currentTimeMillis
-		// Single-use: burn the state before doing any side effects.
-		yield* states.deleteByState(state).pipe(Effect.mapError(toPersistenceError))
-		if (dateToMs(row.expiresAt) < now) {
-			return yield* Effect.fail(
-				new IntegrationsValidationError({ message: "Link state expired — start the link again" }),
-			)
-		}
 		const orgId = yield* decodeOrgId(row.orgId).pipe(
 			Effect.mapError(
 				(error) =>
@@ -636,7 +589,7 @@ const make: Effect.Effect<
 		userId: UserId,
 		connectorId: ChatConnectorId,
 	) {
-		yield* Effect.annotateCurrentSpan({ orgId, "chat.connector": connectorId })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.chat.connector": connectorId })
 		yield* requireConnector(connectorId)
 		const unlinked = yield* unlinkChatIdentity(database, orgId, connectorId, userId)
 		if (unlinked) {
@@ -646,17 +599,16 @@ const make: Effect.Effect<
 	})
 
 	const loadOwned = Effect.fnUntraced(function* (orgId: OrgId, workspaceId: ChatWorkspaceId) {
-		const rows = yield* database
-			.execute((db) =>
-				db
+		const rows = yield* dbExecute((db) =>
+			db.run(
+				PG.from(ChatWorkspaces)
 					.select()
-					.from(chatWorkspaces)
-					.where(and(eq(chatWorkspaces.id, workspaceId), eq(chatWorkspaces.orgId, orgId)))
+					.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])
 					.limit(1),
-			)
-			.pipe(Effect.mapError(toPersistenceError))
+			),
+		)
 		const row = rows[0]
-		if (row === undefined) return yield* Effect.fail(notFound("No chat workspace with this id"))
+		if (row === undefined) return yield* notFound("No chat workspace with this id")
 		return row
 	})
 
@@ -667,30 +619,20 @@ const make: Effect.Effect<
 	) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const row = yield* loadOwned(orgId, workspaceId)
-		const connector = yield* requireConnector(
-			yield* decodeConnectorId(row.connector).pipe(
-				Effect.mapError(
-					(error) =>
-						new IntegrationsPersistenceError({
-							message: `Stored chat workspace is unreadable: ${error.message}`,
-						}),
-				),
+		const connector = yield* requireConnector(row.connector)
+		const validated = yield* validateSettings(connector, settings)
+		const updated = yield* dbExecute((db) =>
+			db.run(
+				PG.update(ChatWorkspaces)
+					.set({ settings: validated })
+					.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])
+					.returning(),
 			),
 		)
-		const validated = yield* validateSettings(connector, settings)
-		const updated = yield* database
-			.execute((db) =>
-				db
-					.update(chatWorkspaces)
-					.set({ settings: validated })
-					.where(and(eq(chatWorkspaces.id, workspaceId), eq(chatWorkspaces.orgId, orgId)))
-					.returning(),
-			)
-			.pipe(Effect.mapError(toPersistenceError))
 		const stored = updated[0]
 		// Lost a race with an unlink: the row was there a statement ago.
-		if (stored === undefined) return yield* Effect.fail(notFound("No chat workspace with this id"))
-		return yield* toSummary(stored)
+		if (stored === undefined) return yield* notFound("No chat workspace with this id")
+		return toSummary(stored)
 	})
 
 	const uninstall = Effect.fn("ChatWorkspaceService.uninstall")(function* (
@@ -698,17 +640,16 @@ const make: Effect.Effect<
 		workspaceId: ChatWorkspaceId,
 	) {
 		yield* Effect.annotateCurrentSpan({ orgId })
-		const deleted = yield* database
-			.execute((db) =>
-				db
-					.delete(chatWorkspaces)
-					.where(and(eq(chatWorkspaces.id, workspaceId), eq(chatWorkspaces.orgId, orgId)))
-					.returning({ connector: chatWorkspaces.connector }),
-			)
-			.pipe(Effect.mapError(toPersistenceError))
+		const deleted = yield* dbExecute((db) =>
+			db.run(
+				PG.deleteFrom(ChatWorkspaces)
+					.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])
+					.returning("connector"),
+			),
+		)
 		const row = deleted[0]
 		if (row === undefined) {
-			return yield* Effect.fail(notFound("No chat workspace with this id"))
+			return yield* notFound("No chat workspace with this id")
 		}
 		yield* Effect.logInfo("Chat workspace unlinked", { orgId, connector: row.connector })
 	})
@@ -721,7 +662,7 @@ const make: Effect.Effect<
 		const key = yield* credentialKey
 		const workspace = yield* loadOwnedChatWorkspace(database, registry, orgId, workspaceId, key).pipe(
 			Effect.catchTags({
-				"@maple/api/lib/DatabaseError": (error) => Effect.fail(toPersistenceError(error)),
+				"@maple/backend/lib/DatabaseError": (error) => Effect.fail(toPersistenceError(error)),
 				"@maple/backend/ChatWorkspaceCredentialsUnreadable": () =>
 					Effect.fail(
 						new IntegrationsNotConnectedError({
@@ -731,15 +672,13 @@ const make: Effect.Effect<
 					),
 			}),
 		)
-		if (Option.isNone(workspace)) return yield* Effect.fail(notFound("No chat workspace with this id"))
+		if (Option.isNone(workspace)) return yield* notFound("No chat workspace with this id")
 		const name = workspace.value.connector.manifest.name
 		const missing = missingOutboundConfig(workspace.value, env.CHAT_CONNECTOR_OUTBOUND_CONFIG)
 		if (missing.length > 0) {
-			return yield* Effect.fail(
-				new IntegrationsConfigurationError({
-					message: `${name} is not configured on this deployment (${missing.join(", ")})`,
-				}),
-			)
+			return yield* new IntegrationsConfigurationError({
+				message: `${name} is not configured on this deployment (${Arr.join(missing, ", ")})`,
+			})
 		}
 		const transport = yield* chatOutboundTransport(
 			workspace.value,
@@ -773,7 +712,7 @@ const make: Effect.Effect<
 		connectorId: ChatConnectorId,
 		externalWorkspaceId: string,
 	) {
-		yield* Effect.annotateCurrentSpan({ "chat.connector": connectorId })
+		yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connectorId })
 		// A deployment with no usable key resolves the workspace without its credential rather than
 		// failing the lookup: everything that does not need one keeps working, and the connector
 		// that does reports it cannot post.
@@ -806,7 +745,7 @@ const make: Effect.Effect<
 })
 
 export class ChatWorkspaceService extends Context.Service<ChatWorkspaceService, ChatWorkspaceServiceApi>()(
-	"@maple/api/services/ChatWorkspaceService",
+	"@maple/backend/services/ChatWorkspaceService",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(

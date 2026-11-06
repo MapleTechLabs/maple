@@ -1,5 +1,6 @@
 /** Output schemas for the traces and logs MCP tools. */
 import { Schema } from "effect"
+import { PlatformSummary } from "../cloud-platform"
 import { OutputPagination, OutputTimeRange } from "./shared"
 
 const StringMap = Schema.Record(Schema.String, Schema.String)
@@ -8,9 +9,12 @@ const CountMap = Schema.Record(Schema.String, Schema.Number)
 /** One trace (or, for a span-level search, one matching span) in a list. */
 export const TraceSummaryRow = Schema.Struct({
 	traceId: Schema.String,
+	/** The root span (trace rows) or the matching span (span-level rows), when known. */
+	spanId: Schema.optionalKey(Schema.String),
 	rootSpanName: Schema.String,
 	durationMs: Schema.Number,
-	spanCount: Schema.Number,
+	/** Spans in the whole trace; absent where the source row does not count them. */
+	spanCount: Schema.optionalKey(Schema.Number),
 	services: Schema.Array(Schema.String),
 	hasError: Schema.Boolean,
 	startTime: Schema.optionalKey(Schema.String),
@@ -29,16 +33,21 @@ export const SearchTracesFilters = Schema.Struct({
 	traceId: Schema.optionalKey(Schema.String),
 	attributeKey: Schema.optionalKey(Schema.String),
 	attributeValue: Schema.optionalKey(Schema.String),
+	environment: Schema.optionalKey(Schema.String),
 	rootOnly: Schema.Boolean,
 })
 
 export const SearchTracesOutput = Schema.Struct({
 	timeRange: OutputTimeRange,
+	/** Set when the window before this time did not finish: only from here to the end was read. */
+	coveredFrom: Schema.optionalKey(Schema.String),
 	pagination: Schema.optionalKey(OutputPagination),
 	traces: Schema.Array(TraceSummaryRow),
 	filters: SearchTracesFilters,
 	/** True when rows are matching spans (span_name without root_only), not traces. */
 	spanLevel: Schema.Boolean,
+	/** On an empty result: filter values that do not exist in the window, with close matches. */
+	emptyHints: Schema.optionalKey(Schema.Array(Schema.String)),
 })
 
 export const TraceDurationStats = Schema.Struct({
@@ -56,39 +65,44 @@ export const FindSlowTracesOutput = Schema.Struct({
 	environment: Schema.optionalKey(Schema.String),
 })
 
-export interface SpanNodeOutput {
-	readonly spanId: string
-	readonly parentSpanId: string
-	readonly spanName: string
-	readonly serviceName: string
-	readonly spanKind?: string
-	readonly durationMs: number
-	readonly statusCode: string
-	readonly statusMessage: string
-	readonly attributes: { readonly [key: string]: string }
-	readonly resourceAttributes: { readonly [key: string]: string }
-	readonly children: ReadonlyArray<SpanNodeOutput>
-}
-
-export const SpanNodeOutput = Schema.Struct({
+/**
+ * One span of the overview. Spans are flat and in pre-order (the rendered tree's order), so the
+ * output nests the same at any trace depth. A span's parent is the nearest earlier span one
+ * `depth` up; roots are depth 0.
+ */
+export const TraceSpanOutput = Schema.Struct({
 	spanId: Schema.String,
 	parentSpanId: Schema.String,
+	depth: Schema.Number,
 	spanName: Schema.String,
+	/** The stored SpanName when `spanName` is a rewritten display name; filters match this one. */
+	rawSpanName: Schema.optionalKey(Schema.String),
 	serviceName: Schema.String,
 	spanKind: Schema.optionalKey(Schema.String),
 	durationMs: Schema.Number,
+	/** When the span started (UTC), to place it inside the trace. */
+	startTime: Schema.optionalKey(Schema.String),
 	statusCode: Schema.String,
 	statusMessage: Schema.String,
 	attributes: StringMap,
 	resourceAttributes: StringMap,
-	children: Schema.Array(Schema.suspend((): Schema.Codec<SpanNodeOutput> => SpanNodeOutput)),
-}).annotate({ identifier: "SpanNode" })
+}).annotate({ identifier: "TraceSpan" })
+export type TraceSpanOutput = typeof TraceSpanOutput.Type
 
 /** Children of a parent that the bounded overview left out. `parentSpanId` "" is the root level. */
 export const TraceOmittedSpans = Schema.Struct({
 	parentSpanId: Schema.String,
 	count: Schema.Number,
 	totalDurationMs: Schema.Number,
+})
+
+export const TraceSpanNameRollup = Schema.Struct({
+	spanName: Schema.String,
+	serviceName: Schema.String,
+	count: Schema.Number,
+	totalDurationMs: Schema.Number,
+	maxDurationMs: Schema.Number,
+	errorCount: Schema.Number,
 })
 
 export const InspectTraceOutput = Schema.Struct({
@@ -102,7 +116,7 @@ export const InspectTraceOutput = Schema.Struct({
 	totalSpanCount: Schema.optionalKey(Schema.Number),
 	/** True when `spans` is a bounded subset of the full trace. */
 	truncated: Schema.optionalKey(Schema.Boolean),
-	spans: Schema.Array(SpanNodeOutput),
+	spans: Schema.Array(TraceSpanOutput),
 	logs: Schema.Array(
 		Schema.Struct({
 			timestamp: Schema.String,
@@ -118,6 +132,12 @@ export const InspectTraceOutput = Schema.Struct({
 	errorsOnly: Schema.Boolean,
 	/** The `timestamp` hint the scan was narrowed around, if one was given. */
 	timestamp: Schema.optionalKey(Schema.String),
+	/** The window the final read covered, and whether it was widened past the first one. */
+	scanned: Schema.optionalKey(
+		Schema.Struct({ startTime: Schema.String, endTime: Schema.String, widened: Schema.Boolean }),
+	),
+	/** Per span name totals over the whole trace, for traces larger than the overview. */
+	rollup: Schema.optionalKey(Schema.Array(TraceSpanNameRollup)),
 })
 
 /** The decoded view of an AI agent span, or why there is none. */
@@ -135,12 +155,27 @@ export const InspectSpanOutput = Schema.Struct({
 	traceId: Schema.String,
 	spanId: Schema.String,
 	found: Schema.Boolean,
+	/** The span row's own fields, as `inspect_trace` reports them; absent when not found. */
+	spanName: Schema.optionalKey(Schema.String),
+	/** The stored SpanName when `spanName` is a rewritten display name. */
+	rawSpanName: Schema.optionalKey(Schema.String),
+	serviceName: Schema.optionalKey(Schema.String),
+	spanKind: Schema.optionalKey(Schema.String),
+	durationMs: Schema.optionalKey(Schema.Number),
+	startTime: Schema.optionalKey(Schema.String),
+	/** OpenTelemetry span status (`Ok`, `Error`, `Unset`), separate from any HTTP status. */
+	statusCode: Schema.optionalKey(Schema.String),
+	statusMessage: Schema.optionalKey(Schema.String),
+	/** The platform the span ran on, read from its span and resource attributes. */
+	platform: Schema.optionalKey(PlatformSummary),
 	attributes: StringMap,
 	resourceAttributes: StringMap,
 	/** Present for AI agent spans. */
 	ai: Schema.optionalKey(AiSpanDecode),
 	/** The `timestamp` hint the scan was narrowed around, if one was given. */
 	timestamp: Schema.optionalKey(Schema.String),
+	/** True when the window around `timestamp` missed and the lookup ran unbounded. */
+	widened: Schema.optionalKey(Schema.Boolean),
 })
 
 export const LogEntryRow = Schema.Struct({
@@ -150,6 +185,8 @@ export const LogEntryRow = Schema.Struct({
 	body: Schema.String,
 	traceId: Schema.optionalKey(Schema.String),
 	spanId: Schema.optionalKey(Schema.String),
+	/** Cause-bearing log attributes (`log.error`, `error.*`, `exception.*`), when present. */
+	keyAttributes: Schema.optionalKey(StringMap),
 })
 
 export const LogSearchFilters = Schema.Struct({
@@ -163,9 +200,13 @@ export const LogSearchFilters = Schema.Struct({
 export const SearchLogsOutput = Schema.Struct({
 	timeRange: OutputTimeRange,
 	totalCount: Schema.Number,
+	/** `totalCount` is only what the pages so far show: the exact count did not finish. */
+	totalIsLowerBound: Schema.optionalKey(Schema.Boolean),
 	pagination: Schema.optionalKey(OutputPagination),
 	logs: Schema.Array(LogEntryRow),
 	filters: Schema.optionalKey(LogSearchFilters),
+	/** On an empty result: filter values that do not exist in the window, with close matches. */
+	emptyHints: Schema.optionalKey(Schema.Array(Schema.String)),
 })
 
 export const LogPatternRow = Schema.Struct({

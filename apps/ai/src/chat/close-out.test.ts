@@ -4,6 +4,7 @@
 import { ChatMessage, ChatToolCall } from "@maple/domain/chat-session"
 import { assert, describe, it } from "vitest"
 import { CLOSE_OUT_EVIDENCE_CHARS, withToolTranscript } from "./close-out"
+import { String as Str } from "effect"
 
 const pass = (calls: number, outputChars: number) =>
 	new ChatMessage({
@@ -17,7 +18,7 @@ const pass = (calls: number, outputChars: number) =>
 					id: `c${i}`,
 					name: "pr_file_diff",
 					input: { paths: [`src/f${i}.ts`] },
-					output: `${i}:${"x".repeat(outputChars)}`,
+					output: `${i}:${Str.repeat(outputChars)("x")}`,
 				}),
 		),
 		createdAt: 0,
@@ -25,17 +26,44 @@ const pass = (calls: number, outputChars: number) =>
 	})
 
 describe("withToolTranscript", () => {
+	it("renders a result's text without its UI payload", () => {
+		const message = new ChatMessage({
+			id: "pass",
+			role: "assistant",
+			text: "",
+			toolCalls: [
+				new ChatToolCall({
+					id: "c0",
+					name: "list_services",
+					input: {},
+					output: {
+						text: "## Services",
+						ui: { __maple_ui: true, tool: "list_services", data: {} },
+					},
+				}),
+			],
+			createdAt: 0,
+			startSeq: 1,
+		})
+		const [rendered] = withToolTranscript([message])
+		assert.isDefined(rendered)
+		assert.include(rendered.text, "## Services")
+		assert.notInclude(rendered.text, "__maple_ui")
+	})
+
 	it("renders every call of a small pass", () => {
 		const [message] = withToolTranscript([pass(3, 100)])
-		assert.include(message!.text, "src/f0.ts")
-		assert.include(message!.text, "src/f2.ts")
-		assert.notInclude(message!.text, "left out for length")
+		assert.isDefined(message)
+		assert.include(message.text, "src/f0.ts")
+		assert.include(message.text, "src/f2.ts")
+		assert.notInclude(message.text, "left out for length")
 	})
 
 	/** A 149-call pass once rendered past the context limit, and the close-out died before its first call. */
 	it("keeps a long pass under the budget, newest calls first, and counts what it left out", () => {
 		const [message] = withToolTranscript([pass(149, 19_000)])
-		const text = message!.text
+		assert.isDefined(message)
+		const text = message.text
 		assert.isAtMost(text.length, CLOSE_OUT_EVIDENCE_CHARS + 1_000)
 		assert.include(text, "src/f148.ts")
 		assert.notInclude(text, "src/f0.ts")

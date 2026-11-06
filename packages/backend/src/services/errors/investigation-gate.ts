@@ -20,13 +20,13 @@ import type {
 	WorkflowState,
 } from "@maple/domain/http"
 import type { InvestigationId } from "@maple/domain/primitives"
-import { STALE_MS } from "@maple/backend/services/errors/investigation-stale"
+import { isInvestigationStale } from "@maple/backend/services/errors/investigation-stale"
 
 /**
  * How sure the model has to be before its "noise" costs an incident its pass:
  * at or above this, a floor, not a strict bound.
  *
- * Jev returns a full distribution, so this is a real threshold rather than a
+ * Clef returns a full distribution, so this is a real threshold rather than a
  * formality: a 0.55/0.45 split between `noise` and `investigate` is the model
  * saying it does not know, and the cheap mistake there is to investigate.
  */
@@ -86,6 +86,8 @@ export interface LatestIssueInvestigation {
 	readonly status: string
 	readonly createdAtMs: number
 	readonly startedAtMs: number | null
+	/** Stored progress, possibly undecoded; its heartbeat keeps a long close-out alive. */
+	readonly progressJson?: unknown
 }
 
 /**
@@ -119,7 +121,10 @@ export const evaluateIssueGate = (input: {
 	// outlived its budget is not under way, whatever the row says: the tick's
 	// sweep will fail it, and waiting on it would hold the issue hostage.
 	if (latest.status === "investigating") {
-		const fresh = latest.startedAtMs === null || latest.startedAtMs >= input.nowMs - STALE_MS
+		const fresh = !isInvestigationStale(
+			{ status: latest.status, startedAt: latest.startedAtMs, progressJson: latest.progressJson },
+			input.nowMs,
+		)
 		if (fresh) return { kind: "skip", reason: "investigation_in_flight", priorInvestigationId: latest.id }
 		return { kind: "investigate" }
 	}

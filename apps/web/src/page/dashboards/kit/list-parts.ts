@@ -1,0 +1,56 @@
+import { cn } from "@maple/ui/lib/utils"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { searchInput } from "@maple/views/ui/search-input"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { fillRule } from "@maple/views/ui/rule"
+
+// Shared by the dashboards list and the template gallery.
+
+/** `ListSectionHeader`: heading, count, rule, note. */
+export const listSectionHeader = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ title: string; count: number; accent?: boolean; note?: string; className?: string }>,
+): Html =>
+	h.div(
+		[h.Class(cn("flex items-center gap-2 pb-2", options.className))],
+		[
+			eyebrow(h, { variant: "label", as: "h3" }, [options.title]),
+			h.span(
+				[
+					h.Class(
+						cn(
+							typographyClass({ size: "2xs", mono: true }),
+							options.accent === true ? "text-primary" : "text-muted-foreground",
+						),
+					),
+				],
+				[String(options.count)],
+			),
+			fillRule(h),
+			...(options.note === undefined
+				? []
+				: [typography(h, { size: "2xs", tone: "muted" }, [options.note])]),
+		],
+	)
+
+/** `ToolbarSearch` (`SearchInput` at the toolbar size, sm): the clear button empties the draft. */
+export const toolbarSearch = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{
+		id: string
+		draft: string
+		placeholder: string
+		className: string
+		onInput: (value: string) => M
+	}>,
+): Html =>
+	searchInput(h, {
+		id: options.id,
+		size: "sm",
+		className: cn("max-w-sm", options.className),
+		placeholder: options.placeholder,
+		value: options.draft,
+		onInput: options.onInput,
+		onClear: options.onInput(""),
+	})

@@ -1,4 +1,4 @@
-import { Cause, Exit } from "effect"
+import { Cause, Exit, Array as Arr } from "effect"
 import { useState } from "react"
 import type { Todo } from "../../shared/api.ts"
 import { addTodoAtom, removeTodoAtom, toggleTodoAtom } from "./lib/actions.ts"
@@ -13,7 +13,7 @@ function failureMessage(exit: Exit.Exit<unknown, unknown>, fallback: string): st
 	if (Exit.isSuccess(exit)) return fallback
 	const error = Cause.squash(exit.cause)
 	return typeof error === "object" && error !== null && "message" in error
-		? String((error as { message: unknown }).message)
+		? String(error.message)
 		: fallback
 }
 
@@ -127,7 +127,7 @@ export function App() {
 								Nothing yet — add one above.
 							</li>
 						)}
-						{todos.map((todo) => (
+						{Arr.map(todos, (todo) => (
 							<li key={todo.id} className="group flex items-center gap-3 px-4 py-3">
 								<button
 									type="button"

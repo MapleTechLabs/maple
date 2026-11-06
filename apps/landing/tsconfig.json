@@ -3,7 +3,10 @@
 	"include": [".astro/types.d.ts", "**/*"],
 	"exclude": ["dist"],
 	"compilerOptions": {
-		"jsx": "react-jsx",
-		"jsxImportSource": "react"
+		// `@maple/ui` exports `./*` without extensions; Vite resolves them, tsc needs the mapping.
+		"paths": {
+			"@maple/ui/styles/ui/*": ["../../packages/ui/src/components/ui/*.styles.ts"],
+			"@maple/ui/*": ["../../packages/ui/src/*"]
+		}
 	}
 }

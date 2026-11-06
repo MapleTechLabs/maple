@@ -4,17 +4,19 @@
 // side of the same table, and it keeps the `/analytics` session filters by
 // reusing `replaysWhere` so the two agree on what a filtered population is.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param, from, inSubquery } from "@maple-dev/effect-clickhouse"
-import type { CHQuery, ColumnAccessor, ColumnDefs } from "@maple-dev/effect-clickhouse"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import type { DateTime } from "effect"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param, from, inSubquery } from "@maple-dev/effect-orm/clickhouse"
+import type { CHQuery, ColumnAccessor, ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 import type { AttributeFilter, ProductEventsGroupBy, ProductEventsMetric } from "@maple/domain/query-engine"
-import { ProductEvents, SessionReplays } from "../tables"
+import { ProductEvents, SessionReplays, orgIdParam } from "../tables"
 import { buildAttrFilterCondition } from "../../traces-shared"
 import { finalizeTimeseries } from "./series-cap"
-import { soleValue } from "./query-helpers"
+import { soleValue, timeseriesBucket, wholeRangeEnd } from "./query-helpers"
 import { replaysWhere, needsSessionSemiJoin, type WebAnalyticsFilters } from "./web-analytics"
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
+import { Array as Arr } from "effect"
 
 type EventsAccessor = ColumnAccessor<typeof ProductEvents.columns>
 
@@ -55,10 +57,12 @@ export interface ProductEventsTimeseriesOpts extends ProductEventsQueryOpts {
 	groupBy?: readonly ProductEventsGroupByKey[]
 	bucketSeconds?: number
 	seriesLimit?: number
+	/** One bucket per group over the whole range; see `timeseriesBucket`. Alert evaluation sets it. */
+	wholeRange?: boolean
 }
 
 export interface ProductEventsTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly groupName: string
 	readonly value: number
 	/** Rows behind `value` — the alert sample count, which a `uniq` metric cannot stand in for. */
@@ -81,7 +85,7 @@ export interface ProductEventsListOpts extends ProductEventsQueryOpts {
 }
 
 export interface ProductEventsListOutput {
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 	readonly eventName: string
 	readonly kind: string
 	readonly source: string
@@ -136,9 +140,9 @@ function sessionSemiJoin($: EventsAccessor, opts: ProductEventsQueryOpts): CH.Co
 
 function eventConditions($: EventsAccessor, opts: ProductEventsQueryOpts): Array<CH.Condition | undefined> {
 	return [
-		$.OrgId.eq(param.string("orgId")),
-		$.Timestamp.gte(param.dateTimeString("startTime")),
-		$.Timestamp.lte(param.dateTimeString("endTime")),
+		$.OrgId.eq(orgIdParam),
+		$.Timestamp.gte(param.dateTime("startTime")),
+		$.Timestamp.lte(param.dateTime("endTime")),
 		inListOpt($.EventName, opts.eventNames),
 		inListOpt($.Kind, opts.kinds),
 		inListOpt($.Source, opts.sources),
@@ -153,7 +157,7 @@ function eventConditions($: EventsAccessor, opts: ProductEventsQueryOpts): Array
 		notInListOpt($.Host, opts.excludedHosts),
 		notInListOpt($.PagePath, opts.excludedPagePaths),
 		notInListOpt($.ServiceName, opts.excludedServiceNames),
-		...(opts.attributeFilters ?? []).map((filter) => buildAttrFilterCondition(filter, "Attributes")),
+		...Arr.map(opts.attributeFilters ?? [], (filter) => buildAttrFilterCondition(filter, "Attributes")),
 		sessionSemiJoin($, opts),
 	]
 }
@@ -204,9 +208,9 @@ function dimensionColumn(
 // Every dimension keeps its position, an empty one shown as `(none)`, so
 // `browser · (none)` and `(none) · browser` stay two groups.
 function groupNameExpr($: EventsAccessor, opts: ProductEventsTimeseriesOpts): CH.Expr<string> {
-	const keys = (opts.groupBy ?? []).filter((key): key is ProductEventsGroupBy => key !== "none")
+	const keys = Arr.filter(opts.groupBy ?? [], (key): key is ProductEventsGroupBy => key !== "none")
 	if (keys.length === 0) return CH.lit("all")
-	const parts = keys.map((key) =>
+	const parts = Arr.map(keys, (key) =>
 		CH.coalesce(
 			CH.nullIf(dimensionColumn($, key, opts.groupByAttributeKey), ""),
 			CH.lit(WEB_ANALYTICS_UNSET),
@@ -218,7 +222,7 @@ function groupNameExpr($: EventsAccessor, opts: ProductEventsTimeseriesOpts): CH
 }
 
 const TS_COLUMNS: ColumnDefs = {
-	bucket: T.string,
+	bucket: T.dateTime64,
 	groupName: T.string,
 	value: T.float64,
 	eventCount: T.float64,
@@ -226,27 +230,23 @@ const TS_COLUMNS: ColumnDefs = {
 
 export function productEventsTimeseriesQuery(
 	opts: ProductEventsTimeseriesOpts,
-): CHQuery<ColumnDefs, ProductEventsTimeseriesOutput, {}> {
+): CHQuery<ColumnDefs, ProductEventsTimeseriesOutput> {
 	const inner = from(ProductEvents)
 		.select(($) => ({
-			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
+			bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 			groupName: groupNameExpr($, opts),
 			value: metricExpr($, opts.metric),
 			eventCount: CH.count(),
 		}))
-		.where(($) => eventConditions($, opts))
+		.where(($) => [...eventConditions($, opts), wholeRangeEnd($.Timestamp, opts.wholeRange)])
 		.groupBy("bucket", "groupName")
 		.orderBy(["bucket", "asc"], ["groupName", "asc"])
-	return finalizeTimeseries(inner, TS_COLUMNS, "value", opts) as CHQuery<
-		ColumnDefs,
-		ProductEventsTimeseriesOutput,
-		{}
-	>
+	return finalizeTimeseries(inner, TS_COLUMNS, "value", opts)
 }
 
 export function productEventsBreakdownQuery(
 	opts: ProductEventsBreakdownOpts,
-): CHQuery<any, ProductEventsBreakdownOutput, any> {
+): CHQuery<ColumnDefs, ProductEventsBreakdownOutput> {
 	return from(ProductEvents)
 		.select(($) => ({
 			name: dimensionColumn($, opts.groupBy, opts.groupByAttributeKey),
@@ -261,7 +261,7 @@ export function productEventsBreakdownQuery(
 
 export function productEventsListQuery(
 	opts: ProductEventsListOpts,
-): CHQuery<any, ProductEventsListOutput, any> {
+): CHQuery<ColumnDefs, ProductEventsListOutput> {
 	return from(ProductEvents)
 		.select(($) => ({
 			timestamp: $.Timestamp,
@@ -299,7 +299,7 @@ export interface ProductEventAttributeKeysOutput {
 /** The `track()` prop keys in use, most common first. No rollup exists; this scans the window. */
 export function productEventAttributeKeysQuery(
 	opts: ProductEventAttributeKeysOpts = {},
-): CHQuery<any, ProductEventAttributeKeysOutput, any> {
+): CHQuery<ColumnDefs, ProductEventAttributeKeysOutput> {
 	return from(ProductEvents)
 		.select(($) => ({
 			attributeKey: CH.arrayJoin(CH.mapKeys($.Attributes)),
@@ -324,7 +324,7 @@ export interface ProductEventAttributeValuesOutput {
 
 export function productEventAttributeValuesQuery(
 	opts: ProductEventAttributeValuesOpts,
-): CHQuery<any, ProductEventAttributeValuesOutput, any> {
+): CHQuery<ColumnDefs, ProductEventAttributeValuesOutput> {
 	return from(ProductEvents)
 		.select(($) => ({
 			attributeValue: $.Attributes.get(opts.attributeKey),

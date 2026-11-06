@@ -22,7 +22,7 @@ const verdict = (overrides?: Partial<IncidentTriageVerdict>) =>
 		severity: "low",
 		severityConfidence: 0.9,
 		userImpact: 0.02,
-		model: "~typesafe/jev-latest",
+		model: "@cf/cloudflare/clef",
 		...overrides,
 	})
 
@@ -113,6 +113,20 @@ describe("evaluateIssueGate", () => {
 		// the tick's sweep will fail it, and the issue must not wait on it.
 		const dead = open({ latest: diagnosed(STALE_MS + 1000, "investigating") })
 		assert.deepStrictEqual(dead, { kind: "investigate" })
+	})
+
+	it("waits on a pass past the budget that is still reporting steps", () => {
+		const closingOut = open({
+			latest: {
+				...diagnosed(STALE_MS + 60 * 1000, "investigating"),
+				progressJson: { updatedAt: NOW - 30 * 1000 },
+			},
+		})
+		assert.deepStrictEqual(closingOut, {
+			kind: "skip",
+			reason: "investigation_in_flight",
+			priorInvestigationId: PRIOR,
+		})
 	})
 
 	it("lets a failed attempt be retried", () => {

@@ -24,23 +24,10 @@
  * `__clerk_db_jwt`) never leak across environments and are left alone.
  */
 
-const CLIENT_UAT_PREFIX = "__client_uat"
+import { computeClerkCookieSuffix } from "@maple/domain/clerk-js-url"
+import { Array as Arr, String as Str } from "effect"
 
-/**
- * Clerk's per-instance cookie suffix: base64url(sha1(publishableKey)),
- * first 8 chars — mirrors `getCookieSuffix` in @clerk/shared.
- */
-export async function computeClerkCookieSuffix(
-	publishableKey: string,
-	subtle: SubtleCrypto = globalThis.crypto.subtle,
-): Promise<string> {
-	const digest = await subtle.digest("SHA-1", new TextEncoder().encode(publishableKey))
-	const bytes = Array.from(new Uint8Array(digest))
-	return btoa(String.fromCharCode(...bytes))
-		.replace(/\+/g, "-")
-		.replace(/\//g, "_")
-		.substring(0, 8)
-}
+const CLIENT_UAT_PREFIX = "__client_uat"
 
 /**
  * Given all visible cookie names, return the `__client_uat*` cookies that do
@@ -48,10 +35,10 @@ export async function computeClerkCookieSuffix(
  * `__client_uat_<other>` plus the shared legacy `__client_uat`.
  */
 export function foreignClientUatCookieNames(cookieNames: readonly string[], ownSuffix: string): string[] {
-	return cookieNames.filter((name) => {
+	return Arr.filter(cookieNames, (name) => {
 		if (name === CLIENT_UAT_PREFIX) return true
-		if (!name.startsWith(`${CLIENT_UAT_PREFIX}_`)) return false
-		return name.slice(CLIENT_UAT_PREFIX.length + 1) !== ownSuffix
+		if (!Str.startsWith(`${CLIENT_UAT_PREFIX}_`)(name)) return false
+		return Str.slice(CLIENT_UAT_PREFIX.length + 1)(name) !== ownSuffix
 	})
 }
 
@@ -63,19 +50,19 @@ export function foreignClientUatCookieNames(cookieNames: readonly string[], ownS
  * we expire the name across all candidates.
  */
 export function cookieDomainCandidates(hostname: string): string[] {
-	const labels = hostname.split(".")
+	const labels = Str.split(".")(hostname)
 	const candidates: string[] = []
 	for (let i = 0; i < labels.length - 1; i++) {
-		candidates.push(labels.slice(i).join("."))
+		candidates.push(Arr.join(labels.slice(i), "."))
 	}
 	return candidates.length > 0 ? candidates : [hostname]
 }
 
 function parseCookieNames(cookieHeader: string): string[] {
-	return cookieHeader
-		.split(";")
-		.map((part) => part.split("=")[0]?.trim() ?? "")
-		.filter((name) => name.length > 0)
+	return Arr.filter(
+		Arr.map(Str.split(";")(cookieHeader), (part) => Str.trim(Str.split("=")(part)[0])),
+		(name) => name.length > 0,
+	)
 }
 
 /**
@@ -102,6 +89,7 @@ export async function purgeForeignClerkCookies(publishableKey: string): Promise<
 		// (e.g. `crypto.subtle` missing on an insecure origin) reproduces exactly
 		// the 403/redirect loop this guard exists to prevent, so leave a
 		// breadcrumb instead of failing silently.
+		// @effect-diagnostics-next-line globalConsole:off -- boot code that runs before the app's logger exists
 		console.warn("[clerk-cookie-guard] failed to purge foreign __client_uat cookies", error)
 	}
 }

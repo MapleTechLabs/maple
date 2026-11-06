@@ -6,7 +6,7 @@ import {
 	SandboxImplementation,
 	SandboxSpawnError,
 	type SandboxError,
-} from "effect-agent/sandbox"
+} from "@maple/backend/sandbox/contract"
 import {
 	SandboxExecOutput,
 	SandboxGrepOutput,
@@ -17,7 +17,7 @@ import {
 	VcsSourceRefNotFoundError,
 	VcsSourceRepositoryNotFoundError,
 } from "@maple/backend/services/integrations/vcs/VcsSourceService"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr } from "effect"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { renderToolDoc } from "../lib/tool-doc"
 import {
@@ -58,10 +58,9 @@ type Run = (
 /** Decode, handle, encode and render, as the registry does; failures stay typed for the assertions. */
 const tools = new Map<string, Run>()
 registerSandboxTools({
-	tool: () => undefined,
 	define: (spec) => {
 		const run = (params: SandboxToolParams) =>
-			Schema.decodeUnknownEffect(spec.parameters)(params).pipe(
+			Schema.decodeEffect(spec.parameters)(params).pipe(
 				Effect.flatMap(spec.handler),
 				Effect.map((output) => ({
 					text: renderToolDoc(spec.render(output)),
@@ -73,8 +72,8 @@ registerSandboxTools({
 } satisfies McpToolRegistrar)
 
 const tenant = Layer.succeed(CurrentMcpTenant, {
-	orgId: Schema.decodeUnknownSync(OrgId)("org_tools"),
-	userId: Schema.decodeUnknownSync(UserId)("user_tools"),
+	orgId: Schema.decodeSync(OrgId)("org_tools"),
+	userId: Schema.decodeSync(UserId)("user_tools"),
 	roles: [],
 	authMode: "self_hosted",
 } as CurrentMcpTenant["Service"])
@@ -89,9 +88,7 @@ const ok = (stdout: string, exitCode = 0, stderr = ""): SandboxCommandResult => 
 
 const call = (name: string, params: SandboxToolParams, service: Partial<RepoSandboxServiceApi>) =>
 	tools.get(name)!(params).pipe(
-		Effect.provide(
-			Layer.mergeAll(tenant, Layer.succeed(RepoSandboxService, service as RepoSandboxServiceApi)),
-		),
+		Effect.provide([tenant, Layer.succeed(RepoSandboxService, service as RepoSandboxServiceApi)]),
 	)
 
 /** The failure a call ended with. */
@@ -187,7 +184,7 @@ describe("the sandbox tools", () => {
 			const result = yield* call(
 				"sandbox_grep",
 				{ repository: "octo/shop", pattern: "x" },
-				{ grep: () => Effect.succeed(ok(lines.join("\n"))) },
+				{ grep: () => Effect.succeed(ok(Arr.join(lines, "\n"))) },
 			)
 			assert.include(result.text, "Showing 200 of 250 lines.")
 			assert.notInclude(result.text, "src/a.ts:201:x")

@@ -20,7 +20,7 @@ import {
 	type ChatEvent,
 	type ChatEventInput,
 } from "@maple/domain/chat-session"
-import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
+import { type ChatSessionStub, chatSessionClientFromStub } from "@maple/domain/chat-session-stub"
 import { OrgId } from "@maple/domain/primitives"
 import {
 	Context,
@@ -33,6 +33,9 @@ import {
 	References,
 	Schema,
 	Tracer,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
 } from "effect"
 import { TestClock } from "effect/testing"
 import { decodeRelayTurnCheckpoint, settleRelayedTurn, type RelayTurnCheckpoint } from "./settle.ts"
@@ -59,7 +62,7 @@ const event = (seq: number, input: ChatEventInput): ChatEvent =>
 	decodeChatEventPayload(encodeChatEventPayload(input), seq)
 
 /** Long enough that the 80-character budget below cuts the answer into several messages. */
-const ANSWER = "The checkout-service p99 doubled after the 14:02 deploy.\n".repeat(3)
+const ANSWER = Str.repeat(3)("The checkout-service p99 doubled after the 14:02 deploy.\n")
 
 const turn: ReadonlyArray<ChatEvent> = [
 	event(1, { type: "user-message", id: "u1", text: mention.text }),
@@ -73,8 +76,8 @@ const turn: ReadonlyArray<ChatEvent> = [
 const sse = (events: ReadonlyArray<ChatEvent>, open = false): ReadableStream<Uint8Array> =>
 	new ReadableStream({
 		start(controller) {
-			const frames = events.map((next) => `id: ${next.seq}\ndata: ${JSON.stringify(next)}\n\n`)
-			controller.enqueue(new TextEncoder().encode(`retry: 1000\n\n${frames.join("")}`))
+			const frames = Arr.map(events, (next) => `id: ${next.seq}\ndata: ${JSON.stringify(next)}\n\n`)
+			controller.enqueue(new TextEncoder().encode(`retry: 1000\n\n${Arr.join(frames, "")}`))
 			if (!open) controller.close()
 		},
 	})
@@ -122,7 +125,7 @@ const platform = (prefix = "m"): Platform => {
 
 /** What each message says last — the conversation as a reader would find it. */
 const finalText = (calls: Platform["calls"]): Map<string, ReadonlyArray<ChatBlock>> =>
-	new Map(calls.map((call) => [call.ref.messageId, call.blocks]))
+	new Map(Arr.map(calls, (call) => [call.ref.messageId, call.blocks]))
 
 /**
  * A session that has run `turn`, or is still running it (`running`: its log stops mid-answer).
@@ -146,7 +149,7 @@ const session = (options?: {
 		since: (cursor) =>
 			options?.gone === true
 				? Promise.reject(new Error(ANSWER))
-				: Promise.resolve(log.filter((next) => next.seq > cursor)),
+				: Promise.resolve(Arr.filter(log, (next) => next.seq > cursor)),
 		append: () => Promise.resolve(0),
 		holdsTurn: () => Promise.resolve(false),
 		endTurn: () => Promise.resolve(),
@@ -168,14 +171,15 @@ const ports = (
 ): RelayPorts => ({
 	outbound,
 	supportsIdentity: false,
-	resolveWorkspace: () => Effect.succeed(Option.some({ orgId: ORG })),
+	resolveWorkspace: () => Effect.succeedSome({ orgId: ORG }),
 	forgetWorkspace: () => Effect.void,
-	chatSession: () => stub,
+	chatSession: () => chatSessionClientFromStub(stub),
 	appBaseUrl: "https://app.maple.dev",
 	chartImageUrl: () => null,
 	announceUnlinked: Effect.succeed(false),
 	ownsConversation: () => Effect.succeed(false),
 	rememberConversation: () => Effect.void,
+	alertAck: () => Effect.succeed({ kind: "unavailable" }),
 	// Cloned, as Durable Object storage does: nothing the fiber holds survives it.
 	recordTurn: (checkpoint) =>
 		Effect.suspend(() => {
@@ -198,7 +202,7 @@ const checkpointOf = (messages: ReadonlyArray<string>, recordedAt = 0): RelayTur
 			turnMessageId: "a1",
 			cursor: 0,
 			target,
-			messages: messages.map((messageId) => ({ target, messageId })),
+			messages: Arr.map(messages, (messageId) => ({ target, messageId })),
 			recordedAt,
 		},
 		writes: 0,
@@ -208,9 +212,12 @@ const checkpointOf = (messages: ReadonlyArray<string>, recordedAt = 0): RelayTur
 const uninterrupted = Effect.gen(function* () {
 	const whole = platform()
 	yield* relayInboundEvent(mention, ports(whole.outbound, session(), storage()))
-	const posts = whole.calls.filter((call) => call.verb === "post").map((call) => call.ref.messageId)
+	const posts = Arr.map(
+		Arr.filter(whole.calls, (call) => call.verb === "post"),
+		(call) => call.ref.messageId,
+	)
 	const settled = finalText(whole.calls)
-	return { posts, settled: posts.map((messageId) => settled.get(messageId)) }
+	return { posts, settled: Arr.map(posts, (messageId) => settled.get(messageId)) }
 })
 
 describe("settling a relayed turn", () => {
@@ -236,7 +243,10 @@ describe("settling a relayed turn", () => {
 			const before = evicted.calls.length
 			const checkpoint = readBack(stored)
 			expect(checkpoint.messages).toEqual(
-				evicted.calls.filter((call) => call.verb === "post").map((call) => call.ref),
+				Arr.map(
+					Arr.filter(evicted.calls, (call) => call.verb === "post"),
+					(call) => call.ref,
+				),
 			)
 
 			// While the session is still running the turn, a tick leaves everything alone.
@@ -251,10 +261,10 @@ describe("settling a relayed turn", () => {
 			const late = yield* settleRelayedTurn(checkpoint, ports(evicted.outbound, session(), stored))
 			expect(late).toBe("done")
 			const settled = evicted.calls.slice(before)
-			expect(settled.map((call) => call.verb)).not.toContain("post")
+			expect(Arr.map(settled, (call) => call.verb)).not.toContain("post")
 			expect(settled).toHaveLength(checkpoint.messages.length)
 			const last = finalText(evicted.calls)
-			expect(checkpoint.messages.map((ref) => last.get(ref.messageId))).toEqual(whole.settled)
+			expect(Arr.map(checkpoint.messages, (ref) => last.get(ref.messageId))).toEqual(whole.settled)
 		}),
 	)
 
@@ -269,13 +279,16 @@ describe("settling a relayed turn", () => {
 				ports(chat.outbound, session(), stored),
 			)
 
-			const posted = chat.calls.filter((call) => call.verb === "post").map((call) => call.ref.messageId)
+			const posted = Arr.map(
+				Arr.filter(chat.calls, (call) => call.verb === "post"),
+				(call) => call.ref.messageId,
+			)
 			expect(posted).toHaveLength(whole.posts.length - 1)
 			// Recorded as it goes, so a settle that is itself evicted does not post it again.
-			const messages = readBack(stored).messages.map((ref) => ref.messageId)
+			const messages = Arr.map(readBack(stored).messages, (ref) => ref.messageId)
 			expect(messages).toEqual([whole.posts[0], ...posted])
 			const last = finalText(chat.calls)
-			expect(messages.map((messageId) => last.get(messageId))).toEqual(whole.settled)
+			expect(Arr.map(messages, (messageId) => last.get(messageId))).toEqual(whole.settled)
 		}),
 	)
 
@@ -312,11 +325,10 @@ describe("settling a relayed turn", () => {
 			expect(chat.calls).toEqual([])
 			expect(logs).toHaveLength(1)
 			expect(logs[0]).toContain("A relayed turn could not be settled")
-			// oxlint-disable-next-line effecttsgo/prefer-schema-over-json
 			const everything = JSON.stringify({
 				logs,
-				spans: spans.map((span) => ({
-					attributes: Object.fromEntries(span.attributes),
+				spans: Arr.map(spans, (span) => ({
+					attributes: Rec.fromEntries(span.attributes),
 					events: span.events,
 				})),
 			})

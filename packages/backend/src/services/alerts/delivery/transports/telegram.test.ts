@@ -1,7 +1,9 @@
-import type { AlertDestinationRow } from "@maple/db"
+import type { AlertDestinationRow } from "@maple/db/tables"
+import { OrgId } from "@maple/domain/primitives"
 import { AlertDestinationId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr, String as Str } from "effect"
+import { FetchHttpClient, type HttpClient } from "effect/http"
 import type { DispatchContext } from "../context"
 import type { RenderInput, SecretConfigOf } from "../Transport"
 import {
@@ -11,16 +13,20 @@ import {
 	verifyTelegramCredentials,
 } from "./telegram"
 
-const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
+const DESTINATION_ID = Schema.decodeSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
 const BOT_TOKEN = "123456789:AAHqwertyuiopasdfghjklzxcvbnm123456"
 const CHAT_ID = "-1001234567890"
 const LINK = "https://web.localhost/alerts"
-const CHAT = "https://web.localhost/chat"
+const CHAT = "https://web.localhost/alerts/rule_1"
+
+/** Runs a Bot API call on the fetch client with `fetchFn` as the wire. */
+const withFetch = <A>(effect: Effect.Effect<A, never, HttpClient.HttpClient>, fetchFn: typeof fetch) =>
+	effect.pipe(Effect.provide(FetchHttpClient.layer), Effect.provideService(FetchHttpClient.Fetch, fetchFn))
 
 const destinationRow: AlertDestinationRow = {
 	id: DESTINATION_ID,
-	orgId: "org_1" as AlertDestinationRow["orgId"],
+	orgId: Schema.decodeSync(OrgId)("org_1"),
 	name: "On-call Telegram",
 	type: "telegram",
 	enabled: true,
@@ -30,8 +36,12 @@ const destinationRow: AlertDestinationRow = {
 	secretTag: "",
 	lastTestedAt: null,
 	lastTestError: null,
-	createdAt: new Date(0),
-	updatedAt: new Date(0),
+	consecutiveFailures: 0,
+	lastFailureAt: null,
+	disabledAt: null,
+	disabledReason: null,
+	createdAt: 0,
+	updatedAt: 0,
 	createdBy: "user_1",
 	updatedBy: "user_1",
 }
@@ -103,15 +113,15 @@ describe("telegramTransport.render", () => {
 		assert.strictEqual(body.parse_mode, "HTML")
 		// The token must never reach the body or a header — only the path, which
 		// `sensitivePath` keeps off the span.
-		assert.isFalse(spec.body.includes(BOT_TOKEN))
-		assert.isFalse(JSON.stringify(spec.headers).includes(BOT_TOKEN))
+		assert.isFalse(Str.includes(BOT_TOKEN)(spec.body))
+		assert.isFalse(Str.includes(BOT_TOKEN)(JSON.stringify(spec.headers)))
 	})
 
-	it("carries both links as inline keyboard buttons", () => {
+	it("carries the Open in Maple link as the only inline keyboard button", () => {
 		const [row] = render().body.reply_markup.inline_keyboard
 		assert.deepStrictEqual(
-			row?.map((button) => button.url),
-			[LINK, CHAT],
+			Arr.map(row ?? [], (button) => button.url),
+			[LINK],
 		)
 	})
 
@@ -130,7 +140,7 @@ describe("telegramTransport.render", () => {
 		const input = inputFor({ context: makeContext({ ruleName: "<b>Pwn</b> & co" }) })
 		const { text } = render(input).body
 		assert.include(text, "&lt;b&gt;Pwn&lt;/b&gt; &amp; co")
-		assert.isFalse(text.includes("<b>Pwn"))
+		assert.isFalse(Str.includes("<b>Pwn")(text))
 	})
 
 	it("previews the chart when there is one, and nothing otherwise", () => {
@@ -160,12 +170,12 @@ describe("telegramTransport.render", () => {
 			const { text } = render(
 				inputFor({ templated: { title: "T", body: "[Tap](tg://user?id=1)" } }),
 			).body
-			assert.isFalse(text.includes("<a href"))
+			assert.isFalse(Str.includes("<a href")(text))
 			assert.include(text, "[Tap](tg://user?id=1)")
 		})
 
 		it("caps the text at Telegram's 4096-character limit", () => {
-			const { text } = render(inputFor({ templated: { title: "T", body: "x".repeat(9000) } })).body
+			const { text } = render(inputFor({ templated: { title: "T", body: Str.repeat(9000)("x") } })).body
 			assert.isAtMost(text.length, 4096)
 		})
 	})
@@ -220,8 +230,8 @@ describe("verifyTelegramCredentials", () => {
 		const calls: string[] = []
 		let index = 0
 		const fetchFn: typeof fetch = async (input) => {
-			calls.push(String(input))
-			const next = responses[Math.min(index++, responses.length - 1)]!
+			calls.push(String(input instanceof Request ? input.url : input))
+			const next = responses[Math.min(index++, responses.length - 1)]
 			return new Response(JSON.stringify(next.body), {
 				status: next.status,
 				headers: { "content-type": "application/json" },
@@ -235,17 +245,17 @@ describe("verifyTelegramCredentials", () => {
 	it.effect("is valid when both getMe and getChat succeed", () =>
 		Effect.gen(function* () {
 			const { fetchFn, calls } = stub([ok, ok])
-			const result = yield* verifyTelegramCredentials(BOT_TOKEN, CHAT_ID, fetchFn, 1000)
+			const result = yield* withFetch(verifyTelegramCredentials(BOT_TOKEN, CHAT_ID, 1000), fetchFn)
 			assert.deepStrictEqual(result, { status: "valid" })
 			assert.strictEqual(calls.length, 2)
-			assert.include(calls[1]!, `chat_id=${encodeURIComponent(CHAT_ID)}`)
+			assert.include(calls[1], `chat_id=${encodeURIComponent(CHAT_ID)}`)
 		}),
 	)
 
 	it.effect("rejects a bad token without asking about the chat", () =>
 		Effect.gen(function* () {
 			const { fetchFn, calls } = stub([{ status: 401, body: { ok: false, error_code: 401 } }])
-			const result = yield* verifyTelegramCredentials(BOT_TOKEN, CHAT_ID, fetchFn, 1000)
+			const result = yield* withFetch(verifyTelegramCredentials(BOT_TOKEN, CHAT_ID, 1000), fetchFn)
 			assert.strictEqual(result.status, "invalid")
 			assert.strictEqual(calls.length, 1)
 		}),
@@ -261,7 +271,7 @@ describe("verifyTelegramCredentials", () => {
 					body: { ok: false, error_code: 400, description: "Bad Request: chat not found" },
 				},
 			])
-			const result = yield* verifyTelegramCredentials(BOT_TOKEN, CHAT_ID, fetchFn, 1000)
+			const result = yield* withFetch(verifyTelegramCredentials(BOT_TOKEN, CHAT_ID, 1000), fetchFn)
 			assert.strictEqual(result.status, "invalid")
 			if (result.status === "invalid") assert.include(result.reason, "chat not found")
 		}),
@@ -270,7 +280,7 @@ describe("verifyTelegramCredentials", () => {
 	it.effect("fails open on a 5xx so a Telegram outage cannot block a save", () =>
 		Effect.gen(function* () {
 			const { fetchFn } = stub([{ status: 503, body: {} }])
-			const result = yield* verifyTelegramCredentials(BOT_TOKEN, CHAT_ID, fetchFn, 1000)
+			const result = yield* withFetch(verifyTelegramCredentials(BOT_TOKEN, CHAT_ID, 1000), fetchFn)
 			assert.deepStrictEqual(result, { status: "unknown" })
 		}),
 	)
@@ -278,7 +288,7 @@ describe("verifyTelegramCredentials", () => {
 	it.effect("fails open when the request throws", () =>
 		Effect.gen(function* () {
 			const fetchFn: typeof fetch = () => Promise.reject(new Error("network down"))
-			const result = yield* verifyTelegramCredentials(BOT_TOKEN, CHAT_ID, fetchFn, 1000)
+			const result = yield* withFetch(verifyTelegramCredentials(BOT_TOKEN, CHAT_ID, 1000), fetchFn)
 			assert.deepStrictEqual(result, { status: "unknown" })
 		}),
 	)
@@ -288,7 +298,7 @@ describe("fetchTelegramChats", () => {
 	const respondWith = (status: number, body: unknown) => {
 		const calls: string[] = []
 		const fetchFn: typeof fetch = async (input) => {
-			calls.push(String(input))
+			calls.push(String(input instanceof Request ? input.url : input))
 			return new Response(JSON.stringify(body), {
 				status,
 				headers: { "content-type": "application/json" },
@@ -312,7 +322,7 @@ describe("fetchTelegramChats", () => {
 				ok: true,
 				result: [{ my_chat_member: { chat: chatOf(-1001234567890, "Acme On-call", "supergroup") } }],
 			})
-			const result = yield* fetchTelegramChats(BOT_TOKEN, fetchFn, 1000)
+			const result = yield* withFetch(fetchTelegramChats(BOT_TOKEN, 1000), fetchFn)
 			assert.deepStrictEqual(result, {
 				status: "ok",
 				chats: [{ id: "-1001234567890", title: "Acme On-call", type: "supergroup" }],
@@ -328,9 +338,9 @@ describe("fetchTelegramChats", () => {
 	it.effect("does not confirm updates — no offset is ever sent", () =>
 		Effect.gen(function* () {
 			const { fetchFn, calls } = respondWith(200, { ok: true, result: [] })
-			yield* fetchTelegramChats(BOT_TOKEN, fetchFn, 1000)
+			yield* withFetch(fetchTelegramChats(BOT_TOKEN, 1000), fetchFn)
 			assert.lengthOf(calls, 1)
-			assert.notInclude(calls[0]!, "offset")
+			assert.notInclude(calls[0], "offset")
 		}),
 	)
 
@@ -344,11 +354,11 @@ describe("fetchTelegramChats", () => {
 					{ channel_post: { chat: chatOf(-100222, "Newer", "channel") } },
 				],
 			})
-			const result = yield* fetchTelegramChats(BOT_TOKEN, fetchFn, 1000)
+			const result = yield* withFetch(fetchTelegramChats(BOT_TOKEN, 1000), fetchFn)
 			assert.strictEqual(result.status, "ok")
 			if (result.status === "ok") {
 				assert.deepStrictEqual(
-					result.chats.map((chat) => chat.id),
+					Arr.map(result.chats, (chat) => chat.id),
 					["-100222", "-100111"],
 				)
 			}
@@ -361,7 +371,7 @@ describe("fetchTelegramChats", () => {
 				ok: true,
 				result: [{ message: { chat: { id: 42, type: "private", username: "ada" } } }],
 			})
-			const result = yield* fetchTelegramChats(BOT_TOKEN, fetchFn, 1000)
+			const result = yield* withFetch(fetchTelegramChats(BOT_TOKEN, 1000), fetchFn)
 			assert.strictEqual(result.status, "ok")
 			if (result.status === "ok") {
 				assert.deepStrictEqual(result.chats, [{ id: "42", title: "ada", type: "private" }])
@@ -377,7 +387,7 @@ describe("fetchTelegramChats", () => {
 				error_code: 409,
 				description: "Conflict: can't use getUpdates method while webhook is active",
 			})
-			const result = yield* fetchTelegramChats(BOT_TOKEN, fetchFn, 1000)
+			const result = yield* withFetch(fetchTelegramChats(BOT_TOKEN, 1000), fetchFn)
 			assert.strictEqual(result.status, "invalid")
 			if (result.status === "invalid") assert.include(result.reason, "webhook")
 		}),
@@ -386,7 +396,7 @@ describe("fetchTelegramChats", () => {
 	it.effect("reports a rejected token as such", () =>
 		Effect.gen(function* () {
 			const { fetchFn } = respondWith(401, { ok: false, error_code: 401, description: "Unauthorized" })
-			const result = yield* fetchTelegramChats(BOT_TOKEN, fetchFn, 1000)
+			const result = yield* withFetch(fetchTelegramChats(BOT_TOKEN, 1000), fetchFn)
 			assert.deepStrictEqual(result, { status: "invalid", reason: "Telegram rejected the bot token" })
 		}),
 	)
@@ -394,7 +404,7 @@ describe("fetchTelegramChats", () => {
 	it.effect("never throws when the request fails", () =>
 		Effect.gen(function* () {
 			const fetchFn: typeof fetch = () => Promise.reject(new Error("network down"))
-			const result = yield* fetchTelegramChats(BOT_TOKEN, fetchFn, 1000)
+			const result = yield* withFetch(fetchTelegramChats(BOT_TOKEN, 1000), fetchFn)
 			assert.strictEqual(result.status, "invalid")
 		}),
 	)

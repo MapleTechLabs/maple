@@ -1,7 +1,7 @@
 import * as ClickHouseHttp from "@maple-dev/effect-clickhouse-http"
-import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientError } from "effect/unstable/http"
-import { Context, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
-import { WarehouseConfigError, type WarehouseQueryRequest } from "@maple/domain/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientError } from "effect/http"
+import { Context, Effect, Layer, Option, Redacted, Schema, Stream, Array as Arr, String as Str } from "effect"
+import { WarehouseConfigError, WarehouseUpstreamError } from "@maple/domain/http"
 import {
 	BackendDialect,
 	makeWarehouseExecutor,
@@ -22,7 +22,6 @@ import {
 	type WarehouseSqlClient,
 	type WarehouseTrustedRouteError,
 } from "@maple/query-engine/execution"
-import type { CompiledQueryInput } from "@maple/query-engine/ch"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
 import { Env } from "@maple/backend/platform/Env"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -99,6 +98,14 @@ const clickHouseDriverError = (
 	}
 }
 
+const clickHouseSessionSettings = (kind: ClickHouseProtocolBackendConfig["kind"]) => {
+	const dialect = BackendDialect[kind]
+	return {
+		...(dialect.unquote64BitIntegers ? { output_format_json_quote_64bit_integers: 0 } : undefined),
+		...(dialect.pinSessionTimezoneUtc ? { session_timezone: "UTC" } : undefined),
+	}
+}
+
 const createClickHouseSqlClient = (
 	config: ClickHouseProtocolBackendConfig,
 ): Effect.Effect<WarehouseSqlClient, WarehouseDriverError, HttpClient.HttpClient> =>
@@ -107,47 +114,46 @@ const createClickHouseSqlClient = (
 		username: config.username,
 		password: Redacted.make(config.password),
 		database: config.database,
-		// Wire-format parity with the Tinybird SDK: without this, JSONEachRow quotes
-		// 64-bit ints ("count":"42") and every schema-less query leaks strings into
-		// Schema.Number responses on BYO-CH orgs. Sent as a per-query URL param, so
-		// the compiled SQL text (and its fingerprint) is untouched.
-		...(BackendDialect[config.kind].unquote64BitIntegers
-			? { settings: { output_format_json_quote_64bit_integers: 0 } }
-			: undefined),
+		// Sent as per-query URL params, so the compiled SQL text (and its fingerprint)
+		// is untouched. See `BackendDialect` for why each one is there.
+		settings: clickHouseSessionSettings(config.kind),
 	}).pipe(
-		Effect.mapError(
-			(error) => new WarehouseDriverError({ reason: "config", message: error.message, cause: error }),
-		),
-		Effect.map((client): WarehouseSqlClient => ({
-			// `wireFormat: "out-of-band"` for every ClickHouse-protocol backend: the
-			// executor has already stripped any FORMAT clause and the client appends
-			// its own.
-			// Trusted queries pass no limits, so the client's 16 MiB `maxRowBytes`
-			// default still applies: it bounds the buffer a single unfinished row can
-			// take and is far above anything a Maple query returns.
-			sql: (statement, options) =>
-				client
-					.query({
-						sql: statement.text,
-						...(options?.responseLimits ? { limits: options.responseLimits } : undefined),
-					})
-					.pipe(
-						Effect.map(({ data }) => ({ data })),
-						Effect.mapError(clickHouseDriverError),
+		Effect.mapBoth({
+			onFailure: (error) =>
+				new WarehouseDriverError({ reason: "config", message: error.message, cause: error }),
+			onSuccess: (client): WarehouseSqlClient => ({
+				// `wireFormat: "out-of-band"` for every ClickHouse-protocol backend: the
+				// executor has already stripped any FORMAT clause and the client appends
+				// its own.
+				// Trusted queries pass no limits, so the client's 16 MiB `maxRowBytes`
+				// default still applies: it bounds the buffer a single unfinished row can
+				// take and is far above anything a Maple query returns.
+				sql: (statement, options) =>
+					client
+						.query({
+							sql: statement.text,
+							...(options?.responseLimits ? { limits: options.responseLimits } : undefined),
+						})
+						.pipe(
+							Effect.mapBoth({
+								onSuccess: ({ data }) => ({ data }),
+								onFailure: clickHouseDriverError,
+							}),
+						),
+				insert: () =>
+					// ClickHouse is READ-ONLY for Maple: the managed CLICKHOUSE_URL endpoint is
+					// a query gateway that rejects inserts ("Only SELECT or DESCRIBE queries are
+					// supported. Got: InsertQuery"), and a BYO org override is a read concern.
+					// All ingest goes to Tinybird's Events API (see resolveIngestConfig), so this
+					// must never be reached — fail loudly instead of silently 500'ing.
+					Effect.fail(
+						new WarehouseDriverError({
+							reason: "config",
+							message: "ClickHouse is read-only for Maple — ingest must use Tinybird",
+						}),
 					),
-			insert: () =>
-				// ClickHouse is READ-ONLY for Maple: the managed CLICKHOUSE_URL endpoint is
-				// a query gateway that rejects inserts ("Only SELECT or DESCRIBE queries are
-				// supported. Got: InsertQuery"), and a BYO org override is a read concern.
-				// All ingest goes to Tinybird's Events API (see resolveIngestConfig), so this
-				// must never be reached — fail loudly instead of silently 500'ing.
-				Effect.fail(
-					new WarehouseDriverError({
-						reason: "config",
-						message: "ClickHouse is read-only for Maple — ingest must use Tinybird",
-					}),
-				),
-		})),
+			}),
+		}),
 	)
 
 // Tinybird's `/v0/sql` speaks plain HTTP: POST the SQL as text with a bearer
@@ -160,6 +166,7 @@ const TinybirdSqlResponse = Schema.Struct({
 const decodeTinybirdSqlResponse = Schema.decodeUnknownEffect(Schema.fromJsonString(TinybirdSqlResponse))
 const TinybirdErrorBody = Schema.Struct({ error: Schema.String })
 const decodeTinybirdErrorBody = Schema.decodeUnknownOption(Schema.fromJsonString(TinybirdErrorBody))
+const encodeEventRow = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const TINYBIRD_ERROR_BODY_BYTES = 16 * 1024
 
@@ -234,7 +241,7 @@ const createTinybirdSqlClient = (
 	config: TinybirdBackendConfig,
 ): Effect.Effect<WarehouseSqlClient, never, HttpClient.HttpClient> =>
 	Effect.map(HttpClient.HttpClient, (http): WarehouseSqlClient => {
-		const base = config.host.replace(/\/$/, "")
+		const base = Str.replace(/\/$/, "")(config.host)
 		const token = Redacted.make(config.token)
 		const bodyOf = (response: {
 			readonly stream: Stream.Stream<Uint8Array, HttpClientError.HttpClientError>
@@ -256,7 +263,7 @@ const createTinybirdSqlClient = (
 					Option.map(decodeTinybirdErrorBody(body), (decoded) => decoded.error),
 					() =>
 						body
-							? `Request failed with status ${status}: ${body.slice(0, 500)}`
+							? `Request failed with status ${status}: ${Str.slice(0, 500)(body)}`
 							: `Request failed with status ${status}`,
 				),
 				cause: body,
@@ -289,7 +296,7 @@ const createTinybirdSqlClient = (
 						)
 						// A 2xx with an empty body is how zero rows can come back; it is a
 						// result, not a decode failure.
-						if (body.trim() === "") return { data: [] }
+						if (Str.trim(body) === "") return { data: [] }
 						const decoded = yield* decodeTinybirdSqlResponse(body).pipe(
 							Effect.mapError(
 								(cause) =>
@@ -315,7 +322,10 @@ const createTinybirdSqlClient = (
 									HttpClientRequest.post(`${base}/v0/events`).pipe(
 										HttpClientRequest.setUrlParams({ name: datasource, wait: "false" }),
 										HttpClientRequest.bodyText(
-											rows.map((row) => JSON.stringify(row)).join("\n"),
+											Arr.join(
+												Arr.map(rows, (row) => encodeEventRow(row)),
+												"\n",
+											),
 											"application/x-ndjson",
 										),
 									),
@@ -336,12 +346,13 @@ const createClient = (
 let sqlClientFactory: typeof createClient = createClient
 
 export class WarehouseQueryService extends Context.Service<WarehouseQueryService, WarehouseQueryServiceApi>()(
-	"@maple/api/lib/WarehouseQueryService",
+	"@maple/backend/lib/WarehouseQueryService",
 	{
 		make: Effect.gen(function* () {
 			// Captured once: every driver the executor builds runs on this client.
 			// `executeSql` is the database span; the drivers' round-trips add none.
-			const http = warehouseHttpClient(yield* HttpClient.HttpClient)
+			const baseHttp = yield* HttpClient.HttpClient
+			const http = warehouseHttpClient(baseHttp)
 			const env = yield* Env
 			const orgClickHouseSettings = yield* OrgClickHouseSettingsService
 			const orgTokens = yield* TinybirdOrgTokenService
@@ -455,7 +466,19 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 				// A per-org BYO ClickHouse row (`org_clickhouse_settings`) overrides the
 				// managed upstream for that org's reads AND raw SQL (the credentials are
 				// already tenant-isolated).
-				const override = yield* orgClickHouseSettings.resolveRuntimeConfig(tenant.orgId)
+				// A failed settings read is transient and not actionable on a data page,
+				// so queries report it as the retryable warehouse outage.
+				const override = yield* orgClickHouseSettings.resolveRuntimeConfig(tenant.orgId).pipe(
+					Effect.catchTag("@maple/http/errors/OrgClickHouseSettingsPersistenceError", (error) =>
+						Effect.fail(
+							new WarehouseUpstreamError({
+								message: `Could not load the org's data connection settings: ${error.message}`,
+								pipeName: label,
+								cause: error,
+							}),
+						),
+					),
+				)
 				if (Option.isSome(override)) {
 					yield* Effect.annotateCurrentSpan("clientSource", "org_override")
 					yield* Effect.annotateCurrentSpan("db.client", "clickhouse")
@@ -560,41 +583,6 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(Layer.mergeAll(OrgClickHouseSettingsService.layer, TinybirdOrgTokenService.layer)),
 	)
-
-	static readonly query = (
-		tenant: TenantContext,
-		payload: WarehouseQueryRequest,
-		options?: SqlQueryOptions,
-	) => this.use((service) => service.query(tenant, payload, options))
-
-	static readonly compiledQuery = <T>(
-		tenant: TenantContext,
-		compiled: CompiledQueryInput<T>,
-		options?: SqlQueryOptions,
-	) => this.use((service) => service.compiledQuery(tenant, compiled, options))
-
-	/**
-	 * `compiledQuery` with a hard ceiling on the response we'll materialize.
-	 * Fails with `WarehouseResponseLimitError` past it rather than buffering the
-	 * rest into the Worker heap — for queries whose result size follows user data
-	 * rather than the query shape (session-replay rrweb payloads).
-	 */
-	static readonly compiledQueryBounded = <T>(
-		tenant: TenantContext,
-		compiled: CompiledQueryInput<T>,
-		options: SqlQueryOptions & {
-			readonly responseLimits: { readonly maxRows: number; readonly maxBytes: number }
-		},
-	) => this.use((service) => service.compiledQueryBounded(tenant, compiled, options))
-
-	static readonly compiledQueryFirst = <T>(
-		tenant: TenantContext,
-		compiled: CompiledQueryInput<T>,
-		options?: SqlQueryOptions,
-	) => this.use((service) => service.compiledQueryFirst(tenant, compiled, options))
-
-	static readonly ingest = <T>(tenant: TenantContext, datasource: string, rows: ReadonlyArray<T>) =>
-		this.use((service) => service.ingest(tenant, datasource, rows))
 }
 
 /**
@@ -618,4 +606,5 @@ export const __testables = {
 	},
 	createClickHouseSqlClient,
 	createTinybirdSqlClient,
+	clickHouseSessionSettings,
 }

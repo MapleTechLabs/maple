@@ -14,27 +14,47 @@
  */
 import { assert, describe, it } from "@effect/vitest"
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
-import { Cause, Effect, Exit, Layer, Option, Schema, Stream } from "effect"
+import {
+	Cause,
+	Duration,
+	Effect,
+	Exit,
+	Fiber,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Stream,
+	Array as Arr,
+} from "effect"
+import { TestClock } from "effect/testing"
 import type { Tracer } from "effect"
-import { AiError, LanguageModel, Tool, Toolkit } from "effect/unstable/ai"
-import type { Response as AiResponse } from "effect/unstable/ai"
-import { FetchHttpClient } from "effect/unstable/http"
+import { AiError, LanguageModel, Prompt, Tool, Toolkit } from "effect/ai"
+import type { Response as AiResponse } from "effect/ai"
+import { FetchHttpClient } from "effect/http"
 import { instrumentLanguageModel } from "./genai-spans"
-import { layerLlm, resolveTriageModel } from "./Llm"
+import { layerLlm, MODEL_ATTEMPT_CAP, MODEL_CALL_OUTPUT_TOKENS, resolveTriageModel } from "./Llm"
+
+/** A stubbed fetch body as text: the client sends the JSON as bytes. */
+const requestBodyText = (body: BodyInit | null | undefined): string =>
+	typeof body === "string" ? body : body instanceof Uint8Array ? new TextDecoder().decode(body) : "{}"
 
 /** Two frames, the first naming the response and the model that served it. */
-const SSE = [
-	": OPENROUTER PROCESSING",
-	"",
-	'data: {"id":"gen-1","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi"},"finish_reason":null}]}',
-	"",
-	'data: {"id":"gen-1","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":1,"total_tokens":5}}',
-	"",
-	"data: [DONE]",
-	"",
-].join("\n")
+const SSE = Arr.join(
+	[
+		": OPENROUTER PROCESSING",
+		"",
+		'data: {"id":"gen-1","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi"},"finish_reason":null}]}',
+		"",
+		'data: {"id":"gen-1","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":1,"total_tokens":5}}',
+		"",
+		"data: [DONE]",
+		"",
+	],
+	"\n",
+)
 
-const ENV = { OPENROUTER_API_KEY: "test-key" }
+const ENV = { OPENROUTER_API_KEY: Redacted.make("test-key") }
 
 const sseFetch: typeof globalThis.fetch = () =>
 	Promise.resolve(new Response(SSE, { status: 200, headers: { "content-type": "text/event-stream" } }))
@@ -90,18 +110,21 @@ const chunk = (delta: Record<string, unknown>, finishReason: string | null) => (
  * One call answered by `frames`: how it ended, the types of the parts the consumer was handed, and
  * the model-call span's attributes as it ended.
  */
-const runModelCall = (
-	request: Parameters<typeof LanguageModel.streamText>[0],
+const runModelCall = <A extends { readonly type: string }, E, R>(
+	call: Stream.Stream<A, E, R>,
 	frames: ReadonlyArray<unknown>,
 	env: Parameters<typeof resolveTriageModel>[0] = ENV,
 	status = 200,
 ) =>
 	Effect.gen(function* () {
 		const recorder = recordingTracer()
-		const body = `${frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join("")}data: [DONE]\n\n`
+		const body = `${Arr.join(
+			Arr.map(frames, (frame) => `data: ${JSON.stringify(frame)}\n\n`),
+			"",
+		)}data: [DONE]\n\n`
 		const delivered: Array<string> = []
 
-		const exit = yield* LanguageModel.streamText(request).pipe(
+		const exit = yield* call.pipe(
 			Stream.tap((part) => Effect.sync(() => void delivered.push(part.type))),
 			Stream.runDrain,
 			Effect.exit,
@@ -114,8 +137,11 @@ const runModelCall = (
 			Effect.withTracer(recorder.tracer),
 		)
 
-		const span = recorder.spans.find(
-			(candidate) => candidate.attributes.get("gen_ai.operation.name") === "chat",
+		const span = Option.getOrUndefined(
+			Arr.findFirst(
+				recorder.spans,
+				(candidate) => candidate.attributes.get("gen_ai.operation.name") === "chat",
+			),
 		)
 		assert.isDefined(span, "no model-call span was opened")
 		return { exit, delivered, attributes: span?.endedWith ?? new Map<string, unknown>() }
@@ -123,11 +149,15 @@ const runModelCall = (
 
 /** The model-call span's attributes as it ended, for one call answered by `frames`. */
 const endedModelCall = (
-	prompt: Parameters<typeof LanguageModel.streamText>[0]["prompt"],
+	prompt: Prompt.RawInput,
 	frames: ReadonlyArray<unknown>,
 	env: Parameters<typeof resolveTriageModel>[0] = ENV,
 	status = 200,
-) => Effect.map(runModelCall({ prompt }, frames, env, status), ({ attributes }) => attributes)
+) =>
+	Effect.map(
+		runModelCall(LanguageModel.streamText({ prompt }), frames, env, status),
+		({ attributes }) => attributes,
+	)
 
 /** The one tool the rejection fixtures declare: a parameter the model can get wrong. */
 const submitPlan = Tool.make("submit_plan", { parameters: Schema.Struct({ limit: Schema.Finite }) })
@@ -190,7 +220,9 @@ const runFakeProviderCall = (parts: Stream.Stream<AiResponse.StreamPartEncoded>)
 			disableToolCallResolution: true,
 		}).pipe(Stream.runDrain, Effect.exit, Effect.provide(model), Effect.withTracer(recorder.tracer))
 
-		const attributes = recorder.spans.find((span) => span.name === "LanguageModel.streamText")?.endedWith
+		const attributes = Option.getOrUndefined(
+			Arr.findFirst(recorder.spans, (span) => span.name === "LanguageModel.streamText"),
+		)?.endedWith
 		assert.isDefined(attributes, "no model-call span was opened")
 		return { exit, attributes: attributes ?? new Map<string, unknown>() }
 	})
@@ -212,8 +244,11 @@ describe("the model-call span", () => {
 				Effect.withTracer(recorder.tracer),
 			)
 
-			const modelCall = recorder.spans.find(
-				(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+			const modelCall = Option.getOrUndefined(
+				Arr.findFirst(
+					recorder.spans,
+					(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+				),
 			)
 			assert.isDefined(modelCall, "no model-call span was opened")
 			assert.strictEqual(modelCall?.attributes.get("gen_ai.response.id"), "gen-1")
@@ -244,15 +279,20 @@ describe("the model-call span", () => {
 				Effect.withTracer(recorder.tracer),
 			)
 
-			const modelCall = recorder.spans.find(
-				(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+			const modelCall = Option.getOrUndefined(
+				Arr.findFirst(
+					recorder.spans,
+					(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+				),
 			)
 			assert.isDefined(modelCall, "no model-call span was opened")
 			assert.strictEqual(modelCall?.endedWith.get(MAPLE_NATIVE_SESSION_ID_ATTR), "org_1:inv-1")
 			assert.strictEqual(modelCall?.endedWith.get(MAPLE_NATIVE_TURN_ID_ATTR), "inv_1_h1")
 			assert.strictEqual(modelCall?.endedWith.get("gen_ai.workflow.name"), "investigation")
 			// Only the model call: the gateway reads the key alone as an agent span.
-			const stamped = recorder.spans.filter((span) => span.attributes.has(MAPLE_NATIVE_SESSION_ID_ATTR))
+			const stamped = Arr.filter(recorder.spans, (span) =>
+				span.attributes.has(MAPLE_NATIVE_SESSION_ID_ATTR),
+			)
 			assert.deepStrictEqual(stamped, [modelCall])
 		}),
 	)
@@ -265,16 +305,19 @@ describe("the model-call span", () => {
 		Effect.gen(function* () {
 			const recorder = recordingTracer()
 			const env = { ...ENV, MAPLE_TRIAGE_REASONING_EFFORT: "high" }
-			const sse = [
-				'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"Look"},"finish_reason":null}]}',
-				"",
-				'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"content":"ing"},"finish_reason":null}]}',
-				"",
-				'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":40,"completion_tokens":12,"total_tokens":52,"cost":0.0042,"prompt_tokens_details":{"cached_tokens":30},"completion_tokens_details":{"reasoning_tokens":5}}}',
-				"",
-				"data: [DONE]",
-				"",
-			].join("\n")
+			const sse = Arr.join(
+				[
+					'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"Look"},"finish_reason":null}]}',
+					"",
+					'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"content":"ing"},"finish_reason":null}]}',
+					"",
+					'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":40,"completion_tokens":12,"total_tokens":52,"cost":0.0042,"prompt_tokens_details":{"cached_tokens":30},"completion_tokens_details":{"reasoning_tokens":5}}}',
+					"",
+					"data: [DONE]",
+					"",
+				],
+				"\n",
+			)
 
 			yield* LanguageModel.streamText({
 				prompt: [
@@ -293,8 +336,11 @@ describe("the model-call span", () => {
 				Effect.withTracer(recorder.tracer),
 			)
 
-			const attributes = recorder.spans.find(
-				(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+			const attributes = Option.getOrUndefined(
+				Arr.findFirst(
+					recorder.spans,
+					(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+				),
 			)?.endedWith
 			assert.isDefined(attributes, "no model-call span was opened")
 			const json = (key: string) => JSON.parse(String(attributes?.get(key)))
@@ -342,12 +388,12 @@ describe("the model-call span", () => {
 	it.effect("keeps the usage of a call the run rejects after the model finished", () =>
 		Effect.gen(function* () {
 			const { exit, delivered, attributes } = yield* runModelCall(
-				{
+				LanguageModel.streamText({
 					prompt: "hi",
 					toolkit: Toolkit.make(submitPlan),
 					// What the agent engine sends: the run owns tool execution.
 					disableToolCallResolution: true,
-				},
+				}),
 				[
 					chunk({ role: "assistant", content: "On it." }, null),
 					...rejectedToolCallFrames({
@@ -395,7 +441,11 @@ describe("the model-call span", () => {
 	it.effect("times a rejected call whose very first chunk was the rejected one", () =>
 		Effect.gen(function* () {
 			const { exit, delivered, attributes } = yield* runModelCall(
-				{ prompt: "hi", toolkit: Toolkit.make(submitPlan), disableToolCallResolution: true },
+				LanguageModel.streamText({
+					prompt: "hi",
+					toolkit: Toolkit.make(submitPlan),
+					disableToolCallResolution: true,
+				}),
 				rejectedToolCallFrames({ prompt_tokens: 40, completion_tokens: 12, total_tokens: 52 }),
 			)
 
@@ -414,7 +464,11 @@ describe("the model-call span", () => {
 		Effect.gen(function* () {
 			// The provider closes every stream with a finish part, usage or not.
 			const { exit, delivered, attributes } = yield* runModelCall(
-				{ prompt: "hi", toolkit: Toolkit.make(submitPlan), disableToolCallResolution: true },
+				LanguageModel.streamText({
+					prompt: "hi",
+					toolkit: Toolkit.make(submitPlan),
+					disableToolCallResolution: true,
+				}),
 				[rejectedToolCallChunk],
 			)
 
@@ -602,10 +656,12 @@ describe("the model-call span", () => {
 			)
 
 			assert.isTrue(
-				recorder.spans.some((span) => span.attributes.get("gen_ai.operation.name") === "chat"),
+				Arr.some(recorder.spans, (span) => span.attributes.get("gen_ai.operation.name") === "chat"),
 				"no model-call span was opened",
 			)
-			assert.isFalse(recorder.spans.some((span) => span.attributes.has(MAPLE_NATIVE_SESSION_ID_ATTR)))
+			assert.isFalse(
+				Arr.some(recorder.spans, (span) => span.attributes.has(MAPLE_NATIVE_SESSION_ID_ATTR)),
+			)
 		}),
 	)
 })
@@ -636,7 +692,7 @@ describe("delta joining", () => {
 				Stream.runCollect,
 				Effect.provide(model),
 			)
-			return parts.filter((part) => part.type === "text-delta")
+			return Arr.filter(parts, (part) => part.type === "text-delta")
 		})
 
 	/** The request's own `options` once shadowed this setting, and nothing was ever joined. */
@@ -644,8 +700,239 @@ describe("delta joining", () => {
 		Effect.gen(function* () {
 			const joined = yield* partsSeen(true)
 			assert.lengthOf(joined, 1)
-			assert.strictEqual(joined[0]!.type === "text-delta" ? joined[0]!.delta : "", "Looks safe.")
+			assert.strictEqual(
+				Arr.getUnsafe(joined, 0).type === "text-delta" ? Arr.getUnsafe(joined, 0).delta : "",
+				"Looks safe.",
+			)
 			assert.lengthOf(yield* partsSeen(false), 3)
+		}),
+	)
+})
+
+describe("runaway model calls", () => {
+	/** A delta every 30s: never idle for the 2-minute idle timeout, and never finished. */
+	const trickle = Stream.fromIterable<AiResponse.StreamPartEncoded>([{ type: "text-start", id: "t" }]).pipe(
+		Stream.concat(
+			Stream.fromEffect(Effect.sleep("30 seconds")).pipe(
+				Stream.as<AiResponse.StreamPartEncoded>({ type: "text-delta", id: "t", delta: "." }),
+				Stream.forever,
+			),
+		),
+	)
+	const model = Layer.effect(
+		LanguageModel.LanguageModel,
+		instrumentLanguageModel(
+			LanguageModel.make({ generateText: () => Effect.succeed([]), streamText: () => trickle }),
+			{ providerName: "fake", sessionAttributes: {} },
+		),
+	)
+
+	it.effect("fails a call that keeps streaming past the per-call timeout", () =>
+		Effect.gen(function* () {
+			const fiber = yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+				Stream.runDrain,
+				Effect.provide(model),
+				Effect.forkChild,
+			)
+			yield* TestClock.adjust("3 minutes")
+			assert.isUndefined(fiber.pollUnsafe(), "a call still inside its budget keeps streaming")
+			yield* TestClock.adjust("1 minute")
+			const exit = yield* Fiber.await(fiber)
+			assert.isTrue(Exit.isFailure(exit))
+			const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
+			assert.isTrue(AiError.isAiError(error))
+			assert.include(
+				String(AiError.isAiError(error) ? error.message : ""),
+				"did not finish within 4 minutes",
+			)
+		}),
+	)
+
+	it.live("caps each call's output tokens far below the model's own limit", () =>
+		Effect.gen(function* () {
+			const bodies: Array<unknown> = []
+			const capture: typeof globalThis.fetch = (_input, init) => {
+				bodies.push(JSON.parse(requestBodyText(init?.body)))
+				return sseFetch(_input, init)
+			}
+			yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+				Stream.runDrain,
+				Effect.provide(Layer.provideMerge(resolveTriageModel(ENV).layer, layerLlm(ENV))),
+				Effect.provideService(FetchHttpClient.Fetch, capture),
+			)
+			assert.deepInclude(bodies[0], { max_tokens: MODEL_CALL_OUTPUT_TOKENS })
+		}),
+	)
+})
+
+describe("model calls cut at their attempt cap", () => {
+	/** Reasoning at one delta every 10s, never finishing: a long generation, not a stalled one. */
+	const slowReasoning = Stream.fromIterable<AiResponse.StreamPartEncoded>([
+		{ type: "reasoning-start", id: "r" },
+	]).pipe(
+		Stream.concat(
+			Stream.fromEffect(Effect.sleep("10 seconds")).pipe(
+				Stream.as<AiResponse.StreamPartEncoded>({ type: "reasoning-delta", id: "r", delta: "hmm " }),
+				Stream.forever,
+			),
+		),
+	)
+	const quickAnswer = Stream.fromIterable<AiResponse.StreamPartEncoded>([
+		{ type: "text-start", id: "t" },
+		{ type: "text-delta", id: "t", delta: "done" },
+		{ type: "text-end", id: "t" },
+		{ type: "finish", reason: "stop", usage: { inputTokens: { total: 1 }, outputTokens: { total: 1 } } },
+	])
+
+	/** A model whose calls are answered by `responses` in order, counting how many it was asked. */
+	const scripted = (
+		responses: ReadonlyArray<Stream.Stream<AiResponse.StreamPartEncoded>>,
+		retried: Array<number>,
+	) => {
+		let calls = 0
+		return Layer.effect(
+			LanguageModel.LanguageModel,
+			instrumentLanguageModel(
+				LanguageModel.make({
+					generateText: () => Effect.succeed([]),
+					streamText: () => Stream.suspend(() => responses[calls++] ?? quickAnswer),
+				}),
+				{ providerName: "fake", sessionAttributes: {} },
+				{
+					attempts: {
+						cap: Duration.seconds(90),
+						retry: (stream) =>
+							Stream.onStart(
+								stream,
+								Effect.sync(() => void retried.push(calls)),
+							),
+					},
+				},
+			),
+		)
+	}
+
+	it.effect("cuts a call still reasoning at the cap and hands over only the retry's answer", () =>
+		Effect.gen(function* () {
+			const retried: Array<number> = []
+			const fiber = yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+				Stream.runCollect,
+				Effect.provide(scripted([slowReasoning, quickAnswer], retried)),
+				Effect.forkChild,
+			)
+			yield* TestClock.adjust("80 seconds")
+			assert.isUndefined(fiber.pollUnsafe(), "a call inside its cap keeps going")
+			yield* TestClock.adjust("10 seconds")
+			const parts = yield* Fiber.join(fiber)
+			assert.lengthOf(retried, 1)
+			// Nothing of the cut attempt reached the engine, so it may treat the retry as the only call.
+			assert.deepStrictEqual(
+				Arr.map(parts, (part) => part.type),
+				["text-start", "text-delta", "text-end", "finish"],
+			)
+		}),
+	)
+
+	it.effect("delivers a call that finishes inside the cap as it was, without a retry", () =>
+		Effect.gen(function* () {
+			const retried: Array<number> = []
+			const parts = yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+				Stream.runCollect,
+				Effect.provide(scripted([quickAnswer], retried)),
+			)
+			assert.lengthOf(retried, 0)
+			assert.strictEqual(parts.length, 4)
+		}),
+	)
+
+	it.effect("still fails a retry that runs past the call's own ceiling", () =>
+		Effect.gen(function* () {
+			const fiber = yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+				Stream.runDrain,
+				Effect.provide(scripted([slowReasoning, slowReasoning], [])),
+				Effect.forkChild,
+			)
+			yield* TestClock.adjust("4 minutes")
+			const exit = yield* Fiber.await(fiber)
+			const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
+			assert.include(
+				String(AiError.isAiError(error) ? error.message : ""),
+				"did not finish within 4 minutes",
+			)
+		}),
+	)
+
+	/** The first request never sends a byte past its headers; every later one answers at once. */
+	const stalledThenAnswered =
+		(bodies: Array<Record<string, unknown>>): typeof globalThis.fetch =>
+		(input, init) => {
+			bodies.push(JSON.parse(requestBodyText(init?.body)))
+			if (bodies.length > 1) return sseFetch(input, init)
+			const open = new ReadableStream<Uint8Array>({
+				start: (controller) =>
+					controller.enqueue(new TextEncoder().encode(": OPENROUTER PROCESSING\n\n")),
+			})
+			return Promise.resolve(
+				new Response(open, { status: 200, headers: { "content-type": "text/event-stream" } }),
+			)
+		}
+
+	/** Real time, not the test clock: the request goes out on a promise, after the fork returns. */
+	const untilSent = (bodies: ReadonlyArray<unknown>, count: number) =>
+		Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 5))).pipe(
+			Effect.repeat({ until: () => bodies.length >= count, times: 400 }),
+		)
+
+	const unattendedCall = (
+		env: Parameters<typeof resolveTriageModel>[0],
+		bodies: Array<Record<string, unknown>>,
+	) =>
+		LanguageModel.streamText({ prompt: "hi" }).pipe(
+			Stream.runCollect,
+			Effect.provide(Layer.provideMerge(resolveTriageModel(env, undefined, true).layer, layerLlm(env))),
+			Effect.provideService(FetchHttpClient.Fetch, stalledThenAnswered(bodies)),
+			Effect.forkChild,
+		)
+
+	it.effect("asks an unattended OpenRouter call again at low reasoning effort after the cap", () =>
+		Effect.gen(function* () {
+			const bodies: Array<Record<string, unknown>> = []
+			const fiber = yield* unattendedCall({ ...ENV, MAPLE_TRIAGE_REASONING_EFFORT: "high" }, bodies)
+			yield* untilSent(bodies, 1)
+			yield* TestClock.adjust(MODEL_ATTEMPT_CAP)
+			const parts = yield* Fiber.join(fiber)
+			assert.lengthOf(bodies, 2)
+			assert.deepInclude(bodies[0], { reasoning: { effort: "high" } })
+			assert.deepInclude(bodies[1], { reasoning: { effort: "low" } })
+			assert.isTrue(Arr.some(parts, (part) => part.type === "finish"))
+		}),
+	)
+
+	it.effect("reads the cap from the deployment's settings", () =>
+		Effect.gen(function* () {
+			const bodies: Array<Record<string, unknown>> = []
+			const fiber = yield* unattendedCall({ ...ENV, MAPLE_MODEL_ATTEMPT_CAP_SECONDS: "30" }, bodies)
+			yield* untilSent(bodies, 1)
+			yield* TestClock.adjust("30 seconds")
+			yield* Fiber.join(fiber)
+			assert.lengthOf(bodies, 2)
+		}),
+	)
+
+	it.effect("never cuts an attended call at the cap", () =>
+		Effect.gen(function* () {
+			const bodies: Array<Record<string, unknown>> = []
+			const fiber = yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+				Stream.runDrain,
+				Effect.provide(Layer.provideMerge(resolveTriageModel(ENV).layer, layerLlm(ENV))),
+				Effect.provideService(FetchHttpClient.Fetch, stalledThenAnswered(bodies)),
+				Effect.forkChild,
+			)
+			yield* untilSent(bodies, 1)
+			yield* TestClock.adjust("100 seconds")
+			assert.isUndefined(fiber.pollUnsafe())
+			assert.lengthOf(bodies, 1)
+			yield* Fiber.interrupt(fiber)
 		}),
 	)
 })

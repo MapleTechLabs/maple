@@ -1,9 +1,9 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import type { RecommendationIssue, RecommendationIssueId } from "@maple/domain/http"
 import { CurrentTenant, RecommendationIssueNotFoundError } from "@maple/domain/http"
 import { MapleApiV2, paginateArray } from "@maple/domain/http/v2"
 import type { V2Recommendation } from "@maple/domain/http/v2"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 
 const toV2Recommendation = (issue: RecommendationIssue): V2Recommendation => ({
@@ -27,15 +27,14 @@ const toV2Recommendation = (issue: RecommendationIssue): V2Recommendation => ({
  * against a concurrent reconciliation dropping it from the list.
  */
 const pickIssue = (issues: ReadonlyArray<RecommendationIssue>, id: RecommendationIssueId) => {
-	const issue = issues.find((candidate) => candidate.id === id)
-	return issue === undefined
-		? Effect.fail(
-				new RecommendationIssueNotFoundError({
-					message: "No such recommendation.",
-					id,
-				}),
-			)
-		: Effect.succeed(issue)
+	return Effect.fromOption(
+		Arr.findFirst(issues, (candidate) => candidate.id === id),
+		() =>
+			new RecommendationIssueNotFoundError({
+				message: "No such recommendation.",
+				id,
+			}),
+	)
 }
 
 export const HttpV2InstrumentationRecommendationsLive = HttpApiBuilder.group(
@@ -51,7 +50,7 @@ export const HttpV2InstrumentationRecommendationsLive = HttpApiBuilder.group(
 						const tenant = yield* CurrentTenant.Context
 						const response = yield* service.listReconciled(tenant)
 
-						const page = yield* paginateArray(response.issues.map(toV2Recommendation), query)
+						const page = yield* paginateArray(Arr.map(response.issues, toV2Recommendation), query)
 						return { object: "list" as const, ...page }
 					}),
 				)

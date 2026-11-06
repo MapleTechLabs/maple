@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { createHash } from "node:crypto"
 import { EdgeCacheService, type EdgeCacheServiceApi } from "@maple/cache"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
-import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -41,8 +41,9 @@ const recordingEdgeCache = () => {
 		invalidate: (options) =>
 			Effect.sync(() => void invalidated.push({ bucket: options.bucket, key: options.key })),
 		rawGetDetailed: () => Effect.succeed({ status: "miss", value: Option.none(), readMs: 0 }),
-		rawGet: () => Effect.succeed(Option.none()),
+		rawGet: () => Effect.succeedNone,
 		rawPut: () => Effect.void,
+		rawDelete: () => Effect.void,
 	}
 	const layer = Layer.succeed(EdgeCacheService, api)
 	return { invalidated, layer }
@@ -60,12 +61,13 @@ const makeLayer = (testDb: TestDb, edgeCache: Layer.Layer<EdgeCacheService>) => 
 	)
 }
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_revoke")
-const otherOrgId = Schema.decodeUnknownSync(OrgId)("org_other")
-const userId = Schema.decodeUnknownSync(UserId)("user_leaver")
-const stayerId = Schema.decodeUnknownSync(UserId)("user_stayer")
-const memberRole = Schema.decodeUnknownSync(RoleName)("org:member")
-const adminRole = Schema.decodeUnknownSync(RoleName)("org:admin")
+const orgId = Schema.decodeSync(OrgId)("org_revoke")
+const otherOrgId = Schema.decodeSync(OrgId)("org_other")
+const userId = Schema.decodeSync(UserId)("user_leaver")
+const stayerId = Schema.decodeSync(UserId)("user_stayer")
+const memberRole = Schema.decodeSync(RoleName)("org:member")
+const adminRole = Schema.decodeSync(RoleName)("org:admin")
+const engineerRole = Schema.decodeSync(RoleName)("org:engineer")
 const resource = "https://api.example.com/mcp"
 const redirectUri = "http://127.0.0.1:49152/callback"
 const verifier = "maple-mcp-oauth-verifier-that-is-long-enough-1234567890"
@@ -75,7 +77,7 @@ const seedEmailDestination = (db: TestDb, id: string, org: OrgId, members: Array
 	Effect.gen(function* () {
 		const secret = JSON.stringify({
 			type: "email",
-			members: members.map((member) => ({
+			members: Arr.map(members, (member) => ({
 				userId: member,
 				email: `${member}@example.com`,
 				name: null,
@@ -171,6 +173,25 @@ const issueMcpGrant = Effect.fnUntraced(function* (
 	return { clientId: client.client_id, tokens }
 })
 
+/** A digest subscriber row; `optedOut` stamps the member's own opt-out. */
+const seedDigestSubscription = (db: TestDb, id: string, org: OrgId, user: UserId, optedOut = false) =>
+	Effect.promise(() =>
+		db.pglite.query(
+			`insert into digest_subscriptions
+				(id, org_id, user_id, email, enabled, opted_out_at, created_at, updated_at)
+			 values ($1, $2, $3, $1 || '@example.com', $4, CASE WHEN $5 THEN now() END, now(), now())`,
+			[id, org, user, !optedOut, optedOut],
+		),
+	)
+
+const digestState = (db: TestDb) =>
+	Effect.promise(() =>
+		db.pglite.query<{ id: string; enabled: boolean; web_analytics_enabled: boolean; opted_out: boolean }>(
+			`select id, enabled, web_analytics_enabled, opted_out_at is not null as opted_out
+			 from digest_subscriptions order by id`,
+		),
+	).pipe(Effect.map((result) => result.rows))
+
 const countRows = (db: TestDb, sql: string, params: unknown[] = []) =>
 	Effect.promise(() => queryFirstRow<{ count: number }>(db, sql, params)).pipe(
 		Effect.map((row) => Number(row?.count ?? 0)),
@@ -196,8 +217,8 @@ describe("MembershipRevocationService", () => {
 			})
 			const cliToken = yield* cli.poll(started.deviceCode)
 			yield* seedMobileDevice(db, "dev_leaver", orgId, userId)
-			yield* seedEmailDestination(db, "dest_shared", orgId, [userId, stayerId])
-			yield* seedChatIdentity(db, "cid_leaver", orgId, userId)
+			yield* seedEmailDestination(db, "00000000-0000-4000-8000-0000000000d1", orgId, [userId, stayerId])
+			yield* seedChatIdentity(db, "00000000-0000-4000-8000-0000000000c1", orgId, userId)
 
 			expect(Option.isSome(yield* apiKeys.resolveByKey(grant.tokens.access_token))).toBe(true)
 
@@ -223,7 +244,7 @@ describe("MembershipRevocationService", () => {
 					"127.0.0.1",
 				)
 				.pipe(Effect.flip)
-			expect(refreshFailure._tag).toBe("@maple/api/errors/McpOAuthProtocolError")
+			expect(refreshFailure._tag).toBe("@maple/backend/errors/McpOAuthProtocolError")
 
 			expect(yield* countRows(db, "select count(*)::int as count from mobile_devices")).toBe(0)
 			expect(yield* countRows(db, "select count(*)::int as count from cli_device_authorizations")).toBe(
@@ -241,7 +262,7 @@ describe("MembershipRevocationService", () => {
 			const destination = yield* Effect.promise(() =>
 				queryFirstRow<{ config_json: { memberUserIds: string[] }; enabled: boolean }>(
 					db,
-					"select config_json, enabled from alert_destinations where id = 'dest_shared'",
+					"select config_json, enabled from alert_destinations where id = '00000000-0000-4000-8000-0000000000d1'",
 				),
 			)
 			expect(destination?.config_json.memberUserIds).toEqual([stayerId])
@@ -273,7 +294,7 @@ describe("MembershipRevocationService", () => {
 		const cache = recordingEdgeCache()
 		return Effect.gen(function* () {
 			const revocation = yield* MembershipRevocationService
-			yield* seedEmailDestination(db, "dest_solo", orgId, [userId])
+			yield* seedEmailDestination(db, "00000000-0000-4000-8000-0000000000d2", orgId, [userId])
 
 			yield* revocation.revokeMembership(orgId, userId)
 
@@ -292,6 +313,46 @@ describe("MembershipRevocationService", () => {
 		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
 	})
 
+	it.effect("stops a removed member's digests in that org only", () => {
+		const db = createTestDb(createdDbs)
+		const cache = recordingEdgeCache()
+		return Effect.gen(function* () {
+			const revocation = yield* MembershipRevocationService
+			yield* seedDigestSubscription(db, "dig_leaver", orgId, userId)
+			yield* seedDigestSubscription(db, "dig_leaver_other_org", otherOrgId, userId)
+			yield* seedDigestSubscription(db, "dig_stayer", orgId, stayerId)
+
+			const summary = yield* revocation.revokeMembership(orgId, userId)
+
+			expect(summary.digestSubscriptionsDisabled).toBe(1)
+			expect(yield* digestState(db)).toEqual([
+				{ id: "dig_leaver", enabled: false, web_analytics_enabled: false, opted_out: false },
+				{ id: "dig_leaver_other_org", enabled: true, web_analytics_enabled: true, opted_out: false },
+				{ id: "dig_stayer", enabled: true, web_analytics_enabled: true, opted_out: false },
+			])
+		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
+	})
+
+	it.effect("stops a deleted user's digests in every org and keeps their own opt-out", () => {
+		const db = createTestDb(createdDbs)
+		const cache = recordingEdgeCache()
+		return Effect.gen(function* () {
+			const revocation = yield* MembershipRevocationService
+			yield* seedDigestSubscription(db, "dig_a", orgId, userId)
+			yield* seedDigestSubscription(db, "dig_b", otherOrgId, userId, true)
+			yield* seedDigestSubscription(db, "dig_c", orgId, stayerId)
+
+			const summary = yield* revocation.revokeUser(userId)
+
+			expect(summary.digestSubscriptionsDisabled).toBe(2)
+			expect(yield* digestState(db)).toEqual([
+				{ id: "dig_a", enabled: false, web_analytics_enabled: false, opted_out: false },
+				{ id: "dig_b", enabled: false, web_analytics_enabled: false, opted_out: true },
+				{ id: "dig_c", enabled: true, web_analytics_enabled: true, opted_out: false },
+			])
+		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
+	})
+
 	it.effect("is idempotent, so a webhook retry converges instead of double-applying", () => {
 		const db = createTestDb(createdDbs)
 		const cache = recordingEdgeCache()
@@ -300,7 +361,7 @@ describe("MembershipRevocationService", () => {
 			const oauth = yield* McpOAuthService
 			yield* issueMcpGrant(oauth, userId, orgId)
 			yield* seedMobileDevice(db, "dev_retry", orgId, userId)
-			yield* seedEmailDestination(db, "dest_retry", orgId, [userId, stayerId])
+			yield* seedEmailDestination(db, "00000000-0000-4000-8000-0000000000d3", orgId, [userId, stayerId])
 
 			const first = yield* revocation.revokeMembership(orgId, userId)
 			const second = yield* revocation.revokeMembership(orgId, userId)
@@ -374,6 +435,46 @@ describe("MembershipRevocationService", () => {
 			// Idempotent, so a Clerk retry converges.
 			const retry = yield* revocation.demoteMembership(orgId, userId, [memberRole])
 			expect(retry.apiKeysRevoked).toBe(0)
+		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
+	})
+
+	it.effect("retires whatever was pinned above the new role, engineer keys included", () => {
+		const db = createTestDb(createdDbs)
+		const cache = recordingEdgeCache()
+		return Effect.gen(function* () {
+			const revocation = yield* MembershipRevocationService
+			const cli = yield* CliDeviceAuthService
+			const apiKeys = yield* ApiKeysService
+			const login = (user: typeof userId, role: typeof adminRole) =>
+				Effect.gen(function* () {
+					const started = yield* cli.start("Laptop", "127.0.0.1")
+					yield* cli.approve(started.userCode, {
+						orgId,
+						userId: user,
+						roles: [role],
+						userEmail: null,
+					})
+					return yield* cli.poll(started.deviceCode)
+				})
+			const stillWorks = (token: Effect.Success<ReturnType<typeof login>>) =>
+				token.status === "complete"
+					? Effect.map(apiKeys.resolveByKey(token.token), Option.isSome)
+					: Effect.succeed(false)
+
+			// An admin demoted to engineer loses the admin key.
+			const adminToken = yield* login(userId, adminRole)
+			const toEngineer = yield* revocation.demoteMembership(orgId, userId, [engineerRole])
+			expect(toEngineer.apiKeysRevoked).toBe(1)
+			expect(yield* stillWorks(adminToken)).toBe(false)
+
+			// An engineer keeps an engineer key while still an engineer, and loses it as a member.
+			const engineerToken = yield* login(stayerId, engineerRole)
+			const unchanged = yield* revocation.demoteMembership(orgId, stayerId, [engineerRole])
+			expect(unchanged.apiKeysRevoked).toBe(0)
+			expect(yield* stillWorks(engineerToken)).toBe(true)
+			const toMember = yield* revocation.demoteMembership(orgId, stayerId, [memberRole])
+			expect(toMember.apiKeysRevoked).toBe(1)
+			expect(yield* stillWorks(engineerToken)).toBe(false)
 		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
 	})
 

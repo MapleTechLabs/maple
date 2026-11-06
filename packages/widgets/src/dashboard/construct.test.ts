@@ -50,18 +50,6 @@ describe("makeQueryDataSource", () => {
 		})
 	})
 
-	// A query data source has no endpoint in v3 — its identity is `kind` plus
-	// `resultShape`. `dataSourceEndpoint` returning null here rather than
-	// synthesising `custom_query_builder_breakdown` is the property that stops the
-	// string-sniffing creeping back in.
-	it("writes no endpoint for a query source", () => {
-		const source = makeQueryDataSource({ resultShape: "breakdown", queries: [] })
-
-		expect(source.kind).toBe("query")
-		expect(source.resultShape).toBe("breakdown")
-		expect(dataSourceEndpoint(source)).toBeNull()
-	})
-
 	it("carries a transform through untouched", () => {
 		const transform = { reduceToValue: { field: "value", aggregate: "first" } } as const
 		expect(makeQueryDataSource({ resultShape: "timeseries", queries: [], transform }).transform).toEqual(

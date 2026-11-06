@@ -1,0 +1,9 @@
+# debug.yaml: print parsed records instead of exporting them
+exporters:
+    debug:
+        verbosity: detailed
+
+service:
+    pipelines:
+        logs:
+            exporters: [debug]

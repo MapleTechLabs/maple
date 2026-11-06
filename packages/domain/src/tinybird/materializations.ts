@@ -1,33 +1,61 @@
-import { defineMaterializedView, node } from "@tinybirdco/sdk"
+import { defineMaterializedView, node } from "@maple-dev/effect-orm/tinybird"
 import {
 	chPattern,
 	chRedactChain,
+	CUSTOM_FINGERPRINT_ATTRIBUTE,
+	CUSTOM_FINGERPRINT_MAX_CHARS,
+	CUSTOM_FINGERPRINT_REDACTIONS,
+	EFFECT_SPAN_FRAME_MARKER,
+	ERROR_MSG_REDACTIONS,
+	FINGERPRINT_HASH_SALT,
+	LIBRARY_FRAME_PATTERN,
+	PREVIOUS_FINGERPRINT_HASH_SALT,
 	FRAME_LINE_PATTERN,
 	FRAME_REDACTIONS,
+	JSON_LABEL_KEYS,
+	JSON_TYPE_KEY,
+	JSON_TYPE_VALUE_REDACTIONS,
 	JSON_VALUE_REDACTIONS,
+	INTERNAL_FRAME_PATTERN,
 	MAX_FINGERPRINT_FRAMES,
+	MAX_NORMALIZED_FRAMES,
 	MSG_SCAN_CHARS,
 	MSG_SIGNATURE_CHARS,
-	MSG_TEXT_REDACTIONS,
+	NAMESPACED_TYPE_MAX_FRAMES,
+	PYTHON_FRAME_PATTERN,
+	SCHEMA_PATH_LINE_PATTERN,
+	SPAN_NAME_FRAME_PATTERN,
 } from "./fingerprint"
 import {
 	serviceUsage,
+	sourceUsageHourly,
 	serviceMapEdgesHourly,
 	serviceMapSpans,
 	serviceMapChildren,
 	serviceMapDbEdgesHourly,
+	serviceMapDbEdgesMinutely,
 	serviceMapDbQuerySignaturesHourly,
 	serviceExternalEdgesHourly,
 	servicePlatformsHourly,
 	serviceOverviewSpans,
+	SLO_LATENCY_COVERAGE_COLUMN,
+	sloLatencyColumnName,
 	serviceOverviewHourly,
 	serviceOverviewMinutely,
 	errorEvents,
 	errorEventsByTime,
 	errorFingerprintsMinutely,
+	errorFingerprintLineage,
 	aiTraceIndex,
 	aiCrawlerRequests,
-	traceDetailSpans,
+	scannerRequests,
+	serviceRuntimesHourly,
+	userActivityHourly,
+	CI_SERVICE_NAME,
+	ciJobs,
+	ciRuns,
+	TRACE_BUCKET_EXPR,
+	traceIndex,
 	traceListMv,
 	traceFacetsHourly,
 	attributeKeysHourly,
@@ -38,6 +66,7 @@ import {
 	spanMetricsCallsHourly,
 	serviceOperationsMinutely,
 	serviceOperationsHourly,
+	serviceEndpointDetailsHourly,
 	productEvents,
 	identityLinks,
 } from "./datasources"
@@ -52,12 +81,35 @@ import { MAPLE_AI_SESSION_ID_ATTR, MAPLE_AI_VENDOR_ID_ATTR, MAPLE_AI_VENDOR_VERS
 import { PRODUCT_EVENTS_TRACE_FILTER, PRODUCT_EVENTS_TRACE_PROJECTION_SQL } from "./product-event-attributes"
 import { DEPLOYMENT_ENV_SQL, MESSAGING_DESTINATION_SQL } from "./semconv-renames"
 import {
+	HTTP_SERVER_SPAN_SQL,
+	HTTP_STATUS_CODE_SQL,
+	REQUEST_BODY_SIZE_SQL,
+	SERVICE_OPERATIONS_HTTP_MEASURES as HTTP,
+	USER_AGENT_SQL,
+} from "./http-endpoint-sql"
+import {
 	AI_CRAWLER_INDEX_SQL,
 	AI_CRAWLER_NAME_SQL,
 	REQUEST_HOST_SQL,
 	REQUEST_PATH_SQL,
 	RESPONSE_STATUS_SQL,
 } from "./ai-crawler-columns"
+import {
+	CLIENT_ADDRESS_SQL,
+	CRITICAL_PROBE_INDEX_SQL,
+	EXECUTABLE_NAME_SQL,
+	OTHER_PROBE_INDEX_SQL,
+	PROBE_SIGNATURE_SQL,
+	RUNTIME_NAME_SQL,
+	RUNTIME_VERSION_SQL,
+	SCANNER_HOST_SQL,
+	SCANNER_INDEX_SQL,
+	SCANNER_NAME_SQL,
+	SCANNER_USER_AGENT_SQL,
+	SDK_LANGUAGE_SQL,
+	SDK_NAME_SQL,
+	SDK_VERSION_SQL,
+} from "./security-telemetry-columns"
 import {
 	GENAI_AGENT_NAME_SQL,
 	GENAI_CACHE_READ_TOKENS_SQL,
@@ -80,6 +132,15 @@ import {
 	GENAI_TOOL_NAME_SQL,
 } from "./gen-ai-columns"
 import { NORMALIZED_SPAN_NAME_SQL } from "./span-display-name"
+import {
+	LOG_USER_ID_SQL,
+	MOBILE_REQUEST_SQL,
+	SERVICE_NAMESPACE_SQL,
+	SPAN_USER_ID_SQL,
+	WEB_REQUEST_SQL,
+} from "./user-activity-sql"
+import { Array as Arr } from "effect"
+import { SLO_LATENCY_THRESHOLDS_MS } from "@maple/primitives"
 
 /**
  * Materialized view to aggregate log usage statistics per service per hour
@@ -284,6 +345,96 @@ export const serviceUsageMetricsExpHistogramMv = defineMaterializedView(
 )
 
 /**
+ * One `source_usage_hourly` row per (org, source, hour) from a signal table.
+ * Consumed by `sourceUsageHourlyQuery` and `sourceUsageTotalsQuery`; byte
+ * estimates match the `service_usage_*_mv` views.
+ */
+const sourceUsageSql = (opts: {
+	readonly table: string
+	readonly hour: string
+	readonly spans?: readonly [string, string]
+	readonly logs?: readonly [string, string]
+	readonly metrics?: readonly [string, string]
+}) => `
+        SELECT
+          OrgId,
+          ResourceAttributes['maple_source_id'] AS SourceId,
+          toStartOfHour(${opts.hour}) AS Hour,
+          ${opts.spans?.[0] ?? "0"} AS SpanCount,
+          ${opts.spans?.[1] ?? "0"} AS SpanSizeBytes,
+          ${opts.logs?.[0] ?? "0"} AS LogCount,
+          ${opts.logs?.[1] ?? "0"} AS LogSizeBytes,
+          ${opts.metrics?.[0] ?? "0"} AS MetricCount,
+          ${opts.metrics?.[1] ?? "0"} AS MetricSizeBytes
+        FROM ${opts.table}
+        WHERE ResourceAttributes['maple_source_id'] != ''
+        GROUP BY OrgId, SourceId, Hour
+      `
+
+const sourceUsageMv = (name: string, signal: string, sql: string) =>
+	defineMaterializedView(name, {
+		description: `Materialized view to aggregate ${signal} usage per source per hour`,
+		datasource: sourceUsageHourly,
+		nodes: [node({ name: `${name}_node`, sql })],
+	})
+
+export const sourceUsageLogsMv = sourceUsageMv(
+	"source_usage_logs_mv",
+	"log",
+	sourceUsageSql({ table: "logs", hour: "TimestampTime", logs: ["count()", "sum(length(Body) + 200)"] }),
+)
+
+export const sourceUsageTracesMv = sourceUsageMv(
+	"source_usage_traces_mv",
+	"span",
+	sourceUsageSql({
+		table: "traces",
+		hour: "toDateTime(Timestamp)",
+		spans: ["count()", "sum(length(SpanName) + 300)"],
+	}),
+)
+
+export const sourceUsageMetricsSumMv = sourceUsageMv(
+	"source_usage_metrics_sum_mv",
+	"sum metric",
+	sourceUsageSql({
+		table: "metrics_sum",
+		hour: "toDateTime(TimeUnix)",
+		metrics: ["count()", "count() * 150"],
+	}),
+)
+
+export const sourceUsageMetricsGaugeMv = sourceUsageMv(
+	"source_usage_metrics_gauge_mv",
+	"gauge metric",
+	sourceUsageSql({
+		table: "metrics_gauge",
+		hour: "toDateTime(TimeUnix)",
+		metrics: ["count()", "count() * 150"],
+	}),
+)
+
+export const sourceUsageMetricsHistogramMv = sourceUsageMv(
+	"source_usage_metrics_histogram_mv",
+	"histogram metric",
+	sourceUsageSql({
+		table: "metrics_histogram",
+		hour: "toDateTime(TimeUnix)",
+		metrics: ["count()", "count() * 250"],
+	}),
+)
+
+export const sourceUsageMetricsExpHistogramMv = sourceUsageMv(
+	"source_usage_metrics_exp_histogram_mv",
+	"exponential histogram metric",
+	sourceUsageSql({
+		table: "metrics_exponential_histogram",
+		hour: "toDateTime(TimeUnix)",
+		metrics: ["count()", "count() * 300"],
+	}),
+)
+
+/**
  * Materialized view projecting trace spans needed for service dependency map.
  * Extracts deployment.environment from Map columns at write time so the service
  * map JOIN query avoids scanning heavy Map columns.
@@ -326,6 +477,9 @@ export const serviceOverviewSpansMv = defineMaterializedView("service_overview_s
 	description:
 		"Materialized view projecting service entry point spans (Server/Consumer + root) for service overview queries. Pre-extracts deployment attributes from ResourceAttributes at write time.",
 	datasource: serviceOverviewSpans,
+	// Migration 0037's SpanKind/IsRoot are additive and older rows may read ''/0.
+	// Without this, Tinybird rebuilds the target by replaying 30 days of `traces`.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "service_overview_spans_mv_node",
@@ -340,13 +494,28 @@ export const serviceOverviewSpansMv = defineMaterializedView("service_overview_s
           ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
           ResourceAttributes['vcs.ref.head.revision'] AS CommitSha,
           SampleRate,
-          ResourceAttributes['service.namespace'] AS ServiceNamespace
+          ResourceAttributes['service.namespace'] AS ServiceNamespace,
+          SpanKind,
+          toUInt8(ParentSpanId = '') AS IsRoot
         FROM traces
         WHERE SpanKind IN ('Server', 'Consumer') OR ParentSpanId = ''
       `,
 		}),
 	],
 })
+
+// The coverage total, then one sampling-weighted count per SLO latency rung; Duration is
+// nanoseconds, status is ignored.
+const SLO_LATENCY_LADDER_SQL = Arr.join(
+	[
+		`sum(SampleRate) AS ${SLO_LATENCY_COVERAGE_COLUMN}`,
+		...Arr.map(
+			SLO_LATENCY_THRESHOLDS_MS,
+			(ms) => `sumIf(SampleRate, Duration < ${ms * 1_000_000}) AS ${sloLatencyColumnName(ms)}`,
+		),
+	],
+	",\n          ",
+)
 
 /**
  * Durable service-level rollup for one-year overview and catalog queries.
@@ -356,6 +525,9 @@ export const serviceOverviewHourlyMv = defineMaterializedView("service_overview_
 	description:
 		"Pre-aggregates service entry-point spans hourly by environment, namespace, and commit for one-year service history.",
 	datasource: serviceOverviewHourly,
+	// Migration 0059 adds the SLO latency ladder columns. A rebuild would replay `traces`
+	// (30 days) into this longer-retained target and drop the rest; `alter` adds them in place.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "service_overview_hourly_mv_node",
@@ -375,7 +547,8 @@ export const serviceOverviewHourlyMv = defineMaterializedView("service_overview_
           quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS DurationQuantiles,
           min(toDateTime(Timestamp)) AS FirstSeen,
           countIf(StatusCode != 'Error' AND Duration < 500000000) AS ApdexSatisfiedCount,
-          countIf(StatusCode != 'Error' AND Duration >= 500000000 AND Duration < 2000000000) AS ApdexToleratingCount
+          countIf(StatusCode != 'Error' AND Duration >= 500000000 AND Duration < 2000000000) AS ApdexToleratingCount,
+          ${SLO_LATENCY_LADDER_SQL}
         FROM traces
         WHERE SpanKind IN ('Server', 'Consumer') OR ParentSpanId = ''
         GROUP BY OrgId, Hour, ServiceName, DeploymentEnv, ServiceNamespace, CommitSha
@@ -402,6 +575,8 @@ export const serviceOverviewMinutelyMv = defineMaterializedView("service_overvie
 	description:
 		"Pre-aggregates service entry-point spans minutely by environment, namespace, and commit, for windows whose bucket size is under an hour.",
 	datasource: serviceOverviewMinutely,
+	// Same as service_overview_hourly_mv: a rebuild would drop the history past `traces`' 30 days.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "service_overview_minutely_mv_node",
@@ -421,7 +596,8 @@ export const serviceOverviewMinutelyMv = defineMaterializedView("service_overvie
           quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS DurationQuantiles,
           min(toDateTime(Timestamp)) AS FirstSeen,
           countIf(StatusCode != 'Error' AND Duration < 500000000) AS ApdexSatisfiedCount,
-          countIf(StatusCode != 'Error' AND Duration >= 500000000 AND Duration < 2000000000) AS ApdexToleratingCount
+          countIf(StatusCode != 'Error' AND Duration >= 500000000 AND Duration < 2000000000) AS ApdexToleratingCount,
+          ${SLO_LATENCY_LADDER_SQL}
         FROM traces
         WHERE SpanKind IN ('Server', 'Consumer') OR ParentSpanId = ''
         GROUP BY OrgId, Minute, ServiceName, DeploymentEnv, ServiceNamespace, CommitSha
@@ -556,6 +732,44 @@ export const serviceMapDbEdgesHourlyMv = defineMaterializedView("service_map_db_
 })
 
 /**
+ * Minute twin of `service_map_db_edges_hourly_mv`, read by `serviceDbEdges` for
+ * the partial hours at the ends of a window (see `serviceMapDbEdgesMinutely`).
+ * Same filter, keys and derivation as the hourly view, so the two tiers merge; keep
+ * them in step. It omits the hourly view's sampled/unsampled counts, which no read uses.
+ */
+export const serviceMapDbEdgesMinutelyMv = defineMaterializedView("service_map_db_edges_minutely_mv", {
+	description:
+		"Pre-aggregates Client/Producer spans with db.system.name into per-minute service-to-database edge buckets for the edges of a service map window.",
+	datasource: serviceMapDbEdgesMinutely,
+	nodes: [
+		node({
+			name: "service_map_db_edges_minutely_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          toStartOfMinute(toDateTime(Timestamp)) AS Minute,
+          ServiceName,
+          ${DB_SYSTEM_ATTR_SQL} AS DbSystem,
+          ${DB_NAMESPACE_ATTR_SQL} AS DbNamespace,
+          ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
+          count() AS CallCount,
+          countIf(StatusCode = 'Error') AS ErrorCount,
+          sum(Duration / 1000000) AS DurationSumMs,
+          max(Duration / 1000000) AS MaxDurationMs,
+          sum(SampleRate) AS SampleRateSum,
+          quantilesTDigestWeightedState(0.5, 0.95)(Duration, toUInt32(greatest(SampleRate, 1.0))) AS DurationQuantiles,
+          now() AS FirstInsertedAt
+        FROM traces
+        WHERE SpanKind IN ('Client', 'Producer')
+          AND ${DB_SYSTEM_ATTR_SQL} != ''
+          AND ServiceName != ''
+        GROUP BY OrgId, Minute, ServiceName, DbSystem, DbNamespace, DeploymentEnv
+      `,
+		}),
+	],
+})
+
+/**
  * Materialized view pre-aggregating database *query shapes* per hour for the
  * service map's database detail panel. For each Client/Producer DB span it
  * derives a normalized shape key + readable label (see `db-query-shape-sql.ts`,
@@ -605,9 +819,10 @@ export const serviceMapDbQuerySignaturesHourlyMv = defineMaterializedView(
 
 /**
  * Materialized view pre-aggregating service-to-external-target edges per hour.
- * Captures Client/Producer spans WITHOUT `db.system.name` set (DB calls go to
- * `service_map_db_edges_hourly_mv`) — i.e. plain HTTP outbound, messaging
- * producers, and RPC clients.
+ * Captures Client/Producer spans with no database system (DB calls go to
+ * `service_map_db_edges_hourly_mv`): plain HTTP outbound, messaging producers,
+ * and RPC clients. The exclusion uses the same `DB_SYSTEM_ATTR_SQL` coalesce as
+ * the db MV, so a span carrying only the legacy `db.system` is never both.
  *
  * `TargetType` precedence: messaging > rpc > http. A span carrying both
  * `messaging.system` and `server.address` (rare, but happens when a queue
@@ -620,7 +835,7 @@ export const serviceMapDbQuerySignaturesHourlyMv = defineMaterializedView(
  */
 export const serviceExternalEdgesHourlyMv = defineMaterializedView("service_external_edges_hourly_mv", {
 	description:
-		"Pre-aggregates Client/Producer spans without db.system.name into hourly service-to-external-target edges (http / messaging / rpc) for the service-detail Dependencies tab.",
+		"Pre-aggregates Client/Producer spans without a database system into hourly service-to-external-target edges (http / messaging / rpc) for the service-detail Dependencies tab.",
 	datasource: serviceExternalEdgesHourly,
 	nodes: [
 		node({
@@ -660,7 +875,7 @@ export const serviceExternalEdgesHourlyMv = defineMaterializedView("service_exte
           quantilesTDigestWeightedState(0.5, 0.95)(Duration, toUInt32(greatest(SampleRate, 1.0))) AS DurationQuantiles
         FROM traces
         WHERE SpanKind IN ('Client', 'Producer')
-          AND SpanAttributes['db.system.name'] = ''
+          AND ${DB_SYSTEM_ATTR_SQL} = ''
           AND ServiceName != ''
           AND (
                SpanAttributes['server.address'] != ''
@@ -723,8 +938,9 @@ export const servicePlatformsHourlyMv = defineMaterializedView("service_platform
  * are absent, reads `exception.*` then `error.*` span attributes. Computes a
  * cityHash64 FingerprintHash used to group occurrences into Issues.
  *
- * Fingerprint inputs: (OrgId, ServiceName, ExceptionType, top-3 normalized frames,
- * message signature).
+ * Fingerprint inputs: (OrgId, ServiceName, ExceptionType, top-3 normalized frames
+ * (1 for a namespaced type), message signature, FINGERPRINT_HASH_SALT), or
+ * (OrgId, ServiceName, 'maple.fingerprint', value) when the error carries that key.
  * - Stack lines are filtered by frame SHAPE — one alternative per runtime's frame
  *   syntax — not by "contains `:NUMBER`". The old rule accepted any colon-digit
  *   line, so Drizzle's `params:` line (actual row values) and `Type: message`
@@ -763,7 +979,10 @@ export const servicePlatformsHourlyMv = defineMaterializedView("service_platform
  */
 export { errorEventsSelectSql as ERROR_EVENTS_MV_SQL }
 
-const errorEventsSelectSql = `
+const jsonStringIsSet = (key: string) =>
+	`JSONType(_msgText, '${key}') = 'String' AND JSONExtractString(_msgText, '${key}') != ''`
+
+const errorEventsWithSql = `
         WITH
           arrayFirstIndex(n -> n = 'exception', EventsName) AS _ei,
           -- Only fill the old Unknown Error bucket. Event values (including
@@ -782,37 +1001,15 @@ const errorEventsSelectSql = `
             if(_useAttrs, SpanAttributes['exception.stacktrace'], '')
           ) AS _exStack,
           if(_useAttrs, _exMsg, StatusMessage) AS _msgText,
-          -- Frame lines are matched by SHAPE, not by "contains :NUMBER". The old
-          -- rule accepted any line with a colon-digit, which let non-frame lines
-          -- in: Drizzle's \`params: <row values>\` line, and the \`Type: message\`
-          -- header (\`Code: 62\`, \`position 1628\`, embedded timestamps). Row values
-          -- and message text then entered the hash and split one bug into
-          -- thousands of issues — 23,035 fingerprints for six real
-          -- AnomalyPersistenceError call sites, 15,051 for thirteen DatabaseError
-          -- ones.
-          --
-          -- The pattern is rendered from FRAME_LINE_PATTERN in fingerprint.ts,
-          -- as is every redaction below. They used to be hand-copied here, which
-          -- let the reference implementation the tests exercise drift away from
-          -- the SQL that actually runs, silently.
-          arraySlice(
-            arrayFilter(
-              line -> match(line, ${chPattern(FRAME_LINE_PATTERN)}),
-              splitByChar('\\n', _exStack)
-            ),
-            1, ${MAX_FINGERPRINT_FRAMES}
-          ) AS _rawFrames,
-          -- Redact every volatile token a frame line can carry: the URL origin
-          -- (so preview hosts share one fingerprint), Vite's 8-char bundle
-          -- content hash (so a deploy does not re-split every triaged browser and
-          -- Worker issue), then line numbers, hex pointers and long id runs. See
-          -- FRAME_REDACTIONS for the order and the reasoning.
-          arrayMap(
-            line -> ${chRedactChain("line", FRAME_REDACTIONS)},
-            _rawFrames
-          ) AS _topFrames,
-          if(length(_topFrames) > 0, _topFrames[1], '') AS _topFrame,
-          arrayStringConcat(_topFrames, '\\n') AS _fpFrames,
+          -- A user key replaces type, frames, message and salt in the hash: the
+          -- exception event's value first, then the span's. Trimmed and capped.
+          substringUTF8(
+            ${chRedactChain(
+				`coalesce(nullIf(if(_ei > 0, EventsAttributes[_ei][${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}], ''), ''), SpanAttributes[${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}])`,
+				CUSTOM_FINGERPRINT_REDACTIONS,
+			)},
+            1, ${CUSTOM_FINGERPRINT_MAX_CHARS}
+          ) AS _customFp,
           -- JSON detection for the message signature below.
           isValidJSON(_msgText) AS _isJson,
           _isJson AND JSONType(_msgText) = 'Object' AS _isJsonObj,
@@ -824,7 +1021,11 @@ const errorEventsSelectSql = `
           arrayStringConcat(
             arraySort(
               arrayMap(
-                kv -> concat(kv.1, '=', ${chRedactChain("kv.2", JSON_VALUE_REDACTIONS)}),
+                kv -> concat(kv.1, '=', if(
+                  kv.1 = ${chPattern(JSON_TYPE_KEY)},
+                  ${chRedactChain("kv.2", JSON_TYPE_VALUE_REDACTIONS)},
+                  ${chRedactChain("kv.2", JSON_VALUE_REDACTIONS)}
+                )),
                 JSONExtractKeysAndValuesRaw(_msgText)
               )
             ),
@@ -838,26 +1039,87 @@ const errorEventsSelectSql = `
           -- restores that discrimination, and it cannot reinflate cardinality the
           -- way a raw prefix would because everything variable is redacted first:
           -- emails, URL origins, home directories, query strings, quoted values,
-          -- then ids and every digit run. See MSG_TEXT_REDACTIONS for the order,
+          -- then ids and every digit run. See ERROR_MSG_REDACTIONS for the order,
           -- what is deliberately kept, and the one residual it cannot reach.
           multiIf(
             _isJsonObj, _jsonSig,
             substringUTF8(
-              ${chRedactChain(`substringUTF8(_msgText, 1, ${MSG_SCAN_CHARS})`, MSG_TEXT_REDACTIONS)},
+              ${chRedactChain(`substringUTF8(_msgText, 1, ${MSG_SCAN_CHARS})`, ERROR_MSG_REDACTIONS)},
               1, ${MSG_SIGNATURE_CHARS}
             )
           ) AS _msgSig,
+          -- Frame lines are matched by SHAPE, not by "contains :NUMBER". The old
+          -- rule accepted any line with a colon-digit, which let non-frame lines
+          -- in: Drizzle's \`params: <row values>\` line, and the \`Type: message\`
+          -- header (\`Code: 62\`, \`position 1628\`, embedded timestamps). Row values
+          -- and message text then entered the hash and split one bug into
+          -- thousands of issues — 23,035 fingerprints for six real
+          -- AnomalyPersistenceError call sites, 15,051 for thirteen DatabaseError
+          -- ones.
+          --
+          -- The pattern is rendered from FRAME_LINE_PATTERN in fingerprint.ts,
+          -- as is every redaction below. They used to be hand-copied here, which
+          -- let the reference implementation the tests exercise drift away from
+          -- the SQL that actually runs, silently.
+          arrayFilter(
+            line -> match(line, ${chPattern(FRAME_LINE_PATTERN)})
+              AND position(line, ${chPattern(EFFECT_SPAN_FRAME_MARKER)}) = 0
+              AND NOT match(line, ${chPattern(SCHEMA_PATH_LINE_PATTERN)})
+              AND NOT match(line, ${chPattern(SPAN_NAME_FRAME_PATTERN)})
+              AND NOT match(line, ${chPattern(INTERNAL_FRAME_PATTERN)}),
+            splitByChar('\\n', _exStack)
+          ) AS _frameLines,
+          -- Redact every volatile token a frame line can carry: the URL origin
+          -- (so preview hosts share one fingerprint), Vite's 8-char bundle
+          -- content hash (so a deploy does not re-split every triaged browser and
+          -- Worker issue), then line numbers, hex pointers and long id runs. See
+          -- FRAME_REDACTIONS for the order and the reasoning.
+          arrayMap(
+            line -> ${chRedactChain("line", FRAME_REDACTIONS)},
+            arraySlice(
+              -- Python prints the outermost frame first: read it from the raise site.
+              if(match(_frameLines[1], ${chPattern(PYTHON_FRAME_PATTERN)}), arrayReverse(_frameLines), _frameLines),
+              1, ${MAX_NORMALIZED_FRAMES}
+            )
+          ) AS _normFrames,
+          -- A repeat (two anonymous closures in one bundle, or recursion) collapses
+          -- so it does not use up the frames the hash keeps.
+          arrayFilter((frame, i) -> i = 1 OR frame != _normFrames[i - 1], _normFrames, arrayEnumerate(_normFrames)) AS _distinctFrames,
+          -- The application's own frames: a dependency's or a runtime's frames vary with
+          -- its internals and version. A stack with none keeps every frame.
+          arrayFilter(frame -> NOT match(frame, ${chPattern(LIBRARY_FRAME_PATTERN)}), _distinctFrames) AS _appFrames,
+          -- A namespaced type plus its message names one failure: keep only the
+          -- throw site. With no message the frames are all that is left; keep 3.
+          if(position(_exType, '/') > 0 AND _msgSig != '', ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES}) AS _maxFrames,
+          arraySlice(if(length(_appFrames) > 0, _appFrames, _distinctFrames), 1, _maxFrames) AS _topFrames,
+          if(length(_topFrames) > 0, _topFrames[1], '') AS _topFrame,
+          arrayStringConcat(_topFrames, '\\n') AS _fpFrames,
+          -- The previous version's frames, for the issue evaluator's re-key while a bump settles.
+          arrayStringConcat(arraySlice(_distinctFrames, 1, _maxFrames), '\\n') AS _prevFpFrames,
+          if(
+            _customFp != '',
+            cityHash64(OrgId, ServiceName, ${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}, _customFp),
+            cityHash64(OrgId, ServiceName, _exType, _fpFrames, _msgSig, ${chPattern(FINGERPRINT_HASH_SALT)})
+          ) AS _hash,
+          if(
+            _customFp != '',
+            _hash,
+            cityHash64(OrgId, ServiceName, _exType, _prevFpFrames, _msgSig, ${chPattern(PREVIOUS_FINGERPRINT_HASH_SALT)})
+          ) AS _prevHash,
           -- Display-only, best-effort human label (decoupled from the fingerprint:
           -- many labels may map to one hash). The broad key list here is a DISPLAY
           -- heuristic only; the fingerprint above makes no key-name assumption.
+          -- Only string values: JSONExtractString renders a number or an object
+          -- as its JSON text, which titled \`{"error":{"code":5}}\` with the object.
           multiIf(
-            JSONExtractString(_msgText, 'title')   != '', JSONExtractString(_msgText, 'title'),
-            JSONExtractString(_msgText, 'message') != '', JSONExtractString(_msgText, 'message'),
-            JSONExtractString(_msgText, 'error')   != '', JSONExtractString(_msgText, 'error'),
-            JSONExtractString(_msgText, '_tag')    != '', JSONExtractString(_msgText, '_tag'),
-            JSONExtractString(_msgText, 'reason')  != '', JSONExtractString(_msgText, 'reason'),
-            JSONExtractString(_msgText, 'name')    != '', JSONExtractString(_msgText, 'name'),
-            JSONExtractString(_msgText, 'type')    != '', extract(JSONExtractString(_msgText, 'type'), '([^/]+)$'),
+            ${Arr.join(
+				Arr.map(
+					JSON_LABEL_KEYS,
+					(key) => `${jsonStringIsSet(key)}, JSONExtractString(_msgText, '${key}'),`,
+				),
+				"\n            ",
+			)}
+            ${jsonStringIsSet("type")}, extract(JSONExtractString(_msgText, 'type'), '([^/]+)$'),
             'JSON error'
           ) AS _jsonLabel,
           multiIf(
@@ -869,11 +1131,13 @@ const errorEventsSelectSql = `
                 'Schema parse error'
               ),
             _isJsonObj OR position(_msgText, '[') = 1, _jsonLabel,
-            left(_msgText, multiIf(
-              position(_msgText, ': ')  > 3, toInt64(position(_msgText, ': '))  - 1,
-              position(_msgText, ' (')  > 3, toInt64(position(_msgText, ' (')) - 1,
-              position(_msgText, '\\n') > 3, toInt64(position(_msgText, '\\n')) - 1,
-              least(toInt64(length(_msgText)), 150)
+            -- UTF8 variants throughout: a byte cut split a character and
+            -- left U+FFFD at the end of a non-ASCII title.
+            leftUTF8(_msgText, multiIf(
+              positionUTF8(_msgText, ': ')  > 3, toInt64(positionUTF8(_msgText, ': '))  - 1,
+              positionUTF8(_msgText, ' (')  > 3, toInt64(positionUTF8(_msgText, ' (')) - 1,
+              positionUTF8(_msgText, '\\n') > 3, toInt64(positionUTF8(_msgText, '\\n')) - 1,
+              150
             ))
           ) AS _statusLabel,
           if(_exType != '', _exType, _statusLabel) AS _errorLabel,
@@ -884,24 +1148,10 @@ const errorEventsSelectSql = `
               SpanAttributes['http.response.status_code'],
               SpanAttributes['http.status_code']
             )
-          ) AS _httpStatus
-        SELECT
-          OrgId,
-          toDateTime(Timestamp) AS Timestamp,
-          TraceId,
-          SpanId,
-          ParentSpanId,
-          ServiceName,
-          ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
-          _exType AS ExceptionType,
-          _exMsg AS ExceptionMessage,
-          _exStack AS ExceptionStacktrace,
-          _topFrame AS TopFrame,
-          cityHash64(OrgId, ServiceName, _exType, _fpFrames, _msgSig) AS FingerprintHash,
-          StatusMessage,
-          Duration,
-          _errorLabel AS ErrorLabel,
-          ResourceAttributes['service.version'] AS ServiceVersion
+          ) AS _httpStatus`
+
+/** The error spans the projections read: `traces` with the 4xx client-noise filter. */
+const errorEventsSourceSql = `
         FROM traces
         WHERE StatusCode = 'Error'
           -- Client-side runtimes (notably the native Cloudflare Workers
@@ -918,15 +1168,36 @@ const errorEventsSelectSql = `
             AND _ei = 0
             AND SpanAttributes['exception.type'] = ''
             AND (SpanAttributes['error.type'] = '' OR SpanAttributes['error.type'] = toString(_httpStatus))
-          )
+          )`
+
+const errorEventsSelectSql = `${errorEventsWithSql}
+        SELECT
+          OrgId,
+          toDateTime(Timestamp) AS Timestamp,
+          TraceId,
+          SpanId,
+          ParentSpanId,
+          ServiceName,
+          ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
+          _exType AS ExceptionType,
+          _exMsg AS ExceptionMessage,
+          _exStack AS ExceptionStacktrace,
+          _topFrame AS TopFrame,
+          _hash AS FingerprintHash,
+          StatusMessage,
+          Duration,
+          _errorLabel AS ErrorLabel,
+          ResourceAttributes['service.version'] AS ServiceVersion,
+          ${SPAN_USER_ID_SQL} AS UserId${errorEventsSourceSql}
       `
 
 export const errorEventsMv = defineMaterializedView("error_events_mv", {
 	description:
 		"Materializes per-occurrence error events from traces. Unwraps the first OTel exception event (falling back to exception.* / error.* span attributes) and computes a cityHash64 FingerprintHash for issue grouping.",
 	datasource: errorEvents,
-	// Preserve the target's 90d history; replaying traces would retain only 30d
-	// and recompute stored fingerprints. Change the SELECT for future inserts.
+	// A fingerprint change must never replay `traces` into this 90-day target: that
+	// drops the 60 days `traces` no longer holds and re-keys every stored occurrence.
+	// `alter` swaps the view query in place; stored rows keep their hashes.
 	deploymentMethod: "alter",
 	nodes: [
 		node({
@@ -948,7 +1219,7 @@ export const errorEventsByTimeMv = defineMaterializedView("error_events_by_time_
 	description:
 		"Time-ordered copy of error_events_mv's projection, written to error_events_by_time (sorted by OrgId, Timestamp, FingerprintHash) for recent-window error scans.",
 	datasource: errorEventsByTime,
-	// Keep both projections forward-only, with the same retained history.
+	// Same as error_events_mv: a rebuild would drop history and re-key stored rows.
 	deploymentMethod: "alter",
 	nodes: [
 		node({
@@ -992,28 +1263,52 @@ export const errorFingerprintsMinutelyMv = defineMaterializedView("error_fingerp
 	],
 })
 
-export const traceDetailSpansMv = defineMaterializedView("trace_detail_spans_mv", {
-	description: "Populates trace_detail_spans with all spans re-sorted by TraceId for fast detail lookups",
-	datasource: traceDetailSpans,
+/**
+ * Each fingerprint's previous-version hashes, for every error a version bump re-keyed:
+ * all of them but the user-keyed ones, which no bump touches. Reads `traces` with the
+ * same expressions as `error_events_mv`, so both hashes come from one evaluation.
+ */
+export const errorFingerprintLineageMv = defineMaterializedView("error_fingerprint_lineage_mv", {
+	description:
+		"Records the previous-version fingerprint hashes of each error fingerprint a version bump re-keyed, for the issue evaluator.",
+	datasource: errorFingerprintLineage,
 	nodes: [
 		node({
-			name: "trace_detail_spans_mv_node",
+			name: "error_fingerprint_lineage_mv_node",
+			sql: `${errorEventsWithSql}
+        SELECT
+          OrgId,
+          toStartOfMinute(toDateTime(Timestamp)) AS Minute,
+          _hash AS FingerprintHash,
+          _prevHash AS PreviousFingerprintHash${errorEventsSourceSql}
+          AND _hash != _prevHash
+      `,
+		}),
+	],
+})
+
+/**
+ * Populates `trace_index` with each (trace, service, bucket) a batch of spans
+ * lands in. Partial rows from separate inserts merge on `min`/`max`; readers
+ * only test membership, so an unmerged duplicate is harmless.
+ */
+export const traceIndexMv = defineMaterializedView("trace_index_mv", {
+	description:
+		"Populates trace_index with the (service, 5-minute bucket) ranges each trace's spans occupy in traces",
+	datasource: traceIndex,
+	nodes: [
+		node({
+			name: "trace_index_mv_node",
 			sql: `
         SELECT
           OrgId,
-          Timestamp,
           TraceId,
-          SpanId,
-          ParentSpanId,
-          SpanName,
-          SpanKind,
           ServiceName,
-          Duration,
-          StatusCode,
-          StatusMessage,
-          SpanAttributes,
-          ResourceAttributes
+          ${TRACE_BUCKET_EXPR} AS Bucket,
+          min(Timestamp) AS MinTimestamp,
+          max(Timestamp) AS MaxTimestamp
         FROM traces
+        GROUP BY OrgId, TraceId, ServiceName, Bucket
       `,
 		}),
 	],
@@ -1030,9 +1325,13 @@ export const traceDetailSpansMv = defineMaterializedView("trace_detail_spans_mv"
  * A missing Map key reads back as `''`, so the single `!= ''` comparison is
  * both the presence check and the non-empty check.
  *
- * The GenAI columns coalesce the dialects and classify the span at insert —
- * the SQL comes from `gen-ai-columns.ts`, so a raw-table read of the same fact
- * is the same expression. Migration 0026 added them; rows materialized before
+ * Every other GenAI column is a projection of the facts the gateway decided
+ * for the span and stamped on it (`MAPLE_AI_STAMP_ATTRS`, SQL from
+ * `gen-ai-columns.ts`) since migration 0035: the view holds no vendor rule,
+ * and a dialect is taught to the gateway instead. Rows materialized before it
+ * keep the values the view's own rules gave them until the 30-day TTL. Before
+ * 0035 the view coalesced the dialects and classified the span itself.
+ * Migration 0026 added the columns; rows materialized before
  * it carry `''`/0 throughout, which the facets drop, the filters never match
  * and the sums count as nothing. Migration 0027 changed `Tokens` to count a
  * nested cache or reasoning bucket once, under the reporter's usage
@@ -1048,7 +1347,7 @@ export const traceDetailSpansMv = defineMaterializedView("trace_detail_spans_mv"
  */
 export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
 	description:
-		"Populates ai_trace_index with GenAI agent spans (maple_ai.vendor.id stamped), pre-extracting the maple_ai.* identity, the environment, the GenAI model/agent/tool, the span's kind and usage, and its failure — whether it failed, the error.type it named, its status message, a failed tool call's result and the failure's fingerprint — plus the tool's own description, to plain columns.",
+		"Populates ai_trace_index with GenAI agent spans (maple_ai.vendor.id stamped), projecting the facts the ingest gateway stamped on each (maple_ai.*: identity, model/agent/tool, kind, usage, failure, a failed tool call's result, the tool's description) plus the environment, the error.type, the status message and the failure's fingerprint, to plain columns.",
 	datasource: aiTraceIndex,
 	// Migration 0026's columns are additive, and the rows already in the target
 	// are explicitly allowed to carry ''/0 for them (see above). Without this,
@@ -1129,6 +1428,226 @@ export const aiCrawlerRequestsMv = defineMaterializedView("ai_crawler_requests_m
 	],
 })
 
+/**
+ * Populates `scanner_requests` with Server spans that probe for something an application should
+ * not serve, or come from a named scanning tool. Spans without a request path are skipped.
+ */
+export const scannerRequestsMv = defineMaterializedView("scanner_requests_mv", {
+	description:
+		"Populates scanner_requests with Server spans whose path matches a probe signature or whose user agent names a scanning tool, pre-extracting the signature, scanner, host, path, status, client address and user agent.",
+	datasource: scannerRequests,
+	nodes: [
+		node({
+			name: "scanner_requests_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          Timestamp,
+          TraceId,
+          ServiceName,
+          ${PROBE_SIGNATURE_SQL} AS Signature,
+          ${SCANNER_NAME_SQL} AS Scanner,
+          ${SCANNER_HOST_SQL} AS Host,
+          ${REQUEST_PATH_SQL} AS Path,
+          ${RESPONSE_STATUS_SQL} AS HttpStatus,
+          ${CLIENT_ADDRESS_SQL} AS ClientAddress,
+          ${SCANNER_USER_AGENT_SQL} AS UserAgent
+        FROM traces
+        WHERE SpanKind = 'Server'
+          AND (${CRITICAL_PROBE_INDEX_SQL} > 0 OR ${OTHER_PROBE_INDEX_SQL} > 0 OR ${SCANNER_INDEX_SQL} > 0)
+          AND ${REQUEST_PATH_SQL} != ''
+      `,
+		}),
+	],
+})
+
+/** Populates `service_runtimes_hourly` with the runtime and SDK each service reports, per hour. */
+export const serviceRuntimesHourlyMv = defineMaterializedView("service_runtimes_hourly_mv", {
+	description:
+		"Counts spans hourly per service, environment, process runtime and telemetry SDK name and version, for the Security Center Runtimes tab.",
+	datasource: serviceRuntimesHourly,
+	nodes: [
+		node({
+			name: "service_runtimes_hourly_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          toStartOfHour(toDateTime(Timestamp)) AS Hour,
+          ServiceName,
+          ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
+          ${RUNTIME_NAME_SQL} AS RuntimeName,
+          ${RUNTIME_VERSION_SQL} AS RuntimeVersion,
+          ${EXECUTABLE_NAME_SQL} AS ExecutableName,
+          ${SDK_LANGUAGE_SQL} AS SdkLanguage,
+          ${SDK_NAME_SQL} AS SdkName,
+          ${SDK_VERSION_SQL} AS SdkVersion,
+          count() AS SpanCount
+        FROM traces
+        WHERE ServiceName != ''
+        GROUP BY OrgId, Hour, ServiceName, DeploymentEnv, RuntimeName, RuntimeVersion, ExecutableName, SdkLanguage, SdkName, SdkVersion
+      `,
+		}),
+	],
+})
+
+// Both views write every column of `user_activity_hourly` in its order; the other signal's columns
+// are zeros and empty `-If` states, so neither view's rows need the other to merge.
+// Read by `userActivitySlicesQuery`, `userActivitySummaryQuery` and `userActivityTotalsQuery`.
+export const userActivityHourlyTracesMv = defineMaterializedView("user_activity_hourly_traces_mv", {
+	description:
+		"Rolls up spans that carry user.id (else enduser.id) hourly per user, service and service.namespace: spans, requests, errors, traces, sessions, request latency, top routes and web/mobile requests.",
+	datasource: userActivityHourly,
+	// A 90-day rollup over 30-day `traces`/`logs`: a rebuild would drop days 31-90.
+	deploymentMethod: "alter",
+	nodes: [
+		node({
+			name: "user_activity_hourly_traces_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          ${SERVICE_NAMESPACE_SQL} AS ServiceNamespace,
+          ${SPAN_USER_ID_SQL} AS UserId,
+          toStartOfHour(toDateTime(Timestamp)) AS Hour,
+          ServiceName,
+          count() AS SpanCount,
+          countIf(StatusCode = 'Error') AS ErrorSpanCount,
+          countIf(IsEntryPoint = 1) AS RequestCount,
+          countIf(IsEntryPoint = 1 AND StatusCode = 'Error') AS FailedRequestCount,
+          uniqIfState(TraceId, TraceId != '') AS TraceIds,
+          uniqIfState(SpanAttributes['session.id'], SpanAttributes['session.id'] != '') AS SessionIds,
+          quantilesTDigestIfState(0.5, 0.95)(Duration, IsEntryPoint = 1) AS RequestDurationQuantiles,
+          approx_top_kState(10)(if(IsEntryPoint = 1, ${NORMALIZED_SPAN_NAME_SQL}, '')) AS TopRoutes,
+          toUInt64(0) AS LogCount,
+          toUInt64(0) AS WarnLogCount,
+          toUInt64(0) AS ErrorLogCount,
+          min(toDateTime(Timestamp)) AS FirstSeen,
+          max(toDateTime(Timestamp)) AS LastSeen,
+          countIf(IsEntryPoint = 1) AS ClassifiedRequestCount,
+          countIf(IsEntryPoint = 1 AND ${WEB_REQUEST_SQL}) AS WebRequestCount,
+          countIf(IsEntryPoint = 1 AND ${MOBILE_REQUEST_SQL}) AS MobileRequestCount
+        FROM traces
+        WHERE ${SPAN_USER_ID_SQL} != ''
+        GROUP BY OrgId, ServiceNamespace, UserId, Hour, ServiceName
+      `,
+		}),
+	],
+})
+
+export const userActivityHourlyLogsMv = defineMaterializedView("user_activity_hourly_logs_mv", {
+	description:
+		"Rolls up logs that carry user.id (else enduser.id) hourly per user, service and service.namespace: log, warning and error log counts and sessions.",
+	datasource: userActivityHourly,
+	// A 90-day rollup over 30-day `traces`/`logs`: a rebuild would drop days 31-90.
+	deploymentMethod: "alter",
+	nodes: [
+		node({
+			name: "user_activity_hourly_logs_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          ${SERVICE_NAMESPACE_SQL} AS ServiceNamespace,
+          ${LOG_USER_ID_SQL} AS UserId,
+          toStartOfHour(TimestampTime) AS Hour,
+          ServiceName,
+          toUInt64(0) AS SpanCount,
+          toUInt64(0) AS ErrorSpanCount,
+          toUInt64(0) AS RequestCount,
+          toUInt64(0) AS FailedRequestCount,
+          uniqIfState(TraceId, toUInt8(0)) AS TraceIds,
+          uniqIfState(LogAttributes['session.id'], LogAttributes['session.id'] != '') AS SessionIds,
+          quantilesTDigestIfState(0.5, 0.95)(toUInt64(0), toUInt8(0)) AS RequestDurationQuantiles,
+          approx_top_kState(10)('') AS TopRoutes,
+          count() AS LogCount,
+          countIf(SeverityNumber >= 13 AND SeverityNumber < 17) AS WarnLogCount,
+          countIf(SeverityNumber >= 17) AS ErrorLogCount,
+          min(TimestampTime) AS FirstSeen,
+          max(TimestampTime) AS LastSeen,
+          toUInt64(0) AS ClassifiedRequestCount,
+          toUInt64(0) AS WebRequestCount,
+          toUInt64(0) AS MobileRequestCount
+        FROM logs
+        WHERE ${LOG_USER_ID_SQL} != ''
+        GROUP BY OrgId, ServiceNamespace, UserId, Hour, ServiceName
+      `,
+		}),
+	],
+})
+
+/** Populates `ci_runs` with the root span of each CI trace: one row per workflow run attempt. */
+export const ciRunsMv = defineMaterializedView("ci_runs_mv", {
+	description:
+		"Populates ci_runs with the root span of every github-actions trace, pre-extracting repository, workflow, result, branch, revision and pull request.",
+	datasource: ciRuns,
+	nodes: [
+		node({
+			name: "ci_runs_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          Timestamp,
+          TraceId,
+          SpanId,
+          ResourceAttributes['vcs.owner.name'] AS Owner,
+          ResourceAttributes['vcs.repository.name'] AS Repository,
+          SpanAttributes['cicd.pipeline.name'] AS Pipeline,
+          SpanAttributes['cicd.pipeline.run.id'] AS RunId,
+          toUInt64OrZero(SpanAttributes['maple.cicd.run_number']) AS RunNumber,
+          toUInt16OrZero(SpanAttributes['maple.cicd.run_attempt']) AS Attempt,
+          SpanAttributes['cicd.pipeline.result'] AS Result,
+          Duration,
+          SpanAttributes['cicd.pipeline.run.url.full'] AS Url,
+          SpanAttributes['vcs.ref.head.name'] AS Branch,
+          SpanAttributes['vcs.ref.head.revision'] AS Revision,
+          SpanAttributes['maple.cicd.trigger_event'] AS TriggerEvent,
+          SpanAttributes['maple.cicd.actor'] AS Actor,
+          toUInt32OrZero(SpanAttributes['vcs.change.id']) AS PullRequest,
+          SpanAttributes['maple.cicd.workflow_path'] AS WorkflowPath
+        FROM traces
+        WHERE ServiceName = '${CI_SERVICE_NAME}'
+          AND ParentSpanId = ''
+      `,
+		}),
+	],
+})
+
+/** Populates `ci_jobs` with each run's jobs: children that name a task but not a step. */
+export const ciJobsMv = defineMaterializedView("ci_jobs_mv", {
+	description:
+		"Populates ci_jobs with the job spans of every github-actions trace, pre-extracting workflow, job, result, queue time, runner and failure reason.",
+	datasource: ciJobs,
+	nodes: [
+		node({
+			name: "ci_jobs_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          Timestamp,
+          TraceId,
+          SpanId,
+          ResourceAttributes['vcs.owner.name'] AS Owner,
+          ResourceAttributes['vcs.repository.name'] AS Repository,
+          SpanAttributes['cicd.pipeline.name'] AS Pipeline,
+          SpanAttributes['cicd.pipeline.run.id'] AS RunId,
+          toUInt16OrZero(SpanAttributes['maple.cicd.run_attempt']) AS Attempt,
+          SpanAttributes['cicd.pipeline.task.name'] AS Job,
+          SpanAttributes['cicd.pipeline.task.run.result'] AS Result,
+          StatusCode,
+          Duration,
+          toUInt32OrZero(SpanAttributes['maple.cicd.queue_duration_ms']) AS QueueMs,
+          SpanAttributes['cicd.pipeline.task.run.url.full'] AS Url,
+          SpanAttributes['maple.cicd.failure.reason'] AS FailureReason,
+          SpanAttributes['cicd.worker.name'] AS RunnerName,
+          SpanAttributes['maple.cicd.runner_labels'] AS RunnerLabels
+        FROM traces
+        WHERE ServiceName = '${CI_SERVICE_NAME}'
+          AND ParentSpanId != ''
+          AND SpanAttributes['cicd.pipeline.task.name'] != ''
+          AND SpanAttributes['maple.cicd.step.number'] = ''
+      `,
+		}),
+	],
+})
+
 export const traceListMvMv = defineMaterializedView("trace_list_mv_mv", {
 	description:
 		"Populates trace_list_mv from root spans with pre-extracted HTTP attributes and normalized span names.",
@@ -1157,7 +1676,7 @@ export const traceListMvMv = defineMaterializedView("trace_list_mv_mv", {
           StatusCode,
           if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']) AS HttpMethod,
           if(SpanAttributes['http.route'] != '', SpanAttributes['http.route'], if(SpanAttributes['url.path'] != '', SpanAttributes['url.path'], SpanAttributes['http.target'])) AS HttpRoute,
-          if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) AS HttpStatusCode,
+          ${HTTP_STATUS_CODE_SQL} AS HttpStatusCode,
           ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
           toUInt8(
             StatusCode = 'Error'
@@ -1634,6 +2153,7 @@ export const serviceOperationsMinutelyMv = defineMaterializedView("service_opera
 	// with no data movement at promotion, which is what an additive change
 	// actually needs, and is also why these rollups need no FORWARD_QUERY (a
 	// leftover one makes every later deploy fail — see the note in datasources).
+	// Migration 0048's six HTTP measures rely on the same directive.
 	deploymentMethod: "alter",
 	nodes: [
 		node({
@@ -1653,7 +2173,13 @@ export const serviceOperationsMinutelyMv = defineMaterializedView("service_opera
           quantilesTDigestState(0.5, 0.95)(Duration) AS DurationQuantiles,
           count() AS ClassifiedSpanCount,
           countIf(SpanKind IN ('Server', 'Consumer')) AS ServerSpanCount,
-          countIf(SpanAttributes['http.route'] != '') AS RoutedSpanCount
+          countIf(SpanAttributes['http.route'] != '') AS RoutedSpanCount,
+          ${HTTP.HttpClassifiedSpanCount} AS HttpClassifiedSpanCount,
+          ${HTTP.HttpStatusCount} AS HttpStatusCount,
+          ${HTTP.Http4xxCount} AS Http4xxCount,
+          ${HTTP.Http5xxCount} AS Http5xxCount,
+          ${HTTP.RequestBodyBytes} AS RequestBodyBytes,
+          ${HTTP.RequestBodyCount} AS RequestBodyCount
         FROM traces
         GROUP BY OrgId, Minute, ServiceName, DeploymentEnv, SpanName
       `,
@@ -1691,9 +2217,62 @@ export const serviceOperationsHourlyMv = defineMaterializedView("service_operati
           quantilesTDigestMergeState(0.5, 0.95)(DurationQuantiles) AS DurationQuantiles,
           sum(ClassifiedSpanCount) AS ClassifiedSpanCount,
           sum(ServerSpanCount) AS ServerSpanCount,
-          sum(RoutedSpanCount) AS RoutedSpanCount
+          sum(RoutedSpanCount) AS RoutedSpanCount,
+          sum(HttpClassifiedSpanCount) AS HttpClassifiedSpanCount,
+          sum(HttpStatusCount) AS HttpStatusCount,
+          sum(Http4xxCount) AS Http4xxCount,
+          sum(Http5xxCount) AS Http5xxCount,
+          sum(RequestBodyBytes) AS RequestBodyBytes,
+          sum(RequestBodyCount) AS RequestBodyCount
         FROM service_operations_minutely
         GROUP BY OrgId, Hour, ServiceName, DeploymentEnv, SpanName
+      `,
+		}),
+	],
+})
+
+/** Request body bytes as Int64 with -1 for none, so `argMax` keeps the slowest row either way. */
+const SLOWEST_BODY_SIZE_SQL = `ifNull(toInt64(${REQUEST_BODY_SIZE_SQL}), -1)`
+
+/**
+ * Hourly HTTP endpoint detail off raw `traces`, for the service API tab. Reads Server
+ * spans with a response status; the SpanName expression is the operations rollup's so
+ * the two tables join on it.
+ */
+export const serviceEndpointDetailsHourlyMv = defineMaterializedView("service_endpoint_details_hourly_mv", {
+	description:
+		"Pre-aggregates HTTP server spans hourly per normalized endpoint, status code and error.type: counts, latency and body-size t-digests, top user agents and the slowest request.",
+	datasource: serviceEndpointDetailsHourly,
+	// The target keeps 90 days and `traces` 30, so a rebuild at promotion would cut it to a
+	// month. `alter` keeps every later change in place (live in US and EU since 2026-10-24).
+	deploymentMethod: "alter",
+	nodes: [
+		node({
+			name: "service_endpoint_details_hourly_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          ServiceName,
+          toStartOfHour(toDateTime(Timestamp)) AS Hour,
+          ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
+          ${NORMALIZED_SPAN_NAME_SQL} AS SpanName,
+          ${HTTP_STATUS_CODE_SQL} AS HttpStatusCode,
+          SpanAttributes['error.type'] AS ErrorType,
+          count() AS SpanCount,
+          sum(SampleRate) AS EstimatedSpanCount,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS DurationQuantiles,
+          quantilesTDigestIfState(0.5, 0.95, 0.99)(ifNull(${REQUEST_BODY_SIZE_SQL}, 0), ${REQUEST_BODY_SIZE_SQL} IS NOT NULL) AS BodySizeQuantiles,
+          maxIf(ifNull(${REQUEST_BODY_SIZE_SQL}, 0), ${REQUEST_BODY_SIZE_SQL} IS NOT NULL) AS BodySizeMax,
+          countIf(${REQUEST_BODY_SIZE_SQL} IS NOT NULL) AS BodyCount,
+          approx_top_kState(10)(${USER_AGENT_SQL}) AS UserAgents,
+          max(Duration) AS SlowestDuration,
+          argMaxState(TraceId, Duration) AS SlowestTraceId,
+          argMaxState(Timestamp, Duration) AS SlowestTimestamp,
+          argMaxState(${SLOWEST_BODY_SIZE_SQL}, Duration) AS SlowestBodySize
+        FROM traces
+        WHERE ${HTTP_SERVER_SPAN_SQL}
+          AND ${HTTP_STATUS_CODE_SQL} != ''
+        GROUP BY OrgId, ServiceName, Hour, DeploymentEnv, SpanName, HttpStatusCode, ErrorType
       `,
 		}),
 	],

@@ -8,9 +8,10 @@
  * shape here — pure, testable, no React — and let the component paint it.
  */
 
-import { Option } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
-import { trySync } from "./try-sync"
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 export type ErrorBodyFormat = "json" | "text"
 
@@ -29,21 +30,21 @@ function looksLikeJson(text: string): boolean {
 }
 
 export function parseErrorBody(message: string): ErrorBody {
-	const trimmed = message.trim()
+	const trimmed = Str.trim(message)
 
 	if (looksLikeJson(trimmed)) {
 		// The delimiter check already guarantees an object or an array — the JSON
 		// grammar admits nothing else between those braces — so a parse that
 		// succeeds is a parse worth pretty-printing. A truncated or otherwise
 		// malformed body decodes to `None` and falls through to text.
-		const parsed = trySync<unknown>(() => JSON.parse(trimmed))
+		const parsed = decodeJson(trimmed)
 		if (Option.isSome(parsed)) {
-			return { format: "json", full: JSON.stringify(parsed.value, null, 2) }
+			return { format: "json", full: encodePrettyJson(parsed.value) }
 		}
 	}
 
 	// Trailing newlines would paint as blank lines under the message.
-	return { format: "text", full: message.replace(/^(?:\r?\n)+/, "").trimEnd() }
+	return { format: "text", full: Str.trimEnd(Str.replace(/^(?:\r?\n)+/, "")(message)) }
 }
 
 export type JsonTokenType = "key" | "string" | "number" | "keyword" | "punctuation" | "plain"
@@ -81,7 +82,7 @@ export function tokenizeJson(source: string): JsonToken[] {
 
 	const push = (text: string, type: JsonTokenType) => {
 		const last = tokens[tokens.length - 1]
-		if (last && last.type === type) last.text += text
+		if (last !== undefined && last.type === type) last.text += text
 		else tokens.push({ text, type })
 	}
 
@@ -112,5 +113,8 @@ const FRAME_RE = /^\s*(at\s|from\s|File\s"|\.{3}\s|Caused by:|\w+\.\w+\(.*\))/
 
 /** Splits a plain-text error into its message and its (dimmed) stack frames. */
 export function splitErrorText(message: string): ErrorTextLine[] {
-	return message.split("\n").map((text, index) => ({ frame: index > 0 && FRAME_RE.test(text), text }))
+	return Arr.map(Str.split("\n")(message), (text, index) => ({
+		frame: index > 0 && FRAME_RE.test(text),
+		text,
+	}))
 }

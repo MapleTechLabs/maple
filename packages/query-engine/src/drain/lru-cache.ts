@@ -7,7 +7,11 @@ import { Schema } from "effect"
  */
 class LruSlotError extends Schema.TaggedError<LruSlotError>()("@maple/query-engine/drain/LruSlotError", {
 	slot: Schema.Number,
-}) {}
+}) {
+	override get message(): string {
+		return `LRU slot ${this.slot} holds no entry`
+	}
+}
 
 interface LruEntry<V> {
 	key: number

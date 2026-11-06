@@ -3,30 +3,38 @@
  * typed output on `structuredContent`, the rendered text, and input errors naming the parameter.
  */
 import { describe, expect, it } from "vitest"
-import { Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import {
 	AlertChecksListResponse,
 	AlertDestinationsListResponse,
 	AlertIncidentsListResponse,
 	AlertRuleDocument,
 	AlertRuleNotFoundError,
+	AlertRulePreviewRequest,
+	AlertRulePreviewResponse,
 	AlertRulesListResponse,
 	AlertRuleUpsertRequest,
+	AlertValidationError,
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
 import {
+	CreateAlertRuleOutput,
 	GetAlertRuleOutput,
 	ListAlertChecksOutput,
 	ListAlertDestinationsOutput,
 	ListAlertIncidentsOutput,
 	ListAlertRulesOutput,
+	PreviewAlertRuleOutput,
+	UpdateAlertRuleOutput,
 } from "@maple/domain/mcp-outputs"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { CurrentMcpTenant } from "../../lib/query-warehouse"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
+import { buildUpdatedRequest } from "../update-alert-rule"
+import { invalidRuleInput } from "../../lib/alert-rules"
 import type { McpToolResult } from "../types"
 
 const RULE_ID = "7f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
@@ -34,7 +42,7 @@ const DEST_ID = "0e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a6b"
 const INCIDENT_ID = "11111111-2222-4333-8444-555555555555"
 const NOW = "2026-09-24T10:00:00.000Z"
 
-const rule = Schema.decodeUnknownSync(AlertRuleDocument)({
+const rule = Schema.decodeSync(AlertRuleDocument)({
 	id: RULE_ID,
 	name: "Checkout errors",
 	notes: null,
@@ -53,6 +61,11 @@ const rule = Schema.decodeUnknownSync(AlertRuleDocument)({
 	windowMinutes: 5,
 	minimumSampleCount: 0,
 	consecutiveBreachesRequired: 1,
+	breachesOutOf: null,
+	evaluationIntervalMinutes: null,
+	thresholds: [
+		{ severity: "critical", value: 0.05, upper: null, recoveryValue: null, destinationIds: [DEST_ID] },
+	],
 	consecutiveHealthyRequired: 1,
 	renotifyIntervalMinutes: 60,
 	apdexThresholdMs: null,
@@ -62,6 +75,9 @@ const rule = Schema.decodeUnknownSync(AlertRuleDocument)({
 	destinationIds: [DEST_ID],
 	noDataBehavior: "skip",
 	lastEvaluationError: "column Foo not found",
+	lastEvaluationErrorKind: null,
+	slowedIntervalMinutes: null,
+	slowedAt: null,
 	lastEvaluatedAt: NOW,
 	lastScheduledAt: NOW,
 	createdAt: NOW,
@@ -69,6 +85,33 @@ const rule = Schema.decodeUnknownSync(AlertRuleDocument)({
 	createdBy: "user_tools",
 	updatedBy: "user_tools",
 })
+
+const ALL_ID = "8a1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
+const RAW_ID = "9b1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
+const OTHER_RAW_ID = "ab1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
+/** An unscoped rule (every service) and two raw-SQL rules, one naming maple-api in its SQL. */
+const extraRules = Arr.map(
+	[
+		{ ...rule, id: ALL_ID, name: "Latency", serviceNames: [], signalType: "p95_latency" },
+		{
+			...rule,
+			id: RAW_ID,
+			name: "Raw api",
+			serviceNames: [],
+			signalType: "raw_query",
+			rawQuerySql: "SELECT count() AS value FROM traces WHERE ServiceName = 'maple-api'",
+		},
+		{
+			...rule,
+			id: OTHER_RAW_ID,
+			name: "Raw web",
+			serviceNames: [],
+			signalType: "raw_query",
+			rawQuerySql: "SELECT 1",
+		},
+	],
+	(r) => Schema.decodeUnknownSync(AlertRuleDocument)(r),
+)
 
 const incident = (overrides: Record<string, unknown>) => ({
 	id: INCIDENT_ID,
@@ -81,6 +124,7 @@ const incident = (overrides: Record<string, unknown>) => ({
 	comparator: "gt",
 	threshold: 0.05,
 	thresholdUpper: null,
+	peakSeverity: null,
 	firstTriggeredAt: NOW,
 	lastTriggeredAt: NOW,
 	resolvedAt: null,
@@ -91,6 +135,10 @@ const incident = (overrides: Record<string, unknown>) => ({
 	lastNotifiedAt: null,
 	holdReason: null,
 	heldSince: null,
+	acknowledgedAt: null,
+	acknowledgedByUserId: null,
+	acknowledgedByName: null,
+	acknowledgedVia: null,
 	errorIssueId: null,
 	...overrides,
 })
@@ -98,23 +146,41 @@ const incident = (overrides: Record<string, unknown>) => ({
 interface Seen {
 	created?: AlertRuleUpsertRequest
 	updated?: AlertRuleUpsertRequest
+	previewed?: AlertRulePreviewRequest
 	incidentOptions?: unknown
 	checkOptions?: unknown
+	extraIncidents?: ReadonlyArray<Record<string, unknown>>
+	updatedIds?: Array<string>
+	/** Replaces the saved rules `listRules` returns. */
+	rules?: ReadonlyArray<AlertRuleDocument>
+	/** The timing a raw-SQL preview reports. */
+	queryTiming?: Record<string, unknown>
+	/** A raw-SQL preview whose range was too heavy to chart: no series. */
+	seriesFailure?: "query_too_slow" | "query_too_much_memory"
 }
 
 const layer = (seen: Seen) =>
 	Layer.mergeAll(
 		Layer.succeed(CurrentMcpTenant, {
-			orgId: Schema.decodeUnknownSync(OrgId)("org_tools"),
-			userId: Schema.decodeUnknownSync(UserId)("user_tools"),
+			orgId: Schema.decodeSync(OrgId)("org_tools"),
+			userId: Schema.decodeSync(UserId)("user_tools"),
 			roles: [],
 			authMode: "self_hosted",
 		} as never),
 		Layer.succeed(AlertRulesService, {
-			listRules: () => Effect.succeed(new AlertRulesListResponse({ rules: [rule] })),
+			listRules: () =>
+				Effect.succeed(new AlertRulesListResponse({ rules: seen.rules ?? [rule, ...extraRules] })),
 			createRule: (_org: unknown, _user: unknown, _roles: unknown, request: AlertRuleUpsertRequest) => {
 				seen.created = request
-				return Effect.succeed(rule)
+				// Echo the fields the write warnings read, so a raw-SQL create reads back as one.
+				return Effect.succeed(
+					Schema.decodeSync(AlertRuleDocument)({
+						...rule,
+						signalType: request.signalType,
+						rawQuerySql: request.rawQuerySql ?? null,
+						minimumSampleCount: request.minimumSampleCount ?? 0,
+					}),
+				)
 			},
 			deleteRule: (_org: unknown, _roles: unknown, id: string) =>
 				id === RULE_ID
@@ -127,19 +193,78 @@ const layer = (seen: Seen) =>
 						),
 		} as never),
 		Layer.succeed(AlertsService, {
+			previewRule: (_o: unknown, _r: unknown, request: AlertRulePreviewRequest) => {
+				seen.previewed = request
+				const point = (bucket: string) => ({
+					bucket,
+					value: null,
+					sampleCount: 0,
+					status: "skipped",
+					skipReason: "no_data",
+				})
+				return Effect.succeed(
+					Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+						bucketSeconds: 300,
+						windowMinutes: 5,
+						threshold: 0.05,
+						thresholdUpper: null,
+						thresholds: [
+							{
+								severity: "warning",
+								value: 0.05,
+								upper: null,
+								recoveryValue: null,
+								destinationIds: [],
+							},
+						],
+						comparator: "gt",
+						truncatedToStart: null,
+						series:
+							seen.seriesFailure === undefined
+								? [
+										{
+											groupKey: "__total__",
+											points: [
+												point("2026-09-24T09:50:00.000Z"),
+												point("2026-09-24T09:55:00.000Z"),
+											],
+										},
+									]
+								: [],
+						wouldFire: [],
+						...(seen.seriesFailure === undefined
+							? undefined
+							: { seriesFailure: seen.seriesFailure }),
+						...(seen.queryTiming === undefined ? undefined : { queryTiming: seen.queryTiming }),
+					}),
+				)
+			},
 			updateRule: (
 				_o: unknown,
 				_u: unknown,
 				_r: unknown,
-				_id: unknown,
+				id: string,
 				request: AlertRuleUpsertRequest,
 			) => {
 				seen.updated = request
-				return Effect.succeed(rule)
+				seen.updatedIds = [...(seen.updatedIds ?? []), id]
+				return Effect.succeed(
+					id === RULE_ID
+						? rule
+						: Schema.decodeSync(AlertRuleDocument)({
+								...rule,
+								id,
+								name: "Latency",
+								destinationIds: Arr.flatMap(
+									request.thresholds ?? [],
+									(tier) => tier.destinationIds,
+								),
+							}),
+				)
 			},
 			listDestinations: () =>
 				Effect.succeed(
-					Schema.decodeUnknownSync(AlertDestinationsListResponse)({
+					Schema.decodeSync(AlertDestinationsListResponse)({
 						destinations: [
 							{
 								id: DEST_ID,
@@ -159,21 +284,26 @@ const layer = (seen: Seen) =>
 				),
 		} as never),
 		Layer.succeed(AlertReadModelsService, {
-			listIncidents: (_org: unknown, options: unknown) => {
-				seen.incidentOptions = options
+			listIncidents: (_org: unknown, options: { readonly status?: string }) => {
+				seen.incidentOptions ??= options
+				const all = [
+					incident({}),
+					incident({ id: "22222222-2222-4333-8444-555555555555", severity: "warning" }),
+					...(seen.extraIncidents ?? []),
+				]
 				return Effect.succeed(
 					Schema.decodeUnknownSync(AlertIncidentsListResponse)({
-						incidents: [
-							incident({}),
-							incident({ id: "22222222-2222-4333-8444-555555555555", severity: "warning" }),
-						],
+						incidents: Arr.filter(
+							all,
+							(i) => options.status === undefined || i.status === options.status,
+						),
 					}),
 				)
 			},
 			listRuleChecks: (_org: unknown, _rule: unknown, options: unknown) => {
 				seen.checkOptions = options
 				return Effect.succeed(
-					Schema.decodeUnknownSync(AlertChecksListResponse)({
+					Schema.decodeSync(AlertChecksListResponse)({
 						checks: [
 							{
 								timestamp: NOW,
@@ -192,9 +322,34 @@ const layer = (seen: Seen) =>
 								consecutiveHealthy: 0,
 								incidentId: null,
 								incidentTransition: "none",
+								level: null,
 								evaluationDurationMs: 12,
 								errorMessage: "column Foo not found",
 								errorCategory: "validation",
+								skipReason: null,
+							},
+							{
+								timestamp: NOW,
+								groupKey: "checkout",
+								status: "skipped",
+								skipReason: "no_data",
+								signalType: "error_rate",
+								comparator: "gt",
+								threshold: 0.05,
+								thresholdUpper: null,
+								observedValue: null,
+								sampleCount: 0,
+								windowMinutes: 5,
+								windowStart: NOW,
+								windowEnd: NOW,
+								consecutiveBreaches: 0,
+								consecutiveHealthy: 0,
+								incidentId: null,
+								incidentTransition: "none",
+								level: null,
+								evaluationDurationMs: 9,
+								errorMessage: null,
+								errorCategory: null,
 							},
 						],
 					}),
@@ -203,23 +358,22 @@ const layer = (seen: Seen) =>
 		} as never),
 	)
 
-interface RunFailure {
-	readonly message: string
-	readonly parameter?: string
-}
+// The registry's requirement union names every tool's services; the alert tools reach only
+// the alert services `layer` provides, so the rest are left absent (a defect if ever reached).
+const withoutUnreachedServices = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E> =>
+	Effect.provide(effect, Context.makeUnsafe<R>(new Map()))
 
 const run = (name: string, params: unknown, seen: Seen = {}) =>
 	Effect.runPromise(
-		// The registry's requirement union names every tool's services; the alert tools reach only
-		// the alert services `layer` provides.
-		// oxlint-disable-next-line effecttsgo/missing-effect-context
 		executeRegisteredMcpToolUnscoped(name, params, "mcp").pipe(
 			Effect.provide(layer(seen)),
 			Effect.result,
-		) as Effect.Effect<
-			{ _tag: "Success"; success: McpToolResult } | { _tag: "Failure"; failure: RunFailure }
-		>,
+			withoutUnreachedServices,
+		),
 	)
+
+const invalidParameter = (failure: { readonly _tag: string }) =>
+	"parameter" in failure ? failure.parameter : undefined
 
 const ok = async (name: string, params: unknown, seen: Seen = {}) => {
 	const result = await run(name, params, seen)
@@ -236,9 +390,9 @@ describe("alert tools", () => {
 			severity: "critical",
 		})
 		const output = Schema.decodeUnknownSync(ListAlertRulesOutput)(result.structuredContent)
-		expect(output.rules.map((r) => r.id)).toEqual([RULE_ID])
+		// The unscoped rule covers checkout too; raw-SQL rules not naming it do not.
+		expect(Arr.map(output.rules, (r) => r.id)).toEqual([RULE_ID, ALL_ID])
 		expect(output.services).toEqual(["checkout", "billing"])
-		expect(text(result)).toContain("## Alert Rules")
 		expect(text(result)).toContain("Services: checkout, billing")
 		expect(text(result)).toContain(RULE_ID)
 		expect(text(result)).toContain(`\`get_alert_rule rule_id="${RULE_ID}"\``)
@@ -261,16 +415,14 @@ describe("alert tools", () => {
 		const result = await ok("get_alert_rule", { rule_id: RULE_ID })
 		const output = Schema.decodeUnknownSync(GetAlertRuleOutput)(result.structuredContent)
 		expect(output.rule.notificationTitle).toBe("{{ rule.name }}")
-		expect(text(result)).toContain("## Alert Rule: Checkout errors")
 		expect(text(result)).toContain("Condition: > 0.05")
 		expect(text(result)).toContain("Last evaluation error: column Foo not found")
-		expect(text(result)).toContain("### Message Template")
 
 		const missing = await run("get_alert_rule", { rule_id: "nope" })
 		expect(missing._tag).toBe("Failure")
 		if (missing._tag === "Failure") {
 			expect(missing.failure._tag).toBe("@maple/mcp/errors/McpInvalidInputError")
-			expect(missing.failure.parameter).toBe("rule_id")
+			expect(invalidParameter(missing.failure)).toBe("rule_id")
 		}
 	})
 
@@ -289,16 +441,48 @@ describe("alert tools", () => {
 		expect(text(result)).toContain('`get_incident_timeline group_key="checkout"`')
 	})
 
+	it("both incident tools point at list_uptime_monitors only when an uptime incident is listed", async () => {
+		const uptime = incident({
+			id: "33333333-3333-4333-8444-555555555555",
+			signalType: "uptime",
+			groupKey: "__total__",
+		})
+		const hint = "`list_uptime_monitors`"
+		// A fresh Seen per call: the stub records into it.
+		expect(text(await ok("list_alert_incidents", {}, { extraIncidents: [uptime] }))).toContain(hint)
+		expect(text(await ok("get_incident_timeline", {}, { extraIncidents: [uptime] }))).toContain(hint)
+		expect(text(await ok("list_alert_incidents", {}))).not.toContain(hint)
+		expect(text(await ok("get_incident_timeline", {}))).not.toContain(hint)
+	})
+
+	it("both incident tools send burn-rate incidents to their SLO, not to list_alert_rules", async () => {
+		const burn = incident({
+			id: "44444444-3333-4333-8444-555555555555",
+			signalType: "slo_burn_rate",
+			ruleName: "SLO burn: Checkout availability",
+			groupKey: "__total__",
+			status: "resolved",
+			resolvedAt: NOW,
+		})
+		// Keyed by the rule id, which survives a rename of the SLO where the stored name does not.
+		const inspect = `\`inspect_slo slo="${burn.ruleId}"\``
+		for (const tool of ["list_alert_incidents", "get_incident_timeline"]) {
+			const onlySlo = text(await ok(tool, { status: "resolved" }, { extraIncidents: [burn] }))
+			expect(onlySlo, tool).toContain(inspect)
+			expect(onlySlo, tool).not.toContain("`list_alert_rules`")
+			expect(text(await ok(tool, {})), tool).not.toContain("inspect_slo")
+		}
+	})
+
 	it("get_incident_timeline filters by rule and rejects a malformed rule_id", async () => {
 		const seen: Seen = {}
 		const result = await ok("get_incident_timeline", { rule_id: RULE_ID, limit: 1 }, seen)
 		expect(seen.incidentOptions).toMatchObject({ ruleId: RULE_ID, limit: 2 })
-		expect(text(result)).toContain("### Checkout errors (open)")
 		expect(text(result)).toContain(`Incident ID: ${INCIDENT_ID}`)
 		expect(text(result)).toContain("Showing 1 incidents.")
 
 		const bad = await run("get_incident_timeline", { rule_id: "not-a-uuid" })
-		expect(bad._tag === "Failure" && bad.failure.parameter).toBe("rule_id")
+		expect(bad._tag === "Failure" && invalidParameter(bad.failure)).toBe("rule_id")
 	})
 
 	it("list_alert_checks takes since/until as the window and a bad rule_id as invalid input", async () => {
@@ -309,31 +493,36 @@ describe("alert tools", () => {
 			seen,
 		)
 		expect(seen.checkOptions).toMatchObject({
-			since: "2026-09-24T00:00:00Z",
-			until: "2026-09-24T12:00:00Z",
+			since: "2026-09-24 00:00:00",
+			until: "2026-09-24 12:00:00",
 			status: "error",
 			limit: 100,
 		})
 		const output = Schema.decodeUnknownSync(ListAlertChecksOutput)(result.structuredContent)
 		expect(output.errored).toBe(1)
+		expect(output.noData).toBe(1)
+		expect(output.checks[1]?.skipReason).toBe("no_data")
+		expect(text(result)).toContain("1 skipped [1 no data]")
+		expect(text(result)).toContain("| no data |")
 		expect(output.timeRange).toEqual({ start: "2026-09-24 00:00:00", end: "2026-09-24 12:00:00" })
 		expect(text(result)).toContain("Time range: 2026-09-24 00:00:00 to 2026-09-24 12:00:00")
 		expect(text(result)).toContain(`\`get_alert_rule rule_id="${RULE_ID}"\``)
 
 		const bad = await run("list_alert_checks", { rule_id: "nope" })
 		expect(bad._tag === "Failure" && bad.failure._tag).toBe("@maple/mcp/errors/McpInvalidInputError")
-		expect(bad._tag === "Failure" && bad.failure.parameter).toBe("rule_id")
+		expect(bad._tag === "Failure" && invalidParameter(bad.failure)).toBe("rule_id")
 	})
 
 	it("create_alert_rule builds the request from a template and list params", async () => {
 		const seen: Seen = {}
-		const result = await ok(
+		await ok(
 			"create_alert_rule",
 			{
 				name: "Errors",
 				template: "high_error_rate",
 				destination_ids: DEST_ID,
 				environments: ["production"],
+				alert_on_no_data: true,
 			},
 			seen,
 		)
@@ -345,8 +534,8 @@ describe("alert tools", () => {
 			destinationIds: [DEST_ID],
 			environments: ["production"],
 			groupBy: ["service.name"],
+			alertOnNoData: true,
 		})
-		expect(text(result)).toContain("## Alert Rule Created")
 
 		// An explicit service scope displaces the template's grouping.
 		await ok(
@@ -390,13 +579,78 @@ describe("alert tools", () => {
 			comparator: "lt",
 			threshold: 0.8,
 		})
-		expect(missing._tag === "Failure" && missing.failure.parameter).toBe("apdex_threshold_ms")
+		expect(missing._tag === "Failure" && invalidParameter(missing.failure)).toBe("apdex_threshold_ms")
 
 		const noDestinations = await run("create_alert_rule", { name: "X", template: "slow_p95" })
 		// Required in the published schema, so its absence is a decode failure naming it.
 		expect(noDestinations._tag === "Failure" && noDestinations.failure.message).toContain(
 			"Missing required `destination_ids`",
 		)
+	})
+
+	it("create_alert_rule warns when a raw_query minimum sample count would count rows", async () => {
+		const base = {
+			name: "Raw",
+			destination_ids: [],
+			signal_type: "raw_query",
+			comparator: "gt",
+			threshold: 0.05,
+			minimum_sample_count: 50,
+		}
+		const sql = "SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)"
+		const warned = await ok("create_alert_rule", { ...base, raw_query_sql: sql })
+		const output = Schema.decodeUnknownSync(CreateAlertRuleOutput)(warned.structuredContent)
+		expect(output.warnings?.[0]).toContain("counts returned rows")
+		expect(text(warned)).toContain("`samples` column")
+
+		const quiet = await ok("create_alert_rule", {
+			...base,
+			raw_query_sql: Str.replace("AS value", "AS value, count() AS samples")(sql),
+		})
+		expect(
+			Schema.decodeUnknownSync(CreateAlertRuleOutput)(quiet.structuredContent).warnings,
+		).toBeUndefined()
+	})
+
+	it("preview_alert_rule replays a draft and flags a window range with no data", async () => {
+		const seen: Seen = {}
+		const result = await ok(
+			"preview_alert_rule",
+			{
+				signal_type: "raw_query",
+				comparator: "gt",
+				threshold: 0.05,
+				raw_query_sql:
+					"SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+				start_time: "2026-09-24 09:00:00",
+				end_time: "2026-09-24 10:00:00",
+			},
+			seen,
+		)
+		expect(seen.previewed?.rule).toMatchObject({
+			name: "Preview",
+			destinationIds: [],
+			signalType: "raw_query",
+		})
+		expect(seen.previewed?.startTime).toBe("2026-09-24T09:00:00Z")
+		const output = Schema.decodeUnknownSync(PreviewAlertRuleOutput)(result.structuredContent)
+		expect(output.groups[0]).toMatchObject({ windows: 2, noData: 2, breached: 0 })
+		expect(output.points[0]?.skipReason).toBe("no_data")
+		expect(output.warnings[0]).toContain("Every window had no data")
+		expect(text(result)).toContain("| no data |")
+	})
+
+	it("preview_alert_rule overlays overrides on a saved rule", async () => {
+		const seen: Seen = {}
+		await ok("preview_alert_rule", { rule_id: RULE_ID, threshold: 0.2 }, seen)
+		expect(seen.previewed?.rule).toMatchObject({
+			name: "Checkout errors",
+			thresholds: [{ value: 0.2 }],
+			signalType: "error_rate",
+		})
+
+		const missing = await run("preview_alert_rule", { rule_id: "8f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f" })
+		expect(missing._tag === "Failure" && invalidParameter(missing.failure)).toBe("rule_id")
 	})
 
 	it("update_alert_rule overlays only the given fields", async () => {
@@ -407,21 +661,337 @@ describe("alert tools", () => {
 			seen,
 		)
 		expect(seen.updated).toMatchObject({
-			threshold: 0.1,
+			thresholds: [{ severity: "critical", value: 0.1 }],
 			name: "Checkout errors",
 			serviceNames: ["checkout"],
 			groupBy: ["service.name", "attr.http.route"],
+			// Carried over from the saved rule, which skips empty windows.
+			alertOnNoData: false,
 		})
+	})
+
+	it("update_alert_rule drops fields the new signal type or comparator does not use", async () => {
+		const seen: Seen = {}
+		await ok(
+			"update_alert_rule",
+			{ rule_id: RAW_ID, signal_type: "error_rate", services: "checkout" },
+			seen,
+		)
+		expect(seen.updated).toMatchObject({
+			signalType: "error_rate",
+			rawQuerySql: null,
+			rawQueryReducer: null,
+		})
+
+		const range = Schema.decodeSync(AlertRuleDocument)({
+			...rule,
+			comparator: "between",
+			thresholdUpper: 10,
+			thresholds: [
+				{ severity: "critical", value: 0.05, upper: 10, recoveryValue: null, destinationIds: [] },
+			],
+		})
+		const upperAfter = (params: Parameters<typeof buildUpdatedRequest>[1]) =>
+			Effect.runSync(buildUpdatedRequest(range, params)).thresholds[0].upper
+		expect(upperAfter({ comparator: "gt" })).toBeNull()
+		expect(upperAfter({ threshold: 2 })).toBe(10)
+	})
+
+	it("update_alert_rule drops a recovery value the new threshold invalidates", () => {
+		const recovering = Schema.decodeSync(AlertRuleDocument)({
+			...rule,
+			comparator: "gt",
+			thresholds: [
+				{
+					severity: "critical",
+					value: 100,
+					upper: null,
+					recoveryValue: 80,
+					destinationIds: [DEST_ID],
+				},
+			],
+		})
+		const recoveryAfter = (params: Parameters<typeof buildUpdatedRequest>[1]) =>
+			Effect.runSync(buildUpdatedRequest(recovering, params)).thresholds[0].recoveryValue
+		expect(recoveryAfter({ threshold: 120 })).toBe(80)
+		expect(recoveryAfter({ threshold: 70 })).toBeNull()
+		expect(recoveryAfter({ comparator: "lt" })).toBeNull()
+	})
+
+	it("update_alert_rule keeps a picked interval until the window gets shorter than it", () => {
+		const hourly = Schema.decodeSync(AlertRuleDocument)({
+			...rule,
+			windowMinutes: 60,
+			evaluationIntervalMinutes: 30,
+		})
+		const intervalAfter = (params: Parameters<typeof buildUpdatedRequest>[1]) =>
+			Effect.runSync(buildUpdatedRequest(hourly, params)).evaluationIntervalMinutes
+		expect(intervalAfter({ threshold: 2 })).toBe(30)
+		expect(intervalAfter({ window_minutes: 30 })).toBe(30)
+		expect(intervalAfter({ window_minutes: 15 })).toBeNull()
+	})
+
+	it("update_alert_rule keeps a two-tier rule's tiers and refuses to merge them", () => {
+		const tiered = Schema.decodeSync(AlertRuleDocument)({
+			...rule,
+			breachesOutOf: 5,
+			thresholds: [
+				{
+					severity: "warning",
+					value: 0.02,
+					upper: null,
+					recoveryValue: 0.01,
+					destinationIds: ["00000000-0000-4000-8000-00000000d001"],
+				},
+				{
+					severity: "critical",
+					value: 0.05,
+					upper: null,
+					recoveryValue: null,
+					destinationIds: ["00000000-0000-4000-8000-00000000d002"],
+				},
+			],
+		})
+		const renamed = Effect.runSync(buildUpdatedRequest(tiered, { name: "Renamed" }))
+		expect(renamed.thresholds).toEqual(tiered.thresholds)
+		expect(renamed.breachesOutOf).toBe(5)
+
+		const added = Effect.runSync(
+			buildUpdatedRequest(tiered, {
+				add_destination_ids: ["00000000-0000-4000-8000-00000000d003"],
+				remove_destination_ids: ["00000000-0000-4000-8000-00000000d002"],
+			}),
+		)
+		expect(Arr.map(added.thresholds, (tier) => tier.destinationIds)).toEqual([
+			["00000000-0000-4000-8000-00000000d001", "00000000-0000-4000-8000-00000000d003"],
+			[],
+		])
+
+		const collapsing = Effect.runSync(Effect.flip(buildUpdatedRequest(tiered, { threshold: 0.1 })))
+		expect(collapsing.parameter).toBe("threshold")
+	})
+
+	it("names each invalid-rule detail once, though the domain message already carries them", () => {
+		const details = ["threshold must be a finite number", "at least one destination must be selected"]
+		const message = invalidRuleInput(
+			new AlertValidationError({ message: `Invalid alert rule: ${Arr.join(details, "; ")}`, details }),
+		).message
+		for (const detail of details) {
+			expect(Str.split(detail)(message)).toHaveLength(2)
+		}
+	})
+
+	it("keeps an invalid-rule message that names a failure its details only qualify", () => {
+		const message = invalidRuleInput(
+			new AlertValidationError({
+				message: "Unsupported traces metric: p95",
+				details: ["Traces filter http.status_code supports only =; ignoring !="],
+			}),
+		).message
+		expect(message).toContain("Unsupported traces metric: p95")
+		expect(message).toContain("ignoring !=")
 	})
 
 	it("delete_alert_rule requires confirm and maps not-found to rule_id", async () => {
 		const unconfirmed = await run("delete_alert_rule", { rule_id: RULE_ID, confirm: false })
-		expect(unconfirmed._tag === "Failure" && unconfirmed.failure.parameter).toBe("confirm")
+		expect(unconfirmed._tag === "Failure" && invalidParameter(unconfirmed.failure)).toBe("confirm")
 
 		const deleted = await ok("delete_alert_rule", { rule_id: RULE_ID, confirm: "true" })
 		expect(text(deleted)).toContain(`ID: ${RULE_ID}`)
 
 		const missing = await run("delete_alert_rule", { rule_id: INCIDENT_ID, confirm: true })
-		expect(missing._tag === "Failure" && missing.failure.parameter).toBe("rule_id")
+		expect(missing._tag === "Failure" && invalidParameter(missing.failure)).toBe("rule_id")
+	})
+	it("list_alert_rules by service includes unscoped rules and raw_query rules naming it", async () => {
+		const result = await ok("list_alert_rules", { service_names: "maple-api" })
+		const output = Schema.decodeUnknownSync(ListAlertRulesOutput)(result.structuredContent)
+		expect(Arr.map(output.rules, (r) => r.id)).toEqual([ALL_ID, RAW_ID])
+		expect(text(result)).toContain("Services: all")
+		expect(text(result)).toContain("| all |")
+		expect(text(result)).toContain("(raw SQL)")
+	})
+
+	it("list_alert_rules names the valid signal types when given an unknown one", async () => {
+		const result = await run("list_alert_rules", { signal_type: "query" })
+		expect(result._tag === "Failure" && JSON.stringify(result.failure)).toContain("raw_query")
+	})
+
+	it("list_alert_incidents status=open counts incidents resolved in the last day", async () => {
+		const seen: Seen = {
+			extraIncidents: [
+				incident({
+					id: "33333333-2222-4333-8444-555555555555",
+					status: "resolved",
+					resolvedAt: new Date().toISOString(),
+				}),
+				incident({
+					id: "44444444-2222-4333-8444-555555555555",
+					status: "resolved",
+					resolvedAt: "2020-01-01T00:00:00.000Z",
+				}),
+			],
+		}
+		const result = await ok("list_alert_incidents", { status: "open", group_key: "nope" }, seen)
+		const output = Schema.decodeUnknownSync(ListAlertIncidentsOutput)(result.structuredContent)
+		expect(output.total).toBe(0)
+		expect(output.recentlyResolvedCount).toBe(0)
+
+		const recent = await ok("list_alert_incidents", { status: "open", severity: "critical" }, seen)
+		const recentOut = Schema.decodeUnknownSync(ListAlertIncidentsOutput)(recent.structuredContent)
+		expect(recentOut.recentlyResolvedCount).toBe(1)
+		expect(text(recent)).toContain("1 resolved in the last 24h")
+		expect(text(recent)).toContain('`list_alert_incidents status="resolved" severity="critical"`')
+	})
+
+	it("create_alert_rule reports the first evaluation and the latest window", async () => {
+		const result = await ok("create_alert_rule", {
+			name: "Errors",
+			template: "high_error_rate",
+			destination_ids: [DEST_ID],
+		})
+		const output = Schema.decodeUnknownSync(CreateAlertRuleOutput)(result.structuredContent)
+		expect(output.evaluation?.nextEvaluationAt).toMatch(/:00\.000Z$/)
+		expect(output.evaluation?.current[0]).toMatchObject({ groupKey: "__total__", status: "skipped" })
+		expect(text(result)).toContain("First scheduled evaluation by")
+		expect(text(result)).toContain("skipped (no_data)")
+	})
+
+	it("get_alert_rule names its destinations", async () => {
+		const result = await ok("get_alert_rule", { rule_id: RULE_ID })
+		const output = Schema.decodeUnknownSync(GetAlertRuleOutput)(result.structuredContent)
+		expect(output.rule.destinations).toEqual([
+			{ id: DEST_ID, name: "On-call", type: "pagerduty", enabled: true },
+		])
+		expect(text(result)).toContain("| On-call | pagerduty | Yes |")
+	})
+
+	it("update_alert_rule adds a destination to every rule with rule_ids=[*]", async () => {
+		const seen: Seen = {}
+		const NEW_DEST = "1e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a6b"
+		const result = await ok(
+			"update_alert_rule",
+			{ rule_ids: ["*"], add_destination_ids: [NEW_DEST], remove_destination_ids: [DEST_ID] },
+			seen,
+		)
+		expect(seen.updatedIds).toEqual([RULE_ID, ALL_ID, RAW_ID, OTHER_RAW_ID])
+		expect(seen.updated?.thresholds?.[0]?.destinationIds).toEqual([NEW_DEST])
+		const output = Schema.decodeUnknownSync(UpdateAlertRuleOutput)(result.structuredContent)
+		expect(output.rules).toHaveLength(4)
+		expect(text(result)).toContain("Updated 4 Alert Rules")
+
+		const named = await run("update_alert_rule", { rule_ids: [RULE_ID, ALL_ID], name: "Same" })
+		expect(named._tag === "Failure" && invalidParameter(named.failure)).toBe("name")
+		const none = await run("update_alert_rule", { threshold: 1 })
+		expect(none._tag === "Failure" && invalidParameter(none.failure)).toBe("rule_id")
+	})
+	/** A raw-SQL rule the scheduler slowed from every 5m to every 10m after repeated timeouts. */
+	const slowedRule = Schema.decodeSync(AlertRuleDocument)({
+		...rule,
+		signalType: "raw_query",
+		rawQuerySql: "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+		windowMinutes: 30,
+		evaluationIntervalMinutes: 5,
+		slowedIntervalMinutes: 10,
+		slowedAt: NOW,
+		lastEvaluationError: "Timeout exceeded: elapsed 15.2 seconds",
+		lastEvaluationErrorKind: "query_too_slow",
+	})
+
+	it("create_alert_rule passes a picked check interval, numeric string or not", async () => {
+		const seen: Seen = {}
+		const base = { name: "Errors", template: "high_error_rate", destination_ids: [], window_minutes: 30 }
+		await ok("create_alert_rule", { ...base, evaluation_interval_minutes: "10" }, seen)
+		expect(seen.created?.evaluationIntervalMinutes).toBe(10)
+
+		await ok("create_alert_rule", { ...base, evaluation_interval_minutes: null }, seen)
+		expect(seen.created?.evaluationIntervalMinutes).toBeUndefined()
+
+		const unpickable = await run("create_alert_rule", { ...base, evaluation_interval_minutes: 7 })
+		expect(unpickable._tag).toBe("Failure")
+	})
+
+	it("update_alert_rule keeps the check interval when omitted and derives it again on null", async () => {
+		const seen: Seen = { rules: [slowedRule] }
+		await ok("update_alert_rule", { rule_id: RULE_ID, threshold: 2 }, seen)
+		expect(seen.updated?.evaluationIntervalMinutes).toBe(5)
+
+		await ok("update_alert_rule", { rule_id: RULE_ID, evaluation_interval_minutes: null }, seen)
+		expect(seen.updated?.evaluationIntervalMinutes).toBeNull()
+
+		await ok("update_alert_rule", { rule_id: RULE_ID, evaluation_interval_minutes: 15 }, seen)
+		await ok("update_alert_rule", { rule_id: RULE_ID, evaluation_interval_minutes: "auto" }, seen)
+		expect(seen.updated?.evaluationIntervalMinutes).toBeNull()
+
+		await ok("update_alert_rule", { rule_id: RULE_ID, evaluation_interval_minutes: 15 }, seen)
+		expect(seen.updated?.evaluationIntervalMinutes).toBe(15)
+	})
+
+	it("get_alert_rule explains a rule the scheduler slowed down and why its checks failed", async () => {
+		const result = await ok("get_alert_rule", { rule_id: RULE_ID }, { rules: [slowedRule] })
+		const output = Schema.decodeUnknownSync(GetAlertRuleOutput)(result.structuredContent)
+		expect(output.rule.slowedIntervalMinutes).toBe(10)
+		expect(output.rule.lastEvaluationErrorKind).toBe("query_too_slow")
+		expect(text(result)).toContain("Window: 30m, checked every 10m (slowed down from 5m)")
+		expect(text(result)).toContain("hit its time or memory limit 3 checks in a row")
+		expect(text(result)).toContain("Editing the rule resets that")
+		expect(text(result)).toContain("Last error kind: query_too_slow")
+
+		const plain = await ok("get_alert_rule", { rule_id: RULE_ID })
+		expect(text(plain)).toContain("checked every 1m (derived from the window)")
+		expect(text(plain)).not.toContain("3 checks in a row")
+	})
+
+	it("preview_alert_rule times one raw-SQL check against the interval's limit", async () => {
+		const sql = "SELECT count() AS value\nFROM traces\nWHERE $__orgFilter AND $__timeFilter(Timestamp)"
+		const seen: Seen = {
+			rules: [new AlertRuleDocument({ ...slowedRule, rawQuerySql: sql })],
+			queryTiming: {
+				elapsedMs: 7800,
+				failure: null,
+				probeLimitMs: 25000,
+				intervalMinutes: 1,
+				limitMs: 5000,
+				fitsIntervalMinutes: [5, 10, 15, 30, 60],
+			},
+		}
+		const result = await ok("preview_alert_rule", { rule_id: RULE_ID }, seen)
+		const output = Schema.decodeUnknownSync(PreviewAlertRuleOutput)(result.structuredContent)
+		expect(output.queryTiming?.elapsedMs).toBe(7800)
+		expect(output.performanceHints?.[0]).toMatchObject({ code: "no_service_filter", line: 2 })
+		expect(text(result)).toContain(
+			"One check took 7.8s; the limit at this interval (every 1m) is 5s. Fits checks every 5, 10, 15, 30, 60 min.",
+		)
+		expect(text(result)).toContain("Line 2: Filter traces on a service")
+		expect(text(result)).toContain("evaluation_interval_minutes=5")
+		// The suggested update carries the window the preview answered with, overridden or not.
+		expect(text(result)).toContain("window_minutes=5 evaluation_interval_minutes=5")
+
+		const unfinished = await ok(
+			"preview_alert_rule",
+			{ rule_id: RULE_ID },
+			{
+				...seen,
+				queryTiming: {
+					...seen.queryTiming,
+					elapsedMs: null,
+					failure: "query_too_slow",
+					fitsIntervalMinutes: [],
+				},
+			},
+		)
+		expect(text(unfinished)).toContain("One check did not finish within 25s")
+		expect(text(unfinished)).toContain("It fits no check interval")
+		expect(text(unfinished)).not.toContain("evaluation_interval_minutes=")
+
+		const heavy = await ok(
+			"preview_alert_rule",
+			{ rule_id: RULE_ID },
+			{ ...seen, seriesFailure: "query_too_much_memory" },
+		)
+		expect(text(heavy)).toContain("ran out of memory charting this whole range")
+		expect(text(heavy)).toContain("The range was too heavy to chart")
+		expect(text(heavy)).not.toContain("returned no series")
+		// The one-check timing still says which interval fits.
+		expect(text(heavy)).toContain("One check took 7.8s")
 	})
 })

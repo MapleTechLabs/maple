@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import type { AlertDestinationDocument, AlertDestinationUpdateRequest } from "@maple/domain/http"
 import { auditDiff } from "./audit-changes"
 import {
@@ -6,10 +6,13 @@ import {
 	CurrentTenant,
 	DiscordAlertDestinationConfig,
 	EmailAlertDestinationConfig,
-	HazelOAuthAlertDestinationConfig,
+	LinearAlertDestinationConfig,
 	AlertDestinationNotFoundError,
 	PagerDutyAlertDestinationConfig,
 	TelegramAlertDestinationConfig,
+	GoogleChatAlertDestinationConfig,
+	IncidentIoAlertDestinationConfig,
+	MicrosoftTeamsAlertDestinationConfig,
 	WebhookAlertDestinationConfig,
 } from "@maple/domain/http"
 import type {
@@ -20,7 +23,7 @@ import type {
 	V2TelegramChatList,
 } from "@maple/domain/http/v2"
 import { MapleApiV2, paginateArray } from "@maple/domain/http/v2"
-import { Effect } from "effect"
+import { Effect, Option, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 
@@ -35,6 +38,7 @@ const toV2Destination = (doc: AlertDestinationDocument): V2AlertDestination => (
 	member_user_ids: doc.memberUserIds,
 	...(doc.chatConnector === undefined ? undefined : { chat_connector: doc.chatConnector }),
 	...(doc.chatWorkspaceId === undefined ? undefined : { chat_workspace_id: doc.chatWorkspaceId }),
+	...(doc.linearTeamId === undefined ? undefined : { linear_team_id: doc.linearTeamId }),
 	last_tested_at: doc.lastTestedAt,
 	last_test_error: doc.lastTestError,
 	created_at: doc.createdAt,
@@ -65,21 +69,6 @@ const toCreateRequest = (params: V2AlertDestinationCreateParams) => {
 					: undefined),
 				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
 			})
-		case "hazel-oauth":
-			return new HazelOAuthAlertDestinationConfig({
-				type: "hazel-oauth",
-				name: params.name,
-				hazelOrganizationId: params.hazel_organization_id,
-				hazelOrganizationName: params.hazel_organization_name,
-				...(params.hazel_organization_logo_url !== undefined
-					? {
-							hazelOrganizationLogoUrl: params.hazel_organization_logo_url,
-						}
-					: undefined),
-				hazelChannelId: params.hazel_channel_id,
-				hazelChannelName: params.hazel_channel_name,
-				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
-			})
 		case "discord":
 			return new DiscordAlertDestinationConfig({
 				type: "discord",
@@ -95,6 +84,28 @@ const toCreateRequest = (params: V2AlertDestinationCreateParams) => {
 				chatId: params.chat_id,
 				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
 			})
+		case "google-chat":
+			return new GoogleChatAlertDestinationConfig({
+				type: "google-chat",
+				name: params.name,
+				webhookUrl: params.webhook_url,
+				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
+			})
+		case "microsoft-teams":
+			return new MicrosoftTeamsAlertDestinationConfig({
+				type: "microsoft-teams",
+				name: params.name,
+				webhookUrl: params.webhook_url,
+				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
+			})
+		case "incident-io":
+			return new IncidentIoAlertDestinationConfig({
+				type: "incident-io",
+				name: params.name,
+				alertSourceConfigId: params.alert_source_config_id,
+				token: params.token,
+				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
+			})
 		case "email":
 			return new EmailAlertDestinationConfig({
 				type: "email",
@@ -108,6 +119,13 @@ const toCreateRequest = (params: V2AlertDestinationCreateParams) => {
 				name: params.name,
 				workspaceId: params.workspace_id,
 				channelId: params.channel_id,
+				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
+			})
+		case "linear":
+			return new LinearAlertDestinationConfig({
+				type: "linear",
+				name: params.name,
+				teamId: params.team_id,
 				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
 			})
 	}
@@ -136,34 +154,6 @@ const toUpdateRequest = (params: V2AlertDestinationUpdateParams): AlertDestinati
 					? { signingSecret: params.signing_secret }
 					: undefined),
 			}
-		case "hazel-oauth":
-			return {
-				type: "hazel-oauth",
-				...shared,
-				...(params.hazel_organization_id !== undefined
-					? {
-							hazelOrganizationId: params.hazel_organization_id,
-						}
-					: undefined),
-				...(params.hazel_organization_name !== undefined
-					? {
-							hazelOrganizationName: params.hazel_organization_name,
-						}
-					: undefined),
-				...(params.hazel_organization_logo_url !== undefined
-					? {
-							hazelOrganizationLogoUrl: params.hazel_organization_logo_url,
-						}
-					: undefined),
-				...(params.hazel_channel_id !== undefined
-					? { hazelChannelId: params.hazel_channel_id }
-					: undefined),
-				...(params.hazel_channel_name !== undefined
-					? {
-							hazelChannelName: params.hazel_channel_name,
-						}
-					: undefined),
-			}
 		case "discord":
 			return {
 				type: "discord",
@@ -176,6 +166,27 @@ const toUpdateRequest = (params: V2AlertDestinationUpdateParams): AlertDestinati
 				...shared,
 				...(params.bot_token !== undefined ? { botToken: params.bot_token } : undefined),
 				...(params.chat_id !== undefined ? { chatId: params.chat_id } : undefined),
+			}
+		case "google-chat":
+			return {
+				type: "google-chat",
+				...shared,
+				...(params.webhook_url !== undefined ? { webhookUrl: params.webhook_url } : undefined),
+			}
+		case "microsoft-teams":
+			return {
+				type: "microsoft-teams",
+				...shared,
+				...(params.webhook_url !== undefined ? { webhookUrl: params.webhook_url } : undefined),
+			}
+		case "incident-io":
+			return {
+				type: "incident-io",
+				...shared,
+				...(params.alert_source_config_id !== undefined
+					? { alertSourceConfigId: params.alert_source_config_id }
+					: undefined),
+				...(params.token !== undefined ? { token: params.token } : undefined),
 			}
 		case "email":
 			return {
@@ -190,6 +201,12 @@ const toUpdateRequest = (params: V2AlertDestinationUpdateParams): AlertDestinati
 				type: "chat",
 				...shared,
 				...(params.channel_id !== undefined ? { channelId: params.channel_id } : undefined),
+			}
+		case "linear":
+			return {
+				type: "linear",
+				...shared,
+				...(params.team_id !== undefined ? { teamId: params.team_id } : undefined),
 			}
 	}
 }
@@ -210,20 +227,10 @@ export const destinationAuditDiff = auditDiff({
 	fields: ["name", "enabled", "member_user_ids"],
 	// A webhook URL is a credential: Discord's carries the token in the path, and
 	// a plain webhook's can carry one in userinfo or query.
-	writeOnly: ["integration_key", "signing_secret", "url", "webhook_url", "bot_token"],
+	writeOnly: ["integration_key", "signing_secret", "url", "webhook_url", "bot_token", "token"],
 	// Provider-side handles. Not secret, but not readable back off the document
 	// either — recorded as touched so the change is not invisible.
-	opaque: [
-		"channel_id",
-		"channel_name",
-		"chat_id",
-		"workspace_id",
-		"hazel_organization_id",
-		"hazel_organization_name",
-		"hazel_organization_logo_url",
-		"hazel_channel_id",
-		"hazel_channel_name",
-	],
+	opaque: ["channel_id", "channel_name", "chat_id", "workspace_id", "team_id", "alert_source_config_id"],
 })
 
 export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "alertDestinations", (handlers) =>
@@ -236,7 +243,7 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 					const tenant = yield* CurrentTenant.Context
 					const response = yield* destinations.listDestinations(tenant.orgId)
 
-					const page = yield* paginateArray(response.destinations.map(toV2Destination), query)
+					const page = yield* paginateArray(Arr.map(response.destinations, toV2Destination), query)
 					return { object: "list" as const, ...page }
 				}),
 			)
@@ -245,15 +252,13 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 					const tenant = yield* CurrentTenant.Context
 					const response = yield* destinations.listDestinations(tenant.orgId)
 
-					const destination = response.destinations.find((doc) => doc.id === params.id)
-					if (destination === undefined)
-						return yield* Effect.fail(
-							new AlertDestinationNotFoundError({
-								message: "No such alert destination.",
-								destinationId: params.id,
-							}),
-						)
-					return toV2Destination(destination)
+					const destination = Arr.findFirst(response.destinations, (doc) => doc.id === params.id)
+					if (Option.isNone(destination))
+						return yield* new AlertDestinationNotFoundError({
+							message: "No such alert destination.",
+							destinationId: params.id,
+						})
+					return toV2Destination(destination.value)
 				}),
 			)
 			.handle("telegramChats", ({ payload }) =>
@@ -289,7 +294,7 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 					const tenant = yield* CurrentTenant.Context
 					const request = toUpdateRequest(payload)
 					const existing = yield* destinations.listDestinations(tenant.orgId)
-					const current = existing.destinations.find((doc) => doc.id === params.id)
+					const current = Arr.findFirst(existing.destinations, (doc) => doc.id === params.id)
 					const updated = yield* destinations.updateDestination(
 						tenant.orgId,
 						tenant.userId,
@@ -300,7 +305,7 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 
 					const changes = destinationAuditDiff(
 						payload,
-						destinationAuditView(current),
+						destinationAuditView(Option.getOrUndefined(current)),
 						destinationAuditView(updated),
 					)
 					yield* recordHttpAudit("alert_destination.updated", {

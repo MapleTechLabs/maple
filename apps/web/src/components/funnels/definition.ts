@@ -7,21 +7,12 @@
 // widget's stored config and an API request decode the same shape.
 
 import {
-	FUNNEL_MAX_STEPS,
-	FUNNEL_SESSION_DIMENSION_LABEL,
 	FunnelSessionDimension,
-	type FunnelBreakdownBy as FunnelBreakdownByType,
 	type FunnelKeyBy as FunnelKeyByType,
 	type FunnelSessionDimension as FunnelSessionDimensionType,
 	type FunnelStep as FunnelStepType,
 } from "@maple/query-model"
-
-export type {
-	FunnelBreakdownByType as FunnelBreakdownBy,
-	FunnelSessionDimensionType as FunnelSessionDimension,
-}
-
-export { FUNNEL_MAX_STEPS }
+import { Array as Arr, String as Str } from "effect"
 
 export const DEFAULT_FUNNEL_KEY_BY: FunnelKeyByType = "person"
 export const DEFAULT_FUNNEL_WINDOW_SECONDS = 24 * 3600
@@ -42,7 +33,7 @@ export const FUNNEL_KEY_BY_OPTIONS: ReadonlyArray<{
 		value: "person",
 		label: "Person",
 		description:
-			"User id when known, else the visitor — anonymous and signed-in activity collapse into one.",
+			"User id when known, else the visitor. Anonymous and signed-in activity collapse into one.",
 	},
 	{ value: "visitor", label: "Visitor", description: "The browser's anonymous visitor id." },
 	{ value: "user", label: "User", description: "Identified users only." },
@@ -53,23 +44,18 @@ export const FUNNEL_KEY_BY_OPTIONS: ReadonlyArray<{
 	},
 ]
 
-export { FUNNEL_SESSION_DIMENSION_LABEL }
-
 export const FUNNEL_SESSION_DIMENSIONS: ReadonlyArray<FunnelSessionDimensionType> =
 	FunnelSessionDimension.literals
 
-/** A fresh event step; the builder's default when a step is added. */
-export const emptyEventStep = (): FunnelStepType => ({ kind: "event", eventName: "" })
-
 /** Steps with something to match on. A blank event name is a step still being typed. */
 export const completedSteps = (steps: ReadonlyArray<FunnelStepType>): ReadonlyArray<FunnelStepType> =>
-	steps.filter((step) => {
+	Arr.filter(steps, (step) => {
 		switch (step.kind) {
 			case "event":
-				return step.eventName.trim() !== ""
+				return Str.trim(step.eventName) !== ""
 			case "page":
-				return step.pagePath.trim() !== ""
+				return Str.trim(step.pagePath) !== ""
 			case "session":
-				return step.value.trim() !== ""
+				return Str.trim(step.value) !== ""
 		}
 	})

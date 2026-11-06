@@ -21,6 +21,46 @@ describe("resolveConfig", () => {
 		expect(warn).toHaveBeenCalledTimes(1)
 	})
 
+	it("warns once when serviceName is missing, since every span would go unattributed", () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+		const named = resolveConfig({ ingestKey: "maple_pk_x", serviceName: "acme-web" })
+		expect(named.serviceName).toBe("acme-web")
+		expect(warn).not.toHaveBeenCalled()
+
+		resolveConfig({ ingestKey: "maple_pk_x", serviceName: " " })
+		// A plain-JS caller can leave it out entirely.
+		const missing = resolveConfig(JSON.parse('{"ingestKey":"maple_pk_x"}'))
+		expect(missing.serviceName).toBe("")
+		expect(warn).toHaveBeenCalledTimes(1)
+		expect(String(warn.mock.calls[0]?.[0])).toContain("serviceName")
+	})
+
+	it("treats a string CORS URL as a prefix of that origin or path, not the whole URL", () => {
+		const { propagateTraceHeaderCorsUrls } = resolveConfig({
+			ingestKey: "maple_pk_x",
+			serviceName: "s",
+			tracing: {
+				propagateTraceHeaderCorsUrls: [
+					"https://api.example.com",
+					"https://cdn.example.com/v2",
+					"https://edge.example.com/v1/",
+				],
+			},
+		})
+		const propagates = (url: string) => propagateTraceHeaderCorsUrls.some((re) => re.test(url))
+		// Request URLs always carry at least the root path.
+		expect(propagates("https://api.example.com/")).toBe(true)
+		expect(propagates("https://api.example.com/v1/users?id=1")).toBe(true)
+		// A configured trailing slash is kept: `/v1/` does not cover `/v1` itself.
+		expect(propagates("https://edge.example.com/v1/users")).toBe(true)
+		expect(propagates("https://edge.example.com/v1")).toBe(false)
+		expect(propagates("https://edge.example.com/v1?x=1")).toBe(false)
+		expect(propagates("https://cdn.example.com/v2/assets")).toBe(true)
+		expect(propagates("https://api.example.com.evil.io/v1")).toBe(false)
+		expect(propagates("https://api.example.com:8443/v1")).toBe(false)
+		expect(propagates("https://cdn.example.com/v20")).toBe(false)
+	})
+
 	it("applies defaults and strips the endpoint's trailing slash", () => {
 		const config = resolveConfig({
 			ingestKey: "maple_pk_x",
@@ -44,6 +84,7 @@ describe("resolveConfig", () => {
 			ingestKey: "maple_pk_x",
 			serviceName: "acme-web",
 			endpoint: "https://ingest.example.com/",
+			// oxlint-disable-next-line typescript/no-deprecated -- covers the legacy `userId` option.
 			userId: null,
 			tracing: { instrumentFetch: false },
 			replay: { sampleRate: 0.25 },
@@ -63,6 +104,7 @@ describe("resolveConfig", () => {
 		const legacy = resolveConfig({
 			ingestKey: "k",
 			serviceName: "s",
+			// oxlint-disable-next-line typescript/no-deprecated -- covers the legacy `userId` option.
 			userId: "user_123",
 		})
 		expect(legacy.identity).toEqual({ id: "user_123", traits: {} })
@@ -89,6 +131,7 @@ describe("resolveConfig", () => {
 		const config = resolveConfig({
 			ingestKey: "k",
 			serviceName: "s",
+			// oxlint-disable-next-line typescript/no-deprecated -- covers the legacy `userId` option.
 			userId: "legacy",
 			user: { id: "modern" },
 		})
@@ -118,5 +161,31 @@ describe("resolveConfig", () => {
 		).toBe(0)
 		expect(warn).toHaveBeenCalledTimes(2)
 		warn.mockRestore()
+	})
+
+	it("drops credential headers from captureHeaders, lowercased", () => {
+		const config = resolveConfig({
+			ingestKey: "k",
+			serviceName: "s",
+			tracing: {
+				captureHeaders: {
+					request: ["Authorization", "X-Request-Id"],
+					response: ["Set-Cookie", "X-Cache"],
+				},
+			},
+		})
+		expect(config.captureHeaders).toEqual({ request: ["x-request-id"], response: ["x-cache"] })
+	})
+
+	it("caps network body length at what ingest keeps", () => {
+		const resolve = (maxLength?: number) =>
+			resolveConfig({
+				ingestKey: "k",
+				serviceName: "s",
+				replay: { networkBodies: { urls: ["/api"], maxLength } },
+			}).networkBodies?.maxLength
+		expect(resolve()).toBe(1_000)
+		expect(resolve(200)).toBe(200)
+		expect(resolve(50_000)).toBe(1_000)
 	})
 })

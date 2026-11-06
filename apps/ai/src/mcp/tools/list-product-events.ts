@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListProductEventsOutput, ProductEventKind } from "@maple/domain/mcp-outputs"
 import { productEventNames } from "@maple/query-engine/observability"
 import type { McpToolRegistrar } from "./types"
@@ -6,6 +6,7 @@ import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import { formatNumber, truncate } from "../lib/format"
+import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -21,6 +22,7 @@ const TRACK_HINT =
 export function registerListProductEventsTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
+		title: "List Product Events",
 		description:
 			"List the product event names an org recorded (browser `track()` events, server-side events, page views) with how often each fired and how many sessions and persons it reached. Use it to find exact step names for `query_funnel`. `kind`: `custom` is a `track()` or server event, `navigation` a page view, `screen` a mobile screen. `kind` and `search` select among the 200 most frequent names in the window.",
 		parameters: Schema.Struct({
@@ -47,7 +49,11 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 			const limit = params.limit
 
 			const tenant = yield* CurrentMcpTenant
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, kind: params.kind ?? "any", limit })
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				"maple.ai.kind": params.kind ?? "any",
+				"maple.ai.limit": limit,
+			})
 
 			// The query ranks every name; kind and name filters apply here so the limit still means
 			// "names shown". Fetch the full cap when narrowing.
@@ -70,17 +76,19 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 			).pipe(Effect.catchTags(warehouseToMcpHandlers(TOOL)))
 
 			const search = params.search?.toLowerCase()
-			const events = rows
-				.filter((row) => params.kind === undefined || row.kind === params.kind)
-				.filter((row) => search === undefined || row.eventName.toLowerCase().includes(search))
-				.slice(0, limit)
-				.map((row) => ({
+			const events = Arr.map(
+				Arr.filter(
+					Arr.filter(rows, (row) => params.kind === undefined || row.kind === params.kind),
+					(row) => search === undefined || Str.includes(search)(Str.toLowerCase(row.eventName)),
+				).slice(0, limit),
+				(row) => ({
 					eventName: row.eventName,
 					kind: row.kind,
-					count: Number(row.count) || 0,
-					sessions: Number(row.sessions) || 0,
-					persons: Number(row.persons) || 0,
-				}))
+					count: row.count,
+					sessions: row.sessions,
+					persons: row.persons,
+				}),
+			)
 			yield* Effect.annotateCurrentSpan("result.rowCount", events.length)
 
 			return {
@@ -92,12 +100,23 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 		}),
 		render: (output) => {
 			const { events } = output
-			const customEvents = events.filter((event) => event.kind === "custom")
-			const suggested = customEvents
-				.slice(0, 2)
-				.map((event) => ({ kind: "event", eventName: event.eventName }))
+			const customEvents = Arr.filter(events, (event) => event.kind === "custom")
+			const suggested = Arr.map(customEvents.slice(0, 2), (event) => ({
+				kind: "event",
+				eventName: event.eventName,
+			}))
 			const expectsCustom = output.kind === undefined || output.kind === "custom"
+			// Every event on one "person" across many sessions means the identity keys are empty.
+			const maxSessions = Math.max(0, ...Arr.map(events, (event) => event.sessions))
+			const collapsed = maxSessions > 1 && Arr.every(events, (event) => event.persons <= 1)
 			return {
+				...(collapsed
+					? {
+							notices: [
+								'Persons is at most 1 while events span many sessions: the events carry no VisitorId or UserId, so they all count as one person. Person, visitor and user funnels cannot stitch them; use query_funnel key_by="session", or send a visitor/user id with the events.',
+							],
+						}
+					: undefined),
 				title: output.narrowed ? "Product events (matching)" : "Product events",
 				scope: [
 					["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
@@ -121,7 +140,7 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 						: [
 								doc.table(
 									["Event", "Kind", "Count", "Sessions", "Persons"],
-									events.map((event) => [
+									Arr.map(events, (event) => [
 										truncate(event.eventName, 60),
 										event.kind,
 										formatNumber(event.count),
@@ -144,13 +163,13 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 								suggested.length > 0
 									? doc.next(
 											"query_funnel",
-											{ steps_json: JSON.stringify(suggested) },
+											{ steps_json: stringifyJson(suggested) },
 											"measure conversion between them",
 										)
 									: doc.next(
 											"query_funnel",
 											{
-												steps_json: JSON.stringify([
+												steps_json: stringifyJson([
 													{ kind: "page", pagePath: "/" },
 													{ kind: "page", pagePath: "/pricing" },
 												]),

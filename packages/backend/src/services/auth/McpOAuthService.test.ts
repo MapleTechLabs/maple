@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
-import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Option, Schema, Tracer, DateTime, Array as Arr } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
@@ -32,9 +32,9 @@ const makeLayer = (testDb: TestDb) => {
 	return Layer.mergeAll(McpOAuthService.layer.pipe(Layer.provide(base)), apiKeys, auth, base)
 }
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_mcp")
-const userId = Schema.decodeUnknownSync(UserId)("user_mcp")
-const memberRole = Schema.decodeUnknownSync(RoleName)("org:member")
+const orgId = Schema.decodeSync(OrgId)("org_mcp")
+const userId = Schema.decodeSync(UserId)("user_mcp")
+const memberRole = Schema.decodeSync(RoleName)("org:member")
 const resource = "https://api.example.com/mcp"
 const redirectUri = "http://127.0.0.1:49152/callback"
 const verifier = "maple-mcp-oauth-verifier-that-is-long-enough-1234567890"
@@ -188,8 +188,8 @@ describe("McpOAuthService", () => {
 					"127.0.0.1",
 				)
 				.pipe(Effect.flip)
-			expect(wrongRedirect._tag).toBe("@maple/api/errors/McpOAuthProtocolError")
-			if (wrongRedirect._tag === "@maple/api/errors/McpOAuthProtocolError") {
+			expect(wrongRedirect._tag).toBe("@maple/backend/errors/McpOAuthProtocolError")
+			if (wrongRedirect._tag === "@maple/backend/errors/McpOAuthProtocolError") {
 				expect(wrongRedirect.error).toBe("invalid_grant")
 			}
 			const tokens = yield* oauth.exchangeAuthorizationCode(
@@ -229,8 +229,8 @@ describe("McpOAuthService", () => {
 					"127.0.0.1",
 				)
 				.pipe(Effect.flip)
-			expect(reused._tag).toBe("@maple/api/errors/McpOAuthProtocolError")
-			if (reused._tag === "@maple/api/errors/McpOAuthProtocolError") {
+			expect(reused._tag).toBe("@maple/backend/errors/McpOAuthProtocolError")
+			if (reused._tag === "@maple/backend/errors/McpOAuthProtocolError") {
 				expect(reused.error).toBe("invalid_grant")
 			}
 		}).pipe(Effect.provide(makeLayer(db)))
@@ -287,7 +287,7 @@ describe("McpOAuthService", () => {
 					"127.0.0.1",
 				)
 				.pipe(Effect.flip)
-			if (replay._tag === "@maple/api/errors/McpOAuthProtocolError") {
+			if (replay._tag === "@maple/backend/errors/McpOAuthProtocolError") {
 				expect(replay.error).toBe("invalid_grant")
 			}
 			expect(Option.isNone(yield* apiKeys.resolveByKey(second.access_token))).toBe(true)
@@ -314,8 +314,8 @@ describe("McpOAuthService", () => {
 					"127.0.0.1",
 				)
 				.pipe(Effect.flip)
-			expect(failure._tag).toBe("@maple/api/errors/McpOAuthProtocolError")
-			if (failure._tag === "@maple/api/errors/McpOAuthProtocolError") {
+			expect(failure._tag).toBe("@maple/backend/errors/McpOAuthProtocolError")
+			if (failure._tag === "@maple/backend/errors/McpOAuthProtocolError") {
 				expect(failure.error).toBe("invalid_grant")
 			}
 
@@ -326,6 +326,39 @@ describe("McpOAuthService", () => {
 				),
 			)
 			expect(Number(live?.count)).toBe(0)
+		}).pipe(Effect.provide(makeLayer(db)))
+	})
+
+	it.effect("leaves the refresh span Ok when the client presents a revoked grant", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const oauth = yield* McpOAuthService
+			const grant = yield* issueGrant(oauth, "Revoked Grant Client")
+			const request = { refreshToken: grant.tokens.refresh_token, clientId: grant.clientId, resource }
+			yield* oauth.refresh(request, "127.0.0.1")
+
+			const spans: Array<Tracer.NativeSpan> = []
+			const tracer = Tracer.make({
+				span(options) {
+					const span = new Tracer.NativeSpan(options)
+					spans.push(span)
+					return span
+				},
+			})
+			// The token was rotated above, so replaying it is `invalid_grant`.
+			const failure = yield* oauth
+				.refresh(request, "127.0.0.1")
+				.pipe(Effect.flip, Effect.withTracer(tracer))
+			expect(failure._tag).toBe("@maple/backend/errors/McpOAuthProtocolError")
+
+			const span = Option.getOrUndefined(
+				Arr.findFirst(spans, (candidate) => candidate.name === "McpOAuthService.refresh"),
+			)
+			expect(span?.status._tag).toBe("Ended")
+			if (span?.status._tag !== "Ended") return
+			expect(Exit.isSuccess(span.status.exit)).toBe(true)
+			expect(span.attributes.get("error.type")).toBe("@maple/backend/errors/McpOAuthProtocolError")
+			expect(span.attributes.get("maple.oauth.error")).toBe("invalid_grant")
 		}).pipe(Effect.provide(makeLayer(db)))
 	})
 
@@ -351,8 +384,8 @@ describe("McpOAuthService", () => {
 					"127.0.0.1",
 				)
 				.pipe(Effect.flip)
-			expect(failure._tag).toBe("@maple/api/errors/McpOAuthProtocolError")
-			if (failure._tag === "@maple/api/errors/McpOAuthProtocolError") {
+			expect(failure._tag).toBe("@maple/backend/errors/McpOAuthProtocolError")
+			if (failure._tag === "@maple/backend/errors/McpOAuthProtocolError") {
 				expect(failure.error).toBe("invalid_grant")
 			}
 		}).pipe(Effect.provide(makeLayer(db)))
@@ -377,8 +410,8 @@ describe("McpOAuthService", () => {
 					"select family_expires_at from mcp_oauth_refresh_tokens order by created_at desc limit 1",
 				),
 			)
-			expect(new Date(after.rows[0]!.family_expires_at).getTime()).toBe(
-				new Date(before.rows[0]!.family_expires_at).getTime(),
+			expect(DateTime.toEpochMillis(DateTime.makeUnsafe(after.rows[0].family_expires_at))).toBe(
+				DateTime.toEpochMillis(DateTime.makeUnsafe(before.rows[0].family_expires_at)),
 			)
 		}).pipe(Effect.provide(makeLayer(db)))
 	})

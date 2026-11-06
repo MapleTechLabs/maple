@@ -1,6 +1,7 @@
 import type { QuerySet, QueryResultContract } from "@maple/query-model"
 import { QUERY_ENDPOINT_RESULT_KINDS, RAW_SQL_ENDPOINT } from "./legacy-endpoints"
 import type { WidgetDataSourceTransformV2 } from "./shared/transform"
+import { Array as Arr } from "effect"
 
 /**
  * Reading a widget's data source without caring which schema version wrote it.
@@ -19,7 +20,7 @@ import type { WidgetDataSourceTransformV2 } from "./shared/transform"
  */
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 const isString = (value: unknown): value is string => typeof value === "string"
 
@@ -63,9 +64,7 @@ export const dataSourceTransform = (
 	dataSource: unknown,
 ): typeof WidgetDataSourceTransformV2.Type | undefined => {
 	if (!isRecord(dataSource)) return undefined
-	return isRecord(dataSource.transform)
-		? (dataSource.transform as typeof WidgetDataSourceTransformV2.Type)
-		: undefined
+	return isRecord(dataSource.transform) ? dataSource.transform : undefined
 }
 
 /** True when this data source carries a user-authored query set. */
@@ -112,12 +111,12 @@ export const dataSourceQuerySet = (dataSource: unknown): WidgetQuerySet | null =
 	const { resultShape: resultKind, fields } = source
 	return {
 		resultShape: resultKind,
-		queries: Array.isArray(fields.queries) ? (fields.queries as QuerySet["queries"]) : [],
-		formulas: Array.isArray(fields.formulas) ? (fields.formulas as QuerySet["formulas"]) : undefined,
-		comparison: isRecord(fields.comparison) ? (fields.comparison as QuerySet["comparison"]) : undefined,
+		queries: Arr.isArray(fields.queries) ? (fields.queries as QuerySet["queries"]) : [],
+		formulas: Arr.isArray(fields.formulas) ? (fields.formulas as QuerySet["formulas"]) : undefined,
+		comparison: isRecord(fields.comparison) ? fields.comparison : undefined,
 		defaultLimit: typeof fields.defaultLimit === "number" ? fields.defaultLimit : undefined,
 		limit: typeof fields.limit === "number" ? fields.limit : undefined,
-		columns: Array.isArray(fields.columns) ? (fields.columns as ReadonlyArray<string>) : undefined,
+		columns: Arr.isArray(fields.columns) ? (fields.columns as ReadonlyArray<string>) : undefined,
 	}
 }
 

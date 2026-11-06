@@ -123,14 +123,15 @@ bounded 60 "legacy source fixture" \
 # compatibility evidence the v0 resolver is allowed to use.
 step "installing legacy marker"
 CHDB_VERSION="$(bounded 60 "maple --version" env MAPLE_LIBCHDB="$LIBCHDB" "$MAPLE" --version 2>/dev/null | sed -n 's/.*chdb \([^ ]*\).*/\1/p')"
-[[ -n "$CHDB_VERSION" ]] || CHDB_VERSION="v26.1.0"
+[[ -n "$CHDB_VERSION" ]] || CHDB_VERSION="v26.7.3"
 printf '%s\n' "{\"chdb\":\"$CHDB_VERSION\",\"maple\":\"native-probe\",\"createdAt\":\"unknown\",\"schema\":\"428701854f9fd30e\"}" >"$ROOT/maple-store-version.json"
 chmod 600 "$ROOT/maple-store-version.json"
 
 step "running maple schema migrate"
-# 120s bound: healthy runs take ~3s; the job budget is <3 minutes, so a stall
-# has to fail the step in seconds-not-minutes with migrate.out as evidence.
-bounded 120 "maple schema migrate" \
+# 300s bound: every step clones, re-bootstraps and verifies, so the run grows with
+# the step count. Beside the other probes on one runner, 47 steps took ~90s and 49
+# took ~120s (2026-11-05); a real stall still fails well inside the job budget.
+bounded 300 "maple schema migrate" \
 	env MAPLE_LIBCHDB="$LIBCHDB" "$MAPLE" schema migrate --data-dir "$DATA" --yes >"$ROOT/migrate.out" 2>&1 || {
 	cat "$ROOT/migrate.out" >&2
 	fail "native schema migration failed"
@@ -140,9 +141,9 @@ grep -q "local store migrated" "$ROOT/migrate.out" || fail "native migration did
 # Pinned to the CURRENT head identity on purpose — this is the gate that proves
 # the native migration promotes all the way to head, not merely that it ran. It
 # must be bumped in lockstep with LOCAL_SCHEMA_VERSION and the matching
-# LOCAL_SCHEMA_V<n>.fingerprint in apps/cli/src/server/schema-identity.ts;
+# LOCAL_SCHEMA_V<n>.fingerprint in packages/local-server/src/schema-identity.ts;
 # leaving it on the previous version is what makes this step fail after a bump.
-jq -e '.formatVersion == 2 and .activation == "active" and .schemaVersion == 25 and .schema == "bfaed79bcf2423f5"' \
+jq -e '.formatVersion == 2 and .activation == "active" and .schemaVersion == 51 and .schema == "252552abda61d2c2"' \
 	"$ROOT/maple-store-version.json" >/dev/null || fail "native migration wrote the wrong active identity"
 
 step "reopening promoted store in a fresh server"

@@ -1,8 +1,10 @@
-import { defineCollection, reference, z } from "astro:content"
+import { defineCollection, reference } from "astro:content"
+import { z } from "astro/zod"
 import { glob } from "astro/loaders"
 import { BRAND_MARKS, type BrandMarkId } from "./lib/brand-marks"
 import { LANGUAGE_IDS } from "./lib/docs-languages"
 import { CHANGELOG_CATEGORIES, CONTRIBUTOR_IDS } from "./lib/changelog-meta"
+import { Record as Rec } from "effect"
 
 const roadmap = defineCollection({
 	loader: glob({ pattern: "**/*.md", base: "./src/content/roadmap" }),
@@ -31,7 +33,9 @@ const docs = defineCollection({
 		sdk: z.enum(LANGUAGE_IDS).optional(),
 		// Brand mark on the sidebar row, for guides that aren't a language (`sdk`),
 		// like the frontend framework guides.
-		icon: z.enum(Object.keys(BRAND_MARKS) as [BrandMarkId, ...BrandMarkId[]]).optional(),
+		icon: z.enum(Rec.keys(BRAND_MARKS) as [BrandMarkId, ...BrandMarkId[]]).optional(),
+		// Key of CONTRIBUTORS in lib/changelog-meta.ts, shown as a byline under the description.
+		author: z.enum(CONTRIBUTOR_IDS).optional(),
 	}),
 })
 
@@ -84,7 +88,7 @@ const logos = defineCollection({
 	loader: glob({ pattern: "**/*.md", base: "./src/content/logos" }),
 	schema: z.object({
 		name: z.string(),
-		href: z.string().url().optional(), // present → linked, absent → static
+		href: z.url().optional(), // present → linked, absent → static
 		order: z.number().default(0),
 	}),
 })

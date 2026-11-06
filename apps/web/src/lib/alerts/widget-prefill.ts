@@ -1,9 +1,14 @@
 import type { QueryBuilderQueryDraftPayload } from "@maple/domain/http"
 
-import { normalizeRuleQueryDraft, rawSqlHasValueColumn, type RuleFormState } from "@/lib/alerts/form-utils"
+import {
+	normalizeRuleQueryDraft,
+	rawSqlHasValueColumn,
+	type RuleFormState,
+} from "@maple/web-data/alerts/form-utils"
 import { buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
 import { SERIES_REDUCER_TO_ALERT_REDUCER, toQueryBuilderDataSource } from "@maple/query-model"
 import { dataSourceQuerySet, dataSourceRawSql, dataSourceTransform } from "@maple/widgets/dashboard"
+import { Array as Arr, Option, String as Str } from "effect"
 
 export type WidgetAlertPrefillNotice = {
 	severity: "warning" | "error"
@@ -50,11 +55,11 @@ function isEnabledVisibleQuery(query: QueryBuilderQueryDraftPayload): boolean {
 }
 
 function queryLabel(query: QueryBuilderQueryDraftPayload, index: number): string {
-	if (typeof query.legend === "string" && query.legend.trim().length > 0) {
-		return query.legend.trim()
+	if (typeof query.legend === "string" && Str.trim(query.legend).length > 0) {
+		return Str.trim(query.legend)
 	}
-	if (typeof query.name === "string" && query.name.trim().length > 0) {
-		return query.name.trim()
+	if (typeof query.name === "string" && Str.trim(query.name).length > 0) {
+		return Str.trim(query.name)
 	}
 	return `query ${index + 1}`
 }
@@ -63,9 +68,9 @@ function hasHiddenSeries(
 	widget: AlertableDashboardWidget,
 	queries: QueryBuilderQueryDraftPayload[],
 ): boolean {
-	if (queries.some((query) => query.hidden === true)) return true
+	if (Arr.some(queries, (query) => query.hidden === true)) return true
 	const hideSeries = record(dataSourceTransform(widget.dataSource)?.hideSeries)
-	return Array.isArray(hideSeries.baseNames) && hideSeries.baseNames.length > 0
+	return Arr.isArray(hideSeries.baseNames) && hideSeries.baseNames.length > 0
 }
 
 function comparisonEnabled(comparison: unknown): boolean {
@@ -84,10 +89,9 @@ function queryToForm(
 		name: widgetAlertName(widget),
 		signalType: "builder_query",
 		queryBuilderDraft,
-		// Builder thresholds compare against the query's raw output. error_rate
-		// is a 0–1 ratio, so the blank-form default of "5" (tuned for the
-		// percent-entry error_rate signal) would mean a 500% error rate.
-		threshold: query.aggregation === "error_rate" ? "0.05" : base.threshold,
+		// error_rate is entered as a percent in every mode (see formThresholdToDomain),
+		// so the blank form's "5" carries over as 5%.
+		threshold: base.threshold,
 		groupBy: [],
 	}
 }
@@ -105,13 +109,13 @@ export function createWidgetAlertPrefill(
 
 	if (rawSql !== null) {
 		const sql = rawSql.sql
-		if (sql.trim().length === 0) {
+		if (Str.trim(sql).length === 0) {
 			notices.push({
 				severity: "warning",
 				message: "This raw SQL chart has no SQL saved. Starting with an editable blank alert query.",
 			})
 		} else {
-			if (!sql.includes("$__orgFilter")) {
+			if (!Str.includes("$__orgFilter")(sql)) {
 				notices.push({
 					severity: "warning",
 					message:
@@ -153,14 +157,18 @@ export function createWidgetAlertPrefill(
 	}
 
 	if (querySet !== null) {
-		const queries = querySet.queries.filter(isQueryDraftPayload)
-		const selectedIndex = queries.findIndex(isEnabledVisibleQuery)
-		const selected =
-			selectedIndex >= 0
-				? queries[selectedIndex]
-				: (queries.find((query) => query.enabled !== false) ?? queries[0])
+		const queries = Arr.filter(querySet.queries, isQueryDraftPayload)
+		const visibleIndex = Arr.findFirstIndex(queries, isEnabledVisibleQuery)
+		const selected = Option.match(visibleIndex, {
+			onSome: (index) => queries[index],
+			onNone: () =>
+				Option.getOrElse(
+					Arr.findFirst(queries, (query) => query.enabled !== false),
+					() => queries[0],
+				),
+		})
 
-		if (!selected) {
+		if (selected == null) {
 			return {
 				form: base,
 				notices: [
@@ -173,11 +181,14 @@ export function createWidgetAlertPrefill(
 			}
 		}
 
-		const visibleEnabledCount = queries.filter(isEnabledVisibleQuery).length
+		const visibleEnabledCount = Arr.filter(queries, isEnabledVisibleQuery).length
 		if (visibleEnabledCount > 1) {
 			notices.push({
 				severity: "warning",
-				message: `This chart has ${visibleEnabledCount} visible queries; the alert uses ${queryLabel(selected, selectedIndex)} only.`,
+				message: `This chart has ${visibleEnabledCount} visible queries; the alert uses ${queryLabel(
+					selected,
+					Option.getOrElse(visibleIndex, () => -1),
+				)} only.`,
 			})
 		}
 		const formulas = querySet.formulas ?? []
@@ -266,8 +277,8 @@ export function resolveWidgetAlertPrefill({
 		}
 	}
 
-	const dashboard = dashboards.find((candidate) => candidate.id === dashboardId)
-	if (!dashboard) {
+	const dashboard = Arr.findFirst(dashboards, (candidate) => candidate.id === dashboardId)
+	if (Option.isNone(dashboard)) {
 		return {
 			form: base,
 			notices: [
@@ -279,8 +290,8 @@ export function resolveWidgetAlertPrefill({
 		}
 	}
 
-	const widget = dashboard.widgets.find((candidate) => candidate.id === widgetId)
-	if (!widget) {
+	const widget = Arr.findFirst(dashboard.value.widgets, (candidate) => candidate.id === widgetId)
+	if (Option.isNone(widget)) {
 		return {
 			form: base,
 			notices: [
@@ -292,5 +303,5 @@ export function resolveWidgetAlertPrefill({
 		}
 	}
 
-	return createWidgetAlertPrefill(widget, base)
+	return createWidgetAlertPrefill(widget.value, base)
 }

@@ -1,4 +1,4 @@
-import type { Edge, Node } from "@xyflow/react"
+import type { EdgeBase as Edge, NodeBase as Node } from "@xyflow/system"
 import {
 	edgeIdFor,
 	nodeNamespace,
@@ -6,6 +6,7 @@ import {
 	type ServiceEdgeData,
 	type ServiceNodeData,
 } from "./service-map-utils"
+import { Array as Arr } from "effect"
 
 /**
  * Pure declutter pipeline applied between {@link buildFlowElements} and layout:
@@ -206,6 +207,7 @@ function bfsNeighborhood(
 	let head = 0
 	while (head < queue.length) {
 		const current = queue[head++]
+		if (current === undefined) break
 		const d = depth.get(current)
 		if (d === undefined || d >= hops) continue
 		for (const neighbor of adjacency.get(current) ?? []) {
@@ -236,7 +238,7 @@ function focusSubgraph(
 
 	// A focus target collapsed into an aggregate follows it into the aggregate.
 	const rootId = memberToAggregate.get(focus.serviceId) ?? focus.serviceId
-	if (!nodes.some((n) => n.id === rootId)) {
+	if (!Arr.some(nodes, (n) => n.id === rootId)) {
 		return { ...identity, focusMissing: true }
 	}
 
@@ -244,8 +246,8 @@ function focusSubgraph(
 
 	if (focus.mode === "hide") {
 		return {
-			nodes: nodes.filter((n) => neighborhood.has(n.id)),
-			edges: edges.filter((e) => neighborhood.has(e.source) && neighborhood.has(e.target)),
+			nodes: Arr.filter(nodes, (n) => neighborhood.has(n.id)),
+			edges: Arr.filter(edges, (e) => neighborhood.has(e.source) && neighborhood.has(e.target)),
 			dimmedNodeIds: EMPTY_SET,
 			dimmedEdgeIds: EMPTY_SET,
 			neighborhood,
@@ -298,7 +300,8 @@ export function applyDeclutter(
 		// Structural relation edges (e.g. Hyperdrive → its origin database) carry no
 		// traffic by definition, so the traffic threshold never applies to them —
 		// keeping one also keeps its endpoints connected below, never dangling.
-		const keptEdges = outEdges.filter(
+		const keptEdges = Arr.filter(
+			outEdges,
 			(e) => e.data?.relation !== undefined || (e.data?.callsPerSecond ?? 0) >= threshold,
 		)
 		hiddenEdgeCount = outEdges.length - keptEdges.length
@@ -309,7 +312,8 @@ export function applyDeclutter(
 				stillConnected.add(e.source)
 				stillConnected.add(e.target)
 			}
-			const keptNodes = outNodes.filter(
+			const keptNodes = Arr.filter(
+				outNodes,
 				(n) =>
 					!hadEdges.has(n.id) ||
 					stillConnected.has(n.id) ||

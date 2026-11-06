@@ -63,7 +63,9 @@ export function register() {
 			headers,
 		}),
 		logRecordProcessors: [
-			new BatchLogRecordProcessor(new OTLPLogExporter({ url: `${MAPLE_ENDPOINT}/v1/logs`, headers })),
+			new BatchLogRecordProcessor({
+				exporter: new OTLPLogExporter({ url: `${MAPLE_ENDPOINT}/v1/logs`, headers }),
+			}),
 		],
 		metricReaders: [
 			new PeriodicExportingMetricReader({
@@ -73,6 +75,8 @@ export function register() {
 	})
 }
 ```
+
+`BatchLogRecordProcessor` takes `{ exporter }` in `@opentelemetry/sdk-logs` 0.220.0 and later, including 3.x. Older releases take the exporter as the first argument. A current release accepts the exporter as a positional argument without throwing, but then exports no log records.
 
 `traceExporter` takes an exporter instance. `OTLPHttpProtoTraceExporter` is exported by `@vercel/otel` and sends OTLP over HTTP with protobuf encoding. It also runs in the Edge runtime.
 
@@ -140,6 +144,47 @@ export async function processOrder(orderId: string) {
 ```
 
 Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map).
+
+## Attributes Maple uses
+
+Most attributes are optional. These unlock specific features.
+
+### Commits and GitHub
+
+Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the Releases page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. The resource in [Configure](#configure) already sets both. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
+
+```bash
+export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=$GITHUB_SHA"
+```
+
+### Databases
+
+Database instrumentation sets these attributes for you. For a driver without instrumentation, set them on a `Client` span:
+
+```typescript
+import { SpanKind } from "@opentelemetry/api"
+
+const user = await tracer.startActiveSpan(
+	"SELECT users",
+	{
+		kind: SpanKind.CLIENT,
+		attributes: {
+			"db.system.name": "postgresql",
+			"db.namespace": "app",
+			"db.query.text": "SELECT * FROM users WHERE id = $1",
+		},
+	},
+	async (span) => {
+		try {
+			return await client.query("SELECT * FROM users WHERE id = $1", [id])
+		} finally {
+			span.end()
+		}
+	},
+)
+```
+
+`db.system.name` and `db.namespace` draw the database node on the [service map](/docs/explore/service-map). `db.query.text` groups statements into query shapes, so record it with placeholders, not bound values. See [Database queries](/docs/concepts/otel-conventions#database-queries) for the full list.
 
 ## Log correlation
 

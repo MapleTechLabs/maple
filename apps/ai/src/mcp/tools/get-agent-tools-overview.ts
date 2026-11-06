@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import {
 	readAiToolErrors,
 	readAiToolsBreakdowns,
@@ -72,6 +72,7 @@ const GROUP_COLUMNS = [
 export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_agent_tools_overview",
+		title: "Agent Tools Overview",
 		description:
 			"AI agent tool calls (the tools an LLM agent invokes; not browser sessions, not Maple's own MCP tools): calls, failures and latency per tool, for the window against the equal window before it. With `tool` set it also lists that tool's failure groups by fingerprint: what it fails with, how often, and whether it still fails; `get_agent_tool_error` opens a group. Tool names here are what `get_agent_tool_error tool` and `list_agent_sessions tools` take. Start with no `tool`.",
 		parameters: Schema.Struct({
@@ -92,7 +93,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 				tool === undefined ? undefined : { tool, bucketSeconds: trendBucketSeconds(startMs, endMs) }
 			const selection = agentToolSelection(params, tool)
 			const tenant = yield* CurrentMcpTenant
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, tool: tool ?? "all" })
+			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.ai.tools.tool": tool ?? "all" })
 
 			const scope = { startTime: st, endTime: et, ...selectionRequest(selection) }
 			const [totals, breakdowns, errorGroups] = yield* Effect.all(
@@ -101,11 +102,16 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 						tenant,
 						new AiToolsTotalsRequest({ ...scope, periods: ["current", "previous", "window"] }),
 					),
-					readAiToolsBreakdowns(tenant, new AiToolsBreakdownsRequest(scope)),
+					// Every tool, to compare or pick from: a selected tool's read is about that tool.
+					selected === undefined
+						? readAiToolsBreakdowns(tenant, new AiToolsBreakdownsRequest(scope)).pipe(
+								Effect.map((response) => response.tools),
+							)
+						: Effect.undefined,
 					// The groups are fingerprints of ONE tool's failures, and "every tool's groups" is a
 					// list with no question behind it.
 					selected === undefined
-						? Effect.succeed(undefined)
+						? Effect.undefined
 						: readAiToolErrors(
 								tenant,
 								new AiToolErrorsRequest({
@@ -120,7 +126,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 			).pipe(Effect.catchTags(warehouseReadToMcpHandlers("get_agent_tools_overview")))
 
 			yield* Effect.annotateCurrentSpan({
-				"result.rowCount": breakdowns.tools.length,
+				...(breakdowns !== undefined && { "result.rowCount": breakdowns.length }),
 				...(errorGroups !== undefined && { "result.errorGroupCount": errorGroups.length }),
 			})
 
@@ -133,7 +139,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 				current: totals.current,
 				...(totals.previous === undefined ? undefined : { previous: totals.previous }),
 				...(totals.allSessions === undefined ? undefined : { allSessions: totals.allSessions }),
-				tools: breakdowns.tools,
+				...(breakdowns === undefined ? undefined : { tools: breakdowns }),
 				...(selected === undefined || errorGroups === undefined
 					? undefined
 					: {
@@ -141,7 +147,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 								tool: selected.tool,
 								bucketSeconds: selected.bucketSeconds,
 								cap: ERROR_GROUPS_MAX,
-								groups: errorGroups.map((group) => ({
+								groups: Arr.map(errorGroups, (group) => ({
 									...group,
 									trend: compactTrend(group.trend, {
 										startMs,
@@ -236,7 +242,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 								: [
 										doc.table(
 											GROUP_COLUMNS,
-											failureGroups.groups.map((group) => [
+											Arr.map(failureGroups.groups, (group) => [
 												group.fingerprint,
 												cellOrDash(group.errorType, 40),
 												cellOrDash(group.message, MESSAGE_CHARS),
@@ -262,7 +268,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 			const groupSteps: ReadonlyArray<NextCall> =
 				failureGroups === undefined
 					? []
-					: failureGroups.groups.slice(0, 3).map((group) =>
+					: Arr.map(failureGroups.groups.slice(0, 3), (group) =>
 							doc.next(
 								"get_agent_tool_error",
 								{
@@ -276,10 +282,11 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 						)
 			// The tool worth looking at next is the one failing most, not the busiest; a tool with
 			// no failures has nothing to open.
-			const worst = [...output.tools]
-				.filter((item) => item.errors > 0)
-				.sort((a, b) => b.errors / b.calls - a.errors / a.calls)[0]
-			const busiest = output.tools[0]
+			const tools = output.tools ?? []
+			const worst = Arr.filter([...tools], (item) => item.errors > 0).sort(
+				(a, b) => b.errors / b.calls - a.errors / a.calls,
+			)[0]
+			const busiest = selection.tool === undefined ? tools[0]?.key : selection.tool
 
 			return {
 				title: "Agent tool calls",
@@ -328,34 +335,35 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 						],
 					),
 					...sessionShare,
-					// The breakdown ignores a selected `tool` on purpose: it is how a caller picks another.
-					doc.heading(
-						`Tools (busiest first, top ${output.tools.length}${failureGroups === undefined ? "" : ", every tool in the window, not just the selected one"})`,
-					),
-					doc.table(
-						[
-							"Tool",
-							"Calls",
-							"Sessions",
-							"Errors",
-							"Err %",
-							"p50",
-							"p95",
-							"First seen",
-							"Last seen",
-						],
-						output.tools.map((item) => [
-							truncate(item.key === "" ? "(unnamed)" : item.key, 60),
-							formatNumber(item.calls),
-							formatNumber(item.sessions),
-							formatNumber(item.errors),
-							percentOf(item.errors, item.calls),
-							formatNanos(item.p50),
-							formatNanos(item.p95),
-							formatSeen(item.firstSeen),
-							formatSeen(item.lastSeen),
-						]),
-					),
+					...(output.tools === undefined
+						? []
+						: [
+								doc.heading(`Tools (busiest first, top ${output.tools.length})`),
+								doc.table(
+									[
+										"Tool",
+										"Calls",
+										"Sessions",
+										"Errors",
+										"Err %",
+										"p50",
+										"p95",
+										"First seen",
+										"Last seen",
+									],
+									Arr.map(output.tools, (item) => [
+										truncate(item.key === "" ? "(unnamed)" : item.key, 60),
+										formatNumber(item.calls),
+										formatNumber(item.sessions),
+										formatNumber(item.errors),
+										percentOf(item.errors, item.calls),
+										formatNanos(item.p50),
+										formatNanos(item.p95),
+										formatSeen(item.firstSeen),
+										formatSeen(item.lastSeen),
+									]),
+								),
+							]),
 					...groupBlocks,
 				],
 				next: [
@@ -374,8 +382,10 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 						: [
 								doc.next(
 									"list_agent_sessions",
-									{ ...window, tools: [busiest.key] },
-									"the sessions that ran the busiest tool",
+									{ ...window, tools: [busiest] },
+									selection.tool === undefined
+										? "the sessions that ran the busiest tool"
+										: "the sessions that ran this tool",
 								),
 							]),
 				],

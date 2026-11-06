@@ -35,10 +35,11 @@ still looks reasonable. See the comment on `edgeGrain` in
 Three shapes, all already in the codebase. If a proposed MV is not one of these, it is a copy
 of a table we already have.
 
-1. **Re-sort for point lookup.** `trace_detail_spans` is a 1:1 copy of `traces` ordered by
-   `(OrgId, TraceId, SpanId)` instead of `(OrgId, ServiceName, Timestamp)`. That turns
-   "fetch this trace" from a bloom-filter scan into a primary-key lookup. It costs 82 GB,
-   the single most expensive object we have, and it earns it.
+1. **Locator index for point lookup.** `trace_index` holds one row per (trace, service,
+   5-minute bucket), the `traces` sort-key prefixes a trace occupies. A trace-id read matches
+   that prefix against the index and seeks a few granules of `traces` itself. It replaced
+   `trace_detail_spans`, a full TraceId-sorted copy of `traces` (see "Trace storage layout").
+   Never re-sort a whole table into a second copy: index the key you need instead.
 2. **Pre-aggregation for scans.** `*_aggregates_hourly`, `service_overview_*`,
    `service_operations_*`. Trades write amplification for orders-of-magnitude less read.
 3. **Filtered projection.** `error_events` keeps only `StatusCode = 'Error'` and unwraps the
@@ -46,9 +47,73 @@ of a table we already have.
    `exception.*` / `error.*` span attributes. Error queries never touch the Map columns of the
    full traces table.
 
-Storage is not free and the ratio is worse than it looks: `traces` is 110 GB, and its MV
-descendants total roughly 116 GB. **We store traces more than twice over.** Every new MV on
-`traces` adds to that.
+Storage is not free: every MV on `traces` is paid for on every span. Until 2026-10 the
+TraceId-sorted copy alone (159 GiB) was larger than `traces` (156 GiB).
+
+---
+
+## Trace storage layout
+
+`traces` is sorted `(OrgId, ServiceName, toStartOfFiveMinutes(Timestamp), TraceId)` and
+`trace_index` locates traces in it. Read a trace's spans with `inTraces(...)`
+(`packages/query-engine/src/ch/tables.ts`), which compiles to
+`(ServiceName, toStartOfFiveMinutes(Timestamp), TraceId) IN (SELECT ... FROM trace_index ...)`.
+The bucket expression is `TRACE_BUCKET_EXPR` in `datasources.ts`; the key and the index must
+change together.
+
+Chosen 2026-10-19 by benchmarking 6 hours of real spans (4.34M, internal org) on ClickHouse
+25.8 against the prod query mix from `system.query_log` (alert raw SQL is most of the
+`traces` reads, then the service-map join, UI reads, and trace-id reads):
+
+| layout                             | B/span (traces + locator) |
+| :--------------------------------- | ------------------------: |
+| old key + `trace_detail_spans`     |                      98.0 |
+| `(svc, 5m, trace)` + `trace_index` |                      43.8 |
+
+- 5-minute alert windows read +18% (15-minute buckets: +84%, 1-minute buckets doubled
+  single-trace reads); 60-minute alerts -27%, org-wide alerts -14%, the service-map join -34%.
+- `SpanName` left the key; `idx_span_name` (bloom, 0.02 B/span) halves rare-name reads.
+  Span-name search still reads more than before (two-stage search 16 -> 24 MiB on the sample).
+- The real query builders, old vs new SQL on the same data, return identical rows. Trace list
+  54 -> 15 MiB, a 700-span hierarchy 8.0 -> 3.0 MiB, small traces 1.6 -> 2.6 MiB.
+- A tuple `IN` beats per-column `IN`s (2.7x less read for 100 traces; the column sets
+  cross-multiply) and plain `TraceId IN` without the index (2.4x). ClickHouse also turns the
+  index set into a `Timestamp` MinMax condition, so a lookup skips the other daily partitions.
+
+BYO ClickHouse clusters created before migration 0043 keep the old sort key: a key cannot be
+altered in place, and results are identical either way, only slower. Local stores re-sort at
+local schema v34.
+
+### The service-map span tables
+
+`service_map_spans` and `service_map_children` (the two sides of the service-to-service
+join) are sorted `(OrgId, toStartOfFiveMinutes(Timestamp), TraceId, SpanId|ParentSpanId)`,
+the same bucket as `traces`. They used to lead with `TraceId`, so a time filter pruned
+only whole days: the rollup's one-hour join read the org's entire day, and the live
+branch of `serviceDependencies` read 9.4 GB for about an hour of spans on the heaviest
+org (a 504 on the map, 2026-10-25). The trace list's services lookup, which needed the
+TraceId-first key, now seeks through `trace_index` (`inServiceMapSpans`).
+
+Measured 2026-10-25 on a 1/8 TraceId sample of 42 hours of prod (73M spans, every org)
+on ClickHouse 25.8, heaviest org, same rows on both keys:
+
+| query                                | read before |   after |
+| :----------------------------------- | ----------: | ------: |
+| rollup, one hour of a closed day     |    2905 MiB | 152 MiB |
+| `serviceDependencies`, 12h           |    1985 MiB | 149 MiB |
+| `serviceDependencies`, 24h over days |    4426 MiB | 160 MiB |
+| setup-audit orphan join, 1h          |    1920 MiB | 292 MiB |
+| trace-list services, 50 traces       |      38 MiB |  12 MiB |
+
+Storage is unchanged (31.6 vs 31.5 B/row). A 1-hour bucket instead of 5 minutes read more
+on every query. The services lookup now covers the page ±1h (it was ±1 day), the same
+padding as every other trace-id read.
+
+The Tinybird re-key copies only the last 2 days. For 28 days after that deploy,
+trace-list rows older than that show only their own service, and a window starting
+earlier misses its leading partial hour of live-joined edges. Existing BYO clusters keep
+the old key, as with `traces`; local stores re-sort at v40. Suite:
+`apps/api/scripts/bench-suites/service-map-spans-key.ts`.
 
 ---
 
@@ -152,9 +217,35 @@ like a real alert rule as well as a dashboard query.
    one. It writes every mechanical edit, including the pinned literals in the bun test and the
    native probe, and leaves the edge's `apply` for you. Write the DDL there, including explicit
    drops, because `assertPhysicalSchema` fails on leftover objects too.
+8. A one-shot `forwardQuery` (a re-key copy, a defaulted new column) is removed in the
+   PR right after its deploy goes live. Left in, the next rebuild of that table runs it
+   again.
 
 Steps 5 and 6 are expensive, so **batch removals into one migration** instead of shipping
 them one at a time. Migration `0019_mv_sweep` is the worked example.
+
+### Backfilling a rollup deployed with `BACKFILL skip`
+
+Managed Tinybird deploys some rollups without replaying raw history (`SKIP_BACKFILL` in
+`packages/domain/src/tinybird/project-manifest.ts`), so their first 30 days stay empty until a
+staged backfill. For `user_activity_hourly` (migration 0056):
+
+```bash
+# Dry run: the day chunks, and which already hold rows
+infisical run --env=prod -- bun scripts/backfill-user-activity-hourly.ts --until 2026-11-06T10:00:00Z
+# Populate, a day at a time, oldest first
+infisical run --env=prod -- bun scripts/backfill-user-activity-hourly.ts --until 2026-11-06T10:00:00Z --execute
+```
+
+- `--until` is when the views went live (the deploy). The views wrote everything after it, so a
+  later `--until` double counts.
+- `--from` defaults to 30 days before `--until` (raw retention); `--pause-seconds` (default 60)
+  spaces the days out. Run it off-peak and watch workspace CPU between days.
+- A day whose whole hours already hold rows is skipped, so a stopped run resumes. A day that
+  failed between its traces and logs view is skipped too: delete that day's rows and re-run.
+- Run once per workspace (US primary, prod-eu, the legacy mirror) with TINYBIRD_HOST/TOKEN set.
+- Try it on a Tinybird branch first: it calls the materialized node population endpoint
+  (`/v0/pipes/<pipe>/nodes/<node>/population`) with a `populate_condition` per day.
 
 ---
 
@@ -165,12 +256,9 @@ Recorded so the next sweep does not re-derive them.
 - **`alertRawQuery`: 173,000 s/week**, the single largest consumer of warehouse time. It is
   user-authored SQL against raw tables, so no MV can see it and no routing guard applies.
   Needs its own design: a rollup users can target, or per-rule result caching.
-- **`trace_detail_spans` TTL.** 82 GB, and TTL is the only remaining lever. Column narrowing
-  recovered 1.19 GB (1.5%) and the rest is `SpanAttributes` (31 GB) and the incompressible
-  `SpanId` (17 GB). A product decision about the trace-drilldown window.
-- **`service_map_spans` + `service_map_children`**: 18.6 GB of intermediate producing a
-  223 MB hourly rollup. Suspicious amplification, but the recent-window branch reads them
-  directly.
+- **`service_map_spans` + `service_map_children`**: 58 GiB of intermediate producing a
+  small hourly rollup. Needed while the live branch joins raw spans; a per-org rollup
+  watermark (`service-map-architecture.md`) would shrink that branch to the unsealed tail.
 - **`metrics_exponential_histogram` is empty.** Not dead: ingest writes it
   (`apps/ingest/src/clickhouse_insert_mappings.rs`, table names in `telemetry.rs`). It is empty only because no SDK currently exports
   exponential histograms. Leave it and its two MVs alone.

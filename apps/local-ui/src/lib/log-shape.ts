@@ -3,27 +3,33 @@
 // the `Record<string,string>` shape the shared attribute renderers expect, so
 // list rows and the detail drawer share one decoded, identity-stable value.
 
+import { SpanId, TraceId } from "@maple/domain"
+import { warehouseDateTimeToIso } from "@maple/query-engine"
 import type { LogsListOutput } from "@maple/query-engine/ch"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
-import { lookup } from "./lookup"
+import { severityRank } from "@maple/ui/lib/severity"
+import type { LogRecord } from "@maple/views/ui/logs/log-row-view"
+import { Option, Schema, String as Str } from "effect"
 
-export interface LocalLog {
-	timestamp: string
-	severityText: string
-	severityNumber: number
-	serviceName: string
-	body: string
-	traceId: string
-	spanId: string
-	/** Hash of the whole stored record: the last tiebreak of the list's keyset cursor. */
-	recordIdentity: string
-	logAttributes: Record<string, string>
-	resourceAttributes: Record<string, string>
-}
+/** One log row, attribute maps already decoded. */
+export const LocalLog = Schema.Struct({
+	/** The stored `DateTime64(9)` value with its nanoseconds: shown verbatim and the keyset cursor. */
+	timestamp: Schema.String,
+	severityText: Schema.String,
+	severityNumber: Schema.Number,
+	serviceName: Schema.String,
+	body: Schema.String,
+	traceId: Schema.String,
+	spanId: Schema.String,
+	recordIdentity: Schema.String,
+	logAttributes: Schema.Record(Schema.String, Schema.String),
+	resourceAttributes: Schema.Record(Schema.String, Schema.String),
+})
+export type LocalLog = typeof LocalLog.Type
 
 export function normalizeLog(row: LogsListOutput): LocalLog {
 	return {
-		timestamp: row.timestamp,
+		timestamp: row.exactTimestamp,
 		severityText: row.severityText,
 		severityNumber: row.severityNumber,
 		serviceName: row.serviceName,
@@ -36,25 +42,34 @@ export function normalizeLog(row: LogsListOutput): LocalLog {
 	}
 }
 
-/** Stable identity for a log row (selection, React keys). */
+/** Stable identity for a log row (selection, keyed rows). */
 export function logKey(log: LocalLog): string {
 	return `${log.timestamp}|${log.serviceName}|${log.traceId}|${log.spanId}|${log.recordIdentity}`
 }
 
-const SEVERITY_RANK = {
-	FATAL: 0,
-	CRITICAL: 0,
-	ERROR: 1,
-	WARN: 2,
-	WARNING: 2,
-	INFO: 3,
-	DEBUG: 4,
-	TRACE: 5,
-} as const satisfies Record<string, number>
+const decodeTraceId = Schema.decodeUnknownOption(TraceId)
+const decodeSpanId = Schema.decodeUnknownOption(SpanId)
+
+/** `LocalLog` keeps the stored `DateTime64(9)` and empty ids; the shared views want ISO, the exact value and no ids. */
+export const toLogRecord = (log: LocalLog): LogRecord => ({
+	timestamp: warehouseDateTimeToIso(log.timestamp),
+	exactTimestamp: log.timestamp,
+	recordIdentity: log.recordIdentity,
+	severityText: log.severityText,
+	severityNumber: log.severityNumber,
+	serviceName: log.serviceName,
+	body: log.body,
+	traceId: Option.getOrUndefined(decodeTraceId(log.traceId)),
+	spanId: Option.getOrUndefined(decodeSpanId(log.spanId)),
+	logAttributes: log.logAttributes,
+	resourceAttributes: log.resourceAttributes,
+})
+
+/** `logKey` of the log a `toLogRecord` came from. */
+export const logRecordKey = (record: LogRecord): string =>
+	`${record.exactTimestamp}|${record.serviceName}|${record.traceId ?? ""}|${record.spanId ?? ""}|${record.recordIdentity ?? ""}`
 
 /** Most severe first; unknown levels after the known ones, alphabetically. */
 export function compareSeverity(a: string, b: string): number {
-	const rankA = lookup(SEVERITY_RANK, a.toUpperCase()) ?? 99
-	const rankB = lookup(SEVERITY_RANK, b.toUpperCase()) ?? 99
-	return rankA - rankB || a.localeCompare(b)
+	return severityRank(a) !== severityRank(b) ? severityRank(a) - severityRank(b) : Str.localeCompare(b)(a)
 }

@@ -7,8 +7,12 @@
  *   bun run measure-tokens -- -o token-stats.json   # also write JSON
  */
 import { writeFileSync } from "node:fs"
+import { Schema, String as Str } from "effect"
 import { encode } from "gpt-tokenizer"
 import { mapleToolCatalog, toInputSchema } from "@/mcp/tools/registry"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 interface ToolTokens {
 	readonly name: string
@@ -19,7 +23,7 @@ interface ToolTokens {
 
 const measure = (): { total: number; tools: ToolTokens[] } => {
 	const tools = mapleToolCatalog.map((definition): ToolTokens => {
-		const schema = JSON.stringify(toInputSchema(definition.schema))
+		const schema = encodeJson(toInputSchema(definition.schema))
 		const nameTokens = encode(definition.name).length
 		const descriptionTokens = encode(definition.description).length
 		const schemaTokens = encode(schema).length
@@ -42,12 +46,12 @@ const outFile = outIndex >= 0 ? args[outIndex + 1] : undefined
 const { total, tools } = measure()
 
 if (outFile) {
-	writeFileSync(outFile, `${JSON.stringify({ total, toolCount: tools.length, tools }, null, 2)}\n`)
+	writeFileSync(outFile, `${encodePrettyJson({ total, toolCount: tools.length, tools })}\n`)
 }
 
-const pad = (value: string, width: number): string => value.padEnd(width)
+const pad = (value: string, width: number): string => Str.padEnd(width)(value)
 console.log(pad("tool", 32) + pad("total", 8) + pad("desc", 8) + "schema")
-console.log("-".repeat(56))
+console.log(Str.repeat(56)("-"))
 for (const tool of tools) {
 	console.log(
 		pad(tool.name, 32) +
@@ -56,5 +60,5 @@ for (const tool of tools) {
 			String(tool.schemaTokens),
 	)
 }
-console.log("-".repeat(56))
+console.log(Str.repeat(56)("-"))
 console.log(`${pad("TOTAL", 32)}${total}  (${tools.length} tools)`)

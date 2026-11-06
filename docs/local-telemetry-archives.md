@@ -29,6 +29,9 @@ and the directory and manifest layouts.
   live store is a separate, explicit `maple archive retire-live` step.
 - Archive rehydration into the Maple UI. Historical data is queried in DuckDB,
   not reloaded into the dashboard.
+- Affected by `maple delete`. A scoped delete changes only the live store;
+  archived generations keep the deleted rows. Re-archiving an already
+  archived day after a delete needs `--allow-shrink`.
 - A second always-running database. Archives are files; DuckDB opens them on
   demand.
 
@@ -353,7 +356,7 @@ PRAGMA temp_directory='/Volumes/External/duckdb-spill';
 ## Export tuning
 
 Archive export uses one fixed set of values (`DEFAULT_ARCHIVE_TUNING` in
-`apps/cli/src/server/archives/config.ts`): one writer thread, 10 000-row row
+`packages/local-server/src/archives/config.ts`): one writer thread, 10 000-row row
 groups, and shards of at most 500 000 rows or 256 MiB uncompressed. There is no
 per-deployment tuning.
 

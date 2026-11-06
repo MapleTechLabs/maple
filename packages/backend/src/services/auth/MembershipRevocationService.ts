@@ -1,26 +1,27 @@
 import { EdgeCacheService } from "@maple/cache"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	alertDestinations,
-	apiKeys,
-	chatIdentities,
-	cliDeviceAuthorizations,
-	mcpOAuthAuthorizations,
-	mobileDevices,
-} from "@maple/db"
+	AlertDestinations,
+	ApiKeys,
+	ChatIdentities,
+	CliDeviceAuthorizations,
+	DeviceCredentials,
+	DigestSubscriptions,
+	McpOAuthAuthorizations,
+	MobileDevices,
+} from "@maple/db/tables"
 import { RoleName, type OrgId, type UserId } from "@maple/domain/http"
-import { and, eq, inArray } from "drizzle-orm"
-import { Clock, Context, Effect, Layer, Redacted, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Redacted, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import { msToDate } from "@maple/backend/platform/time"
 import {
 	DestinationPublicConfigSchema,
 	SecretConfigFromJson,
 } from "@maple/backend/services/alerts/AlertDestinationHydration"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { ORG_MEMBERSHIP_CACHE_BUCKET, forgetMembershipMemo } from "./OrgMembershipService"
-import { isAdmin } from "./auth"
+import * as Policy from "@maple/domain/policy"
 import { revokeFamiliesForAccessKeys, revokeRefreshFamiliesForMember } from "./mcp-oauth-family"
 
 /**
@@ -37,7 +38,7 @@ import { revokeFamiliesForAccessKeys, revokeRefreshFamiliesForMember } from "./m
  */
 
 export class MembershipRevocationError extends Schema.TaggedError<MembershipRevocationError>()(
-	"@maple/api/errors/MembershipRevocationError",
+	"@maple/backend/errors/MembershipRevocationError",
 	{
 		message: Schema.String,
 		orgId: Schema.optionalKey(Schema.String),
@@ -49,16 +50,19 @@ export class MembershipRevocationError extends Schema.TaggedError<MembershipRevo
 export interface MembershipRevocationSummary {
 	readonly apiKeysRevoked: number
 	readonly mcpFamiliesRevoked: number
+	readonly deviceCredentialsRevoked: number
 	readonly cliAuthorizationsDeleted: number
 	readonly mcpAuthorizationsDeleted: number
 	readonly emailDestinationsUpdated: number
 	readonly mobileDevicesDeleted: number
 	readonly chatIdentitiesDeleted: number
+	readonly digestSubscriptionsDisabled: number
 }
 
 export interface MembershipDemotionSummary {
 	readonly apiKeysRevoked: number
 	readonly mcpFamiliesRevoked: number
+	readonly deviceCredentialsRevoked: number
 }
 
 export interface MembershipRevocationServiceApi {
@@ -110,6 +114,7 @@ const decodePinnedRoles = Schema.decodeUnknownOption(PinnedRoles)
 
 const decodePublicConfig = Schema.decodeUnknownOption(DestinationPublicConfigSchema)
 const decodeSecretConfig = Schema.decodeOption(SecretConfigFromJson)
+const encodeSecretConfig = Schema.encodeEffect(SecretConfigFromJson)
 
 const make = Effect.gen(function* () {
 	const database = yield* Database
@@ -142,77 +147,85 @@ const make = Effect.gen(function* () {
 	const stripFromEmailDestinations = Effect.fn("MembershipRevocationService.stripFromEmailDestinations")(
 		function* (orgId: OrgId | null, userId: UserId) {
 			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(alertDestinations)
-					.where(
-						orgId === null
-							? eq(alertDestinations.type, "email")
-							: and(eq(alertDestinations.orgId, orgId), eq(alertDestinations.type, "email")),
-					),
+				db.run(
+					PG.from(AlertDestinations)
+						.select()
+						.where(($) => [orgId === null ? undefined : $.orgId.eq(orgId), $.type.eq("email")]),
+				),
 			)
-			let updated = 0
-			for (const row of rows) {
-				const secretJson = yield* decryptAes256Gcm(
-					{ ciphertext: row.secretCiphertext, iv: row.secretIv, tag: row.secretTag },
-					encryptionKey,
-					() =>
-						new MembershipRevocationError({
-							message: `Could not decrypt alert destination ${row.id}`,
-							...(orgId === null ? undefined : { orgId }),
-						}),
-				)
-				const secret = decodeSecretConfig(secretJson)
-				if (secret._tag === "None" || secret.value.type !== "email") continue
-				const remaining = secret.value.members.filter((member) => member.userId !== userId)
-				if (remaining.length === secret.value.members.length) continue
+			const outcomes = yield* Effect.forEach(rows, (row) =>
+				Effect.gen(function* () {
+					const secretJson = yield* decryptAes256Gcm(
+						{ ciphertext: row.secretCiphertext, iv: row.secretIv, tag: row.secretTag },
+						encryptionKey,
+						() =>
+							new MembershipRevocationError({
+								message: `Could not decrypt alert destination ${row.id}`,
+								...(orgId === null ? undefined : { orgId }),
+							}),
+					)
+					const secret = decodeSecretConfig(secretJson)
+					if (secret._tag === "None" || secret.value.type !== "email") return false
+					const remaining = Arr.filter(secret.value.members, (member) => member.userId !== userId)
+					if (remaining.length === secret.value.members.length) return false
 
-				const nextSecret = { type: "email" as const, members: remaining }
-				const encrypted = yield* encryptAes256Gcm(
-					JSON.stringify(nextSecret),
-					encryptionKey,
-					(message) =>
-						new MembershipRevocationError({
-							message,
-							...(orgId === null ? undefined : { orgId }),
-						}),
-				)
-				const publicConfig = decodePublicConfig(row.configJson)
-				const first = remaining[0]
-				const nextPublic = {
-					...(publicConfig._tag === "Some" ? publicConfig.value : { channelLabel: null }),
-					summary:
-						first === undefined
-							? "Email"
-							: remaining.length === 1
-								? (first.name ?? first.email)
-								: `${first.name ?? first.email} +${remaining.length - 1} more`,
-					channelLabel: first?.email ?? null,
-					memberUserIds: remaining.map((member) => member.userId),
-				}
-				const now = yield* Clock.currentTimeMillis
-				yield* dbExecute((db) =>
-					db
-						.update(alertDestinations)
-						.set({
-							configJson: nextPublic,
-							secretCiphertext: encrypted.ciphertext,
-							secretIv: encrypted.iv,
-							secretTag: encrypted.tag,
-							updatedAt: msToDate(now),
-							...(remaining.length === 0
-								? {
-										enabled: false,
-										disabledAt: msToDate(now),
-										disabledReason: "Last recipient left the organization",
-									}
-								: undefined),
-						})
-						.where(eq(alertDestinations.id, row.id)),
-				)
-				updated += 1
-			}
-			return updated
+					const nextSecret = { type: "email" as const, members: remaining }
+					const nextSecretJson = yield* encodeSecretConfig(nextSecret).pipe(
+						Effect.mapError(
+							() =>
+								new MembershipRevocationError({
+									message: `Could not encode alert destination ${row.id}`,
+									...(orgId === null ? undefined : { orgId }),
+								}),
+						),
+					)
+					const encrypted = yield* encryptAes256Gcm(
+						nextSecretJson,
+						encryptionKey,
+						(message) =>
+							new MembershipRevocationError({
+								message,
+								...(orgId === null ? undefined : { orgId }),
+							}),
+					)
+					const publicConfig = decodePublicConfig(row.configJson)
+					const first = remaining[0]
+					const nextPublic = {
+						...(publicConfig._tag === "Some" ? publicConfig.value : { channelLabel: null }),
+						summary:
+							first === undefined
+								? "Email"
+								: remaining.length === 1
+									? (first.name ?? first.email)
+									: `${first.name ?? first.email} +${remaining.length - 1} more`,
+						channelLabel: first?.email ?? null,
+						memberUserIds: Arr.map(remaining, (member) => member.userId),
+					}
+					const now = yield* Clock.currentTimeMillis
+					yield* dbExecute((db) =>
+						db.run(
+							PG.update(AlertDestinations)
+								.set({
+									configJson: nextPublic,
+									secretCiphertext: encrypted.ciphertext,
+									secretIv: encrypted.iv,
+									secretTag: encrypted.tag,
+									updatedAt: now,
+									...(remaining.length === 0
+										? {
+												enabled: false,
+												disabledAt: now,
+												disabledReason: "Last recipient left the organization",
+											}
+										: undefined),
+								})
+								.where(($) => [$.id.eq(row.id)]),
+						),
+					)
+					return true
+				}),
+			)
+			return Arr.filter(outcomes, Boolean).length
 		},
 	)
 
@@ -226,79 +239,93 @@ const make = Effect.gen(function* () {
 		yield* invalidateMembership(userId)
 
 		const now = yield* Clock.currentTimeMillis
-		const revokedAt = msToDate(now)
 
 		// One transaction for the credential tables: a partial purge here is the
 		// exact half-revoked state the whole fix exists to prevent.
 		const credentials = yield* dbExecute((db) =>
-			db.transaction((tx) =>
+			db.transaction(
 				Effect.gen(function* () {
-					const mcpFamiliesRevoked = yield* revokeRefreshFamiliesForMember(
-						tx,
-						orgId,
-						userId,
-						revokedAt,
-					)
+					const mcpFamiliesRevoked = yield* revokeRefreshFamiliesForMember(db, orgId, userId, now)
 					// After the families, so an MCP access key retired above is already
 					// `revoked` and is simply not claimed twice.
-					const revokedKeys = yield* tx
-						.update(apiKeys)
-						.set({ revoked: true, revokedAt })
-						.where(
-							and(
-								...(orgId === null ? [] : [eq(apiKeys.orgId, orgId)]),
-								eq(apiKeys.createdBy, userId),
-								eq(apiKeys.revoked, false),
-							),
-						)
-						.returning({ id: apiKeys.id })
-					const cliDeleted = yield* tx
-						.delete(cliDeviceAuthorizations)
-						.where(
-							and(
-								...(orgId === null ? [] : [eq(cliDeviceAuthorizations.approvedOrgId, orgId)]),
-								eq(cliDeviceAuthorizations.approvedUserId, userId),
-							),
-						)
-						.returning({ deviceCodeHash: cliDeviceAuthorizations.deviceCodeHash })
-					const mcpAuthDeleted = yield* tx
-						.delete(mcpOAuthAuthorizations)
-						.where(
-							and(
-								...(orgId === null ? [] : [eq(mcpOAuthAuthorizations.approvedOrgId, orgId)]),
-								eq(mcpOAuthAuthorizations.approvedUserId, userId),
-							),
-						)
-						.returning({ requestIdHash: mcpOAuthAuthorizations.requestIdHash })
-					const devicesDeleted = yield* tx
-						.delete(mobileDevices)
-						.where(
-							and(
-								...(orgId === null ? [] : [eq(mobileDevices.orgId, orgId)]),
-								eq(mobileDevices.userId, userId),
-							),
-						)
-						.returning({ id: mobileDevices.id })
+					const revokedKeys = yield* db.run(
+						PG.update(ApiKeys)
+							.set({ revoked: true, revokedAt: now })
+							.where(($) => [
+								orgId === null ? undefined : $.orgId.eq(orgId),
+								$.createdBy.eq(userId),
+								$.revoked.eq(false),
+							])
+							.returning("id"),
+					)
+					// Device-bound (DPoP) widget keys: every token issued for one re-reads it, so
+					// revoking the row ends the device's access on its next request.
+					const revokedDeviceCredentials = yield* db.run(
+						PG.update(DeviceCredentials)
+							.set({ revokedAt: now })
+							.where(($) => [
+								orgId === null ? undefined : $.orgId.eq(orgId),
+								$.userId.eq(userId),
+								$.revokedAt.isNull(),
+							])
+							.returning("id"),
+					)
+					const cliDeleted = yield* db.run(
+						PG.deleteFrom(CliDeviceAuthorizations)
+							.where(($) => [
+								orgId === null ? undefined : $.approvedOrgId.eq(orgId),
+								$.approvedUserId.eq(userId),
+							])
+							.returning("deviceCodeHash"),
+					)
+					const mcpAuthDeleted = yield* db.run(
+						PG.deleteFrom(McpOAuthAuthorizations)
+							.where(($) => [
+								orgId === null ? undefined : $.approvedOrgId.eq(orgId),
+								$.approvedUserId.eq(userId),
+							])
+							.returning("requestIdHash"),
+					)
+					const devicesDeleted = yield* db.run(
+						PG.deleteFrom(MobileDevices)
+							.where(($) => [
+								orgId === null ? undefined : $.orgId.eq(orgId),
+								$.userId.eq(userId),
+							])
+							.returning("id"),
+					)
 					// A chat identity is standing authority to approve a change AS this user: the bot
 					// reads the row on every button click and runs the tool under whatever roles the
 					// user holds. Membership ending has to end that too, or the next click from their
 					// chat account still acts for a member who is gone.
-					const identitiesDeleted = yield* tx
-						.delete(chatIdentities)
-						.where(
-							and(
-								...(orgId === null ? [] : [eq(chatIdentities.orgId, orgId)]),
-								eq(chatIdentities.userId, userId),
-							),
-						)
-						.returning({ id: chatIdentities.id })
+					const identitiesDeleted = yield* db.run(
+						PG.deleteFrom(ChatIdentities)
+							.where(($) => [
+								orgId === null ? undefined : $.orgId.eq(orgId),
+								$.userId.eq(userId),
+							])
+							.returning("id"),
+					)
+					// Disabled the way the daily Clerk reconcile disables a departed member: opt-out
+					// stamps stay untouched, so a member who rejoins is re-enabled by that reconcile.
+					const digestsDisabled = yield* db.run(
+						PG.update(DigestSubscriptions)
+							.set({ enabled: false, webAnalyticsEnabled: false, updatedAt: now })
+							.where(($) => [
+								orgId === null ? undefined : $.orgId.eq(orgId),
+								$.userId.eq(userId),
+							])
+							.returning("id"),
+					)
 					return {
 						apiKeysRevoked: revokedKeys.length,
 						mcpFamiliesRevoked,
+						deviceCredentialsRevoked: revokedDeviceCredentials.length,
 						cliAuthorizationsDeleted: cliDeleted.length,
 						mcpAuthorizationsDeleted: mcpAuthDeleted.length,
 						mobileDevicesDeleted: devicesDeleted.length,
 						chatIdentitiesDeleted: identitiesDeleted.length,
+						digestSubscriptionsDisabled: digestsDisabled.length,
 					}
 				}),
 			),
@@ -310,11 +337,13 @@ const make = Effect.gen(function* () {
 		yield* Effect.annotateCurrentSpan({
 			"maple.membership.api_keys_revoked": summary.apiKeysRevoked,
 			"maple.membership.mcp_families_revoked": summary.mcpFamiliesRevoked,
+			"maple.membership.device_credentials_revoked": summary.deviceCredentialsRevoked,
 			"maple.membership.cli_authorizations_deleted": summary.cliAuthorizationsDeleted,
 			"maple.membership.mcp_authorizations_deleted": summary.mcpAuthorizationsDeleted,
 			"maple.membership.email_destinations_updated": summary.emailDestinationsUpdated,
 			"maple.membership.mobile_devices_deleted": summary.mobileDevicesDeleted,
 			"maple.membership.chat_identities_deleted": summary.chatIdentitiesDeleted,
+			"maple.membership.digest_subscriptions_disabled": summary.digestSubscriptionsDisabled,
 		})
 		return summary
 	})
@@ -324,8 +353,8 @@ const make = Effect.gen(function* () {
 	 * device keys pin the minting user's roles into `metadata_json` and
 	 * `resolveByKey` reads them back without ever re-checking the membership, so
 	 * an admin who ran `maple auth login` and was then demoted keeps admin on
-	 * that key until it expires. Any key still pinned to an admin role the member
-	 * no longer holds is retired here; MCP families go with their access key, or
+	 * that key until it expires. Any key pinned to a role above the one the member
+	 * now holds (admin, or engineer for a new member) is retired here; MCP families go with their access key, or
 	 * the next hourly rotation would mint the authority straight back.
 	 *
 	 * Known residue: a plain `standard` key carries no pinned roles and resolves
@@ -341,40 +370,68 @@ const make = Effect.gen(function* () {
 	) {
 		yield* Effect.annotateCurrentSpan({ orgId, "tenant.userId": userId })
 		yield* invalidateMembership(userId)
-		if (isAdmin(roles)) {
-			return { apiKeysRevoked: 0, mcpFamiliesRevoked: 0 } satisfies MembershipDemotionSummary
+		// Anything pinned above the role the member now holds is retired; admins keep everything.
+		const nowRole = Policy.highestRole(roles)
+		const outlivesDemotion = (pinned: ReadonlyArray<string>) =>
+			Policy.outranks(Policy.highestRole(pinned), nowRole)
+		if (Policy.isAtLeast(nowRole, "admin")) {
+			return {
+				apiKeysRevoked: 0,
+				mcpFamiliesRevoked: 0,
+				deviceCredentialsRevoked: 0,
+			} satisfies MembershipDemotionSummary
 		}
 
 		const now = yield* Clock.currentTimeMillis
-		const revokedAt = msToDate(now)
 		const summary = yield* dbExecute((db) =>
-			db.transaction((tx) =>
+			db.transaction(
 				Effect.gen(function* () {
-					const live = yield* tx
-						.select({ id: apiKeys.id, metadataJson: apiKeys.metadataJson })
-						.from(apiKeys)
-						.where(
-							and(
-								eq(apiKeys.orgId, orgId),
-								eq(apiKeys.createdBy, userId),
-								eq(apiKeys.revoked, false),
-							),
-						)
-					const stale = live
-						.filter((row) => {
+					// Device credentials pin roles in a column rather than key metadata.
+					const liveDevices = yield* db.run(
+						PG.from(DeviceCredentials)
+							.select("id", "roles")
+							.where(($) => [$.orgId.eq(orgId), $.userId.eq(userId), $.revokedAt.isNull()]),
+					)
+					const [firstDevice, ...restDevices] = Arr.map(
+						Arr.filter(liveDevices, (row) => outlivesDemotion(row.roles)),
+						(row) => row.id,
+					)
+					const deviceCredentialsRevoked =
+						firstDevice === undefined
+							? 0
+							: (yield* db.run(
+									PG.update(DeviceCredentials)
+										.set({ revokedAt: now })
+										.where(($) => [
+											$.id.in_(firstDevice, ...restDevices),
+											$.revokedAt.isNull(),
+										])
+										.returning("id"),
+								)).length
+					const live = yield* db.run(
+						PG.from(ApiKeys)
+							.select("id", "metadataJson")
+							.where(($) => [$.orgId.eq(orgId), $.createdBy.eq(userId), $.revoked.eq(false)]),
+					)
+					const stale = Arr.map(
+						Arr.filter(live, (row) => {
 							const pinned = decodePinnedRoles(row.metadataJson)
-							return pinned._tag === "Some" && isAdmin(pinned.value.roles)
-						})
-						.map((row) => row.id)
-					if (stale.length === 0) return { apiKeysRevoked: 0, mcpFamiliesRevoked: 0 }
+							return pinned._tag === "Some" && outlivesDemotion(pinned.value.roles)
+						}),
+						(row) => row.id,
+					)
+					const [first, ...rest] = stale
+					if (first === undefined)
+						return { apiKeysRevoked: 0, mcpFamiliesRevoked: 0, deviceCredentialsRevoked }
 
-					const revoked = yield* tx
-						.update(apiKeys)
-						.set({ revoked: true, revokedAt })
-						.where(and(inArray(apiKeys.id, stale), eq(apiKeys.revoked, false)))
-						.returning({ id: apiKeys.id })
-					const mcpFamiliesRevoked = yield* revokeFamiliesForAccessKeys(tx, stale, revokedAt)
-					return { apiKeysRevoked: revoked.length, mcpFamiliesRevoked }
+					const revoked = yield* db.run(
+						PG.update(ApiKeys)
+							.set({ revoked: true, revokedAt: now })
+							.where(($) => [$.id.in_(first, ...rest), $.revoked.eq(false)])
+							.returning("id"),
+					)
+					const mcpFamiliesRevoked = yield* revokeFamiliesForAccessKeys(db, stale, now)
+					return { apiKeysRevoked: revoked.length, mcpFamiliesRevoked, deviceCredentialsRevoked }
 				}),
 			),
 		)
@@ -382,6 +439,7 @@ const make = Effect.gen(function* () {
 		yield* Effect.annotateCurrentSpan({
 			"maple.membership.demoted_api_keys_revoked": summary.apiKeysRevoked,
 			"maple.membership.demoted_mcp_families_revoked": summary.mcpFamiliesRevoked,
+			"maple.membership.demoted_device_credentials_revoked": summary.deviceCredentialsRevoked,
 		})
 		return summary satisfies MembershipDemotionSummary
 	})
@@ -404,6 +462,6 @@ const make = Effect.gen(function* () {
 export class MembershipRevocationService extends Context.Service<
 	MembershipRevocationService,
 	MembershipRevocationServiceApi
->()("@maple/api/services/auth/MembershipRevocationService", { make }) {
+>()("@maple/backend/services/auth/MembershipRevocationService", { make }) {
 	static readonly layer = Layer.effect(this, this.make)
 }

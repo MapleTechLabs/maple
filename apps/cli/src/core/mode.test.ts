@@ -4,10 +4,10 @@ import { strict as assert } from "node:assert"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Duration, Effect, Option } from "effect"
+import { Duration, Effect, Option, Record as Rec } from "effect"
 import { FileSystem } from "effect/FileSystem"
-import { HttpClient, HttpClientError, HttpClientResponse } from "effect/unstable/http"
-import { discoverLocalUrl, discoverServers, probeLocal } from "./mode"
+import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http"
+import { autoBackend, discoverLocalUrl, discoverServers, probeLocal } from "./mode"
 
 type Route = { readonly status: number; readonly body: string } | "refuse" | "hang"
 
@@ -101,7 +101,7 @@ describe("server discovery scan", () => {
 	const scan = async (files: Readonly<Record<string, unknown>>) => {
 		const dir = mkdtempSync(join(tmpdir(), "maple-scan-"))
 		try {
-			for (const [name, body] of Object.entries(files))
+			for (const [name, body] of Rec.toEntries(files))
 				writeFileSync(join(dir, name), JSON.stringify(body))
 			return await Effect.runPromise(
 				Effect.flatMap(FileSystem, (fs) => discoverServers(fs, dir)).pipe(
@@ -135,5 +135,17 @@ describe("server discovery scan", () => {
 		})
 		assert.deepStrictEqual(found.url, Option.none())
 		assert.deepStrictEqual(found.ambiguous, ["http://a", "http://b"])
+	})
+})
+
+describe("auto mode", () => {
+	// Logged-in users set MAPLE_LOCAL_URL to reach a local server and got prod instead.
+	it("prefers an explicit MAPLE_LOCAL_URL over a stored login", () => {
+		assert.equal(autoBackend({ localUrlFromEnv: true, remoteConfigured: true }), "local")
+	})
+
+	it("uses the login, else probes the local URL", () => {
+		assert.equal(autoBackend({ localUrlFromEnv: false, remoteConfigured: true }), "remote")
+		assert.equal(autoBackend({ localUrlFromEnv: false, remoteConfigured: false }), "probe")
 	})
 })

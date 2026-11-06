@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import * as Effect from "effect/Effect"
 import * as Config from "effect/Config"
 import * as Redacted from "effect/Redacted"
@@ -41,7 +41,7 @@ export type ApiKey = Resource<
 		 * The full `maple_ak_…` secret, captured at create/roll — the API never
 		 * returns it again, so it is preserved in Alchemy state across deploys.
 		 */
-		secret: Redacted.Redacted<string>
+		secret: Redacted.Redacted
 	},
 	never,
 	Providers
@@ -120,11 +120,7 @@ export const ApiKeyProvider = () =>
 					if (output?.keyId) {
 						const fetched = yield* api
 							.get(`/v2/api_keys/${output.keyId}`)
-							.pipe(
-								Effect.catchTag(MapleErrorTags.apiKeyNotFound, () =>
-									Effect.succeed(undefined),
-								),
-							)
+							.pipe(Effect.catchTag(MapleErrorTags.apiKeyNotFound, () => Effect.undefined))
 						if (fetched !== undefined) {
 							const wire = yield* decodeWireApiKey(fetched)
 							if (!wire.revoked) observed = wire
@@ -134,12 +130,14 @@ export const ApiKeyProvider = () =>
 					// The secret is returned once, then retained in Alchemy state.
 					if (observed === undefined || output === undefined) {
 						const created = yield* api.post("/v2/api_keys", createBody(news))
-						return fromSecretResponse(yield* decodeWireApiKeyWithSecret(created))
+						const decoded = yield* decodeWireApiKeyWithSecret(created)
+						return fromSecretResponse(decoded)
 					}
 
 					if (olds !== undefined && olds.rotate !== news.rotate) {
 						const rolled = yield* api.post(`/v2/api_keys/${observed.id}/roll`)
-						return fromSecretResponse(yield* decodeWireApiKeyWithSecret(rolled))
+						const decoded = yield* decodeWireApiKeyWithSecret(rolled)
+						return fromSecretResponse(decoded)
 					}
 
 					// Preserve the stored secret because GET never returns it.
@@ -159,7 +157,7 @@ export const ApiKeyProvider = () =>
 					if (!output?.keyId) return undefined
 					const fetched = yield* api
 						.get(`/v2/api_keys/${output.keyId}`)
-						.pipe(Effect.catchTag(MapleErrorTags.apiKeyNotFound, () => Effect.succeed(undefined)))
+						.pipe(Effect.catchTag(MapleErrorTags.apiKeyNotFound, () => Effect.undefined))
 					if (fetched === undefined) return undefined
 					const wire = yield* decodeWireApiKey(fetched)
 					if (wire.revoked) return undefined
@@ -176,14 +174,15 @@ export const ApiKeyProvider = () =>
 					const wires = yield* Effect.forEach(items, (item) => decodeWireApiKey(item))
 					// Secrets are unrecoverable via list — empty placeholder (list only
 					// powers enumeration/nuke, which needs IDs, not secrets).
-					return wires
-						.filter((wire) => !wire.revoked)
-						.map((wire) => ({
+					return Arr.map(
+						Arr.filter(wires, (wire) => !wire.revoked),
+						(wire) => ({
 							keyId: wire.id,
 							name: wire.name,
 							keyPrefix: wire.key_prefix,
 							secret: Redacted.make(""),
-						}))
+						}),
+					)
 				}),
 			}
 		}),

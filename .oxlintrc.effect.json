@@ -2,9 +2,10 @@
 	"$schema": "./node_modules/@effect/tsgo/oxlint-schema.json",
 	"extends": [
 		"./.oxlintrc.json",
-		"./node_modules/@effect/tsgo/oxlint-presets/recommended.json",
+		// `strict` is `recommended` at error. CI lints with `--quiet`, so a warn-level rule enforces nothing.
+		"./node_modules/@effect/tsgo/oxlint-presets/strict.json",
 		// @effect/tsgo 0.4x moved the host-global rules (console, Date, fetch, process.env, ...) out of
-		// `recommended` into this opt-in preset; the test overrides below depend on them staying on.
+		// `recommended` into this opt-in preset; its rules are raised to error below.
 		"./node_modules/@effect/tsgo/oxlint-presets/effect-native.json"
 	],
 	"plugins": ["eslint", "unicorn", "typescript", "oxc", "react", "jsx-a11y", "effecttsgo"],
@@ -13,51 +14,214 @@
 		"typeAware": true
 	},
 	"rules": {
+		"effecttsgo/abort-controller-in-effect": "error",
+		"effecttsgo/any-unknown-in-error-context": "error",
 		"effecttsgo/catch-to-ignore": "error",
+		"effecttsgo/crypto-random-uuid": "error",
+		"effecttsgo/crypto-random-uuid-in-effect": "error",
+		"effecttsgo/global-console": "error",
+		"effecttsgo/global-date-in-effect": "error",
+		"effecttsgo/global-fetch": "error",
+		"effecttsgo/global-random": "error",
+		"effecttsgo/global-timers": "error",
+		"effecttsgo/global-timers-in-effect": "error",
+		"effecttsgo/instance-of-schema": "error",
+		"effecttsgo/new-promise": "error",
+		"effecttsgo/process-env": "error",
+		"effecttsgo/process-env-in-effect": "error",
 		"effecttsgo/catch-to-or-else-succeed": "error",
 		"effecttsgo/duplicate-package": "error",
-		"effecttsgo/effect-do-notation": "warn",
+		"effecttsgo/effect-do-notation": "error",
 		"effecttsgo/effect-in-failure": "error",
 		"effecttsgo/effect-in-void-success": "error",
+		"effecttsgo/effect-try-without-catch": "error",
 		"effecttsgo/extends-native-error": "error",
 		"effecttsgo/generic-effect-services": "error",
 		"effecttsgo/global-console-in-effect": "error",
 		"effecttsgo/global-error-in-effect-failure": "error",
 		"effecttsgo/global-fetch-in-effect": "error",
+		"effecttsgo/global-json": "error",
+		"effecttsgo/global-json-in-effect": "error",
 		"effecttsgo/global-random-in-effect": "error",
 		"effecttsgo/lazy-promise-in-effect-sync": "error",
 		"effecttsgo/leaking-requirements": "error",
+		"effecttsgo/map-map-error-to-map-both": "error",
 		"effecttsgo/multiple-catch-tag": "error",
 		"effecttsgo/multiple-effect-provide": "error",
-		"effecttsgo/nested-effect-gen-yield": "warn",
+		"effecttsgo/nested-effect-gen-yield": "error",
 		"effecttsgo/outdated-api": "error",
 		"effecttsgo/promise-in-effect-success": "error",
+		"effecttsgo/provide-merge-all-to-array": "error",
 		"effecttsgo/redundant-map-error": "error",
 		"effecttsgo/return-effect-in-gen": "error",
 		"effecttsgo/run-effect-inside-effect": "error",
-		"effecttsgo/service-not-as-class": "warn",
+		"effecttsgo/service-not-as-class": "error",
+		// The repo builds on `effect/unstable/*` (HttpApi, HttpClient, RPC) and `@effect/vitest`; ~10k
+		// hits with nothing to change. Version bumps are where breakage shows up.
+		"effecttsgo/unstable-api-usage": "off",
+		// JSON can't carry NaN/Infinity, and a blanket `Schema.Finite` turns a computed NaN into a decode failure.
+		"effecttsgo/schema-number": "off",
+		// Schema classes are told apart by their fields and `_tag`; a brand on every class is noise.
+		"effecttsgo/schema-class-missing-brand": "off",
+		// `new Date(ts)` to parse or format is pure; `global-date-in-effect` covers clock reads in Effect code.
+		"effecttsgo/global-date": "off",
+		// Durable Object methods, Worker handlers and Promise-based library hooks have to be async.
+		"effecttsgo/async-function": "off",
+		// node:crypto HMAC/hashes in Workers and node:fs/path in the local server are the intended APIs.
+		"effecttsgo/node-builtin-import": "off",
+		// Fires on `new X({ ...x })`, which rebuilds the instance and is how Schema classes are copied.
+		// Re-measured 2026-11-05: all 109 hits are Schema class instances; the rule has no option to skip them.
+		"typescript/no-misused-spread": "off",
 		// New in the effect-native preset: flags every sync decode, ~1k hits mostly in tests and non-Effect
 		// boundaries. `schema-sync-in-effect` already covers the case that matters.
 		"effecttsgo/schema-sync": "off",
+		// Collections go through effect/Array, String and Record. The few native sites left carry a
+		// directive with the reason (function replacers, per-character loops, non-record types).
+		"effecttsgo/prefer-effect-array": "error",
+		"effecttsgo/prefer-effect-record": "error",
+		"effecttsgo/prefer-effect-string": "error",
 		"effecttsgo/strict-effect-provide": "error",
 		"effecttsgo/sync-to-succeed": "error",
+		"effecttsgo/type-union-to-schema-union": "error",
 		"effecttsgo/unnecessary-effect-gen": "error",
 		"effecttsgo/unnecessary-pipe-chain": "error",
-		"effecttsgo/unnecessary-typeof-type": "error"
+		"effecttsgo/unnecessary-typeof-type": "error",
+		"effecttsgo/yield-in-call-argument": "error",
+		"effecttsgo/schema-sync-in-effect": "error",
+		"effecttsgo/unsafe-effect-type-assertion": "error",
+		// `any` is typed at its source (decodes, guards, typed env); see the overrides for what is scoped out.
+		"typescript/no-unsafe-argument": "error",
+		"typescript/no-unsafe-assignment": "error",
+		"typescript/no-unsafe-call": "error",
+		"typescript/no-unsafe-member-access": "error",
+		"typescript/no-unsafe-return": "error",
+		// 0 and NaN are falsy, so `if (count)` or `ts || fallback` on a number hides real values;
+		// an object in a condition is always truthy. Strings and nullable objects stay allowed.
+		"typescript/strict-boolean-expressions": [
+			"error",
+			{
+				"allowString": true,
+				"allowNumber": false,
+				"allowNullableObject": true,
+				"allowNullableBoolean": true,
+				"allowNullableString": true,
+				"allowNullableNumber": false,
+				"allowNullableEnum": false,
+				"allowAny": true
+			}
+		],
+		"typescript/await-thenable": "error",
+		"typescript/no-floating-promises": "error",
+		"typescript/restrict-template-expressions": "error",
+		"typescript/require-array-sort-compare": "error",
+		"typescript/switch-exhaustiveness-check": ["error", { "considerDefaultExhaustiveForUnions": true }],
+		"typescript/no-unnecessary-type-assertion": "error",
+		"typescript/no-unnecessary-type-arguments": "error",
+		"typescript/no-deprecated": "error",
+		"typescript/use-unknown-in-catch-callback-variable": "error",
+		"typescript/return-await": "error",
+		"typescript/no-unnecessary-template-expression": "error",
+		"typescript/no-misused-promises": "error",
+		"typescript/no-unsafe-enum-comparison": "error",
+		"typescript/only-throw-error": "error",
+		"typescript/no-base-to-string": "error",
+		"typescript/no-redundant-type-constituents": "error",
+		"typescript/no-useless-default-assignment": "error",
+		"typescript/no-implied-eval": "error",
+		"typescript/no-for-in-array": "error",
+		"typescript/no-array-delete": "error",
+		"typescript/no-mixed-enums": "error",
+		"typescript/no-meaningless-void-operator": "error",
+		"typescript/no-duplicate-type-constituents": "error",
+		"typescript/no-unsafe-unary-minus": "error",
+		"typescript/prefer-reduce-type-parameter": "error"
 	},
 	"overrides": [
-		// Framework composition roots, standalone libraries, generated-client CLI dispatch, and operational probes expose generic Effect channels.
+		// Published: `fromEnv()`, `providers()` and the other zero-argument Layer factories are its
+		// public API. Drop the call parens at the next major.
+		{
+			"files": ["packages/alchemy-maple/**"],
+			"rules": {
+				"effecttsgo/lazy-effect": "off"
+			}
+		},
+		// CI runs these before `bun install`, so they cannot import effect.
 		{
 			"files": [
-				"apps/api/src/worker.ts",
-				"apps/api/src/worker/**",
-				"apps/cli/**",
-				"examples/**/main.ts",
-				"lib/**",
-				"scripts/**"
+				"scripts/bun-test-guard.ts",
+				"scripts/ci/plan-tests.ts",
+				"scripts/ci/format-ingest-benchmark-comment.ts"
 			],
 			"rules": {
-				"effecttsgo/any-unknown-in-error-context": "off"
+				"effecttsgo/global-json": "off"
+			}
+		},
+		// The shareable lint package's scripts read and write JSON config as plain Node.
+		{
+			"files": ["lib/oxlint-config/scripts/**"],
+			"rules": {
+				"effecttsgo/global-json": "off"
+			}
+		},
+		// Not Effect programs: packages without an `effect` dependency, the Astro site, and ops scripts,
+		// benches and build configs that run as plain async Node/Bun.
+		{
+			"files": [
+				"alchemy.run.ts",
+				"examples/**",
+				"scripts/**",
+				"**/scripts/**",
+				"**/bench/**",
+				"**/bench-harness.ts",
+				"**/tools/**",
+				"**/*.config.ts",
+				"apps/ingest/**",
+				"apps/landing/**",
+				"packages/browser/**",
+				"packages/browser-session/**",
+				"packages/clickhouse-cli/**",
+				"packages/otel-collector-maple-exporter/**",
+				"packages/sdk-core/**",
+				"lib/ai-model-catalog/**",
+				"lib/oxlint-config/**",
+				"lib/grid-engine/**",
+				"lib/prometheus-otlp/**",
+				"lib/semconv/**"
+			],
+			"rules": {
+				// Bench suites and probes load untyped modules and run them as-is.
+				"effecttsgo/any-unknown-in-error-context": "off",
+				"effecttsgo/crypto-random-uuid": "off",
+				"effecttsgo/global-console": "off",
+				"effecttsgo/global-fetch": "off",
+				"effecttsgo/global-json": "off",
+				"effecttsgo/global-random": "off",
+				"effecttsgo/global-timers": "off",
+				"effecttsgo/new-promise": "off",
+				"effecttsgo/process-env": "off",
+				"effecttsgo/prefer-effect-array": "off",
+				"effecttsgo/prefer-effect-record": "off",
+				"effecttsgo/prefer-effect-string": "off"
+			}
+		},
+		// Host APIs on purpose: the customer SDK exports a Promise surface and keeps Schema out of its
+		// bundle, the CLI reads its own environment, and the canvas animations use Math.random per frame.
+		{
+			"files": [
+				"packages/effect-sdk/**",
+				"apps/cli/**",
+				"apps/web/src/crash/**",
+				"apps/web/src/page/service-map/three/**"
+			],
+			"rules": {
+				"effecttsgo/crypto-random-uuid": "off",
+				"effecttsgo/global-console": "off",
+				"effecttsgo/global-fetch": "off",
+				"effecttsgo/global-json": "off",
+				"effecttsgo/global-random": "off",
+				"effecttsgo/global-timers": "off",
+				"effecttsgo/new-promise": "off",
+				"effecttsgo/process-env": "off"
 			}
 		},
 		// Tests may use host globals and intentionally incomplete layers; production code may not.
@@ -69,33 +233,77 @@
 				"**/*.spec.tsx",
 				"**/test/**",
 				"**/tests/**",
-				"**/__tests__/**"
+				"**/__tests__/**",
+				"**/__evals__/**",
+				"**/testing/**",
+				"**/*-e2e-support.ts"
 			],
 			"rules": {
 				"effecttsgo/any-unknown-in-error-context": "off",
-				"effecttsgo/async-function": "off",
 				"effecttsgo/crypto-random-uuid": "off",
 				"effecttsgo/global-console": "off",
-				"effecttsgo/global-date": "off",
+				"effecttsgo/global-date-in-effect": "off",
 				"effecttsgo/global-fetch": "off",
+				// Tests build JSON fixtures and assert on `yield*` results inline.
+				"effecttsgo/global-json": "off",
+				"effecttsgo/global-json-in-effect": "off",
 				"effecttsgo/global-random": "off",
 				"effecttsgo/global-timers": "off",
 				"effecttsgo/new-promise": "off",
-				"effecttsgo/node-builtin-import": "off",
 				"effecttsgo/process-env": "off",
-				"effecttsgo/strict-effect-provide": "off"
+				// Tests decode fixtures inline and cast partial layers on purpose.
+				"effecttsgo/schema-sync-in-effect": "off",
+				"effecttsgo/unsafe-effect-type-assertion": "off",
+				"effecttsgo/strict-effect-provide": "off",
+				// Tests sort ids and tuples to compare them as sets; the default order is fine there.
+				"typescript/require-array-sort-compare": "off",
+				"typescript/restrict-template-expressions": "off",
+				"effecttsgo/yield-in-call-argument": "off",
+				// Tests read JSON response bodies and fixtures inline and assert on their fields.
+				"typescript/no-unsafe-argument": "off",
+				"typescript/no-unsafe-assignment": "off",
+				"typescript/no-unsafe-call": "off",
+				"typescript/no-unsafe-member-access": "off",
+				"typescript/no-unsafe-return": "off"
+			}
+		},
+		// Untyped JavaScript, and ops scripts, benches, tools and e2e harnesses that no tsconfig
+		// includes: their imports do not resolve for the type-aware lint, so every value is `any`.
+		// Two files import `.astro` components and one imports the `atmn` CLI, neither loadable here.
+		{
+			"files": [
+				"**/*.js",
+				"**/*.mjs",
+				"**/*.cjs",
+				"scripts/**",
+				"**/scripts/**",
+				"apps/landing/tools/**",
+				"apps/cli/bench/**",
+				"apps/web/e2e/**",
+				"packages/browser/e2e/**",
+				"apps/api/autumn.config.ts",
+				"apps/landing/src/lib/customer-logos.ts",
+				"apps/landing/src/pages/docs/search-index.json.ts"
+			],
+			"rules": {
+				"typescript/no-unsafe-argument": "off",
+				"typescript/no-unsafe-assignment": "off",
+				"typescript/no-unsafe-call": "off",
+				"typescript/no-unsafe-member-access": "off",
+				"typescript/no-unsafe-return": "off"
 			}
 		}
 	],
 	"ignorePatterns": [
+		"packages/security-audit/skill/**",
 		".agents/**",
 		".codex/**",
 		".context/**",
-		".deepsec/**",
 		".factory/**",
 		".impeccable/**",
 		".superset/**",
-		"apps/web/src/routeTree.gen.ts",
-		"lib/thinking-orbs/**"
+		"lib/thinking-orbs/**",
+		"lib/oxlint-config/plugins/anti-slop/**",
+		"lib/oxlint-config/plugins/anti-slop.mjs"
 	]
 }

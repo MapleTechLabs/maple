@@ -14,9 +14,11 @@
 import {
 	ConnectorCredentials,
 	decodeChatActionControlId,
+	decodeChatAlertAckControlId,
 	driveChatTurn,
 	WORKSPACE_CREDENTIALS,
 	type ChatActionRequest,
+	type ChatAlertAckAction,
 	type ChatBlock,
 	type ChatChartRef,
 	type ChatConversation,
@@ -33,12 +35,12 @@ import {
 	connectorSessionId,
 	connectorTurnTenant,
 	type ChatConversationKey,
-	type ChatMessage,
 	type ChatSessionId,
 } from "@maple/domain/chat-session"
-import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
+import type { ChatSessionClient } from "@maple/domain/chat-session-stub"
 import { ChatConnectorId, ExternalUserId, type OrgId, type UserId } from "@maple/domain/primitives"
-import { Clock, Duration, Effect, Exit, Option, Schema } from "effect"
+import { Clock, Duration, Effect, Exit, Option, Schema, Array as Arr, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { settledMessageBlocks } from "./approval.ts"
 import {
@@ -51,14 +53,16 @@ import {
 import { chatTurnEvents, sessionUnreachable } from "./events.ts"
 import type { RelayTurnCheckpoint } from "./settle.ts"
 
+const secureRandom = SecureRandom.make(SecureRandom.randomBytesUnsafe)
+
 /** The org behind a workspace, and who the person acting is in Maple, when one was asked about. */
 export interface RelayWorkspace {
 	readonly orgId: OrgId
 	/**
 	 * The Maple user the `externalUserId` that was asked about is linked to in that org.
 	 *
-	 * Absent means nobody has linked it — which is a refusal on a connector that can prove who
-	 * clicked, and irrelevant on one that cannot (and on a mention, which never asks).
+	 * Absent means nobody has linked it, which is a refusal on a connector that can prove who is
+	 * asking or clicking, and irrelevant on one that cannot.
 	 */
 	readonly linkedUserId?: UserId
 }
@@ -74,6 +78,27 @@ export class WorkspaceLookupFailed extends Schema.TaggedError<WorkspaceLookupFai
 	{ connector: ChatConnectorId, message: Schema.String },
 ) {}
 
+/** A click on an alert card's Acknowledge or Unacknowledge button, in the workspace's org. */
+export interface RelayAlertAckRequest {
+	readonly orgId: OrgId
+	readonly connector: ChatConnectorId
+	/** Off the control: forgeable, so the host scopes it to `orgId` and nothing else. */
+	readonly incidentId: string
+	readonly action: ChatAlertAckAction
+	/** The card that was clicked, to redraw it. */
+	readonly messageId: string
+	/** Linked Maple user where the connector can prove one, else only the platform's name. */
+	readonly userId: UserId | null
+	readonly displayName: string
+}
+
+/** What came of an ack click. `card` is the clicked message redrawn, when Maple posted it. */
+export type RelayAlertAckOutcome =
+	| { readonly kind: "applied"; readonly card: Option.Option<ReadonlyArray<ChatBlock>> }
+	| { readonly kind: "resolved"; readonly card: Option.Option<ReadonlyArray<ChatBlock>> }
+	| { readonly kind: "not_found" }
+	| { readonly kind: "unavailable" }
+
 export interface RelayPorts<R = never> {
 	/** The connector's outbound half — how a turn is shown on the platform it was asked on. */
 	readonly outbound: ChatOutbound<R>
@@ -82,8 +107,8 @@ export interface RelayPorts<R = never> {
 	 * read.
 	 *
 	 * `externalUserId` asks a second question in the same database connection: which Maple user
-	 * that chat account is linked to. A mention omits it; an approval passes it, and the host skips
-	 * the query anyway when the connector has no `identity` half to link with.
+	 * that chat account is linked to. The host skips it when the connector has no `identity` half
+	 * to link with.
 	 */
 	readonly resolveWorkspace: (
 		connector: ChatConnectorId,
@@ -91,7 +116,7 @@ export interface RelayPorts<R = never> {
 		externalUserId?: string,
 	) => Effect.Effect<Option.Option<RelayWorkspace>, WorkspaceLookupFailed>
 	/**
-	 * Whether this connector can prove who clicked a button.
+	 * Whether this connector can prove who asked or clicked.
 	 *
 	 * The connector's `identity` half, as a fact rather than a function: the host knows which
 	 * connector it is running and this file must not.
@@ -100,7 +125,7 @@ export interface RelayPorts<R = never> {
 	/** Drop the link for a workspace the bot was removed from. */
 	readonly forgetWorkspace: (connector: ChatConnectorId, workspaceId: string) => Effect.Effect<void>
 	/** The conversation's Durable Object, or `undefined` where this deployment has no agent bound. */
-	readonly chatSession: (sessionId: ChatSessionId) => ChatSessionStub | undefined
+	readonly chatSession: (sessionId: ChatSessionId) => ChatSessionClient | undefined
 	/** Base of the Maple web app, for the links a reply carries. */
 	readonly appBaseUrl: string
 	/** A signed image for one chart in a reply, or `null` when this deployment cannot sign one. */
@@ -125,6 +150,8 @@ export interface RelayPorts<R = never> {
 	readonly announceUnlinked: Effect.Effect<boolean>
 	/** Checkpoint the turn's posted messages, for settling it after an eviction (`./settle.ts`). */
 	readonly recordTurn: (checkpoint: RelayTurnCheckpoint) => Effect.Effect<void>
+	/** Acknowledge or unacknowledge an alert incident from its card. Never fails; see the outcome. */
+	readonly alertAck: (request: RelayAlertAckRequest) => Effect.Effect<RelayAlertAckOutcome>
 }
 
 /**
@@ -143,23 +170,36 @@ const BUSY_NOTICE = "Still working on the previous message here — ask again on
 
 const UNAVAILABLE_NOTICE = "Maple's agent can't be reached from here right now."
 
+const ALERT_RESOLVED_NOTICE = "That incident is already resolved, so there is nothing to acknowledge."
+const ALERT_GONE_NOTICE = "That incident no longer exists in Maple."
+const ALERT_UNAVAILABLE_NOTICE = "Maple couldn't record that just now. Try again in a moment."
+
 /** The control outlived what it pointed at: a wiped conversation, or a build that changed the log. */
 const PROPOSAL_GONE_NOTICE = "That change isn't waiting for a decision any more."
 
 /**
- * Why a click was refused, and the one step that fixes it. Bold on its first line, because it
- * answers a button press and has to read as the answer rather than as another line of the thread.
- * The link is Maple's own page, which is where a session is.
+ * Why a question or a click was refused, and the one step that fixes it. Bold on its first line, so
+ * it reads as the answer rather than as another line of the thread. The link is Maple's own page,
+ * which is where a session is.
  */
-const linkNotice = (connector: ChatConnectorId, appBaseUrl: string) => {
-	const platform = connector.charAt(0).toUpperCase() + connector.slice(1)
+const linkNotice = (connector: ChatConnectorId, appBaseUrl: string, refused: "ask" | "approve") => {
+	const platform = Str.toUpperCase(Str.slice(0, 1)(connector)) + Str.slice(1)(connector)
+	const link = `[Link your account](${appBaseUrl}/integrations)`
 	return [
 		{
 			kind: "prose" as const,
-			markdown: [
-				`**Link your ${platform} account to Maple to approve this.**`,
-				`A change you approve runs as your Maple user, with your permissions and your name on it, so Maple has to know which user you are. [Link your account](${appBaseUrl}/integrations), then press Approve again.`,
-			].join("\n"),
+			markdown: Arr.join(
+				refused === "ask"
+					? [
+							`**Link your ${platform} account to Maple to ask it questions.**`,
+							`Maple answers as your Maple user, with your permissions, so it has to know which user you are. ${link}, then ask again.`,
+						]
+					: [
+							`**Link your ${platform} account to Maple to approve this.**`,
+							`A change you approve runs as your Maple user, with your permissions and your name on it, so Maple has to know which user you are. ${link}, then press the button again.`,
+						],
+				"\n",
+			),
 		},
 	]
 }
@@ -218,7 +258,7 @@ const tellClicker = (
 		Effect.ignore,
 	)
 
-const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
+const relayMessage = Effect.fn("ChatBotRelay.relayTurn")(function* <R>(
 	message: InboundMessage,
 	ports: RelayPorts<R>,
 ) {
@@ -259,7 +299,9 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 		}
 	}
 
-	const workspace = yield* Effect.exit(ports.resolveWorkspace(message.connector, message.workspaceId))
+	const workspace = yield* Effect.exit(
+		ports.resolveWorkspace(message.connector, message.workspaceId, author.value),
+	)
 	// A lookup that failed says nothing about whether this workspace is linked, so the mention goes
 	// unanswered rather than answered wrongly. The port has already logged why.
 	if (Exit.isFailure(workspace)) {
@@ -274,7 +316,26 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 		}
 		return
 	}
-	const { orgId } = workspace.value.value
+	const { orgId, linkedUserId } = workspace.value.value
+	yield* Effect.annotateCurrentSpan({ orgId })
+
+	// See `ChatConnector.identity`: a connector that can name the asker answers only a linked Maple
+	// user, so a bot added to a public channel reads nothing for strangers. Before the conversation
+	// is opened, so a refused mention leaves no empty thread behind.
+	if (ports.supportsIdentity && linkedUserId === undefined) {
+		yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "unlinked_author" })
+		if (!message.mentionsBot) return
+		return yield* transport
+			.post(replyTarget(message), linkNotice(message.connector, ports.appBaseUrl, "ask"))
+			.pipe(
+				Effect.tapError((error) =>
+					Effect.logWarning("Chat notice could not be posted").pipe(
+						Effect.annotateLogs({ "error.type": error.operation }),
+					),
+				),
+				Effect.ignore,
+			)
+	}
 
 	// Resolved after the workspace, for a mention: opening a thread in a server nobody has linked
 	// would leave an empty one behind every time.
@@ -297,7 +358,7 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 		)
 	}
 	const sessionId = connectorSessionId(orgId, message.connector, conversation.conversationKey)
-	yield* Effect.annotateCurrentSpan({ orgId, "maple.chat.session_id": sessionId })
+	yield* Effect.annotateCurrentSpan({ "maple.chat.session_id": sessionId })
 
 	const session = ports.chatSession(sessionId)
 	if (session === undefined) {
@@ -310,10 +371,8 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 	// message and what the context block must not repeat. A session that cannot be read answers
 	// neither: `0` leaves the whole context in and takes no follow-up. It degrades the turn twice
 	// over, so it is logged rather than swallowed.
-	const transcript = yield* Effect.tryPromise({
-		catch: sessionUnreachable(sessionId, "The chat session's transcript could not be read"),
-		try: () => session.history(),
-	}).pipe(
+	const transcript = yield* session.history().pipe(
+		Effect.mapError(sessionUnreachable(sessionId, "The chat session's transcript could not be read")),
 		Effect.tapError((error) =>
 			Effect.logWarning("Chat session transcript could not be read").pipe(
 				Effect.annotateLogs({ "error.type": error._tag }),
@@ -325,7 +384,9 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 	// The follow-up window is measured from the last thing the BOT said, which is not always the
 	// last thing in the transcript: a turn evicted after its question was recorded leaves the
 	// conversation with an unanswered message in it rather than a recent answer.
-	const repliedAt = transcript.reduce((at, entry) => (entry.role === "assistant" ? entry.createdAt : at), 0)
+	const repliedAt = Arr.reduce(transcript, 0, (at, entry) =>
+		entry.role === "assistant" ? entry.createdAt : at,
+	)
 	const now = yield* Clock.currentTimeMillis
 
 	// The half of the follow-up rule that needed the session: it has spoken here, and recently.
@@ -353,23 +414,27 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 			Effect.orElseSucceed((): ReadonlyArray<ChatHistoryMessage> => []),
 		)
 
-	const claimed = yield* Effect.tryPromise({
-		catch: sessionUnreachable(sessionId, "The chat session did not accept a turn"),
-		try: () =>
-			session.beginTurn({
-				sessionId,
-				messageId: crypto.randomUUID(),
-				text: chatTurnText(message, { now, recent, seenUpTo }),
-				tenant: connectorTurnTenant(orgId),
-				origin: {
-					kind: "connector",
-					connectorId: message.connector,
-					workspaceId: message.workspaceId,
-					externalUserId: author.value,
-					displayName: message.author.displayName,
-				},
-			}),
-	}).pipe(Effect.exit)
+	const claimed = yield* session
+		.beginTurn({
+			sessionId,
+			messageId: yield* secureRandom.uuidV4(),
+			text: chatTurnText(message, { now, recent, seenUpTo }),
+			tenant: connectorTurnTenant(orgId),
+			origin: {
+				kind: "connector",
+				connectorId: message.connector,
+				workspaceId: message.workspaceId,
+				externalUserId: author.value,
+				displayName: message.author.displayName,
+				// Only ever the user the HOST resolved from its own database: this is who the turn
+				// runs as.
+				...(linkedUserId === undefined ? undefined : { actingUserId: linkedUserId }),
+			},
+		})
+		.pipe(
+			Effect.mapError(sessionUnreachable(sessionId, "The chat session did not accept a turn")),
+			Effect.exit,
+		)
 	// A session that cannot be reached at all, as opposed to one that answered. Silence is the wrong
 	// reply to either — somebody asked a question.
 	if (Exit.isFailure(claimed)) {
@@ -426,11 +491,15 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
  * Nothing the click carried reaches the tool. The control names only a call; the session is this
  * conversation's, and it reads the tool's name and arguments out of its own transcript.
  */
-const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
+const settleAction = Effect.fn("ChatBotRelay.settleApproval")(function* <R>(
 	action: InboundAction,
 	ports: RelayPorts<R>,
 ) {
 	yield* Effect.annotateCurrentSpan({ "maple.chat.connector": action.connector })
+	const alertAck = decodeChatAlertAckControlId(action.actionToken)
+	if (Option.isSome(alertAck)) {
+		return yield* settleAlertAck(action, alertAck.value.action, alertAck.value.incidentId, ports)
+	}
 	const control = decodeChatActionControlId(action.actionToken)
 	// A platform hands back whatever was on the control that was clicked, which includes controls
 	// Maple never rendered. Not ours is not an error.
@@ -468,7 +537,11 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 	// link, and one that cannot lets anyone in the conversation decide.
 	if (ports.supportsIdentity && linkedUserId === undefined) {
 		yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "unlinked" })
-		return yield* tellClicker(transport, action, linkNotice(action.connector, ports.appBaseUrl))
+		return yield* tellClicker(
+			transport,
+			action,
+			linkNotice(action.connector, ports.appBaseUrl, "approve"),
+		)
 	}
 	yield* Effect.annotateCurrentSpan({
 		"maple.chat.approval.as": linkedUserId === undefined ? "connector" : "user",
@@ -481,25 +554,26 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 		return yield* tellClicker(transport, action, notice(UNAVAILABLE_NOTICE))
 	}
 
-	const outcome = yield* Effect.tryPromise({
-		catch: sessionUnreachable(sessionId, "The chat session did not accept a decision"),
-		try: () =>
-			session.settleProposal({
-				sessionId: sessionId,
-				toolCallId: request.toolCallId,
-				decision: request.decision,
-				approver: {
-					kind: "connector",
-					connectorId: action.connector,
-					workspaceId: action.workspaceId,
-					externalUserId: approver.value,
-					displayName: action.actor.displayName,
-				},
-				// Only ever the user the HOST resolved from its own database, never anything the
-				// click carried: this is what the change runs as.
-				...(linkedUserId === undefined ? undefined : { actingUserId: linkedUserId }),
-			}),
-	}).pipe(Effect.exit)
+	const outcome = yield* session
+		.settleProposal({
+			sessionId: sessionId,
+			toolCallId: request.toolCallId,
+			decision: request.decision,
+			approver: {
+				kind: "connector",
+				connectorId: action.connector,
+				workspaceId: action.workspaceId,
+				externalUserId: approver.value,
+				displayName: action.actor.displayName,
+			},
+			// Only ever the user the HOST resolved from its own database, never anything the
+			// click carried: this is what the change runs as.
+			...(linkedUserId === undefined ? undefined : { actingUserId: linkedUserId }),
+		})
+		.pipe(
+			Effect.mapError(sessionUnreachable(sessionId, "The chat session did not accept a decision")),
+			Effect.exit,
+		)
 	if (Exit.isFailure(outcome)) {
 		yield* Effect.logError("A chat approval could not be settled").pipe(
 			Effect.annotateLogs({ "error.type": summarizeCause(outcome.cause) }),
@@ -531,26 +605,96 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 })
 
 /**
+ * A click on an alert card's ack button. Anyone in the channel may acknowledge: where the connector
+ * can link accounts the ack is recorded as that Maple user, otherwise under the platform name.
+ * The org is the workspace's; the incident id off the control is only looked up inside it.
+ */
+const settleAlertAck = Effect.fn("ChatBotRelay.settleAlertAck")(function* <R>(
+	action: InboundAction,
+	ackAction: ChatAlertAckAction,
+	incidentId: string,
+	ports: RelayPorts<R>,
+) {
+	yield* Effect.annotateCurrentSpan({
+		"maple.chat.alert_ack.action": ackAction,
+		"maple.alert.incident_id": incidentId,
+	})
+	const transport = yield* ports.outbound.transport
+	const clicker = decodeExternalUserId(action.actor.id)
+	const workspace = yield* Effect.exit(
+		ports.resolveWorkspace(action.connector, action.workspaceId, Option.getOrUndefined(clicker)),
+	)
+	if (Exit.isFailure(workspace) || Option.isNone(workspace.value)) {
+		yield* Effect.annotateCurrentSpan({ "maple.chat.alert_ack": "unavailable" })
+		return yield* tellClicker(transport, action, notice(ALERT_UNAVAILABLE_NOTICE))
+	}
+	const { orgId, linkedUserId } = workspace.value.value
+	yield* Effect.annotateCurrentSpan({ orgId })
+
+	const outcome = yield* ports.alertAck({
+		orgId,
+		connector: action.connector,
+		incidentId,
+		action: ackAction,
+		messageId: action.messageId,
+		userId: linkedUserId ?? null,
+		displayName: action.actor.displayName,
+	})
+	yield* Effect.annotateCurrentSpan({ "maple.chat.alert_ack": outcome.kind })
+	const redraw = (card: Option.Option<ReadonlyArray<ChatBlock>>) =>
+		Option.match(card, {
+			onNone: () => Effect.void,
+			onSome: (blocks) =>
+				transport.edit({ target: replyTarget(action), messageId: action.messageId }, blocks).pipe(
+					Effect.tapError((error) =>
+						Effect.logWarning("An acknowledged alert card could not be redrawn").pipe(
+							Effect.annotateLogs({ "error.type": error.operation }),
+						),
+					),
+					Effect.ignore,
+				),
+		})
+	switch (outcome.kind) {
+		case "applied":
+			// No card to redraw (a digest, an old delivery): say it privately instead.
+			return yield* Option.isSome(outcome.card)
+				? redraw(outcome.card)
+				: tellClicker(
+						transport,
+						action,
+						notice(ackAction === "acknowledge" ? "Acknowledged." : "Unacknowledged."),
+					)
+		case "resolved":
+			yield* redraw(outcome.card)
+			return yield* tellClicker(transport, action, notice(ALERT_RESOLVED_NOTICE))
+		case "not_found":
+			return yield* tellClicker(transport, action, notice(ALERT_GONE_NOTICE))
+		case "unavailable":
+			return yield* tellClicker(transport, action, notice(ALERT_UNAVAILABLE_NOTICE))
+		default:
+			return outcome satisfies never
+	}
+})
+
+/**
  * Put the decision on the message that carried the controls.
  *
  * Re-read rather than reported: the session's log is what the decision produced, and rendering it
  * the way the turn itself is rendered is what keeps one description of an approval in the codebase.
  */
-const showDecision = Effect.fn("chat_bot.show_decision")(function* <R>(
+const showDecision = Effect.fn("ChatBotRelay.showDecision")(function* <R>(
 	action: InboundAction,
 	request: ChatActionRequest,
 	orgId: OrgId,
 	sessionId: ChatSessionId,
-	session: ChatSessionStub,
+	session: ChatSessionClient,
 	ports: RelayPorts<R>,
 ) {
 	// A transcript that cannot be read leaves the decision applied and the message unchanged, which
 	// is confusing enough to be worth a line: the alternative is a silent degradation that looks
 	// exactly like the platform refusing the edit.
-	const history = yield* Effect.tryPromise({
-		catch: sessionUnreachable(sessionId, "The chat session did not answer with its history"),
-		try: () => session.history(),
-	}).pipe(
+	const history = yield* session.history().pipe(
+		Effect.mapError(sessionUnreachable(sessionId, "The chat session did not answer with its history")),
 		Effect.tapError((error) =>
 			Effect.logWarning("A settled approval could not be re-read").pipe(
 				Effect.annotateLogs({ "error.type": error._tag }),
@@ -558,10 +702,11 @@ const showDecision = Effect.fn("chat_bot.show_decision")(function* <R>(
 		),
 	)
 	// The session just settled this call, so its message is there.
-	const message = history.find((candidate) =>
-		candidate.toolCalls.some((call) => call.id === request.toolCallId),
+	const found = Arr.findFirst(history, (candidate) =>
+		Arr.some(candidate.toolCalls, (call) => call.id === request.toolCallId),
 	)
-	if (message === undefined) return
+	if (Option.isNone(found)) return
+	const message = found.value
 	const transport = yield* ports.outbound.transport
 	const blocks = settledMessageBlocks(
 		message,
@@ -583,12 +728,16 @@ const showDecision = Effect.fn("chat_bot.show_decision")(function* <R>(
 	)
 })
 
+/** What relaying one event can fail with; every failure is caught below. */
+type RelayedError<R> =
+	| Effect.Error<ReturnType<typeof relayMessage<R>>>
+	| Effect.Error<ReturnType<typeof settleAction<R>>>
+
 /**
  * A switch rather than a chain of ternaries: an event kind added to the contract has to be answered
- * here rather than quietly taking the last branch. The error channel is erased because every
- * failure is caught below — nothing above this can do anything with one.
+ * here rather than quietly taking the last branch.
  */
-const relayed = <R>(event: InboundEvent, ports: RelayPorts<R>): Effect.Effect<void, unknown, R> => {
+const relayed = <R>(event: InboundEvent, ports: RelayPorts<R>): Effect.Effect<void, RelayedError<R>, R> => {
 	switch (event.type) {
 		case "message":
 			return relayMessage(event, ports)

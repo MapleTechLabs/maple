@@ -18,17 +18,19 @@
 // components cannot be windowed and a thousand-block session has to stay
 // scrollable.
 
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
 import type { AiSessionSpan } from "@maple/domain/http"
 
 import {
 	classifyAiSpan,
 	isLlmCall,
+	lastUserMessageText,
 	spanEndMs,
 	spanFailed,
 	spanModel,
 	spanStartMs,
+	withoutInjectedBlocks,
 	type AiSpanCategory,
 	type SessionTurn,
 } from "./session-turns"
@@ -40,7 +42,9 @@ import {
 	type SpanMessage,
 	type SpanMessagePart,
 } from "./span-detail"
+import { rawFailureText } from "./failure-text"
 import { countTurnUsage, type SessionTurnUsage } from "./session-summary"
+import { codeUnitAt } from "@maple/strings"
 
 /* -------------------------------------------------------------------------- */
 /* Rows                                                                       */
@@ -136,6 +140,9 @@ export type TranscriptRow =
 			/** Absent when the call failed, or captured no output text. */
 			readonly text: string | undefined
 			readonly failed: boolean
+			/** The call's whole output was tool calls; the row only names the
+			 *  speaker, so the calls below it are not read as the failed call's. */
+			readonly toolCallsOnly: boolean
 	  })
 	/** A captured prompt whose reply the emitter did not record. */
 	| (SpanRowBase & { readonly kind: "prompt"; readonly text: string })
@@ -290,20 +297,20 @@ export function prepareTranscript(input: PrepareInput): PreparedTranscript {
 		return category
 	}
 
-	const filtering = input.query.trim() !== ""
-	const turnRows = input.turns.map((turn) => buildTurn(turn, input, categoryOf))
+	const filtering = Str.trim(input.query) !== ""
+	const turnRows = Arr.map(input.turns, (turn) => buildTurn(turn, input, categoryOf))
 	// Structural chrome, like the lane markers: a filtered view no longer has the
 	// ordering the marker describes, so it is not built at all.
 	const concurrent = filtering ? new Map<string, TranscriptRow | undefined>() : markParallelTurns(turnRows)
 
 	// Capture coverage is a fact about the session, so it is counted over every
 	// turn before the first row is emitted.
-	const llmSpans = turnRows.flatMap((entry) => entry.llmSpans)
-	const capturedCalls = llmSpans.filter(hasCapturedContent).length
+	const llmSpans = Arr.flatMap(turnRows, (entry) => entry.llmSpans)
+	const capturedCalls = Arr.filter(llmSpans, hasCapturedContent).length
 	const bannerUp = llmSpans.length > 0 && capturedCalls / llmSpans.length < CAPTURE_BANNER_THRESHOLD
 	// A session of pure HTTP/DB work has no transcript at all; only one that DOES
 	// have agent work keeps placeholders for the turns without it.
-	const anyAiActivity = turnRows.some((entry) => entry.aiSpanCount > 0)
+	const anyAiActivity = Arr.some(turnRows, (entry) => entry.aiSpanCount > 0)
 
 	return { turnRows, concurrent, filtering, bannerUp, capturedCalls, anyAiActivity }
 }
@@ -341,7 +348,7 @@ export function assembleTranscript(
 		if (
 			!bannerUp &&
 			entry.llmSpans.length > 0 &&
-			entry.llmSpans.every((span) => !hasCapturedContent(span))
+			Arr.every(entry.llmSpans, (span) => !hasCapturedContent(span))
 		) {
 			body.push({
 				kind: "note",
@@ -356,7 +363,7 @@ export function assembleTranscript(
 			body.push(
 				...(indent === 0
 					? entry.rows
-					: entry.rows.map((row) => ({ ...row, depth: row.depth + indent }))),
+					: Arr.map(entry.rows, (row) => ({ ...row, depth: row.depth + indent }))),
 			)
 		}
 	}
@@ -417,9 +424,9 @@ function buildTurn(
 	// Non-AI spans are the app's own HTTP/DB work sharing the agent's traces and
 	// have no place in a conversation; a duplicate span id would render its
 	// block twice.
-	const spans = dedupeById(turn.spans).filter((span) => span.isAiSpan)
-	const llmSpans = spans.filter(isLlmCall)
-	const toolSpans = spans.filter((span) => categoryOf(span) === "tool")
+	const spans = Arr.filter(dedupeById(turn.spans), (span) => span.isAiSpan)
+	const llmSpans = Arr.filter(spans, isLlmCall)
+	const toolSpans = Arr.filter(spans, (span) => categoryOf(span) === "tool")
 
 	const header: Extract<TranscriptRow, { kind: "turn" }> = {
 		kind: "turn",
@@ -431,7 +438,10 @@ function buildTurn(
 		toolCalls: toolSpans.length,
 		aiSpanCount: spans.length,
 		toolNames: distinct(
-			toolSpans.map((span) => span.genAi.toolName).filter((name): name is string => name !== undefined),
+			Arr.filter(
+				Arr.map(toolSpans, (span) => span.genAi.toolName),
+				(name): name is string => name !== undefined,
+			),
 		),
 		usage: countTurnUsage(turn, input.turns),
 	}
@@ -457,7 +467,10 @@ function buildTurn(
 		// `tool_call` part describes the same call, and rendering both would
 		// count one invocation twice.
 		coveredCallIds: new Set(
-			toolSpans.map((span) => span.genAi.toolCallId).filter((id): id is string => id !== undefined),
+			Arr.filter(
+				Arr.map(toolSpans, (span) => span.genAi.toolCallId),
+				(id): id is string => id !== undefined,
+			),
 		),
 		unclaimedToolNames: countIdlessToolSpans(toolSpans),
 		systemCounts: countSystemInstructions(llmSpans, messagesOf),
@@ -466,9 +479,10 @@ function buildTurn(
 		emittedSystem: new Set<string>(),
 		userEmitted: false,
 		lastService: undefined,
+		lastCallFailed: false,
 	}
 
-	const forest = buildForest(spans)
+	const forest = buildForest(spans, dedupeById(turn.spans))
 	const walk = walkLane(forest.roots, forest.children, {
 		context,
 		depth: 0,
@@ -499,12 +513,15 @@ interface TurnContext {
 	userEmitted: boolean
 	/** The last model call's service, for the capture-boundary note. */
 	lastService: string | undefined
+	/** The previous model call failed — its row broke the speaker run. */
+	lastCallFailed: boolean
 }
 
 /**
  * Tool spans in this turn that carry no `gen_ai.tool.call.id`, counted by name.
  *
- * An id-less `tool_call` part in an output message cannot be matched to its
+ * A `tool_call` part no tool span's call id claims — an id-less part, or one
+ * whose tool span recorded no id (OpenInference) — cannot be matched to its
  * span by id, so without this the call renders twice: once first-hand from the
  * span, once again from the message that made it. The tool NAME is the only
  * evidence left, and it is spent conservatively — only against spans that no id
@@ -579,14 +596,32 @@ interface SpanForest {
  * read this one, but it deliberately preserves input order where this sorts —
  * unifying them is a behavioural change to the waterfall, not a lift.
  */
-function buildForest(spans: readonly AiSessionSpan[]): SpanForest {
-	const present = new Set(spans.map((span) => span.spanId))
+/**
+ * The AI spans as a forest. A span whose parent is the app's own (a runtime's
+ * `AgentRuntime.model` wrapper around each model call) hangs off its nearest AI
+ * ancestor through it: promoted to a root instead, every model call of an agent
+ * would print after that agent's whole tool subtree.
+ */
+function buildForest(spans: readonly AiSessionSpan[], all: readonly AiSessionSpan[] = spans): SpanForest {
+	const present = new Set(Arr.map(spans, (span) => span.spanId))
+	const byId = new Map(Arr.map(all, (span) => [span.spanId, span]))
+	const aiParentOf = (span: AiSessionSpan): string | undefined => {
+		const seen = new Set<string>([span.spanId])
+		let parentId = span.parentSpanId
+		while (parentId !== "" && !seen.has(parentId)) {
+			if (present.has(parentId)) return parentId
+			seen.add(parentId)
+			parentId = byId.get(parentId)?.parentSpanId ?? ""
+		}
+		return undefined
+	}
 	const children = new Map<string, AiSessionSpan[]>()
 	const roots: AiSessionSpan[] = []
 	for (const span of spans) {
-		if (span.parentSpanId !== "" && present.has(span.parentSpanId)) {
-			const siblings = children.get(span.parentSpanId)
-			if (siblings === undefined) children.set(span.parentSpanId, [span])
+		const parentId = aiParentOf(span)
+		if (parentId !== undefined) {
+			const siblings = children.get(parentId)
+			if (siblings === undefined) children.set(parentId, [span])
 			else siblings.push(span)
 		} else {
 			roots.push(span)
@@ -670,8 +705,13 @@ function walkLane(
 			// Its captured prompt is the one thing it says that the header does
 			// not: an emitter that records the user's message on the turn span
 			// (Claude Code's `interaction`) and never on the model calls under it
-			// would otherwise have no user row at all.
-			rows.push(...userRows(scope.context.messagesOf(span), span, scope))
+			// would otherwise have no user row at all. A prompt that is not the
+			// turn's label is an earlier turn's (see `turnLabel`), and the model
+			// call below carries the real one.
+			const prompt = lastUserMessageText(span.genAi.inputMessages)
+			if (prompt === undefined || prompt === scope.context.turn.label) {
+				rows.push(...userRows(scope.context.messagesOf(span), span, scope))
+			}
 			const inner = walkLane(children.get(span.spanId) ?? [], children, scope)
 			rows.push(...inner.rows)
 			addWork(counts, inner.counts)
@@ -793,7 +833,8 @@ function delegationTarget(
 	if (forks(span)) return span
 	if (scope.context.categoryOf(span) !== "tool") return undefined
 	const own = children.get(span.spanId) ?? []
-	return own.length === 1 && forks(own[0]) ? own[0] : undefined
+	const [only] = own
+	return own.length === 1 && only !== undefined && forks(only) ? only : undefined
 }
 
 /**
@@ -817,7 +858,7 @@ function markParallelLanes(
 	for (const cluster of clusters) {
 		// `at` is where the lane's rows were pushed and its opening row is the
 		// first of them — the marker opens the cluster right above it.
-		const first = cluster.members[0]
+		const first = Arr.headNonEmpty(cluster.members)
 		markers.push({
 			at: first.at,
 			row: {
@@ -828,7 +869,7 @@ function markParallelLanes(
 				endMs: cluster.endMs,
 				overlapStartMs: cluster.overlapStartMs,
 				overlapEndMs: cluster.overlapEndMs,
-				lanes: cluster.members.map((lane) => lane.ref),
+				lanes: Arr.map(cluster.members, (lane) => lane.ref),
 			},
 		})
 	}
@@ -850,7 +891,7 @@ interface Interval {
 
 interface OverlapCluster<T> {
 	/** Two or more, in start order. */
-	readonly members: readonly T[]
+	readonly members: Arr.NonEmptyReadonlyArray<T>
 	/** The run's extent: first member starting to last member ending. */
 	readonly startMs: number
 	readonly endMs: number
@@ -892,20 +933,21 @@ function clusterByOverlap<T extends Interval>(items: readonly T[]): readonly Ove
 		}
 	}
 
-	return groups
-		.filter((group) => group.length > 1)
-		.map((members) => {
-			const sharedStart = Math.max(...members.map((item) => item.startMs))
-			const sharedEnd = Math.min(...members.map((item) => item.endMs))
+	return Arr.map(
+		Arr.filter(groups, (group): group is Arr.NonEmptyArray<T> => group.length > 1),
+		(members) => {
+			const sharedStart = Math.max(...Arr.map(members, (item) => item.startMs))
+			const sharedEnd = Math.min(...Arr.map(members, (item) => item.endMs))
 			const shared = sharedStart < sharedEnd
 			return {
 				members,
-				startMs: members[0].startMs,
-				endMs: Math.max(...members.map((item) => item.endMs)),
+				startMs: Arr.headNonEmpty(members).startMs,
+				endMs: Math.max(...Arr.map(members, (item) => item.endMs)),
 				overlapStartMs: shared ? sharedStart : undefined,
 				overlapEndMs: shared ? sharedEnd : undefined,
 			}
-		})
+		},
+	)
 }
 
 /**
@@ -923,9 +965,9 @@ function clusterByOverlap<T extends Interval>(items: readonly T[]): readonly Ove
  * with a real turn would announce a concurrency the reader cannot see.
  */
 function markParallelTurns(entries: readonly TurnRows[]): ReadonlyMap<string, TranscriptRow | undefined> {
-	const items = entries
-		.filter((entry) => entry.aiSpanCount > 0)
-		.map((entry, order) => ({
+	const items = Arr.map(
+		Arr.filter(entries, (entry) => entry.aiSpanCount > 0),
+		(entry, order) => ({
 			entry,
 			// Where this turn sits on the PAGE. Turns are ordered by their anchor and
 			// a turn's `startMs` is the minimum over its spans, so the two can
@@ -934,13 +976,19 @@ function markParallelTurns(entries: readonly TurnRows[]): ReadonlyMap<string, Tr
 			startMs: entry.turn.startMs,
 			endMs: entry.turn.endMs,
 			ref: { key: entry.turn.id, turn: entry.turn } satisfies TranscriptTurnRef,
-		}))
+		}),
+	)
 
 	// Membership is the key; only the cluster's first member carries its marker.
 	const marked = new Map<string, TranscriptRow | undefined>()
 	for (const cluster of clusterByOverlap(items)) {
 		for (const item of cluster.members) marked.set(item.entry.turn.id, undefined)
-		const first = cluster.members.reduce((a, b) => (a.order <= b.order ? a : b))
+		if (!Arr.isReadonlyArrayNonEmpty(cluster.members)) continue
+		const first = Arr.reduce(
+			Arr.tailNonEmpty(cluster.members),
+			Arr.headNonEmpty(cluster.members),
+			(a, b) => (a.order <= b.order ? a : b),
+		)
 		marked.set(first.entry.turn.id, {
 			kind: "parallel-turns",
 			key: `${first.ref.key}:parallel-turns`,
@@ -949,7 +997,7 @@ function markParallelTurns(entries: readonly TurnRows[]): ReadonlyMap<string, Tr
 			endMs: cluster.endMs,
 			overlapStartMs: cluster.overlapStartMs,
 			overlapEndMs: cluster.overlapEndMs,
-			turns: cluster.members.map((item) => item.ref),
+			turns: Arr.map(cluster.members, (item) => item.ref),
 		})
 	}
 	return marked
@@ -1022,7 +1070,7 @@ function systemRows(
 ): readonly TranscriptRow[] {
 	const rows: TranscriptRow[] = []
 	for (const message of messages) {
-		if (message.role.toLowerCase() !== "system") continue
+		if (Str.toLowerCase(message.role) !== "system") continue
 		const text = textOf(message.parts)
 		if (text === "" || scope.context.emittedSystem.has(text)) continue
 		scope.context.emittedSystem.add(text)
@@ -1047,7 +1095,7 @@ function countSystemInstructions(
 	const counts = new Map<string, number>()
 	for (const span of llmSpans) {
 		for (const message of messagesOf(span)) {
-			if (message.role.toLowerCase() !== "system") continue
+			if (Str.toLowerCase(message.role) !== "system") continue
 			const text = textOf(message.parts)
 			if (text === "") continue
 			counts.set(text, (counts.get(text) ?? 0) + 1)
@@ -1082,19 +1130,23 @@ function userRows(
 	scope: LaneScope,
 ): readonly TranscriptRow[] {
 	if (scope.context.userEmitted) return []
-	const history = messages.filter((message) => message.origin === "input")
+	const history = Arr.filter(messages, (message) => message.origin === "input")
 	if (history.length === 0) return []
 
+	// The newest user message that says something: a framework's status block
+	// appended as a user message (`<run-status>`) is not what the user asked.
 	let index = -1
+	let text = ""
 	for (let i = history.length - 1; i >= 0; i--) {
-		if (history[i].role.toLowerCase() === "user") {
+		const message = history[i]
+		if (message === undefined || Str.toLowerCase(message.role) !== "user") continue
+		text = Str.trim(withoutInjectedBlocks(textOf(message.parts)))
+		if (text !== "") {
 			index = i
 			break
 		}
 	}
 	if (index === -1) return []
-	const text = textOf(history[index].parts)
-	if (text === "") return []
 
 	scope.context.userEmitted = true
 	return [
@@ -1125,8 +1177,10 @@ function outputRows(
 	promptAllowed: boolean,
 ): readonly TranscriptRow[] {
 	const rows: TranscriptRow[] = []
-	const output = messages.filter((message) => message.origin === "output")
+	const output = Arr.filter(messages, (message) => message.origin === "output")
 	const failed = spanFailed(span)
+	const afterFailure = scope.context.lastCallFailed
+	scope.context.lastCallFailed = failed
 	const base = { depth: scope.depth, span, startMs: spanStartMs(span) }
 	let partIndex = 0
 
@@ -1141,8 +1195,16 @@ function outputRows(
 				continue
 			}
 			if (part.kind === "text") {
-				const text = part.text.trim()
-				if (text !== "") rows.push({ ...base, kind: "assistant", key, text: part.text, failed })
+				const text = Str.trim(part.text)
+				if (text !== "")
+					rows.push({
+						...base,
+						kind: "assistant",
+						key,
+						text: part.text,
+						failed,
+						toolCallsOnly: false,
+					})
 				continue
 			}
 			if (part.kind === "tool_call") {
@@ -1168,13 +1230,20 @@ function outputRows(
 		}
 	}
 
-	if (rows.some((row) => row.kind === "assistant")) return rows
+	if (Arr.some(rows, (row) => row.kind === "assistant")) return rows
 
 	// Nothing said. Which of the silences it is decides what the row is.
 	if (failed) {
 		return [
 			...rows,
-			{ ...base, kind: "assistant", key: rowKey(scope, span, "failed"), text: undefined, failed: true },
+			{
+				...base,
+				kind: "assistant",
+				key: rowKey(scope, span, "failed"),
+				text: undefined,
+				failed: true,
+				toolCallsOnly: false,
+			},
 		]
 	}
 	const promptText = promptAllowed ? capturedPromptText(messages) : undefined
@@ -1186,8 +1255,22 @@ function outputRows(
 	// model going straight to work, not a missing reply. That is read off the
 	// captured messages, not off the rows: a hidden thinking row and a tool call
 	// a span already covers both leave `rows` empty without the reply having
-	// gone anywhere.
-	if (output.length > 0) return rows
+	// gone anywhere. Straight after a failed call, though, that work needs a
+	// speaker of its own, or its tool calls read as the failed call's.
+	if (output.length > 0) {
+		if (!afterFailure) return rows
+		return [
+			{
+				...base,
+				kind: "assistant",
+				key: rowKey(scope, span, "tool-calls"),
+				text: undefined,
+				failed: false,
+				toolCallsOnly: true,
+			},
+			...rows,
+		]
+	}
 	if (messages.length > 0) {
 		// This call captured something — so the reply is missing, not merely
 		// unrecorded like every call in a capture-off session.
@@ -1198,6 +1281,7 @@ function outputRows(
 				key: rowKey(scope, span, "no-reply"),
 				text: undefined,
 				failed: false,
+				toolCallsOnly: false,
 			},
 		]
 	}
@@ -1216,7 +1300,7 @@ function outputRows(
 function coveredBySpan(part: Extract<SpanMessagePart, { kind: "tool_call" }>, context: TurnContext): boolean {
 	// A tool span for the same call carries the duration, the service and the
 	// error; the message-only row exists only where there is no such span.
-	if (part.id !== undefined) return context.coveredCallIds.has(part.id)
+	if (part.id !== undefined && context.coveredCallIds.has(part.id)) return true
 	if (part.name === undefined) return false
 	const unclaimed = context.unclaimedToolNames.get(part.name)
 	if (unclaimed === undefined || unclaimed === 0) return false
@@ -1228,10 +1312,11 @@ function coveredBySpan(part: Extract<SpanMessagePart, { kind: "tool_call" }>, co
  *  turn's user row has already claimed the first history, so this is the text
  *  of a later, differently-captured call. */
 function capturedPromptText(messages: readonly SpanMessage[]): string | undefined {
-	const input = messages.filter((message) => message.origin === "input")
+	const input = Arr.filter(messages, (message) => message.origin === "input")
 	for (let i = input.length - 1; i >= 0; i--) {
-		if (input[i].role.toLowerCase() !== "user") continue
-		const text = textOf(input[i].parts)
+		const message = input[i]
+		if (message === undefined || Str.toLowerCase(message.role) !== "user") continue
+		const text = Str.trim(withoutInjectedBlocks(textOf(message.parts)))
 		if (text !== "") return text
 	}
 	return undefined
@@ -1296,12 +1381,15 @@ function toolArgsText(span: AiSessionSpan): string | undefined {
 }
 
 /** A tool span's captured result. The session-wide index only fills an absence:
- *  a later call's echoed response never overrides the span's own report. */
+ *  a later call's echoed response never overrides the span's own report. A
+ *  failed span that recorded no result still says why it failed (its status
+ *  message), which is the result the call produced. */
 function toolResultText(span: AiSessionSpan, context: TurnContext): string | undefined {
 	const own = span.genAi.toolCallResult ?? undefined
 	if (own !== undefined) return jsonText(own)
 	const id = span.genAi.toolCallId
-	return id === undefined ? undefined : toolResultFor(context.input.toolResults, span.traceId, id)
+	const echoed = id === undefined ? undefined : toolResultFor(context.input.toolResults, span.traceId, id)
+	return echoed ?? (spanFailed(span) ? rawFailureText(span) : undefined)
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1325,7 +1413,7 @@ export function payload(text: string | undefined): TranscriptPayload | undefined
 	const envelope = truncationEnvelope(text)
 	const body = envelope ?? text
 	const marked = TRUNCATION_MARKER.test(body)
-	const shown = marked ? body.replace(TRUNCATION_MARKER, "") : body
+	const shown = marked ? Str.replace(TRUNCATION_MARKER, "")(body) : body
 	const { byteLength, lineCount } = measure(shown)
 
 	return { text: shown, byteLength, lineCount, truncatedByEmitter: envelope !== undefined || marked }
@@ -1347,14 +1435,14 @@ const decodeJsonObject = Schema.decodeUnknownOption(
 )
 
 function truncationEnvelope(text: string): string | undefined {
-	if (!text.startsWith("{") || !text.includes('"truncated"')) return undefined
+	if (!Str.startsWith("{")(text) || !Str.includes('"truncated"')(text)) return undefined
 	// `Schema.Record` admits only JSON objects, so malformed text, an array and a
 	// scalar all decode to `None` — none of them is an envelope.
 	const decoded = decodeJsonObject(text)
 	if (Option.isNone(decoded)) return undefined
 	const parsed = decoded.value
 	if (parsed.truncated !== true) return undefined
-	if (Object.keys(parsed).some((key) => !ENVELOPE_KEYS.has(key))) return undefined
+	if (Arr.some(Rec.keys(parsed), (key) => !ENVELOPE_KEYS.has(key))) return undefined
 	// A prefix-less envelope is still an envelope: the emitter recorded that it
 	// cut the payload and kept none of it. The empty text is what there is.
 	const prefix = parsed.prefix ?? parsed.value ?? parsed.content
@@ -1367,7 +1455,7 @@ function measure(text: string): { byteLength: number; lineCount: number } {
 	let bytes = 0
 	let lines = text === "" ? 0 : 1
 	for (let i = 0; i < text.length; i++) {
-		const code = text.charCodeAt(i)
+		const code = codeUnitAt(text, i)
 		if (code === 10) lines++
 		if (code < 0x80) bytes += 1
 		else if (code < 0x800) bytes += 2
@@ -1394,14 +1482,15 @@ function measure(text: string): { byteLength: number; lineCount: number } {
  * their indentation would point at lanes that are no longer on the page.
  */
 function filterRows(rows: readonly TranscriptRow[], query: string): readonly TranscriptRow[] {
-	const needle = query.trim().toLowerCase()
+	const needle = Str.toLowerCase(Str.trim(query))
 	if (needle === "") return rows
-	return rows
-		.filter((row) => {
+	return Arr.map(
+		Arr.filter(rows, (row) => {
 			const haystack = rowText(row)
-			return haystack !== undefined && haystack.toLowerCase().includes(needle)
-		})
-		.map((row) => (row.depth === 0 ? row : { ...row, depth: 0 }))
+			return haystack !== undefined && Str.includes(needle)(Str.toLowerCase(haystack))
+		}),
+		(row) => (row.depth === 0 ? row : { ...row, depth: 0 }),
+	)
 }
 
 function rowText(row: TranscriptRow): string | undefined {
@@ -1414,7 +1503,12 @@ function rowText(row: TranscriptRow): string | undefined {
 		case "thinking":
 			return row.text
 		case "tool":
-			return [row.toolName, row.args?.text, row.result?.text].filter(Boolean).join("\n")
+			return Arr.join(
+				Arr.filter([row.toolName, row.args?.text, row.result?.text], (part): part is string =>
+					Boolean(part),
+				),
+				"\n",
+			)
 		case "structure":
 			return row.label
 		default:
@@ -1466,15 +1560,17 @@ function structureLabel(span: AiSessionSpan, category: AiSpanCategory): string {
 }
 
 function textOf(parts: readonly SpanMessagePart[]): string {
-	return parts
-		.map((part) => (part.kind === "text" ? part.text : ""))
-		.join("\n")
-		.trim()
+	return Str.trim(
+		Arr.join(
+			Arr.map(parts, (part) => (part.kind === "text" ? part.text : "")),
+			"\n",
+		),
+	)
 }
 
 function dedupeById(spans: readonly AiSessionSpan[]): readonly AiSessionSpan[] {
 	const seen = new Set<string>()
-	return spans.filter((span) => (seen.has(span.spanId) ? false : (seen.add(span.spanId), true)))
+	return Arr.filter(spans, (span) => (seen.has(span.spanId) ? false : (seen.add(span.spanId), true)))
 }
 
 function distinct(values: readonly string[]): readonly string[] {

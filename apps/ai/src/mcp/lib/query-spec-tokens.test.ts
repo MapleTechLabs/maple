@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { QuerySpec } from "@maple/domain/query-engine"
 import {
 	describeInvalidQuerySpec,
@@ -74,7 +74,7 @@ describe("query-spec token table matches the domain schemas", () => {
 		it(`${source}/${kind}: the table is not missing a token the schema accepts`, () => {
 			// Union of every token used anywhere, so a widened schema shows up as a
 			// value this combination now accepts but the table does not list.
-			const allMetrics = new Set(COMBOS.flatMap(([s, k]) => tokensFor(s, k).metrics))
+			const allMetrics = new Set(Arr.flatMap(COMBOS, ([s, k]) => tokensFor(s, k).metrics))
 			for (const metric of allMetrics) {
 				if (metrics.includes(metric)) continue
 				const groupBy = kind === "timeseries" ? { groupBy: [groupBys[0]] } : { groupBy: groupBys[0] }
@@ -99,16 +99,28 @@ describe("describeInvalidQuerySpec", () => {
 		).toBeUndefined()
 	})
 
-	// The production failure: `rate` is a real metrics metric, just not for breakdown.
+	it("accepts every metrics aggregation for a breakdown", () => {
+		for (const metric of ["min", "max", "rate", "increase"]) {
+			expect(
+				describeInvalidQuerySpec({
+					source: "metrics",
+					kind: "breakdown",
+					metric,
+					groupBy: undefined,
+				}),
+			).toBeUndefined()
+		}
+	})
+
 	it("names the narrowing when the token is valid for the other kind", () => {
 		const result = describeInvalidQuerySpec({
 			source: "metrics",
 			kind: "breakdown",
-			metric: "rate",
-			groupBy: undefined,
+			metric: "avg",
+			groupBy: "none",
 		})
 		expect(result?.message).toContain('valid for kind="timeseries"')
-		expect(result?.message).toContain('"avg", "sum", "count"')
+		expect(result?.message).toContain('"service", "attribute", "resource_attribute"')
 	})
 
 	it("lists the valid group_by values for the chosen combination", () => {

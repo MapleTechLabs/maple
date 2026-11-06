@@ -7,9 +7,10 @@ import {
 	type SeriesStats,
 	type StatsSeries,
 } from "../series-stats"
+import { Array as Arr } from "effect"
 
 function series(...keys: string[]): StatsSeries[] {
-	return keys.map((key) => ({ key, label: key, color: "#000" }))
+	return Arr.map(keys, (key) => ({ key, label: key, color: "#000" }))
 }
 
 const ROWS = [
@@ -23,9 +24,9 @@ describe("computeSeriesStats", () => {
 		expect(stats["demo-api"]).toEqual({ min: 4, max: 6, mean: 5, last: 6 })
 	})
 
-	it("reports zeros for a series with no numeric values", () => {
+	it("reports no data (null) for a series with no numeric values", () => {
 		const stats = computeSeriesStats(ROWS, ["absent"])
-		expect(stats.absent).toEqual({ min: 0, max: 0, mean: 0, last: 0 })
+		expect(stats.absent).toBeNull()
 	})
 })
 
@@ -48,7 +49,7 @@ describe("sortZeroSeriesLast", () => {
 	it("sinks an all-zero series below one that carries data", () => {
 		const stats = computeSeriesStats(ROWS, ["zzz-idle", "demo-api"])
 		const sorted = sortZeroSeriesLast(series("zzz-idle", "demo-api"), stats)
-		expect(sorted.map((entry) => entry.key)).toEqual(["demo-api", "zzz-idle"])
+		expect(Arr.map(sorted, (entry) => entry.key)).toEqual(["demo-api", "zzz-idle"])
 	})
 
 	it("keeps the incoming order among series that carry data", () => {
@@ -59,7 +60,11 @@ describe("sortZeroSeriesLast", () => {
 			a: { min: 1, max: 2, mean: 1.5, last: 2 },
 			b: { min: 1, max: 2, mean: 1.5, last: 2 },
 		} satisfies Record<string, SeriesStats>
-		expect(sortZeroSeriesLast(series("c", "a", "b"), stats).map((e) => e.key)).toEqual(["c", "a", "b"])
+		expect(Arr.map(sortZeroSeriesLast(series("c", "a", "b"), stats), (e) => e.key)).toEqual([
+			"c",
+			"a",
+			"b",
+		])
 	})
 
 	it("keeps the incoming order among the sunk series too", () => {
@@ -70,13 +75,13 @@ describe("sortZeroSeriesLast", () => {
 		// (Note this differs from the legacy `query-builder-legend.tsx` helper, which
 		// leaves a series with NO stats where it is. Unreachable in practice — stats
 		// are computed over every key before the legend sees them.)
-		expect(sorted.map((entry) => entry.key)).toEqual(["zzz-idle", "unknown-b", "demo-api"])
+		expect(Arr.map(sorted, (entry) => entry.key)).toEqual(["zzz-idle", "unknown-b", "demo-api"])
 	})
 
 	it("does not mutate the input", () => {
 		const stats = computeSeriesStats(ROWS, ["zzz-idle", "demo-api"])
 		const input = series("zzz-idle", "demo-api")
 		sortZeroSeriesLast(input, stats)
-		expect(input.map((entry) => entry.key)).toEqual(["zzz-idle", "demo-api"])
+		expect(Arr.map(input, (entry) => entry.key)).toEqual(["zzz-idle", "demo-api"])
 	})
 })

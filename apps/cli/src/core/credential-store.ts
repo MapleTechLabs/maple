@@ -1,6 +1,6 @@
-import { Effect, Stream } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { Effect, Stream, String as Str } from "effect"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 const SERVICE = "maple-cli"
 
@@ -41,7 +41,7 @@ const run = (
 			[handle.exitCode, Stream.mkString(Stream.decodeText(handle.stdout))],
 			{ concurrency: "unbounded" },
 		)
-		return { ok: exitCode === 0, stdout: stdout.trim() }
+		return { ok: exitCode === 0, stdout: Str.trim(stdout) }
 	}).pipe(
 		Effect.scoped,
 		Effect.tapCause((cause) => Effect.logDebug(`credential helper ${command} failed`, cause)),
@@ -81,7 +81,7 @@ export const writeNativeCredential = (
 ): Effect.Effect<boolean, never, ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const account = credentialAccount(apiUrl)
-		const stored = yield* Effect.gen(function* () {
+		const storeNative = Effect.gen(function* () {
 			if (process.platform === "darwin") {
 				// With -w as the final option and no argument, `security` prompts for
 				// the secret rather than taking it as an argv word, so it never shows
@@ -103,6 +103,7 @@ export const writeNativeCredential = (
 			}
 			return false
 		})
+		const stored = yield* storeNative
 		if (!stored) return false
 		// Neither helper reports a partial write through its exit status, and the
 		// caller drops the file fallback whenever this returns true — so prove the

@@ -1,6 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
-import { Cause } from "effect"
+import * as Orm from "@maple-dev/effect-orm/database"
 import {
 	ConnectionError,
 	DeadlockError,
@@ -8,7 +7,7 @@ import {
 	SqlSyntaxError,
 	UniqueViolation,
 	UnknownError,
-} from "effect/unstable/sql/SqlError"
+} from "effect/sql/SqlError"
 import { DatabaseError, toDatabaseError } from "./DatabaseLive"
 import {
 	isPostgresConnectionError,
@@ -16,13 +15,16 @@ import {
 	postgresErrorType,
 	postgresSqlState,
 } from "./postgres-errors"
+import { String as Str } from "effect"
 
 /** A pg error the way node-postgres raises it: the class hangs off `code`. */
 const pgError = (code: string, message: string): Error => Object.assign(new Error(message), { code })
 
-/** A statement failure the way drizzle's effect session raises it. */
-const queryFailure = (query: string, reason: SqlError["reason"]): EffectDrizzleQueryError =>
-	new EffectDrizzleQueryError({ query, params: [], cause: Cause.fail(new SqlError({ reason })) })
+/** A statement failure the way effect-orm raises it: the driver's `SqlError` is its cause. */
+const queryFailure = (query: string, reason: SqlError["reason"]): Orm.DatabaseError => {
+	const cause = new SqlError({ reason })
+	return new Orm.DatabaseError({ message: cause.message, sql: query, reason: reason._tag, cause })
+}
 
 describe("postgresErrorType", () => {
 	it("reports the socket code for a dial that was refused", () => {
@@ -142,12 +144,12 @@ describe("postgresErrorType", () => {
 			error.message,
 			'duplicate key value violates unique constraint "api_keys_pkey" [while: insert into "api_keys" ("id") values ($1)]',
 		)
-		// The SqlError, not the drizzle error: that one's message carries the params.
+		// The SqlError itself, kept as the cause for classification.
 		assert.instanceOf(error.cause, SqlError)
 	})
 
 	it("caps the statement in the message and keeps it out of the diagnostic", () => {
-		const longQuery = `insert into "error_events" values ${"($1),".repeat(400)}`
+		const longQuery = `insert into "error_events" values ${Str.repeat(400)("($1),")}`
 		const error = toDatabaseError(
 			queryFailure(
 				longQuery,
@@ -193,6 +195,40 @@ describe("postgresErrorType", () => {
 	it("leaves legacy contention classification unchanged", () => {
 		const deadlock = toDatabaseError(pgError("40P01", "deadlock detected"))
 		assert.isTrue(isRetryablePostgresContention(deadlock))
+	})
+
+	it("treats serialization_failure (40001) on the cause as retryable contention", () => {
+		const error = new DatabaseError({
+			message: "query failed",
+			cause: pgError("40001", "could not serialize"),
+		})
+		assert.isTrue(isRetryablePostgresContention(error))
+	})
+
+	it("matches contention SQLSTATEs in either the error or the cause message", () => {
+		assert.isTrue(
+			isRetryablePostgresContention(
+				new DatabaseError({ message: "SQLSTATE 40001: could not serialize access", cause: null }),
+			),
+		)
+		assert.isTrue(
+			isRetryablePostgresContention(
+				new DatabaseError({ message: "wrapper", cause: "SQLSTATE 40P01: deadlock" }),
+			),
+		)
+	})
+
+	it("rejects unrelated statement failures", () => {
+		assert.isFalse(
+			isRetryablePostgresContention(
+				new DatabaseError({ message: "UNIQUE constraint failed", cause: null }),
+			),
+		)
+		const unique = new DatabaseError({
+			message: "query failed",
+			cause: pgError("23505", "duplicate key value"),
+		})
+		assert.isFalse(isRetryablePostgresContention(unique))
 	})
 
 	it("does not treat a connection failure as retryable contention", () => {

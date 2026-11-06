@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs"
-import { Schema } from "effect"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import {
-	assertSignalProjectionInputBudget,
+	checkSignalProjectionInputBudget,
 	compileSignalPredicate,
 	defineSignalFields,
 	fieldKey,
@@ -60,7 +60,7 @@ const signalFor = (fields: ConformanceFixture["predicateVectors"][number]["field
 	observedAt: "2026-08-07T19:42:01Z",
 	subject: null,
 	fields: defineSignalFields(
-		fields.map(({ namespace, key, value }) => ({
+		Arr.map(fields, ({ namespace, key, value }) => ({
 			field: {
 				namespace,
 				key,
@@ -72,6 +72,11 @@ const signalFor = (fields: ConformanceFixture["predicateVectors"][number]["field
 	data: {},
 })
 
+const budgetIssue = (candidate: unknown): string | undefined => {
+	const checked = checkSignalProjectionInputBudget(candidate)
+	return Result.isFailure(checked) ? checked.failure.message : undefined
+}
+
 describe("cross-language conformance vectors", () => {
 	for (const vector of fixture.eventIdVectors) {
 		it(`event ID: ${vector.name}`, () => {
@@ -81,7 +86,7 @@ describe("cross-language conformance vectors", () => {
 
 	for (const vector of fixture.stringLiteralByteVectors) {
 		it(`string literal bytes: ${vector.name}`, () => {
-			const candidate = { type: "string", value: vector.unit.repeat(vector.repeat) }
+			const candidate = { type: "string", value: Str.repeat(vector.repeat)(vector.unit) }
 			if (vector.valid)
 				expect(() => Schema.decodeUnknownSync(SignalLiteralSchema)(candidate)).not.toThrow()
 			else expect(() => Schema.decodeUnknownSync(SignalLiteralSchema)(candidate)).toThrow()
@@ -91,9 +96,9 @@ describe("cross-language conformance vectors", () => {
 	for (const vector of fixture.predicateVectors) {
 		it(`predicate: ${vector.name}`, () => {
 			const predicate = Schema.decodeUnknownSync(SignalPredicateSchema)(vector.predicate)
-			const result = compileSignalPredicate(predicate)(signalFor(vector.fields))
+			const result = Result.getOrThrow(compileSignalPredicate(predicate))(signalFor(vector.fields))
 			expect(result.matches).toBe(vector.matches)
-			expect(result.typeMismatches.map(fieldKey)).toEqual(vector.typeMismatches ?? [])
+			expect(Arr.map(result.typeMismatches, fieldKey)).toEqual(vector.typeMismatches ?? [])
 		})
 	}
 })
@@ -147,12 +152,10 @@ describe("selector validation", () => {
 		}
 		for (let index = 0; index < MAX_PREDICATE_DEPTH; index++)
 			deeplyNested = { op: "not", clause: deeplyNested }
-		expect(() => assertSignalProjectionInputBudget({ selector: deeplyNested })).toThrow(
-			"predicate depth exceeds",
-		)
+		expect(budgetIssue({ selector: deeplyNested })).toContain("predicate depth exceeds")
 
-		expect(() =>
-			assertSignalProjectionInputBudget({
+		expect(
+			budgetIssue({
 				selector: {
 					op: "all",
 					clauses: Array.from({ length: 65 }, () => ({
@@ -161,23 +164,23 @@ describe("selector validation", () => {
 					})),
 				},
 			}),
-		).toThrow("clause list exceeds")
+		).toContain("clause list exceeds")
 
-		expect(() =>
-			assertSignalProjectionInputBudget({
+		expect(
+			budgetIssue({
 				selector: {
 					op: "eq",
 					field: { namespace: "attribute", key: "n", type: "int64" },
-					value: { type: "int64", value: "1".repeat(21) },
+					value: { type: "int64", value: Str.repeat(21)("1") },
 				},
 			}),
-		).toThrow("int64 literal exceeds")
+		).toContain("int64 literal exceeds")
 	})
 })
 
 describe("total runtime behavior", () => {
 	it("accepts valid large source strings for exists and small contains literals", () => {
-		const largeValue = `${"a".repeat(5 * 1024)}needle`
+		const largeValue = `${Str.repeat(5 * 1024)("a")}needle`
 		const signal = signalFor([
 			{
 				namespace: "attribute",
@@ -191,23 +194,27 @@ describe("total runtime behavior", () => {
 			type: "string" as const,
 		}
 
-		expect(compileSignalPredicate({ op: "exists", field })(signal).matches).toBe(true)
+		expect(Result.getOrThrow(compileSignalPredicate({ op: "exists", field }))(signal).matches).toBe(true)
 		expect(
-			compileSignalPredicate({
-				op: "contains",
-				field,
-				value: { type: "string", value: "needle" },
-			})(signal).matches,
+			Result.getOrThrow(
+				compileSignalPredicate({
+					op: "contains",
+					field,
+					value: { type: "string", value: "needle" },
+				}),
+			)(signal).matches,
 		).toBe(true)
 	})
 
 	it("treats malformed source scalars as mismatches rather than throwing", () => {
 		const field: FieldRef = { namespace: "attribute", key: "n", type: "int64" }
-		const evaluate = compileSignalPredicate({
-			op: "gte",
-			field,
-			value: { type: "int64", value: "1" },
-		})
+		const evaluate = Result.getOrThrow(
+			compileSignalPredicate({
+				op: "gte",
+				field,
+				value: { type: "int64", value: "1" },
+			}),
+		)
 		const signal = signalFor([])
 		const fields = new Map(signal.fields)
 		fields.set(fieldKey(field), { type: "int64", value: "not-an-integer" })
@@ -220,7 +227,11 @@ describe("total runtime behavior", () => {
 	it("distinguishes neq from not(eq) for a missing field", () => {
 		const field: FieldRef = { namespace: "attribute", key: "state", type: "string" }
 		const eq = { op: "eq" as const, field, value: { type: "string" as const, value: "closed" } }
-		expect(compileSignalPredicate({ ...eq, op: "neq" })(signalFor([])).matches).toBe(false)
-		expect(compileSignalPredicate({ op: "not", clause: eq })(signalFor([])).matches).toBe(true)
+		expect(Result.getOrThrow(compileSignalPredicate({ ...eq, op: "neq" }))(signalFor([])).matches).toBe(
+			false,
+		)
+		expect(
+			Result.getOrThrow(compileSignalPredicate({ op: "not", clause: eq }))(signalFor([])).matches,
+		).toBe(true)
 	})
 })

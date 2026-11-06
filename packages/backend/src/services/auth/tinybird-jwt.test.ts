@@ -1,7 +1,8 @@
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { createHmac } from "node:crypto"
 import { assert, describe, it } from "@effect/vitest"
 import { mintOrgReadJwt } from "./tinybird-jwt"
+import { String as Str } from "effect"
 
 const decodePart = (part: string): unknown => JSON.parse(Buffer.from(part, "base64url").toString("utf8"))
 
@@ -18,7 +19,7 @@ describe("mintOrgReadJwt", () => {
 			ttlSeconds: 600,
 		})
 
-		const [header, payload, signature] = jwt.split(".")
+		const [header, payload, signature] = Str.split(".")(jwt)
 		assert.deepStrictEqual(decodePart(header), { alg: "HS256", typ: "JWT" })
 
 		const decoded = decodePart(payload) as {
@@ -53,7 +54,7 @@ describe("mintOrgReadJwt", () => {
 				rpsLimit: 25,
 			})
 		const decode = (token: string) =>
-			decodePart(token.split(".")[1]) as { name: string; limits: { rps: number } }
+			decodePart(Str.split(".")(token)[1]) as { name: string; limits: { rps: number } }
 
 		const a = decode(tokenFor("org_a"))
 		const b = decode(tokenFor("org_b"))
@@ -71,7 +72,7 @@ describe("mintOrgReadJwt", () => {
 			nowSeconds: 0,
 			ttlSeconds: 60,
 		})
-		const decoded = decodePart(jwt.split(".")[1]) as {
+		const decoded = decodePart(Str.split(".")(jwt)[1]) as {
 			scopes: ReadonlyArray<{ filter: string }>
 		}
 		// The embedded quote is backslash-escaped, so the ClickHouse literal stays closed.

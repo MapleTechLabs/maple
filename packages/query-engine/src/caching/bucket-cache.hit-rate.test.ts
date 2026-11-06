@@ -1,10 +1,12 @@
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { assert, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer } from "effect"
+import { Clock, ConfigProvider, Effect, Layer, Array as Arr } from "effect"
 import { OrgId } from "@maple/domain"
 import type { TimeseriesPoint } from "@maple/domain/query-engine"
 import { Schema } from "effect"
 import { BucketCacheService, type BucketCacheOutcome } from "./bucket-cache"
 import {
+	EdgeCacheBackendError,
 	EdgeCacheService,
 	makeEdgeCacheService,
 	makeMemoryBackend,
@@ -80,20 +82,21 @@ const makeInstrumentedBackend = (inner: EdgeCacheBackend = makeMemoryBackend()) 
 
 	const backend: EdgeCacheBackend = {
 		name: inner.name,
-		get: async (bucket, hash, nowMs) => {
-			calls.push({ op: "get", key: hash })
-			inFlight++
-			peakInFlight = Math.max(peakInFlight, inFlight)
-			try {
-				return await inner.get(bucket, hash, nowMs)
-			} finally {
-				inFlight--
-			}
-		},
-		put: async (bucket, hash, value, ttlSeconds, nowMs) => {
-			calls.push({ op: "put", key: hash })
-			return inner.put(bucket, hash, value, ttlSeconds, nowMs)
-		},
+		get: (bucket, hash, nowMs) =>
+			Effect.sync(() => {
+				calls.push({ op: "get", key: hash })
+				inFlight++
+				peakInFlight = Math.max(peakInFlight, inFlight)
+			}).pipe(
+				// Yield so concurrent reads overlap, as a real backend's I/O would.
+				Effect.andThen(Effect.yieldNow),
+				Effect.andThen(inner.get(bucket, hash, nowMs)),
+				Effect.ensuring(Effect.sync(() => inFlight--)),
+			),
+		put: (bucket, hash, value, ttlSeconds, nowMs) =>
+			Effect.sync(() => calls.push({ op: "put", key: hash })).pipe(
+				Effect.andThen(inner.put(bucket, hash, value, ttlSeconds, nowMs)),
+			),
 		delete: inner.delete,
 	}
 
@@ -167,11 +170,11 @@ const runSequence = (requests: ReadonlyArray<Request>, backend: EdgeCacheBackend
 
 /** The same sequence with the cache bypassed — ground truth for the points. */
 const oracle = (requests: ReadonlyArray<Request>) =>
-	requests.map((r) => warehousePointsFor(r.startMs, r.endMs))
+	Arr.map(requests, (r) => warehousePointsFor(r.startMs, r.endMs))
 
 const coverageOf = (outcomes: ReadonlyArray<BucketCacheOutcome>) => {
-	const requested = outcomes.reduce((sum, o) => sum + o.requestedBuckets, 0)
-	const hit = outcomes.reduce((sum, o) => sum + o.bucketsHit, 0)
+	const requested = Arr.reduce(outcomes, 0, (sum, o) => sum + o.requestedBuckets)
+	const hit = Arr.reduce(outcomes, 0, (sum, o) => sum + o.bucketsHit)
 	return requested === 0 ? 1 : hit / requested
 }
 
@@ -180,10 +183,10 @@ const assertMatchesOracle = (
 	requests: ReadonlyArray<Request>,
 ) => {
 	const expected = oracle(requests)
-	outcomes.forEach((outcome, index) => {
+	Arr.forEach(outcomes, (outcome, index) => {
 		assert.deepStrictEqual(
 			outcome.points,
-			expected[index]!,
+			expected[index],
 			`request ${index} returned different points than an uncached run`,
 		)
 	})
@@ -254,7 +257,8 @@ describe("bucket cache hit rate — dashboard access patterns", () => {
 
 			assertMatchesOracle(outcomes, requests)
 
-			const revisit = outcomes[2]!
+			const revisit = outcomes[2]
+			assert.isDefined(revisit)
 			assert.strictEqual(revisit.bucketsMissed, 0)
 			assert.strictEqual(revisit.warehouseQueryCount, 0)
 			assert.strictEqual(revisit.bucketsHit, revisit.requestedBuckets)
@@ -291,10 +295,10 @@ describe("bucket cache hit rate — dashboard access patterns", () => {
 			const { outcomes } = yield* runSequence(requests, backend)
 
 			// The zoomed request is cold...
-			expect(outcomes[1]!.bucketsHit).toBe(0)
+			expect(Arr.getUnsafe(outcomes, 1).bucketsHit).toBe(0)
 			// ...and the original is still fully warm afterwards.
-			assert.strictEqual(outcomes[2]!.warehouseQueryCount, 0)
-			assert.strictEqual(outcomes[2]!.bucketsMissed, 0)
+			assert.strictEqual(Arr.getUnsafe(outcomes, 2).warehouseQueryCount, 0)
+			assert.strictEqual(Arr.getUnsafe(outcomes, 2).bucketsMissed, 0)
 		})
 	})
 
@@ -311,7 +315,7 @@ describe("bucket cache hit rate — dashboard access patterns", () => {
 				{ orgId, query: DEFAULT_QUERY, bucketSeconds: BUCKET_SECONDS, ...window },
 				({ startMs, endMs }) =>
 					Effect.succeed(
-						warehousePointsFor(startMs, endMs).map((p) => ({
+						Arr.map(warehousePointsFor(startMs, endMs), (p) => ({
 							...p,
 							series: { ...p.series, owner: 1 },
 						})),
@@ -325,7 +329,7 @@ describe("bucket cache hit rate — dashboard access patterns", () => {
 				({ startMs, endMs }) => {
 					bComputed = true
 					return Effect.succeed(
-						warehousePointsFor(startMs, endMs).map((p) => ({
+						Arr.map(warehousePointsFor(startMs, endMs), (p) => ({
 							...p,
 							series: { ...p.series, owner: 2 },
 						})),
@@ -371,7 +375,7 @@ describe("bucket cache hit rate — dashboard access patterns", () => {
 			// Expired, so it refetches — and the points are still correct.
 			assert.strictEqual(afterExpiry.warehouseCalls, 1)
 			assert.deepStrictEqual(
-				afterExpiry.outcomes[0]!.points,
+				Arr.getUnsafe(afterExpiry.outcomes, 0).points,
 				warehousePointsFor(fixed.startMs, fixed.endMs),
 			)
 		})
@@ -384,7 +388,7 @@ describe("bucket cache hit rate — dashboard access patterns", () => {
 		const { backend } = makeInstrumentedBackend()
 
 		return Effect.gen(function* () {
-			const nowMs = Date.now()
+			const nowMs = yield* Clock.currentTimeMillis
 			const endMs = Math.floor(nowMs / BUCKET_MS) * BUCKET_MS
 			const window = { startMs: endMs - 30 * MIN, endMs }
 
@@ -396,7 +400,8 @@ describe("bucket cache hit rate — dashboard access patterns", () => {
 				}),
 			)
 
-			const second = outcomes[1]!
+			const second = outcomes[1]
+			assert.isDefined(second)
 			// Settled buckets are cached...
 			expect(second.bucketsHit).toBeGreaterThan(0)
 			// ...but the live tail is never cached, so a query is still issued.
@@ -419,7 +424,7 @@ describe("bucket cache hit rate — degraded backends", () => {
 	const hangingReads = (inner: EdgeCacheBackend): EdgeCacheBackend => ({
 		...inner,
 		name: inner.name,
-		get: () => new Promise<never>(() => {}),
+		get: () => Effect.never,
 	})
 
 	const READ_TIMEOUT_MS = 20
@@ -473,13 +478,9 @@ describe("bucket cache hit rate — degraded backends", () => {
 	it.live("survives a backend that throws on both read and write", () => {
 		const exploding: EdgeCacheBackend = {
 			name: "memory",
-			get: async () => {
-				throw new Error("read exploded")
-			},
-			put: async () => {
-				throw new Error("write exploded")
-			},
-			delete: async () => {},
+			get: () => Effect.fail(new EdgeCacheBackendError({ op: "get", message: "read exploded" })),
+			put: () => Effect.fail(new EdgeCacheBackendError({ op: "put", message: "write exploded" })),
+			delete: () => Effect.void,
 		}
 		const fixed = { startMs: BASE_MS - 4 * MIN, endMs: BASE_MS }
 
@@ -504,10 +505,14 @@ describe("bucket cache hit rate — degraded backends", () => {
 		const inner = makeMemoryBackend()
 		const jsonRoundTrip: EdgeCacheBackend = {
 			name: "workers-cache",
-			get: async (bucket, hash, nowMs) => {
-				const value = await inner.get(bucket, hash, nowMs)
-				return value === undefined ? undefined : JSON.parse(JSON.stringify(value))
-			},
+			get: (bucket, hash, nowMs) =>
+				inner
+					.get(bucket, hash, nowMs)
+					.pipe(
+						Effect.map((value): unknown =>
+							value === undefined ? undefined : JSON.parse(JSON.stringify(value)),
+						),
+					),
 			put: (bucket, hash, value, ttlSeconds, nowMs) =>
 				inner.put(bucket, hash, JSON.parse(JSON.stringify(value)), ttlSeconds, nowMs),
 			delete: inner.delete,
@@ -520,8 +525,11 @@ describe("bucket cache hit rate — degraded backends", () => {
 			// The second read must validate against `isBucketCacheSegmentData` and
 			// hit — if the round trip perturbed the shape it would silently miss.
 			assert.strictEqual(warehouseCalls, 1)
-			assert.strictEqual(outcomes[1]!.bucketsMissed, 0)
-			assert.deepStrictEqual(outcomes[1]!.points, warehousePointsFor(fixed.startMs, fixed.endMs))
+			assert.strictEqual(Arr.getUnsafe(outcomes, 1).bucketsMissed, 0)
+			assert.deepStrictEqual(
+				Arr.getUnsafe(outcomes, 1).points,
+				warehousePointsFor(fixed.startMs, fixed.endMs),
+			)
 		})
 	})
 })
@@ -569,10 +577,13 @@ describe("bucket cache hit rate — concurrency", () => {
 				{ concurrency: "unbounded" },
 			)
 
-			outcomes.forEach((outcome, index) => {
+			Arr.forEach(outcomes, (outcome, index) => {
 				assert.deepStrictEqual(
 					outcome.points,
-					warehousePointsFor(widgets[index]!.startMs, widgets[index]!.endMs),
+					warehousePointsFor(
+						Arr.getUnsafe(widgets, index).startMs,
+						Arr.getUnsafe(widgets, index).endMs,
+					),
 					`widget ${index} received points from a different window`,
 				)
 			})

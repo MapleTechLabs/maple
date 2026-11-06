@@ -14,8 +14,21 @@
  */
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import type { ChatEvent, ChatTurnEndEvent } from "@maple/domain/chat-session"
-import { Cause, Clock, Effect, Fiber, Schedule, Semaphore, Stream } from "effect"
-import type { ChatMessageRef, ChatOutbound, ChatTarget } from "./outbound"
+import {
+	Cause,
+	Clock,
+	Effect,
+	Fiber,
+	Ref,
+	Schedule,
+	Semaphore,
+	Stream,
+	Array as Arr,
+	Option,
+	Schema,
+	String as Str,
+} from "effect"
+import type { ChatMessageRef, ChatOutbound, ChatTarget, ChatWritePhase } from "./outbound"
 import {
 	renderChatMessage,
 	splitBlocks,
@@ -49,9 +62,9 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 ) {
 	const { context, messageId, outbound, target } = options
 	yield* Effect.annotateCurrentSpan({
-		"chat.connector": outbound.connectorId,
-		"chat.session_id": context.sessionId,
-		"chat.message_id": messageId,
+		"maple.chat.connector": outbound.connectorId,
+		"maple.chat.session_id": context.sessionId,
+		"maple.chat.message_id": messageId,
 	})
 
 	const transport = yield* outbound.transport
@@ -64,30 +77,24 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 	// loser's edit would put a stale render back on a finished turn.
 	const gate = yield* Semaphore.make(1)
 
-	// Turn state, mutated by the stream fiber and read by the throttle fiber. Safe without a `Ref`
-	// because fibers interleave only at yield points within one isolate, and everything that reads
-	// the transcript does so under `gate`: `dirty` is cleared BEFORE the render, so an event that
-	// lands during a post or an edit marks the turn dirty again rather than being swallowed.
-	let ending: ChatNoticeBlock | null = null
-	/** How the turn closed, for the span — the one place a failed turn is more than a line of copy. */
-	let endReason = "unfinished"
-	let dirty = false
-	/**
-	 * What the render is of: a turn in progress, or the message it settles as.
-	 *
-	 * The exception to the note above — it is cleared by this fiber once the throttle fiber has
-	 * been interrupted, so no flush can read it half way through a turn it has not finished.
-	 */
-	let running = true
+	// Written by the stream fiber, read by the throttle fiber. `dirty` is cleared BEFORE the render,
+	// so an event that lands during a post or an edit marks the turn dirty again, not swallowed.
+	const turn = yield* Ref.make<TurnState>({
+		ending: null,
+		endReason: "unfinished",
+		dirty: false,
+		running: true,
+	})
 
 	const flush = gate.withPermit(
 		Effect.gen(function* () {
 			// Messages an earlier run posted already say more than a render of no events would.
 			if (resumed && transcript.seq === 0) return
-			dirty = false
-			const message = transcript.messages.find((candidate) => candidate.id === messageId)
-			const blocks: Array<ChatBlock> =
-				message === undefined ? [] : [...renderChatMessage(message, context, running)]
+			const { ending, running } = yield* Ref.updateAndGet(turn, (state) => ({ ...state, dirty: false }))
+			const blocks: Array<ChatBlock> = Option.match(
+				Arr.findFirst(transcript.messages, (candidate) => candidate.id === messageId),
+				{ onNone: () => [], onSome: (message) => [...renderChatMessage(message, context, running)] },
+			)
 			if (ending !== null) blocks.push(ending)
 			// A finished turn must never be left under the placeholder: a model that stops after a
 			// tool call without a closing word renders as nothing at all, and "Working on it…" would
@@ -95,28 +102,35 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 			if (blocks.length === 0) blocks.push(running ? PENDING : NOTHING_SAID)
 
 			const groups = splitBlocks(blocks, outbound.limits.maxMessageChars)
-			for (let index = 0; index < Math.max(groups.length, posted.length); index++) {
-				// A retraction can shrink a turn below a message it had already needed, so a surplus
-				// message is emptied rather than left holding text the turn no longer says.
-				const group = index < groups.length ? groups[index] : NO_BLOCKS
-				// A fingerprint of what this message should now say, not a wire format — nothing decodes
-				// it, it is only ever compared with the previous flush's.
-				// oxlint-disable-next-line effecttsgo/prefer-schema-over-json
-				const rendered = JSON.stringify(group)
-				if (index >= posted.length) {
-					posted.push(yield* transport.post(target, group))
-					sent.push(rendered)
-					// At least once: a run lost between the post and this report posts it again later.
-					if (options.onPosted !== undefined) yield* options.onPosted([...posted])
-					continue
-				}
-				// Only what changed. A turn cut into three messages would otherwise spend three edits
-				// per tick, almost all of them rewriting a message with what it already says — and a
-				// platform's edit budget is per channel, not per message.
-				if (sent[index] === rendered) continue
-				yield* transport.edit(posted[index], group)
-				sent[index] = rendered
-			}
+			const phase: ChatWritePhase = running ? "streaming" : "final"
+			// Messages a flush posts extend `posted` as it goes; the count is fixed up front.
+			yield* Effect.forEach(
+				Array.from({ length: Math.max(groups.length, posted.length) }, (_, index) => index),
+				(index) =>
+					Effect.gen(function* () {
+						// A retraction can shrink a turn below a message it had already needed, so a surplus
+						// message is emptied rather than left holding text the turn no longer says.
+						const group = groups[index] ?? NO_BLOCKS
+						const rendered = renderedKey(group)
+						const existing = posted[index]
+						if (existing === undefined) {
+							const postedMessage = yield* transport.post(target, group, phase)
+							posted.push(postedMessage)
+							sent.push(rendered)
+							// At least once: a run lost between the post and this report posts it again later.
+							if (options.onPosted !== undefined) yield* options.onPosted([...posted])
+							return
+						}
+						// Only what changed. A turn cut into three messages would otherwise spend three edits
+						// per tick, almost all of them rewriting a message with what it already says — and a
+						// platform's edit budget is per channel, not per message. A live message is the
+						// exception at the end: it shows as still being written until its final write.
+						if (sent[index] === rendered && (running || outbound.liveMessages !== true)) return
+						yield* transport.edit(existing, group, phase)
+						sent[index] = rendered
+					}),
+				{ discard: true },
+			)
 		}),
 	)
 
@@ -126,15 +140,13 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 		// Sub-agent events carry a `task` ref and belong to a nested transcript; the turn they are
 		// nested in is the one being driven.
 		if (event.type !== "user-message" && event.task !== undefined) {
-			dirty = true
-			return
+			return yield* Ref.update(turn, (state) => ({ ...state, dirty: true }))
 		}
 		if (event.type === "turn-end" && event.messageId === messageId) {
-			ending = turnEndNotice(event)
-			endReason = event.reason
-			return
+			const ending = turnEndNotice(event)
+			return yield* Ref.update(turn, (state) => ({ ...state, ending, endReason: event.reason }))
 		}
-		dirty = true
+		yield* Ref.update(turn, (state) => ({ ...state, dirty: true }))
 	})
 
 	yield* Effect.forkChild(
@@ -152,7 +164,7 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 		Effect.repeat(
 			// A mid-turn edit that fails takes its fiber with it and nothing joins this one, so the
 			// cause is logged here or it is lost. The final flush still runs, and still reports.
-			Effect.suspend(() => (dirty ? flush : Effect.void)).pipe(
+			Effect.flatMap(Ref.get(turn), (state) => (state.dirty ? flush : Effect.void)).pipe(
 				Effect.tapCause(report("A turn's message could not be updated")),
 			),
 			{ schedule: Schedule.spaced(outbound.limits.minEditInterval) },
@@ -170,19 +182,21 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 		// A stream that dies has no `turn-end` to close on, and the reader would be left looking at
 		// the placeholder forever. Say so, flush, and then fail.
 		Effect.tapError(() =>
-			Effect.sync(() => {
-				if (ending === null) ending = DISCONNECTED
-			}),
+			Ref.update(turn, (state) => (state.ending === null ? { ...state, ending: DISCONNECTED } : state)),
 		),
 		Effect.exit,
 	)
 	yield* Fiber.interrupt(throttled)
 	// Whatever ended the turn, the last render is the finished message: the answer, and none of the
 	// working. Set here rather than on `turn-end`, so a stream that died — and never reaches one —
-	// settles the same way.
-	running = false
+	// settles the same way. Cleared only once the throttle fiber is gone, so no flush reads it half
+	// way through a turn it has not finished.
+	yield* Ref.update(turn, (state) => ({ ...state, running: false }))
 	yield* flush
-	yield* Effect.annotateCurrentSpan({ "chat.turn.end_reason": endReason, "chat.messages": posted.length })
+	yield* Effect.annotateCurrentSpan({
+		"maple.chat.turn.end_reason": (yield* Ref.get(turn)).endReason,
+		"maple.chat.messages": posted.length,
+	})
 	return yield* outcome
 })
 
@@ -195,13 +209,28 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 const report = (message: string) => (cause: Cause.Cause<unknown>) =>
 	Effect.logWarning(message).pipe(
 		Effect.annotateLogs({
-			"error.type": Cause.prettyErrors(cause)
-				.map((error) => error.name)
-				.join(";"),
+			"error.type": Arr.join(
+				Arr.map(Cause.prettyErrors(cause), (error) => error.name),
+				";",
+			),
 		}),
 	)
 
+interface TurnState {
+	readonly ending: ChatNoticeBlock | null
+	/** How the turn closed, for the span: the one place a failed turn is more than a line of copy. */
+	readonly endReason: string
+	readonly dirty: boolean
+	/** What the render is of: a turn in progress, or the message it settles as. */
+	readonly running: boolean
+}
+
 const NO_BLOCKS: ReadonlyArray<ChatBlock> = []
+
+/** A fingerprint of what a message should say; only compared with the previous flush's. */
+const renderedKey: (group: ReadonlyArray<ChatBlock>) => string = Schema.encodeSync(
+	Schema.fromJsonString(Schema.Unknown),
+)
 
 const PENDING: ChatNoticeBlock = { kind: "notice", tone: "pending", text: "Working on it…" }
 
@@ -246,7 +275,7 @@ const turnEndNotice = (event: ChatTurnEndEvent): ChatNoticeBlock | null => {
 				text:
 					event.error === undefined
 						? "Failed before finishing."
-						: `Failed: ${event.error.slice(0, MAX_ERROR_CHARS)}`,
+						: `Failed: ${Str.slice(0, MAX_ERROR_CHARS)(event.error)}`,
 			}
 	}
 }

@@ -25,9 +25,25 @@
 // row schemas are built from `CHNumber` — compile with them or BYO-CH orgs get
 // arithmetic over strings.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { from, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
-import { Logs, ServiceOperationsMinutely, ServiceOverviewSpans } from "../tables"
+import { type DateTime, Schema } from "effect"
+import * as CH from "@maple-dev/effect-orm/expr"
+import {
+	from,
+	param,
+	unionAll,
+	type CHUnionQuery,
+	type CompiledQueryRowSchema,
+} from "@maple-dev/effect-orm/clickhouse"
+import { CHNumber } from "../schema"
+import {
+	Logs,
+	MetricCatalog,
+	ServiceOperationsMinutely,
+	ServiceOverviewSpans,
+	orgIdParam,
+	utcSecondsParam,
+} from "../tables"
+import { utcHourFloor } from "./query-helpers"
 
 export interface ServiceLivenessOutput {
 	/** Distinct minutes in the window that carried at least one span. */
@@ -36,8 +52,8 @@ export interface ServiceLivenessOutput {
 	readonly estimatedSpanCount: number
 	readonly errorCount: number
 	readonly estimatedErrorCount: number
-	/** ClickHouse datetime literal; '1970-01-01 00:00:00' when the window is empty. */
-	readonly lastSeen: string
+	/** The newest minute with spans; the Unix epoch when the window is empty. */
+	readonly lastSeen: DateTime.Utc
 }
 
 export interface ServiceLivenessOpts {
@@ -48,10 +64,6 @@ export interface ServiceLivenessOpts {
 /**
  * Group-less volume aggregate for one service over a bounded window. No
  * groupBy, so this is a single row and a near-empty scan.
- *
- * `lastSeen` is stringified for the same reason the pulse union does it, and
- * because a raw DateTime round-trips inconsistently across the managed and BYO
- * backends.
  */
 export function serviceLivenessQuery(opts: ServiceLivenessOpts = {}) {
 	return from(ServiceOperationsMinutely)
@@ -61,14 +73,14 @@ export function serviceLivenessQuery(opts: ServiceLivenessOpts = {}) {
 			estimatedSpanCount: CH.sum($.EstimatedSpanCount),
 			errorCount: CH.sum($.ErrorCount),
 			estimatedErrorCount: CH.sum($.EstimatedErrorCount),
-			lastSeen: CH.toString_(CH.max_($.Minute)),
+			lastSeen: CH.max_($.Minute),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
-			$.Minute.gte(param.dateTimeSeconds("startTime")),
-			$.Minute.lte(param.dateTimeSeconds("endTime")),
-			opts.scopeToEnvironment ? $.DeploymentEnv.eq(param.string("deploymentEnv")) : undefined,
+			$.Minute.gte(utcSecondsParam("startTime")),
+			$.Minute.lte(utcSecondsParam("endTime")),
+			CH.whenTrue(!!opts.scopeToEnvironment, () => $.DeploymentEnv.eq(param.string("deploymentEnv"))),
 		])
 		.format("JSON")
 }
@@ -105,9 +117,9 @@ export function orgTelemetryPulseQuery(): CHUnionQuery<TelemetryPulseOutput> {
 			lastSeen: CH.toString_(CH.max_($.Timestamp)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 		])
 
 	const logs = from(Logs)
@@ -117,12 +129,83 @@ export function orgTelemetryPulseQuery(): CHUnionQuery<TelemetryPulseOutput> {
 			lastSeen: CH.toString_(CH.max_($.Timestamp)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimestampTime.gte(param.dateTimeSeconds("startTime")),
-			$.TimestampTime.lte(param.dateTimeSeconds("endTime")),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.TimestampTime.gte(utcSecondsParam("startTime")),
+			$.TimestampTime.lte(utcSecondsParam("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 		])
 
 	return unionAll(spans, logs).format("JSON")
 }
+
+/**
+ * Newest timestamp per rollup-backed signal (traces, metrics) for one org, over
+ * a short caller-bounded window. Traces read `service_operations_minutely`,
+ * which counts every span, at minute grain; metrics read `metric_catalog`.
+ * Group-less, so each signal always returns one row. Logs, a raw table, are
+ * probed by `logsFreshnessQuery` so no union mixes tiers.
+ */
+export function ingestFreshnessQuery(): CHUnionQuery<TelemetryPulseOutput> {
+	const traces = from(ServiceOperationsMinutely)
+		.select(($) => ({
+			signal: CH.lit("traces"),
+			count: CH.sum($.SpanCount),
+			lastSeen: CH.toString_(CH.max_($.Minute)),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Minute.gte(utcSecondsParam("startTime")),
+			$.Minute.lte(utcSecondsParam("endTime")),
+		])
+
+	const metrics = from(MetricCatalog)
+		.select(($) => ({
+			signal: CH.lit("metrics"),
+			count: CH.sum($.DataPointCount),
+			// An hour row straddling endTime had data inside the window; clamp its
+			// LastSeen so a past end_time never reads newer than itself.
+			lastSeen: CH.toString_(
+				CH.max_(
+					CH.if_(
+						$.LastSeen.gt(utcSecondsParam("endTime")),
+						CH.toDateTime(utcSecondsParam("endTime")),
+						$.LastSeen,
+					),
+				),
+			),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
+			$.LastSeen.gte(utcSecondsParam("startTime")),
+			$.FirstSeen.lte(utcSecondsParam("endTime")),
+		])
+
+	return unionAll(traces, metrics).format("JSON")
+}
+
+/** Exact newest log timestamp for one org; one group-less row. */
+export function logsFreshnessQuery() {
+	return from(Logs)
+		.select(($) => ({
+			signal: CH.lit("logs"),
+			count: CH.count(),
+			lastSeen: CH.toString_(CH.toDateTime(CH.max_($.Timestamp))),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.TimestampTime.gte(utcSecondsParam("startTime")),
+			$.TimestampTime.lte(utcSecondsParam("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+		])
+		.format("JSON")
+}
+
+export const ingestFreshnessRowSchema = Schema.Struct({
+	signal: Schema.String,
+	count: CHNumber,
+	lastSeen: Schema.String,
+}) satisfies CompiledQueryRowSchema<TelemetryPulseOutput>

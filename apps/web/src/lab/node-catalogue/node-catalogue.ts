@@ -13,12 +13,16 @@
  * is a causal chain in columns, this is a labelled grid, and forcing one to
  * produce the other would mean bending the chain's arithmetic around a catalogue.
  *
- * Free of React and of `@xyflow/react`, for the same reason `provenance-graph.ts`
- * is: coverage over the state space is a fact about this array, and it should be
+ * Free of rendering code: coverage over the state space is a fact about this array, and it should be
  * assertable without mounting a canvas.
  */
-import { ACTION_GLYPH } from "@/components/investigations/flow/flow-nodes"
-import type { ActionKind, ActionTarget } from "@/components/investigations/flow/action-target"
+import type { Tone } from "@maple/ui/lib/tone"
+import {
+	ACTION_KIND_LABEL,
+	ACTION_KINDS,
+	type ActionKind,
+	type ActionTarget,
+} from "@maple/web-data/investigations/action-target"
 import {
 	ACTION_HEIGHT,
 	ACTION_WIDTH,
@@ -29,12 +33,12 @@ import {
 	SPINE_HEIGHT_TALL,
 	SPINE_WIDTH,
 	type FlowGlyph,
-	type FlowTone,
 	type ProvenanceEdge,
 	type ProvenanceNode,
 	type SpineNodeData,
 	type XY,
-} from "@/components/investigations/flow/provenance-graph"
+} from "@maple/web-data/investigations/provenance-graph"
+import { Array as Arr, String as Str } from "effect"
 
 /* -------------------------------------------------------------------------------------------------
  * Grid
@@ -127,6 +131,19 @@ function grid() {
 }
 
 type Grid = ReturnType<typeof grid>
+
+const isCard = (node: ProvenanceNode) => node.type === "spine" || node.type === "pendingVerdict"
+
+/** Spine cards sharing a row take the row's tallest height, so a row reads as one strip. */
+const evenRows = (nodes: ReadonlyArray<ProvenanceNode>): ReadonlyArray<ProvenanceNode> => {
+	const tallest = new Map<number, number>()
+	Arr.forEach(Arr.filter(nodes, isCard), (node) => {
+		tallest.set(node.position.y, Math.max(tallest.get(node.position.y) ?? 0, node.height))
+	})
+	return Arr.map(nodes, (node) =>
+		isCard(node) ? { ...node, height: tallest.get(node.position.y) ?? node.height } : node,
+	)
+}
 
 /* -------------------------------------------------------------------------------------------------
  * Cells
@@ -244,7 +261,7 @@ const edgeCell = (
  * Fixtures
  * -----------------------------------------------------------------------------------------------*/
 
-const TONES: ReadonlyArray<FlowTone> = ["muted", "primary", "success", "info", "warning", "destructive"]
+const TONES: ReadonlyArray<Tone> = ["crit", "warn", "ok", "info", "neutral"]
 const GLYPHS: ReadonlyArray<FlowGlyph> = ["issue", "check", "incident", "investigation", "verdict"]
 
 /** Long enough to hit the two-line clamp and then overflow it. */
@@ -265,9 +282,9 @@ export function buildNodeCatalogue(): NodeCatalogue {
 
 	g.section("SPINE · GLYPH")
 	for (const glyph of GLYPHS) {
-		spineCell(g, glyph.toUpperCase(), {
+		spineCell(g, Str.toUpperCase(glyph), {
 			glyph,
-			eyebrow: glyph.toUpperCase(),
+			eyebrow: Str.toUpperCase(glyph),
 			title: "checkout-api",
 			at: AT,
 		})
@@ -296,7 +313,7 @@ export function buildNodeCatalogue(): NodeCatalogue {
 		glyph: "investigation",
 		eyebrow: "INVESTIGATION",
 		title: "Checkout timeouts",
-		phase: "FANNING OUT · 2/4 REPORTED",
+		phase: "FANNING OUT · 2/4",
 		live: true,
 		at: AT,
 	})
@@ -305,7 +322,7 @@ export function buildNodeCatalogue(): NodeCatalogue {
 		eyebrow: "INVESTIGATION",
 		title: "Checkout timeouts",
 		note: "running",
-		phase: "VALIDATING · 4 CANDIDATES",
+		phase: "VALIDATING · 3/4",
 		current: true,
 		live: true,
 		at: AT,
@@ -357,11 +374,11 @@ export function buildNodeCatalogue(): NodeCatalogue {
 
 	g.section("SPINE · STATUS TONE")
 	for (const tone of TONES) {
-		spineCell(g, tone.toUpperCase(), {
+		spineCell(g, Str.toUpperCase(tone), {
 			glyph: "check",
 			eyebrow: "CHECK",
 			title: "pool_active / pool_max",
-			status: tone.toUpperCase(),
+			status: Str.toUpperCase(tone),
 			statusTone: tone,
 			detail: "0.94",
 			at: AT,
@@ -378,12 +395,12 @@ export function buildNodeCatalogue(): NodeCatalogue {
 
 	g.section("ACTION · KIND")
 	let ordinal = 0
-	for (const kind of Object.keys(ACTION_GLYPH) as Array<ActionKind>) {
+	for (const kind of ACTION_KINDS) {
 		ordinal += 1
-		actionCell(g, kind.toUpperCase(), {
+		actionCell(g, Str.toUpperCase(kind), {
 			kind,
-			ordinal: String(ordinal).padStart(2, "0"),
-			text: `${ACTION_GLYPH[kind].label} — what this kind of action reads like`,
+			ordinal: Str.padStart(2, "0")(String(ordinal)),
+			text: `${ACTION_KIND_LABEL[kind]}: what this kind of action reads like`,
 		})
 	}
 
@@ -421,5 +438,5 @@ export function buildNodeCatalogue(): NodeCatalogue {
 	edgeCell(g, "ROADMAP · LIVE", { kind: "roadmap", label: "AUTOFIX", live: true })
 
 	const { y, rowHeight } = g.bounds()
-	return { nodes: g.nodes, edges: g.edges, width: ROW_MAX, height: y + rowHeight }
+	return { nodes: evenRows(g.nodes), edges: g.edges, width: ROW_MAX, height: y + rowHeight }
 }

@@ -17,16 +17,16 @@ import {
 	type IssueSeverity,
 	type OrgId,
 } from "@maple/domain/http"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	alertDestinations,
-	errorIssues,
-	issueEscalationPolicies,
-	issueEscalations,
+	AlertDestinations,
+	ErrorIssues,
+	IssueEscalationPolicies,
+	IssueEscalations,
 	type IssueEscalationPolicyRow,
 	type IssueEscalationRow,
-} from "@maple/db"
-import { and, asc, eq, inArray } from "drizzle-orm"
-import { Cause, Clock, Context, Effect, Layer, Option, Schema } from "effect"
+} from "@maple/db/tables"
+import { Cause, Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -55,7 +55,7 @@ interface EscalationTickResult {
 }
 
 export interface EscalationServiceApi {
-	readonly runEscalationTick: () => Effect.Effect<EscalationTickResult, AlertPersistenceError>
+	readonly runEscalationTick: Effect.Effect<EscalationTickResult, AlertPersistenceError>
 }
 
 /*
@@ -73,11 +73,12 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 
 		const loadPolicy = (orgId: OrgId) =>
 			dbExecute((db) =>
-				db
-					.select()
-					.from(issueEscalationPolicies)
-					.where(eq(issueEscalationPolicies.orgId, orgId))
-					.limit(1),
+				db.run(
+					PG.from(IssueEscalationPolicies)
+						.select()
+						.where(($) => [$.orgId.eq(orgId)])
+						.limit(1),
+				),
 			).pipe(Effect.map((rows) => rows[0] ?? null))
 
 		const finalize = (
@@ -88,17 +89,18 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 			deliveryResults?: unknown,
 		) =>
 			dbExecute((db) =>
-				db
-					.update(issueEscalations)
-					.set({
-						status,
-						error: error ?? null,
-						...(!(deliveryResults === undefined)
-							? { deliveryResultsJson: deliveryResults }
-							: undefined),
-						...(!(status === "queued") ? { processedAt: new Date(timestamp) } : undefined),
-					})
-					.where(eq(issueEscalations.id, row.id)),
+				db.run(
+					PG.update(IssueEscalations)
+						.set({
+							status,
+							error: error ?? null,
+							...(!(deliveryResults === undefined)
+								? { deliveryResultsJson: deliveryResults }
+								: undefined),
+							...(!(status === "queued") ? { processedAt: timestamp } : undefined),
+						})
+						.where(($) => [$.id.eq(row.id)]),
+				),
 			)
 
 		const processOne = Effect.fn("EscalationService.processOne")(function* (
@@ -110,18 +112,13 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 			// Optimistic claim: bump attempts iff nobody else already has. A
 			// concurrent tick loses the CAS and skips the row.
 			const claimed = yield* dbExecute((db) =>
-				db
-					.update(issueEscalations)
-					.set({ attempts: row.attempts + 1 })
-					.where(
-						and(
-							eq(issueEscalations.id, row.id),
-							eq(issueEscalations.status, "queued"),
-							eq(issueEscalations.attempts, row.attempts),
-						),
-					)
-					// The returned row is the claim: empty means the CAS lost.
-					.returning({ id: issueEscalations.id }),
+				db.run(
+					PG.update(IssueEscalations)
+						.set({ attempts: row.attempts + 1 })
+						.where(($) => [$.id.eq(row.id), $.status.eq("queued"), $.attempts.eq(row.attempts)])
+						// The returned row is the claim: empty means the CAS lost.
+						.returning("id"),
+				),
 			)
 			if (claimed.length === 0) {
 				return "contended" as const
@@ -138,21 +135,20 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 				decodeJsonRecord(row.payloadJson),
 				(): Record<string, unknown> => ({}),
 			)
-			const configuredDestinationIds = rules.flatMap((rule) => rule.destinationIds)
+			const configuredDestinationIds = Arr.flatMap(rules, (rule) => rule.destinationIds)
 			const destinationRows =
 				configuredDestinationIds.length === 0
 					? []
 					: yield* dbExecute((db) =>
-							db
-								.select({ id: alertDestinations.id })
-								.from(alertDestinations)
-								.where(
-									and(
-										eq(alertDestinations.orgId, row.orgId),
-										eq(alertDestinations.enabled, true),
-										inArray(alertDestinations.id, configuredDestinationIds),
-									),
-								),
+							db.run(
+								PG.from(AlertDestinations)
+									.select("id")
+									.where(($) => [
+										$.orgId.eq(row.orgId),
+										$.enabled.eq(true),
+										$.id.in_(...configuredDestinationIds),
+									]),
+							),
 						)
 			const confidence = Option.getOrUndefined(decodeConfidence(payload.confidence))
 			const decision = evaluateEscalationPolicy({
@@ -161,7 +157,7 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 				severity: row.severity,
 				source: row.source,
 				...(!(confidence === undefined) ? { confidence } : undefined),
-				enabledDestinationIds: new Set(destinationRows.map((destination) => destination.id)),
+				enabledDestinationIds: new Set(Arr.map(destinationRows, (destination) => destination.id)),
 			})
 			yield* Effect.annotateCurrentSpan({
 				"maple.escalation.policy_outcome": decision.outcome,
@@ -176,14 +172,15 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 			}
 
 			const issueRows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(errorIssues)
-					.where(and(eq(errorIssues.orgId, row.orgId), eq(errorIssues.id, row.issueId)))
-					.limit(1),
+				db.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [$.orgId.eq(row.orgId), $.id.eq(row.issueId)])
+						.limit(1),
+				),
 			)
 			const issue = issueRows[0]
-			if (!issue) {
+			if (issue === undefined) {
 				yield* finalize(row, "skipped", timestamp, "issue_missing")
 				return "skipped" as const
 			}
@@ -271,16 +268,15 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 			return "retried" as const
 		})
 
-		const runEscalationTick: EscalationServiceApi["runEscalationTick"] = Effect.fn(
-			"EscalationService.runEscalationTick",
-		)(function* () {
+		const runEscalationTick: EscalationServiceApi["runEscalationTick"] = Effect.gen(function* () {
 			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(issueEscalations)
-					.where(eq(issueEscalations.status, "queued"))
-					.orderBy(asc(issueEscalations.createdAt))
-					.limit(ESCALATIONS_PER_TICK),
+				db.run(
+					PG.from(IssueEscalations)
+						.select()
+						.where(($) => [$.status.eq("queued")])
+						.orderBy(["createdAt", "asc"])
+						.limit(ESCALATIONS_PER_TICK),
+				),
 			)
 
 			const policyCache = new Map<OrgId, IssueEscalationPolicyRow | null>()
@@ -305,7 +301,8 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 					),
 				),
 			)
-			const count = (outcome: (typeof outcomes)[number]) => outcomes.filter((o) => o === outcome).length
+			const count = (outcome: (typeof outcomes)[number]) =>
+				Arr.filter(outcomes, (o) => o === outcome).length
 			return {
 				processed: outcomes.length - count("contended"),
 				sent: count("sent"),
@@ -313,14 +310,14 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 				failed: count("failed"),
 				retried: count("retried"),
 			}
-		})
+		}).pipe(Effect.withSpan("EscalationService.runEscalationTick"))
 
 		return EscalationService.of({ runEscalationTick })
 	},
 )
 
 export class EscalationService extends Context.Service<EscalationService, EscalationServiceApi>()(
-	"@maple/api/services/EscalationService",
+	"@maple/backend/services/EscalationService",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(NotificationDispatcher.layer))

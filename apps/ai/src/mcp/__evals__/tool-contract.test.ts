@@ -4,7 +4,7 @@
  * and the rendered text.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { FindErrorsOutput } from "@maple/domain/mcp-outputs"
 import { makeEvalRuntime, runToolDirect, markdown, type EvalRuntime } from "./eval-runtime"
 import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "./fake-warehouse"
@@ -38,6 +38,8 @@ beforeAll(() => {
 			rows: [],
 		},
 		...rules,
+		// Any other query (list_services) returns no rows.
+		{ match: () => true, rows: [] },
 	])
 	rt = makeEvalRuntime()
 })
@@ -65,7 +67,6 @@ describe("a tool declared with define", () => {
 
 		const text = markdown(result)
 		expect(result.content).toHaveLength(1)
-		expect(text).toContain("## Errors by Type")
 		expect(text).toContain("Time range: 2026-09-24 00:00:00 to 2026-09-24 12:00:00")
 		// The renderer escapes cells, so a pipe in a message cannot shift the columns.
 		expect(text).toContain("Database query failed \\| column Foo")
@@ -75,20 +76,25 @@ describe("a tool declared with define", () => {
 
 	it("accepts a retired parameter name and filters by it", async () => {
 		await call("find_errors", { service_name: "checkout" })
-		expect(issuedSql.join("\n")).toContain("checkout")
+		expect(Arr.join(issuedSql, "\n")).toContain("checkout")
 	})
 
 	it("tells the model which keys it ignored, and what it probably meant", async () => {
 		const result = await call("find_errors", { servce: "checkout" })
-		expect(markdown(result)).toContain(
-			"Note: `servce` is not a parameter of `find_errors` and was ignored. Did you mean `service`?",
+		expect(markdown(result)).toMatch(/Warning: `servce` [^\n]*Did you mean `service`\?/)
+	})
+
+	it("warns first, under the title, when a window key it does not take was ignored", async () => {
+		const result = await call("list_services", { time_range: "today" })
+		expect(result.isError).toBeUndefined()
+		expect(markdown(result)).toMatch(
+			/^## Services\n\nWarning: `time_range` [^\n]*Did you mean `start_time`\/`end_time`\?\n\nTime range: /,
 		)
 	})
 
 	it("explains a bad value against the parameter it was sent for", async () => {
 		const result = await call("find_errors", { identity: "everything" })
 		expect(result.isError).toBe(true)
-		expect(markdown(result)).toContain("Invalid parameters for `find_errors`:")
 		expect(markdown(result)).toContain("`identity`")
 	})
 

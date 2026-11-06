@@ -13,8 +13,8 @@ export const DISCORD_URL = "https://discord.gg/BnXjKuwJqP"
 export const X_URL = "https://x.com/Mapledotdev"
 
 export const SUPPORT_EMAIL = "support@maple.dev"
-export const PRIVACY_EMAIL = "privacy@getmaple.dev"
-export const LEGAL_EMAIL = "legal@getmaple.dev"
+export const PRIVACY_EMAIL = "privacy@maple.dev"
+export const LEGAL_EMAIL = "legal@maple.dev"
 
 /** Paths on the website (`maple.dev`). */
 export const SITE_PATHS = {

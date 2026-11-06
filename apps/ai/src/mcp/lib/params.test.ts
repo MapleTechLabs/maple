@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { Effect, Exit, Schema } from "effect"
+import { Effect, Exit, Schema, Array as Arr } from "effect"
 import { toInputSchema } from "../tools/registry"
+import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import * as P from "./params"
+import { CurrentWindowNotes, WindowNotes } from "./window-notes"
 
 const decode = <S extends Schema.Codec<unknown, unknown, never, unknown>>(schema: S, input: unknown) =>
 	Schema.decodeUnknownExit(schema)(input)
@@ -10,10 +12,10 @@ describe("MCP parameter vocabulary", () => {
 	const limited = Schema.Struct({ limit: P.limit({ default: 20, max: 200, noun: "rows" }) })
 
 	it("defaults, clamps and accepts numeric strings for limit", () => {
-		expect(Schema.decodeUnknownSync(limited)({})).toEqual({ limit: 20 })
-		expect(Schema.decodeUnknownSync(limited)({ limit: "15" })).toEqual({ limit: 15 })
-		expect(Schema.decodeUnknownSync(limited)({ limit: 5000 })).toEqual({ limit: 200 })
-		expect(Schema.decodeUnknownSync(limited)({ limit: 0.5 })).toEqual({ limit: 1 })
+		expect(Schema.decodeSync(limited)({})).toEqual({ limit: 20 })
+		expect(Schema.decodeSync(limited)({ limit: "15" })).toEqual({ limit: 15 })
+		expect(Schema.decodeSync(limited)({ limit: 5000 })).toEqual({ limit: 200 })
+		expect(Schema.decodeSync(limited)({ limit: 0.5 })).toEqual({ limit: 1 })
 		expect(Exit.isFailure(decode(limited, { limit: "soon" }))).toBe(true)
 		expect(Exit.isFailure(decode(limited, { limit: "" }))).toBe(true)
 	})
@@ -26,32 +28,32 @@ describe("MCP parameter vocabulary", () => {
 
 	it("reads a blank text filter as absent and trims the rest", () => {
 		const schema = Schema.Struct({ service: P.service() })
-		expect(Schema.decodeUnknownSync(schema)({ service: "  " })).toEqual({})
-		expect(Schema.decodeUnknownSync(schema)({ service: " api " })).toEqual({ service: "api" })
-		expect(Schema.decodeUnknownSync(schema)({})).toEqual({})
+		expect(Schema.decodeSync(schema)({ service: "  " })).toEqual({})
+		expect(Schema.decodeSync(schema)({ service: " api " })).toEqual({ service: "api" })
+		expect(Schema.decodeSync(schema)({})).toEqual({})
 		expect(JSON.stringify(toInputSchema(schema))).toContain("Only this service")
 	})
 
 	it("accepts a list as an array or a comma-separated string", () => {
 		const schema = Schema.Struct({ services: P.optionalList("services") })
-		expect(Schema.decodeUnknownSync(schema)({ services: "a, b,,c" })).toEqual({
+		expect(Schema.decodeSync(schema)({ services: "a, b,,c" })).toEqual({
 			services: ["a", "b", "c"],
 		})
-		expect(Schema.decodeUnknownSync(schema)({ services: ["a"] })).toEqual({ services: ["a"] })
+		expect(Schema.decodeSync(schema)({ services: ["a"] })).toEqual({ services: ["a"] })
 	})
 
 	it("accepts boolean spellings", () => {
 		const schema = Schema.Struct({ on: P.optionalFlag("on") })
-		expect(Schema.decodeUnknownSync(schema)({ on: "true" })).toEqual({ on: true })
-		expect(Schema.decodeUnknownSync(schema)({ on: "0" })).toEqual({ on: false })
+		expect(Schema.decodeSync(schema)({ on: "true" })).toEqual({ on: true })
+		expect(Schema.decodeSync(schema)({ on: "0" })).toEqual({ on: false })
 		expect(Exit.isFailure(decode(schema, { on: "yes please" }))).toBe(true)
 	})
 
 	it("decodes a JSON parameter from its text or the object itself", () => {
 		const Layout = Schema.Struct({ x: Schema.Number })
 		const schema = Schema.Struct({ layout: P.optionalJson(Layout, "layout") })
-		expect(Schema.decodeUnknownSync(schema)({ layout: '{"x":1}' })).toEqual({ layout: { x: 1 } })
-		expect(Schema.decodeUnknownSync(schema)({ layout: { x: 2 } })).toEqual({ layout: { x: 2 } })
+		expect(Schema.decodeSync(schema)({ layout: '{"x":1}' })).toEqual({ layout: { x: 1 } })
+		expect(Schema.decodeSync(schema)({ layout: { x: 2 } })).toEqual({ layout: { x: 2 } })
 		expect(Exit.isFailure(decode(schema, { layout: '{"x":"one"}' }))).toBe(true)
 	})
 
@@ -65,18 +67,25 @@ describe("MCP parameter vocabulary", () => {
 			expect(published).toContain("at most 1 day")
 		})
 
-		it("rejects a window wider than the cap as an input error naming the fix", async () => {
-			const params = Schema.decodeUnknownSync(schema)({
+		it("narrows a window wider than the cap and records why", async () => {
+			const params = Schema.decodeSync(schema)({
 				start_time: "2026-09-01 00:00:00",
 				end_time: "2026-09-03 00:00:00",
 			})
-			const exit = await Effect.runPromiseExit(window.resolve(params, "search_traces"))
-			expect(Exit.isFailure(exit)).toBe(true)
-			expect(JSON.stringify(exit)).toContain("Time range too large for `search_traces`")
+			const notes = new WindowNotes()
+			const range = await Effect.runPromise(
+				window
+					.resolve(params, "search_traces")
+					.pipe(Effect.provideService(CurrentWindowNotes, notes)),
+			)
+			expect(range).toEqual({ st: "2026-09-02 00:00:00", et: "2026-09-03 00:00:00" })
+			expect(Arr.join(notes.notices, ",")).toContain("`search_traces` covers at most 1 day")
+			const rendered = notes.decorate({ title: "T", scope: [["Time range", "x"]], blocks: [] })
+			expect(rendered.scope?.at(-1)?.[0]).toBe("Now (UTC)")
 		})
 
 		it("rejects an inverted window", async () => {
-			const params = Schema.decodeUnknownSync(schema)({
+			const params = Schema.decodeSync(schema)({
 				start_time: "2026-09-03 00:00:00",
 				end_time: "2026-09-01 00:00:00",
 			})
@@ -85,12 +94,22 @@ describe("MCP parameter vocabulary", () => {
 		})
 
 		it("accepts ISO 8601 and the warehouse format alike", async () => {
-			const params = Schema.decodeUnknownSync(schema)({
+			const params = Schema.decodeSync(schema)({
 				start_time: "2026-09-01T00:00:00Z",
 				end_time: "2026-09-01 03:00:00",
 			})
 			const range = await Effect.runPromise(window.resolve(params, "find_errors"))
 			expect(range).toEqual({ st: "2026-09-01 00:00:00", et: "2026-09-01 03:00:00" })
 		})
+	})
+
+	it("reads a dashboard id as its UUID or its REST id, and leaves another resource's REST id as sent", () => {
+		const schema = Schema.Struct({ dashboard_id: P.resourceId("dashboard", "Dashboard") })
+		const uuid = "018f2b3c-4d5e-6f70-8192-a3b4c5d6e7f8"
+		const foreign = encodePublicId(PublicIdPrefixes.alertRule, uuid)
+		const read = (value: string) => Schema.decodeSync(schema)({ dashboard_id: value }).dashboard_id
+		expect(read(encodePublicId(PublicIdPrefixes.dashboard, uuid))).toBe(uuid)
+		expect(read(` ${uuid} `)).toBe(uuid)
+		expect(read(foreign)).toBe(foreign)
 	})
 })

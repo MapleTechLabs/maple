@@ -10,7 +10,7 @@
  * and a run whose last step is old enough to read as stalled.
  */
 import { V2Investigation } from "@maple/domain/http/v2"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 /**
  * Fixtures are decoded, not asserted.
@@ -73,8 +73,8 @@ const base = (overrides: Record<string, unknown>): V2Investigation =>
 	})
 
 const steps = (labels: ReadonlyArray<string>, lastAt: number) =>
-	labels.map((label, index) => ({
-		tool: label.split(" ")[0]!.toLowerCase(),
+	Arr.map(labels, (label, index) => ({
+		tool: Str.toLowerCase(Str.split(" ")(label)[0]),
 		label,
 		at: lastAt - (labels.length - 1 - index) * 9_000,
 	}))

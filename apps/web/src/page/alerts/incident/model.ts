@@ -1,0 +1,47 @@
+import { AlertDeliveryEventDocument } from "@maple/domain/http"
+import { V2AlertIncidentEvent, V2Investigation, V2Slo, V2UptimeMonitor } from "@maple/domain/http/v2"
+import {
+	AlertIncidentRowSchema,
+	AlertRuleRowSchema,
+	AlertRuleStateRowSchema,
+} from "@maple/web-data/collections/alerts"
+import { Schema } from "effect"
+import * as Chart from "@maple/views/charts/chart"
+import { ChartRuntime } from "@maple/views/charts/chart-runtime"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import { CheckSummary } from "../shared/check-summary"
+import { PreviewSlot } from "../shared/preview"
+
+// `/alerts/incidents/$incidentId`.
+
+const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
+
+export const Model = Schema.Struct({
+	incidentId: Schema.String,
+	/** `clockAtSync`: the wall clock to the minute, read when the incident first arrives. */
+	nowMs: Schema.NullOr(Schema.Number),
+	incidents: Rows(AlertIncidentRowSchema),
+	rules: Rows(AlertRuleRowSchema),
+	states: Rows(AlertRuleStateRowSchema),
+	preview: PreviewSlot,
+	/** What the evaluator recorded over the range: the chart's line when the query cannot be replayed. */
+	checks: KeyedSchema(CheckSummary, LoadFailure),
+	deliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
+	investigation: KeyedSchema(Schema.NullOr(V2Investigation), LoadFailure),
+	/** Acknowledgement history, refetched whenever the incident's acknowledgement changes. */
+	activity: KeyedSchema(Schema.Array(V2AlertIncidentEvent), LoadFailure),
+	/** An acknowledge or unacknowledge request is running. */
+	isUpdatingAcknowledgement: Schema.Boolean,
+	/** An SLO incident's link to its SLO: `slos.list`, read only for one. */
+	slos: KeyedSchema(Schema.Array(V2Slo), LoadFailure),
+	/** An uptime incident's link to its monitor: `uptimeMonitors.list`, read only for one. */
+	monitors: KeyedSchema(Schema.Array(V2UptimeMonitor), LoadFailure),
+	/** `useAsyncAction`: the create request is running, so repeat clicks cannot start duplicates. */
+	isStartingInvestigation: Schema.Boolean,
+	chart: Chart.Model,
+	chartRuntime: ChartRuntime,
+	themeColors: Schema.NullOr(ThemeColors),
+})
+export type Model = typeof Model.Type

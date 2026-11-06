@@ -11,7 +11,7 @@
  * Consequences worth knowing before adding to this group:
  *
  *   - `requiredScopeForRoute` would derive the family `share` from the path,
- *     but it is only ever called by `ApiAuthorizationV2Layer`, which these
+ *     but it is only ever called by `ApiAuthorizationV2Live`, which these
  *     routes do not run. There is no `share:read` scope and nothing issues one.
  *   - The operations publish `security: []`. That is derived from the absent
  *     middleware, not annotated, and it is accurate: no credential is required.
@@ -41,7 +41,7 @@
  * unfurls the link. It takes a signed share id instead (`shareOgId`), which is
  * not a credential and cannot be turned back into a token.
  */
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { ChartTimeseries, ShareChartRequest, ShareChartResponse } from "../share-chart"
 import {
 	ShareNotConfiguredError,

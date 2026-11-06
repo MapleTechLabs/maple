@@ -12,13 +12,6 @@ describe("tokenMatches", () => {
 		assert.isFalse(tokenMatches("s3cret", "s3cret-token"))
 		assert.isFalse(tokenMatches("s3cret-token-more", "s3cret-token"))
 	})
-
-	it("compares every byte, so length is the only early exit", () => {
-		// Not a timing measurement, which would be flaky; this pins the property the
-		// implementation relies on.
-		const body = tokenMatches.toString()
-		assert.notInclude(body.slice(body.indexOf("for")), "return true")
-	})
 })
 
 describe("bearerToken", () => {

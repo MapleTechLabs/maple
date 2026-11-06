@@ -2,7 +2,7 @@
 // Local) maps its own query results onto these shapes, so the map itself never
 // learns which backend answered.
 
-export type ServicePlatform = "kubernetes" | "cloudflare" | "lambda" | "web" | "unknown"
+export type ServicePlatform = "kubernetes" | "cloudflare" | "gcp" | "lambda" | "web" | "unknown"
 
 /** One service-to-service edge over the window. */
 export interface ServiceMapEdgeRow {

@@ -1,5 +1,4 @@
-import { Machine } from "@typeonce/effect-machine"
-import { Effect, Schema } from "effect"
+import { Effect } from "effect"
 
 /**
  * THE breach/recovery hysteresis shared by the two incident paths.
@@ -7,215 +6,27 @@ import { Effect, Schema } from "effect"
  * `advanceAlertCounters` (user-configured rules) and `decideTransition` (the
  * zero-config anomaly detector) were the same mechanic spelled twice: breach on
  * N consecutive ticks to open, be healthy on M consecutive ticks to resolve.
- * The anomaly copy additionally guards re-opening with a cooldown. They agreed
- * only by luck, which is the shape of divergence that survives review.
+ * The anomaly copy additionally guards re-opening with a cooldown.
  *
- * Planned, never started: every caller is a cron tick holding a Postgres row,
- * so `Machine.plan` folds one observation into one snapshot with no runtime,
- * no fibers, and no timers. Wall time arrives on the event because a tick knows
- * `now` and the planner does not.
+ * Every caller is a cron tick holding a Postgres row, so this folds one
+ * observation into the row's counters with no runtime, fibers, or timers.
+ * Wall time arrives as an argument because a tick knows `now`.
  */
 
-const HysteresisConfig = Schema.Struct({
+export interface HysteresisConfig {
 	/** Consecutive breaching ticks before an incident opens. */
-	breachesToOpen: Schema.Number,
+	readonly breachesToOpen: number
 	/** Consecutive healthy ticks before an open incident resolves. */
-	healthyToResolve: Schema.Number,
+	readonly healthyToResolve: number
 	/** Quiet period after a resolve during which re-opening is suppressed. 0 disables it. */
-	cooldownMs: Schema.Number,
-})
-export type HysteresisConfig = Schema.Schema.Type<typeof HysteresisConfig>
-
-/**
- * Counters saturate at their requirement because they are only ever compared
- * with `>=`. That keeps open/resolve behaviour identical while letting a
- * steady-state tick recognise its state as unchanged and skip the row upsert.
- */
-export const HysteresisStates = Machine.state({
-	states: {
-		Clear: Schema.TaggedStruct("Clear", {
-			consecutiveHealthy: Schema.Number,
-			/** Set only while a post-resolve cooldown is still running. */
-			cooldownUntilMs: Schema.NullOr(Schema.Number),
-		}),
-		Breaching: Schema.TaggedStruct("Breaching", {
-			consecutiveBreaches: Schema.Number,
-			cooldownUntilMs: Schema.NullOr(Schema.Number),
-		}),
-		Open: Schema.TaggedStruct("Open", {
-			consecutiveBreaches: Schema.Number,
-			consecutiveHealthy: Schema.Number,
-		}),
-	},
-})
-
-const targets = Machine.targets(HysteresisStates)
-
-/** One evaluated window, in the order the scheduler saw it. */
-export const HysteresisEvent = Machine.eventsFromSchemas(
-	Schema.TaggedUnion({
-		Breached: { nowMs: Schema.Number, config: HysteresisConfig },
-		Recovered: { nowMs: Schema.Number, config: HysteresisConfig },
-		/** Too few samples to judge: evidence of nothing, in either direction. */
-		Skipped: {},
-	}),
-)
-
-export const HysteresisEmit = Machine.emittedEventsFromSchemas(
-	Schema.TaggedUnion({
-		IncidentOpened: { atMs: Schema.Number },
-		IncidentResolved: { atMs: Schema.Number },
-	}),
-)
-
-/** Whether a cooldown recorded at `untilMs` is still suppressing re-opens at `nowMs`. */
-const cooling = (untilMs: number | null, nowMs: number): boolean => untilMs !== null && nowMs < untilMs
-
-/** A cooldown that has elapsed is dropped so the row stops carrying dead weight. */
-const carryCooldown = (untilMs: number | null, nowMs: number): number | null =>
-	cooling(untilMs, nowMs) ? untilMs : null
-
-export const IncidentHysteresis = Machine.make({
-	id: "IncidentHysteresis",
-	root: HysteresisStates,
-	events: HysteresisEvent,
-	emittedEvents: HysteresisEmit,
-	branches: {
-		breach: {
-			breaching: { target: targets.root.Breaching },
-			opened: { target: targets.root.Open },
-		},
-		recover: {
-			open: { target: targets.root.Open },
-			resolved: { target: targets.root.Clear },
-		},
-	},
-}).handle({
-	initial: {
-		target: targets.root.Clear,
-		data: () => ({ consecutiveHealthy: 0, cooldownUntilMs: null }),
-	},
-	states: {
-		Clear: {
-			on: {
-				Breached: {
-					branches: "breach",
-					resolve: ({ state, event, select }, enqueue) => {
-						const consecutiveBreaches = Math.min(1, event.config.breachesToOpen)
-						if (
-							consecutiveBreaches >= event.config.breachesToOpen &&
-							!cooling(state.cooldownUntilMs, event.nowMs)
-						) {
-							enqueue.emit(HysteresisEmit.IncidentOpened({ atMs: event.nowMs }))
-							return select.opened({ data: { consecutiveBreaches, consecutiveHealthy: 0 } })
-						}
-						return select.breaching({
-							data: {
-								consecutiveBreaches,
-								cooldownUntilMs: carryCooldown(state.cooldownUntilMs, event.nowMs),
-							},
-						})
-					},
-				},
-				Recovered: {
-					update: targets.root.Clear,
-					data: ({ state, event }) => ({
-						consecutiveHealthy: Math.min(
-							state.consecutiveHealthy + 1,
-							event.config.healthyToResolve,
-						),
-						cooldownUntilMs: carryCooldown(state.cooldownUntilMs, event.nowMs),
-					}),
-				},
-				Skipped: { none: true },
-			},
-		},
-		Breaching: {
-			on: {
-				Breached: {
-					branches: "breach",
-					resolve: ({ state, event, select }, enqueue) => {
-						const consecutiveBreaches = Math.min(
-							state.consecutiveBreaches + 1,
-							event.config.breachesToOpen,
-						)
-						if (
-							consecutiveBreaches >= event.config.breachesToOpen &&
-							!cooling(state.cooldownUntilMs, event.nowMs)
-						) {
-							enqueue.emit(HysteresisEmit.IncidentOpened({ atMs: event.nowMs }))
-							return select.opened({ data: { consecutiveBreaches, consecutiveHealthy: 0 } })
-						}
-						return select.breaching({
-							data: {
-								consecutiveBreaches,
-								cooldownUntilMs: carryCooldown(state.cooldownUntilMs, event.nowMs),
-							},
-						})
-					},
-				},
-				Recovered: {
-					target: targets.root.Clear,
-					data: ({ state, event }) => ({
-						consecutiveHealthy: Math.min(1, event.config.healthyToResolve),
-						cooldownUntilMs: carryCooldown(state.cooldownUntilMs, event.nowMs),
-					}),
-				},
-				Skipped: { none: true },
-			},
-		},
-		Open: {
-			on: {
-				Breached: {
-					update: targets.root.Open,
-					data: ({ state, event }) => ({
-						consecutiveBreaches: Math.min(
-							state.consecutiveBreaches + 1,
-							event.config.breachesToOpen,
-						),
-						consecutiveHealthy: 0,
-					}),
-				},
-				Recovered: {
-					branches: "recover",
-					resolve: ({ state, event, select }, enqueue) => {
-						const consecutiveHealthy = Math.min(
-							state.consecutiveHealthy + 1,
-							event.config.healthyToResolve,
-						)
-						if (consecutiveHealthy < event.config.healthyToResolve) {
-							// A healthy window clears the breach run even while the incident
-							// stands: the run that opened it is over, and a later re-breach
-							// starts counting from one.
-							return select.open({ data: { consecutiveBreaches: 0, consecutiveHealthy } })
-						}
-						enqueue.emit(HysteresisEmit.IncidentResolved({ atMs: event.nowMs }))
-						return select.resolved({
-							data: {
-								consecutiveHealthy,
-								cooldownUntilMs:
-									event.config.cooldownMs > 0
-										? event.nowMs + event.config.cooldownMs
-										: null,
-							},
-						})
-					},
-				},
-				Skipped: { none: true },
-			},
-		},
-	},
-})
+	readonly cooldownMs: number
+}
 
 /**
  * The persisted shape both callers already store: `alert_rule_states` and
  * `anomaly_detector_states` keep counters plus whether an incident stands.
- *
- * The row stays the storage format and the machine stays the decision layer —
- * the snapshot is rebuilt from the row on every tick rather than persisted.
  * Incident *identity* (attach, reopen, the per-tick open budget) lives in the
- * services, so a plan that says "open" can still be deferred without the
- * machine and the world disagreeing about what is open.
+ * services, so a fold that says "open" can still be deferred.
  */
 export interface HysteresisRow {
 	readonly consecutiveBreaches: number
@@ -231,109 +42,70 @@ export interface HysteresisOutcome {
 	readonly consecutiveHealthy: number
 }
 
-type HysteresisSnapshot = Machine.Snapshot<typeof IncidentHysteresis>
+/** Whether a resolve at `lastResolvedAtMs` still suppresses re-opens at `nowMs`. */
+const cooling = (row: HysteresisRow, config: HysteresisConfig, nowMs: number): boolean =>
+	row.lastResolvedAtMs !== null && config.cooldownMs > 0 && nowMs < row.lastResolvedAtMs + config.cooldownMs
 
 /**
- * Rebuild the machine's view of a rule from its row.
- *
- * Goes through `decodeSnapshot` rather than asserting the shape: the encoded
- * form is the library's own persistence boundary, so a state renamed or a field
- * added above fails here with a schema error instead of silently planning from
- * a snapshot the machine never agreed to.
+ * Counters saturate at their requirement because they are only ever compared
+ * with `>=`. That keeps open/resolve behaviour identical while letting a
+ * steady-state tick recognise its row as unchanged and skip the upsert.
  */
-const snapshotFrom = (
+const fold = (
 	row: HysteresisRow,
+	status: "breached" | "healthy" | "skipped",
 	config: HysteresisConfig,
-): Effect.Effect<HysteresisSnapshot, Machine.MachineSchemaDecodeError> => {
-	const cooldownUntilMs =
-		row.lastResolvedAtMs !== null && config.cooldownMs > 0
-			? row.lastResolvedAtMs + config.cooldownMs
-			: null
-	const active = row.incidentOpen
-		? {
-				path: "Open",
-				value: {
-					_tag: "Open",
-					consecutiveBreaches: row.consecutiveBreaches,
-					consecutiveHealthy: row.consecutiveHealthy,
-				},
-			}
-		: row.consecutiveBreaches > 0
-			? {
-					path: "Breaching",
-					value: {
-						_tag: "Breaching",
-						consecutiveBreaches: row.consecutiveBreaches,
-						cooldownUntilMs,
-					},
-				}
-			: {
-					path: "Clear",
-					value: {
-						_tag: "Clear",
-						consecutiveHealthy: row.consecutiveHealthy,
-						cooldownUntilMs,
-					},
-				}
-	// The encoded form lists the root node ahead of its active child.
-	return Machine.decodeSnapshot(IncidentHysteresis, {
-		_tag: "MachineSnapshot",
-		version: 2,
-		active: [{ path: "" }, active],
-	})
-}
-
-/** The counters a snapshot implies, in the columns the rows actually have. */
-export const countersOf = (
-	snapshot: HysteresisSnapshot,
-): { readonly consecutiveBreaches: number; readonly consecutiveHealthy: number } => {
-	const value = snapshot.state.value
-	switch (value._tag) {
-		case "Clear":
-			return { consecutiveBreaches: 0, consecutiveHealthy: value.consecutiveHealthy }
-		case "Breaching":
-			return { consecutiveBreaches: value.consecutiveBreaches, consecutiveHealthy: 0 }
-		case "Open":
+	nowMs: number,
+): HysteresisOutcome => {
+	const { breachesToOpen, healthyToResolve } = config
+	if (row.incidentOpen) {
+		if (status === "skipped") {
 			return {
-				consecutiveBreaches: value.consecutiveBreaches,
-				consecutiveHealthy: value.consecutiveHealthy,
+				transition: "noop",
+				consecutiveBreaches: row.consecutiveBreaches,
+				consecutiveHealthy: row.consecutiveHealthy,
 			}
+		}
+		if (status === "breached") {
+			return {
+				transition: "continue",
+				consecutiveBreaches: Math.min(row.consecutiveBreaches + 1, breachesToOpen),
+				consecutiveHealthy: 0,
+			}
+		}
+		// A healthy window clears the breach run even while the incident stands:
+		// the run that opened it is over, and a later re-breach counts from one.
+		const consecutiveHealthy = Math.min(row.consecutiveHealthy + 1, healthyToResolve)
+		return {
+			transition: consecutiveHealthy < healthyToResolve ? "noop" : "resolve",
+			consecutiveBreaches: 0,
+			consecutiveHealthy,
+		}
+	}
+
+	// Not open: a breach run in progress owns the row, otherwise the healthy run does.
+	const breaching = row.consecutiveBreaches > 0
+	const priorBreaches = breaching ? row.consecutiveBreaches : 0
+	const priorHealthy = breaching ? 0 : row.consecutiveHealthy
+	if (status === "skipped") {
+		return { transition: "noop", consecutiveBreaches: priorBreaches, consecutiveHealthy: priorHealthy }
+	}
+	if (status === "breached") {
+		const consecutiveBreaches = Math.min(priorBreaches + 1, breachesToOpen)
+		const opens = consecutiveBreaches >= breachesToOpen && !cooling(row, config, nowMs)
+		return { transition: opens ? "open" : "noop", consecutiveBreaches, consecutiveHealthy: 0 }
+	}
+	return {
+		transition: "noop",
+		consecutiveBreaches: 0,
+		consecutiveHealthy: Math.min(priorHealthy + 1, healthyToResolve),
 	}
 }
 
-/**
- * Fold one evaluated window into the persisted counters and a verdict.
- *
- * `Machine.plan` is pure — no runtime, no fibers, no timers — which is what a
- * cron tick holding a row needs. Its failures (`InfiniteTransitionError`,
- * `MachineSchemaDecodeError`) can only mean the model above is wrong, never
- * that this observation was bad, so they die rather than widening every
- * caller's error channel with an impossibility.
- */
+/** Fold one evaluated window into the persisted counters and a verdict. */
 export const foldObservation = (
 	row: HysteresisRow,
 	status: "breached" | "healthy" | "skipped",
 	config: HysteresisConfig,
 	nowMs: number,
-): Effect.Effect<HysteresisOutcome> =>
-	Effect.gen(function* () {
-		const snapshot = yield* snapshotFrom(row, config)
-		const event =
-			status === "skipped"
-				? HysteresisEvent.Skipped()
-				: status === "breached"
-					? HysteresisEvent.Breached({ nowMs, config })
-					: HysteresisEvent.Recovered({ nowMs, config })
-		const planned = yield* Machine.plan(IncidentHysteresis, snapshot, event)
-		const counters = countersOf(planned.next)
-		const opened = planned.emittedEvents.some((e) => e._tag === "IncidentOpened")
-		const resolved = planned.emittedEvents.some((e) => e._tag === "IncidentResolved")
-		const transition: HysteresisOutcome["transition"] = opened
-			? "open"
-			: resolved
-				? "resolve"
-				: row.incidentOpen && status === "breached"
-					? "continue"
-					: "noop"
-		return { transition, ...counters }
-	}).pipe(Effect.orDie)
+): Effect.Effect<HysteresisOutcome> => Effect.sync(() => fold(row, status, config, nowMs))

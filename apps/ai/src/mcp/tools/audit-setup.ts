@@ -1,6 +1,6 @@
 import { McpQueryError, type McpToolRegistrar } from "./types"
 import { truncate } from "../lib/format"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { AuditSetupOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
@@ -21,10 +21,13 @@ const STATUS_RANK: Record<AuditCheckResult["status"], number> = {
 
 type RankedCheck = Pick<AuditCheckResult, "id" | "status" | "severity">
 
-export const byUrgency = (a: RankedCheck, b: RankedCheck) =>
-	STATUS_RANK[a.status] - STATUS_RANK[b.status] ||
-	SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
-	a.id.localeCompare(b.id)
+export const byUrgency = (a: RankedCheck, b: RankedCheck) => {
+	const byStatus = STATUS_RANK[a.status] - STATUS_RANK[b.status]
+	if (byStatus !== 0) return byStatus
+	const bySeverity = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]
+	if (bySeverity !== 0) return bySeverity
+	return Str.localeCompare(b.id)(a.id)
+}
 
 interface AffectedLike {
 	readonly affected: ReadonlyArray<{ readonly name: string; readonly note?: string | null | undefined }>
@@ -34,10 +37,12 @@ interface AffectedLike {
 /** Affected entities inline into the table cell: the agent reads them as evidence, not as a list. */
 export const formatAffected = (check: AffectedLike): string => {
 	if (check.affected.length === 0) return "—"
-	const shown = check.affected
-		.slice(0, 3)
-		.map((entity) => (entity.note ? `${entity.name} (${entity.note})` : entity.name))
-		.join("; ")
+	const shown = Arr.join(
+		Arr.map(check.affected.slice(0, 3), (entity) =>
+			entity.note ? `${entity.name} (${entity.note})` : entity.name,
+		),
+		"; ",
+	)
 	const hidden = check.affectedCount - Math.min(check.affected.length, 3)
 	return truncate(hidden > 0 ? `${shown}; +${hidden} more` : shown, 160)
 }
@@ -45,6 +50,7 @@ export const formatAffected = (check: AffectedLike): string => {
 export function registerAuditSetupTool(server: McpToolRegistrar) {
 	server.define({
 		name: "audit_setup",
+		title: "Audit Setup",
 		description:
 			"Audit the organization's whole Maple setup and report every check with its outcome: alert routing and " +
 			"delivery (rules that will never notify anyone), error-notification wiring, what each service actually " +
@@ -52,7 +58,7 @@ export function registerAuditSetupTool(server: McpToolRegistrar) {
 			"trace completeness (orphan spans, traces with no root) and integration health. Telemetry-backed checks " +
 			"skip when the warehouse is unavailable; configuration checks always run. Answers 'is my Maple setup " +
 			"correct' and 'why didn't anything alert me'. `get_instrumentation_recommendations` is the per-attribute " +
-			"rename list.",
+			"rename list; whether data is arriving right now is ingest_freshness / list_sources.",
 		parameters: Schema.Struct({
 			include_passing: P.optionalFlag(
 				"Also list passing and skipped checks (default false: findings only)",
@@ -77,9 +83,9 @@ export function registerAuditSetupTool(server: McpToolRegistrar) {
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				"audit.dataStatus": report.dataStatus,
-				"audit.critical": report.summary.critical,
-				"audit.warn": report.summary.warn,
+				"maple.audit.data_status": report.dataStatus,
+				"maple.audit.critical": report.summary.critical,
+				"maple.audit.warn": report.summary.warn,
 				"result.rowCount": report.checks.length,
 			})
 
@@ -98,9 +104,10 @@ export function registerAuditSetupTool(server: McpToolRegistrar) {
 			}
 			const { summary } = output
 			const showAll = output.includePassing === true
-			const visible = [...output.checks]
-				.filter((check) => showAll || check.status === "fail")
-				.sort(byUrgency)
+			const visible = Arr.filter(
+				[...output.checks],
+				(check) => showAll || check.status === "fail",
+			).sort(byUrgency)
 			const next: Array<NextCall> =
 				output.openRecommendationCount > 0
 					? [
@@ -115,7 +122,7 @@ export function registerAuditSetupTool(server: McpToolRegistrar) {
 				...(summary.critical > 0
 					? ["Fix the `critical` rows first: each one breaks a Maple feature outright."]
 					: []),
-				...(output.checks.some((check) => check.category === "traces" && check.status === "fail")
+				...(Arr.some(output.checks, (check) => check.category === "traces" && check.status === "fail")
 					? [
 							"Call `inspect_trace` on one of the sampled trace ids above to see the gap in a real waterfall.",
 						]
@@ -136,7 +143,7 @@ export function registerAuditSetupTool(server: McpToolRegistrar) {
 						? doc.text("No findings: every check passed.")
 						: doc.table(
 								["Check", "Severity", "Status", "Finding", "Affected", "Fix"],
-								visible.map((check) => [
+								Arr.map(visible, (check) => [
 									check.id,
 									check.severity,
 									check.status,
@@ -165,14 +172,14 @@ const toStructured = (report: SetupAuditReport): typeof AuditSetupOutput.Type =>
 	dataStatus: report.dataStatus,
 	telemetryChecksAvailable: report.warehouseAvailable,
 	summary: report.summary,
-	checks: report.checks.map((check) => ({
+	checks: Arr.map(report.checks, (check) => ({
 		id: check.id,
 		category: check.category,
 		title: check.title,
 		severity: check.severity,
 		status: check.status,
 		detail: check.detail,
-		affected: check.affected.map((entity) => ({
+		affected: Arr.map(check.affected, (entity) => ({
 			kind: entity.kind,
 			name: entity.name,
 			note: entity.note ?? null,

@@ -1,16 +1,17 @@
 import { deepStrictEqual, ok, rejects, strictEqual } from "node:assert"
 import { gzipSync } from "node:zlib"
-import { Effect, Result } from "effect"
+import { Effect, Result, Array as Arr, String as Str } from "effect"
 import { describe, it } from "vitest"
-import { EventingControlStoreError, OutboxEventRejected } from "../src/server/eventing/control-store"
-import { normalizeOtlpLogs } from "../src/server/eventing/otlp"
+import { EventingControlStoreError, OutboxEventRejected } from "@maple/local-server/eventing/control-store"
+import { normalizeOtlpLogs } from "@maple/local-server/eventing/otlp"
 import {
 	type LocalEventingRuntimeApi,
 	ProjectionActivationConflict,
 	SourceOccurrenceCollision,
-} from "../src/server/eventing/runtime"
-import { __testables } from "../src/server/serve"
-import { run, serveCheckpointWith, serveWith } from "./eventing-test-support"
+} from "@maple/local-server/eventing/runtime"
+import { InsertBatcher } from "@maple/local-server/insert-batcher"
+import { __testables } from "@maple/local-server/serve"
+import { run, serveCheckpointWith, serveWith, stubEventing } from "./eventing-test-support"
 
 describe("Local eventing ingest seam", () => {
 	it("requires maintenance authorization and exposes staged records only when requested", async () => {
@@ -166,7 +167,7 @@ describe("Local eventing ingest seam", () => {
 					calls.push(`claim:${consumerId}:${limit}:${leaseSeconds}`)
 					return {
 						consumerId,
-						leaseToken: "a".repeat(64),
+						leaseToken: Str.repeat(64)("a"),
 						throughSequence: 7,
 						events: [{ sequence: 7, event: { id: "event-7" } }],
 					}
@@ -286,9 +287,9 @@ describe("Local eventing ingest seam", () => {
 
 	it("rejects fractional consumer limits before calling the store", async () => {
 		const response = await serveWith(
-			{
+			stubEventing({
 				claimReady: () => Effect.die(new Error("invalid input reached the store")),
-			},
+			}),
 			__testables.handleConsumerClaim(
 				new __testables.RequestQuiescenceGate(),
 				"secret",
@@ -366,7 +367,7 @@ describe("Local eventing ingest seam", () => {
 
 		const result = await serveWith(
 			eventing as never,
-			__testables.ingest(db as never, authority as never, "logs", request),
+			__testables.ingest(new InsertBatcher(db), authority as never, "logs", request),
 		)
 		strictEqual(result.response.status, 200)
 		strictEqual(result.accepted, 1)
@@ -407,11 +408,11 @@ describe("Local eventing ingest seam", () => {
 					}),
 			} as never,
 			__testables.ingest(
-				{
+				new InsertBatcher({
 					exec: () => {
 						throw new Error("write failed")
 					},
-				} as never,
+				}),
 				{
 					isRetired: () => false,
 					filterBatch: (_datasource: string, ndjson: string) => ({
@@ -464,7 +465,7 @@ describe("Local eventing ingest seam", () => {
 					}),
 			} as never,
 			__testables.ingest(
-				{ exec: () => undefined } as never,
+				new InsertBatcher({ exec: () => undefined }),
 				{
 					isRetired: () => false,
 					filterBatch: (_datasource: string, ndjson: string) => ({
@@ -553,11 +554,12 @@ describe("Local eventing ingest seam", () => {
 		const result = await serveWith(
 			{
 				evaluateOtlp: (_signal: string, decoded: unknown) => {
-					const projected = run(normalizeOtlpLogs(decoded)).filter(
+					const projected = Arr.filter(
+						run(normalizeOtlpLogs(decoded)),
 						(signal) => signal.fields.get("signal:event.name")?.value === "project.me",
 					)
 					return Effect.succeed({
-						events: projected.map((_signal, index) => ({ id: `event-${index + 1}` })),
+						events: Arr.map(projected, (_signal, index) => ({ id: `event-${index + 1}` })),
 						recoveredEventIds: [],
 						failures: [],
 						typeMismatchFields: [],
@@ -566,18 +568,18 @@ describe("Local eventing ingest seam", () => {
 				persistFailures: () => Effect.void,
 				stage: (events: readonly { readonly id: string }[]) =>
 					Effect.sync(() => {
-						stagedIds = events.map(({ id }) => id)
+						stagedIds = Arr.map(events, ({ id }) => id)
 						return { inserted: events.length, deduplicated: 0, dropped: 0, eventIds: stagedIds }
 					}),
 				markReady: () => Effect.void,
 			} as never,
 			__testables.ingest(
-				{ exec: () => (inserted = true) } as never,
+				new InsertBatcher({ exec: () => (inserted = true) }),
 				{
 					isRetired: () => false,
 					filterBatch: (_datasource: string, ndjson: string) => ({
 						ndjson,
-						accepted: ndjson.trim().split("\n").length,
+						accepted: Str.split("\n")(Str.trim(ndjson)).length,
 						rejected: 0,
 					}),
 				} as never,
@@ -602,7 +604,7 @@ describe("Local eventing ingest seam", () => {
 					evaluateOtlp: () => failure,
 				} as never,
 				__testables.ingest(
-					{ exec: () => undefined } as never,
+					new InsertBatcher({ exec: () => undefined }),
 					{ isRetired: () => false } as never,
 					"logs",
 					new Request("http://127.0.0.1/v1/logs", {
@@ -642,7 +644,7 @@ describe("Local eventing ingest seam", () => {
 					stage: () => failure,
 				} as never,
 				__testables.ingest(
-					{ exec: () => undefined } as never,
+					new InsertBatcher({ exec: () => undefined }),
 					{ isRetired: () => false } as never,
 					"logs",
 					new Request("http://127.0.0.1/v1/logs", {
@@ -686,7 +688,7 @@ describe("Local eventing ingest seam", () => {
 					Effect.fail(new EventingControlStoreError({ message: "database is locked" })),
 			} as never,
 			__testables.ingest(
-				{ exec: () => undefined } as never,
+				new InsertBatcher({ exec: () => undefined }),
 				{
 					isRetired: () => false,
 					filterBatch: (_datasource: string, ndjson: string) => ({

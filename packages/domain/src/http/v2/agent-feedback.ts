@@ -1,5 +1,5 @@
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
-import { Schema } from "effect"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
+import { Schema, String as Str } from "effect"
 import {
 	AgentFeedbackImpact,
 	AgentFeedbackKind,
@@ -13,7 +13,7 @@ import { V2ParameterInvalid } from "./errors"
 import { publicError } from "./public-error"
 import { AgentFeedbackPublicId } from "./resource-ids"
 
-const isNotBlank = Schema.makeFilter((value: string) => value.trim().length > 0, {
+const isNotBlank = Schema.makeFilter((value: string) => Str.trim(value).length > 0, {
 	description: "Must contain a non-whitespace character",
 })
 
@@ -64,7 +64,8 @@ export const V2AgentFeedback = Schema.Struct({
 	}),
 	agent: V2AgentFeedbackAgent,
 	source: AgentFeedbackSource.annotate({
-		description: "`mcp` when sent through the `send_maple_feedback` tool, `api` when sent to this endpoint.",
+		description:
+			"`mcp` when sent through the `send_maple_feedback` tool, `api` when sent to this endpoint.",
 	}),
 	created_at: Timestamp,
 }).annotate({

@@ -11,14 +11,14 @@ import { ChatAlertPoster } from "@maple/backend/services/alerts/ChatAlertPoster"
  * via a custom `fetch`.
  */
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Redacted, Schema } from "effect"
-import { FetchHttpClient, HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { Clock, ConfigProvider, Context, Effect, Layer, ManagedRuntime, Redacted, Schema } from "effect"
+import { FetchHttpClient, HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { BucketCacheService } from "@maple/query-engine/caching"
 import { EdgeCacheService } from "@maple/cache"
-import type { ScopedPlanStatusSession } from "alchemy/Cli/Cli"
+import { noopSession } from "alchemy/Report"
 import { Stack } from "alchemy/Stack"
 import { Stage } from "alchemy/Stage"
 import {
@@ -36,17 +36,20 @@ import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { AlertRuntime, AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
+import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
-import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
+import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
+import { LinearIssueTracker } from "@maple/backend/services/alerts/LinearIssueTracker"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -91,11 +94,7 @@ const warehouseStub = makeWarehouseServiceStub({
 	ingest: () => Effect.void,
 })
 
-const session: ScopedPlanStatusSession = {
-	emit: () => Effect.void,
-	done: () => Effect.void,
-	note: () => Effect.void,
-}
+const session = noopSession
 
 const makeHarness = () => {
 	const testDb = createTestDb(createdDbs)
@@ -111,12 +110,20 @@ const makeHarness = () => {
 		Layer.provide(configLive),
 	)
 	const runtimeLive = Layer.succeed(AlertRuntime, {
-		now: Effect.sync(() => Date.now()),
+		now: Clock.currentTimeMillis,
 		makeUuid: () => crypto.randomUUID(),
-		fetch: globalThis.fetch,
 		deliveryTimeoutMs: () => 15_000,
+		schedulerTickBudgetMs: () => 25_000,
+		schedulerEvalTimeoutMs: () => 15_000,
+		schedulerSpreadMs: () => 0,
 	})
-	const hazelOAuthLive = HazelOAuthService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer)))
+	const linearOAuthLive = LinearOAuthService.layer.pipe(
+		Layer.provide(Layer.mergeAll(envLive, testDb.layer)),
+	)
+	const linearIssuesLive = Layer.effect(LinearIssueTracker, LinearIssueTracker.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
+		Layer.provide(Layer.mergeAll(linearOAuthLive, testDb.layer)),
+	)
 	const emailLive = Layer.succeed(EmailService, {
 		isConfigured: false,
 		send: () => Effect.void,
@@ -133,9 +140,18 @@ const makeHarness = () => {
 		Layer.provide(Layer.mergeAll(envLive, testDb.layer, edgeCacheLive)),
 	)
 	const alertDestinationsLive = Layer.effect(AlertDestinationsService, AlertDestinationsService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(
-			Layer.mergeAll(envLive, testDb.layer, runtimeLive, hazelOAuthLive, emailLive, orgMembersLive),
+			Layer.mergeAll(
+				envLive,
+				testDb.layer,
+				runtimeLive,
+				linearOAuthLive,
+				linearIssuesLive,
+				emailLive,
+				orgMembersLive,
+			),
 		),
 	)
 	const alertReadModelsLive = Layer.effect(AlertReadModelsService, AlertReadModelsService.make).pipe(
@@ -145,6 +161,7 @@ const makeHarness = () => {
 		Layer.provide(Layer.mergeAll(testDb.layer, runtimeLive)),
 	)
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(
 			Layer.effect(MobilePushService, MobilePushService.make).pipe(
@@ -160,7 +177,8 @@ const makeHarness = () => {
 				queryEngineLive,
 				warehouseLive,
 				runtimeLive,
-				hazelOAuthLive,
+				linearOAuthLive,
+				linearIssuesLive,
 				emailLive,
 				orgMembersLive,
 				orgChSettingsLive,
@@ -168,6 +186,10 @@ const makeHarness = () => {
 				alertDestinationsLive,
 				alertReadModelsLive,
 				alertRulesLive,
+				UptimeAlertSource.layer.pipe(Layer.provide(testDb.layer)),
+				Layer.effect(SloAlertSource, SloAlertSource.make).pipe(
+					Layer.provide(Layer.mergeAll(testDb.layer, warehouseLive)),
+				),
 			),
 		),
 	)
@@ -188,7 +210,7 @@ const makeHarness = () => {
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),
@@ -197,8 +219,8 @@ const makeHarness = () => {
 		disableLogger: true,
 	})
 	const runtime = ManagedRuntime.make(servicesLive)
-	const ORG = Schema.decodeUnknownSync(OrgId)("org_alchemy_e2e")
-	const USER = Schema.decodeUnknownSync(UserId)("user_alchemy_e2e")
+	const ORG = Schema.decodeSync(OrgId)("org_alchemy_e2e")
+	const USER = Schema.decodeSync(UserId)("user_alchemy_e2e")
 
 	const bootstrapKey = () =>
 		runtime.runPromise(

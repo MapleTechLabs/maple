@@ -1,16 +1,17 @@
-import { describe, expect, it } from "vitest"
-import { Effect } from "effect"
-import { compileUnsafe, compileUnionUnsafe, type CompiledQuery } from "@maple-dev/effect-clickhouse"
+import { assert, describe, expect, it } from "vitest"
+import { DateTime, Effect, Array as Arr, String as Str } from "effect"
+import { compileUnsafe, compileUnionUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { orgTelemetryPulseQuery, serviceLivenessQuery } from "./liveness"
+import { OrgId } from "@maple/domain"
 
 const pulseParams = {
-	orgId: "org_123",
+	orgId: OrgId.make("org_123"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-01 00:10:00",
 }
 
 const livenessParams = {
-	orgId: "org_123",
+	orgId: OrgId.make("org_123"),
 	serviceName: "checkout",
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-01 00:30:00",
@@ -35,18 +36,17 @@ describe("serviceLivenessQuery", () => {
 
 		// The pair is the whole point: a raw collapse with a steady corrected
 		// count is a sampling change, not a traffic change.
-		expect(sql).toContain("sum(SpanCount) AS spanCount")
-		expect(sql).toContain("sum(EstimatedSpanCount) AS estimatedSpanCount")
-		expect(sql).toContain("sum(ErrorCount) AS errorCount")
-		expect(sql).toContain("sum(EstimatedErrorCount) AS estimatedErrorCount")
-		expect(sql).toContain("uniq(Minute) AS minutesWithData")
-		expect(sql).toContain("toString(max(Minute)) AS lastSeen")
+		expect(sql).toContain("sum(service_operations_minutely.SpanCount) AS spanCount")
+		expect(sql).toContain("sum(service_operations_minutely.EstimatedSpanCount) AS estimatedSpanCount")
+		expect(sql).toContain("sum(service_operations_minutely.ErrorCount) AS errorCount")
+		expect(sql).toContain("sum(service_operations_minutely.EstimatedErrorCount) AS estimatedErrorCount")
+		expect(sql).toContain("uniq(service_operations_minutely.Minute) AS minutesWithData")
+		expect(sql).toContain("max(service_operations_minutely.Minute) AS lastSeen")
 	})
 
 	it("is a group-less single-row aggregate", () => {
 		const { sql } = compileUnsafe(serviceLivenessQuery(), livenessParams)
 		expect(sql).not.toContain("GROUP BY")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("omits the environment predicate unless asked to scope to one", () => {
@@ -74,8 +74,10 @@ describe("serviceLivenessQuery", () => {
 				lastSeen: "2024-01-01 00:29:00",
 			},
 		])
+		assert.isDefined(byo)
 		expect(byo?.spanCount).toBe(14203)
 		expect(byo?.errorCount).toBe(0)
+		expect(DateTime.formatIso(byo.lastSeen)).toBe("2024-01-01T00:29:00.000Z")
 
 		const [managed] = decodeRows(compiled, [
 			{
@@ -96,10 +98,12 @@ describe("orgTelemetryPulseQuery", () => {
 		const { sql } = compileUnionUnsafe(orgTelemetryPulseQuery(), pulseParams)
 
 		// 2 branches → exactly 1 UNION ALL separator.
-		expect((sql.match(/UNION ALL/g) || []).length).toBe(1)
+		expect(Arr.fromIterable(Str.matchAll(/UNION ALL/g)(sql)).length).toBe(1)
 		expect(sql).toContain("FROM service_overview_spans")
 		expect(sql).toContain("FROM logs")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the signal label routes each row to its branch
 		expect(sql).toContain("'spans' AS signal")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the signal label routes each row to its branch
 		expect(sql).toContain("'logs' AS signal")
 	})
 
@@ -108,13 +112,13 @@ describe("orgTelemetryPulseQuery", () => {
 		expect(sql).toContain("count() AS count")
 		// Stringified so the DateTime (spans) / DateTime64 (logs) branches share a
 		// column type across the UNION.
-		expect(sql).toContain("toString(max(Timestamp)) AS lastSeen")
-		expect(sql).toContain("FORMAT JSON")
+		expect(sql).toContain("toString(max(service_overview_spans.Timestamp)) AS lastSeen")
+		expect(sql).toContain("toString(max(logs.Timestamp)) AS lastSeen")
 	})
 
 	it("scopes every branch by OrgId and the bounded window", () => {
 		const { sql } = compileUnionUnsafe(orgTelemetryPulseQuery(), pulseParams)
-		expect((sql.match(/OrgId = 'org_123'/g) || []).length).toBe(2)
+		expect(Arr.fromIterable(Str.matchAll(/OrgId = 'org_123'/g)(sql)).length).toBe(2)
 		expect(sql).toContain("Timestamp >= '2024-01-01 00:00:00'")
 		expect(sql).toContain("Timestamp <= '2024-01-01 00:10:00'")
 		// The log branch also carries TimestampTime, the logs partition/index key.
@@ -130,7 +134,7 @@ describe("orgTelemetryPulseQuery", () => {
 			{ signal: "spans", count: "0", lastSeen: "1970-01-01 00:00:00" },
 			{ signal: "logs", count: 42, lastSeen: "2024-01-01 00:09:00" },
 		])
-		expect(rows.map((row) => row.count)).toEqual([0, 42])
+		expect(Arr.map(rows, (row) => row.count)).toEqual([0, 42])
 	})
 
 	// Decoding rests entirely on the schema the builder derives from the SELECT:

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { Effect } from "effect"
-import { compileUnsafe, type CompiledQuery } from "@maple-dev/effect-clickhouse"
+import { DateTime, Effect } from "effect"
+import { compileUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { dailyProductEventCountQuery, dailySessionCountQuery, dailySignalVolumeQuery } from "./billing-usage"
+import { OrgId } from "@maple/domain"
 
 const params = {
-	orgId: "org_123",
+	orgId: OrgId.make("org_123"),
 	startTime: "2026-07-01 00:00:00",
 	endTime: "2026-07-31 23:59:59",
 }
@@ -18,7 +19,7 @@ describe("dailySignalVolumeQuery", () => {
 
 		expect(sql).toContain("FROM service_usage")
 		expect(sql).toContain("OrgId = 'org_123'")
-		expect(sql).toContain("toStartOfInterval(Hour, INTERVAL 86400 SECOND) AS day")
+		expect(sql).toContain("toStartOfInterval(service_usage.Hour, INTERVAL 86400 SECOND) AS day")
 		expect(sql).toContain("GROUP BY day")
 		expect(sql).toContain("ORDER BY day ASC")
 	})
@@ -35,12 +36,12 @@ describe("dailySignalVolumeQuery", () => {
 	it("sums all four metric-type columns into the one billed metrics feature", () => {
 		const { sql } = compileUnsafe(dailySignalVolumeQuery(), params)
 
-		expect(sql).toContain("sum(LogSizeBytes) AS logBytes")
-		expect(sql).toContain("sum(TraceSizeBytes) AS traceBytes")
-		expect(sql).toContain("sum(SumMetricSizeBytes)")
-		expect(sql).toContain("sum(GaugeMetricSizeBytes)")
-		expect(sql).toContain("sum(HistogramMetricSizeBytes)")
-		expect(sql).toContain("sum(ExpHistogramMetricSizeBytes)")
+		expect(sql).toContain("sum(service_usage.LogSizeBytes) AS logBytes")
+		expect(sql).toContain("sum(service_usage.TraceSizeBytes) AS traceBytes")
+		expect(sql).toContain("sum(service_usage.SumMetricSizeBytes)")
+		expect(sql).toContain("sum(service_usage.GaugeMetricSizeBytes)")
+		expect(sql).toContain("sum(service_usage.HistogramMetricSizeBytes)")
+		expect(sql).toContain("sum(service_usage.ExpHistogramMetricSizeBytes)")
 	})
 
 	it("decodes UInt64 byte sums that arrive as strings on BYO-ClickHouse", () => {
@@ -55,8 +56,9 @@ describe("dailySignalVolumeQuery", () => {
 			},
 		])
 
+		expect(compiled.rowSchemaSource).toBe("derived")
 		expect(row).toEqual({
-			day: "2026-07-01 00:00:00",
+			day: DateTime.makeUnsafe("2026-07-01T00:00:00Z"),
 			logBytes: 13_421_772_800,
 			traceBytes: 4_294_967_296,
 			metricBytes: 1_073_741_824,
@@ -70,8 +72,8 @@ describe("dailySessionCountQuery", () => {
 
 		expect(sql).toContain("FROM session_replays")
 		expect(sql).toContain("OrgId = 'org_123'")
-		expect(sql).toContain("toStartOfInterval(StartTime, INTERVAL 86400 SECOND) AS day")
-		expect(sql).toContain("uniqExact(SessionId) AS sessions")
+		expect(sql).toContain("toStartOfInterval(session_replays.StartTime, INTERVAL 86400 SECOND) AS day")
+		expect(sql).toContain("uniqExact(session_replays.SessionId) AS sessions")
 		expect(sql).not.toContain("count()")
 		expect(sql).toContain("GROUP BY day")
 	})
@@ -86,9 +88,9 @@ describe("dailySessionCountQuery", () => {
 	it("decodes a string session count", () => {
 		const compiled = compileUnsafe(dailySessionCountQuery(), params)
 
-		const [row] = decodeRows(compiled, [{ day: "2026-07-01 00:00:00", sessions: "1284" }])
+		const [row] = decodeRows(compiled, [{ day: "2026-07-01 00:00:00.000000000", sessions: "1284" }])
 
-		expect(row).toEqual({ day: "2026-07-01 00:00:00", sessions: 1284 })
+		expect(row).toEqual({ day: DateTime.makeUnsafe("2026-07-01T00:00:00Z"), sessions: 1284 })
 	})
 })
 
@@ -98,7 +100,7 @@ describe("dailyProductEventCountQuery", () => {
 
 		expect(sql).toContain("FROM product_events")
 		expect(sql).toContain("OrgId = 'org_123'")
-		expect(sql).toContain("toStartOfInterval(Timestamp, INTERVAL 86400 SECOND) AS day")
+		expect(sql).toContain("toStartOfInterval(product_events.Timestamp, INTERVAL 86400 SECOND) AS day")
 		expect(sql).toContain("count() AS events")
 		expect(sql).toContain("Kind != 'navigation'")
 		expect(sql).toContain("Timestamp >= toDateTime('2026-07-01 00:00:00')")
@@ -108,8 +110,8 @@ describe("dailyProductEventCountQuery", () => {
 	it("decodes a string event count", () => {
 		const compiled = compileUnsafe(dailyProductEventCountQuery(), params)
 
-		const [row] = decodeRows(compiled, [{ day: "2026-07-01 00:00:00", events: "40120" }])
+		const [row] = decodeRows(compiled, [{ day: "2026-07-01 00:00:00.000000000", events: "40120" }])
 
-		expect(row).toEqual({ day: "2026-07-01 00:00:00", events: 40120 })
+		expect(row).toEqual({ day: DateTime.makeUnsafe("2026-07-01T00:00:00Z"), events: 40120 })
 	})
 })

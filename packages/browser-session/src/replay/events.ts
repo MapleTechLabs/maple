@@ -31,7 +31,17 @@ export function startEventCapture(config: IngestConfig, sessionId: string): Even
 	const sink: SessionEventSink = startEventSink(config, sessionId)
 	const emit = sink.emit
 
-	const uninstall = [installConsoleCapture(emit), installNetworkCapture(emit, sink.ignoreUrl)]
+	const uninstall = [
+		// Under maskAllText a console line is masked text too: level and count only.
+		installConsoleCapture(emit, { maskText: config.maskAllText }),
+		installNetworkCapture(
+			emit,
+			sink.ignoreUrl,
+			config.maskAllText || !config.networkBodies
+				? undefined
+				: { ...config.networkBodies, requestBodies: !config.maskAllInputs },
+		),
+	]
 
 	return {
 		// Only the capture listeners stop here — the sink outlives them, so

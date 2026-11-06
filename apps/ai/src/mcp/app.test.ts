@@ -1,14 +1,26 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
-import { ConfigProvider, Context, Effect, Layer, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
+import {
+	ConfigProvider,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Schema,
+	Tracer,
+	Array as Arr,
+	String as Str,
+} from "effect"
+import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import type { RateLimiterApi } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
-import { McpToolExecutor, type McpToolExecutorApi } from "./dispatcher"
+import type { McpToolExecutorApi } from "./dispatcher"
+import { McpToolExecutorLoader } from "./executor-loader"
 import { McpLive } from "./app"
 
 const createdDbs: TestDb[] = []
@@ -18,11 +30,37 @@ const makeMcpToolExecutorStubLayer = (
 	execute: McpToolExecutorApi["execute"] = () =>
 		Effect.succeed({ content: [{ type: "text" as const, text: "ok" }] }),
 ) =>
-	Layer.succeed(McpToolExecutor, {
-		execute,
-		prepareRepository: () => Effect.void,
-		prepareConnectedRepositories: () => Effect.void,
-	})
+	Layer.effect(
+		McpToolExecutorLoader,
+		Effect.sync(() => {
+			const executor = {
+				execute,
+				prepareRepository: () => Effect.void,
+				prepareConnectedRepositories: () => Effect.void,
+			}
+			return {
+				load: Effect.succeed(executor),
+				loadReportingBuild: Effect.succeed({ executor, built: false }),
+			}
+		}),
+	)
+
+// Loose shape of the MCP responses the tests read; unknown fields are ignored.
+const McpResponseBody = Schema.Struct({
+	result: Schema.optionalKey(
+		Schema.Struct({
+			protocolVersion: Schema.optionalKey(Schema.String),
+			serverInfo: Schema.optionalKey(Schema.Struct({ name: Schema.String })),
+			capabilities: Schema.optionalKey(Schema.Unknown),
+			tools: Schema.optionalKey(Schema.Array(Schema.Struct({ name: Schema.String }))),
+		}),
+	),
+	error: Schema.optionalKey(Schema.Union([Schema.String, Schema.Struct({ code: Schema.Number })])),
+})
+const readBody = async (response: Response) =>
+	Schema.decodeUnknownSync(McpResponseBody)(await response.clone().json())
+const errorCode = (error: (typeof McpResponseBody.Type)["error"]) =>
+	typeof error === "object" ? error.code : undefined
 
 const makeRateLimiterStubLayer = (
 	check: RateLimiterApi["check"] = () => Effect.succeed("allowed" as const),
@@ -37,6 +75,7 @@ const testConfig = () =>
 			MAPLE_ROOT_PASSWORD: "test-root-password",
 			MAPLE_DEFAULT_ORG_ID: "default",
 			MAPLE_APP_BASE_URL: "https://app.example.com",
+			MAPLE_API_BASE_URL: "https://api.example.com",
 			MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
 			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
 		}),
@@ -48,6 +87,7 @@ describe("MCP HTTP authorization", () => {
 		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
@@ -74,7 +114,7 @@ describe("MCP HTTP authorization", () => {
 						},
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			expect(response.status).toBe(401)
 			expect(response.headers.get("www-authenticate")).toContain(
@@ -92,6 +132,7 @@ describe("MCP HTTP authorization", () => {
 		let executedOrgId: string | undefined
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer((tenant) => {
 				executedOrgId = tenant.orgId
@@ -99,8 +140,8 @@ describe("MCP HTTP authorization", () => {
 			}),
 			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
-		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
@@ -142,7 +183,7 @@ describe("MCP HTTP authorization", () => {
 						},
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			expect(response.status).toBe(200)
 
@@ -165,7 +206,7 @@ describe("MCP HTTP authorization", () => {
 						method: "notifications/initialized",
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const called = await handler(
 				new Request("http://internal-worker.invalid/mcp", {
@@ -186,7 +227,7 @@ describe("MCP HTTP authorization", () => {
 						params: { name: "inspect_trace", arguments: {} },
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const calledBody = await called.clone().text()
 			expect({ status: called.status, body: calledBody }).toEqual({
@@ -210,12 +251,13 @@ describe("MCP HTTP authorization", () => {
 		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
-		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
@@ -249,9 +291,9 @@ describe("MCP HTTP authorization", () => {
 						},
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
-			const initializedBody = await initialized.clone().json()
+			const initializedBody = await readBody(initialized)
 			expect({
 				status: initialized.status,
 				protocolVersion: initializedBody.result?.protocolVersion,
@@ -273,7 +315,7 @@ describe("MCP HTTP authorization", () => {
 						params: { name: "inspect_trace", arguments: {} },
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			expect(called.status).toBe(200)
 		} finally {
@@ -291,12 +333,13 @@ describe("MCP HTTP authorization", () => {
 		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
-		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
@@ -331,7 +374,7 @@ describe("MCP HTTP authorization", () => {
 						},
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			// No session id on the wire is what keeps clients off the 404 branch.
 			expect({
@@ -353,14 +396,39 @@ describe("MCP HTTP authorization", () => {
 					headers: headers({ "mcp-protocol-version": "2025-06-18" }),
 					body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const body = await listed.clone().text()
-			expect({ status: listed.status, defect: body.includes("A defect occurred") }).toEqual({
+			expect({ status: listed.status, defect: Str.includes("A defect occurred")(body) }).toEqual({
 				status: 200,
 				defect: false,
 			})
 			expect(body).toContain("inspect_trace")
+			// Claude's connector directory reads `annotations.title`; stock effect drops it for
+			// 2025-06-18+ (patches/effect@*.patch).
+			// SAFETY: a 200 `tools/list` response; a different body fails the expectation below.
+			const inspectTrace = Option.getOrUndefined(
+				Arr.findFirst(
+					(
+						JSON.parse(body) as {
+							result: {
+								tools: Array<{
+									name: string
+									title?: string
+									annotations?: { title?: string }
+								}>
+							}
+						}
+					).result.tools,
+					(tool) => tool.name === "inspect_trace",
+				),
+			)
+			expect({ title: inspectTrace?.title, annotationTitle: inspectTrace?.annotations?.title }).toEqual(
+				{
+					title: "Inspect Trace",
+					annotationTitle: "Inspect Trace",
+				},
+			)
 
 			// A session id left over from an earlier isolate is ignored, not rejected.
 			const stale = await second.handler(
@@ -372,9 +440,10 @@ describe("MCP HTTP authorization", () => {
 					}),
 					body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/list" }),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			expect(stale.status).toBe(200)
+			expect(await stale.text()).toContain("inspect_trace")
 		} finally {
 			await second.dispose()
 		}
@@ -387,6 +456,7 @@ describe("MCP HTTP authorization", () => {
 		let executed = false
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer(() => {
 				executed = true
@@ -397,8 +467,8 @@ describe("MCP HTTP authorization", () => {
 				return Effect.succeed("limited" as const)
 			}),
 		).pipe(Layer.provideMerge(base))
-		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
@@ -429,9 +499,9 @@ describe("MCP HTTP authorization", () => {
 						},
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
-			const body = await response.clone().json()
+			const body = await readBody(response)
 			expect({
 				status: response.status,
 				retryAfter: response.headers.get("retry-after"),
@@ -457,12 +527,13 @@ describe("MCP HTTP authorization", () => {
 		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
-		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
@@ -491,15 +562,250 @@ describe("MCP HTTP authorization", () => {
 					// @ts-expect-error -- undici requires this for a stream body; not in the DOM lib.
 					duplex: "half",
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
-			const body = await response.clone().json()
-			expect({ status: response.status, code: body.error?.code }).toEqual({
+			const body = await readBody(response)
+			expect({ status: response.status, code: errorCode(body.error) }).toEqual({
 				status: 200,
 				code: -32700,
 			})
 		} finally {
 			await dispose()
 		}
+	})
+
+	it("advertises tools on a cold initialize and registers them for the first tools request", async () => {
+		// Tools register before the first `tools/*` request, not on `initialize`: loading the
+		// catalog was ~40% of a cold `initialize`. The server only reports `tools` once one is
+		// registered, so the transport has to state it, or clients would never list them.
+		const db = createTestDb(createdDbs)
+		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
+		const services = Layer.mergeAll(
+			ApiKeysService.layer,
+			ErrorActorsService.layer,
+			AuthService.layer,
+			makeMcpToolExecutorStubLayer(),
+			makeRateLimiterStubLayer(),
+		).pipe(Layer.provideMerge(base))
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
+		const key = await Effect.runPromise(
+			Effect.gen(function* () {
+				const apiKeys = yield* ApiKeysService
+				return yield* apiKeys.create(orgId, userId, { name: "Lazy tools test", kind: "mcp" })
+			}).pipe(Effect.provide(services)),
+		)
+		const post = (body: unknown) =>
+			new Request("https://api.example.com/mcp", {
+				method: "POST",
+				headers: {
+					authorization: `Bearer ${key.secret}`,
+					accept: "application/json, text/event-stream",
+					"content-type": "application/json",
+					host: "api.example.com",
+					"x-forwarded-proto": "https",
+					"mcp-protocol-version": "2025-06-18",
+				},
+				body: JSON.stringify(body),
+			})
+		const { handler, dispose } = HttpRouter.toWebHandler(McpLive.pipe(Layer.provideMerge(services)), {
+			disableLogger: true,
+		})
+		try {
+			const initialized = await handler(
+				post({
+					jsonrpc: "2.0",
+					id: 1,
+					method: "initialize",
+					params: {
+						protocolVersion: "2025-06-18",
+						capabilities: {},
+						clientInfo: { name: "test", version: "1.0.0" },
+					},
+				}),
+				Context.empty(),
+			)
+			const result = (await readBody(initialized)).result
+			expect({
+				status: initialized.status,
+				serverName: result?.serverInfo?.name,
+				capabilities: result?.capabilities,
+			}).toEqual({
+				status: 200,
+				serverName: "maple-observability",
+				capabilities: expect.objectContaining({
+					tools: { listChanged: true },
+					prompts: { listChanged: true },
+					resources: expect.any(Object),
+				}),
+			})
+
+			const listed = await handler(
+				post({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
+				Context.empty(),
+			)
+			const tools: ReadonlyArray<{ readonly name: string }> =
+				(await readBody(listed)).result?.tools ?? []
+			expect({
+				status: listed.status,
+				hasInspectTrace: Arr.some(tools, (tool) => tool.name === "inspect_trace"),
+			}).toEqual({
+				status: 200,
+				hasInspectTrace: true,
+			})
+		} finally {
+			await dispose()
+		}
+	})
+})
+
+describe("MCP server spans", () => {
+	it("follow the OpenTelemetry MCP conventions", async () => {
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		const db = createTestDb(createdDbs)
+		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
+		const services = Layer.mergeAll(
+			ApiKeysService.layer,
+			ErrorActorsService.layer,
+			AuthService.layer,
+			// The tool fails the way a tool does: a result with `isError`, not a JSON-RPC error.
+			makeMcpToolExecutorStubLayer(() =>
+				Effect.succeed({
+					isError: true,
+					content: [{ type: "text" as const, text: "Invalid input (`trace_id`): bad input" }],
+					failureCategory: "invalid_input",
+				}),
+			),
+			makeRateLimiterStubLayer(),
+		).pipe(Layer.provideMerge(base))
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
+		const key = await Effect.runPromise(
+			Effect.gen(function* () {
+				const apiKeys = yield* ApiKeysService
+				return yield* apiKeys.create(orgId, userId, { name: "Span conventions test", kind: "mcp" })
+			}).pipe(Effect.provide(services)),
+		)
+		const routes = McpLive.pipe(Layer.provideMerge(services))
+		const { handler, dispose } = HttpRouter.toWebHandler(routes, { disableLogger: true })
+		const post = (body: unknown) =>
+			handler(
+				new Request("https://api.example.com/mcp", {
+					method: "POST",
+					headers: {
+						authorization: `Bearer ${key.secret}`,
+						accept: "application/json, text/event-stream",
+						"content-type": "application/json",
+						host: "api.example.com",
+						"x-forwarded-proto": "https",
+						"user-agent": "claude-code/2.1.312 (cli)",
+					},
+					body: JSON.stringify(body),
+				}),
+				Context.make(Tracer.Tracer, tracer),
+			)
+		const callerTrace = "4bf92f3577b34da6a3ce929d0e0e4736"
+		const callerSpan = "00f067aa0ba902b7"
+		try {
+			await post({
+				jsonrpc: "2.0",
+				id: 1,
+				method: "initialize",
+				params: {
+					protocolVersion: "2025-06-18",
+					capabilities: {},
+					clientInfo: { name: "claude-code", version: "2.1.312" },
+				},
+			})
+			const called = await post({
+				jsonrpc: "2.0",
+				id: 2,
+				method: "tools/call",
+				// An unsampled caller: Maple still records its own server.
+				params: {
+					name: "inspect_trace",
+					arguments: {},
+					_meta: { traceparent: `00-${callerTrace}-${callerSpan}-00` },
+				},
+			})
+			expect(called.status).toBe(200)
+		} finally {
+			await dispose()
+		}
+
+		const server = Arr.filter(
+			spans,
+			(span) => span.kind === "server" && span.attributes.has("mcp.method.name"),
+		)
+		expect(
+			Arr.map(server, (span) => ({
+				name: span.name,
+				sampled: span.sampled,
+				method: span.attributes.get("mcp.method.name"),
+				client: span.attributes.get("maple.mcp.client.name"),
+				tool: span.attributes.get("gen_ai.tool.name"),
+				operation: span.attributes.get("gen_ai.operation.name"),
+				errorType: span.attributes.get("error.type"),
+				errorMessage: span.attributes.get("error.message"),
+				errorCategory: span.attributes.get("maple.mcp.error.category"),
+				requestId: span.attributes.get("jsonrpc.request.id"),
+				userAgent: span.attributes.get("user_agent.original"),
+				user: span.attributes.get("user.id"),
+			})),
+		).toEqual([
+			{
+				name: "initialize",
+				sampled: true,
+				method: "initialize",
+				client: "claude-code",
+				tool: undefined,
+				operation: undefined,
+				errorType: undefined,
+				errorMessage: undefined,
+				errorCategory: undefined,
+				requestId: "1",
+				userAgent: "claude-code/2.1.312 (cli)",
+				user: "user_test",
+			},
+			{
+				name: "tools/call inspect_trace",
+				sampled: true,
+				method: "tools/call",
+				client: undefined,
+				tool: "inspect_trace",
+				operation: "execute_tool",
+				errorType: "tool_error",
+				// Why it failed rides on the span, so the hub can group failures by cause.
+				errorMessage: "Invalid input (`trace_id`): bad input",
+				errorCategory: "invalid_input",
+				requestId: "2",
+				userAgent: "claude-code/2.1.312 (cli)",
+				user: "user_test",
+			},
+		])
+
+		// The handshake the transport synthesises for the tool call is not recorded.
+		const handshakes = Arr.filter(spans, (span) => Str.endsWith("/initialize")(span.name))
+		expect(Arr.map(handshakes, (span) => span.sampled)).toEqual([false])
+
+		// The caller's span is the parent; the HTTP request's span is only a link.
+		const toolCall = server[1]
+		const parent = toolCall === undefined ? Option.none() : toolCall.parent
+		expect(Option.map(parent, (span) => ({ traceId: span.traceId, spanId: span.spanId }))).toEqual(
+			Option.some({ traceId: callerTrace, spanId: callerSpan }),
+		)
+		expect(Arr.map(toolCall?.links ?? [], (link) => link.span._tag === "Span" && link.span.name)).toEqual(
+			["POST"],
+		)
+		// Without a caller span the HTTP span is the parent, and not linked a second time.
+		const initialize = server[0]
+		expect(initialize?.links).toEqual([])
 	})
 })

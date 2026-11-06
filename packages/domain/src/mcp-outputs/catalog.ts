@@ -3,12 +3,45 @@
  * each tool declares exactly this schema) and the chat UI's `StructuredToolOutput` derive from.
  */
 import { SendMapleFeedbackOutput } from "./feedback"
+import { InspectInfraOutput, ListInfraOutput } from "./infra"
+import { ListSourcesOutput } from "./sources"
+import { InspectUserOutput, ListUsersOutput } from "./users"
 import {
+	InspectSecurityAuditRunOutput,
+	InspectSecurityFindingOutput,
+	ListSecurityAuditRunsOutput,
+	ListSecurityFindingsOutput,
+} from "./security"
+import { DeleteUptimeMonitorOutput, ListUptimeMonitorsOutput, UptimeMonitorMutationOutput } from "./uptime"
+import { DeleteSloOutput, InspectSloOutput, ListSlosOutput, SloMutationOutput } from "./slo"
+import {
+	ApplyStatusPageConfigOutput,
+	GetStatusPageConfigOutput,
+	GetStatusPageOutput,
+	ListStatusPagesOutput,
+	StatusPageIncidentMutationOutput,
+} from "./status-pages"
+import {
+	DeleteIngestRuleOutput,
+	IngestRuleMutationOutput,
+	ListIngestRulesOutput,
+	PreviewIngestRuleOutput,
+} from "./ingest-rules"
+import {
+	DeleteScrapeTargetOutput,
+	ListIntegrationsOutput,
+	ScrapeTargetMutationOutput,
+	SyncRailwayOutput,
+} from "./integrations"
+import { CiRunsOutput, CompareCommitsOutput } from "./ci"
+import {
+	AcknowledgeAlertIncidentOutput,
 	CreateAlertRuleOutput,
 	DeleteAlertRuleOutput,
 	GetAlertRuleOutput,
 	GetIncidentTimelineOutput,
 	ListAlertChecksOutput,
+	PreviewAlertRuleOutput,
 	ListAlertDestinationsOutput,
 	ListAlertIncidentsOutput,
 	ListAlertRulesOutput,
@@ -39,7 +72,10 @@ import {
 	RegisterAgentOutput,
 	ReleaseErrorIssueOutput,
 	SetIssueSeverityOutput,
+	MergeErrorIssuesOutput,
 	TransitionErrorIssueOutput,
+	TransitionErrorIssuesOutput,
+	GetErrorNotificationPolicyOutput,
 	UpdateErrorNotificationPolicyOutput,
 } from "./issues"
 import {
@@ -56,6 +92,7 @@ import {
 } from "./services"
 import {
 	GetAgentSessionOutput,
+	GetAgentSessionTranscriptOutput,
 	GetAgentToolErrorOutput,
 	GetAgentToolsOverviewOutput,
 	GetSessionTracesOutput,
@@ -80,6 +117,13 @@ import {
 	SearchSourceCodeOutput,
 } from "./setup"
 import {
+	DbQueryVolumeOutput,
+	IngestFreshnessOutput,
+	IngestUsageOutput,
+	RouteUsageOutput,
+	ServiceDeploymentsOutput,
+} from "./service-activity"
+import {
 	FindSlowTracesOutput,
 	InspectSpanOutput,
 	InspectTraceOutput,
@@ -91,12 +135,25 @@ import {
 export const McpToolOutputs = {
 	add_dashboard_widget: AddDashboardWidgetOutput,
 	audit_setup: AuditSetupOutput,
+	ci_runs: CiRunsOutput,
 	claim_error_issue: ClaimErrorIssueOutput,
 	comment_on_error_issue: CommentOnErrorIssueOutput,
+	compare_commits: CompareCommitsOutput,
 	compare_periods: ComparePeriodsOutput,
 	create_alert_rule: CreateAlertRuleOutput,
+	create_ingest_rule: IngestRuleMutationOutput,
+	create_scrape_target: ScrapeTargetMutationOutput,
 	create_dashboard: CreateDashboardOutput,
+	create_status_page_incident: StatusPageIncidentMutationOutput,
+	create_slo: SloMutationOutput,
+	create_uptime_monitor: UptimeMonitorMutationOutput,
+	db_query_volume: DbQueryVolumeOutput,
+	delete_ingest_rule: DeleteIngestRuleOutput,
+	delete_scrape_target: DeleteScrapeTargetOutput,
 	delete_alert_rule: DeleteAlertRuleOutput,
+	acknowledge_alert_incident: AcknowledgeAlertIncidentOutput,
+	delete_slo: DeleteSloOutput,
+	delete_uptime_monitor: DeleteUptimeMonitorOutput,
 	describe_dashboard_schema: DescribeDashboardSchemaOutput,
 	describe_warehouse_tables: DescribeWarehouseTablesOutput,
 	diagnose_service: DiagnoseServiceOutput,
@@ -105,6 +162,7 @@ export const McpToolOutputs = {
 	find_errors: FindErrorsOutput,
 	find_slow_traces: FindSlowTracesOutput,
 	get_agent_session: GetAgentSessionOutput,
+	get_agent_session_transcript: GetAgentSessionTranscriptOutput,
 	get_agent_tool_error: GetAgentToolErrorOutput,
 	get_agent_tools_overview: GetAgentToolsOverviewOutput,
 	get_alert_rule: GetAlertRuleOutput,
@@ -114,12 +172,21 @@ export const McpToolOutputs = {
 	get_service_top_operations: GetServiceTopOperationsOutput,
 	get_session_traces: GetSessionTracesOutput,
 	get_session_transcript: GetSessionTranscriptOutput,
+	ingest_freshness: IngestFreshnessOutput,
+	ingest_usage: IngestUsageOutput,
 	inspect_chart_data: InspectChartDataOutput,
+	inspect_infra: InspectInfraOutput,
+	inspect_security_audit_run: InspectSecurityAuditRunOutput,
+	inspect_security_finding: InspectSecurityFindingOutput,
+	inspect_slo: InspectSloOutput,
 	inspect_span: InspectSpanOutput,
 	inspect_trace: InspectTraceOutput,
+	inspect_user: InspectUserOutput,
 	link_pull_request: LinkPullRequestOutput,
 	list_agent_sessions: ListAgentSessionsOutput,
 	list_alert_checks: ListAlertChecksOutput,
+	list_ingest_rules: ListIngestRulesOutput,
+	preview_alert_rule: PreviewAlertRuleOutput,
 	list_alert_destinations: ListAlertDestinationsOutput,
 	list_alert_incidents: ListAlertIncidentsOutput,
 	list_alert_rules: ListAlertRulesOutput,
@@ -127,6 +194,21 @@ export const McpToolOutputs = {
 	list_error_incidents: ListErrorIncidentsOutput,
 	list_error_issue_events: ListErrorIssueEventsOutput,
 	list_error_issues: ListErrorIssuesOutput,
+	list_infra: ListInfraOutput,
+	list_integrations: ListIntegrationsOutput,
+	list_security_audit_runs: ListSecurityAuditRunsOutput,
+	list_security_findings: ListSecurityFindingsOutput,
+	list_slos: ListSlosOutput,
+	list_sources: ListSourcesOutput,
+	list_status_pages: ListStatusPagesOutput,
+	list_uptime_monitors: ListUptimeMonitorsOutput,
+	list_users: ListUsersOutput,
+	get_status_page: GetStatusPageOutput,
+	get_status_page_config: GetStatusPageConfigOutput,
+	apply_status_page_config: ApplyStatusPageConfigOutput,
+	post_status_page_update: StatusPageIncidentMutationOutput,
+	resolve_status_page_incident: StatusPageIncidentMutationOutput,
+	schedule_status_page_maintenance: StatusPageIncidentMutationOutput,
 	list_metrics: ListMetricsOutput,
 	list_product_events: ListProductEventsOutput,
 	list_services: ListServicesOutput,
@@ -135,6 +217,7 @@ export const McpToolOutputs = {
 	pr_changed_files: PrChangedFilesOutput,
 	pr_context: PrContextOutput,
 	pr_file_diff: PrFileDiffOutput,
+	preview_ingest_rule: PreviewIngestRuleOutput,
 	propose_fix: ProposeFixOutput,
 	query_data: QueryDataOutput,
 	query_funnel: QueryFunnelOutput,
@@ -144,6 +227,7 @@ export const McpToolOutputs = {
 	remove_dashboard_widget: RemoveDashboardWidgetOutput,
 	reorder_dashboard_widgets: ReorderDashboardWidgetsOutput,
 	replace_dashboard_widgets: ReplaceDashboardWidgetsOutput,
+	route_usage: RouteUsageOutput,
 	run_sql: RunSqlOutput,
 	sandbox_exec: SandboxExecOutput,
 	sandbox_grep: SandboxGrepOutput,
@@ -154,12 +238,21 @@ export const McpToolOutputs = {
 	search_source_code: SearchSourceCodeOutput,
 	search_traces: SearchTracesOutput,
 	send_maple_feedback: SendMapleFeedbackOutput,
+	service_deployments: ServiceDeploymentsOutput,
 	service_map: ServiceMapOutput,
+	sync_railway: SyncRailwayOutput,
 	set_issue_severity: SetIssueSeverityOutput,
+	merge_error_issues: MergeErrorIssuesOutput,
 	transition_error_issue: TransitionErrorIssueOutput,
+	transition_error_issues: TransitionErrorIssuesOutput,
 	update_alert_rule: UpdateAlertRuleOutput,
 	update_dashboard: UpdateDashboardOutput,
 	update_dashboard_widget: UpdateDashboardWidgetOutput,
+	update_ingest_rule: IngestRuleMutationOutput,
+	update_scrape_target: ScrapeTargetMutationOutput,
+	update_slo: SloMutationOutput,
+	update_uptime_monitor: UptimeMonitorMutationOutput,
+	get_error_notification_policy: GetErrorNotificationPolicyOutput,
 	update_error_notification_policy: UpdateErrorNotificationPolicyOutput,
 } as const
 

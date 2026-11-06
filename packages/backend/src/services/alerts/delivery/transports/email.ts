@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { buildAlertEmailContent } from "../../alert-email"
 import { makeDeliveryError } from "../runTransport"
 import type { EffectTransport, EffectTransportDeps, RenderInput, SecretConfigOf } from "../Transport"
@@ -20,11 +20,7 @@ export const emailTransport: EffectTransport<Config> = {
 	providerLabel: "Email",
 	send: (input: RenderInput<Config>, deps: EffectTransportDeps) =>
 		Effect.gen(function* () {
-			const { subject, html } = yield* buildAlertEmailContent(
-				input.context,
-				input.linkUrl,
-				input.chatUrl,
-			)
+			const { subject, html } = yield* buildAlertEmailContent(input.context, input.linkUrl)
 			const members = input.config.members
 			const outcomes = yield* Effect.forEach(members, (member) =>
 				deps.sendEmail(member.email, subject, html).pipe(
@@ -34,22 +30,21 @@ export const emailTransport: EffectTransport<Config> = {
 					}),
 				),
 			)
-			const failures = outcomes.filter((outcome) => outcome.error != null)
+			const failures = Arr.filter(outcomes, (outcome) => outcome.error != null)
 			const count = members.length
 
-			if (failures.length === count && count > 0) {
+			const [firstFailure] = failures
+			if (firstFailure !== undefined && failures.length === count) {
 				// Nobody received it — safe to fail retryable; the retry re-sends to
 				// members who all got nothing. Keep the first failure message
 				// verbatim so timeout classification survives the aggregation.
-				return yield* Effect.fail(
-					makeDeliveryError(
-						`Email delivery failed for all ${count} member${count === 1 ? "" : "s"}: ${failures[0]!.error}`,
-						"email",
-					),
+				return yield* makeDeliveryError(
+					`Email delivery failed for all ${count} member${count === 1 ? "" : "s"}: ${firstFailure.error}`,
+					"email",
 				)
 			}
 
-			if (failures.length > 0) {
+			if (firstFailure !== undefined) {
 				// Partial success is TERMINAL: there is no per-member attempt state,
 				// so retrying would re-email the members who already received it.
 				// Report success and surface the failures.
@@ -58,13 +53,14 @@ export const emailTransport: EffectTransport<Config> = {
 					Effect.annotateLogs({
 						failedCount: failures.length,
 						memberCount: count,
-						firstError: failures[0]!.error,
+						firstError: firstFailure.error,
 					}),
 				)
 				return {
-					providerMessage: `Emailed ${count - failures.length} of ${count} members; failed: ${failures
-						.map((failure) => `${failure.member.email} (${failure.error})`)
-						.join(", ")}`,
+					providerMessage: `Emailed ${count - failures.length} of ${count} members; failed: ${Arr.join(
+						Arr.map(failures, (failure) => `${failure.member.email} (${failure.error})`),
+						", ",
+					)}`,
 					providerReference: null,
 					responseCode: null,
 				}

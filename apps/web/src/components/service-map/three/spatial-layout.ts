@@ -1,6 +1,13 @@
+import { errorRateLevel } from "@maple/ui/lib/error-rate"
+import {
+	EMPTY_VALUE,
+	formatLatency as formatSharedLatency,
+	formatRate as formatSharedRate,
+} from "@maple/ui/lib/format"
 import type { Edge3D, Node3D } from "./types"
 import { computeTiers } from "./graph"
 import type { Vec3 } from "./types"
+import { Array as Arr, Option, Order, String as Str } from "effect"
 
 export interface SpatialTopology {
 	nodes: ReadonlyArray<Pick<Node3D, "id" | "namespace">>
@@ -8,6 +15,10 @@ export interface SpatialTopology {
 }
 
 export type SpatialView = "atlas" | "cascade"
+
+type SpatialNode = SpatialTopology["nodes"][number]
+
+const byLocale = Order.make<string>((a, b) => Str.localeCompare(b)(a))
 export interface District {
 	id: string
 	label: string
@@ -25,30 +36,30 @@ export function spatialLayout(topology: SpatialTopology, view: SpatialView): Spa
 	const districts: District[] = []
 	if (view === "atlas") {
 		const tiers = computeTiers(topology.nodes, topology.edges)
-		const namespaces = [...new Set(topology.nodes.map((node) => node.namespace))]
-		const groups = namespaces
-			.map((namespace) => {
-				const nodes = topology.nodes
-					.filter((node) => node.namespace === namespace)
-					.toSorted(
-						(a, b) => (tiers.get(a.id) ?? 0) - (tiers.get(b.id) ?? 0) || a.id.localeCompare(b.id),
-					)
-				const columns = Math.max(1, Math.ceil(Math.sqrt(nodes.length)))
-				return {
-					namespace,
-					nodes,
-					columns,
-					width: columns * 4.2 + 0.7,
-					depth: Math.ceil(nodes.length / columns) * 4.2 + 1.1,
-					tier: Math.min(...nodes.map((node) => tiers.get(node.id) ?? 0)),
-				}
-			})
-			.sort(
-				(a, b) =>
-					b.width * b.depth - a.width * a.depth ||
-					a.tier - b.tier ||
-					a.namespace.localeCompare(b.namespace),
+		const namespaces = [...new Set(Arr.map(topology.nodes, (node) => node.namespace))]
+		const groups = Arr.map(namespaces, (namespace) => {
+			const nodes = Arr.sort(
+				Arr.filter(topology.nodes, (node) => node.namespace === namespace),
+				Order.combine(
+					Order.mapInput(Order.Number, (node: SpatialNode) => tiers.get(node.id) ?? 0),
+					Order.mapInput(byLocale, (node: SpatialNode) => node.id),
+				),
 			)
+			const columns = Math.max(1, Math.ceil(Math.sqrt(nodes.length)))
+			return {
+				namespace,
+				nodes,
+				columns,
+				width: columns * 4.2 + 0.7,
+				depth: Math.ceil(nodes.length / columns) * 4.2 + 1.1,
+				tier: Math.min(...Arr.map(nodes, (node) => tiers.get(node.id) ?? 0)),
+			}
+		}).sort((a, b) => {
+			const byArea = b.width * b.depth - a.width * a.depth
+			if (byArea !== 0) return byArea
+			if (a.tier !== b.tier) return a.tier - b.tier
+			return Str.localeCompare(b.namespace)(a.namespace)
+		})
 		const gap = 2.8
 		// Balance namespace stacks across columns so a large team doesn't leave
 		// an entire empty row beside the smaller database / service groups.
@@ -58,20 +69,26 @@ export function spatialLayout(topology: SpatialTopology, view: SpatialView): Spa
 			depth: 0,
 		}))
 		for (const group of groups) {
-			const column = columns.toSorted((a, b) => a.depth - b.depth)[0]
-			if (!column) continue
+			const shallowest = Arr.head(
+				Arr.sort(
+					columns,
+					Order.mapInput(Order.Number, (candidate: { readonly depth: number }) => candidate.depth),
+				),
+			)
+			if (Option.isNone(shallowest)) continue
+			const column = shallowest.value
 			column.groups.push(group)
 			column.width = Math.max(column.width, group.width)
 			column.depth += group.depth + gap
 		}
-		const totalDepth = Math.max(0, ...columns.map((column) => column.depth - gap))
+		const totalDepth = Math.max(0, ...Arr.map(columns, (column) => column.depth - gap))
 		let x = 0
 		for (const column of columns) {
 			let z = (totalDepth - (column.depth - gap)) / 2
 			for (const group of column.groups) {
 				const cx = x + column.width / 2,
 					cz = z + group.depth / 2
-				group.nodes.forEach((node, index) =>
+				Arr.forEach(group.nodes, (node, index) =>
 					positions.set(node.id, [
 						cx + ((index % group.columns) - (group.columns - 1) / 2) * 4.2,
 						0,
@@ -96,13 +113,17 @@ export function spatialLayout(topology: SpatialTopology, view: SpatialView): Spa
 		const tiers = computeTiers(topology.nodes, topology.edges)
 		const count = Math.max(0, ...tiers.values()) + 1
 		for (let tier = 0; tier < count; tier++) {
-			const group = topology.nodes
-				.filter((node) => tiers.get(node.id) === tier)
-				.toSorted((a, b) => a.namespace.localeCompare(b.namespace) || a.id.localeCompare(b.id))
-			if (!group.length) continue
+			const group = Arr.sort(
+				Arr.filter(topology.nodes, (node) => tiers.get(node.id) === tier),
+				Order.combine(
+					Order.mapInput(byLocale, (node: SpatialNode) => node.namespace),
+					Order.mapInput(byLocale, (node: SpatialNode) => node.id),
+				),
+			)
+			if (group.length === 0) continue
 			const x = (tier - (count - 1) / 2) * 5.2
 			const y = (count - 1 - tier) * 0.75
-			group.forEach((node, index) =>
+			Arr.forEach(group, (node, index) =>
 				positions.set(node.id, [x, y, (index - (group.length - 1) / 2) * 4.3]),
 			)
 			districts.push({
@@ -116,12 +137,12 @@ export function spatialLayout(topology: SpatialTopology, view: SpatialView): Spa
 	}
 	if (districts.length > 0) {
 		const cx =
-			(Math.min(...districts.map((d) => d.position[0] - d.width / 2)) +
-				Math.max(...districts.map((d) => d.position[0] + d.width / 2))) /
+			(Math.min(...Arr.map(districts, (d) => d.position[0] - d.width / 2)) +
+				Math.max(...Arr.map(districts, (d) => d.position[0] + d.width / 2))) /
 			2
 		const cz =
-			(Math.min(...districts.map((d) => d.position[2] - d.depth / 2)) +
-				Math.max(...districts.map((d) => d.position[2] + d.depth / 2))) /
+			(Math.min(...Arr.map(districts, (d) => d.position[2] - d.depth / 2)) +
+				Math.max(...Arr.map(districts, (d) => d.position[2] + d.depth / 2))) /
 			2
 		for (const [id, position] of positions)
 			positions.set(id, [position[0] - cx, position[1], position[2] - cz])
@@ -131,15 +152,18 @@ export function spatialLayout(topology: SpatialTopology, view: SpatialView): Spa
 	return { positions, districts }
 }
 
-export const nodeHeight = (node: Node3D) => 0.5 + Math.log10(Math.max(1, node.throughput)) * 0.48
-export const health = (rate: number) => (rate > 0.05 ? "degraded" : rate > 0.01 ? "elevated" : "healthy")
-export const HEALTH_COLOR = { healthy: "#79ad9b", elevated: "#d3a65c", degraded: "#dc7b6d" } as const
-const rateFormatter = new Intl.NumberFormat("en", { maximumFractionDigits: 1, notation: "compact" })
+// Shared thresholds (lib/error-rate); the 3D scene keeps its own hex palette below.
+const HEALTH_BY_LEVEL = { crit: "degraded", warn: "elevated", neutral: "healthy" } as const
+export const health = (rate: number) => HEALTH_BY_LEVEL[errorRateLevel(rate)]
+export const HEALTH_COLOR = { healthy: "#2f8f83", elevated: "#d9a21b", degraded: "#c8553d" } as const
+/** The words the 2D map's legend uses for the same three levels, so both maps read alike. */
+export const HEALTH_LABEL = { healthy: "Healthy", elevated: "Degraded", degraded: "Error" } as const
+/** The shared rate format, plus the 3D labels' "/s" suffix, "~" estimate mark and "<0.1" floor. */
 export const formatRate = (rate: number, estimated = false) =>
-	`${estimated ? "~" : ""}${rate > 0 && rate < 0.1 ? "<0.1" : rateFormatter.format(rate)}/s`
+	`${estimated ? "~" : ""}${rate > 0 && rate < 0.1 ? "<0.1" : formatSharedRate(rate)}/s`
+/** The shared latency format, tolerating the optional latencies of 3D edges. */
 export const formatLatency = (ms: number | undefined) =>
-	ms === undefined ? "—" : `${ms < 10 ? ms.toFixed(1) : Math.round(ms)} ms`
-export const formatError = (rate: number) => `${(rate * 100).toFixed(rate < 0.01 ? 2 : 1)}%`
+	ms === undefined ? EMPTY_VALUE : formatSharedLatency(ms)
 
 export function connectedIds(
 	topology: SpatialTopology,

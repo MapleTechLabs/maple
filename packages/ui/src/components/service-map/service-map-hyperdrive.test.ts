@@ -1,12 +1,13 @@
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 import {
 	isPlanetScaleHost,
 	matchHyperdriveConfigs,
 	type HyperdriveConfigInput,
 } from "./service-map-hyperdrive"
+import { Array as Arr, String as Str } from "effect"
 
 const config = (overrides: Partial<HyperdriveConfigInput> = {}): HyperdriveConfigInput => ({
-	id: "a".repeat(32),
+	id: Str.repeat(32)("a"),
 	name: "maple-db",
 	originHost: "aws.connect.psdb.cloud",
 	originPort: 3306,
@@ -19,7 +20,7 @@ const config = (overrides: Partial<HyperdriveConfigInput> = {}): HyperdriveConfi
 const inventory = (
 	entries: ReadonlyArray<{ name: string; kind: string }>,
 ): Map<string, { name: string; kind: string }> =>
-	new Map(entries.map((entry) => [entry.name.toLowerCase(), entry]))
+	new Map(Arr.map(entries, (entry) => [Str.toLowerCase(entry.name), entry]))
 
 describe("isPlanetScaleHost", () => {
 	it("matches psdb.cloud gateways case-insensitively", () => {
@@ -41,8 +42,9 @@ describe("matchHyperdriveConfigs", () => {
 			[config({ originDatabase: "MAPLE" })],
 			inventory([{ name: "Maple", kind: "mysql" }]),
 		)
-		expect(result!.matched).toEqual({ name: "Maple", kind: "mysql" })
-		expect(result!.isPlanetScaleHost).toBe(true)
+		assert.isDefined(result)
+		expect(result.matched).toEqual({ name: "Maple", kind: "mysql" })
+		expect(result.isPlanetScaleHost).toBe(true)
 	})
 
 	it("accepts both postgres spellings against a postgresql inventory kind", () => {
@@ -51,7 +53,8 @@ describe("matchHyperdriveConfigs", () => {
 				[config({ originScheme: scheme, originDatabase: "pgdb" })],
 				inventory([{ name: "pgdb", kind: "postgresql" }]),
 			)
-			expect(result!.matched?.kind).toBe("postgresql")
+			assert.isDefined(result)
+			expect(result.matched?.kind).toBe("postgresql")
 		}
 	})
 
@@ -60,13 +63,15 @@ describe("matchHyperdriveConfigs", () => {
 			[config({ originScheme: "postgres", originDatabase: "maple" })],
 			inventory([{ name: "maple", kind: "mysql" }]),
 		)
-		expect(result!.matched).toBeUndefined()
+		assert.isDefined(result)
+		expect(result.matched).toBeUndefined()
 	})
 
 	it("flags an unmatched psdb.cloud origin as PlanetScale-fronted", () => {
 		const [result] = matchHyperdriveConfigs([config({ originDatabase: "unknown-db" })], inventory([]))
-		expect(result!.matched).toBeUndefined()
-		expect(result!.isPlanetScaleHost).toBe(true)
+		assert.isDefined(result)
+		expect(result.matched).toBeUndefined()
+		expect(result.isPlanetScaleHost).toBe(true)
 	})
 
 	it("passes through non-PlanetScale and VPC (null-host) origins unmatched", () => {
@@ -74,7 +79,7 @@ describe("matchHyperdriveConfigs", () => {
 			[
 				config({ originHost: "db.internal.example.com", originDatabase: "appdb" }),
 				config({
-					id: "b".repeat(32),
+					id: Str.repeat(32)("b"),
 					originHost: null,
 					originPort: null,
 					originScheme: "postgres",
@@ -83,7 +88,7 @@ describe("matchHyperdriveConfigs", () => {
 			],
 			inventory([]),
 		)
-		expect(results.map((result) => result.isPlanetScaleHost)).toEqual([false, false])
-		expect(results.map((result) => result.matched)).toEqual([undefined, undefined])
+		expect(Arr.map(results, (result) => result.isPlanetScaleHost)).toEqual([false, false])
+		expect(Arr.map(results, (result) => result.matched)).toEqual([undefined, undefined])
 	})
 })

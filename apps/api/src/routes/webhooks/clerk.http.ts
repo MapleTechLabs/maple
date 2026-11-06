@@ -1,6 +1,6 @@
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { Effect, Layer, Option, Schema } from "effect"
-import { HttpRouter, type HttpServerRequest } from "effect/unstable/http"
+import { HttpRouter, type HttpServerRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { MembershipRevocationService } from "@maple/backend/services/auth/MembershipRevocationService"
 import {
@@ -54,7 +54,7 @@ const handler = Effect.gen(function* () {
 	 * double-applying — which is what makes "fail loudly" the safe choice here
 	 * rather than a source of duplicate work.
 	 */
-	const revoke = Effect.fn("ClerkWebhook.revoke")(function* (run: Effect.Effect<unknown, unknown>) {
+	const revoke = Effect.fn("ClerkWebhook.revoke")(function* <E>(run: Effect.Effect<unknown, E>) {
 		const outcome = yield* run.pipe(Effect.option)
 		if (Option.isNone(outcome)) {
 			yield* Effect.annotateCurrentSpan({
@@ -211,7 +211,8 @@ const handler = Effect.gen(function* () {
  */
 export const ClerkWebhookRoute = HttpRouter.use((router) =>
 	Effect.gen(function* () {
-		yield* router.add("POST", ROUTE, yield* handler)
+		const routeHandler = yield* handler
+		yield* router.add("POST", ROUTE, routeHandler)
 	}),
 )
 

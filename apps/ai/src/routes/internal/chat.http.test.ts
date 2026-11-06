@@ -1,6 +1,6 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 import { describe, expect, it } from "@effect/vitest"
-import { ChatApiGroup, CurrentTenant, V1SchemaErrors, V1UnexpectedErrors } from "@maple/domain/http"
+import { ChatApiGroup, CurrentTenant, ApiSchemaErrors, ApiUnexpectedErrors } from "@maple/domain/http"
 import {
 	ChatMessage,
 	ChatToolCall,
@@ -8,17 +8,18 @@ import {
 	type ChatProposalSettlement,
 } from "@maple/domain/chat-session"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
+import { envPorts } from "@maple/backend/platform/env-ports"
 import { Context, Effect, Layer } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter } from "effect/http"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { HttpChatLive } from "./chat.http"
-import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
+import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 
 class ChatOnlyApi extends HttpApi.make("MapleAiApi")
 	.add(ChatApiGroup)
-	.middleware(V1SchemaErrors)
-	.middleware(V1UnexpectedErrors) {}
+	.middleware(ApiSchemaErrors)
+	.middleware(ApiUnexpectedErrors) {}
 
 const TENANT = new CurrentTenant.TenantSchema({
 	orgId: "org_chat_approval" as CurrentTenant.TenantSchema["orgId"],
@@ -27,7 +28,7 @@ const TENANT = new CurrentTenant.TenantSchema({
 	authMode: "clerk",
 })
 
-const SESSION_ID = `${TENANT.orgId}:tab-1`
+const SESSION_ID = `${TENANT.orgId}:inv-1`
 
 const AuthorizationStubLayer = Layer.succeed(
 	CurrentTenant.SessionAuthorization,
@@ -74,13 +75,17 @@ const makeHarness = (session: {
 				session.history ?? recorded({ output: "Approved in Maple.\nAlert rule deleted." }),
 			),
 	}
-	const env = { ChatSession: { idFromName: (name: string) => name, get: () => stub } }
 
 	const routes = HttpApiBuilder.layer(ChatOnlyApi).pipe(
 		Layer.provide(HttpChatLive),
-		Layer.provide(V1ErrorBoundaryLive),
+		Layer.provide(ApiErrorBoundaryLive),
 		Layer.provideMerge(AuthorizationStubLayer),
-		Layer.provideMerge(Layer.succeed(WorkerEnvironment, env as never)),
+		Layer.provideMerge(
+			Layer.merge(
+				envPorts({}),
+				fakeChatSessionsLayer(() => stub),
+			),
+		),
 	)
 	const { handler, dispose } = HttpRouter.toWebHandler(routes as never, { disableLogger: true })
 
@@ -94,7 +99,7 @@ const makeHarness = (session: {
 				},
 				body: JSON.stringify(body),
 			}),
-			Context.empty() as never,
+			Context.empty(),
 		)
 		const text = await response.text()
 		return {
@@ -159,8 +164,33 @@ describe("POST /internal/chat/apply", () => {
 		}
 	})
 
-	it("ignores a by-value tool and input, and reads a missing decision as an approval", async () => {
-		// What a tab loaded before this release sends. The tool it names is never what runs.
+	it("ignores a by-value tool and input; only the referenced call is settled", async () => {
+		const harness = makeHarness({})
+		try {
+			const response = await harness.apply({
+				...byReference("deny"),
+				tool: "delete_dashboard",
+				input: { dashboard_id: "d_1" },
+				messageId: "a1",
+			})
+
+			expect(response.status).toBe(200)
+			expect(harness.settlements).toHaveLength(1)
+			expect(harness.settlements[0]).not.toHaveProperty("tool")
+			expect(harness.settlements[0]).not.toHaveProperty("input")
+			expect(harness.settlements[0]?.decision).toBe("deny")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it.each([
+		["missing", {}],
+		["null", { decision: null }],
+		["empty", { decision: "" }],
+		["unrecognised", { decision: "yes" }],
+	])("rejects a %s decision with a 400 and never settles", async (_label, decision) => {
+		// A body with no explicit decision is refused at decode, so it can never approve a mutation.
 		const harness = makeHarness({})
 		try {
 			const response = await harness.apply({
@@ -169,13 +199,11 @@ describe("POST /internal/chat/apply", () => {
 				sessionId: SESSION_ID,
 				messageId: "a1",
 				toolCallId: "call_9",
+				...decision,
 			})
 
-			expect(response.status).toBe(200)
-			expect(harness.settlements).toHaveLength(1)
-			expect(harness.settlements[0]).not.toHaveProperty("tool")
-			expect(harness.settlements[0]).not.toHaveProperty("input")
-			expect(harness.settlements[0]?.decision).toBe("approve")
+			expect(response.status).toBe(400)
+			expect(harness.settlements).toEqual([])
 		} finally {
 			await harness.dispose()
 		}
@@ -208,7 +236,22 @@ describe("POST /internal/chat/apply", () => {
 	it("answers 404 for another org's conversation without reaching it", async () => {
 		const harness = makeHarness({})
 		try {
-			const response = await harness.apply({ ...byReference("approve"), sessionId: "org_other:tab-1" })
+			const response = await harness.apply({ ...byReference("approve"), sessionId: "org_other:inv-1" })
+
+			expect(response.status).toBe(404)
+			expect(harness.settlements).toEqual([])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("answers 404 for a connector thread of the caller's own org without reaching it", async () => {
+		const harness = makeHarness({})
+		try {
+			const response = await harness.apply({
+				...byReference("approve"),
+				sessionId: `${TENANT.orgId}:bot-slack-C1`,
+			})
 
 			expect(response.status).toBe(404)
 			expect(harness.settlements).toEqual([])

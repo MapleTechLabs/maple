@@ -9,6 +9,8 @@ import {
 import { dataSourceQuerySet, dataSourceRawSql, dataSourceTransform } from "@maple/widgets/dashboard"
 import { FUNNEL_MAX_STEPS, PATHS_MAX_BRANCHES, PATHS_MAX_DEPTH } from "@maple/query-model"
 import { isGroupByRequested } from "./inspect-widget"
+import { stringifyJson } from "./json"
+import { Array as Arr, Option, String as Str } from "effect"
 
 type DashboardWidget = typeof DashboardWidgetSchema.Type
 
@@ -50,9 +52,7 @@ export interface ValidateWidgetRenderabilityInput {
 const panelTypeOf = (input: ValidateWidgetRenderabilityInput): PanelType => {
 	if (input.panelType) return input.panelType
 	const visualization = input.widget.visualization
-	return visualization === "chart" || !(visualization in WIDGET_TYPES)
-		? "line"
-		: (visualization as PanelType)
+	return visualization === "chart" || !(visualization in WIDGET_TYPES) ? "line" : visualization
 }
 
 /** Every unit field a display config can carry, with a label for the message. */
@@ -142,16 +142,19 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 				`A product-event funnel has at most ${FUNNEL_MAX_STEPS} steps, but \`display_json.funnel.steps\` has ${funnelSteps.length}.`,
 			)
 		}
-		const lateSession = funnelSteps.findIndex((step, index) => index > 0 && step.kind === "session")
-		if (lateSession !== -1) {
+		const lateSession = Arr.findFirstIndex(
+			funnelSteps,
+			(step, index) => index > 0 && step.kind === "session",
+		)
+		if (Option.isSome(lateSession)) {
 			fatal.push(
-				`A \`{ "kind": "session" }\` funnel step describes how the session was acquired, so it is only valid as step 1 — \`display_json.funnel.steps\` has one at step ${lateSession + 1}.`,
+				`A \`{ "kind": "session" }\` funnel step describes how the session was acquired, so it is only valid as step 1 — \`display_json.funnel.steps\` has one at step ${lateSession.value + 1}.`,
 			)
 		}
 		const windowSeconds = widget.display.funnel?.windowSeconds
 		if (windowSeconds !== undefined && (!Number.isFinite(windowSeconds) || windowSeconds <= 0)) {
 			fatal.push(
-				`\`display_json.funnel.windowSeconds\` is the conversion window and must be a positive number of seconds (got ${JSON.stringify(windowSeconds)}). Omit it to use the default 86400 (24h).`,
+				`\`display_json.funnel.windowSeconds\` is the conversion window and must be a positive number of seconds (got ${stringifyJson(windowSeconds)}). Omit it to use the default 86400 (24h).`,
 			)
 		}
 	}
@@ -166,7 +169,7 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 				: paths.anchor.kind === "event"
 					? paths.anchor.eventName
 					: paths.anchor.pagePath
-		if (anchorName.trim() === "") {
+		if (Str.trim(anchorName) === "") {
 			fatal.push(
 				'`panel_type: "paths"` needs an anchor: set `display_json.paths.anchor` to `{ "kind": "event", "eventName": … }` or `{ "kind": "page", "pagePath": … }`.',
 			)
@@ -176,13 +179,13 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 			(!Number.isInteger(paths.depth) || paths.depth < 1 || paths.depth > PATHS_MAX_DEPTH)
 		) {
 			fatal.push(
-				`\`display_json.paths.depth\` must be an integer in 1..${PATHS_MAX_DEPTH} (got ${JSON.stringify(paths.depth)}).`,
+				`\`display_json.paths.depth\` must be an integer in 1..${PATHS_MAX_DEPTH} (got ${stringifyJson(paths.depth)}).`,
 			)
 		}
 		const pathsWindow = paths?.windowSeconds
 		if (pathsWindow !== undefined && (!Number.isFinite(pathsWindow) || pathsWindow <= 0)) {
 			fatal.push(
-				`\`display_json.paths.windowSeconds\` bounds how far from the anchor a hop may be and must be a positive number of seconds (got ${JSON.stringify(pathsWindow)}). Omit it to use the default 86400 (24h).`,
+				`\`display_json.paths.windowSeconds\` bounds how far from the anchor a hop may be and must be a positive number of seconds (got ${stringifyJson(pathsWindow)}). Omit it to use the default 86400 (24h).`,
 			)
 		}
 		if (
@@ -190,7 +193,7 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 			(!Number.isInteger(paths.branches) || paths.branches < 1 || paths.branches > PATHS_MAX_BRANCHES)
 		) {
 			fatal.push(
-				`\`display_json.paths.branches\` must be an integer in 1..${PATHS_MAX_BRANCHES} (got ${JSON.stringify(paths.branches)}).`,
+				`\`display_json.paths.branches\` must be an integer in 1..${PATHS_MAX_BRANCHES} (got ${stringifyJson(paths.branches)}).`,
 			)
 		}
 	}
@@ -204,7 +207,7 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 	// instead of one slice per category. The web editor blocks this; the MCP path
 	// did not.
 	if (meta.requiresGroupBy && querySet !== null) {
-		const grouped = querySet.queries.some((query) => isGroupByRequested(query))
+		const grouped = Arr.some(querySet.queries, (query) => isGroupByRequested(query))
 		if (!grouped) {
 			warnings.push(
 				`\`panel_type: "${panelType}"\` needs a group-by or it renders a single slice. Set \`groupBy: ["service.name"]\` AND \`addOns: { "groupBy": true }\` — without the addOn the groupBy is silently ignored.`,
@@ -215,8 +218,8 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 	// The same gate, reported on its own: a groupBy that looks set but isn't.
 	if (querySet !== null) {
 		for (const query of querySet.queries) {
-			const hasTokens = (query.groupBy ?? []).some((token) => {
-				const trimmed = token.trim().toLowerCase()
+			const hasTokens = Arr.some(query.groupBy ?? [], (token) => {
+				const trimmed = Str.toLowerCase(Str.trim(token))
 				return trimmed.length > 0 && trimmed !== "none" && trimmed !== "all"
 			})
 			if (hasTokens && !query.addOns?.groupBy) {
@@ -233,7 +236,7 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 	if (querySet !== null) {
 		for (const query of querySet.queries) {
 			if (query.dataSource !== "traces") continue
-			const hasValueField = ((query as { valueField?: string }).valueField ?? "").trim().length > 0
+			const hasValueField = Str.trim((query as { valueField?: string }).valueField ?? "").length > 0
 			if (!hasValueField && /^p(50|95|99)$/.test(query.aggregation)) {
 				warnings.push(
 					`Query "${query.name}" uses \`aggregation: "${query.aggregation}"\` on traces without a \`valueField\`. Bare percentiles only apply to a numeric span attribute; for latency use \`"${query.aggregation}_duration"\`.`,
@@ -249,7 +252,7 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 		warnings.push(
 			`\`${field.label}: "${field.value}"\` is not a known unit and will render as a plain number.${
 				suggestion ? ` Did you mean \`"${suggestion}"\`?` : ""
-			} Known units: ${WIDGET_UNIT_TOKENS.join(", ")}.`,
+			} Known units: ${Arr.join(WIDGET_UNIT_TOKENS, ", ")}.`,
 		)
 	}
 
@@ -273,7 +276,7 @@ export const formatRenderIssues = (issues: WidgetRenderIssues, widgetLabel?: str
 	const lines: string[] = []
 	for (const message of issues.fatal) lines.push(`- ${prefix}${message}`)
 	for (const message of issues.warnings) lines.push(`- ${prefix}${message}`)
-	return lines.join("\n")
+	return Arr.join(lines, "\n")
 }
 
 /**

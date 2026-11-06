@@ -3,31 +3,28 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "vite --port ${PORT:-4319} --host ${HOST:-127.0.0.1}",
+		"dev": "vite dev --port ${PORT:-4319} --host ${HOST:-127.0.0.1}",
 		"build": "vite build",
-		"preview": "vite preview",
-		"test": "vitest run",
-		"typecheck": "tsc --noEmit"
+		"test": "vitest run --passWithNoTests",
+		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
+		"@alchemy.run/cloudflare": "catalog:alchemy",
+		"@fontsource-variable/geist": "^5.3.0",
+		"@fontsource-variable/geist-mono": "^5.3.0",
+		"@maple/domain": "workspace:*",
 		"@maple/infra": "workspace:*",
 		"@maple/query-engine": "workspace:*",
 		"@maple/ui": "workspace:*",
-		"@tanstack/react-query": "^5.104.0",
-		"@tanstack/react-virtual": "^3.14.13",
+		"@maple/views": "workspace:*",
+		"@maple/web": "workspace:*",
 		"effect": "catalog:effect",
-		"react": "catalog:react",
-		"react-dom": "catalog:react",
-		"sugar-high": "^2.5.0"
+		"foldkit": "0.170.0"
 	},
 	"devDependencies": {
+		"@foldkit/vite-plugin": "0.29.0",
 		"@tailwindcss/vite": "catalog:tailwind",
-		"@testing-library/react": "^16.3.3",
-		"@types/react": "catalog:react",
-		"@types/react-dom": "catalog:react",
-		"@vitejs/plugin-react": "^6.1.1",
-		"@vitest/browser-playwright": "catalog:",
-		"playwright": "catalog:",
+		"@types/node": "catalog:tooling",
 		"tailwindcss": "catalog:tailwind",
 		"tw-animate-css": "catalog:tailwind",
 		"typescript": "catalog:tooling",

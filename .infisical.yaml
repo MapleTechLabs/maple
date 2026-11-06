@@ -1,0 +1,7 @@
+version: 1
+general: {}
+secrets-management:
+    project-id: 4aa48f0a-9ba5-4401-937a-25f7d5118124
+    default-environment: ""
+    mappings:
+        git-branch-to-environment: {}

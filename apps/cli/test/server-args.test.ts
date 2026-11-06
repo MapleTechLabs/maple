@@ -8,14 +8,12 @@ import {
 	defaultDataDir,
 	defaultLocalUrl,
 	ingestedSince,
+	storeChangedSince,
 	mapleCommand,
-	parseElapsedSeconds,
 	prettyPath,
 	shellWord,
-	startedBeforeWrite,
 	hostedDashboardUrl,
 	hostedUiOrigin,
-	isProcessAlive,
 	type DirtyStorePolicy,
 	resolveAdvertiseHost,
 	resolveBindHost,
@@ -23,6 +21,13 @@ import {
 	serverUrl,
 	validateHost,
 } from "../src/commands/server-args"
+import {
+	isProcessAlive,
+	parseElapsedSeconds,
+	parseProcStartedAtMs,
+	startedBeforeWrite,
+} from "@maple/local-server/store-claim"
+import { Array as Arr } from "effect"
 
 describe("local server bind host", () => {
 	it("defaults to loopback and accepts a trimmed environment override", () => {
@@ -92,6 +97,8 @@ describe("buildDetachedChildArgs", () => {
 				onDirtyStore: policy,
 				minimumRawTelemetryRetentionDays: 120,
 				checkpointInterval: "30m",
+				projectorModules: ["/tmp/module #1.mjs", "/tmp/second.mjs"],
+				reset: true,
 			})
 			deepStrictEqual(args, [
 				"/repo/apps/cli/src/bin.ts",
@@ -112,9 +119,14 @@ describe("buildDetachedChildArgs", () => {
 				"/tmp/backup config.xml",
 				"--minimum-raw-telemetry-retention-days",
 				"120",
+				"--reset",
 				"--offline",
+				"--projector-module",
+				"/tmp/module #1.mjs",
+				"--projector-module",
+				"/tmp/second.mjs",
 			])
-			strictEqual(args.filter((arg) => arg === "--on-dirty-store").length, 1)
+			strictEqual(Arr.filter(args, (arg) => arg === "--on-dirty-store").length, 1)
 			strictEqual(args.includes("--background"), false)
 			strictEqual(args.includes("-d"), false)
 		})
@@ -227,6 +239,16 @@ describe("PID identity", () => {
 		strictEqual(parseElapsedSeconds("garbage"), undefined)
 	})
 
+	it("reads a process start time from /proc, for images without ps", () => {
+		const systemStat = "cpu  1 2 3\nbtime 1761998400\nprocesses 42\n"
+		// Field 22 (starttime) is 12345 ticks; the comm holds a space and a paren.
+		const pidStat = "1 (tini (init)) S 0 1 1 0 -1 4194560 1 0 0 0 0 0 0 0 20 0 1 0 12345 2 3 4"
+		strictEqual(parseProcStartedAtMs(pidStat, systemStat), 1_761_998_400_000 + 123_450)
+		strictEqual(parseProcStartedAtMs(pidStat, "cpu 1 2 3\n"), undefined)
+		strictEqual(parseProcStartedAtMs("1 (maple) S 0 1", systemStat), undefined)
+		strictEqual(parseProcStartedAtMs("garbage", systemStat), undefined)
+	})
+
 	it("only a process started before the write can own the file", () => {
 		strictEqual(startedBeforeWrite(1_000, 5_000), true)
 		strictEqual(startedBeforeWrite(6_500, 5_000), true) // etime resolution slack
@@ -240,6 +262,17 @@ describe("checkpoint refresh skip", () => {
 		strictEqual(ingestedSince(999, 1_000), false)
 		strictEqual(ingestedSince(1_000, 1_000), true)
 		strictEqual(ingestedSince(undefined, 1_000), true) // status unknown: take it
+	})
+
+	it("also refreshes after a scoped delete, so restore points drop the deleted rows", () => {
+		const status = { service: "maple-local", pid: 1, version: "x", url: "", dataDir: "" } as const
+		strictEqual(storeChangedSince({ ...status, lastIngestAtMs: null }, 1_000), false)
+		strictEqual(
+			storeChangedSince({ ...status, lastIngestAtMs: null, lastDeleteAtMs: 1_000 }, 1_000),
+			true,
+		)
+		strictEqual(storeChangedSince({ ...status, lastIngestAtMs: 999, lastDeleteAtMs: 999 }, 1_000), false)
+		strictEqual(storeChangedSince(undefined, 1_000), true)
 	})
 })
 

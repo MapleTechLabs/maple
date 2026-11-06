@@ -1,13 +1,15 @@
 import {
 	IntegrationsRevokedError,
-	OrgId,
 	ScrapeTargetAuthError,
 	ScrapeTargetEncryptionError,
 	ScrapeTargetPersistenceError,
 	ScrapeTargetUpstreamError,
 } from "@maple/domain/http"
 import { globToRegExp } from "@maple/domain/glob"
-import type { scrapeTargets } from "@maple/db"
+import type { ScrapeTargetRow as StoredScrapeTargetRow } from "@maple/db/tables"
+
+/** Discovery reads a target's connection, never its labels. */
+type ScrapeTargetRow = Omit<StoredScrapeTargetRow, "labelsJson">
 import {
 	Clock,
 	Context,
@@ -21,20 +23,21 @@ import {
 	Ref,
 	Result,
 	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
 } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
 import { buildScrapeAuthHeaders } from "@maple/backend/services/auth/scrape-auth"
-import { validateExternalUrlSync } from "@maple/safe-fetch"
+import { parseExternalUrl } from "@maple/safe-fetch"
 import { decodeDiscoveryConfig } from "./planetscale/discovery-config"
 import {
 	PlanetScaleOAuthService,
 	planetScaleBearerHeader,
 	type PlanetScaleAccessTokenError,
 } from "@maple/backend/services/auth/PlanetScaleOAuthService"
-
-type ScrapeTargetRow = typeof scrapeTargets.$inferSelect
 
 /**
  * Resolves PlanetScale `planetscale`-type scrape targets into their concrete
@@ -101,8 +104,6 @@ type DiscoveryError =
 	| ScrapeTargetUpstreamError
 	| PlanetScaleAccessTokenError
 
-const toPersistenceError = (message: string) => new ScrapeTargetPersistenceError({ message })
-
 // Provider-side (http_sd) failures: transport, timeout, non-2xx non-auth, or an
 // undecodable payload. Kept distinct from persistence (our DB) so the class —
 // not a regex over the message — carries the failure kind downstream.
@@ -125,9 +126,9 @@ export const subTargetsFromGroup = (group: {
 	// `403 invalid signature`.
 	const labels: Record<string, string> = {}
 	const authParams = new URLSearchParams()
-	for (const [key, value] of Object.entries(sdLabels)) {
-		if (key.startsWith("__param_")) authParams.set(key.slice("__param_".length), value)
-		else if (!key.startsWith("__")) labels[key] = value
+	for (const [key, value] of Rec.toEntries(sdLabels)) {
+		if (Str.startsWith("__param_")(key)) authParams.set(Str.slice("__param_".length)(key), value)
+		else if (!Str.startsWith("__")(key)) labels[key] = value
 	}
 	// PlanetScale's current http_sd payload names the human-readable identity
 	// labels with a `_name` suffix. Keep those canonical upstream keys and emit
@@ -143,9 +144,7 @@ export const subTargetsFromGroup = (group: {
 	const dropped: Array<string> = []
 	for (const hostPort of group.targets) {
 		const url = `${scheme}://${hostPort}${path}`
-		try {
-			validateExternalUrlSync(url)
-		} catch {
+		if (Result.isFailure(parseExternalUrl(url))) {
 			dropped.push(url)
 			continue
 		}
@@ -193,21 +192,24 @@ const branchNameForFilter = (entry: PlanetScaleSubTarget): string =>
 	entry.labels.planetscale_database_branch_id ??
 	entry.subTargetKey
 
-interface BranchFilters {
+export interface BranchFilters {
 	readonly include: ReadonlyArray<string>
 	readonly exclude: ReadonlyArray<string>
 }
 
 /** Read include/exclude branch globs off the row's `discovery_config_json`. */
-const parseBranchFilters = (discoveryConfigJson: unknown): BranchFilters => {
+export const parseBranchFilters = (discoveryConfigJson: unknown): BranchFilters => {
 	const cfg = decodeDiscoveryConfig(discoveryConfigJson)
 	return { include: cfg?.includeBranches ?? [], exclude: cfg?.excludeBranches ?? [] }
 }
 
 /** exclude wins over include; an empty include list means "all branches". */
-const branchPassesFilters = (name: string, filters: BranchFilters): boolean => {
-	if (filters.exclude.some((pattern) => globToRegExp(pattern).test(name))) return false
-	if (filters.include.length > 0 && !filters.include.some((pattern) => globToRegExp(pattern).test(name)))
+export const branchPassesFilters = (name: string, filters: BranchFilters): boolean => {
+	if (Arr.some(filters.exclude, (pattern) => globToRegExp(pattern).test(name))) return false
+	if (
+		filters.include.length > 0 &&
+		!Arr.some(filters.include, (pattern) => globToRegExp(pattern).test(name))
+	)
 		return false
 	return true
 }
@@ -237,7 +239,7 @@ export interface PlanetScaleDiscoveryServiceApi {
 export class PlanetScaleDiscoveryService extends Context.Service<
 	PlanetScaleDiscoveryService,
 	PlanetScaleDiscoveryServiceApi
->()("@maple/api/services/PlanetScaleDiscoveryService", {
+>()("@maple/backend/services/PlanetScaleDiscoveryService", {
 	make: Effect.gen(function* () {
 		const env = yield* Env
 		const psOAuth = yield* PlanetScaleOAuthService
@@ -266,14 +268,11 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 			if (row.authType !== "planetscale_oauth") {
 				return yield* buildScrapeAuthHeaders(row, encryptionKey)
 			}
-			const orgId = yield* Schema.decodeEffect(OrgId)(row.orgId).pipe(Effect.orDie)
-			const { accessToken } = yield* psOAuth.getValidAccessToken(orgId)
+			const { accessToken } = yield* psOAuth.getValidAccessToken(row.orgId)
 			return { Authorization: planetScaleBearerHeader(accessToken) }
 		})
 
-		const fetchSubTargets = Effect.fn("PlanetScaleDiscoveryService.fetchSubTargets")(function* (
-			row: ScrapeTargetRow,
-		) {
+		const fetchSubTargets = Effect.fnUntraced(function* (row: ScrapeTargetRow) {
 			const headers = yield* authHeadersForRow(row)
 			const response = yield* Effect.gen(function* () {
 				const request = HttpClientRequest.get(row.url).pipe(HttpClientRequest.setHeaders(headers))
@@ -294,20 +293,19 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 			// Preserve the OAuth grant's exact public failure. A manual service token
 			// has no integration grant, so it keeps the scrape-target auth tag.
 			if (response.status === 401 || response.status === 403) {
-				return yield* Effect.fail(
-					row.authType === "planetscale_oauth"
-						? new IntegrationsRevokedError({
-								message: `PlanetScale discovery rejected the OAuth token (HTTP ${response.status}). Check the OAuth app's read_metrics_endpoints scope and reconnect.`,
-							})
-						: new ScrapeTargetAuthError({
-								reason: "config",
-								message: `PlanetScale discovery rejected the service token (HTTP ${response.status}). Check the token id/secret and its read_metrics_endpoints permission.`,
-							}),
-				)
+				return yield* row.authType === "planetscale_oauth"
+					? new IntegrationsRevokedError({
+							message: `PlanetScale discovery rejected the OAuth token (HTTP ${response.status}). Check the OAuth app's read_metrics_endpoints scope and reconnect.`,
+						})
+					: new ScrapeTargetAuthError({
+							reason: "config",
+							message: `PlanetScale discovery rejected the service token (HTTP ${response.status}). Check the token id/secret and its read_metrics_endpoints permission.`,
+						})
 			}
 			if (response.status < 200 || response.status >= 300) {
-				return yield* Effect.fail(
-					toUpstreamError(`PlanetScale discovery failed: HTTP ${response.status}`, response.status),
+				return yield* toUpstreamError(
+					`PlanetScale discovery failed: HTTP ${response.status}`,
+					response.status,
 				)
 			}
 
@@ -385,8 +383,22 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 
 		const discover = Effect.fn("PlanetScaleDiscoveryService.discover")(function* (row: ScrapeTargetRow) {
 			yield* Effect.annotateCurrentSpan({ orgId: row.orgId })
+			// A revoked grant fails every call until a reconnect; skip it without an error, before
+			// the cache (its signed URLs would keep scraping), so a reconnect resumes on the next call.
+			if (row.authType === "planetscale_oauth") {
+				// An unreadable grant falls through to the fetch, which keeps the stale fallback.
+				const revoked = yield* psOAuth.grantStatus(row.orgId).pipe(
+					Effect.map((grant) => grant.revokedAt !== null),
+					Effect.orElseSucceed(() => false),
+				)
+				if (revoked) {
+					yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": "grant_revoked" })
+					return []
+				}
+			}
 			const now = yield* Clock.currentTimeMillis
-			const cached = Option.getOrUndefined(HashMap.get(yield* Ref.get(cache), row.id))
+			const cacheMap = yield* Ref.get(cache)
+			const cached = Option.getOrUndefined(HashMap.get(cacheMap, row.id))
 			if (cached && now - cached.fetchedAt < DISCOVERY_TTL_MS) {
 				return cached.entries
 			}
@@ -402,6 +414,8 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 			const deferred = Deferred.makeUnsafe<ReadonlyArray<PlanetScaleSubTarget>, DiscoveryError>()
 			inFlight.set(row.id, { await: Deferred.await(deferred) })
 
+			// The span wraps the stale fallback too: a failure served from cache closes Ok with
+			// `error.type`, so a slow discovery endpoint does not open an error issue per refresh.
 			const refresh = Effect.gen(function* () {
 				const fresh = yield* Effect.result(fetchSubTargets(row))
 				if (Result.isSuccess(fresh)) {
@@ -420,6 +434,7 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 				if (cached) {
 					// Serve stale entries through transient discovery failures; keep the
 					// stale fetchedAt so the next call retries instead of waiting a TTL.
+					yield* Effect.annotateCurrentSpan({ "error.type": fresh.failure._tag })
 					yield* Effect.logWarning("PlanetScale discovery failed; serving stale targets").pipe(
 						Effect.annotateLogs({ scrapeTargetId: row.id, error: message }),
 					)
@@ -429,8 +444,12 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 					return cached.entries
 				}
 
-				return yield* Effect.fail(fresh.failure)
-			})
+				return yield* fresh.failure
+			}).pipe(
+				Effect.withSpan("PlanetScaleDiscoveryService.fetchSubTargets", {
+					attributes: { orgId: row.orgId, "maple.scraper.target_id": row.id },
+				}),
+			)
 
 			return yield* refresh.pipe(
 				Effect.tap((entries) => Deferred.succeed(deferred, entries)),

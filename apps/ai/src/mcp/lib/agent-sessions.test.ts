@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 import type { AiSessionSpan } from "@maple/domain/http"
+import { buildSessionTurns } from "@maple/agent-sessions"
+import { langGraphThreadSpans } from "@maple/agent-sessions/testing"
 import { clipSpanContent } from "./agent-sessions"
+import { Array as Arr, String as Str } from "effect"
 
 const span = (genAi: AiSessionSpan["genAi"]): AiSessionSpan => ({
 	traceId: "7f3a4b5c6d7e8f901234567890abcdef",
@@ -23,13 +26,14 @@ const assistantMessage = (text: string) => ({
 	parts: [{ type: "text", content: text }],
 })
 
-const long = "x".repeat(3_000)
+const long = Str.repeat(3_000)("x")
 
 describe("clipSpanContent", () => {
-	it("keeps the newest user message and the last one of an input history", () => {
+	it("keeps the first and newest user messages and the last one of an input history", () => {
 		const clipped = clipSpanContent(
 			span({
 				inputMessages: [
+					assistantMessage("zeroth"),
 					userMessage("first"),
 					assistantMessage("second"),
 					userMessage("third"),
@@ -41,8 +45,17 @@ describe("clipSpanContent", () => {
 		const messages = clipped.genAi.inputMessages as ReadonlyArray<{
 			readonly parts: ReadonlyArray<{ readonly content: string }>
 		}>
-		expect(messages).toHaveLength(2)
-		expect(messages.map((message) => message.parts[0]?.content)).toEqual(["third", "fifth"])
+		expect(Arr.map(messages, (message) => message.parts[0]?.content)).toEqual(["first", "third", "fifth"])
+	})
+
+	// The whole-session read runs the page's derivations on clipped spans, so a
+	// LangGraph thread must read the same turn labels there as on the page.
+	it("keeps what the turn labels read", () => {
+		const prompts = ["opening question", "second question", "third question"]
+		const spans = langGraphThreadSpans(prompts)
+		expect(Arr.map(buildSessionTurns(Arr.map(spans, clipSpanContent)), (turn) => turn.label)).toEqual(
+			prompts,
+		)
 	})
 
 	it("keeps every entry of an array-shaped payload, cutting only its strings", () => {
@@ -55,8 +68,8 @@ describe("clipSpanContent", () => {
 		const rows = clipped.genAi.toolCallResult as ReadonlyArray<{ readonly text?: string }>
 		const parts = clipped.genAi.systemInstructions as ReadonlyArray<{ readonly content?: string }>
 		expect(rows).toHaveLength(3)
-		expect(rows[0]?.text).toBe(`${"x".repeat(1_000)}…`)
+		expect(rows[0]?.text).toBe(`${Str.repeat(1_000)("x")}…`)
 		expect(parts).toHaveLength(2)
-		expect(parts[0]?.content).toBe(`${"x".repeat(1_000)}…`)
+		expect(parts[0]?.content).toBe(`${Str.repeat(1_000)("x")}…`)
 	})
 })

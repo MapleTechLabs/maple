@@ -18,6 +18,10 @@ export const AlertRuleRow = Schema.Struct({
 	comparator: Schema.String,
 	threshold: Schema.Number,
 	windowMinutes: Schema.Number,
+	/** Minutes between checks as picked; null checks every fifth of the window, 1 to 5. */
+	evaluationIntervalMinutes: Schema.NullOr(Schema.Number),
+	/** Set when the scheduler slowed the rule after repeated query timeouts; cleared by an edit. */
+	slowedIntervalMinutes: Schema.NullOr(Schema.Number),
 	destinationIds: Schema.Array(Schema.String),
 	createdAt: Schema.String,
 	updatedAt: Schema.String,
@@ -35,6 +39,8 @@ export const ListAlertRulesOutput = Schema.Struct({
 
 export const AlertDestinationRow = Schema.Struct({
 	id: Schema.String,
+	/** The same destination's id in the REST API (`dest_…`). */
+	publicId: Schema.String,
 	name: Schema.String,
 	type: Schema.String,
 	enabled: Schema.Boolean,
@@ -54,9 +60,42 @@ export const ListAlertDestinationsOutput = Schema.Struct({
 	enabledOnly: Schema.optionalKey(Schema.Boolean),
 })
 
-export const CreateAlertRuleOutput = Schema.Struct({ rule: AlertRuleRow })
+/** Configuration that saved but probably does not do what the caller meant. */
+const RuleWriteWarnings = Schema.optionalKey(Schema.Array(Schema.String))
 
-export const UpdateAlertRuleOutput = Schema.Struct({ rule: AlertRuleRow })
+/** When the saved rule first runs, and what a preview of its latest window observes right now. */
+export const AlertRuleFirstEvaluation = Schema.Struct({
+	/** Next scheduler tick (every minute); null for a disabled rule. */
+	nextEvaluationAt: NullableString,
+	current: Schema.Array(
+		Schema.Struct({
+			groupKey: Schema.String,
+			window: Schema.String,
+			status: Schema.String,
+			skipReason: NullableString,
+			value: NullableNumber,
+			sampleCount: Schema.Number,
+		}),
+	),
+	/** Set when the preview could not run; the rule saved regardless. */
+	previewError: Schema.optionalKey(Schema.String),
+})
+
+const FirstEvaluation = Schema.optionalKey(AlertRuleFirstEvaluation)
+
+export const CreateAlertRuleOutput = Schema.Struct({
+	rule: AlertRuleRow,
+	warnings: RuleWriteWarnings,
+	evaluation: FirstEvaluation,
+})
+
+export const UpdateAlertRuleOutput = Schema.Struct({
+	rule: AlertRuleRow,
+	/** Every rule a bulk (`rule_ids`) update changed; `rule` is the first of them. */
+	rules: Schema.optionalKey(Schema.Array(AlertRuleRow)),
+	warnings: RuleWriteWarnings,
+	evaluation: FirstEvaluation,
+})
 
 export const DeleteAlertRuleOutput = Schema.Struct({ id: Schema.String })
 
@@ -65,6 +104,8 @@ export const AlertRuleDetailRow = Schema.Struct({
 	excludeServiceNames: Schema.Array(Schema.String),
 	groupBy: Schema.NullOr(Schema.Array(Schema.String)),
 	minimumSampleCount: Schema.Number,
+	/** What an empty window does: skip, zero, or alert. */
+	noDataBehavior: Schema.String,
 	consecutiveBreachesRequired: Schema.Number,
 	consecutiveHealthyRequired: Schema.Number,
 	renotifyIntervalMinutes: Schema.Number,
@@ -78,10 +119,91 @@ export const AlertRuleDetailRow = Schema.Struct({
 	notificationBody: Schema.optionalKey(NullableString),
 	/** Most recent evaluation failure, if the rule's last check errored. */
 	lastEvaluationError: Schema.optionalKey(NullableString),
+	/** Why it failed: query_too_slow, query_too_much_memory, invalid_query or other. */
+	lastEvaluationErrorKind: Schema.optionalKey(NullableString),
+	/** When the scheduler slowed the rule down, alongside `slowedIntervalMinutes`. */
+	slowedAt: Schema.optionalKey(NullableString),
 	lastEvaluatedAt: Schema.optionalKey(NullableString),
+	/** `destinationIds` resolved to their names; an id with no match is a deleted destination. */
+	destinations: Schema.optionalKey(
+		Schema.Array(
+			Schema.Struct({
+				id: Schema.String,
+				name: NullableString,
+				type: NullableString,
+				enabled: Schema.Boolean,
+			}),
+		),
+	),
 })
 
 export const GetAlertRuleOutput = Schema.Struct({ rule: AlertRuleDetailRow })
+
+/** One evaluation window of a preview: what the scheduler would have observed and decided. */
+export const AlertPreviewPointRow = Schema.Struct({
+	groupKey: Schema.String,
+	bucket: Schema.String,
+	status: Schema.String,
+	skipReason: NullableString,
+	value: NullableNumber,
+	sampleCount: Schema.Number,
+	provisional: Schema.Boolean,
+})
+
+/** One group's windows, counted by verdict. */
+export const AlertPreviewGroupRow = Schema.Struct({
+	groupKey: Schema.String,
+	windows: Schema.Number,
+	breached: Schema.Number,
+	healthy: Schema.Number,
+	noData: Schema.Number,
+	belowMinSamples: Schema.Number,
+	noValue: Schema.Number,
+	minValue: NullableNumber,
+	maxValue: NullableNumber,
+	totalSamples: Schema.Number,
+})
+
+export const PreviewAlertRuleOutput = Schema.Struct({
+	/** Set when an existing rule was previewed. */
+	ruleId: Schema.optionalKey(Schema.String),
+	timeRange: OutputTimeRange,
+	/** Set when the range was clamped to the preview's window cap. */
+	truncatedToStart: NullableString,
+	windowMinutes: Schema.Number,
+	comparator: Schema.String,
+	threshold: Schema.Number,
+	thresholdUpper: NullableNumber,
+	minimumSampleCount: Schema.Number,
+	groups: Schema.Array(AlertPreviewGroupRow),
+	/** The latest 200 windows per group; `groups` counts the whole range. */
+	points: Schema.Array(AlertPreviewPointRow),
+	wouldFire: Schema.Array(
+		Schema.Struct({ groupKey: Schema.String, start: Schema.String, end: Schema.String }),
+	),
+	warnings: Schema.Array(Schema.String),
+	/** Raw SQL rules only: one check of the latest window, timed against the interval's limit. */
+	/** Raw SQL only: the range was too heavy to chart, or the SQL has no time bucket, so no windows were evaluated. */
+	seriesFailure: Schema.optionalKey(
+		Schema.Literals(["query_too_slow", "query_too_much_memory", "not_time_grouped"]),
+	),
+	queryTiming: Schema.optionalKey(
+		Schema.Struct({
+			/** Null when the check did not finish within `probeLimitMs`. */
+			elapsedMs: NullableNumber,
+			failure: NullableString,
+			probeLimitMs: Schema.Number,
+			intervalMinutes: Schema.Number,
+			limitMs: Schema.Number,
+			/** Check intervals whose limit the query fits with a fifth to spare. */
+			fitsIntervalMinutes: Schema.Array(Schema.Number),
+		}),
+	),
+	/** Raw SQL rules only: filters that would make the query cheaper, by SQL line. */
+	performanceHints: Schema.optionalKey(
+		Schema.Array(Schema.Struct({ code: Schema.String, message: Schema.String, line: Schema.Number })),
+	),
+})
 
 export const AlertIncidentRow = Schema.Struct({
 	id: Schema.String,
@@ -94,6 +216,9 @@ export const AlertIncidentRow = Schema.Struct({
 	/** Set while an open incident is waiting on telemetry rather than observing a breach. */
 	holdReason: NullableString,
 	heldSince: NullableString,
+	/** Set while an open incident is acknowledged; reminders pause until it is not. */
+	acknowledgedAt: Schema.optionalKey(NullableString),
+	acknowledgedBy: Schema.optionalKey(NullableString),
 	threshold: Schema.Number,
 	comparator: Schema.String,
 	firstTriggeredAt: Schema.String,
@@ -106,6 +231,7 @@ const IncidentFilters = {
 	status: Schema.optionalKey(Schema.String),
 	severity: Schema.optionalKey(Schema.String),
 	groupKey: Schema.optionalKey(Schema.String),
+	acknowledged: Schema.optionalKey(Schema.Boolean),
 	limit: Schema.optionalKey(Schema.Number),
 	/** More incidents matched than `limit` let through. */
 	hasMore: Schema.optionalKey(Schema.Boolean),
@@ -116,6 +242,8 @@ export const ListAlertIncidentsOutput = Schema.Struct({
 	total: Schema.Number,
 	openCount: Schema.Number,
 	resolvedCount: Schema.Number,
+	/** With status=open: incidents of the same filters resolved in the last 24 hours. */
+	recentlyResolvedCount: Schema.optionalKey(Schema.Number),
 	...IncidentFilters,
 })
 
@@ -123,6 +251,8 @@ export const AlertCheckRow = Schema.Struct({
 	timestamp: Schema.String,
 	groupKey: Schema.String,
 	status: Schema.String,
+	/** Why a skipped check skipped: no_data, below_min_samples or no_value. */
+	skipReason: NullableString,
 	observedValue: NullableNumber,
 	threshold: Schema.Number,
 	comparator: Schema.String,
@@ -144,6 +274,10 @@ export const ListAlertChecksOutput = Schema.Struct({
 	breached: Schema.Number,
 	healthy: Schema.Number,
 	skipped: Schema.Number,
+	/** Skipped checks whose window had no data (a raw query that returned no rows). */
+	noData: Schema.Number,
+	/** Skipped checks with fewer samples than the rule's minimum. */
+	belowMinSamples: Schema.Number,
 	errored: Schema.Number,
 	transitions: Schema.Number,
 	checks: Schema.Array(AlertCheckRow),
@@ -168,6 +302,20 @@ export const IncidentTimelineRow = Schema.Struct({
 	lastTriggeredAt: Schema.String,
 	resolvedAt: NullableString,
 	lastNotifiedAt: NullableString,
+	acknowledgedAt: Schema.optionalKey(NullableString),
+	acknowledgedBy: Schema.optionalKey(NullableString),
+})
+
+export const AcknowledgeAlertIncidentOutput = Schema.Struct({
+	id: Schema.String,
+	ruleId: Schema.String,
+	ruleName: Schema.String,
+	status: Schema.String,
+	acknowledged: Schema.Boolean,
+	acknowledgedAt: NullableString,
+	acknowledgedBy: NullableString,
+	/** False when the incident was already in the requested state. */
+	changed: Schema.Boolean,
 })
 
 export const GetIncidentTimelineOutput = Schema.Struct({

@@ -1,6 +1,6 @@
-import { Effect, Layer } from "effect"
-import { HttpApiMiddleware } from "effect/unstable/httpapi"
-import { HttpEffect, HttpServerResponse } from "effect/unstable/http"
+import { Effect, Layer, Array as Arr, String as Str } from "effect"
+import { HttpApiMiddleware } from "effect/http-api"
+import { HttpEffect, HttpServerResponse } from "effect/http"
 import {
 	V2InvalidRequest,
 	V2ResponseSchemaFailure,
@@ -39,16 +39,19 @@ const V2SchemaErrorTransformLive = HttpApiMiddleware.layerSchemaErrorTransform(
 					operation: endpoint.identifier,
 					errorType: `@maple/api/routes/v2/V2ResponseSchemaError/${schemaError.kind}`,
 					summary: "V2 response failed its declared HTTP schema",
-					message: details.map(({ line }) => line).join("; "),
+					message: Arr.join(
+						Arr.map(details, ({ line }) => line),
+						"; ",
+					),
 					status: 500,
-					detail: details.map(({ line }) => line),
+					detail: Arr.map(details, ({ line }) => line),
 					cause: schemaError.cause,
 				}).pipe(Effect.andThen(Effect.fail(V2ResponseSchemaFailure.make())))
 			}
 			const first = details[0]
 			if (first === undefined) {
 				return Effect.fail(
-					V2InvalidRequest.make(`Invalid request ${schemaError.kind.toLowerCase()}.`),
+					V2InvalidRequest.make(`Invalid request ${Str.toLowerCase(schemaError.kind)}.`),
 				)
 			}
 			const remaining = details.length - 1

@@ -7,8 +7,8 @@ import {
 } from "@maple/db/client"
 import { trackOutboundSlot } from "@maple/cache"
 import { Context, Effect, Exit, Option, Schema, Scope, Semaphore } from "effect"
-import type * as Reactivity from "effect/unstable/reactivity/Reactivity"
-import type { SqlError } from "effect/unstable/sql/SqlError"
+import type * as Reactivity from "effect/reactivity/Reactivity"
+import type { SqlError } from "effect/sql/SqlError"
 import { MapleDbConnection } from "./bindings"
 import {
 	type DatabaseError,
@@ -75,7 +75,7 @@ export interface PgConnectionScopeApi {
  * entrypoints, tests, any future entry point that forgets to wrap).
  */
 export class PgConnectionScope extends Context.Reference<PgConnectionScopeApi | undefined>(
-	"@maple/api/platform/PgConnectionScope",
+	"@maple/backend/platform/PgConnectionScope",
 	{ defaultValue: () => undefined },
 ) {}
 
@@ -89,7 +89,7 @@ export class PgConnectionScope extends Context.Reference<PgConnectionScopeApi | 
  * a span can name it as something other than a driver fault.
  */
 export class PgConnectionScopeClosedError extends Schema.TaggedError<PgConnectionScopeClosedError>()(
-	"@maple/api/platform/PgConnectionScopeClosedError",
+	"@maple/backend/platform/PgConnectionScopeClosedError",
 	{ message: Schema.String },
 ) {}
 
@@ -105,7 +105,7 @@ export class PgConnectionScopeClosedError extends Schema.TaggedError<PgConnectio
  * the forked work.
  */
 export class DrainRunOnInterrupt extends Context.Reference<boolean>(
-	"@maple/api/platform/DrainRunOnInterrupt",
+	"@maple/backend/platform/DrainRunOnInterrupt",
 	{ defaultValue: () => false },
 ) {}
 
@@ -123,6 +123,8 @@ export interface PgConnectionScopeSeams {
 	readonly openClient?: (
 		options: MaplePgClientOptions,
 	) => Effect.Effect<MaplePgClient, SqlError, Scope.Scope | Reactivity.Reactivity>
+	/** Open the database itself, bypassing `openClient`: tests back the scope with PGlite. */
+	readonly openDb?: Effect.Effect<MapleDb, SqlError, Scope.Scope>
 }
 
 /**
@@ -170,6 +172,7 @@ export const makePgConnectionScope = (
 	// The client is scoped: it registers its own close on the scope below, and a
 	// teardown error there never shadows the real DB error from the call.
 	const acquireClient = Effect.suspend(() => openClient(options))
+	const openDb = seams?.openDb ?? makeMapleEffectDb(acquireClient)
 
 	// Lazy: an invocation that never touches the database never creates one.
 	const open: Effect.Effect<MapleDb, DatabaseError> = gate.withPermits(1)(
@@ -181,7 +184,7 @@ export const makePgConnectionScope = (
 			return Effect.uninterruptible(
 				Effect.gen(function* () {
 					const scope = yield* Scope.make()
-					const db = yield* makeMapleEffectDb(acquireClient).pipe(
+					const db = yield* openDb.pipe(
 						Scope.provide(scope),
 						Effect.mapError(toDatabaseError),
 						Effect.onError(() => Scope.close(scope, Exit.void)),

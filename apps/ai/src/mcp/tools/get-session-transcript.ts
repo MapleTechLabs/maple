@@ -1,4 +1,4 @@
-import { Effect, Schema, SchemaTransformation } from "effect"
+import { DateTime, Effect, Schema, SchemaTransformation, Array as Arr, String as Str } from "effect"
 import { GetSessionTranscriptOutput, SessionTranscriptEventType } from "@maple/domain/mcp-outputs"
 import { getSessionTranscript } from "@maple/query-engine/observability"
 import type { McpToolRegistrar } from "./types"
@@ -23,11 +23,11 @@ const EventTypeList = Schema.Union([
 			Schema.Array(Schema.String),
 			SchemaTransformation.transform<ReadonlyArray<string>, string>({
 				decode: (value) =>
-					value
-						.split(",")
-						.map((part) => part.trim().toLowerCase())
-						.filter((part) => part !== ""),
-				encode: (values) => values.join(","),
+					Arr.filter(
+						Arr.map(Str.split(",")(value), (part) => Str.toLowerCase(Str.trim(part))),
+						(part) => part !== "",
+					),
+				encode: (values) => Arr.join(values, ","),
 			}),
 		),
 		// The split parts are then held to the enum, so an unknown type is a parameter error.
@@ -39,19 +39,21 @@ const EventTypeList = Schema.Union([
 const describeFilters = (filters: TranscriptFilters): string => {
 	const parts: string[] = []
 	if (filters.onlyErrors) parts.push("errors only")
-	if (filters.eventTypes.length > 0) parts.push(`types=${filters.eventTypes.join("/")}`)
-	if (filters.aroundTraceId !== undefined) parts.push(`trace=${filters.aroundTraceId.slice(0, 12)}…`)
-	return parts.join(", ")
+	if (filters.eventTypes.length > 0) parts.push(`types=${Arr.join(filters.eventTypes, "/")}`)
+	if (filters.aroundTraceId !== undefined) parts.push(`trace=${Str.slice(0, 12)(filters.aroundTraceId)}…`)
+	return Arr.join(parts, ", ")
 }
 
 /** One transcript row as `time  TYPE detail (trace)`. */
 const formatLine = (ev: TranscriptEvent): string => {
-	const time = ev.timestamp.split(" ")[1] ?? ev.timestamp
-	const trace = ev.traceId ? ` ⟶ ${ev.traceId.slice(0, 12)}…` : ""
+	// `HH:mm:ss.SSS` out of the ISO timestamp.
+	const time = Str.slice(11, 23)(ev.timestamp) || ev.timestamp
+	const trace = ev.traceId ? ` ⟶ ${Str.slice(0, 12)(ev.traceId)}…` : ""
 	const detail = (() => {
 		switch (ev.type) {
 			case "navigation":
-				return `NAV   → ${ev.url}`
+				// Mobile SDKs leave `url` empty and put the screen name in `message`.
+				return `NAV   → ${ev.url || ev.message}`
 			case "click":
 				return `CLICK ${ev.targetSelector}${ev.targetText ? ` "${truncate(ev.targetText, 60)}"` : ""}`
 			case "input":
@@ -72,6 +74,7 @@ const formatLine = (ev: TranscriptEvent): string => {
 export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_session_transcript",
+		title: "Get Session Transcript",
 		description:
 			"Read a browser session replay (session id from `search_sessions`; for an AI agent session use `get_agent_session`) as a text transcript: navigation, clicks, console logs, network requests and errors in order, each with the trace id it ran under. Use it to see what a user did and where it went wrong; `inspect_trace` opens any referenced trace.",
 		parameters: Schema.Struct({
@@ -100,10 +103,10 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				sessionId: params.session_id,
-				limit: lim,
-				offset: off,
-				errorsOnly,
+				"maple.ai.session.id": params.session_id,
+				"maple.ai.limit": lim,
+				"maple.ai.offset": off,
+				"maple.ai.errors_only": errorsOnly,
 			})
 
 			// Fetch one extra row to detect whether more events remain past this page.
@@ -120,12 +123,12 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 
 			const hasMore = rows.length > lim
 			const events = hasMore ? rows.slice(0, lim) : rows
-			yield* Effect.annotateCurrentSpan("eventCount", events.length)
+			yield* Effect.annotateCurrentSpan("result.eventCount", events.length)
 
 			return {
 				sessionId: params.session_id,
-				events: events.map((e) => ({
-					timestamp: e.timestamp,
+				events: Arr.map(events, (e) => ({
+					timestamp: DateTime.formatIso(e.timestamp),
 					type: e.type,
 					url: truncate(e.url, 256),
 					traceId: e.traceId,
@@ -135,8 +138,8 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 					targetText: truncate(e.targetText, 256),
 					netMethod: e.netMethod,
 					netUrl: truncate(e.netUrl, 256),
-					netStatus: Number(e.netStatus),
-					netDurationMs: Number(e.netDurationMs),
+					netStatus: e.netStatus,
+					netDurationMs: e.netDurationMs,
 				})),
 				pagination: {
 					offset: off,
@@ -186,7 +189,10 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 							},
 						}
 					: undefined),
-				blocks: events.length === 0 ? [] : [doc.code("text", events.map(formatLine).join("\n"))],
+				blocks:
+					events.length === 0
+						? []
+						: [doc.code("text", Arr.join(Arr.map(events, formatLine), "\n"))],
 				...(pagination.nextOffset === undefined
 					? undefined
 					: {
@@ -209,7 +215,7 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 								),
 							},
 						}),
-				next: [...traces].map(([id, timestamp]) =>
+				next: Arr.map([...traces], ([id, timestamp]) =>
 					doc.next(
 						"inspect_trace",
 						{ trace_id: id, timestamp },

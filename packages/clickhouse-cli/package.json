@@ -25,7 +25,7 @@
 	"scripts": {
 		"start": "bun src/cli.ts",
 		"test": "vitest run",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
 		"@maple/domain": "workspace:*"

@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 import {
 	buildSessionChecks,
@@ -6,7 +6,6 @@ import {
 	buildSessionSummary,
 	buildSessionTurns,
 	formatCost,
-	turnOrdinal,
 } from "@maple/agent-sessions"
 import { GetAgentSessionOutput } from "@maple/domain/mcp-outputs"
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
@@ -15,7 +14,6 @@ import { formatDurationFromMs, formatNumber, tableCell, truncate } from "../lib/
 import {
 	loadAgentSessionSpans,
 	loadSummary,
-	offsetLabel,
 	sessionTooLarge,
 	sessionWindowFrom,
 	sessionWindowParams,
@@ -29,7 +27,6 @@ import { doc, type DocBlock } from "../lib/tool-doc"
  *  table of every row. */
 const MAX_FINDINGS = 10
 const MAX_TOOLS = 15
-const MAX_TURNS = 25
 
 /** Characters kept of captured text the output carries (the opening message, a turn's label). */
 const CAPTURED_TEXT_CHARS = 500
@@ -58,8 +55,9 @@ const verdictLine = (verdict: Output["verdict"]): string => {
 export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_agent_session",
+		title: "Get Agent Session",
 		description:
-			"Read one AI agent session (an LLM agent trace; not a browser session replay, see `get_session_transcript`): its verdict, the checks it failed or passed and what to do about each, findings, wall/active/idle time, turns, LLM and tool calls, tokens, reported cost, models, tools and failure groups. Everything is derived from the session's own spans, up to 10000; past that it says so and every figure covers the spans loaded. `inspect_span` opens the span behind the verdict.",
+			"Read one AI agent session (an LLM agent trace; not a browser session replay, see `get_session_transcript`): its verdict, the checks it failed (and what to do about each), findings, wall/active/idle time, turn counts, LLM and tool calls, tokens, reported cost, models and tools. Turn by turn is `get_agent_session_transcript`. Everything is derived from the session's own spans, up to 10000; past that it says so and every figure covers the spans loaded. `inspect_span` opens the span behind the verdict.",
 		parameters: Schema.Struct({
 			session_id: P.text(
 				"The agent session id, as `list_agent_sessions` reports it (a vendor id, or `trace:<traceId>`)",
@@ -134,16 +132,24 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 						passed: counts.passed,
 						skipped: counts.skipped,
 					},
-					checks: checks.checks.map((check) => ({
-						id: check.id,
-						name: check.name,
-						status: check.status,
-						headline: check.headline,
-						...(check.action === undefined ? undefined : { action: check.action }),
-						...(check.fixArea === undefined ? undefined : { fixArea: check.fixArea }),
-					})),
+					// Only what needs attention carries its sentence; a passed check is its name.
+					checks: Arr.map(
+						Arr.filter(checks.checks, (check) => check.status !== "passed"),
+						(check) => ({
+							id: check.id,
+							name: check.name,
+							status: check.status,
+							headline: check.headline,
+							...(check.action === undefined ? undefined : { action: check.action }),
+							...(check.fixArea === undefined ? undefined : { fixArea: check.fixArea }),
+						}),
+					),
+					passedChecks: Arr.map(
+						Arr.filter(checks.checks, (check) => check.status === "passed"),
+						(check) => check.name,
+					),
 					findingCount: report.findings.length,
-					findings: report.findings.slice(0, MAX_FINDINGS).map((finding) => ({
+					findings: Arr.map(report.findings.slice(0, MAX_FINDINGS), (finding) => ({
 						kind: finding.kind,
 						severity: finding.severity,
 						label: finding.label,
@@ -158,7 +164,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 						idleMs: summary.idleMs,
 						idleGapCount: summary.idleGaps.length,
 						agentTimeMs: summary.agentTime.totalMs,
-						agentTimeSegments: summary.agentTime.segments.map((segment) => ({
+						agentTimeSegments: Arr.map(summary.agentTime.segments, (segment) => ({
 							kind: segment.kind,
 							ms: segment.ms,
 						})),
@@ -173,38 +179,23 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 					tokens: summary.tokens,
 					tokenReporting: summary.tokenReporting,
 					...(summary.cost === undefined ? undefined : { cost: summary.cost }),
-					models: summary.models.map((usage) => ({
+					models: Arr.map(summary.models, (usage) => ({
 						model: usage.model,
 						llmCalls: usage.llmCalls,
 						totalTokens: usage.tokens.total,
 						...(usage.cost === undefined ? undefined : { cost: usage.cost }),
 					})),
 					toolCount: summary.tools.length,
-					tools: summary.tools.slice(0, MAX_TOOLS).map((tool) => ({
+					tools: Arr.map(summary.tools.slice(0, MAX_TOOLS), (tool) => ({
 						name: tool.name,
 						calls: tool.calls,
 						failed: tool.failed,
 						totalMs: tool.totalMs,
 						slowestMs: tool.slowestMs,
 					})),
-					failureGroups: summary.failureGroups.map((group) => ({
-						kind: group.kind,
-						label: group.label,
-						count: group.count,
-					})),
+					// Turn by turn is the transcript's index; this read says how many, and how many failed.
 					turnCount: turns.length,
-					turns: turns.slice(0, MAX_TURNS).map((turn) => ({
-						ordinal: turnOrdinal(turn),
-						anchorKind: turn.anchorKind,
-						...(turn.agentName === undefined ? undefined : { agentName: turn.agentName }),
-						offsetMs: turn.startMs - summary.startMs,
-						durationMs: turn.durationMs,
-						spanCount: turn.spans.length,
-						failed: turn.failed,
-						...(turn.label === undefined
-							? undefined
-							: { label: truncate(turn.label, CAPTURED_TEXT_CHARS) }),
-					})),
+					failedTurnCount: Arr.filter(turns, (turn) => turn.failed).length,
 					...(evidence === undefined
 						? undefined
 						: {
@@ -225,14 +216,16 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 		),
 		render: (output) => {
 			const { tokens, checkCounts } = output
-			const attention = output.checks.filter(
+			const attention = Arr.filter(
+				output.checks,
 				(check) => check.status === "failed" || check.status === "warning",
 			)
-			const settled = output.checks.filter(
+			const settled = Arr.filter(
+				output.checks,
 				(check) => check.status === "passed" || check.status === "skipped",
 			)
 			const note = truncationNote(output.load)
-			const orDash = (values: ReadonlyArray<string>) => values.join(", ") || "—"
+			const orDash = (values: ReadonlyArray<string>) => Arr.join(values, ", ") || "—"
 			return {
 				title: `AI agent session ${output.sessionId}`,
 				scope: [
@@ -247,7 +240,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 					doc.text(
 						`Vendor ${orDash(output.vendorIds)} · agents ${orDash(output.agentNames)} · services ${orDash(
 							output.serviceNames,
-						)} · models ${orDash(output.models.map((usage) => usage.model))}`,
+						)} · models ${orDash(Arr.map(output.models, (usage) => usage.model))}`,
 					),
 					...(output.title === undefined
 						? []
@@ -263,18 +256,22 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 						? doc.text("Nothing needs attention.")
 						: doc.table(
 								["Status", "Check", "What happened", "Do"],
-								attention.map((check) => [
+								Arr.map(attention, (check) => [
 									check.status,
 									check.name,
 									truncate(check.headline, 160),
 									check.action === undefined ? "—" : truncate(check.action, 120),
 								]),
 							),
+					...(output.passedChecks.length === 0
+						? []
+						: [doc.text(`Passed: ${Arr.join(output.passedChecks, ", ")}.`)]),
 					...(settled.length === 0
 						? []
 						: [
 								doc.list(
-									settled.map(
+									Arr.map(
+										settled,
 										(check) =>
 											`${check.name} (${check.status}): ${tableCell(check.headline, 200)}`,
 									),
@@ -283,7 +280,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 					...tableSection(
 						`Findings (${output.findingCount})`,
 						["Severity", "What", "×", "Where", "Detail", "Span"],
-						output.findings.map((finding) => [
+						Arr.map(output.findings, (finding) => [
 							finding.severity,
 							truncate(finding.label, 60),
 							String(finding.count),
@@ -298,14 +295,18 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 							output.vitals.activeMs,
 						)} · idle ${formatDurationFromMs(output.vitals.idleMs)} over ${output.vitals.idleGapCount} gap(s)`,
 						`Agent time ${formatDurationFromMs(output.vitals.agentTimeMs)} (${
-							output.vitals.agentTimeSegments
-								.map((segment) => `${segment.kind} ${formatDurationFromMs(segment.ms)}`)
-								.join(", ") || "unbroken"
+							Arr.join(
+								Arr.map(
+									output.vitals.agentTimeSegments,
+									(segment) => `${segment.kind} ${formatDurationFromMs(segment.ms)}`,
+								),
+								", ",
+							) || "unbroken"
 						})`,
 					]),
 					doc.heading("Work"),
 					doc.list([
-						`${output.work.turns} turns · ${output.work.llmCalls} LLM calls · ${output.work.toolCalls} tool calls · ${output.work.spans} spans · ${output.work.traces} traces`,
+						`${output.work.turns} turns${output.failedTurnCount > 0 ? ` (${output.failedTurnCount} failed)` : ""} · ${output.work.llmCalls} LLM calls · ${output.work.toolCalls} tool calls · ${output.work.spans} spans · ${output.work.traces} traces`,
 					]),
 					doc.heading(`Tokens (reported ${output.tokenReporting})`),
 					doc.list([
@@ -317,7 +318,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 					...tableSection(
 						"Models",
 						["Model", "LLM calls", "Tokens", "Cost"],
-						output.models.map((usage) => [
+						Arr.map(output.models, (usage) => [
 							usage.model,
 							formatNumber(usage.llmCalls),
 							formatNumber(usage.totalTokens),
@@ -327,7 +328,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 					...tableSection(
 						`Tools (${output.toolCount})`,
 						["Tool", "Calls", "Failed", "Total", "Slowest"],
-						output.tools.map((tool) => [
+						Arr.map(output.tools, (tool) => [
 							tool.name,
 							formatNumber(tool.calls),
 							tool.failed > 0 ? String(tool.failed) : "—",
@@ -335,34 +336,40 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 							formatDurationFromMs(tool.slowestMs),
 						]),
 					),
-					...tableSection(
-						"Failure groups",
-						["Kind", "Label", "Count"],
-						output.failureGroups.map((group) => [
-							group.kind,
-							truncate(group.label, 80),
-							String(group.count),
-						]),
-					),
-					doc.heading(
-						`Turns (${output.turnCount}${output.turns.length < output.turnCount ? `, showing ${output.turns.length}` : ""})`,
-					),
-					doc.table(
-						["Turn", "Anchor", "Agent", "Start", "Duration", "Spans", "Failed", "Opened with"],
-						output.turns.map((turn) => [
-							turn.ordinal,
-							turn.anchorKind,
-							turn.agentName ?? "—",
-							offsetLabel(turn.offsetMs),
-							formatDurationFromMs(turn.durationMs),
-							String(turn.spanCount),
-							turn.failed ? "yes" : "",
-							turn.label === undefined ? "—" : truncate(turn.label, 80),
-						]),
-					),
 				],
-				next:
-					output.evidence === undefined
+				next: [
+					doc.next(
+						"get_agent_session_transcript",
+						{
+							session_id: output.sessionId,
+							...(output.window === undefined
+								? undefined
+								: { start_time: output.window.start, end_time: output.window.end }),
+							...(output.findingCount > 0 ? { failed_only: true } : undefined),
+						},
+						output.findingCount > 0
+							? "every failure in time order, where a cascade starts"
+							: "what the agent did, step by step",
+					),
+					// The findings name turns by number; the transcript's index says which run each is.
+					...(output.findingCount > 0 && output.turnCount > 1
+						? [
+								doc.next(
+									"get_agent_session_transcript",
+									{
+										session_id: output.sessionId,
+										...(output.window === undefined
+											? undefined
+											: {
+													start_time: output.window.start,
+													end_time: output.window.end,
+												}),
+									},
+									"each turn's agent, outcome and opening, step by step",
+								),
+							]
+						: []),
+					...(output.evidence === undefined
 						? []
 						: [
 								doc.next(
@@ -374,7 +381,8 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 									},
 									"the messages and tool calls of the span behind the verdict",
 								),
-							],
+							]),
+				],
 			}
 		},
 	})

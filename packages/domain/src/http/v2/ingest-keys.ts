@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { IngestKeyEncryptionError, IngestKeyPersistenceError } from "../ingest-keys"
 import { AuthorizationV2 } from "./auth"

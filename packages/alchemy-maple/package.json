@@ -1,6 +1,6 @@
 {
 	"name": "@maple-dev/alchemy",
-	"version": "0.1.0",
+	"version": "0.5.1",
 	"description": "Alchemy provider for Maple resources — declare API keys, ingest keys, dashboards, alert destinations, and alert rules in your alchemy.run.ts",
 	"keywords": [
 		"alchemy",
@@ -33,6 +33,14 @@
 		"./telemetry": {
 			"types": "./dist/telemetry.d.mts",
 			"import": "./dist/telemetry.mjs"
+		},
+		"./local": {
+			"types": "./dist/local.d.mts",
+			"import": "./dist/local.mjs"
+		},
+		"./local-sidecar": {
+			"types": "./dist/local-sidecar.d.mts",
+			"import": "./dist/local-sidecar.mjs"
 		}
 	},
 	"publishConfig": {
@@ -40,7 +48,7 @@
 	},
 	"scripts": {
 		"build": "tsdown",
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsrs --noEmit",
 		"test": "vitest run",
 		"prepublishOnly": "bun run build"
 	},
@@ -48,9 +56,12 @@
 		"@maple-dev/effect-sdk": "workspace:*"
 	},
 	"devDependencies": {
-		"@effect/language-service": "catalog:effect",
+		"@alchemy.run/test": "catalog:alchemy",
+		"@effect/platform-bun": "catalog:effect",
 		"@effect/vitest": "catalog:effect",
 		"@maple/domain": "workspace:*",
+		"@maple/local-server": "workspace:*",
+		"@types/bun": "^1.4.4",
 		"@types/node": "catalog:tooling",
 		"alchemy": "catalog:alchemy",
 		"effect": "catalog:effect",
@@ -59,7 +70,13 @@
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
-		"alchemy": ">=2.0.0-beta.74 <3",
-		"effect": ">=4.0.0-rc.113 <5"
+		"@effect/platform-bun": "^4.0.0",
+		"alchemy": ">=2.0.0-beta.80 <3",
+		"effect": "^4.0.0"
+	},
+	"peerDependenciesMeta": {
+		"@effect/platform-bun": {
+			"optional": true
+		}
 	}
 }

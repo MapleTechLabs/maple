@@ -11,7 +11,7 @@
  * and dropped — Maple never acts on Discord as the person, only as the bot.
  */
 import { Effect, Schema } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import { ChatIdentityFailed, type ChatConnectorIdentity } from "../../identity"
 import { requireConfig, type ChatInstallCallback, type ChatInstallStart } from "../../install"
 import { API_BASE, AUTHORIZE_URL, CLIENT_ID_CONFIG } from "./api"
@@ -82,9 +82,7 @@ const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 		)
 		.pipe(Effect.mapError((error) => identityFailed(`Discord user lookup failed: ${error.message}`)))
 	if (userResponse.status < 200 || userResponse.status >= 300) {
-		return yield* Effect.fail(
-			identityFailed(`Discord user lookup failed with HTTP ${userResponse.status}`),
-		)
+		return yield* identityFailed(`Discord user lookup failed with HTTP ${userResponse.status}`)
 	}
 	const userJson = yield* userResponse.json.pipe(
 		Effect.mapError(() => identityFailed("Discord returned a non-JSON user response")),

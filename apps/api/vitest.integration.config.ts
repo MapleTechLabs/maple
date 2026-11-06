@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url"
-import { defineConfig } from "vitest/config"
+import { configDefaults, defineConfig } from "vitest/config"
 
 /**
  * Integration suite — needs a live Postgres, so it is deliberately NOT part of
@@ -30,6 +30,7 @@ export default defineConfig({
 	test: {
 		environment: "node",
 		include: ["test/integration/**/*.test.ts"],
+		exclude: [...configDefaults.exclude, "**/.claude/**", "**/.context/**", "**/worktrees/**"],
 		pool: "threads",
 		// No PGlite snapshot globalSetup here — these talk to a real server.
 		testTimeout: 60_000,

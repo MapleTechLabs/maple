@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
-import { agentFeedback, type AgentFeedbackRow } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { AgentFeedback as AgentFeedbackTable, type AgentFeedbackRow } from "@maple/db/tables"
 import {
 	AgentFeedbackImpact,
 	AgentFeedbackKind,
@@ -8,11 +9,9 @@ import {
 	AgentType,
 } from "@maple/domain/http"
 import { AgentFeedbackId, type OrgId, type UserId } from "@maple/domain/primitives"
-import { desc, eq } from "drizzle-orm"
-import { Clock, Context, Effect, Layer, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 
 export interface AgentFeedback {
 	readonly id: AgentFeedbackId
@@ -76,7 +75,7 @@ const decodeSource = Schema.decodeUnknownSync(AgentFeedbackSource)
 
 /** Blank optional strings are stored as null, so "not said" has one spelling. */
 const nonBlank = (value: string | undefined): string | null => {
-	const trimmed = value?.trim()
+	const trimmed = typeof value === "string" ? Str.trim(value) : undefined
 	return trimmed === undefined || trimmed.length === 0 ? null : trimmed
 }
 
@@ -97,11 +96,11 @@ const toFeedback = (row: AgentFeedbackRow): AgentFeedback => ({
 		version: row.agentVersion,
 	},
 	source: decodeSource(row.source),
-	createdAtMs: dateToMs(row.createdAt),
+	createdAtMs: row.createdAt,
 })
 
 export class AgentFeedbackService extends Context.Service<AgentFeedbackService, AgentFeedbackServiceApi>()(
-	"@maple/api/services/feedback/AgentFeedbackService",
+	"@maple/backend/services/feedback/AgentFeedbackService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
@@ -121,28 +120,29 @@ export class AgentFeedbackService extends Context.Service<AgentFeedbackService, 
 					"maple.feedback.agent_type": input.agent.type,
 					...(agentName !== null ? { "maple.feedback.agent_name": agentName } : undefined),
 				})
-				const now = msToDate(yield* Clock.currentTimeMillis)
+				const now = yield* Clock.currentTimeMillis
 				const rows = yield* dbExecute((db) =>
-					db
-						.insert(agentFeedback)
-						.values({
-							id: randomUUID(),
-							orgId,
-							userId,
-							kind: input.kind,
-							impact: input.impact ?? null,
-							summary: input.summary.trim(),
-							reason: input.reason.trim(),
-							details: nonBlank(input.details),
-							relatedTo: nonBlank(input.relatedTo),
-							agentType: input.agent.type,
-							agentName,
-							agentModel: nonBlank(input.agent.model),
-							agentVersion: nonBlank(input.agent.version),
-							source: input.source,
-							createdAt: now,
-						})
-						.returning(),
+					db.run(
+						PG.insertInto(AgentFeedbackTable)
+							.values({
+								id: randomUUID(),
+								orgId,
+								userId,
+								kind: input.kind,
+								impact: input.impact ?? null,
+								summary: input.summary.trim(),
+								reason: input.reason.trim(),
+								details: nonBlank(input.details),
+								relatedTo: nonBlank(input.relatedTo),
+								agentType: input.agent.type,
+								agentName,
+								agentModel: nonBlank(input.agent.model),
+								agentVersion: nonBlank(input.agent.version),
+								source: input.source,
+								createdAt: now,
+							})
+							.returning(),
+					),
 				)
 				const row = rows[0]
 				if (row === undefined) {
@@ -157,13 +157,14 @@ export class AgentFeedbackService extends Context.Service<AgentFeedbackService, 
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const rows = yield* dbExecute((db) =>
-					db
-						.select()
-						.from(agentFeedback)
-						.where(eq(agentFeedback.orgId, orgId))
-						.orderBy(desc(agentFeedback.createdAt), desc(agentFeedback.id))
-						.limit(page.limit)
-						.offset(page.offset),
+					db.run(
+						PG.from(AgentFeedbackTable)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)])
+							.orderBy(["createdAt", "desc"], ["id", "desc"])
+							.limit(page.limit)
+							.offset(page.offset),
+					),
 				)
 				return rows.map(toFeedback)
 			})

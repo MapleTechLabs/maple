@@ -102,7 +102,7 @@ export const getSessionTranscript = Effect.fn("Observability.getSessionTranscrip
 	input: SessionTranscriptInput,
 ) {
 	const executor = yield* WarehouseExecutor
-	yield* Effect.annotateCurrentSpan({ orgId: executor.orgId, sessionId: input.sessionId })
+	yield* Effect.annotateCurrentSpan({ orgId: executor.orgId, "maple.session.id": input.sessionId })
 	const compiled = CH.compile(
 		CH.sessionTranscriptQuery({
 			types: input.types,

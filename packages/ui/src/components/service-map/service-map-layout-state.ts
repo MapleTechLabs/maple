@@ -1,3 +1,4 @@
+import { Array as Arr, Option } from "effect"
 // The user-owned state a service map keeps across renders: manual node
 // positions + camera per layout, and declutter preferences. Hosts decide where
 // it lives (web persists it per org in localStorage; local keeps it in memory).
@@ -33,12 +34,15 @@ export function upsertSnapshot(
 	signature: string,
 	update: (snapshot: ServiceMapLayoutSnapshot) => ServiceMapLayoutSnapshot,
 ): ServiceMapLayout {
-	const existing = layout.snapshots.find((s) => s.signature === signature) ?? {
-		signature,
-		positions: {},
-		viewport: null,
-	}
-	const rest = layout.snapshots.filter((s) => s.signature !== signature)
+	const existing = Option.getOrElse(
+		Arr.findFirst(layout.snapshots, (s) => s.signature === signature),
+		(): ServiceMapLayoutSnapshot => ({
+			signature,
+			positions: {},
+			viewport: null,
+		}),
+	)
+	const rest = Arr.filter(layout.snapshots, (s) => s.signature !== signature)
 	return { snapshots: [update(existing), ...rest].slice(0, SNAPSHOT_LIMIT) }
 }
 

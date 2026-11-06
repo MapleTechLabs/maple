@@ -31,7 +31,14 @@
  * GITHUB_TOKEN/GH_TOKEN for the PR-state gate.
  */
 
+import { Option, Schema, Array as Arr } from "effect"
+import { fetchPreviewState, hasPrStateCredentials } from "./lib/pr-state.ts"
+
 const FAILURE = 1
+
+// JSON.stringify printed "undefined" for an absent field; keep that in diagnostics.
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+const showJson = (value: unknown): string => Option.getOrElse(encodeJson(value), () => String(value))
 
 const fail = (message: string): never => {
 	console.error(`✗ ${message}`)
@@ -46,37 +53,6 @@ const requireEnv = (key: string): string => {
 	return value
 }
 
-/**
- * PR state via the GitHub REST API. Returns "unknown" when the API call
- * fails — callers must treat "unknown" as "don't delete", never as "closed".
- * Same contract as the sibling sweeps in scripts/planetscale-pr-branch.ts.
- */
-const fetchPrState = async (prNumber: string): Promise<"open" | "closed" | "unknown"> => {
-	const repo = process.env.GITHUB_REPOSITORY?.trim()
-	const token = (process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN)?.trim()
-	if (!repo || !token) return "unknown"
-	try {
-		const response = await fetch(`https://api.github.com/repos/${repo}/pulls/${prNumber}`, {
-			headers: {
-				Authorization: `Bearer ${token}`,
-				Accept: "application/vnd.github+json",
-				"X-GitHub-Api-Version": "2022-11-28",
-			},
-		})
-		if (!response.ok) {
-			console.log(`⚠ Could not look up PR #${prNumber} state (HTTP ${response.status})`)
-			return "unknown"
-		}
-		const parsed = (await response.json()) as { state?: string }
-		return parsed.state === "open" ? "open" : parsed.state === "closed" ? "closed" : "unknown"
-	} catch (error) {
-		console.log(
-			`⚠ Could not look up PR #${prNumber} state (${error instanceof Error ? error.message : String(error)})`,
-		)
-		return "unknown"
-	}
-}
-
 interface HyperdriveConfig {
 	readonly id?: string
 	readonly name?: string
@@ -85,14 +61,13 @@ interface HyperdriveConfig {
 const cfRequest = async (
 	token: string,
 	path: string,
-	init?: RequestInit,
+	init?: Omit<RequestInit, "headers">,
 ): Promise<{ ok: boolean; status: number; result: unknown; errors: unknown }> => {
 	const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
 		...init,
 		headers: {
 			Authorization: `Bearer ${token}`,
 			"Content-Type": "application/json",
-			...init?.headers,
 		},
 	})
 	const body = (await response.json().catch(() => ({}))) as {
@@ -111,10 +86,7 @@ const cfRequest = async (
 const main = async (): Promise<void> => {
 	// Same guard as the sibling sweeps: without the PR-state gate every config
 	// resolves to "unknown" and the run green-no-ops forever.
-	if (
-		!process.env.GITHUB_REPOSITORY?.trim() ||
-		!(process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN)?.trim()
-	) {
+	if (!hasPrStateCredentials()) {
 		fail("sweep requires GITHUB_REPOSITORY and GITHUB_TOKEN (or GH_TOKEN) to check PR state")
 	}
 	const token = requireEnv("CLOUDFLARE_API_TOKEN")
@@ -122,50 +94,54 @@ const main = async (): Promise<void> => {
 
 	const listed = await cfRequest(token, `/accounts/${accountId}/hyperdrive/configs`)
 	if (!listed.ok) {
-		fail(`Could not list Hyperdrive configs (HTTP ${listed.status}): ${JSON.stringify(listed.errors)}`)
+		fail(`Could not list Hyperdrive configs (HTTP ${listed.status}): ${showJson(listed.errors)}`)
 	}
 	// A success response whose `result` isn't an array means the API shape
 	// changed under us — fail loudly rather than green-no-op'ing the safety net.
-	if (!Array.isArray(listed.result)) {
+	if (!Arr.isArray(listed.result)) {
 		fail(`Unexpected Hyperdrive list response shape (result is ${typeof listed.result}, expected array)`)
 	}
 	const configs = listed.result as ReadonlyArray<HyperdriveConfig>
-	const candidates = configs
-		.map((config) => ({
+	const candidates = Arr.filter(
+		Arr.map(configs, (config) => ({
 			id: config.id ?? "",
 			name: config.name ?? "",
 			match: /^maple-db-pr-(\d+)$/.exec(config.name ?? ""),
-		}))
-		.filter(
-			(entry): entry is { id: string; name: string; match: RegExpExecArray } =>
-				entry.match !== null && entry.id.length > 0,
-		)
+		})),
+		(entry): entry is { id: string; name: string; match: RegExpExecArray } =>
+			entry.match !== null && entry.id.length > 0,
+	)
 	console.log(
-		`Found ${configs.length} Hyperdrive config(s), ${candidates.length} maple-db-pr-*: ${candidates.map((c) => c.name).join(", ") || "—"}`,
+		`Found ${configs.length} Hyperdrive config(s), ${candidates.length} maple-db-pr-*: ${
+			Arr.join(
+				Arr.map(candidates, (c) => c.name),
+				", ",
+			) || "—"
+		}`,
 	)
 
 	const failures: string[] = []
 	for (const { id, name, match } of candidates) {
-		const state = await fetchPrState(match[1] as string)
-		if (state === "open") {
-			console.log(`… keeping ${name} (PR #${match[1]} is open)`)
+		const state = await fetchPreviewState(match[1])
+		if (state === "live") {
+			console.log(`… keeping ${name} (PR #${match[1]} has a live preview)`)
 			continue
 		}
 		if (state === "unknown") {
 			console.log(`⚠ skipping ${name} (PR #${match[1]} state unknown)`)
 			continue
 		}
-		console.log(`… deleting orphan ${name} (PR #${match[1]} is closed)`)
+		console.log(`… deleting orphan ${name} (PR #${match[1]} is closed or unlabelled)`)
 		const removed = await cfRequest(token, `/accounts/${accountId}/hyperdrive/configs/${id}`, {
 			method: "DELETE",
 		})
 		if (!removed.ok && removed.status !== 404) {
-			console.log(`✗ delete failed (HTTP ${removed.status}): ${JSON.stringify(removed.errors)}`)
+			console.log(`✗ delete failed (HTTP ${removed.status}): ${showJson(removed.errors)}`)
 			failures.push(name)
 		}
 	}
 	if (failures.length > 0) {
-		fail(`Failed to delete orphan Hyperdrive config(s): ${failures.join(", ")}`)
+		fail(`Failed to delete orphan Hyperdrive config(s): ${Arr.join(failures, ", ")}`)
 	}
 	console.log("✓ Sweep complete")
 }

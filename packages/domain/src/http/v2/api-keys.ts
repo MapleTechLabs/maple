@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { ApiKeyId, PostgresTransactionId, UserId } from "../../primitives"
 import { ApiKeyKind, ApiKeyNotFoundError, ApiKeyPersistenceError } from "../api-keys"
@@ -57,8 +57,11 @@ export const V2ApiKey = Schema.Struct({
 		description: "Key type: `standard` for HTTP API access, `mcp` for the Model Context Protocol server.",
 		examples: ["standard"],
 	}),
-	scopes: Schema.NullOr(Schema.Array(V2Scope)).annotate({
-		description: "The scopes granted to the key, or `null` for a legacy key with full access.",
+	// Stored grants, not the request grammar: MCP OAuth tokens (`kind: "mcp"`) carry `mcp:tools`,
+	// which V2Scope rejects, and failing it turned the whole list into a 500.
+	scopes: Schema.NullOr(Schema.Array(Schema.String)).annotate({
+		description:
+			'The scopes granted to the key, or `null` for a legacy key with full access. MCP OAuth tokens (`kind: "mcp"`) carry `mcp:tools`.',
 		examples: [["dashboards:read", "alerts:write"]],
 	}),
 	revoked: Schema.Boolean.annotate({
@@ -264,7 +267,7 @@ export class V2ApiKeysApiGroup extends HttpApiGroup.make("apiKeys")
 				identifier: "revokeApiKey",
 				summary: "Revoke an API key",
 				description:
-					"Permanently revokes an API key and returns the final object. A revoked key can no longer authenticate. Requires an org-admin role and the `api_keys:write` scope.",
+					"Permanently revokes an API key and returns the final object. A revoked key can no longer authenticate. Requires the `api_keys:write` scope and an org-admin role, except that a member may revoke an MCP key they created or a device key their own app minted.",
 			}),
 		),
 	)

@@ -1,6 +1,6 @@
 {
 	"name": "@maple/alerting-core",
-	"version": "0.0.0",
+	"version": "0.0.1",
 	"private": true,
 	"type": "module",
 	"exports": {
@@ -9,12 +9,11 @@
 	},
 	"scripts": {
 		"test": "vitest run",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
 		"@maple/domain": "workspace:*",
 		"@maple/eventing-core": "workspace:*",
-		"@typeonce/effect-machine": "0.38.1",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {

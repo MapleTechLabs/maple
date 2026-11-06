@@ -21,14 +21,16 @@
 // they are excluded by requiring `k8s.pod.name = ''` (same trick as the node
 // queries).
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
-import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
-import { unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
-import { MetricsGauge, MetricsSum } from "../tables"
+import type { DateTime } from "effect"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
+import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
+import { MetricsGauge, MetricsSum, orgIdParam } from "../tables"
 import { containerRuntimeExpr, deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { avgIfOrZero, facetAttrExpr, maxIfOrZero, type FacetOutput } from "./query-helpers"
 import type { SortDirection } from "./infra"
+import { Array as Arr } from "effect"
 
 const CONTAINER_METRIC_NAMES = [
 	"container.cpu.utilization",
@@ -98,7 +100,7 @@ export interface ListContainersOutput {
 	readonly composeService: string
 	readonly runtime: string
 	readonly environment: string
-	readonly lastSeen: string
+	readonly lastSeen: DateTime.Utc
 	// Window averages, 0..1 scale (see file header).
 	readonly cpuPct: number
 	readonly memoryPct: number
@@ -116,9 +118,9 @@ const containerBaseConditions = (
 	$: ColumnAccessor<typeof MetricsGauge.columns>,
 	metricNames: ReadonlyArray<string> = CONTAINER_METRIC_NAMES,
 ): Array<CH.Condition | undefined> => [
-	$.OrgId.eq(param.string("orgId")),
-	$.TimeUnix.gte(param.dateTimeString("startTime")),
-	$.TimeUnix.lte(param.dateTimeString("endTime")),
+	$.OrgId.eq(orgIdParam),
+	$.TimeUnix.gte(param.dateTime("startTime")),
+	$.TimeUnix.lte(param.dateTime("endTime")),
 	$.ResourceAttributes.get("container.name").neq(""),
 	$.ResourceAttributes.get("k8s.pod.name").eq(""),
 	$.MetricName.in_(...metricNames),
@@ -149,13 +151,13 @@ const containerFilterConditions = (
 	CH.when(opts.search, (v: string) =>
 		CH.positionCaseInsensitive($.ResourceAttributes.get("container.name"), CH.lit(v)).gt(0),
 	),
-	...CONTAINER_FACETS.flatMap(({ include, exclude, attr }) => {
+	...Arr.flatMap(CONTAINER_FACETS, ({ include, exclude, attr }) => {
 		const expr = attr === null ? deploymentEnvExpr($.ResourceAttributes) : $.ResourceAttributes.get(attr)
-		const included = opts[include] as ReadonlyArray<string> | undefined
-		const excluded = opts[exclude] as ReadonlyArray<string> | undefined
+		const included = opts[include]
+		const excluded = opts[exclude]
 		return [
-			included?.length ? CH.inList(expr, included) : undefined,
-			excluded?.length ? CH.notInList(expr, excluded) : undefined,
+			included !== undefined && included.length > 0 ? CH.inList(expr, included) : undefined,
+			excluded !== undefined && excluded.length > 0 ? CH.notInList(expr, excluded) : undefined,
 		]
 	}),
 ]
@@ -165,7 +167,7 @@ export function listContainersQuery(opts: ListContainersOpts = {}) {
 	const sortDir = opts.sortDir ?? (sortBy === "containerName" ? "asc" : "desc")
 	const orderBy: Array<[string, SortDirection]> = [
 		[sortBy, sortDir],
-		...CONTAINER_SORT_TIEBREAK.filter(([key]) => key !== sortBy),
+		...Arr.filter(CONTAINER_SORT_TIEBREAK, ([key]) => key !== sortBy),
 	]
 
 	const grouped = from(MetricsGauge)
@@ -227,7 +229,7 @@ export function listContainersQuery(opts: ListContainersOpts = {}) {
 function containerScopeCondition(
 	$: {
 		saturation: CH.Expr<number | null>
-		lastSeen: CH.Expr<string>
+		lastSeen: CH.Expr<DateTime.Utc>
 	},
 	scope: ContainerScope,
 ): CH.Condition {
@@ -237,7 +239,7 @@ function containerScopeCondition(
 		case "elevated":
 			return $.saturation.gte(0.6).and($.saturation.lt(0.9))
 		case "stale":
-			return $.lastSeen.lt(CH.intervalSub(param.dateTimeString("endTime"), STALE_CONTAINER_SECONDS))
+			return $.lastSeen.lt(CH.intervalSub(param.dateTime("endTime"), STALE_CONTAINER_SECONDS))
 	}
 }
 
@@ -279,7 +281,7 @@ export function listContainersSummaryQuery(opts: ListContainersOpts = {}) {
 			saturatedContainers: CH.countIf($.saturation.gte(0.9)),
 			elevatedContainers: CH.countIf($.saturation.gte(0.6).and($.saturation.lt(0.9))),
 			staleContainers: CH.countIf(
-				$.lastSeen.lt(CH.intervalSub(param.dateTimeString("endTime"), STALE_CONTAINER_SECONDS)),
+				$.lastSeen.lt(CH.intervalSub(param.dateTime("endTime"), STALE_CONTAINER_SECONDS)),
 			),
 		}))
 		.format("JSON")
@@ -299,8 +301,9 @@ export interface ContainerDetailSummaryOutput {
 	readonly composeProject: string
 	readonly composeService: string
 	readonly runtime: string
-	readonly firstSeen: string
-	readonly lastSeen: string
+	readonly sourceId: string
+	readonly firstSeen: DateTime.Utc
+	readonly lastSeen: DateTime.Utc
 	readonly cpuPct: number
 	readonly memoryPct: number
 	readonly cpuLimitCores: number
@@ -317,6 +320,7 @@ export function containerDetailSummaryQuery(opts: ContainerDetailSummaryOpts) {
 			composeProject: CH.any_($.ResourceAttributes.get("compose.project")),
 			composeService: CH.any_($.ResourceAttributes.get("compose.service")),
 			runtime: CH.any_(containerRuntimeExpr($.ResourceAttributes)),
+			sourceId: CH.argMax($.ResourceAttributes.get("maple_source_id"), $.TimeUnix),
 			firstSeen: CH.min_($.TimeUnix),
 			lastSeen: CH.max_($.TimeUnix),
 			cpuPct: avgIfOrZero($.Value, $.MetricName.eq("container.cpu.utilization")).div(100),
@@ -325,9 +329,9 @@ export function containerDetailSummaryQuery(opts: ContainerDetailSummaryOpts) {
 			uptimeSeconds: maxIfOrZero($.Value, $.MetricName.eq("container.uptime")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("container.name").eq(opts.containerName),
 			CH.when(opts.hostName, (v: string) => $.ResourceAttributes.get("host.name").eq(v)),
 			$.ResourceAttributes.get("k8s.pod.name").eq(""),
@@ -372,9 +376,9 @@ export function containerCountersSummaryQuery(opts: ContainerCountersSummaryOpts
 			pidsAvg: avgIfOrZero($.Value, $.MetricName.eq("container.pids.count")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("container.name").eq(opts.containerName),
 			CH.when(opts.hostName, (v: string) => $.ResourceAttributes.get("host.name").eq(v)),
 			$.ResourceAttributes.get("k8s.pod.name").eq(""),
@@ -410,7 +414,7 @@ export interface ContainerGaugeTimeseriesOpts {
 }
 
 export interface ContainerTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly attributeValue: string
 	readonly avgValue: number
 }
@@ -420,12 +424,15 @@ export function containerGaugeTimeseriesQuery(opts: ContainerGaugeTimeseriesOpts
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
 			attributeValue: CH.lit(""),
-			avgValue: opts.divideBy ? CH.avg($.Value).div(opts.divideBy) : CH.avg($.Value),
+			avgValue:
+				opts.divideBy !== undefined && opts.divideBy !== 0
+					? CH.avg($.Value).div(opts.divideBy)
+					: CH.avg($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("container.name").eq(opts.containerName),
 			CH.when(opts.hostName, (v: string) => $.ResourceAttributes.get("host.name").eq(v)),
 			$.ResourceAttributes.get("k8s.pod.name").eq(""),
@@ -462,22 +469,25 @@ export function containerSumTimeseriesQuery(opts: ContainerSumTimeseriesOpts) {
 	return from(MetricsSum)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
-			attributeValue: labels?.length
-				? CH.multiIf(
-						labels.map(
-							([metricName, label]) => [$.MetricName.eq(metricName), CH.lit(label)] as const,
-						) as Array<[CH.Condition, CH.Expr<string>]>,
-						CH.lit(""),
-					)
-				: opts.groupByAttributeKey
-					? $.Attributes.get(opts.groupByAttributeKey)
-					: CH.lit(""),
+			attributeValue:
+				labels !== undefined && labels.length > 0
+					? CH.multiIf(
+							Arr.map(
+								labels,
+								([metricName, label]) =>
+									[$.MetricName.eq(metricName), CH.lit(label)] as const,
+							),
+							CH.lit(""),
+						)
+					: opts.groupByAttributeKey
+						? $.Attributes.get(opts.groupByAttributeKey)
+						: CH.lit(""),
 			sumValue: opts.average ? CH.avg($.Value) : CH.sum($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("container.name").eq(opts.containerName),
 			CH.when(opts.hostName, (v: string) => $.ResourceAttributes.get("host.name").eq(v)),
 			$.ResourceAttributes.get("k8s.pod.name").eq(""),

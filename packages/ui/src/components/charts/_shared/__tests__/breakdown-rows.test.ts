@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { pickValueField, toBreakdownRows } from "../breakdown-rows"
+import { Array as Arr } from "effect"
 
 describe("pickValueField", () => {
 	it("picks the first numeric column that isn't the label", () => {
@@ -21,7 +22,7 @@ describe("toBreakdownRows", () => {
 	it("coerces string values and treats non-numbers as zero", () => {
 		// 64-bit ints arrive as strings on BYO-ClickHouse.
 		const rows = toBreakdownRows([{ name: "api", value: "87200000" }, { name: "web" }], "value")
-		expect(rows.map((r) => r.value)).toEqual([87_200_000, 0])
+		expect(Arr.map(rows, (r) => r.value)).toEqual([87_200_000, 0])
 	})
 
 	it("aggregates timeseries-shaped input per series instead of per bucket (MAP-49)", () => {

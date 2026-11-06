@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /**
  * Drives the `maple start` reveal:
  *   - hide every line,
@@ -42,12 +43,15 @@ export function playLocalTerminal(root: HTMLElement) {
 
 	const revealSegment = (idx: number) => {
 		const items = segments[idx] ?? []
-		items.forEach((el, i) => {
-			el.style.transition = [
-				`opacity ${REVEAL_MS}ms ${EASE}`,
-				`transform ${REVEAL_MS}ms ${EASE}`,
-				`filter ${REVEAL_MS}ms ${EASE}`,
-			].join(", ")
+		Arr.forEach(items, (el, i) => {
+			el.style.transition = Arr.join(
+				[
+					`opacity ${REVEAL_MS}ms ${EASE}`,
+					`transform ${REVEAL_MS}ms ${EASE}`,
+					`filter ${REVEAL_MS}ms ${EASE}`,
+				],
+				", ",
+			)
 			el.style.transitionDelay = `${i * LINE_STAGGER_MS}ms`
 			el.style.opacity = "1"
 			el.style.transform = "translateY(0)"
@@ -74,7 +78,7 @@ export function playLocalTerminal(root: HTMLElement) {
 			const started = performance.now()
 			const tick = () => {
 				const i = Math.min(text.length, Math.round((performance.now() - started) / stepMs))
-				el.textContent = text.slice(0, i)
+				el.textContent = Str.slice(0, i)(text)
 				if (i < text.length) setTimeout(tick, stepMs)
 				else resolve()
 			}
@@ -105,7 +109,7 @@ export function playLocalTerminal(root: HTMLElement) {
 		([entry], observer) => {
 			if (!entry?.isIntersecting) return
 			observer.disconnect()
-			run()
+			void run()
 		},
 		{ threshold: 0.35 },
 	)
@@ -116,7 +120,7 @@ function groupBySegment(root: HTMLElement): HTMLElement[][] {
 	const out: HTMLElement[][] = []
 	for (const el of root.querySelectorAll<HTMLElement>(".lt-line")) {
 		const idx = Number(el.dataset.segment ?? 0)
-		if (!out[idx]) out[idx] = []
+		if (out[idx] === undefined) out[idx] = []
 		out[idx].push(el)
 	}
 	return out

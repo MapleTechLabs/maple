@@ -1,11 +1,8 @@
 /**
- * What the sandbox Worker does with a request, minus the Sandbox SDK.
+ * What the sandbox Worker does with a request before it reaches the repository's Durable Object.
  *
- * Kept apart from `worker.ts` for the same reason `auth.ts` and `checkout.ts`
- * are: that module imports Cloudflare's Sandbox SDK, which cannot be loaded
- * outside a Workers runtime, and everything below has to be testable. The
- * container arrives as `open`, a function that hands back the port `checkout.ts`
- * already works against.
+ * Kept apart from `worker.ts`, which needs a Workers runtime, so it can be tested. The Durable
+ * Object arrives as `run`; the work itself happens there (`checkout.ts`'s `execute`).
  */
 import {
 	SANDBOX_EXEC_PATH,
@@ -15,26 +12,75 @@ import {
 	boundMessage,
 	redactSecret,
 } from "@maple/domain/sandbox"
-import { Cause, Effect, Schema } from "effect"
+import {
+	EXECUTOR_DESTROY_PATH,
+	EXECUTOR_PREPARE_PATH,
+	EXECUTOR_RELEASE_PATH,
+	EXECUTOR_RUN_PATH,
+	ExecutorDestroyRequest,
+	type ExecutorDestroyResponse,
+	ExecutorPrepareRequest,
+	type ExecutorPrepareResponse,
+	ExecutorReleaseRequest,
+	type ExecutorReleaseResponse,
+	ExecutorRunRequest,
+	type ExecutorRunResponse,
+	ExecutorUnavailable,
+} from "@maple/domain/executor"
+import { Effect, Schema, String as Str } from "effect"
 import { authorize } from "./auth"
-import { SandboxCallError, type SandboxLike, runExec } from "./checkout"
+import { SandboxCallError } from "./checkout"
 
 export interface SandboxHandleEnv {
 	readonly token: string | undefined
-	/** Throws when no container is bound or the SDK refuses the key. */
-	readonly open: (sandboxKey: string) => SandboxLike
+	/**
+	 * Hands the encoded request to the repository's Durable Object and resolves its encoded
+	 * answer. Throws when no Durable Object is bound, rejects when it cannot be reached.
+	 */
+	readonly run: (
+		sandboxKey: string,
+		request: typeof SandboxExecRequest.Encoded,
+	) => Promise<typeof SandboxExecResponse.Encoded>
+	/** The run's execution sandbox (`executor.ts`), keyed like `run` by its Durable Object name. */
+	readonly executor: {
+		readonly prepare: (
+			executorKey: string,
+			request: typeof ExecutorPrepareRequest.Encoded,
+		) => Promise<typeof ExecutorPrepareResponse.Encoded>
+		readonly run: (
+			executorKey: string,
+			request: typeof ExecutorRunRequest.Encoded,
+		) => Promise<typeof ExecutorRunResponse.Encoded>
+		readonly release: (
+			executorKey: string,
+			request: typeof ExecutorReleaseRequest.Encoded,
+		) => Promise<typeof ExecutorReleaseResponse.Encoded>
+		readonly destroy: (executorKey: string) => Promise<typeof ExecutorDestroyResponse.Encoded>
+	}
 }
 
+const EXECUTOR_PATHS = new Set([
+	EXECUTOR_PREPARE_PATH,
+	EXECUTOR_RUN_PATH,
+	EXECUTOR_RELEASE_PATH,
+	EXECUTOR_DESTROY_PATH,
+])
+
 const decodeRequest = Schema.decodeUnknownEffect(SandboxExecRequest)
+const encodeRequest = Schema.encodeSync(SandboxExecRequest)
 const encodeResponse = Schema.encodeUnknownSync(SandboxExecResponse)
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const json = (body: unknown, status = 200) =>
-	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+	new Response(encodeJson(body), { status, headers: { "content-type": "application/json" } })
 
 export const handle = (request: Request, env: SandboxHandleEnv): Effect.Effect<Response> =>
 	Effect.gen(function* () {
 		const url = new URL(request.url)
-		if (url.pathname !== SANDBOX_EXEC_PATH || request.method !== "POST")
+		if (
+			(url.pathname !== SANDBOX_EXEC_PATH && !EXECUTOR_PATHS.has(url.pathname)) ||
+			request.method !== "POST"
+		)
 			return new Response("Not found", { status: 404 })
 		const outcome = authorize(request.headers.get("authorization"), env.token)
 		if (outcome !== "authorized") {
@@ -44,8 +90,10 @@ export const handle = (request: Request, env: SandboxHandleEnv): Effect.Effect<R
 			return new Response("Unauthorized", { status: 401 })
 		}
 
+		if (url.pathname !== SANDBOX_EXEC_PATH) return yield* handleExecutor(url.pathname, request, env)
+
 		const body = yield* Effect.tryPromise({
-			try: () => request.json() as Promise<unknown>,
+			try: () => request.json(),
 			// The only outcome that matters is "not a request this Worker can run",
 			// which the decode below reports; the parse failure itself carries nothing.
 			catch: () => "unparseable" as const,
@@ -55,7 +103,7 @@ export const handle = (request: Request, env: SandboxHandleEnv): Effect.Effect<R
 			// across a deploy. Worth a line: the caller only sees "invalid".
 			Effect.tapError((error) =>
 				Effect.logWarning("sandbox request failed to decode").pipe(
-					Effect.annotateLogs({ "error.message": String(error).slice(0, 500) }),
+					Effect.annotateLogs({ "error.message": Str.slice(0, 500)(String(error)) }),
 				),
 			),
 			Effect.option,
@@ -65,45 +113,97 @@ export const handle = (request: Request, env: SandboxHandleEnv): Effect.Effect<R
 		const exec = decoded.value
 		const redact = (text: string) => boundMessage(redactSecret(text, exec.checkout.token))
 
-		const response = yield* Effect.gen(function* () {
-			// Reaching the container is the one step that throws rather than rejects:
-			// an absent binding fails inside the SDK's own `idFromName`. Left unguarded
-			// it was a defect, and a defect here was a bare 500 the caller could not act
-			// on — the same answer a working container that refused the key would give.
-			const sandbox = yield* Effect.try({
-				try: () => env.open(exec.sandboxKey),
-				catch: (cause) =>
-					new SandboxCallError({
-						message:
-							cause instanceof Error ? cause.message : "no container is bound to this Worker",
-						cause,
-					}),
-			})
-			return yield* runExec(sandbox, exec)
+		// A Durable Object call crosses the network and is retried by nobody here. Its errors can
+		// echo the failing command line, so the clone token is redacted before anything leaves.
+		const response = yield* Effect.tryPromise({
+			try: () => env.run(exec.sandboxKey, encodeRequest(exec)),
+			catch: (cause) =>
+				new SandboxCallError({
+					message: cause instanceof Error ? cause.message : "the sandbox did not answer",
+					cause,
+				}),
 		}).pipe(
-			// A container that never came up is the caller's to report, not a 500 here.
-			// The container puts the failing command line into its own error messages,
-			// so this is one of the paths the clone URL can reach — redact before it
-			// leaves the Worker.
-			Effect.catchTag("@maple/sandbox/SandboxCallError", (error) =>
+			Effect.catch((error) =>
 				Effect.logWarning("sandbox container call failed").pipe(
 					Effect.annotateLogs({ "maple.sandbox.key": exec.sandboxKey }),
-					Effect.as(new SandboxRunUnavailable({ message: redact(error.message) })),
-				),
-			),
-			// Anything left is a bug in this Worker, and this Worker's logs are the
-			// only place it was ever written down. Say what broke in the answer too:
-			// a cause can carry the clone credential, so it goes out redacted.
-			Effect.catchCause((cause) =>
-				Effect.logError("sandbox worker failed", cause).pipe(
-					Effect.annotateLogs({ "maple.sandbox.key": exec.sandboxKey }),
-					Effect.as(
-						new SandboxRunUnavailable({
-							message: redact(`the sandbox worker failed: ${Cause.pretty(cause)}`),
-						}),
-					),
+					Effect.as(encodeResponse(new SandboxRunUnavailable({ message: redact(error.message) }))),
 				),
 			),
 		)
-		return json(encodeResponse(response))
+		return json(response)
+	})
+
+const readJson = (request: Request) =>
+	Effect.tryPromise({
+		try: () => request.json(),
+		// A body that does not parse is reported by the decode that follows.
+		catch: () => "unparseable" as const,
+	}).pipe(Effect.orElseSucceed(() => undefined))
+
+const decodePrepare = Schema.decodeUnknownEffect(ExecutorPrepareRequest)
+const decodeRun = Schema.decodeUnknownEffect(ExecutorRunRequest)
+const decodeRelease = Schema.decodeUnknownEffect(ExecutorReleaseRequest)
+const decodeDestroy = Schema.decodeUnknownEffect(ExecutorDestroyRequest)
+const encodePrepare = Schema.encodeSync(ExecutorPrepareRequest)
+const encodeRun = Schema.encodeSync(ExecutorRunRequest)
+const encodeRelease = Schema.encodeSync(ExecutorReleaseRequest)
+const encodeUnavailable = Schema.encodeSync(ExecutorUnavailable)
+
+/** One executor request, decoded here and answered by the run's Durable Object. */
+const handleExecutor = (path: string, request: Request, env: SandboxHandleEnv): Effect.Effect<Response> =>
+	Effect.gen(function* () {
+		const body = yield* readJson(request)
+		// Reaching the Durable Object can fail before it answers; the prepare token must not echo back.
+		const call = <A>(executorKey: string, secret: string, invoke: () => Promise<A>) =>
+			Effect.tryPromise({
+				try: invoke,
+				catch: (cause) => (cause instanceof Error ? cause.message : String(cause)),
+			}).pipe(
+				Effect.catch((message) =>
+					Effect.logWarning("executor call failed").pipe(
+						Effect.annotateLogs({ "maple.executor.key": executorKey }),
+						Effect.as(
+							encodeUnavailable(
+								new ExecutorUnavailable({
+									message: boundMessage(redactSecret(message, secret)),
+								}),
+							),
+						),
+					),
+				),
+				Effect.map(json),
+			)
+		const invalid = new Response("Invalid executor request", { status: 400 })
+		switch (path) {
+			case EXECUTOR_PREPARE_PATH: {
+				const decoded = yield* decodePrepare(body).pipe(Effect.option)
+				if (decoded._tag === "None") return invalid
+				const prepare = decoded.value
+				return yield* call(prepare.executorKey, prepare.checkout.token, () =>
+					env.executor.prepare(prepare.executorKey, encodePrepare(prepare)),
+				)
+			}
+			case EXECUTOR_RUN_PATH: {
+				const decoded = yield* decodeRun(body).pipe(Effect.option)
+				if (decoded._tag === "None") return invalid
+				const run = decoded.value
+				return yield* call(run.executorKey, "", () =>
+					env.executor.run(run.executorKey, encodeRun(run)),
+				)
+			}
+			case EXECUTOR_RELEASE_PATH: {
+				const decoded = yield* decodeRelease(body).pipe(Effect.option)
+				if (decoded._tag === "None") return invalid
+				const release = decoded.value
+				return yield* call(release.executorKey, "", () =>
+					env.executor.release(release.executorKey, encodeRelease(release)),
+				)
+			}
+			default: {
+				const decoded = yield* decodeDestroy(body).pipe(Effect.option)
+				if (decoded._tag === "None") return invalid
+				const key = decoded.value.executorKey
+				return yield* call(key, "", () => env.executor.destroy(key))
+			}
+		}
 	})

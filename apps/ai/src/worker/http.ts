@@ -1,3 +1,4 @@
+import { IsolateAge, isolateStampHeaders } from "@maple/infra/isolate-age"
 import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/worker-http"
 /**
  * The AI Worker's request path: the route graph built once per isolate on the
@@ -7,14 +8,14 @@ import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/work
  * are shared with the API through @maple/infra/worker-http.
  */
 import type { HttpEffect } from "alchemy/Http"
-import * as Cloudflare from "alchemy/Cloudflare"
-import { type Context, Effect, Exit, Layer } from "effect"
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import * as Etag from "effect/unstable/http/Etag"
-import * as HttpPlatform from "effect/unstable/http/HttpPlatform"
+import { type Context, Effect, Exit, Layer, Array as Arr, String as Str } from "effect"
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import type { MapleDbConnection } from "@maple/backend/platform/bindings"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
-import { layerPg } from "@maple/backend/platform/DatabasePgLive"
+import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import type { AiPortsLayer } from "./bindings"
+import { healthResponse } from "../routes/health"
+import { McpToolExecutorLoader } from "../mcp/executor-loader"
 
 /**
  * The route graph as the bridge's handler, built for the isolate.
@@ -33,20 +34,39 @@ export const buildIsolateHandler = <ROut, E>(
 	>,
 ) => forIsolate(isolate)(HttpRouter.toHttpEffect(routes)).pipe(Effect.map(bridgeHandler))
 
-/** The route graph as one request handler, built once per isolate on the first request. */
+/** The `/mcp` graph as one request handler, built once per isolate on the first `/mcp` request. */
+export const buildMcpApp = (isolate: Context.Context<never>, ports: AiPortsLayer) =>
+	Effect.gen(function* () {
+		const [{ McpRoutes }, { AiAuthLive }] = yield* Effect.all([
+			Effect.promise(() => import("../runtime/mcp-http-graph")),
+			Effect.promise(() => import("../runtime/auth-graph")),
+		])
+		return yield* buildIsolateHandler(
+			isolate,
+			McpRoutes.pipe(
+				// The tool executor's graph loads on the first `tools/*` request, not here.
+				Layer.provideMerge(McpToolExecutorLoader.layer),
+				Layer.provideMerge(AiAuthLive),
+				Layer.provideMerge(WorkerPlatformLive),
+				Layer.provideMerge(DatabasePgLive),
+				Layer.provide(ports),
+			),
+		)
+	})
+
+/** Every other route as one request handler, built once per isolate on the first such request. */
 export const buildApp = (isolate: Context.Context<never>, ports: AiPortsLayer) =>
 	Effect.gen(function* () {
-		const [{ McpServicesLive }, { AllRoutes, AiAuthLive }] = yield* Effect.all([
-			Effect.promise(() => import("../runtime/mcp-service-graph")),
+		const [{ AllRoutes }, { AiAuthLive }] = yield* Effect.all([
 			Effect.promise(() => import("../runtime/http-graph")),
+			Effect.promise(() => import("../runtime/auth-graph")),
 		])
 		return yield* buildIsolateHandler(
 			isolate,
 			AllRoutes.pipe(
-				Layer.provideMerge(McpServicesLive),
 				Layer.provideMerge(AiAuthLive),
 				Layer.provideMerge(WorkerPlatformLive),
-				Layer.provideMerge(layerPg),
+				Layer.provideMerge(DatabasePgLive),
 				Layer.provide(ports),
 			),
 		)
@@ -55,39 +75,49 @@ export const buildApp = (isolate: Context.Context<never>, ports: AiPortsLayer) =
 /**
  * The request handler the bridge serves. Liveness answers before the route graph
  * exists: it needs neither the domain graph nor the database, and a cold isolate
- * can report health when an unrelated binding is unavailable.
+ * can report health when an unrelated binding is unavailable. `/mcp` runs on its
+ * own graph, so a cold `/mcp` request does not load the other routes.
  *
  * No CORS preflight branch here, unlike api's: the api owns the origin and
  * answers `OPTIONS` before it forwards, so a second set of headers from this
  * Worker would be a duplicate `access-control-allow-origin`, which browsers
  * reject outright.
  */
-export const makeFetch = <E>(app: Effect.Effect<HttpEffect, E>, ports: AiPortsLayer) => {
-	return Effect.gen(function* () {
-		const request = yield* HttpServerRequest.HttpServerRequest
-		const path = pathOf(request.url)
-		if (request.method === "GET" && path === "/health") {
-			const revision = (yield* Cloudflare.WorkerEnvironment).COMMIT_SHA
-			return HttpServerResponse.text("OK", {
-				headers: typeof revision === "string" ? { "x-maple-revision": revision } : undefined,
-			})
-		}
+export const makeFetch = <E, EMcp = E>(
+	app: Effect.Effect<HttpEffect, E>,
+	ports: Layer.Layer<MapleDbConnection>,
+	mcpApp: Effect.Effect<HttpEffect, E | EMcp> = app,
+) =>
+	IsolateAge.useSync((isolateAge) =>
+		Effect.gen(function* () {
+			const request = yield* HttpServerRequest.HttpServerRequest
+			const path = pathOf(request.url)
+			if (request.method === "GET" && path === "/health") {
+				return yield* healthResponse
+			}
 
-		const built = yield* Effect.exit(app)
-		if (Exit.isFailure(built)) {
-			yield* Effect.logError("AI worker route graph failed to build", built.cause).pipe(
-				Effect.annotateLogs({ method: request.method, path }),
+			// Before the graph builds, so its failures count too and cold and warm compare unconditioned.
+			// The stamp goes back to the caller, whose span is the only one that sees cold-start CPU.
+			const stamp = yield* isolateAge.record
+			const built = yield* Effect.exit(path === "/mcp" ? mcpApp : app)
+			if (Exit.isFailure(built)) {
+				yield* Effect.logError("AI worker route graph failed to build", built.cause).pipe(
+					Effect.annotateLogs({ method: request.method, path }),
+				)
+				return HttpServerResponse.text("maple-ai is unavailable", {
+					status: 503,
+					headers: isolateStampHeaders(stamp),
+				})
+			}
+			return yield* withPgConnectionScope(built.value).pipe(
+				Effect.map(HttpServerResponse.setHeaders(isolateStampHeaders(stamp))),
 			)
-			return HttpServerResponse.text("maple-ai is unavailable", { status: 503 })
-		}
-		return yield* withPgConnectionScope(built.value)
-	}).pipe(
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the request IS the boundary the ports belong to.
-		Effect.provide(ports),
+		}).pipe(
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the request IS the boundary the ports belong to.
+			Effect.provide(ports),
+		),
 	)
-}
 
 const pathOf = (url: string): string => {
-	const query = url.indexOf("?")
-	return query === -1 ? url : url.slice(0, query)
+	return Arr.headNonEmpty(Str.split("?")(url))
 }

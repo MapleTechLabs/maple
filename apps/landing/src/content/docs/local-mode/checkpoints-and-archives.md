@@ -22,10 +22,10 @@ A checkpoint is a snapshot of the store that has been test-restored before it is
 
 ```bash
 maple start
-maple checkpoint      # take one now, on top of the automatic ones
+maple checkpoint  # take one now
 ```
 
-`maple checkpoint` asks the running server to take the checkpoint. If you started the server with a custom `--host`, `--port` or `--data-dir`, pass the same values.
+`maple checkpoint` asks the running server to take the checkpoint. If you started the server with a custom `--data-dir`, pass the same one; the command finds the server's host and port on its own.
 
 ### What a checkpoint contains
 
@@ -39,9 +39,11 @@ Each finished checkpoint gets a UUID and lives under `<data-dir>/backups`:
     manifest.json              # written only after the backup passed its test restore
   operations/                  # records of reset, restore and archive runs
   pins/                        # checkpoints an archive export is reading from
-  quarantine/                  # stores moved aside by restore, never deleted
+  quarantine/                  # operation records set aside
   retiring/
 ```
+
+A store replaced by a restore is not kept here. It is moved beside the data directory; see [Restoring](#restoring).
 
 Before a new checkpoint becomes the current one, Maple restores it into a temporary instance and checks all six raw telemetry tables (logs, traces and the four metric tables). If that check fails, the previous checkpoint stays current. Maple keeps the two most recent good checkpoints. When a third one succeeds, the oldest is deleted, unless an archive export is still reading from it or it cannot be confirmed as complete. In either of those cases it is kept.
 
@@ -95,11 +97,18 @@ The live store keeps logs and traces for 30 days and metrics for 90 (see [Your d
 An archive covers one UTC day of one **signal**: `logs`, `traces`, `metrics_sum`, `metrics_gauge`, `metrics_histogram` or `metrics_exponential_histogram`. Aggregation tables are not archived; they can be rebuilt from the raw data.
 
 ```bash
-maple archive create 2026-09-20 traces              # export one day of one signal
-maple archive list                                  # what is archived
-maple archive list --output paths --signal traces   # file paths, ready for DuckDB
-maple archive verify                                # re-check every file's SHA-256
-maple archive retire-live 2026-09-20 --apply        # delete the day from the live store once it is fully archived
+# Export one day of one signal
+maple archive create 2026-09-20 traces
+
+# List archives, or just their file paths for DuckDB
+maple archive list
+maple archive list --output paths --signal traces
+
+# Re-check every file's SHA-256
+maple archive verify
+
+# Delete a fully archived day from the live store
+maple archive retire-live 2026-09-20 --apply
 ```
 
 `archive create` exports the day from the current checkpoint (or the one you pass with `--checkpoint-id`), then checks row counts and checksums before the archive appears in `archive list`. The checkpoint is not deleted while the export runs. Exporting the same day again, for example after late data arrives, writes a new copy that replaces the old one in `archive list`; if the new copy has fewer rows it is refused unless you pass `--allow-shrink`. Days past their retention are refused, since the checkpoint no longer holds them. The old files stay on disk until `maple archive gc --apply` removes them (without `--apply`, gc only reports what it would delete).

@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant } from "@maple/domain/http"
 import { isoTimestampOrNull, MapleApiV2, V2InsufficientPermissions } from "@maple/domain/http/v2"
 import type { V2OnboardingChecklist, V2OnboardingChecklistStep } from "@maple/domain/http/v2"
@@ -6,9 +6,9 @@ import {
 	ONBOARDING_REWARD_AMOUNT_USD,
 	type OnboardingChecklistStepId,
 } from "@maple/domain/onboarding-checklist"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import {
 	OnboardingChecklistService,
 	type OnboardingChecklistReport,
@@ -33,7 +33,7 @@ export const toV2OnboardingChecklist = (report: OnboardingChecklistReport): V2On
 	claimed_at: isoTimestampOrNull(report.claimedAtMs),
 	completed_count: report.completedCount,
 	total_count: report.totalCount,
-	steps: report.steps.map((step) => ({
+	steps: Arr.map(report.steps, (step) => ({
 		object: "onboarding_checklist_step",
 		id: step.id,
 		completed: step.completed,
@@ -53,14 +53,15 @@ export const HttpV2OnboardingChecklistLive = HttpApiBuilder.group(
 				.handle("retrieve", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						return toV2OnboardingChecklist(yield* service.read(tenant))
+						const checklist = yield* service.read(tenant)
+						return toV2OnboardingChecklist(checklist)
 					}),
 				)
 				.handle("claim", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles, () =>
-							V2InsufficientPermissions.make("Only org admins can claim the onboarding reward"),
+						yield* Policy.check(tenant.roles, "billing:manage", (denial) =>
+							V2InsufficientPermissions.make(denial.message),
 						)
 						const { report, newlyClaimed } = yield* service.claim(tenant)
 						// A repeat of an idempotent claim is not a second credit; audit the redemption once.

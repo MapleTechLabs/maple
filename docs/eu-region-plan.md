@@ -43,8 +43,8 @@ there is no per-org routing anywhere, because each instance knows exactly one re
 | Repository sandbox (`apps/sandbox`)               | prd Worker, US                                        | per instance, EU Worker                                                                 |
 | Landing, billing                                  | shared                                                | shared, no customer data                                                                |
 | GitHub App, chat connector apps                   | US apps                                               | EU apps of their own, see Phase 0 step 8                                                |
-| OAuth clients (Cloudflare, PlanetScale, Hazel)    | US redirect URIs                                      | same clients, EU redirect URIs added                                                    |
-| Scraper (Railway)                                 | US service                                            | EU service of its own                                                                   |
+| OAuth clients (Cloudflare, PlanetScale)           | US redirect URIs                                      | same clients, EU redirect URIs added                                                    |
+| Scraper (Fargate)                                 | US service                                            | EU service of its own, in the EU ingest VPC                                             |
 
 The landing site stays one site. Billing metadata is not customer telemetry. The GitHub App was
 first listed here as shared, which does not work: an App has one webhook URL and one post-install
@@ -52,7 +52,7 @@ callback, both on `api.maple.dev`, so an EU install lands on the US API (whose d
 connect session for it) and EU repositories' push and pull request events are delivered to the US.
 
 The sandbox clones the customer's repository, so it deploys per instance from day one:
-`stageDeploysSandbox` already gates it to prd, and the EU deploy is prd (stage `prd-eu`), so the
+`profile.deploys.sandbox` already gates it to prd, and the EU deploy is prd (stage `prd-eu`), so the
 only work is the region-suffixed name. Cloudflare's Sandbox container has no jurisdiction setting, so it sits under the same best-effort placement as the Workers.
 
 ## Why `app.eu.maple.dev` and not a shared app
@@ -100,7 +100,6 @@ across regions because there is no routing.
       allowlist). The US client is reusable; add the EU URL to its allowlist:
         - Cloudflare OAuth: `https://api.eu.maple.dev/api/integrations/cloudflare/callback`
         - PlanetScale OAuth: `https://api.eu.maple.dev/api/integrations/planetscale/callback`
-        - Hazel OAuth: `https://api.eu.maple.dev/api/integrations/hazel/callback`
     - **One URL per app** (registered on the app, not sent per request). These need an EU app:
         - **GitHub App.** Register "Maple EU" per `docs/github-app-setup.md` with webhook
           `https://api.eu.maple.dev/api/integrations/github/webhook` and callback
@@ -113,10 +112,9 @@ across regions because there is no routing.
           `https://api.eu.maple.dev/oauth/chat/discord/callback` on it, and set its
           `MAPLE_DISCORD_CLIENT_ID`, `MAPLE_DISCORD_CLIENT_SECRET` and `MAPLE_DISCORD_BOT_TOKEN`
           in `prod-eu` together.
-    - **Scraper.** `apps/scraper` is one Railway service polling the US API's target list, so EU
-      Prometheus and PlanetScale metrics targets are never scraped. Deploy a second service in an
-      EU Railway region with `MAPLE_API_URL=https://api.eu.maple.dev`,
-      `MAPLE_INGEST_URL=https://ingest.eu.maple.dev` and `prod-eu`'s `SD_INTERNAL_TOKEN`.
+    - **Scraper (deployed).** EU prd runs its own scraper on Fargate, polling `api.eu.maple.dev`
+      for scrape targets and uptime monitors with `prod-eu`'s `SD_INTERNAL_TOKEN`. That token is
+      still the same value as `prod`'s; rotate it to an EU-only value.
 
     Until the EU GitHub App exists, remove its keys from `prod-eu`: connecting then fails
     up front with "not configured" instead of sending the user through a flow that cannot finish.
@@ -131,7 +129,7 @@ Built on the `worktree-eu-region` branch; `docs/infra.md` § Regions is the refe
   other's resources. `MAPLE_REGION` as a deploy env var is gone.
 - `resolveWorkerName(base, stage, region)` and `resolveMapleDomains(stage, region)`; `us` stays
   unsuffixed so nothing in prod renames. EU prd domains: `app`, `api`, `ingest`, `sync`,
-  `electric` under `eu.maple.dev`; no landing or local-ui (`regionHostsSharedApps`).
+  `electric` under `eu.maple.dev`; no landing or local-ui (`profile.deploys.sharedApps`).
 - `resolveWorkerPlacement(region)` replaces the placement constant.
 - `resolveStorageJurisdiction(region)` pins the EU replay bucket to the `eu` jurisdiction at
   creation (a new bucket, never a replace) and the ingest gateway's writer token and S3 endpoint
@@ -139,7 +137,7 @@ Built on the `worktree-eu-region` branch; `docs/infra.md` § Regions is the refe
   applied where ids are minted: `chatSessionStub` reads the stack-derived `MAPLE_REGION`.
 - `MapleStack` carries `region`; every Worker module reads it from there. `appUrlsEnv` defaults
   to the deploy's own hostnames, so EU emails and share links point at the EU app.
-- `resolveDatabaseMode(stage, region)` is `"declared"` for the EU prd: the Workers bind the
+- The EU prd profile's `database` is `"declared"`: the Workers bind the
   Hyperdrive configs the deploy created, from their props, so there are no dashboard ids to
   paste and no way to deploy the instance with no `MAPLE_DB`. The US prd stays `"ref"`.
 - `MAPLE_INTERNAL_ORG_ID` comes from the environment already, so the EU value is an org created
@@ -155,7 +153,7 @@ Built on the `worktree-eu-region` branch; `docs/infra.md` § Regions is the refe
 - Still to do before flipping `MAPLE_DEPLOY_EU`: the `production-eu` GitHub environment, the
   `prod-eu` Infisical environment, and the empty `maple-eu` database.
 - Tinybird schema deploys target `maple_us` and `maple_eu` (and GCP Frankfurt while it lives).
-  `tinybird-cd.yml` is disabled, so this joins the manual checklist.
+  There is no Tinybird CD workflow, so this joins the manual checklist.
 - The EU ingest fleet and Electric come out of the existing factories unchanged.
 
 ## Phase 3. Sign-up and the wrong door
@@ -184,8 +182,8 @@ plan.
   `openai/gpt-6-luna` for chat, triage and reviews. `MAPLE_TRIAGE_MODEL_OPENROUTER` and
   `MAPLE_REVIEW_MODEL_OPENROUTER` override it; any override must be in the EU catalogue
   (`GET https://eu.openrouter.ai/api/v1/models`).
-- Jev has no EU provider, so there is no decision model and the investigation gate reads "no
-  verdict" as "investigate".
+- The decision model (Clef) runs on Workers AI, which has no region pin, so the EU instance has no
+  decision model and the investigation gate reads "no verdict" as "investigate".
 - Workers AI has no region pin: `MAPLE_LLM_PROVIDER` must stay unset (OpenRouter) on `prod-eu`.
 
 ## Phase 5. Operations

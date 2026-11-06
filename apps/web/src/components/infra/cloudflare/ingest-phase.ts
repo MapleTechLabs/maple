@@ -1,4 +1,6 @@
 import type { CloudflareIntegrationStatus, CloudflareUsageResponse } from "@maple/domain/http"
+import type { Tone } from "@maple/ui/lib/tone"
+import { Array as Arr } from "effect"
 
 /**
  * How far a connected Cloudflare integration is from showing real numbers. Every Cloudflare
@@ -38,7 +40,8 @@ const BACKFILL_WINDOW_MS = 24 * 60 * 60_000
 const BACKFILL_DONE_SLACK_MS = 60 * 60_000
 
 const hasData = (usage: CloudflareUsageResponse, displayName: string): boolean =>
-	usage.services.some(
+	Arr.some(
+		usage.services,
 		(service) =>
 			service.displayName === displayName && (service.totalRequests > 0 || service.lastDataAt != null),
 	)
@@ -52,7 +55,7 @@ export function cloudflareIngestPhase(
 	usage: CloudflareUsageResponse | null,
 	now: number,
 ): CloudflareIngestPhase {
-	const zones = status.zones.filter((zone) => zone.enabled)
+	const zones = Arr.filter(status.zones, (zone) => zone.enabled)
 	const stalled = status.connectedAt != null && now - status.connectedAt > STALL_AFTER_MS
 
 	// No state rows at all: discovery hasn't run (or found nothing). The connect callback primes
@@ -64,14 +67,15 @@ export function cloudflareIngestPhase(
 	// Usage in flight: report the poller's own progress rather than guessing at the warehouse.
 	if (usage == null) {
 		const anySynced =
-			zones.some((zone) => zone.watermarkAt != null) || status.workers?.watermarkAt != null
+			Arr.some(zones, (zone) => zone.watermarkAt != null) || status.workers?.watermarkAt != null
 		return anySynced ? { kind: "live" } : { kind: "collecting" }
 	}
 
-	const live = zones.filter((zone) => hasData(usage, zone.name)).length
+	const live = Arr.filter(zones, (zone) => hasData(usage, zone.name)).length
 	const workersLive =
 		status.workers != null &&
-		usage.services.some(
+		Arr.some(
+			usage.services,
 			(service) =>
 				service.kind === "worker" && (service.totalRequests > 0 || service.lastDataAt != null),
 		)
@@ -98,10 +102,16 @@ export function cloudflareIngestPhase(
  * finished zone (whose frontier rests at the floor) claim the whole account was caught up.
  */
 function backfillProgress(status: CloudflareIntegrationStatus, now: number): number | null {
-	const frontiers = [
-		...status.zones.filter((zone) => zone.enabled).map((zone) => zone.backfillAt),
-		status.workers?.backfillAt,
-	].filter((value): value is number => value != null)
+	const frontiers = Arr.filter(
+		[
+			...Arr.map(
+				Arr.filter(status.zones, (zone) => zone.enabled),
+				(zone) => zone.backfillAt,
+			),
+			status.workers?.backfillAt,
+		],
+		(value): value is number => value != null,
+	)
 	if (frontiers.length === 0) return null
 	const leastCaughtUp = Math.max(...frontiers)
 	const floor = now - BACKFILL_WINDOW_MS
@@ -114,7 +124,7 @@ function backfillProgress(status: CloudflareIntegrationStatus, now: number): num
 export function describeCloudflareIngestPhase(phase: CloudflareIngestPhase): {
 	readonly title: string
 	readonly description: string
-	readonly tone: "info" | "warning"
+	readonly tone: Extract<Tone, "info" | "warn">
 } {
 	switch (phase.kind) {
 		case "discovering":
@@ -149,7 +159,7 @@ export function describeCloudflareIngestPhase(phase: CloudflareIngestPhase): {
 				title: "No Cloudflare data has arrived",
 				description:
 					"Collection has been connected for a while with nothing ingested. Check that the zones have traffic, and that the connection still has the analytics permissions. Reconnecting re-grants them.",
-				tone: "warning",
+				tone: "warn",
 			}
 		case "live":
 			return { title: "Receiving Cloudflare data", description: "", tone: "info" }

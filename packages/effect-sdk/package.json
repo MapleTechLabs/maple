@@ -1,6 +1,6 @@
 {
 	"name": "@maple-dev/effect-sdk",
-	"version": "0.9.0",
+	"version": "0.13.1",
 	"description": "Maple observability SDK for Effect applications",
 	"keywords": [
 		"effect",
@@ -48,6 +48,10 @@
 		"./cloudflare": {
 			"types": "./dist/cloudflare/index.d.mts",
 			"import": "./dist/cloudflare/index.mjs"
+		},
+		"./foldkit": {
+			"types": "./dist/foldkit/index.d.mts",
+			"import": "./dist/foldkit/index.mjs"
 		}
 	},
 	"publishConfig": {
@@ -55,16 +59,16 @@
 	},
 	"scripts": {
 		"build": "tsdown",
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsrs --noEmit",
 		"test": "vitest run"
 	},
 	"dependencies": {
 		"std-env": "^4.0.0"
 	},
 	"devDependencies": {
-		"@effect/language-service": "catalog:effect",
 		"@effect/vitest": "catalog:effect",
 		"@maple/browser-session": "workspace:*",
+		"@maple/sdk-core": "workspace:*",
 		"@types/node": "catalog:tooling",
 		"effect": "catalog:effect",
 		"tsdown": "^0.23.0",
@@ -72,6 +76,6 @@
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
-		"effect": ">=4.0.0-rc.113"
+		"effect": "^4.0.0"
 	}
 }

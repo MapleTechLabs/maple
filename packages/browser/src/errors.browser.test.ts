@@ -1,20 +1,24 @@
 import { assert, beforeEach, describe, it } from "vitest"
 import { SpanStatusCode, trace } from "@opentelemetry/api"
-import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base"
-import type { ReadableSpan } from "@opentelemetry/sdk-trace-base"
+import { TracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace"
+import type { ReadableSpan } from "@opentelemetry/sdk-trace"
+import { configureErrorFilters } from "./error-filters"
 import { captureException, resetReportedErrorsForTests, setupErrorCapture } from "./errors"
+import { setMapleProviderForTests } from "./tracing"
 
 const exporter = new InMemorySpanExporter()
 
-const provider = new BasicTracerProvider({
-	spanProcessors: [new SimpleSpanProcessor(exporter)],
+const provider = new TracerProvider({
+	spanProcessors: [new SimpleSpanProcessor({ exporter })],
 })
-trace.setGlobalTracerProvider(provider)
+setMapleProviderForTests(provider)
 
-const exceptionEventOf = (span: ReadableSpan) => span.events.find((event) => event.name === "exception")
+const exceptionEventOf = (span: ReadableSpan | undefined) =>
+	span?.events.find((event) => event.name === "exception")
 
 beforeEach(() => {
 	exporter.reset()
+	configureErrorFilters(undefined)
 })
 
 describe("captureException", () => {
@@ -24,7 +28,7 @@ describe("captureException", () => {
 		const [span] = exporter.getFinishedSpans()
 		assert.strictEqual(span?.name, "exception")
 		assert.strictEqual(span?.status.code, SpanStatusCode.ERROR)
-		const event = exceptionEventOf(span!)
+		const event = exceptionEventOf(span)
 		assert.strictEqual(event?.attributes?.["exception.type"], "TypeError")
 		assert.strictEqual(event?.attributes?.["exception.message"], "x is not a function")
 	})
@@ -37,10 +41,10 @@ describe("captureException", () => {
 
 		const [fromObject, fromString] = exporter.getFinishedSpans()
 		assert.strictEqual(
-			exceptionEventOf(fromObject!)?.attributes?.["exception.message"],
+			exceptionEventOf(fromObject)?.attributes?.["exception.message"],
 			"plain object failure",
 		)
-		assert.strictEqual(exceptionEventOf(fromString!)?.attributes?.["exception.message"], "string failure")
+		assert.strictEqual(exceptionEventOf(fromString)?.attributes?.["exception.message"], "string failure")
 	})
 
 	it("records an error once when a boundary reports it and the handler sees it again", () => {
@@ -56,12 +60,25 @@ describe("captureException", () => {
 	it("still records an error reported before tracing was live", () => {
 		resetReportedErrorsForTests()
 		const error = new Error("early")
-		trace.disable()
+		setMapleProviderForTests(undefined)
 		captureException(error)
-		trace.setGlobalTracerProvider(provider)
+		setMapleProviderForTests(provider)
 		captureException(error)
 
 		assert.strictEqual(exporter.getFinishedSpans().length, 1)
+	})
+
+	it("never records into a host app's global provider before init", () => {
+		const hostExporter = new InMemorySpanExporter()
+		trace.setGlobalTracerProvider(
+			new TracerProvider({ spanProcessors: [new SimpleSpanProcessor({ exporter: hostExporter })] }),
+		)
+		setMapleProviderForTests(undefined)
+		captureException(new Error("before init"))
+		setMapleProviderForTests(provider)
+		trace.disable()
+
+		assert.strictEqual(hostExporter.getFinishedSpans().length, 0)
 	})
 
 	it("carries a custom name and caller attributes", () => {
@@ -114,6 +131,30 @@ describe("setupErrorCapture", () => {
 		}
 	})
 
+	it("groups a thrown non-Error by where it was thrown, with signed script URLs redacted", () => {
+		const stop = setupErrorCapture()
+		window.dispatchEvent(
+			new ErrorEvent("error", {
+				error: "boom",
+				message: "Uncaught boom",
+				filename: "https://cdn.test/app.js?signature=abc",
+				lineno: 3,
+				colno: 7,
+			}),
+		)
+		stop()
+
+		const [span] = exporter.getFinishedSpans()
+		assert.strictEqual(span?.attributes["code.file.path"], "https://cdn.test/app.js?signature=REDACTED")
+		const event = exceptionEventOf(span)
+		assert.strictEqual(event?.attributes?.["exception.message"], "boom")
+		// One frame at the throw site, none from inside the SDK.
+		assert.strictEqual(
+			event?.attributes?.["exception.stacktrace"],
+			"Error: boom\n    at https://cdn.test/app.js?signature=REDACTED:3:7",
+		)
+	})
+
 	it("drops an opaque cross-origin script error", () => {
 		const stop = setupErrorCapture()
 		// No error object, no filename — "Script error." carries nothing
@@ -121,5 +162,46 @@ describe("setupErrorCapture", () => {
 		window.dispatchEvent(new ErrorEvent("error", { message: "Script error.", filename: "" }))
 		assert.strictEqual(exporter.getFinishedSpans().length, 0)
 		stop()
+	})
+})
+
+describe("filters and linked errors", () => {
+	it("drops what the app filters out before any span exists", () => {
+		configureErrorFilters({ ignore: ["ChunkLoadError"] })
+		const chunk = new Error("Loading chunk 3 failed")
+		chunk.name = "ChunkLoadError"
+		captureException(chunk)
+		captureException(new Error("kept"))
+
+		assert.deepEqual(
+			exporter
+				.getFinishedSpans()
+				.map((span) => exceptionEventOf(span)?.attributes?.["exception.message"]),
+			["kept"],
+		)
+	})
+
+	it("drops an uncaught error thrown from a browser extension", () => {
+		const stop = setupErrorCapture()
+		const error = new Error("injected")
+		error.stack = "Error: injected\n    at run (chrome-extension://abc/content.js:1:1)"
+		window.dispatchEvent(new ErrorEvent("error", { error, message: error.message }))
+		stop()
+		assert.strictEqual(exporter.getFinishedSpans().length, 0)
+	})
+
+	it("describes a thrown plain object by its fields, with no stack from inside the SDK", () => {
+		captureException({ code: 1, reason: "busy" })
+		const event = exceptionEventOf(exporter.getFinishedSpans()[0])
+		assert.strictEqual(event?.attributes?.["exception.message"], '{"code":1,"reason":"busy"}')
+		assert.isUndefined(event?.attributes?.["exception.stacktrace"])
+	})
+
+	it("records the cause chain in exception.stacktrace", () => {
+		captureException(new Error("save failed", { cause: new TypeError("network down") }))
+		const stacktrace = exceptionEventOf(exporter.getFinishedSpans()[0])?.attributes?.[
+			"exception.stacktrace"
+		]
+		assert.include(String(stacktrace), "Caused by: TypeError: network down")
 	})
 })

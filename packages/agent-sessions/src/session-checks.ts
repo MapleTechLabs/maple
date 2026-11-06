@@ -21,24 +21,37 @@ import {
 	type SessionVerdict,
 } from "./session-findings"
 import {
+	sessionLlmCalls,
 	spanTokenBuckets,
 	type SessionFailureKind,
 	type SessionSummary,
 	type SessionTokenReporting,
 } from "./session-summary"
 import {
-	classifyAiSpan,
+	finalTurnIndex,
+	isCountedToolCall,
 	isLlmCall,
+	spanModel,
 	spanStartMs,
 	type SessionTurn,
 	type TurnAnchorKind,
 } from "./session-turns"
+import { Array as Arr, Option, String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 
 /** Below this share of the prompt served from cache, across the calls after
  *  the first, the prefix is not being reused. */
 const CACHE_HIT_MIN_RATE = 0.5
 /** Fewer calls than this say nothing about the cache either way. */
 const CACHE_MIN_CALLS = 3
+/** The smallest prompt OpenAI, Anthropic or Gemini will cache: a shorter one
+ *  cannot hit the cache, so missing it says nothing about the prefix. */
+const CACHE_MIN_PROMPT_TOKENS = 1024
+/** The largest Claude minimum (Haiku 4.5, Opus 4.5). Anthropic writes as soon
+ *  as a prompt qualifies, so a Claude call that neither wrote nor read the
+ *  cache under it may just have been too short; one above it missed. Only
+ *  Claude's zero says this: other providers stamp a zero write on every call. */
+const CLAUDE_CACHE_MIN_PROMPT_TOKENS = 4096
 /** A headline names this many findings before it counts the rest. */
 const HEADLINE_MAX_CLAUSES = 3
 
@@ -118,8 +131,8 @@ export function buildSessionChecks(
 ): SessionChecksReport {
 	// Turns may interleave in time (a fan-out stamps one conversation id per
 	// lane), so "first call" and "last call" need the spans in start order.
-	const spans = turns.flatMap((turn) => turn.spans).sort((a, b) => spanStartMs(a) - spanStartMs(b))
-	const llmCalls = spans.filter(isLlmCall)
+	const spans = Arr.flatMap(turns, (turn) => turn.spans).sort((a, b) => spanStartMs(a) - spanStartMs(b))
+	const llmCalls = Arr.filter(spans, isLlmCall)
 	const coverage = readCoverage(spans, summary, turns)
 
 	const byKind = new Map<SessionFindingKind, SessionFinding[]>()
@@ -133,9 +146,10 @@ export function buildSessionChecks(
 
 	const checks = [
 		...completionCheck(of("incomplete")),
+		agentLimitCheck(of("agentLimit"), turns),
 		contextWindowCheck(of("contextExceeded"), llmCalls),
 		rateLimitCheck(of("rateLimited")),
-		providerCheck(of("providerError"), of("providerRetry"), llmCalls.length),
+		providerCheck(of("providerError"), of("providerRetry"), summary.work.llmCalls),
 		refusalCheck(of("refusal")),
 		replyLengthCheck(of("truncation"), llmCalls),
 		structuredOutputCheck(of("invalidOutput")),
@@ -143,19 +157,18 @@ export function buildSessionChecks(
 		toolTimeoutCheck(of("toolTimeout"), summary),
 		toolArgumentsCheck(of("toolArguments"), summary),
 		toolErrorCheck(
-			errors.filter((finding) => finding.tool !== undefined),
+			Arr.filter(errors, (finding) => finding.tool !== undefined),
 			summary,
 		),
-		...otherErrorsCheck(errors.filter((finding) => finding.tool === undefined)),
-		repetitionCheck(of("repetition"), summary, coverage),
+		...otherErrorsCheck(Arr.filter(errors, (finding) => finding.tool === undefined)),
 		stallCheck(of("stall")),
-		promptCacheCheck(llmCalls),
-	].sort(
-		(a, b) =>
-			STATUS_RANK[a.status] - STATUS_RANK[b.status] ||
-			// The check that ended the run leads: it is what the headline names.
-			Number(endedTheRun(b.findings)) - Number(endedTheRun(a.findings)),
-	)
+		promptCacheCheck(cacheObservations(spans)),
+	].sort((a, b) => {
+		const byStatus = STATUS_RANK[a.status] - STATUS_RANK[b.status]
+		if (byStatus !== 0) return byStatus
+		// The check that ended the run leads: it is what the headline names.
+		return Number(endedTheRun(b.findings)) - Number(endedTheRun(a.findings))
+	})
 
 	const counts = { failed: 0, warning: 0, passed: 0, skipped: 0 }
 	for (const check of checks) counts[check.status]++
@@ -178,8 +191,35 @@ function reportHeadline(
 ): string {
 	const word = turns[0]?.anchorKind === "trace" ? "segment" : "turn"
 	if (report.verdict.status === "failed") {
-		const cause = report.findings.find((finding) => finding.terminal)
-		return `the final ${word} ${cause === undefined ? "did not close cleanly" : causeText(cause)}`
+		const cause = Arr.findFirst(report.findings, (finding) => finding.terminal)
+		return `the final ${word} ${Option.match(cause, {
+			onNone: () => "did not close cleanly",
+			onSome: causeText,
+		})}`
+	}
+	// A fan-out whose sub-agents failed has not completed the way its verdict word
+	// suggests: the runs that did the work are what the headline names.
+	const final = turns[finalTurnIndex(turns)]
+	const subRuns =
+		final === undefined
+			? []
+			: Arr.filter(
+					turns,
+					(turn) =>
+						turn !== final &&
+						turn.anchorKind === "agent-root" &&
+						turn.startMs >= final.startMs &&
+						turn.startMs <= final.endMs,
+				)
+	const failedSubRuns = Arr.filter(subRuns, (turn) => turn.failed).length
+	if (failedSubRuns > 0) {
+		const which =
+			failedSubRuns === subRuns.length
+				? failedSubRuns === 1
+					? "its sub-agent run"
+					: `all ${plural(failedSubRuns, "sub-agent run")}`
+				: `${failedSubRuns} of ${plural(subRuns.length, "sub-agent run")}`
+		return `but ${which} failed`
 	}
 	if (counts.failed > 0) return `but ${plural(counts.failed, "check")} failed`
 	if (counts.warning > 0) return `with ${plural(counts.warning, "warning")}`
@@ -191,24 +231,24 @@ function readCoverage(
 	summary: SessionSummary,
 	turns: readonly SessionTurn[],
 ): SessionCoverage {
-	const llmCalls = spans.filter(isLlmCall)
-	const toolCalls = spans.filter((span) => classifyAiSpan(span) === "tool")
+	const llmCalls = Arr.filter(spans, isLlmCall)
+	const toolCalls = Arr.filter(spans, isCountedToolCall)
 	// JSON-decoded payloads: an emitter that wrote `null` lands as `null`,
 	// not as a missing key, and recorded nothing.
 	const recorded = (
 		span: AiSessionSpan,
 		keys: readonly ("inputMessages" | "outputMessages" | "toolCallArguments" | "toolCallResult")[],
-	) => keys.some((key) => (span.genAi[key] ?? undefined) !== undefined)
+	) => Arr.some(keys, (key) => (span.genAi[key] ?? undefined) !== undefined)
 	const signal = (population: readonly AiSessionSpan[], captured: boolean): SessionCoverageSignal =>
 		population.length === 0 ? "absent" : captured ? "captured" : "missing"
 	return {
 		messages: signal(
 			llmCalls,
-			llmCalls.some((span) => recorded(span, ["inputMessages", "outputMessages"])),
+			Arr.some(llmCalls, (span) => recorded(span, ["inputMessages", "outputMessages"])),
 		),
 		toolPayloads: signal(
 			toolCalls,
-			toolCalls.some((span) => recorded(span, ["toolCallArguments", "toolCallResult"])),
+			Arr.some(toolCalls, (span) => recorded(span, ["toolCallArguments", "toolCallResult"])),
 		),
 		usage: llmCalls.length === 0 ? "absent" : summary.tokenReporting,
 		cost: signal(llmCalls, summary.cost !== undefined),
@@ -244,10 +284,10 @@ const check = (
 /** The findings' own severity decides: a red row ended the run or names a
  *  class that needs a fix regardless; an amber one was survived. */
 const foundStatus = (findings: readonly SessionFinding[]): "failed" | "warning" =>
-	findings.some((finding) => finding.severity === "failure") ? "failed" : "warning"
+	Arr.some(findings, (finding) => finding.severity === "failure") ? "failed" : "warning"
 
 const endedTheRun = (findings: readonly SessionFinding[]): boolean =>
-	findings.some((finding) => finding.terminal)
+	Arr.some(findings, (finding) => finding.terminal)
 
 /** A run that ended without the completion its agent demanded: present only
  *  when it happened, since most agents demand no such thing. */
@@ -278,6 +318,7 @@ const CAUSE_TEXT = {
 	refusal: () => "ended on a refusal",
 	invalidOutput: () => "died on a reply that did not match its schema",
 	incomplete: (finding) => finding.detail ?? "ended without calling its completion tool",
+	agentLimit: (finding) => `was stopped on its ${limitName(finding)}`,
 	toolUnavailable: (finding) => `died with ${toolName(finding)} unable to run`,
 	toolTimeout: (finding) => `died on ${toolName(finding)} timing out`,
 	toolArguments: (finding) => `died on ${toolName(finding)} rejecting its arguments`,
@@ -289,6 +330,38 @@ const isFailureKind = (kind: SessionFindingKind): kind is SessionFailureKind => 
 
 function causeText(finding: SessionFinding): string {
 	return isFailureKind(finding.kind) ? CAUSE_TEXT[finding.kind](finding) : "did not close cleanly"
+}
+
+/** `duration limit`, from an `agent_limit · duration limit` label. */
+const limitName = (finding: SessionFinding): string => Str.replace(/^agent_limit · /, "")(finding.label)
+
+/** Agent runs the framework stopped on a budget. A sub-agent stopped this way
+ *  returns nothing to its parent, so its work is lost even when the session
+ *  carried on. */
+function agentLimitCheck(findings: readonly SessionFinding[], turns: readonly SessionTurn[]): SessionCheck {
+	const identity: CheckIdentity = { id: "agent-limits", name: "Agent limits", fixArea: "prompt" }
+	if (findings.length === 0) {
+		const runs = Arr.filter(turns, (turn) => turn.anchorKind === "agent-root").length
+		return check(
+			identity,
+			"passed",
+			runs > 1
+				? `None of the ${plural(runs, "agent run")} was stopped on a limit`
+				: "No agent run was stopped on a limit",
+		)
+	}
+	const n = total(findings)
+	return check(
+		identity,
+		foundStatus(findings),
+		`${plural(n, "agent run")} ${n === 1 ? "was" : "were"} stopped on a limit: ${clauses(
+			findings,
+			(finding) =>
+				`${limitName(finding)} ${times(finding.count)} on ${where(finding)}${detailText(finding)}`,
+		)}${endedTheRun(findings) ? "" : "; whatever those runs had found was lost"}`,
+		"Raise the limit, or give each run less to do: split the work, or tell the agent to stop and report before the limit.",
+		findings,
+	)
 }
 
 function contextWindowCheck(
@@ -303,9 +376,11 @@ function contextWindowCheck(
 		// after it recovered. The row links the deepest span; the group's own
 		// time is its first member's, which may be a wrapper that started
 		// before that call.
-		const overflow = llmCalls.find((span) => span.spanId === found.spanId)
-		const untilMs = overflow === undefined ? found.atMs : spanStartMs(overflow)
-		const sizes = promptSizes(llmCalls.filter((span) => spanStartMs(span) <= untilMs))
+		const untilMs = Option.match(
+			Arr.findFirst(llmCalls, (span) => span.spanId === found.spanId),
+			{ onNone: () => found.atMs, onSome: spanStartMs },
+		)
+		const sizes = promptSizes(Arr.filter(llmCalls, (span) => spanStartMs(span) <= untilMs))
 		const first = sizes[0]
 		const last = sizes[sizes.length - 1]
 		const growth =
@@ -328,18 +403,20 @@ function contextWindowCheck(
 			"No model call reported token usage, so prompt size could not be checked.",
 		)
 	}
-	const peak = sizes.reduce((max, size) => (size > max ? size : max), 0)
+	const peak = Arr.reduce(sizes, 0, (max, size) => (size > max ? size : max))
 	return check(identity, "passed", `The prompt peaked at ${formatNumber(peak)} tokens`)
 }
 
 /** Each model call's prompt, in start order: what the model had in front of
  *  it — uncached input plus both cache buckets. */
 function promptSizes(llmCalls: readonly AiSessionSpan[]): readonly number[] {
-	return llmCalls
-		.map(spanTokenBuckets)
-		.filter((buckets) => buckets !== undefined)
-		.map((buckets) => buckets.input + buckets.cacheRead + buckets.cacheWrite)
-		.filter((size) => size > 0)
+	return Arr.filter(
+		Arr.map(
+			Arr.filter(Arr.map(llmCalls, spanTokenBuckets), (buckets) => buckets !== undefined),
+			(buckets) => buckets.input + buckets.cacheRead + buckets.cacheWrite,
+		),
+		(size) => size > 0,
+	)
 }
 
 function rateLimitCheck(findings: readonly SessionFinding[]): SessionCheck {
@@ -374,16 +451,20 @@ function providerCheck(
 					: `All ${plural(llmCalls, "model call")} were answered first time`,
 		)
 	}
+	const [firstFailure] = failures
 	const parts = [
-		...(failures.length > 0
-			? [`${plural(total(failures), "model call")} failed at the provider on ${where(failures[0])}`]
+		...(firstFailure !== undefined
+			? [`${plural(total(failures), "model call")} failed at the provider on ${where(firstFailure)}`]
 			: []),
-		...retries.map((retry) => `retried at the gateway: ${retry.detail ?? `${retry.count} attempts`}`),
+		...Arr.map(
+			retries,
+			(retry) => `retried at the gateway: ${retry.detail ?? `${retry.count} attempts`}`,
+		),
 	]
 	return check(
 		identity,
 		failures.length > 0 ? foundStatus(failures) : "warning",
-		parts.join("; ") + carriedOn(findings),
+		Arr.join(parts, "; ") + carriedOn(findings),
 		"Add a fallback model or provider with backoff, and check the provider's status page.",
 		findings,
 	)
@@ -411,7 +492,10 @@ function replyLengthCheck(
 	const found = findings[0]
 	if (found !== undefined) {
 		const n = total(findings)
-		const limit = llmCalls.find((span) => span.spanId === found.spanId)?.genAi.requestMaxTokens
+		const limit = Arr.findFirst(llmCalls, (span) => span.spanId === found.spanId).pipe(
+			Option.map((span) => span.genAi.requestMaxTokens),
+			Option.getOrUndefined,
+		)
 		return check(
 			identity,
 			foundStatus(findings),
@@ -422,7 +506,7 @@ function replyLengthCheck(
 			findings,
 		)
 	}
-	if (!llmCalls.some((span) => span.genAi.responseFinishReasons !== undefined)) {
+	if (!Arr.some(llmCalls, (span) => span.genAi.responseFinishReasons !== undefined)) {
 		return check(
 			identity,
 			"skipped",
@@ -505,7 +589,7 @@ function toolArgumentsCheck(findings: readonly SessionFinding[], summary: Sessio
 			summary.tools.length === 0 ? "No tool was called" : "Every tool call was accepted as sent",
 		)
 	}
-	const tools = [...new Set(findings.map(toolName))]
+	const tools = [...new Set(Arr.map(findings, toolName))]
 	return check(
 		identity,
 		foundStatus(findings),
@@ -514,7 +598,7 @@ function toolArgumentsCheck(findings: readonly SessionFinding[], summary: Sessio
 			(finding) =>
 				`${toolName(finding)} rejected ${plural(finding.count, "call")} on ${where(finding)}${detailText(finding)}`,
 		) + carriedOn(findings),
-		`Tighten ${tools.join(", ")}'s description or schema so the model sends what it needs.`,
+		`Tighten ${Arr.join(tools, ", ")}'s description or schema so the model sends what it needs.`,
 		findings,
 	)
 }
@@ -525,7 +609,7 @@ function toolErrorCheck(findings: readonly SessionFinding[], summary: SessionSum
 		const calls = summary.work.toolCalls
 		// Failures the other tool checks classified — unavailable, timed out,
 		// rejected arguments — are not this row's to deny.
-		const failed = summary.tools.reduce((sum, tool) => sum + tool.failed, 0)
+		const failed = Arr.reduce(summary.tools, 0, (sum, tool) => sum + tool.failed)
 		return check(
 			identity,
 			"passed",
@@ -568,36 +652,6 @@ function otherErrorsCheck(findings: readonly SessionFinding[]): SessionCheck[] {
 	]
 }
 
-function repetitionCheck(
-	findings: readonly SessionFinding[],
-	summary: SessionSummary,
-	coverage: SessionCoverage,
-): SessionCheck {
-	const identity: CheckIdentity = { id: "repetition", name: "Repeated calls", fixArea: "prompt" }
-	if (findings.length === 0) {
-		return check(
-			identity,
-			"passed",
-			summary.tools.length === 0
-				? "No tool was called"
-				: coverage.toolPayloads === "captured"
-					? "No tool was called on repeat within a turn"
-					: "No tool was hammered within a turn; arguments were not captured, so identical retries could not be checked",
-		)
-	}
-	return check(
-		identity,
-		foundStatus(findings),
-		clauses(
-			findings,
-			(finding) =>
-				`${toolName(finding)} was ${finding.detail ?? "called repeatedly"} on ${where(finding)}`,
-		),
-		"Cache the result, or give the agent a stop rule; it repeated itself.",
-		findings,
-	)
-}
-
 function stallCheck(findings: readonly SessionFinding[]): SessionCheck {
 	const identity: CheckIdentity = { id: "stalls", name: "Stalls", fixArea: "instrumentation" }
 	if (findings.length === 0) return check(identity, "passed", "No gap over 30s inside a turn")
@@ -606,20 +660,47 @@ function stallCheck(findings: readonly SessionFinding[]): SessionCheck {
 		foundStatus(findings),
 		clauses(
 			findings,
-			(finding) => `Nothing ran for ${finding.label.replace(/^idle /, "")} inside ${where(finding)}`,
+			(finding) =>
+				`Nothing ran for ${Str.replace(/^idle /, "")(finding.label)} inside ${where(finding)}`,
 		),
 		"Check what ran before the gap; untraced time inside a turn is usually a queue, a sleep or a wait for approval.",
 		findings,
 	)
 }
 
+/** Claude, by provider or through any gateway by model. */
+const isClaude = (span: AiSessionSpan): boolean =>
+	span.genAi.providerName === "anthropic" || /claude/i.test(spanModel(span) ?? "")
+
+/** The emitter's own cache keys, or the gateway's buckets, which it stamps
+ *  from dialect spellings the detail decode may not alias. */
+const reportsCache = (span: AiSessionSpan): boolean =>
+	span.genAi.usageCacheReadInputTokens !== undefined ||
+	span.genAi.usageCacheCreationInputTokens !== undefined ||
+	span.genAi.mapleCacheReadTokens !== undefined ||
+	span.genAi.mapleCacheWriteTokens !== undefined
+
+/**
+ * One span per model call, so a call its framework also rolled up (ADK
+ * `call_llm` over `generate_content`) is judged once — and, when the span
+ * counted for it reported no cache usage, another observation of the same
+ * response that did (an app span beside its gateway's mirror).
+ */
+function cacheObservations(spans: readonly AiSessionSpan[]): readonly AiSessionSpan[] {
+	const byResponse = new Map<string, AiSessionSpan>()
+	for (const span of spans) {
+		const responseId = span.genAi.responseId
+		if (responseId !== undefined && responseId !== "" && reportsCache(span))
+			byResponse.set(responseId, span)
+	}
+	return Arr.map(sessionLlmCalls(spans), (call) =>
+		reportsCache(call) ? call : (byResponse.get(call.genAi.responseId ?? "") ?? call),
+	)
+}
+
 function promptCacheCheck(llmCalls: readonly AiSessionSpan[]): SessionCheck {
 	const identity: CheckIdentity = { id: "prompt-cache", name: "Prompt cache", fixArea: "prompt" }
-	const reporting = llmCalls.filter(
-		(span) =>
-			span.genAi.usageCacheReadInputTokens !== undefined ||
-			span.genAi.usageCacheCreationInputTokens !== undefined,
-	)
+	const reporting = Arr.filter(llmCalls, reportsCache)
 	if (reporting.length === 0) {
 		return check(
 			identity,
@@ -627,26 +708,27 @@ function promptCacheCheck(llmCalls: readonly AiSessionSpan[]): SessionCheck {
 			"No model call reported cache usage, so the prompt cache could not be checked.",
 		)
 	}
-	// The first call of a session cannot hit a cache nothing has written yet.
-	const calls = reporting
-		.slice(1)
-		.map(spanTokenBuckets)
-		.filter((buckets) => buckets !== undefined)
-		.map((buckets) => ({
-			read: buckets.cacheRead,
-			prompt: buckets.input + buckets.cacheRead + buckets.cacheWrite,
-		}))
-		.filter((call) => call.prompt > 0)
+	// The first cacheable call cannot hit a cache nothing has written yet.
+	const cacheable = Arr.flatMap(reporting, (span) => {
+		const buckets = spanTokenBuckets(span)
+		if (buckets === undefined) return []
+		const prompt = buckets.input + buckets.cacheRead + buckets.cacheWrite
+		const uncachedClaude = isClaude(span) && buckets.cacheRead + buckets.cacheWrite === 0
+		const minimum = uncachedClaude ? CLAUDE_CACHE_MIN_PROMPT_TOKENS : CACHE_MIN_PROMPT_TOKENS
+		return prompt >= minimum ? [{ read: buckets.cacheRead, prompt }] : []
+	})
+	const calls = cacheable.slice(1)
 	if (calls.length < CACHE_MIN_CALLS) {
 		return check(
 			identity,
 			"skipped",
-			`Only ${plural(reporting.length, "model call")} reported cache usage; at least ${CACHE_MIN_CALLS + 1} are needed to judge the prompt cache.`,
+			`Only ${plural(cacheable.length, "model call")} had a prompt long enough to cache; at least ${CACHE_MIN_CALLS + 1} are needed to judge the prompt cache.`,
 		)
 	}
 	const rate =
-		calls.reduce((sum, call) => sum + call.read, 0) / calls.reduce((sum, call) => sum + call.prompt, 0)
-	const misses = calls.filter((call) => call.read / call.prompt < CACHE_HIT_MIN_RATE).length
+		Arr.reduce(calls, 0, (sum, call) => sum + call.read) /
+		Arr.reduce(calls, 0, (sum, call) => sum + call.prompt)
+	const misses = Arr.filter(calls, (call) => call.read / call.prompt < CACHE_HIT_MIN_RATE).length
 	const rateText = `${Math.round(rate * 100)}%`
 	if (rate < CACHE_HIT_MIN_RATE) {
 		return check(
@@ -672,7 +754,7 @@ function times(n: number): string {
 }
 
 function total(findings: readonly SessionFinding[]): number {
-	return findings.reduce((sum, finding) => sum + finding.count, 0)
+	return Arr.reduce(findings, 0, (sum, finding) => sum + finding.count)
 }
 
 /** The first few findings phrased and joined, the rest counted: a session
@@ -682,14 +764,14 @@ function clauses(
 	phrase: (finding: SessionFinding) => string,
 	separator = "; ",
 ): string {
-	const shown = findings.slice(0, HEADLINE_MAX_CLAUSES).map(phrase).join(separator)
+	const shown = Arr.join(Arr.map(findings.slice(0, HEADLINE_MAX_CLAUSES), phrase), separator)
 	const rest = findings.length - HEADLINE_MAX_CLAUSES
 	return rest > 0 ? `${shown}${separator}and ${rest} more` : shown
 }
 
 /** `turn 14 (final)`, `turns 9, 11` — the finding's own attribution, read in a sentence. */
 function where(finding: SessionFinding): string {
-	return finding.turnText.replace(/^(Turn|Segment)/, (word) => word.toLowerCase())
+	return replaceWith(finding.turnText, /^(Turn|Segment)/, (word) => Str.toLowerCase(word))
 }
 
 function toolName(finding: SessionFinding): string {

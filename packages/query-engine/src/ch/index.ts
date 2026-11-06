@@ -1,13 +1,13 @@
 // ClickHouse Query DSL — Maple facade
 //
 // The generic, reusable query builder now lives in the standalone
-// @maple-dev/effect-clickhouse package. This module re-exports that public API
+// @maple-dev/effect-orm package. This module re-exports that public API
 // and layers Maple's OpenTelemetry-specific table definitions, the named-query
 // ("pipe") registry, and the pre-built query templates on top of it.
 
 // Generic DSL — types, table, expressions, functions, params, query builder,
 // compilation, and unions — re-exported from the standalone library.
-export * from "@maple-dev/effect-clickhouse"
+export * from "@maple-dev/effect-orm/clickhouse"
 
 // Handwritten SQL. Shadows the builder's `rawCompiledQuery`, whose `reason`
 // is any string, with one that pins Maple's closed `RawSqlReason` union — the
@@ -19,6 +19,9 @@ export { type RawSqlReason, rawCompiledQuery } from "./raw-sql"
 // resolve a pipe name to identical SQL.
 export { compilePipeQuery, type PipeCompiledQuery } from "./pipe-dispatch"
 
+// One builder over a current and a previous window, rows tagged with `period`.
+export { compilePeriodCompare, type PeriodCompareWindows } from "./period-compare"
+
 export * as tables from "./tables"
 
 // Shared row-schema codecs (ClickHouse `FORMAT JSON` 64-bit-int-as-string coercion).
@@ -29,6 +32,7 @@ export {
 	tracesTimeseriesQuery,
 	canUseAnnualServiceOverview,
 	tracesBreakdownQuery,
+	tracesBreakdownReadsRaw,
 	tracesListQuery,
 	tracesRootListQuery,
 	traceListQuery,
@@ -68,6 +72,8 @@ export {
 	metricAttributeValuesQuery,
 	metricScopedAttributeKeysQuery,
 	metricScopedAttributeValuesQuery,
+	serviceScopedAttributeKeysQuery,
+	serviceScopedAttributeValuesQuery,
 	type MetricScopedAttributeKeysOpts,
 	type MetricScopedAttributeValuesOpts,
 	type AttributeKeysQueryOpts,
@@ -80,6 +86,7 @@ export {
 
 // Queries — Metrics
 export {
+	metricDeltaExpr,
 	metricsTimeseriesQuery,
 	metricsTimeseriesRateQuery,
 	metricsBreakdownQuery,
@@ -89,7 +96,6 @@ export {
 	type MetricsTimeseriesOpts,
 	type MetricsTimeseriesOutput,
 	type MetricsRateTimeseriesOpts,
-	type MetricsRateTimeseriesOutput,
 	type MetricsBreakdownOpts,
 	type MetricsBreakdownOutput,
 	listMetricsQuery,
@@ -131,6 +137,8 @@ export {
 	sessionReplayEventsQuery,
 	sessionsForTraceQuery,
 	sessionTraceSummariesQuery,
+	MAX_SESSION_TRACE_SUMMARIES,
+	sessionTraceWindow,
 	type SessionReplaysListOpts,
 	type SessionReplaysListOutput,
 	type SessionReplaysFacetsOpts,
@@ -154,6 +162,7 @@ export {
 	sessionActivityAggregateQuery,
 	IDLE_GAP_THRESHOLD_MS,
 	type SessionTranscriptOutput,
+	type SessionTranscriptOpts,
 	type SessionEventMatchOpts,
 	type SessionActivityOpts,
 	type SessionActivityOutput,
@@ -200,6 +209,25 @@ export {
 	type WebAnalyticsAiCrawledPagesOpts,
 	type WebAnalyticsAiCrawledPagesOutput,
 } from "./queries/web-analytics-ai"
+
+// Queries — Security Center telemetry (scanner probes, runtime versions)
+export {
+	scannerSignaturesQuery,
+	scannerExposedQuery,
+	scannerSourcesQuery,
+	scannerTimelineQuery,
+	SCANNER_TIMELINE_MAX_BUCKETS,
+	SCANNER_SIGNATURES_MAX_ROWS,
+	runtimeVersionsQuery,
+	type ScannerSignaturesOutput,
+	type ScannerExposedOutput,
+	type ScannerSourcesOutput,
+	type ScannerTimelineOutput,
+	type RuntimeVersionsOutput,
+} from "./queries/security-telemetry"
+
+// Queries: Users (`user_activity_hourly`, per-user traces, logs and issues)
+export * from "./queries/user-activity"
 
 // Queries — Product events (funnels over `product_events`)
 export {
@@ -285,7 +313,13 @@ export {
 	serviceApdexTimeseriesQuery,
 	serviceUsageQuery,
 	serviceUsageWithPreviousQuery,
+	traceSpanVolumeByServiceQuery,
+	traceSpanVolumeRowSchema,
+	type TraceSpanVolumeOutput,
 	servicesFacetsQuery,
+	servicePresenceQuery,
+	servicePresenceRowSchema,
+	type ServicePresenceOutput,
 	type ServiceOverviewOpts,
 	type ServiceOverviewOutput,
 	type ServiceCatalogOpts,
@@ -309,10 +343,12 @@ export {
 // Queries — Releases
 export {
 	releasesListQuery,
+	runningCommitsQuery,
+	runningCommitsRowSchema,
+	RUNNING_COMMITS_CAP,
 	releasesListRowSchema,
 	releasesTimelineQuery,
 	releaseErrorFingerprintsQuery,
-	releaseErrorFingerprintsRowSchema,
 	RELEASES_LIST_CAP,
 	PLACEHOLDER_COMMIT_SHAS,
 	type ReleasesListOpts,
@@ -321,6 +357,11 @@ export {
 	type ReleasesTimelineOutput,
 	type ReleaseErrorFingerprintsOpts,
 	type ReleaseErrorFingerprintsOutput,
+	serviceDeploymentsQuery,
+	serviceDeploymentsRowSchema,
+	DEPLOYMENTS_PER_SERVICE_CAP,
+	type ServiceDeploymentsOpts,
+	type ServiceDeploymentsOutput,
 } from "./queries/releases"
 
 // Queries — Errors
@@ -332,16 +373,26 @@ export {
 	spanHierarchyQuery,
 	SPAN_HIERARCHY_MAX_SPANS,
 	spanDetailQuery,
+	spanEventsQuery,
+	spanEventsByTraceQuery,
 	traceTimeProbeQuery,
+	recentTraceTimeProbeQuery,
 	tracesDurationStatsQuery,
 	canUseTraceFacetsRollup,
 	tracesFacetsQuery,
 	errorsFacetsQuery,
 	errorsSummaryQuery,
 	errorDetailTracesQuery,
+	errorFingerprintSummaryQuery,
+	errorCooccurringFingerprintsQuery,
+	errorFingerprintOccurrencesQuery,
+	errorOccurrenceSpansQuery,
+	errorsWindowTotalsQuery,
 	errorIssuesQuery,
 	errorTickBootstrapIssuesQuery,
+	errorTickFirstErrorMinuteQuery,
 	errorTickIssuesQuery,
+	errorFingerprintLineageQuery,
 	errorFingerprintsQuery,
 	errorIssueTimeseriesQuery,
 	errorIssueSampleTracesQuery,
@@ -359,6 +410,9 @@ export {
 	type SpanHierarchyOutput,
 	type SpanDetailOpts,
 	type SpanDetailOutput,
+	type SpanEventsOpts,
+	type SpanEventsOutput,
+	type SpanEventsByTraceOutput,
 	type TraceTimeProbeOutput,
 	type TracesDurationStatsOpts,
 	type TracesDurationStatsOutput,
@@ -411,11 +465,17 @@ export {
 export {
 	serviceDependenciesSQL,
 	serviceDependenciesForServiceQuery,
+	serviceDependenciesInvolvingServiceQuery,
 	serviceDbEdgesSQL,
 	serviceDbEdgesForServiceQuery,
 	serviceDbQuerySummarySQL,
 	serviceDbQueryTimeseriesSQL,
 	serviceDbTopQueriesSQL,
+	serviceDbQuerySpansQuery,
+	dbQueryVolumeQuery,
+	dbQueryVolumeRowSchema,
+	type DbQueryVolumeOpts,
+	type DbQueryVolumeOutput,
 	servicePlatformsSQL,
 	serviceMapEdgeJoinQuery,
 	type ServiceDependenciesOpts,
@@ -460,6 +520,11 @@ export {
 	serviceWorkloadsSQL,
 	type ServiceWorkloadsOpts,
 	type ServiceWorkloadsOutput,
+	serviceRuntimesSQL,
+	serviceRuntimeResources,
+	type ServiceRuntimeResource,
+	type ServiceRuntimesOpts,
+	type ServiceRuntimesOutput,
 } from "./queries/service-infra"
 
 // Queries — Alerts: removed. Alert evaluation now reuses the dashboard
@@ -479,6 +544,11 @@ export {
 	type ServiceOperationsSummaryOutput,
 	type ServiceOperationsTimeseriesOpts,
 	type ServiceOperationsTimeseriesOutput,
+	routeUsageQuery,
+	routeUsageRowSchema,
+	type RouteUsageOpts,
+	type RouteUsageOrder,
+	type RouteUsageOutput,
 } from "./queries/service-operations"
 
 // Queries — Service API Endpoints (the HTTP slice of the operations rollup)
@@ -491,6 +561,40 @@ export {
 	type ServiceEndpointsSummaryOpts,
 	type ServiceEndpointsSummaryOutput,
 } from "./queries/service-endpoints"
+
+// Queries — Service API tab (HTTP totals/timeseries off the operations splice, and
+// per-endpoint detail off service_endpoint_details_hourly, migration 0048)
+export {
+	serviceApiTimeseriesQuery,
+	serviceApiTimeseriesRowSchema,
+	serviceApiTotalsQuery,
+	serviceApiTotalsRowSchema,
+	serviceEndpointsWithHttpQuery,
+	serviceEndpointsWithHttpRowSchema,
+	type ServiceApiScopeOpts,
+	type ServiceApiTiers,
+	type ServiceApiTimeseriesOpts,
+	type ServiceApiTimeseriesOutput,
+	type ServiceApiTotalsOutput,
+	type ServiceEndpointsWithHttpOpts,
+	type ServiceEndpointsWithHttpOutput,
+} from "./queries/service-api"
+export {
+	ENDPOINT_LATENCY_QUANTILE_LEVELS,
+	serviceEndpointDistributionQuery,
+	serviceEndpointDistributionRowSchema,
+	serviceEndpointSlowestQuery,
+	serviceEndpointSlowestRowSchema,
+	serviceEndpointStatusBreakdownQuery,
+	serviceEndpointStatusBreakdownRowSchema,
+	type ServiceEndpointDetailOpts,
+	type ServiceEndpointDetailsScopeOpts,
+	type ServiceEndpointDistributionOutput,
+	type ServiceEndpointSlowestOpts,
+	type ServiceEndpointSlowestOutput,
+	type ServiceEndpointStatusBreakdownOpts,
+	type ServiceEndpointStatusBreakdownOutput,
+} from "./queries/service-endpoint-details"
 
 // Queries — Alert Checks (historical rule evaluations)
 export {
@@ -511,6 +615,22 @@ export {
 	type AuditLogEntriesOpts,
 	type AuditLogEntriesOutput,
 } from "./queries/audit-log"
+
+// Queries — Cancellation evidence (what a cancelling org sent and did)
+export {
+	CANCELLATION_RESOURCE_KEYS,
+	cancellationAlertChecksQuery,
+	cancellationAuditActionsQuery,
+	cancellationAuditActorsQuery,
+	cancellationErrorFingerprintsQuery,
+	cancellationErrorsByDayQuery,
+	cancellationProductEventsQuery,
+	cancellationResourceAttributesQuery,
+	cancellationResourceSpansQuery,
+	cancellationServiceCountsQuery,
+	cancellationServiceUsageQuery,
+	cancellationToolCallsQuery,
+} from "./queries/cancellation-evidence"
 
 // Queries — Cloudflare integration usage (integrations-page ingest proof)
 
@@ -534,6 +654,9 @@ export {
 
 // Queries — Telemetry liveness (auto-resolve gating + local-mode header heartbeat)
 export {
+	ingestFreshnessQuery,
+	ingestFreshnessRowSchema,
+	logsFreshnessQuery,
 	orgTelemetryPulseQuery,
 	serviceLivenessQuery,
 	type ServiceLivenessOpts,
@@ -556,16 +679,75 @@ export {
 	type TopOperationsOutput,
 } from "./queries/top-operations"
 
+// Queries - MCP hub (MCP server spans per the OpenTelemetry MCP conventions)
+export {
+	mcpCallListQuery,
+	mcpCallSeriesQuery,
+	mcpCallSplitSeriesQuery,
+	mcpCallTotalsQuery,
+	mcpClientName,
+	mcpClientReachQuery,
+	mcpClientsQuery,
+	mcpErrorGroupsQuery,
+	mcpErrorTrendQuery,
+	mcpFirstSeenQuery,
+	mcpClientInfoQuery,
+	mcpMethodsQuery,
+	mcpServerClientsQuery,
+	mcpServerSparkQuery,
+	mcpServerStatsQuery,
+	mcpServersSessionListQuery,
+	mcpServersUserActivityQuery,
+	mcpServicesQuery,
+	mcpSessionActivityQuery,
+	mcpSessionListQuery,
+	mcpSessionRequestsQuery,
+	mcpSessionTotalsQuery,
+	mcpSpanSummaryQuery,
+	mcpUserActivityQuery,
+	mcpUserSessionRequestsQuery,
+	mcpToolErrorsQuery,
+	mcpToolStatsQuery,
+	type McpCallFilter,
+	type McpCallOrder,
+	type McpSessionFilter,
+} from "./queries/mcp"
+
+// Queries - end users (`/users`: replays, product events and MCP spans per user id)
+export {
+	hasUserSources,
+	usersAnonymousVisitorsQuery,
+	usersFacetsQuery,
+	usersListQuery,
+	usersGroupNamesQuery,
+	usersGroupsQuery,
+	usersMcpNamesQuery,
+	usersMcpNameSearchQuery,
+	usersServiceNamespacesQuery,
+	usersSummaryQuery,
+	readsServiceSources,
+	userDevicesQuery,
+	userEventsQuery,
+	userEventsSummaryQuery,
+	userMcpSummaryQuery,
+	userReplayProfileQuery,
+	userServicesQuery,
+	userVisitorIdsQuery,
+	type UsersListFilter,
+	type UsersScope,
+} from "./queries/users"
+
 // Queries — Infrastructure (host-centric aggregations over hostmetrics)
 export {
 	listHostsQuery,
 	hostDetailSummaryQuery,
 	hostGaugeTimeseriesQuery,
 	hostNetworkTimeseriesQuery,
-	fleetUtilizationTimeseriesQuery,
+	hostFilesystemsQuery,
 	listPodsQuery,
 	listPodsSummaryQuery,
 	podDetailSummaryQuery,
+	podRestartsQuery,
 	podGaugeTimeseriesQuery,
 	podFacetsQuery,
 	listNodesQuery,
@@ -584,7 +766,8 @@ export {
 	type HostGaugeTimeseriesOutput,
 	type HostNetworkTimeseriesOpts,
 	type HostNetworkTimeseriesOutput,
-	type FleetUtilizationTimeseriesOutput,
+	type HostFilesystemsOpts,
+	type HostFilesystemsOutput,
 	type ListPodsOpts,
 	type ListPodsOutput,
 	type ListPodsSummaryOutput,
@@ -592,10 +775,13 @@ export {
 	type SortDirection,
 	type PodDetailSummaryOpts,
 	type PodDetailSummaryOutput,
+	type PodRestartsOpts,
+	type PodRestartsOutput,
 	type PodGaugeTimeseriesOpts,
 	type PodFacetsOutput,
 	type ListNodesOpts,
 	type ListNodesOutput,
+	type NodeCapacityOutput,
 	type NodeDetailSummaryOpts,
 	type NodeDetailSummaryOutput,
 	type NodeGaugeTimeseriesOpts,
@@ -608,6 +794,8 @@ export {
 	type WorkloadFacetsOutput,
 	type WorkloadKind,
 	infraPresenceQuery,
+	FILESYSTEM_USED_STATES,
+	PSEUDO_FS_TYPES,
 	type InfraSurface,
 	type InfraPresenceOutput,
 } from "./queries/infra"
@@ -635,3 +823,76 @@ export {
 	type ContainerTimeseriesOutput,
 	type ContainerFacetsOutput,
 } from "./queries/containers"
+
+// Queries — Pull request review (per-operation traffic across services)
+export {
+	operationTrafficHourlyQuery,
+	operationTrafficMinutelyQuery,
+	type OperationTrafficOpts,
+	type OperationTrafficOutput,
+} from "./queries/pr-review"
+
+// Queries: AWS ingest (one connection's metric stream by namespace and region)
+export {
+	AWS_INGEST_RESOURCE_SAMPLE,
+	AWS_METRIC_STREAM_SCOPE,
+	awsIngestQuery,
+	awsIngestRowSchema,
+	type AwsIngestOutput,
+} from "./queries/aws-ingest"
+
+// Queries: source usage (hourly volume and estimated bytes per source)
+export {
+	sourceUsageHourlyQuery,
+	sourceUsageHourlyRowSchema,
+	sourceUsageTotalsQuery,
+	sourceUsageTotalsRowSchema,
+	type SourceUsageHourlyOutput,
+	type SourceUsageTotalsOutput,
+} from "./queries/source-usage"
+
+// Queries — CI pipeline runs (GitHub Actions traces)
+export {
+	CI_FAILED_RESULTS,
+	ciActorStatsQuery,
+	ciFailedJobsQuery,
+	ciJobStatsQuery,
+	ciPipelineStatsQuery,
+	ciRedStreak,
+	isCiFailedResult,
+	ciQueueTotalsQuery,
+	ciRunSeriesQuery,
+	ciRunsSpanMs,
+	ciRunTotalsQuery,
+	ciRunsQuery,
+	type CiActorStatsOpts,
+	type CiFailedJobsOpts,
+	type CiRedStreak,
+	type CiRunsOpts,
+	type CiScopeOpts,
+} from "./queries/ci-runs"
+export {
+	uptimeChecksQuery,
+	uptimeChecksRowSchema,
+	uptimePhaseTimingsQuery,
+	uptimePhaseTimingsRowSchema,
+	type UptimeChecksOutput,
+	type UptimePhaseTimingsOutput,
+} from "./queries/uptime"
+export {
+	sloBucketsQuery,
+	sloBucketsRowSchema,
+	sloBurnByServiceQuery,
+	sloBurnByServiceRowSchema,
+	sloTotalsByServiceQuery,
+	sloTotalsByServiceRowSchema,
+	type SloBurnByServiceOutput,
+	type SloGroupQueryOpts,
+	type SloTotalsByServiceOutput,
+	sloTotalsQuery,
+	sloTotalsRowSchema,
+	type SloBucketsOutput,
+	type SloReadGrain,
+	type SloSliQueryOpts,
+	type SloTotalsOutput,
+} from "./queries/slos"

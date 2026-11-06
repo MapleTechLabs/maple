@@ -1,6 +1,6 @@
 import { SupportChannelUnavailableError } from "@maple/domain/support-channel"
 import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 
 /**
@@ -14,7 +14,10 @@ const SLACK_API_BASE = "https://slack.com/api"
 const SlackResponse = Schema.Struct({
 	ok: Schema.Boolean,
 	error: Schema.optionalKey(Schema.String),
-	channel: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
+	/** `conversations.create` answers with the channel; `chat.postMessage` with only its id. */
+	channel: Schema.optionalKey(
+		Schema.Union([Schema.String, Schema.Struct({ id: Schema.String, name: Schema.String })]),
+	),
 	channels: Schema.optionalKey(
 		Schema.Array(
 			Schema.Struct({
@@ -86,7 +89,7 @@ export class SupportSlackClient extends Context.Service<SupportSlackClient, Supp
 				method: SupportSlackMethod,
 				args: SupportSlackArgs,
 			) {
-				yield* Effect.annotateCurrentSpan({ "peer.service": "slack", "slack.method": method })
+				yield* Effect.annotateCurrentSpan({ "peer.service": "slack", "maple.slack.method": method })
 				if (Option.isNone(token)) {
 					return yield* new SupportChannelUnavailableError({
 						message: "Support Slack bot token is not configured",
@@ -109,7 +112,7 @@ export class SupportSlackClient extends Context.Service<SupportSlackClient, Supp
 				const decoded = yield* decodeSlackResponse(json).pipe(Effect.mapError(unavailable(method)))
 				if (!decoded.ok) {
 					const error = decoded.error ?? "unknown_error"
-					yield* Effect.annotateCurrentSpan({ "slack.error": error })
+					yield* Effect.annotateCurrentSpan({ "maple.slack.error": error })
 					return yield* new SupportSlackRefusedError({
 						message: `Slack ${method} refused: ${error}`,
 						method,

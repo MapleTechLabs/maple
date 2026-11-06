@@ -6,12 +6,13 @@
  * workflow tests stub every model call, so a diagnosis that invented a trace id
  * or reported "it's an unknown error" passed everything in the repo.
  *
- * Kept as pure functions over the report rather than as `vitest-evals` scorers
- * directly, so the same rules are unit-tested in the normal suite (see
+ * Kept as pure functions over the report rather than as eval scorers directly,
+ * so the same rules are unit-tested in the normal suite (see
  * `diagnosis-scorers.test.ts`) and wrapped for the model-driven eval. A scoring
  * rule that only runs when someone sets an API key is a rule that rots.
  */
 import type { DiagnosisFixture } from "./diagnosis-fixtures"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /**
  * Every field is `unknown`, and that is the point.
@@ -47,7 +48,7 @@ const pass = (rationale: string): RuleScore => ({ score: 1, rationale })
 const fail = (rationale: string): RuleScore => ({ score: 0, rationale })
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 const wrongType = (field: string, value: unknown): string => `${field} is malformed: ${JSON.stringify(value)}`
 
@@ -56,11 +57,11 @@ const notString = (field: string, value: unknown): string | undefined =>
 	value === undefined || typeof value === "string" ? undefined : wrongType(field, value)
 
 const notList = (field: string, value: unknown): string | undefined =>
-	value === undefined || Array.isArray(value) ? undefined : wrongType(field, value)
+	value === undefined || Arr.isArray(value) ? undefined : wrongType(field, value)
 
 const text = (value: unknown): string => (typeof value === "string" ? value : "")
-const lower = (value: unknown): string => text(value).toLowerCase()
-const items = (value: unknown): ReadonlyArray<unknown> => (Array.isArray(value) ? value : [])
+const lower = (value: unknown): string => Str.toLowerCase(text(value))
+const items = (value: unknown): ReadonlyArray<unknown> => (Arr.isArray(value) ? value : [])
 
 /**
  * Every identifier in the report must exist in the fixture's world.
@@ -77,7 +78,7 @@ export const scoreEvidenceGrounding = (report: ScoredReport, fixture: DiagnosisF
 	const breach = notList("evidence", report.evidence)
 	if (breach) return fail(breach)
 
-	const known = fixture.knownIdentifiers.map((id) => id.toLowerCase())
+	const known = Arr.map(fixture.knownIdentifiers, (id) => Str.toLowerCase(id))
 	const claimed: Array<unknown> = []
 	for (const entry of items(report.evidence)) {
 		if (!isRecord(entry)) return fail(`an evidence entry is malformed: ${JSON.stringify(entry)}`)
@@ -90,10 +91,10 @@ export const scoreEvidenceGrounding = (report: ScoredReport, fixture: DiagnosisF
 	}
 	// A non-string citation is no more checkable than a fabricated one, so it lands in
 	// the same bucket rather than getting its own softer verdict.
-	const invented = claimed.filter((value) => {
+	const invented = Arr.filter(claimed, (value) => {
 		if (typeof value !== "string") return true
-		const needle = value.toLowerCase()
-		return !known.some((id) => id.includes(needle) || needle.includes(id))
+		const needle = Str.toLowerCase(value)
+		return !Arr.some(known, (id) => Str.includes(needle)(id) || Str.includes(id)(needle))
 	})
 	return invented.length === 0
 		? pass(`all ${claimed.length} cited identifiers exist in the fixture`)
@@ -130,7 +131,7 @@ export const scoreUnknownDiscipline = (report: ScoredReport): RuleScore => {
 	const ruledOut = items(report.ruledOut)
 	// A ruled-out entry that is not prose cannot carry evidence at all — an object or a
 	// number here is a broken answer, and it fails outright rather than crashing the case.
-	const notProse = ruledOut.filter((entry) => typeof entry !== "string")
+	const notProse = Arr.filter(ruledOut, (entry) => typeof entry !== "string")
 	if (notProse.length > 0) {
 		return fail(`ruled-out entries are not strings: ${JSON.stringify(notProse)}`)
 	}
@@ -140,7 +141,7 @@ export const scoreUnknownDiscipline = (report: ScoredReport): RuleScore => {
 	// A ruled-out entry has to carry the evidence that ruled it out, not just the
 	// name of the thing. "Deploy" is a category; "no version change across 41k
 	// spans" is a finding.
-	const bare = ruledOut.filter((entry) => text(entry).trim().split(/\s+/).length < 4)
+	const bare = Arr.filter(ruledOut, (entry) => Str.split(/\s+/)(Str.trim(text(entry))).length < 4)
 	if (bare.length > 0) {
 		return { score: 0.5, rationale: `ruled-out entries name no evidence: ${JSON.stringify(bare)}` }
 	}
@@ -168,10 +169,14 @@ export const scoreCauseMatch = (report: ScoredReport, fixture: DiagnosisFixture)
 			? pass("correctly declined to name a cause")
 			: fail(`named a cause on an unknowable incident: "${text(report.suspectedCause)}"`)
 	}
-	const hit = fixture.expectedCauseTerms.find((term) => said.includes(term))
-	return hit === undefined
-		? fail(
-				`named none of the expected cause terms ${JSON.stringify(fixture.expectedCauseTerms)}; said "${text(report.suspectedCause)}"`,
-			)
-		: pass(`named the planted cause family via "${hit}"`)
+	return Option.match(
+		Arr.findFirst(fixture.expectedCauseTerms, (term) => Str.includes(term)(said)),
+		{
+			onNone: () =>
+				fail(
+					`named none of the expected cause terms ${JSON.stringify(fixture.expectedCauseTerms)}; said "${text(report.suspectedCause)}"`,
+				),
+			onSome: (hit) => pass(`named the planted cause family via "${hit}"`),
+		},
+	)
 }

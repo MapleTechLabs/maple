@@ -1,6 +1,8 @@
 import { Replayer } from "@rrweb/replay"
 import { ReplayerEvents } from "@rrweb/types"
 import type { ReplayEngine, ReplayEngineCreateInput, ReplayEngineFactory } from "./replay-engine"
+import { String as Str } from "effect"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 // The rrweb engine — browser recordings.
 //
@@ -13,7 +15,7 @@ class RrwebEngine implements ReplayEngine {
 
 	constructor(input: ReplayEngineCreateInput) {
 		const accent =
-			getComputedStyle(document.documentElement).getPropertyValue("--primary").trim() || "#6366f1"
+			Str.trim(getComputedStyle(document.documentElement).getPropertyValue("--primary")) || "#6366f1"
 
 		this.fallbackViewport = input.fallbackViewport
 		this.replayer = new Replayer(input.events as never, {
@@ -85,11 +87,14 @@ class RrwebEngine implements ReplayEngine {
 	 * the `Resize` listener re-runs this when they change mid-playback.
 	 */
 	fit(container: HTMLElement): void {
-		const vw = Number(this.replayer.iframe?.getAttribute("width")) || this.fallbackViewport.width
-		const vh = Number(this.replayer.iframe?.getAttribute("height")) || this.fallbackViewport.height
+		const vw = nonZeroOr(Number(this.replayer.iframe?.getAttribute("width")), this.fallbackViewport.width)
+		const vh = nonZeroOr(
+			Number(this.replayer.iframe?.getAttribute("height")),
+			this.fallbackViewport.height,
+		)
 		const availW = container.clientWidth
 		const availH = container.clientHeight
-		if (!availW || !availH || !vw || !vh) return
+		if (availW === 0 || availH === 0 || vw === 0 || vh === 0) return
 		const scale = Math.min(availW / vw, availH / vh)
 		const offsetX = Math.max(0, (availW - vw * scale) / 2)
 		const offsetY = Math.max(0, (availH - vh * scale) / 2)

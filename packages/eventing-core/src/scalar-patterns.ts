@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /** Decimal strings bounded without rounding through a JavaScript number. */
 const magnitudePattern = (maximum: bigint): string => {
 	const digits = maximum.toString()
@@ -9,10 +10,12 @@ const magnitudePattern = (maximum: bigint): string => {
 		if (lastDigit < minimumDigit) continue
 		const digit = lastDigit === minimumDigit ? String(lastDigit) : `[${minimumDigit}-${lastDigit}]`
 		const remaining = digits.length - index - 1
-		alternatives.push(`${digits.slice(0, index)}${digit}${remaining === 0 ? "" : `[0-9]{${remaining}}`}`)
+		alternatives.push(
+			`${Str.slice(0, index)(digits)}${digit}${remaining === 0 ? "" : `[0-9]{${remaining}}`}`,
+		)
 	}
 	alternatives.push(digits)
-	return `(?:${alternatives.join("|")})`
+	return `(?:${Arr.join(alternatives, "|")})`
 }
 
 export const INT64_MIN = -(1n << 63n)
@@ -20,6 +23,7 @@ export const INT64_MAX = (1n << 63n) - 1n
 // Preserve the existing spelling of zero, including -0; reject leading zeroes.
 export const DECIMAL_INT64_PATTERN = new RegExp(
 	`^(?:${magnitudePattern(INT64_MAX)}|-${magnitudePattern(-INT64_MIN)})$`,
+	"u",
 )
 
 // Gregorian leap years: divisible by four, except centuries not divisible by 400.
@@ -31,4 +35,5 @@ const minuteOrSecond = "[0-5][0-9]"
 /** The v1 RFC 3339 subset, enforced even by validators that ignore format annotations. */
 export const RFC3339_TIMESTAMP_PATTERN = new RegExp(
 	`^(?:${ordinaryDate}|${leapYear}-02-29)T${hour}:${minuteOrSecond}:${minuteOrSecond}(?:\\.[0-9]{1,9})?(?:Z|[+-]${hour}:${minuteOrSecond})$`,
+	"u",
 )

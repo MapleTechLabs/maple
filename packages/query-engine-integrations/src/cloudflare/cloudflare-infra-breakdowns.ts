@@ -9,9 +9,9 @@
 // metric emit literal 0 for those columns, so the response schema and the UI
 // table stay generic.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { from, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
-import { MetricsSum } from "@maple/query-engine/ch/tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { from, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
+import { MetricsSum, orgIdParam } from "@maple/query-engine/ch/tables"
 import { ISO_Z_FORMAT, isoBucket } from "@maple/query-engine/ch/format"
 import {
 	CF_ATTR,
@@ -23,6 +23,7 @@ import {
 	type CloudflareFilterOpts,
 	type CloudflareMetricsAccessor,
 } from "./cloudflare-infra-filters"
+import { Array as Arr, Record as Rec } from "effect"
 
 export type CloudflareBreakdownDimension =
 	| "path"
@@ -86,7 +87,7 @@ const BREAKDOWNS: Record<CloudflareBreakdownDimension, BreakdownSpec> = {
 	},
 } satisfies Record<CloudflareBreakdownDimension, BreakdownSpec>
 
-export const CLOUDFLARE_BREAKDOWN_DIMENSIONS = Object.keys(
+export const CLOUDFLARE_BREAKDOWN_DIMENSIONS = Rec.keys(
 	BREAKDOWNS,
 ) as ReadonlyArray<CloudflareBreakdownDimension>
 
@@ -113,7 +114,8 @@ export const cloudflareBreakdownMetrics = (
 	dimension: CloudflareBreakdownDimension,
 ): ReadonlyArray<string> => {
 	const spec = BREAKDOWNS[dimension]
-	return [spec.requestsMetric, spec.errorsMetric, spec.bytesMetric].filter(
+	return Arr.filter(
+		[spec.requestsMetric, spec.errorsMetric, spec.bytesMetric],
 		(name): name is string => name !== undefined,
 	)
 }
@@ -180,11 +182,11 @@ export function cloudflareZoneBreakdownTotalsSQL(
 	return from(MetricsSum)
 		.select(($) => ({ key: keyExpr($, dimension), ...measures($, spec) }))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.in_(...cloudflareBreakdownMetrics(dimension)),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			...breakdownConditions($, dimension, opts),
 		])
 		.groupBy("key")
@@ -220,11 +222,11 @@ export function cloudflareZoneBreakdownTimeseriesSQL(
 			requests: CH.sum($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq(spec.requestsMetric),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			...breakdownConditions($, dimension, opts),
 		])
 		.groupBy("bucket", "key")
@@ -245,11 +247,11 @@ export function cloudflareZoneBreakdownCoverageSQL(dimension: CloudflareBreakdow
 			attributedRequests: CH.sum($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq(spec.requestsMetric),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.format("JSON")
 }
@@ -290,11 +292,11 @@ const makeCfFacet = (
 			facetType: CH.lit(facetType),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq(metricName),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			(key === "host" ? cloudflareHostAttr($) : $.Attributes.get(CF_ATTR[key])).neq(""),
 			...cloudflareFilterConditions($, opts, CF_FILTERABLE[metricName] ?? [], key),
 		])

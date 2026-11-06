@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import type { PlanetScaleBranchStat } from "@/api/warehouse/service-map"
+import type { PlanetScaleBranchStat } from "@maple/web-data/warehouse/service-map"
 import {
 	absenceReason,
 	defaultBranch,
@@ -11,6 +11,7 @@ import {
 	resolveSelectedBranch,
 	type BranchCandidate,
 } from "./branch-selection"
+import { Array as Arr, Option } from "effect"
 
 const branch = (name: string, production = false, ready = true) => ({ id: name, name, production, ready })
 
@@ -83,31 +84,31 @@ describe("isExcluded", () => {
 describe("mergeBranchCandidates", () => {
 	it("keeps inventory branches that reported no metrics", () => {
 		const merged = mergeBranchCandidates([branch("main", true), branch("pr-1")], [stat("main", 18)])
-		expect(merged.map((c) => c.name)).toEqual(["main", "pr-1"])
-		expect(merged[1]!.stat).toBeNull()
+		expect(Arr.map(merged, (c) => c.name)).toEqual(["main", "pr-1"])
+		expect(Arr.getUnsafe(merged, 1).stat).toBeNull()
 	})
 
 	it("adds branches the rollups saw but the inventory hasn't listed", () => {
 		const merged = mergeBranchCandidates([branch("main", true)], [stat("main", 18), stat("pr-9", 3)])
-		const extra = merged.find((c) => c.name === "pr-9")
+		const extra = Option.getOrUndefined(Arr.findFirst(merged, (c) => c.name === "pr-9"))
 		expect(extra?.unknownToInventory).toBe(true)
 		expect(extra?.stat?.connectionsAvg).toBe(3)
 	})
 
 	it("flags branches the scrape target excludes", () => {
 		const merged = mergeBranchCandidates([branch("main", true), branch("pr-246")], [], [], ["pr-*"])
-		expect(merged.find((c) => c.name === "main")?.excluded).toBe(false)
-		expect(merged.find((c) => c.name === "pr-246")?.excluded).toBe(true)
+		expect(Option.getOrUndefined(Arr.findFirst(merged, (c) => c.name === "main"))?.excluded).toBe(false)
+		expect(Option.getOrUndefined(Arr.findFirst(merged, (c) => c.name === "pr-246"))?.excluded).toBe(true)
 	})
 
 	it("treats an include list as authoritative", () => {
 		const merged = mergeBranchCandidates([branch("main", true), branch("staging")], [], ["main"], [])
-		expect(merged.find((c) => c.name === "staging")?.excluded).toBe(true)
+		expect(Option.getOrUndefined(Arr.findFirst(merged, (c) => c.name === "staging"))?.excluded).toBe(true)
 	})
 
 	it("ignores blank branch labels from the warehouse", () => {
 		const merged = mergeBranchCandidates([branch("main", true)], [stat("", 0)])
-		expect(merged.map((c) => c.name)).toEqual(["main"])
+		expect(Arr.map(merged, (c) => c.name)).toEqual(["main"])
 	})
 })
 
@@ -205,6 +206,6 @@ describe("orderBranches", () => {
 			candidate({ name: "main", production: true }),
 			candidate({ name: "pr-1" }),
 		])
-		expect(ordered.map((c) => c.name)).toEqual(["main", "pr-2", "pr-1", "pr-9"])
+		expect(Arr.map(ordered, (c) => c.name)).toEqual(["main", "pr-2", "pr-1", "pr-9"])
 	})
 })

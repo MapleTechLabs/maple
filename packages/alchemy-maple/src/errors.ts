@@ -120,6 +120,11 @@ export class MapleAlertRuleTagsError extends Schema.TaggedError<MapleAlertRuleTa
 	{ message: Schema.String },
 ) {}
 
+export class MapleDashboardIdentityError extends Schema.TaggedError<MapleDashboardIdentityError>()(
+	"@maple/alchemy/errors/DashboardIdentityError",
+	{ message: Schema.String, dashboardId: Schema.String, requestedId: Schema.String },
+) {}
+
 export type MapleClientError =
 	| MapleApiRequestEncodingError
 	| MapleApiTransportError

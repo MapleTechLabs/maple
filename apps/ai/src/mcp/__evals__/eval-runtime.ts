@@ -1,12 +1,13 @@
 import { ConfigProvider, Effect, Layer, ManagedRuntime, Schema } from "effect"
-import { OrgId, UserId } from "@maple/domain/http"
-import { McpServicesLive } from "../../runtime/mcp-service-graph"
+import { mcpServicesWithFeatureFlags } from "../../runtime/mcp-tool-graph"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { Env } from "@maple/backend/platform/Env"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
-import { createTestDb } from "@maple/backend/platform/test-pglite"
+import { createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { McpToolExecutor } from "../dispatcher"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { FIXTURES } from "./utils"
+import type { McpToolSurface } from "@maple/domain/mcp-manifest"
+import { EVAL_TENANT, FIXTURES, jsonDepth, MAX_STRUCTURED_OUTPUT_DEPTH } from "./utils"
 
 const INTERNAL_TOKEN = "eval-internal-token"
 
@@ -14,6 +15,9 @@ const testEnv = (): Record<string, string> => ({
 	PORT: "3472",
 	TINYBIRD_HOST: "https://maple-eval.tinybird.co",
 	TINYBIRD_TOKEN: "eval-token",
+	// Lets run_sql mint its org-scoped token locally and reach the fake warehouse like any query.
+	TINYBIRD_SIGNING_KEY: "eval-signing-key",
+	TINYBIRD_WORKSPACE_ID: "eval-workspace",
 	MAPLE_AUTH_MODE: "self_hosted",
 	MAPLE_ROOT_PASSWORD: "eval-root-password",
 	MAPLE_DEFAULT_ORG_ID: FIXTURES.orgId,
@@ -25,9 +29,11 @@ const testEnv = (): Record<string, string> => ({
 })
 
 export interface EvalRuntime {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	// oxlint-disable-next-line typescript/no-explicit-any
 	readonly runtime: ManagedRuntime.ManagedRuntime<any, never>
 	readonly tenant: TenantContext
+	/** The PGlite database behind the runtime, for seeding rows (`executeSql`). */
+	readonly testDb: TestDb
 	readonly dispose: () => Promise<void>
 }
 
@@ -39,7 +45,13 @@ export interface EvalRuntime {
  * carries the already-resolved MCP tenant, matching the post-auth dispatcher
  * context shared by HTTP and RPC.
  */
-export const makeEvalRuntime = (): EvalRuntime => {
+export const makeEvalRuntime = (
+	featureFlags: Layer.Layer<
+		OrganizationFeatureFlagsService,
+		never,
+		Env
+	> = OrganizationFeatureFlagsService.layer,
+): EvalRuntime => {
 	const testDb = createTestDb()
 	const env = testEnv()
 
@@ -48,30 +60,30 @@ export const makeEvalRuntime = (): EvalRuntime => {
 	const databaseLive = testDb.layer
 	const workerEnvLive = Layer.succeed(WorkerEnvironment, env as Record<string, unknown>)
 
-	const layer = McpServicesLive.pipe(
+	const layer = mcpServicesWithFeatureFlags(featureFlags).pipe(
 		Layer.provide(Layer.mergeAll(configLive, envLive, databaseLive, workerEnvLive)),
 	)
 	// `as any`: the residual requirement set is satisfied at runtime (same pattern
 	// as apps/api/src/agent.ts buildSetup).
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	// The lint type checker reads `make(any)` as already `<any, never>`; tsc infers `<unknown, unknown>`.
+	// oxlint-disable-next-line typescript/no-explicit-any, typescript/no-unnecessary-type-assertion
 	const runtime = ManagedRuntime.make(layer as any) as ManagedRuntime.ManagedRuntime<any, never>
-
-	const tenant: TenantContext = {
-		orgId: Schema.decodeSync(OrgId)(FIXTURES.orgId),
-		userId: Schema.decodeSync(UserId)("internal-service"),
-		roles: [],
-		authMode: "self_hosted",
-	}
 
 	return {
 		runtime,
-		tenant,
+		tenant: EVAL_TENANT,
+		testDb,
 		dispose: async () => {
 			await runtime.dispose()
 			await testDb.close()
 		},
 	}
 }
+
+class StructuredOutputTooDeep extends Schema.TaggedError<StructuredOutputTooDeep>()(
+	"@maple/ai/evals/StructuredOutputTooDeep",
+	{ message: Schema.String },
+) {}
 
 /**
  * Invoke a tool handler directly (no LLM) through the eval runtime + request
@@ -81,10 +93,24 @@ export const runToolDirect = async (
 	rt: EvalRuntime,
 	name: string,
 	params: unknown,
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	surface: McpToolSurface = "mcp",
+	// oxlint-disable-next-line typescript/no-explicit-any
 ): Promise<any> => {
 	return rt.runtime.runPromise(
-		McpToolExecutor.pipe(Effect.flatMap((executor) => executor.execute(rt.tenant, name, params, "mcp"))),
+		McpToolExecutor.pipe(
+			Effect.flatMap((executor) => executor.execute(rt.tenant, name, params, surface)),
+			// Every tool run here is held to the depth bound clients enforce on results.
+			Effect.tap((result) => {
+				const depth = jsonDepth(result.structuredContent)
+				return depth > MAX_STRUCTURED_OUTPUT_DEPTH
+					? Effect.fail(
+							new StructuredOutputTooDeep({
+								message: `${name} structuredContent nests ${depth} levels deep`,
+							}),
+						)
+					: Effect.void
+			}),
+		),
 	)
 }
 

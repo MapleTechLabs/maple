@@ -9,7 +9,7 @@
  * Internal audience: these read a repository's diff on the org's behalf and exist for Maple's own
  * review agent, not for MCP clients.
  */
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import type { PullRequestContext, PullRequestFile } from "@maple/domain/http"
 import { PrChangedFilesOutput, PrContextOutput, PrFileDiffOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
@@ -28,7 +28,7 @@ const INTERNAL = "internal" as const
 const HINTS = { readOnly: true, openWorld: true } as const
 
 const unsafePath = (path: string): boolean =>
-	path.startsWith("/") || path.split("/").some((segment) => segment === "..")
+	Str.startsWith("/")(path) || Arr.some(Str.split("/")(path), (segment) => segment === "..")
 
 /** The text a doc reads as, for callers outside the registry (the local runner, tests). */
 const asResult = (tool: ToolDoc): McpToolResult => ({
@@ -94,7 +94,7 @@ export const annotatePatch = (
 	let newLine = 0
 	let chars = 0
 	let truncated = false
-	for (const raw of patch.split("\n")) {
+	for (const raw of Str.split("\n")(patch)) {
 		if (out.length >= MAX_DIFF_LINES || chars >= MAX_DIFF_CHARS) {
 			truncated = true
 			break
@@ -104,15 +104,15 @@ export const annotatePatch = (
 		if (header !== null) {
 			newLine = Number(header[3])
 			rendered = `      ${raw}`
-		} else if (raw.startsWith("+")) {
-			rendered = `${String(newLine).padStart(5)} + ${raw.slice(1)}`
+		} else if (Str.startsWith("+")(raw)) {
+			rendered = `${Str.padStart(5)(String(newLine))} + ${Str.slice(1)(raw)}`
 			newLine += 1
-		} else if (raw.startsWith("-")) {
-			rendered = `      - ${raw.slice(1)}`
-		} else if (raw.startsWith("\\")) {
+		} else if (Str.startsWith("-")(raw)) {
+			rendered = `      - ${Str.slice(1)(raw)}`
+		} else if (Str.startsWith("\\")(raw)) {
 			rendered = `      ${raw}`
 		} else {
-			rendered = `${String(newLine).padStart(5)}   ${raw.startsWith(" ") ? raw.slice(1) : raw}`
+			rendered = `${Str.padStart(5)(String(newLine))}   ${Str.startsWith(" ")(raw) ? Str.slice(1)(raw) : raw}`
 			newLine += 1
 		}
 		out.push(rendered)
@@ -143,17 +143,17 @@ const DIFF_HEADER = /^### (.+) · [a-z]+ · \+\d+\/-\d+$/
  * kinds that have a patch. Parsed back from {@link changedFilesDoc}, so the two change together.
  */
 export const reviewablePathsInListing = (answer: string): ReadonlyArray<string> =>
-	answer.split("\n").flatMap((line) => {
-		const match = LISTED_FILE.exec(line)
-		if (match === null || match[3] !== undefined) return []
-		return REVIEWED_KIND_NAMES.has(match[2]!) ? [match[1]!] : []
+	Arr.flatMap(Str.split("\n")(answer), (line) => {
+		const [, path, kind, noPatch] = LISTED_FILE.exec(line) ?? []
+		if (path === undefined || kind === undefined || noPatch !== undefined) return []
+		return REVIEWED_KIND_NAMES.has(kind) ? [path] : []
 	})
 
 /** The files whose diff a `pr_file_diff` answer actually showed, from {@link fileDiffsDoc}'s headings. */
 export const pathsInDiffAnswer = (answer: string): ReadonlyArray<string> =>
-	answer.split("\n").flatMap((line) => {
-		const match = DIFF_HEADER.exec(line)
-		return match === null ? [] : [match[1]!]
+	Arr.flatMap(Str.split("\n")(answer), (line) => {
+		const path = DIFF_HEADER.exec(line)?.[1]
+		return path === undefined ? [] : [path]
 	})
 
 export const changedFilesOutput = (
@@ -161,7 +161,7 @@ export const changedFilesOutput = (
 	number: number,
 	files: ReadonlyArray<PullRequestFile>,
 ): ChangedFilesOutput => {
-	const classified = files.map((file) => ({
+	const classified = Arr.map(files, (file) => ({
 		path: file.path,
 		previousPath: file.previousPath,
 		status: file.status,
@@ -176,8 +176,8 @@ export const changedFilesOutput = (
 		repository,
 		number,
 		total: files.length,
-		byKind: [...counts.entries()].map(([kind, count]) => ({ kind, count })),
-		reviewedCount: classified.filter((file) => REVIEWED_KINDS.has(file.kind)).length,
+		byKind: Arr.map([...counts.entries()], ([kind, count]) => ({ kind, count })),
+		reviewedCount: Arr.filter(classified, (file) => REVIEWED_KINDS.has(file.kind)).length,
 		files: classified.slice(0, MAX_LISTED_FILES),
 	}
 }
@@ -191,9 +191,12 @@ export const changedFilesDoc = (output: ChangedFilesOutput): ToolDoc => ({
 			? []
 			: [
 					doc.text(
-						`By kind: ${output.byKind.map(({ kind, count }) => `${kind} ${count}`).join(", ")}.`,
+						`By kind: ${Arr.join(
+							Arr.map(output.byKind, ({ kind, count }) => `${kind} ${count}`),
+							", ",
+						)}.`,
 					),
-					doc.list(output.files.map(describeFile)),
+					doc.list(Arr.map(output.files, describeFile)),
 					...(output.files.length < output.total
 						? [doc.text("Review the source files listed above first.")]
 						: []),
@@ -236,7 +239,7 @@ export const fileDiffsOutput = (
 	const deferred: Array<string> = []
 	let chars = 0
 	for (const path of paths.slice(0, MAX_BATCH_PATHS)) {
-		const wanted = path.trim()
+		const wanted = Str.trim(path)
 		const file =
 			wanted === "" || unsafePath(wanted)
 				? undefined
@@ -248,7 +251,7 @@ export const fileDiffsOutput = (
 		const patch = file.patch === null ? null : annotatePatch(file.patch)
 		const size =
 			file.path.length +
-			(patch === null ? 200 : patch.lines.reduce((sum, line) => sum + line.length + 1, 0))
+			(patch === null ? 200 : Arr.reduce(patch.lines, 0, (sum, line) => sum + line.length + 1))
 		if (shown.length > 0 && chars + size > MAX_BATCH_CHARS) {
 			deferred.push(wanted)
 			continue
@@ -277,7 +280,7 @@ const diffBlocks = (file: FileDiffOutput["files"][number], maxDiffLines: number)
 				),
 			]
 		: [
-				doc.code("", file.lines.join("\n")),
+				doc.code("", Arr.join(file.lines, "\n")),
 				...(file.truncated
 					? [
 							doc.text(
@@ -292,15 +295,15 @@ const diffBlocks = (file: FileDiffOutput["files"][number], maxDiffLines: number)
 export const fileDiffsDoc = (output: FileDiffOutput): ToolDoc => ({
 	title: `Pull request #${output.number} of ${output.repository}: ${output.files.length} ${output.files.length === 1 ? "diff" : "diffs"}`,
 	blocks: [
-		...(output.files.some((file) => file.lines !== null)
+		...(Arr.some(output.files, (file) => file.lines !== null)
 			? [
 					doc.text(
 						"Format: `<new-side line> <+ added | - removed | (blank) context> <code>`. Cite the new-side line.",
 					),
 				]
 			: []),
-		...output.files.flatMap((file) => diffBlocks(file, output.maxDiffLines)),
-		...output.notChanged.map((path) =>
+		...Arr.flatMap(output.files, (file) => diffBlocks(file, output.maxDiffLines)),
+		...Arr.map(output.notChanged, (path) =>
 			doc.text(
 				`'${path}' is not a file this pull request changes. Call pr_changed_files for the list.`,
 			),
@@ -309,7 +312,7 @@ export const fileDiffsDoc = (output: FileDiffOutput): ToolDoc => ({
 			? []
 			: [
 					doc.text(
-						`Not included, to keep this answer readable; request them in one more call: ${output.deferred.join(", ")}`,
+						`Not included, to keep this answer readable; request them in one more call: ${Arr.join(output.deferred, ", ")}`,
 					),
 				]),
 	],
@@ -339,8 +342,8 @@ const CONTEXT_COMMENTS = 40
 
 const firstLine = (value: string) => value.split("\n", 1)[0] ?? ""
 const clipText = (value: string, max: number) => {
-	const flat = value.replace(/\s+/g, " ").trim()
-	return flat.length > max ? `${flat.slice(0, max)}…` : flat
+	const flat = Str.trim(Str.replace(/\s+/g, " ")(value))
+	return flat.length > max ? `${Str.slice(0, max)(flat)}…` : flat
 }
 
 const failing = (conclusion: string | null) =>
@@ -353,9 +356,9 @@ export const contextOutput = (
 ): ContextOutput => ({
 	repository,
 	number,
-	commits: context.commits.map((commit) => ({ sha: commit.sha, message: firstLine(commit.message) })),
+	commits: Arr.map(context.commits, (commit) => ({ sha: commit.sha, message: firstLine(commit.message) })),
 	totalComments: context.comments.length,
-	comments: context.comments.slice(0, CONTEXT_COMMENTS).map((comment) => ({
+	comments: Arr.map(context.comments.slice(0, CONTEXT_COMMENTS), (comment) => ({
 		author: comment.author,
 		path: comment.path,
 		line: comment.line,
@@ -371,7 +374,14 @@ export const contextDoc = (output: ContextOutput): ToolDoc => ({
 		doc.heading(`Commits (${output.commits.length})`),
 		...(output.commits.length === 0
 			? []
-			: [doc.list(output.commits.map((commit) => `${commit.sha.slice(0, 7)} ${commit.message}`))]),
+			: [
+					doc.list(
+						Arr.map(
+							output.commits,
+							(commit) => `${Str.slice(0, 7)(commit.sha)} ${commit.message}`,
+						),
+					),
+				]),
 		doc.heading(`Already said on this pull request (${output.totalComments})`),
 		doc.text(
 			output.comments.length === 0
@@ -382,7 +392,8 @@ export const contextDoc = (output: ContextOutput): ToolDoc => ({
 			? []
 			: [
 					doc.list(
-						output.comments.map(
+						Arr.map(
+							output.comments,
 							(comment) =>
 								`@${comment.author}${comment.path === null ? "" : ` on ${comment.path}${comment.line === null ? "" : `:${comment.line}`}`}: ${comment.body}`,
 						),
@@ -392,7 +403,8 @@ export const contextDoc = (output: ContextOutput): ToolDoc => ({
 		output.checks.length === 0
 			? doc.text("None reported.")
 			: doc.list(
-					output.checks.map(
+					Arr.map(
+						output.checks,
 						(check) =>
 							`${check.name}: ${check.conclusion ?? check.status}${check.title === null ? "" : ` · ${clipText(check.title, 160)}`}`,
 					),
@@ -435,6 +447,7 @@ const fromPullRequestError = (operation: string, number: number) => (error: VcsL
 export function registerPullRequestTools(server: McpToolRegistrar) {
 	server.define({
 		name: "pr_changed_files",
+		title: "PR Changed Files",
 		description:
 			"List every file one pull request changes, with additions, deletions and a coarse kind (source, test, generated, docs, config, infra, tooling, lockfile). Call it first when reviewing a pull request; generated files, docs, tooling and lockfiles are not reviewed. Read the rest with pr_file_diff. The repository must be the one named in the review's first message.",
 		parameters: Schema.Struct({ repository: REPOSITORY, number: NUMBER }),
@@ -447,15 +460,16 @@ export function registerPullRequestTools(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const source = yield* VcsSourceService
 			const files = yield* source
-				.listPullRequestFiles(tenant.orgId, repository.trim(), number)
+				.listPullRequestFiles(tenant.orgId, Str.trim(repository), number)
 				.pipe(Effect.mapError(fromPullRequestError("pr_changed_files", number)))
-			return changedFilesOutput(repository.trim(), number, files)
+			return changedFilesOutput(Str.trim(repository), number, files)
 		}),
 		render: changedFilesDoc,
 	})
 
 	server.define({
 		name: "pr_context",
+		title: "PR Context",
 		description:
 			"The pull request's commits, the comments people and other bots already left on it, and the checks on its head commit. Call it once, after pr_changed_files, so a review never repeats what was already said or what CI already reports.",
 		parameters: Schema.Struct({ repository: REPOSITORY, number: NUMBER }),
@@ -468,15 +482,16 @@ export function registerPullRequestTools(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const source = yield* VcsSourceService
 			const context = yield* source
-				.getPullRequestContext(tenant.orgId, repository.trim(), number)
+				.getPullRequestContext(tenant.orgId, Str.trim(repository), number)
 				.pipe(Effect.mapError(fromPullRequestError("pr_context", number)))
-			return contextOutput(repository.trim(), number, context)
+			return contextOutput(Str.trim(repository), number, context)
 		}),
 		render: contextDoc,
 	})
 
 	server.define({
 		name: "pr_file_diff",
+		title: "PR File Diff",
 		description:
 			"The unified diffs of changed files in a pull request, with the NEW-side line number on every added or context line. Those numbers are the only lines a review finding may cite. Deletions carry no number. Pass several files at once in `paths`: every call re-sends the conversation, so batching is far cheaper than one file per call.",
 		parameters: Schema.Struct({
@@ -493,16 +508,19 @@ export function registerPullRequestTools(server: McpToolRegistrar) {
 		phrases: ["Reading a diff"],
 		handler: Effect.fn("McpTool.prFileDiff")(function* ({ repository, number, path, paths }) {
 			yield* checkNumber(number)
-			const wanted = [...(paths ?? []), ...(path === undefined ? [] : [path])]
-				.map((candidate) => candidate.trim())
-				.filter((candidate) => candidate !== "")
+			const wanted = Arr.filter(
+				Arr.map([...(paths ?? []), ...(path === undefined ? [] : [path])], (candidate) =>
+					Str.trim(candidate),
+				),
+				(candidate) => candidate !== "",
+			)
 			if (wanted.length === 0) {
 				return yield* new McpInvalidInputError({
 					message: "pass the files to read in paths",
 					parameter: "paths",
 				})
 			}
-			if (wanted.some(unsafePath)) {
+			if (Arr.some(wanted, unsafePath)) {
 				return yield* new McpInvalidInputError({
 					message: "paths must be repository-relative",
 					parameter: "paths",
@@ -511,9 +529,9 @@ export function registerPullRequestTools(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const source = yield* VcsSourceService
 			const files = yield* source
-				.listPullRequestFiles(tenant.orgId, repository.trim(), number)
+				.listPullRequestFiles(tenant.orgId, Str.trim(repository), number)
 				.pipe(Effect.mapError(fromPullRequestError("pr_file_diff", number)))
-			return fileDiffsOutput(repository.trim(), number, files, wanted)
+			return fileDiffsOutput(Str.trim(repository), number, files, wanted)
 		}),
 		render: fileDiffsDoc,
 	})

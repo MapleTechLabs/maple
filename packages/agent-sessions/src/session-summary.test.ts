@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import { agentSpan, llmSpan, makeSpan, toolSpan } from "./span-test-support"
 import { buildSessionTurns } from "./session-turns"
 import { buildSessionSummary, countTurnTokens, findIdleGaps, type AgentTimeKind } from "./session-summary"
+import { Array as Arr, Option, String as Str } from "effect"
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND
@@ -13,7 +14,13 @@ const summarize = (spans: Parameters<typeof buildSessionTurns>[0]) =>
 const segment = (
 	segments: readonly { readonly kind: AgentTimeKind; readonly ms: number }[],
 	kind: AgentTimeKind,
-) => segments.find((entry) => entry.kind === kind)?.ms
+) =>
+	Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(segments, (entry) => entry.kind === kind),
+			(entry) => entry.ms,
+		),
+	)
 
 describe("findIdleGaps", () => {
 	it("finds the stretches where nothing was running", () => {
@@ -23,7 +30,7 @@ describe("findIdleGaps", () => {
 		])
 
 		expect(gaps).toHaveLength(1)
-		expect(gaps[0]!.durationMs).toBe(60 * SECOND)
+		expect(Arr.getUnsafe(gaps, 0).durationMs).toBe(60 * SECOND)
 	})
 
 	it("ignores a hole too short to be a human", () => {
@@ -111,8 +118,40 @@ describe("buildSessionSummary — time", () => {
 			llmSpan({ spanId: "llm", parentSpanId: "agent", startMs: 6 * SECOND, durationMs: 3 * SECOND }),
 		])
 
-		expect(summary.agentTime.segments.map((entry) => entry.kind)).toEqual(["inference", "tool"])
+		expect(Arr.map(summary.agentTime.segments, (entry) => entry.kind)).toEqual(["inference", "tool"])
 		expect(summary.agentTime.totalMs).toBe(7 * SECOND)
+	})
+
+	// OpenRouter Broadcast nests a `provider attempt` and a `generation` span,
+	// both op `chat`, under each `LLM Generation`: summing all three read 204.8s
+	// of agent time in a 125.5s session.
+	it("charges a model call observed at several levels once, at the outermost", () => {
+		const summary = summarize([
+			llmSpan({ spanId: "root", spanName: "LLM Generation", startMs: 0, durationMs: 4_842 }),
+			llmSpan({ spanId: "attempt", parentSpanId: "root", startMs: 184, durationMs: 2_019 }),
+			llmSpan({
+				spanId: "generation",
+				parentSpanId: "root",
+				startMs: 200,
+				durationMs: 4_402,
+				ttftSeconds: 3.6,
+			}),
+		])
+
+		expect(summary.agentTime.totalMs).toBe(4_842)
+		// The TTFT only the nested span reported still splits the call.
+		expect(segment(summary.agentTime.segments, "ttft")).toBe(3_600)
+		expect(segment(summary.agentTime.segments, "inference")).toBe(1_242)
+	})
+
+	it("still charges a model call a tool made inside another call", () => {
+		const summary = summarize([
+			llmSpan({ spanId: "outer", startMs: 0, durationMs: 10 * SECOND }),
+			toolSpan({ spanId: "tool", parentSpanId: "outer", startMs: SECOND, durationMs: 4 * SECOND }),
+			llmSpan({ spanId: "inner", parentSpanId: "tool", startMs: 2 * SECOND, durationMs: 2 * SECOND }),
+		])
+
+		expect(segment(summary.agentTime.segments, "inference")).toBe(12 * SECOND)
 	})
 })
 
@@ -189,6 +228,127 @@ describe("buildSessionSummary — tokens and models", () => {
 		})
 	})
 
+	it("reads the ingest gateway's buckets and cost on a span it stamped", () => {
+		// Strands TS: `invoke_agent` repeats its chat's `gen_ai.usage.*` under an
+		// unstamped loop span. The gateway stamped buckets on the chat alone, and
+		// its buckets, not the emitter's figures, are what the list sums.
+		const reported = { usageInputTokens: 218, usageOutputTokens: 28, usageCost: 0.5 }
+		const summary = summarize([
+			agentSpan({
+				spanId: "agent",
+				startMs: 0,
+				durationMs: 5 * SECOND,
+				genAi: { ...reported, mapleLlmCall: 0 },
+			}),
+			llmSpan({
+				spanId: "chat",
+				parentSpanId: "loop",
+				startMs: SECOND,
+				durationMs: SECOND,
+				genAi: {
+					...reported,
+					mapleLlmCall: 1,
+					mapleInputTokens: 18,
+					mapleCacheReadTokens: 200,
+					mapleOutputTokens: 20,
+					mapleReasoningTokens: 8,
+					mapleCost: 0.002,
+				},
+			}),
+		])
+
+		expect(summary.tokens).toEqual({
+			input: 18,
+			cacheRead: 200,
+			cacheWrite: 0,
+			output: 20,
+			reasoning: 8,
+			total: 246,
+		})
+		expect(summary.cost).toBe(0.002)
+	})
+
+	it("counts the gateway cost eve stamps on the step above its model call", () => {
+		// eve on Vercel AI Gateway: the cost is on `agent.step`, the tokens on
+		// its `chat` call, and the turn total on `invoke_agent` repeats them.
+		const summary = summarize([
+			agentSpan({
+				spanId: "turn",
+				startMs: 0,
+				durationMs: 3 * SECOND,
+				genAi: { usageInputTokens: 2700, usageOutputTokens: 50, mapleLlmCall: 0 },
+			}),
+			makeSpan({
+				spanId: "step",
+				parentSpanId: "turn",
+				spanName: "agent.step",
+				startMs: 0,
+				durationMs: 2 * SECOND,
+				genAi: {
+					operationName: "workflow",
+					usageCost: 0.0004263,
+					mapleLlmCall: 0,
+					mapleCost: 0.0004263,
+				},
+			}),
+			llmSpan({
+				spanId: "chat",
+				parentSpanId: "step",
+				startMs: 0,
+				durationMs: 2 * SECOND,
+				genAi: {
+					usageInputTokens: 2700,
+					usageOutputTokens: 50,
+					mapleLlmCall: 1,
+					mapleInputTokens: 2700,
+					mapleOutputTokens: 50,
+				},
+			}),
+		])
+
+		expect(summary.cost).toBe(0.0004263)
+		expect(summary.tokens.total).toBe(2750)
+		expect(summary.work.llmCalls).toBe(1)
+	})
+
+	it("lists a model once whatever snapshot each call answered with", () => {
+		const call = (spanId: string, startMs: number, responseModel?: string) =>
+			llmSpan({
+				spanId,
+				startMs,
+				durationMs: SECOND,
+				genAi: {
+					requestModel: "openai/gpt-4o-mini",
+					responseModel,
+					usageInputTokens: 10,
+					usageOutputTokens: 1,
+				},
+			})
+		const summary = summarize([
+			call("a", 0, "gpt-4o-mini-2024-07-18"),
+			call("b", 2 * SECOND, "gpt-4o-mini"),
+			call("c", 4 * SECOND),
+			llmSpan({
+				spanId: "routed",
+				startMs: 6 * SECOND,
+				durationMs: SECOND,
+				genAi: { requestModel: "openrouter/auto", responseModel: "anthropic/claude-sonnet-4.5" },
+			}),
+			llmSpan({
+				spanId: "pinned",
+				startMs: 8 * SECOND,
+				durationMs: SECOND,
+				genAi: { requestModel: "openai/gpt-4o-2024-05-13", responseModel: "gpt-4o-2024-08-06" },
+			}),
+		])
+
+		expect(Arr.map(summary.models, (model) => model.model).sort()).toEqual([
+			"anthropic/claude-sonnet-4.5",
+			"gpt-4o-2024-08-06",
+			"openai/gpt-4o-mini",
+		])
+	})
+
 	it("counts usage at the deepest span that reports it", () => {
 		const summary = summarize([
 			// The framework reports a turn total on the agent span AND on each model
@@ -220,11 +380,11 @@ describe("buildSessionSummary — tokens and models", () => {
 		expect(summary.tokens.output).toBe(30)
 	})
 
-	it("keeps what a roll-up reported above the children that reported", () => {
+	it("keeps what a model-call roll-up reported above the children that reported", () => {
 		const summary = summarize([
-			// Three model calls under one agent span, and the middle one carries no
-			// usage at all — its tokens survive as the agent span's excess.
-			agentSpan({
+			// An SDK's `generateText` over three steps, and the middle one carries
+			// no usage at all — its tokens survive as the wrapper's excess.
+			llmSpan({
 				spanId: "agent",
 				startMs: 0,
 				durationMs: 10 * SECOND,
@@ -265,6 +425,153 @@ describe("buildSessionSummary — tokens and models", () => {
 		expect(summary.tokens.input).toBe(300)
 	})
 
+	it("does not let a zero-usage step between the agent and its calls absorb them", () => {
+		// Vercel AI SDK, `usage: true` (capture docs_vercel-ai-sdk_a2): every span
+		// carries `ai.usage.outputTokenDetails.reasoningTokens="0"`, the `step`
+		// spans nothing else. The agent span restates its two chats.
+		const vercel = { vendorId: "vercel_ai_sdk" } as const
+		const summary = summarize([
+			agentSpan({
+				...vercel,
+				spanId: "invoke",
+				startMs: 0,
+				durationMs: 5 * SECOND,
+				genAi: { usageInputTokens: 312, usageOutputTokens: 28, usageReasoningOutputTokens: 0 },
+			}),
+			...Arr.map([1, 2], (step) =>
+				makeSpan({
+					...vercel,
+					spanId: `step-${step}`,
+					parentSpanId: "invoke",
+					spanName: `step ${step}`,
+					startMs: step * SECOND,
+					durationMs: SECOND,
+					genAi: { operationName: "agent_step", usageReasoningOutputTokens: 0 },
+				}),
+			),
+			llmSpan({
+				...vercel,
+				spanId: "chat-1",
+				parentSpanId: "step-1",
+				startMs: SECOND,
+				durationMs: SECOND,
+				genAi: { usageInputTokens: 137, usageOutputTokens: 14, usageReasoningOutputTokens: 0 },
+			}),
+			llmSpan({
+				...vercel,
+				spanId: "chat-2",
+				parentSpanId: "step-2",
+				startMs: 2 * SECOND,
+				durationMs: SECOND,
+				genAi: { usageInputTokens: 175, usageOutputTokens: 14, usageReasoningOutputTokens: 0 },
+			}),
+		])
+
+		// 340 was reported as 680: the chats, and the agent's roll-up of them again.
+		expect(summary.tokens.total).toBe(340)
+		expect(summary.work.llmCalls).toBe(2)
+	})
+
+	it("counts nothing of an agent span whose calls reported, however much more it claims", () => {
+		// smolagents `run(reset=False)` (capture cap_a_v1, session a1): each run
+		// span reports the conversation so far, so its excess over its own calls
+		// is every earlier turn's calls again. The calls sum to 7675 in / 136 out.
+		const turns = [
+			{ run: [1022, 45], calls: [[1022, 45]] },
+			{ run: [2178, 65], calls: [[1156, 20]] },
+			{
+				run: [4751, 106],
+				calls: [
+					[1244, 14],
+					[1329, 27],
+				],
+			},
+			{
+				run: [7675, 136],
+				calls: [
+					[1430, 16],
+					[1494, 14],
+				],
+			},
+		]
+		const summary = summarize(
+			Arr.flatMap(turns, ({ run, calls }, turn) => [
+				agentSpan({
+					spanId: `run-${turn}`,
+					traceId: `trace-${turn}`,
+					spanName: "assistant.run",
+					startMs: turn * 10 * SECOND,
+					durationMs: 5 * SECOND,
+					genAi: { usageInputTokens: run[0], usageOutputTokens: run[1] },
+				}),
+				...Arr.flatMap(calls, ([input, output], step) => [
+					makeSpan({
+						spanId: `step-${turn}-${step}`,
+						traceId: `trace-${turn}`,
+						parentSpanId: `run-${turn}`,
+						spanName: `Step ${step + 1}`,
+						startMs: turn * 10 * SECOND + step * SECOND,
+						durationMs: SECOND,
+						vendorId: "smolagents",
+					}),
+					llmSpan({
+						spanId: `call-${turn}-${step}`,
+						traceId: `trace-${turn}`,
+						parentSpanId: `step-${turn}-${step}`,
+						startMs: turn * 10 * SECOND + step * SECOND,
+						durationMs: SECOND,
+						genAi: { usageInputTokens: input, usageOutputTokens: output },
+					}),
+				]),
+			]),
+		)
+
+		// 15978 before: the calls, and each run's cumulative excess again.
+		expect(summary.tokens.total).toBe(7811)
+	})
+
+	it("counts nothing of a reused Strands agent's accumulated usage over its own calls", () => {
+		// Strands with one Agent across requests (capture strands_user, scenario a):
+		// each `invoke_agent` reports the agent's accumulated usage, through the
+		// event-loop span, over the one chat it ran.
+		const turns = [
+			{ agent: [204, 44], chat: [204, 44] },
+			{ agent: [473, 122], chat: [269, 78] },
+			{ agent: [838, 193], chat: [365, 71] },
+		]
+		const summary = summarize(
+			Arr.flatMap(turns, ({ agent, chat }, turn) => [
+				agentSpan({
+					spanId: `agent-${turn}`,
+					traceId: `trace-${turn}`,
+					startMs: turn * 10 * SECOND,
+					durationMs: 5 * SECOND,
+					genAi: { usageInputTokens: agent[0], usageOutputTokens: agent[1] },
+				}),
+				makeSpan({
+					spanId: `cycle-${turn}`,
+					traceId: `trace-${turn}`,
+					parentSpanId: `agent-${turn}`,
+					spanName: "execute_event_loop_cycle",
+					startMs: turn * 10 * SECOND,
+					durationMs: SECOND,
+					vendorId: "strands",
+					genAi: { operationName: "execute_event_loop_cycle" },
+				}),
+				llmSpan({
+					spanId: `chat-${turn}`,
+					traceId: `trace-${turn}`,
+					parentSpanId: `cycle-${turn}`,
+					startMs: turn * 10 * SECOND,
+					durationMs: SECOND,
+					genAi: { usageInputTokens: chat[0], usageOutputTokens: chat[1] },
+				}),
+			]),
+		)
+
+		expect(summary.tokens.total).toBe(204 + 44 + 269 + 78 + 365 + 71)
+	})
+
 	it("groups models by the one that answered, busiest first", () => {
 		const summary = summarize([
 			llmSpan({ spanId: "a", startMs: 0, durationMs: SECOND, model: "claude-haiku-4-5" }),
@@ -272,7 +579,7 @@ describe("buildSessionSummary — tokens and models", () => {
 			llmSpan({ spanId: "c", startMs: 4 * SECOND, durationMs: SECOND, model: "claude-opus-4-1" }),
 		])
 
-		expect(summary.models.map((model) => [model.model, model.llmCalls])).toEqual([
+		expect(Arr.map(summary.models, (model) => [model.model, model.llmCalls])).toEqual([
 			["claude-opus-4-1", 2],
 			["claude-haiku-4-5", 1],
 		])
@@ -462,7 +769,7 @@ describe("buildSessionSummary — cache accounting", () => {
 		// The app's span represents the call and carries the gateway's price, so
 		// the per-model row adds up to the session's cost.
 		expect(
-			summary.models.map((model) => [model.model, model.llmCalls, model.tokens.total, model.cost]),
+			Arr.map(summary.models, (model) => [model.model, model.llmCalls, model.tokens.total, model.cost]),
 		).toEqual([["z-ai/glm-5.3-flash:nitro", 1, 110, 0.01]])
 	})
 
@@ -503,13 +810,40 @@ describe("buildSessionSummary — cache accounting", () => {
 		expect(summary.tokens.total).toBe(22)
 	})
 
+	it("counts a gateway request whose every attempt failed once, not once per attempt", () => {
+		// OpenRouter Broadcast, trace 83d675eb…: the generation and its one
+		// provider attempt both failed with op `chat` and no usage.
+		const openrouter = { vendorId: "openrouter", statusCode: "Error" } as const
+		const summary = summarize([
+			llmSpan({
+				...openrouter,
+				spanId: "generation",
+				spanName: "LLM Generation",
+				startMs: 0,
+				durationMs: 118,
+				genAi: { requestModel: "openai/gpt-4o-mini", responseId: "gen-1785983234" },
+			}),
+			llmSpan({
+				...openrouter,
+				spanId: "attempt",
+				parentSpanId: "generation",
+				spanName: "provider attempt 1: OpenAI",
+				startMs: 10,
+				durationMs: 100,
+				genAi: { responseId: "gen-1785983234:attempt-0" },
+			}),
+		])
+
+		expect(summary.work.llmCalls).toBe(1)
+	})
+
 	it("subtracts a roll-up's children bucket by bucket, in normalised buckets", () => {
 		const summary = summarize([
 			// The wrapper reports exclusively (Anthropic), the child inclusively
 			// (unnamed). Both are normalised before the subtraction, so the child's
 			// uncached 60 comes off the wrapper's uncached 300 — and the session
 			// total equals the wrapper's own claim of 300 + 100 + 30.
-			agentSpan({
+			llmSpan({
 				spanId: "agent",
 				startMs: 0,
 				durationMs: 10 * SECOND,
@@ -637,16 +971,16 @@ describe("countTurnTokens", () => {
 	it("adds up to the session total when every call reported its own usage", () => {
 		const turns = buildSessionTurns(perCall)
 
-		expect(turns.map((turn) => countTurnTokens(turn, turns).total)).toEqual([110, 220])
+		expect(Arr.map(turns, (turn) => countTurnTokens(turn, turns).total)).toEqual([110, 220])
 		expect(summarize(perCall).tokens.total).toBe(330)
 	})
 
 	it("counts a duplicated span row once, as the session total does", () => {
 		// A page-overlapping read repeats a row (`session-transcript.ts` dedupes by
 		// id for the same reason); both totals are keyed by span id.
-		const duplicated = [...perCall, { ...perCall[1]! }]
+		const duplicated = [...perCall, { ...Arr.getUnsafe(perCall, 1) }]
 		const turns = buildSessionTurns(duplicated)
-		const total = turns.reduce((sum, turn) => sum + countTurnTokens(turn, turns).total, 0)
+		const total = Arr.reduce(turns, 0, (sum, turn) => sum + countTurnTokens(turn, turns).total)
 
 		expect(total).toBe(summarize(duplicated).tokens.total)
 		expect(total).toBe(330)
@@ -658,7 +992,7 @@ describe("countTurnTokens", () => {
 		const turns = buildSessionTurns(aggregateOnly)
 
 		expect(turns).toHaveLength(2)
-		expect(turns.map((turn) => countTurnTokens(turn, turns).total)).toEqual([0, 0])
+		expect(Arr.map(turns, (turn) => countTurnTokens(turn, turns).total)).toEqual([0, 0])
 	})
 })
 
@@ -1029,7 +1363,7 @@ describe("buildSessionSummary — work and failures", () => {
 			}),
 		])
 
-		expect(summary.failureGroups.map((group) => group.label).sort()).toEqual([
+		expect(Arr.map(summary.failureGroups, (group) => group.label).sort()).toEqual([
 			"error · sandbox_grep",
 			"tool_arguments · query_data",
 			"tool_unavailable · read_source_file",
@@ -1049,7 +1383,7 @@ describe("buildSessionSummary — work and failures", () => {
 			}),
 		])
 
-		expect(summary.failureGroups.map((group) => group.label)).toEqual(["content_filter"])
+		expect(Arr.map(summary.failureGroups, (group) => group.label)).toEqual(["content_filter"])
 	})
 
 	// A gateway attempt that a provider refused, then another provider served:
@@ -1126,7 +1460,9 @@ describe("buildSessionSummary — work and failures", () => {
 			}),
 		])
 
-		expect(summary.failureGroups.map((group) => group.label)).toEqual(["tool_arguments · sandbox_exec"])
+		expect(Arr.map(summary.failureGroups, (group) => group.label)).toEqual([
+			"tool_arguments · sandbox_exec",
+		])
 	})
 
 	it("does not read a max_tokens finish as a failure", () => {
@@ -1208,31 +1544,162 @@ describe("per-model cost, tools and failure groups", () => {
 		])
 
 		expect(summary.cost).toBeCloseTo(0.5)
-		expect(summary.models.find((model) => model.model === "claude-opus-5")?.cost).toBeCloseTo(0.5)
-		expect(summary.models.find((model) => model.model === "claude-haiku-4-5")?.cost).toBeUndefined()
+		expect(
+			Option.getOrThrow(Arr.findFirst(summary.models, (model) => model.model === "claude-opus-5")).cost,
+		).toBeCloseTo(0.5)
+		expect(
+			Arr.findFirst(summary.models, (model) => model.model === "claude-haiku-4-5").pipe(
+				Option.map((model) => model.cost),
+				Option.getOrUndefined,
+			),
+		).toBeUndefined()
 	})
 
-	// Same deepest-reporter rule the tokens follow: a wrapper that sums its
-	// children's cost onto itself must not double the session's spend.
-	it("does not count a rolled-up cost twice", () => {
+	it("nets a sub-agent's cost through its tool span, and past a zero-cost wrapper", () => {
+		// The orchestrator prices the whole run; the worker it delegates to via a
+		// tool stamps a zero cost of its own over the call it made. The list nets
+		// the same way (`Cost > 0` reporters, climbing past the tool span).
 		const summary = summarize([
 			agentSpan({
-				spanId: "root",
+				spanId: "orchestrator",
 				startMs: 0,
 				durationMs: 4 * SECOND,
-				genAi: { usageCost: 0.3 },
+				genAi: { usageCost: 0.004 },
 			}),
 			llmSpan({
-				spanId: "child",
-				parentSpanId: "root",
+				spanId: "own-call",
+				parentSpanId: "orchestrator",
 				startMs: 0,
 				durationMs: SECOND,
-				model: "gpt-5",
-				genAi: { usageCost: 0.3 },
+				genAi: { usageCost: 0.003 },
+			}),
+			toolSpan({
+				spanId: "delegate",
+				parentSpanId: "orchestrator",
+				startMs: SECOND,
+				durationMs: 2 * SECOND,
+			}),
+			agentSpan({
+				spanId: "worker",
+				parentSpanId: "delegate",
+				startMs: SECOND,
+				durationMs: 2 * SECOND,
+				genAi: { usageCost: 0 },
+			}),
+			llmSpan({
+				spanId: "worker-call",
+				parentSpanId: "worker",
+				startMs: SECOND,
+				durationMs: SECOND,
+				genAi: { usageCost: 0.001 },
 			}),
 		])
 
-		expect(summary.cost).toBeCloseTo(0.3)
+		expect(summary.cost).toBeCloseTo(0.004, 9)
+	})
+
+	it("reads a zero cost as free, not as unmeasured", () => {
+		const summary = summarize([
+			llmSpan({ spanId: "free", startMs: 0, durationMs: SECOND, genAi: { usageCost: 0 } }),
+		])
+
+		expect(summary.cost).toBe(0)
+	})
+
+	it("counts a call paused for a human and resumed once, as its resumed copy", () => {
+		// Strands HITL (capture docs_strands_a1): the interrupted `delete_file`
+		// span ends Ok with no result, and the resumed turn's trace opens it
+		// again under the same call id.
+		const callId = "call_ltoPrLQIg3ZHWkyFnBIOE65u"
+		const summary = summarize([
+			toolSpan({
+				spanId: "paused",
+				traceId: "trace-pause",
+				toolName: "delete_file",
+				startMs: 0,
+				durationMs: 0.4,
+				genAi: { toolCallId: callId },
+			}),
+			toolSpan({
+				spanId: "resumed",
+				traceId: "trace-resume",
+				toolName: "delete_file",
+				startMs: 52,
+				durationMs: 1,
+				genAi: { toolCallId: callId, toolCallResult: "deleted /tmp/scratch-notes.txt" },
+			}),
+			toolSpan({ spanId: "other", toolName: "get_weather", startMs: 100, durationMs: 1 }),
+		])
+
+		expect(summary.work.toolCalls).toBe(2)
+		expect(
+			Arr.map(summary.tools, (tool) => [
+				tool.name,
+				tool.calls,
+				Arr.map(tool.events, (event) => event.spanId),
+			]),
+		).toEqual([
+			["delete_file", 1, ["resumed"]],
+			["get_weather", 1, ["other"]],
+		])
+	})
+
+	// The tests above read spans ingested before the gateway stamped them. On a
+	// stamped span its `maple_ai.tool_call` verdict decides, as on the list.
+	it("counts a stamped tool span by the gateway's verdict alone", () => {
+		const stamped = (spanId: string, startMs: number, mapleToolCall: number, toolCallResult?: string) =>
+			toolSpan({
+				spanId,
+				traceId: `trace-${spanId}`,
+				toolName: "delete_file",
+				startMs,
+				durationMs: 1,
+				genAi: { mapleLlmCall: 0, mapleToolCall, toolCallId: "call_a", toolCallResult },
+			})
+		const summary = summarize([
+			// Google ADK's confirmation request: no call.
+			stamped(
+				"paused",
+				0,
+				0,
+				'{"error": "This tool call requires confirmation, please approve or reject."}',
+			),
+			// LlamaIndex ends a step waiting for a human in error, which the
+			// gateway stamped neither a call nor a failure.
+			{ ...stamped("waiting", 500, 0), statusCode: "Error" },
+			// No result and no framework mark: a call, not merged into the one
+			// that follows under the same id.
+			stamped("no-result", 1_000, 1),
+			stamped("approved", 2_000, 1, "deleted /tmp/scratch-notes.txt"),
+		])
+
+		expect(summary.work.toolCalls).toBe(2)
+		expect(Arr.map(summary.tools, (tool) => [tool.name, tool.calls])).toEqual([["delete_file", 2]])
+		expect(Arr.map(Arr.getUnsafe(summary.tools, 0).events, (event) => event.spanId)).toEqual([
+			"no-result",
+			"approved",
+		])
+		expect(summary.failures.errors).toBe(0)
+	})
+
+	it("keeps two calls that share an id when both returned, and every call captured without payloads", () => {
+		const lane = (spanId: string, traceId: string, startMs: number, result?: string) =>
+			toolSpan({
+				spanId,
+				traceId,
+				toolName: "run_sql",
+				startMs,
+				durationMs: 10,
+				genAi: { toolCallId: "toolu_1", toolCallResult: result },
+			})
+		const summary = summarize([
+			lane("lane-a", "trace-a", 0, "3 rows"),
+			lane("lane-b", "trace-b", 1_000, "0 rows"),
+			lane("bare-1", "trace-c", 2_000),
+			lane("bare-2", "trace-d", 3_000),
+		])
+
+		expect(summary.work.toolCalls).toBe(4)
 	})
 
 	// Busiest first, with what each cost alongside it: how often the agent
@@ -1251,7 +1718,9 @@ describe("per-model cost, tools and failure groups", () => {
 			}),
 		])
 
-		expect(summary.tools.map((tool) => [tool.name, tool.calls, tool.totalMs, tool.slowestMs])).toEqual([
+		expect(
+			Arr.map(summary.tools, (tool) => [tool.name, tool.calls, tool.totalMs, tool.slowestMs]),
+		).toEqual([
 			["read_file", 2, 200, 100],
 			["run_tests", 1, 5 * SECOND, 5 * SECOND],
 		])
@@ -1267,7 +1736,10 @@ describe("per-model cost, tools and failure groups", () => {
 		])
 
 		expect(
-			summary.tools[0]?.events.map((event) => ({ ...event, startMs: event.startMs - summary.startMs })),
+			Arr.map(Arr.getUnsafe(summary.tools, 0)?.events, (event) => ({
+				...event,
+				startMs: event.startMs - summary.startMs,
+			})),
 		).toEqual([
 			{
 				spanId: "t1",
@@ -1312,7 +1784,7 @@ describe("per-model cost, tools and failure groups", () => {
 			}),
 		])
 
-		expect(summary.tools.map((tool) => [tool.name, tool.calls, tool.failed])).toEqual([
+		expect(Arr.map(summary.tools, (tool) => [tool.name, tool.calls, tool.failed])).toEqual([
 			["read_file", 2, 1],
 			["run_tests", 1, 1],
 		])
@@ -1345,8 +1817,8 @@ describe("per-model cost, tools and failure groups", () => {
 		])
 
 		expect(
-			summary.tools.flatMap((tool) =>
-				tool.events.map((event) => [event.errorLabel, event.errorDetail]),
+			Arr.flatMap(summary.tools, (tool) =>
+				Arr.map(tool.events, (event) => [event.errorLabel, event.errorDetail]),
 			),
 		).toEqual([
 			["SHARD_LOCKED", "shard 3 is locked by a running merge"],
@@ -1357,7 +1829,7 @@ describe("per-model cost, tools and failure groups", () => {
 	// A framework that records a stack trace as the tool's result would hand the
 	// ledger row an unbounded line; the status-message path has always clipped.
 	it("clips a failed call's message however the framework recorded it", () => {
-		const long = "x".repeat(400)
+		const long = Str.repeat(400)("x")
 		const summary = summarize([
 			agentSpan({ spanId: "a1", startMs: 0, durationMs: 10 * SECOND }),
 			toolSpan({
@@ -1380,7 +1852,8 @@ describe("per-model cost, tools and failure groups", () => {
 
 		for (const tool of summary.tools) {
 			expect(tool.events[0]?.errorDetail?.length).toBe(140)
-			expect(tool.events[0]?.errorDetail?.endsWith("…")).toBe(true)
+			const detail = tool.events[0]?.errorDetail
+			expect(detail !== undefined && Str.endsWith("…")(detail)).toBe(true)
 		}
 	})
 
@@ -1399,7 +1872,9 @@ describe("per-model cost, tools and failure groups", () => {
 			}),
 		])
 
-		expect(summary.tools.map((tool) => tool.description)).toEqual(["Read a file from the repository."])
+		expect(Arr.map(summary.tools, (tool) => tool.description)).toEqual([
+			"Read a file from the repository.",
+		])
 	})
 
 	// The counts and the breakdown are two readings of one list, so a failure

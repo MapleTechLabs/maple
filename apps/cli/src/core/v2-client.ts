@@ -9,11 +9,11 @@
 //
 // Auth is the token `maple auth login` already stores: a `maple_ak_…` API key
 // minted with `kind: "standard"` and no scope restriction, which
-// `ApiAuthorizationV2Layer` accepts across every `/v2` family.
+// `ApiAuthorizationV2Live` accepts across every `/v2` family.
 
-import { Effect } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
-import { HttpApiClient } from "effect/unstable/httpapi"
+import { Effect, Schema, String as Str } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { HttpApiClient } from "effect/http-api"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { WarehouseClientError, WarehouseQueryError } from "@maple/domain/http/warehouse-errors"
 import { CliNotFoundError, CliUsageError } from "../lib/errors"
@@ -25,7 +25,7 @@ import type { Range } from "./time"
  * `Timestamp` schema rejects: it requires ISO-8601 with an explicit UTC
  * designator. Convert at the boundary rather than widening the wire schema.
  */
-export const toV2Timestamp = (clickhouseUtc: string): string => `${clickhouseUtc.replace(" ", "T")}.000Z`
+export const toV2Timestamp = (clickhouseUtc: string): string => `${Str.replace(" ", "T")(clickhouseUtc)}.000Z`
 
 export const toV2Window = (range: Range): { start_time: string; end_time: string } => ({
 	start_time: toV2Timestamp(range.startTime),
@@ -36,7 +36,7 @@ export type MapleV2Client = Effect.Success<ReturnType<typeof makeV2Client>>
 
 export const makeV2Client = (apiUrl: string, token: string) =>
 	HttpApiClient.make(MapleApiV2, {
-		baseUrl: apiUrl.replace(/\/$/, ""),
+		baseUrl: Str.replace(/\/$/, "")(apiUrl),
 		transformClient: HttpClient.mapRequest(HttpClientRequest.bearerToken(token)),
 	})
 
@@ -57,14 +57,6 @@ export const unsupportedInRemote = (pipeName: string, reason: string) =>
 		}),
 	)
 
-/**
- * A remote operation that v2 supports but that found nothing to answer with,
- * distinct from `unsupportedInRemote`, which reports a missing capability and
- * points at local mode. Tagged so `bin.ts` treats it as an expected outcome.
- */
-export const remoteFailure = (pipeName: string, message: string) =>
-	Effect.fail(new WarehouseClientError({ message, pipeName }))
-
 export type RemoteError = WarehouseClientError | WarehouseQueryError | CliNotFoundError | CliUsageError
 
 /**
@@ -77,9 +69,9 @@ export type RemoteError = WarehouseClientError | WarehouseQueryError | CliNotFou
 export const toWarehouseError =
 	(pipeName: string) =>
 	(error: unknown): RemoteError =>
-		error instanceof WarehouseClientError ||
-		error instanceof WarehouseQueryError ||
-		error instanceof CliNotFoundError ||
-		error instanceof CliUsageError
+		Schema.is(WarehouseClientError)(error) ||
+		Schema.is(WarehouseQueryError)(error) ||
+		Schema.is(CliNotFoundError)(error) ||
+		Schema.is(CliUsageError)(error)
 			? error
 			: new WarehouseQueryError({ message: messageOf(error), pipeName, cause: error })

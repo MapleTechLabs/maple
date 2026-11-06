@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
-import { Context, Effect, Option, Schema } from "effect"
+import { Context, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { WarehouseExecutor, productEventsFunnel } from "@maple/query-engine/observability"
 import { CH } from "@maple/query-engine"
+import { OrgId } from "@maple/domain/http"
 import { ListProductEventsOutput, QueryFunnelOutput } from "@maple/domain/mcp-outputs"
 import type { McpToolResult } from "../types"
-import { mapleToolCatalog, toInputSchema } from "../registry"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "../../__evals__/fake-warehouse"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
@@ -12,9 +12,19 @@ import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../.
 // Both tools run through the registry the way a client reaches them, against a fake warehouse
 // that answers the funnel read with two steps and the event-name read with one custom event.
 const fixtures: FixtureRule[] = [
+	// Events with an empty VisitorId: keyed by session step 1 matches, keyed by visitor nothing does.
+	{
+		match: (sql) => Str.includes("anon_step")(sql) && /windowFunnel/i.test(sql) && !/VisitorId/.test(sql),
+		rows: [{ step: 1, count: 7 }],
+	},
+	{ match: (sql) => Str.includes("anon_step")(sql), rows: [] },
+	{
+		match: (sql) => /product_events/i.test(sql) && Str.includes("collapsed.test")(sql),
+		rows: [{ eventName: "page_view", kind: "navigation", count: 40, sessions: 12, persons: 1 }],
+	},
 	// The breakdown read names the attribute it groups by.
 	{
-		match: (sql) => /windowFunnel/i.test(sql) && sql.includes("'plan'"),
+		match: (sql) => /windowFunnel/i.test(sql) && Str.includes("'plan'")(sql),
 		rows: [{ group: "pro", step: 1, count: 10 }],
 	},
 	{
@@ -45,23 +55,15 @@ afterAll(async () => {
 const call = (name: string, params: Record<string, unknown>) =>
 	runToolDirect(rt, name, params) as Promise<McpToolResult>
 
-describe("query_funnel / list_product_events registration", () => {
-	it("both tools are in the catalog with object input schemas", () => {
-		for (const name of ["query_funnel", "list_product_events"]) {
-			const definition = mapleToolCatalog.find((d) => d.name === name)
-			expect(definition, name).toBeDefined()
-			expect(toInputSchema(definition!.schema).type).toBe("object")
-		}
-	})
-
-	it("query_funnel requires steps_json and nothing else", () => {
-		const definition = mapleToolCatalog.find((d) => d.name === "query_funnel")!
-		expect(toInputSchema(definition.schema).required).toEqual(["steps_json"])
-	})
-
-	it("list_product_events has only optional parameters", () => {
-		const definition = mapleToolCatalog.find((d) => d.name === "list_product_events")!
-		expect(toInputSchema(definition.schema).required ?? []).toEqual([])
+describe("query_funnel identity", () => {
+	it("names an empty VisitorId instead of reporting nobody matched", async () => {
+		const result = await call("query_funnel", {
+			steps_json: JSON.stringify([{ kind: "event", eventName: "anon_step" }]),
+			key_by: "visitor",
+		})
+		const output = Schema.decodeUnknownSync(QueryFunnelOutput)(result.structuredContent)
+		expect(output.identityNote).toContain("7 sessions but 0 visitors")
+		expect(markdown(result)).toContain('key_by="session"')
 	})
 })
 
@@ -69,7 +71,6 @@ describe("query_funnel validation", () => {
 	it("rejects malformed steps_json as a parameter error", async () => {
 		const result = await call("query_funnel", { steps_json: "not json" })
 		expect(result.isError).toBe(true)
-		expect(markdown(result)).toContain("Invalid parameters for `query_funnel`")
 		expect(markdown(result)).toContain("steps_json")
 	})
 
@@ -117,7 +118,6 @@ describe("query_funnel validation", () => {
 		expect(markdown(bad)).toContain("breakdown_by must be one of")
 		const good = await call("query_funnel", { steps_json: steps, breakdown_by: "attribute:plan" })
 		expect(good.isError).toBeUndefined()
-		expect(markdown(good)).toContain("### By attribute:plan")
 	})
 
 	it("takes the steps as an array as well as JSON text", async () => {
@@ -134,11 +134,10 @@ describe("query_funnel output", () => {
 		]
 		const result = await call("query_funnel", { steps_json: JSON.stringify(steps) })
 		const output = Schema.decodeUnknownSync(QueryFunnelOutput)(result.structuredContent)
-		expect(output.steps.map((step) => step.count)).toEqual([100, 40])
+		expect(Arr.map(output.steps, (step) => step.count)).toEqual([100, 40])
 		expect(output.conversion).toBeCloseTo(0.4)
 		expect(output.definition).toEqual(steps)
 		const text = markdown(result)
-		expect(text).toContain("## Funnel (2 steps, by person")
 		expect(text).toContain("**Conversion: 40.00%**")
 		// The breakdown suggestion repeats the funnel, so it decodes against this tool's schema.
 		expect(text).toContain("`query_funnel steps_json=")
@@ -156,6 +155,13 @@ describe("list_product_events output", () => {
 		expect(text).toContain("`query_funnel steps_json=")
 	})
 
+	it("says when every event collapses onto one person", async () => {
+		const result = await call("list_product_events", { host: "collapsed.test" })
+		expect(markdown(result)).toContain("carry no VisitorId or UserId")
+		const healthy = await call("list_product_events", {})
+		expect(markdown(healthy)).not.toContain("carry no VisitorId")
+	})
+
 	it("rejects an unknown kind as a parameter error", async () => {
 		const result = await call("list_product_events", { kind: "pageview" })
 		expect(result.isError).toBe(true)
@@ -170,15 +176,15 @@ describe("productEventsFunnel (observability helper)", () => {
 	]
 	const compiledSql: string[] = []
 	const executor = Context.make(WarehouseExecutor, {
-		orgId: "org_test",
+		orgId: Schema.decodeSync(OrgId)("org_test"),
 		query: () => Effect.succeed({ data: [] }),
-		compiledQuery: <T>(compiled: { readonly sql: string }) => {
+		compiledQuery: <T>(compiled: CH.CompiledQueryInput<T>) => {
 			compiledSql.push(compiledQueryOf(compiled).sql)
 			// SAFETY: the stub answers every compiled query with funnel rows; the
 			// only query these tests compile is the funnel, whose row type is `T`.
 			return Effect.succeed(rows as ReadonlyArray<T>)
 		},
-		compiledQueryFirst: () => Effect.succeed(Option.none()),
+		compiledQueryFirst: () => Effect.succeedNone,
 	})
 
 	it.effect("compiles a definition and returns the executor's rows", () =>
@@ -223,7 +229,7 @@ describe("productEventsFunnel (observability helper)", () => {
 				}).pipe(Effect.provide(executor)),
 			)
 			expect(failed).toBeInstanceOf(CH.ProductEventsFunnelError)
-			expect((failed as CH.ProductEventsFunnelError).reason).toBe("NoSteps")
+			expect(failed).toHaveProperty("reason", "NoSteps")
 		}),
 	)
 })

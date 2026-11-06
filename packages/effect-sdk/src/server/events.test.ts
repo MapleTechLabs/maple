@@ -1,6 +1,6 @@
-import { describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema, Scope } from "effect"
-import { HttpClient, HttpClientResponse } from "effect/unstable/http"
+import { assert, describe, it } from "@effect/vitest"
+import { DateTime, Effect, Layer, Schema, Scope, Array as Arr, String as Str } from "effect"
+import { HttpClient, HttpClientResponse } from "effect/http"
 import { afterEach, expect, vi } from "vitest"
 import { make, makeHandle, MapleEvents } from "./events.js"
 
@@ -26,10 +26,10 @@ const stubClient = (status = 200) => {
 			url: request.url,
 			headers: { ...request.headers },
 			contentType: body._tag === "Uint8Array" ? body.contentType : undefined,
-			lines: text
-				.split("\n")
-				.filter((line) => line.length > 0)
-				.map((line) => parseLine(line)),
+			lines: Arr.map(
+				Arr.filter(Str.split("\n")(text), (line) => line.length > 0),
+				(line) => parseLine(line),
+			),
 		})
 		return Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status })))
 	})
@@ -72,7 +72,7 @@ describe("MapleEvents (server)", () => {
 						groupId: "org_1",
 						visitorId: "v-1",
 						sessionId: "s-1",
-						timestamp: new Date("2026-08-17T10:00:00.000Z"),
+						timestamp: DateTime.toDateUtc(DateTime.makeUnsafe("2026-08-17T10:00:00.000Z")),
 						url: "https://app.example.com/billing",
 						pagePath: "/billing",
 						attributes: { plan: "startup", seats: 5, trial: false, dropped: undefined },
@@ -84,10 +84,11 @@ describe("MapleEvents (server)", () => {
 
 			expect(posts).toHaveLength(1)
 			const [batch] = posts
-			expect(batch!.url).toBe("https://ingest.test/v1/events")
-			expect(batch!.headers.authorization).toBe("Bearer secret")
-			expect(batch!.contentType).toBe("application/x-ndjson")
-			expect(batch!.lines).toEqual([
+			assert.isDefined(batch)
+			expect(batch.url).toBe("https://ingest.test/v1/events")
+			expect(batch.headers.authorization).toBe("Bearer secret")
+			expect(batch.contentType).toBe("application/x-ndjson")
+			expect(batch.lines).toEqual([
 				{
 					name: "plan_started",
 					timestamp: "2026-08-17T10:00:00.000Z",
@@ -114,7 +115,7 @@ describe("MapleEvents (server)", () => {
 					attributes: {},
 				}),
 			])
-			expect(typeof batch!.lines[1]!.timestamp).toBe("string")
+			expect(typeof Arr.getUnsafe(batch.lines, 1).timestamp).toBe("string")
 		}),
 	)
 
@@ -131,7 +132,11 @@ describe("MapleEvents (server)", () => {
 					expect(posts).toHaveLength(0)
 					yield* events.flush
 					expect(posts).toHaveLength(1)
-					expect(posts[0]!.lines.map((line) => line.name)).toEqual(["a", "b", "c"])
+					expect(Arr.map(Arr.getUnsafe(posts, 0).lines, (line) => line.name)).toEqual([
+						"a",
+						"b",
+						"c",
+					])
 					yield* events.flush
 					expect(posts).toHaveLength(1)
 				}),
@@ -150,7 +155,7 @@ describe("MapleEvents (server)", () => {
 					yield* Effect.yieldNow
 					yield* Effect.yieldNow
 					expect(posts).toHaveLength(1)
-					expect(posts[0]!.lines.map((line) => line.name)).toEqual(["a", "b"])
+					expect(Arr.map(Arr.getUnsafe(posts, 0).lines, (line) => line.name)).toEqual(["a", "b"])
 				}),
 			)
 		}),
@@ -165,7 +170,7 @@ describe("MapleEvents (server)", () => {
 			expect(posts).toHaveLength(0)
 			yield* Scope.close(scope, undefined as never)
 			expect(posts).toHaveLength(1)
-			expect(posts[0]!.lines[0]!.name).toBe("shutdown_event")
+			expect(Arr.getUnsafe(Arr.getUnsafe(posts, 0).lines, 0).name).toBe("shutdown_event")
 		}),
 	)
 
@@ -182,7 +187,7 @@ describe("MapleEvents (server)", () => {
 			)
 			expect(posts).toHaveLength(1)
 			expect(warn).toHaveBeenCalledTimes(1)
-			expect(String(warn.mock.calls[0]![0])).toContain("401")
+			expect(String(Arr.getUnsafe(Arr.getUnsafe(warn.mock.calls, 0), 0))).toContain("401")
 		}),
 	)
 
@@ -198,7 +203,7 @@ describe("MapleEvents (server)", () => {
 				}),
 			)
 			expect(posts).toHaveLength(0)
-			expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([
+			expect(Arr.map(warn.mock.calls, (call) => String(call[0]))).toEqual([
 				expect.stringContaining("non-empty event name"),
 				expect.stringContaining("no ingest key"),
 			])
@@ -215,34 +220,37 @@ describe("MapleEvents (server)", () => {
 					yield* events.flush
 				}),
 			).pipe(Effect.provide(serviceLayer))
-			expect(posts[0]!.lines[0]).toMatchObject({ name: "via_layer", user_id: "u" })
+			expect(Arr.getUnsafe(Arr.getUnsafe(posts, 0).lines, 0)).toMatchObject({
+				name: "via_layer",
+				user_id: "u",
+			})
 		}),
 	)
 
 	it("makeHandle: fire-and-forget track, flush and dispose over fetch", async () => {
 		const bodies: Array<string> = []
 		const original = globalThis.fetch
-		globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+		globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
 			bodies.push(
 				typeof init?.body === "string"
 					? init.body
 					: new TextDecoder().decode(init?.body as ArrayBuffer),
 			)
 			return new Response(null, { status: 200 })
-		}) as typeof fetch
+		}
 		try {
 			const handle = makeHandle(config)
 			handle.track("signup_completed", { userId: "user_9" })
 			await handle.flush()
 			expect(bodies).toHaveLength(1)
-			expect(JSON.parse(bodies[0]!.trim())).toMatchObject({
+			expect(JSON.parse(Str.trim(Arr.getUnsafe(bodies, 0)))).toMatchObject({
 				name: "signup_completed",
 				user_id: "user_9",
 			})
 			handle.track("last_one")
 			await handle.dispose()
 			expect(bodies).toHaveLength(2)
-			expect(JSON.parse(bodies[1]!.trim())).toMatchObject({ name: "last_one" })
+			expect(JSON.parse(Str.trim(Arr.getUnsafe(bodies, 1)))).toMatchObject({ name: "last_one" })
 		} finally {
 			globalThis.fetch = original
 		}

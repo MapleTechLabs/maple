@@ -1,7 +1,8 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { TraceId, SpanId } from "@maple/domain"
 import type { Span, SpanNode } from "./types"
-import { trySync } from "./try-sync"
+
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 const toTraceId = Schema.decodeSync(TraceId)
 const toSpanId = Schema.decodeSync(SpanId)
@@ -29,7 +30,7 @@ export interface SpanHierarchyRow {
 export function parseAttributes(value: string | null | undefined): Record<string, string> {
 	if (!value) return {}
 	const parsed = Option.filter(
-		trySync<unknown>(() => JSON.parse(value)),
+		decodeJson(value),
 		(decoded): decoded is Record<string, string> => decoded !== null && typeof decoded === "object",
 	)
 	return Option.getOrElse(parsed, (): Record<string, string> => ({}))
@@ -45,7 +46,7 @@ export function transformSpan(raw: SpanHierarchyRow): Span {
 		serviceName: raw.serviceName,
 		spanKind: raw.spanKind,
 		durationMs: Number(raw.durationMs),
-		startTime: String(raw.startTime),
+		startTime: raw.startTime,
 		statusCode: raw.statusCode,
 		statusMessage: raw.statusMessage,
 		spanAttributes: parseAttributes(raw.spanAttributes),
@@ -56,7 +57,7 @@ export function transformSpan(raw: SpanHierarchyRow): Span {
 /** Drop duplicate spans (at-least-once ingest delivery), keeping the first occurrence. */
 export function dedupeBySpanId(spans: Span[]): Span[] {
 	const seen = new Set<string>()
-	return spans.filter((span) => {
+	return Arr.filter(spans, (span) => {
 		if (seen.has(span.spanId)) return false
 		seen.add(span.spanId)
 		return true
@@ -102,15 +103,17 @@ export function buildSpanTree(spans: Span[]): SpanNode[] {
 	}
 
 	for (const [missingParentId, children] of missingParentGroups) {
+		const [firstChild] = children
+		if (firstChild === undefined) continue
 		const placeholder: SpanNode = {
-			traceId: children[0].traceId,
+			traceId: firstChild.traceId,
 			spanId: toSpanId(missingParentId),
 			parentSpanId: "",
 			spanName: "Missing Span",
 			serviceName: "unknown",
 			spanKind: "SPAN_KIND_INTERNAL",
 			durationMs: 0,
-			startTime: children[0].startTime,
+			startTime: firstChild.startTime,
 			statusCode: "Unset",
 			statusMessage: "",
 			spanAttributes: {},
@@ -267,16 +270,41 @@ export interface TraceDetail {
 }
 
 /**
+ * The trace's wall-clock length: earliest start to latest end. Not the longest span,
+ * which understates any trace whose async or orphaned spans run past the root.
+ */
+export function traceWallClockMs(spans: ReadonlyArray<Pick<Span, "startTime" | "durationMs">>): number {
+	const longest = Arr.reduce(spans, 0, (max, span) => Math.max(max, span.durationMs))
+	const bounds = Arr.reduce(
+		spans,
+		{ start: Number.POSITIVE_INFINITY, end: Number.NEGATIVE_INFINITY },
+		(acc, span) => {
+			const start = new Date(span.startTime).getTime()
+			if (!Number.isFinite(start)) return acc
+			return { start: Math.min(acc.start, start), end: Math.max(acc.end, start + span.durationMs) }
+		},
+	)
+	return Number.isFinite(bounds.start) ? Math.max(longest, bounds.end - bounds.start) : longest
+}
+
+/**
  * Convenience: turn raw span-hierarchy rows into everything `TraceViewTabs`
  * needs — the flat span list, the root tree, total duration, the unique
  * service list, and the earliest start time.
  */
 export function buildTraceDetail(rows: ReadonlyArray<SpanHierarchyRow>): TraceDetail {
-	const spans = dedupeBySpanId(rows.map(transformSpan))
+	const spans = dedupeBySpanId(Arr.map(rows, transformSpan))
 	const rootSpans = buildSpanTree(spans)
-	const totalDurationMs = spans.length > 0 ? Math.max(...spans.map((span) => span.durationMs)) : 0
-	const services = Array.from(new Set(spans.map((span) => span.serviceName).filter(Boolean)))
-	let traceStartTime = spans.length > 0 ? spans[0].startTime : new Date().toISOString()
+	const totalDurationMs = traceWallClockMs(spans)
+	const services = Array.from(
+		new Set(
+			Arr.filter(
+				Arr.map(spans, (span) => span.serviceName),
+				Boolean,
+			),
+		),
+	)
+	let traceStartTime = spans[0]?.startTime ?? new Date().toISOString()
 	let earliestEpoch = new Date(traceStartTime).getTime()
 	for (const span of spans) {
 		const epoch = new Date(span.startTime).getTime()

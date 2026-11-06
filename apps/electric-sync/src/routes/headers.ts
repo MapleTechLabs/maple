@@ -1,3 +1,5 @@
+import { Array as Arr, String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 // Upstream response headers that must not survive re-wrapping: the platform
 // re-encodes and re-chunks the streamed body, so a stale content-encoding /
 // content-length would misdescribe it.
@@ -9,15 +11,15 @@ const STRIPPED_UPSTREAM_HEADERS = ["content-encoding", "content-length"]
  * caching, so it's left as-is.
  */
 const appendVary = (existing: string | undefined, header: string): string => {
-	const trimmed = existing?.trim()
+	const trimmed = existing === undefined ? undefined : Str.trim(existing)
 	if (!trimmed) return header
 	if (trimmed === "*") return trimmed
-	const tokens = trimmed
-		.split(",")
-		.map((t) => t.trim())
-		.filter(Boolean)
-	if (tokens.some((t) => t.toLowerCase() === header.toLowerCase())) return tokens.join(", ")
-	return [...tokens, header].join(", ")
+	const tokens = Arr.filter(
+		Arr.map(Str.split(",")(trimmed), (t) => Str.trim(t)),
+		Boolean,
+	)
+	if (Arr.some(tokens, (t) => Str.toLowerCase(t) === Str.toLowerCase(header))) return Arr.join(tokens, ", ")
+	return Arr.join([...tokens, header], ", ")
 }
 
 /**
@@ -55,7 +57,7 @@ const MAX_BROWSER_CACHE_SECONDS = 60
 const CAPPED_AGE_DIRECTIVES = /\b(s-maxage|max-age|stale-while-revalidate|stale-if-error)=(\d+)/gi
 
 const capMaxAge = (cacheControl: string): string =>
-	cacheControl.replace(CAPPED_AGE_DIRECTIVES, (directive, name: string, seconds: string) =>
+	replaceWith(cacheControl, CAPPED_AGE_DIRECTIVES, (directive, name = "", seconds = "") =>
 		Number(seconds) > MAX_BROWSER_CACHE_SECONDS ? `${name}=${MAX_BROWSER_CACHE_SECONDS}` : directive,
 	)
 
@@ -64,11 +66,13 @@ const capMaxAge = (cacheControl: string): string =>
  * whole freshness lifetime — the one directive a capped `max-age` cannot undo.
  */
 const dropImmutable = (cacheControl: string): string =>
-	cacheControl
-		.split(",")
-		.map((directive) => directive.trim())
-		.filter((directive) => directive.toLowerCase() !== "immutable")
-		.join(", ")
+	Arr.join(
+		Arr.filter(
+			Arr.map(Str.split(",")(cacheControl), (directive) => Str.trim(directive)),
+			(directive) => Str.toLowerCase(directive) !== "immutable",
+		),
+		", ",
+	)
 
 /**
  * Shapes the headers we return to the browser from an upstream Electric response.
@@ -96,7 +100,9 @@ export const syncResponseHeaders = (upstream: Readonly<Record<string, string>>):
 
 	const cacheControl = headers["cache-control"]
 	if (cacheControl) {
-		headers["cache-control"] = dropImmutable(capMaxAge(cacheControl.replace(/\bpublic\b/g, "private")))
+		headers["cache-control"] = dropImmutable(
+			capMaxAge(Str.replace(/\bpublic\b/g, "private")(cacheControl)),
+		)
 	}
 
 	return headers

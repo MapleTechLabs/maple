@@ -1,5 +1,5 @@
 /**
- * effect-agent's `Sandbox` port over Cloudflare's Sandbox container.
+ * @yielded/agent's `Sandbox` port over Cloudflare's Sandbox container.
  *
  * The contract asks an implementation to enforce each requested feature or
  * reject it, so this one is explicit about its posture. It provides: an isolated
@@ -15,10 +15,11 @@
  */
 import { OrgId } from "@maple/domain/http"
 import {
-	SANDBOX_COMMAND_ENV,
+	SANDBOX_COMMAND_ENV_NAMES,
 	SandboxCheckout,
 	SandboxExecRequest,
 	type SandboxExecResponse,
+	SandboxRunUnavailable,
 } from "@maple/domain/sandbox"
 import {
 	Sandbox,
@@ -34,8 +35,18 @@ import {
 	type SandboxError,
 	type SandboxEvent,
 	type SandboxRequest,
-} from "effect-agent/sandbox"
-import { Duration, Effect, Layer, Option, Schedule, Schema, Stream } from "effect"
+} from "@maple/backend/sandbox/contract"
+import {
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Schedule,
+	Schema,
+	Stream,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { SandboxClient } from "@maple/backend/sandbox/client"
 import {
 	VcsSourceService,
@@ -55,8 +66,8 @@ const unsupported = (feature: SandboxUnsupportedRequestError["feature"], message
 
 /**
  * The contract's own ceiling on a `SandboxOutput`'s `bytes`, mirrored because it
- * is module-private there. `bytes` carries the stream's true size, so a caller
- * can tell a truncated prefix from a whole answer by comparing it to the text.
+ * is module-private there. Whether a stream was cut is `truncated`, never `bytes`
+ * against the text: invalid UTF-8 decodes to replacement characters.
  */
 const CONTRACT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 
@@ -70,6 +81,13 @@ const decodeOrgId = Schema.decodeUnknownOption(OrgId)
 export const CHECKOUT_WAIT = Duration.seconds(90)
 const CHECKOUT_POLL = Duration.seconds(2)
 const checkoutWait = Schedule.spaced(CHECKOUT_POLL).pipe(Schedule.upTo({ duration: CHECKOUT_WAIT }))
+
+/**
+ * Headroom over a command's own wall clock for one call into the sandbox Worker. A container in
+ * trouble held calls for over four minutes before answering 500, which spent most of a review's
+ * pass on two tool calls; past this the call is reported as the sandbox being unavailable.
+ */
+export const CALL_HEADROOM = Duration.seconds(60)
 
 const isPending = (answer: Option.Option<SandboxExecResponse>): boolean =>
 	Option.isSome(answer) && answer.value._tag === "SandboxRunCheckoutPending"
@@ -101,14 +119,17 @@ export const admit = (
 				"this sandbox can only switch egress off entirely; it cannot enforce a destination allowlist",
 			)
 		// The container pins one fixed environment, so the allowlist is honoured only
-		// when it names exactly that set. A narrower request would still see all three,
+		// when it names exactly that set. A narrower request would still see all of them,
 		// and a request this cannot enforce is one the contract says to refuse.
-		const supportedEnv = Object.keys(SANDBOX_COMMAND_ENV)
+		const supportedEnv = SANDBOX_COMMAND_ENV_NAMES
 		const requestedEnv = new Set(request.environment.allow)
-		if (requestedEnv.size !== supportedEnv.length || supportedEnv.some((name) => !requestedEnv.has(name)))
+		if (
+			requestedEnv.size !== supportedEnv.length ||
+			Arr.some(supportedEnv, (name) => !requestedEnv.has(name))
+		)
 			return yield* unsupported(
 				"runtime",
-				`a command sees exactly ${supportedEnv.join(", ")}; this sandbox cannot narrow or widen that set`,
+				`a command sees exactly ${Arr.join(supportedEnv, ", ")}; this sandbox cannot narrow or widen that set`,
 			)
 		if (request.limits.cpuCores !== undefined)
 			return yield* unsupported("cpu-limit", "per-command CPU limits are not enforced")
@@ -133,10 +154,11 @@ export const admit = (
 			)
 		const orgId = decodeOrgId(parsed.value.orgId)
 		if (Option.isNone(orgId)) return yield* unsupported("mounts", "mount source names no organization")
-		if (request.cwd !== REPO_MOUNT_TARGET && !request.cwd.startsWith(`${REPO_MOUNT_TARGET}/`))
+		if (request.cwd !== REPO_MOUNT_TARGET && !Str.startsWith(`${REPO_MOUNT_TARGET}/`)(request.cwd))
 			return yield* unsupported("mounts", `cwd must be inside ${REPO_MOUNT_TARGET}`)
-		const cwd = request.cwd === REPO_MOUNT_TARGET ? "." : request.cwd.slice(REPO_MOUNT_TARGET.length + 1)
-		if (cwd.split("/").includes(".."))
+		const cwd =
+			request.cwd === REPO_MOUNT_TARGET ? "." : Str.slice(REPO_MOUNT_TARGET.length + 1)(request.cwd)
+		if (Str.split("/")(cwd).includes(".."))
 			return yield* unsupported("mounts", "cwd must stay inside the mount")
 		return { orgId: orgId.value, repository: parsed.value.repository, ref: parsed.value.ref, cwd }
 	})
@@ -145,7 +167,7 @@ const spawnError = (command: string, message: string, cause?: unknown) =>
 	new SandboxSpawnError({
 		implementation: IMPLEMENTATION,
 		command,
-		message: message.slice(0, SANDBOX_DIAGNOSTIC_MAX_LENGTH),
+		message: Str.slice(0, SANDBOX_DIAGNOSTIC_MAX_LENGTH)(message),
 		...(cause === undefined ? undefined : { cause }),
 	})
 
@@ -163,9 +185,8 @@ export const toEvents = (
 					runtime: request.runtime,
 				}),
 			]
-			// `bytes` is the stream's true size, which can exceed the text that came
-			// back: the container cut each stream at the requested bound. That
-			// difference is how a caller detects truncation.
+			// `bytes` is the stream's true size; whether the container cut it at the
+			// requested bound is the Worker's own answer, carried as `truncated`.
 			if (response.stdout.length > 0)
 				events.push(
 					new SandboxOutput({
@@ -174,6 +195,7 @@ export const toEvents = (
 						stream: "stdout",
 						text: response.stdout,
 						bytes: Math.min(response.stdoutBytes, CONTRACT_MAX_OUTPUT_BYTES),
+						truncated: response.stdoutTruncated,
 					}),
 				)
 			if (response.stderr.length > 0)
@@ -184,6 +206,7 @@ export const toEvents = (
 						stream: "stderr",
 						text: response.stderr,
 						bytes: Math.min(response.stderrBytes, CONTRACT_MAX_OUTPUT_BYTES),
+						truncated: response.stderrTruncated,
 					}),
 				)
 			events.push(
@@ -237,14 +260,17 @@ export const sandboxKey = (orgId: OrgId, checkout: RepositoryCheckout): Effect.E
 			crypto.subtle.digest(
 				"SHA-256",
 				new TextEncoder().encode(
-					`${orgId}\u0000${checkout.provider}\u0000${checkout.fullName.toLowerCase()}`,
+					`${orgId}\u0000${checkout.provider}\u0000${Str.toLowerCase(checkout.fullName)}`,
 				),
 			),
 		),
 		(digest) =>
-			`repo-${Array.from(new Uint8Array(digest).slice(0, 16))
-				.map((byte) => byte.toString(16).padStart(2, "0"))
-				.join("")}`,
+			`repo-${Arr.join(
+				Arr.map(Array.from(new Uint8Array(digest).slice(0, 16)), (byte) =>
+					Str.padStart(2, "0")(byte.toString(16)),
+				),
+				"",
+			)}`,
 	)
 
 export interface CloudflareRepoSandboxDeps {
@@ -283,13 +309,24 @@ export const makeCloudflareRepoSandbox = (deps: CloudflareRepoSandboxDeps): Sand
 					timeoutMs: Duration.toMillis(request.limits.maxWallTime),
 					maxOutputBytes: request.limits.maxOutputBytes,
 				})
+				const callBudget = Duration.sum(request.limits.maxWallTime, CALL_HEADROOM)
 				// Each poll is one cheap round trip that only starts a clone on the first call;
 				// suspended so every repetition asks the port again rather than replaying one answer.
 				// `attempt` counts the schedule steps before this poll, so the last write is the total.
 				const poll = Effect.gen(function* () {
 					const { attempt } = yield* Schedule.CurrentMetadata
 					yield* Effect.annotateCurrentSpan("maple.sandbox.checkout_polls", attempt + 1)
-					return yield* deps.exec(exec)
+					return yield* deps.exec(exec).pipe(
+						Effect.timeoutOrElse({
+							duration: callBudget,
+							orElse: () =>
+								Effect.succeedSome(
+									new SandboxRunUnavailable({
+										message: `The repository sandbox did not answer within ${Duration.toSeconds(callBudget)}s.`,
+									}),
+								),
+						}),
+					)
 				})
 				const answered = yield* poll.pipe(
 					Effect.repeat({ while: isPending, schedule: checkoutWait }),
@@ -303,7 +340,8 @@ export const makeCloudflareRepoSandbox = (deps: CloudflareRepoSandboxDeps): Sand
 						`The checkout of ${checkout.fullName} at ${checkout.sha} is still being cloned after ${Duration.toSeconds(CHECKOUT_WAIT)}s. The clone continues in the background: gather other evidence first and come back to this repository later rather than calling again immediately.`,
 						answered.value,
 					)
-				return Stream.fromIterable(yield* toEvents(request, answered.value))
+				const events = yield* toEvents(request, answered.value)
+				return Stream.fromIterable(events)
 			}),
 		),
 })

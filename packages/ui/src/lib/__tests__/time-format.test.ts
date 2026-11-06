@@ -9,6 +9,7 @@ import {
 	relativeParts,
 	toEpochMs,
 } from "../time-format"
+import { Array as Arr } from "effect"
 
 // A fixed "now" everywhere: these formatters take `nowMs` precisely so the suite
 // never needs fake timers and never goes flaky at a boundary.
@@ -44,7 +45,7 @@ describe("toEpochMs", () => {
 
 	it("agrees across every input input for the same instant", () => {
 		const inputs = ["2026-05-24 14:30:00", "2026-05-24T14:30:00Z", new Date(NOW), NOW] as const
-		const rendered = inputs.map((input) => formatRelativeTime(input, NOW + HOUR))
+		const rendered = Arr.map(inputs, (input) => formatRelativeTime(input, NOW + HOUR))
 		expect(new Set(rendered).size).toBe(1)
 		expect(rendered[0]).toBe("1h ago")
 	})
@@ -87,6 +88,22 @@ describe("formatRelativeFrom", () => {
 
 	it("renders clock skew forwards, not as a negative age", () => {
 		expect(formatRelativeFrom(NOW + 2 * HOUR, NOW)).toBe("in 2h")
+	})
+
+	it("reads an event a little ahead of the page clock as just now", () => {
+		expect(formatRelativeFrom(NOW + 30 * SECOND, NOW)).toBe("just now")
+		expect(formatRelativeFrom(NOW + 90 * SECOND, NOW)).toBe("just now")
+		expect(formatRelativeShortFrom(NOW + 90 * SECOND, NOW)).toBe("now")
+	})
+
+	it("keeps genuinely future times past the skew window", () => {
+		expect(formatRelativeFrom(NOW + 5 * MINUTE, NOW)).toBe("in 5m")
+		expect(formatRelativeShortFrom(NOW + 5 * MINUTE, NOW)).toBe("5m")
+	})
+
+	it("leaves past values alone", () => {
+		expect(formatRelativeFrom(ago(90 * SECOND), NOW)).toBe("1m ago")
+		expect(formatRelativeShortFrom(ago(90 * SECOND), NOW)).toBe("1m")
 	})
 
 	it("renders an em dash for unparseable input", () => {

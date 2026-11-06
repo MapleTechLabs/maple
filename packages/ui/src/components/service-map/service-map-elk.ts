@@ -1,4 +1,4 @@
-import type { Edge, Node } from "@xyflow/react"
+import type { EdgeBase as Edge, NodeBase as Node } from "@xyflow/system"
 import type { ElkExtendedEdge, ElkNode, ELK } from "elkjs/lib/elk-api"
 import {
 	NS_LABEL_HEIGHT,
@@ -10,6 +10,7 @@ import {
 	type ServiceEdgeData,
 	type ServiceNodeData,
 } from "./service-map-utils"
+import { Array as Arr } from "effect"
 
 export type { PreviousPositions }
 
@@ -61,7 +62,7 @@ function getMainThreadElk(): Promise<ELK> {
 function getElk(onWarning: ElkWarningReporter | undefined): Promise<ELK> {
 	if (workerBroken) return getMainThreadElk()
 	if (!workerElk) {
-		workerElk = createWorkerElk().catch((error) => {
+		workerElk = createWorkerElk().catch((error: unknown) => {
 			onWarning?.("service_map.elk_worker_unavailable", toLayoutFailure(error))
 			workerBroken = true
 			return getMainThreadElk()
@@ -148,7 +149,7 @@ export function buildElkGraph(
 		if (!laneNodes) continue
 		children.push({
 			id: `${ELK_CONTAINER_PREFIX}${ns}`,
-			children: laneNodes.map(toElkNode),
+			children: Arr.map(laneNodes, toElkNode),
 			layoutOptions: {
 				// Reserve room at the top for the namespace label chip.
 				"elk.padding": `[top=${NS_LABEL_HEIGHT + NS_PADDING_Y},left=${NS_PADDING_X},bottom=${NS_PADDING_Y},right=${NS_PADDING_X}]`,
@@ -157,7 +158,7 @@ export function buildElkGraph(
 	}
 	for (const node of topLevel) children.push(toElkNode(node))
 
-	const elkEdges: ElkExtendedEdge[] = edges.map((edge) => ({
+	const elkEdges: ElkExtendedEdge[] = Arr.map(edges, (edge) => ({
 		id: edge.id,
 		sources: [edge.source],
 		targets: [edge.target],
@@ -259,7 +260,7 @@ export async function layoutServiceMapWithElk(
 
 	const result: ElkNode = await getElk(onWarning)
 		.then((elk) => elk.layout(graph))
-		.catch((error) => {
+		.catch((error: unknown) => {
 			// A failure on the worker path (e.g. the worker chunk 404s at runtime)
 			// demotes to the main-thread build and retries once.
 			if (workerBroken) return Promise.reject(error)

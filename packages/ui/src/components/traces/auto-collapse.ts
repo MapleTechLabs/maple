@@ -1,4 +1,5 @@
 import type { SpanNode } from "../../lib/types"
+import { Array as Arr } from "effect"
 
 // Traces below this many total spans expand fully (unchanged behaviour).
 export const LONG_TRACE_THRESHOLD = 25
@@ -28,10 +29,10 @@ export function collectAllCollapsibleIds(nodes: SpanNode[]): Set<string> {
 	const visit = (node: SpanNode) => {
 		if (node.children.length > 0) {
 			ids.add(node.spanId)
-			node.children.forEach(visit)
+			Arr.forEach(node.children, visit)
 		}
 	}
-	nodes.forEach(visit)
+	Arr.forEach(nodes, visit)
 	return ids
 }
 
@@ -43,9 +44,9 @@ export function collectAncestorIds(nodes: SpanNode[], spanId: string): Set<strin
 	const nodeById = new Map<string, SpanNode>()
 	const index = (node: SpanNode) => {
 		nodeById.set(node.spanId, node)
-		node.children.forEach(index)
+		Arr.forEach(node.children, index)
 	}
-	nodes.forEach(index)
+	Arr.forEach(nodes, index)
 
 	return collectAncestorIdsFromIndex(nodeById, spanId)
 }
@@ -174,7 +175,7 @@ export function computeDefaultExpandedSpanIds(
 		return { hasError: subtreeHasError }
 	}
 
-	rootSpans.forEach(visit)
+	Arr.forEach(rootSpans, visit)
 
 	// Force the selected/deep-linked span's ancestor chain open.
 	if (opts.keepVisibleSpanId) {

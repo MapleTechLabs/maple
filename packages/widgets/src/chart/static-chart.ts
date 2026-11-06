@@ -1,3 +1,4 @@
+import { Array as Arr, Option, String as Str } from "effect"
 /**
  * Chart rendering with no DOM, no React and no chart library — for images that
  * are rasterised server-side and pasted into Slack, Discord or an email.
@@ -183,7 +184,7 @@ const round = (n: number, digits = 1): string => {
 		return String(Number(n.toFixed(Math.min(MAX_DIGITS, Math.ceil(-Math.log10(abs)) + 1))))
 	}
 	const s = n.toFixed(digits)
-	return s.endsWith(".0") ? s.slice(0, -2) : s
+	return Str.endsWith(".0")(s) ? Str.slice(0, -2)(s) : s
 }
 
 /**
@@ -222,7 +223,7 @@ export function formatValue(value: number, unit: ChartUnit, digits?: number): st
 	}
 }
 
-const pad2 = (n: number): string => String(n).padStart(2, "0")
+const pad2 = (n: number): string => Str.padStart(2, "0")(String(n))
 
 export function formatTimestamp(ms: number, rangeMs: number): string {
 	const d = new Date(ms)
@@ -239,7 +240,13 @@ export function niceTicks(min: number, max: number, count = 4): number[] {
 	const hi = max <= lo ? lo + 1 : max
 	const rawStep = (hi - lo) / count
 	const mag = 10 ** Math.floor(Math.log10(rawStep))
-	const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= rawStep) ?? 10 * mag
+	const step = Option.getOrElse(
+		Arr.findFirst(
+			Arr.map([1, 2, 2.5, 5, 10], (m) => m * mag),
+			(s) => s >= rawStep,
+		),
+		() => 10 * mag,
+	)
 	const ticks: number[] = []
 	const start = Math.floor(lo / step) * step
 	const end = Math.ceil(hi / step) * step
@@ -274,7 +281,7 @@ const AXIS_LABELS = 4
  */
 const axisDigits = (ticks: ReadonlyArray<number>, unit: ChartUnit): number => {
 	for (let digits = 0; digits < MAX_DIGITS; digits += 1) {
-		const labels = ticks.map((tick) => formatValue(tick, unit, digits))
+		const labels = Arr.map(ticks, (tick) => formatValue(tick, unit, digits))
 		if (new Set(labels).size === labels.length) return digits
 	}
 	return MAX_DIGITS
@@ -283,7 +290,7 @@ const axisDigits = (ticks: ReadonlyArray<number>, unit: ChartUnit): number => {
 /** The grid ticks that get a label: every one, thinned to {@link AXIS_LABELS}. */
 const labelledTicks = (ticks: ReadonlyArray<number>): ReadonlyArray<number> => {
 	const stride = Math.max(1, Math.ceil((ticks.length - 1) / (AXIS_LABELS - 1)))
-	const kept = ticks.filter((_, index) => index % stride === 0)
+	const kept = Arr.filter(ticks, (_, index) => index % stride === 0)
 	const top = ticks.at(-1)
 	// The top of the domain is the one tick a reader needs most; the stride only
 	// lands on it when it divides evenly.
@@ -351,8 +358,8 @@ export function downsample(
 	const kept: ChartPoint[] = [first]
 	for (let i = 0; i < inner.length; i += size) {
 		const slice = inner.slice(i, i + size)
-		if (slice.length === 0) continue
-		const pick = slice.reduce((best, p) =>
+		if (!Arr.isReadonlyArrayNonEmpty(slice)) continue
+		const pick = Arr.reduce(slice, Arr.headNonEmpty(slice), (best, p) =>
 			breachSide === "below" ? (p[1] < best[1] ? p : best) : p[1] > best[1] ? p : best,
 		)
 		kept.push(pick)
@@ -411,7 +418,7 @@ const areaGradient = (id: string, color: string, top = 0.8, bottom = 0.1): strin
  * draws the lines they sit on and reports them as `yAxis`.
  */
 const gridLines = (scales: PlotScales): ReadonlyArray<string> =>
-	scales.ticks.map((tick) => {
+	Arr.map(scales.ticks, (tick) => {
 		const ty = scales.y(tick)
 		const isBaseline = tick === scales.yMin
 		return `<line x1="${PLOT_PAD}" y1="${ty}" x2="${PLOT_WIDTH - PLOT_PAD}" y2="${ty}" stroke="${COLORS.border}"${isBaseline ? "" : ' stroke-opacity="0.5"'} stroke-width="1"/>`
@@ -438,7 +445,7 @@ const barMarks = (
 	const band = slot / placement.bands
 	const barW = Math.max(1, Math.min(band - 2, 40))
 	const baseline = scales.y(scales.yMin)
-	return bars.map(({ slot: index, value }) => {
+	return Arr.map(bars, ({ slot: index, value }) => {
 		const bx = PLOT_PAD + slot * index + band * (placement.band + 0.5) - barW / 2
 		const by = scales.y(Math.max(value, scales.yMin))
 		const bh = Math.max(1, baseline - by)
@@ -468,9 +475,13 @@ const lineMarks = (
 	const last = points.at(-1)
 	if (first === undefined || last === undefined) return []
 
-	const linePath = points
-		.map(([t, v], i) => `${i === 0 ? "M" : "L"} ${scales.x(t).toFixed(1)} ${scales.y(v).toFixed(1)}`)
-		.join(" ")
+	const linePath = Arr.join(
+		Arr.map(
+			points,
+			([t, v], i) => `${i === 0 ? "M" : "L"} ${scales.x(t).toFixed(1)} ${scales.y(v).toFixed(1)}`,
+		),
+		" ",
+	)
 	const baseline = scales.y(scales.yMin).toFixed(1)
 	return [
 		...(options.filled
@@ -506,41 +517,39 @@ export function renderChartSvg(spec: ChartSpec): ChartRender {
 	const threshold = spec.threshold ?? null
 	const breachSide = spec.breachSide ?? "none"
 
-	const ranked = spec.series
-		.flatMap((series) => {
-			const points = [...series.points].sort(byTime)
-			const last = points.at(-1)
-			if (last === undefined) return []
-			return [
-				{
-					name: series.name,
-					points,
-					latest: last[1],
-					peak: points.reduce((max, [, v]) => Math.max(max, Math.abs(v)), 0),
-				},
-			]
-		})
-		.sort((a, b) => b.peak - a.peak)
+	const ranked = Arr.flatMap(spec.series, (series) => {
+		const points = [...series.points].sort(byTime)
+		const last = points.at(-1)
+		if (last === undefined) return []
+		return [
+			{
+				name: series.name,
+				points,
+				latest: last[1],
+				peak: Arr.reduce(points, 0, (max, [, v]) => Math.max(max, Math.abs(v))),
+			},
+		]
+	}).sort((a, b) => b.peak - a.peak)
 
-	const drawn = ranked.slice(0, MAX_PLOT_SERIES).map((series, index) => ({
+	const drawn = Arr.map(ranked.slice(0, MAX_PLOT_SERIES), (series, index) => ({
 		...series,
 		color: spec.color ?? SERIES_PALETTE[index] ?? SERIES_PALETTE[0],
 	}))
 	if (drawn.length === 0) throw new Error("renderChartSvg needs at least one data point.")
 
-	const times = drawn.flatMap((series) => series.points.map((point) => point[0]))
+	const times = Arr.flatMap(drawn, (series) => Arr.map(series.points, (point) => point[0]))
 	const tMin = Math.min(...times)
 	const tMax = Math.max(...times)
 	const tRange = Math.max(1, tMax - tMin)
 	// The threshold joins the domain so its rule is always on the canvas — a
 	// chart whose breach line sits off the top edge is worse than no chart.
-	const values = drawn.flatMap((series) => series.points.map((point) => point[1]))
+	const values = Arr.flatMap(drawn, (series) => Arr.map(series.points, (point) => point[1]))
 	const scales = plotScales(threshold === null ? values : [...values, threshold], tMin, tRange)
 
 	// Bars stand side by side inside one bucket, so every series has to agree on
 	// what the buckets are — the union of the times drawn, left to right.
 	const buckets = [...new Set(times)].sort((a, b) => a - b)
-	const slotOf = new Map(buckets.map((time, index) => [time, index]))
+	const slotOf = new Map(Arr.map(buckets, (time, index) => [time, index]))
 
 	const parts: string[] = [...SVG_OPEN]
 	if (spec.kind === "area") {
@@ -548,7 +557,10 @@ export function renderChartSvg(spec: ChartSpec): ChartRender {
 		// paints over every series drawn under it.
 		const [top, bottom] = drawn.length === 1 ? [0.8, 0.1] : [0.3, 0.04]
 		parts.push(
-			`<defs>${drawn.map((series, i) => areaGradient(`areaFill${i}`, series.color, top, bottom)).join("")}</defs>`,
+			`<defs>${Arr.join(
+				Arr.map(drawn, (series, i) => areaGradient(`areaFill${i}`, series.color, top, bottom)),
+				"",
+			)}</defs>`,
 		)
 	}
 	parts.push(...gridLines(scales))
@@ -571,7 +583,7 @@ export function renderChartSvg(spec: ChartSpec): ChartRender {
 		parts.push(
 			...(spec.kind === "bar"
 				? barMarks(
-						series.points.map(([time, value]) => ({ slot: slotOf.get(time) ?? 0, value })),
+						Arr.map(series.points, ([time, value]) => ({ slot: slotOf.get(time) ?? 0, value })),
 						series.color,
 						scales,
 						{ slots: buckets.length, bands: drawn.length, band: index },
@@ -600,16 +612,14 @@ export function renderChartSvg(spec: ChartSpec): ChartRender {
 	// precision so no two of them can read alike.
 	const ticks = labelledTicks(scales.ticks)
 	const digits = axisDigits(ticks, spec.unit)
-	const yAxis = ticks
-		.map((tick) => ({
-			text: formatValue(tick, spec.unit, digits),
-			yFraction: (scales.y(tick) - PLOT_PAD) / scales.plotH,
-		}))
-		.reverse()
+	const yAxis = Arr.map(ticks, (tick) => ({
+		text: formatValue(tick, spec.unit, digits),
+		yFraction: (scales.y(tick) - PLOT_PAD) / scales.plotH,
+	})).reverse()
 
 	return {
-		svg: parts.join("\n"),
-		legend: drawn.map((series) => ({
+		svg: Arr.join(parts, "\n"),
+		legend: Arr.map(drawn, (series) => ({
 			name: series.name,
 			color: series.color,
 			latest: formatValue(series.latest, spec.unit),
@@ -643,18 +653,19 @@ export function sparkline(values: readonly number[], maxBuckets = 24): string {
 	const size = Math.ceil(values.length / maxBuckets)
 	for (let i = 0; i < values.length; i += size) {
 		const slice = values.slice(i, i + size)
-		buckets.push(slice.reduce((a, b) => a + b, 0) / slice.length)
+		buckets.push(Arr.reduce(slice, 0, (a, b) => a + b) / slice.length)
 	}
 	const min = Math.min(...buckets)
 	const max = Math.max(...buckets)
 	const range = max - min
-	return buckets
-		.map((v) => {
+	return Arr.join(
+		Arr.map(buckets, (v) => {
 			const idx =
 				range === 0
 					? 3
 					: Math.min(SPARK_LEVELS.length - 1, Math.floor(((v - min) / range) * SPARK_LEVELS.length))
-			return SPARK_LEVELS[idx]
-		})
-		.join("")
+			return SPARK_LEVELS[idx] ?? ""
+		}),
+		"",
+	)
 }

@@ -7,33 +7,35 @@ import {
 	SATURATED,
 	type LensInput,
 } from "./service-lens-summary"
-import type { PodRow } from "@/components/infra/pod-table"
+import type { ListPodsResponse } from "@maple/domain/http"
+import { Array as Arr, String as Str } from "effect"
 
-const pod = (saturation: number, opts?: { unbounded?: boolean }): PodRow =>
-	({
-		podName: `pod-${saturation}-${opts?.unbounded ? "u" : "b"}`,
-		namespace: "payments",
-		nodeName: "ip-10-0-42-17",
-		clusterName: "production",
-		environment: "production",
-		deploymentName: "payments-api",
-		statefulsetName: "",
-		daemonsetName: "",
-		jobName: "",
-		qosClass: "Burstable",
-		podUid: `uid-${saturation}`,
-		computeType: "ec2",
-		lastSeen: "2026-08-31 14:00:00",
-		cpuUsage: 0.4,
-		cpuLimitPct: opts?.unbounded ? 0 : saturation,
-		memoryLimitPct: opts?.unbounded ? 0 : 0.5,
-		cpuRequestPct: 0.8,
-		memoryRequestPct: 0.6,
-		cpuUsagePeak: 0.9,
-		cpuLimitPctPeak: opts?.unbounded ? 0 : saturation,
-		memoryLimitPctPeak: opts?.unbounded ? 0 : 0.5,
-		saturation: opts?.unbounded ? 0 : saturation,
-	}) as PodRow
+type PodRow = ListPodsResponse["data"][number]
+
+const pod = (saturation: number, opts?: { unbounded?: boolean }): PodRow => ({
+	podName: `pod-${saturation}-${opts?.unbounded ? "u" : "b"}`,
+	namespace: "payments",
+	nodeName: "ip-10-0-42-17",
+	clusterName: "production",
+	environment: "production",
+	deploymentName: "payments-api",
+	statefulsetName: "",
+	daemonsetName: "",
+	jobName: "",
+	qosClass: "Burstable",
+	podUid: `uid-${saturation}`,
+	computeType: "ec2",
+	lastSeen: "2026-08-31 14:00:00",
+	cpuUsage: 0.4,
+	cpuLimitPct: opts?.unbounded ? 0 : saturation,
+	memoryLimitPct: opts?.unbounded ? 0 : 0.5,
+	cpuRequestPct: 0.8,
+	memoryRequestPct: 0.6,
+	cpuUsagePeak: 0.9,
+	cpuLimitPctPeak: opts?.unbounded ? 0 : saturation,
+	memoryLimitPctPeak: opts?.unbounded ? 0 : 0.5,
+	saturation: opts?.unbounded ? 0 : saturation,
+})
 
 const BUCKET_SECONDS = 300
 /** Bucket `i` as the normalized ISO string the page feeds in. */
@@ -41,7 +43,7 @@ const at = (i: number) => new Date(Date.UTC(2026, 7, 31, 10, 0, 0) + i * BUCKET_
 
 /** A dense, fully-served latency series. */
 const latency = (values: number[], opts?: { servedFrom?: number; servedTo?: number }) =>
-	values.map((value, i) => ({
+	Arr.map(values, (value, i) => ({
 		bucket: at(i),
 		value,
 		hasTraffic: i >= (opts?.servedFrom ?? 0) && i <= (opts?.servedTo ?? values.length - 1),
@@ -49,7 +51,7 @@ const latency = (values: number[], opts?: { servedFrom?: number; servedTo?: numb
 
 /** A CPU series at explicit bucket indices — sparse, as the gauges really are. */
 const cpu = (entries: ReadonlyArray<[index: number, value: number]>) =>
-	entries.map(([i, value]) => ({ bucket: at(i), value }))
+	Arr.map(entries, ([i, value]) => ({ bucket: at(i), value }))
 
 const base: LensInput = {
 	hasWorkload: true,
@@ -185,7 +187,7 @@ describe("deriveLensVerdict", () => {
 	it("does not read a spike out of a window with no traffic at all", () => {
 		const verdict = deriveLensVerdict(
 			withPods([pod(0.1)], {
-				latency: latency([0, 0, 0, 0]).map((p) => ({ ...p, hasTraffic: false })),
+				latency: Arr.map(latency([0, 0, 0, 0]), (p) => ({ ...p, hasTraffic: false })),
 			}),
 		)
 		expect(verdict.kind).toBe("healthy")
@@ -282,7 +284,7 @@ describe("lens copy", () => {
 	]
 
 	it("covers every verdict with a headline and a subhead", () => {
-		const kinds = new Set(cases.map(([, input]) => deriveLensVerdict(input).kind))
+		const kinds = new Set(Arr.map(cases, ([, input]) => deriveLensVerdict(input).kind))
 		expect(kinds.size).toBe(cases.length)
 		for (const [, input] of cases) {
 			const verdict = deriveLensVerdict(input)
@@ -293,7 +295,7 @@ describe("lens copy", () => {
 
 	it("only says “because” for the verdict that earned it", () => {
 		for (const [kind, input] of cases) {
-			const said = lensHeadline(deriveLensVerdict(input), "payments-api").includes("because")
+			const said = Str.includes("because")(lensHeadline(deriveLensVerdict(input), "payments-api"))
 			expect(said).toBe(kind === "throttled-and-slow")
 		}
 	})

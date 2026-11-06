@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { SetupAuditUnavailableError } from "../../setup-audit"
 import { AuthorizationV2 } from "./auth"
@@ -67,7 +67,7 @@ export const V2SetupAuditCheck = Schema.Struct({
 	}),
 	severity: Schema.Literals(["critical", "warn", "info"]).annotate({
 		description:
-			"How bad a failure is: `critical` breaks a feature outright, `warn` degrades it, `info` is advisory. Fixed per check — it does not vary with the finding.",
+			"How bad a failure is: `critical` breaks a feature outright, `warn` degrades it, `info` is advisory. Fixed per check; `TRC-02` is tiered by rate.",
 		examples: ["critical"],
 	}),
 	status: Schema.Literals(["pass", "fail", "skip"]).annotate({

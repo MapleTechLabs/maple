@@ -1,16 +1,17 @@
 import type { Duration } from "effect"
 import { type MapleRegion, resolveIngestEndpoint, warnIfKeylessMapleIngest } from "@maple/browser-session"
+import { isCommitSha } from "@maple/browser-session/commit-sha"
 import { Effect, Layer } from "effect"
-import { Otlp } from "effect/unstable/observability"
-import { trySyncOrUndefined } from "../shared/try-sync.js"
-import { browserNavigator } from "./browser-globals.js"
+import { makeOtlpLayer } from "../shared/otlp-layer.js"
+import type { MapleSpanOptions } from "../shared/span-options.js"
+import { browserResourceAttributes } from "./browser-globals.js"
 import { consentHttpClientLayer } from "./consent-http-client.js"
 import { type ClientReplayConfig, startClientSession } from "./replay-loader.js"
 import { withSessionLink } from "./session-link.js"
 import { type IdentifyInput, type PrivacyOptions, type TrackProps, track as trackEvent } from "./track.js"
 import { clearIdentity as clearIdentityUser, identify as identifyUser } from "./user.js"
 
-export interface MapleClientConfig {
+export interface MapleClientConfig extends MapleSpanOptions {
 	/** The service name reported in traces, logs, and metrics. */
 	readonly serviceName: string
 	/**
@@ -57,6 +58,8 @@ export interface MapleClientConfig {
 	 * when post-grant browser metrics are required.
 	 */
 	readonly privacy?: PrivacyOptions | undefined
+	/** Skip Effect log spans in OTLP log attributes. Default `false`. */
+	readonly excludeLogSpans?: boolean | undefined
 	readonly maxBatchSize?: number | undefined
 	readonly loggerExportInterval?: Duration.Input | undefined
 	readonly metricsExportInterval?: Duration.Input | undefined
@@ -88,21 +91,9 @@ export interface MapleClientConfig {
  */
 export const layer = (config: MapleClientConfig) => {
 	const attributes: Record<string, unknown> = {
+		...browserResourceAttributes(),
 		"maple.sdk.type": "client",
 	} satisfies Record<string, unknown>
-	const nav = browserNavigator()
-	if (nav) {
-		// `user_agent.original` is the semconv key; `browser.user_agent` was
-		// deprecated in favour of it.
-		if (nav.userAgent) attributes["user_agent.original"] = nav.userAgent
-		if (nav.language) attributes["browser.language"] = nav.language
-	}
-	if (typeof Intl !== "undefined") {
-		// A locale-stripped build throws from `DateTimeFormat` rather than
-		// reporting an unknown zone.
-		const timezone = trySyncOrUndefined(() => Intl.DateTimeFormat().resolvedOptions().timeZone)
-		if (timezone) attributes["browser.timezone"] = timezone
-	}
 	if (config.environment) {
 		// Dual-emit: legacy key (pre-extracted by Tinybird MVs) + the canonical
 		// resource attribute. Keep both until the MVs coalesce them.
@@ -111,7 +102,7 @@ export const layer = (config: MapleClientConfig) => {
 	}
 	// `serviceVersion` may be a semver release string, which belongs in
 	// `service.version` but not in `vcs.*` — only a SHA-shaped value is stamped.
-	if (config.serviceVersion && /^[0-9a-f]{7,40}$/i.test(config.serviceVersion)) {
+	if (isCommitSha(config.serviceVersion)) {
 		attributes["vcs.ref.head.revision"] = config.serviceVersion
 	}
 	if (config.serviceNamespace) attributes["service.namespace"] = config.serviceNamespace
@@ -135,7 +126,7 @@ export const layer = (config: MapleClientConfig) => {
 		privacy: config.privacy,
 	} as const
 
-	const base = Otlp.layerJson({
+	const base = makeOtlpLayer({
 		baseUrl: endpoint,
 		resource: {
 			serviceName: config.serviceName,
@@ -148,6 +139,9 @@ export const layer = (config: MapleClientConfig) => {
 		metricsExportInterval: config.metricsExportInterval,
 		tracerExportInterval: config.tracerExportInterval,
 		shutdownTimeout: config.shutdownTimeout,
+		loggerExcludeLogSpans: config.excludeLogSpans,
+		// Matches the stock `OtlpTracer` this layer used before (fingerprint parity).
+		spans: { ...config, includeCauseInStack: true },
 	}).pipe(Layer.provide(consentHttpClientLayer(config.privacy?.requireConsent ?? false)))
 
 	const lifecycle = Layer.effectDiscard(

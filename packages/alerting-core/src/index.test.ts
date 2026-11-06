@@ -1,4 +1,4 @@
-import { Result } from "effect"
+import { Result, Array as Arr } from "effect"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import {
@@ -24,14 +24,22 @@ const breached: AlertEvaluation = {
 	comparator: "gt",
 	reason: "above threshold",
 	derivedFromNoData: false,
+	levels: [{ severity: "warning", status: "breach" }],
 }
 
-const healthy: AlertEvaluation = { ...breached, status: "healthy", value: 9 }
+const healthy: AlertEvaluation = {
+	...breached,
+	status: "healthy",
+	value: 9,
+	levels: [{ severity: "warning", status: "clear" }],
+}
 
 const policy = {
 	consecutiveBreachesRequired: 2,
+	breachWindow: 2,
 	consecutiveHealthyRequired: 2,
 	renotifyIntervalMinutes: 10,
+	severities: ["warning" as const],
 }
 
 const projectAlertLifecycleEvent = (input: Parameters<typeof projectAlertLifecycleEventResult>[0]) =>
@@ -45,6 +53,7 @@ describe("evaluateAlertObservation", () => {
 					comparator: "between",
 					threshold: 10,
 					thresholdUpper: 20,
+					tiers: [{ severity: "warning", value: 10, upper: 20, recoveryValue: null }],
 					minimumSampleCount: 2,
 					noDataBehavior: "skip",
 				},
@@ -61,6 +70,7 @@ describe("evaluateAlertObservation", () => {
 					comparator: "gt",
 					threshold: 10,
 					thresholdUpper: null,
+					tiers: [{ severity: "warning", value: 10, upper: null, recoveryValue: null }],
 					minimumSampleCount: 0,
 					noDataBehavior: "zero",
 				},
@@ -113,6 +123,7 @@ describe("planAlertLifecycle", () => {
 			evaluation: healthy,
 			state: { consecutiveBreaches: 0, consecutiveHealthy: 1 },
 			openIncident: {
+				severity: "warning" as const,
 				firstTriggeredAtMs: 600_000,
 				lastNotifiedAtMs: opened.inheritedNotificationAtMs,
 				lastDeliveredEventType: null,
@@ -132,6 +143,7 @@ describe("planAlertLifecycle", () => {
 			evaluation: breached,
 			state: { consecutiveBreaches: 2, consecutiveHealthy: 0 },
 			openIncident: {
+				severity: "warning" as const,
 				firstTriggeredAtMs: 0,
 				lastNotifiedAtMs: 1_000,
 				lastDeliveredEventType: "trigger",
@@ -152,6 +164,7 @@ describe("planAlertLifecycle", () => {
 			evaluation: noDataHealthy,
 			state: { consecutiveBreaches: 0, consecutiveHealthy: 1 },
 			openIncident: {
+				severity: "warning" as const,
 				firstTriggeredAtMs: 0,
 				lastNotifiedAtMs: 0,
 				lastDeliveredEventType: "trigger" as const,
@@ -170,18 +183,20 @@ describe("planAlertLifecycle", () => {
 				comparator: "gt",
 				threshold: 10,
 				thresholdUpper: null,
+				tiers: [{ severity: "warning", value: 10, upper: null, recoveryValue: null }],
 				minimumSampleCount: 0,
 				noDataBehavior: "skip",
 			},
 			{ value: null, sampleCount: 0, hasData: false },
 			"above threshold",
 		)
-		expect(evaluation).toMatchObject({ status: "skipped", skippedForNoData: true })
+		expect(evaluation).toMatchObject({ status: "skipped", skipReason: "no_data" })
 		const input = {
 			policy,
 			evaluation,
 			state: { consecutiveBreaches: 2, consecutiveHealthy: 0 },
 			openIncident: {
+				severity: "warning" as const,
 				firstTriggeredAtMs: 0,
 				lastNotifiedAtMs: 0,
 				lastDeliveredEventType: "trigger" as const,
@@ -217,6 +232,47 @@ describe("planAlertLifecycle", () => {
 		})
 	})
 
+	it("breaches on an empty window when the rule alerts on no data, and opens an incident", () => {
+		const evaluation = evaluateAlertObservation(
+			{
+				comparator: "gt",
+				threshold: 10,
+				thresholdUpper: null,
+				tiers: [{ severity: "warning", value: 10, upper: null, recoveryValue: null }],
+				minimumSampleCount: 50,
+				noDataBehavior: "alert",
+			},
+			{ value: null, sampleCount: 0, hasData: false },
+			"above threshold",
+		)
+		expect(evaluation).toMatchObject({ status: "breached", value: null, derivedFromNoData: true })
+		expect(evaluation.skipReason).toBeUndefined()
+		expect(
+			planAlertLifecycle({
+				policy: { ...policy, consecutiveBreachesRequired: 1 },
+				evaluation,
+				state: null,
+				openIncident: null,
+				nowMs: 1_000,
+			}),
+		).toMatchObject({ transition: "opened", eventType: "trigger" })
+
+		// Data that is present but thin is still gated by the minimum, not read as no data.
+		const thin = evaluateAlertObservation(
+			{
+				comparator: "gt",
+				threshold: 10,
+				thresholdUpper: null,
+				tiers: [{ severity: "warning", value: 10, upper: null, recoveryValue: null }],
+				minimumSampleCount: 50,
+				noDataBehavior: "alert",
+			},
+			{ value: 20, sampleCount: 3, hasData: true },
+			"above threshold",
+		)
+		expect(thin).toMatchObject({ status: "skipped", skipReason: "below_min_samples" })
+	})
+
 	it("never turns insufficient samples or invalid scalars into empty-window recovery", () => {
 		for (const observation of [
 			{ value: 5, sampleCount: 1, hasData: true },
@@ -228,6 +284,7 @@ describe("planAlertLifecycle", () => {
 					comparator: "gt",
 					threshold: 10,
 					thresholdUpper: null,
+					tiers: [{ severity: "warning", value: 10, upper: null, recoveryValue: null }],
 					minimumSampleCount: 2,
 					noDataBehavior: "skip",
 				},
@@ -235,7 +292,7 @@ describe("planAlertLifecycle", () => {
 				"above threshold",
 			)
 			expect(evaluation.status).toBe("skipped")
-			expect(evaluation.skippedForNoData).not.toBe(true)
+			expect(evaluation.skipReason).not.toBe("no_data")
 			const state = { consecutiveBreaches: 2, consecutiveHealthy: 1 }
 			expect(
 				planAlertLifecycle({
@@ -243,6 +300,7 @@ describe("planAlertLifecycle", () => {
 					evaluation,
 					state,
 					openIncident: {
+						severity: "warning" as const,
 						firstTriggeredAtMs: 0,
 						lastNotifiedAtMs: 0,
 						lastDeliveredEventType: "trigger",
@@ -264,13 +322,12 @@ describe("interleaveAlertRulesByTenant", () => {
 			{ tenantId: "a", id: "a3" },
 			{ tenantId: "b", id: "b2" },
 		]
-		expect(interleaveAlertRulesByTenant(rows, (row) => row.tenantId).map(({ id }) => id)).toEqual([
-			"a1",
-			"b1",
-			"a2",
-			"b2",
-			"a3",
-		])
+		expect(
+			Arr.map(
+				interleaveAlertRulesByTenant(rows, (row) => row.tenantId),
+				({ id }) => id,
+			),
+		).toEqual(["a1", "b1", "a2", "b2", "a3"])
 	})
 })
 
@@ -289,6 +346,7 @@ describe("delivery policy", () => {
 			comparator: "gt" as const,
 			threshold: 5,
 			thresholdUpper: null,
+			tiers: [{ severity: "warning", value: 5, upper: null, recoveryValue: null }],
 			windowMinutes: 5,
 			value: 7.2,
 			sampleCount: 12,

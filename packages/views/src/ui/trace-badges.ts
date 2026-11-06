@@ -1,0 +1,111 @@
+import { httpStatusTone } from "@maple/ui/lib/http"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
+import { cn } from "@maple/ui/lib/utils"
+import { badgeVariants } from "@maple/ui/styles/ui/badge"
+import { copyableBadgeStyles } from "@maple/ui/styles/ui/copyable-badge"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { badge } from "./display"
+import { icon } from "./icon"
+import { tooltipTrigger } from "./tooltip-host"
+import { serviceDot } from "./values"
+import { Array as Arr } from "effect"
+
+// Ports of `TraceIdBadge`, `TraceStatusBadge` (packages/ui/src/components/traces/trace-status-badge.tsx) and
+// `ServicePills` (packages/ui/src/components/service-pills.tsx).
+
+/** The root's HTTP status toned by class (3xx keeps its own blue), else OK / Error. */
+export const traceStatusBadge = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ hasError: boolean; httpStatusCode?: number | null; className?: string }>,
+): Html => {
+	const code = options.httpStatusCode
+	if (code === undefined || code === null) {
+		return badge(
+			h,
+			{
+				variant: "secondary",
+				className: cn(TONE_SOFT[options.hasError ? "crit" : "ok"], options.className),
+			},
+			[options.hasError ? "Error" : "OK"],
+		)
+	}
+	const tone = httpStatusTone(code)
+	return badge(
+		h,
+		{
+			variant: "secondary",
+			className: cn(
+				tone !== "neutral"
+					? TONE_SOFT[tone]
+					: code >= 300
+						? "bg-chart-p50/15 text-chart-p50"
+						: TONE_SOFT.ok,
+				options.className,
+			),
+		},
+		[String(code)],
+	)
+}
+
+const VISIBLE_SERVICES = 3
+
+/** `tooltipServices`: the services the tooltip lists, when the pills draw only some. */
+export const servicePills = <M>(
+	h: HtmlBuilder<M>,
+	services: ReadonlyArray<string>,
+	tooltipServices: ReadonlyArray<string> = services,
+): Html | null =>
+	services.length === 0
+		? null
+		: h.div(
+				[
+					h.Class("flex min-w-0 flex-wrap gap-1"),
+					h.DataAttribute("base-ui-tooltip-trigger", ""),
+					h.DataAttribute("slot", "tooltip-trigger"),
+					...tooltipTrigger(h, Arr.join(tooltipServices, "\n")),
+				],
+				[
+					...Arr.map(services.slice(0, VISIBLE_SERVICES), (service) =>
+						badge(h, { variant: "outline", className: "max-w-full font-mono text-3xs" }, [
+							serviceDot(h, { serviceName: service, size: "sm" }),
+							h.span([h.Class("truncate")], [service]),
+						]),
+					),
+					...(services.length > VISIBLE_SERVICES
+						? [
+								badge(h, { variant: "outline", className: "text-3xs" }, [
+									"+",
+									String(services.length - VISIBLE_SERVICES),
+								]),
+							]
+						: []),
+				],
+			)
+
+/** `TraceIdBadge` (`CopyableBadge` + id glyph); `onCopy` is the page's copy of the id. */
+export const traceIdBadge = <M>(
+	h: HtmlBuilder<M>,
+	traceId: string,
+	options: Readonly<{ size?: "default" | "lg" | "sm"; className?: string; onCopy?: M }> = {},
+): Html =>
+	h.button(
+		[
+			h.AriaLabel("Copy trace ID"),
+			h.Class(
+				cn(
+					badgeVariants({ variant: "outline", size: options.size ?? "lg" }),
+					copyableBadgeStyles,
+					cn("gap-1.5 font-mono", options.className),
+				),
+			),
+			h.DataAttribute("base-ui-tooltip-trigger", ""),
+			h.DataAttribute("slot", "tooltip-trigger"),
+			...(options.onCopy === undefined ? [] : tooltipTrigger(h, "Copy trace ID")),
+			h.Type("button"),
+			...(options.onCopy === undefined ? [] : [h.OnClick(options.onCopy)]),
+		],
+		[
+			icon(h, "IdBadgeIcon", { className: "text-muted-foreground" }),
+			h.span([h.Class("min-w-0 truncate")], [traceId]),
+		],
+	)

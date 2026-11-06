@@ -2,7 +2,7 @@ import type { PGliteInterface } from "@electric-sql/pglite"
 import type { MapleDb } from "@maple/db/client"
 import { makeMaplePgliteDb } from "@maple/db/pglite"
 import { Effect, type Scope } from "effect"
-import type { SqlError } from "effect/unstable/sql/SqlError"
+import type { SqlError } from "effect/sql/SqlError"
 import { Database, type DatabaseApi, executeWithSpan } from "./DatabaseLive"
 
 /** `db.namespace` for the embedded Postgres used by vitest / local entrypoints. */
@@ -13,7 +13,7 @@ export const PGLITE_DB_NAMESPACE = "pglite"
  * migration). The test harness pre-migrates via a cached snapshot and uses
  * this directly.
  *
- * One drizzle database per instance: statement capture is a fiber reference
+ * One database per instance: statement capture is a fiber reference
  * provided per `execute`, so concurrent calls over the shared database never
  * cross-attribute. This layer is vitest/local-only.
  */

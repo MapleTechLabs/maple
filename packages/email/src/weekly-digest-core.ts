@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 /**
  * Markup-free core of the weekly digest: prop types, formatters, and the
  * status/subject derivation. Split out of `weekly-digest.ts` so callers that
@@ -175,8 +176,8 @@ export function fmtErrRate(rate: number): string {
  * more than one scoped digest.
  */
 export function fmtScopeLabel(scope: DigestScope): string | null {
-	const parts = [...scope.namespaces, ...scope.environments].map(fmtScopeValue)
-	return parts.length === 0 ? null : parts.join(" · ")
+	const parts = Arr.map([...scope.namespaces, ...scope.environments], fmtScopeValue)
+	return parts.length === 0 ? null : Arr.join(parts, " · ")
 }
 
 /** Environments and namespaces are optional in OTel; empty means "not reported". */
@@ -241,11 +242,10 @@ export function deriveDigestStatus(props: WeeklyDigestProps): DigestStatus {
 	const overallErrRate = reqs > 0 ? (errs / reqs) * 100 : 0
 	const errorsDelta = summary.errors.delta
 	const p95Delta = summary.p95Latency.delta
-	const multiEnv = new Set(services.map((s) => s.environment)).size > 1
+	const multiEnv = new Set(Arr.map(services, (s) => s.environment)).size > 1
 
-	const worstSvc = services.reduce<{ label: string; rate: number }>(
-		(acc, s) => (s.errorRate > acc.rate ? { label: serviceLabel(s, multiEnv), rate: s.errorRate } : acc),
-		{ label: "", rate: 0 },
+	const worstSvc = Arr.reduce(services, { label: "", rate: 0 }, (acc, s) =>
+		s.errorRate > acc.rate ? { label: serviceLabel(s, multiEnv), rate: s.errorRate } : acc,
 	)
 
 	const errorsUp = errorsDelta.kind === "pct" ? errorsDelta.value : 0
@@ -263,12 +263,10 @@ export function deriveDigestStatus(props: WeeklyDigestProps): DigestStatus {
 	if (worstSvc.label && worstSvc.rate >= 1) {
 		biggestMover = `${worstSvc.label} running hot — ${fmtErrRate(worstSvc.rate)} error rate`
 	} else {
-		const swing = services.reduce<{ label: string; d: number }>(
-			(acc, s) =>
-				s.requestsDelta.kind === "pct" && Math.abs(s.requestsDelta.value) > Math.abs(acc.d)
-					? { label: serviceLabel(s, multiEnv), d: s.requestsDelta.value }
-					: acc,
-			{ label: "", d: 0 },
+		const swing = Arr.reduce(services, { label: "", d: 0 }, (acc, s) =>
+			s.requestsDelta.kind === "pct" && Math.abs(s.requestsDelta.value) > Math.abs(acc.d)
+				? { label: serviceLabel(s, multiEnv), d: s.requestsDelta.value }
+				: acc,
 		)
 		if (swing.label && Math.abs(swing.d) >= 15) {
 			biggestMover = `${swing.label} traffic ${swing.d > 0 ? "up" : "down"} ${fmtDeltaAbs(swing.d)} WoW`

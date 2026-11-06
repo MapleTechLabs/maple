@@ -1,10 +1,10 @@
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { ConfigProvider, Effect, Layer, Schema, String as Str } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { clickHouseVersionAtLeast } from "@maple/domain/clickhouse"
 import { OrgId, RawSqlValidationError, UserId } from "@maple/domain/http"
 import { prepareRawSql } from "@maple/query-engine/runtime"
-import { parseStatement } from "@maple-dev/effect-clickhouse/sql"
+import { parseStatement } from "@maple-dev/effect-orm/sql"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
@@ -27,15 +27,15 @@ const database = uniqueDatabase("maple_raw_sql_e2e")
 const orgId = "org_raw_sql_e2e"
 
 const assertSearchSchemaApplied = async (): Promise<void> => {
-	const migrationRevision = (
+	const migrationRevision = Str.trim(
 		await clickhouseExec(
 			"SELECT count() FROM _maple_schema_migrations WHERE version = 10 FORMAT TabSeparated",
 			database,
-		)
-	).trim()
+		),
+	)
 	assert.strictEqual(migrationRevision, "1", "performance migration 10 was not recorded")
 
-	const portableIndexCount = (
+	const portableIndexCount = Str.trim(
 		await clickhouseExec(
 			`SELECT count()
 FROM system.data_skipping_indices
@@ -51,11 +51,11 @@ WHERE database = currentDatabase()
   )
 FORMAT TabSeparated`,
 			database,
-		)
-	).trim()
+		),
+	)
 	assert.strictEqual(portableIndexCount, "9", "portable search indexes are incomplete")
 
-	const computedColumnCount = (
+	const computedColumnCount = Str.trim(
 		await clickhouseExec(
 			`SELECT count()
 FROM system.columns
@@ -67,22 +67,22 @@ WHERE database = currentDatabase()
   )
 FORMAT TabSeparated`,
 			database,
-		)
-	).trim()
+		),
+	)
 	assert.strictEqual(computedColumnCount, "6", "computed search columns are incomplete")
 
-	const serverVersion = (await clickhouseExec("SELECT version() FORMAT TabSeparated", database)).trim()
+	const serverVersion = Str.trim(await clickhouseExec("SELECT version() FORMAT TabSeparated", database))
 	if (!clickHouseVersionAtLeast(serverVersion, "26.2.0")) return
 
-	const textFeatureRevision = (
+	const textFeatureRevision = Str.trim(
 		await clickhouseExec(
 			"SELECT max(revision) FROM _maple_schema_features WHERE id = 'search_text_v1' FORMAT TabSeparated",
 			database,
-		)
-	).trim()
+		),
+	)
 	assert.strictEqual(textFeatureRevision, "1", "text search feature was not recorded")
 
-	const textIndexCount = (
+	const textIndexCount = Str.trim(
 		await clickhouseExec(
 			`SELECT count()
 FROM system.data_skipping_indices
@@ -93,8 +93,8 @@ WHERE database = currentDatabase()
   )
 FORMAT TabSeparated`,
 			database,
-		)
-	).trim()
+		),
+	)
 	assert.strictEqual(textIndexCount, "7", "text search indexes are incomplete")
 
 	await clickhouseExec(
@@ -111,16 +111,16 @@ FORMAT TabSeparated`,
 )`,
 		database,
 	)
-	const scanCount = (
+	const scanCount = Str.trim(
 		await clickhouseExec(
 			`SELECT count()
 FROM logs
 WHERE OrgId = '${orgId}' AND Body ILIKE '%connection timeout%'
 FORMAT TabSeparated`,
 			database,
-		)
-	).trim()
-	const indexedCount = (
+		),
+	)
+	const indexedCount = Str.trim(
 		await clickhouseExec(
 			`SELECT count()
 FROM logs
@@ -128,8 +128,8 @@ WHERE OrgId = '${orgId}' AND hasAllTokens(lower(Body), 'connection timeout')
 SETTINGS enable_full_text_index = 1
 FORMAT TabSeparated`,
 			database,
-		)
-	).trim()
+		),
+	)
 	assert.strictEqual(indexedCount, scanCount, "indexed and fallback log search disagree")
 
 	const explain = await clickhouseExec(
@@ -311,8 +311,37 @@ describe.skipIf(!enabled)("WarehouseQueryService ClickHouse raw-SQL E2E", () => 
 		)
 		const row = result.data[0]
 		assert.isDefined(row)
-		assert.strictEqual(typeof row!.wide, "number", "UInt64 arrived as a string — the quote pin is gone")
-		assert.strictEqual(row!.wide, 42)
-		assert.strictEqual(typeof row!.c, "number")
+		assert.strictEqual(typeof row.wide, "number", "UInt64 arrived as a string — the quote pin is gone")
+		assert.strictEqual(row.wide, 42)
+		assert.strictEqual(typeof row.c, "number")
+	}, 60_000)
+
+	// A BYO server in any zone must read zone-less literals and columns as UTC.
+	// `getSetting` is '' unless the session sets it, so this fails without the
+	// pin even on the UTC servers CI and local dev run.
+	it("resolves zone-less DateTime literals as UTC through the production client", async () => {
+		const client = await Effect.runPromise(
+			__testables
+				.createClickHouseSqlClient({
+					kind: "clickhouse",
+					url: clickhouseUrl,
+					username: clickhouseUser,
+					password: clickhousePassword,
+					database,
+				})
+				.pipe(Effect.provide(FetchHttpClient.layer)),
+		)
+		const result = await Effect.runPromise(
+			client.sql(
+				parseStatement(
+					"SELECT getSetting('session_timezone') AS pinned, timezone() AS tz, toUnixTimestamp(toDateTime('2026-10-07 10:00:00')) AS ts FROM system.one",
+				),
+			),
+		)
+		const row = result.data[0]
+		assert.isDefined(row)
+		assert.strictEqual(row.pinned, "UTC", "session_timezone was not sent")
+		assert.strictEqual(row.tz, "UTC")
+		assert.strictEqual(row.ts, 1791367200)
 	}, 60_000)
 })

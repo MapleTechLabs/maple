@@ -1,30 +1,22 @@
 import { describe, it } from "@effect/vitest"
 import * as BunServices from "@effect/platform-bun/BunServices"
-import { Duration, Effect } from "effect"
+import { Duration, Effect, Option, String as Str } from "effect"
 import { ok, strictEqual } from "node:assert"
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
-	chdbConfigPath,
 	dirtyStoreRecoveryAdvice,
 	needsInitialCheckpoint,
 	parseCheckpointInterval,
-	resolveChdbConfigFile,
 } from "../src/commands/server"
-import { CheckpointPreconditionError, parseCheckpointId } from "../src/server/checkpoints"
-import { recoverExpected } from "../src/core/outcomes"
 import {
-	BackgroundServerSpawnError,
-	BackgroundServerTimeoutError,
-	CheckpointUnavailableError,
-	LocalStoreDirtyError,
-	LocalStoreIncompatibleError,
-	LocalStoreMigrationError,
-	LocalStoreSchemaStaleError,
-	ServerOptionError,
-	ServerStopTimeoutError,
-} from "../src/commands/server-errors"
+	CheckpointPreconditionError,
+	chdbConfigPath,
+	parseCheckpointId,
+	resolveChdbConfigFile,
+} from "@maple/local-server/checkpoints"
+import { recoverExpected } from "../src/core/outcomes"
 
 /** Run an effect, capturing anything written to stderr and restoring the real
  *  writer + exit code afterwards. */
@@ -32,10 +24,10 @@ const captureStderr = async (effect: Effect.Effect<void>): Promise<string> => {
 	const original = process.stderr.write.bind(process.stderr)
 	const previousExitCode = process.exitCode
 	let captured = ""
-	process.stderr.write = ((chunk: string) => {
+	process.stderr.write = (chunk: string) => {
 		captured += chunk
 		return true
-	}) as typeof process.stderr.write
+	}
 	try {
 		await Effect.runPromise(effect)
 		return captured
@@ -83,7 +75,7 @@ describe("expected CLI outcomes", () => {
 	it("still exits non-zero, so scripts and CI keep their old behaviour", async () => {
 		const original = process.exitCode
 		const restoreStderr = process.stderr.write.bind(process.stderr)
-		process.stderr.write = (() => true) as typeof process.stderr.write
+		process.stderr.write = () => true
 		try {
 			process.exitCode = 0
 			await Effect.runPromise(
@@ -104,18 +96,47 @@ describe("dirty-store recovery advice", () => {
 	// were accurate and neither named a command that would get them running.
 	it("never sends the user to restore when there is no checkpoint to restore", () => {
 		const none = dirtyStoreRecoveryAdvice({ available: false, reason: "none" })
-		ok(!none.includes("maple restore"))
-		ok(none.includes("maple start --reset"))
-		ok(none.includes("maple checkpoint"))
+		ok(!Str.includes("maple restore")(none))
+		ok(Str.includes("maple start --reset")(none))
+		ok(Str.includes("maple checkpoint")(none))
 
 		const unusable = dirtyStoreRecoveryAdvice({
 			available: false,
 			reason: "unusable",
 			detail: "checkpoint backup size mismatch",
 		})
-		ok(!unusable.includes("maple restore"))
-		ok(unusable.includes("checkpoint backup size mismatch"))
-		ok(unusable.includes("maple start --reset"))
+		ok(!Str.includes("maple restore")(unusable))
+		ok(Str.includes("checkpoint backup size mismatch")(unusable))
+		ok(Str.includes("maple start --reset")(unusable))
+	})
+
+	it("sends a checkpoint another build took back to that build before offering a reset", () => {
+		const advice = dirtyStoreRecoveryAdvice({
+			available: false,
+			reason: "other_build",
+			checkpointId: parseCheckpointId("00000000-0000-4000-8000-000000000000"),
+			restoreWith: "0.0.22",
+			detail: "checkpoint schema mismatch (checkpoint: a; build: b)",
+		})
+		ok(Str.includes("maple update --tag v0.0.22")(advice))
+		ok(Str.includes("maple restore --yes")(advice))
+		const positionOf = (needle: string) => Option.getOrElse(Str.indexOf(needle)(advice), () => -1)
+		ok(positionOf("maple update") < positionOf("maple start --reset"))
+		ok(!Str.includes("unusable")(advice))
+		ok(!Str.includes("cannot be recovered")(advice))
+	})
+
+	it("promises no version when no other release is known to restore the checkpoint", () => {
+		const advice = dirtyStoreRecoveryAdvice({
+			available: false,
+			reason: "other_build",
+			checkpointId: parseCheckpointId("00000000-0000-4000-8000-000000000000"),
+			restoreWith: null,
+			detail: "checkpoint schema mismatch (checkpoint: a; build: b)",
+		})
+		ok(!Str.includes("maple update")(advice))
+		ok(!Str.includes("maple restore")(advice))
+		ok(Str.includes("maple start --reset")(advice))
 	})
 
 	it("offers restore, naming the checkpoint, once one exists", () => {
@@ -123,9 +144,9 @@ describe("dirty-store recovery advice", () => {
 			available: true,
 			checkpointId: parseCheckpointId("00000000-0000-4000-8000-000000000000"),
 		})
-		ok(advice.includes("maple restore --yes"))
-		ok(advice.includes("00000000-0000-4000-8000-000000000000"))
-		ok(advice.includes("maple start --reset"))
+		ok(Str.includes("maple restore --yes")(advice))
+		ok(Str.includes("00000000-0000-4000-8000-000000000000")(advice))
+		ok(Str.includes("maple start --reset")(advice))
 	})
 })
 
@@ -149,8 +170,27 @@ describe("default chDB backups config", () => {
 			// fails with Code 318 and checkpoints are impossible — which is exactly
 			// the state this default exists to prevent.
 			const xml = readFileSync(resolved, "utf8")
-			ok(xml.includes("<allowed_disk>default</allowed_disk>"))
-			ok(xml.includes("<allowed_path>backups</allowed_path>"))
+			ok(Str.includes("<allowed_disk>default</allowed_disk>")(xml))
+			ok(Str.includes("<allowed_path>backups</allowed_path>")(xml))
+		} finally {
+			rmSync(root, { recursive: true, force: true })
+		}
+	})
+
+	it("gives an in-memory store the ingest defaults without enabling backups", async () => {
+		const root = mkdtempSync(join(tmpdir(), "maple-chdb-config-"))
+		try {
+			const dataDir = join(root, "data")
+			const resolved = await Effect.runPromise(
+				resolveChdbConfigFile(dataDir, undefined, { backups: false }).pipe(
+					Effect.provide(BunServices.layer),
+				),
+			)
+
+			strictEqual(resolved, chdbConfigPath(dataDir))
+			const xml = readFileSync(resolved ?? "", "utf8")
+			ok(Str.includes("<cleanup_delay_period>1</cleanup_delay_period>")(xml))
+			ok(!Str.includes("<backups>")(xml))
 		} finally {
 			rmSync(root, { recursive: true, force: true })
 		}

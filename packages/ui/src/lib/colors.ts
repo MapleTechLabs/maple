@@ -1,3 +1,5 @@
+import { Array as Arr, Option, String as Str } from "effect"
+import { codeUnitAt } from "@maple/strings"
 /**
  * Chart color Tailwind classes for depth-based coloring in visualizations.
  * Maps to Tailwind classes: bg-chart-1 through bg-chart-5
@@ -15,8 +17,12 @@ export const CHART_BG_CLASSES = [
  * Cycles through chart-1 to chart-5 based on depth % 5.
  */
 export function getDepthColorClass(depth: number): string {
-	return CHART_BG_CLASSES[depth % CHART_BG_CLASSES.length]
+	return cyclic(CHART_BG_CLASSES, depth)
 }
+
+/** The element at `index` modulo the list length, wrapping negatives. */
+const cyclic = <A>(items: Arr.NonEmptyReadonlyArray<A>, index: number): A =>
+	items[((index % items.length) + items.length) % items.length] ?? Arr.headNonEmpty(items)
 
 /**
  * Simple hash function for strings
@@ -24,7 +30,7 @@ export function getDepthColorClass(depth: number): string {
 function hashString(str: string): number {
 	let hash = 0
 	for (let i = 0; i < str.length; i++) {
-		hash = str.charCodeAt(i) + ((hash << 5) - hash)
+		hash = codeUnitAt(str, i) + ((hash << 5) - hash)
 	}
 	return Math.abs(hash)
 }
@@ -33,7 +39,7 @@ function hashString(str: string): number {
  * Base hues for services - warm to cool spectrum
  * Using OKLCH for perceptually uniform colors
  */
-const SERVICE_HUES = [
+const SERVICE_HUES: Arr.NonEmptyReadonlyArray<number> = [
 	250, // Blue
 	185, // Teal
 	155, // Green
@@ -57,15 +63,12 @@ const SERVICE_HUES = [
  */
 export function extractClassName(spanName: string): string | null {
 	// Match patterns like "Class.Method", "Namespace.Class.Method", "Class::Method"
-	const dotMatch = spanName.match(/^(.+?)\.[\w]+$/)
-	if (dotMatch) {
-		return dotMatch[1]
-	}
-	const colonMatch = spanName.match(/^(.+?)::[\w]+$/)
-	if (colonMatch) {
-		return colonMatch[1]
-	}
-	return null
+	return Option.getOrNull(
+		Option.map(
+			Option.orElse(Str.match(/^(.+?)\.[\w]+$/)(spanName), () => Str.match(/^(.+?)::[\w]+$/)(spanName)),
+			(match) => match[1] ?? null,
+		),
+	)
 }
 
 /**
@@ -74,25 +77,26 @@ export function extractClassName(spanName: string): string | null {
  * service map) regardless of which other services are on screen.
  */
 export function getServiceHueFromName(serviceName: string): number {
-	return SERVICE_HUES[hashString(serviceName) % SERVICE_HUES.length]
+	return cyclic(SERVICE_HUES, hashString(serviceName))
 }
 
 /**
  * Lightness/chroma tiers layered on top of the 16 hues. A second hash
  * dimension picks the tier, tripling the palette to 48 slots so services
  * that land on neighboring hues (teal/cyan, blue/violet, …) still separate
- * by depth. All tiers stay mid-lightness so they read on both themes.
+ * by depth. All tiers stay mid-lightness so they read on both themes: below ~0.55 a hue
+ * turns muddy on the dark canvas, and chroma under ~0.13 reads washed out.
  */
-const SERVICE_COLOR_TIERS = [
-	{ l: 0.47, c: 0.17 },
-	{ l: 0.57, c: 0.15 },
-	{ l: 0.67, c: 0.12 },
+const SERVICE_COLOR_TIERS: Arr.NonEmptyReadonlyArray<{ readonly l: number; readonly c: number }> = [
+	{ l: 0.57, c: 0.17 },
+	{ l: 0.64, c: 0.16 },
+	{ l: 0.7, c: 0.14 },
 ]
 
-function getServiceColorTier(serviceName: string): { l: number; c: number } {
-	const hash = hashString(serviceName)
-	return SERVICE_COLOR_TIERS[Math.floor(hash / SERVICE_HUES.length) % SERVICE_COLOR_TIERS.length]
-}
+/** Yellow through lime go olive at mid lightness, so they sit lighter; capped so service
+ * names drawn in these colours still read on a white background. */
+const tierLightness = (l: number, hue: number): number =>
+	hue >= 70 && hue <= 140 ? Math.min(l + 0.08, 0.74) : l
 
 /**
  * The identity palette flattened to a single index space: `tier * 16 + hue`.
@@ -112,9 +116,9 @@ export function getIdentitySlot(name: string): number {
 /** The color occupying a given identity slot. Wraps, so any integer is valid. */
 export function getIdentityColorBySlot(slot: number): string {
 	const index = ((Math.floor(slot) % IDENTITY_SLOT_COUNT) + IDENTITY_SLOT_COUNT) % IDENTITY_SLOT_COUNT
-	const tier = SERVICE_COLOR_TIERS[Math.floor(index / SERVICE_HUES.length)]
-	const hue = SERVICE_HUES[index % SERVICE_HUES.length]
-	return `oklch(${tier.l} ${tier.c} ${hue})`
+	const tier = cyclic(SERVICE_COLOR_TIERS, Math.floor(index / SERVICE_HUES.length))
+	const hue = cyclic(SERVICE_HUES, index)
+	return `oklch(${tierLightness(tier.l, hue).toFixed(2)} ${tier.c} ${hue})`
 }
 
 /**
@@ -131,7 +135,10 @@ export function getServiceColor(serviceName: string): string {
  * - Each class within a service gets a lightness/saturation variation
  * - Returns inline style object with background color and appropriate text color
  */
-export function getSpanColorStyle(spanName: string, serviceName: string): React.CSSProperties {
+export function getSpanColorStyle(
+	spanName: string,
+	serviceName: string,
+): { readonly backgroundColor: string; readonly color: string } {
 	const baseHue = getServiceHueFromName(serviceName)
 
 	const className = extractClassName(spanName)
@@ -156,21 +163,13 @@ export function getSpanColorStyle(spanName: string, serviceName: string): React.
 }
 
 /**
- * Get a border accent color for a service (slightly darker/more saturated than background)
- */
-export function getServiceBorderColor(serviceName: string): string {
-	const tier = getServiceColorTier(serviceName)
-	return `oklch(${tier.l - 0.08} ${tier.c + 0.02} ${getServiceHueFromName(serviceName)})`
-}
-
-/**
  * Resolve a hue for a string value, used to color trace timeline bars by
  * an arbitrary attribute. Returns null for empty/missing values so callers
  * can render a neutral fallback. Shares hues with getServiceColor.
  */
 export function getValueHue(value: string | undefined | null): number | null {
 	if (value == null || value === "") return null
-	return SERVICE_HUES[hashString(value) % SERVICE_HUES.length]
+	return cyclic(SERVICE_HUES, hashString(value))
 }
 
 /**
@@ -186,8 +185,8 @@ export function calculateSelfTime(
 	const spanEndMs = spanStartMs + span.durationMs
 
 	// Calculate total time covered by children (accounting for overlaps)
-	const childIntervals = children
-		.map((child) => {
+	const childIntervals = Arr.filter(
+		Arr.map(children, (child) => {
 			const childStartMs = new Date(child.startTime).getTime() + (child.clockSkewMs ?? 0)
 			const childEndMs = childStartMs + child.durationMs
 			// Clamp to parent span boundaries
@@ -195,8 +194,9 @@ export function calculateSelfTime(
 				start: Math.max(childStartMs, spanStartMs),
 				end: Math.min(childEndMs, spanEndMs),
 			}
-		})
-		.filter((i) => i.end > i.start)
+		}),
+		(i) => i.end > i.start,
+	)
 
 	if (childIntervals.length === 0) return span.durationMs
 
@@ -205,13 +205,62 @@ export function calculateSelfTime(
 	const merged: Array<{ start: number; end: number }> = []
 
 	for (const interval of childIntervals) {
-		if (merged.length === 0 || merged[merged.length - 1].end < interval.start) {
+		const last = merged.at(-1)
+		if (last === undefined || last.end < interval.start) {
 			merged.push({ ...interval })
 		} else {
-			merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, interval.end)
+			last.end = Math.max(last.end, interval.end)
 		}
 	}
 
-	const childrenTime = merged.reduce((sum, i) => sum + (i.end - i.start), 0)
+	const childrenTime = Arr.reduce(merged, 0, (sum, i) => sum + (i.end - i.start))
 	return Math.max(0, span.durationMs - childrenTime)
+}
+
+/** Last-resort colour for a token that is neither on the document nor in {@link TOKEN_FALLBACK}. */
+export const DEFAULT_TOKEN_FALLBACK = "#e8872a"
+
+/**
+ * The one hex fallback per design token, used where a token cannot be read off
+ * the document (SSR, tests, a canvas painted before styles load), from the dark theme. Callers name
+ * the token only; nothing else should carry its own `["--token", "#hex"]` pair.
+ */
+export const TOKEN_FALLBACK: Readonly<Record<string, string>> = {
+	"--background": "#1a1714",
+	"--foreground": "#e8e0d6",
+	"--border": "#2a2520",
+	"--muted-foreground": "#9b9084",
+	"--primary": "#e8872a",
+	"--destructive": "#e85d4b",
+	"--chart-1": "#e8872a",
+	"--chart-2": "#4a9eff",
+	"--chart-3": "#49a866",
+	"--chart-4": "#00aa9a",
+	"--chart-5": "#b589d6",
+	"--chart-p99": "#e85d4b",
+	"--chart-p95": "#e8872a",
+	"--chart-p50": "#4a9eff",
+	"--chart-error": "#ef2e43",
+	"--chart-throughput": "#9281e1",
+	"--chart-apdex": "#49a866",
+	"--severity-trace": "#8a7f72",
+	"--severity-debug": "#4a9eff",
+	"--severity-info": "#49a866",
+	"--severity-warn": "#ebb432",
+	"--severity-error": "#e85d4b",
+	"--severity-fatal": "#c43d2e",
+	"--info": "#4a9eff",
+	"--success": "#49a866",
+	"--warning": "#ebb432",
+} satisfies Record<string, string>
+
+/**
+ * The hex fallback for `--token`, `var(--token)` or Tailwind's `--color-token` alias;
+ * {@link DEFAULT_TOKEN_FALLBACK} when unmapped.
+ */
+export function tokenFallback(token: string): string {
+	const inner =
+		Str.startsWith("var(")(token) && Str.endsWith(")")(token) ? Str.trim(Str.slice(4, -1)(token)) : token
+	const name = Str.startsWith("--color-")(inner) ? `--${Str.slice("--color-".length)(inner)}` : inner
+	return TOKEN_FALLBACK[name] ?? DEFAULT_TOKEN_FALLBACK
 }

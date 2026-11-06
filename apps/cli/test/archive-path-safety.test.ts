@@ -1,6 +1,6 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { describe, it } from "@effect/vitest"
-import { ok, rejects, strictEqual } from "node:assert"
+import { ok, rejects, strictEqual, throws } from "node:assert"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -15,12 +15,13 @@ import {
 	generationManifestPath,
 	rangeRoot,
 	shardsRoot,
-} from "../src/server/archives/paths"
-import { promoteGeneration } from "../src/server/archives/generation"
-import { rebuildCatalog, listActiveGenerations } from "../src/server/archives/listing"
-import { type ArchiveGenerationManifest } from "../src/server/archives/manifest"
-import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
+} from "@maple/local-server/archives/paths"
+import { promoteGeneration } from "@maple/local-server/archives/generation"
+import { rebuildCatalog, listActiveGenerations } from "@maple/local-server/archives/listing"
+import { type ArchiveGenerationManifest } from "@maple/local-server/archives/manifest"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
+import { Array as Arr, String as Str } from "effect"
 
 // External-sentinel tests proving archive-root path escapes are closed (C-1).
 // These mirror the reviewer's deterministic probes: a symlinked descendant must
@@ -45,7 +46,7 @@ const manifest = (
 	generationId: string,
 	signal = "traces",
 	rowCount = 10,
-	shardSha = "a".repeat(64),
+	shardSha = Str.repeat(64)("a"),
 	shardBytes = 4096,
 ): ArchiveGenerationManifest => ({
 	formatVersion: 3,
@@ -134,7 +135,7 @@ describe("archive path safety — symlink escapes (C-1)", () => {
 			writeFileSync(sentinel, "sensitive")
 			mkdirSync(signalRootPath(archiveDir, "traces"), { recursive: true })
 			symlinkSync(sentinel, catalogPath(archiveDir, "traces"))
-			throwsSync(
+			throws(
 				() => assertNoSymlinkSync(archiveDir, catalogPath(archiveDir, "traces"), "catalog"),
 				/symlink/,
 			)
@@ -206,10 +207,10 @@ describe("archive path safety — symlink escapes (C-1)", () => {
 			writeFileSync(activePointerPath(archiveDir, "traces", "2026-06-02"), "{bad json")
 			const listing = listActiveGenerations(archiveDir)
 			strictEqual(listing.active.length, 1)
-			strictEqual(listing.active[0]!.rangeStart, "2026-06-01")
+			strictEqual(Arr.getUnsafe(listing.active, 0).rangeStart, "2026-06-01")
 			ok(listing.errors.length >= 1, "malformed pointer surfaced as error")
 			ok(
-				listing.errors.some((e) => e.rangeStart === "2026-06-02"),
+				Arr.some(listing.errors, (e) => e.rangeStart === "2026-06-02"),
 				"the corrupt range is named",
 			)
 		})
@@ -225,7 +226,7 @@ describe("archive path safety — symlink escapes (C-1)", () => {
 			)
 			const listing = listActiveGenerations(archiveDir)
 			strictEqual(listing.active.length, 0)
-			ok(listing.errors.some((e) => e.rangeStart === "2026-06-01" && /mismatch/.test(e.error)))
+			ok(Arr.some(listing.errors, (e) => e.rangeStart === "2026-06-01" && /mismatch/.test(e.error)))
 		})
 	})
 })
@@ -233,7 +234,7 @@ describe("archive path safety — symlink escapes (C-1)", () => {
 describe("archive path safety — read-side symlink escapes (HIGH-1/HIGH-2)", () => {
 	it("readArchiveGenerationManifest refuses a symlinked generation dir and does not read outside content", async () => {
 		await withArchive(async (archiveDir, outside) => {
-			const { readArchiveGenerationManifest } = await import("../src/server/archives/manifest")
+			const { readArchiveGenerationManifest } = await import("@maple/local-server/archives/manifest")
 			const generationId = randomUUID()
 			// Plant a real generation outside the root with an attacker manifest.
 			const outsideGen = join(outside, "evil-gen")
@@ -246,7 +247,7 @@ describe("archive path safety — read-side symlink escapes (HIGH-1/HIGH-2)", ()
 				outsideGen,
 				join(generationsRootPath(archiveDir, "traces", "2026-06-01"), generationId),
 			)
-			throwsSync(
+			throws(
 				() => readArchiveGenerationManifest(archiveDir, "traces", "2026-06-01", generationId),
 				/symlink/,
 			)
@@ -276,7 +277,7 @@ describe("archive path safety — read-side symlink escapes (HIGH-1/HIGH-2)", ()
 			// The symlinked shard must not appear in active paths.
 			strictEqual(listing.active.length, 0)
 			ok(
-				listing.errors.some((e) => /shard path/.test(e.error)),
+				Arr.some(listing.errors, (e) => /shard path/.test(e.error)),
 				"symlinked shard surfaced as error",
 			)
 		})
@@ -306,13 +307,3 @@ const signalRootPath = (archiveDir: string, signal: string): string => join(arch
 
 const generationsRootPath = (archiveDir: string, signal: string, rangeDate: string): string =>
 	join(archiveDir, signal, rangeDate, "generations")
-
-const throwsSync = (fn: () => unknown, pattern: RegExp): void => {
-	try {
-		fn()
-		throw new Error("expected function to throw")
-	} catch (error) {
-		const msg = error instanceof Error ? error.message : String(error)
-		if (!pattern.test(msg)) throw new Error(`expected ${pattern}, got: ${msg}`)
-	}
-}

@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect"
-import { HttpClient } from "effect/unstable/http"
+import { HttpClient } from "effect/http"
 import { WarehouseExecutor, type SqlQueryOptions } from "@maple/query-engine/observability"
 import { WarehouseConfigError } from "@maple/domain/http/warehouse-errors"
 import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"

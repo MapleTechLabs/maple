@@ -1,29 +1,30 @@
 # CLAUDE.md
 
-Maple is an OpenTelemetry observability platform: TanStack Start (React 19, Vite) + Effect on the
+Maple is an OpenTelemetry observability platform: a Foldkit (Vite) dashboard + Effect on the
 backend, ClickHouse/Tinybird as the warehouse, PlanetScale Postgres for relational state.
 
 ## Workspace layout
 
 - `apps/*`: deployables (web, api, ai, ingest, alerting, cli, landing, sandbox, ...).
 - `packages/*`: shared code that knows Maple (`domain`, `query-engine`, `backend`, `ui`, `db`, ...).
+  `views` is the Foldkit kit, charts and service map that `apps/web` and `apps/local-ui` share.
 - `lib/*`: zero Maple knowledge, could ship as a standalone OSS library. A `lib/` package that
   imports `@maple/domain` must move to `packages/`. New packages default to `packages/`.
 
-`@maple-dev/effect-clickhouse` lives in the separate effect-clickhouse repo; change it there.
+`@maple-dev/effect-orm` lives in the separate effect-orm repo; change it there.
 
 ## Commands
 
 ```bash
 bun dev                        # full alchemy dev stack at https://[<worktree>.]<app>.localhost
 bun dev api web                # subset
-bun --filter=@maple/web dev    # single app, raw port
+bun --filter=@maple/web dev   # single app, raw port
 bun run test                   # Vitest via turbo (NOT `bun test`)
 bun typecheck
 bun run tinybird:manifest      # after editing datasources.ts
 bun run local-schema:bump <slug>   # local chDB schema bump for a datasources.ts change
 bun db:up && bun db:migrate:local
-bun run --cwd packages/db db:generate   # new Drizzle migration
+bun run --cwd packages/db db:generate   # new migration (effect-orm)
 bun run dev:signin             # one-shot signed-in Clerk link (dev user david+clerk_test@gmail.com)
 ```
 
@@ -32,11 +33,13 @@ with `packageManager`.
 
 ## Backend architecture
 
-- `apps/ai` runs the public MCP server, the chat agent, and investigations. `apps/api` forwards
-  `/mcp`, `/api/chat/*`, `/internal/chat/*` to it over a service binding; OAuth stays in `apps/api`.
+- `apps/ai` runs the public MCP server and the shared agent runtime (the `ChatSession` Durable
+  Object) behind investigations and their follow-ups, PR review and the Slack/Discord bot.
+  `apps/api` forwards `/mcp`, `/api/chat/*`, `/internal/chat/*` to it over a service binding;
+  OAuth stays in `apps/api`.
 - An investigation is **one agent turn** ending in `submit_diagnosis`. Do not split it across
   planner/lanes/validator. Sub-agents are fine elsewhere (e.g. review fan-out) via `SubagentHost`.
-- LLM code (Effect AI + `effect-agent`) is only in `apps/ai`; Maple-specific wiring lives in
+- LLM code (Effect AI + `@yielded/agent`) is only in `apps/ai`; Maple-specific wiring lives in
   `apps/ai/src/platform/Llm.ts`.
 - Shared services live in `packages/backend`, imported via `@maple/backend/*` subpaths.
 
@@ -73,19 +76,24 @@ const rows = yield* warehouse.compiledQuery(tenant, CH.compile(CH.myQuery({ limi
 - Read `docs/warehouse-rollups.md` before adding a materialized view. Query perf work uses
   `bun run bench:queries` (see `docs/query-benchmarking.md`); empty-table timings prove nothing.
 
-## Application database (Postgres / Drizzle)
+## Application database (Postgres / effect-orm)
 
-Schema in `packages/db/src/schema/`, reached via Hyperdrive binding `MAPLE_DB`. Drizzle runs on
-Effect (`drizzle-orm/effect-postgres`): queries are `yield*`ed, `db.transaction` takes an Effect.
+Tables in `packages/db/src/tables/` (`@maple/db/tables`), reached via Hyperdrive binding
+`MAPLE_DB`. Queries use `@maple-dev/effect-orm`: `database.execute((db) => db.run(PG.from(T)...))`,
+`db.transaction(effect)`. Rows are typed by the table: branded ids, literal unions, schema-typed
+jsonb, timestamps as epoch ms (`PG.timestamptzMillis`), so compare them with `=== null`, never by
+truthiness.
 
-- Use `msToDate` / `dateToMs` (`packages/backend/src/platform/time.ts`) at the drizzle boundary.
-- Use `.returning()` + length, never driver write-result shapes. `count(*)` needs `::int`. Wrap raw
-  `db.execute(sql...)` in `rawRows`.
+- No untyped SQL. A query the builder lacks is a `PG.sql` template with a typed result.
+- Readers that must tolerate old jsonb shapes select the column with `PG.undecoded`.
+- Change a table, then `bun run --cwd packages/db db:generate --name <x>`: it diffs the tables
+  against the newest snapshot and writes `packages/db/drizzle/<ts>_<x>/migration.sql`.
+  `parity.test.ts` fails when the tables and the migrations disagree.
 - One pool per invocation via `withPgConnectionScope`; connections never outlive the invocation.
   Fork DB work off a request only with `forkRequestScoped`.
 - Tests use `createTestDb()` (PGlite, `packages/backend/src/platform/test-pglite.ts`).
-- **Migrations apply in the prd alchemy deploy.** Never run `drizzle-kit migrate` against prd.
-- PR previews (only with the `preview` label) have no database; DB-backed routes 500 there.
+- **Migrations apply in the prd alchemy deploy.** `db:migrate` is for local databases; never point it at prd.
+- PR previews (only with the `preview` label) get their own Neon branch, migrated by the deploy (`docs/pr-previews.md`).
 
 ## Conventions
 
@@ -102,13 +110,19 @@ Effect (`drizzle-orm/effect-postgres`): queries are `yield*`ed, `db.transaction`
   spans. Custom attributes use `maple.*`.
 - **Self-tracing:** the API traces itself through ingest; keep `withTracerDisabledWhen()` and avoid
   spans on hot paths like token validation.
-- **UI:** shadcn/Base UI + Tailwind 4, Recharts, Nucleo icons. Port icons into
-  `apps/web/src/components/icons/` from the local Nucleo DB:
+- **UI:** the dashboard (`apps/web`) and Maple Local (`apps/local-ui`) are Foldkit + `@foldkit/ui` +
+  Tailwind 4, Nucleo icons. Dashboard pages are built from the kit only; read `apps/web/CLAUDE.md`
+  before UI work (find the component in `packages/views/src/ui/INDEX.md`, build missing ones in the kit).
+  Add icons to `packages/views/src/ui/icons.generated.ts` (element trees) from the local Nucleo DB:
   ```bash
   sqlite3 "~/Library/Application Support/Nucleo/icons/data.sqlite3" \
     "SELECT id, name, set_id FROM icons WHERE klass='outline' AND grid=24 AND name LIKE '%search%';"
   ```
-- `@/` resolves to each app's source. `src/routeTree.gen.ts` is generated.
+- `@/` resolves to each app's source.
+- **Tests:** assert behavior, not source. `test-slop/*` rules (`lib/oxlint-config/plugins/test-slop.mjs`)
+  ban constant-vs-literal pins, existence-only/does-not-throw tests, Tailwind class pins and tests that
+  read source files. Import and architecture boundaries are `no-restricted-imports` overrides in
+  `.oxlintrc.json`, not tests.
 
 ## MCP tools
 
@@ -119,7 +133,7 @@ rendering. `registry.contract.test.ts` enforces it across the catalog.
 - Parameters come from `apps/ai/src/mcp/lib/params.ts` (`P.timeWindow`, `P.service`, `P.limit`,
   `P.oneOf`...): one spelling per concept, retired names only as `aliases`.
 - Output is an Effect Schema in `packages/domain/src/mcp-outputs/` (`outputSchema` /
-  `structuredContent`, and the chat UI's payload). The model reads `render(output)`, a `ToolDoc`
+  `structuredContent`, which `apps/cli` decodes). The model reads `render(output)`, a `ToolDoc`
   whose `next` calls the registry validates.
 - Failures are typed (`McpInvalidInputError`, `McpNotReadyError`, `McpUnavailableError`,
   `McpQueryBudgetError`, `McpQueryError`); no `isError` literals in tools.
@@ -135,8 +149,31 @@ git clone in Cloudflare's Sandbox container (`apps/sandbox`, prd only). Invarian
 
 Test with `bun run --cwd apps/sandbox verify:image` (needs Docker); it catches what unit tests can't.
 
+## PR previews
+
+A PR labelled `preview` deploys the full stack to `app-pr-<n>.maple.dev` / `api-pr-<n>.maple.dev`
+on the Clerk development instance (`docs/pr-previews.md`). Default to `preview:web` for dashboard,
+API or AI changes: it deploys only the Workers on the same seeded data, faster and without a VPC.
+Use `preview` only to test ingest, Electric live sync, landing, or a connect flow that sends
+telemetry. To sign in to either:
+
+```bash
+infisical run --env dev -- bun run preview:signin <n>   # one-shot signed-in link, valid 2 minutes
+```
+
+It signs in as the shared reviewer `preview-reviewer+clerk_test@maple.dev` in the `Preview` org,
+which the deploy's smoke test seeds with demo telemetry. Humans can instead use the "PR preview"
+form on the sign-in page with `PREVIEW_SIGNIN_KEY` (Infisical `dev`).
+
+- Never type the key into a form or print it: mint the link with the command above and open it.
+- `{"enabled":false}` from `GET /api/auth/preview/sign-in` means the deploy ran without the key;
+  re-run the preview deploy.
+- A preview hostname that will not resolve locally right after deploy is a cached NXDOMAIN; it
+  clears on its own (or use `curl --resolve` with `dig @1.1.1.1`).
+
 ## Docs
 
 Read the relevant doc before touching an area: `error-issue-lifecycle.md` (anything in
 `packages/backend/src/services/errors/`), `warehouse-rollups.md`, `service-map-architecture.md`,
-`ingest-wal-durability.md`, `local-mode.md`, `infra.md`, `api-v2.md`, `otel-spec/`.
+`ingest-wal-durability.md`, `local-mode.md`, `infra.md`, `api-v2.md`, `otel-spec/`,
+`dashboard-grid.md` (the dashboard canvas and `lib/grid-engine`), `design-rules.md` (tokens and the `maple/*` design lint rules for `apps/web` and `packages/ui`).

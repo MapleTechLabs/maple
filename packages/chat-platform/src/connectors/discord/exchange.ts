@@ -11,7 +11,7 @@
  * person whose account did not.
  */
 import { Effect } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import { requireConfig, type ChatConnectorNotConfigured, type ChatInstallCallback } from "../../install"
 import { CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
 import { DISCORD_CONNECTOR_ID } from "./id"

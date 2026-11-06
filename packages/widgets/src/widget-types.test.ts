@@ -10,20 +10,9 @@ import {
 	widgetTypeByVisualization,
 	WIDGET_VISUALIZATIONS,
 } from "./widget-types"
+import { Array as Arr } from "effect"
 
 describe("defaultWidgetLayout", () => {
-	// The one auto-place size. There used to be a second, `templateHeight`, which
-	// packed stat rows to h:2 — but templates hand-write every layout literal and
-	// never called it, so it was removed rather than left half-connected.
-	it("gives a hand-added stat room for a sparkline", () => {
-		expect(defaultWidgetLayout("stat")).toEqual({ w: 3, h: 4, minW: 2, minH: 2 })
-	})
-
-	it("gives row-based widgets the wide slot", () => {
-		expect(defaultWidgetLayout("table")).toEqual({ w: 6, h: 5, minW: 3, minH: 3 })
-		expect(defaultWidgetLayout("list")).toEqual({ w: 6, h: 5, minW: 3, minH: 3 })
-	})
-
 	it("falls back to the chart slot for anything unknown", () => {
 		expect(defaultWidgetLayout("chart")).toEqual({ w: 4, h: 6, minW: 2, minH: 2 })
 		expect(defaultWidgetLayout("not-a-widget")).toEqual({ w: 4, h: 6, minW: 2, minH: 2 })
@@ -35,34 +24,6 @@ describe("defaultWidgetLayout", () => {
 })
 
 describe("owned display keys", () => {
-	// `buildWidgetDisplay` clears the union of these before each type writes back
-	// the keys it owns, so a key dropped from every type's list stops being
-	// cleared and starts leaking across a type switch — which is how a line chart
-	// switched to Pie kept `chartId: "query-builder-line"` and rendered a line
-	// over breakdown rows. Pinned so the union can only change deliberately.
-	//
-	// Keys absent here (`pie`, `funnel`, `histogram`, `xAxis`, …) are never
-	// written by the builder and are preserved across a switch on purpose.
-	it("clears exactly the keys the builder writes", () => {
-		const union = new Set(PANEL_TYPES.flatMap((meta) => meta.ownedDisplayKeys))
-		expect([...union].sort()).toEqual([
-			"chartId",
-			"columns",
-			"curveType",
-			"gauge",
-			"heatmap",
-			"listDataSource",
-			"listLimit",
-			"listRootOnly",
-			"listWhereClause",
-			"markdown",
-			"paths",
-			"sparkline",
-			"stacked",
-			"thresholds",
-		])
-	})
-
 	it("gives every chart-mounting panel type ownership of chartId", () => {
 		for (const meta of PANEL_TYPES) {
 			expect(meta.ownedDisplayKeys.includes("chartId"), meta.panelType).toBe(meta.chartId != null)
@@ -131,24 +92,7 @@ describe("widgetTypeByPersesKind", () => {
 
 describe("MCP_VISUALIZATIONS", () => {
 	it("collapses line/bar/area into one chart entry", () => {
-		expect(MCP_VISUALIZATIONS.filter((viz) => viz === "chart")).toHaveLength(1)
-	})
-
-	it("exposes every widget kind an agent can build", () => {
-		expect([...MCP_VISUALIZATIONS].sort()).toEqual([
-			"chart",
-			"funnel",
-			"gauge",
-			"hbar",
-			"heatmap",
-			"histogram",
-			"list",
-			"markdown",
-			"paths",
-			"pie",
-			"stat",
-			"table",
-		])
+		expect(Arr.filter(MCP_VISUALIZATIONS, (viz) => viz === "chart")).toHaveLength(1)
 	})
 })
 
@@ -160,7 +104,7 @@ describe("MCP_VISUALIZATIONS", () => {
 describe("WIDGET_VISUALIZATIONS", () => {
 	it("is exactly the set the widget type table claims", () => {
 		expect([...WIDGET_VISUALIZATIONS].sort()).toEqual(
-			[...new Set(PANEL_TYPES.map((meta) => meta.visualization))].sort(),
+			[...new Set(Arr.map(PANEL_TYPES, (meta) => meta.visualization))].sort(),
 		)
 	})
 

@@ -6,59 +6,23 @@ import { optionalString } from "./config-helpers.ts"
 import type { MapleDomains, MapleStage } from "./cloudflare/stage.ts"
 import { resolveDeploymentEnvironment } from "./cloudflare/stage.ts"
 import { DEFAULT_MAPLE_REGION, type MapleRegion } from "./region.ts"
+import { Array as Arr, String as Str } from "effect"
 
 /**
- * Deploy-time environment for the Cloudflare workers.
- *
- * Every worker used to carry its own copy of `requireEnv` / `optionalPlain` /
- * `optionalSecret` and then re-list the same keys, so `api` and `alerting`
- * shared 32 hand-copied entries that drifted whenever one was edited alone.
- * The primitives live here once, and the shared keys are grouped by the concern
- * that owns them: a worker spreads the groups it needs and lists only what is
- * genuinely its own.
- *
- * These are effect `Config`s, not `process.env` reads, and that is load-bearing
- * rather than stylistic. Alchemy resolves config through a ConfigProvider built
- * as `fromDotEnv(--env-file ?? ".env")` **orElse** `fromEnv()`
- * (`alchemy/Util/ConfigProvider.ts`) and never copies those file-sourced values
- * into `process.env`. A `process.env` read therefore silently ignores `.env` and
- * `--env-file` — and would do so *selectively*, since alchemy's own provider
- * settings (CLOUDFLARE_ACCOUNT_ID, CI, …) would still pick them up. `Config`
- * also reports every missing key at once instead of throwing on the first, and
- * keeps failures in the typed error channel (`ConfigError`) rather than as a
- * thrown `Error`, which is what the rest of the repo does — see
- * `packages/alchemy-maple/src/MapleEnvironment.ts` for the same pattern inside
- * an alchemy provider.
- *
- * The three rules the primitives encode:
- *
- *   - values are trimmed, and a whitespace-only value counts as absent;
- *   - an absent optional key is OMITTED from the record, never set to `""` —
- *     an empty binding is a value the worker has to defend against, an absent
- *     one reaches the `??` default in the code that reads it;
- *   - secrets are wrapped in `Redacted` so they never surface in plan output.
+ * Deploy-time Worker env, as effect `Config`s: never read `process.env`, which misses alchemy's
+ * `.env` / `--env-file` provider. Values are trimmed (blank = absent), absent optional keys are
+ * omitted (never `""`), and secrets are `Redacted`.
  */
 
 export type PlainEnv = Record<string, string>
-export type SecretEnv = Record<string, Redacted.Redacted<string>>
-/**
- * A group that mixes both. Deliberately a union-valued record and NOT
- * `PlainEnv & SecretEnv` — intersecting two index signatures narrows the value
- * type to `string & Redacted<string>`, which nothing inhabits.
- */
-export type WorkerEnv = Record<string, string | Redacted.Redacted<string>>
+export type SecretEnv = Record<string, Redacted.Redacted>
+/** A union-valued record, not `PlainEnv & SecretEnv` (that intersection is uninhabited). */
+export type WorkerEnv = Record<string, string | Redacted.Redacted>
 
-/**
- * Present-and-non-blank, trimmed.
- *
- * Built on `./config-helpers.ts`' `optionalString`, which
- * already encodes "blank or whitespace-only counts as absent" for the runtime
- * worker env schemas. The trim on top is the one thing it does not do — it
- * returns the raw value — and the deploy path has always trimmed.
- */
+/** Present-and-non-blank, trimmed (`optionalString` returns the raw value). */
 const trimmedOption = (key: string): Config.Config<Option.Option<string>> =>
 	optionalString(key).pipe(
-		Config.map((value: Option.Option<string>) => Option.map(value, (raw) => raw.trim())),
+		Config.map((value: Option.Option<string>) => Option.map(value, (raw) => Str.trim(raw))),
 	)
 
 const entry = <A>(key: string, value: Option.Option<A>): Record<string, A> =>
@@ -72,18 +36,12 @@ export const merge = (...parts: ReadonlyArray<Config.Config<Partial<WorkerEnv>>>
 		),
 	)
 
-/**
- * Required plain value. Fails with a `ConfigError` — not a thrown `Error` — so a
- * deploy missing several vars reports all of them in one pass.
- *
- * `Schema.Trim` before the non-empty check, so `"   "` is rejected rather than
- * binding an empty string.
- */
+/** Required plain value, trimmed; blank fails with a `ConfigError`. */
 export const requiredPlain = (key: string): Config.Config<string> =>
 	Config.schema(Schema.Trim.check(Schema.isNonEmpty()), key)
 
 /** Required secret, wrapped in `Redacted`. */
-export const requiredSecret = (key: string): Config.Config<Redacted.Redacted<string>> =>
+export const requiredSecret = (key: string): Config.Config<Redacted.Redacted> =>
 	requiredPlain(key).pipe(Config.map(Redacted.make))
 
 /** Required plain value as a single-entry record, for spreading into a group. */
@@ -98,7 +56,8 @@ export const requireSecretEntry = (key: string): Config.Config<SecretEnv> =>
 export const optionalPlain = (key: string, fallback?: string): Config.Config<PlainEnv> =>
 	trimmedOption(key).pipe(
 		Config.map((value) => {
-			const resolved = Option.getOrUndefined(value) ?? fallback?.trim()
+			const resolved =
+				Option.getOrUndefined(value) ?? (fallback === undefined ? undefined : Str.trim(fallback))
 			return resolved ? { [key]: resolved } : {}
 		}),
 	)
@@ -109,43 +68,28 @@ export const optionalSecret = (key: string): Config.Config<SecretEnv> =>
 
 /** The first present-and-non-blank of `keys`, else `fallback`. For build vars with a `VITE_` twin. */
 export const plainFrom = (keys: ReadonlyArray<string>, fallback: string): Config.Config<string> =>
-	Config.all(keys.map(trimmedOption)).pipe(
+	Config.all(Arr.map(keys, trimmedOption)).pipe(
 		Config.map((values: ReadonlyArray<Option.Option<string>>) =>
 			Option.getOrElse(Option.firstSomeOf(values), () => fallback),
 		),
 	)
 
-/**
- * Optional value with a default that a BLANK env var also falls back to.
- *
- * Distinct from `Config.withDefault`, which only fires when the key is missing:
- * `MAPLE_AUTH_MODE=""` must still yield `"self_hosted"`, matching the
- * `process.env.X?.trim() || "…"` these replaced.
- */
+/** Optional value whose default also applies to a BLANK var (unlike `Config.withDefault`). */
 export const plainWithDefault = (key: string, fallback: string): Config.Config<PlainEnv> =>
 	trimmedOption(key).pipe(Config.map((value) => ({ [key]: Option.getOrElse(value, () => fallback) })))
 
 /**
- * A value the stack CHOOSES rather than reads — the environment cannot override it.
- *
- * Distinct from `optionalPlain(key, fallback)`, where the environment wins. The
- * difference is load-bearing for `MAPLE_ENVIRONMENT`: a stray
- * `MAPLE_ENVIRONMENT=production` in a pr-N deploy environment would open
- * `EmailService.emailAllowed` and the alerting worker's `scheduled()`
- * early-return at once, on a stage that shares live org data.
+ * A value the stack chooses; the environment cannot override it. Load-bearing for
+ * `MAPLE_ENVIRONMENT`: a stray `production` on a preview would enable emails and alerting crons.
  */
 export const derived = (key: string, value: string): Config.Config<PlainEnv> =>
 	Config.succeed({ [key]: value })
 
 // ── Shared groups ───────────────────────────────────────────────────────────
 
-/**
- * Session auth. The same `AuthEnv` subset `api`, `alerting` and `electric-sync`
- * all resolve callers with.
- */
+/** Session auth, shared by `api`, `alerting` and `electric-sync`. */
 export const authEnv: Config.Config<WorkerEnv> = merge(
 	plainWithDefault("MAPLE_AUTH_MODE", "self_hosted"),
-	// Clerk's SDK phones home unless told not to, and says so at every boot.
 	derived("CLERK_TELEMETRY_DISABLED", "1"),
 	plainWithDefault("MAPLE_DEFAULT_ORG_ID", "default"),
 	optionalSecret("MAPLE_ROOT_PASSWORD"),
@@ -154,12 +98,7 @@ export const authEnv: Config.Config<WorkerEnv> = merge(
 	optionalSecret("CLERK_JWT_KEY"),
 )
 
-/**
- * Warehouse access. `SIGNING_KEY` + `WORKSPACE_ID` are what
- * `TinybirdOrgTokenService` needs for Tinybird-scoped raw SQL — without them
- * every alert tick fails with "TINYBIRD_SIGNING_KEY is required for
- * Tinybird-scoped raw SQL", which is why `alerting` binds the same set as `api`.
- */
+/** Warehouse access. `SIGNING_KEY` + `WORKSPACE_ID` are required for raw-SQL alerts too. */
 export const tinybirdEnv: Config.Config<WorkerEnv> = merge(
 	requirePlainEntry("TINYBIRD_HOST"),
 	requireSecretEntry("TINYBIRD_TOKEN"),
@@ -174,35 +113,32 @@ export const ingestKeyCryptoEnv: Config.Config<WorkerEnv> = merge(
 	requireSecretEntry("MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY"),
 )
 
-/**
- * Public URLs the workers build links with (emails, share links, quick-start
- * snippets). Defaults follow the deploy's own hostnames, so the EU instance
- * links to itself; a dev stage has none and falls back to production's.
- */
+/** Public URLs for links, defaulting to the deploy's own hostnames (else production's). */
 export const appUrlsEnv = (domains: MapleDomains = {}): Config.Config<WorkerEnv> =>
 	merge(
-		plainWithDefault("MAPLE_INGEST_PUBLIC_URL", `https://${domains.ingest ?? "ingest.maple.dev"}`),
+		// Derived where the deploy has its own gateway: a preview must hand out its own endpoint.
+		domains.ingest
+			? derived("MAPLE_INGEST_PUBLIC_URL", `https://${domains.ingest}`)
+			: plainWithDefault("MAPLE_INGEST_PUBLIC_URL", "https://ingest.maple.dev"),
 		plainWithDefault("MAPLE_APP_BASE_URL", `https://${domains.web ?? "app.maple.dev"}`),
+		// Canonical API origin for self-published URLs (MCP `server.json`, email one-click
+		// unsubscribe), never forwarded headers.
+		domains.api
+			? derived("MAPLE_API_BASE_URL", `https://${domains.api}`)
+			: plainWithDefault("MAPLE_API_BASE_URL", "https://api.maple.dev"),
 		plainWithDefault("EMAIL_FROM", "Maple <notifications@noreply.maple.dev>"),
 	)
 
 /**
- * The worker's own OTLP export, through the ingest gateway.
- *
- * `MAPLE_ENVIRONMENT` is `derived`, not `optionalPlain` — see `derived` above.
- * `COMMIT_SHA` falls back to `GITHUB_SHA` so a deploy that did not export it
- * still stamps a build: an unstamped Worker reports no `service.version`, and
- * the error evaluator treats a build it cannot identify as a regression, so a
- * missing binding quietly restores the behaviour where any occurrence reopens a
- * fixed issue.
+ * The Worker's own OTLP export. `COMMIT_SHA` falls back to `GITHUB_SHA`: an unstamped build
+ * makes the error evaluator reopen fixed issues on any occurrence.
  */
 export const selfObservabilityEnv = (
 	stage: MapleStage,
 	region: MapleRegion = DEFAULT_MAPLE_REGION,
 ): Config.Config<WorkerEnv> =>
 	merge(
-		// Bound under a different name than it is read from. Optional on dev stages
-		// only: no developer has a real ingest key, and absent means self-observability off.
+		// Optional on dev only (absent = self-observability off). Rebound as MAPLE_INGEST_KEY.
 		stage.kind === "dev"
 			? optionalSecret("MAPLE_OTEL_INGEST_KEY").pipe(
 					Config.map((record) =>
@@ -216,17 +152,11 @@ export const selfObservabilityEnv = (
 				),
 		optionalPlain("MAPLE_ENDPOINT"),
 		derived("MAPLE_ENVIRONMENT", resolveDeploymentEnvironment(stage)),
-		// The instance a Worker runs in. Read where a Durable Object stub is
-		// addressed (`chatSessionStub`), which is the one place the runtime has to
-		// know: the EU instance keeps its objects in the `eu` jurisdiction.
+		// Read for Durable Object jurisdiction (`layerChatSessions`).
 		derived("MAPLE_REGION", region),
-		// Stamped on every span and log as a resource attribute (the SDK reads the OTel
-		// variable off the Worker env). Both instances report to the US internal org
-		// for now, and this is what tells their `maple-api`s apart there.
+		// Tells the instances apart in the shared internal org.
 		derived("OTEL_RESOURCE_ATTRIBUTES", `maple.region=${region}`),
-		// GITHUB_SHA is read as its own key and re-labelled, rather than passed to
-		// `optionalPlain`'s `fallback` — a `process.env.GITHUB_SHA` read there would
-		// bypass the ConfigProvider and so miss `.env` / `--env-file`.
+		// Read via Config, not `process.env`, so `.env` / `--env-file` apply.
 		merge(optionalPlain("COMMIT_SHA"), optionalPlain("GITHUB_SHA")).pipe(
 			Config.map((record): PlainEnv => {
 				const sha = record.COMMIT_SHA ?? record.GITHUB_SHA
@@ -236,40 +166,15 @@ export const selfObservabilityEnv = (
 	)
 
 /**
- * The prd services that stamp `vcs.ref.head.revision` and are deployed by a
- * SINGLE `alchemy deploy --stage prd` run, so in a healthy production they all
- * report the same commit.
- *
- * That lockstep is what the **"Prod revision skew — a Worker missed the deploy"**
- * alert rule (`raw_query`, id `2a6e9529-5f73-4478-9fa0-432904ff15c8`) tests: it
- * counts distinct revisions across exactly these service names and pages when
- * the count exceeds one. Alchemy isolates per-resource failures on purpose, so
- * a deploy can update four of these and leave the fifth on its old script —
- * that is the 2026-09-07 incident, where `api` sat 6h behind `web`.
- *
- * **The alert rule lives in the Maple database, not in this repo, so nothing
- * mechanically couples the two.** This constant and `env.test.ts` are that
- * coupling. If you change which services deploy together, you MUST edit the
- * rule's SQL to match — otherwise it either pages forever on a service that no
- * longer ships with the rest, or silently stops covering one that does.
- *
- * What is deliberately NOT here:
- * - `scraper` — runs in production but is not part of this stack (see the
- *   dev-only note in `alchemy.run.ts`), so it sits on its own revision.
- * - `maple-landing`, `maple-ios` — deployed, but stamp no revision.
- * - api's background service names (`maple-vcs-sync`, …) — the same Worker as
- *   `maple-api`, so they add no signal. `maple-investigations` is no longer one
- *   of them: the fan-out runs on `maple-ai` now, which is listed in its own
- *   right below.
+ * prd services deployed together that must report the same revision. Not ingest: it reports
+ * the last commit that touched `apps/ingest` (`INGEST_COMMIT_SHA`). The "Prod revision skew"
+ * alert rule (id `2a6e9529-5f73-4478-9fa0-432904ff15c8`) lives in the Maple database, not this
+ * repo: if you change this list, you MUST edit that rule's SQL to match.
  */
 export const PRD_LOCKSTEP_REVISION_SERVICES = [
 	"alerting",
-	// The agent surfaces. Added when maple-ai first deployed to prd; the alert
-	// rule's SQL, which lives in the production database rather than this repo,
-	// has to list it too or a skewed maple-ai goes unnoticed.
 	"maple-ai",
 	"electric-sync",
-	"ingest",
 	"maple-api",
 	"maple-web",
 ] as const
@@ -295,15 +200,20 @@ export const planetScaleOAuthEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("MAPLE_PLANETSCALE_API_BASE_URL"),
 )
 
+/** Supabase integration (Management API OAuth app: confidential client with PKCE). */
+export const supabaseOAuthEnv: Config.Config<WorkerEnv> = merge(
+	optionalPlain("SUPABASE_OAUTH_CLIENT_ID"),
+	optionalSecret("SUPABASE_OAUTH_CLIENT_SECRET"),
+	optionalPlain("MAPLE_SUPABASE_API_BASE_URL"),
+)
+
 /**
- * The GitHub App as a repository reader: app id + private key mint installation
- * tokens, `GITHUB_API_BASE_URL` points them at GitHub Enterprise Server. Bound by
- * every Worker that resolves a connected repository — api for the integration,
- * maple-ai for the agents' source and sandbox tools. The install flow's client
+ * The GitHub App as a repository reader, for api, maple-ai and alerting. The install flow's client
  * id/secret and the webhook secret stay api-only.
  */
 export const githubAppSourceEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("GITHUB_APP_ID"),
+	optionalPlain("GITHUB_APP_SLUG"),
 	optionalSecret("GITHUB_APP_PRIVATE_KEY"),
 	optionalPlain("GITHUB_API_BASE_URL"),
 )
@@ -313,4 +223,7 @@ export const apnsEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("APNS_TEAM_ID"),
 	optionalPlain("APNS_KEY_ID"),
 	optionalSecret("APNS_PRIVATE_KEY"),
+	// App Attest for device credentials: App ID = <APNS_TEAM_ID>.<MAPLE_IOS_BUNDLE_ID>.
+	optionalPlain("MAPLE_IOS_BUNDLE_ID"),
+	optionalPlain("MAPLE_APP_ATTEST_ALLOW_DEVELOPMENT"),
 )

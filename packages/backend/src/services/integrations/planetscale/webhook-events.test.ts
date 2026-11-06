@@ -1,4 +1,4 @@
-import { Result } from "effect"
+import { Result, Array as Arr, DateTime, String as Str } from "effect"
 import { createHmac } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
@@ -16,6 +16,7 @@ import {
 	decodePlanetScaleWebhookPayload,
 	deployRequestNumber,
 	insertPlanetScaleEvent,
+	PLANETSCALE_WEBHOOK_EVENTS,
 	planetScaleIssueFingerprint,
 	projectPlanetScaleWebhookEvent as projectPlanetScaleWebhookEventResult,
 	truncateToSecond,
@@ -55,9 +56,21 @@ describe("verifyPlanetScaleSignature", () => {
 		const other = createHmac("sha256", "other-secret").update(OOM_PAYLOAD, "utf8").digest("hex")
 		assert.isFalse(verifyPlanetScaleSignature(OOM_PAYLOAD, "shh", other))
 	})
+
+	it("rejects a signature of the expected length in other characters", () => {
+		assert.isFalse(verifyPlanetScaleSignature(OOM_PAYLOAD, "shh", Str.repeat(64)("\u00e9")))
+	})
 })
 
 describe("classifyPlanetScaleEvent", () => {
+	it("acts on every event Maple subscribes its webhooks to", () => {
+		const ignored = Arr.filter(PLANETSCALE_WEBHOOK_EVENTS, (event) => {
+			const { action } = classifyPlanetScaleEvent(event)
+			return action !== "issue" && action !== "timeline"
+		})
+		assert.deepStrictEqual(ignored, [])
+	})
+
 	it("normalizes queued webhooks into deterministic common CloudEvents", () => {
 		const payload = Schema.decodeUnknownSync(PlanetScaleWebhookPayload)(JSON.parse(OOM_PAYLOAD))
 		const input = {
@@ -80,7 +93,7 @@ describe("classifyPlanetScaleEvent", () => {
 		if (Result.isFailure(invalid))
 			assert.strictEqual(
 				invalid.failure._tag,
-				"@maple/api/planetscale/PlanetScaleWebhookProjectionInvalid",
+				"@maple/backend/planetscale/PlanetScaleWebhookProjectionInvalid",
 			)
 	})
 
@@ -100,7 +113,7 @@ describe("classifyPlanetScaleEvent", () => {
 		})
 		assert.deepStrictEqual(first, redelivery)
 
-		const withoutTimestamp = Schema.decodeUnknownSync(PlanetScaleWebhookPayload)({
+		const withoutTimestamp = Schema.decodeSync(PlanetScaleWebhookPayload)({
 			event: "branch.ready",
 			database: "main-db",
 		})
@@ -110,7 +123,7 @@ describe("classifyPlanetScaleEvent", () => {
 			payload: withoutTimestamp,
 			receivedAt: 1_698_252_880_000,
 		})
-		assert.strictEqual(fallback.time, new Date(1_698_252_880_000).toISOString())
+		assert.strictEqual(fallback.time, DateTime.formatIso(DateTime.makeUnsafe(1_698_252_880_000)))
 	})
 
 	it("maps health events to issues and lifecycle events to timeline rows", () => {
@@ -167,8 +180,8 @@ describe("deployRequestNumber", () => {
 describe("truncateToSecond", () => {
 	it("collapses the webhook's second precision and the backfill's millisecond precision", () => {
 		// Same transition, two sources — must produce one dedupe key.
-		assert.strictEqual(truncateToSecond(1_698_252_879_000).getTime(), 1_698_252_879_000)
-		assert.strictEqual(truncateToSecond(1_698_252_879_412).getTime(), 1_698_252_879_000)
+		assert.strictEqual(truncateToSecond(1_698_252_879_000), 1_698_252_879_000)
+		assert.strictEqual(truncateToSecond(1_698_252_879_412), 1_698_252_879_000)
 	})
 })
 
@@ -337,7 +350,7 @@ describe("upsertPlanetScaleIssue", () => {
 				],
 				{ concurrency: "unbounded" },
 			)
-			assert.deepStrictEqual(results.map(({ action }) => action).sort(), ["created", "refreshed"])
+			assert.deepStrictEqual(Arr.map(results, ({ action }) => action).sort(), ["created", "refreshed"])
 			assert.strictEqual(results[0].issueId, results[1].issueId)
 
 			const aggregate = yield* Effect.promise(() =>
@@ -384,7 +397,7 @@ describe("upsertPlanetScaleIssue", () => {
 				],
 				{ concurrency: "unbounded" },
 			)
-			assert.deepStrictEqual(results.map(({ action }) => action).sort(), ["refreshed", "reopened"])
+			assert.deepStrictEqual(Arr.map(results, ({ action }) => action).sort(), ["refreshed", "reopened"])
 
 			const aggregate = yield* Effect.promise(() =>
 				queryFirstRow<{
@@ -429,7 +442,7 @@ describe("upsertPlanetScaleIssue", () => {
 				executeSql(
 					testDb,
 					"UPDATE error_issues SET workflow_state = 'wontfix', snooze_until = $2 WHERE id = $1",
-					[first.issueId, new Date(10_000).toISOString()],
+					[first.issueId, DateTime.formatIso(DateTime.makeUnsafe(10_000))],
 				),
 			)
 
@@ -536,7 +549,7 @@ describe("upsertPlanetScaleIssue", () => {
 				executeSql(
 					testDb,
 					"UPDATE error_issues SET workflow_state = 'wontfix', snooze_until = $2 WHERE id = $1",
-					[first.issueId, new Date(5_000).toISOString()],
+					[first.issueId, DateTime.formatIso(DateTime.makeUnsafe(5_000))],
 				),
 			)
 
@@ -604,7 +617,7 @@ describe("upsertPlanetScaleIssue", () => {
 			)
 
 			const error = yield* upsertPlanetScaleIssue(input).pipe(Effect.flip)
-			assert.strictEqual(error._tag, "@maple/api/lib/DatabaseError")
+			assert.strictEqual(error._tag, "@maple/backend/lib/DatabaseError")
 			const afterFailure = yield* Effect.promise(() =>
 				queryFirstRow<{ count: number }>(
 					testDb,

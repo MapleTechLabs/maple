@@ -1,9 +1,10 @@
 import { expect, it } from "vitest"
 import { computeTiers } from "./graph"
 import { spatialLayout } from "./spatial-layout"
+import { Array as Arr } from "effect"
 
 it("keeps cycles on one terrace and ranks their downstream services correctly", () => {
-	const nodes = ["entry", "a", "b", "sink", "isolated"].map((id) => ({ id }))
+	const nodes = Arr.map(["entry", "a", "b", "sink", "isolated"], (id) => ({ id }))
 	const edges = [
 		{ source: "entry", target: "a" },
 		{ source: "a", target: "b" },

@@ -1,0 +1,187 @@
+import type { ErrorIssueDocument, ErrorIssuePullRequestDocument } from "@maple/domain/http"
+import { AlertRuleId } from "@maple/domain/primitives"
+import { Option, Schema, Array as Arr } from "effect"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
+import { cn } from "@maple/ui/lib/utils"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { AppRoute, hrefOf } from "../../../route"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { item, itemContent, itemDescription, itemMedia } from "@maple/views/ui/item"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { textLinkClass } from "@maple/views/ui/text-link"
+import { docsLink } from "../../kit/signal-empty-state"
+import { Message } from "./message"
+import { sectionHeading } from "../../kit/section-heading"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+
+// `IssuePullRequestsPanel`, the attach nudge, `LinkedInvestigationPanel`, `IssueIncidentsTable`.
+
+type H = HtmlBuilder<Message>
+
+const IN_FLIGHT_SOFT = "bg-severity-debug-a2 text-severity-debug"
+
+/** `PULL_REQUEST_STATE_TONE`: open is work under way; merged is done. */
+const PULL_REQUEST_STATE_TONE = {
+	open: IN_FLIGHT_SOFT,
+	merged: TONE_SOFT.done,
+	closed: TONE_SOFT.neutral,
+} satisfies Record<ErrorIssuePullRequestDocument["state"], string>
+
+const SOURCE_HINT = {
+	user: null,
+	agent: "attached by an agent",
+	auto: "found in the pull request description",
+} satisfies Record<ErrorIssuePullRequestDocument["linkSource"], string | null>
+
+const pullRequestRow = (h: H, pr: ErrorIssuePullRequestDocument, isBusy: boolean): Html => {
+	const hint = SOURCE_HINT[pr.linkSource]
+	return item(h, { tag: "li", variant: "flush", size: "lg", className: "group flex-nowrap items-start" }, [
+		itemMedia(h, { variant: "icon", className: "text-muted-foreground" }, [
+			icon(h, "GithubIcon", { className: "size-4" }),
+		]),
+		itemContent(h, [
+			hstack(h, { gap: "2", wrap: true }, [
+				h.a(
+					[
+						h.Href(pr.url),
+						h.Target("_blank"),
+						h.Rel("noreferrer"),
+						h.Class(
+							"truncate text-sm font-medium text-foreground hover:underline active:underline",
+						),
+					],
+					[pr.repoFullName, "#", String(pr.number)],
+				),
+				badge(
+					h,
+					{
+						variant: "outline",
+						className: cn("shrink-0 capitalize", PULL_REQUEST_STATE_TONE[pr.state]),
+					},
+					[pr.state],
+				),
+			]),
+			...(pr.title ? [itemDescription(h, [pr.title], "line-clamp-1")] : []),
+			...(hint ? [itemDescription(h, [hint], "text-foreground-subtle")] : []),
+		]),
+		iconButton(
+			h,
+			{
+				size: "icon",
+				label: `Detach ${pr.repoFullName}#${pr.number}`,
+				className:
+					"size-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
+				isDisabled: isBusy,
+				attributes: [h.OnClick(Message.ClickedDetachPullRequest({ id: pr.id }))],
+			},
+			[icon(h, "TrashIcon")],
+		),
+	])
+}
+
+export const pullRequestsPanel = (
+	h: H,
+	pullRequests: ReadonlyArray<ErrorIssuePullRequestDocument>,
+	isBusy: boolean,
+): Html =>
+	panel(h, {}, [
+		panelHeader(h, {
+			title: "Pull requests",
+			action: button(
+				h,
+				{
+					size: "sm",
+					variant: "ghost",
+					className: "gap-1 px-2 text-xs",
+					isDisabled: isBusy,
+					attributes: [h.OnClick(Message.ClickedAttach())],
+				},
+				[icon(h, "PlusIcon"), "Attach"],
+			),
+		}),
+		pullRequests.length === 0
+			? h.div(
+					[h.Class("space-y-2 px-4 py-3")],
+					[
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"Attach the pull request that fixes this. When it merges, Maple watches for the error to come back and closes this issue if it doesn't.",
+						]),
+						docsLink(h, "github", "GitHub integration docs"),
+					],
+				)
+			: h.ul(
+					[h.Class("divide-y")],
+					Arr.map(pullRequests, (pr) => pullRequestRow(h, pr, isBusy)),
+				),
+	])
+
+/** The awaiting-fix nudge: work is under way and nothing tells Maple which fix to watch. */
+export const attachNudge = (h: H): Html =>
+	panel(h, { className: "px-4 py-3" }, [
+		typography(h, { size: "xs", tone: "muted", as: "p" }, [
+			"No pull request attached. Maple can only confirm this error stopped if it knows which fix to watch.",
+		]),
+		button(
+			h,
+			{
+				size: "sm",
+				variant: "outline",
+				className: "mt-2 h-auto w-full whitespace-normal py-1.5 text-xs",
+				attributes: [h.OnClick(Message.ClickedAttach())],
+			},
+			["Attach the PR that fixes this"],
+		),
+	])
+
+/** `BodySection` over `SectionHeading`: a titled block of the page body. */
+export const bodySection = (
+	h: H,
+	options: Readonly<{ id: string; title: string; count?: string | undefined }>,
+	children: ReadonlyArray<Html>,
+): Html =>
+	vstack(
+		h,
+		{
+			as: "section",
+			className: "shrink-0 gap-3.5",
+			attributes: [h.AriaLabelledBy(`${options.id}-heading`)],
+		},
+		[
+			sectionHeading(h, { title: options.title, hint: options.count, id: `${options.id}-heading` }),
+			...children,
+		],
+	)
+
+const decodeRuleId = Schema.decodeUnknownOption(AlertRuleId)
+
+/** `AlertSourceCard`: an alert-backed issue links back to the rule that feeds it. */
+export const alertSourceCard = (h: H, issue: ErrorIssueDocument): Html => {
+	const sourceRef = issue.sourceRef
+	const ruleId = Option.getOrNull(decodeRuleId(sourceRef?.ruleId))
+	const signalType = typeof sourceRef?.signalType === "string" ? sourceRef.signalType : null
+	const groupKey = typeof sourceRef?.groupKey === "string" ? sourceRef.groupKey : null
+	return panel(h, { className: "shrink-0 gap-2 px-5 py-4" }, [
+		sectionHeading(h, { title: "Alert source" }),
+		typography(h, { size: "sm", tone: "muted", as: "p" }, [
+			"This issue is fed by alert rule incidents",
+			...(signalType ? [` (${signalType})`] : []),
+			...(groupKey && groupKey !== "__total__" ? [` for group "${groupKey}"`] : []),
+			".",
+		]),
+		...(ruleId === null
+			? []
+			: [
+					h.a(
+						[
+							h.Href(hrefOf(AppRoute.AlertRule({ ruleId, search: {} }))),
+							h.Class(textLinkClass("primary", false, "text-sm")),
+						],
+						["View alert rule →"],
+					),
+				]),
+	])
+}

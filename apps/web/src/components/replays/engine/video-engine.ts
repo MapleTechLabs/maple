@@ -1,4 +1,6 @@
 import type { ReplayEngine, ReplayEngineCreateInput, ReplayEngineFactory } from "./replay-engine"
+import { Array as Arr } from "effect"
+import { codeUnitAt } from "@maple/strings"
 
 // The video engine — mobile recordings.
 //
@@ -54,6 +56,20 @@ export function videoSegmentPayload(event: unknown): Record<string, unknown> | u
 }
 
 /**
+ * A segment's identity, stable across separate extractions.
+ *
+ * The iOS SDK sends its chunk sequence number. A position in the list being
+ * extracted is not an identity: `addEvent` extracts one event at a time, so
+ * every late segment came out as "0", matched the first seed segment, and was
+ * dropped, cutting playback off at the end of the first loaded range.
+ */
+function segmentIdOf(raw: unknown, timestamp: number): string {
+	if (typeof raw === "string" && raw.length > 0) return raw
+	if (typeof raw === "number" && Number.isFinite(raw)) return String(raw)
+	return `t${timestamp}`
+}
+
+/**
  * Pull the ordered segment list out of a raw event stream.
  *
  * `startTime` is the stream's first event timestamp — the playhead's time-zero,
@@ -71,7 +87,7 @@ export function extractVideoSegments(events: ReadonlyArray<unknown>, startTime: 
 		const timestamp = numberOr(asRecord(raw)?.timestamp, Number.NaN)
 		if (!Number.isFinite(timestamp)) continue
 		segments.push({
-			segmentId: typeof payload.segmentId === "string" ? payload.segmentId : String(segments.length),
+			segmentId: segmentIdOf(payload.segmentId, timestamp),
 			startMs: Math.max(0, timestamp - startTime),
 			durationMs: Math.max(0, numberOr(payload.duration, 0)),
 			base64,
@@ -103,8 +119,7 @@ export function resolveSegment(
 	offsetMs: number,
 ): SegmentPosition | undefined {
 	if (segments.length === 0) return undefined
-	for (let index = 0; index < segments.length; index++) {
-		const segment = segments[index]!
+	for (const [index, segment] of segments.entries()) {
 		if (offsetMs < segment.startMs) return { index, offsetSec: 0 }
 		if (offsetMs < segment.startMs + segment.durationMs) {
 			return { index, offsetSec: (offsetMs - segment.startMs) / 1000 }
@@ -113,13 +128,14 @@ export function resolveSegment(
 	// Past the end of the recording — hold at the tail of the last segment so the
 	// engine reports "finished" rather than silently restarting.
 	const index = segments.length - 1
-	return { index, offsetSec: segments[index]!.durationMs / 1000 }
+	const last = segments[index]
+	return last === undefined ? undefined : { index, offsetSec: last.durationMs / 1000 }
 }
 
 /** Decode base64 to an MP4 object URL. Mirrors the idiom in `lib/log-key.ts`. */
 function toObjectUrl(base64: string): string {
 	const binary = atob(base64)
-	const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
+	const bytes = Uint8Array.from(binary, (char) => codeUnitAt(char, 0))
 	return URL.createObjectURL(new Blob([bytes], { type: "video/mp4" }))
 }
 
@@ -141,8 +157,8 @@ class VideoEngine implements ReplayEngine {
 	private readonly streamStart: number
 
 	constructor(input: ReplayEngineCreateInput) {
-		this.onFinish = input.onFinish
-		this.onResize = input.onResize
+		this.onFinish = () => input.onFinish()
+		this.onResize = () => input.onResize()
 		this.streamStart = streamStartMs(input.events)
 		this.segments = extractVideoSegments(input.events, this.streamStart)
 
@@ -192,7 +208,7 @@ class VideoEngine implements ReplayEngine {
 	private select(index: number, offsetSec: number): void {
 		if (this.destroyed) return
 		const segment = this.segments[index]
-		if (!segment) return
+		if (segment === undefined) return
 		if (index === this.index) {
 			// Same media — seek directly; no metadata round-trip needed.
 			if (this.video.readyState >= 1) this.video.currentTime = offsetSec
@@ -210,7 +226,9 @@ class VideoEngine implements ReplayEngine {
 	private urlFor(index: number): string {
 		const existing = this.urls.get(index)
 		if (existing !== undefined) return existing
-		const url = toObjectUrl(this.segments[index]!.base64)
+		const segment = this.segments[index]
+		if (segment === undefined) return ""
+		const url = toObjectUrl(segment.base64)
 		this.urls.set(index, url)
 		return url
 	}
@@ -238,7 +256,7 @@ class VideoEngine implements ReplayEngine {
 
 	getCurrentTimeMs(): number {
 		const segment = this.segments[this.index]
-		if (!segment) return 0
+		if (segment === undefined) return 0
 		const ms = segment.startMs + this.video.currentTime * 1000
 		return Number.isFinite(ms) && ms > 0 ? ms : 0
 	}
@@ -275,7 +293,7 @@ class VideoEngine implements ReplayEngine {
 		const appended = extractVideoSegments([event], this.streamStart)
 		if (appended.length === 0) return
 		for (const segment of appended) {
-			if (this.segments.some((existing) => existing.segmentId === segment.segmentId)) continue
+			if (Arr.some(this.segments, (existing) => existing.segmentId === segment.segmentId)) continue
 			this.segments.push(segment)
 		}
 		this.segments.sort((a, b) => a.startMs - b.startMs)

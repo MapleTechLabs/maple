@@ -1,13 +1,14 @@
-# Build context: repo root (workspace deps @maple/domain + @maple-dev/effect-sdk).
-# Railway: set the service's config file path to apps/scraper/railway.json and
-# keep the root directory at the repo root.
-FROM oven/bun:1.4.0 AS runner
+# Local docker-compose build. Build context: repo root (workspace deps @maple/domain +
+# @maple-dev/effect-sdk). Deploys use Dockerfile.prebuilt (apps/scraper/alchemy.run.ts).
+FROM oven/bun:1.4.4 AS runner
 WORKDIR /app
 
 COPY . .
 # Build the workspace SDK consumed by the scraper.
 RUN bun install --frozen-lockfile \
 	&& bun run --cwd packages/effect-sdk build
+
+USER bun
 
 EXPOSE 3475
 

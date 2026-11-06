@@ -1,5 +1,5 @@
 import { predicateInputBudgetIssue } from "./input-budget"
-import { Option, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import type {
 	FieldRef,
 	NormalizedSignal,
@@ -12,7 +12,6 @@ import type {
 import {
 	SignalProjectionSpecSchema,
 	fieldKey,
-	MAX_DECIMAL_INT64_LENGTH,
 	MAX_IN_VALUES,
 	MAX_PREDICATE_DEPTH,
 	MAX_PREDICATE_NODES,
@@ -36,24 +35,31 @@ export class SignalPredicateValidationError extends Schema.TaggedError<SignalPre
 ) {
 	static create(issues: readonly ValidationIssue[]) {
 		return new SignalPredicateValidationError({
-			message: issues.map(({ path, message }) => `${path}: ${message}`).join("; "),
+			message: Arr.join(
+				Arr.map(issues, ({ path, message }) => `${path}: ${message}`),
+				"; ",
+			),
 			issues,
 		})
 	}
 }
 
-export const assertSignalProjectionInputBudget = (candidate: unknown): void => {
-	if (typeof candidate !== "object" || candidate === null || !("selector" in candidate)) return
+export const checkSignalProjectionInputBudget = (
+	candidate: unknown,
+): Result.Result<void, SignalPredicateValidationError> => {
+	if (typeof candidate !== "object" || candidate === null || !("selector" in candidate))
+		return Result.succeed(undefined)
 	const issue = predicateInputBudgetIssue(candidate.selector)
-	if (issue !== undefined)
-		throw SignalPredicateValidationError.create([{ path: "selector", message: issue }])
+	return issue === undefined
+		? Result.succeed(undefined)
+		: Result.fail(SignalPredicateValidationError.create([{ path: "selector", message: issue }]))
 }
 
 const Int64FromString = Schema.BigIntFromString.check(
 	Schema.makeFilter((value) => value >= INT64_MIN && value <= INT64_MAX, { expected: "signed int64" }),
 )
 const parseInt64 = (value: string): bigint | null =>
-	Option.getOrNull(Schema.decodeUnknownOption(Int64FromString)(value))
+	Option.getOrNull(Schema.decodeOption(Int64FromString)(value))
 
 /** Guard topology before the recursive codec, including persisted and compile inputs. */
 export const decodeSignalProjectionSpec = (candidate: unknown): SignalProjectionSpec => {
@@ -114,7 +120,7 @@ export const timestampToEpochNanos = (value: string): bigint | null => {
 	date.setUTCHours(hour, minute, second, 0)
 	const milliseconds = date.getTime() - offsetMinutes * 60_000
 	if (!Number.isFinite(milliseconds)) return null
-	const nanos = BigInt(fraction.padEnd(9, "0"))
+	const nanos = BigInt(Str.padEnd(9, "0")(fraction))
 	return BigInt(milliseconds) * 1_000_000n + nanos
 }
 
@@ -222,11 +228,6 @@ export const validateSignalPredicate = (predicate: SignalPredicate): readonly Va
 	return issues
 }
 
-export const assertValidSignalPredicate = (predicate: SignalPredicate): void => {
-	const issues = validateSignalPredicate(predicate)
-	if (issues.length > 0) throw SignalPredicateValidationError.create(issues)
-}
-
 export const validateSignalProjectionSpec = (
 	projection: SignalProjectionSpec,
 ): readonly ValidationIssue[] => [
@@ -299,11 +300,15 @@ const scalarOrder = (left: SignalScalar, right: SignalScalar): number | null => 
 
 export type CompiledSignalPredicate = (signal: NormalizedSignal) => PredicateEvaluation
 
-export const compileSignalPredicate = (predicate: SignalPredicate): CompiledSignalPredicate => {
-	assertSignalProjectionInputBudget({ selector: predicate })
-	assertValidSignalPredicate(predicate)
+export const compileSignalPredicate = (
+	predicate: SignalPredicate,
+): Result.Result<CompiledSignalPredicate, SignalPredicateValidationError> => {
+	const budget = checkSignalProjectionInputBudget({ selector: predicate })
+	if (Result.isFailure(budget)) return Result.fail(budget.failure)
+	const issues = validateSignalPredicate(predicate)
+	if (issues.length > 0) return Result.fail(SignalPredicateValidationError.create(issues))
 
-	return (signal) => {
+	return Result.succeed((signal) => {
 		const typeMismatches: FieldRef[] = []
 		const readField = (field: FieldRef): SignalScalar | undefined => {
 			const value = signal.fields.get(fieldKey(field))
@@ -318,9 +323,9 @@ export const compileSignalPredicate = (predicate: SignalPredicate): CompiledSign
 		const evaluate = (node: SignalPredicate): boolean => {
 			switch (node.op) {
 				case "all":
-					return node.clauses.every(evaluate)
+					return Arr.every(node.clauses, evaluate)
 				case "any":
-					return node.clauses.some(evaluate)
+					return Arr.some(node.clauses, evaluate)
 				case "not":
 					return !evaluate(node.clause)
 				case "exists": {
@@ -341,7 +346,7 @@ export const compileSignalPredicate = (predicate: SignalPredicate): CompiledSign
 						return (
 							value.type === "string" &&
 							node.value.type === "string" &&
-							value.value.includes(node.value.value)
+							Str.includes(node.value.value)(value.value)
 						)
 					const order = scalarOrder(value, node.value)
 					if (order === null) return false
@@ -353,11 +358,11 @@ export const compileSignalPredicate = (predicate: SignalPredicate): CompiledSign
 				case "in": {
 					const value = readField(node.field)
 					if (value === undefined) return false
-					return node.values.some((candidate) => scalarEquals(value, candidate))
+					return Arr.some(node.values, (candidate) => scalarEquals(value, candidate))
 				}
 			}
 		}
 
 		return { matches: evaluate(predicate), typeMismatches }
-	}
+	})
 }

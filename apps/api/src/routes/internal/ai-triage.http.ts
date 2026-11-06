@@ -1,8 +1,8 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { AiTriageForbiddenError, CurrentTenant, MapleInternalApi } from "@maple/domain/http"
 import { Effect } from "effect"
 import { AiTriageService } from "@maple/backend/services/errors/AiTriageService"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 
 export const HttpAiTriageLive = HttpApiBuilder.group(MapleInternalApi, "aiTriage", (handlers) =>
 	Effect.gen(function* () {
@@ -20,11 +20,12 @@ export const HttpAiTriageLive = HttpApiBuilder.group(MapleInternalApi, "aiTriage
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-					yield* requireAdmin(
+					yield* Policy.check(
 						tenant.roles,
-						() =>
+						"ai_triage:configure",
+						(denial) =>
 							new AiTriageForbiddenError({
-								message: "Only org admins can manage AI triage settings",
+								message: denial.message,
 							}),
 					)
 					return yield* triage.updateSettings(tenant.orgId, tenant.userId, payload)

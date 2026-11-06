@@ -6,10 +6,13 @@
 		<meta name="color-scheme" content="dark light" />
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<link rel="icon" href="/favicon.ico" />
+		<meta name="theme-color" content="#171410" />
 		<title>Maple Local</title>
+		<!-- Sets the OS theme before first paint; a same-origin file so the CSP allows it. -->
+		<script src="/theme-init.js"></script>
 	</head>
 	<body>
 		<div id="app"></div>
-		<script type="module" src="/src/main.tsx"></script>
+		<script type="module" src="/src/entry.ts"></script>
 	</body>
 </html>

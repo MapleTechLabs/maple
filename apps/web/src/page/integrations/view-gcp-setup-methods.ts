@@ -1,0 +1,192 @@
+import { cn } from "@maple/ui/lib/utils"
+import type { GcpManualStep, GcpStepField } from "../../components/integrations/gcp-setup-steps"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { pressable } from "@maple/views/ui/pressable"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import type { ConfigureModel } from "./gcp-configure-schema"
+import { Message } from "./message"
+import type { Model } from "./model"
+import { externalLink } from "./view-gcp-configure-parts"
+import { copyOf, SMALL } from "./view-gcp-parts"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
+
+// `GcpValue` and `GcpManualSteps`.
+
+type H = HtmlBuilder<Message>
+
+/** An exact name in mono with its copy button, or a setting in words. */
+export const gcpValue = (h: H, model: Model, value: GcpStepField["value"], copy = true): Html => {
+	if (typeof value !== "string")
+		return h.span(
+			[h.Class("flex flex-wrap gap-x-2 gap-y-1")],
+			Arr.map(value, (one) => gcpValue(h, model, one, copy)),
+		)
+	if (!copy) return h.span([h.Class("text-foreground")], [value])
+	return h.span(
+		[h.Class("inline-flex max-w-full items-start gap-0.5")],
+		[
+			inlineCode(h, { className: "min-w-0 break-all text-xs/5" }, [value]),
+			copyOf(h, model, `value-${value}`, value, {
+				label: "value",
+				iconSize: 12,
+				className: "size-6 shrink-0",
+			}),
+		],
+	)
+}
+
+/** A removal row: what, its name to copy, and where in the console. */
+export const removalItem = (
+	h: H,
+	model: Model,
+	item: Readonly<{ what: string; name: string; consoleUrl: string }>,
+): Html =>
+	h.li(
+		[h.Key(item.what)],
+		[
+			h.span([h.Class("text-muted-foreground")], [item.what]),
+			" ",
+			gcpValue(h, model, item.name),
+			" ",
+			externalLink(h, item.consoleUrl, "Open in console"),
+		],
+	)
+
+const manualStepBody = (h: H, model: Model, step: GcpManualStep): Html =>
+	h.div(
+		[h.Class("flex flex-col gap-3 pr-4 pb-4 pl-12")],
+		[
+			h.p(
+				[h.Class(SMALL)],
+				[
+					step.intro,
+					" ",
+					h.a(
+						[
+							h.Href(step.consoleUrl),
+							h.Target("_blank"),
+							h.Rel("noreferrer"),
+							h.Class(
+								"inline-flex items-center gap-1 font-medium text-foreground hover:underline active:underline",
+							),
+						],
+						["Open in console", icon(h, "ExternalLinkIcon", { size: 12 })],
+					),
+				],
+			),
+			h.dl(
+				[
+					h.Class(
+						"grid grid-cols-1 items-baseline gap-x-4 gap-y-1 text-xs/5 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)] sm:gap-y-2",
+					),
+				],
+				Arr.map(step.fields, (field) =>
+					h.div(
+						[h.Key(field.label), h.Class("contents")],
+						[
+							h.dt([h.Class("text-muted-foreground")], [field.label]),
+							h.dd([h.Class("min-w-0")], [gcpValue(h, model, field.value, field.copy)]),
+						],
+					),
+				),
+			),
+			...(step.notes.length === 0
+				? []
+				: [
+						h.ul(
+							[
+								h.Class(
+									"flex list-disc flex-col gap-1 pl-4 text-xs/5 text-pretty text-muted-foreground",
+								),
+							],
+							Arr.map(step.notes, (note) => h.li([h.Key(note)], [note])),
+						),
+					]),
+		],
+	)
+
+/** The console steps as one list, one open at a time; untouched, the first is open. */
+export const manualSteps = (
+	h: H,
+	model: Model,
+	configure: ConfigureModel,
+	options: Readonly<{
+		heading: string
+		detail: string
+		steps: ReadonlyArray<GcpManualStep>
+		docsHref: string
+	}>,
+): Html => {
+	const firstTitle = options.steps[0]?.title ?? null
+	const open = configure.isManualTouched ? configure.manualOpen : firstTitle
+	return vstack(h, { gap: "3", as: "section" }, [
+		hstack(h, { align: "baseline", justify: "between", wrap: true, className: "gap-x-4 gap-y-1" }, [
+			vstack(h, { gap: "0.5" }, [
+				heading(h, { level: 3, variant: "subsection" }, [options.heading]),
+				h.p([h.Class(SMALL)], [options.detail]),
+			]),
+			h.span([h.Class("text-xs/5")], [externalLink(h, options.docsHref, "Full guide in the docs")]),
+		]),
+		h.ol(
+			[h.Class("divide-y divide-border-subtle rounded-md border")],
+			Arr.map(options.steps, (step, index) => {
+				const expanded = open === step.title
+				return h.li(
+					[h.Key(step.title)],
+					[
+						hstack(h, { gap: "3", className: "px-4 py-3" }, [
+							h.span(
+								[
+									h.AriaHidden(true),
+									h.Class(
+										"flex size-5 shrink-0 items-center justify-center rounded-full border text-2xs font-medium text-muted-foreground",
+									),
+								],
+								[String(index + 1)],
+							),
+							pressable(
+								h,
+								{
+									onClick: Message.ClickedGcpManualStep({ title: step.title, firstTitle }),
+									className:
+										"flex min-w-0 flex-1 items-center gap-3 text-left text-sm font-medium outline-none focus-visible:underline focus-visible:ring-0",
+									attributes: [h.AriaExpanded(expanded)],
+								},
+								[
+									h.span([h.Class("min-w-0 flex-1")], [step.title]),
+									...(expanded
+										? []
+										: [
+												h.span(
+													[
+														h.Class(
+															"max-w-1/2 min-w-0 truncate font-mono text-xs font-normal text-muted-foreground",
+														),
+													],
+													[step.summary],
+												),
+											]),
+									icon(h, "ChevronDownIcon", {
+										size: 14,
+										className: cn(
+											typographyClass({
+												tone: "muted",
+												className: "shrink-0 transition-transform",
+											}),
+											expanded && "rotate-180",
+										),
+									}),
+								],
+							),
+						]),
+						...(expanded ? [manualStepBody(h, model, step)] : []),
+					],
+				)
+			}),
+		),
+	])
+}

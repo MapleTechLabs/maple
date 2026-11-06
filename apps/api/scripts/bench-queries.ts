@@ -2,15 +2,28 @@
 // Maple owns trace mining and its query catalog. Execution lives in the published builder CLI.
 import { dirname, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { Clock, Config, Console, Context, Effect, FileSystem, Layer, Option, Redacted, Schema } from "effect"
-import { Command, Flag } from "effect/unstable/cli"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import {
+	Clock,
+	Config,
+	Console,
+	Context,
+	DateTime,
+	Effect,
+	FileSystem,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+} from "effect"
+import { Command, Flag } from "effect/cli"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { BunRuntime, BunServices } from "@effect/platform-bun"
-import { CH } from "@maple/query-engine"
+import { OrgId } from "@maple/domain"
+import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 import * as Bench from "@maple/query-engine/benchmark"
 import { collectWarehouseQueryCatalog } from "./query-bench/catalog"
-import { runCli } from "@maple-dev/effect-clickhouse/benchmark/cli"
+import { runCli } from "@maple-dev/effect-orm/benchmark/cli"
 
 // Errors
 
@@ -136,18 +149,16 @@ export class Tinybird extends Context.Service<Tinybird, TinybirdApi>()("bench/Ti
 		const { tinybird } = yield* BenchConfig
 		const httpClient = yield* HttpClient.HttpClient
 
-		const requireConfig: Effect.Effect<TinybirdConfig, MissingConfigError> = Option.match(tinybird, {
-			onNone: () =>
-				Effect.fail(
-					new MissingConfigError({
-						what: "TINYBIRD_HOST/TINYBIRD_TOKEN",
-						message:
-							"TINYBIRD_HOST and TINYBIRD_TOKEN are required to mine recent db.query.text spans " +
-							"from production traces.",
-					}),
-				),
-			onSome: (cfg) => Effect.succeed(cfg),
-		})
+		const requireConfig: Effect.Effect<TinybirdConfig, MissingConfigError> = Effect.fromOption(
+			tinybird,
+			() =>
+				new MissingConfigError({
+					what: "TINYBIRD_HOST/TINYBIRD_TOKEN",
+					message:
+						"TINYBIRD_HOST and TINYBIRD_TOKEN are required to mine recent db.query.text spans " +
+						"from production traces.",
+				}),
+		)
 
 		const query = Effect.fn("Tinybird.query")(function* (sql: string) {
 			const cfg = yield* requireConfig
@@ -166,13 +177,11 @@ export class Tinybird extends Context.Service<Tinybird, TinybirdApi>()("bench/Ti
 				Effect.mapError((cause) => new HttpRequestError({ url: cfg.host, message: String(cause) })),
 			)
 			if (response.status < 200 || response.status >= 300) {
-				return yield* Effect.fail(
-					new UpstreamStatusError({
-						source: "Tinybird",
-						status: response.status,
-						message: text.slice(0, 500),
-					}),
-				)
+				return yield* new UpstreamStatusError({
+					source: "Tinybird",
+					status: response.status,
+					message: text.slice(0, 500),
+				})
 			}
 			const parsed = yield* decodeJson(text, Schema.Struct({ data: Schema.Array(JsonRow) })).pipe(
 				Effect.mapError((cause) => new HttpRequestError({ url: cfg.host, message: cause.message })),
@@ -193,22 +202,26 @@ export class Tinybird extends Context.Service<Tinybird, TinybirdApi>()("bench/Ti
 // File IO via the core FileSystem service
 
 const decodeJson = <A>(text: string, schema: Schema.Decoder<A>) =>
-	Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(text).pipe(
+	Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(text).pipe(
 		Effect.flatMap(Schema.decodeUnknownEffect(schema)),
 		Effect.mapError((cause) => new Bench.BenchmarkError({ message: String(cause) })),
 	)
 
 const JsonRow = Schema.Record(Schema.String, Schema.Unknown)
+const encodePrettyJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 const writeJsonFile = (path: string, value: unknown) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem
+		const text = yield* encodePrettyJson(value).pipe(
+			Effect.mapError((cause) => new BenchFileError({ path, op: "encode", message: String(cause) })),
+		)
 		yield* fs
 			.makeDirectory(dirname(resolve(path)), { recursive: true })
 			.pipe(
 				Effect.mapError((cause) => new BenchFileError({ path, op: "mkdir", message: String(cause) })),
 			)
 		yield* fs
-			.writeFileString(path, JSON.stringify(value, null, 2))
+			.writeFileString(path, text)
 			.pipe(
 				Effect.mapError((cause) => new BenchFileError({ path, op: "write", message: String(cause) })),
 			)
@@ -226,16 +239,8 @@ const parseRelativeDuration = (input: string): Effect.Effect<number, InvalidDura
 			}),
 		)
 	}
-	const unit = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 }[match[2]!.toLowerCase()]!
+	const unit = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 }[(match[2] ?? "").toLowerCase()]!
 	return Effect.succeed(Number(match[1]) * unit)
-}
-
-const formatCHDateTime = (d: Date): string => {
-	const pad = (n: number) => String(n).padStart(2, "0")
-	return (
-		`${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
-		`${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`
-	)
 }
 
 const formatMs = (ms: number | null | undefined): string => {
@@ -279,7 +284,15 @@ const renderTable = (
 	lines.push(`┌─${titleLine}${titleBorderRight}┐`)
 	lines.push(`│ ${columns.map((c) => pad(c.header, c)).join(" │ ")} │`)
 	lines.push(`├${border}┤`)
-	for (const row of rows) lines.push(`│ ${row.map((v, i) => pad(v, columns[i]!)).join(" │ ")} │`)
+	for (const row of rows)
+		lines.push(
+			`│ ${row
+				.map((v, i) => {
+					const column = columns[i]
+					return column === undefined ? v : pad(v, column)
+				})
+				.join(" │ ")} │`,
+		)
 	lines.push(`└${border}┘`)
 	return lines.join("\n")
 }
@@ -304,13 +317,13 @@ const fetchHandler = Effect.fn("bench.fetch")(function* (config: FetchConfig) {
 	const tinybird = yield* Tinybird
 	const sinceMs = yield* parseRelativeDuration(config.since)
 	const nowMs = yield* Clock.currentTimeMillis
-	const startTime = formatCHDateTime(new Date(nowMs - sinceMs))
-	const endTime = formatCHDateTime(new Date(nowMs))
+	const startTime = formatWarehouseDateTime(nowMs - sinceMs)
+	const endTime = formatWarehouseDateTime(nowMs)
 	const topN = config.top
 	const orgId = yield* Option.match(config.org, {
 		onNone: () => tinybird.internalOrgId,
 		onSome: (o) => Effect.succeed(o),
-	})
+	}).pipe(Effect.flatMap(Schema.decodeUnknownEffect(OrgId)))
 	const host = yield* tinybird.host
 
 	const compiled = yield* CH.compile(
@@ -335,7 +348,7 @@ const fetchHandler = Effect.fn("bench.fetch")(function* (config: FetchConfig) {
 
 	const outputPath = Option.getOrElse(config.out, () => defaultOutput("queries"))
 	const output: FetchOutput = {
-		fetchedAt: new Date(nowMs).toISOString(),
+		fetchedAt: DateTime.formatIso(DateTime.makeUnsafe(nowMs)),
 		source: host,
 		criteria: {
 			orgId,
@@ -401,9 +414,11 @@ const catalogHandler = Effect.fn("bench.catalog")(function* (config: {
 					),
 				catch: (cause) => new BenchFileError({ path, op: "import suite", message: String(cause) }),
 			}).pipe(
+				// @effect-diagnostics-next-line flatMapConditionalToFilterOrFail:off -- the branch also maps the suite's own error
 				Effect.flatMap((value) =>
 					Effect.isEffect(value)
-						? (value as Effect.Effect<unknown, unknown>).pipe(
+						? // oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- a suite module's default export, checked by isEffect
+							(value as Effect.Effect<unknown, unknown>).pipe(
 								Effect.mapError(
 									(cause) =>
 										new BenchFileError({
@@ -417,7 +432,7 @@ const catalogHandler = Effect.fn("bench.catalog")(function* (config: {
 				),
 				Effect.flatMap(Schema.decodeUnknownEffect(Bench.Suite)),
 			),
-		onNone: () => collectWarehouseQueryCatalog().pipe(Effect.flatMap(Bench.suiteFromCatalog)),
+		onNone: () => collectWarehouseQueryCatalog.pipe(Effect.flatMap(Bench.suiteFromCatalog)),
 	})
 	const selected = yield* filterSuite(suite, config.match)
 	const path = Option.getOrElse(config.out, () => defaultOutput("catalog"))
@@ -430,7 +445,7 @@ const catalogHandler = Effect.fn("bench.catalog")(function* (config: {
 		)
 })
 
-// CLI command tree (effect/unstable/cli)
+// CLI command tree (effect/cli)
 
 const fetchCommand = Command.make(
 	"fetch",
@@ -483,12 +498,7 @@ const BenchServicesLive = Tinybird.layer.pipe(Layer.provide(FetchHttpClient.laye
 const BenchLive = Layer.mergeAll(BenchServicesLive, BunServices.layer)
 
 if (["catalog", "fetch"].includes(process.argv[2] ?? "")) {
-	Command.run(rootCommand, { version: "0.2.0" }).pipe(
-		// Application root: this is the one runtime boundary that owns the complete layer graph.
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(BenchLive),
-		BunRuntime.runMain,
-	)
+	Command.run(rootCommand, { version: "0.2.0" }).pipe(Effect.provide(BenchLive), BunRuntime.runMain)
 } else {
 	process.exitCode = await runCli(process.argv.slice(2))
 }

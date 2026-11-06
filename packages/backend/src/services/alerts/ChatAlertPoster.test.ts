@@ -10,7 +10,7 @@ import {
 	type ChatTarget,
 } from "@maple/chat-platform"
 import { ChatWorkspaceId, OrgId } from "@maple/domain/http"
-import { ConfigProvider, Duration, Effect, Fiber, Layer, Schema } from "effect"
+import { ConfigProvider, Duration, Effect, Fiber, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { Env } from "@maple/backend/platform/Env"
@@ -45,8 +45,13 @@ interface Posted {
 
 const unreachable = () => Effect.die("the alert reached another transport method")
 
-/** `hang` is a platform that never answers the post. */
-const makeConnector = (posted: Array<Posted>, hang = false): RegisteredChatConnector => ({
+/** `hang` is a platform that never answers the post; `rejects` says which messages it refuses. */
+const makeConnector = (
+	posted: Array<Posted>,
+	hang = false,
+	built: Array<true> = [],
+	rejects: (blocks: ReadonlyArray<ChatBlock>) => boolean = () => false,
+): RegisteredChatConnector => ({
 	id: TESTCHAT,
 	manifest: {
 		id: TESTCHAT,
@@ -68,6 +73,7 @@ const makeConnector = (posted: Array<Posted>, hang = false): RegisteredChatConne
 		requiredConfig: [{ name: OUTBOUND_KEY, secret: true }],
 		transport: Effect.gen(function* () {
 			const config = yield* yield* ConnectorCredentials
+			built.push(true)
 			return {
 				post: (target, blocks) =>
 					hang
@@ -81,10 +87,19 @@ const makeConnector = (posted: Array<Posted>, hang = false): RegisteredChatConne
 										reason: "auth",
 									}),
 								)
-							: Effect.sync(() => {
-									posted.push({ target, blocks, config })
-									return { target, messageId: "message-1" }
-								}),
+							: rejects(blocks)
+								? Effect.fail(
+										new ChatOutboundError({
+											message: "Test Chat refused the call: invalid_attachments",
+											connectorId: TESTCHAT,
+											operation: "post",
+											reason: "rejected",
+										}),
+									)
+								: Effect.sync(() => {
+										posted.push({ target, blocks, config })
+										return { target, messageId: "message-1" }
+									}),
 				edit: unreachable,
 				whisper: unreachable,
 				typing: unreachable,
@@ -130,10 +145,19 @@ const config = (withOutboundConfig = true) =>
 const makeLayer = (
 	testDb: TestDb | Layer.Layer<Database>,
 	posted: Array<Posted>,
-	options: { readonly outboundConfig?: boolean; readonly hang?: boolean } = {},
+	options: {
+		readonly outboundConfig?: boolean
+		readonly hang?: boolean
+		readonly built?: Array<true>
+		readonly rejects?: (blocks: ReadonlyArray<ChatBlock>) => boolean
+	} = {},
 ) =>
 	ChatAlertPoster.layer.pipe(
-		Layer.provide(Layer.succeed(ChatConnectorRegistry, [makeConnector(posted, options.hang)])),
+		Layer.provide(
+			Layer.succeed(ChatConnectorRegistry, [
+				makeConnector(posted, options.hang, options.built, options.rejects),
+			]),
+		),
 		Layer.provide("layer" in testDb ? testDb.layer : testDb),
 		Layer.provide(Env.layer),
 		Layer.provide(config(options.outboundConfig)),
@@ -211,7 +235,7 @@ describe("ChatAlertPoster", () => {
 		}),
 	)
 
-	it.effect("reports a credential that will not open as needing a reinstall", () =>
+	it.effect("reports a credential that will not open as a retryable reinstall prompt", () =>
 		Effect.gen(function* () {
 			const testDb = createTestDb(trackedDbs)
 			yield* linkWorkspace(testDb, WORKSPACE, "workspace-1")
@@ -221,8 +245,10 @@ describe("ChatAlertPoster", () => {
 			)
 			yield* Effect.gen(function* () {
 				const failure = yield* post().pipe(Effect.flip)
-				assert.strictEqual(failure._tag, "@maple/http/errors/AlertDeliveryAuthError")
-				assert.include(failure.message, "reinstall")
+				// Maple's own credential, so retryable: it must never disable the destination.
+				assert.strictEqual(failure._tag, "@maple/http/errors/AlertDeliveryError")
+				assert.isTrue(failure.error.retryable)
+				assert.include(failure.message, "Reinstall")
 			}).pipe(Effect.provide(makeLayer(testDb, [])))
 		}),
 	)
@@ -286,6 +312,20 @@ describe("ChatAlertPoster", () => {
 		}),
 	)
 
+	it.effect("reuses one transport for a burst to the same workspace, so it shares rate limits", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			const posted: Array<Posted> = []
+			const built: Array<true> = []
+			yield* linkWorkspace(testDb, WORKSPACE, "workspace-1")
+			yield* Effect.all([post(), post(), post()]).pipe(
+				Effect.provide(makeLayer(testDb, posted, { built })),
+			)
+			assert.strictEqual(posted.length, 3)
+			assert.strictEqual(built.length, 1)
+		}),
+	)
+
 	it.effect("never reaches a workspace another org linked", () =>
 		Effect.gen(function* () {
 			const testDb = createTestDb(trackedDbs)
@@ -316,4 +356,59 @@ describe("ChatAlertPoster", () => {
 			}).pipe(Effect.provide(makeLayer(testDb, [])))
 		}),
 	)
+
+	describe("a message the platform rejects", () => {
+		const alertCard = (imageUrl: string | null): ChatBlock => ({
+			kind: "alert",
+			color: "#e5484d",
+			title: "Checkout error rate",
+			summary: "Triggered",
+			fields: [],
+			imageUrl,
+			imageAlt: "Checkout error rate over the alert window",
+			links: [],
+			footer: [],
+			sentAtMs: null,
+		})
+		// A platform refuses a message whose image it cannot fetch.
+		const hasImage = (blocks: ReadonlyArray<ChatBlock>) =>
+			Arr.some(blocks, (block) => block.kind === "alert" && block.imageUrl !== null)
+		const postCard = (card: ChatBlock) =>
+			Effect.gen(function* () {
+				const poster = yield* ChatAlertPoster
+				return yield* poster.post({
+					orgId: ORG,
+					workspaceId: WORKSPACE,
+					channelId: "channel-1",
+					blocks: [card],
+				})
+			})
+
+		it.effect("still delivers the alert, without the chart image it could not show", () =>
+			Effect.gen(function* () {
+				const testDb = createTestDb(trackedDbs)
+				const posted: Array<Posted> = []
+				yield* linkWorkspace(testDb, WORKSPACE, "workspace-1")
+				const result = yield* postCard(alertCard("https://app.maple.test/alerts/chart/x.png")).pipe(
+					Effect.provide(makeLayer(testDb, posted, { rejects: hasImage })),
+				)
+				assert.strictEqual(result.messageId, "message-1")
+				assert.lengthOf(posted, 1)
+				assert.deepInclude(posted[0]?.blocks[0], { kind: "alert", imageUrl: null })
+			}),
+		)
+
+		it.effect("is a terminal rejection when there was no image to drop", () =>
+			Effect.gen(function* () {
+				const testDb = createTestDb(trackedDbs)
+				yield* linkWorkspace(testDb, WORKSPACE, "workspace-1")
+				const failure = yield* postCard({ kind: "prose", markdown: "x" }).pipe(
+					Effect.provide(makeLayer(testDb, [], { rejects: () => true })),
+					Effect.flip,
+				)
+				assert.strictEqual(failure._tag, "@maple/http/errors/AlertDeliveryRejectedError")
+				assert.isFalse(failure.error.retryable)
+			}),
+		)
+	})
 })

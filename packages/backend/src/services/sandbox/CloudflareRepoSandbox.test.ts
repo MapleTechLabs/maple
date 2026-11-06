@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/http"
 import {
+	SANDBOX_COMMAND_ENV_NAMES,
 	SandboxRunCheckoutFailed,
 	SandboxRunCheckoutPending,
 	SandboxRunExited,
@@ -19,15 +20,15 @@ import {
 	SandboxRequest,
 	SandboxRuntime,
 	SandboxSecretHandle,
-} from "effect-agent/sandbox"
-import { Duration, Effect, Exit, Fiber, Option, Schema, Stream } from "effect"
+} from "@maple/backend/sandbox/contract"
+import { Duration, Effect, Exit, Fiber, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import type { RepositoryCheckout } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { admit, makeCloudflareRepoSandbox } from "./CloudflareRepoSandbox"
 import { NETWORK_DISABLED, REPO_SANDBOX_RUNTIME, repoMount } from "./repo-mount"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_sandbox_test")
-const SHA = "c".repeat(40)
+const ORG = Schema.decodeSync(OrgId)("org_sandbox_test")
+const SHA = Str.repeat(40)("c")
 
 const request = (overrides: Partial<ConstructorParameters<typeof SandboxRequest>[0]> = {}) =>
 	new SandboxRequest({
@@ -35,7 +36,7 @@ const request = (overrides: Partial<ConstructorParameters<typeof SandboxRequest>
 		command: "git",
 		args: ["grep", "-e", "boom"],
 		cwd: "/workspace/src",
-		environment: new SandboxEnvironment({ allow: ["PATH", "HOME", "LANG"] }),
+		environment: new SandboxEnvironment({ allow: SANDBOX_COMMAND_ENV_NAMES }),
 		mounts: [repoMount({ orgId: ORG, repository: "octo/shop", ref: "main" })],
 		network: NETWORK_DISABLED,
 		limits: new SandboxLimits({ maxOutputBytes: 1024, maxWallTime: Duration.seconds(5) }),
@@ -65,11 +66,11 @@ const makeSandbox = (
 			return Effect.succeed(checkout)
 		},
 		exec: (execRequest) => {
-			if (!bound) return Effect.succeed(Option.none())
+			if (!bound) return Effect.succeedNone
 			calls.push(
-				`exec:${execRequest.command} ${execRequest.args.join(" ")}|@${execRequest.cwd}|sha=${execRequest.checkout.sha}`,
+				`exec:${execRequest.command} ${Arr.join(execRequest.args, " ")}|@${execRequest.cwd}|sha=${execRequest.checkout.sha}`,
 			)
-			return Effect.succeed(Option.some(answer(execRequest)))
+			return Effect.succeedSome(answer(execRequest))
 		},
 	})
 
@@ -128,7 +129,11 @@ describe("admit", () => {
 				["runtime", { environment: new SandboxEnvironment({ allow: ["PATH"] }) }],
 				[
 					"runtime",
-					{ environment: new SandboxEnvironment({ allow: ["PATH", "HOME", "LANG", "TERM"] }) },
+					{
+						environment: new SandboxEnvironment({
+							allow: [...SANDBOX_COMMAND_ENV_NAMES, "TERM"],
+						}),
+					},
 				],
 				// It can switch egress off entirely, but it cannot police destinations.
 				["network", { network: new NetworkAllowlist({ domains: ["github.com"], ports: [443] }) }],
@@ -220,14 +225,42 @@ describe("the Cloudflare repository sandbox", () => {
 			)
 			const events = yield* Stream.runCollect(sandbox.execute(request()))
 			assert.deepStrictEqual(
-				events.map((event) => event._tag),
+				Arr.map(events, (event) => event._tag),
 				["SandboxStarted", "SandboxOutput", "SandboxExited"],
 			)
-			assert.isTrue(events.every((event) => event.implementation.isolation === "isolated"))
+			assert.isTrue(Arr.every(events, (event) => event.implementation.isolation === "isolated"))
 			assert.deepStrictEqual(calls, [
 				`checkout:${ORG}:octo/shop:main`,
 				`exec:git grep -e boom|@src|sha=${SHA}`,
 			])
+		}),
+	)
+
+	it.effect("carries the Worker's cut flag on each output event", () =>
+		Effect.gen(function* () {
+			const sandbox = makeSandbox(
+				() =>
+					new SandboxRunExited({
+						exitCode: 0,
+						stdout: Str.repeat(4)("\uFFFD"),
+						stderr: "warn",
+						stdoutBytes: 9,
+						stderrBytes: 4,
+						stdoutTruncated: true,
+						stderrTruncated: false,
+						wallTimeMs: 40,
+					}),
+			)
+			const events = yield* Stream.runCollect(sandbox.execute(request()))
+			assert.deepStrictEqual(
+				Arr.flatMap(events, (event) =>
+					event._tag === "SandboxOutput" ? [[event.stream, event.bytes, event.truncated]] : [],
+				),
+				[
+					["stdout", 9, true],
+					["stderr", 4, false],
+				],
+			)
 		}),
 	)
 
@@ -238,7 +271,7 @@ describe("the Cloudflare repository sandbox", () => {
 					makeSandbox(() => new SandboxRunTimedOut({ wallTimeMs: 5000 })).execute(request()),
 				),
 			)
-			assert.strictEqual(failureTag(timedOut), "SandboxTimeoutError")
+			assert.strictEqual(failureTag(timedOut), "@maple/backend/sandbox/SandboxTimeoutError")
 
 			// A checkout that never becomes ready is waited on up to the budget, and
 			// then reported as a spawn failure: no process ran, so it must not borrow
@@ -253,7 +286,7 @@ describe("the Cloudflare repository sandbox", () => {
 				),
 			)
 			const pending = yield* settleWithClock(waiting)
-			assert.strictEqual(failureTag(pending), "SandboxSpawnError")
+			assert.strictEqual(failureTag(pending), "@maple/backend/sandbox/SandboxSpawnError")
 			assert.match(
 				failureMessage(pending) ?? "",
 				/still being cloned .* come back to this repository later/,
@@ -266,7 +299,7 @@ describe("the Cloudflare repository sandbox", () => {
 					),
 				),
 			)
-			assert.strictEqual(failureTag(brokenCheckout), "SandboxSpawnError")
+			assert.strictEqual(failureTag(brokenCheckout), "@maple/backend/sandbox/SandboxSpawnError")
 
 			const gone = yield* Effect.exit(
 				Stream.runCollect(
@@ -275,7 +308,7 @@ describe("the Cloudflare repository sandbox", () => {
 					),
 				),
 			)
-			assert.strictEqual(failureTag(gone), "SandboxSpawnError")
+			assert.strictEqual(failureTag(gone), "@maple/backend/sandbox/SandboxSpawnError")
 		}),
 	)
 
@@ -290,9 +323,30 @@ describe("the Cloudflare repository sandbox", () => {
 			)
 			const running = yield* Effect.forkChild(Stream.runCollect(sandbox.execute(request())))
 			const events = Array.from(yield* settleWithClock(running))
-			assert.strictEqual(calls.filter((call) => call.startsWith("exec:")).length, 3)
-			assert.strictEqual(calls.filter((call) => call.startsWith("checkout:")).length, 1)
+			assert.strictEqual(Arr.filter(calls, (call) => Str.startsWith("exec:")(call)).length, 3)
+			assert.strictEqual(Arr.filter(calls, (call) => Str.startsWith("checkout:")(call)).length, 1)
 			assert.strictEqual(events.at(-1)?._tag, "SandboxExited")
+		}),
+	)
+
+	it.effect("reports a sandbox call that never answers as unavailable instead of waiting on it", () =>
+		Effect.gen(function* () {
+			const hung = makeCloudflareRepoSandbox({
+				resolveCheckout: () => Effect.succeed(checkout),
+				exec: () => Effect.never,
+			})
+			const running = yield* Effect.forkChild(Effect.exit(Stream.runCollect(hung.execute(request()))))
+			const exit = yield* settleWithClock(running)
+			assert.match(failureMessage(exit) ?? "", /did not answer within 65s/)
+			// Carried as the Worker's own "unavailable" answer, which the tools report as such.
+			const error =
+				Exit.isFailure(exit) && exit.cause.reasons[0]?._tag === "Fail"
+					? exit.cause.reasons[0].error
+					: undefined
+			assert.isTrue(
+				error?._tag === "@maple/backend/sandbox/SandboxSpawnError" &&
+					Schema.is(SandboxRunUnavailable)(error.cause),
+			)
 		}),
 	)
 
@@ -305,7 +359,7 @@ describe("the Cloudflare repository sandbox", () => {
 					),
 				),
 			)
-			assert.strictEqual(failureTag(exit), "SandboxUnsupportedRequestError")
+			assert.strictEqual(failureTag(exit), "@maple/backend/sandbox/SandboxUnsupportedRequestError")
 		}),
 	)
 
@@ -318,7 +372,7 @@ describe("the Cloudflare repository sandbox", () => {
 					),
 				),
 			)
-			assert.strictEqual(failureTag(exit), "SandboxUnsupportedRequestError")
+			assert.strictEqual(failureTag(exit), "@maple/backend/sandbox/SandboxUnsupportedRequestError")
 		}),
 	)
 })

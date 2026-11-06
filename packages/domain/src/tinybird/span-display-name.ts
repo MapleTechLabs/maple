@@ -1,6 +1,6 @@
-import type { Expr } from "@maple-dev/effect-clickhouse/expr"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { compile } from "@maple-dev/effect-clickhouse/sql"
+import type { Expr } from "@maple-dev/effect-orm/expr"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { compile } from "@maple-dev/effect-orm/sql"
 
 /**
  * Canonical operation-name expression shared by runtime queries and generated
@@ -31,7 +31,7 @@ const spanAttributes = CH.dynamicColumn<Record<string, string>>("SpanAttributes"
 /** SQL text required by Tinybird materialization and ClickHouse migration DDL. */
 export const NORMALIZED_SPAN_NAME_SQL = compile(
 	normalizedSpanNameExpr(
-		CH.dynamicColumn<string>("SpanName"),
+		CH.dynamicColumn("SpanName"),
 		CH.mapGet(spanAttributes, "http.route"),
 		CH.mapGet(spanAttributes, "url.path"),
 	).toFragment(),

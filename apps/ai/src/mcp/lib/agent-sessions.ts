@@ -3,7 +3,7 @@
 // more than one tool prints. These are the `maple_ai.*` agent traces, not the
 // browser session replays `search_sessions` serves.
 
-import { Effect, Schema } from "effect"
+import { Effect, Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	AI_SESSION_SPANS_MAX_SPANS,
 	GetAiSessionSpansRequest,
@@ -53,30 +53,36 @@ const PAYLOAD_FIELDS = [
 ] as const satisfies ReadonlyArray<AiGenAiField>
 
 const clipText = (value: string, chars: number): string =>
-	value.length <= chars ? value : `${value.slice(0, chars)}…`
+	value.length <= chars ? value : `${Str.slice(0, chars)(value)}…`
 
 /** BOUNDARY: every string inside a captured value, cut. The shape is the
  *  vendor's own JSON, which this walks rather than parses. */
 const clipStrings = (value: unknown, chars: number): unknown => {
 	if (typeof value === "string") return clipText(value, chars)
-	if (Array.isArray(value)) return value.map((entry) => clipStrings(entry, chars))
+	if (Arr.isArray(value)) return Arr.map(value, (entry) => clipStrings(entry, chars))
 	if (typeof value === "object" && value !== null) {
-		return Object.fromEntries(
-			Object.entries(value).map(([key, entry]) => [key, clipStrings(entry, chars)]),
+		return Rec.fromEntries(
+			Arr.map(Rec.toEntries(value), ([key, entry]) => [key, clipStrings(entry, chars)]),
 		)
 	}
 	return value
 }
 
-/** The newest user message and the last one — the turn label the derivations
- *  read is that message, found by the reader `turnLabel` itself uses. */
+/** The first user message, the newest one and the last message — the turn label
+ *  the derivations read is the newest, found by the reader `turnLabel` itself
+ *  uses, and `turnLabel` checks an agent root's prompt against the first. */
 const keptMessages = (messages: ReadonlyArray<unknown>): ReadonlyArray<unknown> => {
+	const hasUserText = (message: unknown) => lastUserMessageText([message]) !== undefined
 	const last = messages.length - 1
-	if (last < 0) return messages
+	let newest = -1
 	for (let i = last - 1; i >= 0; i--) {
-		if (lastUserMessageText([messages[i]]) !== undefined) return [messages[i], messages[last]]
+		if (hasUserText(messages[i])) {
+			newest = i
+			break
+		}
 	}
-	return [messages[last]]
+	const first = Arr.findFirstIndex(messages, hasUserText)
+	return Arr.filter(messages, (_, i) => Option.contains(first, i) || i === newest || i === last)
 }
 
 /** A span's content cut to what a whole-session read retains; a tool needing
@@ -86,8 +92,8 @@ export function clipSpanContent(span: AiSessionSpan): AiSessionSpan {
 	for (const field of MESSAGE_FIELDS) {
 		const value = genAi[field]
 		if (value === undefined) continue
-		genAi[field] = Array.isArray(value)
-			? keptMessages(value).map((message) => clipStrings(message, MESSAGE_TEXT_CHARS))
+		genAi[field] = Arr.isArray(value)
+			? Arr.map(keptMessages(value), (message) => clipStrings(message, MESSAGE_TEXT_CHARS))
 			: clipStrings(value, MESSAGE_TEXT_CHARS)
 	}
 	for (const field of PAYLOAD_FIELDS) {
@@ -108,7 +114,7 @@ export interface SessionWindow {
  *  levels, without it the session's bounds cost a resolve round trip first. */
 export const sessionWindowParams = {
 	start_time: P.optionalTimestamp(
-		"Start of the session's window (both bounds or neither; pass them as the `get_agent_session` call suggested by `list_agent_sessions` carries them, which makes the read a seek rather than a lookup)",
+		"Start of the session's window. Copy start_time and end_time from the list_agent_sessions row (both or neither); it makes the read fast",
 	),
 	end_time: P.optionalTimestamp("End of the session's window (see start_time)"),
 }
@@ -158,7 +164,16 @@ export function paddedWindowArgs(window: { readonly startTime: string; readonly 
 }
 
 /** The sentinel a caught 413 hands back: retry this page smaller. */
-const HALVE: "halve" = "halve"
+const HALVE = "halve" as const
+
+type ReadSpansPage = ReturnType<typeof readAiSessionSpans>
+
+interface SpanLoadState {
+	readonly spans: ReadonlyArray<AiSessionSpan>
+	readonly after: GetAiSessionSpansRequest["after"]
+	readonly limit: number
+	readonly truncated: "cap" | "too_large" | false
+}
 
 /**
  * Every span of a session the derivations run on, up to
@@ -167,7 +182,7 @@ const HALVE: "halve" = "halve"
  * The window is resolved once, not per page: every page's bounds must cover
  * the session, not the first page.
  */
-export const loadAgentSessionSpans = Effect.fn("loadAgentSessionSpans")(function* (
+export const loadAgentSessionSpans = Effect.fn("McpAgentSessions.loadAgentSessionSpans")(function* (
 	tenant: TenantContext,
 	opts: { readonly sessionId: string; readonly window: SessionWindow | undefined },
 ) {
@@ -178,46 +193,59 @@ export const loadAgentSessionSpans = Effect.fn("loadAgentSessionSpans")(function
 		return { spans: [], truncated: false as const, window: undefined }
 	}
 
-	const spans: AiSessionSpan[] = []
-	let after = undefined as GetAiSessionSpansRequest["after"]
-	let limit = AI_SESSION_SPANS_MAX_SPANS
-	let truncated: "cap" | "too_large" | false = false
-	while (spans.length < MCP_AGENT_SESSION_MAX_SPANS) {
-		const page = yield* readAiSessionSpans(
-			tenant,
-			new GetAiSessionSpansRequest({
-				sessionId: opts.sessionId,
-				limit: Math.min(limit, MCP_AGENT_SESSION_MAX_SPANS - spans.length),
-				...window,
-				...(after !== undefined && { after }),
-			}),
-		).pipe(
-			// A 413 is the BYTE cap, and the sessions this tool exists for are
-			// exactly the ones whose heavy spans trip it on page one — so the same
-			// page is retried at half the rows, down to the floor. Past that the
-			// pages in hand are the session's beginning, and a first page that
-			// cannot be read even at the floor fails the call.
-			Effect.catchTag("@maple/http/ai-sessions/AiSessionTooLargeError", (error) =>
-				limit > MIN_PAGE_SPANS
-					? Effect.succeed(HALVE)
-					: spans.length === 0
-						? Effect.fail(error)
-						: Effect.succeed(undefined),
-			),
-		)
-		if (page === HALVE) {
-			limit = Math.max(MIN_PAGE_SPANS, Math.floor(limit / 2))
-			continue
-		}
-		if (page === undefined) {
-			truncated = "too_large"
-			break
-		}
-		for (const row of page.data) spans.push(clipSpanContent(row))
-		after = page.nextCursor
-		if (after === undefined) break
-		truncated = spans.length >= MCP_AGENT_SESSION_MAX_SPANS ? "cap" : false
-	}
+	const readPage = (
+		state: SpanLoadState,
+	): Effect.Effect<SpanLoadState, Effect.Error<ReadSpansPage>, Effect.Services<ReadSpansPage>> =>
+		state.spans.length >= MCP_AGENT_SESSION_MAX_SPANS
+			? Effect.succeed(state)
+			: readAiSessionSpans(
+					tenant,
+					new GetAiSessionSpansRequest({
+						sessionId: opts.sessionId,
+						limit: Math.min(state.limit, MCP_AGENT_SESSION_MAX_SPANS - state.spans.length),
+						...window,
+						...(state.after !== undefined && { after: state.after }),
+					}),
+				).pipe(
+					// A 413 is the BYTE cap, and the sessions this tool exists for are
+					// exactly the ones whose heavy spans trip it on page one — so the same
+					// page is retried at half the rows, down to the floor. Past that the
+					// pages in hand are the session's beginning, and a first page that
+					// cannot be read even at the floor fails the call.
+					Effect.catchTag("@maple/http/ai-sessions/AiSessionTooLargeError", (error) =>
+						state.limit > MIN_PAGE_SPANS
+							? Effect.succeed(HALVE)
+							: state.spans.length === 0
+								? Effect.fail(error)
+								: Effect.undefined,
+					),
+					Effect.flatMap((page) => {
+						if (page === HALVE) {
+							return readPage({
+								...state,
+								limit: Math.max(MIN_PAGE_SPANS, Math.floor(state.limit / 2)),
+							})
+						}
+						if (page === undefined)
+							return Effect.succeed({ ...state, truncated: "too_large" as const })
+						const spans = [...state.spans, ...Arr.map(page.data, clipSpanContent)]
+						if (page.nextCursor === undefined)
+							return Effect.succeed({ ...state, spans, after: undefined })
+						return readPage({
+							spans,
+							after: page.nextCursor,
+							limit: state.limit,
+							truncated: spans.length >= MCP_AGENT_SESSION_MAX_SPANS ? "cap" : false,
+						})
+					}),
+				)
+
+	const { spans, limit, truncated } = yield* readPage({
+		spans: [],
+		after: undefined,
+		limit: AI_SESSION_SPANS_MAX_SPANS,
+		truncated: false,
+	})
 	yield* Effect.annotateCurrentSpan({
 		"maple.ai.span_count": spans.length,
 		"maple.ai.page_limit": limit,
@@ -290,8 +318,8 @@ export function clipPayload(text: string, chars: number): string {
 export function offsetLabel(ms: number): string {
 	if (ms < 1000) return `+${Math.round(ms)}ms`
 	if (ms < 60_000) return `+${(ms / 1000).toFixed(1)}s`
-	const minutes = Math.floor(ms / 60_000)
-	return `+${minutes}m${Math.round((ms % 60_000) / 1000)}s`
+	const seconds = Math.round(ms / 1000)
+	return `+${Math.floor(seconds / 60)}m${seconds % 60}s`
 }
 
 /** How a span reads: the four categories the session model classifies into. */

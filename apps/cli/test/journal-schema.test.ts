@@ -1,15 +1,17 @@
+import { ok } from "node:assert"
 // Golden decode tests for the coordinator journal envelope.
 //
 // The fixture below is a literal copy of what a shipped build writes to
 // `maple-store-migration.json`. Its purpose is to fail loudly if the schema
 // ever stops accepting a journal an installed store already holds — the
 // declaration is only safe because this pins the accepted form.
-import { Schema } from "effect"
+import { Schema, Record as Rec, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	decodeMigrationJournal,
 	MigrationJournalSchema,
-} from "../src/server/local-store-migrations/journal-schema"
+} from "@maple/local-server/local-store-migrations/journal-schema"
+import * as Arr from "effect/Array"
 
 const golden = {
 	formatVersion: 2,
@@ -22,18 +24,18 @@ const golden = {
 			from: {
 				version: 7,
 				fingerprint: "0123456789abcdef",
-				digest: "a".repeat(64),
-				manifestDigest: "b".repeat(64),
+				digest: Str.repeat(64)("a"),
+				manifestDigest: Str.repeat(64)("b"),
 				chdb: "3.6.0",
-				projectRevision: "c".repeat(64),
+				projectRevision: Str.repeat(64)("c"),
 			},
 			to: {
 				version: 8,
 				fingerprint: "51081e951066442a",
-				digest: "d".repeat(64),
-				manifestDigest: "e".repeat(64),
+				digest: Str.repeat(64)("d"),
+				manifestDigest: Str.repeat(64)("e"),
 				chdb: "3.6.0",
-				projectRevision: "f".repeat(64),
+				projectRevision: Str.repeat(64)("f"),
 			},
 			status: "running",
 			state: { module: "local-0007-to-0008-apple-crash-frames", version: 1, rawRows: {} },
@@ -45,13 +47,13 @@ const golden = {
 	sourceStoreId: "8b7d9f1e-0000-4000-8000-000000000001",
 	sourceChdb: "3.6.0",
 	sourceFingerprint: "0123456789abcdef",
-	sourceDigest: "a".repeat(64),
+	sourceDigest: Str.repeat(64)("a"),
 	sourceVersion: 7,
 	targetDataDir: "/var/lib/maple/.maple-migrations/m/target/data",
 	targetStoreId: "8b7d9f1e-0000-4000-8000-000000000002",
 	targetChdb: "3.6.0",
 	targetFingerprint: "51081e951066442a",
-	targetDigest: "d".repeat(64),
+	targetDigest: Str.repeat(64)("d"),
 	targetVersion: 8,
 	cutoffAt: "2026-08-19T10:15:00.000Z",
 	createdAt: "2026-08-19T10:15:00.000Z",
@@ -79,13 +81,14 @@ describe("migration journal envelope", () => {
 
 	it("keeps absent optional identity fields absent rather than present-undefined", () => {
 		const journal = structuredClone(golden)
-		const { manifestDigest: _m, projectRevision: _p, ...leanFrom } = journal.chain[0]!.from
+		const { manifestDigest: _m, projectRevision: _p, ...leanFrom } = Arr.getUnsafe(journal.chain, 0).from
 		const decoded = decodeMigrationJournal({
 			...journal,
-			chain: [{ ...journal.chain[0]!, from: leanFrom }],
+			chain: [{ ...journal.chain[0], from: leanFrom }],
 		})
-		expect("manifestDigest" in decoded.chain[0]!.from).toBe(false)
-		expect(Object.keys(decoded.chain[0]!.from)).not.toContain("projectRevision")
+		expect("manifestDigest" in Arr.getUnsafe(decoded.chain, 0).from).toBe(false)
+		const from: Readonly<Record<string, unknown>> = Arr.getUnsafe(decoded.chain, 0).from
+		expect(Rec.keys(from)).not.toContain("projectRevision")
 	})
 
 	it("rejects a journal written by a build this one does not know", () => {
@@ -115,7 +118,8 @@ describe("migration journal envelope", () => {
 	})
 
 	it("rejects a malformed step without interpreting module state", () => {
-		const step = golden.chain[0]!
+		const step = golden.chain[0]
+		ok(step !== undefined)
 		for (const patch of [
 			{ status: "halfway" },
 			{ moduleVersion: 0 },

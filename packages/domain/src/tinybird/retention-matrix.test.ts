@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest"
 import { tinybirdProjectManifest } from "../generated/tinybird-project-manifest"
+import { Array as Arr, Option, Record as Rec } from "effect"
 
 const RETENTION_DAYS = {
 	alert_checks: 365,
-	// Raw-tier sibling of trace_detail_spans: rebuilt from `traces`, so holding
+	// CI projections outlive their raw traces on purpose: a year of run history.
+	ci_jobs: 365,
+	ci_runs: 365,
+	// Raw-tier projection of `traces`: rebuilt from it, so holding
 	// it past the source's own retention would store rows detection can no
 	// longer cross-check against a raw trace.
 	ai_trace_index: 30,
@@ -16,6 +20,8 @@ const RETENTION_DAYS = {
 	error_events: 90,
 	error_events_by_time: 90,
 	error_fingerprints_minutely: 90,
+	// Only read while a fingerprint version bump settles; the re-key needs a recent occurrence.
+	error_fingerprint_lineage: 30,
 	logs: 30,
 	logs_aggregates_hourly: 365,
 	metric_catalog: 90,
@@ -23,10 +29,16 @@ const RETENTION_DAYS = {
 	metrics_gauge: 90,
 	metrics_histogram: 90,
 	metrics_sum: 90,
+	// Raw-tier projection of `traces`, like `ai_crawler_requests`.
+	scanner_requests: 30,
 	service_address_resolutions_hourly: 365,
+	// Hour-grain only, read for windows of days; a year would be a second annual table.
+	service_endpoint_details_hourly: 90,
 	service_external_edges_hourly: 365,
 	service_map_children: 30,
 	service_map_db_edges_hourly: 365,
+	// Serves only the partial hours of a map window, which raw traces answered before it: 30 like them.
+	service_map_db_edges_minutely: 30,
 	service_map_db_query_shapes_hourly: 365,
 	service_map_edges_hourly: 365,
 	service_map_spans: 30,
@@ -39,18 +51,23 @@ const RETENTION_DAYS = {
 	service_overview_minutely: 90,
 	service_overview_spans: 30,
 	service_platforms_hourly: 365,
+	// Read for the last week; 90 days shows when a service last changed its runtime.
+	service_runtimes_hourly: 90,
 	service_usage: 365,
+	source_usage_hourly: 90,
 	session_events: 30,
 	session_replay_events: 30,
 	session_replays: 30,
 	span_metrics_calls_hourly: 90,
-	trace_detail_spans: 30,
+	trace_index: 30,
 	// Matches its source, trace_list_mv: facet counts past the list's own window
 	// would offer values that filter the list down to nothing.
 	trace_facets_hourly: 30,
 	trace_list_mv: 30,
 	traces: 30,
 	traces_aggregates_hourly: 365,
+	// Users' PII: last seen up to a quarter back, not a year; raw drill-down needs only 30.
+	user_activity_hourly: 90,
 	// Browser rows past 30 days can never be rebuilt from `session_events`, but
 	// direct-ingested (server/mobile) rows have no source: this table IS the copy.
 	product_events: 365,
@@ -61,12 +78,12 @@ const ZERO_RETENTION_DATASOURCES = ["service_map_edges_hourly_ingest"] as const
 
 describe("Tinybird retention matrix", () => {
 	it("assigns every stored datasource to the intended 30/90/365-day tier", () => {
-		const actualNames = tinybirdProjectManifest.datasources.map(({ name }) => name).sort()
-		expect(actualNames).toEqual([...Object.keys(RETENTION_DAYS), ...ZERO_RETENTION_DATASOURCES].sort())
+		const actualNames = Arr.map(tinybirdProjectManifest.datasources, ({ name }) => name).sort()
+		expect(actualNames).toEqual([...Rec.keys(RETENTION_DAYS), ...ZERO_RETENTION_DATASOURCES].sort())
 
-		for (const [name, expectedDays] of Object.entries(RETENTION_DAYS)) {
-			const datasource = tinybirdProjectManifest.datasources.find(
-				(candidate) => candidate.name === name,
+		for (const [name, expectedDays] of Rec.toEntries(RETENTION_DAYS)) {
+			const datasource = Option.getOrUndefined(
+				Arr.findFirst(tinybirdProjectManifest.datasources, (candidate) => candidate.name === name),
 			)
 			expect(datasource, name).toBeDefined()
 			expect(datasource!.content, datasource!.name).toMatch(
@@ -77,29 +94,12 @@ describe("Tinybird retention matrix", () => {
 
 	it("does not retain Null-engine ingestion bridges", () => {
 		for (const name of ZERO_RETENTION_DATASOURCES) {
-			const datasource = tinybirdProjectManifest.datasources.find(
-				(candidate) => candidate.name === name,
+			const datasource = Option.getOrUndefined(
+				Arr.findFirst(tinybirdProjectManifest.datasources, (candidate) => candidate.name === name),
 			)
 			expect(datasource, name).toBeDefined()
 			expect(datasource?.content, name).toContain("ENGINE Null")
 			expect(datasource?.content, name).not.toContain("ENGINE_TTL")
-		}
-	})
-
-	it("does not retain completed forward queries on ALTER-compatible annual rollups", () => {
-		const alterCompatibleRollups = [
-			"service_map_db_edges_hourly",
-			"service_map_db_query_shapes_hourly",
-			"service_operations_minutely",
-			"service_platforms_hourly",
-		]
-
-		for (const name of alterCompatibleRollups) {
-			const datasource = tinybirdProjectManifest.datasources.find(
-				(candidate) => candidate.name === name,
-			)
-			expect(datasource, name).toBeDefined()
-			expect(datasource?.content, name).not.toContain("FORWARD_QUERY")
 		}
 	})
 
@@ -114,28 +114,36 @@ describe("Tinybird retention matrix", () => {
 	 * data movement, which is the only correct shape here. Migration 0023's first
 	 * deploy attempt failed on exactly this.
 	 */
-	it("applies service-operations rollup changes by ALTER, never by rebuild", () => {
-		for (const name of ["service_operations_minutely_mv", "service_operations_hourly_mv"]) {
-			const pipe = tinybirdProjectManifest.pipes.find((candidate) => candidate.name === name)
+	it("applies service-operations, service-overview, endpoint-details and user-activity rollup changes by ALTER, never by rebuild", () => {
+		for (const name of [
+			"service_operations_minutely_mv",
+			"service_operations_hourly_mv",
+			"service_overview_minutely_mv",
+			"service_overview_hourly_mv",
+			"service_endpoint_details_hourly_mv",
+			"user_activity_hourly_traces_mv",
+			"user_activity_hourly_logs_mv",
+		]) {
+			const pipe = Option.getOrUndefined(
+				Arr.findFirst(tinybirdProjectManifest.pipes, (candidate) => candidate.name === name),
+			)
 			expect(pipe, name).toBeDefined()
 			expect(pipe?.content, name).toContain("DEPLOYMENT_METHOD alter")
 		}
 	})
 
-	it("preserves longer-lived aggregates while raw logs are rebuilt", () => {
-		const migrationForwardQueries = [
-			"logs",
-			"attribute_keys_hourly",
-			"attribute_values_hourly",
-			"logs_aggregates_hourly",
-		]
-
-		for (const name of migrationForwardQueries) {
-			const datasource = tinybirdProjectManifest.datasources.find(
-				(candidate) => candidate.name === name,
+	/**
+	 * The error views also replay 30-day `traces` into 90-day targets, and a rebuild
+	 * recomputes FingerprintHash for every stored row, re-keying every issue. The
+	 * fingerprint fixes in #2071 sat undeployable behind this refusal.
+	 */
+	it("applies error-events view changes by ALTER, never by rebuild", () => {
+		for (const name of ["error_events_mv", "error_events_by_time_mv"]) {
+			const pipe = Option.getOrUndefined(
+				Arr.findFirst(tinybirdProjectManifest.pipes, (candidate) => candidate.name === name),
 			)
-			expect(datasource, name).toBeDefined()
-			expect(datasource?.content, name).toContain("FORWARD_QUERY")
+			expect(pipe, name).toBeDefined()
+			expect(pipe?.content, name).toContain("DEPLOYMENT_METHOD alter")
 		}
 	})
 })

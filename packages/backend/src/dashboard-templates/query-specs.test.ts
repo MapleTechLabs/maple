@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Schema } from "effect"
+import { Predicate, Schema, Array as Arr, Option, String as Str } from "effect"
 import { QueryBuilderQueryDraftSchema } from "@maple/domain/http"
 import { buildBreakdownQuerySpec, buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
 import type { BuildSpecResult } from "@maple/query-engine/query-builder"
@@ -49,7 +49,11 @@ function specBuilderFor(
 }
 
 describe("dashboard template query specs", () => {
-	function checkTemplate(template: TemplateDefinition, params: TemplateParameterValues, variant: string) {
+	function expectTemplateLowers(
+		template: TemplateDefinition,
+		params: TemplateParameterValues,
+		variant: string,
+	) {
 		const built = template.build(params)
 		for (const widget of built.widgets) {
 			const dataSource = widget.dataSource
@@ -58,8 +62,8 @@ describe("dashboard template query specs", () => {
 			if (!buildSpec) continue
 
 			const rawQueries = dataSource.queries
-			expect(Array.isArray(rawQueries), `${template.id}/${widget.id}: queries`).toBe(true)
-			if (!Array.isArray(rawQueries)) continue
+			expect(Arr.isArray(rawQueries), `${template.id}/${widget.id}: queries`).toBe(true)
+			if (!Arr.isArray(rawQueries)) continue
 			expect(rawQueries.length, `${template.id}/${widget.id}`).toBeGreaterThan(0)
 
 			for (const raw of rawQueries) {
@@ -74,12 +78,12 @@ describe("dashboard template query specs", () => {
 
 	for (const template of DASHBOARD_TEMPLATES) {
 		it(`${template.id} query-builder widgets lower to valid query specs`, () => {
-			checkTemplate(template, sampleParams(template), "required params")
+			expectTemplateLowers(template, sampleParams(template), "required params")
 			// Second pass with every optional param filled: scoping params must
 			// emit where clauses the engine actually honors — an ignored filter
 			// surfaces as a warning and fails here.
-			if (template.parameters.some((p) => !p.required)) {
-				checkTemplate(template, allParams(template), "all params")
+			if (Arr.some(template.parameters, (p) => !p.required)) {
+				expectTemplateLowers(template, allParams(template), "all params")
 			}
 		})
 	}
@@ -121,10 +125,10 @@ describe("dashboard template query specs", () => {
 
 	function* displayUnits(display: Record<string, unknown>): Generator<[string, string]> {
 		if (typeof display.unit === "string") yield ["display.unit", display.unit]
-		if (Array.isArray(display.columns)) {
+		if (Arr.isArray(display.columns)) {
 			for (const column of display.columns) {
-				const unit = (column as { unit?: unknown; field?: unknown }).unit
-				if (typeof unit === "string") yield [`column ${String(column.field)}`, unit]
+				const entry = column as { unit?: unknown; field?: unknown }
+				if (typeof entry.unit === "string") yield [`column ${String(entry.field)}`, entry.unit]
 			}
 		}
 	}
@@ -147,11 +151,14 @@ describe("dashboard template query specs", () => {
 			for (const widget of template.build(allParams(template)).widgets) {
 				if (widget.display.unit !== "percent") continue
 				const formulas = widget.dataSource.params?.formulas
-				if (!Array.isArray(formulas)) continue
+				if (!Arr.isArray(formulas)) continue
 				for (const formula of formulas) {
-					const expression = String((formula as { expression?: unknown }).expression ?? "")
+					const expression =
+						Predicate.hasProperty(formula, "expression") && Predicate.isString(formula.expression)
+							? formula.expression
+							: ""
 					expect(
-						expression.replace(/\s+/g, ""),
+						Str.replace(/\s+/g, "")(expression),
 						`${template.id}/${widget.id}: "${expression}" under unit "percent"`,
 					).not.toMatch(/\*100$/)
 				}
@@ -160,12 +167,40 @@ describe("dashboard template query specs", () => {
 	})
 
 	it("uses PlanetScale's canonical discovery label keys", () => {
-		const template = DASHBOARD_TEMPLATES.find((candidate) => candidate.id === "planetscale")
+		const template = Option.getOrUndefined(
+			Arr.findFirst(DASHBOARD_TEMPLATES, (candidate) => candidate.id === "planetscale"),
+		)
 		expect(template).toBeDefined()
 		const encoded = JSON.stringify(template?.build({ database: "shop" }))
 		expect(encoded).toContain("attr.planetscale_database_name")
 		expect(encoded).toContain("attr.planetscale_branch_name")
 		expect(encoded).not.toContain('"attr.planetscale_database"')
 		expect(encoded).not.toContain('"attr.planetscale_branch"')
+	})
+
+	// The hostmetrics receiver sends utilization with no state; split shippers add state=used.
+	it("reads host filesystem utilization with no state or the used state", () => {
+		const template = Option.getOrUndefined(
+			Arr.findFirst(DASHBOARD_TEMPLATES, (candidate) => candidate.id === "host-metrics"),
+		)
+		const widget = Option.getOrUndefined(
+			Arr.findFirst(template?.build({}).widgets ?? [], (candidate) => candidate.id === "filesystem"),
+		)
+		const dataSource = widget?.dataSource
+		const raw = dataSource?.kind === "query" ? dataSource.queries[0] : undefined
+		const result = buildTimeseriesQuerySpec(decodeQueryDraft(raw))
+		expect(result.warnings).toEqual([])
+		expect(result.query).toMatchObject({
+			filters: {
+				attributeFilters: [
+					{
+						key: "state",
+						mode: "equals",
+						value: "used",
+						or: [{ key: "state", mode: "exists", negated: true }],
+					},
+				],
+			},
+		})
 	})
 })

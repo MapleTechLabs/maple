@@ -1,6 +1,8 @@
+import { String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 /**
  * The whole email runtime: HTML escaping plus a token/slot splicer for the
- * Maizzle-compiled templates in `src/generated/`.
+ * templates compiled into `src/generated/`.
  *
  * Zero dependencies on purpose — this runs inside the API Worker, where
  * pulling react + react-email in just to produce a string was the problem this
@@ -9,12 +11,15 @@
 
 /** Escapes into a form that is safe in both text nodes and quoted attributes. */
 export function escapeHtml(value: string): string {
-	return value
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;")
-		.replace(/'/g, "&#39;")
+	return Str.replace(
+		/'/g,
+		"&#39;",
+	)(
+		Str.replace(
+			/"/g,
+			"&quot;",
+		)(Str.replace(/>/g, "&gt;")(Str.replace(/</g, "&lt;")(Str.replace(/&/g, "&amp;")(value)))),
+	)
 }
 
 const TOKEN = /\[\[(#?)([A-Za-z0-9_]+)\]\]/g
@@ -35,7 +40,7 @@ export function fill(
 	values: Readonly<Record<string, string>> = {},
 	slots: Readonly<Record<string, string>> = {},
 ): string {
-	return template.replace(TOKEN, (_match, raw: string, name: string) => {
+	return replaceWith(template, TOKEN, (_match, raw = "", name = "") => {
 		if (raw === "#") {
 			const slot = slots[name]
 			if (slot === undefined) throw new Error(`Email template is missing slot "${name}"`)
@@ -55,9 +60,9 @@ const PREHEADER_UNIT = " ‌​‍‎‏﻿"
 const PREHEADER_TARGET = 150
 
 export function preheaderPadding(previewText: string): string {
-	return PREHEADER_UNIT.repeat(Math.max(0, PREHEADER_TARGET - previewText.length))
+	return Str.repeat(Math.max(0, PREHEADER_TARGET - previewText.length))(PREHEADER_UNIT)
 }
 
 export function truncate(text: string, max: number): string {
-	return text.length > max ? `${text.slice(0, max)}…` : text
+	return text.length > max ? `${Str.slice(0, max)(text)}…` : text
 }

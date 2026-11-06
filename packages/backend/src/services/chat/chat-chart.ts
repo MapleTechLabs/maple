@@ -25,6 +25,8 @@ import { orgIdFromChatSessionId, type ChatMessage } from "@maple/domain/chat-ses
 import type { OrgId, ShareChartResponse } from "@maple/domain/http"
 import { ChartRanked, ChartTimeseries } from "@maple/domain/http"
 import { downsample, type ChartPoint } from "@maple/widgets/chart/static-chart"
+import { parseWarehouseDateTime } from "@maple/query-engine"
+import { Array as Arr, Option, Record as Rec } from "effect"
 
 /**
  * Points kept per series. The alert card draws 60 across the same 720px and a
@@ -117,10 +119,12 @@ export const chatChartFrom = (
 	messages: ReadonlyArray<ChatMessage>,
 	claims: VerifiedChatChartClaims,
 ): ShareChartResponse | null => {
-	const message = messages.find(
+	const found = Arr.findFirst(
+		messages,
 		(candidate) => candidate.id === claims.rawMessageId && candidate.role === "assistant",
 	)
-	if (message === undefined) return null
+	if (Option.isNone(found)) return null
+	const message = found.value
 
 	// Position in the reply is the chart's identity — see `chartFences`.
 	const fence = chartFences(message.text)[claims.chartIndex]
@@ -130,7 +134,7 @@ export const chatChartFrom = (
 
 /** How big a series draws, which is how it earns one of the {@link MAX_SERIES} slots. */
 const peak = (points: ReadonlyArray<ChartPoint>): number =>
-	points.reduce((max, [, value]) => Math.max(max, Math.abs(value)), 0)
+	Arr.reduce(points, 0, (max, [, value]) => Math.max(max, Math.abs(value)))
 
 /**
  * `{ bucket, series: { … } }` rows turned inside out: one entry per series name.
@@ -143,8 +147,8 @@ const seriesOf = (spec: TimeseriesSpec, scale: number): ReadonlyArray<ChartTimes
 	const byName = new Map<string, Array<ChartPoint>>()
 	for (const row of spec.data) {
 		// `parseChartSpec` has already dropped the rows whose bucket is not a time.
-		const at = Date.parse(row.bucket)
-		for (const [name, value] of Object.entries(row.series)) {
+		const at = parseWarehouseDateTime(row.bucket)
+		for (const [name, value] of Rec.toEntries(row.series)) {
 			const scaledValue = scaled(value, scale)
 			if (scaledValue === null) continue
 			const points = byName.get(name) ?? []
@@ -152,16 +156,15 @@ const seriesOf = (spec: TimeseriesSpec, scale: number): ReadonlyArray<ChartTimes
 			byName.set(name, points)
 		}
 	}
-	return [...byName]
-		.map(([name, points]) => ({
-			name,
-			// The renderer sorts, but downsampling picks extremes per stride and
-			// needs the strides to be time-ordered to mean anything.
-			points: downsample(
-				[...points].sort((a, b) => a[0] - b[0]),
-				MAX_POINTS_PER_SERIES,
-			),
-		}))
+	return Arr.map([...byName], ([name, points]) => ({
+		name,
+		// The renderer sorts, but downsampling picks extremes per stride and
+		// needs the strides to be time-ordered to mean anything.
+		points: downsample(
+			[...points].sort((a, b) => a[0] - b[0]),
+			MAX_POINTS_PER_SERIES,
+		),
+	}))
 		.sort((a, b) => peak(b.points) - peak(a.points))
 		.slice(0, MAX_SERIES)
 }
@@ -184,12 +187,10 @@ export const chatChartResponse = (spec: ChartSpec): ShareChartResponse => {
 			kind: "ranked",
 			title,
 			unit,
-			points: spec.data
-				.flatMap((point) => {
-					const value = scaled(point.value, scale)
-					return value === null ? [] : [{ name: point.name, value }]
-				})
-				.slice(0, MAX_RANKED_BARS),
+			points: Arr.flatMap(spec.data, (point) => {
+				const value = scaled(point.value, scale)
+				return value === null ? [] : [{ name: point.name, value }]
+			}).slice(0, MAX_RANKED_BARS),
 		})
 	}
 

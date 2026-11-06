@@ -1,11 +1,12 @@
+import { Array as Arr } from "effect"
 // Single source of truth for docs navigation ordering. The sidebar
 // (DocsSidebar), the index page, prev/next and search all read from here so
 // section and group order never drift apart. Pure data — client islands import it.
 
 /**
  * The sidebar is split into sections so a reader sees one section's tree at a
- * time: product surfaces, the "get data in" guides, the local binary, and the
- * machine-facing references. Groups are listed in sidebar order; `icon` is a
+ * time: product surfaces, the "get data in" guides, the local binary, running
+ * it on your own server, and the machine-facing references. Groups are listed in sidebar order; `icon` is a
  * DocsCategoryIcon id, shared with the header strip.
  */
 export const SECTIONS = [
@@ -13,7 +14,7 @@ export const SECTIONS = [
 		id: "platform",
 		icon: "Dashboards",
 		label: "Platform",
-		blurb: "Concepts and every product surface.",
+		blurb: "Concepts, every product surface, and the sources that feed it.",
 		groups: [
 			"Getting Started",
 			"Concepts",
@@ -22,17 +23,21 @@ export const SECTIONS = [
 			"Session Replay",
 			"Product Events",
 			"Agent Sessions",
+			"MCP Servers",
 			"Dashboards",
 			"Alerting",
+			"Code Review",
+			"Infrastructure",
 			"Integrations",
+			"Infrastructure as Code",
 		],
 	},
 	{
 		id: "instrumentation",
 		icon: "Instrumentation",
 		label: "Instrumentation",
-		blurb: "Languages, frameworks, frontends, hosts and clusters.",
-		groups: ["Instrumentation", "Frontend", "Infrastructure"],
+		blurb: "Languages, frameworks, frontends and AI agents.",
+		groups: ["Instrumentation", "Frontend", "AI Frameworks", "AI Gateways"],
 	},
 	{
 		id: "local",
@@ -40,6 +45,13 @@ export const SECTIONS = [
 		label: "Local Mode",
 		blurb: "The whole product as one binary.",
 		groups: ["Local Mode"],
+	},
+	{
+		id: "self-hosting",
+		icon: "Self-hosting",
+		label: "Self-hosting",
+		blurb: "Maple on your own server, as one container.",
+		groups: ["Self-hosting", "Platforms"],
 	},
 	{
 		id: "reference",
@@ -54,9 +66,10 @@ export type DocSection = (typeof SECTIONS)[number]
 export type DocGroup = DocSection["groups"][number]
 
 /** Doc groups in sidebar order (sections in order, groups within each). */
-export const GROUP_ORDER: readonly DocGroup[] = SECTIONS.flatMap((section) => section.groups)
+export const GROUP_ORDER: readonly DocGroup[] = Arr.flatMap(SECTIONS, (section) => section.groups)
 
-export const isDocGroup = (group: string): group is DocGroup => GROUP_ORDER.some((known) => known === group)
+export const isDocGroup = (group: string): group is DocGroup =>
+	Arr.some(GROUP_ORDER, (known) => known === group)
 
 export const groupRank = (group: string): number => {
 	const i = GROUP_ORDER.findIndex((known) => known === group)
@@ -65,28 +78,7 @@ export const groupRank = (group: string): number => {
 
 /** The section a group belongs to; unknown groups fall into the first one. */
 export const sectionForGroup = (group: string): DocSection =>
-	SECTIONS.find((section) => section.groups.some((known) => known === group)) ?? SECTIONS[0]
+	SECTIONS.find((section) => Arr.some(section.groups, (known) => known === group)) ?? SECTIONS[0]
 
 /** Slug of the instrumentation overview — the "SDKs" entry point everywhere. */
 export const INSTRUMENTATION_SLUG = "instrumentation"
-
-/** One-line blurb per group for the docs index cards. */
-export const GROUP_BLURBS = {
-	"Getting Started": "What Maple is and the three steps to first data.",
-	Instrumentation: "Setup guides for every language, framework and runtime.",
-	Frontend: "Trace browser navigations, data loading and errors, linked to your backend.",
-	Concepts: "How Maple reads OpenTelemetry data and what it expects from yours.",
-	Explore: "Search traces, logs and metrics, and read services and the service map.",
-	Errors: "How errors become issues, and how to triage and resolve them.",
-	"Session Replay": "Record browser sessions and play them back next to their traces.",
-	"Product Events": "Track signups, checkouts and plan starts from the browser, a span, or any backend.",
-	"Agent Sessions": "Trace AI agents: every model call, tool call and turn, grouped into sessions.",
-	Dashboards: "Build dashboards on your telemetry and embed their charts in your own product.",
-	Infrastructure: "Stream host, container and cluster metrics next to your services.",
-	Integrations: "Pull metrics and context from the services around your app.",
-	Alerting: "Create alert rules, work incidents, and route notifications to your team.",
-	"Local Mode": "The whole product as one binary on your machine.",
-	Reference: "The REST API, MCP server, CLI, ingest endpoint, SQL tables, alert webhooks and limits.",
-} satisfies Record<DocGroup, string>
-
-export const groupBlurb = (group: string): string => (isDocGroup(group) ? GROUP_BLURBS[group] : "")

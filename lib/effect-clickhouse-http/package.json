@@ -9,11 +9,10 @@
 	},
 	"scripts": {
 		"test": "vitest run",
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsrs --noEmit",
 		"test:live": "CLICKHOUSE_HTTP_LIVE=1 vitest run src/client.live.test.ts"
 	},
 	"devDependencies": {
-		"@effect/language-service": "catalog:effect",
 		"@effect/vitest": "catalog:effect",
 		"@types/node": "catalog:tooling",
 		"effect": "catalog:effect",
@@ -21,6 +20,6 @@
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
-		"effect": ">=4.0.0-rc.117 <5"
+		"effect": "^4.0.0"
 	}
 }

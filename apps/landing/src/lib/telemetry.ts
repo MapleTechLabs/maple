@@ -17,6 +17,14 @@
  */
 
 import { MapleBrowser, type TrackProps } from "@maple-dev/browser"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
+
+// Speculation-rules prerendering (Chromium); not in TypeScript's DOM lib yet.
+declare global {
+	interface Document {
+		readonly prerendering?: boolean
+	}
+}
 
 const INGEST_KEY = import.meta.env.PUBLIC_MAPLE_INGEST_KEY
 const ENDPOINT = import.meta.env.PUBLIC_INGEST_URL || "https://ingest.maple.dev"
@@ -41,6 +49,7 @@ const LANDING_EVENTS = [
 	"pricing_plan_selected",
 	"pricing_calculator_changed",
 	"install_command_copied",
+	"agent_prompt_copied",
 	"docs_search",
 	"docs_snippet_copied",
 	"changelog_link_copied",
@@ -68,6 +77,12 @@ export function startLandingTelemetry(): void {
 	// No key configured (fresh clone, `astro dev` without env) — stay silent
 	// rather than post a marketing site's traffic at whatever the default is.
 	if (started || !INGEST_KEY || typeof window === "undefined") return
+	// Hover prefetch prerenders pages the visitor may never open; start the
+	// session and replay only once the page is actually shown.
+	if (document.prerendering) {
+		document.addEventListener("prerenderingchange", startLandingTelemetry, { once: true })
+		return
+	}
 	started = true
 
 	MapleBrowser.init({
@@ -112,9 +127,9 @@ function bindScrollDepth(): void {
 			scrollable <= 0
 				? 100
 				: ((window.scrollY + window.innerHeight) / document.documentElement.scrollHeight) * 100
-		const reached = remaining.filter((mark) => percent >= mark)
+		const reached = Arr.filter(remaining, (mark) => percent >= mark)
 		if (reached.length === 0) return
-		remaining = remaining.filter((mark) => percent < mark)
+		remaining = Arr.filter(remaining, (mark) => percent < mark)
 		for (const mark of reached) {
 			trackLanding("page_scrolled", { depth: String(mark), path: window.location.pathname })
 		}
@@ -181,10 +196,10 @@ function bindDeclarativeTracking(): void {
 			}
 
 			const props: Record<string, string> = {}
-			for (const [key, value] of Object.entries(host.dataset)) {
-				if (key === "track" || !key.startsWith("track") || value === undefined) continue
+			for (const [key, value] of Rec.toEntries(host.dataset)) {
+				if (key === "track" || !Str.startsWith("track")(key) || value === undefined) continue
 				// `data-track-location` → dataset.trackLocation → `location`.
-				props[key.slice(5).replace(/^./, (c) => c.toLowerCase())] = value
+				props[Str.slice(5)(key).replace(/^./, (c) => Str.toLowerCase(c))] = value
 			}
 			// Which page a CTA was clicked on is not knowable from the markup —
 			// the same nav renders on every route — and stamping it in the

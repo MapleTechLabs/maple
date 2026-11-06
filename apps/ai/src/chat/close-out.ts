@@ -1,3 +1,4 @@
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { ChatMessage } from "@maple/domain/chat-session"
 
 /** How much of one tool's output the close-out turn is shown. */
@@ -22,11 +23,10 @@ export const withToolTranscript = (history: ReadonlyArray<ChatMessage>): Readonl
 	let full = false
 	const rendered = new Map<number, { readonly calls: ReadonlyArray<string>; readonly omitted: number }>()
 	for (let index = history.length - 1; index >= 0; index--) {
-		const message = history[index]!
-		if (message.role !== "assistant" || message.toolCalls.length === 0) continue
+		const message = history[index]
+		if (message === undefined || message.role !== "assistant" || message.toolCalls.length === 0) continue
 		const kept: Array<string> = []
-		for (let call = message.toolCalls.length - 1; call >= 0; call--) {
-			const { name, input, output } = message.toolCalls[call]!
+		for (const { name, input, output } of Arr.reverse(message.toolCalls)) {
 			const text = `[${name} ${renderToolValue(input)}]\n${output === undefined ? "(no result)" : renderToolValue(output)}`
 			if (full || text.length > budget) {
 				full = true
@@ -37,26 +37,43 @@ export const withToolTranscript = (history: ReadonlyArray<ChatMessage>): Readonl
 		}
 		rendered.set(index, { calls: kept, omitted: message.toolCalls.length - kept.length })
 	}
-	return history.map((message, index) => {
+	return Arr.map(history, (message, index) => {
 		const evidence = rendered.get(index)
 		if (evidence === undefined) return message
 		return new ChatMessage({
 			...message,
-			text: [
-				message.text,
-				"Evidence gathered so far:",
-				...(evidence.omitted > 0
-					? [`(${evidence.omitted} earlier tool calls left out for length.)`]
-					: []),
-				...evidence.calls,
-			]
-				.filter((part) => part !== "")
-				.join("\n\n"),
+			text: Arr.join(
+				Arr.filter(
+					[
+						message.text,
+						"Evidence gathered so far:",
+						...(evidence.omitted > 0
+							? [`(${evidence.omitted} earlier tool calls left out for length.)`]
+							: []),
+						...evidence.calls,
+					],
+					(part) => part !== "",
+				),
+				"\n\n",
+			),
 		})
 	})
 }
 
+// A result with a UI payload is stored as `{ text, ui }` (`events.ts`); only the text is for a model.
+const UiResult = Schema.Struct({ text: Schema.String, ui: Schema.Unknown })
+const modelText = Schema.decodeUnknownOption(UiResult)
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+
 const renderToolValue = (value: unknown): string => {
-	const text = typeof value === "string" ? value : JSON.stringify(value)
-	return text.length > CLOSE_OUT_TOOL_OUTPUT_CHARS ? `${text.slice(0, CLOSE_OUT_TOOL_OUTPUT_CHARS)}…` : text
+	const text =
+		typeof value === "string"
+			? value
+			: Option.match(modelText(value), {
+					onNone: () => Option.getOrElse(encodeJson(value), () => String(value)),
+					onSome: (result) => result.text,
+				})
+	return text.length > CLOSE_OUT_TOOL_OUTPUT_CHARS
+		? `${Str.slice(0, CLOSE_OUT_TOOL_OUTPUT_CHARS)(text)}…`
+		: text
 }

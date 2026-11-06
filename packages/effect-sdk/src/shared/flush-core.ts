@@ -1,4 +1,4 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 // Shared flush core (platform-agnostic)
 //
 // The buffer-drain → OTLP-encode → POST machinery shared by every flushable
@@ -6,13 +6,20 @@
 // resolution (env-lazy on Workers, env-auto-detect on Node, programmatic in the
 // browser) and its transport (plain `fetch` vs `fetch(keepalive)`); everything
 // downstream of a resolved endpoint lives here.
-import { Effect, Redacted, Result } from "effect"
+import { Cause, Effect, Redacted, Result, Array as Arr, Record as Rec, String as Str } from "effect"
+import { isMapleIngestEndpoint } from "@maple/browser-session/region"
 import type { LogBuffer, LogRecord } from "./flushable-logger.js"
 import type { MetricBuffer } from "./flushable-metrics.js"
 import type { OtlpSpan, SpanBuffer } from "./flushable-tracer.js"
 
 /** Disable a signal for this long after a failed POST so a broken collector isn't hammered. */
 const COOLDOWN_MS = 60_000
+
+/** Upper bound on one default-transport POST. A request that never answers must not hold its flush. */
+const EXPORT_TIMEOUT_MS = 10_000
+
+/** Upper bound on how long a serialized flush waits for the one before it. */
+const FLUSH_LINK_TIMEOUT_MS = 15_000
 
 /**
  * Minimal resource shape consumed by {@link buildResolved}. Structurally
@@ -23,7 +30,7 @@ const COOLDOWN_MS = 60_000
  */
 export interface ResourceInput {
 	readonly endpoint: string | undefined
-	readonly ingestKey: Redacted.Redacted<string> | undefined
+	readonly ingestKey: Redacted.Redacted | undefined
 	readonly resource: {
 		readonly serviceName: string
 		readonly serviceVersion: string | undefined
@@ -64,9 +71,10 @@ export interface FlushTransport {
 /**
  * Turn a resolved resource into ready-to-POST URLs + headers. Shared by all
  * presets. `keyless` is each preset's answer to "no ingest key": the env-driven
- * server and Cloudflare presets treat it as unconfigured and `"disable"`; the
- * browser client's key is auth only, so it `"send"`s without `Authorization`
- * for a proxy in front of the endpoint to complete.
+ * server and Cloudflare presets disable export only against Maple's hosted
+ * ingest, which rejects keyless writes, and send to any other endpoint (a local
+ * `maple start`, a self-hosted collector). The browser client's key is auth
+ * only, so it always `"send"`s without `Authorization` for a proxy to complete.
  */
 export const buildResolved = (
 	r: ResourceInput,
@@ -75,13 +83,13 @@ export const buildResolved = (
 		readonly logsPath?: string | undefined
 		readonly metricsPath?: string | undefined
 		readonly userAgent: string
-		readonly keyless: "disable" | "send"
+		readonly keyless: "disable-at-maple-ingest" | "send"
 	},
 ): Resolved => {
 	// `r.endpoint` is always defined in practice (every resolver falls back to
 	// the region's public ingest); guard anyway.
 	const base = r.endpoint ?? "https://ingest.maple.dev"
-	const baseUrl = base.endsWith("/") ? base.slice(0, -1) : base
+	const baseUrl = Str.endsWith("/")(base) ? Str.slice(0, -1)(base) : base
 	const tracesUrl = `${baseUrl}${opts.tracesPath ?? "/v1/traces"}`
 	const logsUrl = `${baseUrl}${opts.logsPath ?? "/v1/logs"}`
 	const metricsUrl = `${baseUrl}${opts.metricsPath ?? "/v1/metrics"}`
@@ -101,7 +109,10 @@ export const buildResolved = (
 		resource: makeOtlpResource(r.resource),
 		scope: { name: r.resource.serviceName },
 		headers,
-		noOp: r.ingestKey === undefined && opts.keyless === "disable",
+		noOp:
+			r.ingestKey === undefined &&
+			opts.keyless === "disable-at-maple-ingest" &&
+			isMapleIngestEndpoint(baseUrl),
 	}
 }
 
@@ -111,7 +122,7 @@ const makeOtlpResource = (resource: {
 	readonly attributes: Record<string, unknown>
 }): OtlpResourceLike => {
 	const attrs: Array<{ readonly key: string; readonly value: unknown }> = []
-	for (const [key, value] of Object.entries(resource.attributes)) {
+	for (const [key, value] of Rec.toEntries(resource.attributes)) {
 		attrs.push({ key, value: anyValue(value) })
 	}
 	attrs.push({ key: "service.name", value: { stringValue: resource.serviceName } })
@@ -122,7 +133,7 @@ const makeOtlpResource = (resource: {
 }
 
 const anyValue = (value: unknown): unknown => {
-	if (Array.isArray(value)) return { arrayValue: { values: value.map(anyValue) } }
+	if (Arr.isArray(value)) return { arrayValue: { values: Arr.map(value, anyValue) } }
 	switch (typeof value) {
 		case "string":
 			return { stringValue: value }
@@ -138,12 +149,29 @@ const anyValue = (value: unknown): unknown => {
 }
 
 /** Plain `fetch` POST. Throws on non-2xx so {@link flushSignal} records a cooldown. */
-const post = async (url: string, headers: Record<string, string>, body: unknown): Promise<void> => {
-	const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) })
+const send = async (
+	url: string,
+	headers: Record<string, string>,
+	body: unknown,
+	signal: AbortSignal,
+): Promise<void> => {
+	const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal })
 	if (!res.ok) {
 		throw new Error(`OTLP ${res.status} ${res.statusText}`)
 	}
 }
+
+/**
+ * {@link send}, aborted after {@link EXPORT_TIMEOUT_MS}. Rejects on non-2xx or
+ * timeout so {@link flushSignal} restores the batch and cools down.
+ */
+const post = (url: string, headers: Record<string, string>, body: unknown): Promise<void> =>
+	Effect.runPromise(
+		Effect.tryPromise({
+			try: (signal) => send(url, headers, body, signal),
+			catch: (cause) => new Cause.UnknownError(cause),
+		}).pipe(Effect.timeout(EXPORT_TIMEOUT_MS)),
+	)
 
 /** Default transport: plain `fetch` (server + Cloudflare). */
 export const fetchTransport: FlushTransport = { post }
@@ -157,9 +185,11 @@ const flushSignal = async <A>(args: {
 	readonly signal: string
 	readonly transport: FlushTransport
 	readonly logPrefix: string
+	readonly tailBytes: (() => number) | undefined
+	readonly ignoreCooldown: boolean | undefined
 }): Promise<void> => {
-	const { url, headers, buffer, body, state, signal, transport, logPrefix } = args
-	if (state.disabledUntil && Date.now() < state.disabledUntil) {
+	const { url, headers, buffer, body, state, signal, transport, logPrefix, tailBytes } = args
+	if (!args.ignoreCooldown && state.disabledUntil > 0 && Date.now() < state.disabledUntil) {
 		console.warn(
 			`${logPrefix} ${signal} flush skipped (cooldown ${state.disabledUntil - Date.now()}ms remaining)`,
 		)
@@ -168,19 +198,61 @@ const flushSignal = async <A>(args: {
 	state.disabledUntil = 0
 	const batch = buffer.drain()
 	if (batch.length === 0) return
-	const posted = await Effect.runPromise(
-		Effect.result(
-			Effect.tryPromise({
-				try: () => transport.post(url, headers, body(batch)),
-				catch: (cause) => cause,
-			}),
-		),
+	// Asked per signal, right before the split: the room depends on what the
+	// signals before this one have just reserved.
+	const tail = tailBytes?.()
+	const chunks = tail !== undefined && tail !== 0 ? newestFirst(batch, body, tail) : [batch]
+	const posted = await Promise.all(
+		Arr.map(chunks, async (chunk) => ({
+			chunk,
+			result: await Effect.runPromise(
+				Effect.result(
+					Effect.tryPromise({
+						try: () => transport.post(url, headers, body(chunk)),
+						// The fetch transport already rejects with one; the log prints what it wraps.
+						catch: (cause) =>
+							Cause.isUnknownError(cause) ? cause : new Cause.UnknownError(cause),
+					}),
+				),
+			),
+		})),
 	)
-	if (Result.isFailure(posted)) {
-		buffer.restore(batch)
+	const failed = Arr.flatMap(posted, ({ chunk, result }) =>
+		Result.isFailure(result) ? [{ chunk, cause: result.failure }] : [],
+	)
+	const [first] = failed
+	if (first !== undefined) {
+		// One restore, back in drain order.
+		buffer.restore(Arr.flatMap(failed.reverse(), ({ chunk }) => chunk))
 		state.disabledUntil = Date.now() + COOLDOWN_MS
-		console.error(`${logPrefix} ${signal} flush failed; cooldown 60s:`, posted.failure)
+		console.error(`${logPrefix} ${signal} flush failed; cooldown 60s:`, first.cause.cause)
 	}
+}
+
+/**
+ * Split a batch for a document that may be unloading: the newest items that
+ * fit `maxBytes` (UTF-8) in one body, issued first so it gets the keepalive
+ * attempt, then everything older in a second. Only the tail is measured, so a
+ * large backlog is not serialized here. No split when nothing or everything fits.
+ */
+const newestFirst = <A>(
+	items: ReadonlyArray<A>,
+	body: (items: ReadonlyArray<A>) => unknown,
+	maxBytes: number,
+): Array<ReadonlyArray<A>> => {
+	const encoder = new TextEncoder()
+	const size = (chunk: ReadonlyArray<A>) => encoder.encode(JSON.stringify(body(chunk))).byteLength
+	const envelope = size([])
+	let start = items.length
+	let bytes = envelope
+	while (start > 0) {
+		// +1 for the comma that joins it to the tail.
+		const next = size(items.slice(start - 1, start)) - envelope + 1
+		if (bytes + next > maxBytes) break
+		bytes += next
+		start -= 1
+	}
+	return start > 0 && start < items.length ? [items.slice(start), items.slice(0, start)] : [items]
 }
 
 /**
@@ -197,41 +269,53 @@ export const guardFlush =
 	<Args extends ReadonlyArray<unknown>>(logPrefix: string, run: (...args: Args) => Promise<void>) =>
 	async (...args: Args): Promise<void> => {
 		const outcome = await Effect.runPromise(
-			Effect.result(Effect.tryPromise({ try: () => run(...args), catch: (cause) => cause })),
+			Effect.result(
+				Effect.tryPromise({
+					try: () => run(...args),
+					catch: (cause) => new Cause.UnknownError(cause),
+				}),
+			),
 		)
-		if (Result.isFailure(outcome)) console.error(`${logPrefix} flush failed:`, outcome.failure)
+		if (Result.isFailure(outcome)) console.error(`${logPrefix} flush failed:`, outcome.failure.cause)
 	}
 
 /**
- * Serialize drains. Workers may coalesce queued calls with identical arguments:
- * every caller waits for that drain, and calls arriving DURING it queue a later
- * drain so spans completed after the first snapshot cannot be stranded.
- * Other presets retain one drain per call by default.
+ * Serialize drains: each call waits for the one before it, then drains. The
+ * wait is bounded, so a flush that never settles delays later ones by at most
+ * {@link FLUSH_LINK_TIMEOUT_MS} instead of blocking them for the process lifetime.
  */
 export const makeSerializedFlush = <Args extends ReadonlyArray<unknown>>(
 	run: (...args: Args) => Promise<void>,
-	options?: { readonly coalesceSameArguments?: boolean },
 ): ((...args: Args) => Promise<void>) => {
 	let tail: Promise<void> = Promise.resolve()
-	let queued: { readonly args: Args; readonly promise: Promise<void> } | undefined
 	return (...args) => {
-		const waiting = queued
-		if (
-			options?.coalesceSameArguments &&
-			waiting &&
-			args.length === waiting.args.length &&
-			args.every((value, index) => value === waiting.args[index])
-		)
-			return waiting.promise
-		const next: Promise<void> = tail.then(() => {
-			if (queued?.promise === next) queued = undefined
-			return run(...args)
-		})
-		queued = { args, promise: next }
-		tail = next.catch(() => undefined)
+		const start = tail
+		const next = start.then(() => run(...args))
+		tail = settledWithin(start, next, FLUSH_LINK_TIMEOUT_MS)
 		return next
 	}
 }
+
+/**
+ * Resolves when `promise` settles or `ms` after `start` resolves, whichever is
+ * first. The timer starts with the drain, so queued calls stay one at a time.
+ * Never rejects.
+ */
+const settledWithin = (start: Promise<void>, promise: Promise<unknown>, ms: number): Promise<void> =>
+	new Promise<void>((resolve) => {
+		let timer: ReturnType<typeof setTimeout> | undefined
+		let settled = false
+		const done = () => {
+			settled = true
+			clearTimeout(timer)
+			resolve()
+		}
+		// Registered now, so the timer is gone before the caller's `await` resumes.
+		promise.then(done, done)
+		void start.then(() => {
+			if (!settled) timer = setTimeout(resolve, ms)
+		})
+	})
 
 /**
  * Drain the span + log buffers and POST them. Errors are swallowed per signal
@@ -240,6 +324,12 @@ export const makeSerializedFlush = <Args extends ReadonlyArray<unknown>>(
  * - `noOp`: drain so the buffers don't grow unbounded, fire `onNoOp` (one-shot
  *   "telemetry disabled" notice), never POST.
  * - empty buffers: short-circuit without a request.
+ * - `tailBytes` (browser, document hidden or unloading): each signal goes out
+ *   as at most two requests, its newest items first in a body of at most the
+ *   size this returns for it. Every request is issued before `runFlush`
+ *   returns, traces first.
+ * - `ignoreCooldown` (browser `pagehide`): no later flush is coming, so a
+ *   signal in cooldown is sent anyway.
  */
 export const runFlush = async (args: {
 	readonly resolved: Resolved
@@ -252,6 +342,8 @@ export const runFlush = async (args: {
 	readonly transport: FlushTransport
 	readonly logPrefix: string
 	readonly onNoOp?: (() => void) | undefined
+	readonly tailBytes?: (() => number) | undefined
+	readonly ignoreCooldown?: boolean | undefined
 }): Promise<void> => {
 	const {
 		resolved: r,
@@ -264,6 +356,8 @@ export const runFlush = async (args: {
 		transport,
 		logPrefix,
 		onNoOp,
+		tailBytes,
+		ignoreCooldown,
 	} = args
 
 	if (r.noOp) {
@@ -284,6 +378,8 @@ export const runFlush = async (args: {
 			signal: "traces",
 			transport,
 			logPrefix,
+			tailBytes,
+			ignoreCooldown,
 		}),
 		flushSignal({
 			url: r.logsUrl,
@@ -294,6 +390,8 @@ export const runFlush = async (args: {
 			signal: "logs",
 			transport,
 			logPrefix,
+			tailBytes,
+			ignoreCooldown,
 		}),
 		flushSignal({
 			url: r.metricsUrl,
@@ -304,6 +402,8 @@ export const runFlush = async (args: {
 			signal: "metrics",
 			transport,
 			logPrefix,
+			tailBytes,
+			ignoreCooldown,
 		}),
 	])
 }
@@ -322,7 +422,7 @@ const metricAttributes = (
 	attributes: Readonly<Record<string, string>> | undefined,
 	extra?: readonly [string, string],
 ) => [
-	...Object.entries(attributes ?? {}).map(([key, value]) => ({
+	...Arr.map(Rec.toEntries(attributes ?? {}), ([key, value]) => ({
 		key,
 		value: anyValue(value),
 	})),
@@ -375,7 +475,7 @@ const makeMetricsBody = (snapshots: ReadonlyArray<MetricSnapshot>, r: Resolved) 
 					sum: {
 						aggregationTemporality: 2,
 						isMonotonic: true,
-						dataPoints: [...snapshot.state.occurrences].map(([value, count]) => ({
+						dataPoints: Arr.map([...snapshot.state.occurrences], ([value, count]) => ({
 							attributes: metricAttributes(snapshot.attributes, ["value", value]),
 							timeUnixNano: timestamp,
 							asDouble: count,
@@ -385,8 +485,8 @@ const makeMetricsBody = (snapshots: ReadonlyArray<MetricSnapshot>, r: Resolved) 
 				break
 			case "Histogram": {
 				let previous = 0
-				const finiteBuckets = snapshot.state.buckets.filter(([bound]) => Number.isFinite(bound))
-				const bucketCounts = finiteBuckets.map(([, cumulative]) => {
+				const finiteBuckets = Arr.filter(snapshot.state.buckets, ([bound]) => Number.isFinite(bound))
+				const bucketCounts = Arr.map(finiteBuckets, ([, cumulative]) => {
 					const count = cumulative - previous
 					previous = cumulative
 					return String(count)
@@ -404,7 +504,7 @@ const makeMetricsBody = (snapshots: ReadonlyArray<MetricSnapshot>, r: Resolved) 
 								sum: snapshot.state.sum,
 								min: snapshot.state.min,
 								max: snapshot.state.max,
-								explicitBounds: finiteBuckets.map(([bound]) => bound),
+								explicitBounds: Arr.map(finiteBuckets, ([bound]) => bound),
 								bucketCounts,
 							},
 						],
@@ -422,7 +522,7 @@ const makeMetricsBody = (snapshots: ReadonlyArray<MetricSnapshot>, r: Resolved) 
 								timeUnixNano: timestamp,
 								count: String(snapshot.state.count),
 								sum: snapshot.state.sum,
-								quantileValues: snapshot.state.quantiles.flatMap(([quantile, value]) =>
+								quantileValues: Arr.flatMap(snapshot.state.quantiles, ([quantile, value]) =>
 									value === undefined ? [] : [{ quantile, value }],
 								),
 							},

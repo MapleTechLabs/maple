@@ -1,0 +1,32 @@
+{
+	"include": ["src/**/*.ts", "src/**/*.d.ts", "test/**/*.ts"],
+	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
+		"target": "ES2022",
+		"module": "ESNext",
+		"lib": ["ES2022"],
+		"types": ["bun", "node"],
+		"moduleResolution": "bundler",
+		"resolveJsonModule": true,
+		"allowImportingTsExtensions": true,
+		"verbatimModuleSyntax": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"strict": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedSideEffectImports": true,
+		"plugins": [
+			{
+				"name": "@effect/language-service",
+				"ignoreEffectWarningsInTscExitCode": true,
+				"includeSuggestionsInTsc": false,
+				"diagnosticSeverity": {
+					"unstableApiUsage": "off",
+					"schemaNumber": "off",
+					"schemaClassMissingBrand": "off",
+					"schemaSync": "off"
+				}
+			}
+		]
+	}
+}

@@ -102,7 +102,9 @@ struct MapleApp: App {
 		var options = MapleOptions()
 		// Only our own API carries `traceparent`. Clerk is a third party and has
 		// no use for our trace ids; the default would send the header everywhere.
-		options.tracing.tracePropagationTargets = ["api.maple.dev", "api-staging.maple.dev", "localhost"]
+		// The configured API's host joins them, so EU and preview builds trace end to end too.
+		options.tracing.tracePropagationTargets =
+			["api.maple.dev", "api-staging.maple.dev", "localhost"] + [AppConfig.apiBaseURL?.host].compactMap { $0 }
 		// Masking off: a fully masked replay of this app is a screen of grey
 		// rectangles and tells us nothing about how the dashboard is used.
 		// Set explicitly rather than inherited so the trade-off stays visible —

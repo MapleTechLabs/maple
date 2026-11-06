@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /**
  * Vendor ids the ingest gateway stamps (`AI_VENDORS` in
  * apps/ingest/src/ai_session.rs) → brand names. Listed here are the ids whose
@@ -7,6 +8,7 @@
  */
 const VENDOR_LABELS: Record<string, string> = {
 	claude_agent_sdk: "Claude Agent SDK",
+	cloudflare_ai_gateway: "Cloudflare AI Gateway",
 	crewai: "CrewAI",
 	dspy: "DSPy",
 	effect_ai: "Effect AI",
@@ -32,12 +34,14 @@ const UNIDENTIFIED_PREFIX = "unknown:"
  * a newly stamped vendor still reads as a name rather than a raw id.
  */
 export function vendorLabel(vendorId: string): string {
-	if (!vendorId || vendorId.startsWith(UNIDENTIFIED_PREFIX)) return "Unidentified"
+	if (!vendorId || Str.startsWith(UNIDENTIFIED_PREFIX)(vendorId)) return "Unidentified"
 	const known = VENDOR_LABELS[vendorId]
 	if (known) return known
-	return vendorId
-		.split(/[_-]+/)
-		.filter(Boolean)
-		.map((word) => word[0]!.toUpperCase() + word.slice(1))
-		.join(" ")
+	return Arr.join(
+		Arr.map(
+			Arr.filter(Str.split(/[_-]+/)(vendorId), Boolean),
+			(word) => Str.toUpperCase(Str.slice(0, 1)(word)) + Str.slice(1)(word),
+		),
+		" ",
+	)
 }

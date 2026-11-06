@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { Effect } from "effect"
+import { Effect, Record as Rec, String as Str } from "effect"
 import { installerPublicKey, signReleaseManifest } from "../../../../scripts/sign-local-release"
 import {
 	MAPLE_RELEASE_PUBLIC_KEY,
@@ -48,7 +48,7 @@ describe("verifyReleaseManifest", () => {
 	})
 
 	it("rejects a tampered manifest", async () => {
-		const tampered = new TextEncoder().encode(`${HASH.replace(/^8/, "9")}  ${BUNDLE}\n`)
+		const tampered = new TextEncoder().encode(`${Str.replace(/^8/, "9")(HASH)}  ${BUNDLE}\n`)
 		const error = await Effect.runPromise(
 			Effect.flip(verifyReleaseManifest(tampered, SIGNATURE, key.spki)),
 		)
@@ -121,7 +121,7 @@ describe("releaseChecksum", () => {
 			),
 		)
 		strictEqual(error._tag, "@maple/cli/ReleaseManifestInvalid")
-		ok(error.message.includes("maple-v1.0.0"))
+		ok(Str.includes("maple-v1.0.0")(error.message))
 	})
 
 	it("requires a signed manifest to name its bundle", async () => {
@@ -160,7 +160,7 @@ describe("releaseChecksum", () => {
 
 describe("parseChecksumManifest", () => {
 	it("reads sha256sum text and binary lines", async () => {
-		const text = await Effect.runPromise(parseChecksumManifest(`${HASH.toUpperCase()}  ${BUNDLE}\r\n`))
+		const text = await Effect.runPromise(parseChecksumManifest(`${Str.toUpperCase(HASH)}  ${BUNDLE}\r\n`))
 		strictEqual(text.sha256, HASH)
 		strictEqual(text.fileName, BUNDLE)
 		strictEqual((await Effect.runPromise(parseChecksumManifest(`${HASH} *${BUNDLE}`))).fileName, BUNDLE)
@@ -179,26 +179,26 @@ describe("user-facing text", () => {
 		const missing = await Effect.runPromise(
 			Effect.flip(verifyReleaseManifest(MANIFEST, undefined, key.spki)),
 		)
-		ok(releaseVerificationFailure(missing, BUNDLE).includes("--insecure-skip-signature"))
+		ok(Str.includes("--insecure-skip-signature")(releaseVerificationFailure(missing, BUNDLE)))
 		const manifest = await Effect.runPromise(Effect.flip(parseChecksumManifest("nope")))
-		ok(!releaseVerificationFailure(manifest, BUNDLE).includes("--insecure-skip-signature"))
+		ok(!Str.includes("--insecure-skip-signature")(releaseVerificationFailure(manifest, BUNDLE)))
 	})
 
 	it("prints a notice only when the signature was not checked", () => {
 		strictEqual(releaseSignatureNotice("verified"), undefined)
-		ok(releaseSignatureNotice("unconfigured")?.includes("no release public key"))
-		ok(releaseSignatureNotice("skipped")?.includes("--insecure-skip-signature"))
+		ok(Str.includes("no release public key")(releaseSignatureNotice("unconfigured") ?? ""))
+		ok(Str.includes("--insecure-skip-signature")(releaseSignatureNotice("skipped") ?? ""))
 	})
 })
 
 describe("embedded release public key", () => {
 	it("matches scripts/install.sh", () => {
+		// oxlint-disable-next-line test-slop/no-source-text-assertions -- the shell installer embeds the same key; no shared source.
 		const installer = installerPublicKey(readFileSync(join(REPO_ROOT, "scripts/install.sh"), "utf8"))
 		strictEqual(installer, MAPLE_RELEASE_PUBLIC_KEY)
 	})
 
-	it("is an Ed25519 key once provisioned", async () => {
-		if (MAPLE_RELEASE_PUBLIC_KEY === "") return
+	it("is an Ed25519 key", async () => {
 		const error = await Effect.runPromise(
 			Effect.flip(verifyReleaseManifest(MANIFEST, SIGNATURE, MAPLE_RELEASE_PUBLIC_KEY)),
 		)
@@ -235,14 +235,14 @@ describe("scripts/sign-local-release.ts", () => {
 		const error = await Effect.runPromise(
 			Effect.flip(signReleaseManifest({ ...signing, privateKeyPem: keypair().privatePem })),
 		)
-		ok(error.message.includes("does not match"))
+		ok(Str.includes("does not match")(error.message))
 	})
 
 	it("fails a publishing run without the secret once a key is embedded", async () => {
 		const error = await Effect.runPromise(
 			Effect.flip(signReleaseManifest({ ...signing, privateKeyPem: undefined })),
 		)
-		ok(error.message.includes("MAPLE_RELEASE_SIGNING_KEY is not set"))
+		ok(Str.includes("MAPLE_RELEASE_SIGNING_KEY is not set")(error.message))
 		const notRequired = await Effect.runPromise(
 			signReleaseManifest({ ...signing, privateKeyPem: undefined, required: false }),
 		)
@@ -266,35 +266,34 @@ describe("scripts/sign-local-release.ts", () => {
 		const drift = await Effect.runPromise(
 			Effect.flip(signReleaseManifest({ ...signing, installerPublicKey: "" })),
 		)
-		ok(drift.message.includes("differ"))
+		ok(Str.includes("differ")(drift.message))
 		const bare = await Effect.runPromise(
 			Effect.flip(signReleaseManifest({ ...signing, manifest: new TextEncoder().encode(`${HASH}\n`) })),
 		)
-		ok(bare.message.includes("must name its bundle"))
+		ok(Str.includes("must name its bundle")(bare.message))
 		const rsaPem = generateKeyPairSync("rsa", { modulusLength: 2048 })
 			.privateKey.export({ format: "pem", type: "pkcs8" })
 			.toString()
 		const rsa = await Effect.runPromise(
 			Effect.flip(signReleaseManifest({ ...signing, privateKeyPem: rsaPem })),
 		)
-		ok(rsa.message.includes("expected ed25519"))
+		ok(Str.includes("expected ed25519")(rsa.message))
 		const junk = await Effect.runPromise(
 			Effect.flip(
 				signReleaseManifest({ ...signing, privateKeyPem: "-----BEGIN PRIVATE KEY-----\nnope" }),
 			),
 		)
-		ok(junk.message.includes("not a valid PEM"))
+		ok(Str.includes("not a valid PEM")(junk.message))
 	})
 
 	it("CLI: a non-publishing run without the secret warns and writes no .sig", () => {
 		const dir = mkdtempSync(join(tmpdir(), "maple-sign-"))
 		const manifestPath = join(dir, BUNDLE + ".sha256")
 		writeFileSync(manifestPath, MANIFEST)
-		const env = Object.fromEntries(
-			Object.entries({ ...process.env, MAPLE_RELEASE_SIGNING_REQUIRED: "0" }).filter(
-				([key]) => key !== "MAPLE_RELEASE_SIGNING_KEY",
-			),
-		)
+		const env = {
+			...Rec.filter(process.env, (_, key) => key !== "MAPLE_RELEASE_SIGNING_KEY"),
+			MAPLE_RELEASE_SIGNING_REQUIRED: "0",
+		}
 		const run = spawnSync(
 			process.execPath,
 			[join(REPO_ROOT, "scripts/sign-local-release.ts"), manifestPath],
@@ -304,7 +303,7 @@ describe("scripts/sign-local-release.ts", () => {
 			},
 		)
 		strictEqual(run.status, 0, run.stderr)
-		ok(run.stdout.includes("::warning::"))
+		ok(Str.includes("::warning::")(run.stdout))
 		strictEqual(existsSync(`${manifestPath}.sig`), false)
 		rmSync(dir, { recursive: true, force: true })
 	})

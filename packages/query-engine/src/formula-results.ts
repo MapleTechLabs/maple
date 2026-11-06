@@ -1,3 +1,4 @@
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 // Pure formula evaluation over query-builder timeseries results. Lives in
 // @maple/query-engine (no React/DOM deps) so both the web renderer and the
 // server-side widget inspector evaluate `formulas[]` identically — keeping the
@@ -51,22 +52,21 @@ function tokenizeFormula(expression: string): {
 
 	while (index < expression.length) {
 		tokenRegex.lastIndex = index
-		const match = tokenRegex.exec(expression)
+		const rawToken = tokenRegex.exec(expression)?.[1]
 
-		if (!match) {
-			const remaining = expression.slice(index).trim()
+		if (rawToken === undefined) {
+			const remaining = Str.trim(Str.slice(index)(expression))
 			if (!remaining) {
 				break
 			}
 
 			return {
 				tokens: [],
-				error: `Invalid token near: ${remaining.slice(0, 16)}`,
+				error: `Invalid token near: ${Str.slice(0, 16)(remaining)}`,
 			}
 		}
 
 		index = tokenRegex.lastIndex
-		const rawToken = match[1]
 
 		if (rawToken === "(") {
 			tokens.push({ type: "leftParen" })
@@ -83,12 +83,12 @@ function tokenizeFormula(expression: string): {
 			continue
 		}
 
-		if (/^\d/.test(rawToken) || rawToken.startsWith(".")) {
+		if (/^\d/.test(rawToken) || Str.startsWith(".")(rawToken)) {
 			tokens.push({ type: "number", value: Number.parseFloat(rawToken) })
 			continue
 		}
 
-		tokens.push({ type: "identifier", value: rawToken.toUpperCase() })
+		tokens.push({ type: "identifier", value: Str.toUpperCase(rawToken) })
 	}
 
 	return { tokens, error: null }
@@ -99,7 +99,7 @@ function compileFormula(expression: string): {
 	identifiers: string[]
 	error: string | null
 } {
-	const trimmed = expression.trim()
+	const trimmed = Str.trim(expression)
 	if (!trimmed) {
 		return {
 			rpn: [],
@@ -192,6 +192,7 @@ function compileFormula(expression: string): {
 
 			while (operatorStack.length > 0) {
 				const top = operatorStack[operatorStack.length - 1]
+				if (top === undefined) break
 				if (top.type === "unary") {
 					emitTop()
 					continue
@@ -311,11 +312,11 @@ function evaluateCompiledFormula(
 		stack.push(left / right)
 	}
 
-	if (stack.length !== 1) {
+	const [value] = stack
+	if (stack.length !== 1 || value === undefined) {
 		return { value: null, error: "Invalid formula expression", reason: "other" }
 	}
 
-	const value = stack[0]
 	if (!Number.isFinite(value)) {
 		return { value: null, error: "Formula result is not finite", reason: "other" }
 	}
@@ -327,13 +328,14 @@ function aggregateByBucket(points: TimeseriesPoint[]): Map<string, number> {
 	const aggregated = new Map<string, number>()
 
 	for (const point of points) {
-		if (Object.keys(point.series).length === 0) {
+		if (Rec.keys(point.series).length === 0) {
 			continue
 		}
 
-		const total = Object.values(point.series).reduce(
-			(sum, value) => sum + (Number.isFinite(value) ? value : 0),
+		const total = Arr.reduce(
+			Rec.values(point.series),
 			0,
+			(sum, value) => sum + (Number.isFinite(value) ? value : 0),
 		)
 		aggregated.set(point.bucket, total)
 	}
@@ -342,12 +344,14 @@ function aggregateByBucket(points: TimeseriesPoint[]): Map<string, number> {
 }
 
 function listIntersectedBuckets(bucketMaps: Map<string, number>[]): string[] {
-	if (bucketMaps.length === 0) {
+	const [first, ...rest] = bucketMaps
+	if (first === undefined) {
 		return []
 	}
 
-	const [first, ...rest] = bucketMaps
-	return [...first.keys()].filter((bucket) => rest.every((bucketMap) => bucketMap.has(bucket))).sort()
+	return Arr.filter([...first.keys()], (bucket) =>
+		Arr.every(rest, (bucketMap) => bucketMap.has(bucket)),
+	).sort()
 }
 
 function listUnionBuckets(bucketMaps: Map<string, number>[]): string[] {
@@ -370,8 +374,8 @@ function formatBucketWarning(reason: string, buckets: string[]): string {
 	const sample = buckets.slice(0, WARNING_BUCKET_SAMPLE_SIZE)
 	const suffix =
 		buckets.length > WARNING_BUCKET_SAMPLE_SIZE
-			? ` (examples: ${sample.join(", ")}, +${buckets.length - sample.length} more)`
-			: ` (bucket${sample.length === 1 ? "" : "s"}: ${sample.join(", ")})`
+			? ` (examples: ${Arr.join(sample, ", ")}, +${buckets.length - sample.length} more)`
+			: ` (bucket${sample.length === 1 ? "" : "s"}: ${Arr.join(sample, ", ")})`
 
 	return `Skipped ${buckets.length} ${buckets.length === 1 ? "bucket" : "buckets"} due to ${reason}${suffix}`
 }
@@ -392,13 +396,13 @@ export function buildFormulaResults(
 			continue
 		}
 
-		seriesByAlias.set(result.queryName.toUpperCase(), aggregateByBucket(result.data))
+		seriesByAlias.set(Str.toUpperCase(result.queryName), aggregateByBucket(result.data))
 	}
 
 	const allBuckets = listUnionBuckets([...seriesByAlias.values()])
 
 	for (const formula of formulas) {
-		const alias = formula.name.toUpperCase()
+		const alias = Str.toUpperCase(formula.name)
 		const compiled = compileFormula(formula.expression)
 
 		if (compiled.error) {
@@ -414,14 +418,17 @@ export function buildFormulaResults(
 			continue
 		}
 
-		const missingIdentifiers = compiled.identifiers.filter((identifier) => !seriesByAlias.has(identifier))
+		const missingIdentifiers = Arr.filter(
+			compiled.identifiers,
+			(identifier) => !seriesByAlias.has(identifier),
+		)
 		if (missingIdentifiers.length > 0) {
 			formulaResults.push({
 				queryId: formula.id,
 				queryName: formula.name,
 				source: "formula",
 				status: "error",
-				error: `Unknown references: ${missingIdentifiers.join(", ")}`,
+				error: `Unknown references: ${Arr.join(missingIdentifiers, ", ")}`,
 				warnings: [],
 				data: [],
 			})
@@ -441,9 +448,10 @@ export function buildFormulaResults(
 			continue
 		}
 
-		const referencedBucketMaps = compiled.identifiers
-			.map((identifier) => seriesByAlias.get(identifier))
-			.filter((bucketMap): bucketMap is Map<string, number> => bucketMap != null)
+		const referencedBucketMaps = Arr.filter(
+			Arr.map(compiled.identifiers, (identifier) => seriesByAlias.get(identifier)),
+			(bucketMap): bucketMap is Map<string, number> => bucketMap != null,
+		)
 
 		// Every operand must have a value in a bucket for the formula to evaluate there — a
 		// missing operand is unknown, not zero, so nothing is synthesized.
@@ -459,7 +467,10 @@ export function buildFormulaResults(
 		const missingOperandBuckets =
 			referencedBucketMaps.length === 0
 				? []
-				: listUnionBuckets(referencedBucketMaps).filter((bucket) => !eligibleBucketSet.has(bucket))
+				: Arr.filter(
+						listUnionBuckets(referencedBucketMaps),
+						(bucket) => !eligibleBucketSet.has(bucket),
+					)
 
 		const warnings: string[] = []
 		if (missingOperandBuckets.length > 0) {
@@ -469,7 +480,7 @@ export function buildFormulaResults(
 			}
 		}
 
-		const seriesName = formula.legend.trim() || formula.name
+		const seriesName = Str.trim(formula.legend) || formula.name
 		const data: TimeseriesPoint[] = []
 		const divisionByZeroBuckets: string[] = []
 		let evaluationError: string | null = null
@@ -540,14 +551,15 @@ export function buildFormulaResults(
 			// Name the operands, not just the outcome. "Formula produced no valid buckets" on a
 			// five-operand ratio gives the reader nothing to act on; which alias came back empty
 			// usually is the answer (a filter that matches nothing, a metric that isn't emitted).
-			const emptyOperands = compiled.identifiers.filter(
+			const emptyOperands = Arr.filter(
+				compiled.identifiers,
 				(identifier) => (seriesByAlias.get(identifier)?.size ?? 0) === 0,
 			)
 			const error =
 				divisionByZeroBuckets.length > 0
 					? "Formula produced no valid buckets due to division by zero"
 					: emptyOperands.length > 0
-						? `Formula produced no valid buckets — no data for ${emptyOperands.join(", ")}`
+						? `Formula produced no valid buckets — no data for ${Arr.join(emptyOperands, ", ")}`
 						: "Formula produced no valid buckets"
 
 			formulaResults.push({

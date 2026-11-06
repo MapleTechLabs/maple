@@ -5,6 +5,8 @@ import { DashboardWidgetSchema, TimeRangeSchema } from "../http/dashboards"
 /** A dashboard's identity and counts, as every dashboard tool reports it. */
 export const DashboardRow = Schema.Struct({
 	id: Schema.String,
+	/** The same dashboard's id in the REST API (`dash_…`). */
+	publicId: Schema.String,
 	name: Schema.String,
 	description: Schema.optionalKey(Schema.String),
 	tags: Schema.optionalKey(Schema.Array(Schema.String)),
@@ -57,6 +59,8 @@ export const WidgetInspectionEntry = Schema.Struct({
 	verdict: WidgetInspectionVerdict,
 	flags: Schema.Array(InspectChartFlag),
 	note: Schema.optionalKey(Schema.String),
+	/** Series (groups, for a breakdown) in the widget's largest query, so a `group_by` split is visible. */
+	seriesCount: Schema.optionalKey(Schema.Number),
 })
 
 /** The automatic check the mutation tools run on the widgets they wrote. */
@@ -87,6 +91,8 @@ export const ListDashboardsOutput = Schema.Struct({
 })
 
 export const GetDashboardOutput = Schema.Struct({
+	/** The dashboard's id in the REST API (`dash_…`). */
+	publicId: Schema.String,
 	/** The document in the shape `update_dashboard`'s `dashboard_json` takes back. */
 	dashboard: Schema.Struct({
 		id: Schema.String,

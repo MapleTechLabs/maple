@@ -1,4 +1,4 @@
-// BOUNDARY: Reflection reads heterogeneous schema/class exports and narrows every value before use.
+// BOUNDARY-FILE: Reflection reads heterogeneous schema/class exports and narrows every value before use.
 // Reflection-based derivation of anticipated (4xx) error identifiers.
 //
 // This module intentionally imports the entire domain HTTP surface and must not
@@ -7,6 +7,7 @@
 // `generated/anticipated-error-identifiers.ts`.
 import * as Http from "./http/index"
 import * as HttpV2 from "./http/v2/index"
+import { Record as Rec } from "effect"
 
 /** Read `obj[key]` when `obj` is an object/function that has it; `undefined` otherwise. */
 const prop = (obj: unknown, key: string): unknown =>
@@ -40,7 +41,7 @@ const readHttpStatus = (value: unknown): number | undefined => {
 export const EXTERNAL_ANTICIPATED_IDENTIFIERS = ["HttpApiSchemaError"] as const
 
 const exportedValues = <Namespace extends object>(namespace: Namespace): ReadonlyArray<unknown> =>
-	Object.values(namespace)
+	Rec.values(namespace)
 
 /** Derive the full 4xx identifier set from the authoritative domain contracts. */
 export const deriveAnticipatedIdentifiers = (): ReadonlySet<string> => {

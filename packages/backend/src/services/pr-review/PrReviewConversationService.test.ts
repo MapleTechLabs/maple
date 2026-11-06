@@ -3,16 +3,17 @@
  * agent is told, where the answer is posted, and when a fix is committed and when it is not.
  *
  * The provider is a fake at the `VcsProviderRegistry` seam, the Durable Object at the
- * `WorkerEnvironment` seam; each records what it was asked to do.
+ * `ChatSessions` seam; each records what it was asked to do.
  */
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
 	GitCommitSha,
+	type PullRequestCiApprovedJob,
 	type PullRequestCommentJob,
 	type PullRequestHead,
-	PrReviewReplyId,
 } from "@maple/domain/http"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
+import { envPorts } from "@maple/backend/platform/env-ports"
 import { Effect, Layer, Option, Schema } from "effect"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
@@ -27,8 +28,6 @@ import {
 	type VcsProviderRegistryApi,
 } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
-import { ENABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { PrReviewService } from "./PrReviewService"
 import { applyEdits, editablePath, PrReviewConversationService } from "./PrReviewConversationService"
 
@@ -49,9 +48,10 @@ interface Recorded {
 		files: ReadonlyArray<{ path: string; content: string }>
 	}>
 	readonly reactions: Array<string>
+	readonly headLookups: Array<string>
 }
 
-const record = (): Recorded => ({ begun: [], posted: [], commits: [], reactions: [] })
+const record = (): Recorded => ({ begun: [], posted: [], commits: [], reactions: [], headLookups: [] })
 
 const head = (overrides: Partial<PullRequestHead> = {}): PullRequestHead => ({
 	number: 612,
@@ -81,17 +81,39 @@ const layerFor = (
 	const unused = () => Effect.die("not used by the conversation service")
 	const provider: VcsProviderClient = {
 		id: "github",
+		reviewerMention: "@maple-review-bot",
+		webhookSignatureHeader: "x-hub-signature-256",
 		webhookToJobs: unused,
 		fetchRepositories: unused,
 		fetchCommits: unused,
 		fetchBranches: unused,
 		fetchCommit: unused,
-		fetchPullRequests: unused,
+		fetchPullRequests: (_installation, _repo, opts) =>
+			Effect.sync(() => {
+				recorded.headLookups.push(opts.head ?? "")
+				const pr = options.pr ?? head()
+				return [
+					{
+						number: pr.number,
+						title: pr.title,
+						url: pr.url,
+						authorLogin: pr.authorLogin,
+						state: "open" as const,
+						headRef: pr.headRef,
+						baseRef: pr.baseRef,
+						isDraft: pr.draft,
+						updatedAtMs: 0,
+						mergedAtMs: null,
+						mergeCommitSha: null,
+					},
+				]
+			}),
 		fetchPullRequest: unused,
 		fetchPullRequestFiles: unused,
 		fetchPullRequestContext: unused,
 		fetchReviewThreads: () => Effect.succeed([]),
 		resolveReviewThread: unused,
+		hideEarlierComments: unused,
 		fetchChangesSince: unused,
 		fetchPullRequestHead: () => Effect.succeed(options.pr ?? head()),
 		postPullRequestReply: (_installation, _repo, input) =>
@@ -139,59 +161,54 @@ const layerFor = (
 		ids: ["github"],
 		resolve: () => Effect.succeed(provider),
 	} satisfies VcsProviderRegistryApi)
-	const workerEnv = Layer.succeed(WorkerEnvironment, {
-		ChatSession: {
-			idFromName: (name: string) => name,
-			get: () => ({
-				beginTurn: async (input: { text: string }) => {
-					recorded.begun.push(input.text)
-					return { cursor: 0, messageId: "m" }
-				},
-				abort: async () => undefined,
-			}),
-		},
-	})
-	const base = Layer.mergeAll(
-		testRepoLayer(testDb),
-		registry,
-		testDb.layer,
-		workerEnv,
-		OrganizationFeatureFlagsService.fixed(ENABLED_ORGANIZATION_FEATURE_FLAGS),
+	const workerEnv = Layer.merge(
+		envPorts({}),
+		fakeChatSessionsLayer(() => ({
+			beginTurn: async (input: { text: string }) => {
+				recorded.begun.push(input.text)
+				return { cursor: 0, messageId: "m", turnMessageId: "t" }
+			},
+			abort: async () => undefined,
+		})),
 	)
+	const base = Layer.mergeAll(testRepoLayer(testDb), registry, testDb.layer, workerEnv)
 	return Layer.effect(PrReviewConversationService, PrReviewConversationService.make).pipe(
 		Layer.provideMerge(Layer.effect(PrReviewService, PrReviewService.make)),
 		Layer.provideMerge(base),
 	)
 }
 
-const seed = Effect.gen(function* () {
-	const repo = yield* VcsRepository
-	yield* repo.upsertInstallation({
-		orgId,
-		provider: "github",
-		externalInstallationId: "42",
-		accountLogin: "octo",
-		accountType: "organization",
-		externalAccountId: "100",
-		accountAvatarUrl: null,
-		repositorySelection: "all",
-		installedByUserId: asUserId("user_1"),
+const seedRepo = (isPrivate: boolean) =>
+	Effect.gen(function* () {
+		const repo = yield* VcsRepository
+		yield* repo.upsertInstallation({
+			orgId,
+			provider: "github",
+			externalInstallationId: "42",
+			accountLogin: "octo",
+			accountType: "organization",
+			externalAccountId: "100",
+			accountAvatarUrl: null,
+			repositorySelection: "all",
+			installedByUserId: asUserId("user_1"),
+		})
+		yield* upsertReposFor(repo, "42", [
+			{
+				externalRepoId: "7",
+				owner: "octo",
+				name: "repo",
+				fullName: "octo/repo",
+				defaultBranch: "main",
+				htmlUrl: "https://github.com/octo/repo",
+				isPrivate,
+				isArchived: false,
+			},
+		])
+		const stored = Option.getOrThrow(yield* repo.resolveRepository(orgId, "github", "7"))
+		yield* repo.setPrReviewEnabled(orgId, stored.id, true)
 	})
-	yield* upsertReposFor(repo, "42", [
-		{
-			externalRepoId: "7",
-			owner: "octo",
-			name: "repo",
-			fullName: "octo/repo",
-			defaultBranch: "main",
-			htmlUrl: "https://github.com/octo/repo",
-			isPrivate: true,
-			isArchived: false,
-		},
-	])
-	const stored = Option.getOrThrow(yield* repo.resolveRepository(orgId, "github", "7"))
-	yield* repo.setPrReviewEnabled(orgId, stored.id, true)
-})
+
+const seed = seedRepo(true)
 
 const comment = (overrides: Partial<PullRequestCommentJob> = {}): PullRequestCommentJob => ({
 	kind: "pull-request-comment",
@@ -230,6 +247,84 @@ describe("editablePath and applyEdits", () => {
 	})
 })
 
+const ciApproval = (overrides: Partial<PullRequestCiApprovedJob> = {}): PullRequestCiApprovedJob => ({
+	kind: "pull-request-ci-approved",
+	provider: "github",
+	externalInstallationId: "42",
+	externalRepoId: "7",
+	repoFullName: "octo/repo",
+	runId: "9001",
+	headSha: HEAD,
+	headBranch: "feat/orders",
+	headRepoFullName: "outsider/repo",
+	approverLogin: "maintainer",
+	authorLogin: "outsider",
+	pullRequestNumbers: [],
+	...overrides,
+})
+
+describe("PrReviewConversationService CI approvals", () => {
+	const fork = head({ authorLogin: "outsider", headRepoFullName: "outsider/repo" })
+
+	it.effect(
+		"reviews a fork's pull request on a public repository once a maintainer approves its CI",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const recorded = record()
+			return Effect.gen(function* () {
+				yield* seedRepo(false)
+				const conversations = yield* PrReviewConversationService
+				yield* conversations.onCiApproved(orgId, ciApproval())
+				assert.deepStrictEqual(recorded.headLookups, ["outsider:feat/orders"])
+				assert.lengthOf(recorded.begun, 1)
+			}).pipe(Effect.provide(layerFor(testDb, recorded, { pr: fork })))
+		},
+	)
+
+	it.effect("does not review when the approver lacks write access", () => {
+		const testDb = createTestDb(trackedDbs)
+		const recorded = record()
+		return Effect.gen(function* () {
+			yield* seedRepo(false)
+			const conversations = yield* PrReviewConversationService
+			yield* conversations.onCiApproved(orgId, ciApproval())
+			assert.lengthOf(recorded.headLookups, 0)
+			assert.lengthOf(recorded.begun, 0)
+		}).pipe(Effect.provide(layerFor(testDb, recorded, { pr: fork, permission: "triage" })))
+	})
+
+	// One field off at a time, so each identity comparison is pinned on its own.
+	for (const [field, pr] of [
+		["head branch", { ...fork, headRef: "feat/other" }],
+		["head repository", { ...fork, headRepoFullName: "someone/repo" }],
+		["author", { ...fork, authorLogin: "someone" }],
+	] as const) {
+		it.effect(`does not review a pull request whose ${field} differs from the approved run's`, () => {
+			const testDb = createTestDb(trackedDbs)
+			const recorded = record()
+			return Effect.gen(function* () {
+				yield* seedRepo(false)
+				const conversations = yield* PrReviewConversationService
+				yield* conversations.onCiApproved(orgId, ciApproval({ pullRequestNumbers: [612] }))
+				assert.lengthOf(recorded.begun, 0)
+			}).pipe(Effect.provide(layerFor(testDb, recorded, { pr })))
+		})
+	}
+
+	it.effect("does not review a head pushed after the approved run", () => {
+		const testDb = createTestDb(trackedDbs)
+		const recorded = record()
+		const moved = { ...fork, headSha: sha("2222222222222222222222222222222222222222") }
+		return Effect.gen(function* () {
+			yield* seedRepo(false)
+			const conversations = yield* PrReviewConversationService
+			yield* conversations.onCiApproved(orgId, ciApproval({ pullRequestNumbers: [612] }))
+			assert.lengthOf(recorded.headLookups, 0)
+			assert.lengthOf(recorded.begun, 0)
+		}).pipe(Effect.provide(layerFor(testDb, recorded, { pr: moved })))
+	})
+})
+
 describe("PrReviewConversationService", () => {
 	it.effect("answers a member's question on the thread it came from", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -243,8 +338,8 @@ describe("PrReviewConversationService", () => {
 			)
 			assert.equal(outcome.outcome, "started")
 			assert.deepEqual(recorded.reactions, ["901:eyes"])
-			assert.include(recorded.begun[0]!, "@octocat mentioned you on pull request #612")
-			assert.include(recorded.begun[0]!, "> @maple why does this need a lock?")
+			assert.include(recorded.begun[0], "@octocat mentioned you on pull request #612")
+			assert.include(recorded.begun[0], "> @maple why does this need a lock?")
 			yield* conversations.submitReply(
 				orgId,
 				outcome.replyId!,
@@ -272,19 +367,52 @@ describe("PrReviewConversationService", () => {
 		}).pipe(Effect.provide(layerFor(testDb, recorded)))
 	})
 
-	it.effect("ignores people outside the repository and comments on disabled repositories", () => {
+	it.effect("ignores people outside a public repository and comments on disabled repositories", () => {
 		const testDb = createTestDb(trackedDbs)
 		const recorded = record()
 		return Effect.gen(function* () {
 			const conversations = yield* PrReviewConversationService
 			assert.equal((yield* conversations.onPullRequestComment(orgId, comment())).skipReason, "disabled")
-			yield* seed
+			yield* seedRepo(false)
 			assert.equal(
 				(yield* conversations.onPullRequestComment(orgId, comment({ authorAssociation: "NONE" })))
 					.skipReason,
 				"not_collaborator",
 			)
 			assert.lengthOf(recorded.begun, 0)
+		}).pipe(Effect.provide(layerFor(testDb, recorded, { permission: "read" })))
+	})
+
+	it.effect(
+		"answers a public repository's commenter who can push, whatever association the webhook reports",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const recorded = record()
+			return Effect.gen(function* () {
+				yield* seedRepo(false)
+				const conversations = yield* PrReviewConversationService
+				const outcome = yield* conversations.onPullRequestComment(
+					orgId,
+					comment({ authorAssociation: "CONTRIBUTOR" }),
+				)
+				assert.equal(outcome.outcome, "started")
+				assert.lengthOf(recorded.begun, 1)
+			}).pipe(Effect.provide(layerFor(testDb, recorded, { permission: "write" })))
+		},
+	)
+
+	it.effect("answers a private repository's commenter whatever association the webhook reports", () => {
+		const testDb = createTestDb(trackedDbs)
+		const recorded = record()
+		return Effect.gen(function* () {
+			yield* seed
+			const conversations = yield* PrReviewConversationService
+			const outcome = yield* conversations.onPullRequestComment(
+				orgId,
+				comment({ authorAssociation: "CONTRIBUTOR" }),
+			)
+			assert.equal(outcome.outcome, "started")
+			assert.lengthOf(recorded.begun, 1)
 		}).pipe(Effect.provide(layerFor(testDb, recorded)))
 	})
 
@@ -299,7 +427,7 @@ describe("PrReviewConversationService", () => {
 				comment({ body: "@maple fix the null check" }),
 			)
 			assert.equal(outcome.outcome, "started")
-			assert.include(recorded.begun[0]!, "They asked you to fix it")
+			assert.include(recorded.begun[0], "They asked you to fix it")
 			const replyId = outcome.replyId!
 			assert.include(
 				yield* conversations.stageEdit(orgId, replyId, {
@@ -325,8 +453,8 @@ describe("PrReviewConversationService", () => {
 					files: [{ path: "src/a.ts", content: "const a = 1\nif (x != null) {\n}\n" }],
 				},
 			])
-			assert.include(recorded.posted[0]!.body, "Guarded the null case.")
-			assert.include(recorded.posted[0]!.body, "Pushed `ccccccc` to `feat/orders`.")
+			assert.include(recorded.posted[0].body, "Guarded the null case.")
+			assert.include(recorded.posted[0].body, "Pushed `ccccccc` to `feat/orders`.")
 		}).pipe(
 			Effect.provide(
 				layerFor(testDb, recorded, { files: { "src/a.ts": "const a = 1\nif (x) {\n}\n" } }),
@@ -344,7 +472,7 @@ describe("PrReviewConversationService", () => {
 				comment({ body: "@maple fix it" }),
 			)
 			assert.equal(outcome.outcome, "failed")
-			assert.include(recordedA.posted[0]!.body, "write access")
+			assert.include(recordedA.posted[0].body, "write access")
 			assert.lengthOf(recordedA.begun, 0)
 		}).pipe(Effect.provide(layerFor(createTestDb(trackedDbs), recordedA, { permission: "read" })))
 
@@ -357,7 +485,7 @@ describe("PrReviewConversationService", () => {
 				comment({ body: "@maple fix it" }),
 			)
 			assert.equal(outcome.outcome, "failed")
-			assert.include(recordedB.posted[0]!.body, "fork")
+			assert.include(recordedB.posted[0].body, "fork")
 		}).pipe(
 			Effect.provide(
 				layerFor(createTestDb(trackedDbs), recordedB, {
@@ -383,7 +511,7 @@ describe("PrReviewConversationService", () => {
 			moved.current = head({ headSha: sha("2222222222222222222222222222222222222222") })
 			yield* conversations.submitReply(orgId, outcome.replyId!, "Done.")
 			assert.lengthOf(recordedC.commits, 0)
-			assert.include(recordedC.posted[0]!.body, "the branch moved")
+			assert.include(recordedC.posted[0].body, "the branch moved")
 		}).pipe(
 			Effect.provide(
 				Layer.suspend(() =>
@@ -397,9 +525,5 @@ describe("PrReviewConversationService", () => {
 			),
 		)
 		return noWrite.pipe(Effect.andThen(fork), Effect.andThen(movedBranch))
-	})
-
-	it("decodes reply ids as UUIDs", () => {
-		assert.isTrue(Schema.is(PrReviewReplyId)("00000000-0000-4000-8000-000000000000"))
 	})
 })

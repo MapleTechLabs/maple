@@ -1,3 +1,4 @@
+import { Array as Arr, Predicate, Record as Rec } from "effect"
 /**
  * Wires waterfall row hover to the side-panel attribute inspector.
  * Touch users get the same behaviour via `pointerenter` (rAF debounced).
@@ -18,7 +19,8 @@ export function wireInspector(traceId: string) {
 		const dur = row.dataset.duration ?? ""
 		let attrs: Record<string, string> = {}
 		try {
-			attrs = JSON.parse(row.dataset.attrs ?? "{}")
+			const parsed: unknown = JSON.parse(row.dataset.attrs ?? "{}")
+			attrs = isStringRecord(parsed) ? parsed : {}
 		} catch {
 			attrs = {}
 		}
@@ -33,17 +35,22 @@ export function wireInspector(traceId: string) {
 	})
 }
 
+const isStringRecord = (value: unknown): value is Record<string, string> =>
+	Predicate.isObject(value) && Arr.every(Rec.values(value), (v) => typeof v === "string")
+
 function renderAttrs(attrs: Record<string, string>): string {
 	const escape = (s: string) =>
 		s.replace(
 			/[&<>"']/g,
 			(c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string,
 		)
-	const rows = Object.entries(attrs)
-		.map(
+	const rows = Arr.join(
+		Arr.map(
+			Rec.toEntries(attrs),
 			([k, v]) =>
 				`<dt class="text-fg-muted">${escape(k)}</dt><dd class="text-fg break-all">${escape(v)}</dd>`,
-		)
-		.join("")
+		),
+		"",
+	)
 	return `<div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">${rows}</div>`
 }

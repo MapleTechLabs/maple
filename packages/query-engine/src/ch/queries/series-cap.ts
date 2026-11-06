@@ -12,13 +12,14 @@
 // group-by), the inner query is returned unchanged so existing SQL snapshots
 // stay byte-identical.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { fromQuery, type CHQuery } from "@maple-dev/effect-clickhouse"
-import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
-import { uint64 } from "@maple-dev/effect-clickhouse/types"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { fromQuery, type CHQuery } from "@maple-dev/effect-orm/clickhouse"
+import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
+import { uint64 } from "@maple-dev/effect-orm/clickhouse"
+import { Array as Arr, Record as Rec } from "effect"
 
 function hasRealGroupBy(groupBy: readonly string[] | undefined): boolean {
-	return !!groupBy && groupBy.some((key) => key !== "none")
+	return !!groupBy && Arr.some(groupBy, (key) => key !== "none")
 }
 
 export interface FinalizeTimeseriesParams {
@@ -54,15 +55,18 @@ export function finalizeTimeseries<Output extends Record<string, unknown>>(
 	// shape of a timeseries from "decodes" to "decodes nothing" while the
 	// uncapped shape of the same query still decoded.
 	const passthrough: Record<string, CH.Expr<unknown>> = {}
-	for (const [key, columnType] of Object.entries(outputColumns)) {
+	for (const [key, columnType] of Rec.toEntries(outputColumns)) {
 		passthrough[key] = CH.dynamicColumn(key, columnType)
 	}
 
-	const groupName = CH.dynamicColumn<string>("groupName", outputColumns.groupName)
+	const groupName = CH.dynamicColumn("groupName", outputColumns.groupName)
 	// A CTE referenced by both a top-groups subquery and the result query repeats
 	// the base scan in ClickHouse. Windows rank the already aggregated buckets
 	// while reading the tenant-scoped inner query once.
-	const peaks = fromQuery(inner.orderBy(), "__series_base").select(() => ({
+	// Read back by name through `outputColumns`, so the inner query's own output
+	// type is not needed past this point.
+	const base: CHQuery<ColumnDefs, Record<string, unknown>, Record<string, ColumnDefs>> = inner.orderBy()
+	const peaks = fromQuery(base, "__series_base").select(() => ({
 		...passthrough,
 		__series_peak: CH.over(
 			CH.max_(CH.dynamicColumn<number>(rankColumn, outputColumns[rankColumn])),

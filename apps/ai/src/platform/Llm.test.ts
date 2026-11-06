@@ -10,21 +10,37 @@
  * The fake responds 400, which the provider classifies as a non-retryable invalid request. That
  * keeps the run to a single request with no backoff; the resulting failure is expected and ignored.
  */
-import { Effect, Layer, Schema, Stream } from "effect"
-import { Decision, DecisionModel, LanguageModel, Tool, Toolkit } from "effect/unstable/ai"
-import { FetchHttpClient } from "effect/unstable/http"
+import {
+	ConfigProvider,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Stream,
+	Array as Arr,
+	String as Str,
+} from "effect"
+import { Decision, DecisionModel, LanguageModel, Tool, Toolkit } from "effect/ai"
+import { FetchHttpClient } from "effect/http"
 import { assert, describe, it } from "@effect/vitest"
 import { expect } from "vitest"
+import { PR_REVIEW_MODELS } from "@maple/domain/http"
 import {
 	DEFAULT_DECISION_MODEL,
 	layerDecisionModel,
 	DEFAULT_REVIEW_MODEL,
 	layerLlm,
+	loadLlmSettings,
 	resolveDecisionModel,
 	resolveReviewModel,
+	resolveSecurityAuditModel,
+	securityAuditModelId,
+	securityAuditModelIds,
+	DEFAULT_AUDIT_MODELS,
 	resolveTriageModel,
 	type LlmCallTags,
-	type LlmEnv,
+	type LlmSettings,
 	type ResolvedModel,
 } from "./Llm"
 
@@ -41,9 +57,10 @@ interface CapturedRequest {
  * defaults and the only honest way to check a default is to watch what leaves.
  */
 const captureRequest = (
-	env: LlmEnv,
+	env: LlmSettings,
 	tags?: LlmCallTags,
-	resolve: (env: LlmEnv, tags?: LlmCallTags) => ResolvedModel = resolveTriageModel,
+	resolve: (env: LlmSettings, tags?: LlmCallTags) => ResolvedModel = resolveTriageModel,
+	declareTool = false,
 ): Effect.Effect<CapturedRequest> =>
 	Effect.gen(function* () {
 		let captured: CapturedRequest | undefined
@@ -51,12 +68,12 @@ const captureRequest = (
 		const fakeFetch: typeof globalThis.fetch = async (input, init) => {
 			const headers: Record<string, string> = {}
 			new Headers(init?.headers).forEach((value, key) => {
-				headers[key.toLowerCase()] = value
+				headers[Str.toLowerCase(key)] = value
 			})
 			// The body arrives as bytes, not a string — `Response` is the cheapest correct decoder.
 			const bodyText = await new Response(init?.body ?? "{}").text()
 			captured = {
-				url: String(input),
+				url: input instanceof Request ? input.url : input.toString(),
 				headers,
 				body: JSON.parse(bodyText) as Record<string, unknown>,
 			}
@@ -65,7 +82,20 @@ const captureRequest = (
 
 		const model = resolve(env, tags)
 
-		yield* LanguageModel.generateText({ prompt: "hi", system: "You are concise." }).pipe(
+		const prompt = [
+			{ role: "system" as const, content: "You are concise." },
+			{ role: "user" as const, content: "hi" },
+		]
+		const call = declareTool
+			? Effect.asVoid(
+					LanguageModel.generateText({
+						prompt,
+						toolkit: Toolkit.make(listServices),
+						disableToolCallResolution: true,
+					}),
+				)
+			: Effect.asVoid(LanguageModel.generateText({ prompt }))
+		yield* call.pipe(
 			Effect.provide(model.layer),
 			Effect.ignore,
 			Effect.provide(layerLlm(env)),
@@ -78,7 +108,7 @@ const captureRequest = (
 		return captured
 	})
 
-const openRouterEnv: LlmEnv = { OPENROUTER_API_KEY: "test-key" }
+const openRouterEnv: LlmSettings = { OPENROUTER_API_KEY: Redacted.make("test-key") }
 
 /** `DEFAULT_MODEL_LIMITS.context` in Llm.ts — what a model absent from the table falls back to. */
 const DEFAULT_MODEL_LIMITS_CONTEXT = 128_000
@@ -109,6 +139,14 @@ describe("resolveTriageModel — OpenRouter attribution", () => {
 		}),
 	)
 
+	it.live("asks for a rolling prompt-cache breakpoint so agent loops reuse their history", () =>
+		Effect.gen(function* () {
+			const captured = yield* captureRequest(openRouterEnv, tags)
+
+			expect(captured.body.cache_control).toEqual({ type: "ephemeral" })
+		}),
+	)
+
 	it.live("omits session_id when the caller has no session to group by", () =>
 		Effect.gen(function* () {
 			const captured = yield* captureRequest(openRouterEnv, { surface: "chat", orgId: "org_123" })
@@ -120,7 +158,10 @@ describe("resolveTriageModel — OpenRouter attribution", () => {
 
 	it.live("truncates an over-long session id to OpenRouter's 256-character limit", () =>
 		Effect.gen(function* () {
-			const captured = yield* captureRequest(openRouterEnv, { ...tags, sessionId: "s".repeat(400) })
+			const captured = yield* captureRequest(openRouterEnv, {
+				...tags,
+				sessionId: Str.repeat(400)("s"),
+			})
 
 			expect(captured.body.session_id).toHaveLength(256)
 		}),
@@ -142,10 +183,21 @@ describe("resolveTriageModel — OpenRouter attribution", () => {
 		}).pipe(Effect.withSpan("chat")),
 	)
 
+	it.live("leaves strict off a tool with no strict annotation, since some upstreams reject null", () =>
+		Effect.gen(function* () {
+			const captured = yield* captureRequest(openRouterEnv, tags, resolveTriageModel, true)
+
+			// An exact match: a `strict: null` key left on the function fails it.
+			expect(captured.body.tools).toEqual([
+				{ type: "function", function: { name: "list_services", parameters: expect.anything() } },
+			])
+		}),
+	)
+
 	it.live("keeps the headers and tags off the Workers AI path", () =>
 		Effect.gen(function* () {
 			const captured = yield* captureRequest(
-				{ MAPLE_LLM_PROVIDER: "workers-ai", CLOUDFLARE_API_KEY: "test-key" },
+				{ MAPLE_LLM_PROVIDER: "workers-ai", CLOUDFLARE_API_KEY: Redacted.make("test-key") },
 				tags,
 			)
 
@@ -156,6 +208,7 @@ describe("resolveTriageModel — OpenRouter attribution", () => {
 			expect(captured.body).not.toHaveProperty("user")
 			expect(captured.body).not.toHaveProperty("session_id")
 			expect(captured.body).not.toHaveProperty("trace")
+			expect(captured.body).not.toHaveProperty("cache_control")
 		}),
 	)
 })
@@ -185,7 +238,7 @@ describe("reasoning effort", () => {
 	it.live("keeps reasoning off the Workers AI path", () =>
 		Effect.gen(function* () {
 			const captured = yield* captureRequest(
-				{ MAPLE_LLM_PROVIDER: "workers-ai", CLOUDFLARE_API_KEY: "test-key" },
+				{ MAPLE_LLM_PROVIDER: "workers-ai", CLOUDFLARE_API_KEY: Redacted.make("test-key") },
 				tags,
 			)
 
@@ -193,6 +246,53 @@ describe("reasoning effort", () => {
 			expect(captured.body).not.toHaveProperty("reasoning")
 		}),
 	)
+})
+
+describe("resolveSecurityAuditModel", () => {
+	it("resolves discovery and validation to different models, each overridable", () => {
+		const defaults = [
+			resolveSecurityAuditModel(openRouterEnv, "discovery").name,
+			resolveSecurityAuditModel(openRouterEnv, "validation").name,
+		]
+		const overridden = resolveSecurityAuditModel(
+			{ ...openRouterEnv, MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER: "openai/gpt-6-luna" },
+			"validation",
+		).name
+		expect([defaults[0] !== defaults[1], overridden]).toEqual([true, "openai/gpt-6-luna"])
+	})
+
+	it("runs on the org's pick over the deployment's override", () => {
+		const env = { ...openRouterEnv, MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER: "openai/gpt-6-luna" }
+		expect(
+			resolveSecurityAuditModel(env, "discovery", undefined, "anthropic/claude-haiku-5.5").name,
+		).toBe("anthropic/claude-haiku-5.5")
+	})
+
+	it("ignores a pick the region does not serve, or that cannot verify", () => {
+		const eu = { ...openRouterEnv, MAPLE_REGION: "eu" }
+		expect([
+			securityAuditModelId(eu, "discovery", "deepseek/deepseek-v4.1-flash-1017:nitro"),
+			securityAuditModelId(openRouterEnv, "validation", "openai/gpt-6.1-sol"),
+			securityAuditModelId(openRouterEnv, "discovery", "not/a-listed-model"),
+		]).toEqual([
+			DEFAULT_AUDIT_MODELS.eu.discovery,
+			DEFAULT_AUDIT_MODELS.us.validation,
+			DEFAULT_AUDIT_MODELS.us.discovery,
+		])
+	})
+})
+
+describe("securityAuditModelIds", () => {
+	it("never verifies on the hunting model, even when the region's fallback lands both picks on one", () => {
+		const eu = { ...openRouterEnv, MAPLE_REGION: "eu" }
+		// DeepSeek has no EU provider, so the hunter falls back to Haiku, which this org verifies with.
+		expect(
+			securityAuditModelIds(eu, {
+				discovery: "deepseek/deepseek-v4.1-flash-1017:nitro",
+				validation: "anthropic/claude-haiku-5.5",
+			}),
+		).toEqual({ discovery: DEFAULT_AUDIT_MODELS.eu.validation, validation: "anthropic/claude-haiku-5.5" })
+	})
 })
 
 describe("resolveReviewModel", () => {
@@ -215,6 +315,32 @@ describe("resolveReviewModel", () => {
 		expect(model.limits.context).toBe(1_000_000)
 	})
 
+	it("runs on the organization's pick ahead of the deployment override", () => {
+		const env = { ...openRouterEnv, MAPLE_REVIEW_MODEL_OPENROUTER: "anthropic/claude-sonnet-5" }
+		expect(resolveReviewModel(env, undefined, Option.some("xiaomi/mimo-v2.6-pro")).name).toBe(
+			"xiaomi/mimo-v2.6-pro",
+		)
+		expect(resolveReviewModel(env).name).toBe("anthropic/claude-sonnet-5")
+	})
+
+	it("ignores a pick the EU instance does not serve", () => {
+		const euEnv = { ...openRouterEnv, MAPLE_REGION: "eu" }
+		expect(resolveReviewModel(euEnv, undefined, Option.some("xiaomi/mimo-v2.6-pro")).name).toBe(
+			"openai/gpt-6-luna",
+		)
+		expect(resolveReviewModel(euEnv, undefined, Option.some("openai/gpt-6-luna")).name).toBe(
+			"openai/gpt-6-luna",
+		)
+	})
+
+	it("knows the window of every model an organization can pick", () => {
+		for (const { id } of PR_REVIEW_MODELS) {
+			expect(
+				resolveReviewModel(openRouterEnv, undefined, Option.some(id)).limits.context,
+			).toBeGreaterThan(128_000)
+		}
+	})
+
 	it("reviews on the triage model when agents run on Workers AI", () => {
 		const env = { ...openRouterEnv, MAPLE_LLM_PROVIDER: "workers-ai" }
 		expect(resolveReviewModel(env).name).toBe(resolveTriageModel(env).name)
@@ -222,7 +348,7 @@ describe("resolveReviewModel", () => {
 })
 
 describe("EU in-region routing", () => {
-	const euEnv: LlmEnv = { ...openRouterEnv, MAPLE_REGION: "eu" }
+	const euEnv: LlmSettings = { ...openRouterEnv, MAPLE_REGION: "eu" }
 
 	it.effect("sends the EU instance's calls to OpenRouter's EU endpoint, on an EU-served model", () =>
 		Effect.gen(function* () {
@@ -243,8 +369,8 @@ describe("EU in-region routing", () => {
 
 	it("asks no decision model in the EU unless one is configured", () => {
 		expect(resolveDecisionModel(euEnv)).toBeUndefined()
-		expect(resolveDecisionModel({ ...euEnv, MAPLE_DECISION_MODEL: "typesafe/jev-1.13" })).toBe(
-			"typesafe/jev-1.13",
+		expect(resolveDecisionModel({ ...euEnv, MAPLE_DECISION_MODEL: "@cf/cloudflare/clef-flash" })).toBe(
+			"@cf/cloudflare/clef-flash",
 		)
 		expect(resolveDecisionModel(openRouterEnv)).toBe(DEFAULT_DECISION_MODEL)
 	})
@@ -363,19 +489,22 @@ const sseBody = (
 					})}`,
 					"",
 				]
-	return [
-		...chunks.flatMap((chunk) => [`data: ${JSON.stringify({ ...envelope, ...chunk })}`, ""]),
-		...terminal,
-		"data: [DONE]",
-		"",
-	].join("\n")
+	return Arr.join(
+		[
+			...Arr.flatMap(chunks, (chunk) => [`data: ${JSON.stringify({ ...envelope, ...chunk })}`, ""]),
+			...terminal,
+			"data: [DONE]",
+			"",
+		],
+		"\n",
+	)
 }
 
 /**
  * The one tool the streaming fixtures declare. A `tool-call` part is decoded against the toolkit
  * the call declared, so a stream that returns one is only readable with the tool in hand.
  */
-const listServices = Tool.make("list_services", { parameters: Schema.Struct({}) })
+const listServices = Tool.make("list_services")
 
 /**
  * How one streaming fixture is shaped: the wire, plus whether the call declares a tool. Only a
@@ -394,18 +523,17 @@ const streamParts = (usage: Record<string, unknown>, options: StreamFixture = {}
 			})
 
 		const model = resolveTriageModel(openRouterEnv)
-		return yield* LanguageModel.streamText({
-			prompt: "hi",
-			...(options.declareTool === true
-				? {
+		const stream =
+			options.declareTool === true
+				? LanguageModel.streamText({
+						prompt: "hi",
 						toolkit: Toolkit.make(listServices),
 						// What the agent engine sends: the run owns tool execution, the model call only
 						// reports the calls it was asked for.
 						disableToolCallResolution: true,
-					}
-				: undefined),
-		}).pipe(
-			Stream.runCollect,
+					})
+				: LanguageModel.streamText({ prompt: "hi" })
+		return yield* Stream.runCollect(stream).pipe(
 			// One provide, not a chain: the model layer needs the clients the LLM stack builds, so
 			// they go in as a single merged layer rather than two lifecycles stacked on each other.
 			Effect.provide(Layer.provide(model.layer, layerLlm(openRouterEnv))),
@@ -417,9 +545,9 @@ const streamParts = (usage: Record<string, unknown>, options: StreamFixture = {}
 const streamFinishPart = (usage: Record<string, unknown>, options?: StreamFixture) =>
 	Effect.gen(function* () {
 		const parts = yield* streamParts(usage, options)
-		const finish = parts.find((part) => part.type === "finish")
-		if (finish === undefined) return yield* Effect.die("the stream carried no finish part")
-		return finish
+		const finish = Arr.findFirst(parts, (part) => part.type === "finish")
+		if (Option.isNone(finish)) return yield* Effect.die("the stream carried no finish part")
+		return finish.value
 	})
 
 /**
@@ -513,7 +641,7 @@ describe("streamed completion — a stream that ends without a usage block", () 
 			// "said nothing" half of the report, and it survives a finish part on its own.
 			const parts = yield* streamParts(disjointReasoningUsage, { omitUsage: true })
 
-			expect(parts.map((part) => part.type)).toContain("text-end")
+			expect(Arr.map(parts, (part) => part.type)).toContain("text-end")
 		}),
 	)
 
@@ -561,11 +689,15 @@ describe("streamed completion — a stream that ends without a usage block", () 
 				terminalChoices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
 			})
 
-			expect(parts.find((part) => part.type === "tool-call")).toMatchObject({
+			expect(
+				Option.getOrUndefined(Arr.findFirst(parts, (part) => part.type === "tool-call")),
+			).toMatchObject({
 				name: "list_services",
 				params: {},
 			})
-			expect(parts.find((part) => part.type === "finish")?.reason).toBe("tool-calls")
+			expect(
+				Option.getOrUndefined(Arr.findFirst(parts, (part) => part.type === "finish"))?.reason,
+			).toBe("tool-calls")
 		}),
 	)
 
@@ -573,7 +705,7 @@ describe("streamed completion — a stream that ends without a usage block", () 
 		Effect.gen(function* () {
 			const parts = yield* streamParts(disjointReasoningUsage)
 
-			expect(parts.filter((part) => part.type === "finish")).toHaveLength(1)
+			expect(Arr.filter(parts, (part) => part.type === "finish")).toHaveLength(1)
 		}),
 	)
 
@@ -608,8 +740,8 @@ describe("streamed completion — a stream that ends without a usage block", () 
 				terminalChoices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
 			})
 
-			expect(parts.filter((part) => part.type === "tool-call")).toHaveLength(1)
-			expect(parts.filter((part) => part.type === "finish")).toHaveLength(1)
+			expect(Arr.filter(parts, (part) => part.type === "tool-call")).toHaveLength(1)
+			expect(Arr.filter(parts, (part) => part.type === "finish")).toHaveLength(1)
 		}),
 	)
 })
@@ -617,11 +749,16 @@ describe("streamed completion — a stream that ends without a usage block", () 
 /**
  * The decision model's own transport check.
  *
- * Jev is served from a different endpoint than chat completions, and the only honest way to check
- * that the model id, the questions and the OpenRouter credential all reach it is to watch what
+ * Clef is a native `ai/run` model rather than a chat completion, and the only honest way to check
+ * that the model id, the questions and the Cloudflare credential all reach it is to watch what
  * leaves.
  */
-describe("layerDecisionModel — Jev over OpenRouter", () => {
+describe("layerDecisionModel — Clef on Workers AI", () => {
+	const workersAiEnv: LlmSettings = {
+		CLOUDFLARE_ACCOUNT_ID: "test-account",
+		CLOUDFLARE_API_KEY: Redacted.make("cf-key"),
+	}
+
 	const ticket = Decision.make({
 		input: Schema.Struct({ message: Schema.String }),
 		decisions: {
@@ -632,18 +769,18 @@ describe("layerDecisionModel — Jev over OpenRouter", () => {
 		},
 	})
 
-	const captureDecision = (env: LlmEnv): Effect.Effect<CapturedRequest> =>
+	const captureDecision = (env: LlmSettings): Effect.Effect<CapturedRequest> =>
 		Effect.gen(function* () {
 			let captured: CapturedRequest | undefined
 
 			const fakeFetch: typeof globalThis.fetch = async (input, init) => {
 				const headers: Record<string, string> = {}
 				new Headers(init?.headers).forEach((value, key) => {
-					headers[key.toLowerCase()] = value
+					headers[Str.toLowerCase(key)] = value
 				})
 				const bodyText = await new Response(init?.body ?? "{}").text()
 				captured = {
-					url: String(input),
+					url: input instanceof Request ? input.url : input.toString(),
 					headers,
 					body: JSON.parse(bodyText) as Record<string, unknown>,
 				}
@@ -652,7 +789,7 @@ describe("layerDecisionModel — Jev over OpenRouter", () => {
 
 			yield* DecisionModel.decide(ticket, { input: { message: "refund me" } }).pipe(
 				Effect.ignore,
-				Effect.provide(Layer.provide(layerDecisionModel(env), layerLlm(env))),
+				Effect.provide(layerDecisionModel(env)),
 				Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
 			)
 
@@ -660,14 +797,16 @@ describe("layerDecisionModel — Jev over OpenRouter", () => {
 			return captured
 		})
 
-	it.live("posts the configured model and the decision's questions to the decisions endpoint", () =>
+	it.live("posts the model variant and the decision's questions to the run endpoint", () =>
 		Effect.gen(function* () {
-			const captured = yield* captureDecision(openRouterEnv)
+			const captured = yield* captureDecision(workersAiEnv)
 
-			// Not `/v1/decisions`: the alpha endpoint sits beside the versioned API, not under it.
-			assert.strictEqual(captured.url, "https://openrouter.ai/api/alpha/decisions")
-			assert.strictEqual(captured.headers.authorization, "Bearer test-key")
-			assert.strictEqual(captured.body.model, DEFAULT_DECISION_MODEL)
+			assert.strictEqual(
+				captured.url,
+				`https://api.cloudflare.com/client/v4/accounts/test-account/ai/run/${DEFAULT_DECISION_MODEL}`,
+			)
+			assert.strictEqual(captured.headers.authorization, "Bearer cf-key")
+			assert.strictEqual(captured.body.model, "clef")
 			assert.deepStrictEqual(captured.body.questions, {
 				department: {
 					type: "choice",
@@ -678,23 +817,93 @@ describe("layerDecisionModel — Jev over OpenRouter", () => {
 		}),
 	)
 
-	it.live("carries the same app attribution as a model call", () =>
-		Effect.gen(function* () {
-			const captured = yield* captureDecision(openRouterEnv)
-
-			assert.strictEqual(captured.headers["http-referer"], "https://maple.dev")
-			assert.strictEqual(captured.headers["x-title"], "Maple")
-		}),
-	)
-
 	it.live("takes the model id from the environment", () =>
 		Effect.gen(function* () {
 			const captured = yield* captureDecision({
-				...openRouterEnv,
-				MAPLE_DECISION_MODEL: "typesafe/jev-1.13",
+				...workersAiEnv,
+				MAPLE_DECISION_MODEL: "@cf/cloudflare/clef-flash",
 			})
 
-			assert.strictEqual(captured.body.model, "typesafe/jev-1.13")
+			assert.match(captured.url, /\/ai\/run\/@cf\/cloudflare\/clef-flash$/)
+			assert.strictEqual(captured.body.model, "clef-flash")
+		}),
+	)
+
+	it.live("sends score levels as descriptions and keys the answer's probabilities by label", () =>
+		Effect.gen(function* () {
+			const severity = Decision.make({
+				input: Schema.Struct({ message: Schema.String }),
+				decisions: {
+					severity: Decision.rate({
+						instructions: "How urgent is this incident",
+						criteria: [
+							{ label: "low", description: "Cosmetic, no user impact" },
+							{ label: "medium", description: "Degraded for some users" },
+							{ label: "high", description: "Outage or data loss" },
+						],
+					}),
+				},
+			})
+			let questions: unknown
+			const fakeFetch: typeof globalThis.fetch = async (_input, init) => {
+				const body = JSON.parse(await new Response(init?.body ?? "{}").text()) as Record<
+					string,
+					unknown
+				>
+				questions = body.questions
+				const answer = { type: "score", score: 2, probabilities: { "0": 0.1, "1": 0.2, "2": 0.7 } }
+				const output = { answers: { severity: answer }, usage: { input_tokens: 1, output_tokens: 1 } }
+				return new Response(JSON.stringify({ result: output }), { status: 200 })
+			}
+
+			const response = yield* DecisionModel.decide(severity, { input: { message: "db down" } }).pipe(
+				Effect.provide(layerDecisionModel(workersAiEnv)),
+				Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
+			)
+
+			assert.deepStrictEqual(questions, {
+				severity: {
+					type: "score",
+					instructions: "How urgent is this incident",
+					criteria: ["Cosmetic, no user impact", "Degraded for some users", "Outage or data loss"],
+				},
+			})
+			assert.strictEqual(response.answers.severity.rating, 2)
+			assert.strictEqual(response.answers.severity.label, "high")
+			assert.deepStrictEqual(response.answers.severity.probabilities, {
+				low: 0.1,
+				medium: 0.2,
+				high: 0.7,
+			})
+		}),
+	)
+})
+
+describe("loadLlmSettings", () => {
+	const load = (env: Record<string, unknown>) =>
+		loadLlmSettings.pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))))
+
+	it.effect("reads the env through the ConfigProvider, trimmed, with blanks treated as unset", () =>
+		Effect.gen(function* () {
+			const settings = yield* load({
+				OPENROUTER_API_KEY: " or-key ",
+				MAPLE_REGION: " eu ",
+				MAPLE_TRIAGE_MODEL_OPENROUTER: "   ",
+			})
+
+			assert.strictEqual(Redacted.value(settings.OPENROUTER_API_KEY ?? Redacted.make("")), "or-key")
+			assert.strictEqual(settings.MAPLE_REGION, "eu")
+			assert.strictEqual(settings.MAPLE_TRIAGE_MODEL_OPENROUTER, undefined)
+			assert.strictEqual(resolveTriageModel(settings).name, "openai/gpt-6-luna")
+		}),
+	)
+
+	it.effect("falls back to the defaults when nothing is configured", () =>
+		Effect.gen(function* () {
+			const settings = yield* load({})
+
+			assert.strictEqual(settings.OPENROUTER_API_KEY, undefined)
+			assert.strictEqual(resolveDecisionModel(settings), DEFAULT_DECISION_MODEL)
 		}),
 	)
 })

@@ -5,7 +5,7 @@
  * in a thread continues it, a button click applies an approval, and an uninstall unlinks a
  * workspace. Everything else Slack delivers is dropped here rather than carried further.
  */
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import type { InboundEvent } from "../../ingress"
 import { SLACK_CONNECTOR_ID } from "./id"
 import { botUserIdOf, type SlackBlockActions, type SlackEventCallback, type SlackEventBody } from "./payloads"
@@ -21,17 +21,32 @@ const REMOVAL_EVENTS: ReadonlySet<string> = new Set(["app_uninstalled", "tokens_
  * wire, and a pattern built from wire data is a pattern somebody else chose.
  */
 export const stripMention = (text: string, botUserId: string): string => {
-	const parts = text.split(`<@${botUserId}>`).join(" ").split(`<@${botUserId}|`)
-	return parts
-		.map((part, index) => (index === 0 ? part : part.slice(part.indexOf(">") + 1)))
-		.join(" ")
-		.replace(/\s+/gu, " ")
-		.trim()
+	const parts = Str.split(`<@${botUserId}|`)(Arr.join(Str.split(`<@${botUserId}>`)(text), " "))
+	return Str.trim(
+		Str.replace(
+			/\s+/gu,
+			" ",
+		)(
+			Arr.join(
+				Arr.map(parts, (part, index) =>
+					index === 0
+						? part
+						: Str.slice(
+								Option.match(Str.indexOf(">")(part), {
+									onNone: () => 0,
+									onSome: (at) => at + 1,
+								}),
+							)(part),
+				),
+				" ",
+			),
+		),
+	)
 }
 
 /** Whether the text addresses the bot, in either mention form. */
 const mentionsBot = (text: string, botUserId: string): boolean =>
-	text.includes(`<@${botUserId}>`) || text.includes(`<@${botUserId}|`)
+	Str.includes(`<@${botUserId}>`)(text) || Str.includes(`<@${botUserId}|`)(text)
 
 /**
  * A message this connector could answer at all.
@@ -73,7 +88,7 @@ export const eventCallbackToInbound = (callback: SlackEventCallback): ReadonlyAr
 	if (REMOVAL_EVENTS.has(event.type)) {
 		return [{ type: "workspace-removed", connector: SLACK_CONNECTOR_ID, workspaceId: callback.team_id }]
 	}
-	if (event.type !== "app_mention" && !event.type.startsWith("message")) return []
+	if (event.type !== "app_mention" && !Str.startsWith("message")(event.type)) return []
 	if (!isAnswerable(event)) return []
 
 	const botUserId = botUserIdOf(callback)
@@ -135,7 +150,9 @@ export const blockActionsToInbound = (payload: SlackBlockActions): ReadonlyArray
 	const workspaceId = payload.team?.id
 	const channelId = payload.channel?.id ?? payload.container?.channel_id
 	const messageId = payload.container?.message_ts ?? payload.message?.ts
-	const actionToken = payload.actions.find((action) => action.value !== undefined)?.value
+	const actionToken = Option.getOrUndefined(
+		Arr.findFirst(payload.actions, (action) => Option.fromUndefinedOr(action.value)),
+	)
 	if (workspaceId === undefined || channelId === undefined || messageId === undefined) return []
 	if (actionToken === undefined) return []
 	// The control sits on Maple's own answer, which lives in the thread the question opened — so

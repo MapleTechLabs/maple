@@ -2,11 +2,15 @@ import { describe, expect, it } from "@effect/vitest"
 import { MAPLE_MCP_SERVER_INSTRUCTIONS } from "./server-instructions"
 import { mapleToolCatalog } from "./tools/registry"
 import { withFeedbackHint } from "./dispatcher"
+import { Array as Arr, String as Str } from "effect"
 
 describe("MCP server instructions", () => {
 	it("name only tools that exist", () => {
-		const names = new Set(mapleToolCatalog.map((tool) => tool.name))
-		const mentioned = [...MAPLE_MCP_SERVER_INSTRUCTIONS.matchAll(/`([a-z_]+)`/g)].map((match) => match[1])
+		const names = new Set(Arr.map(mapleToolCatalog, (tool) => tool.name))
+		const mentioned = Arr.map(
+			Arr.fromIterable(Str.matchAll(/`([a-z_]+)`/g)(MAPLE_MCP_SERVER_INSTRUCTIONS)),
+			(match) => match[1],
+		)
 		expect(mentioned).toContain("send_maple_feedback")
 		for (const name of mentioned) expect(names.has(name ?? "")).toBe(true)
 	})

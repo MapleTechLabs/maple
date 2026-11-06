@@ -1,7 +1,9 @@
 import { assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, Schema } from "effect"
-import { FetchHttpClient, HttpRouter } from "effect/unstable/http"
-import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi"
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
+import { BillingOrgService } from "@maple/backend/services/billing/BillingOrgService"
+import { ConfigProvider, Context, Effect, Layer, Schema, Array as Arr } from "effect"
+import { FetchHttpClient, HttpRouter } from "effect/http"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import {
 	EdgeCacheService,
 	type EdgeCacheBackend,
@@ -21,13 +23,19 @@ import {
 	summariseSubscriptions,
 } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing/autumn-http"
+import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import {
 	BillingApiGroup,
 	BillingConflictError,
+	BillingCustomerId,
+	DailySpendResponse,
+	DailyVolume,
+	BillingManagedByBillingOrgError,
+	OrgId,
 	BillingCustomer,
 	CurrentTenant,
-	V1SchemaErrors,
-	V1UnexpectedErrors,
+	ApiSchemaErrors,
+	ApiUnexpectedErrors,
 	UpdateBillingControlsRequest,
 	UpdateBillingSpendLimit,
 	UpdateBillingUsageAlert,
@@ -35,10 +43,12 @@ import {
 import { DailySpendService } from "@maple/backend/services/billing/DailySpendService"
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 import { StripeClient } from "@maple/backend/services/billing/stripe-http"
-import { decodeInvoices, HttpBillingLive, resolveCycleWindow } from "./billing.http"
-import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
+import { decodeInvoices, HttpBillingLive, resolveCycleWindow, sumDailySpend } from "./billing.http"
+import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 
 const ORG = "org_test_123"
+/** The org as the Autumn customer it bills to: itself, unlinked. */
+const CUSTOMER = BillingCustomerId.make(ORG)
 
 const makeCache = () => makeEdgeCacheService(makeMemoryBackend())
 
@@ -98,7 +108,7 @@ describe("AutumnClient.updateCustomerBillingControls", () => {
 	it("uses Autumn's canonical customer update route and v2.3 wire shape", async () => {
 		let request: { readonly url: string; readonly init?: RequestInit } | undefined
 		const fetch = (async (input, init) => {
-			request = { url: String(input), init }
+			request = { url: new Request(input).url, init }
 			return new Response(JSON.stringify({ id: ORG }), { status: 200 })
 		}) as typeof globalThis.fetch
 
@@ -107,7 +117,7 @@ describe("AutumnClient.updateCustomerBillingControls", () => {
 				const autumn = yield* AutumnClient
 				return yield* autumn
 					.updateCustomerBillingControls(
-						ORG,
+						CUSTOMER,
 						new UpdateBillingControlsRequest({
 							spendLimits: [
 								new UpdateBillingSpendLimit({
@@ -187,7 +197,7 @@ describe("AutumnClient.updateCustomerBillingControls", () => {
 			Effect.gen(function* () {
 				const autumn = yield* AutumnClient
 				return yield* autumn
-					.updateCustomerBillingControls(ORG, {
+					.updateCustomerBillingControls(CUSTOMER, {
 						spendLimits: [
 							{ featureId: "logs", enabled: true, limitType: "absolute", overageLimit: 250 },
 						],
@@ -202,6 +212,28 @@ describe("AutumnClient.updateCustomerBillingControls", () => {
 	})
 })
 
+describe("AutumnClient.updateCustomerName", () => {
+	it("renames the customer through customers.update", async () => {
+		let request: { readonly url: string; readonly body: string } | undefined
+		const fetch = (async (input, init) => {
+			request = { url: new Request(input).url, body: await new Response(init?.body).text() }
+			return new Response(JSON.stringify({ id: ORG }), { status: 200 })
+		}) as typeof globalThis.fetch
+
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const autumn = yield* AutumnClient
+				return yield* autumn
+					.updateCustomerName(CUSTOMER, "Acme Inc")
+					.pipe(Effect.provideService(FetchHttpClient.Fetch, fetch))
+			}).pipe(Effect.provide(autumnClientLayer)),
+		)
+
+		assert.strictEqual(request?.url, "https://api.useautumn.com/v1/customers.update")
+		assert.deepStrictEqual(JSON.parse(request?.body ?? "{}"), { customer_id: ORG, name: "Acme Inc" })
+	})
+})
+
 describe("readCustomerCached", () => {
 	it.effect("caches a 200 response: 2nd call hits the cache, upstream runs once", () =>
 		Effect.gen(function* () {
@@ -212,8 +244,8 @@ describe("readCustomerCached", () => {
 				return { statusCode: 200, response: { customer: ORG, calls } }
 			})
 
-			const first = yield* readCustomerCached(cache, ORG, run)
-			const second = yield* readCustomerCached(cache, ORG, run)
+			const first = yield* readCustomerCached(cache, CUSTOMER, run)
+			const second = yield* readCustomerCached(cache, CUSTOMER, run)
 
 			assert.strictEqual(calls, 1)
 			assert.isFalse(first.hit)
@@ -231,8 +263,8 @@ describe("readCustomerCached", () => {
 				return { statusCode: 500, response: { error: "boom" } }
 			})
 
-			const first = yield* readCustomerCached(cache, ORG, run)
-			const second = yield* readCustomerCached(cache, ORG, run)
+			const first = yield* readCustomerCached(cache, CUSTOMER, run)
+			const second = yield* readCustomerCached(cache, CUSTOMER, run)
 
 			assert.strictEqual(calls, 2)
 			assert.isFalse(first.hit)
@@ -250,10 +282,10 @@ describe("readCustomerCached", () => {
 				return { statusCode: 200, response: { calls } }
 			})
 
-			yield* readCustomerCached(cache, ORG, run)
-			yield* readCustomerCached(cache, ORG, run) // served from cache
+			yield* readCustomerCached(cache, CUSTOMER, run)
+			yield* readCustomerCached(cache, CUSTOMER, run) // served from cache
 			yield* cache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: ORG })
-			const after = yield* readCustomerCached(cache, ORG, run)
+			const after = yield* readCustomerCached(cache, CUSTOMER, run)
 
 			assert.strictEqual(calls, 2)
 			assert.isFalse(after.hit)
@@ -270,8 +302,8 @@ describe("readCustomerCached", () => {
 				return { statusCode: 200, response: { calls } }
 			})
 
-			yield* readCustomerCached(cache, "org_a", run)
-			yield* readCustomerCached(cache, "org_b", run)
+			yield* readCustomerCached(cache, BillingCustomerId.make("org_a"), run)
+			yield* readCustomerCached(cache, BillingCustomerId.make("org_b"), run)
 
 			assert.strictEqual(calls, 2)
 		}),
@@ -281,7 +313,7 @@ describe("readCustomerCached", () => {
 		Effect.gen(function* () {
 			const { cache, puts } = makeRecordingBackend()
 			const run = Effect.succeed({ statusCode: 200, response: activePlanResponse })
-			yield* readCustomerCached(cache, ORG, run)
+			yield* readCustomerCached(cache, CUSTOMER, run)
 			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_TTL_SECONDS])
 		}),
 	)
@@ -290,7 +322,7 @@ describe("readCustomerCached", () => {
 		Effect.gen(function* () {
 			const { cache, puts } = makeRecordingBackend()
 			const run = Effect.succeed({ statusCode: 200, response: noPlanResponse })
-			yield* readCustomerCached(cache, ORG, run)
+			yield* readCustomerCached(cache, CUSTOMER, run)
 			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_UNSETTLED_TTL_SECONDS])
 		}),
 	)
@@ -299,7 +331,7 @@ describe("readCustomerCached", () => {
 		Effect.gen(function* () {
 			const { cache, puts } = makeRecordingBackend()
 			const run = Effect.succeed({ statusCode: 200, response: lapsedPlanResponse })
-			yield* readCustomerCached(cache, ORG, run)
+			yield* readCustomerCached(cache, CUSTOMER, run)
 			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_LAPSED_TTL_SECONDS])
 		}),
 	)
@@ -308,7 +340,7 @@ describe("readCustomerCached", () => {
 		Effect.gen(function* () {
 			const { cache, puts } = makeRecordingBackend()
 			const run = Effect.succeed({ statusCode: 200, response: { error: "autumn_api_error" } })
-			yield* readCustomerCached(cache, ORG, run)
+			yield* readCustomerCached(cache, CUSTOMER, run)
 			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_UNSETTLED_TTL_SECONDS])
 		}),
 	)
@@ -366,6 +398,35 @@ describe("decodeInvoices", () => {
 			assert.isTrue(exit._tag === "Failure")
 		}),
 	)
+})
+
+describe("sumDailySpend", () => {
+	const day = (date: string, logsGB: number, productEvents?: number) =>
+		new DailyVolume({
+			date,
+			logsGB,
+			tracesGB: 1,
+			metricsGB: 0,
+			browserSessions: 2,
+			...(productEvents === undefined ? undefined : { productEvents }),
+		})
+	const series = (days: ReadonlyArray<DailyVolume>) =>
+		new DailySpendResponse({ cycleStart: 10, cycleEnd: 20, days })
+
+	it("adds a billing org's members into its series, day by day", () => {
+		const total = sumDailySpend(series([day("2026-10-01", 1, 3), day("2026-10-02", 2)]), [
+			series([day("2026-10-01", 0.5), day("2026-10-02", 4, 1)]),
+		])
+		assert.deepStrictEqual(
+			Arr.map(total.days, (d) => [d.date, d.logsGB, d.tracesGB, d.browserSessions, d.productEvents]),
+			[
+				["2026-10-01", 1.5, 2, 4, 3],
+				["2026-10-02", 6, 2, 4, 1],
+			],
+		)
+		assert.strictEqual(total.cycleStart, 10)
+		assert.strictEqual(total.cycleEnd, 20)
+	})
 })
 
 describe("resolveCycleWindow", () => {
@@ -448,24 +509,24 @@ describe("summariseSubscriptions", () => {
 				],
 			}),
 			{
-				"billing.subscription_count": 3,
-				"billing.subscription_statuses": "expired,active,active",
-				"billing.subscription_plan_ids": "startup,byoc,free",
-				"billing.subscription_excluded": "-,addon,auto",
-				"billing.has_active_plan": false,
-				"billing.has_plan_history": true,
+				"maple.billing.subscription_count": 3,
+				"maple.billing.subscription_statuses": "expired,active,active",
+				"maple.billing.subscription_plan_ids": "startup,byoc,free",
+				"maple.billing.subscription_excluded": "-,addon,auto",
+				"maple.billing.has_active_plan": false,
+				"maple.billing.has_plan_history": true,
 			},
 		)
 	})
 
 	it("reports a never-subscribed customer as empty rather than throwing", () => {
 		assert.deepStrictEqual(summariseSubscriptions(noPlanResponse), {
-			"billing.subscription_count": 0,
-			"billing.subscription_statuses": "",
-			"billing.subscription_plan_ids": "",
-			"billing.subscription_excluded": "",
-			"billing.has_active_plan": false,
-			"billing.has_plan_history": false,
+			"maple.billing.subscription_count": 0,
+			"maple.billing.subscription_statuses": "",
+			"maple.billing.subscription_plan_ids": "",
+			"maple.billing.subscription_excluded": "",
+			"maple.billing.has_active_plan": false,
+			"maple.billing.has_plan_history": false,
 		})
 	})
 
@@ -473,20 +534,20 @@ describe("summariseSubscriptions", () => {
 		// `getCustomer` annotates BEFORE `ensureOk`, so it sees Autumn's error
 		// bodies too — the summary must never be the thing that fails the request.
 		const summary = summariseSubscriptions({ code: "autumn_api_error", message: "boom" })
-		assert.strictEqual(summary["billing.subscription_count"], 0)
-		assert.strictEqual(summary["billing.has_plan_history"], false)
+		assert.strictEqual(summary["maple.billing.subscription_count"], 0)
+		assert.strictEqual(summary["maple.billing.has_plan_history"], false)
 	})
 
 	it("marks a row missing planId or status without shifting the columns", () => {
 		assert.deepStrictEqual(
 			summariseSubscriptions({ subscriptions: [{ status: "expired" }, { planId: "pro" }] }),
 			{
-				"billing.subscription_count": 2,
-				"billing.subscription_statuses": "expired,-",
-				"billing.subscription_plan_ids": "-,pro",
-				"billing.subscription_excluded": "-,-",
-				"billing.has_active_plan": false,
-				"billing.has_plan_history": true,
+				"maple.billing.subscription_count": 2,
+				"maple.billing.subscription_statuses": "expired,-",
+				"maple.billing.subscription_plan_ids": "-,pro",
+				"maple.billing.subscription_excluded": "-,-",
+				"maple.billing.has_active_plan": false,
+				"maple.billing.has_plan_history": true,
 			},
 		)
 	})
@@ -556,19 +617,42 @@ describe("resolveAttachConflict", () => {
 describe("billing writes over HTTP", () => {
 	class BillingOnlyApi extends HttpApi.make("MapleInternalApi")
 		.add(BillingApiGroup)
-		.middleware(V1SchemaErrors)
-		.middleware(V1UnexpectedErrors) {}
+		.middleware(ApiSchemaErrors)
+		.middleware(ApiUnexpectedErrors) {}
 
 	const decodeTenant = Schema.decodeUnknownSync(CurrentTenant.TenantSchema)
+	const PAYER_ORG = Schema.decodeSync(OrgId)("org_billing_payer")
 	const tenantWithRoles = (roles: ReadonlyArray<string>) =>
 		decodeTenant({ orgId: ORG, userId: "user_billing_test", roles, authMode: "self_hosted" })
 
 	const die = () => Effect.die(new Error("not reachable once the admin gate rejects"))
 
-	const makeHarness = (roles: ReadonlyArray<string>) => {
+	/** A member org's resolver: reads bill to `payer`, writes are refused. */
+	const billedThroughResolver = (payer: OrgId) =>
+		Layer.succeed(BillingCustomerResolver, {
+			billingOrgId: () => Effect.succeed(payer),
+			customerFor: () => Effect.succeed(BillingCustomerId.make(payer)),
+			requireOwnBilling: () =>
+				Effect.fail(
+					new BillingManagedByBillingOrgError({ message: "billed elsewhere", billingOrgId: payer }),
+				),
+			readLink: () => Effect.succeedSome(payer),
+			forget: () => Effect.void,
+		})
+
+	const makeHarness = (
+		roles: ReadonlyArray<string>,
+		overrides: {
+			readonly autumn?: object
+			readonly organizations?: object
+			readonly stripe?: object
+			/** The org this one is billed through, when it is a member org. */
+			readonly billedThrough?: OrgId
+		} = {},
+	) => {
 		const routes = HttpApiBuilder.layer(BillingOnlyApi).pipe(
 			Layer.provide(HttpBillingLive),
-			Layer.provide(V1ErrorBoundaryLive),
+			Layer.provide(ApiErrorBoundaryLive),
 			Layer.provideMerge(
 				Layer.succeed(
 					CurrentTenant.SessionAuthorization,
@@ -580,31 +664,43 @@ describe("billing writes over HTTP", () => {
 			),
 			Layer.provideMerge(Layer.succeed(EdgeCacheService, makeCache())),
 			Layer.provideMerge(Layer.succeed(DailySpendService, { get: die })),
+			Layer.provideMerge(
+				overrides.billedThrough === undefined
+					? BillingCustomerResolver.standalone
+					: billedThroughResolver(overrides.billedThrough),
+			),
+			Layer.provideMerge(
+				Layer.succeed(BillingOrgService, { members: () => Effect.succeed([]) } as never),
+			),
 			Layer.provideMerge(Layer.succeed(ProductEventsService, { track: die, trackMany: die })),
-			Layer.provideMerge(Layer.succeed(StripeClient, { request: die })),
+			Layer.provideMerge(Layer.succeed(StripeClient, { request: die, ...overrides.stripe })),
+			Layer.provideMerge(
+				Layer.succeed(OrganizationService, { retrieve: die, ...overrides.organizations } as never),
+			),
 			Layer.provideMerge(
 				Layer.succeed(AutumnClient, {
 					attach: die,
 					openCustomerPortal: die,
+					...overrides.autumn,
 				} as never),
 			),
 		)
 		const { handler, dispose } = HttpRouter.toWebHandler(routes as never, { disableLogger: true })
 
-		const post = async (path: string, body: unknown) => {
+		const send = (method: string) => async (path: string, body: unknown) => {
 			const response = await handler(
 				new Request(`http://maple.test${path}`, {
-					method: "POST",
+					method,
 					headers: { authorization: "Bearer test-token", "content-type": "application/json" },
 					body: JSON.stringify(body),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const text = await response.text()
 			return { status: response.status, body: text.length === 0 ? null : JSON.parse(text) }
 		}
 
-		return { post, dispose }
+		return { post: send("POST"), put: send("PUT"), dispose }
 	}
 
 	it("refuses attach from a non-admin member", async () => {
@@ -618,6 +714,68 @@ describe("billing writes over HTTP", () => {
 		}
 	})
 
+	it("answers a details save against a customer Stripe no longer has as unavailable", async () => {
+		const missing = {
+			statusCode: 404,
+			response: { message: "No such customer", code: "resource_missing", statusCode: 404 },
+		}
+		const harness = makeHarness(["org:admin"], {
+			autumn: {
+				getOrCreateCustomer: () =>
+					Effect.succeed({ statusCode: 200, response: { id: ORG, stripeId: "cus_deleted" } }),
+			},
+			stripe: { updateCustomer: () => Effect.succeed(missing) },
+		})
+		try {
+			const response = await harness.put("/internal/billing/profile", { name: "Acme GmbH" })
+			assert.strictEqual(response.status, 409)
+			assert.strictEqual(response.body._tag, "@maple/http/errors/BillingProfileUnavailableError")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("answers a tax-ID add against a customer Stripe no longer has as unavailable", async () => {
+		const missing = {
+			statusCode: 404,
+			response: { message: "No such customer", code: "resource_missing", statusCode: 404 },
+		}
+		const harness = makeHarness(["org:admin"], {
+			autumn: {
+				getOrCreateCustomer: () =>
+					Effect.succeed({ statusCode: 200, response: { id: ORG, stripeId: "cus_deleted" } }),
+			},
+			stripe: { createTaxId: () => Effect.succeed(missing) },
+		})
+		try {
+			const response = await harness.post("/internal/billing/profile/tax-ids", {
+				type: "eu_vat",
+				value: "DE123456789",
+			})
+			assert.strictEqual(response.status, 409)
+			assert.strictEqual(response.body._tag, "@maple/http/errors/BillingProfileUnavailableError")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses plan and portal changes from an org billed through another org", async () => {
+		const harness = makeHarness(["org:admin"], { billedThrough: PAYER_ORG })
+		try {
+			const attach = await harness.post("/internal/billing/attach", { planId: "startup" })
+			assert.strictEqual(attach.status, 409)
+			assert.strictEqual(attach.body._tag, "@maple/http/errors/BillingManagedByBillingOrgError")
+			assert.strictEqual(attach.body.billingOrgId, PAYER_ORG)
+			const portal = await harness.post("/internal/billing/portal", {
+				returnUrl: "https://maple.test/settings/billing",
+			})
+			assert.strictEqual(portal.status, 409)
+			assert.strictEqual(portal.body._tag, "@maple/http/errors/BillingManagedByBillingOrgError")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
 	it("refuses the Stripe customer portal from a non-admin member", async () => {
 		const harness = makeHarness(["org:member"])
 		try {
@@ -626,6 +784,141 @@ describe("billing writes over HTTP", () => {
 			})
 			assert.strictEqual(response.status, 403)
 			assert.strictEqual(response.body._tag, "@maple/http/errors/BillingForbiddenError")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("names the Autumn customer after the org before opening the portal", async () => {
+		const calls: Array<string> = []
+		const harness = makeHarness(["org:admin"], {
+			organizations: {
+				retrieve: () =>
+					Effect.succeed({
+						id: ORG,
+						name: "Acme Inc",
+						slug: null,
+						imageUrl: null,
+						createdAtMs: null,
+					}),
+			},
+			autumn: {
+				updateCustomerName: (_orgId: string, name: string) =>
+					Effect.sync(() => {
+						calls.push(`name:${name}`)
+						return { statusCode: 200, response: { id: ORG } }
+					}),
+				openCustomerPortal: () =>
+					Effect.sync(() => {
+						calls.push("portal")
+						return { statusCode: 200, response: { url: "https://billing.stripe.test/session" } }
+					}),
+			},
+		})
+		try {
+			const response = await harness.post("/internal/billing/portal", {
+				returnUrl: "https://maple.test/settings/billing",
+			})
+			assert.strictEqual(response.status, 200)
+			assert.deepStrictEqual(calls, ["name:Acme Inc", "portal"])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("still opens the portal when naming the customer fails", async () => {
+		const harness = makeHarness(["org:admin"], {
+			organizations: {
+				retrieve: () =>
+					Effect.succeed({
+						id: ORG,
+						name: "Acme Inc",
+						slug: null,
+						imageUrl: null,
+						createdAtMs: null,
+					}),
+			},
+			autumn: {
+				updateCustomerName: () =>
+					Effect.succeed({ statusCode: 503, response: { message: "autumn down" } }),
+				openCustomerPortal: () =>
+					Effect.succeed({
+						statusCode: 200,
+						response: { url: "https://billing.stripe.test/session" },
+					}),
+			},
+		})
+		try {
+			const response = await harness.post("/internal/billing/portal", {
+				returnUrl: "https://maple.test/settings/billing",
+			})
+			assert.strictEqual(response.status, 200)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("creates the customer already named when it does not exist yet", async () => {
+		const calls: Array<string> = []
+		const harness = makeHarness(["org:admin"], {
+			organizations: {
+				retrieve: () =>
+					Effect.succeed({
+						id: ORG,
+						name: "Acme Inc",
+						slug: null,
+						imageUrl: null,
+						createdAtMs: null,
+					}),
+			},
+			autumn: {
+				updateCustomerName: () =>
+					Effect.sync(() => {
+						calls.push("update")
+						return { statusCode: 404, response: { message: "customer not found" } }
+					}),
+				getOrCreateCustomer: (
+					_orgId: string,
+					options: { readonly customerData?: { readonly name?: string | null } },
+				) =>
+					Effect.sync(() => {
+						calls.push(`create:${options.customerData?.name}`)
+						return { statusCode: 200, response: { id: ORG } }
+					}),
+				openCustomerPortal: () =>
+					Effect.sync(() => {
+						calls.push("portal")
+						return { statusCode: 200, response: { url: "https://billing.stripe.test/session" } }
+					}),
+			},
+		})
+		try {
+			const response = await harness.post("/internal/billing/portal", {
+				returnUrl: "https://maple.test/settings/billing",
+			})
+			assert.strictEqual(response.status, 200)
+			assert.deepStrictEqual(calls, ["update", "create:Acme Inc", "portal"])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("opens the portal without waiting on a stalled rename", { timeout: 10_000 }, async () => {
+		const harness = makeHarness(["org:admin"], {
+			organizations: { retrieve: () => Effect.never },
+			autumn: {
+				openCustomerPortal: () =>
+					Effect.succeed({
+						statusCode: 200,
+						response: { url: "https://billing.stripe.test/session" },
+					}),
+			},
+		})
+		try {
+			const response = await harness.post("/internal/billing/portal", {
+				returnUrl: "https://maple.test/settings/billing",
+			})
+			assert.strictEqual(response.status, 200)
 		} finally {
 			await harness.dispose()
 		}

@@ -60,7 +60,9 @@ answer from Maple — and a proposed change into one that actually happened.
    Connect, which runs the install flow and writes the `chat_workspaces` row. Until that row
    exists, a mention is answered once with a note saying the workspace is not connected — that is
    the resolution failing, not the bot.
-4. **Mention it.** `@Maple why is checkout slow?` in a channel. The bot opens a thread on that
+4. **Mention it.** `@Maple why is checkout slow?` in a channel. Only a person who has linked their
+   Discord account (step 5) is answered: anyone else gets a link notice, and an unaddressed message
+   from them is ignored. The turn runs as their Maple user, under their current org roles. The bot opens a thread on that
    message and edits one message in it as the answer streams. A follow-up mention inside the thread
    continues the same conversation; a mention in another channel starts a different one. A mention
    while an answer is still being written is told so, and is not queued. A follow-up inside that

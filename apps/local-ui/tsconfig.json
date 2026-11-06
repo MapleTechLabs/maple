@@ -1,8 +1,8 @@
 {
-	"include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"],
+	"include": ["src/**/*.ts", "vite.config.ts", "vitest.config.ts"],
 	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
 		"target": "ES2023",
-		"jsx": "react-jsx",
 		"module": "ESNext",
 		"lib": ["ES2023", "DOM", "DOM.Iterable"],
 		"types": ["vite/client"],
@@ -18,7 +18,22 @@
 		"noUncheckedSideEffectImports": true,
 		"paths": {
 			"@/*": ["./src/*"],
-			"@maple/ui/*": ["../../packages/ui/src/*"]
-		}
+			"@maple/ui/styles/ui/*": ["../../packages/ui/src/components/ui/*.styles.ts"],
+			"@maple/ui/*": ["../../packages/ui/src/*"],
+			"@maple/web/*": ["../web/src/*"]
+		},
+		"plugins": [
+			{
+				"name": "@effect/language-service",
+				"ignoreEffectWarningsInTscExitCode": true,
+				"includeSuggestionsInTsc": false,
+				"diagnosticSeverity": {
+					"unstableApiUsage": "off",
+					"schemaNumber": "off",
+					"schemaClassMissingBrand": "off",
+					"schemaSync": "off"
+				}
+			}
+		]
 	}
 }

@@ -19,22 +19,30 @@
 
 import { finiteOrZero } from "@maple/query-engine/ch/format"
 import { Schema } from "effect"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { from, fromQuery, param, type CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { from, fromQuery, param, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "@maple/query-engine/ch/schema"
-import { MetricsGauge } from "@maple/query-engine/ch/tables"
+import { MetricsGauge, orgIdParam } from "@maple/query-engine/ch/tables"
 
 /** Active connections (gauge) — one series per edge region/branch; summed per timestamp. */
 export const CONNECTION_METRIC_NAMES = [
 	"planetscale_edge_active_connections", // Vitess/MySQL
 	"planetscale_edge_postgres_active_connections", // Postgres (includes PgBouncer)
+	"planetscale_api_connections", // Polled from the metrics API (backend planetscale/api-metrics.ts)
 ] as const
 
 /** Pod CPU utilization percentage (gauge, both products). */
-export const CPU_METRIC_NAMES = ["planetscale_pods_cpu_util_percentages"] as const
+export const CPU_METRIC_NAMES = [
+	"planetscale_pods_cpu_util_percentages",
+	// Vitess branches read from the metrics API: router CPU is the only CPU it serves.
+	"planetscale_vtgate_cpu_util_percentages",
+] as const
 
 /** Pod memory utilization percentage (gauge, both products). */
-export const MEMORY_METRIC_NAMES = ["planetscale_pods_mem_util_percentages"] as const
+export const MEMORY_METRIC_NAMES = [
+	"planetscale_pods_mem_util_percentages",
+	"planetscale_vtgate_mem_util_percentages",
+] as const
 
 /** Replication lag in seconds (gauge). */
 export const REPLICA_LAG_METRIC_NAMES = [
@@ -148,14 +156,14 @@ export function planetscaleGaugesSQL() {
 			replicaLagMaxSeconds: CH.maxIf($.Value, $.MetricName.in_(...REPLICA_LAG_METRIC_NAMES)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...GAUGE_METRIC_NAMES),
 			CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
 				$.Attributes.get("planetscale_database"),
 			).neq(""),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.groupBy("database")
 		.limit(500)
@@ -179,14 +187,14 @@ export function planetscaleBranchGaugesSQL() {
 			replicaLagMaxSeconds: CH.maxIf($.Value, $.MetricName.in_(...REPLICA_LAG_METRIC_NAMES)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...GAUGE_METRIC_NAMES),
 			CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
 				$.Attributes.get("planetscale_database"),
 			).eq(param.string("database")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.groupBy("database", "branch")
 		.limit(500)
@@ -243,14 +251,14 @@ export function planetscaleStorageSQL() {
 			samples: CH.countIf($.MetricName.in_(...STORAGE_AVAILABLE_METRIC_NAMES)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...STORAGE_METRIC_NAMES),
 			CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
 				$.Attributes.get("planetscale_database"),
 			).neq(""),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.groupBy("database", "branch")
 
@@ -282,14 +290,14 @@ export function planetscaleBranchStorageSQL() {
 			samples: CH.countIf($.MetricName.in_(...STORAGE_AVAILABLE_METRIC_NAMES)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...STORAGE_METRIC_NAMES),
 			CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
 				$.Attributes.get("planetscale_database"),
 			).eq(param.string("database")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.groupBy("database", "branch")
 
@@ -323,14 +331,14 @@ export function planetscaleConnectionsSQL() {
 			totalConnections: CH.sum($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...CONNECTION_METRIC_NAMES),
 			CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
 				$.Attributes.get("planetscale_database"),
 			).neq(""),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.groupBy("database", "t")
 
@@ -361,14 +369,14 @@ export function planetscaleBranchConnectionsSQL() {
 			totalConnections: CH.sum($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...CONNECTION_METRIC_NAMES),
 			CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
 				$.Attributes.get("planetscale_database"),
 			).eq(param.string("database")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.groupBy("database", "branch", "t")
 

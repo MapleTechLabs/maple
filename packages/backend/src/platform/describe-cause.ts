@@ -1,15 +1,13 @@
-import { Cause } from "effect"
+import { Cause, Formatter, Option, Schema, Array as Arr, String as Str } from "effect"
+
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 
 /** Render an unknown nested cause for logs and serialized persistence errors. */
 export const describeCause = (cause: unknown): string | undefined => {
 	if (cause == null) return undefined
 	if (cause instanceof Error) return cause.stack ?? cause.message
 	if (typeof cause === "string") return cause
-	try {
-		return JSON.stringify(cause)
-	} catch {
-		return String(cause)
-	}
+	return encodeJson(cause).pipe(Option.getOrElse(() => Formatter.format(cause)))
 }
 
 /**
@@ -20,7 +18,7 @@ export const describeCause = (cause: unknown): string | undefined => {
 const MAX_CAUSE_CHARS = 500
 
 const cap = (message: string): string =>
-	message.length <= MAX_CAUSE_CHARS ? message : `${message.slice(0, MAX_CAUSE_CHARS)}…[truncated]`
+	message.length <= MAX_CAUSE_CHARS ? message : `${Str.slice(0, MAX_CAUSE_CHARS)(message)}…[truncated]`
 
 /**
  * A bounded, one-line rendering of a cause, safe to hand `Effect.annotateLogs`.
@@ -34,7 +32,7 @@ const cap = (message: string): string =>
  *
  * `Cause.prettyErrors` is the same normalizer `Cause.pretty` builds on, stopped
  * one step earlier: it hands back an `Error` per reason with `name` resolved to
- * the tag (`@maple/api/lib/DatabaseError`) and `message` resolved through the
+ * the tag (`@maple/backend/lib/DatabaseError`) and `message` resolved through the
  * same fallbacks — `toString`, then JSON — that make a thrown string, number or
  * bare object legible. Reading only those two leaves the stack and the nested
  * cause behind. The SDK's tracer builds its `exception` events off the same
@@ -43,5 +41,10 @@ const cap = (message: string): string =>
 export const summarizeCause = (cause: Cause.Cause<unknown>): string => {
 	const errors = Cause.prettyErrors(cause)
 	if (errors.length === 0) return "empty cause"
-	return cap(errors.map((error) => `${error.name}: ${error.message}`).join("; "))
+	return cap(
+		Arr.join(
+			Arr.map(errors, (error) => `${error.name}: ${error.message}`),
+			"; ",
+		),
+	)
 }

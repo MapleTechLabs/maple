@@ -30,21 +30,26 @@ import {
 	type DashboardDocument,
 	type DashboardVariable,
 	OrgId,
+	ShareRangeInvalidError,
 	ShareUnsupportedWidgetError,
+	ShareVariableInvalidError,
 	ShareWidgetExecutionError,
 	ShareWidgetNotFoundError,
+	type ShareWidgetDataOutcome,
 	UserId,
 } from "@maple/domain/http"
 import { RoleName } from "@maple/domain/primitives"
 import { QuerySetSchema } from "@maple/query-model"
 import {
 	MAX_LIST_RANGE_SECONDS,
+	collectWhereClauses,
 	computeBucketSecondsForRange,
 	dashboardVariableOptionsFromResult,
 	dashboardVariableOptionsQuery,
 	formatWarehouseDateTime,
 	parseWarehouseDateTime,
 	planWidgetRequest,
+	QueryEngineExecuteRequest,
 	rawSqlRowsForDisplay,
 	type PlannedWidgetRequest,
 	type VariableValues,
@@ -53,22 +58,23 @@ import { fallbackStrategyFromWire, runQuerySet } from "@maple/query-engine/query
 import { makeExecuteRawSql } from "@maple/query-engine/runtime"
 import type { WarehouseExecutionError } from "@maple/query-engine/execution"
 import type { RawSqlValidationError } from "@maple/domain/http"
-import {
-	dataSourceQuerySet,
-	MARKDOWN_STATIC_ENDPOINT,
-	QUERY_RESULT_ENDPOINTS,
-	RAW_SQL_ENDPOINT,
-	toWidgetRequest,
-} from "@maple/widgets/dashboard"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeServerQuerySetExecutor } from "./server-query-set-executor"
-import { ROUTE_ENDPOINT_PLANS, type RouteEndpointContext } from "./route-endpoint-plans"
+import type { RouteEndpointContext } from "./route-endpoint-plans"
+import { resolveShareVariables } from "./share-variables"
 import { resolveShareWindow } from "./share-window"
+import {
+	sourceReadFamilies,
+	type TelemetryReadFamily,
+	widgetReadFamilies,
+	widgetReadPath,
+} from "./widget-read-families"
 
-const UNSUPPORTED_WIDGET_MESSAGE = "This widget isn't available in shared views."
+// Shares and the API's widget data read both land here, so the wording names neither.
+const UNSUPPORTED_WIDGET_MESSAGE = "This widget type can't be read outside the dashboard yet."
 const EXECUTION_FAILED_MESSAGE = "This widget couldn't be loaded. Try again shortly."
 
 /**
@@ -107,6 +113,7 @@ const asWidgetOutcomeFailure =
 
 const decodeUserIdSync = Schema.decodeUnknownSync(UserId)
 const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
+const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /**
  * The identity a shared dashboard's queries execute under.
@@ -153,7 +160,30 @@ export interface WidgetDataOutcome {
 
 /** Every widget on a document, including those nested in sections and tabs. */
 const findWidget = (document: DashboardDocument, widgetId: string) =>
-	document.widgets.find((widget) => widget.id === widgetId)
+	Arr.findFirst(document.widgets, (widget) => widget.id === widgetId)
+
+/** The families a request reads that the caller may not, empty when it may read them all. */
+const unreadableFamilies = (
+	document: DashboardDocument,
+	request: WidgetDataRequest,
+	canRead: (family: TelemetryReadFamily) => boolean,
+): ReadonlyArray<TelemetryReadFamily> => {
+	const dataSource = Option.match(findWidget(document, request.widgetId), {
+		onNone: () => undefined,
+		onSome: (widget) =>
+			request.source === "sparkline" ? widget.display?.sparkline?.dataSource : widget.dataSource,
+	})
+	return Arr.filter(widgetReadFamilies(dataSource), (family) => !canRead(family))
+}
+
+const scopeNotAllowedMessage = (missing: ReadonlyArray<TelemetryReadFamily>) =>
+	`This widget requires the ${Arr.join(
+		Arr.map(missing, (family) => `"${family}:read"`),
+		", ",
+	)} scope${missing.length === 1 ? "" : "s"}.`
+
+/** Widgets of one batch resolved at once; each is its own warehouse query. */
+const WIDGET_BATCH_CONCURRENCY = 4
 
 /**
  * The interpolated query-set params, read back as typed values.
@@ -199,12 +229,14 @@ export interface DashboardWidgetDataServiceApi {
 	 * The option lists of the document's `query` variables over a window — the
 	 * same facet / attribute-value queries the signed-in provider runs, so the
 	 * share's "first option" and "All" expansion are the board's. A source that
-	 * fails to list resolves to no options, as it does in the browser.
+	 * fails to list resolves to no options, as it does in the browser. A variable
+	 * whose source the caller may not read is not listed: its options are telemetry.
 	 */
 	readonly variableOptions: (
 		orgId: OrgId,
 		definitions: ReadonlyArray<DashboardVariable>,
 		window: ResolvedWindow,
+		canRead: (family: TelemetryReadFamily) => boolean,
 	) => Effect.Effect<Readonly<Record<string, ReadonlyArray<string>>>>
 	readonly resolve: (
 		orgId: OrgId,
@@ -216,12 +248,50 @@ export interface DashboardWidgetDataServiceApi {
 		WidgetDataOutcome,
 		ShareWidgetNotFoundError | ShareUnsupportedWidgetError | ShareWidgetExecutionError
 	>
+	/**
+	 * A batch of widgets over one requested window: bounds the window, resolves
+	 * the variable ladder, then one outcome per request. Shared by the share
+	 * page and the signed-in `widget_data` route.
+	 */
+	readonly resolveBatch: (
+		orgId: OrgId,
+		document: DashboardDocument,
+		input: WidgetDataBatchInput,
+	) => Effect.Effect<WidgetDataBatchResult, ShareRangeInvalidError | ShareVariableInvalidError>
 }
+
+export interface WidgetDataBatchInput {
+	readonly requests: ReadonlyArray<WidgetDataRequest>
+	/** The caller's window, still unvalidated; `resolveShareWindow` bounds it. */
+	readonly window: ResolvedWindow
+	readonly variableValues: Readonly<Record<string, string>>
+	/** A widget-scoped share answers for this widget and nothing else. */
+	readonly onlyWidgetId?: string
+	/**
+	 * Whether the caller may read a telemetry family. Required so every caller decides: every
+	 * widget runs as the org, and a widget whose families the caller cannot read is refused.
+	 */
+	readonly canRead: (family: TelemetryReadFamily) => boolean
+}
+
+export interface WidgetDataBatchResult {
+	readonly results: ReadonlyArray<ShareWidgetDataOutcome>
+	/** The value each variable resolved to (`$__all` for All), for title interpolation. */
+	readonly variables: Readonly<Record<string, string>>
+}
+
+const WIDGET_NOT_ON_DASHBOARD = "That widget is not on this dashboard."
+
+/** Every where-clause the board could interpolate a variable into: data sources, sparklines, list displays. */
+const boardWhereClauses = (document: DashboardDocument): ReadonlyArray<string> =>
+	Arr.flatMap(document.widgets, (widget) =>
+		collectWhereClauses({ dataSource: widget.dataSource, display: widget.display }),
+	)
 
 export class DashboardWidgetDataService extends Context.Service<
 	DashboardWidgetDataService,
 	DashboardWidgetDataServiceApi
->()("@maple/api/services/DashboardWidgetDataService", {
+>()("@maple/backend/services/DashboardWidgetDataService", {
 	make: Effect.gen(function* () {
 		const queryEngine = yield* QueryEngineService
 		const warehouse = yield* WarehouseQueryService
@@ -240,25 +310,22 @@ export class DashboardWidgetDataService extends Context.Service<
 				"maple.widget.source": request.source,
 			})
 
-			const widget = findWidget(document, request.widgetId)
-			if (widget === undefined) {
-				return yield* Effect.fail(
-					new ShareWidgetNotFoundError({
-						message: "That widget is not on this dashboard.",
-						widgetId: request.widgetId,
-					}),
-				)
+			const found = findWidget(document, request.widgetId)
+			if (Option.isNone(found)) {
+				return yield* new ShareWidgetNotFoundError({
+					message: "That widget is not on this dashboard.",
+					widgetId: request.widgetId,
+				})
 			}
+			const widget = found.value
 
 			const dataSource =
 				request.source === "sparkline" ? widget.display?.sparkline?.dataSource : widget.dataSource
 			if (dataSource === undefined) {
-				return yield* Effect.fail(
-					new ShareWidgetNotFoundError({
-						message: "That widget is not on this dashboard.",
-						widgetId: request.widgetId,
-					}),
-				)
+				return yield* new ShareWidgetNotFoundError({
+					message: "That widget is not on this dashboard.",
+					widgetId: request.widgetId,
+				})
 			}
 
 			const tenant = shareViewerTenant(orgId)
@@ -266,14 +333,22 @@ export class DashboardWidgetDataService extends Context.Service<
 			// A markdown/static tile has nothing to fetch. It is a success with no
 			// data, not an unsupported widget — the renderer draws it from the
 			// document alone.
-			const lowered = toWidgetRequest(dataSource)
-			if (lowered === null || lowered.endpoint === MARKDOWN_STATIC_ENDPOINT) {
+			const path = widgetReadPath(dataSource)
+			if (path._tag === "Static") {
 				return {
 					widgetId: request.widgetId,
 					source: request.source,
 					data: null,
 				} satisfies WidgetDataOutcome
 			}
+			if (path._tag === "Unservable") {
+				return yield* new ShareUnsupportedWidgetError({
+					message: UNSUPPORTED_WIDGET_MESSAGE,
+					widgetId: request.widgetId,
+					kind: path.request.endpoint,
+				})
+			}
+			const lowered = path.request
 
 			// The signed-in browser's exact planning pass. A pinned tile
 			// (`widget.timeRange`) resolves against the same clock and snap grid
@@ -288,15 +363,13 @@ export class DashboardWidgetDataService extends Context.Service<
 					: { maxDataPoints: request.maxDataPoints }),
 			})
 			if (plan.kind === "disabled") {
-				return yield* Effect.fail(
-					new ShareWidgetExecutionError({
-						message:
-							plan.reason === "metric_not_selected"
-								? "This widget has no metric selected."
-								: "This widget's own time range couldn't be resolved.",
-						widgetId: request.widgetId,
-					}),
-				)
+				return yield* new ShareWidgetExecutionError({
+					message:
+						plan.reason === "metric_not_selected"
+							? "This widget has no metric selected."
+							: "This widget's own time range couldn't be resolved.",
+					widgetId: request.widgetId,
+				})
 			}
 
 			// A pinned range is the author's, not the viewer's, but it still has to
@@ -345,8 +418,8 @@ export class DashboardWidgetDataService extends Context.Service<
 			// `{ data: rows }` in every branch — the envelope the browser's server
 			// functions return, which the shared `toReadyWidgetData` unwraps on
 			// the client for both paths alike.
-			const querySet = dataSourceQuerySet(dataSource)
-			if (querySet !== null && executed.endpoint === QUERY_RESULT_ENDPOINTS[querySet.resultShape]) {
+			// Branches on the same path the scope gate classified, never on the stored shape.
+			if (path._tag === "QuerySet") {
 				const rows = yield* Effect.gen(function* () {
 					const params = yield* decodePlannedQuerySet(executed.params)
 					const result = yield* runQuerySet(makeServerQuerySetExecutor(tenant, queryEngine), {
@@ -357,7 +430,7 @@ export class DashboardWidgetDataService extends Context.Service<
 								? undefined
 								: { comparison: params.comparison }),
 						},
-						resultShape: querySet.resultShape,
+						resultShape: path.querySet.resultShape,
 						startTime: executed.window.startTime,
 						endTime: executed.window.endTime,
 						...(params.defaultLimit === undefined
@@ -381,7 +454,7 @@ export class DashboardWidgetDataService extends Context.Service<
 				return outcome({ data: rows })
 			}
 
-			if (executed.endpoint === RAW_SQL_ENDPOINT) {
+			if (path._tag === "RawSql") {
 				// The SQL is the dashboard author's, never the viewer's — it comes off
 				// the stored document and no share payload can influence it beyond
 				// the variable values, which the planner interpolated as escaped SQL
@@ -415,17 +488,6 @@ export class DashboardWidgetDataService extends Context.Service<
 				return outcome({ data: rows })
 			}
 
-			const routePlan = ROUTE_ENDPOINT_PLANS[executed.endpoint]
-			if (routePlan === undefined) {
-				return yield* Effect.fail(
-					new ShareUnsupportedWidgetError({
-						message: UNSUPPORTED_WIDGET_MESSAGE,
-						widgetId: request.widgetId,
-						kind: executed.endpoint,
-					}),
-				)
-			}
-
 			const context: RouteEndpointContext = {
 				tenant,
 				queryEngine,
@@ -433,9 +495,8 @@ export class DashboardWidgetDataService extends Context.Service<
 				window: executed.window,
 			}
 
-			// `routePlan === undefined` above is the structural case and stays
-			// "unsupported"; a plan that exists and throws is a run that failed.
-			const data = yield* routePlan
+			// A route with no plan was refused as unsupported above; a plan that fails is a run that failed.
+			const data = yield* path.plan
 				.run(executed.params, context)
 				.pipe(asWidgetOutcomeFailure(request.widgetId, executed.endpoint))
 
@@ -446,6 +507,7 @@ export class DashboardWidgetDataService extends Context.Service<
 			orgId: OrgId,
 			definitions: ReadonlyArray<DashboardVariable>,
 			window: ResolvedWindow,
+			canRead: (family: TelemetryReadFamily) => boolean,
 		) {
 			const tenant = shareViewerTenant(orgId)
 			// Several variables sharing a source share one query, as the browser's
@@ -456,8 +518,9 @@ export class DashboardWidgetDataService extends Context.Service<
 			>()
 			for (const definition of definitions) {
 				const query = dashboardVariableOptionsQuery(definition)
-				if (query === null) continue
-				const key = JSON.stringify(query)
+				// Unlisted, the variable falls back to free text, so a value is never checked against rows.
+				if (query === null || !Arr.every(sourceReadFamilies(query.source), canRead)) continue
+				const key = encodeJsonSync(query)
 				const entry = byQuery.get(key) ?? { query, names: [] }
 				entry.names.push(definition.name)
 				byQuery.set(key, entry)
@@ -467,7 +530,14 @@ export class DashboardWidgetDataService extends Context.Service<
 				[...byQuery.values()],
 				({ query, names }) =>
 					queryEngine
-						.execute(tenant, { startTime: window.startTime, endTime: window.endTime, query })
+						.execute(
+							tenant,
+							new QueryEngineExecuteRequest({
+								startTime: window.startTime,
+								endTime: window.endTime,
+								query,
+							}),
+						)
 						.pipe(
 							Effect.map((response) =>
 								dashboardVariableOptionsFromResult(query, response.result),
@@ -494,7 +564,72 @@ export class DashboardWidgetDataService extends Context.Service<
 			return byName
 		})
 
-		return { variableOptions, resolve } satisfies DashboardWidgetDataServiceApi
+		const failed = (
+			widgetId: string,
+			reason: "unsupported" | "not_found" | "failed",
+			message: string,
+		): ShareWidgetDataOutcome => ({ widgetId, ok: false, reason, message })
+
+		const resolveBatch = Effect.fn("DashboardWidgetDataService.resolveBatch")(function* (
+			orgId: OrgId,
+			document: DashboardDocument,
+			input: WidgetDataBatchInput,
+		) {
+			const window = yield* resolveShareWindow(input.window)
+
+			// Query-variable options are listed over the same window, so the board's
+			// ladder (selection, default, All, first option) resolves as it does there.
+			const definitions = document.variables ?? []
+			const queryOptions = yield* variableOptions(orgId, definitions, window, input.canRead)
+			const variableValues = yield* resolveShareVariables(
+				definitions,
+				input.variableValues,
+				queryOptions,
+				boardWhereClauses(document),
+			)
+
+			const results = yield* Effect.forEach(
+				input.requests,
+				(request) => {
+					if (input.onlyWidgetId !== undefined && request.widgetId !== input.onlyWidgetId) {
+						return Effect.succeed(failed(request.widgetId, "not_found", WIDGET_NOT_ON_DASHBOARD))
+					}
+					const missing = unreadableFamilies(document, request, input.canRead)
+					if (missing.length > 0) {
+						return Effect.succeed(
+							failed(request.widgetId, "unsupported", scopeNotAllowedMessage(missing)),
+						)
+					}
+					return resolve(orgId, document, request, window, variableValues).pipe(
+						Effect.map(({ data, narrowedToSeconds }): ShareWidgetDataOutcome =>
+							narrowedToSeconds === undefined
+								? { widgetId: request.widgetId, ok: true, data }
+								: { widgetId: request.widgetId, ok: true, data, narrowedToSeconds },
+						),
+						// Per-widget failures ride inside the batch: one tile that cannot
+						// be served must not blank its neighbours. `failed` is retryable.
+						Effect.catchTags({
+							"@maple/http/errors/ShareWidgetNotFoundError": (error) =>
+								Effect.succeed(failed(request.widgetId, "not_found", error.message)),
+							"@maple/http/errors/ShareUnsupportedWidgetError": (error) =>
+								Effect.succeed(failed(request.widgetId, "unsupported", error.message)),
+							"@maple/http/errors/ShareWidgetExecutionError": (error) =>
+								Effect.succeed(failed(request.widgetId, "failed", error.message)),
+						}),
+					)
+				},
+				{ concurrency: WIDGET_BATCH_CONCURRENCY },
+			)
+
+			const variables = Object.fromEntries(
+				Object.entries(variableValues).flatMap(([name, resolved]): Array<[string, string]> =>
+					resolved === undefined ? [] : [[name, resolved.value]],
+				),
+			)
+			return { results, variables } satisfies WidgetDataBatchResult
+		})
+
+		return { variableOptions, resolve, resolveBatch } satisfies DashboardWidgetDataServiceApi
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(

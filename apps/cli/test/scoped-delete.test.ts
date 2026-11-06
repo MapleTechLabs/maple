@@ -1,0 +1,390 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
+import { Chdb } from "@maple/local-server/chdb"
+import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
+import { buildLocalSchemaManifest } from "@maple/local-server/schema-manifest"
+import { LOCAL_SCHEMA_MANIFEST } from "@maple/local-server/schema-identity"
+import { serviceMapRollupInserts } from "@maple/local-server/service-map-rollup"
+import { describeWithChdb } from "./libchdb-test-support"
+import {
+	pendingDeletePath,
+	resumePendingDelete,
+	runScopedDelete,
+	TABLE_DELETE_PLAN,
+	tablePlan,
+	validateDeletePlan,
+} from "@maple/local-server/scoped-delete"
+
+describe("scoped delete plan", () => {
+	// Fails when a table is added to the local schema without a delete strategy.
+	test("classifies every table in the bundled schema soundly", () => {
+		expect(validateDeletePlan(LOCAL_SCHEMA_MANIFEST)).toEqual([])
+		const tables = Arr.map(
+			Arr.filter(LOCAL_SCHEMA_MANIFEST.objects, (o) => o.kind === "table"),
+			(o) => o.name,
+		)
+		const planned: Array<string> = Rec.keys(TABLE_DELETE_PLAN)
+		expect(planned.sort()).toEqual([...tables].sort())
+	})
+
+	const withExtra = (ddl: string) => buildLocalSchemaManifest(`${schemaSql}\n\n${ddl}\n`)
+
+	test("refuses a new derived table nobody classified", () => {
+		const manifest = withExtra(
+			"CREATE TABLE IF NOT EXISTS traces_by_route (OrgId String, Hour DateTime, ServiceName String, Count UInt64)\nENGINE = SummingMergeTree\nORDER BY (OrgId, Hour);\n\nCREATE MATERIALIZED VIEW IF NOT EXISTS traces_by_route_mv TO traces_by_route AS\nSELECT OrgId, toStartOfHour(toDateTime(Timestamp)) AS Hour, ServiceName, count() AS Count FROM traces GROUP BY OrgId, Hour, ServiceName;",
+		)
+		expect(validateDeletePlan(manifest)).toContain("traces_by_route: no delete plan for this table")
+	})
+
+	test("refuses a filter on a merged column that is not a key", () => {
+		const problems = validateDeletePlan(LOCAL_SCHEMA_MANIFEST, {
+			...TABLE_DELETE_PLAN,
+			error_fingerprints_minutely: {
+				strategy: "scoped",
+				time: "Minute",
+				service: ["ServiceName"],
+				namespace: null,
+				env: null,
+				recompute: "views",
+			},
+		})
+		expect(Arr.some(problems, (p) => Str.includes("ServiceName is not in the sorting key")(p))).toBe(true)
+	})
+
+	test("refuses a table that can neither filter nor recompute a namespace", () => {
+		const problems = validateDeletePlan(LOCAL_SCHEMA_MANIFEST, {
+			...TABLE_DELETE_PLAN,
+			service_map_spans: {
+				strategy: "scoped",
+				time: "Timestamp",
+				service: ["ServiceName"],
+				namespace: null,
+				env: { column: "DeploymentEnv" },
+				recompute: null,
+			},
+		})
+		expect(problems).toContain("service_map_spans: cannot delete --namespace and has no recompute")
+	})
+
+	test("refuses recomputing a view source whose dependant is filtered", () => {
+		const problems = validateDeletePlan(LOCAL_SCHEMA_MANIFEST, {
+			...TABLE_DELETE_PLAN,
+			service_operations_hourly: {
+				strategy: "scoped",
+				time: "Hour",
+				service: ["ServiceName"],
+				namespace: { resourceAttributes: "ResourceAttributes" },
+				env: { column: "DeploymentEnv" },
+				recompute: "views",
+			},
+		})
+		expect(Arr.some(problems, (p) => Str.includes("leaks into service_operations_hourly")(p))).toBe(true)
+	})
+
+	test("refuses excluding a table that telemetry views write", () => {
+		const problems = validateDeletePlan(LOCAL_SCHEMA_MANIFEST, {
+			...TABLE_DELETE_PLAN,
+			trace_list_mv: { strategy: "excluded", reason: "test" },
+		})
+		expect(problems).toContain("trace_list_mv_mv: writes excluded trace_list_mv from traces")
+	})
+})
+
+const HOUR_MS = 3_600_000
+const iso = (ms: number) => Str.replace("Z", "")(Str.replace("T", " ")(new Date(ms).toISOString()))
+const decodeCount = decodeJsonEachRow(Schema.Struct({ n: Schema.String }))
+
+describeWithChdb("scoped delete against chDB", () => {
+	let root = ""
+	let dataDir = ""
+	let db: Chdb
+	const now = Date.now()
+	const hourAgo = Math.floor(now / HOUR_MS) * HOUR_MS - HOUR_MS + 60_000
+	const twoHoursAgo = hourAgo - HOUR_MS
+
+	const count = (sql: string) => Number(decodeCount(db.query(sql))[0]?.n)
+	const serviceRows = (table: string, service: string) => {
+		const plan = tablePlan(table)!
+		const columns = plan.strategy === "scoped" && plan.service !== null ? plan.service : ["ServiceName"]
+		return count(
+			`SELECT toString(count()) AS n FROM ${table} WHERE ${Arr.join(
+				Arr.map(columns, (c) => `${c} = '${service}'`),
+				" OR ",
+			)}`,
+		)
+	}
+	const attributeKey = (key: string) =>
+		count(
+			`SELECT toString(sum(UsageCount)) AS n FROM attribute_keys_hourly WHERE AttributeKey = '${key}'`,
+		)
+
+	const span = (at: number, id: string, service: string, env: string, parent = "", kind = "Server") =>
+		`('local', '${iso(at)}', 't-${id}', 's-${id}', '${parent}', 'GET /x', '${kind}', '${service}', 1000000, 'Error', ` +
+		`map('deployment.environment', '${env}'), map('attr.${service}', 'v', 'shared.key', 'v', 'exception.type', 'E'), ` +
+		`[toDateTime64('${iso(at)}', 9)], ['exception'], [map('exception.type', 'Boom', 'exception.message', 'm')])`
+	const log = (at: number, service: string, env: string) =>
+		`('local', '${iso(at)}', '${Str.slice(0, 19)(iso(at))}', '${service}', 'body', map('deployment.environment', '${env}'), map('log.${service}', 'v'))`
+	const metric = (at: number, service: string, env: string) =>
+		`('local', map('deployment.environment', '${env}'), '${service}', 'm.${service}', map('k', 'v'), '${iso(at)}', '${iso(at)}', 1, 1)`
+
+	beforeAll(() => {
+		root = mkdtempSync(join(tmpdir(), "maple-scoped-delete-"))
+		dataDir = join(root, "data")
+		db = Chdb.open({ dataDir, schemaSql })
+		const spans = [
+			span(twoHoursAgo, "k1", "keep", "prod"),
+			span(hourAgo, "k2", "keep", "prod"),
+			span(twoHoursAgo, "d1", "drop", "prod"),
+			span(hourAgo, "d2", "drop", "pr-1"),
+			span(hourAgo + 1, "d3", "drop", "prod", "", "Client"),
+		]
+		db.exec(
+			`INSERT INTO traces (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, ResourceAttributes, SpanAttributes, EventsTimestamp, EventsName, EventsAttributes) VALUES ${Arr.join(spans, ", ")}`,
+		)
+		db.exec(
+			`INSERT INTO logs (OrgId, Timestamp, TimestampTime, ServiceName, Body, ResourceAttributes, LogAttributes) VALUES ${Arr.join(
+				[
+					log(twoHoursAgo, "keep", "prod"),
+					log(hourAgo, "drop", "prod"),
+					log(hourAgo, "drop", "pr-1"),
+				],
+				", ",
+			)}`,
+		)
+		db.exec(
+			`INSERT INTO metrics_sum (OrgId, ResourceAttributes, ServiceName, MetricName, Attributes, StartTimeUnix, TimeUnix, Value, IsMonotonic) VALUES ${Arr.join(
+				[
+					metric(hourAgo, "keep", "prod"),
+					metric(hourAgo, "drop", "prod"),
+					metric(hourAgo, "drop", "pr-1"),
+				],
+				", ",
+			)}`,
+		)
+		db.exec(
+			`INSERT INTO service_map_edges_hourly_ingest (OrgId, Hour, SourceService, TargetService, DeploymentEnv, CallCount) VALUES ('local', toStartOfHour(toDateTime('${Str.slice(0, 19)(iso(hourAgo))}')), 'keep', 'drop', 'prod', 3), ('local', toStartOfHour(toDateTime('${Str.slice(0, 19)(iso(hourAgo))}')), 'keep', 'db', 'prod', 2)`,
+		)
+	}, 120_000)
+
+	afterAll(() => {
+		db?.close()
+		if (root) rmSync(root, { recursive: true, force: true })
+	})
+
+	const deleteNow = (request: Parameters<typeof runScopedDelete>[3], dryRun = false) =>
+		Effect.runPromise(runScopedDelete(db, LOCAL_SCHEMA_MANIFEST, dataDir, request, { dryRun }))
+
+	test("seed reached the derived tables", () => {
+		for (const table of [
+			"trace_list_mv",
+			"service_overview_hourly",
+			"error_events",
+			"service_usage",
+			"metric_catalog",
+		])
+			expect(serviceRows(table, "drop")).toBeGreaterThan(0)
+		expect(attributeKey("attr.drop")).toBe(3)
+	})
+
+	test("dry run counts without deleting", async () => {
+		const report = await deleteNow({ service: "drop", env: "pr-1" }, true)
+		expect(report.dryRun).toBe(true)
+		expect(
+			Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(report.tables, (t) => t.table === "traces"),
+					(t) => t.rows,
+				),
+			),
+		).toBe(1)
+		expect(serviceRows("traces", "drop")).toBe(3)
+		expect(existsSync(pendingDeletePath(dataDir))).toBe(false)
+	})
+
+	test("--env removes one environment and recomputes tables without one", async () => {
+		const usageBefore = count(
+			"SELECT toString(sum(TraceCount)) AS n FROM service_usage WHERE ServiceName = 'drop'",
+		)
+		expect(usageBefore).toBe(3)
+		const report = await deleteNow({ service: "drop", env: "pr-1" })
+		expect(
+			Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(report.tables, (t) => t.table === "service_usage"),
+					(t) => t.strategy,
+				),
+			),
+		).toBe("rebuild")
+		expect(count("SELECT toString(count()) AS n FROM traces WHERE ServiceName = 'drop'")).toBe(2)
+		expect(count("SELECT toString(count()) AS n FROM trace_list_mv WHERE DeploymentEnv = 'pr-1'")).toBe(0)
+		expect(
+			count("SELECT toString(sum(TraceCount)) AS n FROM service_usage WHERE ServiceName = 'drop'"),
+		).toBe(2)
+		expect(
+			count("SELECT toString(sum(LogCount)) AS n FROM service_usage WHERE ServiceName = 'drop'"),
+		).toBe(1)
+		expect(attributeKey("attr.drop")).toBe(2)
+		expect(existsSync(pendingDeletePath(dataDir))).toBe(false)
+	})
+
+	test("--service removes every derived row and keeps other services intact", async () => {
+		const keepBefore = Rec.fromEntries(
+			Arr.map(
+				Arr.filter(
+					Rec.toEntries(TABLE_DELETE_PLAN),
+					([, plan]) => plan.strategy === "scoped" && plan.service !== null,
+				),
+				([table]): [string, number] => [table, serviceRows(table, "keep")],
+			),
+		)
+		const sharedBefore = attributeKey("shared.key")
+		await deleteNow({ service: "drop" })
+		for (const [table, plan] of Rec.toEntries(TABLE_DELETE_PLAN)) {
+			if (plan.strategy !== "scoped" || plan.service === null) continue
+			expect({ table, rows: serviceRows(table, "drop") }).toEqual({ table, rows: 0 })
+			// Edges from keep to drop go too: they were derived from drop's spans.
+			if (table !== "service_map_edges_hourly")
+				expect({ table, rows: serviceRows(table, "keep") }).toEqual({
+					table,
+					rows: keepBefore[table] ?? 0,
+				})
+		}
+		expect(serviceRows("service_map_edges_hourly", "keep")).toBe(1)
+		expect(serviceRows("error_fingerprints_minutely", "drop")).toBe(0)
+		expect(attributeKey("attr.drop")).toBe(0)
+		expect(attributeKey("log.drop")).toBe(0)
+		expect(attributeKey("attr.keep")).toBe(2)
+		expect(attributeKey("shared.key")).toBe(sharedBefore - 2)
+	})
+
+	test("--before only removes hours before the floored cutoff", async () => {
+		const report = await deleteNow({ service: "keep", beforeMs: hourAgo + 30 * 60_000 })
+		expect(report.request.beforeMs).toBe(hourAgo - 60_000)
+		expect(count("SELECT toString(count()) AS n FROM traces WHERE ServiceName = 'keep'")).toBe(1)
+		expect(count("SELECT toString(count()) AS n FROM trace_list_mv WHERE ServiceName = 'keep'")).toBe(1)
+		expect(attributeKey("attr.keep")).toBe(1)
+	})
+
+	test("a journaled delete resumes on the next run", async () => {
+		db.exec(
+			`INSERT INTO traces (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, ResourceAttributes, SpanAttributes, EventsTimestamp, EventsName, EventsAttributes) VALUES ${span(hourAgo, "z1", "zombie", "prod")}`,
+		)
+		writeFileSync(
+			pendingDeletePath(dataDir),
+			JSON.stringify({ formatVersion: 1, request: { service: "zombie" }, rebuildHours: {} }),
+		)
+		await Effect.runPromise(resumePendingDelete(db, LOCAL_SCHEMA_MANIFEST, dataDir))
+		expect(serviceRows("trace_list_mv", "zombie")).toBe(0)
+		expect(attributeKey("attr.zombie")).toBe(0)
+		expect(existsSync(pendingDeletePath(dataDir))).toBe(false)
+	})
+})
+
+describeWithChdb("namespace delete against chDB", () => {
+	let root = ""
+	let dataDir = ""
+	let db: Chdb
+	const hourMs = Math.floor(Date.now() / HOUR_MS) * HOUR_MS - 2 * HOUR_MS
+	const at = hourMs + 10 * 60_000
+
+	const count = (sql: string) => Number(decodeCount(db.query(sql))[0]?.n)
+	// A client span calling a child server span named "api", both in `namespace`.
+	const call = (id: string, client: string, namespace: string) => {
+		const resource = (service: string) =>
+			`map('service.name', '${service}', 'service.namespace', '${namespace}', 'deployment.environment', 'prod')`
+		return (
+			`('local', '${iso(at)}', 't-${id}', 'c-${id}', '', 'GET /api', 'Client', '${client}', 5000000, 'Ok', ${resource(client)}, map('server.address', 'api.internal')), ` +
+			`('local', '${iso(at + 1)}', 't-${id}', 's-${id}', 'c-${id}', 'GET /api', 'Server', 'api', 4000000, 'Error', ${resource("api")}, map('exception.type', 'E'))`
+		)
+	}
+	const edge = (source: string) =>
+		count(
+			`SELECT toString(sum(CallCount)) AS n FROM service_map_edges_hourly WHERE SourceService = '${source}' AND TargetService = 'api'`,
+		)
+
+	beforeAll(async () => {
+		root = mkdtempSync(join(tmpdir(), "maple-scoped-delete-ns-"))
+		dataDir = join(root, "data")
+		db = Chdb.open({ dataDir, schemaSql })
+		db.exec(
+			`INSERT INTO traces (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, ResourceAttributes, SpanAttributes) VALUES ${call("a", "web", "pr-1")}, ${call("b", "caller", "pr-2")}`,
+		)
+		for (const statement of await Effect.runPromise(serviceMapRollupInserts(hourMs))) db.exec(statement)
+	}, 120_000)
+
+	afterAll(() => {
+		db?.close()
+		if (root) rmSync(root, { recursive: true, force: true })
+	})
+
+	test("removes one namespace and keeps a same-named service in another", async () => {
+		expect(edge("web")).toBe(1)
+		expect(edge("caller")).toBe(1)
+		expect(
+			count(
+				"SELECT toString(sum(SpanCount)) AS n FROM service_operations_hourly WHERE ServiceName = 'api'",
+			),
+		).toBe(2)
+
+		const report = await Effect.runPromise(
+			runScopedDelete(db, LOCAL_SCHEMA_MANIFEST, dataDir, { namespace: "pr-1" }, { dryRun: false }),
+		)
+		const strategy = (table: string) =>
+			Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(report.tables, (t) => t.table === table),
+					(t) => t.strategy,
+				),
+			)
+		expect(strategy("trace_list_mv")).toBe("filter")
+		expect(strategy("error_events")).toBe("rebuild")
+		expect(strategy("service_map_edges_hourly")).toBe("rebuild")
+
+		expect(
+			count(
+				"SELECT toString(count()) AS n FROM traces WHERE ResourceAttributes['service.namespace'] = 'pr-1'",
+			),
+		).toBe(0)
+		expect(count("SELECT toString(count()) AS n FROM traces WHERE ServiceName = 'api'")).toBe(1)
+		expect(
+			count("SELECT toString(count()) AS n FROM trace_list_mv WHERE ServiceNamespace = 'pr-1'"),
+		).toBe(0)
+		for (const [table, plan] of Rec.toEntries(TABLE_DELETE_PLAN)) {
+			if (plan.strategy !== "scoped" || plan.service === null) continue
+			const where = Arr.join(
+				Arr.map(plan.service, (c) => `${c} = 'web'`),
+				" OR ",
+			)
+			expect({
+				table,
+				rows: count(`SELECT toString(count()) AS n FROM ${table} WHERE ${where}`),
+			}).toEqual({
+				table,
+				rows: 0,
+			})
+		}
+		// Recomputed from pr-2's surviving api span, including the cascaded hourly rollup.
+		expect(count("SELECT toString(count()) AS n FROM error_events WHERE ServiceName = 'api'")).toBe(1)
+		expect(count("SELECT toString(sum(OccurrenceCount)) AS n FROM error_fingerprints_minutely")).toBe(1)
+		expect(
+			count(
+				"SELECT toString(sum(SpanCount)) AS n FROM service_operations_minutely WHERE ServiceName = 'api'",
+			),
+		).toBe(1)
+		expect(
+			count(
+				"SELECT toString(sum(SpanCount)) AS n FROM service_operations_hourly WHERE ServiceName = 'api'",
+			),
+		).toBe(1)
+		expect(
+			count("SELECT toString(sum(TraceCount)) AS n FROM service_usage WHERE ServiceName = 'api'"),
+		).toBe(1)
+		expect(edge("web")).toBe(0)
+		expect(edge("caller")).toBe(1)
+		expect(existsSync(pendingDeletePath(dataDir))).toBe(false)
+	})
+})

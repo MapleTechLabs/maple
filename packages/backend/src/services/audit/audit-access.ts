@@ -1,6 +1,6 @@
-import { Context, Effect } from "effect"
-import type { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import type { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import { Context, Effect, Option, Schema, String as Str } from "effect"
+import type { HttpServerRequest, HttpServerResponse } from "effect/http"
+import type { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { AuditedRead, type AuditLogSource } from "@maple/domain/http"
 import { CONNECTOR_TENANT_USER_ID, type ChatTurnOrigin } from "@maple/domain/chat-session"
 import { chatConnectorAgentName } from "@maple/domain/system-agents"
@@ -31,10 +31,12 @@ import {
 /** Bound on stored request/parameter snapshots — enough to see what was asked for. */
 const MAX_SNAPSHOT_CHARS = 2_000
 
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+
 /** A JSON rendering of `value` capped at {@link MAX_SNAPSHOT_CHARS}. */
 export const snapshot = (value: unknown): string => {
-	const text = typeof value === "string" ? value : (JSON.stringify(value) ?? "null")
-	return text.length > MAX_SNAPSHOT_CHARS ? `${text.slice(0, MAX_SNAPSHOT_CHARS)}…` : text
+	const text = typeof value === "string" ? value : Option.getOrElse(encodeJson(value), () => "null")
+	return text.length > MAX_SNAPSHOT_CHARS ? `${Str.slice(0, MAX_SNAPSHOT_CHARS)(text)}…` : text
 }
 
 export interface AuditAttribution {
@@ -46,14 +48,14 @@ export interface AuditAttribution {
 const MAX_ORIGIN_FIELD_CHARS = 200
 
 const clip = (value: string): string =>
-	value.length > MAX_ORIGIN_FIELD_CHARS ? `${value.slice(0, MAX_ORIGIN_FIELD_CHARS)}…` : value
+	value.length > MAX_ORIGIN_FIELD_CHARS ? `${Str.slice(0, MAX_ORIGIN_FIELD_CHARS)(value)}…` : value
 
 /**
  * Who was behind a chat-platform turn. The external identity answers the
  * question an auditor asks of such an entry — which person, in which workspace
  * — and it is forensic context, never an identity Maple resolves anything by.
  */
-const originMetadata = (origin: ChatTurnOrigin | undefined) =>
+export const originMetadata = (origin: ChatTurnOrigin | undefined) =>
 	origin?.kind === "connector"
 		? {
 				connector: clip(origin.connectorId),

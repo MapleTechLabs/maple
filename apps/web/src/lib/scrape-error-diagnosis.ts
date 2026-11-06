@@ -1,4 +1,5 @@
 import type { ScrapeTargetType } from "@maple/domain/primitives"
+import { Option, String as Str } from "effect"
 
 /**
  * A human-readable diagnosis of a scrape failure. The scraper records raw error
@@ -6,8 +7,8 @@ import type { ScrapeTargetType } from "@maple/domain/primitives"
  * them into something a user can act on, tailored to PlanetScale targets.
  */
 export interface ScrapeErrorDiagnosis {
-	/** Drives the Alert variant — warning for transient/rate issues, error otherwise. */
-	readonly severity: "warning" | "error"
+	/** Drives the Alert variant: warn for transient/rate issues, crit otherwise. */
+	readonly severity: "warn" | "crit"
 	/** Short headline, e.g. "Rate limited by PlanetScale". */
 	readonly title: string
 	/** One-sentence explanation of what went wrong. */
@@ -17,11 +18,10 @@ export interface ScrapeErrorDiagnosis {
 }
 
 /** Strip the `[branch:<x>] ` prefix the API adds to PlanetScale rollup errors. */
-const stripBranchPrefix = (message: string): string => message.replace(/^\[branch:[^\]]*\]\s*/, "")
+const stripBranchPrefix = (message: string): string => Str.replace(/^\[branch:[^\]]*\]\s*/, "")(message)
 
 const httpStatusOf = (message: string): number | null => {
-	const match = message.match(/HTTP (\d{3})/)
-	return match ? Number(match[1]) : null
+	return Option.getOrNull(Option.map(Str.match(/HTTP (\d{3})/)(message), (match) => Number(match[1])))
 }
 
 const isPlanetScale = (targetType: ScrapeTargetType): boolean => targetType === "planetscale"
@@ -35,7 +35,7 @@ export const diagnoseScrapeError = (
 	targetType: ScrapeTargetType,
 ): ScrapeErrorDiagnosis | null => {
 	if (!rawMessage) return null
-	const message = stripBranchPrefix(rawMessage.trim())
+	const message = stripBranchPrefix(Str.trim(rawMessage))
 	if (message.length === 0) return null
 
 	const planetScale = isPlanetScale(targetType)
@@ -45,7 +45,7 @@ export const diagnoseScrapeError = (
 	// Timeouts / connectivity (no HTTP status reached).
 	if (/timed out|operation was aborted|ETIMEDOUT/i.test(message)) {
 		return {
-			severity: "error",
+			severity: "crit",
 			title: "Request timed out",
 			summary: planetScale
 				? "PlanetScale did not respond before Maple's scrape timeout."
@@ -59,7 +59,7 @@ export const diagnoseScrapeError = (
 
 	if (status === 429) {
 		return {
-			severity: "warning",
+			severity: "warn",
 			title: "Rate limited",
 			summary: planetScale
 				? "PlanetScale's metrics API rejected the request with HTTP 429 (too many requests)."
@@ -67,7 +67,7 @@ export const diagnoseScrapeError = (
 			fixes: planetScale
 				? [
 						"Raise the scrape interval (e.g. to 60s or more) so Maple polls PlanetScale less often.",
-						"Each database branch is scraped as a separate target — many branches multiply request volume against PlanetScale's rate limit.",
+						"Each database branch is scraped as a separate target, so many branches multiply request volume against PlanetScale's rate limit.",
 						"Maple now backs off automatically after a 429, but a longer interval is the durable fix.",
 					]
 				: [
@@ -79,7 +79,7 @@ export const diagnoseScrapeError = (
 
 	if (status === 401 || status === 403) {
 		return {
-			severity: "error",
+			severity: "crit",
 			title: "Authentication rejected",
 			summary: planetScale
 				? `PlanetScale rejected the credentials (HTTP ${status}).`
@@ -99,7 +99,7 @@ export const diagnoseScrapeError = (
 
 	if (status === 404) {
 		return {
-			severity: "error",
+			severity: "crit",
 			title: "Endpoint not found",
 			summary: planetScale
 				? "PlanetScale returned HTTP 404 for the metrics endpoint."
@@ -115,9 +115,9 @@ export const diagnoseScrapeError = (
 
 	if (status !== null && status >= 500) {
 		return {
-			severity: "warning",
+			severity: "warn",
 			title: planetScale ? "PlanetScale-side error" : "Upstream error",
-			summary: `The target returned HTTP ${status} — this is usually transient.`,
+			summary: `The target returned HTTP ${status}. This is usually transient.`,
 			fixes: [
 				"This is typically a temporary upstream problem; Maple will keep retrying.",
 				planetScale
@@ -130,7 +130,7 @@ export const diagnoseScrapeError = (
 	// Discovery-stage failures that didn't carry a recognized status.
 	if (isDiscovery) {
 		return {
-			severity: "error",
+			severity: "crit",
 			title: "Discovery failed",
 			summary: planetScale
 				? "Maple could not discover PlanetScale database branches to scrape."
@@ -146,7 +146,7 @@ export const diagnoseScrapeError = (
 
 	// Anything else — surface the raw message so it isn't lost.
 	return {
-		severity: "error",
+		severity: "crit",
 		title: "Scrape failed",
 		summary: message,
 		fixes: [

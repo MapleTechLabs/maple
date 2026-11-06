@@ -46,9 +46,11 @@ export function register() {
     serviceName: "my-next-app",
     attributes: { "deployment.environment.name": "production" },
     traceExporter: { url: \`\${MAPLE_ENDPOINT}/v1/traces\`, headers },
-    logRecordProcessor: new SimpleLogRecordProcessor(
-      new OTLPLogExporter({ url: \`\${MAPLE_ENDPOINT}/v1/logs\`, headers })
-    ),
+    logRecordProcessors: [
+      new SimpleLogRecordProcessor({
+        exporter: new OTLPLogExporter({ url: \`\${MAPLE_ENDPOINT}/v1/logs\`, headers }),
+      }),
+    ],
   });
 }`,
 				language: "typescript",
@@ -62,7 +64,7 @@ export function register() {
 			},
 			{
 				title: "API routes",
-				description: "Full tracing of API route handlers including request/response metadata.",
+				description: "Spans for API route handlers, with request and response metadata.",
 			},
 			{
 				title: "Server Components",
@@ -169,12 +171,12 @@ const sdk = new NodeSDK({
     headers: { Authorization: "Bearer your-api-key" },
   }),
   logRecordProcessors: [
-    new SimpleLogRecordProcessor(
-      new OTLPLogExporter({
+    new SimpleLogRecordProcessor({
+      exporter: new OTLPLogExporter({
         url: "https://ingest.maple.dev/v1/logs",
         headers: { Authorization: "Bearer your-api-key" },
-      })
-    ),
+      }),
+    }),
   ],
   instrumentations: [getNodeAutoInstrumentations()],
 });
@@ -206,7 +208,7 @@ sdk.start();`,
 			{
 				title: "gRPC services",
 				description:
-					"Full client and server gRPC tracing with service name, method, and status attributes.",
+					"Client and server gRPC spans with service name, method, and status attributes.",
 			},
 			{
 				title: "Logs with trace context",

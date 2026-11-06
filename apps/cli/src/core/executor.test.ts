@@ -2,9 +2,10 @@
 import { describe, expect, it } from "@effect/vitest"
 import { test } from "bun:test"
 import { Deferred, Effect, Exit, Fiber, Layer } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { rawCompiledQuery } from "@maple/query-engine/ch"
 import { makeLocalWarehouseExecutorApi } from "./executor"
+import * as Arr from "effect/Array"
 
 // The local executor is the REAL makeWarehouseExecutor wired to the `chdb`
 // backend — these tests pin the wiring: SQL normalization for the local
@@ -16,13 +17,16 @@ const BASE_URL = "http://127.0.0.1:4318"
 const httpWith = (request: typeof fetch) =>
 	FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, request)))
 
+const requestUrl = (input: string | URL | Request): string =>
+	typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+
 const stubFetch = (handler: (url: string, init?: RequestInit) => Response): typeof fetch =>
 	(async (input: string | URL | Request, init?: RequestInit) =>
-		handler(String(input), init)) as typeof fetch
+		handler(requestUrl(input), init)) as typeof fetch
 
 // The Effect HttpClient hands fetch a `Uint8Array` body, so decode rather than stringify.
 const bodyText = (body: RequestInit["body"]) =>
-	body instanceof Uint8Array ? new TextDecoder().decode(body) : String(body ?? "{}")
+	body instanceof Uint8Array ? new TextDecoder().decode(body) : typeof body === "string" ? body : "{}"
 
 const stubLocalServer = (rows: ReadonlyArray<Record<string, unknown>>) => {
 	const requests: Array<{ url: string; sql: string }> = []
@@ -53,11 +57,11 @@ describe("makeLocalWarehouseExecutorApi", () => {
 
 			expect(rows).toEqual([{ c: 1 }])
 			expect(requests).toHaveLength(1)
-			expect(requests[0]!.url).toBe(`${BASE_URL}/local/query`)
+			expect(Arr.getUnsafe(requests, 0).url).toBe(`${BASE_URL}/local/query`)
 			// The chdb backend speaks the ClickHouse protocol shape: the executor
 			// strips the trailing FORMAT and the local server owns the output format.
-			expect(requests[0]!.sql).not.toContain("FORMAT JSON")
-			expect(requests[0]!.sql).toContain("OrgId = 'local'")
+			expect(Arr.getUnsafe(requests, 0).sql).not.toContain("FORMAT JSON")
+			expect(Arr.getUnsafe(requests, 0).sql).toContain("OrgId = 'local'")
 		}).pipe(Effect.provide(httpWith(request)))
 	})
 

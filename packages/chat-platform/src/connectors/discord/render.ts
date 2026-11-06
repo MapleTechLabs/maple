@@ -8,8 +8,9 @@
  * characters, a message carries at most 10 embeds, an action row at most 5 buttons, and a button's
  * `custom_id` is 1–100 characters.
  */
-import { chatActionControlId, type ChatActionToken } from "../../action-token"
-import type { ChatAlertBlock, ChatBlock, ChatToolActivity } from "../../render/blocks"
+import { chatActionControlId, chatAlertAckControlId, type ChatActionToken } from "../../action-token"
+import type { ChatAlertAcknowledge, ChatAlertBlock, ChatBlock, ChatToolActivity } from "../../render/blocks"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /** https://discord.com/developers — Create/Edit Message JSON params, API v10. */
 export interface DiscordEmbed {
@@ -31,8 +32,8 @@ export interface DiscordEmbed {
 
 export interface DiscordButton {
 	readonly type: 2
-	/** 3 = success, 4 = danger. */
-	readonly style: 3 | 4
+	/** 1 = primary, 2 = secondary, 3 = success, 4 = danger. */
+	readonly style: 1 | 2 | 3 | 4
 	readonly label: string
 	readonly custom_id: string
 }
@@ -111,7 +112,7 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 				break
 			}
 			case "activity":
-				if (block.tools.length > 0) lines.push(block.tools.map(toolLabel).join(" · "))
+				if (block.tools.length > 0) lines.push(Arr.join(Arr.map(block.tools, toolLabel), " · "))
 				break
 			case "approval": {
 				const { outcome } = block
@@ -140,6 +141,9 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 				lines.push(block.tone === "error" ? `**${block.text}**` : `_${block.text}_`)
 				break
 			case "alert": {
+				if (block.acknowledge !== undefined && rows.length < MAX_ACTION_ROWS) {
+					rows.push(alertAckRow(block.acknowledge))
+				}
 				const embed = alertEmbed(block)
 				const cost = embedCost(embed)
 				if (embeds.length < MAX_EMBEDS && embedChars + cost <= MAX_EMBED_TOTAL_CHARS) {
@@ -157,7 +161,7 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 		}
 	}
 
-	const content = lines.join("\n\n")
+	const content = Arr.join(lines, "\n\n")
 	return {
 		// The neutral cut works to an estimate of what a dialect costs, and a body over the limit is
 		// rejected whole — so the estimate is clamped here rather than trusted.
@@ -173,31 +177,45 @@ const embedCost = (embed: DiscordEmbed): number =>
 	(embed.title?.length ?? 0) +
 	(embed.description?.length ?? 0) +
 	(embed.footer?.text.length ?? 0) +
-	(embed.fields ?? []).reduce((total, field) => total + field.name.length + field.value.length, 0)
+	Arr.reduce(embed.fields ?? [], 0, (total, field) => total + field.name.length + field.value.length)
 
 /**
  * An alert as the embed it has always been on Discord: the title linking into Maple, the summary,
  * the facts as inline fields, the links, the chart and a footer — with the state as the bar colour.
  */
 const alertEmbed = (block: ChatAlertBlock): DiscordEmbed => {
-	const primary = block.links.find((link) => link.primary) ?? block.links[0]
-	const links = block.links.map((link) => `[${link.label}](${link.url})`).join(" · ")
-	const fields = [
-		...block.fields.map((field) => ({ name: field.label, value: field.value, inline: true })),
-		...(links === "" ? [] : [{ name: "Links", value: links, inline: false }]),
-	]
-		.slice(0, MAX_EMBED_FIELDS)
-		.map((field) => ({
+	const primary = Option.getOrElse(
+		Arr.findFirst(block.links, (link) => link.primary),
+		() => block.links[0],
+	)
+	const links = Arr.join(
+		Arr.map(block.links, (link) => `[${link.label}](${link.url})`),
+		" · ",
+	)
+	const acknowledgedBy = block.acknowledge?.acknowledgedBy ?? null
+	const fields = Arr.map(
+		[
+			...(acknowledgedBy === null
+				? []
+				: [{ name: "Acknowledged by", value: acknowledgedBy, inline: false }]),
+			...Arr.map(block.fields, (field) => ({ name: field.label, value: field.value, inline: true })),
+			...(links === "" ? [] : [{ name: "Links", value: links, inline: false }]),
+		].slice(0, MAX_EMBED_FIELDS),
+		(field) => ({
 			name: clamp(field.name, MAX_FIELD_NAME_CHARS),
 			value: clamp(field.value, MAX_FIELD_VALUE_CHARS),
 			inline: field.inline,
-		}))
+		}),
+	)
 	// A footer is plain text on Discord, so inline code would show its backticks.
-	const footer = block.footer.map((part) => part.replaceAll("`", "")).join("  ·  ")
+	const footer = Arr.join(
+		Arr.map(block.footer, (part) => Str.replaceAll("`", "")(part)),
+		"  ·  ",
+	)
 	return {
 		title: clamp(block.title, MAX_EMBED_TITLE_CHARS),
 		...(primary === undefined ? undefined : { url: primary.url }),
-		color: Number.parseInt(block.color.slice(1), 16),
+		color: Number.parseInt(Str.slice(1)(block.color), 16),
 		...(block.summary === ""
 			? undefined
 			: { description: clamp(block.summary, MAX_EMBED_DESCRIPTION_CHARS) }),
@@ -215,7 +233,7 @@ const alertEmbed = (block: ChatAlertBlock): DiscordEmbed => {
 export const EMPTY_CONTENT = "—"
 
 const clamp = (text: string, max: number): string =>
-	text.length <= max ? text : `${text.slice(0, max - 1)}…`
+	text.length <= max ? text : `${Str.slice(0, max - 1)(text)}…`
 
 const ENTITY_LABELS = {
 	trace: "Trace",
@@ -233,6 +251,25 @@ const toolLabel = (tool: ChatToolActivity): string => {
 	const detail = tool.detail === null ? "" : ` (${tool.detail})`
 	const status = tool.status === "failed" ? "… (failed)" : "…"
 	return `${tool.label}${detail}${status}`
+}
+
+/** An alert's ack toggle: Acknowledge while open and unacknowledged, Unacknowledge once acked. */
+const alertAckRow = (ack: ChatAlertAcknowledge): DiscordActionRow => {
+	const acknowledged = ack.acknowledgedBy !== null
+	return {
+		type: 1,
+		components: [
+			{
+				type: 2,
+				style: acknowledged ? 2 : 1,
+				label: acknowledged ? "Unacknowledge" : "Acknowledge",
+				custom_id: chatAlertAckControlId(
+					acknowledged ? "unacknowledge" : "acknowledge",
+					ack.incidentId,
+				),
+			},
+		],
+	}
 }
 
 /**
@@ -254,7 +291,7 @@ const approvalRow = (token: ChatActionToken, toolName: string): DiscordActionRow
 			{
 				type: 2,
 				style: 3,
-				label: `Run ${toolName}`.slice(0, MAX_BUTTON_LABEL_CHARS),
+				label: Str.slice(0, MAX_BUTTON_LABEL_CHARS)(`Run ${toolName}`),
 				custom_id: approve,
 			},
 			{ type: 2, style: 4, label: "Skip", custom_id: deny },

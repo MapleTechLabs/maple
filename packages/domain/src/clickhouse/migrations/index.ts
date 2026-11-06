@@ -33,6 +33,32 @@ import { migration_0031_ai_trace_index_list_columns } from "./0031_ai_trace_inde
 import { migration_0032_ai_trace_index_tool_detail_columns } from "./0032_ai_trace_index_tool_detail_columns"
 import { migration_0033_ai_crawler_requests } from "./0033_ai_crawler_requests"
 import { migration_0034_trace_facets_hourly } from "./0034_trace_facets_hourly"
+import { migration_0035_ai_trace_index_gateway_stamps } from "./0035_ai_trace_index_gateway_stamps"
+import { migration_0036_alert_checks_skip_reason } from "./0036_alert_checks_skip_reason"
+import { migration_0037_service_overview_spans_span_kind } from "./0037_service_overview_spans_span_kind"
+import { migration_0038_external_edges_legacy_db_system } from "./0038_external_edges_legacy_db_system"
+import { migration_0039_error_fingerprint_v3 } from "./0039_error_fingerprint_v3"
+import { migration_0040_error_fingerprint_span_name_frames } from "./0040_error_fingerprint_span_name_frames"
+import { migration_0041_alert_checks_level } from "./0041_alert_checks_level"
+import { migration_0042_trace_index } from "./0042_trace_index"
+import { migration_0043_traces_span_name_index } from "./0043_traces_span_name_index"
+import { migration_0044_drop_trace_detail_spans } from "./0044_drop_trace_detail_spans"
+import { migration_0045_ttl_only_drop_parts } from "./0045_ttl_only_drop_parts"
+import { migration_0046_source_usage_hourly } from "./0046_source_usage_hourly"
+import { migration_0047_ci_runs_jobs } from "./0047_ci_runs_jobs"
+import { migration_0048_service_api_http_details } from "./0048_service_api_http_details"
+import { migration_0049_service_map_db_edges_minutely } from "./0049_service_map_db_edges_minutely"
+import { migration_0050_security_telemetry } from "./0050_security_telemetry"
+import { migration_0051_error_fingerprint_fuzz_fixes } from "./0051_error_fingerprint_fuzz_fixes"
+import { migration_0052_error_fingerprint_json_frames } from "./0052_error_fingerprint_json_frames"
+import { migration_0053_error_fingerprint_interleaved_values } from "./0053_error_fingerprint_interleaved_values"
+import { migration_0054_error_custom_fingerprint } from "./0054_error_custom_fingerprint"
+import { migration_0055_error_fingerprint_v4 } from "./0055_error_fingerprint_v4"
+import { migration_0056_user_activity_hourly } from "./0056_user_activity_hourly"
+import { migration_0057_error_events_user_id } from "./0057_error_events_user_id"
+import { migration_0058_user_activity_channels } from "./0058_user_activity_channels"
+import { migration_0059_service_overview_slo_latency_ladder } from "./0059_service_overview_slo_latency_ladder"
+import { Array as Arr } from "effect"
 
 /**
  * A migration statement is either a raw SQL string (structural DDL) or a
@@ -98,13 +124,37 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0032_ai_trace_index_tool_detail_columns,
 	migration_0033_ai_crawler_requests,
 	migration_0034_trace_facets_hourly,
+	migration_0035_ai_trace_index_gateway_stamps,
+	migration_0036_alert_checks_skip_reason,
+	migration_0037_service_overview_spans_span_kind,
+	migration_0038_external_edges_legacy_db_system,
+	migration_0039_error_fingerprint_v3,
+	migration_0040_error_fingerprint_span_name_frames,
+	migration_0041_alert_checks_level,
+	migration_0042_trace_index,
+	migration_0043_traces_span_name_index,
+	migration_0044_drop_trace_detail_spans,
+	migration_0045_ttl_only_drop_parts,
+	migration_0046_source_usage_hourly,
+	migration_0047_ci_runs_jobs,
+	migration_0048_service_api_http_details,
+	migration_0049_service_map_db_edges_minutely,
+	migration_0050_security_telemetry,
+	migration_0051_error_fingerprint_fuzz_fixes,
+	migration_0052_error_fingerprint_json_frames,
+	migration_0053_error_fingerprint_interleaved_values,
+	migration_0054_error_custom_fingerprint,
+	migration_0055_error_fingerprint_v4,
+	migration_0056_user_activity_hourly,
+	migration_0057_error_events_user_id,
+	migration_0058_user_activity_channels,
+	migration_0059_service_overview_slo_latency_ladder,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied
  * ClickHouse instance reaches. */
-export const latestMigrationVersion: number = migrations.reduce(
-	(max, migration) => Math.max(max, migration.version),
-	0,
+export const latestMigrationVersion: number = Arr.reduce(migrations, 0, (max, migration) =>
+	Math.max(max, migration.version),
 )
 
 /**
@@ -126,8 +176,7 @@ export const latestMigrationVersion: number = migrations.reduce(
  * `clickhouse_insert_mappings.rs` by `scripts/generate-clickhouse-insert-mappings.ts`).
  */
 export const clickHouseSchemaVersion: string = String(
-	migrations.reduce(
-		(max, migration) => (migration.requiredForIngest === false ? max : Math.max(max, migration.version)),
-		0,
+	Arr.reduce(migrations, 0, (max, migration) =>
+		migration.requiredForIngest === false ? max : Math.max(max, migration.version),
 	),
 )

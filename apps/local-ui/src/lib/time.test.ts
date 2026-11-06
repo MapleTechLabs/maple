@@ -7,6 +7,7 @@ import {
 	parseClickHouseDateTime,
 	snapToMinute,
 } from "./time"
+import { String as Str } from "effect"
 
 describe("boundsForRange", () => {
 	afterEach(() => vi.useRealTimers())
@@ -45,14 +46,16 @@ describe("warehouse timestamps", () => {
 	it("renders local wall-clock time with millis, and the date only on other days", () => {
 		const raw = "2026-07-30 23:06:01.940085000"
 		const local = new Date(Date.parse("2026-07-30T23:06:01.940Z"))
-		const pad = (n: number, w = 2) => String(n).padStart(w, "0")
+		const pad = (n: number, w = 2) => Str.padStart(w, "0")(String(n))
 		const clock = `${pad(local.getHours())}:${pad(local.getMinutes())}:${pad(local.getSeconds())}.940`
 
 		expect(formatLocalTimestamp(raw, { nowMs: local.getTime() + 1000 })).toBe(clock)
 		const otherDay = formatLocalTimestamp(raw, { nowMs: local.getTime() + 3 * 24 * 60 * 60 * 1000 })
-		expect(otherDay.endsWith(` ${clock}`)).toBe(true)
+		expect(Str.endsWith(` ${clock}`)(otherDay)).toBe(true)
 		expect(otherDay.length).toBeGreaterThan(clock.length + 1)
-		expect(formatLocalTimestamp(raw, { precision: "s", nowMs: local.getTime() })).toBe(clock.slice(0, 8))
+		expect(formatLocalTimestamp(raw, { precision: "s", nowMs: local.getTime() })).toBe(
+			Str.slice(0, 8)(clock),
+		)
 		expect(formatUtcTitle(raw)).toBe(`${raw} UTC`)
 	})
 })
@@ -70,6 +73,12 @@ describe("chartWindow", () => {
 		const firstSeen = now - 60 * 60 * 1000
 		const window = chartWindow(boundsForRange("30d", now), firstSeen, now)
 		expect(window.startMs).toBe(firstSeen)
+		expect(window.bucketSeconds).toBe(60)
+	})
+
+	it("charts a five-minute range over exactly that range, never below minute buckets", () => {
+		const window = chartWindow(boundsForRange("5m", now), null, now)
+		expect(window.startMs).toBe(now - 5 * 60 * 1000)
 		expect(window.bucketSeconds).toBe(60)
 	})
 

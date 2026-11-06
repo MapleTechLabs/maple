@@ -27,6 +27,7 @@
 import { container, image, text, type Node } from "@takumi-rs/helpers"
 import type { ShareOgCardTile } from "@maple/domain/http"
 import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from "./share-links"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /** The card is exactly the size the `og:image:*` tags advertise. */
 export const CARD_WIDTH = OG_IMAGE_WIDTH
@@ -139,7 +140,7 @@ type Row =
 
 const groupRows = (group: Group): ReadonlyArray<Row> => [
 	...(group.section === undefined ? [] : [{ kind: "section" as const, label: group.section }]),
-	...group.titles.map((label) => ({ kind: "panel" as const, label })),
+	...Arr.map(group.titles, (label) => ({ kind: "panel" as const, label })),
 ]
 
 /**
@@ -203,7 +204,7 @@ const sectionRow = (label: string, first: boolean): Node =>
 	container({
 		style: { display: "flex", alignItems: "center", height: 34, marginTop: first ? 0 : 14 },
 		children: [
-			text(label.toUpperCase(), {
+			text(Str.toUpperCase(label), {
 				color: COLOR.faint,
 				fontSize: 16,
 				fontFamily: MONO_FONT,
@@ -217,7 +218,7 @@ const columnNode = (rows: ReadonlyArray<Row>, overflow: string | undefined): Nod
 	container({
 		style: { display: "flex", flexDirection: "column", width: "50%", paddingRight: 24 },
 		children: [
-			...rows.map((row, index) =>
+			...Arr.map(rows, (row, index) =>
 				row.kind === "section" ? sectionRow(row.label, index === 0) : panelRow(row.label),
 			),
 			...(overflow === undefined
@@ -276,12 +277,18 @@ const orgAvatar = (org: OgCardOrg): Node =>
 					justifyContent: "center",
 				},
 				children: [
-					text([...org.name][0]?.toUpperCase() ?? "?", {
-						color: COLOR.muted,
-						fontSize: 17,
-						fontFamily: DISPLAY_FONT,
-						fontWeight: 600,
-					}),
+					text(
+						Option.getOrElse(
+							Option.map(Arr.head(Array.from(org.name)), (initial) => Str.toUpperCase(initial)),
+							() => "?",
+						),
+						{
+							color: COLOR.muted,
+							fontSize: 17,
+							fontFamily: DISPLAY_FONT,
+							fontWeight: 600,
+						},
+					),
 				],
 			})
 		: image({ src: org.imageUrl, width: AVATAR_SIZE, height: AVATAR_SIZE, style: { borderRadius: 8 } })
@@ -351,9 +358,9 @@ const emptyState = (): Node =>
 	})
 
 export const ogCardNode = ({ title, description, org, widgetCount, tiles }: OgCardInput): Node => {
-	const rows = capRows(groupTiles(tiles).flatMap(groupRows))
+	const rows = capRows(Arr.flatMap(groupTiles(tiles), groupRows))
 	const [left, right] = columns(rows)
-	const named = rows.filter((row) => row.kind === "panel").length
+	const named = Arr.filter(rows, (row) => row.kind === "panel").length
 	const overflow = overflowLabel(named, widgetCount)
 
 	return container({

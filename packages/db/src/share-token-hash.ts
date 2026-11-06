@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto"
 import type { AlertRuleId, OrgId } from "@maple/domain/primitives"
 import { ChartBreachSide, ChartUnit } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Option, Result, Schema, String as Str } from "effect"
 
 const SHARE_TOKEN_PREFIX = "mshare_"
 
@@ -27,7 +27,7 @@ export const generateShareToken = (): string =>
 export const hashShareToken = (rawToken: string, hmacKey: string): string =>
 	createHmac("sha256", hmacKey).update(rawToken, "utf8").digest("base64url")
 
-export const shareTokenSuffix = (rawToken: string): string => rawToken.slice(-SHARE_TOKEN_SUFFIX_LENGTH)
+export const shareTokenSuffix = (rawToken: string): string => Str.slice(-SHARE_TOKEN_SUFFIX_LENGTH)(rawToken)
 
 /**
  * A payload and its signature, as one URL-safe string.
@@ -52,13 +52,14 @@ const signPayload = (label: string, payload: string, hmacKey: string): string =>
  * one — the caller gets no signal about which.
  */
 const verifiedPayload = (label: string, id: string, hmacKey: string): string | undefined => {
-	const separator = id.indexOf(".")
-	if (separator <= 0) return undefined
+	const found = Str.indexOf(".")(id)
+	if (Option.isNone(found) || found.value === 0) return undefined
+	const separator = found.value
 
-	const payload = Buffer.from(id.slice(0, separator), "base64url").toString("utf8")
+	const payload = Buffer.from(Str.slice(0, separator)(id), "base64url").toString("utf8")
 	if (payload.length === 0) return undefined
 
-	const presented = Buffer.from(id.slice(separator + 1), "utf8")
+	const presented = Buffer.from(Str.slice(separator + 1)(id), "utf8")
 	const expected = Buffer.from(signPayload(label, payload, hmacKey), "utf8")
 	// `timingSafeEqual` throws on a length mismatch, which would itself be the
 	// oracle it exists to remove.
@@ -176,10 +177,13 @@ const AlertChartPayload = Schema.Tuple([
 	ChartBreachSide,
 ])
 
+// Claims are signed, so the encoding must stay plain `JSON.stringify` output.
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const decodeAlertChartPayload = Schema.decodeUnknownResult(Schema.fromJsonString(AlertChartPayload))
 
 const encodeAlertChartClaims = (claims: AlertChartClaims): string =>
-	JSON.stringify([
+	encodeJson([
 		claims.orgId,
 		claims.ruleId,
 		claims.groupKey,
@@ -266,7 +270,7 @@ const ChatChartPayload = Schema.Tuple([
 const decodeChatChartPayload = Schema.decodeUnknownResult(Schema.fromJsonString(ChatChartPayload))
 
 const encodeChatChartClaims = (claims: ChatChartClaims): string =>
-	JSON.stringify([claims.orgId, claims.sessionId, claims.messageId, claims.chartIndex])
+	encodeJson([claims.orgId, claims.sessionId, claims.messageId, claims.chartIndex])
 
 /**
  * The public, opaque id of a chart an agent drew inside a reply.

@@ -10,11 +10,13 @@ import type {
 	MineLogPatternsOutput,
 	SearchLogsOutput,
 	SearchTracesOutput,
+	ServiceEdge,
 	ServiceHealthOutput,
 	ServiceSummary,
 	SpanNode,
 	SpanResult,
 } from "@maple/query-engine/observability"
+import type { CH } from "@maple/query-engine"
 import {
 	type Column,
 	type Section,
@@ -26,7 +28,9 @@ import {
 	formatTimestamp,
 	renderFields,
 	renderTable,
+	timestampMs,
 } from "./output"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 const right = "right" as const
 
@@ -36,6 +40,15 @@ const logColumns: ReadonlyArray<Column<LogEntry>> = [
 	{ header: "SERVICE", cell: (l) => l.serviceName },
 	{ header: "BODY", cell: (l) => l.body, maxWidth: 100 },
 ]
+
+const attributeColumn: Column<LogEntry> = {
+	header: "ATTRIBUTES",
+	cell: (l) =>
+		Arr.join(
+			Arr.map(Rec.toEntries(l.attributes ?? {}), ([k, v]) => `${k}=${v}`),
+			" ",
+		),
+}
 
 const spanColumns: ReadonlyArray<Column<SpanResult>> = [
 	{ header: "TRACE ID", cell: (s) => s.traceId },
@@ -133,7 +146,7 @@ interface TreeRow {
 const flattenTree = (nodes: ReadonlyArray<SpanNode>): ReadonlyArray<TreeRow> => {
 	const rows: Array<TreeRow> = []
 	const walk = (list: ReadonlyArray<SpanNode>, prefix: string, root: boolean) => {
-		list.forEach((span, i) => {
+		Arr.forEach(list, (span, i) => {
 			const last = i === list.length - 1
 			const branch = root ? "" : last ? "└─ " : "├─ "
 			rows.push({ label: `${prefix}${branch}${span.spanName}`, span })
@@ -144,24 +157,36 @@ const flattenTree = (nodes: ReadonlyArray<SpanNode>): ReadonlyArray<TreeRow> => 
 	return rows
 }
 
-export const traceView: View<InspectTraceOutput> = {
+export const traceView: View<InspectTraceOutput & { readonly url?: string }> = {
 	isEmpty: (d) => d.spans.length === 0,
 	table: (d) => {
+		const rows = flattenTree(d.spans)
+		const starts = Arr.filter(
+			Arr.map(rows, (r) => timestampMs(r.span.startTime)),
+			Number.isFinite,
+		)
+		const traceStartMs = starts.length === 0 ? Number.NaN : Math.min(...starts)
+		// Offset from the earliest span, so gaps and overlaps read straight off the column.
+		const offset = (r: TreeRow): string => {
+			const ms = timestampMs(r.span.startTime) - traceStartMs
+			return Number.isFinite(ms) ? `+${formatDuration(ms)}` : ""
+		}
+		const summary: Array<readonly [string, string]> = [
+			["trace", d.traceId],
+			["duration", formatDuration(d.rootDurationMs)],
+			["spans", formatCount(d.spanCount)],
+			["services", formatCount(d.serviceCount)],
+		]
+		if (d.url !== undefined) summary.push(["open", d.url])
 		const sections: Array<Section> = [
-			{
-				body: renderFields([
-					["trace", d.traceId],
-					["duration", formatDuration(d.rootDurationMs)],
-					["spans", formatCount(d.spanCount)],
-					["services", formatCount(d.serviceCount)],
-				]),
-			},
+			{ body: renderFields(summary) },
 			{
 				title: "SPANS",
 				body: renderTable<TreeRow>(
 					[
 						{ header: "SPAN", cell: (r) => r.label, maxWidth: 90 },
 						{ header: "SERVICE", cell: (r) => r.span.serviceName },
+						{ header: "START", cell: offset, align: right },
 						{ header: "DURATION", cell: (r) => formatDuration(r.span.durationMs), align: right },
 						{
 							header: "STATUS",
@@ -172,7 +197,7 @@ export const traceView: View<InspectTraceOutput> = {
 							maxWidth: 60,
 						},
 					],
-					flattenTree(d.spans),
+					rows,
 				),
 			},
 		]
@@ -181,7 +206,7 @@ export const traceView: View<InspectTraceOutput> = {
 				title: "LOGS",
 				body: renderTable(
 					logColumns,
-					d.logs.map((l) => ({ ...l, traceId: d.traceId })),
+					Arr.map(d.logs, (l) => ({ ...l, traceId: d.traceId })),
 				),
 			})
 		}
@@ -200,7 +225,10 @@ export const diagnoseView: View<ServiceHealthOutput> = {
 					["window", `${d.timeRange.startTime} to ${d.timeRange.endTime} UTC`],
 					["throughput", formatCount(h.throughput)],
 					["errors", `${formatCount(h.errorCount)} (${formatPercent(h.errorRate)})`],
-					["p50 / p95 / p99", [h.p50Ms, h.p95Ms, h.p99Ms].map(formatDuration).join(" / ")],
+					[
+						"p50 / p95 / p99",
+						Arr.join(Arr.map([h.p50Ms, h.p95Ms, h.p99Ms], formatDuration), " / "),
+					],
 					["apdex", h.apdex.toFixed(3)],
 				]),
 			},
@@ -239,20 +267,30 @@ export const diagnoseView: View<ServiceHealthOutput> = {
 	},
 }
 
-export const logsView = (empty: string): View<SearchLogsOutput> => ({
+export const logsView = (empty: string): View<SearchLogsOutput & { readonly url?: string }> => ({
 	empty,
 	isEmpty: (d) => d.logs.length === 0,
-	table: (d) => [{ body: renderTable(logColumns, d.logs) }],
+	table: (d) => [
+		{
+			body: renderTable(
+				Arr.some(d.logs, (l) => l.attributes !== undefined)
+					? [...logColumns, attributeColumn]
+					: logColumns,
+				d.logs,
+			),
+		},
+	],
 	notes: (d) => [
 		`${formatCount(d.total)} matching log${d.total === 1 ? "" : "s"} in the window`,
 		...moreNote(d.pagination),
+		...(d.url === undefined ? [] : [`open in the UI: ${d.url}`]),
 	],
 })
 
 const topKeys = (counts: Readonly<Record<string, number>>, max: number): string => {
-	const entries = Object.entries(counts).sort((a, b) => b[1] - a[1])
-	const shown = entries.slice(0, max).map(([k]) => k)
-	return entries.length > max ? `${shown.join(", ")} +${entries.length - max}` : shown.join(", ")
+	const entries = Rec.toEntries(counts).sort((a, b) => b[1] - a[1])
+	const shown = Arr.map(entries.slice(0, max), ([k]) => k)
+	return entries.length > max ? `${Arr.join(shown, ", ")} +${entries.length - max}` : Arr.join(shown, ", ")
 }
 
 export const logPatternsView = (empty: string): View<MineLogPatternsOutput> => ({
@@ -298,7 +336,7 @@ export const topOpsView = (empty: string): View<ReadonlyArray<TopOperationRow>> 
 				[
 					{ header: "OPERATION", cell: (r) => r.name, maxWidth: 80 },
 					{
-						header: (rows[0]?.metric ?? "value").toUpperCase().replace(/_/g, " "),
+						header: Str.replace(/_/g, " ")(Str.toUpperCase(rows[0]?.metric ?? "value")),
 						cell: (r) => formatMetricValue(r.value, r.unit),
 						align: right,
 					},
@@ -332,7 +370,7 @@ export const errorDetailView = (empty: string): View<ErrorDetailOutput> => ({
 					{ header: "TIME", cell: (t) => formatTimestamp(t.startTime) },
 					{ header: "ROOT SPAN", cell: (t) => t.rootSpanName, maxWidth: 50 },
 					{ header: "DURATION", cell: (t) => formatDuration(t.durationMs), align: right },
-					{ header: "SERVICES", cell: (t) => t.services.join(", "), maxWidth: 50 },
+					{ header: "SERVICES", cell: (t) => Arr.join(t.services, ", "), maxWidth: 50 },
 					{ header: "ERROR MESSAGE", cell: (t) => t.errorMessage, maxWidth: 60 },
 				],
 				d.traces,
@@ -362,7 +400,8 @@ export interface CompareRow {
 	readonly throughput: number
 	readonly errorCount: number
 	readonly p95LatencyMs: number
-	readonly p99LatencyMs: number
+	/** Absent in remote mode, which does not report it. */
+	readonly p99LatencyMs?: number
 }
 
 const change = (prev: number | undefined, cur: number | undefined, fmt: (n: number) => string): string =>
@@ -460,4 +499,86 @@ export const metricSeriesView = (empty: string): View<MetricSeriesOutput> => ({
 			},
 		]
 	},
+})
+
+/**
+ * Service edges plus what they call that runs no SDK of its own. `databases`
+ * and `external` are absent in remote mode (v2 has no resource for them), and
+ * `external` needs a service: its query is scoped to one caller.
+ */
+export interface ServiceMapResult {
+	readonly edges: ReadonlyArray<ServiceEdge>
+	readonly databases?: ReadonlyArray<CH.ServiceDbEdgesOutput>
+	readonly external?: ReadonlyArray<CH.ServiceExternalEdgesOutput>
+}
+
+/** The edge rollups' p95 is 0 for hours sealed before they kept a digest. */
+const p95Cell = (r: { readonly p95DurationMs: number }): string =>
+	r.p95DurationMs > 0 ? formatDuration(r.p95DurationMs) : "-"
+
+const errorRate = (r: { readonly callCount: number; readonly errorCount: number }): number =>
+	r.callCount > 0 ? r.errorCount / r.callCount : 0
+
+export const serviceMapView = (empty: string): View<ServiceMapResult> => ({
+	empty,
+	table: (d) => {
+		const sections: Array<Section> = []
+		if (d.edges.length > 0) {
+			sections.push({
+				title: "SERVICES",
+				body: renderTable(
+					[
+						{ header: "SOURCE", cell: (e) => e.sourceService },
+						{ header: "TARGET", cell: (e) => e.targetService },
+						{ header: "CALLS", cell: (e) => formatCount(e.callCount), align: right },
+						{ header: "ERROR RATE", cell: (e) => formatPercent(errorRate(e)), align: right },
+						{ header: "AVG", cell: (e) => formatDuration(e.avgDurationMs), align: right },
+						{ header: "MAX", cell: (e) => formatDuration(e.maxDurationMs), align: right },
+					],
+					d.edges,
+				),
+			})
+		}
+		if (d.databases !== undefined && d.databases.length > 0) {
+			sections.push({
+				title: "DATABASES",
+				body: renderTable(
+					[
+						{ header: "SOURCE", cell: (e) => e.sourceService },
+						{ header: "SYSTEM", cell: (e) => e.dbSystem },
+						{ header: "NAMESPACE", cell: (e) => e.dbNamespace },
+						{ header: "CALLS", cell: (e) => formatCount(e.callCount), align: right },
+						{ header: "ERROR RATE", cell: (e) => formatPercent(errorRate(e)), align: right },
+						{ header: "AVG", cell: (e) => formatDuration(e.avgDurationMs), align: right },
+						{ header: "P95", cell: p95Cell, align: right },
+					],
+					d.databases,
+				),
+			})
+		}
+		if (d.external !== undefined && d.external.length > 0) {
+			sections.push({
+				title: "EXTERNAL",
+				body: renderTable(
+					[
+						{ header: "SOURCE", cell: (e) => e.sourceService },
+						{ header: "TYPE", cell: (e) => e.targetType },
+						{ header: "TARGET", cell: (e) => e.targetName, maxWidth: 60 },
+						{ header: "CALLS", cell: (e) => formatCount(e.callCount), align: right },
+						{ header: "ERROR RATE", cell: (e) => formatPercent(errorRate(e)), align: right },
+						{ header: "AVG", cell: (e) => formatDuration(e.avgDurationMs), align: right },
+						{ header: "P95", cell: p95Cell, align: right },
+					],
+					d.external,
+				),
+			})
+		}
+		return sections
+	},
+	notes: (d) =>
+		d.databases === undefined
+			? ["databases and external calls are only listed in local mode"]
+			: d.external === undefined
+				? ["external calls (HTTP, messaging, RPC) are listed per service: add -s <service>"]
+				: [],
 })

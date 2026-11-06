@@ -1,9 +1,9 @@
 /** Scaffold an independent SQLite control-schema identity; the author supplies its migration edge. */
 import { createHash } from "node:crypto"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
-import { LOCAL_CONTROL_SCHEMA_VERSION } from "../apps/cli/src/server/local-schema-version"
+import { LOCAL_CONTROL_SCHEMA_VERSION } from "../packages/local-server/src/local-schema-version"
 
-const root = "apps/cli/src/server"
+const root = "packages/local-server/src"
 const next = LOCAL_CONTROL_SCHEMA_VERSION + 1
 const currentPath = `${root}/schema/control-schema.sql`
 const snapshotPath = `${root}/schema/control-schema-v${next}.sql`

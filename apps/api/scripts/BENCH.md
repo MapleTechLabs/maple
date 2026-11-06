@@ -31,7 +31,7 @@ Output JSONs land in `apps/api/scripts/.bench/` by default (gitignored).
 
 Built on Effect v4 end-to-end:
 
-- **CLI** — `effect/unstable/cli` (`Command` / `Flag` / `Argument`). The command
+- **CLI** — `effect/cli` (`Command` / `Flag` / `Argument`). The command
   tree gives `--help`, per-subcommand help, `--version`, shell `--completions`,
   and arg validation for free; no hand-rolled parser.
 - **Runtime** — `@effect/platform-bun` `BunRuntime.runMain` with

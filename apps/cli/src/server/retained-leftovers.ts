@@ -6,7 +6,7 @@
 import { existsSync } from "node:fs"
 import { lstat, readdir, readFile, rm } from "node:fs/promises"
 import { basename, dirname, join, resolve } from "node:path"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import {
 	checkpointQuarantineRoot,
 	listPreservedCheckpointPins,
@@ -16,13 +16,13 @@ import {
 	withMaintenanceLock,
 	type CheckpointId,
 	type CheckpointValidation,
-} from "./checkpoints"
-import { syncDirectory } from "./durable-files"
+} from "@maple/local-server/checkpoints"
+import { syncDirectory } from "@maple/local-server/durable-files"
 import {
 	migrationJournalPath,
 	migrationRootPath,
 	readMigrationJournalStructure,
-} from "./local-store-migrations"
+} from "@maple/local-server/local-store-migration-journal"
 
 export type RetainedLeftoverKind =
 	| "restore-replaced-store"
@@ -67,7 +67,7 @@ export class RetainedLeftoverError extends Schema.TaggedError<RetainedLeftoverEr
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
 const MIGRATION_ID = "[A-Za-z0-9._-]+"
 
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+const escapeRegExp = (value: string): string => Str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")(value)
 
 /** Only the provenance a leftover needs to be attributed to one data dir. */
 const JournalProvenance = Schema.Struct({ sourceDataDir: Schema.String })
@@ -118,9 +118,9 @@ const siblingLeftovers = async (dataDir: string): Promise<ReadonlyArray<Retained
 	]
 	const found: RetainedLeftover[] = []
 	for (const name of (await readdir(parent)).sort()) {
-		const match = patterns.find(([, pattern]) => pattern.test(name))
-		if (match === undefined) continue
-		const item = await leftover(match[0], join(parent, name))
+		const match = Arr.findFirst(patterns, ([, pattern]) => pattern.test(name))
+		if (Option.isNone(match)) continue
+		const item = await leftover(match.value[0], join(parent, name))
 		if (item !== null) found.push(item)
 	}
 	return found

@@ -1,0 +1,163 @@
+import { describeSpanEvent, formatEventOffset } from "../span-events"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { collapsibleTrigger } from "@maple/views/ui/collapsible"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { keyValue, keyValueList } from "@maple/views/ui/key-value"
+import { copyButton, statusOf } from "./copy"
+import { Message } from "./message"
+import type { Model } from "./model"
+import type { SpanEventData } from "../trace-source"
+import { hstack } from "@maple/views/ui/stack"
+import { dividedList } from "@maple/views/ui/rule"
+import { Array as Arr, Record as Rec } from "effect"
+
+// The span's events section.
+
+type H = HtmlBuilder<Message>
+
+const eventAttributes = (
+	h: H,
+	model: Model,
+	eventId: string,
+	attributes: Readonly<Record<string, string>>,
+) => {
+	const entries = Rec.toEntries(attributes)
+	return entries.length === 0
+		? []
+		: [
+				keyValueList(
+					h,
+					{ className: "gap-0.5 text-2xs" },
+					Arr.map(entries, ([key, value]) => {
+						const id = `${eventId}:attr:${key}`
+						return keyValue(
+							h,
+							{
+								label: key,
+								mono: true,
+								wrap: true,
+								copy: {
+									status: statusOf(model, id),
+									onCopy: Message.ClickedCopy({ id, text: value }),
+								},
+							},
+							[value],
+						)
+					}),
+				),
+			]
+}
+
+const stackTrace = (h: H, model: Model, eventId: string, stacktrace: string): Html => {
+	const id = `${eventId}:stack`
+	const isOpen = model.openIds.includes(id)
+	return h.div(
+		[h.DataAttribute(isOpen ? "open" : "closed", ""), h.DataAttribute("slot", "collapsible")],
+		[
+			hstack(h, { gap: "1" }, [
+				collapsibleTrigger(
+					h,
+					{
+						isOpen,
+						onToggle: Message.ToggledCollapsible({ id }),
+						className:
+							"group flex items-center gap-1 text-3xs text-muted-foreground hover:text-foreground active:text-foreground",
+					},
+					[
+						icon(h, "ChevronRightIcon", {
+							size: 10,
+							className: "transition-transform group-data-[panel-open]:rotate-90",
+						}),
+						"Stack trace",
+					],
+				),
+				copyButton(h, model, {
+					id: `${id}:copy`,
+					value: stacktrace,
+					label: "stack trace",
+					iconSize: 10,
+				}),
+			]),
+			...(isOpen
+				? [
+						h.pre(
+							[
+								h.Class(
+									"mt-1 max-h-80 overflow-auto rounded-sm bg-surface-sunken p-2 font-mono text-3xs leading-relaxed",
+								),
+							],
+							[stacktrace],
+						),
+					]
+				: []),
+		],
+	)
+}
+
+const eventRow = (h: H, model: Model, event: SpanEventData, index: number): Html => {
+	const eventId = `event:${index}`
+	const described = describeSpanEvent(event)
+	const offset = h.span(
+		[
+			h.Class("w-20 shrink-0 font-mono text-3xs tabular-nums text-muted-foreground"),
+			h.Title(event.timestamp),
+		],
+		[formatEventOffset(event.offsetMs)],
+	)
+	if (described.kind === "event") {
+		return h.li(
+			[h.Class("space-y-1 p-2")],
+			[
+				hstack(h, { gap: "2", align: "baseline", shrink: true }, [
+					offset,
+					h.span([h.Class("min-w-0 truncate font-mono text-xs")], [event.name || "(unnamed)"]),
+				]),
+				...eventAttributes(h, model, eventId, described.attributes),
+			],
+		)
+	}
+	return h.li(
+		[h.Class("space-y-1 p-2")],
+		[
+			hstack(h, { gap: "2", align: "baseline", shrink: true }, [
+				offset,
+				h.span(
+					[h.Class("flex min-w-0 items-center gap-1 font-mono text-xs text-severity-error")],
+					[
+						icon(h, "CircleXmarkIcon", { size: 12, className: "shrink-0 self-center" }),
+						h.span([h.Class("truncate")], [described.type ?? "exception"]),
+					],
+				),
+			]),
+			...(described.message === undefined
+				? []
+				: [
+						h.p(
+							[h.Class("font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]")],
+							[described.message],
+						),
+					]),
+			...(described.stacktrace === undefined
+				? []
+				: [stackTrace(h, model, eventId, described.stacktrace)]),
+			...eventAttributes(h, model, eventId, described.attributes),
+		],
+	)
+}
+
+/** The span's OTel events in time order, `exception` events expanded; nothing when there are none. */
+export const spanEventsSection = (h: H, model: Model, events: ReadonlyArray<SpanEventData>): Html | null =>
+	events.length === 0
+		? null
+		: h.div(
+				[h.Class("space-y-1")],
+				[
+					heading(h, { level: 4, variant: "label" }, ["Events (", String(events.length), ")"]),
+					dividedList(
+						h,
+						{ as: "ul" },
+						Arr.map(events, (event, index) => eventRow(h, model, event, index)),
+					),
+				],
+			)

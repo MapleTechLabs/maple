@@ -27,6 +27,8 @@ export interface RunRawSqlInput {
 	readonly startTime: string
 	readonly endTime: string
 	readonly granularitySeconds: number
+	/** Stop at the 1,000-row cap instead of failing on a longer result. */
+	readonly truncateAtCap?: boolean
 }
 
 /**
@@ -38,7 +40,7 @@ export interface RunRawSqlInput {
  * guardrails. Fails with `RawSqlValidationError` (macro/safety) or a
  * `WarehouseError` (execution); callers surface these to the agent.
  */
-export const runRawSql = Effect.fn("runRawSql")(function* (input: RunRawSqlInput) {
+export const runRawSql = Effect.fn("McpRawSql.runRawSql")(function* (input: RunRawSqlInput) {
 	const warehouse = yield* WarehouseQueryService
 	const executeRawSql = makeExecuteRawSql<TenantContext, WarehouseExecutionError | RawSqlValidationError>(
 		warehouse,
@@ -58,6 +60,7 @@ export const runRawSql = Effect.fn("runRawSql")(function* (input: RunRawSqlInput
 		startTime: input.startTime,
 		endTime: input.endTime,
 		granularitySeconds: input.granularitySeconds,
+		...(input.truncateAtCap === true ? { truncateAtCap: true } : undefined),
 		workload: "interactive",
 		context: "mcp.run_sql",
 	}).pipe(

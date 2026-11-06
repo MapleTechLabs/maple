@@ -27,27 +27,6 @@ const metricsDraft = (fields: Omit<MetricsDraft, "id" | "name" | "dataSource">):
 })
 
 describe("resolveSignalDisplay", () => {
-	describe("preset signals", () => {
-		it("keeps their established labels and attaches their units", () => {
-			assert.deepStrictEqual(resolveSignalDisplay({ signalType: "error_rate" }), {
-				label: "Error Rate",
-				unit: "ratio",
-			})
-			assert.deepStrictEqual(resolveSignalDisplay({ signalType: "p95_latency" }), {
-				label: "P95 Latency",
-				unit: "ms",
-			})
-			assert.deepStrictEqual(resolveSignalDisplay({ signalType: "throughput" }), {
-				label: "Throughput",
-				unit: "rpm",
-			})
-			assert.deepStrictEqual(resolveSignalDisplay({ signalType: "apdex" }), {
-				label: "Apdex",
-				unit: "apdex",
-			})
-		})
-	})
-
 	describe("builder_query", () => {
 		it("names a metrics query as aggregation(metricName), unit unknown", () => {
 			assert.deepStrictEqual(

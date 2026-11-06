@@ -1,0 +1,1300 @@
+# HELP pgbouncer_free_servers Count of free servers
+# TYPE pgbouncer_free_servers gauge
+pgbouncer_free_servers{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 48
+# HELP node_disk_discarded_sectors_total The total number of sectors discarded successfully.
+# TYPE node_disk_discarded_sectors_total counter
+node_disk_discarded_sectors_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme0n1"} 0
+node_disk_discarded_sectors_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme1n1"} 0
+# HELP node_disk_flush_requests_time_seconds_total This is the total number of seconds spent by all flush requests.
+# TYPE node_disk_flush_requests_time_seconds_total counter
+node_disk_flush_requests_time_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme0n1"} 0
+node_disk_flush_requests_time_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme1n1"} 0
+# HELP node_disk_reads_merged_total The total number of reads merged.
+# TYPE node_disk_reads_merged_total counter
+node_disk_reads_merged_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme0n1"} 63507
+node_disk_reads_merged_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme1n1"} 753
+# HELP node_filesystem_size_bytes Filesystem size in bytes.
+# TYPE node_filesystem_size_bytes gauge
+node_filesystem_size_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="/dev/nvme0n1p2",device_error="",fstype="ext4",mountpoint="/"} 1.0359754752e+10
+node_filesystem_size_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="/dev/nvme1n1",device_error="",fstype="ext4",mountpoint="/data"} 2.077073408e+09
+# HELP node_memory_Inactive_file_bytes Memory information field Inactive_file_bytes.
+# TYPE node_memory_Inactive_file_bytes gauge
+node_memory_Inactive_file_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 4.1422848e+07
+# HELP node_network_receive_bytes_total Network device statistic receive_bytes.
+# TYPE node_network_receive_bytes_total counter
+node_network_receive_bytes_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="ens5"} 4.7724966e+07
+# HELP node_procs_running Number of processes in runnable state.
+# TYPE node_procs_running gauge
+node_procs_running{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 1
+# HELP pgbouncer_pools_server_being_canceled_connections Servers that normally could become idle but are waiting to do so until all in-flight cancel requests have completed that were sent to cancel a query on this server.
+# TYPE pgbouncer_pools_server_being_canceled_connections gauge
+pgbouncer_pools_server_being_canceled_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer",user="pgbouncer"} 0
+pgbouncer_pools_server_being_canceled_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="pgbouncer"} 0
+pgbouncer_pools_server_being_canceled_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="supabase_storage_admin"} 0
+# HELP node_memory_Active_anon_bytes Memory information field Active_anon_bytes.
+# TYPE node_memory_Active_anon_bytes gauge
+node_memory_Active_anon_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 5.484544e+07
+# HELP pgbouncer_stats_server_in_transaction_seconds_total Total number of seconds spent by pgbouncer when connected to PostgreSQL in a transaction, either idle in transaction or executing queries
+# TYPE pgbouncer_stats_server_in_transaction_seconds_total counter
+pgbouncer_stats_server_in_transaction_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer"} 0
+pgbouncer_stats_server_in_transaction_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres"} 0.028554
+# HELP node_cpu_online CPUs that are online and being scheduled.
+# TYPE node_cpu_online gauge
+node_cpu_online{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="0"} 1
+node_cpu_online{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="1"} 1
+# HELP node_disk_writes_merged_total The number of writes merged.
+# TYPE node_disk_writes_merged_total counter
+node_disk_writes_merged_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme0n1"} 87718
+node_disk_writes_merged_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme1n1"} 1687
+# HELP node_disk_written_bytes_total The total number of bytes written successfully.
+# TYPE node_disk_written_bytes_total counter
+node_disk_written_bytes_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme0n1"} 1.0003712e+09
+node_disk_written_bytes_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme1n1"} 2.4664064e+08
+# HELP node_network_receive_frame_total Network device statistic receive_frame.
+# TYPE node_network_receive_frame_total counter
+node_network_receive_frame_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="ens5"} 0
+# HELP pgbouncer_pools_client_active_cancel_connections Client connections that have forwarded query cancellations to the server and are waiting for the server response
+# TYPE pgbouncer_pools_client_active_cancel_connections gauge
+pgbouncer_pools_client_active_cancel_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer",user="pgbouncer"} 0
+pgbouncer_pools_client_active_cancel_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="pgbouncer"} 0
+pgbouncer_pools_client_active_cancel_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="supabase_storage_admin"} 0
+# HELP pgbouncer_pools_client_waiting_cancel_connections Client connections that have not forwarded query cancellations to the server yet
+# TYPE pgbouncer_pools_client_waiting_cancel_connections gauge
+pgbouncer_pools_client_waiting_cancel_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer",user="pgbouncer"} 0
+pgbouncer_pools_client_waiting_cancel_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="pgbouncer"} 0
+pgbouncer_pools_client_waiting_cancel_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="supabase_storage_admin"} 0
+# HELP node_context_switches_total Total number of context switches.
+# TYPE node_context_switches_total counter
+node_context_switches_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 1.450458e+06
+# HELP node_cpu_guest_seconds_total Seconds the CPUs spent in guests (VMs) for each mode.
+# TYPE node_cpu_guest_seconds_total counter
+node_cpu_guest_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="0",mode="nice"} 0
+node_cpu_guest_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="0",mode="user"} 0
+node_cpu_guest_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="1",mode="nice"} 0
+node_cpu_guest_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="1",mode="user"} 0
+# HELP node_memory_SwapCached_bytes Memory information field SwapCached_bytes.
+# TYPE node_memory_SwapCached_bytes gauge
+node_memory_SwapCached_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 5.3772288e+07
+# HELP pgbouncer_pools_server_used_connections Server connections idle more than server_check_delay, needing server_check_query, shown as connection
+# TYPE pgbouncer_pools_server_used_connections gauge
+pgbouncer_pools_server_used_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer",user="pgbouncer"} 0
+pgbouncer_pools_server_used_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="pgbouncer"} 0
+pgbouncer_pools_server_used_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="supabase_storage_admin"} 1
+# HELP node_disk_filesystem_info Info about disk filesystem.
+# TYPE node_disk_filesystem_info gauge
+node_disk_filesystem_info{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme1n1",type="ext4",usage="filesystem",uuid="222007ab-e320-4a34-b43c-2d9b9e2fe5a4",version="1.0"} 1
+# HELP node_disk_io_now The number of I/Os currently in progress.
+# TYPE node_disk_io_now gauge
+node_disk_io_now{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme0n1"} 0
+node_disk_io_now{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme1n1"} 0
+# HELP node_disk_write_time_seconds_total This is the total number of seconds spent by all writes.
+# TYPE node_disk_write_time_seconds_total counter
+node_disk_write_time_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme0n1"} 186.019
+node_disk_write_time_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme1n1"} 4.247
+# HELP node_memory_PageTables_bytes Memory information field PageTables_bytes.
+# TYPE node_memory_PageTables_bytes gauge
+node_memory_PageTables_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 7.163904e+06
+# HELP node_disk_read_time_seconds_total The total number of seconds spent by all reads.
+# TYPE node_disk_read_time_seconds_total counter
+node_disk_read_time_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme0n1"} 219.409
+node_disk_read_time_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme1n1"} 3.43
+# HELP node_network_receive_drop_total Network device statistic receive_drop.
+# TYPE node_network_receive_drop_total counter
+node_network_receive_drop_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="ens5"} 0
+# HELP node_network_transmit_colls_total Network device statistic transmit_colls.
+# TYPE node_network_transmit_colls_total counter
+node_network_transmit_colls_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="ens5"} 0
+# HELP pgbouncer_databases_paused 1 if this database is currently paused, else 0
+# TYPE pgbouncer_databases_paused gauge
+pgbouncer_databases_paused{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer",force_user="pgbouncer",host="",name="pgbouncer",pool_mode="statement",port="6543"} 0
+pgbouncer_databases_paused{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",force_user="",host="localhost",name="postgres",pool_mode="",port="5432"} 0
+# HELP node_filesystem_readonly Filesystem read-only status.
+# TYPE node_filesystem_readonly gauge
+node_filesystem_readonly{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="/dev/nvme0n1p2",device_error="",fstype="ext4",mountpoint="/"} 0
+node_filesystem_readonly{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="/dev/nvme1n1",device_error="",fstype="ext4",mountpoint="/data"} 0
+# HELP node_pressure_io_waiting_seconds_total Total time in seconds that processes have waited due to IO congestion
+# TYPE node_pressure_io_waiting_seconds_total counter
+node_pressure_io_waiting_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 85.805705
+# HELP node_disk_info Info of /sys/block/<block_device>.
+# TYPE node_disk_info gauge
+node_disk_info{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme0n1",major="259",minor="1",model="Amazon Elastic Block Store",path="pci-0000:00:04.0-nvme-1",revision="1.0",rotational="0",serial="vol0ab1e5969ee936cc4",wwn="nvme.1d0f-766f6c3061623165353936396565393336636334-416d617a6f6e20456c617374696320426c6f636b2053746f7265-00000001"} 1
+node_disk_info{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme1n1",major="259",minor="0",model="Amazon Elastic Block Store",path="pci-0000:00:1f.0-nvme-1",revision="1.0",rotational="0",serial="vol09c14634ef9f62e0f",wwn="nvme.1d0f-766f6c3039633134363334656639663632653066-416d617a6f6e20456c617374696320426c6f636b2053746f7265-00000001"} 1
+# HELP node_filesystem_avail_bytes Filesystem space available to non-root users in bytes.
+# TYPE node_filesystem_avail_bytes gauge
+node_filesystem_avail_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="/dev/nvme0n1p2",device_error="",fstype="ext4",mountpoint="/"} 3.272896512e+09
+node_filesystem_avail_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="/dev/nvme1n1",device_error="",fstype="ext4",mountpoint="/data"} 1.791643648e+09
+# HELP node_memory_MemTotal_bytes Memory information field MemTotal_bytes.
+# TYPE node_memory_MemTotal_bytes gauge
+node_memory_MemTotal_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 4.26192896e+08
+# HELP node_network_transmit_bytes_total Network device statistic transmit_bytes.
+# TYPE node_network_transmit_bytes_total counter
+node_network_transmit_bytes_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="ens5"} 1.2177658e+07
+# HELP node_network_transmit_packets_total Network device statistic transmit_packets.
+# TYPE node_network_transmit_packets_total counter
+node_network_transmit_packets_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="ens5"} 11549
+# HELP node_vmstat_oom_kill /proc/vmstat information field oom_kill.
+# TYPE node_vmstat_oom_kill untyped
+node_vmstat_oom_kill{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP node_disk_discard_time_seconds_total This is the total number of seconds spent by all discards.
+# TYPE node_disk_discard_time_seconds_total counter
+node_disk_discard_time_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme0n1"} 0
+node_disk_discard_time_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme1n1"} 0
+# HELP node_disk_discards_merged_total The total number of discards merged.
+# TYPE node_disk_discards_merged_total counter
+node_disk_discards_merged_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme0n1"} 0
+node_disk_discards_merged_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme1n1"} 0
+# HELP node_memory_Inactive_anon_bytes Memory information field Inactive_anon_bytes.
+# TYPE node_memory_Inactive_anon_bytes gauge
+node_memory_Inactive_anon_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 4.3593728e+07
+# HELP node_memory_Inactive_bytes Memory information field Inactive_bytes.
+# TYPE node_memory_Inactive_bytes gauge
+node_memory_Inactive_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 8.5016576e+07
+# HELP node_memory_SwapFree_bytes Memory information field SwapFree_bytes.
+# TYPE node_memory_SwapFree_bytes gauge
+node_memory_SwapFree_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 8.57645056e+08
+# HELP node_time_clocksource_current_info Current clocksource read from '/sys/devices/system/clocksource'.
+# TYPE node_time_clocksource_current_info gauge
+node_time_clocksource_current_info{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",clocksource="arch_sys_counter",device="0"} 1
+# HELP pgbouncer_pools Count of pools
+# TYPE pgbouncer_pools gauge
+pgbouncer_pools{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 3
+# HELP pgbouncer_stats_client_wait_seconds_total Time spent by clients waiting for a server in seconds
+# TYPE pgbouncer_stats_client_wait_seconds_total counter
+pgbouncer_stats_client_wait_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer"} 0
+pgbouncer_stats_client_wait_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres"} 0.046618
+# HELP node_memory_CmaFree_bytes Memory information field CmaFree_bytes.
+# TYPE node_memory_CmaFree_bytes gauge
+node_memory_CmaFree_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP node_memory_Shmem_bytes Memory information field Shmem_bytes.
+# TYPE node_memory_Shmem_bytes gauge
+node_memory_Shmem_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 1.0248192e+07
+# HELP node_time_zone_offset_seconds System time zone offset in seconds.
+# TYPE node_time_zone_offset_seconds gauge
+node_time_zone_offset_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",time_zone="UTC"} 0
+# HELP pgbouncer_stats_queries_duration_seconds_total Total number of seconds spent by pgbouncer when actively connected to PostgreSQL, executing queries
+# TYPE pgbouncer_stats_queries_duration_seconds_total counter
+pgbouncer_stats_queries_duration_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer"} 0
+pgbouncer_stats_queries_duration_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres"} 0.028554
+# HELP node_memory_AnonPages_bytes Memory information field AnonPages_bytes.
+# TYPE node_memory_AnonPages_bytes gauge
+node_memory_AnonPages_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 7.4797056e+07
+# HELP node_memory_SUnreclaim_bytes Memory information field SUnreclaim_bytes.
+# TYPE node_memory_SUnreclaim_bytes gauge
+node_memory_SUnreclaim_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 4.9147904e+07
+# HELP node_memory_Unevictable_bytes Memory information field Unevictable_bytes.
+# TYPE node_memory_Unevictable_bytes gauge
+node_memory_Unevictable_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 8192
+# HELP pgbouncer_databases Count of databases
+# TYPE pgbouncer_databases gauge
+pgbouncer_databases{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 2
+# HELP pgbouncer_databases_disabled 1 if this database is currently disabled, else 0
+# TYPE pgbouncer_databases_disabled gauge
+pgbouncer_databases_disabled{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer",force_user="pgbouncer",host="",name="pgbouncer",pool_mode="statement",port="6543"} 0
+pgbouncer_databases_disabled{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",force_user="",host="localhost",name="postgres",pool_mode="",port="5432"} 0
+# HELP pgbouncer_in_flight_dns_queries Count of in-flight DNS queries
+# TYPE pgbouncer_in_flight_dns_queries gauge
+pgbouncer_in_flight_dns_queries{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} -1
+# HELP pgbouncer_pools_server_idle_connections Server connections idle and ready for a client query, shown as connection
+# TYPE pgbouncer_pools_server_idle_connections gauge
+pgbouncer_pools_server_idle_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer",user="pgbouncer"} 0
+pgbouncer_pools_server_idle_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="pgbouncer"} 1
+pgbouncer_pools_server_idle_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="supabase_storage_admin"} 0
+# HELP node_memory_Cached_bytes Memory information field Cached_bytes.
+# TYPE node_memory_Cached_bytes gauge
+node_memory_Cached_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 1.8925568e+08
+# HELP node_memory_Mlocked_bytes Memory information field Mlocked_bytes.
+# TYPE node_memory_Mlocked_bytes gauge
+node_memory_Mlocked_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 8192
+# HELP node_memory_ShmemPmdMapped_bytes Memory information field ShmemPmdMapped_bytes.
+# TYPE node_memory_ShmemPmdMapped_bytes gauge
+node_memory_ShmemPmdMapped_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP node_memory_VmallocTotal_bytes Memory information field VmallocTotal_bytes.
+# TYPE node_memory_VmallocTotal_bytes gauge
+node_memory_VmallocTotal_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 1.38535235485696e+14
+# HELP node_memory_WritebackTmp_bytes Memory information field WritebackTmp_bytes.
+# TYPE node_memory_WritebackTmp_bytes gauge
+node_memory_WritebackTmp_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP pgbouncer_pools_server_active_cancel_connections Server connections that are currently forwarding a cancel request.
+# TYPE pgbouncer_pools_server_active_cancel_connections gauge
+pgbouncer_pools_server_active_cancel_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer",user="pgbouncer"} 0
+pgbouncer_pools_server_active_cancel_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="pgbouncer"} 0
+pgbouncer_pools_server_active_cancel_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="supabase_storage_admin"} 0
+# HELP node_load15 15m load average.
+# TYPE node_load15 gauge
+node_load15{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0.08
+# HELP node_memory_Dirty_bytes Memory information field Dirty_bytes.
+# TYPE node_memory_Dirty_bytes gauge
+node_memory_Dirty_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 106496
+# HELP pgbouncer_login_clients Count of clients in login state
+# TYPE pgbouncer_login_clients gauge
+pgbouncer_login_clients{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP pgbouncer_pools_server_testing_connections Server connections currently running either server_reset_query or server_check_query, shown as connection
+# TYPE pgbouncer_pools_server_testing_connections gauge
+pgbouncer_pools_server_testing_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer",user="pgbouncer"} 0
+pgbouncer_pools_server_testing_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="pgbouncer"} 0
+pgbouncer_pools_server_testing_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="supabase_storage_admin"} 0
+# HELP node_memory_HugePages_Surp Memory information field HugePages_Surp.
+# TYPE node_memory_HugePages_Surp gauge
+node_memory_HugePages_Surp{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP node_memory_HugePages_Total Memory information field HugePages_Total.
+# TYPE node_memory_HugePages_Total gauge
+node_memory_HugePages_Total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP node_memory_Bounce_bytes Memory information field Bounce_bytes.
+# TYPE node_memory_Bounce_bytes gauge
+node_memory_Bounce_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP node_memory_Buffers_bytes Memory information field Buffers_bytes.
+# TYPE node_memory_Buffers_bytes gauge
+node_memory_Buffers_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 4.718592e+06
+# HELP node_network_receive_errs_total Network device statistic receive_errs.
+# TYPE node_network_receive_errs_total counter
+node_network_receive_errs_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="ens5"} 0
+# HELP pgbouncer_databases_max_connections Maximum number of allowed connections for this database
+# TYPE pgbouncer_databases_max_connections gauge
+pgbouncer_databases_max_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer",force_user="pgbouncer",host="",name="pgbouncer",pool_mode="statement",port="6543"} 0
+pgbouncer_databases_max_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",force_user="",host="localhost",name="postgres",pool_mode="",port="5432"} 0
+# HELP node_disk_io_time_seconds_total Total seconds spent doing I/Os.
+# TYPE node_disk_io_time_seconds_total counter
+node_disk_io_time_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme0n1"} 129.15200000000002
+node_disk_io_time_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme1n1"} 3.226
+# HELP node_memory_Hugepagesize_bytes Memory information field Hugepagesize_bytes.
+# TYPE node_memory_Hugepagesize_bytes gauge
+node_memory_Hugepagesize_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 2.097152e+06
+# HELP node_memory_MemAvailable_bytes Memory information field MemAvailable_bytes.
+# TYPE node_memory_MemAvailable_bytes gauge
+node_memory_MemAvailable_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 2.04087296e+08
+# HELP node_memory_Slab_bytes Memory information field Slab_bytes.
+# TYPE node_memory_Slab_bytes gauge
+node_memory_Slab_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 7.4211328e+07
+# HELP node_time_clocksource_available_info Available clocksources read from '/sys/devices/system/clocksource'.
+# TYPE node_time_clocksource_available_info gauge
+node_time_clocksource_available_info{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",clocksource="arch_sys_counter",device="0"} 1
+# HELP pgbouncer_cached_dns_zones Count of DNS zones in the cache
+# TYPE pgbouncer_cached_dns_zones gauge
+pgbouncer_cached_dns_zones{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP node_filesystem_mount_info Filesystem mount information.
+# TYPE node_filesystem_mount_info gauge
+node_filesystem_mount_info{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="/dev/nvme0n1p2",major="259",minor="3",mountpoint="/"} 1
+node_filesystem_mount_info{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="/dev/nvme1n1",major="259",minor="0",mountpoint="/data"} 1
+# HELP node_load1 1m load average.
+# TYPE node_load1 gauge
+node_load1{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0.1
+# HELP node_network_receive_nohandler_total Network device statistic receive_nohandler.
+# TYPE node_network_receive_nohandler_total counter
+node_network_receive_nohandler_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="ens5"} 0
+# HELP node_network_transmit_carrier_total Network device statistic transmit_carrier.
+# TYPE node_network_transmit_carrier_total counter
+node_network_transmit_carrier_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="ens5"} 0
+# HELP pgbouncer_cached_dns_names Count of DNS names in the cache
+# TYPE pgbouncer_cached_dns_names gauge
+pgbouncer_cached_dns_names{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 1
+# HELP pgbouncer_pools_server_active_connections Server connections linked to a client connection, shown as connection
+# TYPE pgbouncer_pools_server_active_connections gauge
+pgbouncer_pools_server_active_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer",user="pgbouncer"} 0
+pgbouncer_pools_server_active_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="pgbouncer"} 0
+pgbouncer_pools_server_active_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="supabase_storage_admin"} 0
+# HELP node_disk_reads_completed_total The total number of reads completed successfully.
+# TYPE node_disk_reads_completed_total counter
+node_disk_reads_completed_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme0n1"} 256051
+node_disk_reads_completed_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme1n1"} 4711
+# HELP node_disk_writes_completed_total The total number of writes completed successfully.
+# TYPE node_disk_writes_completed_total counter
+node_disk_writes_completed_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme0n1"} 89302
+node_disk_writes_completed_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme1n1"} 2242
+# HELP node_load5 5m load average.
+# TYPE node_load5 gauge
+node_load5{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0.06
+# HELP pgbouncer_stats_sent_bytes_total Total volume in bytes of network traffic sent by pgbouncer, shown as bytes
+# TYPE pgbouncer_stats_sent_bytes_total counter
+pgbouncer_stats_sent_bytes_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer"} 0
+pgbouncer_stats_sent_bytes_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres"} 1357
+# HELP pgbouncer_used_clients Count of used clients
+# TYPE pgbouncer_used_clients gauge
+pgbouncer_used_clients{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 2
+# HELP node_memory_CmaTotal_bytes Memory information field CmaTotal_bytes.
+# TYPE node_memory_CmaTotal_bytes gauge
+node_memory_CmaTotal_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP node_network_transmit_drop_total Network device statistic transmit_drop.
+# TYPE node_network_transmit_drop_total counter
+node_network_transmit_drop_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="ens5"} 0
+# HELP node_time_seconds System time in seconds since epoch (1970).
+# TYPE node_time_seconds gauge
+node_time_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 1.7925994829990454e+09
+# HELP node_memory_Mapped_bytes Memory information field Mapped_bytes.
+# TYPE node_memory_Mapped_bytes gauge
+node_memory_Mapped_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 9.9741696e+07
+# HELP node_scrape_collector_success node_exporter: Whether a collector succeeded.
+# TYPE node_scrape_collector_success gauge
+node_scrape_collector_success{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="cpu"} 1
+node_scrape_collector_success{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="diskstats"} 1
+node_scrape_collector_success{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="filesystem"} 1
+node_scrape_collector_success{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="loadavg"} 1
+node_scrape_collector_success{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="meminfo"} 1
+node_scrape_collector_success{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="netdev"} 1
+node_scrape_collector_success{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="pressure"} 0
+node_scrape_collector_success{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="stat"} 1
+node_scrape_collector_success{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="time"} 1
+node_scrape_collector_success{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="vmstat"} 1
+# HELP node_vmstat_pgmajfault /proc/vmstat information field pgmajfault.
+# TYPE node_vmstat_pgmajfault untyped
+node_vmstat_pgmajfault{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 260868
+# HELP node_vmstat_pswpin /proc/vmstat information field pswpin.
+# TYPE node_vmstat_pswpin untyped
+node_vmstat_pswpin{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 159360
+# HELP pgbouncer_pools_client_active_connections Client connections linked to server connection and able to process queries, shown as connection
+# TYPE pgbouncer_pools_client_active_connections gauge
+pgbouncer_pools_client_active_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer",user="pgbouncer"} 1
+pgbouncer_pools_client_active_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="pgbouncer"} 0
+pgbouncer_pools_client_active_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="supabase_storage_admin"} 1
+# HELP node_memory_NFS_Unstable_bytes Memory information field NFS_Unstable_bytes.
+# TYPE node_memory_NFS_Unstable_bytes gauge
+node_memory_NFS_Unstable_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP node_network_receive_packets_total Network device statistic receive_packets.
+# TYPE node_network_receive_packets_total counter
+node_network_receive_packets_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="ens5"} 37837
+# HELP node_network_transmit_compressed_total Network device statistic transmit_compressed.
+# TYPE node_network_transmit_compressed_total counter
+node_network_transmit_compressed_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="ens5"} 0
+# HELP pgbouncer_stats_received_bytes_total Total volume in bytes of network traffic received by pgbouncer, shown as bytes
+# TYPE pgbouncer_stats_received_bytes_total counter
+pgbouncer_stats_received_bytes_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer"} 0
+pgbouncer_stats_received_bytes_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres"} 674
+# HELP pgbouncer_used_servers Count of used servers
+# TYPE pgbouncer_used_servers gauge
+pgbouncer_used_servers{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 2
+# HELP node_filesystem_files Filesystem total file nodes.
+# TYPE node_filesystem_files gauge
+node_filesystem_files{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="/dev/nvme0n1p2",device_error="",fstype="ext4",mountpoint="/"} 648960
+node_filesystem_files{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="/dev/nvme1n1",device_error="",fstype="ext4",mountpoint="/data"} 131072
+# HELP node_memory_AnonHugePages_bytes Memory information field AnonHugePages_bytes.
+# TYPE node_memory_AnonHugePages_bytes gauge
+node_memory_AnonHugePages_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP node_memory_Percpu_bytes Memory information field Percpu_bytes.
+# TYPE node_memory_Percpu_bytes gauge
+node_memory_Percpu_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 770048
+# HELP node_pressure_cpu_waiting_seconds_total Total time in seconds that processes have waited for CPU time
+# TYPE node_pressure_cpu_waiting_seconds_total counter
+node_pressure_cpu_waiting_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 11.777282999999999
+# HELP pgbouncer_free_clients Count of free clients
+# TYPE pgbouncer_free_clients gauge
+pgbouncer_free_clients{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 48
+# HELP node_disk_discards_completed_total The total number of discards completed successfully.
+# TYPE node_disk_discards_completed_total counter
+node_disk_discards_completed_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme0n1"} 0
+node_disk_discards_completed_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme1n1"} 0
+# HELP node_filesystem_device_error Whether an error occurred while getting statistics for the given device.
+# TYPE node_filesystem_device_error gauge
+node_filesystem_device_error{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="/dev/nvme0n1p2",device_error="",fstype="ext4",mountpoint="/"} 0
+node_filesystem_device_error{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="/dev/nvme1n1",device_error="",fstype="ext4",mountpoint="/data"} 0
+# HELP node_pressure_io_stalled_seconds_total Total time in seconds no process could make progress due to IO congestion
+# TYPE node_pressure_io_stalled_seconds_total counter
+node_pressure_io_stalled_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 80.729724
+# HELP pgbouncer_pools_server_login_connections Server connections currently in the process of logging in, shown as connection
+# TYPE pgbouncer_pools_server_login_connections gauge
+pgbouncer_pools_server_login_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer",user="pgbouncer"} 0
+pgbouncer_pools_server_login_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="pgbouncer"} 0
+pgbouncer_pools_server_login_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="supabase_storage_admin"} 0
+# HELP pgbouncer_users Count of users
+# TYPE pgbouncer_users gauge
+pgbouncer_users{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 2
+# HELP node_memory_SReclaimable_bytes Memory information field SReclaimable_bytes.
+# TYPE node_memory_SReclaimable_bytes gauge
+node_memory_SReclaimable_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 2.5063424e+07
+# HELP node_vmstat_pgfault /proc/vmstat information field pgfault.
+# TYPE node_vmstat_pgfault untyped
+node_vmstat_pgfault{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 2.947247e+06
+# HELP node_vmstat_pgpgout /proc/vmstat information field pgpgout.
+# TYPE node_vmstat_pgpgout untyped
+node_vmstat_pgpgout{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 1.217785e+06
+# HELP node_memory_Active_bytes Memory information field Active_bytes.
+# TYPE node_memory_Active_bytes gauge
+node_memory_Active_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 1.97107712e+08
+# HELP node_network_receive_fifo_total Network device statistic receive_fifo.
+# TYPE node_network_receive_fifo_total counter
+node_network_receive_fifo_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="ens5"} 0
+# HELP node_network_transmit_fifo_total Network device statistic transmit_fifo.
+# TYPE node_network_transmit_fifo_total counter
+node_network_transmit_fifo_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="ens5"} 0
+# HELP pgbouncer_config_max_user_connections Config maximum number of server connections per user
+# TYPE pgbouncer_config_max_user_connections gauge
+pgbouncer_config_max_user_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP pgbouncer_databases_pool_size Maximum number of server connections
+# TYPE pgbouncer_databases_pool_size gauge
+pgbouncer_databases_pool_size{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer",force_user="pgbouncer",host="",name="pgbouncer",pool_mode="statement",port="6543"} 2
+pgbouncer_databases_pool_size{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",force_user="",host="localhost",name="postgres",pool_mode="",port="5432"} 15
+# HELP node_cpu_seconds_total Seconds the CPUs spent in each mode.
+# TYPE node_cpu_seconds_total counter
+node_cpu_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="0",mode="idle"} 1417.87
+node_cpu_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="0",mode="iowait"} 70.09
+node_cpu_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="0",mode="irq"} 0
+node_cpu_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="0",mode="nice"} 0.1
+node_cpu_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="0",mode="softirq"} 0.62
+node_cpu_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="0",mode="steal"} 0.04
+node_cpu_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="0",mode="system"} 21.96
+node_cpu_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="0",mode="user"} 33.91
+node_cpu_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="1",mode="idle"} 1406.96
+node_cpu_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="1",mode="iowait"} 74.22
+node_cpu_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="1",mode="irq"} 0
+node_cpu_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="1",mode="nice"} 0.04
+node_cpu_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="1",mode="softirq"} 0.89
+node_cpu_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="1",mode="steal"} 0.04
+node_cpu_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="1",mode="system"} 22.19
+node_cpu_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",cpu="1",mode="user"} 40.38
+# HELP node_disk_read_bytes_total The total number of bytes read successfully.
+# TYPE node_disk_read_bytes_total counter
+node_disk_read_bytes_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme0n1"} 5.41542912e+09
+node_disk_read_bytes_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme1n1"} 2.23881216e+08
+# HELP node_memory_CommitLimit_bytes Memory information field CommitLimit_bytes.
+# TYPE node_memory_CommitLimit_bytes gauge
+node_memory_CommitLimit_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 1.286832128e+09
+# HELP node_memory_HugePages_Rsvd Memory information field HugePages_Rsvd.
+# TYPE node_memory_HugePages_Rsvd gauge
+node_memory_HugePages_Rsvd{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP node_pressure_memory_stalled_seconds_total Total time in seconds no process could make progress due to memory congestion
+# TYPE node_pressure_memory_stalled_seconds_total counter
+node_pressure_memory_stalled_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 15.780918999999999
+# HELP node_procs_blocked Number of processes blocked waiting for I/O to complete.
+# TYPE node_procs_blocked gauge
+node_procs_blocked{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 1
+# HELP pgbouncer_version_info The pgbouncer version info
+# TYPE pgbouncer_version_info gauge
+pgbouncer_version_info{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",version="PgBouncer 1.25.1"} 1
+# HELP node_filesystem_free_bytes Filesystem free space in bytes.
+# TYPE node_filesystem_free_bytes gauge
+node_filesystem_free_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="/dev/nvme0n1p2",device_error="",fstype="ext4",mountpoint="/"} 3.300302848e+09
+node_filesystem_free_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="/dev/nvme1n1",device_error="",fstype="ext4",mountpoint="/data"} 1.913278464e+09
+# HELP node_memory_ShmemHugePages_bytes Memory information field ShmemHugePages_bytes.
+# TYPE node_memory_ShmemHugePages_bytes gauge
+node_memory_ShmemHugePages_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP node_memory_VmallocChunk_bytes Memory information field VmallocChunk_bytes.
+# TYPE node_memory_VmallocChunk_bytes gauge
+node_memory_VmallocChunk_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP pgbouncer_pools_client_waiting_connections Client connections waiting on a server connection, shown as connection
+# TYPE pgbouncer_pools_client_waiting_connections gauge
+pgbouncer_pools_client_waiting_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer",user="pgbouncer"} 0
+pgbouncer_pools_client_waiting_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="pgbouncer"} 0
+pgbouncer_pools_client_waiting_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="supabase_storage_admin"} 0
+# HELP pgbouncer_stats_queries_pooled_total Total number of SQL queries pooled
+# TYPE pgbouncer_stats_queries_pooled_total counter
+pgbouncer_stats_queries_pooled_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer"} 1
+pgbouncer_stats_queries_pooled_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres"} 91
+# HELP postgresql_restarts_total Number of times postgresql has been restarted
+# TYPE postgresql_restarts_total counter
+postgresql_restarts_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP node_network_transmit_errs_total Network device statistic transmit_errs.
+# TYPE node_network_transmit_errs_total counter
+node_network_transmit_errs_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="ens5"} 0
+# HELP node_scrape_collector_duration_seconds node_exporter: Duration of a collector scrape.
+# TYPE node_scrape_collector_duration_seconds gauge
+node_scrape_collector_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="cpu"} 0.010399735
+node_scrape_collector_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="diskstats"} 0.032959803
+node_scrape_collector_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="filesystem"} 0.000705317
+node_scrape_collector_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="loadavg"} 0.001170826
+node_scrape_collector_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="meminfo"} 0.001539662
+node_scrape_collector_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="netdev"} 0.002643861
+node_scrape_collector_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="pressure"} 0.010454317
+node_scrape_collector_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="stat"} 0.000174091
+node_scrape_collector_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="time"} 0.005292735
+node_scrape_collector_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",collector="vmstat"} 0.00031788
+# HELP pgbouncer_databases_current_connections Current number of connections for this database
+# TYPE pgbouncer_databases_current_connections gauge
+pgbouncer_databases_current_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer",force_user="pgbouncer",host="",name="pgbouncer",pool_mode="statement",port="6543"} 0
+pgbouncer_databases_current_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",force_user="",host="localhost",name="postgres",pool_mode="",port="5432"} 2
+# HELP pgbouncer_pools_client_maxwait_seconds Age of oldest unserved client connection, shown as second
+# TYPE pgbouncer_pools_client_maxwait_seconds gauge
+pgbouncer_pools_client_maxwait_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer",user="pgbouncer"} 0
+pgbouncer_pools_client_maxwait_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="pgbouncer"} 0
+pgbouncer_pools_client_maxwait_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres",user="supabase_storage_admin"} 0
+# HELP pgbouncer_up The pgbouncer scrape succeeded
+# TYPE pgbouncer_up gauge
+pgbouncer_up{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 1
+# HELP node_memory_MemFree_bytes Memory information field MemFree_bytes.
+# TYPE node_memory_MemFree_bytes gauge
+node_memory_MemFree_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 5.271552e+06
+# HELP node_network_receive_compressed_total Network device statistic receive_compressed.
+# TYPE node_network_receive_compressed_total counter
+node_network_receive_compressed_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="ens5"} 0
+# HELP node_pressure_memory_waiting_seconds_total Total time in seconds that processes have waited for memory
+# TYPE node_pressure_memory_waiting_seconds_total counter
+node_pressure_memory_waiting_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 16.491944
+# HELP db_transmit_bytes postgres and pgbouncer network transmit bytes
+# TYPE db_transmit_bytes counter
+db_transmit_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 4641
+# HELP node_boot_time_seconds Node boot time, in unixtime.
+# TYPE node_boot_time_seconds gauge
+node_boot_time_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 1.792597931e+09
+# HELP node_filesystem_files_free Filesystem total free file nodes.
+# TYPE node_filesystem_files_free gauge
+node_filesystem_files_free{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="/dev/nvme0n1p2",device_error="",fstype="ext4",mountpoint="/"} 404567
+node_filesystem_files_free{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="/dev/nvme1n1",device_error="",fstype="ext4",mountpoint="/data"} 129798
+# HELP node_forks_total Total number of forks.
+# TYPE node_forks_total counter
+node_forks_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 6997
+# HELP node_intr_total Total number of interrupts serviced.
+# TYPE node_intr_total counter
+node_intr_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 1.344036e+06
+# HELP node_memory_Committed_AS_bytes Memory information field Committed_AS_bytes.
+# TYPE node_memory_Committed_AS_bytes gauge
+node_memory_Committed_AS_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 1.194020864e+09
+# HELP node_memory_KernelStack_bytes Memory information field KernelStack_bytes.
+# TYPE node_memory_KernelStack_bytes gauge
+node_memory_KernelStack_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 3.899392e+06
+# HELP node_memory_SwapTotal_bytes Memory information field SwapTotal_bytes.
+# TYPE node_memory_SwapTotal_bytes gauge
+node_memory_SwapTotal_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 1.073737728e+09
+# HELP node_disk_flush_requests_total The total number of flush requests completed successfully
+# TYPE node_disk_flush_requests_total counter
+node_disk_flush_requests_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme0n1"} 0
+node_disk_flush_requests_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme1n1"} 0
+# HELP node_disk_io_time_weighted_seconds_total The weighted # of seconds spent doing I/Os.
+# TYPE node_disk_io_time_weighted_seconds_total counter
+node_disk_io_time_weighted_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme0n1"} 405.42900000000003
+node_disk_io_time_weighted_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="nvme1n1"} 7.6770000000000005
+# HELP node_memory_Active_file_bytes Memory information field Active_file_bytes.
+# TYPE node_memory_Active_file_bytes gauge
+node_memory_Active_file_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 1.42262272e+08
+# HELP node_memory_VmallocUsed_bytes Memory information field VmallocUsed_bytes.
+# TYPE node_memory_VmallocUsed_bytes gauge
+node_memory_VmallocUsed_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 1.615872e+07
+# HELP node_memory_Writeback_bytes Memory information field Writeback_bytes.
+# TYPE node_memory_Writeback_bytes gauge
+node_memory_Writeback_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP node_vmstat_pswpout /proc/vmstat information field pswpout.
+# TYPE node_vmstat_pswpout untyped
+node_vmstat_pswpout{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 159807
+# HELP pgbouncer_config_max_client_connections Config maximum number of client connections
+# TYPE pgbouncer_config_max_client_connections gauge
+pgbouncer_config_max_client_connections{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 200
+# HELP pgbouncer_stats_sql_transactions_pooled_total Total number of SQL transactions pooled
+# TYPE pgbouncer_stats_sql_transactions_pooled_total counter
+pgbouncer_stats_sql_transactions_pooled_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="pgbouncer"} 1
+pgbouncer_stats_sql_transactions_pooled_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",database="postgres"} 91
+# HELP node_memory_HardwareCorrupted_bytes Memory information field HardwareCorrupted_bytes.
+# TYPE node_memory_HardwareCorrupted_bytes gauge
+node_memory_HardwareCorrupted_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP node_memory_HugePages_Free Memory information field HugePages_Free.
+# TYPE node_memory_HugePages_Free gauge
+node_memory_HugePages_Free{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 0
+# HELP node_network_receive_multicast_total Network device statistic receive_multicast.
+# TYPE node_network_receive_multicast_total counter
+node_network_receive_multicast_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db",device="ens5"} 0
+# HELP node_vmstat_pgpgin /proc/vmstat information field pgpgin.
+# TYPE node_vmstat_pgpgin untyped
+node_vmstat_pgpgin{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="db"} 5.509863e+06
+# HELP pg_stat_database_tup_returned_total Rows returned by queries
+# TYPE pg_stat_database_tup_returned_total counter
+pg_stat_database_tup_returned_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 363168
+# HELP pg_status_in_recovery Database in recovery
+# TYPE pg_status_in_recovery gauge
+pg_status_in_recovery{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP postgres_exporter_config_last_reload_success_timestamp_seconds Timestamp of the last successful configuration reload.
+# TYPE postgres_exporter_config_last_reload_success_timestamp_seconds gauge
+postgres_exporter_config_last_reload_success_timestamp_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 0
+# HELP connection_stats_connection_count Number of active connections
+# TYPE connection_stats_connection_count gauge
+connection_stats_connection_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432",username="authenticator"} 1
+connection_stats_connection_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432",username="other"} 1
+connection_stats_connection_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432",username="supabase_admin"} 1
+connection_stats_connection_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432",username="supabase_storage_admin"} 1
+# HELP go_memstats_heap_sys_bytes Number of heap bytes obtained from system.
+# TYPE go_memstats_heap_sys_bytes gauge
+go_memstats_heap_sys_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 7.929856e+06
+# HELP pg_stat_database_temp_bytes_total Temp data written by queries
+# TYPE pg_stat_database_temp_bytes_total counter
+pg_stat_database_temp_bytes_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP postgres_exporter_build_info A metric with a constant '1' value labeled by version, revision, branch, goversion from which postgres_exporter was built, and the goos and goarch for the build.
+# TYPE postgres_exporter_build_info gauge
+postgres_exporter_build_info{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",branch="HEAD",goarch="arm64",goos="linux",goversion="go1.21.3",revision="68c176b8833b7580bf847cecf60f8e0ad5923f9a",tags="unknown",version="0.15.0"} 1
+# HELP realtime_postgres_changes_total_subscriptions Total subscription records listening for Postgres changes
+# TYPE realtime_postgres_changes_total_subscriptions gauge
+realtime_postgres_changes_total_subscriptions{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP auth_users_user_count Estimated number of users in the project db
+# TYPE auth_users_user_count gauge
+auth_users_user_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} -1
+# HELP go_memstats_lookups_total Total number of pointer lookups.
+# TYPE go_memstats_lookups_total counter
+go_memstats_lookups_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 0
+# HELP go_memstats_mspan_sys_bytes Number of bytes used for mspan structures obtained from system.
+# TYPE go_memstats_mspan_sys_bytes gauge
+go_memstats_mspan_sys_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 65184
+# HELP pg_exporter_last_scrape_error Whether the last scrape of metrics from PostgreSQL resulted in an error (1 for error, 0 for success).
+# TYPE pg_exporter_last_scrape_error gauge
+pg_exporter_last_scrape_error{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 0
+# HELP pg_settings_default_transaction_read_only Default transaction mode set to read only
+# TYPE pg_settings_default_transaction_read_only gauge
+pg_settings_default_transaction_read_only{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP pg_stat_bgwriter_checkpoint_sync_time_total Time spent synchronizing checkpoint files to disk
+# TYPE pg_stat_bgwriter_checkpoint_sync_time_total counter
+pg_stat_bgwriter_checkpoint_sync_time_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 85
+# HELP pg_stat_bgwriter_checkpoints_timed_total Scheduled checkpoints performed
+# TYPE pg_stat_bgwriter_checkpoints_timed_total counter
+pg_stat_bgwriter_checkpoints_timed_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 4
+# HELP process_virtual_memory_max_bytes Maximum amount of virtual memory available in bytes.
+# TYPE process_virtual_memory_max_bytes gauge
+process_virtual_memory_max_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 1.8446744073709552e+19
+# HELP go_memstats_buck_hash_sys_bytes Number of bytes used by the profiling bucket hash table.
+# TYPE go_memstats_buck_hash_sys_bytes gauge
+go_memstats_buck_hash_sys_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 5048
+# HELP pg_database_size_bytes Disk space used by the database
+# TYPE pg_database_size_bytes gauge
+pg_database_size_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",datname="postgres"} 1.0802867e+07
+pg_database_size_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",datname="template0"} 7.520783e+06
+pg_database_size_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",datname="template1"} 7.755443e+06
+# HELP pg_scrape_collector_success postgres_exporter: Whether a collector succeeded.
+# TYPE pg_scrape_collector_success gauge
+pg_scrape_collector_success{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",collector="database"} 1
+pg_scrape_collector_success{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",collector="database_wraparound"} 1
+# HELP pg_stat_database_most_recent_reset The most recent time one of the databases had its statistics reset
+# TYPE pg_stat_database_most_recent_reset counter
+pg_stat_database_most_recent_reset{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 1.790964075e+09
+# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 1.79259808372e+09
+# HELP process_virtual_memory_bytes Virtual memory size in bytes.
+# TYPE process_virtual_memory_bytes gauge
+process_virtual_memory_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 1.26672896e+09
+# HELP go_memstats_other_sys_bytes Number of bytes used for other system allocations.
+# TYPE go_memstats_other_sys_bytes gauge
+go_memstats_other_sys_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 507080
+# HELP go_threads Number of OS threads created.
+# TYPE go_threads gauge
+go_threads{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 6
+# HELP pg_stat_bgwriter_maxwritten_clean_total Number of times bg writer stopped a cleaning scan because it had written too many buffers
+# TYPE pg_stat_bgwriter_maxwritten_clean_total counter
+pg_stat_bgwriter_maxwritten_clean_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP pg_stat_database_conflicts_confl_tablespace_total Queries cancelled due to dropped tablespaces
+# TYPE pg_stat_database_conflicts_confl_tablespace_total counter
+pg_stat_database_conflicts_confl_tablespace_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP pg_stat_database_tup_fetched_total Rows fetched by queries
+# TYPE pg_stat_database_tup_fetched_total counter
+pg_stat_database_tup_fetched_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 141539
+# HELP go_memstats_gc_sys_bytes Number of bytes used for garbage collection system metadata.
+# TYPE go_memstats_gc_sys_bytes gauge
+go_memstats_gc_sys_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 3.837952e+06
+# HELP pg_stat_bgwriter_buffers_checkpoint_total Buffers written during checkpoints
+# TYPE pg_stat_bgwriter_buffers_checkpoint_total counter
+pg_stat_bgwriter_buffers_checkpoint_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 851
+# HELP pg_stat_database_conflicts_total Queries canceled due to conflicts with recovery
+# TYPE pg_stat_database_conflicts_total counter
+pg_stat_database_conflicts_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP go_memstats_mcache_inuse_bytes Number of bytes in use by mcache structures.
+# TYPE go_memstats_mcache_inuse_bytes gauge
+go_memstats_mcache_inuse_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 2400
+# HELP go_memstats_sys_bytes Number of bytes obtained from system.
+# TYPE go_memstats_sys_bytes gauge
+go_memstats_sys_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 1.2819472e+07
+# HELP pg_stat_bgwriter_checkpoint_write_time_total Time spent writing checkpoint files to disk
+# TYPE pg_stat_bgwriter_checkpoint_write_time_total counter
+pg_stat_bgwriter_checkpoint_write_time_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 31694
+# HELP pg_stat_database_conflicts_confl_deadlock_total Queries cancelled due to deadlocks
+# TYPE pg_stat_database_conflicts_confl_deadlock_total counter
+pg_stat_database_conflicts_confl_deadlock_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP pg_stat_database_tup_updated_total Rows updated
+# TYPE pg_stat_database_tup_updated_total counter
+pg_stat_database_tup_updated_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 1677
+# HELP pg_stat_database_xact_commit_total Transactions committed
+# TYPE pg_stat_database_xact_commit_total counter
+pg_stat_database_xact_commit_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 2487
+# HELP pg_up Whether the last scrape of metrics from PostgreSQL was able to connect to the server (1 for yes, 0 for no).
+# TYPE pg_up gauge
+pg_up{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 1
+# HELP supabase_usage_metrics_user_queries_total The total number of user queries executed
+# TYPE supabase_usage_metrics_user_queries_total counter
+supabase_usage_metrics_user_queries_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 179
+# HELP pg_stat_bgwriter_checkpoints_req_total Requested checkpoints performed
+# TYPE pg_stat_bgwriter_checkpoints_req_total counter
+pg_stat_bgwriter_checkpoints_req_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 4
+# HELP go_memstats_heap_alloc_bytes Number of heap bytes allocated and still in use.
+# TYPE go_memstats_heap_alloc_bytes gauge
+go_memstats_heap_alloc_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 1.497936e+06
+# HELP go_memstats_heap_inuse_bytes Number of heap bytes that are in use.
+# TYPE go_memstats_heap_inuse_bytes gauge
+go_memstats_heap_inuse_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 2.875392e+06
+# HELP go_memstats_mspan_inuse_bytes Number of bytes in use by mspan structures.
+# TYPE go_memstats_mspan_inuse_bytes gauge
+go_memstats_mspan_inuse_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 56112
+# HELP max_connections_connection_count Maximum allowed connections
+# TYPE max_connections_connection_count gauge
+max_connections_connection_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 60
+# HELP pg_exporter_user_queries_load_error Whether the user queries file was loaded and parsed successfully (1 for error, 0 for success).
+# TYPE pg_exporter_user_queries_load_error gauge
+pg_exporter_user_queries_load_error{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",filename="/opt/postgres_exporter/queries.yml",hashsum="9dbbdf5c2e247c87bdf513d23bb517c5e0ad513b4e72bbd16a94f3c737792e5c"} 0
+# HELP pg_stat_database_temp_files_total Temp files created by queries
+# TYPE pg_stat_database_temp_files_total counter
+pg_stat_database_temp_files_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP pg_stat_database_tup_inserted_total Rows inserted
+# TYPE pg_stat_database_tup_inserted_total counter
+pg_stat_database_tup_inserted_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 22438
+# HELP pg_exporter_scrapes_total Total number of times PostgreSQL was scraped for metrics.
+# TYPE pg_exporter_scrapes_total counter
+pg_exporter_scrapes_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 25
+# HELP go_memstats_stack_sys_bytes Number of bytes obtained from system for stack allocator.
+# TYPE go_memstats_stack_sys_bytes gauge
+go_memstats_stack_sys_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 458752
+# HELP go_gc_duration_seconds A summary of the pause duration of garbage collection cycles.
+# TYPE go_gc_duration_seconds summary
+go_gc_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",quantile="0"} 6.8463e-05
+go_gc_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",quantile="0.25"} 0.000152015
+go_gc_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",quantile="0.5"} 0.000554142
+go_gc_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",quantile="0.75"} 0.000930757
+go_gc_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",quantile="1"} 0.005995035
+go_gc_duration_seconds_sum{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 0.010692085
+go_gc_duration_seconds_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 10
+# HELP go_memstats_heap_idle_bytes Number of heap bytes waiting to be used.
+# TYPE go_memstats_heap_idle_bytes gauge
+go_memstats_heap_idle_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 5.054464e+06
+# HELP go_memstats_mallocs_total Total number of mallocs.
+# TYPE go_memstats_mallocs_total counter
+go_memstats_mallocs_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 70590
+# HELP pg_stat_replication_replay_lag Max replay lag
+# TYPE pg_stat_replication_replay_lag gauge
+pg_stat_replication_replay_lag{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} NaN
+# HELP pg_wal_size_mb Disk space used by WAL files
+# TYPE pg_wal_size_mb gauge
+pg_wal_size_mb{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 80.00034618377686
+# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.
+# TYPE process_cpu_seconds_total counter
+process_cpu_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 0.21
+# HELP go_memstats_stack_inuse_bytes Number of bytes in use by the stack allocator.
+# TYPE go_memstats_stack_inuse_bytes gauge
+go_memstats_stack_inuse_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 458752
+# HELP pg_stat_bgwriter_stats_reset Most recent stat reset time
+# TYPE pg_stat_bgwriter_stats_reset counter
+pg_stat_bgwriter_stats_reset{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 1.790963981e+09
+# HELP pg_stat_database_blks_hit_total Disk blocks found in buffer cache
+# TYPE pg_stat_database_blks_hit_total counter
+pg_stat_database_blks_hit_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 267022
+# HELP pg_stat_database_conflicts_confl_snapshot_total Queries cancelled due to old snapshots
+# TYPE pg_stat_database_conflicts_confl_snapshot_total counter
+pg_stat_database_conflicts_confl_snapshot_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP pg_stat_database_deadlocks_total Deadlocks detected
+# TYPE pg_stat_database_deadlocks_total counter
+pg_stat_database_deadlocks_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP pg_stat_database_xact_rollback_total Transactions rolled back
+# TYPE pg_stat_database_xact_rollback_total counter
+pg_stat_database_xact_rollback_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 6
+# HELP pg_stat_replication_send_lag Max send lag
+# TYPE pg_stat_replication_send_lag gauge
+pg_stat_replication_send_lag{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} NaN
+# HELP postgres_exporter_config_last_reload_successful Postgres exporter config loaded successfully.
+# TYPE postgres_exporter_config_last_reload_successful gauge
+postgres_exporter_config_last_reload_successful{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 0
+# HELP direct_connection_stats_connection_count Number of active connections
+# TYPE direct_connection_stats_connection_count gauge
+direct_connection_stats_connection_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432",username="dashboard"} 0
+direct_connection_stats_connection_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432",username="direct"} 0
+direct_connection_stats_connection_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432",username="pgbouncer"} 0
+# HELP go_memstats_next_gc_bytes Number of heap bytes when next garbage collection will take place.
+# TYPE go_memstats_next_gc_bytes gauge
+go_memstats_next_gc_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 4.194304e+06
+# HELP pg_database_size_mb Disk space used by the database
+# TYPE pg_database_size_mb gauge
+pg_database_size_mb{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 24.87096118927002
+# HELP pg_stat_activity_xact_runtime Transaction Runtime
+# TYPE pg_stat_activity_xact_runtime gauge
+pg_stat_activity_xact_runtime{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP pg_stat_bgwriter_buffers_alloc_total Buffers allocated
+# TYPE pg_stat_bgwriter_buffers_alloc_total counter
+pg_stat_bgwriter_buffers_alloc_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 2776
+# HELP pg_stat_database_conflicts_confl_bufferpin_total Queries cancelled due to pinned buffers
+# TYPE pg_stat_database_conflicts_confl_bufferpin_total counter
+pg_stat_database_conflicts_confl_bufferpin_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP physical_replication_lag_is_wal_replay_paused Check if WAL replay has been paused
+# TYPE physical_replication_lag_is_wal_replay_paused gauge
+physical_replication_lag_is_wal_replay_paused{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP physical_replication_lag_physical_replication_lag_seconds Physical replication lag in seconds
+# TYPE physical_replication_lag_physical_replication_lag_seconds gauge
+physical_replication_lag_physical_replication_lag_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP pg_ls_archive_statusdir_wal_pending_count Number of not yet archived WAL files
+# TYPE pg_ls_archive_statusdir_wal_pending_count counter
+pg_ls_archive_statusdir_wal_pending_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP pg_stat_database_num_backends The number of active backends
+# TYPE pg_stat_database_num_backends gauge
+pg_stat_database_num_backends{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 5
+# HELP pg_stat_database_tup_deleted_total Rows deleted
+# TYPE pg_stat_database_tup_deleted_total counter
+pg_stat_database_tup_deleted_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 829
+# HELP promhttp_metric_handler_requests_in_flight Current number of scrapes being served.
+# TYPE promhttp_metric_handler_requests_in_flight gauge
+promhttp_metric_handler_requests_in_flight{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 1
+# HELP replication_slots_max_lag_bytes Max Replication Lag
+# TYPE replication_slots_max_lag_bytes gauge
+replication_slots_max_lag_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} NaN
+# HELP go_memstats_frees_total Total number of frees.
+# TYPE go_memstats_frees_total counter
+go_memstats_frees_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 66774
+# HELP pg_database_wraparound_age_datminmxid_seconds Age of the oldest multi-transaction ID that has been replaced with a transaction ID.
+# TYPE pg_database_wraparound_age_datminmxid_seconds gauge
+pg_database_wraparound_age_datminmxid_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",datname="postgres"} 0
+pg_database_wraparound_age_datminmxid_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",datname="template1"} 0
+# HELP pg_exporter_last_scrape_duration_seconds Duration of the last scrape of metrics from PostgreSQL.
+# TYPE pg_exporter_last_scrape_duration_seconds gauge
+pg_exporter_last_scrape_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 0.011295496
+# HELP pg_stat_statements_total_time_seconds Total time spent, in seconds
+# TYPE pg_stat_statements_total_time_seconds counter
+pg_stat_statements_total_time_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 2.8805169550000036
+# HELP physical_replication_lag_is_connected_to_primary Monitor connection to the primary database
+# TYPE physical_replication_lag_is_connected_to_primary gauge
+physical_replication_lag_is_connected_to_primary{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 8.953856e+06
+# HELP go_memstats_alloc_bytes_total Total number of bytes allocated, even if freed.
+# TYPE go_memstats_alloc_bytes_total counter
+go_memstats_alloc_bytes_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 1.144868e+07
+# HELP pg_stat_bgwriter_buffers_clean_total Buffers written by bg writter
+# TYPE pg_stat_bgwriter_buffers_clean_total counter
+pg_stat_bgwriter_buffers_clean_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP process_max_fds Maximum number of open file descriptors.
+# TYPE process_max_fds gauge
+process_max_fds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 524288
+# HELP promhttp_metric_handler_requests_total Total number of scrapes by HTTP status code.
+# TYPE promhttp_metric_handler_requests_total counter
+promhttp_metric_handler_requests_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",code="200"} 24
+promhttp_metric_handler_requests_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",code="500"} 0
+promhttp_metric_handler_requests_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",code="503"} 0
+# HELP realtime_postgres_changes_client_subscriptions Client subscriptions listening for Postgres changes
+# TYPE realtime_postgres_changes_client_subscriptions gauge
+realtime_postgres_changes_client_subscriptions{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP go_info Information about the Go environment.
+# TYPE go_info gauge
+go_info{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",version="go1.21.3"} 1
+# HELP pg_scrape_collector_duration_seconds postgres_exporter: Duration of a collector scrape.
+# TYPE pg_scrape_collector_duration_seconds gauge
+pg_scrape_collector_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",collector="database"} 0.005667847
+pg_scrape_collector_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",collector="database_wraparound"} 0.001344146
+# HELP pg_stat_database_blks_read_total Number of disk blocks read
+# TYPE pg_stat_database_blks_read_total counter
+pg_stat_database_blks_read_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 2516
+# HELP process_open_fds Number of open file descriptors.
+# TYPE process_open_fds gauge
+process_open_fds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 9
+# HELP go_memstats_alloc_bytes Number of bytes allocated and still in use.
+# TYPE go_memstats_alloc_bytes gauge
+go_memstats_alloc_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 1.497936e+06
+# HELP go_memstats_heap_objects Number of allocated objects.
+# TYPE go_memstats_heap_objects gauge
+go_memstats_heap_objects{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 3816
+# HELP pg_database_wraparound_age_datfrozenxid_seconds Age of the oldest transaction ID that has not been frozen.
+# TYPE pg_database_wraparound_age_datfrozenxid_seconds gauge
+pg_database_wraparound_age_datfrozenxid_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",datname="postgres"} 485
+pg_database_wraparound_age_datfrozenxid_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",datname="template1"} 485
+# HELP pg_stat_database_conflicts_confl_lock_total Queries cancelled due to lock timeouts
+# TYPE pg_stat_database_conflicts_confl_lock_total counter
+pg_stat_database_conflicts_confl_lock_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 0
+# HELP pg_stat_statements_total_queries Number of times executed
+# TYPE pg_stat_statements_total_queries counter
+pg_stat_statements_total_queries{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql",server="localhost:5432"} 1449
+# HELP go_goroutines Number of goroutines that currently exist.
+# TYPE go_goroutines gauge
+go_goroutines{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 8
+# HELP go_memstats_heap_released_bytes Number of heap bytes released to OS.
+# TYPE go_memstats_heap_released_bytes gauge
+go_memstats_heap_released_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 4.325376e+06
+# HELP go_memstats_last_gc_time_seconds Number of seconds since 1970 of last garbage collection.
+# TYPE go_memstats_last_gc_time_seconds gauge
+go_memstats_last_gc_time_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 1.7925994370755508e+09
+# HELP go_memstats_mcache_sys_bytes Number of bytes used for mcache structures obtained from system.
+# TYPE go_memstats_mcache_sys_bytes gauge
+go_memstats_mcache_sys_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgresql"} 15600
+# HELP pgrst_jwt_cache_evictions_total The total number of JWT cache evictions
+# TYPE pgrst_jwt_cache_evictions_total counter
+pgrst_jwt_cache_evictions_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgrest"} 0
+# HELP pgrst_jwt_cache_requests_total The total number of JWT cache lookups
+# TYPE pgrst_jwt_cache_requests_total counter
+pgrst_jwt_cache_requests_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgrest"} 0
+# HELP pgrst_schema_cache_query_time_seconds The query time in seconds of the last schema cache load
+# TYPE pgrst_schema_cache_query_time_seconds gauge
+pgrst_schema_cache_query_time_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgrest"} 5.964034999919932
+# HELP pgrst_db_pool_waiting Requests waiting to acquire a pool connection
+# TYPE pgrst_db_pool_waiting gauge
+pgrst_db_pool_waiting{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgrest"} 0
+# HELP pgrst_db_pool_available Available connections in the pool
+# TYPE pgrst_db_pool_available gauge
+pgrst_db_pool_available{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgrest"} 0
+# HELP pgrst_db_pool_timeouts_total The total number of pool connection timeouts
+# TYPE pgrst_db_pool_timeouts_total counter
+pgrst_db_pool_timeouts_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgrest"} 0
+# HELP pgrst_jwt_cache_hits_total The total number of JWT cache hits
+# TYPE pgrst_jwt_cache_hits_total counter
+pgrst_jwt_cache_hits_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgrest"} 0
+# HELP pgrst_schema_cache_loads_total The total number of times the schema cache was loaded
+# TYPE pgrst_schema_cache_loads_total counter
+pgrst_schema_cache_loads_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgrest",status="SUCCESS"} 6
+# HELP pgrst_db_pool_max Max pool connections
+# TYPE pgrst_db_pool_max gauge
+pgrst_db_pool_max{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="postgrest"} 10
+# HELP go_memstats_lookups_total Total number of pointer lookups.
+# TYPE go_memstats_lookups_total counter
+go_memstats_lookups_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 0
+# HELP go_memstats_stack_sys_bytes Number of bytes obtained from system for stack allocator.
+# TYPE go_memstats_stack_sys_bytes gauge
+go_memstats_stack_sys_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 884736
+# HELP go_memstats_sys_bytes Number of bytes obtained from system.
+# TYPE go_memstats_sys_bytes gauge
+go_memstats_sys_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 1.8454792e+07
+# HELP process_runtime_go_gc_pause_total_ns_total Cumulative nanoseconds in GC stop-the-world pauses since the program started
+# TYPE process_runtime_go_gc_pause_total_ns_total counter
+process_runtime_go_gc_pause_total_ns_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0"} 1.1774841e+07
+# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 1.79259808361e+09
+# HELP promhttp_metric_handler_requests_in_flight Current number of scrapes being served.
+# TYPE promhttp_metric_handler_requests_in_flight gauge
+promhttp_metric_handler_requests_in_flight{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 1
+# HELP db_sql_connection_wait_total The total number of connections waited for
+# TYPE db_sql_connection_wait_total counter
+db_sql_connection_wait_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0"} 0
+# HELP gotrue_running Whether GoTrue is running (always 1)
+# TYPE gotrue_running gauge
+gotrue_running{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="gotrue",otel_scope_version=""} 1
+# HELP process_runtime_go_mem_lookups_total Number of pointer lookups performed by the runtime
+# TYPE process_runtime_go_mem_lookups_total counter
+process_runtime_go_mem_lookups_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0"} 0
+# HELP promhttp_metric_handler_requests_total Total number of scrapes by HTTP status code.
+# TYPE promhttp_metric_handler_requests_total counter
+promhttp_metric_handler_requests_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",code="200"} 24
+promhttp_metric_handler_requests_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",code="500"} 0
+promhttp_metric_handler_requests_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",code="503"} 0
+# HELP runtime_uptime_milliseconds_total Milliseconds since application was initialized
+# TYPE runtime_uptime_milliseconds_total counter
+runtime_uptime_milliseconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0"} 1.398755e+06
+# HELP process_max_fds Maximum number of open file descriptors.
+# TYPE process_max_fds gauge
+process_max_fds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 524287
+# HELP process_runtime_go_goroutines Number of goroutines that currently exist
+# TYPE process_runtime_go_goroutines gauge
+process_runtime_go_goroutines{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0"} 55
+# HELP process_runtime_go_mem_live_objects Number of live objects is the number of cumulative Mallocs - Frees
+# TYPE process_runtime_go_mem_live_objects gauge
+process_runtime_go_mem_live_objects{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0"} 16234
+# HELP db_sql_latency_milliseconds The latency of calls in milliseconds
+# TYPE db_sql_latency_milliseconds histogram
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.begin_tx",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="0"} 0
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.begin_tx",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="5"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.begin_tx",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="10"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.begin_tx",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="25"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.begin_tx",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="50"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.begin_tx",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="75"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.begin_tx",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="100"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.begin_tx",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="250"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.begin_tx",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="500"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.begin_tx",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="750"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.begin_tx",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="1000"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.begin_tx",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="2500"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.begin_tx",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="5000"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.begin_tx",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="7500"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.begin_tx",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="10000"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.begin_tx",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="+Inf"} 1
+db_sql_latency_milliseconds_sum{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.begin_tx",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok"} 0.235207
+db_sql_latency_milliseconds_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.begin_tx",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.query",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="0"} 0
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.query",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="5"} 0
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.query",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="10"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.query",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="25"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.query",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="50"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.query",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="75"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.query",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="100"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.query",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="250"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.query",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="500"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.query",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="750"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.query",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="1000"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.query",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="2500"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.query",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="5000"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.query",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="7500"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.query",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="10000"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.query",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="+Inf"} 1
+db_sql_latency_milliseconds_sum{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.query",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok"} 9.906205
+db_sql_latency_milliseconds_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.conn.query",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.connector.connect",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="0"} 0
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.connector.connect",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="5"} 0
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.connector.connect",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="10"} 0
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.connector.connect",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="25"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.connector.connect",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="50"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.connector.connect",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="75"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.connector.connect",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="100"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.connector.connect",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="250"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.connector.connect",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="500"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.connector.connect",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="750"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.connector.connect",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="1000"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.connector.connect",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="2500"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.connector.connect",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="5000"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.connector.connect",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="7500"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.connector.connect",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="10000"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.connector.connect",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="+Inf"} 1
+db_sql_latency_milliseconds_sum{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.connector.connect",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok"} 10.071535
+db_sql_latency_milliseconds_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.connector.connect",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.rows",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="0"} 0
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.rows",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="5"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.rows",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="10"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.rows",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="25"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.rows",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="50"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.rows",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="75"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.rows",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="100"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.rows",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="250"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.rows",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="500"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.rows",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="750"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.rows",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="1000"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.rows",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="2500"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.rows",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="5000"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.rows",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="7500"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.rows",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="10000"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.rows",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="+Inf"} 1
+db_sql_latency_milliseconds_sum{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.rows",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok"} 0.035742
+db_sql_latency_milliseconds_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.rows",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.tx.commit",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="0"} 0
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.tx.commit",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="5"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.tx.commit",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="10"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.tx.commit",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="25"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.tx.commit",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="50"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.tx.commit",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="75"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.tx.commit",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="100"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.tx.commit",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="250"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.tx.commit",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="500"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.tx.commit",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="750"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.tx.commit",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="1000"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.tx.commit",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="2500"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.tx.commit",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="5000"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.tx.commit",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="7500"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.tx.commit",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="10000"} 1
+db_sql_latency_milliseconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.tx.commit",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok",le="+Inf"} 1
+db_sql_latency_milliseconds_sum{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.tx.commit",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok"} 0.15568
+db_sql_latency_milliseconds_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",method="sql.tx.commit",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="ok"} 1
+# HELP go_memstats_alloc_bytes Number of bytes allocated and still in use.
+# TYPE go_memstats_alloc_bytes gauge
+go_memstats_alloc_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 4.901144e+06
+# HELP db_sql_connection_closed_max_idle_total The total number of connections closed due to SetMaxIdleConns
+# TYPE db_sql_connection_closed_max_idle_total counter
+db_sql_connection_closed_max_idle_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0"} 0
+# HELP db_sql_connection_max_open Maximum number of open connections to the database
+# TYPE db_sql_connection_max_open gauge
+db_sql_connection_max_open{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0"} 10
+# HELP go_goroutines Number of goroutines that currently exist.
+# TYPE go_goroutines gauge
+go_goroutines{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 57
+# HELP go_memstats_frees_total Total number of frees.
+# TYPE go_memstats_frees_total counter
+go_memstats_frees_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 115174
+# HELP http_server_request_body_size_bytes Size of HTTP server request bodies.
+# TYPE http_server_request_body_size_bytes histogram
+http_server_request_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="0"} 1
+http_server_request_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="5"} 1
+http_server_request_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="10"} 1
+http_server_request_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="25"} 1
+http_server_request_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="50"} 1
+http_server_request_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="75"} 1
+http_server_request_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="100"} 1
+http_server_request_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="250"} 1
+http_server_request_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="500"} 1
+http_server_request_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="750"} 1
+http_server_request_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="1000"} 1
+http_server_request_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="2500"} 1
+http_server_request_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="5000"} 1
+http_server_request_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="7500"} 1
+http_server_request_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="10000"} 1
+http_server_request_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="+Inf"} 1
+http_server_request_body_size_bytes_sum{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http"} 0
+http_server_request_body_size_bytes_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http"} 1
+# HELP otel_scope_info Instrumentation Scope metadata
+# TYPE otel_scope_info gauge
+otel_scope_info{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0"} 1
+otel_scope_info{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0"} 1
+otel_scope_info{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0"} 1
+otel_scope_info{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="gotrue",otel_scope_version=""} 1
+# HELP process_runtime_go_mem_heap_alloc_bytes Bytes of allocated heap objects
+# TYPE process_runtime_go_mem_heap_alloc_bytes gauge
+process_runtime_go_mem_heap_alloc_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0"} 4.984176e+06
+# HELP process_virtual_memory_bytes Virtual memory size in bytes.
+# TYPE process_virtual_memory_bytes gauge
+process_virtual_memory_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 1.32528128e+09
+# HELP go_info Information about the Go environment.
+# TYPE go_info gauge
+go_info{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",version="go1.27.0"} 1
+# HELP go_memstats_mspan_inuse_bytes Number of bytes in use by mspan structures.
+# TYPE go_memstats_mspan_inuse_bytes gauge
+go_memstats_mspan_inuse_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 101120
+# HELP go_memstats_other_sys_bytes Number of bytes used for other system allocations.
+# TYPE go_memstats_other_sys_bytes gauge
+go_memstats_other_sys_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 802938
+# HELP go_threads Number of OS threads created.
+# TYPE go_threads gauge
+go_threads{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 8
+# HELP http_status_codes_total Number of returned HTTP status codes
+# TYPE http_status_codes_total counter
+http_status_codes_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",code="200",http_route="/health",otel_scope_name="gotrue",otel_scope_version=""} 1
+# HELP target_info Target metadata
+# TYPE target_info gauge
+target_info{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",service_name="unknown_service:auth",telemetry_sdk_language="go",telemetry_sdk_name="opentelemetry",telemetry_sdk_version="1.44.0"} 1
+# HELP go_memstats_heap_objects Number of allocated objects.
+# TYPE go_memstats_heap_objects gauge
+go_memstats_heap_objects{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 15672
+# HELP process_runtime_go_mem_heap_objects Number of allocated heap objects
+# TYPE process_runtime_go_mem_heap_objects gauge
+process_runtime_go_mem_heap_objects{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0"} 16234
+# HELP go_memstats_heap_sys_bytes Number of heap bytes obtained from system.
+# TYPE go_memstats_heap_sys_bytes gauge
+go_memstats_heap_sys_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 1.1698176e+07
+# HELP go_memstats_mspan_sys_bytes Number of bytes used for mspan structures obtained from system.
+# TYPE go_memstats_mspan_sys_bytes gauge
+go_memstats_mspan_sys_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 114240
+# HELP process_open_fds Number of open file descriptors.
+# TYPE process_open_fds gauge
+process_open_fds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 10
+# HELP process_virtual_memory_max_bytes Maximum amount of virtual memory available in bytes.
+# TYPE process_virtual_memory_max_bytes gauge
+process_virtual_memory_max_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 1.8446744073709552e+19
+# HELP go_memstats_mcache_inuse_bytes Number of bytes in use by mcache structures.
+# TYPE go_memstats_mcache_inuse_bytes gauge
+go_memstats_mcache_inuse_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 4592
+# HELP process_runtime_go_cgo_calls Number of cgo calls made by the current process
+# TYPE process_runtime_go_cgo_calls gauge
+process_runtime_go_cgo_calls{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0"} 0
+# HELP db_sql_connection_closed_max_idle_time_total The total number of connections closed due to SetConnMaxIdleTime
+# TYPE db_sql_connection_closed_max_idle_time_total counter
+db_sql_connection_closed_max_idle_time_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0"} 1
+# HELP db_sql_connection_open The number of established connections both in use and idle
+# TYPE db_sql_connection_open gauge
+db_sql_connection_open{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="idle"} 0
+db_sql_connection_open{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0",status="inuse"} 0
+# HELP db_sql_connection_wait_duration_milliseconds_total The total time blocked waiting for a new connection
+# TYPE db_sql_connection_wait_duration_milliseconds_total counter
+db_sql_connection_wait_duration_milliseconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0"} 0
+# HELP global_auth_version_minor Set to this auth servers minor version number.
+# TYPE global_auth_version_minor gauge
+global_auth_version_minor{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="gotrue",otel_scope_version=""} 197
+# HELP global_auth_version_patch Set to this auth servers patch version number.
+# TYPE global_auth_version_patch gauge
+global_auth_version_patch{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="gotrue",otel_scope_version=""} 0
+# HELP global_auth_version_rc Set to this auth servers rc version number.
+# TYPE global_auth_version_rc gauge
+global_auth_version_rc{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="gotrue",otel_scope_version=""} 0
+# HELP go_memstats_mallocs_total Total number of mallocs.
+# TYPE go_memstats_mallocs_total counter
+go_memstats_mallocs_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 130846
+# HELP go_memstats_mcache_sys_bytes Number of bytes used for mcache structures obtained from system.
+# TYPE go_memstats_mcache_sys_bytes gauge
+go_memstats_mcache_sys_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 16072
+# HELP global_auth_version_major Set to this auth servers major version number.
+# TYPE global_auth_version_major gauge
+global_auth_version_major{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="gotrue",otel_scope_version=""} 2
+# HELP go_memstats_gc_sys_bytes Number of bytes used for garbage collection system metadata.
+# TYPE go_memstats_gc_sys_bytes gauge
+go_memstats_gc_sys_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 3.48184e+06
+# HELP http_server_response_body_size_bytes Size of HTTP server response bodies.
+# TYPE http_server_response_body_size_bytes histogram
+http_server_response_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="0"} 0
+http_server_response_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="5"} 0
+http_server_response_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="10"} 0
+http_server_response_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="25"} 0
+http_server_response_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="50"} 0
+http_server_response_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="75"} 0
+http_server_response_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="100"} 0
+http_server_response_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="250"} 1
+http_server_response_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="500"} 1
+http_server_response_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="750"} 1
+http_server_response_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="1000"} 1
+http_server_response_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="2500"} 1
+http_server_response_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="5000"} 1
+http_server_response_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="7500"} 1
+http_server_response_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="10000"} 1
+http_server_response_body_size_bytes_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="+Inf"} 1
+http_server_response_body_size_bytes_sum{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http"} 107
+http_server_response_body_size_bytes_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http"} 1
+# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.
+# TYPE process_cpu_seconds_total counter
+process_cpu_seconds_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 1.56
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 1.6437248e+07
+# HELP process_runtime_go_mem_heap_idle_bytes Bytes in idle (unused) spans
+# TYPE process_runtime_go_mem_heap_idle_bytes gauge
+process_runtime_go_mem_heap_idle_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0"} 4.5056e+06
+# HELP process_runtime_go_mem_heap_inuse_bytes Bytes in in-use spans
+# TYPE process_runtime_go_mem_heap_inuse_bytes gauge
+process_runtime_go_mem_heap_inuse_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0"} 7.192576e+06
+# HELP go_memstats_heap_released_bytes Number of heap bytes released to OS.
+# TYPE go_memstats_heap_released_bytes gauge
+go_memstats_heap_released_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 3.137536e+06
+# HELP db_sql_connection_closed_max_lifetime_total The total number of connections closed due to SetConnMaxLifetime
+# TYPE db_sql_connection_closed_max_lifetime_total counter
+db_sql_connection_closed_max_lifetime_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="github.com/XSAM/otelsql",otel_scope_version="0.26.0"} 0
+# HELP go_gc_duration_seconds A summary of the pause duration of garbage collection cycles.
+# TYPE go_gc_duration_seconds summary
+go_gc_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",quantile="0"} 6.0515e-05
+go_gc_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",quantile="0.25"} 0.000253681
+go_gc_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",quantile="0.5"} 0.00061139
+go_gc_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",quantile="0.75"} 0.000865889
+go_gc_duration_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",quantile="1"} 0.001918224
+go_gc_duration_seconds_sum{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 0.011774841
+go_gc_duration_seconds_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 18
+# HELP go_memstats_buck_hash_sys_bytes Number of bytes used by the profiling bucket hash table.
+# TYPE go_memstats_buck_hash_sys_bytes gauge
+go_memstats_buck_hash_sys_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 1.45679e+06
+# HELP go_memstats_last_gc_time_seconds Number of seconds since 1970 of last garbage collection.
+# TYPE go_memstats_last_gc_time_seconds gauge
+go_memstats_last_gc_time_seconds{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 1.7925994723854568e+09
+# HELP go_memstats_next_gc_bytes Number of heap bytes when next garbage collection will take place.
+# TYPE go_memstats_next_gc_bytes gauge
+go_memstats_next_gc_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 1.0350266e+07
+# HELP go_memstats_stack_inuse_bytes Number of bytes in use by the stack allocator.
+# TYPE go_memstats_stack_inuse_bytes gauge
+go_memstats_stack_inuse_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 884736
+# HELP process_runtime_go_mem_heap_released_bytes Bytes of idle spans whose physical memory has been returned to the OS
+# TYPE process_runtime_go_mem_heap_released_bytes gauge
+process_runtime_go_mem_heap_released_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0"} 3.137536e+06
+# HELP process_runtime_go_mem_heap_sys_bytes Bytes of heap memory obtained from the OS
+# TYPE process_runtime_go_mem_heap_sys_bytes gauge
+process_runtime_go_mem_heap_sys_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0"} 1.1698176e+07
+# HELP go_memstats_alloc_bytes_total Total number of bytes allocated, even if freed.
+# TYPE go_memstats_alloc_bytes_total counter
+go_memstats_alloc_bytes_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 2.5775048e+07
+# HELP http_server_request_duration_seconds Duration of HTTP server requests.
+# TYPE http_server_request_duration_seconds histogram
+http_server_request_duration_seconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="0.005"} 0
+http_server_request_duration_seconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="0.01"} 0
+http_server_request_duration_seconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="0.025"} 1
+http_server_request_duration_seconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="0.05"} 1
+http_server_request_duration_seconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="0.075"} 1
+http_server_request_duration_seconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="0.1"} 1
+http_server_request_duration_seconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="0.25"} 1
+http_server_request_duration_seconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="0.5"} 1
+http_server_request_duration_seconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="0.75"} 1
+http_server_request_duration_seconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="1"} 1
+http_server_request_duration_seconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="2.5"} 1
+http_server_request_duration_seconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="5"} 1
+http_server_request_duration_seconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="7.5"} 1
+http_server_request_duration_seconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="10"} 1
+http_server_request_duration_seconds_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http",le="+Inf"} 1
+http_server_request_duration_seconds_sum{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http"} 0.02061834
+http_server_request_duration_seconds_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",http_request_method="GET",http_response_status_code="200",http_route="/health",network_protocol_name="http",network_protocol_version="1.1",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",otel_scope_version="0.64.0",server_address="abcdefghijklmnopqrst.supabase.co",url_scheme="http"} 1
+# HELP process_runtime_go_gc_count_total Number of completed garbage collection cycles
+# TYPE process_runtime_go_gc_count_total counter
+process_runtime_go_gc_count_total{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0"} 18
+# HELP process_runtime_go_gc_pause_ns Amount of nanoseconds in GC stop-the-world pauses
+# TYPE process_runtime_go_gc_pause_ns histogram
+process_runtime_go_gc_pause_ns_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0",le="0"} 0
+process_runtime_go_gc_pause_ns_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0",le="5"} 0
+process_runtime_go_gc_pause_ns_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0",le="10"} 0
+process_runtime_go_gc_pause_ns_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0",le="25"} 0
+process_runtime_go_gc_pause_ns_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0",le="50"} 0
+process_runtime_go_gc_pause_ns_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0",le="75"} 0
+process_runtime_go_gc_pause_ns_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0",le="100"} 0
+process_runtime_go_gc_pause_ns_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0",le="250"} 0
+process_runtime_go_gc_pause_ns_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0",le="500"} 0
+process_runtime_go_gc_pause_ns_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0",le="750"} 0
+process_runtime_go_gc_pause_ns_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0",le="1000"} 0
+process_runtime_go_gc_pause_ns_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0",le="2500"} 0
+process_runtime_go_gc_pause_ns_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0",le="5000"} 0
+process_runtime_go_gc_pause_ns_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0",le="7500"} 0
+process_runtime_go_gc_pause_ns_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0",le="10000"} 0
+process_runtime_go_gc_pause_ns_bucket{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0",le="+Inf"} 18
+process_runtime_go_gc_pause_ns_sum{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0"} 1.1774841e+07
+process_runtime_go_gc_pause_ns_count{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue",otel_scope_name="go.opentelemetry.io/contrib/instrumentation/runtime",otel_scope_version="0.45.0"} 18
+# HELP go_memstats_heap_alloc_bytes Number of heap bytes allocated and still in use.
+# TYPE go_memstats_heap_alloc_bytes gauge
+go_memstats_heap_alloc_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 4.901144e+06
+# HELP go_memstats_heap_idle_bytes Number of heap bytes waiting to be used.
+# TYPE go_memstats_heap_idle_bytes gauge
+go_memstats_heap_idle_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 4.5056e+06
+# HELP go_memstats_heap_inuse_bytes Number of heap bytes that are in use.
+# TYPE go_memstats_heap_inuse_bytes gauge
+go_memstats_heap_inuse_bytes{supabase_project_ref="abcdefghijklmnopqrst",supabase_identifier="abcdefghijklmnopqrst",service_type="gotrue"} 7.192576e+06

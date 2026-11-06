@@ -1,30 +1,41 @@
-import { HttpApi, OpenApi } from "effect/unstable/httpapi"
+import { HttpApi, OpenApi } from "effect/http-api"
 import { AiModelsInternalApiGroup } from "./ai-models"
 import { AiSessionsInternalApiGroup } from "./ai-sessions"
+import { McpInternalApiGroup } from "./mcp"
 import { AiTriageApiGroup } from "./ai-triage"
 import { BillingApiGroup } from "./billing"
+import { CodeReviewApiGroup } from "./code-review"
 import { DemoApiGroup } from "./demo"
+import { DependencyScanApiGroup } from "./dependency-scan"
 import { DigestApiGroup } from "./digest"
+import { ErrorsApiGroup } from "./errors"
+import { IntegrationsApiGroup } from "./integrations"
+import { OpenRouterKeyApiGroup } from "./openrouter-key"
+import { OrgClickHouseSettingsApiGroup } from "./org-clickhouse-settings"
+import {
+	OrganizationCreationApiGroup,
+	OrganizationRegionApiGroup,
+	OrganizationsApiGroup,
+} from "./organizations"
 import { QueryEngineApiGroup } from "./query-engine"
 import { SessionReplaysInternalApiGroup } from "./session-replay"
-import { V1SchemaErrors, V1UnexpectedErrors } from "./v1-boundary"
+import { UsersInternalApiGroup } from "./users"
+import { ApiSchemaErrors, ApiUnexpectedErrors } from "./api-boundary"
 
 /**
  * The dashboard's private transport.
  *
  * Deliberately a separate `HttpApi` from `MapleApi` rather than another group
- * inside it. Two things follow from the split, and both are the point:
- * `/docs` is generated from `MapleApi`, so these operations stop being
- * published as public API; and the groups here can carry session-only
- * authorization without loosening it for anything else.
+ * inside it, so the groups here carry session-only authorization without
+ * loosening it for anything else. Nothing here appears in the API reference.
  *
  * What belongs here is transport whose request and response shapes are allowed
  * to change with the UI — raw SQL, generic query documents, dashboard-builder
  * facet discovery, infrastructure drill-downs — plus the dashboard-only product
  * workflows (checkout and billing controls, digest subscriptions, demo seeding,
- * AI-triage settings) that were never
- * public API and only ever lived under `/api` because that was the one HttpApi
- * at the time. Nothing here is a stable
+ * AI-triage settings, the error-issue workflow, integration and code-review
+ * settings, organization setup, BYO ClickHouse configuration) that were never
+ * public API and lived under `/api` until the v1 API was retired. Nothing here is a stable
  * public contract, and nothing here should be promoted to `/v2` without a
  * deliberate redesign of its shape first. See `docs/http-api-migration.md`.
  *
@@ -32,20 +43,30 @@ import { V1SchemaErrors, V1UnexpectedErrors } from "./v1-boundary"
  * unauthenticated so a token-settle gap renders prices instead of a 401, which
  * session-only authorization would defeat.
  *
- * The error envelope is v1's on purpose: `apps/web` already decodes it, so the
- * split costs the frontend nothing.
+ * It shares `MapleApi`'s error envelope (`api-boundary.ts`), which `apps/web` decodes.
  */
 export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(AiModelsInternalApiGroup)
 	.add(AiSessionsInternalApiGroup)
 	.add(AiTriageApiGroup)
 	.add(BillingApiGroup)
+	.add(CodeReviewApiGroup)
 	.add(DemoApiGroup)
+	.add(DependencyScanApiGroup)
 	.add(DigestApiGroup)
+	.add(ErrorsApiGroup)
+	.add(IntegrationsApiGroup)
+	.add(McpInternalApiGroup)
+	.add(OpenRouterKeyApiGroup)
+	.add(OrgClickHouseSettingsApiGroup)
+	.add(OrganizationsApiGroup)
+	.add(OrganizationCreationApiGroup)
+	.add(OrganizationRegionApiGroup)
 	.add(QueryEngineApiGroup)
 	.add(SessionReplaysInternalApiGroup)
-	.middleware(V1SchemaErrors)
-	.middleware(V1UnexpectedErrors)
+	.add(UsersInternalApiGroup)
+	.middleware(ApiSchemaErrors)
+	.middleware(ApiUnexpectedErrors)
 	.annotateMerge(
 		OpenApi.annotations({
 			title: "Maple Internal API",

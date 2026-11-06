@@ -25,7 +25,7 @@ vi.mock("../session/session", () => ({
 	markActivity: vi.fn(),
 	noteNavigation: vi.fn(),
 }))
-vi.mock("../platform/transport", () => ({ postSessionEvents: vi.fn(async () => {}) }))
+vi.mock("../platform/transport", () => ({ postSessionEvents: vi.fn(async () => "accepted") }))
 
 const { startEventCapture } = await import("./events")
 const { getActiveSink, resetSinkForTests } = await import("../events/events-sink")
@@ -94,6 +94,7 @@ describe("startEventCapture session counters", () => {
 		capture.stop()
 		// stop() uninstalls the listeners only. The sink outlives them, because a
 		// custom event fired while the tab is tearing down still has to land.
-		expect(getActiveSink()).toBeDefined()
+		getActiveSink()?.emit({ type: "error", message: "late" })
+		expect(getActiveSink()?.getErrorCount()).toBe(1)
 	})
 })

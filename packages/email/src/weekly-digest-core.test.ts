@@ -17,6 +17,7 @@ import {
 	scopedDigestProps,
 	watchDigestProps,
 } from "./samples"
+import { String as Str } from "effect"
 
 const pct = (value: number): Delta => ({ kind: "pct", value })
 
@@ -53,7 +54,7 @@ describe("computeDelta", () => {
 	})
 
 	it("computes an ordinary week-over-week percentage", () => {
-		expect(computeDelta(110, 100)).toEqual({ kind: "pct", value: 100 * (10 / 100) })
+		expect(computeDelta(110, 100)).toEqual({ kind: "pct", value: 10 })
 	})
 })
 
@@ -182,7 +183,7 @@ describe("deriveDigestStatus", () => {
 
 	it("leads the subject with the org name and names the email", () => {
 		const { subject } = deriveDigestStatus(healthyDigestProps)
-		expect(subject.startsWith(`${healthyDigestProps.orgName} · Weekly digest · `)).toBe(true)
+		expect(Str.startsWith(`${healthyDigestProps.orgName} · Weekly digest · `)(subject)).toBe(true)
 		expect(subject).not.toContain("—")
 	})
 

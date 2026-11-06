@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { datasources, pipes } from "../generated/tinybird-project-manifest"
+import { Array as Arr, Option, String as Str } from "effect"
 
 interface Resource {
 	readonly name: string
@@ -11,7 +12,7 @@ const blockBody = (resource: Resource, section: string): string => {
 		resource.content,
 	)
 	expect(match, `${resource.name} should include ${section} block`).not.toBeNull()
-	return match![1]!.replace(/^    /gm, "").trim()
+	return Str.trim(Str.replace(/^    /gm, "")(Arr.getUnsafe(match!, 1)))
 }
 
 const splitTopLevelCommas = (input: string): string[] => {
@@ -34,20 +35,20 @@ const splitTopLevelCommas = (input: string): string[] => {
 		if (char === ")") depth--
 
 		if (char === "," && depth === 0) {
-			parts.push(input.slice(start, index).trim())
+			parts.push(Str.trim(Str.slice(start, index)(input)))
 			start = index + 1
 		}
 	}
 
-	parts.push(input.slice(start).trim())
-	return parts.filter((part) => part.length > 0)
+	parts.push(Str.trim(Str.slice(start)(input)))
+	return Arr.filter(parts, (part) => part.length > 0)
 }
 
 const datasourceColumns = (resource: Resource): string[] =>
-	splitTopLevelCommas(blockBody(resource, "SCHEMA")).map((column) => {
+	Arr.map(splitTopLevelCommas(blockBody(resource, "SCHEMA")), (column) => {
 		const match = /^([A-Za-z_][A-Za-z0-9_]*)\s+/.exec(column)
 		expect(match, `could not parse datasource column from ${column}`).not.toBeNull()
-		return match![1]!
+		return Arr.getUnsafe(match!, 1)
 	})
 
 const findTopLevelFrom = (sql: string): number => {
@@ -67,7 +68,11 @@ const findTopLevelFrom = (sql: string): number => {
 		if (char === "(") depth++
 		if (char === ")") depth--
 
-		if (depth === 0 && /^FROM\b/i.test(sql.slice(index)) && (index === 0 || /\s/.test(sql[index - 1]!))) {
+		if (
+			depth === 0 &&
+			/^FROM\b/i.test(Str.slice(index)(sql)) &&
+			(index === 0 || /\s/.test(sql[index - 1] ?? ""))
+		) {
 			return index
 		}
 	}
@@ -82,27 +87,27 @@ const findTopLevelFrom = (sql: string): number => {
  * the parse and surfaces as "could not find top-level FROM".
  */
 const stripLineComments = (sql: string): string =>
-	sql
-		.split("\n")
-		.map((line) => line.replace(/(^|\s)--.*$/, ""))
-		.join("\n")
+	Arr.join(
+		Arr.map(Str.split("\n")(sql), (line) => Str.replace(/(^|\s)--.*$/, "")(line)),
+		"\n",
+	)
 
 const pipeSelectColumns = (resource: Resource): string[] => {
 	const sql = stripLineComments(blockBody(resource, "SQL"))
 	const selectMatch = /\bSELECT\b/i.exec(sql)
 	expect(selectMatch, `${resource.name} should include SELECT`).not.toBeNull()
 
-	const selectStart = selectMatch!.index + selectMatch![0]!.length
-	const selectList = sql.slice(selectStart, findTopLevelFrom(sql))
+	const selectStart = selectMatch!.index + selectMatch![0].length
+	const selectList = Str.slice(selectStart, findTopLevelFrom(sql))(sql)
 
-	return splitTopLevelCommas(selectList).map((expression) => {
-		const normalized = expression.replace(/\s+/g, " ").trim()
+	return Arr.map(splitTopLevelCommas(selectList), (expression) => {
+		const normalized = Str.trim(Str.replace(/\s+/g, " ")(expression))
 		const alias = /\s+AS\s+([A-Za-z_][A-Za-z0-9_]*)$/i.exec(normalized)
-		if (alias) return alias[1]!
+		if (alias) return Arr.getUnsafe(alias, 1)
 
 		const bareColumn = /^([A-Za-z_][A-Za-z0-9_]*)$/.exec(normalized)
 		expect(bareColumn, `SELECT expression needs an explicit alias: ${normalized}`).not.toBeNull()
-		return bareColumn![1]!
+		return Arr.getUnsafe(bareColumn!, 1)
 	})
 }
 
@@ -111,10 +116,17 @@ describe("materialized projection order", () => {
 		const targets = [
 			["ai_trace_index", "ai_trace_index_mv"],
 			["ai_crawler_requests", "ai_crawler_requests_mv"],
+			["scanner_requests", "scanner_requests_mv"],
+			["service_runtimes_hourly", "service_runtimes_hourly_mv"],
+			["user_activity_hourly", "user_activity_hourly_traces_mv"],
+			["user_activity_hourly", "user_activity_hourly_logs_mv"],
+			["ci_runs", "ci_runs_mv"],
+			["ci_jobs", "ci_jobs_mv"],
 			["service_map_edges_hourly", "service_map_edges_hourly_ingest_mv"],
 			["service_overview_spans", "service_overview_spans_mv"],
 			["service_overview_hourly", "service_overview_hourly_mv"],
 			["service_operations_hourly", "service_operations_hourly_mv"],
+			["service_endpoint_details_hourly", "service_endpoint_details_hourly_mv"],
 			["trace_list_mv", "trace_list_mv_mv"],
 			["trace_facets_hourly", "trace_facets_hourly_mv"],
 			["logs_aggregates_hourly", "logs_aggregates_hourly_mv"],
@@ -123,8 +135,10 @@ describe("materialized projection order", () => {
 		] as const
 
 		for (const [datasourceName, pipeName] of targets) {
-			const datasource = datasources.find((resource) => resource.name === datasourceName)
-			const pipe = pipes.find((resource) => resource.name === pipeName)
+			const datasource = Option.getOrUndefined(
+				Arr.findFirst(datasources, (resource) => resource.name === datasourceName),
+			)
+			const pipe = Option.getOrUndefined(Arr.findFirst(pipes, (resource) => resource.name === pipeName))
 			expect(datasource, `${datasourceName} datasource should exist`).toBeDefined()
 			expect(pipe, `${pipeName} pipe should exist`).toBeDefined()
 

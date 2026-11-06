@@ -1,19 +1,37 @@
 import { describe, expect, it } from "vitest"
 
 import { getHttpInfo, HTTP_METHOD_COLORS, HTTP_METHOD_HEX } from "../http"
+import { Record as Rec, String as Str } from "effect"
 
 describe("HTTP method colors", () => {
-	it("keeps the Tailwind class map in sync with the hex source of truth", () => {
+	it("gives every method in the hex source of truth its own method token class", () => {
 		// HTTP_METHOD_COLORS stays literal so Tailwind's JIT scanner sees the
 		// class names; this test is what stops the two maps from drifting.
-		expect(Object.keys(HTTP_METHOD_COLORS).sort()).toEqual(Object.keys(HTTP_METHOD_HEX).sort())
-		for (const [method, hex] of Object.entries(HTTP_METHOD_HEX)) {
-			expect(HTTP_METHOD_COLORS[method], method).toBe(`bg-[${hex}]`)
+		expect(Rec.keys(HTTP_METHOD_COLORS).sort()).toEqual(Rec.keys(HTTP_METHOD_HEX).sort())
+		for (const [method, hex] of Rec.toEntries(HTTP_METHOD_HEX)) {
+			expect(HTTP_METHOD_COLORS[method], `${method} ${hex}`).toBe(`bg-http-${Str.toLowerCase(method)}`)
 		}
 	})
 })
 
 describe("getHttpInfo", () => {
+	it("reads the new-semconv status when the projected map carries a blank old key", () => {
+		// The trace list projects a fixed key set, so absent keys arrive as "".
+		const info = getHttpInfo({
+			spanName: "POST /api/checkout",
+			spanKind: "Server",
+			spanAttributes: {
+				"http.method": "",
+				"http.request.method": "POST",
+				"http.route": "/api/checkout",
+				"http.status_code": "",
+				"http.response.status_code": "500",
+			},
+		})
+		expect(info?.statusCode).toBe(500)
+		expect(info?.isError).toBe(true)
+	})
+
 	it("detects HTTP from standard attrs", () => {
 		expect(
 			getHttpInfo({

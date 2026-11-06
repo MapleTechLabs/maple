@@ -1,27 +1,8 @@
 import { describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { AiTriageSubmission, normalizeTriageSubmission } from "./ai-triage"
 
 const decode = Schema.decodeUnknownSync(AiTriageSubmission)
-
-/**
- * The submissions here are transcribed from prod (internal org, 2026-09-17..19), where each one
- * ended its run with `Invalid output: Missing key` instead of filing the report the agent had
- * already done the work for.
- */
-describe("AiTriageSubmission", () => {
-	it("accepts a submission missing every field the strict report requires", () => {
-		expect(() => decode({ headline: "Retry budget exhausted in the payment client" })).not.toThrow()
-	})
-
-	it("accepts an evidence entry that carries only the arrays the agent filled", () => {
-		expect(() => decode({ evidence: [{ traceIds: ["abc"], note: "the failing span" }] })).not.toThrow()
-	})
-
-	it("accepts a severity the report's literal does not have", () => {
-		expect(() => decode({ severityAssessment: "unclassified" })).not.toThrow()
-	})
-})
 
 describe("normalizeTriageSubmission", () => {
 	it("keeps a complete submission intact and reports nothing filled", () => {
@@ -97,7 +78,7 @@ describe("normalizeTriageSubmission", () => {
 				],
 			}),
 		)
-		expect(filled.filter((field) => field.startsWith("evidence"))).toEqual(["evidence[1].note"])
+		expect(Arr.filter(filled, (field) => Str.startsWith("evidence")(field))).toEqual(["evidence[1].note"])
 	})
 
 	it("drops a severity the report cannot hold and says it did", () => {
@@ -124,5 +105,43 @@ describe("normalizeTriageSubmission", () => {
 		expect(report.headline).toBeUndefined()
 		expect(report.ruledOut).toBeUndefined()
 		expect(report.unchecked).toBeUndefined()
+	})
+})
+
+/** The shapes prod models sent where a list belongs; each one used to end the turn. */
+describe("AiTriageSubmission list leniency", () => {
+	it("reads a bare string in evidence as one entry's note", () => {
+		expect(decode({ evidence: "p99 tripled at 14:02" }).evidence).toEqual([
+			{ note: "p99 tripled at 14:02" },
+		])
+	})
+
+	it("reads string entries inside evidence as notes", () => {
+		expect(decode({ evidence: ["a", { traceIds: ["t1"] }] }).evidence).toEqual([
+			{ note: "a" },
+			{ traceIds: ["t1"] },
+		])
+	})
+
+	it("wraps a single evidence object in a list", () => {
+		expect(decode({ evidence: { note: "n", traceIds: ["t1"] } }).evidence).toEqual([
+			{ note: "n", traceIds: ["t1"] },
+		])
+	})
+
+	it("parses a JSON-encoded evidence list", () => {
+		expect(decode({ evidence: '[{"note":"n"}]' }).evidence).toEqual([{ note: "n" }])
+	})
+
+	it("wraps a bare suggestedActions string", () => {
+		expect(decode({ suggestedActions: "Roll back" }).suggestedActions).toEqual(["Roll back"])
+	})
+
+	it("parses a JSON-encoded suggestedActions list", () => {
+		expect(decode({ suggestedActions: '["a","b"]' }).suggestedActions).toEqual(["a", "b"])
+	})
+
+	it("still rejects a value that is no list shape at all", () => {
+		expect(() => decode({ suggestedActions: 42 })).toThrow()
 	})
 })

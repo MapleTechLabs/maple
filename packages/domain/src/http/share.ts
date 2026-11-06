@@ -18,6 +18,7 @@
 import { Schema } from "effect"
 import { DashboardId, DashboardShareId, IsoDateTimeString } from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
+import { WireValue } from "../wire"
 
 /**
  * The single body every "no such share" answer carries.
@@ -48,7 +49,7 @@ export type DashboardShareMode = Schema.Schema.Type<typeof DashboardShareMode>
 export const ShareToken = Schema.String.check(
 	Schema.isMinLength(8),
 	Schema.isMaxLength(128),
-	Schema.isPattern(/^[A-Za-z0-9_-]+$/),
+	Schema.isPattern(/^[A-Za-z0-9_-]+$/u),
 ).pipe(Schema.annotate({ identifier: "@maple/ShareToken", title: "Dashboard share token" }))
 export type ShareToken = Schema.Schema.Type<typeof ShareToken>
 
@@ -59,10 +60,9 @@ export type ShareToken = Schema.Schema.Type<typeof ShareToken>
 /**
  * A share as its owner sees it, raw token included.
  *
- * The token is readable on every response, not just the one that minted it:
- * anyone who can read this can already mint a replacement, so withholding it
- * bought no safety and cost the obvious thing — you had to destroy a live link
- * in order to see it.
+ * The token is readable on every response, not just the one that minted it, so
+ * seeing a live link never means destroying it. The v2 routes hand it only to a
+ * caller that could mint the link (`toV2DashboardShare`): it serves telemetry.
  */
 export class DashboardShare extends Schema.Class<DashboardShare>("DashboardShare")({
 	id: DashboardShareId,
@@ -221,8 +221,8 @@ export class ShareUnsupportedWidgetError extends HttpTaggedError<ShareUnsupporte
 		// arriving through a 5xx side door.
 		status: 422,
 		code: "share_widget_unsupported",
-		title: "Widget unavailable in shared views",
-		message: "This widget isn't available in shared views.",
+		title: "Widget type unsupported",
+		message: "This widget type can't be read outside the dashboard yet.",
 		retry: "never",
 		recovery: "none",
 		exposure: "redacted",
@@ -346,8 +346,9 @@ export class SharePersistenceError extends HttpTaggedError<SharePersistenceError
 		// retryable dependency failure rather than a generic 500.
 		status: 503,
 		code: "share_persistence_failed",
-		title: "Could not save the share link",
-		message: "Something went wrong updating this dashboard's share link.",
+		// Raised by both the owner's share writes and an anonymous viewer's read of the shared dashboard.
+		title: "Share link unavailable",
+		message: "Something went wrong loading or updating this share link. Try again in a moment.",
 		retry: "never",
 		recovery: "contact_support",
 		exposure: "redacted",
@@ -427,7 +428,7 @@ export const ShareWidgetDataOutcome = Schema.Union([
 	Schema.Struct({
 		widgetId: Schema.String,
 		ok: Schema.Literal(true),
-		data: Schema.Unknown,
+		data: WireValue,
 		/** Set when the server narrowed the window for this widget's shape. */
 		narrowedToSeconds: Schema.optionalKey(Schema.Number),
 	}),

@@ -1,5 +1,6 @@
-import type { Layout, LayoutItem } from "react-grid-layout"
+import type { GridItem, Layout } from "@maple/grid-engine"
 import type { WidgetLayoutSchema } from "@maple/widgets/dashboard"
+import { Array as Arr, Option, Order } from "effect"
 
 /**
  * The minimum a widget must expose to be placed on the grid.
@@ -55,7 +56,7 @@ export interface GridTier {
  * 12 columns and an ~860px canvas the narrowest common widget (a `w:3` stat) is
  * still ~215px, which reads fine; below that it starts truncating.
  */
-export const GRID_TIERS: readonly GridTier[] = [
+export const GRID_TIERS: Arr.NonEmptyReadonlyArray<GridTier> = [
 	{ minWidth: 860, cols: CANONICAL_COLS, minSpan: 1, margin: [12, 12], canonical: true },
 	{ minWidth: 640, cols: 8, minSpan: 2, margin: [10, 10], canonical: false },
 	{ minWidth: 460, cols: 6, minSpan: 3, margin: [8, 8], canonical: false },
@@ -63,7 +64,10 @@ export const GRID_TIERS: readonly GridTier[] = [
 ]
 
 export function tierForWidth(width: number): GridTier {
-	return GRID_TIERS.find((tier) => width > tier.minWidth) ?? GRID_TIERS[GRID_TIERS.length - 1]
+	return Option.getOrElse(
+		Arr.findFirst(GRID_TIERS, (tier) => width > tier.minWidth),
+		() => Arr.lastNonEmpty(GRID_TIERS),
+	)
 }
 
 /** Column count for a container width — used by the template live preview. */
@@ -78,8 +82,9 @@ function clamp(value: number, min: number, max: number): number {
 /**
  * Project the authored 12-column layout onto a narrower tier.
  *
- * Deliberately not react-grid-layout's own `findOrGenerateResponsiveLayout`:
- * that clamps each `w` to the column count and re-runs vertical compaction,
+ * Deliberately not a clamp-and-recompact (what react-grid-layout's
+ * `findOrGenerateResponsiveLayout` did): that clamps each `w` to the column
+ * count and re-runs vertical compaction,
  * which leaves a `w:4` chart at 4 of 6 columns while a `w:2` stat squeezes into
  * the 2-column remainder, and then floats short tiles up into whatever holes
  * the clamping opened. The result reads as scattered rather than as a grid.
@@ -87,10 +92,10 @@ function clamp(value: number, min: number, max: number): number {
  * Instead: scale every width proportionally (with `minSpan` as a floor), pack
  * widgets into rows in reading order, and justify each row so it fills the
  * width exactly. Rows stay rows, order is preserved, and nothing overlaps —
- * which is why the canvas pairs this with `noCompactor` on derived tiers.
+ * which is why the canvas draws derived tiers without compaction.
  */
 export function projectLayout(widgets: ReadonlyArray<PlacedWidget>, tier: GridTier): Layout {
-	const base = widgets.map((w) => ({
+	const base = Arr.map(widgets, (w) => ({
 		i: w.id,
 		x: w.layout.x,
 		y: w.layout.y,
@@ -105,9 +110,15 @@ export function projectLayout(widgets: ReadonlyArray<PlacedWidget>, tier: GridTi
 	if (tier.canonical) return base
 
 	// Reading order: left-to-right within a row, then down.
-	const ordered = base.toSorted((a, b) => a.y - b.y || a.x - b.x)
+	const ordered = Arr.sort(
+		base,
+		Order.combine(
+			Order.mapInput(Order.Number, (item: { readonly x: number; readonly y: number }) => item.y),
+			Order.mapInput(Order.Number, (item: { readonly x: number; readonly y: number }) => item.x),
+		),
+	)
 
-	const projected: LayoutItem[] = []
+	const projected: GridItem[] = []
 	let row: Array<{ i: string; w: number; h: number }> = []
 	let rowY = 0
 
@@ -115,9 +126,11 @@ export function projectLayout(widgets: ReadonlyArray<PlacedWidget>, tier: GridTi
 	// ever renders a ragged right edge.
 	const flushRow = () => {
 		if (row.length === 0) return
-		let remainder = tier.cols - row.reduce((sum, item) => sum + item.w, 0)
+		let remainder = tier.cols - Arr.reduce(row, 0, (sum, item) => sum + item.w)
 		for (let index = 0; remainder > 0; index = (index + 1) % row.length) {
-			row[index].w += 1
+			const item = row[index]
+			if (item === undefined) break
+			item.w += 1
 			remainder -= 1
 		}
 
@@ -126,7 +139,7 @@ export function projectLayout(widgets: ReadonlyArray<PlacedWidget>, tier: GridTi
 		// compactor can't fill (it's switched off here precisely so rows hold
 		// together), and the result reads as holes rather than as a grid.
 		let x = 0
-		const rowHeight = Math.max(...row.map((item) => item.h))
+		const rowHeight = Math.max(...Arr.map(row, (item) => item.h))
 		for (const item of row) {
 			projected.push({ i: item.i, x, y: rowY, w: item.w, h: rowHeight })
 			x += item.w
@@ -141,7 +154,7 @@ export function projectLayout(widgets: ReadonlyArray<PlacedWidget>, tier: GridTi
 			Math.min(tier.minSpan, tier.cols),
 			tier.cols,
 		)
-		const used = row.reduce((sum, r) => sum + r.w, 0)
+		const used = Arr.reduce(row, 0, (sum, r) => sum + r.w)
 		if (used + scaled > tier.cols) flushRow()
 		row.push({ i: item.i, w: scaled, h: item.h })
 	}

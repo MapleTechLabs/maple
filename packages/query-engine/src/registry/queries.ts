@@ -9,12 +9,12 @@ import type {
 	ServiceDbEdgesRequest,
 	ServiceDependenciesRequest,
 	ServiceWorkloadsRequest,
+	ServiceRuntimesRequest,
 	ServiceUsageRequest,
 	ErrorDetailTracesRequest,
 	ErrorRateByServiceRequest,
 	ErrorsByTypeRequest,
 	ErrorsSummaryRequest,
-	ErrorsTimeseriesRequest,
 	ErrorsSparkRequest,
 	ContainerDetailSummaryRequest,
 	ContainerFacetsRequest,
@@ -30,6 +30,7 @@ import type {
 	MetricsSummaryRequest,
 	NodeDetailSummaryRequest,
 	PodDetailSummaryRequest,
+	PodRestartsRequest,
 	PodsSummaryRequest,
 	ServiceApdexRequest,
 	ServiceDbEdgesForServiceRequest,
@@ -38,6 +39,8 @@ import type {
 	ServiceHealthSnapshotRequest,
 	ServiceOverviewRequest,
 	ReleasesListRequest,
+	UptimeChecksRequest,
+	UptimePhaseTimingsRequest,
 	ReleaseDetailRequest,
 	WorkloadDetailSummaryRequest,
 	WebAnalyticsSummaryRequest,
@@ -49,10 +52,12 @@ import type {
 	WebAnalyticsBreakdownsRequest,
 	WebAnalyticsAiReferralsRequest,
 	WebAnalyticsAiCrawlersRequest,
+	SecurityExposureRequest,
+	SecurityRuntimesRequest,
 } from "@maple/domain/http"
 import { Match } from "effect"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
-import { formatWarehouseDateTime } from "../datetime"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "../datetime"
 import { attributeIndexMode, logBodySearchMode } from "../capabilities"
 import * as CH from "../ch"
 import { LOGS_BODY_SEARCH_SETTINGS } from "../profiles"
@@ -73,6 +78,7 @@ export {
 	productEventsBreakdown,
 	productEventsList,
 } from "./product-events"
+import type { OrgId } from "@maple/domain"
 
 /**
  * Declarative compile, execution, and cache policy. Handlers retain response
@@ -90,7 +96,7 @@ export const errorsByType = defineQuery({
 	id: "errorsByType",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ErrorsByTypeRequest, orgId: string) =>
+	compile: (payload: ErrorsByTypeRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.errorsByTypeQuery({
 				rootOnly: payload.rootOnly,
@@ -109,31 +115,11 @@ export const errorsByType = defineQuery({
 		),
 })
 
-export const errorsTimeseries = defineQuery({
-	id: "errorsTimeseries",
-	profile: "aggregation",
-	cache: timeRangeCache,
-	compile: (payload: ErrorsTimeseriesRequest, orgId: string) =>
-		CH.compile(
-			CH.errorsTimeseriesQuery({
-				fingerprintHash: payload.fingerprintHash,
-				services: payload.services,
-			}),
-			{
-				orgId,
-				startTime: payload.startTime,
-				endTime: payload.endTime,
-				// Optional buckets default to one hour.
-				bucketSeconds: payload.bucketSeconds ?? 3600,
-			},
-		),
-})
-
 export const errorsSpark = defineQuery({
 	id: "errorsSpark",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ErrorsSparkRequest, orgId: string) =>
+	compile: (payload: ErrorsSparkRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.errorsSparkQuery({
 				fingerprintHashes: payload.fingerprintHashes,
@@ -150,7 +136,7 @@ export const errorsSpark = defineQuery({
 				orgId,
 				startTime: payload.startTime,
 				endTime: payload.endTime,
-				// Optional buckets default to one hour, as errorsTimeseries does.
+				// Optional buckets default to one hour.
 				bucketSeconds: payload.bucketSeconds ?? 3600,
 			},
 		),
@@ -160,7 +146,7 @@ export const errorsSummary = defineQuery({
 	id: "errorsSummary",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ErrorsSummaryRequest, orgId: string) =>
+	compile: (payload: ErrorsSummaryRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.errorsSummaryQuery({
 				rootOnly: payload.rootOnly,
@@ -178,7 +164,7 @@ export const errorRateByService = defineQuery({
 	id: "errorRateByService",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ErrorRateByServiceRequest, orgId: string) =>
+	compile: (payload: ErrorRateByServiceRequest, orgId: OrgId) =>
 		CH.compile(CH.errorRateByServiceQuery(), {
 			orgId,
 			startTime: payload.startTime,
@@ -195,7 +181,7 @@ export const serviceOverview = defineQuery({
 	// renders a services list with no commits and no latency. The bump is the only
 	// thing standing between a deploy and that.
 	cache: makeTimeRangeCachePolicy({ version: 3 }),
-	compile: (payload: ServiceOverviewRequest, orgId: string) =>
+	compile: (payload: ServiceOverviewRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.serviceOverviewQuery({
 				environments: payload.environments,
@@ -213,7 +199,7 @@ export const errorDetailTraces = defineQuery({
 	id: "errorDetailTraces",
 	profile: "list",
 	cache: timeRangeCache,
-	compile: (payload: ErrorDetailTracesRequest, orgId: string) =>
+	compile: (payload: ErrorDetailTracesRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.errorDetailTracesQuery({
 				fingerprintHash: payload.fingerprintHash,
@@ -229,7 +215,7 @@ export const serviceHealthSnapshot = defineQuery({
 	id: "serviceHealthSnapshot",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ServiceHealthSnapshotRequest, orgId: string) =>
+	compile: (payload: ServiceHealthSnapshotRequest, orgId: OrgId) =>
 		CH.compile(CH.serviceHealthSnapshotQuery({ environments: payload.environments }), {
 			orgId,
 			startTime: payload.startTime,
@@ -241,7 +227,7 @@ export const serviceHealthBaseline = defineQuery({
 	id: "serviceHealthBaseline",
 	profile: "aggregation",
 	cache: 3600,
-	compile: (payload: ServiceHealthBaselineRequest, orgId: string) =>
+	compile: (payload: ServiceHealthBaselineRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.serviceHealthBaselineQuery({
 				environments: payload.environments,
@@ -255,7 +241,7 @@ export const serviceApdex = defineQuery({
 	id: "serviceApdex",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ServiceApdexRequest, orgId: string) => {
+	compile: (payload: ServiceApdexRequest, orgId: OrgId) => {
 		const bucketSeconds = payload.bucketSeconds ?? 60
 		return CH.compile(
 			CH.serviceApdexTimeseriesQuery({
@@ -277,7 +263,7 @@ export const serviceDependenciesForService = defineQuery({
 	id: "serviceDependenciesForService",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ServiceDependenciesForServiceRequest, orgId: string) =>
+	compile: (payload: ServiceDependenciesForServiceRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.serviceDependenciesForServiceQuery({
 				serviceName: payload.serviceName,
@@ -291,15 +277,18 @@ export const serviceDependenciesForService = defineQuery({
 		),
 })
 
-export const serviceDbEdgesForService = defineQuery({
-	id: "serviceDbEdgesForService",
-	profile: "aggregation",
+// The minute-tier/raw pairs share ids and cache keys: both return the exact window.
+// `Raw` reads the partial hours from `traces`, for a cluster without migration 0049.
+const serviceDbEdgesForServiceDef = (minuteTier: boolean) => ({
+	id: "serviceDbEdgesForService" as const,
+	profile: "aggregation" as const,
 	cache: timeRangeCache,
-	compile: (payload: ServiceDbEdgesForServiceRequest, orgId: string) =>
+	compile: (payload: ServiceDbEdgesForServiceRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.serviceDbEdgesForServiceQuery({
 				serviceName: payload.serviceName,
 				deploymentEnv: payload.deploymentEnv,
+				minuteTier,
 			}),
 			{
 				orgId,
@@ -309,6 +298,9 @@ export const serviceDbEdgesForService = defineQuery({
 		),
 })
 
+export const serviceDbEdgesForService = defineQuery(serviceDbEdgesForServiceDef(true))
+export const serviceDbEdgesForServiceRaw = defineQuery(serviceDbEdgesForServiceDef(false))
+
 /** Capability-aware so dashboard search uses the same bloom/tokenbf plan as the CLI. */
 export const listLogs = defineQuery({
 	id: "listLogs",
@@ -317,7 +309,7 @@ export const listLogs = defineQuery({
 	settings: (payload: ListLogsRequest) => (payload.search ? LOGS_BODY_SEARCH_SETTINGS : undefined),
 	cache: timeRangeCache,
 	capabilityAware: true,
-	compile: (payload: ListLogsRequest, orgId: string, capabilities) =>
+	compile: (payload: ListLogsRequest, orgId: OrgId, capabilities) =>
 		CH.compile(
 			CH.logsListQuery({
 				attributeIndexMode: attributeIndexMode(capabilities, "logs"),
@@ -330,6 +322,8 @@ export const listLogs = defineQuery({
 				excludedSeverities: payload.excludedSeverities,
 				excludedEnvironments: payload.excludedDeploymentEnvs,
 				excludedNamespaces: payload.excludedNamespaces,
+				attributeFilters: payload.attributeFilters,
+				resourceAttributeFilters: payload.resourceAttributeFilters,
 				minSeverity: payload.minSeverity,
 				traceId: payload.traceId,
 				spanId: payload.spanId,
@@ -337,16 +331,18 @@ export const listLogs = defineQuery({
 				search: payload.search,
 				// The array spelling wins when present; the scalar stays for the dashboard
 				// read-model plans, which select exactly one.
-				environments: payload.deploymentEnvs?.length
-					? payload.deploymentEnvs
-					: payload.deploymentEnv
-						? [payload.deploymentEnv]
-						: undefined,
-				namespaces: payload.namespaces?.length
-					? payload.namespaces
-					: payload.namespace
-						? [payload.namespace]
-						: undefined,
+				environments:
+					payload.deploymentEnvs !== undefined && payload.deploymentEnvs.length > 0
+						? payload.deploymentEnvs
+						: payload.deploymentEnv
+							? [payload.deploymentEnv]
+							: undefined,
+				namespaces:
+					payload.namespaces !== undefined && payload.namespaces.length > 0
+						? payload.namespaces
+						: payload.namespace
+							? [payload.namespace]
+							: undefined,
 				matchModes: Match.value([
 					payload.deploymentEnvMatchMode,
 					payload.namespaceMatchMode,
@@ -358,6 +354,7 @@ export const listLogs = defineQuery({
 					})),
 				),
 				limit: payload.limit,
+				order: payload.order,
 			}),
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
 		),
@@ -367,7 +364,7 @@ export const listMetrics = defineQuery({
 	id: "listMetrics",
 	profile: "discovery",
 	cache: 60,
-	compile: (payload: ListMetricsRequest, orgId: string) =>
+	compile: (payload: ListMetricsRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.listMetricsQuery({
 				serviceName: payload.service,
@@ -384,7 +381,7 @@ export const metricsSummary = defineQuery({
 	id: "metricsSummary",
 	profile: "discovery",
 	cache: 60,
-	compile: (payload: MetricsSummaryRequest, orgId: string) =>
+	compile: (payload: MetricsSummaryRequest, orgId: OrgId) =>
 		CH.compile(CH.metricsSummaryQuery({ serviceName: payload.service }), {
 			orgId,
 			startTime: payload.startTime,
@@ -402,7 +399,7 @@ export const infraPresence = defineQuery({
 	id: "infraPresence",
 	profile: "discovery",
 	cache: 300,
-	compile: (payload: InfraPresenceRequest, orgId: string) =>
+	compile: (payload: InfraPresenceRequest, orgId: OrgId) =>
 		CH.compileUnion(CH.infraPresenceQuery(), {
 			orgId,
 			startTime: payload.startTime,
@@ -414,7 +411,7 @@ export const listHosts = defineQuery({
 	id: "listHosts",
 	profile: "list",
 	cache: timeRangeCache,
-	compile: (payload: ListHostsRequest, orgId: string) =>
+	compile: (payload: ListHostsRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.listHostsQuery({
 				search: payload.search,
@@ -429,7 +426,7 @@ export const hostDetailSummary = defineQuery({
 	id: "hostDetailSummary",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: HostDetailSummaryRequest, orgId: string) =>
+	compile: (payload: HostDetailSummaryRequest, orgId: OrgId) =>
 		CH.compile(CH.hostDetailSummaryQuery({ hostName: payload.hostName }), {
 			orgId,
 			startTime: payload.startTime,
@@ -441,7 +438,7 @@ export const podsSummary = defineQuery({
 	id: "podsSummary",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: PodsSummaryRequest, orgId: string) =>
+	compile: (payload: PodsSummaryRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.listPodsSummaryQuery({
 				namespaces: payload.namespaces,
@@ -456,7 +453,7 @@ export const podDetailSummary = defineQuery({
 	id: "podDetailSummary",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: PodDetailSummaryRequest, orgId: string) =>
+	compile: (payload: PodDetailSummaryRequest, orgId: OrgId) =>
 		CH.compile(CH.podDetailSummaryQuery({ podName: payload.podName, namespace: payload.namespace }), {
 			orgId,
 			startTime: payload.startTime,
@@ -464,11 +461,26 @@ export const podDetailSummary = defineQuery({
 		}),
 })
 
+export const podRestarts = defineQuery({
+	id: "podRestarts",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: PodRestartsRequest, orgId: OrgId) =>
+		CH.compile(
+			CH.podRestartsQuery({
+				podNames: payload.podNames,
+				namespace: payload.namespace,
+				limit: payload.limit,
+			}),
+			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+		),
+})
+
 export const listNodes = defineQuery({
 	id: "listNodes",
 	profile: "list",
 	cache: timeRangeCache,
-	compile: (payload: ListNodesRequest, orgId: string) =>
+	compile: (payload: ListNodesRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.listNodesQuery({
 				search: payload.search,
@@ -486,7 +498,7 @@ export const nodeDetailSummary = defineQuery({
 	id: "nodeDetailSummary",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: NodeDetailSummaryRequest, orgId: string) =>
+	compile: (payload: NodeDetailSummaryRequest, orgId: OrgId) =>
 		CH.compile(CH.nodeDetailSummaryQuery({ nodeName: payload.nodeName }), {
 			orgId,
 			startTime: payload.startTime,
@@ -498,7 +510,7 @@ export const listWorkloads = defineQuery({
 	id: "listWorkloads",
 	profile: "list",
 	cache: timeRangeCache,
-	compile: (payload: ListWorkloadsRequest, orgId: string) =>
+	compile: (payload: ListWorkloadsRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.listWorkloadsQuery({
 				kind: payload.kind,
@@ -519,7 +531,7 @@ export const workloadDetailSummary = defineQuery({
 	id: "workloadDetailSummary",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: WorkloadDetailSummaryRequest, orgId: string) =>
+	compile: (payload: WorkloadDetailSummaryRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.workloadDetailSummaryQuery({
 				kind: payload.kind,
@@ -537,7 +549,7 @@ export const releasesList = defineQuery({
 	id: "releasesList",
 	profile: "list",
 	cache: timeRangeCache,
-	compile: (payload: ReleasesListRequest, orgId: string) =>
+	compile: (payload: ReleasesListRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.releasesListQuery({
 				environments: payload.environments,
@@ -550,11 +562,43 @@ export const releasesList = defineQuery({
 		),
 })
 
+// One uptime monitor's per-bucket phase averages, for the monitor page's breakdown chart.
+export const uptimePhaseTimings = defineQuery({
+	id: "uptimePhaseTimings",
+	profile: "list",
+	cache: timeRangeCache,
+	compile: (payload: UptimePhaseTimingsRequest, orgId: OrgId) =>
+		CH.compile(
+			CH.uptimePhaseTimingsQuery(),
+			{
+				orgId,
+				monitorId: payload.monitorId,
+				startTime: payload.startTime,
+				endTime: payload.endTime,
+				bucketSeconds: payload.bucketSeconds,
+			},
+			{ rowSchema: CH.uptimePhaseTimingsRowSchema },
+		),
+})
+
+// One uptime monitor's checks with their phases, for the monitor page's per-check chart.
+export const uptimeChecks = defineQuery({
+	id: "uptimeChecks",
+	profile: "list",
+	cache: timeRangeCache,
+	compile: (payload: UptimeChecksRequest, orgId: OrgId) =>
+		CH.compile(
+			CH.uptimeChecksQuery({ limit: payload.limit }),
+			{ orgId, monitorId: payload.monitorId, startTime: payload.startTime, endTime: payload.endTime },
+			{ rowSchema: CH.uptimeChecksRowSchema },
+		),
+})
+
 export const releasesTimeline = defineQuery({
 	id: "releasesTimeline",
 	profile: "list",
 	cache: timeRangeCache,
-	compile: (payload: ReleasesListRequest, orgId: string) =>
+	compile: (payload: ReleasesListRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.releasesTimelineQuery({
 				environments: payload.environments,
@@ -576,7 +620,7 @@ export const releaseVersions = defineQuery({
 	id: "releaseVersions",
 	profile: "list",
 	cache: timeRangeCache,
-	compile: (payload: ReleaseDetailRequest, orgId: string) =>
+	compile: (payload: ReleaseDetailRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.releasesListQuery({
 				serviceName: payload.serviceName,
@@ -592,7 +636,7 @@ export const releaseTimeline = defineQuery({
 	id: "releaseTimeline",
 	profile: "list",
 	cache: timeRangeCache,
-	compile: (payload: ReleaseDetailRequest, orgId: string) =>
+	compile: (payload: ReleaseDetailRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.releasesTimelineQuery({
 				serviceName: payload.serviceName,
@@ -612,7 +656,7 @@ export const releaseErrorFingerprints = defineQuery({
 	id: "releaseErrorFingerprints",
 	profile: "list",
 	cache: timeRangeCache,
-	compile: (payload: ReleaseDetailRequest, orgId: string) =>
+	compile: (payload: ReleaseDetailRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.releaseErrorFingerprintsQuery({
 				serviceName: payload.serviceName,
@@ -624,7 +668,6 @@ export const releaseErrorFingerprints = defineQuery({
 				endTime: payload.endTime,
 				serviceVersion: payload.commitSha,
 			},
-			{ rowSchema: CH.releaseErrorFingerprintsRowSchema },
 		),
 })
 
@@ -640,7 +683,7 @@ export const serviceReleases = defineQuery({
 			readonly endTime: string
 			readonly releasesBucketSeconds?: number | undefined
 		},
-		orgId: string,
+		orgId: OrgId,
 	) => {
 		const bucketSeconds = payload.releasesBucketSeconds ?? 300
 		return CH.compile(
@@ -661,7 +704,7 @@ export const serviceEnvironments = defineQuery({
 	cache: timeRangeCache,
 	compile: (
 		payload: { readonly serviceName: string; readonly startTime: string; readonly endTime: string },
-		orgId: string,
+		orgId: OrgId,
 	) =>
 		CH.compile(CH.serviceEnvironmentsQuery({ serviceName: payload.serviceName }), {
 			orgId,
@@ -681,7 +724,7 @@ export const serviceExternalEdges = defineQuery({
 			readonly startTime: string
 			readonly endTime: string
 		},
-		orgId: string,
+		orgId: OrgId,
 	) =>
 		CH.serviceExternalEdgesSQL(
 			{ deploymentEnv: payload.deploymentEnv, serviceName: payload.serviceName },
@@ -694,7 +737,7 @@ export const serviceUsage = defineQuery({
 	profile: "aggregation",
 	// Usage totals tolerate a minute of staleness.
 	cache: 60,
-	compile: (payload: ServiceUsageRequest, orgId: string) => {
+	compile: (payload: ServiceUsageRequest, orgId: OrgId) => {
 		const prevStart = payload.previousStartTime
 		const prevEnd = payload.previousEndTime
 		return prevStart != null && prevEnd != null
@@ -717,30 +760,44 @@ export const serviceDependencies = defineQuery({
 	id: "serviceDependencies",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ServiceDependenciesRequest, orgId: string) =>
+	compile: (payload: ServiceDependenciesRequest, orgId: OrgId) =>
 		CH.serviceDependenciesSQL(
 			{ deploymentEnv: payload.deploymentEnv },
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
 		),
 })
 
-export const serviceDbEdges = defineQuery({
-	id: "serviceDbEdges",
-	profile: "aggregation",
+const serviceDbEdgesDef = (minuteTier: boolean) => ({
+	id: "serviceDbEdges" as const,
+	profile: "aggregation" as const,
 	cache: timeRangeCache,
-	compile: (payload: ServiceDbEdgesRequest, orgId: string) =>
+	compile: (payload: ServiceDbEdgesRequest, orgId: OrgId) =>
 		CH.serviceDbEdgesSQL(
-			{ deploymentEnv: payload.deploymentEnv },
+			{ deploymentEnv: payload.deploymentEnv, minuteTier },
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
 		),
 })
+
+export const serviceDbEdges = defineQuery(serviceDbEdgesDef(true))
+export const serviceDbEdgesRaw = defineQuery(serviceDbEdgesDef(false))
 
 export const serviceWorkloads = defineQuery({
 	id: "serviceWorkloads",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ServiceWorkloadsRequest, orgId: string) =>
+	compile: (payload: ServiceWorkloadsRequest, orgId: OrgId) =>
 		CH.serviceWorkloadsSQL(
+			{ services: payload.services },
+			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+		),
+})
+
+export const serviceRuntimes = defineQuery({
+	id: "serviceRuntimes",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: ServiceRuntimesRequest, orgId: OrgId) =>
+		CH.serviceRuntimesSQL(
 			{ services: payload.services },
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
 		),
@@ -750,14 +807,14 @@ export const servicePlatforms = defineQuery({
 	id: "servicePlatforms",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ServicePlatformsRequest, orgId: string) =>
+	compile: (payload: ServicePlatformsRequest, orgId: OrgId) =>
 		CH.servicePlatformsSQL(
 			{ deploymentEnv: payload.deploymentEnv },
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
 		),
 })
 
-const dbQueryParams = (payload: ServiceDbQuerySummaryRequest, orgId: string) => ({
+const dbQueryParams = (payload: ServiceDbQuerySummaryRequest, orgId: OrgId) => ({
 	orgId,
 	dbSystem: payload.dbSystem,
 	dbNamespace: payload.dbNamespace,
@@ -773,7 +830,7 @@ export const serviceDbQuerySummary = defineQuery({
 	id: "serviceDbQuerySummary",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ServiceDbQuerySummaryRequest, orgId: string) =>
+	compile: (payload: ServiceDbQuerySummaryRequest, orgId: OrgId) =>
 		CH.serviceDbQuerySummarySQL(dbQueryParams(payload, orgId)),
 })
 
@@ -781,7 +838,7 @@ export const serviceDbQueryTimeseries = defineQuery({
 	id: "serviceDbQueryTimeseries",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ServiceDbQuerySummaryRequest, orgId: string) =>
+	compile: (payload: ServiceDbQuerySummaryRequest, orgId: OrgId) =>
 		CH.serviceDbQueryTimeseriesSQL(dbQueryParams(payload, orgId)),
 })
 
@@ -789,7 +846,7 @@ export const serviceDbTopQueries = defineQuery({
 	id: "serviceDbTopQueries",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ServiceDbQuerySummaryRequest, orgId: string) =>
+	compile: (payload: ServiceDbQuerySummaryRequest, orgId: OrgId) =>
 		CH.serviceDbTopQueriesSQL(dbQueryParams(payload, orgId)),
 })
 
@@ -835,7 +892,7 @@ const webAnalyticsSummaryDef = (useProductEvents: boolean) => ({
 	id: "webAnalyticsSummary" as const,
 	profile: "aggregation" as const,
 	cache: timeRangeCache,
-	compile: (payload: WebAnalyticsSummaryRequest, orgId: string) =>
+	compile: (payload: WebAnalyticsSummaryRequest, orgId: OrgId) =>
 		CH.compile(CH.webAnalyticsSummaryQuery(webAnalyticsFilters(payload, useProductEvents)), {
 			orgId,
 			startTime: payload.startTime,
@@ -868,7 +925,7 @@ const webAnalyticsLiveDef = (useProductEvents: boolean) => ({
 	id: "webAnalyticsLive" as const,
 	profile: "aggregation" as const,
 	cache: 15,
-	compile: (payload: WebAnalyticsLiveRequest, orgId: string) => {
+	compile: (payload: WebAnalyticsLiveRequest, orgId: OrgId) => {
 		const now = Date.now()
 		return CH.compile(
 			CH.webAnalyticsLiveQuery({
@@ -891,7 +948,7 @@ const webAnalyticsTimeseriesDef = (useProductEvents: boolean) => ({
 	id: "webAnalyticsTimeseries" as const,
 	profile: "aggregation" as const,
 	cache: timeRangeCache,
-	compile: (payload: WebAnalyticsTimeseriesRequest, orgId: string) =>
+	compile: (payload: WebAnalyticsTimeseriesRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.webAnalyticsTimeseriesQuery({
 				...webAnalyticsFilters(payload, useProductEvents),
@@ -908,7 +965,7 @@ const webAnalyticsPageviewsDef = (useProductEvents: boolean) => ({
 	id: "webAnalyticsPageviews" as const,
 	profile: "aggregation" as const,
 	cache: timeRangeCache,
-	compile: (payload: WebAnalyticsPageviewsRequest, orgId: string) =>
+	compile: (payload: WebAnalyticsPageviewsRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.webAnalyticsPageviewsTimeseriesQuery({
 				...webAnalyticsFilters(payload, useProductEvents),
@@ -925,7 +982,7 @@ const webAnalyticsPagesDef = (useProductEvents: boolean) => ({
 	id: "webAnalyticsPages" as const,
 	profile: "aggregation" as const,
 	cache: timeRangeCache,
-	compile: (payload: WebAnalyticsPagesRequest, orgId: string) =>
+	compile: (payload: WebAnalyticsPagesRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.webAnalyticsPagesQuery({
 				...webAnalyticsFilters(payload, useProductEvents),
@@ -942,7 +999,7 @@ const webAnalyticsEventsDef = (useProductEvents: boolean) => ({
 	id: "webAnalyticsEvents" as const,
 	profile: "aggregation" as const,
 	cache: timeRangeCache,
-	compile: (payload: WebAnalyticsEventsRequest, orgId: string) =>
+	compile: (payload: WebAnalyticsEventsRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.webAnalyticsEventsQuery({
 				...webAnalyticsFilters(payload, useProductEvents),
@@ -961,7 +1018,7 @@ const webAnalyticsBreakdownsDef = (useProductEvents: boolean) => ({
 	// Bound memory across the UNION fan-out.
 	settings: { maxThreads: 4 },
 	cache: timeRangeCache,
-	compile: (payload: WebAnalyticsBreakdownsRequest, orgId: string) =>
+	compile: (payload: WebAnalyticsBreakdownsRequest, orgId: OrgId) =>
 		CH.compileUnion(
 			CH.webAnalyticsBreakdownsQuery({
 				...webAnalyticsFilters(payload, useProductEvents),
@@ -978,7 +1035,7 @@ const webAnalyticsAiReferralsDef = (useProductEvents: boolean) => ({
 	id: "webAnalyticsAiReferrals" as const,
 	profile: "aggregation" as const,
 	cache: timeRangeCache,
-	compile: (payload: WebAnalyticsAiReferralsRequest, orgId: string) =>
+	compile: (payload: WebAnalyticsAiReferralsRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.webAnalyticsAiReferralsQuery({
 				...webAnalyticsFilters(payload, useProductEvents),
@@ -992,7 +1049,7 @@ export const webAnalyticsAiReferrals = defineQuery(webAnalyticsAiReferralsDef(tr
 export const webAnalyticsAiReferralsRaw = defineQuery(webAnalyticsAiReferralsDef(false))
 
 // The three crawler reads share one request; each is a small scan of `ai_crawler_requests`.
-const aiCrawlerWindow = (payload: WebAnalyticsAiCrawlersRequest, orgId: string) => ({
+const aiCrawlerWindow = (payload: WebAnalyticsAiCrawlersRequest, orgId: OrgId) => ({
 	orgId,
 	startTime: payload.startTime,
 	endTime: payload.endTime,
@@ -1002,7 +1059,7 @@ export const webAnalyticsAiCrawlers = defineQuery({
 	id: "webAnalyticsAiCrawlers",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: WebAnalyticsAiCrawlersRequest, orgId: string) =>
+	compile: (payload: WebAnalyticsAiCrawlersRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.webAnalyticsAiCrawlersQuery({ host: payload.host, pagePath: payload.pagePath }),
 			aiCrawlerWindow(payload, orgId),
@@ -1013,7 +1070,7 @@ export const webAnalyticsAiCrawlerFormats = defineQuery({
 	id: "webAnalyticsAiCrawlerFormats",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: WebAnalyticsAiCrawlersRequest, orgId: string) =>
+	compile: (payload: WebAnalyticsAiCrawlersRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.webAnalyticsAiCrawlerFormatsQuery({ host: payload.host, pagePath: payload.pagePath }),
 			aiCrawlerWindow(payload, orgId),
@@ -1024,7 +1081,7 @@ export const webAnalyticsAiCrawledPages = defineQuery({
 	id: "webAnalyticsAiCrawledPages",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: WebAnalyticsAiCrawlersRequest, orgId: string) =>
+	compile: (payload: WebAnalyticsAiCrawlersRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.webAnalyticsAiCrawledPagesQuery({
 				host: payload.host,
@@ -1035,13 +1092,74 @@ export const webAnalyticsAiCrawledPages = defineQuery({
 		),
 })
 
+// Security Center telemetry. The four exposure reads share one request; each is a small scan of
+// `scanner_requests`.
+const securityWindow = (payload: SecurityExposureRequest | SecurityRuntimesRequest, orgId: OrgId) => ({
+	orgId,
+	startTime: payload.startTime,
+	endTime: payload.endTime,
+})
+
+export const scannerSignatures = defineQuery({
+	id: "scannerSignatures",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityExposureRequest, orgId: OrgId) =>
+		CH.compile(CH.scannerSignaturesQuery(), securityWindow(payload, orgId)),
+})
+
+export const scannerExposed = defineQuery({
+	id: "scannerExposed",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityExposureRequest, orgId: OrgId) =>
+		CH.compile(CH.scannerExposedQuery(), securityWindow(payload, orgId)),
+})
+
+export const scannerSources = defineQuery({
+	id: "scannerSources",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityExposureRequest, orgId: OrgId) =>
+		CH.compile(CH.scannerSourcesQuery(), securityWindow(payload, orgId)),
+})
+
+/**
+ * The requested bucket, widened so the window never needs more buckets than the query returns. Buckets
+ * sit on the epoch grid, so a window can straddle one more than its length divided by the bucket.
+ */
+export const scannerTimelineBucketSeconds = (payload: SecurityExposureRequest): number => {
+	const requested = payload.bucketSeconds ?? 3600
+	const windowMs = parseWarehouseDateTime(payload.endTime) - parseWarehouseDateTime(payload.startTime)
+	return Math.max(requested, Math.ceil(windowMs / 1000 / (CH.SCANNER_TIMELINE_MAX_BUCKETS - 1)))
+}
+
+export const scannerTimeline = defineQuery({
+	id: "scannerTimeline",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityExposureRequest, orgId: OrgId) =>
+		CH.compile(
+			CH.scannerTimelineQuery({ bucketSeconds: scannerTimelineBucketSeconds(payload) }),
+			securityWindow(payload, orgId),
+		),
+})
+
+export const runtimeVersions = defineQuery({
+	id: "runtimeVersions",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityRuntimesRequest, orgId: OrgId) =>
+		CH.compile(CH.runtimeVersionsQuery(), securityWindow(payload, orgId)),
+})
+
 export const podFacets = defineQuery({
 	id: "podFacets",
 	profile: "discovery",
 	// Bound Map-column decompression memory across the UNION fan-out.
 	settings: { maxThreads: 4 },
 	cache: 60,
-	compile: (payload: PodFacetsRequest, orgId: string) =>
+	compile: (payload: PodFacetsRequest, orgId: OrgId) =>
 		CH.compileUnion(
 			CH.podFacetsQuery({
 				search: payload.search,
@@ -1076,7 +1194,7 @@ export const nodeFacets = defineQuery({
 	// Bound Map-column decompression memory across the UNION fan-out.
 	settings: { maxThreads: 4 },
 	cache: 60,
-	compile: (payload: NodeFacetsRequest, orgId: string) =>
+	compile: (payload: NodeFacetsRequest, orgId: OrgId) =>
 		CH.compileUnion(
 			CH.nodeFacetsQuery({
 				search: payload.search,
@@ -1094,7 +1212,7 @@ export const workloadFacets = defineQuery({
 	// Bound Map-column decompression memory across the UNION fan-out.
 	settings: { maxThreads: 4 },
 	cache: 60,
-	compile: (payload: WorkloadFacetsRequest, orgId: string) =>
+	compile: (payload: WorkloadFacetsRequest, orgId: OrgId) =>
 		CH.compileUnion(
 			CH.workloadFacetsQuery({
 				kind: payload.kind,
@@ -1143,7 +1261,7 @@ export const listPods = defineQuery({
 	id: "listPods",
 	profile: "list",
 	cache: timeRangeCache,
-	compile: (payload: ListPodsRequest, orgId: string) =>
+	compile: (payload: ListPodsRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.listPodsQuery({
 				...listPodsFilters(payload),
@@ -1161,7 +1279,7 @@ export const listPodsCount = defineQuery({
 	id: "listPodsCount",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ListPodsRequest, orgId: string) =>
+	compile: (payload: ListPodsRequest, orgId: OrgId) =>
 		CH.compile(CH.listPodsSummaryQuery(listPodsFilters(payload)), {
 			orgId,
 			startTime: payload.startTime,
@@ -1190,7 +1308,7 @@ export const listContainers = defineQuery({
 	id: "listContainers",
 	profile: "list",
 	cache: timeRangeCache,
-	compile: (payload: ListContainersRequest, orgId: string) =>
+	compile: (payload: ListContainersRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.listContainersQuery({
 				...listContainersFilters(payload),
@@ -1208,7 +1326,7 @@ export const listContainersCount = defineQuery({
 	id: "listContainersCount",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ListContainersRequest, orgId: string) =>
+	compile: (payload: ListContainersRequest, orgId: OrgId) =>
 		CH.compile(CH.listContainersSummaryQuery(listContainersFilters(payload)), {
 			orgId,
 			startTime: payload.startTime,
@@ -1220,7 +1338,7 @@ export const containersSummary = defineQuery({
 	id: "containersSummary",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ContainersSummaryRequest, orgId: string) =>
+	compile: (payload: ContainersSummaryRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.listContainersSummaryQuery({
 				hostNames: payload.hostNames,
@@ -1234,7 +1352,7 @@ export const containerDetailSummary = defineQuery({
 	id: "containerDetailSummary",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ContainerDetailSummaryRequest, orgId: string) =>
+	compile: (payload: ContainerDetailSummaryRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.containerDetailSummaryQuery({
 				containerName: payload.containerName,
@@ -1248,7 +1366,7 @@ export const containerCountersSummary = defineQuery({
 	id: "containerCountersSummary",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: ContainerDetailSummaryRequest, orgId: string) =>
+	compile: (payload: ContainerDetailSummaryRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.containerCountersSummaryQuery({
 				containerName: payload.containerName,
@@ -1264,7 +1382,7 @@ export const containerFacets = defineQuery({
 	// Bound Map-column decompression memory across the UNION fan-out.
 	settings: { maxThreads: 4 },
 	cache: 60,
-	compile: (payload: ContainerFacetsRequest, orgId: string) =>
+	compile: (payload: ContainerFacetsRequest, orgId: OrgId) =>
 		CH.compileUnion(CH.containerFacetsQuery(listContainersFilters(payload)), {
 			orgId,
 			startTime: payload.startTime,
@@ -1278,8 +1396,8 @@ export const spanHierarchyProbeRecent = defineQuery({
 	id: "spanHierarchyProbeRecent",
 	profile: "discovery",
 	cache: undefined,
-	compile: (payload: { readonly traceId: string; readonly startTime: string }, orgId: string) =>
-		CH.compile(CH.traceTimeProbeQuery({ traceId: payload.traceId, narrowByTime: true }), {
+	compile: (payload: { readonly traceId: string; readonly startTime: string }, orgId: OrgId) =>
+		CH.compile(CH.recentTraceTimeProbeQuery({ traceId: payload.traceId }), {
 			orgId,
 			startTime: payload.startTime,
 		}),
@@ -1289,8 +1407,8 @@ export const spanHierarchyProbe = defineQuery({
 	id: "spanHierarchyProbe",
 	profile: "discovery",
 	cache: undefined,
-	compile: (payload: { readonly traceId: string }, orgId: string) =>
-		CH.compile(CH.traceTimeProbeQuery({ traceId: payload.traceId, narrowByTime: false }), {
+	compile: (payload: { readonly traceId: string }, orgId: OrgId) =>
+		CH.compile(CH.traceTimeProbeQuery({ traceId: payload.traceId }), {
 			orgId,
 		}),
 })
@@ -1306,7 +1424,7 @@ export const spanHierarchy = defineQuery({
 			readonly startTime?: string | undefined
 			readonly endTime?: string | undefined
 		},
-		orgId: string,
+		orgId: OrgId,
 	) => {
 		const narrowByTime = payload.startTime != null && payload.endTime != null
 		return CH.compile(
@@ -1314,6 +1432,8 @@ export const spanHierarchy = defineQuery({
 				traceId: payload.traceId,
 				spanId: payload.spanId,
 				narrowByTime,
+				// One sentinel row past the cap, so callers can tell a truncated trace.
+				limit: CH.SPAN_HIERARCHY_MAX_SPANS + 1,
 			}),
 			narrowByTime ? { orgId, startTime: payload.startTime, endTime: payload.endTime } : { orgId },
 		)
@@ -1328,7 +1448,7 @@ const serviceOperationsSummaryOptions = (payload: ServiceOperationsRequest) => (
 	limit: payload.limit,
 })
 
-const serviceOperationsParams = (payload: ServiceOperationsRequest, orgId: string) => ({
+const serviceOperationsParams = (payload: ServiceOperationsRequest, orgId: OrgId) => ({
 	orgId,
 	startTime: payload.startTime,
 	endTime: payload.endTime,
@@ -1338,7 +1458,7 @@ export const serviceOperationsSummary = defineQuery({
 	id: "serviceOperations",
 	profile: "aggregation",
 	cache: undefined,
-	compile: (payload: ServiceOperationsRequest, orgId: string) =>
+	compile: (payload: ServiceOperationsRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.serviceOperationsSummaryQuery(serviceOperationsSummaryOptions(payload)),
 			serviceOperationsParams(payload, orgId),
@@ -1357,7 +1477,7 @@ export const serviceOperationsSummaryRaw = defineQuery({
 	profile: "aggregation",
 	settings: SERVICE_OPERATIONS_RAW_SETTINGS,
 	cache: undefined,
-	compile: (payload: ServiceOperationsRequest, orgId: string) =>
+	compile: (payload: ServiceOperationsRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.serviceOperationsSummaryRawQuery(serviceOperationsSummaryOptions(payload)),
 			serviceOperationsParams(payload, orgId),
@@ -1375,7 +1495,7 @@ export const serviceEndpointsSummary = defineQuery({
 	id: "serviceEndpoints",
 	profile: "aggregation",
 	cache: undefined,
-	compile: (payload: ServiceOperationsRequest, orgId: string) =>
+	compile: (payload: ServiceOperationsRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.serviceEndpointsSummaryQuery(serviceOperationsSummaryOptions(payload)),
 			serviceOperationsParams(payload, orgId),
@@ -1388,7 +1508,7 @@ export const serviceEndpointsSummaryRaw = defineQuery({
 	profile: "aggregation",
 	settings: SERVICE_OPERATIONS_RAW_SETTINGS,
 	cache: undefined,
-	compile: (payload: ServiceOperationsRequest, orgId: string) =>
+	compile: (payload: ServiceOperationsRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.serviceEndpointsSummaryRawQuery(serviceOperationsSummaryOptions(payload)),
 			serviceOperationsParams(payload, orgId),
@@ -1413,7 +1533,7 @@ export const serviceOperationsTimeseries = defineQuery({
 	id: "serviceOperationsTimeseries",
 	profile: "aggregation",
 	cache: undefined,
-	compile: (payload: ServiceOperationsTimeseriesInput, orgId: string) =>
+	compile: (payload: ServiceOperationsTimeseriesInput, orgId: OrgId) =>
 		CH.compile(CH.serviceOperationsTimeseriesQuery(serviceOperationsTimeseriesOptions(payload)), {
 			...serviceOperationsParams(payload, orgId),
 			bucketSeconds: payload.bucketSeconds,
@@ -1425,9 +1545,124 @@ export const serviceOperationsTimeseriesRaw = defineQuery({
 	profile: "aggregation",
 	settings: SERVICE_OPERATIONS_RAW_SETTINGS,
 	cache: undefined,
-	compile: (payload: ServiceOperationsTimeseriesInput, orgId: string) =>
+	compile: (payload: ServiceOperationsTimeseriesInput, orgId: OrgId) =>
 		CH.compile(CH.serviceOperationsTimeseriesRawQuery(serviceOperationsTimeseriesOptions(payload)), {
 			...serviceOperationsParams(payload, orgId),
 			bucketSeconds: payload.bucketSeconds,
 		}),
+})
+
+// Service API tab. Totals and timeseries share the operations splice and its raw
+// fallback; the endpoint detail reads only service_endpoint_details_hourly.
+
+interface ServiceApiWindowInput {
+	readonly serviceName: string
+	readonly startTime: string
+	readonly endTime: string
+	readonly environments?: ReadonlyArray<string> | undefined
+}
+
+type ServiceApiTimeseriesInput = ServiceApiWindowInput & {
+	readonly bucketSeconds: number
+	readonly spanNames?: ReadonlyArray<string> | undefined
+}
+
+const serviceApiWindowParams = (payload: ServiceApiWindowInput, orgId: OrgId) => ({
+	orgId,
+	startTime: payload.startTime,
+	endTime: payload.endTime,
+})
+
+const serviceApiScope = (payload: ServiceApiWindowInput, tiers: CH.ServiceApiTiers) => ({
+	serviceName: payload.serviceName,
+	environments: payload.environments,
+	tiers,
+})
+
+const serviceApiTotalsFor = (tiers: CH.ServiceApiTiers) =>
+	defineQuery({
+		id: "serviceApiTotals",
+		profile: "aggregation",
+		settings: tiers === "raw" ? SERVICE_OPERATIONS_RAW_SETTINGS : undefined,
+		cache: undefined,
+		compile: (payload: ServiceApiWindowInput, orgId: OrgId) =>
+			CH.compile(
+				CH.serviceApiTotalsQuery(serviceApiScope(payload, tiers)),
+				serviceApiWindowParams(payload, orgId),
+				{
+					rowSchema: CH.serviceApiTotalsRowSchema,
+				},
+			),
+	})
+
+export const serviceApiTotals = serviceApiTotalsFor("spliced")
+export const serviceApiTotalsRaw = serviceApiTotalsFor("raw")
+
+const serviceApiTimeseriesFor = (tiers: CH.ServiceApiTiers) =>
+	defineQuery({
+		id: "serviceApiTimeseries",
+		profile: "aggregation",
+		settings: tiers === "raw" ? SERVICE_OPERATIONS_RAW_SETTINGS : undefined,
+		cache: undefined,
+		compile: (payload: ServiceApiTimeseriesInput, orgId: OrgId) =>
+			CH.compile(
+				CH.serviceApiTimeseriesQuery({
+					...serviceApiScope(payload, tiers),
+					bucketSeconds: payload.bucketSeconds,
+					spanNames: payload.spanNames,
+				}),
+				{ ...serviceApiWindowParams(payload, orgId), bucketSeconds: payload.bucketSeconds },
+				{ rowSchema: CH.serviceApiTimeseriesRowSchema },
+			),
+	})
+
+export const serviceApiTimeseries = serviceApiTimeseriesFor("spliced")
+export const serviceApiTimeseriesRaw = serviceApiTimeseriesFor("raw")
+
+export const serviceEndpointStatusBreakdown = defineQuery({
+	id: "serviceEndpointStatusBreakdown",
+	profile: "aggregation",
+	cache: undefined,
+	compile: (payload: ServiceApiWindowInput & { readonly spanName?: string | undefined }, orgId: OrgId) =>
+		CH.compile(
+			CH.serviceEndpointStatusBreakdownQuery({
+				serviceName: payload.serviceName,
+				environments: payload.environments,
+				spanName: payload.spanName,
+			}),
+			serviceApiWindowParams(payload, orgId),
+			{ rowSchema: CH.serviceEndpointStatusBreakdownRowSchema },
+		),
+})
+
+type ServiceEndpointDetailInput = ServiceApiWindowInput & { readonly spanName: string }
+
+const endpointDetailOpts = (payload: ServiceEndpointDetailInput) => ({
+	serviceName: payload.serviceName,
+	environments: payload.environments,
+	spanName: payload.spanName,
+})
+
+export const serviceEndpointDistribution = defineQuery({
+	id: "serviceEndpointDistribution",
+	profile: "aggregation",
+	cache: undefined,
+	compile: (payload: ServiceEndpointDetailInput, orgId: OrgId) =>
+		CH.compile(
+			CH.serviceEndpointDistributionQuery(endpointDetailOpts(payload)),
+			serviceApiWindowParams(payload, orgId),
+			{ rowSchema: CH.serviceEndpointDistributionRowSchema },
+		),
+})
+
+export const serviceEndpointSlowest = defineQuery({
+	id: "serviceEndpointSlowest",
+	profile: "aggregation",
+	cache: undefined,
+	compile: (payload: ServiceEndpointDetailInput, orgId: OrgId) =>
+		CH.compile(
+			CH.serviceEndpointSlowestQuery(endpointDetailOpts(payload)),
+			serviceApiWindowParams(payload, orgId),
+			{ rowSchema: CH.serviceEndpointSlowestRowSchema },
+		),
 })

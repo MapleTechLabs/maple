@@ -1,22 +1,21 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { queryWarehouse } from "../lib/query-warehouse"
-import { getSpamPatternsParam } from "@maple/backend/services/errors/spam-patterns"
 import { resolveTimeRange } from "../lib/time"
-import { formatDelta, formatPercent, formatDurationFromMs, formatNumber } from "../lib/format"
+import {
+	formatDelta,
+	formatPercent,
+	formatPointsDelta,
+	formatDurationFromMs,
+	formatNumber,
+} from "../lib/format"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { ComparePeriodsOutput } from "@maple/domain/mcp-outputs"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 
 type Output = typeof ComparePeriodsOutput.Type
 type RegressionFlag = NonNullable<Output["services"][number]["flags"]>[number]
-
-interface ErrorsSummaryRow {
-	readonly totalErrors: number | string
-	readonly totalSpans: number | string
-	readonly errorRate: number
-}
 
 interface ServiceOverviewRow {
 	readonly serviceName: string
@@ -55,17 +54,25 @@ const statsOf = (agg: ServiceAggregate | undefined) => ({
 	p95Ms: agg !== undefined && agg.totalWeight > 0 ? agg.p95 / agg.totalWeight : 0,
 })
 
-const overallOf = (row: ErrorsSummaryRow | undefined) => ({
-	totalSpans: row === undefined ? 0 : Number(row.totalSpans),
-	totalErrors: row === undefined ? 0 : Number(row.totalErrors),
-	errorRate: row === undefined ? 0 : row.errorRate,
-})
+/** Overall totals summed from the same per-service rows, so the two tables always agree. */
+const overallOf = (services: ReadonlyMap<string, ServiceAggregate>) => {
+	let totalSpans = 0
+	let totalErrors = 0
+	for (const agg of services.values()) {
+		totalSpans += agg.throughput
+		totalErrors += agg.errorCount
+	}
+	return { totalSpans, totalErrors, errorRate: totalSpans > 0 ? totalErrors / totalSpans : 0 }
+}
+
+const SPAN_SCOPE = "entry spans (server, consumer and root spans)"
 
 const HALF_WINDOW_MS = 30 * 60 * 1000
 
 export function registerComparePeriodsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "compare_periods",
+		title: "Compare Periods",
 		description:
 			"Compare error rate, throughput and P95 between two periods, overall and per service, and flag regressions (error_rate_up, latency_up, throughput_drop). Useful after a deploy or an incident report.",
 		parameters: Schema.Struct({
@@ -123,22 +130,8 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 
 			const service = params.service
 			const environment = params.environment
-			const [currentSummary, previousSummary, currentServices, previousServices] = yield* Effect.all(
+			const [currentServices, previousServices] = yield* Effect.all(
 				[
-					queryWarehouse<ErrorsSummaryRow>("errors_summary", {
-						start_time: curSt,
-						end_time: curEt,
-						exclude_spam_patterns: getSpamPatternsParam(),
-						...(service !== undefined && { services: service }),
-						...(environment !== undefined && { deployment_envs: environment }),
-					}),
-					queryWarehouse<ErrorsSummaryRow>("errors_summary", {
-						start_time: prevSt,
-						end_time: prevEt,
-						exclude_spam_patterns: getSpamPatternsParam(),
-						...(service !== undefined && { services: service }),
-						...(environment !== undefined && { deployment_envs: environment }),
-					}),
 					queryWarehouse<ServiceOverviewRow>("service_overview", {
 						start_time: curSt,
 						end_time: curEt,
@@ -161,10 +154,10 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 				currentPeriod: { start: curSt, end: curEt },
 				previousPeriod: { start: prevSt, end: prevEt },
 				overall: {
-					current: overallOf(currentSummary.data[0]),
-					previous: overallOf(previousSummary.data[0]),
+					current: overallOf(currentSvcMap),
+					previous: overallOf(previousSvcMap),
 				},
-				services: allServiceNames.map((name) => {
+				services: Arr.map(allServiceNames, (name) => {
 					const current = statsOf(currentSvcMap.get(name))
 					const previous = statsOf(previousSvcMap.get(name))
 					const flags: Array<RegressionFlag> = []
@@ -187,7 +180,7 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 					["Metric", "Previous", "Current", "Change"],
 					[
 						[
-							"Total spans",
+							"Entry spans",
 							formatNumber(previous.totalSpans),
 							formatNumber(current.totalSpans),
 							formatDelta(current.totalSpans, previous.totalSpans),
@@ -202,7 +195,7 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 							"Error rate",
 							formatPercent(previous.errorRate),
 							formatPercent(current.errorRate),
-							formatDelta(current.errorRate, previous.errorRate),
+							formatPointsDelta(current.errorRate, previous.errorRate),
 						],
 					],
 				),
@@ -221,7 +214,7 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 							"Curr P95",
 							"Flags",
 						],
-						output.services.map((s) => [
+						Arr.map(output.services, (s) => [
 							s.name,
 							formatNumber(s.previous.throughput),
 							formatNumber(s.current.throughput),
@@ -229,15 +222,15 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 							formatPercent(s.current.errorRate),
 							formatDurationFromMs(s.previous.p95Ms),
 							formatDurationFromMs(s.current.p95Ms),
-							(s.flags ?? []).join(", ") || "-",
+							Arr.join(s.flags ?? [], ", ") || "-",
 						]),
 					),
 				)
 			}
-			const regressions = output.services.filter((s) => (s.flags ?? []).length > 0).slice(0, 3)
+			const regressions = Arr.filter(output.services, (s) => (s.flags ?? []).length > 0).slice(0, 3)
 			const errorsUp = current.errorRate > previous.errorRate && current.errorRate > 0.01
 			const next = [
-				...regressions.map((s) =>
+				...Arr.map(regressions, (s) =>
 					doc.next(
 						"diagnose_service",
 						{
@@ -266,8 +259,9 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 				scope: [
 					["Current", `${output.currentPeriod.start} to ${output.currentPeriod.end}`],
 					["Previous", `${output.previousPeriod.start} to ${output.previousPeriod.end}`],
-					["Service", output.service],
+					["Service", output.service ?? "all services"],
 					["Environment", output.environment],
+					["Counts", SPAN_SCOPE],
 				],
 				blocks,
 				next: next.length > 0 ? next : [doc.next("list_services", {}, "see current service health")],

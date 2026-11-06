@@ -6,18 +6,18 @@ import {
 	AI_SESSION_SUMMARY_MAX_TURNS,
 	AI_TOOL_ERRORS_MAX,
 	CurrentTenant,
-	V1SchemaErrors,
-	V1UnexpectedErrors,
+	ApiSchemaErrors,
+	ApiUnexpectedErrors,
 } from "@maple/domain/http"
 
 import { WarehouseResponseLimitError } from "@maple/query-engine/execution"
-import { Context, Effect, Layer } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi"
+import { Context, Effect, Layer, Array as Arr, String as Str } from "effect"
+import { HttpRouter } from "effect/http"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "../v2/v2-test-support"
-import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
+import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { HttpAiSessionsInternalLive } from "./ai-sessions.http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
@@ -33,8 +33,8 @@ import { compiledQueryOf } from "@maple/query-engine/execution"
 
 class AiSessionsOnlyApi extends HttpApi.make("MapleInternalApi")
 	.add(AiSessionsInternalApiGroup)
-	.middleware(V1SchemaErrors)
-	.middleware(V1UnexpectedErrors) {}
+	.middleware(ApiSchemaErrors)
+	.middleware(ApiUnexpectedErrors) {}
 
 const SESSION_ID = "wrun_01KZTEST"
 const TRACE_ID = "7f3a4b5c6d7e8f901234567890abcdef"
@@ -61,7 +61,7 @@ const AuthorizationStubLayer = Layer.succeed(
 /** One warehouse row, in the wire shape `aiSessionSpansRowSchema` decodes. */
 const spanRow = (index: number) => ({
 	traceId: TRACE_ID,
-	spanId: index.toString(16).padStart(16, "0"),
+	spanId: Str.padStart(16, "0")(index.toString(16)),
 	parentSpanId: "",
 	spanName: "chat",
 	spanKind: "SPAN_KIND_CLIENT",
@@ -76,7 +76,7 @@ const spanRow = (index: number) => ({
 const makeHarness = (overrides: Partial<WarehouseQueryServiceApi>) => {
 	const routes = HttpApiBuilder.layer(AiSessionsOnlyApi).pipe(
 		Layer.provide(HttpAiSessionsInternalLive),
-		Layer.provide(V1ErrorBoundaryLive),
+		Layer.provide(ApiErrorBoundaryLive),
 		Layer.provideMerge(AuthorizationStubLayer),
 		Layer.provideMerge(Layer.succeed(WarehouseQueryService, makeWarehouseServiceStub(overrides))),
 	)
@@ -96,7 +96,7 @@ const makeHarness = (overrides: Partial<WarehouseQueryServiceApi>) => {
 				},
 				body: JSON.stringify(body),
 			}),
-			Context.empty() as never,
+			Context.empty(),
 		)
 		const text = await response.text()
 		return {
@@ -470,13 +470,11 @@ describe("POST /internal/ai-sessions/list", () => {
 		pageRow(`trace:${TRACE_ID}`, "2026-08-19 09:50:00.000000000", "2026-08-19 10:00:00.000000000"),
 	]
 
-	it("answers from one index read over the caller's window, never touching trace_detail_spans", async () => {
-		const contexts: Array<string | undefined> = []
-		let pageSql: string | undefined
+	it("ranks the page over the caller's window, then reads its rows over the page's extent, never touching the spans", async () => {
+		const reads: Array<{ context: string | undefined; sql: string }> = []
 		const harness = makeHarness({
 			compiledQuery: (_tenant, compiled, options) => {
-				contexts.push(options?.context)
-				pageSql = compiledQueryOf(compiled).sql
+				reads.push({ context: options?.context, sql: compiledQueryOf(compiled).sql })
 				return compiledQueryOf(compiled).decodeRows(PAGE).pipe(Effect.orDie)
 			},
 		})
@@ -484,15 +482,46 @@ describe("POST /internal/ai-sessions/list", () => {
 		try {
 			const response = await harness.post("/internal/ai-sessions/list", LIST_BODY)
 			expect(response.status).toBe(200)
-			// The fan-out over `trace_detail_spans` is seconds on a cold partition,
+			// The fan-out over `traces` is seconds on a cold partition,
 			// which is why it is the client's second request (`/details`) and not
 			// part of this one.
+			expect(Arr.map(reads, (read) => read.context)).toEqual(["aiSessionsRank", "aiSessionsPage"])
+			const [rank, page] = Arr.map(reads, (read) => read.sql)
+			for (const sql of [rank, page]) {
+				expect(sql).toContain("FROM ai_trace_index")
+				expect(sql).not.toContain("FROM traces")
+				expect(sql).not.toContain("__PARAM_")
+			}
+			expect(rank).toContain(`Timestamp <= '${WINDOW.endTime}'`)
+			expect(rank).toContain("LIMIT 3")
+			// The rows: the ranked sessions, between the earliest start and the
+			// latest end among them.
+			expect(page).toContain("IN ('wrun_beta', 'wrun_alpha', 'trace:")
+			expect(page).toContain("Timestamp >= '2026-08-19 09:50:00.000000000'")
+			expect(page).toContain("Timestamp <= '2026-08-19 10:40:00.000000000'")
+			expect(page).toContain(`Timestamp <= '${WINDOW.endTime}'`)
+			expect(page).not.toContain("LIMIT")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("reads a page sorted on usage in one read, which nets every session of the window", async () => {
+		const contexts: Array<string | undefined> = []
+		const harness = makeHarness({
+			compiledQuery: (_tenant, compiled, options) => {
+				contexts.push(options?.context)
+				return compiledQueryOf(compiled).decodeRows(PAGE).pipe(Effect.orDie)
+			},
+		})
+
+		try {
+			const response = await harness.post("/internal/ai-sessions/list", {
+				...LIST_BODY,
+				sortBy: "cost",
+			})
+			expect(response.status).toBe(200)
 			expect(contexts).toEqual(["aiSessionsPage"])
-			expect(pageSql).toContain("FROM ai_trace_index")
-			expect(pageSql).not.toContain("trace_detail_spans")
-			expect(pageSql).toContain(`Timestamp <= '${WINDOW.endTime}'`)
-			expect(pageSql).toContain("LIMIT 3")
-			expect(pageSql).not.toContain("__PARAM_")
 		} finally {
 			await harness.dispose()
 		}
@@ -510,7 +539,11 @@ describe("POST /internal/ai-sessions/list", () => {
 			const data = response.body.data as ReadonlyArray<Record<string, unknown>>
 			// The page's order is the order that was paged; re-sorting here would
 			// let a row jump between pages on a scroll.
-			expect(data.map((r) => r.sessionId)).toEqual(["wrun_beta", "wrun_alpha", `trace:${TRACE_ID}`])
+			expect(Arr.map(data, (r) => r.sessionId)).toEqual([
+				"wrun_beta",
+				"wrun_alpha",
+				`trace:${TRACE_ID}`,
+			])
 			expect(data[0]).toMatchObject({
 				vendorId: "eve",
 				vendorVersion: "1",
@@ -596,7 +629,7 @@ describe("POST /internal/ai-sessions/details", () => {
 				expect(options?.context).toBe("aiSessionsDetails")
 				detailsSql.push(compiledQueryOf(compiled).sql)
 				return compiledQueryOf(compiled)
-					.decodeRows(DETAILS_BODY.sessionIds.map(detailsRow))
+					.decodeRows(Arr.map(DETAILS_BODY.sessionIds, detailsRow))
 					.pipe(Effect.orDie)
 			},
 		})
@@ -604,25 +637,32 @@ describe("POST /internal/ai-sessions/details", () => {
 		try {
 			const response = await harness.post("/internal/ai-sessions/details", DETAILS_BODY)
 			expect(response.status).toBe(200)
-			// The fan-out reads `trace_detail_spans` over the page's extent, padded
+			// The fan-out reads `traces` over the page's extent, padded
 			// by an hour — the caller's window would be a week of partitions on
 			// the page the UI offers — as one read, because the padded extent lies
 			// inside one day; both `ai_trace_index` reads take the page's bounds.
 			expect(detailsSql).toHaveLength(1)
 			const [sql] = detailsSql
-			expect(sql).toContain("FROM trace_detail_spans")
+			expect(sql).toContain("FROM traces")
+			expect(sql).toContain(
+				"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
+			)
 			expect(sql).toContain("Timestamp >= '2026-08-19 08:50:00.000000000'")
 			expect(sql).toContain("Timestamp <= '2026-08-19 11:40:00.000000000'")
 			expect(sql).not.toContain("INTERVAL")
-			expect(sql?.split("Timestamp >= '2026-08-19 09:50:00.000000000'").length).toBe(3)
+			expect(
+				sql === undefined
+					? undefined
+					: Str.split("Timestamp >= '2026-08-19 09:50:00.000000000'")(sql).length,
+			).toBe(3)
 			// Exactly the page's ids, and the page's counted filters, so a trace
 			// resolves to the session it was ranked into.
 			for (const sessionId of DETAILS_BODY.sessionIds) expect(sql).toContain(`'${sessionId}'`)
-			expect(sql).toContain("countIf(VendorId IN ('eve')) > 0")
+			expect(sql).toContain("countIf(ai_trace_index.VendorId IN ('eve')) > 0")
 			expect(sql).not.toContain("__PARAM_")
 			// The rows as the fan-out returned them; the client merges by id.
 			expect(response.body).toEqual({
-				data: DETAILS_BODY.sessionIds.map((sessionId) => ({
+				data: Arr.map(DETAILS_BODY.sessionIds, (sessionId) => ({
 					sessionId,
 					spanCount: 12,
 					errorSpanCount: 2,
@@ -642,9 +682,10 @@ describe("POST /internal/ai-sessions/details", () => {
 		const harness = makeHarness({
 			compiledQuery: (_tenant, compiled) => {
 				const { sql } = compiledQueryOf(compiled)
-				const start = /Timestamp >= '([^']+)'\n\s+AND Timestamp <= '([^']+)'\n\s+AND TraceId IN/.exec(
-					sql,
-				)
+				const start =
+					/traces\.Timestamp >= '([^']+)'\n\s+AND traces\.Timestamp <= '([^']+)'\n\s+AND \(traces\.ServiceName, toStartOfFiveMinutes/.exec(
+						sql,
+					)
 				spansBounds.push([start?.[1] ?? "", start?.[2] ?? ""])
 				// The first read (the earlier day) sees the session's first spans, the
 				// second its last; only one of them sees the `trace:` session at all.
@@ -772,7 +813,7 @@ describe("POST /internal/ai-sessions/facets", () => {
 	})
 })
 
-describe("POST /internal/ai-sessions/list", () => {
+describe("POST /internal/ai-sessions/list filters and sort", () => {
 	// Every filter is a payload field the handler has to hand to the builder by
 	// name; a field the schema accepts and the handler forgets is a 200 that
 	// silently ignores the sidebar. So the compiled SQL is what gets asserted —
@@ -814,13 +855,15 @@ describe("POST /internal/ai-sessions/list", () => {
 			expect(response.status).toBe(200)
 			expect(response.body).toEqual({ data: [] })
 			for (const fragment of [
-				"countIf(VendorId IN ('eve')) > 0",
-				"countIf(ServiceName IN ('agent-runner')) > 0",
-				"countIf(DeploymentEnv IN ('production')) > 0",
-				"countIf(Model IN ('claude-sonnet-5')) > 0",
-				"countIf(AgentName IN ('slack-agent')) > 0",
-				"countIf(ToolName IN ('search_traces')) > 0",
-				"SessionId LIKE 'wrun01%'",
+				"countIf(ai_trace_index.VendorId IN ('eve')) > 0",
+				"countIf(ai_trace_index.ServiceName IN ('agent-runner')) > 0",
+				"countIf(ai_trace_index.DeploymentEnv IN ('production')) > 0",
+				"countIf(ai_trace_index.Model IN ('claude-sonnet-5')) > 0",
+				"countIf(ai_trace_index.AgentName IN ('slack-agent')) > 0",
+				"countIf(ai_trace_index.ToolName IN ('search_traces')) > 0",
+				// Session ids match as a substring (their key sits mid-string); trace ids as a prefix.
+				"SessionId LIKE '%wrun01%'",
+				"TraceId LIKE 'wrun01%'",
 				"errorAgentSpans > 0",
 				"NOT (sessionId LIKE 'trace:%')",
 				"agentDurationMs >= 1000",
@@ -905,7 +948,7 @@ describe("POST /internal/ai-sessions/spans — pages and scopes", () => {
 			expect(response.status).toBe(200)
 			expect(sql()).toContain("SpanAttributes['maple_ai.vendor.id'] != ''")
 			expect(sql()).toContain(
-				`(Timestamp > '${after.timestamp}' OR (Timestamp = '${after.timestamp}' AND SpanId > '${after.spanId}'))`,
+				`(traces.Timestamp > '${after.timestamp}' OR (traces.Timestamp = '${after.timestamp}' AND traces.SpanId > '${after.spanId}'))`,
 			)
 			expect(sql()).toContain("LIMIT 501")
 		} finally {
@@ -923,9 +966,11 @@ describe("POST /internal/ai-sessions/spans — pages and scopes", () => {
 				traceIds: [TRACE_ID, other],
 			})
 			expect(response.status).toBe(200)
-			expect(sql()).toContain(`TraceId IN ('${TRACE_ID}', '${other}')`)
+			expect(sql()).toContain(`trace_index.TraceId IN ('${TRACE_ID}', '${other}')`)
 			expect(sql()).toContain("SpanAttributes['maple_ai.vendor.id'] = ''")
-			expect(sql()).not.toContain("FROM traces")
+			// The spans read alone: no session-detection read over `traces`.
+			const spansSql = sql()
+			expect(spansSql === undefined ? undefined : Str.split("FROM traces")(spansSql).length).toBe(2)
 		} finally {
 			await harness.dispose()
 		}
@@ -1008,7 +1053,7 @@ describe("POST /internal/ai-sessions/summary", () => {
 				const sql = compiledQueryOf(compiled).sql
 				sqls.push(sql)
 				return compiledQueryOf(compiled)
-					.decodeRows(sql.includes("GROUP BY turnKey") ? rows : totals)
+					.decodeRows(Str.includes("GROUP BY turnKey")(sql) ? rows : totals)
 					.pipe(Effect.orDie)
 			},
 		})
@@ -1413,7 +1458,7 @@ describe("POST /internal/ai-sessions/tools/breakdowns", () => {
 		try {
 			const response = await harness.post("/internal/ai-sessions/tools/breakdowns", TOOLS_WINDOW)
 			expect(response.status).toBe(200)
-			expect((response.body.tools as ReadonlyArray<{ key: string }>).map((row) => row.key)).toEqual([
+			expect(Arr.map(response.body.tools as ReadonlyArray<{ key: string }>, (row) => row.key)).toEqual([
 				"search_traces",
 				"run_sql",
 			])
@@ -1462,8 +1507,8 @@ describe("POST /internal/ai-sessions/tools/errors", () => {
 			expect(response.status).toBe(200)
 			expect(seen[0]).toContain("ai_trace_index.ToolName = 'run_tests'")
 			// Migration 0032 put the failure's text and fingerprint on the index, so
-			// this read never seeks `trace_detail_spans` across the window.
-			expect(seen[0]).not.toContain("trace_detail_spans")
+			// this read never seeks `traces` across the window.
+			expect(seen[0]).not.toContain("FROM traces")
 			expect(seen[0]).toContain("INTERVAL 3600 SECOND")
 			expect(response.body.data).toEqual([
 				{
@@ -1565,7 +1610,7 @@ describe("POST /internal/ai-sessions/tools/error-detail", () => {
 			])
 			for (const sql of seen) {
 				expect(sql).toContain(`fingerprint = '${FINGERPRINT}'`)
-				expect(sql).not.toContain("trace_detail_spans")
+				expect(sql).not.toContain("FROM traces")
 			}
 		} finally {
 			await harness.dispose()
@@ -1668,10 +1713,12 @@ describe("POST /internal/ai-sessions/tools/error-samples", () => {
 										traceId: occurrence.traceId,
 										spanId: occurrence.spanId,
 										statusCode: "Ok",
-										arguments: "{}",
-										argumentsBytes: 2,
-										result: occurrence.message,
-										resultBytes: 58,
+										spanAttributes: {
+											"maple_ai.vendor.id": "maple",
+											"gen_ai.tool.call.arguments": "{}",
+											"gen_ai.tool.call.result": occurrence.message,
+										},
+										cutAttributeBytes: {},
 									},
 								],
 					)
@@ -1690,11 +1737,12 @@ describe("POST /internal/ai-sessions/tools/error-samples", () => {
 			const [occurrencesSql, payloadSql] = seen
 			// One row past the default page, to know whether there is another.
 			expect(occurrencesSql).toContain("LIMIT 26")
-			expect(occurrencesSql).not.toContain("trace_detail_spans")
-			// The only `trace_detail_spans` read on the page, and it is a tuple
-			// seek bounded by the page's own timestamps.
+			expect(occurrencesSql).not.toContain("FROM traces")
+			// The only `traces` read on the page: a trace_index seek on the page's
+			// trace ids and a span tuple list, bounded by the page's own timestamps.
+			expect(payloadSql).toContain(`trace_index.TraceId IN ('${occurrence.traceId}')`)
 			expect(payloadSql).toContain(
-				`(trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (tuple('${occurrence.traceId}', '${occurrence.spanId}'))`,
+				`(traces.TraceId, traces.SpanId) IN (tuple('${occurrence.traceId}', '${occurrence.spanId}'))`,
 			)
 			expect(payloadSql).toContain("Timestamp >= '2026-08-19 10:15:00.000000000'")
 			expect(payloadSql).toContain("Timestamp <= '2026-08-19 10:15:00.000000000'")
@@ -1708,7 +1756,7 @@ describe("POST /internal/ai-sessions/tools/error-samples", () => {
 						arguments: "{}",
 						argumentsBytes: 2,
 						result: occurrence.message,
-						resultBytes: 58,
+						resultBytes: occurrence.message.length,
 					},
 				],
 			})
@@ -1743,7 +1791,7 @@ describe("POST /internal/ai-sessions/tools/error-samples", () => {
 				nextCursor?: unknown
 			}
 			// The extra row only says there is more; it is the next page's first.
-			expect(body.occurrences.map((row) => row.spanId)).toEqual([occurrence.spanId])
+			expect(Arr.map(body.occurrences, (row) => row.spanId)).toEqual([occurrence.spanId])
 			expect(body.nextCursor).toEqual({ timestamp: occurrence.timestamp, spanId: occurrence.spanId })
 			expect(seen[1]).not.toContain(older.spanId)
 		} finally {

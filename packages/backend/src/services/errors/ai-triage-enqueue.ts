@@ -14,13 +14,13 @@ import {
 	PRIOR_DIAGNOSES_LIMIT,
 } from "@maple/domain/http"
 import { InvestigationId, IsoDateTimeString } from "@maple/domain/primitives"
-import { aiTriageSettings, errorIssues, investigations } from "@maple/db"
-import type { MapleDbLike } from "@maple/db/client"
-import { and, desc, eq, gte, isNull, lt, ne, or, sql } from "drizzle-orm"
-import { Clock, Effect, Option, Schema } from "effect"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import type { MapleDb } from "@maple/db/client"
+import { AiTriageSettings, ErrorIssues, Investigations } from "@maple/db/tables"
+import { Clock, Effect, Option, Schema, type Semaphore, Array as Arr, String as Str } from "effect"
 
+import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { dateToMs } from "@maple/backend/platform/time"
 
 import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
 import {
@@ -39,16 +39,15 @@ import {
 	STALE_MS,
 	isInvestigationStale,
 	staleTimeoutMessage,
+	storedProgressJson,
 } from "@maple/backend/services/errors/investigation-stale"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 const decodeInvestigationId = Schema.decodeUnknownSync(InvestigationId)
 
-const STALE_INVESTIGATION_MS = 15 * 60 * 1000
-
 const contextString = (context: Record<string, unknown>, key: string): string | undefined => {
 	const value = context[key]
-	return typeof value === "string" && value.trim().length > 0 ? value : undefined
+	return typeof value === "string" && Str.trim(value).length > 0 ? value : undefined
 }
 
 const contextNumber = (context: Record<string, unknown>, key: string): number | null => {
@@ -83,7 +82,7 @@ const contextInstant = (
 				? value
 				: typeof value === "number" && Number.isFinite(value)
 					? new Date(value)
-					: typeof value === "string" && value.trim().length > 0
+					: typeof value === "string" && Str.trim(value).length > 0
 						? new Date(value)
 						: null
 		if (instant !== null && !Number.isNaN(instant.getTime())) {
@@ -95,7 +94,7 @@ const contextInstant = (
 
 const snapshotFor = (input: MaybeEnqueueTriageInput): InstanceType<typeof InvestigationSubjectSnapshot> => {
 	const serviceName = contextString(input.context, "serviceName")
-	const kindWord = `${input.incidentKind[0]?.toUpperCase() ?? ""}${input.incidentKind.slice(1)}`
+	const kindWord = `${Str.toUpperCase(Str.slice(0, 1)(input.incidentKind))}${Str.slice(1)(input.incidentKind)}`
 	// The last resort is what the investigations list renders as a title, so it
 	// names the service when there is one — "Alert incident" says nothing the
 	// list's kind marker doesn't already say. (`reason` is deliberately not in
@@ -148,7 +147,7 @@ const snapshotFor = (input: MaybeEnqueueTriageInput): InstanceType<typeof Invest
 		scope: serviceName ?? null,
 		status: "open",
 		severity,
-		facts: factKeys.flatMap(([label, value]) =>
+		facts: Arr.flatMap(factKeys, ([label, value]) =>
 			value ? [new InvestigationSnapshotFact({ label, value })] : [],
 		),
 		references: input.issueId
@@ -188,10 +187,12 @@ export interface MaybeEnqueueTriageInput {
 	readonly incidentId: string
 	readonly issueId?: ErrorIssueId
 	readonly context: Record<string, unknown>
-	/** The Worker env, for the `ChatSession` binding. Absent means the row records why it could not run. */
-	readonly workerEnv?: Record<string, unknown>
+	/** The `ChatSession` port. Absent means the row records why it could not run. */
+	readonly chatSessions?: ChatSessionsApi
 	/** Manual starts ignore the automation-enabled flag and the gates, but never the quota. */
 	readonly force?: boolean
+	/** One per org when a producer starts several at once: holds the quota read and the insert. */
+	readonly admission?: Semaphore.Semaphore
 }
 
 /**
@@ -238,43 +239,50 @@ export interface MaybeEnqueueTriageResult {
  * own issue is excluded: its history is the issue gate's business, judged
  * without a model.
  */
+/** Only what the classifier is shown; a stored report that drifted elsewhere still counts. */
+const decodePriorReport = Schema.decodeUnknownOption(
+	Schema.Struct({ headline: Schema.optional(Schema.String), summary: Schema.optional(Schema.String) }),
+)
+const decodePriorSnapshot = Schema.decodeUnknownOption(
+	Schema.Struct({ exceptionType: Schema.optional(Schema.NullOr(Schema.String)) }),
+)
+
 const selectPriorDiagnoses = (
-	db: MapleDbLike,
+	orm: MapleDb,
 	orgId: OrgId,
 	serviceName: string,
 	issueId: ErrorIssueId | null,
 	sinceMs: number,
 ) =>
 	Effect.map(
-		db
-			.select({
-				id: investigations.id,
-				reportJson: investigations.reportJson,
-				snapshotJson: investigations.snapshotJson,
-			})
-			.from(investigations)
-			.where(
-				and(
-					eq(investigations.orgId, orgId),
-					eq(investigations.status, "diagnosed"),
-					gte(investigations.createdAt, new Date(sinceMs)),
-					sql`${investigations.snapshotJson}->>'serviceName' = ${serviceName}`,
-					issueId === null
-						? undefined
-						: or(isNull(investigations.issueId), ne(investigations.issueId, issueId)),
-				),
-			)
-			.orderBy(desc(investigations.createdAt))
-			.limit(PRIOR_DIAGNOSES_LIMIT),
+		orm.run(
+			PG.from(Investigations)
+				.select(($) => ({
+					id: $.id,
+					reportJson: PG.undecoded($.reportJson),
+					snapshotJson: PG.undecoded($.snapshotJson),
+				}))
+				.where(($) => [
+					$.orgId.eq(orgId),
+					$.status.eq("diagnosed"),
+					$.createdAt.gte(sinceMs),
+					PG.jsonText($.snapshotJson, "serviceName").eq(serviceName),
+					issueId === null ? undefined : PG.or($.issueId.isNull(), $.issueId.neq(issueId)),
+				])
+				.orderBy(($) => [[$.createdAt, "desc"]])
+				.limit(PRIOR_DIAGNOSES_LIMIT),
+		),
 		(rows) =>
-			rows.flatMap((row) => {
-				const headline = row.reportJson?.headline ?? row.reportJson?.summary
-				if (headline === undefined || headline.trim().length === 0) return []
+			Arr.flatMap(rows, (row) => {
+				const report = Option.getOrUndefined(decodePriorReport(row.reportJson))
+				const headline = report?.headline ?? report?.summary
+				if (headline === undefined || Str.trim(headline).length === 0) return []
+				const snapshot = Option.getOrUndefined(decodePriorSnapshot(row.snapshotJson))
 				return [
 					new IncidentTriagePriorDiagnosis({
 						investigationId: row.id,
 						headline,
-						exceptionType: row.snapshotJson?.exceptionType ?? null,
+						exceptionType: snapshot?.exceptionType ?? null,
 					}),
 				]
 			}),
@@ -370,50 +378,60 @@ const recordSkip = (
  */
 export const maybeEnqueueTriage: (
 	input: MaybeEnqueueTriageInput,
-) => Effect.Effect<MaybeEnqueueTriageResult, never, Database> = Effect.fn("maybeStartInvestigation")(
+) => Effect.Effect<MaybeEnqueueTriageResult, never, Database> = Effect.fn(
+	"AiTriageEnqueue.maybeStartInvestigation",
+)(
 	function* (input) {
 		const database = yield* Database
 		const nowMs = yield* Clock.currentTimeMillis
 
 		const existingRows = yield* database.execute((db) =>
-			db
-				.select()
-				.from(investigations)
-				.where(
-					and(
-						eq(investigations.orgId, input.orgId),
-						eq(investigations.incidentKind, input.incidentKind),
-						eq(investigations.incidentId, input.incidentId),
-					),
-				)
-				.limit(1),
+			db.run(
+				PG.from(Investigations)
+					.select(($) => ({
+						id: $.id,
+						status: $.status,
+						startedAt: $.startedAt,
+						progressJson: storedProgressJson($),
+					}))
+					.where(($) => [
+						$.orgId.eq(input.orgId),
+						$.incidentKind.eq(input.incidentKind),
+						$.incidentId.eq(input.incidentId),
+					])
+					.limit(1),
+			),
 		)
 		const existing = existingRows[0]
-		if (existing) {
+		if (existing !== undefined) {
 			if (isInvestigationStale(existing, nowMs)) {
 				const budget = STALE_MS
 				yield* database.execute((db) =>
-					db
-						.update(investigations)
-						.set({
-							status: "failed",
-							error: staleTimeoutMessage(budget),
-							updatedAt: new Date(nowMs),
-						})
-						.where(
-							and(
-								eq(investigations.orgId, input.orgId),
-								eq(investigations.id, existing.id),
-								lt(investigations.startedAt, new Date(nowMs - budget)),
-							),
-						),
+					db.run(
+						PG.update(Investigations)
+							.set({
+								status: "failed",
+								error: staleTimeoutMessage(budget),
+								updatedAt: nowMs,
+							})
+							.where(($) => [
+								$.orgId.eq(input.orgId),
+								$.id.eq(existing.id),
+								$.startedAt.lt(nowMs - budget),
+							]),
+					),
 				)
 			}
 			return { enqueued: false, investigationId: existing.id, reason: "duplicate" as const }
 		}
 
 		const settingsRows = yield* database.execute((db) =>
-			db.select().from(aiTriageSettings).where(eq(aiTriageSettings.orgId, input.orgId)).limit(1),
+			db.run(
+				PG.from(AiTriageSettings)
+					.select()
+					.where(($) => [$.orgId.eq(input.orgId)])
+					.limit(1),
+			),
 		)
 		const settings = settingsRows[0]
 		if (!input.force && (settings === undefined || !settings.enabled)) {
@@ -432,24 +450,27 @@ export const maybeEnqueueTriage: (
 		if (input.issueId !== undefined) {
 			const issueId = input.issueId
 			const issueRows = yield* database.execute((db) =>
-				db
-					.select({ workflowState: errorIssues.workflowState })
-					.from(errorIssues)
-					.where(and(eq(errorIssues.orgId, input.orgId), eq(errorIssues.id, issueId)))
-					.limit(1),
+				db.run(
+					PG.from(ErrorIssues)
+						.select("workflowState")
+						.where(($) => [$.orgId.eq(input.orgId), $.id.eq(issueId)])
+						.limit(1),
+				),
 			)
 			const latestRows = yield* database.execute((db) =>
-				db
-					.select({
-						id: investigations.id,
-						status: investigations.status,
-						createdAt: investigations.createdAt,
-						startedAt: investigations.startedAt,
-					})
-					.from(investigations)
-					.where(and(eq(investigations.orgId, input.orgId), eq(investigations.issueId, issueId)))
-					.orderBy(desc(investigations.createdAt))
-					.limit(1),
+				db.run(
+					PG.from(Investigations)
+						.select(($) => ({
+							id: $.id,
+							status: $.status,
+							createdAt: $.createdAt,
+							startedAt: $.startedAt,
+							progressJson: storedProgressJson($),
+						}))
+						.where(($) => [$.orgId.eq(input.orgId), $.issueId.eq(issueId)])
+						.orderBy(["createdAt", "desc"])
+						.limit(1),
+				),
 			)
 			const latestRow = latestRows[0]
 			const latest: LatestIssueInvestigation | null =
@@ -458,8 +479,9 @@ export const maybeEnqueueTriage: (
 					: {
 							id: latestRow.id,
 							status: latestRow.status,
-							createdAtMs: dateToMs(latestRow.createdAt),
-							startedAtMs: dateToMs(latestRow.startedAt),
+							createdAtMs: latestRow.createdAt,
+							startedAtMs: latestRow.startedAt,
+							progressJson: latestRow.progressJson,
 						}
 			const issueGate = evaluateIssueGate({
 				workflowState: issueRows[0]?.workflowState ?? null,
@@ -549,86 +571,97 @@ export const maybeEnqueueTriage: (
 				? detected
 				: new InvestigationSubjectSnapshot({ ...detected, severity: gate.severity })
 
-		// One agent, one pass. Shared with `InvestigationService` so the two ceilings
-		// are judged the same way on both paths.
-		const usage = yield* database.execute((db) => selectInvestigationUsage(db, input.orgId, nowMs))
-		const quota = evaluateInvestigationQuota({
-			usage,
-			limits: settings,
-			passCount: 1,
-			nowMs,
-			// Severity decides which ceiling applies, in both units, so that a burst of
-			// `low` incidents just after UTC midnight cannot spend the slice a
-			// `critical` opening at noon needs.
-			severity: snapshot.severity,
-		})
-		if (quota.kind === "exceeded") {
-			yield* Effect.logWarning("Investigation daily budget reached; skipping autonomous start").pipe(
-				Effect.annotateLogs({
-					orgId: input.orgId,
-					incidentId: input.incidentId,
-					quotaDimension: quota.dimension,
-					quotaLimit: quota.limit,
-					// Without this the log says a start was refused but not what was
-					// refused. "runs, 100" read the same for a `low` anomaly and for the
-					// `critical` the reserve exists to protect, so there was no way to tell
-					// a working ceiling from one that had just turned away the day's only
-					// real incident.
-					severity: snapshot.severity ?? "unclassified",
-				}),
-			)
-			// A refused start has to be visible as a *refusal*. `start_result` used to
-			// be set only on the success path, so a budget-exhausted org looked
-			// identical in traces to one with nothing to investigate — which is how
-			// this went unnoticed for two weeks.
-			yield* Effect.annotateCurrentSpan({
-				orgId: input.orgId,
-				"maple.investigation.start_result": "quota_exceeded",
-				"maple.investigation.quota_dimension": quota.dimension,
-				"maple.investigation.quota_limit": quota.limit,
-				"maple.investigation.severity": snapshot.severity ?? "unclassified",
+		// Quota read through insert. Under `admission`, concurrent starts for one org
+		// cannot all read the same usage and overshoot the daily cap together.
+		const admit = Effect.gen(function* () {
+			// One agent, one pass. Shared with `InvestigationService` so the two ceilings
+			// are judged the same way on both paths.
+			const usage = yield* database.execute((db) => selectInvestigationUsage(db, input.orgId, nowMs))
+			const quota = evaluateInvestigationQuota({
+				usage,
+				limits: settings,
+				passCount: 1,
+				nowMs,
+				// Severity decides which ceiling applies, in both units, so that a burst of
+				// `low` incidents just after UTC midnight cannot spend the slice a
+				// `critical` opening at noon needs.
+				severity: snapshot.severity,
 			})
-			return { enqueued: false, reason: "daily_cap" as const }
-		}
-
-		const investigationId = decodeInvestigationId(randomUUID())
-		const subject = new InvestigationIncidentSubject({
-			type: "incident",
-			incidentKind: input.incidentKind,
-			incidentId: input.incidentId,
-			...(input.issueId ? { issueId: input.issueId } : undefined),
-		})
-		const inserted = yield* database.execute((db) =>
-			db
-				.insert(investigations)
-				.values({
-					id: investigationId,
+			if (quota.kind === "exceeded") {
+				yield* Effect.logWarning(
+					"Investigation daily budget reached; skipping autonomous start",
+				).pipe(
+					Effect.annotateLogs({
+						orgId: input.orgId,
+						incidentId: input.incidentId,
+						quotaDimension: quota.dimension,
+						quotaLimit: quota.limit,
+						// Without this the log says a start was refused but not what was
+						// refused. "runs, 100" read the same for a `low` anomaly and for the
+						// `critical` the reserve exists to protect, so there was no way to tell
+						// a working ceiling from one that had just turned away the day's only
+						// real incident.
+						severity: snapshot.severity ?? "unclassified",
+					}),
+				)
+				// A refused start has to be visible as a *refusal*. `start_result` used to
+				// be set only on the success path, so a budget-exhausted org looked
+				// identical in traces to one with nothing to investigate, which is how
+				// this went unnoticed for two weeks.
+				yield* Effect.annotateCurrentSpan({
 					orgId: input.orgId,
-					status: "investigating",
-					seededBy: "system",
-					subjectJson: subject,
-					snapshotJson: snapshot,
-					incidentKind: input.incidentKind,
-					incidentId: input.incidentId,
-					issueId: input.issueId ?? null,
-					startedAt: new Date(nowMs),
-					autonomousTurns: 1,
-					createdAt: new Date(nowMs),
-					updatedAt: new Date(nowMs),
+					"maple.investigation.start_result": "quota_exceeded",
+					"maple.investigation.quota_dimension": quota.dimension,
+					"maple.investigation.quota_limit": quota.limit,
+					"maple.investigation.severity": snapshot.severity ?? "unclassified",
 				})
-				.onConflictDoNothing()
-				.returning({ id: investigations.id }),
-		)
-		if (inserted.length === 0) {
-			return { enqueued: false, reason: "duplicate" as const }
-		}
+				return { refused: { enqueued: false, reason: "daily_cap" as const } }
+			}
+
+			const investigationId = decodeInvestigationId(randomUUID())
+			const subject = new InvestigationIncidentSubject({
+				type: "incident",
+				incidentKind: input.incidentKind,
+				incidentId: input.incidentId,
+				...(input.issueId ? { issueId: input.issueId } : undefined),
+			})
+			const inserted = yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(Investigations)
+						.values({
+							id: investigationId,
+							orgId: input.orgId,
+							status: "investigating",
+							seededBy: "system",
+							subjectJson: subject,
+							snapshotJson: snapshot,
+							incidentKind: input.incidentKind,
+							incidentId: input.incidentId,
+							issueId: input.issueId ?? null,
+							startedAt: nowMs,
+							autonomousTurns: 1,
+							createdAt: nowMs,
+							updatedAt: nowMs,
+						})
+						.onConflictDoNothing()
+						.returning("id"),
+				),
+			)
+			if (inserted.length === 0) {
+				return { refused: { enqueued: false, reason: "duplicate" as const } }
+			}
+			return { refused: null, investigationId, subject }
+		})
+		const admitted = yield* input.admission ? input.admission.withPermit(admit) : admit
+		if (admitted.refused !== null) return admitted.refused
+		const { investigationId, subject } = admitted
 
 		const started = yield* startInvestigationTurn({
 			orgId: input.orgId,
 			investigationId,
 			subject,
 			snapshot,
-			workerEnv: input.workerEnv,
+			chatSessions: input.chatSessions,
 			nowMs,
 		})
 		if (!started.started) {

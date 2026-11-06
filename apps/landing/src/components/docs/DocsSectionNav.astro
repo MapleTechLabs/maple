@@ -1,5 +1,5 @@
 ---
-// Section strip under the docs header: the same four sections the sidebar
+// Section strip under the docs header: the same sections the sidebar
 // switcher shows, as tabs with the group glyphs. Both read getDocSections so
 // the two never disagree about where a page lives.
 import DocsCategoryIcon from "./DocsCategoryIcon.astro";
@@ -45,13 +45,15 @@ const sections = await getDocSections(currentSlug);
     .docs-section-nav::-webkit-scrollbar {
         display: none;
     }
-    /* Without a scrollbar, fade the right edge on phones so the clipped last
-       tab reads as "more this way" rather than a cut-off word. */
-    @media (max-width: 639px) {
-        .docs-section-nav {
-            mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
-            /* Lets the last tab scroll clear of the fade. */
-            padding-inline-end: 32px;
-        }
+    /* Without a scrollbar, a fade on each edge that has more tabs past it
+       (DocsLayout sets the attributes) says the strip scrolls. */
+    .docs-section-nav[data-more-end] {
+        mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+    }
+    .docs-section-nav[data-more-start] {
+        mask-image: linear-gradient(to right, transparent, #000 40px);
+    }
+    .docs-section-nav[data-more-start][data-more-end] {
+        mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
     }
 </style>

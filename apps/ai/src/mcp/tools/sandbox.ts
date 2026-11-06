@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import {
 	SandboxExecOutput,
 	SandboxGrepOutput,
@@ -35,8 +35,8 @@ const SANDBOX_REF =
 	"Runs in the repository sandbox (see sandbox_grep for how the checkout, `ref` and the clone wait work)."
 
 const unsafePath = (path: string): boolean =>
-	path.startsWith("/") ||
-	path.split("/").some((segment) => segment === "..") ||
+	Str.startsWith("/")(path) ||
+	Arr.some(Str.split("/")(path), (segment) => segment === "..") ||
 	// oxlint-disable-next-line no-control-regex
 	/[\u0000-\u001f]/.test(path)
 
@@ -51,17 +51,17 @@ const unsafePath = (path: string): boolean =>
 const unsafeRef = (ref: string): boolean =>
 	ref.length === 0 ||
 	ref.length > 255 ||
-	ref.startsWith("-") ||
-	ref.split("/").some((segment) => segment === "" || segment === "." || segment === "..") ||
+	Str.startsWith("-")(ref) ||
+	Arr.some(Str.split("/")(ref), (segment) => segment === "" || segment === "." || segment === "..") ||
 	// oxlint-disable-next-line no-control-regex
 	/[\u0000-\u001f\u007f ~^:?*[\\]/.test(ref)
 
 /**
- * Maple's own agents only. These run commands inside a container holding the
- * org's source, and until the audience existed they were published to every MCP
- * client like any other tool.
+ * Maple's own agents only, the chat-platform bot included. These run commands inside a
+ * container holding the org's source, and until the audience existed they were published
+ * to every MCP client like any other tool.
  */
-const INTERNAL = "internal" as const
+const AGENT = "agent" as const
 
 /** Reads only, but against a repository checkout outside Maple's own data. */
 const HINTS = { readOnly: true, openWorld: true } as const
@@ -110,11 +110,12 @@ const scopeOf = (output: {
 
 /** Split into non-empty lines; the cap is applied by the caller, which reports the total. */
 const nonEmptyLines = (output: string): ReadonlyArray<string> =>
-	output.split("\n").filter((line) => line.length > 0)
+	Arr.filter(Str.split("\n")(output), (line) => line.length > 0)
 
 export function registerSandboxTools(server: McpToolRegistrar) {
 	server.define({
 		name: "sandbox_grep",
+		title: "Search Repository Checkout",
 		description: `Search one connected repository's checkout with git grep: \`pattern\` is a POSIX extended regex, matched against tracked files at the exact commit. Use this instead of search_source_code when it is available: it searches the deployed commit, not GitHub's index of the default branch, and is not rate limited. ${SANDBOX_NOTE}`,
 		parameters: Schema.Struct({
 			repository: REPOSITORY,
@@ -131,7 +132,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 		}),
 		output: SandboxGrepOutput,
 		hints: HINTS,
-		audience: INTERNAL,
+		audience: AGENT,
 		phrases: ["Searching the repository", "Grepping the code"],
 		handler: Effect.fn("McpTool.sandboxGrep")(function* ({
 			repository,
@@ -142,7 +143,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			case_sensitive,
 			context_lines,
 		}) {
-			if (!pattern.trim() || pattern.length > 512) {
+			if (!Str.trim(pattern) || pattern.length > 512) {
 				return yield* new McpInvalidInputError({
 					message: "pattern must be 1-512 characters",
 					parameter: "pattern",
@@ -157,13 +158,13 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			const result = yield* sandbox
 				.grep(
 					tenant.orgId,
-					{ repository: repository.trim(), ref },
+					{ repository: Str.trim(repository), ref },
 					{ pattern, path, glob, caseSensitive, contextLines },
 				)
 				.pipe(Effect.mapError(fromSandboxError("sandbox_grep")))
 			// git grep: 0 matches, 1 no matches, anything above an error it printed to stderr.
 			if (result.exitCode > 1) {
-				const stderr = result.stderr.trim().slice(0, 500)
+				const stderr = Str.slice(0, 500)(Str.trim(result.stderr))
 				return yield* REGEX_FAILURE.test(stderr)
 					? new McpInvalidInputError({
 							message: `git grep could not compile the pattern (${stderr}). The pattern is a POSIX extended regex: \`(\`, \`)\`, \`[\`, \`{\`, \`.\`, \`*\`, \`+\`, \`?\` and \`|\` are operators, so escape each one you mean literally with a backslash.`,
@@ -174,7 +175,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			}
 			const all = nonEmptyLines(result.stdout)
 			return {
-				repository: repository.trim(),
+				repository: Str.trim(repository),
 				...(ref === undefined ? undefined : { ref }),
 				exitCode: result.exitCode,
 				wallTimeMs: result.wallTimeMs,
@@ -204,7 +205,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 				output.lines.length === 0
 					? []
 					: [
-							doc.code("", output.lines.join("\n")),
+							doc.code("", Arr.join(output.lines, "\n")),
 							...(output.totalLines > output.lines.length
 								? [doc.text("Narrow the pattern, path or glob for the rest.")]
 								: []),
@@ -217,6 +218,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 
 	server.define({
 		name: "sandbox_list_files",
+		title: "List Repository Files",
 		description: `List the files git tracks in a connected repository's checkout, optionally under one directory or matching a glob. Use it to learn a codebase's layout before sandbox_grep or sandbox_read_file. ${SANDBOX_REF}`,
 		parameters: Schema.Struct({
 			repository: REPOSITORY,
@@ -226,7 +228,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 		}),
 		output: SandboxListFilesOutput,
 		hints: HINTS,
-		audience: INTERNAL,
+		audience: AGENT,
 		phrases: ["Listing files"],
 		handler: Effect.fn("McpTool.sandboxListFiles")(function* ({ repository, path, glob, ref }) {
 			yield* checkPath("path", path)
@@ -234,17 +236,17 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const sandbox = yield* RepoSandboxService
 			const result = yield* sandbox
-				.listFiles(tenant.orgId, { repository: repository.trim(), ref }, { path, glob })
+				.listFiles(tenant.orgId, { repository: Str.trim(repository), ref }, { path, glob })
 				.pipe(Effect.mapError(fromSandboxError("sandbox_list_files")))
 			if (result.exitCode !== 0) {
 				return yield* new McpInvalidInputError({
-					message: `listing failed: ${result.stderr.trim().slice(0, 500)}`,
+					message: `listing failed: ${Str.slice(0, 500)(Str.trim(result.stderr))}`,
 					parameter: "path",
 				})
 			}
 			const all = nonEmptyLines(result.stdout)
 			return {
-				repository: repository.trim(),
+				repository: Str.trim(repository),
 				...(ref === undefined ? undefined : { ref }),
 				exitCode: result.exitCode,
 				wallTimeMs: result.wallTimeMs,
@@ -277,6 +279,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 
 	server.define({
 		name: "sandbox_read_file",
+		title: "Read Repository File",
 		description: `Read a line range of one file from a connected repository's checkout at the exact ref. Prefer this over read_source_file once you know the path: it reads the deployed commit, not GitHub's copy. ${SANDBOX_REF}`,
 		parameters: Schema.Struct({
 			repository: REPOSITORY,
@@ -287,7 +290,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 		}),
 		output: SandboxReadFileOutput,
 		hints: HINTS,
-		audience: INTERNAL,
+		audience: AGENT,
 		phrases: ["Reading a file"],
 		handler: Effect.fn("McpTool.sandboxReadFile")(function* ({
 			repository,
@@ -296,7 +299,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			start_line,
 			end_line,
 		}) {
-			const filePath = path.trim()
+			const filePath = Str.trim(path)
 			if (!filePath) {
 				return yield* new McpInvalidInputError({
 					message: "path must be repository-relative",
@@ -320,33 +323,36 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			const result = yield* sandbox
 				.readFile(
 					tenant.orgId,
-					{ repository: repository.trim(), ref },
+					{ repository: Str.trim(repository), ref },
 					{ path: filePath, startLine: start, endLine: end },
 				)
 				.pipe(Effect.mapError(fromSandboxError("sandbox_read_file")))
 			if (result.exitCode !== 0) {
 				return yield* new McpInvalidInputError({
-					message: `No readable file '${filePath}' at that ref: ${result.stderr.trim().slice(0, 300)}. Find the path with sandbox_list_files or sandbox_grep.`,
+					message: `No readable file '${filePath}' at that ref: ${Str.slice(0, 300)(Str.trim(result.stderr))}. Find the path with sandbox_list_files or sandbox_grep.`,
 					parameter: "path",
 				})
 			}
-			if (result.stdout.includes(NUL)) {
+			if (Str.includes(NUL)(result.stdout)) {
 				return yield* new McpInvalidInputError({
 					message: "The requested file is binary and cannot be read as source text",
 					parameter: "path",
 				})
 			}
-			const body = result.stdout.split("\n")
-			const markerIndex = body.findIndex((line) => line.startsWith(TOTAL_MARKER))
+			const body = Str.split("\n")(result.stdout)
+			const markerIndex = body.findIndex((line) => Str.startsWith(TOTAL_MARKER)(line))
+			const markerLine = body[markerIndex]
 			const total =
-				markerIndex === -1 ? undefined : Number(body[markerIndex]!.slice(TOTAL_MARKER.length).trim())
+				markerLine === undefined
+					? undefined
+					: Number(Str.trim(Str.slice(TOTAL_MARKER.length)(markerLine)))
 			// No blank-line filter: the header reports the line range, so dropping
 			// empty lines would leave the rendered source not matching those numbers.
 			// awk's trailing newline is the one empty element worth removing.
 			const numbered = markerIndex === -1 ? body : body.slice(0, markerIndex)
 			const lines = numbered.at(-1) === "" ? numbered.slice(0, numbered.length - 1) : numbered
 			return {
-				repository: repository.trim(),
+				repository: Str.trim(repository),
 				...(ref === undefined ? undefined : { ref }),
 				exitCode: result.exitCode,
 				wallTimeMs: result.wallTimeMs,
@@ -368,7 +374,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 						`${output.startLine}-${output.endLine}${output.totalLines === undefined ? "" : `/${output.totalLines}`}${truncated ? " · truncated" : ""}`,
 					],
 				],
-				blocks: [doc.code("", output.lines.join("\n"))],
+				blocks: [doc.code("", Arr.join(output.lines, "\n"))],
 				...(truncated
 					? {
 							next: [
@@ -391,6 +397,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 
 	server.define({
 		name: "sandbox_exec",
+		title: "Run Command in Repository",
 		description: `Run one program inside a connected repository's checkout. \`command\` is the program name, \`args\` its arguments, one per element; nothing is parsed by a shell, so \`command: "git", args: ["log", "-5"]\`, never \`args: ["git log -5"]\`. Available: git, coreutils, awk, sed, grep, find, wc, sort, jq, node, bun; no python. The checkout is a full clone, so git history works (git log, show, blame, diff against another commit). No network, files are read-only, output is cut at ${Math.round(SANDBOX_MAX_OUTPUT_BYTES / 1024)} KiB. Use sandbox_grep and sandbox_read_file for searching and reading; use this for what they do not cover. ${SANDBOX_REF}`,
 		parameters: Schema.Struct({
 			repository: REPOSITORY,
@@ -409,7 +416,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 		}),
 		output: SandboxExecOutput,
 		hints: HINTS,
-		audience: INTERNAL,
+		audience: AGENT,
 		phrases: ["Running a command"],
 		handler: Effect.fn("McpTool.sandboxExec")(function* ({
 			repository,
@@ -419,8 +426,8 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			ref,
 			timeout_seconds,
 		}) {
-			const program = command.trim()
-			if (!program || program.includes("/") || program.length > 64) {
+			const program = Str.trim(command)
+			if (!program || Str.includes("/")(program) || program.length > 64) {
 				return yield* new McpInvalidInputError({
 					message: "command must be a bare program name on PATH",
 					parameter: "command",
@@ -428,7 +435,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 				})
 			}
 			const argv = args ?? []
-			if (argv.length > MAX_ARGS || argv.some((arg) => arg.length > 4096)) {
+			if (argv.length > MAX_ARGS || Arr.some(argv, (arg) => arg.length > 4096)) {
 				return yield* new McpInvalidInputError({
 					message: `at most ${MAX_ARGS} arguments of 4096 characters`,
 					parameter: "args",
@@ -436,7 +443,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			}
 			yield* checkPath("cwd", cwd)
 			yield* checkRef(ref)
-			if (argv.some((arg) => arg.includes(NUL))) {
+			if (Arr.some(argv, (arg) => Str.includes(NUL)(arg))) {
 				return yield* new McpInvalidInputError({
 					message: "arguments may not contain NUL bytes",
 					parameter: "args",
@@ -447,7 +454,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			const result = yield* sandbox
 				.exec(
 					tenant.orgId,
-					{ repository: repository.trim(), ref },
+					{ repository: Str.trim(repository), ref },
 					{
 						command: program,
 						args: argv,
@@ -458,7 +465,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 				)
 				.pipe(Effect.mapError(fromSandboxError("sandbox_exec")))
 			return {
-				repository: repository.trim(),
+				repository: Str.trim(repository),
 				...(ref === undefined ? undefined : { ref }),
 				exitCode: result.exitCode,
 				wallTimeMs: result.wallTimeMs,
@@ -472,14 +479,14 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			}
 		}),
 		render: (output) => ({
-			title: `Sandbox exec: \`${[output.command, ...output.args].join(" ")}\``,
+			title: `Sandbox exec: \`${Arr.join([output.command, ...output.args], " ")}\``,
 			scope: [...scopeOf(output), ["Cwd", output.cwd]],
 			blocks: [
-				...(output.stdout.trim()
-					? [doc.heading("stdout"), doc.code("", output.stdout.trimEnd())]
+				...(Str.trim(output.stdout)
+					? [doc.heading("stdout"), doc.code("", Str.trimEnd(output.stdout))]
 					: [doc.text("(no stdout)")]),
-				...(output.stderr.trim()
-					? [doc.heading("stderr"), doc.code("", output.stderr.trimEnd())]
+				...(Str.trim(output.stderr)
+					? [doc.heading("stderr"), doc.code("", Str.trimEnd(output.stderr))]
 					: []),
 				...(output.truncated
 					? [doc.text(`Output was cut at ${Math.round(output.maxOutputBytes / 1024)} KiB.`)]

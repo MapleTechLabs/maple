@@ -2,30 +2,46 @@
 //
 // DSL-based query definitions for traces timeseries, breakdown, and list.
 
+import type { DateTime } from "effect"
 import type { TracesMetric } from "@maple/domain/query-engine"
-import { compileFnCall, subqueryCond, subqueryExpr, untypedSubqueryExpr } from "@maple-dev/effect-clickhouse"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
-import { from, fromUnion, unionAll, type CHQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
-import type { Table } from "@maple-dev/effect-clickhouse"
+import { subqueryCond, subqueryExpr, untypedSubqueryExpr } from "@maple-dev/effect-orm/clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
+import {
+	from,
+	fromUnion,
+	unionAll,
+	type CHQuery,
+	type ColumnAccessor,
+} from "@maple-dev/effect-orm/clickhouse"
+import type { Table } from "@maple-dev/effect-orm/clickhouse"
 import {
 	ServiceMapSpans,
 	ServiceOverviewSpans,
 	ServiceOverviewHourly,
 	ServiceOverviewMinutely,
-	TraceDetailSpans,
 	TraceListMv,
 	Traces,
+	inServiceMapSpans,
+	inTraces,
+	paramTraceWindow,
 	TracesAggregatesHourly,
+	orgIdParam,
+	utcSecondsParam,
 } from "../tables"
+import {
+	deploymentEnvExpr,
+	httpRequestMethodExpr,
+	httpResponseStatusCodeExpr,
+} from "@maple/domain/tinybird/semconv-renames"
 import { METRIC_NEEDS } from "../../traces-shared"
-import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 import { finalizeTimeseries } from "./series-cap"
-import { edgeCondition, hourGrain, interiorBounds, interiorConditions, minuteGrain } from "./rollup-splice"
+import { edgeCondition, hourGrain, interiorBounds, utcInteriorConditions, minuteGrain } from "./rollup-splice"
 import {
 	apdexExprs,
 	buildProjectedMapExpr,
+	ROOT_SPAN_ATTR_KEYS,
 	canUseServiceOverviewMv,
 	canUseTracesAggregatesMv,
 	errorsOnlyCondition,
@@ -36,7 +52,10 @@ import {
 	type TracesBaseWhereOpts,
 	matchOrIn,
 	soleValue,
+	timeseriesBucket,
+	wholeRangeEnd,
 } from "./query-helpers"
+import { Array as Arr, String as Str, Record as Rec } from "effect"
 
 /**
  * The two t-digest state types the timeseries branches must agree on.
@@ -154,6 +173,7 @@ function buildGroupNameExpr(
 	$: ColumnAccessor<typeof Traces.columns>,
 	groupBy: readonly string[] | undefined,
 	groupByAttributeKeys: readonly string[] | undefined,
+	groupByResourceAttributeKey?: string,
 ): CH.Expr<string> {
 	if (!groupBy || groupBy.length === 0) {
 		return CH.lit("all")
@@ -172,16 +192,19 @@ function buildGroupNameExpr(
 				parts.push(CH.toString_($.StatusCode))
 				break
 			case "http_method":
-				parts.push(CH.toString_($.SpanAttributes.get("http.method")))
+				parts.push(CH.toString_(httpRequestMethodExpr($.SpanAttributes)))
 				break
 			case "attribute":
-				if (groupByAttributeKeys?.length) {
-					const keys: CH.Expr<string>[] = groupByAttributeKeys.map((k) =>
+				if (groupByResourceAttributeKey) {
+					parts.push(CH.toString_($.ResourceAttributes.get(groupByResourceAttributeKey)))
+				} else if (groupByAttributeKeys !== undefined && groupByAttributeKeys.length > 0) {
+					const keys: CH.Expr<string>[] = Arr.map(groupByAttributeKeys, (k) =>
 						CH.toString_($.SpanAttributes.get(k)),
 					)
 					// When multiple attribute keys, join them into a single part
-					if (keys.length === 1) {
-						parts.push(keys[0])
+					const soleKey = soleValue(keys)
+					if (soleKey !== undefined) {
+						parts.push(soleKey)
 					} else {
 						parts.push(CH.arrayStringConcat(keys, " \u00b7 "))
 					}
@@ -196,8 +219,9 @@ function buildGroupNameExpr(
 		return CH.lit("all")
 	}
 
-	if (parts.length === 1) {
-		return CH.coalesce(CH.nullIf(parts[0], ""), CH.lit("all"))
+	const solePart = soleValue(parts)
+	if (solePart !== undefined) {
+		return CH.coalesce(CH.nullIf(solePart, ""), CH.lit("all"))
 	}
 
 	// Multi-part: filter empty strings before joining with separator
@@ -272,6 +296,7 @@ function buildBreakdownGroupExpr(
 	$: ColumnAccessor<typeof Traces.columns>,
 	groupBy: string,
 	groupByAttributeKey: string | undefined,
+	groupByResourceAttributeKey?: string,
 ): CH.Expr<string> {
 	switch (groupBy) {
 		// One row for the whole window — the same "no dimension" shape the
@@ -289,14 +314,15 @@ function buildBreakdownGroupExpr(
 		case "namespace":
 			return $.ResourceAttributes.get("service.namespace")
 		case "environment":
-			return $.ResourceAttributes.get("deployment.environment")
+			return deploymentEnvExpr($.ResourceAttributes)
 		case "span_name":
 			return $.SpanName
 		case "status_code":
 			return $.StatusCode
 		case "http_method":
-			return $.SpanAttributes.get("http.method")
+			return httpRequestMethodExpr($.SpanAttributes)
 		case "attribute":
+			if (groupByResourceAttributeKey) return $.ResourceAttributes.get(groupByResourceAttributeKey)
 			return groupByAttributeKey ? $.SpanAttributes.get(groupByAttributeKey) : $.ServiceName
 		default:
 			return $.ServiceName
@@ -343,6 +369,7 @@ export interface TracesTimeseriesOpts extends TracesQueryOpts {
 	needsSampling: boolean
 	groupBy?: readonly string[]
 	groupByAttributeKeys?: readonly string[]
+	groupByResourceAttributeKey?: string
 	bucketSeconds?: number
 	apdexThresholdMs?: number
 	/** When true, emit all metric columns regardless of the selected metric. Used by custom charts. */
@@ -363,10 +390,12 @@ export interface TracesTimeseriesOpts extends TracesQueryOpts {
 	 * `apps/api/src/routes/internal/query-engine.http.ts`.
 	 */
 	overviewTiers?: "hour" | "minute"
+	/** One bucket per group over the whole range; see `timeseriesBucket`. Alert evaluation sets it. */
+	wholeRange?: boolean
 }
 
 export interface TracesTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly groupName: string
 	/** Sample-weighted estimate of spans that happened. See COUNT SEMANTICS. */
 	readonly count: number
@@ -387,7 +416,7 @@ export interface TracesTimeseriesOutput {
 // query when the top-N series cap is applied. CH types are nominal
 // here (the cap helper references columns by name), so numerics use Float64.
 const TRACES_TS_COLUMNS: ColumnDefs = {
-	bucket: T.string,
+	bucket: T.dateTime,
 	groupName: T.string,
 	count: T.float64,
 	spanCount: T.float64,
@@ -463,16 +492,16 @@ export function canUseAnnualServiceOverview(opts: TracesTimeseriesOpts): boolean
 		opts.rootOnly === true &&
 		bucketSeconds >= 60 &&
 		tierIsAvailable &&
-		(opts.groupBy ?? []).every((key) => OVERVIEW_ROLLUP_GROUP_KEYS.has(key)) &&
+		Arr.every(opts.groupBy ?? [], (key) => OVERVIEW_ROLLUP_GROUP_KEYS.has(key)) &&
 		opts.spanName == null &&
 		opts.statusCode == null &&
 		!opts.errorsOnly &&
 		opts.minDurationMs == null &&
 		opts.maxDurationMs == null &&
-		!opts.excludedSpanNames?.length &&
-		!opts.attributeFilters?.length &&
-		!opts.resourceAttributeFilters?.length &&
-		!Object.values(opts.matchModes ?? {}).includes("contains")
+		(opts.excludedSpanNames === undefined || opts.excludedSpanNames.length === 0) &&
+		(opts.attributeFilters === undefined || opts.attributeFilters.length === 0) &&
+		(opts.resourceAttributeFilters === undefined || opts.resourceAttributeFilters.length === 0) &&
+		!Rec.values<string, unknown>({ ...opts.matchModes }).includes("contains")
 	)
 }
 
@@ -497,7 +526,7 @@ function buildOverviewRollupGroupNameExpr(
 
 export function tracesTimeseriesQuery(
 	opts: TracesTimeseriesOpts,
-): CHQuery<ColumnDefs, TracesTimeseriesOutput, {}> {
+): CHQuery<ColumnDefs, TracesTimeseriesOutput> {
 	const apdexThresholdMs = opts.apdexThresholdMs ?? 500
 
 	if (canUseAnnualServiceOverview(opts)) {
@@ -533,25 +562,31 @@ export function tracesTimeseriesQuery(
 		>(
 			$: A,
 		) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			opts.serviceName ? $.ServiceName.eq(opts.serviceName) : undefined,
-			opts.environments?.length ? CH.inList($.DeploymentEnv, opts.environments) : undefined,
-			opts.namespaces?.length ? CH.inList($.ServiceNamespace, opts.namespaces) : undefined,
-			opts.commitShas?.length ? CH.inList($.CommitSha, opts.commitShas) : undefined,
-			opts.excludedServiceNames?.length
+			opts.environments !== undefined && opts.environments.length > 0
+				? CH.inList($.DeploymentEnv, opts.environments)
+				: undefined,
+			opts.namespaces !== undefined && opts.namespaces.length > 0
+				? CH.inList($.ServiceNamespace, opts.namespaces)
+				: undefined,
+			opts.commitShas !== undefined && opts.commitShas.length > 0
+				? CH.inList($.CommitSha, opts.commitShas)
+				: undefined,
+			opts.excludedServiceNames !== undefined && opts.excludedServiceNames.length > 0
 				? CH.notInList($.ServiceName, opts.excludedServiceNames)
 				: undefined,
-			opts.excludedEnvironments?.length
+			opts.excludedEnvironments !== undefined && opts.excludedEnvironments.length > 0
 				? CH.notInList($.DeploymentEnv, opts.excludedEnvironments)
 				: undefined,
-			opts.excludedNamespaces?.length
+			opts.excludedNamespaces !== undefined && opts.excludedNamespaces.length > 0
 				? CH.notInList($.ServiceNamespace, opts.excludedNamespaces)
 				: undefined,
 		]
 
 		const rawEdges = from(ServiceOverviewSpans)
 			.select(($) => ({
-				bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
+				bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 				groupName: buildOverviewRollupGroupNameExpr($, opts.groupBy),
 				bCount: CH.count(),
 				bEstimatedSpanCount: CH.sum($.SampleRate),
@@ -571,12 +606,16 @@ export function tracesTimeseriesQuery(
 						)
 					: CH.lit(0),
 			}))
-			.where(($) => [...serviceOverviewWhereConditions($, opts), edgeCondition("Timestamp", edgeGrain)])
+			.where(($) => [
+				...serviceOverviewWhereConditions($, opts),
+				edgeCondition("Timestamp", edgeGrain),
+				wholeRangeEnd($.Timestamp, opts.wholeRange),
+			])
 			.groupBy("bucket", "groupName")
 
 		const minutelyInterior = from(ServiceOverviewMinutely)
 			.select(($) => ({
-				bucket: CH.toStartOfInterval($.Minute, param.int("bucketSeconds")),
+				bucket: timeseriesBucket($.Minute, opts.wholeRange),
 				groupName: buildOverviewRollupGroupNameExpr($, opts.groupBy),
 				bCount: CH.sum($.SpanCount),
 				bEstimatedSpanCount: CH.sum($.EstimatedSpanCount),
@@ -590,7 +629,7 @@ export function tracesTimeseriesQuery(
 			}))
 			.where(($) => [
 				...rollupWhere($),
-				...interiorConditions($.Minute, minuteGrain),
+				...utcInteriorConditions($.Minute, minuteGrain),
 				// Only the sub-hour remainder when the hourly tier covers the middle;
 				// the whole interior otherwise.
 				includeHourly ? edgeCondition("Minute", hourGrain) : undefined,
@@ -599,7 +638,7 @@ export function tracesTimeseriesQuery(
 
 		const hourlyInterior = from(ServiceOverviewHourly)
 			.select(($) => ({
-				bucket: CH.toStartOfInterval($.Hour, param.int("bucketSeconds")),
+				bucket: timeseriesBucket($.Hour, opts.wholeRange),
 				groupName: buildOverviewRollupGroupNameExpr($, opts.groupBy),
 				bCount: CH.sum($.SpanCount),
 				bEstimatedSpanCount: CH.sum($.EstimatedSpanCount),
@@ -611,7 +650,7 @@ export function tracesTimeseriesQuery(
 				bSatisfiedCount: needs.has("apdex") ? CH.sum($.ApdexSatisfiedCount) : CH.lit(0),
 				bToleratingCount: needs.has("apdex") ? CH.sum($.ApdexToleratingCount) : CH.lit(0),
 			}))
-			.where(($) => [...rollupWhere($), ...interiorConditions($.Hour)])
+			.where(($) => [...rollupWhere($), ...utcInteriorConditions($.Hour)])
 			.groupBy("bucket", "groupName")
 
 		const tiers = !includeMinutely
@@ -681,8 +720,7 @@ export function tracesTimeseriesQuery(
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
 		return finalizeTimeseries(annual, TRACES_TS_COLUMNS, "count", opts) as CHQuery<
 			ColumnDefs,
-			TracesTimeseriesOutput,
-			{}
+			TracesTimeseriesOutput
 		>
 	}
 
@@ -719,7 +757,7 @@ export function tracesTimeseriesQuery(
 		const spanNames = inclusionValues(opts.spanName, opts.spanNames)
 		const rawEdges = from(Traces)
 			.select(($) => ({
-				bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
+				bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 				groupName: buildGroupNameExpr($, opts.groupBy, undefined),
 				bWeightedCount: CH.sum($.SampleRate),
 				// `toFloat64` is load-bearing: the MV side of this column is
@@ -742,12 +780,13 @@ export function tracesTimeseriesQuery(
 					matchOrIn($.SpanName, v, opts.matchModes?.spanName === "contains"),
 				),
 				edgeCondition("Timestamp"),
+				wholeRangeEnd($.Timestamp, opts.wholeRange),
 			])
 			.groupBy("bucket", "groupName")
 
 		const hourlyInterior = from(TracesAggregatesHourly)
 			.select(($) => ({
-				bucket: CH.toStartOfInterval($.Hour, param.int("bucketSeconds")),
+				bucket: timeseriesBucket($.Hour, opts.wholeRange),
 				groupName: buildAggregatesGroupNameExpr($, opts.groupBy),
 				bWeightedCount: CH.sum($.WeightedCount),
 				// The MV stores no raw row count, so the weighted value stands in for
@@ -798,11 +837,7 @@ export function tracesTimeseriesQuery(
 			}))
 			.groupBy("bucket", "groupName")
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
-		return finalizeTimeseries(aggregates, TRACES_TS_COLUMNS, "count", opts) as CHQuery<
-			ColumnDefs,
-			TracesTimeseriesOutput,
-			{}
-		>
+		return finalizeTimeseries(aggregates, TRACES_TS_COLUMNS, "count", opts)
 	}
 
 	// Fast path: when no filter or groupBy references span-level columns
@@ -814,33 +849,39 @@ export function tracesTimeseriesQuery(
 	if (canUseServiceOverviewMv(opts, opts.groupBy)) {
 		const mv = from(ServiceOverviewSpans)
 			.select(($) => ({
-				bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
+				bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 				groupName: buildMvGroupNameExpr($, opts.groupBy),
 				...metricSelectExprs($, opts.metric, apdexThresholdMs, opts.needsSampling, opts.allMetrics),
 			}))
-			.where(($) => serviceOverviewWhereConditions($, opts))
+			.where(($) => [
+				...serviceOverviewWhereConditions($, opts),
+				wholeRangeEnd($.Timestamp, opts.wholeRange),
+			])
 			.groupBy("bucket", "groupName")
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
 		return finalizeTimeseries(mv, TRACES_TS_COLUMNS, "count", opts) as CHQuery<
 			ColumnDefs,
-			TracesTimeseriesOutput,
-			{}
+			TracesTimeseriesOutput
 		>
 	}
 
 	const raw = from(Traces)
 		.select(($) => ({
-			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
-			groupName: buildGroupNameExpr($, opts.groupBy, opts.groupByAttributeKeys),
+			bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
+			groupName: buildGroupNameExpr(
+				$,
+				opts.groupBy,
+				opts.groupByAttributeKeys,
+				opts.groupByResourceAttributeKey,
+			),
 			...metricSelectExprs($, opts.metric, apdexThresholdMs, opts.needsSampling, opts.allMetrics),
 		}))
-		.where(($) => buildWhereConditions($, opts))
+		.where(($) => [...buildWhereConditions($, opts), wholeRangeEnd($.Timestamp, opts.wholeRange)])
 		.groupBy("bucket", "groupName")
 		.orderBy(["bucket", "asc"], ["groupName", "asc"])
 	return finalizeTimeseries(raw, TRACES_TS_COLUMNS, "count", opts) as CHQuery<
 		ColumnDefs,
-		TracesTimeseriesOutput,
-		{}
+		TracesTimeseriesOutput
 	>
 }
 
@@ -850,6 +891,7 @@ export interface TracesBreakdownOpts extends TracesQueryOpts {
 	metric: TracesMetric
 	groupBy: string
 	groupByAttributeKey?: string
+	groupByResourceAttributeKey?: string
 	limit?: number
 	apdexThresholdMs?: number
 	/** When true, emit all metric columns regardless of the selected metric. Used by custom charts. */
@@ -871,11 +913,16 @@ export interface TracesBreakdownOutput {
 	readonly apdexScore: number
 }
 
+/** Whether `tracesBreakdownQuery` scans raw `traces` rather than the entry-span rollup. */
+export function tracesBreakdownReadsRaw(opts: TracesBreakdownOpts): boolean {
+	return !canUseServiceOverviewMv(opts, [opts.groupBy])
+}
+
 export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 	const apdexThresholdMs = opts.apdexThresholdMs ?? 500
 	const limit = opts.limit ?? 10
 
-	if (canUseServiceOverviewMv(opts, [opts.groupBy])) {
+	if (!tracesBreakdownReadsRaw(opts)) {
 		const mv = from(ServiceOverviewSpans)
 			.select(($) => {
 				const { estimatedSpanCount: _estimatedSpanCount, ...metrics } = metricSelectExprs(
@@ -895,7 +942,7 @@ export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 			.orderBy(["count", "desc"])
 			.limit(limit)
 			.format("JSON")
-		return mv as CHQuery<ColumnDefs, TracesBreakdownOutput, {}>
+		return mv as CHQuery<ColumnDefs, TracesBreakdownOutput>
 	}
 
 	const raw = from(Traces)
@@ -908,7 +955,12 @@ export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 				opts.allMetrics,
 			)
 			return {
-				name: buildBreakdownGroupExpr($, opts.groupBy, opts.groupByAttributeKey),
+				name: buildBreakdownGroupExpr(
+					$,
+					opts.groupBy,
+					opts.groupByAttributeKey,
+					opts.groupByResourceAttributeKey,
+				),
 				...metrics,
 			}
 		})
@@ -917,7 +969,7 @@ export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 		.orderBy(["count", "desc"])
 		.limit(limit)
 		.format("JSON")
-	return raw as CHQuery<ColumnDefs, TracesBreakdownOutput, {}>
+	return raw as CHQuery<ColumnDefs, TracesBreakdownOutput>
 }
 
 // List query
@@ -931,7 +983,7 @@ export interface TracesListOpts extends TracesQueryOpts {
 	 * both, but callers should pick one. Cursor is strictly preferred for deep
 	 * pages: offset still scans all skipped rows.
 	 */
-	cursor?: string
+	cursor?: DateTime.Utc
 	columns?: readonly string[]
 	/** Defaults to `"timestamp"`. */
 	sortBy?: TracesListSortKey
@@ -944,7 +996,7 @@ export type TracesListSortDir = "asc" | "desc"
 
 export interface TracesListOutput {
 	readonly traceId: string
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 	readonly spanId: string
 	/** Empty string for a root span. */
 	readonly parentSpanId: string
@@ -992,10 +1044,10 @@ export function tracesListQuery(opts: TracesListOpts) {
 
 	if (opts.columns) {
 		for (const col of opts.columns) {
-			if (col.startsWith("spanAttributes.")) {
-				requestedSpanAttrKeys.push(col.slice("spanAttributes.".length))
-			} else if (col.startsWith("resourceAttributes.")) {
-				requestedResourceAttrKeys.push(col.slice("resourceAttributes.".length))
+			if (Str.startsWith("spanAttributes.")(col)) {
+				requestedSpanAttrKeys.push(Str.slice("spanAttributes.".length)(col))
+			} else if (Str.startsWith("resourceAttributes.")(col)) {
+				requestedResourceAttrKeys.push(Str.slice("resourceAttributes.".length)(col))
 			}
 		}
 	}
@@ -1011,7 +1063,7 @@ export function tracesListQuery(opts: TracesListOpts) {
 
 	const baseWhere = ($: ColumnAccessor<typeof Traces.columns>): Array<CH.Condition | undefined> => [
 		...buildWhereConditions($, opts),
-		CH.when(cursor, (v: string) => $.Timestamp.lt(v)),
+		CH.when(cursor, (v: DateTime.Utc) => $.Timestamp.lt(v)),
 	]
 
 	const sortBy = opts.sortBy ?? "timestamp"
@@ -1042,11 +1094,7 @@ export function tracesListQuery(opts: TracesListOpts) {
 			.orderBy(["ts", sortDir])
 			.limit(limit + offset)
 		const agg = sortDir === "desc" ? "min" : "max"
-		const cutoff = subqueryExpr(
-			cutoffInner,
-			T.dateTimeString,
-			(sql) => `(SELECT ${agg}(ts) FROM (${sql}))`,
-		)
+		const cutoff = subqueryExpr(cutoffInner, T.dateTime64, (sql) => `(SELECT ${agg}(ts) FROM (${sql}))`)
 		return sortDir === "desc" ? $.Timestamp.gte(cutoff) : $.Timestamp.lte(cutoff)
 	}
 
@@ -1103,7 +1151,7 @@ export interface SlowTracesOutput {
 	readonly serviceName: string
 	readonly durationMs: number
 	readonly statusCode: string
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 }
 
 export function slowTracesQuery(opts: SlowTracesOpts) {
@@ -1114,12 +1162,12 @@ export function slowTracesQuery(opts: SlowTracesOpts) {
 			serviceName: $.ServiceName,
 			durationMs: $.Duration.div(1000000),
 			statusCode: $.StatusCode,
-			timestamp: CH.toString_($.Timestamp),
+			timestamp: $.Timestamp,
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 			CH.when(opts.service, (v: string) => $.ServiceName.eq(v)),
 			CH.when(opts.environment, (v: string) => $.DeploymentEnv.eq(v)),
 		])
@@ -1133,9 +1181,9 @@ export function slowTracesQuery(opts: SlowTracesOpts) {
 // DSL port of the span-level search in `observability/search-traces.ts`
 // (`spanLevelSearch`). Returns the matched span rows (not root summaries) for
 // flexible span-level filtering: span name (exact or contains), service,
-// error, duration bounds, attribute filters, and trace id. When a trace id is
-// present, it reads `trace_detail_spans`, whose sort key starts with
-// (OrgId, TraceId); otherwise it uses the raw `traces` search path.
+// error, duration bounds, attribute filters, and trace id. With a trace id it
+// seeks that trace's granules through `trace_index`; otherwise it searches the
+// window in two stages.
 // OrgId-scoped via `tracesBaseWhereConditions`.
 
 export interface SpanSearchOpts extends TracesQueryOpts {
@@ -1154,7 +1202,7 @@ export interface SpanSearchOutput {
 	readonly statusMessage: string
 	readonly spanAttributes: Record<string, string>
 	readonly resourceAttributes: Record<string, string>
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 }
 
 type SpanSearchColumns = Pick<
@@ -1179,7 +1227,7 @@ function spanSearchFrom<Name extends string>(
 	opts: SpanSearchOpts,
 	limit: number,
 	offset: number,
-	cutoff?: CH.Expr<string>,
+	cutoff?: CH.Expr<DateTime.Utc>,
 ) {
 	const q = from(source)
 		.select(($) => ({
@@ -1192,7 +1240,7 @@ function spanSearchFrom<Name extends string>(
 			statusMessage: $.StatusMessage,
 			spanAttributes: $.SpanAttributes,
 			resourceAttributes: $.ResourceAttributes,
-			timestamp: CH.toString_($.Timestamp),
+			timestamp: $.Timestamp,
 		}))
 		.where(($) => [
 			...tracesBaseWhereConditions($, opts),
@@ -1210,16 +1258,17 @@ export function spanSearchQuery(opts: SpanSearchOpts) {
 	const limit = opts.limit ?? 20
 	const offset = opts.offset ?? 0
 
-	// With a trace id, `trace_detail_spans` is keyed `(OrgId, TraceId, SpanId)`:
-	// the filter is a sort-key prefix and the row set is one trace, so the whole
-	// Maps are cheap to read directly.
+	// With a trace id the row set is one trace's granules, so the whole Maps
+	// are cheap to read directly.
 	if (opts.traceId) {
-		return spanSearchFrom(TraceDetailSpans, opts, limit, offset)
+		const traceId = opts.traceId
+		return spanSearchFrom(Traces, opts, limit, offset).where(() => [
+			inTraces((id) => id.eq(traceId), paramTraceWindow()),
+		])
 	}
 
-	// Without one, this reads raw `traces`, whose sort key
-	// `(OrgId, ServiceName, SpanName, toDateTime(Timestamp))` cannot serve
-	// `ORDER BY Timestamp DESC` — so a single-stage query materialized both
+	// Without one, the sort key `(OrgId, ServiceName, 5-minute bucket, TraceId)`
+	// cannot serve `ORDER BY Timestamp DESC`, so a single-stage query materialized both
 	// attribute Maps for every matching row in range before `LIMIT` discarded
 	// all but N (9–13 GB reads in production). Two-stage it exactly like
 	// `tracesListQuery`: stage 1 reads only `Timestamp` to find the cutoff,
@@ -1232,7 +1281,7 @@ export function spanSearchQuery(opts: SpanSearchOpts) {
 		])
 		.orderBy(["ts", "desc"])
 		.limit(limit + offset)
-	const cutoff = subqueryExpr(cutoffInner, T.dateTimeString, (sql) => `(SELECT min(ts) FROM (${sql}))`)
+	const cutoff = subqueryExpr(cutoffInner, T.dateTime64, (sql) => `(SELECT min(ts) FROM (${sql}))`)
 
 	return spanSearchFrom(Traces, opts, limit, offset, cutoff)
 }
@@ -1244,15 +1293,16 @@ export interface TracesRootListOpts extends TracesQueryOpts {
 	offset?: number
 	/**
 	 * Keyset pagination cursor. When set, only root spans with `Timestamp < cursor`
-	 * are returned. Strictly preferred over `offset` for deep pagination.
+	 * are returned. Strictly preferred over `offset` for deep pagination. Pass
+	 * `exactDateTime64(...)` to keep the nanoseconds a `DateTime.Utc` drops.
 	 */
-	cursor?: string
+	cursor?: DateTime.Utc | CH.Expr<DateTime.Utc>
 }
 
 export interface TracesRootListOutput {
 	readonly traceId: string
-	readonly startTime: string
-	readonly endTime: string
+	readonly startTime: DateTime.Utc
+	readonly endTime: DateTime.Utc
 	readonly durationMicros: number
 	readonly spanCount: number
 	readonly services: readonly string[]
@@ -1270,6 +1320,9 @@ export interface TracesRootListOutput {
 	 * destination (`host/path`) instead of falling back to `http.client GET`.
 	 */
 	readonly rootSpanAttributes: string
+	/** Root span's deployment environment and service.version ('' when unset). */
+	readonly rootDeploymentEnv?: string
+	readonly rootServiceVersion?: string
 	readonly hasError: number
 }
 
@@ -1287,12 +1340,12 @@ export interface TraceSummariesOpts extends TracesBaseWhereOpts {
 	httpRoute?: string
 	limit?: number
 	offset?: number
-	cursor?: { timestamp: string; traceId: string }
+	cursor?: { timestamp: DateTime.Utc; traceId: string }
 }
 
 export interface TraceSummaryOutput {
 	readonly traceId: string
-	readonly startTime: string
+	readonly startTime: DateTime.Utc
 	readonly durationMs: number
 	readonly rootSpanName: string
 	readonly rootSpanKind: string
@@ -1311,13 +1364,28 @@ export interface TraceSummaryOutput {
 // which is why the trace list — thirteen `argMin` columns — decoded nothing.
 const argMin = CH.argMin
 
+const REWRITTEN_HTTP_SPAN_NAMES = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
+
+/** Raw names `normalizedSpanNameExpr` rewrites, so they never appear as-is in `trace_list_mv`. */
+const isRewrittenHttpSpanName = (name: string) =>
+	Str.startsWith("http.server ")(name) || REWRITTEN_HTTP_SPAN_NAMES.has(name)
+
 /**
  * Public trace catalog read over the root-span MV, ordered deterministically.
- * Signal filters match any span by default. A tenant/time-filtered `IN`
- * semi-join selects owning TraceIds before the root-summary MV is read, avoiding
- * a broad runtime JOIN while keeping the returned fields explicitly root-scoped.
+ *
+ * Every path pages before it aggregates: grouping the window first (or collecting
+ * every matching TraceId for an `IN`) grows with the org's trace volume, not the
+ * page, and ran out of memory for orgs writing ~2M traces an hour.
+ *
+ * - Root-scoped or unfiltered: filters apply to the trace's true root
+ *   (`ParentSpanId = ''`, the row the returned fields describe). The page walks
+ *   `trace_list_mv` in sort-key order; filters it cannot express page over raw
+ *   root spans instead.
+ * - Otherwise filters match any span, through a TraceId semi-join.
  */
 export function traceSummariesQuery(opts: TraceSummariesOpts) {
+	const limit = opts.limit ?? 20
+	const offset = opts.offset ?? 0
 	const attributeFilters = [
 		...(opts.attributeFilters ?? []),
 		...(opts.httpMethod ? [{ key: "http.method", mode: "equals" as const, value: opts.httpMethod }] : []),
@@ -1330,7 +1398,6 @@ export function traceSummariesQuery(opts: TraceSummariesOpts) {
 		serviceName: opts.serviceName,
 		spanName: opts.spanName,
 		statusCode: opts.statusCode,
-		rootOnly: opts.spanScope === "root" ? true : undefined,
 		errorsOnly: opts.hasError,
 		environments: opts.environments ?? (opts.deploymentEnv ? [opts.deploymentEnv] : undefined),
 		namespaces: opts.namespaces ?? (opts.namespace ? [opts.namespace] : undefined),
@@ -1338,17 +1405,56 @@ export function traceSummariesQuery(opts: TraceSummariesOpts) {
 		maxDurationMs: opts.maxDurationMs,
 		attributeFilters,
 		resourceAttributeFilters: opts.resourceAttributeFilters,
+		matchModes: opts.matchModes,
 	}
-	const hasSpanFilters = Object.entries(spanFilters).some(([, value]) =>
-		Array.isArray(value) ? value.length > 0 : value !== undefined,
+	// Match modes only shape the filters, so they never count as one.
+	const hasSpanFilters = Arr.some(Rec.toEntries<string, unknown>({ ...spanFilters }), ([key, value]) =>
+		key === "matchModes" ? false : Arr.isArray(value) ? value.length > 0 : value !== undefined,
 	)
-	// Match modes only shape the filters above, so they never force the semi-join on their own.
-	const matchingTraceIds = hasSpanFilters
-		? from(Traces)
-				.select(($) => ({ traceId: $.TraceId }))
-				.where(($) => tracesBaseWhereConditions($, { ...spanFilters, matchModes: opts.matchModes }))
-				.groupBy("traceId")
-		: undefined
+	// Keyset over (second, TraceId): the MV stores whole seconds, and the cursor is a page's last `startTime`.
+	const afterCursor = (ts: CH.Expr<DateTime.Utc>, traceId: CH.Expr<string>) =>
+		opts.cursor
+			? ts
+					.lt(opts.cursor.timestamp)
+					.or(ts.eq(opts.cursor.timestamp).and(traceId.lt(opts.cursor.traceId)))
+			: undefined
+
+	// The MV stores display span names, which equal the raw name except for HTTP server spans
+	// (`http.server GET` -> `GET /route`). `span_name` matches either, so a raw HTTP spelling,
+	// or a substring of one, has to page over raw spans.
+	const spanName = spanFilters.spanName
+	const pagesOverMv =
+		canUseTraceListMvStage1(spanFilters) &&
+		(spanName === undefined ||
+			(opts.matchModes?.spanName !== "contains" && !isRewrittenHttpSpanName(spanName)))
+	const page =
+		opts.spanScope === "root" || !hasSpanFilters
+			? pagesOverMv
+				? from(TraceListMv)
+						.select(($) => ({ ts: $.Timestamp, traceId: $.TraceId }))
+						.where(($) => [
+							...traceListMvWhereConditions($, spanFilters),
+							afterCursor($.Timestamp, $.TraceId),
+						])
+						.orderBy(["ts", "desc"], ["traceId", "desc"])
+						.limit(limit + offset)
+				: from(Traces)
+						.select(($) => ({ ts: CH.toDateTime($.Timestamp), traceId: $.TraceId }))
+						.where(($) => [
+							...tracesBaseWhereConditions($, spanFilters),
+							$.ParentSpanId.eq(""),
+							afterCursor(CH.toDateTime($.Timestamp), $.TraceId),
+						])
+						.orderBy(["ts", "desc"], ["traceId", "desc"])
+						.limit(limit + offset)
+			: undefined
+	const matchingTraceIds =
+		page === undefined
+			? from(Traces)
+					.select(($) => ({ traceId: $.TraceId }))
+					.where(($) => tracesBaseWhereConditions($, spanFilters))
+					.groupBy("traceId")
+			: undefined
 
 	return from(TraceListMv)
 		.select(($) => ({
@@ -1367,44 +1473,22 @@ export function traceSummariesQuery(opts: TraceSummariesOpts) {
 			httpStatusCode: argMin($.HttpStatusCode, $.Timestamp),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
-			matchingTraceIds ? subqueryCond(matchingTraceIds, (sql) => `TraceId IN (${sql})`) : undefined,
-			opts.cursor
-				? $.Timestamp.lt(opts.cursor.timestamp).or(
-						$.Timestamp.eq(opts.cursor.timestamp).and($.TraceId.lt(opts.cursor.traceId)),
-					)
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
+			// The (Timestamp, TraceId) tuple is the MV's sort key after OrgId, so the page is an index seek.
+			page
+				? subqueryCond(page, (sql) => `(Timestamp, TraceId) IN (SELECT ts, traceId FROM (${sql}))`)
 				: undefined,
+			matchingTraceIds ? subqueryCond(matchingTraceIds, (sql) => `TraceId IN (${sql})`) : undefined,
+			matchingTraceIds ? afterCursor($.Timestamp, $.TraceId) : undefined,
 		])
 		.groupBy("traceId")
 		.orderBy(["startTime", "desc"], ["traceId", "desc"])
-		.limit(opts.limit ?? 20)
-		.offset(opts.offset ?? 0)
+		.limit(limit)
+		.offset(offset)
 		.format("JSON")
 }
-
-/**
- * HTTP attribute keys projected into `rootSpanAttributes`. Mirrors the web app's
- * trace-list projection and the hierarchy query's `TREE_SPAN_ATTR_KEYS` so the
- * shared `getHttpInfo` / `HttpSpanLabel` render identically across surfaces.
- */
-const ROOT_SPAN_ATTR_KEYS = [
-	"http.method",
-	"http.request.method",
-	"http.route",
-	"http.target",
-	"http.status_code",
-	"http.response.status_code",
-	"http.url",
-	"url.full",
-	"url.path",
-	"server.address",
-	"net.peer.name",
-	// Mobile screen spans (`ui.screen` / `screen.load`) carry their only useful
-	// identity here — without it every screen trace renders as the bare span name.
-	"screen.name",
-] as const
 
 /**
  * Two-stage root-trace list query. Same OOM avoidance as `tracesListQuery`:
@@ -1426,7 +1510,7 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 
 	const baseWhere = ($: ColumnAccessor<typeof Traces.columns>): Array<CH.Condition | undefined> => [
 		...buildWhereConditions($, { ...opts, rootOnly: true }),
-		CH.when(cursor, (v: string) => $.Timestamp.lt(v)),
+		CH.when(cursor, (v: DateTime.Utc | CH.Expr<DateTime.Utc>) => $.Timestamp.lt(v)),
 	]
 
 	// Stage 1: cheap scan — only `Timestamp` is read, sharing the same WHERE
@@ -1436,7 +1520,7 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 		.where(baseWhere)
 		.orderBy(["ts", "desc"])
 		.limit(limit + offset)
-	const cutoff = subqueryExpr(cutoffInner, T.dateTimeString, (sql) => `(SELECT min(ts) FROM (${sql}))`)
+	const cutoff = subqueryExpr(cutoffInner, T.dateTime64, (sql) => `(SELECT min(ts) FROM (${sql}))`)
 
 	// Stage 2: heavy SpanAttributes lookups read only for rows at/after the cutoff.
 	let q = from(Traces)
@@ -1452,10 +1536,12 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 			rootSpanKind: $.SpanKind,
 			rootSpanStatusCode: $.StatusCode,
 			rootSpanStatusMessage: $.StatusMessage,
-			rootHttpMethod: $.SpanAttributes.get("http.method"),
+			rootHttpMethod: httpRequestMethodExpr($.SpanAttributes),
 			rootHttpRoute: $.SpanAttributes.get("http.route"),
-			rootHttpStatusCode: $.SpanAttributes.get("http.status_code"),
+			rootHttpStatusCode: httpResponseStatusCodeExpr($.SpanAttributes),
 			rootSpanAttributes: CH.toJSONString(buildProjectedMapExpr(ROOT_SPAN_ATTR_KEYS, "SpanAttributes")),
+			rootDeploymentEnv: deploymentEnvExpr($.ResourceAttributes),
+			rootServiceVersion: $.ResourceAttributes.get("service.version"),
 			hasError: CH.if_($.StatusCode.eq("Error"), CH.lit(1), CH.lit(0)),
 		}))
 		.where(($) => [...baseWhere($), $.Timestamp.gte(cutoff)])
@@ -1482,7 +1568,7 @@ export interface TraceListOpts extends TracesQueryOpts {
 	 * timestamp. Strictly preferred over `offset` for deep pagination.
 	 * Only valid with the default `timestamp` sort.
 	 */
-	cursor?: { timestamp: string; traceId: string }
+	cursor?: { timestamp: DateTime.Utc; traceId: string }
 	/**
 	 * `durationMs` sorts by the ROOT span's own duration, not the trace's
 	 * wall-clock extent — the wall clock only exists after stage 2 aggregates,
@@ -1496,11 +1582,11 @@ export interface TraceListOpts extends TracesQueryOpts {
 export interface TraceListOutput {
 	readonly traceId: string
 	/** Root span timestamp — the keyset cursor field, paired with `traceId`. */
-	readonly startTime: string
+	readonly startTime: DateTime.Utc
 	/** `startTime` truncated to the second: the page order on the `trace_list_mv` path. */
-	readonly startSecond: string
+	readonly startSecond: DateTime.Utc
 	/** When the last span finished, so `endTime - startTime` is the duration below. */
-	readonly endTime: string
+	readonly endTime: DateTime.Utc
 	/** Wall-clock extent of the whole trace, not the root span's own duration. */
 	readonly durationMicros: number
 	/** The root span's own duration — the `durationMs` sort key (see `TraceListOpts.sortBy`). */
@@ -1524,14 +1610,20 @@ export interface TraceListOutput {
 // they preserve their argument's element type, and the local copies here (plain
 // `compileFnCall`) did not, which cost every query selecting one its row schema.
 
-const fromUnixTimestamp64Nano = (nanos: CH.Expr<number>): CH.Expr<string> =>
-	CH.compileTypedFnCall<string>("fromUnixTimestamp64Nano", T.dateTime64String.schema, nanos)
+const fromUnixTimestamp64Nano = (nanos: CH.Expr<number>): CH.Expr<DateTime.Utc> =>
+	CH.compileTypedFnCall("fromUnixTimestamp64Nano", T.dateTime64.schema, nanos)
 
-const subtractHours = (d: CH.Expr<string>, hours: CH.Expr<number>): CH.Expr<string> =>
-	compileFnCall<string>("subtractHours", d, hours)
+const subtractHours = <Q>(d: CH.Expr<DateTime.Utc, Q>, hours: CH.Expr<number>) =>
+	CH.compileTypedFnCall("subtractHours", T.dateTime.schema, d, hours)
 
-const addHours = (d: CH.Expr<string>, hours: CH.Expr<number>): CH.Expr<string> =>
-	compileFnCall<string>("addHours", d, hours)
+const addHours = <Q>(d: CH.Expr<DateTime.Utc, Q>, hours: CH.Expr<number>) =>
+	CH.compileTypedFnCall("addHours", T.dateTime.schema, d, hours)
+
+/** The list window padded ±1h: a trace's children can start before or outlive its root. */
+const paddedTraceWindow = {
+	start: subtractHours(CH.toDateTime(utcSecondsParam("startTime")), CH.lit(1)),
+	end: addHours(CH.toDateTime(utcSecondsParam("endTime")), CH.lit(1)),
+}
 
 /**
  * Attribute-filter keys the trace-list MV pre-extracts into columns. The MV
@@ -1557,12 +1649,14 @@ const TRACE_LIST_MV_ATTR_COLUMNS = new Map<string, "HttpMethod" | "HttpStatusCod
  * pre-extracted columns are expressible; anything else falls back to raw.
  */
 export function canUseTraceListMvStage1(opts: TraceListOpts): boolean {
-	if (opts.resourceAttributeFilters?.length) return false
-	if (opts.commitShas?.length) return false
+	if (opts.resourceAttributeFilters !== undefined && opts.resourceAttributeFilters.length > 0) return false
+	if (opts.commitShas !== undefined && opts.commitShas.length > 0) return false
 	for (const af of opts.attributeFilters ?? []) {
+		if (af.or !== undefined && af.or.length > 0) return false
 		if (!TRACE_LIST_MV_ATTR_COLUMNS.has(af.key)) return false
 		const expressible =
-			(af.mode === "equals" && af.value !== undefined) || (af.mode === "in" && !!af.values?.length)
+			(af.mode === "equals" && af.value !== undefined) ||
+			(af.mode === "in" && af.values !== undefined && af.values.length > 0)
 		if (!expressible) return false
 	}
 	return true
@@ -1582,9 +1676,9 @@ function traceListMvWhereConditions(
 	const services = inclusionValues(opts.serviceName, opts.serviceNames)
 	const spanNames = inclusionValues(opts.spanName, opts.spanNames)
 	const conditions: Array<CH.Condition | undefined> = [
-		$.OrgId.eq(param.string("orgId")),
-		$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-		$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+		$.OrgId.eq(orgIdParam),
+		$.Timestamp.gte(utcSecondsParam("startTime")),
+		$.Timestamp.lte(utcSecondsParam("endTime")),
 		CH.when(services, (v: readonly string[]) =>
 			matchOrIn($.ServiceName, v, mm?.serviceName === "contains"),
 		),
@@ -1599,7 +1693,7 @@ function traceListMvWhereConditions(
 	if (opts.maxDurationMs != null) {
 		conditions.push($.Duration.lte(opts.maxDurationMs * 1000000))
 	}
-	if (opts.environments?.length) {
+	if (opts.environments !== undefined && opts.environments.length > 0) {
 		conditions.push(
 			matchOrIn(
 				$.DeploymentEnv,
@@ -1608,7 +1702,7 @@ function traceListMvWhereConditions(
 			),
 		)
 	}
-	if (opts.namespaces?.length) {
+	if (opts.namespaces !== undefined && opts.namespaces.length > 0) {
 		conditions.push(
 			matchOrIn(
 				$.ServiceNamespace,
@@ -1623,21 +1717,21 @@ function traceListMvWhereConditions(
 		const col = $[column]
 		if (af.mode === "equals" && af.value !== undefined) {
 			conditions.push(af.negated ? col.neq(af.value) : col.eq(af.value))
-		} else if (af.mode === "in" && af.values?.length) {
+		} else if (af.mode === "in" && af.values !== undefined && af.values.length > 0) {
 			const inCond = CH.inList(col, af.values)
 			conditions.push(af.negated ? CH.not(inCond) : inCond)
 		}
 	}
-	if (opts.excludedServiceNames?.length) {
+	if (opts.excludedServiceNames !== undefined && opts.excludedServiceNames.length > 0) {
 		conditions.push(CH.notInList($.ServiceName, opts.excludedServiceNames))
 	}
-	if (opts.excludedSpanNames?.length) {
+	if (opts.excludedSpanNames !== undefined && opts.excludedSpanNames.length > 0) {
 		conditions.push(CH.notInList($.SpanName, opts.excludedSpanNames))
 	}
-	if (opts.excludedEnvironments?.length) {
+	if (opts.excludedEnvironments !== undefined && opts.excludedEnvironments.length > 0) {
 		conditions.push(CH.notInList($.DeploymentEnv, opts.excludedEnvironments))
 	}
-	if (opts.excludedNamespaces?.length) {
+	if (opts.excludedNamespaces !== undefined && opts.excludedNamespaces.length > 0) {
 		conditions.push(CH.notInList($.ServiceNamespace, opts.excludedNamespaces))
 	}
 
@@ -1657,8 +1751,7 @@ function traceListMvWhereConditions(
  * construction) in `traces`, reading only TraceId + Timestamp under the caller's
  * filters — so filtering, ordering and the cursor stay root-scoped, matching the
  * `trace_list_mv`-backed sidebar facets. Stage 2 aggregates that page's traces in
- * `trace_detail_spans`, whose `(OrgId, TraceId, SpanId)` sort key turns the
- * `limit` trace ids into primary-key seeks; the heavy SpanAttributes lookups are
+ * `traces`, seeked through `trace_index`; the heavy SpanAttributes lookups are
  * materialized only there, for at most one page of traces.
  *
  * Stage 2 is bounded by the requested window padded by ±1h, not the exact
@@ -1682,12 +1775,10 @@ export function traceListQuery(opts: TraceListOpts) {
 		? (() => {
 				// `trace_list_mv` is sorted `(OrgId, Timestamp, TraceId)`, so this pages
 				// read-in-order instead of scanning the window. Its Timestamp is
-				// second-granularity (`toDateTime`): the ns cursor from stage-2
-				// `startTime` must be truncated to match, and the `(ts, traceId)` tuple
+				// second-granularity (`toDateTime`): the column's codec floors the
+				// stage-2 `startTime` cursor to the second, and the `(ts, traceId)` tuple
 				// ordering is what keeps pages disjoint despite the truncation ties.
 				const secCursor = cursor
-					? { timestamp: cursor.timestamp.slice(0, 19), traceId: cursor.traceId }
-					: undefined
 				const mvBase = from(TraceListMv)
 					.select(($) => ({ traceId: $.TraceId, ts: $.Timestamp, d: $.Duration }))
 					.where(($) => [
@@ -1735,7 +1826,7 @@ export function traceListQuery(opts: TraceListOpts) {
 	// tiebreaker for the (malformed) traces that ship no root at all.
 	const rootOrder = CH.untypedExpr("(if(ParentSpanId = '', 0, 1), Timestamp)")
 
-	const aggregated = from(TraceDetailSpans)
+	const aggregated = from(Traces)
 		.select(($) => {
 			const rootServiceName = argMin($.ServiceName, rootOrder)
 			const startNanos = CH.toUnixTimestamp64Nano($.Timestamp)
@@ -1758,9 +1849,9 @@ export function traceListQuery(opts: TraceListOpts) {
 				rootSpanName: argMin($.SpanName, rootOrder),
 				rootSpanKind: argMin($.SpanKind, rootOrder),
 				rootSpanStatusCode: argMin($.StatusCode, rootOrder),
-				rootHttpMethod: argMin($.SpanAttributes.get("http.method"), rootOrder),
+				rootHttpMethod: argMin(httpRequestMethodExpr($.SpanAttributes), rootOrder),
 				rootHttpRoute: argMin($.SpanAttributes.get("http.route"), rootOrder),
-				rootHttpStatusCode: argMin($.SpanAttributes.get("http.status_code"), rootOrder),
+				rootHttpStatusCode: argMin(httpResponseStatusCodeExpr($.SpanAttributes), rootOrder),
 				rootSpanAttributes: argMin(
 					CH.toJSONString(buildProjectedMapExpr(ROOT_SPAN_ATTR_KEYS, "SpanAttributes")),
 					rootOrder,
@@ -1771,16 +1862,20 @@ export function traceListQuery(opts: TraceListOpts) {
 			}
 		})
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			// Padded, not exact: children can start slightly before their root
 			// (clock skew) or outlive the window, but they cannot drift a full
 			// hour — the same ±1h convention as the trace-detail partition hint
 			// (`computeTraceTimeWindow`). Without any bound this scans every
 			// retained partition for the PK analysis and times out on prod
 			// (measured: 12h window, unbounded >10s; bounded <10s).
-			$.Timestamp.gte(subtractHours(CH.toDateTime(param.dateTimeString("startTime")), CH.lit(1))),
-			$.Timestamp.lte(addHours(CH.toDateTime(param.dateTimeString("endTime")), CH.lit(1))),
-			subqueryCond(pageQuery, (sql) => `TraceId IN (SELECT traceId FROM (${sql}))`),
+			$.Timestamp.gte(paddedTraceWindow.start),
+			$.Timestamp.lte(paddedTraceWindow.end),
+			inTraces(
+				() =>
+					subqueryCond(pageQuery, (sql) => `trace_index.TraceId IN (SELECT traceId FROM (${sql}))`),
+				paddedTraceWindow,
+			),
 		])
 		.groupBy("traceId")
 
@@ -1812,16 +1907,13 @@ export interface TraceServicesByTraceIdsOutput {
 /**
  * Batch-load the services touched by one already-paged set of traces.
  *
- * `service_map_spans` is the light projection sorted by
- * `(OrgId, TraceId, SpanId, Timestamp)`, so the tenant + page TraceIds form an
- * ORDER BY prefix instead of rescanning and aggregating every trace in the
- * list window. The caller supplies buffered page-derived time bounds as a
- * partition hint; without them, every retained daily partition is probed.
+ * `service_map_spans` is the light projection of the dependency-bearing kinds
+ * (Client/Producer/Server/Consumer), sorted by the same 5-minute bucket as
+ * `traces`, so the page's ids are seeked through `trace_index`. The caller
+ * passes the page's own time span; it is padded ±1h as in `traceListQuery`.
  *
- * The projection intentionally contains the OTel dependency-bearing kinds
- * (Client/Producer/Server/Consumer). The list mapper always preserves its row
- * service as a fallback, covering Internal/unset single-service roots and MV
- * propagation lag.
+ * The list mapper always preserves its row service as a fallback, covering
+ * Internal/unset single-service roots and MV propagation lag.
  */
 export function traceServicesByTraceIdsQuery(opts: TraceServicesByTraceIdsOpts) {
 	return from(ServiceMapSpans)
@@ -1836,10 +1928,10 @@ export function traceServicesByTraceIdsQuery(opts: TraceServicesByTraceIdsOpts) 
 			}
 		})
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TraceId.in_(...opts.traceIds),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.OrgId.eq(orgIdParam),
+			inServiceMapSpans((id) => id.in_(...opts.traceIds), paddedTraceWindow),
+			$.Timestamp.gte(paddedTraceWindow.start),
+			$.Timestamp.lte(paddedTraceWindow.end),
 		])
 		.groupBy("traceId")
 		.limit(opts.traceIds.length)
@@ -1863,11 +1955,11 @@ export interface TraceSpanStatsByTraceIdsOutput {
 /**
  * Span count and services for one already-paged set of traces, for lists whose
  * page query reads the roots-only `trace_list_mv` and so cannot count spans.
- * `trace_detail_spans` is keyed `(OrgId, TraceId, SpanId)`, so the page's ids
- * are primary-key seeks; the window is padded ±1h as in `traceListQuery`.
+ * The page's ids are seeked through `trace_index`; the window is padded ±1h as
+ * in `traceListQuery`.
  */
 export function traceSpanStatsByTraceIdsQuery(opts: TraceSpanStatsByTraceIdsOpts) {
-	return from(TraceDetailSpans)
+	return from(Traces)
 		.select(($) => {
 			const rootOrder = CH.untypedExpr("(if(ParentSpanId = '', 0, 1), Timestamp)")
 			const rootServiceName = argMin($.ServiceName, rootOrder)
@@ -1880,10 +1972,10 @@ export function traceSpanStatsByTraceIdsQuery(opts: TraceSpanStatsByTraceIdsOpts
 			}
 		})
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TraceId.in_(...opts.traceIds),
-			$.Timestamp.gte(subtractHours(CH.toDateTime(param.dateTimeString("startTime")), CH.lit(1))),
-			$.Timestamp.lte(addHours(CH.toDateTime(param.dateTimeString("endTime")), CH.lit(1))),
+			$.OrgId.eq(orgIdParam),
+			inTraces((id) => id.in_(...opts.traceIds), paddedTraceWindow),
+			$.Timestamp.gte(paddedTraceWindow.start),
+			$.Timestamp.lte(paddedTraceWindow.end),
 		])
 		.groupBy("traceId")
 		.limit(opts.traceIds.length)

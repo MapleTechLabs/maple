@@ -5,13 +5,30 @@ import type {
 	UpdateMutationFnParams,
 	UtilsRecord,
 } from "@tanstack/db"
-import type { Txid } from "@tanstack/electric-db-collection"
-import { Cause, Effect, Exit, type ManagedRuntime } from "effect"
+import type { ElectricCollectionUtils, Txid } from "@tanstack/electric-db-collection"
+import { Cause, Effect, Exit, type ManagedRuntime, Option, Array as Arr } from "effect"
 import { DeleteError, InsertError, MissingTxIdError, UpdateError } from "./errors"
 import type { EffectDeleteHandler, EffectInsertHandler, EffectUpdateHandler } from "./types"
 
-type MutationResult = { txid: Txid | Array<Txid> }
-type PromiseMutationHandler<Params> = (params: Params) => Promise<MutationResult>
+type PromiseMutationHandler<Params> = (params: Params) => Promise<void>
+
+// Electric deprecated returning `{ txid }`; awaiting it here is what it did with the return value.
+// TanStack types a collection's utils as `Record<string, any>`; Electric collections carry `awaitTxId`.
+const hasAwaitTxId = (utils: UtilsRecord): utils is Pick<ElectricCollectionUtils, "awaitTxId"> =>
+	typeof utils.awaitTxId === "function"
+
+const awaitTxids = (
+	utils: UtilsRecord,
+	txid: Txid | Array<Txid>,
+	operation: "insert" | "update" | "delete",
+): Promise<void> =>
+	hasAwaitTxId(utils)
+		? Promise.all(Arr.map(Arr.isArray(txid) ? txid : [txid], (id) => utils.awaitTxId(id))).then(
+				() => undefined,
+			)
+		: Promise.reject(
+				new MissingTxIdError({ message: "The collection has no awaitTxId to wait on", operation }),
+			)
 
 /** Adapts an Effect insert handler to Electric's Promise API. */
 export function convertInsertHandler<
@@ -20,7 +37,7 @@ export function convertInsertHandler<
 	TUtils extends UtilsRecord,
 	E = never,
 >(
-	handler: EffectInsertHandler<T, TKey, TUtils, E, never> | undefined,
+	handler: EffectInsertHandler<T, TKey, TUtils, E> | undefined,
 	runtime?: undefined,
 ): PromiseMutationHandler<InsertMutationFnParams<T, TKey, TUtils>> | undefined
 export function convertInsertHandler<
@@ -62,15 +79,15 @@ export function convertInsertHandler<
 			? await runtime.runPromiseExit(effect)
 			: await Effect.runPromiseExit(
 					// The overload without a runtime only accepts handlers whose requirements are `never`.
-					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion
-					effect as Effect.Effect<{ txid: Txid | Array<Txid> }, InsertError, never>,
+					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- the overload without a runtime only accepts R = never
+					effect as Effect.Effect<{ txid: Txid | Array<Txid> }, InsertError>,
 				)
 
 		if (Exit.isFailure(exit)) {
 			const cause = exit.cause
-			const failReason = cause.reasons.find(Cause.isFailReason)
-			if (failReason) {
-				throw failReason.error
+			const failReason = Arr.findFirst(cause.reasons, Cause.isFailReason)
+			if (Option.isSome(failReason)) {
+				throw failReason.value.error
 			}
 			throw new InsertError({
 				message: `Insert operation failed unexpectedly`,
@@ -81,14 +98,14 @@ export function convertInsertHandler<
 
 		const result = exit.value
 
-		if (!result.txid) {
+		if (result.txid == null || result.txid === 0) {
 			throw new MissingTxIdError({
 				message: `Insert handler must return a txid`,
 				operation: "insert",
 			})
 		}
 
-		return result
+		await awaitTxids(params.collection.utils, result.txid, "insert")
 	}
 }
 
@@ -99,7 +116,7 @@ export function convertUpdateHandler<
 	TUtils extends UtilsRecord,
 	E = never,
 >(
-	handler: EffectUpdateHandler<T, TKey, TUtils, E, never> | undefined,
+	handler: EffectUpdateHandler<T, TKey, TUtils, E> | undefined,
 	runtime?: undefined,
 ): PromiseMutationHandler<UpdateMutationFnParams<T, TKey, TUtils>> | undefined
 export function convertUpdateHandler<
@@ -141,15 +158,15 @@ export function convertUpdateHandler<
 			? await runtime.runPromiseExit(effect)
 			: await Effect.runPromiseExit(
 					// The overload without a runtime only accepts handlers whose requirements are `never`.
-					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion
-					effect as Effect.Effect<{ txid: Txid | Array<Txid> }, UpdateError, never>,
+					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- the overload without a runtime only accepts R = never
+					effect as Effect.Effect<{ txid: Txid | Array<Txid> }, UpdateError>,
 				)
 
 		if (Exit.isFailure(exit)) {
 			const cause = exit.cause
-			const failReason = cause.reasons.find(Cause.isFailReason)
-			if (failReason) {
-				throw failReason.error
+			const failReason = Arr.findFirst(cause.reasons, Cause.isFailReason)
+			if (Option.isSome(failReason)) {
+				throw failReason.value.error
 			}
 			throw new UpdateError({
 				message: `Update operation failed unexpectedly`,
@@ -160,14 +177,14 @@ export function convertUpdateHandler<
 
 		const result = exit.value
 
-		if (!result.txid) {
+		if (result.txid == null || result.txid === 0) {
 			throw new MissingTxIdError({
 				message: `Update handler must return a txid`,
 				operation: "update",
 			})
 		}
 
-		return result
+		await awaitTxids(params.collection.utils, result.txid, "update")
 	}
 }
 
@@ -178,7 +195,7 @@ export function convertDeleteHandler<
 	TUtils extends UtilsRecord,
 	E = never,
 >(
-	handler: EffectDeleteHandler<T, TKey, TUtils, E, never> | undefined,
+	handler: EffectDeleteHandler<T, TKey, TUtils, E> | undefined,
 	runtime?: undefined,
 ): PromiseMutationHandler<DeleteMutationFnParams<T, TKey, TUtils>> | undefined
 export function convertDeleteHandler<
@@ -220,15 +237,15 @@ export function convertDeleteHandler<
 			? await runtime.runPromiseExit(effect)
 			: await Effect.runPromiseExit(
 					// The overload without a runtime only accepts handlers whose requirements are `never`.
-					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion
-					effect as Effect.Effect<{ txid: Txid | Array<Txid> }, DeleteError, never>,
+					// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- the overload without a runtime only accepts R = never
+					effect as Effect.Effect<{ txid: Txid | Array<Txid> }, DeleteError>,
 				)
 
 		if (Exit.isFailure(exit)) {
 			const cause = exit.cause
-			const failReason = cause.reasons.find(Cause.isFailReason)
-			if (failReason) {
-				throw failReason.error
+			const failReason = Arr.findFirst(cause.reasons, Cause.isFailReason)
+			if (Option.isSome(failReason)) {
+				throw failReason.value.error
 			}
 			throw new DeleteError({
 				message: `Delete operation failed unexpectedly`,
@@ -239,13 +256,13 @@ export function convertDeleteHandler<
 
 		const result = exit.value
 
-		if (!result.txid) {
+		if (result.txid == null || result.txid === 0) {
 			throw new MissingTxIdError({
 				message: `Delete handler must return a txid`,
 				operation: "delete",
 			})
 		}
 
-		return result
+		await awaitTxids(params.collection.utils, result.txid, "delete")
 	}
 }

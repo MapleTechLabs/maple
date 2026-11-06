@@ -1,19 +1,20 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
-import { Chdb } from "../src/server/chdb"
-import { LOCAL_SCHEMA_SQL } from "../src/server/schema-identity"
-import { markStoreClosedDurable, markStoreOpenDurable } from "../src/server/store-version"
+import { Chdb } from "@maple/local-server/chdb"
+import { LOCAL_SCHEMA_SQL } from "@maple/local-server/schema-identity"
+import { markStoreClosedDurable, markStoreOpenDurable } from "@maple/local-server/store-version"
+import { Option, Array as Arr, String as Str } from "effect"
 
 const [dataDir, configFile] = process.argv.slice(2)
 if (!dataDir || !configFile)
 	throw new Error("usage: native-service-map-ingest-bridge-probe.ts <data-dir> <config-file>")
 
 const firstRow = <A>(jsonEachRow: string): A => {
-	const line = jsonEachRow
-		.split("\n")
-		.map((candidate) => candidate.trim())
-		.find((candidate) => candidate.length > 0)
-	if (!line) throw new Error("native service-map bridge query returned no rows")
-	return JSON.parse(line) as A
+	const line = Arr.findFirst(
+		Arr.map(Str.split("\n")(jsonEachRow), (candidate) => Str.trim(candidate)),
+		(candidate) => candidate.length > 0,
+	)
+	if (Option.isNone(line)) throw new Error("native service-map bridge query returned no rows")
+	return JSON.parse(line.value) as A
 }
 
 await markStoreOpenDurable(dataDir)

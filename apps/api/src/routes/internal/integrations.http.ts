@@ -1,0 +1,791 @@
+import { HttpServerRequest } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import {
+	CloudflareDisconnectResponse,
+	CloudflareHyperdrivesResponse,
+	CloudflarePrimeResponse,
+	CloudflareStartConnectResponse,
+	CloudflareTopTrafficResponse,
+	CloudflareTopTrafficRow,
+	CloudflareUsageResponse,
+	CurrentTenant,
+	GcpResourcesResponse,
+	GithubDeleteRepositoryResponse,
+	GithubDisconnectResponse,
+	GithubIntegrationStatus,
+	GithubSetCiTracesResponse,
+	GithubSetPrReviewResponse,
+	GithubPrReviewConfigResponse,
+	GithubPrReviewSettingsResponse,
+	GithubSetTrackedBranchResponse,
+	GithubStartConnectResponse,
+	GithubSelectInstallationResponse,
+	InfraSurfaceLiteral,
+	IntegrationsForbiddenError,
+	IntegrationsUpstreamError,
+	LinearDisconnectResponse,
+	LinearIntegrationStatus,
+	LinearStartConnectResponse,
+	LinearTeamsListResponse,
+	IntegrationsValidationError,
+	MapleInternalApi,
+	RailwayDisconnectResponse,
+	RoleName,
+	SupabaseConnectResponse,
+	SupabaseDisconnectResponse,
+	VCS_COMMIT_DETAILS_MAX_SHAS,
+	VCS_COMMIT_RANGES_MAX,
+	VcsCommitDetailResponse,
+	VCS_PULL_REQUESTS_DEFAULT_LIMIT,
+	VcsCommitDetailsResponse,
+	VcsCommitRangeResponse,
+	VcsCommitRangesResponse,
+	VcsPullRequestsResponse,
+} from "@maple/domain/http"
+import { EdgeCacheService } from "@maple/cache"
+import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Env } from "@maple/backend/platform/Env"
+import { graphqlQuery } from "@maple/backend/services/integrations/CloudflareApi"
+import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
+import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
+import { abrCount } from "@maple/backend/services/integrations/cloudflare-analytics/mapping"
+import {
+	decodeTopTrafficResponse,
+	toGraphqlTime,
+	topTrafficFilterVariables,
+	topTrafficQuery,
+	type TopTrafficGroupDefinition,
+} from "@maple/backend/services/integrations/cloudflare-analytics/queries"
+import { AwsConnectionService } from "@maple/backend/services/integrations/AwsConnectionService"
+import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
+import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
+import { makeQueryRunners } from "@maple/backend/queries/query-runner"
+import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
+import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
+import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
+import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
+import {
+	SUPABASE_CALLBACK_PATH,
+	SupabaseOAuthService,
+} from "@maple/backend/services/auth/SupabaseOAuthService"
+import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
+import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
+import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
+import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
+import * as Policy from "@maple/domain/policy"
+import {
+	CLOUDFLARE_CALLBACK_PATH,
+	GITHUB_CALLBACK_PATH,
+	LINEAR_CALLBACK_PATH,
+} from "@/routes/integrations-callback.http"
+import { isTrustedCallbackOrigin, resolveRequestOrigin } from "@/routes/v2/integrations.http"
+import { makeOAuthCompleter } from "@/routes/oauth-complete"
+import { Queries } from "@/routes/queries"
+import { settleInfraSurfaces } from "./infra-surfaces"
+
+/**
+ * How long `cloudflarePrime` spends on the post-connect poll. Long enough for zone discovery plus
+ * a first window on an ordinary account; whatever a slow or many-zoned one does not finish resumes
+ * on the next cron tick. It is deliberately NOT on the OAuth callback's critical path — see the
+ * callback handler.
+ */
+const CLOUDFLARE_PRIME_TIMEOUT = "20 seconds"
+
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
+
+const requirePermission = (roles: ReadonlyArray<RoleName>, permission: Policy.Permission) =>
+	Policy.check(roles, permission, (denial) => new IntegrationsForbiddenError({ message: denial.message }))
+
+export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "integrations", (handlers) =>
+	Effect.gen(function* () {
+		const linear = yield* LinearOAuthService
+		const github = yield* GithubConnectService
+		const vcsCommits = yield* VcsCommitService
+		const vcsSource = yield* VcsSourceService
+		const cloudflare = yield* CloudflareOAuthService
+		const cloudflareAnalytics = yield* CloudflareAnalyticsService
+		const railway = yield* RailwayMetricsService
+		const supabaseOAuth = yield* SupabaseOAuthService
+		const supabase = yield* SupabaseConnectionService
+		const supabaseLogs = yield* SupabaseLogsService
+		const supabaseInsights = yield* SupabaseInsightsService
+		const gcp = yield* GcpConnectorService
+		const planetscale = yield* PlanetScaleConnectionService
+		const aws = yield* AwsConnectionService
+		const { runQuery } = makeQueryRunners({
+			warehouse: yield* WarehouseQueryService,
+			queryEngine: yield* QueryEngineService,
+		})
+		const edgeCache = yield* EdgeCacheService
+		const env = yield* Env
+		const completeOAuth = yield* makeOAuthCompleter
+
+		// The callback URL is replayed as `redirect_uri` and its origin comes from a
+		// client-settable header, so it must belong to the app's own host family.
+		const trustedCallbackUrl = (path: string) =>
+			Effect.gen(function* () {
+				const request = yield* HttpServerRequest.HttpServerRequest
+				const origin = resolveRequestOrigin(request)
+				if (!isTrustedCallbackOrigin(origin, env)) {
+					return yield* new IntegrationsForbiddenError({
+						message: "Integrations cannot be connected from this host",
+					})
+				}
+				return `${origin}${path}`
+			})
+
+		return (
+			handlers
+				// The caller's own session is the proof: a state only redeems for the user who began it.
+				.handle("oauthComplete", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* completeOAuth(payload, { orgId: tenant.orgId, userId: tenant.userId })
+					}),
+				)
+				.handle("linearStatus", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const status = yield* linear.getStatus(tenant.orgId)
+						return status.connected
+							? new LinearIntegrationStatus({
+									connected: true,
+									workspaceName: status.workspaceName,
+									connectedByUserId: status.connectedByUserId,
+									revoked: status.revoked,
+								})
+							: new LinearIntegrationStatus({
+									connected: false,
+									workspaceName: null,
+									connectedByUserId: null,
+									revoked: false,
+								})
+					}),
+				)
+				.handle("linearStart", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const callbackUrl = yield* trustedCallbackUrl(LINEAR_CALLBACK_PATH)
+						const result = yield* linear.startConnect(tenant.orgId, tenant.userId, {
+							callbackUrl,
+							returnTo: payload.returnTo,
+						})
+						return new LinearStartConnectResponse(result)
+					}),
+				)
+				.handle("linearTeams", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const teams = yield* linear.listTeams(tenant.orgId)
+						return new LinearTeamsListResponse({ teams })
+					}),
+				)
+				.handle("linearDisconnect", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const disconnected = yield* linear.disconnect(tenant.orgId)
+						return new LinearDisconnectResponse(disconnected)
+					}),
+				)
+				// The sidebar's boot read: one request instead of the probe plus six statuses.
+				.handle("infraSurfaces", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const connected = <E, R>(
+							status: Effect.Effect<{ readonly connected: boolean }, E, R>,
+						) => Effect.map(status, (value) => value.connected)
+						return yield* settleInfraSurfaces({
+							surfaces: Effect.map(runQuery(Queries.infraPresence, tenant, payload), (rows) =>
+								Arr.flatMap(rows, (row) =>
+									Schema.is(InfraSurfaceLiteral)(row.surface) ? [row.surface] : [],
+								),
+							),
+							cloudflare: connected(cloudflareAnalytics.getIntegrationStatus(tenant.orgId)),
+							railway: connected(railway.getStatus(tenant.orgId)),
+							planetscale: connected(planetscale.getStatus(tenant.orgId)),
+							// Google Cloud counts only with metrics on: the page reads metrics, not logs.
+							gcp: Effect.map(gcp.status(tenant.orgId), (status) =>
+								Arr.some(status.connectors, (connector) => connector.metricsEnabled),
+							),
+							supabase: connected(supabase.getStatus(tenant.orgId)),
+							aws: Effect.map(
+								aws.status(tenant.orgId),
+								(status) => status.connections.length > 0,
+							),
+						})
+					}),
+				)
+				.handle("cloudflareStatus", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* cloudflareAnalytics.getIntegrationStatus(tenant.orgId)
+					}),
+				)
+				.handle("cloudflareUsage", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						// Two warehouse aggregations per call — 60s edge cache absorbs page-load
+						// bursts. The window is server-clocked, so orgId alone keys the entry.
+						const cached = yield* edgeCache.getOrCompute(
+							{
+								bucket: "cf-usage",
+								key: tenant.orgId,
+								ttlSeconds: 60,
+								schema: CloudflareUsageResponse,
+							},
+							cloudflareAnalytics.getUsage(tenant.orgId),
+						)
+						return cached.value
+					}),
+				)
+				// No admin gate — any org member may read the inventory (service map needs it).
+				// Not connected / never discovered simply reads as an empty config list.
+				.handle("cloudflareHyperdrives", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* cloudflareAnalytics.listHyperdriveConfigs(tenant.orgId)
+						return new CloudflareHyperdrivesResponse({
+							configs: Arr.map(rows, (row) => ({
+								id: row.configId,
+								name: row.name,
+								originHost: row.originHost,
+								originPort: row.originPort,
+								originScheme: row.originScheme,
+								originDatabase: row.originDatabase,
+								originUser: row.originUser,
+							})),
+						})
+					}),
+				)
+				.handle("cloudflareTopTraffic", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						if (payload.endTime <= payload.startTime) {
+							return yield* new IntegrationsValidationError({
+								message: "endTime must be after startTime",
+							})
+						}
+						const limit = Math.min(Math.max(Math.floor(payload.limit ?? 15), 1), 50)
+						// Cloudflare applies these before ranking, which is the whole point: the live
+						// lookup can reach keys the stored per-window top-N folded into "other".
+						const filter = {
+							contains:
+								payload.contains === undefined
+									? undefined
+									: Str.slice(0, 200)(payload.contains),
+							hosts: payload.hosts,
+							countries: payload.countries,
+							methods: payload.methods,
+							cacheStatuses: payload.cacheStatuses,
+						}
+						const filterVariables = topTrafficFilterVariables(filter)
+						const isFiltered = Rec.keys(filterVariables).length > 0
+						// Minute-align the window so repeated dashboard refreshes within the TTL share
+						// a cache entry instead of each minting a unique key. Floor the start but CEIL
+						// the end (with a one-minute floor on the width): flooring both would collapse
+						// a sub-minute window to zero width and cache the resulting empty result.
+						const MINUTE = 60_000
+						const startMs = Math.floor(payload.startTime / MINUTE) * MINUTE
+						const endMs = Math.max(Math.ceil(payload.endTime / MINUTE) * MINUTE, startMs + MINUTE)
+						const compute = Effect.gen(function* () {
+							// The zone's state row also names the account that owns it, so the token
+							// is minted for the right connection when several accounts are connected.
+							const zoneRow = yield* cloudflareAnalytics.findHttpZone(
+								tenant.orgId,
+								payload.zoneName,
+							)
+							if (zoneRow == null) {
+								return yield* new IntegrationsValidationError({
+									message: `Unknown Cloudflare zone: ${payload.zoneName}`,
+								})
+							}
+							const zoneId = zoneRow.zoneId
+							const { accessToken } = yield* cloudflare.getValidAccessToken(
+								tenant.orgId,
+								zoneRow.accountId,
+							)
+							const result = yield* graphqlQuery(
+								accessToken,
+								{
+									query: topTrafficQuery({ dimension: payload.dimension, limit, filter }),
+									variables: {
+										zoneTags: [zoneId],
+										start: toGraphqlTime(startMs),
+										end: toGraphqlTime(endMs),
+										...filterVariables,
+									},
+								},
+								env.MAPLE_CLOUDFLARE_API_BASE_URL,
+							)
+							// GraphQL-level errors here are plan/authz shaped ("dataset not available",
+							// window beyond retention) — soft-fail so the card shows an empty state
+							// instead of a 5xx toast.
+							if (result.errors.length > 0) {
+								return new CloudflareTopTrafficResponse({
+									rows: [],
+									unavailableReason: Str.slice(
+										0,
+										300,
+									)(
+										Arr.join(
+											Arr.map(result.errors, (error) => error.message),
+											"; ",
+										),
+									),
+								})
+							}
+							const decoded = yield* decodeTopTrafficResponse(result.data).pipe(
+								// The card reduces failures to short human copy — keep the real ParseError
+								// in the server log so we can see which field of the upstream shape
+								// mismatched, matching the OAuth-callback logging pattern above.
+								Effect.tapError((error) =>
+									Effect.logError("Cloudflare top-traffic response failed to decode", {
+										zoneName: payload.zoneName,
+										dimension: payload.dimension,
+										error: error.message,
+									}),
+								),
+								Effect.mapError(
+									() =>
+										new IntegrationsUpstreamError({
+											message:
+												"Cloudflare GraphQL top-traffic response had an unexpected shape",
+										}),
+								),
+							)
+							const zone = decoded.viewer.zones?.[0]
+							const keyOf = (group: TopTrafficGroupDefinition) =>
+								(payload.dimension === "host"
+									? group.dimensions.clientRequestHTTPHost
+									: group.dimensions.clientRequestPath) ?? "unknown"
+							const byKey = new Map<
+								string,
+								{ requests: number; bytes: number; errors5xx: number }
+							>()
+							for (const group of zone?.top ?? []) {
+								const key = keyOf(group)
+								const entry = byKey.get(key) ?? { requests: 0, bytes: 0, errors5xx: 0 }
+								entry.requests += abrCount(group.count, group.avg?.sampleInterval)
+								entry.bytes += group.sum?.edgeResponseBytes ?? 0
+								byKey.set(key, entry)
+							}
+							for (const group of zone?.errors ?? []) {
+								const key = keyOf(group)
+								const entry = byKey.get(key) ?? { requests: 0, bytes: 0, errors5xx: 0 }
+								entry.errors5xx += abrCount(group.count, group.avg?.sampleInterval)
+								byKey.set(key, entry)
+							}
+							const rows = Arr.map(
+								[...byKey.entries()],
+								([key, entry]) =>
+									new CloudflareTopTrafficRow({
+										key,
+										requests: entry.requests,
+										bytes: entry.bytes,
+										errors5xx: entry.errors5xx,
+									}),
+							)
+								.sort((a, b) => b.requests - a.requests)
+								.slice(0, limit)
+							return new CloudflareTopTrafficResponse({ rows, unavailableReason: null })
+						})
+						// The filter digest MUST be in the key — a filtered/unfiltered collision would
+						// serve one user's drill-down as another's overview. Sorted so two equivalent
+						// selections share an entry.
+						const filterDigest = isFiltered
+							? yield* encodeJson(
+									Rec.fromEntries(
+										Arr.map(
+											Rec.toEntries(filterVariables).sort(([a], [b]) =>
+												Str.localeCompare(b)(a),
+											),
+											([key, value]) => [
+												key,
+												typeof value === "string" ? value : [...value].sort(),
+											],
+										),
+									),
+								).pipe(Effect.orDie)
+							: ""
+						const cached = yield* edgeCache.getOrCompute(
+							{
+								bucket: "cf-top-traffic",
+								key: `${tenant.orgId}:${payload.zoneName}:${payload.dimension}:${startMs}:${endMs}:${limit}:${filterDigest}`,
+								// Filters explode the key space, so hit rate drops exactly when the
+								// upstream budget matters most. An ad-hoc drill-down doesn't need
+								// 60s freshness — this endpoint shares the poller's Cloudflare quota.
+								ttlSeconds: isFiltered ? 300 : 60,
+								schema: CloudflareTopTrafficResponse,
+							},
+							compute,
+						)
+						return cached.value
+					}),
+				)
+				.handle("cloudflareStart", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const callbackUrl = yield* trustedCallbackUrl(CLOUDFLARE_CALLBACK_PATH)
+						const result = yield* cloudflare.startConnect(tenant.orgId, tenant.userId, {
+							callbackUrl,
+							returnTo: payload.returnTo,
+						})
+						return new CloudflareStartConnectResponse(result)
+					}),
+				)
+				.handle("cloudflareZoneSettings", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						yield* cloudflareAnalytics.setZoneSettings(tenant.orgId, tenant.userId, payload)
+						yield* recordHttpAudit("cloudflare_integration.zones_updated", {
+							metadata: {
+								accountId: payload.accountId,
+								watchNewZones: payload.watchNewZones,
+								pausedZoneIds: Arr.map(
+									Arr.filter(payload.zones, (zone) => !zone.watched),
+									(zone) => zone.zoneId,
+								),
+							},
+						})
+						return yield* cloudflareAnalytics.getIntegrationStatus(tenant.orgId)
+					}),
+				)
+				.handle("cloudflareDisconnect", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const result = yield* cloudflare.disconnect(tenant.orgId)
+						return new CloudflareDisconnectResponse(result)
+					}),
+				)
+				.handle("cloudflarePrime", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						// Discovery (the part that stops the integration looking empty) commits in
+						// the first seconds; the rest spends what call budget it has on the newest
+						// window. Timing out is an ordinary outcome, not a failure — the cron picks
+						// up where this left off, and a lease dropped by the timeout expires.
+						const summary = yield* Effect.timeoutOption(
+							cloudflareAnalytics.pollOrg(tenant.orgId),
+							CLOUDFLARE_PRIME_TIMEOUT,
+						)
+						// A prime that arrives before the callback committed the grant polls nothing.
+						// Reporting that plainly lets the dashboard retry rather than assume it ran.
+						return new CloudflarePrimeResponse({
+							connected: Option.match(summary, {
+								onNone: () => true,
+								onSome: (value) => value.skipped !== "not connected",
+							}),
+							complete: Option.isSome(summary),
+						})
+					}),
+				)
+				.handle("railwayStatus", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* railway.getStatus(tenant.orgId)
+					}),
+				)
+				.handle("railwayConnect", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						return yield* railway.connect(tenant.orgId, tenant.userId, payload.token)
+					}),
+				)
+				.handle("railwaySync", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						// Spends the org's per-token Railway quota, so it needs integrations:manage like connect.
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						return yield* railway.sync(tenant.orgId)
+					}),
+				)
+				.handle("railwayDisconnect", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const disconnected = yield* railway.disconnect(tenant.orgId)
+						return new RailwayDisconnectResponse(disconnected)
+					}),
+				)
+				// Any member may read the status; every change needs integrations:manage, as for Railway.
+				.handle("supabaseStatus", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* supabase.getStatus(tenant.orgId)
+					}),
+				)
+				.handle("supabaseConnect", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const callbackUrl = yield* trustedCallbackUrl(SUPABASE_CALLBACK_PATH)
+						const result = yield* supabaseOAuth.startConnect(tenant.orgId, tenant.userId, {
+							callbackUrl,
+							returnTo: payload.returnTo,
+						})
+						return new SupabaseConnectResponse(result)
+					}),
+				)
+				.handle("supabaseSync", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						// Spends the org's Supabase rate limit, so it needs integrations:manage like connect.
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						return yield* supabase.sync(tenant.orgId)
+					}),
+				)
+				.handle("supabaseUpdateProject", ({ params, payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						// Drain first: switching a project from drain to polling turns the drain off before polling on.
+						const status = yield* supabase.updateProject(
+							tenant.orgId,
+							tenant.userId,
+							params.ref,
+							payload,
+						)
+						if (payload.logsEnabled === undefined) return status
+						yield* supabaseLogs.setLogsEnabled(tenant.orgId, params.ref, payload.logsEnabled)
+						return yield* supabase.getStatus(tenant.orgId)
+					}),
+				)
+				.handle("supabaseProjectInsights", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* supabaseInsights.getInsights(tenant.orgId, params.ref)
+					}),
+				)
+				.handle("supabaseDisconnect", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const disconnected = yield* supabase.disconnect(tenant.orgId)
+						return new SupabaseDisconnectResponse(disconnected)
+					}),
+				)
+				.handle("gcpResources", ({ query }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const resources = yield* gcp.resources(tenant.orgId, query)
+						return new GcpResourcesResponse(resources)
+					}),
+				)
+				.handle("githubStatus", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const status = yield* github.getStatus(tenant.orgId)
+						return new GithubIntegrationStatus({
+							connected: status.connected,
+							state: status.state,
+							accountLogin: status.accountLogin,
+							accountType: status.accountType,
+							repositorySelection: status.repositorySelection,
+							ciTracesEnabled: status.ciTracesEnabled,
+							repositoryDiscovery: status.repositoryDiscovery,
+							repositories: status.repositories,
+						})
+					}),
+				)
+				.handle("githubStart", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const callbackUrl = yield* trustedCallbackUrl(GITHUB_CALLBACK_PATH)
+						const result = yield* github.startConnect(tenant.orgId, tenant.userId, {
+							callbackUrl,
+							returnTo: payload.returnTo,
+							mode: payload.mode,
+						})
+						return new GithubStartConnectResponse(result)
+					}),
+				)
+				.handle("githubSelectInstallation", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const selected = yield* github.selectInstallation(
+							payload.installationId,
+							payload.state,
+							{
+								orgId: tenant.orgId,
+								userId: tenant.userId,
+							},
+						)
+						return new GithubSelectInstallationResponse(selected)
+					}),
+				)
+				.handle("githubDisconnect", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const result = yield* github.disconnect(tenant.orgId)
+						return new GithubDisconnectResponse(result)
+					}),
+				)
+				.handle("githubDeleteRepository", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const result = yield* github.deleteRepository(tenant.orgId, params.repositoryId)
+						return new GithubDeleteRepositoryResponse(result)
+					}),
+				)
+				.handle("githubSetTrackedBranch", ({ params, payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const result = yield* github.setTrackedBranch(
+							tenant.orgId,
+							params.repositoryId,
+							payload.trackedBranch,
+						)
+						return new GithubSetTrackedBranchResponse(result)
+					}),
+				)
+				.handle("githubSetCiTraces", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const result = yield* github.setCiTracesEnabled(tenant.orgId, payload.enabled)
+						return new GithubSetCiTracesResponse(result)
+					}),
+				)
+				.handle("githubSetPrReview", ({ params, payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "code_review:configure")
+						const result = yield* github.setPrReviewEnabled(
+							tenant.orgId,
+							params.repositoryId,
+							payload.enabled,
+						)
+						return new GithubSetPrReviewResponse(result)
+					}),
+				)
+				// Any member may read a repository's review settings and history; changing them needs code_review:configure.
+				.handle("githubGetPrReviewConfig", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const config = yield* github.getPrReviewConfig(tenant.orgId, params.repositoryId)
+						return new GithubPrReviewConfigResponse({ config })
+					}),
+				)
+				.handle("githubSetPrReviewConfig", ({ params, payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "code_review:configure")
+						const config = yield* github.setPrReviewConfig(
+							tenant.orgId,
+							params.repositoryId,
+							payload.config,
+						)
+						return new GithubPrReviewConfigResponse({ config })
+					}),
+				)
+				.handle("githubGetPrReviewSettings", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const settings = yield* github.getPrReviewSettings(tenant.orgId)
+						return new GithubPrReviewSettingsResponse({ settings })
+					}),
+				)
+				.handle("githubSetPrReviewSettings", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "code_review:configure")
+						const settings = yield* github.setPrReviewSettings(
+							tenant.orgId,
+							payload.settings,
+							tenant.userId,
+						)
+						return new GithubPrReviewSettingsResponse({ settings })
+					}),
+				)
+				// No admin gate — any org member may resolve commit SHAs for hover cards.
+				.handle("vcsCommitDetail", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const detail = yield* vcsCommits.resolveCommitDetail(tenant.orgId, params.sha)
+						return new VcsCommitDetailResponse(detail)
+					}),
+				)
+				.handle("vcsCommitDetails", ({ query }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const shas = Arr.filter(
+							Arr.map(Str.split(",")(query.shas), (sha) => Str.trim(sha)),
+							(sha) => sha.length > 0,
+						).slice(0, VCS_COMMIT_DETAILS_MAX_SHAS)
+						const details = yield* vcsCommits.resolveCommitDetails(tenant.orgId, shas)
+						return new VcsCommitDetailsResponse({
+							commits: Arr.map(details, (detail) => new VcsCommitDetailResponse(detail)),
+						})
+					}),
+				)
+				.handle("vcsCommitRanges", ({ query }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const ranges = Arr.flatMap(Str.split(",")(query.ranges), (pair) => {
+							const [base, head] = Str.split("..")(Str.trim(pair))
+							return base && head ? [{ base, head }] : []
+						}).slice(0, VCS_COMMIT_RANGES_MAX)
+						const results = yield* vcsCommits.resolveCommitRanges(tenant.orgId, ranges, {
+							limit: query.limit ?? 20,
+						})
+						return new VcsCommitRangesResponse({
+							ranges: Arr.map(
+								results,
+								(range) =>
+									new VcsCommitRangeResponse({
+										...range,
+										commits: Arr.map(
+											range.commits,
+											(detail) => new VcsCommitDetailResponse(detail),
+										),
+									}),
+							),
+						})
+					}),
+				)
+				.handle("vcsPullRequests", ({ query }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* Effect.annotateCurrentSpan({
+							orgId: tenant.orgId,
+							"vcs.repository.full_name": query.repository,
+						})
+						const pullRequests = yield* vcsSource
+							.listPullRequests(tenant.orgId, query.repository, {
+								limit: query.limit ?? VCS_PULL_REQUESTS_DEFAULT_LIMIT,
+							})
+							.pipe(
+								// A repository this org has not connected is a client mistake, not
+								// an upstream one — the picker only ever offers connected repos, so
+								// reaching here means a hand-built request or a repo disconnected
+								// mid-session.
+								Effect.catchTag(
+									"@maple/backend/vcs/VcsSourceRepositoryNotFoundError",
+									(error) => new IntegrationsValidationError({ message: error.message }),
+								),
+							)
+						yield* Effect.annotateCurrentSpan({ "result.rowCount": pullRequests.length })
+						return new VcsPullRequestsResponse({
+							repository: query.repository,
+							pullRequests,
+						})
+					}).pipe(Effect.withSpan("HttpIntegrations.vcsPullRequests")),
+				)
+		)
+	}),
+)

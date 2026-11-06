@@ -14,10 +14,14 @@ import { renderTitleBody } from "../AlertDeliveryDispatch"
 import { discordTransport } from "./transports/discord"
 import { chatTransport } from "./transports/chat"
 import { emailTransport } from "./transports/email"
-import { hazelTransport } from "./transports/hazel"
+import { googleChatTransport } from "./transports/google-chat"
+import { incidentIoTransport } from "./transports/incident-io"
+import { linearTransport } from "./transports/linear"
+import { microsoftTeamsTransport } from "./transports/microsoft-teams"
 import { pagerDutyTransport } from "./transports/pagerduty"
 import { telegramTransport } from "./transports/telegram"
 import { webhookTransport } from "./transports/webhook"
+import type { HttpClient } from "effect/http"
 import { runEffectTransport, runHttpTransport, type TransportRuntime } from "./runTransport"
 import type { EffectTransportDeps, RenderInput } from "./Transport"
 import type { DispatchContext, DispatchResult } from "./context"
@@ -25,14 +29,21 @@ import type { DispatchContext, DispatchResult } from "./context"
 export const dispatchDelivery = (
 	context: DispatchContext,
 	payloadJson: string,
-	fetchFn: typeof fetch,
 	timeoutMs: number,
 	linkUrl: string,
 	chatUrl: string,
 	/** `sendEmail` (the platform email channel) and `postChatAlert` (a chat connector). */
 	deps: EffectTransportDeps,
-): Effect.Effect<DispatchResult, AlertDeliveryFailure> => {
-	const runtime: TransportRuntime = { fetchFn, timeoutMs }
+): Effect.Effect<DispatchResult, AlertDeliveryFailure, HttpClient.HttpClient> => {
+	// Only PagerDuty has an acknowledge; the queue never sends one elsewhere, this keeps it so.
+	if (context.eventType === "acknowledge" && context.secretConfig.type !== "pagerduty") {
+		return Effect.succeed({
+			providerMessage: "Skipped: acknowledgements are only sent to PagerDuty",
+			providerReference: null,
+			responseCode: null,
+		})
+	}
+	const runtime: TransportRuntime = { timeoutMs }
 	/**
 	 * Resolved once here rather than by each provider: the template is a
 	 * property of the rule and the destination TYPE, not of the transport's
@@ -46,11 +57,14 @@ export const dispatchDelivery = (
 		Match.discriminatorsExhaustive("type")({
 			pagerduty: (config) => runHttpTransport(pagerDutyTransport, input(config), runtime),
 			webhook: (config) => runHttpTransport(webhookTransport, input(config), runtime),
-			"hazel-oauth": (config) => runHttpTransport(hazelTransport, input(config), runtime),
 			discord: (config) => runHttpTransport(discordTransport, input(config), runtime),
 			telegram: (config) => runHttpTransport(telegramTransport, input(config), runtime),
+			"google-chat": (config) => runHttpTransport(googleChatTransport, input(config), runtime),
+			"microsoft-teams": (config) => runHttpTransport(microsoftTeamsTransport, input(config), runtime),
+			"incident-io": (config) => runHttpTransport(incidentIoTransport, input(config), runtime),
 			email: (config) => runEffectTransport(emailTransport, input(config), deps),
 			chat: (config) => runEffectTransport(chatTransport, input(config), deps),
+			linear: (config) => runEffectTransport(linearTransport, input(config), deps),
 		}),
 	)
 }

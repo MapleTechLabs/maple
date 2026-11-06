@@ -1,4 +1,4 @@
-import { Result } from "effect"
+import { Result, String as Str } from "effect"
 import { assert, describe, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/http"
 import {
@@ -20,7 +20,7 @@ import {
 const projectPlanetScaleWebhookEvent = (...args: Parameters<typeof projectPlanetScaleWebhookEventResult>) =>
 	Result.getOrThrow(projectPlanetScaleWebhookEventResult(...args))
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_1")
+const orgId = Schema.decodeSync(OrgId)("org_1")
 const payload = {
 	timestamp: 1,
 	event: "branch.anomaly",
@@ -51,7 +51,7 @@ const provideQueue = (producer: QueueProducer) =>
 describe("PlanetScaleWebhookQueue", () => {
 	it("decodes tenant, source, connection, type, schema, and time as one relational boundary", () => {
 		const contradictions: readonly PlanetScaleWebhookJob[] = [
-			{ ...job, event: { ...job.event, tenantid: Schema.decodeUnknownSync(OrgId)("org_2") } },
+			{ ...job, event: { ...job.event, tenantid: Schema.decodeSync(OrgId)("org_2") } },
 			{ ...job, event: { ...job.event, source: "urn:maple:planetscale:connection_2" } },
 			{
 				...job,
@@ -71,8 +71,8 @@ describe("PlanetScaleWebhookQueue", () => {
 			{ ...job, event: { ...job.event, time: "2026-99-99T00:00:00Z" } },
 		]
 		for (const contradiction of contradictions)
-			assert.throws(() => Schema.decodeUnknownSync(PlanetScaleWebhookQueueMessage)(contradiction))
-		assert.deepStrictEqual(Schema.decodeUnknownSync(PlanetScaleWebhookQueueMessage)(job), job)
+			assert.throws(() => Schema.decodeSync(PlanetScaleWebhookQueueMessage)(contradiction))
+		assert.deepStrictEqual(Schema.decodeSync(PlanetScaleWebhookQueueMessage)(job), job)
 	})
 
 	it.effect("schema-encodes the internal job onto the dedicated binding", () => {
@@ -97,7 +97,7 @@ describe("PlanetScaleWebhookQueue", () => {
 		return Effect.gen(function* () {
 			const queue = yield* PlanetScaleWebhookQueue
 			const error = yield* queue.send(preparePlanetScaleWebhookJob(job)).pipe(Effect.flip)
-			assert.strictEqual(error._tag, "@maple/api/services/planetscale/PlanetScaleWebhookQueueError")
+			assert.strictEqual(error._tag, "@maple/backend/services/planetscale/PlanetScaleWebhookQueueError")
 			assert.strictEqual(error.message, "simulated queue outage")
 			assert.strictEqual(attempts, 1)
 		}).pipe(
@@ -127,8 +127,10 @@ describe("PlanetScaleWebhookQueue", () => {
 		})
 		const empty = withPayload("")
 		const envelopeBytes = planetScaleWebhookQueueJobBytes(empty)
-		const atCap = withPayload("x".repeat(MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES - envelopeBytes))
-		const oversized = withPayload("x".repeat(MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES - envelopeBytes + 1))
+		const atCap = withPayload(Str.repeat(MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES - envelopeBytes)("x"))
+		const oversized = withPayload(
+			Str.repeat(MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES - envelopeBytes + 1)("x"),
+		)
 		assert.strictEqual(planetScaleWebhookQueueJobBytes(atCap), MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES)
 		assert.strictEqual(
 			planetScaleWebhookQueueJobBytes(oversized),

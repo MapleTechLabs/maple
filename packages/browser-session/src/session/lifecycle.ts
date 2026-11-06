@@ -22,6 +22,7 @@ import {
 	type SessionRecord,
 } from "./session"
 import { claimVisit, touchVisit } from "../identity/visit"
+import { IDLE_TIMEOUT_MS } from "./idle"
 import { getVisitorId, isVisitorIdPersisted } from "../identity/visitor"
 
 /**
@@ -59,8 +60,13 @@ export interface SessionSuspendOptions {
 
 /** The parts of the lifecycle each capture mode owns. */
 export interface SessionLifecycleHooks {
-	/** Whether the rows this owner posts are accompanied by an rrweb recording. */
-	readonly recorded: boolean
+	/**
+	 * Whether the rows this owner posts are accompanied by an rrweb recording.
+	 * A function when it can change mid-run: a buffered session becomes recorded when an error happens.
+	 */
+	readonly recorded: boolean | (() => boolean)
+	/** Whether this page buffers replay for errors, so a session minted by rotation keeps that decision. */
+	readonly buffered?: (() => boolean) | undefined
 	/** POST one metadata row. Best-effort — must never throw. */
 	readonly post: (row: Record<string, unknown>, keepalive: boolean) => void
 	/**
@@ -79,10 +85,19 @@ export interface SessionLifecycleHooks {
 	readonly onSuspend?: ((options: SessionSuspendOptions) => Promise<void> | void) | undefined
 	/** The lifecycle moved to a new session id (idle rotation). */
 	readonly onSessionChange?: ((sessionId: string) => void) | undefined
+	/**
+	 * Flush capture on a hide that may be the last thing the page does, keeping
+	 * it running. When given, a hidden tab pauses rather than ends its run: the
+	 * `ended` row still goes out, but showing it again resumes the same capture
+	 * instead of restarting it (for replay, a full DOM snapshot per tab switch).
+	 */
+	readonly onPause?: ((options: { readonly keepalive: boolean }) => Promise<void> | void) | undefined
 }
 
 export interface SessionLifecycleHandle {
 	readonly sessionId: string
+	/** Post a fresh `active` row now, e.g. after the session became recorded. */
+	readonly announce: () => void
 	readonly shutdown: (options?: { readonly flush?: boolean }) => Promise<void>
 }
 
@@ -107,11 +122,17 @@ export function startSessionLifecycle(
 	let stopped = false
 	/** Whether a run is live: capture started, `active` posted, heartbeat armed. */
 	let running = false
+	/** A live run whose tab is hidden: `ended` posted, heartbeat off, capture kept. */
+	let paused = false
+	/** Ends a paused run once its session would have gone idle, so a hidden tab does not record for long. */
+	let pauseTimer: ReturnType<typeof setTimeout> | undefined
 	let heartbeat: ReturnType<typeof setInterval> | undefined
 	let clickCountBase = 0
 	let errorCountBase = 0
 	let sinkClickCountAtStart = 0
 	let sinkErrorCountAtStart = 0
+	const isRecorded = (): boolean =>
+		typeof hooks.recorded === "function" ? hooks.recorded() : hooks.recorded
 
 	/**
 	 * The persisted record of the session this lifecycle owns.
@@ -139,9 +160,12 @@ export function startSessionLifecycle(
 	const rebaseCounts = (record: SessionRecord): void => {
 		clickCountBase = record.clickCount ?? 0
 		errorCountBase = record.errorCount ?? 0
+		// A sink still under the rotated-out id is replaced on its next emit and the
+		// new one starts at zero; baselining against the old tallies would hide that many.
 		const sink = getActiveSink()
-		sinkClickCountAtStart = sink?.getClickCount() ?? 0
-		sinkErrorCountAtStart = sink?.getErrorCount() ?? 0
+		const own = sink !== undefined && sink.sessionId === record.id
+		sinkClickCountAtStart = own ? sink.getClickCount() : 0
+		sinkErrorCountAtStart = own ? sink.getErrorCount() : 0
 	}
 
 	const countsFor = (record: SessionRecord): SessionCounts => {
@@ -167,6 +191,9 @@ export function startSessionLifecycle(
 
 	const post = (status: "active" | "ended", keepalive: boolean): void => {
 		const record = liveRecord()
+		// Unknown only for a session this document never wrote; a guessed version could lose argMax.
+		const version = nextMetaVersion(record.id)
+		if (version === undefined) return
 		const counts = countsFor(record)
 		const visitorId = getVisitorId()
 		// Tracking off means no visitor id and no persisted claim: billing falls
@@ -178,7 +205,7 @@ export function startSessionLifecycle(
 			buildSessionMetaRow({
 				sessionId: record.id,
 				startedAt: new Date(record.startedAt),
-				version: nextMetaVersion(),
+				version,
 				status,
 				serviceName: options.serviceName,
 				identity: options.getIdentity?.(),
@@ -196,7 +223,8 @@ export function startSessionLifecycle(
 				pageViews: counts.pageViews,
 				errorCount: counts.errorCount,
 				traceIds: status === "ended" ? options.getTraceIds?.(record.id) : undefined,
-				recorded: hooks.recorded,
+				recorded: isRecorded(),
+				replayTrigger: record.replayTrigger,
 				billableStart,
 			}),
 			keepalive,
@@ -209,16 +237,26 @@ export function startSessionLifecycle(
 		heartbeat = undefined
 	}
 
+	const clearPauseTimer = (): void => {
+		if (pauseTimer !== undefined) clearTimeout(pauseTimer)
+		pauseTimer = undefined
+	}
+
 	const startRun = (): void => {
 		if (stopped || running) return
 		running = true
 		const record = liveRecord()
 		// A session minted by idle rotation mid-page has no sampling decision yet;
 		// it takes this page's mode so its later loads agree with it.
-		adoptReplayDecision(record.id, hooks.recorded)
+		adoptReplayDecision(record.id, isRecorded(), hooks.buffered?.())
 		rebaseCounts(record)
 		hooks.onStart?.(record)
 		post("active", false)
+		startHeartbeat()
+	}
+
+	const startHeartbeat = (): void => {
+		stopHeartbeat()
 		heartbeat = setInterval(() => {
 			if (typeof document !== "undefined" && document.visibilityState !== "visible") return
 			// A visible tab nobody is using still crosses the idle window. Ending the
@@ -230,10 +268,11 @@ export function startSessionLifecycle(
 			// rotation listener below.
 			//
 			// Expiry is judged on the *persisted* record, not the one captured when
-			// the run started: `lastActivityAt` is bumped by every span and captured
-			// event, and none of those writes reach the captured object.
+			// the run started: `lastActivityAt` is bumped by user input (and, in the
+			// Effect SDK's standalone mode, by spans), and none of those writes reach
+			// the captured object.
 			if (isSessionExpired(liveRecord())) {
-				endRun({ flush: true, keepalive: false })
+				void endRun({ flush: true, keepalive: false })
 				return
 			}
 			post("active", false)
@@ -244,15 +283,41 @@ export function startSessionLifecycle(
 		if (!running) return
 		running = false
 		stopHeartbeat()
-		if (suspend.flush) post("ended", suspend.keepalive)
+		clearPauseTimer()
+		// A paused run already posted its `ended` row when the tab was hidden.
+		if (suspend.flush && !paused) post("ended", suspend.keepalive)
+		paused = false
 		return hooks.onSuspend?.(suspend)
+	}
+
+	const pauseRun = (onPause: NonNullable<SessionLifecycleHooks["onPause"]>): void => {
+		if (!running || paused) return
+		paused = true
+		stopHeartbeat()
+		post("ended", true)
+		void onPause({ keepalive: true })
+		const idleIn = liveRecord().lastActivityAt + IDLE_TIMEOUT_MS - Date.now()
+		pauseTimer = setTimeout(
+			() => {
+				pauseTimer = undefined
+				void endRun({ flush: true, keepalive: false })
+			},
+			Math.max(0, idleIn) + 1_000,
+		)
+	}
+
+	const resumeRun = (): void => {
+		clearPauseTimer()
+		paused = false
+		post("active", false)
+		startHeartbeat()
 	}
 
 	const stopRotationListener = onSessionRotate((previous, next) => {
 		if (stopped || previous.id !== current.id) return
 		// Not keepalive: rotation is discovered by activity in a live tab, never on
 		// the way out, and the keepalive budget is shared with the unload writes.
-		endRun({ flush: true, keepalive: false })
+		void endRun({ flush: true, keepalive: false })
 		current = next
 		hooks.onSessionChange?.(next.id)
 		// The replacement record is written by the rotating caller immediately
@@ -266,7 +331,8 @@ export function startSessionLifecycle(
 		const doc = browserDocument()
 		if (!doc) return
 		if (doc.visibilityState === "hidden") {
-			void endRun({ flush: true, keepalive: true })
+			if (hooks.onPause) pauseRun(hooks.onPause)
+			else void endRun({ flush: true, keepalive: true })
 			return
 		}
 		// Back in view. The session may have gone idle while hidden — resolving it
@@ -276,7 +342,8 @@ export function startSessionLifecycle(
 			getSession()
 			return
 		}
-		startRun()
+		if (paused) resumeRun()
+		else startRun()
 	}
 
 	// `visibilitychange` is fired at the document (and bubbles to the window); a
@@ -300,6 +367,11 @@ export function startSessionLifecycle(
 	return {
 		get sessionId() {
 			return current.id
+		},
+		announce: () => {
+			// While hidden the row already reads `ended`; an update must not reopen it,
+			// since no heartbeat or later `ended` would follow.
+			if (running) post(paused ? "ended" : "active", false)
 		},
 		shutdown: async (shutdownOptions) => {
 			if (stopped) return

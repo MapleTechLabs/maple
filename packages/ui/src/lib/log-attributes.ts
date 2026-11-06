@@ -9,7 +9,11 @@
 // Kept dependency-free (structural `LogLike` instead of an app-specific `Log`)
 // so it can be consumed from web and React Native alike.
 
-export type ChipTone = "error" | "warn" | "info" | "muted"
+import { httpStatusTone } from "./http"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
+
+/** Status members share `Tone`'s names; `emphasis`/`muted` are plain-chip weights, not statuses. */
+export type ChipTone = "crit" | "warn" | "emphasis" | "muted"
 
 export interface PickedAttribute {
 	key: string
@@ -47,9 +51,9 @@ const PROMOTED_RESOURCE_KEYS = new Set([
 ])
 
 function scoreKey(key: string): number {
-	if (key === "error" || key === "exception" || key.startsWith("exception.")) return 100
+	if (key === "error" || key === "exception" || Str.startsWith("exception.")(key)) return 100
 	if (key === "http.status_code" || key === "http.response.status_code") return 95
-	if (key === "rpc.grpc.status_code") return 90
+	if (key === "rpc.grpc.status_code" || key === "rpc.response.status_code") return 90
 	if (key === "http.method" || key === "http.request.method") return 80
 	if (
 		key === "db.system" ||
@@ -60,29 +64,60 @@ function scoreKey(key: string): number {
 		key === "db.operation.name"
 	)
 		return 70
-	if (key === "rpc.service" || key === "rpc.method") return 68
+	if (key === "rpc.system.name" || key === "rpc.service" || key === "rpc.method") return 68
 	if (key === "user.id" || key === "enduser.id" || key === "customer_id" || key === "customer.id") return 66
 	if (key === "duration_ms" || key === "latency_ms" || key === "http.duration") return 60
-	if (key === "http.url" || key === "http.route" || key === "url.path") return 55
-	if (key.startsWith("http.") || key.startsWith("url.")) return 40
-	if (key.startsWith("db.")) return 38
-	if (key.startsWith("rpc.")) return 36
-	if (key.startsWith("messaging.")) return 34
-	if (key.startsWith("user.") || key.startsWith("enduser.")) return 32
-	if (key.includes(".")) return 25
+	if (key === "http.url" || key === "url.full" || key === "http.route" || key === "url.path") return 55
+	if (Str.startsWith("http.")(key) || Str.startsWith("url.")(key)) return 40
+	if (Str.startsWith("db.")(key)) return 38
+	if (Str.startsWith("rpc.")(key)) return 36
+	if (Str.startsWith("messaging.")(key)) return 34
+	if (Str.startsWith("user.")(key) || Str.startsWith("enduser.")(key)) return 32
+	if (Str.includes(".")(key)) return 25
 	return 20
 }
+
+// `rpc.response.status_code` values are system-specific, so they are only toned
+// when the row says the system is gRPC. gRPC's are status names (or their
+// numbers from older instrumentation); semconv counts only these as errors on a
+// server span, and the chip does not know the span kind, so the other non-OK
+// codes are a warning.
+const GRPC_SERVER_ERROR_CODES = new Set([
+	"UNKNOWN",
+	"DEADLINE_EXCEEDED",
+	"UNIMPLEMENTED",
+	"INTERNAL",
+	"UNAVAILABLE",
+	"DATA_LOSS",
+	"2",
+	"4",
+	"12",
+	"13",
+	"14",
+	"15",
+])
+const GRPC_CODES = new Set([
+	...GRPC_SERVER_ERROR_CODES,
+	...Str.split(" ")(
+		"OK CANCELLED INVALID_ARGUMENT NOT_FOUND ALREADY_EXISTS PERMISSION_DENIED RESOURCE_EXHAUSTED FAILED_PRECONDITION ABORTED OUT_OF_RANGE UNAUTHENTICATED",
+	),
+	...Str.split(" ")("0 1 3 5 6 7 8 9 10 11 16"),
+])
 
 function isNumericStatus(value: string): number | null {
 	const n = Number(value)
 	return Number.isInteger(n) && n >= 100 && n < 600 ? n : null
 }
 
-export function getChipTone(key: string, value: string, severityText: string): ChipTone {
-	const sev = severityText.toUpperCase()
+/**
+ * `rpcSystem` is the row's `rpc.system.name` (or legacy `rpc.system`); without
+ * it `rpc.response.status_code` stays neutral.
+ */
+export function getChipTone(key: string, value: string, severityText: string, rpcSystem?: string): ChipTone {
+	const sev = Str.toUpperCase(severityText)
 	const rowIsError = sev === "ERROR" || sev === "FATAL"
 
-	if (key === "error" || key === "exception" || key.startsWith("exception.")) return "error"
+	if (key === "error" || key === "exception" || Str.startsWith("exception.")(key)) return "crit"
 
 	if (
 		key === "http.status_code" ||
@@ -92,21 +127,38 @@ export function getChipTone(key: string, value: string, severityText: string): C
 	) {
 		const status = isNumericStatus(value)
 		if (status !== null) {
-			if (status >= 500) return "error"
-			if (status >= 400) return "warn"
-			if (status >= 300) return "info"
+			const tone = httpStatusTone(status)
+			if (tone === "crit") return "crit"
+			if (tone === "warn") return "warn"
+			if (status >= 300) return "emphasis"
 			return "muted"
 		}
 	}
 
 	if (key === "rpc.grpc.status_code") {
 		const n = Number(value)
-		if (Number.isFinite(n) && n !== 0) return "error"
+		if (Number.isFinite(n) && n !== 0) return "crit"
 	}
 
-	if (key === "http.method" || key === "http.request.method") return "info"
-	if (key === "db.system" || key === "db.system.name" || key === "rpc.service" || key === "rpc.method")
-		return "info"
+	if (
+		key === "rpc.response.status_code" &&
+		rpcSystem !== undefined &&
+		Str.toLowerCase(rpcSystem) === "grpc"
+	) {
+		const code = Str.toUpperCase(value)
+		if (GRPC_SERVER_ERROR_CODES.has(code)) return "crit"
+		if (GRPC_CODES.has(code) && code !== "OK" && code !== "0") return "warn"
+	}
+
+	if (key === "http.method" || key === "http.request.method") return "emphasis"
+	if (
+		key === "db.system" ||
+		key === "db.system.name" ||
+		key === "rpc.system.name" ||
+		key === "rpc.service" ||
+		key === "rpc.method"
+	)
+		return "emphasis"
 
 	if (rowIsError) return "muted"
 	return "muted"
@@ -114,34 +166,35 @@ export function getChipTone(key: string, value: string, severityText: string): C
 
 function shouldSkip(key: string): boolean {
 	if (SKIP_KEYS.has(key)) return true
-	return SKIP_PREFIXES.some((p) => key.startsWith(p))
+	return Arr.some(SKIP_PREFIXES, (p) => Str.startsWith(p)(key))
 }
 
 export function pickImportantAttributes(log: LogLike, limit = 4): PickedAttribute[] {
-	const serviceNameLower = log.serviceName.toLowerCase()
+	const rpcSystem = log.logAttributes["rpc.system.name"] || log.logAttributes["rpc.system"]
+	const serviceNameLower = Str.toLowerCase(log.serviceName)
 	const scored: Array<{ key: string; value: string; score: number; source: "log" | "resource" }> = []
 
-	for (const [key, value] of Object.entries(log.logAttributes)) {
+	for (const [key, value] of Rec.toEntries(log.logAttributes)) {
 		if (shouldSkip(key)) continue
 		if (!value) continue
-		if (value.toLowerCase() === serviceNameLower) continue
+		if (Str.toLowerCase(value) === serviceNameLower) continue
 		scored.push({ key, value, score: scoreKey(key), source: "log" })
 	}
 
-	for (const [key, value] of Object.entries(log.resourceAttributes)) {
+	for (const [key, value] of Rec.toEntries(log.resourceAttributes)) {
 		if (!value) continue
 		if (shouldSkip(key)) continue
 		if (!PROMOTED_RESOURCE_KEYS.has(key)) continue
-		if (value.toLowerCase() === serviceNameLower) continue
+		if (Str.toLowerCase(value) === serviceNameLower) continue
 		scored.push({ key, value, score: scoreKey(key) - 10, source: "resource" })
 	}
 
-	scored.sort((a, b) => b.score - a.score || a.key.localeCompare(b.key))
+	scored.sort((a, b) => (b.score !== a.score ? b.score - a.score : Str.localeCompare(b.key)(a.key)))
 
-	return scored.slice(0, limit).map(({ key, value, source }) => ({
+	return Arr.map(scored.slice(0, limit), ({ key, value, source }) => ({
 		key,
 		value,
-		tone: getChipTone(key, value, log.severityText),
+		tone: getChipTone(key, value, log.severityText, rpcSystem),
 		source,
 	}))
 }
@@ -174,17 +227,19 @@ export interface AttributeGroup {
 export function groupAttributesByNamespace(attrs: Record<string, string>): AttributeGroup[] {
 	const buckets = new Map<string, Array<[string, string]>>()
 
-	for (const entry of Object.entries(attrs)) {
+	for (const entry of Rec.toEntries(attrs)) {
 		const [key] = entry
-		const dot = key.indexOf(".")
-		const namespace = dot > 0 ? key.slice(0, dot) : "Other"
+		const namespace = Option.match(
+			Option.filter(Str.indexOf(".")(key), (dot) => dot > 0),
+			{ onNone: () => "Other", onSome: (dot) => Str.slice(0, dot)(key) },
+		)
 		const list = buckets.get(namespace)
 		if (list) list.push(entry)
 		else buckets.set(namespace, [entry])
 	}
 
 	for (const list of buckets.values()) {
-		list.sort(([a], [b]) => a.localeCompare(b))
+		list.sort(([a], [b]) => Str.localeCompare(b)(a))
 	}
 
 	const ordered: AttributeGroup[] = []
@@ -196,9 +251,9 @@ export function groupAttributesByNamespace(attrs: Record<string, string>): Attri
 		}
 	}
 
-	const remaining = [...buckets.entries()]
-		.filter(([ns]) => ns !== "Other")
-		.sort(([a], [b]) => a.localeCompare(b))
+	const remaining = Arr.filter([...buckets.entries()], ([ns]) => ns !== "Other").sort(([a], [b]) =>
+		Str.localeCompare(b)(a),
+	)
 	for (const [ns, entries] of remaining) {
 		ordered.push({ namespace: ns, entries })
 	}

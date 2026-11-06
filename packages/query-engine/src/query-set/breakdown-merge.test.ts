@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { type BreakdownQueryResult, mergeBreakdownResults, toDisplayName } from "./breakdown-merge"
+import { Array as Arr } from "effect"
 
 const queryDraft = (id: string, name: string, legend: string) => ({ id, name, legend })
 
@@ -86,7 +87,7 @@ describe("mergeBreakdownResults", () => {
 			[queryDraft("q-a", "A", ""), queryDraft("q-b", "B", "")],
 		)
 
-		expect(rows.map((row) => row.name)).toEqual(["high", "low"])
+		expect(Arr.map(rows, (row) => row.name)).toEqual(["high", "low"])
 	})
 
 	it("ignores failed and empty results", () => {

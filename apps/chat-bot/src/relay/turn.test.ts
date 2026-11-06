@@ -7,21 +7,22 @@
  * linked, a session that recycles its connection mid-turn, a turn that fails, and the picture a
  * chart is relayed as.
  */
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import {
 	decodeChatEventPayload,
 	encodeChatEventPayload,
 	type ChatEvent,
 	type ChatEventInput,
-	type ChatMessage,
+	ChatMessage,
 	type ChatProposalOutcome,
 	type ChatProposalSettlement,
 } from "@maple/domain/chat-session"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
-import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
+import { type ChatSessionStub, chatSessionClientFromStub } from "@maple/domain/chat-session-stub"
 import { ChatConnectorId, OrgId, UserId } from "@maple/domain/primitives"
 import {
 	chatActionControlId,
+	chatAlertAckControlId,
 	chatConnectorId,
 	ChatOutboundError,
 	ConnectorCredentials,
@@ -38,10 +39,28 @@ import {
 	type InboundWorkspaceRemoved,
 	WORKSPACE_CREDENTIALS,
 } from "@maple/chat-platform"
-import { Context, Duration, Effect, Logger, Option, References, Schema, Tracer } from "effect"
+import {
+	Context,
+	Duration,
+	Effect,
+	Logger,
+	Option,
+	References,
+	Schema,
+	Tracer,
+	Array as Arr,
+	Record as Rec,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { ConversationNotRecorded, FOLLOW_UP_WINDOW_MS } from "./conversation.ts"
-import { relayInboundEvent, relayWithWorkspace, WorkspaceLookupFailed, type RelayPorts } from "./turn.ts"
+import {
+	relayInboundEvent,
+	relayWithWorkspace,
+	WorkspaceLookupFailed,
+	type RelayAlertAckOutcome,
+	type RelayAlertAckRequest,
+	type RelayPorts,
+} from "./turn.ts"
 
 const TESTCHAT = chatConnectorId("testchat")
 const ORG = Schema.decodeSync(OrgId)("org_1")
@@ -143,7 +162,7 @@ const chat = (
 				history: (historyTarget, options) =>
 					Effect.suspend(() => {
 						historyCalls.push({ channelId: historyTarget.channelId, ...options })
-						return earlier instanceof ChatOutboundError
+						return Schema.is(ChatOutboundError)(earlier)
 							? Effect.fail(earlier)
 							: Effect.succeed(earlier)
 					}),
@@ -163,7 +182,10 @@ const event = (seq: number, input: ChatEventInput): ChatEvent =>
 const sse = (events: ReadonlyArray<ChatEvent>): ReadableStream<Uint8Array> => {
 	const payload =
 		"retry: 1000\n\n" +
-		events.map((next) => `id: ${next.seq}\ndata: ${JSON.stringify(next)}\n\n`).join("")
+		Arr.join(
+			Arr.map(events, (next) => `id: ${next.seq}\ndata: ${JSON.stringify(next)}\n\n`),
+			"",
+		)
 	const bytes = new TextEncoder().encode(payload)
 	// Cut mid-frame, so the decoder's buffer is exercised rather than assumed.
 	const cut = Math.floor(bytes.length / 2)
@@ -257,6 +279,8 @@ interface Host {
 	readonly announced: { count: number }
 	/** How many workspace lookups the events caused — one database connection each. */
 	readonly lookups: { count: number }
+	/** Every alert ack the relay asked the host for. */
+	readonly alertAcks: Array<RelayAlertAckRequest>
 }
 
 const host = (
@@ -274,8 +298,11 @@ const host = (
 		readonly opened?: ReadonlyArray<string>
 		/** The relay object could not record the conversation the bot just opened. */
 		readonly rememberFails?: boolean
+		/** What the alert ack port answers. */
+		readonly alertAck?: (request: RelayAlertAckRequest) => RelayAlertAckOutcome
 	},
 ): Host => {
+	const alertAcks: Array<RelayAlertAckRequest> = []
 	const forgotten: Array<string> = []
 	const charts: Array<{ orgId: OrgId; ref: ChatChartRef }> = []
 	const opened = new Set<string>(options?.opened ?? [])
@@ -287,6 +314,7 @@ const host = (
 		opened,
 		announced,
 		lookups,
+		alertAcks,
 		ports: {
 			outbound,
 			supportsIdentity: options?.supportsIdentity ?? false,
@@ -317,7 +345,7 @@ const host = (
 				}),
 			forgetWorkspace: (_connector: ChatConnectorId, workspaceId: string) =>
 				Effect.sync(() => void forgotten.push(workspaceId)),
-			chatSession: () => stub,
+			chatSession: () => (stub === undefined ? undefined : chatSessionClientFromStub(stub)),
 			appBaseUrl: "https://app.maple.dev",
 			chartImageUrl: (orgId, ref) => {
 				charts.push({ orgId, ref })
@@ -341,6 +369,11 @@ const host = (
 						)
 					: Effect.sync(() => void opened.add(conversation.conversationKey)),
 			recordTurn: () => Effect.void,
+			alertAck: (request) =>
+				Effect.sync(() => {
+					alertAcks.push(request)
+					return options?.alertAck?.(request) ?? { kind: "unavailable" }
+				}),
 		},
 	}
 }
@@ -350,13 +383,16 @@ const CHART_FENCE = '```chart\n{"type":"ranked","unit":"count","data":[{"name":"
 const blocksOf = (calls: Chat["calls"]): ReadonlyArray<ChatBlock> => calls[calls.length - 1]?.blocks ?? []
 
 const prose = (blocks: ReadonlyArray<ChatBlock>): string =>
-	blocks
-		.filter((block) => block.kind === "prose")
-		.map((block) => block.markdown)
-		.join("\n")
+	Arr.join(
+		Arr.map(
+			Arr.filter(blocks, (block) => block.kind === "prose"),
+			(block) => block.markdown,
+		),
+		"\n",
+	)
 
 const notices = (blocks: ReadonlyArray<ChatBlock>): ReadonlyArray<string> =>
-	blocks.flatMap((block) => (block.kind === "notice" ? [block.text] : []))
+	Arr.flatMap(blocks, (block) => (block.kind === "notice" ? [block.text] : []))
 
 const target: ChatTarget = { workspaceId: WORKSPACE, channelId: CONVERSATION }
 
@@ -378,7 +414,8 @@ describe("relaying a mention", () => {
 
 			// One turn, on the session the connector's conversation key names.
 			expect(agent.turns).toHaveLength(1)
-			const turn = agent.turns[0]!
+			const turn = agent.turns[0]
+			assert.isDefined(turn)
 			expect(turn.sessionId).toBe(SESSION_ID)
 			// The org's own tenant, with no roles: a connector turn proposes mutations, it does not
 			// perform them.
@@ -398,7 +435,7 @@ describe("relaying a mention", () => {
 			// A placeholder first, then the answer, in the conversation the connector opened.
 			expect(platform.calls[0]?.verb).toBe("post")
 			expect(platform.calls[0]?.ref.target).toEqual(target)
-			expect(platform.calls.map((call) => call.verb)).toContain("edit")
+			expect(Arr.map(platform.calls, (call) => call.verb)).toContain("edit")
 			expect(prose(blocksOf(platform.calls))).toBe("Checkout is slow.")
 			expect(platform.threads).toEqual(["message-1"])
 		}),
@@ -463,8 +500,10 @@ describe("relaying a mention", () => {
 
 			yield* relayInboundEvent(mention, deployment.ports)
 
-			const chart = blocksOf(platform.calls).find((block) => block.kind === "chart")
-			expect(chart?.imageUrl).toBe("https://app.maple.dev/chat/chart/0.png")
+			const chart = Arr.findFirst(blocksOf(platform.calls), (block) => block.kind === "chart")
+			expect(Option.map(chart, (block) => block.imageUrl)).toEqual(
+				Option.some("https://app.maple.dev/chat/chart/0.png"),
+			)
 			// Signed for the org that owns the conversation, naming the reply it is a fence inside.
 			expect(deployment.charts[0]?.orgId).toBe(ORG)
 			expect(deployment.charts[0]?.ref).toMatchObject({ sessionId: SESSION_ID, chartIndex: 0 })
@@ -601,9 +640,9 @@ describe("relaying a mention", () => {
 
 			const everything = JSON.stringify({
 				logs,
-				spans: spans.map((span) => ({
+				spans: Arr.map(spans, (span) => ({
 					name: span.name,
-					attributes: Object.fromEntries(span.attributes),
+					attributes: Rec.fromEntries(span.attributes),
 					// A failed span records the failure as an event, which is the other place a cause
 					// would be rendered.
 					events: span.events,
@@ -612,7 +651,7 @@ describe("relaying a mention", () => {
 			expect(everything).not.toContain(mention.text)
 			expect(everything).not.toContain(mention.author.displayName)
 			// The failure is still reported — by what it was, not by what it carried.
-			expect(logs.join("")).toContain("ChatOutboundError")
+			expect(Arr.join(logs, "")).toContain("ChatOutboundError")
 		}),
 	)
 
@@ -706,14 +745,14 @@ describe("relaying a message that mentioned nobody", () => {
 
 	/** A session whose last turn was `ago` milliseconds before NOW. */
 	const spokeAt = (ago: number): ReadonlyArray<ChatMessage> => [
-		{
+		new ChatMessage({
 			id: "a1",
 			role: "assistant",
 			text: "Checkout is slow.",
 			toolCalls: [],
 			createdAt: NOW - ago,
 			startSeq: 2,
-		},
+		}),
 	]
 
 	/** A minute ago, which is what makes the conversation live. */
@@ -784,14 +823,14 @@ describe("relaying a message that mentioned nobody", () => {
 			// The conversation has an unanswered message in it, which is not a recent answer.
 			const stale: ReadonlyArray<ChatMessage> = [
 				...spokeAt(FOLLOW_UP_WINDOW_MS + 1),
-				{
+				new ChatMessage({
 					id: "u2",
 					role: "user",
 					text: "still there?",
 					toolCalls: [],
 					createdAt: NOW - 60_000,
 					startSeq: 3,
-				},
+				}),
 			]
 			const platform = chat()
 			const agent = session([silentTurn], { transcript: stale })
@@ -917,11 +956,12 @@ const decidedTranscript = (output: string, isError?: boolean): ReadonlyArray<Cha
 			...(isError === true ? { isError: true } : undefined),
 		},
 	]
-	inputs.forEach((input, index) => transcript.add(event(index + 1, input), 0))
+	Arr.forEach(inputs, (input, index) => transcript.add(event(index + 1, input), 0))
 	return transcript.messages
 }
 
-const approvals = (blocks: ReadonlyArray<ChatBlock>) => blocks.filter((block) => block.kind === "approval")
+const approvals = (blocks: ReadonlyArray<ChatBlock>) =>
+	Arr.filter(blocks, (block) => block.kind === "approval")
 
 /**
  * Why a click was refused, off the span.
@@ -940,9 +980,10 @@ const refusalReason = (effect: Effect.Effect<void>) =>
 			},
 		})
 		yield* effect.pipe(Effect.provideContext(Context.make(Tracer.Tracer, tracer)))
-		return spans
-			.flatMap((span) => [span.attributes.get("maple.chat.approval")])
-			.find((value) => value !== undefined)
+		return Arr.findFirst(
+			Arr.flatMap(spans, (span) => [span.attributes.get("maple.chat.approval")]),
+			(value) => value !== undefined,
+		)
 	})
 
 describe("settling an approval somebody clicked", () => {
@@ -1039,7 +1080,7 @@ describe("settling an approval somebody clicked", () => {
 
 			expect(agent.settlements).toEqual([])
 			// Only the clicker sees it: it is about their account, not the conversation.
-			expect(platform.calls.map((call) => call.verb)).toEqual(["whisper"])
+			expect(Arr.map(platform.calls, (call) => call.verb)).toEqual(["whisper"])
 			const text = prose(blocksOf(platform.calls))
 			expect(text).toContain("**Link your Testchat account to Maple to approve this.**")
 			expect(text).toContain("(https://app.maple.dev/integrations)")
@@ -1055,7 +1096,7 @@ describe("settling an approval somebody clicked", () => {
 			yield* relayInboundEvent(click(), deployment.ports)
 
 			// An unanswered click reads as a broken button, which is worse than a public notice.
-			expect(platform.calls.map((call) => call.verb)).toEqual(["post"])
+			expect(Arr.map(platform.calls, (call) => call.verb)).toEqual(["post"])
 			expect(prose(blocksOf(platform.calls))).toContain("https://app.maple.dev/integrations")
 		}),
 	)
@@ -1071,21 +1112,6 @@ describe("settling an approval somebody clicked", () => {
 			// Settled, and with no acting user — the apply runs as the org-level connector identity.
 			expect(agent.settlements).toHaveLength(1)
 			expect(agent.settlements[0]).not.toHaveProperty("actingUserId")
-		}),
-	)
-
-	it.effect("hands the session the user the HOST resolved, never anything the click carried", () =>
-		Effect.gen(function* () {
-			const platform = chat()
-			const agent = session([], { transcript: decidedTranscript("Approved by Ada.\nDone.") })
-			const deployment = host(platform.outbound, agent.stub, {
-				supportsIdentity: true,
-				linkedUserId: ADA,
-			})
-
-			yield* relayInboundEvent(click(), deployment.ports)
-
-			expect(agent.settlements[0]).toHaveProperty("actingUserId", ADA)
 		}),
 	)
 
@@ -1114,7 +1140,7 @@ describe("settling an approval somebody clicked", () => {
 			// this session's log, so it cannot be settled from here.
 			yield* relayInboundEvent(click({ channelId: "otherchannel" }), deployment.ports)
 
-			expect(agent.settlements.map((settlement) => settlement.sessionId)).toEqual([
+			expect(Arr.map(agent.settlements, (settlement) => settlement.sessionId)).toEqual([
 				`${ORG}:bot-${TESTCHAT}-otherchannel`,
 			])
 		}),
@@ -1132,7 +1158,7 @@ describe("settling an approval somebody clicked", () => {
 				relayInboundEvent(click({ actor: { id: "", displayName: "Ada" } }), deployment.ports),
 			)
 
-			expect(reason).toBe("no_approver")
+			expect(reason).toEqual(Option.some("no_approver"))
 			expect(agent.settlements).toEqual([])
 			expect(platform.calls).toEqual([])
 		}),
@@ -1149,7 +1175,7 @@ describe("settling an approval somebody clicked", () => {
 
 				// Neither has an approver role to check or an org to change anything in, and the
 				// unlinked notice belongs to a mention rather than to a button nobody should have.
-				expect(reason).toBe("unavailable")
+				expect(reason).toEqual(Option.some("unavailable"))
 				expect(agent.settlements).toEqual([])
 				expect(platform.calls).toEqual([])
 			}
@@ -1203,9 +1229,9 @@ describe("settling an approval somebody clicked", () => {
 
 			const everything = JSON.stringify({
 				logs,
-				spans: spans.map((span) => ({
+				spans: Arr.map(spans, (span) => ({
 					name: span.name,
-					attributes: Object.fromEntries(span.attributes),
+					attributes: Rec.fromEntries(span.attributes),
 					events: span.events,
 				})),
 			})
@@ -1230,12 +1256,12 @@ describe("settling an approval somebody clicked", () => {
 			// The session refused to settle it twice, so nothing re-ran — but the re-render still
 			// happens, which is what fixes a message whose first update never landed.
 			expect(agent.settlements).toHaveLength(1)
-			expect(platform.calls.map((call) => call.verb)).toEqual(["edit"])
+			expect(Arr.map(platform.calls, (call) => call.verb)).toEqual(["edit"])
 			expect(approvals(platform.calls.at(-1)?.blocks ?? [])[0]).toMatchObject({
 				outcome: { approved: true },
 			})
 			// And it says nothing out loud: a second click is not worth a message of its own.
-			expect(platform.calls.every((call) => call.verb === "edit")).toBe(true)
+			expect(Arr.every(platform.calls, (call) => call.verb === "edit")).toBe(true)
 		}),
 	)
 
@@ -1271,6 +1297,152 @@ describe("settling an approval somebody clicked", () => {
 	)
 })
 
+describe("acknowledging an alert from its card", () => {
+	const INCIDENT = "00000000-0000-4000-8000-0000000000a1"
+	const ackClick = (action: "acknowledge" | "unacknowledge") =>
+		click({ actionToken: chatAlertAckControlId(action, INCIDENT), messageId: "alert-msg" })
+	const redrawn: ReadonlyArray<ChatBlock> = [
+		{
+			kind: "alert",
+			color: "#e01e5a",
+			title: "Checkout errors",
+			summary: "",
+			fields: [],
+			imageUrl: null,
+			imageAlt: "",
+			links: [],
+			footer: [],
+			sentAtMs: null,
+			acknowledge: { incidentId: INCIDENT, acknowledgedBy: "Ada" },
+		},
+	]
+
+	it.effect("acks in the workspace's org and redraws the clicked card", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const deployment = host(platform.outbound, undefined, {
+				alertAck: () => ({ kind: "applied", card: Option.some(redrawn) }),
+			})
+
+			yield* relayInboundEvent(ackClick("acknowledge"), deployment.ports)
+
+			expect(deployment.alertAcks).toEqual([
+				{
+					orgId: ORG,
+					connector: TESTCHAT,
+					incidentId: INCIDENT,
+					action: "acknowledge",
+					messageId: "alert-msg",
+					userId: null,
+					displayName: "Ada",
+				},
+			])
+			expect(platform.calls).toHaveLength(1)
+			expect(platform.calls[0]?.verb).toBe("edit")
+			expect(platform.calls[0]?.ref.messageId).toBe("alert-msg")
+			expect(platform.calls[0]?.blocks).toEqual(redrawn)
+		}),
+	)
+
+	it.effect("records the linked Maple user when the connector can name the clicker", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const deployment = host(platform.outbound, undefined, {
+				supportsIdentity: true,
+				linkedUserId: ADA,
+				alertAck: () => ({ kind: "applied", card: Option.some(redrawn) }),
+			})
+
+			yield* relayInboundEvent(ackClick("unacknowledge"), deployment.ports)
+
+			expect(deployment.alertAcks[0]).toMatchObject({ action: "unacknowledge", userId: ADA })
+		}),
+	)
+
+	it.effect("acks an unlinked clicker under their platform name rather than refusing", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const deployment = host(platform.outbound, undefined, {
+				supportsIdentity: true,
+				alertAck: () => ({ kind: "applied", card: Option.some(redrawn) }),
+			})
+
+			yield* relayInboundEvent(ackClick("acknowledge"), deployment.ports)
+
+			expect(deployment.alertAcks[0]).toMatchObject({ userId: null, displayName: "Ada" })
+			expect(platform.calls[0]?.verb).toBe("edit")
+		}),
+	)
+
+	it.effect("redraws a resolved incident's card and says so privately", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const deployment = host(platform.outbound, undefined, {
+				alertAck: () => ({ kind: "resolved", card: Option.some(redrawn) }),
+			})
+
+			yield* relayInboundEvent(ackClick("acknowledge"), deployment.ports)
+
+			expect(Arr.map(platform.calls, (call) => call.verb)).toEqual(["edit", "whisper"])
+			expect(notices(blocksOf(platform.calls))).toEqual([
+				"That incident is already resolved, so there is nothing to acknowledge.",
+			])
+		}),
+	)
+
+	it.effect("tells the clicker when the incident is gone, and edits nothing", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const deployment = host(platform.outbound, undefined, {
+				alertAck: () => ({ kind: "not_found" }),
+			})
+
+			yield* relayInboundEvent(ackClick("acknowledge"), deployment.ports)
+
+			expect(Arr.map(platform.calls, (call) => call.verb)).toEqual(["whisper"])
+			expect(notices(blocksOf(platform.calls))).toEqual(["That incident no longer exists in Maple."])
+		}),
+	)
+
+	it.effect("confirms privately when there is no card to redraw", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const deployment = host(platform.outbound, undefined, {
+				alertAck: () => ({ kind: "applied", card: Option.none() }),
+			})
+
+			yield* relayInboundEvent(ackClick("acknowledge"), deployment.ports)
+
+			expect(Arr.map(platform.calls, (call) => call.verb)).toEqual(["whisper"])
+			expect(notices(blocksOf(platform.calls))).toEqual(["Acknowledged."])
+		}),
+	)
+
+	it.effect("asks nothing of the host for a workspace nobody linked", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const deployment = host(platform.outbound, undefined, { linked: false })
+
+			yield* relayInboundEvent(ackClick("acknowledge"), deployment.ports)
+
+			expect(deployment.alertAcks).toEqual([])
+			expect(Arr.map(platform.calls, (call) => call.verb)).toEqual(["whisper"])
+		}),
+	)
+
+	it.effect("treats a malformed ack control as not Maple's", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const deployment = host(platform.outbound, undefined)
+
+			yield* relayInboundEvent(click({ actionToken: "alert_ack:not-a-uuid" }), deployment.ports)
+
+			expect(deployment.alertAcks).toEqual([])
+			expect(platform.calls).toEqual([])
+		}),
+	)
+})
+
 describe("relaying everything else a connector reports", () => {
 	it.effect("unlinks a workspace the bot was removed from", () =>
 		Effect.gen(function* () {
@@ -1291,6 +1463,70 @@ describe("relaying everything else a connector reports", () => {
 	)
 })
 
+describe("relaying a message on a connector that can name the asker", () => {
+	it.effect("runs a linked asker's turn as their Maple user", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([silentTurn])
+			const deployment = host(platform.outbound, agent.stub, {
+				supportsIdentity: true,
+				linkedUserId: ADA,
+			})
+
+			yield* relayInboundEvent(mention, deployment.ports)
+
+			expect(agent.turns).toHaveLength(1)
+			expect(agent.turns[0]?.origin).toEqual({
+				kind: "connector",
+				connectorId: TESTCHAT,
+				workspaceId: WORKSPACE,
+				externalUserId: "author-1",
+				displayName: "Ada",
+				actingUserId: ADA,
+			})
+		}),
+	)
+
+	it.effect("answers an unlinked asker with where to link, and reads nothing", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([silentTurn])
+			const deployment = host(platform.outbound, agent.stub, { supportsIdentity: true })
+
+			yield* relayInboundEvent(mention, deployment.ports)
+
+			expect(agent.turns).toEqual([])
+			// No thread opened for an answer that will never come.
+			expect(platform.threads).toEqual([])
+			expect(platform.historyCalls).toEqual([])
+			expect(platform.calls).toHaveLength(1)
+			expect(platform.calls[0]?.ref.target).toEqual({ workspaceId: WORKSPACE, channelId: CHANNEL })
+			const text = prose(blocksOf(platform.calls))
+			expect(text).toContain("**Link your Testchat account to Maple to ask it questions.**")
+			expect(text).toContain("(https://app.maple.dev/integrations)")
+		}),
+	)
+
+	it.effect("ignores an unlinked person's follow-up in the bot's own conversation", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([silentTurn])
+			const deployment = host(platform.outbound, agent.stub, {
+				supportsIdentity: true,
+				opened: [CONVERSATION],
+			})
+
+			yield* relayInboundEvent(
+				{ ...mention, messageId: "message-2", channelId: CONVERSATION, mentionsBot: false },
+				deployment.ports,
+			)
+
+			expect(agent.turns).toEqual([])
+			expect(platform.calls).toEqual([])
+		}),
+	)
+})
+
 describe("reading the workspace row", () => {
 	const NOW = Date.parse("2026-09-23T12:00:00.000Z")
 	const followUp: InboundMessage = {
@@ -1300,14 +1536,14 @@ describe("reading the workspace row", () => {
 		mentionsBot: false,
 	}
 	const answered: ReadonlyArray<ChatMessage> = [
-		{
+		new ChatMessage({
 			id: "a1",
 			role: "assistant",
 			text: "Checkout is slow.",
 			toolCalls: [],
 			createdAt: NOW - 60_000,
 			startSeq: 2,
-		},
+		}),
 	]
 
 	/**

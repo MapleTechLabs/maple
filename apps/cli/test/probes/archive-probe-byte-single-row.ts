@@ -9,8 +9,9 @@
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { ArchiveProbe } from "../archive-probe-helpers"
-import { archiveSignal } from "../../src/server/archives/signals"
-import { exportSignalShards } from "../../src/server/archives/export"
+import { archiveSignal } from "@maple/local-server/archives/signals"
+import { exportSignalShards } from "@maple/local-server/archives/export"
+import { String as Str } from "effect"
 
 const SCHEMA = `
 CREATE DATABASE IF NOT EXISTS default;
@@ -43,9 +44,9 @@ try {
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e)
 		if (/single row exceeds maxShardBytes/i.test(msg)) {
-			h.ok(`distinct single-row failure: ${msg.slice(0, 120)}`)
+			h.ok(`distinct single-row failure: ${Str.slice(0, 120)(msg)}`)
 		}
-		h.fail(`oversized single row failed with a non-distinct message: ${msg.slice(0, 160)}`)
+		h.fail(`oversized single row failed with a non-distinct message: ${Str.slice(0, 160)(msg)}`)
 	}
 } catch (e) {
 	h.fail(e instanceof Error ? e.message : String(e))

@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr, Option } from "effect"
 import { OrgId } from "@maple/domain/http"
+import { WarehouseQuotaExceededError } from "@maple/domain/http/warehouse-errors"
 import { searchLogs } from "./search-logs"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { WarehouseExecutorApi } from "./WarehouseExecutor"
@@ -24,7 +25,7 @@ interface CapturedCalls {
 }
 
 const makeMockExecutor = (captured: CapturedCalls): WarehouseExecutorApi => ({
-	orgId: "org_test",
+	orgId: OrgId.make("org_test"),
 	compiledQuery: (compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
 	compiledQueryFirst: (compiled) => compiledQueryOf(compiled).decodeFirstRow([]).pipe(Effect.orDie),
 	query: (
@@ -52,23 +53,27 @@ describe("searchLogs", () => {
 					Effect.provide(makeLayer(makeMockExecutor(captured))),
 				)
 
-				const list = captured.pipeCalls.find((c) => c.pipe === "list_logs")
-				const count = captured.pipeCalls.find((c) => c.pipe === "logs_count")
+				const list = Option.getOrThrow(
+					Arr.findFirst(captured.pipeCalls, (c) => c.pipe === "list_logs"),
+				)
+				const count = Option.getOrThrow(
+					Arr.findFirst(captured.pipeCalls, (c) => c.pipe === "logs_count"),
+				)
 				assert.isDefined(list)
 				assert.isDefined(count)
 
 				// The dispatch reads `str("search")`; emitting `body_search` would be
 				// silently dropped. Assert the canonical key is present and the stale
 				// key is absent on BOTH pipe calls.
-				assert.strictEqual(list!.params.search, "boom")
-				assert.isUndefined(list!.params.body_search)
-				assert.strictEqual(count!.params.search, "boom")
-				assert.isUndefined(count!.params.body_search)
+				assert.strictEqual(list.params.search, "boom")
+				assert.isUndefined(list.params.body_search)
+				assert.strictEqual(count.params.search, "boom")
+				assert.isUndefined(count.params.body_search)
 
 				// Body search reads the wide Body column — both calls must carry the
 				// block-size guardrail (see WarehouseQuerySettings.maxBlockSize).
-				assert.strictEqual(list!.options?.settings?.maxBlockSize, 512)
-				assert.strictEqual(count!.options?.settings?.maxBlockSize, 512)
+				assert.strictEqual(list.options?.settings?.maxBlockSize, 512)
+				assert.strictEqual(count.options?.settings?.maxBlockSize, 512)
 			}),
 	)
 
@@ -83,10 +88,10 @@ describe("searchLogs", () => {
 			// Feed the exact params searchLogs produced through the real dispatcher —
 			// proves the free-text filter reaches the compiled SQL end-to-end.
 			for (const pipe of ["list_logs", "logs_count"] as const) {
-				const call = captured.pipeCalls.find((c) => c.pipe === pipe)!
+				const call = Option.getOrThrow(Arr.findFirst(captured.pipeCalls, (c) => c.pipe === pipe))
 				const compiled = compilePipeQuery(pipe, { ...call.params, org_id: asOrgId("org_test") })
 				assert.isDefined(compiled)
-				assert.include(compiled!.sql, "Body ILIKE '%boom%'")
+				assert.include(compiled.sql, "Body ILIKE '%boom%'")
 			}
 		}),
 	)
@@ -106,4 +111,95 @@ describe("searchLogs", () => {
 			}
 		}),
 	)
+
+	it.effect("keeps the page when the exact count runs out of time, with the total as a lower bound", () =>
+		Effect.gen(function* () {
+			const row = {
+				timestamp: "2026-04-01 10:00:00",
+				exactTimestamp: "2026-04-01 10:00:00.000000000",
+				severityText: "ERROR",
+				severityNumber: 17,
+				serviceName: "api",
+				body: "request failed",
+				traceId: "t1",
+				spanId: "s1",
+				recordIdentity: "r1",
+				logAttributes: "{}",
+				resourceAttributes: "{}",
+			}
+			const page: ReadonlyArray<unknown> = [row]
+			const countTimesOut: WarehouseExecutorApi = {
+				...makeMockExecutor({ pipeCalls: [] }),
+				query: (pipe: string) =>
+					pipe === "logs_count"
+						? Effect.fail(
+								new WarehouseQuotaExceededError({
+									message: "Warehouse query logs_count exceeded 10000ms client timeout",
+									pipeName: "logs_count",
+									setting: "max_execution_time",
+								}),
+							)
+						: Effect.succeed({ data: page as ReadonlyArray<never> }),
+			}
+
+			const result = yield* searchLogs({ timeRange, search: "failed", offset: 10 }).pipe(
+				Effect.provide(makeLayer(countTimesOut)),
+			)
+
+			assert.lengthOf(result.logs, 1)
+			assert.strictEqual(result.total, 11)
+			assert.isTrue(result.totalIsLowerBound)
+		}),
+	)
+
+	describe("attributes", () => {
+		const row = {
+			timestamp: "2026-04-01 10:00:00",
+			exactTimestamp: "2026-04-01 10:00:00.000000000",
+			severityText: "ERROR",
+			severityNumber: 17,
+			serviceName: "api",
+			body: "request failed",
+			traceId: "t1",
+			spanId: "s1",
+			recordIdentity: "r1",
+			logAttributes: JSON.stringify({ requestId: "req-1", "exception.type": "Boom", empty: "" }),
+			resourceAttributes: "{}",
+		}
+		const withRow: WarehouseExecutorApi = {
+			...makeMockExecutor({ pipeCalls: [] }),
+			query: (pipe: string) => {
+				const data: ReadonlyArray<unknown> = pipe === "list_logs" ? [row] : []
+				return Effect.succeed({ data: data as ReadonlyArray<never> })
+			},
+		}
+
+		it.effect("keeps only the error-carrying keys by default", () =>
+			Effect.gen(function* () {
+				const result = yield* searchLogs({ timeRange }).pipe(Effect.provide(makeLayer(withRow)))
+				const [entry] = result.logs
+				assert.deepStrictEqual(entry, {
+					timestamp: "2026-04-01 10:00:00",
+					severityText: "ERROR",
+					serviceName: "api",
+					body: "request failed",
+					traceId: "t1",
+					spanId: "s1",
+					keyAttributes: { "exception.type": "Boom" },
+				})
+			}),
+		)
+
+		it.effect("returns every non-empty attribute when asked", () =>
+			Effect.gen(function* () {
+				const result = yield* searchLogs({ timeRange, includeAttributes: true }).pipe(
+					Effect.provide(makeLayer(withRow)),
+				)
+				assert.deepStrictEqual(result.logs[0]?.attributes, {
+					requestId: "req-1",
+					"exception.type": "Boom",
+				})
+			}),
+		)
+	})
 })

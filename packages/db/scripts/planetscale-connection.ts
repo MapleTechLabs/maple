@@ -15,6 +15,10 @@
  */
 import { spawnSync } from "node:child_process"
 import * as Predicate from "effect/Predicate"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { DB_ACCESS_ROLES, type DbAccess } from "../src/roles"
+
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 const FAILURE = 1
 
@@ -43,9 +47,9 @@ export const runPscale = (args: string[], opts?: { secret?: boolean }): CliResul
 	if (proc.error) {
 		fail(`Failed to invoke \`pscale\` — is the PlanetScale CLI installed? (${proc.error.message})`)
 	}
-	const stdout = (proc.stdout ?? "").trim()
-	const stderr = (proc.stderr ?? "").trim()
-	console.log(`$ pscale ${args.join(" ")}`)
+	const stdout = Str.trim(proc.stdout ?? "")
+	const stderr = Str.trim(proc.stderr ?? "")
+	console.log(`$ pscale ${Arr.join(args, " ")}`)
 	// `secret` suppresses stdout — credential JSON must never reach the log.
 	if (!opts?.secret) {
 		if (stdout) console.log(stdout)
@@ -69,16 +73,15 @@ interface Credential {
 
 /**
  * Mint an ephemeral branch ROLE. PlanetScale Postgres credentials are roles —
- * `pscale password` is Vitess/MySQL-only. The role inherits `postgres` by
- * default so it can run DDL (apply-schema) as well as DML (data import);
- * override via PLANETSCALE_MIGRATE_INHERITED_ROLES. A short --ttl is a safety
- * net so the credential auto-expires even if revoke fails. JSON field names
- * have drifted across `pscale` releases, so accept the known spellings; the
- * password plaintext is only ever returned on create.
+ * `pscale password` is Vitess/MySQL-only. The role gets the caller's data
+ * access, never `postgres`: no script needs DDL (the deploy migrates). A short
+ * --ttl is a safety net so the credential auto-expires even if revoke fails.
+ * JSON field names have drifted across `pscale` releases, so accept the known
+ * spellings; the password plaintext is only ever returned on create.
  */
-const createCredential = (database: string, branch: string): Credential => {
+const createCredential = (database: string, branch: string, access: DbAccess): Credential => {
 	const name = `migrate-${branch}-${process.pid}`
-	const inheritedRoles = process.env.PLANETSCALE_MIGRATE_INHERITED_ROLES?.trim() || "postgres"
+	const inheritedRoles = Arr.join(DB_ACCESS_ROLES[access], ",")
 	const ttl = process.env.PLANETSCALE_MIGRATE_TTL?.trim() || "1h"
 	const result = runPscale(
 		[
@@ -99,14 +102,10 @@ const createCredential = (database: string, branch: string): Credential => {
 	if (result.exitCode !== 0) {
 		fail(`Could not mint a role for ${database}/${branch} — check PLANETSCALE_ORG + auth`)
 	}
-	let parsed: Record<string, unknown>
-	try {
-		const value: unknown = JSON.parse(result.stdout)
-		if (!Predicate.isObject(value)) throw new TypeError("role response is not an object")
-		parsed = value
-	} catch {
-		return fail("Could not parse `pscale role create --format json` output")
-	}
+	const value = Option.getOrUndefined(decodeJson(result.stdout))
+	const parsed: Record<string, unknown> = Predicate.isObject(value)
+		? value
+		: fail("Could not parse `pscale role create --format json` output")
 	const pick = (...keys: string[]): string | undefined => {
 		for (const key of keys) {
 			const value = parsed[key]
@@ -127,7 +126,7 @@ const createCredential = (database: string, branch: string): Credential => {
 		}
 	}
 	if (!url || !password) {
-		return fail(`role JSON missing connection fields (keys: ${Object.keys(parsed).join(", ")})`)
+		return fail(`role JSON missing connection fields (keys: ${Arr.join(Rec.keys(parsed), ", ")})`)
 	}
 	return { id, url, password }
 }
@@ -144,15 +143,16 @@ const deleteCredential = (database: string, branch: string, id: string): void =>
 /**
  * Run `fn` with a direct (port 5432, the cluster `postgres` database)
  * connection URL to the given branch, then revoke the ephemeral credential.
- * DDL and bulk imports use the direct primary port, never the
+ * Bulk reads and writes use the direct primary port, never the
  * PSBouncer/Hyperdrive poolers.
  */
 export const withBranchConnection = async (
 	branch: string,
+	access: DbAccess,
 	fn: (connectionUrl: string) => Promise<void>,
 ): Promise<void> => {
 	const database = resolveDatabase()
-	const credential = createCredential(database, branch)
+	const credential = createCredential(database, branch, access)
 	const host = (() => {
 		try {
 			return new URL(credential.url).host

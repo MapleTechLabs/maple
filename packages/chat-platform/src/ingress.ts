@@ -26,7 +26,7 @@
  */
 import type { Effect } from "effect"
 import { Option, Schema } from "effect"
-import type { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import type { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { ChatConnectorId } from "./connector.ts"
 
 // Configuration
@@ -46,6 +46,11 @@ import { ChatConnectorId } from "./connector.ts"
 export interface ConnectorConfigKey {
 	readonly name: string
 	readonly secret: boolean
+	/**
+	 * A setting the connector works without (a region, a tuning knob): its absence leaves the
+	 * connector configured. Unset means required.
+	 */
+	readonly optional?: boolean
 }
 
 /**

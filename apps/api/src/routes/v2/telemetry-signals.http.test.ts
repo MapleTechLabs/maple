@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { FetchHttpClient, HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { Env } from "@maple/backend/platform/Env"
-import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -17,9 +17,13 @@ import { IngestAttributeMappingService } from "@maple/backend/services/org/Inges
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
+import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
+import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
+import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
+import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
@@ -31,6 +35,7 @@ import {
 	Phase1ResourceStubsLayer,
 	PlanetScaleServiceStubsLayer,
 	TelemetryServiceStubsLayer,
+	SourcesServiceStubsLayer,
 } from "./v2-test-support"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
@@ -44,8 +49,8 @@ import { compiledQueryOf } from "@maple/query-engine/execution"
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_signals_e2e")
-const USER = Schema.decodeUnknownSync(UserId)("user_signals_e2e")
+const ORG = Schema.decodeSync(OrgId)("org_signals_e2e")
+const USER = Schema.decodeSync(UserId)("user_signals_e2e")
 
 const testConfig = () =>
 	ConfigProvider.layer(
@@ -91,9 +96,20 @@ const planetScaleStubs = Layer.mergeAll(
 		startConnect: die,
 		completeConnect: die,
 		getValidAccessToken: die,
+		withAccessToken: die,
 		listOrganizations: die,
 		hasConnection: die,
 		connectedByUserId: die,
+		disconnect: die,
+	}),
+	Layer.succeed(SupabaseOAuthService, {
+		isConfigured: false,
+		apiBaseUrl: "https://api.supabase.com",
+		startConnect: die,
+		completeConnect: die,
+		getValidAccessToken: die,
+		withAccessToken: die,
+		isGrantUsable: die,
 		disconnect: die,
 	}),
 )
@@ -113,11 +129,30 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi) => {
 		SharedDashboardService.layer,
 		IngestAttributeMappingService.layer,
 		OrgIngestKeysService.layer,
+		SourcesServiceStubsLayer,
 		Layer.effect(RecommendationIssueService, RecommendationIssueService.make).pipe(
 			Layer.provide(warehouseLive),
 		),
-		Layer.effect(ScrapeTargetsService, ScrapeTargetsService.make).pipe(Layer.provide(planetScaleStubs)),
-		Layer.effect(SetupAuditService, SetupAuditService.make).pipe(Layer.provide(warehouseLive)),
+		Layer.effect(ScrapeTargetsService, ScrapeTargetsService.make).pipe(
+			Layer.provide(FetchHttpClient.layer),
+			Layer.provide(planetScaleStubs),
+		),
+		Layer.effect(SetupAuditService, SetupAuditService.make).pipe(
+			Layer.provide(
+				Layer.mergeAll(
+					warehouseLive,
+					IntegrationInventoryService.layer,
+					OnboardingService.layer,
+					// An undatable org: the audit may stamp an existing row but never creates one.
+					Layer.succeed(OrganizationService, {
+						retrieve: () => Effect.die("org lookup not exercised"),
+					}),
+					Layer.effect(SignalPresenceService, SignalPresenceService.make).pipe(
+						Layer.provide(warehouseLive),
+					),
+				),
+			),
+		),
 		Layer.effect(SignalPresenceService, SignalPresenceService.make).pipe(Layer.provide(warehouseLive)),
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
@@ -129,7 +164,7 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi) => {
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provide(warehouseLive),
-		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),

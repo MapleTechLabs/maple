@@ -13,16 +13,23 @@
 // Counts are sampling-weighted via `sum(SampleRate)`; quantiles stay
 // unweighted, matching every other raw-Traces query.
 
-import { Schema } from "effect"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
-import { defineCondFn, from, fromUnion, unionAll, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
+import { type DateTime, Schema } from "effect"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import {
+	defineCondFn,
+	from,
+	fromUnion,
+	unionAll,
+	type ColumnAccessor,
+} from "@maple-dev/effect-orm/clickhouse"
 import { httpDisplaySpanName } from "../../traces-shared"
 import { CHNumber } from "../schema"
-import { ServiceOperationsHourly, ServiceOperationsMinutely, Traces } from "../tables"
+import { DateTimeUtcFromWarehouse } from "../../datetime"
+import { ServiceOperationsHourly, ServiceOperationsMinutely, Traces, orgIdParam } from "../tables"
 import { tracesBaseWhereConditions } from "./query-helpers"
-import { edgeCondition, hourGrain, interiorConditions, minuteGrain } from "./rollup-splice"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import { edgeCondition, hourGrain, utcInteriorConditions, minuteGrain } from "./rollup-splice"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 
 export interface ServiceOperationsSummaryOpts {
 	serviceName: string
@@ -66,7 +73,7 @@ export const serviceOperationsSummaryRowSchema = Schema.Struct({
 	p99DurationMs: CHNumber,
 })
 
-const displaySpanName = ($: ColumnAccessor<typeof Traces.columns>) =>
+export const displaySpanName = ($: ColumnAccessor<typeof Traces.columns>) =>
 	httpDisplaySpanName($.SpanName, $.SpanAttributes.get("http.route"), $.SpanAttributes.get("url.path"))
 
 // p50/p95/p99 off states that `service_operations_minutely/_hourly` wrote with
@@ -109,31 +116,35 @@ const matchRegex = defineCondFn<[CH.Expr<string>, string]>("match")
  */
 
 /** Undefined when `httpOnly` is unset, so the Operations tab's SQL is unchanged. */
-const httpEndpointCondition = (name: CH.Expr<string>, httpOnly: boolean | undefined) =>
+export const httpEndpointCondition = (name: CH.Expr<string>, httpOnly: boolean | undefined) =>
 	httpOnly ? matchRegex(name, HTTP_ENDPOINT_NAME_RE) : undefined
 
-const RAW_DURATION_STATE = "quantilesTDigestState(0.5, 0.95, 0.99)(Duration)"
-const ROLLUP_DURATION_STATE = "quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles)"
+export const RAW_DURATION_STATE = "quantilesTDigestState(0.5, 0.95, 0.99)(Duration)"
+export const ROLLUP_DURATION_STATE = "quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles)"
 
 /** The t-digest type both branches above produce — opaque, merged by the outer
  *  level, never decoded as a row. */
-const DURATION_STATE = T.aggregateState("quantilesTDigest(0.5, 0.95, 0.99)", "UInt64")
+export const DURATION_STATE = T.aggregateState("quantilesTDigest(0.5, 0.95, 0.99)", "UInt64")
 
 function rollupEnvironmentCondition(
 	$: ColumnAccessor<typeof ServiceOperationsMinutely.columns>,
 	environments: readonly string[] | undefined,
 ) {
-	return environments?.length ? CH.inList($.DeploymentEnv, environments) : undefined
+	return environments !== undefined && environments.length > 0
+		? CH.inList($.DeploymentEnv, environments)
+		: undefined
 }
 
 function hourlyEnvironmentCondition(
 	$: ColumnAccessor<typeof ServiceOperationsHourly.columns>,
 	environments: readonly string[] | undefined,
 ) {
-	return environments?.length ? CH.inList($.DeploymentEnv, environments) : undefined
+	return environments !== undefined && environments.length > 0
+		? CH.inList($.DeploymentEnv, environments)
+		: undefined
 }
 
-const mergedDurationQuantile = (index: 1 | 2 | 3) =>
+export const mergedDurationQuantile = (index: 1 | 2 | 3) =>
 	CH.rawExpr(
 		`if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), ${index}) / 1000000, 0)`,
 		T.float64,
@@ -206,10 +217,10 @@ export function serviceOperationsSummaryQuery(opts: ServiceOperationsSummaryOpts
 			bDurationQuantiles: CH.rawExpr(ROLLUP_DURATION_STATE, DURATION_STATE),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(opts.serviceName),
 			rollupEnvironmentCondition($, opts.environments),
-			...interiorConditions($.Minute, minuteGrain),
+			...utcInteriorConditions($.Minute, minuteGrain),
 			edgeCondition("Minute", hourGrain),
 			httpEndpointCondition($.SpanName, opts.httpOnly),
 		])
@@ -226,10 +237,10 @@ export function serviceOperationsSummaryQuery(opts: ServiceOperationsSummaryOpts
 			bDurationQuantiles: CH.rawExpr(ROLLUP_DURATION_STATE, DURATION_STATE),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(opts.serviceName),
 			hourlyEnvironmentCondition($, opts.environments),
-			...interiorConditions($.Hour, hourGrain),
+			...utcInteriorConditions($.Hour, hourGrain),
 			httpEndpointCondition($.SpanName, opts.httpOnly),
 		])
 		.groupBy("bSpanName")
@@ -274,13 +285,13 @@ export interface ServiceOperationsTimeseriesOpts {
 }
 
 export interface ServiceOperationsTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly spanName: string
 	readonly count: number
 }
 
 export const serviceOperationsTimeseriesRowSchema = Schema.Struct({
-	bucket: Schema.String,
+	bucket: DateTimeUtcFromWarehouse,
 	spanName: Schema.String,
 	count: CHNumber,
 })
@@ -336,10 +347,10 @@ export function serviceOperationsTimeseriesQuery(opts: ServiceOperationsTimeseri
 			count: CH.sum($.EstimatedSpanCount),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(opts.serviceName),
 			rollupEnvironmentCondition($, opts.environments),
-			...interiorConditions($.Minute, minuteGrain),
+			...utcInteriorConditions($.Minute, minuteGrain),
 			opts.bucketSeconds != null && opts.bucketSeconds >= 3600
 				? edgeCondition("Minute", hourGrain)
 				: undefined,
@@ -354,10 +365,10 @@ export function serviceOperationsTimeseriesQuery(opts: ServiceOperationsTimeseri
 			count: CH.sum($.EstimatedSpanCount),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(opts.serviceName),
 			hourlyEnvironmentCondition($, opts.environments),
-			...interiorConditions($.Hour, hourGrain),
+			...utcInteriorConditions($.Hour, hourGrain),
 			CH.inList($.SpanName, opts.spanNames),
 		])
 		.groupBy("bucket", "spanName")
@@ -376,5 +387,129 @@ export function serviceOperationsTimeseriesQuery(opts: ServiceOperationsTimeseri
 		.groupBy("bucket", "spanName")
 		.orderBy(["bucket", "asc"])
 		.limit(10_000)
+		.format("JSON")
+}
+
+// Route usage
+//
+// HTTP endpoints across one or every service with first/last seen, off the same
+// three-tier splice as the summary. `firstSeen`/`lastSeen` are bucket starts:
+// minute-exact at the window ends, hour-grained for hours inside the window.
+
+export type RouteUsageOrder = "count" | "lastSeenAsc" | "lastSeenDesc"
+
+export interface RouteUsageOpts {
+	readonly serviceName?: string
+	readonly environments?: readonly string[]
+	/** Case-insensitive substring of the normalized `METHOD /route` name. */
+	readonly search?: string
+	readonly orderBy?: RouteUsageOrder
+	readonly limit?: number
+}
+
+export interface RouteUsageOutput {
+	readonly serviceName: string
+	readonly spanName: string
+	readonly spanCount: number
+	readonly errorCount: number
+	readonly p95DurationMs: number
+	readonly firstSeen: DateTime.Utc
+	readonly lastSeen: DateTime.Utc
+}
+
+export const routeUsageRowSchema = Schema.Struct({
+	serviceName: Schema.String,
+	spanName: Schema.String,
+	spanCount: CHNumber,
+	errorCount: CHNumber,
+	p95DurationMs: CHNumber,
+	firstSeen: DateTimeUtcFromWarehouse,
+	lastSeen: DateTimeUtcFromWarehouse,
+})
+
+const searchCondition = (name: CH.Expr<string>, search: string | undefined) =>
+	search ? CH.positionCaseInsensitive(name, CH.lit(search)).gt(0) : undefined
+
+export function routeUsageQuery(opts: RouteUsageOpts) {
+	const rawEdges = from(Traces)
+		.select(($) => ({
+			bServiceName: $.ServiceName,
+			bSpanName: displaySpanName($),
+			bSpanCount: CH.count(),
+			bErrorCount: CH.countIf($.StatusCode.eq("Error")),
+			bDurationQuantiles: CH.rawExpr(RAW_DURATION_STATE, DURATION_STATE),
+			bFirst: CH.min_(CH.toStartOfMinute(CH.toDateTime($.Timestamp))),
+			bLast: CH.max_(CH.toStartOfMinute(CH.toDateTime($.Timestamp))),
+		}))
+		.where(($) => [
+			...tracesBaseWhereConditions($, {
+				serviceName: opts.serviceName,
+				environments: opts.environments,
+			}),
+			edgeCondition("Timestamp", minuteGrain),
+			httpEndpointCondition(displaySpanName($), true),
+			searchCondition(displaySpanName($), opts.search),
+		])
+		.groupBy("bServiceName", "bSpanName")
+
+	const minutelyEdges = from(ServiceOperationsMinutely)
+		.select(($) => ({
+			bServiceName: $.ServiceName,
+			bSpanName: $.SpanName,
+			bSpanCount: CH.sum($.SpanCount),
+			bErrorCount: CH.sum($.ErrorCount),
+			bDurationQuantiles: CH.rawExpr(ROLLUP_DURATION_STATE, DURATION_STATE),
+			bFirst: CH.min_($.Minute),
+			bLast: CH.max_($.Minute),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			CH.when(opts.serviceName, (value: string) => $.ServiceName.eq(value)),
+			rollupEnvironmentCondition($, opts.environments),
+			...utcInteriorConditions($.Minute, minuteGrain),
+			edgeCondition("Minute", hourGrain),
+			httpEndpointCondition($.SpanName, true),
+			searchCondition($.SpanName, opts.search),
+		])
+		.groupBy("bServiceName", "bSpanName")
+
+	const hourlyInterior = from(ServiceOperationsHourly)
+		.select(($) => ({
+			bServiceName: $.ServiceName,
+			bSpanName: $.SpanName,
+			bSpanCount: CH.sum($.SpanCount),
+			bErrorCount: CH.sum($.ErrorCount),
+			bDurationQuantiles: CH.rawExpr(ROLLUP_DURATION_STATE, DURATION_STATE),
+			bFirst: CH.min_($.Hour),
+			bLast: CH.max_($.Hour),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			CH.when(opts.serviceName, (value: string) => $.ServiceName.eq(value)),
+			hourlyEnvironmentCondition($, opts.environments),
+			...utcInteriorConditions($.Hour, hourGrain),
+			httpEndpointCondition($.SpanName, true),
+			searchCondition($.SpanName, opts.search),
+		])
+		.groupBy("bServiceName", "bSpanName")
+
+	const order = opts.orderBy ?? "count"
+	return fromUnion(unionAll(rawEdges, minutelyEdges, hourlyInterior), "route_windows")
+		.select(($) => ({
+			serviceName: $.bServiceName,
+			spanName: $.bSpanName,
+			spanCount: CH.sum($.bSpanCount),
+			errorCount: CH.sum($.bErrorCount),
+			p95DurationMs: mergedDurationQuantile(2),
+			firstSeen: CH.min_($.bFirst),
+			lastSeen: CH.max_($.bLast),
+		}))
+		.groupBy("serviceName", "spanName")
+		.orderBy(
+			order === "count"
+				? ["spanCount", "desc"]
+				: ["lastSeen", order === "lastSeenAsc" ? "asc" : "desc"],
+		)
+		.limit(opts.limit ?? 50)
 		.format("JSON")
 }

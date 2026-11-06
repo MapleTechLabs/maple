@@ -1,0 +1,107 @@
+{
+	"date": "2026-10-08",
+	"baseline_commit": "c426a6c515",
+	"platform": "macOS arm64",
+	"playwright": "1.63.0",
+	"browser": "Chromium (chromium-performance project, 1440x900)",
+	"harness": "apps/web/perf/dashboard-grid.perf.spec.ts over /lab/bench/dashboard-grid",
+	"notes": [
+		"rgl = the react-grid-layout 2.3.0 canvas as it shipped; native = the CSS Grid + @maple/grid-engine canvas that replaced it. Same board, tile renderer and store semantics in both arms.",
+		"Vite dev server under React StrictMode: absolute times include dev-build overhead and double renders, so compare arms, not absolutes. Content render counts include StrictMode's double invocation.",
+		"Drag: one stat tile carried 700px right and 500px down in 180 pointer events. Resize: one stat tile's corner dragged 300px x 260px in 120 events. Each window runs 600ms past the release so deferred work is counted. Mount: median of 5 remounts.",
+		"Both arms ended every drag and resize with identical layouts (28/78 widgets moved at 50/100), confirming parity in a real browser.",
+		"Native commits the drop's store update as a transition. Before that change it ran one ~50ms blocking commit at the drop (the moved tiles' content re-rendering, the same work rgl does); after it, zero long tasks."
+	],
+	"widgets_50": {
+		"mount": {
+			"rgl": { "median_ms": 68.2, "react_commits": 2, "layout_shift": 0 },
+			"native": { "median_ms": 50.2, "react_commits": 1, "layout_shift": 0 }
+		},
+		"drag": {
+			"rgl": {
+				"react_commits": 182,
+				"react_total_ms": 494.9,
+				"frame_p95_ms": 16.8,
+				"dropped_frames": 2,
+				"long_tasks": 1,
+				"blocking_ms": 14,
+				"content_renders_during_drag": 0,
+				"content_renders_total": 56,
+				"widgets_moved": 28
+			},
+			"native": {
+				"react_commits": 12,
+				"react_total_ms": 86.2,
+				"frame_p95_ms": 16.7,
+				"dropped_frames": 0,
+				"long_tasks": 0,
+				"blocking_ms": 0,
+				"content_renders_during_drag": 0,
+				"content_renders_total": 56,
+				"widgets_moved": 28
+			}
+		},
+		"resize": {
+			"rgl": {
+				"react_commits": 122,
+				"react_total_ms": 308.1,
+				"frame_p95_ms": 16.7,
+				"dropped_frames": 2,
+				"long_tasks": 2,
+				"blocking_ms": 17
+			},
+			"native": {
+				"react_commits": 9,
+				"react_total_ms": 82.2,
+				"frame_p95_ms": 16.8,
+				"dropped_frames": 0,
+				"long_tasks": 0,
+				"blocking_ms": 0
+			}
+		}
+	},
+	"widgets_100": {
+		"mount": {
+			"rgl": { "median_ms": 99.5, "react_commits": 2, "layout_shift": 0 },
+			"native": { "median_ms": 92.1, "react_commits": 1, "layout_shift": 0 }
+		},
+		"drag": {
+			"rgl": {
+				"react_commits": 182,
+				"react_total_ms": 454.2,
+				"frame_p95_ms": 16.7,
+				"dropped_frames": 2,
+				"long_tasks": 0,
+				"blocking_ms": 0,
+				"widgets_moved": 78
+			},
+			"native": {
+				"react_commits": 12,
+				"react_total_ms": 105.0,
+				"frame_p95_ms": 16.7,
+				"dropped_frames": 0,
+				"long_tasks": 0,
+				"blocking_ms": 0,
+				"widgets_moved": 78
+			}
+		},
+		"resize": {
+			"rgl": {
+				"react_commits": 122,
+				"react_total_ms": 309.1,
+				"frame_p95_ms": 16.8,
+				"dropped_frames": 3,
+				"long_tasks": 1,
+				"blocking_ms": 13
+			},
+			"native": {
+				"react_commits": 9,
+				"react_total_ms": 99.3,
+				"frame_p95_ms": 16.7,
+				"dropped_frames": 0,
+				"long_tasks": 0,
+				"blocking_ms": 0
+			}
+		}
+	}
+}

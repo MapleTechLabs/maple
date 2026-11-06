@@ -1,6 +1,7 @@
 import { describe, it } from "@effect/vitest"
 import { strictEqual } from "node:assert"
-import { retainedDaysMatch, type RetainedDays } from "../src/server/checkpoints"
+import { retainedDaysMatch, type RetainedDays } from "@maple/local-server/checkpoints"
+import { Array as Arr, Record as Rec } from "effect"
 
 const TABLES = [
 	"logs",
@@ -14,7 +15,7 @@ const TABLES = [
 // Every raw table at a 30-day TTL, with the given per-day counts on each.
 const measured = (countedOn: string, days: Record<string, number>): RetainedDays => ({
 	countedOn,
-	tables: Object.fromEntries(TABLES.map((table) => [table, { ttlDays: 30, days }])),
+	tables: Rec.fromEntries(Arr.map(TABLES, (table) => [table, { ttlDays: 30, days }])),
 })
 
 describe("checkpoint validation per-day counts", () => {
@@ -46,14 +47,17 @@ describe("checkpoint validation per-day counts", () => {
 		// Created under a 90-day floor, restored under 30 days: 08-20 is past the shorter TTL on 09-20.
 		const created: RetainedDays = {
 			countedOn: "2026-09-20",
-			tables: Object.fromEntries(
-				TABLES.map((table) => [table, { ttlDays: 90, days: { "2026-08-20": 6, "2026-09-20": 3 } }]),
+			tables: Rec.fromEntries(
+				Arr.map(TABLES, (table) => [
+					table,
+					{ ttlDays: 90, days: { "2026-08-20": 6, "2026-09-20": 3 } },
+				]),
 			),
 		}
 		const restored: RetainedDays = {
 			countedOn: "2026-09-20",
-			tables: Object.fromEntries(
-				TABLES.map((table) => [table, { ttlDays: 30, days: { "2026-09-20": 3 } }]),
+			tables: Rec.fromEntries(
+				Arr.map(TABLES, (table) => [table, { ttlDays: 30, days: { "2026-09-20": 3 } }]),
 			),
 		}
 		strictEqual(retainedDaysMatch(created, restored), true)

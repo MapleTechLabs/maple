@@ -3,6 +3,9 @@
 
 const EDITABLE_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT"])
 
+/** `event.key`, or "" for the key-less `keydown` Chrome fires when it autofills a form. */
+export const pressedKey = (event: { readonly key?: string | undefined }): string => event.key ?? ""
+
 /** True when the event target is a text field / contentEditable — skip shortcuts there. */
 export function isEditableTarget(target: EventTarget | null): boolean {
 	if (!(target instanceof HTMLElement)) return false

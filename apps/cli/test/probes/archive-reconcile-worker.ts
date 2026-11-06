@@ -17,8 +17,8 @@
 //   1 = reconciliation threw (ambiguous/corrupt state — surfaced to the harness)
 
 import { randomUUID } from "node:crypto"
-import { withMaintenanceLock } from "../../src/server/checkpoints"
-import { reconcileArchiveGeneration } from "../../src/server/archives/generation"
+import { withMaintenanceLock } from "@maple/local-server/checkpoints"
+import { reconcileArchiveGeneration } from "@maple/local-server/archives/generation"
 
 const get = (name: string): string => {
 	const i = process.argv.indexOf(`--${name}`)
@@ -39,7 +39,7 @@ withMaintenanceLock(dataDir, randomUUID(), () => reconcileArchiveGeneration(data
 		console.log("reconcile: converged")
 		process.exit(0)
 	})
-	.catch((error) => {
+	.catch((error: unknown) => {
 		const msg = error instanceof Error ? error.message : String(error)
 		console.error(`reconcile: FAILED ${msg}`)
 		process.exit(1)

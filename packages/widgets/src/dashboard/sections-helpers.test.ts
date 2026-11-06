@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 
 import {
 	ROOT_CONTAINER_KEY,
@@ -14,6 +14,7 @@ import {
 	DASHBOARD_MAX_TABS_PER_SECTION,
 	type DashboardSection,
 } from "./shared/sections"
+import { Array as Arr } from "effect"
 
 interface TestWidget {
 	id: string
@@ -31,7 +32,7 @@ const widget = (id: string, sectionId?: string, tabId?: string): TestWidget => {
 const section = (id: string, tabIds: ReadonlyArray<string>): DashboardSection => ({
 	id,
 	title: id,
-	tabs: tabIds.map((tabId) => ({ id: tabId, title: tabId })),
+	tabs: Arr.map(tabIds, (tabId) => ({ id: tabId, title: tabId })),
 })
 
 describe("containerKeyOf", () => {
@@ -83,9 +84,9 @@ describe("groupWidgetsByContainer", () => {
 			widgets: [widget("a", "s1", "t1"), widget("b"), widget("c", "s1", "t1"), widget("d", "s1", "t2")],
 			sections: [section("s1", ["t1", "t2"])],
 		}
-		expect(widgetsInTab(doc, "s1", "t1").map((w) => w.id)).toEqual(["a", "c"])
-		expect(widgetsInTab(doc, "s1", "t2").map((w) => w.id)).toEqual(["d"])
-		expect(rootWidgets(doc).map((w) => w.id)).toEqual(["b"])
+		expect(Arr.map(widgetsInTab(doc, "s1", "t1"), (w) => w.id)).toEqual(["a", "c"])
+		expect(Arr.map(widgetsInTab(doc, "s1", "t2"), (w) => w.id)).toEqual(["d"])
+		expect(Arr.map(rootWidgets(doc), (w) => w.id)).toEqual(["b"])
 	})
 
 	// An empty group must still render — otherwise adding a group and then
@@ -99,7 +100,7 @@ describe("groupWidgetsByContainer", () => {
 	// tiles on the floor.
 	it("falls back to root for a widget addressing a missing container", () => {
 		const doc = { widgets: [widget("a", "gone", "t1")], sections: [section("s1", ["t1"])] }
-		expect(rootWidgets(doc).map((w) => w.id)).toEqual(["a"])
+		expect(Arr.map(rootWidgets(doc), (w) => w.id)).toEqual(["a"])
 	})
 })
 
@@ -119,8 +120,9 @@ describe("sanitizeDashboardSections", () => {
 	it("ungroups a widget whose section is gone", () => {
 		const doc = { widgets: [widget("a", "gone", "t1")], sections: [section("s1", ["t1"])] }
 		const [repaired] = sanitizeDashboardSections(doc).widgets
-		expect("sectionId" in repaired!).toBe(false)
-		expect("tabId" in repaired!).toBe(false)
+		assert.isDefined(repaired)
+		expect("sectionId" in repaired).toBe(false)
+		expect("tabId" in repaired).toBe(false)
 	})
 
 	it("reassigns a dangling tabId to the section's first tab", () => {
@@ -139,7 +141,9 @@ describe("sanitizeDashboardSections", () => {
 
 	it("drops a tabId that has no sectionId", () => {
 		const doc = { widgets: [widget("a", undefined, "t1")], sections: [section("s1", ["t1"])] }
-		expect("tabId" in sanitizeDashboardSections(doc).widgets[0]!).toBe(false)
+		const [repaired] = sanitizeDashboardSections(doc).widgets
+		assert.isDefined(repaired)
+		expect("tabId" in repaired).toBe(false)
 	})
 
 	it("synthesises a tab for a section that has none", () => {
@@ -188,9 +192,12 @@ describe("sanitizeDashboardSections", () => {
 	// a section that is no longer in the document.
 	it("ungroups widgets whose section was cut by the cap", () => {
 		const sections = Array.from({ length: DASHBOARD_MAX_SECTIONS + 1 }, (_, i) => section(`s${i}`, ["t"]))
-		const doomed = sections[DASHBOARD_MAX_SECTIONS]!
+		const doomed = sections[DASHBOARD_MAX_SECTIONS]
+		assert.isDefined(doomed)
 		const doc = { widgets: [widget("a", doomed.id, "t")], sections }
-		expect("sectionId" in sanitizeDashboardSections(doc).widgets[0]!).toBe(false)
+		const [repaired] = sanitizeDashboardSections(doc).widgets
+		assert.isDefined(repaired)
+		expect("sectionId" in repaired).toBe(false)
 	})
 
 	// "Collapsed by default" + "can never be collapsed" would render the group
@@ -210,8 +217,9 @@ describe("sanitizeDashboardSections", () => {
 			],
 		}
 		const repaired = sanitizeDashboardSections(doc).sections?.[0]
-		expect("collapsed" in repaired!).toBe(false)
-		expect(repaired!.collapsible).toBe(false)
+		assert.isDefined(repaired)
+		expect("collapsed" in repaired).toBe(false)
+		expect(repaired.collapsible).toBe(false)
 	})
 
 	it("leaves a collapsible section's stored default alone", () => {

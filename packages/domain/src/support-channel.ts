@@ -1,7 +1,7 @@
 // The shared Slack channel between a customer org and the Maple team. The channel lives in
 // Maple's workspace and reaches the customer through Slack Connect invites sent by email.
 
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import { HttpTaggedError } from "./http/error-policy"
 
 /** This deployment has no Slack workspace to create support channels in. */
@@ -75,14 +75,21 @@ export class SupportChannelUnavailableError extends HttpTaggedError<SupportChann
  * 80 characters. Falls back to the org id when the name has nothing usable in it.
  */
 export const supportChannelName = (orgName: string | null, orgId: string, attempt = 0): string => {
-	const slug = (orgName ?? "")
-		.normalize("NFKD")
-		.replace(/\p{M}+/gu, "")
-		.toLowerCase()
-		.replace(/[^a-z0-9_-]+/g, "-")
-		.replace(/-+/g, "-")
-		.replace(/^-|-$/g, "")
-	const base = `maple-${slug.length > 0 ? slug : orgId.toLowerCase().replace(/[^a-z0-9_-]+/g, "")}`
+	const slug = Str.replace(
+		/^-|-$/g,
+		"",
+	)(
+		Str.replace(
+			/-+/g,
+			"-",
+		)(
+			Str.replace(
+				/[^a-z0-9_-]+/g,
+				"-",
+			)(Str.toLowerCase(Str.replace(/\p{M}+/gu, "")(Str.normalize("NFKD")(orgName ?? "")))),
+		),
+	)
+	const base = `maple-${slug.length > 0 ? slug : Str.replace(/[^a-z0-9_-]+/g, "")(Str.toLowerCase(orgId))}`
 	const suffix = attempt === 0 ? "" : `-${attempt + 1}`
-	return `${base.slice(0, 80 - suffix.length).replace(/-$/, "")}${suffix}`
+	return `${Str.replace(/-$/, "")(Str.slice(0, 80 - suffix.length)(base))}${suffix}`
 }

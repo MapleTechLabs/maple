@@ -1,8 +1,9 @@
-import type { AlertDestinationRow } from "@maple/db"
+import type { AlertDestinationRow } from "@maple/db/tables"
 import { ChatOutboundError, chatConnectorId, type ChatAlertBlock, type ChatBlock } from "@maple/chat-platform"
 import { AlertDestinationId, ChatWorkspaceId, OrgId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { chatDeliveryFailure } from "../../ChatAlertPoster"
 import type { DispatchContext } from "../context"
 import { dispatchDelivery } from "../dispatch"
@@ -15,10 +16,10 @@ import { buildChatAlertBlocks, chatTransport } from "./chat"
  * connector is `testchat`, and what the platform does with the blocks is its own test's business.
  */
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_1")
-const WORKSPACE = Schema.decodeUnknownSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
+const ORG = Schema.decodeSync(OrgId)("org_1")
+const WORKSPACE = Schema.decodeSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
 const LINK = "https://web.localhost/alerts"
-const CHAT = "https://web.localhost/chat"
+const CHAT = "https://web.localhost/alerts/rule_1"
 
 const config: SecretConfigOf<"chat"> = {
 	type: "chat",
@@ -28,7 +29,7 @@ const config: SecretConfigOf<"chat"> = {
 }
 
 const destinationRow: AlertDestinationRow = {
-	id: Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726"),
+	id: Schema.decodeSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726"),
 	orgId: ORG,
 	name: "Incidents",
 	type: "chat",
@@ -43,8 +44,8 @@ const destinationRow: AlertDestinationRow = {
 	lastFailureAt: null,
 	disabledAt: null,
 	disabledReason: null,
-	createdAt: new Date(0),
-	updatedAt: new Date(0),
+	createdAt: 0,
+	updatedAt: 0,
 	createdBy: "user_1",
 	updatedBy: "user_1",
 }
@@ -106,17 +107,36 @@ describe("chat alert blocks", () => {
 		assert.strictEqual(card.color, "#e01e5a")
 		assert.include(card.summary, "**Error Rate** is **8%**")
 		assert.deepStrictEqual(
-			card.fields.map((field) => field.label),
+			Arr.map(card.fields, (field) => field.label),
 			["Severity", "Group"],
 		)
 		assert.strictEqual(card.fields[1]?.value, "`checkout`")
 		assert.strictEqual(card.imageUrl, "https://charts.localhost/c.png")
-		assert.deepStrictEqual(card.links, [
-			{ label: "Open in Maple", url: LINK, primary: true },
-			{ label: "✨ Ask Maple AI", url: CHAT, primary: false },
-		])
+		assert.deepStrictEqual(card.links, [{ label: "Open in Maple", url: LINK, primary: true }])
 		assert.deepStrictEqual(card.footer, ["\u{1F341} Maple Alerts", "`▁▂▅▇`", "Incident `inc_1`"])
 		assert.strictEqual(card.sentAtMs, 1_700_000_000_000)
+	})
+
+	it("offers an open incident's firing card the ack control, with who acknowledged it", () => {
+		assert.deepStrictEqual(cardOf(buildChatAlertBlocks(inputFor())).acknowledge, {
+			incidentId: "inc_1",
+			acknowledgedBy: null,
+		})
+		const acked = cardOf(
+			buildChatAlertBlocks(inputFor({ context: { ...context, incidentAcknowledgedBy: "Ada" } })),
+		)
+		assert.deepStrictEqual(acked.acknowledge, { incidentId: "inc_1", acknowledgedBy: "Ada" })
+	})
+
+	it("gives no ack control to a resolve, a test or a resolved incident", () => {
+		for (const overrides of [
+			{ eventType: "resolve" as const },
+			{ eventType: "test" as const },
+			{ incidentStatus: "resolved" },
+		]) {
+			const card = cardOf(buildChatAlertBlocks(inputFor({ context: { ...context, ...overrides } })))
+			assert.isUndefined(card.acknowledge)
+		}
 	})
 
 	it("colours a resolve green", () => {
@@ -130,7 +150,7 @@ describe("chat alert blocks", () => {
 			buildChatAlertBlocks(inputFor({ context: { ...context, groupKey: "__total__" } })),
 		)
 		assert.deepStrictEqual(
-			card.fields.map((field) => field.label),
+			Arr.map(card.fields, (field) => field.label),
 			["Severity"],
 		)
 	})
@@ -180,14 +200,17 @@ describe("chat through dispatchDelivery", () => {
 			throw new Error("a chat destination made an HTTP request of its own")
 		}
 		return Effect.gen(function* () {
-			const result = yield* dispatchDelivery(context, "{}", fetchFn, 5_000, LINK, CHAT, {
+			const result = yield* dispatchDelivery(context, "{}", 5_000, LINK, CHAT, {
 				sendEmail: () => Effect.die("the chat transport sent an email"),
 				postChatAlert: (post) =>
 					Effect.sync(() => {
 						posts.push(post)
 						return { connectorName: "Test Chat", messageId: "message-1" }
 					}),
-			})
+			}).pipe(
+				Effect.provide(FetchHttpClient.layer),
+				Effect.provideService(FetchHttpClient.Fetch, fetchFn),
+			)
 			assert.strictEqual(result.providerMessage, "Delivered to Test Chat #incidents")
 			assert.strictEqual(posts[0]?.workspaceId, WORKSPACE)
 			assert.include(cardOf(posts[0]?.blocks ?? []).title, "Checkout error rate")

@@ -1,13 +1,18 @@
 /**
- * How a Maple repository checkout is named inside effect-agent's `Sandbox`
+ * How a Maple repository checkout is named inside @yielded/agent's `Sandbox`
  * contract: as the one `SandboxMount` a request carries, whose `source` is
  * `maple-vcs://<orgId>/<owner>/<name>@<ref>`. The tenant rides in the source
  * so the implementation, which sees nothing but the request, can never be
  * pointed at another organization's repository.
  */
 import type { OrgId } from "@maple/domain/http"
-import { NetworkDisabled, SandboxImplementation, SandboxMount, SandboxRuntime } from "effect-agent/sandbox"
-import { Option, Schema } from "effect"
+import {
+	NetworkDisabled,
+	SandboxImplementation,
+	SandboxMount,
+	SandboxRuntime,
+} from "@maple/backend/sandbox/contract"
+import { Option, Schema, String as Str } from "effect"
 
 export const REPO_SANDBOX_RUNTIME = new SandboxRuntime({
 	kind: "container",
@@ -46,16 +51,16 @@ export const parseRepoMountSource = (
 	readonly repository: string
 	readonly ref: string | undefined
 }> => {
-	if (!source.startsWith(SCHEME)) return Option.none()
-	const rest = source.slice(SCHEME.length)
-	const firstSlash = rest.indexOf("/")
-	if (firstSlash <= 0) return Option.none()
-	const orgId = rest.slice(0, firstSlash)
-	const remainder = rest.slice(firstSlash + 1)
+	if (!Str.startsWith(SCHEME)(source)) return Option.none()
+	const rest = Str.slice(SCHEME.length)(source)
+	const slash = Str.indexOf("/")(rest)
+	if (Option.isNone(slash) || slash.value === 0) return Option.none()
+	const orgId = Str.slice(0, slash.value)(rest)
+	const remainder = Str.slice(slash.value + 1)(rest)
 	// owner/name may not contain `@`; a ref may (`v1@2` is a legal tag), so split at the first.
-	const at = remainder.indexOf("@")
-	const repository = at === -1 ? remainder : remainder.slice(0, at)
-	const ref = at === -1 ? undefined : remainder.slice(at + 1)
+	const at = Str.indexOf("@")(remainder)
+	const repository = Option.isNone(at) ? remainder : Str.slice(0, at.value)(remainder)
+	const ref = Option.isNone(at) ? undefined : Str.slice(at.value + 1)(remainder)
 	if (!/^[^/@\s]+\/[^/@\s]+$/.test(repository) || ref === "") return Option.none()
 	if (Option.isNone(decodeOrgId(orgId))) return Option.none()
 	return Option.some({ orgId, repository, ref })

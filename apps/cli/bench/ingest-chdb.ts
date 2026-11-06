@@ -1,0 +1,298 @@
+// In-process breakdown of one ingest request against a scratch chDB store:
+//   stages    decode → encode → build SQL → exec, per export size
+//   settings  insert cost under candidate session settings
+//   views     marginal insert cost of each materialized view on the source table
+//   sustained back-to-back traces exports, listing every insert slower than 500 ms
+//
+//   bun run bench:ingest:chdb [--signals traces,logs,metrics] [--sizes 1,50,500]
+//     [--iterations 20] [--views-signal traces] [--views-size 1]
+//     [--settings parallel_view_processing=0,optimize_on_insert=0] [--set name=value,...]
+//     [--sustained-exports 300] [--sustained-size 50] [--skip stages,settings,views,sustained] [--out <file>]
+//
+// `--set` applies session settings before every section, for A/B runs of one candidate.
+// The store opens with the config `maple start --in-memory` generates; `--chdb-config none`
+// opens it without one, `--chdb-config <file>` with your own.
+
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { Chdb, writeIngestConfig } from "@maple/local-server/chdb"
+import { buildInsertStatements } from "@maple/local-server/inserts"
+import { type EncodedBatch, encodeLogs, encodeMetrics, encodeTraces } from "@maple/local-server/otlp/encode"
+import { LOCAL_SCHEMA_SQL } from "@maple/local-server/schema-identity"
+import { type Signal, exportBody } from "./payloads"
+import { environment, flag, list, numbers, summarize, type Summary, writeReport } from "./report"
+import { Schema, Array as Arr, String as Str } from "effect"
+import { decodeJsonSync } from "@maple/local-server/json"
+
+const decodeViewLine = Schema.decodeUnknownSync(
+	Schema.fromJsonString(Schema.Struct({ name: Schema.String, create: Schema.String })),
+)
+
+const signals = list("signals", "traces,logs,metrics") as Signal[]
+const sizes = numbers("sizes", "1,50,500")
+const iterations = Number(flag("iterations", "20"))
+const viewsSignal = flag("views-signal", "traces") as Signal
+const viewsSize = Number(flag("views-size", "1"))
+const settingVariants = list("settings", "parallel_view_processing=0,optimize_on_insert=0")
+const sessionSettings = list("set", "")
+const sustainedExports = Number(flag("sustained-exports", "300"))
+const sustainedSize = Number(flag("sustained-size", "50"))
+const chdbConfig = flag("chdb-config", "default")
+const skip = new Set(list("skip", ""))
+const WARMUP = 3
+
+const encoders = {
+	traces: encodeTraces,
+	logs: encodeLogs,
+	metrics: encodeMetrics,
+} satisfies Record<Signal, typeof encodeTraces>
+
+/** The datasource whose insert carries the signal's raw rows. */
+const rawDatasource = { traces: "traces", logs: "logs", metrics: "metrics_gauge" } satisfies Record<
+	Signal,
+	string
+>
+
+const time = (f: () => void): number => {
+	const started = performance.now()
+	f()
+	return performance.now() - started
+}
+
+const repeat = (n: number, f: () => number): number[] => Array.from({ length: n }, f)
+
+const measure = (f: () => number): Summary => {
+	repeat(WARMUP, f)
+	return summarize(repeat(iterations, f))
+}
+
+/** Statements for one fresh export (new trace and span ids every call). */
+const statementsFor = (signal: Signal, records: number) =>
+	Arr.flatMap(encoders[signal](decodeJsonSync(exportBody(signal, records))), (batch) =>
+		Arr.map(buildInsertStatements(batch.datasource, batch.ndjson), (s) => ({
+			...s,
+			datasource: batch.datasource,
+		})),
+	)
+
+const execAll = (db: Chdb, signal: Signal, records: number) => {
+	const statements = statementsFor(signal, records)
+	return time(() => Arr.forEach(statements, (s) => db.exec(s.sql)))
+}
+
+// Quoted: `system.settings` prints string values bare, and ClickHouse accepts quoted numbers.
+const setSetting = (db: Chdb, name: string | undefined, value: string | undefined) =>
+	db.exec(`SET ${name} = '${Str.replace(/[\\']/g, "\\$&")(value ?? "")}'`)
+
+const stages = (db: Chdb) =>
+	Arr.flatMap(signals, (signal) =>
+		Arr.map(sizes, (records) => {
+			const parse: number[] = []
+			const encode: number[] = []
+			const build: number[] = []
+			const exec: number[] = []
+			const statementCounts: number[] = []
+			repeat(WARMUP + iterations, () => {
+				const body = exportBody(signal, records)
+				let decoded: unknown
+				parse.push(time(() => (decoded = decodeJsonSync(body))))
+				let batches: EncodedBatch[] = []
+				encode.push(time(() => (batches = encoders[signal](decoded))))
+				let sql: string[] = []
+				build.push(
+					time(
+						() =>
+							(sql = Arr.flatMap(batches, (b) =>
+								Arr.map(buildInsertStatements(b.datasource, b.ndjson), (s) => s.sql),
+							)),
+					),
+				)
+				exec.push(time(() => Arr.forEach(sql, (s) => db.exec(s))))
+				statementCounts.push(sql.length)
+				return 0
+			})
+			const tail = <A>(xs: A[]) => xs.slice(WARMUP)
+			const row = {
+				signal,
+				records,
+				statements: statementCounts.at(-1) ?? 0,
+				parseMs: summarize(tail(parse)),
+				encodeMs: summarize(tail(encode)),
+				buildSqlMs: summarize(tail(build)),
+				execMs: summarize(tail(exec)),
+			}
+			console.log(
+				`${Str.padEnd(7)(signal)} ${Str.padStart(4)(String(records))} rec  ${row.statements} stmt  ` +
+					`parse ${row.parseMs.p50.toFixed(2)}  encode ${row.encodeMs.p50.toFixed(2)}  ` +
+					`sql ${row.buildSqlMs.p50.toFixed(2)}  exec ${row.execMs.p50.toFixed(1)} ms (p50)`,
+			)
+			return row
+		}),
+	)
+
+const settings = (db: Chdb) => {
+	const run = (label: string) =>
+		Arr.map(signals, (signal) => {
+			const execMs = measure(() => execAll(db, signal, 1))
+			console.log(
+				`${Str.padEnd(32)(label)} ${Str.padEnd(7)(signal)} 1 rec  exec p50 ${execMs.p50.toFixed(1)} ms`,
+			)
+			return { setting: label, signal, records: 1, execMs }
+		})
+	const baseline = run("default")
+	const variants = Arr.flatMap(settingVariants, (assignment) => {
+		const [name, value] = Str.split("=")(assignment)
+		const current = Str.trim(
+			db.query(`SELECT value FROM system.settings WHERE name = '${name}'`, "TSVRaw"),
+		)
+		setSetting(db, name, value)
+		const rows = run(assignment)
+		setSetting(db, name, current)
+		return rows
+	})
+	return [...baseline, ...variants]
+}
+
+interface ViewRow {
+	readonly name: string
+	readonly table: string
+	readonly create: string
+}
+
+const viewsOf = (db: Chdb, source: string): ViewRow[] =>
+	Arr.map(
+		Arr.filter(
+			Str.split("\n")(
+				db.query(
+					`SELECT t.name AS name, t.create_table_query AS create
+			 FROM system.tables AS t
+			 WHERE t.database = currentDatabase() AND t.engine = 'MaterializedView'
+			   AND has((SELECT any(dependencies_table) FROM system.tables
+			            WHERE database = currentDatabase() AND name = '${source}'), t.name)
+			 ORDER BY t.name`,
+				),
+			),
+			Boolean,
+		),
+		(line) => ({ ...decodeViewLine(line), table: source }),
+	)
+
+/** Drop every view on the source, then add each back alone and time the insert. */
+const views = (db: Chdb) => {
+	const source = rawDatasource[viewsSignal]
+	const all = viewsOf(db, source)
+	const insert = () => {
+		const statements = Arr.filter(statementsFor(viewsSignal, viewsSize), (s) => s.datasource === source)
+		return time(() => Arr.forEach(statements, (s) => db.exec(s.sql)))
+	}
+	const withAll = measure(insert)
+	Arr.forEach(all, (v) => db.exec(`DROP VIEW ${v.name}`))
+	const withNone = measure(insert)
+	console.log(
+		`${source}: ${all.length} views, insert p50 ${withAll.p50.toFixed(1)} ms with all, ` +
+			`${withNone.p50.toFixed(1)} ms with none`,
+	)
+	const perView = Arr.map(all, (v) => {
+		db.exec(v.create)
+		const alone = measure(insert)
+		db.exec(`DROP VIEW ${v.name}`)
+		return {
+			view: v.name,
+			aloneMs: alone,
+			marginalMs: Math.round((alone.p50 - withNone.p50) * 100) / 100,
+		}
+	})
+	Arr.forEach(all, (v) => db.exec(v.create))
+	perView.sort((a, b) => b.marginalMs - a.marginalMs)
+	Arr.forEach(perView, (v) => console.log(`  ${Str.padEnd(44)(v.view)} +${v.marginalMs.toFixed(2)} ms`))
+	const sumMarginal = Math.round(Arr.reduce(perView, 0, (a, v) => a + v.marginalMs) * 100) / 100
+	console.log(
+		`  sum of marginals ${sumMarginal.toFixed(1)} ms vs all-minus-none ${(withAll.p50 - withNone.p50).toFixed(1)} ms`,
+	)
+	return {
+		source,
+		records: viewsSize,
+		count: all.length,
+		withAllMs: withAll,
+		withNoneMs: withNone,
+		sumMarginal,
+		perView,
+	}
+}
+
+const SLOW_INSERT_MS = 500
+
+/** Back-to-back exports, as a busy dev machine sends them; background merges show up as slow inserts. */
+const sustained = (db: Chdb) => {
+	const started = performance.now()
+	const samples = repeat(sustainedExports, () => execAll(db, "traces", sustainedSize))
+	const elapsedSeconds = (performance.now() - started) / 1000
+	const slow = Arr.flatMap(samples, (ms, i) =>
+		ms > SLOW_INSERT_MS ? [{ export: i + 1, ms: Math.round(ms) }] : [],
+	)
+	const execMs = summarize(samples)
+	const slowTotalMs = Arr.reduce(slow, 0, (a, s) => a + s.ms)
+	console.log(
+		`${sustainedExports} traces exports x ${sustainedSize} spans in ${elapsedSeconds.toFixed(1)} s: ` +
+			`p50 ${execMs.p50.toFixed(1)}  p95 ${execMs.p95.toFixed(1)}  max ${execMs.max.toFixed(0)} ms, ` +
+			`${slow.length} inserts over ${SLOW_INSERT_MS} ms (${(slowTotalMs / 1000).toFixed(1)} s total)`,
+	)
+	return { exports: sustainedExports, records: sustainedSize, elapsedSeconds, execMs, slowTotalMs, slow }
+}
+
+const main = () => {
+	const env = environment()
+	const root = mkdtempSync(join(tmpdir(), "maple-bench-chdb-"))
+	const dataDir = join(root, "data")
+	const configFile =
+		chdbConfig === "none"
+			? undefined
+			: chdbConfig === "default"
+				? join(root, "chdb-config.xml")
+				: chdbConfig
+	if (chdbConfig === "default" && configFile) writeIngestConfig(configFile)
+	// A run that throws partway still removes its scratch store.
+	let db: Chdb | undefined
+	try {
+		const openStarted = performance.now()
+		db = Chdb.open({ dataDir, schemaSql: LOCAL_SCHEMA_SQL, configFile })
+		writeChdbReport(env, db, dataDir, Math.round(performance.now() - openStarted))
+	} finally {
+		db?.close()
+		rmSync(root, { recursive: true, force: true })
+	}
+}
+
+const writeChdbReport = (env: ReturnType<typeof environment>, db: Chdb, dataDir: string, openMs: number) => {
+	console.log(`store opened in ${openMs} ms at ${dataDir}`)
+	Arr.forEach(sessionSettings, (assignment) => {
+		const [name, value] = Str.split("=")(assignment)
+		setSetting(db, name, value)
+	})
+	const report = {
+		bench: "local-ingest-chdb",
+		environment: env,
+		options: {
+			signals,
+			sizes,
+			iterations,
+			viewsSignal,
+			viewsSize,
+			settingVariants,
+			sessionSettings,
+			chdbConfig,
+			sustainedExports,
+			sustainedSize,
+			skip: [...skip],
+		},
+		openMs,
+		stages: skip.has("stages") ? [] : (console.log("\n# stages"), stages(db)),
+		settings: skip.has("settings") ? [] : (console.log("\n# settings"), settings(db)),
+		views: skip.has("views") ? null : (console.log("\n# views"), views(db)),
+		sustained: skip.has("sustained") ? null : (console.log("\n# sustained"), sustained(db)),
+	}
+	console.log(`\nwrote ${writeReport(`local-ingest-chdb-${Str.slice(0, 10)(env.date)}.json`, report)}`)
+}
+
+main()

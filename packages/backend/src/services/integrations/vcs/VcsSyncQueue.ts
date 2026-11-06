@@ -1,23 +1,43 @@
 import { VcsQueueError, VcsSyncJob } from "@maple/domain/http"
 import { Context, Effect, Layer, Schema } from "effect"
-import { VcsSyncQueueProducer } from "@maple/backend/platform/bindings"
+import { VcsBackfillQueueProducer, VcsSyncQueueProducer } from "@maple/backend/platform/bindings"
 
-// Vendor-agnostic queue producer over the `VcsSyncQueueProducer` port, sending
-// Schema-encoded `VcsSyncJob`s. The same queue carries jobs for every provider
-// (discriminated by `job.provider`).
+// Vendor-agnostic queue producer sending Schema-encoded `VcsSyncJob`s for every
+// provider (discriminated by `job.provider`). Webhook deltas and bulk refreshes go
+// to separate queues, so a scheduled sync's thousands of jobs never delay a webhook.
 
-/** The queue's logical id — its binding name on the Worker. */
-const QUEUE_NAME = "vcs-sync"
 const encodeJob = Schema.encodeSync(VcsSyncJob)
 
-// Messaging semconv identity for this queue, shared with the consumer side
+/** The queues' logical ids: webhook deltas, and the bulk refreshes the cron and connects fan out. */
+export const VCS_SYNC_QUEUE = "vcs-sync"
+export const VCS_BACKFILL_QUEUE = "vcs-backfill"
+export type VcsQueueName = typeof VCS_SYNC_QUEUE | typeof VCS_BACKFILL_QUEUE
+
+const BACKFILL_KINDS: ReadonlySet<string> = new Set<VcsSyncJob["kind"]>([
+	"sync-branches",
+	"sync-commits",
+	"dependency-scan",
+])
+
+/**
+ * The queue a job (or its encoded body, on the consumer side) belongs to. A connect's or webhook's
+ * `installation-sync` stays live: someone is waiting on its discovery. Anything unrecognised is live.
+ */
+export const vcsQueueFor = (job: unknown): VcsQueueName => {
+	if (typeof job !== "object" || job === null || !("kind" in job) || typeof job.kind !== "string") {
+		return VCS_SYNC_QUEUE
+	}
+	const scheduled = job.kind === "installation-sync" && "reason" in job && job.reason === "scheduled"
+	return BACKFILL_KINDS.has(job.kind) || scheduled ? VCS_BACKFILL_QUEUE : VCS_SYNC_QUEUE
+}
+
+// Messaging semconv identity for these queues, shared with the consumer side
 // (vcs-sync-runtime.ts) so producer and consumer spans agree. `messaging.system`
 // has no registered value for Cloudflare Queues; the lowercase vendor name is
 // what semconv prescribes for unregistered systems. Together with the Producer /
 // Consumer span kinds these are what put the queue on the service map as an
 // external dependency — an Internal span with neither is invisible there.
 export const MESSAGING_SYSTEM = "cloudflare_queues"
-export const MESSAGING_DESTINATION = QUEUE_NAME
 
 // Cloudflare Queues transport limits, owned here (the only module that talks to
 // the binding). Producers that must pre-size their payloads — e.g. a provider
@@ -39,7 +59,31 @@ export const clampQueueDelaySeconds = (seconds: number): number =>
 
 // Serialized byte size of a message body (UTF-8) — the basis for Cloudflare's per-batch byte cap.
 const textEncoder = new TextEncoder()
-const jsonByteLength = (body: unknown): number => textEncoder.encode(JSON.stringify(body)).length
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const jsonByteLength = (body: unknown): number => textEncoder.encode(encodeJson(body)).length
+
+/** Greedy packing into `sendBatch` calls under both the message-count and byte caps. */
+const packMessages = (
+	sized: ReadonlyArray<{ readonly message: { body: unknown }; readonly size: number }>,
+): Array<Array<{ body: unknown }>> => {
+	const chunks: Array<Array<{ body: unknown }>> = []
+	let current: Array<{ body: unknown }> = []
+	let currentBytes = 0
+	for (const { message, size } of sized) {
+		const wouldOverflow =
+			current.length >= QUEUE_BATCH_MAX_MESSAGES ||
+			(current.length > 0 && currentBytes + size > QUEUE_BATCH_MAX_BYTES)
+		if (wouldOverflow) {
+			chunks.push(current)
+			current = []
+			currentBytes = 0
+		}
+		current.push(message)
+		currentBytes += size
+	}
+	if (current.length > 0) chunks.push(current)
+	return chunks
+}
 
 export interface VcsSyncQueueApi {
 	/**
@@ -55,46 +99,47 @@ export interface VcsSyncQueueApi {
 }
 
 export class VcsSyncQueue extends Context.Service<VcsSyncQueue, VcsSyncQueueApi>()(
-	"@maple/api/services/vcs/VcsSyncQueue",
+	"@maple/backend/services/vcs/VcsSyncQueue",
 	{
 		make: Effect.gen(function* () {
-			const queue = yield* VcsSyncQueueProducer
+			const queues = {
+				[VCS_SYNC_QUEUE]: yield* VcsSyncQueueProducer,
+				[VCS_BACKFILL_QUEUE]: yield* VcsBackfillQueueProducer,
+			}
+			const toQueueError = (error: { readonly message: string }) =>
+				new VcsQueueError({ message: error.message })
 
 			const send = Effect.fn("VcsSyncQueue.send", {
 				kind: "producer",
-				attributes: {
-					"messaging.system": MESSAGING_SYSTEM,
-					"messaging.destination.name": MESSAGING_DESTINATION,
-					"messaging.operation.name": "send",
-				},
+				attributes: { "messaging.system": MESSAGING_SYSTEM, "messaging.operation.name": "send" },
 			})(function* (job: VcsSyncJob, options?: { readonly delaySeconds?: number }) {
-				yield* Effect.annotateCurrentSpan({ "vcs.job.kind": job.kind, "vcs.provider": job.provider })
+				const destination = vcsQueueFor(job)
+				yield* Effect.annotateCurrentSpan({
+					"messaging.destination.name": destination,
+					"vcs.job.kind": job.kind,
+					"vcs.provider": job.provider,
+				})
 				const body = encodeJob(job)
 				const delay =
 					options?.delaySeconds === undefined
 						? undefined
 						: { delaySeconds: clampQueueDelaySeconds(options.delaySeconds) }
-				yield* queue
-					.sendBatch([{ body, ...delay }])
-					.pipe(Effect.mapError((error) => new VcsQueueError({ message: error.message })))
+				yield* queues[destination].sendBatch([{ body, ...delay }]).pipe(Effect.mapError(toQueueError))
 			})
 
-			const sendBatch = Effect.fn("VcsSyncQueue.sendBatch", {
+			// One producer span per destination queue, so each lands on the service map as its own node.
+			const sendBatchTo = Effect.fn("VcsSyncQueue.sendBatch", {
 				kind: "producer",
-				attributes: {
-					"messaging.system": MESSAGING_SYSTEM,
-					"messaging.destination.name": MESSAGING_DESTINATION,
-					"messaging.operation.name": "send",
-				},
-			})(function* (jobs: ReadonlyArray<VcsSyncJob>) {
+				attributes: { "messaging.system": MESSAGING_SYSTEM, "messaging.operation.name": "send" },
+			})(function* (destination: VcsQueueName, jobs: ReadonlyArray<VcsSyncJob>) {
 				// Count + distinct kinds only — a fixed, low-cardinality summary. A batch can
 				// hold hundreds of jobs, so a raw kind-per-job list would be unbounded and
 				// redundant with the count.
 				yield* Effect.annotateCurrentSpan({
+					"messaging.destination.name": destination,
 					"vcs.jobs.length": jobs.length,
 					"vcs.job.kinds": [...new Set(jobs.map((j) => j.kind))].sort().join(","),
 				})
-				if (jobs.length === 0) return
 
 				// Encode once, then greedily pack into chunks bounded by BOTH the message
 				// count and the byte cap Cloudflare accepts per `sendBatch`. A single job
@@ -104,33 +149,29 @@ export class VcsSyncQueue extends Context.Service<VcsSyncQueue, VcsSyncQueueApi>
 					const body = encodeJob(job)
 					return { message: { body }, size: jsonByteLength(body) }
 				})
-				const chunks: Array<Array<{ body: unknown }>> = []
-				let current: Array<{ body: unknown }> = []
-				let currentBytes = 0
-				for (const { message, size } of sized) {
-					const wouldOverflow =
-						current.length >= QUEUE_BATCH_MAX_MESSAGES ||
-						(current.length > 0 && currentBytes + size > QUEUE_BATCH_MAX_BYTES)
-					if (wouldOverflow) {
-						chunks.push(current)
-						current = []
-						currentBytes = 0
-					}
-					current.push(message)
-					currentBytes += size
-				}
-				if (current.length > 0) chunks.push(current)
+				const chunks = packMessages(sized)
 
 				yield* Effect.annotateCurrentSpan({ "vcs.jobs.batches": chunks.length })
 				yield* Effect.forEach(
 					chunks,
-					(chunk) =>
-						queue
-							.sendBatch(chunk)
-							.pipe(Effect.mapError((error) => new VcsQueueError({ message: error.message }))),
+					(chunk) => queues[destination].sendBatch(chunk).pipe(Effect.mapError(toQueueError)),
 					{ discard: true },
 				)
 			})
+
+			const sendBatch = (jobs: ReadonlyArray<VcsSyncJob>) => {
+				const live = jobs.filter((job) => vcsQueueFor(job) === VCS_SYNC_QUEUE)
+				const backfill = jobs.filter((job) => vcsQueueFor(job) === VCS_BACKFILL_QUEUE)
+				return Effect.forEach(
+					[
+						[VCS_SYNC_QUEUE, live],
+						[VCS_BACKFILL_QUEUE, backfill],
+					] as const,
+					([destination, group]) =>
+						group.length === 0 ? Effect.void : sendBatchTo(destination, group),
+					{ discard: true },
+				)
+			}
 
 			return { send, sendBatch } satisfies VcsSyncQueueApi
 		}),

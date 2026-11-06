@@ -2,8 +2,8 @@
 // a thrown error: "busy" (chDB is mid-query, the single JS thread can't answer)
 // and "refused" (nothing is listening) need different screens.
 
-import { Effect, Option, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/unstable/http"
+import { Effect, Option, Schema, String as Str } from "effect"
+import { HttpClient, HttpClientResponse } from "effect/http"
 
 export const LocalServerStatus = Schema.Struct({
 	service: Schema.String,
@@ -32,7 +32,8 @@ const classify = (response: HttpClientResponse.HttpClientResponse) =>
 	Effect.gen(function* () {
 		if (response.status === 404) return { _tag: "Legacy" } satisfies StatusProbe
 		if (response.status < 200 || response.status >= 300) {
-			const detail = (yield* response.text.pipe(Effect.orElseSucceed(() => ""))).trim()
+			const text = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
+			const detail = Str.trim(text)
 			return { _tag: "Rejected", status: response.status, detail } satisfies StatusProbe
 		}
 		return yield* decodeStatus(response).pipe(
@@ -61,13 +62,3 @@ export const probeLocalStatus = (baseUrl: string, timeoutMs: number) =>
 		Effect.timeoutOption(timeoutMs),
 		Effect.map(Option.getOrElse((): StatusProbe => ({ _tag: "Busy" }))),
 	)
-
-export const runStatusProbe = (
-	baseUrl: string,
-	timeoutMs: number,
-	signal?: AbortSignal,
-): Promise<StatusProbe> =>
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
-	Effect.runPromise(probeLocalStatus(baseUrl, timeoutMs).pipe(Effect.provide(FetchHttpClient.layer)), {
-		signal,
-	})

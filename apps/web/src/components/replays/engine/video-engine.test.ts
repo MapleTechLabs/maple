@@ -6,6 +6,7 @@ import {
 	videoSegmentPayload,
 	type VideoSegment,
 } from "./video-engine"
+import { Array as Arr } from "effect"
 
 // A mobile recording is a sequence of independent MP4s, each opening on an IDR
 // keyframe. The segment math below is what turns a playhead offset into
@@ -54,6 +55,23 @@ const touchEvent = (offsetMs: number) => ({
 	data: { source: 2, type: 7, pointerType: 2 },
 })
 
+describe("segment identity", () => {
+	// Ranges loaded after the seed reach the engine one event at a time, so an id
+	// must not depend on where in its batch a segment was found.
+	it("keeps the SDK's numeric chunk sequence as the id across separate extractions", () => {
+		const seed = extractVideoSegments([videoEvent(0, 5_000, { segmentId: 0 })], T0)
+		const late = extractVideoSegments([videoEvent(5_000, 5_000, { segmentId: 1 })], T0)
+		expect(Arr.map(seed, (segment) => segment.segmentId)).toEqual(["0"])
+		expect(Arr.map(late, (segment) => segment.segmentId)).toEqual(["1"])
+	})
+
+	it("falls back to the timestamp, not the batch position, when the id is missing", () => {
+		const first = extractVideoSegments([videoEvent(0, 5_000, { segmentId: undefined })], T0)
+		const second = extractVideoSegments([videoEvent(5_000, 5_000, { segmentId: undefined })], T0)
+		expect(first[0]?.segmentId).not.toBe(second[0]?.segmentId)
+	})
+})
+
 describe("videoSegmentPayload", () => {
 	it("recognises the SDK's video custom event", () => {
 		expect(videoSegmentPayload(videoEvent(0, 30_000))).toMatchObject({ encoding: "h264" })
@@ -83,7 +101,7 @@ describe("extractVideoSegments", () => {
 
 	it("orders segments by start time regardless of arrival order", () => {
 		const segments = extractVideoSegments([videoEvent(60_000, 30_000), videoEvent(0, 30_000)], T0)
-		expect(segments.map((s) => s.startMs)).toEqual([0, 60_000])
+		expect(Arr.map(segments, (s) => s.startMs)).toEqual([0, 60_000])
 	})
 
 	it("skips unusable segments rather than failing the recording", () => {
@@ -95,7 +113,7 @@ describe("extractVideoSegments", () => {
 			{ type: 5, timestamp: T0 + 60_000, data: { tag: "video" } },
 			videoEvent(90_000, 30_000),
 		]
-		expect(extractVideoSegments(events, T0).map((s) => s.startMs)).toEqual([0, 90_000])
+		expect(Arr.map(extractVideoSegments(events, T0), (s) => s.startMs)).toEqual([0, 90_000])
 	})
 
 	it("returns nothing for a browser recording", () => {

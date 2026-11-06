@@ -31,6 +31,8 @@ import type {
 	QueueConsumersGroupDefinition,
 	WorkersGroupDefinition,
 } from "./queries"
+import { parseWarehouseDateTime } from "@maple/query-engine"
+import { Array as Arr, Option, String as Str } from "effect"
 
 type Attrs = Record<string, string>
 
@@ -55,6 +57,7 @@ export const METRIC_HTTP_BYTES_BY_COUNTRY = "cloudflare.http.bytes.by_country"
 export const METRIC_HTTP_REQUESTS_BY_CLIENT = "cloudflare.http.requests.by_client"
 export const METRIC_WORKER_REQUESTS = "cloudflare.worker.requests"
 export const METRIC_WORKER_ERRORS = "cloudflare.worker.errors"
+export const METRIC_WORKER_SUBREQUESTS = "cloudflare.worker.subrequests"
 export const METRIC_WORKER_CPU_TIME = "cloudflare.worker.cpu_time"
 export const METRIC_WORKER_DURATION = "cloudflare.worker.duration"
 export const METRIC_FIREWALL_EVENTS = "cloudflare.firewall.events"
@@ -74,7 +77,7 @@ export interface CloudflareMetricRows {
 }
 
 /** GraphQL buckets arrive as RFC 3339 datetimes ("2026-07-03T10:05:00Z"). */
-const bucketToTs = (bucket: string): string => fmtMetricTs(Date.parse(bucket))
+const bucketToTs = (bucket: string): string => fmtMetricTs(parseWarehouseDateTime(bucket))
 
 const DELTA_TEMPORALITY = 1
 
@@ -148,10 +151,12 @@ export const OTHER_BUCKET = "other"
 /** Top-N keys by weight; ties break lexicographically so folding is deterministic across runs. */
 export const topNKeys = (weights: ReadonlyMap<string, number>, n: number): ReadonlySet<string> =>
 	new Set(
-		[...weights.entries()]
-			.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-			.slice(0, n)
-			.map(([key]) => key),
+		Arr.map(
+			[...weights.entries()]
+				.sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : Str.localeCompare(b[0])(a[0])))
+				.slice(0, n),
+			([key]) => key,
+		),
 	)
 
 const httpResourceAttrs = (orgId: string, zoneId: string, zoneName: string): Attrs => ({
@@ -284,16 +289,18 @@ const MAX_PATH_LEN = 200
  */
 export const normalizePath = (raw: string | null | undefined): string => {
 	if (raw == null || raw === "") return "unknown"
-	const query = raw.indexOf("?")
-	const path = query === -1 ? raw : raw.slice(0, query)
+	const path = Option.match(Str.indexOf("?")(raw), {
+		onNone: () => raw,
+		onSome: (query) => Str.slice(0, query)(raw),
+	})
 	if (path === "") return "unknown"
-	return path.length > MAX_PATH_LEN ? `${path.slice(0, MAX_PATH_LEN)}…` : path
+	return path.length > MAX_PATH_LEN ? `${Str.slice(0, MAX_PATH_LEN)(path)}…` : path
 }
 
 /** `"HTTP/1.1"` → `"1.1"`: semconv's `network.protocol.version` is the bare version. */
 export const normalizeProtocol = (raw: string | null | undefined): string => {
 	if (raw == null || raw === "") return "unknown"
-	return raw.toUpperCase().startsWith("HTTP/") ? raw.slice(5) : raw
+	return Str.startsWith("HTTP/")(Str.toUpperCase(raw)) ? Str.slice(5)(raw) : raw
 }
 
 export interface MapHttpPathGroupsInput {
@@ -729,6 +736,7 @@ export const mapWorkersGroups = (input: MapWorkersGroupsInput): CloudflareMetric
 		const counters: ReadonlyArray<readonly [string, string, string, number]> = [
 			[METRIC_WORKER_REQUESTS, "Worker invocations", "{requests}", group.sum?.requests ?? 0],
 			[METRIC_WORKER_ERRORS, "Worker invocation errors", "{errors}", group.sum?.errors ?? 0],
+			[METRIC_WORKER_SUBREQUESTS, "Worker subrequests", "{requests}", group.sum?.subrequests ?? 0],
 		]
 		for (const [metricName, description, unit, value] of counters) {
 			if (value <= 0) continue

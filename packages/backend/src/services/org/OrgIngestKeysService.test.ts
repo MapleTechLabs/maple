@@ -1,12 +1,31 @@
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
+import {
+	Cause,
+	ConfigProvider,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { IngestKeyEncryptionError, IngestKeyPersistenceError, OrgId, UserId } from "@maple/domain/http"
 import { hashIngestKey } from "@maple/db"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
+import type { OrgIngestKeyRow } from "@maple/db/tables"
+import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
 import { OrgIngestKeysService } from "./OrgIngestKeysService"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { SharedIngestKeysMemo } from "./shared-ingest-keys-memo"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	makeStatementRecorder,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 
 // A Database layer that builds successfully (so migrations are never attempted)
 // but fails every query, exercising the service's `mapError(toPersistenceError)`
@@ -67,12 +86,32 @@ describe("OrgIngestKeysService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const result = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
+			const keys = yield* OrgIngestKeysService
+			const result = yield* keys.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
 
-			assert.isTrue(result.publicKey.startsWith("maple_pk_"))
-			assert.isTrue(result.privateKey.startsWith("maple_sk_"))
+			assert.isTrue(Str.startsWith("maple_pk_")(result.publicKey))
+			assert.isTrue(Str.startsWith("maple_sk_")(result.privateKey))
 			assert.isFalse(Number.isNaN(Date.parse(result.publicRotatedAt)))
 			assert.isFalse(Number.isNaN(Date.parse(result.privateRotatedAt)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("creates the org's default source with its keys", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const keys = yield* OrgIngestKeysService
+			yield* keys.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
+			yield* keys.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
+
+			const row = yield* Effect.promise(() =>
+				queryFirstRow<{ count: number; name: string; key_hash: string | null }>(
+					testDb,
+					"SELECT count(*)::int AS count, min(name) AS name, min(key_hash) AS key_hash FROM sources WHERE org_id = $1 AND kind = 'default'",
+					["org_a"],
+				),
+			)
+			assert.deepStrictEqual(row, { count: 1, name: "Default", key_hash: null })
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -80,8 +119,9 @@ describe("OrgIngestKeysService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const first = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
-			const second = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
+			const keys = yield* OrgIngestKeysService
+			const first = yield* keys.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
+			const second = yield* keys.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
 
 			assert.deepStrictEqual(second, first)
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -91,8 +131,9 @@ describe("OrgIngestKeysService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const first = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
-			const rerolled = yield* OrgIngestKeysService.rerollPublic(asOrgId("org_a"), asUserId("user_a"))
+			const keys = yield* OrgIngestKeysService
+			const first = yield* keys.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
+			const rerolled = yield* keys.rerollPublic(asOrgId("org_a"), asUserId("user_a"))
 
 			assert.notStrictEqual(rerolled.publicKey, first.publicKey)
 			assert.strictEqual(rerolled.privateKey, first.privateKey)
@@ -105,8 +146,9 @@ describe("OrgIngestKeysService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const first = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
-			const rerolled = yield* OrgIngestKeysService.rerollPrivate(asOrgId("org_a"), asUserId("user_a"))
+			const keys = yield* OrgIngestKeysService
+			const first = yield* keys.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
+			const rerolled = yield* keys.rerollPrivate(asOrgId("org_a"), asUserId("user_a"))
 
 			assert.strictEqual(rerolled.publicKey, first.publicKey)
 			assert.notStrictEqual(rerolled.privateKey, first.privateKey)
@@ -119,8 +161,9 @@ describe("OrgIngestKeysService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const orgA = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
-			const orgB = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_b"), asUserId("user_b"))
+			const keys = yield* OrgIngestKeysService
+			const orgA = yield* keys.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
+			const orgB = yield* keys.getOrCreate(asOrgId("org_b"), asUserId("user_b"))
 
 			assert.notStrictEqual(orgA.publicKey, orgB.publicKey)
 			assert.notStrictEqual(orgA.privateKey, orgB.privateKey)
@@ -131,7 +174,8 @@ describe("OrgIngestKeysService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const created = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
+			const keys = yield* OrgIngestKeysService
+			const created = yield* keys.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
 
 			const row = yield* Effect.promise(() =>
 				queryFirstRow<{
@@ -158,7 +202,8 @@ describe("OrgIngestKeysService", () => {
 		const lookupHmacKey = "maple-test-lookup-secret"
 
 		return Effect.gen(function* () {
-			const created = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
+			const keys = yield* OrgIngestKeysService
+			const created = yield* keys.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
 
 			const row = yield* Effect.promise(() =>
 				queryFirstRow<{
@@ -181,10 +226,11 @@ describe("OrgIngestKeysService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const created = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
-			const publicResolved = yield* OrgIngestKeysService.resolveIngestKey(created.publicKey)
-			const privateResolved = yield* OrgIngestKeysService.resolveIngestKey(created.privateKey)
-			const invalidResolved = yield* OrgIngestKeysService.resolveIngestKey("not-a-maple-key")
+			const keys = yield* OrgIngestKeysService
+			const created = yield* keys.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
+			const publicResolved = yield* keys.resolveIngestKey(created.publicKey)
+			const privateResolved = yield* keys.resolveIngestKey(created.privateKey)
+			const invalidResolved = yield* keys.resolveIngestKey("not-a-maple-key")
 
 			assert.isTrue(Option.isSome(publicResolved))
 			assert.isTrue(Option.isSome(privateResolved))
@@ -204,19 +250,14 @@ describe("OrgIngestKeysService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const first = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
-			const rerolledPublic = yield* OrgIngestKeysService.rerollPublic(
-				asOrgId("org_a"),
-				asUserId("user_a"),
-			)
-			const oldPublic = yield* OrgIngestKeysService.resolveIngestKey(first.publicKey)
-			const newPublic = yield* OrgIngestKeysService.resolveIngestKey(rerolledPublic.publicKey)
-			const rerolledPrivate = yield* OrgIngestKeysService.rerollPrivate(
-				asOrgId("org_a"),
-				asUserId("user_a"),
-			)
-			const oldPrivate = yield* OrgIngestKeysService.resolveIngestKey(first.privateKey)
-			const newPrivate = yield* OrgIngestKeysService.resolveIngestKey(rerolledPrivate.privateKey)
+			const keys = yield* OrgIngestKeysService
+			const first = yield* keys.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
+			const rerolledPublic = yield* keys.rerollPublic(asOrgId("org_a"), asUserId("user_a"))
+			const oldPublic = yield* keys.resolveIngestKey(first.publicKey)
+			const newPublic = yield* keys.resolveIngestKey(rerolledPublic.publicKey)
+			const rerolledPrivate = yield* keys.rerollPrivate(asOrgId("org_a"), asUserId("user_a"))
+			const oldPrivate = yield* keys.resolveIngestKey(first.privateKey)
+			const newPrivate = yield* keys.resolveIngestKey(rerolledPrivate.privateKey)
 
 			assert.deepStrictEqual(oldPublic, Option.none())
 			assert.isTrue(Option.isSome(newPublic))
@@ -239,9 +280,9 @@ describe("OrgIngestKeysService", () => {
 			const layer = makeLayer(testDb, "invalid-base64-key")
 
 			const exit = yield* Effect.exit(
-				OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a")).pipe(
-					Effect.provide(layer),
-				),
+				OrgIngestKeysService.use((keys) =>
+					keys.getOrCreate(asOrgId("org_a"), asUserId("user_a")),
+				).pipe(Effect.provide(layer)),
 			)
 			const failure = getError(exit)
 
@@ -260,9 +301,9 @@ describe("OrgIngestKeysService", () => {
 			)
 
 			const exit = yield* Effect.exit(
-				OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a")).pipe(
-					Effect.provide(layer),
-				),
+				OrgIngestKeysService.use((keys) =>
+					keys.getOrCreate(asOrgId("org_a"), asUserId("user_a")),
+				).pipe(Effect.provide(layer)),
 			)
 
 			assert.isTrue(Exit.isFailure(exit))
@@ -278,9 +319,9 @@ describe("OrgIngestKeysService", () => {
 			)
 
 			const exit = yield* Effect.exit(
-				OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a")).pipe(
-					Effect.provide(layer),
-				),
+				OrgIngestKeysService.use((keys) =>
+					keys.getOrCreate(asOrgId("org_a"), asUserId("user_a")),
+				).pipe(Effect.provide(layer)),
 			)
 			const failure = getError(exit)
 
@@ -288,4 +329,62 @@ describe("OrgIngestKeysService", () => {
 			assert.instanceOf(failure, IngestKeyPersistenceError)
 		}),
 	)
+
+	it.effect("a shared memo carries an org's keys from one service instance to the next", () => {
+		const testDb = createTestDb(trackedDbs)
+		const second = makeStatementRecorder()
+		return Effect.gen(function* () {
+			const shared = Layer.succeed(SharedIngestKeysMemo, yield* makeExpiringStore<OrgIngestKeyRow>())
+			const getOrCreate = OrgIngestKeysService.use((keys) =>
+				keys.getOrCreate(asOrgId("org_a"), asUserId("user_a")),
+			)
+			// Two builds of the layer, as two queue batches in one isolate build theirs.
+			const first = yield* getOrCreate.pipe(
+				Effect.provide(makeLayer(testDb).pipe(Layer.provide(shared))),
+			)
+			const again = yield* getOrCreate.pipe(
+				Effect.withTracer(second.tracer),
+				Effect.provide(makeLayer(testDb).pipe(Layer.provide(shared))),
+			)
+			assert.deepStrictEqual(again, first)
+			assert.deepStrictEqual(second.verbs(), [])
+		})
+	})
+
+	it.effect("getOrCreateMany resolves every org with one SELECT and creates only missing rows", () => {
+		const testDb = createTestDb(trackedDbs)
+		const user = asUserId("user_a")
+		const seededOrgs = Arr.map(["org_a", "org_b", "org_c"], asOrgId)
+		const newOrg = asOrgId("org_d")
+		const orgs = [...seededOrgs, newOrg]
+		const coldBatch = makeStatementRecorder()
+		const warmBatch = makeStatementRecorder()
+		return Effect.gen(function* () {
+			// Seed three orgs through one instance, then read through a fresh one so
+			// its memo is cold, like a new isolate.
+			const seeded = yield* Effect.forEach(seededOrgs, (orgId) =>
+				OrgIngestKeysService.use((keys) => keys.getOrCreate(orgId, user)),
+			).pipe(Effect.provide(makeLayer(testDb)))
+
+			const keys = yield* Effect.gen(function* () {
+				const service = yield* OrgIngestKeysService
+				const cold = yield* service
+					.getOrCreateMany([...orgs, ...seededOrgs], user)
+					.pipe(Effect.withTracer(coldBatch.tracer))
+				yield* service.getOrCreateMany(orgs, user).pipe(Effect.withTracer(warmBatch.tracer))
+				return cold
+			}).pipe(Effect.provide(makeLayer(testDb)))
+
+			// One batched SELECT for all four orgs, then org_d's first-use create path (keys, default source).
+			assert.deepStrictEqual(coldBatch.verbs(), ["SELECT", "SELECT", "INSERT", "INSERT", "SELECT"])
+			// Every org is memoized after the first batch: no statements at all.
+			assert.deepStrictEqual(warmBatch.verbs(), [])
+			assert.strictEqual(keys.size, 4)
+			assert.deepStrictEqual(
+				Arr.map(seededOrgs, (orgId) => keys.get(orgId)?.publicKey),
+				Arr.map(seeded, (response) => response.publicKey),
+			)
+			assert.isTrue(Str.startsWith("maple_pk_")(keys.get(newOrg)?.publicKey ?? ""))
+		})
+	})
 })

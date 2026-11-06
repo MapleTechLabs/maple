@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import {
 	MobileDeviceNotFoundError,
@@ -12,13 +12,18 @@ import { wireExample, ListOf, Timestamp } from "./envelopes"
 import { publicError } from "./public-error"
 import { AlertIncidentPublicId, MobileDevicePublicId } from "./resource-ids"
 
-const DeviceToken = Schema.String.check(Schema.isMinLength(16), Schema.isMaxLength(512)).annotate({
+// Code points, not UTF-16 units: identical for these ASCII values, and the only length the
+// JSON Schema `minLength` can state exactly (Effect halves a UTF-16 bound when it exports one).
+const DeviceToken = Schema.String.check(Schema.isMinCodePoints(16), Schema.isMaxLength(512)).annotate({
 	title: "Device token",
 	description: "The platform push token — the hex APNs device token on iOS. Opaque to Maple.",
 	examples: ["a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"],
 })
 
-const LiveActivityStartToken = Schema.String.check(Schema.isMinLength(16), Schema.isMaxLength(512)).annotate({
+const LiveActivityStartToken = Schema.String.check(
+	Schema.isMinCodePoints(16),
+	Schema.isMaxLength(512),
+).annotate({
 	title: "Live Activity push-to-start token",
 	description:
 		"ActivityKit's push-to-start token, hex. Lets Maple start a Lock Screen Live Activity for a critical incident on a phone that has not opened the app. Opaque to Maple.",
@@ -143,7 +148,7 @@ export const V2LiveActivityRegisterParams = Schema.Struct({
 	activity_id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)).annotate({
 		description: "ActivityKit's own identifier for the running activity.",
 	}),
-	push_token: Schema.String.check(Schema.isMinLength(16), Schema.isMaxLength(512)).annotate({
+	push_token: Schema.String.check(Schema.isMinCodePoints(16), Schema.isMaxLength(512)).annotate({
 		description:
 			"The activity's APNs update token, hex. Different from both the device token and the push-to-start token, and rotated by iOS — the app re-submits it on every rotation.",
 	}),

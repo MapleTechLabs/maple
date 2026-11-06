@@ -1,0 +1,729 @@
+import * as Policy from "@maple/domain/policy"
+import { type AwsStreamState, awsStreamState } from "@maple/domain/aws"
+import type { V2AwsConnection } from "@maple/domain/http/v2"
+import { countLabel } from "@maple/ui/lib/format"
+import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import {
+	GCP_CONNECTION_LABEL,
+	gcpConnectionState,
+	gcpScopeLabel,
+	gcpWorstState,
+} from "../../components/integrations/gcp-connector-state"
+import { DateTime, Option, Array as Arr } from "effect"
+import { AsyncData } from "foldkit"
+import {
+	metricsAuthOf,
+	metricsLastCollectedAt,
+	metricsLastError,
+} from "../../components/integrations/planetscale-setup-steps"
+import type { Keyed } from "@maple/views/data/keyed"
+import { chatIntegrationId, HUB_CATALOG, type IntegrationId } from "./catalog"
+import { hasBringYourOwnCloudAddOn } from "../../lib/billing/plan-gating"
+import type { Visibility } from "../settings/nav"
+import type { Model, Statuses } from "./model"
+
+// `useIntegrationStatuses` and `useIntegrationOverviews`, as pure folds.
+
+/** `Result.builder`: success (also while revalidating), initial (`null`), else the failure value. */
+export const fold = <A, E, R>(slot: Keyed<A, E>, onSuccess: (data: A) => R, onFailure: () => R): R | null =>
+	AsyncData.match(slot.data, {
+		onIdle: () => null,
+		onLoading: () => null,
+		onRefreshing: onSuccess,
+		onSuccess,
+		onFailure: () => onFailure(),
+		onStale: () => onFailure(),
+	})
+
+/** `Date.parse` of an ISO timestamp (lint-banned), `null` when absent or unparseable. */
+export const isoMs = (iso: string | null | undefined): number | null =>
+	iso === null || iso === undefined
+		? null
+		: Option.getOrNull(Option.map(DateTime.make(iso), DateTime.toEpochMillis))
+
+/** Where a connection's metric stream stands, as the source's health reads it. */
+export const awsStreamOf = (connection: V2AwsConnection, nowMs: number): AwsStreamState =>
+	awsStreamState(
+		{
+			verifiedAt: isoMs(connection.verified_at),
+			metricStream: connection.metric_stream,
+			metricStreamChangedAt: isoMs(connection.metric_stream_changed_at),
+			metricsLastReceivedAt: isoMs(connection.metrics_last_received_at),
+			metricsLastError: connection.metrics_last_error,
+		},
+		nowMs,
+	)
+
+/** The one thing a connection needs next, or that it receives metrics; worst first. */
+export type AwsConnectionCondition =
+	| "setup"
+	| "failing"
+	| "not-receiving"
+	| "outdated"
+	| "metrics-off"
+	| "stopped"
+	| "waiting"
+	| "receiving"
+
+/** Worst first: a connection's own condition and the integration's worst follow this order. */
+const AWS_CONDITION_RANK: ReadonlyArray<AwsConnectionCondition> = [
+	"failing",
+	"not-receiving",
+	"stopped",
+	"setup",
+	"outdated",
+	"metrics-off",
+	"waiting",
+	"receiving",
+]
+
+export const awsConditionOf = (connection: V2AwsConnection, nowMs: number): AwsConnectionCondition => {
+	if (connection.verified_at === null) return "setup"
+	if (connection.last_check_error !== null) return "failing"
+	const stream = awsStreamOf(connection, nowMs)
+	if (stream._tag === "refused" || stream._tag === "undelivered") return "not-receiving"
+	if (stream._tag === "silent") return "stopped"
+	if (connection.setup_outdated) return "outdated"
+	switch (stream._tag) {
+		case "off":
+			return "metrics-off"
+		case "waiting":
+			return "waiting"
+		case "delivering":
+			return "receiving"
+	}
+}
+
+export const AWS_CONDITION_LABEL = {
+	setup: "Finish setup",
+	failing: "Needs attention",
+	"not-receiving": "No metrics arriving",
+	outdated: "Update the stack",
+	"metrics-off": "Metrics off",
+	stopped: "Metrics stopped",
+	waiting: "Waiting for metrics",
+	receiving: "Receiving metrics",
+} satisfies Record<AwsConnectionCondition, string>
+
+export interface CardStatus {
+	readonly label: string
+	readonly variant: "ok" | "warn" | "crit" | "outline"
+}
+
+const NOT_CONNECTED: CardStatus = { label: "Not connected", variant: "outline" }
+const NOT_CONFIGURED: CardStatus = { label: "Not configured", variant: "outline" }
+/** The status read failed: a warning, not the neutral look of a quiet connection. */
+const STATUS_UNAVAILABLE: CardStatus = { label: "Couldn't check status", variant: "warn" }
+
+export interface ConnectedOverview {
+	readonly kind: "connected"
+	readonly health: "healthy" | "attention" | "pending"
+	readonly stateLabel: string
+	readonly context: string | null
+	readonly stat: string | null
+	readonly lastSyncLabel: string | null
+	readonly issue: string | null
+}
+export interface AvailableOverview {
+	readonly kind: "available"
+	readonly cta: "Connect" | "Set up"
+}
+export interface UnavailableOverview {
+	readonly kind: "unavailable"
+	/** `failed`: the status read failed. `not-configured`: this deployment has no setup for it. */
+	readonly reason: "failed" | "not-configured"
+}
+export type IntegrationOverview = ConnectedOverview | AvailableOverview | UnavailableOverview | null
+
+const CONNECT: AvailableOverview = { kind: "available", cta: "Connect" }
+const SET_UP: AvailableOverview = { kind: "available", cta: "Set up" }
+const UNAVAILABLE: UnavailableOverview = { kind: "unavailable", reason: "failed" }
+const UNCONFIGURED: UnavailableOverview = { kind: "unavailable", reason: "not-configured" }
+
+export const HEALTH_TONE = {
+	healthy: "ok",
+	attention: "warn",
+	pending: "neutral",
+	unavailable: "warn",
+} as const
+
+const syncedLabel = (ms: number | null, nowMs: number, verb = "synced"): string | null =>
+	ms === null ? null : `${verb} ${formatRelativeTime(ms, nowMs)}`
+
+const maxMs = (values: ReadonlyArray<number | null | undefined>): number | null =>
+	Arr.reduce<(typeof values)[number], number | null>(values, null, (acc, v) =>
+		v !== null && v !== undefined && (acc === null || v > acc) ? v : acc,
+	)
+
+const unavailableStatus = () => STATUS_UNAVAILABLE
+
+const scrapeStatus = (statuses: Statuses, targetType: "prometheus" | "planetscale") =>
+	fold(
+		statuses.scrapeTargets,
+		(data): CardStatus => {
+			const targets = Arr.filter(data, (target) => target.target_type === targetType)
+			if (targets.length === 0) return NOT_CONNECTED
+			const failing = Arr.some(targets, (target) => target.enabled && target.last_scrape_error !== null)
+			const enabled = Arr.filter(targets, (target) => target.enabled).length
+			const noun = targetType === "planetscale" ? "org" : "target"
+			return {
+				label: `${countLabel(targets.length, noun)} · ${enabled} enabled`,
+				variant: failing ? "warn" : "ok",
+			}
+		},
+		unavailableStatus,
+	)
+
+const chatStatus = (statuses: Statuses, id: IntegrationId) =>
+	fold(
+		statuses.chat,
+		(response): CardStatus => {
+			const connector = Arr.findFirst(response.data, (entry) => chatIntegrationId(entry.id) === id)
+			const workspaces = Option.match(connector, {
+				onNone: () => [],
+				onSome: (found) => found.workspaces,
+			})
+			if (workspaces.length === 0)
+				return Option.exists(connector, (found) => found.available === false)
+					? NOT_CONFIGURED
+					: NOT_CONNECTED
+			return {
+				label:
+					workspaces.length === 1
+						? (workspaces[0]?.name ?? "Connected")
+						: `${workspaces.length} workspaces`,
+				variant: "ok",
+			}
+		},
+		unavailableStatus,
+	)
+
+const githubStatus = (statuses: Statuses) =>
+	fold(
+		statuses.github,
+		(status): CardStatus => {
+			if (status.state === "disconnected") return { label: "Deactivated", variant: "warn" }
+			if (status.state === "suspended") return { label: "Suspended", variant: "warn" }
+			if (!status.connected) return NOT_CONNECTED
+			const count = Arr.filter(status.repositories, (repo) => repo.status === "active").length
+			return { label: count > 0 ? countLabel(count, "repo") : "Connected", variant: "ok" }
+		},
+		unavailableStatus,
+	)
+
+const connectedOrNot = (connected: boolean): CardStatus =>
+	connected ? { label: "Connected", variant: "ok" } : NOT_CONNECTED
+
+/** The header badge per integration (`useIntegrationStatuses`); `null` while loading. */
+export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: number): CardStatus | null => {
+	switch (id) {
+		case "gcp":
+			return fold(
+				statuses.gcp,
+				(status): CardStatus =>
+					status.connectors.length === 0
+						? NOT_CONNECTED
+						: { label: countLabel(status.connectors.length, "connection"), variant: "ok" },
+				unavailableStatus,
+			)
+		case "aws":
+			return fold(
+				statuses.aws,
+				(status): CardStatus => {
+					if (status.connections.length === 0) return NOT_CONNECTED
+					const worst = worstAwsCondition(status.connections, nowMs)
+					return worst === "receiving"
+						? { label: countLabel(status.connections.length, "account"), variant: "ok" }
+						: {
+								label: AWS_CONDITION_LABEL[worst],
+								variant: worst === "failing" || worst === "not-receiving" ? "crit" : "warn",
+							}
+				},
+				unavailableStatus,
+			)
+		case "railway":
+			return fold(
+				statuses.railway,
+				(status): CardStatus =>
+					!status.connected
+						? NOT_CONNECTED
+						: status.authFailed
+							? { label: "Token rejected", variant: "crit" }
+							: { label: countLabel(status.environments.length, "environment"), variant: "ok" },
+				unavailableStatus,
+			)
+		case "supabase":
+			return fold(
+				statuses.supabase,
+				(status): CardStatus =>
+					!status.configured
+						? NOT_CONFIGURED
+						: !status.connected
+							? NOT_CONNECTED
+							: status.revoked
+								? { label: "Access revoked", variant: "crit" }
+								: { label: status.organization?.name ?? "Connected", variant: "ok" },
+				unavailableStatus,
+			)
+		case "cloudflare":
+			return fold(statuses.cloudflare, (status) => connectedOrNot(status.connected), unavailableStatus)
+		case "prometheus":
+			return scrapeStatus(statuses, "prometheus")
+		case "planetscale":
+			return fold(
+				statuses.planetscale,
+				(status): CardStatus | null =>
+					status.connected
+						? {
+								label: status.organization ?? "Connected",
+								variant: metricsLastError(status) !== null ? "warn" : "ok",
+							}
+						: scrapeStatus(statuses, "planetscale"),
+				unavailableStatus,
+			)
+		case "warpstream":
+			return { label: "Via Prometheus", variant: "outline" }
+		case "linear":
+			return fold(
+				statuses.linear,
+				(status): CardStatus =>
+					status.revoked
+						? { label: "Revoked", variant: "warn" }
+						: status.connected
+							? {
+									label:
+										status.workspaceName === null || status.workspaceName === ""
+											? "Connected"
+											: status.workspaceName,
+									variant: "ok",
+								}
+							: NOT_CONNECTED,
+				unavailableStatus,
+			)
+		case "github":
+			return githubStatus(statuses)
+		default:
+			return chatStatus(statuses, id)
+	}
+}
+
+// OVERVIEWS
+
+const unavailableOverview = (): IntegrationOverview => UNAVAILABLE
+
+const attentionOr = (issue: string | null) =>
+	({
+		health: issue !== null ? "attention" : "healthy",
+		stateLabel: issue !== null ? "Needs attention" : "Healthy",
+	}) as const
+
+const gcpOverview = (statuses: Statuses, nowMs: number) =>
+	fold(
+		statuses.gcp,
+		(status): IntegrationOverview => {
+			const connectors = status.connectors
+			if (connectors.length === 0) return SET_UP
+			const states = Arr.map(connectors, (connector) => gcpConnectionState(connector, nowMs))
+			const count = (state: (typeof states)[number]) =>
+				Arr.filter(states, (entry) => entry === state).length
+			const worst = gcpWorstState(states)
+			const lastData = maxMs(
+				Arr.map(
+					Arr.flatMap(connectors, (connector) => [
+						connector.logs_enabled ? connector.last_log_received_at : null,
+						connector.metrics_enabled ? connector.last_metrics_received_at : null,
+					]),
+					isoMs,
+				),
+			)
+			return {
+				kind: "connected",
+				health: worst === "attention" || worst === "healthy" ? worst : "pending",
+				stateLabel: GCP_CONNECTION_LABEL[worst],
+				context:
+					connectors.length === 1 && connectors[0] !== undefined
+						? gcpScopeLabel(connectors[0])
+						: countLabel(connectors.length, "connection"),
+				stat: Arr.join(
+					Arr.filter(
+						[
+							Arr.some(connectors, (connector) => connector.logs_enabled) ? "Logs" : null,
+							Arr.some(connectors, (connector) => connector.metrics_enabled)
+								? "Metrics and resources"
+								: null,
+						],
+						(part) => part !== null,
+					),
+					" · ",
+				),
+				lastSyncLabel: worst === "waiting" ? null : syncedLabel(lastData, nowMs, "last data"),
+				issue:
+					worst === "attention"
+						? `${countLabel(count("attention"), "connection")} failing`
+						: worst === "setup-pending" || worst === "changes-pending"
+							? "Finish setup"
+							: null,
+			}
+		},
+		unavailableOverview,
+	)
+
+const worstAwsCondition = (connections: ReadonlyArray<V2AwsConnection>, nowMs: number) => {
+	const conditions = Arr.map(connections, (connection) => awsConditionOf(connection, nowMs))
+	return Option.getOrElse(
+		Arr.findFirst(AWS_CONDITION_RANK, (condition) => conditions.includes(condition)),
+		(): AwsConnectionCondition => "receiving",
+	)
+}
+
+const awsOverview = (statuses: Statuses, nowMs: number) =>
+	fold(
+		statuses.aws,
+		(status): IntegrationOverview => {
+			if (status.connections.length === 0) return CONNECT
+			const conditions = Arr.map(status.connections, (connection) => awsConditionOf(connection, nowMs))
+			const failing = Arr.filter(conditions, (condition) => condition === "failing").length
+			const worst = worstAwsCondition(status.connections, nowMs)
+			const issue =
+				worst === "failing"
+					? `${countLabel(failing, "account")} failing`
+					: worst === "receiving"
+						? null
+						: AWS_CONDITION_LABEL[worst]
+			// A stack not deployed yet, or a first delivery on its way, is setup in progress, not a failure.
+			const health: Pick<IntegrationOverview & { kind: "connected" }, "health" | "stateLabel"> =
+				worst === "setup" || worst === "waiting"
+					? { health: "pending", stateLabel: AWS_CONDITION_LABEL[worst] }
+					: attentionOr(issue)
+			const receiving = Arr.filter(conditions, (condition) => condition === "receiving").length
+			const accounts = countLabel(status.connections.length, "account")
+			return {
+				kind: "connected",
+				...health,
+				context: status.connections.length === 1 ? (status.connections[0]?.account_id ?? null) : null,
+				stat: conditions.includes("setup") ? accounts : `${receiving} of ${accounts} sending metrics`,
+				lastSyncLabel: syncedLabel(
+					maxMs(
+						Arr.map(status.connections, (connection) =>
+							isoMs(connection.metrics_last_received_at),
+						),
+					),
+					nowMs,
+					"last data",
+				),
+				issue,
+			}
+		},
+		unavailableOverview,
+	)
+
+const railwayOverview = (statuses: Statuses, nowMs: number) =>
+	fold(
+		statuses.railway,
+		(status): IntegrationOverview => {
+			if (!status.connected) return CONNECT
+			const failing = Arr.filter(
+				status.environments,
+				(environment) => environment.lastError != null,
+			).length
+			const issue = status.authFailed
+				? "Token rejected"
+				: failing > 0
+					? `${countLabel(failing, "environment")} failing`
+					: null
+			return {
+				kind: "connected",
+				...attentionOr(issue),
+				context: status.workspaceNames,
+				stat: `${countLabel(status.environments.length, "environment")} polled`,
+				lastSyncLabel: syncedLabel(status.lastSyncedAt ?? null, nowMs),
+				issue,
+			}
+		},
+		unavailableOverview,
+	)
+
+const supabaseOverview = (statuses: Statuses, nowMs: number) =>
+	fold(
+		statuses.supabase,
+		(status): IntegrationOverview => {
+			if (!status.configured) return UNCONFIGURED
+			if (!status.connected) return CONNECT
+			const issue = status.revoked
+				? "Reconnect to resume"
+				: status.lastDiscoveryError !== null
+					? "Project discovery failing"
+					: null
+			const collecting = Arr.filter(status.projects, (project) => project.metricsEnabled).length
+			return {
+				kind: "connected",
+				...attentionOr(issue),
+				context: status.organization?.name ?? null,
+				stat: `${countLabel(status.projects.length, "project")} · ${collecting} collecting metrics`,
+				lastSyncLabel: syncedLabel(status.lastDiscoveryAt, nowMs),
+				issue,
+			}
+		},
+		unavailableOverview,
+	)
+
+const cloudflareOverview = (statuses: Statuses, nowMs: number) =>
+	fold(
+		statuses.cloudflare,
+		(status): IntegrationOverview => {
+			if (!status.connected) return CONNECT
+			const zones = status.zones
+			const enabledZones = Arr.filter(zones, (zone) => zone.enabled).length
+			const erroringZones = Arr.filter(zones, (zone) => zone.enabled && zone.lastError != null).length
+			const workersFailing = status.workers?.enabled === true && status.workers.lastError != null
+			const issue = !status.analyticsCapable
+				? "Update access"
+				: erroringZones > 0
+					? `${countLabel(erroringZones, "zone")} erroring`
+					: workersFailing
+						? "Workers sync failing"
+						: null
+			const statParts = [
+				...(zones.length > 0
+					? [`${enabledZones} of ${countLabel(zones.length, "zone")} streaming`]
+					: []),
+				...(status.workers?.enabled === true ? ["Workers"] : []),
+			]
+			return {
+				kind: "connected",
+				...attentionOr(issue),
+				context: status.accountName,
+				stat: statParts.length > 0 ? Arr.join(statParts, " · ") : null,
+				lastSyncLabel: syncedLabel(
+					maxMs([...Arr.map(zones, (zone) => zone.lastSyncedAt), status.workers?.lastSyncedAt]),
+					nowMs,
+				),
+				issue,
+			}
+		},
+		unavailableOverview,
+	)
+
+const scrapeOverview = (statuses: Statuses, nowMs: number, targetType: "prometheus" | "planetscale") =>
+	fold(
+		statuses.scrapeTargets,
+		(data): IntegrationOverview => {
+			const targets = Arr.filter(data, (target) => target.target_type === targetType)
+			if (targets.length === 0) return targetType === "prometheus" ? SET_UP : CONNECT
+			const enabled = Arr.filter(targets, (target) => target.enabled).length
+			const failing = Arr.filter(
+				targets,
+				(target) => target.enabled && target.last_scrape_error !== null,
+			).length
+			const noun = targetType === "planetscale" ? "org" : "target"
+			return {
+				kind: "connected",
+				health: failing > 0 ? "attention" : "healthy",
+				stateLabel: failing > 0 ? "Needs attention" : "Healthy",
+				context: countLabel(targets.length, `scrape ${noun}`),
+				stat: `${enabled} of ${targets.length} enabled`,
+				lastSyncLabel: syncedLabel(
+					maxMs(Arr.map(targets, (t) => isoMs(t.last_scrape_at))),
+					nowMs,
+					"scraped",
+				),
+				issue: failing > 0 ? `${countLabel(failing, noun)} failing` : null,
+			}
+		},
+		unavailableOverview,
+	)
+
+const planetscaleOverview = (statuses: Statuses, nowMs: number) => {
+	const dbCount = fold(
+		statuses.planetscaleDatabases,
+		(response): number | null => response.databases.length,
+		() => null,
+	)
+	return fold(
+		statuses.planetscale,
+		(status): IntegrationOverview => {
+			if (!status.connected) return scrapeOverview(statuses, nowMs, "planetscale")
+			const issue = status.pending_org_selection
+				? "Finish org selection"
+				: metricsLastError(status) !== null
+					? metricsAuthOf(status) === "api"
+						? "Metrics polling failing"
+						: "Scrape failing"
+					: status.last_inventory_error != null
+						? "Inventory failing"
+						: null
+			return {
+				kind: "connected",
+				...attentionOr(issue),
+				context: status.organization,
+				stat:
+					dbCount !== null && dbCount > 0
+						? `${countLabel(dbCount, "database")} tracked`
+						: metricsAuthOf(status) === "api" || status.scrape_target?.enabled === true
+							? "Branch metrics on"
+							: null,
+				lastSyncLabel: syncedLabel(
+					maxMs(Arr.map([metricsLastCollectedAt(status), status.last_inventory_at], isoMs)),
+					nowMs,
+				),
+				issue,
+			}
+		},
+		unavailableOverview,
+	)
+}
+
+const linearOverview = (statuses: Statuses) =>
+	fold(
+		statuses.linear,
+		(status): IntegrationOverview =>
+			status.revoked
+				? {
+						kind: "connected",
+						health: "attention",
+						stateLabel: "Revoked",
+						context: status.workspaceName,
+						stat: null,
+						lastSyncLabel: null,
+						issue: "Reconnect Linear",
+					}
+				: status.connected
+					? {
+							kind: "connected",
+							health: "healthy",
+							stateLabel: "Healthy",
+							context: status.workspaceName,
+							stat: "Incident issues ready",
+							lastSyncLabel: null,
+							issue: null,
+						}
+					: CONNECT,
+		unavailableOverview,
+	)
+
+const githubOverview = (statuses: Statuses, nowMs: number) =>
+	fold(
+		statuses.github,
+		(status): IntegrationOverview => {
+			const context =
+				status.accountLogin !== null ? `@${status.accountLogin} · GitHub App` : "GitHub App"
+			const halted = (stateLabel: string, issue: string): IntegrationOverview => ({
+				kind: "connected",
+				health: "attention",
+				stateLabel,
+				context,
+				stat: null,
+				lastSyncLabel: null,
+				issue,
+			})
+			if (status.state === "disconnected") return halted("Deactivated", "Reinstall the app")
+			if (status.state === "suspended") return halted("Suspended", "Suspended on GitHub")
+			if (!status.connected) return CONNECT
+			const active = Arr.filter(status.repositories, (repo) => repo.status === "active")
+			const removed = status.repositories.length - active.length
+			const failing = Arr.filter(active, (repo) => repo.lastSyncError != null).length
+			const issue =
+				failing > 0
+					? `${countLabel(failing, "repo")} failing`
+					: removed > 0
+						? `${countLabel(removed, "repo")} removed`
+						: null
+			return {
+				kind: "connected",
+				...attentionOr(issue),
+				context,
+				stat: active.length > 0 ? `${countLabel(active.length, "repo")} synced` : null,
+				lastSyncLabel: syncedLabel(maxMs(Arr.map(active, (repo) => repo.lastSyncedAt)), nowMs),
+				issue,
+			}
+		},
+		unavailableOverview,
+	)
+
+const chatOverview = (statuses: Statuses, id: IntegrationId) =>
+	fold(
+		statuses.chat,
+		(response): IntegrationOverview => {
+			const workspaces = Arr.findFirst(
+				response.data,
+				(entry) => chatIntegrationId(entry.id) === id,
+			).pipe(
+				Option.flatMapNullishOr((found) => found.workspaces),
+				Option.getOrElse(() => []),
+			)
+			if (workspaces.length === 0) return CONNECT
+			return {
+				kind: "connected",
+				health: "healthy",
+				stateLabel: "Healthy",
+				context:
+					workspaces.length === 1
+						? (workspaces[0]?.name ?? null)
+						: countLabel(workspaces.length, "workspace"),
+				stat: "Alerts & agent ready",
+				lastSyncLabel: null,
+				issue: null,
+			}
+		},
+		unavailableOverview,
+	)
+
+/** One integration's overview (`useIntegrationOverviews()[id]`); `null` while its status loads. */
+export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId): IntegrationOverview => {
+	switch (id) {
+		case "gcp":
+			return gcpOverview(statuses, nowMs)
+		case "aws":
+			return awsOverview(statuses, nowMs)
+		case "railway":
+			return railwayOverview(statuses, nowMs)
+		case "supabase":
+			return supabaseOverview(statuses, nowMs)
+		case "cloudflare":
+			return cloudflareOverview(statuses, nowMs)
+		case "prometheus":
+			return scrapeOverview(statuses, nowMs, "prometheus")
+		case "planetscale":
+			return planetscaleOverview(statuses, nowMs)
+		case "warpstream":
+			return SET_UP
+		case "linear":
+			return linearOverview(statuses)
+		case "github":
+			return githubOverview(statuses, nowMs)
+		default:
+			return chatOverview(statuses, id)
+	}
+}
+
+/** `IntegrationsSummary`: quiet until every overview resolved, and while nothing is connected. */
+export const summaryOf = (
+	statuses: Statuses,
+	nowMs: number,
+): { readonly connected: number; readonly attention: number } | null => {
+	const values = Arr.map(HUB_CATALOG, (entry) => overviewOf(statuses, nowMs, entry.id))
+	if (Arr.some(values, (value) => value === null)) return null
+	const connected = Arr.filter(values, (value): value is ConnectedOverview => value?.kind === "connected")
+	if (connected.length === 0) return null
+	return {
+		connected: connected.length,
+		attention: Arr.filter(connected, (value) => value.health === "attention").length,
+	}
+}
+
+/** `useVisibleSettingsSections()` on `/integrations`: the session's admin flag and the BYOC add-on. */
+export const settingsNavVisibility = (
+	model: Pick<Model, "grants" | "customer">,
+	isClerk: boolean,
+): Visibility => {
+	if (!isClerk) return { isClerk, grants: Policy.allPermissions, canAccessDataPlatform: true }
+	const hasByoc = AsyncData.getOrElse(
+		AsyncData.map(model.customer.data, hasBringYourOwnCloudAddOn),
+		() => false,
+	)
+	return {
+		isClerk,
+		grants: model.grants,
+		canAccessDataPlatform: Policy.has(model.grants, "warehouse:manage") && hasByoc,
+	}
+}

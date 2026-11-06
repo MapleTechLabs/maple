@@ -1,4 +1,5 @@
 import type { SpanNode } from "@maple/query-engine/observability"
+import { Array as Arr } from "effect"
 
 /**
  * A trace can contain thousands of spans (the underlying SQL fetches up to
@@ -40,14 +41,14 @@ export interface OverviewSelection {
 
 const isError = (n: SpanNode): boolean => n.statusCode === "Error"
 const isEntry = (n: SpanNode): boolean => ENTRY_KINDS.has(n.spanKind)
-const key = (n: SpanNode): string => n.spanId as string
+const key = (n: SpanNode): string => n.spanId
 
 /** Walk every node once, invoking `visit(node, parent)`. */
 function forEachNode(
 	roots: ReadonlyArray<SpanNode>,
 	visit: (node: SpanNode, parent: SpanNode | null) => void,
 ): void {
-	const stack: Array<{ node: SpanNode; parent: SpanNode | null }> = roots.map((node) => ({
+	const stack: Array<{ node: SpanNode; parent: SpanNode | null }> = Arr.map(roots, (node) => ({
 		node,
 		parent: null,
 	}))
@@ -146,7 +147,10 @@ export function selectOverviewSpans(
 		return { ...node, children: keptChildren }
 	}
 
-	const prunedRoots = roots.filter((r) => selected.has(key(r))).map(rebuild)
+	const prunedRoots = Arr.map(
+		Arr.filter(roots, (r) => selected.has(key(r))),
+		rebuild,
+	)
 
 	return {
 		roots: prunedRoots,

@@ -1,0 +1,366 @@
+import { HttpEffect, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { ApiKeyLookupPersistenceError, CurrentTenant, RoleName } from "@maple/domain/http"
+import {
+	AuthorizationV2,
+	isScopeExemptRoute,
+	requiredScopeForRoute,
+	scopeAllows,
+	V2InsufficientScope,
+	V2InvalidCredentials,
+	V2InvalidDpopProof,
+	V2NoActiveOrganization,
+	V2OrganizationAccessDenied,
+	V2RateLimited,
+} from "@maple/domain/http/v2"
+import { Effect, Layer, Option, Schema, String as Str } from "effect"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { ORG_SELECTION_HEADER } from "@maple/auth"
+import { makeResolveTenant } from "./AuthService"
+import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
+import { annotateAuthSpan } from "@maple/backend/services/auth/auth-span"
+import { DeviceCredentialsService } from "@maple/backend/services/auth/DeviceCredentialsService"
+import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { recordApiDenial } from "@maple/backend/services/auth/audit-denial"
+import { withAuditedRead } from "@maple/backend/services/audit/audit-access"
+import { Env } from "@maple/backend/platform/Env"
+import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
+import {
+	API_V2_RATE_LIMIT_PERIOD_SECONDS,
+	API_V2_RATE_LIMIT_REQUESTS,
+	ApiV2RateLimiter,
+	apiV2RateLimitKey,
+	deviceRateLimitKey,
+} from "./ApiV2RateLimiter"
+
+const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
+const apiKeyDefaultRoles = [decodeRoleNameSync("root")] as const
+
+const getBearerToken = (headers: Record<string, string | undefined>): string | undefined => {
+	const header = headers["authorization"] ?? headers["Authorization"]
+	if (!header) return undefined
+	const [scheme, token] = Str.split(" ")(header)
+	if (!scheme || !token || Str.toLowerCase(scheme) !== "bearer") return undefined
+	return token
+}
+
+/** The access token of an RFC 9449 `Authorization: DPoP <token>` request. */
+const getDpopToken = (headers: Record<string, string | undefined>): string | undefined => {
+	const [scheme, token] = Str.split(" ")(headers["authorization"] ?? "")
+	return Str.toLowerCase(scheme) === "dpop" && token !== undefined && token.length > 0 ? token : undefined
+}
+
+/** RFC 9449 section 7.1: a DPoP-scheme 401 names the scheme and what went wrong. */
+const dpopChallenge = (error: "invalid_token" | "invalid_dpop_proof") =>
+	HttpEffect.appendPreResponseHandler((_request, response) =>
+		Effect.succeed(
+			HttpServerResponse.setHeader(response, "WWW-Authenticate", `DPoP algs="ES256", error="${error}"`),
+		),
+	)
+
+/** `HttpServerRequest` lowercases every incoming header, and the constant is
+ * already lowercase — so this is a plain lookup, not a case-insensitive one. */
+const getOrgSelectionHeader = (headers: Record<string, string | undefined>): string | undefined =>
+	headers[ORG_SELECTION_HEADER]
+
+/**
+ * A protected v2 route the scope derivation cannot classify. Every group behind
+ * `AuthorizationV2` is prefixed `/v2/<family>`, so this is unreachable by
+ * construction — it is a defect (500), never a silently unscoped request.
+ */
+class V2UnclassifiableRoute extends Schema.TaggedError<V2UnclassifiableRoute>()(
+	"@maple/backend/auth/V2UnclassifiableRoute",
+	{
+		message: Schema.String,
+		method: Schema.String,
+		routePath: Schema.String,
+	},
+) {}
+
+/**
+ * v2 flavor of `ApiAuthorizationLive`: same credential resolution (API key
+ * first, then Clerk/self-hosted session token), but errors use the v2
+ * envelope and restricted API keys are scope-checked mechanically from the
+ * matched route template (family = first path segment under /v2, GET/HEAD →
+ * read else write).
+ * Session tokens and legacy null-scope keys bypass scope checks.
+ */
+export const ApiAuthorizationV2Live = Layer.effect(
+	AuthorizationV2,
+	Effect.gen(function* () {
+		const env = yield* Env
+		const apiKeys = yield* ApiKeysService
+		const rateLimiter = yield* ApiV2RateLimiter
+		const audit = yield* AuditLogService
+		// The one resolver wired for organization selection: `x-maple-org-id` is
+		// a v2-client affordance (the iOS app publishing a widget snapshot per
+		// organization), and every other resolver rejects the header instead.
+		//
+		// Optional so a route test can build this layer without a membership
+		// directory. Absent, the header is *rejected* rather than ignored — a
+		// runtime that forgot to wire it serves 403s, never another org's data.
+		const membership = yield* Effect.serviceOption(OrgMembershipService)
+		// Optional for the same reason; absent, every organization is served here.
+		const regions = yield* Effect.serviceOption(OrganizationRegionService)
+		// Optional for route tests; absent, `Authorization: DPoP` is always a 401.
+		const devices = yield* Effect.serviceOption(DeviceCredentialsService)
+		const resolveTenant = makeResolveTenant(
+			env,
+			undefined,
+			undefined,
+			Option.match(membership, { onNone: () => undefined, onSome: (service) => service.verify }),
+		)
+
+		return AuthorizationV2.of({
+			bearer: (httpEffect, options) =>
+				Effect.gen(function* () {
+					const request = yield* HttpServerRequest.HttpServerRequest
+
+					const dpopToken = getDpopToken(request.headers)
+					if (dpopToken !== undefined) {
+						const resolved = yield* Option.match(devices, {
+							onNone: () =>
+								dpopChallenge("invalid_token").pipe(
+									Effect.andThen(
+										Effect.fail(
+											V2InvalidCredentials.make("Device tokens are not accepted here."),
+										),
+									),
+								),
+							onSome: (service) =>
+								service
+									.authenticate(dpopToken, {
+										proof: request.headers["dpop"],
+										method: request.method,
+										path: request.url,
+									})
+									.pipe(
+										Effect.catchTags({
+											"@maple/backend/auth/device/DpopProofRejected": (error) =>
+												dpopChallenge("invalid_dpop_proof").pipe(
+													Effect.andThen(
+														Effect.fail(V2InvalidDpopProof.make(error.message)),
+													),
+												),
+											"@maple/backend/auth/device/DeviceTokenRejected": (error) =>
+												dpopChallenge("invalid_token").pipe(
+													Effect.andThen(
+														Effect.fail(V2InvalidCredentials.make(error.message)),
+													),
+												),
+											"@maple/http/errors/DeviceCredentialPersistenceError": (error) =>
+												Effect.fail(
+													new ApiKeyLookupPersistenceError({
+														message: error.message,
+														cause: error,
+													}),
+												),
+										}),
+									),
+						})
+						yield* annotateAuthSpan("dpop", { orgId: resolved.orgId, userId: resolved.userId })
+						yield* Effect.annotateCurrentSpan("maple.device.credential_id", resolved.credentialId)
+						const rateLimitOutcome = yield* rateLimiter.check(
+							deviceRateLimitKey(resolved.credentialId),
+						)
+						yield* Effect.annotateCurrentSpan("maple.rate_limit.outcome", rateLimitOutcome)
+						if (rateLimitOutcome === "limited") {
+							return yield* V2RateLimited.make(undefined, {
+								retryAfterSeconds: API_V2_RATE_LIMIT_PERIOD_SECONDS,
+							})
+						}
+						// A device credential's scopes are its whole authority: no exemptions.
+						const { route } = yield* HttpRouter.RouteContext
+						const required = requiredScopeForRoute(request.method, route.path)
+						if (required === null || !scopeAllows(resolved.scopes, required)) {
+							return yield* V2InsufficientScope.make(
+								"This device credential cannot call this endpoint.",
+							)
+						}
+						const requestedOrg = getOrgSelectionHeader(request.headers)
+						if (requestedOrg !== undefined && requestedOrg !== resolved.orgId) {
+							return yield* V2OrganizationAccessDenied.make(
+								"A device credential cannot select a different organization.",
+							)
+						}
+						const tenant = new CurrentTenant.TenantSchema({
+							orgId: resolved.orgId,
+							userId: resolved.userId,
+							roles: resolved.roles,
+							authMode: "self_hosted",
+							scopes: resolved.scopes,
+						})
+						const label = "Device credential"
+						return yield* httpEffect.pipe(
+							Effect.provideService(CurrentTenant.Context, tenant),
+							Effect.provideService(CurrentAuditActor, { type: "user", label, source: "api" }),
+							withAuditedRead(audit, request, options, {
+								orgId: resolved.orgId,
+								actor: { type: "user", userId: resolved.userId, label },
+								source: "api",
+							}),
+						)
+					}
+
+					const token = getBearerToken(request.headers)
+					const apiKeyResolved = yield* apiKeys.resolveByBearer(token)
+
+					if (Option.isSome(apiKeyResolved)) {
+						const resolved = apiKeyResolved.value
+						// A refused attempt is the highest-signal audit row there is —
+						// denials carry the same actor attribution as successes, tagged
+						// `outcome: "denied"`, coalesced so a looping client cannot
+						// amplify into unbounded rows.
+						const recordDenied = (denialReason: string) =>
+							recordApiDenial(audit, request, {
+								orgId: resolved.orgId,
+								userId: resolved.userId,
+								apiKeyId: resolved.keyId,
+								apiKeyName: resolved.name,
+								denialReason,
+							})
+						// Deny-list, not an allow-list: `mcp` keys are minted through a
+						// path that does not gate on organization admin, so they must
+						// never reach the public API. `device` keys are admitted
+						// because every ceiling they have — scopes, TTL, and the
+						// pinned roles below — is chosen by the server that minted
+						// them, not by whatever is holding them.
+						if (resolved.kind === "mcp") {
+							const message = "This API key is only valid for the MCP server."
+							yield* recordDenied(message)
+							return yield* V2InvalidCredentials.make(message)
+						}
+
+						// A device credential's authority is entirely its pinned
+						// roles, and `apiKeyDefaultRoles` below is `root`. A device
+						// row that reaches here without them is not a key with a
+						// permissive default — it is a key whose defining property
+						// is missing, so it is rejected rather than promoted.
+						if (resolved.kind === "device" && resolved.roles === null) {
+							const message = "This device credential is not valid."
+							yield* recordDenied(message)
+							return yield* V2InvalidCredentials.make(message)
+						}
+
+						// Attribute before the scope check so scope-rejected
+						// requests are still counted as API-key traffic.
+						yield* annotateAuthSpan("api_key", {
+							orgId: resolved.orgId,
+							userId: resolved.userId,
+							keyId: resolved.keyId,
+						})
+
+						const rateLimitOutcome = yield* rateLimiter.check(apiV2RateLimitKey(resolved.keyId))
+						yield* Effect.annotateCurrentSpan({
+							"maple.rate_limit.outcome": rateLimitOutcome,
+							"maple.rate_limit.limit": API_V2_RATE_LIMIT_REQUESTS,
+							"maple.rate_limit.period_seconds": API_V2_RATE_LIMIT_PERIOD_SECONDS,
+						})
+
+						if (rateLimitOutcome === "limited") {
+							return yield* V2RateLimited.make(undefined, {
+								retryAfterSeconds: API_V2_RATE_LIMIT_PERIOD_SECONDS,
+							})
+						}
+
+						// The route *template* the router matched, not `request.url`: the
+						// router lowercases, percent-decodes, collapses `//` and strips
+						// `;`-suffixes before matching, so a raw URL that reaches this
+						// handler need not look like the path the scope check expects.
+						const { route } = yield* HttpRouter.RouteContext
+						const required = requiredScopeForRoute(request.method, route.path)
+						if (required === null) {
+							// Fail closed. Every scope-protected v2 route matches the family
+							// pattern, so reaching here means a route was registered outside the
+							// shape the scope check understands, and answering the request would
+							// mean skipping the check entirely.
+							// oxlint-disable-next-line maple/no-effect-die -- fail closed on a route the scope check cannot classify
+							return yield* Effect.die(
+								new V2UnclassifiableRoute({
+									message: "Cannot derive a scope family for a scope-protected v2 route.",
+									method: request.method,
+									routePath: route.path,
+								}),
+							)
+						}
+						if (
+							!isScopeExemptRoute(request.method, route.path, resolved.kind) &&
+							!scopeAllows(resolved.scopes, required)
+						) {
+							const message = `This API key does not have the "${required.family}:${required.access}" scope required for this request.`
+							yield* recordDenied(message)
+							return yield* V2InsufficientScope.make(message)
+						}
+
+						// An API key is already organization-bound, so a selection could
+						// only ever widen it. This path returns before `resolveTenant`
+						// runs, so the guard inside the resolver never sees it — the
+						// check has to be here too.
+						const requestedOrg = getOrgSelectionHeader(request.headers)
+						if (requestedOrg !== undefined && requestedOrg !== resolved.orgId) {
+							const message = "An API key cannot select a different organization."
+							yield* recordDenied(message)
+							return yield* V2OrganizationAccessDenied.make(message)
+						}
+
+						const tenant = new CurrentTenant.TenantSchema({
+							orgId: resolved.orgId,
+							userId: resolved.userId,
+							roles: resolved.roles ?? apiKeyDefaultRoles,
+							authMode: "self_hosted",
+							...(resolved.scopes !== null ? { scopes: resolved.scopes } : undefined),
+						})
+						return yield* httpEffect.pipe(
+							Effect.provideService(CurrentTenant.Context, tenant),
+							Effect.provideService(CurrentAuditActor, {
+								type: "api_key",
+								apiKeyId: resolved.keyId,
+								label: resolved.name,
+								source: "api",
+							}),
+							// Telemetry and replay reads are recorded (see `AuditedRead`).
+							withAuditedRead(audit, request, options, {
+								orgId: resolved.orgId,
+								actor: {
+									type: "api_key",
+									userId: resolved.userId,
+									apiKeyId: resolved.keyId,
+									label: resolved.name,
+								},
+								source: "api",
+							}),
+						)
+					}
+
+					const tenant = yield* resolveTenant(request.headers).pipe(
+						Effect.catchTags({
+							"@maple/http/errors/OrganizationAccessDeniedError": (error) =>
+								Effect.fail(V2OrganizationAccessDenied.make(error.message)),
+							// Every other 401 stays redacted; only this case gets a public tag.
+							"@maple/http/errors/UnauthorizedError": (error) =>
+								Effect.fail(
+									error.reason === "no_active_organization"
+										? V2NoActiveOrganization.make()
+										: error,
+								),
+						}),
+					)
+					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
+					if (Option.isSome(regions)) {
+						yield* regions.value
+							.ensureServedHere(tenant.orgId)
+							.pipe(Effect.mapError((error) => V2OrganizationAccessDenied.make(error.message)))
+					}
+					return yield* httpEffect.pipe(
+						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),
+						Effect.provideService(CurrentAuditActor, { type: "user", source: "dashboard" }),
+						withAuditedRead(audit, request, options, {
+							orgId: tenant.orgId,
+							actor: { type: "user", userId: tenant.userId },
+							source: "dashboard",
+						}),
+					)
+				}),
+		})
+	}),
+)

@@ -1,0 +1,397 @@
+import type { DependencyLockfileStatus, DependencyScanLockfile } from "@maple/domain/dependency-scan"
+import type {
+	DependencyFindingView,
+	DependencyScanRepository,
+	DependencyScanSummary,
+} from "@maple/domain/http"
+import { countLabel } from "@maple/ui/lib/format"
+import { cn } from "@maple/ui/lib/utils"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { listFooter } from "@maple/views/ui/list-footer"
+import { panel } from "@maple/views/ui/panel"
+import { statusDot } from "@maple/views/ui/status-dot"
+import {
+	ROW_LINK_LIFT,
+	rowLink,
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+} from "@maple/views/ui/table"
+import { relativeTime } from "../../kit/relative-time"
+import { WIDE_COLUMN } from "../kit/layout"
+import { repositoryName } from "../kit/parts"
+import type { AdvisorySeverity } from "@maple/domain/package-advisories"
+import {
+	dependenciesHref,
+	type Digest,
+	isScanPending,
+	openFindingsOf,
+	openSeverityCounts,
+	planSummaryOf,
+	runningServicesOf,
+	SEVERITY_LABEL,
+	shortSha,
+	upgradePlanOf,
+} from "./derive"
+import { SEVERITY_FILL } from "../../errors/kit/severity"
+import { Message, type Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, hstackClass, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
+
+// The Repositories tab: each connected repository as a row, riskiest first: its latest scan, open
+// findings by severity, the upgrades that clear them and what production runs. A row scopes the page.
+
+type H = HtmlBuilder<Message>
+type Clock = Readonly<{ nowMs: number; timeZone: string }>
+
+/** Said when the scanner left no message of its own. */
+const LOCKFILE_FALLBACK = {
+	parsed: "",
+	unsupported: "This lockfile format is not supported yet.",
+	too_large: "Too large to scan.",
+	failed: "Could not be read.",
+	skipped: "Past the lockfiles a scan reads.",
+} satisfies Record<DependencyLockfileStatus, string>
+
+const LOCKFILE_STATUS_LABEL = {
+	parsed: "Parsed",
+	unsupported: "Unsupported",
+	too_large: "Too large",
+	failed: "Failed",
+	skipped: "Skipped",
+} satisfies Record<DependencyLockfileStatus, string>
+
+export const lockfileIssue = (h: H, lockfile: DependencyScanLockfile): Html =>
+	h.li(
+		[h.Key(lockfile.path), h.Class("flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs")],
+		[
+			typography(h, { tone: "foreground", mono: true }, [lockfile.path]),
+			badge(h, { variant: lockfile.status === "failed" ? "crit" : "muted" }, [
+				LOCKFILE_STATUS_LABEL[lockfile.status],
+			]),
+			h.span(
+				[h.Class("min-w-0 text-muted-foreground wrap-anywhere")],
+				[lockfile.message ?? LOCKFILE_FALLBACK[lockfile.status]],
+			),
+		],
+	)
+
+/** What the scan's time stands for: a failed scan read nothing, so it is not "Scanned". */
+const SCAN_SUMMARY_LABEL = {
+	running: "Scan started",
+	completed: "Scanned",
+	failed: "Last attempt",
+} satisfies Record<DependencyScanSummary["status"], string>
+
+const dot = (h: H): Html => h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"])
+
+export const scanSummary = (h: H, scan: DependencyScanSummary, clock: Clock): Html =>
+	h.span(
+		[
+			h.Class(
+				cn(
+					"flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground",
+					ROW_LINK_LIFT,
+				),
+			),
+		],
+		[
+			SCAN_SUMMARY_LABEL[scan.status],
+			relativeTime(h, {
+				value: scan.finishedAt ?? scan.startedAt,
+				nowMs: clock.nowMs,
+				timeZone: clock.timeZone,
+				variant: "orDate",
+				tooltip: "title",
+			}),
+			dot(h),
+			h.span([h.Class("font-mono"), h.Title(scan.commitSha)], [shortSha(scan.commitSha)]),
+			dot(h),
+			countLabel(scan.lockfiles.length, "lockfile"),
+			dot(h),
+			countLabel(scan.packageCount, "package"),
+		],
+	)
+
+export const scanButton = (h: H, model: Model, repository: DependencyScanRepository): Html => {
+	const isRequesting = model.requestingScans.includes(repository.id)
+	const isQueued = !isRequesting && isScanPending(model, repository.id)
+	const isRunning = repository.latestScan?.status === "running"
+	return button(
+		h,
+		{
+			variant: "outline",
+			size: "sm",
+			isLoading: isRequesting,
+			isDisabled: isQueued || isRunning,
+			className: ROW_LINK_LIFT,
+			attributes: [h.OnClick(Message.ClickedScanNow({ repositoryId: repository.id }))],
+		},
+		[isQueued ? "Scan queued" : isRunning ? "Scanning" : "Scan now"],
+	)
+}
+
+export const scanState = (h: H, scan: DependencyScanSummary | null): ReadonlyArray<Html> =>
+	scan === null
+		? [badge(h, { variant: "muted" }, ["Not scanned yet"])]
+		: scan.status === "failed"
+			? [badge(h, { variant: "crit" }, ["Scan failed"])]
+			: []
+
+const muted = (h: H, text: string): Html => typography(h, { size: "xs", tone: "muted" }, [text])
+
+/** An advisory's severity as a dot; an unrated one is grey, and null (nothing open) a hollow ring. */
+export const advisoryDot = (h: H, severity: AdvisorySeverity | null, className?: string): Html =>
+	statusDot(h, {
+		tone: "custom",
+		size: "lg",
+		className: cn(
+			severity === null
+				? "border border-foreground-subtle"
+				: severity === "unknown"
+					? "bg-muted-foreground"
+					: SEVERITY_FILL[severity],
+			className,
+		),
+	})
+
+const RANKED = ["critical", "high", "medium", "low"] as const
+
+/** Open findings by severity as dots and counts, the rows and the pane header read the same way. */
+export const severityTally = (h: H, findings: ReadonlyArray<DependencyFindingView>): Html => {
+	const counts = openSeverityCounts(findings)
+	return h.span(
+		// Two by two on phones, where the row has room for one narrow column beside the name.
+		[
+			h.Class(
+				"grid grid-cols-2 gap-x-2.5 gap-y-1 font-mono text-xs tabular-nums sm:flex sm:items-center",
+			),
+		],
+		[
+			...Arr.map(RANKED, (severity) =>
+				h.span(
+					[
+						h.Key(severity),
+						h.Class(
+							cn(
+								hstackClass({ gap: "1.5", inline: true }),
+								counts[severity] === 0 && "text-foreground-faint",
+								ROW_LINK_LIFT,
+							),
+						),
+						h.Title(`${counts[severity]} ${Str.toLowerCase(SEVERITY_LABEL[severity])}`),
+					],
+					[advisoryDot(h, severity), String(counts[severity])],
+				),
+			),
+			...(counts.unknown === 0
+				? []
+				: [
+						h.span(
+							[
+								h.Key("unrated"),
+								h.Class("col-span-2 whitespace-nowrap font-sans text-muted-foreground"),
+							],
+							[`+${counts.unknown} unrated`],
+						),
+					]),
+		],
+	)
+}
+
+/** How many bumps clear the open findings, and how many have no fix to bump to. */
+const planCell = (h: H, findings: ReadonlyArray<DependencyFindingView>): Html => {
+	const plan = planSummaryOf(upgradePlanOf(findings))
+	if (plan.open === 0) return muted(h, "Nothing to fix")
+	return h.span(
+		[h.Class("flex flex-col")],
+		[
+			h.span(
+				[h.Class("whitespace-nowrap text-sm")],
+				plan.upgrades === 0
+					? ["No fix yet"]
+					: [
+							`${countLabel(plan.upgrades, "upgrade")} ${plan.upgrades === 1 ? "clears" : "clear"} ${plan.fixable}`,
+						],
+			),
+			...(plan.unfixed === 0 || plan.upgrades === 0
+				? []
+				: [muted(h, `${plan.unfixed} with no fix yet`)]),
+		],
+	)
+}
+
+const productionCell = (h: H, repository: DependencyScanRepository): Html => {
+	const services = runningServicesOf(repository)
+	const [first] = services
+	return first === undefined
+		? muted(h, "Not seen running")
+		: h.span(
+				[
+					h.Class(cn("flex min-w-0 max-w-40 flex-col", ROW_LINK_LIFT)),
+					h.Title(Arr.join(services, ", ")),
+				],
+				[
+					typography(h, { size: "sm", truncate: true }, [first]),
+					...(services.length > 1
+						? [muted(h, `+${countLabel(services.length - 1, "service")}`)]
+						: []),
+				],
+			)
+}
+
+const repositoryRow = (
+	h: H,
+	model: Model,
+	repository: DependencyScanRepository,
+	findings: ReadonlyArray<DependencyFindingView>,
+	clock: Clock,
+): Html => {
+	const scan = repository.latestScan
+	const issues = Arr.filter(scan?.lockfiles ?? [], (lockfile) => lockfile.status !== "parsed")
+	const open = openFindingsOf(findings, repository.id)
+	// Findings from an earlier scan still count; with none, say why the cells are empty.
+	const emptyNote =
+		open.length > 0 || scan?.status === "completed"
+			? null
+			: scan === null
+				? "No scan yet"
+				: scan.status === "running"
+					? "Scanning"
+					: "No completed scan"
+	return tableRow(
+		h,
+		[
+			tableCell(
+				h,
+				[
+					h.div(
+						[h.Class("flex min-w-0 max-w-xl flex-col gap-1")],
+						[
+							h.span(
+								[h.Class("flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5")],
+								[
+									icon(h, "GithubIcon", {
+										size: 14,
+										className: "shrink-0 text-muted-foreground",
+									}),
+									// The name is the row's link, stretched over the whole row.
+									rowLink(
+										h,
+										{
+											href: dependenciesHref(repository.id),
+											className: "min-w-0 text-sm font-medium",
+										},
+										[repositoryName(h, repository.fullName)],
+									),
+									h.span(
+										[h.Class("shrink-0 font-mono text-xs text-muted-foreground")],
+										[repository.trackedBranch],
+									),
+									h.a(
+										[
+											h.Href(repository.htmlUrl),
+											h.Target("_blank"),
+											h.Rel("noopener noreferrer"),
+											h.AriaLabel(`Open ${repository.fullName} on GitHub`),
+											h.Class(
+												cn(
+													typographyClass({
+														tone: "muted",
+														hoverTone: "foreground",
+														className: "shrink-0",
+													}),
+													ROW_LINK_LIFT,
+												),
+											),
+										],
+										[icon(h, "ExternalLinkIcon", { size: 12 })],
+									),
+								],
+							),
+							scan === null
+								? muted(h, "Scanned on the next push, or now.")
+								: scanSummary(h, scan, clock),
+							...(scan?.error === null || scan?.error === undefined
+								? []
+								: [typography(h, { size: "xs", tone: "error", as: "p" }, [scan.error])]),
+							...(issues.length === 0
+								? []
+								: [
+										h.ul(
+											[h.Class(cn(vstackClass({ gap: "1" }), ROW_LINK_LIFT))],
+											Arr.map(issues, (lockfile) => lockfileIssue(h, lockfile)),
+										),
+									]),
+							// Phones drop the scan column, so its state and button ride here.
+							h.div(
+								[h.Class("flex flex-wrap items-center gap-2 pt-1 sm:hidden")],
+								[...scanState(h, scan), scanButton(h, model, repository)],
+							),
+						],
+					),
+				],
+				"whitespace-normal align-top sm:w-full",
+			),
+			tableCell(h, [emptyNote === null ? severityTally(h, open) : muted(h, emptyNote)], "align-top"),
+			tableCell(
+				h,
+				[emptyNote === null ? planCell(h, open) : muted(h, "")],
+				cn("align-top", WIDE_COLUMN),
+			),
+			tableCell(h, [productionCell(h, repository)], "hidden md:table-cell align-top"),
+			tableCell(
+				h,
+				[
+					hstack(h, { gap: "2", justify: "end" }, [
+						...scanState(h, scan),
+						scanButton(h, model, repository),
+					]),
+				],
+				cn("align-top text-right", WIDE_COLUMN),
+			),
+		],
+		undefined,
+		[h.Key(repository.id)],
+	)
+}
+
+/** Every repository riskiest first, with its latest scan and what it needs; a row scopes the page to it. */
+export const repositoriesPanel = (h: H, model: Model, digest: Digest, clock: Clock): Html => {
+	const shown = digest.ranked.slice(0, model.shownRows)
+	const footer = listFooter(h, {
+		shown: shown.length,
+		total: digest.ranked.length,
+		noun: "repositories",
+		singular: "repository",
+		hasMore: shown.length < digest.ranked.length,
+		onLoadMore: Message.ClickedShowMoreRows(),
+	})
+	return panel(h, { className: "overflow-hidden" }, [
+		table(h, { variant: "bare", ariaLabel: "Repositories" }, [
+			tableHeader(h, [
+				tableRow(h, [
+					tableHead(h, ["Repository"]),
+					tableHead(h, ["Open"]),
+					tableHead(h, ["Fix plan"], WIDE_COLUMN),
+					tableHead(h, ["Running in"], "hidden md:table-cell"),
+					tableHead(h, [h.span([h.Class("sr-only")], ["Scan"])], cn("text-right", WIDE_COLUMN)),
+				]),
+			]),
+			tableBody(
+				h,
+				Arr.map(shown, (repository) =>
+					repositoryRow(h, model, repository, digest.statsOf(repository.id).findings, clock),
+				),
+			),
+		]),
+		...(footer === null ? [] : [footer]),
+	])
+}

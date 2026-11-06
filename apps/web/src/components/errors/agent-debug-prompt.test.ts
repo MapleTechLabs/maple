@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { formatAgentDebugPrompt } from "./agent-debug-prompt"
+import { Option, String as Str } from "effect"
 
 describe("formatAgentDebugPrompt", () => {
 	it("interpolates the fingerprint into the error_detail step", () => {
@@ -13,7 +14,7 @@ describe("formatAgentDebugPrompt", () => {
 		expect(prompt).toContain('`error_detail` with fingerprint "fp_abc123"')
 		expect(prompt).toContain("**Error:** TypeError in checkout")
 		expect(prompt).toContain("Cannot read property 'id' of undefined")
-		expect(prompt.trimEnd().endsWith("Start by calling error_detail.")).toBe(true)
+		expect(Str.endsWith("Start by calling error_detail.")(Str.trimEnd(prompt))).toBe(true)
 		// No issue, so no claim to make — the numbered list starts at the read.
 		expect(prompt).toContain('1. Call `error_detail` with fingerprint "fp_abc123"')
 	})
@@ -33,8 +34,10 @@ describe("formatAgentDebugPrompt", () => {
 		// been claimed. It leads now, and it is not optional.
 		expect(withIssue).toContain("1. Claim the issue with `claim_error_issue`")
 		expect(withIssue).not.toContain("Optionally claim")
-		expect(withIssue.trimEnd().endsWith("Start by claiming the issue.")).toBe(true)
-		expect(withIssue.indexOf("claim_error_issue")).toBeLessThan(withIssue.indexOf("propose_fix"))
+		expect(Str.endsWith("Start by claiming the issue.")(Str.trimEnd(withIssue))).toBe(true)
+		expect(Option.getOrThrow(Str.indexOf("claim_error_issue")(withIssue))).toBeLessThan(
+			Option.getOrThrow(Str.indexOf("propose_fix")(withIssue)),
+		)
 
 		const withoutIssue = formatAgentDebugPrompt({
 			fingerprintHash: "fp_abc123",

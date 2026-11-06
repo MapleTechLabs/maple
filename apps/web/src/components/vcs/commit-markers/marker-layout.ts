@@ -1,5 +1,7 @@
 // Pure geometry + derivation for the chart's commit deploy markers. Kept free of
-// React/recharts so it unit-tests cleanly and the overlay component stays thin.
+// rendering so it unit-tests cleanly and the overlay component stays thin.
+import { shortId } from "@maple/ui/lib/ids"
+import { Array as Arr, Order, String as Str } from "effect"
 
 /** A row of the per-bucket release timeline (one per distinct commit per bucket). */
 export interface ReleasePoint {
@@ -69,13 +71,13 @@ export function estimateLabelWidth(label: string, commitCount: number): number {
 // (tag, version, arbitrary `vcs.ref.head.revision`) is already a meaningful short id
 // and is shown verbatim — the renderer CSS-truncates only if it's genuinely too long.
 function shortLabel(sha: string): string {
-	return /^[0-9a-f]{40}$/i.test(sha) ? sha.slice(0, 7) : sha
+	return /^[0-9a-f]{40}$/i.test(sha) ? shortId(sha, "sha") : sha
 }
 
 // Tolerates ISO ("…T…Z") and Tinybird ("YYYY-MM-DD HH:mm:ss", treated as UTC).
 function bucketMs(bucket: string): number {
-	const s = bucket.trim()
-	const iso = s.includes("T") ? s : `${s.replace(" ", "T")}Z`
+	const s = Str.trim(bucket)
+	const iso = Str.includes("T")(s) ? s : `${Str.replace(" ", "T")(s)}Z`
 	return new Date(iso).getTime()
 }
 
@@ -95,9 +97,10 @@ function snapBucket(ms: number, chartMs: ReadonlyArray<{ b: string; ms: number }
 // Representative ordering within a bucket: highest span count first (the version
 // that actually took most of the traffic in that bucket is the most useful label),
 // ties broken by sha so the pick is deterministic.
-function byRepresentative(a: MarkerCommit, b: MarkerCommit): number {
-	return b.count - a.count || (a.sha < b.sha ? -1 : 1)
-}
+const byRepresentative: Order.Order<MarkerCommit> = Order.combine(
+	Order.flip(Order.mapInput(Order.Number, (commit: MarkerCommit) => commit.count)),
+	Order.mapInput(Order.String, (commit: MarkerCommit) => commit.sha),
+)
 
 /**
  * Derives deploy markers from the per-bucket release timeline.
@@ -139,10 +142,10 @@ export function buildCommitMarkers(
 	}
 	if (firstSeen.size === 0) return []
 
-	const chartMs = chartBuckets
-		.map((b) => ({ b, ms: bucketMs(b) }))
-		.filter((x) => !Number.isNaN(x.ms))
-		.sort((a, b) => a.ms - b.ms)
+	const chartMs = Arr.filter(
+		Arr.map(chartBuckets, (b) => ({ b, ms: bucketMs(b) })),
+		(x) => !Number.isNaN(x.ms),
+	).sort((a, b) => a.ms - b.ms)
 	if (chartMs.length === 0) return []
 
 	const byBucket = new Map<string, MarkerCommit[]>()
@@ -154,12 +157,10 @@ export function buildCommitMarkers(
 		byBucket.set(snapped, list)
 	}
 
-	return Array.from(byBucket.entries())
-		.map(([bucket, commits]): CommitMarker => {
-			const ordered = commits.toSorted(byRepresentative)
-			return { bucket, label: shortLabel(ordered[0].sha), commits: ordered }
-		})
-		.sort((a, b) => bucketMs(a.bucket) - bucketMs(b.bucket))
+	return Arr.map(Array.from(byBucket.entries()), ([bucket, commits]): CommitMarker => {
+		const ordered = Arr.sort(commits, byRepresentative)
+		return { bucket, label: shortLabel(ordered[0]?.sha ?? ""), commits: ordered }
+	}).sort((a, b) => bucketMs(a.bucket) - bucketMs(b.bucket))
 }
 
 /** A marker resolved to a pixel x (host fills `x` via the chart's x-scale). */
@@ -230,8 +231,8 @@ function placeLabel(
 	plotLeft: number,
 	plotRight: number,
 ): { boxLeft: number; boxWidth: number } {
-	const minX = dashXs[0]
-	const maxX = dashXs[dashXs.length - 1]
+	const minX = dashXs[0] ?? plotLeft
+	const maxX = dashXs.at(-1) ?? minX
 	// HARD bounds — never violated: don't overlap the previous label, don't leave the plot.
 	const hardLo = Math.max(prevRight, plotLeft)
 	// Cap the width to the space left before the plot's right edge so the box can never be
@@ -273,7 +274,7 @@ export function layoutMarkerLabels(
 	const groups: LabelGroup[] = []
 	for (const p of positioned) {
 		const last = groups[groups.length - 1]
-		const prevRight = last ? last.boxLeft + last.boxWidth + gap : plotLeft
+		const prevRight = last !== undefined ? last.boxLeft + last.boxWidth + gap : plotLeft
 		// Merge when either:
 		//  - the dash hits the previous label: there's no room to the right of it to seat a
 		//    fresh label that both clears it (by `gap`) AND keeps this dash inset from its
@@ -284,7 +285,7 @@ export function layoutMarkerLabels(
 		//    previous label (+N).
 		const hitsPrevious = p.x < prevRight + EDGE_INSET
 		const noRoomBeforeEdge = plotRight - prevRight < MIN_LABEL_WIDTH
-		if (last && (hitsPrevious || noRoomBeforeEdge)) {
+		if (last !== undefined && (hitsPrevious || noRoomBeforeEdge)) {
 			last.dashXs.push(p.x)
 			last.commits.push(...p.marker.commits)
 		} else {
@@ -301,9 +302,10 @@ export function layoutMarkerLabels(
 		// freshly pushed) is re-placed clearing the label BEFORE it (groups[-2]). For a
 		// fresh group `before` is the old `last`, so `beforeRight === prevRight` computed
 		// above — same input the standalone-placement path used.
-		const group = groups[groups.length - 1]
-		const before = groups[groups.length - 2]
-		const beforeRight = before ? before.boxLeft + before.boxWidth + gap : plotLeft
+		const group = groups.at(-1)
+		if (group === undefined) continue
+		const before = groups.at(-2)
+		const beforeRight = before !== undefined ? before.boxLeft + before.boxWidth + gap : plotLeft
 		const box = placeLabel(
 			group.dashXs,
 			estimateLabelWidth(group.label, group.commits.length),

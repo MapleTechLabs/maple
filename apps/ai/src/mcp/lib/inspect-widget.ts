@@ -1,19 +1,34 @@
-import { Effect, Exit, Option, Result, Schema } from "effect"
-import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
-import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
-	QuerySpec,
-	type QueryEngineResult,
-	type BreakdownItem,
-	type TimeseriesPoint,
-} from "@maple/query-engine"
+	Clock,
+	Effect,
+	Exit,
+	Option,
+	Result,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
+import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import {
+	WarehouseQueryService,
+	provideWarehouseExecutorFromTenant,
+} from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { productEventsFunnel } from "@maple/query-engine/observability"
+import { PRODUCT_EVENTS_FUNNEL_ENDPOINT } from "@maple/widgets/dashboard"
+import { QueryEngineExecuteRequest, QuerySpec, type QueryEngineResult } from "@maple/query-engine"
 import { buildBreakdownQuerySpec, buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
 import {
 	buildFormulaResults,
 	type FormulaDraft,
 	type QueryRunResult,
 } from "@maple/query-engine/formula-results"
-import { QueryBuilderFormulaSchema, QueryBuilderQueryDraftSchema } from "@maple/domain/http"
+import {
+	QueryBuilderFormulaSchema,
+	QueryBuilderQueryDraftSchema,
+	WarehouseQueryRequest,
+} from "@maple/domain/http"
+import { describeQuerySpecDecodeError } from "@maple/domain/query-engine"
 import {
 	computeBreakdownStats,
 	computeFlags,
@@ -23,7 +38,7 @@ import {
 	type ChartFlag,
 	type QueryStats,
 } from "./chart-statistics"
-import { resolveDashboardTimeRange, type DashboardTimeRangeInput } from "./resolve-dashboard-time-range"
+import { resolveDashboardTimeRange } from "./resolve-dashboard-time-range"
 import { resolveTimeRange } from "./time"
 import { autoBucketSeconds, runRawSql } from "./run-raw-sql"
 import type { DashboardDocument, DashboardWidgetSchema } from "@maple/domain/http"
@@ -91,45 +106,47 @@ const decodeQuerySpec = Schema.decodeUnknownEffect(QuerySpec)
  * non-query-builder widgets (raw SQL / unsupported endpoints) and for params
  * that don't decode — those carry their own validation elsewhere.
  */
-export const collectBlockingBuilderWarnings = Effect.fn("collectBlockingBuilderWarnings")(function* (
-	dataSource: DashboardWidget["dataSource"],
-) {
-	const querySet = dataSourceQuerySet(dataSource)
-	if (querySet === null) return [] as string[]
-	const isTimeseries = querySet.resultShape === "timeseries"
-	const isBreakdown = querySet.resultShape === "breakdown"
-	if (!isTimeseries && !isBreakdown) return [] as string[]
+export const collectBlockingBuilderWarnings = Effect.fn("McpInspectWidget.collectBlockingBuilderWarnings")(
+	function* (dataSource: DashboardWidget["dataSource"]) {
+		const querySet = dataSourceQuerySet(dataSource)
+		if (querySet === null) return [] as string[]
+		const isTimeseries = querySet.resultShape === "timeseries"
+		const isBreakdown = querySet.resultShape === "breakdown"
+		if (!isTimeseries && !isBreakdown) return [] as string[]
 
-	const decoded = yield* Effect.result(decodeQueryBuilderParams({ queries: querySet.queries }))
-	if (Result.isFailure(decoded)) return [] as string[]
+		const decoded = yield* Effect.result(decodeQueryBuilderParams({ queries: querySet.queries }))
+		if (Result.isFailure(decoded)) return [] as string[]
 
-	const drafts = decoded.success.queries.filter((q) => q.enabled !== false)
-	const warnings: string[] = []
-	for (const draft of drafts) {
-		const buildResult = isTimeseries ? buildTimeseriesQuerySpec(draft) : buildBreakdownQuerySpec(draft)
-		for (const w of buildResult.warnings ?? []) {
-			// Non-scoping fallback — auto bucket size is a fine default.
-			if (w.toLowerCase().includes("step interval")) continue
-			warnings.push(w)
+		const drafts = Arr.filter(decoded.success.queries, (q) => q.enabled !== false)
+		const warnings: string[] = []
+		for (const draft of drafts) {
+			const buildResult = isTimeseries
+				? buildTimeseriesQuerySpec(draft)
+				: buildBreakdownQuerySpec(draft)
+			for (const w of buildResult.warnings ?? []) {
+				// Non-scoping fallback — auto bucket size is a fine default.
+				if (Str.includes("step interval")(Str.toLowerCase(w))) continue
+				warnings.push(w)
+			}
 		}
-	}
-	return warnings
-})
+		return warnings
+	},
+)
 
 // The first numeric series/value present in a result. Mirrors the client
 // renderer's `resolveField` fallback so the inspector reduces the same field the
 // stat tile actually shows.
 function firstNumericField(result: QueryEngineResult): string | null {
 	if (result.kind === "timeseries") {
-		for (const point of result.data as ReadonlyArray<TimeseriesPoint>) {
-			for (const [name, v] of Object.entries(point.series)) {
+		for (const point of result.data) {
+			for (const [name, v] of Rec.toEntries(point.series)) {
 				if (typeof v === "number" && !Number.isNaN(v)) return name
 			}
 		}
 		return null
 	}
 	if (result.kind === "breakdown") {
-		return (result.data as ReadonlyArray<BreakdownItem>).length > 0 ? "value" : null
+		return result.data.length > 0 ? "value" : null
 	}
 	return null
 }
@@ -137,17 +154,17 @@ function firstNumericField(result: QueryEngineResult): string | null {
 function collectReduceValues(result: QueryEngineResult, field: string): number[] {
 	const values: number[] = []
 	if (result.kind === "timeseries") {
-		for (const point of result.data as ReadonlyArray<TimeseriesPoint>) {
+		for (const point of result.data) {
 			const v = point.series[field]
 			if (typeof v === "number" && !Number.isNaN(v)) values.push(v)
 		}
 	} else if (result.kind === "breakdown") {
 		if (field === "value") {
-			for (const row of result.data as ReadonlyArray<BreakdownItem>) {
+			for (const row of result.data) {
 				if (typeof row.value === "number") values.push(row.value)
 			}
 		} else {
-			for (const row of result.data as ReadonlyArray<BreakdownItem>) {
+			for (const row of result.data) {
 				if (row.name === field && typeof row.value === "number") values.push(row.value)
 			}
 		}
@@ -183,15 +200,15 @@ function applyReduceToValue(
 
 	switch (aggregate) {
 		case "sum":
-			return { value: values.reduce((a, b) => a + b, 0) }
+			return { value: Arr.reduce(values, 0, (a, b) => a + b) }
 		case "avg":
-			return { value: values.reduce((a, b) => a + b, 0) / values.length }
+			return { value: Arr.reduce(values, 0, (a, b) => a + b) / values.length }
 		case "min":
 			return { value: Math.min(...values) }
 		case "max":
 			return { value: Math.max(...values) }
 		case "first":
-			return { value: values[0] }
+			return { value: values[0] ?? null }
 		case "count":
 			return { value: values.length }
 		default:
@@ -205,7 +222,7 @@ function statsToData(stats: QueryStats): InspectChartQueryStats {
 		seriesCount: stats.seriesCount,
 		...(stats.firstBucket !== undefined ? { firstBucket: stats.firstBucket } : undefined),
 		...(stats.lastBucket !== undefined ? { lastBucket: stats.lastBucket } : undefined),
-		seriesStats: stats.seriesStats.map((s): InspectChartSeriesStat => ({
+		seriesStats: Arr.map(stats.seriesStats, (s): InspectChartSeriesStat => ({
 			name: s.name,
 			min: s.min,
 			max: s.max,
@@ -214,7 +231,7 @@ function statsToData(stats: QueryStats): InspectChartQueryStats {
 			nullCount: s.nullCount,
 			zeroCount: s.zeroCount,
 			negativeCount: s.negativeCount,
-			samples: s.samples.map((sample) => ({
+			samples: Arr.map(s.samples, (sample) => ({
 				...(sample.bucket !== undefined ? { bucket: sample.bucket } : undefined),
 				value: sample.value,
 			})),
@@ -238,8 +255,8 @@ export function isGroupByRequested(draft: {
 	groupBy?: readonly string[]
 }): boolean {
 	if (!draft.addOns?.groupBy) return false
-	return (draft.groupBy ?? []).some((g) => {
-		const t = g.trim().toLowerCase()
+	return Arr.some(draft.groupBy ?? [], (g) => {
+		const t = Str.toLowerCase(Str.trim(g))
 		return t.length > 0 && t !== "none" && t !== "all"
 	})
 }
@@ -250,13 +267,13 @@ export function isGroupByRequested(draft: {
 function isSingleAllGroup(result: QueryEngineResult): boolean {
 	if (result.kind === "timeseries") {
 		const names = new Set<string>()
-		for (const point of result.data as ReadonlyArray<TimeseriesPoint>) {
-			for (const name of Object.keys(point.series)) names.add(name)
+		for (const point of result.data) {
+			for (const name of Rec.keys(point.series)) names.add(name)
 		}
 		return names.size === 1 && names.has("all")
 	}
 	if (result.kind === "breakdown") {
-		const rows = result.data as ReadonlyArray<BreakdownItem>
+		const rows = result.data
 		return rows.length === 1 && rows[0]?.name === "all"
 	}
 	return false
@@ -266,7 +283,7 @@ function isSingleAllGroup(result: QueryEngineResult): boolean {
 // has no data in this window" — both otherwise surface as EMPTY/ALL_NULLS. On
 // any lookup error we assume the metric exists, so we never raise a false
 // METRIC_NOT_FOUND.
-const metricExistsInCatalog = Effect.fn("metricExistsInCatalog")(function* (
+const metricExistsInCatalog = Effect.fn("McpInspectWidget.metricExistsInCatalog")(function* (
 	tenant: TenantContext,
 	metricName: string,
 	metricType: string | undefined,
@@ -275,20 +292,24 @@ const metricExistsInCatalog = Effect.fn("metricExistsInCatalog")(function* (
 ) {
 	const warehouse = yield* WarehouseQueryService
 	return yield* warehouse
-		.query(tenant, {
-			pipeName: "list_metrics",
-			params: {
-				start_time: startTime,
-				end_time: endTime,
-				search: metricName,
-				...(metricType ? { metric_type: metricType } : undefined),
-				limit: 200,
-				offset: 0,
-			},
-		})
+		.query(
+			tenant,
+			new WarehouseQueryRequest({
+				pipeName: "list_metrics",
+				params: {
+					start_time: startTime,
+					end_time: endTime,
+					search: metricName,
+					...(metricType ? { metric_type: metricType } : undefined),
+					limit: 200,
+					offset: 0,
+				},
+			}),
+		)
 		.pipe(
 			Effect.map((resp) =>
-				(resp.data as ReadonlyArray<{ metricName?: string }>).some(
+				Arr.some(
+					resp.data as ReadonlyArray<{ metricName?: string }>,
 					(m) => m.metricName === metricName,
 				),
 			),
@@ -317,7 +338,12 @@ export interface RawSqlInspectionData {
 	rows: ReadonlyArray<Record<string, unknown>>
 	truncated: boolean
 	timeRange: InspectWidgetTimeRange
+	/** Wall time of the run, alone; the dashboard runs every tile at once, so it only gets slower. */
+	durationMs?: number
 }
+
+/** A raw-SQL tile this slow alone tends to time out when the whole board loads together. */
+export const SLOW_RAW_SQL_MS = 3_000
 
 /** One widget's inspection: `inspect_chart_data`'s output before the tool adds which dashboard it read. */
 export type WidgetInspection = Omit<InspectChartDataData, "outcome" | "dashboardId" | "dashboardName">
@@ -325,13 +351,51 @@ export type WidgetInspection = Omit<InspectChartDataData, "outcome" | "dashboard
 export type InspectionOutcome =
 	| { kind: "supported"; data: WidgetInspection }
 	| { kind: "raw_sql"; data: RawSqlInspectionData }
-	| { kind: "unsupported"; endpoint: string }
+	| {
+			kind: "unsupported"
+			endpoint: string
+			/** A product-event funnel, checked through the same read query_funnel runs. */
+			funnel?: FunnelCheck
+	  }
 	| {
 			kind: "skipped"
 			reason: "no_params" | "no_enabled_queries" | "too_many_queries" | "decode_failed"
 			detail: string
 	  }
 	| { kind: "inspection_error"; message: string }
+
+export type FunnelCheck =
+	| { readonly ok: true; readonly steps: number; readonly first: number; readonly last: number }
+	| { readonly ok: false; readonly error: string }
+
+const checkFunnelWidget = (
+	tenant: TenantContext,
+	widget: DashboardWidget,
+	timeRange: InspectWidgetTimeRange,
+) => {
+	const funnel = widget.display.funnel
+	const funnelSteps = funnel?.steps
+	if (funnel === undefined || funnelSteps === undefined || funnelSteps.length === 0) {
+		return Effect.succeed<FunnelCheck | undefined>(undefined)
+	}
+	const steps = funnelSteps.length
+	return productEventsFunnel({
+		steps: funnelSteps,
+		keyBy: funnel.keyBy ?? "person",
+		windowSeconds: funnel.windowSeconds ?? 86_400,
+		...(funnel.filters === undefined ? undefined : { filters: funnel.filters }),
+		startTime: timeRange.startTime,
+		endTime: timeRange.endTime,
+	}).pipe(
+		provideWarehouseExecutorFromTenant(tenant),
+		Effect.map((rows): FunnelCheck => {
+			const count = (step: number) =>
+				Option.getOrUndefined(Arr.findFirst(rows, (r) => r.step === step))?.count ?? 0
+			return { ok: true, steps, first: count(1), last: count(steps) }
+		}),
+		Effect.catch((error) => Effect.succeed<FunnelCheck>({ ok: false, error: error.message })),
+	)
+}
 
 export interface InspectWidgetInput {
 	tenant: TenantContext
@@ -346,7 +410,7 @@ export interface InspectWidgetInput {
  * returning a rows preview. Never fails the caller — validation/execution
  * errors are encoded as `status: "error"` in the returned data.
  */
-const inspectRawSqlWidget = Effect.fn("inspectRawSqlWidget")(function* (
+const inspectRawSqlWidget = Effect.fn("McpInspectWidget.inspectRawSqlWidget")(function* (
 	tenant: TenantContext,
 	widget: DashboardWidget,
 	timeRange: InspectWidgetTimeRange,
@@ -365,6 +429,7 @@ const inspectRawSqlWidget = Effect.fn("inspectRawSqlWidget")(function* (
 	const granularitySeconds =
 		rawSql.granularitySeconds ?? autoBucketSeconds(timeRange.startTime, timeRange.endTime)
 
+	const startedAt = yield* Clock.currentTimeMillis
 	const result = yield* runRawSql({
 		tenant,
 		sql,
@@ -396,6 +461,7 @@ const inspectRawSqlWidget = Effect.fn("inspectRawSqlWidget")(function* (
 		} satisfies InspectionOutcome
 	}
 
+	const durationMs = (yield* Clock.currentTimeMillis) - startedAt
 	const rendered = result.value.rows.slice(0, RAW_SQL_INSPECT_ROWS)
 	return {
 		kind: "raw_sql",
@@ -409,6 +475,7 @@ const inspectRawSqlWidget = Effect.fn("inspectRawSqlWidget")(function* (
 			rows: rendered,
 			truncated: result.value.rowCount > rendered.length,
 			timeRange,
+			durationMs,
 		},
 	} satisfies InspectionOutcome
 })
@@ -418,7 +485,7 @@ const inspectRawSqlWidget = Effect.fn("inspectRawSqlWidget")(function* (
  * problems are encoded in the returned `InspectionOutcome` so post-mutation
  * callers can always finish their response.
  */
-export const inspectWidget = Effect.fn("inspectWidget")(
+export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 	function* (input: InspectWidgetInput) {
 		const { tenant, widget, timeRange } = input
 
@@ -431,9 +498,15 @@ export const inspectWidget = Effect.fn("inspectWidget")(
 		const isBreakdown = querySet?.resultShape === "breakdown"
 
 		if (querySet === null || (!isTimeseries && !isBreakdown)) {
+			const endpoint = dataSourceEndpoint(widget.dataSource) ?? "unknown"
+			const funnel =
+				endpoint === PRODUCT_EVENTS_FUNNEL_ENDPOINT
+					? yield* checkFunnelWidget(tenant, widget, timeRange)
+					: undefined
 			return {
 				kind: "unsupported",
-				endpoint: dataSourceEndpoint(widget.dataSource) ?? "unknown",
+				endpoint,
+				...(funnel === undefined ? undefined : { funnel }),
 			} satisfies InspectionOutcome
 		}
 
@@ -449,7 +522,7 @@ export const inspectWidget = Effect.fn("inspectWidget")(
 		}
 		const decodedParams = decodedParamsResult.success
 
-		const enabledRawDrafts = decodedParams.queries.filter((q) => q.enabled !== false)
+		const enabledRawDrafts = Arr.filter(decodedParams.queries, (q) => q.enabled !== false)
 		if (enabledRawDrafts.length === 0) {
 			return {
 				kind: "skipped",
@@ -470,7 +543,8 @@ export const inspectWidget = Effect.fn("inspectWidget")(
 		const transformObj = dataSourceTransform(widget.dataSource)
 		const reduceToValue = transformObj?.reduceToValue
 		const hasUnsupportedTransform =
-			transformObj !== undefined && Object.keys(transformObj).some((k) => k !== "reduceToValue")
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
+			transformObj !== undefined && Arr.some(Object.keys(transformObj), (k) => k !== "reduceToValue")
 
 		const queryEngine = yield* QueryEngineService
 
@@ -490,9 +564,7 @@ export const inspectWidget = Effect.fn("inspectWidget")(
 						: buildBreakdownQuerySpec(draft)
 
 					const builderWarnings =
-						buildResult.warnings && buildResult.warnings.length > 0
-							? [...buildResult.warnings]
-							: undefined
+						buildResult.warnings.length > 0 ? [...buildResult.warnings] : undefined
 					const builderWarningFlags: ChartFlag[] = builderWarnings ? ["BUILDER_WARNINGS"] : []
 
 					if (!buildResult.query) {
@@ -514,7 +586,10 @@ export const inspectWidget = Effect.fn("inspectWidget")(
 							queryId: draft.id,
 							queryName: draft.name,
 							status: "error",
-							error: `Invalid query specification: ${decodedSpecResult.failure.message}`,
+							error: describeQuerySpecDecodeError(
+								buildResult.query,
+								decodedSpecResult.failure.message,
+							),
 							stats: { rowCount: 0, seriesCount: 0, seriesStats: [] },
 							flags: ["EMPTY", ...builderWarningFlags],
 							...(builderWarnings ? { builderWarnings } : undefined),
@@ -523,11 +598,14 @@ export const inspectWidget = Effect.fn("inspectWidget")(
 					const decodedSpec = decodedSpecResult.success
 
 					const exit = yield* queryEngine
-						.execute(tenant, {
-							startTime: timeRange.startTime,
-							endTime: timeRange.endTime,
-							query: decodedSpec,
-						})
+						.execute(
+							tenant,
+							new QueryEngineExecuteRequest({
+								startTime: timeRange.startTime,
+								endTime: timeRange.endTime,
+								query: decodedSpec,
+							}),
+						)
 						.pipe(Effect.exit)
 
 					if (Exit.isFailure(exit)) {
@@ -580,7 +658,7 @@ export const inspectWidget = Effect.fn("inspectWidget")(
 					// `computeFlags`, or the ambiguous low-side percent check fires on
 					// exactly the queries it was meant to skip.
 					const numericAggregation =
-						((draft as { valueField?: string }).valueField ?? "").trim().length > 0
+						Str.trim((draft as { valueField?: string }).valueField ?? "").length > 0
 
 					const flagContext = {
 						metric: draft.aggregation,
@@ -622,7 +700,7 @@ export const inspectWidget = Effect.fn("inspectWidget")(
 							)
 							if (!exists) {
 								flags = [
-									...baseFlags.filter((f) => f !== "EMPTY" && f !== "ALL_NULLS"),
+									...Arr.filter(baseFlags, (f) => f !== "EMPTY" && f !== "ALL_NULLS"),
 									"METRIC_NOT_FOUND",
 								]
 							}
@@ -637,7 +715,7 @@ export const inspectWidget = Effect.fn("inspectWidget")(
 							status: "success",
 							error: null,
 							warnings: [],
-							data: (result.data as ReadonlyArray<TimeseriesPoint>).map((p) => ({
+							data: Arr.map(result.data, (p) => ({
 								bucket: p.bucket,
 								series: { ...p.series },
 							})),
@@ -665,7 +743,8 @@ export const inspectWidget = Effect.fn("inspectWidget")(
 		if (formulaEvaluated) {
 			// No per-field narrowing: `QueryBuilderFormulaSchema` already guarantees
 			// all four strings, and `FormulaDraft` asks for exactly them.
-			const formulaDrafts: FormulaDraft[] = formulas.map(
+			const formulaDrafts: FormulaDraft[] = Arr.map(
+				formulas,
 				({ id, name, expression, legend }): FormulaDraft => ({ id, name, expression, legend }),
 			)
 
@@ -712,7 +791,7 @@ export const inspectWidget = Effect.fn("inspectWidget")(
 			}
 		}
 
-		const allFlags = queryResults.flatMap((r) => r.flags)
+		const allFlags = Arr.flatMap(queryResults, (r) => r.flags)
 		const verdict = verdictFromFlags(allFlags)
 
 		const notes: string[] = []
@@ -774,19 +853,45 @@ export const inspectWidget = Effect.fn("inspectWidget")(
 	),
 )
 
-function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOutcome): WidgetInspectionEntry {
+export function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOutcome): WidgetInspectionEntry {
 	if (outcome.kind === "supported") {
 		// The percent-scale note is the one note that tells the caller what to
 		// change, so it rides along on the mutation-tool summary rather than only
 		// appearing in a full `inspect_chart_data` response.
-		const actionableNote = outcome.data.notes.find((note) => note.startsWith('unit "percent'))
+		const actionableNote = Arr.findFirst(outcome.data.notes, (note) =>
+			Str.startsWith('unit "percent')(note),
+		)
+		// A breakdown's groups are its rows. The largest query, not the sum, so hidden
+		// operands and the formula built from them are not counted twice.
+		const isBreakdown = dataSourceQuerySet(widget.dataSource)?.resultShape === "breakdown"
+		const seriesCount = Arr.reduce(outcome.data.queries, 0, (largest, query) =>
+			query.status === "ok"
+				? Math.max(largest, isBreakdown ? query.stats.rowCount : query.stats.seriesCount)
+				: largest,
+		)
 		return {
 			widgetId: widget.id,
 			...(widget.display.title !== undefined ? { title: widget.display.title } : undefined),
 			visualization: widget.visualization,
 			verdict: outcome.data.verdict satisfies WidgetInspectionVerdict,
 			flags: [...outcome.data.flags],
-			...(actionableNote !== undefined ? { note: actionableNote } : undefined),
+			...Option.match(actionableNote, { onNone: () => undefined, onSome: (note) => ({ note }) }),
+			seriesCount,
+		}
+	}
+	if (outcome.kind === "unsupported" && outcome.funnel !== undefined) {
+		const check = outcome.funnel
+		return {
+			widgetId: widget.id,
+			...(widget.display.title !== undefined ? { title: widget.display.title } : undefined),
+			visualization: widget.visualization,
+			verdict: !check.ok ? "broken" : check.first === 0 ? "suspicious" : "looks_healthy",
+			flags: [],
+			note: !check.ok
+				? `Funnel query failed: ${check.error}`
+				: check.first === 0
+					? "Funnel step 1 matched nobody in this window; check the step names with list_product_events, or run query_funnel (an empty VisitorId/UserId shows up there)."
+					: `Funnel: ${check.first} at step 1, ${check.last} at step ${check.steps}.`,
 		}
 	}
 	if (outcome.kind === "unsupported") {
@@ -800,10 +905,12 @@ function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOutcome): 
 		}
 	}
 	if (outcome.kind === "raw_sql") {
+		const durationMs = outcome.data.durationMs ?? 0
+		const slow = outcome.data.status === "ok" && durationMs >= SLOW_RAW_SQL_MS
 		const verdict: WidgetInspectionVerdict =
 			outcome.data.status === "error"
 				? "broken"
-				: outcome.data.rowCount === 0
+				: outcome.data.rowCount === 0 || slow
 					? "suspicious"
 					: "looks_healthy"
 		const note =
@@ -811,7 +918,9 @@ function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOutcome): 
 				? `Raw SQL failed: ${outcome.data.error ?? "unknown error"}`
 				: outcome.data.rowCount === 0
 					? "Raw SQL returned no rows for this window."
-					: `Raw SQL returned ${outcome.data.rowCount} row(s).`
+					: slow
+						? `Raw SQL took ${(durationMs / 1000).toFixed(1)}s on its own; with every tile loading at once it may time out. Aggregate less raw data (a rollup table, fewer columns) or narrow the window.`
+						: `Raw SQL returned ${outcome.data.rowCount} row(s).`
 		return {
 			widgetId: widget.id,
 			...(widget.display.title !== undefined ? { title: widget.display.title } : undefined),
@@ -869,7 +978,7 @@ const SKIPPED_SUMMARY: WidgetInspectionSummary = {
  * widget with bounded concurrency. Returns a compact `WidgetInspectionSummary`
  * suitable for inclusion in tool responses.
  */
-export const inspectWidgetsAfterMutation = Effect.fn("inspectWidgetsAfterMutation")(
+export const inspectWidgetsAfterMutation = Effect.fn("McpInspectWidget.inspectWidgetsAfterMutation")(
 	function* (input: InspectWidgetsAfterMutationInput) {
 		const {
 			tenant,
@@ -896,7 +1005,7 @@ export const inspectWidgetsAfterMutation = Effect.fn("inspectWidgetsAfterMutatio
 		const capped = targets.length > maxWidgets
 		const toInspect = capped ? targets.slice(0, maxWidgets) : targets
 
-		const resolved = resolveDashboardTimeRange(dashboard.timeRange as DashboardTimeRangeInput)
+		const resolved = resolveDashboardTimeRange(dashboard.timeRange)
 		const timeRange: InspectWidgetTimeRange = resolved
 			? { startTime: resolved.startTime, endTime: resolved.endTime, source: "dashboard" }
 			: (() => {
@@ -909,7 +1018,7 @@ export const inspectWidgetsAfterMutation = Effect.fn("inspectWidgetsAfterMutatio
 		// on data the tile will never show.
 		const timeRangeFor = (widget: DashboardWidget): InspectWidgetTimeRange => {
 			if (!widget.timeRange) return timeRange
-			const widgetResolved = resolveDashboardTimeRange(widget.timeRange as DashboardTimeRangeInput)
+			const widgetResolved = resolveDashboardTimeRange(widget.timeRange)
 			return widgetResolved
 				? { startTime: widgetResolved.startTime, endTime: widgetResolved.endTime, source: "widget" }
 				: timeRange
@@ -927,29 +1036,17 @@ export const inspectWidgetsAfterMutation = Effect.fn("inspectWidgetsAfterMutatio
 			{ concurrency: maxConcurrent },
 		)
 
-		const inspected: WidgetInspectionEntry[] = toInspect.map((widget, i) =>
-			summarizeOutcome(widget, outcomes[i]),
+		const inspected: WidgetInspectionEntry[] = Arr.map(
+			Arr.zip(toInspect, outcomes),
+			([widget, outcome]) => summarizeOutcome(widget, outcome),
 		)
 
-		let healthyCount = 0
-		let suspiciousCount = 0
-		let brokenCount = 0
-		let skippedCount = 0
-		for (const entry of inspected) {
-			switch (entry.verdict) {
-				case "looks_healthy":
-					healthyCount++
-					break
-				case "suspicious":
-					suspiciousCount++
-					break
-				case "broken":
-					brokenCount++
-					break
-				default:
-					skippedCount++
-			}
-		}
+		const countVerdict = (verdict: WidgetInspectionEntry["verdict"]) =>
+			Arr.filter(inspected, (entry) => entry.verdict === verdict).length
+		const healthyCount = countVerdict("looks_healthy")
+		const suspiciousCount = countVerdict("suspicious")
+		const brokenCount = countVerdict("broken")
+		const skippedCount = inspected.length - healthyCount - suspiciousCount - brokenCount
 
 		const summary: WidgetInspectionSummary = {
 			ran: true,
@@ -963,7 +1060,11 @@ export const inspectWidgetsAfterMutation = Effect.fn("inspectWidgetsAfterMutatio
 		}
 		return summary
 	},
-	Effect.catchCause(() => Effect.succeed(SKIPPED_SUMMARY)),
+	Effect.catchCause((cause) =>
+		Effect.logWarning("Widget inspection failed; reporting it as skipped", cause).pipe(
+			Effect.as(SKIPPED_SUMMARY),
+		),
+	),
 )
 
 /**
@@ -976,22 +1077,25 @@ export function validationDoc(
 ): { readonly blocks: ReadonlyArray<DocBlock>; readonly next: ReadonlyArray<NextCall> } {
 	if (!summary.ran) return { blocks: [], next: [] }
 
-	const next = summary.inspected
-		.filter((entry) => entry.verdict === "suspicious" || entry.verdict === "broken")
-		.slice(0, 3)
-		.map((entry) =>
+	const next = Arr.map(
+		Arr.filter(
+			summary.inspected,
+			(entry) => entry.verdict === "suspicious" || entry.verdict === "broken",
+		).slice(0, 3),
+		(entry) =>
 			doc.next(
 				"inspect_chart_data",
 				{ dashboard_id: options.dashboardId, widget_id: entry.widgetId },
 				`re-check "${entry.title ?? entry.widgetId}" after fixing it with update_dashboard_widget`,
 			),
-		)
+	)
 
 	const single = options.single && summary.inspected.length === 1 ? summary.inspected[0] : undefined
 	if (single !== undefined) {
-		const flagPart = single.flags.length > 0 ? `  (${single.flags.join(", ")})` : ""
+		const flagPart = single.flags.length > 0 ? `  (${Arr.join(single.flags, ", ")})` : ""
+		const seriesPart = single.seriesCount !== undefined ? `, ${single.seriesCount} series` : ""
 		const lines = [
-			`${verdictIcon(single.verdict)} "${single.title ?? single.widgetId}": ${single.verdict}${flagPart}`,
+			`${verdictIcon(single.verdict)} "${single.title ?? single.widgetId}": ${single.verdict}${seriesPart}${flagPart}`,
 		]
 		if (single.note) lines.push(single.note)
 		if (single.verdict === "suspicious" || single.verdict === "broken") {
@@ -1000,7 +1104,10 @@ export function validationDoc(
 			)
 		}
 		return {
-			blocks: [doc.heading(`Validation: ${single.verdict.toUpperCase()}`), doc.text(lines.join("\n"))],
+			blocks: [
+				doc.heading(`Validation: ${Str.toUpperCase(single.verdict)}`),
+				doc.text(Arr.join(lines, "\n")),
+			],
 			next,
 		}
 	}
@@ -1019,10 +1126,11 @@ export function validationDoc(
 	}
 	blocks.push(
 		doc.list(
-			summary.inspected.map((entry) => {
-				const flagPart = entry.flags.length > 0 ? `  (${entry.flags.join(", ")})` : ""
+			Arr.map(summary.inspected, (entry) => {
+				const flagPart = entry.flags.length > 0 ? `  (${Arr.join(entry.flags, ", ")})` : ""
+				const seriesPart = entry.seriesCount !== undefined ? `, ${entry.seriesCount} series` : ""
 				const notePart = entry.note ? `: ${entry.note}` : ""
-				return `${verdictIcon(entry.verdict)} ${entry.widgetId} "${entry.title ?? ""}": ${entry.verdict}${flagPart}${notePart}`
+				return `${verdictIcon(entry.verdict)} ${entry.widgetId} "${entry.title ?? ""}": ${entry.verdict}${seriesPart}${flagPart}${notePart}`
 			}),
 		),
 	)
@@ -1037,7 +1145,7 @@ export function validationDoc(
 			"Fix suspicious/broken widgets via update_dashboard_widget. Skipped widgets use predefined endpoints; verify with query_data if needed.",
 		)
 	}
-	if (notes.length > 0) blocks.push(doc.text(notes.join("\n")))
+	if (notes.length > 0) blocks.push(doc.text(Arr.join(notes, "\n")))
 	return { blocks, next }
 }
 

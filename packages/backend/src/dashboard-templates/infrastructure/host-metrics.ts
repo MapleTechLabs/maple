@@ -106,7 +106,9 @@ function widgets(hostName?: string): WidgetDef[] {
 				name: "Filesystem",
 				metricName: "system.filesystem.utilization",
 				metricType: "gauge",
-				whereClause: where,
+				// The hostmetrics receiver sets no state; collectors that split by state
+				// would otherwise average used/free/reserved per mount.
+				whereClause: combineWhere(where, `(attr.state = "used" OR attr.state !exists)`),
 				groupBy: ["attr.mountpoint"],
 			}),
 			display: { title: "Filesystem Utilization", ...CHART_DISPLAY_LINE, unit: "percent" },

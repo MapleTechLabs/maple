@@ -1,6 +1,10 @@
 import { Array as Arr, Effect, Schema, pipe } from "effect"
 import { TraceId, SpanId } from "@maple/domain"
-import type { SpanSearchOutput, TracesRootListOutput } from "../ch"
+import type { SpanSearchOutput } from "../ch"
+
+/** A `span_search` row as the pipe returns it: pipes re-encode timestamps to the wire string. */
+type SpanSearchWireRow = Omit<SpanSearchOutput, "timestamp"> & { readonly timestamp: string }
+import type { ListTracesOutput } from "@maple/domain/tinybird"
 import { WarehouseValidationError } from "@maple/domain/http/warehouse-errors"
 import {
 	WarehouseExecutor,
@@ -10,6 +14,7 @@ import {
 import type { SearchTracesInput, SearchTracesOutput, SpanResult } from "./types"
 import { toSpanResult } from "./row-mappers"
 import { safeUInt } from "./sql-utils"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "../datetime"
 
 const MAX_LIMIT = 1000
 const MAX_OFFSET = 1_000_000
@@ -18,9 +23,8 @@ const MAX_OFFSET = 1_000_000
  * Search for spans matching the given criteria.
  *
  * When `spanName` is provided (and `rootOnly` is not true), queries the
- * `span_search` pipe to find matching spans. Broad searches use `traces`; a
- * concrete trace-id search uses `trace_detail_spans`, which is sorted for that
- * lookup pattern. This avoids the unreliable EXISTS subquery in the
+ * `span_search` pipe to find matching spans. Broad searches scan `traces`; a
+ * concrete trace-id search seeks the trace's granules through `trace_index`. This avoids the unreliable EXISTS subquery in the
  * `list_traces` pipe and returns the **matched span** data instead of root
  * span summaries.
  *
@@ -36,11 +40,11 @@ export const searchTraces = Effect.fn("Observability.searchTraces")(function* (i
 	const offset = safeUInt(input.offset, 0, MAX_OFFSET)
 
 	yield* Effect.annotateCurrentSpan(
-		"searchMode",
+		"maple.query.search_mode",
 		input.spanName && !input.rootOnly ? "span_level" : "root_level",
 	)
-	if (input.service) yield* Effect.annotateCurrentSpan("service", input.service)
-	if (input.spanName) yield* Effect.annotateCurrentSpan("spanName", input.spanName)
+	if (input.service) yield* Effect.annotateCurrentSpan("maple.query.service", input.service)
+	if (input.spanName) yield* Effect.annotateCurrentSpan("maple.query.span_name", input.spanName)
 
 	// Root-level search is backed by the `list_traces` pipe, which only takes a
 	// single attribute filter. Reject N>1 filters so callers know to switch to
@@ -54,16 +58,79 @@ export const searchTraces = Effect.fn("Observability.searchTraces")(function* (i
 		})
 	}
 
-	const spans =
-		input.spanName && !input.rootOnly
-			? yield* spanLevelSearch(executor, input, limit, offset)
-			: yield* rootLevelSearch(executor, input, limit, offset)
+	if (!rootMode && input.traceId === undefined)
+		return yield* newestFirstSpanSearch(executor, input, limit, offset)
+
+	const spans = rootMode
+		? yield* rootLevelSearch(executor, input, limit, offset)
+		: yield* spanLevelSearch(executor, input, limit, offset)
 
 	return {
 		timeRange: input.timeRange,
 		spans,
 		pagination: { offset, limit, hasMore: spans.length === limit },
 	} satisfies SearchTracesOutput
+})
+
+const RECENT_SLICE_MS = 3_600_000
+const NO_SPANS: ReadonlyArray<SpanResult> = []
+
+/**
+ * A span-name search over the newest hour first, then the rest only if that hour is short: same
+ * page, newest first. When the older part does not finish, `coveredFrom` says what was read.
+ */
+const newestFirstSpanSearch = Effect.fnUntraced(function* (
+	executor: WarehouseExecutorApi,
+	input: SearchTracesInput,
+	limit: number,
+	offset: number,
+) {
+	const startMs = parseWarehouseDateTime(input.timeRange.startTime)
+	const endMs = parseWarehouseDateTime(input.timeRange.endTime)
+	const result = (spans: ReadonlyArray<SpanResult>, coveredFrom?: string): SearchTracesOutput => ({
+		timeRange: input.timeRange,
+		spans,
+		pagination: { offset, limit, hasMore: spans.length === limit },
+		...(coveredFrom === undefined ? undefined : { coveredFrom }),
+	})
+	if (endMs - startMs <= RECENT_SLICE_MS || offset >= limit) {
+		const spans = yield* spanLevelSearch(executor, input, limit, offset)
+		return result(spans)
+	}
+
+	const want = limit + offset
+	const splitAt = formatWarehouseDateTime(endMs - RECENT_SLICE_MS)
+	const recent = yield* spanLevelSearch(
+		executor,
+		{ ...input, timeRange: { startTime: splitAt, endTime: input.timeRange.endTime } },
+		want,
+		0,
+	)
+	yield* Effect.annotateCurrentSpan("maple.query.recent_slice_rows", recent.length)
+	if (recent.length >= want) return result(recent.slice(offset, want))
+
+	// One row over what is missing: both bounds are inclusive, so a span at `splitAt` comes back twice.
+	const older = yield* spanLevelSearch(
+		executor,
+		{ ...input, timeRange: { startTime: input.timeRange.startTime, endTime: splitAt } },
+		want - recent.length + 1,
+		0,
+	).pipe(
+		Effect.map((spans) => ({ spans, cutOff: false })),
+		Effect.catchTags({
+			"@maple/http/errors/WarehouseQuotaExceededError": () =>
+				Effect.succeed({ spans: NO_SPANS, cutOff: true }),
+			// The executor's own client timeout; a real SQL error already failed the newest hour.
+			"@maple/http/errors/WarehouseQueryError": () => Effect.succeed({ spans: NO_SPANS, cutOff: true }),
+		}),
+	)
+	yield* Effect.annotateCurrentSpan("maple.query.older_slice_cut_off", older.cutOff)
+	const seen = new Set(Arr.map(recent, (span) => `${span.traceId}:${span.spanId}`))
+	const merged = [
+		...recent,
+		...Arr.filter(older.spans, (span) => !seen.has(`${span.traceId}:${span.spanId}`)),
+	]
+	return result(merged.slice(offset, want), older.cutOff ? splitAt : undefined)
 })
 
 /**
@@ -86,28 +153,33 @@ const spanLevelSearch = (
 		...(input.service && { service: input.service }),
 		...(input.spanName && { span_name: input.spanName }),
 		...(input.spanNameMatchMode === "contains" && { span_name_match_mode: "contains" }),
+		...(input.environment && { deployment_env: input.environment }),
 		...(input.hasError && { has_error: true }),
 		...(input.minDurationMs != null && { min_duration_ms: input.minDurationMs }),
 		...(input.maxDurationMs != null && { max_duration_ms: input.maxDurationMs }),
 		...(input.httpMethod && { http_method: input.httpMethod }),
 		...(input.traceId && { trace_id: input.traceId }),
-		...(input.attributeFilters?.length && { attribute_filters: input.attributeFilters }),
+		...(input.attributeFilters !== undefined &&
+			input.attributeFilters.length > 0 && { attribute_filters: input.attributeFilters }),
+		...(input.resourceAttributeFilter && {
+			resource_attribute_filters: [{ ...input.resourceAttributeFilter, mode: "equals" }],
+		}),
 	} satisfies Record<string, unknown>
 
 	return Effect.map(
-		executor.query<SpanSearchOutput>("span_search", params, { profile: "list" }),
+		executor.query<SpanSearchWireRow>("span_search", params, { profile: "list" }),
 		(result): ReadonlyArray<SpanResult> =>
-			result.data.map((row): SpanResult => ({
+			Arr.map(result.data, (row): SpanResult => ({
 				traceId: Schema.decodeSync(TraceId)(row.traceId),
 				spanId: Schema.decodeSync(SpanId)(row.spanId),
 				spanName: row.spanName,
 				serviceName: row.serviceName,
-				durationMs: Number(row.durationMs),
+				durationMs: row.durationMs,
 				statusCode: row.statusCode,
 				statusMessage: row.statusMessage ?? "",
 				attributes: row.spanAttributes ?? {},
 				resourceAttributes: row.resourceAttributes ?? {},
-				timestamp: String(row.timestamp),
+				timestamp: row.timestamp,
 			})),
 	)
 }
@@ -126,6 +198,7 @@ const rootLevelSearch = (
 		...(input.service && { service: input.service }),
 		...(input.spanName && { span_name: input.spanName }),
 		...(input.spanNameMatchMode === "contains" && { span_name_match_mode: "contains" }),
+		...(input.environment && { deployment_env: input.environment }),
 		...(input.hasError && { has_error: true }),
 		...(input.minDurationMs != null && { min_duration_ms: input.minDurationMs }),
 		...(input.maxDurationMs != null && { max_duration_ms: input.maxDurationMs }),
@@ -134,6 +207,10 @@ const rootLevelSearch = (
 		...(input.attributeFilters?.[0]?.key && { attribute_filter_key: input.attributeFilters[0].key }),
 		...(input.attributeFilters?.[0]?.value && {
 			attribute_filter_value: input.attributeFilters[0].value,
+		}),
+		...(input.resourceAttributeFilter && {
+			resource_filter_key: input.resourceAttributeFilter.key,
+			resource_filter_value: input.resourceAttributeFilter.value,
 		}),
 	} satisfies Record<string, unknown>
 
@@ -146,7 +223,7 @@ const rootLevelSearch = (
 	}
 
 	return Effect.map(
-		executor.query<TracesRootListOutput>("list_traces", params, { profile: "list" }),
+		executor.query<ListTracesOutput>("list_traces", params, { profile: "list" }),
 		(result): ReadonlyArray<SpanResult> => pipe(result.data, Arr.map(toSpanResult)),
 	)
 }

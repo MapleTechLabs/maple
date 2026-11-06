@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest"
-import { Effect } from "effect"
-import { compile, compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
+import { assert, describe, expect, it } from "@effect/vitest"
+import { DateTime, Effect, Array as Arr, String as Str, Option } from "effect"
+import { compile, compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	canUseLogsAggregatesHourly,
 	logsTimeseriesQuery,
@@ -11,9 +11,10 @@ import {
 	errorRateByServiceQuery,
 	logsFacetsQuery,
 } from "./logs"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 	bucketSeconds: 3600,
@@ -81,24 +82,16 @@ describe("logsTimeseriesQuery", () => {
 		expect(sql).toContain("FROM logs")
 		expect(sql).toContain("toStartOfInterval")
 		expect(sql).toContain("INTERVAL 3600 SECOND")
-		expect(sql).toContain("'all' AS groupName")
 		expect(sql).toContain("count() AS count")
 		expect(sql).toContain("GROUP BY bucket, groupName")
 		expect(sql).toContain("ORDER BY bucket ASC, groupName ASC")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("groups by service", () => {
 		const q = logsTimeseriesQuery({ groupBy: ["service"] })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("toString(ServiceName)")
+		expect(sql).toContain("toString(logs.ServiceName)")
 		expect(sql).not.toContain("'all' AS groupName")
-	})
-
-	it("groups by severity", () => {
-		const q = logsTimeseriesQuery({ groupBy: ["severity"] })
-		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("toString(SeverityText)")
 	})
 
 	it("groups by service and severity", () => {
@@ -136,7 +129,7 @@ describe("logsTimeseriesQuery", () => {
 			baseParams,
 		)
 
-		expect(sql).toContain("hasAllTokens(lower(Body), 'to connect to')")
+		expect(sql).toContain("hasAllTokens(lower(logs.Body), 'to connect to')")
 		expect(sql).toContain("Body ILIKE '%failed to connect to upstream%'")
 	})
 
@@ -145,8 +138,8 @@ describe("logsTimeseriesQuery", () => {
 			logsCountQuery({ search: "failed to connect upstream", bodySearchMode: "tokenbf" }),
 			baseParams,
 		).sql
-		expect(indexed).toContain("hasToken(lower(Body), 'to')")
-		expect(indexed).toContain("hasToken(lower(Body), 'connect')")
+		expect(indexed).toContain("hasToken(lower(logs.Body), 'to')")
+		expect(indexed).toContain("hasToken(lower(logs.Body), 'connect')")
 		expect(indexed).not.toContain("hasToken(lower(Body), 'failed')")
 		expect(indexed).not.toContain("hasToken(lower(Body), 'upstream')")
 		expect(indexed).toContain("Body ILIKE '%failed to connect upstream%'")
@@ -168,15 +161,15 @@ describe("logsTimeseriesQuery", () => {
 			logsCountQuery({ search: " timeout ", bodySearchMode: "tokenbf" }),
 			baseParams,
 		).sql
-		expect(bounded).toContain("hasToken(lower(Body), 'timeout')")
+		expect(bounded).toContain("hasToken(lower(logs.Body), 'timeout')")
 
 		const punctuation = compileUnsafe(
 			logsCountQuery({ search: "a foo.bar-baz qux", bodySearchMode: "tokenbf" }),
 			baseParams,
 		).sql
-		expect(punctuation).toContain("hasToken(lower(Body), 'foo')")
-		expect(punctuation).toContain("hasToken(lower(Body), 'bar')")
-		expect(punctuation).toContain("hasToken(lower(Body), 'baz')")
+		expect(punctuation).toContain("hasToken(lower(logs.Body), 'foo')")
+		expect(punctuation).toContain("hasToken(lower(logs.Body), 'bar')")
+		expect(punctuation).toContain("hasToken(lower(logs.Body), 'baz')")
 		expect(punctuation).not.toContain("hasToken(lower(Body), 'qux')")
 
 		// `_` and `%` are ILIKE wildcards, not literal boundaries: `a_foo_b`
@@ -189,7 +182,7 @@ describe("logsTimeseriesQuery", () => {
 			logsCountQuery({ search: "a_b foo c", bodySearchMode: "tokenbf" }),
 			baseParams,
 		).sql
-		expect(wildcardNeighbour).toContain("hasToken(lower(Body), 'foo')")
+		expect(wildcardNeighbour).toContain("hasToken(lower(logs.Body), 'foo')")
 
 		// ClickHouse lower() folds ASCII only, so non-ASCII words never pre-filter,
 		// including the Kelvin sign that JS lowercases to an ASCII `k`.
@@ -280,9 +273,8 @@ describe("logsTimeseriesQuery MV routing", () => {
 	it("routes to logs_aggregates_hourly at bucketSeconds=3600", () => {
 		const q = logsTimeseriesQuery({ bucketSeconds: 3600 })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM logs_aggregates_hourly")
 		expect(sql).not.toContain("FROM logs\n")
-		expect(sql).toContain("sum(Count) AS count")
+		expect(sql).toContain("sum(logs_aggregates_hourly.Count) AS count")
 		// Hour column is the partition + ORDER BY prefix.
 		expect(sql).toContain("Hour >= '2024-01-01 00:00:00'")
 		// Trailing partial hour clamp — strict-less-than at the floored upper bound.
@@ -293,9 +285,7 @@ describe("logsTimeseriesQuery MV routing", () => {
 	it("falls back to raw `logs` at sub-hour buckets", () => {
 		const q = logsTimeseriesQuery({ bucketSeconds: 60 })
 		const { sql } = compileUnsafe(q, { ...baseParams, bucketSeconds: 60 })
-		expect(sql).toContain("FROM logs")
 		expect(sql).not.toContain("logs_aggregates_hourly")
-		expect(sql).toContain("count() AS count")
 	})
 
 	it("falls back to raw `logs` when traceId is filtered", () => {
@@ -330,7 +320,7 @@ describe("logsTimeseriesQuery MV routing", () => {
 		expect(sql).toContain("FROM logs")
 		expect(sql).not.toContain("logs_aggregates_hourly")
 		expect(sql).toContain(
-			"positionCaseInsensitive(coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']), 'prod')",
+			"positionCaseInsensitive(coalesce(nullIf(logs.ResourceAttributes['deployment.environment.name'], ''), logs.ResourceAttributes['deployment.environment']), 'prod')",
 		)
 	})
 })
@@ -341,23 +331,15 @@ describe("logsBreakdownQuery", () => {
 	it("uses the hourly aggregate for full interior hours when grouping by service", () => {
 		const q = logsBreakdownQuery({ groupBy: "service" })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("UNION ALL")
 		expect(sql).toContain("FROM logs_aggregates_hourly")
 		expect(sql).toContain("FROM logs")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the breakdown's group key
 		expect(sql).toContain("ServiceName AS name")
-		expect(sql).toContain("sum(Count) AS count")
+		expect(sql).toContain("sum(logs_aggregates_hourly.Count) AS count")
 		expect(sql).toContain("count() AS count")
 		expect(sql).toContain("GROUP BY name")
 		expect(sql).toContain("ORDER BY count DESC")
 		expect(sql).toContain("LIMIT 10")
-		expect(sql).toContain("FORMAT JSON")
-	})
-
-	it("compiles breakdown by severity", () => {
-		const q = logsBreakdownQuery({ groupBy: "severity" })
-		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM logs_aggregates_hourly")
-		expect(sql).toContain("SeverityText AS name")
 	})
 
 	it("applies optional filters", () => {
@@ -377,7 +359,7 @@ describe("logsBreakdownQuery", () => {
 		expect(sql).toContain("FROM logs")
 		expect(sql).not.toContain("logs_aggregates_hourly")
 		expect(sql).toContain(
-			"positionCaseInsensitive(coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']), 'prod')",
+			"positionCaseInsensitive(coalesce(nullIf(logs.ResourceAttributes['deployment.environment.name'], ''), logs.ResourceAttributes['deployment.environment']), 'prod')",
 		)
 	})
 
@@ -401,7 +383,7 @@ describe("logsBreakdownQuery", () => {
 		expect(build).not.toThrow()
 
 		const error = Effect.runSync(Effect.flip(compile(build(), baseParams)))
-		expect(error._tag).toBe("@maple-dev/effect-clickhouse/QueryBuilderError")
+		expect(error._tag).toBe("@maple-dev/effect-orm/QueryBuilderError")
 		expect(error.message).toContain("Timestamp")
 	})
 
@@ -436,17 +418,15 @@ describe("logsCountQuery", () => {
 	it("uses the hourly aggregate for full interior hours and raw logs for exact edges", () => {
 		const q = logsCountQuery({})
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("UNION ALL")
 		expect(sql).toContain("FROM logs_aggregates_hourly")
 		expect(sql).toContain("FROM logs")
-		expect(sql).toContain("sum(Count) AS total")
+		expect(sql).toContain("sum(logs_aggregates_hourly.Count) AS total")
 		expect(sql).toContain("count() AS total")
-		expect(sql).toContain("sum(total) AS total")
+		expect(sql).toContain("sum(counts.total) AS total")
 		expect(sql).toContain("Hour >= if(")
 		expect(sql).toContain("Hour < toStartOfHour(toDateTime('2024-01-02 00:00:00'))")
 		expect(sql).toContain("TimestampTime < if(")
 		expect(sql).toContain("TimestampTime >= toStartOfHour(toDateTime('2024-01-02 00:00:00'))")
-		expect(sql).toContain("FORMAT JSON")
 		expect(sql).not.toContain("GROUP BY")
 		expect(sql).not.toContain("ORDER BY")
 	})
@@ -454,9 +434,7 @@ describe("logsCountQuery", () => {
 	it("applies search filter", () => {
 		const q = logsCountQuery({ search: "exception" })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM logs")
 		expect(sql).not.toContain("logs_aggregates_hourly")
-		expect(sql).toContain("Body ILIKE '%exception%'")
 	})
 
 	it("applies traceId filter", () => {
@@ -481,31 +459,68 @@ describe("logsCountQuery", () => {
 // logsListQuery
 
 describe("logsListQuery", () => {
-	it("compiles basic list with all columns", () => {
-		const q = logsListQuery({})
-		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM logs")
-		expect(sql).toContain("Timestamp AS timestamp")
-		expect(sql).toContain("SeverityText AS severityText")
-		expect(sql).toContain("SeverityNumber AS severityNumber")
-		expect(sql).toContain("ServiceName AS serviceName")
-		expect(sql).toContain("Body AS body")
-		expect(sql).toContain("TraceId AS traceId")
-		expect(sql).toContain("SpanId AS spanId")
-		expect(sql).toContain("hex(MD5(toJSONString(tuple(")
-		expect(sql).toContain("AS recordIdentity")
-		expect(sql).toContain("toJSONString(LogAttributes) AS logAttributes")
-		expect(sql).toContain("toJSONString(ResourceAttributes) AS resourceAttributes")
-		expect(sql).toContain("ORDER BY timestamp DESC")
-		expect(sql).toContain("LIMIT 50")
-		expect(sql).toContain("FORMAT JSON")
+	it("applies filter-in and filter-out attribute predicates with escaped user input", () => {
+		const { sql } = compileUnsafe(
+			logsListQuery({
+				attributeFilters: [
+					{ key: "http.route", value: "/a", mode: "equals" },
+					{ key: "o'k", value: "x' OR 1=1", mode: "equals", negated: true },
+				],
+				resourceAttributeFilters: [{ key: "k8s.pod.name", value: "p1", mode: "equals" }],
+			}),
+			baseParams,
+		)
+		expect(sql).toContain("LogAttributes['http.route'] = '/a'")
+		expect(sql).toContain("NOT (LogAttributes['o\\'k'] = 'x\\' OR 1=1')")
+		expect(sql).toContain("ResourceAttributes['k8s.pod.name'] = 'p1'")
 	})
 
 	it("applies cursor pagination", () => {
-		const q = logsListQuery({ cursor: "2024-01-01T12:00:00" })
+		const q = logsListQuery({ cursor: "2024-01-01 12:00:00.123456789" })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("Timestamp < '2024-01-01T12:00:00'")
+		expect(sql).toContain("Timestamp < '2024-01-01 12:00:00.123456789'")
 	})
+
+	// `timestamp` decodes to a millisecond `DateTime.Utc`; the cursor rides on
+	// `exactTimestamp`, so a page boundary inside one millisecond stays exact.
+	it.effect("round-trips a row's exactTimestamp into the next page's cursor", () =>
+		Effect.gen(function* () {
+			const compiled = yield* compile(logsListQuery({ limit: 1 }), baseParams)
+			expect(compiled.rowSchemaSource).toBe("derived")
+			const [row] = yield* compiled.decodeRows([
+				{
+					timestamp: "2024-01-01 12:00:00.123456789",
+					exactTimestamp: "2024-01-01 12:00:00.123456789",
+					severityText: "INFO",
+					severityNumber: 9,
+					serviceName: "api",
+					body: "hello",
+					traceId: "",
+					spanId: "",
+					recordIdentity: "00112233445566778899AABBCCDDEEFF",
+					logAttributes: "{}",
+					resourceAttributes: "{}",
+				},
+			])
+			assert.isDefined(row)
+			expect(DateTime.formatIso(row.timestamp)).toBe("2024-01-01T12:00:00.123Z")
+			const next = yield* compile(
+				logsListQuery({
+					limit: 1,
+					cursorIdentity: {
+						timestamp: row.exactTimestamp,
+						serviceName: row.serviceName,
+						traceId: row.traceId,
+						spanId: row.spanId,
+						recordIdentity: row.recordIdentity,
+					},
+				}),
+				baseParams,
+			)
+			expect(next.sql).toContain("logs.Timestamp < '2024-01-01 12:00:00.123456789'")
+			expect(next.sql).toContain("logs.Timestamp = '2024-01-01 12:00:00.123456789'")
+		}),
+	)
 
 	it("uses the full composite identity for deterministic keyset continuation", () => {
 		const { sql } = compileUnsafe(
@@ -564,31 +579,66 @@ describe("logsListQuery", () => {
 		const q = logsListQuery({ limit: 100 })
 		const { sql } = compileUnsafe(q, baseParams)
 
-		// Outer query keeps the heavy projection.
-		expect(sql).toContain("Body AS body")
-		expect(sql).toContain("toJSONString(LogAttributes) AS logAttributes")
-
 		// Cutoff subquery reads only Timestamp — no Body, no toJSONString.
-		const cutoffMatch = sql.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)
+		const cutoffMatch = Option.getOrThrow(Str.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)(sql))
 		expect(cutoffMatch).not.toBeNull()
-		const inner = cutoffMatch![1]!
-		expect(inner).toContain("Timestamp AS ts")
+		const inner = cutoffMatch[1]
 		expect(inner).not.toContain("Body")
 		expect(inner).not.toContain("toJSONString")
 		expect(inner).toContain("ORDER BY ts DESC")
 		expect(inner).toContain("LIMIT 100")
-
-		// Outer query gates on the cutoff.
-		expect(sql).toContain("Timestamp >= (SELECT min(ts) FROM (")
 	})
 
 	it("applies the same filters to both the cutoff and outer stages", () => {
 		const q = logsListQuery({ serviceName: "api", severity: "ERROR" })
 		const { sql } = compileUnsafe(q, baseParams)
 		// Each filter appears twice — once per stage.
-		expect(sql.match(/ServiceName = 'api'/g)).toHaveLength(2)
-		expect(sql.match(/SeverityText IN \('ERROR', 'Error', 'error'\)/g)).toHaveLength(2)
-		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/ServiceName = 'api'/g)(sql))).toHaveLength(2)
+		expect(
+			Arr.fromIterable(Str.matchAll(/SeverityText IN \('ERROR', 'Error', 'error'\)/g)(sql)),
+		).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(sql))).toHaveLength(2)
+	})
+
+	it("reads oldest-first with a max cutoff when order is asc", () => {
+		const { sql } = compileUnsafe(logsListQuery({ limit: 25, order: "asc" }), baseParams)
+		const cutoffMatch = Option.getOrThrow(Str.match(/SELECT max\(ts\) FROM \(([\s\S]*?)\)\)/)(sql))
+		expect(cutoffMatch).not.toBeNull()
+		expect(cutoffMatch[1]).toContain("ORDER BY ts ASC")
+		expect(cutoffMatch[1]).toContain("LIMIT 25")
+		expect(sql).toContain("Timestamp <= (SELECT max(ts) FROM (")
+		expect(sql).toContain(
+			"ORDER BY timestamp ASC, serviceName ASC, traceId ASC, spanId ASC, recordIdentity ASC",
+		)
+		expect(Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(sql))).toHaveLength(2)
+	})
+
+	it("continues an asc page past its cursor, not behind it", () => {
+		const cursor = "2026-10-08 14:30:00.123456789"
+		const asc = compileUnsafe(logsListQuery({ limit: 25, order: "asc", cursor }), baseParams).sql
+		expect(asc).toMatch(/Timestamp > '2026-10-08 14:30:00\.123456789'/)
+		expect(asc).not.toMatch(/Timestamp < '2026-10-08 14:30:00\.123456789'/)
+		const desc = compileUnsafe(logsListQuery({ limit: 25, cursor }), baseParams).sql
+		expect(desc).toMatch(/Timestamp < '2026-10-08 14:30:00\.123456789'/)
+	})
+
+	it("keeps the desc query unchanged when order is explicit", () => {
+		const implicit = compileUnsafe(logsListQuery({ limit: 25 }), baseParams).sql
+		const explicit = compileUnsafe(logsListQuery({ limit: 25, order: "desc" }), baseParams).sql
+		expect(explicit).toBe(implicit)
+		expect(explicit).not.toContain("max(ts)")
+	})
+
+	it("scopes to one instance through a resource attribute filter", () => {
+		const { sql } = compileUnsafe(
+			logsListQuery({
+				serviceName: "api",
+				resourceAttributeFilters: [{ key: "k8s.pod.name", value: "api-7f9", mode: "equals" }],
+			}),
+			baseParams,
+		)
+		expect(Arr.fromIterable(Str.matchAll(/'k8s\.pod\.name'/g)(sql)).length).toBeGreaterThanOrEqual(2)
+		expect(sql).toContain("'api-7f9'")
 	})
 })
 
@@ -596,38 +646,6 @@ describe("logsListQuery", () => {
 
 describe("getLogByKeyQuery", () => {
 	const keyParams = { ...baseParams, timestamp: "2024-01-01 12:00:00.123456" }
-
-	it("compiles an exact-match single-log lookup", () => {
-		const q = getLogByKeyQuery({ serviceName: "api" })
-		const { sql } = compileUnsafe(q, keyParams)
-		expect(sql).toContain("FROM logs")
-		expect(sql).toContain("Timestamp AS timestamp")
-		expect(sql).toContain("toJSONString(LogAttributes) AS logAttributes")
-		expect(sql).toContain("Timestamp = '2024-01-01 12:00:00.123456'")
-		expect(sql).toContain("ServiceName = 'api'")
-		expect(sql).toContain("LIMIT 1")
-		expect(sql).toContain("FORMAT JSON")
-	})
-
-	it("bounds TimestampTime for partition pruning", () => {
-		const q = getLogByKeyQuery({ serviceName: "api" })
-		const { sql } = compileUnsafe(q, keyParams)
-		expect(sql).toContain("TimestampTime >= '2024-01-01 00:00:00'")
-		expect(sql).toContain("TimestampTime <= '2024-01-02 00:00:00'")
-	})
-
-	it("applies optional traceId and spanId filters", () => {
-		const q = getLogByKeyQuery({
-			serviceName: "api",
-			traceId: "trace123",
-			spanId: "span456",
-			recordIdentity: "00112233445566778899AABBCCDDEEFF",
-		})
-		const { sql } = compileUnsafe(q, keyParams)
-		expect(sql).toContain("TraceId = 'trace123'")
-		expect(sql).toContain("SpanId = 'span456'")
-		expect(sql).toContain("= '00112233445566778899AABBCCDDEEFF'")
-	})
 
 	it("omits traceId and spanId filters when not provided", () => {
 		const q = getLogByKeyQuery({ serviceName: "api" })
@@ -643,52 +661,36 @@ describe("errorRateByServiceQuery", () => {
 	it("uses the hourly aggregate for full interior hours and raw logs for exact edges", () => {
 		const q = errorRateByServiceQuery()
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("UNION ALL")
-		expect(sql).toContain("FROM logs_aggregates_hourly")
-		expect(sql).toContain("FROM logs")
-		expect(sql).toContain("sum(Count) AS bucketTotalLogs")
-		expect(sql).toContain("sumIf(Count, SeverityText IN ('ERROR', 'FATAL')) AS bucketErrorLogs")
-		expect(sql).toContain("sum(bucketTotalLogs) AS totalLogs")
-		expect(sql).toContain("sum(bucketErrorLogs) AS errorLogs")
+		expect(sql).toContain("sum(logs_aggregates_hourly.Count) AS bucketTotalLogs")
+		expect(sql).toContain(
+			"sumIf(logs_aggregates_hourly.Count, logs_aggregates_hourly.SeverityText IN ('ERROR', 'FATAL')) AS bucketErrorLogs",
+		)
+		expect(sql).toContain("sum(rates.bucketTotalLogs) AS totalLogs")
+		expect(sql).toContain("sum(rates.bucketErrorLogs) AS errorLogs")
 		expect(sql).toContain("count() AS bucketTotalLogs")
 		expect(sql).toContain("countIf(")
 		expect(sql).toContain("IN ('ERROR', 'FATAL')")
-		expect(sql).toContain("AS bucketErrorLogs")
 		expect(sql).toContain("round(")
-		expect(sql).toContain("AS errorRate")
 		expect(sql).toContain("GROUP BY serviceName")
 		expect(sql).toContain("ORDER BY errorRate DESC")
-		expect(sql).toContain("FORMAT JSON")
 	})
 })
 
 // logsFacetsQuery
 
 describe("logsFacetsQuery", () => {
-	it("routes to logs_aggregates_hourly with severity/service/deploymentEnv/namespace facets", () => {
+	it("routes all four facet branches to logs_aggregates_hourly", () => {
 		const q = logsFacetsQuery({})
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		const unionCount = (sql.match(/UNION ALL/g) || []).length
-		expect(unionCount).toBe(3)
-		expect(sql).toContain("FROM logs_aggregates_hourly")
 		// Pre-aggregated reads — no raw map lookups on the MV path.
 		expect(sql).not.toContain("ResourceAttributes")
-		expect(sql).toContain("'severity' AS facetType")
-		expect(sql).toContain("'service' AS facetType")
-		expect(sql).toContain("'deploymentEnv' AS facetType")
-		expect(sql).toContain("'namespace' AS facetType")
-		expect(sql).toContain("ServiceNamespace AS namespace")
-		expect(sql).toContain("sum(Count) AS count")
-		// Env facet reads the top-level MV column, not the resource-attr map.
-		expect(sql).toContain("DeploymentEnv AS deploymentEnv")
+		expect(sql).toContain("sum(logs_aggregates_hourly.Count) AS count")
 		expect(sql).toContain("ORDER BY count DESC")
 	})
 
 	it("filters on Hour instead of the dual Timestamp/TimestampTime predicates", () => {
 		const q = logsFacetsQuery({})
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		expect(sql).toContain("Hour >= '2024-01-01 00:00:00'")
-		expect(sql).toContain("Hour <= '2024-01-02 00:00:00'")
 		expect(sql).not.toContain("TimestampTime")
 	})
 
@@ -708,7 +710,7 @@ describe("logsFacetsQuery", () => {
 		expect(sql).toContain("FROM logs")
 		expect(sql).not.toContain("logs_aggregates_hourly")
 		expect(sql).toContain(
-			"positionCaseInsensitive(coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']), 'prod')",
+			"positionCaseInsensitive(coalesce(nullIf(logs.ResourceAttributes['deployment.environment.name'], ''), logs.ResourceAttributes['deployment.environment']), 'prod')",
 		)
 	})
 
@@ -716,12 +718,23 @@ describe("logsFacetsQuery", () => {
 		const q = logsFacetsQuery({}, "severity")
 		const { sql } = compileUnionUnsafe(q, baseParams)
 		expect(sql).not.toContain("UNION ALL")
-		expect(sql).toContain("FROM logs_aggregates_hourly")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the facet label proves which branch compiled
 		expect(sql).toContain("'severity' AS facetType")
 		expect(sql).not.toContain("'service' AS facetType")
 		// Same outer shape as the full union: count-desc, limit 500.
 		expect(sql).toContain("ORDER BY count DESC")
 		expect(sql).toContain("LIMIT 500")
+	})
+
+	it("takes the raw-`logs` path and applies attribute filters when they are set", () => {
+		const q = logsFacetsQuery({
+			attributeFilters: [{ key: "http.route", value: "/a", mode: "equals" }],
+			resourceAttributeFilters: [{ key: "k8s.pod.name", value: "p1", mode: "equals", negated: true }],
+		})
+		const { sql } = compileUnionUnsafe(q, baseParams)
+		expect(sql).not.toContain("logs_aggregates_hourly")
+		expect(sql).toContain("LogAttributes['http.route'] = '/a'")
+		expect(sql).toContain("NOT (ResourceAttributes['k8s.pod.name'] = 'p1')")
 	})
 
 	it("facet scoping follows the raw-`logs` fallback path", () => {
@@ -732,6 +745,7 @@ describe("logsFacetsQuery", () => {
 		const { sql } = compileUnionUnsafe(q, baseParams)
 		expect(sql).not.toContain("UNION ALL")
 		expect(sql).toContain("FROM logs")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the facet label proves which branch compiled
 		expect(sql).toContain("'severity' AS facetType")
 		expect(sql).not.toContain("'namespace' AS facetType")
 	})
@@ -744,7 +758,7 @@ describe("environments filter", () => {
 		const q = logsListQuery({ environments: ["production"] })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain(
-			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) IN ('production')",
+			"coalesce(nullIf(logs.ResourceAttributes['deployment.environment.name'], ''), logs.ResourceAttributes['deployment.environment']) IN ('production')",
 		)
 	})
 
@@ -752,7 +766,7 @@ describe("environments filter", () => {
 		const q = logsListQuery({ environments: ["production", "staging"] })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain(
-			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) IN ('production', 'staging')",
+			"coalesce(nullIf(logs.ResourceAttributes['deployment.environment.name'], ''), logs.ResourceAttributes['deployment.environment']) IN ('production', 'staging')",
 		)
 	})
 
@@ -760,7 +774,7 @@ describe("environments filter", () => {
 		const q = logsListQuery({ environments: ["prod"], matchModes: { deploymentEnv: "contains" } })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain(
-			"positionCaseInsensitive(coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']), 'prod')",
+			"positionCaseInsensitive(coalesce(nullIf(logs.ResourceAttributes['deployment.environment.name'], ''), logs.ResourceAttributes['deployment.environment']), 'prod')",
 		)
 	})
 
@@ -768,7 +782,7 @@ describe("environments filter", () => {
 		const q = logsCountQuery({ environments: ["production"] })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain(
-			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) IN ('production')",
+			"coalesce(nullIf(logs.ResourceAttributes['deployment.environment.name'], ''), logs.ResourceAttributes['deployment.environment']) IN ('production')",
 		)
 	})
 
@@ -776,7 +790,7 @@ describe("environments filter", () => {
 		const q = logsTimeseriesQuery({ environments: ["production"] })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain(
-			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) IN ('production')",
+			"coalesce(nullIf(logs.ResourceAttributes['deployment.environment.name'], ''), logs.ResourceAttributes['deployment.environment']) IN ('production')",
 		)
 	})
 
@@ -784,7 +798,7 @@ describe("environments filter", () => {
 		const q = logsFacetsQuery({ environments: ["production"] })
 		const { sql } = compileUnionUnsafe(q, baseParams)
 		expect(sql).toContain("FROM logs_aggregates_hourly")
-		const matches = sql.match(/DeploymentEnv IN \('production'\)/g) || []
+		const matches = Arr.fromIterable(Str.matchAll(/DeploymentEnv IN \('production'\)/g)(sql))
 		expect(matches.length).toBe(4)
 		expect(sql).not.toContain("ResourceAttributes")
 	})

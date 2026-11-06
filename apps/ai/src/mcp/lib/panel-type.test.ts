@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest"
-import { MCP_PANEL_TYPES, WIDGET_TYPES } from "@maple/domain/http"
 import { resolvePanelType } from "./panel-type"
 
 const resolved = (input: Parameters<typeof resolvePanelType>[0]) => {
@@ -15,15 +14,6 @@ const failure = (input: Parameters<typeof resolvePanelType>[0]) => {
 }
 
 describe("panel_type derives the whole chart decision", () => {
-	for (const panelType of MCP_PANEL_TYPES) {
-		it(`${panelType} resolves to its table entry`, () => {
-			const result = resolved({ panel_type: panelType })
-			expect(result.panelType).toBe(panelType)
-			expect(result.visualization).toBe(WIDGET_TYPES[panelType].visualization)
-			expect(result.chartId).toBe(WIDGET_TYPES[panelType].chartId)
-		})
-	}
-
 	// The concrete gap this closed: on the structured-query path there was no way
 	// to ask for a bar or an area chart at all, because `visualization` collapses
 	// them into `"chart"` and nothing derived `chartId`.

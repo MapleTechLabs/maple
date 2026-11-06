@@ -13,8 +13,8 @@
 import { BunHttpServer } from "@effect/platform-bun"
 import { Maple } from "@maple-dev/effect-sdk/server"
 import { Effect, Layer } from "effect"
-import { HttpMiddleware, HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpMiddleware, HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { NotifierApi } from "../shared/notifier-api.ts"
 import { NotificationService } from "./NotificationService.ts"
 
@@ -65,6 +65,7 @@ console.log(`    telemetry → ${MAPLE_ENDPOINT} (run \`maple start\`)`)
 
 const shutdown = () => {
 	void dispose()
+		// oxlint-disable-next-line typescript/no-misused-promises -- Promise.finally awaits the returned promise.
 		.finally(() => server.stop(true))
 		.finally(() => process.exit(0))
 }

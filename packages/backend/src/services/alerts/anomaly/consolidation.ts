@@ -19,6 +19,8 @@ import {
 } from "@maple/domain/http"
 import { Array as Arr, Option, Schema } from "effect"
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 /**
  * Attach only when the new fingerprint's breach onset falls within this span
  * of the incident's own onset (or latest reopen) — co-onset on the same
@@ -94,7 +96,7 @@ export function parseFingerprints(row: IncidentFingerprintSource): IncidentFinge
 }
 
 export const serializeFingerprints = (entries: ReadonlyArray<IncidentFingerprintEntry>): string =>
-	JSON.stringify(entries)
+	encodeJson(entries)
 
 /**
  * Insert or update one fingerprint's entry. New entries beyond the cap are
@@ -104,14 +106,17 @@ export function upsertFingerprintEntry(
 	entries: ReadonlyArray<IncidentFingerprintEntry>,
 	entry: IncidentFingerprintEntry,
 ): IncidentFingerprintEntry[] {
-	const existing = entries.findIndex((e) => e.fingerprintHash === entry.fingerprintHash)
-	if (existing >= 0) {
-		const next = [...entries]
-		next[existing] = entry
-		return next
-	}
-	if (entries.length >= MAX_FINGERPRINT_ENTRIES) return [...entries]
-	return [...entries, entry]
+	return Option.match(
+		Arr.findFirstIndex(entries, (e) => e.fingerprintHash === entry.fingerprintHash),
+		{
+			onSome: (existing) => {
+				const next = [...entries]
+				next[existing] = entry
+				return next
+			},
+			onNone: () => (entries.length >= MAX_FINGERPRINT_ENTRIES ? [...entries] : [...entries, entry]),
+		},
+	)
 }
 
 export function markFingerprintResolved(
@@ -119,7 +124,7 @@ export function markFingerprintResolved(
 	fingerprintHash: string,
 	nowMs: number,
 ): IncidentFingerprintEntry[] {
-	return entries.map((e) => (e.fingerprintHash === fingerprintHash ? { ...e, resolvedAt: nowMs } : e))
+	return Arr.map(entries, (e) => (e.fingerprintHash === fingerprintHash ? { ...e, resolvedAt: nowMs } : e))
 }
 
 /** Max severity over still-firing entries; `fallback` when none are tracked. */
@@ -127,9 +132,9 @@ export function headlineSeverity(
 	entries: ReadonlyArray<IncidentFingerprintEntry>,
 	fallback: AnomalyIncidentSeverity,
 ): AnomalyIncidentSeverity {
-	const active = entries.filter((e) => e.resolvedAt === null)
+	const active = Arr.filter(entries, (e) => e.resolvedAt === null)
 	if (active.length === 0) return fallback
-	return active.some((e) => e.severity === "critical") ? "critical" : "warning"
+	return Arr.some(active, (e) => e.severity === "critical") ? "critical" : "warning"
 }
 
 /** Co-onset evidence gate for attaching a fingerprint to an open incident. */

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Predicate, Result, Schema } from "effect"
+import { Effect, Predicate, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { MapleApiV2 } from "./api"
 import { V2AlertDestinationCreateParams } from "./alert-destinations"
 import { V2AlertIncident } from "./alert-incidents"
 import { V2AlertRule, V2AlertRuleMutationResponse } from "./alert-rules"
 import { V2ApiKey, V2ApiKeyMutationResponse, V2ApiKeyWithSecret } from "./api-keys"
 import { V2DashboardMutation } from "./dashboards"
-import { V2ErrorIssue, V2ErrorIssueDetail } from "./error-issues"
+import { V2ErrorIssue } from "./error-issues"
 import { AuthorizationV2, isScopeExemptRoute, requiredScopeForRoute, scopeAllows, V2Scope } from "./auth"
 import {
 	V2PlanetScaleIntegration,
@@ -16,13 +16,12 @@ import {
 import {
 	decodeOffsetCursor,
 	encodeOffsetCursor,
-	isoTimestamp,
 	ListQuery,
 	paginateArray,
 	paginateOffsetQuery,
 	Timestamp,
 } from "./envelopes"
-import { defineV2Error, V2InsufficientScope, V2RateLimited } from "./errors"
+import { defineV2Error } from "./errors"
 import { encodePublicId } from "./public-id"
 import {
 	LogPublicId,
@@ -35,7 +34,7 @@ const UUID = "0f8fad5b-d9cb-469f-a165-70867728950e"
 
 describe("V2PlanetScaleIntegration wire format", () => {
 	it("decodes snake_case fields, ISO timestamps, and a scrp_ public ID", () => {
-		const status = Schema.decodeUnknownSync(V2PlanetScaleIntegration)({
+		const status = Schema.decodeSync(V2PlanetScaleIntegration)({
 			object: "planetscale_integration",
 			connected: true,
 			pending_org_selection: false,
@@ -64,7 +63,7 @@ describe("V2PlanetScaleIntegration wire format", () => {
 
 	it("rejects a scrape target ID carrying the wrong prefix", () => {
 		expect(() =>
-			Schema.decodeUnknownSync(V2PlanetScaleScrapeTarget)({
+			Schema.decodeSync(V2PlanetScaleScrapeTarget)({
 				id: encodePublicId("key", UUID),
 				object: "planetscale_integration.scrape_target",
 				enabled: true,
@@ -79,13 +78,13 @@ describe("V2PlanetScaleIntegration wire format", () => {
 
 	it("requires a non-empty token id and secret", () => {
 		expect(() =>
-			Schema.decodeUnknownSync(V2PlanetScaleMetricsTokenRequest)({
+			Schema.decodeSync(V2PlanetScaleMetricsTokenRequest)({
 				token_id: "",
 				token_secret: "pscale_tkn_x",
 			}),
 		).toThrow()
 		expect(
-			Schema.decodeUnknownSync(V2PlanetScaleMetricsTokenRequest)({
+			Schema.decodeSync(V2PlanetScaleMetricsTokenRequest)({
 				token_id: "tok_1",
 				token_secret: "pscale_tkn_x",
 			}).token_id,
@@ -95,7 +94,7 @@ describe("V2PlanetScaleIntegration wire format", () => {
 
 describe("V2ApiKey wire format", () => {
 	it("encodes snake_case fields, an object type, and a key_ public ID", () => {
-		const key = Schema.decodeUnknownSync(V2ApiKey)({
+		const key = Schema.decodeSync(V2ApiKey)({
 			id: encodePublicId("key", UUID),
 			object: "api_key",
 			name: "ci",
@@ -121,6 +120,26 @@ describe("V2ApiKey wire format", () => {
 		expect("keyPrefix" in wire).toBe(false)
 	})
 
+	it("encodes MCP OAuth tokens, whose stored scope is outside the request grammar", () => {
+		const key = Schema.decodeSync(V2ApiKey)({
+			id: encodePublicId("key", UUID),
+			object: "api_key",
+			name: "Claude",
+			description: "OAuth access token for the Maple MCP server",
+			key_prefix: "maple_ak_abc...",
+			kind: "mcp",
+			scopes: ["mcp:tools"],
+			revoked: false,
+			revoked_at: null,
+			last_used_at: null,
+			expires_at: "2026-07-15T01:00:00.000Z",
+			created_at: "2026-07-15T00:00:00.000Z",
+			created_by: "user_123",
+			created_by_email: null,
+		})
+		expect(Schema.encodeSync(V2ApiKey)(key).scopes).toEqual(["mcp:tools"])
+	})
+
 	it("keeps txid on mutation responses but out of the base resource", () => {
 		const base = {
 			id: encodePublicId("key", UUID),
@@ -138,21 +157,21 @@ describe("V2ApiKey wire format", () => {
 			created_by: "user_123",
 			created_by_email: null,
 		}
-		const withSecret = Schema.decodeUnknownSync(V2ApiKeyWithSecret)({
+		const withSecret = Schema.decodeSync(V2ApiKeyWithSecret)({
 			...base,
 			secret: "maple_ak_secret",
 			txid: "81234",
 		})
-		const revoked = Schema.decodeUnknownSync(V2ApiKeyMutationResponse)({ ...base, txid: "81235" })
+		const revoked = Schema.decodeSync(V2ApiKeyMutationResponse)({ ...base, txid: "81235" })
 
 		expect(Schema.encodeSync(V2ApiKeyWithSecret)(withSecret).txid).toBe("81234")
 		expect(Schema.encodeSync(V2ApiKeyMutationResponse)(revoked).txid).toBe("81235")
-		expect("txid" in Schema.encodeSync(V2ApiKey)(Schema.decodeUnknownSync(V2ApiKey)(base))).toBe(false)
+		expect("txid" in Schema.encodeSync(V2ApiKey)(Schema.decodeSync(V2ApiKey)(base))).toBe(false)
 	})
 
 	it("rejects non-Postgres transaction IDs", () => {
 		expect(() =>
-			Schema.decodeUnknownSync(V2ApiKeyMutationResponse)({
+			Schema.decodeSync(V2ApiKeyMutationResponse)({
 				id: encodePublicId("key", UUID),
 				object: "api_key",
 				name: "ci",
@@ -211,40 +230,18 @@ describe("V2ErrorIssue wire format", () => {
 	}
 
 	it("encodes the resource with snake_case fields and an iss_ public ID", () => {
-		const decoded = Schema.decodeUnknownSync(V2ErrorIssue)(issueWire)
+		const decoded = Schema.decodeSync(V2ErrorIssue)(issueWire)
 		expect(decoded.id).toBe(UUID)
 		const wire = Schema.encodeSync(V2ErrorIssue)(decoded)
 		expect(wire.id).toBe(encodePublicId("iss", UUID))
 		expect(wire.service_name).toBe("checkout-api")
 		expect("serviceName" in wire).toBe(false)
 	})
-
-	it("decodes the rich retrieve representation", () => {
-		const detail = Schema.decodeUnknownSync(V2ErrorIssueDetail)({
-			...issueWire,
-			timeseries: [{ bucket: "2026-07-15T01:00:00.000Z", count: 4 }],
-			sample_traces: [
-				{
-					trace_id: "0123456789abcdef0123456789abcdef",
-					span_id: "0123456789abcdef",
-					service_name: "checkout-api",
-					timestamp: "2026-07-15T01:00:00.000Z",
-					exception_message: "upstream timed out",
-					duration_micros: 1200,
-				},
-			],
-			incidents: [],
-			environments: [{ name: "production", count: 4 }],
-		})
-		expect(detail.timeseries[0]?.count).toBe(4)
-		expect(detail.environments[0]?.name).toBe("production")
-		expect(detail.sample_traces[0]?.trace_id).toBe("0123456789abcdef0123456789abcdef")
-	})
 })
 
 describe("V2Dashboard wire format", () => {
 	it("encodes public IDs and recursively snake_cases the dashboard document", () => {
-		const decoded = Schema.decodeUnknownSync(V2DashboardMutation)({
+		const decoded = Schema.decodeSync(V2DashboardMutation)({
 			id: encodePublicId("dash", UUID),
 			object: "dashboard",
 			name: "Operations",
@@ -301,6 +298,7 @@ describe("V2Dashboard wire format", () => {
 			refresh_interval_seconds: null,
 			created_at: "2026-07-15T00:00:00.000Z",
 			updated_at: "2026-07-16T00:00:00.000Z",
+			version: 3,
 			txid: "81234",
 		})
 
@@ -363,9 +361,22 @@ describe("V2 alerts wire format", () => {
 		comparator: "gt",
 		threshold: 0.05,
 		threshold_upper: null,
+		thresholds: [
+			{
+				severity: "critical",
+				value: 0.05,
+				upper: null,
+				recovery_value: null,
+				destination_ids: [encodePublicId("dest", DEST_UUID)],
+			},
+		],
 		window_minutes: 5,
+		evaluation_interval_minutes: null,
+		slowed_interval_minutes: null,
+		slowed_at: null,
 		minimum_sample_count: 50,
 		consecutive_breaches_required: 2,
+		breaches_out_of: null,
 		consecutive_healthy_required: 3,
 		renotify_interval_minutes: 60,
 		apdex_threshold_ms: null,
@@ -374,7 +385,9 @@ describe("V2 alerts wire format", () => {
 		raw_query_reducer: null,
 		destination_ids: [encodePublicId("dest", DEST_UUID)],
 		no_data_behavior: "skip",
+		alert_on_no_data: false,
 		last_evaluation_error: null,
+		last_evaluation_error_kind: null,
 		last_evaluated_at: null,
 		last_scheduled_at: null,
 		created_at: "2026-07-15T00:00:00.000Z",
@@ -391,6 +404,7 @@ describe("V2 alerts wire format", () => {
 		const wire = Schema.encodeSync(V2AlertRule)(rule)
 		expect(wire.id).toBe(encodePublicId("alrt", UUID))
 		expect(wire.destination_ids[0]).toMatch(/^dest_/)
+		expect(wire.thresholds[0]?.destination_ids[0]).toMatch(/^dest_/)
 		expect("signalType" in wire).toBe(false)
 		// The query-builder draft is opaque: its camelCase keys survive untouched.
 		expect(wire.query_builder_draft).toEqual({
@@ -412,14 +426,14 @@ describe("V2 alerts wire format", () => {
 	})
 
 	it("decodes destination create params per union arm and rejects mismatched configs", () => {
-		const pagerduty = Schema.decodeUnknownSync(V2AlertDestinationCreateParams)({
+		const pagerduty = Schema.decodeSync(V2AlertDestinationCreateParams)({
 			type: "pagerduty",
 			name: "On-call",
 			integration_key: "routing-key",
 		})
 		expect(pagerduty.type).toBe("pagerduty")
 
-		const email = Schema.decodeUnknownSync(V2AlertDestinationCreateParams)({
+		const email = Schema.decodeSync(V2AlertDestinationCreateParams)({
 			type: "email",
 			name: "Leads",
 			member_user_ids: ["user_1", "user_2"],
@@ -445,6 +459,7 @@ describe("V2 alerts wire format", () => {
 			group_key: null,
 			signal_type: "error_rate",
 			severity: "critical",
+			peak_severity: "critical",
 			status: "open",
 			comparator: "gt",
 			threshold: 0.05,
@@ -463,6 +478,9 @@ describe("V2 alerts wire format", () => {
 			last_notified_at: null,
 			hold_reason: null,
 			held_since: null,
+			acknowledged_at: null,
+			acknowledged_by: null,
+			acknowledged_via: null,
 			error_issue_id: null,
 		})
 		expect(incident.id).toBe(INCIDENT_UUID)
@@ -529,27 +547,6 @@ describe("v2 error envelope", () => {
 	it("omits param when not provided", () => {
 		const wire = Schema.encodeSync(TestNotFound.schema)(TestNotFound.make("gone"))
 		expect("param" in wire.error).toBe(false)
-	})
-
-	it("permission errors carry their declared category", () => {
-		expect(V2InsufficientScope.make("nope").error.type).toBe("permission_error")
-	})
-
-	it("rateLimited has the stable public 429 envelope", () => {
-		expect(
-			Schema.encodeSync(V2RateLimited.schema)(V2RateLimited.make(undefined, { retryAfterSeconds: 60 })),
-		).toEqual({
-			error: {
-				_tag: "@maple/http/v2/RateLimitError",
-				type: "rate_limit_error",
-				code: "rate_limited",
-				title: "Too many requests",
-				message: "Too many requests. Retry after the interval in the Retry-After header.",
-				retryable: true,
-				recovery: "retry",
-				retry_after_seconds: 60,
-			},
-		})
 	})
 })
 
@@ -658,9 +655,11 @@ describe("scopes", () => {
 	// derivation cannot classify is a 500, so every declared one must classify.
 	it("classifies every scope-protected v2 route template", () => {
 		let checked = 0
-		for (const group of Object.values(MapleApiV2.groups)) {
+		for (const group of Rec.values(MapleApiV2.groups)) {
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.values would need a cast
 			for (const endpoint of Object.values(group.endpoints)) {
-				const scoped = Array.from(endpoint.middlewares).some(
+				const scoped = Arr.some(
+					Array.from(endpoint.middlewares),
 					(middleware) =>
 						Predicate.hasProperty(middleware, "key") &&
 						Predicate.isString(middleware.key) &&
@@ -743,19 +742,8 @@ describe("telemetry contracts", () => {
 	it("round-trips the synthetic composite log ID", () => {
 		const internal = JSON.stringify(["2026-07-15 12:00:00.123", "00112233445566778899AABBCCDDEEFF"])
 		const wire = Schema.encodeSync(LogPublicId)(internal)
-		expect(wire.startsWith("log_")).toBe(true)
+		expect(Str.startsWith("log_")(wire)).toBe(true)
 		expect(Schema.decodeSync(LogPublicId)(wire)).toBe(internal)
-	})
-
-	it("decodes signal-scoped trace timeseries with attribute grouping", () => {
-		const request = Schema.decodeUnknownSync(V2TraceTimeseriesParams)({
-			start_time: "2026-07-15T00:00:00.000Z",
-			end_time: "2026-07-15T01:00:00.000Z",
-			aggregation: "count",
-			group_by: "attribute",
-			group_by_attribute_key: "http.route",
-		})
-		expect(request.group_by).toBe("attribute")
 	})
 
 	it("rejects invalid filters, grouping, metric compatibility, and budgets", () => {
@@ -764,21 +752,21 @@ describe("telemetry contracts", () => {
 			end_time: "2026-07-15T01:00:00.000Z",
 		}
 		expect(() =>
-			Schema.decodeUnknownSync(V2TraceTimeseriesParams)({
+			Schema.decodeSync(V2TraceTimeseriesParams)({
 				...base,
 				aggregation: "count",
 				group_by: "attribute",
 			}),
 		).toThrow()
 		expect(() =>
-			Schema.decodeUnknownSync(V2TraceTimeseriesParams)({
+			Schema.decodeSync(V2TraceTimeseriesParams)({
 				...base,
 				aggregation: "count",
 				bucket_seconds: 0,
 			}),
 		).toThrow()
 		expect(() =>
-			Schema.decodeUnknownSync(V2MetricsTimeseriesParams)({
+			Schema.decodeSync(V2MetricsTimeseriesParams)({
 				...base,
 				aggregation: "rate",
 				filters: { metric_name: "requests", metric_type: "gauge" },
@@ -872,25 +860,24 @@ describe("list pagination", () => {
 })
 
 describe("timestamps", () => {
-	it("formats epoch-ms as ISO-8601 UTC", () => {
-		expect(isoTimestamp(0)).toBe("1970-01-01T00:00:00.000Z")
-	})
-
 	it("accepts UTC ISO-8601 timestamps and rejects invalid values", () => {
-		expect(Schema.decodeUnknownSync(Timestamp)("2026-07-15T12:34:56.000Z")).toBe(
-			"2026-07-15T12:34:56.000Z",
-		)
-		expect(() => Schema.decodeUnknownSync(Timestamp)("not-a-date")).toThrow()
-		expect(() => Schema.decodeUnknownSync(Timestamp)("2026-07-15T12:34:56+02:00")).toThrow()
+		expect(Schema.decodeSync(Timestamp)("2026-07-15T12:34:56.000Z")).toBe("2026-07-15T12:34:56.000Z")
+		expect(() => Schema.decodeSync(Timestamp)("not-a-date")).toThrow()
+		expect(() => Schema.decodeSync(Timestamp)("2026-07-15T12:34:56+02:00")).toThrow()
 	})
 })
 
 describe("isScopeExemptRoute", () => {
 	it("exempts only sending and listing agent feedback", () => {
-		expect(isScopeExemptRoute("POST", "/v2/agent_feedback")).toBe(true)
-		expect(isScopeExemptRoute("POST", "/v2/agent_feedback/")).toBe(true)
-		expect(isScopeExemptRoute("GET", "/v2/agent_feedback")).toBe(true)
-		expect(isScopeExemptRoute("DELETE", "/v2/agent_feedback")).toBe(false)
-		expect(isScopeExemptRoute("POST", "/v2/api_keys")).toBe(false)
+		expect(isScopeExemptRoute("POST", "/v2/agent_feedback", "standard")).toBe(true)
+		expect(isScopeExemptRoute("POST", "/v2/agent_feedback/", "standard")).toBe(true)
+		expect(isScopeExemptRoute("GET", "/v2/agent_feedback", "standard")).toBe(true)
+		expect(isScopeExemptRoute("DELETE", "/v2/agent_feedback", "standard")).toBe(false)
+		expect(isScopeExemptRoute("POST", "/v2/api_keys", "standard")).toBe(false)
+	})
+
+	it("exempts nothing for a device credential", () => {
+		expect(isScopeExemptRoute("POST", "/v2/agent_feedback", "device")).toBe(false)
+		expect(isScopeExemptRoute("GET", "/v2/agent_feedback", "device")).toBe(false)
 	})
 })

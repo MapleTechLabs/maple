@@ -121,7 +121,7 @@ const base = {
 	</svg>
 )}
 
-{name === "Agent Sessions" && (
+{(name === "Agent Sessions" || name === "AI Frameworks") && (
 	<svg class={className} {...base}>
 		<path d="M3 4H21V16H13L8 21V16H3V4Z" />
 		<path d="M8 9H8.01" />
@@ -139,7 +139,7 @@ const base = {
 	</svg>
 )}
 
-{name === "Infrastructure" && (
+{(name === "Infrastructure" || name === "Platforms") && (
 	<svg class={className} {...base}>
 		<path d="M17 6.5V6.49" />
 		<path d="M13 6.5V6.49" />
@@ -156,7 +156,7 @@ const base = {
 	</svg>
 )}
 
-{name === "Integrations" && (
+{(name === "Integrations" || name === "AI Gateways") && (
 	<svg class={className} {...base}>
 		<path d="M16 2V7" />
 		<path d="M8 2V7" />
@@ -183,6 +183,43 @@ const base = {
 	</svg>
 )}
 
+{name === "Code Review" && (
+	<svg class={className} {...base}>
+		<path d="M15 19H7" />
+		<path d="M13 3L7 3" />
+		<path d="M3 15L3 7" />
+		<path d="M19 15L19 9" />
+		<path d="M19 19L19 19.01" />
+		<path d="M21 21L21 21.01" />
+		<path d="M5 17L5 17.01" />
+		<path d="M17 17L17 17.01" />
+		<path d="M5 5L5 5.01" />
+		<path d="M11 11.01V11" />
+		<path d="M13 9.01V9" />
+		<path d="M15 7.01V7" />
+		<path d="M17 5.01V5" />
+		<path d="M9 9.01V9" />
+	</svg>
+)}
+
+{name === "Infrastructure as Code" && (
+	<svg class={className} {...base}>
+		<path d="M12 16.01V16" />
+		<path d="M16 16.01V16" />
+		<path d="M8 16.01V16" />
+		<path d="M7 3H6" />
+		<path d="M17 3H18" />
+		<path d="M7 21H6" />
+		<path d="M17 21H18" />
+		<path d="M2 12H1" />
+		<path d="M22 12H23" />
+		<path d="M4 10V5" />
+		<path d="M20 10V5" />
+		<path d="M4 19V14" />
+		<path d="M20 19V14" />
+	</svg>
+)}
+
 {name === "Local Mode" && (
 	<svg class={className} {...base}>
 		<path d="M13 16H17" />
@@ -195,6 +232,22 @@ const base = {
 		<path d="M7.01 16L7 16" />
 		<path d="M7.01 8L7 8" />
 		<path d="M9.01 10L9 10" />
+	</svg>
+)}
+
+{name === "Self-hosting" && (
+	<svg class={className} {...base}>
+		<path d="M12 21V17" />
+		<path d="M11 2H13" />
+		<path d="M21 19L21 10" />
+		<path d="M3 19L3 10" />
+		<path d="M5 8.00999V7.99999" />
+		<path d="M7 6.00999V5.99999" />
+		<path d="M9 4.00999V3.99999" />
+		<path d="M15 4.00999V3.99999" />
+		<path d="M17 6.00999V5.99999" />
+		<path d="M19 8.00999V7.99999" />
+		<path d="M5 21H19" />
 	</svg>
 )}
 

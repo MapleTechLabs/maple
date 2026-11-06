@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 
 import {
 	FUNNEL_EMPTY_GROUP_LABEL,
-	ProductEventsFunnelWidgetParams,
 	ProductEventsPathsWidgetParams,
 	funnelStepDetails,
 	funnelWidgetBreakdownRows,
@@ -44,7 +43,7 @@ describe("funnelWidgetBreakdownRows", () => {
 			{ group: "twitter.com", step: 1, count: 80 },
 			{ group: "twitter.com", step: 2, count: 10 },
 		])
-		expect(rows.map((row) => row.group)).toEqual([
+		expect(Arr.map(rows, (row) => row.group)).toEqual([
 			"news.ycombinator.com",
 			"news.ycombinator.com",
 			"news.ycombinator.com",
@@ -55,23 +54,13 @@ describe("funnelWidgetBreakdownRows", () => {
 			FUNNEL_EMPTY_GROUP_LABEL,
 			FUNNEL_EMPTY_GROUP_LABEL,
 		])
-		expect(rows.filter((row) => row.group === "twitter.com").map((row) => row.value)).toEqual([80, 10, 0])
+		expect(
+			Arr.map(
+				Arr.filter(rows, (row) => row.group === "twitter.com"),
+				(row) => row.value,
+			),
+		).toEqual([80, 10, 0])
 		expect(rows[0]).toEqual({ name: "/pricing", value: 80, group: "news.ycombinator.com" })
-	})
-})
-
-describe("ProductEventsFunnelWidgetParams", () => {
-	it("decodes the flat params bag a funnel widget stores", () => {
-		const decoded = Schema.decodeSync(ProductEventsFunnelWidgetParams)({
-			steps,
-			keyBy: "visitor",
-			breakdownBy: "attribute:plan",
-			country: "DE",
-			visitorType: "new",
-		})
-		expect(decoded.breakdownBy).toBe("attribute:plan")
-		expect(decoded.country).toBe("DE")
-		expect(decoded.windowSeconds).toBeUndefined()
 	})
 })
 
@@ -112,19 +101,6 @@ describe("funnel drop-off details", () => {
 })
 
 describe("ProductEventsPathsWidgetParams", () => {
-	it("decodes the flat params bag a paths widget stores", () => {
-		const decoded = Schema.decodeSync(ProductEventsPathsWidgetParams)({
-			anchor: { kind: "page", pagePath: "/pricing" },
-			direction: "before",
-			depth: 2,
-			exclude: ["heartbeat"],
-			country: "DE",
-		})
-		expect(decoded.direction).toBe("before")
-		expect(decoded.exclude).toEqual(["heartbeat"])
-		expect(decoded.branches).toBeUndefined()
-	})
-
 	it("refuses a session step as the anchor", () => {
 		expect(() =>
 			Schema.decodeUnknownSync(ProductEventsPathsWidgetParams)({

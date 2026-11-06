@@ -110,9 +110,10 @@ Maple's code emits these values. Reuse them so trace search stays consistent, an
 | `slack`, `discord` | Chat platform APIs |
 | `apns` | Apple Push Notification service |
 | `planetscale-metrics` | PlanetScale per-branch `/metrics` endpoint (scraper) |
+| `supabase-metrics` | Supabase per-project Management API metrics endpoint (scraper) |
 | `scrape-target` | Any other user-configured Prometheus scrape target (scraper) |
 
-The last two are deliberately generic. Scrape targets are user-configured and unbounded, so bucket them by target type.
+The last three are deliberately generic. Scrape targets are user-configured and unbounded, so bucket them by target type.
 
 ## Anti-patterns
 

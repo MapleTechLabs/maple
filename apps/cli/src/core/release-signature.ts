@@ -2,14 +2,14 @@
 // bundle's `.sha256` manifest with an Ed25519 key (scripts/sign-local-release.ts);
 // this module checks that signature against the public key baked into the binary.
 import { createPublicKey, verify, type KeyObject } from "node:crypto"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 
 /**
- * Base64 SPKI (DER) of the Ed25519 release public key. Empty until the key is
- * provisioned (docs/local-mode.md "Release signing"). scripts/install.sh embeds
- * the same value as `release_public_key`; release-signature.test.ts enforces it.
+ * Base64 SPKI (DER) of the Ed25519 release public key (docs/local-mode.md
+ * "Release signing"). scripts/install.sh embeds the same value as
+ * `release_public_key`; release-signature.test.ts enforces it.
  */
-export const MAPLE_RELEASE_PUBLIC_KEY = ""
+export const MAPLE_RELEASE_PUBLIC_KEY = "MCowBQYDK2VwAyEAT58nYzFjZrHs2utGCW2xooSnljsEl2je33QEJ4VspnI="
 
 const SignatureFailureReason = Schema.Literals(["malformed-public-key", "malformed-signature", "mismatch"])
 
@@ -72,10 +72,10 @@ export const verifyReleaseManifest = (
 	signatureBase64: string | undefined,
 	publicKey: string = MAPLE_RELEASE_PUBLIC_KEY,
 ): Effect.Effect<ManifestVerification, ReleaseSignatureMissing | ReleaseSignatureInvalid> => {
-	if (publicKey.trim() === "") return Effect.succeed(UNCONFIGURED)
+	if (Str.trim(publicKey) === "") return Effect.succeed(UNCONFIGURED)
 	return Effect.gen(function* () {
-		const key = yield* parsePublicKey(publicKey.trim())
-		const encoded = signatureBase64?.trim() ?? ""
+		const key = yield* parsePublicKey(Str.trim(publicKey))
+		const encoded = signatureBase64 === undefined ? "" : Str.trim(signatureBase64)
 		if (encoded === "") {
 			return yield* new ReleaseSignatureMissing({ message: "the release has no signature" })
 		}
@@ -116,20 +116,20 @@ const MANIFEST_LINE = /^([0-9a-fA-F]{64})(?:[ \t]+\*?(\S+))?$/
 export const parseChecksumManifest = (
 	text: string,
 ): Effect.Effect<ChecksumManifest, ReleaseManifestInvalid> => {
-	const lines = text
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line !== "")
+	const lines = Arr.filter(
+		Arr.map(Str.split("\n")(text), (line) => Str.trim(line)),
+		(line) => line !== "",
+	)
 	const match = lines.length === 1 ? MANIFEST_LINE.exec(lines[0] ?? "") : null
 	if (match === null) {
 		return Effect.fail(
 			new ReleaseManifestInvalid({
 				message: "the checksum manifest is not a single sha256 line",
-				rawManifest: text.slice(0, 200),
+				rawManifest: Str.slice(0, 200)(text),
 			}),
 		)
 	}
-	return Effect.succeed({ sha256: (match[1] ?? "").toLowerCase(), fileName: match[2] })
+	return Effect.succeed({ sha256: Str.toLowerCase(match[1] ?? ""), fileName: match[2] })
 }
 
 export interface ReleaseChecksumInput {
@@ -170,7 +170,7 @@ export const releaseChecksum = (
 					manifest.fileName === undefined
 						? `the signed checksum manifest does not name ${input.bundleName}`
 						: `the checksum manifest is for ${manifest.fileName}, not ${input.bundleName}`,
-				rawManifest: text.slice(0, 200),
+				rawManifest: Str.slice(0, 200)(text),
 			})
 		}
 		return { sha256: manifest.sha256, signature }

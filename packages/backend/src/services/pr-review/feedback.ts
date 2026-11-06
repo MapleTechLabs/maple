@@ -7,6 +7,7 @@
  * Pure, so the rules are tested without a model or a database; `PrReviewService` does the I/O.
  */
 import type { PrReviewFinding, PrReviewFindingStatus } from "@maple/domain/http"
+import { Array as Arr } from "effect"
 
 /**
  * Cosine similarity at which two findings count as the same kind of comment. Measured on
@@ -107,7 +108,7 @@ export const applyFeedback = <F extends Pick<PrReviewFinding, "category" | "seve
 	const kept: Array<F> = []
 	const keptVectors: Array<ReadonlyArray<number>> = []
 	const suppressed: Array<F> = []
-	findings.forEach((finding, i) => {
+	Arr.forEach(findings, (finding, i) => {
 		const embedding = embeddings[i] ?? []
 		if (!feedbackExempt(finding) && feedbackVerdict(embedding, examples).suppress) {
 			suppressed.push(finding)

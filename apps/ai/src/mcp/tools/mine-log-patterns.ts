@@ -5,7 +5,7 @@ import { MCP_LOG_PATTERN_MAX_HOURS } from "../lib/time"
 import { truncate, formatNumber } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { MineLogPatternsOutput } from "@maple/domain/mcp-outputs"
 import { mineLogPatterns } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -16,6 +16,7 @@ const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_LOG_PATTERN_MAX_HOU
 export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "mine_log_patterns",
+		title: "Mine Log Patterns",
 		description:
 			"Cluster log messages into templates (e.g. 'GET /api/users/<*> 200 in <*>ms') with counts and a per-template severity/service breakdown. Use when search_logs would return too many rows to read. It clusters a sample of the most recent matching logs, so pair it with a tight window and selective filters.",
 		parameters: Schema.Struct({
@@ -43,10 +44,10 @@ export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				service: params.service ?? "all",
-				severity: params.severity ?? "all",
-				sampleSize: params.sample_size,
-				limit: params.limit,
+				"maple.ai.service": params.service ?? "all",
+				"maple.ai.severity": params.severity ?? "all",
+				"maple.ai.sample_size": params.sample_size,
+				"maple.ai.limit": params.limit,
 			})
 
 			const result = yield* mineLogPatterns({
@@ -89,8 +90,9 @@ export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 				}
 			}
 			const errorPattern = output.patterns.find((p) =>
-				Object.keys(p.severityCounts).some(
-					(k) => k.toUpperCase() === "ERROR" || k.toUpperCase() === "FATAL",
+				Arr.some(
+					Rec.keys(p.severityCounts),
+					(k) => Str.toUpperCase(k) === "ERROR" || Str.toUpperCase(k) === "FATAL",
 				),
 			)
 			return {
@@ -98,12 +100,14 @@ export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 				scope,
 				blocks: [
 					doc.text(
-						output.patterns
-							.map(
+						Arr.join(
+							Arr.map(
+								output.patterns,
 								(p) =>
-									`${String(p.count).padStart(6)} ${topKey(p.severityCounts).padEnd(5)} ${topKey(p.serviceCounts)}: ${truncate(p.template, 140)}`,
-							)
-							.join("\n"),
+									`${Str.padStart(6)(String(p.count))} ${Str.padEnd(5)(topKey(p.severityCounts))} ${topKey(p.serviceCounts)}: ${truncate(p.template, 140)}`,
+							),
+							"\n",
+						),
 					),
 				],
 				next:
@@ -129,7 +133,7 @@ export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 const topKey = (counts: { readonly [key: string]: number }): string => {
 	let best = ""
 	let bestN = -1
-	for (const [k, v] of Object.entries(counts)) {
+	for (const [k, v] of Rec.toEntries(counts)) {
 		if (v > bestN) {
 			best = k
 			bestN = v

@@ -1,8 +1,8 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant, MobileDeviceNotFoundError } from "@maple/domain/http"
 import type { V2MobileDevice } from "@maple/domain/http/v2"
 import { MapleApiV2, isoTimestamp } from "@maple/domain/http/v2"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService, type MobileDevice } from "@maple/backend/services/push/MobileDevicesService"
 
@@ -55,7 +55,7 @@ export const HttpV2MobileDevicesLive = HttpApiBuilder.group(MapleApiV2, "mobileD
 					const rows = yield* devices.listForUser(tenant.orgId, tenant.userId)
 					return {
 						object: "list" as const,
-						data: rows.map(toV2),
+						data: Arr.map(rows, toV2),
 						has_more: false,
 						next_cursor: null,
 					}

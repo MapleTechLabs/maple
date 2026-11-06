@@ -1,9 +1,19 @@
 import { assert, describe, it } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
-import * as Cloudflare from "alchemy/Cloudflare"
-import { Effect, Exit, Layer, Schema, Scope } from "effect"
-import { HttpRouter } from "effect/unstable/http"
+import { MapleHttpTracingLive, workerTelemetryConfig } from "@maple/infra/worker-telemetry"
+import * as Cloudflare from "@alchemy.run/cloudflare"
+import {
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Schema,
+	Scope,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
+import { HttpRouter } from "effect/http"
 import { ElectricSyncRouter } from "./routes/shape.http"
 import {
 	noTenantLayer,
@@ -22,6 +32,7 @@ import {
  */
 const ExportedSpan = Schema.Struct({
 	name: Schema.String,
+	kind: Schema.optionalKey(Schema.Finite),
 	status: Schema.Struct({
 		code: Schema.optionalKey(Schema.Finite),
 		message: Schema.optionalKey(Schema.String),
@@ -31,6 +42,8 @@ const ExportedSpan = Schema.Struct({
 	),
 })
 type ExportedSpan = typeof ExportedSpan.Type
+/** OTLP `SPAN_KIND_SERVER`. Effect names server spans by method alone, so kind is what marks one. */
+const SERVER_KIND = 2
 
 const ExportedTraces = Schema.Struct({
 	resourceSpans: Schema.optionalKey(
@@ -42,21 +55,28 @@ const ExportedTraces = Schema.Struct({
 const decodeExportedTraces = Schema.decodeUnknownSync(ExportedTraces)
 
 const exportedSpans = (recorded: ReadonlyArray<RecordedRequest>): Array<ExportedSpan> =>
-	recorded
-		.filter((request) => request.url.endsWith("/v1/traces"))
-		.flatMap((request) => {
+	Arr.flatMap(
+		Arr.filter(recorded, (request) => Str.endsWith("/v1/traces")(request.url)),
+		(request: RecordedRequest) => {
 			const body = decodeExportedTraces(JSON.parse(request.body ?? "{}"))
-			return (body.resourceSpans ?? []).flatMap((resource) =>
-				resource.scopeSpans.flatMap((scope) => scope.spans),
+			return Arr.flatMap(body.resourceSpans ?? [], (resource) =>
+				Arr.flatMap(resource.scopeSpans, (scope) => scope.spans),
 			)
-		})
+		},
+	)
 
-const statusCodeOf = (span: ExportedSpan | undefined): number | undefined => {
-	const value = span?.attributes.find((attribute) => attribute.key === "http.response.status_code")?.value
-	return value === undefined ? undefined : Number(Object.values(value)[0])
-}
+const statusCodeOf = (span: ExportedSpan | undefined): number | undefined =>
+	Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(
+				span?.attributes ?? [],
+				(attribute) => attribute.key === "http.response.status_code",
+			),
+			(attribute) => Number(Rec.values(attribute.value)[0]),
+		),
+	)
 
-const appLayer = (options: { readonly ensureConfigured?: Effect.Effect<void, never> } = {}) =>
+const appLayer = (options: { readonly ensureConfigured?: Effect.Effect<void> } = {}) =>
 	ElectricSyncRouter.pipe(
 		Layer.provide(
 			recordingElectricClient({
@@ -70,7 +90,11 @@ const appLayer = (options: { readonly ensureConfigured?: Effect.Effect<void, nev
 
 const env = { MAPLE_INGEST_KEY: "maple_sk_test", MAPLE_ENDPOINT: "http://ingest.test" }
 
-const event = (path: string, app: ReturnType<typeof appLayer> = appLayer()) =>
+const event = (
+	path: string,
+	app: ReturnType<typeof appLayer> = appLayer(),
+	headers: Record<string, string> = {},
+) =>
 	Effect.gen(function* () {
 		const recorded: Array<RecordedRequest> = []
 		const realFetch = globalThis.fetch
@@ -84,20 +108,24 @@ const event = (path: string, app: ReturnType<typeof appLayer> = appLayer()) =>
 		const isolate = yield* Scope.make()
 		const handler = yield* HttpRouter.toHttpEffect(app).pipe(Scope.provide(isolate))
 		const request = yield* Scope.make()
+		// What `WorkerTelemetry` registers with alchemy: the SDK and the header allowlist.
 		const services = yield* Layer.buildWithScope(
-			MapleCloudflareSDK.make(
-				workerTelemetryConfig({ serviceName: "electric-sync" }),
-			).requestLayer.pipe(Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env))),
+			Layer.merge(
+				MapleCloudflareSDK.make(
+					workerTelemetryConfig({ serviceName: "electric-sync" }),
+				).requestLayer.pipe(Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env))),
+				MapleHttpTracingLive,
+			),
 			request,
 		)
 		const fetchEvent: Effect.Effect<Response, unknown, Scope.Scope> | undefined =
 			Cloudflare.Workers.makeRequestHandler(handler)({
 				kind: "Cloudflare.Workers.WorkerEvent",
 				type: "fetch",
-				input: new Request(`http://sync.maple.test${path}`),
+				input: new Request(`http://sync.maple.test${path}`, { headers }),
 			})
 		assert.isDefined(fetchEvent)
-		const response = yield* fetchEvent!.pipe(Effect.provide(services), Scope.provide(request))
+		const response = yield* fetchEvent.pipe(Effect.provide(services), Scope.provide(request))
 		const flushedBeforeClose = recorded.length
 		yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
 		yield* Scope.close(request, Exit.void)
@@ -106,7 +134,7 @@ const event = (path: string, app: ReturnType<typeof appLayer> = appLayer()) =>
 		return {
 			status: response.status,
 			flushedBeforeClose,
-			server: spans.filter((span) => span.name === "http.server GET"),
+			server: Arr.filter(spans, (span) => span.kind === SERVER_KIND),
 		}
 	}).pipe(Effect.scoped)
 
@@ -142,6 +170,20 @@ describe("electric-sync through alchemy's Worker bridge", () => {
 			assert.strictEqual(server.length, 1)
 			assert.strictEqual(server[0]?.status.code, 2 /* Error */)
 			assert.strictEqual(statusCodeOf(server[0]), 500)
+		}),
+	)
+
+	it.effect("records the allowlisted request headers on the server span and no credential", () =>
+		Effect.gen(function* () {
+			const { server } = yield* event("/nope", appLayer(), {
+				"cf-ray": "8f1a2b3c4d5e6f70-IAD",
+				authorization: "Bearer secret",
+				cookie: "session=secret",
+			})
+			const keys = Arr.map(server[0]?.attributes ?? [], (attribute) => attribute.key)
+			assert.include(keys, "http.request.header.cf-ray")
+			assert.notInclude(keys, "http.request.header.authorization")
+			assert.notInclude(keys, "http.request.header.cookie")
 		}),
 	)
 })

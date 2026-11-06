@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { normalizeEvents } from "./replay-events"
+import { Array as Arr } from "effect"
 
 const ev = (timestamp: number, tag: string) => ({ timestamp, tag })
 
@@ -35,7 +36,7 @@ describe("normalizeEvents", () => {
 			ev(42_000, "end"),
 		]
 		const out = normalizeEvents(events) as Array<{ timestamp: number }>
-		expect(out.map((e) => e.timestamp)).toEqual([1000, 42_000, 12_465_000])
-		expect(out.at(-1)!.timestamp - out[0]!.timestamp).toBe(12_464_000)
+		expect(Arr.map(out, (e) => e.timestamp)).toEqual([1000, 42_000, 12_465_000])
+		expect(out.at(-1)!.timestamp - Arr.getUnsafe(out, 0).timestamp).toBe(12_464_000)
 	})
 })

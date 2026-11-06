@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { anomalyFilterChips, hasAnomalyFilters, matchesAnomalyFilters } from "./anomaly-filters"
+import { Array as Arr } from "effect"
 
 const incident = {
 	severity: "critical" as const,
@@ -47,7 +48,7 @@ describe("hasAnomalyFilters", () => {
 describe("anomalyFilterChips", () => {
 	it("puts exclusions ahead of inclusions", () => {
 		const chips = anomalyFilterChips({ services: ["api"], excludedEnvs: ["staging"] })
-		expect(chips.map((c) => [c.label, c.negated])).toEqual([
+		expect(Arr.map(chips, (c) => [c.label, c.negated])).toEqual([
 			["Environment", true],
 			["Service", false],
 		])

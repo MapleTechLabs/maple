@@ -1,98 +1,30 @@
 /// <reference types="@types/bun" />
 /**
- * Compiles the Maizzle sources into the checked-in template modules under
+ * Compiles the templates under `templates/` into the checked-in modules under
  * `src/generated/`.
  *
- * Maizzle v6 renders Vue SFCs through a Vite SSR server, then runs the email
- * transformer pipeline (Tailwind → juice → …). None of that can run on
- * Cloudflare Workers, so it happens here, once, at build time: every Tailwind
- * class is flattened into an inline `style` and the result is emitted as plain
- * strings. At runtime `src/template.ts` only splices those strings.
+ * Foldkit renders each view to markup and every Tailwind class is flattened
+ * into an inline `style` (`inline-tailwind.ts`). None of that can run on
+ * Cloudflare Workers, so it happens here, once, at build time, and the result
+ * is emitted as plain strings. At runtime `src/template.ts` only splices them.
  *
  * Two kinds of unit come out of a compile:
  *
- *   PAGE      — a root template from `emails/`, with `[[token]]` values and
- *               `[[#slot]]` holes.
- *   FRAGMENTS — one entry per component listed in a template's `fragments`
- *               map, each rendered standalone. A fragment is just a component
- *               file; its props default to their own `[[token]]` placeholders,
- *               so rendering it with no props yields the compiled shape the
- *               runtime fills in.
+ *   PAGE      — the whole document, with `[[token]]` values and `[[#slot]]`
+ *               holes.
+ *   FRAGMENTS — one entry per name in a template's `fragments` map, each
+ *               rendered standalone with its own `[[token]]` placeholders.
  *
  * Usage: bun run --cwd packages/email build [--check]
  */
-import { render } from "@maizzle/framework"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { TEMPLATES, type Template } from "../templates"
+import { documentShell, renderUnit } from "../templates/render"
+import { inlineTailwind } from "./inline-tailwind"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
-
-interface Template {
-	/** Root SFC under `emails/`. */
-	readonly source: string
-	/** Generated module under `src/generated/`. */
-	readonly output: string
-	/**
-	 * Fragment name → component name. The key is what the runtime looks up in
-	 * `FRAGMENTS`; the value is the auto-imported component under `components/`.
-	 */
-	readonly fragments: Readonly<Record<string, string>>
-}
-
-const TEMPLATES: ReadonlyArray<Template> = [
-	{
-		source: "weekly-digest.vue",
-		output: "weekly-digest.ts",
-		fragments: {
-			affectedServices: "MapleAffectedServices",
-			breakdownRow: "MapleBreakdownRow",
-			breakdownTable: "MapleBreakdownTable",
-			barErr: "MapleBarErr",
-			barOk: "MapleBarOk",
-			biggestMover: "MapleBiggestMover",
-			deltaPill: "MapleDeltaPill",
-			envGroupHeader: "MapleEnvGroupHeader",
-			errorRow: "MapleErrorRow",
-			errorsSection: "MapleErrors",
-			ingestionCell: "MapleIngestionCell",
-			ingestionDelta: "MapleIngestionDelta",
-			newBadge: "MapleNewBadge",
-			scopeChip: "MapleScopeChip",
-			scopeLine: "MapleScopeLine",
-			serviceRequestsDelta: "MapleServiceDelta",
-			serviceRow: "MapleServiceRow",
-			servicesSection: "MapleServices",
-			sparkBar: "MapleSparkBar",
-			sparkLabel: "MapleSparkLabel",
-			sparklineSection: "MapleSparkline",
-			statusBanner: "MapleStatusBanner",
-			summaryCard: "MapleSummaryCard",
-		},
-	},
-	{
-		source: "web-analytics-digest.vue",
-		output: "web-analytics-digest.ts",
-		fragments: {
-			aiColumn: "MapleAiColumn",
-			aiSection: "MapleAiSection",
-			biggestMover: "MapleBiggestMover",
-			compactRow: "MapleCompactRow",
-			deltaPill: "MapleDeltaPill",
-			highlightBanner: "MapleStatusBanner",
-			quietLine: "MapleQuietLine",
-			rankRow: "MapleRankRow",
-			rankTable: "MapleRankTable",
-			rowIcon: "MapleRowIcon",
-			sectionHead: "MapleSectionHead",
-			statCard: "MapleStatCard",
-		},
-	},
-	{
-		source: "alert-notification.vue",
-		output: "alert-notification.ts",
-		fragments: { detailRow: "MapleDetailRow" },
-	},
-]
 
 /**
  * Adjacencies that must compile with no whitespace between them — Vue turns any
@@ -108,56 +40,9 @@ const TIGHT_JOINS: ReadonlyArray<string> = [
 	"[[#barOk]][[#barErr]]", // stacked sparkline segments
 ]
 
-function maizzleConfig() {
-	return {
-		css: {
-			// Flatten every class into a `style` attribute and drop the <style>
-			// block; email clients (and our runtime) only deal with inline CSS.
-			inline: { removeStyleTags: true },
-			// Longhand→shorthand collapsing would rewrite the
-			// `border-bottom: [[rowBorder]]` placeholders.
-			shorthand: false,
-		},
-		html: {
-			// Reformatting breaks inline runs apart — js-beautify happily puts
-			// `<span>NEW</span>` and the message that follows it on separate
-			// lines, which renders as an extra space. The sources are authored
-			// in their final shape instead.
-			format: false,
-			minify: false,
-			attributes: {
-				// Classes have been inlined; keep the output lean.
-				remove: [{ name: "class", value: /.*/ }],
-			},
-		},
-		useTransformers: {
-			// Maizzle stamps `cellpadding/cellspacing/role` onto EVERY <table>
-			// by default. react-email only emitted them for its Section and
-			// Container components (and the logo table), and `cellspacing="0"`
-			// silently kills the browser's default 2px border-spacing on the
-			// plain layout tables — 4px of height each, ~37px of cumulative
-			// drift down the digest. The components author these attributes on
-			// exactly the tables that had them.
-			addAttributes: false,
-		},
-	}
-}
-
-/** `render()` prepends a doctype; fragments are markup, not documents. */
-function stripDoctype(html: string): string {
-	return html.replace(/^<!DOCTYPE[^>]*>\n?/i, "")
-}
-
-async function renderPage(source: string): Promise<string> {
-	const { html } = await render(join(PACKAGE_ROOT, "emails", source), maizzleConfig())
-	return html.trim()
-}
-
-async function renderFragment(component: string): Promise<string> {
-	// The component is auto-imported from components/; MapleTailwind supplies
-	// the stylesheet the inliner consumes, and is removed with it.
-	const { html } = await render(`<template><MapleTailwind /><${component} /></template>`, maizzleConfig())
-	return stripDoctype(html).trim()
+async function renderPage(template: Template): Promise<string> {
+	const body = await renderUnit({ context: "flow", view: template.page })
+	return inlineTailwind(documentShell(body))
 }
 
 /**
@@ -166,16 +51,16 @@ async function renderFragment(component: string): Promise<string> {
  * 20/14 to `1.42857`, which computes 19.99998px on a 14px font — Chrome rounds
  * that box down and the text sits a pixel high. The ratios the templates
  * actually want (1, 1.25, 1.375) all fit in three decimals; anything longer is
- * a truncated fraction that should have been pinned to px in MapleTailwind.vue.
+ * a truncated fraction that should have been pinned to px in inline-tailwind.ts.
  */
 function assertExactLineHeights(label: string, html: string): void {
 	for (const match of html.matchAll(/line-height:\s*([\d.]+)\s*[;"]/g)) {
 		const value = match[1]
-		if (value === undefined || value.includes("px")) continue
-		const decimals = value.split(".")[1]?.length ?? 0
+		if (value === undefined || Str.includes("px")(value)) continue
+		const decimals = Str.split(".")(value)[1]?.length ?? 0
 		if (decimals > 3) {
 			throw new Error(
-				`${label}: line-height "${value}" is a truncated ratio — pin it to px in MapleTailwind.vue`,
+				`${label}: line-height "${value}" is a truncated ratio — pin it to px in inline-tailwind.ts`,
 			)
 		}
 	}
@@ -183,25 +68,26 @@ function assertExactLineHeights(label: string, html: string): void {
 
 function assertTightJoins(label: string, html: string): void {
 	for (const join of TIGHT_JOINS) {
-		if (!html.includes(join)) continue
-		const loosened = join.replace(/(\]\]|>)(\[\[|[.×])/, "$1 $2")
-		if (html.includes(loosened)) {
+		if (!Str.includes(join)(html)) continue
+		const loosened = Str.replace(/(\]\]|>)(\[\[|[.×])/, "$1 $2")(join)
+		if (Str.includes(loosened)(html)) {
 			throw new Error(`${label}: whitespace crept into the tight join "${join}"`)
 		}
 	}
 }
 
 function asTemplateLiteral(value: string): string {
-	return `\`${value.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g, "\\${")}\``
+	return `\`${Str.replace(/\\|`|\$\{/g, "\\$&")(value)}\``
 }
 
-function emitModule(source: string, page: string, fragments: ReadonlyMap<string, string>): string {
-	const entries = [...fragments.keys()]
-		.sort()
-		.map((name) => `\t${name}: ${asTemplateLiteral(fragments.get(name) ?? "")},`)
+function emitModule(output: string, page: string, fragments: ReadonlyMap<string, string>): string {
+	const entries = Arr.map(
+		[...fragments.keys()].sort(),
+		(name) => `\t${name}: ${asTemplateLiteral(fragments.get(name) ?? "")},`,
+	)
 	return `// GENERATED FILE — DO NOT EDIT.
 //
-// Compiled from packages/email/emails/${source} by Maizzle.
+// Compiled from packages/email/templates/ into ${output}.
 // Regenerate with: bun run --cwd packages/email build
 
 /** The full page, with \`[[token]]\` values and \`[[#slot]]\` fragment holes. */
@@ -209,7 +95,7 @@ export const PAGE = ${asTemplateLiteral(page)}
 
 /** Repeated, optional and nested regions spliced into the page's slots. */
 export const FRAGMENTS = {
-${entries.join("\n")}
+${Arr.join(entries, "\n")}
 } as const
 
 export type FragmentName = keyof typeof FRAGMENTS
@@ -217,26 +103,21 @@ export type FragmentName = keyof typeof FRAGMENTS
 }
 
 async function buildTemplate(template: Template): Promise<{ path: string; contents: string }> {
-	const page = await renderPage(template.source)
-	assertTightJoins(template.source, page)
-	assertExactLineHeights(template.source, page)
+	const page = await renderPage(template)
+	assertTightJoins(template.output, page)
+	assertExactLineHeights(template.output, page)
 
 	const fragments = new Map<string, string>()
-	// Distinct components only — a component may back more than one fragment.
-	const compiled = new Map<string, string>()
-	for (const component of new Set(Object.values(template.fragments))) {
-		compiled.set(component, await renderFragment(component))
-	}
-	for (const [name, component] of Object.entries(template.fragments)) {
-		const html = compiled.get(component) ?? ""
-		assertTightJoins(`${template.source}#${name}`, html)
-		assertExactLineHeights(`${template.source}#${name}`, html)
+	for (const [name, unit] of Rec.toEntries(template.fragments)) {
+		const html = await inlineTailwind(await renderUnit(unit))
+		assertTightJoins(`${template.output}#${name}`, html)
+		assertExactLineHeights(`${template.output}#${name}`, html)
 		fragments.set(name, html)
 	}
 
 	return {
 		path: join(PACKAGE_ROOT, "src", "generated", template.output),
-		contents: emitModule(template.source, page, fragments),
+		contents: emitModule(template.output, page, fragments),
 	}
 }
 

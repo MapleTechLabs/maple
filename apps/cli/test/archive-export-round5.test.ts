@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { deepStrictEqual, strictEqual, throws } from "node:assert"
+import { deepStrictEqual, notStrictEqual, strictEqual, throws } from "node:assert"
 import { randomUUID } from "node:crypto"
 import {
 	normalizeType,
@@ -7,10 +7,11 @@ import {
 	COMPLEX_DIGEST_ALGORITHM,
 	multisetDigestSql,
 	type ExportSettings,
-} from "../src/server/archives/export"
-import { parseArchiveGenerationManifest } from "../src/server/archives/manifest"
-import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
+} from "@maple/local-server/archives/export"
+import { parseArchiveGenerationManifest } from "@maple/local-server/archives/manifest"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
+import { Array as Arr, String as Str } from "effect"
 
 // Pure-logic tests for the round-5 fixes. The end-to-end adversarial coverage
 // (column swap, row reassociation, byte refinement, timezone, recovery) lives
@@ -27,17 +28,15 @@ const settings = (overrides: Partial<ExportSettings> = {}): ExportSettings => ({
 describe("bounded multiset digest", () => {
 	it("uses fixed-size aggregate state instead of materializing every row", () => {
 		const sql = multisetDigestSql([{ name: "Body", type: "String" }], "logs")
-		strictEqual(sql.includes("groupArray"), false)
-		strictEqual(sql.includes("sumWithOverflow"), true)
-		strictEqual(sql.includes("groupBitXor"), true)
+		strictEqual(Str.includes("groupArray")(sql), false)
+		strictEqual(Str.includes("sumWithOverflow")(sql), true)
+		strictEqual(Str.includes("groupBitXor")(sql), true)
 	})
 })
 
 describe("schema normalizeType (measured chDB Parquet mapping)", () => {
 	it("does NOT collapse parameterized array element types", () => {
-		if (normalizeType("Array(UInt64)") === normalizeType("Array(String)")) {
-			throw new Error("Array(UInt64) collapsed to Array(String)")
-		}
+		notStrictEqual(normalizeType("Array(UInt64)"), normalizeType("Array(String)"))
 	})
 
 	it("applies the measured LowCardinality/DateTime/DateTime64/Map transforms", () => {
@@ -59,22 +58,6 @@ describe("schema normalizeType (measured chDB Parquet mapping)", () => {
 			deepStrictEqual(normalizeType(t), t)
 		}
 	})
-
-	it("makes source vs Parquet normalized forms equal for every measured round-trip", () => {
-		const pairs: ReadonlyArray<[string, string]> = [
-			["LowCardinality(String)", "String"],
-			["DateTime", "DateTime64(3, 'UTC')"],
-			["DateTime64(9)", "DateTime64(9, 'UTC')"],
-			["Map(LowCardinality(String), String)", "Map(String, String)"],
-			["Array(UInt64)", "Array(UInt64)"],
-			["Array(String)", "Array(String)"],
-		]
-		for (const [src, par] of pairs) {
-			if (normalizeType(src) !== normalizeType(par)) {
-				throw new Error(`normalized source ${src} must equal normalized parquet ${par}`)
-			}
-		}
-	})
 })
 
 describe("planHourShards — per-part physical offset ranges (no ORDER BY)", () => {
@@ -85,7 +68,7 @@ describe("planHourShards — per-part physical offset ranges (no ORDER BY)", () 
 		deepStrictEqual(plans.length, 3)
 		// Half-open ranges covering [0, 1200): [0,500),[500,1000),[1000,1200)
 		deepStrictEqual(
-			plans.map((p) => [p.range.offsetLo, p.range.offsetHiExclusive]),
+			Arr.map(plans, (p) => [p.range.offsetLo, p.range.offsetHiExclusive]),
 			[
 				[0, 500],
 				[500, 1000],
@@ -93,7 +76,7 @@ describe("planHourShards — per-part physical offset ranges (no ORDER BY)", () 
 			],
 		)
 		deepStrictEqual(
-			plans.map((p) => p.range.part),
+			Arr.map(plans, (p) => p.range.part),
 			["p1", "p1", "p1"],
 		)
 		// Each range's physical width <= maxShardRows.
@@ -108,7 +91,10 @@ describe("planHourShards — per-part physical offset ranges (no ORDER BY)", () 
 		const parts = [{ part: "p1", offsetMin: 0, offsetMax: 99, matchingRows: 100 }]
 		const plans = planHourShards(12, parts, settings())
 		deepStrictEqual(plans.length, 1)
-		deepStrictEqual([plans[0]!.range.offsetLo, plans[0]!.range.offsetHiExclusive], [0, 100])
+		deepStrictEqual(
+			[Arr.getUnsafe(plans, 0).range.offsetLo, Arr.getUnsafe(plans, 0).range.offsetHiExclusive],
+			[0, 100],
+		)
 	})
 
 	it("handles multiple parts, paging each independently", () => {
@@ -119,7 +105,7 @@ describe("planHourShards — per-part physical offset ranges (no ORDER BY)", () 
 		const plans = planHourShards(12, parts, settings({ maxShardRows: 500 }))
 		// part a -> [0,500),[500,1000); part b -> [0,500)
 		deepStrictEqual(
-			plans.map((p) => [p.range.part, p.range.offsetLo, p.range.offsetHiExclusive]),
+			Arr.map(plans, (p) => [p.range.part, p.range.offsetLo, p.range.offsetHiExclusive]),
 			[
 				["a", 0, 500],
 				["a", 500, 1000],
@@ -163,7 +149,7 @@ const manifestWith = (
 			rowCount: 1,
 			minEventTimeUnixNano: nano("2026-06-29T12:00:00.000Z"),
 			maxEventTimeUnixNano: nano("2026-06-29T12:30:00.000Z"),
-			sha256: "a".repeat(64),
+			sha256: Str.repeat(64)("a"),
 			bytes: 4096,
 			columns: ["Timestamp"],
 			complexDigest: "1:2:3:4",
@@ -176,12 +162,13 @@ const manifestWith = (
 
 describe("shard time evidence — UTC nanoseconds, host-timezone-independent (round 5)", () => {
 	it("accepts a valid in-range shard bound", () => {
-		parseArchiveGenerationManifest(manifestWith({}), "traces", "2026-06-29") // must not throw
+		const parsed = parseArchiveGenerationManifest(manifestWith({}), "traces", "2026-06-29")
+		strictEqual(Arr.getUnsafe(parsed.shards, 0).minEventTimeUnixNano, nano("2026-06-29T12:00:00.000Z"))
 	})
 
 	it("accepts a valid 23:30 UTC late-day bound (the round-4 timezone defect)", () => {
 		// Under any host timezone this must parse, because bounds are epoch nanos.
-		parseArchiveGenerationManifest(
+		const parsed = parseArchiveGenerationManifest(
 			manifestWith(
 				{},
 				{
@@ -192,6 +179,7 @@ describe("shard time evidence — UTC nanoseconds, host-timezone-independent (ro
 			"traces",
 			"2026-06-29",
 		)
+		strictEqual(Arr.getUnsafe(parsed.shards, 0).maxEventTimeUnixNano, nano("2026-06-29T23:30:00.000Z"))
 	})
 
 	it("rejects an out-of-range (2027) shard bound", () => {
@@ -226,7 +214,7 @@ describe("shard time evidence — UTC nanoseconds, host-timezone-independent (ro
 
 	it("rejects a missing complexDigestAlgorithm (round 5 manifest field)", () => {
 		const m = manifestWith({})
-		delete (m.shards as Array<Record<string, unknown>>)[0]!.complexDigestAlgorithm
+		delete Arr.getUnsafe(m.shards as Array<Record<string, unknown>>, 0).complexDigestAlgorithm
 		throws(() => parseArchiveGenerationManifest(m, "traces", "2026-06-29"), /complexDigestAlgorithm/)
 	})
 

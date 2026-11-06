@@ -5,6 +5,7 @@ import {
 	type WarehouseColumnMetadataRow,
 	type WarehouseIndexMetadataRow,
 } from "../capabilities"
+import { String as Str, Array as Arr, Option } from "effect"
 
 /**
  * Capabilities for the warehouses whose schema *we* deploy.
@@ -45,22 +46,25 @@ interface TableMetadata {
  * so this stays a line scan rather than a DDL parser.
  */
 const parseTableDdl = (table: string, ddl: string): TableMetadata => {
-	const lines = ddl.split("\n")
-	const end = lines.findIndex((line, index) => index > 0 && line.startsWith(")"))
-	const body = lines.slice(1, end === -1 ? lines.length : end)
+	const lines = Str.split("\n")(ddl)
+	const end = Arr.findFirstIndex(lines, (line, index) => index > 0 && Str.startsWith(")")(line))
+	const body = lines.slice(
+		1,
+		Option.getOrElse(end, () => lines.length),
+	)
 
 	const columns: Array<WarehouseColumnMetadataRow> = []
 	const indexes: Array<WarehouseIndexMetadataRow> = []
 
 	for (const line of body) {
-		const entry = line.trim().replace(/,$/, "")
+		const entry = Str.replace(/,$/, "")(Str.trim(line))
 		if (entry === "") continue
 		const [, indexName, indexExpression, indexType] = INDEX_LINE.exec(entry) ?? []
 		if (indexName !== undefined && indexExpression !== undefined && indexType !== undefined) {
 			indexes.push({ table, name: indexName, type: indexType, expression: indexExpression })
 			continue
 		}
-		const name = entry.split(/\s+/)[0]
+		const name = Str.split(/\s+/)(entry)[0]
 		if (name !== undefined) columns.push({ table, name })
 	}
 
@@ -72,11 +76,11 @@ const readManagedSchemaMetadata = (): TableMetadata => {
 	const indexes: Array<WarehouseIndexMetadataRow> = []
 
 	for (const table of CAPABILITY_TABLES) {
-		const ddl = latestSnapshotStatements.find((statement) =>
-			statement.startsWith(`CREATE TABLE IF NOT EXISTS ${table} (`),
+		const ddl = Arr.findFirst(latestSnapshotStatements, (statement) =>
+			Str.startsWith(`CREATE TABLE IF NOT EXISTS ${table} (`)(statement),
 		)
-		if (ddl === undefined) continue
-		const parsed = parseTableDdl(table, ddl)
+		if (Option.isNone(ddl)) continue
+		const parsed = parseTableDdl(table, ddl.value)
 		columns.push(...parsed.columns)
 		indexes.push(...parsed.indexes)
 	}

@@ -1,5 +1,5 @@
 import { MAPLE_REGION_LABELS, type MapleRegion, parseMapleRegion } from "@maple/domain/organization-regions"
-import { Option, Schema } from "effect"
+import { Option, Record as Rec, Schema } from "effect"
 
 export { MAPLE_REGION_LABELS, type MapleRegion }
 
@@ -11,7 +11,7 @@ const RegionAppUrls = Schema.fromJsonString(
 )
 
 const regionAppUrls: Partial<Record<MapleRegion, string>> = Option.getOrElse(
-	Schema.decodeUnknownOption(RegionAppUrls)(import.meta.env.VITE_MAPLE_REGION_APP_URLS ?? ""),
+	Schema.decodeOption(RegionAppUrls)(import.meta.env.VITE_MAPLE_REGION_APP_URLS ?? ""),
 	() => ({}),
 )
 
@@ -21,4 +21,4 @@ export function regionAppUrl(region: MapleRegion): string | undefined {
 }
 
 /** Whether this deployment has more than one region, and so whether regions are worth showing. */
-export const hasMultipleRegions = Object.keys(regionAppUrls).length > 1
+export const hasMultipleRegions = Rec.keys<string, string | undefined>(regionAppUrls).length > 1

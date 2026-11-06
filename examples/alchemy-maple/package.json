@@ -4,9 +4,10 @@
 	"description": "Example: declaring Maple resources (dashboards, alerts, keys) in alchemy.run.ts via @maple-dev/alchemy",
 	"type": "module",
 	"scripts": {
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsrs --noEmit"
 	},
 	"devDependencies": {
+		"@alchemy.run/cloudflare": "catalog:alchemy",
 		"@cloudflare/workers-types": "catalog:alchemy",
 		"@maple-dev/alchemy": "workspace:*",
 		"@maple-dev/effect-sdk": "workspace:*",

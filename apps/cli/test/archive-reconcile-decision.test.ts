@@ -6,8 +6,9 @@ import {
 	digestOfIntent,
 	type ReconciliationInspection,
 	type ReconciliationSnapshot,
-} from "../src/server/archives/reconcile"
-import type { CreateOperationIntent, GcOperationIntent } from "../src/server/archives/journal"
+} from "@maple/local-server/archives/reconcile"
+import type { CreateOperationIntent, GcOperationIntent } from "@maple/local-server/archives/journal"
+import { String as Str } from "effect"
 
 // Exhaustive transition-table tests for the pure decision function (Gate 3b r5).
 // These test the SOLE branch logic with NO I/O: every (kind, phase, topology)
@@ -37,7 +38,7 @@ const createIntent = (phase: CreateOperationIntent["phase"]): CreateOperationInt
 		phase,
 		createdAt: "2026-06-01T00:00:00.000Z",
 		updatedAt: "2026-06-01T00:00:00.000Z",
-	} as CreateOperationIntent
+	}
 }
 
 const gcIntent = (
@@ -50,9 +51,9 @@ const gcIntent = (
 		rangeStart: "2026-06-01",
 		generationId: randomUUID(),
 		createdAt: "2026-06-02T00:00:00.000Z",
-		manifestSha256: "b".repeat(64),
+		manifestSha256: Str.repeat(64)("b"),
 		bytes: 100,
-		shards: [{ name: "00.parquet", bytes: 100, sha256: "c".repeat(64) }],
+		shards: [{ name: "00.parquet", bytes: 100, sha256: Str.repeat(64)("c") }],
 		recordedActiveGenerationId: randomUUID(),
 	}))
 	return {
@@ -68,7 +69,7 @@ const gcIntent = (
 		phase,
 		createdAt: "2026-06-01T00:00:00.000Z",
 		updatedAt: "2026-06-01T00:00:00.000Z",
-	} as GcOperationIntent
+	}
 }
 
 const createSnapshot = (
@@ -302,7 +303,8 @@ describe("decideReconciliation — decision identities", () => {
 		const intent = createIntent("promoted")
 		const snap = createSnapshot(intent, { promoted: true, manifestAtFinal: true })
 		const d = decideReconciliation(valid(snap))
-		if (d.kind !== "NoOp" && d.kind !== "FailClosed") {
+		strictEqual(d.kind, "CreateFinishPublication")
+		if (d.kind === "CreateFinishPublication") {
 			strictEqual(d.operationId, intent.operationId)
 			strictEqual(d.journalDigest, snap.journalDigest)
 		}

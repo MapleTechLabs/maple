@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Redacted } from "effect"
-import { FetchHttpClient, HttpClient } from "effect/unstable/http"
+import { Effect, Layer, Redacted, String as Str } from "effect"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { discord } from "./index"
 import { CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
 import { discordAuthorizeUrl } from "./install"
@@ -24,8 +24,8 @@ const tokenFetch = (respond: () => Response, bodies: Array<string> = []) =>
 		input: Parameters<typeof globalThis.fetch>[0],
 		init?: RequestInit,
 	) => {
-		const url = String(input)
-		if (!url.startsWith(TOKEN_URL)) return Promise.reject(new Error(`unexpected fetch: ${url}`))
+		const url = new Request(input).url
+		if (!Str.startsWith(TOKEN_URL)(url)) return Promise.reject(new Error(`unexpected fetch: ${url}`))
 		// Read the body through `Request` rather than off `init`: the client is
 		// free to hand fetch a stream there.
 		return new Request(url, init).text().then((body) => {

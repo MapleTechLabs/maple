@@ -1,60 +1,59 @@
-import { health, HEALTH_COLOR } from "./spatial-layout"
+import { Color } from "three"
+import { errorRateLevel } from "@maple/ui/lib/error-rate"
+import type { InkPalette } from "./palette"
+import { Array as Arr } from "effect"
 
-/** WebGL material inputs in sRGB. The scene shares Maple's warm neutral surface
- * family; health is a small signal on the object, never the lighting itself. */
-export const GROUND_Y = -0.36
-export const MAP_MATERIALS = {
-	dark: {
-		air: "#d9ada5",
-		ground: "#749451",
-		grass: "#65924c",
-		platform: "#b49468",
-		turf: "#83a35d",
-		body: "#b68c5c",
-		cap: "#d1c4a5",
-		base: "#7b7158",
-		seam: "#403a2e",
-		dimmed: "#686751",
-	},
-	light: {
-		air: "#e7bba5",
-		ground: "#85a660",
-		grass: "#74a357",
-		platform: "#c5a373",
-		turf: "#92b36d",
-		body: "#c39965",
-		cap: "#e3d7b8",
-		base: "#a89978",
-		seam: "#514939",
-		dimmed: "#a3a186",
-	},
-} as const
+export { FACE_TONE, type InkPalette, type MachineKind, mapPalette } from "./palette"
 
-export const FACTORY_FINISH = {
-	amber: "#e86f00",
-	steel: "#a3a18a",
-	pipe: "#82927a",
-	collar: "#c6b897",
-	paint: {
-		processor: "#cb8a3a",
-		tank: "#779572",
-		loader: "#dea13f",
-		gateway: "#d98b33",
-		pump: "#a2967f",
-	},
-} as const
-
-export function connectionStyle(errorRate: number, dark: boolean, active: boolean, dimmed: boolean) {
-	let color = dark ? "#6c8073" : "#42614e"
-	if (active) color = dark ? "#b9d6c6" : "#42614e"
-	if (errorRate >= 0.01)
-		color = dark ? HEALTH_COLOR[health(errorRate)] : errorRate >= 0.02 ? "#a95a4a" : "#9d762b"
-	return { color, opacity: dimmed ? 0.08 : active ? 0.95 : dark ? 0.48 : 0.72 }
+/** Mix toward the paper so dimmed parts recede without transparency sorting. */
+export function fade(color: string, paper: string, amount: number) {
+	return `#${new Color(color).lerp(new Color(paper), amount).getHexString()}`
 }
 
-/** The reference's dusk sky is scene art, independent of the app chrome theme. */
-export const MAP_SKY = {
-	backgroundColor: "#d9ada5",
-	backgroundImage:
-		"radial-gradient(ellipse at 16% 30%, #ffe5b880 0%, transparent 46%), linear-gradient(180deg, #a99bb6 0%, #d3a7b0 30%, #efbd99 65%, #f2c990 78%, #bc8eaa 100%)",
-} as const
+/** A part outside the selection: drained of colour, then most of the way to the paper, so it
+ * recedes in both themes without transparency sorting. */
+export function dim(color: string, paper: string, amount: number) {
+	const tone = new Color(color)
+	const hsl = tone.getHSL({ h: 0, s: 0, l: 0 })
+	tone.setHSL(hsl.h, hsl.s * 0.3, hsl.l)
+	return `#${tone.lerp(new Color(paper), amount).getHexString()}`
+}
+
+/** Less chroma, a little toward the paper: scenery sits a step behind the services. */
+function mute(color: string, paper: string) {
+	const tone = new Color(color)
+	const hsl = tone.getHSL({ h: 0, s: 0, l: 0 })
+	tone.setHSL(hsl.h, hsl.s * 0.75, hsl.l)
+	return `#${tone.lerp(new Color(paper), 0.14).getHexString()}`
+}
+
+/** The palette the forest, meadow and critters draw with: lighter ink, muted colour.
+ * Lamplight and the paper stay as they are. */
+export function sceneryPalette(palette: InkPalette): InkPalette {
+	const m = (color: string) => mute(color, palette.paper)
+	return {
+		...palette,
+		face: m(palette.face),
+		plinth: m(palette.plinth),
+		pad: m(palette.pad),
+		ink: fade(palette.ink, palette.paper, 0.4),
+		belt: m(palette.belt),
+		kraft: m(palette.kraft),
+		tape: m(palette.tape),
+		gifts: Arr.map(palette.gifts, m),
+		foliage: Arr.map(palette.foliage, m),
+		evergreen: m(palette.evergreen),
+		stone: m(palette.stone),
+		iron: m(palette.iron),
+		soil: m(palette.soil),
+		birch: m(palette.birch),
+		water: m(palette.water),
+		trunk: m(palette.trunk),
+		cloud: m(palette.cloud),
+	}
+}
+
+export function beltInk(errorRate: number, palette: InkPalette) {
+	const level = errorRateLevel(errorRate)
+	return level === "crit" ? "#c8553d" : level === "warn" ? "#d9a21b" : palette.ink
+}

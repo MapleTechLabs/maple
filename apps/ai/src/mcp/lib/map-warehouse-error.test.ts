@@ -19,7 +19,7 @@ describe("toMcpQueryError", () => {
 		const mcp = toMcpQueryError("service_overview")(err)
 		expect(mcp.message).toContain("Unknown expression or function identifier 'SampleRate'")
 		expect(mcp.message).toContain("schema apply")
-		expect(mcp.message).toContain("/api/org-clickhouse-settings/apply-schema")
+		expect(mcp.message).toContain("ClickHouse settings page")
 	})
 
 	it("does not enrich non-schema-drift errors", () => {

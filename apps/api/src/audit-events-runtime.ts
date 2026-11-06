@@ -1,7 +1,7 @@
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import type { Message } from "@cloudflare/workers-types"
 import type { OrgId } from "@maple/domain/primitives"
-import { Cause, Clock, Effect, Layer } from "effect"
+import { Cause, Clock, Effect, Layer, Array as Arr } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { EventBaseLive } from "@maple/backend/platform/DatabasePgLive"
 import type { QueueBatch } from "@maple/backend/platform/queue-batch"
@@ -48,7 +48,7 @@ const auditEventOrgId = (body: unknown) => auditEventField(body, "orgId")
 const auditEventAction = (body: unknown) => auditEventField(body, "action")
 
 interface DecodedMessage {
-	readonly message: Message<unknown>
+	readonly message: Message
 	readonly event: AuditLogEvent
 }
 
@@ -56,10 +56,10 @@ interface DecodedMessage {
  * Retrying past the limit is what hands the message to the DLQ; acking there
  * would silently discard it instead.
  */
-const retryOrExhaust = (message: Message<unknown>, cause: unknown) => {
+const retryOrExhaust = (message: Message, cause: unknown) => {
 	const isFinalAttempt = message.attempts > AUDIT_EVENTS_MAX_RETRIES
 	return Effect.annotateCurrentSpan({
-		"audit.queue.message.outcome": isFinalAttempt ? "exhausted_dlq" : "retry",
+		"maple.audit.queue.message_outcome": isFinalAttempt ? "exhausted_dlq" : "retry",
 	}).pipe(
 		Effect.flatMap(() =>
 			isFinalAttempt
@@ -86,73 +86,71 @@ const retryOrExhaust = (message: Message<unknown>, cause: unknown) => {
  * time; write failures retry through the queue's policy and, once exhausted,
  * land in `audit-events-dlq` rather than disappearing.
  */
-export const processAuditEventsBatch = (batch: QueueBatch) =>
-	Effect.gen(function* () {
-		const warehouse = yield* WarehouseQueryService
-		const now = yield* Clock.currentTimeMillis
+export const processAuditEventsBatch = Effect.fn("AuditEvents.processBatch")(function* (batch: QueueBatch) {
+	const warehouse = yield* WarehouseQueryService
+	const now = yield* Clock.currentTimeMillis
 
-		const decoded: Array<DecodedMessage> = []
-		for (const message of batch.messages) {
-			const event = yield* decodeAuditLogEvent(message.body).pipe(
-				Effect.matchEffect({
-					// Undecodable now means undecodable on every redelivery, so retrying
-					// only burns attempts. Acked, but at Error: an audit entry that
-					// never reaches a row is lost evidence, not routine noise.
-					onFailure: (error) =>
-						Effect.logError("Discarding malformed audit event queue message").pipe(
-							Effect.annotateLogs({ attempt: message.attempts, error: String(error) }),
-							Effect.flatMap(() => Effect.sync(() => message.ack())),
-							Effect.as(undefined),
-						),
-					onSuccess: (event) => Effect.succeed(event),
-				}),
-			)
-			if (event !== undefined) decoded.push({ message, event })
-		}
-
-		// One `ingest` per org so the write span names the tenant it belongs to.
-		const byOrg = new Map<OrgId, Array<DecodedMessage>>()
-		for (const entry of decoded) {
-			const group = byOrg.get(entry.event.orgId)
-			if (group === undefined) byOrg.set(entry.event.orgId, [entry])
-			else group.push(entry)
-		}
-
-		yield* Effect.forEach(
-			byOrg,
-			([orgId, group]) =>
-				warehouse
-					.ingest(
-						systemTenant(orgId),
-						AUDIT_LOG_DATASOURCE,
-						group.map(({ event }) => auditEventToRow(event, now)),
-					)
-					.pipe(
-						Effect.flatMap(() =>
-							Effect.sync(() => {
-								for (const { message } of group) message.ack()
-							}),
-						),
-						Effect.withSpan("auditEvents.writeOrgBatch", {
-							attributes: { orgId, rows: group.length },
-						}),
-						// A failure or a defect is a failed attempt and retries. Interruption
-						// is not: an interrupted batch (a deploy, an isolate torn down)
-						// counted as an attempt would push messages toward the DLQ for
-						// something that never failed. Re-raised, it leaves the batch
-						// unacked and the platform redelivers it.
-						Effect.catchCause((cause) =>
-							Cause.hasInterruptsOnly(cause)
-								? Effect.interrupt
-								: Effect.forEach(
-										group,
-										({ message }) => retryOrExhaust(message, summarizeCause(cause)),
-										{
-											discard: true,
-										},
-									),
-						),
+	const decodedPerMessage = yield* Effect.forEach(batch.messages, (message) =>
+		decodeAuditLogEvent(message.body).pipe(
+			Effect.matchEffect({
+				// Undecodable now means undecodable on every redelivery, so retrying
+				// only burns attempts. Acked, but at Error: an audit entry that
+				// never reaches a row is lost evidence, not routine noise.
+				onFailure: (error) =>
+					Effect.logError("Discarding malformed audit event queue message").pipe(
+						Effect.annotateLogs({ attempt: message.attempts, error: String(error) }),
+						Effect.flatMap(() => Effect.sync(() => message.ack())),
+						Effect.as([]),
 					),
-			{ concurrency: 3, discard: true },
-		)
-	}).pipe(Effect.withSpan("auditEvents.processBatch"))
+				onSuccess: (event) => Effect.succeed<Array<DecodedMessage>>([{ message, event }]),
+			}),
+		),
+	)
+	const decoded = decodedPerMessage.flat()
+
+	// One `ingest` per org so the write span names the tenant it belongs to.
+	const byOrg = new Map<OrgId, Array<DecodedMessage>>()
+	for (const entry of decoded) {
+		const group = byOrg.get(entry.event.orgId)
+		if (group === undefined) byOrg.set(entry.event.orgId, [entry])
+		else group.push(entry)
+	}
+
+	yield* Effect.forEach(
+		byOrg,
+		([orgId, group]) =>
+			warehouse
+				.ingest(
+					systemTenant(orgId),
+					AUDIT_LOG_DATASOURCE,
+					Arr.map(group, ({ event }) => auditEventToRow(event, now)),
+				)
+				.pipe(
+					Effect.flatMap(() =>
+						Effect.sync(() => {
+							for (const { message } of group) message.ack()
+						}),
+					),
+					Effect.withSpan("AuditEvents.writeOrgBatch", {
+						attributes: { orgId, "maple.audit.batch_rows": group.length },
+					}),
+					// A failure or a defect is a failed attempt and retries. Interruption
+					// is not: an interrupted batch (a deploy, an isolate torn down)
+					// counted as an attempt would push messages toward the DLQ for
+					// something that never failed. Re-raised, it leaves the batch
+					// unacked and the platform redelivers it.
+					Effect.catchCause((cause) =>
+						Cause.hasInterruptsOnly(cause)
+							? Effect.interrupt
+							: Effect.forEach(
+									group,
+									({ message }) => retryOrExhaust(message, summarizeCause(cause)),
+									{
+										discard: true,
+									},
+								),
+					),
+				),
+		{ concurrency: 3, discard: true },
+	)
+})

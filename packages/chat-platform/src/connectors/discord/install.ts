@@ -1,5 +1,4 @@
-import { Effect, Schema } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { Effect, Record as Rec, Schema } from "effect"
 import {
 	ChatInstallFailed,
 	ChatSettingsRejected,
@@ -43,7 +42,7 @@ const BOT_SCOPE = "bot"
  * mints is one, and checking it here means a value that is not an id fails where
  * it is diagnosable rather than one the API silently never matches.
  */
-const Snowflake = Schema.String.check(Schema.isPattern(/^\d{17,20}$/))
+const Snowflake = Schema.String.check(Schema.isPattern(/^\d{17,20}$/u))
 
 /**
  * The extended token response Discord returns for a `bot` authorization: the
@@ -106,7 +105,7 @@ const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 	if (guild === undefined) {
 		// No guild means the authorization was not a bot install (or the app's
 		// install settings overrode the requested scope) — there is nothing to link.
-		return yield* Effect.fail(installFailed("Discord's authorization did not add the bot to a server"))
+		return yield* installFailed("Discord's authorization did not add the bot to a server")
 	}
 	return { externalWorkspaceId: guild.id, name: guild.name ?? guild.id }
 })
@@ -120,7 +119,7 @@ const decodeSettings = (
 	// Checked explicitly rather than through an empty schema with `onExcessProperty: "error"` — a
 	// struct with no declared keys has nothing to call excess, so that decode accepts everything
 	// and a key this connector does not define would land in the settings column unread.
-	Object.keys(input).length === 0
+	Rec.keys<string, string>(input).length === 0
 		? Effect.succeed({})
 		: Effect.fail(
 				new ChatSettingsRejected({

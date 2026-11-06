@@ -1,0 +1,62 @@
+import { Array as Arr, Record as Rec } from "effect"
+/**
+ * The deployed local-mode dashboard's Worker entry, as a plain module. Static
+ * assets come off the ASSETS binding; unknown routes fall back to the shell so
+ * the client router can take over. `worker.ts` declares the Worker and its build.
+ */
+interface AssetsBinding {
+	readonly fetch: (request: Request) => Promise<Response>
+}
+
+/**
+ * This page can POST SQL to every visitor's loopback `maple start`, so an
+ * injected script must not run. Every script is an external same-origin file
+ * (the pre-paint theme script is `public/theme-init.js`, never inline); the
+ * inline-style allowance covers the highlighted JSON views' `style` attributes.
+ * `'wasm-unsafe-eval'` lets the code highlighter compile its WebAssembly lexer;
+ * it does not enable JavaScript `eval`.
+ */
+const CONTENT_SECURITY_POLICY = Arr.join(
+	[
+		"default-src 'self'",
+		"script-src 'self' 'wasm-unsafe-eval'",
+		"style-src 'self' 'unsafe-inline'",
+		"img-src 'self' data:",
+		"font-src 'self' data:",
+		"connect-src 'self' http://127.0.0.1:* http://localhost:*",
+		"object-src 'none'",
+		"base-uri 'none'",
+		"form-action 'none'",
+		"frame-ancestors 'none'",
+	],
+	"; ",
+)
+
+const SECURITY_HEADERS = {
+	"content-security-policy": CONTENT_SECURITY_POLICY,
+	"x-content-type-options": "nosniff",
+	"x-frame-options": "DENY",
+	"referrer-policy": "no-referrer",
+	"cross-origin-opener-policy": "same-origin",
+	"permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+	"strict-transport-security": "max-age=31536000",
+} as const satisfies Readonly<Record<string, string>>
+
+const withSecurityHeaders = (response: Response): Response => {
+	// Asset responses can be immutable; copy before setting headers.
+	const secured = new Response(response.body, response)
+	for (const [name, value] of Rec.toEntries(SECURITY_HEADERS)) secured.headers.set(name, value)
+	return secured
+}
+
+const serve = async (request: Request, assets: AssetsBinding): Promise<Response> => {
+	const asset = await assets.fetch(request)
+	if (asset.status !== 404) return withSecurityHeaders(asset)
+	// A fresh GET: the first fetch may have consumed the original request's body.
+	return withSecurityHeaders(await assets.fetch(new Request(new URL("/index.html", request.url))))
+}
+
+export default {
+	fetch: (request: Request, env: { readonly ASSETS: AssetsBinding }): Promise<Response> =>
+		serve(request, env.ASSETS),
+}

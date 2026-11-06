@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { Array as Arr, Effect } from "effect"
-import { compileUnionUnsafe, compileUnsafe, type CompiledQuery } from "@maple-dev/effect-clickhouse"
+import { Array as Arr, Effect, String as Str, Option } from "effect"
+import { compileUnionUnsafe, compileUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	aiToolDescriptionQuery,
 	aiToolDescriptionRowSchema,
@@ -8,6 +8,7 @@ import {
 	aiToolErrorBreakdownRowSchema,
 	aiToolErrorOccurrencesQuery,
 	aiToolErrorOccurrencesRowSchema,
+	aiToolErrorPayload,
 	aiToolErrorPayloadSlice,
 	aiToolErrorPayloadsQuery,
 	aiToolErrorPayloadsRowSchema,
@@ -23,13 +24,16 @@ import {
 	aiToolsTotalsQuery,
 	AI_TOOLS_BREAKDOWN_LIMIT,
 	AI_TOOLS_SERIES_MAX_KEYS,
+	AI_TOOL_ERROR_ATTRIBUTE_MAX,
+	AI_TOOL_ERROR_PAYLOAD_MAX,
 	AI_TOOL_OCCURRENCES_LIMIT,
 	type AiToolErrorCallKey,
 } from "./ai-tools"
 import { AI_TOOLS_OTHER_SERIES_KEY } from "@maple/domain/http"
+import { OrgId } from "@maple/domain"
 
 const params = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2026-08-18 00:00:00",
 	endTime: "2026-08-19 23:59:59",
 	bucketSeconds: 300,
@@ -65,7 +69,7 @@ const decodeRows = <T>(compiled: CompiledQuery<T>, rows: ReadonlyArray<Record<st
 
 /** `OrgId = 'x'` on every level that reads a table — a subquery contributes
  *  nothing to the outer query's scope. */
-const orgPredicateCount = (sql: string) => sql.split("OrgId = 'org_1'").length - 1
+const orgPredicateCount = (sql: string) => Str.split("OrgId = 'org_1'")(sql).length - 1
 
 describe("tool call population", () => {
 	it("reads ai_trace_index alone, filtered to tool calls", () => {
@@ -75,7 +79,7 @@ describe("tool call population", () => {
 		expect(sql).toContain("ai_trace_index.IsToolCall = 1")
 		// The whole page is the index. The moment it reaches the span tables it
 		// costs what the sessions fan-out costs — seconds, per partition.
-		expect(sql).not.toContain("trace_detail_spans")
+		expect(sql).not.toContain("FROM traces")
 		expect(sql).not.toContain("SpanAttributes")
 	})
 
@@ -88,7 +92,7 @@ describe("tool call population", () => {
 		// span's parent. Left, because a tool span under a workflow node has no
 		// model-bearing parent and must still be counted.
 		expect(sql).toContain(
-			"LEFT JOIN (SELECT\n          TraceId AS TraceId,\n          SpanId AS SpanId,\n          anyIf(Model, Model != '') AS parentModel",
+			"LEFT JOIN (SELECT\n          ai_trace_index.TraceId AS TraceId,\n          ai_trace_index.SpanId AS SpanId,\n          anyIf(ai_trace_index.Model, ai_trace_index.Model != '') AS parentModel",
 		)
 		// One parent row per span, whatever models it was indexed under — a second
 		// row would double the tool call the join matches.
@@ -98,8 +102,10 @@ describe("tool call population", () => {
 		)
 		// Step two: the trace's own model. Inner, because every tool call of the
 		// window belongs to a trace of the window.
-		expect(sql).toContain("anyIf(Model, Model != '') AS traceModel")
+		expect(sql).toContain("anyIf(ai_trace_index.Model, ai_trace_index.Model != '') AS traceModel")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- inner join, every tool call belongs to a trace of the window
 		expect(sql).toContain("INNER JOIN")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- model attribution, parent model before the trace's own
 		expect(sql).toContain(`${MODEL_EXPR} AS modelName`)
 	})
 
@@ -109,9 +115,20 @@ describe("tool call population", () => {
 		// `max(SessionId)` per trace, because the id sits on the turn-owning span
 		// and every other row of the trace reads ''. Keyed per tool ROW instead,
 		// nearly every tool call would become its own `trace:` session.
-		expect(sql).toContain("max(SessionId) AS rawSessionId")
+		expect(sql).toContain("max(ai_trace_index.SessionId) AS rawSessionId")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the sessions list's own key, per trace
 		expect(sql).toContain(`${SESSION_KEY} AS sessionKey`)
-		expect(sql).toContain("uniqExact(sessionKey) AS sessions")
+		expect(sql).toContain("uniqExact(tool_calls.sessionKey) AS sessions")
+	})
+
+	it("counts the sessions list's population in the window's Sessions tile", () => {
+		const { sql } = compileUnionUnsafe(aiToolsTotalsQuery({}, ["window"]), totalsParams)
+
+		// The same per-trace rule the list applies, or the tile counts sessions
+		// the list does not show.
+		expect(sql).toContain(
+			"HAVING countIf((((ai_trace_index.SessionId != '' OR ai_trace_index.IsLlmCall = 1) OR ai_trace_index.IsToolCall = 1) OR ai_trace_index.AgentName != '')) > 0",
+		)
 	})
 
 	it("scopes every level that reads the table to the org", () => {
@@ -159,7 +176,6 @@ describe("tool call population", () => {
 			compileUnsafe(aiToolsSeriesQuery({ tool: "search_traces" }), params).sql,
 		]
 		for (const sql of withParent) {
-			expect(sql).toContain("LEFT JOIN")
 			expect(sql).toContain("parentModel")
 		}
 		expect(compileUnsafe(aiToolsSeriesQuery(), params).sql).not.toContain("parentModel")
@@ -175,7 +191,7 @@ describe("tool call population", () => {
 			compileUnsafe(aiToolErrorBreakdownQuery(errorSelection), params).sql,
 			compileUnsafe(aiToolErrorOccurrencesQuery(errorSelection), params).sql,
 		]) {
-			expect(sql).toContain("LEFT JOIN")
+			// oxlint-disable-next-line test-slop/no-sql-text-pin -- model attribution, parent model before the trace's own
 			expect(sql).toContain(`${MODEL_EXPR} AS modelName`)
 		}
 		for (const sql of [
@@ -231,8 +247,8 @@ describe("tool call population", () => {
 		const series = compileUnsafe(aiToolsSeriesQuery(scoped), params).sql
 		// Twice in the series: once for the points, once for the top-N ranking —
 		// otherwise the legend ranks a population the chart is not drawing.
-		expect(series.split("ILIKE '%run%'").length - 1).toBe(2)
-		expect(series.split("IsError = 1").length - 1).toBe(2)
+		expect(Str.split("ILIKE '%run%'")(series).length - 1).toBe(2)
+		expect(Str.split("IsError = 1")(series).length - 1).toBe(2)
 
 		for (const sql of [
 			compileUnionUnsafe(aiToolsTotalsQuery(scoped), totalsParams).sql,
@@ -261,17 +277,18 @@ describe("aiToolsSeriesQuery", () => {
 		// Both picked is a single series, and the tool is what names it.
 		expect(aiToolsSeriesKind({ tool: "search_traces", model: "gpt-5" })).toBe("tool")
 
-		expect(compileUnsafe(aiToolsSeriesQuery(), params).sql).toContain("if(toolName IN (SELECT")
+		expect(compileUnsafe(aiToolsSeriesQuery(), params).sql).toContain("if(tool_calls.toolName IN (SELECT")
 		expect(compileUnsafe(aiToolsSeriesQuery({ tool: "t" }), params).sql).toContain(
-			"if(modelName IN (SELECT",
+			"if(tool_calls.modelName IN (SELECT",
 		)
 	})
 
 	it("buckets by the caller's interval and folds the long tail into one key", () => {
 		const { sql } = compileUnsafe(aiToolsSeriesQuery(), params)
 
-		expect(sql).toContain("toStartOfInterval(ts, INTERVAL 300 SECOND)")
-		expect(sql).toContain(`, toolName, '${AI_TOOLS_OTHER_SERIES_KEY}') AS seriesKey`)
+		expect(sql).toContain("toStartOfInterval(tool_calls.ts, INTERVAL 300 SECOND)")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- folds the long tail into the other key
+		expect(sql).toContain(`, tool_calls.toolName, '${AI_TOOLS_OTHER_SERIES_KEY}') AS seriesKey`)
 		// Ranked, not truncated: the tail is folded so the stack still totals what
 		// the tiles report. The key breaks ties so a series cannot swap in and out
 		// of `other` between two loads of the same window.
@@ -314,14 +331,15 @@ describe("aiToolsTotalsQuery", () => {
 	it("measures both windows in one read, each off its own params", () => {
 		const { sql } = compileUnionUnsafe(aiToolsTotalsQuery(), totalsParams)
 
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the label routes each branch to its window
 		expect(sql).toContain("'current' AS period")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the label routes each branch to its window
 		expect(sql).toContain("'previous' AS period")
-		expect(sql).toContain("UNION ALL")
 		expect(sql).toContain("Timestamp >= '2026-08-18 00:00:00'")
 		expect(sql).toContain("Timestamp >= '2026-08-16 00:00:01'")
 		// Quantiles do not merge, which is why the tiles are their own read
 		// rather than a client-side fold of the chart.
-		expect(sql).toContain("quantile(0.95)(durationNs)")
+		expect(sql).toContain("quantile(0.95)(tool_calls_current.durationNs)")
 		// Un-bucketed: one row per branch, the whole window in each.
 		expect(sql).not.toContain("GROUP BY period")
 		expect(sql).not.toContain("toStartOfInterval")
@@ -341,7 +359,9 @@ describe("aiToolsTotalsQuery", () => {
 		// The overview's default is unchanged, and the branches keep their order
 		// whatever order the caller lists them in.
 		const listed = compileUnionUnsafe(aiToolsTotalsQuery({}, ["window", "current"]), totalsParams).sql
-		expect(listed.indexOf("'current' AS period")).toBeLessThan(listed.indexOf("'window' AS period"))
+		expect(Option.getOrThrow(Str.indexOf("'current' AS period")(listed))).toBeLessThan(
+			Option.getOrThrow(Str.indexOf("'window' AS period")(listed)),
+		)
 		expect(listed).not.toContain("'previous' AS period")
 	})
 
@@ -350,7 +370,9 @@ describe("aiToolsTotalsQuery", () => {
 
 		// A quantile over no rows is NULL, which the row schema refuses — so the
 		// query returns 0 and the tile renders a real number.
-		expect(compiled.sql).toContain("ifNull(ifNotFinite(quantile(0.5)(durationNs), 0), 0) AS p50")
+		expect(compiled.sql).toContain(
+			"ifNull(ifNotFinite(quantile(0.5)(tool_calls_current.durationNs), 0), 0) AS p50",
+		)
 		const rows = decodeRows(compiled, [
 			{
 				period: "previous",
@@ -375,6 +397,7 @@ describe("aiToolsBreakdownsQuery", () => {
 			params,
 		)
 
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the breakdown groups by tool
 		expect(sql).toContain("toolName AS key")
 		// The table exists to pick a DIFFERENT tool, so it keeps the model filter
 		// and drops the tool one — otherwise it returns the single row the user
@@ -386,7 +409,7 @@ describe("aiToolsBreakdownsQuery", () => {
 	it("returns the busiest rows, with the last call under each key", () => {
 		const { sql } = compileUnsafe(aiToolsBreakdownsQuery(), params)
 
-		expect(sql).toContain("toString(max(ts)) AS lastSeen")
+		expect(sql).toContain("toString(max(tool_breakdown.ts)) AS lastSeen")
 		expect(sql).toContain("ORDER BY calls DESC, key ASC")
 		expect(sql).toContain(`LIMIT ${AI_TOOLS_BREAKDOWN_LIMIT}`)
 	})
@@ -405,8 +428,8 @@ describe("aiToolsSeriesQuery split", () => {
 		expect(sql).not.toContain("top_series_keys")
 		expect(sql).not.toContain(AI_TOOLS_OTHER_SERIES_KEY)
 		expect(sql).toContain("'' AS seriesKey")
-		expect(sql).toContain("uniqExact(sessionKey) AS sessions")
-		expect(sql).toContain("quantile(0.95)(durationNs)")
+		expect(sql).toContain("uniqExact(tool_calls.sessionKey) AS sessions")
+		expect(sql).toContain("quantile(0.95)(tool_calls.durationNs)")
 	})
 
 	it("still derives the kind when the caller names none", () => {
@@ -423,8 +446,8 @@ describe("aiToolsTotalsQuery empty window", () => {
 		// A non-grouped `min()` over zero rows returns the DateTime default, so
 		// without the guard an empty window claims a first call in 1970 — which
 		// the response contract says is `''`.
-		expect(sql).toContain("if(count() = 0, '', toString(min(ts))) AS firstSeen")
-		expect(sql).toContain("if(count() = 0, '', toString(max(ts))) AS lastSeen")
+		expect(sql).toContain("if(count() = 0, '', toString(min(tool_calls_current.ts))) AS firstSeen")
+		expect(sql).toContain("if(count() = 0, '', toString(max(tool_calls_current.ts))) AS lastSeen")
 	})
 })
 
@@ -443,10 +466,10 @@ describe("the tool detail reads", () => {
 			compileUnsafe(aiToolErrorVariantsQuery(group), params).sql,
 			compileUnsafe(aiToolErrorBreakdownQuery(group), params).sql,
 		]) {
-			// Migration 0032. Before it the failure reads seeked `trace_detail_spans`
+			// Migration 0032. Before it the failure reads seeked the span table
 			// inside the traces the index named, which costs by the partitions the
 			// window spreads over — seconds to tens of seconds on a week.
-			expect(sql).not.toContain("trace_detail_spans")
+			expect(sql).not.toContain("FROM traces")
 			expect(sql).not.toContain("SpanAttributes")
 			expect(sql).toContain("ai_trace_index.ToolName = 'search_traces'")
 			// Selected through `toString`: a UInt64 past 2^53 is not a JSON number.
@@ -465,10 +488,12 @@ describe("the tool detail reads", () => {
 			"coalesce(nullIf(ai_trace_index.FailedToolCallResult, ''), ai_trace_index.StatusMessage) AS failureMessage",
 		)
 		// Aggregates are never aliased to their own input's name.
-		expect(sql).toContain("argMax(callErrorType, ts) AS errorType")
-		expect(sql).toContain("argMax(failureMessage, ts) AS message")
-		expect(sql).toContain("uniqExact(failureMessage) AS variants")
-		expect(sql).toContain("uniqExact(sessionKey) AS sessions")
+		expect(sql).toContain(
+			"argMax(numbered_tool_calls.callErrorType, numbered_tool_calls.ts) AS errorType",
+		)
+		expect(sql).toContain("argMax(numbered_tool_calls.failureMessage, numbered_tool_calls.ts) AS message")
+		expect(sql).toContain("uniqExact(numbered_tool_calls.failureMessage) AS variants")
+		expect(sql).toContain("uniqExact(numbered_tool_calls.sessionKey) AS sessions")
 		expect(sql).toContain("GROUP BY fingerprint")
 		expect(sql).toContain("ORDER BY calls DESC, fingerprint ASC")
 	})
@@ -480,16 +505,18 @@ describe("the tool detail reads", () => {
 
 		expect(sql).not.toContain("ai_trace_index.IsError = 1")
 		expect(sql).toContain("row_number() OVER (ORDER BY ts DESC, spanId DESC) - 1 AS newerCalls")
-		expect(sql).toContain("min(newerCalls) AS callsSince")
+		expect(sql).toContain("min(numbered_tool_calls.newerCalls) AS callsSince")
 		// The failure filter is the outer level's, above the numbering.
-		expect(sql).toContain("WHERE isError = 1")
-		expect(sql.indexOf("WHERE isError = 1")).toBeGreaterThan(sql.indexOf("row_number()"))
+		expect(sql).toContain("WHERE numbered_tool_calls.isError = 1")
+		expect(Option.getOrThrow(Str.indexOf("WHERE numbered_tool_calls.isError = 1")(sql))).toBeGreaterThan(
+			Option.getOrThrow(Str.indexOf("row_number()")(sql)),
+		)
 	})
 
 	it("counts each group's failures per bucket of the caller's interval", () => {
 		const { sql } = compileUnsafe(aiToolErrorsQuery(errorSelection), params)
 
-		expect(sql).toContain("toStartOfInterval(ts, INTERVAL 300 SECOND)")
+		expect(sql).toContain("toStartOfInterval(tool_calls.ts, INTERVAL 300 SECOND)")
 		expect(sql).toContain("sumMap(map(bucket, toUInt64(1))) AS trend")
 	})
 
@@ -525,7 +552,7 @@ describe("the tool detail reads", () => {
 		)
 
 		expect(sql).toContain(
-			"(ts < '2026-08-18 01:00:00.000000000' OR (ts = '2026-08-18 01:00:00.000000000' AND spanId < 's9'))",
+			"(failing_tool_calls.ts < '2026-08-18 01:00:00.000000000' OR (failing_tool_calls.ts = '2026-08-18 01:00:00.000000000' AND failing_tool_calls.spanId < 's9'))",
 		)
 	})
 
@@ -616,19 +643,26 @@ describe("aiToolErrorPayloadsQuery", () => {
 	]
 	const compiled = compileUnsafe(
 		aiToolErrorPayloadsQuery(calls),
-		{ orgId: "org_1", ...aiToolErrorPayloadSlice(calls) },
+		{ orgId: OrgId.make("org_1"), ...aiToolErrorPayloadSlice(calls) },
 		{ rowSchema: aiToolErrorPayloadsRowSchema },
 	)
 
 	it("seeks the named spans and nothing else", () => {
 		expect(compiled.tenantScope).toBe("single-tenant")
-		// A primary-key seek on `(OrgId, TraceId, SpanId)`: the tuple list is the
-		// occurrences the modal already has, so the read cannot widen with the
-		// window the reader picked.
+		// The occurrences the modal already has name both the trace_index seek and
+		// the span tuples, so the read cannot widen with the window the reader picked.
+		expect(compiled.sql).toContain("FROM traces")
 		expect(compiled.sql).toContain(
-			"(trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (tuple('t2', 's2'), tuple('t1', 's1'))",
+			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
 		)
-		expect(compiled.sql).not.toContain("IN (SELECT")
+		expect(compiled.sql).toMatch(
+			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId IN \('t2', 't1'\)\s+AND trace_index\.Bucket >= toStartOfFiveMinutes\(toDateTime64\(/,
+		)
+		expect(compiled.sql).toContain(
+			"(traces.TraceId, traces.SpanId) IN (tuple('t2', 's2'), tuple('t1', 's1'))",
+		)
+		// The seek is the only subquery, and it reads literals.
+		expect(Str.split("IN (SELECT")(compiled.sql).length - 1).toBe(1)
 	})
 
 	it("bounds the read by the occurrences' own extent, unpadded", () => {
@@ -644,25 +678,159 @@ describe("aiToolErrorPayloadsQuery", () => {
 		expect(compiled.sql).not.toContain("2026-08-19 23:59:59")
 	})
 
-	it("truncates payloads by codepoint and reports their size in bytes", () => {
-		// `left` counts BYTES and would cut a multi-byte codepoint in half.
-		expect(compiled.sql).not.toContain("left(")
-		expect(compiled.sql).toContain("leftUTF8(")
-		expect(compiled.sql).toContain("AS argumentsBytes")
-		expect(compiled.sql).toContain("AS resultBytes")
+	it("reads the attributes the session page decodes, not a payload of its own", () => {
+		// Which attribute holds the arguments is the integrations' call, so the
+		// read hands back the same projection the session span read does.
+		expect(compiled.sql).toContain("mapFilter((k, v) ->")
+		expect(compiled.sql).toContain("'input.value'")
+		expect(compiled.sql).toContain("'tool.parameters'")
+		expect(compiled.sql).not.toContain("coalesce(")
+	})
+
+	it("cuts every value in SQL and reports the true size of the ones it cut", () => {
+		expect(compiled.sql).toContain(
+			`mapApply((k, v) -> (k, leftUTF8(v, ${AI_TOOL_ERROR_ATTRIBUTE_MAX})), mapFilter(`,
+		)
+		expect(compiled.sql).toContain(
+			`mapApply((k, v) -> (k, length(v)), mapFilter((k, v) -> lengthUTF8(v) > ${AI_TOOL_ERROR_ATTRIBUTE_MAX}, mapFilter(`,
+		)
 		expect(
 			decodeRows(compiled, [
 				{
 					traceId: "t1",
 					spanId: "s1",
 					statusCode: "Error",
-					arguments: "{}",
-					argumentsBytes: "2",
-					result: "",
-					resultBytes: 0,
+					spanAttributes: { "input.value": "{}" },
+					// UInt64 arrives quoted under FORMAT JSON.
+					cutAttributeBytes: { "output.value": "40000" },
 				},
-			])[0],
-		).toMatchObject({ argumentsBytes: 2, resultBytes: 0 })
+			])[0]?.cutAttributeBytes,
+		).toEqual({ "output.value": 40_000 })
+	})
+})
+
+describe("aiToolErrorPayload", () => {
+	const payload = (
+		spanAttributes: Record<string, string>,
+		cutAttributeBytes: Record<string, number> = {},
+	) =>
+		aiToolErrorPayload({
+			traceId: "t1",
+			spanId: "s1",
+			statusCode: "Error",
+			spanAttributes,
+			cutAttributeBytes,
+		})
+
+	// `update_seat` as the OpenAI Agents SDK's Python OpenInference instrumentor
+	// emitted it in production: the GenAI dual-write put the parameter schema in
+	// `gen_ai.tool.call.arguments` (session `verify-oa-py-nofix1-1`) where the
+	// baseline run (`verify-oa-py-base-1`) had the real arguments.
+	const UPDATE_SEAT_SCHEMA =
+		'{"properties": {"confirmation_number": {"description": "The confirmation number for the flight.", "title": "Confirmation Number", "type": "string"}, "new_seat": {"description": "The new seat to update to.", "title": "New Seat", "type": "string"}}, "required": ["confirmation_number", "new_seat"], "title": "update_seat_args", "type": "object", "additionalProperties": false}'
+	const UPDATE_SEAT_ARGS = '{"confirmation_number":"ABC123","new_seat":"14C"}'
+	const UPDATE_SEAT_ERROR =
+		"An error occurred while running the tool. Please try again. Error: Seat 14C is temporarily locked, retry once"
+	const updateSeat = (dualWrittenArguments: string) => ({
+		"maple_ai.vendor.id": "openai_agents_sdk",
+		"openinference.span.kind": "TOOL",
+		"tool.name": "update_seat",
+		"gen_ai.tool.name": "update_seat",
+		"tool.parameters": UPDATE_SEAT_SCHEMA,
+		"gen_ai.tool.call.arguments": dualWrittenArguments,
+		"input.value": UPDATE_SEAT_ARGS,
+		"output.value": UPDATE_SEAT_ERROR,
+		"gen_ai.tool.call.result": UPDATE_SEAT_ERROR,
+	})
+
+	it("shows an OpenInference tool's arguments where the dual-write copied its schema", () => {
+		expect(payload(updateSeat(UPDATE_SEAT_SCHEMA))).toMatchObject({
+			arguments: UPDATE_SEAT_ARGS,
+			argumentsBytes: UPDATE_SEAT_ARGS.length,
+			result: UPDATE_SEAT_ERROR,
+		})
+		// The run whose dual-write carried the arguments reads the same.
+		expect(payload(updateSeat(UPDATE_SEAT_ARGS)).arguments).toBe(UPDATE_SEAT_ARGS)
+	})
+
+	// LlamaIndex `get_weather`: with the GenAI dual-write on (`verify-li-sem1-1`)
+	// the arguments slot holds the schema, with it off (`verify-li-sem0-1`) it is
+	// empty, and `input.value` has the call either way.
+	const WEATHER_SCHEMA =
+		'{"properties": {"city": {"title": "City", "type": "string"}, "unit": {"title": "Unit", "type": "string"}}, "required": ["city", "unit"], "type": "object"}'
+	const WEATHER_OUTPUT =
+		'{"blocks":[{"text":"Weather in Berlin: 18 degrees celsius, light rain."}],"tool_name":"get_weather","raw_input":{"args":[],"kwargs":{"city":"Berlin","unit":"celsius"}},"raw_output":"Weather in Berlin: 18 degrees celsius, light rain.","is_error":false}'
+	const getWeather = (dualWrite: Record<string, string>) => ({
+		"maple_ai.vendor.id": "llamaindex",
+		"openinference.span.kind": "TOOL",
+		"tool.name": "get_weather",
+		"tool.parameters": WEATHER_SCHEMA,
+		"input.value": '{"kwargs": {"city": "Berlin", "unit": "celsius"}}',
+		"output.value": WEATHER_OUTPUT,
+		...dualWrite,
+	})
+
+	it("reads a LlamaIndex tool's input whether or not the dual-write ran", () => {
+		const withDualWrite = payload(
+			getWeather({
+				"gen_ai.tool.call.arguments": WEATHER_SCHEMA,
+				"gen_ai.tool.call.result": WEATHER_OUTPUT,
+			}),
+		)
+		const without = payload(getWeather({}))
+		// Re-serialised from the decoded value, as the session page renders it.
+		const args = '{"kwargs":{"city":"Berlin","unit":"celsius"}}'
+		expect(withDualWrite.arguments).toBe(args)
+		expect(without.arguments).toBe(args)
+		expect(without.result).toBe(WEATHER_OUTPUT)
+	})
+
+	it("unwraps a LangChain ToolMessage result to what the tool returned", () => {
+		expect(
+			payload({
+				"gen_ai.tool.name": "get_weather",
+				"gen_ai.tool.call.result":
+					'{"type": "tool", "data": {"content": "{\\"city\\": \\"Berlin\\"}", "type": "tool", "name": "get_weather", "tool_call_id": "call_1", "status": "success"}}',
+			}).result,
+		).toBe('{"city": "Berlin"}')
+	})
+
+	it("truncates by codepoint and reports the full size in bytes", () => {
+		const long = `"${Str.repeat(AI_TOOL_ERROR_PAYLOAD_MAX + 10)("é")}"`
+		const cut = payload({ "gen_ai.tool.call.arguments": "{}", "gen_ai.tool.call.result": long })
+		expect(cut).toMatchObject({ arguments: "{}", argumentsBytes: 2 })
+		// A JSON string decodes to its text; every `é` is two bytes.
+		expect(Array.from(cut.result)).toHaveLength(AI_TOOL_ERROR_PAYLOAD_MAX)
+		expect(cut.resultBytes).toBe((AI_TOOL_ERROR_PAYLOAD_MAX + 10) * 2)
+		expect(payload({})).toMatchObject({ arguments: "", argumentsBytes: 0, result: "", resultBytes: 0 })
+	})
+
+	it("shows a value the read cut as its raw text, at its true size", () => {
+		// As the read returns a 40 KB JSON result: cut mid-document, so it no
+		// longer parses.
+		const whole = JSON.stringify({ rows: Str.repeat(40_000)("x") })
+		const cut = Str.slice(0, AI_TOOL_ERROR_ATTRIBUTE_MAX)(whole)
+		const shown = payload(
+			{ "gen_ai.tool.call.arguments": "{}", "gen_ai.tool.call.result": cut },
+			{ "gen_ai.tool.call.result": whole.length },
+		)
+		expect(shown).toMatchObject({ arguments: "{}", argumentsBytes: 2, resultBytes: whole.length })
+		expect(shown.result).toBe(Str.slice(0, AI_TOOL_ERROR_PAYLOAD_MAX)(cut))
+	})
+
+	it("still swaps an OpenInference schema for the arguments when both are cut", () => {
+		// The schema and its dual-written copy are cut to the same prefix, so
+		// they still compare equal and `input.value` still wins.
+		const schema = JSON.stringify({
+			properties: { seat: { description: Str.repeat(AI_TOOL_ERROR_ATTRIBUTE_MAX)("d") } },
+		})
+		const cut = Str.slice(0, AI_TOOL_ERROR_ATTRIBUTE_MAX)(schema)
+		expect(
+			payload(
+				{ ...updateSeat(cut), "tool.parameters": cut },
+				{ "tool.parameters": schema.length, "gen_ai.tool.call.arguments": schema.length },
+			),
+		).toMatchObject({ arguments: UPDATE_SEAT_ARGS, argumentsBytes: UPDATE_SEAT_ARGS.length })
 	})
 })
 
@@ -676,14 +844,16 @@ describe("aiToolDescriptionQuery", () => {
 		// One level, one table. This read ranked a hundred calls and then seeked
 		// the span table for each, and it was what the page waited on.
 		expect(orgPredicateCount(compiled.sql)).toBe(1)
-		expect(compiled.sql).not.toContain("trace_detail_spans")
+		expect(compiled.sql).not.toContain("FROM traces")
 		expect(compiled.sql).toContain("FROM ai_trace_index")
 		expect(compiled.sql).toContain("IsToolCall = 1")
 		expect(compiled.sql).toContain("ToolName = 'search_traces'")
 	})
 
 	it("keeps the latest description a call actually stamped", () => {
-		expect(compiled.sql).toContain("argMax(ToolDescription, Timestamp) AS description")
+		expect(compiled.sql).toContain(
+			"argMax(ai_trace_index.ToolDescription, ai_trace_index.Timestamp) AS description",
+		)
 		// Rows materialized before migration 0032 read '', and so does a call
 		// whose framework stamps nothing — without this the `argMax` would answer
 		// '' for a tool whose most recent call is one of them.

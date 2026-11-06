@@ -4,7 +4,7 @@
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { migrations } from "@maple/domain/clickhouse"
-import { Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { msToDate } from "../../platform/time"
 import {
 	applyRealMigrations,
@@ -23,13 +23,14 @@ const SERVICE = "cf-worker"
  * ages past the horizon, leaving the suite comparing nothing to nothing.
  */
 const SEED_MS = Date.now() - 60 * 60 * 1000
-const chDateTime = (epochMs: number): string => msToDate(epochMs).toISOString().replace("T", " ").slice(0, 19)
+const chDateTime = (epochMs: number): string =>
+	Str.slice(0, 19)(Str.replace("T", " ")(msToDate(epochMs).toISOString()))
 const SEED_TS = chDateTime(SEED_MS)
 
-const quote = (value: string): string => `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
+const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 const chMap = (entries: Readonly<Record<string, string>>): string => {
-	const pairs = Object.entries(entries).flatMap(([key, value]) => [quote(key), quote(value)])
-	return pairs.length === 0 ? "map()" : `map(${pairs.join(", ")})`
+	const pairs = Arr.flatMap(Rec.toEntries(entries), ([key, value]) => [quote(key), quote(value)])
+	return pairs.length === 0 ? "map()" : `map(${Arr.join(pairs, ", ")})`
 }
 
 interface ExceptionEvent {
@@ -170,21 +171,24 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 ]
 
 const seed = async (): Promise<void> => {
-	const rows = SEED_SPANS.map((row) => {
-		const resource = chMap({
-			"service.version": "e2e",
-			"deployment.environment.name": "production",
-		})
-		const events =
-			row.exceptionEvent === undefined
-				? "[], [], []"
-				: `[toDateTime64(${quote(SEED_TS)}, 9)], ['exception'], [${chMap({
-						"exception.type": row.exceptionEvent.type,
-						"exception.message": row.exceptionEvent.message,
-						"exception.stacktrace": row.exceptionEvent.stacktrace,
-					})}]`
-		return `(${quote(ORG_ID)}, ${quote(SEED_TS)}, ${quote(`trace-${row.spanId}`)}, ${quote(row.spanId)}, '', 'GET /', ${quote(row.kind)}, ${quote(SERVICE)}, 1000000, 'Error', ${quote(row.statusMessage)}, ${chMap(row.spanAttributes)}, ${resource}, ${events})`
-	}).join(",\n")
+	const rows = Arr.join(
+		Arr.map(SEED_SPANS, (row) => {
+			const resource = chMap({
+				"service.version": "e2e",
+				"deployment.environment.name": "production",
+			})
+			const events =
+				row.exceptionEvent === undefined
+					? "[], [], []"
+					: `[toDateTime64(${quote(SEED_TS)}, 9)], ['exception'], [${chMap({
+							"exception.type": row.exceptionEvent.type,
+							"exception.message": row.exceptionEvent.message,
+							"exception.stacktrace": row.exceptionEvent.stacktrace,
+						})}]`
+			return `(${quote(ORG_ID)}, ${quote(SEED_TS)}, ${quote(`trace-${row.spanId}`)}, ${quote(row.spanId)}, '', 'GET /', ${quote(row.kind)}, ${quote(SERVICE)}, 1000000, 'Error', ${quote(row.statusMessage)}, ${chMap(row.spanAttributes)}, ${resource}, ${events})`
+		}),
+		",\n",
+	)
 
 	await clickhouseExec(
 		`INSERT INTO traces
@@ -215,11 +219,11 @@ const readErrorEvents = async (from: string): Promise<Map<string, ErrorEventRow>
 		 FORMAT JSONEachRow`,
 		database,
 	)
-	const rows = body
-		.split("\n")
-		.filter((line) => line.trim().length > 0)
-		.map(decodeErrorEvent)
-	const bySpan = new Map(rows.map((row) => [row.SpanId, row]))
+	const rows = Arr.map(
+		Arr.filter(Str.split("\n")(body), (line) => Str.trim(line).length > 0),
+		decodeErrorEvent,
+	)
+	const bySpan = new Map(Arr.map(rows, (row) => [row.SpanId, row]))
 	assert.strictEqual(bySpan.size, rows.length, "unexpected duplicate occurrences")
 	return bySpan
 }
@@ -282,17 +286,28 @@ describe.skipIf(!clickhouseE2eEnabled)("error_events attribute fallback (ClickHo
 
 	it("preserves pre-migration hashes and details for events and status messages", async () => {
 		// Migration 0020 is the last deployed definition of these views before 0030.
-		// Evaluate its frozen SELECT against identical spans; do not reimplement hashing.
-		const previousView = migrations
-			.find((migration) => migration.version === 20)
-			?.statements.find(
-				(statement) =>
-					typeof statement === "string" &&
-					statement.startsWith("CREATE MATERIALIZED VIEW IF NOT EXISTS error_events_mv "),
+		// Evaluate both frozen SELECTs against identical spans; do not reimplement
+		// hashing. (0039 rotates every hash on purpose, so the live view is not 0030.)
+		const frozenSelect = (version: number): string => {
+			const view = Option.getOrUndefined(
+				Option.flatMap(
+					Arr.findFirst(migrations, (migration) => migration.version === version),
+					(migration) =>
+						Arr.findFirst(
+							migration.statements,
+							(statement) =>
+								typeof statement === "string" &&
+								Str.startsWith("CREATE MATERIALIZED VIEW IF NOT EXISTS error_events_mv ")(
+									statement,
+								),
+						),
+				),
 			)
-		assert.isString(previousView)
-		const previousSelect = previousView.slice(previousView.indexOf(" AS\n") + 4)
-		const previousRows = await readErrorEvents(`(${previousSelect})`)
+			assert.isString(view)
+			return view.slice(view.indexOf(" AS\n") + 4)
+		}
+		const previousRows = await readErrorEvents(`(${frozenSelect(20)})`)
+		const fallbackRows = await readErrorEvents(`(${frozenSelect(30)})`)
 		for (const spanId of [
 			"event-wins",
 			"empty-event",
@@ -301,12 +316,12 @@ describe.skipIf(!clickhouseE2eEnabled)("error_events attribute fallback (ClickHo
 			"status-and-exception-attrs",
 			"unknown",
 		]) {
-			assert.deepStrictEqual(mustGet(rows, spanId), mustGet(previousRows, spanId), spanId)
+			assert.deepStrictEqual(mustGet(fallbackRows, spanId), mustGet(previousRows, spanId), spanId)
 		}
 	})
 
 	it("preserves stored occurrences when the migration is reapplied", async () => {
-		const migration = migrations.find((entry) => entry.version === 30)
+		const migration = Option.getOrUndefined(Arr.findFirst(migrations, (entry) => entry.version === 39))
 		assert.isDefined(migration)
 		for (const statement of migration.statements) {
 			assert.isString(statement)

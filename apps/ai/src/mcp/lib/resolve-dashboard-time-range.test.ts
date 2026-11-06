@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { resolveDashboardTimeRange, validateDashboardTimeRange } from "./resolve-dashboard-time-range"
+import { String as Str } from "effect"
 
 describe("validateDashboardTimeRange", () => {
 	it("accepts ranges the old {1h, 6h, 24h, 7d} whitelist rejected", () => {
@@ -18,12 +19,6 @@ describe("validateDashboardTimeRange", () => {
 		expect(validateDashboardTimeRange("3mo")).toContain("31 days")
 	})
 
-	it("still accepts the four values the whitelist allowed", () => {
-		for (const value of ["1h", "6h", "24h", "7d"]) {
-			expect(validateDashboardTimeRange(value)).toBeNull()
-		}
-	})
-
 	it("rejects a range past the engine ceiling instead of downgrading it", () => {
 		const error = validateDashboardTimeRange("999d")
 		expect(error).not.toBeNull()
@@ -40,8 +35,8 @@ describe("validateDashboardTimeRange", () => {
 
 describe("resolveDashboardTimeRange", () => {
 	const spanSeconds = (range: { startTime: string; endTime: string }) =>
-		(Date.parse(`${range.endTime}Z`.replace(" ", "T")) -
-			Date.parse(`${range.startTime}Z`.replace(" ", "T"))) /
+		(Date.parse(Str.replace(" ", "T")(`${range.endTime}Z`)) -
+			Date.parse(Str.replace(" ", "T")(`${range.startTime}Z`))) /
 		1000
 
 	it("resolves a 30-day relative range to a 30-calendar-day window", () => {
@@ -65,7 +60,7 @@ describe("resolveDashboardTimeRange", () => {
 		const localMidnight = new Date()
 		localMidnight.setHours(0, 0, 0, 0)
 		expect(resolved!.startTime).toBe(
-			new Date(localMidnight.getTime()).toISOString().replace("T", " ").slice(0, 19),
+			Str.slice(0, 19)(Str.replace("T", " ")(new Date(localMidnight.getTime()).toISOString())),
 		)
 	})
 

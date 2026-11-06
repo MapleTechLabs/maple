@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
-import { Effect, Fiber, Layer, Schema } from "effect"
+import { Effect, Fiber, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { ActorId, OrgId, UserId } from "@maple/domain/primitives"
 import { Database, DatabaseError, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
@@ -80,7 +80,7 @@ describe("ErrorActorsService", () => {
 			const listed = yield* actors.listAgents(ORG)
 			const lookedUp = yield* actors.lookupActor(ORG, registered.id)
 
-			expect(listed.actors.map((actor) => actor.id)).toContain(registered.id)
+			expect(Arr.map(listed.actors, (actor) => actor.id)).toContain(registered.id)
 			assert.deepStrictEqual(lookedUp, registered)
 		}).pipe(Effect.provide(makeLayer())),
 	)

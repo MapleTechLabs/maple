@@ -2,7 +2,18 @@ import { createClerkClient } from "@clerk/backend"
 import { EdgeCacheService } from "@maple/cache"
 import type { VerifiedOrgMembership } from "@maple/auth"
 import { AuthorizationUnavailableError, OrgId, RoleName, type UserId } from "@maple/domain/http"
-import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Stream,
+	String as Str,
+} from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 
@@ -113,34 +124,34 @@ export const collectMemberships = Effect.fnUntraced(function* (
 		offset: number,
 	) => Effect.Effect<ReadonlyArray<ClerkMembershipRow>, AuthorizationUnavailableError>,
 ) {
-	const memberships: Array<{ orgId: OrgId; role: RoleName }> = []
-	let page = 0
-	let truncated = false
-	let undecodable = 0
+	const pages = yield* Stream.paginate(0, (page: number) =>
+		listPage(page * MEMBERSHIP_PAGE_SIZE).pipe(
+			Effect.map((rows) => {
+				const next = page + 1
+				const full = rows.length >= MEMBERSHIP_PAGE_SIZE
+				const truncated = full && next >= MEMBERSHIP_MAX_PAGES
+				return [
+					[{ rows, truncated }],
+					full && !truncated ? Option.some(next) : Option.none<number>(),
+				] as const
+			}),
+		),
+	).pipe(Stream.runCollect)
 
-	while (true) {
-		const rows = yield* listPage(page * MEMBERSHIP_PAGE_SIZE)
-
-		for (const row of rows) {
-			const orgId = decodeOrgIdOption(row.organization.id)
-			const role = decodeRoleNameOption(row.role)
-			// A Clerk role Maple does not model must not 500 an unrelated request —
-			// it simply is not a membership we can act on. Counted so the span says
-			// it happened rather than the count quietly disagreeing with Clerk.
-			if (Option.isNone(orgId) || Option.isNone(role)) {
-				undecodable += 1
-				continue
-			}
-			memberships.push({ orgId: orgId.value, role: role.value })
-		}
-
-		page += 1
-		if (rows.length < MEMBERSHIP_PAGE_SIZE) break
-		if (page >= MEMBERSHIP_MAX_PAGES) {
-			truncated = true
-			break
-		}
-	}
+	const rows = Arr.flatMap(pages, (page) => page.rows)
+	const truncated = Arr.some(pages, (page) => page.truncated)
+	// A Clerk role Maple does not model must not 500 an unrelated request —
+	// it simply is not a membership we can act on. Counted so the span says
+	// it happened rather than the count quietly disagreeing with Clerk.
+	const memberships = Arr.getSomes(
+		Arr.map(rows, (row) =>
+			Option.all({
+				orgId: decodeOrgIdOption(row.organization.id),
+				role: decodeRoleNameOption(row.role),
+			}),
+		),
+	)
+	const undecodable = rows.length - memberships.length
 
 	yield* Effect.annotateCurrentSpan({
 		"maple.auth.membership.count": memberships.length,
@@ -155,7 +166,7 @@ const make = Effect.gen(function* () {
 	const edgeCache = yield* EdgeCacheService
 
 	const clerk =
-		env.MAPLE_AUTH_MODE.toLowerCase() === "clerk" && Option.isSome(env.CLERK_SECRET_KEY)
+		Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk" && Option.isSome(env.CLERK_SECRET_KEY)
 			? createClerkClient({ secretKey: Redacted.value(env.CLERK_SECRET_KEY.value) })
 			: null
 
@@ -171,10 +182,7 @@ const make = Effect.gen(function* () {
 						limit: MEMBERSHIP_PAGE_SIZE,
 						offset,
 					}),
-			).pipe(
-				Effect.map((response) => response.data),
-				Effect.mapError(unavailable),
-			)
+			).pipe(Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: unavailable }))
 		})
 
 	const readShared = (userId: UserId) =>
@@ -192,7 +200,7 @@ const make = Effect.gen(function* () {
 			.pipe(Effect.map((result) => result.value))
 
 	const load = Effect.fn("OrgMembershipService.load")(function* (userId: UserId) {
-		const now = Date.now()
+		const now = yield* Clock.currentTimeMillis
 		const memo = membershipMemo.get(userId)
 		if (memo && now < memo.freshUntil) {
 			yield* Effect.annotateCurrentSpan("cache.status", "memo")
@@ -212,7 +220,7 @@ const make = Effect.gen(function* () {
 	 * account would be told it is not a member of an org it is in.
 	 */
 	const verifyPair = Effect.fn("OrgMembershipService.verifyPair")(function* (userId: UserId, orgId: OrgId) {
-		if (clerk === null) return yield* Effect.fail(unavailable("Clerk is not configured"))
+		if (clerk === null) return yield* unavailable("Clerk is not configured")
 		const response = yield* clerkRequest(
 			"Clerk.organizations.getOrganizationMembershipList",
 			{ "tenant.userId": userId, orgId },
@@ -225,16 +233,16 @@ const make = Effect.gen(function* () {
 		).pipe(Effect.mapError(unavailable))
 
 		const membership = response.data[0]
-		if (!membership) return Option.none<VerifiedOrgMembership>()
+		if (membership === undefined) return Option.none<VerifiedOrgMembership>()
 		const role = decodeRoleNameOption(membership.role)
 		return Option.map(role, (value): VerifiedOrgMembership => ({ orgId, role: value }))
 	})
 
 	const verify = Effect.fn("OrgMembershipService.verify")(function* (userId: UserId, orgId: OrgId) {
-		yield* Effect.annotateCurrentSpan({ "tenant.userId": userId, "tenant.requested_org_id": orgId })
+		yield* Effect.annotateCurrentSpan({ "tenant.userId": userId, "tenant.requestedOrgId": orgId })
 		const { memberships, truncated } = yield* load(userId)
-		const found = memberships.find((membership) => membership.orgId === orgId)
-		if (found) return Option.some<VerifiedOrgMembership>(found)
+		const found = Arr.findFirst(memberships, (membership) => membership.orgId === orgId)
+		if (Option.isSome(found)) return Option.some<VerifiedOrgMembership>(found.value)
 		if (!truncated) return Option.none<VerifiedOrgMembership>()
 		return yield* verifyPair(userId, orgId)
 	})
@@ -243,7 +251,7 @@ const make = Effect.gen(function* () {
 })
 
 export class OrgMembershipService extends Context.Service<OrgMembershipService, OrgMembershipServiceApi>()(
-	"@maple/api/services/auth/OrgMembershipService",
+	"@maple/backend/services/auth/OrgMembershipService",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make)

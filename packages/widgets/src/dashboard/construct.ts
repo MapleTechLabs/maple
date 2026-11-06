@@ -18,6 +18,7 @@ import type {
 	RouteWidgetDataSource,
 	StaticWidgetDataSource,
 } from "./v3/data-source"
+import { Array as Arr, Record as Rec } from "effect"
 
 /**
  * Writing a widget's data source without caring which schema version stores it.
@@ -177,8 +178,9 @@ export const makeProductEventsFunnelDataSource = (
 	funnel: ProductEventsFunnelDefinition,
 	transform?: WidgetDataSourceTransform,
 ) => {
-	const filters = Object.fromEntries(
-		Object.entries(funnel.filters ?? {}).filter(([, value]) => value !== undefined && value !== ""),
+	const given: Readonly<Record<string, string | undefined>> = funnel.filters ?? {}
+	const filters = Rec.fromEntries(
+		Arr.filter(Rec.toEntries(given), ([, value]) => value !== undefined && value !== ""),
 	)
 	return makeRouteDataSource(
 		PRODUCT_EVENTS_FUNNEL_ENDPOINT,
@@ -221,8 +223,9 @@ export const makeProductEventsPathsDataSource = (
 	paths: ProductEventsPathsDefinition,
 	transform?: WidgetDataSourceTransform,
 ) => {
-	const filters = Object.fromEntries(
-		Object.entries(paths.filters ?? {}).filter(([, value]) => value !== undefined && value !== ""),
+	const given: Readonly<Record<string, string | undefined>> = paths.filters ?? {}
+	const filters = Rec.fromEntries(
+		Arr.filter(Rec.toEntries(given), ([, value]) => value !== undefined && value !== ""),
 	)
 	return makeRouteDataSource(
 		PRODUCT_EVENTS_PATHS_ENDPOINT,

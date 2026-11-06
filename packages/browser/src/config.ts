@@ -1,15 +1,25 @@
 import {
-	type IdentifyInput,
 	type MapleIdentity,
 	type MapleRegion,
 	normalizeIdentity,
+	type Persistence,
 	type ResolvedIdentity,
 	resolveIngestEndpoint,
 	warnIfKeylessMapleIngest,
 } from "@maple/browser-session"
+import {
+	type ReplayOptions,
+	type ResolvedSignalOptions,
+	resolveReplayOptions,
+	resolveSignalOptions,
+	type SignalOptions,
+	type TracingSignalOptions,
+} from "@maple/sdk-core"
 
-/** Public configuration for `MapleBrowser.init`. */
-export interface MapleBrowserConfig {
+export type { ConsoleLevel } from "@maple/sdk-core"
+
+/** Public configuration for `MapleBrowser.init`. The signal groups are shared with the Effect SDK. */
+export interface MapleBrowserConfig extends SignalOptions {
 	/**
 	 * Public ingest key (`maple_pk_...`), sent as `Authorization: Bearer …` and
 	 * nothing else. Leave it unset when a proxy at `endpoint` adds auth: tracing
@@ -44,7 +54,7 @@ export interface MapleBrowserConfig {
 	readonly userId?: string | null | undefined
 	/** End-user identity attached to sessions and browser spans. */
 	readonly user?: MapleIdentity | undefined
-	readonly tracing?: {
+	readonly tracing?: TracingSignalOptions & {
 		/** Default true. */
 		readonly enabled?: boolean
 		/**
@@ -55,6 +65,11 @@ export interface MapleBrowserConfig {
 		 */
 		readonly instrumentFetch?: boolean
 		/**
+		 * Auto-instrument `XMLHttpRequest` (axios and older clients) the same way.
+		 * Default true. Turn it off for the same reason as `instrumentFetch`.
+		 */
+		readonly instrumentXhr?: boolean
+		/**
 		 * Capture uncaught errors and unhandled promise rejections as error
 		 * spans. Default true. Turn off only when another tracker already owns
 		 * the page's global error handlers, or the same crash lands twice.
@@ -63,17 +78,14 @@ export interface MapleBrowserConfig {
 		/**
 		 * Cross-origin URLs whose `fetch()` requests carry the W3C `traceparent`
 		 * header, so the browser span and your backend's span join one trace.
-		 * Same-origin requests always carry it. Your API must allow the
-		 * `traceparent` header in CORS. Example: `[/^https:\/\/api\.example\.com\//]`.
+		 * Same-origin requests always carry it. A string is a URL prefix
+		 * (`"https://api.example.com"` covers every path on that origin); a RegExp
+		 * is tested against the full URL. Your API must allow the `traceparent`
+		 * header in CORS.
 		 */
 		readonly propagateTraceHeaderCorsUrls?: ReadonlyArray<string | RegExp>
 	}
-	readonly replay?: {
-		/** Default true. */
-		readonly enabled?: boolean
-		/** Fraction of sessions to record, 0–1. Default 1. */
-		readonly sampleRate?: number
-	}
+	readonly replay?: ReplayOptions
 	readonly privacy?: {
 		/** Mask all `<input>` values. Default true. */
 		readonly maskAllInputs?: boolean
@@ -88,6 +100,13 @@ export interface MapleBrowserConfig {
 		 * purges any id already stored.
 		 */
 		readonly persistVisitorId?: boolean
+		/**
+		 * `"memory"` keeps everything in memory: no cookies, localStorage,
+		 * sessionStorage or IndexedDB, and no visitor id. Each page load is a new
+		 * session, so a reload splits a replay, and `transport.offline` keeps
+		 * nothing. Default `"browser"`.
+		 */
+		readonly persistence?: Persistence
 		/**
 		 * Scope the visitor-id cookie to the registered domain, so a marketing site
 		 * and an app on sibling subdomains (`example.com` and `app.example.com`)
@@ -118,7 +137,7 @@ export interface MapleBrowserConfig {
 	}
 }
 
-export interface ResolvedConfig {
+export interface ResolvedConfig extends ResolvedSignalOptions {
 	readonly ingestKey: string | undefined
 	readonly serviceName: string
 	readonly endpoint: string
@@ -129,13 +148,20 @@ export interface ResolvedConfig {
 	identity: ResolvedIdentity | undefined
 	readonly tracingEnabled: boolean
 	readonly tracingInstrumentFetch: boolean
+	readonly tracingInstrumentXhr: boolean
 	readonly tracingCaptureErrors: boolean
-	readonly propagateTraceHeaderCorsUrls: ReadonlyArray<string | RegExp>
+	readonly propagateTraceHeaderCorsUrls: ReadonlyArray<RegExp>
 	readonly replayEnabled: boolean
 	readonly replaySampleRate: number
+	readonly replayOnErrorSampleRate: number
+	readonly canvasFps: number | undefined
+	readonly networkBodies:
+		| { readonly urls: ReadonlyArray<string | RegExp>; readonly maxLength: number }
+		| undefined
 	readonly maskAllInputs: boolean
 	readonly maskAllText: boolean
 	readonly persistVisitorId: boolean
+	readonly persistence: Persistence
 	readonly crossSubdomainCookie: boolean
 	readonly cookieDomain: string | undefined
 	readonly requireConsent: boolean
@@ -152,30 +178,21 @@ export function resolveIdentity(config: {
 	readonly user?: MapleIdentity | undefined
 	readonly userId?: string | null | undefined
 }): ResolvedIdentity | undefined {
-	return normalizeIdentity((config.user ?? config.userId) as IdentifyInput)
+	return normalizeIdentity(config.user ?? config.userId)
 }
 
-/**
- * A sample rate outside 0–1 (or not a number) is a typo, not a policy. Clamp it
- * and say so, rather than recording everyone or no one without a word.
- */
-function resolveSampleRate(raw: number | undefined): number {
-	if (raw === undefined) return 1
-	if (typeof raw !== "number" || Number.isNaN(raw)) {
-		console.warn(
-			`[maple] replay.sampleRate must be a number between 0 and 1; got ${String(raw)}. Using 1.`,
-		)
-		return 1
-	}
-	if (raw < 0 || raw > 1) {
-		const clamped = Math.min(1, Math.max(0, raw))
-		console.warn(`[maple] replay.sampleRate must be between 0 and 1; got ${raw}. Using ${clamped}.`)
-		return clamped
-	}
-	return raw
-}
+let warnedServiceName = false
 
 export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
+	// Plain JS callers and env-driven configs can pass nothing; every span would then be unattributed.
+	if (typeof config.serviceName !== "string" || config.serviceName.trim() === "") {
+		if (!warnedServiceName) {
+			warnedServiceName = true
+			console.warn(
+				"[maple] init() needs a `serviceName`; telemetry is reported without one. Pass the name of your app.",
+			)
+		}
+	}
 	const endpoint = resolveIngestEndpoint({ endpoints: [config.endpoint], regions: [config.region] })
 	warnIfKeylessMapleIngest({
 		logPrefix: "[maple]",
@@ -183,9 +200,11 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		hasIngestKey: Boolean(config.ingestKey),
 		hint: "Pass `ingestKey`, or point `endpoint` at a proxy that adds it.",
 	})
+	const replay = resolveReplayOptions(config.replay)
 	return {
+		...resolveSignalOptions(config),
 		ingestKey: config.ingestKey,
-		serviceName: config.serviceName,
+		serviceName: typeof config.serviceName === "string" ? config.serviceName : "",
 		endpoint,
 		serviceNamespace: config.serviceNamespace,
 		serviceVersion: config.serviceVersion,
@@ -193,13 +212,20 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		identity: resolveIdentity(config),
 		tracingEnabled: config.tracing?.enabled ?? true,
 		tracingInstrumentFetch: config.tracing?.instrumentFetch ?? true,
+		tracingInstrumentXhr: config.tracing?.instrumentXhr ?? true,
 		tracingCaptureErrors: config.tracing?.captureErrors ?? true,
-		propagateTraceHeaderCorsUrls: config.tracing?.propagateTraceHeaderCorsUrls ?? [],
-		replayEnabled: config.replay?.enabled ?? true,
-		replaySampleRate: resolveSampleRate(config.replay?.sampleRate),
+		propagateTraceHeaderCorsUrls: (config.tracing?.propagateTraceHeaderCorsUrls ?? []).map(
+			corsUrlMatcher,
+		),
+		replayEnabled: replay.enabled,
+		replaySampleRate: replay.sampleRate,
+		replayOnErrorSampleRate: replay.onErrorSampleRate,
+		canvasFps: replay.canvasFps,
+		networkBodies: replay.networkBodies,
 		maskAllInputs: config.privacy?.maskAllInputs ?? true,
 		maskAllText: config.privacy?.maskAllText ?? false,
 		persistVisitorId: config.privacy?.persistVisitorId ?? true,
+		persistence: config.privacy?.persistence ?? "browser",
 		crossSubdomainCookie: config.privacy?.crossSubdomainCookie ?? true,
 		cookieDomain: config.privacy?.cookieDomain,
 		requireConsent: config.privacy?.requireConsent ?? false,
@@ -207,4 +233,19 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		respectDoNotTrack: config.privacy?.respectDoNotTrack ?? false,
 		sanitizeUrl: config.privacy?.sanitizeUrl,
 	}
+}
+
+export function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+/**
+ * OTel compares a string entry to the whole request URL, so `"https://api.example.com"`
+ * would never match `https://api.example.com/v1/users`. A string is a prefix that
+ * ends on a URL boundary, so it does not also match `https://api.example.com.evil.io`.
+ */
+function corsUrlMatcher(entry: string | RegExp): RegExp {
+	if (typeof entry !== "string") return entry
+	// A configured trailing slash is part of the prefix; without one, the prefix ends on a boundary.
+	return new RegExp(`^${escapeRegExp(entry)}${entry.endsWith("/") ? "" : "(?:[/?#]|$)"}`)
 }

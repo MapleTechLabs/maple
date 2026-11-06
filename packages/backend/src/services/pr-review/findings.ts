@@ -11,7 +11,16 @@ import type {
 	PrReviewSeverity,
 	PullRequestReviewThread,
 } from "@maple/domain/http"
+import { isPrReviewDefectHistory } from "@maple/domain/http"
+import { Array as Arr, Option, pipe, String as Str } from "effect"
 import type { PullRequestDelta } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
+import { isPrivacyScanFinding } from "./telemetry/privacy"
+
+/** Severities in order, for sorting and thresholds. */
+export const SEVERITY_RANK = { info: 0, warn: 1, critical: 2 } as const satisfies Record<
+	PrReviewSeverity,
+	number
+>
 
 /** A stored finding, as the review flow reads it. */
 export interface TrackedFinding {
@@ -24,6 +33,32 @@ export interface TrackedFinding {
 	readonly title: string
 	readonly status: PrReviewFindingStatus
 	readonly commentId: string | null
+	/** The head that fixed it, once resolved. */
+	readonly resolvedSha?: string | null
+}
+
+/**
+ * Defects fixed since the last pass that read the whole diff. A later push's pass reads only what
+ * changed, so nothing has re-read the pull request around these fixes. `reviews` are the pull
+ * request's completed reviews, newest first; one stored before `wholeDiff` existed counts as partial.
+ */
+export const uncheckedFixes = (
+	reviews: ReadonlyArray<{ readonly headSha: string; readonly wholeDiff: boolean }>,
+	tracked: ReadonlyArray<TrackedFinding>,
+): number => {
+	const sinceWhole = Option.match(
+		Arr.findFirstIndex(reviews, (review) => review.wholeDiff),
+		{ onNone: () => reviews, onSome: (lastWhole) => reviews.slice(0, lastWhole) },
+	)
+	const since = new Set(Arr.map(sinceWhole, (review) => review.headSha))
+	return Arr.filter(
+		tracked,
+		(finding) =>
+			finding.status === "resolved" &&
+			isPrReviewDefectHistory(finding) &&
+			finding.resolvedSha != null &&
+			since.has(finding.resolvedSha),
+	).length
 }
 
 /** Lines a finding may drift between pushes and still be a restatement of the same issue. */
@@ -38,30 +73,32 @@ const SAME_TITLE_OVERLAP = 0.6
  */
 const DISMISSAL =
 	/(?<!\bnot\s)\b(won'?t fix|wontfix|not an issue|false positive|by design|as intended|intended behaviou?r|ignore this)\b/i
-const dismisses = (body: string) => !body.includes("?") && DISMISSAL.test(body)
+const dismisses = (body: string) => !Str.includes("?")(body) && DISMISSAL.test(body)
 
 /**
- * Open findings a person has dismissed since the last review: their thread was resolved while the
- * finding was still open (the reviewer resolves only what it marked fixed), or someone replied
- * with a dismissal. Replies from the bot that posted the finding do not count.
+ * Open findings a person has dismissed since the last review: someone replied with a dismissal, or
+ * resolved the thread while its file stayed unchanged since then. Authors resolve a thread once
+ * they push the fix, so a resolved thread on a changed file (or unknown changes) is left open for
+ * the reviewer to judge. Replies from the bot that posted the finding do not count.
  */
 export const dismissedFindings = (
 	open: ReadonlyArray<TrackedFinding>,
 	threads: ReadonlyArray<PullRequestReviewThread>,
+	changedPaths: ReadonlySet<string> | undefined,
 ): ReadonlyArray<TrackedFinding> => {
 	const byComment = new Map<string, PullRequestReviewThread>()
 	for (const thread of threads) {
 		const first = thread.comments[0]?.commentId
 		if (first !== null && first !== undefined) byComment.set(first, thread)
 	}
-	return open.filter((finding) => {
+	return Arr.filter(open, (finding) => {
 		if (finding.commentId === null) return false
 		const thread = byComment.get(finding.commentId)
 		if (thread === undefined) return false
 		const poster = thread.comments[0]?.author
 		return (
-			thread.isResolved ||
-			thread.comments.slice(1).some((reply) => reply.author !== poster && dismisses(reply.body))
+			(thread.isResolved && changedPaths !== undefined && !changedPaths.has(finding.path)) ||
+			Arr.some(thread.comments.slice(1), (reply) => reply.author !== poster && dismisses(reply.body))
 		)
 	})
 }
@@ -73,22 +110,20 @@ export const threadForFinding = (
 ): PullRequestReviewThread | undefined =>
 	finding.commentId === null
 		? undefined
-		: threads.find((thread) => thread.comments[0]?.commentId === finding.commentId)
+		: Option.getOrUndefined(
+				Arr.findFirst(threads, (thread) => thread.comments[0]?.commentId === finding.commentId),
+			)
 
 const titleWords = (title: string): ReadonlySet<string> =>
-	new Set(
-		title
-			.toLowerCase()
-			.split(/[^a-z0-9_]+/)
-			.filter((word) => word.length > 2),
-	)
+	new Set(Arr.filter(Str.split(/[^a-z0-9_]+/)(Str.toLowerCase(title)), (word) => word.length > 2))
 
 /** Jaccard overlap of the two titles' words, so a reworded title still matches and a new bug does not. */
 const similarTitles = (a: string, b: string) => {
 	const left = titleWords(a)
 	const right = titleWords(b)
-	if (left.size === 0 || right.size === 0) return a.trim().toLowerCase() === b.trim().toLowerCase()
-	const shared = [...left].filter((word) => right.has(word)).length
+	if (left.size === 0 || right.size === 0)
+		return Str.toLowerCase(Str.trim(a)) === Str.toLowerCase(Str.trim(b))
+	const shared = Arr.filter([...left], (word) => right.has(word)).length
 	return shared / (left.size + right.size - shared) >= SAME_TITLE_OVERLAP
 }
 
@@ -96,6 +131,8 @@ const similarTitles = (a: string, b: string) => {
  * Whether a new finding is a near-exact restatement of one already tracked: same file, lens and
  * nearly the same line, and a title saying the same thing. Anything looser is left to the reviewer,
  * which judges each earlier finding at the new head: a different bug next to an old one is new.
+ * A finding the service files itself (`TEL-*`, the privacy scan) names its subject in the title,
+ * so the same title in the same file is the same issue wherever later pushes moved it.
  */
 const restates = (
 	finding: PrReviewFinding,
@@ -103,8 +140,11 @@ const restates = (
 ) =>
 	finding.path === tracked.path &&
 	finding.category === tracked.category &&
-	Math.abs(finding.line - tracked.line) <= SAME_ISSUE_LINES &&
-	similarTitles(finding.title, tracked.title)
+	((((finding.checkId !== undefined && Str.startsWith("TEL-")(finding.checkId)) ||
+		isPrivacyScanFinding(finding)) &&
+		finding.title === tracked.title) ||
+		(Math.abs(finding.line - tracked.line) <= SAME_ISSUE_LINES &&
+			similarTitles(finding.title, tracked.title)))
 
 /**
  * New findings minus near-exact restatements of a finding still open or already dismissed, a
@@ -114,8 +154,8 @@ export const withoutRepeats = (
 	findings: ReadonlyArray<PrReviewFinding>,
 	tracked: ReadonlyArray<TrackedFinding>,
 ): { readonly fresh: ReadonlyArray<PrReviewFinding>; readonly repeated: number } => {
-	const blocking = tracked.filter((finding) => finding.status !== "resolved")
-	const fresh = findings.filter((finding) => !blocking.some((known) => restates(finding, known)))
+	const blocking = Arr.filter(tracked, (finding) => finding.status !== "resolved")
+	const fresh = Arr.filter(findings, (finding) => !Arr.some(blocking, (known) => restates(finding, known)))
 	return { fresh, repeated: findings.length - fresh.length }
 }
 
@@ -129,15 +169,15 @@ export const mergeSavedFindings = (
 	submitted: ReadonlyArray<PrReviewFinding>,
 ): ReadonlyArray<PrReviewFinding> => [
 	...saved,
-	...submitted.filter((finding) => !saved.some((known) => restates(finding, known))),
+	...Arr.filter(submitted, (finding) => !Arr.some(saved, (known) => restates(finding, known))),
 ]
 
 /** `F1`, `F2`, ... continuing after every handle this pull request has used. */
 export const nextHandles = (used: ReadonlyArray<string>, count: number): ReadonlyArray<string> => {
-	const highest = used.reduce((max, handle) => {
+	const highest = Arr.reduce(used, 0, (max, handle) => {
 		const n = Number(/^F(\d+)$/.exec(handle)?.[1] ?? 0)
 		return n > max ? n : max
-	}, 0)
+	})
 	return Array.from({ length: count }, (_, i) => `F${highest + i + 1}`)
 }
 
@@ -146,8 +186,8 @@ export const resolvedByHandle = (
 	handles: ReadonlyArray<string>,
 	open: ReadonlyArray<TrackedFinding>,
 ): ReadonlyArray<TrackedFinding> => {
-	const wanted = new Set(handles.map((handle) => handle.trim().toUpperCase()))
-	return open.filter((finding) => wanted.has(finding.handle))
+	const wanted = new Set<string>(Arr.map(handles, (handle) => Str.toUpperCase(Str.trim(handle))))
+	return Arr.filter(open, (finding) => wanted.has(finding.handle))
 }
 
 const NOTHING_CHANGED = "No file's change differs since then: check the open findings and submit."
@@ -171,19 +211,37 @@ const renderChanges = (changes: PullRequestDelta | undefined): ReadonlyArray<str
 	const scope =
 		paths.length === 0
 			? NOTHING_CHANGED
-			: `${CHANGED_SINCE}${paths.slice(0, MAX_LISTED_CHANGES).join(", ")}${paths.length > MAX_LISTED_CHANGES ? `, and ${paths.length - MAX_LISTED_CHANGES} more` : ""}.`
+			: `${CHANGED_SINCE}${Arr.join(paths.slice(0, MAX_LISTED_CHANGES), ", ")}${paths.length > MAX_LISTED_CHANGES ? `, and ${paths.length - MAX_LISTED_CHANGES} more` : ""}.`
 	return changes.rewritten ? [REWRITTEN, scope] : [scope]
 }
 
-/** The kickoff section for a later push: what changed since, and what is still open. */
+const RECHECK =
+	"A defect is open, or was fixed since the last full pass: review the whole diff, so a fix is checked against the rest of the pull request."
+
+/** Every file is due, so what changed is a starting point and never parses as a scope. */
+const renderRecheck = (changes: PullRequestDelta | undefined): ReadonlyArray<string> => {
+	const paths = changes?.paths ?? []
+	return paths.length === 0
+		? [RECHECK]
+		: [
+				RECHECK,
+				`Start with what changed since then: ${Arr.join(paths.slice(0, MAX_LISTED_CHANGES), ", ")}${paths.length > MAX_LISTED_CHANGES ? `, and ${paths.length - MAX_LISTED_CHANGES} more` : ""}.`,
+			]
+}
+
+/**
+ * The kickoff section for a later push: what changed since, and what is still open. With
+ * `recheck`, a defect is open or was fixed since the last whole-diff pass, so this pass is due every file.
+ */
 export const renderFollowUp = (input: {
 	readonly previousSha: string
 	readonly changes: PullRequestDelta | undefined
 	readonly open: ReadonlyArray<TrackedFinding>
+	readonly recheck?: boolean
 }): ReadonlyArray<string> => {
 	const lines = [
-		`This pull request was reviewed before, at ${input.previousSha.slice(0, 7)}.`,
-		...renderChanges(input.changes),
+		`This pull request was reviewed before, at ${Str.slice(0, 7)(input.previousSha)}.`,
+		...(input.recheck === true ? renderRecheck(input.changes) : renderChanges(input.changes)),
 	]
 	if (input.open.length === 0) {
 		lines.push("No finding from earlier reviews is still open.")
@@ -192,7 +250,8 @@ export const renderFollowUp = (input: {
 	lines.push(
 		"Findings from earlier reviews that are still open. Judge each one at this head: read the code it describes, following it if it moved, and decide whether the defect is gone. Lines being modified is not enough; list a handle in `resolved` only when the code you read no longer has the problem, and leave it open when unsure.",
 		"Never file a new finding that restates one of these, even where its code moved to other lines. A different defect near one of them is a new finding; file it.",
-		...input.open.map(
+		...Arr.map(
+			input.open,
 			(finding) =>
 				`- ${finding.handle} · ${finding.path}:${finding.line} · ${finding.category} · ${finding.severity} · ${finding.title}`,
 		),
@@ -206,14 +265,18 @@ export const renderFollowUp = (input: {
  * (a first review, or a push whose comparison failed) and every file is in scope.
  */
 export const followUpScope = (kickoff: string): ReadonlyArray<string> | undefined => {
-	for (const line of kickoff.split("\n")) {
+	for (const line of Str.split("\n")(kickoff)) {
 		if (line === NOTHING_CHANGED) return []
-		if (line.startsWith(CHANGED_SINCE)) {
-			return line
-				.slice(CHANGED_SINCE.length)
-				.replace(/(, and \d+ more)?\.$/, "")
-				.split(", ")
-				.filter((path) => path !== "")
+		if (Str.startsWith(CHANGED_SINCE)(line)) {
+			return Arr.filter(
+				pipe(
+					line,
+					Str.slice(CHANGED_SINCE.length),
+					Str.replace(/(, and \d+ more)?\.$/, ""),
+					Str.split(", "),
+				),
+				(path) => path !== "",
+			)
 		}
 	}
 	return undefined
@@ -223,27 +286,29 @@ const IGNORED_PATHS = "Never review these paths: "
 
 /** The kickoff line naming the repository's ignored paths; {@link ignoredPathsInKickoff} reads it back. */
 export const renderIgnoredPaths = (patterns: ReadonlyArray<string>): string =>
-	`${IGNORED_PATHS}${patterns.join(", ")}.`
+	`${IGNORED_PATHS}${Arr.join(patterns, ", ")}.`
 
 /** The ignore patterns a kickoff states, so the coverage gate never asks for a file it excludes. */
 export const ignoredPathsInKickoff = (kickoff: string): ReadonlyArray<string> => {
-	const line = kickoff.split("\n").find((candidate) => candidate.startsWith(IGNORED_PATHS))
-	if (line === undefined) return []
-	return line
-		.slice(IGNORED_PATHS.length)
-		.replace(/\.$/, "")
-		.split(", ")
-		.filter((pattern) => pattern.trim() !== "")
+	const line = Arr.findFirst(Str.split("\n")(kickoff), (candidate) =>
+		Str.startsWith(IGNORED_PATHS)(candidate),
+	)
+	if (Option.isNone(line)) return []
+	return Arr.filter(
+		pipe(line.value, Str.slice(IGNORED_PATHS.length), Str.replace(/\.$/, ""), Str.split(", ")),
+		(pattern) => Str.trim(pattern) !== "",
+	)
 }
 
 const globToRegExp = (pattern: string): RegExp => {
-	const escaped = pattern
-		.trim()
-		.replace(/[.+^${}()|[\]\\]/g, "\\$&")
-		.replace(/\*\*\/?/g, "\uE000")
-		.replace(/\*/g, "[^/]*")
-		.replace(/\?/g, "[^/]")
-		.replace(/\uE000/g, ".*")
+	const escaped = pipe(
+		Str.trim(pattern),
+		Str.replace(/[.+^${}()|[\]\\]/g, "\\$&"),
+		Str.replace(/\*\*\/?/g, "\uE000"),
+		Str.replace(/\*/g, "[^/]*"),
+		Str.replace(/\?/g, "[^/]"),
+		Str.replace(/\uE000/g, ".*"),
+	)
 	return new RegExp(`^${escaped}`)
 }
 
@@ -253,9 +318,10 @@ const globToRegExp = (pattern: string): RegExp => {
  * (`*.pb.go` matches in any directory).
  */
 export const pathIgnored = (path: string, patterns: ReadonlyArray<string> | undefined): boolean =>
-	(patterns ?? []).some((raw) => {
-		const pattern = raw.trim()
+	Arr.some(patterns ?? [], (raw) => {
+		const pattern = Str.trim(raw)
 		if (pattern === "") return false
-		if (pattern.startsWith("*.") && !pattern.includes("/")) return path.endsWith(pattern.slice(1))
+		if (Str.startsWith("*.")(pattern) && !Str.includes("/")(pattern))
+			return Str.endsWith(Str.slice(1)(pattern))(path)
 		return globToRegExp(pattern).test(path)
 	})

@@ -1,8 +1,12 @@
-import { Effect, Option } from "effect"
-import { HttpRouter, type HttpServerRequest } from "effect/unstable/http"
+import { OrgId } from "@maple/domain/http"
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
+import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
+import { HttpRouter, type HttpServerRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
+import { CancellationReviewQueue } from "@maple/backend/services/cancellation-review/CancellationReviewQueue"
 import {
 	AUTUMN_BILLING_UPDATED,
+	cancellationsFromBillingUpdated,
 	decodeAutumnBillingUpdated,
 	decodeAutumnEnvelope,
 	planEventsFromBillingUpdated,
@@ -15,13 +19,24 @@ import { receiveSvixWebhook, webhookText } from "./svix-receiver"
  * / `plan_cancelled` product events, `group_id` = the Autumn customer id, which
  * is the Maple org id. Public route; authenticity is the Svix signature
  * (`AUTUMN_WEBHOOK_SECRET`). Other event types are acknowledged with 200.
+ *
+ * A cancelled plan is also queued for its review (`CancellationReviewQueue`),
+ * after the product events are recorded, so the funnel never waits on it. The
+ * review runs on the queue's consumer, off this request, and retries there. A
+ * cancellation that could not be queued answers 503 for Svix to redeliver;
+ * that redelivery records the delivery's events again, under the same
+ * `webhook_message_id`.
  */
 const ROUTE = "/webhooks/autumn"
+
+const decodeOrgId = Schema.decodeUnknownOption(OrgId)
 
 export const AutumnWebhookRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
 		const env = yield* Env
 		const productEvents = yield* ProductEventsService
+		const cancellationReviews = yield* CancellationReviewQueue
+		const billingCustomers = yield* BillingCustomerResolver
 
 		const handle = Effect.fn("AutumnWebhook.receive")(function* (
 			req: HttpServerRequest.HttpServerRequest,
@@ -56,16 +71,97 @@ export const AutumnWebhookRouter = HttpRouter.use((router) =>
 					Effect.option,
 				)
 				if (Option.isSome(data)) {
-					const events = planEventsFromBillingUpdated(data.value, {
-						id: envelope.value.id ?? received.messageId,
-						occurred_at: envelope.value.occurred_at,
+					// Linking cancels the org's own plans: that is billing moving, not churn. An unread link
+					// answers 503 so the delivery comes back, rather than reporting churn that was not.
+					const linked = yield* Option.match(decodeOrgId(data.value.customer_id), {
+						onNone: () => Effect.succeedSome(false),
+						onSome: (orgId) =>
+							billingCustomers.readLink(orgId).pipe(
+								Effect.map((link) => Option.some(Option.isSome(link))),
+								Effect.catchTag(
+									"@maple/http/errors/BillingAccountPersistenceError",
+									(error) =>
+										Effect.logWarning(
+											"Could not read the org's billing link; asking Svix to redeliver",
+										).pipe(
+											Effect.annotateLogs({ orgId, error: error.message }),
+											Effect.as(Option.none<boolean>()),
+										),
+								),
+							),
 					})
+					if (Option.isNone(linked)) {
+						yield* Effect.annotateCurrentSpan({
+							orgId: data.value.customer_id,
+							"http.response.status_code": 503,
+							"maple.webhook.outcome": "link_unread",
+						})
+						return webhookText("Could not read the billing link", 503)
+					}
+					const billedThroughAnother = linked.value
+					// A review ends in a Slack post; without a channel there is nothing to do.
+					const cancellations =
+						Option.isSome(env.MAPLE_CANCELLATION_SLACK_CHANNEL_ID) && !billedThroughAnother
+							? cancellationsFromBillingUpdated(data.value)
+							: []
+					const events = billedThroughAnother
+						? []
+						: planEventsFromBillingUpdated(data.value, {
+								id: envelope.value.id ?? received.messageId,
+								occurred_at: envelope.value.occurred_at,
+							})
 					yield* Effect.annotateCurrentSpan({
 						orgId: data.value.customer_id,
 						"maple.webhook.outcome": "handled",
 						"maple.webhook.emitted": events.length,
+						"maple.webhook.cancellations": cancellations.length,
+						"maple.billing.linked": billedThroughAnother,
 					})
 					yield* Effect.forEach(events, (event) => productEvents.track(event), { discard: true })
+
+					const receivedAt = yield* Clock.currentTimeMillis
+					const enqueue =
+						cancellations.length === 0
+							? Effect.void
+							: Option.match(decodeOrgId(data.value.customer_id), {
+									// Not an id this instance could have issued; nothing to review.
+									onNone: () =>
+										Effect.logWarning(
+											"Autumn customer id is not an org id; cancellation not reviewed",
+										).pipe(Effect.annotateLogs({ rawOrgId: data.value.customer_id })),
+									onSome: (orgId) =>
+										cancellationReviews.enqueue(
+											Arr.map(cancellations, (cancellation) => ({
+												...cancellation,
+												orgId,
+												receivedAt,
+											})),
+										),
+								})
+					const queued = yield* enqueue.pipe(
+						Effect.as(true),
+						Effect.catchTag(
+							"@maple/backend/cancellation-review/CancellationReviewQueueError",
+							(error) =>
+								Effect.logError(
+									"Cancellation review could not be queued; asking Svix to redeliver",
+								).pipe(
+									Effect.annotateLogs({
+										orgId: data.value.customer_id,
+										error: error.message,
+									}),
+									Effect.as(false),
+								),
+						),
+					)
+					if (!queued) {
+						yield* Effect.annotateCurrentSpan({
+							orgId: data.value.customer_id,
+							"http.response.status_code": 503,
+							"maple.webhook.outcome": "enqueue_failed",
+						})
+						return webhookText("Could not queue the cancellation review", 503)
+					}
 				} else {
 					yield* Effect.annotateCurrentSpan({ "maple.webhook.outcome": "parse_rejected" })
 				}

@@ -1,4 +1,6 @@
-import { splitTerminalClauses } from "@maple-dev/effect-clickhouse/sql"
+import { splitTerminalClauses } from "@maple-dev/effect-orm/sql"
+import { String as Str } from "effect"
+import { codeUnitAt } from "@maple/strings"
 
 /**
  * Cap traced SQL at 16 KB. OTel's default attribute size limit is 32 KB, and
@@ -9,20 +11,20 @@ export const SQL_TRACE_MAX = 16_384
 export const SQL_LOG_MAX = 1_000
 
 export const truncateSql = (s: string, maxLen: number) =>
-	s.length > maxLen ? s.slice(0, maxLen) + "...[truncated]" : s
+	s.length > maxLen ? Str.slice(0, maxLen)(s) + "...[truncated]" : s
 
 /**
  * Stable 32-bit FNV-1a hash over SQL with literals and numbers normalized. Lets
  * the same query with different params group together in trace search.
  */
 export const fingerprintSql = (s: string): string => {
-	const normalized = s.replace(/'[^']*'/g, "'?'").replace(/\b\d+\b/g, "?")
+	const normalized = Str.replace(/\b\d+\b/g, "?")(Str.replace(/'[^']*'/g, "'?'")(s))
 	let h = 0x811c9dc5
 	for (let i = 0; i < normalized.length; i++) {
-		h ^= normalized.charCodeAt(i)
+		h ^= codeUnitAt(normalized, i)
 		h = Math.imul(h, 0x01000193)
 	}
-	return (h >>> 0).toString(16).padStart(8, "0")
+	return Str.padStart(8, "0")((h >>> 0).toString(16))
 }
 
 /**
@@ -66,9 +68,9 @@ export const SQL_TABLE_RE = /(?:from|into|update|join|table)\s+\W?([\w.]+)/i
  */
 export const summarizeSql = (sql: string): SqlSummary => {
 	if (sql === "") return { operation: "", collection: "", summary: "" }
-	const operation = (SQL_VERB_RE.exec(sql)?.[1] ?? "").toUpperCase()
+	const operation = Str.toUpperCase(SQL_VERB_RE.exec(sql)?.[1] ?? "")
 	const collection = SQL_TABLE_RE.exec(sql)?.[1] ?? ""
-	const summary = `${operation}${collection === "" ? "" : ` ${collection}`}`.trim()
+	const summary = Str.trim(`${operation}${collection === "" ? "" : ` ${collection}`}`)
 	return { operation, collection, summary }
 }
 

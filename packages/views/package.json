@@ -1,0 +1,44 @@
+{
+	"name": "@maple/views",
+	"private": true,
+	"type": "module",
+	"sideEffects": [
+		"**/*.css"
+	],
+	"exports": {
+		"./*.css": "./src/*.css",
+		"./*": "./src/*.ts"
+	},
+	"scripts": {
+		"test": "vitest run",
+		"typecheck": "tsrs --noEmit"
+	},
+	"dependencies": {
+		"@floating-ui/dom": "1.8.0",
+		"@foldkit/ui": "0.170.0",
+		"@maple/chat-platform": "workspace:*",
+		"@maple/domain": "workspace:*",
+		"@maple/query-engine": "workspace:*",
+		"@maple/strings": "workspace:*",
+		"@maple/ui": "workspace:*",
+		"@maple/web-data": "workspace:*",
+		"@pierre/highlights": "0.3.0",
+		"@tanstack/charts": "catalog:charts",
+		"@tanstack/charts-scales": "catalog:charts",
+		"@tanstack/virtual-core": "3.19.10",
+		"@xyflow/system": "0.0.84",
+		"class-variance-authority": "catalog:ui",
+		"d3-scale": "^4.0.2",
+		"d3-shape": "^3.2.0",
+		"effect": "catalog:effect",
+		"foldkit": "0.170.0"
+	},
+	"devDependencies": {
+		"@types/d3-scale": "^4.0.9",
+		"@types/d3-shape": "^3.2.0",
+		"@types/node": "catalog:tooling",
+		"typescript": "catalog:tooling",
+		"vite": "catalog:",
+		"vitest": "catalog:"
+	}
+}

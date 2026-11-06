@@ -14,6 +14,7 @@ import { assert, beforeEach, describe, it } from "vitest"
 import type { ChatConnectorOrigin } from "@maple/domain/chat-session"
 import { ChatSession, type ProposalApplier } from "./ChatSession"
 import { makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
+import { Array as Arr, Option } from "effect"
 
 /** Everything the applier was handed — the settlement as it arrived, plus what the log supplied. */
 const applied: Array<unknown> = []
@@ -54,10 +55,12 @@ const withProposal = (session: ChatSession, callId = "call_9") => {
 }
 
 const settledCall = (session: ChatSession, callId = "call_9") =>
-	session
-		.history()
-		.flatMap((message) => message.toolCalls)
-		.find((call) => call.id === callId)
+	Option.getOrUndefined(
+		Arr.findFirst(
+			Arr.flatMap(session.history(), (message) => message.toolCalls),
+			(call) => call.id === callId,
+		),
+	)
 
 const settle = (session: ChatSession, decision: "approve" | "deny", callId = "call_9") =>
 	session.settleProposal({ sessionId: SESSION_ID, toolCallId: callId, decision, approver: ADA })
@@ -99,6 +102,19 @@ describe("settling a proposal", () => {
 		// change that went through quietly.
 		assert.equal(call?.isError, true)
 		assert.include(String(call?.output), "Declined by Ada")
+	})
+
+	it("declines a decision that is neither approve nor deny, and runs nothing", async () => {
+		const session = withProposal(makeSession())
+		// What a skewed Worker could send over RPC, where nothing decodes the decision.
+		const rpcBody = JSON.parse(
+			JSON.stringify({ sessionId: SESSION_ID, toolCallId: "call_9", decision: "yes", approver: ADA }),
+		)
+
+		assert.equal(await session.settleProposal(rpcBody), "decided")
+
+		assert.deepEqual(applied, [])
+		assert.equal(settledCall(session)?.isError, true)
 	})
 
 	it("hands an app approver's own tenant to the applier, and names the app in a denial", async () => {

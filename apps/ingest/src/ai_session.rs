@@ -26,12 +26,24 @@
 //! keys become the `gen_ai.*` keys every reader keys on, and the phases of its
 //! tool calls are left unstamped — see `ai_session/claude_code.rs`.
 //!
+//! Every stamped span also carries the facts Agent Sessions aggregates and
+//! filters on, decided here once: whether it is a model call
+//! (`maple_ai.llm_call`) or a tool call, whether it failed, its model, agent
+//! and tool, and a model call's token usage as five disjoint
+//! `maple_ai.usage.*` buckets, whatever convention its emitter reported under
+//! — see `ai_session/facts.rs` and `ai_session/usage.rs`.
+//!
+//! One vendor's evaluations are left unstamped entirely: a Mastra scorer run
+//! grades a finished agent run and is not a conversation (see
+//! [`run_predicates`]).
+//!
 //! Detection is ordered first-match over the vendor predicates below; the
 //! session ID is the first non-empty session-granularity attribute for the
-//! matched vendor. A vendor with no session-level key of its own (its
-//! instrumentation only emits run/user-scoped IDs, or nothing) and every
-//! unknown-tier bucket read the OTel GenAI key, `gen_ai.conversation.id`,
-//! which the public docs give any emitter as the way to group its traces.
+//! matched vendor. Every vendor and unknown-tier bucket falls back to the OTel
+//! GenAI key, `gen_ai.conversation.id`, after its own keys: the public docs
+//! give any emitter that key as the way to group its traces, and for a vendor
+//! with no session-level key of its own (its instrumentation only emits
+//! run/user-scoped IDs, or nothing) it is the only one.
 //!
 //! One vendor is not a framework: `maple` matches any span carrying a
 //! `maple_ai.session.id` attribute. That is the one key an emitter both writes
@@ -57,9 +69,12 @@
 
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, KeyValue};
-use opentelemetry_proto::tonic::trace::v1::span::Event;
+use opentelemetry_proto::tonic::trace::v1::span::{Event, SpanKind};
 
 mod claude_code;
+mod cloudflare_ai_gateway;
+mod facts;
+mod usage;
 
 pub const ATTR_NAMESPACE: &str = "maple_ai.";
 pub const VENDOR_ID_ATTR: &str = "maple_ai.vendor.id";
@@ -97,6 +112,8 @@ pub struct SpanView<'a> {
     pub span_attrs: &'a [KeyValue],
     pub resource_attrs: &'a [KeyValue],
     pub events: &'a [Event],
+    /// OTLP `Span.kind`, as the raw enum value.
+    pub span_kind: i32,
 }
 
 /// Classify every span in a decoded trace request and stamp the `maple_ai.*`
@@ -137,7 +154,14 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                     collect_evidence(&mut ev, &span.attributes, &span.events);
                     let classification =
                         if scope_forces || ev.any || span_name_candidate(&span.name) {
-                            run_predicates(&scope, &resource, &span.name, &ev, &span.attributes)
+                            run_predicates(
+                                &scope,
+                                &resource,
+                                &span.name,
+                                span.kind,
+                                &ev,
+                                &span.attributes,
+                            )
                         } else {
                             None
                         };
@@ -159,9 +183,13 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                     }
                     claude_code::normalize(span);
                 }
-                // One reserve, not up to three doubling reallocs that each
-                // copy every existing KeyValue.
-                span.attributes.reserve(3);
+                if classification.vendor == cloudflare_ai_gateway::VENDOR_ID {
+                    cloudflare_ai_gateway::normalize(span);
+                }
+                let mut stamps = facts::stamps(span, classification.vendor);
+                // One reserve, not a doubling realloc per push that each copy
+                // every existing KeyValue.
+                span.attributes.reserve(stamps.len() + 3);
                 span.attributes
                     .push(string_attribute(VENDOR_ID_ATTR, classification.vendor));
                 span.attributes
@@ -172,6 +200,7 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                     span.attributes
                         .push(owned_string_attribute(SESSION_ID_ATTR, session_id));
                 }
+                span.attributes.append(&mut stamps);
             }
         }
     }
@@ -187,7 +216,14 @@ pub fn classify_span(view: &SpanView) -> Option<AiClassification> {
     let scope = scope_facts(view.scope_name, &resource);
     let mut ev = SpanEvidence::default();
     collect_evidence(&mut ev, view.span_attrs, view.events);
-    classify_from_facts(&scope, &resource, view.span_name, &ev, view.span_attrs)
+    classify_from_facts(
+        &scope,
+        &resource,
+        view.span_name,
+        view.span_kind,
+        &ev,
+        view.span_attrs,
+    )
 }
 
 fn string_attribute(key: &str, value: &str) -> KeyValue {
@@ -235,7 +271,8 @@ fn resource_facts(attrs: &[KeyValue]) -> ResourceFacts<'_> {
 
 /// Scope-level facts, computed once per `ScopeSpans`. `any` is true when the
 /// scope alone can decide a vendor; the flags that only narrow span evidence
-/// (`spring_boot`, `vercel_ai`, `matches_service_name`, the crewai refusal)
+/// (`genkit`, `spring_boot`, `vercel_ai`, `matches_service_name`, the crewai
+/// refusal)
 /// deliberately don't set it, so they never force predicate evaluation on
 /// evidence-free spans.
 #[expect(
@@ -248,10 +285,13 @@ struct ScopeFacts {
     claude: bool,
     dspy: bool,
     eve: bool,
+    eve_agent: bool,
     flue: bool,
+    genkit: bool,
     google_adk: bool,
     haystack: bool,
-    langsmith: bool,
+    haystack_openinference: bool,
+    langchain: bool,
     litellm: bool,
     llamaindex: bool,
     mastra: bool,
@@ -280,7 +320,9 @@ const SCOPE_NAMES: &[&str] = &[
     "com.anthropic.claude_code.",
     "openinference.instrumentation.",
     "eve",
+    "eve.agent",
     "@flue/opentelemetry",
+    "genkit-tracer",
     "gcp.vertex.agent",
     "haystack",
     "langsmith",
@@ -288,6 +330,9 @@ const SCOPE_NAMES: &[&str] = &[
     "llamaindex.opentelemetry.tracer",
     "@mastra/otel-exporter",
     "agent_framework",
+    "Experimental.Microsoft.Agents.AI",
+    "@arizeai/openinference-instrumentation-openai-agents",
+    "@arizeai/openinference-instrumentation-langchain",
     "agent_runtime ",
     "openrouter",
     "crewai.telemetry",
@@ -297,6 +342,7 @@ const SCOPE_NAMES: &[&str] = &[
     "ai",
     "gen_ai",
     "semantic_kernel.",
+    "Microsoft.SemanticKernel.Diagnostics",
 ];
 
 static SCOPE_SCREEN: [u64; 256] = build_screen(&[SCOPE_NAMES]);
@@ -320,23 +366,38 @@ fn scope_facts(scope_name: &str, resource: &ResourceFacts) -> ScopeFacts {
         "com.anthropic.claude_code" => facts.claude = true,
         "openinference.instrumentation.dspy" => facts.dspy = true,
         "eve" => facts.eve = true,
+        "eve.agent" => facts.eve_agent = true,
         "@flue/opentelemetry" => facts.flue = true,
-        "gcp.vertex.agent" => facts.google_adk = true,
+        "genkit-tracer" => facts.genkit = true,
+        "gcp.vertex.agent" | "openinference.instrumentation.google_adk" => {
+            facts.google_adk = true;
+        }
         "haystack" => facts.haystack = true,
-        "langsmith" => facts.langsmith = true,
+        "openinference.instrumentation.haystack" => facts.haystack_openinference = true,
+        // The `@arizeai/` name is the TypeScript instrumentor.
+        "langsmith"
+        | "openinference.instrumentation.langchain"
+        | "@arizeai/openinference-instrumentation-langchain" => facts.langchain = true,
         "litellm" => facts.litellm = true,
-        "llamaindex.opentelemetry.tracer" => facts.llamaindex = true,
+        "llamaindex.opentelemetry.tracer" | "openinference.instrumentation.llama_index" => {
+            facts.llamaindex = true;
+        }
         "@mastra/otel-exporter" => facts.mastra = true,
         "openinference.instrumentation.agno" => facts.agno = true,
-        "agent_framework" => facts.agent_framework = true,
+        // The second name is the .NET build's ActivitySource.
+        "agent_framework" | "Experimental.Microsoft.Agents.AI" => facts.agent_framework = true,
         // Exact equality, never starts_with: "openinference.instrumentation.
-        // openai" is a string prefix of the agents scope.
-        "openinference.instrumentation.openai_agents" => facts.openai_agents = true,
+        // openai" is a string prefix of the agents scope. The `@arizeai/` name
+        // is the TypeScript instrumentor of the same SDK.
+        "openinference.instrumentation.openai_agents"
+        | "@arizeai/openinference-instrumentation-openai-agents" => facts.openai_agents = true,
         "openinference.instrumentation.openai" => facts.openinference_openai = true,
         "openrouter" => facts.openrouter = true,
         "openinference.instrumentation.crewai" | "crewai.telemetry" => facts.crewai = true,
         "openinference.instrumentation.smolagents" => facts.smolagents = true,
-        "pydantic-ai" => facts.pydantic = true,
+        "pydantic-ai" | "openinference.instrumentation.pydantic_ai" => facts.pydantic = true,
+        // The .NET build's ActivitySource; Python's are `semantic_kernel.*`.
+        "Microsoft.SemanticKernel.Diagnostics" => facts.semantic_kernel = true,
         "strands.telemetry.tracer" => facts.strands = true,
         "org.springframework.boot" => facts.spring_boot = true,
         "ai" | "gen_ai" => facts.vercel_ai = true,
@@ -356,10 +417,12 @@ fn scope_facts(scope_name: &str, resource: &ResourceFacts) -> ScopeFacts {
     facts.any = facts.claude
         || facts.dspy
         || facts.eve
+        || facts.eve_agent
         || facts.flue
         || facts.google_adk
         || facts.haystack
-        || facts.langsmith
+        || facts.haystack_openinference
+        || facts.langchain
         || facts.litellm
         || facts.llamaindex
         || facts.mastra
@@ -408,6 +471,11 @@ struct SpanEvidence<'a> {
     langsmith: bool,
     llamaindex: bool,
     mastra: bool,
+    /// A Mastra scorer's span: its `scorer_run`/`scorer_step`, or any span it
+    /// ran (an LLM judge's agent and model calls) - see [`run_predicates`].
+    mastra_scorer: bool,
+    /// `mcp.method.name`: the span is one side of an MCP exchange.
+    mcp_method_name: bool,
     agno: bool,
     agent_framework: bool,
     executor: bool,
@@ -434,6 +502,7 @@ struct SpanEvidence<'a> {
     coding_agent: bool,
     logfire_json_schema: bool,
     gen_ai_agent_call_id: bool,
+    gen_ai_event_start_time: bool,
     operation_cost: bool,
     model_request_parameters: bool,
     sk_available_functions: bool,
@@ -475,6 +544,7 @@ const SCREEN_KEYS: &[&str] = &[
     "llm.",
     "logfire.json_schema",
     "mastra.",
+    "mcp.method.name",
     "message.",
     "model_request_parameters",
     ATTR_NAMESPACE,
@@ -606,6 +676,7 @@ fn absorb_key<'a>(ev: &mut SpanEvidence<'a>, attr: &'a KeyValue, b0: u8) {
                         }
                     }
                     "agent.call.id" => ev.gen_ai_agent_call_id = true,
+                    "event.start_time" => ev.gen_ai_event_start_time = true,
                     "execute_tool.duration" => ev.gen_ai_execute_tool_duration = true,
                     _ if rest.starts_with("aggregated_usage.") => {
                         ev.gen_ai_aggregated_usage = true;
@@ -636,6 +707,17 @@ fn absorb_key<'a>(ev: &mut SpanEvidence<'a>, attr: &'a KeyValue, b0: u8) {
         b'm' => {
             if key.starts_with("mastra.") {
                 ev.mastra = true;
+                // A scorer stamps the run it grades as metadata, and Mastra
+                // copies a span's metadata onto every span beneath it.
+                if key == "mastra.metadata.targetTraceId"
+                    || (key == "mastra.span.type" && value_str(attr).starts_with("scorer_"))
+                {
+                    ev.mastra_scorer = true;
+                }
+            } else if key == "mcp.method.name" {
+                // A veto, not evidence: an MCP span is AI work only on other grounds.
+                ev.mcp_method_name = true;
+                return;
             } else if key.starts_with("message.") {
                 ev.message = true;
             } else if key == "model_request_parameters" {
@@ -822,12 +904,22 @@ struct Vendor {
     id: &'static str,
     detect: DetectFn,
     /// Session-granularity span attribute keys; the first non-empty value wins.
+    /// [`CONVERSATION_ID_KEY`] is tried last unless the list ranks it itself.
     session_keys: &'static [&'static str],
 }
 
-/// The session key of a dialect with none of its own: the OTel GenAI
-/// conversation id, which the docs tell every emitter to set.
-const CONVERSATION_ID_ONLY: &[&str] = &["gen_ai.conversation.id"];
+/// The OTel GenAI conversation id, which the docs tell every emitter to set.
+const CONVERSATION_ID_KEY: &str = "gen_ai.conversation.id";
+
+/// The session keys of a dialect with none of its own.
+const CONVERSATION_ID_ONLY: &[&str] = &[CONVERSATION_ID_KEY];
+
+/// `session.id` (OpenInference's, or a framework's documented trace
+/// attribute) after the conversation id. The two usually carry the same value;
+/// where they differ, `session.id` is often an app's own (a web-login session
+/// stamped on every span, Maple's browser SDK replay session) and can span
+/// several conversations.
+const CONVERSATION_THEN_SESSION_ID: &[&str] = &[CONVERSATION_ID_KEY, "session.id"];
 
 /// Ordered: first match wins. `maple` leads because its key is an explicit
 /// opt-in rather than a framework fingerprint (see the module doc). Then
@@ -847,7 +939,7 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "dspy",
         detect: detect_dspy,
-        session_keys: &["session.id"],
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "eve",
@@ -860,9 +952,26 @@ static VENDORS: &[Vendor] = &[
         session_keys: &["gen_ai.conversation.id"],
     },
     Vendor {
+        id: "genkit",
+        detect: detect_genkit,
+        session_keys: CONVERSATION_ID_ONLY,
+    },
+    Vendor {
         id: "google_adk",
         detect: detect_google_adk,
-        session_keys: &["gen_ai.conversation.id", "gcp.vertex.agent.session_id"],
+        // `session.id` is OpenInference's.
+        session_keys: &[
+            "gen_ai.conversation.id",
+            "gcp.vertex.agent.session_id",
+            "session.id",
+        ],
+    },
+    // One vendor, two dialects with their own session keys: `session.id` is
+    // the OpenInference instrumentor's, and means nothing on a native span.
+    Vendor {
+        id: "haystack",
+        detect: detect_haystack_openinference,
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "haystack",
@@ -872,12 +981,22 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "langchain",
         detect: detect_langchain,
-        session_keys: &["langsmith.metadata.thread_id"],
+        // LangSmith's thread, then OpenInference's session keys.
+        session_keys: &[
+            "langsmith.metadata.thread_id",
+            CONVERSATION_ID_KEY,
+            "session.id",
+        ],
     },
     Vendor {
         id: "litellm",
         detect: detect_litellm,
         session_keys: CONVERSATION_ID_ONLY,
+    },
+    Vendor {
+        id: cloudflare_ai_gateway::VENDOR_ID,
+        detect: detect_cloudflare_ai_gateway,
+        session_keys: cloudflare_ai_gateway::SESSION_KEYS,
     },
     Vendor {
         id: "openrouter",
@@ -887,7 +1006,8 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "llamaindex",
         detect: detect_llamaindex,
-        session_keys: CONVERSATION_ID_ONLY,
+        // `session.id` is OpenInference's; the native package has no session key.
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "mastra",
@@ -897,7 +1017,7 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "agno",
         detect: detect_agno,
-        session_keys: &["session.id"],
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "microsoft_agent_framework",
@@ -907,22 +1027,23 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "openai_agents_sdk",
         detect: detect_openai_agents_sdk,
-        session_keys: &["session.id", "gen_ai.conversation.id"],
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "openinference-openai",
         detect: detect_openinference_openai,
-        session_keys: &["session.id"],
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "crewai",
         detect: detect_crewai,
-        session_keys: &["session.id"],
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "pydantic_ai",
         detect: detect_pydantic_ai,
-        session_keys: &["gen_ai.conversation.id"],
+        // `session.id` is OpenInference's.
+        session_keys: &["gen_ai.conversation.id", "session.id"],
     },
     Vendor {
         id: "semantic_kernel",
@@ -932,12 +1053,12 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "smolagents",
         detect: detect_smolagents,
-        session_keys: &["session.id"],
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "strands",
         detect: detect_strands,
-        session_keys: &["session.id"],
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "effect_ai",
@@ -952,9 +1073,13 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "vercel_ai_sdk",
         detect: detect_vercel_ai_sdk,
+        // An app's `runtimeContext` lands under `ai.settings.context.<key>`;
+        // its ids rank below an explicit conversation id.
         session_keys: &[
             "ai.settings.context.eve.session.id",
             "gen_ai.conversation.id",
+            "ai.settings.context.sessionId",
+            "ai.settings.context.conversationId",
         ],
     },
 ];
@@ -969,7 +1094,7 @@ static UNKNOWN_TIER: &[Vendor] = &[
     Vendor {
         id: "unknown:openinference",
         detect: detect_unknown_openinference,
-        session_keys: CONVERSATION_ID_ONLY,
+        session_keys: CONVERSATION_THEN_SESSION_ID,
     },
     Vendor {
         id: "unknown:other",
@@ -982,6 +1107,7 @@ fn classify_from_facts(
     scope: &ScopeFacts,
     resource: &ResourceFacts,
     span_name: &str,
+    span_kind: i32,
     ev: &SpanEvidence,
     span_attrs: &[KeyValue],
 ) -> Option<AiClassification> {
@@ -989,16 +1115,33 @@ fn classify_from_facts(
     if !scope.any && !resource.mastra_sdk && !ev.any && !span_name_candidate(span_name) {
         return None;
     }
-    run_predicates(scope, resource, span_name, ev, span_attrs)
+    run_predicates(scope, resource, span_name, span_kind, ev, span_attrs)
 }
 
 fn run_predicates(
     scope: &ScopeFacts,
     resource: &ResourceFacts,
     span_name: &str,
+    span_kind: i32,
     ev: &SpanEvidence,
     span_attrs: &[KeyValue],
 ) -> Option<AiClassification> {
+    // A Mastra scorer grades a finished run in a trace of its own, with no
+    // conversation id: stamped, every scorer run became a `trace:` session, its
+    // `scorer_*` spans counted as tool calls and an LLM judge as a second agent.
+    // It is an evaluation, not a conversation, so none of it is agent work -
+    // whichever instrumentation recorded the span (a judge's model call can sit
+    // under LangSmith's scope, which the vendor order would name first).
+    if ev.mastra_scorer {
+        return None;
+    }
+    // An MCP server handling `tools/call` carries `gen_ai.operation.name =
+    // execute_tool` by the MCP conventions, but it is the tool, not an agent
+    // using one: stamped, every call to an instrumented MCP server became an
+    // `unknown:genai` session. The client side stays agent work.
+    if ev.mcp_method_name && span_kind == SpanKind::Server as i32 {
+        return None;
+    }
     let ctx = Ctx {
         scope,
         resource,
@@ -1009,9 +1152,13 @@ fn run_predicates(
         .iter()
         .chain(UNKNOWN_TIER)
         .find(|vendor| (vendor.detect)(&ctx))?;
+    let fallback =
+        (!vendor.session_keys.contains(&CONVERSATION_ID_KEY)).then_some(CONVERSATION_ID_KEY);
     let session_id = vendor
         .session_keys
         .iter()
+        .copied()
+        .chain(fallback)
         .find_map(|key| session_value(span_attrs, key));
     Some(AiClassification {
         vendor: vendor.id,
@@ -1061,16 +1208,29 @@ fn detect_dspy(c: &Ctx) -> bool {
 }
 
 fn detect_eve(c: &Ctx) -> bool {
-    // "eve" alone is a bare English word; require the turn span name too.
-    c.scope.eve && c.span_name == "ai.eve.turn"
+    // eve 0.78 traces a whole turn under its own `eve.agent` scope. eve 0.25
+    // used the scope "eve", a bare English word, so there the turn span name
+    // is required too.
+    c.scope.eve_agent || (c.scope.eve && c.span_name == "ai.eve.turn")
 }
 
 fn detect_flue(c: &Ctx) -> bool {
     c.scope.flue || c.ev.flue
 }
 
+fn detect_genkit(c: &Ctx) -> bool {
+    // Genkit's raw spans carry only its own `genkit:*` dialect, which nothing
+    // here decodes; the spans an app's GenAI processor has restated name their
+    // operation.
+    c.scope.genkit && c.ev.has_gen_ai_operation_name
+}
+
 fn detect_google_adk(c: &Ctx) -> bool {
     c.scope.google_adk || c.ev.gcp_vertex_agent || c.ev.gen_ai_system == "gcp.vertex.agent"
+}
+
+fn detect_haystack_openinference(c: &Ctx) -> bool {
+    c.scope.haystack_openinference
 }
 
 fn detect_haystack(c: &Ctx) -> bool {
@@ -1083,7 +1243,7 @@ fn detect_haystack(c: &Ctx) -> bool {
 fn detect_langchain(c: &Ctx) -> bool {
     // langgraph deliberately folds in here; the LangSmith dialect is not
     // span-locally separable.
-    c.scope.langsmith || c.ev.langsmith || c.ev.gen_ai_system == "langchain"
+    c.scope.langchain || c.ev.langsmith || c.ev.gen_ai_system == "langchain"
 }
 
 fn detect_litellm(c: &Ctx) -> bool {
@@ -1092,12 +1252,19 @@ fn detect_litellm(c: &Ctx) -> bool {
     c.scope.litellm
 }
 
+fn detect_cloudflare_ai_gateway(c: &Ctx) -> bool {
+    // Scope `ai` is shared with the Vercel AI SDK, so the gateway is told
+    // apart by its span name, which nothing else emits.
+    c.span_name == cloudflare_ai_gateway::SPAN_NAME
+}
+
 fn detect_openrouter(c: &Ctx) -> bool {
     // OpenRouter's own OTLP export (scope and service.name are both
     // "openrouter"). Its `session.id` span attribute echoes the caller-supplied
     // session tag, so calls tagged by a framework the gateway also stamps join
-    // that framework's session.
-    c.scope.openrouter
+    // that framework's session. Every generation, attempt and moderation span
+    // names its operation; the dashboard's "Test Connection" span is bare.
+    c.scope.openrouter && c.ev.has_gen_ai_operation_name
 }
 
 fn detect_llamaindex(c: &Ctx) -> bool {
@@ -1185,6 +1352,14 @@ fn detect_strands(c: &Ctx) -> bool {
         || c.ev.gen_ai_system == "strands-agents"
         || c.ev.gen_ai_provider_name == "strands-agents"
         || (c.ev.event_loop && c.ev.has_gen_ai_operation_name)
+        // The TypeScript SDK names its tracer and its provider after the
+        // service, so a custom `service.name` replaces "strands-agents". Its
+        // non-semconv `gen_ai.event.start_time` tells it from an app that
+        // names its own tracer and provider the same way.
+        || (c.ev.gen_ai_event_start_time
+            && c.scope.matches_service_name
+            && (c.ev.gen_ai_provider_name == c.resource.service_name
+                || c.ev.gen_ai_system == c.resource.service_name))
 }
 
 fn detect_effect_ai(c: &Ctx) -> bool {
@@ -1200,19 +1375,27 @@ fn detect_effect_ai(c: &Ctx) -> bool {
 }
 
 fn detect_spring_ai(c: &Ctx) -> bool {
+    // A model starter's chat span carries only `gen_ai.*`, with its own
+    // provider as `gen_ai.system`; the Boot scope is shared with the HTTP
+    // spans, which have no operation name.
     c.ev.spring_ai
         || c.ev.gen_ai_system == "spring_ai"
-        || (c.scope.spring_boot && c.ev.gen_ai_system == "openai")
+        || (c.scope.spring_boot && c.ev.has_gen_ai_operation_name)
 }
 
 fn detect_vercel_ai_sdk(c: &Ctx) -> bool {
-    (c.scope.vercel_ai && c.ev.ai)
-        || c.ev.gen_ai_operation_name == "agent_step"
+    // The v7 tracer ("gen_ai") writes `ai.*` keys only when the app opts into
+    // them, so an operation name inside its scope is enough. Its `agent_step`
+    // op is no evidence elsewhere: other emitters use it for their own steps.
+    (c.scope.vercel_ai && (c.ev.ai || c.ev.has_gen_ai_operation_name))
         || c.ev.gen_ai_execute_tool_duration
 }
 
 fn detect_unknown_genai(c: &Ctx) -> bool {
-    c.ev.has_gen_ai_operation_name
+    // An OpenInference span that also dual-writes the GenAI operation (every
+    // provider-client instrumentor does) belongs to the bucket that decodes
+    // its dialect.
+    c.ev.has_gen_ai_operation_name && !c.ev.openinference_span_kind
 }
 
 fn detect_unknown_openinference(c: &Ctx) -> bool {
@@ -1251,6 +1434,7 @@ mod tests {
             span_attrs: &span_attrs,
             resource_attrs: &resource_attrs,
             events: &[],
+            span_kind: 0,
         })
     }
 
@@ -1483,6 +1667,77 @@ mod tests {
     }
 
     #[test]
+    fn openinference_session_id_ranks_below_the_conversation_id() {
+        let both = [
+            ("session.id", "login-1"),
+            ("gen_ai.conversation.id", "conv-8"),
+        ];
+        for (scope, span_name, vendor) in [
+            ("openinference.instrumentation.dspy", "predict", "dspy"),
+            (
+                "openinference.instrumentation.haystack",
+                "OpenAIChatGenerator.run",
+                "haystack",
+            ),
+            (
+                "openinference.instrumentation.langchain",
+                "ChatOpenAI",
+                "langchain",
+            ),
+            (
+                "openinference.instrumentation.llama_index",
+                "FunctionAgent.run",
+                "llamaindex",
+            ),
+            ("openinference.instrumentation.agno", "agent.run", "agno"),
+            (
+                "openinference.instrumentation.openai_agents",
+                "agent",
+                "openai_agents_sdk",
+            ),
+            (
+                "openinference.instrumentation.openai",
+                "chat",
+                "openinference-openai",
+            ),
+            ("crewai.telemetry", "Crew.kickoff", "crewai"),
+            (
+                "openinference.instrumentation.smolagents",
+                "step",
+                "smolagents",
+            ),
+            ("strands.telemetry.tracer", "invoke_agent", "strands"),
+        ] {
+            classified(scope, span_name, &both, &[], vendor, Some("conv-8"));
+            classified(
+                scope,
+                span_name,
+                &[("session.id", "own-1")],
+                &[],
+                vendor,
+                Some("own-1"),
+            );
+        }
+        // Their `session.id` is their own session, not OpenInference's.
+        classified(
+            "com.anthropic.claude_code",
+            "claude_code.interaction",
+            &both,
+            &[],
+            "claude_agent_sdk",
+            Some("login-1"),
+        );
+        classified(
+            "openrouter",
+            "LLM Generation",
+            &[("gen_ai.operation.name", "chat"), both[0], both[1]],
+            &[],
+            "openrouter",
+            Some("login-1"),
+        );
+    }
+
+    #[test]
     fn vendor_matched_but_session_key_absent_or_empty() {
         classified(
             "openinference.instrumentation.dspy",
@@ -1544,6 +1799,7 @@ mod tests {
             span_attrs: &span_attrs,
             resource_attrs: &resource_attrs,
             events: &[],
+            span_kind: 0,
         })
         .unwrap();
         assert_eq!(result.session_id.as_deref(), Some("4211"));
@@ -1663,7 +1919,7 @@ mod tests {
             ("gen_ai.operation.name", "chat"),
             ("gen_ai.usage.input_tokens", "2"),
             ("gen_ai.usage.cache_read.input_tokens", "114514"),
-            ("gen_ai.usage.cache_creation.input_tokens", "3549"),
+            ("gen_ai.usage.cache_write.input_tokens", "3549"),
             ("gen_ai.response.time_to_first_chunk", "0.934"),
         ] {
             assert_eq!(attr_value(llm, key).as_deref(), Some(value), "{key}");
@@ -1772,12 +2028,97 @@ mod tests {
             attr_value(tool, "gen_ai.tool.call.result").as_deref(),
             Some(r#"{"error":"Syntax error"}"#)
         );
+        // The folded failure reaches the stamps, though the call was stamped
+        // before its phase was seen.
+        assert_eq!(attr_value(tool, "maple_ai.error").as_deref(), Some("1"));
+        assert_eq!(
+            attr_value(tool, "maple_ai.tool.error_result").as_deref(),
+            Some(r#"{"error":"Syntax error"}"#)
+        );
+    }
+
+    #[test]
+    fn openrouter_connection_test_span_is_not_ai() {
+        // capture `openrouter`: one attribute-less span per "Test Connection"
+        // click, all on trace id 0...01, which became a junk session.
+        assert!(classify(
+            "openrouter",
+            "openrouter-connection-test",
+            &[],
+            &[("service.name", "openrouter")]
+        )
+        .is_none());
+        classified(
+            "openrouter",
+            "provider attempt 1: OpenAI",
+            &[("gen_ai.operation.name", "chat")],
+            &[("service.name", "openrouter")],
+            "openrouter",
+            None,
+        );
     }
 
     #[test]
     fn eve_requires_scope_and_turn_span_name() {
         assert!(classify("eve", "other", &[], &[]).is_none());
         assert!(classify("other", "ai.eve.turn", &[], &[]).is_none());
+    }
+
+    #[test]
+    fn eve_agent_scope_is_eve_for_every_span_of_a_turn() {
+        // eve_user / eve_agents (eve 0.78): the turn, its steps, model calls,
+        // tools and approvals share one scope, and the session is the
+        // conversation id. The tool span's `gen_ai.execute_tool.duration` used
+        // to send it to the Vercel AI SDK and the rest to `unknown:genai`.
+        let session = ("gen_ai.conversation.id", "wrun_1");
+        let cases: &[(&str, &[(&str, &str)])] = &[
+            (
+                "invoke_agent support-agent",
+                &[("gen_ai.operation.name", "invoke_agent"), session],
+            ),
+            (
+                "agent.step",
+                &[("gen_ai.operation.name", "workflow"), session],
+            ),
+            (
+                "chat openai/gpt-4o-mini",
+                &[
+                    ("gen_ai.operation.name", "chat"),
+                    ("ai.response.finish_reason", "stop"),
+                    session,
+                ],
+            ),
+            (
+                "execute_tool get_weather",
+                &[
+                    ("gen_ai.operation.name", "execute_tool"),
+                    ("gen_ai.execute_tool.duration", "0.002"),
+                    session,
+                ],
+            ),
+            (
+                "agent.approval",
+                &[("gen_ai.operation.name", "workflow"), session],
+            ),
+        ];
+        for (span_name, attrs) in cases {
+            classified("eve.agent", span_name, attrs, &[], "eve", Some("wrun_1"));
+        }
+    }
+
+    #[test]
+    fn eve_agent_tool_span_outside_the_scope_stays_vercel() {
+        classified(
+            "gen_ai",
+            "execute_tool get_weather",
+            &[
+                ("gen_ai.operation.name", "execute_tool"),
+                ("gen_ai.execute_tool.duration", "0.002"),
+            ],
+            &[],
+            "vercel_ai_sdk",
+            None,
+        );
     }
 
     #[test]
@@ -1808,6 +2149,84 @@ mod tests {
     }
 
     #[test]
+    fn vercel_v7_spans_without_ai_keys_and_runtime_context_sessions() {
+        // docs_vercel-ai-sdk_a: without `usage: true` the v7 tracer's chat,
+        // invoke_agent and execute_tool spans carry no `ai.*` key at all.
+        for (span_name, op) in [
+            ("chat openai/gpt-4o-mini", "chat"),
+            ("invoke_agent openai/gpt-4o-mini", "invoke_agent"),
+            ("execute_tool get_weather", "execute_tool"),
+        ] {
+            classified(
+                "gen_ai",
+                span_name,
+                &[("gen_ai.operation.name", op)],
+                &[],
+                "vercel_ai_sdk",
+                None,
+            );
+        }
+        classified(
+            "gen_ai",
+            "invoke_agent openai/gpt-4o-mini",
+            &[
+                ("gen_ai.operation.name", "invoke_agent"),
+                ("ai.settings.context.sessionId", "v-1"),
+            ],
+            &[],
+            "vercel_ai_sdk",
+            Some("v-1"),
+        );
+        classified(
+            "gen_ai",
+            "step 1",
+            &[
+                ("gen_ai.operation.name", "agent_step"),
+                ("ai.settings.context.conversationId", "v-2"),
+            ],
+            &[],
+            "vercel_ai_sdk",
+            Some("v-2"),
+        );
+        // An explicit conversation id outranks the runtime context.
+        classified(
+            "gen_ai",
+            "invoke_agent openai/gpt-4o-mini",
+            &[
+                ("gen_ai.operation.name", "invoke_agent"),
+                ("ai.settings.context.sessionId", "v-1"),
+                ("gen_ai.conversation.id", "conv-1"),
+            ],
+            &[],
+            "vercel_ai_sdk",
+            Some("conv-1"),
+        );
+        // Another tracer's generic span is still unidentified.
+        classified(
+            "my-service",
+            "chat gpt-5",
+            &[("gen_ai.operation.name", "chat")],
+            &[],
+            "unknown:genai",
+            None,
+        );
+    }
+
+    #[test]
+    fn agent_step_outside_the_vercel_scope_is_not_vercel() {
+        // A LangGraph node a processor stamped as a step; it used to claim
+        // the whole span for the Vercel AI SDK.
+        classified(
+            "my-service",
+            "tools",
+            &[("gen_ai.operation.name", "agent_step")],
+            &[],
+            "unknown:genai",
+            None,
+        );
+    }
+
+    #[test]
     fn openai_agents_scope_is_not_claimed_by_openinference_openai() {
         // Exact-equality trap: one scope is a string prefix of the other.
         classified(
@@ -1824,7 +2243,7 @@ mod tests {
     fn crewai_refuses_foreign_openinference_scopes() {
         assert_eq!(
             classify(
-                "openinference.instrumentation.langchain",
+                "openinference.instrumentation.bedrock",
                 "Crew.kickoff",
                 &[("crew_key", "x"), ("openinference.span.kind", "AGENT")],
                 &[],
@@ -1844,6 +2263,266 @@ mod tests {
     }
 
     #[test]
+    fn instrumentor_scopes_name_their_framework() {
+        // Scope, span name and keys as the docs_langchain_a, docs_llamaindex_a,
+        // docs_microsoft-agent-framework_net and docs_openai-agents_ts captures
+        // send them; each used to land in an `unknown:*` bucket.
+        let cases: &[VendorCase] = &[
+            (
+                "openinference.instrumentation.langchain",
+                "ChatOpenAI",
+                &[
+                    ("openinference.span.kind", "LLM"),
+                    ("gen_ai.operation.name", "chat"),
+                    ("session.id", "lc-1"),
+                ],
+                "langchain",
+                "lc-1",
+            ),
+            (
+                "openinference.instrumentation.langchain",
+                "model",
+                &[
+                    ("openinference.span.kind", "CHAIN"),
+                    ("gen_ai.conversation.id", "lc-2"),
+                ],
+                "langchain",
+                "lc-2",
+            ),
+            (
+                "openinference.instrumentation.llama_index",
+                "FunctionAgent.run",
+                &[("openinference.span.kind", "CHAIN"), ("session.id", "li-1")],
+                "llamaindex",
+                "li-1",
+            ),
+            (
+                "Experimental.Microsoft.Agents.AI",
+                "invoke_agent support_agent(a769803e5c1e4bf48bdc12453718304b)",
+                &[
+                    ("gen_ai.operation.name", "invoke_agent"),
+                    ("gen_ai.conversation.id", "maf-1"),
+                ],
+                "microsoft_agent_framework",
+                "maf-1",
+            ),
+            (
+                "@arizeai/openinference-instrumentation-openai-agents",
+                "Agent workflow",
+                &[
+                    ("openinference.span.kind", "CHAIN"),
+                    ("gen_ai.conversation.id", "oa-1"),
+                ],
+                "openai_agents_sdk",
+                "oa-1",
+            ),
+            (
+                "@arizeai/openinference-instrumentation-langchain",
+                "ChatOpenAI",
+                &[
+                    ("openinference.span.kind", "LLM"),
+                    ("gen_ai.operation.name", "chat"),
+                    ("session.id", "lc-3"),
+                ],
+                "langchain",
+                "lc-3",
+            ),
+            (
+                "openinference.instrumentation.haystack",
+                "OpenAIChatGenerator.run",
+                &[("openinference.span.kind", "LLM"), ("session.id", "h-1")],
+                "haystack",
+                "h-1",
+            ),
+            (
+                "openinference.instrumentation.google_adk",
+                "invoke_agent weather_agent",
+                &[("openinference.span.kind", "AGENT"), ("session.id", "g-2")],
+                "google_adk",
+                "g-2",
+            ),
+            (
+                "openinference.instrumentation.pydantic_ai",
+                "agent run",
+                &[("openinference.span.kind", "AGENT"), ("session.id", "p-2")],
+                "pydantic_ai",
+                "p-2",
+            ),
+            (
+                "Microsoft.SemanticKernel.Diagnostics",
+                "chat.completions gpt-4o",
+                &[
+                    ("gen_ai.operation.name", "chat"),
+                    ("gen_ai.conversation.id", "sk-1"),
+                ],
+                "semantic_kernel",
+                "sk-1",
+            ),
+            (
+                "Microsoft.SemanticKernel.Diagnostics",
+                "invoke_agent WeatherAgent",
+                &[
+                    ("gen_ai.operation.name", "invoke_agent"),
+                    ("gen_ai.conversation.id", "sk-2"),
+                ],
+                "semantic_kernel",
+                "sk-2",
+            ),
+            (
+                "genkit-tracer",
+                "generate",
+                &[
+                    ("genkit:type", "action"),
+                    ("gen_ai.operation.name", "chat"),
+                    ("gen_ai.conversation.id", "gk-1"),
+                ],
+                "genkit",
+                "gk-1",
+            ),
+        ];
+        for (scope_name, span_name, span_attrs, vendor, session_id) in cases {
+            classified(
+                scope_name,
+                span_name,
+                span_attrs,
+                &[],
+                vendor,
+                Some(session_id),
+            );
+        }
+    }
+
+    #[test]
+    fn session_key_order_follows_the_emitting_dialect() {
+        // Every span carries both keys.
+        let both = &[
+            ("gen_ai.conversation.id", "conv-1"),
+            ("session.id", "app-1"),
+        ];
+        for (scope, span_name, vendor, session_id) in [
+            // A native span's `session.id` is not the vendor's: the
+            // conversation id wins.
+            ("haystack", "haystack.pipeline.run", "haystack", "conv-1"),
+            // google_adk and pydantic_ai rank `session.id` after their own keys
+            // on both scopes.
+            (
+                "openinference.instrumentation.google_adk",
+                "invoke_agent weather_agent",
+                "google_adk",
+                "conv-1",
+            ),
+            ("gcp.vertex.agent", "invoke_agent", "google_adk", "conv-1"),
+            (
+                "openinference.instrumentation.pydantic_ai",
+                "agent run",
+                "pydantic_ai",
+                "conv-1",
+            ),
+            ("pydantic-ai", "agent run", "pydantic_ai", "conv-1"),
+        ] {
+            classified(scope, span_name, both, &[], vendor, Some(session_id));
+        }
+    }
+
+    #[test]
+    fn genkit_spans_without_a_gen_ai_operation_are_not_ai() {
+        assert_eq!(
+            classify(
+                "genkit-tracer",
+                "generate",
+                &[("genkit:type", "action"), ("genkit:name", "generate")],
+                &[],
+            ),
+            None,
+        );
+    }
+
+    #[test]
+    fn openinference_provider_clients_land_in_the_openinference_bucket() {
+        // The provider-client instrumentors dual-write the GenAI operation, which
+        // used to file them under `unknown:genai`, whose read path skips the
+        // OpenInference decoding.
+        for scope_name in [
+            "openinference.instrumentation.anthropic",
+            "openinference.instrumentation.google_genai",
+            "@arizeai/openinference-instrumentation-anthropic",
+        ] {
+            classified(
+                scope_name,
+                "Messages",
+                &[
+                    ("openinference.span.kind", "LLM"),
+                    ("gen_ai.operation.name", "chat"),
+                    ("gen_ai.conversation.id", "conv-4"),
+                ],
+                &[],
+                "unknown:openinference",
+                Some("conv-4"),
+            );
+        }
+    }
+
+    #[test]
+    fn strands_typescript_is_detected_under_a_custom_service_name() {
+        // docs_strands_ts: tracer and provider are both named after the
+        // service, and every span carries `gen_ai.event.start_time`.
+        let resource = [("service.name", "docs-verify-strands-ts")];
+        let start = ("gen_ai.event.start_time", "2026-09-28T10:00:00Z");
+        classified(
+            "docs-verify-strands-ts",
+            "invoke_agent support_agent",
+            &[
+                ("gen_ai.operation.name", "invoke_agent"),
+                ("gen_ai.provider.name", "docs-verify-strands-ts"),
+                ("session.id", "st-ts"),
+                start,
+            ],
+            &resource,
+            "strands",
+            Some("st-ts"),
+        );
+        // Older semconv: the same value on `gen_ai.system`.
+        classified(
+            "docs-verify-strands-ts",
+            "chat",
+            &[
+                ("gen_ai.operation.name", "chat"),
+                ("gen_ai.system", "docs-verify-strands-ts"),
+                start,
+            ],
+            &resource,
+            "strands",
+            None,
+        );
+        // A real provider name under the service's own tracer is not Strands.
+        classified(
+            "docs-verify-strands-ts",
+            "chat",
+            &[
+                ("gen_ai.operation.name", "chat"),
+                ("gen_ai.provider.name", "openai"),
+                start,
+            ],
+            &resource,
+            "unknown:genai",
+            None,
+        );
+        // Nor is an app that names tracer and provider after its service but
+        // lacks the Strands key.
+        classified(
+            "my-agent",
+            "chat",
+            &[
+                ("gen_ai.operation.name", "chat"),
+                ("gen_ai.provider.name", "my-agent"),
+            ],
+            &[("service.name", "my-agent")],
+            "unknown:genai",
+            None,
+        );
+    }
+
+    #[test]
     fn mastra_detected_from_resource_sdk() {
         classified(
             "",
@@ -1852,6 +2531,89 @@ mod tests {
             &[("telemetry.sdk.name", "@mastra/otel-exporter")],
             "mastra",
             Some("ma-1"),
+        );
+    }
+
+    #[test]
+    fn mastra_scorer_runs_are_not_agent_work() {
+        // capture `blind-ts-mastra` (EU, 2026-09-29): a live scorer grades the
+        // agent's run in a root trace of its own. Every span of it carries the
+        // graded run as `mastra.metadata.target*`, including the LLM judge's
+        // agent and model call beneath a `scorer_step`.
+        const SCOPE: &str = "@mastra/otel-exporter";
+        const TARGET: (&str, &str) = (
+            "mastra.metadata.targetTraceId",
+            "7df8c67d7b9310062270dae3ddc6e010",
+        );
+        let spans: &[(&str, &[(&str, &str)])] = &[
+            (
+                "scorer_run code-tool-call-accuracy-scorer",
+                &[
+                    ("gen_ai.operation.name", "scorer_run"),
+                    ("mastra.span.type", "scorer_run"),
+                    TARGET,
+                ],
+            ),
+            (
+                "scorer_step translation-quality-scorer",
+                &[
+                    ("gen_ai.operation.name", "scorer_step"),
+                    ("mastra.span.type", "scorer_step"),
+                    TARGET,
+                ],
+            ),
+            (
+                "invoke_agent judge",
+                &[
+                    ("gen_ai.operation.name", "invoke_agent"),
+                    ("gen_ai.agent.name", "judge"),
+                    ("mastra.span.type", "agent_run"),
+                    TARGET,
+                ],
+            ),
+            (
+                "chat openai/gpt-5-mini",
+                &[
+                    ("gen_ai.operation.name", "chat"),
+                    ("gen_ai.request.model", "openai/gpt-5-mini"),
+                    ("gen_ai.usage.input_tokens", "352"),
+                    ("mastra.span.type", "model_inference"),
+                    TARGET,
+                ],
+            ),
+            // A scorer run with no graded trace still names its own type.
+            (
+                "scorer_run code-tool-call-accuracy-scorer",
+                &[("mastra.span.type", "scorer_run")],
+            ),
+        ];
+        for (name, span) in spans {
+            assert!(
+                classify(SCOPE, name, span, &[]).is_none(),
+                "{name} was stamped"
+            );
+        }
+        // A judge's model call recorded by another instrumentation still
+        // carries the graded run, and is not stamped under that vendor either.
+        assert!(classify(
+            "langsmith",
+            "chat openai/gpt-5-mini",
+            &[("gen_ai.operation.name", "chat"), TARGET],
+            &[],
+        )
+        .is_none());
+        // The run it graded is still the agent's.
+        classified(
+            SCOPE,
+            "invoke_agent translator",
+            &[
+                ("gen_ai.operation.name", "invoke_agent"),
+                ("gen_ai.conversation.id", "maple-demo-conversation-1"),
+                ("mastra.span.type", "agent_run"),
+            ],
+            &[],
+            "mastra",
+            Some("maple-demo-conversation-1"),
         );
     }
 
@@ -1880,6 +2642,7 @@ mod tests {
             span_attrs: &[],
             resource_attrs: &[],
             events: &events,
+            span_kind: 0,
         })
         .unwrap();
         assert_eq!(result.vendor, "llamaindex");
@@ -1887,7 +2650,30 @@ mod tests {
     }
 
     #[test]
-    fn spring_ai_boot_scope_needs_the_openai_system() {
+    fn spring_ai_chat_spans_of_any_model_starter() {
+        // docs_spring-ai_a: a chat call without tools has no `spring.ai.*`
+        // key. The Anthropic starter writes `gen_ai.system=anthropic`.
+        for system in ["openai", "anthropic"] {
+            classified(
+                "org.springframework.boot",
+                "chat claude-haiku-4.5",
+                &[("gen_ai.operation.name", "chat"), ("gen_ai.system", system)],
+                &[],
+                "spring_ai",
+                None,
+            );
+        }
+        assert!(classify(
+            "org.springframework.boot",
+            "POST",
+            &[("http.request.method", "POST")],
+            &[]
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn spring_ai_chat_client_carries_the_conversation_id() {
         classified(
             "org.springframework.boot",
             "chat",
@@ -2031,6 +2817,28 @@ mod tests {
             "unknown:openinference",
             Some("conv-9"),
         );
+        // OpenInference's `session.id` fills in only without a conversation id:
+        // a browser replay session under that key must not merge conversations.
+        classified(
+            "",
+            "llm",
+            &[
+                ("openinference.span.kind", "LLM"),
+                ("gen_ai.conversation.id", "conv-9"),
+                ("session.id", "browser-1"),
+            ],
+            &[],
+            "unknown:openinference",
+            Some("conv-9"),
+        );
+        classified(
+            "",
+            "llm",
+            &[("openinference.span.kind", "LLM"), ("session.id", "oi-1")],
+            &[],
+            "unknown:openinference",
+            Some("oi-1"),
+        );
         classified(
             "",
             "task",
@@ -2129,6 +2937,45 @@ mod tests {
     }
 
     #[test]
+    fn mcp_server_tool_calls_are_not_agent_work() {
+        // The MCP conventions put `gen_ai.operation.name = execute_tool` on both
+        // sides of a `tools/call`. The client is an agent using a tool; the
+        // server is the tool, and must not become an `unknown:genai` session.
+        let tool_call = |kind: SpanKind| Span {
+            name: "tools/call run_sql".to_owned(),
+            kind: kind as i32,
+            attributes: attrs(&[
+                ("mcp.method.name", "tools/call"),
+                ("gen_ai.operation.name", "execute_tool"),
+                ("gen_ai.tool.name", "run_sql"),
+            ]),
+            ..Default::default()
+        };
+        let mut request = ExportTraceServiceRequest {
+            resource_spans: vec![ResourceSpans {
+                resource: Some(Resource {
+                    attributes: attrs(&[("service.name", "mcp-server")]),
+                    ..Default::default()
+                }),
+                scope_spans: vec![ScopeSpans {
+                    spans: vec![tool_call(SpanKind::Server), tool_call(SpanKind::Client)],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        };
+
+        stamp_trace_request(&mut request);
+
+        let spans = &request.resource_spans[0].scope_spans[0].spans;
+        assert_eq!(attr_value(&spans[0].attributes, VENDOR_ID_ATTR), None);
+        assert_eq!(
+            attr_value(&spans[1].attributes, VENDOR_ID_ATTR).as_deref(),
+            Some("unknown:genai")
+        );
+    }
+
+    #[test]
     fn stamp_trace_request_stamps_ai_spans_and_skips_the_rest() {
         let mut request = ExportTraceServiceRequest {
             resource_spans: vec![ResourceSpans {
@@ -2193,7 +3040,8 @@ mod tests {
                 .iter()
                 .filter(|kv| kv.key.starts_with(ATTR_NAMESPACE))
                 .count(),
-            3,
+            // Vendor, version, session, and the llm-call marker.
+            4,
             "spoofed stamps must be stripped, not duplicated"
         );
 

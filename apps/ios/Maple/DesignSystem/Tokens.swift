@@ -37,6 +37,8 @@ enum Token {
 
 	// MARK: Severity ramp
 
+	/// The "good" delta green: `--severity-info`.
+	static let severityInfo = theme(light: .init(0.696, 0.17, 162.48), dark: .init(0.658, 0.134, 151))
 	static let severityWarn = theme(light: .init(0.769, 0.188, 70.08), dark: .init(0.714, 0.154, 59))
 	static let severityError = theme(light: .init(0.637, 0.237, 25.331), dark: .init(0.654, 0.176, 30))
 
@@ -51,11 +53,8 @@ enum Token {
 	static let amberText = theme(light: .init(0.666, 0.179, 58.318), dark: .init(0.828, 0.189, 84.429))
 	static let amberFill = constant(.init(0.769, 0.188, 70.08)) // amber-500
 	static let blueText = theme(light: .init(0.546, 0.245, 262.881), dark: .init(0.707, 0.165, 254.624))
-	static let blueFill = constant(.init(0.623, 0.214, 259.815)) // blue-500
 	static let purpleText = theme(light: .init(0.558, 0.288, 302.321), dark: .init(0.714, 0.203, 305.504))
-	static let purpleFill = constant(.init(0.606, 0.25, 292.717)) // violet-500
 	static let tealText = theme(light: .init(0.6, 0.118, 184.704), dark: .init(0.777, 0.152, 181.912))
-	static let tealFill = constant(.init(0.704, 0.14, 182.503)) // teal-500
 
 	// MARK: Chart palette (percentile-specific — not the generic 1..5 ramp)
 

@@ -5,6 +5,7 @@ import {
 	type FunnelStep,
 } from "@maple/query-model"
 import { quoteWhereValue, splitWhereClause } from "@maple/domain/where-clause"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // The funnel panel's where-clause strings and what they compile to.
 //
@@ -38,7 +39,7 @@ const EQUALS_CLAUSE = /^([^\s=!<>~]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))$/
 
 /** Split a clause string into `key = value` pairs, or say why it cannot. */
 function parseEqualsClauses(text: string): FunnelFilterParse<ReadonlyArray<EqualsClause>> {
-	const trimmed = text.trim()
+	const trimmed = Str.trim(text)
 	if (trimmed === "") return { ok: true, value: [] }
 	if (/\bOR\b/i.test(trimmed)) return { ok: false, error: 'only "AND" joins clauses here' }
 	const clauses: EqualsClause[] = []
@@ -52,10 +53,10 @@ function parseEqualsClauses(text: string): FunnelFilterParse<ReadonlyArray<Equal
 					: `"${part}" is not a key = "value" clause`,
 			}
 		}
-		const key = match[1]!
+		const key = match[1] ?? ""
 		const value = match[2] ?? match[3] ?? match[4] ?? ""
 		if (value === "") return { ok: false, error: `"${key}" needs a value` }
-		if (clauses.some((clause) => clause.key === key)) {
+		if (Arr.some(clauses, (clause) => clause.key === key)) {
 			return { ok: false, error: `"${key}" appears twice` }
 		}
 		clauses.push({ key, value })
@@ -75,7 +76,7 @@ export function parseFunnelStepFilter(text: string): FunnelFilterParse<Record<st
 	if (!parsed.ok) return parsed
 	const attributeEquals: Record<string, string> = {}
 	for (const clause of parsed.value) {
-		const key = clause.key.startsWith("attr.") ? clause.key.slice("attr.".length) : clause.key
+		const key = Str.startsWith("attr.")(clause.key) ? Str.slice("attr.".length)(clause.key) : clause.key
 		if (key === "") return { ok: false, error: `"${clause.key}" is not an attribute key` }
 		if (key in attributeEquals) return { ok: false, error: `"${key}" appears twice` }
 		attributeEquals[key] = clause.value
@@ -88,9 +89,10 @@ export function formatFunnelStepFilter(
 	attributeEquals: Readonly<Record<string, string>> | undefined,
 ): string {
 	if (!attributeEquals) return ""
-	return Object.entries(attributeEquals)
-		.map(([key, value]) => `${key} = ${quoteWhereValue(value)}`)
-		.join(" AND ")
+	return Arr.join(
+		Arr.map(Rec.toEntries(attributeEquals), ([key, value]) => `${key} = ${quoteWhereValue(value)}`),
+		" AND ",
+	)
 }
 
 /**
@@ -117,13 +119,13 @@ export function compileFunnelStep(draft: FunnelStepDraft): FunnelFilterParse<Fun
 			return {
 				ok: true,
 				value:
-					Object.keys(parsed.value).length > 0
+					Rec.keys(parsed.value).length > 0
 						? { kind: "event", eventName: rest.eventName, attributeEquals: parsed.value }
 						: { kind: "event", eventName: rest.eventName },
 			}
 		}
 		case "page": {
-			const host = draft.host?.trim()
+			const host = draft.host === undefined ? undefined : Str.trim(draft.host)
 			return {
 				ok: true,
 				value: host
@@ -169,21 +171,21 @@ export const PRODUCT_EVENTS_FILTER_KEYS = {
 	utmMedium: ["utm.medium", "utm_medium"],
 	utmCampaign: ["utm.campaign", "utm_campaign"],
 	visitorType: ["visitor_type", "visitor.type"],
-} satisfies Readonly<Record<FunnelPopulationFilterField, ReadonlyArray<string>>>
+} satisfies Readonly<Record<FunnelPopulationFilterField, Arr.NonEmptyReadonlyArray<string>>>
 
 /** The canonical where-clause key of a filter field. */
 export const productEventsFilterKey = (field: FunnelPopulationFilterField): string =>
-	PRODUCT_EVENTS_FILTER_KEYS[field][0]!
+	Arr.headNonEmpty(PRODUCT_EVENTS_FILTER_KEYS[field])
 
 const FIELD_BY_KEY: ReadonlyMap<string, FunnelPopulationFilterField> = new Map(
-	FUNNEL_POPULATION_FILTER_FIELDS.flatMap((field) =>
-		PRODUCT_EVENTS_FILTER_KEYS[field].map((key) => [key, field] as const),
+	Arr.flatMap(FUNNEL_POPULATION_FILTER_FIELDS, (field) =>
+		Arr.map(PRODUCT_EVENTS_FILTER_KEYS[field], (key) => [key, field] as const),
 	),
 )
 
 /** The filter field a where-clause key (or alias) names, if any. Case-insensitive. */
 export const productEventsFilterField = (key: string): FunnelPopulationFilterField | undefined =>
-	FIELD_BY_KEY.get(key.trim().toLowerCase())
+	FIELD_BY_KEY.get(Str.toLowerCase(Str.trim(key)))
 
 const VISITOR_TYPES = ["new", "returning"] as const
 
@@ -199,8 +201,8 @@ export function parseProductEventsFilterClause(text: string): FunnelFilterParse<
 	for (const clause of parsed.value) {
 		const field = productEventsFilterField(clause.key)
 		if (field === undefined) {
-			const known = FUNNEL_POPULATION_FILTER_FIELDS.map(productEventsFilterKey).join(", ")
-			return { ok: false, error: `"${clause.key}" is not a filter key — use one of ${known}` }
+			const known = Arr.join(Arr.map(FUNNEL_POPULATION_FILTER_FIELDS, productEventsFilterKey), ", ")
+			return { ok: false, error: `"${clause.key}" is not a filter key. Use one of ${known}` }
 		}
 		if (field in filters) return { ok: false, error: `"${productEventsFilterKey(field)}" appears twice` }
 		filters[field] = clause.value
@@ -222,15 +224,21 @@ export function parseProductEventsFilterClause(text: string): FunnelFilterParse<
 /** The canonical text for stored filters — what the editor shows on open. */
 export function formatProductEventsFilterClause(filters: FunnelPopulationFilters | undefined): string {
 	if (!filters) return ""
-	return FUNNEL_POPULATION_FILTER_FIELDS.flatMap((field) => {
-		const value = filters[field]
-		return value === undefined || value === ""
-			? []
-			: [`${productEventsFilterKey(field)} = ${quoteWhereValue(value)}`]
-	}).join(" AND ")
+	return Arr.join(
+		Arr.flatMap(FUNNEL_POPULATION_FILTER_FIELDS, (field) => {
+			const value = filters[field]
+			return value === undefined || value === ""
+				? []
+				: [`${productEventsFilterKey(field)} = ${quoteWhereValue(value)}`]
+		}),
+		" AND ",
+	)
 }
 
 /** True when a filters object narrows anything. */
 export const hasProductEventsFilters = (filters: FunnelPopulationFilters | undefined): boolean =>
 	filters !== undefined &&
-	FUNNEL_POPULATION_FILTER_FIELDS.some((field) => filters[field] !== undefined && filters[field] !== "")
+	Arr.some(
+		FUNNEL_POPULATION_FILTER_FIELDS,
+		(field) => filters[field] !== undefined && filters[field] !== "",
+	)

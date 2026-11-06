@@ -1,10 +1,11 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Array as Arr, Effect, Layer, Option, String as Str } from "effect"
 import { WarehouseUpstreamError } from "@maple/domain/http"
 import { getSessionTraces } from "./session-replays"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { WarehouseExecutorApi } from "./WarehouseExecutor"
 import { compiledQueryOf } from "../execution/compiled-input"
+import { OrgId } from "@maple/domain"
 
 interface Captured {
 	sqls: string[]
@@ -20,29 +21,29 @@ interface MockResponses {
  * Mock executor that records each SQL string and dispatches rows by which query
  * is running, matched on its source table. This stays correct regardless of the
  * execution order of the concurrent detail (`session_replays`) and activity
- * (`session_events`) reads; the trace summaries read `trace_detail_spans`.
+ * (`session_events`) reads; the trace summaries read `traces` through `trace_index`.
  */
 const makeExecutor = (captured: Captured, responses: MockResponses): WarehouseExecutorApi => {
 	const rowsFor = (sql: string): ReadonlyArray<Record<string, unknown>> => {
-		if (sql.includes("session_events")) return responses.activity ?? []
-		if (sql.includes("trace_detail_spans")) return responses.summaries ?? []
+		if (Str.includes("session_events")(sql)) return responses.activity ?? []
+		if (Str.includes("FROM trace_index")(sql)) return responses.summaries ?? []
 		return responses.detail ?? []
 	}
 	return {
-		orgId: "org_test",
+		orgId: OrgId.make("org_test"),
 		query: () => Effect.succeed({ data: [] as ReadonlyArray<never> }),
-		compiledQuery: ((compiled) => {
+		compiledQuery: (compiled) => {
 			captured.sqls.push(compiledQueryOf(compiled).sql)
 			return compiledQueryOf(compiled)
 				.decodeRows(rowsFor(compiledQueryOf(compiled).sql))
 				.pipe(Effect.orDie)
-		}) as WarehouseExecutorApi["compiledQuery"],
-		compiledQueryFirst: ((compiled) => {
+		},
+		compiledQueryFirst: (compiled) => {
 			captured.sqls.push(compiledQueryOf(compiled).sql)
 			return compiledQueryOf(compiled)
 				.decodeFirstRow(rowsFor(compiledQueryOf(compiled).sql))
 				.pipe(Effect.orDie)
-		}) as WarehouseExecutorApi["compiledQueryFirst"],
+		},
 	}
 }
 
@@ -101,7 +102,8 @@ const sessionRow = (overrides: Record<string, unknown> = {}): Record<string, unk
 })
 
 /** The recorded SQL for the query that reads `table`, if it ran. */
-const sqlFor = (captured: Captured, table: string) => captured.sqls.find((s) => s.includes(table))
+const sqlFor = (captured: Captured, table: string) =>
+	Arr.findFirst(captured.sqls, (s) => Str.includes(table)(s))
 
 describe("getSessionTraces", () => {
 	it.effect("returns null and runs no summaries query when the session is missing", () =>
@@ -115,7 +117,7 @@ describe("getSessionTraces", () => {
 			assert.deepStrictEqual(out.traces, [])
 			assert.strictEqual(out.totalTraceCount, 0)
 			// Detail + activity run concurrently; the summaries query never does.
-			assert.isUndefined(sqlFor(captured, "trace_detail_spans"))
+			assert.isTrue(Option.isNone(sqlFor(captured, "FROM trace_index")))
 		}),
 	)
 
@@ -134,7 +136,7 @@ describe("getSessionTraces", () => {
 			assert.deepStrictEqual(out.traces, [])
 			assert.strictEqual(out.totalTraceCount, 0)
 			// `TraceId IN ()` is never compiled.
-			assert.isUndefined(sqlFor(captured, "trace_detail_spans"))
+			assert.isTrue(Option.isNone(sqlFor(captured, "FROM trace_index")))
 		}),
 	)
 
@@ -174,9 +176,29 @@ describe("getSessionTraces", () => {
 			)
 
 			assert.strictEqual(out.totalTraceCount, 150)
-			const summarySql = sqlFor(captured, "trace_detail_spans")!
+			const summarySql = Option.getOrThrow(sqlFor(captured, "FROM trace_index"))
 			assert.include(summarySql, "trace-49")
 			assert.notInclude(summarySql, "trace-50")
+		}),
+	)
+
+	it.effect("bounds the summaries read to the session's span plus 15 minutes", () =>
+		Effect.gen(function* () {
+			const captured: Captured = { sqls: [] }
+			yield* getSessionTraces({ sessionId: "s1" }).pipe(
+				Effect.provide(
+					makeLayer(
+						makeExecutor(captured, {
+							detail: [sessionRow({ sessionId: "s1", traceIds: traceIds(3) })],
+						}),
+					),
+				),
+			)
+
+			const summarySql = Option.getOrThrow(sqlFor(captured, "FROM trace_index"))
+			assert.include(summarySql, "traces.Timestamp >= '2025-12-31 23:45:00'")
+			assert.include(summarySql, "traces.Timestamp <= '2026-01-01 00:20:00'")
+			assert.include(summarySql, "trace_index.Bucket <= toDateTime64('2026-01-01 00:20:00.000', 9)")
 		}),
 	)
 
@@ -193,7 +215,7 @@ describe("getSessionTraces", () => {
 				),
 			)
 
-			const summarySql = sqlFor(captured, "trace_detail_spans")!
+			const summarySql = Option.getOrThrow(sqlFor(captured, "FROM trace_index"))
 			assert.include(summarySql, "trace-99")
 			assert.notInclude(summarySql, "trace-100")
 		}),
@@ -202,7 +224,7 @@ describe("getSessionTraces", () => {
 	it.effect("propagates warehouse errors from the executor", () =>
 		Effect.gen(function* () {
 			const failing: WarehouseExecutorApi = {
-				orgId: "org_test",
+				orgId: OrgId.make("org_test"),
 				query: () => Effect.succeed({ data: [] }),
 				compiledQuery: () =>
 					Effect.fail(

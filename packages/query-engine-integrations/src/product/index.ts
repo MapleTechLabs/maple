@@ -34,6 +34,7 @@ export {
 	type AuditLogCorrelationRow,
 	type AuditOrphanSpanRow,
 	type AuditRootlessTraceRow,
+	type AuditSamplingOverrides,
 	type AuditTraceWindowParams,
 } from "./setup-audit"
 

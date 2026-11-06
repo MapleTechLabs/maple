@@ -1,4 +1,5 @@
-import type { AlertDestinationRow } from "@maple/db"
+import type { AlertDestinationRow } from "@maple/db/tables"
+import { OrgId } from "@maple/domain/primitives"
 import {
 	AlertDeliveryError,
 	AlertDeliveryRejectedError,
@@ -6,28 +7,53 @@ import {
 	UNGROUPED_GROUP_KEY,
 } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Fiber, Schema } from "effect"
+import { Effect, Fiber, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import {
-	buildAlertChatUrl,
+	buildAlertRuleUrl,
 	buildDiscordEmbedsFromTemplate,
 	buildSummaryLine,
 	buildTemplateContext,
 	type DispatchContext,
 } from "./AlertDeliveryDispatch"
-import { dispatchDelivery } from "./delivery/dispatch"
+import { dispatchDelivery as dispatchDeliveryRaw } from "./delivery/dispatch"
+import { FetchHttpClient } from "effect/http"
 import type { EffectTransportDeps } from "./delivery/Transport"
 import type { TemplateRenderContext } from "./alert-formatting"
 import { resolveSignalDisplay } from "./alert-signal-display"
 import { renderTemplate } from "./alert-templating/renderer"
 import { DEFAULT_BODY_TEMPLATE, DEFAULT_TITLE_TEMPLATE } from "./alert-templating/defaultTemplates"
 
+type DispatchArgs = Parameters<typeof dispatchDeliveryRaw>
+
+/** The runtime provides the HTTP client; each test fakes the wire as `FetchHttpClient.Fetch`. */
+const dispatchDelivery = (
+	context: DispatchArgs[0],
+	payloadJson: DispatchArgs[1],
+	fetchFn: typeof fetch,
+	...rest: [DispatchArgs[2], DispatchArgs[3], DispatchArgs[4], DispatchArgs[5]]
+) =>
+	dispatchDeliveryRaw(context, payloadJson, ...rest).pipe(
+		Effect.provide(FetchHttpClient.layer),
+		Effect.provideService(FetchHttpClient.Fetch, fetchFn),
+	)
+
 /** Chat posts must not happen for these destinations. */
 const failingChatPost = () =>
 	Effect.fail(new AlertDeliveryError({ message: "unexpected postChatAlert", destinationType: "chat" }))
 
+/** These tests send to no Linear destination. */
+const unusedLinear: EffectTransportDeps["linear"] = {
+	request: () =>
+		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
+	findThread: () =>
+		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
+	saveThread: () =>
+		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
+}
+
 const baseContext: TemplateRenderContext = {
-	ruleId: "rule_1" as TemplateRenderContext["ruleId"],
+	ruleId: "rule_1",
 	ruleName: "Checkout error rate",
 	eventType: "trigger",
 	severity: "critical",
@@ -39,7 +65,7 @@ const baseContext: TemplateRenderContext = {
 	sampleCount: 1200,
 	groupKey: null,
 	windowMinutes: 5,
-	incidentId: "inc_1" as TemplateRenderContext["incidentId"],
+	incidentId: "inc_1",
 	incidentStatus: "open",
 	dedupeKey: "dedupe_1",
 	template: null,
@@ -60,26 +86,33 @@ const rangeContext: TemplateRenderContext = {
 }
 
 const LINK = "https://web.localhost/alerts"
-const CHAT = "https://web.localhost/chat?mode=alert"
-const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
+const CHAT = "https://web.localhost/alerts/rule_1"
+const DESTINATION_ID = Schema.decodeSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
 /** Dispatch deps for non-email destinations — email sends must not happen. */
 const noEmailDeps: EffectTransportDeps = {
 	postChatAlert: failingChatPost,
+	linear: unusedLinear,
 	sendEmail: () =>
 		Effect.fail(new AlertDeliveryError({ message: "unexpected sendEmail", destinationType: "email" })),
 }
 
-describe("buildAlertChatUrl (Ask Maple AI link)", () => {
-	it("targets the incident diagnosis page when an incident exists", () => {
-		const url = buildAlertChatUrl("https://web.localhost", baseContext)
-		assert.isTrue(url.startsWith("https://web.localhost/alerts/incidents/inc_1?alert="), url)
+describe("buildAlertRuleUrl", () => {
+	it("opens the rule page", () => {
+		assert.equal(
+			buildAlertRuleUrl("https://web.localhost", baseContext),
+			"https://web.localhost/alerts/rule_1",
+		)
 	})
 
-	it("falls back to the chat surface when there is no incident row", () => {
-		const url = buildAlertChatUrl("https://web.localhost", { ...baseContext, incidentId: null })
-		assert.isTrue(url.startsWith("https://web.localhost/chat?"), url)
-		assert.include(url, "mode=alert")
+	it("encodes a rule id that is not URL-safe", () => {
+		const url = buildAlertRuleUrl("https://web.localhost", { ruleId: "a/b?c", eventType: "trigger" })
+		assert.equal(url, "https://web.localhost/alerts/a%2Fb%3Fc")
+	})
+
+	it("opens the alerts list for a test notification, whose rule does not exist", () => {
+		const url = buildAlertRuleUrl("https://web.localhost", { ...baseContext, eventType: "test" })
+		assert.equal(url, "https://web.localhost/alerts")
 	})
 })
 
@@ -149,6 +182,12 @@ describe("buildSummaryLine", () => {
 	 * metric name and its value as a bare unpunctuated integer —
 	 * "*builder_query* is *1041923*".
 	 */
+	it("says a breach without a value is a window with no data", () => {
+		const line = bold({ ...baseContext, value: null })
+		assert.include(line, "has no data over the last")
+		assert.notInclude(line, "n/a")
+	})
+
 	it("names what a builder_query rule measures instead of its query kind", () => {
 		const line = bold({
 			...baseContext,
@@ -188,7 +227,7 @@ describe("buildSummaryLine", () => {
 
 describe("buildDiscordEmbedsFromTemplate", () => {
 	it("maps title/body to the embed and color-codes by severity", () => {
-		const [embed] = buildDiscordEmbedsFromTemplate("T", "B", baseContext, LINK, CHAT) as Array<{
+		const [embed] = buildDiscordEmbedsFromTemplate("T", "B", baseContext, LINK) as Array<{
 			title: string
 			description: string
 			color: number
@@ -205,7 +244,7 @@ describe("buildDiscordEmbedsFromTemplate", () => {
 describe("dispatchDelivery", () => {
 	const destinationRow: AlertDestinationRow = {
 		id: DESTINATION_ID,
-		orgId: "org_1" as AlertDestinationRow["orgId"],
+		orgId: Schema.decodeSync(OrgId)("org_1"),
 		name: "PagerDuty",
 		type: "pagerduty",
 		enabled: true,
@@ -215,8 +254,12 @@ describe("dispatchDelivery", () => {
 		secretTag: "",
 		lastTestedAt: null,
 		lastTestError: null,
-		createdAt: new Date(0),
-		updatedAt: new Date(0),
+		consecutiveFailures: 0,
+		lastFailureAt: null,
+		disabledAt: null,
+		disabledReason: null,
+		createdAt: 0,
+		updatedAt: 0,
 		createdBy: "user_1",
 		updatedBy: "user_1",
 	}
@@ -267,11 +310,11 @@ describe("dispatchDelivery", () => {
 		}),
 	)
 
-	it.effect("calls an unguarded transport's fetch detached from the runtime object", () =>
+	it.effect("calls an unguarded transport's fetch as a bare function", () =>
 		Effect.gen(function* () {
-			// Regression: the unguarded transports used to call `runtime.fetchFn(...)`,
+			// Regression: the unguarded transports once called `runtime.fetchFn(...)`,
 			// a method call that hands workerd's global `fetch` a `this` of the
-			// runtime object — "Illegal invocation", every such delivery dead.
+			// runtime object: "Illegal invocation", every such delivery dead.
 			// A `function` (not an arrow) is what makes `this` observable here.
 			let called = false
 			let receiver: typeof globalThis | undefined
@@ -373,6 +416,39 @@ describe("dispatchDelivery", () => {
 		}),
 	)
 
+	it.effect("webhook: reads only a bounded prefix of an endless error body", () =>
+		Effect.gen(function* () {
+			const webhookContext: DispatchContext = {
+				...pagerdutyContext,
+				destination: { ...destinationRow, name: "Webhook", type: "webhook" },
+				publicConfig: { summary: "POST hooks.example.test", channelLabel: null },
+				secretConfig: {
+					type: "webhook",
+					url: "https://hooks.example.test/maple",
+					signingSecret: null,
+				},
+			}
+			const pulled = { count: 0 }
+			const chunk = new TextEncoder().encode(Str.repeat(200)("boom "))
+			const fetchFn: typeof fetch = async () =>
+				new Response(
+					new ReadableStream<Uint8Array>({
+						pull: (controller) => {
+							pulled.count++
+							controller.enqueue(chunk)
+						},
+					}),
+					{ status: 500 },
+				)
+
+			const error = yield* Effect.flip(
+				dispatchDelivery(webhookContext, "{}", fetchFn, 5_000, LINK, CHAT, noEmailDeps),
+			)
+			assert.include(error.message, "delivery failed with 500: boom boom")
+			assert.isBelow(pulled.count, 100)
+		}),
+	)
+
 	const failingFetch: typeof fetch = async () => {
 		throw new Error("fetch must not be called for email dispatch")
 	}
@@ -394,6 +470,7 @@ describe("dispatchDelivery", () => {
 			const sent: Array<{ to: string; subject: string; html: string }> = []
 			const deps: EffectTransportDeps = {
 				postChatAlert: failingChatPost,
+				linear: unusedLinear,
 				sendEmail: (to, subject, html) =>
 					Effect.sync(() => {
 						sent.push({ to, subject, html })
@@ -403,14 +480,14 @@ describe("dispatchDelivery", () => {
 			const result = yield* dispatchDelivery(emailContext, "{}", failingFetch, 5_000, LINK, CHAT, deps)
 
 			assert.deepStrictEqual(
-				sent.map((s) => s.to),
+				Arr.map(sent, (s) => s.to),
 				["ops@acme.test", "oncall@acme.test"],
 			)
-			assert.include(sent[0]!.subject, "Test alert")
-			assert.include(sent[0]!.subject, "Test")
-			assert.include(sent[0]!.html, "Test alert")
-			assert.include(sent[0]!.html, LINK)
-			assert.include(sent[0]!.html, CHAT)
+			assert.include(sent[0].subject, "Test alert")
+			assert.include(sent[0].subject, "Test")
+			assert.include(sent[0].html, "Test alert")
+			assert.include(sent[0].html, LINK)
+			assert.notInclude(sent[0].html, CHAT)
 			assert.strictEqual(result.providerMessage, "Emailed 2 members")
 			assert.strictEqual(result.responseCode, null)
 		}),
@@ -420,6 +497,7 @@ describe("dispatchDelivery", () => {
 		Effect.gen(function* () {
 			const deps: EffectTransportDeps = {
 				postChatAlert: failingChatPost,
+				linear: unusedLinear,
 				sendEmail: () =>
 					Effect.fail(
 						new AlertDeliveryError({
@@ -444,6 +522,7 @@ describe("dispatchDelivery", () => {
 			const sent: string[] = []
 			const deps: EffectTransportDeps = {
 				postChatAlert: failingChatPost,
+				linear: unusedLinear,
 				sendEmail: (to) =>
 					to === "oncall@acme.test"
 						? Effect.fail(
@@ -470,6 +549,7 @@ describe("dispatchDelivery", () => {
 		Effect.gen(function* () {
 			const deps: EffectTransportDeps = {
 				postChatAlert: failingChatPost,
+				linear: unusedLinear,
 				sendEmail: () =>
 					Effect.fail(
 						new AlertDeliveryError({

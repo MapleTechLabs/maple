@@ -5,12 +5,12 @@
  */
 import { RegistryContext, scheduleTask, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Cause, Option } from "effect"
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
 
 export { RegistryContext, scheduleTask, useAtomRefresh, useAtomSet, useAtomValue }
-export * as Atom from "effect/unstable/reactivity/Atom"
-export * as AtomHttpApi from "effect/unstable/reactivity/AtomHttpApi"
-export * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry"
+export * as Atom from "effect/reactivity/Atom"
+export * as AtomHttpApi from "effect/reactivity/AtomHttpApi"
+export * as AtomRegistry from "effect/reactivity/AtomRegistry"
 
 class ResultBuilder<A, E, B> {
 	constructor(

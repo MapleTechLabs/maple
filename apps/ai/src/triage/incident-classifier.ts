@@ -1,5 +1,5 @@
 /**
- * The pre-LLM incident triage: one Jev decision, before an investigation is
+ * The pre-LLM incident triage: one Clef decision, before an investigation is
  * allowed to spend a model pass.
  *
  * This is deliberately NOT an agent turn. An investigation is one turn
@@ -14,8 +14,8 @@ import {
 	type IncidentTriagePriorDiagnosis,
 	type IssueSeverity,
 } from "@maple/domain/http"
-import { Effect } from "effect"
-import { Decision, DecisionModel } from "effect/unstable/ai"
+import { Effect, Option, Array as Arr, Record as Rec } from "effect"
+import { Decision, DecisionModel } from "effect/ai"
 
 /** The severity scale, ordered as `Decision.rate` needs it: least to most urgent. */
 const SEVERITY_SCALE = ["low", "medium", "high", "critical"] as const satisfies ReadonlyArray<IssueSeverity>
@@ -71,8 +71,8 @@ const priorMatchDecision = (priors: ReadonlyArray<IncidentTriagePriorDiagnosis>)
 					"Recent diagnoses for the same service are listed as options. Decide whether this incident is one of those causes firing again, judging by the exception, the message and the mechanism the diagnosis describes. A different exception from the same service, or the same exception with a different mechanism, is not a match.",
 				criteria: {
 					[NO_PRIOR]: "A cause none of the listed diagnoses describes, or too little to tell.",
-					...Object.fromEntries(
-						priors.map((prior, index) => [
+					...Rec.fromEntries(
+						Arr.map(priors, (prior, index) => [
 							priorLabel(index),
 							`${prior.exceptionType ?? "(no exception type)"}: ${prior.headline}`,
 						]),
@@ -104,7 +104,7 @@ const decide = <Decisions extends Record<string, Decision.Any>>(
  * The prior-diagnosis question is a second call, made alongside the first, so
  * offering priors never makes the answer slower.
  */
-export const classifyIncident = Effect.fn("classifyIncident")(function* (options: {
+export const classifyIncident = Effect.fn("IncidentClassifier.classifyIncident")(function* (options: {
 	readonly request: IncidentTriageRequest
 	readonly model: string
 }) {
@@ -132,16 +132,17 @@ export const classifyIncident = Effect.fn("classifyIncident")(function* (options
 	const matchedPrior =
 		prior === null
 			? undefined
-			: (() => {
-					const index = priors.findIndex((_, i) => priorLabel(i) === prior.label)
-					const matched = index === -1 ? undefined : priors[index]
-					return matched === undefined
-						? null
-						: new IncidentTriagePriorMatch({
+			: Option.match(
+					Arr.findFirst(priors, (_, i) => priorLabel(i) === prior.label),
+					{
+						onNone: () => null,
+						onSome: (matched) =>
+							new IncidentTriagePriorMatch({
 								investigationId: matched.investigationId,
 								probability: clamp(prior.probabilities[prior.label] ?? prior.confidence ?? 0),
-							})
-				})()
+							}),
+					},
+				)
 
 	return new IncidentTriageVerdict({
 		disposition: answers.disposition.label,

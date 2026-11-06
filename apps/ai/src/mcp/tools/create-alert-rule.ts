@@ -1,11 +1,14 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { CreateAlertRuleOutput } from "@maple/domain/mcp-outputs"
+import { MAX_RAW_SQL_ALERT_GROUPS } from "@maple/domain/raw-sql"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import {
+	ALERT_EVALUATION_INTERVALS,
 	AlertRuleUpsertRequest,
+	MAX_ALERT_WINDOW_MINUTES,
 	QueryBuilderQueryDraftSchema,
 	type AlertComparator,
 	type AlertSignalType,
@@ -16,9 +19,11 @@ import {
 	ALERT_SEVERITIES,
 	ALERT_SIGNAL_TYPES,
 	renderRuleWrite,
+	ruleConfigWarnings,
 	ruleWriteInputErrors,
 	toAlertRuleRow,
 } from "../lib/alert-rules"
+import { firstEvaluation } from "../lib/alert-rule-evaluation"
 import * as P from "../lib/params"
 
 const decodeAlertRuleRequest = Schema.decodeUnknownEffect(AlertRuleUpsertRequest)
@@ -59,10 +64,12 @@ const ALERT_TEMPLATES = {
 	throughput_drop: { signalType: "throughput", comparator: "lt", defaultThreshold: 100 },
 } satisfies Record<TemplateName, AlertTemplate>
 
-const Parameters = Schema.Struct({
+export const CreateAlertRuleParameters = Schema.Struct({
 	name: P.text("Rule name"),
-	destination_ids: P.list(
-		"Destination IDs to notify (use list_alert_destinations to find IDs). Pass an empty list for none.",
+	destination_ids: P.resourceIdList(
+		"alertDestination",
+		"Required, at least one: destination IDs to notify, from list_alert_destinations",
+		{ blankIsEmpty: true },
 	),
 	template: P.optionalOneOf(
 		TEMPLATE_NAMES,
@@ -75,7 +82,13 @@ const Parameters = Schema.Struct({
 	threshold: P.optionalNumber(
 		"The value compared against. Units: error_rate and apdex are 0-1 ratios, latency is milliseconds, throughput is requests per minute. Overrides the template's.",
 	),
-	window_minutes: P.optionalNumber("Evaluation window in minutes (default: 5)"),
+	window_minutes: P.optionalNumber(
+		`Evaluation window in minutes, at most ${MAX_ALERT_WINDOW_MINUTES} (default: 5)`,
+	),
+	evaluation_interval_minutes: P.optionalNullableNumberOneOf(
+		ALERT_EVALUATION_INTERVALS,
+		'Minutes between checks, at most window_minutes. A raw_query rule checked less often gets a longer query time limit: 5s under 5 min, 15s at 5, 25s at 10 or more. Omit (or pass "auto") to derive it: a fifth of the window, 1 to 5.',
+	),
 	services: P.optionalList("Service names to scope the alert to"),
 	environments: P.optionalList(
 		"Deployment environments to scope the alert to (e.g. 'production'). Omit for all environments. Ignored for builder_query / raw_query, which filter inside their own query.",
@@ -97,10 +110,15 @@ const Parameters = Schema.Struct({
 	group_by: P.optionalList(
 		"Evaluate one value per group. Built-in tokens: service.name, span.name, status.code, http.method, severity; attribute keys as attr.<key> (e.g. attr.http.route).",
 	),
-	minimum_sample_count: P.optionalNumber("Minimum sample count before evaluating (default: 0)"),
-	consecutive_breaches: P.optionalNumber("Consecutive breaches before alerting (default: 1)"),
-	consecutive_healthy: P.optionalNumber("Consecutive healthy evaluations before resolving (default: 1)"),
-	renotify_interval_minutes: P.optionalNumber("Re-notification interval in minutes (default: 60)"),
+	minimum_sample_count: P.optionalNumber(
+		"Skip evaluation below this many samples in the window (default: 0). For raw_query it sums the `samples` column; without one each returned row counts as 1, so it gates on buckets, not events.",
+	),
+	alert_on_no_data: P.optionalFlag(
+		"Count a window with no data as a breach, so a rule whose query stops matching opens an incident instead of going quiet (default false: such windows are skipped). Not supported with group_by.",
+	),
+	consecutive_breaches: P.optionalNumber("Consecutive breaches before alerting (default: 2)"),
+	consecutive_healthy: P.optionalNumber("Consecutive healthy evaluations before resolving (default: 2)"),
+	renotify_interval_minutes: P.optionalNumber("Re-notification interval in minutes (default: 30)"),
 	apdex_threshold_ms: P.optionalNumber(
 		"Response time counted as satisfactory, in ms. Required for signal_type=apdex.",
 	),
@@ -109,7 +127,7 @@ const Parameters = Schema.Struct({
 		"The query to evaluate, in the query-builder draft shape dashboard custom-query widgets use ({ id, name, dataSource, aggregation, whereClause, groupBy, ... }). Required for signal_type=builder_query.",
 	),
 	raw_query_sql: P.optionalText(
-		"ClickHouse SQL returning a numeric `value` column and optional `group` / `samples` columns. Must reference $__orgFilter and $__timeFilter(col); $__startTime, $__endTime and $__interval_s are also available. Required for signal_type=raw_query.",
+		`ClickHouse SQL returning a numeric \`value\` column and optional \`group\` / \`samples\` columns (\`samples\` is the event count behind each row; it feeds minimum_sample_count). A query returning no rows is a no-data check, not a healthy one. Must reference $__orgFilter and $__timeFilter(col); $__startTime, $__endTime and $__interval_s are also available. At most ${MAX_RAW_SQL_ALERT_GROUPS} distinct groups. Required for signal_type=raw_query.`,
 	),
 	raw_query_reducer: P.optionalOneOf(
 		ALERT_REDUCERS,
@@ -136,7 +154,9 @@ const invalid = (message: string, parameter: string, example?: string) =>
 	)
 
 /** The upsert request the params describe, before the domain schema checks it. */
-const buildAlertRuleRequest = Effect.fnUntraced(function* (params: typeof Parameters.Type) {
+export const buildAlertRuleRequest = Effect.fnUntraced(function* (
+	params: typeof CreateAlertRuleParameters.Type,
+) {
 	const template: AlertTemplate | undefined =
 		params.template === undefined || params.template === "custom"
 			? undefined
@@ -168,7 +188,7 @@ const buildAlertRuleRequest = Effect.fnUntraced(function* (params: typeof Parame
 	}
 
 	const apdexThresholdMs = params.apdex_threshold_ms ?? template?.apdexThresholdMs
-	if (signalType === "apdex" && !apdexThresholdMs) {
+	if (signalType === "apdex" && (apdexThresholdMs ?? 0) === 0) {
 		return yield* invalid(
 			"signal_type=apdex requires apdex_threshold_ms (milliseconds defining satisfactory response time).",
 			"apdex_threshold_ms",
@@ -189,13 +209,13 @@ const buildAlertRuleRequest = Effect.fnUntraced(function* (params: typeof Parame
 				"raw_query_sql",
 			)
 		}
-		if (!params.raw_query_sql.includes("$__orgFilter")) {
+		if (!Str.includes("$__orgFilter")(params.raw_query_sql)) {
 			return yield* invalid(
 				"raw_query_sql must reference $__orgFilter for org scoping",
 				"raw_query_sql",
 			)
 		}
-		if (!params.raw_query_sql.includes("$__timeFilter(")) {
+		if (!Str.includes("$__timeFilter(")(params.raw_query_sql)) {
 			return yield* invalid(
 				"raw_query_sql must reference $__timeFilter(...) to bound alert reads",
 				"raw_query_sql",
@@ -217,6 +237,9 @@ const buildAlertRuleRequest = Effect.fnUntraced(function* (params: typeof Parame
 		comparator,
 		threshold,
 		windowMinutes: params.window_minutes ?? 5,
+		...(params.evaluation_interval_minutes == null
+			? undefined
+			: { evaluationIntervalMinutes: params.evaluation_interval_minutes }),
 		destinationIds: params.destination_ids,
 		...(params.enabled === undefined ? undefined : { enabled: params.enabled }),
 		...(services === undefined ? undefined : { serviceNames: services }),
@@ -227,6 +250,7 @@ const buildAlertRuleRequest = Effect.fnUntraced(function* (params: typeof Parame
 		...(params.minimum_sample_count === undefined
 			? undefined
 			: { minimumSampleCount: params.minimum_sample_count }),
+		...(params.alert_on_no_data === undefined ? undefined : { alertOnNoData: params.alert_on_no_data }),
 		...(params.consecutive_breaches === undefined
 			? undefined
 			: { consecutiveBreachesRequired: params.consecutive_breaches }),
@@ -263,12 +287,13 @@ const buildAlertRuleRequest = Effect.fnUntraced(function* (params: typeof Parame
 export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 	server.define({
 		name: "create_alert_rule",
+		title: "Create Alert Rule",
 		// The template names live on the `template` parameter, with their thresholds;
 		// repeating them here cost tokens twice for one fact.
 		description:
 			"Create an alert rule. Pick a `template` for the common cases; otherwise pass signal_type, comparator and threshold yourself. " +
-			"Use list_alert_destinations for destination_ids.",
-		parameters: Parameters,
+			"destination_ids is required (at least one, from list_alert_destinations).",
+		parameters: CreateAlertRuleParameters,
 		aliases: { service_names: "services" },
 		output: CreateAlertRuleOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
@@ -294,8 +319,15 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 				}),
 			)
 
-			return { rule: toAlertRuleRow(rule) }
+			const evaluated = yield* firstEvaluation(decoded, rule.enabled)
+			const warnings = [...ruleConfigWarnings(rule), ...evaluated.warnings]
+			return {
+				rule: toAlertRuleRow(rule),
+				...(warnings.length > 0 ? { warnings } : undefined),
+				evaluation: evaluated.evaluation,
+			}
 		}),
-		render: (output) => renderRuleWrite("Alert Rule Created", output.rule),
+		render: (output) =>
+			renderRuleWrite("Alert Rule Created", output.rule, output.warnings, output.evaluation),
 	})
 }

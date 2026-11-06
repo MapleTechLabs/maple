@@ -72,8 +72,7 @@ export class WorkerUrlError extends Schema.TaggedError<WorkerUrlError>()("Portle
 }) {}
 
 export const workerPort = (url: string | undefined | Output.Output<string | undefined>) =>
-	// `Output.mapEffect` has no failure channel, and a served Worker without a
-	// local URL is a broken stack invariant, so both cases are defects.
+	// `Output.mapEffect` has no failure channel, and a missing URL is a stack invariant.
 	Output.mapEffect((value: string | undefined) => {
 		if (!value) {
 			// oxlint-disable-next-line maple/no-effect-die -- stack wiring invariant, see above
@@ -100,6 +99,7 @@ const offline = (props: RouteProps): RouteAttributes => {
 }
 
 /** Deploy-time provider: nothing to create. Routes are a dev-mode concern. */
+// @effect-diagnostics-next-line lazyEffect:off -- ProviderLayer.dual takes Layer factories
 export const RouteProviderLive = () =>
 	Provider.succeed(Route, {
 		diff: () => Effect.succeed({ action: "noop" as const }),
@@ -109,6 +109,7 @@ export const RouteProviderLive = () =>
 	})
 
 /** Dev-mode provider, in alchemy's sidecar so the route survives stack-file reloads. */
+// @effect-diagnostics-next-line lazyEffect:off -- ProviderLayer.dual takes Layer factories
 export const RouteProviderLocal = () =>
 	LocalProvider.make(
 		Route,
@@ -144,5 +145,6 @@ export const RouteProviderLocal = () =>
 	)
 
 /** Register both providers; merge into the stack's `providers` layer. */
+// @effect-diagnostics-next-line lazyEffect:off -- alchemy's provider convention, called as `providers()`
 export const providers = () =>
 	ProviderLayer.dual(Route, { live: RouteProviderLive, local: RouteProviderLocal })

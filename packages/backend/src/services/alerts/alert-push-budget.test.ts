@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/primitives"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { makeIncidentPushBudget, type IncidentPushClaim } from "./alert-push-budget"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_budget_test")
+const ORG = Schema.decodeSync(OrgId)("org_budget_test")
 
 const claim = (ruleId: string, kind: IncidentPushClaim["kind"] = "firing"): IncidentPushClaim => ({
 	orgId: ORG,
@@ -68,7 +68,7 @@ describe("makeIncidentPushBudget", () => {
 			const allowed = yield* Effect.forEach(rules, (rule) =>
 				Effect.forEach([1, 2, 3], () => budget.claim(claim(rule))),
 			)
-			expect(allowed.flat().filter(Boolean)).toHaveLength(25)
+			expect(Arr.filter(allowed.flat(), Boolean)).toHaveLength(25)
 		}),
 	)
 })

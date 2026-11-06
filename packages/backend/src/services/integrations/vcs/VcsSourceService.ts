@@ -12,19 +12,20 @@ import {
 	type PullRequestSummary,
 	type VcsInstallation,
 	type VcsRepo,
+	type VcsRepositoryRef,
 } from "@maple/domain/http"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Cache, Context, Duration, Effect, Exit, Layer, Option, Schema } from "effect"
 import { VcsProviderRegistry } from "./VcsProviderRegistry"
 import { VcsRepository } from "./VcsRepository"
 import type { VcsCodeSearchMatch, VcsSourceFile } from "./VcsProviderClient"
 
 export class VcsSourceRepositoryNotFoundError extends Schema.TaggedError<VcsSourceRepositoryNotFoundError>()(
-	"@maple/api/vcs/VcsSourceRepositoryNotFoundError",
+	"@maple/backend/vcs/VcsSourceRepositoryNotFoundError",
 	{ repository: Schema.String, message: Schema.String },
 ) {}
 
 export class VcsSourceFileNotFoundError extends Schema.TaggedError<VcsSourceFileNotFoundError>()(
-	"@maple/api/vcs/VcsSourceFileNotFoundError",
+	"@maple/backend/vcs/VcsSourceFileNotFoundError",
 	{ repository: Schema.String, path: Schema.String, ref: Schema.String, message: Schema.String },
 ) {}
 
@@ -44,7 +45,7 @@ type VcsRepositoryScopedError =
 type VcsSourceError = VcsRepositoryScopedError | VcsSourceFileNotFoundError
 
 export class VcsSourceRefNotFoundError extends Schema.TaggedError<VcsSourceRefNotFoundError>()(
-	"@maple/api/vcs/VcsSourceRefNotFoundError",
+	"@maple/backend/vcs/VcsSourceRefNotFoundError",
 	{ repository: Schema.String, ref: Schema.String, message: Schema.String },
 ) {}
 
@@ -62,6 +63,12 @@ export interface RepositoryCheckout {
 
 const isCommitSha = Schema.is(GitCommitSha)
 
+/**
+ * A clone token lives an hour and is reused for half that, so a run of sandbox commands does not
+ * mint one each. Repository access is still checked on every call; only the mint is shared.
+ */
+export const CLONE_CREDENTIALS_REUSE = Duration.minutes(30)
+
 export interface ConnectedSourceRepository {
 	readonly provider: VcsRepo["provider"]
 	readonly fullName: string
@@ -70,6 +77,9 @@ export interface ConnectedSourceRepository {
 	readonly htmlUrl: string
 	readonly isPrivate: boolean
 	readonly isArchived: boolean
+	/** `error` when Maple's last sync of it failed: the App may have lost access to it. */
+	readonly syncStatus: string
+	readonly lastSyncError: string | null
 }
 
 export interface VcsSourceServiceApi {
@@ -122,6 +132,11 @@ export interface VcsSourceServiceApi {
 		path: string,
 		ref?: string,
 	) => Effect.Effect<VcsSourceFile & { readonly ref: string }, VcsSourceError>
+	/** The connected repository's size in bytes as its provider reports it, before any clone. */
+	readonly repositorySizeBytes: (
+		orgId: OrgId,
+		repository: string,
+	) => Effect.Effect<number, VcsRepositoryScopedError>
 	/** Resolve `ref` (default: the tracked branch) to a commit and a pre-signed archive URL for it. */
 	readonly resolveCheckout: (
 		orgId: OrgId,
@@ -147,7 +162,7 @@ const asUpstream = <A, E extends { readonly message: string; readonly status?: n
 	)
 
 export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourceServiceApi>()(
-	"@maple/api/services/vcs/VcsSourceService",
+	"@maple/backend/services/vcs/VcsSourceService",
 	{
 		make: Effect.gen(function* () {
 			const repoStore = yield* VcsRepository
@@ -179,6 +194,23 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 				).pipe(Effect.map((groups) => groups.flat()))
 			})
 
+			const cloneCredentials = yield* Cache.makeWith(
+				(key: {
+					readonly provider: VcsRepo["provider"]
+					readonly installation: VcsInstallation
+					readonly repository: VcsRepositoryRef
+				}) =>
+					asUpstream(providers.resolve(key.provider)).pipe(
+						Effect.flatMap((provider) =>
+							asUpstream(provider.fetchCloneCredentials(key.installation, key.repository)),
+						),
+					),
+				{
+					capacity: 256,
+					timeToLive: (exit) => (Exit.isSuccess(exit) ? CLONE_CREDENTIALS_REUSE : Duration.zero),
+				},
+			)
+
 			const resolveRepository = Effect.fn("VcsSourceService.resolveRepository")(function* (
 				orgId: OrgId,
 				fullName: string,
@@ -199,7 +231,8 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 
 			const listRepositories = Effect.fn("VcsSourceService.listRepositories")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				const entries = yield* repositoriesFor(yield* activeInstallations(orgId))
+				const installations = yield* activeInstallations(orgId)
+				const entries = yield* repositoriesFor(installations)
 				return entries
 					.map(({ repository }) => ({
 						provider: repository.provider,
@@ -209,6 +242,8 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 						htmlUrl: repository.htmlUrl,
 						isPrivate: repository.isPrivate,
 						isArchived: repository.isArchived,
+						syncStatus: repository.syncStatus,
+						lastSyncError: repository.lastSyncError,
 					}))
 					.sort((a, b) => a.fullName.localeCompare(b.fullName))
 			})
@@ -425,7 +460,11 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 							`A service version string is not a git ref.`,
 					})
 				}
-				const credentials = yield* asUpstream(provider.fetchCloneCredentials(installation, repoRef))
+				const credentials = yield* Cache.get(cloneCredentials, {
+					provider: repository.provider,
+					installation,
+					repository: repoRef,
+				})
 				yield* Effect.annotateCurrentSpan({ "vcs.ref.head.revision": resolved.value })
 				return {
 					provider: repository.provider,
@@ -436,7 +475,23 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 				}
 			})
 
+			const repositorySizeBytes: VcsSourceServiceApi["repositorySizeBytes"] = Effect.fn(
+				"VcsSourceService.repositorySizeBytes",
+			)(function* (orgId, repositoryName) {
+				const { installation, repository } = yield* resolveRepository(orgId, repositoryName)
+				yield* Effect.annotateCurrentSpan({ orgId, "vcs.repository.full_name": repository.fullName })
+				const provider = yield* asUpstream(providers.resolve(repository.provider))
+				return yield* asUpstream(
+					provider.repositorySizeBytes(installation, {
+						externalRepoId: repository.externalRepoId,
+						owner: repository.owner,
+						name: repository.name,
+					}),
+				)
+			})
+
 			return {
+				repositorySizeBytes,
 				listRepositories,
 				listPullRequests,
 				fetchPullRequest,

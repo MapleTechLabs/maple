@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import * as schema from "@maple/db"
-import { getColumns, is, Table } from "drizzle-orm"
+import * as tables from "@maple/db/tables"
 import { ORG_DELETE_REGISTRY } from "./OrganizationService"
+import { Array as Arr, Record as Rec, Option } from "effect"
 
 /**
  * The fix that stays fixed: org deletion missed four credential tables because
@@ -13,27 +13,30 @@ import { ORG_DELETE_REGISTRY } from "./OrganizationService"
 
 const ORG_COLUMN_NAMES = new Set(["org_id", "approved_org_id"])
 
+const isTable = (value: unknown): value is (typeof tables.allTables)[number] =>
+	Arr.some(tables.allTables, (table) => table === value)
+
+const exportedTables = () =>
+	Arr.flatMap(Rec.toEntries(tables), ([exportName, value]) =>
+		isTable(value) ? [[exportName, value] as const] : [],
+	)
+
 const orgScopedTables = () => {
 	const found = new Map<string, string>()
-	for (const [exportName, value] of Object.entries(schema)) {
-		if (!is(value, Table)) continue
-		const columns = getColumns(value)
-		for (const column of Object.values(columns)) {
-			if (ORG_COLUMN_NAMES.has(column.name)) {
-				found.set(exportName, column.name)
-				break
-			}
-		}
+	for (const [exportName, table] of exportedTables()) {
+		const column = Option.getOrUndefined(
+			Arr.findFirst(table.ddl.columns, (item) => ORG_COLUMN_NAMES.has(item.name)),
+		)
+		if (column !== undefined) found.set(exportName, column.name)
 	}
 	return found
 }
 
-const registeredNames = (tables: ReadonlyArray<unknown>) => {
-	const byTable = new Map<unknown, string>()
-	for (const [exportName, value] of Object.entries(schema)) {
-		if (is(value, Table)) byTable.set(value, exportName)
-	}
-	return tables.map((table) => byTable.get(table) ?? "<unexported table>")
+const registeredNames = (registered: ReadonlyArray<unknown>) => {
+	const byTable = new Map<unknown, string>(
+		Arr.map(exportedTables(), ([exportName, table]) => [table, exportName]),
+	)
+	return Arr.map(registered, (table) => byTable.get(table) ?? "<unexported table>")
 }
 
 describe("org-scoped table registry", () => {
@@ -43,7 +46,7 @@ describe("org-scoped table registry", () => {
 			...registeredNames(ORG_DELETE_REGISTRY.approvedOrgScoped),
 			...ORG_DELETE_REGISTRY.unpurged,
 		])
-		const unclassified = [...orgScopedTables().keys()].filter((name) => !classified.has(name)).sort()
+		const unclassified = Arr.filter([...orgScopedTables().keys()], (name) => !classified.has(name)).sort()
 		expect(
 			unclassified,
 			"Every org-scoped table must be registered in OrganizationService: add it to ORG_SCOPED_TABLES (purged by org_id), APPROVED_ORG_SCOPED_TABLES (purged by approved_org_id), or UNPURGED_ORG_SCOPED_TABLES (deliberately kept).",
@@ -52,13 +55,14 @@ describe("org-scoped table registry", () => {
 
 	it("registers nothing that no longer carries an org column", () => {
 		const scoped = orgScopedTables()
-		const stale = [
-			...registeredNames(ORG_DELETE_REGISTRY.orgScoped),
-			...registeredNames(ORG_DELETE_REGISTRY.approvedOrgScoped),
-			...ORG_DELETE_REGISTRY.unpurged,
-		]
-			.filter((name) => !scoped.has(name))
-			.sort()
+		const stale = Arr.filter(
+			[
+				...registeredNames(ORG_DELETE_REGISTRY.orgScoped),
+				...registeredNames(ORG_DELETE_REGISTRY.approvedOrgScoped),
+				...ORG_DELETE_REGISTRY.unpurged,
+			],
+			(name) => !scoped.has(name),
+		).sort()
 		expect(stale).toEqual([])
 	})
 
@@ -78,16 +82,16 @@ describe("org-scoped table registry", () => {
 			...registeredNames(ORG_DELETE_REGISTRY.approvedOrgScoped),
 		])
 		for (const name of [
-			"apiKeys",
-			"mcpOAuthRefreshTokens",
-			"mcpOAuthAuthorizations",
-			"cliDeviceAuthorizations",
-			"mobileDevices",
+			"ApiKeys",
+			"McpOAuthRefreshTokens",
+			"McpOAuthAuthorizations",
+			"CliDeviceAuthorizations",
+			"MobileDevices",
 			// Public bearer token, encrypted inbound-webhook HMAC secret, and live
 			// APNs push tokens respectively — all resolvable after the org is gone.
-			"dashboardShares",
-			"planetscaleConnections",
-			"liveActivities",
+			"DashboardShares",
+			"PlanetscaleConnections",
+			"LiveActivities",
 		]) {
 			expect(purged.has(name), `${name} must be purged on org deletion`).toBe(true)
 		}

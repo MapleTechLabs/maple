@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
-import * as Cloudflare from "alchemy/Cloudflare"
-import { Cause, Effect, Exit, Schema } from "effect"
+import * as Cloudflare from "@alchemy.run/cloudflare"
+import { Cause, Effect, Exit, Schema, Array as Arr, Option } from "effect"
 import { durableStep } from "./durable-step"
 
 /** What alchemy's step service records for each `do`, standing in for Cloudflare's step transaction. */
@@ -68,7 +68,7 @@ describe("durableStep", () => {
 		}),
 	)
 
-	it.effect("a failing Effect rejects the step, so Cloudflare retries it", () =>
+	it.effect("a typed failure rejects the step in the error channel, so Cloudflare retries it", () =>
 		Effect.gen(function* () {
 			const failure = new StepFailure({ message: "ClickHouse 500" })
 			const exit = yield* durableStep("m1:create", Effect.fail(failure)).pipe(
@@ -77,9 +77,38 @@ describe("durableStep", () => {
 			)
 			assert.isTrue(Exit.isFailure(exit))
 			if (Exit.isFailure(exit)) {
-				assert.isDefined(exit.cause.reasons.find(Cause.isDieReason))
+				assert.isDefined(Option.getOrUndefined(Arr.findFirst(exit.cause.reasons, Cause.isFailReason)))
 				assert.strictEqual(Cause.squash(exit.cause), failure)
 			}
+		}),
+	)
+
+	it.effect("ends the run as an interrupt when the step's Durable Object is reset, so it replays", () =>
+		Effect.gen(function* () {
+			const lost = new Error(
+				"Connection closed: this Durable Object instance is no longer active. Reconnect or retry the request.",
+			)
+			const exit = yield* durableStep("agent:a1", Effect.void).pipe(
+				Effect.provideService(Cloudflare.WorkflowStep, {
+					...recordingStep([]),
+					do: () => Effect.die(lost),
+				}),
+				Effect.exit,
+			)
+			assert.isTrue(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause))
+		}),
+	)
+
+	it.effect("keeps any other step defect a defect", () =>
+		Effect.gen(function* () {
+			const exit = yield* durableStep("agent:a1", Effect.void).pipe(
+				Effect.provideService(Cloudflare.WorkflowStep, {
+					...recordingStep([]),
+					do: () => Effect.die(new Error("step timed out after 30 seconds")),
+				}),
+				Effect.exit,
+			)
+			assert.isTrue(Exit.isFailure(exit) && Cause.hasDies(exit.cause))
 		}),
 	)
 })

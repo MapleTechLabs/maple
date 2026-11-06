@@ -1,13 +1,15 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
 import { trace } from "@opentelemetry/api"
-import type { ReadableSpan } from "@opentelemetry/sdk-trace-base"
+import type { ReadableSpan } from "@opentelemetry/sdk-trace"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 const exported: ReadableSpan[] = []
-vi.mock("@opentelemetry/exporter-trace-otlp-http", () => ({
-	OTLPTraceExporter: class {
+vi.mock("./otlp", async (original) => ({
+	...(await original<typeof import("./otlp")>()),
+	OtlpExporter: class {
+		constructor(private readonly url: string) {}
 		export(spans: ReadableSpan[], callback: (result: { code: number }) => void): void {
-			exported.push(...spans)
+			if (this.url.endsWith("/v1/traces")) exported.push(...spans)
 			callback({ code: 0 })
 		}
 		forceFlush(): Promise<void> {
@@ -35,15 +37,31 @@ const CONFIG = {
 	tracingCaptureErrors: false,
 	replayEnabled: false,
 	replaySampleRate: 0,
+	replayOnErrorSampleRate: 0,
+	canvasFps: undefined,
+	networkBodies: undefined,
+	captureHeaders: { request: [], response: [] },
+	longFrames: false,
+	slowInteractions: false,
 	maskAllInputs: true,
 	maskAllText: false,
 	persistVisitorId: true,
+	persistence: "browser" as const,
 	crossSubdomainCookie: true,
 	cookieDomain: undefined,
 	requireConsent: false,
 	captureUserEmail: true,
 	respectDoNotTrack: false,
 	propagateTraceHeaderCorsUrls: [],
+	tracingSampleRate: 1,
+	tracingInstrumentXhr: false,
+	errorFilters: {},
+	webVitals: false,
+	breadcrumbs: false,
+	captureConsole: [],
+	reportCsp: false,
+	reportBrowser: false,
+	offlineQueue: false,
 	sanitizeUrl: undefined,
 }
 

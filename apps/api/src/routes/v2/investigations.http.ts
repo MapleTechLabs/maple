@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import type { InvestigationDocument, InvestigationSubject } from "@maple/domain/http"
 import {
 	AlertIncidentId,
@@ -13,14 +13,20 @@ import {
 	InvestigationSubjectSnapshot,
 	TraceId,
 } from "@maple/domain/http"
-import { MapleApiV2, paginateOffsetQuery } from "@maple/domain/http/v2"
+import {
+	INVESTIGATION_READ_FAMILIES,
+	MapleApiV2,
+	missingReadScopes,
+	paginateOffsetQuery,
+	V2InsufficientScope,
+} from "@maple/domain/http/v2"
 import type {
 	V2Investigation,
 	V2InvestigationCreateParams,
 	V2InvestigationCreateSubject,
 	V2InvestigationSubject,
 } from "@maple/domain/http/v2"
-import { Effect, Match, Schema } from "effect"
+import { Effect, Match, Schema, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 
@@ -70,32 +76,38 @@ const toWireSubject = Effect.fn("HttpV2Investigations.toWireSubject")(function* 
 	return yield* Match.value(subject.incidentKind).pipe(
 		Match.when("error", () =>
 			Schema.decodeEffect(ErrorIncidentId)(subject.incidentId).pipe(
-				Effect.mapError(decodeFailure),
-				Effect.map((incidentId) => ({
-					...shared,
-					incident_kind: "error" as const,
-					incident_id: incidentId,
-				})),
+				Effect.mapBoth({
+					onFailure: decodeFailure,
+					onSuccess: (incidentId) => ({
+						...shared,
+						incident_kind: "error" as const,
+						incident_id: incidentId,
+					}),
+				}),
 			),
 		),
 		Match.when("anomaly", () =>
 			Schema.decodeEffect(AnomalyIncidentId)(subject.incidentId).pipe(
-				Effect.mapError(decodeFailure),
-				Effect.map((incidentId) => ({
-					...shared,
-					incident_kind: "anomaly" as const,
-					incident_id: incidentId,
-				})),
+				Effect.mapBoth({
+					onFailure: decodeFailure,
+					onSuccess: (incidentId) => ({
+						...shared,
+						incident_kind: "anomaly" as const,
+						incident_id: incidentId,
+					}),
+				}),
 			),
 		),
 		Match.when("alert", () =>
 			Schema.decodeEffect(AlertIncidentId)(subject.incidentId).pipe(
-				Effect.mapError(decodeFailure),
-				Effect.map((incidentId) => ({
-					...shared,
-					incident_kind: "alert" as const,
-					incident_id: incidentId,
-				})),
+				Effect.mapBoth({
+					onFailure: decodeFailure,
+					onSuccess: (incidentId) => ({
+						...shared,
+						incident_kind: "alert" as const,
+						incident_id: incidentId,
+					}),
+				}),
 			),
 		),
 		Match.exhaustive,
@@ -123,7 +135,7 @@ const toInternalSnapshot = (snapshot: V2InvestigationCreateParams["snapshot"] | 
 const toV2Investigation = Effect.fn("HttpV2Investigations.toV2Investigation")(function* (
 	doc: InvestigationDocument,
 ): Effect.fn.Return<V2Investigation, InvestigationDataCorruptionError> {
-	yield* Effect.annotateCurrentSpan("investigationId", doc.id)
+	yield* Effect.annotateCurrentSpan("maple.investigation.id", doc.id)
 	const decodeReportTraceId = (traceId: string) =>
 		Schema.decodeEffect(TraceId)(traceId).pipe(
 			Effect.mapError(
@@ -185,6 +197,21 @@ const logSubjectDecodeError = (error: InvestigationDataCorruptionError) =>
 const serializeInvestigation = (doc: InvestigationDocument) =>
 	toV2Investigation(doc).pipe(Effect.tapError(logSubjectDecodeError))
 
+/** A run reads the whole org as an internal service, so a scoped key must already read it all. */
+const requireInvestigationScopes = (scopes: ReadonlyArray<string> | undefined) => {
+	const missing = missingReadScopes(scopes, INVESTIGATION_READ_FAMILIES)
+	return missing.length === 0
+		? Effect.void
+		: Effect.fail(
+				V2InsufficientScope.make(
+					`Running an investigation requires read access to everything its agent reads. Missing scopes: ${Arr.join(
+						Arr.map(missing, (family) => `"${family}:read"`),
+						", ",
+					)}.`,
+				),
+			)
+}
+
 export const HttpV2InvestigationsLive = HttpApiBuilder.group(MapleApiV2, "investigations", (handlers) =>
 	Effect.gen(function* () {
 		const service = yield* InvestigationService
@@ -229,6 +256,7 @@ export const HttpV2InvestigationsLive = HttpApiBuilder.group(MapleApiV2, "invest
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
+					yield* requireInvestigationScopes(tenant.scopes)
 					const doc = yield* service.createAndStartInvestigation(
 						tenant.orgId,
 						tenant.userId,
@@ -252,6 +280,7 @@ export const HttpV2InvestigationsLive = HttpApiBuilder.group(MapleApiV2, "invest
 			.handle("restart", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
+					yield* requireInvestigationScopes(tenant.scopes)
 					const doc = yield* service.restartInvestigation(tenant.orgId, params.id)
 					yield* recordHttpAudit("investigation.restarted", { resourceId: doc.id })
 

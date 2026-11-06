@@ -1,0 +1,110 @@
+import type { ErrorIssueSampleTrace } from "@maple/domain/http"
+import { cn } from "@maple/ui/lib/utils"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { AppRoute, hrefOf } from "../../../route"
+import { empty, emptyDescription, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
+import {
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+	truncatedTableCell,
+} from "@maple/views/ui/table"
+import { truncatedId } from "@maple/views/ui/truncated-id"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { serviceDot } from "@maple/views/ui/values"
+import { relativeTime } from "../../kit/relative-time"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
+
+// The issue occurrences table.
+
+export type OccurrencesTableInputs = Readonly<{ nowMs: number; timeZone: string }>
+
+const TRACE_PILL = cn(
+	"inline-flex items-center gap-1 rounded-full border border-border-subtle bg-surface-sunken px-2 py-0.5",
+	typographyClass({ size: "2xs", tone: "muted", mono: true, numeric: true }),
+	"hover:border-primary-a4 active:border-primary-a4 hover:bg-primary-a2 active:bg-primary-a2 hover:text-primary active:text-primary",
+)
+
+const occurrenceRow = <M>(
+	h: HtmlBuilder<M>,
+	trace: ErrorIssueSampleTrace,
+	inputs: OccurrencesTableInputs,
+): Html =>
+	tableRow(
+		h,
+		[
+			tableCell(
+				h,
+				[
+					relativeTime(h, {
+						value: trace.timestamp,
+						nowMs: inputs.nowMs,
+						timeZone: inputs.timeZone,
+						tooltip: "title",
+					}),
+				],
+				typographyClass({ tone: "muted", numeric: true }),
+			),
+			tableCell(h, [
+				hstack(h, { gap: "1.5", inline: true, as: "span" }, [
+					serviceDot(h, { serviceName: trace.serviceName, size: "sm" }),
+					h.span([], [trace.serviceName]),
+				]),
+			]),
+			truncatedTableCell(h, [
+				truncatedText(h, { text: trace.exceptionMessage }, [
+					Arr.headNonEmpty(Str.split("\n")(trace.exceptionMessage)),
+				]),
+			]),
+			tableCell(h, [
+				h.a(
+					[
+						h.Href(
+							hrefOf(
+								AppRoute.Trace({ traceId: trace.traceId, search: { t: trace.timestamp } }),
+							),
+						),
+						h.Class(TRACE_PILL),
+					],
+					[truncatedId(h, { value: trace.traceId, length: 12, ellipsis: true })],
+				),
+			]),
+		],
+		undefined,
+		[h.Key(`${trace.traceId}-${trace.spanId}`)],
+	)
+
+/** The sampled traces of an issue, newest first as the server sends them, each linking its trace. */
+export const occurrencesTable = <M>(
+	h: HtmlBuilder<M>,
+	traces: ReadonlyArray<ErrorIssueSampleTrace>,
+	inputs: OccurrencesTableInputs,
+): Html =>
+	traces.length === 0
+		? empty(h, [
+				emptyHeader(h, [
+					emptyTitle(h, ["No samples in this window"]),
+					emptyDescription(h, [
+						"This fingerprint was not seen in this window. Widen the time range to find traces to open.",
+					]),
+				]),
+			])
+		: table(h, {}, [
+				tableHeader(h, [
+					tableRow(h, [
+						tableHead(h, ["Time"]),
+						tableHead(h, ["Service"]),
+						tableHead(h, ["Message"]),
+						tableHead(h, ["Trace"]),
+					]),
+				]),
+				tableBody(
+					h,
+					Arr.map(traces, (trace) => occurrenceRow(h, trace, inputs)),
+				),
+			])

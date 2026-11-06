@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { DeploymentEnvironment, MetricName, OrgId } from "@maple/domain"
-import { Effect } from "effect"
+import { Effect, String as Str } from "effect"
 import { compiledQueryOf } from "../execution/compiled-input"
 import type { MetricsTimeseriesQuery } from "@maple/domain/query-engine"
 import {
@@ -45,13 +45,10 @@ describe("metric alert evaluation", () => {
 				[
 					{
 						bucket: "2026-04-01 00:00:00",
-						serviceName: "",
-						attributeValue: "",
-						avgValue: 3,
-						minValue: 1,
-						maxValue: 5,
-						sumValue: 12,
+						groupName: "",
+						value: 12,
 						dataPointCount: 4,
+						seriesCount: 2,
 					},
 				],
 				(compiledSql, compiledContext) => {
@@ -77,7 +74,7 @@ describe("metric alert evaluation", () => {
 			assert.include(sql, "OrgId = 'org_metrics_alert_test'")
 			assert.include(
 				sql,
-				"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) IN ('production')",
+				"coalesce(nullIf(metrics_sum.ResourceAttributes['deployment.environment.name'], ''), metrics_sum.ResourceAttributes['deployment.environment']) IN ('production')",
 			)
 			assert.strictEqual(context, "metricsAlertEval")
 			assert.deepStrictEqual(result, [
@@ -97,19 +94,20 @@ describe("metric alert evaluation", () => {
 	] as const) {
 		it.effect(`evaluates ${metric} rows with metric data-point sample counts`, () =>
 			Effect.gen(function* () {
+				let sql = ""
 				let context: string | undefined
 				const warehouse = makeWarehouse(
 					[
 						{
 							bucket: "2026-04-01 00:00:00",
-							serviceName: "api",
-							attributeValue: "",
-							rateValue: 2.5,
-							increaseValue: 10,
+							groupName: "",
+							value: expectedValue,
 							dataPointCount: 4,
+							seriesCount: 1,
 						},
 					],
-					(_sql, compiledContext) => {
+					(compiledSql, compiledContext) => {
+						sql = compiledSql
 						context = compiledContext
 					},
 				)
@@ -126,6 +124,8 @@ describe("metric alert evaluation", () => {
 				)
 
 				assert.strictEqual(context, "metricsRateIncreaseAlertEval")
+				// Only a rate divides the increase by the covered seconds.
+				assert.strictEqual(Str.includes("sum(per_series.increase) / min(")(sql), metric === "rate")
 				assert.strictEqual(result[0]?.value, expectedValue)
 				assert.strictEqual(result[0]?.sampleCount, 4)
 			}),

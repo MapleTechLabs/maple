@@ -2,6 +2,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { verificationVerdictAutoCloses } from "@maple/domain/http"
 
 import { splitVersionRows, verdictFromInvestigationStatus } from "./FixVerificationTickService"
+import { Array as Arr } from "effect"
 
 /**
  * The verdict mapping is deliberately inverted relative to an incident
@@ -46,7 +47,8 @@ describe("verdictFromInvestigationStatus", () => {
 		// auto-closes at all), so the set of statuses producing it is the blast
 		// radius of this mapping. Pinned as a set: widening it is how a failed fix
 		// gets closed automatically.
-		const verifying = ["diagnosed", "inconclusive", "failed", "investigating", "cancelled"].filter(
+		const verifying = Arr.filter(
+			["diagnosed", "inconclusive", "failed", "investigating", "cancelled"],
 			(status) => verdictFromInvestigationStatus(status).verdict === "verified",
 		)
 		assert.deepStrictEqual(verifying, ["inconclusive"])

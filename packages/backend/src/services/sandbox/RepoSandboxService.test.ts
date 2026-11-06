@@ -1,14 +1,20 @@
 import { assert, describe, it } from "@effect/vitest"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { OrgId } from "@maple/domain/http"
-import { Sandbox, SandboxExited, SandboxOutput, SandboxStarted } from "effect-agent/sandbox"
-import { Duration, Effect, Layer, Schema, Stream } from "effect"
+import {
+	Sandbox,
+	SandboxExited,
+	SandboxOutput,
+	SandboxStarted,
+	SandboxResourceUse,
+} from "@maple/backend/sandbox/contract"
+import { Duration, Effect, Layer, Schema, Stream, String as Str } from "effect"
 import { gitPathspec, RepoSandboxService } from "./RepoSandboxService"
 import { IMPLEMENTATION } from "./CloudflareRepoSandbox"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_git_test")
+const ORG = Schema.decodeSync(OrgId)("org_git_test")
 
 /** A file outside the checkout that no tool may ever return. */
 const SENTINEL = `${mkdtempSync(`${tmpdir()}/maple-outside-`)}/secret.txt`
@@ -34,6 +40,8 @@ const makeRepo = () => {
 	writeFileSync(`${dir}/src/spaced.ts`, "const before = 1\n\n\nconst after = 2\n")
 	writeFileSync(`${dir}/other.txt`, "card declined outside src\n")
 	writeFileSync(`${dir}/README.md`, "# shop\n")
+	// git prints this name quoted in its index listing.
+	writeFileSync(`${dir}/src/a"b.ts`, "export const quoted = 1\n")
 	// A committed symlink out of the checkout: tracked, so `--error-unmatch` alone
 	// would let `awk` follow it.
 	symlinkSync(SENTINEL, `${dir}/escape.txt`)
@@ -52,7 +60,7 @@ const localSandbox = (repo: string, seen: string[][] = []): Layer.Layer<Sandbox>
 			Stream.unwrap(
 				Effect.sync(() => {
 					seen.push([request.command, ...request.args])
-					const cwd = request.cwd === "/workspace" ? repo : `${repo}/${request.cwd.slice(11)}`
+					const cwd = request.cwd === "/workspace" ? repo : `${repo}/${Str.slice(11)(request.cwd)}`
 					let stdout = ""
 					let exitCode = 0
 					try {
@@ -76,6 +84,7 @@ const localSandbox = (repo: string, seen: string[][] = []): Layer.Layer<Sandbox>
 										stream: "stdout" as const,
 										text: stdout,
 										bytes: Buffer.byteLength(stdout),
+										truncated: false,
 									}),
 								]
 							: []),
@@ -83,11 +92,11 @@ const localSandbox = (repo: string, seen: string[][] = []): Layer.Layer<Sandbox>
 							eventVersion: 1,
 							implementation: IMPLEMENTATION,
 							exitCode,
-							resourceUse: {
+							resourceUse: new SandboxResourceUse({
 								wallTime: Duration.millis(1),
 								stdoutBytes: Buffer.byteLength(stdout),
 								stderrBytes: 0,
-							} as ConstructorParameters<typeof SandboxExited>[0]["resourceUse"],
+							}),
 							artifacts: [],
 						}),
 					])
@@ -242,7 +251,57 @@ describe("the git commands the tools build, against a real repository", () => {
 				{ path: "escape.txt", startLine: 1, endLine: 10 },
 			)
 			assert.notStrictEqual(result.exitCode, 0)
-			assert.notInclude(result.stdout, SENTINEL_BODY.trim())
+			assert.notInclude(result.stdout, Str.trim(SENTINEL_BODY))
+		}).pipe(Effect.provide(overRepo())),
+	)
+
+	it.effect("reads a file with one sandbox command, never running the path as shell", () => {
+		const seen: string[][] = []
+		const repo = makeRepo()
+		return Effect.gen(function* () {
+			const service = yield* RepoSandboxService
+			const result = yield* service.readFile(
+				ORG,
+				{ repository: "octo/shop" },
+				{ path: "src/checkout.ts", startLine: 1, endLine: 1 },
+			)
+			assert.strictEqual(result.exitCode, 0, result.stderr)
+			assert.include(result.stdout, "1: export const checkout = 1")
+			assert.strictEqual(seen.length, 1)
+			const hostile = yield* service.readFile(
+				ORG,
+				{ repository: "octo/shop" },
+				{ path: "src/$(touch pwned).ts", startLine: 1, endLine: 1 },
+			)
+			assert.strictEqual(hostile.exitCode, 1)
+			assert.isFalse(existsSync(`${repo}/pwned`))
+		}).pipe(Effect.provide(RepoSandboxService.layer.pipe(Layer.provide(localSandbox(repo, seen)))))
+	})
+
+	it.effect("refuses a directory, which matches many index entries, instead of reading one", () =>
+		Effect.gen(function* () {
+			const service = yield* RepoSandboxService
+			const result = yield* service.readFile(
+				ORG,
+				{ repository: "octo/shop" },
+				{ path: "src", startLine: 1, endLine: 10 },
+			)
+			assert.strictEqual(result.exitCode, 1)
+			assert.notInclude(result.stdout, "export const checkout")
+		}).pipe(Effect.provide(overRepo())),
+	)
+
+	it.effect("reads a file whose name git quotes, and refuses a directory holding one file", () =>
+		Effect.gen(function* () {
+			const service = yield* RepoSandboxService
+			const read = (path: string) =>
+				service.readFile(ORG, { repository: "octo/shop" }, { path, startLine: 1, endLine: 10 })
+			const quoted = yield* read('src/a"b.ts')
+			assert.strictEqual(quoted.exitCode, 0, quoted.stderr)
+			assert.include(quoted.stdout, "1: export const quoted = 1")
+			const single = yield* read("src/deep")
+			assert.strictEqual(single.exitCode, 1)
+			assert.notInclude(single.stdout, "card declined")
 		}).pipe(Effect.provide(overRepo())),
 	)
 
@@ -253,12 +312,82 @@ describe("the git commands the tools build, against a real repository", () => {
 				const failure = yield* service
 					.listFiles(ORG, { repository: "octo/shop" }, { path })
 					.pipe(Effect.flip)
-				assert.strictEqual(failure._tag, "SandboxUnsupportedRequestError")
+				assert.strictEqual(failure._tag, "@maple/backend/sandbox/SandboxUnsupportedRequestError")
 			}
 			const cwdFailure = yield* service
 				.exec(ORG, { repository: "octo/shop" }, { command: "true", args: [], cwd: "/etc" })
 				.pipe(Effect.flip)
-			assert.strictEqual(cwdFailure._tag, "SandboxUnsupportedRequestError")
+			assert.strictEqual(cwdFailure._tag, "@maple/backend/sandbox/SandboxUnsupportedRequestError")
 		}).pipe(Effect.provide(overRepo())),
+	)
+})
+
+/** A sandbox answering every command with one stdout fragment. */
+const answering = (output: { readonly text: string; readonly bytes: number; readonly truncated: boolean }) =>
+	Layer.succeed(Sandbox, {
+		execute: (request) =>
+			Stream.fromIterable([
+				new SandboxStarted({
+					eventVersion: 1,
+					implementation: IMPLEMENTATION,
+					runtime: request.runtime,
+				}),
+				new SandboxOutput({
+					eventVersion: 1,
+					implementation: IMPLEMENTATION,
+					stream: "stdout",
+					...output,
+				}),
+				new SandboxExited({
+					eventVersion: 1,
+					implementation: IMPLEMENTATION,
+					exitCode: 0,
+					resourceUse: new SandboxResourceUse({
+						wallTime: Duration.millis(1),
+						stdoutBytes: output.bytes,
+						stderrBytes: 0,
+					}),
+					artifacts: [],
+				}),
+			]),
+	})
+
+describe("output the sandbox cut", () => {
+	const exec = Effect.gen(function* () {
+		const service = yield* RepoSandboxService
+		return yield* service.exec(
+			ORG,
+			{ repository: "octo/shop", ref: "main" },
+			{ command: "cat", args: ["a.bin"] },
+		)
+	})
+
+	it.effect("is reported cut when the sandbox says so, though its lossy text re-encodes larger", () =>
+		Effect.gen(function* () {
+			// 100 invalid bytes kept of 200 decode to 100 U+FFFD, which re-encode to 300 bytes.
+			const result = yield* exec.pipe(
+				Effect.provide(
+					RepoSandboxService.layer.pipe(
+						Layer.provide(
+							answering({ text: Str.repeat(100)("\uFFFD"), bytes: 200, truncated: true }),
+						),
+					),
+				),
+			)
+			assert.isTrue(result.truncated)
+		}),
+	)
+
+	it.effect("is reported whole when the sandbox kept every byte", () =>
+		Effect.gen(function* () {
+			const result = yield* exec.pipe(
+				Effect.provide(
+					RepoSandboxService.layer.pipe(
+						Layer.provide(answering({ text: "abc", bytes: 3, truncated: false })),
+					),
+				),
+			)
+			assert.isFalse(result.truncated)
+		}),
 	)
 })

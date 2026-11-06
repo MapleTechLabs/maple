@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { afterEach, expect, vi } from "vitest"
 import { make } from "./flushable.js"
 
@@ -30,10 +30,10 @@ describe("MapleFlush.make (server) — resource resolution failure", () => {
 
 		const calls: Array<string> = []
 		const originalFetch = globalThis.fetch
-		globalThis.fetch = (async (input: RequestInfo | URL) => {
+		globalThis.fetch = async (input: RequestInfo | URL) => {
 			calls.push(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
 			return new Response(null, { status: 200 })
-		}) as typeof fetch
+		}
 
 		try {
 			const telemetry = make({
@@ -44,7 +44,7 @@ describe("MapleFlush.make (server) — resource resolution failure", () => {
 			})
 
 			await Effect.runPromise(
-				Effect.succeed(undefined).pipe(Effect.withSpan("op-1"), Effect.provide(telemetry.layer)),
+				Effect.undefined.pipe(Effect.withSpan("op-1"), Effect.provide(telemetry.layer)),
 			)
 
 			// The contract is "never rejects" — an unhandled rejection here is the bug.
@@ -56,7 +56,7 @@ describe("MapleFlush.make (server) — resource resolution failure", () => {
 			// next flush resolves the resource and exports the retained span.
 			expect(uuidSpy).toHaveBeenCalledTimes(1)
 			await telemetry.flush()
-			expect(calls.some((url) => url.endsWith("/v1/traces"))).toBe(true)
+			expect(Arr.some(calls, (url) => Str.endsWith("/v1/traces")(url))).toBe(true)
 		} finally {
 			globalThis.fetch = originalFetch
 		}

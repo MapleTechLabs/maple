@@ -5,12 +5,12 @@
 # Pipeline:
 #   1. Build the workspace packages consumed through gitignored `dist/` paths.
 #   2. Build the lightweight SPA (`apps/local-ui` → its `dist/`).
-#   3. Inline that dist into apps/cli/src/server/ui-embed.gen.ts so
+#   3. Inline that dist into packages/local-server/src/ui-embed.gen.ts so
 #      `bun build --compile` bakes the SPA into the binary.
 #   4. Compile apps/cli (the CLI + the OTLP-ingest/query server) into a single
 #      executable with `bun build --compile`. The schema artifacts and SPA are
 #      embedded; the OTLP encoders run in-process; chDB is reached via bun:ffi.
-#   5. Download libchdb (v26.1.0, matching what we test against) for the host
+#   5. Download libchdb (pinned in packages/local-server/libchdb.json) for the host
 #      platform and place it beside the binary. At runtime `maple` dlopens the
 #      sibling libchdb (resolved relative to its own path) — no rpath tricks.
 #   6. Restore the committed ui-embed.gen.ts stub so the tree stays clean.
@@ -21,16 +21,35 @@
 # Usage:
 #   scripts/build-local-binary.sh                 # release build into ./dist
 #   OUT_DIR=/tmp/maple scripts/build-local-binary.sh
+#   MAPLE_TARGET=linux-arm64 scripts/build-local-binary.sh   # cross-compile (e.g. a container image from macOS)
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${OUT_DIR:-$REPO_ROOT/dist}"
-LIBCHDB_VERSION="${LIBCHDB_VERSION:-v26.1.0}"
-UI_EMBED="$REPO_ROOT/apps/cli/src/server/ui-embed.gen.ts"
+# The chDB release this build pairs with, and each platform asset's sha256. The
+# @maple-dev/alchemy sidecar builds and downloads from the same manifest.
+LIBCHDB_MANIFEST="$REPO_ROOT/packages/local-server/libchdb.json"
+LIBCHDB_VERSION="${LIBCHDB_VERSION:-$(bun -p "require(process.argv[1]).version" "$LIBCHDB_MANIFEST")}"
+UI_EMBED="$REPO_ROOT/packages/local-server/src/ui-embed.gen.ts"
 
 # Version baked into the binary via `bun build --define`. The release workflow
 # passes the tag; a local build defaults to `git describe` (or "dev").
 MAPLE_BUILD_VERSION="${MAPLE_BUILD_VERSION:-$(git -C "$REPO_ROOT" describe --tags --always 2>/dev/null || echo dev)}"
+
+# Target platform: the host by default, or MAPLE_TARGET for a cross-compiled bundle.
+# Only a cross-compile passes --target, so native builds compile exactly as before.
+COMPILE_TARGET=()
+if [ -n "${MAPLE_TARGET:-}" ]; then
+	COMPILE_TARGET=(--target "bun-$MAPLE_TARGET")
+else
+	case "$(uname -s)-$(uname -m)" in
+		Linux-x86_64)  MAPLE_TARGET="linux-x64" ;;
+		Linux-aarch64) MAPLE_TARGET="linux-arm64" ;;
+		Darwin-x86_64) MAPLE_TARGET="darwin-x64" ;;
+		Darwin-arm64)  MAPLE_TARGET="darwin-arm64" ;;
+		*) echo "ERROR: unsupported platform $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+	esac
+fi
 
 mkdir -p "$OUT_DIR"
 
@@ -52,27 +71,28 @@ echo "==> Compiling maple binary (bun build --compile) — version $MAPLE_BUILD_
 ( cd "$REPO_ROOT" && bun build apps/cli/src/bin.ts --compile \
 	--define "__MAPLE_VERSION__=\"$MAPLE_BUILD_VERSION\"" \
 	--define "__CHDB_VERSION__=\"$LIBCHDB_VERSION\"" \
+	${COMPILE_TARGET[@]+"${COMPILE_TARGET[@]}"} \
 	--outfile "$OUT_DIR/maple" )
 
-echo "==> Downloading libchdb $LIBCHDB_VERSION for this platform"
-case "$(uname -s)-$(uname -m)" in
-	Linux-x86_64)        ASSET="linux-x86_64-libchdb.tar.gz" ;;
-	Linux-aarch64)       ASSET="linux-aarch64-libchdb.tar.gz" ;;
-	Darwin-x86_64)       ASSET="macos-x86_64-libchdb.tar.gz" ;;
-	Darwin-arm64)        ASSET="macos-arm64-libchdb.tar.gz" ;;
-	*) echo "ERROR: unsupported platform $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+echo "==> Downloading libchdb $LIBCHDB_VERSION for $MAPLE_TARGET"
+case "$MAPLE_TARGET" in
+	linux-x64)    ASSET="linux-x86_64-libchdb.tar.gz" ;;
+	linux-arm64)  ASSET="linux-aarch64-libchdb.tar.gz" ;;
+	darwin-x64)   ASSET="macos-x86_64-libchdb.tar.gz" ;;
+	darwin-arm64) ASSET="macos-arm64-libchdb.tar.gz" ;;
+	*) echo "ERROR: unsupported MAPLE_TARGET $MAPLE_TARGET" >&2; exit 1 ;;
 esac
-# Expected sha256 per platform asset, pinned to LIBCHDB_VERSION: release assets
-# are mutable even for a fixed tag, so this is verified before extraction.
-# Bumping LIBCHDB_VERSION means re-hashing each asset here. A `case` rather than
-# an associative array because macOS still ships bash 3.2.
-case "$ASSET" in
-	linux-x86_64-libchdb.tar.gz)  EXPECTED_SHA256="3f192cb85cbdb6153622db8ad6f6a25d7163bbda57f283e5ba8fd22cadd0da81" ;;
-	linux-aarch64-libchdb.tar.gz) EXPECTED_SHA256="08ee80488822dfa04776841bb5a4b7ddce35e161ef579b5615b80a88b177428d" ;;
-	macos-x86_64-libchdb.tar.gz)  EXPECTED_SHA256="425db8a197288e1826b60958b3e233d0a7a5b4b46b8065c8bb7489366dbaf47f" ;;
-	macos-arm64-libchdb.tar.gz)   EXPECTED_SHA256="78cfd42203cd33cb0304952f4a6c39921fd9a583c614c2eef96ef6060e9677eb" ;;
-	*) echo "ERROR: no pinned sha256 for $ASSET (LIBCHDB_VERSION=$LIBCHDB_VERSION)" >&2; exit 1 ;;
-esac
+# Expected sha256 per platform asset comes from the manifest: release assets are
+# mutable even for a fixed tag, so this is verified before extraction. Bumping
+# the release means updating its version and every asset hash there.
+# v26.1.0's macos-arm64 dylib put its LINKEDIT string pool at a non-8-byte-aligned
+# offset, which newer dyld rejects ("mis-aligned LINKEDIT string pool"). Check
+# `otool -l libchdb.so` (LC_SYMTAB stroff % 8 == 0) before pinning a new release.
+EXPECTED_SHA256="$(bun -p 'const m = require(process.argv[1]); m.version === process.argv[2] ? (m.sha256[process.argv[3]] ?? "") : ""' "$LIBCHDB_MANIFEST" "$LIBCHDB_VERSION" "$ASSET")"
+if [ -z "$EXPECTED_SHA256" ]; then
+	echo "ERROR: no pinned sha256 for $ASSET at LIBCHDB_VERSION=$LIBCHDB_VERSION (see $LIBCHDB_MANIFEST)" >&2
+	exit 1
+fi
 
 URL="https://github.com/chdb-io/chdb-core/releases/download/$LIBCHDB_VERSION/$ASSET"
 TMP="$(mktemp -d)"

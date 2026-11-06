@@ -40,7 +40,7 @@ export const ErrorIssueRow = Schema.Struct({
 	lastResolvedAt: Schema.NullOr(Schema.String),
 })
 
-/** The `compact: true` row: identity, state and volume; no assignment, lease or notes. */
+/** The compact row (the default): identity, state and volume; no assignment, lease or notes. */
 export const ErrorIssueCompactRow = Schema.Struct({
 	id: Schema.String,
 	kind: Schema.String,
@@ -60,28 +60,56 @@ export const ErrorIssueCompactRow = Schema.Struct({
 export const ListErrorIssuesOutput = Schema.Struct({
 	compact: Schema.Boolean,
 	issues: Schema.Union([Schema.Array(ErrorIssueRow), Schema.Array(ErrorIssueCompactRow)]),
+	/** Issues on this page. */
 	total: Schema.Number,
+	/** Issues matching the filters across every page. */
+	totalMatching: Schema.optionalKey(Schema.Number),
+	/** Pass back as `cursor` for the next page; absent on the last page. */
+	nextCursor: Schema.optionalKey(Schema.String),
 	/** The filters that applied. */
 	filters: Schema.Struct({
 		workflowState: Schema.optionalKey(Schema.String),
 		severity: Schema.optionalKey(Schema.String),
 		kind: Schema.optionalKey(Schema.String),
 		service: Schema.optionalKey(Schema.String),
+		exceptionType: Schema.optionalKey(Schema.String),
+		search: Schema.optionalKey(Schema.String),
 		lastSeenAfter: Schema.optionalKey(Schema.String),
 		includeArchived: Schema.Boolean,
 		limit: Schema.Number,
 	}),
+	/** On an empty result: filter values that do not exist in the window, with close matches. */
+	emptyHints: Schema.optionalKey(Schema.Array(Schema.String)),
 })
 
 export const TransitionErrorIssueOutput = Schema.Struct({
 	id: Schema.String,
 	workflowState: Schema.String,
+	/** The state before this call; equal to `toState` when the issue was already there. */
+	fromState: Schema.String,
 	toState: Schema.String,
 	assignedActorId: Schema.NullOr(Schema.String),
 	leaseHolderActorId: Schema.NullOr(Schema.String),
 	snoozeUntil: Schema.NullOr(Schema.String),
 	serviceName: Schema.String,
 	exceptionType: Schema.String,
+	note: Schema.optionalKey(Schema.String),
+})
+
+/** One issue's outcome in a multi-issue call: `ok` with the move made, or the refusal. */
+export const IssueBatchResult = Schema.Struct({
+	id: Schema.String,
+	ok: Schema.Boolean,
+	fromState: Schema.optionalKey(Schema.String),
+	workflowState: Schema.optionalKey(Schema.String),
+	error: Schema.optionalKey(Schema.String),
+})
+
+export const TransitionErrorIssuesOutput = Schema.Struct({
+	toState: Schema.String,
+	succeeded: Schema.Number,
+	failed: Schema.Number,
+	results: Schema.Array(IssueBatchResult),
 	note: Schema.optionalKey(Schema.String),
 })
 
@@ -94,6 +122,17 @@ export const SetIssueSeverityOutput = Schema.Struct({
 	workflowState: Schema.String,
 	serviceName: Schema.String,
 	note: Schema.optionalKey(Schema.String),
+})
+
+export const MergeErrorIssuesOutput = Schema.Struct({
+	/** The issue that was kept. */
+	id: Schema.String,
+	mergedIssueIds: Schema.Array(Schema.String),
+	/** Every fingerprint the kept issue now owns, its own first. */
+	fingerprintHashes: Schema.Array(Schema.String),
+	occurrenceCount: Schema.Number,
+	workflowState: Schema.String,
+	serviceName: Schema.String,
 })
 
 export const ClaimErrorIssueOutput = Schema.Struct({
@@ -125,6 +164,8 @@ export const ProposeFixOutput = Schema.Struct({
 	issueId: Schema.String,
 	workflowState: Schema.String,
 	prUrl: Schema.NullOr(Schema.String),
+	/** Per-issue outcomes for `also_issue_ids`, the other issues the same fix covers. */
+	also: Schema.optionalKey(Schema.Array(IssueBatchResult)),
 })
 
 export const LinkPullRequestOutput = Schema.Struct({
@@ -182,12 +223,34 @@ export const ListErrorIncidentsOutput = Schema.Struct({
 	issueId: Schema.optionalKey(Schema.String),
 })
 
-export const UpdateErrorNotificationPolicyOutput = Schema.Struct({
+/** A destination the policy delivers to; `name`/`type` are null when it no longer exists. */
+export const ErrorNotificationPolicyDestination = Schema.Struct({
+	id: Schema.String,
+	/** The same destination's id in the REST API (`dest_…`). */
+	publicId: Schema.String,
+	name: Schema.NullOr(Schema.String),
+	type: Schema.NullOr(Schema.String),
+	enabled: Schema.Boolean,
+})
+
+export const ErrorNotificationPolicyOutput = Schema.Struct({
 	enabled: Schema.Boolean,
 	destinationIds: Schema.Array(Schema.String),
+	/** Set when the destination names could not be read; ids are still exact. */
+	destinationNamesUnavailable: Schema.optionalKey(Schema.Boolean),
+	destinations: Schema.Array(ErrorNotificationPolicyDestination),
 	notifyOnFirstSeen: Schema.Boolean,
 	notifyOnRegression: Schema.Boolean,
 	notifyOnResolve: Schema.Boolean,
 	minOccurrenceCount: Schema.Number,
+	/** Occurrences a first-seen incident must open with to notify: at least 3, since issues open at 3. */
+	firstNotificationThreshold: Schema.Number,
 	severity: Schema.String,
+	updatedAt: Schema.String,
+	/** `system` while the org still runs on the defaults. */
+	updatedBy: Schema.String,
 })
+
+export const GetErrorNotificationPolicyOutput = ErrorNotificationPolicyOutput
+
+export const UpdateErrorNotificationPolicyOutput = ErrorNotificationPolicyOutput

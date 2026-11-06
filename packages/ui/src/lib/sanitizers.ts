@@ -5,7 +5,7 @@
  * fall back, etc.) rather than ever rendering an unvetted string.
  */
 
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 const decodeUrl = Schema.decodeUnknownOption(Schema.URLFromString)
 
@@ -28,6 +28,7 @@ export const sanitizeCssIdentifier = (key: string): string => {
 	}
 	// Fallback for environments without CSS.escape: hex-encode anything
 	// that isn't [a-zA-Z0-9_-].
+	// oxlint-disable-next-line effecttsgo/prefer-effect-string -- function replacer; Str.replace only takes a string
 	return key.replace(/[^a-zA-Z0-9_-]/g, (ch) => `\\${ch.charCodeAt(0).toString(16)} `)
 }
 
@@ -37,7 +38,7 @@ export const sanitizeCssIdentifier = (key: string): string => {
  */
 export const validateCssColor = (value: string | undefined | null): string | null => {
 	if (typeof value !== "string") return null
-	const trimmed = value.trim()
+	const trimmed = Str.trim(value)
 	if (trimmed.length === 0) return null
 	if (/[<>;{}]/.test(trimmed)) return null
 	return CSS_COLOR_RE.test(trimmed) ? trimmed : null
@@ -50,10 +51,10 @@ export const validateCssColor = (value: string | undefined | null): string | nul
  */
 export const validateUrlScheme = (raw: string | undefined | null): string | null => {
 	if (typeof raw !== "string") return null
-	const trimmed = raw.trim()
+	const trimmed = Str.trim(raw)
 	if (trimmed.length === 0) return null
-	if (trimmed.startsWith("//")) return null
-	if (trimmed.startsWith("/") && !trimmed.startsWith("//")) return trimmed
+	if (Str.startsWith("//")(trimmed)) return null
+	if (Str.startsWith("/")(trimmed) && !Str.startsWith("//")(trimmed)) return trimmed
 	return Option.getOrNull(
 		Option.filter(decodeUrl(trimmed), (parsed) => ALLOWED_HREF_SCHEMES.has(parsed.protocol)).pipe(
 			Option.map(() => trimmed),
@@ -69,26 +70,44 @@ export const validateUrlScheme = (raw: string | undefined | null): string | null
  * in JS but unescaped in JSON, so they must also be encoded.
  */
 export const escapeJsonInHtml = (json: string): string =>
-	json
-		.replace(/</g, "\\u003c")
-		.replace(/>/g, "\\u003e")
-		.replace(/&/g, "\\u0026")
-		.split(LINE_SEPARATOR)
-		.join("\\u2028")
-		.split(PARAGRAPH_SEPARATOR)
-		.join("\\u2029")
+	Arr.join(
+		Str.split(PARAGRAPH_SEPARATOR)(
+			Arr.join(
+				Str.split(LINE_SEPARATOR)(
+					Str.replace(
+						/&/g,
+						"\\u0026",
+					)(Str.replace(/>/g, "\\u003e")(Str.replace(/</g, "\\u003c")(json))),
+				),
+				"\\u2028",
+			),
+		),
+		"\\u2029",
+	)
+
+const REDIRECT_PROBE_ORIGIN = "https://x.invalid"
+
+// Browsers strip tabs and newlines from URLs and read `\\` as `/`, so either can turn a path into a host.
+const isUnsafeRedirectChar = (char: string): boolean =>
+	char === "\\" || Option.exists(Str.charCodeAt(0)(char), (code) => code <= 0x1f || code === 0x7f)
+// The same characters percent-encoded, plus an encoded slash right after the leading one.
+const UNSAFE_REDIRECT_ESCAPES = /%(?:[01][0-9a-f]|7f|5c)|^\/%2f/i
 
 /**
  * Validate a post-login `redirect_url` query value. Allows same-origin
  * relative paths (single leading `/`, no `//`). Returns null for absolute
- * URLs, scheme tricks, or empty input — caller should fall back to `/`.
+ * URLs, scheme tricks, control characters or backslashes (raw or
+ * percent-encoded), or empty input. Caller should fall back to `/`.
  */
 export const validateInternalRedirect = (raw: string | undefined | null): string | null => {
 	if (typeof raw !== "string") return null
-	const trimmed = raw.trim()
+	const trimmed = Str.trim(raw)
 	if (trimmed.length === 0) return null
-	if (!trimmed.startsWith("/")) return null
-	if (trimmed.startsWith("//")) return null
-	if (trimmed.startsWith("/\\")) return null
+	if (!Str.startsWith("/")(trimmed)) return null
+	if (Str.startsWith("//")(trimmed)) return null
+	if (Arr.some(Arr.fromIterable(trimmed), isUnsafeRedirectChar) || UNSAFE_REDIRECT_ESCAPES.test(trimmed))
+		return null
+	if (!URL.canParse(trimmed, REDIRECT_PROBE_ORIGIN)) return null
+	if (new URL(trimmed, REDIRECT_PROBE_ORIGIN).origin !== REDIRECT_PROBE_ORIGIN) return null
 	return trimmed
 }

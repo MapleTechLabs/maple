@@ -1,16 +1,16 @@
-import { Context, Effect, Exit, Metric, Scope } from "effect"
+import { Context, Effect, Exit, Metric, Scope, Array as Arr } from "effect"
 import type { ProjectorRegistry } from "@maple/eventing-core"
 import {
 	LocalEventingControlStore,
 	openControlStore,
 	type LocalEventingControlLimits,
 	type LocalEventingControlStoreApi,
-} from "../src/server/eventing/control-store"
+} from "@maple/local-server/eventing/control-store"
 import {
 	LocalEventingProjectors,
 	LocalEventingRuntime,
 	type LocalEventingRuntimeApi,
-} from "../src/server/eventing/runtime"
+} from "@maple/local-server/eventing/runtime"
 
 /** Runs a synchronous store or runtime step, throwing its typed failure like the old API did. */
 export const run = <A, E>(effect: Effect.Effect<A, E>): A => Effect.runSync(effect)
@@ -26,7 +26,7 @@ export const openStore = async (
 	dataDir: string,
 	limits?: LocalEventingControlLimits,
 ): Promise<OpenedStore> => {
-	const scope = Effect.runSync(Scope.make())
+	const scope = Scope.makeUnsafe()
 	const store = await Effect.runPromise(
 		openControlStore(dataDir, limits).pipe(
 			Scope.provide(scope),
@@ -57,7 +57,7 @@ export const metricRecorder = () => {
 			Effect.provideService(effect, Metric.MetricRegistry, registry),
 		/** `operation:outcome` pairs of every eventing counter with a non-zero count. */
 		operationOutcomes: (): string[] =>
-			Metric.snapshotUnsafe(context).flatMap((snapshot) =>
+			Arr.flatMap(Metric.snapshotUnsafe(context), (snapshot) =>
 				snapshot.id === "maple.eventing.operations_total" &&
 				snapshot.type === "Counter" &&
 				Number(snapshot.state.count) > 0
@@ -65,9 +65,35 @@ export const metricRecorder = () => {
 					: [],
 			),
 		attributes: (): string =>
-			JSON.stringify(Metric.snapshotUnsafe(context).map(({ attributes }) => attributes)),
+			JSON.stringify(Arr.map(Metric.snapshotUnsafe(context), ({ attributes }) => attributes)),
 	}
 }
+
+const unexpected = (method: string) => Effect.die(new Error(`unexpected eventing call: ${method}`))
+
+/** A runtime whose methods die unless overridden, for handler tests that touch one or two. */
+export const stubEventing = (overrides: Partial<LocalEventingRuntimeApi>): LocalEventingRuntimeApi => ({
+	hasActiveSource: () => unexpected("hasActiveSource"),
+	prepareActivation: () => unexpected("prepareActivation"),
+	commitActivation: () => unexpected("commitActivation"),
+	activate: () => unexpected("activate"),
+	listActive: unexpected("listActive"),
+	evaluateOtlp: () => unexpected("evaluateOtlp"),
+	persistFailures: () => unexpected("persistFailures"),
+	stage: () => unexpected("stage"),
+	markReady: () => unexpected("markReady"),
+	listReady: () => unexpected("listReady"),
+	listStaged: () => unexpected("listStaged"),
+	listConsumers: unexpected("listConsumers"),
+	registerConsumer: () => unexpected("registerConsumer"),
+	disableConsumer: () => unexpected("disableConsumer"),
+	claimReady: () => unexpected("claimReady"),
+	acknowledgeClaim: () => unexpected("acknowledgeClaim"),
+	acceptDeliveryGap: () => unexpected("acceptDeliveryGap"),
+	abandonEvents: () => unexpected("abandonEvents"),
+	health: unexpected("health"),
+	...overrides,
+})
 
 /** Runs a serve.ts request effect against a runtime (real or a partial stub). */
 export const serveWith = <A>(

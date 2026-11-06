@@ -1,5 +1,5 @@
-import { HttpServerRequest } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpServerRequest } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { CurrentTenant } from "@maple/domain/http"
 import type { V2ChatConnector, V2ChatWorkspace } from "@maple/domain/http/v2"
@@ -11,7 +11,7 @@ import {
 } from "@maple/domain/http/v2"
 import { Array as Arr, Effect } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { Env } from "@maple/backend/platform/Env"
 import type {
 	ChatConnectorStatus,
@@ -109,8 +109,8 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 				.handle("install", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles, () =>
-							V2InsufficientPermissions.make("Only org admins can link a chat workspace"),
+						yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+							V2InsufficientPermissions.make(denial.message),
 						)
 						const req = yield* HttpServerRequest.HttpServerRequest
 						const origin = resolveRequestOrigin(req)
@@ -118,14 +118,12 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 						// replayed in the token exchange, and the origin is read from a header
 						// a client can set — so an untrusted one would mint an authorize URL
 						// pointing at a host the caller controls.
-						if (!isTrustedCallbackOrigin(origin, env.MAPLE_APP_BASE_URL)) {
+						if (!isTrustedCallbackOrigin(origin, env)) {
 							yield* Effect.logError("Rejected chat install: untrusted callback origin", {
 								origin,
 							})
-							return yield* Effect.fail(
-								V2CallbackHostUnavailable.make(
-									"Chat installs are not available from this host",
-								),
+							return yield* V2CallbackHostUnavailable.make(
+								"Chat installs are not available from this host",
 							)
 						}
 						const result = yield* chat.beginInstall(
@@ -152,14 +150,12 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 						// Same reasoning as the install: the origin is read from a header a
 						// client can set, and it is persisted as the state's redirect URI and
 						// replayed in the token exchange.
-						if (!isTrustedCallbackOrigin(origin, env.MAPLE_APP_BASE_URL)) {
+						if (!isTrustedCallbackOrigin(origin, env)) {
 							yield* Effect.logError("Rejected chat account link: untrusted callback origin", {
 								origin,
 							})
-							return yield* Effect.fail(
-								V2CallbackHostUnavailable.make(
-									"Chat account links are not available from this host",
-								),
+							return yield* V2CallbackHostUnavailable.make(
+								"Chat account links are not available from this host",
 							)
 						}
 						const result = yield* chat.beginLink(
@@ -195,10 +191,8 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 				.handle("updateWorkspace", ({ params, payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles, () =>
-							V2InsufficientPermissions.make(
-								"Only org admins can change chat workspace settings",
-							),
+						yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+							V2InsufficientPermissions.make(denial.message),
 						)
 						const workspace = yield* chat.updateSettings(
 							tenant.orgId,
@@ -212,15 +206,13 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 						return toWorkspace(workspace)
 					}),
 				)
-				// Admin-gated like the other channel inventories: it reads a workspace's channel
-				// list off the platform, and only an admin can create a destination from it.
+				// Gated like the other channel inventories: it reads a workspace's channel
+				// list off the platform, and only an engineer or admin can create a destination from it.
 				.handle("destinations", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles, () =>
-							V2InsufficientPermissions.make(
-								"Only org admins can list a chat workspace's channels",
-							),
+						yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+							V2InsufficientPermissions.make(denial.message),
 						)
 						const destinations = yield* chat.listDestinations(tenant.orgId, params.id)
 						return {
@@ -236,8 +228,8 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 				.handle("deleteWorkspace", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles, () =>
-							V2InsufficientPermissions.make("Only org admins can unlink a chat workspace"),
+						yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+							V2InsufficientPermissions.make(denial.message),
 						)
 						yield* chat.uninstall(tenant.orgId, params.id)
 						yield* recordHttpAudit("chat_integration.uninstalled", { resourceId: params.id })

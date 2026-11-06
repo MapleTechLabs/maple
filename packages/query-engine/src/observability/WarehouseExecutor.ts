@@ -1,4 +1,5 @@
 import { Context, type Effect, type Option } from "effect"
+import type { OrgId } from "@maple/domain"
 import type { WarehouseError } from "@maple/domain/http/warehouse-errors"
 import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
 import type { CompiledQueryInput } from "../ch"
@@ -14,9 +15,9 @@ export type WarehouseExecutorError = WarehouseError
 
 export interface WarehouseExecutorApi {
 	/** The org ID for the current tenant — needed for raw SQL queries. */
-	readonly orgId: string
+	readonly orgId: OrgId
 
-	readonly query: <T = any>(
+	readonly query: <T = unknown>(
 		pipe: WarehouseQueryName,
 		params: Record<string, unknown>,
 		options?: SqlQueryOptions,

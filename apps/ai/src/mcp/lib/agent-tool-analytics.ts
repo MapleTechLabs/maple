@@ -3,7 +3,8 @@ import type { AgentToolSelection } from "@maple/domain/mcp-outputs"
 import { formatDurationFromMs, tableCell, truncate } from "./format"
 import { MCP_SEARCH_MAX_HOURS } from "./time"
 import * as P from "./params"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 
 // What `get_agent_tools_overview` and `get_agent_tool_error` share: the window,
 // the selection, and the primitives both render with: a p95 that reads as ms in
@@ -23,13 +24,12 @@ export const boundedText = (description: string, max: number) =>
 export const agentToolTextParam = (description: string) =>
 	boundedText(description, AI_TOOLS_SELECTION_MAX_CHARS)
 
-/** The scope both tool-analytics tools take: which calls, by model, service and environment. */
+/** The scope both tool-analytics tools take: which calls, by model and service. */
 export const agentToolScopeParams = {
 	model: agentToolTextParam(
 		"Only calls attributed to this model (exact name). A tool span inherits its parent LLM call's model, else its trace's",
 	),
 	service: agentToolTextParam("Only calls from this service (exact `service.name`)"),
-	environment: agentToolTextParam("Only calls from this deployment environment (e.g. production, staging)"),
 }
 
 /** The selection minus `tool`: the overview filters tools by name, the error detail names one exactly. */
@@ -50,7 +50,6 @@ export const agentToolSelection = (
 	...(tool === undefined ? undefined : { tool }),
 	...(params.model === undefined ? undefined : { model: params.model }),
 	...(params.service === undefined ? undefined : { service: params.service }),
-	...(params.environment === undefined ? undefined : { environment: params.environment }),
 	...(params.tool_contains === undefined ? undefined : { toolContains: params.tool_contains }),
 })
 
@@ -59,7 +58,6 @@ export const selectionRequest = (selection: typeof AgentToolSelection.Type) => (
 	tool: selection.tool,
 	model: selection.model,
 	service: selection.service,
-	env: selection.environment,
 	search: selection.toolContains,
 })
 
@@ -73,21 +71,22 @@ export const selectionArgs = (selection: typeof AgentToolSelection.Type) => ({
 export const scopeArgs = (selection: typeof AgentToolSelection.Type) => ({
 	model: selection.model,
 	service: selection.service,
-	environment: selection.environment,
 })
 
 /** One line describing what the numbers below it cover. Every value is the
  *  caller's own free text, so it is collapsed like any other rendered cell. */
 export const describeSelection = (selection: typeof AgentToolSelection.Type): string =>
-	[
-		`tool: ${selection.tool === undefined ? "all tools" : tableCell(selection.tool)}`,
-		...(selection.model === undefined ? [] : [`model: ${tableCell(selection.model)}`]),
-		...(selection.service === undefined ? [] : [`service: ${tableCell(selection.service)}`]),
-		...(selection.environment === undefined ? [] : [`environment: ${tableCell(selection.environment)}`]),
-		...(selection.toolContains === undefined
-			? []
-			: [`name contains: ${tableCell(selection.toolContains)}`]),
-	].join(" · ")
+	Arr.join(
+		[
+			`tool: ${selection.tool === undefined ? "all tools" : tableCell(selection.tool)}`,
+			...(selection.model === undefined ? [] : [`model: ${tableCell(selection.model)}`]),
+			...(selection.service === undefined ? [] : [`service: ${tableCell(selection.service)}`]),
+			...(selection.toolContains === undefined
+				? []
+				: [`name contains: ${tableCell(selection.toolContains)}`]),
+		],
+		" · ",
+	)
 
 /** A fingerprint reaches a UInt64 column comparison; anything else is a 400. */
 export const decodeFingerprint = Schema.decodeUnknownOption(AiToolErrorFingerprint)
@@ -105,7 +104,7 @@ export const cellOrDash = (value: string, max?: number): string =>
 
 /** `2026-09-12 10:11:12` from a warehouse literal or an ISO bucket; `—` for `''`. */
 export const formatSeen = (value: string): string =>
-	value === "" ? "—" : value.replace("T", " ").slice(0, 19)
+	value === "" ? "—" : Str.slice(0, 19)(Str.replace("T", " ")(value))
 
 /** A capped list states which of the two its count is: the group's total, or
  *  the page the read returned. The totals are the overview's group row. */
@@ -129,7 +128,7 @@ export const compactTrend = (
 	const spanned = Math.ceil((opts.endMs - gridStart) / width)
 	const buckets = Array.from<number>({ length: Math.min(spanned, TREND_BUCKETS) }).fill(0)
 	for (const point of points) {
-		const index = Math.floor((Date.parse(point.bucket) - gridStart) / width)
+		const index = Math.floor((parseWarehouseDateTime(point.bucket) - gridStart) / width)
 		if (index >= 0 && index < buckets.length) buckets[index] = point.calls
 	}
 	return buckets

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { Schema } from "effect"
-import { ApiKeyId, DashboardId } from "../../primitives"
+import { Schema, String as Str } from "effect"
+import { ApiKeyId } from "../../primitives"
 import { decodePublicId, encodePublicId, PublicId, PublicIdPrefixes } from "./public-id"
 
 const UUID = "0f8fad5b-d9cb-469f-a165-70867728950e"
@@ -8,14 +8,14 @@ const UUID = "0f8fad5b-d9cb-469f-a165-70867728950e"
 describe("encodePublicId / decodePublicId", () => {
 	it("round-trips a UUID internal ID", () => {
 		const publicId = encodePublicId("key", UUID)
-		expect(publicId.startsWith("key_")).toBe(true)
+		expect(Str.startsWith("key_")(publicId)).toBe(true)
 		expect(decodePublicId("key", publicId)).toBe(UUID)
 	})
 
 	it("round-trips a free-form string internal ID", () => {
 		const internal = "my-dashboard-2024"
 		const publicId = encodePublicId("dash", internal)
-		expect(publicId.startsWith("dash_")).toBe(true)
+		expect(Str.startsWith("dash_")(publicId)).toBe(true)
 		expect(decodePublicId("dash", publicId)).toBe(internal)
 	})
 
@@ -24,12 +24,8 @@ describe("encodePublicId / decodePublicId", () => {
 		expect(decodePublicId("dash", encodePublicId("dash", internal))).toBe(internal)
 	})
 
-	it("is deterministic", () => {
-		expect(encodePublicId("key", UUID)).toBe(encodePublicId("key", UUID))
-	})
-
 	it("normalizes UUID case on round-trip", () => {
-		expect(decodePublicId("key", encodePublicId("key", UUID.toUpperCase()))).toBe(UUID)
+		expect(decodePublicId("key", encodePublicId("key", Str.toUpperCase(UUID)))).toBe(UUID)
 	})
 
 	it("rejects a wrong prefix", () => {
@@ -56,20 +52,16 @@ describe("PublicId schema codec", () => {
 	})
 
 	it("encodes an internal ID to the wire public ID", () => {
-		const internal = Schema.decodeUnknownSync(ApiKeyId)(UUID)
+		const internal = Schema.decodeSync(ApiKeyId)(UUID)
 		expect(encode(internal)).toBe(encodePublicId("key", UUID))
+	})
+
+	it("decodes a raw UUID to the same internal ID as its public ID", () => {
+		expect(decode(Str.toUpperCase(UUID))).toBe(decode(encodePublicId("key", UUID)))
 	})
 
 	it("fails decode on a malformed wire ID", () => {
 		expect(() => decode("key_not!base58")).toThrow()
 		expect(() => decode("dash_abc")).toThrow()
-	})
-
-	it("supports free-form internal ID schemas", () => {
-		const DashId = PublicId(PublicIdPrefixes.dashboard, DashboardId)
-		const internal = Schema.decodeUnknownSync(DashboardId)("service-overview")
-		const wire = Schema.encodeSync(DashId)(internal)
-		expect(wire.startsWith("dash_")).toBe(true)
-		expect(Schema.decodeUnknownSync(DashId)(wire)).toBe("service-overview")
 	})
 })

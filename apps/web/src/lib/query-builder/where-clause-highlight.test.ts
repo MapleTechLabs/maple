@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest"
 
 import { tokenizeWhereClause } from "./where-clause-highlight"
+import { Array as Arr, Option } from "effect"
 
 describe("tokenizeWhereClause", () => {
 	it("round-trips the input text", () => {
 		const input = 'service.name = "checkout" AND attr.http.route != "/health"'
 		const tokens = tokenizeWhereClause(input)
-		expect(tokens.map((token) => token.text).join("")).toBe(input)
+		expect(
+			Arr.join(
+				Arr.map(tokens, (token) => token.text),
+				"",
+			),
+		).toBe(input)
 	})
 
 	it("classifies keys, operators, strings, and AND", () => {
@@ -30,30 +36,45 @@ describe("tokenizeWhereClause", () => {
 
 	it("treats word operators and negations as operators", () => {
 		const tokens = tokenizeWhereClause("span.name contains checkout AND attr.foo !exists")
-		expect(tokens.find((token) => token.text === "contains")?.type).toBe("operator")
-		expect(tokens.find((token) => token.text === "!exists")?.type).toBe("operator")
+		expect(Option.getOrUndefined(Arr.findFirst(tokens, (token) => token.text === "contains"))?.type).toBe(
+			"operator",
+		)
+		expect(Option.getOrUndefined(Arr.findFirst(tokens, (token) => token.text === "!exists"))?.type).toBe(
+			"operator",
+		)
 	})
 
 	it("highlights bare words after an operator as values, not keys", () => {
 		const tokens = tokenizeWhereClause("service.name = checkout")
-		expect(tokens.find((token) => token.text === "checkout")?.type).toBe("value")
+		expect(Option.getOrUndefined(Arr.findFirst(tokens, (token) => token.text === "checkout"))?.type).toBe(
+			"value",
+		)
 	})
 
 	it("does not treat dotted keys containing operator words as operators", () => {
 		const tokens = tokenizeWhereClause("attr.contains = true")
 		expect(tokens[0]).toEqual({ text: "attr.contains", type: "key" })
-		expect(tokens.find((token) => token.text === "true")?.type).toBe("boolean")
+		expect(Option.getOrUndefined(Arr.findFirst(tokens, (token) => token.text === "true"))?.type).toBe(
+			"boolean",
+		)
 	})
 
 	it("handles unterminated quotes without dropping text", () => {
 		const input = 'service.name = "check'
 		const tokens = tokenizeWhereClause(input)
-		expect(tokens.map((token) => token.text).join("")).toBe(input)
+		expect(
+			Arr.join(
+				Arr.map(tokens, (token) => token.text),
+				"",
+			),
+		).toBe(input)
 		expect(tokens[tokens.length - 1]).toEqual({ text: '"check', type: "string" })
 	})
 
 	it("is case-insensitive for AND", () => {
 		const tokens = tokenizeWhereClause("a = 1 and b = 2")
-		expect(tokens.find((token) => token.text === "and")?.type).toBe("keyword")
+		expect(Option.getOrUndefined(Arr.findFirst(tokens, (token) => token.text === "and"))?.type).toBe(
+			"keyword",
+		)
 	})
 })

@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { DateTime, Effect, Schema, Array as Arr } from "effect"
 import { GetSessionTracesOutput } from "@maple/domain/mcp-outputs"
 import { getSessionTraces } from "@maple/query-engine/observability"
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
@@ -11,6 +11,7 @@ import { doc } from "../lib/tool-doc"
 export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_session_traces",
+		title: "Get Session Traces",
 		description:
 			"The backend traces a browser session replay observed (session id from `search_sessions`; not an AI agent session), with the session's client, user and error summary. Use it to jump from a user's session to the requests behind it; `inspect_trace` opens one.",
 		parameters: Schema.Struct({
@@ -22,7 +23,11 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 		phrases: ["Loading session traces"],
 		handler: Effect.fn("McpTool.getSessionTraces")(function* ({ session_id, limit }) {
 			const tenant = yield* CurrentMcpTenant
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, sessionId: session_id, limit })
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				"maple.ai.session.id": session_id,
+				"maple.ai.limit": limit,
+			})
 
 			const { session, traces, totalTraceCount } = yield* withTenantExecutor(
 				getSessionTraces({ sessionId: session_id, limit }),
@@ -34,16 +39,16 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 					parameter: "session_id",
 				})
 			}
-			yield* Effect.annotateCurrentSpan("traceCount", traces.length)
+			yield* Effect.annotateCurrentSpan("result.traceCount", traces.length)
 
 			// ClickHouse serializes integer aggregates as JSON strings while Tinybird returns numbers
 			// (see the facets handler in session-replay.http.ts); coerce every numeric at the edge.
 			return {
 				session: {
 					sessionId: session.sessionId,
-					startTime: session.startTime,
-					endTime: session.endTime,
-					durationMs: session.durationMs != null ? Number(session.durationMs) : null,
+					startTime: DateTime.formatIso(session.startTime),
+					endTime: session.endTime === null ? null : DateTime.formatIso(session.endTime),
+					durationMs: session.durationMs != null ? session.durationMs : null,
 					status: session.status,
 					userId: session.userId,
 					urlInitial: truncate(session.urlInitial, 256),
@@ -52,36 +57,42 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 					deviceType: session.deviceType,
 					country: session.country,
 					serviceName: session.serviceName,
-					pageViews: Number(session.pageViews),
-					clickCount: Number(session.clickCount),
-					errorCount: Number(session.errorCount),
-					activeTimeMs: session.activeTimeMs != null ? Number(session.activeTimeMs) : null,
-					idleTimeMs: session.idleTimeMs != null ? Number(session.idleTimeMs) : null,
+					pageViews: session.pageViews,
+					clickCount: session.clickCount,
+					errorCount: session.errorCount,
+					activeTimeMs: session.activeTimeMs != null ? session.activeTimeMs : null,
+					idleTimeMs: session.idleTimeMs != null ? session.idleTimeMs : null,
 				},
-				totalTraceCount: Number(totalTraceCount),
-				traces: traces.map((t) => ({
+				totalTraceCount: totalTraceCount,
+				traces: Arr.map(traces, (t) => ({
 					traceId: t.traceId,
-					startTime: t.startTime,
-					durationMs: Number(t.durationMs),
+					startTime: DateTime.formatIso(t.startTime),
+					durationMs: t.durationMs,
 					rootSpanName: t.rootSpanName,
 					rootServiceName: t.rootServiceName,
-					spanCount: Number(t.spanCount),
-					hasError: Number(t.hasError) === 1,
+					spanCount: t.spanCount,
+					hasError: t.hasError === 1,
 				})),
 			}
 		}),
 		render: ({ session, traces, totalTraceCount }) => {
-			const device = [session.browserName, session.osName, session.deviceType]
-				.filter(Boolean)
-				.join(" / ")
-			const summary = [
-				device || "unknown client",
-				session.country || undefined,
-				session.errorCount > 0 ? `${session.errorCount} errors` : "no errors",
-				session.durationMs !== null ? `${Math.round(session.durationMs)}ms total` : undefined,
-				session.activeTimeMs !== null ? `${Math.round(session.activeTimeMs)}ms active` : undefined,
-				session.idleTimeMs !== null ? `${Math.round(session.idleTimeMs)}ms idle` : undefined,
-			].filter((part): part is string => part !== undefined)
+			const device = Arr.join(
+				Arr.filter([session.browserName, session.osName, session.deviceType], Boolean),
+				" / ",
+			)
+			const summary = Arr.filter(
+				[
+					device || "unknown client",
+					session.country || undefined,
+					session.errorCount > 0 ? `${session.errorCount} errors` : "no errors",
+					session.durationMs !== null ? `${Math.round(session.durationMs)}ms total` : undefined,
+					session.activeTimeMs !== null
+						? `${Math.round(session.activeTimeMs)}ms active`
+						: undefined,
+					session.idleTimeMs !== null ? `${Math.round(session.idleTimeMs)}ms idle` : undefined,
+				],
+				(part): part is string => part !== undefined,
+			)
 			// Drill-down hints: errored traces first, then the rest.
 			const ranked = [...traces].sort((a, b) => Number(b.hasError) - Number(a.hasError))
 			return {
@@ -94,14 +105,14 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 					? { empty: { message: "This session observed no backend traces." } }
 					: undefined),
 				blocks: [
-					doc.text(summary.join(" · ")),
+					doc.text(Arr.join(summary, " · ")),
 					...(traces.length === 0
 						? []
 						: [
 								doc.heading("Backend traces"),
 								doc.table(
 									["Trace ID", "Root span", "Service", "Duration", "Error", "Spans"],
-									traces.map((t) => [
+									Arr.map(traces, (t) => [
 										t.traceId,
 										truncate(t.rootSpanName || "—", 40),
 										truncate(t.rootServiceName || "—", 30),
@@ -115,15 +126,13 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 				...(totalTraceCount > traces.length
 					? { truncation: { shown: traces.length, total: totalTraceCount, noun: "traces" } }
 					: undefined),
-				next: ranked
-					.slice(0, 3)
-					.map((t) =>
-						doc.next(
-							"inspect_trace",
-							{ trace_id: t.traceId, timestamp: t.startTime },
-							`${t.hasError ? "errored " : ""}${t.rootSpanName || "trace"} in ${t.rootServiceName || "?"}`,
-						),
+				next: Arr.map(ranked.slice(0, 3), (t) =>
+					doc.next(
+						"inspect_trace",
+						{ trace_id: t.traceId, timestamp: t.startTime },
+						`${t.hasError ? "errored " : ""}${t.rootSpanName || "trace"} in ${t.rootServiceName || "?"}`,
 					),
+				),
 			}
 		},
 	})

@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 /**
  * The geographic instance an organization's data lives on. Each region is a full,
@@ -9,12 +9,19 @@ export type MapleRegion = Schema.Schema.Type<typeof MapleRegion>
 
 export const DEFAULT_MAPLE_REGION: MapleRegion = "us"
 
+/**
+ * The model the EU instance runs chat, triage and reviews on. OpenRouter's EU catalogue is a subset
+ * (66 models on 2026-09-25) and serves none of the US defaults. Saving an OpenRouter key on the EU
+ * instance asks this model for one token, so the key check and the agents cannot drift apart.
+ */
+export const EU_DEFAULT_OPENROUTER_MODEL = "openai/gpt-6-luna"
+
 const decodeRegion = Schema.decodeUnknownOption(MapleRegion)
 
 /** Parses an instance's own region setting. Anything unrecognised is the default region. */
 export function parseMapleRegion(value: unknown): MapleRegion {
 	return Option.getOrElse(
-		decodeRegion(typeof value === "string" ? value.trim().toLowerCase() : value),
+		decodeRegion(typeof value === "string" ? Str.toLowerCase(Str.trim(value)) : value),
 		() => DEFAULT_MAPLE_REGION,
 	)
 }
@@ -31,10 +38,11 @@ export function organizationRegionsFrom(metadata: unknown): readonly [MapleRegio
 		typeof metadata === "object" && metadata !== null && "regions" in metadata
 			? metadata.regions
 			: undefined
-	const regions = Array.isArray(raw)
-		? raw
-				.flatMap((value) => Option.toArray(decodeRegion(value)))
-				.filter((r, i, all) => all.indexOf(r) === i)
+	const regions = Arr.isArray(raw)
+		? Arr.dedupeWith(
+				Arr.flatMap(raw, (value) => Option.toArray(decodeRegion(value))),
+				(a, b) => a === b,
+			)
 		: []
 	const [first, ...rest] = regions
 	return first === undefined ? [DEFAULT_MAPLE_REGION] : [first, ...rest]
@@ -49,7 +57,7 @@ export function organizationRegionChosen(metadata: unknown): boolean {
 		typeof metadata === "object" && metadata !== null && "regions" in metadata
 			? metadata.regions
 			: undefined
-	return Array.isArray(raw) && raw.some((value) => Option.isSome(decodeRegion(value)))
+	return Arr.isArray(raw) && Arr.some(raw, (value) => Option.isSome(decodeRegion(value)))
 }
 
 /** How long after creation an organization without a region may still choose one. */

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { Effect } from "effect"
-import { compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
+import { Effect, String as Str } from "effect"
+import { compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { signalPresenceQuery } from "./signal-presence"
+import { OrgId } from "@maple/domain"
 
 const params = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	// Deliberately sub-hour: `service_usage` is keyed on top-of-hour `Hour`, so
 	// the branches must floor both bounds or a partial hour vanishes.
 	startTime: "2024-01-01 00:23:00",
@@ -24,7 +25,7 @@ describe("signalPresenceQuery", () => {
 
 	it("scopes every branch to the org", () => {
 		const { sql } = compileUnionUnsafe(signalPresenceQuery(), params)
-		const branches = sql.split("UNION ALL")
+		const branches = Str.split("UNION ALL")(sql)
 
 		expect(branches).toHaveLength(5)
 		for (const branch of branches) {

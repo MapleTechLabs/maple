@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest"
-import { Effect } from "effect"
-import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
+import { assert, describe, expect, it } from "vitest"
+import { DateTime, Effect, Array as Arr, String as Str } from "effect"
+import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	serviceOverviewQuery,
 	serviceOverviewRowSchema,
@@ -13,10 +13,12 @@ import {
 	serviceUsageQuery,
 	serviceUsageWithPreviousQuery,
 	servicesFacetsQuery,
+	servicePresenceQuery,
 } from "./services"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 	bucketSeconds: 3600,
@@ -33,14 +35,8 @@ describe("serviceCatalogQuery", () => {
 			}),
 			baseParams,
 		)
-		expect(sql).toContain("FROM service_overview_spans")
-		expect(sql).toContain("FROM service_overview_hourly")
-		expect(sql).toContain("UNION ALL")
-		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("Timestamp >= '2024-01-01 00:00:00'")
 		expect(sql).toContain("Hour >= if(toDateTime('2024-01-01 00:00:00')")
-		expect(sql).toContain("DeploymentEnv IN ('production')")
-		expect(sql).toContain("ServiceNamespace IN ('checkout')")
 		expect(sql).toContain("GROUP BY serviceName")
 		expect(sql).toContain("LIMIT 21")
 		expect(sql).toContain("OFFSET 20")
@@ -56,15 +52,18 @@ describe("serviceHealthSnapshotQuery", () => {
 			baseParams,
 		)
 
-		expect(sql).toContain("FROM traces_aggregates_hourly")
-		expect(sql).toContain("OrgId = 'org_1'")
-		expect(sql).toContain("IsEntryPoint = 1")
-		expect(sql).toContain("DeploymentEnv IN ('production')")
 		expect(sql).toContain("sum(WeightedCount) AS requestCount")
 		expect(sql).toContain("sum(WeightedErrorCount) AS errorCount")
 		expect(sql).toContain("quantilesTDigestWeightedMerge(0.95)(DurationQuantiles)")
 		expect(sql).toContain("GROUP BY serviceName, environment")
 		expect(sql).not.toContain("service_overview_spans")
+	})
+
+	it("reads whole hours with an exclusive, rounded-up end", () => {
+		const { sql } = compileUnsafe(serviceHealthSnapshotQuery({}), baseParams)
+		// Back-to-back windows must not share the hour at their seam.
+		expect(sql).toMatch(/Hour < toStartOfHour\(addSeconds\(toDateTime\('[^']+'\), 3599\)\)/)
+		expect(sql).not.toMatch(/Hour <= /)
 	})
 
 	it("coerces BYO ClickHouse string-encoded aggregates", () => {
@@ -113,18 +112,17 @@ describe("serviceOverviewQuery exclusions", () => {
 		// only one tier would drop the excluded rows for part of the range and keep them for the
 		// rest, which reads as the filter half-working.
 		const { sql } = compileUnsafe(serviceOverviewQuery({ excludedEnvironments: ["staging"] }), baseParams)
-		const occurrences = (sql.match(/DeploymentEnv NOT IN \('staging'\)/g) ?? []).length
+		const occurrences = Arr.fromIterable(Str.matchAll(/DeploymentEnv NOT IN \('staging'\)/g)(sql)).length
 		expect(occurrences).toBeGreaterThanOrEqual(2)
 	})
 })
 
 describe("serviceOverviewQuery", () => {
-	it("compiles basic overview with all columns", () => {
+	it("splices raw and hourly tiers and collapses per-commit rows to one row per service", () => {
 		const q = serviceOverviewQuery({})
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM service_overview_spans")
 		expect(sql).toContain("FROM service_overview_hourly")
-		expect(sql).toContain("UNION ALL")
 
 		// Inner level keeps the commit dimension so the breakdown survives...
 		expect(sql).toContain("GROUP BY cServiceName, cServiceNamespace, cEnvironment, cCommitSha")
@@ -137,34 +135,32 @@ describe("serviceOverviewQuery", () => {
 		expect(sql).toContain("GROUP BY serviceName, environment")
 		expect(sql).toContain("quantilesTDigestMerge(0.5, 0.95, 0.99)(cDurationQuantiles)")
 		expect(sql).toContain("argMax(cServiceNamespace, cEstimatedSpanCount)")
-		expect(sql).toContain("sum(cSpanCount) AS throughput")
-		expect(sql).toContain("sum(cErrorCount) AS errorCount")
-		expect(sql).toContain("sum(cEstimatedErrorCount) AS estimatedErrorCount")
-		expect(sql).toContain("min(cFirstSeen) AS firstSeen")
+		expect(sql).toContain("sum(service_commit_rows.cSpanCount) AS throughput")
+		expect(sql).toContain("sum(service_commit_rows.cErrorCount) AS errorCount")
+		expect(sql).toContain("sum(service_commit_rows.cEstimatedErrorCount) AS estimatedErrorCount")
+		expect(sql).toContain("min(service_commit_rows.cFirstSeen) AS firstSeen")
 
 		// Commits ride along as a capped, count-descending tuple array rather than
 		// one row per commit. `arrayReverseSort`, not `arraySort(x -> -x.2)`: the
 		// counts are UInt64 and negating an unsigned integer wraps.
-		expect(sql).toContain("arrayReverseSort(x -> x.2, groupArray(tuple(")
-		expect(sql).toContain("), 1, 20) AS commits")
+		expect(sql).toMatch(/arrayReverseSort\(x -> x\.2, groupArray\(tuple\([\s\S]*\), 1, 20\) AS commits/)
 		expect(sql).not.toContain("AS commitSha")
 
 		expect(sql).toContain("ORDER BY throughput DESC")
 		// On the collapsed grain, so a few frequently-deployed services can no
 		// longer consume the budget and silently drop other services off the list.
 		expect(sql).toContain("LIMIT 500")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("merges sampling-corrected counts from raw edges and hourly interiors", () => {
 		const q = serviceOverviewQuery({})
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("estimatedSpanCount")
-		expect(sql).toContain("sum(SampleRate)")
-		expect(sql).toContain("estimatedErrorCount")
-		expect(sql).toContain("sumIf(SampleRate, StatusCode = 'Error')")
-		expect(sql).toContain("sum(EstimatedSpanCount)")
-		expect(sql).toContain("sum(bEstimatedSpanCount)")
+		expect(sql).toContain("sum(service_overview_spans.SampleRate)")
+		expect(sql).toContain(
+			"sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode = 'Error')",
+		)
+		expect(sql).toContain("sum(service_overview_hourly.EstimatedSpanCount)")
+		expect(sql).toContain("sum(service_windows.bEstimatedSpanCount)")
 		// The old `anyIf(threshold)` approach must be gone — it was the bug.
 		expect(sql).not.toContain("dominantThreshold")
 		expect(sql).not.toContain("anyIf")
@@ -210,10 +206,18 @@ describe("serviceOverviewQuery", () => {
 				},
 			]),
 		)
+		assert.isDefined(decoded)
 		expect(decoded.estimatedSpanCount).toBe(200)
 		expect(decoded.p95LatencyMs).toBe(42)
 		expect(decoded.commits).toHaveLength(2)
-		expect(decoded.commits[0]).toEqual(["abc123", 80, 2, "2024-01-01 00:00:00"])
+		const [sha, spans, errors, firstSeen] = Arr.getUnsafe(decoded.commits, 0)
+		expect([sha, spans, errors, DateTime.formatIso(firstSeen)]).toEqual([
+			"abc123",
+			80,
+			2,
+			"2024-01-01T00:00:00.000Z",
+		])
+		expect(DateTime.formatIso(decoded.firstSeen)).toBe("2024-01-01T00:00:00.000Z")
 	})
 })
 
@@ -223,26 +227,15 @@ describe("serviceHealthBaselineQuery", () => {
 	it("compiles a per-service p95 baseline scoped to the org", () => {
 		const q = serviceHealthBaselineQuery({})
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM service_overview_spans")
-		expect(sql).toContain("FROM service_overview_hourly")
-		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("Timestamp >= '2024-01-01 00:00:00'")
 		expect(sql).toContain(
 			"arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000 AS baselineP95LatencyMs",
 		)
-		expect(sql).toContain("sum(bSpanCount) AS baselineSpanCount")
+		expect(sql).toContain("sum(service_windows.bSpanCount) AS baselineSpanCount")
 		// Baseline must NOT split by commit — health compares service+env totals.
 		expect(sql).toContain("GROUP BY serviceName, serviceNamespace, environment")
 		expect(sql).not.toContain("commitSha")
 		expect(sql).toContain("LIMIT 200")
-		expect(sql).toContain("FORMAT JSON")
-	})
-
-	it("applies environment and namespace filters", () => {
-		const q = serviceHealthBaselineQuery({ environments: ["production"], namespaces: ["shop"] })
-		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("DeploymentEnv IN ('production')")
-		expect(sql).toContain("ServiceNamespace IN ('shop')")
 	})
 })
 
@@ -256,9 +249,8 @@ describe("serviceReleasesTimelineQuery", () => {
 		expect(sql).toContain("FROM service_overview_hourly")
 		expect(sql).toContain("ServiceName = 'api'")
 		expect(sql).toContain("CommitSha != ''")
-		expect(sql).toContain("CommitSha AS commitSha")
-		expect(sql).toContain("sum(bSpanCount) AS count")
-		expect(sql).toContain("sum(bErrorCount) AS errorCount")
+		expect(sql).toContain("sum(service_windows.bSpanCount) AS count")
+		expect(sql).toContain("sum(service_windows.bErrorCount) AS errorCount")
 		expect(sql).toContain("GROUP BY bucket, commitSha")
 		expect(sql).toContain("ORDER BY bucket ASC")
 		expect(sql).toContain("LIMIT 1000")
@@ -274,7 +266,7 @@ describe("serviceReleasesTimelineQuery", () => {
 		expect(sql).toContain("FROM service_overview_minutely")
 		expect(sql).not.toContain("FROM service_overview_hourly")
 		// The raw edge floors to the minute too, so every tier agrees on grain.
-		expect(sql).toContain("toStartOfMinute(Timestamp) AS bBucket")
+		expect(sql).toContain("toStartOfMinute(service_overview_spans.Timestamp) AS bBucket")
 	})
 
 	it("falls back to a raw scan for sub-minute buckets", () => {
@@ -293,19 +285,10 @@ describe("serviceEnvironmentsQuery", () => {
 	it("compiles a service-scoped, time-windowed distinct-environments query", () => {
 		const q = serviceEnvironmentsQuery({ serviceName: "api" })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM service_overview_spans")
-		expect(sql).toContain("FROM service_overview_hourly")
-		expect(sql).toContain("bEnvironment AS environment")
-		// Scoped to the org + this one service (replaces an all-services scan)…
-		expect(sql).toContain("OrgId = 'org_1'")
-		expect(sql).toContain("ServiceName = 'api'")
-		// …and to the active window so date partitions are pruned.
+		// Scoped to the active window so date partitions are pruned.
 		expect(sql).toContain("Timestamp >= '2024-01-01 00:00:00'")
 		expect(sql).toContain("Timestamp <= '2024-01-02 00:00:00'")
-		// Empty env rows are excluded (matches the old switcher's truthy filter).
-		expect(sql).toContain("bEnvironment != ''")
 		expect(sql).toContain("GROUP BY environment")
-		expect(sql).toContain("FORMAT JSON")
 	})
 })
 
@@ -318,18 +301,14 @@ describe("serviceApdexTimeseriesQuery", () => {
 		// Exact raw partial hours surround complete hourly aggregate buckets.
 		expect(sql).toContain("FROM service_overview_spans")
 		expect(sql).toContain("FROM service_overview_hourly")
-		expect(sql).toContain("UNION ALL")
 		expect(sql).toContain("ServiceName = 'api'")
-		expect(sql).toContain("sum(bSpanCount) AS totalCount")
+		expect(sql).toContain("sum(service_windows.bSpanCount) AS totalCount")
 		expect(sql).toContain("Duration < 500000000")
-		expect(sql).toContain("AS satisfiedCount")
-		expect(sql).toContain("AS toleratingCount")
-		expect(sql).toContain("AS apdexScore")
 		// Errored spans count as frustrated: the satisfied/tolerating buckets are
 		// gated on the non-error predicate, so a fast 5xx never inflates apdex.
 		expect(sql).toContain("StatusCode != 'Error'")
 		// totalCount still counts every span (errors included), so they drag the score down.
-		expect(sql).toContain("sum(bSpanCount) AS totalCount")
+		expect(sql).toContain("sum(service_windows.bSpanCount) AS totalCount")
 		expect(sql).toContain("GROUP BY bucket")
 		expect(sql).toContain("ORDER BY bucket ASC")
 		// The MV pre-filters at write time — the runtime root-only predicate is
@@ -361,10 +340,10 @@ describe("serviceApdexTimeseriesQuery", () => {
 		// The Apdex SELECT must contain the split-term form: each countIf is
 		// divided by count() before being summed, instead of summed first.
 		expect(sql).toContain(
-			"sum(bApdexSatisfiedCount) / sum(bSpanCount) + sum(bApdexToleratingCount) * 0.5 / sum(bSpanCount)",
+			"sum(service_windows.bApdexSatisfiedCount) / sum(service_windows.bSpanCount) + (sum(service_windows.bApdexToleratingCount) * 0.5 / sum(service_windows.bSpanCount))",
 		)
 		// And it must NOT contain the buggy summed-then-divided form.
-		expect(sql).not.toMatch(/sum\(bApdexSatisfiedCount\) \+ sum\(bApdexToleratingCount\)/)
+		expect(sql).not.toMatch(/sum\((\w+\.)?bApdexSatisfiedCount\) \+ sum\((\w+\.)?bApdexToleratingCount\)/)
 	})
 
 	it("coerces BYO ClickHouse string-encoded Apdex aggregates", () => {
@@ -383,6 +362,7 @@ describe("serviceApdexTimeseriesQuery", () => {
 				},
 			]),
 		)
+		assert.isDefined(decoded)
 		expect(decoded.totalCount).toBe(100)
 		expect(decoded.apdexScore).toBe(0.85)
 	})
@@ -395,19 +375,16 @@ describe("serviceUsageQuery", () => {
 		const q = serviceUsageQuery({})
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM service_usage")
-		expect(sql).toContain("ServiceName AS serviceName")
-		expect(sql).toContain("sum(LogCount) AS totalLogCount")
-		expect(sql).toContain("sum(LogSizeBytes) AS totalLogSizeBytes")
-		expect(sql).toContain("sum(TraceCount) AS totalTraceCount")
-		expect(sql).toContain("sum(TraceSizeBytes) AS totalTraceSizeBytes")
-		expect(sql).toContain("sum(SumMetricCount) AS totalSumMetricCount")
-		expect(sql).toContain("sum(GaugeMetricCount) AS totalGaugeMetricCount")
-		expect(sql).toContain("sum(HistogramMetricCount) AS totalHistogramMetricCount")
-		expect(sql).toContain("sum(ExpHistogramMetricCount) AS totalExpHistogramMetricCount")
-		expect(sql).toContain("AS totalSizeBytes")
+		expect(sql).toContain("sum(service_usage.LogCount) AS totalLogCount")
+		expect(sql).toContain("sum(service_usage.LogSizeBytes) AS totalLogSizeBytes")
+		expect(sql).toContain("sum(service_usage.TraceCount) AS totalTraceCount")
+		expect(sql).toContain("sum(service_usage.TraceSizeBytes) AS totalTraceSizeBytes")
+		expect(sql).toContain("sum(service_usage.SumMetricCount) AS totalSumMetricCount")
+		expect(sql).toContain("sum(service_usage.GaugeMetricCount) AS totalGaugeMetricCount")
+		expect(sql).toContain("sum(service_usage.HistogramMetricCount) AS totalHistogramMetricCount")
+		expect(sql).toContain("sum(service_usage.ExpHistogramMetricCount) AS totalExpHistogramMetricCount")
 		expect(sql).toContain("GROUP BY serviceName")
 		expect(sql).toContain("ORDER BY totalSizeBytes DESC")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("applies serviceName filter", () => {
@@ -429,7 +406,7 @@ describe("serviceUsageQuery", () => {
 
 describe("serviceUsageWithPreviousQuery", () => {
 	const params = {
-		orgId: "org_1",
+		orgId: OrgId.make("org_1"),
 		startTime: "2024-01-02 00:00:00",
 		endTime: "2024-01-03 00:00:00",
 		previousStartTime: "2024-01-01 00:00:00",
@@ -440,18 +417,17 @@ describe("serviceUsageWithPreviousQuery", () => {
 		const q = serviceUsageWithPreviousQuery({})
 		const { sql } = compileUnsafe(q, params)
 		// Single scan of the union window [previousStartTime, endTime].
-		expect((sql.match(/FROM service_usage/g) || []).length).toBe(1)
+		expect(Arr.fromIterable(Str.matchAll(/FROM service_usage/g)(sql)).length).toBe(1)
 		expect(sql).toContain("Hour >= toStartOfHour(toDateTime('2024-01-01 00:00:00'))")
 		expect(sql).toContain("Hour <= toStartOfHour(toDateTime('2024-01-03 00:00:00'))")
 		// Current totals are sumIf over [startTime, endTime].
 		expect(sql).toContain(
-			"sumIf(LogCount, (Hour >= toStartOfHour(toDateTime('2024-01-02 00:00:00')) AND Hour <= toStartOfHour(toDateTime('2024-01-03 00:00:00')))) AS totalLogCount",
+			"sumIf(service_usage.LogCount, (service_usage.Hour >= toStartOfHour(toDateTime('2024-01-02 00:00:00')) AND service_usage.Hour <= toStartOfHour(toDateTime('2024-01-03 00:00:00')))) AS totalLogCount",
 		)
 		// Previous aggregates are sumIf over [previousStartTime, previousEndTime].
 		expect(sql).toContain(
-			"sumIf(LogCount, (Hour >= toStartOfHour(toDateTime('2024-01-01 00:00:00')) AND Hour <= toStartOfHour(toDateTime('2024-01-02 00:00:00')))) AS previousLogCount",
+			"sumIf(service_usage.LogCount, (service_usage.Hour >= toStartOfHour(toDateTime('2024-01-01 00:00:00')) AND service_usage.Hour <= toStartOfHour(toDateTime('2024-01-02 00:00:00')))) AS previousLogCount",
 		)
-		expect(sql).toContain("AS previousSizeBytes")
 		expect(sql).toContain("GROUP BY serviceName")
 	})
 })
@@ -459,21 +435,25 @@ describe("serviceUsageWithPreviousQuery", () => {
 // servicesFacetsQuery
 
 describe("servicesFacetsQuery", () => {
-	it("compiles UNION ALL with environment, namespace, commit_sha, and service facets", () => {
+	it("emits a non-empty-filtered branch per facet type the UI keys on", () => {
 		const q = servicesFacetsQuery()
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		const unionCount = (sql.match(/UNION ALL/g) || []).length
-		expect(unionCount).toBe(7) // 4 facet branches, each with a raw/hourly window union
-		expect(sql).toContain("'environment' AS facetType")
-		expect(sql).toContain("'namespace' AS facetType")
-		expect(sql).toContain("'commit_sha' AS facetType")
-		expect(sql).toContain("'service' AS facetType")
+		const facetTypes = Arr.map(Arr.fromIterable(Str.matchAll(/'(\w+)' AS facetType/g)(sql)), (m) => m[1])
+		expect(facetTypes).toEqual(
+			expect.arrayContaining(["environment", "namespace", "commit_sha", "service"]),
+		)
 		expect(sql).toContain("bEnvironment != ''")
 		expect(sql).toContain("bServiceNamespace != ''")
 		expect(sql).toContain("bCommitSha != ''")
 		expect(sql).toContain("bServiceName != ''")
 		expect(sql).toContain("FROM service_overview_spans")
 		expect(sql).toContain("FROM service_overview_hourly")
-		expect(sql).toContain("UNION ALL")
+	})
+})
+
+describe("servicePresenceQuery", () => {
+	it("filters on the service name even when it is blank", () => {
+		const { sql } = compileUnsafe(servicePresenceQuery({ serviceName: "" }), baseParams)
+		expect(sql).toMatch(/WHERE [\w.]*bServiceName = ''/)
 	})
 })

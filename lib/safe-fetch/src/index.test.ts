@@ -1,22 +1,32 @@
 import { assert, describe, expect, it } from "@effect/vitest"
-import { Effect } from "effect"
-import { safeFetch, UrlValidationError, validateExternalUrl, validateExternalUrlSync } from "./index"
+import { Effect, Exit, Fiber, Result, Array as Arr } from "effect"
+import { TestClock } from "effect/testing"
+import { FetchHttpClient, HttpBody, HttpClient, HttpClientError } from "effect/http"
+import {
+	describeHttpClientError,
+	guard,
+	parseExternalUrl,
+	UrlValidationError,
+	validateExternalUrl,
+} from "./index"
 
-describe("validateExternalUrlSync", () => {
+const rejects = (raw: string) => Result.isFailure(parseExternalUrl(raw))
+
+describe("parseExternalUrl", () => {
 	it("accepts public https URLs", () => {
-		const url = validateExternalUrlSync("https://api.example.com/probe")
+		const url = Result.getOrThrow(parseExternalUrl("https://api.example.com/probe"))
 		expect(url.hostname).toBe("api.example.com")
 	})
 
 	it("accepts public http URLs", () => {
-		const url = validateExternalUrlSync("http://prom.public.dev:9090/metrics")
+		const url = Result.getOrThrow(parseExternalUrl("http://prom.public.dev:9090/metrics"))
 		expect(url.hostname).toBe("prom.public.dev")
 	})
 
 	it.each(["javascript:alert(1)", "file:///etc/passwd", "ftp://example.com", "data:text/html,<script>"])(
 		"rejects non-http(s) scheme: %s",
 		(raw) => {
-			expect(() => validateExternalUrlSync(raw)).toThrow(UrlValidationError)
+			expect(rejects(raw)).toBe(true)
 		},
 	)
 
@@ -65,8 +75,34 @@ describe("validateExternalUrlSync", () => {
 		"http://224.0.0.1/",
 		"http://239.255.255.250/",
 		"http://240.0.0.1/",
+		// Container task metadata (169.254.170.2) sits in the link-local range.
+		"http://169.254.170.2/v2/credentials/",
+		"http://[fd00:ec2::254]/",
+		"http://[fd00::1]/",
+		"http://[ff02::1]/",
+		// IPv4-compatible, SIIT, NAT64 local-use and Teredo forms.
+		"http://[::127.0.0.1]/",
+		"http://[::7f00:1]/",
+		"http://[::8.8.8.8]/",
+		"http://[::ffff:0:127.0.0.1]/",
+		"http://[::ffff:0:a9fe:a9fe]/",
+		"http://[64:ff9b:1::7f00:1]/",
+		"http://[64:ff9b:1::8.8.8.8]/",
+		"http://[2001:0:4136:e378:8000:63bf:80ff:fffe]/",
+		"http://[0:0:0:0:0:ffff:7f00:1]/",
+		// Names that only resolve on a private network.
+		"http://db.internal/",
+		"http://ip-10-0-0-1.ec2.internal/",
+		"http://printer.local/",
+		"http://app.localhost/",
+		"http://nas.lan/",
+		"http://router.home.arpa/",
+		"http://api.default.svc.cluster.local/",
+		"http://api.default.svc/",
+		"http://DB.Internal./",
+		"http://internal/",
 	])("rejects private/loopback host: %s", (raw) => {
-		expect(() => validateExternalUrlSync(raw)).toThrow(UrlValidationError)
+		expect(rejects(raw)).toBe(true)
 	})
 
 	// The parser's host here is `internal`, not `real.example.com` — the credentials
@@ -74,7 +110,7 @@ describe("validateExternalUrlSync", () => {
 	it.each(["https://real.example.com@localhost/", "https://user:pw@api.example.com/"])(
 		"rejects embedded credentials: %s",
 		(raw) => {
-			expect(() => validateExternalUrlSync(raw)).toThrow(UrlValidationError)
+			expect(rejects(raw)).toBe(true)
 		},
 	)
 
@@ -89,7 +125,13 @@ describe("validateExternalUrlSync", () => {
 		"http://198.20.0.1/",
 		"http://223.255.255.255/",
 		"http://[2001:db8::1]/",
-		"http://[2002::1]/",
+		"http://[2002:808:808::1]/",
+		"http://[64:ff9b::808:808]/",
+		"http://[::ffff:8.8.8.8]/",
+		"http://[2606:4700::1111]/",
+		"https://internal.example.com/hook",
+		"https://local.example.com/hook",
+		"https://svc.example.com/hook",
 		// Hostnames that merely start like a blocked range. The IPv4 patterns are
 		// prefix matches, so they are only applied to actual address literals.
 		"https://10.example.com/hook",
@@ -97,27 +139,20 @@ describe("validateExternalUrlSync", () => {
 		"https://127.acme.io/hook",
 		"https://192.168.example.com/hook",
 	])("accepts public host: %s", (raw) => {
-		expect(() => validateExternalUrlSync(raw)).not.toThrow()
+		expect(rejects(raw)).toBe(false)
 	})
 
 	it("rejects empty string", () => {
-		expect(() => validateExternalUrlSync("")).toThrow(UrlValidationError)
-		expect(() => validateExternalUrlSync("   ")).toThrow(UrlValidationError)
+		expect(rejects("")).toBe(true)
+		expect(rejects("   ")).toBe(true)
 	})
 
 	it("rejects malformed input", () => {
-		expect(() => validateExternalUrlSync("not a url")).toThrow(UrlValidationError)
+		expect(rejects("not a url")).toBe(true)
 	})
 })
 
 describe("validateExternalUrl (Effect)", () => {
-	it.effect("succeeds for a public URL", () =>
-		Effect.gen(function* () {
-			const url = yield* validateExternalUrl("https://hooks.slack.com/services/abc")
-			assert.strictEqual(url.hostname, "hooks.slack.com")
-		}),
-	)
-
 	it.effect("fails with UrlValidationError for a private URL", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(validateExternalUrl("http://169.254.169.254"))
@@ -126,122 +161,400 @@ describe("validateExternalUrl (Effect)", () => {
 	)
 })
 
-describe("safeFetch", () => {
-	it("issues the request when the URL is public", async () => {
-		const calls: Array<string> = []
-		const fakeFetch: typeof fetch = async (input) => {
-			const u = typeof input === "string" ? input : (input as URL).toString()
-			calls.push(u)
-			return new Response("ok", { status: 200 })
-		}
-		const response = await safeFetch("https://api.example.com/x", { fetchFn: fakeFetch })
-		expect(response.status).toBe(200)
-		expect(calls).toEqual(["https://api.example.com/x"])
-	})
+/** A guarded client whose transport is `fakeFetch`. */
+const run = <A, E>(
+	fakeFetch: typeof fetch,
+	use: (
+		client: HttpClient.HttpClient.With<HttpClientError.HttpClientError | UrlValidationError>,
+	) => Effect.Effect<A, E>,
+) =>
+	Effect.flatMap(HttpClient.HttpClient, (client) => use(guard(client))).pipe(
+		Effect.provide(FetchHttpClient.layer),
+		Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
+	)
 
-	it("rejects an internal URL before fetching", async () => {
-		const fakeFetch: typeof fetch = async () => {
-			throw new Error("should not be called")
-		}
-		await expect(safeFetch("http://169.254.169.254/", { fetchFn: fakeFetch })).rejects.toBeInstanceOf(
-			UrlValidationError,
-		)
-	})
+const urlOf = (input: string | URL | Request) => (input instanceof Request ? input.url : String(input))
+const bodyOf = (body: RequestInit["body"]): string =>
+	typeof body === "string" ? body : body instanceof Uint8Array ? new TextDecoder().decode(body) : ""
 
-	it("rejects a redirect to an internal URL", async () => {
-		let calls = 0
-		const fakeFetch: typeof fetch = async () => {
-			calls++
-			return new Response(null, {
-				status: 302,
-				headers: { location: "http://127.0.0.1/admin" },
-			})
-		}
-		await expect(safeFetch("https://api.example.com/x", { fetchFn: fakeFetch })).rejects.toBeInstanceOf(
-			UrlValidationError,
-		)
-		expect(calls).toBe(1)
-	})
+describe("guard", () => {
+	it.effect("issues the request when the URL is public, with redirect: manual", () =>
+		Effect.gen(function* () {
+			const calls: Array<{ url: string; redirect: RequestRedirect | undefined }> = []
+			const fakeFetch: typeof fetch = async (input, init) => {
+				calls.push({ url: urlOf(input), redirect: init?.redirect })
+				return new Response("ok", { status: 200 })
+			}
+			const response = yield* run(fakeFetch, (client) => client.get("https://api.example.com/x"))
+			assert.strictEqual(response.status, 200)
+			assert.deepStrictEqual(calls, [{ url: "https://api.example.com/x", redirect: "manual" }])
+		}),
+	)
 
-	it("follows a redirect to another public URL", async () => {
-		let calls = 0
-		const fakeFetch: typeof fetch = async (input) => {
-			calls++
-			if (calls === 1) {
+	it.effect("rejects an internal URL before fetching", () =>
+		Effect.gen(function* () {
+			let calls = 0
+			const fakeFetch: typeof fetch = async () => {
+				calls++
+				return new Response("ok")
+			}
+			const error = yield* Effect.flip(
+				run(fakeFetch, (client) => client.get("http://169.254.169.254/")),
+			)
+			assert.instanceOf(error, UrlValidationError)
+			assert.strictEqual(calls, 0)
+		}),
+	)
+
+	it.effect("validates query params added outside the URL string", () =>
+		Effect.gen(function* () {
+			const seen: Array<string> = []
+			const fakeFetch: typeof fetch = async (input) => {
+				seen.push(urlOf(input))
+				return new Response("ok")
+			}
+			yield* run(fakeFetch, (client) =>
+				client.get("https://api.example.com/metrics", { urlParams: { sig: "s" } }),
+			)
+			assert.deepStrictEqual(seen, ["https://api.example.com/metrics?sig=s"])
+		}),
+	)
+
+	it.effect("rejects a redirect to an internal URL", () =>
+		Effect.gen(function* () {
+			let calls = 0
+			const fakeFetch: typeof fetch = async () => {
+				calls++
+				return new Response(null, { status: 302, headers: { location: "http://127.0.0.1/admin" } })
+			}
+			const error = yield* Effect.flip(
+				run(fakeFetch, (client) => client.get("https://api.example.com/x")),
+			)
+			assert.instanceOf(error, UrlValidationError)
+			assert.strictEqual(calls, 1)
+		}),
+	)
+
+	it.effect("follows a redirect to another public URL, keeping method and body", () =>
+		Effect.gen(function* () {
+			const seen: Array<{ url: string; method: string | undefined; body: string }> = []
+			const fakeFetch: typeof fetch = async (input, init) => {
+				seen.push({ url: urlOf(input), method: init?.method, body: bodyOf(init?.body) })
+				return seen.length === 1
+					? new Response(null, { status: 307, headers: { location: "https://api2.example.com/y" } })
+					: new Response("ok", { status: 200 })
+			}
+			const response = yield* run(fakeFetch, (client) =>
+				client.post("https://api1.example.com/x", { body: HttpBody.text("payload") }),
+			)
+			assert.strictEqual(response.status, 200)
+			assert.deepStrictEqual(
+				Arr.map(seen, (s) => [s.url, s.method, s.body]),
+				[
+					["https://api1.example.com/x", "POST", "payload"],
+					["https://api2.example.com/y", "POST", "payload"],
+				],
+			)
+		}),
+	)
+
+	it.effect("drops credential headers on a cross-origin redirect", () =>
+		Effect.gen(function* () {
+			const seen: Array<string | null> = []
+			const fakeFetch: typeof fetch = async (_url, init) => {
+				seen.push(new Headers(init?.headers).get("authorization"))
+				return seen.length === 1
+					? new Response(null, {
+							status: 302,
+							headers: { location: "https://attacker.example/steal" },
+						})
+					: new Response("ok", { status: 200 })
+			}
+			const response = yield* run(fakeFetch, (client) =>
+				client.get("https://api.example.com/metrics", {
+					headers: { Authorization: "Bearer scrape-secret", Accept: "text/plain" },
+				}),
+			)
+			assert.strictEqual(response.status, 200)
+			assert.deepStrictEqual(seen, ["Bearer scrape-secret", null])
+		}),
+	)
+
+	it.effect("keeps credential headers on a same-origin redirect", () =>
+		Effect.gen(function* () {
+			const seen: Array<string | null> = []
+			const fakeFetch: typeof fetch = async (_url, init) => {
+				seen.push(new Headers(init?.headers).get("authorization"))
+				return seen.length === 1
+					? new Response(null, { status: 302, headers: { location: "/metrics/v2" } })
+					: new Response("ok", { status: 200 })
+			}
+			yield* run(fakeFetch, (client) =>
+				client.get("https://api.example.com/metrics", {
+					headers: { Authorization: "Bearer scrape-secret" },
+				}),
+			)
+			assert.deepStrictEqual(seen, ["Bearer scrape-secret", "Bearer scrape-secret"])
+		}),
+	)
+
+	it.effect("does not restore credentials when a redirect bounces back to the original origin", () =>
+		Effect.gen(function* () {
+			const seen: Array<string | null> = []
+			const hops = ["https://attacker.example/a", "https://api.example.com/back"]
+			const fakeFetch: typeof fetch = async (_url, init) => {
+				seen.push(new Headers(init?.headers).get("authorization"))
+				const location = hops[seen.length - 1]
+				return location === undefined
+					? new Response("ok", { status: 200 })
+					: new Response(null, { status: 302, headers: { location } })
+			}
+			yield* run(fakeFetch, (client) =>
+				client.get("https://api.example.com/metrics", {
+					headers: { Authorization: "Bearer scrape-secret" },
+				}),
+			)
+			assert.deepStrictEqual(seen, ["Bearer scrape-secret", null, null])
+		}),
+	)
+
+	it.effect("a redirect's query replaces the original request's params", () =>
+		Effect.gen(function* () {
+			const seen: Array<string> = []
+			const fakeFetch: typeof fetch = async (input) => {
+				seen.push(urlOf(input))
+				return seen.length === 1
+					? new Response(null, { status: 302, headers: { location: "/next?token=new" } })
+					: new Response("ok", { status: 200 })
+			}
+			yield* run(fakeFetch, (client) =>
+				client.get("https://api.example.com/start", { urlParams: { token: "old" } }),
+			)
+			assert.deepStrictEqual(seen, [
+				"https://api.example.com/start?token=old",
+				"https://api.example.com/next?token=new",
+			])
+		}),
+	)
+
+	it.effect("returns a redirect with an empty Location instead of re-requesting", () =>
+		Effect.gen(function* () {
+			let calls = 0
+			const fakeFetch: typeof fetch = async () => {
+				calls++
+				return new Response(null, { status: 302, headers: { location: "" } })
+			}
+			const response = yield* run(fakeFetch, (client) => client.post("https://api.example.com/hook"))
+			assert.strictEqual(response.status, 302)
+			assert.strictEqual(calls, 1)
+		}),
+	)
+
+	it.effect("under HttpClient.withScope, every hop is aborted when the scope closes", () =>
+		Effect.gen(function* () {
+			const signals: Array<AbortSignal> = []
+			const fakeFetch: typeof fetch = async (_url, init) => {
+				if (init?.signal) signals.push(init.signal)
+				return signals.length === 1
+					? new Response("moved", { status: 302, headers: { location: "/next" } })
+					: new Response("unread", { status: 200 })
+			}
+			yield* Effect.flatMap(HttpClient.HttpClient, (client) =>
+				guard(HttpClient.withScope(client)).get("https://api.example.com/start"),
+			).pipe(
+				Effect.scoped,
+				Effect.provide(FetchHttpClient.layer),
+				Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
+			)
+			assert.strictEqual(signals.length, 2)
+			assert.isTrue(Arr.every(signals, (signal) => signal.aborted))
+		}),
+	)
+
+	it.effect("caps redirect chains", () =>
+		Effect.gen(function* () {
+			let calls = 0
+			const fakeFetch: typeof fetch = async () => {
+				calls++
 				return new Response(null, {
 					status: 302,
-					headers: { location: "https://api2.example.com/y" },
+					headers: { location: `https://api${calls}.example.com/r` },
 				})
 			}
-			expect(typeof input === "string" ? input : (input as URL).toString()).toBe(
-				"https://api2.example.com/y",
+			const error = yield* Effect.flip(
+				run(fakeFetch, (client) => client.get("https://api0.example.com/r")),
 			)
-			return new Response("ok", { status: 200 })
-		}
-		const response = await safeFetch("https://api1.example.com/x", { fetchFn: fakeFetch })
-		expect(response.status).toBe(200)
-		expect(calls).toBe(2)
-	})
+			assert.instanceOf(error, UrlValidationError)
+			assert.strictEqual(calls, 6)
+		}),
+	)
 
-	it("drops credential headers on a cross-origin redirect", async () => {
-		const seen: Array<string | null> = []
-		const fakeFetch: typeof fetch = async (_url, init) => {
-			seen.push(new Headers(init?.headers).get("authorization"))
-			return seen.length === 1
-				? new Response(null, { status: 302, headers: { location: "https://attacker.example/steal" } })
-				: new Response("ok", { status: 200 })
-		}
-		const response = await safeFetch("https://api.example.com/metrics", {
-			fetchFn: fakeFetch,
-			headers: { Authorization: "Bearer scrape-secret", Accept: "text/plain" },
+	it.effect("aborts the in-flight request when interrupted", () =>
+		Effect.gen(function* () {
+			let aborted = false
+			const fakeFetch: typeof fetch = (_input, init) =>
+				new Promise<Response>((_resolve, reject) => {
+					init?.signal?.addEventListener("abort", () => {
+						aborted = true
+						reject(new Error("aborted"))
+					})
+				})
+			const fiber = yield* run(fakeFetch, (client) =>
+				client.get("https://api.example.com/slow").pipe(Effect.timeout("10 millis")),
+			).pipe(Effect.exit, Effect.forkChild({ startImmediately: true }))
+			yield* TestClock.adjust("10 millis")
+			const exit = yield* Fiber.join(fiber)
+			assert.isTrue(Exit.isFailure(exit))
+			assert.isTrue(aborted)
+		}),
+	)
+})
+
+interface SeenHop {
+	readonly url: string
+	readonly method: string | undefined
+	readonly body: string
+	readonly apiKey: string | null
+}
+
+/** Records each hop and answers the first with `status` to `location`, the rest with 200. */
+const redirectOnce = (status: number, location: string) => {
+	const seen: Array<SeenHop> = []
+	const fakeFetch: typeof fetch = async (input, init) => {
+		seen.push({
+			url: urlOf(input),
+			method: init?.method,
+			body: bodyOf(init?.body),
+			apiKey: new Headers(init?.headers).get("x-api-key"),
 		})
-		expect(response.status).toBe(200)
-		expect(seen).toEqual(["Bearer scrape-secret", null])
-	})
+		return seen.length === 1
+			? new Response(null, { status, headers: { location } })
+			: new Response("ok", { status: 200 })
+	}
+	return { seen, fakeFetch }
+}
 
-	it("keeps credential headers on a same-origin redirect", async () => {
-		const seen: Array<string | null> = []
-		const fakeFetch: typeof fetch = async (_url, init) => {
-			seen.push(new Headers(init?.headers).get("authorization"))
-			return seen.length === 1
-				? new Response(null, { status: 302, headers: { location: "/metrics/v2" } })
-				: new Response("ok", { status: 200 })
-		}
-		await safeFetch("https://api.example.com/metrics", {
-			fetchFn: fakeFetch,
-			headers: { Authorization: "Bearer scrape-secret" },
-		})
-		expect(seen).toEqual(["Bearer scrape-secret", "Bearer scrape-secret"])
-	})
+const postThroughStrictGuard = (fakeFetch: typeof fetch) =>
+	Effect.flatMap(HttpClient.HttpClient, (client) =>
+		guard(client, { strictRedirects: true }).post("https://api.example.com/x", {
+			headers: { "X-Api-Key": "probe-secret" },
+			body: HttpBody.text("payload"),
+		}),
+	).pipe(Effect.provide(FetchHttpClient.layer), Effect.provideService(FetchHttpClient.Fetch, fakeFetch))
 
-	it("does not restore credentials when a redirect bounces back to the original origin", async () => {
-		const seen: Array<string | null> = []
-		const hops = ["https://attacker.example/a", "https://api.example.com/back"]
-		const fakeFetch: typeof fetch = async (_url, init) => {
-			seen.push(new Headers(init?.headers).get("authorization"))
-			const location = hops[seen.length - 1]
-			return location === undefined
-				? new Response("ok", { status: 200 })
-				: new Response(null, { status: 302, headers: { location } })
-		}
-		await safeFetch("https://api.example.com/metrics", {
-			fetchFn: fakeFetch,
-			headers: { Authorization: "Bearer scrape-secret" },
-		})
-		expect(seen).toEqual(["Bearer scrape-secret", null, null])
-	})
+const hopsOf = (seen: ReadonlyArray<SeenHop>) =>
+	Arr.map(seen, (hop) => [hop.url, hop.method, hop.body, hop.apiKey])
 
-	it("caps redirect chains", async () => {
-		let calls = 0
-		const fakeFetch: typeof fetch = async () => {
-			calls++
-			return new Response(null, {
-				status: 302,
-				headers: { location: `https://api${calls}.example.com/r` },
-			})
-		}
-		await expect(safeFetch("https://api0.example.com/r", { fetchFn: fakeFetch })).rejects.toBeInstanceOf(
-			UrlValidationError,
-		)
-	})
+describe("guard with strictRedirects", () => {
+	it.effect("drops every configured header and the body on a cross-origin 302", () =>
+		Effect.gen(function* () {
+			const { seen, fakeFetch } = redirectOnce(302, "https://elsewhere.example/landing")
+			const response = yield* postThroughStrictGuard(fakeFetch)
+			assert.strictEqual(response.status, 200)
+			assert.deepStrictEqual(hopsOf(seen), [
+				["https://api.example.com/x", "POST", "payload", "probe-secret"],
+				["https://elsewhere.example/landing", "GET", "", null],
+			])
+		}),
+	)
+
+	it.effect("keeps the caller's own headers across origins while dropping the rest", () =>
+		Effect.gen(function* () {
+			const seen: Array<{ readonly trace: string | null; readonly apiKey: string | null }> = []
+			const fakeFetch: typeof fetch = async (_input, init) => {
+				const headers = new Headers(init?.headers)
+				seen.push({ trace: headers.get("traceparent"), apiKey: headers.get("x-api-key") })
+				return seen.length === 1
+					? new Response(null, {
+							status: 302,
+							headers: { location: "https://elsewhere.example/y" },
+						})
+					: new Response("ok", { status: 200 })
+			}
+			yield* Effect.flatMap(HttpClient.HttpClient, (client) =>
+				guard(client, { strictRedirects: true, ownHeaders: ["Traceparent"] }).get(
+					"https://api.example.com/x",
+					{ headers: { "X-Api-Key": "probe-secret", traceparent: "00-a-b-01" } },
+				),
+			).pipe(
+				Effect.provide(FetchHttpClient.layer),
+				Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
+			)
+			assert.deepStrictEqual(seen, [
+				{ trace: "00-a-b-01", apiKey: "probe-secret" },
+				{ trace: "00-a-b-01", apiKey: null },
+			])
+		}),
+	)
+
+	it.effect("replays a cross-origin 307 as a body-less GET without headers", () =>
+		Effect.gen(function* () {
+			const { seen, fakeFetch } = redirectOnce(307, "https://elsewhere.example/y")
+			yield* postThroughStrictGuard(fakeFetch)
+			assert.deepStrictEqual(hopsOf(seen)[1], ["https://elsewhere.example/y", "GET", "", null])
+		}),
+	)
+
+	it.effect("keeps method, body and headers on a same-origin 307", () =>
+		Effect.gen(function* () {
+			const { seen, fakeFetch } = redirectOnce(307, "/y")
+			yield* postThroughStrictGuard(fakeFetch)
+			assert.deepStrictEqual(hopsOf(seen)[1], [
+				"https://api.example.com/y",
+				"POST",
+				"payload",
+				"probe-secret",
+			])
+		}),
+	)
+
+	it.effect("turns a same-origin 303 into a GET that keeps the headers", () =>
+		Effect.gen(function* () {
+			const { seen, fakeFetch } = redirectOnce(303, "/status")
+			yield* postThroughStrictGuard(fakeFetch)
+			assert.deepStrictEqual(hopsOf(seen)[1], [
+				"https://api.example.com/status",
+				"GET",
+				"",
+				"probe-secret",
+			])
+		}),
+	)
+
+	it.effect("without the option, forwards non-credential headers cross-origin as before", () =>
+		Effect.gen(function* () {
+			const { seen, fakeFetch } = redirectOnce(307, "https://elsewhere.example/y")
+			yield* run(fakeFetch, (client) =>
+				client.post("https://api.example.com/x", {
+					headers: { "X-Api-Key": "probe-secret" },
+					body: HttpBody.text("payload"),
+				}),
+			)
+			assert.deepStrictEqual(hopsOf(seen)[1], [
+				"https://elsewhere.example/y",
+				"POST",
+				"payload",
+				"probe-secret",
+			])
+		}),
+	)
+})
+
+describe("describeHttpClientError", () => {
+	it.effect("redacts the request URL from a transport failure's message", () =>
+		Effect.gen(function* () {
+			const fakeFetch: typeof fetch = async (input) => {
+				throw new TypeError(`connect failed for ${urlOf(input)}`)
+			}
+			const error = yield* Effect.flip(
+				run(fakeFetch, (client) =>
+					client.get("https://hooks.example.com/api/webhooks/1/SECRET?sig=SIG"),
+				),
+			)
+			assert.strictEqual(error._tag, "HttpClientError")
+			if (error._tag !== "HttpClientError") return
+			const message = describeHttpClientError(error)
+			assert.strictEqual(message, "connect failed for https://hooks.example.com")
+		}),
+	)
 })

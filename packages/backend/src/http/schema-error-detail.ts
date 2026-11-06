@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 /**
  * Turns an `HttpApiSchemaError` (the framework's request-decode failure) into
  * human-readable, path-anchored lines.
@@ -16,7 +16,7 @@
  * decode failure, so the common request-decode path now renders the path alone.
  * The path still identifies the widget positionally (`widgets[0]`).
  */
-import { SchemaIssue } from "effect"
+import { SchemaIssue, Array as Arr, Option } from "effect"
 
 /** Which part of the request failed to decode; mirrors `HttpApiSchemaError.kind`. */
 export type SchemaErrorKind = "Params" | "Headers" | "Query" | "Body" | "Payload" | "ResponseHeaders"
@@ -38,7 +38,7 @@ export const formatIssuePath = (path: ReadonlyArray<PropertyKey>): string => {
 
 const readKey = (value: unknown, key: PropertyKey): unknown => {
 	if (typeof value !== "object" || value === null) return undefined
-	if (typeof key === "number") return Array.isArray(value) ? value[key] : undefined
+	if (typeof key === "number") return Arr.isArray(value) ? value[key] : undefined
 	return (value as Record<PropertyKey, unknown>)[key]
 }
 
@@ -52,10 +52,12 @@ export const widgetIdForPath = (root: unknown, path: ReadonlyArray<PropertyKey>)
 	let cursor = root
 	let widgetId: string | undefined
 	for (let i = 0; i < path.length; i++) {
-		const segment = path[i]!
+		const segment = path[i]
+		if (segment === undefined) break
 		const next = readKey(cursor, segment)
-		if (segment === "widgets" && typeof path[i + 1] === "number") {
-			const widget = readKey(next, path[i + 1]!)
+		const following = path[i + 1]
+		if (segment === "widgets" && typeof following === "number") {
+			const widget = readKey(next, following)
 			const id = readKey(widget, "id")
 			if (typeof id === "string") widgetId = id
 		}
@@ -78,7 +80,14 @@ const reportedInputs = (issue: SchemaIssue.Issue): ReadonlyArray<unknown> => {
 				break
 			case "Composite":
 			case "AnyOf":
-				current.issues.forEach(visit)
+				Arr.forEach(current.issues, visit)
+				break
+			case "Forbidden":
+			case "InvalidType":
+			case "InvalidValue":
+			case "MissingKey":
+			case "OneOf":
+			case "UnexpectedKey":
 				break
 		}
 	}
@@ -115,7 +124,7 @@ export const describeSchemaIssue = (issue: SchemaIssue.Issue): ReadonlyArray<Sch
 
 	for (const entry of formatStandard(issue).issues) {
 		// Standard Schema allows either a bare key or a `{ key }` segment object.
-		const path = (entry.path ?? []).map((segment) =>
+		const path = Arr.map(entry.path ?? [], (segment) =>
 			typeof segment === "object" && segment !== null ? segment.key : segment,
 		)
 		const key = formatIssuePath(path)
@@ -129,8 +138,13 @@ export const describeSchemaIssue = (issue: SchemaIssue.Issue): ReadonlyArray<Sch
 
 	const details: Array<SchemaIssueDetail> = []
 	for (const [key, { path, messages }] of byPath) {
-		const widgetId = inputs.map((input) => widgetIdForPath(input, path)).find((id) => id !== undefined)
-		const message = messages.join("; ")
+		const widgetId = Option.getOrUndefined(
+			Arr.findFirst(
+				Arr.map(inputs, (input) => widgetIdForPath(input, path)),
+				(id) => id !== undefined,
+			),
+		)
+		const message = Arr.join(messages, "; ")
 		const location = key === "" ? "<root>" : key
 		const label = widgetId === undefined ? location : `${location} (widget "${widgetId}")`
 		details.push({ path: key, widgetId, message, line: `${label}: ${message}` })

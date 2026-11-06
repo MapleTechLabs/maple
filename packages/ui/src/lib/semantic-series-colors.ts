@@ -1,11 +1,19 @@
 import { getIdentityColorBySlot, getIdentitySlot, IDENTITY_SLOT_COUNT } from "./colors"
 import { HTTP_METHOD_HEX } from "./http"
 import { SEVERITY_COLORS } from "./severity"
+import { Option, String as Str } from "effect"
 
 const SPAN_STATUS_COLORS: Record<string, string> = {
 	ok: "var(--severity-info)",
 	error: "var(--severity-error)",
 	unset: "var(--muted-foreground)",
+} satisfies Record<string, string>
+
+// Run results (CI runs, and any chart's series named so), colored like the span statuses.
+const RUN_RESULT_COLORS: Record<string, string> = {
+	succeeded: "var(--severity-info)",
+	failed: "var(--severity-error)",
+	cancelled: "var(--muted-foreground)",
 } satisfies Record<string, string>
 
 const AGGREGATE_COLORS: Record<string, string> = {
@@ -18,7 +26,7 @@ const AGGREGATE_COLORS: Record<string, string> = {
 // Base OKLCH parameters for each status code class
 // Each individual code gets a unique variation within its class
 const STATUS_CLASS_BASES: Record<number, { l: number; c: number; h: number }> = {
-	1: { l: 0.62, c: 0.04, h: 265 }, // low-chroma slate — informational, reads as background
+	1: { l: 0.62, c: 0.04, h: 265 }, // low-chroma slate: informational, reads as background
 	2: { l: 0.696, c: 0.17, h: 162 }, // green (matches --severity-info)
 	3: { l: 0.62, c: 0.14, h: 250 }, // blue (matches --chart-p50)
 	4: { l: 0.769, c: 0.188, h: 70 }, // amber (matches --severity-warn)
@@ -28,7 +36,7 @@ const STATUS_CLASS_BASES: Record<number, { l: number; c: number; h: number }> = 
 function getHttpStatusColor(code: number): string | null {
 	const classDigit = Math.floor(code / 100)
 	const base = STATUS_CLASS_BASES[classDigit]
-	if (!base) return null
+	if (base === undefined) return null
 
 	// For class labels (2xx, 3xx) use the base color directly
 	if (code % 100 === 0 && code === classDigit * 100) return statusOklch(base, 0)
@@ -56,28 +64,29 @@ function statusOklch(base: { l: number; c: number; h: number }, offset: number):
 const STATUS_CLASS_PATTERN = /^([1-5])xx$/i
 
 function detectColor(key: string): string | null {
-	const lower = key.toLowerCase()
+	const lower = Str.toLowerCase(key)
 
 	// Span status codes ("error" is matched here, before the severity map)
-	if (lower in SPAN_STATUS_COLORS) return SPAN_STATUS_COLORS[lower]
+	if (lower in SPAN_STATUS_COLORS) return SPAN_STATUS_COLORS[lower] ?? null
+	if (lower in RUN_RESULT_COLORS) return RUN_RESULT_COLORS[lower] ?? null
 
 	// Log severities — the shared uppercase-keyed map from ./severity
-	const severity = SEVERITY_COLORS[lower.toUpperCase()]
+	const severity = SEVERITY_COLORS[Str.toUpperCase(lower)]
 	if (severity) return severity
 
 	// HTTP methods
-	const method = HTTP_METHOD_HEX[lower.toUpperCase()]
+	const method = HTTP_METHOD_HEX[Str.toUpperCase(lower)]
 	if (method) return method
 
 	// Latency percentiles — these have dedicated chart tokens
-	if (lower in AGGREGATE_COLORS) return AGGREGATE_COLORS[lower]
+	if (lower in AGGREGATE_COLORS) return AGGREGATE_COLORS[lower] ?? null
 
 	// HTTP status code classes (e.g., "2xx", "5xx")
-	const classMatch = key.match(STATUS_CLASS_PATTERN)
-	if (classMatch) {
-		const classDigit = Number(classMatch[1])
+	const classMatch = Str.match(STATUS_CLASS_PATTERN)(key)
+	if (Option.isSome(classMatch)) {
+		const classDigit = Number(classMatch.value[1])
 		const base = STATUS_CLASS_BASES[classDigit]
-		if (base) return statusOklch(base, 0)
+		if (base !== undefined) return statusOklch(base, 0)
 	}
 
 	// Individual HTTP status codes (e.g., "200", "404", "500")
@@ -94,18 +103,19 @@ function detectColor(key: string): string | null {
  * Returns a CSS color value or null if no pattern matches.
  */
 export function getSemanticSeriesColor(seriesKey: string): string | null {
-	const trimmed = seriesKey.trim()
+	const trimmed = Str.trim(seriesKey)
 	if (!trimmed) return null
 
 	const direct = detectColor(trimmed)
 	if (direct) return direct
 
-	const colonIndex = trimmed.indexOf(": ")
-	if (colonIndex > 0) {
-		return detectColor(trimmed.slice(colonIndex + 2).trim())
-	}
-
-	return null
+	return Option.match(
+		Option.filter(Str.indexOf(": ")(trimmed), (colonIndex) => colonIndex > 0),
+		{
+			onNone: () => null,
+			onSome: (colonIndex) => detectColor(Str.trim(Str.slice(colonIndex + 2)(trimmed))),
+		},
+	)
 }
 
 /** The default color for a chart that plots a single, unnamed value. */
@@ -150,7 +160,7 @@ export function resolveSeriesColors(names: readonly string[]): Map<string, strin
 		const semantic = getSemanticSeriesColor(name)
 		if (semantic) {
 			colors.set(name, semantic)
-		} else if (GENERIC_SERIES_NAMES.has(name.trim().toLowerCase())) {
+		} else if (GENERIC_SERIES_NAMES.has(Str.toLowerCase(Str.trim(name)))) {
 			colors.set(name, SINGLE_SERIES_COLOR)
 		} else {
 			identityNames.push(name)
@@ -159,7 +169,7 @@ export function resolveSeriesColors(names: readonly string[]): Map<string, strin
 
 	// Sorted, so the assignment depends on the set of names and nothing else.
 	const takenSlots = new Set<number>()
-	for (const name of [...identityNames].sort((a, b) => a.localeCompare(b))) {
+	for (const name of [...identityNames].sort((a, b) => Str.localeCompare(b)(a))) {
 		let slot = getIdentitySlot(name)
 		for (let probe = 0; probe < IDENTITY_SLOT_COUNT && takenSlots.has(slot); probe++) {
 			slot = (slot + COLLISION_PROBE_STRIDE) % IDENTITY_SLOT_COUNT

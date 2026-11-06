@@ -4,7 +4,7 @@ import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import { formatNumber, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { ListMetricsOutput } from "@maple/domain/mcp-outputs"
 import { MetricType } from "@maple/query-engine"
 
@@ -28,6 +28,7 @@ interface MetricSummaryRow {
 export function registerListMetricsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_metrics",
+		title: "List Metrics",
 		description:
 			"Discover custom metrics with their type, unit, monotonicity and data volume. Pass a discovered `metric_name` and `metric_type` to query_data source=metrics.",
 		parameters: Schema.Struct({
@@ -47,10 +48,10 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				service: params.service ?? "all",
-				metricType: params.metric_type ?? "all",
-				limit: params.limit,
-				offset: params.offset,
+				"maple.ai.service": params.service ?? "all",
+				"maple.ai.metric_type": params.metric_type ?? "all",
+				"maple.ai.limit": params.limit,
+				"maple.ai.offset": params.offset,
 			})
 
 			const [metricsResult, summaryResult] = yield* Effect.all(
@@ -85,12 +86,12 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 					hasMore,
 					...(hasMore ? { nextOffset: params.offset + metrics.length } : undefined),
 				},
-				summary: summaryResult.data.map((s) => ({
+				summary: Arr.map(summaryResult.data, (s) => ({
 					metricType: s.metricType,
 					metricCount: Number(s.metricCount),
 					dataPointCount: Number(s.dataPointCount),
 				})),
-				metrics: metrics.map((m) => ({
+				metrics: Arr.map(metrics, (m) => ({
 					metricName: m.metricName,
 					metricType: m.metricType,
 					serviceName: m.serviceName,
@@ -112,13 +113,17 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 			const hasNarrowingFilter = filters.search !== undefined || filters.metricType !== undefined
 			const showSummary =
 				output.summary.length > 0 && (output.metrics.length > 0 || !hasNarrowingFilter)
-			const filterDesc = [
-				filters.search === undefined ? undefined : `name contains "${filters.search}"`,
-				filters.metricType === undefined ? undefined : `type=${filters.metricType}`,
-				filters.service === undefined ? undefined : `service=${filters.service}`,
-			]
-				.filter((part) => part !== undefined)
-				.join(", ")
+			const filterDesc = Arr.join(
+				Arr.filter(
+					[
+						filters.search === undefined ? undefined : `name contains "${filters.search}"`,
+						filters.metricType === undefined ? undefined : `type=${filters.metricType}`,
+						filters.service === undefined ? undefined : `service=${filters.service}`,
+					],
+					(part) => part !== undefined,
+				),
+				", ",
+			)
 			const pagination = output.pagination
 			return {
 				title: "Available Metrics",
@@ -144,7 +149,7 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 						? [
 								doc.table(
 									["Type", "Metrics", "Data Points"],
-									output.summary.map((s) => [
+									Arr.map(output.summary, (s) => [
 										s.metricType,
 										formatNumber(s.metricCount),
 										formatNumber(s.dataPointCount),
@@ -157,7 +162,7 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 						: [
 								doc.table(
 									["Name", "Type", "Monotonic", "Service", "Unit", "Data Points"],
-									output.metrics.map((m) => [
+									Arr.map(output.metrics, (m) => [
 										truncate(m.metricName, 40),
 										m.metricType,
 										m.isMonotonic ? "yes" : "-",
@@ -189,7 +194,7 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 								),
 							},
 						}),
-				next: output.metrics.slice(0, 3).map((m) =>
+				next: Arr.map(output.metrics.slice(0, 3), (m) =>
 					doc.next(
 						"query_data",
 						{

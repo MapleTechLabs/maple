@@ -11,10 +11,11 @@
 // Run: TZ=America/New_York MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-timezone-bound.ts
 
 import { ArchiveProbe } from "../archive-probe-helpers"
-import { parseArchiveGenerationManifest } from "../../src/server/archives/manifest"
+import { parseArchiveGenerationManifest } from "@maple/local-server/archives/manifest"
 import { randomUUID } from "node:crypto"
-import { CHDB_VERSION, MAPLE_VERSION } from "../../src/version"
-import { SCHEMA_FINGERPRINT } from "../../src/server/schema-identity"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
+import { String as Str } from "effect"
 
 const h = ArchiveProbe.create("timezone-bound")
 
@@ -56,7 +57,7 @@ const manifest = {
 			// instant, so parsing it is host-timezone-independent by construction.
 			minEventTimeUnixNano: `${BigInt(Date.parse("2026-06-29T23:30:00.000Z")) * 1_000_000n}`,
 			maxEventTimeUnixNano: `${BigInt(Date.parse("2026-06-29T23:30:00.000Z")) * 1_000_000n}`,
-			sha256: "a".repeat(64),
+			sha256: Str.repeat(64)("a"),
 			bytes: 4096,
 			columns: ["Timestamp"],
 			complexDigest: "123456789",
@@ -72,7 +73,7 @@ try {
 	const msg = e instanceof Error ? e.message : String(e)
 	if (/outside sealed range/i.test(msg)) {
 		h.fail(
-			`VALID_UTC_2330_REJECTED under ${process.env.TZ}: ${msg.slice(0, 160)} (host-timezone-dependent parse)`,
+			`VALID_UTC_2330_REJECTED under ${process.env.TZ}: ${Str.slice(0, 160)(msg)} (host-timezone-dependent parse)`,
 		)
 	}
 	h.fail(msg)

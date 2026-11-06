@@ -5,9 +5,9 @@
 // The request-count metrics are 5-min delta sums written by the analytics
 // poller, so sum(Value) per bucket is the true request count.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { from, param } from "@maple-dev/effect-clickhouse"
-import { MetricsSum } from "@maple/query-engine/ch/tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { from, param } from "@maple-dev/effect-orm/clickhouse"
+import { MetricsSum, orgIdParam } from "@maple/query-engine/ch/tables"
 import { ISO_Z_FORMAT, isoBucket } from "@maple/query-engine/ch/format"
 
 /**
@@ -54,21 +54,21 @@ export function cloudflareUsageStatsQuery() {
 			previousRequests: CH.sumIf(
 				$.Value,
 				$.MetricName.in_(...CLOUDFLARE_USAGE_METRIC_NAMES).and(
-					$.TimeUnix.lt(param.dateTimeString("currentStartTime")),
+					$.TimeUnix.lt(param.dateTime("currentStartTime")),
 				),
 			),
 			firewallBlockedEvents: CH.sumIf(
 				$.Value,
 				$.MetricName.eq("cloudflare.firewall.events")
 					.and($.Attributes.get("firewall.action").in_(...BLOCKED_FIREWALL_ACTIONS))
-					.and($.TimeUnix.gte(param.dateTimeString("currentStartTime"))),
+					.and($.TimeUnix.gte(param.dateTime("currentStartTime"))),
 			),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...CLOUDFLARE_USAGE_METRIC_NAMES, "cloudflare.firewall.events"),
-			$.TimeUnix.gte(param.dateTimeString("prevStartTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("prevStartTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.format("JSON")
 }
@@ -83,10 +83,10 @@ export function cloudflareUsageQuery() {
 			lastTimeUnix: CH.formatDateTime(CH.max_($.TimeUnix), ISO_Z_FORMAT),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...CLOUDFLARE_USAGE_METRIC_NAMES),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.groupBy("serviceName", "bucket")
 		.orderBy(["serviceName", "asc"], ["bucket", "asc"])

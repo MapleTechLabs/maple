@@ -11,8 +11,11 @@ import {
 } from "./options"
 
 // SAFETY: test fixtures; the shape is the decoded query-variable arm.
-const query = (source: DashboardQueryVariableSource): DashboardVariable =>
-	({ name: "v", type: "query", source }) as DashboardVariable
+const query = (source: DashboardQueryVariableSource): DashboardVariable => ({
+	name: "v",
+	type: "query",
+	source,
+})
 
 const loaded = (options: string[]) => ({ options, loading: false })
 
@@ -84,15 +87,36 @@ describe("dashboardVariableOptionsQuery", () => {
 		).toEqual({ kind: "attributeValues", source: "traces", scope: "resource", attributeKey: "k8s.pod" })
 	})
 
+	it("maps a metric variable onto a metrics attribute-values scan of its named metrics", () => {
+		expect(
+			dashboardVariableOptionsQuery(
+				query({
+					kind: "metric",
+					metricType: "gauge",
+					metricNames: ["gcp.cloud_run.cpu.utilization", "gcp.cloud_run.memory.utilization"],
+					scope: "resource",
+					attributeKey: "cloud.region",
+				}),
+			),
+		).toEqual({
+			kind: "attributeValues",
+			source: "metrics",
+			scope: "resource",
+			attributeKey: "cloud.region",
+			metricNames: ["gcp.cloud_run.cpu.utilization", "gcp.cloud_run.memory.utilization"],
+			metricType: "gauge",
+		})
+	})
+
 	it("has nothing to run for custom and textbox variables", () => {
 		expect(
 			dashboardVariableOptionsQuery({
 				name: "c",
 				type: "custom",
 				options: [{ value: "x" }],
-			} as DashboardVariable),
+			}),
 		).toBeNull()
-		expect(dashboardVariableOptionsQuery({ name: "t", type: "textbox" } as DashboardVariable)).toBeNull()
+		expect(dashboardVariableOptionsQuery({ name: "t", type: "textbox" })).toBeNull()
 	})
 })
 

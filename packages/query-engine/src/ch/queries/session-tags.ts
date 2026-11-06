@@ -5,19 +5,21 @@
 // column each list row carries. Nothing is stored, so changing a threshold
 // re-tags history. Tags that need `session_events` belong in a rollup, not here.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import * as T from "@maple-dev/effect-clickhouse/types"
-import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
+import type { DateTime } from "effect"
+import * as CH from "@maple-dev/effect-orm/expr"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { SESSION_QUALITY_TAGS, SESSION_TAG_THRESHOLDS, type SessionTag } from "@maple/domain/query-engine"
 import { SessionReplays } from "../tables"
 import { isBotCond } from "../user-agent"
+import { Array as Arr } from "effect"
 
 type ReplaysAccessor = ColumnAccessor<typeof SessionReplays.columns>
 type ReplaysWhere = ($: ReplaysAccessor) => Array<CH.Condition | undefined>
 
 // dateDiff(unit, start, end) as whole units; the DSL has no typed wrapper.
-function dateDiffMs(start: CH.Expr<string>, end: CH.Expr<string>): CH.Expr<number> {
-	return CH.compileTypedFnCall<number>("dateDiff", T.int64.schema, CH.lit("millisecond"), start, end)
+function dateDiffMs(start: CH.Expr<DateTime.Utc>, end: CH.Expr<DateTime.Utc>): CH.Expr<number> {
+	return CH.compileTypedFnCall("dateDiff", T.int64.schema, CH.lit("millisecond"), start, end)
 }
 
 // Only the ended row carries DurationMs. A tab killed without its unload row has
@@ -91,10 +93,10 @@ function tagCondition($: TagFacts, tag: SessionTag): CH.Condition {
 export function taggedSessionIds(tags: ReadonlyArray<SessionTag>, where: ReplaysWhere) {
 	return fromQuery(sessionTagFactsQuery(where), "t")
 		.select(($) => ({ SessionId: $.sessionId }))
-		.where(($) => tags.map((tag) => tagCondition($, tag)))
+		.where(($) => Arr.map(tags, (tag) => tagCondition($, tag)))
 }
 
-const isQualityTag = (tag: SessionTag) => SESSION_QUALITY_TAGS.some((quality) => quality === tag)
+const isQualityTag = (tag: SessionTag) => Arr.some(SESSION_QUALITY_TAGS, (quality) => quality === tag)
 
 /**
  * Sessions per tag, as a facet branch: one row per tag, `name` being the tag.
@@ -105,9 +107,9 @@ const isQualityTag = (tag: SessionTag) => SESSION_QUALITY_TAGS.some((quality) =>
  */
 export function sessionTagFacet(where: ReplaysWhere, selected: ReadonlyArray<SessionTag> = []) {
 	const under = ($: TagFacts, own: CH.Condition, context: ReadonlyArray<SessionTag>) =>
-		context.reduce((cond, tag) => cond.and(tagCondition($, tag)), own)
-	const traitsOnly = selected.filter((tag) => !isQualityTag(tag))
-	const othersThan = (trait: SessionTag) => selected.filter((tag) => tag !== trait)
+		Arr.reduce(context, own, (cond, tag) => cond.and(tagCondition($, tag)))
+	const traitsOnly = Arr.filter(selected, (tag) => !isQualityTag(tag))
+	const othersThan = (trait: SessionTag) => Arr.filter(selected, (tag) => tag !== trait)
 	return fromQuery(sessionTagFactsQuery(where), "t")
 		.select(($) => ({
 			name: CH.arrayJoin<string>(

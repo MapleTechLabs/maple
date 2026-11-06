@@ -8,12 +8,15 @@
 // apps/api (`query-benchmark.clickhouse.e2e.test.ts`) analyzes these fixtures
 // against the real migrations alongside the core catalog.
 
-import { Effect } from "effect"
+import { Effect, Array as Arr, Record as Rec, String as Str } from "effect"
 import { compileUnionUnsafe, compileUnsafe, type CompiledQuery } from "@maple/query-engine/ch"
+import { AWS_INFRA_KIND_IDS, AWS_INFRA_KINDS } from "@maple/domain/aws-infra"
+import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS, GCP_INFRA_SOURCES } from "@maple/domain/gcp-infra"
 import { MAPLE_AI_TRACE_SESSION_PREFIX } from "@maple/domain/gen-ai"
 import * as CH from "../index"
 import { BenchmarkError, type CatalogEntry } from "@maple/query-engine/benchmark"
 import { fingerprintSql } from "@maple/query-engine/execution"
+import { OrgId } from "@maple/domain"
 
 export interface IntegrationFixture {
 	/** Source module basename, e.g. `"cloudflare-infra"`. */
@@ -25,7 +28,7 @@ export interface IntegrationFixture {
 	readonly compile: () => CompiledQuery<unknown>
 }
 
-const ORG_ID = "org_sql_catalog"
+const ORG_ID = OrgId.make("org_sql_catalog")
 const START_TIME = "2026-01-01 10:30:00"
 const END_TIME = "2026-01-03 14:15:00"
 
@@ -47,6 +50,18 @@ const cfUsageCompare = { ...window, currentStartTime: "2026-01-02 10:30:00", pre
 /** One PlanetScale branch, as the /infra/planetscale pages scope them. */
 const psBranch = { ...window, database: "maple-prd", branch: "main" }
 const psBranchBucketed = { ...psBranch, bucketSeconds: 300 }
+
+const railwayWindow = { orgId: ORG_ID, startTime: START_TIME, endTime: END_TIME }
+const railwayServiceBucketed = {
+	...railwayWindow,
+	environmentId: "env_1",
+	serviceId: "svc_1",
+	bucketSeconds: 300,
+}
+
+/** One Supabase project, as /infra/supabase/$ref scopes it. */
+const supabaseProject = { ...window, projectRef: "abcdefghijklmnopqrst" }
+const supabaseProjectBucketed = { ...supabaseProject, bucketSeconds: 300 }
 
 /** The zone-slice filters the /infra/cloudflare page sends, as one bag. */
 const CF_FILTERS = { hosts: ["example.com"], statusClasses: ["5xx"], methods: ["GET"] }
@@ -123,6 +138,39 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		name: "aiSessionPageQuery",
 		label: "default",
 		compile: () => compileUnsafe(CH.aiSessionPageQuery(), window),
+	},
+	{
+		// What the list runs first where the index can rank the page: the page's
+		// session ids and bounds over the caller's window, nothing netted.
+		module: "ai-sessions",
+		name: "aiSessionRankQuery",
+		label: "filtered",
+		compile: () =>
+			compileUnsafe(
+				CH.aiSessionRankQuery({
+					limit: 25,
+					offset: 25,
+					vendorIds: ["eve"],
+					hasErrors: true,
+					sortBy: "durationMs",
+				}),
+				window,
+			),
+	},
+	{
+		// And then: the ranked sessions' rows, over the page's bounds alone.
+		module: "ai-sessions",
+		name: "aiSessionPageQuery",
+		label: "ranked",
+		compile: () =>
+			compileUnsafe(
+				CH.aiSessionPageQuery({
+					sessionIds: AI_PAGE_SESSION_IDS,
+					vendorIds: ["eve"],
+					sortBy: "durationMs",
+				}),
+				{ ...aiPageBounds, endTime: window.endTime },
+			),
 	},
 	{
 		// The vendor/service filters the AI sessions list page sends, on its
@@ -437,6 +485,12 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 	},
 	{
 		module: "ai-sessions",
+		name: "aiSessionsOfTracesQuery",
+		label: "default",
+		compile: () => compileUnsafe(CH.aiSessionsOfTracesQuery([AI_TRACE_ID]), window),
+	},
+	{
+		module: "ai-sessions",
 		name: "aiTraceSpansQuery",
 		label: "default",
 		compile: () =>
@@ -633,6 +687,30 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		compile: () => compileUnsafe(CH.cloudflareWorkerLatencySQL(), cfZone),
 	},
 	{
+		module: "cloudflare-infra",
+		name: "cloudflareWorkerOutcomeTimeseriesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.cloudflareWorkerOutcomeTimeseriesSQL(), { ...cfZoneBucketed, accountId: "" }),
+	},
+	{
+		module: "cloudflare-infra",
+		name: "cloudflareWorkerLatencyTimeseriesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.cloudflareWorkerLatencyTimeseriesSQL(), { ...cfZoneBucketed, accountId: "" }),
+	},
+	{
+		module: "cloudflare-infra",
+		name: "cloudflareWorkerDurableObjectTimeseriesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.cloudflareWorkerDurableObjectTimeseriesSQL(), {
+				...cfZoneBucketed,
+				accountId: "",
+			}),
+	},
+	{
 		module: "cloudflare-infra-extended",
 		name: "cloudflareZoneFirewallTimeseriesSQL",
 		label: "default",
@@ -704,6 +782,183 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		label: "default",
 		compile: () => compileUnsafe(CH.planetscaleBranchInfraTimeseriesSQL(), psBranchBucketed),
 	},
+	{
+		module: "railway-infra",
+		name: "railwayServicesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.railwayServicesSQL(), railwayWindow),
+	},
+	{
+		module: "railway-infra",
+		name: "railwayServiceTimeseriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.railwayServiceTimeseriesSQL(), railwayServiceBucketed),
+	},
+	{
+		module: "supabase-infra",
+		name: "supabaseProjectGaugesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectGaugesSQL(), window),
+	},
+	{
+		module: "supabase-infra",
+		name: "supabaseProjectCpuSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectCpuSQL(), window),
+	},
+	{
+		module: "supabase-infra",
+		name: "supabaseProjectGaugeSeriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectGaugeSeriesSQL(), supabaseProjectBucketed),
+	},
+	{
+		module: "supabase-infra",
+		name: "supabaseProjectRateSeriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectRateSeriesSQL(), supabaseProjectBucketed),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseApiTrafficSeriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseApiTrafficSeriesSQL(), supabaseProjectBucketed),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseApiTrafficTotalsSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseApiTrafficTotalsSQL(), supabaseProject),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseApiTopPathsSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseApiTopPathsSQL(), supabaseProject),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseLogIssuesSQL",
+		label: "project",
+		compile: () => compileUnsafe(CH.supabaseLogIssuesSQL({ byProject: true }), supabaseProject),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseLogIssuesSQL",
+		label: "org",
+		compile: () => compileUnsafe(CH.supabaseLogIssuesSQL({ byProject: false }), window),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseLogsProjectsSummarySQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseLogsProjectsSummarySQL(), window),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseProjectCallersSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectCallersSQL(), supabaseProject),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseProjectCallerSeriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectCallerSeriesSQL(), supabaseProjectBucketed),
+	},
+	{
+		module: "gcp-infra",
+		name: "gcpInfraPresenceSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.gcpInfraPresenceSQL(), window),
+	},
+	...Arr.map(GCP_INFRA_SERVICE_IDS, (service): IntegrationFixture => ({
+		module: "gcp-infra",
+		name: "gcpInfraMetricsSQL",
+		label: service,
+		compile: () => compileUnsafe(CH.gcpInfraMetricsSQL(service), window),
+	})),
+	...Arr.map(GCP_INFRA_SOURCE_IDS, (source): IntegrationFixture => ({
+		module: "gcp-infra",
+		name: "gcpInfraTimeseriesSQL",
+		label: source,
+		compile: () =>
+			compileUnsafe(
+				CH.gcpInfraTimeseriesSQL(
+					source,
+					Arr.map(GCP_INFRA_SOURCES[source].identity, ([label]) => Str.toLowerCase(label)),
+				),
+				bucketed,
+			),
+	})),
+	...Arr.map(
+		Arr.filter(GCP_INFRA_SERVICE_IDS, (service) => CH.GCP_INFRA_SPARKLINE_METRICS[service] !== undefined),
+		(service): IntegrationFixture => ({
+			module: "gcp-infra",
+			name: "gcpInfraSparklinesSQL",
+			label: service,
+			compile: () => compileUnsafe(CH.gcpInfraSparklinesSQL(service), bucketed),
+		}),
+	),
+	{
+		module: "gcp-infra",
+		name: "gcpCloudSqlTopQueriesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.gcpCloudSqlTopQueriesSQL(["acme-prod:orders-db", "acme-prod", "us-central1"]),
+				window,
+			),
+	},
+	{
+		module: "gcp-infra",
+		name: "gcpCloudSqlDatabasesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.gcpCloudSqlDatabasesSQL(["acme-prod:orders-db", "acme-prod", "us-central1"]),
+				window,
+			),
+	},
+	{
+		module: "aws-infra",
+		name: "awsInfraPresenceSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.awsInfraPresenceSQL(), window),
+	},
+	...Arr.map(AWS_INFRA_KIND_IDS, (kind): IntegrationFixture => ({
+		module: "aws-infra",
+		name: "awsInfraMetricsSQL",
+		label: kind,
+		compile: () => compileUnsafe(CH.awsInfraMetricsSQL(kind), window),
+	})),
+	...Arr.map(AWS_INFRA_KIND_IDS, (kind): IntegrationFixture => ({
+		module: "aws-infra",
+		name: "awsInfraSparklinesSQL",
+		label: kind,
+		compile: () =>
+			compileUnsafe(
+				CH.awsInfraSparklinesSQL(
+					kind,
+					CH.awsInfraBucketCount(START_TIME, END_TIME, bucketed.bucketSeconds),
+				),
+				bucketed,
+			),
+	})),
+	...Arr.map(AWS_INFRA_KIND_IDS, (kind): IntegrationFixture => ({
+		module: "aws-infra",
+		name: "awsInfraTimeseriesSQL",
+		label: kind,
+		compile: () =>
+			compileUnsafe(
+				CH.awsInfraTimeseriesSQL(kind, [
+					...Arr.map(AWS_INFRA_KINDS[kind].identity, ([, dimension]) => `acme-${dimension}`),
+					"us-east-1",
+					"123456789012",
+				]),
+				bucketed,
+			),
+	})),
 	{
 		module: "planetscale-map",
 		name: "planetscaleBranchGaugesSQL",
@@ -816,7 +1071,10 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		module: "setup-audit",
 		name: "auditRootlessTracesSQL",
 		label: "default",
-		compile: () => Effect.runSync(CH.auditRootlessTracesSQL(traceWindow)),
+		compile: () =>
+			Effect.runSync(
+				CH.auditRootlessTracesSQL(traceWindow, { keepErrorSpans: true, slowSpanNs: 2_000_000_000 }),
+			),
 	},
 ]
 
@@ -825,34 +1083,33 @@ export interface IntegrationCatalogEntry extends CatalogEntry {
 }
 
 /** Compile every fixture. A fixture that throws fails here, not in production. */
-export const collectIntegrationQueryCatalog = () =>
-	Effect.try({
-		try: (): ReadonlyArray<IntegrationCatalogEntry> =>
-			integrationFixtures.map((fixture) => {
-				const compiled = fixture.compile()
-				// The executor dies on unresolved placeholders at runtime; a fixture
-				// missing a compile param must fail HERE.
-				if (compiled.sql.includes("__PARAM_")) {
-					throw new Error(
-						`Integration catalog: ${fixture.module}/${fixture.name} (${fixture.label}) ` +
-							`left an unresolved __PARAM_ placeholder — a compile param is missing.`,
-					)
-				}
-				return {
-					id: `builder:${fixture.module}:${fixture.name}:${fixture.label}`,
-					name: fixture.name,
-					source: "builder",
-					label: fixture.label,
-					capabilityLabel: "baseline",
-					route: undefined,
-					fingerprint: fingerprintSql(compiled.sql),
-					sql: compiled.sql,
-					compiled,
-				}
-			}),
-		catch: (cause) =>
-			new BenchmarkError({ message: `Integration catalog compilation failed: ${String(cause)}` }),
-	})
+export const collectIntegrationQueryCatalog = Effect.try({
+	try: (): ReadonlyArray<IntegrationCatalogEntry> =>
+		Arr.map(integrationFixtures, (fixture) => {
+			const compiled = fixture.compile()
+			// The executor dies on unresolved placeholders at runtime; a fixture
+			// missing a compile param must fail HERE.
+			if (Str.includes("__PARAM_")(compiled.sql)) {
+				throw new Error(
+					`Integration catalog: ${fixture.module}/${fixture.name} (${fixture.label}) ` +
+						`left an unresolved __PARAM_ placeholder — a compile param is missing.`,
+				)
+			}
+			return {
+				id: `builder:${fixture.module}:${fixture.name}:${fixture.label}`,
+				name: fixture.name,
+				source: "builder",
+				label: fixture.label,
+				capabilityLabel: "baseline",
+				route: undefined,
+				fingerprint: fingerprintSql(compiled.sql),
+				sql: compiled.sql,
+				compiled,
+			}
+		}),
+	catch: (cause) =>
+		new BenchmarkError({ message: `Integration catalog compilation failed: ${String(cause)}` }),
+})
 
 // Anti-rot assertion — the integration half of `UNDECODED_QUERIES`
 
@@ -881,10 +1138,10 @@ export const UNDECODED_INTEGRATION_QUERIES: ReadonlySet<string> = new Set([])
 export function undecodedIntegrationQueries(
 	entries: ReadonlyArray<IntegrationCatalogEntry>,
 ): ReadonlyArray<string> {
-	return entries
-		.filter((entry) => entry.compiled.rowSchemaSource === "none")
-		.map((entry) => entry.id)
-		.sort()
+	return Arr.map(
+		Arr.filter(entries, (entry) => entry.compiled.rowSchemaSource === "none"),
+		(entry) => entry.id,
+	).sort()
 }
 
 /**
@@ -921,16 +1178,20 @@ export const EXEMPT_INTEGRATION_BUILDERS: ReadonlySet<string> = new Set([])
 /** Every exported builder — the `*Query` / `*SQL` naming convention is the
  *  contract, the same one the core catalog's coverage assertion reads. */
 export function exportedIntegrationBuilders(): ReadonlyArray<string> {
-	return Object.entries(CH)
-		.filter(([name, value]) => typeof value === "function" && /(Query|SQL)$/.test(name))
-		.map(([name]) => name)
-		.sort()
+	return Arr.map(
+		Arr.filter(
+			Rec.toEntries(CH),
+			([name, value]) => typeof value === "function" && /(Query|SQL)$/.test(name),
+		),
+		([name]) => name,
+	).sort()
 }
 
 /** Exported builders that no fixture compiles and no exemption covers. */
 export function unfixturedIntegrationBuilders(): ReadonlyArray<string> {
-	const fixtured = new Set(integrationFixtures.map((fixture) => fixture.name))
-	return exportedIntegrationBuilders().filter(
+	const fixtured = new Set(Arr.map(integrationFixtures, (fixture) => fixture.name))
+	return Arr.filter(
+		exportedIntegrationBuilders(),
 		(name) => !fixtured.has(name) && !EXEMPT_INTEGRATION_BUILDERS.has(name),
 	)
 }

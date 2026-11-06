@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant } from "@maple/domain/http"
 import { isoTimestamp, MapleApiV2 } from "@maple/domain/http/v2"
 import type { V2SupportChannel } from "@maple/domain/http/v2"
@@ -43,7 +43,8 @@ export const HttpV2SupportChannelLive = HttpApiBuilder.group(MapleApiV2, "suppor
 			.handle("retrieve", () =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					return toV2SupportChannel(yield* service.retrieve(tenant.orgId), null)
+					const channel = yield* service.retrieve(tenant.orgId)
+					return toV2SupportChannel(channel, null)
 				}),
 			)
 			.handle("invite", () =>

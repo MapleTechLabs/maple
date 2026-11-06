@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest"
-import { deriveHostStatus, severityLevel } from "./format"
-import { formatBytesPerSecond, formatLoad, formatPercent, formatUptime } from "@maple/ui/lib/format"
+import {
+	capacityFraction,
+	deriveHostStatus,
+	formatBytesOfAllocatable,
+	formatCoresOfAllocatable,
+	formatUtilizationPercent,
+	severityLevel,
+} from "./format"
+import { Array as Arr } from "effect"
 
 describe("deriveHostStatus", () => {
 	const now = new Date("2026-04-24T12:00:00Z").getTime()
@@ -22,71 +29,6 @@ describe("deriveHostStatus", () => {
 	})
 })
 
-describe("formatPercent", () => {
-	it("formats a small fraction as 0%", () => {
-		expect(formatPercent(0.0004)).toBe("0%")
-	})
-
-	it("formats a mid-range fraction with one decimal", () => {
-		expect(formatPercent(0.054)).toBe("5.4%")
-	})
-
-	it("drops decimals for values ≥10%", () => {
-		expect(formatPercent(0.236)).toBe("24%")
-	})
-
-	it("returns em-dash for non-finite input", () => {
-		expect(formatPercent(Number.NaN)).toBe("—")
-	})
-})
-
-describe("formatBytesPerSecond", () => {
-	it("returns 0 B/s for zero", () => {
-		expect(formatBytesPerSecond(0)).toBe("0 B/s")
-	})
-
-	it("scales up to KB/s", () => {
-		expect(formatBytesPerSecond(2048)).toBe("2.0 KB/s")
-	})
-
-	it("scales up to MB/s with integer rounding over 10", () => {
-		expect(formatBytesPerSecond(50 * 1024 * 1024)).toBe("50 MB/s")
-	})
-})
-
-describe("formatLoad", () => {
-	it("formats with two decimals", () => {
-		expect(formatLoad(1.3456)).toBe("1.35")
-	})
-
-	it("returns em-dash for NaN", () => {
-		expect(formatLoad(Number.NaN)).toBe("—")
-	})
-})
-
-describe("formatUptime", () => {
-	it("returns em-dash for zero or negative", () => {
-		expect(formatUptime(0)).toBe("—")
-		expect(formatUptime(-5)).toBe("—")
-	})
-
-	it("formats minutes under an hour", () => {
-		expect(formatUptime(125)).toBe("2m")
-	})
-
-	it("formats hours under a day", () => {
-		expect(formatUptime(3 * 3600 + 200)).toBe("3h")
-	})
-
-	it("formats days with remaining hours", () => {
-		expect(formatUptime(2 * 86_400 + 5 * 3600)).toBe("2d 5h")
-	})
-
-	it("returns em-dash for non-finite input", () => {
-		expect(formatUptime(Number.NaN)).toBe("—")
-	})
-})
-
 describe("severityLevel", () => {
 	it("returns ok below 60%", () => {
 		expect(severityLevel(0)).toBe("ok")
@@ -105,5 +47,43 @@ describe("severityLevel", () => {
 
 	it("returns ok for non-finite input", () => {
 		expect(severityLevel(Number.NaN)).toBe("ok")
+	})
+})
+
+describe("node capacity", () => {
+	it("keeps the utilization when allocatable was collected", () => {
+		expect(capacityFraction(0.25, 4)).toBe(0.25)
+	})
+
+	it("is NaN when allocatable was not collected, so it renders a dash", () => {
+		expect(capacityFraction(0, 0)).toBeNaN()
+	})
+
+	it("formats cores against allocatable", () => {
+		expect(formatCoresOfAllocatable(0.4231, 3.92)).toBe("0.423 / 3.92 cores")
+		expect(formatCoresOfAllocatable(0.4231, 0)).toBe("0.423 cores")
+		expect(formatCoresOfAllocatable(10.4, 16)).toBe("10.4 / 16 cores")
+	})
+
+	it("formats memory against allocatable", () => {
+		expect(formatBytesOfAllocatable(3 * 1024 ** 3, 16 * 1024 ** 3)).toBe("3.0 GB / 16.0 GB")
+		expect(formatBytesOfAllocatable(3 * 1024 ** 3, 0)).toBe("3.0 GB")
+	})
+})
+
+describe("formatUtilizationPercent", () => {
+	it("keeps one decimal under 10% and drops trailing zeros", () => {
+		expect(Arr.map([0.017, 0.008, 0.06, 0.2, 0.0004, 0], formatUtilizationPercent)).toEqual([
+			"1.7%",
+			"0.8%",
+			"6%",
+			"20%",
+			"<0.1%",
+			"0%",
+		])
+	})
+
+	it("rounds a value that reaches 10% to a whole number", () => {
+		expect(formatUtilizationPercent(0.0996)).toBe("10%")
 	})
 })

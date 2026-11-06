@@ -15,15 +15,18 @@ enum SignalUnit: Codable {
 	case apdex
 	case count
 	case plain
+	/// An SLO burn rate: a multiple of the sustainable rate, shown as `14.4x` like the web.
+	case burnRate
 
 	func format(_ value: Double?) -> String {
-		guard let value, value.isFinite else { return "—" }
+		guard let value, value.isFinite else { return Format.placeholder }
 		switch self {
 		case .ratio: return Format.errorRate(value)
 		case .milliseconds: return Format.latency(value)
 		case .perMinute: return Format.count(value) + "/min"
 		case .apdex: return String(format: "%.2f", value)
 		case .count, .plain: return Format.count(value)
+		case .burnRate: return String(format: "%.1fx", value)
 		}
 	}
 }
@@ -44,6 +47,10 @@ struct SignalDisplay: Codable {
 		case .throughput: self.init(label: "Throughput", unit: .perMinute)
 		case .builderQuery: self.init(label: "Query", unit: .plain)
 		case .rawQuery: self.init(label: "Raw query", unit: .plain)
+		// A monitor's hidden rule: down is 1, up is 0, so the value reads as a plain number.
+		case .uptime: self.init(label: "Uptime check", unit: .plain)
+		// An SLO's hidden rule: the value is how many times faster than sustainable the budget burns.
+		case .sloBurnRate: self.init(label: "SLO burn rate", unit: .burnRate)
 		}
 	}
 
@@ -164,10 +171,13 @@ extension AlertDestinationType {
 		case .chat: "Chat"
 		case .pagerduty: "PagerDuty"
 		case .webhook: "Webhook"
-		case .hazelOauth: "Hazel"
 		case .discord: "Discord"
 		case .telegram: "Telegram"
+		case .googleChat: "Google Chat"
+		case .microsoftTeams: "Microsoft Teams"
+		case .incidentIo: "incident.io"
 		case .email: "Email"
+		case .linear: "Linear"
 		}
 	}
 }
@@ -176,18 +186,41 @@ extension Format {
 	/// A timeline stamp: `11:44` today, `Aug 15, 11:44` otherwise. One line,
 	/// always — the timeline's date column is fixed-width.
 	static func timelineTime(_ timestamp: String) -> String {
-		guard let date = ResolvedTimeWindow.parse(timestamp) else { return "—" }
+		guard let date = ResolvedTimeWindow.parse(timestamp) else { return Format.placeholder }
 		if Calendar.current.isDateInToday(date) {
 			return date.formatted(date: .omitted, time: .shortened)
 		}
 		return date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
 	}
 
+	/// `9:41`: the locale's clock without its AM/PM marker, for chart axes and
+	/// timelines that have no room for it.
+	static func clock(_ date: Date) -> String {
+		clockFormatter.string(from: date)
+			.replacingOccurrences(of: clockFormatter.amSymbol, with: "")
+			.replacingOccurrences(of: clockFormatter.pmSymbol, with: "")
+			.trimmingCharacters(in: .whitespaces)
+	}
+
+	private static let clockFormatter: DateFormatter = {
+		let formatter = DateFormatter()
+		formatter.setLocalizedDateFormatFromTemplate("jmm")
+		return formatter
+	}()
+
+	/// `timelineTime`, but a bare `9:41` for today.
+	static func timelineClock(_ timestamp: String) -> String {
+		guard let date = ResolvedTimeWindow.parse(timestamp), Calendar.current.isDateInToday(date) else {
+			return timelineTime(timestamp)
+		}
+		return clock(date)
+	}
+
 	/// "32m", "3h 12m", "2d 4h" — how long something has been going on. Terse
 	/// like `lastSeen`, but two units once it passes an hour, because "3h" for
 	/// an incident hides whether it's fresh or nearly four.
 	static func duration(from startText: String, to endText: String? = nil) -> String {
-		guard let start = ResolvedTimeWindow.parse(startText) else { return "—" }
+		guard let start = ResolvedTimeWindow.parse(startText) else { return Format.placeholder }
 		let end = endText.flatMap(ResolvedTimeWindow.parse) ?? Date()
 		return duration(seconds: end.timeIntervalSince(start))
 	}
@@ -219,5 +252,18 @@ extension Format {
 		default:
 			return "\(observedText) \(comparator.glyph) \(unit.format(threshold))"
 		}
+	}
+}
+
+extension AlertIncident {
+	/// The last observation against the rule's threshold: `9.0% > 5.0%`.
+	func breach(unit: SignalUnit) -> String {
+		Format.breach(
+			observed: lastObservedValue,
+			comparator: comparator,
+			threshold: threshold,
+			upper: thresholdUpper,
+			unit: unit
+		)
 	}
 }

@@ -1,5 +1,5 @@
-import * as Command from "effect/unstable/cli/Command"
-import * as Argument from "effect/unstable/cli/Argument"
+import * as Command from "effect/cli/Command"
+import * as Argument from "effect/cli/Argument"
 import { Console, Effect } from "effect"
 import { MapleConfig } from "../core/config"
 
@@ -18,7 +18,7 @@ export const use = Command.make("use", {
 		Effect.fnUntraced(function* (a) {
 			const config = yield* MapleConfig
 			if (a.mode === "auto") {
-				yield* config.clearDefaultMode()
+				yield* config.clearDefaultMode
 				yield* Console.log(
 					"Default mode cleared; Maple will auto-detect (use --local/--remote to override).",
 				)

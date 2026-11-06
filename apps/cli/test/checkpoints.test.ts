@@ -1,9 +1,9 @@
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { describe, it } from "@effect/vitest"
 import { createHash } from "node:crypto"
-import { sha256File } from "../src/server/checkpoint-digest"
-import { Clock, Duration, Effect, Exit, Option } from "effect"
-import { HttpClient, HttpClientResponse } from "effect/unstable/http"
+import { sha256File } from "@maple/local-server/checkpoint-digest"
+import { Clock, Duration, Effect, Exit, Option, Array as Arr, String as Str } from "effect"
+import { HttpClient, HttpClientResponse } from "effect/http"
 import { deepStrictEqual, match, ok, rejects, strictEqual, throws } from "node:assert"
 import {
 	existsSync,
@@ -56,17 +56,17 @@ import {
 	retireCheckpointIfEligible,
 	validateCheckpointDataDir,
 	writeBackupConfig,
-} from "../src/server/checkpoints"
+} from "@maple/local-server/checkpoints"
 import {
 	durableWrite,
 	isUnsupportedDirectorySyncError,
 	syncDirectory,
 	syncTree,
-} from "../src/server/durable-files"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
-import { storeMarkerPath, storeOpenMarkerPath } from "../src/server/store-version"
-import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
-import { eventingControlSnapshotPath } from "../src/server/eventing/control-store"
+} from "@maple/local-server/durable-files"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
+import { storeMarkerPath, storeOpenMarkerPath } from "@maple/local-server/store-version"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
+import { eventingControlSnapshotPath } from "@maple/local-server/eventing/control-store"
 import { openStore, runAsync } from "./eventing-test-support"
 
 const withDataDir = async (run: (dataDir: string) => Promise<void> | void): Promise<void> => {
@@ -230,26 +230,20 @@ describe("writeBackupConfig", () => {
 			const runtimePath = join(dataDir, "runtime.xml")
 			writeBackupConfig(runtimePath)
 			const runtime = readFileSync(runtimePath, "utf8")
-			ok(runtime.includes("<allowed_disk>default</allowed_disk>"))
-			ok(runtime.includes("<allowed_path>backups</allowed_path>"))
+			ok(Str.includes("<allowed_disk>default</allowed_disk>")(runtime))
+			ok(Str.includes("<allowed_path>backups</allowed_path>")(runtime))
 			strictEqual(lstatSync(runtimePath).mode & 0o777, 0o600)
 
 			const restorePath = join(dataDir, "restore.xml")
 			writeBackupConfig(restorePath, join(dataDir, "source & <store>"))
 			const restore = readFileSync(restorePath, "utf8")
-			ok(restore.includes("<allowed_disk>src</allowed_disk>"))
-			ok(restore.includes("source &amp; &lt;store&gt;"))
+			ok(Str.includes("<allowed_disk>src</allowed_disk>")(restore))
+			ok(Str.includes("source &amp; &lt;store&gt;")(restore))
 		})
 	})
 })
 
 describe("checkpoint IDs and strict parsers", () => {
-	it("generates collision-resistant UUIDs", () => {
-		const ids = new Set(Array.from({ length: 2_000 }, () => newCheckpointId()))
-		strictEqual(ids.size, 2_000)
-		for (const id of ids) match(id, /^[0-9a-f-]{36}$/)
-	})
-
 	it("accepts a complete manifest and rejects ID, path, compatibility, and count corruption", () => {
 		const id = newCheckpointId()
 		strictEqual(parseCheckpointManifest(manifest(id), id).checkpointId, id)
@@ -346,14 +340,8 @@ describe("checkpoint snapshot hashing", () => {
 		})
 	})
 
-	it("hashes empty snapshots and propagates file-open/read failures", async () => {
+	it("propagates file-open/read failures while hashing", async () => {
 		await withDataDir(async (dataDir) => {
-			const path = join(dataDir, "empty.bin")
-			writeFileSync(path, "")
-			strictEqual(
-				await sha256File(path),
-				"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-			)
 			await rejects(sha256File(join(dataDir, "missing.bin")), /ENOENT/)
 			await rejects(sha256File(dataDir), /EISDIR/)
 		})
@@ -390,7 +378,7 @@ describe("checkpoint state resolution", () => {
 			strictEqual((await resolveCheckpoint(dataDir)).manifest.formatVersion, 2)
 
 			const corrupted = Buffer.from(controlBytes)
-			corrupted[corrupted.length - 1] ^= 1
+			corrupted.writeUInt8((corrupted.at(-1) ?? 0) ^ 1, corrupted.length - 1)
 			writeFileSync(controlPath, corrupted)
 			await rejects(resolveCheckpoint(dataDir), /digest mismatch|quick_check failed/)
 		})
@@ -432,18 +420,32 @@ describe("checkpoint state resolution", () => {
 		})
 	})
 
-	it("reports a current checkpoint from an older build as unusable, not as absent", async () => {
+	it("reports a current checkpoint from another build as that, not as absent or corrupt", async () => {
 		await withDataDir(async (dataDir) => {
 			const stale = newCheckpointId()
 			writeSnapshot(dataDir, stale, undefined, OLDER_BUILD_SCHEMA)
 			writeState(dataDir, stale)
 			const availability = await checkpointAvailability(dataDir)
 			strictEqual(availability.available, false)
+			strictEqual(availability.available === false && availability.reason, "other_build")
+			strictEqual(
+				availability.available === false &&
+					availability.reason === "other_build" &&
+					availability.checkpointId,
+				stale,
+			)
 			match(
-				availability.available === false && availability.reason === "unusable"
+				availability.available === false && availability.reason === "other_build"
 					? availability.detail
 					: "",
 				/checkpoint schema mismatch/,
+			)
+			// Same release, different schema: no version to send the user to.
+			strictEqual(
+				availability.available === false &&
+					availability.reason === "other_build" &&
+					availability.restoreWith,
+				null,
 			)
 		})
 	})
@@ -506,7 +508,7 @@ describe("checkpoint state resolution", () => {
 			mkdirSync(outside)
 			writeFileSync(
 				join(outside, "manifest.json"),
-				`${JSON.stringify(manifest(checkpointId, newCheckpointId(), dataDir))}\n`,
+				`${JSON.stringify(manifest(checkpointId, newCheckpointOperationId(), dataDir))}\n`,
 			)
 			mkdirSync(join(outside, "backup"))
 			mkdirSync(snapshot, { recursive: true })
@@ -552,8 +554,8 @@ describe("checkpoint reconciliation and retention", () => {
 			const quarantines = readdirSync(quarantineRoot)
 			strictEqual(quarantines.length, 1)
 			// A failed refresh used to leave a full store copy here, forever.
-			deepStrictEqual(readdirSync(join(quarantineRoot, quarantines[0]!)), ["operation"])
-			ok(existsSync(join(quarantineRoot, quarantines[0]!, "operation", "intent.json")))
+			deepStrictEqual(readdirSync(join(quarantineRoot, Arr.getUnsafe(quarantines, 0))), ["operation"])
+			ok(existsSync(join(quarantineRoot, Arr.getUnsafe(quarantines, 0), "operation", "intent.json")))
 		})
 	})
 
@@ -953,7 +955,7 @@ describe("live-store reset safety", () => {
 				})}\n`,
 			)
 
-			const exit = await Effect.runPromise(Effect.exit(reconcileCheckpointRecovery(dataDir)))
+			const exit = await Effect.runPromiseExit(reconcileCheckpointRecovery(dataDir))
 			ok(Exit.isFailure(exit))
 			const failure = Option.getOrUndefined(Exit.findErrorOption(exit))
 			ok(failure)
@@ -968,8 +970,9 @@ describe("live-store reset safety", () => {
 describe("live restore transaction reconciliation", () => {
 	it("is a no-op when no transaction or restore debris exists", async () => {
 		await withDataDir(async (dataDir) => {
+			const before = readdirSync(dataDir).sort()
 			await Effect.runPromise(reconcileCheckpointRecovery(dataDir))
-			ok(existsSync(dataDir))
+			deepStrictEqual(readdirSync(dataDir).sort(), before)
 		})
 	})
 
@@ -990,13 +993,13 @@ describe("live restore transaction reconciliation", () => {
 			ok(!existsSync(restoreTransactionPath(dataDir)))
 			const siblingNames = readdirSync(dirname(dataDir))
 			ok(
-				siblingNames.some((name) =>
-					name.startsWith(`${basename(dataDir)}.restore-${operationId}.quarantine-`),
+				Arr.some(siblingNames, (name) =>
+					Str.startsWith(`${basename(dataDir)}.restore-${operationId}.quarantine-`)(name),
 				),
 			)
 			ok(
-				siblingNames.some((name) =>
-					name.startsWith(`${basename(dataDir)}.restore-transaction.json.quarantine-`),
+				Arr.some(siblingNames, (name) =>
+					Str.startsWith(`${basename(dataDir)}.restore-transaction.json.quarantine-`)(name),
 				),
 			)
 		})

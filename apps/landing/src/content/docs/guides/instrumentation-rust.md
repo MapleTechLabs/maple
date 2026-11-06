@@ -240,6 +240,39 @@ async fn process_order(order_id: String) {
 }
 ```
 
+## Attributes Maple uses
+
+Most attributes are optional. These unlock specific features.
+
+### Commits and GitHub
+
+Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the Releases page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
+
+```bash
+export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=$GITHUB_SHA"
+```
+
+### Databases
+
+Database instrumentation sets these attributes for you. For a driver without instrumentation, set them on a `Client` span. `tracing-opentelemetry` reads the `otel.kind` field as the span kind:
+
+```rust
+let span = info_span!(
+    "SELECT users",
+    otel.kind = "client",
+    db.system.name = "postgresql",
+    db.namespace = "app",
+    db.query.text = "SELECT * FROM users WHERE id = $1",
+);
+let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+    .bind(id)
+    .fetch_one(&pool)
+    .instrument(span)
+    .await?;
+```
+
+`db.system.name` and `db.namespace` draw the database node on the [service map](/docs/explore/service-map). `db.query.text` groups statements into query shapes, so record it with placeholders, not bound values. See [Database queries](/docs/concepts/otel-conventions#database-queries) for the full list.
+
 ## Log correlation
 
 `tracing` events go to the `OpenTelemetryTracingBridge` layer as OpenTelemetry log records. Events emitted inside a span carry its trace and span IDs:

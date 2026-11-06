@@ -3,8 +3,8 @@
 // Pure Logger that pushes OTLP-shaped log records into a caller-owned buffer.
 // Same pattern as the tracer — URL/resource/headers are resolved by the caller
 // at flush time, not at construction time.
-import { Array as Arr, Cause, Layer, Logger, type LogLevel, References } from "effect"
-import * as OtlpResource from "effect/unstable/observability/OtlpResource"
+import { Array as Arr, Cause, Layer, Logger, type LogLevel, References, Record as Rec } from "effect"
+import * as OtlpResource from "effect/observability/OtlpResource"
 
 export interface LogBuffer {
 	readonly loggerLayer: Layer.Layer<never>
@@ -46,14 +46,14 @@ export const makeLogBuffer = (options: { readonly excludeLogSpans?: boolean } = 
 	}
 }
 
-// Log record conversion (adapted from `effect/unstable/observability/OtlpLogger`)
+// Log record conversion (adapted from `effect/observability/OtlpLogger`)
 
 const makeLogRecord = (logOptions: Logger.Options<unknown>, excludeLogSpans: boolean): LogRecord => {
 	const nowMillis = logOptions.date.getTime()
 	const nanosString = String(BigInt(nowMillis) * 1_000_000n)
 
 	const attributes = OtlpResource.entriesToAttributes(
-		Object.entries(logOptions.fiber.getRef(References.CurrentLogAnnotations)),
+		Rec.toEntries(logOptions.fiber.getRef(References.CurrentLogAnnotations)),
 	)
 	attributes.push({ key: "fiberId", value: { intValue: logOptions.fiber.id } })
 	if (!excludeLogSpans) {

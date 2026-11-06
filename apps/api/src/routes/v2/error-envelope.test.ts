@@ -1,7 +1,18 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Context, Effect, Layer, Logger, References, Schema, Tracer } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import {
+	Context,
+	Effect,
+	Layer,
+	Logger,
+	Option,
+	References,
+	Schema,
+	Tracer,
+	Array as Arr,
+	String as Str,
+} from "effect"
+import { HttpRouter } from "effect/http"
+import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { WarehouseQueryError } from "@maple/domain/http"
 import { publicError, V2SchemaErrors, V2UnexpectedErrors } from "@maple/domain/http/v2"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
@@ -83,7 +94,11 @@ describe("v2 response schema boundary", () => {
 			const response = await handler(new Request("http://maple.test/declared"), context as never)
 			expect(response.status).toBe(502)
 
-			const log = logs.find((entry) => entry.message.includes("Route answered with a server error"))
+			const log = Option.getOrUndefined(
+				Arr.findFirst(logs, (entry) =>
+					Str.includes("Route answered with a server error")(entry.message),
+				),
+			)
 			expect(log).toBeDefined()
 			expect(log?.level).toBe("Error")
 			expect(log?.annotations).toMatchObject({
@@ -94,8 +109,11 @@ describe("v2 response schema boundary", () => {
 				message: "Memory limit (for query) exceeded",
 			})
 
-			const span = spans.find(
-				(s) => s.attributes.get("error.type") === "@maple/http/errors/WarehouseQueryError",
+			const span = Option.getOrUndefined(
+				Arr.findFirst(
+					spans,
+					(s) => s.attributes.get("error.type") === "@maple/http/errors/WarehouseQueryError",
+				),
 			)
 			expect(span).toBeDefined()
 			expect(span?.attributes.get("http.response.status_code")).toBe(502)

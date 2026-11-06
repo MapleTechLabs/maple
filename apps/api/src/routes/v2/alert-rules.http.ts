@@ -1,11 +1,18 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
-import type { AlertCheckDocument, AlertRuleDocument, AlertRulePreviewResponse } from "@maple/domain/http"
+import { HttpApiBuilder } from "effect/http-api"
+import type {
+	AlertCheckDocument,
+	AlertRuleDocument,
+	AlertRulePreviewResponse,
+	AlertThreshold,
+	AlertThresholds,
+} from "@maple/domain/http"
 import {
 	AlertRulePreviewRequest,
 	AlertRuleUpsertRequest,
 	AlertRuleNotFoundError,
 	CurrentTenant,
 	IsoDateTimeString,
+	isRangeComparator,
 	QueryBuilderQueryDraftSchema,
 } from "@maple/domain/http"
 import type {
@@ -16,48 +23,49 @@ import type {
 	V2AlertRulePreviewResult,
 	V2AlertRuleUpdateParams,
 } from "@maple/domain/http/v2"
-import { MapleApiV2, paginateArray, scopeAllows, timestamp, V2ParameterInvalid } from "@maple/domain/http/v2"
+import {
+	fromV2Threshold,
+	MapleApiV2,
+	paginateArray,
+	scopeAllows,
+	timestamp,
+	toV2Threshold,
+	V2ParameterInvalid,
+} from "@maple/domain/http/v2"
 import { AlertForbiddenError } from "@maple/domain/http"
-import { Effect, Encoding, Result, Schema } from "effect"
+import { Array as Arr, DateTime, Effect, Option, Result, Schema, String as Str } from "effect"
+import { Base64Url } from "effect/encoding"
 import { auditDiff } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
+import { timestampMs } from "@maple/backend/platform/time"
 
 const decodeIsoDateTime = Schema.decodeUnknownSync(IsoDateTimeString)
+const ChecksCursorPartsJson = Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String]))
+const decodeChecksCursorParts = Schema.decodeUnknownOption(ChecksCursorPartsJson)
+const encodeChecksCursorParts = Schema.encodeSync(ChecksCursorPartsJson)
 
 const encodeChecksCursor = (check: AlertCheckDocument): string =>
-	`chk_${Encoding.encodeBase64Url(JSON.stringify([check.timestamp, check.groupKey]))}`
+	`chk_${Base64Url.encode(encodeChecksCursorParts([check.timestamp, check.groupKey]))}`
 
 const decodeChecksCursor = (value: string | undefined) => {
 	if (value === undefined) return Effect.succeed<readonly [string, string] | undefined>(undefined)
-	if (!value.startsWith("chk_")) {
+	if (!Str.startsWith("chk_")(value)) {
 		return Effect.fail(V2ParameterInvalid.make("Invalid pagination cursor.", { param: "cursor" }))
 	}
-	const decoded = Encoding.decodeBase64UrlString(value.slice(4))
+	const decoded = Base64Url.decodeString(Str.slice(4)(value))
 	if (Result.isFailure(decoded)) {
 		return Effect.fail(V2ParameterInvalid.make("Invalid pagination cursor.", { param: "cursor" }))
 	}
-	try {
-		const parts = JSON.parse(decoded.success) as unknown
-		if (
-			!Array.isArray(parts) ||
-			parts.length !== 2 ||
-			typeof parts[0] !== "string" ||
-			typeof parts[1] !== "string" ||
-			!Number.isFinite(Date.parse(parts[0]))
-		) {
-			throw new Error("invalid")
-		}
-		return Effect.succeed([parts[0], parts[1]] as const)
-	} catch {
-		return Effect.fail(V2ParameterInvalid.make("Invalid pagination cursor.", { param: "cursor" }))
-	}
+	return Effect.fromOption(
+		decodeChecksCursorParts(decoded.success).pipe(
+			Option.filter(([ts]) => Number.isFinite(timestampMs(ts))),
+		),
+		() => V2ParameterInvalid.make("Invalid pagination cursor.", { param: "cursor" }),
+	)
 }
-
-const summaryTimestamp = (value: string) =>
-	timestamp(new Date(value.includes("T") ? value : `${value.replace(" ", "T")}Z`).toISOString())
 
 const toV2Rule = (doc: AlertRuleDocument): V2AlertRule => ({
 	id: doc.id,
@@ -67,6 +75,7 @@ const toV2Rule = (doc: AlertRuleDocument): V2AlertRule => ({
 	notification_template: doc.notificationTemplate,
 	enabled: doc.enabled,
 	severity: doc.severity,
+	thresholds: Arr.map(doc.thresholds, toV2Threshold),
 	service_names: doc.serviceNames,
 	exclude_service_names: doc.excludeServiceNames,
 	environments: doc.environments,
@@ -77,8 +86,12 @@ const toV2Rule = (doc: AlertRuleDocument): V2AlertRule => ({
 	threshold: doc.threshold,
 	threshold_upper: doc.thresholdUpper,
 	window_minutes: doc.windowMinutes,
+	evaluation_interval_minutes: doc.evaluationIntervalMinutes,
+	slowed_interval_minutes: doc.slowedIntervalMinutes,
+	slowed_at: doc.slowedAt,
 	minimum_sample_count: doc.minimumSampleCount,
 	consecutive_breaches_required: doc.consecutiveBreachesRequired,
+	breaches_out_of: doc.breachesOutOf,
 	consecutive_healthy_required: doc.consecutiveHealthyRequired,
 	renotify_interval_minutes: doc.renotifyIntervalMinutes,
 	apdex_threshold_ms: doc.apdexThresholdMs,
@@ -87,7 +100,9 @@ const toV2Rule = (doc: AlertRuleDocument): V2AlertRule => ({
 	raw_query_reducer: doc.rawQueryReducer,
 	destination_ids: doc.destinationIds,
 	no_data_behavior: doc.noDataBehavior,
+	alert_on_no_data: doc.noDataBehavior === "alert",
 	last_evaluation_error: doc.lastEvaluationError,
+	last_evaluation_error_kind: doc.lastEvaluationErrorKind,
 	last_evaluated_at: doc.lastEvaluatedAt,
 	last_scheduled_at: doc.lastScheduledAt,
 	created_at: doc.createdAt,
@@ -103,6 +118,7 @@ const ruleAuditDiff = auditDiff<keyof V2AlertRuleUpdateParams & keyof V2AlertRul
 		"notes",
 		"notification_template",
 		"enabled",
+		"thresholds",
 		"severity",
 		"service_names",
 		"exclude_service_names",
@@ -114,14 +130,17 @@ const ruleAuditDiff = auditDiff<keyof V2AlertRuleUpdateParams & keyof V2AlertRul
 		"threshold",
 		"threshold_upper",
 		"window_minutes",
+		"evaluation_interval_minutes",
 		"minimum_sample_count",
 		"consecutive_breaches_required",
+		"breaches_out_of",
 		"consecutive_healthy_required",
 		"renotify_interval_minutes",
 		"apdex_threshold_ms",
 		"query_builder_draft",
 		"raw_query_sql",
 		"raw_query_reducer",
+		"alert_on_no_data",
 		"destination_ids",
 	],
 	// Query drafts and raw SQL are config blobs — audit that they changed, not their bodies.
@@ -138,6 +157,7 @@ const toV2Check = (check: AlertCheckDocument): V2AlertCheck => ({
 	timestamp: check.timestamp,
 	group_key: check.groupKey,
 	status: check.status,
+	skip_reason: check.skipReason,
 	signal_type: check.signalType,
 	comparator: check.comparator,
 	threshold: check.threshold,
@@ -151,6 +171,7 @@ const toV2Check = (check: AlertCheckDocument): V2AlertCheck => ({
 	consecutive_healthy: check.consecutiveHealthy,
 	incident_id: check.incidentId,
 	incident_transition: check.incidentTransition,
+	level: check.level,
 	evaluation_duration_ms: check.evaluationDurationMs,
 	error_message: check.errorMessage,
 	error_category: check.errorCategory,
@@ -181,12 +202,21 @@ const toUpsertRequest = (
 					: { queryBuilderDraft: yield* decodeDraft(params.query_builder_draft) }
 		return new AlertRuleUpsertRequest({
 			name: params.name,
-			severity: params.severity,
 			signalType: params.signal_type,
 			comparator: params.comparator,
-			threshold: params.threshold,
 			windowMinutes: params.window_minutes,
-			destinationIds: params.destination_ids,
+			...(params.thresholds !== undefined
+				? { thresholds: Arr.map(params.thresholds, fromV2Threshold) }
+				: undefined),
+			...(params.severity !== undefined ? { severity: params.severity } : undefined),
+			...(params.threshold !== undefined ? { threshold: params.threshold } : undefined),
+			...(params.destination_ids !== undefined
+				? { destinationIds: params.destination_ids }
+				: undefined),
+			...(params.breaches_out_of !== undefined ? { breachesOutOf: params.breaches_out_of } : undefined),
+			...(params.evaluation_interval_minutes !== undefined
+				? { evaluationIntervalMinutes: params.evaluation_interval_minutes }
+				: undefined),
 			...(params.notes !== undefined ? { notes: params.notes } : undefined),
 			...(params.notification_template !== undefined
 				? {
@@ -210,6 +240,9 @@ const toUpsertRequest = (
 				? {
 						minimumSampleCount: params.minimum_sample_count,
 					}
+				: undefined),
+			...(params.alert_on_no_data !== undefined
+				? { alertOnNoData: params.alert_on_no_data }
 				: undefined),
 			...(params.consecutive_breaches_required !== undefined
 				? {
@@ -238,6 +271,55 @@ const toUpsertRequest = (
 	})
 
 /**
+ * `thresholds` replaces the tiers; single-threshold fields edit a one-tier rule in place and
+ * are rejected on two tiers. A stored range bound is dropped when the comparator stops being a range.
+ */
+const mergeThresholds = (
+	doc: AlertRuleDocument,
+	patch: V2AlertRuleUpdateParams,
+	comparator: AlertRuleDocument["comparator"],
+): Effect.Effect<AlertThresholds, ReturnType<typeof V2ParameterInvalid.make>> => {
+	const fitBound = (tier: AlertThreshold): AlertThreshold =>
+		isRangeComparator(comparator) ? tier : { ...tier, upper: null }
+	if (patch.thresholds !== undefined) {
+		return Effect.succeed(Arr.map(patch.thresholds, fromV2Threshold))
+	}
+	// Legacy fields echoed back as read (a client PATCHing the document it fetched) are not edits.
+	const echoed = {
+		severity: patch.severity === doc.severity,
+		threshold: patch.threshold === doc.threshold,
+		threshold_upper: patch.threshold_upper === doc.thresholdUpper,
+		destination_ids:
+			patch.destination_ids !== undefined &&
+			patch.destination_ids.length === doc.destinationIds.length &&
+			Arr.every(patch.destination_ids, (id) => doc.destinationIds.includes(id)),
+	}
+	const legacyKeys = Arr.filter(
+		["severity", "threshold", "threshold_upper", "destination_ids"] as const,
+		(key) => patch[key] !== undefined && !echoed[key],
+	)
+	if (legacyKeys.length === 0) return Effect.succeed(Arr.map(doc.thresholds, fitBound))
+	const [only, ...rest] = doc.thresholds
+	if (rest.length > 0) {
+		return Effect.fail(
+			V2ParameterInvalid.make(
+				`This rule has severity tiers; update \`thresholds\` instead of \`${legacyKeys[0]}\`.`,
+				{ param: legacyKeys[0] },
+			),
+		)
+	}
+	return Effect.succeed(
+		Arr.of({
+			...fitBound(only),
+			severity: patch.severity ?? only.severity,
+			value: patch.threshold ?? only.value,
+			...(patch.threshold_upper !== undefined ? { upper: patch.threshold_upper } : undefined),
+			destinationIds: patch.destination_ids ?? only.destinationIds,
+		}),
+	)
+}
+
+/**
  * PATCH semantics over the domain full-upsert `updateRule`: overlay the fields
  * present in the patch onto the rule's current state. Read-merge-write — no
  * version check, mirroring the dashboard's behavior.
@@ -248,6 +330,8 @@ const mergeUpsertRequest = (
 ): Effect.Effect<AlertRuleUpsertRequest, ReturnType<typeof V2ParameterInvalid.make>> =>
 	Effect.gen(function* () {
 		const signalType = patch.signal_type ?? doc.signalType
+		const comparator = patch.comparator ?? doc.comparator
+		const thresholds = yield* mergeThresholds(doc, patch, comparator)
 		const queryBuilderDraft =
 			signalType !== "builder_query"
 				? null
@@ -282,20 +366,23 @@ const mergeUpsertRequest = (
 					? patch.notification_template
 					: doc.notificationTemplate,
 			enabled: patch.enabled ?? doc.enabled,
-			severity: patch.severity ?? doc.severity,
+			thresholds,
 			serviceNames: patch.service_names ?? doc.serviceNames,
 			excludeServiceNames: patch.exclude_service_names ?? doc.excludeServiceNames,
 			environments: patch.environments ?? doc.environments,
 			tags: patch.tags ?? doc.tags,
 			groupBy: patch.group_by !== undefined ? patch.group_by : doc.groupBy,
 			signalType,
-			comparator: patch.comparator ?? doc.comparator,
-			threshold: patch.threshold ?? doc.threshold,
-			thresholdUpper: patch.threshold_upper !== undefined ? patch.threshold_upper : doc.thresholdUpper,
+			comparator,
 			windowMinutes: patch.window_minutes ?? doc.windowMinutes,
+			evaluationIntervalMinutes:
+				patch.evaluation_interval_minutes !== undefined
+					? patch.evaluation_interval_minutes
+					: doc.evaluationIntervalMinutes,
 			minimumSampleCount: patch.minimum_sample_count ?? doc.minimumSampleCount,
 			consecutiveBreachesRequired:
 				patch.consecutive_breaches_required ?? doc.consecutiveBreachesRequired,
+			breachesOutOf: patch.breaches_out_of !== undefined ? patch.breaches_out_of : doc.breachesOutOf,
 			consecutiveHealthyRequired: patch.consecutive_healthy_required ?? doc.consecutiveHealthyRequired,
 			renotifyIntervalMinutes: patch.renotify_interval_minutes ?? doc.renotifyIntervalMinutes,
 			apdexThresholdMs:
@@ -303,7 +390,7 @@ const mergeUpsertRequest = (
 			queryBuilderDraft,
 			rawQuerySql,
 			rawQueryReducer,
-			destinationIds: patch.destination_ids ?? doc.destinationIds,
+			alertOnNoData: patch.alert_on_no_data ?? doc.noDataBehavior === "alert",
 		})
 	})
 
@@ -313,23 +400,40 @@ const toV2PreviewResult = (preview: AlertRulePreviewResponse): V2AlertRulePrevie
 	window_minutes: preview.windowMinutes,
 	threshold: preview.threshold,
 	threshold_upper: preview.thresholdUpper,
+	thresholds: Arr.map(preview.thresholds, toV2Threshold),
 	comparator: preview.comparator,
 	truncated_to_start: preview.truncatedToStart,
-	series: preview.series.map((series) => ({
+	series: Arr.map(preview.series, (series) => ({
 		group_key: series.groupKey,
-		points: series.points.map((point) => ({
+		points: Arr.map(series.points, (point) => ({
 			bucket: point.bucket,
 			value: point.value,
 			sample_count: point.sampleCount,
 			status: point.status,
+			...(point.skipReason !== undefined ? { skip_reason: point.skipReason } : undefined),
 			...(point.provisional !== undefined ? { provisional: point.provisional } : undefined),
+			...(point.level !== undefined ? { level: point.level } : undefined),
 		})),
 	})),
-	would_fire: preview.wouldFire.map((span) => ({
+	would_fire: Arr.map(preview.wouldFire, (span) => ({
 		group_key: span.groupKey,
 		start: span.start,
 		end: span.end,
+		severity: span.severity,
 	})),
+	...(preview.seriesFailure === undefined ? undefined : { series_failure: preview.seriesFailure }),
+	...(preview.queryTiming === undefined
+		? undefined
+		: {
+				query_timing: {
+					elapsed_ms: preview.queryTiming.elapsedMs,
+					failure: preview.queryTiming.failure,
+					probe_limit_ms: preview.queryTiming.probeLimitMs,
+					interval_minutes: preview.queryTiming.intervalMinutes,
+					limit_ms: preview.queryTiming.limitMs,
+					fits_interval_minutes: preview.queryTiming.fitsIntervalMinutes,
+				},
+			}),
 })
 
 export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules", (handlers) =>
@@ -341,15 +445,13 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 		const findRule = (orgId: Parameters<typeof rules.listRules>[0], ruleId: AlertRuleDocument["id"]) =>
 			Effect.gen(function* () {
 				const response = yield* rules.listRules(orgId)
-				const rule = response.rules.find((doc) => doc.id === ruleId)
-				if (rule === undefined)
-					return yield* Effect.fail(
-						new AlertRuleNotFoundError({
-							message: "No such alert rule.",
-							ruleId,
-						}),
-					)
-				return rule
+				const rule = Arr.findFirst(response.rules, (doc) => doc.id === ruleId)
+				if (Option.isNone(rule))
+					return yield* new AlertRuleNotFoundError({
+						message: "No such alert rule.",
+						ruleId,
+					})
+				return rule.value
 			})
 
 		return handlers
@@ -357,7 +459,7 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const response = yield* rules.listRules(tenant.orgId)
-					const page = yield* paginateArray(response.rules.map(toV2Rule), query)
+					const page = yield* paginateArray(Arr.map(response.rules, toV2Rule), query)
 					return { object: "list" as const, ...page }
 				}),
 			)
@@ -502,7 +604,7 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 					const last = checks.at(-1)
 					return {
 						object: "list" as const,
-						data: checks.map(toV2Check),
+						data: Arr.map(checks, toV2Check),
 						has_more: hasMore,
 						next_cursor: hasMore && last !== undefined ? encodeChecksCursor(last) : null,
 					}
@@ -521,8 +623,8 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 						bucket_seconds: summary.bucketSeconds,
 						top_group_keys: summary.topGroupKeys,
 						totals: summary.totals,
-						points: summary.points.map((point) => ({
-							bucket: summaryTimestamp(point.bucket),
+						points: Arr.map(summary.points, (point) => ({
+							bucket: timestamp(DateTime.formatIso(point.bucket)),
 							group_key: point.groupKey,
 							total_count: point.totalCount,
 							breached_count: point.breachedCount,

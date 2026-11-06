@@ -1,6 +1,7 @@
 {
 	"include": ["**/*.ts"],
 	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
 		"target": "ES2022",
 		"module": "ESNext",
 		"lib": ["ES2022"],
@@ -16,7 +17,14 @@
 		"plugins": [
 			{
 				"name": "@effect/language-service",
-				"reportSuggestionsAsWarningsInTsc": true
+				"ignoreEffectWarningsInTscExitCode": true,
+				"includeSuggestionsInTsc": false,
+				"diagnosticSeverity": {
+					"unstableApiUsage": "off",
+					"schemaNumber": "off",
+					"schemaClassMissingBrand": "off",
+					"schemaSync": "off"
+				}
 			}
 		]
 	}

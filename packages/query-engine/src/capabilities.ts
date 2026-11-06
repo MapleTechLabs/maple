@@ -4,7 +4,7 @@
  * useful context, but an optimization is enabled only when the matching live
  * column/index is present.
  */
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str, Option } from "effect"
 
 export type WarehouseSearchFeature =
 	| "logs.body.tokenbf"
@@ -28,6 +28,8 @@ export interface WarehouseCapabilities {
 	readonly indexes: ReadonlyMap<string, WarehouseIndexCapability>
 	readonly fullTextSearchSetting: "enabled" | "available" | "unavailable"
 	readonly metadataAvailable: boolean
+	/** Optional tables the columns probe looked for and positively did not find. */
+	readonly absentTables: ReadonlySet<string>
 }
 
 export interface WarehouseIndexMetadataRow {
@@ -72,6 +74,7 @@ export const baselineWarehouseCapabilities = (): WarehouseCapabilities => ({
 	indexes: new Map(),
 	fullTextSearchSetting: "unavailable",
 	metadataAvailable: false,
+	absentTables: new Set(),
 })
 
 const indexKey = (table: string, name: string): string => `${table}.${name}`
@@ -82,7 +85,10 @@ const hasIndexType = (
 	table: string,
 	name: string,
 	typePrefix: string,
-): boolean => indexes.get(indexKey(table, name))?.type.toLowerCase().startsWith(typePrefix) ?? false
+): boolean => {
+	const index = indexes.get(indexKey(table, name))
+	return index !== undefined && Str.startsWith(typePrefix)(Str.toLowerCase(index.type))
+}
 
 const hasColumn = (columns: ReadonlySet<string>, table: string, name: string): boolean =>
 	columns.has(columnKey(table, name))
@@ -94,6 +100,8 @@ export const deriveWarehouseCapabilities = (input: {
 	readonly settings?: ReadonlyArray<WarehouseSettingMetadataRow>
 	/** Managed gateways may expose settings metadata but reject inline overrides. */
 	readonly allowSettingOverrides?: boolean
+	/** Tables the columns probe also covered, which a cluster may legitimately lack. */
+	readonly optionalTables?: ReadonlyArray<string>
 }): WarehouseCapabilities => {
 	const indexes = new Map<string, WarehouseIndexCapability>()
 	for (const row of input.indexes) {
@@ -104,13 +112,20 @@ export const deriveWarehouseCapabilities = (input: {
 			expression: row.expression ?? row.expr ?? "",
 		})
 	}
-	const columns = new Set(input.columns.map((row) => columnKey(row.table, row.name)))
+	const columns = new Set(Arr.map(input.columns, (row) => columnKey(row.table, row.name)))
 	const features = new Set<WarehouseSearchFeature>()
-	const fullTextSetting = input.settings?.find((row) => row.name === "enable_full_text_index")
+	const fullTextSetting = Arr.findFirst(
+		input.settings ?? [],
+		(row) => row.name === "enable_full_text_index",
+	)
+	const fullTextValue = Option.match(fullTextSetting, {
+		onNone: () => "0",
+		onSome: (row) => row.value ?? "0",
+	})
 	const fullTextSearchSetting =
-		String(fullTextSetting?.value ?? "0") === "1"
+		String(fullTextValue) === "1"
 			? "enabled"
-			: fullTextSetting && input.allowSettingOverrides
+			: Option.isSome(fullTextSetting) && input.allowSettingOverrides
 				? "available"
 				: "unavailable"
 
@@ -131,7 +146,7 @@ export const deriveWarehouseCapabilities = (input: {
 		"idx_log_attr_keys",
 		"idx_log_attr_vals",
 	] as const
-	if (logsBloomNames.every((name) => hasIndexType(indexes, "logs", name, "bloom_filter"))) {
+	if (Arr.every(logsBloomNames, (name) => hasIndexType(indexes, "logs", name, "bloom_filter"))) {
 		features.add("logs.attributes.bloom")
 	}
 
@@ -141,7 +156,7 @@ export const deriveWarehouseCapabilities = (input: {
 		"idx_resource_attr_keys",
 		"idx_resource_attr_vals",
 	] as const
-	if (tracesBloomNames.every((name) => hasIndexType(indexes, "traces", name, "bloom_filter"))) {
+	if (Arr.every(tracesBloomNames, (name) => hasIndexType(indexes, "traces", name, "bloom_filter"))) {
 		features.add("traces.attributes.bloom")
 	}
 
@@ -152,7 +167,8 @@ export const deriveWarehouseCapabilities = (input: {
 	] as const
 	if (
 		fullTextSearchSetting !== "unavailable" &&
-		logsTextItems.every(
+		Arr.every(
+			logsTextItems,
 			([column, index]) =>
 				hasColumn(columns, "logs", column) && hasIndexType(indexes, "logs", index, "text"),
 		)
@@ -167,13 +183,26 @@ export const deriveWarehouseCapabilities = (input: {
 	] as const
 	if (
 		fullTextSearchSetting !== "unavailable" &&
-		tracesTextItems.every(
+		Arr.every(
+			tracesTextItems,
 			([column, index]) =>
 				hasColumn(columns, "traces", column) && hasIndexType(indexes, "traces", index, "text"),
 		)
 	) {
 		features.add("traces.attributes.text")
 	}
+
+	// An empty columns probe (denied or failed) proves nothing; only a probe that
+	// saw `traces` is evidence that a missing optional table is really missing.
+	const probeSawTraces = Arr.some(input.columns, (row) => row.table === "traces")
+	const absentTables = new Set(
+		probeSawTraces
+			? Arr.filter(
+					input.optionalTables ?? [],
+					(table) => !Arr.some(input.columns, (row) => row.table === table),
+				)
+			: [],
+	)
 
 	return {
 		serverVersion: input.serverVersion,
@@ -182,8 +211,16 @@ export const deriveWarehouseCapabilities = (input: {
 		indexes,
 		fullTextSearchSetting,
 		metadataAvailable: true,
+		absentTables,
 	}
 }
+
+/** The BYO-optional rollup tables the capability probe checks for. */
+export const OPTIONAL_ROLLUP_TABLES = ["trace_facets_hourly"] as const
+
+/** False only when the probe proved the table is absent; unknown stays optimistic. */
+export const hasWarehouseTable = (capabilities: WarehouseCapabilities, table: string): boolean =>
+	!capabilities.absentTables.has(table)
 
 export const hasWarehouseFeature = (
 	capabilities: WarehouseCapabilities,

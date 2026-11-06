@@ -7,7 +7,7 @@ import type {
 	OrgId,
 } from "@maple/domain/http"
 import { PublicIdPrefixes, encodePublicId } from "@maple/domain/http/v2"
-import { Cause, Clock, Context, Duration, Effect, Layer } from "effect"
+import { Cause, Clock, Context, Duration, Effect, Layer, Array as Arr, String as Str } from "effect"
 import { ApnsClient, type ApnsPush } from "@maple/backend/platform/Apns"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import {
@@ -17,6 +17,7 @@ import {
 	formatThresholdSummary,
 	formatWindow,
 	truncate,
+	uptimeSummaryLine,
 } from "@maple/backend/services/alerts/alert-formatting"
 import type { SignalDisplay } from "@maple/backend/services/alerts/alert-signal-display"
 import { LiveActivitiesService, type LiveActivity } from "./LiveActivitiesService"
@@ -78,6 +79,8 @@ export interface IncidentPushEvent {
 	readonly threshold: number
 	readonly thresholdUpper: number | null
 	readonly value: number | null
+	/** Uptime rules only: the failing check's error. */
+	readonly detail?: string | null
 	readonly groupKey: string | null
 	readonly serviceNames: ReadonlyArray<string>
 	readonly windowMinutes: number
@@ -176,6 +179,7 @@ const wantsEvent = (device: MobileDevice, event: IncidentPushEvent): boolean => 
 				? device.preferences.criticalIncidents
 				: device.preferences.warningIncidents
 		case "test":
+		case "acknowledge":
 			return false
 	}
 }
@@ -201,8 +205,8 @@ const RENOTIFY_TAIL_INTERVAL_MINUTES = 720
 
 const escalationRungsBelow = (openForMs: number): number => {
 	const minutes = openForMs / 60_000
-	const last = RENOTIFY_ESCALATION_MINUTES[RENOTIFY_ESCALATION_MINUTES.length - 1]
-	const rungs = RENOTIFY_ESCALATION_MINUTES.filter((rung) => minutes >= rung).length
+	const last = Arr.lastNonEmpty(RENOTIFY_ESCALATION_MINUTES)
+	const rungs = Arr.filter(RENOTIFY_ESCALATION_MINUTES, (rung) => minutes >= rung).length
 	return minutes >= last ? rungs + Math.floor((minutes - last) / RENOTIFY_TAIL_INTERVAL_MINUTES) : rungs
 }
 
@@ -262,13 +266,14 @@ const humanDuration = (ms: number): string => {
 export const renderIncidentPush = (
 	event: IncidentPushEvent,
 ): Pick<ApnsPush, "alert" | "interruptionLevel" | "priority" | "sound"> => {
+	const [firstService] = event.serviceNames
 	const service =
 		displayGroupKey(event.groupKey) ??
-		(event.serviceNames.length === 1
-			? event.serviceNames[0]
-			: event.serviceNames.length > 1
-				? `${event.serviceNames[0]} +${event.serviceNames.length - 1}`
-				: null)
+		(firstService === undefined
+			? null
+			: event.serviceNames.length === 1
+				? firstService
+				: `${firstService} +${event.serviceNames.length - 1}`)
 	const severity = event.severity === "critical" ? "Critical" : "Warning"
 	const observed = formatObservedSummary({
 		signalType: event.signalType,
@@ -282,6 +287,32 @@ export const renderIncidentPush = (
 
 	const rule = truncate(event.ruleName, 60)
 	const openFor = event.openForMs === null ? null : humanDuration(event.openForMs)
+
+	// A monitor has no value worth a sentence: the check's own error is the body.
+	if (event.signalType === "uptime") {
+		const body = uptimeSummaryLine(event)
+		if (event.eventType === "resolve") {
+			return {
+				alert: {
+					title: `Resolved · ${rule}`,
+					subtitle: service ?? undefined,
+					body: openFor === null ? body : `${body} Down for ${openFor}.`,
+				},
+				interruptionLevel: "passive",
+				priority: 5,
+				sound: null,
+			}
+		}
+		return {
+			alert: {
+				title: `${event.eventType === "renotify" ? "Still down" : "Down"} · ${rule}`,
+				subtitle: service ?? undefined,
+				body,
+			},
+			interruptionLevel: event.severity === "critical" ? "time-sensitive" : "active",
+			priority: 10,
+		}
+	}
 
 	switch (event.eventType) {
 		case "resolve": {
@@ -309,10 +340,14 @@ export const renderIncidentPush = (
 		case "renotify":
 			return {
 				alert: {
-					title: `Still ${severity.toLowerCase()} · ${rule}`,
-					subtitle: [service, openFor === null ? null : `open ${openFor}`]
-						.filter((part) => part !== null)
-						.join(" · "),
+					title: `Still ${Str.toLowerCase(severity)} · ${rule}`,
+					subtitle: Arr.join(
+						Arr.filter(
+							[service, openFor === null ? null : `open ${openFor}`],
+							(part) => part !== null,
+						),
+						" · ",
+					),
 					body: `${label} ${observed} over ${formatWindow(event.windowMinutes)}.`,
 				},
 				interruptionLevel: "active",
@@ -320,6 +355,8 @@ export const renderIncidentPush = (
 			}
 		case "trigger":
 		case "test":
+		// Never pushed (`wantsEvent` refuses it); rendered like a trigger to keep the switch total.
+		case "acknowledge":
 			return {
 				alert: {
 					title: `${severity} · ${rule}`,
@@ -416,7 +453,7 @@ export const buildLiveActivitySeries = (
 	event: IncidentPushEvent,
 	recentValues: ReadonlyArray<number>,
 ): ReadonlyArray<number> => {
-	const history = [...recentValues].reverse().filter((value) => Number.isFinite(value))
+	const history = Arr.filter([...recentValues].reverse(), (value) => Number.isFinite(value))
 	const series = event.value === null ? history : [...history, event.value]
 	return series.slice(-LIVE_ACTIVITY_SERIES_POINTS)
 }
@@ -444,7 +481,7 @@ export const renderLiveActivityState = (
 })
 
 export class MobilePushService extends Context.Service<MobilePushService, MobilePushServiceApi>()(
-	"@maple/api/services/push/MobilePushService",
+	"@maple/backend/services/push/MobilePushService",
 	{
 		make: Effect.gen(function* () {
 			const apns = yield* ApnsClient
@@ -458,7 +495,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 					orgId: event.orgId,
 					"maple.alert.rule_id": event.ruleId,
 					"maple.alert.incident_id": event.incidentId,
-					"event.type": event.eventType,
+					"maple.push.event_type": event.eventType,
 				})
 				const empty: MobilePushSummary = { sent: 0, failed: 0, unregistered: 0, skipped: 0 }
 
@@ -546,56 +583,60 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 					{ concurrency: SEND_CONCURRENCY },
 				)
 
-				let sent = 0
-				let failed = 0
-				let unregistered = 0
-				const pushed: Array<MobileDevice["id"]> = []
-				for (const { device, result } of results) {
-					switch (result.outcome) {
-						case "sent":
-							sent += 1
-							pushed.push(device.id)
-							break
-						case "unregistered":
-							unregistered += 1
-							// Loud on purpose: a disabled row is silence on the phone until
-							// the app re-registers, and the reason names the fix
-							// (`BadDeviceToken` = wrong environment for the token,
-							// `DeviceTokenNotForTopic` = a build signed for another app id).
-							yield* Effect.logWarning(
-								"Mobile push: Apple says the token is dead, disabling device",
-							).pipe(
-								Effect.annotateLogs({
-									orgId: event.orgId,
-									deviceId: device.id,
-									environment: device.environment,
-									bundleId: device.bundleId,
-									appVersion: device.appVersion ?? "",
-									reason: result.reason,
-								}),
-							)
-							yield* devices.disable(device.id, result.reason).pipe(
-								ignoreLogged("Mobile push: could not disable a dead device", {
-									orgId: event.orgId,
-									deviceId: device.id,
-								}),
-							)
-							break
-						case "failed":
-							failed += 1
-							yield* Effect.logWarning("Mobile push: APNs rejected the send").pipe(
-								Effect.annotateLogs({
-									orgId: event.orgId,
-									deviceId: device.id,
-									status: result.status,
-									reason: result.reason,
-									retryable: result.retryable,
-								}),
-							)
-							break
-					}
-				}
-				yield* devices.markPushed(pushed).pipe(
+				const countOutcome = (outcome: (typeof results)[number]["result"]["outcome"]) =>
+					results.filter(({ result }) => result.outcome === outcome).length
+				const sent = countOutcome("sent")
+				const failed = countOutcome("failed")
+				const unregistered = countOutcome("unregistered")
+				const pushed = results
+					.filter(({ result }) => result.outcome === "sent")
+					.map(({ device }) => device.id)
+				yield* Effect.forEach(
+					results,
+					({ device, result }) => {
+						switch (result.outcome) {
+							case "sent":
+								return Effect.void
+							case "unregistered":
+								// Loud on purpose: a disabled row is silence on the phone until
+								// the app re-registers, and the reason names the fix
+								// (`BadDeviceToken` = wrong environment for the token,
+								// `DeviceTokenNotForTopic` = a build signed for another app id).
+								return Effect.logWarning(
+									"Mobile push: Apple says the token is dead, disabling device",
+								).pipe(
+									Effect.annotateLogs({
+										orgId: event.orgId,
+										deviceId: device.id,
+										environment: device.environment,
+										bundleId: device.bundleId,
+										appVersion: device.appVersion ?? "",
+										reason: result.reason,
+									}),
+									Effect.andThen(
+										devices.disable(event.orgId, device.id, result.reason).pipe(
+											ignoreLogged("Mobile push: could not disable a dead device", {
+												orgId: event.orgId,
+												deviceId: device.id,
+											}),
+										),
+									),
+								)
+							case "failed":
+								return Effect.logWarning("Mobile push: APNs rejected the send").pipe(
+									Effect.annotateLogs({
+										orgId: event.orgId,
+										deviceId: device.id,
+										status: result.status,
+										reason: result.reason,
+										retryable: result.retryable,
+									}),
+								)
+						}
+					},
+					{ discard: true },
+				)
+				yield* devices.markPushed(event.orgId, pushed).pipe(
 					ignoreLogged("Mobile push: could not record which devices were pushed", {
 						orgId: event.orgId,
 						deviceCount: pushed.length,
@@ -722,31 +763,26 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 					{ concurrency: SEND_CONCURRENCY },
 				)
 
-				let sent = 0
-				let failed = 0
-				let unregistered = 0
-				for (const { device, result } of results) {
-					switch (result.outcome) {
-						case "sent":
-							sent += 1
-							break
-						case "unregistered":
-							unregistered += 1
-							yield* devices.disable(device.id, result.reason).pipe(
-								ignoreLogged("Mobile push: could not disable a dead device", {
-									orgId,
-									deviceId: device.id,
-								}),
-							)
-							break
-						case "failed":
-							// Quieter than the alert path on purpose: nobody is waiting
-							// on this, and a failed wake-up costs a widget some
-							// freshness, not a missed page.
-							failed += 1
-							break
-					}
-				}
+				const countOutcome = (outcome: (typeof results)[number]["result"]["outcome"]) =>
+					results.filter(({ result }) => result.outcome === outcome).length
+				// A failed wake-up is quieter than the alert path on purpose: nobody is
+				// waiting on this, and it costs a widget some freshness, not a missed page.
+				const sent = countOutcome("sent")
+				const failed = countOutcome("failed")
+				const unregistered = countOutcome("unregistered")
+				yield* Effect.forEach(
+					results,
+					({ device, result }) =>
+						result.outcome === "unregistered"
+							? devices.disable(orgId, device.id, result.reason).pipe(
+									ignoreLogged("Mobile push: could not disable a dead device", {
+										orgId,
+										deviceId: device.id,
+									}),
+								)
+							: Effect.void,
+					{ discard: true },
+				)
 				yield* Effect.annotateCurrentSpan({
 					"maple.push.sent": sent,
 					"maple.push.failed": failed,

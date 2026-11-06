@@ -1,8 +1,8 @@
 import { MapleApiV2, v2RouteNotFoundBody } from "@maple/domain/http/v2"
 import { mapleMcpServerManifest } from "@maple/domain/mcp-manifest"
-import { Context, Effect, identity, Option } from "effect"
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { OpenApi } from "effect/unstable/httpapi"
+import { Context, Effect, identity, Option, Schema, String as Str } from "effect"
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { OpenApi } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
 
 /**
@@ -32,7 +32,8 @@ const PUBLIC_CACHE = { "cache-control": "public, max-age=300" }
  * `MAPLE_API_BASE_URL` instead.
  */
 const untrustedRequestOrigin = (request: HttpServerRequest.HttpServerRequest) => {
-	const forwarded = (value: string | undefined) => value?.split(",")[0]?.trim()
+	const forwarded = (value: string | undefined) =>
+		value === undefined ? undefined : Str.trim(Str.split(",")(value)[0])
 	const proto = forwarded(request.headers["x-forwarded-proto"]) ?? "https"
 	const host = forwarded(request.headers["x-forwarded-host"]) ?? request.headers.host
 	return host ? `${proto}://${host}` : ""
@@ -56,12 +57,23 @@ export const instanceApiV2 = (origin: string) =>
 		}),
 	)
 
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
+
 let openApiDocument: string | undefined
 const openApiJson = (origin: string) =>
-	Effect.sync(() => {
-		openApiDocument ??= JSON.stringify(OpenApi.fromApi(instanceApiV2(origin)))
-		return openApiDocument
-	})
+	Effect.suspend(() =>
+		openApiDocument === undefined
+			? encodeJson(OpenApi.fromApi(instanceApiV2(origin))).pipe(
+					Effect.tap((document) =>
+						Effect.sync(() => {
+							openApiDocument = document
+						}),
+					),
+					// The spec is plain data; an unencodable one is a bug, as the old throw was.
+					Effect.orDie,
+				)
+			: Effect.succeed(openApiDocument),
+	)
 
 const apiIndex = (origin: string) => ({
 	name: "Maple API",
@@ -76,7 +88,7 @@ const apiIndex = (origin: string) => ({
 export const DiscoveryRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
 		const env = yield* Env
-		const origin = env.MAPLE_API_BASE_URL.replace(/\/+$/, "")
+		const origin = Str.replace(/\/+$/, "")(env.MAPLE_API_BASE_URL)
 
 		const serveOpenApi = Effect.map(openApiJson(origin), (body) =>
 			HttpServerResponse.text(body, {
@@ -112,7 +124,7 @@ export const DiscoveryRouter = HttpRouter.use((router) =>
 export const NotFoundRouter = HttpRouter.use((router) =>
 	router.add("*", "/*", (request) => {
 		const origin = untrustedRequestOrigin(request)
-		const path = request.url.split("?")[0] ?? request.url
+		const path = Str.split("?")(request.url)[0] ?? request.url
 		return Effect.succeed(
 			HttpServerResponse.jsonUnsafe(
 				{

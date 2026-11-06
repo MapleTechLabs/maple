@@ -1,5 +1,6 @@
 import { isActivePlanSubscription, isPlanSubscription } from "@maple/domain/billing"
 import type { BillingBalance, BillingCustomer, BillingSubscription, CatalogPlan } from "@maple/domain/http"
+import { Array as Arr, Option, String as Str } from "effect"
 
 type Customer = BillingCustomer
 
@@ -18,7 +19,7 @@ export type { CatalogPlan }
 const METERED_INGEST_FEATURES = ["logs", "traces", "metrics"] as const
 
 // Surface a warning once usage crosses 80% of the included grant; "over" once it
-// reaches 100%. Mirrors the meter thresholds in feature-usage-cards.tsx.
+// reaches 100%.
 const APPROACHING_RATIO = 0.8
 
 export type QuotaLevel = "ok" | "approaching" | "over"
@@ -32,8 +33,9 @@ export interface FeatureQuota {
 }
 
 function isLegacyFreePlan(sub: Subscription): boolean {
-	if (sub.planId.toLowerCase() === "free") return true
-	return sub.plan?.name?.toLowerCase() === "free"
+	if (Str.toLowerCase(sub.planId) === "free") return true
+	const name = sub.plan?.name
+	return typeof name === "string" && Str.toLowerCase(name) === "free"
 }
 
 // A subscription is "legacy" when its plan is no longer offered to new customers:
@@ -48,9 +50,10 @@ export function isLegacyPlan(
 	if (isLegacyFreePlan(sub)) return true
 	if (sub.plan?.archived === true) return true
 	if (!plans || plans.length === 0) return false
-	const catalogPlan = plans.find((plan) => plan.id === sub.planId)
-	if (!catalogPlan) return true
-	return catalogPlan.archived === true
+	return Option.match(
+		Arr.findFirst(plans, (plan) => plan.id === sub.planId),
+		{ onNone: () => true, onSome: (catalogPlan) => catalogPlan.archived === true },
+	)
 }
 
 // Autumn's `useCustomer` surfaces upstream API failures (e.g. a `200` whose
@@ -60,12 +63,12 @@ export function isLegacyPlan(
 // route. Treat anything without a `subscriptions` array as "no usable customer"
 // and let callers fail open instead of crashing.
 export function isUsableCustomer(customer: Customer | null | undefined): customer is Customer {
-	return !!customer && Array.isArray(customer.subscriptions)
+	return !!customer && Arr.isArray(customer.subscriptions)
 }
 
 export function getActivePlan(customer: Customer | null | undefined): Subscription | null {
 	if (!isUsableCustomer(customer)) return null
-	return customer.subscriptions.find((sub) => isActivePlanSubscription(sub)) ?? null
+	return Option.getOrNull(Arr.findFirst(customer.subscriptions, (sub) => isActivePlanSubscription(sub)))
 }
 
 export function hasSelectedPlan(customer: Customer | null | undefined): boolean {
@@ -168,7 +171,7 @@ export function getTrialStatus(customer: Customer | null | undefined): TrialStat
 	let daysRemaining: number | null = null
 	let trialEndsAt: Date | null = null
 
-	if (isTrialing && sub.trialEndsAt) {
+	if (isTrialing && sub.trialEndsAt != null) {
 		trialEndsAt = new Date(sub.trialEndsAt)
 		const msRemaining = trialEndsAt.getTime() - Date.now()
 		daysRemaining = msRemaining > 0 ? Math.ceil(msRemaining / (1000 * 60 * 60 * 24)) : 0
@@ -204,7 +207,7 @@ function isHardCapped(balance: Balance | undefined): balance is Balance {
 export function isUsageBasedPlan(customer: Customer | null | undefined): boolean {
 	const balances = customer?.balances
 	if (!balances) return false
-	return METERED_INGEST_FEATURES.some((featureId) => balances[featureId]?.overageAllowed === true)
+	return Arr.some(METERED_INGEST_FEATURES, (featureId) => balances[featureId]?.overageAllowed === true)
 }
 
 // Per-feature quota standing for the hard-capped (base-plan) ingest features.
@@ -233,8 +236,8 @@ export function getFeatureQuotas(customer: Customer | null | undefined): Feature
 // blocked. Usage-based and unlimited orgs always resolve to "ok".
 export function getQuotaStatus(customer: Customer | null | undefined): QuotaLevel {
 	const quotas = getFeatureQuotas(customer)
-	if (quotas.some((quota) => quota.level === "over")) return "over"
-	if (quotas.some((quota) => quota.level === "approaching")) return "approaching"
+	if (Arr.some(quotas, (quota) => quota.level === "over")) return "over"
+	if (Arr.some(quotas, (quota) => quota.level === "approaching")) return "approaching"
 	return "ok"
 }
 
@@ -243,7 +246,9 @@ export function getQuotaStatus(customer: Customer | null | undefined): QuotaLeve
 // to surface it.
 export function getPastDueSubscription(customer: Customer | null | undefined): Subscription | null {
 	if (!isUsableCustomer(customer)) return null
-	return customer.subscriptions.find((sub) => !sub.addOn && sub.pastDue === true) ?? null
+	return Option.getOrNull(
+		Arr.findFirst(customer.subscriptions, (sub) => !sub.addOn && sub.pastDue === true),
+	)
 }
 
 // Whether the org's active plan is a legacy/grandfathered one, plus its display

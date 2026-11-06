@@ -7,53 +7,36 @@
 	],
 	"exports": {
 		"./styles/tokens.css": "./src/styles/tokens.css",
-		"./lib/cloud-platforms": "./src/lib/cloud-platforms/index.ts",
-		"./components/plot": "./src/components/plot/index.ts",
+		"./styles/ui/*": "./src/components/ui/*.styles.ts",
 		"./*": "./src/*"
 	},
 	"scripts": {
 		"test": "vitest run",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
-		"@base-ui/react": "catalog:ui",
 		"@maple/domain": "workspace:*",
 		"@maple/query-engine": "workspace:*",
-		"@shadcn/react": "^0.3.1",
+		"@maple/strings": "workspace:*",
 		"@tanstack/charts": "catalog:charts",
 		"@tanstack/charts-scales": "catalog:charts",
-		"@tanstack/react-virtual": "^3.14.13",
-		"@xyflow/react": "catalog:ui",
+		"@xyflow/system": "0.0.84",
 		"class-variance-authority": "catalog:ui",
 		"clsx": "catalog:ui",
 		"d3-scale": "^4.0.2",
-		"d3-shape": "^3.2.0",
 		"effect": "catalog:effect",
-		"elkjs": "^0.12.0",
-		"react-day-picker": "^10.0.1",
-		"react-resizable-panels": "^4.14.1",
+		"elkjs": "^0.12.1",
 		"tailwind-merge": "catalog:tailwind"
 	},
 	"devDependencies": {
-		"@tailwindcss/vite": "catalog:tailwind",
-		"@testing-library/dom": "^10.4.2",
-		"@testing-library/react": "^16.3.3",
 		"@types/d3-scale": "^4.0.9",
-		"@types/d3-shape": "^3.2.0",
-		"@types/react": "catalog:react",
-		"@types/react-dom": "catalog:react",
 		"@vitest/browser-playwright": "catalog:",
 		"playwright": "catalog:",
-		"react": "catalog:react",
-		"react-dom": "catalog:react",
-		"tailwindcss": "catalog:tailwind",
 		"typescript": "catalog:tooling",
 		"vite": "catalog:",
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
-		"react": "^19.0.0",
-		"react-dom": "^19.0.0",
 		"tailwindcss": "^4.0.0"
 	}
 }

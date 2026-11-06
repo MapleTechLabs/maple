@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs"
 import { deserialize } from "node:v8"
 import { PGlite } from "@electric-sql/pglite"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Option, Schema, Tracer, Array as Arr, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { inject } from "vitest"
 
 import { FixtureMemoryFS, type PgliteFixture } from "../../test/pglite-fixture"
@@ -49,10 +50,10 @@ export interface TestDb {
  * behind it — use `msToSqlTimestamp` there.
  */
 const assertNoDateParams = (sql: string, params: unknown[] | undefined): void => {
-	const index = params?.findIndex((param) => param instanceof Date) ?? -1
-	if (index === -1) return
+	const index = Arr.findFirstIndex(params ?? [], (param) => param instanceof Date)
+	if (Option.isNone(index)) return
 	throw new Error(
-		`Bound a Date as param $${index + 1}: raw \`sql\` fragments have no column type to serialize it. ` +
+		`Bound a Date as param $${index.value + 1}: raw \`sql\` fragments have no column type to serialize it. ` +
 			`Interpolate an ISO string (msToSqlTimestamp) into raw \`sql\` templates instead.\n${sql}`,
 	)
 }
@@ -72,15 +73,25 @@ const withDateParamGuard = <T extends object>(client: T): T =>
 			if (property === "query") {
 				return (sql: string, params?: unknown[], ...rest: unknown[]) => {
 					assertNoDateParams(sql, params)
-					return value.call(target, sql, params, ...rest)
+					const result: unknown = value.call(target, sql, params, ...rest)
+					return result
 				}
 			}
-			return value.bind(target)
+			const bound: unknown = value.bind(target)
+			return bound
 		},
 	})
 
-export const createTestDb = (track?: TestDb[]): TestDb => {
-	const pglite = new PGlite({ fs: new FixtureMemoryFS(SNAPSHOT) })
+/**
+ * `startParams` are appended to PGlite's own Postgres arguments. PGlite is one
+ * backend, so the only way to hold a row lock the code under test does not own
+ * is a prepared transaction, which needs `-c max_prepared_transactions=1`.
+ */
+export const createTestDb = (track?: TestDb[], startParams: ReadonlyArray<string> = []): TestDb => {
+	const pglite = new PGlite({
+		fs: new FixtureMemoryFS(SNAPSHOT),
+		startParams: [...PGlite.defaultStartParams, ...startParams],
+	})
 	// Building the layer twice over the same DB is legitimate (tests that provide
 	// makeLayer twice to simulate concurrent service instances). Restoring the
 	// snapshot is the constructor's job and happens once, so both builds just wait
@@ -105,6 +116,33 @@ export const createTestDb = (track?: TestDb[]): TestDb => {
 	return db
 }
 
+const decodeQueryText = Schema.decodeUnknownSync(Schema.String)
+
+/**
+ * A tracer recording `Database.execute` spans. `verbs()` lists the leading keyword
+ * of every statement those calls ran, in order, read from `db.query.text`.
+ */
+export const makeStatementRecorder = () => {
+	const spans: Array<Tracer.NativeSpan> = []
+	const tracer = Tracer.make({
+		span(options) {
+			const span = new Tracer.NativeSpan(options)
+			spans.push(span)
+			return span
+		},
+	})
+	const verbs = () => {
+		const pgSpans = Arr.filter(spans, (span) => span.attributes.get("db.system.name") === "postgresql")
+		return Arr.map(
+			Arr.flatMap(pgSpans, (span) =>
+				Str.split(";\n")(decodeQueryText(span.attributes.get("db.query.text"))),
+			),
+			(statement) => Str.toUpperCase(Arr.headNonEmpty(Str.split(/\s+/)(Str.trim(statement)))),
+		)
+	}
+	return { tracer, verbs }
+}
+
 export const cleanupTestDbs = async (dbs: TestDb[]): Promise<void> => {
 	for (const db of dbs.splice(0, dbs.length)) {
 		await db.close().catch(() => {})
@@ -114,6 +152,28 @@ export const cleanupTestDbs = async (dbs: TestDb[]): Promise<void> => {
 /** Raw SQL against the test instance. Placeholders are Postgres-style ($1, $2, …). */
 export const executeSql = async (db: TestDb, sql: string, params: unknown[] = []): Promise<void> => {
 	await db.pglite.query(sql, params)
+}
+
+/**
+ * An integration source for a fixture row to point at through `source_id`, as the integration's
+ * connect flow creates it. Resolves to its id.
+ */
+export const insertTestSource = async (
+	db: TestDb,
+	source: {
+		readonly orgId: string
+		readonly platform: string
+		readonly name?: string
+		readonly id?: string
+	},
+): Promise<string> => {
+	const id = source.id ?? SecureRandom.uuidV4Unsafe()
+	await db.pglite.query(
+		`INSERT INTO sources (id, org_id, name, platform, kind, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, 'integration', now(), now())`,
+		[id, source.orgId, source.name ?? source.platform, source.platform],
+	)
+	return id
 }
 
 export const queryFirstRow = async <T>(

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { searchRecords, splitSections, toRecords, type SearchDoc } from "../lib/docs-search"
+import { Array as Arr } from "effect"
 
 const doc = (
 	id: string,
@@ -21,27 +22,30 @@ const doc = (
 
 describe("splitSections", () => {
 	it("uses Astro's rendered slugs and ignores headings inside any fence", () => {
-		const body = [
-			"Intro text.",
-			"## Evaluation timing",
-			"Min samples defaults to 50.",
-			"````md",
-			"```sh",
-			"## not a heading",
-			"```",
-			"````",
-			"~~~py",
-			"## also not a heading",
-			"~~~",
-			"### Nested `code` heading",
-			"Deeper text.",
-		].join("\n")
+		const body = Arr.join(
+			[
+				"Intro text.",
+				"## Evaluation timing",
+				"Min samples defaults to 50.",
+				"````md",
+				"```sh",
+				"## not a heading",
+				"```",
+				"````",
+				"~~~py",
+				"## also not a heading",
+				"~~~",
+				"### Nested `code` heading",
+				"Deeper text.",
+			],
+			"\n",
+		)
 		const { intro, sections } = splitSections(body, [
 			{ depth: 2, slug: "evaluation-timing", text: "Evaluation timing" },
 			{ depth: 3, slug: "nested-code-heading-1", text: "Nested code heading" },
 		])
 		expect(intro).toBe("Intro text.")
-		expect(sections.map((s) => [s.heading, s.anchor])).toEqual([
+		expect(Arr.map(sections, (s) => [s.heading, s.anchor])).toEqual([
 			["Evaluation timing", "evaluation-timing"],
 			["Nested code heading", "nested-code-heading-1"],
 		])
@@ -73,7 +77,7 @@ describe("searchRecords", () => {
 
 	it("requires every term as a word prefix and links the section", () => {
 		const hits = searchRecords(records, "min samples")
-		expect(hits.map((h) => h.record.url)).toEqual(["/docs/alerting/alert-rules#evaluation-timing"])
+		expect(Arr.map(hits, (h) => h.record.url)).toEqual(["/docs/alerting/alert-rules#evaluation-timing"])
 		expect(hits[0].snippet).toContain("Min samples")
 	})
 

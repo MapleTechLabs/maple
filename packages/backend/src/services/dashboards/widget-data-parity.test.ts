@@ -14,7 +14,12 @@
  * screenshot.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { DashboardDocument, DashboardId, IsoDateTimeString, OrgId } from "@maple/domain/http"
+import {
+	DashboardDocument,
+	DashboardVariableSchema,
+	IsoDateTimeString,
+	OrgId,
+} from "@maple/domain/http"
 import type { RawSqlValidationError } from "@maple/domain/http"
 import {
 	MAX_LIST_RANGE_SECONDS,
@@ -30,14 +35,17 @@ import { fallbackStrategyFromWire, runQuerySet } from "@maple/query-engine/query
 import { makeExecuteRawSql } from "@maple/query-engine/runtime"
 import { QuerySetSchema } from "@maple/query-model"
 import { dataSourceQuerySet, toWidgetRequest } from "@maple/widgets/dashboard"
-import { Effect, Layer, ManagedRuntime, Schema } from "effect"
+import { Effect, Layer, ManagedRuntime, Schema, Array as Arr } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { DashboardWidgetDataService, shareViewerTenant } from "./DashboardWidgetDataService"
+import {
+	type DashboardVariable,
+	DashboardWidgetDataService,
+	shareViewerTenant,
+} from "./DashboardWidgetDataService"
 import { makeServerQuerySetExecutor } from "./server-query-set-executor"
 import { compiledQueryOf, type CompiledQueryInput } from "@maple/query-engine/execution"
 
-const asDashboardId = Schema.decodeUnknownSync(DashboardId)
 const asIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 
@@ -148,13 +156,21 @@ const makeHarness = () => {
 	return { runtime, captured, queryEngineLayer: queryEngine, warehouseLayer: warehouse }
 }
 
+/** One string field of a captured, untyped query-engine request. */
+const fieldOf = (query: unknown, field: string): string | undefined => {
+	const value =
+		typeof query === "object" && query !== null
+			? Object.getOwnPropertyDescriptor(query, field)?.value
+			: undefined
+	return typeof value === "string" ? value : undefined
+}
+
 const document = (widgets: ReadonlyArray<Record<string, unknown>>): DashboardDocument =>
-	new DashboardDocument({
-		id: asDashboardId("dash-parity"),
+	Schema.decodeUnknownSync(DashboardDocument)({
+		id: "dash-parity",
 		name: "Parity",
 		timeRange: { type: "relative", value: "12h" },
-		// oxlint-disable-next-line typescript/no-explicit-any
-		widgets: widgets as any,
+		widgets,
 		createdAt: NOW,
 		updatedAt: NOW,
 	})
@@ -283,7 +299,7 @@ describe("shared widget data parity with the signed-in board", () => {
 
 		const plan = browserWould(TIMESERIES_SOURCE, { widgetTimeRange: { type: "relative", value: "1h" } })
 		expect(shared.captured.execute).toHaveLength(1)
-		const executed = shared.captured.execute[0]!
+		const executed = shared.captured.execute[0]
 		// Both resolve "1h" against their own `Date.now()`, a few ms apart; the
 		// cache-grid snap (15s rung for 1h) makes them land on the same endpoint.
 		expect(executed.endTime).toBe(plan.window.endTime)
@@ -335,7 +351,7 @@ describe("shared widget data parity with the signed-in board", () => {
 
 		expect(shared.captured.rawSql).toEqual(expected.captured.rawSql)
 		expect(shared.captured.rawSql).toHaveLength(1)
-		const issued = shared.captured.rawSql[0]!.sql
+		const issued = shared.captured.rawSql[0].sql
 		expect(issued).toContain("'checkout'")
 		expect(issued).not.toContain("$service")
 		// 12h under the rawSql policy is a 30-minute `$__interval_s`, not the old
@@ -397,7 +413,7 @@ describe("shared widget data parity with the signed-in board", () => {
 		)
 
 		expect(outcome.narrowedToSeconds).toBe(MAX_LIST_RANGE_SECONDS)
-		const executed = shared.captured.execute[0]!
+		const executed = shared.captured.execute[0]
 		expect(executed.endTime).toBe(wide.endTime)
 		expect((Date.parse(`${executed.endTime}Z`) - Date.parse(`${executed.startTime}Z`)) / 1000).toBe(
 			MAX_LIST_RANGE_SECONDS,
@@ -411,7 +427,7 @@ describe("shared widget data parity with the signed-in board", () => {
 
 	it("variable options: lists each query variable's source once, over the window, and tolerates a failing source", async () => {
 		const shared = makeHarness()
-		const definitions = [
+		const definitions = Schema.decodeSync(Schema.Array(DashboardVariableSchema))([
 			{ name: "service", type: "query", source: { kind: "facet", facet: "service" } },
 			{ name: "svc2", type: "query", source: { kind: "facet", facet: "service" } },
 			{
@@ -422,12 +438,11 @@ describe("shared widget data parity with the signed-in board", () => {
 			{ name: "sev", type: "query", source: { kind: "facet", facet: "log_severity" } },
 			{ name: "free", type: "textbox" },
 			{ name: "fixed", type: "custom", options: [{ value: "x" }] },
-		]
+		])
 
 		const options = await shared.runtime.runPromise(
 			DashboardWidgetDataService.use((service) =>
-				// oxlint-disable-next-line typescript/no-explicit-any -- fixture definitions in stored shape
-				service.variableOptions(ORG, definitions as any, WINDOW),
+				service.variableOptions(ORG, definitions, WINDOW, () => true),
 			),
 		)
 
@@ -439,16 +454,78 @@ describe("shared widget data parity with the signed-in board", () => {
 			pod: ["k8s.pod-a"],
 			sev: [],
 		})
-		const facetQueries = shared.captured.execute.filter(
+		const facetQueries = Arr.filter(
+			shared.captured.execute,
 			(r) => (r.query as { kind: string }).kind === "facets",
 		)
 		expect(facetQueries).toHaveLength(2)
 		expect(
-			shared.captured.execute.every(
+			Arr.every(
+				shared.captured.execute,
 				(r) => r.startTime === WINDOW.startTime && r.endTime === WINDOW.endTime,
 			),
 		).toBe(true)
 
+		await shared.runtime.dispose()
+	})
+
+	it("variable options: lists only the sources the caller may read", async () => {
+		const shared = makeHarness()
+		const definitions: ReadonlyArray<DashboardVariable> = [
+			{ name: "service", type: "query", source: { kind: "facet", facet: "service" } },
+			{ name: "sev", type: "query", source: { kind: "facet", facet: "log_severity" } },
+			{
+				name: "host",
+				type: "query",
+				source: {
+					kind: "metric",
+					metricType: "gauge",
+					metricNames: ["cpu"],
+					scope: "resource",
+					attributeKey: "host",
+				},
+			},
+		]
+
+		const options = await shared.runtime.runPromise(
+			DashboardWidgetDataService.use((service) =>
+				service.variableOptions(ORG, definitions, WINDOW, (family) => family === "metrics"),
+			),
+		)
+
+		expect(options).toEqual({ host: ["host-a"] })
+		expect(Arr.map(shared.captured.execute, (r) => fieldOf(r.query, "source"))).toEqual(["metrics"])
+		await shared.runtime.dispose()
+	})
+
+	it("a key that cannot read a variable's source learns nothing about its values", async () => {
+		const shared = makeHarness()
+		const board = new DashboardDocument({
+			...document([
+				widget("w-logs", {
+					...TIMESERIES_SOURCE,
+					queries: [{ ...TIMESERIES_SOURCE.queries[0], dataSource: "logs" }],
+				}),
+			]),
+			variables: [{ name: "service", type: "query", source: { kind: "facet", facet: "service" } }],
+		})
+		const batch = (variableValues: Record<string, string>) =>
+			shared.runtime.runPromise(
+				DashboardWidgetDataService.use((service) =>
+					service.resolveBatch(ORG, board, {
+						requests: [{ widgetId: "w-logs", source: "primary" }],
+						window: WINDOW,
+						variableValues,
+						canRead: (family) => family === "logs",
+					}),
+				),
+			)
+
+		// No fallback to the first live service, and a real value and a made-up one resolve alike.
+		expect((await batch({})).variables).toEqual({ service: "" })
+		expect((await batch({ service: "checkout" })).variables).toEqual({ service: "checkout" })
+		expect((await batch({ service: "made-up" })).variables).toEqual({ service: "made-up" })
+		expect(Arr.some(shared.captured.execute, (r) => fieldOf(r.query, "kind") === "facets")).toBe(false)
 		await shared.runtime.dispose()
 	})
 })

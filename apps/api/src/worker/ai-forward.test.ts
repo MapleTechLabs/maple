@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect } from "effect"
-import { HttpServerRequest } from "effect/unstable/http"
-import { forwardsToAi, forwardToAi, isCloudflareFetcher } from "./ai-forward"
+import { HttpServerRequest } from "effect/http"
+import { forwardsToAi, forwardToAi } from "./ai-forward"
 
 /**
  * The predicate IS the contract between the two Workers: a path it misses 404s
@@ -9,7 +9,7 @@ import { forwardsToAi, forwardToAi, isCloudflareFetcher } from "./ai-forward"
  * all. Both failures are silent in a typecheck, hence the table.
  */
 describe("forwardsToAi", () => {
-	it("forwards the MCP transport and the chat surfaces", () => {
+	it("forwards the MCP transport, the chat surfaces and the security audit API", () => {
 		for (const path of [
 			"/mcp",
 			"/mcp/",
@@ -19,6 +19,9 @@ describe("forwardsToAi", () => {
 			"/api/chat/sessions/org:tab/messages",
 			"/api/chat/sessions/org:tab/abort",
 			"/internal/chat/apply",
+			"/internal/mcp/tools",
+			"/api/security-audit/targets",
+			"/api/security-audit/runs/run-1/events",
 		]) {
 			assert.isTrue(forwardsToAi(path), path)
 		}
@@ -35,19 +38,14 @@ describe("forwardsToAi", () => {
 			"/api/chatter",
 			"/api/chat",
 			"/internal/chatty",
+			"/internal/mcp",
+			"/internal/mcpx",
 			"/internal/ai-sessions",
+			"/api/security-audit",
+			"/api/security-auditx/targets",
 			"/v2/errors",
 		]) {
 			assert.isFalse(forwardsToAi(path), path)
-		}
-	})
-})
-
-describe("isCloudflareFetcher", () => {
-	it("accepts a binding exposing fetch and rejects everything else", () => {
-		assert.isTrue(isCloudflareFetcher({ fetch: () => new Response("ok") }))
-		for (const value of [undefined, null, {}, "AI_WORKER", { fetch: "nope" }]) {
-			assert.isFalse(isCloudflareFetcher(value), JSON.stringify(value))
 		}
 	})
 })
@@ -57,11 +55,11 @@ describe("isCloudflareFetcher", () => {
  * that and is asserted to the binding's type rather than growing a `connect`
  * this path never reaches.
  */
-const echoFetcher = (seen: Array<Request>) =>
+const echoFetcher = (seen: Array<Request>, headers: Record<string, string> = {}) =>
 	({
 		fetch: (input: RequestInfo | URL) => {
 			if (input instanceof Request) seen.push(input)
-			return Promise.resolve(new Response("forwarded", { status: 207 }))
+			return Promise.resolve(new Response("forwarded", { status: 207, headers }))
 		},
 	}) as Fetcher
 
@@ -90,6 +88,55 @@ describe("forwardToAi", () => {
 			// and the service map gains the edge between them.
 			assert.strictEqual(forwarded.headers.get("traceparent"), `00-${span.traceId}-${span.spanId}-01`)
 			assert.strictEqual(yield* Effect.promise(() => forwarded.text()), '{"method":"tools/list"}')
+		}).pipe(Effect.withSpan("test-root")),
+	)
+
+	it.effect("moves maple-ai's isolate stamp onto this span and off the response", () =>
+		Effect.gen(function* () {
+			const fetcher = echoFetcher([], {
+				"x-maple-isolate-ordinal": "1",
+				"x-maple-isolate-age-ms": "0",
+				"content-type": "application/json",
+			})
+			const response = yield* forwardToAi(
+				fetcher,
+				HttpServerRequest.fromWeb(new Request("https://api.maple.dev/mcp")),
+			)
+			const span = yield* Effect.currentSpan
+
+			assert.deepStrictEqual(
+				{
+					ordinal: span.attributes.get("maple.ai.isolate.request_ordinal"),
+					ageMs: span.attributes.get("maple.ai.isolate.age_ms"),
+				},
+				{ ordinal: 1, ageMs: 0 },
+			)
+			assert.deepStrictEqual(response.headers, { "content-type": "application/json" })
+		}).pipe(Effect.withSpan("test-root")),
+	)
+
+	it.effect("marks the request that built maple-ai's tool executor, and strips the marker", () =>
+		Effect.gen(function* () {
+			const built = yield* forwardToAi(
+				echoFetcher([], { "x-maple-ai-mcp-tools-built": "1", "content-type": "application/json" }),
+				HttpServerRequest.fromWeb(new Request("https://api.maple.dev/mcp")),
+			)
+			const span = yield* Effect.currentSpan
+
+			assert.strictEqual(span.attributes.get("maple.ai.mcp.tools_built"), true)
+			assert.deepStrictEqual(built.headers, { "content-type": "application/json" })
+		}).pipe(Effect.withSpan("test-root")),
+	)
+
+	it.effect("leaves a warm tools request unmarked", () =>
+		Effect.gen(function* () {
+			yield* forwardToAi(
+				echoFetcher([]),
+				HttpServerRequest.fromWeb(new Request("https://api.maple.dev/mcp")),
+			)
+			const span = yield* Effect.currentSpan
+
+			assert.isUndefined(span.attributes.get("maple.ai.mcp.tools_built"))
 		}).pipe(Effect.withSpan("test-root")),
 	)
 

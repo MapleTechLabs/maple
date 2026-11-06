@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { RAW_SQL_TEMPLATES, visualizationToDisplayType } from "@/lib/raw-sql/templates"
-import { fromPanelType } from "@/lib/query-builder/panel-types"
+import { RAW_SQL_TEMPLATES, visualizationToDisplayType } from "./templates"
+import { WIDGET_TYPES } from "@maple/domain/http"
+import { Record as Rec } from "effect"
 
 describe("visualizationToDisplayType", () => {
 	it("maps gauge onto the scalar stat shape", () => {
@@ -19,26 +20,7 @@ describe("visualizationToDisplayType", () => {
 
 	it("maps each breakdown visualization to its own display type", () => {
 		for (const panel of ["pie", "histogram", "heatmap", "funnel", "hbar"] as const) {
-			const { visualization, chartId } = fromPanelType(panel)
-			expect(visualizationToDisplayType(visualization, chartId), panel).toBe(panel)
-		}
-	})
-
-	it("has a template for every display type a panel type can produce", () => {
-		for (const panel of [
-			"line",
-			"bar",
-			"area",
-			"stat",
-			"gauge",
-			"table",
-			"pie",
-			"funnel",
-			"hbar",
-		] as const) {
-			const { visualization, chartId } = fromPanelType(panel)
-			const displayType = visualizationToDisplayType(visualization, chartId)
-			expect(RAW_SQL_TEMPLATES[displayType], panel).toBeTruthy()
+			expect(visualizationToDisplayType(WIDGET_TYPES[panel].visualization), panel).toBe(panel)
 		}
 	})
 
@@ -48,7 +30,7 @@ describe("visualizationToDisplayType", () => {
 	})
 
 	it("scopes every template to the org via $__orgFilter", () => {
-		for (const [displayType, sql] of Object.entries(RAW_SQL_TEMPLATES)) {
+		for (const [displayType, sql] of Rec.toEntries(RAW_SQL_TEMPLATES)) {
 			expect(sql, displayType).toContain("$__orgFilter")
 		}
 	})

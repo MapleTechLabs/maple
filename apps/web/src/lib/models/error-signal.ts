@@ -19,8 +19,9 @@ import type {
 } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
 
-import type { ErrorByType } from "@/api/warehouse/errors"
-import type { ErrorsSparkSeries } from "@/api/warehouse/errors"
+import type { ErrorByType } from "@maple/web-data/warehouse/errors"
+import type { ErrorsSparkSeries } from "@maple/web-data/warehouse/errors"
+import { Array as Arr } from "effect"
 
 /**
  * What a row says about where this fingerprint stands. One slot, resolved by
@@ -153,9 +154,29 @@ export function resolveSignalState(
  * same reason.
  */
 export function sparkFingerprintHashes(
-	issues: ReadonlyArray<{ readonly kind: IssueKind; readonly fingerprintHash: string }>,
+	issues: ReadonlyArray<{ readonly kind: IssueKind; readonly fingerprintHashes: ReadonlyArray<string> }>,
 ): ReadonlyArray<string> {
-	return issues.filter((issue) => issue.kind === "error").map((issue) => issue.fingerprintHash)
+	return Arr.flatMap(issues, (issue) => (issue.kind === "error" ? issue.fingerprintHashes : []))
+}
+
+const lookupAll = <V>(map: ReadonlyMap<string, V>, keys: ReadonlyArray<string>): ReadonlyArray<V> =>
+	Arr.flatMap(keys, (key) => {
+		const value = map.get(key)
+		return value === undefined ? [] : [value]
+	})
+
+/** Sum the per-hash spark points of one issue into one series, bucket by bucket. */
+const mergeSparkPoints = (
+	series: ReadonlyArray<ReadonlyArray<{ readonly bucket: string; readonly count: number }>>,
+): ReadonlyArray<{ readonly bucket: string; readonly count: number }> => {
+	if (series.length <= 1) return series[0] ?? []
+	const byBucket = Arr.reduce(Arr.flatten(series), new Map<string, number>(), (acc, point) =>
+		acc.set(point.bucket, (acc.get(point.bucket) ?? 0) + point.count),
+	)
+	return Arr.map(
+		[...byBucket.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+		([bucket, count]) => ({ bucket, count }),
+	)
 }
 
 /**
@@ -172,11 +193,22 @@ export function buildErrorSignals(input: {
 	readonly spark: ReadonlyArray<ErrorsSparkSeries>
 	readonly investigations: ReadonlyMap<string, V2Investigation>
 }): ReadonlyArray<ErrorSignal> {
-	const volumeByHash = new Map(input.warehouse.map((row) => [row.fingerprintHash, row]))
-	const sparkByHash = new Map(input.spark.map((series) => [series.fingerprintHash, series.points]))
+	const volumeByHash = new Map(Arr.map(input.warehouse, (row) => [row.fingerprintHash, row]))
+	const sparkByHash = new Map(Arr.map(input.spark, (series) => [series.fingerprintHash, series.points]))
 
-	return input.issues.map((issue) => {
-		const volume = volumeByHash.get(issue.fingerprintHash)
+	return Arr.map(input.issues, (issue) => {
+		// A merged issue owns several hashes; its row shows their sum.
+		const volumes = lookupAll(volumeByHash, issue.fingerprintHashes)
+		const volume =
+			volumes.length === 0
+				? undefined
+				: {
+						count: Arr.reduce(volumes, 0, (sum, row) => sum + row.count),
+						// A lower bound: hashes that hit different services are not unioned here.
+						affectedServicesCount: Math.max(
+							...Arr.map(volumes, (row) => row.affectedServicesCount),
+						),
+					}
 		return {
 			id: issue.id,
 			fingerprintHash: issue.fingerprintHash,
@@ -188,7 +220,7 @@ export function buildErrorSignals(input: {
 			windowCount: volume ? volume.count : null,
 			totalCount: issue.occurrenceCount,
 			affectedServicesCount: volume ? volume.affectedServicesCount : null,
-			spark: sparkByHash.get(issue.fingerprintHash) ?? [],
+			spark: mergeSparkPoints(lookupAll(sparkByHash, issue.fingerprintHashes)),
 			lastSeenAt: issue.lastSeenAt,
 			firstSeenAt: issue.firstSeenAt,
 			assignee: issue.leaseHolder ?? issue.assignedActor,
@@ -214,7 +246,7 @@ export function densifySpark(
 	const bucketCount = Math.ceil((window.endMs - window.startMs) / window.bucketMs)
 	if (bucketCount <= 0 || !Number.isFinite(bucketCount)) return []
 
-	const dense = new Array<number>(bucketCount).fill(0)
+	const dense = Array.from({ length: bucketCount }, () => 0)
 	for (const point of points) {
 		const ms = Date.parse(point.bucket)
 		if (!Number.isFinite(ms)) continue
@@ -238,10 +270,10 @@ const SURGE_MIN_EVENTS = 20
 const SURGE_TAIL_FRACTION = 0.2
 
 export function surgeRatio(dense: ReadonlyArray<number>): number | null {
-	const total = dense.reduce((sum, value) => sum + value, 0)
+	const total = Arr.reduce(dense, 0, (sum, value) => sum + value)
 	if (total < SURGE_MIN_EVENTS) return null
 	const tailLength = Math.max(1, Math.round(dense.length * SURGE_TAIL_FRACTION))
-	const tail = dense.slice(dense.length - tailLength).reduce((sum, value) => sum + value, 0)
+	const tail = Arr.reduce(dense.slice(dense.length - tailLength), 0, (sum, value) => sum + value)
 	// Against the window's own average tail, so "surging" means "faster than it
 	// has been", not merely "nonzero at the end".
 	const expected = total * (tailLength / dense.length)

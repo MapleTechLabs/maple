@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 import { getActiveInfraCorrelations } from "./infra-correlations"
+import { Array as Arr } from "effect"
 
 describe("getActiveInfraCorrelations", () => {
 	it("returns no groups for empty/missing resource attributes", () => {
@@ -26,6 +27,7 @@ describe("getActiveInfraCorrelations", () => {
 			"k8s.pod.name": "checkout-7c9f",
 			"k8s.namespace.name": "prod",
 		})
+		assert.isDefined(pod)
 		expect(pod.kind).toBe("pod")
 		expect(pod.identifier).toBe("checkout-7c9f")
 		expect(pod).toMatchObject({ namespace: "prod" })
@@ -33,6 +35,7 @@ describe("getActiveInfraCorrelations", () => {
 
 	it("leaves namespace undefined when none is present", () => {
 		const [pod] = getActiveInfraCorrelations({ "k8s.pod.name": "checkout-7c9f" })
+		assert.isDefined(pod)
 		expect(pod.kind).toBe("pod")
 		expect(pod).toMatchObject({ namespace: undefined })
 	})
@@ -61,7 +64,7 @@ describe("getActiveInfraCorrelations", () => {
 			"k8s.namespace.name": "prod",
 			"k8s.node.name": "ip-10-0-1-5",
 		})
-		expect(groups.map((g) => g.kind)).toEqual(["pod", "node"])
+		expect(Arr.map(groups, (g) => g.kind)).toEqual(["pod", "node"])
 	})
 
 	it("passes identifiers and namespaces through raw (Link owns URL encoding)", () => {
@@ -71,6 +74,7 @@ describe("getActiveInfraCorrelations", () => {
 			"k8s.pod.name": "weird/pod name",
 			"k8s.namespace.name": "team a/b",
 		})
+		assert.isDefined(pod)
 		expect(pod.identifier).toBe("weird/pod name")
 		expect(pod).toMatchObject({ namespace: "team a/b" })
 	})
@@ -80,7 +84,7 @@ describe("getActiveInfraCorrelations", () => {
 			"container.name": "redis",
 			"host.name": "docker-host-1",
 		})
-		expect(groups.map((g) => g.kind)).toEqual(["container", "host"])
+		expect(Arr.map(groups, (g) => g.kind)).toEqual(["container", "host"])
 		expect(groups[0]).toMatchObject({
 			kind: "container",
 			identifier: "redis",
@@ -94,7 +98,7 @@ describe("getActiveInfraCorrelations", () => {
 			"k8s.pod.name": "checkout-7c9f",
 			"k8s.node.name": "ip-10-0-1-5",
 		})
-		expect(groups.map((g) => g.kind)).toEqual(["pod", "node"])
+		expect(Arr.map(groups, (g) => g.kind)).toEqual(["pod", "node"])
 	})
 
 	it("treats an empty container.name as absent", () => {
@@ -109,7 +113,7 @@ describe("getActiveInfraCorrelations", () => {
 			"container.runtime": "containerd",
 			"host.name": "node-1",
 		})
-		expect(groups.map((g) => g.kind)).toEqual(["host"])
+		expect(Arr.map(groups, (g) => g.kind)).toEqual(["host"])
 	})
 
 	it("keeps the container group when container.runtime is docker", () => {
@@ -117,7 +121,7 @@ describe("getActiveInfraCorrelations", () => {
 			"container.name": "app",
 			"container.runtime": "docker",
 		})
-		expect(groups.map((g) => g.kind)).toEqual(["container"])
+		expect(Arr.map(groups, (g) => g.kind)).toEqual(["container"])
 	})
 
 	/**
@@ -128,18 +132,24 @@ describe("getActiveInfraCorrelations", () => {
 	 */
 	it("honours the renamed container.runtime.name in both directions", () => {
 		expect(
-			getActiveInfraCorrelations({
-				"container.name": "app",
-				"container.runtime.name": "containerd",
-				"host.name": "node-1",
-			}).map((g) => g.kind),
+			Arr.map(
+				getActiveInfraCorrelations({
+					"container.name": "app",
+					"container.runtime.name": "containerd",
+					"host.name": "node-1",
+				}),
+				(g) => g.kind,
+			),
 		).toEqual(["host"])
 
 		expect(
-			getActiveInfraCorrelations({
-				"container.name": "app",
-				"container.runtime.name": "docker",
-			}).map((g) => g.kind),
+			Arr.map(
+				getActiveInfraCorrelations({
+					"container.name": "app",
+					"container.runtime.name": "docker",
+				}),
+				(g) => g.kind,
+			),
 		).toEqual(["container"])
 	})
 
@@ -151,7 +161,7 @@ describe("getActiveInfraCorrelations", () => {
 			"container.runtime": "docker",
 			"host.name": "node-1",
 		})
-		expect(groups.map((g) => g.kind)).toEqual(["host"])
+		expect(Arr.map(groups, (g) => g.kind)).toEqual(["host"])
 	})
 
 	it("each group carries at least one chart", () => {
@@ -160,7 +170,7 @@ describe("getActiveInfraCorrelations", () => {
 			"k8s.node.name": "n",
 			"host.name": "h",
 		})
-		expect(groups.map((g) => g.kind)).toEqual(["pod", "node", "host"])
+		expect(Arr.map(groups, (g) => g.kind)).toEqual(["pod", "node", "host"])
 		for (const g of groups) {
 			expect(g.charts.length).toBeGreaterThan(0)
 		}

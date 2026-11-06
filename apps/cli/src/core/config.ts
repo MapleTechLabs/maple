@@ -1,16 +1,28 @@
-import { Clock, Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
+import {
+	Config,
+	Context,
+	DateTime,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Result,
+	Schema,
+	Record as Rec,
+} from "effect"
 import { FileSystem } from "effect/FileSystem"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as os from "node:os"
 import * as path from "node:path"
-import { defaultLocalUrl } from "../lib/local-address"
-import { durableWrite } from "../server/durable-files"
+import { defaultLocalUrl } from "@maple/local-server/local-address"
+import { durableWrite } from "@maple/local-server/durable-files"
 import {
 	credentialAccount,
 	deleteNativeCredential,
 	readNativeCredential,
 	writeNativeCredential,
 } from "./credential-store"
+import { encodeJsonPretty } from "@maple/local-server/json"
 
 /**
  * On-disk CLI config, stored at `~/.maple/config.json` (mode 0600). The same
@@ -30,6 +42,8 @@ export interface StoredConfig {
 	/** Latest release tag seen by the update check (e.g. "v0.6.0"), cached so the
 	 *  notice can render between probes without hitting the network. */
 	latestKnownVersion?: string
+	/** Version that last ran here, so the first run after an upgrade can point at its notes. */
+	lastSeenVersion?: string
 }
 
 /** The config file exists but cannot be read, parsed, or replaced. Names the
@@ -54,8 +68,9 @@ const StoredConfigFields = Schema.Struct({
 	defaultMode: Schema.optionalKey(Schema.Literals(["local", "remote"])),
 	lastUpdateCheck: Schema.optionalKey(Schema.String),
 	latestKnownVersion: Schema.optionalKey(Schema.String),
+	lastSeenVersion: Schema.optionalKey(Schema.String),
 })
-const KNOWN_KEYS = new Set(Object.keys(StoredConfigFields.fields))
+const KNOWN_KEYS = new Set<string>(Rec.keys(StoredConfigFields.fields))
 const decodeConfigObject = Schema.decodeUnknownResult(
 	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
 )
@@ -69,7 +84,7 @@ interface ConfigFile {
 
 const readConfig = (fs: FileSystem, configPath: string): Effect.Effect<ConfigFile, ConfigFileError> =>
 	fs.readFileString(configPath).pipe(
-		Effect.map(Option.some),
+		Effect.asSome,
 		Effect.catchTag("PlatformError", (error) =>
 			error.reason._tag === "NotFound"
 				? Effect.succeed(Option.none<string>())
@@ -87,9 +102,7 @@ const readConfig = (fs: FileSystem, configPath: string): Effect.Effect<ConfigFil
 			if (Result.isFailure(object)) return Effect.fail(invalid)
 			const config = decodeStoredConfig(object.success)
 			if (Result.isFailure(config)) return Effect.fail(invalid)
-			const unknownFields = Object.fromEntries(
-				Object.entries(object.success).filter(([key]) => !KNOWN_KEYS.has(key)),
-			)
+			const unknownFields = Rec.filter(object.success, (_, key) => !KNOWN_KEYS.has(key))
 			return Effect.succeed<ConfigFile>({ config: config.success, unknownFields })
 		}),
 	)
@@ -113,7 +126,7 @@ export const writeConfigFile = (
 		const current = yield* readConfig(fs, configPath)
 		const merged = { ...current.unknownFields, ...mutate(current.config) }
 		yield* Effect.tryPromise({
-			try: () => durableWrite(configPath, `${JSON.stringify(merged, null, 2)}\n`),
+			try: () => durableWrite(configPath, `${encodeJsonPretty(merged)}\n`),
 			catch: (cause) =>
 				new ConfigFileError({
 					path: configPath,
@@ -144,7 +157,7 @@ export interface MapleConfigValues {
 	/** Remote API base URL (env `MAPLE_API_URL` overrides the stored value). */
 	readonly apiUrl: Option.Option<string>
 	/** Remote bearer token (env `MAPLE_API_TOKEN` overrides the stored value). */
-	readonly token: Option.Option<Redacted.Redacted<string>>
+	readonly token: Option.Option<Redacted.Redacted>
 	readonly orgId: Option.Option<string>
 	readonly userId: Option.Option<string>
 	readonly credentialStore: Option.Option<"keychain" | "file">
@@ -160,6 +173,8 @@ export interface MapleConfigValues {
 	readonly lastUpdateCheck: Option.Option<string>
 	/** Latest release tag seen by the last update check, or `None`. */
 	readonly latestKnownVersion: Option.Option<string>
+	/** Version that last ran on this machine, or `None` before the first run that records it. */
+	readonly lastSeenVersion: Option.Option<string>
 	/** Persist config fields (merged with existing). */
 	readonly write: (next: StoredConfig) => Effect.Effect<void, ConfigFileError>
 	readonly saveRemoteCredential: (next: {
@@ -169,15 +184,28 @@ export interface MapleConfigValues {
 		readonly userId: string
 		readonly managed: boolean
 	}) => Effect.Effect<"keychain" | "file", ConfigFileError>
-	readonly clearRemoteCredential: () => Effect.Effect<void, ConfigFileError>
+	readonly clearRemoteCredential: Effect.Effect<void, ConfigFileError>
 	/** Pin the default mode (used by `maple use local|remote`). */
 	readonly setDefaultMode: (mode: "local" | "remote") => Effect.Effect<void, ConfigFileError>
 	/** Drop the pinned default mode, reverting to auto-detect (`maple use auto`). */
-	readonly clearDefaultMode: () => Effect.Effect<void, ConfigFileError>
+	readonly clearDefaultMode: Effect.Effect<void, ConfigFileError>
 	/** Stamp the update-check timestamp (always) and the latest seen tag (when
 	 *  provided — omitted on a failed probe so the cached version is preserved). */
 	readonly recordUpdateCheck: (latestTag?: string) => Effect.Effect<void, ConfigFileError>
 }
+
+const optionalEnv = (key: string) => Config.String(key).pipe(Config.option, Config.map(Option.getOrUndefined))
+
+const envConfig = Config.all({
+	MAPLE_API_URL: optionalEnv("MAPLE_API_URL"),
+	MAPLE_API_TOKEN: Config.Redacted("MAPLE_API_TOKEN").pipe(
+		Config.option,
+		Config.map(Option.getOrUndefined),
+	),
+	MAPLE_ORG_ID: optionalEnv("MAPLE_ORG_ID"),
+	MAPLE_LOCAL_URL: optionalEnv("MAPLE_LOCAL_URL"),
+	MAPLE_LOCAL_BIND_HOST: optionalEnv("MAPLE_LOCAL_BIND_HOST"),
+})
 
 export class MapleConfig extends Context.Service<MapleConfig, MapleConfigValues>()("@maple/cli/MapleConfig", {
 	make: Effect.gen(function* () {
@@ -194,9 +222,9 @@ export class MapleConfig extends Context.Service<MapleConfig, MapleConfigValues>
 				Effect.logWarning(error.message).pipe(Effect.as<StoredConfig>({})),
 			),
 		)
-		const env = process.env
+		const env = yield* envConfig
 		const resolvedApiUrl = env.MAPLE_API_URL ?? stored.apiUrl
-		const envToken = env.MAPLE_API_TOKEN
+		const envToken = env.MAPLE_API_TOKEN === undefined ? undefined : Redacted.value(env.MAPLE_API_TOKEN)
 		const fileToken = storedTokenFor(stored, resolvedApiUrl)
 		const nativeToken =
 			!envToken && !fileToken && stored.credentialStore === "keychain" && resolvedApiUrl
@@ -224,6 +252,7 @@ export class MapleConfig extends Context.Service<MapleConfig, MapleConfigValues>
 			defaultApiUrl: env.MAPLE_API_URL ?? DEFAULT_API_URL,
 			lastUpdateCheck: Option.fromNullishOr(stored.lastUpdateCheck),
 			latestKnownVersion: Option.fromNullishOr(stored.latestKnownVersion),
+			lastSeenVersion: Option.fromNullishOr(stored.lastSeenVersion),
 			write: (next) => writeMerged(fs, (cur) => ({ ...cur, ...next })),
 			saveRemoteCredential: (next) =>
 				Effect.gen(function* () {
@@ -245,34 +274,32 @@ export class MapleConfig extends Context.Service<MapleConfig, MapleConfigValues>
 					})
 					return storedInKeychain ? "keychain" : "file"
 				}),
-			clearRemoteCredential: () =>
-				Effect.gen(function* () {
-					const storedApiUrl = stored.apiUrl
-					if (storedApiUrl && stored.credentialStore === "keychain") {
-						yield* keychain(deleteNativeCredential(storedApiUrl))
-					}
-					yield* writeMerged(fs, (cur) => {
-						const {
-							token: _token,
-							apiUrl: _apiUrl,
-							orgId: _orgId,
-							userId: _userId,
-							credentialStore: _store,
-							credentialManaged: _managed,
-							...rest
-						} = cur
-						return rest
-					})
-				}),
-			setDefaultMode: (mode) => writeMerged(fs, (cur) => ({ ...cur, defaultMode: mode })),
-			clearDefaultMode: () =>
-				writeMerged(fs, (cur) => {
-					const { defaultMode: _mode, ...rest } = cur
+			clearRemoteCredential: Effect.gen(function* () {
+				const storedApiUrl = stored.apiUrl
+				if (storedApiUrl && stored.credentialStore === "keychain") {
+					yield* keychain(deleteNativeCredential(storedApiUrl))
+				}
+				yield* writeMerged(fs, (cur) => {
+					const {
+						token: _token,
+						apiUrl: _apiUrl,
+						orgId: _orgId,
+						userId: _userId,
+						credentialStore: _store,
+						credentialManaged: _managed,
+						...rest
+					} = cur
 					return rest
-				}),
+				})
+			}),
+			setDefaultMode: (mode) => writeMerged(fs, (cur) => ({ ...cur, defaultMode: mode })),
+			clearDefaultMode: writeMerged(fs, (cur) => {
+				const { defaultMode: _mode, ...rest } = cur
+				return rest
+			}),
 			recordUpdateCheck: (latestTag) =>
 				Effect.gen(function* () {
-					const nowIso = new Date(yield* Clock.currentTimeMillis).toISOString()
+					const nowIso = yield* Effect.map(DateTime.now, DateTime.formatIso)
 					yield* writeMerged(fs, (cur) => ({
 						...cur,
 						lastUpdateCheck: nowIso,

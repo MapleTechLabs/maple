@@ -1,10 +1,11 @@
 /**
  * What the agents' sandbox tools call: grep, list, read and run, each phrased
  * as one bounded `SandboxRequest` over a repository mount and drained through
- * effect-agent's `Sandbox` port. The service knows the commands; the port
+ * @yielded/agent's `Sandbox` port. The service knows the commands; the port
  * knows the container.
  */
 import type { OrgId } from "@maple/domain/http"
+import { SANDBOX_COMMAND_ENV_NAMES } from "@maple/domain/sandbox"
 import {
 	Sandbox,
 	SandboxEnvironment,
@@ -13,8 +14,8 @@ import {
 	SandboxUnsupportedRequestError,
 	type SandboxError,
 	type SandboxEvent,
-} from "effect-agent/sandbox"
-import { Context, Duration, Effect, Layer, Stream } from "effect"
+} from "@maple/backend/sandbox/contract"
+import { Context, Duration, Effect, Layer, Stream, Array as Arr, String as Str } from "effect"
 import {
 	NETWORK_DISABLED,
 	REPO_MOUNT_TARGET,
@@ -44,7 +45,7 @@ const GIT_COMMON = ["--no-optional-locks", "-c", "core.quotePath=false"]
  * filters, so they are combined into a single pattern instead.
  */
 export const gitPathspec = (path: string | undefined, glob: string | undefined): ReadonlyArray<string> => {
-	const dir = path?.replace(/\/+$/, "")
+	const dir = path === undefined ? undefined : Str.replace(/\/+$/, "")(path)
 	if (glob === undefined) return dir === undefined ? [] : [dir]
 	return [`:(glob)${dir === undefined ? glob : `${dir}/${glob}`}`]
 }
@@ -58,8 +59,8 @@ export const gitPathspec = (path: string | undefined, glob: string | undefined):
  */
 const rejectUnsafePath = (label: string, value: string | undefined) =>
 	value !== undefined &&
-	(value.startsWith("/") ||
-		value.split("/").includes("..") ||
+	(Str.startsWith("/")(value) ||
+		Str.split("/")(value).includes("..") ||
 		// oxlint-disable-next-line no-control-regex
 		/[\u0000-\u001f]/.test(value))
 		? Effect.fail(
@@ -71,8 +72,26 @@ const rejectUnsafePath = (label: string, value: string | undefined) =>
 			)
 		: Effect.void
 
-/** Git's index mode for a regular file; anything else is a symlink or a submodule. */
-const REGULAR_FILE_MODES = new Set(["100644", "100755"])
+/** Numbers the requested lines and reports the total, so a truncated read can say how far it is from the end. */
+const READ_FILE_PROGRAM = `NR>=s && NR<=e { printf "%d: %s\\n", NR, $0 } END { printf "__MAPLE_TOTAL_LINES__ %d\\n", NR }`
+
+/**
+ * `read_file` as one sandbox command over positional arguments: $1 path, $2 and $3 the line
+ * bounds, $4 the awk program. A directory is refused by `-d`, not by comparing git's printed path,
+ * which git quotes for names with `"` or `\`. The mode must be a regular file's: a committed
+ * symlink is tracked too, and `awk` would follow it out. The `./` anchor stops a leading `-`.
+ */
+const READ_FILE_SCRIPT = Arr.join(
+	[
+		`entry=$(git ${Arr.join(GIT_COMMON, " ")} ls-files --stage -- ":(literal)$1") || exit 2`,
+		`if [ -z "$entry" ] || [ -d "./$1" ]; then printf "'%s' is not a tracked file at this commit\\n" "$1" >&2; exit 1; fi`,
+		`case "\${entry%% *}" in`,
+		`100644|100755) exec awk -v s="$2" -v e="$3" "$4" "./$1" ;;`,
+		`*) printf "'%s' is not a regular file in the repository\\n" "$1" >&2; exit 3 ;;`,
+		"esac",
+	],
+	"\n",
+)
 
 export interface SandboxCommandResult {
 	readonly exitCode: number
@@ -143,17 +162,15 @@ const limits = (timeoutSeconds: number) =>
 		maxWallTime: Duration.seconds(timeoutSeconds),
 	})
 
-const environment = new SandboxEnvironment({ allow: ["PATH", "HOME", "LANG"] })
+const environment = new SandboxEnvironment({ allow: SANDBOX_COMMAND_ENV_NAMES })
 
 /** A workspace-relative path as the contract's absolute cwd/argument. */
 const inWorkspace = (relative: string | undefined): string =>
 	relative === undefined || relative === "" || relative === "."
 		? REPO_MOUNT_TARGET
-		: `${REPO_MOUNT_TARGET}/${relative.replace(/^\/+/, "")}`
+		: `${REPO_MOUNT_TARGET}/${Str.replace(/^\/+/, "")(relative)}`
 
 /** Fold the event stream into what a tool renders. Non-zero exits are results, not failures: `rg` exits 1 on no match. */
-const utf8 = new TextEncoder()
-
 const drain = (
 	events: Stream.Stream<SandboxEvent, SandboxError>,
 ): Effect.Effect<SandboxCommandResult, SandboxError> =>
@@ -171,9 +188,7 @@ const drain = (
 				case "SandboxStarted":
 					return result
 				case "SandboxOutput": {
-					// `bytes` is the stream's real size; more of it than arrived means the
-					// container cut it at the bound.
-					const truncated = result.truncated || event.bytes > utf8.encode(event.text).length
+					const truncated = result.truncated || event.truncated
 					return event.stream === "stdout"
 						? { ...result, stdout: result.stdout + event.text, truncated }
 						: { ...result, stderr: result.stderr + event.text, truncated }
@@ -189,7 +204,7 @@ const drain = (
 	)
 
 export class RepoSandboxService extends Context.Service<RepoSandboxService, RepoSandboxServiceApi>()(
-	"@maple/api/services/sandbox/RepoSandboxService",
+	"@maple/backend/services/sandbox/RepoSandboxService",
 	{
 		make: Effect.gen(function* () {
 			const sandbox = yield* Sandbox
@@ -237,7 +252,9 @@ export class RepoSandboxService extends Context.Service<RepoSandboxService, Repo
 						// a literal bar and an unbalanced group.
 						"--extended-regexp",
 						...(options.caseSensitive === false ? ["--ignore-case"] : []),
-						...(options.contextLines ? ["--context", String(options.contextLines)] : []),
+						...(options.contextLines !== undefined && options.contextLines > 0
+							? ["--context", String(options.contextLines)]
+							: []),
 						"-e",
 						options.pattern,
 						// Everything past `--` is a pathspec, so a pattern that starts with a
@@ -266,42 +283,17 @@ export class RepoSandboxService extends Context.Service<RepoSandboxService, Repo
 			const readFile: RepoSandboxServiceApi["readFile"] = Effect.fn("RepoSandboxService.readFile")(
 				function* (orgId, target, options) {
 					yield* rejectUnsafePath("path", options.path)
-					// `git ls-files` first: `awk` would follow a symlink out
-					// of the checkout, and only tracked files are readable through this tool.
-					// One pass then numbers the requested lines and reports the total, so a
-					// truncated read can say how far it is from the end.
-					const program = `NR>=s && NR<=e { printf "%d: %s\\n", NR, $0 } END { printf "__MAPLE_TOTAL_LINES__ %d\\n", NR }`
+					// One command: the path and bounds are positional arguments, never part of the script.
 					const args = [
-						"-v",
-						`s=${options.startLine}`,
-						"-v",
-						`e=${options.endLine}`,
-						program,
-						// mawk reads `--` as a file name; anchoring the path keeps a leading `-` from parsing as an option.
-						`./${options.path}`,
+						"-c",
+						READ_FILE_SCRIPT,
+						"sh",
+						options.path,
+						String(options.startLine),
+						String(options.endLine),
+						READ_FILE_PROGRAM,
 					]
-					const tracked = yield* run(
-						orgId,
-						target,
-						"git",
-						[...GIT_COMMON, "ls-files", "--stage", "--error-unmatch", "--", options.path],
-						undefined,
-						SANDBOX_DEFAULT_TIMEOUT_SECONDS,
-					)
-					if (tracked.exitCode !== 0) return tracked
-					// `--error-unmatch` proves the path is tracked, not that it is a file.
-					// A committed symlink is tracked too, and `awk` would follow it out of
-					// the checkout, so the index mode is what decides.
-					const mode = tracked.stdout.trimStart().split(/\s/, 1)[0] ?? ""
-					if (!REGULAR_FILE_MODES.has(mode))
-						return {
-							exitCode: 1,
-							stdout: "",
-							stderr: `'${options.path}' is not a regular file in the repository`,
-							wallTimeMs: tracked.wallTimeMs,
-							truncated: false,
-						}
-					return yield* run(orgId, target, "awk", args, undefined, SANDBOX_DEFAULT_TIMEOUT_SECONDS)
+					return yield* run(orgId, target, "sh", args, undefined, SANDBOX_DEFAULT_TIMEOUT_SECONDS)
 				},
 			)
 

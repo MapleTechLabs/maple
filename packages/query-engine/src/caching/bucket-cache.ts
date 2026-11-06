@@ -2,7 +2,7 @@ import type { OrgId } from "@maple/domain"
 import type { TimeseriesPoint } from "@maple/domain/query-engine"
 import { canonicalJSON } from "../canonical-json"
 import { parseWarehouseDateTime } from "../datetime"
-import { Clock, Config, Context, Effect, Layer, Option } from "effect"
+import { Clock, Config, Context, Effect, Layer, Option, Array as Arr, String as Str } from "effect"
 import { EdgeCacheService } from "@maple/cache"
 
 /**
@@ -85,7 +85,7 @@ const sha256Hex = async (input: string): Promise<string> => {
 	const view = new Uint8Array(digest)
 	let out = ""
 	for (const byte of view) {
-		out += byte.toString(16).padStart(2, "0")
+		out += Str.padStart(2, "0")(byte.toString(16))
 	}
 	return out
 }
@@ -206,7 +206,7 @@ export const coalesceMissingRanges = (missing: ReadonlyArray<MissingRange>): Rea
 	}
 	// Settled range before the live tail, so the write-back path sees the
 	// cachable result first.
-	return [true, false].flatMap((cachable) => {
+	return Arr.flatMap([true, false], (cachable) => {
 		const span = spans.get(cachable)
 		return span ? [{ range: { startMs: span.startMs, endMs: span.endMs }, cachable }] : []
 	})
@@ -350,11 +350,11 @@ const isBucketCacheSegmentData = (
 		data.bucketSeconds !== expected.bucketSeconds ||
 		data.segmentStartMs !== expected.segmentStartMs ||
 		data.segmentEndMs !== expected.segmentEndMs ||
-		!Array.isArray(data.buckets)
+		!Arr.isArray(data.buckets)
 	) {
 		return false
 	}
-	return data.buckets.every((cachedBucket) => {
+	return Arr.every<CachedBucket>(data.buckets, (cachedBucket) => {
 		if (cachedBucket === null || typeof cachedBucket !== "object") return false
 		return (
 			Number.isFinite(cachedBucket.startMs) &&
@@ -363,8 +363,8 @@ const isBucketCacheSegmentData = (
 			cachedBucket.endMs <= expected.segmentEndMs &&
 			cachedBucket.endMs - cachedBucket.startMs === expected.bucketMs &&
 			cachedBucket.startMs % expected.bucketMs === 0 &&
-			Array.isArray(cachedBucket.points) &&
-			cachedBucket.points.every((point: unknown) => {
+			Arr.isArray(cachedBucket.points) &&
+			Arr.every(cachedBucket.points, (point: unknown) => {
 				if (point === null || typeof point !== "object") return false
 				const candidate = point as Partial<TimeseriesPoint>
 				return (
@@ -433,7 +433,7 @@ const readConcurrencyConfig = Config.Number("QE_BUCKET_CACHE_READ_CONCURRENCY").
 const fillConcurrencyConfig = Config.Number("QE_BUCKET_CACHE_FILL_CONCURRENCY").pipe(Config.withDefault(4))
 
 export class BucketCacheService extends Context.Service<BucketCacheService, BucketCacheServiceApi>()(
-	"@maple/api/lib/BucketCacheService",
+	"@maple/query-engine/caching/BucketCacheService",
 	{
 		make: Effect.gen(function* () {
 			const edgeCache = yield* EdgeCacheService

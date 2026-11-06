@@ -3,8 +3,10 @@ import {
 	attributeIndexMode,
 	baselineWarehouseCapabilities,
 	deriveWarehouseCapabilities,
+	hasWarehouseTable,
 	logBodySearchMode,
 } from "./capabilities"
+import { Array as Arr } from "effect"
 
 const logsTextIndexes = [
 	{ table: "logs", name: "idx_lower_body_text", type: "text", expression: "lower(Body)" },
@@ -20,6 +22,27 @@ const logsTextColumns = [
 ] as const
 
 describe("warehouse capabilities", () => {
+	it("marks an optional rollup absent only when the columns probe saw traces", () => {
+		const probe = (columns: ReadonlyArray<{ table: string; name: string }>) =>
+			deriveWarehouseCapabilities({ indexes: [], columns, optionalTables: ["trace_facets_hourly"] })
+
+		expect(hasWarehouseTable(probe([{ table: "traces", name: "TraceId" }]), "trace_facets_hourly")).toBe(
+			false,
+		)
+		expect(
+			hasWarehouseTable(
+				probe([
+					{ table: "traces", name: "TraceId" },
+					{ table: "trace_facets_hourly", name: "TraceCount" },
+				]),
+				"trace_facets_hourly",
+			),
+		).toBe(true)
+		// A denied or failed probe returns no rows and proves nothing.
+		expect(hasWarehouseTable(probe([]), "trace_facets_hourly")).toBe(true)
+		expect(hasWarehouseTable(baselineWarehouseCapabilities(), "trace_facets_hourly")).toBe(true)
+	})
+
 	it("uses the conservative scan baseline when metadata is unavailable", () => {
 		const capabilities = baselineWarehouseCapabilities()
 		expect(logBodySearchMode(capabilities)).toBe("scan")
@@ -60,14 +83,17 @@ describe("warehouse capabilities", () => {
 		const capabilities = deriveWarehouseCapabilities({
 			indexes: [
 				{ table: "logs", name: "idx_lower_body", type: "tokenbf_v1(32768, 3, 0)" },
-				...[
-					"idx_resource_attr_keys",
-					"idx_resource_attr_vals",
-					"idx_scope_attr_keys",
-					"idx_scope_attr_vals",
-					"idx_log_attr_keys",
-					"idx_log_attr_vals",
-				].map((name) => ({ table: "logs", name, type: "bloom_filter(0.01)" })),
+				...Arr.map(
+					[
+						"idx_resource_attr_keys",
+						"idx_resource_attr_vals",
+						"idx_scope_attr_keys",
+						"idx_scope_attr_vals",
+						"idx_log_attr_keys",
+						"idx_log_attr_vals",
+					],
+					(name) => ({ table: "logs", name, type: "bloom_filter(0.01)" }),
+				),
 			],
 			columns: [],
 		})

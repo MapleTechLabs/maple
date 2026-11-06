@@ -1,0 +1,54 @@
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { rowClass } from "./styles"
+import { Array as Arr, String as Str } from "effect"
+import { indexOfFrom } from "@maple/strings"
+
+const MAX_MATCHES = 40
+
+/**
+ * Occurrences of `query` in `text` as alternating plain/match segments: one case-insensitive
+ * substring, like the backend's `Body ILIKE`.
+ */
+export const splitOnMatches = (
+	text: string,
+	query: string,
+): ReadonlyArray<{ text: string; match: boolean }> => {
+	const needle = Str.toLowerCase(Str.trim(query))
+	if (needle === "") return [{ text, match: false }]
+	const haystack = Str.toLowerCase(text)
+	const segments: Array<{ text: string; match: boolean }> = []
+	const step = (cursor: number, found: number): number => {
+		if (found >= MAX_MATCHES) return cursor
+		const at = indexOfFrom(haystack, needle, cursor)
+		if (at === -1) return cursor
+		if (at > cursor) segments.push({ text: Str.slice(cursor, at)(text), match: false })
+		segments.push({ text: Str.slice(at, at + needle.length)(text), match: true })
+		return step(at + needle.length, found + 1)
+	}
+	const cursor = step(0, 0)
+	if (segments.length === 0) return [{ text, match: false }]
+	if (cursor < text.length) segments.push({ text: Str.slice(cursor)(text), match: false })
+	return segments
+}
+
+/** `<HighlightedText>`: the text with every match of the active search marked. */
+export const highlightedText = <Message>(
+	h: HtmlBuilder<Message>,
+	text: string,
+	query: string | undefined,
+): ReadonlyArray<Html | string> =>
+	query === undefined || query === ""
+		? [text]
+		: Arr.map(splitOnMatches(text, query), (segment) =>
+				segment.match
+					? h.mark(
+							[
+								rowClass(
+									h,
+									"rounded-xs bg-primary-a3 px-px text-foreground [text-decoration:inherit]",
+								),
+							],
+							[segment.text],
+						)
+					: segment.text,
+			)

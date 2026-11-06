@@ -6,15 +6,18 @@
  * depends on (`apiPorts`).
  *
  */
+import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPageStore"
+import { StatusSnapshotsBucket, StatusSnapshotsKv } from "@maple/infra/cloudflare"
 import { MapleDb } from "@maple/infra/cloudflare"
-import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import * as Cloudflare from "alchemy/Cloudflare"
-import { RuntimeContext } from "alchemy/RuntimeContext"
+import * as Cloudflare from "@alchemy.run/cloudflare"
+import { dischargeRuntimeContext } from "@maple/backend/platform/alchemy-runtime"
 import { Effect, Layer, Option } from "effect"
 import {
 	ApiV2RateLimit,
 	AuditEventsQueueProducer,
+	CancellationReviewQueueProducer,
 	CliAuthRateLimit,
+	EmailSender,
 	McpOAuthRateLimit,
 	type ObjectStore,
 	ObjectStoreError,
@@ -24,14 +27,32 @@ import {
 	RateLimitBindingError,
 	type RateLimiter,
 	ReplayBlobBucket,
+	SchemaApplyWorkflow,
+	ShareLinkRateLimit,
+	VcsBackfillQueueProducer,
 	VcsSyncQueueProducer,
+	WorkflowStartError,
+	type WorkflowStarter,
 } from "@maple/backend/platform/bindings"
-import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
+import { bindChatSessions, layerChatSessions } from "@maple/backend/platform/chat-sessions"
+import { bindEmailSender } from "@maple/backend/platform/email-sender"
+import { envPorts } from "@maple/backend/platform/env-ports"
+import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
 import {
 	API_V2_RATE_LIMIT_PERIOD_SECONDS,
 	API_V2_RATE_LIMIT_REQUESTS,
 } from "@maple/backend/services/auth/ApiV2RateLimiter"
-import { AuditEventsQueue, PlanetScaleWebhookQueue, VcsSyncQueue } from "../resources/queues"
+import {
+	SHARE_LINK_RATE_LIMIT_PERIOD_SECONDS,
+	SHARE_LINK_RATE_LIMIT_REQUESTS,
+} from "@maple/backend/services/auth/ShareRateLimiter"
+import {
+	AuditEventsQueue,
+	CancellationReviewsQueue,
+	PlanetScaleWebhookQueue,
+	VcsBackfillQueue,
+	VcsSyncQueue,
+} from "../resources/queues"
 import { ReplayBlobs } from "../resources/replay-blobs"
 
 /**
@@ -43,13 +64,22 @@ export const bindApiClients = Effect.gen(function* () {
 	yield* MapleDb("api")
 	return {
 		vcsSync: yield* Cloudflare.Queues.WriteQueue(VcsSyncQueue),
+		vcsBackfill: yield* Cloudflare.Queues.WriteQueue(VcsBackfillQueue),
 		planetScaleWebhooks: yield* Cloudflare.Queues.WriteQueue(PlanetScaleWebhookQueue),
 		auditEvents: yield* Cloudflare.Queues.WriteQueue(AuditEventsQueue),
+		cancellationReviews: yield* Cloudflare.Queues.WriteQueue(CancellationReviewsQueue),
 		// Read side of the replay payload store.
 		replayBlobs: yield* Cloudflare.R2.ReadBucket(ReplayBlobs),
+		// Published status pages: the publish endpoint writes snapshots, page deletes clear them.
+		statusKv: yield* Cloudflare.KV.ReadWriteNamespace(StatusSnapshotsKv),
+		statusBucket: yield* Cloudflare.R2.ReadWriteBucket(StatusSnapshotsBucket),
 		apiV2RateLimit: yield* Cloudflare.RateLimit("API_V2_RATE_LIMITER", {
 			namespaceId: 2026071801,
 			simple: { limit: API_V2_RATE_LIMIT_REQUESTS, period: API_V2_RATE_LIMIT_PERIOD_SECONDS },
+		}),
+		shareLinkRateLimit: yield* Cloudflare.RateLimit("SHARE_LINK_RATE_LIMITER", {
+			namespaceId: 2026110401,
+			simple: { limit: SHARE_LINK_RATE_LIMIT_REQUESTS, period: SHARE_LINK_RATE_LIMIT_PERIOD_SECONDS },
 		}),
 		cliAuthRateLimit: yield* Cloudflare.RateLimit("CLI_AUTH_RATE_LIMITER", {
 			namespaceId: 2026072101,
@@ -59,23 +89,25 @@ export const bindApiClients = Effect.gen(function* () {
 			namespaceId: 2026072102,
 			simple: { limit: 60, period: 60 },
 		}),
+		// `send_email`, prd only.
+		email: yield* bindEmailSender,
+		// maple-ai's chat Durable Object, cross-script.
+		chatSessions: yield* bindChatSessions,
 	}
 })
 
 type ApiBindingClients = Effect.Success<typeof bindApiClients>
 
 /** The binding layers `bindApiClients` needs on the init. */
-export const ApiBindingLayers = Layer.mergeAll(
+export const ApiBindingsLive = Layer.mergeAll(
 	Cloudflare.Hyperdrive.ConnectBinding,
 	Cloudflare.Queues.WriteQueueBinding,
 	Cloudflare.R2.ReadBucketBinding,
+	Cloudflare.KV.ReadWriteNamespaceBinding,
+	Cloudflare.R2.ReadWriteBucketBinding,
 	Cloudflare.Workers.RateLimitBinding,
+	Cloudflare.Email.SendBinding,
 )
-
-/** Discharge alchemy's phantom color, the way alchemy's own runtime helpers do. */
-const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effect<A, E> =>
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
-	Effect.provide(effect, RuntimeContext.phantom)
 
 /**
  * A producer over the raw queue handle rather than alchemy's `send`: the
@@ -84,7 +116,7 @@ const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effe
  */
 const producer = (client: Cloudflare.Queues.WriteQueueClient): QueueProducer => ({
 	sendBatch: (messages) =>
-		runtime(client.raw).pipe(
+		dischargeRuntimeContext(client.raw).pipe(
 			Effect.flatMap((queue) =>
 				Effect.tryPromise({
 					try: () => queue.sendBatch(messages),
@@ -100,7 +132,7 @@ const producer = (client: Cloudflare.Queues.WriteQueueClient): QueueProducer => 
 
 const limiter = (client: Cloudflare.Workers.RateLimitClient): RateLimiter => ({
 	limit: (key) =>
-		runtime(client.limit({ key })).pipe(
+		dischargeRuntimeContext(client.limit({ key })).pipe(
 			Effect.mapError(
 				(error) =>
 					new RateLimitBindingError({
@@ -113,34 +145,66 @@ const limiter = (client: Cloudflare.Workers.RateLimitClient): RateLimiter => ({
 
 const objectStore = (client: Cloudflare.R2.ReadBucketClient): ObjectStore => ({
 	getBytes: (key) =>
-		runtime(client.get(key)).pipe(
+		dischargeRuntimeContext(client.get(key)).pipe(
 			Effect.flatMap((object) =>
-				object === null
-					? Effect.succeed(Option.none<Uint8Array>())
-					: object.bytes().pipe(Effect.map(Option.some)),
+				object === null ? Effect.succeed(Option.none<Uint8Array>()) : Effect.asSome(object.bytes()),
 			),
 			Effect.mapError((error) => new ObjectStoreError({ message: error.message, cause: error.cause })),
 		),
 })
 
 /**
- * The ports the service graph depends on, over the clients the init bound,
- * plus the env itself as `WorkerEnvironment` and the `ConfigProvider` — the
- * one place a graph in this Worker gets its env from. `env` carries the
- * `MAPLE_DB` binding — real in the isolate, empty at plan time, where nothing
- * reads it.
+ * Alchemy's `create` dies when the binding rejects; recovered here into the
+ * port's typed channel, so the caller can release the run it claimed.
  */
-export const apiPorts = (clients: ApiBindingClients, env: Record<string, unknown>) =>
+const workflowStarter = <Params>(handle: Cloudflare.WorkflowHandle<Params>): WorkflowStarter<Params> => ({
+	create: (params) =>
+		handle.create({ params }).pipe(
+			Effect.asVoid,
+			Effect.catchDefect((cause) =>
+				Effect.fail(
+					new WorkflowStartError({
+						message: cause instanceof Error ? cause.message : "workflow create failed",
+						cause,
+					}),
+				),
+			),
+		),
+})
+
+/**
+ * The ports the service graph depends on, over the clients the init bound,
+ * plus the env-backed ports (`envPorts`: the env itself as `WorkerEnvironment`,
+ * the `ConfigProvider`, the ai service binding) and the `ChatSessions` port: the one place
+ * a graph in this Worker gets its env from. `env` carries the `MAPLE_DB`
+ * binding — real in the isolate, empty at plan time, where nothing reads it.
+ */
+export const apiPorts = (
+	clients: ApiBindingClients,
+	schemaApply: Cloudflare.WorkflowHandle<{ readonly orgId: string }>,
+	env: Record<string, unknown>,
+) =>
 	Layer.mergeAll(
 		Layer.succeed(VcsSyncQueueProducer, producer(clients.vcsSync)),
+		Layer.succeed(VcsBackfillQueueProducer, producer(clients.vcsBackfill)),
 		Layer.succeed(PlanetScaleWebhookQueueProducer, producer(clients.planetScaleWebhooks)),
 		Layer.succeed(AuditEventsQueueProducer, producer(clients.auditEvents)),
+		Layer.succeed(CancellationReviewQueueProducer, producer(clients.cancellationReviews)),
 		Layer.succeed(ApiV2RateLimit, limiter(clients.apiV2RateLimit)),
+		Layer.succeed(ShareLinkRateLimit, limiter(clients.shareLinkRateLimit)),
 		Layer.succeed(CliAuthRateLimit, limiter(clients.cliAuthRateLimit)),
 		Layer.succeed(McpOAuthRateLimit, limiter(clients.mcpOAuthRateLimit)),
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),
-		mapleDbConnectionLayer(env),
-		workerEnvLayer(env),
+		Layer.unwrap(
+			dischargeRuntimeContext(Effect.all([clients.statusKv.raw, clients.statusBucket.raw])).pipe(
+				Effect.map(([kv, bucket]) => StatusPageStore.fromBindings(kv, bucket)),
+			),
+		),
+		Layer.succeed(EmailSender, clients.email),
+		Layer.succeed(SchemaApplyWorkflow, workflowStarter(schemaApply)),
+		layerMapleDbConnection(env),
+		envPorts(env),
+		layerChatSessions(clients.chatSessions, env),
 	)
 
 export type ApiPortsLayer = ReturnType<typeof apiPorts>

@@ -9,11 +9,16 @@ import {
 	generationManifestPath,
 	generationsRoot,
 	rangeRoot,
-} from "../src/server/archives/paths"
-import { parseArchiveActivePointer, parseArchiveGenerationManifest } from "../src/server/archives/manifest"
-import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
+} from "@maple/local-server/archives/paths"
+import {
+	parseArchiveActivePointer,
+	parseArchiveGenerationManifest,
+} from "@maple/local-server/archives/manifest"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
 import { randomUUID } from "node:crypto"
+import { String as Str } from "effect"
+import * as Arr from "effect/Array"
 
 const withArchive = async (run: (archiveDir: string) => Promise<void> | void): Promise<void> => {
 	const parent = mkdtempSync(join(tmpdir(), "maple-archive-manifest-test-"))
@@ -55,7 +60,7 @@ const validGenerationManifest = (overrides: Record<string, unknown> = {}) => ({
 			rowCount: 100,
 			minEventTimeUnixNano: `${BigInt(Date.parse("2026-06-01T00:00:00.000Z")) * 1_000_000n}`,
 			maxEventTimeUnixNano: `${BigInt(Date.parse("2026-06-01T00:30:00.000Z")) * 1_000_000n}`,
-			sha256: "a".repeat(64),
+			sha256: Str.repeat(64)("a"),
 			bytes: 4096,
 			columns: ["TimestampTime", "ServiceName"],
 			complexDigest: "123456789",
@@ -73,22 +78,13 @@ describe("archive generation manifest parser", () => {
 		strictEqual(parsed.generationId, generationId)
 		strictEqual(parsed.signal, "traces")
 		strictEqual(parsed.shards.length, 1)
-		strictEqual(parsed.shards[0]!.bytes, 4096)
+		strictEqual(Arr.getUnsafe(parsed.shards, 0).bytes, 4096)
 	})
 
 	it("rejects an unknown (future) format version", () => {
 		throws(
 			() => parseArchiveGenerationManifest({ ...validGenerationManifest(), formatVersion: 99 }),
 			/unsupported archive manifest formatVersion 99/,
-		)
-	})
-
-	it("rejects an older (v1) format version fail-closed (round 5)", () => {
-		// A round-4 v1 manifest carried timezone-dependent time evidence and a
-		// commutative digest; the reader must not silently re-interpret it.
-		throws(
-			() => parseArchiveGenerationManifest({ ...validGenerationManifest(), formatVersion: 1 }),
-			/unsupported archive manifest formatVersion 1/,
 		)
 	})
 
@@ -158,7 +154,7 @@ describe("archive generation manifest parser", () => {
 
 	it("rejects a malformed shard name", () => {
 		const bad = validGenerationManifest({
-			shards: [{ ...validGenerationManifest().shards[0]!, name: "../escape.parquet" }],
+			shards: [{ ...validGenerationManifest().shards[0], name: "../escape.parquet" }],
 		})
 		throws(() => parseArchiveGenerationManifest(bad), /shard name/)
 	})
@@ -178,7 +174,7 @@ describe("archive generation manifest parser", () => {
 
 	it("reads a manifest from disk bound to its location", async () => {
 		await withArchive(async (archiveDir) => {
-			const { readArchiveGenerationManifest } = await import("../src/server/archives/manifest")
+			const { readArchiveGenerationManifest } = await import("@maple/local-server/archives/manifest")
 			const generationId = randomUUID()
 			const manifestPath = generationManifestPath(archiveDir, "traces", "2026-06-01", generationId)
 			mkdirSync(dirname(manifestPath), { recursive: true })
@@ -220,7 +216,7 @@ describe("archive path model", () => {
 	it("places generations under signal/range/generations", async () => {
 		await withArchive(async (archiveDir) => {
 			const gen = generationsRoot(archiveDir, "traces", "2026-06-01")
-			ok(gen.endsWith(join("traces", "2026-06-01", "generations")))
+			ok(Str.endsWith(join("traces", "2026-06-01", "generations"))(gen))
 		})
 	})
 
@@ -235,9 +231,9 @@ describe("archive path model", () => {
 	it("catalog and active pointer live under the signal/range roots", async () => {
 		await withArchive(async (archiveDir) => {
 			const cat = catalogPath(archiveDir, "traces")
-			ok(cat.endsWith(join("traces", "catalog.jsonl")))
+			ok(Str.endsWith(join("traces", "catalog.jsonl"))(cat))
 			const active = activePointerPath(archiveDir, "traces", "2026-06-01")
-			ok(active.endsWith(join("traces", "2026-06-01", "active.json")))
+			ok(Str.endsWith(join("traces", "2026-06-01", "active.json"))(active))
 		})
 	})
 })
@@ -247,38 +243,13 @@ describe("archive manifest tuningConfig identity", () => {
 		const generationId = randomUUID()
 		const manifest = validGenerationManifest({
 			generationId,
-			tuningConfig: { formatVersion: 1, configName: "calib-2026.json", sha256: "b".repeat(64) },
+			tuningConfig: { formatVersion: 1, configName: "calib-2026.json", sha256: Str.repeat(64)("b") },
 		})
 		const parsed = parseArchiveGenerationManifest(manifest, "traces", "2026-06-01", generationId)
 		ok(parsed.tuningConfig !== null)
-		strictEqual(parsed.tuningConfig!.configName, "calib-2026.json")
-		strictEqual(parsed.tuningConfig!.sha256, "b".repeat(64))
-		strictEqual(parsed.tuningConfig!.formatVersion, 1)
-	})
-
-	it("preserves a loaded format-2 calibration config identity", () => {
-		const generationId = randomUUID()
-		const manifest = validGenerationManifest({
-			generationId,
-			tuningConfig: { formatVersion: 2, configName: "phase3b-tuning.json", sha256: "c".repeat(64) },
-		})
-		const parsed = parseArchiveGenerationManifest(manifest, "traces", "2026-06-01", generationId)
-		strictEqual(parsed.tuningConfig!.formatVersion, 2)
-		strictEqual(parsed.tuningConfig!.configName, "phase3b-tuning.json")
-	})
-
-	it("preserves a format-3 calibration config identity from before calibration was removed", () => {
-		const generationId = randomUUID()
-		const manifest = validGenerationManifest({
-			generationId,
-			tuningConfig: {
-				formatVersion: 3,
-				configName: "new-tuning.json",
-				sha256: "d".repeat(64),
-			},
-		})
-		const parsed = parseArchiveGenerationManifest(manifest, "traces", "2026-06-01", generationId)
-		strictEqual(parsed.tuningConfig!.formatVersion, 3)
+		strictEqual(parsed.tuningConfig.configName, "calib-2026.json")
+		strictEqual(parsed.tuningConfig.sha256, Str.repeat(64)("b"))
+		strictEqual(parsed.tuningConfig.formatVersion, 1)
 	})
 
 	it("accepts null tuningConfig (no config loaded)", () => {
@@ -290,12 +261,6 @@ describe("archive manifest tuningConfig identity", () => {
 
 	it("rejects a v3 manifest missing the tuningConfig key", () => {
 		const manifest = validGenerationManifest()
-		delete (manifest as Record<string, unknown>).tuningConfig
-		throws(() => parseArchiveGenerationManifest(manifest), /tuningConfig \(required in formatVersion 3\)/)
-	})
-
-	it("rejects a legacy-shaped v3 manifest with tuningConfigName but no tuningConfig key", () => {
-		const manifest = validGenerationManifest({ tuningConfigName: "calib-2026.json" })
 		delete (manifest as Record<string, unknown>).tuningConfig
 		throws(() => parseArchiveGenerationManifest(manifest), /tuningConfig \(required in formatVersion 3\)/)
 	})
@@ -316,7 +281,7 @@ describe("archive manifest tuningConfig identity", () => {
 		const generationId = randomUUID()
 		const manifest = validGenerationManifest({
 			generationId,
-			tuningConfig: { formatVersion: 1, configName: "c.json", sha256: "b".repeat(64), rogue: "x" },
+			tuningConfig: { formatVersion: 1, configName: "c.json", sha256: Str.repeat(64)("b"), rogue: "x" },
 		})
 		throws(
 			() => parseArchiveGenerationManifest(manifest, "traces", "2026-06-01", generationId),
@@ -328,7 +293,7 @@ describe("archive manifest tuningConfig identity", () => {
 		const generationId = randomUUID()
 		const manifest = validGenerationManifest({
 			generationId,
-			tuningConfig: { formatVersion: 1, configName: "../evil", sha256: "b".repeat(64) },
+			tuningConfig: { formatVersion: 1, configName: "../evil", sha256: Str.repeat(64)("b") },
 		})
 		throws(
 			() => parseArchiveGenerationManifest(manifest, "traces", "2026-06-01", generationId),

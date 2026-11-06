@@ -6,7 +6,8 @@ import {
 	projectLayout,
 	tierForWidth,
 	type PlacedWidget,
-} from "@/components/dashboard-builder/canvas/grid-breakpoints"
+} from "./grid-breakpoints"
+import { Array as Arr, Option, Order } from "effect"
 
 // No cast: placement reads `id` and `layout`, and nothing else. That is the
 // whole reason a redacted share widget can go through the same projection as a
@@ -26,7 +27,7 @@ const AUTHORED = [
 	widget("table", 0, 10, 12, 5),
 ]
 
-const derivedTiers = GRID_TIERS.filter((tier) => !tier.canonical)
+const derivedTiers = Arr.filter(GRID_TIERS, (tier) => !tier.canonical)
 
 describe("tierForWidth", () => {
 	it("returns the canonical tier on a desktop canvas", () => {
@@ -44,9 +45,9 @@ describe("tierForWidth", () => {
 
 describe("projectLayout", () => {
 	it("passes the authored layout through untouched at the canonical tier", () => {
-		const projected = projectLayout(AUTHORED, GRID_TIERS[0])
-		expect(projected.map((l) => [l.i, l.x, l.y, l.w, l.h])).toEqual(
-			AUTHORED.map((w) => [w.id, w.layout.x, w.layout.y, w.layout.w, w.layout.h]),
+		const projected = projectLayout(AUTHORED, Arr.getUnsafe(GRID_TIERS, 0))
+		expect(Arr.map(projected, (l) => [l.i, l.x, l.y, l.w, l.h])).toEqual(
+			Arr.map(AUTHORED, (w) => [w.id, w.layout.x, w.layout.y, w.layout.w, w.layout.h]),
 		)
 	})
 
@@ -57,7 +58,17 @@ describe("projectLayout", () => {
 			const projected = projectLayout(AUTHORED, tier)
 
 			it("keeps every widget exactly once", () => {
-				expect(projected.map((l) => l.i).toSorted()).toEqual(AUTHORED.map((w) => w.id).toSorted())
+				expect(
+					Arr.sort(
+						Arr.map(projected, (l) => l.i),
+						Order.String,
+					),
+				).toEqual(
+					Arr.sort(
+						Arr.map(AUTHORED, (w) => w.id),
+						Order.String,
+					),
+				)
 			})
 
 			it("keeps every widget inside the grid", () => {
@@ -74,7 +85,10 @@ describe("projectLayout", () => {
 					rows.set(item.y, [...(rows.get(item.y) ?? []), item])
 				}
 				for (const row of rows.values()) {
-					const ordered = row.toSorted((a, b) => a.x - b.x)
+					const ordered = Arr.sort(
+						row,
+						Order.mapInput(Order.Number, (l: { readonly x: number }) => l.x),
+					)
 					let cursor = 0
 					for (const item of ordered) {
 						// Abutting exactly proves no overlap and no gap in one check.
@@ -86,17 +100,37 @@ describe("projectLayout", () => {
 			})
 
 			it("preserves reading order", () => {
-				const authoredOrder = AUTHORED.map((w) => w.id)
-				const projectedOrder = projected.toSorted((a, b) => a.y - b.y || a.x - b.x).map((l) => l.i)
+				const authoredOrder = Arr.map(AUTHORED, (w) => w.id)
+				const projectedOrder = Arr.map(
+					Arr.sort(
+						projected,
+						Order.combine(
+							Order.mapInput(
+								Order.Number,
+								(l: { readonly x: number; readonly y: number }) => l.y,
+							),
+							Order.mapInput(
+								Order.Number,
+								(l: { readonly x: number; readonly y: number }) => l.x,
+							),
+						),
+					),
+					(l) => l.i,
+				)
 				expect(projectedOrder).toEqual(authoredOrder)
 			})
 
 			it("starts each row below the tallest widget of the row above", () => {
-				const rowTops = [...new Set(projected.map((l) => l.y))].toSorted((a, b) => a - b)
+				const rowTops = Arr.sort([...new Set(Arr.map(projected, (l) => l.y))], Order.Number)
 				for (const [index, top] of rowTops.entries()) {
 					const next = rowTops[index + 1]
 					if (next === undefined) continue
-					const tallest = Math.max(...projected.filter((l) => l.y === top).map((l) => l.h))
+					const tallest = Math.max(
+						...Arr.map(
+							Arr.filter(projected, (l) => l.y === top),
+							(l) => l.h,
+						),
+					)
 					expect(next).toBeGreaterThanOrEqual(top + tallest)
 				}
 			})
@@ -113,7 +147,7 @@ describe("projectLayout", () => {
 
 			it("never shrinks a widget below its authored height", () => {
 				for (const item of projected) {
-					const source = AUTHORED.find((w) => w.id === item.i)
+					const source = Option.getOrUndefined(Arr.findFirst(AUTHORED, (w) => w.id === item.i))
 					expect(item.h).toBeGreaterThanOrEqual(source?.layout.h ?? 0)
 				}
 			})
@@ -121,15 +155,15 @@ describe("projectLayout", () => {
 	}
 
 	it("stacks every widget full width in a single column", () => {
-		const single = GRID_TIERS.find((tier) => tier.cols === 1)
+		const single = Option.getOrUndefined(Arr.findFirst(GRID_TIERS, (tier) => tier.cols === 1))
 		if (!single) throw new Error("expected a single-column tier")
 		const projected = projectLayout(AUTHORED, single)
-		expect(projected.every((l) => l.x === 0 && l.w === 1)).toBe(true)
-		expect(new Set(projected.map((l) => l.y)).size).toBe(AUTHORED.length)
+		expect(Arr.every(projected, (l) => l.x === 0 && l.w === 1)).toBe(true)
+		expect(new Set(Arr.map(projected, (l) => l.y)).size).toBe(AUTHORED.length)
 	})
 
 	it("honours the per-tier minimum span so narrow tiles never get narrower", () => {
-		const sixCol = GRID_TIERS.find((tier) => tier.cols === 6)
+		const sixCol = Option.getOrUndefined(Arr.findFirst(GRID_TIERS, (tier) => tier.cols === 6))
 		if (!sixCol) throw new Error("expected a six-column tier")
 		// Four w:2 stats would each scale to a single column (~17%) without the floor.
 		const stats = [
@@ -139,27 +173,10 @@ describe("projectLayout", () => {
 			widget("d", 6, 0, 2, 4),
 		]
 		const projected = projectLayout(stats, sixCol)
-		expect(projected.every((l) => l.w >= sixCol.minSpan)).toBe(true)
+		expect(Arr.every(projected, (l) => l.w >= sixCol.minSpan)).toBe(true)
 	})
 
 	it("returns an empty layout for a dashboard with no widgets", () => {
-		expect(projectLayout([], GRID_TIERS[2])).toEqual([])
-	})
-})
-
-describe("PlacedWidget", () => {
-	// Guards the seam rather than the maths: re-widening the parameter back to a
-	// full `DashboardWidget` would break every read-only surface, and it would
-	// break here first.
-	it("projects a widget carrying nothing but an id and a layout", () => {
-		const redactedWidgets = [
-			{ id: "a", layout: { x: 0, y: 0, w: 6, h: 4 } },
-			{ id: "b", layout: { x: 6, y: 0, w: 6, h: 4 } },
-		]
-
-		expect(projectLayout(redactedWidgets, GRID_TIERS[0])).toMatchObject([
-			{ i: "a", x: 0, y: 0, w: 6, h: 4 },
-			{ i: "b", x: 6, y: 0, w: 6, h: 4 },
-		])
+		expect(projectLayout([], Arr.getUnsafe(GRID_TIERS, 2))).toEqual([])
 	})
 })

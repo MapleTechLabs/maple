@@ -1,10 +1,11 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 import { WIDGET_TYPES, WIDGET_VISUALIZATIONS } from "../../widget-types"
 import { SORT_DIRECTIONS, STAT_AGGREGATES } from "../shared/transform"
 import type { DashboardMigration } from "./types"
+import { Array as Arr, Option } from "effect"
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 /**
  * Coerce rather than reject.
@@ -23,7 +24,10 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
  *     everything else, so an unrecognised direction is already an ascending sort.
  */
 const coerce = <T extends string>(value: unknown, allowed: ReadonlyArray<T>, fallback: T): T =>
-	allowed.find((candidate) => candidate === value) ?? fallback
+	Option.getOrElse(
+		Arr.findFirst(allowed, (candidate) => candidate === value),
+		() => fallback,
+	)
 
 const migrateTransform = (transform: unknown): unknown => {
 	if (!isPlainObject(transform)) return transform
@@ -64,12 +68,12 @@ const migrateWidget = (widget: unknown): unknown => {
 
 	const next: Record<string, unknown> = { ...widget } satisfies Record<string, unknown>
 
-	const storedPanel = CHART_PANEL_TYPES.find((panel) => panel === widget.visualization)
-	if (storedPanel !== undefined) {
+	const storedPanel = Arr.findFirst(CHART_PANEL_TYPES, (panel) => panel === widget.visualization)
+	if (Option.isSome(storedPanel)) {
 		next.visualization = "chart"
 		const display = isPlainObject(widget.display) ? widget.display : {}
 		if (display.chartId === undefined) {
-			next.display = { ...display, chartId: WIDGET_TYPES[storedPanel].chartId }
+			next.display = { ...display, chartId: WIDGET_TYPES[storedPanel.value].chartId }
 		}
 	} else {
 		next.visualization = coerce(widget.visualization, WIDGET_VISUALIZATIONS, "chart")
@@ -123,7 +127,7 @@ export const v1ToV2: DashboardMigration = {
 	to: 2,
 	description: "Close visualization, reduceToValue.aggregate and sortBy.direction to their known sets",
 	migrate: (document) => {
-		if (!Array.isArray(document.widgets)) return document
-		return { ...document, widgets: document.widgets.map(migrateWidget) }
+		if (!Arr.isArray(document.widgets)) return document
+		return { ...document, widgets: Arr.map(document.widgets, migrateWidget) }
 	},
 }

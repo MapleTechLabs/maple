@@ -1,0 +1,107 @@
+import { typographyClass } from "../ui/typography"
+import { String as Str } from "effect"
+const KEYWORDS = new Set([
+	"SELECT",
+	"FROM",
+	"WHERE",
+	"GROUP",
+	"BY",
+	"ORDER",
+	"LIMIT",
+	"JOIN",
+	"ON",
+	"AS",
+	"AND",
+	"OR",
+	"NOT",
+	"NULL",
+	"CASE",
+	"WHEN",
+	"THEN",
+	"ELSE",
+	"END",
+	"WITH",
+	"HAVING",
+	"UNION",
+	"ALL",
+	"DISTINCT",
+	"INNER",
+	"LEFT",
+	"RIGHT",
+	"FULL",
+	"OUTER",
+	"ARRAY",
+	"TUPLE",
+	"ASOF",
+	"FINAL",
+	"PREWHERE",
+	"SAMPLE",
+	"SETTINGS",
+	"FORMAT",
+	"INSERT",
+	"INTO",
+	"VALUES",
+	"IF",
+	"BETWEEN",
+	"IN",
+	"LIKE",
+	"ILIKE",
+	"IS",
+	"INTERVAL",
+	"DESC",
+	"ASC",
+	"OFFSET",
+	"USING",
+	"CROSS",
+	"ANY",
+	"SEMI",
+	"ANTI",
+	"TRUE",
+	"FALSE",
+])
+
+const TOKEN_RE =
+	/(\/\*[\s\S]*?\*\/|--[^\n]*)|('(?:''|\\.|[^'\\])*'|"(?:""|\\.|[^"\\])*")|(\$__[a-zA-Z_][a-zA-Z0-9_]*)|(\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|([a-zA-Z_][a-zA-Z0-9_]*)/g
+
+export interface SqlHighlightToken {
+	text: string
+	start: number
+	className?: string
+}
+
+export function tokenizeSql(code: string): SqlHighlightToken[] {
+	const tokens: SqlHighlightToken[] = []
+	let last = 0
+	TOKEN_RE.lastIndex = 0
+	let m: RegExpExecArray | null
+	while ((m = TOKEN_RE.exec(code)) !== null) {
+		if (m.index > last) tokens.push({ text: Str.slice(last, m.index)(code), start: last })
+		const [full, comment, str, macro, num, ident] = m
+		if (comment) {
+			tokens.push({
+				text: comment,
+				start: m.index,
+				className: typographyClass({ tone: "subtle", className: "italic" }),
+			})
+		} else if (str) {
+			tokens.push({ text: str, start: m.index, className: "text-severity-info" })
+		} else if (macro) {
+			tokens.push({ text: macro, start: m.index, className: "text-primary font-medium" })
+		} else if (num) {
+			tokens.push({ text: num, start: m.index, className: "text-chart-4" })
+		} else if (ident) {
+			if (KEYWORDS.has(Str.toUpperCase(ident))) {
+				tokens.push({ text: ident, start: m.index, className: "text-chart-5" })
+			} else if (Str.startsWith("(", m.index + ident.length)(code)) {
+				tokens.push({ text: ident, start: m.index, className: "text-chart-1" })
+			} else {
+				tokens.push({ text: ident, start: m.index })
+			}
+		} else {
+			tokens.push({ text: full, start: m.index })
+		}
+		last = m.index + full.length
+	}
+	if (last < code.length) tokens.push({ text: Str.slice(last)(code), start: last })
+	return tokens
+}

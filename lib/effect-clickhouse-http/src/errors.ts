@@ -1,4 +1,4 @@
-import { Schema, type Types } from "effect"
+import { Option, Schema, type Types, String as Str } from "effect"
 
 const metadata = { status: Schema.Number, queryId: Schema.String }
 
@@ -53,13 +53,20 @@ export type ClickHouseError =
 
 /** Bounded input only. Preserve server identity, including nested cluster exceptions. */
 export const serverError = (text: string, status: number, queryId: string, headerCode?: string) => {
-	const code = text.match(/\b(?:Code|Error):\s*(\d+)/)?.[1] ?? headerCode
-	const lastException = text.lastIndexOf("Exception:")
-	const detail = lastException >= 0 ? text.slice(lastException + "Exception:".length).trim() : text.trim()
-	const type = detail.match(/\(([A-Z][A-Z0-9_]{2,})\)/)?.[1]
+	const code = Str.match(/\b(?:Code|Error):\s*(\d+)/)(text).pipe(
+		Option.flatMapNullishOr((found) => found[1]),
+		Option.orElse(() => Option.fromNullishOr(headerCode)),
+	)
+	const detail = Option.match(Str.lastIndexOf("Exception:")(text), {
+		onNone: () => Str.trim(text),
+		onSome: (at) => Str.trim(Str.slice(at + "Exception:".length)(text)),
+	})
+	const type = Str.match(/\(([A-Z][A-Z0-9_]{2,})\)/)(detail).pipe(
+		Option.flatMapNullishOr((found) => found[1]),
+	)
 	const identity: Types.Mutable<Pick<ClickHouseServerError, "code" | "type">> = {}
-	if (code !== undefined) identity.code = code
-	if (type !== undefined) identity.type = type
+	if (Option.isSome(code)) identity.code = code.value
+	if (Option.isSome(type)) identity.type = type.value
 	return new ClickHouseServerError({
 		status,
 		queryId,

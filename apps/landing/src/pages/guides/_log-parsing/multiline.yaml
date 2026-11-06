@@ -1,0 +1,35 @@
+receivers:
+    file_log/checkout:
+        include: [/var/log/checkout/app.log]
+        resource:
+            service.name: checkout
+        # A new entry starts at a line beginning with a date. Other lines, such
+        # as stack frames, are appended to the entry before them.
+        multiline:
+            line_start_pattern: '^\d{4}-\d{2}-\d{2} '
+        operators:
+            - type: regex_parser
+              regex: '(?s)^(?P<time>\S+ \S+) (?P<level>[A-Z]+)\s+\[(?P<thread>[^\]]+)\] (?P<logger>\S+) - (?P<message>.*)$'
+              timestamp:
+                  parse_from: attributes.time
+                  layout: "%Y-%m-%d %H:%M:%S,%L"
+                  location: UTC
+              severity:
+                  parse_from: attributes.level
+
+processors:
+    batch: {}
+
+exporters:
+    otlp_http/maple:
+        endpoint: https://ingest.maple.dev
+        compression: gzip
+        headers:
+            x-maple-ingest-key: ${env:MAPLE_INGEST_KEY}
+
+service:
+    pipelines:
+        logs:
+            receivers: [file_log/checkout]
+            processors: [batch]
+            exporters: [otlp_http/maple]

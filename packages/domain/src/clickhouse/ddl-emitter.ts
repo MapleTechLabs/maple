@@ -15,9 +15,14 @@
  *   - `INDEXES >` blocks (Tinybird-only top-level section; folded into CREATE TABLE)
  *   - `TYPE MATERIALIZED` + `DATASOURCE` (folded into CREATE MATERIALIZED VIEW … TO …)
  *
+ * and we append the ClickHouse-only columns from `clickhouse-only-columns.ts`.
+ *
  * Materialized views must be created after both their source and target tables
  * exist — `orderForCreation()` returns datasources first, then MVs.
  */
+
+import { clickHouseOnlyColumns } from "./clickhouse-only-columns"
+import { Array as Arr, Option, String as Str } from "effect"
 
 export type EngineFlavor = "MergeTree" | "ReplicatedMergeTree" | "SharedMergeTree"
 
@@ -42,12 +47,15 @@ const qualified = (name: string, database: string): string =>
 	database.length > 0 ? `${quoteIdent(database)}.${quoteIdent(name)}` : quoteIdent(name)
 
 const quoteIdent = (name: string): string =>
-	/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? name : `\`${name.replace(/`/g, "``")}\``
+	/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? name : `\`${Str.replace(/`/g, "``")(name)}\``
 
-const stripJsonPathAnnotations = (line: string): string => line.replace(/\s*`json:[^`]*`/g, "")
+const stripJsonPathAnnotations = (line: string): string => Str.replace(/\s*`json:[^`]*`/g, "")(line)
 
 const indent = (lines: ReadonlyArray<string>, prefix = "    "): string =>
-	lines.map((line) => `${prefix}${line}`).join("\n")
+	Arr.join(
+		Arr.map(lines, (line) => `${prefix}${line}`),
+		"\n",
+	)
 
 interface ParsedDatasourceSchema {
 	readonly description: string
@@ -68,7 +76,7 @@ interface ParsedPipe {
 const SECTION_HEADER = /^([A-Z_][A-Z0-9_]*)([\s\S]*)$/
 
 const parseDatasource = (content: string): ParsedDatasourceSchema => {
-	const lines = content.split("\n")
+	const lines = Str.split("\n")(content)
 
 	let description = ""
 	const schemaLines: string[] = []
@@ -82,28 +90,30 @@ const parseDatasource = (content: string): ParsedDatasourceSchema => {
 	const blockBuffer: string[] = []
 
 	const flushBlock = () => {
-		const body = blockBuffer
-			.map((l) => l.replace(/^    /, ""))
-			.join("\n")
-			.trim()
+		const body = Str.trim(
+			Arr.join(
+				Arr.map(blockBuffer, (l) => Str.replace(/^    /, "")(l)),
+				"\n",
+			),
+		)
 		switch (currentBlock) {
 			case "DESCRIPTION":
 				description = body
 				break
 			case "SCHEMA": {
-				const cols = body
-					.split(/,\s*\n/)
-					.map((c) => c.replace(/\n\s+/g, " ").trim())
-					.filter((c) => c.length > 0)
+				const cols = Arr.filter(
+					Arr.map(Str.split(/,\s*\n/)(body), (c) => Str.trim(Str.replace(/\n\s+/g, " ")(c))),
+					(c) => c.length > 0,
+				)
 				schemaLines.push(...cols)
 				break
 			}
 			case "INDEXES":
 				indexLines.push(
-					...body
-						.split("\n")
-						.map((l) => l.trim())
-						.filter((l) => l.length > 0),
+					...Arr.filter(
+						Arr.map(Str.split("\n")(body), (l) => Str.trim(l)),
+						(l) => l.length > 0,
+					),
 				)
 				break
 			case "FORWARD_QUERY":
@@ -118,7 +128,7 @@ const parseDatasource = (content: string): ParsedDatasourceSchema => {
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i] ?? ""
-		const trimmed = line.trim()
+		const trimmed = Str.trim(line)
 		if (trimmed.length === 0) {
 			if (currentBlock !== null) {
 				blockBuffer.push(line)
@@ -126,7 +136,7 @@ const parseDatasource = (content: string): ParsedDatasourceSchema => {
 			continue
 		}
 
-		const startsBlockOrField = !line.startsWith(" ") && !line.startsWith("\t")
+		const startsBlockOrField = !Str.startsWith(" ")(line) && !Str.startsWith("\t")(line)
 		if (startsBlockOrField && currentBlock !== null) {
 			flushBlock()
 		}
@@ -134,7 +144,7 @@ const parseDatasource = (content: string): ParsedDatasourceSchema => {
 		const match = SECTION_HEADER.exec(line)
 		if (startsBlockOrField && match) {
 			const key = match[1] ?? ""
-			const valueRaw = (match[2] ?? "").trim()
+			const valueRaw = Str.trim(match[2] ?? "")
 
 			switch (key) {
 				case "DESCRIPTION":
@@ -182,7 +192,7 @@ const parseDatasource = (content: string): ParsedDatasourceSchema => {
 
 	return {
 		description,
-		columns: schemaLines.map(stripJsonPathAnnotations),
+		columns: Arr.map(schemaLines, stripJsonPathAnnotations),
 		engine,
 		partitionKey,
 		sortingKey,
@@ -192,15 +202,15 @@ const parseDatasource = (content: string): ParsedDatasourceSchema => {
 }
 
 const stripQuotes = (raw: string): string => {
-	const trimmed = raw.trim()
-	if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
-		return trimmed.slice(1, -1)
+	const trimmed = Str.trim(raw)
+	if (Str.startsWith('"')(trimmed) && Str.endsWith('"')(trimmed)) {
+		return Str.slice(1, -1)(trimmed)
 	}
 	return trimmed
 }
 
 const parsePipe = (content: string): ParsedPipe => {
-	const lines = content.split("\n")
+	const lines = Str.split("\n")(content)
 
 	let description = ""
 	let sql = ""
@@ -210,10 +220,12 @@ const parsePipe = (content: string): ParsedPipe => {
 	const blockBuffer: string[] = []
 
 	const flushBlock = () => {
-		const body = blockBuffer
-			.map((l) => l.replace(/^    /, ""))
-			.join("\n")
-			.trim()
+		const body = Str.trim(
+			Arr.join(
+				Arr.map(blockBuffer, (l) => Str.replace(/^    /, "")(l)),
+				"\n",
+			),
+		)
 		switch (currentBlock) {
 			case "DESCRIPTION":
 				description = body
@@ -230,13 +242,13 @@ const parsePipe = (content: string): ParsedPipe => {
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i] ?? ""
-		const trimmed = line.trim()
+		const trimmed = Str.trim(line)
 		if (trimmed.length === 0) {
 			if (currentBlock !== null) blockBuffer.push(line)
 			continue
 		}
 
-		const startsBlockOrField = !line.startsWith(" ") && !line.startsWith("\t")
+		const startsBlockOrField = !Str.startsWith(" ")(line) && !Str.startsWith("\t")(line)
 		if (startsBlockOrField && currentBlock !== null) {
 			flushBlock()
 		}
@@ -244,7 +256,7 @@ const parsePipe = (content: string): ParsedPipe => {
 		const match = SECTION_HEADER.exec(line)
 		if (startsBlockOrField && match) {
 			const key = match[1] ?? ""
-			const valueRaw = (match[2] ?? "").trim()
+			const valueRaw = Str.trim(match[2] ?? "")
 
 			switch (key) {
 				case "DESCRIPTION":
@@ -255,7 +267,7 @@ const parsePipe = (content: string): ParsedPipe => {
 					// Tinybird requires a NODE name; ClickHouse MVs don't.
 					continue
 				case "TYPE":
-					if (stripQuotes(valueRaw).toUpperCase() !== "MATERIALIZED") {
+					if (Str.toUpperCase(stripQuotes(valueRaw)) !== "MATERIALIZED") {
 						throw new Error(`Unsupported pipe TYPE: ${valueRaw}`)
 					}
 					continue
@@ -316,11 +328,14 @@ export const emitCreateTable = (datasource: ResourceContent, options?: EmitterOp
 	const ifNotExists = opts.ifNotExists ? "IF NOT EXISTS " : ""
 	const tableRef = qualified(datasource.name, opts.database)
 
+	const columns = [...parsed.columns, ...(clickHouseOnlyColumns.get(datasource.name) ?? [])]
 	const innerLines = [
-		...parsed.columns.map(
-			(col, i) => `${col}${i < parsed.columns.length - 1 || parsed.indexes.length > 0 ? "," : ""}`,
+		...Arr.map(
+			columns,
+			(col, i) => `${col}${i < columns.length - 1 || parsed.indexes.length > 0 ? "," : ""}`,
 		),
-		...parsed.indexes.map(
+		...Arr.map(
+			parsed.indexes,
 			(idx, i) => `${buildIndexClause(idx)}${i < parsed.indexes.length - 1 ? "," : ""}`,
 		),
 	]
@@ -342,7 +357,7 @@ export const emitCreateTable = (datasource: ResourceContent, options?: EmitterOp
 		lines.push(`TTL ${parsed.ttl}`)
 	}
 
-	return lines.join("\n")
+	return Arr.join(lines, "\n")
 }
 
 /**
@@ -360,7 +375,10 @@ export const emitCreateMaterializedView = (pipe: ResourceContent, options?: Emit
 	const viewRef = qualified(pipe.name, opts.database)
 	const targetRef = qualified(parsed.target, opts.database)
 
-	return [`CREATE MATERIALIZED VIEW ${ifNotExists}${viewRef} TO ${targetRef} AS`, parsed.sql].join("\n")
+	return Arr.join(
+		[`CREATE MATERIALIZED VIEW ${ifNotExists}${viewRef} TO ${targetRef} AS`, parsed.sql],
+		"\n",
+	)
 }
 
 /**
@@ -380,7 +398,7 @@ export const emitJsonPathSpec = (
 	readonly hasDefaultExpression: boolean
 }> => {
 	const parsed = parseDatasource(datasource.content)
-	const original = datasource.content.split("\n")
+	const original = Str.split("\n")(datasource.content)
 
 	const colJsonPath = new Map<string, string>()
 	for (const line of original) {
@@ -392,9 +410,9 @@ export const emitJsonPathSpec = (
 		}
 	}
 
-	return parsed.columns.map((col) => {
+	return Arr.map(parsed.columns, (col) => {
 		const colMatch = /^([A-Za-z_][A-Za-z0-9_]*)\s+(.+?)(?:\s+DEFAULT\s+.*)?$/.exec(col)
-		const name = colMatch?.[1] ?? col.split(/\s+/)[0] ?? ""
+		const name = colMatch?.[1] ?? Str.split(/\s+/)(col)[0] ?? ""
 		const type = colMatch?.[2] ?? ""
 		return {
 			column: name,
@@ -445,14 +463,14 @@ const COLUMN_CLAUSE_KEYWORDS = /^(DEFAULT|MATERIALIZED|ALIAS|CODEC|COMMENT|TTL|E
  * Returns `null` for non-column lines (e.g. an `INDEX …` clause).
  */
 const parseColumnDefinitionLine = (line: string): EmittedTableColumn | null => {
-	const trimmed = line.trim().replace(/,$/, "")
+	const trimmed = Str.replace(/,$/, "")(Str.trim(line))
 	if (trimmed.length === 0) return null
 	if (/^INDEX\s/i.test(trimmed)) return null
 
 	const nameMatch = /^([A-Za-z_][A-Za-z0-9_]*)\s+/.exec(trimmed)
 	if (!nameMatch) return null
 	const name = nameMatch[1] ?? ""
-	const rest = trimmed.slice(nameMatch[0].length)
+	const rest = Str.slice(nameMatch[0].length)(trimmed)
 
 	let depth = 0
 	let typeEnd = rest.length
@@ -461,7 +479,7 @@ const parseColumnDefinitionLine = (line: string): EmittedTableColumn | null => {
 		if (ch === "(") depth++
 		else if (ch === ")") depth--
 		else if (ch === " " && depth === 0) {
-			const remainder = rest.slice(i + 1)
+			const remainder = Str.slice(i + 1)(rest)
 			if (COLUMN_CLAUSE_KEYWORDS.test(remainder)) {
 				typeEnd = i
 				break
@@ -469,7 +487,7 @@ const parseColumnDefinitionLine = (line: string): EmittedTableColumn | null => {
 		}
 	}
 
-	const type = rest.slice(0, typeEnd).trim()
+	const type = Str.trim(Str.slice(0, typeEnd)(rest))
 	if (type.length === 0) return null
 	return { name, type }
 }
@@ -491,7 +509,7 @@ export const parseEmittedStatement = (sql: string): EmittedStatement | null => {
 	const tableMatch = CREATE_TABLE_HEADER.exec(sql)
 	if (tableMatch) {
 		const name = tableMatch[1] ?? ""
-		const openIndex = sql.indexOf("(")
+		const openIndex = Option.getOrElse(Str.indexOf("(")(sql), () => -1)
 		// Match the closing paren of the column list (track depth so nested
 		// parens inside types like Map(...) don't terminate us early).
 		let depth = 0
@@ -508,7 +526,7 @@ export const parseEmittedStatement = (sql: string): EmittedStatement | null => {
 			}
 		}
 		if (closeIndex < 0) return null
-		const body = sql.slice(openIndex + 1, closeIndex)
+		const body = Str.slice(openIndex + 1, closeIndex)(sql)
 		const columns: EmittedTableColumn[] = []
 		// Split on commas at the top level only.
 		let lineDepth = 0
@@ -519,11 +537,11 @@ export const parseEmittedStatement = (sql: string): EmittedStatement | null => {
 			if (ch === "(") lineDepth++
 			else if (ch === ")") lineDepth--
 			else if (ch === "," && lineDepth === 0) {
-				segments.push(body.slice(lineStart, i))
+				segments.push(Str.slice(lineStart, i)(body))
 				lineStart = i + 1
 			}
 		}
-		segments.push(body.slice(lineStart))
+		segments.push(Str.slice(lineStart)(body))
 		for (const segment of segments) {
 			const col = parseColumnDefinitionLine(segment)
 			if (col) columns.push(col)
@@ -561,7 +579,7 @@ export const extractColumnDefinition = (sql: string, columnName: string): string
 	const tableMatch = CREATE_TABLE_HEADER.exec(sql)
 	if (!tableMatch) return null
 
-	const openIndex = sql.indexOf("(")
+	const openIndex = Option.getOrElse(Str.indexOf("(")(sql), () => -1)
 	let depth = 0
 	let closeIndex = -1
 	for (let i = openIndex; i < sql.length; i++) {
@@ -577,7 +595,7 @@ export const extractColumnDefinition = (sql: string, columnName: string): string
 	}
 	if (closeIndex < 0) return null
 
-	const body = sql.slice(openIndex + 1, closeIndex)
+	const body = Str.slice(openIndex + 1, closeIndex)(sql)
 	let lineDepth = 0
 	let lineStart = 0
 	const segments: string[] = []
@@ -586,14 +604,14 @@ export const extractColumnDefinition = (sql: string, columnName: string): string
 		if (ch === "(") lineDepth++
 		else if (ch === ")") lineDepth--
 		else if (ch === "," && lineDepth === 0) {
-			segments.push(body.slice(lineStart, i))
+			segments.push(Str.slice(lineStart, i)(body))
 			lineStart = i + 1
 		}
 	}
-	segments.push(body.slice(lineStart))
+	segments.push(Str.slice(lineStart)(body))
 
 	for (const segment of segments) {
-		const trimmed = segment.trim().replace(/,$/, "").trim()
+		const trimmed = Str.trim(Str.replace(/,$/, "")(Str.trim(segment)))
 		if (trimmed.length === 0) continue
 		if (/^INDEX\s/i.test(trimmed)) continue
 		const nameMatch = /^([A-Za-z_][A-Za-z0-9_]*)\s+/.exec(trimmed)
@@ -623,13 +641,15 @@ export const emitProjectDdl = (
 	},
 	options?: EmitterOptions,
 ): ReadonlyArray<string> => {
-	const datasourceStatements = [...manifest.datasources]
-		.sort((a, b) => a.name.localeCompare(b.name))
-		.map((ds) => emitCreateTable(ds, options))
+	const datasourceStatements = Arr.map(
+		[...manifest.datasources].sort((a, b) => Str.localeCompare(b.name)(a.name)),
+		(ds) => emitCreateTable(ds, options),
+	)
 
-	const mvStatements = [...manifest.pipes]
-		.sort((a, b) => a.name.localeCompare(b.name))
-		.map((pipe) => emitCreateMaterializedView(pipe, options))
+	const mvStatements = Arr.map(
+		[...manifest.pipes].sort((a, b) => Str.localeCompare(b.name)(a.name)),
+		(pipe) => emitCreateMaterializedView(pipe, options),
+	)
 
 	return [...datasourceStatements, ...mvStatements]
 }

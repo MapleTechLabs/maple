@@ -207,7 +207,7 @@ Requires docker Postgres running (`bun run db:migrate:local`).
 
 ```bash
 bun dev web                    # in the stack: https://web.localhost
-bun --filter=@maple/web dev    # alone, raw port
+bun --filter=@maple/web dev   # alone, raw port
 ```
 
 Default raw URL: `http://localhost:3471`
@@ -288,6 +288,10 @@ Override it with `MAPLE_TRIAGE_MODEL`.
 > session the API never seeded, and the transcript stays empty forever. Unset it,
 > or set it to your Clerk org id, when working on chat.
 
+In Clerk mode the pin admits a user who is not a member of the pinned org only when
+`MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS=true` and `MAPLE_ENVIRONMENT=development`. `bun dev`
+sets the opt-in for you; set it yourself when you run the API outside the dev stack.
+
 When an autonomous investigation fails to start, the `investigations.error` column names it:
 
 | `error` value                                                    | Cause                                                                               |
@@ -350,4 +354,4 @@ Vitest uses embedded PGlite — no Docker Postgres required for unit tests.
 - [docs/persistence.md](docs/persistence.md) — Postgres migrations
 - [docs/self-hosted-clickhouse.md](docs/self-hosted-clickhouse.md) — ClickHouse BYO + schema
 - [docs/local-mode.md](docs/local-mode.md) — single-binary local mode
-- [.env.example](.env.example) — full env reference with optional integrations (GitHub App, Hazel, Autumn, email)
+- [.env.example](.env.example): full env reference with optional integrations (GitHub App, Autumn, email)

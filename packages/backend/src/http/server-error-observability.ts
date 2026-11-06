@@ -1,5 +1,5 @@
 import { Effect, Schema, SchemaAST } from "effect"
-import type { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import type { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { failureStackOf, recordRenderedFailure } from "@maple/backend/http/rendered-failure"
 
 /** The `HttpApiSchema.status` annotation, the one the response encoder resolves. */

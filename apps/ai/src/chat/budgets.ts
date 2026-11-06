@@ -35,6 +35,12 @@ export const TOOL_CONCURRENCY = 4
 export const REPEATED_TOOL_CALLS = 5
 
 /**
+ * Retries of a model call that failed with a 429 or 5xx before any content streamed. The engine backs
+ * off from one to thirty seconds (longer when the provider sends `retryAfter`), inside `maxDuration`.
+ */
+export const MODEL_RETRIES = 3
+
+/**
  * What one kind of turn may spend.
  *
  * Per agent, because the kinds of turn are not the same work: an unattended pass needs rails that
@@ -82,6 +88,8 @@ export const INVESTIGATION_BUDGET: AgentBudget = {
 	maxDuration: "10 minutes",
 	tokenBudget: 25_600_000,
 	completionReserveTokens: 64_000,
+	// Without its clock the pass ran into the 10-minute rail instead of submitting before it.
+	runStatus: true,
 }
 
 /**
@@ -143,5 +151,11 @@ export const CHAT_BUDGET: AgentBudget = {
 export const MAX_LIVE_CONTEXT_TOKENS = 128_000
 const LIVE_CONTEXT_FRACTION = 0.6
 
-export const liveContextLimit = (modelContextTokens: number): number =>
-	Math.max(1, Math.min(Math.floor(modelContextTokens * LIVE_CONTEXT_FRACTION), MAX_LIVE_CONTEXT_TOKENS))
+/**
+ * The security audit's cap. Its agents start from an empty history, but a coverage critic's first
+ * prompt carries the whole ledger: 113k tokens on a large monorepo, so 128k killed it after one read.
+ */
+export const AUDIT_MAX_LIVE_CONTEXT_TOKENS = 600_000
+
+export const liveContextLimit = (modelContextTokens: number, cap: number = MAX_LIVE_CONTEXT_TOKENS): number =>
+	Math.max(1, Math.min(Math.floor(modelContextTokens * LIVE_CONTEXT_FRACTION), cap))

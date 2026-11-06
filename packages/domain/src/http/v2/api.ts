@@ -1,4 +1,4 @@
-import { HttpApi, OpenApi } from "effect/unstable/httpapi"
+import { HttpApi, OpenApi } from "effect/http-api"
 import { V2AlertDeliveriesApiGroup } from "./alert-deliveries"
 import { V2AlertDestinationsApiGroup } from "./alert-destinations"
 import { V2AnomaliesApiGroup } from "./anomalies"
@@ -8,18 +8,28 @@ import { V2ApiKeysApiGroup } from "./api-keys"
 import { V2AttributeMappingsApiGroup } from "./attribute-mappings"
 import { V2AuditLogApiGroup } from "./audit-log"
 import { V2DashboardsApiGroup } from "./dashboards"
+import { V2DeviceCredentialsApiGroup, V2DeviceTokensApiGroup } from "./device-credentials"
 import { V2IngestKeysApiGroup } from "./ingest-keys"
+import { V2IngestRulesApiGroup } from "./ingest-rules"
+import { V2SourcesApiGroup } from "./sources"
 import { V2ChatIntegrationsApiGroup } from "./integrations-chat"
+import { V2AwsIntegrationsApiGroup } from "./integrations-aws"
+import { V2GcpIntegrationsApiGroup } from "./integrations-gcp"
 import { V2PlanetScaleIntegrationsApiGroup } from "./integrations-planetscale"
 import { V2ErrorIssuesApiGroup } from "./error-issues"
 import { V2InvestigationsApiGroup } from "./investigations"
 import { V2AgentFeedbackApiGroup } from "./agent-feedback"
 import { V2MobileDevicesApiGroup } from "./mobile-devices"
+import { V2McpConnectionsApiGroup } from "./mcp-connections"
 import { V2OnboardingChecklistApiGroup } from "./onboarding-checklist"
 import { V2OrganizationApiGroup } from "./organization"
 import { V2InstrumentationRecommendationsApiGroup } from "./recommendations"
 import { V2ScrapeTargetsApiGroup } from "./scrape-targets"
 import { V2SessionReplaysApiGroup } from "./session-replays"
+import { V2UptimeMonitorsApiGroup } from "./uptime-monitors"
+import { V2SlosApiGroup } from "./slos"
+import { V2UsersApiGroup } from "./users"
+import { V2StatusPageIncidentsApiGroup, V2StatusPagesApiGroup } from "./status-pages"
 import { V2InstrumentationAuditApiGroup } from "./setup-audit"
 import { V2SupportChannelApiGroup } from "./support-channel"
 import { V2TelemetrySignalsApiGroup } from "./telemetry-signals"
@@ -36,6 +46,7 @@ import {
 } from "./telemetry"
 import { V2SchemaErrors, V2UnexpectedErrors } from "./auth"
 import { collapseQueryParameterNullBranches } from "./openapi-nullable"
+import { Predicate, Record as Rec } from "effect"
 
 const HTTP_OPERATION_METHODS = ["get", "post", "put", "patch", "delete", "head"] as const
 
@@ -52,7 +63,7 @@ interface OpenApiSpec {
 
 /** Add the rate-limit retry contract to every generated 429 response. */
 const addRateLimitResponseHeaders = <S extends OpenApiSpec>(spec: S): S => {
-	for (const pathItem of Object.values(spec.paths ?? {})) {
+	for (const pathItem of Rec.values(spec.paths ?? {})) {
 		if (typeof pathItem !== "object" || pathItem === null) continue
 		for (const method of HTTP_OPERATION_METHODS) {
 			const operation = pathItem[method]
@@ -83,9 +94,9 @@ const addRateLimitResponseHeaders = <S extends OpenApiSpec>(spec: S): S => {
  * `{error:{type,code,message}}` error envelope, snake_case wire fields,
  * ISO-8601 timestamps, and scoped API keys.
  *
- * Mounted alongside the internal v1 `MapleApi`; groups are added here as they
- * are promoted to the public surface. Dashboard-only operations move to the
- * internal Effect RPC tier instead — they never appear in this API.
+ * Mounted alongside the unversioned `MapleApi` (auth protocols) and the
+ * session-only `MapleInternalApi`; groups are added here as they are promoted
+ * to the public surface. Dashboard-only operations go to `MapleInternalApi`.
  */
 export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2ApiKeysApiGroup)
@@ -95,12 +106,20 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2AlertDestinationsApiGroup)
 	.add(V2AlertIncidentsApiGroup)
 	.add(V2IngestKeysApiGroup)
+	.add(V2SourcesApiGroup)
 	.add(V2ChatIntegrationsApiGroup)
 	.add(V2PlanetScaleIntegrationsApiGroup)
+	.add(V2GcpIntegrationsApiGroup)
+	.add(V2AwsIntegrationsApiGroup)
 	.add(V2ErrorIssuesApiGroup)
 	.add(V2AttributeMappingsApiGroup)
+	.add(V2IngestRulesApiGroup)
 	.add(V2AuditLogApiGroup)
 	.add(V2ScrapeTargetsApiGroup)
+	.add(V2UptimeMonitorsApiGroup)
+	.add(V2SlosApiGroup)
+	.add(V2StatusPagesApiGroup)
+	.add(V2StatusPageIncidentsApiGroup)
 	.add(V2InstrumentationRecommendationsApiGroup)
 	.add(V2InstrumentationAuditApiGroup)
 	.add(V2TelemetrySignalsApiGroup)
@@ -110,8 +129,10 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2OnboardingChecklistApiGroup)
 	.add(V2SupportChannelApiGroup)
 	.add(V2MobileDevicesApiGroup)
+	.add(V2McpConnectionsApiGroup)
 	.add(V2AgentFeedbackApiGroup)
 	.add(V2SessionReplaysApiGroup)
+	.add(V2UsersApiGroup)
 	.add(V2TracesApiGroup)
 	.add(V2LogsApiGroup)
 	.add(V2MetricsApiGroup)
@@ -121,6 +142,8 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2SharePublicApiGroup)
 	.add(V2WidgetSummaryApiGroup)
 	.add(V2WidgetCredentialsApiGroup)
+	.add(V2DeviceCredentialsApiGroup)
+	.add(V2DeviceTokensApiGroup)
 	.middleware(V2SchemaErrors)
 	.middleware(V2UnexpectedErrors)
 	.annotateMerge(
@@ -149,10 +172,15 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 				const withRateLimitHeaders = collapseQueryParameterNullBranches(
 					addRateLimitResponseHeaders(spec),
 				)
+				// The generated document is `Record<string, any>`; `info` is checked before it is spread.
+				const generatedInfo: unknown = withRateLimitHeaders.info
+				const info: Record<PropertyKey, unknown> = Predicate.isObject(generatedInfo)
+					? generatedInfo
+					: {}
 				return {
 					...withRateLimitHeaders,
 					info: {
-						...withRateLimitHeaders.info,
+						...info,
 						contact: {
 							name: "Maple Support",
 							url: "https://maple.dev",

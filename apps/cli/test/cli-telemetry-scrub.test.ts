@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { sanitizeArgv, sanitizeStack, scrubAttributes, scrubTraceData } from "../src/core/telemetry"
+import { Array as Arr } from "effect"
 
 const str = (key: string, value: string) => ({ key, value: { stringValue: value } })
 
@@ -11,13 +12,17 @@ describe("CLI telemetry scrubber", () => {
 			str("ch.sql", "SELECT 2"),
 			str("query.filter.serviceName", "checkout"),
 			str("service", "checkout"),
+			str("maple.query.service", "checkout"),
+			str("maple.query.span_name", "POST /charge"),
+			str("maple.query.attribute_key", "user.email"),
+			str("maple.session.id", "sess_123"),
 			str("exception.message", "Cannot parse input: 'alice@example.com'"),
 			str("effect.cause", "Error: row {'email':'x'}"),
 			str("db.system.name", "clickhouse"),
 			str("error.type", "HTTP 400"),
 			{ key: "db.query.length", value: { intValue: 41 } },
 		])
-		expect(scrubbed.map((attribute) => attribute.key)).toEqual([
+		expect(Arr.map(scrubbed, (attribute) => attribute.key)).toEqual([
 			"db.system.name",
 			"error.type",
 			"db.query.length",
@@ -79,15 +84,18 @@ describe("CLI telemetry scrubber", () => {
 				},
 			],
 		})
-		const scrubbed = data.resourceSpans[0]!.scopeSpans[0]!.spans[0]!
+		const scrubbed = Arr.getUnsafe(
+			Arr.getUnsafe(Arr.getUnsafe(data.resourceSpans, 0).scopeSpans, 0).spans,
+			0,
+		)
 		expect(JSON.stringify(scrubbed)).not.toContain("secret")
 		expect(scrubbed.status).toEqual({ code: 2 })
 		expect(scrubbed.attributes).toEqual([str("cli.argv", "query")])
-		expect(scrubbed.events[0]!.attributes.map((attribute) => attribute.key)).toEqual([
+		expect(Arr.map(Arr.getUnsafe(scrubbed.events, 0).attributes, (attribute) => attribute.key)).toEqual([
 			"exception.type",
 			"exception.stacktrace",
 		])
-		expect(scrubbed.events[1]).toMatchObject({
+		expect(Arr.getUnsafe(scrubbed.events, 1)).toMatchObject({
 			name: "log",
 			attributes: [str("effect.logLevel", "ERROR")],
 		})

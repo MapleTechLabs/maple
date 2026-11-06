@@ -1,13 +1,13 @@
 import { describe, it } from "@effect/vitest"
-import { deepStrictEqual, ok, rejects, strictEqual } from "node:assert"
-import { Effect, Exit, Result, Tracer } from "effect"
-import { checkpointQueryUrl } from "../src/server/checkpoints"
+import { ok, rejects, strictEqual } from "node:assert"
+import { Effect, Exit, Option, Result, Tracer, Array as Arr, String as Str } from "effect"
+import { checkpointQueryUrl } from "@maple/local-server/checkpoints"
 import {
 	__testables,
 	corsHeadersForAllowedOrigin,
 	isBrowserOriginAllowed,
 	makeBrowserOriginPolicy,
-} from "../src/server/serve"
+} from "@maple/local-server/serve"
 import { serverProbeUrl } from "../src/commands/server-args"
 
 const makeRecordingTracer = () => {
@@ -31,8 +31,9 @@ describe("local HTTP server span status", () => {
 				.pipe(Effect.withSpan("POST /local/query", { kind: "server" }), Effect.withTracer(tracer))
 
 			strictEqual(response.status, 400)
-			const span = spans.find((candidate) => candidate.name === "POST /local/query")
-			ok(span)
+			const found = Arr.findFirst(spans, (candidate) => candidate.name === "POST /local/query")
+			ok(Option.isSome(found))
+			const span = found.value
 			strictEqual(span.attributes.get("error.type"), "HTTP 400")
 			ok(span.status._tag === "Ended" && Exit.isSuccess(span.status.exit))
 		}),
@@ -50,11 +51,12 @@ describe("local HTTP server span status", () => {
 				)
 
 			ok(Exit.isFailure(exit))
-			const span = spans.find((candidate) => candidate.name === "POST /local/query")
-			ok(span)
+			const found = Arr.findFirst(spans, (candidate) => candidate.name === "POST /local/query")
+			ok(Option.isSome(found))
+			const span = found.value
 			ok(span.status._tag === "Ended" && Exit.isFailure(span.status.exit))
 			// Response bodies can quote rows or SQL; only the status reaches the span.
-			ok(!JSON.stringify(exit).includes("database unavailable"))
+			ok(!Str.includes("database unavailable")(JSON.stringify(exit)))
 		}),
 	)
 })
@@ -92,6 +94,12 @@ describe("request admission on shutdown", () => {
 	})
 })
 
+// Bun types `port` as optional (unix sockets); these listeners are always TCP.
+const portOf = (server: { readonly port: number | undefined }): number => {
+	ok(server.port !== undefined, "listener has no TCP port")
+	return server.port
+}
+
 describe("local listener addresses", () => {
 	it("reaches an IPv4 wildcard listener through the loopback probe URL", async () => {
 		const server = Bun.serve({
@@ -100,7 +108,7 @@ describe("local listener addresses", () => {
 			fetch: () => new Response("OK"),
 		})
 		try {
-			const response = await fetch(serverProbeUrl("0.0.0.0", server.port))
+			const response = await fetch(serverProbeUrl("0.0.0.0", portOf(server)))
 			strictEqual(response.status, 200)
 		} finally {
 			await server.stop(true)
@@ -114,7 +122,7 @@ describe("local listener addresses", () => {
 			fetch: () => new Response("OK"),
 		})
 		try {
-			strictEqual((await fetch(serverProbeUrl("::1", server.port))).status, 200)
+			strictEqual((await fetch(serverProbeUrl("::1", portOf(server)))).status, 200)
 			await rejects(fetch(`http://127.0.0.1:${server.port}`))
 		} finally {
 			await server.stop(true)
@@ -128,7 +136,7 @@ describe("local listener addresses", () => {
 			fetch: () => new Response("OK"),
 		})
 		try {
-			strictEqual((await fetch(serverProbeUrl("::", server.port))).status, 200)
+			strictEqual((await fetch(serverProbeUrl("::", portOf(server)))).status, 200)
 		} finally {
 			await server.stop(true)
 		}
@@ -198,7 +206,7 @@ describe("browser origin policy", () => {
 		strictEqual(allowed("http://127.0.0.1:4318/local/query", "https://tools.example.test", policy), true)
 		const invalid = makeBrowserOriginPolicy({ browserHosts, extraOrigins: "not a url" })
 		ok(Result.isFailure(invalid))
-		ok(invalid.failure.message.includes("MAPLE_LOCAL_ALLOWED_ORIGINS"))
+		ok(Str.includes("MAPLE_LOCAL_ALLOWED_ORIGINS")(invalid.failure.message))
 	})
 
 	it("accepts no hosted origin when the hosted UI is disabled", () => {
@@ -212,6 +220,22 @@ describe("browser origin policy", () => {
 		}
 	})
 
+	it("checks the Host of requests without an Origin outside ingest and /health", () => {
+		const rebound = "http://rebind.attacker.example:4418"
+		for (const path of ["/local/status", "/", "/assets/app.js", "/local/eventing/outbox"])
+			strictEqual(allowed(`${rebound}${path}`, null), false, path)
+		for (const path of ["/v1/traces", "/health"])
+			strictEqual(allowed(`${rebound}${path}`, null), true, path)
+		for (const url of [
+			"http://127.0.0.1:4318/local/status",
+			"http://localhost:4318/local/status",
+			"http://[::1]:4318/local/status",
+			"https://maple.wt.localhost/local/status",
+			"http://node-a.example.test:4418/local/status",
+		])
+			strictEqual(allowed(url, null), true, url)
+	})
+
 	it("rejects arbitrary and DNS-rebinding browser origins", () => {
 		strictEqual(allowed(requestUrl, "https://attacker.example"), false)
 		strictEqual(
@@ -223,13 +247,10 @@ describe("browser origin policy", () => {
 	})
 
 	it("echoes any allowed origin instead of a wildcard", () => {
-		deepStrictEqual(corsHeadersForAllowedOrigin(hostedOrigin), {
-			"access-control-allow-origin": hostedOrigin,
-			"access-control-allow-methods": "GET, POST, OPTIONS",
-			"access-control-allow-headers": "content-type, content-encoding, authorization, x-maple-sdk",
-			"access-control-allow-private-network": "true",
-			vary: "Origin",
-		})
+		const headers = corsHeadersForAllowedOrigin(hostedOrigin)
+		strictEqual(headers?.["access-control-allow-origin"], hostedOrigin)
+		strictEqual(headers?.vary, "Origin")
+		strictEqual(headers?.["access-control-allow-private-network"], "true")
 		const loopbackOrigin = "http://localhost:3000"
 		strictEqual(allowed("http://127.0.0.1:4318/v1/traces", loopbackOrigin), true)
 		strictEqual(
@@ -239,26 +260,25 @@ describe("browser origin policy", () => {
 		strictEqual(corsHeadersForAllowedOrigin(null), undefined)
 	})
 
-	it("allows the Authorization header browser SDKs send when an ingest key is set", () => {
-		// A page bundled for hosted Maple carries `Authorization: Bearer maple_pk_…`
-		// on every OTLP post. Omitting the header here failed preflight and blocked
-		// the page from reaching local mode at all.
-		strictEqual(
-			corsHeadersForAllowedOrigin("http://localhost:4501")
-				?.["access-control-allow-headers"].split(", ")
-				.includes("authorization"),
-			true,
+	it("allows instrumented dashboard requests through the CORS preflight", () => {
+		const headers = new Headers(corsHeadersForAllowedOrigin(hostedOrigin))
+		const allowHeader = headers.get("access-control-allow-headers")
+		const allowedHeaders = new Set<string>(
+			allowHeader === null
+				? []
+				: Arr.map(Str.split(",")(allowHeader), (header) => Str.toLowerCase(Str.trim(header))),
 		)
-	})
-
-	it("allows the x-maple-sdk identity hint every browser SDK sends", () => {
-		// Same failure mode as `authorization`: a header the SDK always sends that
-		// preflight refuses blocks every request from that SDK, not just the header.
-		strictEqual(
-			corsHeadersForAllowedOrigin("http://localhost:4501")
-				?.["access-control-allow-headers"].split(", ")
-				.includes("x-maple-sdk"),
-			true,
-		)
+		for (const requested of [
+			"content-type",
+			"authorization",
+			"x-maple-sdk",
+			"x-maple-ingest-key",
+			"traceparent",
+			"tracestate",
+			"baggage",
+			"b3",
+		]) {
+			ok(allowedHeaders.has(requested), `preflight must allow ${requested}`)
+		}
 	})
 })

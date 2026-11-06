@@ -1,6 +1,6 @@
 import { DailySpendResponse, DailyVolume, WarehouseQueryError } from "@maple/domain/http"
-import { CH, parseWarehouseDateTime, formatWarehouseDateTime } from "@maple/query-engine"
-import { Context, Effect, Layer } from "effect"
+import { CH, formatWarehouseDateTime } from "@maple/query-engine"
+import { Context, DateTime, Effect, Layer, String as Str } from "effect"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { isMissingProductEvents } from "@maple/backend/services/warehouse/missing-table"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -26,7 +26,7 @@ const BYTES_PER_BILLED_GB = 1_000_000_000
 /** ClickHouse datetime literal (`YYYY-MM-DD HH:MM:SS`), which is what the DSL params want. */
 
 /** `YYYY-MM-DD` in UTC — the key the client renders and the series is indexed by. */
-export const toUtcDateKey = (epochMs: number) => new Date(epochMs).toISOString().slice(0, 10)
+export const toUtcDateKey = (epochMs: number) => Str.slice(0, 10)(new Date(epochMs).toISOString())
 
 const startOfUtcDay = (epochMs: number) => Math.floor(epochMs / DAY_MS) * DAY_MS
 
@@ -51,7 +51,7 @@ const toQueryError = (error: { readonly message: string }) =>
 	new WarehouseQueryError({ pipeName: "billingDailySpend", message: error.message })
 
 export class DailySpendService extends Context.Service<DailySpendService, DailySpendServiceApi>()(
-	"@maple/api/services/DailySpendService",
+	"@maple/backend/services/DailySpendService",
 	{
 		make: Effect.gen(function* () {
 			const warehouse = yield* WarehouseQueryService
@@ -87,7 +87,7 @@ export class DailySpendService extends Context.Service<DailySpendService, DailyS
 
 				const byDay = new Map<string, { logsGB: number; tracesGB: number; metricsGB: number }>()
 				for (const row of signalRows) {
-					byDay.set(toUtcDateKey(parseWarehouseDateTime(row.day)), {
+					byDay.set(toUtcDateKey(DateTime.toEpochMillis(row.day)), {
 						logsGB: row.logBytes / BYTES_PER_BILLED_GB,
 						tracesGB: row.traceBytes / BYTES_PER_BILLED_GB,
 						metricsGB: row.metricBytes / BYTES_PER_BILLED_GB,
@@ -108,12 +108,12 @@ export class DailySpendService extends Context.Service<DailySpendService, DailyS
 
 				const sessionsByDay = new Map<string, number>()
 				for (const row of sessionRows) {
-					sessionsByDay.set(toUtcDateKey(parseWarehouseDateTime(row.day)), row.sessions)
+					sessionsByDay.set(toUtcDateKey(DateTime.toEpochMillis(row.day)), row.sessions)
 				}
 
 				const eventsByDay = new Map<string, number>()
 				for (const row of eventRows) {
-					eventsByDay.set(toUtcDateKey(parseWarehouseDateTime(row.day)), row.events)
+					eventsByDay.set(toUtcDateKey(DateTime.toEpochMillis(row.day)), row.events)
 				}
 
 				const days: DailyVolume[] = []
@@ -136,7 +136,7 @@ export class DailySpendService extends Context.Service<DailySpendService, DailyS
 
 				yield* Effect.annotateCurrentSpan({
 					orgId,
-					"billing.days": days.length,
+					"maple.billing.days": days.length,
 				})
 
 				return new DailySpendResponse({

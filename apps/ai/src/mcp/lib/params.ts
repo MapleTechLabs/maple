@@ -6,10 +6,29 @@
  * also what renders them into the published description: a description cannot claim a
  * default the decoder does not apply.
  */
-import { Effect, Option, Schema, SchemaGetter, SchemaTransformation } from "effect"
+import {
+	Clock,
+	Effect,
+	Option,
+	Schema,
+	SchemaGetter,
+	SchemaTransformation,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
+import { decodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
+import {
+	AlertDestinationId,
+	AlertIncidentId,
+	AlertRuleId,
+	DashboardId,
+	ErrorIssueId,
+} from "@maple/domain/primitives"
 import { WarehouseTimeInput, type WarehouseDateTime } from "@maple/query-engine"
 import { McpInvalidInputError } from "../tools/types"
-import { rangeExceededMessage, resolveTimeRange } from "./time"
+import { resolveWindow } from "./time"
+import { CurrentWindowNotes } from "./window-notes"
 
 /**
  * A number, or a numeric string. 12% of agent calls send `"limit":"15"`, so the string branch
@@ -19,7 +38,7 @@ import { rangeExceededMessage, resolveTimeRange } from "./time"
  * `limit: 0`); `Finite` rejects `"soon"`.
  */
 const NumericString = Schema.String.check(
-	Schema.makeFilter((value: string) => value.trim().length > 0, {
+	Schema.makeFilter((value: string) => Str.trim(value).length > 0, {
 		title: "nonBlankNumericString",
 		expected: "a number, or omit the parameter (an empty string is not a number)",
 	}),
@@ -45,7 +64,7 @@ const OPTIONAL_TEXT_TRANSFORMATION = {
 	decode: SchemaGetter.transformOptional((option: Option.Option<string | undefined>) =>
 		option.pipe(
 			Option.flatMap(Option.fromUndefinedOr),
-			Option.map((value) => value.trim()),
+			Option.map((value) => Str.trim(value)),
 			Option.filter((value) => value !== ""),
 		),
 	),
@@ -78,6 +97,28 @@ export const oneOf = <const L extends ReadonlyArray<string>>(values: L, descript
 export const optionalOneOf = <const L extends ReadonlyArray<string>>(values: L, description: string) =>
 	Schema.optional(Schema.Literals(values)).annotate({ description })
 
+/** `"auto"`, a value a schema-validating client can send where the published schema cannot say null. */
+const AutoAsNull = Schema.Literal("auto").pipe(
+	Schema.decodeTo(
+		Schema.Null,
+		SchemaTransformation.transform({ decode: () => null, encode: () => "auto" as const }),
+	),
+)
+
+/**
+ * A closed set of numbers in the schema's `enum` (a numeric string decodes too), or `"auto"` to
+ * clear the value. `null` clears it too, but the published schema drops the null branch.
+ */
+export const optionalNullableNumberOneOf = <const L extends ReadonlyArray<number>>(
+	values: L,
+	description: string,
+) => {
+	const literals = Schema.Literals(values)
+	return Schema.optional(
+		Schema.NullOr(Schema.Union([literals, NumericString.pipe(Schema.decodeTo(literals)), AutoAsNull])),
+	).annotate({ description })
+}
+
 /** Several values from a closed set, each listed in the item schema's `enum`. */
 export const optionalOneOfList = <const L extends ReadonlyArray<string>>(values: L, description: string) =>
 	Schema.optional(Schema.Array(Schema.Literals(values))).annotate({ description })
@@ -86,19 +127,16 @@ export const optionalOneOfList = <const L extends ReadonlyArray<string>>(values:
  * A list. Published as an array; a comma-separated string is still accepted because every
  * `*_names` parameter used to be one.
  */
-const CommaList = Schema.String.pipe(
-	Schema.decodeTo(
-		Schema.Array(Schema.String),
-		SchemaTransformation.transform<ReadonlyArray<string>, string>({
-			decode: (value) =>
-				value
-					.split(",")
-					.map((part) => part.trim())
-					.filter((part) => part !== ""),
-			encode: (values) => values.join(","),
-		}),
-	),
-)
+const COMMA_SPLIT = SchemaTransformation.transform<ReadonlyArray<string>, string>({
+	decode: (value) =>
+		Arr.filter(
+			Arr.map(Str.split(",")(value), (part) => Str.trim(part)),
+			(part) => part !== "",
+		),
+	encode: (values) => Arr.join(values, ","),
+})
+
+const CommaList = Schema.String.pipe(Schema.decodeTo(Schema.Array(Schema.String), COMMA_SPLIT))
 
 export const list = (description: string) =>
 	Schema.Union([Schema.Array(Schema.String), CommaList]).annotate({ description })
@@ -106,20 +144,119 @@ export const list = (description: string) =>
 export const optionalList = (description: string) =>
 	Schema.optional(Schema.Union([Schema.Array(Schema.String), CommaList])).annotate({ description })
 
+/** The resources a tool takes ids for, with their REST public-id prefix and internal id schema. */
+const RESOURCE_IDS = {
+	alertRule: { prefix: PublicIdPrefixes.alertRule, schema: AlertRuleId, noun: "alert rule" },
+	alertIncident: {
+		prefix: PublicIdPrefixes.alertIncident,
+		schema: AlertIncidentId,
+		noun: "alert incident",
+	},
+	alertDestination: {
+		prefix: PublicIdPrefixes.alertDestination,
+		schema: AlertDestinationId,
+		noun: "alert destination",
+	},
+	dashboard: { prefix: PublicIdPrefixes.dashboard, schema: DashboardId, noun: "dashboard" },
+	errorIssue: { prefix: PublicIdPrefixes.errorIssue, schema: ErrorIssueId, noun: "error issue" },
+} as const
+
+export type ResourceIdKind = keyof typeof RESOURCE_IDS
+
+const KNOWN_PREFIXES: ReadonlySet<string> = new Set(Rec.values(PublicIdPrefixes))
+
+/**
+ * The internal id behind `raw`: its REST public id (`dest_…`) decodes, anything else passes
+ * through for the lookup to judge. None when it is malformed or another resource's public id.
+ */
+export const internalIdOf = (kind: ResourceIdKind, raw: string): Option.Option<string> => {
+	const { prefix } = RESOURCE_IDS[kind]
+	const value = Str.trim(raw)
+	if (Str.startsWith(`${prefix}_`)(value)) return Option.fromNullOr(decodePublicId(prefix, value))
+	const other = /^([a-z]+)_/.exec(value)?.[1]
+	return other !== undefined && KNOWN_PREFIXES.has(other) ? Option.none() : Option.some(value)
+}
+
+/**
+ * Trimmed, with a REST id swapped for the internal id. Anything else stays as sent, so the tool's
+ * own lookup reports it as invalid input on the parameter.
+ */
+const normalizedId = (kind: ResourceIdKind) =>
+	Schema.String.pipe(
+		Schema.decodeTo(
+			Schema.String,
+			SchemaTransformation.transform({
+				decode: (raw: string) => Option.getOrElse(internalIdOf(kind, raw), () => Str.trim(raw)),
+				encode: (id: string) => id,
+			}),
+		),
+	)
+
+const idHint = (kind: ResourceIdKind) => `its UUID or its REST id (${RESOURCE_IDS[kind].prefix}_…)`
+
+/** One resource id: the internal UUID or the REST public id, decoded to the internal id. */
+export const resourceId = (kind: ResourceIdKind, description: string) =>
+	Schema.String.annotate({ description: `${description}: ${idHint(kind)}` }).pipe(
+		Schema.decodeTo(normalizedId(kind)),
+	)
+
+export const optionalResourceId = (kind: ResourceIdKind, description: string) =>
+	Schema.optional(resourceId(kind, description))
+
+/** A resource id as its branded type, or invalid input on `parameter` naming the accepted forms. */
+export const decodeResourceId =
+	<K extends ResourceIdKind>(kind: K, parameter: string) =>
+	(raw: string): Effect.Effect<(typeof RESOURCE_IDS)[K]["schema"]["Type"], McpInvalidInputError> => {
+		const schema: (typeof RESOURCE_IDS)[K]["schema"] = RESOURCE_IDS[kind].schema
+		return Option.match(internalIdOf(kind, raw), {
+			onNone: () => Effect.fail(invalidId(kind, raw, parameter)),
+			onSome: (id) =>
+				Schema.decodeEffect(schema)(id).pipe(Effect.mapError(() => invalidId(kind, raw, parameter))),
+		})
+	}
+
+const invalidId = (kind: ResourceIdKind, raw: string, parameter: string) =>
+	new McpInvalidInputError({
+		message: `Invalid ${RESOURCE_IDS[kind].noun} id "${raw}": pass ${idHint(kind)}.`,
+		parameter,
+	})
+
+/** A comma-separated string with no ids in it is a model's "nothing", not a request to clear a list. */
+const NonBlankCommaList = Schema.String.check(
+	Schema.makeFilter((value: string) => Arr.some(Str.split(",")(value), (part) => Str.trim(part) !== ""), {
+		title: "nonBlankList",
+		expected: "at least one id; pass [] to clear the list",
+	}),
+).pipe(Schema.decodeTo(Schema.Array(Schema.String), COMMA_SPLIT))
+
+/**
+ * Several resource ids, each its UUID or REST id. `[]` is a real empty list; a blank string is
+ * rejected unless `blankIsEmpty`, for a list where empty cannot clear anything (a new rule).
+ */
+export const resourceIdList = (
+	kind: ResourceIdKind,
+	description: string,
+	options: { readonly blankIsEmpty?: boolean } = {},
+) =>
+	Schema.Union([Schema.Array(Schema.String), options.blankIsEmpty === true ? CommaList : NonBlankCommaList])
+		.annotate({
+			description: `${description}. Each is ${idHint(kind)}`,
+		})
+		.pipe(Schema.decodeTo(Schema.Array(normalizedId(kind))))
+
+export const optionalResourceIdList = (kind: ResourceIdKind, description: string) =>
+	Schema.optional(resourceIdList(kind, description))
+
 /**
  * A structured value a tool takes as JSON. Accepts the object itself or its JSON text, and
  * decodes it against the real schema, so a malformed field is a parameter error naming the
  * field rather than a handler-side `JSON.parse` failure.
  */
-export const json = <S extends Schema.Codec<unknown, unknown, never, never>>(
-	schema: S,
-	description: string,
-) => Schema.Union([Schema.fromJsonString(schema), schema]).annotate({ description })
+export const json = <S extends Schema.Codec<unknown, unknown>>(schema: S, description: string) =>
+	Schema.Union([Schema.fromJsonString(schema), schema]).annotate({ description })
 
-export const optionalJson = <S extends Schema.Codec<unknown, unknown, never, never>>(
-	schema: S,
-	description: string,
-) => Schema.optional(json(schema, description))
+export const optionalJson = <S extends Schema.Codec<unknown, unknown>>(schema: S, description: string) =>
+	Schema.optional(json(schema, description))
 
 const clampTo = (spec: { readonly min: number; readonly max: number }) =>
 	SchemaTransformation.transform<number, number>({
@@ -159,10 +296,6 @@ export const offset = (spec: { readonly max: number }) =>
 
 const TIMESTAMP_FORMAT = "UTC (YYYY-MM-DD HH:mm:ss or ISO 8601)"
 
-/** A single point in time, worded like the window bounds: `meaning` then the accepted format. */
-export const timestamp = (meaning: string) =>
-	WarehouseTimeInput.annotate({ description: `${meaning}, ${TIMESTAMP_FORMAT}` })
-
 export const optionalTimestamp = (meaning: string) =>
 	Schema.optional(WarehouseTimeInput).annotate({ description: `${meaning}, ${TIMESTAMP_FORMAT}` })
 
@@ -183,7 +316,7 @@ const formatHours = (hours: number): string =>
 export interface TimeWindowSpec {
 	/** Window used when neither bound is given. */
 	readonly defaultHours: number
-	/** Widest window the tool accepts; wider is an input error rather than a silent clamp. */
+	/** Widest window the tool scans; a wider request keeps end_time and moves start_time, with a notice. */
 	readonly maxHours?: number
 }
 
@@ -193,15 +326,17 @@ export interface TimeWindowSpec {
  */
 export const timeWindow = (spec: TimeWindowSpec) => {
 	const cap =
-		spec.maxHours === undefined ? "" : ` The window may span at most ${formatHours(spec.maxHours)}.`
+		spec.maxHours === undefined
+			? ""
+			: ` Covers at most ${formatHours(spec.maxHours)}; a wider window is narrowed to the ${formatHours(spec.maxHours)} before end_time.`
 	return {
 		spec,
 		fields: {
 			start_time: Schema.optional(WarehouseTimeInput).annotate({
-				description: `Start of the window, ${TIMESTAMP_FORMAT}. Default: ${formatHours(spec.defaultHours)} before end_time.${cap}`,
+				description: `Window start, ${TIMESTAMP_FORMAT}. Default: ${formatHours(spec.defaultHours)} before end_time.${cap}`,
 			}),
 			end_time: Schema.optional(WarehouseTimeInput).annotate({
-				description: `End of the window, ${TIMESTAMP_FORMAT}. Default: now.`,
+				description: "Window end, UTC, same format. Default: now.",
 			}),
 		},
 		resolve: (
@@ -213,25 +348,19 @@ export const timeWindow = (spec: TimeWindowSpec) => {
 		): Effect.Effect<
 			{ readonly st: WarehouseDateTime; readonly et: WarehouseDateTime },
 			McpInvalidInputError
-		> => {
-			const range = resolveTimeRange(params.start_time, params.end_time, spec)
-			if (range.requestedHours < 0) {
-				return Effect.fail(
-					new McpInvalidInputError({
-						message: `start_time (${range.st}) is after end_time (${range.et}).`,
+		> =>
+			Effect.gen(function* () {
+				const now = yield* Clock.currentTimeMillis
+				const resolution = resolveWindow(params.start_time, params.end_time, { ...spec, tool }, now)
+				if (resolution._tag === "Rejected") {
+					return yield* new McpInvalidInputError({
+						message: resolution.message,
 						parameter: "start_time",
-					}),
-				)
-			}
-			if (range.exceeded) {
-				return Effect.fail(
-					new McpInvalidInputError({
-						message: rangeExceededMessage(range, tool),
-						parameter: "start_time",
-					}),
-				)
-			}
-			return Effect.succeed({ st: range.st, et: range.et })
-		},
+					})
+				}
+				const notes = yield* CurrentWindowNotes
+				notes?.record(resolution.now, resolution.notices)
+				return { st: resolution.st, et: resolution.et }
+			}),
 	}
 }

@@ -1,0 +1,38 @@
+{
+	"include": ["src/**/*.ts", "vitest.config.ts", "vitest-setup.ts"],
+	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
+		"target": "ES2023",
+		"module": "ESNext",
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
+		"types": ["vite/client"],
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"verbatimModuleSyntax": false,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"strict": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedSideEffectImports": true,
+		"paths": {
+			"@maple/ui/styles/ui/*": ["../ui/src/components/ui/*.styles.ts"],
+			"@maple/ui/*": ["../ui/src/*"],
+			"@maple/chat-platform/manifests": ["../chat-platform/src/connectors/manifests.ts"]
+		},
+		"plugins": [
+			{
+				"name": "@effect/language-service",
+				"ignoreEffectWarningsInTscExitCode": true,
+				"includeSuggestionsInTsc": false,
+				"diagnosticSeverity": {
+					"unstableApiUsage": "off",
+					"schemaNumber": "off",
+					"schemaClassMissingBrand": "off",
+					"schemaSync": "off"
+				}
+			}
+		]
+	}
+}

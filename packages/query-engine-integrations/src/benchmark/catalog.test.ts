@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	collectIntegrationQueryCatalog,
@@ -16,18 +16,18 @@ import {
 // same guarantees are asserted here: every shape compiles, is tenant-scoped,
 // and is pinned byte-for-byte.
 describe("integration sql catalog", () => {
-	const entries = Effect.runSync(collectIntegrationQueryCatalog())
+	const entries = Effect.runSync(collectIntegrationQueryCatalog)
 
 	it("compiles every fixture", () => {
 		expect(entries.length).toBeGreaterThan(0)
 		for (const entry of entries) {
 			expect(entry.sql, entry.id).toBeTruthy()
-			expect(entry.sql.toUpperCase(), entry.id).toContain("SELECT")
+			expect(Str.toUpperCase(entry.sql), entry.id).toContain("SELECT")
 		}
 	})
 
 	// Structural, not a substring check on the SQL — see the tenant-scope work in
-	// @maple-dev/effect-clickhouse. No integration query reads across tenants.
+	// @maple-dev/effect-orm. No integration query reads across tenants.
 	it("scopes every query to an org", () => {
 		for (const entry of entries) {
 			expect(entry.compiled.tenantScope, `${entry.id} tenant scope`).toBe("single-tenant")
@@ -39,7 +39,7 @@ describe("integration sql catalog", () => {
 	// baseline and the e2e sweep alike.
 	it("covers or exempts every exported builder", () => {
 		const missing = unfixturedIntegrationBuilders()
-		expect(missing, `builders with no fixture and no exemption:\n${missing.join("\n")}`).toEqual([])
+		expect(missing, `builders with no fixture and no exemption:\n${Arr.join(missing, "\n")}`).toEqual([])
 	})
 
 	it("declares fixtures whose export actually exists", () => {
@@ -51,7 +51,7 @@ describe("integration sql catalog", () => {
 
 	it("keeps the exemption list free of stale entries", () => {
 		const exported = new Set(exportedIntegrationBuilders())
-		const fixtured = new Set(integrationFixtures.map((fixture) => fixture.name))
+		const fixtured = new Set(Arr.map(integrationFixtures, (fixture) => fixture.name))
 		for (const name of EXEMPT_INTEGRATION_BUILDERS) {
 			expect(exported.has(name), `${name} is exempt but no longer exported`).toBe(true)
 			expect(fixtured.has(name), `${name} is exempt AND fixtured — drop the exemption`).toBe(false)
@@ -63,9 +63,13 @@ describe("integration sql catalog", () => {
 	// `decodeRows` identity cast is invisible at runtime, so this list is the
 	// only place this package can see which of its queries validate nothing.
 	it("decodes every query except the declared exceptions", () => {
-		const detail = [...undecodedIntegrationColumns(entries)]
-			.map(([id, cols]) => `  ${id} — untyped: ${cols.join(", ")}`)
-			.join("\n")
+		const detail = Arr.join(
+			Arr.map(
+				[...undecodedIntegrationColumns(entries)],
+				([id, cols]) => `  ${id} — untyped: ${Arr.join(cols, ", ")}`,
+			),
+			"\n",
+		)
 
 		expect(
 			undecodedIntegrationQueries(entries),
@@ -78,24 +82,28 @@ describe("integration sql catalog", () => {
 	// failing on a field the query no longer emits. The builder compares the two
 	// shapes by field name; this is where that comparison is asserted.
 	it("keeps every declared row schema in step with its SELECT", () => {
-		const drifted = entries
-			.filter((entry) => entry.compiled.rowSchemaMismatch !== undefined)
-			.map((entry) => {
+		const drifted = Arr.map(
+			Arr.filter(entries, (entry) => entry.compiled.rowSchemaMismatch !== undefined),
+			(entry) => {
 				const mismatch = entry.compiled.rowSchemaMismatch!
-				return `  ${entry.id} — undeclared: [${mismatch.undeclared.join(", ")}] unselected: [${mismatch.unselected.join(", ")}]`
-			})
+				return `  ${entry.id} — undeclared: [${Arr.join(mismatch.undeclared, ", ")}] unselected: [${Arr.join(mismatch.unselected, ", ")}]`
+			},
+		)
 
 		expect(
 			drifted,
-			`declared row schemas that no longer match their query:\n${drifted.join("\n")}`,
+			`declared row schemas that no longer match their query:\n${Arr.join(drifted, "\n")}`,
 		).toEqual([])
 	})
 
 	it("emits the same SQL as the recorded baseline", async () => {
-		const rendered = [...entries]
-			.sort((a, b) => a.id.localeCompare(b.id))
-			.map((entry) => `-- ${entry.id}\n${entry.sql}`)
-			.join("\n\n")
+		const rendered = Arr.join(
+			Arr.map(
+				[...entries].sort((a, b) => Str.localeCompare(b.id)(a.id)),
+				(entry) => `-- ${entry.id}\n${entry.sql}`,
+			),
+			"\n\n",
+		)
 
 		await expect(rendered).toMatchFileSnapshot("../__sql_baseline__/integrations.sql")
 	})

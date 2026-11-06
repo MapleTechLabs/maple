@@ -5,8 +5,20 @@
  * whole list there with them.
  */
 
-export const HUB_VIEWS = ["open", "triage", "active", "resolved", "all"] as const
+export const HUB_VIEWS = ["open", "closed", "all"] as const
 export type HubView = (typeof HUB_VIEWS)[number]
+
+/** Tabs the list used to have. Old links still decode and land on the tab that
+ *  now holds the same issues. */
+export const LEGACY_HUB_VIEWS = ["triage", "active", "resolved"] as const
+export type LegacyHubView = (typeof LEGACY_HUB_VIEWS)[number]
+
+export const hubViewOf = (view: HubView | LegacyHubView | undefined): HubView =>
+	view === undefined || view === "triage" || view === "active"
+		? "open"
+		: view === "resolved"
+			? "closed"
+			: view
 
 /** `last_seen` leads because it is the default: newest activity first, paged
  *  back through older issues. `volume` is the one sort only the warehouse can
@@ -16,11 +28,3 @@ export type HubSort = (typeof HUB_SORTS)[number]
 
 export const SEVERITY_FILTERS = ["all", "critical", "high", "medium", "low", "unset"] as const
 export type SeverityFilter = (typeof SEVERITY_FILTERS)[number]
-
-/**
- * How far back the trend, count and totals look. A day, because a sparkline of
- * the last twelve hours reads as silence for anything that errors nightly, and
- * a week flattens a burst into a tick. Not a URL param: the list does not
- * change with it, and a picker on a list that ignores it is what this replaced.
- */
-export const ERRORS_WINDOW = "24h"

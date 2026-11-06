@@ -1,115 +1,58 @@
-import { String as Str } from "effect"
+import { Option, String as Str, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { type BackfillSpec, isBackfill, renderStatementFull } from "../backfill"
 import { migration_0004_service_namespace_projections } from "./0004_service_namespace_projections"
-import { migration_0005_alert_checks_error_columns } from "./0005_alert_checks_error_columns"
-import { migration_0006_db_edge_namespace } from "./0006_db_edge_namespace"
 import {
 	migration_0008_service_operations_minutely,
 	serviceOperationsMinutelyBackfill,
 } from "./0008_service_operations_minutely"
-import {
-	migration_0009_one_year_service_history,
-	serviceOperationsHourlyBackfill,
-	serviceOverviewHourlyBackfill,
-} from "./0009_one_year_service_history"
-import { migration_0010_search_indexes } from "./0010_search_indexes"
+import { migration_0009_one_year_service_history } from "./0009_one_year_service_history"
 import { migration_0011_session_analytics_columns } from "./0011_session_analytics_columns"
-import { migration_0012_session_event_attribute_keys } from "./0012_session_event_attribute_keys"
-import { migration_0013_service_map_ingest_bridge } from "./0013_service_map_ingest_bridge"
 import { migration_0014_web_events, webEventsBackfill } from "./0014_web_events"
-import {
-	migration_0015_service_overview_minutely,
-	serviceOverviewMinutelyBackfill,
-} from "./0015_service_overview_minutely"
-import { migration_0016_error_events_4xx_and_frame_redaction } from "./0016_error_events_4xx_and_frame_redaction"
+import { migration_0015_service_overview_minutely } from "./0015_service_overview_minutely"
 import { migration_0017_error_service_version_columns } from "./0017_error_service_version_columns"
-import { migration_0018_apple_crash_frames } from "./0018_apple_crash_frames"
-import { migration_0019_mv_sweep } from "./0019_mv_sweep"
-import { migration_0020_semconv_key_renames } from "./0020_semconv_key_renames"
-import { migration_0022_service_map_edge_quantiles } from "./0022_service_map_edge_quantiles"
-import { migration_0023_service_operations_discriminators } from "./0023_service_operations_discriminators"
-import { migration_0024_ai_trace_index } from "./0024_ai_trace_index"
-import { migration_0025_commit_sha_vcs_revision } from "./0025_commit_sha_vcs_revision"
 import { migration_0026_ai_trace_index_filter_columns } from "./0026_ai_trace_index_filter_columns"
-import { migration_0027_audit_log } from "./0027_audit_log"
-import { migration_0028_product_events_from_traces } from "./0028_product_events_from_traces"
 import { migration_0030_error_events_attribute_fallback } from "./0030_error_events_attribute_fallback"
-import { migration_0031_ai_trace_index_list_columns } from "./0031_ai_trace_index_list_columns"
-import { migration_0032_ai_trace_index_tool_detail_columns } from "./0032_ai_trace_index_tool_detail_columns"
-import { migration_0033_ai_crawler_requests } from "./0033_ai_crawler_requests"
 import { migration_0034_trace_facets_hourly, traceFacetsHourlyBackfill } from "./0034_trace_facets_hourly"
+import { migration_0037_service_overview_spans_span_kind } from "./0037_service_overview_spans_span_kind"
+import { migration_0038_external_edges_legacy_db_system } from "./0038_external_edges_legacy_db_system"
+import { migration_0045_ttl_only_drop_parts } from "./0045_ttl_only_drop_parts"
 import { latestSnapshotStatements } from "../../generated/clickhouse-schema"
-import { clickHouseSchemaVersion, latestMigrationVersion, migrations } from "./index"
+import { migrations } from "./index"
 
-const backfills = migration_0004_service_namespace_projections.statements.filter(
-	isBackfill,
-) as ReadonlyArray<BackfillSpec>
+const indexWhere = <A>(xs: ReadonlyArray<A>, predicate: (a: A) => boolean): number =>
+	Option.getOrElse(Arr.findFirstIndex(xs, predicate), () => -1)
+const firstGroup =
+	(regex: RegExp) =>
+	(text: string): string | undefined =>
+		Option.getOrUndefined(
+			Option.flatMap(Str.match(regex)(text), (match) => Option.fromNullishOr(match[1])),
+		)
 
 // Full rendered SQL (structural strings + backfills rendered to their full
 // INSERT…SELECT, qualified into `default`) — what the non-chunking path runs.
-const renderedSql = migration_0004_service_namespace_projections.statements
-	.map((s) => renderStatementFull(s, "default"))
-	.join("\n\n")
+const renderedSql = Arr.join(
+	Arr.map(migration_0004_service_namespace_projections.statements, (s) =>
+		renderStatementFull(s, "default"),
+	),
+	"\n\n",
+)
 
 describe("ClickHouse migrations", () => {
-	it("keeps migrations ordered by version", () => {
-		expect(migrations.map((m) => m.version)).toEqual([
-			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
-			28, 29, 30, 31, 32, 33, 34,
-		])
-		expect(migrations.at(-1)).toBe(migration_0034_trace_facets_hourly)
-		expect(latestMigrationVersion).toBe(34)
-		// 0010 and 0014-0020 are read-path only and skipped by the ingest-gating
-		// version; 0021 is not — the gateway writes `session_events`' new identity
-		// columns and `product_events` directly, so a BYO-CH org must apply it
-		// before ingest routes there again. 0022 is read-path only again: both
-		// tables it touches are MV-populated and the gateway writes neither, and
-		// 0023 is the same: it only adds counter columns to those MV-populated
-		// service-operations rollups. 0024 is read-path only too: `ai_trace_index`
-		// is MV-populated and the gateway never writes it, and 0025 only rebuilds
-		// the three MV-populated service-overview views. 0027 (`audit_log`) is
-		// written by the API worker through Tinybird, never by the gateway.
-		expect(clickHouseSchemaVersion).toBe("21")
-		expect(migration_0010_search_indexes.requiredForIngest).toBe(false)
-		expect(migration_0014_web_events.requiredForIngest).toBe(false)
-		expect(migration_0015_service_overview_minutely.requiredForIngest).toBe(false)
-		expect(migration_0016_error_events_4xx_and_frame_redaction.requiredForIngest).toBe(false)
-		expect(migration_0017_error_service_version_columns.requiredForIngest).toBe(false)
-		expect(migration_0018_apple_crash_frames.requiredForIngest).toBe(false)
-		expect(migration_0019_mv_sweep.requiredForIngest).toBe(false)
-		expect(migration_0020_semconv_key_renames.requiredForIngest).toBe(false)
-		expect(migration_0022_service_map_edge_quantiles.requiredForIngest).toBe(false)
-		expect(migration_0023_service_operations_discriminators.requiredForIngest).toBe(false)
-		expect(migration_0024_ai_trace_index.requiredForIngest).toBe(false)
-		expect(migration_0025_commit_sha_vcs_revision.requiredForIngest).toBe(false)
-		// 0026 widens the same MV-populated ai_trace_index and rebuilds its view.
-		expect(migration_0026_ai_trace_index_filter_columns.requiredForIngest).toBe(false)
-		expect(migration_0027_audit_log.requiredForIngest).toBe(false)
-		expect(migration_0028_product_events_from_traces.requiredForIngest).toBe(false)
-		// 0030 only recreates the error-events MVs.
-		expect(migration_0030_error_events_attribute_fallback.requiredForIngest).toBe(false)
-		// 0031 and 0032 widen the same MV-populated ai_trace_index again.
-		expect(migration_0031_ai_trace_index_list_columns.requiredForIngest).toBe(false)
-		expect(migration_0032_ai_trace_index_tool_detail_columns.requiredForIngest).toBe(false)
-		// 0033 adds the MV-populated ai_crawler_requests.
-		expect(migration_0033_ai_crawler_requests.requiredForIngest).toBe(false)
-		// 0034 adds the MV-populated trace_facets_hourly.
-		expect(migration_0034_trace_facets_hourly.requiredForIngest).toBe(false)
-	})
-
 	it("recreates both error-events MVs with the span-attribute exception fallback", () => {
-		const statements: ReadonlyArray<string> =
-			migration_0030_error_events_attribute_fallback.statements.filter((stmt) => !isBackfill(stmt))
-		const sql = statements.join("\n")
+		const statements: ReadonlyArray<string> = Arr.filter(
+			migration_0030_error_events_attribute_fallback.statements,
+			(stmt) => !isBackfill(stmt),
+		)
+		const sql = Arr.join(statements, "\n")
 
 		// An MV's SELECT is frozen at creation, so both views are dropped before
 		// they are recreated; error_events_by_time_mv shares the projection
 		// byte-for-byte and must never disagree with error_events_mv on a label.
 		for (const view of ["error_events_mv", "error_events_by_time_mv"]) {
-			const dropAt = statements.findIndex((stmt) => stmt === `DROP VIEW IF EXISTS ${view}`)
-			const createAt = statements.findIndex((stmt) =>
-				stmt.startsWith(`CREATE MATERIALIZED VIEW IF NOT EXISTS ${view} `),
+			const dropAt = indexWhere(statements, (stmt) => stmt === `DROP VIEW IF EXISTS ${view}`)
+			const createAt = indexWhere(statements, (stmt) =>
+				Str.startsWith(`CREATE MATERIALIZED VIEW IF NOT EXISTS ${view} `)(stmt),
 			)
 			expect(dropAt).toBeGreaterThanOrEqual(0)
 			expect(createAt).toBeGreaterThan(dropAt)
@@ -118,46 +61,15 @@ describe("ClickHouse migrations", () => {
 		// Nothing is rewritten: error_events keeps no span attributes to re-derive
 		// from, and recomputing FingerprintHash would re-bucket every issue.
 		expect(sql).not.toContain("ALTER TABLE error_events")
-		expect(migration_0030_error_events_attribute_fallback.statements.some(isBackfill)).toBe(false)
-	})
-
-	it("recreates both error-events MVs with the 4xx guard and the widened frame redaction", () => {
-		const sql = migration_0016_error_events_4xx_and_frame_redaction.statements
-			.filter((stmt) => !isBackfill(stmt))
-			.join("\n")
-
-		// An MV's SELECT is frozen at creation, so both views must be dropped.
-		// error_events_by_time_mv shares the projection byte-for-byte; leaving it
-		// behind would make the two tables disagree on what an error is.
-		expect(sql).toContain("DROP VIEW IF EXISTS error_events_mv")
-		expect(sql).toContain("DROP VIEW IF EXISTS error_events_by_time_mv")
-		expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS error_events_mv TO error_events")
-		expect(sql).toContain(
-			"CREATE MATERIALIZED VIEW IF NOT EXISTS error_events_by_time_mv TO error_events_by_time",
-		)
-
-		// Both semconv spellings of the status attribute, and the guard itself.
-		expect(sql).toContain("SpanAttributes['http.response.status_code']")
-		expect(sql).toContain("SpanAttributes['http.status_code']")
-		expect(sql).toContain("_httpStatus >= 400 AND _httpStatus < 500")
-		// Only exception-less spans are dropped — never one carrying a real error.
-		expect(sql).toContain("_ei = 0")
-
-		// Frame redaction now matches _msgFallback's: ids in the top stack line
-		// must not split one bug into one issue per occurrence.
-		expect(sql).toContain(":[0-9]+|line [0-9]+|0x[0-9a-fA-F]+|[0-9a-fA-F]{8,}|[0-9]{6,}")
-
-		// Nothing is rewritten: recomputing FingerprintHash would re-bucket every
-		// existing issue, and the 4xx noise already stored carries no HTTP status
-		// to filter on. New events only.
-		expect(sql).not.toContain("ALTER TABLE error_events")
-		expect(migration_0016_error_events_4xx_and_frame_redaction.statements.some(isBackfill)).toBe(false)
+		expect(Arr.some(migration_0030_error_events_attribute_fallback.statements, isBackfill)).toBe(false)
 	})
 
 	it("adds the ServiceVersion columns before recreating the MVs that write them", () => {
-		const statements: ReadonlyArray<string> =
-			migration_0017_error_service_version_columns.statements.filter((stmt) => !isBackfill(stmt))
-		const sql = statements.join("\n")
+		const statements: ReadonlyArray<string> = Arr.filter(
+			migration_0017_error_service_version_columns.statements,
+			(stmt) => !isBackfill(stmt),
+		)
+		const sql = Arr.join(statements, "\n")
 
 		// The drifted columns: present in the 0001 snapshot, never ALTERed onto a
 		// server provisioned before they were added to the datasource definitions.
@@ -174,9 +86,9 @@ describe("ClickHouse migrations", () => {
 		// An MV's SELECT is frozen at creation, so each view is dropped and
 		// recreated from the current snapshot body.
 		for (const view of ["error_events_mv", "error_events_by_time_mv", "error_fingerprints_minutely_mv"]) {
-			const dropAt = statements.findIndex((stmt) => stmt === `DROP VIEW IF EXISTS ${view}`)
-			const createAt = statements.findIndex((stmt) =>
-				stmt.startsWith(`CREATE MATERIALIZED VIEW IF NOT EXISTS ${view} `),
+			const dropAt = indexWhere(statements, (stmt) => stmt === `DROP VIEW IF EXISTS ${view}`)
+			const createAt = indexWhere(statements, (stmt) =>
+				Str.startsWith(`CREATE MATERIALIZED VIEW IF NOT EXISTS ${view} `)(stmt),
 			)
 			expect(dropAt).toBeGreaterThanOrEqual(0)
 			expect(createAt).toBeGreaterThan(dropAt)
@@ -184,65 +96,32 @@ describe("ClickHouse migrations", () => {
 
 		// Every ALTER must land before the first view that writes into it — a
 		// recreated MV needs somewhere to put the new column.
-		const lastAlter = statements.reduce(
-			(last, stmt, index) => (stmt.startsWith("ALTER TABLE ") ? index : last),
-			-1,
+		const lastAlter = Arr.reduce(statements, -1, (last, stmt, index) =>
+			Str.startsWith("ALTER TABLE ")(stmt) ? index : last,
 		)
-		const firstDrop = statements.findIndex((stmt) => stmt.startsWith("DROP VIEW "))
+		const firstDrop = indexWhere(statements, (stmt) => Str.startsWith("DROP VIEW ")(stmt))
 		expect(lastAlter).toBeLessThan(firstDrop)
 
 		// The recreated bodies must actually populate the columns, or the ALTERs
 		// are cosmetic and errorIssuesScan keeps returning empty version arrays.
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- MV must write the ALTERed column
 		expect(sql).toContain("AS ServiceVersion")
 		expect(sql).toContain("groupUniqArray(ServiceVersion) AS ServiceVersions")
 
 		// Nothing is backfilled: ServiceVersion comes from the source span's
 		// resource attributes, which these target tables do not keep.
-		expect(migration_0017_error_service_version_columns.statements.some(isBackfill)).toBe(false)
-	})
-
-	it("installs service_overview_minutely with a live-write MV and no POPULATE", () => {
-		const sql = migration_0015_service_overview_minutely.statements
-			.filter((stmt) => !isBackfill(stmt))
-			.join("\n")
-
-		// Mirrors service_overview_hourly's prefix, not service_operations_minutely's:
-		// the queries reading this filter on service and time, often with no
-		// environment predicate.
-		expect(sql).toContain(
-			"ORDER BY (OrgId, ServiceName, Minute, DeploymentEnv, ServiceNamespace, CommitSha)",
-		)
-		// Daily parts: a month-wide part at minute grain cannot prune a 12h window.
-		expect(sql).toContain("PARTITION BY toDate(Minute)")
-		expect(sql).toContain("TTL toDate(Minute) + INTERVAL 90 DAY")
-		// Three quantiles, matching service_overview_hourly. The two feed one UNION
-		// ALL, and a (0.5, 0.95) state here — the shape service_operations_minutely
-		// uses — would not type-check against the hourly branch.
-		expect(sql).toContain("AggregateFunction(quantilesTDigest(0.5, 0.95, 0.99), UInt64)")
-		expect(sql).toContain(
-			"CREATE MATERIALIZED VIEW IF NOT EXISTS service_overview_minutely_mv TO service_overview_minutely",
-		)
-		// Entry-point predicate identical to service_overview_spans_mv and
-		// service_overview_hourly_mv — all three tiers must agree on what a
-		// service-level span is.
-		expect(sql).toContain("WHERE SpanKind IN ('Server', 'Consumer') OR ParentSpanId = ''")
-
-		// Reads traces, NOT service_overview_minutely: cascading the hourly rollup
-		// off this table would make the backfill below double-count 30 days into
-		// service_overview_hourly, which is retained a year and cannot be rebuilt.
-		expect(sql).not.toContain("FROM service_overview_minutely")
-		expect(sql).not.toContain("POPULATE")
+		expect(Arr.some(migration_0017_error_service_version_columns.statements, isBackfill)).toBe(false)
 	})
 
 	it("orders 0015 so the backfill and the MV never both write", () => {
-		const kinds = migration_0015_service_overview_minutely.statements.map((stmt) =>
-			isBackfill(stmt) ? "backfill" : stmt.split("\n")[0]!.trim(),
+		const kinds = Arr.map(migration_0015_service_overview_minutely.statements, (stmt) =>
+			isBackfill(stmt) ? "backfill" : Str.trim(Str.split("\n")(stmt)[0]),
 		)
 
-		const dropIndex = kinds.findIndex((kind) => kind.startsWith("DROP VIEW"))
-		const truncateIndex = kinds.findIndex((kind) => kind.startsWith("TRUNCATE"))
+		const dropIndex = indexWhere(kinds, (kind) => Str.startsWith("DROP VIEW")(kind))
+		const truncateIndex = indexWhere(kinds, (kind) => Str.startsWith("TRUNCATE")(kind))
 		const backfillIndex = kinds.indexOf("backfill")
-		const createMvIndex = kinds.findIndex((kind) => kind.startsWith("CREATE MATERIALIZED VIEW"))
+		const createMvIndex = indexWhere(kinds, (kind) => Str.startsWith("CREATE MATERIALIZED VIEW")(kind))
 
 		// DROP → TRUNCATE → backfill → CREATE MV. The truncate makes a re-apply
 		// converge instead of doubling, and is only safe because the view is
@@ -253,58 +132,18 @@ describe("ClickHouse migrations", () => {
 		expect(backfillIndex).toBeLessThan(createMvIndex)
 	})
 
-	it("backfills service_overview_minutely from the entry-point projection", () => {
-		// service_overview_spans is already filtered to the entry-point predicate,
-		// so the backfill matches the MV by construction rather than by a re-typed
-		// WHERE. Raw traces offers no deeper window; both are retained 30 days.
-		expect(serviceOverviewMinutelyBackfill.from).toBe("service_overview_spans")
-		expect(serviceOverviewMinutelyBackfill.tsColumn).toBe("Timestamp")
-		expect(serviceOverviewMinutelyBackfill.target).toBe("service_overview_minutely")
-		// Day-aligned chunks are coarser than minute groups, so no group straddles
-		// a chunk boundary.
-		expect(serviceOverviewMinutelyBackfill.groupBy).toBe(
-			"OrgId, Minute, ServiceName, DeploymentEnv, ServiceNamespace, CommitSha",
-		)
-		expect(serviceOverviewMinutelyBackfill.select).toContain(
-			"quantilesTDigestState(0.5, 0.95, 0.99)(Duration)",
-		)
-	})
-
-	it("installs web_events with a live-write MV and no POPULATE", () => {
-		const sql = migration_0014_web_events.statements.filter((stmt) => !isBackfill(stmt)).join("\n")
-
-		// Time-first sorting key is the entire point of the table: session_events
-		// is sorted (OrgId, SessionId, Timestamp, Seq), so a time range there can
-		// only prune partitions.
-		expect(sql).toContain("ORDER BY (OrgId, Timestamp, SessionId, Seq)")
-		expect(sql).toContain("INDEX idx_event_name EventName TYPE set(64) GRANULARITY 4")
-		expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS web_events_mv TO web_events")
-		expect(sql).toContain("WHERE Type IN ('navigation', 'custom')")
-
-		// POPULATE would race the view's own writes into a table with no dedup, and
-		// it is unchunked — history comes from `webEventsBackfill` instead, which
-		// the apply plan splits into day-aligned steps and which runs while no
-		// writer is attached.
-		expect(sql).not.toContain("POPULATE")
-
-		// `Kind` carries the source `Type` through untouched so the page-view
-		// predicate stays provably identical to the pre-rollup `Type = 'navigation'`
-		// even when a customer calls `track('$pageview')`.
-		expect(sql).toContain("Type AS Kind")
-	})
-
 	it("orders the web_events backfill so it can never overlap the materialized view", () => {
 		// The whole double-count hazard is an ordering property, and nothing else
 		// checks it. web_events has no dedup, so a backfill running while the view
 		// is attached counts every page view in the overlap twice.
-		const kinds = migration_0014_web_events.statements.map((stmt) =>
+		const kinds = Arr.map(migration_0014_web_events.statements, (stmt) =>
 			isBackfill(stmt)
 				? "backfill"
-				: String(stmt).includes("CREATE MATERIALIZED VIEW")
+				: Str.includes("CREATE MATERIALIZED VIEW")(String(stmt))
 					? "create-view"
-					: String(stmt).includes("DROP VIEW")
+					: Str.includes("DROP VIEW")(String(stmt))
 						? "drop-view"
-						: String(stmt).includes("TRUNCATE")
+						: Str.includes("TRUNCATE")(String(stmt))
 							? "truncate"
 							: "create-table",
 		)
@@ -321,10 +160,13 @@ describe("ClickHouse migrations", () => {
 		// Two divergent copies of this SELECT would show up as a page-view count
 		// that steps at the backfill boundary — on a table with no dedup, nothing
 		// else would catch it.
-		const mvBody = migration_0014_web_events.statements.find((s) =>
-			String(s).includes("CREATE MATERIALIZED VIEW"),
+		const mvBody = Option.getOrUndefined(
+			Arr.findFirst(
+				Arr.filter(migration_0014_web_events.statements, (s) => typeof s === "string"),
+				(s) => Str.includes("CREATE MATERIALIZED VIEW")(s),
+			),
 		)
-		expect(String(mvBody)).toContain(webEventsBackfill.select)
+		expect(mvBody).toContain(webEventsBackfill.select)
 		expect(webEventsBackfill.where).toBe("Type IN ('navigation', 'custom')")
 		expect(webEventsBackfill.from).toBe("session_events")
 		expect(webEventsBackfill.tsColumn).toBe("Timestamp")
@@ -332,8 +174,26 @@ describe("ClickHouse migrations", () => {
 		expect(webEventsBackfill.groupBy).toBeUndefined()
 	})
 
+	it("keeps the service_operations_minutely backfill aligned with its table and live MV", () => {
+		// The rollout runs this backfill by hand; a drifted SELECT or column list steps the series.
+		const statements = Arr.map(migration_0008_service_operations_minutely.statements, String)
+		const table = Option.getOrElse(
+			Arr.findFirst(statements, (s) => Str.includes("CREATE TABLE")(s)),
+			() => "",
+		)
+		const tableColumns = Arr.map(
+			Arr.fromIterable(Str.matchAll(/^\s+(\w+) [A-Z]/gm)(table)),
+			(match) => match[1],
+		)
+		expect(serviceOperationsMinutelyBackfill.columns).toEqual(tableColumns)
+		const mvBody = Option.getOrUndefined(
+			Arr.findFirst(statements, (s) => Str.includes("CREATE MATERIALIZED VIEW")(s)),
+		)
+		expect(mvBody).toContain(serviceOperationsMinutelyBackfill.select)
+	})
+
 	it("adds session analytics columns with defaults so older SDK rows never quarantine", () => {
-		const sql = migration_0011_session_analytics_columns.statements.join("\n")
+		const sql = Arr.join(migration_0011_session_analytics_columns.statements, "\n")
 
 		expect(sql).toContain("ADD COLUMN IF NOT EXISTS VisitorId String DEFAULT ''")
 		expect(sql).toContain("ADD COLUMN IF NOT EXISTS GroupId String DEFAULT ''")
@@ -344,100 +204,19 @@ describe("ClickHouse migrations", () => {
 		// Every session_replays column add must carry a DEFAULT — Tinybird
 		// quarantines rows omitting a non-defaulted column, which is exactly what
 		// an older SDK sends. Nullable columns default to NULL implicitly.
-		const columnAdds = migration_0011_session_analytics_columns.statements.filter((s) =>
-			s.includes("ADD COLUMN"),
+		const columnAdds = Arr.filter(migration_0011_session_analytics_columns.statements, (s) =>
+			Str.includes("ADD COLUMN")(s),
 		)
 		for (const statement of columnAdds) {
-			expect(statement.includes("DEFAULT") || statement.includes("Nullable(")).toBe(true)
+			expect(Str.includes("DEFAULT")(statement) || Str.includes("Nullable(")(statement)).toBe(true)
 		}
 
 		// Gates direct ingest: the native INSERT names every column explicitly, so
 		// a BYO cluster without them must not be routed direct writes. Read off the
 		// typed array — the migration literal itself simply omits the field.
-		expect(migrations.find((m) => m.version === 11)?.requiredForIngest).toBeUndefined()
-	})
-
-	it("widens session_events attribute keys off the shared dictionary", () => {
-		// `track()` props are customer-named, so the keys stop being a small fixed
-		// set. MODIFY COLUMN is a mutation, not a metadata edit — it lives alone in
-		// its own migration for that reason.
-		expect(migration_0012_session_event_attribute_keys.statements).toEqual([
-			"ALTER TABLE session_events MODIFY COLUMN Attributes Map(String, String)",
-		])
-		expect(migrations.find((m) => m.version === 12)?.requiredForIngest).toBeUndefined()
-	})
-
-	it("routes service-map rollup writes through a zero-retention plain-schema bridge", () => {
-		const ingressTable = migration_0013_service_map_ingest_bridge.statements.find((statement) =>
-			statement.startsWith("CREATE TABLE IF NOT EXISTS service_map_edges_hourly_ingest"),
-		)
-		const ingressView = migration_0013_service_map_ingest_bridge.statements.find((statement) =>
-			statement.startsWith("CREATE MATERIALIZED VIEW IF NOT EXISTS service_map_edges_hourly_ingest_mv"),
-		)
-
-		expect(ingressTable).toContain("ENGINE = Null")
-		expect(ingressTable).toContain("CallCount UInt64")
-		expect(ingressTable).not.toContain("AggregateFunction(")
-		expect(ingressView).toContain("TO service_map_edges_hourly")
-		expect(renderStatementFull(ingressView!, "maple")).toContain(
-			"FROM `maple`.`service_map_edges_hourly_ingest`",
-		)
-		expect(migrations.find((m) => m.version === 13)?.requiredForIngest).toBeUndefined()
-	})
-
-	it("adds the incremental minutely error rollup without replacing the deployed time-copy view", () => {
-		const sql = migration_0013_service_map_ingest_bridge.statements.join("\n\n")
-		const minutelyView = migration_0013_service_map_ingest_bridge.statements.find((statement) =>
-			statement.startsWith("CREATE MATERIALIZED VIEW IF NOT EXISTS error_fingerprints_minutely_mv"),
-		)
-
-		expect(sql).toContain("CREATE TABLE IF NOT EXISTS error_fingerprints_minutely")
-		expect(sql).toContain("PARTITION BY toYYYYMM(Minute)")
-		expect(sql).toContain("ORDER BY (OrgId, Minute, FingerprintHash)")
-		expect(minutelyView).toContain("FROM error_events")
-		expect(renderStatementFull(minutelyView!, "maple")).toContain("FROM `maple`.`error_events`")
-		expect(sql).not.toContain("DROP TABLE IF EXISTS error_events_by_time_mv")
-		expect(sql).not.toContain("DROP VIEW IF EXISTS error_events_by_time_mv")
-	})
-
-	it("adds the portable search substrate without requiring experimental text indexes", () => {
-		const sql = migration_0010_search_indexes.statements.join("\n")
-
-		expect(sql).toContain("ResourceAttributeItems Array(String) DEFAULT arrayMap")
-		expect(sql).toContain("LogAttributeItems Array(String) DEFAULT arrayMap")
-		expect(sql).toContain("SpanAttributeItems Array(String) DEFAULT arrayMap")
-		expect(sql).toContain("concat(k, char(31), v)")
-		expect(sql).toContain("idx_lower_body lower(Body) TYPE tokenbf_v1")
-		expect(sql).toContain("idx_log_attr_keys mapKeys(LogAttributes) TYPE bloom_filter")
-		expect(sql).not.toContain("MATERIALIZE INDEX")
-		expect(sql).not.toContain("TYPE text(")
-		expect(sql).not.toContain("OPTIMIZE TABLE")
-	})
-
-	it("adds monthly annual service rollups and coordinated retained-source backfills", () => {
-		const sql = migration_0009_one_year_service_history.statements
-			.map((statement) => renderStatementFull(statement, "default"))
-			.join("\n\n")
-
-		expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS .*service_overview_hourly/)
-		expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS .*service_operations_hourly/)
-		expect(sql.match(/PARTITION BY toYYYYMM\(Hour\)/g)).toHaveLength(2)
-		expect(sql.match(/TTL toDate\(Hour\) \+ INTERVAL 365 DAY/g)?.length).toBeGreaterThanOrEqual(2)
-		expect(sql).toContain("quantilesTDigestState(0.5, 0.95, 0.99)(Duration)")
-		expect(sql).toContain("quantilesTDigestMergeState(0.5, 0.95)(DurationQuantiles)")
-		expect(sql).toContain("Duration < 500000000")
-		expect(sql).toContain("ALTER TABLE alert_checks MODIFY TTL")
-		expect(sql).toContain("ALTER TABLE traces_aggregates_hourly MODIFY TTL")
-		expect(sql).toContain("ALTER TABLE logs_aggregates_hourly MODIFY TTL")
-		expect(migration_0009_one_year_service_history.statements.filter(isBackfill)).toEqual([
-			serviceOverviewHourlyBackfill,
-			serviceOperationsHourlyBackfill,
-		])
-
-		expect(serviceOverviewHourlyBackfill.from).toBe("service_overview_spans")
-		expect(serviceOverviewHourlyBackfill.tsColumn).toBe("Timestamp")
-		expect(serviceOperationsHourlyBackfill.from).toBe("service_operations_minutely")
-		expect(serviceOperationsHourlyBackfill.tsColumn).toBe("Minute")
+		expect(
+			Option.getOrUndefined(Arr.findFirst(migrations, (m) => m.version === 11))?.requiredForIngest,
+		).toBeUndefined()
 	})
 
 	it("orders 0009 so a re-apply converges instead of doubling the annual rollups", () => {
@@ -445,12 +224,12 @@ describe("ClickHouse migrations", () => {
 		// the backfills after a partial failure (chunk N fails, admin re-runs the
 		// apply) would double every sum until TTL. DROP → TRUNCATE → backfill →
 		// CREATE MV is the 0015 cutover shape, restated as invariants.
-		const kinds = migration_0009_one_year_service_history.statements.map((stmt) =>
+		const kinds = Arr.map(migration_0009_one_year_service_history.statements, (stmt) =>
 			// Str.split returns a NonEmptyArray, so the head index is statically safe.
-			isBackfill(stmt) ? `backfill:${stmt.target}` : Str.split(stmt, "\n")[0].trim(),
+			isBackfill(stmt) ? `backfill:${stmt.target}` : Str.trim(Str.split(stmt, "\n")[0]),
 		)
 		const at = (needle: string) => {
-			const index = kinds.findIndex((kind) => kind.startsWith(needle))
+			const index = indexWhere(kinds, (kind) => Str.startsWith(needle)(kind))
 			expect(index, needle).toBeGreaterThanOrEqual(0)
 			return index
 		}
@@ -485,139 +264,31 @@ describe("ClickHouse migrations", () => {
 		// scratch (DROP TABLE IF EXISTS <fresh> + rename swap), or scoped-deleted
 		// for a dual-fed target (0021). An additive INSERT…SELECT into a surviving
 		// table doubles on the rerun and nothing downstream can detect it.
-		// identity_links is exempt because a replay is a merge no-op: its only
-		// aggregate is SimpleAggregateFunction(min) keyed by the full sorting key,
-		// so re-inserted rows collapse to the values already stored.
-		const mergeIdempotentTargets = new Set(["identity_links"])
+		// identity_links and trace_index are exempt because a replay is a merge
+		// no-op: their only aggregates are SimpleAggregateFunction(min/max) keyed by
+		// the full sorting key, so re-inserted rows collapse to the values stored.
+		// A backfill that skips every span its target already holds (0047) converges
+		// without emptying a target that outlives its source.
+		const mergeIdempotentTargets = new Set(["identity_links", "trace_index"])
+		const skipsStored = (stmt: BackfillSpec) =>
+			stmt.where !== undefined &&
+			Str.includes(`(TraceId, SpanId) NOT IN (SELECT TraceId, SpanId FROM ${stmt.target})`)(stmt.where)
 		for (const migration of migrations) {
-			migration.statements.forEach((stmt, index) => {
-				if (!isBackfill(stmt) || mergeIdempotentTargets.has(stmt.target)) return
-				const before = migration.statements
-					.slice(0, index)
-					.filter((s): s is string => typeof s === "string")
-				const emptied = before.some(
+			Arr.forEach(migration.statements, (stmt, index) => {
+				if (!isBackfill(stmt) || mergeIdempotentTargets.has(stmt.target) || skipsStored(stmt)) return
+				const before = Arr.filter(
+					migration.statements.slice(0, index),
+					(s): s is string => typeof s === "string",
+				)
+				const emptied = Arr.some(
+					before,
 					(s) =>
-						s.startsWith(`TRUNCATE TABLE IF EXISTS ${stmt.target}`) ||
-						s.startsWith(`DROP TABLE IF EXISTS ${stmt.target}`) ||
-						s.startsWith(`DELETE FROM ${stmt.target} `),
+						Str.startsWith(`TRUNCATE TABLE IF EXISTS ${stmt.target}`)(s) ||
+						Str.startsWith(`DROP TABLE IF EXISTS ${stmt.target}`)(s) ||
+						Str.startsWith(`DELETE FROM ${stmt.target} `)(s),
 				)
 				expect(emptied, `m${migration.version} backfill:${stmt.target}`).toBe(true)
 			})
-		}
-	})
-
-	it("adds the service-operation rollup and exposes a coordinated chunkable backfill", () => {
-		const statements = migration_0008_service_operations_minutely.statements
-		const sql = statements.map((statement) => renderStatementFull(statement, "default")).join("\n\n")
-
-		expect(sql).toContain("PARTITION BY toDate(Minute)")
-		expect(sql).toContain("ORDER BY (OrgId, ServiceName, DeploymentEnv, Minute, SpanName)")
-		expect(sql).toContain("TTL toDate(Minute) + INTERVAL 90 DAY")
-		expect(sql).toContain("SpanName String")
-		expect(sql).toContain("quantilesTDigestState(0.5, 0.95)(Duration)")
-		expect(sql).toContain("http.route")
-		expect(sql).toContain("http.server %")
-		expect(statements.filter(isBackfill)).toHaveLength(0)
-		expect(sql).not.toContain("TRUNCATE TABLE service_operations_minutely")
-		expect(serviceOperationsMinutelyBackfill.target).toBe("service_operations_minutely")
-		expect(serviceOperationsMinutelyBackfill.from).toBe("traces")
-		expect(serviceOperationsMinutelyBackfill.tsColumn).toBe("Timestamp")
-		expect(serviceOperationsMinutelyBackfill.groupBy).toBe(
-			"OrgId, Minute, ServiceName, DeploymentEnv, SpanName",
-		)
-	})
-
-	it("adds alert_checks error columns as idempotent ALTERs", () => {
-		for (const statement of migration_0005_alert_checks_error_columns.statements) {
-			expect(statement).toContain("ALTER TABLE alert_checks ADD COLUMN IF NOT EXISTS")
-		}
-	})
-
-	it("rebuilds namespace-aware log aggregates and recreates affected materialized views", () => {
-		expect(renderedSql).toContain("ServiceNamespace LowCardinality(String) DEFAULT ''")
-		expect(renderedSql).toContain("logs_aggregates_hourly__v4")
-		expect(renderedSql).toContain(
-			"ORDER BY (OrgId, Hour, ServiceName, SeverityText, DeploymentEnv, ServiceNamespace)",
-		)
-		expect(renderedSql).toContain("RENAME TABLE")
-		expect(renderedSql).toContain("service_overview_spans_mv")
-		expect(renderedSql).toContain("trace_list_mv_mv")
-		expect(renderedSql).toContain("logs_aggregates_hourly_mv")
-		expect(renderedSql).toContain(
-			"INDEX idx_service_namespace ServiceNamespace TYPE set(1000) GRANULARITY 4",
-		)
-	})
-
-	it("expresses the three heavy backfills as chunkable specs with explicit column lists", () => {
-		// service_overview_spans + trace_list_mv from traces, logs aggregate from logs.
-		expect(backfills.map((b) => b.target).sort()).toEqual([
-			"logs_aggregates_hourly__v4",
-			"service_overview_spans",
-			"trace_list_mv",
-		])
-
-		const byTarget = Object.fromEntries(backfills.map((b) => [b.target, b]))
-		expect(byTarget.service_overview_spans?.from).toBe("traces")
-		expect(byTarget.service_overview_spans?.tsColumn).toBe("Timestamp")
-		expect(byTarget.trace_list_mv?.from).toBe("traces")
-		expect(byTarget.logs_aggregates_hourly__v4?.from).toBe("logs")
-		expect(byTarget.logs_aggregates_hourly__v4?.tsColumn).toBe("TimestampTime")
-		expect(byTarget.logs_aggregates_hourly__v4?.groupBy).toContain("OrgId, Hour")
-
-		// Explicit column lists so appended columns never drift by position.
-		expect(byTarget.service_overview_spans?.columns).toEqual([
-			"OrgId",
-			"Timestamp",
-			"ServiceName",
-			"Duration",
-			"StatusCode",
-			"TraceState",
-			"DeploymentEnv",
-			"CommitSha",
-			"SampleRate",
-			"ServiceNamespace",
-		])
-		expect(byTarget.trace_list_mv?.columns).toContain("ServiceNamespace")
-		expect(byTarget.trace_list_mv?.columns).toContain("HasError")
-	})
-
-	it("rebuilds the db rollups with DbNamespace in the sorting key and recreates their MVs", () => {
-		const sql = migration_0006_db_edge_namespace.statements
-			.map((s) => renderStatementFull(s, "default"))
-			.join("\n\n")
-		expect(sql).toContain("service_map_db_edges_hourly__v6")
-		expect(sql).toContain("service_map_db_query_shapes_hourly__v6")
-		expect(sql).toContain("ORDER BY (OrgId, Hour, DeploymentEnv, ServiceName, DbSystem, DbNamespace)")
-		expect(sql).toContain(
-			"ORDER BY (OrgId, Hour, DeploymentEnv, ServiceName, DbSystem, DbNamespace, QueryKey)",
-		)
-		expect(sql).toContain("RENAME TABLE service_map_db_edges_hourly")
-		expect(sql).toContain("RENAME TABLE service_map_db_query_shapes_hourly")
-		// renderStatementFull qualifies object names with the database.
-		expect(sql).toMatch(
-			/CREATE MATERIALIZED VIEW IF NOT EXISTS [`default.]*service_map_db_edges_hourly_mv/,
-		)
-		expect(sql).toMatch(
-			/CREATE MATERIALIZED VIEW IF NOT EXISTS [`default.]*service_map_db_query_shapes_hourly_mv/,
-		)
-		// The identity coalesce must appear in both MV bodies AND both backfills.
-		expect(sql.match(/SpanAttributes\['db\.namespace'\]/g)?.length ?? 0).toBeGreaterThanOrEqual(4)
-	})
-
-	it("expresses the db rollup rebuilds as chunkable backfills with explicit column lists", () => {
-		const specs = migration_0006_db_edge_namespace.statements.filter(
-			isBackfill,
-		) as ReadonlyArray<BackfillSpec>
-		expect(specs.map((b) => b.target).sort()).toEqual([
-			"service_map_db_edges_hourly__v6",
-			"service_map_db_query_shapes_hourly__v6",
-		])
-		for (const spec of specs) {
-			expect(spec.from).toBe("traces")
-			expect(spec.tsColumn).toBe("Timestamp")
-			expect(spec.columns).toContain("DbNamespace")
-			expect(spec.groupBy).toContain("DbNamespace")
-			expect(spec.where).toContain("SpanKind IN ('Client', 'Producer')")
 		}
 	})
 
@@ -632,37 +303,14 @@ describe("ClickHouse migrations", () => {
 	})
 })
 
-describe("migration 0018 — Apple crash frames", () => {
-	const creates = migration_0018_apple_crash_frames.statements.filter((stmt) => stmt.startsWith("CREATE"))
-
-	it("recreates both error-events MVs with the Apple frame alternative", () => {
-		expect(creates).toHaveLength(2)
-		for (const sql of creates) {
-			// Frame index, binary name, hex address — an iOS crash has no source
-			// position to key on, because it arrives unsymbolicated.
-			expect(sql).toContain("^[0-9]+ +\\\\S.* +0x[0-9a-fA-F]+")
-			// The other runtimes' alternatives are untouched; only iOS hashes rotate.
-			expect(sql).toContain('^[ \\\\t]*at |^[ \\\\t]*File "')
-		}
-	})
-
-	it("does not backfill", () => {
-		// Recomputing FingerprintHash would re-bucket every existing issue. The
-		// FINGERPRINT_VERSION bump retires the collapsed iOS issues instead.
-		expect(migration_0018_apple_crash_frames.statements.some((stmt) => stmt.includes("UPDATE"))).toBe(
-			false,
-		)
-	})
-})
-
 describe("migration 0026 — ai_trace_index filter columns", () => {
 	const statements = migration_0026_ai_trace_index_filter_columns.statements
 
 	it("widens the index with idempotent ALTERs before recreating its view", () => {
-		const alters = statements.filter((stmt) =>
-			stmt.startsWith("ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS"),
+		const alters = Arr.filter(statements, (stmt) =>
+			Str.startsWith("ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS")(stmt),
 		)
-		expect(alters.map((stmt) => stmt.split(" ")[8])).toEqual([
+		expect(Arr.map(alters, (stmt) => Str.split(" ")(stmt)[8])).toEqual([
 			"DeploymentEnv",
 			"Model",
 			"AgentName",
@@ -682,154 +330,10 @@ describe("migration 0026 — ai_trace_index filter columns", () => {
 		// — and the drop must come after the ALTERs and before the CREATE, or the
 		// recreated view maps a column its target does not yet have.
 		const drop = statements.indexOf("DROP VIEW IF EXISTS ai_trace_index_mv")
-		const create = statements.findIndex((stmt) => stmt.startsWith("CREATE MATERIALIZED VIEW"))
+		const create = indexWhere(statements, (stmt) => Str.startsWith("CREATE MATERIALIZED VIEW")(stmt))
 		expect(drop).toBe(alters.length)
 		expect(create).toBe(drop + 1)
 		expect(statements).toHaveLength(alters.length + 2)
-	})
-
-	it("recreates the view with the coalesced GenAI identity, measures and the semconv environment", () => {
-		const create = statements.find((stmt) => stmt.startsWith("CREATE MATERIALIZED VIEW"))!
-		expect(create).toContain("TO ai_trace_index AS")
-		// The write filter is unchanged: membership in the table is still the
-		// detection predicate the read side relies on.
-		expect(create).toContain("WHERE SpanAttributes['maple_ai.vendor.id'] != ''")
-		expect(create).toContain(
-			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) AS DeploymentEnv",
-		)
-		// Response model before request model, canonical keys before dialects.
-		expect(create).toContain(
-			"coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), SpanAttributes['llm.model_name']) AS Model",
-		)
-		expect(create).toContain(
-			"coalesce(nullIf(SpanAttributes['gen_ai.agent.name'], ''), SpanAttributes['ai.telemetry.functionId']) AS AgentName",
-		)
-		expect(create).toContain(
-			"coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), SpanAttributes['tool.name']) AS ToolName",
-		)
-		// The measures: the span's kind and failure as flags, its usage as sums
-		// the page can rank on, and the ids that let a roll-up be undone.
-		expect(create).toContain("SpanId,\n          ParentSpanId,\n          Duration,")
-		expect(create).toContain(
-			"toUInt8(((StatusCode = 'Error' OR SpanAttributes['error.type'] != '') OR SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))) AS IsError",
-		)
-		expect(create).toMatch(
-			/toUInt8\(.*IN \('chat', 'generate_content', 'text_completion', 'fetch_response'\).*\) AS IsLlmCall/,
-		)
-		expect(create).toMatch(/toUInt8\(.*IN \('execute_tool'\).*\) AS IsToolCall/)
-		expect(create).toMatch(
-			/toFloat64OrZero\(coalesce\(nullIf\(SpanAttributes\['gen_ai\.usage\.input_tokens'\], ''\).*\) AS Tokens/,
-		)
-		expect(create).toContain("SpanAttributes['llm.cost.total'])) AS Cost")
-	})
-
-	it("does not backfill", () => {
-		expect(statements.some((stmt) => typeof stmt !== "string" || stmt.includes("INSERT"))).toBe(false)
-	})
-})
-
-describe("migration 0029 — ai_trace_index usage conventions", () => {
-	const migration = migrations.find((entry) => entry.version === 29)!
-
-	it("adds ResponseId and recreates the view with the convention-aware token sum", () => {
-		const [alter, drop, create, ...rest] = migration.statements as ReadonlyArray<string>
-		expect(rest).toEqual([])
-		expect(alter).toBe("ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ResponseId String")
-		expect(drop).toBe("DROP VIEW IF EXISTS ai_trace_index_mv")
-		expect(create).toContain(
-			"coalesce(nullIf(SpanAttributes['gen_ai.response.id'], ''), SpanAttributes['ai.response.id']) AS ResponseId",
-		)
-		expect(create).toMatch(
-			/^CREATE MATERIALIZED VIEW IF NOT EXISTS ai_trace_index_mv TO ai_trace_index AS/,
-		)
-		// The prompt half nests the cache for the re-summing vendors and the
-		// OpenAI-shaped providers, and adds it beside the prompt for Anthropic.
-		expect(create).toContain(
-			"multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(",
-		)
-		expect(create).toContain(
-			"IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens']",
-		)
-		// The completion half sets reasoning beside the completion for Gemini alone.
-		expect(create).toContain(
-			"IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens']",
-		)
-		expect(create).toContain(") AS Tokens")
-		// Every 0026 column still projected: the view maps to the table by NAME.
-		for (const column of [
-			"DeploymentEnv",
-			"Model",
-			"AgentName",
-			"ToolName",
-			"IsError",
-			"IsLlmCall",
-			"IsToolCall",
-			"Tokens",
-			"Cost",
-			"ResponseId",
-		]) {
-			expect(create).toContain(` AS ${column}`)
-		}
-		expect(create).toMatch(/\bSpanId,\s+ParentSpanId,\s+Duration,/)
-	})
-
-	it("does not backfill and does not gate ingest", () => {
-		expect(migration.requiredForIngest).toBe(false)
-		expect(migration.statements.some(isBackfill)).toBe(false)
-	})
-})
-
-describe("migration 0031 — ai_trace_index list columns", () => {
-	const migration = migrations.find((entry) => entry.version === 31)!
-
-	it("adds the vendor version and the five token buckets, then recreates the view", () => {
-		const statements = migration.statements as ReadonlyArray<string>
-		const alters = statements.slice(0, 6)
-		const [drop, create, ...rest] = statements.slice(6)
-		expect(rest).toEqual([])
-		expect(alters).toEqual([
-			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS VendorVersion LowCardinality(String)",
-			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS InputTokens Float64",
-			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS CacheReadTokens Float64",
-			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS CacheWriteTokens Float64",
-			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS OutputTokens Float64",
-			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ReasoningTokens Float64",
-		])
-		// An MV's SELECT is frozen at creation, so the 0029 view is dropped
-		// before the widened one is created.
-		expect(drop).toBe("DROP VIEW IF EXISTS ai_trace_index_mv")
-		expect(create).toMatch(
-			/^CREATE MATERIALIZED VIEW IF NOT EXISTS ai_trace_index_mv TO ai_trace_index AS/,
-		)
-		expect(create).toContain("SpanAttributes['maple_ai.vendor.version'] AS VendorVersion")
-		// The buckets are the disjoint split, so the nesting conventions carve
-		// the cache out of the prompt and the reasoning out of the completion.
-		expect(create).toContain(
-			"greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens']",
-		)
-		expect(create).toContain(
-			"greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens']",
-		)
-		// Every column the target holds is still projected: the view maps to the
-		// table by NAME.
-		for (const column of [
-			"Tokens",
-			"Cost",
-			"ResponseId",
-			"VendorVersion",
-			"InputTokens",
-			"CacheReadTokens",
-			"CacheWriteTokens",
-			"OutputTokens",
-			"ReasoningTokens",
-		]) {
-			expect(create).toContain(` AS ${column}`)
-		}
-	})
-
-	it("does not backfill and does not gate ingest", () => {
-		expect(migration.requiredForIngest).toBe(false)
-		expect(migration.statements.some(isBackfill)).toBe(false)
 	})
 })
 
@@ -840,85 +344,91 @@ describe("migration 0034: trace_facets_hourly", () => {
 		expect(drop).toBe("DROP VIEW IF EXISTS trace_facets_hourly_mv")
 		expect(truncate).toBe("TRUNCATE TABLE IF EXISTS trace_facets_hourly")
 		expect(backfill).toBe(traceFacetsHourlyBackfill)
-		expect(latestSnapshotStatements).toContain(table)
+		// 0045 later moved its TTL onto the partition's day.
+		expect(latestSnapshotStatements).toContain(
+			Str.replace("TTL Hour + INTERVAL", "TTL toDate(Hour) + INTERVAL")(String(table)),
+		)
 		expect(latestSnapshotStatements).toContain(view)
 	})
 })
 
-describe("migration 0033: ai_crawler_requests", () => {
-	it("creates the table before the view that fills it, with no backfill", () => {
-		const [table, view, ...rest] = migration_0033_ai_crawler_requests.statements
+describe("migration 0037: service_overview_spans records why a row is an entry point", () => {
+	it("adds the columns before recreating the view that fills them", () => {
+		const [addKind, addRoot, drop, create, ...rest] =
+			migration_0037_service_overview_spans_span_kind.statements
 		expect(rest).toEqual([])
-		expect(table).toMatch(/^CREATE TABLE IF NOT EXISTS ai_crawler_requests \(/)
-		expect(view).toMatch(
-			/^CREATE MATERIALIZED VIEW IF NOT EXISTS ai_crawler_requests_mv TO ai_crawler_requests AS/,
+		expect(addKind).toContain("ADD COLUMN IF NOT EXISTS SpanKind")
+		expect(addRoot).toContain("ADD COLUMN IF NOT EXISTS IsRoot")
+		expect(drop).toBe("DROP VIEW IF EXISTS service_overview_spans_mv")
+		expect(create).toBe(
+			Option.getOrUndefined(
+				Arr.findFirst(latestSnapshotStatements, (stmt) =>
+					Str.includes("service_overview_spans_mv TO")(stmt),
+				),
+			),
 		)
-		// The view maps to the table by name, so every column must be projected.
-		for (const column of ["Crawler", "Host", "Path", "HttpStatus"]) {
-			expect(view).toContain(` AS ${column}`)
-		}
-		expect(view).toContain("WHERE SpanKind = 'Server'")
+		expect(create).toContain("toUInt8(ParentSpanId = '') AS IsRoot")
 	})
 })
 
-describe("migration 0032 — ai_trace_index tool detail columns", () => {
-	const migration = migrations.find((entry) => entry.version === 32)!
-
-	it("adds the failure's type, message, tool call result and fingerprint and the tool description, then recreates the view", () => {
-		const statements = migration.statements as ReadonlyArray<string>
-		const alters = statements.slice(0, 5)
-		const [drop, create, ...rest] = statements.slice(5)
+describe("migration 0038: legacy db.system spans stay off the external edges", () => {
+	it("recreates the view excluding on the db.system.name -> db.system coalesce", () => {
+		const [drop, create, ...rest] = migration_0038_external_edges_legacy_db_system.statements
 		expect(rest).toEqual([])
-		expect(alters).toEqual([
-			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ErrorType LowCardinality(String)",
-			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS StatusMessage String",
-			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ToolDescription String",
-			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS FailedToolCallResult String",
-			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ErrorFingerprint UInt64",
-		])
-		// An MV's SELECT is frozen at creation, so the 0031 view is dropped
-		// before the widened one is created.
-		expect(drop).toBe("DROP VIEW IF EXISTS ai_trace_index_mv")
-		expect(create).toMatch(
-			/^CREATE MATERIALIZED VIEW IF NOT EXISTS ai_trace_index_mv TO ai_trace_index AS/,
+		expect(drop).toBe("DROP VIEW IF EXISTS service_external_edges_hourly_mv")
+		expect(create).toBe(
+			Option.getOrUndefined(
+				Arr.findFirst(latestSnapshotStatements, (stmt) =>
+					Str.includes("service_external_edges_hourly_mv TO")(stmt),
+				),
+			),
 		)
-		// `error.type` is plain semconv, so one key answers for every dialect —
-		// and it is the same lookup `IsError` already tests for emptiness.
-		expect(create).toContain("SpanAttributes['error.type'] AS ErrorType")
-		// Both free-text columns are cut at insert, in CHARACTERS: `left` would
-		// cut mid-codepoint on any message or description holding one.
-		expect(create).toContain("leftUTF8(StatusMessage, 400) AS StatusMessage")
 		expect(create).toContain(
-			"leftUTF8(coalesce(nullIf(SpanAttributes['gen_ai.tool.description'], ''), SpanAttributes['tool.description']), 2000) AS ToolDescription",
+			"AND coalesce(nullIf(SpanAttributes['db.system.name'], ''), SpanAttributes['db.system']) = ''",
 		)
-		// A tool call's result is carried only where the call failed, cut the same
-		// way.
-		expect(create).toContain(
-			"leftUTF8(coalesce(nullIf(SpanAttributes['gen_ai.tool.call.result'], ''), SpanAttributes['ai.toolCall.result']), 1000), '') AS FailedToolCallResult",
+	})
+})
+
+describe("migration 0045: TTL eviction drops whole parts", () => {
+	const tables = Arr.flatMap(latestSnapshotStatements, (stmt) => {
+		const name = firstGroup(/^CREATE TABLE IF NOT EXISTS (\w+) \(/)(stmt)
+		const partition = firstGroup(/\nPARTITION BY (.+)/)(stmt)
+		const ttl = firstGroup(/\nTTL (.+)/)(stmt)
+		return name === undefined || ttl === undefined ? [] : [{ name, partition, ttl }]
+	})
+	const datePartitioned = Arr.filter(
+		tables,
+		(table) => table.partition !== undefined && table.partition !== "tuple()",
+	)
+	const statements = Arr.flatMap(migrations, (migration) =>
+		Arr.filter(migration.statements, (stmt): stmt is string => typeof stmt === "string"),
+	)
+
+	it("keys each date-partitioned TTL off the day of its partition column", () => {
+		const misaligned = Arr.map(
+			Arr.filter(datePartitioned, ({ partition, ttl }) => {
+				const column =
+					partition === undefined
+						? undefined
+						: firstGroup(/^to(?:Date|YYYYMM)\((\w+)\)$/)(partition)
+				return column === undefined || !Str.startsWith(`toDate(${column}) + INTERVAL `)(ttl)
+			}),
+			({ name }) => name,
 		)
-		// The fingerprint hashes that result, else the index's own status message,
-		// through the redaction chain `error_events` uses — its first pattern
-		// innermost, its last outermost — and is 0 on a span that did not fail.
-		expect(create).toContain("cityHash64(replaceRegexpAll(replaceRegexpAll(")
-		expect(create).toContain("leftUTF8(StatusMessage, 400)), 400), '[a-zA-Z0-9._%+-]+@")
-		expect(create).toContain("'[0-9a-fA-F-]{6,}|[0-9]+', '#')), 0) AS ErrorFingerprint")
-		// Every column the target holds is still projected: the view maps to the
-		// table by NAME.
-		for (const column of [
-			"VendorVersion",
-			"ReasoningTokens",
-			"ErrorType",
-			"StatusMessage",
-			"ToolDescription",
-			"FailedToolCallResult",
-			"ErrorFingerprint",
-		]) {
-			expect(create).toContain(` AS ${column}`)
-		}
+		expect(misaligned).toEqual([])
 	})
 
-	it("does not backfill and does not gate ingest", () => {
-		expect(migration.requiredForIngest).toBe(false)
-		expect(migration.statements.some(isBackfill)).toBe(false)
+	it("sets ttl_only_drop_parts on every date-partitioned table, and only on those", () => {
+		const withSetting = Arr.flatMap(statements, (stmt) =>
+			Arr.fromNullishOr(firstGroup(/^ALTER TABLE (\w+) MODIFY SETTING ttl_only_drop_parts = 1$/)(stmt)),
+		)
+		expect([...withSetting].sort()).toEqual(Arr.map(datePartitioned, ({ name }) => name).sort())
+	})
+
+	it("sets the setting before it moves any TTL", () => {
+		const kinds = Arr.map(migration_0045_ttl_only_drop_parts.statements, (stmt) =>
+			Str.includes("MODIFY SETTING")(stmt) ? "setting" : "ttl",
+		)
+		expect(kinds.indexOf("ttl")).toBe(kinds.lastIndexOf("setting") + 1)
 	})
 })

@@ -1,8 +1,10 @@
 import { TemplateMinerConfig } from "./config"
-import { Drain } from "./drain"
+import { Drain, type FullSearchStrategy } from "./drain"
 import { LogCluster } from "./log-cluster"
 import { LruCache } from "./lru-cache"
 import { LogMasker, MaskingInstruction } from "./masking"
+import { Array as Arr, String as Str, Option } from "effect"
+import { codeUnitAt } from "@maple/strings"
 
 export interface ExtractedParameter {
 	value: string
@@ -30,7 +32,8 @@ export class TemplateMiner {
 		const cfg = config ?? new TemplateMinerConfig()
 		const paramStr = cfg.maskPrefix + "*" + cfg.maskSuffix
 
-		const maskingInstructions = cfg.maskingInstructions.map(
+		const maskingInstructions = Arr.map(
+			cfg.maskingInstructions,
 			(mi) => new MaskingInstruction(mi.pattern, mi.maskWith),
 		)
 
@@ -62,7 +65,7 @@ export class TemplateMiner {
 		}
 	}
 
-	match(logMessage: string, fullSearchStrategy: string = "never"): LogCluster | null {
+	match(logMessage: string, fullSearchStrategy: FullSearchStrategy = "never"): LogCluster | null {
 		const maskedContent = this.masker.mask(logMessage)
 		return this.drain.match(maskedContent, fullSearchStrategy)
 	}
@@ -74,7 +77,7 @@ export class TemplateMiner {
 	): ExtractedParameter[] | null {
 		let message = logMessage
 		for (const delimiter of this.extraDelimiters) {
-			message = message.split(delimiter).join(" ")
+			message = Arr.join(Str.split(delimiter)(message), " ")
 		}
 
 		const { regex: templateRegex, paramMap } = this.getTemplateParameterExtractionRegex(
@@ -82,14 +85,15 @@ export class TemplateMiner {
 			exactMatching,
 		)
 
-		const parameterMatch = message.match(new RegExp(templateRegex))
-		if (!parameterMatch || !parameterMatch.groups) {
+		const parameterMatch = Str.match(new RegExp(templateRegex))(message)
+		if (Option.isNone(parameterMatch) || !parameterMatch.value.groups) {
 			return null
 		}
+		const groups = parameterMatch.value.groups
 
 		const extracted: ExtractedParameter[] = []
 		for (const [groupName, maskName] of paramMap) {
-			const value = parameterMatch.groups[groupName]
+			const value = groups[groupName]
 			if (value !== undefined) {
 				extracted.push({ value, maskName })
 			}
@@ -98,8 +102,8 @@ export class TemplateMiner {
 		// Sort by position in input string (left-to-right) to match Python Drain3 behavior,
 		// which depends on CPython's set iteration order for mask name processing.
 		extracted.sort((a, b) => {
-			const posA = message.indexOf(a.value)
-			const posB = message.indexOf(b.value)
+			const posA = Option.getOrElse(Str.indexOf(a.value)(message), () => -1)
+			const posB = Option.getOrElse(Str.indexOf(b.value)(message), () => -1)
 			return posA - posB
 		})
 
@@ -142,18 +146,18 @@ export class TemplateMiner {
 				paramNameCounter++
 				paramMap.set(paramGroupName, maskName)
 
-				const joined = allowedPatterns.join("|")
+				const joined = Arr.join(allowedPatterns, "|")
 				const captureRegex = `(?<${paramGroupName}>${joined})`
 
-				if (templateRegex.includes(searchStr)) {
-					templateRegex = templateRegex.replace(searchStr, captureRegex)
+				if (Str.includes(searchStr)(templateRegex)) {
+					templateRegex = Str.replace(searchStr, captureRegex)(templateRegex)
 				} else {
 					break
 				}
 			}
 		}
 
-		templateRegex = templateRegex.replace(/\\ /g, "\\s+")
+		templateRegex = Str.replace(/\\ /g, "\\s+")(templateRegex)
 		templateRegex = `^${templateRegex}$`
 
 		const result = { regex: templateRegex, paramMap }
@@ -163,13 +167,13 @@ export class TemplateMiner {
 }
 
 function escapeRegex(s: string): string {
-	return s.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&")
+	return Str.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&")(s)
 }
 
 function simpleHash(s: string): number {
 	let hash = 5381
 	for (let i = 0; i < s.length; i++) {
-		hash = ((hash * 33) ^ s.charCodeAt(i)) >>> 0
+		hash = ((hash * 33) ^ codeUnitAt(s, i)) >>> 0
 	}
 	return hash
 }

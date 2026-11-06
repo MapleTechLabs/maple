@@ -11,8 +11,8 @@
  * would do exactly the same for a connector for any other platform.
  */
 import type { ChatConnectorId, ConnectorRequest, SocketStep } from "@maple/chat-platform"
-import { Duration, Effect } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { Duration, Effect, Schema, Record as Rec } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import { InboundHandler } from "../inbound.ts"
 
 /** The live connection, as much of it as the loop needs. */
@@ -20,9 +20,15 @@ export interface SocketSink {
 	readonly send: (frame: string) => void
 }
 
+/** The connector's state could not be persisted; the step stops before publishing anything. */
+export class SocketStateNotWritten extends Schema.TaggedError<SocketStateNotWritten>()(
+	"@maple/chat-bot/SocketStateNotWritten",
+	{ connector: Schema.String, message: Schema.String, cause: Schema.Defect() },
+) {}
+
 /** Where the connector's opaque state lives between activations. */
 export interface SocketStore {
-	readonly write: (state: string) => Effect.Effect<void>
+	readonly write: (state: string) => Effect.Effect<void, SocketStateNotWritten>
 }
 
 export interface SocketPorts {
@@ -54,7 +60,7 @@ const issueRequest = Effect.fnUntraced(
 		const client = yield* HttpClient.HttpClient
 		const contentType = request.headers.get("content-type") ?? "application/json"
 		const built = HttpClientRequest.make(request.method)(request.url, {
-			headers: Object.fromEntries(request.headers),
+			headers: Rec.fromEntries(request.headers),
 		}).pipe(HttpClientRequest.bodyText(request.body, contentType))
 		const response = yield* client.execute(built)
 		if (response.status >= 400) {
@@ -84,8 +90,7 @@ const issueRequest = Effect.fnUntraced(
 			)
 		return effect.pipe(
 			Effect.catchTag("HttpClientError", (error) => dropped(error.reason._tag)),
-			Effect.timeout(REQUEST_TIMEOUT),
-			Effect.catchTag("TimeoutError", () => dropped("TimeoutError")),
+			Effect.timeoutOrElse({ duration: REQUEST_TIMEOUT, orElse: () => dropped("TimeoutError") }),
 		)
 	},
 )

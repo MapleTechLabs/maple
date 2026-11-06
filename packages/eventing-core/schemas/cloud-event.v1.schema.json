@@ -63,6 +63,7 @@
 				},
 				"projectionrevision": {
 					"type": "integer",
+					"maximum": 9007199254740991,
 					"exclusiveMinimum": 0
 				},
 				"projectorid": {
@@ -73,6 +74,7 @@
 				},
 				"projectorversion": {
 					"type": "integer",
+					"maximum": 9007199254740991,
 					"exclusiveMinimum": 0
 				},
 				"sourceoccurrenceid": {

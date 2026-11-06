@@ -12,13 +12,14 @@ import {
 } from "@maple/domain/chat-session"
 import { evaluatePermission } from "@maple/domain/permission"
 import { ExternalUserId, OrgId, UserId } from "@maple/domain/primitives"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
+import { noRepositoryWarmup } from "../../test/chat/tool-executor"
 import { mapleToolCatalog } from "../mcp/tools/registry"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { AGENTS, agentForSession, buildSystemPrompt } from "./agents"
+import { AGENTS, agentForSession } from "./agents"
 import { profileForTurn } from "./profiles"
 import { CONNECTOR_SYSTEM_PROMPT } from "./prompts"
 import { buildChatToolkit } from "./tools"
@@ -37,10 +38,8 @@ const CONNECTOR_ORIGIN: ChatTurnOrigin = {
 
 describe("AGENTS", () => {
 	it("names an agent for every wire mode", () => {
-		// `chatModeFromSessionId` is on the wire and the client derives from it, so a mode without a
-		// matching agent is a runtime `undefined` in the middle of a turn.
-		// `AGENTS` is keyed by `ChatMode`, so this is now a belt to the compiler's braces: it also
-		// pins that the record's key IS the agent's name, which `agentForSession` relies on.
+		// `AGENTS` is keyed by `ChatMode`, so the compiler covers the keys; this pins that the record's
+		// key IS the agent's name, which `agentForSession` relies on.
 		for (const mode of ChatMode.literals) {
 			assert.equal(AGENTS[mode].name, mode)
 		}
@@ -50,7 +49,7 @@ describe("AGENTS", () => {
 describe("agentForSession", () => {
 	it("maps a session id to its mode's agent", () => {
 		assert.equal(agentForSession(makeChatSessionId("org_1", "tab")).name, "default")
-		assert.equal(agentForSession(makeChatSessionId("org_1", "alert-123")).name, "alert")
+		assert.equal(agentForSession(makeChatSessionId("org_1", "pr-123")).name, "pr-review")
 		assert.equal(agentForSession(makeChatSessionId("org_1", "inv-abc")).name, "investigate")
 		// A connector thread is an ordinary chat conversation; its ORIGIN is what differs.
 		assert.equal(
@@ -77,6 +76,7 @@ describe("profileForTurn", () => {
 		authMode: "self_hosted",
 	}
 	const executor: McpToolExecutorApi = {
+		...noRepositoryWarmup,
 		execute: (_tenant, name) => Effect.succeed({ content: [{ type: "text" as const, text: name }] }),
 	}
 	/** Exactly what `runChatTurn` builds, through the same policy. */
@@ -98,14 +98,16 @@ describe("profileForTurn", () => {
 		}
 	})
 
-	it("offers a connector no internal-audience tool, so a channel cannot reach the sandbox", () => {
-		// `sandbox_exec` is code execution against the org's checkout, answering into a thread
-		// anyone can read, and nothing proposes it for approval first.
+	it("offers a connector the repository sandbox but no internal-audience tool", () => {
+		// The reviewer's pull request tools act on the org's behalf; a channel never reaches them.
 		const { tools } = toolsFor(connectorSession, CONNECTOR_ORIGIN)
-		const internal = mapleToolCatalog.filter((definition) => definition.audience === "internal")
+		const internal = Arr.filter(mapleToolCatalog, (definition) => definition.audience === "internal")
 		assert.isNotEmpty(internal, "no internal tools in the catalog — this test would pass vacuously")
 		for (const definition of internal) {
 			assert.notProperty(tools, definition.name, `${definition.name} was offered to the connector`)
+		}
+		for (const name of ["sandbox_grep", "sandbox_list_files", "sandbox_read_file", "sandbox_exec"]) {
+			assert.property(tools, name, `${name} was withheld from the connector`)
 		}
 	})
 
@@ -137,14 +139,5 @@ describe("profileForTurn", () => {
 		assert.equal(profile.surface, "chat")
 		assert.property(tools, "sandbox_exec")
 		for (const name of MUTATING_TOOL_NAMES) assert.notProperty(tools, name)
-	})
-})
-
-describe("buildSystemPrompt", () => {
-	it("is the agent's own persona, with no delegation guidance", () => {
-		for (const agent of Object.values(AGENTS)) {
-			assert.equal(buildSystemPrompt(agent), agent.prompt)
-			assert.notInclude(buildSystemPrompt(agent), "## Delegating")
-		}
 	})
 })

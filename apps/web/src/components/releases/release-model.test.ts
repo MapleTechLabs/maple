@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { CommitSha, ServiceName } from "@maple/domain/http"
-import type { Release, ReleaseTimelineBucket } from "@/api/warehouse/releases"
+import type { Release, ReleaseTimelineBucket } from "@maple/web-data/warehouse/releases"
 import {
 	attributeIssues,
 	countIssues,
@@ -18,9 +18,9 @@ import {
 
 const sha = Schema.decodeUnknownSync(CommitSha)
 const svc = Schema.decodeUnknownSync(ServiceName)
-const SHA_A = sha("a".repeat(40))
-const SHA_B = sha("b".repeat(40))
-const SHA_C = sha("c".repeat(40))
+const SHA_A = sha(Str.repeat(40)("a"))
+const SHA_B = sha(Str.repeat(40)("b"))
+const SHA_C = sha(Str.repeat(40)("c"))
 const API = svc("api")
 const WEB = svc("web")
 
@@ -187,7 +187,7 @@ describe("deriveReleaseImpacts", () => {
 			release({ commitSha: SHA_A, serviceName: API, environment: "staging", errorCount: 500 }),
 		]
 		const impacts = deriveReleaseImpacts(rows, [])
-		expect(impacts.every((impact) => impact.baseline === undefined)).toBe(true)
+		expect(Arr.every(impacts, (impact) => impact.baseline === undefined)).toBe(true)
 	})
 })
 
@@ -216,8 +216,8 @@ describe("groupReleases", () => {
 			release({ commitSha: SHA_B, serviceName: API, firstSeen: "2026-09-04T09:00:00.000Z" }),
 		]
 		const groups = groupReleases(deriveReleaseImpacts(rows, []))
-		expect(groups.map((g) => g.commitSha)).toEqual([SHA_A, SHA_B])
-		expect(groups[0]?.services.map((s) => s.serviceName)).toEqual(["web", "api"])
+		expect(Arr.map(groups, (g) => g.commitSha)).toEqual([SHA_A, SHA_B])
+		expect(Arr.map(Arr.getUnsafe(groups, 0)?.services, (s) => s.serviceName)).toEqual(["web", "api"])
 		expect(groups[0]?.firstSeen).toBe("2026-09-05T09:00:00.000Z")
 		expect(groups[0]?.health).toBe("regressed")
 		expect(groups[0]?.spanCount).toBe(2000)
@@ -237,7 +237,7 @@ describe("releaseFacetCounts", () => {
 			{ name: "api", count: 2 },
 			{ name: "web", count: 1 },
 		])
-		expect(counts.environments.map((e) => e.name)).toEqual(["production", "unknown"])
+		expect(Arr.map(counts.environments, (e) => e.name)).toEqual(["production", "unknown"])
 	})
 })
 
@@ -284,7 +284,7 @@ describe("releaseHeadline", () => {
 			release({ commitSha: SHA_A, serviceName: WEB }),
 		]
 		const [newest] = groupReleases(deriveReleaseImpacts(rows, []))
-		expect(newest && releaseHeadline(newest).serviceName).toBe("web")
+		expect(newest !== undefined && releaseHeadline(newest).serviceName).toBe("web")
 	})
 })
 
@@ -345,7 +345,10 @@ describe("liveVersions", () => {
 	it("reports a service stuck on an older co-deployed commit as behind", () => {
 		const live = liveVersions(timeline, groups)
 		expect(live[0]).toMatchObject({ serviceName: "db-sync", commitSha: SHA_A, behind: 2 })
-		expect(live.find((v) => v.serviceName === "api")).toMatchObject({ commitSha: SHA_C, behind: 0 })
+		expect(Option.getOrUndefined(Arr.findFirst(live, (v) => v.serviceName === "api"))).toMatchObject({
+			commitSha: SHA_C,
+			behind: 0,
+		})
 	})
 
 	it("ignores a release its siblings are still rolling out", () => {
@@ -356,8 +359,11 @@ describe("liveVersions", () => {
 			bucket(last, DB, SHA_A, 100),
 		]
 		const live = liveVersions(rolling, groups)
-		expect(live.find((v) => v.serviceName === "db-sync")?.behind).toBe(1)
-		expect(live.find((v) => v.serviceName === "api")).toMatchObject({ commitSha: SHA_B, behind: 0 })
+		expect(Option.getOrUndefined(Arr.findFirst(live, (v) => v.serviceName === "db-sync"))?.behind).toBe(1)
+		expect(Option.getOrUndefined(Arr.findFirst(live, (v) => v.serviceName === "api"))).toMatchObject({
+			commitSha: SHA_B,
+			behind: 0,
+		})
 	})
 
 	it("never calls an independently deployed service behind", () => {
@@ -379,7 +385,7 @@ describe("previousSha", () => {
 			release({ commitSha: SHA_A, serviceName: svc("db"), firstSeen: "2026-09-05T09:00:00.000Z" }),
 		]
 		const [newest, , oldest] = groupReleases(deriveReleaseImpacts(rows, []))
-		expect(newest && previousSha(newest)).toBe(SHA_B)
-		expect(oldest && previousSha(oldest)).toBeUndefined()
+		expect(newest !== undefined && previousSha(newest)).toBe(SHA_B)
+		expect(oldest !== undefined && previousSha(oldest)).toBeUndefined()
 	})
 })

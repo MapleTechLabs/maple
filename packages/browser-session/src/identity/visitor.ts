@@ -7,6 +7,7 @@ import {
 	setRawCookie,
 } from "../platform/cookie"
 import { parseJsonObject } from "../platform/json"
+import { randomUuid } from "../platform/uuid"
 import { clearVisitClaim } from "./visit"
 
 /**
@@ -69,11 +70,43 @@ interface VisitorRecord {
 	mintedAt: number
 }
 
-let enabled = true
-/** Memoized so the hot path never re-reads storage. */
-let cached: VisitorRecord | undefined
-let persisted = false
-let mintedThisLoad = false
+/** Only ids this SDK could have minted; anything else in the cookie is someone else's. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+interface VisitorState {
+	enabled: boolean
+	/** Set by `persistVisitorId: false`; sticky, so another SDK copy cannot re-enable it. */
+	optedOut: boolean
+	/** Memoized so the hot path never re-reads storage. */
+	cached: VisitorRecord | undefined
+	persisted: boolean
+	mintedThisLoad: boolean
+}
+
+/**
+ * On `globalThis`, like consent: with two bundled SDK copies, per-copy state let
+ * one copy's opt-out purge the id while the other minted it straight back.
+ */
+const VISITOR_KEY = "__MAPLE_BROWSER_VISITOR__"
+
+function visitorState(): VisitorState {
+	const owner: Record<string, unknown> = globalThis
+	const existing = owner[VISITOR_KEY]
+	if (isVisitorState(existing)) return existing
+	const fresh: VisitorState = {
+		cached: undefined,
+		enabled: true,
+		mintedThisLoad: false,
+		optedOut: false,
+		persisted: false,
+	}
+	owner[VISITOR_KEY] = fresh
+	return fresh
+}
+
+function isVisitorState(value: unknown): value is VisitorState {
+	return typeof value === "object" && value !== null && "optedOut" in value
+}
 
 /**
  * Kept under this name because `configurePrivacy` and the SDK tests call it;
@@ -81,26 +114,27 @@ let mintedThisLoad = false
  */
 export const configureVisitorCookie = configureCookieScope
 
-function parseRecord(raw: string | undefined): VisitorRecord | undefined {
+export function parseVisitorRecord(raw: string | null | undefined): VisitorRecord | undefined {
 	if (!raw) return undefined
 	const value = parseJsonObject(raw)
 	if (!value) return undefined
 	const { id, mintedAt } = value
-	if (typeof id !== "string" || typeof mintedAt !== "number") return undefined
+	if (typeof id !== "string" || !UUID.test(id)) return undefined
+	if (typeof mintedAt !== "number" || !Number.isFinite(mintedAt)) return undefined
 	if (Date.now() - mintedAt > MAX_AGE_MS) return undefined
 	return { id, mintedAt }
 }
 
 function readFromStorage(): VisitorRecord | undefined {
 	try {
-		return parseRecord(window.localStorage.getItem(STORAGE_KEY) ?? undefined)
+		return parseVisitorRecord(window.localStorage.getItem(STORAGE_KEY))
 	} catch {
 		return undefined
 	}
 }
 
 function readFromCookie(): VisitorRecord | undefined {
-	return parseRecord(readRawCookie(COOKIE_NAME))
+	return parseVisitorRecord(readRawCookie(COOKIE_NAME))
 }
 
 function writeToStorage(record: VisitorRecord): boolean {
@@ -130,7 +164,7 @@ function write(record: VisitorRecord): void {
 	// The in-memory id still keeps every row from this page load consistent,
 	// which beats sending '' — but with neither store it is not a real visitor
 	// id, and `isVisitorIdPersisted()` says so.
-	persisted = inStorage || inCookie
+	visitorState().persisted = inStorage || inCookie
 }
 
 /**
@@ -138,8 +172,9 @@ function write(record: VisitorRecord): void {
  * tracking is off or outside a browser.
  */
 export function getVisitorId(): string | undefined {
-	if (!enabled || typeof window === "undefined") return undefined
-	if (cached) return cached.id
+	const state = visitorState()
+	if (!state.enabled || state.optedOut || typeof window === "undefined") return undefined
+	if (state.cached) return state.cached.id
 
 	const fromCookie = readFromCookie()
 	const fromStorage = readFromStorage()
@@ -148,8 +183,8 @@ export function getVisitorId(): string | undefined {
 	// than the app's older origin-local id.
 	const existing = fromCookie ?? fromStorage
 	if (existing) {
-		cached = existing
-		persisted = true
+		state.cached = existing
+		state.persisted = true
 		// Converge the two stores on the winner. Best-effort — one of them already
 		// holds the id, so a failure here doesn't make it any less persistent.
 		if (!fromCookie) writeToCookie(existing)
@@ -158,11 +193,11 @@ export function getVisitorId(): string | undefined {
 	}
 
 	const record: VisitorRecord = {
-		id: crypto.randomUUID(),
+		id: randomUuid(),
 		mintedAt: Date.now(),
 	}
-	cached = record
-	mintedThisLoad = true
+	state.cached = record
+	state.mintedThisLoad = true
 	write(record)
 	return record.id
 }
@@ -180,8 +215,9 @@ export function getVisitorId(): string | undefined {
  */
 export function claimNewVisitor(): boolean {
 	getVisitorId()
-	if (!mintedThisLoad) return false
-	mintedThisLoad = false
+	const state = visitorState()
+	if (!state.mintedThisLoad) return false
+	state.mintedThisLoad = false
 	return true
 }
 
@@ -192,7 +228,7 @@ export function claimNewVisitor(): boolean {
  * layer can flag it rather than quietly inflate.
  */
 export function isVisitorIdPersisted(): boolean {
-	return persisted
+	return visitorState().persisted
 }
 
 /**
@@ -200,11 +236,26 @@ export function isVisitorIdPersisted(): boolean {
  * id already stored — an opt-out that leaves the identifier behind is not one.
  */
 export function setVisitorTracking(nextEnabled: boolean): void {
-	enabled = nextEnabled
-	if (nextEnabled) return
-	cached = undefined
-	persisted = false
-	mintedThisLoad = false
+	visitorState().enabled = nextEnabled
+	if (!nextEnabled) purgeVisitorId()
+}
+
+/**
+ * `persistVisitorId: false` from any SDK on the page. Unlike `setVisitorTracking`,
+ * which follows consent both ways, this never turns back on for the page load.
+ */
+export function optOutOfVisitorId(): void {
+	visitorState().optedOut = true
+	purgeVisitorId()
+}
+
+/** Drop the id and the visit claim from memory and every store. */
+export function purgeVisitorId(): void {
+	const state = visitorState()
+	state.cached = undefined
+	state.persisted = false
+	state.mintedThisLoad = false
+	if (typeof window === "undefined") return
 	try {
 		window.localStorage.removeItem(STORAGE_KEY)
 	} catch {
@@ -217,11 +268,13 @@ export function setVisitorTracking(nextEnabled: boolean): void {
 	clearVisitClaim()
 }
 
-/** Test seam — drops the memoized id without touching storage. */
+/** Test seam — drops the memoized id and any opt-out without touching storage. */
 export function resetVisitorCacheForTests(): void {
-	cached = undefined
-	persisted = false
-	mintedThisLoad = false
-	enabled = true
+	const state = visitorState()
+	state.cached = undefined
+	state.persisted = false
+	state.mintedThisLoad = false
+	state.enabled = true
+	state.optedOut = false
 	resetCookieScopeForTests()
 }

@@ -2,7 +2,7 @@ import { describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { strict as assert } from "node:assert"
 import { OrgId, UserId } from "@maple/domain"
-import { baselineWarehouseCapabilities, QueryEngineExecuteRequest, type QuerySpec } from "@maple/query-engine"
+import { baselineWarehouseCapabilities, QueryEngineExecuteRequest } from "@maple/query-engine"
 import type { CompiledQuery } from "@maple/query-engine/ch"
 import { QueryEngineService } from "./QueryEngineService"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -68,6 +68,7 @@ const makeObservedEdgeCache = () => {
 		},
 		rawGet: inner.rawGet,
 		rawPut: inner.rawPut,
+		rawDelete: inner.rawDelete,
 	}
 	return {
 		layer: Layer.succeed(EdgeCacheService, observed),
@@ -165,7 +166,7 @@ const timeseriesRequest = (overrides: Partial<{ startTime: string; endTime: stri
 			source: "traces",
 			metric: "count",
 			bucketSeconds: 300,
-		} as QuerySpec,
+		},
 		...overrides,
 	})
 
@@ -207,7 +208,7 @@ describe("QueryEngineService.execute — cache path selection", () => {
 				source: "traces",
 				metric: "count",
 				groupBy: "service",
-			} as QuerySpec,
+			},
 		})
 
 		return Effect.gen(function* () {

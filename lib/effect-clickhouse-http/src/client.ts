@@ -1,5 +1,19 @@
-import { Context, Effect, Encoding, Layer, Option, Redacted, type Scope, Stream, type Types } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import {
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	type Scope,
+	Stream,
+	type Types,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import { Base64 } from "effect/encoding"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import {
 	ClickHouseConfigError,
 	ClickHouseRedirectError,
@@ -9,12 +23,14 @@ import {
 } from "./errors"
 import { decodeRows, type Limits } from "./protocol"
 
+const secureRandom = SecureRandom.make(SecureRandom.randomBytesUnsafe)
+
 export interface ClientConfig {
 	/** HTTP(S) endpoint; proxy paths and ordinary URL parameters are preserved. */
 	readonly url: string
 	readonly database?: string
 	readonly username?: string
-	readonly password?: Redacted.Redacted<string>
+	readonly password?: Redacted.Redacted
 	readonly settings?: Readonly<Record<string, string | number>>
 }
 export interface QueryOptions {
@@ -44,14 +60,16 @@ interface OpenQuery {
 
 const reserved = new Set(["query", "query_id", "database", "user", "password", "default_format"])
 const validSettings = (settings: ClientConfig["settings"]) =>
-	Object.entries(settings ?? {}).every(
+	Arr.every(
+		Rec.toEntries(settings ?? {}),
 		([key, value]) =>
 			/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key) &&
 			!reserved.has(key) &&
 			(typeof value === "string" || Number.isFinite(value)),
 	)
 const validLimits = (limits: Limits | undefined) =>
-	Object.values(limits ?? {}).every((n) => n === undefined || (Number.isSafeInteger(n) && n >= 0))
+	// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.values would need a cast
+	Arr.every(Object.values(limits ?? {}), (n) => n === undefined || (Number.isSafeInteger(n) && n >= 0))
 
 const transportError = (error: { readonly reason: object }, queryId: string) =>
 	new ClickHouseTransportError({
@@ -100,9 +118,9 @@ export const make = (
 			endpoint.username ||
 			endpoint.password ||
 			endpoint.hash ||
-			[...endpoint.searchParams.keys()].some((key) => reserved.has(key)) ||
+			Arr.some([...endpoint.searchParams.keys()], (key) => reserved.has(key)) ||
 			!validSettings(config.settings) ||
-			(config.username ?? "default").includes(":")
+			Str.includes(":")(config.username ?? "default")
 		) {
 			return yield* new ClickHouseConfigError({
 				message: "Invalid ClickHouse endpoint, credentials, or settings",
@@ -111,7 +129,7 @@ export const make = (
 		const http = yield* HttpClient.HttpClient
 		// UTF-8 Basic auth: `HttpClientRequest.basicAuth` goes through `btoa`, which
 		// rejects anything outside Latin-1 and mis-encodes what it accepts.
-		const authorization = `Basic ${Encoding.encodeBase64(
+		const authorization = `Basic ${Base64.encode(
 			`${config.username ?? "default"}:${config.password ? Redacted.value(config.password) : ""}`,
 		)}`
 
@@ -121,7 +139,7 @@ export const make = (
 		): Effect.Effect<OpenQuery, ClickHouseError, Scope.Scope> =>
 			Effect.gen(function* () {
 				if (
-					!options.sql.trim() ||
+					!Str.trim(options.sql) ||
 					!validSettings(options.settings) ||
 					!validLimits(options.limits) ||
 					!queryId ||
@@ -134,7 +152,7 @@ export const make = (
 				const url = new URL(endpoint)
 				url.searchParams.set("database", config.database ?? "default")
 				url.searchParams.set("query_id", queryId)
-				for (const [key, value] of Object.entries({ ...config.settings, ...options.settings }))
+				for (const [key, value] of Rec.toEntries({ ...config.settings, ...options.settings }))
 					url.searchParams.set(key, String(value))
 				const request = HttpClientRequest.post(url).pipe(
 					HttpClientRequest.setHeader("authorization", authorization),
@@ -188,7 +206,10 @@ export const make = (
 			})
 		// A fresh ID per execution: the same lazy Effect can run many times.
 		const openWithId = (options: QueryOptions) =>
-			Effect.suspend(() => open(options, options.queryId ?? crypto.randomUUID()))
+			Effect.flatMap(
+				options.queryId === undefined ? secureRandom.uuidV4() : Effect.succeed(options.queryId),
+				(id) => open(options, id),
+			)
 
 		return {
 			stream: (options) => Stream.unwrap(Effect.map(openWithId(options), (query) => query.rows)),

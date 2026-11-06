@@ -1,6 +1,6 @@
-import { Effect, Option, Schema } from "effect"
-import * as Command from "effect/unstable/cli/Command"
-import * as Flag from "effect/unstable/cli/Flag"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
+import * as Command from "effect/cli/Command"
+import * as Flag from "effect/cli/Flag"
 import { randomUUID } from "node:crypto"
 import { homedir } from "node:os"
 import { join } from "node:path"
@@ -14,14 +14,14 @@ import {
 	runLocalStoreMigration,
 	type MigrationPlan,
 } from "../server/local-store-migrations"
-import { maintenanceOperation, releasePreservedCheckpoints } from "../server/checkpoints"
+import { maintenanceOperation, releasePreservedCheckpoints } from "@maple/local-server/checkpoints"
 import {
 	listRetainedLeftovers,
 	pruneRetainedLeftovers,
 	type RetainedInventory,
 	type RetainedLeftover,
 } from "../server/retained-leftovers"
-import { isStoreDirty, readMarker } from "../server/store-version"
+import { isStoreDirty, readMarker } from "@maple/local-server/store-version"
 import { jsonFormatRequested, writeJson } from "./json-output"
 import { commandScope, mapleCommand } from "./server-args"
 
@@ -86,7 +86,7 @@ const planJson = (plan: MigrationPlan) => ({
 	source: plan.source,
 	target: plan.target,
 	requiresQuiescence: plan.requiresQuiescence,
-	chain: plan.chain.map((migration) => ({
+	chain: Arr.map(plan.chain, (migration) => ({
 		id: migration.id,
 		description: migration.description,
 		from: migration.from,
@@ -140,7 +140,7 @@ export const schemaStatus = Command.make("status", { dataDir: dataDirFlag }).pip
 				`migration journal: ${status.journal?.phase ?? "none"}`,
 				`physical check: ${status.physicalCheck}`,
 			]
-			yield* Effect.sync(() => process.stdout.write(`${lines.join("\n")}\n`))
+			yield* Effect.sync(() => process.stdout.write(`${Arr.join(lines, "\n")}\n`))
 		}),
 	),
 )
@@ -165,7 +165,10 @@ export const schemaPlan = Command.make("plan", { dataDir: dataDirFlag }).pipe(
 )
 
 const planSummary = (plan: MigrationPlan): string =>
-	`${plan.chain.map((migration) => migration.id).join(" -> ")}\n` +
+	`${Arr.join(
+		Arr.map(plan.chain, (migration) => migration.id),
+		" -> ",
+	)}\n` +
 	`This migration requires a stopped source and retains the original store as a pre-cutover rollback point.\n` +
 	`Existing checkpoints remain with that source and are not restorable by the current schema.\n`
 
@@ -294,18 +297,18 @@ const renderInventory = (inventory: RetainedInventory): string => {
 	if (inventory.leftovers.length === 0) {
 		lines.push(`${green("✓")} no retained leftovers for ${inventory.dataDir}`)
 	} else {
-		const total = inventory.leftovers.reduce((sum, item) => sum + item.bytes, 0)
+		const total = Arr.reduce(inventory.leftovers, 0, (sum, item) => sum + item.bytes)
 		lines.push(
 			`${inventory.leftovers.length} retained leftover(s) for ${inventory.dataDir} (${formatBytes(total)}):`,
 		)
 		for (const [kind, label] of LEFTOVER_KINDS) {
-			const items = inventory.leftovers.filter((item) => item.kind === kind)
+			const items = Arr.filter(inventory.leftovers, (item) => item.kind === kind)
 			if (items.length === 0) continue
-			const bytes = items.reduce((sum, item) => sum + item.bytes, 0)
+			const bytes = Arr.reduce(items, 0, (sum, item) => sum + item.bytes)
 			lines.push(`  ${bold(label)}: ${items.length} (${formatBytes(bytes)})`)
 			for (const item of items.slice(0, PATHS_PER_KIND)) {
 				lines.push(
-					`    ${dim(item.modifiedAt.slice(0, 19))}  ${formatBytes(item.bytes).padStart(10)}  ${item.path}`,
+					`    ${dim(Str.slice(0, 19)(item.modifiedAt))}  ${Str.padStart(10)(formatBytes(item.bytes))}  ${item.path}`,
 				)
 			}
 			if (items.length > PATHS_PER_KIND)
@@ -327,7 +330,7 @@ const renderInventory = (inventory: RetainedInventory): string => {
 		}
 	}
 	for (const note of inventory.notes) lines.push(`${amber("!")} ${note}`)
-	return `${lines.join("\n")}\n`
+	return `${Arr.join(lines, "\n")}\n`
 }
 
 export const schemaGc = Command.make("gc", {
@@ -372,7 +375,7 @@ export const schemaGc = Command.make("gc", {
 				catch: commandError,
 			})
 			if (json) return yield* writeJson({ applied: true, removed, ...released })
-			const reclaimed = removed.reduce((sum, item) => sum + item.bytes, 0)
+			const reclaimed = Arr.reduce(removed, 0, (sum, item) => sum + item.bytes)
 			yield* Effect.sync(() =>
 				process.stdout.write(
 					`${green("✓")} removed ${removed.length} retained leftover(s), reclaimed ${formatBytes(reclaimed)}\n` +

@@ -12,6 +12,10 @@
 		"./config-helpers": "./src/config-helpers.ts",
 		"./dev-urls": "./src/dev-urls.ts",
 		"./env": "./src/env.ts",
+		"./isolate-age": "./src/cloudflare/isolate-age.ts",
+		"./r2-credentials": "./src/cloudflare/r2-credentials.ts",
+		"./security-baseline": "./src/aws/security-baseline.ts",
+		"./worker-build": "./src/cloudflare/worker-build.ts",
 		"./worker-runtime": "./src/cloudflare/worker-runtime.ts",
 		"./worker-telemetry": "./src/cloudflare/worker-telemetry.ts",
 		"./workers-cache": "./src/cloudflare/workers-cache.ts",
@@ -19,10 +23,13 @@
 	},
 	"scripts": {
 		"test": "vitest run",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
-		"@distilled.cloud/aws": "1.0.0-rc.12",
+		"@alchemy.run/aws": "catalog:alchemy",
+		"@alchemy.run/cloudflare": "catalog:alchemy",
+		"@distilled.cloud/aws": "1.0.0-rc.18",
+		"@distilled.cloud/cloudflare": "1.0.0-rc.18",
 		"@maple-dev/alchemy": "workspace:*",
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/alchemy-portless": "workspace:*",
