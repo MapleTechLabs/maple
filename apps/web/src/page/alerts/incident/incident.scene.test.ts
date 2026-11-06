@@ -1,5 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { AlertRulePreviewResponse } from "@maple/domain/http"
+import { sloRuleName } from "@maple/domain/slo"
 import { Result, Schema, Array as Arr } from "effect"
 import {
 	click,
@@ -22,6 +23,8 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { sloHref, slosTabHref } from "../shared/slo-commands"
 import { checkoutSlo } from "../shared/slo-test-fixtures"
+import { monitorHref, uptimeTabHref } from "../shared/uptime-commands"
+import { httpMonitor, MONITOR_RULE, monitorId } from "../shared/uptime-test-monitors"
 import { incidentRow, INCIDENT_ID, NOW, ORG, ruleRow, stateRow } from "../shared/test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -226,6 +229,91 @@ describe("alert incident", () => {
 			given(linked),
 			themeResolved(),
 			expectView(role("link", { name: "Open SLO" })).toHaveAttr("href", sloHref(slo.id)),
+		)
+	})
+
+	test("a resolved SLO incident opened at its tier factor and no longer reads a current burn", () => {
+		const resolved = incidentRow({
+			rule_name: sloRuleName("Checkout API"),
+			signal_type: "slo_burn_rate",
+			comparator: "gte",
+			threshold: 14.4,
+			last_observed_value: 0.3,
+			group_key: "__total__",
+			status: "resolved",
+			resolved_at: new Date(NOW - 60_000).toISOString(),
+		})
+		const loaded = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedIncidents({ orgId: ORG, rows: [resolved] }),
+				Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2, { signal_type: "slo_burn_rate" })] }),
+			],
+			init(route(), context).model,
+			(model, message) => step(model, message).model,
+		)
+		const withDeliveries = step(
+			loaded,
+			Message.CompletedFetchDeliveries({
+				key: loaded.deliveries.key ?? "",
+				result: Result.succeed([]),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(withDeliveries),
+			themeResolved(),
+			expectView(role("heading", { name: "Checkout API stopped burning its error budget" })).toExist(),
+			expectView(text("SLO burning its error budget at 14.4x or more")).toExist(),
+			expectView(text(/0\.3x/u)).not.toExist(),
+			expectView(text(/now /u)).not.toExist(),
+		)
+	})
+
+	test("an uptime incident links its monitor once known and keeps its rule's history, without a rule edit", () => {
+		const uptimeIncident = incidentRow({
+			rule_id: MONITOR_RULE,
+			rule_name: "checkout-api",
+			signal_type: "uptime",
+			group_key: "__total__",
+		})
+		const loaded = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedIncidents({ orgId: ORG, rows: [uptimeIncident] }),
+			],
+			init(route(), context).model,
+			(model, message) => step(model, message).model,
+		)
+		const withRule = step(
+			loaded,
+			Message.UpdatedRules({
+				orgId: ORG,
+				rows: [ruleRow(7, { signal_type: "uptime", name: "checkout-api" })],
+			}),
+		)
+		expect(withRule.model.monitors.key).not.toBeNull()
+		scene(
+			{ update: pageUpdate, view },
+			given(withRule.model),
+			themeResolved(),
+			expectView(role("link", { name: "Open monitors" })).toHaveAttr("href", uptimeTabHref()),
+			expectView(role("link", { name: "Edit rule" })).not.toExist(),
+			expectView(text(/^Fired 1 time in 30d/u)).toExist(),
+		)
+		const monitor = httpMonitor()
+		const linked = step(
+			withRule.model,
+			Message.CompletedFetchMonitors({
+				key: withRule.model.monitors.key ?? "",
+				result: Result.succeed([httpMonitor({ id: monitorId(5), alert_rule_id: null }), monitor]),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(linked),
+			themeResolved(),
+			expectView(role("link", { name: "Open monitor" })).toHaveAttr("href", monitorHref(monitor.id)),
 		)
 	})
 

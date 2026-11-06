@@ -1,5 +1,5 @@
 import { AlertDeliveryEventDocument } from "@maple/domain/http"
-import { V2Investigation, V2Slo } from "@maple/domain/http/v2"
+import { V2Investigation, V2Slo, V2UptimeMonitor } from "@maple/domain/http/v2"
 import {
 	AlertIncidentRowSchema,
 	AlertRuleRowSchema,
@@ -32,6 +32,8 @@ export const Model = Schema.Struct({
 	investigation: KeyedSchema(Schema.NullOr(V2Investigation), LoadFailure),
 	/** An SLO incident's link to its SLO: `slos.list`, read only for one. */
 	slos: KeyedSchema(Schema.Array(V2Slo), LoadFailure),
+	/** An uptime incident's link to its monitor: `uptimeMonitors.list`, read only for one. */
+	monitors: KeyedSchema(Schema.Array(V2UptimeMonitor), LoadFailure),
 	/** `useAsyncAction`: the create request is running, so repeat clicks cannot start duplicates. */
 	isStartingInvestigation: Schema.Boolean,
 	chart: Chart.Model,

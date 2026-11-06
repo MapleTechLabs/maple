@@ -1,4 +1,5 @@
 import type { AlertSeverity } from "@maple/domain/http"
+import { SLO_BURN_WINDOWS_MINUTES, windowLabel } from "@maple/domain/slo"
 import type { AlertIncidentRow } from "@maple/web-data/collections/alerts"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
@@ -35,9 +36,11 @@ import {
 	type Slo,
 	type SloStatus,
 	sliTone,
+	holdingLine,
+	isBudgetSpent,
 	sloIncidents,
+	type TierReading,
 	tierStates,
-	windowLabel,
 } from "../shared/slo-derive"
 import { toneText } from "../shared/slo-view"
 import { isoMs } from "../shared/time"
@@ -85,10 +88,9 @@ export const figures = (h: H, model: Model, slo: Slo): Html => {
 					value: formatBudget(status.budget_remaining),
 					tone: budgetTone(status.budget_remaining),
 					compact: true,
-					subline:
-						status.budget_remaining <= 0
-							? `Spent: ${formatBudget(-status.budget_remaining)} over budget`
-							: `Of the ${slo.window_days}-day budget`,
+					subline: isBudgetSpent(status.budget_remaining)
+						? `Spent: ${formatBudget(-status.budget_remaining)} over budget`
+						: `Of the ${slo.window_days}-day budget`,
 				}),
 				statRailItem(h, {
 					eyebrow: "Events counted",
@@ -243,8 +245,6 @@ export const sliPanel = (h: H, model: Model, slo: Slo, context: ChartContext | n
 
 // BURN RATES
 
-const BURN_WINDOWS = [5, 30, 60, 360] as const
-
 const SEVERITY_LABEL = { critical: "Critical", warning: "Warning" } as const satisfies Record<
 	AlertSeverity,
 	string
@@ -286,8 +286,27 @@ const burnWindowRow = (h: H, status: SloStatus, minutes: number): Html => {
 	)
 }
 
-const tierRow = (h: H, status: SloStatus, state: ReturnType<typeof tierStates>[number]): Html => {
-	const { tier, isFiring } = state
+/** "Would fire" while both windows burn, "Holding" while the short window saw nothing, else "Quiet". */
+const tierVerdict = (h: H, reading: TierReading): Html => {
+	const { tier, state } = reading
+	if (state === "clear") return typography(h, { size: "xs", tone: "muted" }, ["Quiet"])
+	const isCritical = tier.severity === "critical"
+	return hstack(h, { gap: "1.5", as: "span", className: "shrink-0" }, [
+		statusDot(h, { tone: state === "hold" ? "neutral" : isCritical ? "crit" : "warn" }),
+		typography(
+			h,
+			{
+				size: "xs",
+				weight: "medium",
+				tone: state === "hold" ? "soft" : isCritical ? "error" : "warning",
+			},
+			[state === "hold" ? "Holding" : "Would fire"],
+		),
+	])
+}
+
+const tierRow = (h: H, status: SloStatus, reading: TierReading): Html => {
+	const { tier, state } = reading
 	const long = burnOf(status, tier.longWindowMinutes)
 	const short = burnOf(status, tier.shortWindowMinutes)
 	return h.div(
@@ -301,23 +320,12 @@ const tierRow = (h: H, status: SloStatus, state: ReturnType<typeof tierStates>[n
 							`${tier.factor}x over ${windowLabel(tier.longWindowMinutes)} and ${windowLabel(tier.shortWindowMinutes)}`,
 						]),
 					]),
-					isFiring
-						? hstack(h, { gap: "1.5", as: "span", className: "shrink-0" }, [
-								statusDot(h, { tone: tier.severity === "critical" ? "crit" : "warn" }),
-								typography(
-									h,
-									{
-										size: "xs",
-										weight: "medium",
-										tone: tier.severity === "critical" ? "error" : "warning",
-									},
-									["Would fire"],
-								),
-							])
-						: typography(h, { size: "xs", tone: "muted" }, ["Quiet"]),
+					tierVerdict(h, reading),
 				]),
 				typography(h, { size: "xs", tone: "muted", mono: true, numeric: true, as: "p" }, [
-					`${windowLabel(tier.longWindowMinutes)} at ${formatBurn(long)}, ${windowLabel(tier.shortWindowMinutes)} at ${formatBurn(short)}. ${SEVERITY_LABEL[tier.severity]} ${TIER_ROLE[tier.severity]} when both reach ${tier.factor}x.`,
+					state === "hold"
+						? `${holdingLine(tier)}.`
+						: `${windowLabel(tier.longWindowMinutes)} at ${formatBurn(long)}, ${windowLabel(tier.shortWindowMinutes)} at ${formatBurn(short)}. ${SEVERITY_LABEL[tier.severity]} ${TIER_ROLE[tier.severity]} when both reach ${tier.factor}x.`,
 				]),
 			]),
 		],
@@ -337,7 +345,7 @@ export const burnPanel = (h: H, model: Model): Html =>
 				h.div(
 					[],
 					[
-						...Arr.map(BURN_WINDOWS, (minutes) => burnWindowRow(h, status, minutes)),
+						...Arr.map(SLO_BURN_WINDOWS_MINUTES, (minutes) => burnWindowRow(h, status, minutes)),
 						...Arr.map(tierStates(status), (state) => tierRow(h, status, state)),
 					],
 				),

@@ -125,6 +125,27 @@ describe("alerts hub, SLOs tab", () => {
 		)
 	})
 
+	test("an SLO whose tiers hold through an outage still counts as burning while its incident is open", () => {
+		const rows: ReadonlyArray<SloListRow> = [
+			{ slo: checkoutSlo(), status: sloStatus("holding") },
+			{ slo: searchSlo(), status: sloStatus("healthy", { sloId: sloUuid(2), targetPercent: 99.5 }) },
+		]
+		const incident = incidentRow({ rule_id: SLO_RULE_UUID, signal_type: "slo_burn_rate", status: "open" })
+		scene(
+			{ update: pageUpdate, view },
+			given(withSlos(rows)),
+			expectView(text(/^0\s*burning$/u)).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(withSlos(rows), Message.UpdatedIncidents({ orgId: ORG, rows: [incident] })).model,
+			),
+			expectView(text(/^1\s*burning$/u)).toExist(),
+			expectView(within(table, text("Incident open"))).toExist(),
+		)
+	})
+
 	test("alerting reads as on, off, or an open incident on the SLO's rule", () => {
 		const withIncident = pageUpdate(
 			withSlos(HEALTHY_AND_BURNING),

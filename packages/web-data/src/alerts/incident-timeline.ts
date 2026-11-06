@@ -170,12 +170,12 @@ export function buildIncidentTimeline(input: {
 }): ReadonlyArray<IncidentTimelineEntry> {
 	const { incident } = input
 	const group = incidentGroup(incident)
-	// An uptime rule has no threshold to read out: the monitor's checks failed.
+	// An uptime rule has no threshold to read out; an SLO's reads its tier factor, not today's burn.
 	const condition =
 		incident.signalType === "uptime"
 			? `${incident.ruleName} went down`
 			: incident.signalType === "slo_burn_rate"
-				? `SLO burning its error budget at ${formatSignalValue(incident.signalType, incident.lastObservedValue)}`
+				? `SLO burning its error budget at ${formatSignalValue(incident.signalType, incident.threshold)} or more`
 				: `${signalTitle(incident.signalType)} ${conditionPhrase(incident)}`
 
 	const opened: IncidentTimelineEntry = {

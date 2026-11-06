@@ -59,15 +59,20 @@ export const searchSlo = (fields: Record<string, unknown> = {}): V2Slo =>
 		...fields,
 	})
 
-export type SloScenario = "healthy" | "burning" | "exhausted"
+export type SloScenario = "healthy" | "burning" | "exhausted" | "holding"
 
-/** Budget left over the window, and the 5m, 30m, 1h and 6h burn rates, per scenario. */
+/** Budget left over the window, and the 5m, 30m, 1h and 6h burn rates (`null`: no events), per scenario. */
 const SCENARIOS = {
 	healthy: { budget: 0.62, burns: [0.4, 0.6, 0.5, 0.45] },
 	// Both critical windows (1h, 5m) at 14.4x or more: the page tier fires.
 	burning: { budget: 0.12, burns: [18.2, 9.4, 16.1, 7.3] },
 	exhausted: { budget: -0.35, burns: [2.1, 1.8, 1.6, 1.4] },
-} as const satisfies Record<SloScenario, { budget: number; burns: readonly [number, number, number, number] }>
+	// An outage: no events in 5m or 30m, so both tiers hold after the 1h burned hard.
+	holding: { budget: 0.12, burns: [null, null, 16.1, 7.3] },
+} as const satisfies Record<
+	SloScenario,
+	{ budget: number; burns: readonly [number | null, number | null, number | null, number | null] }
+>
 
 const WINDOWS = [5, 30, 60, 360] as const
 const TOTAL = 1_240_000
@@ -89,8 +94,9 @@ export const sloStatus = (
 		sli: 1 - badShare,
 		budget_remaining: budget,
 		burn_windows: Arr.map(WINDOWS, (minutes, index) => {
-			const rate = burns[index] ?? 0
-			const total = (TOTAL / (30 * 24 * 60)) * minutes
+			const burn = burns[index] ?? null
+			const rate = burn ?? 0
+			const total = burn === null ? 0 : (TOTAL / (30 * 24 * 60)) * minutes
 			return {
 				window_minutes: minutes,
 				burn_rate: rate,
@@ -109,10 +115,10 @@ export const sloHistory = (
 	const hours = (options.days ?? 30) * 24
 	const budgetRatio = 1 - (options.targetPercent ?? 99.9) / 100
 	const end = SCENARIOS[scenario].budget
-	// A steady spend, then the last day burning hard when the scenario is burning.
+	// A steady spend, then the last day burning hard when the scenario is burning or holding.
 	const budgetAt = (index: number): number => {
 		const share = index / (hours - 1)
-		if (scenario !== "burning") return 1 - (1 - end) * share
+		if (scenario !== "burning" && scenario !== "holding") return 1 - (1 - end) * share
 		const steady = 0.7
 		const cutoff = (hours - 24) / (hours - 1)
 		return share <= cutoff

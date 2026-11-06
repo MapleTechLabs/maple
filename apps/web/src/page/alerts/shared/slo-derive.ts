@@ -1,6 +1,12 @@
 import type { AlertIncidentRow } from "@maple/web-data/collections/alerts"
 import type { V2Slo, V2SloSli, V2SloStatus } from "@maple/domain/http/v2"
-import { SLO_BURN_TIERS, type SloBurnTier, tierBreached } from "@maple/domain/slo"
+import {
+	SLO_BURN_TIERS,
+	type SloBurnTier,
+	type SloTierState,
+	tierState,
+	windowLabel,
+} from "@maple/domain/slo"
 import type { Tone } from "@maple/ui/lib/tone"
 import { Array as Arr, Option } from "effect"
 
@@ -49,8 +55,12 @@ export const formatEvents = (count: number): string =>
 			? `${Number((count / 1000).toFixed(1))}k`
 			: String(Math.round(count))
 
+/** A spent budget: none left, or overspent. */
+export const isBudgetSpent = (budget: number): boolean => budget <= 0
+
 /** Spent is red, under a quarter left amber, anything else neutral. */
-export const budgetTone = (budget: number): Tone => (budget <= 0 ? "crit" : budget < 0.25 ? "warn" : "ok")
+export const budgetTone = (budget: number): Tone =>
+	isBudgetSpent(budget) ? "crit" : budget < 0.25 ? "warn" : "ok"
 
 export const sliTone = (slo: Pick<Slo, "target_percent">, sli: number | null): Tone =>
 	sli === null ? "neutral" : sli * 100 >= slo.target_percent ? "ok" : "crit"
@@ -68,16 +78,6 @@ export const burnTone = (rate: number): Tone =>
 			? "warn"
 			: "neutral"
 
-const WINDOW_LABEL = new Map([
-	[5, "5m"],
-	[30, "30m"],
-	[60, "1h"],
-	[360, "6h"],
-])
-
-/** "1h" for a burn window of 60 minutes. */
-export const windowLabel = (minutes: number): string => WINDOW_LABEL.get(minutes) ?? `${minutes}m`
-
 const domainWindows = (status: SloStatus) =>
 	Arr.map(status.burn_windows, (window) => ({
 		windowMinutes: window.window_minutes,
@@ -86,20 +86,33 @@ const domainWindows = (status: SloStatus) =>
 		good: window.good_events,
 	}))
 
-/** Whether each tier's long and short windows both burn at its factor. */
-export const tierStates = (
-	status: SloStatus,
-): ReadonlyArray<Readonly<{ tier: SloTier; isFiring: boolean }>> => {
+export type TierReading = Readonly<{ tier: SloTier; state: SloTierState }>
+
+/** Each tier as the evaluator reads it: breaching, holding (no events in its short window), or clear. */
+export const tierStates = (status: SloStatus): ReadonlyArray<TierReading> => {
 	const windows = domainWindows(status)
-	return Arr.map(SLO_BURN_TIERS, (tier) => ({ tier, isFiring: tierBreached(tier, windows) }))
+	return Arr.map(SLO_BURN_TIERS, (tier) => ({ tier, state: tierState(tier, windows) }))
 }
 
 /** The most severe tier whose windows burn at its factor: critical before warning. */
 export const firingTier = (status: SloStatus): Option.Option<SloTier> =>
 	Option.map(
-		Arr.findFirst(tierStates(status), (state) => state.isFiring),
-		(state) => state.tier,
+		Arr.findFirst(tierStates(status), (reading) => reading.state === "breach"),
+		(reading) => reading.tier,
 	)
+
+/** The most severe tier holding its state, when none breaches: an open incident stays open. */
+export const holdingTier = (status: SloStatus): Option.Option<SloTier> =>
+	Option.isSome(firingTier(status))
+		? Option.none()
+		: Option.map(
+				Arr.findFirst(tierStates(status), (reading) => reading.state === "hold"),
+				(reading) => reading.tier,
+			)
+
+/** "Holding: no events in 5m, an open incident stays open." */
+export const holdingLine = (tier: SloTier): string =>
+	`Holding: no events in ${windowLabel(tier.shortWindowMinutes)}, an open incident stays open`
 
 /** The fastest of the four windows' burn rates, 0 without windows. */
 export const fastestBurn = (status: SloStatus): number =>

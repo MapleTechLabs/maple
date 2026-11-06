@@ -1,3 +1,4 @@
+import { SLO_BURN_TIERS, windowLabel } from "@maple/domain/slo"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -98,8 +99,8 @@ const serviceSection = (h: H, model: Model): Html => {
 					defaultValue: current,
 					className: "w-full max-w-xs",
 					attributes: [
-						// Keyed on the services: the select is uncontrolled, so a late list must rebuild it.
-						h.Key(`slo-service-${names.length}-${current}`),
+						// Keyed on the list length: a late list rebuilds the uncontrolled select, a pick keeps focus.
+						h.Key(`slo-service-${names.length}`),
 						h.Id(fieldId("serviceName")),
 						h.OnChange((value) => Message.ChangedText({ field: "serviceName", value })),
 					],
@@ -230,14 +231,20 @@ const windowSection = (h: H, form: Form): Html =>
 		}),
 	])
 
-const TIERS: ReadonlyArray<{ tier: Tier; title: string; rule: string }> = [
-	{ tier: "critical", title: "Critical", rule: "Pages when the budget burns at 14.4x over 1h and 5m." },
-	{
-		tier: "warning",
-		title: "Warning",
-		rule: "Opens a ticket at 6x over 6h and 30m. A critical incident notifies these too.",
-	},
-]
+const TIER_COPY = {
+	critical: { title: "Critical", role: "Pages", note: "" },
+	warning: { title: "Warning", role: "Opens a ticket", note: " A critical incident notifies these too." },
+} as const satisfies Record<Tier, Readonly<{ title: string; role: string; note: string }>>
+
+/** Each tier's line, from the factors and windows the evaluator uses. */
+const TIERS = Arr.map(SLO_BURN_TIERS, (tier) => {
+	const copy = TIER_COPY[tier.severity]
+	return {
+		tier: tier.severity,
+		title: copy.title,
+		rule: `${copy.role} when the budget burns at ${tier.factor}x over ${windowLabel(tier.longWindowMinutes)} and ${windowLabel(tier.shortWindowMinutes)}.${copy.note}`,
+	}
+})
 
 const tierPicker = (h: H, model: Model, entry: (typeof TIERS)[number]): Html =>
 	vstack(h, { gap: "1.5", attributes: [h.Key(entry.tier)] }, [

@@ -1,3 +1,5 @@
+import type { AlertSeverity } from "@maple/domain/http"
+import { windowLabel } from "@maple/domain/slo"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -26,13 +28,15 @@ import {
 	formatBurn,
 	formatTarget,
 	formatWindow,
+	holdingLine,
+	holdingTier,
+	isBudgetSpent,
 	openIncident,
 	scopeLine,
 	sliDescription,
 	sliLabel,
 	type Slo,
 	type SloStatus,
-	windowLabel,
 } from "../shared/slo-derive"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
@@ -89,31 +93,64 @@ const callout = (h: H, model: Model, slo: Slo, status: SloStatus): Html | null =
 			]),
 		],
 	})
-	return Option.match(firingTier(status), {
-		onSome: (tier) =>
-			alert(h, { variant: tier.severity === "critical" ? "crit" : "warn" }, [
+	const firing = Option.map(firingTier(status), (tier) =>
+		alert(h, { variant: tier.severity === "critical" ? "crit" : "warn" }, [
+			icon(h, "FireIcon"),
+			alertTitle(h, [
+				`Burning the error budget at ${formatBurn(burnOf(status, tier.longWindowMinutes))} over ${windowLabel(tier.longWindowMinutes)}`,
+			]),
+			alertDescription(h, [
+				`At this rate the ${slo.window_days}-day budget runs out early. The ${tier.severity} tier fires at ${tier.factor}x over both ${windowLabel(tier.longWindowMinutes)} and ${windowLabel(tier.shortWindowMinutes)}.`,
+			]),
+			...action,
+		]),
+	)
+	// An outage empties the short window: the tier holds, so the open incident leads the page.
+	const holding = Option.flatMap(holdingTier(status), (tier) =>
+		Option.map(incident, (row) =>
+			alert(h, { variant: row.severity === "critical" ? "crit" : "warn" }, [
 				icon(h, "FireIcon"),
-				alertTitle(h, [
-					`Burning the error budget at ${formatBurn(burnOf(status, tier.longWindowMinutes))} over ${windowLabel(tier.longWindowMinutes)}`,
-				]),
+				alertTitle(h, [holdingLine(tier)]),
 				alertDescription(h, [
-					`At this rate the ${slo.window_days}-day budget runs out early. The ${tier.severity} tier fires at ${tier.factor}x over both ${windowLabel(tier.longWindowMinutes)} and ${windowLabel(tier.shortWindowMinutes)}.`,
+					`The ${tier.severity} tier cannot judge the burn without events, so it neither fires nor resolves. Check whether ${slo.service_name} is down or has stopped reporting.`,
 				]),
 				...action,
 			]),
-		onNone: () =>
-			status.budget_remaining <= 0
-				? alert(h, { variant: "crit" }, [
-						icon(h, "CircleXmarkIcon"),
-						alertTitle(h, ["Error budget spent"]),
-						alertDescription(h, [
-							`The last ${formatWindow(slo.window_days)} saw more bad events than ${formatTarget(slo)} allows: ${formatBudget(-status.budget_remaining)} over budget. It recovers as bad hours leave the window.`,
-						]),
-						...action,
-					])
-				: null,
-	})
+		),
+	)
+	const spent = isBudgetSpent(status.budget_remaining)
+		? Option.some(
+				alert(h, { variant: "crit" }, [
+					icon(h, "CircleXmarkIcon"),
+					alertTitle(h, ["Error budget spent"]),
+					alertDescription(h, [
+						`The last ${formatWindow(slo.window_days)} saw more bad events than ${formatTarget(slo)} allows: ${formatBudget(-status.budget_remaining)} over budget. It recovers as bad hours leave the window.`,
+					]),
+					...action,
+				]),
+			)
+		: Option.none()
+	return Option.getOrNull(
+		Option.orElse(
+			Option.orElse(firing, () => holding),
+			() => spent,
+		),
+	)
 }
+
+/** The header's severity: the firing tier, or the open incident's while a tier holds it open. */
+const headerSeverity = (model: Model, slo: Slo): Option.Option<AlertSeverity> =>
+	Option.flatMap(statusOf(model), (status) =>
+		Option.orElse(
+			Option.map(firingTier(status), (tier) => tier.severity),
+			() =>
+				Option.flatMap(holdingTier(status), () =>
+					Option.map(openIncident(slo, model.incidents ?? []), (row) =>
+						row.severity === "critical" ? "critical" : "warning",
+					),
+				),
+		),
+	)
 
 const serviceHref = (slo: Slo): string =>
 	hrefOf(AppRoute.Service({ serviceName: slo.service_name, search: {} }))
@@ -190,7 +227,7 @@ const page = (h: H, model: Model, inputs: PageViewInputs): Html => {
 	return Option.match(sloOf(model), {
 		onNone: () => loadingPage(h),
 		onSome: (slo) => {
-			const tier = Option.flatMap(statusOf(model), firingTier)
+			const severity = headerSeverity(model, slo)
 			const title = {
 				kind: ["SLO", sliLabel(slo.sli)],
 				title: [slo.name],
@@ -216,10 +253,9 @@ const page = (h: H, model: Model, inputs: PageViewInputs): Html => {
 			return dashboardPage(
 				h,
 				{
-					titleContent: Option.match(tier, {
+					titleContent: Option.match(severity, {
 						onNone: () => detailTitle(h, title),
-						onSome: (firing) =>
-							detailTitle(h, { ...title, adornment: severityBadge(h, firing.severity) }),
+						onSome: (level) => detailTitle(h, { ...title, adornment: severityBadge(h, level) }),
 					}),
 					actions: headerActions(h, model, slo),
 					gap: "md",

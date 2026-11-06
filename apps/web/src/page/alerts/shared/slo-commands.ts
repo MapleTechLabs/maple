@@ -7,7 +7,7 @@ import {
 	type V2SloStatus,
 	V2SloUpdateParams,
 } from "@maple/domain/http/v2"
-import { Effect, Option, Ref, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AppRoute, hrefOf } from "../../../route"
@@ -15,35 +15,17 @@ import type { AlertsSloNewSearch } from "../../../route/search"
 
 // The SLO reads and writes, as Effects the pages' Commands wrap, and their links.
 
+/** One page holds every SLO: the API caps an org at 50. */
 export const SLO_LIST_LIMIT = 100
-
-/** Pages read at most per list: 2000 SLOs. */
-const MAX_LIST_PAGES = 20
 
 /** How many status reads the SLOs tab runs at once. */
 const STATUS_CONCURRENCY = 6
 
-interface ListProgress {
-	readonly rows: ReadonlyArray<V2Slo>
-	readonly cursor: string | null
-	readonly pages: number
-}
-
-/** `slos.list`: every one of the org's SLOs, newest first, following `next_cursor`. */
+/** `slos.list`: the org's SLOs, newest first, in a single read. */
 export const listSlos = Effect.gen(function* () {
 	const client = yield* MapleApiV2Client
-	const progress = yield* Ref.make<ListProgress>({ rows: [], cursor: null, pages: 0 })
-	const readPage = Effect.gen(function* () {
-		const { rows, cursor, pages } = yield* Ref.get(progress)
-		const response = yield* client.slos.list({
-			query: { limit: SLO_LIST_LIMIT, ...(cursor === null ? undefined : { cursor }) },
-		})
-		const next = response.has_more ? response.next_cursor : null
-		yield* Ref.set(progress, { rows: [...rows, ...response.data], cursor: next, pages: pages + 1 })
-		return next !== null && pages + 1 < MAX_LIST_PAGES
-	})
-	yield* readPage.pipe(Effect.repeat({ while: (hasMore) => hasMore }))
-	return (yield* Ref.get(progress)).rows
+	const response = yield* client.slos.list({ query: { limit: SLO_LIST_LIMIT } })
+	return response.data
 }).pipe(Effect.mapError(toLoadFailure))
 
 /** An SLO beside its status; `status` is `null` when that one read failed. */

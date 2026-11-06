@@ -41,6 +41,7 @@ import { resourceNotFound } from "../../kit/resource-not-found"
 import { severityBadge } from "../shared/badges"
 import { alertsHref } from "../shared/links"
 import { sloHref, slosTabHref } from "../shared/slo-commands"
+import { monitorHref, uptimeTabHref } from "../shared/uptime-commands"
 import { incidentChecksOf, summaryChecksOf } from "../shared/check-summary"
 import { previewIssue, previewStateOf } from "../shared/preview"
 import { providerOf } from "../shared/providers"
@@ -90,7 +91,10 @@ export const headerTitle = <M>(
 				: isSlo
 					? [
 							"SLO burn rate",
-							`now ${formatSignalValue(incident.signalType, incident.lastObservedValue)}`,
+							// A resolved incident's last value is the healthy burn it ended on.
+							incident.status === "resolved"
+								? null
+								: `now ${formatSignalValue(incident.signalType, incident.lastObservedValue)}`,
 							group,
 						]
 					: [
@@ -162,13 +166,31 @@ export type IncidentBodyInputs<M> = Readonly<{
 	entries: ReadonlyArray<IncidentTimelineEntry>
 	isEntriesLoading: boolean
 	isEntriesFailed: boolean
-	/** An SLO incident's SLO page, or the SLOs tab until the SLO is known. */
-	sloHref?: string | null
+	/** An SLO or uptime incident's SLO or monitor page; its tab stands in until it is known. */
+	sourceHref?: string | null
 	chartId: string
 	chart: Chart.Model
 	toChartMessage: (message: Chart.Message) => M
 	colors: ThemeColors
 }>
+
+/** A managed incident's note on what opened it, and a link to its SLO or monitor (its tab until known). */
+const sourceNote = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{
+		text: string
+		href: string | null
+		label: string
+		fallback: Readonly<{ href: string; label: string }>
+	}>,
+): Html =>
+	vstack(h, { gap: "3", align: "start" }, [
+		typography(h, { size: "sm", tone: "muted", as: "p" }, [options.text]),
+		linkButton(h, { size: "sm", variant: "outline", href: options.href ?? options.fallback.href }, [
+			options.href === null ? options.fallback.label : options.label,
+			icon(h, "ArrowRightIcon"),
+		]),
+	])
 
 /** `IncidentBody`: signal chart, timeline and rail. */
 export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>): Html => {
@@ -188,29 +210,19 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 								...(group != null ? [` · ${group}`] : []),
 							]),
 							incident.signalType === "uptime"
-								? typography(h, { size: "sm", tone: "muted", as: "p" }, [
-										"This incident follows an uptime monitor: it opened when the monitor's checks went down and resolves when one passes again. The monitor's page lists each check with its failing trace.",
-									])
+								? sourceNote(h, {
+										text: "This incident follows an uptime monitor: it opened when the monitor's checks went down and resolves when one passes again. The monitor's page lists each check with its failing trace.",
+										href: inputs.sourceHref ?? null,
+										label: "Open monitor",
+										fallback: { href: uptimeTabHref(), label: "Open monitors" },
+									})
 								: incident.signalType === "slo_burn_rate"
-									? vstack(h, { gap: "3", align: "start" }, [
-											typography(h, { size: "sm", tone: "muted", as: "p" }, [
-												"This incident follows an SLO burning its error budget: it opened when the burn rate held at a tier's factor over both of its windows, and resolves when the short window cools. The SLO's page charts the budget and each window's burn rate.",
-											]),
-											linkButton(
-												h,
-												{
-													size: "sm",
-													variant: "outline",
-													href: inputs.sloHref ?? slosTabHref(),
-												},
-												[
-													inputs.sloHref === undefined || inputs.sloHref === null
-														? "Open SLOs"
-														: "Open SLO",
-													icon(h, "ArrowRightIcon"),
-												],
-											),
-										])
+									? sourceNote(h, {
+											text: "This incident follows an SLO burning its error budget: it opened when the burn rate held at a tier's factor over both of its windows, and resolves when the short window cools. The SLO's page charts the budget and each window's burn rate.",
+											href: inputs.sourceHref ?? null,
+											label: "Open SLO",
+											fallback: { href: slosTabHref(), label: "Open SLOs" },
+										})
 									: rule === null
 										? typography(h, { size: "sm", tone: "muted", as: "p" }, [
 												"The rule behind this incident was deleted, so its signal cannot be replayed.",
@@ -266,18 +278,22 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 	const deliveries = AsyncData.getOrElse(model.deliveries.data, () => [])
 	const investigation = AsyncData.getOrElse(model.investigation.data, () => null)
 	const isChartReady = model.themeColors !== null && isChartRuntimeReady(model.chartRuntime)
-	const sloLink = Option.getOrUndefined(
-		Option.flatMap(AsyncData.getData(model.slos.data), (slos) =>
-			Option.map(
-				Arr.findFirst(slos, (slo) => slo.alert_rule_id === incident.ruleId),
-				(slo) => sloHref(slo.id),
-			),
+	const sloLink = Option.flatMap(AsyncData.getData(model.slos.data), (slos) =>
+		Option.map(
+			Arr.findFirst(slos, (slo) => slo.alert_rule_id === incident.ruleId),
+			(slo) => sloHref(slo.id),
+		),
+	)
+	const monitorLink = Option.flatMap(AsyncData.getData(model.monitors.data), (monitors) =>
+		Option.map(
+			Arr.findFirst(monitors, (monitor) => monitor.alert_rule_id === incident.ruleId),
+			(monitor) => monitorHref(monitor.id),
 		),
 	)
 	return incidentBody(h, {
 		incident,
 		rule,
-		sloHref: sloLink ?? null,
+		sourceHref: Option.getOrNull(incident.signalType === "uptime" ? monitorLink : sloLink),
 		ruleIncidents: view.ruleIncidents,
 		states: ruleStatesOf(model, incident.ruleId),
 		preview: groupPreviewOf(previewState.preview, incident),

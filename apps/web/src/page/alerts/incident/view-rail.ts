@@ -221,36 +221,46 @@ const ruleSection = <M>(
 	)
 	const breaches = rule.consecutiveBreachesRequired
 	const summary = `${signalTitle(rule.signalType)} ${conditionPhrase(rule)} over ${rule.windowMinutes}m, ${breaches} ${breaches === 1 ? "check" : "checks in a row"} to open${scope.length > 0 ? `, ${Arr.join(scope, ", ")}` : ""}.`
+	// A monitor's or SLO's rule is edited through its owner, so it keeps only the history.
+	const isManaged = isManagedSignalType(rule.signalType)
 	return railSection(
 		h,
 		["Rule"],
-		h.a(
-			[
-				h.Href(createHref({ ruleId: rule.id })),
-				h.Class(
-					typographyClass({
-						size: "xs",
-						tone: "primary",
-						className: "hover:underline active:underline",
-					}),
+		isManaged
+			? null
+			: h.a(
+					[
+						h.Href(createHref({ ruleId: rule.id })),
+						h.Class(
+							typographyClass({
+								size: "xs",
+								tone: "primary",
+								className: "hover:underline active:underline",
+							}),
+						),
+					],
+					["Edit rule"],
 				),
-			],
-			["Edit rule"],
-		),
 		[
 			h.div(
 				[h.Class("space-y-2")],
 				[
-					h.a(
-						[
-							h.Href(ruleHref(rule.id)),
-							h.Class("block text-sm hover:underline active:underline"),
-						],
-						[rule.name],
-					),
-					typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
-						summary,
-					]),
+					...(isManaged
+						? []
+						: [
+								h.a(
+									[
+										h.Href(ruleHref(rule.id)),
+										h.Class("block text-sm hover:underline active:underline"),
+									],
+									[rule.name],
+								),
+								typography(
+									h,
+									{ size: "xs", tone: "muted", as: "p", className: "leading-relaxed" },
+									[summary],
+								),
+							]),
 					typography(h, { size: "xs", tone: "muted", as: "p" }, [
 						"Fired ",
 						String(recent.length),
@@ -293,9 +303,7 @@ export const incidentRail = <M>(
 					]
 				: []),
 			evidenceSection(h, rule, incident, options.window),
-			...(rule !== null && !isManagedSignalType(rule.signalType)
-				? [ruleSection(h, rule, options.ruleIncidents, options.now)]
-				: []),
+			...(rule !== null ? [ruleSection(h, rule, options.ruleIncidents, options.now)] : []),
 		],
 	)
 }

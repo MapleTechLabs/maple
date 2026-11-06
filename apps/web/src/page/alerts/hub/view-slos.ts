@@ -1,4 +1,5 @@
 import { pluralize } from "@maple/ui/lib/format"
+import type { AlertIncidentRow } from "@maple/web-data/collections/alerts"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -30,6 +31,9 @@ import {
 	formatSli,
 	formatTarget,
 	formatWindow,
+	holdingTier,
+	isBudgetSpent,
+	openIncident,
 	scopeLine,
 	sliLabel,
 	sliTone,
@@ -68,9 +72,15 @@ const slosEmptyState = (h: H, serviceName: string | undefined, canEdit: boolean)
 		"py-12",
 	)
 
-const readout = (h: H, rows: ReadonlyArray<SloListRow>): ReadonlyArray<Html> => {
-	const burning = Arr.filter(rows, (row) => row.status !== null && Option.isSome(firingTier(row.status)))
-	const spent = Arr.filter(rows, (row) => row.status !== null && row.status.budget_remaining <= 0)
+/** Burning: a tier fires, or a tier holds (no events) while the SLO's incident stays open. */
+const isBurning = (row: SloListRow, incidents: ReadonlyArray<AlertIncidentRow>): boolean =>
+	row.status !== null &&
+	(Option.isSome(firingTier(row.status)) ||
+		(Option.isSome(holdingTier(row.status)) && Option.isSome(openIncident(row.slo, incidents))))
+
+const readout = (h: H, model: Model, rows: ReadonlyArray<SloListRow>): ReadonlyArray<Html> => {
+	const burning = Arr.filter(rows, (row) => isBurning(row, model.incidents ?? []))
+	const spent = Arr.filter(rows, (row) => row.status !== null && isBudgetSpent(row.status.budget_remaining))
 	return [
 		toolbarStat(h, { value: String(rows.length), label: pluralize(rows.length, "SLO") }),
 		toolbarStat(h, {
@@ -194,7 +204,7 @@ export const slosTab = (h: H, model: Model): Html => {
 			rows.length === 0
 				? slosEmptyState(h, model.search.serviceName, canManage(model))
 				: vstack(h, { gap: "4" }, [
-						listToolbar(h, { className: "pb-0", trailing: readout(h, rows) }),
+						listToolbar(h, { className: "pb-0", trailing: readout(h, model, rows) }),
 						slosTable(h, model, rows),
 					]),
 	})

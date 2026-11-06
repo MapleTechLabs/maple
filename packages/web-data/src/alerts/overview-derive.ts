@@ -1,4 +1,5 @@
 import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
+import { sloNameFromRuleName } from "@maple/domain/slo"
 
 import {
 	comparatorLabels,
@@ -55,9 +56,7 @@ const isUptime = (incident: Pick<AlertIncidentDocument, "signalType">) => incide
 const isSlo = (incident: Pick<AlertIncidentDocument, "signalType">) => incident.signalType === "slo_burn_rate"
 
 /** The rule backing an SLO is named `SLO burn: <SLO name>`; the SLO's own name reads better. */
-const SLO_RULE_PREFIX = "SLO burn: "
-export const sloNameOf = (ruleName: string): string =>
-	Str.startsWith(SLO_RULE_PREFIX)(ruleName) ? Str.slice(SLO_RULE_PREFIX.length)(ruleName) : ruleName
+export const sloNameOf = (ruleName: string): string => sloNameFromRuleName(ruleName) ?? ruleName
 
 /** Raw SQL and builder rules: "Raw SQL 5" says nothing, so the rule name is what fired. */
 export const isQueryIncident = (incident: Pick<AlertIncidentDocument, "signalType">) =>

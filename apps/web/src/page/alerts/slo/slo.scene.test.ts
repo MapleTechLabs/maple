@@ -152,6 +152,44 @@ describe("SLO page", () => {
 		)
 	})
 
+	test("an outage holds both tiers: the open incident still leads, its severity stays, nothing reads quiet", () => {
+		const incident = incidentRow({ rule_id: SLO_RULE_UUID, signal_type: "slo_burn_rate", status: "open" })
+		const model = pageUpdate(
+			withStatus("holding"),
+			Message.UpdatedIncidents({ orgId: ORG, rows: [incident] }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			themeResolved(),
+			expectView(
+				within(callout, text("Holding: no events in 5m, an open incident stays open")),
+			).toExist(),
+			expectView(within(callout, role("link", { name: "Open incident" }))).toHaveAttr(
+				"href",
+				`/alerts/incidents/${incident.id}`,
+			),
+			expectView(within(role("heading", { name: /Checkout API/u }), text("Critical"))).toExist(),
+			expectView(
+				within(burnPanel, text("Holding: no events in 30m, an open incident stays open.")),
+			).toExist(),
+			expectView(within(burnPanel, text("Quiet"))).not.toExist(),
+			expectView(within(burnPanel, text("Would fire"))).not.toExist(),
+		)
+	})
+
+	test("a holding tier without an open incident shows in the burn panel, not as a callout", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withStatus("holding")),
+			themeResolved(),
+			expectView(callout).not.toExist(),
+			expectView(
+				within(burnPanel, text("Holding: no events in 5m, an open incident stays open.")),
+			).toExist(),
+		)
+	})
+
 	test("a spent budget reads negative and says the SLO is out of budget", () => {
 		scene(
 			{ update: pageUpdate, view },

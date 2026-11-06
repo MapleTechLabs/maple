@@ -1,6 +1,7 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { SloPublicId } from "@maple/domain/http/v2"
+import { sloRuleName } from "@maple/domain/slo"
 import { Effect, Option, Result, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -32,7 +33,8 @@ import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
 
 // `/lab/slos`: the SLOs tab, the SLO page and the SLO form over fixtures. `?state=` picks one:
-// tab-empty, tab, loading, healthy, burning, exhausted, status-error, form-new, form-invalid, form-edit.
+// tab-empty, tab, loading, healthy, burning, holding, exhausted, status-error, form-new, form-invalid,
+// form-edit.
 
 export const LabState = Schema.Literals([
 	"tab-empty",
@@ -40,6 +42,7 @@ export const LabState = Schema.Literals([
 	"loading",
 	"healthy",
 	"burning",
+	"holding",
 	"exhausted",
 	"status-error",
 	"form-new",
@@ -95,7 +98,7 @@ const fold = <PM, PS>(
 
 const INCIDENT = incidentRow({
 	rule_id: SLO_RULE_UUID,
-	rule_name: "SLO burn: Checkout API",
+	rule_name: sloRuleName("Checkout API"),
 	signal_type: "slo_burn_rate",
 	status: "open",
 	severity: "critical",
@@ -142,7 +145,7 @@ const hubFor = (state: LabState) => {
 }
 
 const scenarioOf = (state: LabState): SloScenario =>
-	state === "burning" ? "burning" : state === "exhausted" ? "exhausted" : "healthy"
+	state === "burning" || state === "holding" || state === "exhausted" ? state : "healthy"
 
 const sloFor = (state: LabState) => {
 	const slo = checkoutSlo()
