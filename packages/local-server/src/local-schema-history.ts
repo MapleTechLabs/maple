@@ -634,16 +634,16 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 	Object.freeze({
-		// v50: the SLO latency ladder counters on both service-overview rollups,
+		// v50: the SLO latency ladder counters and coverage total on both rollups,
 		// metadata-only, and their views recreated to fill them. No backfill.
 		//
 		// projectRevision is carried forward deliberately: it is a hardcoded
 		// constant that no longer tracks the generator's header, and the identity
 		// this gate compares is the fingerprint/digest pair.
 		version: 50,
-		fingerprint: "74a4ff73ddda5ff8",
-		digest: "74a4ff73ddda5ff8a3b9007c6394f4045edc131a373e0c0e06babe33e78d149f",
-		manifestDigest: "d9d49a35af6ab0217086012dae781be76c4e1a16b42413be038fe3f692ac23c0",
+		fingerprint: "12a5eae029ba20e3",
+		digest: "12a5eae029ba20e394e6d4c5ae13d238bf997e34c74861b99b95b43f7cc022ed",
+		manifestDigest: "ddd2fa9ee448c72b94806a4c9723cac7c573584a005813d8ef66c35a864ede98",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 ] as const)

@@ -38,6 +38,7 @@ import {
 	serviceExternalEdgesHourly,
 	servicePlatformsHourly,
 	serviceOverviewSpans,
+	SLO_LATENCY_COVERAGE_COLUMN,
 	sloLatencyColumnName,
 	serviceOverviewHourly,
 	serviceOverviewMinutely,
@@ -497,12 +498,16 @@ export const serviceOverviewSpansMv = defineMaterializedView("service_overview_s
 	],
 })
 
-// One sampling-weighted count per SLO latency rung; Duration is nanoseconds, status is ignored.
+// The coverage total, then one sampling-weighted count per SLO latency rung; Duration is
+// nanoseconds, status is ignored.
 const SLO_LATENCY_LADDER_SQL = Arr.join(
-	Arr.map(
-		SLO_LATENCY_THRESHOLDS_MS,
-		(ms) => `sumIf(SampleRate, Duration < ${ms * 1_000_000}) AS ${sloLatencyColumnName(ms)}`,
-	),
+	[
+		`sum(SampleRate) AS ${SLO_LATENCY_COVERAGE_COLUMN}`,
+		...Arr.map(
+			SLO_LATENCY_THRESHOLDS_MS,
+			(ms) => `sumIf(SampleRate, Duration < ${ms * 1_000_000}) AS ${sloLatencyColumnName(ms)}`,
+		),
+	],
 	",\n          ",
 )
 

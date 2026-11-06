@@ -114,8 +114,9 @@ const SERVICE_OPERATIONS_HTTP_COLUMNS = [
 	["RequestBodyCount", "SimpleAggregateFunction(sum, UInt64)"],
 ] as const
 
-/** The eight SLO latency ladder counters v50 adds to both service-overview rollups. */
+/** The SLO latency coverage total and eight ladder counters v50 adds to both service-overview rollups. */
 const SERVICE_OVERVIEW_SLO_LATENCY_COLUMNS = [
+	["EstimatedLadderSpanCount", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
 	["EstimatedUnder50Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
 	["EstimatedUnder100Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
 	["EstimatedUnder250Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
@@ -1916,7 +1917,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		plan: [
 			[
 				"add-service-overview-slo-latency-ladder",
-				"Add the eight SLO latency ladder counters to both service-overview rollups and recreate their views so new buckets count spans under each threshold",
+				"Add the SLO latency coverage total and eight ladder counters to both service-overview rollups and recreate their views so new buckets count spans under each threshold",
 			],
 		],
 		verifies: "Verify the v50 physical schema, retained raw telemetry counts, and the rollup row counts",
@@ -1927,14 +1928,14 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				classification: "derived",
 				disposition: "preserve-exact",
 				guarantee:
-					"Eight counter columns are added as metadata-only defaults; no part is rewritten, the row count is verified unchanged, and existing rows read the ladder as zero.",
+					"Nine counter columns are added as metadata-only defaults; no part is rewritten, the row count is verified unchanged, and existing rows read the ladder and its EstimatedLadderSpanCount coverage as zero.",
 			},
 			{
 				name: "service_overview_minutely",
 				classification: "derived",
 				disposition: "preserve-exact",
 				guarantee:
-					"Eight counter columns are added as metadata-only defaults; no part is rewritten, the row count is verified unchanged, and existing rows read the ladder as zero.",
+					"Nine counter columns are added as metadata-only defaults; no part is rewritten, the row count is verified unchanged, and existing rows read the ladder and its EstimatedLadderSpanCount coverage as zero.",
 			},
 		],
 	},

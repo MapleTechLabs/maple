@@ -869,9 +869,13 @@ export type ServiceOverviewSpansRow = InferRow<typeof serviceOverviewSpans>
 export const sloLatencyColumnName = <Ms extends SloLatencyThresholdMs>(ms: Ms): `EstimatedUnder${Ms}Ms` =>
 	`EstimatedUnder${ms}Ms`
 
+/** Spans the ladder covers (`sum(SampleRate)`): the latency SLI's total, 0 on pre-0058 buckets. */
+export const SLO_LATENCY_COVERAGE_COLUMN = "EstimatedLadderSpanCount" as const
+
 // Latency SLI ladder: `sumIf(SampleRate, Duration < ms)` per rung, any status. Written only by
-// the post-0058 views, so older buckets read 0 and must not be scored as slow traffic.
+// the post-0058 views, so older buckets read 0 on every rung and on the coverage column.
 const sloLatencyLadderColumns = {
+	[SLO_LATENCY_COVERAGE_COLUMN]: t.simpleAggregateFunction("sum", t.float64()).default(0),
 	EstimatedUnder50Ms: t.simpleAggregateFunction("sum", t.float64()).default(0),
 	EstimatedUnder100Ms: t.simpleAggregateFunction("sum", t.float64()).default(0),
 	EstimatedUnder250Ms: t.simpleAggregateFunction("sum", t.float64()).default(0),
@@ -880,7 +884,7 @@ const sloLatencyLadderColumns = {
 	EstimatedUnder2500Ms: t.simpleAggregateFunction("sum", t.float64()).default(0),
 	EstimatedUnder5000Ms: t.simpleAggregateFunction("sum", t.float64()).default(0),
 	EstimatedUnder10000Ms: t.simpleAggregateFunction("sum", t.float64()).default(0),
-} satisfies Record<ReturnType<typeof sloLatencyColumnName>, unknown>
+} satisfies Record<`EstimatedUnder${SloLatencyThresholdMs}Ms` | typeof SLO_LATENCY_COVERAGE_COLUMN, unknown>
 
 /**
  * Hour-grain service overview metrics retained independently from the 30-day

@@ -34,7 +34,9 @@ const spanRows = (atMs: number, prefix: string, spans: ReadonlyArray<Span>) =>
 		", ",
 	)
 
+// The coverage total first, then the rungs: a pre-v50 bucket reads 0 on all nine.
 const LADDER = [
+	"EstimatedLadderSpanCount",
 	"EstimatedUnder50Ms",
 	"EstimatedUnder100Ms",
 	"EstimatedUnder250Ms",
@@ -114,7 +116,7 @@ describeWithChdb("v49 -> v50 service-overview SLO latency ladder", () => {
 		if (root) await rm(root, { recursive: true, force: true })
 	})
 
-	test("keeps every existing bucket and reads the ladder as zero on them", async () => {
+	test("keeps every existing bucket and reads the ladder and its coverage as zero on them", async () => {
 		const state = await migration.preflight(context)
 		await migration.prepareTarget(context, state)
 		const progress = await migration.apply(context, state, undefined)
@@ -149,6 +151,8 @@ describeWithChdb("v49 -> v50 service-overview SLO latency ladder", () => {
 		)
 		const expected = {
 			spans: "6",
+			// Sampling-weighted, so the coverage total is 10 against a raw count of 6.
+			EstimatedLadderSpanCount: "10",
 			EstimatedUnder50Ms: "1",
 			EstimatedUnder100Ms: "3",
 			EstimatedUnder250Ms: "3",
