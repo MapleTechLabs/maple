@@ -15,6 +15,8 @@ enum SignalUnit: Codable {
 	case apdex
 	case count
 	case plain
+	/// An SLO burn rate: a multiple of the sustainable rate, shown as `14.4x` like the web.
+	case burnRate
 
 	func format(_ value: Double?) -> String {
 		guard let value, value.isFinite else { return Format.placeholder }
@@ -24,6 +26,7 @@ enum SignalUnit: Codable {
 		case .perMinute: return Format.count(value) + "/min"
 		case .apdex: return String(format: "%.2f", value)
 		case .count, .plain: return Format.count(value)
+		case .burnRate: return String(format: "%.1fx", value)
 		}
 	}
 }
@@ -46,6 +49,8 @@ struct SignalDisplay: Codable {
 		case .rawQuery: self.init(label: "Raw query", unit: .plain)
 		// A monitor's hidden rule: down is 1, up is 0, so the value reads as a plain number.
 		case .uptime: self.init(label: "Uptime check", unit: .plain)
+		// An SLO's hidden rule: the value is how many times faster than sustainable the budget burns.
+		case .sloBurnRate: self.init(label: "SLO burn rate", unit: .burnRate)
 		}
 	}
 

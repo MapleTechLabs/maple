@@ -173,6 +173,12 @@ export function registerSloTools(server: McpToolRegistrar) {
 			// One batched read for every SLO; if it fails, the list still shows each SLO's config.
 			const statuses = yield* service.statuses(tenant).pipe(
 				Effect.map((read) => new Map(Arr.map(read, (row) => [row.slo.id, row.status] as const))),
+				Effect.tapError((error) =>
+					Effect.andThen(
+						Effect.annotateCurrentSpan({ "maple.slo.status_error": error._tag }),
+						Effect.logWarning("list_slos could not read SLO statuses", error.message),
+					),
+				),
 				Effect.result,
 			)
 			const rows = Arr.map(shown, (slo): typeof SloListRow.Type => {
@@ -186,7 +192,10 @@ export function registerSloTools(server: McpToolRegistrar) {
 						worstBurnWindow: null,
 						burning: null,
 						holding: false,
-						statusError: Result.isFailure(statuses) ? statuses.failure.message : "No status read",
+						// The model gets what to do next; the raw error is in the log and on the span.
+						statusError: Result.isFailure(statuses)
+							? "The status read failed; inspect_slo reads one SLO's status on its own"
+							: "No status read",
 					}
 				}
 				const worst = worstWindow(status.burnWindows)

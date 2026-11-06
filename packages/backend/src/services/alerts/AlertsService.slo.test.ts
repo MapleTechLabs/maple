@@ -14,7 +14,7 @@ import {
 } from "@maple/backend/platform/test-pglite"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { SlosService } from "@maple/backend/services/slos/SlosService"
+import { MAX_SLOS_PER_ORG, SlosService } from "@maple/backend/services/slos/SlosService"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
 	adminRoles,
@@ -32,6 +32,8 @@ interface Traffic {
 	badPerMille: number
 	/** No spans at all: the service is down or ingest stalled. */
 	silent?: boolean
+	/** No spans in only the newest minutes; older minutes keep their traffic. */
+	silentMinutes?: number
 }
 
 /**
@@ -46,11 +48,17 @@ const sloWarehouse = (traffic: Traffic) =>
 				const minute = Math.floor(nowMs / 60_000) * 60_000
 				const rows =
 					options?.context === "sloBurnWindows" && traffic.silent !== true
-						? Arr.makeBy(400, (index) => ({
-								bucket: formatWarehouseDateTime(minute - index * 60_000),
-								total: 1000,
-								good: 1000 - traffic.badPerMille,
-							}))
+						? Arr.map(
+								Arr.filter(
+									Arr.makeBy(400, (index) => index),
+									(index) => index >= (traffic.silentMinutes ?? 0),
+								),
+								(index) => ({
+									bucket: formatWarehouseDateTime(minute - index * 60_000),
+									total: 1000,
+									good: 1000 - traffic.badPerMille,
+								}),
+							)
 						: []
 				return yield* compiledQueryOf(compiled).decodeRows(rows).pipe(Effect.orDie)
 			}),
@@ -132,6 +140,27 @@ describe("AlertsService SLO burn-rate rules", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("a page stays open while its 5m window is empty, even once the warning tier clears", () => {
+		const traffic: Traffic = { badPerMille: 20 }
+		const { layer } = harness(traffic)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			yield* createSlo(undefined)
+			yield* alerts.runSchedulerTick()
+			assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.severity, "critical")
+
+			// The newest minutes go quiet and the older ones turn healthy: warning clears, critical holds.
+			traffic.badPerMille = 0
+			traffic.silentMinutes = 6
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+			const held = (yield* alerts.listIncidents(orgId)).incidents
+			assert.strictEqual(held[0]?.status, "open")
+			assert.strictEqual(held[0]?.severity, "critical")
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("an edit brings back a rule whose row is gone", () => {
 		const { layer, testDb } = harness({ badPerMille: 0 })
 		return Effect.gen(function* () {
@@ -201,6 +230,26 @@ describe("AlertsService SLO burn-rate rules", () => {
 				),
 			)
 			assert.strictEqual(remaining?.count, 0)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("caps an org at MAX_SLOS_PER_ORG SLOs", () => {
+		const { layer } = harness({ badPerMille: 0 })
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const slos = yield* SlosService
+			const create = (index: number) =>
+				slos.create(orgId, {
+					name: `SLO ${index}`,
+					serviceName: "checkout",
+					sli: { _tag: "availability" },
+					targetPercent: 99,
+					createdBy: userId,
+				})
+			yield* Effect.forEach(Arr.range(1, MAX_SLOS_PER_ORG), create, { discard: true })
+			const refused = yield* create(MAX_SLOS_PER_ORG + 1).pipe(Effect.flip)
+			assert.strictEqual(refused._tag, "@maple/http/errors/SloValidationError")
+			assert.lengthOf(yield* slos.list(orgId), MAX_SLOS_PER_ORG)
 		}).pipe(Effect.provide(layer))
 	})
 

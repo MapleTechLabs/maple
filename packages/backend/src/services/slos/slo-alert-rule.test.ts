@@ -29,6 +29,33 @@ describe("evaluateSloBurn", () => {
 		)
 	})
 
+	it("holds the critical tier while its 5m window is empty and still fires the warning", () => {
+		const evaluation = evaluateSloBurn(
+			Arr.map(windows({ 30: 8, 60: 20, 360: 7 }), (window) =>
+				window.windowMinutes === 5 ? { ...window, total: 0, good: 0 } : window,
+			),
+		)
+		expect(evaluation.status).toBe("breached")
+		expect(evaluation.levels).toEqual([
+			{ severity: "warning", status: "breach" },
+			{ severity: "critical", status: "hold" },
+		])
+	})
+
+	it("holds the critical tier while its 5m window is empty even as the warning clears", () => {
+		const evaluation = evaluateSloBurn(
+			Arr.map(windows({ 30: 0.5, 60: 20, 360: 0.5 }), (window) =>
+				window.windowMinutes === 5 ? { ...window, total: 0, good: 0 } : window,
+			),
+		)
+		// Healthy overall, but the held tier keeps an open critical incident from resolving.
+		expect(evaluation.status).toBe("healthy")
+		expect(evaluation.levels).toEqual([
+			{ severity: "warning", status: "clear" },
+			{ severity: "critical", status: "hold" },
+		])
+	})
+
 	it("skips as no data when every short window is empty", () => {
 		const empty = Arr.map(windows({}), (window) =>
 			window.windowMinutes === 5 || window.windowMinutes === 30

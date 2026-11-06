@@ -64,7 +64,7 @@ export const MANAGED_SIGNAL_TYPES = [
 ] as const satisfies ReadonlyArray<AlertSignalType>
 export type ManagedSignalType = (typeof MANAGED_SIGNAL_TYPES)[number]
 export const isManagedSignalType = (signalType: string): signalType is ManagedSignalType =>
-	signalType === "uptime" || signalType === "slo_burn_rate"
+	Arr.some(MANAGED_SIGNAL_TYPES, (managed) => managed === signalType)
 
 export const AlertGroupByDimension = Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed()).annotate({
 	identifier: "@maple/AlertGroupByDimension",
