@@ -211,6 +211,60 @@ describe("buildIncidentTimeline", () => {
 		expect(entries.at(-1)?.detail).toBe("Last value 8.4% · reminders every 30m while open")
 	})
 
+	it("says what happened to each page an escalation sent", () => {
+		const entries = build(
+			makeIncident(),
+			[],
+			[
+				makeActivity({
+					type: "paged",
+					actor: null,
+					source: null,
+					created_at: "2026-10-15T14:21:00.000Z",
+					page: {
+						user_id: "user_ben",
+						name: "Ben Brook",
+						channel: "email",
+						status: "sent",
+						error_message: null,
+					},
+				}),
+				makeActivity({
+					type: "paged",
+					actor: null,
+					source: null,
+					created_at: "2026-10-15T14:22:00.000Z",
+					page: {
+						user_id: "user_ben",
+						name: "Ben Brook",
+						channel: "slack",
+						status: "failed",
+						error_message: "The chat account could not be reached",
+					},
+				}),
+				makeActivity({
+					type: "paged",
+					actor: null,
+					source: null,
+					created_at: "2026-10-15T14:23:00.000Z",
+					page: {
+						user_id: "user_ben",
+						name: "Ben Brook",
+						channel: "email",
+						status: "skipped",
+						error_message: "Not sent: the incident was acknowledged",
+					},
+				}),
+			],
+		)
+		expect(Arr.map(entries.slice(1, 4), (entry) => [entry.title, entry.tone])).toEqual([
+			["Paged Ben Brook by email", "info"],
+			["Couldn't page Ben Brook by Slack DM", "crit"],
+			["Skipped paging Ben Brook by email", "neutral"],
+		])
+		expect(entries[2]?.detail).toBe("The chat account could not be reached")
+	})
+
 	it("keeps the state still in effect last when an ack came after it", () => {
 		const entries = build(
 			makeIncident({ holdReason: "no_data", heldSince: "2026-10-15T14:40:00.000Z" }),
