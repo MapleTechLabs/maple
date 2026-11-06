@@ -47,6 +47,7 @@ const hub = (h: H, model: Model, inputs: PageViewInputs): Html => {
 				status,
 				signals,
 				isNarrowed: isNarrowedBySidebar(model),
+				timeZone: inputs.context.timeZone,
 				rowState: (signal) => ({
 					isSelected: model.selectedIds.includes(signal.id),
 					isSelecting,

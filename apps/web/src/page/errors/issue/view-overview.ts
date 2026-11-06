@@ -1,7 +1,7 @@
 import type { ErrorIssueDocument, IssueSeverity } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
-import { formatRelativeTime, toEpochMs } from "@maple/ui/lib/time-format"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { eyebrow } from "@maple/views/ui/eyebrow"
@@ -112,7 +112,7 @@ export const SURGE_THRESHOLD = 2.5
 const exact = (value: number): Html | string => formatNumber(value)
 
 const stamp = (h: H, iso: string, inputs: StatInputs): Html =>
-	relativeTime(h, { value: iso, nowMs: inputs.nowMs, timeZone: inputs.timeZone, tooltip: "title" })
+	relativeTime(h, { value: iso, nowMs: inputs.nowMs, timeZone: inputs.timeZone })
 
 /** Below this the window's tail has dropped to under half its usual rate. */
 const FADE_THRESHOLD = 0.5
@@ -177,18 +177,12 @@ export const issueStats = (h: H, issue: ErrorIssueDocument, inputs: StatInputs):
 				issue.lastRegressedAt !== null && !isFixHeldSince(issue)
 					? h.span(
 							[h.Class("text-severity-warn")],
-							["regressed ", formatRelativeTime(issue.lastRegressedAt, inputs.nowMs)],
+							["regressed ", stamp(h, issue.lastRegressedAt, inputs)],
 						)
 					: issue.snoozeUntil !== null
-						? h.span([], ["snoozed until ", formatRelativeTime(issue.snoozeUntil, inputs.nowMs)])
+						? h.span([], ["snoozed until ", stamp(h, issue.snoozeUntil, inputs)])
 						: issue.lastResolvedAt !== null
-							? h.span(
-									[],
-									[
-										"fix held since ",
-										formatRelativeTime(issue.lastResolvedAt, inputs.nowMs),
-									],
-								)
+							? h.span([], ["fix held since ", stamp(h, issue.lastResolvedAt, inputs)])
 							: undefined,
 		}),
 	])

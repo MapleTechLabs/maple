@@ -1,5 +1,4 @@
 import { formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type {
@@ -12,6 +11,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "@maple/views/ui/heading"
 import { inlineCodeClassName } from "@maple/views/ui/inline-code"
 import { statusDot } from "@maple/views/ui/status-dot"
+import { timestamp } from "@maple/views/ui/timestamp"
+import { relativeTime } from "../../kit/relative-time"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
@@ -189,30 +190,43 @@ export const failureStatusLine = <M>(
 	}>,
 ): Html => {
 	const { status, scope, timeZone } = options
-	const shortDate = (ms: number) => formatDateInTimezone(ms, { timeZone, withYear: false })
-	const dateTime = (ms: number) => formatTimestampInTimezone(ms, { timeZone, style: "range" })
-	const [lead, detail] =
+	const at = (ms: number, label: string): Html =>
+		timestamp(h, { value: ms, timeZone, nowMs: options.nowMs, label })
+	const shortDate = (ms: number) => at(ms, formatDateInTimezone(ms, { timeZone, withYear: false }))
+	const dateTime = (ms: number) => at(ms, formatTimestampInTimezone(ms, { timeZone, style: "range" }))
+	const [lead, detail]: readonly [ReadonlyArray<Html | string>, string | undefined] =
 		status.kind === "stopped"
 			? [
 					scope === "tool"
-						? `No failures since ${dateTime(status.since)}`
-						: `None since ${shortDate(status.since)}`,
+						? ["No failures since ", dateTime(status.since)]
+						: ["None since ", shortDate(status.since)],
 					`· ${formatNumber(status.callsSince)} ${pluralize(status.callsSince, "call")} since`,
 				]
 			: status.kind === "quiet"
 				? [
-						`No calls since ${scope === "tool" ? dateTime(status.since) : shortDate(status.since)}`,
+						[
+							"No calls since ",
+							scope === "tool" ? dateTime(status.since) : shortDate(status.since),
+						],
 						undefined,
 					]
 				: scope === "tool"
 					? [
-							`Last failure ${formatRelativeTimeOrDate(status.lastSeen, options.nowMs, timeZone)}`,
+							[
+								"Last failure ",
+								relativeTime(h, {
+									value: status.lastSeen,
+									nowMs: options.nowMs,
+									timeZone,
+									variant: "orDate",
+								}),
+							],
 							options.calls > 0
 								? `· ${formatErrorRate(options.failures / options.calls)} of ${formatNumber(options.calls)} calls`
 								: undefined,
 						]
 					: [
-							"Still happening",
+							["Still happening"],
 							options.activeBuckets === undefined
 								? undefined
 								: `· failed in ${options.activeBuckets.active} of ${options.activeBuckets.total} ${options.activeBuckets.unit === "day" ? "days" : `${options.activeBuckets.unit} buckets`}`,
@@ -221,7 +235,7 @@ export const failureStatusLine = <M>(
 		[h.Class(cn("flex items-center gap-2 font-mono text-2xs leading-3.5", options.className))],
 		[
 			statusDot(h, { tone: STATUS_TONE[status.kind] }),
-			h.span([h.Class("text-foreground")], [lead]),
+			h.span([h.Class("text-foreground")], lead),
 			...(detail === undefined ? [] : [h.span([h.Class("text-foreground-subtle")], [detail])]),
 		],
 	)

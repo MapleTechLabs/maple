@@ -39,6 +39,8 @@ export type SignalEmptyStateOptions<M> = Readonly<{
 	detail?: Html
 	presence: PresenceState
 	nowMs: number
+	/** The session's zone (`TimeFormat`), for the last-seen time's card. */
+	timeZone: string
 	guide: Omit<ConnectGuideOptions<M>, "note">
 }>
 
@@ -58,6 +60,7 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 		detail: options.detail,
 		presence: options.presence,
 		nowMs: options.nowMs,
+		timeZone: options.timeZone,
 		className: "h-full",
 		onramp: {
 			source: sourceOf(h, options.signal),

@@ -285,7 +285,6 @@ export const lastSeenCell = <M>(h: HtmlBuilder<M>, value: number, nowMs: number,
 	relativeTime(h, {
 		value,
 		variant: "orDate",
-		tooltip: "title",
 		nowMs,
 		timeZone,
 		className:

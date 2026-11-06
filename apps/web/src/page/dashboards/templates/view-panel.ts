@@ -286,7 +286,6 @@ const requirementBlock = (
 																		nowMs,
 																		timeZone,
 																		prefix: "last seen",
-																		tooltip: "title",
 																	}),
 																]),
 													],

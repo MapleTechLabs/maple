@@ -68,7 +68,6 @@ const stateLine = (h: H, model: Model, page: V2StatusPage, timeZone: string): Ht
 				value: page.published_at,
 				nowMs: model.nowMs ?? 0,
 				timeZone,
-				tooltip: "title",
 				prefix: "Live, published",
 			}),
 		],

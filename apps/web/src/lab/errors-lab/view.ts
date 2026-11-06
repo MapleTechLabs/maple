@@ -93,6 +93,7 @@ const hubView = Submodel.defineView<HubModel, HubMessage, HubInputs>((hub, input
 				status,
 				signals,
 				isNarrowed: false,
+				timeZone: inputs.timeZone,
 				rowState: (signal) => ({
 					isSelected: hub.selectedIds.includes(signal.id),
 					isSelecting,

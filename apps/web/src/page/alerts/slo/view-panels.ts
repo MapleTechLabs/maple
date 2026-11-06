@@ -444,7 +444,6 @@ const incidentRow = (h: H, row: AlertIncidentRow, nowMs: number, timeZone: strin
 			value: isoMs(row.first_triggered_at),
 			nowMs,
 			timeZone,
-			tooltip: "title",
 			prefix: "Opened",
 		}),
 		trailing: severityBadge(h, row.severity === "critical" ? "critical" : "warning"),

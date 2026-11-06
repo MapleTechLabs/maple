@@ -44,6 +44,7 @@ import { MountEndpointPeekKeys } from "./keys"
 import { Message } from "./message"
 import type { Model } from "./model"
 import type { Peek } from "./update"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option, Order } from "effect"
@@ -68,6 +69,7 @@ export type ViewInputs = Readonly<{
 	tracesHref: (filter: Readonly<{ statusCode?: string; slowest?: boolean }>) => string
 	alertHref: string
 	timeZone: string
+	nowMs: number
 }>
 
 const toChart = (chartId: string) => (message: Chart.Message) => Message.GotChartMessage({ chartId, message })
@@ -449,15 +451,16 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 									],
 									[request.bodyBytes === null ? "" : formatBytes(request.bodyBytes)],
 								),
-								h.span(
-									[h.Class("ml-auto shrink-0 whitespace-nowrap text-muted-foreground")],
-									[
-										formatTimestampInTimezone(request.timestamp, {
-											timeZone: inputs.timeZone,
-											style: "range",
-										}),
-									],
-								),
+								timestamp(h, {
+									value: request.timestamp,
+									timeZone: inputs.timeZone,
+									nowMs: inputs.nowMs,
+									label: formatTimestampInTimezone(request.timestamp, {
+										timeZone: inputs.timeZone,
+										style: "range",
+									}),
+									className: "ml-auto shrink-0 whitespace-nowrap text-muted-foreground",
+								}),
 							],
 						),
 					)),

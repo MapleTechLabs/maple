@@ -8,6 +8,7 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
 import { button } from "@maple/views/ui/button"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { avatarFallback } from "@maple/views/ui/display"
 import { errorState } from "@maple/views/ui/error-state"
@@ -122,11 +123,20 @@ const memberRow = (h: H, model: Model, member: BillingAccountOrg, timeZone: stri
 				orgAvatar(h, name, member.imageUrl),
 				vstack(h, { gap: "0.5", shrink: true }, [
 					typography(h, { size: "sm", weight: "medium", truncate: true }, [name]),
-					typography(h, { size: "2xs", tone: "muted" }, [
+					typography(
+						h,
+						{ size: "2xs", tone: "muted" },
 						member.linkedAt === undefined
-							? "Billed here"
-							: `Billed here since ${formatDateInTimezone(member.linkedAt, { timeZone })}`,
-					]),
+							? ["Billed here"]
+							: [
+									"Billed here since ",
+									timestamp(h, {
+										value: member.linkedAt,
+										timeZone,
+										label: formatDateInTimezone(member.linkedAt, { timeZone }),
+									}),
+								],
+					),
 				]),
 			]),
 			hstack(h, { gap: "4" }, [

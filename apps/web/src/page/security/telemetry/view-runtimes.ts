@@ -301,7 +301,6 @@ const runtimesTable = (h: H, entries: ReadonlyArray<RuntimeEntry>, nowMs: number
 												nowMs,
 												timeZone,
 												variant: "orDate",
-												tooltip: "title",
 												className: typographyClass({
 													size: "xs",
 													tone: "muted",

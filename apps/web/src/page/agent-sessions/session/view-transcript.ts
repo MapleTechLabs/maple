@@ -85,6 +85,7 @@ const block = (h: H, context: BlockContext, row: TranscriptRow): Html => {
 		isContinued: context.continued.has(row.key),
 		isSelected: isSelectedRow(model, row),
 		timeZone,
+		nowMs: model.nowMs,
 	}
 	switch (row.kind) {
 		case "turn":
@@ -116,7 +117,7 @@ const block = (h: H, context: BlockContext, row: TranscriptRow): Html => {
 		case "note":
 			return noteBlock(h, row)
 		case "divider":
-			return dividerBlock(h, row, context.data.progress, timeZone)
+			return dividerBlock(h, row, context.data.progress, timeZone, model.nowMs)
 	}
 }
 

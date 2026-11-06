@@ -1,9 +1,11 @@
 import { McpQueryError, type McpToolRegistrar } from "./types"
-import { DateTime, Effect, Schema, Array as Arr, String as Str } from "effect"
+import { DateTime, Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { GetIncidentTimelineOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
+import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
+import type { AlertSilenceId, OrgId } from "@maple/domain/primitives"
 import {
 	ackLabel,
 	ALERT_INCIDENT_STATUSES,
@@ -55,6 +57,45 @@ const formatPages = (pages: ReadonlyArray<PageRow>): string =>
 		),
 		", ",
 	)
+
+/** Reasons of the silences these incidents name; one that cannot be read is left out. */
+const silenceReasons = Effect.fn("McpTool.getIncidentTimeline.silenceReasons")(function* (
+	orgId: OrgId,
+	ids: ReadonlyArray<AlertSilenceId>,
+) {
+	if (ids.length === 0) return new Map<string, string>()
+	const silences = yield* AlertSilencesService
+	const found = yield* Effect.forEach(
+		ids,
+		(id) =>
+			silences.get(orgId, id).pipe(
+				Effect.map((silence) => [[silence.id, silence.reason] as const]),
+				// The line falls back to the bare id, but a failed lookup is still recorded.
+				Effect.tapError((error) =>
+					Effect.logWarning("Alert silence reason lookup failed").pipe(
+						Effect.annotateLogs({ silenceId: id, errorTag: error._tag }),
+					),
+				),
+				Effect.orElseSucceed(() => []),
+			),
+		{ concurrency: 4 },
+	)
+	return new Map<string, string>(Arr.flatten(found))
+})
+
+/** How a held-back notification reads: still owed while `silencedAt` is set. */
+function silenceLine(inc: {
+	readonly silenceId?: string | null
+	readonly silencedAt?: string | null
+	readonly silenceReason?: string
+}): string | undefined {
+	if (inc.silenceId === undefined || inc.silenceId === null) return undefined
+	const named =
+		inc.silenceReason === undefined ? inc.silenceId : `"${inc.silenceReason}" (${inc.silenceId})`
+	return inc.silencedAt === undefined || inc.silencedAt === null
+		? `a page was held back earlier by silence ${named}; nothing is owed now`
+		: `held back by silence ${named} since ${formatTimestamp(inc.silencedAt)}`
+}
 
 export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 	server.define({
@@ -123,6 +164,11 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 					),
 				)
 
+			const reasons = yield* silenceReasons(
+				tenant.orgId,
+				Arr.dedupe(Arr.flatMap(incidents, (i) => (i.silenceId === null ? [] : [i.silenceId]))),
+			)
+
 			return {
 				incidents: Arr.map(incidents, (i) => {
 					const paged = Arr.filter(pages, (entry) => entry.incidentId === i.id)
@@ -141,6 +187,12 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 						lastTriggeredAt: i.lastTriggeredAt,
 						resolvedAt: i.resolvedAt,
 						lastNotifiedAt: i.lastNotifiedAt,
+						silenceId: i.silenceId,
+						silencedAt: i.silencedAt,
+						...Option.match(Option.fromUndefinedOr(reasons.get(i.silenceId ?? "")), {
+							onNone: () => undefined,
+							onSome: (silenceReason) => ({ silenceReason }),
+						}),
 						acknowledgedAt: i.acknowledgedAt,
 						acknowledgedBy: ackLabel(i),
 						...(paged.length === 0
@@ -203,6 +255,7 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 								: `${formatTimestamp(inc.acknowledgedAt)} by ${inc.acknowledgedBy ?? "someone"}`,
 						],
 						["Paged", inc.pages === undefined ? undefined : formatPages(inc.pages)],
+						["Notifications", silenceLine(inc)],
 						["Incident ID", inc.id],
 						["Rule ID", inc.ruleId],
 					]),

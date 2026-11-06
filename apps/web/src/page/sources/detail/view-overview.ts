@@ -1,5 +1,4 @@
 import type { V2Source } from "@maple/domain/http/v2"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -28,6 +27,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstackClass, vstack } from "@maple/views/ui/stack"
+import { relativeTime } from "../../kit/relative-time"
 
 // `SourceOverview`.
 
@@ -54,7 +54,7 @@ const notices = (h: H, source: V2Source, timeZone: string, nowMs: number): Reado
 	...(source.status === "paused"
 		? [
 				alert(h, { variant: "warn" }, [
-					alertTitle(h, [pausedLabel(source, timeZone)]),
+					alertTitle(h, pausedLabel(h, source, timeZone)),
 					alertDescription(
 						h,
 						[
@@ -70,7 +70,10 @@ const notices = (h: H, source: V2Source, timeZone: string, nowMs: number): Reado
 	...(source.status === "expired" && source.expires_at !== null
 		? [
 				alert(h, {}, [
-					alertTitle(h, [`Expired ${formatRelativeTime(source.expires_at, nowMs)}`]),
+					alertTitle(h, [
+						"Expired ",
+						relativeTime(h, { value: source.expires_at, nowMs, timeZone }),
+					]),
 					alertDescription(
 						h,
 						["Senders are rejected with 401. Set a new expiry in Settings to accept it again."],
@@ -169,12 +172,14 @@ const last24h = (h: H, model: Model): Html => {
 	)
 }
 
-const rulesSummary = (h: H, source: V2Source, nowMs: number): Html =>
+const rulesSummary = (h: H, source: V2Source, timeZone: string, nowMs: number): Html =>
 	panel(h, {}, [
 		configRow(h, "Signals", [signalsSummary(source.allowed_signals)]),
 		configRow(h, "Rate limit", [rateLimitLabel(source.rate_limit_rps)]),
 		configRow(h, "Expires", [
-			source.expires_at === null ? "Never" : formatRelativeTime(source.expires_at, nowMs),
+			source.expires_at === null
+				? "Never"
+				: relativeTime(h, { value: source.expires_at, nowMs, timeZone }),
 		]),
 		configRow(h, "Resource attributes", [
 			source.resource_attributes.length === 0
@@ -227,7 +232,7 @@ const resourcesLabel = (source: V2Source): string | null => {
 }
 
 /** What an integration source collects, where its rules table would be: Maple holds the settings. */
-const collectionSummary = (h: H, model: Model, source: V2Source, nowMs: number): Html => {
+const collectionSummary = (h: H, model: Model, source: V2Source, timeZone: string, nowMs: number): Html => {
 	const signals = storedSignals(model)
 	const resources = resourcesLabel(source)
 	return panel(h, {}, [
@@ -254,7 +259,10 @@ const collectionSummary = (h: H, model: Model, source: V2Source, nowMs: number):
 				),
 			],
 		),
-		configRow(h, "Connected", [`${viaLabel(source)} · ${formatRelativeTime(source.created_at, nowMs)}`]),
+		configRow(h, "Connected", [
+			`${viaLabel(source)} · `,
+			relativeTime(h, { value: source.created_at, nowMs, timeZone }),
+		]),
 		configRow(h, "Collects", [platformMeta(source.platform).description]),
 		...(resources === null ? [] : [configRow(h, "Resources", [resources])]),
 		configRow(h, "Signals", [signals ?? skeleton(h, "h-4 w-32")]),
@@ -280,7 +288,7 @@ export const overviewTab = (h: H, model: Model, source: V2Source, timeZone: stri
 					integrationPlatformOf(source) === null ? "Last data" : "Last sync",
 					source.health.last_data_at === null
 						? "Never"
-						: formatRelativeTime(source.health.last_data_at, nowMs),
+						: relativeTime(h, { value: source.health.last_data_at, nowMs, timeZone }),
 					hasToken(source) || source.is_default
 						? "Last request the gateway accepted"
 						: "Last successful collection",
@@ -289,7 +297,9 @@ export const overviewTab = (h: H, model: Model, source: V2Source, timeZone: stri
 			],
 		),
 		volumePanel(h, model, timeZone, nowMs),
-		...(hasToken(source) ? [rulesSummary(h, source, nowMs)] : []),
-		...(integrationPlatformOf(source) === null ? [] : [collectionSummary(h, model, source, nowMs)]),
+		...(hasToken(source) ? [rulesSummary(h, source, timeZone, nowMs)] : []),
+		...(integrationPlatformOf(source) === null
+			? []
+			: [collectionSummary(h, model, source, timeZone, nowMs)]),
 	])
 }
