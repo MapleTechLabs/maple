@@ -329,7 +329,7 @@ const receiveDocument = (
 				status: "Ready",
 				document,
 				snapshot,
-				layoutWrite: receiveLayoutWrite(model.layoutWrite, document),
+				layoutWrite: receiveLayoutWrite(model.layoutWrite),
 				charts: withCharts(model, document.widgets),
 				// The toolbar's share dialog reads the shares too, so they load for an empty board as well.
 				shares: model.shares === "Idle" ? "Loading" : model.shares,

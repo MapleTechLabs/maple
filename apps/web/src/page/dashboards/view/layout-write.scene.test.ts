@@ -150,7 +150,7 @@ describe("a dropped layout's write", () => {
 		expect(shownX(late, "error-rate")).toBe(shownX(second, "error-rate"))
 	})
 
-	test("an unrelated document update keeps drawing the drop until the store holds it", () => {
+	test("a document update while the drop saves keeps drawing it, even the store's own echo", () => {
 		const drop = dropped(editing()).model
 		const droppedX = shownX(drop, "error-rate")
 		const renamed = pageUpdate(
@@ -158,6 +158,7 @@ describe("a dropped layout's write", () => {
 			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(documentWith("Renamed", 3)) }),
 		).model
 		expect(shownX(renamed, "error-rate")).toBe(droppedX)
+		// The store applies the write optimistically: its echo lands before the server answers.
 		const echoed = pageUpdate(
 			renamed,
 			Message.UpdatedDashboard({
@@ -165,8 +166,19 @@ describe("a dropped layout's write", () => {
 				maybeDocument: Option.some(documentWith("Renamed", droppedX ?? 0)),
 			}),
 		).model
-		expect(echoed.layoutWrite).toBeNull()
-		expect(shownX(echoed, "error-rate")).toBe(droppedX)
+		expect(echoed.layoutWrite?._tag).toBe("Saving")
+		// The server then refuses it and the store rolls back: Retry still has the write to send.
+		const failed = run(echoed, [
+			Message.CompletedLayoutWrite({
+				generation: generationOf(drop),
+				result: Result.fail("Unavailable"),
+			}),
+			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(documentWith("Renamed", 3)) }),
+		])
+		expect(shownX(failed, "error-rate")).toBe(3)
+		expect(names(pageUpdate(failed, Message.ClickedRetryPersistence()).commands)).toEqual([
+			UpdateWidgetLayouts.name,
+		])
 	})
 
 	test("a saved drop clears on the next document", () => {

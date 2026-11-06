@@ -87,9 +87,9 @@ export const retryLayoutWrite = (model: Model, context: PageContext): Return =>
 const isEchoed = (write: LayoutWrite, document: DashboardDocument | null): boolean =>
 	document !== null && withLayouts(document, write.changes, document.updatedAt) === null
 
-/** A new document clears a drop once the store holds it, or the write is settled; a save keeps drawing. */
-export const receiveLayoutWrite = (
-	write: LayoutWrite | null,
-	document: DashboardDocument,
-): LayoutWrite | null =>
-	write === null || write._tag === "Saved" || isEchoed(write, document) ? null : write
+/**
+ * A new document clears a settled drop. A drop still saving is kept even when the document holds it:
+ * the store applies a write optimistically, so that echo comes before the answer, and Retry needs it.
+ */
+export const receiveLayoutWrite = (write: LayoutWrite | null): LayoutWrite | null =>
+	write === null || write._tag === "Saved" ? null : write
