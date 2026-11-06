@@ -270,7 +270,11 @@ export const shiftTimeline = <M>(
 				),
 				h.div(
 					[h.Class("relative h-8 grow"), h.Role("cell")],
-					row.bars.length === 0 && row.emptyText !== undefined
+					// Bars wholly outside the range draw nothing, so they count as none.
+					row.emptyText !== undefined &&
+						!Arr.some(row.bars, (bar) =>
+							Option.isSome(placeBar(fromMs, toMs, bar.startMs, bar.endMs)),
+						)
 						? [
 								typography(
 									h,

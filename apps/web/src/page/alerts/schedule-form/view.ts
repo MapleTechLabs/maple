@@ -195,6 +195,7 @@ const participantsField = (h: H, model: Model, layer: LayerDraft, index: number)
 					removeLabel: `Remove ${name} from layer ${index + 1}`,
 					onRemove: Message.ClickedRemoveParticipant({ key, userId }),
 					move: {
+						context: `layer ${index + 1}`,
 						up:
 							at === 0
 								? null

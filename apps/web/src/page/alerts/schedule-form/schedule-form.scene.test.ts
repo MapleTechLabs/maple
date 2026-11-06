@@ -122,6 +122,11 @@ describe("schedule form", () => {
 			}),
 		])
 		expect(model.form.layers[0]?.participants).toEqual([memberId(0), memberId(2), memberId(1)])
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(role("button", { name: `Move ${oncallMembers[2]?.name} up in layer 1` })).toExist(),
+		)
 		expect(names(pageUpdate(model, Message.ClickedSave()).commands)).toEqual(["SaveOnCallSchedule"])
 	})
 

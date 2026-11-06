@@ -12,6 +12,9 @@ import { typography } from "@maple/views/ui/typography"
 // `PickList`: what a form has picked (destinations, people, schedules), each removable and, in an
 // ordered list, movable, then an "Add" menu of the rest.
 
+const moveLabel = (label: string, direction: "up" | "down", context: string | undefined): string =>
+	context === undefined ? `Move ${label} ${direction}` : `Move ${label} ${direction} in ${context}`
+
 /** One picked entry: its media (an icon or an avatar), its name and how to remove or move it. */
 export type PickedEntry<M> = Readonly<{
 	key: string
@@ -22,7 +25,8 @@ export type PickedEntry<M> = Readonly<{
 	removeLabel: string
 	onRemove: M
 	/** Present on an ordered list: the up and down buttons, disabled at its ends. */
-	move?: Readonly<{ up: M | null; down: M | null }>
+	/** `context` names the list in the move buttons ("layer 2"), when one page shows several lists. */
+	move?: Readonly<{ up: M | null; down: M | null; context?: string }>
 }>
 
 /**
@@ -61,7 +65,7 @@ export const pickList = <M>(
 							iconButton(
 								h,
 								{
-									label: `Move ${entry.label} up`,
+									label: moveLabel(entry.label, "up", entry.move.context),
 									isDisabled: isDisabled || entry.move.up === null,
 									className: "text-muted-foreground",
 									attributes: entry.move.up === null ? [] : [h.OnClick(entry.move.up)],
@@ -71,7 +75,7 @@ export const pickList = <M>(
 							iconButton(
 								h,
 								{
-									label: `Move ${entry.label} down`,
+									label: moveLabel(entry.label, "down", entry.move.context),
 									isDisabled: isDisabled || entry.move.down === null,
 									className: "text-muted-foreground",
 									attributes: entry.move.down === null ? [] : [h.OnClick(entry.move.down)],

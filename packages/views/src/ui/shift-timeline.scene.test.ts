@@ -49,6 +49,21 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 					},
 				],
 			},
+			{
+				key: "later",
+				label: "Later layer",
+				emptyText: "Not active in this range",
+				bars: [
+					{
+						key: "c",
+						startMs: FROM + 10 * 24 * HOUR,
+						endMs: FROM + 11 * 24 * HOUR,
+						label: "Cy",
+						title: "Cy, next week",
+						tone: "neutral",
+					},
+				],
+			},
 		],
 	})
 const update = (model: Model) => ({ model, commands: [] })
@@ -71,6 +86,15 @@ describe("shift timeline", () => {
 			{ update, view },
 			given<Model>({ nowMs: FROM - HOUR }),
 			expectView(text("Now, Tue 10 Nov, 11:30")).not.toExist(),
+		)
+	})
+
+	test("a lane whose shifts all fall outside the range says so instead of drawing blank", () => {
+		scene(
+			{ update, view },
+			given<Model>({ nowMs: FROM + 35 * HOUR }),
+			expectView(text("Not active in this range")).toExist(),
+			expectView(role("img", { name: "Cy, next week" })).not.toExist(),
 		)
 	})
 })
