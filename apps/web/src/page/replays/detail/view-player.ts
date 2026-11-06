@@ -35,7 +35,7 @@ import {
 	trailingRanges,
 } from "./loader"
 import { Message } from "./message"
-import type { Model, ReplayDetail } from "./model"
+import type { Model, Playback, ReplayDetail } from "./model"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
@@ -268,14 +268,13 @@ const stageOf = stableSlice((model: Model) => ({
 	control: model.player.control,
 	speed: model.player.speed,
 	isSkippingIdle: model.player.isSkippingIdle,
-	isPlaying: model.player.isPlaying,
-	isFinished: model.player.isFinished,
+	playback: model.player.playback,
 	isFullscreen: model.player.isFullscreen,
 	totalMs: model.player.totalMs,
 	inactiveIntervals: model.meta.inactiveIntervals,
 	seedVersion: model.loader.seedVersion,
 	seed: model.loader.seed,
-	seekTargetMs: model.loader.seekTargetMs,
+	seekTargetMs: model.loader.seek?.targetMs ?? null,
 	originMs: model.loader.originMs,
 	seedCount: model.loader.seedCount,
 	loaded: model.loader.loaded,
@@ -335,14 +334,14 @@ const playOverlay = (h: H, stage: Stage): Html =>
 					h.Class(
 						cn(
 							"grid size-16 place-items-center rounded-full bg-black/55 text-white backdrop-blur-sm transition-opacity duration-200",
-							stage.isPlaying ? "opacity-0 group-hover:opacity-70" : "opacity-100",
+							stage.playback._tag === "Playing" ? "opacity-0 group-hover:opacity-70" : "opacity-100",
 						),
 					),
 				],
 				[
-					stage.isFinished
+					stage.playback._tag === "Finished"
 						? icon(h, "ArrowPathIcon", { className: "size-7" })
-						: stage.isPlaying
+						: stage.playback._tag === "Playing"
 							? icon(h, "MediaPauseIcon", { className: "size-7" })
 							: icon(h, "MediaPlayIcon", { className: "size-7 translate-x-0.5" }),
 				],
@@ -418,7 +417,7 @@ const stageSlot = createLazy()
 /** `ReplaySurface detachedTransport docked`: browser chrome over the recording. */
 export const replaySurface = (h: H, model: Model, session: ReplayDetail, state: SurfaceState): Html => {
 	const { isFullscreen } = model.player
-	const isHolding = model.player.isPlaying && isBuffering(model)
+	const isHolding = model.player.playback._tag === "Playing" && isBuffering(model)
 	return panel(
 		h,
 		{
@@ -493,20 +492,22 @@ const scrubber = (h: H, model: Model, surface: TrackSurface): Html => {
 	)
 }
 
-const playButton = (h: H, isPlaying: boolean, isFinished: boolean): Html =>
+/** While a seek rebuilds the engine there is nothing to pause yet: Play, disabled. */
+const playButton = (h: H, playback: Playback): Html =>
 	iconButton(
 		h,
 		{
-			label: isFinished ? "Replay" : isPlaying ? "Pause" : "Play",
+			label: playback._tag === "Finished" ? "Replay" : playback._tag === "Playing" ? "Pause" : "Play",
+			isDisabled: playback._tag === "Buffering",
 			variant: "default",
 			size: "icon",
 			className: "rounded-full before:rounded-full",
 			attributes: [h.AriaKeyshortcuts("Space"), h.OnClick(Message.ClickedPlay())],
 		},
 		[
-			isFinished
+			playback._tag === "Finished"
 				? icon(h, "ArrowPathIcon")
-				: isPlaying
+				: playback._tag === "Playing"
 					? icon(h, "MediaPauseIcon")
 					: icon(h, "MediaPlayIcon", { className: "translate-x-px" }),
 		],
@@ -561,7 +562,7 @@ export const replayControls = (h: H, model: Model, isDetached: boolean): Html =>
 			h.div(
 				[h.Class("flex items-center gap-3 sm:contents")],
 				[
-					controlSlots(`play-${surface}`, playButton, [h, player.isPlaying, player.isFinished]),
+					controlSlots(`play-${surface}`, playButton, [h, player.playback]),
 					scrubber(h, model, surface),
 					h.div(
 						[

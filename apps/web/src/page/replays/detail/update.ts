@@ -30,16 +30,18 @@ import {
 	subscribedRange,
 } from "./loader"
 import { Message } from "./message"
-import type { Model, Player } from "./model"
+import type { Model, Playback, Player } from "./model"
 import { controlValue, type TransportAction } from "../kit/replay-engine-mount"
 import { nonZeroOr } from "@maple/ui/lib/number"
 
 type Return = PageReturn<Model, Message>
 type Route = { readonly sessionId: string; readonly search: Model["search"] }
 
+const PAUSED: Playback = { _tag: "Paused" }
+const PLAYING: Playback = { _tag: "Playing" }
+
 const initialPlayer: Player = {
-	isPlaying: false,
-	isFinished: false,
+	playback: PAUSED,
 	currentMs: 0,
 	totalMs: 0,
 	speed: 1,
@@ -193,33 +195,45 @@ const isReady = (model: Model): boolean => {
 /** `togglePlay`. */
 const togglePlay = (model: Model): Model => {
 	if (!isReady(model)) return model
-	const { player } = model
-	if (player.isFinished)
-		return instruct(model, "replay", undefined, { currentMs: 0, isFinished: false, isPlaying: true })
-	if (player.isPlaying) return instruct(model, "pause", undefined, { isPlaying: false })
-	return instruct(model, "resume", undefined, { isPlaying: true })
+	switch (model.player.playback._tag) {
+		case "Finished":
+			return instruct(model, "replay", undefined, { currentMs: 0, playback: PLAYING })
+		case "Playing":
+			return instruct(model, "pause", undefined, { playback: PAUSED })
+		case "Paused":
+			return instruct(model, "resume", undefined, { playback: PLAYING })
+		case "Buffering":
+			return model
+	}
 }
+
+/** Playing now, or about to once a rebuild is ready. */
+const isPlayingThrough = (playback: Playback): boolean =>
+	playback._tag === "Playing" || (playback._tag === "Buffering" && playback.resumeAfter)
 
 /** `applySeek`: rebuild outside the loaded span, else drive the engine. */
 const seekTo = (model: Model, context: PageContext, offsetMs: number): Return => {
 	if (!isReady(model)) return { model }
 	const { player } = model
 	const clamped = Math.max(0, Math.min(offsetMs, player.totalMs))
+	const isPlaying = isPlayingThrough(player.playback)
 	const placed: Model = {
 		...model,
 		player: {
 			...player,
 			currentMs: clamped,
-			isFinished: clamped < player.totalMs ? false : player.isFinished,
+			playback: player.playback._tag === "Finished" && clamped < player.totalMs ? PAUSED : player.playback,
 		},
 	}
-	return Option.match(requestSeek(placed, clamped, player.isPlaying), {
+	return Option.match(requestSeek(placed, clamped, isPlaying), {
 		onSome: (rebuilt) => syncRange(rebuilt, context),
 		onNone: () => ({
 			model:
-				player.isPlaying && clamped < player.totalMs
-					? instruct(placed, "play", clamped)
-					: instruct(placed, "pause", clamped),
+				isPlaying && clamped < player.totalMs
+					? instruct(placed, "play", clamped, { playback: PLAYING })
+					: instruct(placed, "pause", clamped, {
+							playback: placed.player.playback._tag === "Finished" ? placed.player.playback : PAUSED,
+						}),
 		}),
 	})
 }
@@ -318,25 +332,26 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			},
 		}),
 		ReadiedEngine: ({ seedVersion, totalMs }) => {
-			if (seedVersion !== model.loader.seedVersion) return { model }
-			const startMs = model.loader.seekTargetMs ?? 0
+			// The seed version moves only once a rebuild's window is cut: until then it is the old engine.
+			if (seedVersion !== model.loader.seedVersion || model.loader.seek?.isLoading === true) return { model }
+			const startMs = model.loader.seek?.targetMs ?? 0
+			const { playback } = model.player
 			const ready: Model = {
 				...model,
-				loader: { ...model.loader, resumeOnReady: false },
 				player: {
 					...model.player,
 					// rrweb only knows the loaded seed; the manifest knows the whole recording.
 					totalMs: nonZeroOr(manifestTotalMs(model), totalMs),
 					currentMs: startMs,
-					isFinished: false,
-					isPlaying: false,
+					playback: PAUSED,
 				},
 			}
 			// A seek or window slide that interrupted playback carries on in the new engine.
 			return {
-				model: model.loader.resumeOnReady
-					? instruct(ready, "play", startMs, { isPlaying: true })
-					: ready,
+				model:
+					playback._tag === "Buffering" && playback.resumeAfter
+						? instruct(ready, "play", startMs, { playback: PLAYING })
+						: ready,
 			}
 		},
 		TickedEngine: ({ seedVersion, currentMs }) =>
@@ -356,7 +371,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		FinishedEngine: ({ seedVersion }) =>
 			seedVersion !== model.loader.seedVersion
 				? { model }
-				: { model: { ...model, player: { ...model.player, isPlaying: false, isFinished: true } } },
+				: { model: { ...model, player: { ...model.player, playback: { _tag: "Finished" } } } },
 		ClickedPlay: () => ({ model: togglePlay(model) }),
 		PressedScrubber: ({ surface, clientX }) => ({
 			model,

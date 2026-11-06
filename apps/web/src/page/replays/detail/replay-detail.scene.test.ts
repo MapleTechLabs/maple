@@ -237,7 +237,7 @@ describe("replay detail", () => {
 	test("play, pause and a finished replay instruct the engine with fresh nonces", () => {
 		const ready = pageUpdate(seeded(), Message.ReadiedEngine({ seedVersion: 1, totalMs: 1000 })).model
 		const playing = pageUpdate(ready, Message.ClickedPlay()).model
-		expect(playing.player.isPlaying).toBe(true)
+		expect(playing.player.playback._tag).toBe("Playing")
 		expect(playing.player.control).toBe("1|resume|")
 		const paused = pageUpdate(playing, Message.ClickedPlay()).model
 		expect(paused.player.control).toBe("2|pause|")
@@ -372,7 +372,33 @@ describe("replay detail", () => {
 			{ chunk_seq: 3, events: [click(305)] },
 		])
 		expect(seedShiftMs(rebuilt.loader)).toBe(300_000)
-		expect(rebuilt.loader.seekTargetMs).toBe(302_000)
+		expect(rebuilt.loader.seek?.targetMs).toBe(302_000)
+		expect(rebuilt.player.playback).toEqual({ _tag: "Buffering", resumeAfter: false })
+		expect(
+			pageUpdate(rebuilt, Message.ReadiedEngine({ seedVersion: rebuilt.loader.seedVersion, totalMs: 1 }))
+				.model.player.playback._tag,
+		).toBe("Paused")
+
+		// Seeking while playing: nothing plays until the new engine is ready, then playback resumes.
+		const playing = pageUpdate(ready, Message.ClickedPlay()).model
+		const seekingPlaying = pageUpdate(playing, Message.RequestedSeek({ offsetMs: 302_000 })).model
+		expect(seekingPlaying.player.playback).toEqual({ _tag: "Buffering", resumeAfter: true })
+		expect(pageUpdate(seekingPlaying, Message.ClickedPlay()).model.player).toEqual(seekingPlaying.player)
+		// The old engine's ready, arriving late, is not the rebuild's.
+		expect(
+			pageUpdate(seekingPlaying, Message.ReadiedEngine({ seedVersion: ready.loader.seedVersion, totalMs: 1 }))
+				.model.player.playback._tag,
+		).toBe("Buffering")
+		const rebuiltPlaying = answer(seekingPlaying, [
+			{ chunk_seq: 2, events: [page(300), snapshot(300)] },
+			{ chunk_seq: 3, events: [click(305)] },
+		])
+		const resumed = pageUpdate(
+			rebuiltPlaying,
+			Message.ReadiedEngine({ seedVersion: rebuiltPlaying.loader.seedVersion, totalMs: 1 }),
+		).model
+		expect(resumed.player.playback._tag).toBe("Playing")
+		expect(resumed.player.control).toContain("|play|302000")
 		// The clicks before the seek stay marked, and the new window's land at their real offsets.
 		expect(Arr.map(rebuilt.meta.actionMarkers, (marker) => marker.ms)).toEqual([1_000, 305_000])
 	})
@@ -482,7 +508,7 @@ describe("replay detail", () => {
 			rebuilt,
 			Message.ReadiedEngine({ seedVersion: rebuilt.loader.seedVersion, totalMs: 1 }),
 		).model
-		expect(resumed.player.isPlaying).toBe(true)
+		expect(resumed.player.playback._tag).toBe("Playing")
 		expect(resumed.player.control).toContain("|play|9500")
 	})
 
