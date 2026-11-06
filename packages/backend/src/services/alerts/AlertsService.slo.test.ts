@@ -14,7 +14,7 @@ import {
 } from "@maple/backend/platform/test-pglite"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { SlosService } from "@maple/backend/services/slos/SlosService"
+import { MAX_SLOS_PER_ORG, SlosService } from "@maple/backend/services/slos/SlosService"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
 	adminRoles,
@@ -201,6 +201,26 @@ describe("AlertsService SLO burn-rate rules", () => {
 				),
 			)
 			assert.strictEqual(remaining?.count, 0)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("caps an org at MAX_SLOS_PER_ORG SLOs", () => {
+		const { layer } = harness({ badPerMille: 0 })
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const slos = yield* SlosService
+			const create = (index: number) =>
+				slos.create(orgId, {
+					name: `SLO ${index}`,
+					serviceName: "checkout",
+					sli: { _tag: "availability" },
+					targetPercent: 99,
+					createdBy: userId,
+				})
+			yield* Effect.forEach(Arr.range(1, MAX_SLOS_PER_ORG), create, { discard: true })
+			const refused = yield* create(MAX_SLOS_PER_ORG + 1).pipe(Effect.flip)
+			assert.strictEqual(refused._tag, "@maple/http/errors/SloValidationError")
+			assert.lengthOf(yield* slos.list(orgId), MAX_SLOS_PER_ORG)
 		}).pipe(Effect.provide(layer))
 	})
 

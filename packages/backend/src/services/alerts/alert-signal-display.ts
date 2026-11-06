@@ -19,7 +19,8 @@ import { AGGREGATIONS_BY_SOURCE } from "@maple/query-engine/query-builder"
 import type { ChartUnit } from "@maple/widgets/chart/static-chart"
 import { Array as Arr, String as Str } from "effect"
 
-export type SignalUnit = "ratio" | "ms" | "rpm" | "apdex" | "count" | "plain"
+/** `burn`: an SLO burn rate, a multiple of the sustainable rate shown as `14.4x`. */
+export type SignalUnit = "ratio" | "ms" | "rpm" | "apdex" | "count" | "plain" | "burn"
 
 export interface SignalDisplay {
 	/** Human-readable name of the measured quantity, e.g. `sum(db.query.duration)`. */
@@ -45,7 +46,7 @@ const PRESET_SIGNALS: Record<string, SignalDisplay> = {
 	apdex: { label: "Apdex", unit: "apdex" },
 	throughput: { label: "Throughput", unit: "rpm" },
 	uptime: { label: "Uptime check", unit: "plain" },
-	slo_burn_rate: { label: "SLO burn rate", unit: "plain" },
+	slo_burn_rate: { label: "SLO burn rate", unit: "burn" },
 } satisfies Record<string, SignalDisplay>
 
 /**
@@ -147,6 +148,7 @@ export const mapSignalUnit = (unit: SignalUnit): ChartUnit => {
 		case "apdex":
 		case "count":
 		case "plain":
+		case "burn":
 			return "number"
 	}
 }
