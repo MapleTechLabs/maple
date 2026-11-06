@@ -206,9 +206,10 @@ Stores created with a non-`data` name before this rule adopt their old files onc
   when losing its live telemetry is acceptable.
 - **`maple-store-open`**: a clean-shutdown sentinel (not a concurrency lock; the
   PID file already guards that). It is written right after chDB opens and removed
-  as the last step of a clean close. Shutdown interrupts admitted requests and
-  maintenance before chDB closes; one interrupted after its work began (a delete,
-  retirement or eventing change) leaves the sentinel in place. If `maple start` finds it over a populated
+  as the last step of a clean close. Shutdown interrupts queries and maintenance
+  before chDB closes (ingest, eventing writes and retirement are waited for); a
+  maintenance operation interrupted after its work began leaves the sentinel in
+  place. If `maple start` finds it over a populated
   store, the previous server died without closing cleanly and the store may be
   inconsistent. Reopening it could crash chDB natively, so `maple start` never
   reopens it. `--on-dirty-store` picks the recovery:

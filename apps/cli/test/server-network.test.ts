@@ -69,9 +69,13 @@ describe("request admission on shutdown", () => {
 		const leave = gate.enter()
 		ok(leave)
 		let maintenanceRan = false
-		const maintenance = gate.exclusive(async () => {
-			maintenanceRan = true
-		})
+		const maintenance = Effect.runPromiseExit(
+			gate.exclusiveEffect(
+				Effect.sync(() => {
+					maintenanceRan = true
+				}),
+			),
+		)
 		let drained = false
 		const shutdown = gate.shutdown().then((report) => {
 			drained = true
@@ -82,7 +86,7 @@ describe("request admission on shutdown", () => {
 			gate.exclusive(async () => undefined),
 			/maintenance operation is active/,
 		)
-		await rejects(maintenance)
+		strictEqual(Exit.hasInterrupts(await maintenance), true)
 		await yieldTurn()
 		strictEqual(drained, false)
 		leave()
@@ -101,6 +105,7 @@ describe("request admission on shutdown", () => {
 			__testables.admitted(
 				gate,
 				Effect.never.pipe(Effect.onInterrupt(() => Effect.sync(() => stopped.push("request")))),
+				"interrupt",
 			),
 		)
 		await yieldTurn()
@@ -108,6 +113,43 @@ describe("request admission on shutdown", () => {
 		stopped.push("shutdown")
 		strictEqual(Exit.hasInterrupts(await request), true)
 		deepStrictEqual(stopped, ["request", "shutdown"])
+	})
+
+	it("waits for an ingest request and for started Promise maintenance instead of cutting them off", async () => {
+		const gate = new __testables.RequestQuiescenceGate()
+		let answerIngest = () => {}
+		const ingest = Effect.runPromise(
+			__testables.admitted(
+				gate,
+				Effect.promise(
+					() =>
+						new Promise<Response>(
+							(resolve) => (answerIngest = () => resolve(new Response("ok"))),
+						),
+				),
+				"wait",
+			),
+		)
+		await yieldTurn()
+		let shutDown = false
+		const shutdown = gate.shutdown().then(() => (shutDown = true))
+		await yieldTurn()
+		strictEqual(shutDown, false)
+		answerIngest()
+		strictEqual((await ingest).status, 200)
+		await shutdown
+
+		const busy = new __testables.RequestQuiescenceGate()
+		let finishRetirement = () => {}
+		const retirement = busy.exclusive(() => new Promise<void>((resolve) => (finishRetirement = resolve)))
+		await yieldTurn()
+		let busyDown = false
+		const busyShutdown = busy.shutdown().then(() => (busyDown = true))
+		await yieldTurn()
+		strictEqual(busyDown, false)
+		finishRetirement()
+		await retirement
+		strictEqual((await busyShutdown, busy.leavesStoreClean()), true)
 	})
 
 	it("reports the store unclean only when maintenance was cut off mid-way", async () => {

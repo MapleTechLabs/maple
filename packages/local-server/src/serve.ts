@@ -874,9 +874,9 @@ export class RequestQuiescenceGate {
 		}
 	}
 
-	/** `exclusiveEffect` for Promise work; on shutdown the promise is abandoned, not awaited. */
+	/** `exclusiveEffect` for Promise work. A started promise cannot be stopped, so shutdown waits for it. */
 	exclusive<A>(work: () => Promise<A>): Promise<A> {
-		return Effect.runPromise(this.exclusiveEffect(Effect.promise(work)))
+		return Effect.runPromise(this.exclusiveEffect(Effect.promise(work), "wait"))
 	}
 
 	/** Whether closing the engine now leaves the store consistent: no maintenance is or was cut off mid-way. */
@@ -898,16 +898,18 @@ export class RequestQuiescenceGate {
 		return new Promise<void>((resolve) => this.#drained.push(resolve))
 	}
 
-	/** Run `work` alone; closing is uninterruptible and reopening always runs. */
+	/** Run `work` alone; closing is uninterruptible and reopening always runs. With
+	 *  `"wait"`, shutdown waits for it rather than interrupting it. */
 	exclusiveEffect<A, E, R>(
 		work: Effect.Effect<A, E, R>,
+		onShutdown: "interrupt" | "wait" = "interrupt",
 	): Effect.Effect<A, E | MaintenanceInProgressError, R> {
 		return Effect.acquireUseRelease(
 			Effect.withFiber((fiber) => {
 				if (this.#maintenance || this.#shuttingDown)
 					return Effect.fail(MaintenanceInProgressError.create())
 				this.#maintenance = true
-				this.#fibers.add(fiber)
+				if (onShutdown === "interrupt") this.#fibers.add(fiber)
 				const settled = Promise.withResolvers<void>()
 				this.#exclusiveSettled = settled.promise
 				return Effect.succeed({ fiber, settle: settled.resolve })
@@ -1035,12 +1037,17 @@ const recoverBodyFailure = <R>(
 		}),
 	)
 
+/** Run `work` inside the gate. Only a request that commits nothing is interrupted on
+ *  shutdown: an ingest whose rows commit must still answer, or exporters resend them. */
 const admitted = <R>(
 	gate: RequestQuiescenceGate,
 	work: Effect.Effect<Response, never, R>,
+	onShutdown: "interrupt" | "wait",
 ): Effect.Effect<Response, never, R> =>
 	Effect.acquireUseRelease(
-		Effect.withFiber((fiber) => Effect.succeed(gate.enter(fiber))),
+		Effect.withFiber((fiber) =>
+			Effect.succeed(gate.enter(onShutdown === "interrupt" ? fiber : undefined)),
+		),
 		(leave) => (leave ? work : Effect.succeed(text("server maintenance in progress", 503))),
 		(leave) => Effect.sync(() => leave?.()),
 	)
@@ -1339,6 +1346,7 @@ const consumerRequest = <A, S extends Schema.Top & { readonly DecodingServices: 
 				Effect.map((result) => json(result, status)),
 				recoverEventConsumerFailure,
 			),
+			"wait",
 		)
 	}).pipe(recoverBodyFailure)
 
@@ -1480,6 +1488,7 @@ const handleOutboxAdministration = (
 				Effect.map((gap) => json(gap)),
 				recoverEventConsumerFailure,
 			),
+			"wait",
 		)
 	}).pipe(recoverBodyFailure)
 }
@@ -1709,11 +1718,16 @@ const makeFetch =
 								signal,
 								req,
 							),
+							"wait",
 						),
 					),
 				)
 			if (url.pathname === "/local/query")
-				return respond(await runSpan(admitted(gate, querySpan(db, authority, maintenanceToken, req))))
+				return respond(
+					await runSpan(
+						admitted(gate, querySpan(db, authority, maintenanceToken, req), "interrupt"),
+					),
+				)
 			if (url.pathname === "/local/eventing/outbox/abandon")
 				return respond(
 					await runSpan(handleOutboxAdministration(gate, maintenanceToken, req, "abandon")),
@@ -1998,9 +2012,9 @@ export const startServer = (
 			}),
 			(s) =>
 				Effect.promise(async () => {
-					// Queued exports are admitted requests: commit them now rather than
-					// on the next tick. Then stop admitting, interrupt admitted requests and
-					// maintenance, and wait for them to stop. chDB closes after this finalizer.
+					// Queued exports are admitted requests: commit them now rather than on
+					// the next tick. Then stop admitting, interrupt queries and Effect
+					// maintenance, and wait for everything admitted. chDB closes after this.
 					readiness.stop()
 					inserts.flush()
 					const drained = gate.shutdown()
