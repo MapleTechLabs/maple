@@ -482,6 +482,39 @@ describe("MapleFlush.make (client)", () => {
 		await telemetry.dispose()
 	})
 
+	it("redacts credentials from the page URL and script path on uncaught errors", async () => {
+		const { calls, restore: rf } = setupFetch()
+		const dom = setupDom()
+		vi.stubGlobal("location", { href: "https://app.test/reset?token=s3cr3t&tab=1" })
+		restore = () => {
+			rf()
+			dom.restore()
+			vi.unstubAllGlobals()
+		}
+		const telemetry = make(baseConfig)
+
+		dom.dispatch("error", {
+			error: new TypeError("app bug"),
+			filename: "https://app.test/assets/app.js?api_key=k3y",
+		})
+		await telemetry.flush()
+
+		const body = Arr.getUnsafe(traceCalls(calls), 0).body as {
+			resourceSpans: Array<{
+				scopeSpans: Array<{
+					spans: Array<{ attributes: Array<{ key: string; value: { stringValue?: string } }> }>
+				}>
+			}>
+		}
+		const span = Arr.getUnsafe(Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0).scopeSpans, 0).spans, 0)
+		const attr = (key: string) =>
+			Option.getOrThrow(Arr.findFirst(span.attributes, (a) => a.key === key)).value.stringValue
+		expect(attr("url.full")).not.toContain("s3cr3t")
+		expect(attr("url.full")).toContain("tab=1")
+		expect(attr("code.file.path")).not.toContain("k3y")
+		await telemetry.dispose()
+	})
+
 	it("auto-flushes on the interval, and dispose() stops the timer", async () => {
 		vi.useFakeTimers()
 		const { calls, restore: r } = setupFetch()

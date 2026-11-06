@@ -11,6 +11,8 @@ import {
 	PagerDutyAlertDestinationConfig,
 	TelegramAlertDestinationConfig,
 	GoogleChatAlertDestinationConfig,
+	IncidentIoAlertDestinationConfig,
+	MicrosoftTeamsAlertDestinationConfig,
 	WebhookAlertDestinationConfig,
 } from "@maple/domain/http"
 import type {
@@ -89,6 +91,21 @@ const toCreateRequest = (params: V2AlertDestinationCreateParams) => {
 				webhookUrl: params.webhook_url,
 				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
 			})
+		case "microsoft-teams":
+			return new MicrosoftTeamsAlertDestinationConfig({
+				type: "microsoft-teams",
+				name: params.name,
+				webhookUrl: params.webhook_url,
+				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
+			})
+		case "incident-io":
+			return new IncidentIoAlertDestinationConfig({
+				type: "incident-io",
+				name: params.name,
+				alertSourceConfigId: params.alert_source_config_id,
+				token: params.token,
+				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
+			})
 		case "email":
 			return new EmailAlertDestinationConfig({
 				type: "email",
@@ -156,6 +173,21 @@ const toUpdateRequest = (params: V2AlertDestinationUpdateParams): AlertDestinati
 				...shared,
 				...(params.webhook_url !== undefined ? { webhookUrl: params.webhook_url } : undefined),
 			}
+		case "microsoft-teams":
+			return {
+				type: "microsoft-teams",
+				...shared,
+				...(params.webhook_url !== undefined ? { webhookUrl: params.webhook_url } : undefined),
+			}
+		case "incident-io":
+			return {
+				type: "incident-io",
+				...shared,
+				...(params.alert_source_config_id !== undefined
+					? { alertSourceConfigId: params.alert_source_config_id }
+					: undefined),
+				...(params.token !== undefined ? { token: params.token } : undefined),
+			}
 		case "email":
 			return {
 				type: "email",
@@ -195,10 +227,10 @@ export const destinationAuditDiff = auditDiff({
 	fields: ["name", "enabled", "member_user_ids"],
 	// A webhook URL is a credential: Discord's carries the token in the path, and
 	// a plain webhook's can carry one in userinfo or query.
-	writeOnly: ["integration_key", "signing_secret", "url", "webhook_url", "bot_token"],
+	writeOnly: ["integration_key", "signing_secret", "url", "webhook_url", "bot_token", "token"],
 	// Provider-side handles. Not secret, but not readable back off the document
 	// either — recorded as touched so the change is not invisible.
-	opaque: ["channel_id", "channel_name", "chat_id", "workspace_id", "team_id"],
+	opaque: ["channel_id", "channel_name", "chat_id", "workspace_id", "team_id", "alert_source_config_id"],
 })
 
 export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "alertDestinations", (handlers) =>

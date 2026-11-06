@@ -31,7 +31,7 @@ import {
 import { pinnedNamespaceNotice } from "../kit/pinned-namespace-notice"
 import { listRelativeTime } from "../kit/relative-time"
 import { statRail, statRailItem, statRailItemSkeleton } from "../kit/stat-rail"
-import { groupLabel, perUserText, type UserRow } from "./data"
+import { channelSummary, groupLabel, perUserText, type UserRow } from "./data"
 import { signalLane, signalTags, userAvatar, userNameBlock } from "./view-kit"
 
 // `/users`: every end user the SDKs identified in the window, most recently seen first.
@@ -394,6 +394,37 @@ const groupCell = <M>(h: HtmlBuilder<M>, row: UserRow): Html => {
 	)
 }
 
+/** The Channel lane, head and cells. */
+const CHANNEL_LANE = columnClass({ width: "28", shrink: false, inset: "4" })
+
+/** The channel most requests came from and its share, the whole split on hover. */
+const channelCell = <M>(h: HtmlBuilder<M>, row: UserRow): Html => {
+	const summary = channelSummary(row.channels)
+	return hstack(
+		h,
+		{
+			gap: "1.5",
+			as: "span",
+			className: `hidden ${CHANNEL_LANE} @min-[960px]/panel:flex`,
+			...(summary !== null && { attributes: [h.Title(summary.split)] }),
+		},
+		summary === null
+			? [typography(h, { size: "xs", tone: "subtle", as: "span" }, [EMPTY_VALUE])]
+			: [
+					typography(h, { size: "xs", tone: "soft", as: "span" }, [summary.label]),
+					...(summary.share === null
+						? []
+						: [
+								typography(
+									h,
+									{ size: "xs", mono: true, numeric: true, tone: "muted", as: "span" },
+									[summary.share],
+								),
+							]),
+				],
+	)
+}
+
 /** The first signal tags, then `+N` naming the rest on hover, so five signals fit the lane. */
 const signalCell = <M>(
 	h: HtmlBuilder<M>,
@@ -471,18 +502,7 @@ const userRow = <M>(h: HtmlBuilder<M>, row: UserRow, options: UsersListOptions<M
 					]),
 				],
 			),
-			typography(
-				h,
-				{
-					size: "xs",
-					mono: true,
-					tone: row.topRoute === null ? "subtle" : "soft",
-					truncate: true,
-					as: "span",
-					className: "hidden w-40 shrink-0 pl-4 @min-[960px]/panel:block",
-				},
-				[row.topRoute ?? EMPTY_VALUE],
-			),
+			channelCell(h, row),
 			hstack(
 				h,
 				{ gap: "1", as: "span", className: "hidden w-36 shrink-0 @min-[1000px]/panel:flex" },
@@ -552,8 +572,8 @@ export const usersListBody = <M>(
 								hidden: "hidden @min-[760px]/panel:flex",
 							}),
 							th(h, {
-								label: "Top route",
-								width: "w-40 shrink-0 pl-4",
+								label: "Channel",
+								width: CHANNEL_LANE,
 								hidden: "hidden @min-[960px]/panel:flex",
 							}),
 							th(h, {
