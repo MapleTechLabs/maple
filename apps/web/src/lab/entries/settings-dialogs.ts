@@ -25,6 +25,7 @@ import * as SourceDetail from "../../page/sources/detail/update"
 import type * as SourceDetailModel from "../../page/sources/detail/model"
 import { Message as SourceMessage } from "../../page/sources/detail/message"
 import { settingsTab } from "../../page/sources/detail/view-tabs"
+import { defaultDestinationForm } from "@maple/web-data/alerts/form-utils"
 import * as Destination from "../../page/alerts/destination/dialog"
 import * as DestinationView from "../../page/alerts/destination/view"
 import { AppRoute } from "../../route"
@@ -42,6 +43,9 @@ const ITEMS = [
 	"key-create",
 	"key-created",
 	"destination",
+	"destination-teams",
+	"destination-teams-retired",
+	"destination-incident-io",
 	"general",
 	"profile",
 	"profile-dirty",
@@ -56,6 +60,31 @@ const context: PageContext = {
 }
 
 const opened = (dialog: Dialog.Model): Dialog.Model => Dialog.init(dialog.id, dialog.kind, { isOpen: true })
+
+/** The provider (and pasted credentials) each destination item opens the dialog on. */
+const destinationForm = (item: (typeof ITEMS)[number]) => {
+	switch (item) {
+		case "destination-teams":
+			return {
+				...defaultDestinationForm("microsoft-teams"),
+				webhookUrl:
+					"https://default0a1b2c3d.47.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/9f8e7d6c/triggers/manual/paths/invoke?api-version=1&sv=1.0&sig=lab",
+			}
+		case "destination-teams-retired":
+			return {
+				...defaultDestinationForm("microsoft-teams"),
+				webhookUrl: "https://contoso.webhook.office.com/webhookb2/a@b/IncomingWebhook/c/d",
+			}
+		case "destination-incident-io":
+			return {
+				...defaultDestinationForm("incident-io"),
+				incidentIoAlertSourceId: "01GW2G3V0S59R238FAHPDS1R66",
+				incidentIoToken: "lab-token",
+			}
+		default:
+			return defaultDestinationForm()
+	}
+}
 
 const integrations = (isPending: boolean): IntegrationsModel.Model => {
 	const model = Integrations.init({ search: { integration: "linear" } }, context).model
@@ -229,11 +258,14 @@ const render = (h: HtmlBuilder<Message>, item: string): Html => {
 				toParentMessage: ignore,
 				viewInputs: { slotId: "lab-key-popup" },
 			})
-		case "destination": {
+		case "destination":
+		case "destination-teams":
+		case "destination-teams-retired":
+		case "destination-incident-io": {
 			const model = Destination.init("lab-destination")
 			return h.submodel({
 				slotId: "lab-destination",
-				model: { ...model, dialog: opened(model.dialog) },
+				model: { ...model, dialog: opened(model.dialog), form: destinationForm(item) },
 				view: DestinationView.view,
 				toParentMessage: ignore,
 				viewInputs: { id: "lab-destination" },

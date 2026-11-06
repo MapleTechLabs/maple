@@ -44,6 +44,15 @@ const DestinationSecretConfigSchema = Schema.Union([
 		webhookUrl: Schema.String,
 	}),
 	Schema.Struct({
+		type: Schema.Literal("microsoft-teams"),
+		webhookUrl: Schema.String,
+	}),
+	Schema.Struct({
+		type: Schema.Literal("incident-io"),
+		alertSourceConfigId: Schema.String,
+		token: Schema.String,
+	}),
+	Schema.Struct({
 		type: Schema.Literal("chat"),
 		// The `chat_workspaces` row id — no token here either: the connector's credential is
 		// opened from that row, scoped to the destination's org, at dispatch time.
