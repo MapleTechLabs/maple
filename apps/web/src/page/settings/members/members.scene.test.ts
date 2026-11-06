@@ -66,6 +66,7 @@ describe("members paging under a mutation", () => {
 		const changed = update(
 			paging,
 			Message.CompletedRoleChange({
+				memberId: "user_1",
 				name: "user_1",
 				next: "org:admin",
 				result: Result.succeed(undefined),
@@ -92,6 +93,57 @@ describe("members paging under a mutation", () => {
 		const data = AsyncData.getOrElse(stale.members, () => null)
 		expect(data?.rows).toHaveLength(10)
 		expect(data?.isFetchingMore).toBe(false)
+	})
+})
+
+describe("a role picked while another saves", () => {
+	const pick = (model: Model, memberId: string, value: string) =>
+		update(
+			model,
+			Message.GotRoleSelectMessage({ memberId, message: { _tag: "SelectedItem", index: 0, value } }),
+		).model
+
+	const savingAThenPickingB = () => {
+		const loaded = update(
+			init(ADMIN).model,
+			Message.CompletedFetchMembers({
+				page: 1,
+				generation: 0,
+				result: Result.succeed({ rows: [member("user_a"), member("user_b")], total: 2 }),
+			}),
+		).model
+		const saving = update(pick(loaded, "user_a", "org:admin"), Message.ClickedConfirmRole()).model
+		return pick(saving, "user_b", "org:admin")
+	}
+
+	test("the first change's success keeps the second pick on its confirm strip", () => {
+		const done = update(
+			savingAThenPickingB(),
+			Message.CompletedRoleChange({
+				memberId: "user_a",
+				name: "user_a",
+				next: "org:admin",
+				result: Result.succeed(undefined),
+			}),
+		).model
+		expect(done.pendingRole).toMatchObject({ _tag: "Confirming", memberId: "user_b" })
+		expect(Arr.map(update(done, Message.ClickedConfirmRole()).commands ?? [], (c) => c.name)).toEqual([
+			"ChangeClerkMemberRole",
+		])
+	})
+
+	test("the first change's failure leaves the second pick alone", () => {
+		const failed = update(
+			savingAThenPickingB(),
+			Message.CompletedRoleChange({
+				memberId: "user_a",
+				name: "user_a",
+				next: "org:admin",
+				result: Result.fail("Couldn't change role"),
+			}),
+		)
+		expect(failed.model.pendingRole).toMatchObject({ _tag: "Confirming", memberId: "user_b" })
+		expect(failed.outMessage).toMatchObject({ _tag: "RequestedToast" })
 	})
 })
 

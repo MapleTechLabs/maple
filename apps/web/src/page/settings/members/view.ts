@@ -219,7 +219,7 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 										{
 											variant: "ghost",
 											size: "sm",
-											isDisabled: model.isRoleSaving,
+											isDisabled: pending._tag === "Saving",
 											attributes: [h.OnClick(Message.ClickedCancelRole())],
 										},
 										["Cancel"],
@@ -228,7 +228,7 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 										h,
 										{
 											size: "sm",
-											isLoading: model.isRoleSaving,
+											isLoading: pending._tag === "Saving",
 											attributes: [h.OnClick(Message.ClickedConfirmRole())],
 										},
 										[prompt.confirmLabel],

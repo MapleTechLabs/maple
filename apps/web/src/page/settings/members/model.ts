@@ -52,12 +52,14 @@ const ListOf = <S extends Schema.Top>(row: S) =>
 export const MembersData = AsyncData.Schema(ListOf(MemberRow), LoadFailure)
 export const InvitationsData = AsyncData.Schema(ListOf(InvitationRow), LoadFailure)
 
-/** A role change waiting on the inline confirm strip under the member's row. */
-export const PendingRoleChange = Schema.Struct({
-	memberId: Schema.String,
-	name: Schema.String,
-	next: OrgRole,
-})
+const roleChangeFields = { memberId: Schema.String, name: Schema.String, next: OrgRole }
+
+/** A role change on the inline confirm strip under the member's row, then while it saves. */
+export const PendingRoleChange = Schema.Union([
+	Schema.TaggedStruct("Confirming", roleChangeFields),
+	Schema.TaggedStruct("Saving", roleChangeFields),
+])
+export type PendingRoleChange = typeof PendingRoleChange.Type
 
 export const Model = Schema.Struct({
 	grants: Schema.Array(Policy.PermissionName),
@@ -76,7 +78,6 @@ export const Model = Schema.Struct({
 	isInviting: Schema.Boolean,
 	roleSelects: Schema.Record(Schema.String, Select.Model),
 	pendingRole: Schema.NullOr(PendingRoleChange),
-	isRoleSaving: Schema.Boolean,
 	rowMenus: Schema.Record(Schema.String, Menu.Model),
 	removing: Schema.NullOr(Schema.Struct({ id: Schema.String, name: Schema.String })),
 	removeDialog: Dialog.Model,
@@ -117,7 +118,8 @@ export const Message = defineMessageUnion({
 	GotRoleSelectMessage: { memberId: Schema.String, message: Select.Message },
 	ClickedCancelRole: {},
 	ClickedConfirmRole: {},
-	CompletedRoleChange: { name: Schema.String, next: OrgRole, ...done(Schema.Void) },
+	/** Keyed by member and role: a pick made meanwhile is not the change that settled. */
+	CompletedRoleChange: { memberId: Schema.String, name: Schema.String, next: OrgRole, ...done(Schema.Void) },
 	GotRowMenuMessage: { menuId: Schema.String, message: Menu.Message },
 	GotRemoveDialogMessage: { message: Dialog.Message },
 	ClickedConfirmRemove: {},
