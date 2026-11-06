@@ -31,7 +31,8 @@ export function registerAcknowledgeAlertIncidentTool(server: McpToolRegistrar) {
 			const acknowledge = params.acknowledged !== false
 			// Attributed as the audit log attributes this call: Maple itself and a chat connector's
 			// placeholder carry no user, an agent is named by its client.
-			const attribution = auditAttribution(tenant, yield* CurrentAuditActor)
+			const credential = yield* CurrentAuditActor
+			const attribution = auditAttribution(tenant, credential)
 			const actor = {
 				userId: attribution.actor.userId ?? null,
 				name: attribution.actor.label ?? (attribution.actor.type === "system" ? "Maple" : null),

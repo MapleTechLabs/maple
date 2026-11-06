@@ -3324,7 +3324,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								if (cleared.length > 0) {
 									// Stamped at the write, not the tick's start: an ack that committed during
 									// the evaluation must not sort after the event that cleared it.
-									const clearedAt = Math.max(timestamp, yield* now)
+									const writeTime = yield* now
+									const clearedAt = Math.max(timestamp, writeTime)
 									yield* db.run(
 										PG.insertInto(AlertIncidentEvents).values({
 											id: decodeAlertIncidentEventIdSync(makeUuid()),
