@@ -83,8 +83,8 @@ export const Message = defineMessageUnion({
 	ChangedUpdateField: { field: UpdateTextField, value: Schema.String },
 	SubmittedUpdate: {},
 	ClickedCancelUpdate: {},
-	/** `incidentId`: the incident it was posted to, which the form may no longer show. */
-	CompletedPostUpdate: { incidentId: StatusPageIncidentId, result: outcome(V2StatusPageIncident) },
+	/** `generation`: which post answered; the form may have moved on to another one. */
+	CompletedPostUpdate: { generation: Schema.Number, result: outcome(V2StatusPageIncident) },
 	ClickedPublishIncident: { incidentId: StatusPageIncidentId },
 	CompletedPublishIncident: { incidentId: StatusPageIncidentId, result: outcome(V2StatusPageIncident) },
 	// Live

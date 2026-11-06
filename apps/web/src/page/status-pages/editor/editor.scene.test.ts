@@ -541,6 +541,7 @@ describe("incidents in the panel", () => {
 				name: "PostStatusPageIncidentUpdate",
 				args: {
 					incidentId: incidentId(1),
+					generation: 0,
 					payload: { status: "resolved", body: "This incident has been resolved." },
 				},
 			},
@@ -676,7 +677,7 @@ describe("an update posted while the form moved on", () => {
 		const moved = posting()
 		const done = pageUpdate(
 			moved,
-			Message.CompletedPostUpdate({ incidentId: incidentId(1), result: Result.succeed(incident(1)) }),
+			Message.CompletedPostUpdate({ generation: 0, result: Result.succeed(incident(1)) }),
 		)
 		expect(done.model.updateForm).toMatchObject({ _tag: "Editing", form: { incidentId: incidentId(2) } })
 		expect(done.outMessage).toMatchObject({ _tag: "RequestedToast", type: "success" })
@@ -688,7 +689,7 @@ describe("an update posted while the form moved on", () => {
 		const failed = pageUpdate(
 			moved,
 			Message.CompletedPostUpdate({
-				incidentId: incidentId(1),
+				generation: 0,
 				result: Result.fail(toLoadFailure(new Error("unreachable"))),
 			}),
 		)
@@ -696,6 +697,30 @@ describe("an update posted while the form moved on", () => {
 			_tag: "Editing",
 			form: { incidentId: incidentId(2) },
 		})
+		expect(failed.outMessage).toMatchObject({ _tag: "RequestedToast", type: "error" })
+	})
+
+	test("a reopened form for the same incident ignores the earlier post's answer", () => {
+		const model = loaded({ incidents: [incident(1, { status: "identified" })] })
+		const open = (current: Model) =>
+			pageUpdate(
+				pageUpdate(
+					current,
+					Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }),
+				).model,
+				Message.ChangedUpdateField({ field: "body", value: "Fixed." }),
+			).model
+		const first = pageUpdate(open(model), Message.SubmittedUpdate()).model
+		const closed = pageUpdate(first, Message.ClickedIncident({ incidentId: incidentId(1) })).model
+		const second = pageUpdate(open(closed), Message.SubmittedUpdate()).model
+		const failed = pageUpdate(
+			second,
+			Message.CompletedPostUpdate({
+				generation: 0,
+				result: Result.fail(toLoadFailure(new Error("no"))),
+			}),
+		)
+		expect(failed.model.updateForm).toMatchObject({ _tag: "Posting", generation: 1 })
 		expect(failed.outMessage).toMatchObject({ _tag: "RequestedToast", type: "error" })
 	})
 
@@ -713,7 +738,7 @@ describe("an update posted while the form moved on", () => {
 		const failed = pageUpdate(
 			cancelled,
 			Message.CompletedPostUpdate({
-				incidentId: incidentId(1),
+				generation: 0,
 				result: Result.fail(toLoadFailure(new Error("unreachable"))),
 			}),
 		).model

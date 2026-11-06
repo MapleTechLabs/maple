@@ -245,7 +245,9 @@ export const update = (model: Model, message: Message): Return =>
 		}),
 		PickedProvider: ({ provider }) =>
 			provider === "managed" && isKeyInUse(model)
-				? liftRemoveDialog(model, Dialog.open(model.removeDialog))
+				? model.keyWrite !== "Idle"
+					? { model }
+					: liftRemoveDialog(model, Dialog.open(model.removeDialog))
 				: { model: { ...model, picked: provider } },
 		CompletedFocusProvider: () => ({ model }),
 		ClickedReplace: () => ({ model: { ...model, isReplacing: true } }),
@@ -278,7 +280,8 @@ export const update = (model: Model, message: Message): Return =>
 					outMessage: toast("error", "Couldn't save the key", error.message),
 				}),
 			}),
-		ClickedRemoveKey: () => liftRemoveDialog(model, Dialog.open(model.removeDialog)),
+		ClickedRemoveKey: () =>
+			model.keyWrite !== "Idle" ? { model } : liftRemoveDialog(model, Dialog.open(model.removeDialog)),
 		GotRemoveDialogMessage: ({ message: child }) =>
 			model.keyWrite === "Removing"
 				? { model }

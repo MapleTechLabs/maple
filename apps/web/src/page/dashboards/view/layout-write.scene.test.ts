@@ -97,6 +97,22 @@ describe("a dropped layout's write", () => {
 		expect(shownX(retried.model, "error-rate")).toBe(shownX(drop.model, "error-rate"))
 	})
 
+	test("another write succeeding keeps the failed drop's banner until Retry", () => {
+		const drop = dropped(editing())
+		const failed = pageUpdate(
+			drop.model,
+			Message.CompletedLayoutWrite({
+				generation: generationOf(drop.model),
+				result: Result.fail("Conflict"),
+			}),
+		).model
+		const other = pageUpdate(failed, Message.CompletedWrite({ result: Result.succeed("Synced") })).model
+		expect(other.persistenceError).toBe("Conflict")
+		expect(names(pageUpdate(other, Message.ClickedRetryPersistence()).commands)).toEqual([
+			UpdateWidgetLayouts.name,
+		])
+	})
+
 	test("coming back online sends the failed write again", () => {
 		const drop = dropped(editing())
 		const failed = pageUpdate(

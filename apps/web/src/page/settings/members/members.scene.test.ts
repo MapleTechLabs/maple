@@ -132,6 +132,21 @@ describe("a role picked while another saves", () => {
 		])
 	})
 
+	test("a second pick for the member being saved is dropped, so one save runs per member", () => {
+		const loaded = update(
+			init(ADMIN).model,
+			Message.CompletedFetchMembers({
+				page: 1,
+				generation: 0,
+				result: Result.succeed({ rows: [member("user_a")], total: 1 }),
+			}),
+		).model
+		const saving = update(pick(loaded, "user_a", "org:admin"), Message.ClickedConfirmRole()).model
+		const repicked = pick(saving, "user_a", "org:engineer")
+		expect(repicked.pendingRole).toMatchObject({ _tag: "Saving", next: "org:admin" })
+		expect(update(repicked, Message.ClickedConfirmRole()).commands ?? []).toEqual([])
+	})
+
 	test("the first change's failure leaves the second pick alone", () => {
 		const failed = update(
 			savingAThenPickingB(),

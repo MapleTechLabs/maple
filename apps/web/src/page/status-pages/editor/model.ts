@@ -25,7 +25,8 @@ import { PreviewHistory, PreviewScheme } from "../shared/preview"
 export const UpdateFormState = Schema.Union([
 	Schema.TaggedStruct("Closed", {}),
 	Schema.TaggedStruct("Editing", { form: UpdateForm }),
-	Schema.TaggedStruct("Posting", { form: UpdateForm }),
+	/** `generation`: which post this is, so a reopened form ignores an earlier post's answer. */
+	Schema.TaggedStruct("Posting", { form: UpdateForm, generation: Schema.Number }),
 	Schema.TaggedStruct("Failed", { form: UpdateForm, failure: LoadFailure }),
 ])
 export type UpdateFormState = typeof UpdateFormState.Type
@@ -98,6 +99,8 @@ export const Model = Schema.Struct({
 	isCreatingIncident: Schema.Boolean,
 	incidentFailure: Schema.NullOr(LoadFailure),
 	updateForm: UpdateFormState,
+	/** The generation the next update post takes. */
+	nextUpdatePost: Schema.Number,
 	publishingIncidentIds: Schema.Array(StatusPageIncidentId),
 	// Live
 	/** The status Worker's origin; empty hides the public links (no status domain yet). */

@@ -816,10 +816,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedWrite: ({ result }) =>
 			Result.match(result, {
 				onFailure: (error) => closePicker({ ...model, persistenceError: error }),
+				// A failed drop keeps its banner until Retry sends it again.
 				onSuccess: (sync) =>
 					sync === "Behind"
 						? { model, outMessage: behindToast() }
-						: { model: { ...model, persistenceError: null } },
+						: model.layoutWrite?._tag === "Failed"
+							? { model }
+							: { model: { ...model, persistenceError: null } },
 			}),
 		CompletedLayoutWrite: ({ generation, result }) => {
 			const settled = settleLayoutWrite(model, generation, Result.isSuccess(result), model.document)

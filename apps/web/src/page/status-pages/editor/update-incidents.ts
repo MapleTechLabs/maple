@@ -211,25 +211,30 @@ export const submitUpdate = (model: Model): Return => {
 	return state._tag === "Closed" || state._tag === "Posting" || Str.trim(state.form.body) === ""
 		? { model }
 		: {
-				model: { ...model, updateForm: { _tag: "Posting", form: state.form } },
+				model: {
+					...model,
+					updateForm: { _tag: "Posting", form: state.form, generation: model.nextUpdatePost },
+					nextUpdatePost: model.nextUpdatePost + 1,
+				},
 				commands: [
 					PostIncidentUpdate({
 						incidentId: state.form.incidentId,
+						generation: model.nextUpdatePost,
 						payload: { status: state.form.status, body: Str.trim(state.form.body) },
 					}),
 				],
 			}
 }
 
-/** A post's result: the form settles only if it still posts that incident; any success rereads. */
+/** A post's result: the form settles only if it still shows that post; any success rereads. */
 export const postedUpdate = (
 	model: Model,
-	incidentId: StatusPageIncidentId,
+	generation: number,
 	result: Result.Result<V2StatusPageIncident, LoadFailure>,
 	context: PageContext,
 ): Return => {
 	const state = model.updateForm
-	const isShown = state._tag === "Posting" && state.form.incidentId === incidentId
+	const isShown = state._tag === "Posting" && state.generation === generation
 	return Result.match(result, {
 		onSuccess: (incident): Return => ({
 			...reread(isShown ? { ...model, updateForm: CLOSED } : model, context),

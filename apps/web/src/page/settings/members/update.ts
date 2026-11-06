@@ -442,6 +442,9 @@ export const revisit = (model: Model): Return => {
 	}
 }
 
+const isSavingFor = (model: Model, memberId: string): boolean =>
+	model.pendingRole?._tag === "Saving" && model.pendingRole.memberId === memberId
+
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		CompletedFetchOrganization: ({ name }) => ({
@@ -573,18 +576,33 @@ export const update = (model: Model, message: Message): Return =>
 							onSome: (role) =>
 								role === toOrgRole(member.role)
 									? { model: next, commands }
-									: {
-											model: {
-												...next,
-												pendingRole: {
-													_tag: "Confirming",
-													memberId,
-													name: member.name,
-													next: role,
+									: isSavingFor(model, memberId)
+										? // One save per member: the pick closes the list and is dropped.
+											{
+												model: {
+													...next,
+													roleSelects: {
+														...model.roleSelects,
+														[memberId]: {
+															...step.model,
+															value: roleSelectFor(model, member).value,
+														},
+													},
 												},
+												commands,
+											}
+										: {
+												model: {
+													...next,
+													pendingRole: {
+														_tag: "Confirming",
+														memberId,
+														name: member.name,
+														next: role,
+													},
+												},
+												commands,
 											},
-											commands,
-										},
 						})
 					},
 				},

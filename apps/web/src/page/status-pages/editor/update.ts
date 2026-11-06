@@ -141,6 +141,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		isCreatingIncident: false,
 		incidentFailure: null,
 		updateForm: { _tag: "Closed" },
+		nextUpdatePost: 0,
 		publishingIncidentIds: [],
 		publicBaseUrl: STATUS_PAGE_BASE_URL,
 		urlCopy: CopyButton.init(),
@@ -398,7 +399,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ChangedUpdateField: ({ field, value }) => changeUpdate(model, field, value),
 		SubmittedUpdate: () => submitUpdate(model),
 		ClickedCancelUpdate: () => cancelUpdate(model),
-		CompletedPostUpdate: ({ incidentId, result }) => postedUpdate(model, incidentId, result, context),
+		CompletedPostUpdate: ({ generation, result }) => postedUpdate(model, generation, result, context),
 		ClickedPublishIncident: ({ incidentId }) => publishIncident(model, incidentId),
 		CompletedPublishIncident: ({ incidentId, result }) =>
 			publishedIncident(model, incidentId, result, context),

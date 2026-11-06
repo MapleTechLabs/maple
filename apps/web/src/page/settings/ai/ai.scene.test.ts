@@ -71,6 +71,7 @@ describe("ai tab", () => {
 			Message.GotKeyDraftMessage({ message: { _tag: "ChangedValue", value: "sk-new" } }),
 		).model
 		const saving = update(typed, Message.SubmittedKey()).model
+		expect(update(saving, Message.ClickedRemoveKey()).model.removeDialog.isOpen).toBe(false)
 		expect(update(saving, Message.ClickedConfirmRemove()).commands ?? []).toEqual([])
 		const saved = update(saving, Message.CompletedSaveKey({ result: Result.succeed(key) })).model
 		const removing = update(saved, Message.ClickedConfirmRemove())

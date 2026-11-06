@@ -12,6 +12,7 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import {
 	type AwsCardModel,
 	type AwsRemovedStack,
+	type AwsMetricsEdit,
 	type AwsSelection,
 	isMetricsPanelOpen,
 	type AwsSetupMethod,
@@ -414,11 +415,15 @@ export const statusArrived = (
 }
 
 /** Edit data: the picker opens with what the connection streams. */
-export const clickedMetrics = (model: Model, id: AwsConnectionId): Return => ({
-	model: withCard(model, {
-		metrics: { _tag: "Editing", id, selection: null, isPanelOpen: true, error: null },
-	}),
-})
+export const clickedMetrics = (model: Model, id: AwsConnectionId): Return => {
+	const edit = model.awsCard.metrics
+	const selection = edit._tag === "Editing" && edit.id === id ? edit.selection : null
+	return {
+		model: withCard(model, {
+			metrics: { _tag: "Editing", id, selection, isPanelOpen: true, error: null },
+		}),
+	}
+}
 
 /** Closes the panel; a save in flight still answers, as a toast. */
 export const cancelledMetrics = (model: Model): Return => ({
@@ -487,27 +492,19 @@ export const completedMetricStream = (
 	connection: V2AwsConnection | null,
 	error: string | null,
 ): Return => {
-	const edit = model.awsCard.metrics
-	const isShown = edit._tag === "Saving" && edit.id === id
-	if (connection === null) {
-		return edit._tag === "Saving" && isShown
-			? {
-					model: withCard(model, {
-						metrics: {
-							_tag: "Editing",
-							id,
-							selection: edit.selection,
-							isPanelOpen: edit.isPanelOpen,
-							error,
-						},
-					}),
-				}
-			: toast(model, "error", "Couldn't turn on the metric stream", error ?? "")
-	}
 	const done = (next: Model) =>
 		toast(next, "success", "Metric stream added", "Run the setup again in AWS to start streaming.")
-	if (!isShown) return chain(model, [(next) => requestStatus(next, context, "aws", "Supersede"), done])
-	return chain(withCard(model, { metrics: { _tag: "Idle" } }), [
+	const edit = model.awsCard.metrics
+	if (edit._tag !== "Saving" || edit.id !== id)
+		return connection === null
+			? toast(model, "error", "Couldn't turn on the metric stream", error ?? "")
+			: chain(model, [(next) => requestStatus(next, context, "aws", "Supersede"), done])
+	const { selection, isPanelOpen } = edit
+	if (connection === null)
+		return { model: withCard(model, { metrics: { _tag: "Editing", id, selection, isPanelOpen, error } }) }
+	// The pick stays, panel closed, so the flow shows it until the status read brings the stream back.
+	const saved: AwsMetricsEdit = { _tag: "Editing", id, selection, isPanelOpen: false, error: null }
+	return chain(withCard(model, { metrics: saved }), [
 		// The stored script predates the stream, so it is read again.
 		(next) => openSetup(next, context, connection.id, "Supersede"),
 		(next) => requestStatus(next, context, "aws", "Supersede"),

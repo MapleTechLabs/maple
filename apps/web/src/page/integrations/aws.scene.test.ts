@@ -120,7 +120,8 @@ describe("aws card", () => {
 				error: null,
 			}),
 		)
-		expect(saved.model.awsCard.metrics._tag).toBe("Idle")
+		expect(isMetricsPanelOpen(saved.model.awsCard.metrics, connectionId)).toBe(false)
+		expect(saved.model.awsCard.metrics).toMatchObject({ selection: { regions: ["eu-central-1"] } })
 		expect(saved.model.awsCard.setupId).toBe(connectionId)
 		expect(names(saved.commands)).toContain("LoadAwsSetup")
 		expect(names(saved.commands)).toContain("LoadIntegrationsAwsStatus")
