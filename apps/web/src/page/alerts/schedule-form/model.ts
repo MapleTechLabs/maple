@@ -1,7 +1,7 @@
 import * as Policy from "@maple/domain/policy"
 import { OnCallScheduleId } from "@maple/domain/http"
 import { V2OnCallSchedule } from "@maple/domain/http/v2"
-import { Schema } from "effect"
+import { Array as Arr, Order, Schema, String as Str } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Combobox from "@maple/views/ui/combobox"
@@ -37,6 +37,13 @@ export const Model = Schema.Struct({
 	isSessionLoaded: Schema.Boolean,
 })
 export type Model = typeof Model.Type
+
+/** The picker's zones: the browser's list, plus `UTC` (which it leaves out) and the form's own zone. */
+export const zoneItems = (model: Pick<Model, "zones" | "form">): ReadonlyArray<string> =>
+	Arr.sort(
+		Arr.dedupe(Arr.filter([...model.zones, "UTC", model.form.timeZone], Str.isNonEmpty)),
+		Order.String,
+	)
 
 /** The viewer may change schedules (`alerts:manage`); the API refuses anyone else. */
 export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "alerts:manage")

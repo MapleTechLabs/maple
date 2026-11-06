@@ -28,7 +28,7 @@ import {
 	type RestrictionDraft,
 } from "./form"
 import { type Direction, Message } from "./message"
-import { canManage, type Model } from "./model"
+import { canManage, type Model, zoneItems } from "./model"
 
 type Return = PageReturn<Model, Message>
 type FormRoute = Extract<AppRoute, { readonly _tag: "AlertsScheduleNew" }>
@@ -149,14 +149,22 @@ const zonePicked = (model: Model, message: Combobox.Message): Return => {
 		Message.GotZoneMessage({ message: child }),
 	)
 	const zone =
-		step.outMessage?._tag === "ChangedValue" && model.zones.includes(step.outMessage.value)
+		step.outMessage?._tag === "ChangedValue" && zoneItems(model).includes(step.outMessage.value)
 			? step.outMessage.value
 			: null
 	return {
 		model: {
 			...model,
 			zonePicker: step.model,
-			form: zone === null ? model.form : { ...model.form, timeZone: zone },
+			// Each layer keeps its wall-clock start, now read in the new zone, so what is shown is what saves.
+			form:
+				zone === null || zone === model.form.timeZone
+					? model.form
+					: {
+							...model.form,
+							timeZone: zone,
+							layers: Arr.map(model.form.layers, (layer) => ({ ...layer, startsAtMs: null })),
+						},
 		},
 		commands,
 	}

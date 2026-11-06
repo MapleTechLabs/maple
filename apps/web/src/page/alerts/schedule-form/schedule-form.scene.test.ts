@@ -214,6 +214,46 @@ describe("schedule form", () => {
 		)
 	})
 
+	test("UTC can be picked although the browser's zone list leaves it out", () => {
+		const model = run(ready(), [
+			Message.ReadDefaults({
+				timeZone: "Europe/Berlin",
+				nowMs: ONCALL_NOW,
+				zones: ["Europe/Berlin", "America/New_York"],
+			}),
+			Message.GotZoneMessage({ message: { _tag: "ClickedItem", value: "UTC" } }),
+		])
+		expect(model.form.timeZone).toBe("UTC")
+	})
+
+	test("a new zone keeps each layer's start on the wall clock shown, and saves it in that zone", () => {
+		const base = ready()
+		const loaded = run({ ...base, editingId: Schema.decodeSync(OnCallScheduleId)(scheduleUuid(1)) }, [])
+		const filled = { ...loaded, form: formFromSchedule(checkoutSchedule(ONCALL_NOW)) }
+		const shown = filled.form.layers[0]?.startsAt ?? ""
+		const moved = run(filled, [
+			Message.GotZoneMessage({ message: { _tag: "ClickedItem", value: "America/New_York" } }),
+		])
+		expect(moved.form.layers[0]?.startsAt).toBe(shown)
+		expect(Option.map(payloadOf(moved.form), (payload) => payload.layers[0].starts_at)).toEqual(
+			Option.map(localInputMs(shown, "America/New_York"), (ms) => new Date(ms).toISOString()),
+		)
+	})
+
+	test("a window whose From and To are the same time is refused", () => {
+		const model = run(ready(), [
+			Message.ClickedAddRestriction({ key: "l0" }),
+			Message.ChangedRestrictionTime({ key: "l0", restrictionKey: "r1", edge: "end", value: "18:00" }),
+			Message.ClickedSave(),
+		])
+		expect(payloadOf(model.form)).toEqual(Option.none())
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("From and To can't be the same time")).toExist(),
+		)
+	})
+
 	test("a start before year 1000 keeps four year digits", () => {
 		expect(localInputOf(Date.UTC(999, 0, 2, 9, 0), "UTC")).toBe("0999-01-02T09:00")
 	})

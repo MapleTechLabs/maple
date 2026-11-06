@@ -32,6 +32,8 @@ export const Model = Schema.Struct({
 	overrides: KeyedSchema(Schema.Array(V2OnCallOverride), LoadFailure),
 	/** `null` until Clerk answers, and after a failed read: names then read neutrally. */
 	members: Schema.NullOr(Schema.Array(OrgMember)),
+	/** The members read failed: the override form says so instead of offering nobody. */
+	isMembersFailed: Schema.Boolean,
 	grants: Schema.Array(Policy.PermissionName),
 	overrideDialog: Dialog.Model,
 	overrideDraft: OverrideDraft,

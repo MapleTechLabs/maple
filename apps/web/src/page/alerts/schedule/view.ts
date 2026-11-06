@@ -283,6 +283,7 @@ const overrideDialog = (h: H, model: Model, schedule: V2OnCallSchedule): Html =>
 					{
 						defaultValue: model.overrideDraft.userId,
 						className: "w-full",
+						isDisabled: model.isMembersFailed,
 						attributes: [
 							h.Key(`${id}-person-${model.overrideOpenCount}-${(model.members ?? []).length}`),
 							h.Id(`${id}-person`),
@@ -290,7 +291,12 @@ const overrideDialog = (h: H, model: Model, schedule: V2OnCallSchedule): Html =>
 						],
 					},
 					[
-						nativeOption("", "Pick a person"),
+						nativeOption(
+							"",
+							model.isMembersFailed
+								? "Couldn't load members, try reloading the page"
+								: "Pick a person",
+						),
 						...Arr.map(model.members ?? [], (member) => nativeOption(member.userId, member.name)),
 					],
 				),

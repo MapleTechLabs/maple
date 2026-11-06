@@ -48,7 +48,7 @@ import {
 	zoneError,
 } from "./form"
 import { type LayerField, Message } from "./message"
-import { canManage, type Model } from "./model"
+import { canManage, type Model, zoneItems } from "./model"
 import { participantMenuId } from "./update"
 
 // `/alerts/schedules/new`: the schedule's name and zone, then its layers: who rotates, how they
@@ -142,7 +142,7 @@ const zoneSection = (h: H, model: Model): Html =>
 				view: ComboboxView.view,
 				toParentMessage: (message) => Message.GotZoneMessage({ message }),
 				viewInputs: {
-					items: model.zones,
+					items: zoneItems(model),
 					ariaLabel: "Time zone",
 					placeholder: "Search time zones…",
 					emptyText: "No time zone matches that",

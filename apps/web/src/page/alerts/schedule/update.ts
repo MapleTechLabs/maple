@@ -75,6 +75,7 @@ export const init = (route: ScheduleRoute, context: PageContext): Return => {
 		shifts: Keyed.idle(),
 		overrides: Keyed.idle(),
 		members: null,
+		isMembersFailed: false,
 		grants: [],
 		overrideDialog: Dialog.init(OVERRIDE_DIALOG_ID, "dialog"),
 		overrideDraft: { userId: "", startsAt: "", endsAt: "", startMs: null, endMs: null },
@@ -320,9 +321,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		CompletedFetchMembers: ({ result }) =>
 			Result.match(result, {
-				onSuccess: (members) => ({ model: { ...model, members } }),
+				onSuccess: (members) => ({ model: { ...model, members, isMembersFailed: false } }),
 				// A failed read keeps names neutral ("Member") rather than calling everyone a former member.
-				onFailure: () => ({ model }),
+				onFailure: () => ({ model: { ...model, isMembersFailed: true } }),
 			}),
 		CompletedFetchSession: ({ orgId, grants }) =>
 			orgId === context.orgId ? { model: { ...model, grants } } : { model },

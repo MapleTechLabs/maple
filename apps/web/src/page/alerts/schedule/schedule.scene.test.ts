@@ -7,7 +7,9 @@ import { AsyncData } from "foldkit"
 import { isoMs, msIso } from "../shared/time"
 import { memberName } from "../shared/org-members"
 import { formatShiftEdge } from "../shared/oncall-schedules"
-import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import * as Dialog from "@maple/views/ui/dialog"
+import { MountDialog } from "@maple/views/ui/dialog"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import {
@@ -363,6 +365,18 @@ describe("on-call schedule page", () => {
 					payload: { user_id: memberId(7), starts_at: msIso(ONCALL_NOW), ends_at: running.ends_at },
 				}),
 			),
+		)
+	})
+	test("the override form says the members did not load, rather than asking to pick nobody", () => {
+		const model = run(loaded(ONCALL_NOW), [
+			Message.CompletedFetchMembers({ result: Result.fail("Clerk is down") }),
+			Message.ClickedNewOverride(),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text("Couldn't load members, try reloading the page")).toExist(),
 		)
 	})
 })
