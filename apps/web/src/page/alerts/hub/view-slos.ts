@@ -79,6 +79,18 @@ const isBurning = (row: SloListRow, incidents: ReadonlyArray<AlertIncidentRow>):
 		(Option.isSome(holdingTier(row.status)) && Option.isSome(openIncident(row.slo, incidents))))
 
 const readout = (h: H, model: Model, rows: ReadonlyArray<SloListRow>): ReadonlyArray<Html> => {
+	// Every SLO's status arrives in one read; none at all means that read failed, not that nothing burns.
+	if (rows.length > 0 && Arr.every(rows, (row) => row.status === null)) {
+		return [
+			toolbarStat(h, { value: String(rows.length), label: pluralize(rows.length, "SLO") }),
+			toolbarStat(h, {
+				value: "–",
+				label: "figures unavailable",
+				dot: "warn",
+				attributes: [h.Title("Couldn't read the SLOs' current figures. Reload to try again.")],
+			}),
+		]
+	}
 	const burning = Arr.filter(rows, (row) => isBurning(row, model.incidents ?? []))
 	const spent = Arr.filter(rows, (row) => row.status !== null && isBudgetSpent(row.status.budget_remaining))
 	return [

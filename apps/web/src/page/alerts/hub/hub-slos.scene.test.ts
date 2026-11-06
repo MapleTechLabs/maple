@@ -176,6 +176,21 @@ describe("alerts hub, SLOs tab", () => {
 		)
 	})
 
+	test("a failed status read says the figures are unavailable rather than nothing burning", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				withSlos([
+					{ slo: checkoutSlo(), status: null },
+					{ slo: checkoutSlo({ id: sloUuid(3), name: "Payments" }), status: null },
+				]),
+			),
+			expectView(text(/^2\s*SLOs$/u)).toExist(),
+			expectView(text(/figures unavailable$/u)).toExist(),
+			expectView(text(/^0\s*burning$/u)).not.toExist(),
+		)
+	})
+
 	test("a failed list read says so with a retry that reads again", () => {
 		const model = onSlos()
 		const failed = pageUpdate(
