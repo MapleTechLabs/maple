@@ -883,6 +883,13 @@ export {
 export {
 	sloBucketsQuery,
 	sloBucketsRowSchema,
+	sloBurnByServiceQuery,
+	sloBurnByServiceRowSchema,
+	sloTotalsByServiceQuery,
+	sloTotalsByServiceRowSchema,
+	type SloBurnByServiceOutput,
+	type SloGroupQueryOpts,
+	type SloTotalsByServiceOutput,
 	sloTotalsQuery,
 	sloTotalsRowSchema,
 	type SloBucketsOutput,

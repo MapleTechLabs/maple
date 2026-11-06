@@ -1239,6 +1239,34 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				{ ...window, bucketSeconds: 60 },
 			),
 	},
+	{
+		// The SLOs tab: every SLO's window totals in one read per (SLI, window).
+		module: "slos",
+		name: "sloTotalsByServiceQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.sloTotalsByServiceQuery({
+					serviceNames: ["api", "checkout"],
+					sli: { _tag: "availability" },
+				}),
+				window,
+			),
+	},
+	{
+		// The SLOs tab: every SLO's four burn windows in one read per SLI.
+		module: "slos",
+		name: "sloBurnByServiceQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.sloBurnByServiceQuery({
+					serviceNames: ["api", "checkout"],
+					sli: { _tag: "latency", thresholdMs: 500 },
+				}),
+				window,
+			),
+	},
 	// Audit log listing (apps/api/src/services/audit/AuditLogService.ts `list`).
 	{
 		module: "audit-log",
