@@ -34,6 +34,8 @@ const groupedRule = {
 	serviceNames: [],
 	environments: [],
 	groupBy: ["service.name"],
+	signalType: "error_rate" as const,
+	queryBuilderDraft: null,
 }
 
 describe("activeSilenceFor", () => {
@@ -69,6 +71,8 @@ describe("matchersForRule", () => {
 		id: ruleId,
 		groupBy: null,
 		serviceNames: [],
+		signalType: "error_rate" as const,
+		queryBuilderDraft: null,
 		...overrides,
 	})
 

@@ -1,4 +1,5 @@
 import {
+	alertSilenceGroupBy,
 	alertSilenceMatches,
 	type AlertRuleDocument,
 	type AlertSilenceId,
@@ -84,7 +85,10 @@ const byLatestEnd = Order.flip(Order.mapInput(Order.Number, endsAtMs))
  */
 export const activeSilenceFor = (
 	silences: ReadonlyArray<V2AlertSilence>,
-	rule: Pick<AlertRuleDocument, "id" | "tags" | "serviceNames" | "environments" | "groupBy">,
+	rule: Pick<
+		AlertRuleDocument,
+		"id" | "tags" | "serviceNames" | "environments" | "groupBy" | "signalType" | "queryBuilderDraft"
+	>,
 	groupKey: string | null,
 	nowMs: number,
 ): Option.Option<V2AlertSilence> =>
@@ -99,7 +103,7 @@ export const activeSilenceFor = (
 						tags: rule.tags,
 						serviceNames: rule.serviceNames,
 						environments: rule.environments,
-						groupBy: rule.groupBy,
+						groupBy: alertSilenceGroupBy(rule),
 						groupKey,
 					}),
 			),
@@ -118,15 +122,19 @@ export const silenceScopeParts = (
 	...Arr.map(matchers.tags ?? [], (tag) => `tag ${tag}`),
 ]
 
-const groupedBy = (rule: Pick<AlertRuleDocument, "groupBy">, dimension: string): boolean =>
-	rule.groupBy !== null && rule.groupBy.length === 1 && rule.groupBy[0] === dimension
+type GroupedRule = Pick<AlertRuleDocument, "groupBy" | "signalType" | "queryBuilderDraft">
+
+const groupedBy = (rule: GroupedRule, dimension: string): boolean => {
+	const groupBy = alertSilenceGroupBy(rule)
+	return groupBy !== null && groupBy.length === 1 && groupBy[0] === dimension
+}
 
 /**
  * The matchers that silence one rule, or just one incident group of it: a service group (grouped
  * by service, or a multi-service rule keyed by service) or an environment group, as the server reads them.
  */
 export const matchersForRule = (
-	rule: Pick<AlertRuleDocument, "id" | "groupBy" | "serviceNames">,
+	rule: Pick<AlertRuleDocument, "id" | "serviceNames"> & GroupedRule,
 	groupKey: string | null,
 ): V2AlertSilenceMatchers => {
 	if (groupKey === null || groupKey === UNGROUPED_GROUP_KEY) return { rule_ids: [rule.id] }
