@@ -16,6 +16,7 @@ import {
 	OnCallScheduleNotFoundError,
 	EscalationChainId,
 	OnCallSchedulesListResponse,
+	OnCallShiftDocument,
 	OnCallShiftsResponse,
 	OrgId,
 	UserId,
