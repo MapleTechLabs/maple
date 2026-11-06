@@ -555,7 +555,7 @@ describe("escalation pages the on-call", () => {
 						testDb,
 						`insert into alert_member_notifications (id, org_id, incident_id, run_id, user_id, channel,
 						   status, attempt_number, scheduled_at, payload_json, dedupe_key, created_at, updated_at)
-						 select gen_random_uuid()::text, org_id, incident_id, run_id, $2, channel, 'queued', 1,
+						 select gen_random_uuid()::text, org_id, incident_id, run_id, $2, channel, 'queued', 0,
 						   scheduled_at, payload_json, dedupe_key || ':late', created_at, updated_at
 						 from alert_member_notifications where org_id = $1`,
 						[orgId, chen],
@@ -575,7 +575,13 @@ describe("escalation pages the on-call", () => {
 					Arr.map(late, (row) => row.status),
 					["skipped", "skipped"],
 				)
-				assert.include(late[0]?.error_message ?? "", "acknowledged")
+				assert.deepStrictEqual(
+					Arr.map(late, (row) => row.error_message),
+					[
+						"Not sent: the incident was acknowledged before this page went out",
+						"Not sent: the incident was acknowledged before this page went out",
+					],
+				)
 				assert.notInclude(
 					Arr.map(emails, (email) => email.to),
 					"chen@acme.test",
@@ -634,6 +640,37 @@ describe("escalation pages the on-call", () => {
 					[["sent", 2]],
 				)
 				assert.deepStrictEqual(chat.attempts, ["transient", "ok"])
+			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat)))
+		})
+	})
+
+	it.effect("stops retrying a failed DM once the incident is acknowledged, and says so", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRate(10) }
+		const emails: Array<{ to: string; subject: string; html: string }> = []
+		return Effect.gen(function* () {
+			const chat = yield* makeChat
+			yield* Ref.set(chat.mode, "transient")
+			yield* TestClock.setTime(NOW)
+			return yield* Effect.gen(function* () {
+				const { alerts, orgId } = yield* setup("org_page_retry_ack", testDb)
+				yield* ticks(alerts, 10)
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`update alert_incidents set acknowledged_at = now(), acknowledged_by_name = 'Ana',
+						   acknowledged_via = 'web' where org_id = $1`,
+						[orgId],
+					),
+				)
+				yield* Ref.set(chat.mode, "ok")
+				yield* ticks(alerts, 2)
+				const slack = Arr.filter(yield* pageRows(testDb, orgId), (row) => row.channel === "slack")
+				assert.deepStrictEqual(
+					Arr.map(slack, (row) => [row.status, row.error_message]),
+					[["skipped", "Stopped retrying: the incident was acknowledged"]],
+				)
+				assert.deepStrictEqual(chat.attempts, ["transient"])
 			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat)))
 		})
 	})

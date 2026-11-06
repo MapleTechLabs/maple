@@ -376,10 +376,16 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 					incident.value.status !== "open" ||
 					incident.value.acknowledgedAt !== null
 				) {
+					const acknowledged = Option.isSome(incident) && incident.value.status === "open"
+					// A page with earlier attempts was on its way, so it stopped rather than never went.
+					const tried = row.attemptNumber > 0
 					yield* settle(row, claimedAt, {
 						status: "skipped",
-						errorMessage:
-							Option.isSome(incident) && incident.value.status === "open"
+						errorMessage: tried
+							? acknowledged
+								? "Stopped retrying: the incident was acknowledged"
+								: "Stopped retrying: the incident resolved"
+							: acknowledged
 								? "Not sent: the incident was acknowledged before this page went out"
 								: "Not sent: the incident resolved before this page went out",
 					})
