@@ -7,7 +7,8 @@
 		"./electric": "./src/electric/index.ts"
 	},
 	"scripts": {
-		"typecheck": "tsrs --noEmit"
+		"typecheck": "tsrs --noEmit",
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"@electric-sql/client": "1.5.28",
@@ -16,6 +17,7 @@
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
-		"typescript": "catalog:tooling"
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:"
 	}
 }
