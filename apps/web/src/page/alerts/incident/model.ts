@@ -1,5 +1,5 @@
 import { AlertDeliveryEventDocument } from "@maple/domain/http"
-import { V2Investigation } from "@maple/domain/http/v2"
+import { V2AlertSilence, V2Investigation } from "@maple/domain/http/v2"
 import {
 	AlertIncidentRowSchema,
 	AlertRuleRowSchema,
@@ -13,6 +13,7 @@ import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { CheckSummary } from "../shared/check-summary"
 import { PreviewSlot } from "../shared/preview"
+import * as SilenceDialog from "../silence-dialog/dialog"
 
 // `/alerts/incidents/$incidentId`.
 
@@ -35,5 +36,8 @@ export const Model = Schema.Struct({
 	chart: Chart.Model,
 	chartRuntime: ChartRuntime,
 	themeColors: Schema.NullOr(ThemeColors),
+	/** `alertSilences.list`: which silence, if any, holds back this incident's notifications. */
+	silences: KeyedSchema(Schema.Array(V2AlertSilence), LoadFailure),
+	silenceDialog: SilenceDialog.Model,
 })
 export type Model = typeof Model.Type

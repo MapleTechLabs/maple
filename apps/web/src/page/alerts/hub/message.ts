@@ -1,7 +1,12 @@
 import * as Policy from "@maple/domain/policy"
 import { UptimeMonitorId } from "@maple/domain"
-import { AlertDeliveryEventDocument, AlertDestinationId, AlertRuleId } from "@maple/domain/http"
-import { V2UptimeMonitor } from "@maple/domain/http/v2"
+import {
+	AlertDeliveryEventDocument,
+	AlertDestinationId,
+	AlertRuleId,
+	AlertSilenceId,
+} from "@maple/domain/http"
+import { V2AlertSilence, V2UptimeMonitor } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -14,6 +19,7 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
+import * as SilenceDialog from "../silence-dialog/dialog"
 import { TestOutcome, UptimeKindFilter, UptimeStatusFilter } from "./model"
 import { ServiceNamespaces } from "./uptime-groups"
 
@@ -69,5 +75,11 @@ export const Message = defineMessageUnion({
 	ClickedConfirmDeleteMonitor: {},
 	CompletedDeleteMonitor: { monitorId: UptimeMonitorId, result: outcome(Schema.Void) },
 	GotDeleteMonitorDialogMessage: { message: Dialog.Message },
+	CompletedFetchSilences: { key: Schema.String, result: outcome(Schema.Array(V2AlertSilence)) },
+	ClickedRetrySilences: {},
+	ClickedNewSilence: {},
+	GotSilenceDialogMessage: { message: SilenceDialog.Message },
+	ClickedEndSilence: { silenceId: AlertSilenceId },
+	CompletedEndSilence: { silenceId: AlertSilenceId, result: outcome(V2AlertSilence) },
 })
 export type Message = typeof Message.Type

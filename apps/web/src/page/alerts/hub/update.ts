@@ -1,5 +1,5 @@
 import type { UptimeMonitorId } from "@maple/domain"
-import type { AlertDestinationId, AlertRuleId } from "@maple/domain/http"
+import type { AlertDestinationId, AlertRuleId, AlertSilenceId } from "@maple/domain/http"
 import { buildDestinationUpdateParamsV2, destinationToFormState } from "@maple/web-data/alerts/form-utils"
 import { rowToAlertDestinationDocument, rowToAlertRuleDocument } from "@maple/web-data/collections/alerts"
 import { Array, Option, Result, String as Str } from "effect"
@@ -14,6 +14,7 @@ import type { AppRoute } from "../../../route"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
+import * as SilenceDialog from "../silence-dialog/dialog"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { alertsHref, createHref, ruleHref } from "../shared/links"
 import { editMonitorHref, newMonitorHref, UPTIME_LIST_LIMIT } from "../shared/uptime-commands"
@@ -30,6 +31,8 @@ import {
 	TestDestination,
 	ToggleRule,
 	UpdateDestination,
+	EndHubSilence,
+	FetchHubSilences,
 } from "./command"
 import { resolveStatus, resolveTab } from "./derive"
 import { Message, type RuleBucket } from "./message"
@@ -83,6 +86,26 @@ const requestRoutingDeliveries = (model: Model, context: PageContext, mode: Keye
 					commands: [FetchRoutingDeliveries({ key })],
 				}),
 			})
+}
+
+const silencesKey = (context: PageContext) =>
+	requestKey(context.orgId, "alertSilences.list", { query: { limit: 100 } })
+
+/** The Silences tab reads the org's silences only while it is open. */
+const requestSilences = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested => {
+	if (resolveTab(model.search.tab) !== "silences") return { model, commands: [] }
+	return Option.match(Keyed.requestFor(model.silences, silencesKey(context), mode), {
+		onNone: () => ({ model, commands: [] }),
+		onSome: (silences) => ({
+			model: { ...model, silences },
+			commands: [FetchHubSilences({ key: silences.key })],
+		}),
+	})
+}
+
+const refreshSilences = (model: Model, context: PageContext): Return => {
+	const step = requestSilences(model, context, "Supersede")
+	return { model: step.model, commands: step.commands }
 }
 
 const monitorsKey = (context: PageContext) =>
@@ -154,18 +177,23 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		deletingMonitorId: null,
 		confirmDeleteMonitorId: null,
 		deleteMonitorDialog: Dialog.init(DELETE_MONITOR_DIALOG_ID, "alert-dialog"),
+		silences: Keyed.idle(),
+		endingSilenceIds: [],
+		silenceDialog: SilenceDialog.init("alerts-silence"),
 	}
 	const deliveries = requestDeliveries(model, context, "Load")
 	const routing = requestRoutingDeliveries(deliveries.model, context, "Load")
 	const monitors = requestMonitors(routing.model, context, "Load")
+	const silences = requestSilences(monitors.model, context, "Load")
 	return {
-		model: monitors.model,
+		model: silences.model,
 		commands: [
 			ReadHubClock(),
 			FetchHubSession({ orgId: context.orgId }),
 			...deliveries.commands,
 			...routing.commands,
 			...monitors.commands,
+			...silences.commands,
 		],
 	}
 }
@@ -173,7 +201,11 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 export const routeChanged = (model: Model, route: HubRoute, context: PageContext): Return => {
 	const routing = requestRoutingDeliveries({ ...model, search: route.search }, context, "Load")
 	const monitors = requestMonitors(routing.model, context, "Load")
-	return { model: monitors.model, commands: [...routing.commands, ...monitors.commands] }
+	const silences = requestSilences(monitors.model, context, "Load")
+	return {
+		model: silences.model,
+		commands: [...routing.commands, ...monitors.commands, ...silences.commands, ReadHubClock()],
+	}
 }
 
 const navigate = (search: Model["search"]): PageOutMessage =>
@@ -251,6 +283,43 @@ const liftDestinationDialog = (model: Model, step: ReturnType<typeof Destination
 					CreatedDestination: () => toast("success", "Destination created"),
 				}),
 })
+
+// SILENCES
+
+const liftSilenceDialog = (
+	model: Model,
+	context: PageContext,
+	step: ReturnType<typeof SilenceDialog.update>,
+): Return => {
+	const next = { ...model, silenceDialog: step.model }
+	const commands = FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
+		Message.GotSilenceDialogMessage({ message }),
+	)
+	if (step.outMessage === undefined) return { model: next, commands }
+	return SilenceDialog.OutMessage.match(step.outMessage, {
+		RequestedToast: ({ type, title, description }) => ({
+			model: next,
+			commands,
+			outMessage: toast(type, title, description),
+		}),
+		CreatedSilence: () => {
+			const refreshed = refreshSilences(next, context)
+			return {
+				model: refreshed.model,
+				commands: [...commands, ...(refreshed.commands ?? [])],
+				outMessage: toast("success", "Alerts silenced"),
+			}
+		},
+	})
+}
+
+const endSilence = (model: Model, silenceId: AlertSilenceId): Return =>
+	model.endingSilenceIds.includes(silenceId)
+		? { model }
+		: {
+				model: { ...model, endingSilenceIds: [...model.endingSilenceIds, silenceId] },
+				commands: [EndHubSilence({ silenceId })],
+			}
 
 // ROW MENUS
 
@@ -533,6 +602,28 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onFailure: (failure): Return => ({
 					model: settled,
 					outMessage: errorToast("Couldn't update the monitor", failure),
+				}),
+			})
+		},
+		CompletedFetchSilences: ({ key, result }) => ({
+			model: { ...model, silences: Keyed.accept(model.silences, key, result) },
+		}),
+		ClickedRetrySilences: () => refreshSilences(model, context),
+		ClickedNewSilence: () =>
+			liftSilenceDialog(model, context, SilenceDialog.openNew(model.silenceDialog, context.timeZone)),
+		GotSilenceDialogMessage: ({ message: child }) =>
+			liftSilenceDialog(model, context, SilenceDialog.update(model.silenceDialog, child)),
+		ClickedEndSilence: ({ silenceId }) => endSilence(model, silenceId),
+		CompletedEndSilence: ({ silenceId, result }) => {
+			const settled = { ...model, endingSilenceIds: withoutId(model.endingSilenceIds, silenceId) }
+			return Result.match(result, {
+				onSuccess: (): Return => ({
+					...refreshSilences(settled, context),
+					outMessage: toast("success", "Silence ended"),
+				}),
+				onFailure: (failure): Return => ({
+					model: settled,
+					outMessage: errorToast("Couldn't end silence", failure),
 				}),
 			})
 		},

@@ -1,6 +1,6 @@
-import type { AlertRuleDocument } from "@maple/domain/http"
+import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 import { comparatorLabels, formatSignalValue, signalLabels } from "@maple/web-data/alerts/form-utils"
-import { Submodel } from "foldkit"
+import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { linkButton } from "@maple/views/ui/button"
@@ -24,7 +24,10 @@ import { historyTab } from "./view-history"
 import { overviewTab } from "./view-overview"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Option, Array as Arr } from "effect"
+import { activeSilenceFor } from "../shared/silences"
+import { silenceBadge, silenceButton } from "../shared/silence-view"
+import * as SilenceDialogView from "../silence-dialog/view"
 
 // The rule detail page through `ResultPage` and `DetailHeader`.
 
@@ -49,9 +52,27 @@ export const ruleSubtitle = (rule: AlertRuleDocument): string => {
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
 
 /** `DetailHeader` (kind eyebrow, title, meta row) with the time controls and Edit rule. */
-const header = (h: H, model: Model, rule: AlertRuleDocument) => {
+/** The silence over the whole rule, or else over one of its open incidents' groups. */
+const ruleSilence = (
+	model: Model,
+	rule: AlertRuleDocument,
+	openIncidents: ReadonlyArray<AlertIncidentDocument>,
+) => {
+	const silences = AsyncData.getOrElse(model.silences.data, () => [])
+	return Option.orElse(activeSilenceFor(silences, rule, null, model.nowMs), () =>
+		Arr.findFirst(
+			Arr.map(openIncidents, (incident) =>
+				activeSilenceFor(silences, rule, incident.groupKey, model.nowMs),
+			),
+			Option.isSome,
+		).pipe(Option.flatten),
+	)
+}
+
+const header = (h: H, model: Model, rule: AlertRuleDocument, timeZone: string) => {
 	const openIncidents = Arr.filter(ruleIncidentsOf(model), (i) => i.status === "open")
 	const isFiring = openIncidents.length > 0
+	const silence = ruleSilence(model, rule, openIncidents)
 	return {
 		titleContent: h.div(
 			[h.Class("min-w-0 space-y-2.5")],
@@ -68,6 +89,9 @@ const header = (h: H, model: Model, rule: AlertRuleDocument) => {
 								Arr.every(openIncidents, (i) => i.holdReason != null) ? "held" : "firing",
 							)
 						: alertStatusBadge(h, rule.enabled ? "ok" : "disabled"),
+					...Option.toArray(
+						Option.map(silence, (active) => silenceBadge(h, active, model.nowMs, timeZone)),
+					),
 					typography(h, { size: "sm", tone: "muted" }, [ruleSubtitle(rule)]),
 				]),
 			],
@@ -95,6 +119,7 @@ const header = (h: H, model: Model, rule: AlertRuleDocument) => {
 						},
 					}),
 			}),
+			silenceButton(h, Message.ClickedSilence()),
 			linkButton(h, { variant: "outline", size: "sm", href: createHref({ ruleId: rule.id }) }, [
 				icon(h, "PencilIcon"),
 				"Edit rule",
@@ -147,14 +172,26 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							back: { href: alertsHref({}), label: "Back to rules" },
 						}),
 					])
-				: dashboardPage(h, { ...header(h, model, rule), tabs: tabStrip(h, model) }, [
+				: dashboardPage(h, { ...header(h, model, rule, timeZone), tabs: tabStrip(h, model) }, [
 						activeTabOf(model) === "overview"
 							? overviewTab(h, model, rule, timeZone)
 							: model.incidents === null
 								? historyLoading(h)
 								: historyTab(h, model, rule, ruleIncidentsOf(model), timeZone, model.nowMs),
 					])
-	return h.div([h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: RULE_CHART_TOKENS }))], [page])
+	return h.div(
+		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: RULE_CHART_TOKENS }))],
+		[
+			page,
+			h.submodel({
+				slotId: "alert-rule-silence",
+				model: model.silenceDialog,
+				view: SilenceDialogView.view,
+				viewInputs: { id: "alert-rule-silence" },
+				toParentMessage: (message) => Message.GotSilenceDialogMessage({ message }),
+			}),
+		],
+	)
 })
 
 export const breadcrumbsOf = (model: Model) => {

@@ -26,6 +26,7 @@ import {
 	ReadDiagnosisClock,
 	ResolveRuleWindow,
 	ToggleRuleEnabled,
+	FetchRuleSilences,
 } from "./command"
 import {
 	checksPageOf,
@@ -38,6 +39,67 @@ import {
 } from "./derive"
 import { Message, type RequestMode } from "./message"
 import type { Model } from "./model"
+import * as SilenceDialog from "../silence-dialog/dialog"
+import { matchersForRule } from "../shared/silences"
+
+const silencesKey = (context: PageContext) =>
+	requestKey(context.orgId, "alertSilences.list", { query: { limit: 100 } })
+
+const requestSilences = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return =>
+	Option.match(Keyed.requestFor(model.silences, silencesKey(context), mode), {
+		onNone: () => ({ model }),
+		onSome: (silences) => ({
+			model: { ...model, silences },
+			commands: [FetchRuleSilences({ key: silences.key })],
+		}),
+	})
+
+/** The silence dialog's outcome: a toast, and a re-read so the header shows the new silence. */
+const liftSilenceDialog = (
+	model: Model,
+	context: PageContext,
+	step: ReturnType<typeof SilenceDialog.update>,
+): Return => {
+	const next = { ...model, silenceDialog: step.model }
+	const commands = Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotSilenceDialogMessage({ message }),
+	)
+	if (step.outMessage === undefined) return { model: next, commands }
+	return SilenceDialog.OutMessage.match(step.outMessage, {
+		RequestedToast: ({ type, title, description }) => ({
+			model: next,
+			commands,
+			outMessage: PageOutMessage.RequestedToast({ type, title, description }),
+		}),
+		CreatedSilence: () => {
+			const refreshed = requestSilences(next, context, "Supersede")
+			return {
+				model: refreshed.model,
+				commands: [...commands, ...(refreshed.commands ?? []), ReadDiagnosisClock()],
+				outMessage: PageOutMessage.RequestedToast({
+					type: "success",
+					title: "Alerts silenced",
+					description: "",
+				}),
+			}
+		},
+	})
+}
+
+const openSilence = (model: Model, context: PageContext): Return => {
+	const rule = ruleOf(model)
+	return rule === null
+		? { model }
+		: liftSilenceDialog(
+				model,
+				context,
+				SilenceDialog.openFor(
+					model.silenceDialog,
+					{ label: rule.name, matchers: matchersForRule(rule, null) },
+					context.timeZone,
+				),
+			)
+}
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -150,11 +212,15 @@ export const init = (route: RuleRoute, context: PageContext): Return => {
 		chart: Chart.init(),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
+		silences: Keyed.idle(),
+		silenceDialog: SilenceDialog.init("alert-rule-silence"),
 	}
-	const followed = followData(model, context, "Load")
+	const silences = requestSilences(model, context, "Load")
+	const followed = followData(silences.model, context, "Load")
 	return {
 		model: followed.model,
 		commands: [
+			...(silences.commands ?? []),
 			resolveCommand(model, context, "Load"),
 			ReadDiagnosisClock(),
 			...(followed.commands ?? []),
@@ -495,6 +561,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
 		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		CompletedFetchSilences: ({ key, result }) => ({
+			model: { ...model, silences: Keyed.accept(model.silences, key, result) },
+		}),
+		ClickedSilence: () => openSilence(model, context),
+		GotSilenceDialogMessage: ({ message: child }) =>
+			liftSilenceDialog(model, context, SilenceDialog.update(model.silenceDialog, child)),
 		GotChartMessage: ({ message: child }) => {
 			const next = Chart.update(model.chart, child)
 			return {

@@ -48,6 +48,10 @@ import { groupPreviewOf, type IncidentView, incidentViewOf, ruleStatesOf } from 
 import { Message } from "./message"
 import type { Model } from "./model"
 import { incidentRail } from "./view-rail"
+import { activeSilenceFor } from "../shared/silences"
+import { silenceBadge, silenceButton } from "../shared/silence-view"
+import * as SilenceDialogView from "../silence-dialog/view"
+import { hstack } from "@maple/views/ui/stack"
 import { incidentTimeline } from "./view-timeline"
 import { typography } from "@maple/views/ui/typography"
 
@@ -71,6 +75,7 @@ export const headerTitle = <M>(
 	rule: AlertRuleDocument | null,
 	now: number,
 	timeZone: string,
+	badges: ReadonlyArray<Html> = [],
 ) => {
 	const group = incidentGroup(incident)
 	const isUptime = incident.signalType === "uptime"
@@ -102,6 +107,7 @@ export const headerTitle = <M>(
 				[h.Class("flex flex-wrap items-center gap-2.5")],
 				[
 					severityBadge(h, incident.severity),
+					...badges,
 					typography(h, { size: "xs", tone: "muted" }, [statusLine(incident, now, timeZone)]),
 				],
 			),
@@ -112,6 +118,12 @@ export const headerTitle = <M>(
 }
 
 const headerAction = (h: H, model: Model, investigation: V2Investigation | null): Html =>
+	hstack(h, { gap: "2" }, [
+		silenceButton(h, Message.ClickedSilence()),
+		investigateAction(h, model, investigation),
+	])
+
+const investigateAction = (h: H, model: Model, investigation: V2Investigation | null): Html =>
 	investigation !== null
 		? linkButton(
 				h,
@@ -303,7 +315,28 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			return dashboardPage(
 				h,
 				{
-					titleContent: headerTitle(h, view.incident, view.rule, now, timeZone),
+					titleContent: headerTitle(
+						h,
+						view.incident,
+						view.rule,
+						now,
+						timeZone,
+						view.incident.status === "open"
+							? Option.toArray(
+									Option.map(
+										Option.flatMap(Option.fromNullishOr(view.rule), (rule) =>
+											activeSilenceFor(
+												AsyncData.getOrElse(model.silences.data, () => []),
+												rule,
+												view.incident.groupKey,
+												now,
+											),
+										),
+										(silence) => silenceBadge(h, silence, now, timeZone),
+									),
+								)
+							: [],
+					),
 					actions: headerAction(
 						h,
 						model,
@@ -314,7 +347,19 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			)
 		},
 	})
-	return h.div([h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: RULE_CHART_TOKENS }))], [page])
+	return h.div(
+		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: RULE_CHART_TOKENS }))],
+		[
+			page,
+			h.submodel({
+				slotId: "alert-incident-silence",
+				model: model.silenceDialog,
+				view: SilenceDialogView.view,
+				viewInputs: { id: "alert-incident-silence" },
+				toParentMessage: (message) => Message.GotSilenceDialogMessage({ message }),
+			}),
+		],
+	)
 })
 
 /** `DashboardPage`'s breadcrumbs per state. */

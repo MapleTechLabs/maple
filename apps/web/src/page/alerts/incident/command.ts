@@ -5,6 +5,7 @@ import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { listDeliveries } from "../shared/commands"
+import { listSilences } from "../shared/silences"
 import { fetchCheckSummary } from "../shared/check-summary"
 import { fetchPreview } from "../shared/preview"
 import { Message } from "./message"
@@ -75,5 +76,15 @@ export const CreateInvestigation = Command.define("CreateAlertInvestigation", {
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedCreateInvestigation({ result })),
+		),
+})
+
+export const FetchIncidentSilences = Command.define("FetchAlertIncidentSilences", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchSilences],
+	execute: ({ key }) =>
+		listSilences.pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchSilences({ key, result })),
 		),
 })

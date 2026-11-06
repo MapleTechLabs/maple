@@ -76,19 +76,24 @@ function deliveryEntry(
 	const name = event.destinationName
 	const failed = event.status === "failed"
 	const sending = event.status === "queued" || event.status === "processing"
-	const title = sending
-		? `Sending to ${name}`
-		: event.eventType === "resolve"
-			? failed
-				? `All-clear to ${name} failed`
-				: `Sent all-clear to ${name}`
-			: event.eventType === "renotify"
+	const silenced = event.status === "silenced"
+	const title = silenced
+		? event.eventType === "resolve"
+			? `All-clear to ${name} held back by a silence`
+			: `Page to ${name} held back by a silence`
+		: sending
+			? `Sending to ${name}`
+			: event.eventType === "resolve"
 				? failed
-					? `Reminder to ${name} failed`
-					: `Reminded ${name}`
-				: failed
-					? `Could not notify ${name}`
-					: `Notified ${name}`
+					? `All-clear to ${name} failed`
+					: `Sent all-clear to ${name}`
+				: event.eventType === "renotify"
+					? failed
+						? `Reminder to ${name} failed`
+						: `Reminded ${name}`
+					: failed
+						? `Could not notify ${name}`
+						: `Notified ${name}`
 	const reason = failed
 		? (event.errorMessage ?? (event.responseCode != null ? `HTTP ${event.responseCode}` : null))
 		: null
@@ -100,7 +105,13 @@ function deliveryEntry(
 	return {
 		key: `delivery:${event.id}`,
 		at: Date.parse(event.attemptedAt ?? event.scheduledAt),
-		tone: failed ? "crit" : sending ? "neutral" : event.eventType === "resolve" ? "ok" : "info",
+		tone: failed
+			? "crit"
+			: sending || silenced
+				? "neutral"
+				: event.eventType === "resolve"
+					? "ok"
+					: "info",
 		pending: sending,
 		title,
 		detail: Arr.join(

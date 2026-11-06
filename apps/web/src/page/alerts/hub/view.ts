@@ -21,6 +21,9 @@ import { alertsEmptyState } from "./view-empty"
 import { inboxTab } from "./view-inbox"
 import { routingTab } from "./view-routing"
 import * as DestinationDialogView from "../destination/view"
+import * as SilenceDialogView from "../silence-dialog/view"
+import { silenceStatusAt } from "../shared/silences"
+import { silencesTab } from "./view-silences"
 import { rulesTab } from "./view-rules"
 import { deleteMonitorDialog, uptimeTab } from "./view-uptime"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -33,6 +36,7 @@ const ALERTS_TABS: ReadonlyArray<{ value: AlertsTab; label: string }> = [
 	{ value: "inbox", label: "Inbox" },
 	{ value: "rules", label: "Rules" },
 	{ value: "uptime", label: "Uptime" },
+	{ value: "silences", label: "Silences" },
 	{ value: "routing", label: "Routing" },
 ]
 
@@ -45,6 +49,11 @@ const tabBar = (
 	active: AlertsTab,
 ): Html => {
 	const monitorCount = Option.map(AsyncData.getData(model.monitors.data), (monitors) => monitors.length)
+	const activeSilenceCount = Option.map(
+		AsyncData.getData(model.silences.data),
+		(silences) =>
+			Arr.filter(silences, (silence) => silenceStatusAt(silence, model.nowMs ?? 0) === "active").length,
+	)
 	return linkTabStrip(
 		h,
 		"Alerts sections",
@@ -52,15 +61,17 @@ const tabBar = (
 			const count =
 				tab.value === "uptime"
 					? Option.getOrUndefined(monitorCount)
-					: Option.match(overview, {
-							onNone: () => undefined,
-							onSome: (data) =>
-								tab.value === "inbox"
-									? data.openIncidents.length
-									: tab.value === "rules"
-										? data.rules.length
-										: undefined,
-						})
+					: tab.value === "silences"
+						? Option.getOrUndefined(activeSilenceCount)
+						: Option.match(overview, {
+								onNone: () => undefined,
+								onSome: (data) =>
+									tab.value === "inbox"
+										? data.openIncidents.length
+										: tab.value === "rules"
+											? data.rules.length
+											: undefined,
+							})
 			return {
 				key: tab.value,
 				href: alertsHref({ ...model.search, tab: tab.value }),
@@ -161,6 +172,19 @@ const newRuleButton = (h: H, model: Model): Html =>
 // Destinations are a Routing concern, so "New destination" only shows on that tab.
 const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
 	hstack(h, { gap: "2" }, [
+		...(canManage(model) && tab === "silences"
+			? [
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							attributes: [h.OnClick(Message.ClickedNewSilence())],
+						},
+						[icon(h, "BellSlashIcon"), "New silence"],
+					),
+				]
+			: []),
 		...(canManage(model) && tab === "routing"
 			? [
 					button(
@@ -277,7 +301,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							})
 						: tab === "uptime"
 							? uptimeTab(h, model, model.nowMs ?? 0, inputs.context.pinnedNamespace)
-							: hubBody(h, model, overview, tab),
+							: tab === "silences"
+								? silencesTab(h, model, model.nowMs ?? 0, inputs.context.timeZone)
+								: hubBody(h, model, overview, tab),
 				],
 			),
 			deleteDialog(h, model),
@@ -288,6 +314,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				view: DestinationDialogView.view,
 				viewInputs: { id: "alerts-destination" },
 				toParentMessage: (message) => Message.GotDestinationDialogMessage({ message }),
+			}),
+			h.submodel({
+				slotId: "alerts-silence",
+				model: model.silenceDialog,
+				view: SilenceDialogView.view,
+				viewInputs: { id: "alerts-silence" },
+				toParentMessage: (message) => Message.GotSilenceDialogMessage({ message }),
 			}),
 		],
 	)
