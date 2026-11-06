@@ -171,9 +171,11 @@ export class AlertSilencesService extends Context.Service<AlertSilencesService, 
 							.limit(1),
 					),
 				)
-				const name = windows[0]?.name ?? windowId
+				const window = windows[0]
 				return yield* validationError(
-					`This silence belongs to maintenance window ${name}; edit or disable the window instead`,
+					window === undefined
+						? "This silence came from a maintenance window that was deleted, so it cannot be edited"
+						: `This silence belongs to maintenance window ${window.name}; edit or disable the window instead`,
 				)
 			})
 

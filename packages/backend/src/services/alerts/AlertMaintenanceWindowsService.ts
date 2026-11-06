@@ -312,7 +312,9 @@ export class AlertMaintenanceWindowsService extends Context.Service<
 				request.schedule === undefined
 					? current.schedule
 					: toStoredMaintenanceSchedule(request.schedule)
-			if (request.schedule !== undefined) yield* validateSchedule(schedule, nowMs)
+			// Re-enabling a one-off window that already ended would turn on something that never fires.
+			const enabling = request.enabled === true && !current.row.enabled
+			if (request.schedule !== undefined || enabling) yield* validateSchedule(schedule, nowMs)
 			if (request.matchers !== undefined) yield* requireRuleIds(orgId, request.matchers)
 
 			const next: DecodedMaintenanceWindow = {

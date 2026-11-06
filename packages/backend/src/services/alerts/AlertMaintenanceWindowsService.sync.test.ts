@@ -398,6 +398,44 @@ describe("maintenance window sync", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("refuses to turn back on a one-off window that already ended", () => {
+		const { layer } = setup()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			const window = yield* createWindow(once(NOW, NOW + HOUR))
+			yield* updateWindow(window.id, new AlertMaintenanceWindowUpdateRequest({ enabled: false }))
+			yield* TestClock.setTime(NOW + 2 * HOUR)
+			const reenabled = yield* Effect.exit(
+				updateWindow(window.id, new AlertMaintenanceWindowUpdateRequest({ enabled: true })),
+			)
+			const error = getError(reenabled)
+			assert.strictEqual(
+				Schema.is(AlertValidationError)(error) ? error.message : String(error),
+				"A one-off maintenance window must end in the future",
+			)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("says a deleted window's silence cannot be edited, without naming an id", () => {
+		const { layer } = setup()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			const window = yield* createWindow(nightly, "Nightly DB")
+			const [first] = yield* occurrenceSilences(window.id)
+			// Deleted mid-occurrence: that occurrence's silence is kept, ended at the delete.
+			yield* TestClock.setTime(TUE_2330 + 10 * MINUTE)
+			yield* AlertMaintenanceWindowsService.use((service) =>
+				service.delete(orgId, userId, adminRoles, window.id),
+			)
+			const silences = yield* AlertSilencesService
+			const error = getError(yield* Effect.exit(silences.end(orgId, userId, adminRoles, first.id)))
+			assert.strictEqual(
+				Schema.is(AlertValidationError)(error) ? error.message : String(error),
+				"This silence came from a maintenance window that was deleted, so it cannot be edited",
+			)
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("keeps a past occurrence's baseline exclusion after its window is deleted", () => {
 		const { layer } = setup()
 		return Effect.gen(function* () {
