@@ -2039,8 +2039,8 @@ const make: Effect.Effect<
 					const [nextState] = otherStates
 					let keepPointer = false
 					if (nextState === undefined) {
-						// A lost race (manual resolve, overlapping reopen) leaves the row to its
-						// winner; this series still drops its pointer below.
+						// A lost race leaves the row to its winner: a manual resolve drops the pointer, an
+						// overlapping tick that kept it firing (continue or reopen) keeps it.
 						const resolved = yield* resolveOpenIncident(
 							orgId,
 							incidentId,
@@ -2058,19 +2058,16 @@ const make: Effect.Effect<
 									? { fingerprintsJson: runtime.entries }
 									: undefined),
 							},
-							runtime === undefined ? {} : { reopenCount: runtime.row.reopenCount },
+							runtime === undefined
+								? {}
+								: {
+										reopenCount: runtime.row.reopenCount,
+										triggeredBefore: runtime.row.lastTriggeredAt + 1,
+									},
 						)
-						incidentById.delete(incidentId)
-						if (runtime !== undefined && runtime.row.signalType === "error_spike") {
-							const attachKey = attachKeyFor(runtime.row.serviceName, runtime.row.deploymentEnv)
-							if (openSpikeByServiceEnv.get(attachKey) === runtime) {
-								openSpikeByServiceEnv.delete(attachKey)
-							}
-						}
 						if (resolved) {
 							stats.incidentsResolved += 1
 						} else {
-							// Reopened by an overlapping tick: keep pointing at it so the row is not orphaned.
 							const current = yield* dbExecute((db) =>
 								db.run(
 									PG.from(AnomalyIncidents)
@@ -2080,6 +2077,19 @@ const make: Effect.Effect<
 								),
 							)
 							keepPointer = current[0]?.status === "open"
+						}
+						// Still open means it stays this tick's attach target too.
+						if (!keepPointer) {
+							incidentById.delete(incidentId)
+							if (runtime !== undefined && runtime.row.signalType === "error_spike") {
+								const attachKey = attachKeyFor(
+									runtime.row.serviceName,
+									runtime.row.deploymentEnv,
+								)
+								if (openSpikeByServiceEnv.get(attachKey) === runtime) {
+									openSpikeByServiceEnv.delete(attachKey)
+								}
+							}
 						}
 					} else {
 						// Other fingerprints are still firing: the incident stays open.
