@@ -413,6 +413,43 @@ describe("ErrorIssueWorkflowService", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
+	it.effect("gives the conflict to the second of two writers that read the same state", () =>
+		Effect.gen(function* () {
+			const workflow = yield* ErrorIssueWorkflowService
+			const database = yield* Database
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId, { workflowState: "triage" })
+			// Both callers read `triage` before either wrote.
+			const seenByBoth = yield* workflow.requireIssue(ORG, issueId)
+
+			yield* workflow.applyTransition(ORG, null, seenByBoth, "cancelled")
+			const loser = yield* Effect.flip(workflow.applyTransition(ORG, null, seenByBoth, "done"))
+			assert.strictEqual(loser._tag, "@maple/http/errors/ErrorIssueTransitionError")
+
+			const [after] = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [$.id.eq(issueId)]),
+				),
+			)
+			assert.strictEqual(after?.workflowState, "cancelled")
+			assert.isNull(after?.resolvedAt)
+			// The loser's timeline event rolled back with its UPDATE.
+			const events = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorIssueEvents)
+						.select()
+						.where(($) => [$.issueId.eq(issueId)]),
+				),
+			)
+			assert.deepStrictEqual(
+				Arr.map(events, (event) => event.toState),
+				["cancelled"],
+			)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
 	// The lease used to advance only via an explicit `heartbeat` call, which agents
 	// never made: `claim` was used 11 times in 8 days, `heartbeat` zero. Issues were
 	// claimed, worked, and silently dropped back to `todo` when the lease lapsed.

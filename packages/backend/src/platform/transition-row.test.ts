@@ -15,8 +15,8 @@ import { transitionRow } from "./transition-row"
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_transition_row_test")
-const ID = Schema.decodeUnknownSync(InvestigationId)("00000000-0000-4000-8000-000000000001")
+const ORG = Schema.decodeSync(OrgId)("org_transition_row_test")
+const ID = Schema.decodeSync(InvestigationId)("00000000-0000-4000-8000-000000000001")
 const NOW = Date.UTC(2026, 10, 6, 12, 0)
 
 const seed = Effect.gen(function* () {
@@ -59,7 +59,11 @@ const move = (from: InvestigationStatus, to: InvestigationStatus) =>
 const statusNow = Effect.gen(function* () {
 	const database = yield* Database
 	const rows = yield* database.execute((db) =>
-		db.run(PG.from(Investigations).select("status").where(($) => [$.orgId.eq(ORG), $.id.eq(ID)])),
+		db.run(
+			PG.from(Investigations)
+				.select("status")
+				.where(($) => [$.orgId.eq(ORG), $.id.eq(ID)]),
+		),
 	)
 	return rows[0]?.status
 })

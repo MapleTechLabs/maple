@@ -6,7 +6,8 @@
  */
 import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb, MapleDbError } from "@maple/db/client"
-import { Investigations } from "@maple/db/tables"
+import { Investigations, type InvestigationRow } from "@maple/db/tables"
+import type { OrgId } from "@maple/domain/http"
 import { Effect, Option, Schema } from "effect"
 
 /** One agent pass. If it has not answered in this long, it is not going to. */
@@ -58,7 +59,9 @@ export const isInvestigationStale = (
 }
 
 /**
- * Fail every abandoned run, across every org, in one statement.
+ * Fail abandoned runs: every org in one statement for the tick, or one org when a read finds a
+ * stale row on its page. The only sweep; there used to be a second, per-org one that ignored
+ * the heartbeat and failed live passes in their close-out.
  *
  * Until this existed the check ran only when something happened to read the row: a detail page
  * load, or a second incident on the same subject re-enqueueing. An autonomous run nobody opens is
@@ -66,40 +69,35 @@ export const isInvestigationStale = (
  * `investigating` indefinitely and the hub filled with investigations that were never coming back.
  * Prod, 2026-09-19: 78 of 100 starts left no trace at all.
  *
- * Org-agnostic and unbatched on purpose. The per-org form would be one round-trip per org per tick
- * against a table where the matching set is almost always empty; this is one statement for the
- * whole tick, and `status` narrows it before `started_at` does.
- *
  * Mirrors {@link isInvestigationStale}, heartbeat included: a run still recording steps is alive
- * however long it has been going, and a sweep that ran every tick rather than on a read would
- * otherwise fail a pass in its close-out. `coalesce` to zero so a row whose progress somehow
- * carries no `updatedAt` reads as no heartbeat and is still swept, rather than a NULL comparison
- * quietly excluding it forever.
+ * however long it has been going. `coalesce` to zero so a row whose progress somehow carries no
+ * `updatedAt` reads as no heartbeat and is still swept, rather than a NULL comparison quietly
+ * excluding it forever. Guarded on `investigating`, so a run that settled meanwhile is untouched.
  *
- * Returns how many rows it moved so the tick can report a number that should normally be zero.
+ * Returns the rows it moved, so callers can settle their anomaly triage and the tick can report
+ * a count that should normally be zero.
  */
 export const sweepAbandonedInvestigations = (
 	orm: MapleDb,
 	nowMs: number,
-): Effect.Effect<number, MapleDbError> =>
-	Effect.map(
-		orm.run(
-			PG.update(Investigations)
-				.set({
-					status: "failed",
-					error: staleTimeoutMessage(STALE_MS),
-					updatedAt: nowMs,
-				})
-				.where(($) => [
-					$.status.eq("investigating"),
-					$.startedAt.lt(nowMs - STALE_MS),
-					PG.or(
-						$.progressJson.isNull(),
-						PG.sql
-							.cond`coalesce((${$.progressJson}->>'updatedAt')::bigint, 0) < ${nowMs - PROGRESS_HEARTBEAT_STALE_MS}`,
-					),
-				])
-				.returning("id"),
-		),
-		(rows) => rows.length,
+	orgId?: OrgId,
+): Effect.Effect<ReadonlyArray<Pick<InvestigationRow, "incidentKind" | "incidentId">>, MapleDbError> =>
+	orm.run(
+		PG.update(Investigations)
+			.set({
+				status: "failed",
+				error: staleTimeoutMessage(STALE_MS),
+				updatedAt: nowMs,
+			})
+			.where(($) => [
+				orgId === undefined ? undefined : $.orgId.eq(orgId),
+				$.status.eq("investigating"),
+				$.startedAt.lt(nowMs - STALE_MS),
+				PG.or(
+					$.progressJson.isNull(),
+					PG.sql
+						.cond`coalesce((${$.progressJson}->>'updatedAt')::bigint, 0) < ${nowMs - PROGRESS_HEARTBEAT_STALE_MS}`,
+				),
+			])
+			.returning("incidentKind", "incidentId"),
 	)
