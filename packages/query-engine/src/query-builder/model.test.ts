@@ -435,6 +435,13 @@ describe("metrics resource.* support", () => {
 		expect(warnings).toEqual(["Metrics queries group by at most 5 attribute keys; ignoring 1"])
 	})
 
+	it("a chart query carries its across-series aggregation, and omits it when unset", () => {
+		const withMax = buildTimeseriesQuerySpec(metricsDraft({ spaceAggregation: "max" }))
+		expect((withMax.query as { spaceAggregation?: string } | null)?.spaceAggregation).toBe("max")
+		const unset = buildTimeseriesQuerySpec(metricsDraft())
+		expect(unset.query).not.toHaveProperty("spaceAggregation")
+	})
+
 	it("a breakdown keeps the chart's across-series aggregation", () => {
 		const result = buildBreakdownQuerySpec(
 			metricsDraft({
