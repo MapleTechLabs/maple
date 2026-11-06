@@ -13,6 +13,7 @@ import {
 	otlpKeepaliveRoom,
 	postToIngest,
 	resolveIngestEndpoint,
+	scrubUrl,
 	warnIfKeylessMapleIngest,
 } from "@maple/browser-session"
 import { isCommitSha } from "@maple/browser-session/commit-sha"
@@ -347,7 +348,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		spans.captureException(error, {
 			...options,
 			attributes: {
-				...(page !== undefined ? { "url.full": page } : undefined),
+				...(page !== undefined ? { "url.full": scrubUrl(page) } : undefined),
 				...options.attributes,
 			},
 		})
@@ -370,7 +371,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 				// reads the names they replaced, so they are dropped rather than
 				// dual-emitted — carrying both would put four near-identical rows on
 				// every uncaught error in the attribute list.
-				...(event.filename ? { "code.file.path": event.filename } : undefined),
+				...(event.filename ? { "code.file.path": scrubUrl(event.filename) } : undefined),
 				...(event.lineno > 0 ? { "code.line.number": event.lineno } : undefined),
 			},
 		})
