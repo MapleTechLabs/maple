@@ -31,7 +31,9 @@ export const liftDialog = (model: Model, step: ReturnType<typeof DestinationDial
 	return DestinationDialog.OutMessage.match(step.outMessage, {
 		CreatedDestination: ({ id }) => ({
 			model:
-				next.form === null ? next : { ...next, form: updateTierIds(next.form, "warning", addId(id)) },
+				next.form === null
+					? next
+					: { ...next, form: updateTierIds(next.form, next.destinationTier, addId(id)) },
 			commands,
 			outMessage: PageOutMessage.RequestedToast({
 				type: "success",
@@ -66,7 +68,7 @@ const picked = (model: Model, menuId: string, value: string): Return => {
 			onNone: () => ({ model }),
 			onSome: (type) =>
 				liftDialog(
-					model,
+					{ ...model, destinationTier: tier },
 					DestinationDialog.openNew(model.destinationDialog, defaultDestinationForm(type)),
 				),
 		})
@@ -81,7 +83,7 @@ const picked = (model: Model, menuId: string, value: string): Return => {
 				onNone: (): Return => ({ model }),
 				onSome: (workspace) =>
 					liftDialog(
-						model,
+						{ ...model, destinationTier: tier },
 						DestinationDialog.openNew(
 							model.destinationDialog,
 							chatDestinationForm(connector, workspace.id),
@@ -127,7 +129,13 @@ export const connectorsAnswered = (model: Model, connectors: ReadonlyArray<V2Cha
 		onNone: () => ({ model: next }),
 		onSome: (linked) =>
 			liftDialog(
-				{ ...next, chatConnect: ChatConnect.finish(next.chatConnect), chatConnectMenuId: null },
+				{
+					...next,
+					chatConnect: ChatConnect.finish(next.chatConnect),
+					chatConnectMenuId: null,
+					destinationTier:
+						model.chatConnectMenuId === null ? "warning" : tierOfMenu(model.chatConnectMenuId),
+				},
 				DestinationDialog.openNew(
 					next.destinationDialog,
 					chatDestinationForm(linked.connector, linked.id),

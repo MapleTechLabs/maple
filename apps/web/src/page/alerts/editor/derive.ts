@@ -50,11 +50,13 @@ export const conditionSubject = (form: RuleForm): string => {
 }
 
 /** The rule in one plain sentence, shown in the action bar. */
-export const describeRuleCondition = (form: RuleForm): string => {
+export const describeRuleCondition = (form: RuleForm, isDefault = false): string => {
 	if (form.signalType === "anomaly")
-		return isDefaultAnomalyRule(form)
+		return isDefault
 			? "Pages on every anomaly no narrower rule handles"
-			: `Pages on anomalies in ${anomalyScopeSummary(form)}`
+			: isDefaultAnomalyRule(form)
+				? "Anomalies in a service, environment or signal"
+				: `Pages on anomalies in ${anomalyScopeSummary(form)}`
 	const unit = thresholdUnitLabel(form) ?? ""
 	const value = (raw: string) => `${Str.trim(raw) || "?"}${unit === "%" ? "%" : unit ? ` ${unit}` : ""}`
 	const threshold = isRangeComparator(form.comparator)
@@ -92,8 +94,8 @@ export const suggestCriticalThreshold = (form: RuleForm): string => {
 }
 
 /** `deriveValidationIssues`: what the action bar lists as missing. */
-export const validationIssues = (form: RuleForm): ReadonlyArray<string> => {
-	if (form.signalType === "anomaly") return anomalyIssues(form)
+export const validationIssues = (form: RuleForm, isDefault = false): ReadonlyArray<string> => {
+	if (form.signalType === "anomaly") return anomalyIssues(form, isDefault)
 	const issues: Array<string> = []
 	if (Str.trim(form.name).length === 0) issues.push("Rule name")
 	if (!isFilledNumber(form.threshold)) issues.push("Threshold")
@@ -124,22 +126,27 @@ export const validationIssues = (form: RuleForm): ReadonlyArray<string> => {
 }
 
 /**
- * An anomaly rule has no query or timing to get wrong: a name, and someone to page on a scoped
- * rule. The default rule may stay unrouted (anomaly paging is opt-in), as the server allows.
+ * An anomaly rule has no query or timing to get wrong: a name, a scope and someone to page. Only
+ * Maple creates the unscoped default rule, which may stay unrouted (anomaly paging is opt-in); the
+ * server refuses any other unscoped or unrouted enabled anomaly rule.
  */
-const anomalyIssues = (form: RuleForm): ReadonlyArray<string> => [
+const anomalyIssues = (form: RuleForm, isDefault: boolean): ReadonlyArray<string> => [
 	...(Str.trim(form.name).length === 0 ? ["Rule name"] : []),
-	...(!isDefaultAnomalyRule(form) &&
-	form.destinationIds.length === 0 &&
-	(form.escalation?.destinationIds.length ?? 0) === 0
+	...(!isDefault && isDefaultAnomalyRule(form) ? ["Scope"] : []),
+	...(!isDefault && form.destinationIds.length === 0 && (form.escalation?.destinationIds.length ?? 0) === 0
 		? ["Who gets notified"]
 		: []),
 ]
 
 /** What blocks saving: the form's own issues and a query too slow for its interval. */
-export const saveIssues = (form: RuleForm, timing: AlertQueryTiming | null): ReadonlyArray<string> => {
+export const saveIssues = (
+	form: RuleForm,
+	timing: AlertQueryTiming | null,
+	isDefault = false,
+): ReadonlyArray<string> => {
 	const timingIssue = queryTimingIssue(form, timing)
-	return timingIssue === null ? validationIssues(form) : [...validationIssues(form), timingIssue]
+	const issues = validationIssues(form, isDefault)
+	return timingIssue === null ? issues : [...issues, timingIssue]
 }
 
 /** `previewIdentityKey`: the rule as evaluated; a dry-run verdict is only shown while it matches. */

@@ -4,6 +4,10 @@ import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "eff
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
+import { AlertDestinationId } from "@maple/domain/http"
+import * as Menu from "@maple/views/ui/menu"
+import * as DestinationDialog from "../page/alerts/destination/dialog"
+import { menuIdOf } from "../page/alerts/editor/dest-steps"
 import * as EditorMessage from "../page/alerts/editor/message"
 import * as EditorModel from "../page/alerts/editor/model"
 import { init as initEditor } from "../page/alerts/editor/init"
@@ -38,13 +42,14 @@ import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
 
 // `/lab/anomaly-alerts`: anomalies paging through alert rules, over fixtures. `?state=` picks one:
-// editor-new, editor-scoped, editor-default, incident-warning, incident-critical, incident-spike,
+// editor-new, editor-scoped, editor-default, editor-critical-destination, incident-warning, incident-critical, incident-spike,
 // hub-anomalies, hub-anomalies-resolved, hub-anomalies-empty, hub-rules.
 
 export const LabState = Schema.Literals([
 	"editor-new",
 	"editor-scoped",
 	"editor-default",
+	"editor-critical-destination",
 	"incident-warning",
 	"incident-critical",
 	"incident-spike",
@@ -184,6 +189,40 @@ const editorFor = (state: LabState) =>
 			EditorMessage.Message.CompletedReadGrants({ grants: Policy.allPermissions }),
 			EditorMessage.Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow()] }),
 			EditorMessage.Message.UpdatedRules({ orgId: ORG, rows: RULES }),
+			...(state === "editor-critical-destination"
+				? [
+						EditorMessage.Message.ChangedField({ field: "name", value: "Search anomalies" }),
+						EditorMessage.Message.ToggledAnomalySignal({ signal: "latency_p95" }),
+						EditorMessage.Message.GotMenuMessage({
+							id: menuIdOf("critical"),
+							message: Menu.Message.ClickedItem({
+								index: 0,
+								item: { kind: "Item", value: "type:webhook" },
+							}),
+						}),
+						EditorMessage.Message.GotDestinationDialogMessage({
+							message: DestinationDialog.Message.CompletedSave({
+								openCount: 1,
+								isCreate: true,
+								result: Result.succeed(PAGER_ID),
+							}),
+						}),
+						EditorMessage.Message.UpdatedDestinations({
+							orgId: ORG,
+							rows: [
+								destinationRow(),
+								destinationRow({
+									id: PAGER_ID,
+									name: "Search pager",
+									config_json: {
+										summary: "https://pager.acme.test/search",
+										channelLabel: null,
+									},
+								}),
+							],
+						}),
+					]
+				: []),
 			...(state === "editor-new"
 				? [
 						EditorMessage.Message.ChangedField({ field: "name", value: "Search anomalies" }),
@@ -255,6 +294,8 @@ const incidentFor = (state: LabState) => {
 		(model, message) => IncidentUpdate.update(model, message, CONTEXT),
 	)
 }
+
+const PAGER_ID = Schema.decodeSync(AlertDestinationId)("0199a001-0000-7000-8000-000000000009")
 
 const isEditor = Str.startsWith("editor")
 const isIncident = Str.startsWith("incident")

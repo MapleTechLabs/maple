@@ -57,6 +57,9 @@ const KIND_HINT = new Map<SignalKind, string>([
 const ANOMALY_DESCRIPTION =
 	"Pages when Maple detects unusual error rate, latency, throughput, error spikes or log volume. The most specific anomaly rule handles each anomaly."
 
+const SCOPE_NEEDED_NOTE =
+	"Pick at least one service, environment or signal. Maple's default anomaly rule already covers everything."
+
 const DEFAULT_ANOMALY_NOTE =
 	"This is the default anomaly rule. It handles every anomaly no narrower rule covers, so its scope stays empty and it stays on."
 
@@ -315,6 +318,8 @@ const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 const anomalyForm = (h: H, model: QueryView, form: RuleForm): Html => {
 	const facets = traceFacetsOf(model)
 	const isLocked = model.isDefaultAnomaly
+	const isUnscoped =
+		form.serviceNames.length === 0 && form.environments.length === 0 && form.anomalySignals.length === 0
 	return card(
 		h,
 		[
@@ -337,7 +342,9 @@ const anomalyForm = (h: H, model: QueryView, form: RuleForm): Html => {
 									],
 								),
 							]
-						: []),
+						: isUnscoped
+							? [typography(h, { size: "xs", tone: "warning", as: "p" }, [SCOPE_NEEDED_NOTE])]
+							: []),
 				],
 			),
 			h.div(
@@ -446,6 +453,8 @@ const query = (h: H, model: QueryView, form: RuleForm, timing: AlertQueryTiming 
 					onChange: (next) => Message.ClickedSignalKind({ kind: next }),
 					ariaLabel: "Query mode",
 					size: "sm",
+					// Four modes outgrow a phone's width: the track wraps instead of clipping the last one.
+					className: "max-w-full flex-wrap",
 				}),
 				typography(h, { size: "xs", tone: "muted", as: "p", className: "min-w-0 flex-1" }, [
 					model.kindNotice ?? KIND_HINT.get(kind) ?? "",

@@ -112,7 +112,9 @@ const nameField = (h: H, model: DetailsView, form: RuleForm): Html => {
 			ids,
 			state,
 			attributes: [
-				h.Placeholder("Error rate on payments"),
+				h.Placeholder(
+					form.signalType === "anomaly" ? "Checkout anomalies" : "Error rate on payments",
+				),
 				h.Value(form.name),
 				h.OnInput((value) => Message.ChangedField({ field: "name", value })),
 			],
