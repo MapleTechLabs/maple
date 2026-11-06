@@ -42,7 +42,7 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
-const route = (platform?: "nodejs" | "kubernetes") => ({
+const route = (platform?: "nodejs" | "kubernetes" | "browser") => ({
 	_tag: "SourcesNew" as const,
 	search: platform === undefined ? {} : { platform },
 })
@@ -140,6 +140,15 @@ describe("connect a source", () => {
 		const picked = names(routeChanged(back.model, route("kubernetes"), context).commands)
 		expect(picked).toContain("FetchSourcesList")
 		expect(picked).toContain("ScrollSourcesNewToTop")
+	})
+
+	test("a browser source says its token is public", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(init(route("browser"), context).model),
+			expectView(text("Public token")).toExist(),
+			expectView(role("button", { name: "Create source" })).toExist(),
+		)
 	})
 
 	test("an empty name disables Create; a failed create toasts and re-enables it", () => {
