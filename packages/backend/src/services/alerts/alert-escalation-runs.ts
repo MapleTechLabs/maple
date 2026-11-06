@@ -359,13 +359,40 @@ export const applyEscalationPlan = (db: MapleDb, input: ApplyEscalationPlanInput
 						passCount: row.repeatCount + 1,
 					},
 				}
-				const destinationIds = Arr.dedupe(
+				const stepDestinationIds = Arr.dedupe(
 					Arr.filter(
 						Arr.map(plan.step.targets, (target) => target.destinationId),
 						(id) => input.enabled.has(id),
 					),
 				)
-				if (destinationIds.length === 0) {
+				// A silence's catch-up at this step's due time may have gone out as a renotify, which the
+				// step's trigger key would not dedupe against; those destinations are already paged.
+				const renotified =
+					stepDestinationIds.length === 0
+						? []
+						: yield* db.run(
+								PG.from(AlertDeliveryEvents)
+									.select("destinationId")
+									.where(($) => [
+										$.orgId.eq(row.orgId),
+										$.incidentId.eq(row.incidentId),
+										$.deliveryKey.in_(
+											...Arr.map(stepDestinationIds, (destinationId) =>
+												makeAlertDeliveryKey(
+													row.incidentId,
+													destinationId,
+													"renotify",
+													row.nextStepAt,
+												),
+											),
+										),
+									]),
+							)
+				const destinationIds = Arr.filter(
+					stepDestinationIds,
+					(id) => !Arr.some(renotified, (delivery) => delivery.destinationId === id),
+				)
+				if (stepDestinationIds.length === 0) {
 					yield* Effect.logWarning(
 						"Escalation step has no enabled destination; nobody was notified",
 					).pipe(
