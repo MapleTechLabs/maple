@@ -95,6 +95,14 @@ describe("alerts hub, escalation chains", () => {
 		)
 	})
 
+	test("a chain counts the rules that start it before the rules list has loaded", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...onRouting(ENGINEER, CHAINS), rules: null }),
+			expectView(text("Used by 2 rules")).toExist(),
+		)
+	})
+
 	test("a member sees the chains but cannot create, edit or delete one", () => {
 		scene(
 			{ update: pageUpdate, view },
