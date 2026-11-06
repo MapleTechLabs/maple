@@ -276,6 +276,22 @@ describe("update_slo", () => {
 		expect(availability.isError).toBe(true)
 		expect(markdown(availability)).toContain("threshold_ms applies to a latency SLI")
 	})
+
+	it("sets a description, and clear_description removes it", async () => {
+		const described = decode(
+			SloMutationOutput,
+			await runToolDirect(admin, "update_slo", {
+				slo: "Search latency",
+				description: "Search stays fast",
+			}),
+		)
+		expect(described.slo.description).toBe("Search stays fast")
+		const cleared = decode(
+			SloMutationOutput,
+			await runToolDirect(admin, "update_slo", { slo: "Search latency", clear_description: true }),
+		)
+		expect(cleared.slo.description).toBeNull()
+	})
 })
 
 describe("delete_slo", () => {

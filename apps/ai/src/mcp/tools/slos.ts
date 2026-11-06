@@ -406,6 +406,7 @@ export function registerSloTools(server: McpToolRegistrar) {
 			sli: P.optionalOneOf(SLI_KINDS, "A new SLI: not an error, or faster than threshold_ms"),
 			target_percent: P.optionalNumber("A new target share of good spans in percent, 50 to 99.999"),
 			...sloParameters,
+			clear_description: P.optionalFlag("Remove the SLO's description"),
 		}),
 		aliases: P.SERVICE_ALIASES,
 		output: SloMutationOutput,
@@ -423,10 +424,11 @@ export function registerSloTools(server: McpToolRegistrar) {
 			const updated = yield* service
 				.update(tenant.orgId, current.id, {
 					...(params.name === undefined ? undefined : { name: params.name }),
-					// An empty description removes it.
-					...(params.description === undefined
-						? undefined
-						: { description: params.description === "" ? null : params.description }),
+					...(params.clear_description === true
+						? { description: null }
+						: params.description === undefined
+							? undefined
+							: { description: params.description }),
 					...(params.service === undefined ? undefined : { serviceName: params.service }),
 					...(params.environments === undefined
 						? undefined
