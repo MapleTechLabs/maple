@@ -1,7 +1,7 @@
 import { SIDEBAR_WIDTH_NARROW_MIN } from "@maple/ui/components/traces/trace-timeline-types"
 import { Option, Array as Arr, String as Str } from "effect"
 import { Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { MountAltToggle, MeasureTimelineBody } from "./command"
 import { type Bar, computeSearchMatches, computeTimeAxisTicks, ROW_PITCH, virtualRange } from "./layout"
@@ -10,7 +10,7 @@ import type { Model } from "./model"
 import { barsOf, TIMELINE_KEYS } from "./update"
 import { minimap, searchBar, tickLeft, timeAxis, toolbar, type ToolbarIds } from "./view-chrome"
 import { footer, shortcutsOverlay } from "./view-footer"
-import { timelineRow } from "./view-row"
+import { type RowState, timelineRow } from "./view-row"
 
 // `TraceTimeline` (packages/ui/src/components/traces/trace-timeline.tsx): what its tab panel holds.
 // TODO(gestures): drag-zoom marquee, shift/middle-drag pan, ctrl+wheel zoom, minimap drags, the
@@ -53,6 +53,38 @@ const alignedStrip = (h: H, spacerClass: string, rowClass: string, cellClass: st
 		],
 	)
 
+const rowSlots = createKeyedLazy()
+
+// Primitive args so an unchanged row reuses its VNode; `top` is an arg, so a reused row never moves.
+const memoRow = (
+	h: H,
+	bar: Bar,
+	top: number,
+	isSelected: boolean,
+	isFocused: boolean,
+	isHovered: boolean,
+	isDimmed: boolean,
+	isMatched: boolean,
+	showService: boolean,
+	events: RowState["events"],
+	leftPct: number,
+	rightPct: number,
+	idPrefix: string,
+): Html =>
+	timelineRow(h, bar, {
+		top,
+		isSelected,
+		isFocused,
+		isHovered,
+		isDimmed,
+		isMatched,
+		showService,
+		events,
+		leftPct,
+		rightPct,
+		markerId: (marker) => `${idPrefix}-event-${bar.span.spanId}-${marker}`,
+	})
+
 const body = (
 	h: H,
 	model: Model,
@@ -72,19 +104,21 @@ const body = (
 		const spanId = bar.span.spanId
 		const isMatched = isSearchActive && matches.has(spanId)
 		return [
-			timelineRow(h, bar, {
-				top: index * ROW_PITCH,
-				isSelected: model.selectedSpanId === spanId,
-				isFocused: model.focusedIndex === index,
-				isHovered: model.hoveredSpanId === spanId,
-				isDimmed: isSearchActive && !isMatched,
+			rowSlots(spanId, memoRow, [
+				h,
+				bar,
+				index * ROW_PITCH,
+				model.selectedSpanId === spanId,
+				model.focusedIndex === index,
+				model.hoveredSpanId === spanId,
+				isSearchActive && !isMatched,
 				isMatched,
-				showService: model.services.length > 1,
-				events: model.spanEvents?.[spanId],
-				leftPct: (bar.offsetStartMs - vp0) * k,
-				rightPct: (bar.offsetEndMs - vp0) * k,
-				markerId: (marker) => `${inputs.idPrefix}-event-${spanId}-${marker}`,
-			}),
+				model.services.length > 1,
+				model.spanEvents?.[spanId],
+				(bar.offsetStartMs - vp0) * k,
+				(bar.offsetEndMs - vp0) * k,
+				inputs.idPrefix,
+			]),
 		]
 	})
 	return h.div(
