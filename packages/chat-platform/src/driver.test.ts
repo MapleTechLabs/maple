@@ -108,6 +108,51 @@ const working = (blocks: ReadonlyArray<ChatBlock>): ReadonlyArray<string> =>
 	)
 
 describe("driveChatTurn", () => {
+	it.effect("leaves the streaming render on interrupt, with the ending on the last posted message", () =>
+		Effect.gen(function* () {
+			const chat = recorder(40)
+			const fiber = yield* Effect.forkChild(
+				driveChatTurn({
+					events: Stream.concat(
+						timeline([
+							[NOW, event(1, { type: "turn-start", messageId: "a1" })],
+							[NOW, event(2, { type: "text-delta", messageId: "a1", text: "First part." })],
+							[
+								Duration.millis(1500),
+								event(3, {
+									type: "text-delta",
+									messageId: "a1",
+									text: " A much longer second part that needs another message.",
+								}),
+							],
+						]),
+						Stream.never,
+					),
+					messageId: "a1",
+					outbound: chat.outbound,
+					target,
+					context,
+				}),
+			)
+			yield* TestClock.adjust("1 second")
+			const posts = Arr.filter(chat.calls, (call) => call.verb === "post").length
+			yield* TestClock.adjust("600 millis")
+			yield* Fiber.interrupt(fiber)
+
+			// No message is posted on the way out: the turn may not grow once nobody follows it.
+			expect(Arr.filter(chat.calls, (call) => call.verb === "post").length).toBe(posts)
+			const last = Arr.getUnsafe(chat.calls, chat.calls.length - 1)
+			expect(last.phase).toBe("final")
+			expect(Arr.filter(last.blocks, (block) => block.kind === "notice")).toEqual([
+				{
+					kind: "notice",
+					tone: "info",
+					text: "Still working on this. The full answer will replace this message when it is ready.",
+				},
+			])
+		}),
+	)
+
 	it.effect("posts a placeholder, coalesces deltas into throttled edits, and flushes at the end", () =>
 		Effect.gen(function* () {
 			const chat = recorder()

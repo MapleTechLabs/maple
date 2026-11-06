@@ -241,6 +241,19 @@ describe("investigation detail", () => {
 		expect(failed.model.busy).toBeNull()
 	})
 
+	test("a run still in flight offers no resolve, which the server would refuse", () => {
+		const ready = synced(
+			entered(),
+			investigationOf({ status: "investigating", report_json: null, diagnosed_at: null }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(ready),
+			...canvas(),
+			expectView(role("button", { name: "Resolve" })).toBeDisabled(),
+		)
+	})
+
 	test("a failed run's primary action restarts it", () => {
 		const ready = synced(
 			entered(),

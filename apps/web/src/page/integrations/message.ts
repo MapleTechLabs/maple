@@ -259,7 +259,9 @@ export const Message = defineMessageUnion({
 	ToggledAwsRegion: { id: AwsConnectionId, region: Schema.String },
 	ToggledAwsNamespace: { id: AwsConnectionId, namespace: AwsMetricNamespace },
 	SubmittedAwsMetrics: { id: AwsConnectionId },
+	/** `id`: the connection the save was for, which the editor may have moved on from. */
 	CompletedAwsMetricStream: {
+		id: AwsConnectionId,
 		connection: Schema.NullOr(V2AwsConnection),
 		error: Schema.NullOr(Schema.String),
 	},

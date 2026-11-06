@@ -50,6 +50,11 @@ const groupsSection = <M>(
 	})
 	const breaching = Arr.filter(rows, (row) => row.last_status === "breached").length
 	const openByGroup = new Map(Arr.map(openIncidents, (open) => [open.groupKey, open]))
+	// An anomaly rule's group key is an incident id; people see the stored label instead.
+	const groupName = (groupKey: string): string =>
+		openByGroup.get(groupKey)?.groupLabel ??
+		(groupKey === incident.groupKey ? incident.groupLabel : null) ??
+		(rule.signalType === "anomaly" ? "Anomaly" : groupKey)
 	return railSection(h, [`Groups · ${breaching} of ${rows.length} breaching`], null, [
 		h.ul(
 			[h.Class("space-y-2")],
@@ -69,7 +74,7 @@ const groupsSection = <M>(
 										h.Href(incidentHref(open.id)),
 										h.Class("min-w-0 flex-1 truncate hover:underline active:underline"),
 									],
-									[row.group_key],
+									[groupName(row.group_key)],
 								)
 							: h.span(
 									[
@@ -83,7 +88,7 @@ const groupsSection = <M>(
 											),
 										),
 									],
-									[row.group_key],
+									[groupName(row.group_key)],
 								),
 						h.span(
 							[

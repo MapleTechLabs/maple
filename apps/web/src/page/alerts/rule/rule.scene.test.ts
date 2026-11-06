@@ -1,5 +1,6 @@
 import { OrgId } from "@maple/domain"
-import { AlertCheckDocument, AlertRuleId } from "@maple/domain/http"
+import { AlertCheckDocument, AlertRuleId, AlertSilenceId } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { Result, Schema, Array as Arr } from "effect"
 import {
 	all,
@@ -348,6 +349,60 @@ describe("alert rule", () => {
 		)
 		expect(viewAll.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/alerts?tab=overview", isReplace: false }),
+		)
+	})
+})
+
+describe("alert rule page, silences", () => {
+	const silence = {
+		id: Schema.decodeSync(AlertSilenceId)("22222222-2222-4222-8222-222222222222"),
+		object: "alert_silence" as const,
+		reason: "Deploying payments",
+		matchers: { rule_ids: [RULE] },
+		status: "active" as const,
+		starts_at: new Date(NOW - 60_000).toISOString(),
+		ends_at: new Date(NOW + 60 * 60_000).toISOString(),
+		created_by: "user_1",
+		created_at: new Date(NOW).toISOString(),
+		updated_at: new Date(NOW).toISOString(),
+	}
+	const withGrants = (model: Model, roles: ReadonlyArray<string>) =>
+		pageUpdate(model, Message.CompletedFetchSession({ grants: Policy.grantsOf(roles) })).model
+	const withSilences = (
+		model: Model,
+		result: Parameters<typeof Message.CompletedFetchSilences>[0]["result"],
+	) => pageUpdate(model, Message.CompletedFetchSilences({ key: model.silences.key ?? "", result })).model
+
+	test("offers Silence only to a role that can manage alerts", () => {
+		expect(names(init(route(), context).commands)).toEqual(
+			expect.arrayContaining(["FetchAlertRuleSilences", "FetchAlertRuleSession"]),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withGrants(loaded(), ["org:member"])),
+			themeResolved(),
+			expectView(role("button", { name: "Silence" })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withGrants(loaded(), ["org:engineer"])),
+			themeResolved(),
+			expectView(role("button", { name: "Silence" })).toExist(),
+		)
+	})
+
+	test("shows the silence in force, and says so when silences could not be read", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withSilences(loaded(), Result.succeed([silence]))),
+			themeResolved(),
+			expectView(text(/^Silenced until /u)).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withSilences(loaded(), Result.fail(toLoadFailure(new Error("down"))))),
+			themeResolved(),
+			expectView(text("Couldn't check silences")).toExist(),
 		)
 	})
 })

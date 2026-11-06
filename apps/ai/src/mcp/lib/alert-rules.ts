@@ -9,6 +9,7 @@ import {
 	AlertRuleId,
 	AlertSeverity,
 	AlertSignalType,
+	AnomalySignalType,
 	type AlertIncidentDocument,
 	type AlertRuleDocument,
 	type AlertRuleDestinationNotFoundError,
@@ -20,6 +21,7 @@ import { rawAlertSampleCountWarning } from "@maple/domain/raw-sql"
 import { alertRuleIntervalMinutes } from "@maple/query-engine/datetime"
 import { McpInvalidInputError } from "../tools/types"
 import { doc, type ToolDoc } from "./tool-doc"
+import { anomalySignalName } from "@maple/backend/services/alerts/anomaly/anomaly-rule"
 
 export const ALERT_SEVERITIES = AlertSeverity.literals
 /** `uptime` rules are made and edited through uptime monitors, so the rule tools never offer it. */
@@ -31,7 +33,12 @@ export const ALERT_SIGNAL_TYPES = AlertSignalType.pick([
 	"throughput",
 	"builder_query",
 	"raw_query",
+	"anomaly",
 ]).literals
+export const ANOMALY_SIGNAL_TYPES = AnomalySignalType.literals
+/** Shared wording for the `anomaly_signals` parameter of the rule tools. */
+export const ANOMALY_SIGNALS_DESCRIPTION =
+	"signal_type=anomaly only: detector signals the rule pages on (empty or omitted: every signal). An anomaly rule takes no comparator, threshold or window: it opens when the anomaly detector opens an anomaly in its scope (services, environments, anomaly_signals) at or above its severity, and resolves when that anomaly does."
 /** The range comparators need `thresholdUpper`, which the tools do not take. */
 export const ALERT_COMPARATORS = AlertComparator.pick(["gt", "gte", "lt", "lte", "eq", "neq"]).literals
 export const ALERT_REDUCERS = QueryEngineAlertReducer.literals
@@ -67,6 +74,57 @@ export const formatCondition = (rule: {
 		? `${rule.comparator} ${rule.threshold} and ${rule.thresholdUpper}`
 		: `${comparatorLabel(rule.comparator)} ${rule.threshold}`
 
+const isAnomalySignal = Schema.is(AnomalySignalType)
+
+/** "a", "a and b", "a, b and c". */
+const joinWithAnd = (items: ReadonlyArray<string>): string =>
+	items.length <= 2
+		? Arr.join(items, " and ")
+		: `${Arr.join(items.slice(0, -1), ", ")} and ${items[items.length - 1]}`
+
+/**
+ * What an anomaly rule pages on, in one phrase: "checkout, production, error rate and p95 latency",
+ * or "every anomaly" for the unscoped default. Undefined on other rules.
+ */
+export const formatAnomalyScope = (rule: {
+	readonly signalType: string
+	readonly serviceNames: ReadonlyArray<string>
+	readonly environments: ReadonlyArray<string>
+	readonly anomalySignals?: ReadonlyArray<string> | undefined
+}): string | undefined => {
+	if (rule.signalType !== "anomaly") return undefined
+	const signals = Arr.map(rule.anomalySignals ?? [], (signal) =>
+		isAnomalySignal(signal) ? anomalySignalName(signal) : signal,
+	)
+	const parts = Arr.filter(
+		[joinWithAnd(rule.serviceNames), joinWithAnd(rule.environments), joinWithAnd(signals)],
+		(part) => part.length > 0,
+	)
+	return parts.length === 0 ? "every anomaly" : Arr.join(parts, ", ")
+}
+
+/** The condition rows of a rule's text: comparison and window, or an anomaly rule's scope and cadence. */
+export const ruleConditionFields = (
+	rule: RuleCadence & {
+		readonly signalType: string
+		readonly comparator: string
+		readonly threshold: number
+		readonly thresholdUpper?: number | null | undefined
+		readonly serviceNames: ReadonlyArray<string>
+		readonly environments: ReadonlyArray<string>
+		readonly anomalySignals?: ReadonlyArray<string> | undefined
+	},
+): ReadonlyArray<readonly [string, string | undefined]> =>
+	rule.signalType === "anomaly"
+		? [
+				["Scope", formatAnomalyScope(rule)],
+				["Checked", formatCheckInterval(rule)],
+			]
+		: [
+				["Condition", formatCondition(rule)],
+				["Window", `${rule.windowMinutes}m, checked ${formatCheckInterval(rule)}`],
+			]
+
 export const toAlertRuleRow = (rule: AlertRuleDocument): typeof AlertRuleRow.Type => ({
 	id: rule.id,
 	name: rule.name,
@@ -74,6 +132,7 @@ export const toAlertRuleRow = (rule: AlertRuleDocument): typeof AlertRuleRow.Typ
 	severity: rule.severity,
 	serviceNames: [...rule.serviceNames],
 	environments: [...rule.environments],
+	...(rule.anomalySignals === undefined ? undefined : { anomalySignals: [...rule.anomalySignals] }),
 	signalType: rule.signalType,
 	comparator: rule.comparator,
 	threshold: rule.threshold,
@@ -222,11 +281,13 @@ const evaluationBlocks = (
 			? "The rule is disabled, so the scheduler will not evaluate it."
 			: `First scheduled evaluation by ${Str.slice(0, 19)(evaluation.nextEvaluationAt)}Z (every ${intervalMinutes}m after), no need to poll list_alert_checks before then.`
 	const now =
-		evaluation.previewError !== undefined
-			? `A preview of the latest window failed: ${evaluation.previewError}. Run preview_alert_rule to see what it observes.`
-			: evaluation.current.length === 0
-				? "A preview of the latest window returned no series."
-				: undefined
+		evaluation.previewSkipped !== undefined
+			? evaluation.previewSkipped
+			: evaluation.previewError !== undefined
+				? `A preview of the latest window failed: ${evaluation.previewError}. Run preview_alert_rule to see what it observes.`
+				: evaluation.current.length === 0
+					? "A preview of the latest window returned no series."
+					: undefined
 	return [
 		doc.text(now === undefined ? when : `${when}\n${now}`),
 		...(evaluation.current.length === 0
@@ -282,18 +343,22 @@ export const renderRuleWrite = (
 				["Name", rule.name],
 				[
 					"Service Names",
-					rule.serviceNames.length > 0 ? Arr.join(rule.serviceNames, ", ") : undefined,
+					rule.serviceNames.length > 0 && rule.signalType !== "anomaly"
+						? Arr.join(rule.serviceNames, ", ")
+						: undefined,
 				],
 				["Severity", rule.severity],
 				["Signal", rule.signalType],
-				["Condition", formatCondition(rule)],
-				["Window", `${rule.windowMinutes}m, checked ${formatCheckInterval(rule)}`],
+				// An anomaly rule's comparison and window are pinned; its scope is what it means.
+				...ruleConditionFields(rule),
 				["Enabled", rule.enabled ? "Yes" : "No"],
 				["Destinations", rule.destinationIds.length],
 				["Escalation", formatEscalationChains(rule.escalationChains)],
 				[
 					"Environments",
-					rule.environments.length > 0 ? Arr.join(rule.environments, ", ") : undefined,
+					rule.environments.length > 0 && rule.signalType !== "anomaly"
+						? Arr.join(rule.environments, ", ")
+						: undefined,
 				],
 			]),
 		],

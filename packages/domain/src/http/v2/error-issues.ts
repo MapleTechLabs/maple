@@ -220,6 +220,8 @@ export const V2ErrorIssueTransitionParams = Schema.Struct({
 	note: Schema.optionalKey(Schema.String),
 	// Only meaningful with `to_state: "snoozed"`; `null` clears it.
 	snooze_until: Schema.optionalKey(Schema.NullOr(Timestamp)),
+	// The state the caller last read; when the issue has since moved, the request is a 409.
+	expected_state: Schema.optionalKey(WorkflowState),
 }).annotate({ identifier: "ErrorIssueTransitionParams", title: "Error issue transition parameters" })
 
 export const V2ErrorIssueClaimParams = Schema.Struct({

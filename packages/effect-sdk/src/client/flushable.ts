@@ -150,7 +150,10 @@ export interface FlushableTelemetry {
 	readonly captureException: (error: unknown, options?: CaptureExceptionOptions) => void
 	/** Drain the buffers and POST them now (keepalive while the body fits the budget). Never rejects. */
 	readonly flush: () => Promise<void>
-	/** Remove unload listeners, stop the auto-flush timer, then do one final flush. */
+	/**
+	 * Remove unload listeners, stop the auto-flush timer, then do one final flush.
+	 * Afterwards `flush` and `layer` do nothing, and a second call returns the first.
+	 */
 	readonly dispose: () => Promise<void>
 }
 
@@ -290,8 +293,9 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	}
 
 	// Never rejects: fired as `void` from the auto-flush timer and the unload handlers.
-	const makeFlush = (unload?: { readonly ignoreCooldown: boolean }) =>
-		guardFlush("[MapleClientSDK]", async (): Promise<void> => {
+	const drain = guardFlush(
+		"[MapleClientSDK]",
+		async (unload?: { readonly ignoreCooldown: boolean }): Promise<void> => {
 			if (!hasConsent()) {
 				spans.drain()
 				logs.drain()
@@ -312,12 +316,16 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 				tailBytes: unload && (() => Math.min(OTLP_UNLOAD_TAIL_BYTES, otlpKeepaliveRoom())),
 				ignoreCooldown: unload?.ignoreCooldown,
 			})
-		})
-	const flush = makeSerializedFlush(makeFlush())
-	// These skip the queue: the document may not live to see a queued flush
-	// start. A hidden tab usually comes back, so only `pagehide` ignores the cooldown.
-	const hiddenFlush = makeFlush({ ignoreCooldown: false })
-	const pageHideFlush = makeFlush({ ignoreCooldown: true })
+		},
+	)
+	// One queue for every drain, so none races another over the buffers and
+	// cooldowns. Unload drains start at once (`now`): the document may not live to
+	// see a queued one start. A hidden tab usually comes back, so only `pagehide`
+	// ignores the cooldown.
+	const serialized = makeSerializedFlush(drain)
+	/** Set by the first `dispose()`: later flushes and disposes do nothing more. */
+	let disposal: Promise<void> | undefined
+	const flush = (): Promise<void> => (disposal === undefined ? serialized() : Promise.resolve())
 
 	const intervalMs =
 		config.autoFlushInterval === undefined
@@ -398,7 +406,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		unloading = true
 		pageHides += 1
 		noteLost("page_unload")
-		if (flushOnUnload) void pageHideFlush()
+		if (flushOnUnload) void serialized.now({ ignoreCooldown: true })
 	}
 	const onPageShow = (): void => {
 		unloading = false
@@ -406,7 +414,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	const onVisibilityChange = (): void => {
 		if (browserDocument()?.visibilityState !== "hidden") return
 		noteLost("page_hidden")
-		if (flushOnUnload) void hiddenFlush()
+		if (flushOnUnload) void serialized.now({ ignoreCooldown: false })
 	}
 	const onOffline = (): void => noteLost("offline")
 	const canListen = typeof globalThis.addEventListener === "function"
@@ -417,7 +425,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		globalThis.addEventListener("offline", onOffline)
 	}
 
-	const dispose = async (): Promise<void> => {
+	const finalize = async (): Promise<void> => {
 		if (timer !== undefined) {
 			clearInterval(timer)
 			timer = undefined
@@ -433,9 +441,12 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 			globalThis.removeEventListener("unhandledrejection", onUnhandledRejection)
 		}
 		stopConsentListener()
-		await flush()
+		await serialized()
+		// Spans ended through `layer` after this are dropped rather than buffered for good.
+		setCaptureAllowed(false)
 		await clientSession.stop()
 	}
+	const dispose = (): Promise<void> => (disposal ??= finalize())
 
 	return { layer, captureException, flush, dispose }
 }

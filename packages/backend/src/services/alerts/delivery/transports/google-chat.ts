@@ -3,7 +3,7 @@ import { replaceWith } from "@maple/strings"
 import { buildSummaryLine } from "../../AlertDeliveryDispatch"
 import {
 	alertAccentColor,
-	displayGroupKey,
+	displayGroup,
 	eventTypeEmoji,
 	formatAlertHeadline,
 	formatSeverityLabel,
@@ -63,7 +63,7 @@ const threadedUrl = (webhookUrl: string): string =>
 export const buildGoogleChatMessage = (input: RenderInput<Config>) => {
 	const { context, templated, linkUrl, chatUrl } = input
 	const accent = alertAccentColor(context.eventType, context.severity)
-	const group = displayGroupKey(context.groupKey)
+	const group = displayGroup(context)
 	const title = templated?.title ?? `${eventTypeEmoji(context.eventType)} ${formatAlertHeadline(context)}`
 	const lead = templated
 		? markdownToCardHtml(truncate(templated.body, MAX_TEMPLATED_BODY_CHARS))

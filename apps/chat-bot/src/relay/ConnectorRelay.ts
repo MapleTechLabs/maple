@@ -317,10 +317,23 @@ export class ConnectorRelay {
 				recorded = turnKey(checkpoint)
 				return this.recordTurn(checkpoint)
 			})
+		// A handed-off turn keeps its checkpoint and leaves `relaying`, so its next job settles it.
+		const handOffTurn = (checkpoint: RelayTurnCheckpoint) =>
+			Effect.sync(() => {
+				const key = turnKey(checkpoint)
+				if (recorded === key) recorded = undefined
+				this.relaying.delete(key)
+			})
 		return runtimeCall("event", async () => {
 			const { runInboundEvent } = await this.runtime()
 			await runInboundEvent(
-				{ env: this.env, chatSessions: this.chatSessions, ...this.relayPorts(event), recordTurn },
+				{
+					env: this.env,
+					chatSessions: this.chatSessions,
+					...this.relayPorts(event),
+					recordTurn,
+					handOffTurn,
+				},
 				event,
 			)
 		}).pipe(

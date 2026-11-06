@@ -306,6 +306,24 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 					})
 					const scanError = (message: string) => (cause: unknown) =>
 						new DependencyScanError({ message, repositoryId: repository.id, cause })
+					// A scan whose worker died stays `running`; each new scan of the repo settles those.
+					const startedAt = yield* Clock.currentTimeMillis
+					yield* store
+						.failAbandonedScans({
+							orgId,
+							repositoryId: repository.id,
+							startedBefore: startedAt - RESCAN_AFTER_MS,
+						})
+						.pipe(
+							Effect.catchTag(
+								"@maple/dependency-scan/DependencyScanPersistenceError",
+								(error) =>
+									Effect.logWarning(
+										"Could not settle abandoned dependency scans",
+										error.message,
+									),
+							),
+						)
 					const provider = yield* sources
 						.resolve(repository.provider)
 						.pipe(Effect.mapError(scanError("Unknown VCS provider")))

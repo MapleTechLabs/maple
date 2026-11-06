@@ -3,7 +3,7 @@
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"
-import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
+import { MobilePushService, type IncidentPushEvent } from "@maple/backend/services/push/MobilePushService"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import {
 	Cause,
@@ -37,6 +37,7 @@ import { AlertSilencesService } from "./AlertSilencesService"
 import { AlertRulesService } from "./AlertRulesService"
 import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
+import { AnomalyAlertSource } from "@maple/backend/services/alerts/anomaly/AnomalyAlertSource"
 import { BucketCacheService } from "@maple/query-engine/caching"
 import { EdgeCacheService } from "@maple/cache"
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
@@ -195,6 +196,8 @@ export interface TestOverrides extends Partial<AlertRuntimeApi> {
 	readonly fetch?: typeof fetch
 	/** The investigation agent's port; absent means investigations cannot start. */
 	readonly chatSessions?: ChatSessionsApi
+	/** Records every incident push instead of sending it through the real push service. */
+	readonly pushes?: Array<IncidentPushEvent>
 }
 
 // The fixed epoch scheduler tests start TestClock at, mirroring the previous
@@ -251,7 +254,25 @@ export const makeLayer = (
 	emailStub?: (typeof EmailService)["Service"],
 	chatAlertPoster: Layer.Layer<ChatAlertPoster, never, Database | Env> = ChatAlertPoster.layer,
 ) => {
-	const { fetch: fetchImpl = globalThis.fetch, chatSessions, ...runtimeOverrides } = overrides
+	const { fetch: fetchImpl = globalThis.fetch, chatSessions, pushes, ...runtimeOverrides } = overrides
+	const noPushes = { sent: 0, failed: 0, unregistered: 0, skipped: 0 }
+	const mobilePushLive =
+		pushes === undefined
+			? Layer.effect(MobilePushService, MobilePushService.make).pipe(
+					Layer.provide(
+						Layer.mergeAll(
+							ApnsClient.layer,
+							MobileDevicesService.layer,
+							LiveActivitiesService.layer,
+						),
+					),
+				)
+			: Layer.succeed(MobilePushService, {
+					notifyIncident: (event) =>
+						Effect.sync(() => pushes.push(event)).pipe(Effect.as(noPushes)),
+					notifyIncidentDigest: () => Effect.succeed(noPushes),
+					refreshWidgets: () => Effect.succeed(noPushes),
+				})
 	const configLive = makeConfig()
 	const envLive = Env.layer.pipe(Layer.provide(configLive))
 	const databaseLive = testDb.layer
@@ -308,13 +329,7 @@ export const makeLayer = (
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(chatAlertPoster),
-		Layer.provide(
-			Layer.effect(MobilePushService, MobilePushService.make).pipe(
-				Layer.provide(
-					Layer.mergeAll(ApnsClient.layer, MobileDevicesService.layer, LiveActivitiesService.layer),
-				),
-			),
-		),
+		Layer.provide(mobilePushLive),
 		Layer.provide(envLive),
 		Layer.provide(databaseLive),
 		Layer.provide(queryEngineLive),
@@ -329,6 +344,7 @@ export const makeLayer = (
 		Layer.provide(alertReadModelsLive),
 		Layer.provide(alertRulesLive),
 		Layer.provide(UptimeAlertSource.layer.pipe(Layer.provide(databaseLive))),
+		Layer.provide(AnomalyAlertSource.layer.pipe(Layer.provide(databaseLive))),
 		Layer.provide(
 			Layer.effect(SloAlertSource, SloAlertSource.make).pipe(
 				Layer.provide(Layer.mergeAll(databaseLive, warehouseLive)),
