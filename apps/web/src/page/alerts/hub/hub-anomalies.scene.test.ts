@@ -155,6 +155,21 @@ describe("alerts hub: anomalies", () => {
 		)
 	})
 
+	test("with only resolved anomalies the open view still says there are none", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ signal: "anomaly" }, [RESOLVED_CHECKOUT])),
+			expectView(text("No anomalies")).toExist(),
+			expectView(text(/^No rule fired/)).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ signal: "anomaly", anomalyStatus: "all" }, [RESOLVED_CHECKOUT])),
+			expectView(role("link", { name: "Anomaly on checkout (staging)" })).toExist(),
+			expectView(text(/^No rule fired/)).not.toExist(),
+		)
+	})
+
 	test("the rules list marks the default anomaly rule, reads scopes, and offers no way to turn it off", () => {
 		scene(
 			{ update: pageUpdate, view },
