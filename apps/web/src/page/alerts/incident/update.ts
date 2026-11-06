@@ -363,7 +363,8 @@ const thresholdFacts = (incident: AlertIncidentDocument) => [
 
 /** An anomaly's facts are the detector's readings; its alert values are only severity codes, so nothing is sent until those load. */
 const anomalyFacts = (model: Model) =>
-	Option.match(AsyncData.getData(model.anomaly.data), {
+	// Readings kept on screen while newer evidence loads are not sent as facts.
+	Option.match(model.anomaly.retained === true ? Option.none() : AsyncData.getData(model.anomaly.data), {
 		onNone: () => [],
 		onSome: (anomaly) => [
 			{ label: "Signal", value: ANOMALY_SIGNAL_LABEL[anomaly.signal_type] },
