@@ -72,10 +72,13 @@ const fixtures: FixtureRule[] = [
 	},
 ]
 
+/** Set by one test to make the list's batched status reads fail as the warehouse would. */
+let failStatusReads = false
+
 let member: EvalRuntime
 let admin: EvalRuntime
 beforeAll(() => {
-	installFakeWarehouse(fixtures)
+	installFakeWarehouse(fixtures, (sql) => failStatusReads && Str.includes("AS serviceName")(sql))
 	member = makeEvalRuntime()
 	admin = { ...member, tenant: { ...member.tenant, roles: [Schema.decodeSync(RoleName)("org:admin")] } }
 })
@@ -195,6 +198,19 @@ describe("create_slo", () => {
 })
 
 describe("list_slos", () => {
+	it("still lists every SLO's config when the status read fails, and says what to do next", async () => {
+		failStatusReads = true
+		const result = await runToolDirect(member, "list_slos", {}).finally(() => {
+			failStatusReads = false
+		})
+		const output = decode(ListSlosOutput, result)
+		expect(output.slos.length).toBeGreaterThan(0)
+		for (const row of output.slos) {
+			expect(row).toMatchObject({ sli: null, budgetRemaining: null, burning: null })
+			expect(row.statusError).toContain("inspect_slo")
+		}
+	})
+
 	it("puts the burning SLO first with its SLI, budget left and worst burn", async () => {
 		const result = await runToolDirect(member, "list_slos", {})
 		const output = decode(ListSlosOutput, result)
