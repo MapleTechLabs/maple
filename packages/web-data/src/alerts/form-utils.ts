@@ -492,7 +492,10 @@ export function deriveTierIssues(form: RuleFormState): string[] {
 			issues.push("Critical recovery past warning")
 		}
 		recoveryIssue("Critical recovery value", escalation.threshold, escalation.recoveryValue)
-		if (escalation.destinationIds.length === 0) issues.push("Critical destinations")
+		// An escalation chain routes the tier on its own, as on the server.
+		if (escalation.destinationIds.length === 0 && escalation.escalationChainId === null) {
+			issues.push("Critical destinations")
+		}
 	}
 	if (Str.trim(form.breachesOutOf).length > 0) {
 		const outOf = Number(form.breachesOutOf)

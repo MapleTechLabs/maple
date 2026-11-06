@@ -7,6 +7,7 @@ import {
 	AlertIncidentId,
 	AlertRuleId,
 	ChatWorkspaceId,
+	EscalationChainId,
 } from "@maple/domain/http"
 import {
 	buildDestinationCreateParamsV2,
@@ -16,6 +17,8 @@ import {
 	defaultDestinationForm,
 	destinationToFormState,
 	defaultRuleForm,
+	deriveTierIssues,
+	formThresholds,
 	ruleFormIsGrouped,
 	deriveRuleQueryIssues,
 	domainThresholdToForm,
@@ -636,5 +639,35 @@ describe("microsoft teams destination params", () => {
 		expect(
 			buildDestinationUpdateParamsV2({ ...defaultDestinationForm("microsoft-teams"), name: "Ops" }),
 		).toEqual({ type: "microsoft-teams", enabled: true, name: "Ops" })
+	})
+})
+
+describe("escalation chains on tiers", () => {
+	const warnChain = Schema.decodeSync(EscalationChainId)("3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b")
+	const pageChain = Schema.decodeSync(EscalationChainId)("9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d")
+	const twoTiers = {
+		...defaultRuleForm(),
+		escalationChainId: warnChain,
+		escalation: { threshold: "10", recoveryValue: "", destinationIds: [], escalationChainId: pageChain },
+	}
+
+	it("accepts a critical tier routed only by its chain", () => {
+		expect(deriveTierIssues(twoTiers)).not.toContain("Critical destinations")
+		expect(
+			deriveTierIssues({
+				...twoTiers,
+				escalation: { ...twoTiers.escalation, escalationChainId: null },
+			}),
+		).toContain("Critical destinations")
+	})
+
+	it("saves each tier's chain on that tier", () => {
+		const [warning, critical] = formThresholds(twoTiers)
+		expect(warning).toMatchObject({ severity: "warning", escalation_chain_id: warnChain })
+		expect(critical).toMatchObject({
+			severity: "critical",
+			escalation_chain_id: pageChain,
+			destination_ids: [],
+		})
 	})
 })
