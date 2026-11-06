@@ -147,7 +147,7 @@ describe("ConnectorSocket", () => {
 		expect(state.stored.has("heartbeatAt")).toBe(false)
 	})
 
-	it("sends the fresh socket's first heartbeat instead of judging it by the dead one's ack", async () => {
+	it("sends the first heartbeat once the replacement socket is open and it is due", async () => {
 		const state = objectState(evicted())
 		const socket = new ConnectorSocket(state, ENV, relays, [fakeConnector])
 

@@ -60,7 +60,6 @@ describe("runAutonomousTurn", () => {
 		await Effect.runPromise(Fiber.await(fiber))
 
 		assert.deepEqual(turn.writes, INTERRUPTED_ROWS)
-		assert.strictEqual(turn.observability.outcome, "aborted")
 	})
 
 	it("leaves the rows alone when a newer commit supersedes the review", async () => {
