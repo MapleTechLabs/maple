@@ -279,7 +279,7 @@ export class AlertIncidentAckService extends Context.Service<
 				const current = yield* findIncident(orgId, incidentId)
 				if (current.status !== "open") {
 					return yield* new AlertIncidentResolvedError({
-						message: `Alert incident '${incidentId}' is resolved; only an open incident can be ${acknowledged ? "acknowledged" : "unacknowledged"}.`,
+						message: `This alert incident is resolved; only an open incident can be ${acknowledged ? "acknowledged" : "unacknowledged"}.`,
 						incidentId,
 					})
 				}
