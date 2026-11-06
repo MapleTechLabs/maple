@@ -1,9 +1,11 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { AlertIncidentNotFoundError, AlertPersistenceError } from "../alerts"
+import { AlertIncidentNotFoundError, AlertIncidentResolvedError, AlertPersistenceError } from "../alerts"
 import {
 	AlertComparator,
 	AlertEventType,
+	AlertIncidentAckSource,
+	AlertIncidentEventType,
 	AlertIncidentHoldReason,
 	AlertIncidentStatus,
 	AlertSeverity,
@@ -13,7 +15,13 @@ import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
 import { publicError } from "./public-error"
-import { AlertIncidentPublicId, AlertRulePublicId, ErrorIssuePublicId } from "./resource-ids"
+import { UserId } from "../../primitives"
+import {
+	AlertIncidentEventPublicId,
+	AlertIncidentPublicId,
+	AlertRulePublicId,
+	ErrorIssuePublicId,
+} from "./resource-ids"
 
 const alertIncidentExample = {
 	id: "inc_tC4d9V79DCDzgbGKhAnff9",
@@ -38,8 +46,21 @@ const alertIncidentExample = {
 	last_notified_at: "2026-07-15T09:10:05.000Z",
 	hold_reason: null,
 	held_since: null,
+	acknowledged_at: "2026-07-15T09:14:02.000Z",
+	acknowledged_by: { user_id: "user_2Nk8mXqPfR3yZ1aB4cD5eF6g", name: "Dana Kim" },
+	acknowledged_via: "slack",
 	error_issue_id: null,
 } as const
+
+const V2AlertIncidentActor = Schema.Struct({
+	user_id: Schema.NullOr(UserId).annotate({
+		description: "The Maple user, or `null` for a chat account not linked to one.",
+	}),
+	name: Schema.NullOr(Schema.String).annotate({
+		description: "Display name as the source reported it, or `null` when none was available.",
+		examples: ["Dana Kim"],
+	}),
+}).annotate({ identifier: "AlertIncidentActor", title: "Alert incident actor" })
 
 // v2 wire schemas are annotated `Schema.Struct`s (not `Schema.Class`) — see the
 // note in api-keys.ts.
@@ -113,6 +134,18 @@ export const V2AlertIncident = Schema.Struct({
 	held_since: Schema.NullOr(Timestamp).annotate({
 		description: "When the current hold began, or `null` when the incident is not held.",
 	}),
+	acknowledged_at: Schema.NullOr(Timestamp).annotate({
+		description:
+			"When someone acknowledged this open incident, or `null`. While acknowledged, reminders (`renotify`) pause; an escalation to a higher severity still notifies and clears the acknowledgement. Cleared when the incident resolves.",
+	}),
+	acknowledged_by: Schema.NullOr(V2AlertIncidentActor).annotate({
+		description: "Who acknowledged the incident, or `null` when it is not acknowledged.",
+	}),
+	acknowledged_via: Schema.NullOr(AlertIncidentAckSource).annotate({
+		description:
+			"Where the acknowledgement came from (`web`, `api`, `mcp`, `slack`, `discord`), or `null` when not acknowledged.",
+		examples: ["slack"],
+	}),
 	error_issue_id: Schema.NullOr(ErrorIssuePublicId).annotate({
 		description: "The linked error issue (`iss_…`) when the incident was correlated to one, or `null`.",
 	}),
@@ -120,10 +153,45 @@ export const V2AlertIncident = Schema.Struct({
 	identifier: "AlertIncident",
 	title: "Alert Incident",
 	description:
-		"A period during which an alert rule's condition held: opened after enough consecutive breaches, resolved by the scheduler after enough consecutive healthy checks. Read-only via the API.",
+		"A period during which an alert rule's condition held: opened after enough consecutive breaches, resolved by the scheduler after enough consecutive healthy checks. An open incident can be acknowledged to pause reminders; resolution is scheduler-driven.",
 	examples: [wireExample(alertIncidentExample)],
 })
 export type V2AlertIncident = Schema.Schema.Type<typeof V2AlertIncident>
+
+export const V2AlertIncidentEvent = Schema.Struct({
+	id: AlertIncidentEventPublicId,
+	object: Schema.Literal("alert_incident_event").annotate({
+		description: 'The object type — always `"alert_incident_event"`.',
+		examples: ["alert_incident_event"],
+	}),
+	incident_id: AlertIncidentPublicId,
+	type: AlertIncidentEventType.annotate({
+		description:
+			"`acknowledged` or `unacknowledged` by a person, or `ack_cleared` when the scheduler cleared an acknowledgement because the incident escalated to a higher severity.",
+		examples: ["acknowledged"],
+	}),
+	actor: Schema.NullOr(V2AlertIncidentActor).annotate({
+		description: "Who did it, or `null` for a scheduler-written event.",
+	}),
+	source: Schema.NullOr(AlertIncidentAckSource).annotate({
+		description: "Where it came from, or `null` for a scheduler-written event.",
+	}),
+	created_at: Timestamp,
+}).annotate({
+	identifier: "AlertIncidentEvent",
+	title: "Alert Incident Event",
+	description: "One entry in an alert incident's activity log, oldest first.",
+})
+export type V2AlertIncidentEvent = Schema.Schema.Type<typeof V2AlertIncidentEvent>
+
+const AlertIncidentEventList = Schema.Struct({
+	object: Schema.Literal("list"),
+	data: Schema.Array(V2AlertIncidentEvent),
+}).annotate({
+	identifier: "AlertIncidentEventList",
+	title: "Alert incident event list",
+	description: "An incident's activity, oldest first.",
+})
 
 const IncidentsQuery = Schema.Struct({
 	...ListQuery.fields,
@@ -138,6 +206,13 @@ const IncidentsQuery = Schema.Struct({
 			description: "Only return incidents opened by this alert rule (`alrt_…`).",
 		}),
 	),
+	acknowledged: Schema.optional(
+		Schema.Literals(["true", "false"]).annotate({
+			description:
+				"`true` for open incidents someone has acknowledged, `false` for open incidents nobody has. Implies `status=open`.",
+			examples: ["false"],
+		}),
+	),
 }).annotate({
 	identifier: "AlertIncidentListQuery",
 	title: "Alert incident list query",
@@ -145,6 +220,8 @@ const IncidentsQuery = Schema.Struct({
 })
 
 const alertPersistence = publicError(AlertPersistenceError)
+const alertIncidentNotFound = publicError(AlertIncidentNotFoundError)
+const alertIncidentResolved = publicError(AlertIncidentResolvedError)
 
 const AlertIncidentList = ListOf(V2AlertIncident).annotate({
 	identifier: "AlertIncidentList",
@@ -171,7 +248,7 @@ export class V2AlertIncidentsApiGroup extends HttpApiGroup.make("alertIncidents"
 		HttpApiEndpoint.get("retrieve", "/:id", {
 			params: { id: AlertIncidentPublicId },
 			success: V2AlertIncident,
-			error: [publicError(AlertIncidentNotFoundError), alertPersistence],
+			error: [alertIncidentNotFound, alertPersistence],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getAlertIncident",
@@ -181,12 +258,54 @@ export class V2AlertIncidentsApiGroup extends HttpApiGroup.make("alertIncidents"
 			}),
 		),
 	)
+	.add(
+		HttpApiEndpoint.post("acknowledge", "/:id/acknowledge", {
+			params: { id: AlertIncidentPublicId },
+			success: V2AlertIncident,
+			error: [alertIncidentNotFound, alertIncidentResolved, alertPersistence],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "acknowledgeAlertIncident",
+				summary: "Acknowledge an alert incident",
+				description:
+					"Marks an open incident as acknowledged by the calling user, which pauses reminders until it is unacknowledged, escalates to a higher severity, or resolves. Acknowledging an already acknowledged incident changes nothing and returns it. Fails with 409 on a resolved incident. Requires the `alerts:write` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.post("unacknowledge", "/:id/unacknowledge", {
+			params: { id: AlertIncidentPublicId },
+			success: V2AlertIncident,
+			error: [alertIncidentNotFound, alertIncidentResolved, alertPersistence],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "unacknowledgeAlertIncident",
+				summary: "Unacknowledge an alert incident",
+				description:
+					"Clears an open incident's acknowledgement, so reminders resume on their usual schedule. Fails with 409 on a resolved incident. Requires the `alerts:write` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.get("listEvents", "/:id/events", {
+			params: { id: AlertIncidentPublicId },
+			success: AlertIncidentEventList,
+			error: [alertIncidentNotFound, alertPersistence],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "listAlertIncidentEvents",
+				summary: "List an alert incident's events",
+				description:
+					"Returns the incident's acknowledgement history, oldest first. Requires the `alerts:read` scope.",
+			}),
+		),
+	)
 	.prefix("/v2/alerts/incidents")
 	.middleware(AuthorizationV2)
 	.annotateMerge(
 		OpenApi.annotations({
 			title: "Alert Incidents",
 			description:
-				"The incident history produced by your alert rules. Incidents open when a rule breaches for enough consecutive checks and resolve automatically once the signal recovers — this surface is read-only.",
+				"The incident history produced by your alert rules. Incidents open when a rule breaches for enough consecutive checks and resolve automatically once the signal recovers. An open incident can be acknowledged to pause its reminders.",
 		}),
 	) {}

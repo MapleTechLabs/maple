@@ -5,6 +5,7 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
@@ -41,6 +42,7 @@ export const unimplementedMcpToolServices = Layer.mergeAll(
 	Layer.mock(AgentFeedbackService)({}),
 	Layer.mock(AlertsService)({}),
 	Layer.mock(AlertReadModelsService)({}),
+	Layer.mock(AlertIncidentAckService)({}),
 	Layer.mock(AlertRulesService)({}),
 	Layer.mock(DashboardPersistenceService)({}),
 	Layer.mock(ErrorActorsService)({}),

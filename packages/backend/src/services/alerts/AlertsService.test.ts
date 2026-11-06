@@ -1616,6 +1616,94 @@ describe("AlertsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: failingFetch })))
 	})
 
+	it.effect("holds reminders while an incident is acknowledged and clears the ack on resolve", () => {
+		const testDb = createTestDb(trackedDbs)
+		const breaching = tracesRow({
+			count: 200,
+			avgDuration: 40,
+			p50Duration: 20,
+			p95Duration: 120,
+			p99Duration: 240,
+			errorRate: 10,
+			satisfiedCount: 180,
+			toleratingCount: 10,
+			apdexScore: 0.925,
+		})
+		const state = {
+			tracesAggregateRows: [breaching] as ReadonlyArray<Record<string, unknown>>,
+		}
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_ack_holds_renotify")
+			const userId = asUserId("user_ack_holds_renotify")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({
+					name: "Checkout error rate",
+					severity: "critical",
+					enabled: true,
+					serviceNames: ["checkout"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					consecutiveBreachesRequired: 2,
+					consecutiveHealthyRequired: 2,
+					renotifyIntervalMinutes: 5,
+					destinationIds: [destination.id],
+				}),
+			)
+
+			// The trigger opens on the second tick; acknowledge it straight away.
+			for (let minute = 0; minute < 2; minute += 1) {
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+			}
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`update alert_incidents set acknowledged_at = now(), acknowledged_by_user_id = $1,
+					   acknowledged_by_name = 'Dana', acknowledged_via = 'web' where org_id = $2`,
+					[userId, orgId],
+				),
+			)
+
+			// Well past the 5-minute reminder interval, still breaching.
+			for (let minute = 0; minute < 12; minute += 1) {
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+			}
+			const events = yield* alerts.listDeliveryEvents(orgId)
+			assert.deepStrictEqual(
+				Arr.dedupe(Arr.map(events.events, (event: { eventType: string }) => event.eventType)),
+				["trigger"],
+			)
+
+			state.tracesAggregateRows = [{ ...breaching, errorRate: 1 }]
+			for (let minute = 0; minute < 3; minute += 1) {
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+			}
+			const [incident] = (yield* alerts.listIncidents(orgId)).incidents
+			assert.strictEqual(incident?.status, "resolved")
+			assert.isNull(incident?.acknowledgedAt)
+			assert.isNull(incident?.acknowledgedByName)
+			const afterResolve = yield* alerts.listDeliveryEvents(orgId)
+			assert.isTrue(
+				Arr.some(
+					afterResolve.events,
+					(event: { eventType: string }) => event.eventType === "resolve",
+				),
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+	})
+
 	it.effect("skips unchanged alert_rule_states writes and refreshes on the 5-minute heartbeat", () => {
 		const testDb = createTestDb(trackedDbs)
 		// Healthy from the start: errorRate 1 stays below the threshold of 5.

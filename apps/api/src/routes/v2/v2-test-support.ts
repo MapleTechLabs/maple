@@ -5,6 +5,7 @@ import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
@@ -181,7 +182,11 @@ const v2GroupLayersExceptOnboardingChecklist = (
 		HttpV2AlertDeliveriesLive,
 		HttpV2AlertRulesLive,
 		HttpV2AlertDestinationsLive,
-		HttpV2AlertIncidentsLive,
+		// Real ack service: it needs only the Database. API keys are named by their label, so the
+		// empty member directory is never asked for one.
+		HttpV2AlertIncidentsLive.pipe(
+			Layer.provide(Layer.merge(AlertIncidentAckService.layer, OrgMembersServiceStubLayer)),
+		),
 		HttpV2IngestKeysLive,
 		HttpV2SourcesLive,
 		HttpV2ErrorIssuesLive,

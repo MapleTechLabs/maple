@@ -9,6 +9,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
 
@@ -175,6 +176,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	DashboardWidgetDataService.layer,
 	AlertDestinationsService.layer,
 	AlertReadModelsService.layer,
+	AlertIncidentAckService.layer,
 	AlertRulesService.layer,
 	AlertsService.layer,
 	AnomalyDetectionService.layer,

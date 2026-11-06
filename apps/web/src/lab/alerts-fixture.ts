@@ -542,6 +542,10 @@ const incidentFrom = (spec: IncidentSpec, rule: AlertRuleDocument, nowMs: number
 		lastNotifiedAt: iso(nowMs - (open ? 8 * MIN : (spec.endAgo ?? 0))),
 		holdReason: spec.held ? "volume_collapsed" : null,
 		heldSince: spec.held ? iso(nowMs - 58 * MIN) : null,
+		acknowledgedAt: null,
+		acknowledgedByUserId: null,
+		acknowledgedByName: null,
+		acknowledgedVia: null,
 		errorIssueId: null,
 	})
 }

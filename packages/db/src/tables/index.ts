@@ -7,6 +7,7 @@ import {
 	AlertRuleClaims,
 	AlertRuleStates,
 	AlertIncidents,
+	AlertIncidentEvents,
 	AlertDeliveryEvents,
 	AlertLinearIssues,
 } from "./alerts"
@@ -162,6 +163,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	AlertRuleClaims,
 	AlertRuleStates,
 	AlertIncidents,
+	AlertIncidentEvents,
 	AlertDeliveryEvents,
 	AlertLinearIssues,
 	AnomalyDetectorSettings,

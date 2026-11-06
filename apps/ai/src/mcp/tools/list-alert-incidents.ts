@@ -4,7 +4,7 @@ import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListAlertIncidentsOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
-import { ALERT_INCIDENT_STATUSES, ALERT_SEVERITIES, formatCondition } from "../lib/alert-rules"
+import { ackLabel, ALERT_INCIDENT_STATUSES, ALERT_SEVERITIES, formatCondition } from "../lib/alert-rules"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { parseWarehouseDateTime } from "@maple/query-engine"
@@ -105,6 +105,8 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 					status: i.status,
 					holdReason: i.holdReason,
 					heldSince: i.heldSince,
+					acknowledgedAt: i.acknowledgedAt,
+					acknowledgedBy: ackLabel(i),
 					threshold: i.threshold,
 					comparator: i.comparator,
 					firstTriggeredAt: i.firstTriggeredAt,
@@ -199,7 +201,9 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 										i.severity,
 										i.holdReason != null
 											? `open (waiting on data: ${i.holdReason})`
-											: i.status,
+											: i.acknowledgedAt != null
+												? `open (acknowledged by ${i.acknowledgedBy ?? "someone"})`
+												: i.status,
 										i.groupKey ?? "all",
 										i.signalType,
 										formatCondition(i),
