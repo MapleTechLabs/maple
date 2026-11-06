@@ -201,6 +201,10 @@ describe("a cluster without user_activity_hourly", () => {
 							events: "3",
 							spans: "0",
 							logLines: "0",
+							classifiedRequests: "0",
+							mcpRequests: "0",
+							webRequests: "0",
+							mobileRequests: "0",
 						},
 					],
 				],
@@ -311,6 +315,10 @@ const listRow = (userId: string, name: string) => ({
 	events: "0",
 	spans: "3",
 	logLines: "0",
+	classifiedRequests: "0",
+	mcpRequests: "0",
+	webRequests: "0",
+	mobileRequests: "0",
 })
 
 describe("the directory's MCP-only users", () => {

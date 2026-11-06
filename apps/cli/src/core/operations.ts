@@ -896,6 +896,7 @@ const localMetricSeries = (p: MetricSeriesInput) =>
 					executor.compiledQuery(
 						CH.compile(
 							CH.metricsTimeseriesRateQuery({
+								metric: "rate",
 								metricName: p.name,
 								bucketSeconds: p.bucketSeconds,
 								...series,
@@ -908,19 +909,22 @@ const localMetricSeries = (p: MetricSeriesInput) =>
 						Arr.map(rows, (r) => ({
 							bucket: DateTime.formatIso(r.bucket),
 							service: r.groupName,
-							value: r.rateValue,
+							value: r.value,
 						})),
 				)
 			: yield* Effect.map(
 					executor.compiledQuery(
-						CH.compile(CH.metricsTimeseriesQuery({ metricType, ...series }), params),
+						CH.compile(
+							CH.metricsTimeseriesQuery({ metric: "avg", metricType, ...series }),
+							params,
+						),
 						options,
 					),
 					(rows) =>
 						Arr.map(rows, (r) => ({
 							bucket: DateTime.formatIso(r.bucket),
 							service: r.groupName,
-							value: r.avgValue,
+							value: r.value,
 						})),
 				)
 		return {

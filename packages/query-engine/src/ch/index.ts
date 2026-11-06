@@ -96,7 +96,6 @@ export {
 	type MetricsTimeseriesOpts,
 	type MetricsTimeseriesOutput,
 	type MetricsRateTimeseriesOpts,
-	type MetricsRateTimeseriesOutput,
 	type MetricsBreakdownOpts,
 	type MetricsBreakdownOutput,
 	listMetricsQuery,

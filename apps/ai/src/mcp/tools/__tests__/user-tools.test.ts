@@ -42,6 +42,10 @@ const listUser = (userId: string, errors: number): UserListItem => ({
 	topRoute: "GET /checkout",
 	activity: [1, 2, 3, 4, 5, 6, 7],
 	signals: ["replay", "traces"],
+	channels: [
+		{ channel: "web", requests: 30 },
+		{ channel: "api", requests: 10 },
+	],
 })
 
 const profile: UserProfileItem = {
@@ -255,6 +259,7 @@ describe("list_users", () => {
 		const markdown = text(result)
 		expect(markdown).toContain("Ada Lovelace")
 		expect(markdown).toContain("Acme Inc. (acme)")
+		expect(markdown).toContain("| web 75%, api 25% |")
 		expect(markdown).toContain('list_users start_time="2026-11-01 00:00:00"')
 		expect(markdown).toContain(`cursor="${output.nextCursor}"`)
 
