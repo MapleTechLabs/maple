@@ -169,6 +169,8 @@ extension AlertDestinationType {
 		case .discord: "Discord"
 		case .telegram: "Telegram"
 		case .googleChat: "Google Chat"
+		case .microsoftTeams: "Microsoft Teams"
+		case .incidentIo: "incident.io"
 		case .email: "Email"
 		case .linear: "Linear"
 		}

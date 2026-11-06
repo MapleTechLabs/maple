@@ -80,7 +80,7 @@ export const V2AlertDestination = Schema.Struct({
 	}),
 	type: AlertDestinationType.annotate({
 		description:
-			"The delivery channel: `pagerduty`, `webhook`, `discord`, `telegram`, `google-chat`, `email`, `chat` (a channel in a chat workspace linked through a chat connector), or `linear` (a team in the connected Linear workspace). Immutable after creation.",
+			"The delivery channel: `pagerduty`, `webhook`, `discord`, `telegram`, `google-chat`, `microsoft-teams`, `incident-io`, `email`, `chat` (a channel in a chat workspace linked through a chat connector), or `linear` (a team in the connected Linear workspace). Immutable after creation.",
 		examples: ["pagerduty"],
 	}),
 	enabled: Schema.Boolean.annotate({
@@ -95,7 +95,7 @@ export const V2AlertDestination = Schema.Struct({
 	}),
 	channel_label: Schema.NullOr(Schema.String).annotate({
 		description:
-			"Optional display label for the target channel — the channel name for a chat destination, the chat ID for Telegram — or `null`.",
+			"Optional display label for the target channel (the channel name for a chat destination, the chat ID for Telegram, the alert source config ID for incident.io), or `null`.",
 		examples: ["#incidents"],
 	}),
 	member_user_ids: Schema.NullOr(Schema.Array(Schema.String)).annotate({
@@ -131,7 +131,7 @@ export const V2AlertDestination = Schema.Struct({
 	identifier: "AlertDestination",
 	title: "Alert Destination",
 	description:
-		"A notification channel that alert rules deliver to (PagerDuty, generic webhook, Discord, Telegram, Google Chat, workspace-member email, a channel in a linked chat workspace, or a Linear team). Channel secrets are write-only: responses carry a redacted `summary` instead.",
+		"A notification channel that alert rules deliver to (PagerDuty, generic webhook, Discord, Telegram, Google Chat, Microsoft Teams, incident.io, workspace-member email, a channel in a linked chat workspace, or a Linear team). Channel secrets are write-only: responses carry a redacted `summary` instead.",
 	examples: [wireExample(alertDestinationExample)],
 })
 export type V2AlertDestination = Schema.Schema.Type<typeof V2AlertDestination>
@@ -216,6 +216,30 @@ const V2GoogleChatDestinationCreateParams = Schema.Struct({
 	enabled: enabledField,
 }).annotate({ identifier: "AlertDestinationCreateGoogleChat", title: "Google Chat destination" })
 
+const V2MicrosoftTeamsDestinationCreateParams = Schema.Struct({
+	type: Schema.Literal("microsoft-teams"),
+	name: nameField,
+	webhook_url: NonEmptyString.annotate({
+		description:
+			'The webhook URL of a Teams Workflows flow ("Post to a channel when a webhook request is received"), on `*.environment.api.powerplatform.com`. Retired Office 365 connector and `logic.azure.com` URLs are rejected. Write-only, never returned.',
+	}),
+	enabled: enabledField,
+}).annotate({ identifier: "AlertDestinationCreateMicrosoftTeams", title: "Microsoft Teams destination" })
+
+const V2IncidentIoDestinationCreateParams = Schema.Struct({
+	type: Schema.Literal("incident-io"),
+	name: nameField,
+	alert_source_config_id: NonEmptyString.annotate({
+		description:
+			"The ID of an incident.io HTTP alert source, the last segment of its `https://api.incident.io/v2/alert_events/http/{id}` URL.",
+		examples: ["01GW2G3V0S59R238FAHPDS1R66"],
+	}),
+	token: NonEmptyString.annotate({
+		description: "The alert source's secret token. Write-only, never returned.",
+	}),
+	enabled: enabledField,
+}).annotate({ identifier: "AlertDestinationCreateIncidentIo", title: "incident.io destination" })
+
 const V2EmailDestinationCreateParams = Schema.Struct({
 	type: Schema.Literal("email"),
 	name: nameField,
@@ -257,6 +281,8 @@ export const V2AlertDestinationCreateParams = Schema.Union([
 	V2DiscordDestinationCreateParams,
 	V2TelegramDestinationCreateParams,
 	V2GoogleChatDestinationCreateParams,
+	V2MicrosoftTeamsDestinationCreateParams,
+	V2IncidentIoDestinationCreateParams,
 	V2EmailDestinationCreateParams,
 	V2ChatDestinationCreateParams,
 	V2LinearDestinationCreateParams,
@@ -313,6 +339,22 @@ export const V2AlertDestinationUpdateParams = Schema.Union([
 		webhook_url: Schema.optionalKey(Schema.String),
 		enabled: Schema.optionalKey(Schema.Boolean),
 	}).annotate({ identifier: "AlertDestinationUpdateGoogleChat", title: "Google Chat destination update" }),
+	Schema.Struct({
+		type: Schema.Literal("microsoft-teams"),
+		name: optionalNameField,
+		webhook_url: Schema.optionalKey(Schema.String),
+		enabled: Schema.optionalKey(Schema.Boolean),
+	}).annotate({
+		identifier: "AlertDestinationUpdateMicrosoftTeams",
+		title: "Microsoft Teams destination update",
+	}),
+	Schema.Struct({
+		type: Schema.Literal("incident-io"),
+		name: optionalNameField,
+		alert_source_config_id: Schema.optionalKey(Schema.String),
+		token: Schema.optionalKey(Schema.String),
+		enabled: Schema.optionalKey(Schema.Boolean),
+	}).annotate({ identifier: "AlertDestinationUpdateIncidentIo", title: "incident.io destination update" }),
 	Schema.Struct({
 		type: Schema.Literal("email"),
 		name: optionalNameField,
