@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "0b9400fd1ffbb8611097e24cb3cbfc4f04268e3e99c500db104dfb027541042d",
+	"id": "02e2840f10a2adcc176610d397711485961c812639c4e7a1184ee78d75e0de95",
 	"prevIds": [
-		"c17d814b80b3c744f9918aeef7c5edd59881efdcf959113f7259615b0b8bc7b5"
+		"1b5f4066dcc3e96da80fab498f408ea2dc18fa71ad3a7dec1f05846d02fe7c2e"
 	],
 	"entities": [
 		{
@@ -113,6 +113,16 @@
 			"name": "alert_rules",
 			"primaryKey": {
 				"name": "alert_rules_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "alert_silences",
+			"primaryKey": {
+				"name": "alert_silences_pkey",
 				"columns": [
 					"id"
 				]
@@ -1634,8 +1644,18 @@
 		{
 			"kind": "column",
 			"table": "alert_delivery_events",
-			"name": "payload_json",
+			"name": "silence_id",
 			"position": 18,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_delivery_events",
+			"name": "payload_json",
+			"position": 19,
 			"type": "jsonb",
 			"notNull": true,
 			"default": null,
@@ -1645,7 +1665,7 @@
 			"kind": "column",
 			"table": "alert_delivery_events",
 			"name": "created_at",
-			"position": 19,
+			"position": 20,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -1655,7 +1675,7 @@
 			"kind": "column",
 			"table": "alert_delivery_events",
 			"name": "updated_at",
-			"position": 20,
+			"position": 21,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -2224,8 +2244,28 @@
 		{
 			"kind": "column",
 			"table": "alert_incidents",
-			"name": "created_at",
+			"name": "silence_id",
 			"position": 29,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incidents",
+			"name": "silenced_at",
+			"position": 30,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incidents",
+			"name": "created_at",
+			"position": 31,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -2235,7 +2275,7 @@
 			"kind": "column",
 			"table": "alert_incidents",
 			"name": "updated_at",
-			"position": 30,
+			"position": 32,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -2906,6 +2946,106 @@
 			"table": "alert_rules",
 			"name": "updated_by",
 			"position": 38,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_silences",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_silences",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_silences",
+			"name": "reason",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_silences",
+			"name": "matchers_json",
+			"position": 3,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_silences",
+			"name": "starts_at",
+			"position": 4,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_silences",
+			"name": "ends_at",
+			"position": 5,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_silences",
+			"name": "created_at",
+			"position": 6,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_silences",
+			"name": "updated_at",
+			"position": 7,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_silences",
+			"name": "created_by",
+			"position": 8,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_silences",
+			"name": "updated_by",
+			"position": 9,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -16637,6 +16777,18 @@
 			"columns": [
 				"\"org_id\"",
 				"\"name\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "alert_silences",
+			"name": "alert_silences_org_ends_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"ends_at\""
 			],
 			"where": null
 		},
