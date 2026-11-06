@@ -22,6 +22,7 @@ import {
 	AlertDestinationId,
 	AlertIncidentId,
 	AlertRuleId,
+	AlertSilenceId,
 	DashboardId,
 	ErrorIssueId,
 } from "@maple/domain/primitives"
@@ -157,6 +158,7 @@ const RESOURCE_IDS = {
 		schema: AlertDestinationId,
 		noun: "alert destination",
 	},
+	alertSilence: { prefix: PublicIdPrefixes.alertSilence, schema: AlertSilenceId, noun: "alert silence" },
 	dashboard: { prefix: PublicIdPrefixes.dashboard, schema: DashboardId, noun: "dashboard" },
 	errorIssue: { prefix: PublicIdPrefixes.errorIssue, schema: ErrorIssueId, noun: "error issue" },
 } as const
