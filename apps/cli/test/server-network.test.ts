@@ -147,9 +147,27 @@ describe("request admission on shutdown", () => {
 		const busyShutdown = busy.shutdown().then(() => (busyDown = true))
 		await yieldTurn()
 		strictEqual(busyDown, false)
+		strictEqual(busy.leavesStoreClean(), false)
 		finishRetirement()
 		await retirement
-		strictEqual((await busyShutdown, busy.leavesStoreClean()), true)
+		await busyShutdown
+		strictEqual(busy.leavesStoreClean(), true)
+	})
+
+	it("never starts Promise maintenance that was still waiting for admission when shutdown began", async () => {
+		const gate = new __testables.RequestQuiescenceGate()
+		const leave = gate.enter()
+		ok(leave)
+		let started = false
+		const retirement = gate.exclusive(async () => {
+			started = true
+		})
+		const shutdown = gate.shutdown()
+		leave()
+		await rejects(retirement, /maintenance operation is active/)
+		await shutdown
+		strictEqual(started, false)
+		strictEqual(gate.leavesStoreClean(), true)
 	})
 
 	it("reports the store unclean only when maintenance was cut off mid-way", async () => {

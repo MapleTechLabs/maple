@@ -916,9 +916,12 @@ export class RequestQuiescenceGate {
 			}),
 			() =>
 				Effect.promise(() => this.#drain()).pipe(
+					// Work still waiting when shutdown begins never starts, waited-for or not.
 					Effect.andThen(
-						Effect.sync(() => {
+						Effect.suspend(() => {
+							if (this.#shuttingDown) return Effect.fail(MaintenanceInProgressError.create())
 							this.#maintenanceWorking = true
+							return Effect.void
 						}),
 					),
 					Effect.andThen(work),
