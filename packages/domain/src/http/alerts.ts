@@ -23,6 +23,8 @@ export const AlertDestinationType = Schema.Literals([
 	"discord",
 	"telegram",
 	"google-chat",
+	"microsoft-teams",
+	"incident-io",
 	"email",
 	"chat",
 	"linear",
@@ -373,6 +375,32 @@ export class GoogleChatAlertDestinationConfig extends Schema.Class<GoogleChatAle
 }) {}
 
 /**
+ * A Teams channel's Workflows webhook: the "Post to a channel when a webhook request is received"
+ * flow (`https://….environment.api.powerplatform.com/powerautomate/automations/direct/workflows/…`).
+ */
+export class MicrosoftTeamsAlertDestinationConfig extends Schema.Class<MicrosoftTeamsAlertDestinationConfig>(
+	"MicrosoftTeamsAlertDestinationConfig",
+)({
+	type: Schema.Literal("microsoft-teams"),
+	name: ChannelLabel,
+	/** Write-only: the `sig` query parameter is the credential. */
+	webhookUrl: NonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+/** An incident.io HTTP alert source: its config id (not secret) and its token (write-only). */
+export class IncidentIoAlertDestinationConfig extends Schema.Class<IncidentIoAlertDestinationConfig>(
+	"IncidentIoAlertDestinationConfig",
+)({
+	type: Schema.Literal("incident-io"),
+	name: ChannelLabel,
+	alertSourceConfigId: NonEmptyString,
+	/** The alert source's secret token. Write-only, never returned. */
+	token: NonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+/**
  * A channel in a chat workspace linked through a chat connector. Which connector posts it is read
  * from the workspace row, never taken from the request — the workspace must belong to the org, and
  * the channel must be one the workspace's connector lists; its name is read from that listing.
@@ -421,6 +449,65 @@ export const parseGoogleChatWebhookUrl = (raw: string): Option.Option<{ readonly
 		}),
 	)
 
+/** `URL.hostname` is already lowercase, so this needs no case folding. */
+const TEAMS_WORKFLOWS_HOST = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.environment\.api\.powerplatform\.com$/
+const TEAMS_WORKFLOW_INVOKE_PATH =
+	/^\/powerautomate\/automations\/direct\/workflows\/([A-Za-z0-9]+)\/triggers\/[A-Za-z0-9_]+\/paths\/invoke$/
+
+/**
+ * A Teams Workflows webhook URL. Only the Power Platform host is accepted: Office 365 connector
+ * URLs (`*.webhook.office.com`) were retired in May 2026 and `*.logic.azure.com` flow URLs stopped
+ * triggering on 2025-11-30. The `sig` query parameter is the credential.
+ */
+export const parseTeamsWorkflowWebhookUrl = (raw: string): Option.Option<{ readonly workflowId: string }> =>
+	Option.liftThrowable(() => new URL(Str.trim(raw)))().pipe(
+		Option.flatMap((url) => {
+			const workflow = TEAMS_WORKFLOW_INVOKE_PATH.exec(url.pathname)
+			return url.protocol === "https:" &&
+				url.port === "" &&
+				url.username === "" &&
+				url.password === "" &&
+				TEAMS_WORKFLOWS_HOST.test(url.hostname) &&
+				workflow?.[1] !== undefined &&
+				(url.searchParams.get("sig") ?? "").length > 0
+				? Option.some({ workflowId: workflow[1] })
+				: Option.none()
+		}),
+	)
+
+/** Why a pasted Teams URL is not a Workflows webhook, for the two retired kinds people still have. */
+export const teamsWebhookUrlProblem = (
+	raw: string,
+): "retired-connector" | "retired-logic-apps" | "invalid" | null => {
+	if (Option.isSome(parseTeamsWorkflowWebhookUrl(raw))) return null
+	return Option.match(Option.liftThrowable(() => new URL(Str.trim(raw)))(), {
+		onNone: () => "invalid" as const,
+		onSome: (url) => {
+			const host = url.hostname
+			if (Str.endsWith(".webhook.office.com")(host) || host === "outlook.office.com")
+				return "retired-connector"
+			if (Str.endsWith(".logic.azure.com")(host)) return "retired-logic-apps"
+			return "invalid"
+		},
+	})
+}
+
+/** Why each kind of rejected Teams URL is rejected, shown by the dialog and the API alike. */
+export const TEAMS_WEBHOOK_URL_PROBLEM_MESSAGES = {
+	"retired-connector":
+		'That is an Office 365 connector URL, which Microsoft retired in May 2026. In the Teams channel, create a Workflows webhook ("Post to a channel when a webhook request is received") and paste its URL.',
+	"retired-logic-apps":
+		"That is a logic.azure.com flow URL, which stopped working on 30 November 2025. Open the flow in Power Automate and copy the new URL from its webhook trigger.",
+	invalid:
+		"That isn't a Teams Workflows webhook URL. It is on environment.api.powerplatform.com and ends with a sig parameter; copy it from the channel's Workflows webhook.",
+} as const
+
+/**
+ * incident.io leaves the alert source id's format open, so this only keeps it to what can sit in a
+ * URL path segment as typed: a ULID (`01GW2G3V0S59R238FAHPDS1R66`) today.
+ */
+export const isIncidentIoAlertSourceId = (raw: string): boolean => /^[A-Za-z0-9_-]{1,64}$/.test(Str.trim(raw))
+
 export const MAX_EMAIL_RECIPIENTS = 10
 
 /**
@@ -448,6 +535,8 @@ export const AlertDestinationCreateRequest = Schema.Union([
 	DiscordAlertDestinationConfig,
 	TelegramAlertDestinationConfig,
 	GoogleChatAlertDestinationConfig,
+	MicrosoftTeamsAlertDestinationConfig,
+	IncidentIoAlertDestinationConfig,
 	EmailAlertDestinationConfig,
 	ChatAlertDestinationConfig,
 	LinearAlertDestinationConfig,
@@ -496,6 +585,23 @@ export class UpdateGoogleChatAlertDestinationConfig extends Schema.Class<UpdateG
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
+export class UpdateMicrosoftTeamsAlertDestinationConfig extends Schema.Class<UpdateMicrosoftTeamsAlertDestinationConfig>(
+	"UpdateMicrosoftTeamsAlertDestinationConfig",
+)({
+	name: OptionalNonEmptyString,
+	webhookUrl: Schema.optionalKey(Schema.String),
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+export class UpdateIncidentIoAlertDestinationConfig extends Schema.Class<UpdateIncidentIoAlertDestinationConfig>(
+	"UpdateIncidentIoAlertDestinationConfig",
+)({
+	name: OptionalNonEmptyString,
+	alertSourceConfigId: Schema.optionalKey(Schema.String),
+	token: Schema.optionalKey(Schema.String),
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
 export class UpdateEmailAlertDestinationConfig extends Schema.Class<UpdateEmailAlertDestinationConfig>(
 	"UpdateEmailAlertDestinationConfig",
 )({
@@ -541,6 +647,14 @@ export const AlertDestinationUpdateRequest = Schema.Union([
 	Schema.Struct({
 		type: Schema.Literal("google-chat"),
 		...UpdateGoogleChatAlertDestinationConfig.fields,
+	}),
+	Schema.Struct({
+		type: Schema.Literal("microsoft-teams"),
+		...UpdateMicrosoftTeamsAlertDestinationConfig.fields,
+	}),
+	Schema.Struct({
+		type: Schema.Literal("incident-io"),
+		...UpdateIncidentIoAlertDestinationConfig.fields,
 	}),
 	Schema.Struct({
 		type: Schema.Literal("email"),

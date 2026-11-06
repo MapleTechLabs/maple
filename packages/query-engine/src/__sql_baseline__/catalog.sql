@@ -10272,7 +10272,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- builder:users:usersFacetsQuery:default  [8d40d5d0]
+-- builder:users:usersFacetsQuery:default  [c8c283ee]
 SELECT
           signals.namespace AS name,
           uniqExact(signals.userId) AS count,
@@ -10293,6 +10293,10 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           groupUniqArrayIf(20)(sessions.groupId, sessions.groupId != '') AS groupIds,
           toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userName != '')) AS nameAt,
           toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userEmail != '')) AS emailAt,
@@ -10330,6 +10334,10 @@ SELECT
           count() AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           groupUniqArrayIf(20)(product_events.GroupId, product_events.GroupId != '') AS groupIds,
           toFloat64(0) AS nameAt,
           toFloat64(0) AS emailAt,
@@ -10356,6 +10364,10 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS classifiedRequests,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           CAST([], 'Array(String)') AS groupIds,
           toFloat64(maxIf(toFloat64(traces.Timestamp), traces.SpanAttributes['user.name'] != '')) AS nameAt,
           toFloat64(maxIf(toFloat64(traces.Timestamp), traces.SpanAttributes['user.email'] != '')) AS emailAt,
@@ -10395,6 +10407,10 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           groupUniqArrayIf(20)(sessions.groupId, sessions.groupId != '') AS groupIds,
           toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userName != '')) AS nameAt,
           toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userEmail != '')) AS emailAt,
@@ -10433,6 +10449,10 @@ SELECT
           count() AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           groupUniqArrayIf(20)(product_events.GroupId, product_events.GroupId != '') AS groupIds,
           toFloat64(0) AS nameAt,
           toFloat64(0) AS emailAt,
@@ -10468,6 +10488,10 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS classifiedRequests,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           CAST([], 'Array(String)') AS groupIds,
           toFloat64(maxIf(toFloat64(traces.Timestamp), traces.SpanAttributes['user.name'] != '')) AS nameAt,
           toFloat64(maxIf(toFloat64(traces.Timestamp), traces.SpanAttributes['user.email'] != '')) AS emailAt,
@@ -10488,7 +10512,7 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- builder:users:usersFacetsQuery:pinned  [bd28349d]
+-- builder:users:usersFacetsQuery:pinned  [e2850b12]
 SELECT
           arrayJoin(signals.groupIds) AS name,
           uniqExact(signals.userId) AS count,
@@ -10509,6 +10533,10 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           groupUniqArrayIf(20)(sessions.groupId, sessions.groupId != '') AS groupIds,
           toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userName != '')) AS nameAt,
           toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userEmail != '')) AS emailAt,
@@ -10547,6 +10575,10 @@ SELECT
           count() AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           groupUniqArrayIf(20)(product_events.GroupId, product_events.GroupId != '') AS groupIds,
           toFloat64(0) AS nameAt,
           toFloat64(0) AS emailAt,
@@ -10582,6 +10614,10 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS classifiedRequests,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           CAST([], 'Array(String)') AS groupIds,
           toFloat64(maxIf(toFloat64(traces.Timestamp), traces.SpanAttributes['user.name'] != '')) AS nameAt,
           toFloat64(maxIf(toFloat64(traces.Timestamp), traces.SpanAttributes['user.email'] != '')) AS emailAt,
@@ -10616,7 +10652,7 @@ SELECT
         LIMIT 2
         FORMAT JSON
 
--- builder:users:usersGroupsQuery:default  [e6351beb]
+-- builder:users:usersGroupsQuery:default  [81c3b1be]
 SELECT
           arrayJoin(if(empty(per_user.groupIds), [''], per_user.groupIds)) AS groupId,
           count() AS users,
@@ -10644,7 +10680,11 @@ SELECT
           sum(signals.mcpSpans) AS mcpSpans,
           sum(signals.events) AS events,
           sum(signals.spans) AS spans,
-          sum(signals.logLines) AS logLines
+          sum(signals.logLines) AS logLines,
+          sum(signals.classifiedRequests) AS classifiedRequests,
+          sum(signals.mcpRequests) AS mcpRequests,
+          sum(signals.webRequests) AS webRequests,
+          sum(signals.mobileRequests) AS mobileRequests
         FROM (
 SELECT
           sessions.userId AS userId,
@@ -10661,6 +10701,10 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           groupUniqArrayIf(20)(sessions.groupId, sessions.groupId != '') AS groupIds,
           toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userName != '')) AS nameAt,
           toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userEmail != '')) AS emailAt,
@@ -10698,6 +10742,10 @@ SELECT
           count() AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           groupUniqArrayIf(20)(product_events.GroupId, product_events.GroupId != '') AS groupIds,
           toFloat64(0) AS nameAt,
           toFloat64(0) AS emailAt,
@@ -10724,6 +10772,10 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(sum(user_activity_hourly.SpanCount)) AS spans,
           toUInt64(sum(user_activity_hourly.LogCount)) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           CAST([], 'Array(String)') AS groupIds,
           toFloat64(0) AS nameAt,
           toFloat64(0) AS emailAt,
@@ -10741,7 +10793,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:users:usersListQuery:activityRollup  [86891b7f]
+-- builder:users:usersListQuery:activityRollup  [ec31323a]
 SELECT
           signals.userId AS userId,
           argMax(signals.name, signals.nameAt) AS name,
@@ -10758,7 +10810,11 @@ SELECT
           sum(signals.mcpSpans) AS mcpSpans,
           sum(signals.events) AS events,
           sum(signals.spans) AS spans,
-          sum(signals.logLines) AS logLines
+          sum(signals.logLines) AS logLines,
+          sum(signals.classifiedRequests) AS classifiedRequests,
+          sum(signals.mcpRequests) AS mcpRequests,
+          sum(signals.webRequests) AS webRequests,
+          sum(signals.mobileRequests) AS mobileRequests
         FROM (
 SELECT
           sessions.userId AS userId,
@@ -10775,6 +10831,10 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           groupUniqArrayIf(20)(sessions.groupId, sessions.groupId != '') AS groupIds,
           toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userName != '')) AS nameAt,
           toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userEmail != '')) AS emailAt,
@@ -10813,6 +10873,10 @@ SELECT
           count() AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           groupUniqArrayIf(20)(product_events.GroupId, product_events.GroupId != '') AS groupIds,
           toFloat64(0) AS nameAt,
           toFloat64(0) AS emailAt,
@@ -10848,6 +10912,10 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(sum(user_activity_hourly.SpanCount)) AS spans,
           toUInt64(sum(user_activity_hourly.LogCount)) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           CAST([], 'Array(String)') AS groupIds,
           toFloat64(0) AS nameAt,
           toFloat64(0) AS emailAt,
@@ -10865,7 +10933,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:users:usersListQuery:namespaceFiltered  [a7763630]
+-- builder:users:usersListQuery:namespaceFiltered  [5a3cb3cf]
 SELECT
           signals.userId AS userId,
           argMax(signals.name, signals.nameAt) AS name,
@@ -10882,7 +10950,11 @@ SELECT
           sum(signals.mcpSpans) AS mcpSpans,
           sum(signals.events) AS events,
           sum(signals.spans) AS spans,
-          sum(signals.logLines) AS logLines
+          sum(signals.logLines) AS logLines,
+          sum(signals.classifiedRequests) AS classifiedRequests,
+          sum(signals.mcpRequests) AS mcpRequests,
+          sum(signals.webRequests) AS webRequests,
+          sum(signals.mobileRequests) AS mobileRequests
         FROM (
 SELECT
           sessions.userId AS userId,
@@ -10899,6 +10971,10 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           groupUniqArrayIf(20)(sessions.groupId, sessions.groupId != '') AS groupIds,
           toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userName != '')) AS nameAt,
           toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userEmail != '')) AS emailAt,
@@ -10937,6 +11013,10 @@ SELECT
           count() AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           groupUniqArrayIf(20)(product_events.GroupId, product_events.GroupId != '') AS groupIds,
           toFloat64(0) AS nameAt,
           toFloat64(0) AS emailAt,
@@ -10972,6 +11052,10 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS classifiedRequests,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           CAST([], 'Array(String)') AS groupIds,
           toFloat64(maxIf(toFloat64(traces.Timestamp), traces.SpanAttributes['user.name'] != '')) AS nameAt,
           toFloat64(maxIf(toFloat64(traces.Timestamp), traces.SpanAttributes['user.email'] != '')) AS emailAt,
@@ -10996,7 +11080,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:users:usersListQuery:unscoped  [8048f05a]
+-- builder:users:usersListQuery:requestChannels  [9ff369d6]
 SELECT
           signals.userId AS userId,
           argMax(signals.name, signals.nameAt) AS name,
@@ -11013,7 +11097,11 @@ SELECT
           sum(signals.mcpSpans) AS mcpSpans,
           sum(signals.events) AS events,
           sum(signals.spans) AS spans,
-          sum(signals.logLines) AS logLines
+          sum(signals.logLines) AS logLines,
+          sum(signals.classifiedRequests) AS classifiedRequests,
+          sum(signals.mcpRequests) AS mcpRequests,
+          sum(signals.webRequests) AS webRequests,
+          sum(signals.mobileRequests) AS mobileRequests
         FROM (
 SELECT
           sessions.userId AS userId,
@@ -11030,6 +11118,10 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           groupUniqArrayIf(20)(sessions.groupId, sessions.groupId != '') AS groupIds,
           toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userName != '')) AS nameAt,
           toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userEmail != '')) AS emailAt,
@@ -11067,6 +11159,139 @@ SELECT
           count() AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
+          groupUniqArrayIf(20)(product_events.GroupId, product_events.GroupId != '') AS groupIds,
+          toFloat64(0) AS nameAt,
+          toFloat64(0) AS emailAt,
+          toFloat64(maxIf(toFloat64(product_events.Timestamp), product_events.GroupId != '')) AS groupAt
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.UserId != ''
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          user_activity_hourly.UserId AS userId,
+          '' AS name,
+          '' AS email,
+          '' AS groupId,
+          user_activity_hourly.ServiceNamespace AS namespace,
+          toDateTime64(min(user_activity_hourly.FirstSeen), 9) AS firstSeen,
+          toDateTime64(max(user_activity_hourly.LastSeen), 9) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(sum(user_activity_hourly.FailedRequestCount)) AS errors,
+          toUInt64(sum(user_activity_hourly.RequestCount)) AS requests,
+          toUInt64(sumIf(user_activity_hourly.SpanCount, user_activity_hourly.ServiceName IN ('maple-ai'))) AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(sum(user_activity_hourly.SpanCount)) AS spans,
+          toUInt64(sum(user_activity_hourly.LogCount)) AS logLines,
+          toUInt64(sum(user_activity_hourly.ClassifiedRequestCount)) AS classifiedRequests,
+          toUInt64(sumIf(user_activity_hourly.ClassifiedRequestCount, user_activity_hourly.ServiceName IN ('maple-ai'))) AS mcpRequests,
+          toUInt64(sumIf(user_activity_hourly.WebRequestCount, NOT (user_activity_hourly.ServiceName IN ('maple-ai')))) AS webRequests,
+          toUInt64(sumIf(user_activity_hourly.MobileRequestCount, NOT (user_activity_hourly.ServiceName IN ('maple-ai')))) AS mobileRequests,
+          CAST([], 'Array(String)') AS groupIds,
+          toFloat64(0) AS nameAt,
+          toFloat64(0) AS emailAt,
+          toFloat64(0) AS groupAt
+        FROM user_activity_hourly
+        WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
+          AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND user_activity_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND user_activity_hourly.UserId != ''
+        GROUP BY userId, namespace
+) AS signals
+        GROUP BY userId
+        ORDER BY lastSeen DESC, userId ASC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:users:usersListQuery:unscoped  [815d520b]
+SELECT
+          signals.userId AS userId,
+          argMax(signals.name, signals.nameAt) AS name,
+          argMax(signals.email, signals.emailAt) AS email,
+          argMax(signals.groupId, signals.groupAt) AS groupId,
+          arraySort(arrayDistinct(groupArrayArray(signals.groupIds))) AS groupIds,
+          arraySort(groupUniqArrayIf(20)(signals.namespace, signals.namespace != '')) AS namespaces,
+          min(signals.firstSeen) AS firstSeen,
+          max(signals.lastSeen) AS lastSeen,
+          toString(max(signals.lastSeen)) AS lastSeenKey,
+          sum(signals.sessions) AS sessions,
+          sum(signals.errors) AS errors,
+          sum(signals.requests) AS requests,
+          sum(signals.mcpSpans) AS mcpSpans,
+          sum(signals.events) AS events,
+          sum(signals.spans) AS spans,
+          sum(signals.logLines) AS logLines,
+          sum(signals.classifiedRequests) AS classifiedRequests,
+          sum(signals.mcpRequests) AS mcpRequests,
+          sum(signals.webRequests) AS webRequests,
+          sum(signals.mobileRequests) AS mobileRequests
+        FROM (
+SELECT
+          sessions.userId AS userId,
+          argMax(sessions.userName, if(sessions.userName != '', toFloat64(sessions.lastActivity), 0)) AS name,
+          argMax(sessions.userEmail, if(sessions.userEmail != '', toFloat64(sessions.lastActivity), 0)) AS email,
+          argMax(sessions.groupId, if(sessions.groupId != '', toFloat64(sessions.lastActivity), 0)) AS groupId,
+          transform(sessions.serviceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(sessions.startTime) AS firstSeen,
+          max(sessions.lastActivity) AS lastSeen,
+          count() AS sessions,
+          toUInt64(sum(sessions.errors)) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
+          groupUniqArrayIf(20)(sessions.groupId, sessions.groupId != '') AS groupIds,
+          toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userName != '')) AS nameAt,
+          toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userEmail != '')) AS emailAt,
+          toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.groupId != '')) AS groupAt
+        FROM (SELECT
+          session_replays.SessionId AS sessionId,
+          argMax(session_replays.UserId, session_replays.Version) AS userId,
+          argMax(session_replays.UserName, session_replays.Version) AS userName,
+          argMax(session_replays.UserEmail, session_replays.Version) AS userEmail,
+          argMax(session_replays.GroupId, session_replays.Version) AS groupId,
+          any(session_replays.ServiceName) AS serviceName,
+          max(session_replays.ErrorCount) AS errors,
+          min(session_replays.StartTime) AS startTime,
+          max(ifNull(session_replays.LastActivityAt, session_replays.StartTime)) AS lastActivity
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS sessions
+        WHERE sessions.userId != ''
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          product_events.UserId AS userId,
+          '' AS name,
+          '' AS email,
+          argMax(product_events.GroupId, if(product_events.GroupId != '', toFloat64(product_events.Timestamp), 0)) AS groupId,
+          transform(product_events.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(product_events.Timestamp) AS firstSeen,
+          max(product_events.Timestamp) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(0) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          count() AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           groupUniqArrayIf(20)(product_events.GroupId, product_events.GroupId != '') AS groupIds,
           toFloat64(0) AS nameAt,
           toFloat64(0) AS emailAt,
@@ -11093,6 +11318,10 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS classifiedRequests,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           CAST([], 'Array(String)') AS groupIds,
           toFloat64(maxIf(toFloat64(traces.Timestamp), traces.SpanAttributes['user.name'] != '')) AS nameAt,
           toFloat64(maxIf(toFloat64(traces.Timestamp), traces.SpanAttributes['user.email'] != '')) AS emailAt,
@@ -11204,7 +11433,7 @@ SELECT
         LIMIT 2000
         FORMAT JSON
 
--- builder:users:usersSummaryQuery:default  [f4576e89]
+-- builder:users:usersSummaryQuery:default  [48c9b564]
 SELECT
           count() AS identified,
           countIf(users.lastSeen >= '2026-01-01 10:30:00') AS activeToday,
@@ -11231,6 +11460,10 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           groupUniqArrayIf(20)(sessions.groupId, sessions.groupId != '') AS groupIds,
           toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userName != '')) AS nameAt,
           toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userEmail != '')) AS emailAt,
@@ -11268,6 +11501,10 @@ SELECT
           count() AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(0) AS classifiedRequests,
+          toUInt64(0) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           groupUniqArrayIf(20)(product_events.GroupId, product_events.GroupId != '') AS groupIds,
           toFloat64(0) AS nameAt,
           toFloat64(0) AS emailAt,
@@ -11294,6 +11531,10 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS classifiedRequests,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS mcpRequests,
+          toUInt64(0) AS webRequests,
+          toUInt64(0) AS mobileRequests,
           CAST([], 'Array(String)') AS groupIds,
           toFloat64(maxIf(toFloat64(traces.Timestamp), traces.SpanAttributes['user.name'] != '')) AS nameAt,
           toFloat64(maxIf(toFloat64(traces.Timestamp), traces.SpanAttributes['user.email'] != '')) AS emailAt,
@@ -18181,23 +18422,43 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:metrics-breakdown:baseline  [bc31907a]
+-- spec:metrics-breakdown:baseline  [8d3f329e]
 SELECT
-          metrics_histogram.ServiceName AS name,
-          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS avgValue,
-          ifNull(min(metrics_histogram.Min), 0) AS minValue,
-          ifNull(max(metrics_histogram.Max), 0) AS maxValue,
-          sum(metrics_histogram.Sum) AS sumValue,
-          sum(metrics_histogram.Count) AS count
+          bucket AS bucket,
+          groupName AS groupName,
+          value AS value,
+          dataPointCount AS dataPointCount,
+          seriesCount AS seriesCount
+        FROM (SELECT
+          bucket AS bucket,
+          groupName AS groupName,
+          value AS value,
+          dataPointCount AS dataPointCount,
+          seriesCount AS seriesCount,
+          dense_rank() OVER (ORDER BY __series_peak DESC, groupName ASC) AS __series_rank
+        FROM (SELECT
+          bucket AS bucket,
+          groupName AS groupName,
+          value AS value,
+          dataPointCount AS dataPointCount,
+          seriesCount AS seriesCount,
+          max(value) OVER (PARTITION BY groupName) AS __series_peak
+        FROM (SELECT
+          toDateTime('2026-01-01 10:30:00') AS bucket,
+          metrics_histogram.ServiceName AS groupName,
+          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS value,
+          sum(metrics_histogram.Count) AS dataPointCount,
+          uniqExact(cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes))) AS seriesCount
         FROM metrics_histogram
         WHERE metrics_histogram.MetricName = 'http.server.request.duration'
           AND metrics_histogram.OrgId = 'org_sql_catalog'
           AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_histogram.TimeUnix < '2026-01-03 14:15:00'
           AND metrics_histogram.ServiceName = 'api'
-        GROUP BY name
-        ORDER BY avgValue DESC
-        LIMIT 10
+        GROUP BY bucket, groupName) AS __series_base) AS __series_peaks) AS __series_ranked
+        WHERE __series_rank <= 11
+        ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
 -- spec:metrics-sparklines:baseline  [f220d493]
@@ -18216,55 +18477,52 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-grouped-by-attribute:baseline  [60a5bdfa]
+-- spec:metrics-timeseries-grouped-by-attribute:baseline  [09da1919]
 SELECT
           toStartOfInterval(metrics_histogram.TimeUnix, INTERVAL 300 SECOND) AS bucket,
-          metrics_histogram.ServiceName AS serviceName,
-          metrics_histogram.Attributes['http.route'] AS attributeValue,
           metrics_histogram.Attributes['http.route'] AS groupName,
-          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS avgValue,
-          ifNull(min(metrics_histogram.Min), 0) AS minValue,
-          ifNull(max(metrics_histogram.Max), 0) AS maxValue,
-          sum(metrics_histogram.Sum) AS sumValue,
-          sum(metrics_histogram.Count) AS dataPointCount
+          sum(metrics_histogram.Sum) AS value,
+          sum(metrics_histogram.Count) AS dataPointCount,
+          uniqExact(cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes))) AS seriesCount
         FROM metrics_histogram
         WHERE metrics_histogram.MetricName = 'http.server.request.duration'
           AND metrics_histogram.OrgId = 'org_sql_catalog'
           AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_histogram.ServiceName = 'api'
-        GROUP BY bucket, serviceName, attributeValue
+        GROUP BY bucket, groupName
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-grouped-by-resource:baseline  [d6a11b76]
+-- spec:metrics-timeseries-grouped-by-resource:baseline  [71f914a2]
 SELECT
           toStartOfInterval(metrics_histogram.TimeUnix, INTERVAL 300 SECOND) AS bucket,
-          metrics_histogram.ServiceName AS serviceName,
-          metrics_histogram.ResourceAttributes['host.name'] AS attributeValue,
           metrics_histogram.ResourceAttributes['host.name'] AS groupName,
-          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS avgValue,
-          ifNull(min(metrics_histogram.Min), 0) AS minValue,
-          ifNull(max(metrics_histogram.Max), 0) AS maxValue,
-          sum(metrics_histogram.Sum) AS sumValue,
-          sum(metrics_histogram.Count) AS dataPointCount
+          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS value,
+          sum(metrics_histogram.Count) AS dataPointCount,
+          uniqExact(cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes))) AS seriesCount
         FROM metrics_histogram
         WHERE metrics_histogram.MetricName = 'http.server.request.duration'
           AND metrics_histogram.OrgId = 'org_sql_catalog'
           AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_histogram.ServiceName = 'api'
-        GROUP BY bucket, serviceName, attributeValue
+        GROUP BY bucket, groupName
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-rate:baseline  [6edd2ce8]
-WITH with_deltas AS (
+-- spec:metrics-timeseries-rate:baseline  [0f1f979f]
+SELECT
+          per_series.bucket AS bucket,
+          per_series.groupName AS groupName,
+          ifNull(ifNotFinite(sum(per_series.increase) / min(least(toUnixTimestamp(per_series.bucket) + 3600, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(per_series.bucket), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS value,
+          sum(per_series.points) AS dataPointCount,
+          count() AS seriesCount
+        FROM (WITH with_deltas AS (
 SELECT
           metrics_sum.TimeUnix AS TimeUnix,
-          metrics_sum.ServiceName AS ServiceName,
-          metrics_sum.Attributes AS Attributes,
-          '' AS resourceAttributeValue,
+          '' AS groupName,
+          cityHash64(metrics_sum.ServiceName, mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes), mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) AS series,
           multiIf(AggregationTemporality = 1, metrics_sum.Value, metrics_sum.Value < lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), metrics_sum.Value, (metrics_sum.StartTimeUnix > lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AND metrics_sum.StartTimeUnix < metrics_sum.TimeUnix), metrics_sum.Value, metrics_sum.Value - lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) AS delta
         FROM metrics_sum
         WHERE metrics_sum.MetricName = 'http.server.requests'
@@ -18274,36 +18532,31 @@ SELECT
 )
 SELECT
           toStartOfInterval(with_deltas.TimeUnix, INTERVAL 3600 SECOND) AS bucket,
-          with_deltas.ServiceName AS serviceName,
-          '' AS attributeValue,
-          with_deltas.ServiceName AS groupName,
-          ifNull(ifNotFinite(sum(with_deltas.delta) / min(least(toUnixTimestamp(toStartOfInterval(with_deltas.TimeUnix, INTERVAL 3600 SECOND)) + 3600, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(with_deltas.TimeUnix, INTERVAL 3600 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS rateValue,
-          sum(with_deltas.delta) AS increaseValue,
-          count() AS dataPointCount
+          with_deltas.groupName AS groupName,
+          with_deltas.series AS series,
+          sum(with_deltas.delta) AS increase,
+          count() AS points
         FROM with_deltas
         WHERE with_deltas.TimeUnix >= '2026-01-01 10:30:00'
-        GROUP BY bucket, serviceName
+        GROUP BY bucket, groupName, series) AS per_series
+        GROUP BY bucket, groupName
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries:baseline  [013da770]
+-- spec:metrics-timeseries:baseline  [797e943f]
 SELECT
           toStartOfInterval(metrics_histogram.TimeUnix, INTERVAL 3600 SECOND) AS bucket,
-          metrics_histogram.ServiceName AS serviceName,
-          '' AS attributeValue,
-          metrics_histogram.ServiceName AS groupName,
-          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS avgValue,
-          ifNull(min(metrics_histogram.Min), 0) AS minValue,
-          ifNull(max(metrics_histogram.Max), 0) AS maxValue,
-          sum(metrics_histogram.Sum) AS sumValue,
-          sum(metrics_histogram.Count) AS dataPointCount
+          '' AS groupName,
+          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS value,
+          sum(metrics_histogram.Count) AS dataPointCount,
+          uniqExact(cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes))) AS seriesCount
         FROM metrics_histogram
         WHERE metrics_histogram.MetricName = 'http.server.request.duration'
           AND metrics_histogram.OrgId = 'org_sql_catalog'
           AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_histogram.ServiceName = 'api'
-        GROUP BY bucket, serviceName
+        GROUP BY bucket, groupName
         ORDER BY bucket ASC
         FORMAT JSON
 

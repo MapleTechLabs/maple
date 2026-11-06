@@ -494,6 +494,14 @@ jobs:
                   src/services/warehouse/error-fingerprint-fuzz.clickhouse.e2e.test.ts
                   src/services/errors/error-tick-fingerprint.clickhouse.e2e.test.ts
 
+            # The metrics builder's two aggregation stages (per series in time, then
+            # across series) against a TS reference: seeded gauges and counters,
+            # random queries through the real engine. Replay with METRICS_FUZZ_SEED.
+            - name: Metrics aggregation differential fuzz
+              run: >-
+                  bun run --filter=@maple/backend test --
+                  src/services/warehouse/metrics-aggregation-fuzz.clickhouse.e2e.test.ts
+
             # Every SQL shape the product emits, against the real analyzer: unit tests
             # only compare SQL text, which is how a NO_COMMON_TYPE reached production.
             - name: Analyze the SQL catalog

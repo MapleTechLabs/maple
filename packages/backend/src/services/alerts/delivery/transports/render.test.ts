@@ -7,6 +7,8 @@ import type { DispatchContext } from "../context"
 import type { HttpRequestSpec, RenderInput } from "../Transport"
 import { discordTransport } from "./discord"
 import { googleChatTransport } from "./google-chat"
+import { incidentIoTransport } from "./incident-io"
+import { microsoftTeamsTransport } from "./microsoft-teams"
 import { pagerDutyTransport } from "./pagerduty"
 import { telegramTransport } from "./telegram"
 import { webhookTransport } from "./webhook"
@@ -121,6 +123,22 @@ describe("transport render: guard flags", () => {
 				}),
 			),
 		],
+		[
+			"microsoft-teams",
+			microsoftTeamsTransport.render(
+				inputFor({
+					type: "microsoft-teams",
+					webhookUrl:
+						"https://d1.47.environment.api.powerplatform.com/powerautomate/automations/direct/workflows/w1/triggers/manual/paths/invoke?sig=s",
+				}),
+			),
+		],
+		[
+			"incident-io",
+			incidentIoTransport.render(
+				inputFor({ type: "incident-io", alertSourceConfigId: "01GW2G3V", token: "t" }),
+			),
+		],
 	]
 
 	it("guards exactly the user-configured hosts", () => {
@@ -131,7 +149,7 @@ describe("transport render: guard flags", () => {
 		// pagerduty + telegram post to compile-time vendor constants: there
 		// is no attacker-controlled URL to validate, so the guard would only cost a
 		// redirect walk.
-		assert.deepStrictEqual(guarded, ["webhook", "discord", "google-chat"])
+		assert.deepStrictEqual(guarded, ["webhook", "discord", "google-chat", "microsoft-teams"])
 	})
 
 	it("marks exactly the providers whose token rides in the URL path", () => {

@@ -58,11 +58,11 @@ const TOKENS = {
 		groupBys: ["service", "severity"],
 	},
 	"metrics:breakdown": {
-		metrics: ["avg", "sum", "min", "max", "count", "rate", "increase"],
+		metrics: ["avg", "sum", "min", "max", "count", "latest", "rate", "increase"],
 		groupBys: ["service", "attribute", "resource_attribute"],
 	},
 	"metrics:timeseries": {
-		metrics: ["avg", "sum", "min", "max", "count", "rate", "increase"],
+		metrics: ["avg", "sum", "min", "max", "count", "latest", "rate", "increase"],
 		groupBys: ["service", "attribute", "resource_attribute", "none"],
 	},
 	"product_events:timeseries": {

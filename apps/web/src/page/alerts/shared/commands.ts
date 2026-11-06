@@ -47,6 +47,10 @@ export const updateDestination = (
 				return yield* client.alertDestinations.update({ params, payload })
 			case "google-chat":
 				return yield* client.alertDestinations.update({ params, payload })
+			case "microsoft-teams":
+				return yield* client.alertDestinations.update({ params, payload })
+			case "incident-io":
+				return yield* client.alertDestinations.update({ params, payload })
 			case "email":
 				return yield* client.alertDestinations.update({ params, payload })
 			case "chat":

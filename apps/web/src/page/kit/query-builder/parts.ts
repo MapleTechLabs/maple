@@ -8,7 +8,7 @@ import { input } from "@maple/views/ui/input"
 import * as Select from "@maple/views/ui/select"
 import { view as selectView, type SelectOption } from "@maple/views/ui/select-view"
 import type { AddOnKey } from "./change"
-import type { QueryDraft } from "./draft"
+import { groupBySelectionOf, type QueryDraft } from "./draft"
 import { Message, type Model } from "./panel"
 import { whereEditor } from "./where-editor"
 import { whereSpecOf, whereTextareaId } from "./where"
@@ -139,7 +139,7 @@ const groupBySelect = (h: H, model: Model, query: QueryDraft): Html => {
 	const current = model.groupBys[query.id] ?? Combobox.init(`group-by-${query.id}`, "multiple")
 	return h.submodel({
 		slotId: `${model.slotPrefix}-group-by-${query.id}`,
-		model: { ...current, selected: query.groupBy },
+		model: { ...current, selected: [...groupBySelectionOf(query)] },
 		view: chipsView,
 		toParentMessage: (message) => Message.GotGroupByMessage({ queryId: query.id, message }),
 		viewInputs: {
@@ -147,7 +147,7 @@ const groupBySelect = (h: H, model: Model, query: QueryDraft): Html => {
 				Arr.filter(GROUP_BY_OPTIONS[query.dataSource], (option) => option.value !== "none"),
 				(option) => option.value,
 			),
-			placeholder: query.groupBy.length === 0 ? "service.name" : "",
+			placeholder: groupBySelectionOf(query).length === 0 ? "service.name" : "",
 			emptyText: "No fields found",
 			className: "text-xs font-mono",
 			toView: (parts) => h.div([h.Class("flex-1 min-w-[140px]")], parts),
