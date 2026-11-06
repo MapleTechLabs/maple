@@ -100,10 +100,22 @@ describe("alert rule editor: anomaly rules", () => {
 	})
 
 	test("a scoped anomaly rule with nobody to page cannot be saved", () => {
-		const unrouted = run(opened({ template: "anomaly", serviceName: "search" }), [
-			Message.ChangedField({ field: "name", value: "Search anomalies" }),
-			Message.ClickedRemoveDestination({ tier: "warning", id: DESTINATION }),
+		const routed = run(opened({ template: "anomaly" }), [
+			Message.ChangedField({ field: "name", value: "Error rate anomalies" }),
+			Message.ToggledAnomalySignal({ signal: "error_rate" }),
+			pickExisting("warning", DESTINATION),
 		])
+		// Scoped and routed: the only thing left to take away is the destination.
+		scene(
+			{ update: pageUpdate, view },
+			given(routed),
+			themeResolved(),
+			expectView(role("button", { name: "Create rule" })).toBeEnabled(),
+		)
+		const unrouted = pageUpdate(
+			routed,
+			Message.ClickedRemoveDestination({ tier: "warning", id: DESTINATION }),
+		).model
 		scene(
 			{ update: pageUpdate, view },
 			given(unrouted),
