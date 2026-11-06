@@ -1,11 +1,12 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { SloId, SloLatencyThresholdMs, SloWindowDays } from "../../primitives"
-import { SloTargetPercent, type SloSli } from "../../slo"
+import { SLO_BURN_WINDOWS_MINUTES, SloTargetPercent, type SloSli } from "../../slo"
 import { SloNotFoundError, SloPersistenceError, SloValidationError } from "../slos"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
+import { V2WarehouseReadErrors } from "./query-errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 import { AlertRulePublicId } from "./resource-ids"
@@ -162,6 +163,73 @@ export const V2SloDeleteResponse = Schema.Struct({
 })
 export type V2SloDeleteResponse = Schema.Schema.Type<typeof V2SloDeleteResponse>
 
+const ratioField = (description: string) => Schema.Number.annotate({ description })
+
+export const V2SloBurnWindow = Schema.Struct({
+	window_minutes: Schema.Literals(SLO_BURN_WINDOWS_MINUTES).annotate({
+		description: "The window's length in minutes, ending at `as_of`.",
+	}),
+	burn_rate: ratioField(
+		"How fast the window spends the error budget: 1 spends exactly the budget over the SLO window.",
+	),
+	total_events: ratioField("Sampling-weighted entry-point spans in the window."),
+	good_events: ratioField("The good ones among them."),
+}).annotate({ identifier: "SloBurnWindow", title: "SLO burn window" })
+
+export const V2SloStatus = Schema.Struct({
+	object: Schema.Literal("slo.status"),
+	slo_id: SloPublicId,
+	as_of: Timestamp.annotate({ description: "When the status was read, to the minute." }),
+	total_events: ratioField("Sampling-weighted entry-point spans over the SLO window."),
+	good_events: ratioField("The good ones among them."),
+	sli: Schema.NullOr(Schema.Number).annotate({
+		description: "Share of good events over the SLO window (0 to 1), `null` when there were none.",
+	}),
+	budget_remaining: ratioField(
+		"Share of the window's error budget left: 1 untouched, 0 spent, negative when overspent.",
+	),
+	burn_windows: Schema.Array(V2SloBurnWindow).annotate({
+		description: "The windows the burn-rate alert reads: 5 minutes, 30 minutes, 1 hour and 6 hours.",
+	}),
+}).annotate({
+	identifier: "SloStatus",
+	title: "SLO status",
+	description: "Where an SLO stands now: its SLI, the budget left and how fast it burns.",
+})
+export type V2SloStatus = Schema.Schema.Type<typeof V2SloStatus>
+
+export const V2SloStatusList = Schema.Struct({
+	object: Schema.Literal("slo.status_list"),
+	data: Schema.Array(V2SloStatus).annotate({ description: "One status per SLO, in list order." }),
+}).annotate({
+	identifier: "SloStatusList",
+	title: "SLO status list",
+	description: "Every SLO's status at once, read together rather than one request per SLO.",
+})
+export type V2SloStatusList = Schema.Schema.Type<typeof V2SloStatusList>
+
+export const V2SloHistoryPoint = Schema.Struct({
+	at: Timestamp,
+	sli: Schema.NullOr(Schema.Number).annotate({
+		description: "Share of good events in the bucket ending here, `null` when there were none.",
+	}),
+	budget_remaining: ratioField("Budget left over the SLO window ending here."),
+	burn_rate: ratioField("Burn rate of the bucket ending here."),
+}).annotate({ identifier: "SloHistoryPoint", title: "SLO history point" })
+
+export const V2SloHistory = Schema.Struct({
+	object: Schema.Literal("slo.history"),
+	slo_id: SloPublicId,
+	as_of: Timestamp,
+	bucket_seconds: Schema.Number.annotate({ description: "Width of each point's bucket." }),
+	points: Schema.Array(V2SloHistoryPoint).annotate({ description: "Oldest first, over the SLO window." }),
+}).annotate({
+	identifier: "SloHistory",
+	title: "SLO history",
+	description: "The error budget over the SLO window, one point per hour.",
+})
+export type V2SloHistory = Schema.Schema.Type<typeof V2SloHistory>
+
 const [sloNotFound, sloValidation, sloPersistence] = publicErrors(
 	SloNotFoundError,
 	SloValidationError,
@@ -186,6 +254,19 @@ export class V2SlosApiGroup extends HttpApiGroup.make("slos")
 				summary: "List SLOs",
 				description:
 					"Returns your organization's SLOs, most recently created first. Cursor-paginated.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.get("statuses", "/statuses", {
+			success: V2SloStatusList,
+			error: [sloPersistence, ...V2WarehouseReadErrors],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "listSloStatuses",
+				summary: "List every SLO's status",
+				description:
+					"Returns the SLI, budget left and burn windows of every SLO in the organization, read together.",
 			}),
 		),
 	)
@@ -241,6 +322,33 @@ export class V2SlosApiGroup extends HttpApiGroup.make("slos")
 				summary: "Delete an SLO",
 				description:
 					"Permanently deletes an SLO and its burn-rate alert rule. Requires a caller who can manage alerts.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.get("status", "/:id/status", {
+			params: { id: SloPublicId },
+			success: V2SloStatus,
+			error: [sloNotFound, sloPersistence, ...V2WarehouseReadErrors],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "getSloStatus",
+				summary: "Retrieve an SLO's status",
+				description:
+					"Returns the SLO's SLI and error budget over its window, and its current burn rates.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.get("history", "/:id/history", {
+			params: { id: SloPublicId },
+			success: V2SloHistory,
+			error: [sloNotFound, sloPersistence, ...V2WarehouseReadErrors],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "getSloHistory",
+				summary: "Retrieve an SLO's budget history",
+				description: "Returns the error budget left over the SLO window, one point per hour.",
 			}),
 		),
 	)

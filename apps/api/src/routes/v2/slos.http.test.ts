@@ -14,6 +14,13 @@ import { DashboardPersistenceService } from "@maple/backend/services/dashboards/
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
+import {
+	WarehouseQueryService,
+	type WarehouseQueryServiceApi,
+} from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
+import { compiledQueryOf } from "@maple/query-engine/execution"
+import { formatWarehouseDateTime } from "@maple/query-engine"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
 	AlertsServiceStubLayer,
@@ -50,7 +57,18 @@ const testConfig = () =>
 		}),
 	)
 
-const makeHarness = () => {
+/** A warehouse whose SLO reads answer from fixed rows, decoded like real ones. */
+const sloWarehouse = (
+	rowsByContext: Record<string, ReadonlyArray<Record<string, unknown>>>,
+): WarehouseQueryServiceApi =>
+	makeWarehouseServiceStub({
+		compiledQuery: (_tenant, compiled, options) =>
+			compiledQueryOf(compiled)
+				.decodeRows(rowsByContext[options?.context ?? ""] ?? [])
+				.pipe(Effect.orDie),
+	})
+
+const makeHarness = (warehouse: WarehouseQueryServiceApi = makeWarehouseServiceStub()) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
 	const servicesLive = Layer.mergeAll(
@@ -64,6 +82,8 @@ const makeHarness = () => {
 
 	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 		Layer.provide(AllV2GroupLayersLive),
+		// Ahead of the stub bundles, which carry an inert warehouse of their own.
+		Layer.provide(Layer.succeed(WarehouseQueryService, warehouse)),
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
@@ -116,10 +136,13 @@ const makeHarness = () => {
 	}
 }
 
-const withHarness = (body: (harness: ReturnType<typeof makeHarness>) => Promise<void>) =>
+const withHarness = (
+	body: (harness: ReturnType<typeof makeHarness>) => Promise<void>,
+	warehouse?: WarehouseQueryServiceApi,
+) =>
 	Effect.runPromise(
 		Effect.acquireUseRelease(
-			Effect.sync(makeHarness),
+			Effect.sync(() => makeHarness(warehouse)),
 			(harness) => Effect.promise(() => body(harness)),
 			(harness) => Effect.promise(() => harness.dispose()),
 		),
@@ -250,4 +273,105 @@ describe("v2 slos", () => {
 			const { secret: writer } = await harness.bootstrapKey(undefined, ["slos:write"])
 			expect((await harness.request("PATCH", path, writer, { target_percent: 99 })).status).toBe(200)
 		}))
+
+	it("reports the SLI, budget left and burn windows from the warehouse", () => {
+		const nowMinute = Math.floor(Date.now() / 60_000) * 60_000
+		// 2% of every minute is bad: 20x the 0.1% budget in every window.
+		const minutes = Arr.makeBy(400, (index) => ({
+			bucket: formatWarehouseDateTime(nowMinute - (index - 1) * 60_000),
+			total: 100,
+			good: 98,
+		}))
+		const warehouse = sloWarehouse({
+			sloWindowTotals: [{ total: 10_000, good: 9_995 }],
+			sloBurnWindows: minutes,
+		})
+		return withHarness(async (harness) => {
+			const { secret: token } = await harness.bootstrapKey()
+			const created = await harness.request("POST", "/v2/slos", token, checkoutSlo)
+			const status = await harness.request("GET", `/v2/slos/${created.body.id}/status`, token)
+			expect(status.status).toBe(200)
+			expect(status.body).toMatchObject({ object: "slo.status", slo_id: created.body.id })
+			expect(status.body.total_events).toBe(10_000)
+			expect(status.body.sli).toBeCloseTo(0.9995)
+			expect(status.body.budget_remaining).toBeCloseTo(0.5)
+			expect(
+				Arr.map(status.body.burn_windows, (window: { window_minutes: number; burn_rate: number }) => [
+					window.window_minutes,
+					Math.round(window.burn_rate),
+				]),
+			).toEqual([
+				[5, 20],
+				[30, 20],
+				[60, 20],
+				[360, 20],
+			])
+
+			// An SLO that is gone, or another org's, is a 404 on both reads.
+			const gone = "slo_YofPTrK9782DWwcnXhpcCw"
+			const missing = await Promise.all([
+				harness.request("GET", `/v2/slos/${gone}/status`, token),
+				harness.request("GET", `/v2/slos/${gone}/history`, token),
+			])
+			expect(Arr.map(missing, (response) => [response.status, response.body.error.code])).toEqual([
+				[404, "slo_not_found"],
+				[404, "slo_not_found"],
+			])
+
+			const history = await harness.request("GET", `/v2/slos/${created.body.id}/history`, token)
+			expect(history.status).toBe(200)
+			// 30 days of hourly points, untouched since the stub has no hourly rows.
+			expect(history.body.points).toHaveLength(720)
+			expect(history.body.points[0].budget_remaining).toBe(1)
+		}, warehouse)
+	})
+
+	it("reads every SLO's status in one batch, counting only each SLO's service and environments", () => {
+		const burn = (total: number, good: number) => ({
+			total5: total,
+			good5: good,
+			total30: total * 6,
+			good30: good * 6,
+			total60: total * 12,
+			good60: good * 12,
+			total360: total * 72,
+			good360: good * 72,
+		})
+		const warehouse = sloWarehouse({
+			sloStatusTotals: [
+				{ serviceName: "checkout", environment: "production", total: 10_000, good: 9_995 },
+				// Outside the checkout SLO's environments: counting it would spend the whole budget.
+				{ serviceName: "checkout", environment: "staging", total: 500, good: 0 },
+				{ serviceName: "search", environment: "production", total: 2_000, good: 2_000 },
+			],
+			sloStatusBurn: [
+				{ serviceName: "checkout", environment: "production", ...burn(100, 98) },
+				{ serviceName: "checkout", environment: "staging", ...burn(100, 0) },
+				{ serviceName: "search", environment: "production", ...burn(100, 100) },
+			],
+		})
+		return withHarness(async (harness) => {
+			const { secret: token } = await harness.bootstrapKey()
+			const checkout = await harness.request("POST", "/v2/slos", token, checkoutSlo)
+			const search = await harness.request("POST", "/v2/slos", token, {
+				name: "Search latency",
+				service_name: "search",
+				sli: { type: "latency", threshold_ms: 500 },
+				target_percent: 99,
+			})
+			const listed = await harness.request("GET", "/v2/slos/statuses", token)
+			expect(listed.status).toBe(200)
+			expect(listed.body.object).toBe("slo.status_list")
+			const byId = new Map(
+				Arr.map(listed.body.data, (status: { slo_id: string }) => [status.slo_id, status] as const),
+			)
+			const checkoutStatus = byId.get(checkout.body.id)
+			expect(checkoutStatus.total_events).toBe(10_000)
+			expect(checkoutStatus.budget_remaining).toBeCloseTo(0.5)
+			expect(Math.round(checkoutStatus.burn_windows[0].burn_rate)).toBe(20)
+			const searchStatus = byId.get(search.body.id)
+			expect(searchStatus.sli).toBe(1)
+			expect(searchStatus.burn_windows[3].burn_rate).toBe(0)
+		}, warehouse)
+	})
 })

@@ -1,13 +1,28 @@
 import { randomUUID } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Slos, type SloRow } from "@maple/db/tables"
-import { SloNotFoundError, SloPersistenceError, SloValidationError } from "@maple/domain/http"
+import {
+	SloNotFoundError,
+	SloPersistenceError,
+	SloValidationError,
+	type WarehouseReadError,
+} from "@maple/domain/http"
 import { type AlertRuleId, type OrgId, SloId, SloWindowDays, type UserId } from "@maple/domain/primitives"
-import { SloSli, SloTargetPercent } from "@maple/domain/slo"
+import {
+	budgetRemaining,
+	sliRatio,
+	SloTargetPercent,
+	type SloBurnWindow,
+	type SloHistoryPoint,
+	type SloSli,
+} from "@maple/domain/slo"
 import { Array as Arr, Clock, Context, Effect, Layer, Schema, String as Str } from "effect"
 import type { MapleDb } from "@maple/db/client"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import type { TenantContext } from "@maple/backend/services/auth/AuthService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { readBudgetHistory, readBurnWindows, readStatuses, readWindowTotals } from "./slo-reads"
 
 export interface SloRecord {
 	readonly id: SloId
@@ -48,6 +63,26 @@ export interface UpdateSloInput {
 
 type SloError = SloNotFoundError | SloValidationError | SloPersistenceError
 
+export interface SloStatus {
+	/** The read's end, snapped to the minute. */
+	readonly asOfMs: number
+	readonly total: number
+	readonly good: number
+	/** Good share over the SLO window, `null` without events. */
+	readonly sli: number | null
+	/** Share of the window's budget left: 1 untouched, negative when overspent. */
+	readonly budgetRemaining: number
+	readonly burnWindows: ReadonlyArray<SloBurnWindow>
+}
+
+export interface SloHistory {
+	readonly asOfMs: number
+	readonly bucketSeconds: number
+	readonly points: ReadonlyArray<SloHistoryPoint>
+}
+
+type SloReadError = SloNotFoundError | SloPersistenceError | WarehouseReadError
+
 export interface SlosServiceApi {
 	readonly list: (orgId: OrgId) => Effect.Effect<ReadonlyArray<SloRecord>, SloPersistenceError>
 	readonly get: (
@@ -63,6 +98,17 @@ export interface SlosServiceApi {
 		orgId: OrgId,
 		sloId: SloId,
 	) => Effect.Effect<SloId, SloNotFoundError | SloPersistenceError>
+	/** Where the SLO stands now: its SLI, budget left and each burn window. */
+	readonly status: (tenant: TenantContext, sloId: SloId) => Effect.Effect<SloStatus, SloReadError>
+	/** Every SLO's status at once, for the SLOs list: a handful of reads, not two per SLO. */
+	readonly statuses: (
+		tenant: TenantContext,
+	) => Effect.Effect<
+		ReadonlyArray<{ readonly slo: SloRecord; readonly status: SloStatus }>,
+		SloPersistenceError | WarehouseReadError
+	>
+	/** The budget chart: hourly points over the SLO window. */
+	readonly history: (tenant: TenantContext, sloId: SloId) => Effect.Effect<SloHistory, SloReadError>
 }
 
 export const DEFAULT_SLO_WINDOW_DAYS: SloWindowDays = 30
@@ -142,6 +188,9 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 		make: Effect.gen(function* () {
 			const database = yield* Database
 			const dbExecute = makeDbExecute(database, "SlosService", toPersistenceError)
+			const warehouse = yield* WarehouseQueryService
+			const withWarehouse = Effect.provideService(WarehouseQueryService, warehouse)
+			const nowMinute = Effect.map(Clock.currentTimeMillis, (now) => Math.floor(now / 60_000) * 60_000)
 
 			const selectOne = (orgId: OrgId, sloId: SloId) =>
 				dbExecute((db) =>
@@ -282,9 +331,66 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 				return sloId
 			})
 
-			return { list, get, create, update, delete: remove } satisfies SlosServiceApi
+			const status = Effect.fn("SlosService.status")(function* (tenant: TenantContext, sloId: SloId) {
+				yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.slo.id": sloId })
+				const slo = yield* selectOne(tenant.orgId, sloId)
+				const asOfMs = yield* nowMinute
+				const [totals, windows] = yield* Effect.all(
+					[readWindowTotals(tenant, slo, asOfMs), readBurnWindows(tenant, slo, asOfMs)],
+					{ concurrency: 2 },
+				).pipe(withWarehouse)
+				return {
+					asOfMs,
+					total: totals.total,
+					good: totals.good,
+					sli: sliRatio(totals),
+					budgetRemaining: budgetRemaining(totals, slo.targetPercent),
+					burnWindows: windows,
+				} satisfies SloStatus
+			})
+
+			const statuses = Effect.fn("SlosService.statuses")(function* (tenant: TenantContext) {
+				yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+				const slos = yield* list(tenant.orgId)
+				const asOfMs = yield* nowMinute
+				const read = yield* readStatuses(tenant, slos, asOfMs).pipe(withWarehouse)
+				return Arr.map(slos, (slo) => {
+					const found = read.get(slo.id)
+					const totals = found?.totals ?? { total: 0, good: 0 }
+					return {
+						slo,
+						status: {
+							asOfMs,
+							total: totals.total,
+							good: totals.good,
+							sli: sliRatio(totals),
+							budgetRemaining: budgetRemaining(totals, slo.targetPercent),
+							burnWindows: found?.windows ?? [],
+						} satisfies SloStatus,
+					}
+				})
+			})
+
+			const history = Effect.fn("SlosService.history")(function* (tenant: TenantContext, sloId: SloId) {
+				yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.slo.id": sloId })
+				const slo = yield* selectOne(tenant.orgId, sloId)
+				const asOfMs = yield* nowMinute
+				const points = yield* readBudgetHistory(tenant, slo, asOfMs).pipe(withWarehouse)
+				return { asOfMs, bucketSeconds: 3600, points } satisfies SloHistory
+			})
+
+			return {
+				list,
+				get,
+				create,
+				update,
+				delete: remove,
+				status,
+				statuses,
+				history,
+			} satisfies SlosServiceApi
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make)
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WarehouseQueryService.layer))
 }
