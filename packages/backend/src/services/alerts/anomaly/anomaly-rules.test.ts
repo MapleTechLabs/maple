@@ -65,7 +65,6 @@ describe("anomaly rule normalization", () => {
 					serviceNames: ["checkout"],
 					environments: ["production"],
 					anomalySignals: ["error_rate", "error_rate", "latency_p95"],
-					excludeServiceNames: ["cart"],
 					thresholds: [
 						{
 							severity: "warning",
@@ -154,6 +153,19 @@ describe("anomaly rule normalization", () => {
 			)
 			assert.strictEqual(error._tag, "@maple/http/errors/AlertValidationError")
 			assert.include(error.message, "anomalySignals is only supported for anomaly alerts")
+		}),
+	)
+
+	it.effect("rejects excluded services, which anomaly scope cannot honour", () =>
+		Effect.gen(function* () {
+			const { normalizeRule } = makeAlertRuleNormalizer(yield* makeRuntime)
+			const error = yield* Effect.flip(
+				normalizeRule(ORG, anomalyRequest({ excludeServiceNames: ["checkout"] }), {
+					forPreview: true,
+				}),
+			)
+			assert.strictEqual(error._tag, "@maple/http/errors/AlertValidationError")
+			assert.include(error.message, "excludeServiceNames is not supported for anomaly alerts")
 		}),
 	)
 })

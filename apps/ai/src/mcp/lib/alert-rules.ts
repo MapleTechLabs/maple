@@ -216,11 +216,13 @@ const evaluationBlocks = (
 			? "The rule is disabled, so the scheduler will not evaluate it."
 			: `First scheduled evaluation by ${Str.slice(0, 19)(evaluation.nextEvaluationAt)}Z (every ${intervalMinutes}m after), no need to poll list_alert_checks before then.`
 	const now =
-		evaluation.previewError !== undefined
-			? `A preview of the latest window failed: ${evaluation.previewError}. Run preview_alert_rule to see what it observes.`
-			: evaluation.current.length === 0
-				? "A preview of the latest window returned no series."
-				: undefined
+		evaluation.previewSkipped !== undefined
+			? evaluation.previewSkipped
+			: evaluation.previewError !== undefined
+				? `A preview of the latest window failed: ${evaluation.previewError}. Run preview_alert_rule to see what it observes.`
+				: evaluation.current.length === 0
+					? "A preview of the latest window returned no series."
+					: undefined
 	return [
 		doc.text(now === undefined ? when : `${when}\n${now}`),
 		...(evaluation.current.length === 0
