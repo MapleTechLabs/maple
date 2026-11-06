@@ -3370,7 +3370,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							planned !== null || owed
 								? yield* findActiveSilence(row.orgId, tierRule, groupKey, timestamp)
 								: null
-						const catchUp = owed && silence === null
+						// An acknowledged incident gets no reminder, so no catch-up either; `silencedAt` stays,
+						// so an escalation that clears the ack still sends the page that was held back.
+						const catchUp = owed && silence === null && openIncident.acknowledgedAt === null
 						const notifyEvent: AlertEventTypeValue | null =
 							silence !== null
 								? null
