@@ -42,5 +42,7 @@ export const Model = Schema.Struct({
 	silenceDialog: SilenceDialog.Model,
 	/** What the session may do (`Policy.grantsOf`); none until it answers, so Silence stays hidden. */
 	grants: Schema.Array(Policy.PermissionName),
+	/** The clock as read, not floored: a silence created this minute is already in force. */
+	clockMs: Schema.NullOr(Schema.Number),
 })
 export type Model = typeof Model.Type

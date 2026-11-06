@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import * as Policy from "@maple/domain/policy"
-import { AlertRulePreviewResponse } from "@maple/domain/http"
+import { AlertRuleId, AlertRulePreviewResponse, AlertSilenceId } from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
 import {
 	click,
@@ -341,6 +341,46 @@ describe("alert incident, silences", () => {
 			label: "Rule 2 · checkout",
 			matchers: { rule_ids: [ruleRow(2).id], services: ["checkout"] },
 		})
+	})
+
+	test("shows the badge for a silence that started earlier in the current minute", () => {
+		// The page floors its clock to the minute; a silence created just now starts after that floor.
+		const clock = Math.floor(NOW / 60_000) * 60_000 + 40_000
+		const model = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: clock }),
+				Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow()] }),
+				Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2)] }),
+			],
+			init(route(), context).model,
+			(current, message) => step(current, message).model,
+		)
+		const silence = {
+			id: Schema.decodeSync(AlertSilenceId)("22222222-2222-4222-8222-222222222222"),
+			object: "alert_silence" as const,
+			reason: "Deploy",
+			matchers: { rule_ids: [Schema.decodeSync(AlertRuleId)(ruleRow(2).id)] },
+			status: "active" as const,
+			starts_at: new Date(clock - 10_000).toISOString(),
+			ends_at: new Date(clock + 60 * 60_000).toISOString(),
+			created_by: "user_1",
+			created_at: new Date(clock).toISOString(),
+			updated_at: new Date(clock).toISOString(),
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				step(
+					model,
+					Message.CompletedFetchSilences({
+						key: model.silences.key ?? "",
+						result: Result.succeed([silence]),
+					}),
+				).model,
+			),
+			themeResolved(),
+			expectView(text(/^Silenced until /u)).toExist(),
+		)
 	})
 
 	test("offers Silence to managers once the rule is known, and never to members", () => {

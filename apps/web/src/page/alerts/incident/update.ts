@@ -103,7 +103,7 @@ const openSilence = (model: Model, context: PageContext): Return =>
 							model.silenceDialog,
 							target,
 							context.timeZone,
-							model.nowMs ?? 0,
+							model.clockMs ?? 0,
 						),
 					)
 				},
@@ -128,6 +128,7 @@ export const init = (route: IncidentRoute, context: PageContext): Return => {
 			silences: Keyed.idle(),
 			silenceDialog: SilenceDialog.init("alert-incident-silence"),
 			grants: [],
+			clockMs: null,
 		},
 		commands: [
 			ReadIncidentClock(),
@@ -317,7 +318,7 @@ const withIncidents = (
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		ReadClock: ({ nowMs }) => followData({ ...model, nowMs: minuteOf(nowMs) }, context),
+		ReadClock: ({ nowMs }) => followData({ ...model, nowMs: minuteOf(nowMs), clockMs: nowMs }, context),
 		UpdatedIncidents: ({ orgId, rows }) => withIncidents(model, context, orgId, rows),
 		UpdatedRules: ({ orgId, rows }) => withRuleRows(model, context, orgId, { rules: rows }),
 		UpdatedRuleStates: ({ orgId, rows }) => withRuleRows(model, context, orgId, { states: rows }),

@@ -133,8 +133,10 @@ const isOpenIncident = (model: Model): boolean =>
 	})
 
 /** "Silenced until 15:00" over an open incident, or a note when the silences could not be read. */
-const silenceBadges = (h: H, model: Model, view: IncidentView, now: number, timeZone: string) => {
+const silenceBadges = (h: H, model: Model, view: IncidentView, timeZone: string) => {
 	if (view.incident.status !== "open") return []
+	// The unfloored clock: a silence created this minute is in force already.
+	const now = model.clockMs ?? model.nowMs ?? 0
 	if (AsyncData.isFailure(model.silences.data)) return [silenceCheckFailed(h)]
 	return Option.toArray(
 		Option.map(
@@ -349,7 +351,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						view.rule,
 						now,
 						timeZone,
-						silenceBadges(h, model, view, now, timeZone),
+						silenceBadges(h, model, view, timeZone),
 					),
 					actions: headerAction(
 						h,
