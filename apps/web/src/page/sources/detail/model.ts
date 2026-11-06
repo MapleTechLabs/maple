@@ -1,5 +1,6 @@
 import { V2SourceUsage } from "@maple/domain/http/v2"
 import { SourceId } from "@maple/domain/primitives"
+import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -18,7 +19,11 @@ import { Model as IntegrationModel } from "../../integrations/model"
 // `/sources/$sourceId`.
 
 /** `RevealedToken`: the one-time token from a roll, held while this page is open. */
-export const RevealedToken = Schema.Struct({ sourceId: SourceId, secret: Schema.String, rolled: Schema.Boolean })
+export const RevealedToken = Schema.Struct({
+	sourceId: SourceId,
+	secret: Schema.String,
+	rolled: Schema.Boolean,
+})
 export type RevealedToken = typeof RevealedToken.Type
 
 /** The one write in flight (`useAsyncAction`'s pending, the delete dialog's running state). */
@@ -39,6 +44,8 @@ export const Model = Schema.Struct({
 	/** `fromPublicSourceId(sourceId)`: `null` for an id that does not decode (not found, no request). */
 	sourceId: Schema.NullOr(SourceId),
 	tab: Schema.Literals(SOURCE_TABS),
+	/** The session's permissions (`null` until read): anyone reads a source, `sources:manage` changes it. */
+	grants: Schema.NullOr(Schema.Array(Policy.PermissionName)),
 	/** `Date.now()` at render, read once on entry for the relative times. */
 	nowMs: Schema.NullOr(Schema.Number),
 	list: KeyedSchema(SourceList, LoadFailure),
@@ -60,3 +67,6 @@ export const Model = Schema.Struct({
 	connection: Schema.NullOr(IntegrationModel),
 })
 export type Model = typeof Model.Type
+
+export const canManage = (model: Pick<Model, "grants">): boolean =>
+	model.grants !== null && Policy.has(model.grants, "sources:manage")

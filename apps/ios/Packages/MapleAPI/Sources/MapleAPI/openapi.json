@@ -13993,7 +13993,7 @@
       "name": "Ingest Keys"
     },
     {
-      "description": "Everything that sends data to your organization: OpenTelemetry SDKs and collectors, Kubernetes clusters, Prometheus scrapes and cloud integrations. Push sources get their own token with allowed signals, a rate limit and resource attributes. All operations are admin-only.",
+      "description": "Everything that sends data to your organization: OpenTelemetry SDKs and collectors, Kubernetes clusters, Prometheus scrapes and cloud integrations. Push sources get their own token with allowed signals, a rate limit and resource attributes. Every member can read sources; changing them needs an org-admin or engineer role.",
       "name": "Sources"
     },
     {

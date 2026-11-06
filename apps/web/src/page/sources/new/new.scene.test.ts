@@ -29,7 +29,7 @@ import { Message as IntegrationMessage } from "../../integrations/message"
 import { ScrollToTop } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, routeChanged, update } from "./update"
+import { initPage as init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 import { trailOf } from "./view-trail"
 
@@ -86,6 +86,17 @@ const created = (lastUsedAt: string | null = null) =>
 	})
 
 describe("connect a source", () => {
+	test("a member without sources:manage is told who can connect, not shown the picker", () => {
+		const entered = init(route("nodejs"), context).model
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(entered, Message.CompletedReadGrants({ grants: [] })).model),
+			expectView(text("Only org admins and engineers can connect sources")).toExist(),
+			expectView(role("link", { name: "View sources" })).toHaveAttr("href", "/sources"),
+			expectView(role("textbox")).not.toExist(),
+		)
+	})
+
 	test("the picker reads the integration statuses; a push card sets the platform, an integration card its step", () => {
 		const entered = init(route(), context)
 		expect(names(entered.commands)).toEqual(expect.arrayContaining(STATUS_READS))
