@@ -81,6 +81,8 @@ export const AlertRuleFirstEvaluation = Schema.Struct({
 	),
 	/** Set when the preview could not run; the rule saved regardless. */
 	previewError: Schema.optionalKey(Schema.String),
+	/** Set when the rule has nothing to preview, e.g. an anomaly rule. */
+	previewSkipped: Schema.optionalKey(Schema.String),
 })
 
 const FirstEvaluation = Schema.optionalKey(AlertRuleFirstEvaluation)

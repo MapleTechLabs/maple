@@ -1660,7 +1660,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				}
 				const oldNormalized = yield* normalizeRuleRow(oldRow)
 				const newNormalized = yield* normalizeRule(orgId, request)
-				const result = yield* upsertRuleRow(orgId, userId, ruleId, request, oldRow.signalType)
+				const result = yield* upsertRuleRow(orgId, userId, ruleId, request)
 
 				// Resolve stale incidents caused by the configuration change
 
@@ -5256,15 +5256,19 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						).pipe(flushingStates)
 
 						const evaluatedGroups = HashSet.fromIterable(Arr.map(eligible, (r) => r.groupKey))
-						yield* resolveOrphanedGroupIncidents(
-							row.orgId,
-							normalized.id,
-							normalized,
-							evaluatedGroups,
-							timestamp,
-							prefetch.openIncidentsForRule(row.orgId, row.id),
-							pushBudget,
-						)
+						// An anomaly rule's source reports every open incident it still owns, so a missing
+						// group was closed elsewhere; never probe the warehouse for it.
+						if (normalized.signalType !== "anomaly") {
+							yield* resolveOrphanedGroupIncidents(
+								row.orgId,
+								normalized.id,
+								normalized,
+								evaluatedGroups,
+								timestamp,
+								prefetch.openIncidentsForRule(row.orgId, row.id),
+								pushBudget,
+							)
+						}
 
 						// Self-heal state rows whose key shape contradicts the rule's
 						// groupedness: a grouped rule can never legitimately own an

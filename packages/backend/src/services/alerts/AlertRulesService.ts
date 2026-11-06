@@ -191,8 +191,6 @@ export const makeAlertRulePersistence = (options: {
 		userId: UserId,
 		existingId: AlertRuleId | null,
 		request: AlertRuleUpsertRequest,
-		/** The stored rule's signal type on an edit; null on create. */
-		previousSignalType: string | null = null,
 	) {
 		const normalized = yield* normalizeRule(orgId, request)
 		const ruleId = existingId ?? normalized.id
@@ -273,13 +271,9 @@ export const makeAlertRulePersistence = (options: {
 							})
 						}
 					}
-					// One default anomaly rule per org, kept enabled and unscoped while it exists.
-					// Only an edit that is or was an anomaly rule can touch it.
-					const touchesAnomaly =
-						normalized.signalType === "anomaly" || previousSignalType === "anomaly"
-					const defaultAnomalyRule = touchesAnomaly
-						? yield* findDefaultAnomalyRule(db, orgId)
-						: Option.none()
+					// One default anomaly rule per org, kept enabled and unscoped while it exists. Read
+					// under the lock for every write, so a concurrent edit cannot turn this row into it unseen.
+					const defaultAnomalyRule = yield* findDefaultAnomalyRule(db, orgId)
 					const becomesDefault =
 						normalized.signalType === "anomaly" && isDefaultAnomalyScope(normalized)
 					// A disabled unscoped rule would hold the default slot and block the backfill.
@@ -413,9 +407,8 @@ export const makeAlertRulePersistence = (options: {
 		userId: UserId,
 		existingId: AlertRuleId,
 		request: AlertRuleUpsertRequest,
-		previousSignalType: string | null = null,
 	) {
-		const { ruleId, txid } = yield* writeRuleRow(orgId, userId, existingId, request, previousSignalType)
+		const { ruleId, txid } = yield* writeRuleRow(orgId, userId, existingId, request)
 		const row = yield* findRuleRow(orgId, ruleId)
 		if (row === undefined) {
 			return yield* new AlertPersistenceError({

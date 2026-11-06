@@ -71,7 +71,12 @@ export const firstEvaluation = Effect.fn("McpTool.alertFirstEvaluation")(functio
 		: null
 	// An anomaly rule reads the detector's open incidents, not a query, so there is nothing to preview.
 	if (rule.signalType === "anomaly") {
-		const evaluation: typeof AlertRuleFirstEvaluation.Type = { nextEvaluationAt, current: [] }
+		const evaluation: typeof AlertRuleFirstEvaluation.Type = {
+			nextEvaluationAt,
+			current: [],
+			previewSkipped:
+				"An anomaly rule pages on the anomaly detector's open anomalies, so there is no query window to preview.",
+		}
 		return { evaluation, warnings: noWarnings }
 	}
 	const lookbackMs = Math.max(rule.windowMinutes * 6, 60) * 60_000

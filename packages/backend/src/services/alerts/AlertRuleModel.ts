@@ -929,6 +929,9 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		const comparator = anomaly ? ANOMALY_RULE_DEFAULTS.comparator : request.comparator
 		const details: string[] = []
 		if (name.length === 0 && !options?.forPreview) details.push("name is required")
+		if (anomaly && Arr.some(request.excludeServiceNames ?? [], (service) => Str.trim(service).length > 0)) {
+			details.push("excludeServiceNames is not supported for anomaly alerts; scope by serviceNames instead")
+		}
 		if (!anomaly && request.anomalySignals !== undefined && request.anomalySignals.length > 0) {
 			details.push("anomalySignals is only supported for anomaly alerts")
 		}
