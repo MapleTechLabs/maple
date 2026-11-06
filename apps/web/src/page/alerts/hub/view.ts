@@ -23,6 +23,9 @@ import { alertsEmptyState } from "./view-empty"
 import { inboxTab } from "./view-inbox"
 import { routingTab } from "./view-routing"
 import * as DestinationDialogView from "../destination/view"
+import * as ChainDialogView from "../escalation-dialog/view"
+import { deleteChainDialog } from "./view-chains"
+import { CHAIN_DIALOG_ID } from "./update"
 import { rulesTab } from "./view-rules"
 import { deleteMonitorDialog, uptimeTab } from "./view-uptime"
 import { slosTab } from "./view-slos"
@@ -314,6 +317,14 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			),
 			deleteDialog(h, model),
 			deleteMonitorDialog(h, model),
+			deleteChainDialog(h, model),
+			h.submodel({
+				slotId: CHAIN_DIALOG_ID,
+				model: model.chainDialog,
+				view: ChainDialogView.view,
+				viewInputs: { id: CHAIN_DIALOG_ID, destinations: model.destinations },
+				toParentMessage: (message) => Message.GotChainDialogMessage({ message }),
+			}),
 			h.submodel({
 				slotId: "alerts-destination",
 				model: model.destinationDialog,

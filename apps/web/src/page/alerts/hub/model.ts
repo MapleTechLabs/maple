@@ -1,7 +1,12 @@
 import * as Policy from "@maple/domain/policy"
 import { UptimeMonitorId } from "@maple/domain"
-import { AlertDeliveryEventDocument, AlertDestinationId, AlertRuleId } from "@maple/domain/http"
-import { V2Slo, V2SloStatus, V2UptimeMonitor } from "@maple/domain/http/v2"
+import {
+	AlertDeliveryEventDocument,
+	AlertDestinationId,
+	AlertRuleId,
+	EscalationChainId,
+} from "@maple/domain/http"
+import { V2EscalationChain, V2Slo, V2SloStatus, V2UptimeMonitor } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -15,6 +20,7 @@ import { AlertsSearch } from "../../../route/search"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
+import * as ChainDialog from "../escalation-dialog/dialog"
 import { ServiceNamespaces } from "./uptime-groups"
 
 // The `/alerts` hub.
@@ -80,6 +86,14 @@ export const Model = Schema.Struct({
 	deleteMonitorDialog: Dialog.Model,
 	/** SLOs tab: `slos.list` and each SLO's status, read only while the tab is open. */
 	slos: KeyedSchema(Schema.Array(SloListRow), LoadFailure),
+	/** Routing tab: `escalationChains.list`, read only while the tab is open. */
+	chains: KeyedSchema(Schema.Array(V2EscalationChain), LoadFailure),
+	chainDialog: ChainDialog.Model,
+	/** The chain awaiting delete confirmation, the delete in flight, and why the last one was refused. */
+	confirmDeleteChainId: Schema.NullOr(EscalationChainId),
+	deletingChainId: Schema.NullOr(EscalationChainId),
+	deleteChainError: Schema.NullOr(Schema.String),
+	deleteChainDialog: Dialog.Model,
 })
 export type Model = typeof Model.Type
 

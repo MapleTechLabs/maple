@@ -31,6 +31,7 @@ import { createHref } from "../shared/links"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { destinationMenuId } from "./update"
+import { chainsSection } from "./view-chains"
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -77,6 +78,8 @@ export const routingTab = (h: H, model: Model, inputs: RoutingInputs): Html => {
 					destinationsSection(h, model, inputs, events),
 				],
 			),
+			separator(h, "horizontal", undefined),
+			chainsSection(h, model),
 			separator(h, "horizontal", undefined),
 			h.section(
 				[h.Class("space-y-4")],
@@ -456,7 +459,12 @@ const logRow = (h: H, model: Model, inputs: RoutingInputs, event: AlertDeliveryE
 	const ev = eventTypeMeta[event.eventType]
 	const status = deliveryStatusMeta[event.status]
 	// Delivery events carry only the type; a `chat` destination's logo comes from its connector.
-	const chatConnector = inputs.destinations.find((d) => d.id === event.destinationId)?.chatConnector
+	const chatConnector = Option.getOrUndefined(
+		Option.flatMapNullishOr(
+			Arr.findFirst(inputs.destinations, (d) => d.id === event.destinationId),
+			(d) => d.chatConnector,
+		),
+	)
 	return tableRow(h, [
 		tableCell(h, [
 			hstack(h, { gap: "1.5", as: "span" }, [
