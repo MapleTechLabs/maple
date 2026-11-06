@@ -1043,6 +1043,27 @@ const make: Effect.Effect<
 		)
 	})
 
+	/**
+	 * Skip a system transition that lost to a concurrent move (it is only ever attempted from a
+	 * state where the move is legal, so a refusal is the race), and keep ticking.
+	 */
+	const skipLostTransition =
+		(issueId: ErrorIssueId, via: string) =>
+		<A>(
+			effect: Effect.Effect<
+				A,
+				ErrorPersistenceError | ErrorIssueNotFoundError | ErrorIssueTransitionError
+			>,
+		) =>
+			effect.pipe(
+				Effect.catchTag("@maple/http/errors/ErrorIssueTransitionError", (error) =>
+					Effect.logInfo("Skipped a tick transition another writer beat").pipe(
+						Effect.annotateLogs({ issueId, via, message: error.message }),
+						Effect.as(undefined),
+					),
+				),
+			)
+
 	const expireLeasesForOrg = Effect.fn("ErrorsService.expireLeases")(function* (
 		orgId: OrgId,
 		nowMs: number,
@@ -1054,7 +1075,8 @@ const make: Effect.Effect<
 		yield* Effect.forEach(expired, (row) =>
 			Effect.gen(function* () {
 				const prevActorId = row.leaseHolderActorId
-				yield* dbExecute((db) =>
+				// Still expired: a heartbeat committed since the preamble read keeps the lease.
+				const cleared = yield* dbExecute((db) =>
 					db.run(
 						PG.update(ErrorIssues)
 							.set({
@@ -1063,19 +1085,25 @@ const make: Effect.Effect<
 								claimedAt: null,
 								updatedAt: nowMs,
 							})
-							.where(($) => [$.id.eq(row.id)]),
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(row.id), $.leaseExpiresAt.lt(nowMs)])
+							.returning("id"),
 					),
 				)
+				if (cleared.length === 0) return
 				yield* recordEvent(orgId, row.id, systemActor.id, "lease_expired", {
 					payload: { previousHolderActorId: prevActorId },
 					timestamp: nowMs,
 				})
-				if (row.workflowState === "in_progress") {
-					const refreshed = yield* requireIssue(orgId, row.id)
+				// Only an issue still `in_progress` drops back to `todo`; one the holder already moved
+				// on (to review, verifying, triage) keeps its new state, and so does one a new holder
+				// claimed after the clear above (guarded on the lease still being empty).
+				const refreshed = yield* requireIssue(orgId, row.id)
+				if (refreshed.workflowState === "in_progress" && refreshed.leaseHolderActorId === null) {
 					yield* applyTransition(orgId, systemActor.id, refreshed, "todo", {
 						payload: { viaLeaseExpiry: true },
 						timestamp: nowMs,
-					})
+						unleased: true,
+					}).pipe(skipLostTransition(row.id, "lease_expiry"))
 				}
 			}),
 		)
@@ -1190,14 +1218,18 @@ const make: Effect.Effect<
 			systemActor,
 		).pipe(Effect.tapError(() => releaseTickClaim(orgId, tickWindow.claimToken, nowMs)))
 
-		const wakeCandidates = preamble.wakeCandidates
-		yield* Effect.forEach(wakeCandidates, (row) =>
+		const woken = yield* Effect.forEach(preamble.wakeCandidates, (row) =>
 			applyTransition(orgId, systemActor.id, row, "triage", {
 				payload: { viaSnoozeWakeup: true },
 				timestamp: nowMs,
-			}),
+				snoozeElapsedBy: nowMs,
+			}).pipe(
+				Effect.as(true),
+				skipLostTransition(row.id, "snooze_wakeup"),
+				Effect.map((applied) => applied === true),
+			),
 		).pipe(Effect.tapError(() => releaseTickClaim(orgId, tickWindow.claimToken, nowMs)))
-		const issuesReopened = wakeCandidates.length
+		const issuesReopened = Arr.filter(woken, (applied) => applied).length
 
 		const scanWindow = (endMs: number) =>
 			Effect.gen(function* () {
@@ -1946,7 +1978,9 @@ const make: Effect.Effect<
 		// One statement for every org, outside the per-org loop: an abandoned run is
 		// rare and the matching set is almost always empty, so paying a round-trip per
 		// org to discover that would cost more than the sweep saves.
-		const investigationsAbandoned = yield* dbExecute((db) => sweepAbandonedInvestigations(db, nowMs))
+		const investigationsAbandoned = yield* dbExecute((db) =>
+			sweepAbandonedInvestigations(db, nowMs),
+		).pipe(Effect.map((rows) => rows.length))
 		if (investigationsAbandoned > 0) {
 			yield* Effect.logWarning("Failed investigations whose agent pass never returned").pipe(
 				Effect.annotateLogs({ count: investigationsAbandoned, budgetMs: STALE_MS }),
