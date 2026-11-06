@@ -136,6 +136,31 @@ describe("makeProgressFeed", () => {
 		}),
 	)
 
+	/** A report refused after the turn closed the feed must not reopen a feed with no writer. */
+	it.effect("ignores a resume once the feed is closed", () =>
+		Effect.gen(function* () {
+			const { feed, writes } = yield* feedWith()
+			yield* feed.close
+			yield* feed.resume
+			feed.step("search_logs", {})
+			yield* feed.flush
+			yield* TestClock.adjust(Duration.times(INVESTIGATION_PROGRESS_HEARTBEAT, 2))
+			assert.lengthOf(writes, 0)
+		}),
+	)
+
+	it.effect("stays closed when a pause follows the close", () =>
+		Effect.gen(function* () {
+			const { feed, writes } = yield* feedWith()
+			yield* feed.close
+			yield* feed.pause
+			yield* feed.resume
+			feed.step("search_logs", {})
+			yield* feed.flush
+			assert.lengthOf(writes, 0)
+		}),
+	)
+
 	it.effect("gives up on a hung write instead of holding the permit", () =>
 		Effect.gen(function* () {
 			const feed = yield* makeProgressFeed({
