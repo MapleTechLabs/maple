@@ -13,6 +13,9 @@ export const DestinationForm = Schema.Struct({
 	signingSecret: Schema.String,
 	telegramBotToken: Schema.String,
 	telegramChatId: Schema.String,
+	incidentIoAlertSourceId: Schema.String,
+	incidentIoToken: Schema.String,
+	incidentIoStoredAlertSourceId: Schema.String,
 	memberUserIds: Schema.Array(Schema.String),
 	chatWorkspaceId: Schema.NullOr(ChatWorkspaceId),
 	chatConnector: Schema.String,
@@ -38,5 +41,7 @@ export const TextField = Schema.Literals([
 	"signingSecret",
 	"telegramBotToken",
 	"telegramChatId",
+	"incidentIoAlertSourceId",
+	"incidentIoToken",
 ])
 export type TextField = typeof TextField.Type

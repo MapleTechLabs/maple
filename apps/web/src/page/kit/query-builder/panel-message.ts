@@ -16,7 +16,6 @@ export const Model = Schema.Struct({
 	groupBys: Schema.Record(Schema.String, Combobox.Model),
 	/** `MetricsBody`: the metric picker and the one-field "by" combobox, by query id. */
 	metricPickers: Schema.Record(Schema.String, Combobox.Model),
-	metricBreakdowns: Schema.Record(Schema.String, Combobox.Model),
 	collapsed: Schema.Array(Schema.String),
 	/** Each where editor's caret, list and active key values, by query id. */
 	whereFields: WhereFields,
@@ -28,7 +27,6 @@ export const init = (slotPrefix: string): Model => ({
 	selects: {},
 	groupBys: {},
 	metricPickers: {},
-	metricBreakdowns: {},
 	collapsed: [],
 	whereFields: initWhereFields(),
 })
@@ -38,7 +36,6 @@ export const Message = defineMessageUnion({
 	GotGroupByMessage: { queryId: Schema.String, message: Combobox.Message },
 	/** `value`: the draft's metric, which a closed picker's input reads (and keeps on opening). */
 	GotMetricMessage: { queryId: Schema.String, value: Schema.String, message: Combobox.Message },
-	GotMetricBreakdownMessage: { queryId: Schema.String, message: Combobox.Message },
 	ToggledCollapsed: { queryId: Schema.String },
 	ToggledVisible: { queryId: Schema.String },
 	ChangedText: { queryId: Schema.String, field: QueryTextField, value: Schema.String },

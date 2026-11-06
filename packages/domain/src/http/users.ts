@@ -26,6 +26,16 @@ const windowFields = {
 export const UserSignalKind = Schema.Literals(["replay", "events", "mcp", "traces", "logs"])
 export type UserSignalKind = typeof UserSignalKind.Type
 
+/** Where a user's requests came from: a browser, a native mobile app, an MCP client, or anything else. */
+export const UserChannelKind = Schema.Literals(["web", "mobile", "api", "mcp"])
+export type UserChannelKind = typeof UserChannelKind.Type
+
+export const UserChannel = Schema.Struct({
+	channel: UserChannelKind,
+	requests: Schema.Number,
+})
+export type UserChannel = typeof UserChannel.Type
+
 export const UserListItem = Schema.Struct({
 	userId: Schema.String,
 	name: Schema.NullOr(Schema.String),
@@ -46,6 +56,12 @@ export const UserListItem = Schema.Struct({
 	/** Requests in 7 equal slices of the window, oldest first; empty without the span rollup. */
 	activity: Schema.Array(Schema.Number),
 	signals: Schema.Array(UserSignalKind),
+	/**
+	 * The user's classified requests per channel, most first, channels without any left out. Empty
+	 * when none was classified (rollup hours before migration 0058, or a rollup without it); without
+	 * the rollup, only MCP tool calls.
+	 */
+	channels: Schema.Array(UserChannel),
 })
 export type UserListItem = typeof UserListItem.Type
 

@@ -130,7 +130,13 @@ import {
 	GENAI_TOOL_NAME_SQL,
 } from "./gen-ai-columns"
 import { NORMALIZED_SPAN_NAME_SQL } from "./span-display-name"
-import { LOG_USER_ID_SQL, SERVICE_NAMESPACE_SQL, SPAN_USER_ID_SQL } from "./user-activity-sql"
+import {
+	LOG_USER_ID_SQL,
+	MOBILE_REQUEST_SQL,
+	SERVICE_NAMESPACE_SQL,
+	SPAN_USER_ID_SQL,
+	WEB_REQUEST_SQL,
+} from "./user-activity-sql"
 import { Array as Arr } from "effect"
 
 /**
@@ -1466,7 +1472,7 @@ export const serviceRuntimesHourlyMv = defineMaterializedView("service_runtimes_
 // Read by `userActivitySlicesQuery`, `userActivitySummaryQuery` and `userActivityTotalsQuery`.
 export const userActivityHourlyTracesMv = defineMaterializedView("user_activity_hourly_traces_mv", {
 	description:
-		"Rolls up spans that carry user.id (else enduser.id) hourly per user, service and service.namespace: spans, requests, errors, traces, sessions, request latency and top routes.",
+		"Rolls up spans that carry user.id (else enduser.id) hourly per user, service and service.namespace: spans, requests, errors, traces, sessions, request latency, top routes and web/mobile requests.",
 	datasource: userActivityHourly,
 	// A 90-day rollup over 30-day `traces`/`logs`: a rebuild would drop days 31-90.
 	deploymentMethod: "alter",
@@ -1492,7 +1498,10 @@ export const userActivityHourlyTracesMv = defineMaterializedView("user_activity_
           toUInt64(0) AS WarnLogCount,
           toUInt64(0) AS ErrorLogCount,
           min(toDateTime(Timestamp)) AS FirstSeen,
-          max(toDateTime(Timestamp)) AS LastSeen
+          max(toDateTime(Timestamp)) AS LastSeen,
+          countIf(IsEntryPoint = 1) AS ClassifiedRequestCount,
+          countIf(IsEntryPoint = 1 AND ${WEB_REQUEST_SQL}) AS WebRequestCount,
+          countIf(IsEntryPoint = 1 AND ${MOBILE_REQUEST_SQL}) AS MobileRequestCount
         FROM traces
         WHERE ${SPAN_USER_ID_SQL} != ''
         GROUP BY OrgId, ServiceNamespace, UserId, Hour, ServiceName
@@ -1529,7 +1538,10 @@ export const userActivityHourlyLogsMv = defineMaterializedView("user_activity_ho
           countIf(SeverityNumber >= 13 AND SeverityNumber < 17) AS WarnLogCount,
           countIf(SeverityNumber >= 17) AS ErrorLogCount,
           min(TimestampTime) AS FirstSeen,
-          max(TimestampTime) AS LastSeen
+          max(TimestampTime) AS LastSeen,
+          toUInt64(0) AS ClassifiedRequestCount,
+          toUInt64(0) AS WebRequestCount,
+          toUInt64(0) AS MobileRequestCount
         FROM logs
         WHERE ${LOG_USER_ID_SQL} != ''
         GROUP BY OrgId, ServiceNamespace, UserId, Hour, ServiceName

@@ -6868,6 +6868,8 @@
           "discord",
           "telegram",
           "google-chat",
+          "microsoft-teams",
+          "incident-io",
           "email",
           "chat",
           "linear"

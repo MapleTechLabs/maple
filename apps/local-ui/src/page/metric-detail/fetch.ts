@@ -52,6 +52,7 @@ export const fetchMetricTimeseries = (
 			const rows = yield* queryRows(
 				CH.compile(
 					CH.metricsTimeseriesRateQuery({
+						metric: "rate",
 						metricName: entry.metricName,
 						bucketSeconds,
 						...SERIES_CAP,
@@ -63,19 +64,19 @@ export const fetchMetricTimeseries = (
 			return Arr.map(rows, (r): SeriesPoint => ({
 				bucket: DateTime.formatIso(r.bucket),
 				series: r.groupName || "value",
-				value: r.rateValue,
+				value: r.value,
 			}))
 		}
 		const metricType = entry.metricType
 		if (!isMetricType(metricType)) return []
 		const rows = yield* queryRows(
-			CH.compile(CH.metricsTimeseriesQuery({ metricType, ...SERIES_CAP }), params),
+			CH.compile(CH.metricsTimeseriesQuery({ metric: "avg", metricType, ...SERIES_CAP }), params),
 			apiBase,
 		)
 		return Arr.map(rows, (r): SeriesPoint => ({
 			bucket: DateTime.formatIso(r.bucket),
 			series: r.groupName || "value",
-			value: r.avgValue,
+			value: r.value,
 		}))
 	})
 

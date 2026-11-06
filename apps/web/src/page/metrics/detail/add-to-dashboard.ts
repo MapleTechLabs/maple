@@ -99,7 +99,7 @@ const readablePreset = (preset: string | undefined): string | undefined =>
 	preset !== undefined && resolveRelativeRangeToWarehouse(preset, 0, "UTC") !== null ? preset : undefined
 
 // The metrics aggregations whose result is in the metric's own unit; count and rate are not.
-const UNIT_PRESERVING = new Set(["avg", "min", "max", "sum", "increase"])
+const UNIT_PRESERVING = new Set(["avg", "min", "max", "sum", "latest", "increase"])
 
 /** The declared OTel unit when the aggregation keeps it and the chart can read it, else the inferred one. */
 const displayUnitOf = (draft: typeof MetricsQueryDraftSchema.Type, declaredUnit: string) =>
