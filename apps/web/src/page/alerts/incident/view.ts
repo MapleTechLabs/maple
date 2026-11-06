@@ -1,3 +1,4 @@
+import type { V2AlertIncidentEscalation } from "@maple/domain/http/v2"
 import type {
 	AlertCheckDocument,
 	AlertIncidentDocument,
@@ -166,6 +167,8 @@ export type IncidentBodyInputs<M> = Readonly<{
 	entries: ReadonlyArray<IncidentTimelineEntry>
 	isEntriesLoading: boolean
 	isEntriesFailed: boolean
+	/** The incident's latest escalation run, once read; `null` without one. */
+	escalation?: V2AlertIncidentEscalation | null
 	/** An SLO or uptime incident's SLO or monitor page; its tab stands in until it is known. */
 	sourceHref?: string | null
 	chartId: string
@@ -262,6 +265,8 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 				ruleIncidents: inputs.ruleIncidents,
 				window: inputs.range,
 				now: inputs.now,
+				escalation: inputs.escalation ?? null,
+				timeZone: inputs.timeZone,
 			}),
 		],
 	)
@@ -294,6 +299,7 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 		incident,
 		rule,
 		sourceHref: Option.getOrNull(incident.signalType === "uptime" ? monitorLink : sloLink),
+		escalation: AsyncData.getOrElse(model.escalation.data, () => null),
 		ruleIncidents: view.ruleIncidents,
 		states: ruleStatesOf(model, incident.ruleId),
 		preview: groupPreviewOf(previewState.preview, incident),

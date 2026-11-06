@@ -7,6 +7,7 @@ import { MapleApiV2Client } from "../../../platform/api-clients"
 import { listDeliveries } from "../shared/commands"
 import { listSlos } from "../shared/slo-commands"
 import { listMonitors } from "../shared/uptime-commands"
+import { retrieveIncidentEscalation } from "../shared/escalation-chains"
 import { fetchCheckSummary } from "../shared/check-summary"
 import { fetchPreview } from "../shared/preview"
 import { Message } from "./message"
@@ -77,6 +78,16 @@ export const CreateInvestigation = Command.define("CreateAlertInvestigation", {
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedCreateInvestigation({ result })),
+		),
+})
+
+export const FetchIncidentEscalation = Command.define("FetchAlertIncidentEscalation", {
+	args: { key: Schema.String, incidentId: AlertIncidentId },
+	messages: [Message.CompletedFetchEscalation],
+	execute: ({ key, incidentId }) =>
+		retrieveIncidentEscalation(incidentId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchEscalation({ key, result })),
 		),
 })
 

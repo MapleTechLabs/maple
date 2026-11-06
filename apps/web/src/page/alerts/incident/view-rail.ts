@@ -1,5 +1,6 @@
 import { pluralize } from "@maple/ui/lib/format"
 import { type AlertIncidentDocument, type AlertRuleDocument, isManagedSignalType } from "@maple/domain/http"
+import type { V2AlertIncidentEscalation } from "@maple/domain/http/v2"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { cn } from "@maple/ui/lib/utils"
 import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
@@ -10,9 +11,12 @@ import { AppRoute, hrefOf } from "../../../route"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { createHref, incidentHref, ruleHref } from "../shared/links"
+import { routingTabHref, runView } from "../shared/escalation-chains"
+import { textLink } from "@maple/views/ui/text-link"
+import type { Tone } from "@maple/ui/lib/tone"
 import { isoMs } from "../shared/time"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // `IncidentRail`: the incident detail's side rail.
@@ -275,6 +279,46 @@ const ruleSection = <M>(
 	)
 }
 
+const RUN_TONE = { escalating: "warn", paused: "neutral", finished: "neutral" } as const satisfies Record<
+	ReturnType<typeof runView>["state"],
+	Tone
+>
+
+/** `EscalationSection`: the chain paging this incident, where it stands, and when it pages next. */
+export const escalationSection = <M>(
+	h: HtmlBuilder<M>,
+	run: V2AlertIncidentEscalation,
+	incident: AlertIncidentDocument,
+	timeZone: string,
+): Html => {
+	const view = runView(run, incident.acknowledgedAt !== null, timeZone)
+	return railSection(
+		h,
+		["Escalation"],
+		textLink(h, { href: routingTabHref(), tone: "muted", className: "text-xs" }, ["View chains"]),
+		[
+			vstack(h, { gap: "1.5" }, [
+				hstack(h, { gap: "2" }, [
+					statusDot(h, { tone: RUN_TONE[view.state] }),
+					typography(h, { size: "sm", weight: "medium" }, [view.label]),
+				]),
+				typography(
+					h,
+					{ size: "sm", truncate: true, as: "p", attributes: [h.Title(run.chain_name)] },
+					[run.chain_name],
+				),
+				typography(h, { size: "xs", tone: "muted", as: "p", numeric: true }, [view.detail]),
+				typography(h, { size: "xs", tone: "muted", as: "p", numeric: true }, [
+					String(run.steps_sent),
+					" ",
+					pluralize(run.steps_sent, "step"),
+					view.state === "finished" ? " paged" : " paged so far",
+				]),
+			]),
+		],
+	)
+}
+
 export const incidentRail = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
@@ -284,6 +328,8 @@ export const incidentRail = <M>(
 		ruleIncidents: ReadonlyArray<AlertIncidentDocument>
 		window: Readonly<{ start: number; end: number }>
 		now: number
+		escalation: V2AlertIncidentEscalation | null
+		timeZone: string
 	}>,
 ): Html => {
 	const { rule, incident, states } = options
@@ -291,6 +337,9 @@ export const incidentRail = <M>(
 	return h.aside(
 		[h.Class("space-y-5 lg:border-l lg:pl-6")],
 		[
+			...(options.escalation === null
+				? []
+				: [escalationSection(h, options.escalation, incident, options.timeZone)]),
 			...(isGrouped && rule !== null
 				? [
 						groupsSection(

@@ -19,6 +19,7 @@ import {
 	CreateInvestigation,
 	FetchIncidentChecks,
 	FetchIncidentDeliveries,
+	FetchIncidentEscalation,
 	FetchIncidentInvestigation,
 	FetchIncidentMonitors,
 	FetchIncidentPreview,
@@ -46,6 +47,7 @@ export const init = (route: IncidentRoute, _context: PageContext): Return => ({
 		checks: Keyed.idle(),
 		deliveries: Keyed.idle(),
 		investigation: Keyed.idle(),
+		escalation: Keyed.idle(),
 		slos: Keyed.idle(),
 		monitors: Keyed.idle(),
 		isStartingInvestigation: false,
@@ -87,7 +89,26 @@ const followData = (model: Model, context: PageContext): Return =>
 			const investigationKey = requestKey(context.orgId, "investigations.list", {
 				query: { incident_kind: "alert", incident_id: incidentId, limit: 1 },
 			})
+			// What moves an escalation: a new page, an ack, a severity change, the resolve.
+			const escalationKey = requestKey(context.orgId, "alertIncidents.retrieve", {
+				id: incidentId,
+				status: view.incident.status,
+				severity: view.incident.severity,
+				lastNotifiedAt: view.incident.lastNotifiedAt,
+				acknowledgedAt: view.incident.acknowledgedAt,
+			})
 			const steps: ReadonlyArray<{ patch: Partial<Model>; commands: Commands }> = [
+				...Option.toArray(
+					Option.map(
+						sameKey(model.escalation, escalationKey)
+							? Option.none()
+							: Keyed.request(model.escalation, escalationKey, "Load"),
+						(escalation) => ({
+							patch: { escalation },
+							commands: [FetchIncidentEscalation({ key: escalationKey, incidentId })],
+						}),
+					),
+				),
 				...Option.toArray(
 					Option.map(
 						sameKey(model.deliveries, deliveriesKey)
@@ -287,6 +308,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		CompletedFetchInvestigation: ({ key, result }) => ({
 			model: { ...model, investigation: Keyed.accept(model.investigation, key, result) },
+		}),
+		CompletedFetchEscalation: ({ key, result }) => ({
+			model: { ...model, escalation: Keyed.accept(model.escalation, key, result) },
 		}),
 		CompletedFetchSlos: ({ key, result }) => ({
 			model: { ...model, slos: Keyed.accept(model.slos, key, result) },
