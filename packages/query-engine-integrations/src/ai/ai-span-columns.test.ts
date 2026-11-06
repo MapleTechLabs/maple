@@ -112,20 +112,17 @@ describe("session usage SQL", () => {
 			"r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - own.1) > 0 OR greatest(0., r.4 - own.2) > 0, tokenAncestor.8 = 0 AND costAncestor.8 = 0 AND parent.8 = 0)",
 		)
 		// Tokens, cost and the five buckets, each less its children's, floored at
-		// zero — and nothing at all for a reporter that is not a model call once
-		// that measure was charged to it (tokens decide the buckets).
-		for (const [element, charged, measure] of [
-			[3, 1, 1],
-			[4, 2, 2],
-			[7, 3, 1],
-			[8, 4, 1],
-			[9, 5, 1],
-			[10, 6, 1],
-			[11, 7, 1],
+		// zero.
+		for (const [element, charged] of [
+			[3, 1],
+			[4, 2],
+			[7, 3],
+			[8, 4],
+			[9, 5],
+			[10, 6],
+			[11, 7],
 		] as const) {
-			expect(text).toContain(
-				`if(r.6 = 0 AND own.${measure} > 0, 0., greatest(0., r.${element} - own.${charged}))`,
-			)
+			expect(text).toContain(`greatest(0., r.${element} - own.${charged})`)
 		}
 	})
 

@@ -3,7 +3,8 @@
 // The real shape has a dozen required fields and a sixty-five-key `genAi` bag,
 // so a test that spelled one out per span would be unreadable and would say
 // nothing about the rule under test. Everything here defaults to "an ordinary
-// AI span"; each test overrides only the attribute its rule reads.
+// AI span", stamped as the ingest gateway would; each test overrides only the
+// attribute its rule reads.
 
 import type { AiSessionGenAiValues, AiSessionSpan } from "@maple/domain/http"
 import { formatWarehouseDateTimeMs } from "@maple/query-engine"
@@ -53,7 +54,18 @@ export function makeSpan(input: SpanInput): AiSessionSpan {
 	}
 }
 
-/** A model call. Usage goes in `genAi` under its `gen_ai.usage.*` names. */
+/** A span the gateway classified, with its error verdict where the span failed
+ *  by its status or `error.type` (`apps/ingest/src/ai_session/facts.rs`). */
+function stamped(input: SpanInput, spanName: string, genAi: AiSessionGenAiValues): AiSessionSpan {
+	const failed = input.statusCode === "Error" || (genAi.errorType ?? "") !== ""
+	return makeSpan({
+		...input,
+		spanName: input.spanName ?? spanName,
+		genAi: { ...(failed && { mapleError: 1 }), ...genAi },
+	})
+}
+
+/** A model call. Usage goes in `genAi` as the gateway's `maple*` buckets. */
 export function llmSpan({
 	model,
 	ttftSeconds,
@@ -62,23 +74,22 @@ export function llmSpan({
 	readonly model?: string
 	readonly ttftSeconds?: number
 }): AiSessionSpan {
-	return makeSpan({
-		...input,
-		spanName: input.spanName ?? "chat",
-		genAi: {
-			operationName: "chat",
-			responseModel: model,
-			responseTimeToFirstChunk: ttftSeconds,
-			...input.genAi,
-		},
+	return stamped(input, "chat", {
+		operationName: "chat",
+		mapleLlmCall: 1,
+		responseModel: model,
+		responseTimeToFirstChunk: ttftSeconds,
+		...input.genAi,
 	})
 }
 
 export function toolSpan({ toolName, ...input }: SpanInput & { readonly toolName?: string }): AiSessionSpan {
-	return makeSpan({
-		...input,
-		spanName: input.spanName ?? "execute_tool",
-		genAi: { operationName: "execute_tool", toolName: toolName ?? "read_file", ...input.genAi },
+	return stamped(input, "execute_tool", {
+		operationName: "execute_tool",
+		mapleLlmCall: 0,
+		mapleToolCall: 1,
+		toolName: toolName ?? "read_file",
+		...input.genAi,
 	})
 }
 
@@ -86,14 +97,11 @@ export function agentSpan({
 	agentName,
 	...input
 }: SpanInput & { readonly agentName?: string }): AiSessionSpan {
-	return makeSpan({
-		...input,
-		spanName: input.spanName ?? "invoke_agent",
-		genAi: {
-			operationName: "invoke_agent",
-			agentName: agentName ?? "billing-agent",
-			...input.genAi,
-		},
+	return stamped(input, "invoke_agent", {
+		operationName: "invoke_agent",
+		mapleLlmCall: 0,
+		agentName: agentName ?? "billing-agent",
+		...input.genAi,
 	})
 }
 
@@ -155,7 +163,7 @@ export function langGraphThreadSpans(prompts: readonly string[]): readonly AiSes
 				startMs: startMs + 1,
 				durationMs: 2_000,
 				vendorId: "langchain",
-				genAi: { operationName: "invoke_workflow" },
+				genAi: { operationName: "invoke_workflow", mapleLlmCall: 0 },
 			}),
 			llmSpan({
 				spanId: `chat-${turn + 1}`,
