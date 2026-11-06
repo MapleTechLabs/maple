@@ -5,6 +5,7 @@ import type { OrgId } from "@maple/domain/http"
 import { Clock, Context, Effect, Layer, Option } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { transitionRow } from "@maple/backend/platform/transition-row"
 
 const toPersistenceError = (error: unknown) =>
 	new OnboardingPersistenceError({
@@ -204,7 +205,8 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 			/**
 			 * Take the reward claim lease: stamps `rewardReservedAt` if the reward is not
 			 * claimed and no live reservation exists (a reservation older than `leaseMs`
-			 * is a crashed attempt and may be taken over). Reports whether this call won.
+			 * is a crashed attempt and may be taken over). Returns the reservation this call
+			 * holds, or `None` when another holder has it.
 			 */
 			const reserveRewardClaim = Effect.fn("OnboardingService.reserveRewardClaim")(function* (
 				orgId: OrgId,
@@ -223,39 +225,67 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 							.returning(($) => ({ id: $.orgId })),
 					),
 				)
-				return result.length > 0
+				return result.length > 0 ? Option.some(now) : Option.none<number>()
 			})
 
-			/** Billing confirmed the credit: the claim is final and the lease is released. */
+			/** A write that applies only while the org's lease is still the reservation the caller took. */
+			const whileReserved = (
+				orgId: OrgId,
+				reservedAt: number,
+				to: "claimed" | "released",
+				set: Partial<OrgOnboardingStateRow>,
+			) =>
+				transitionRow({ table: "org_onboarding_state", id: orgId, from: ["reserved"], to }, () =>
+					dbExecute((db) =>
+						db.run(
+							PG.update(OrgOnboardingState)
+								.set(set)
+								.where(($) => [$.orgId.eq(orgId), $.rewardReservedAt.eq(reservedAt)])
+								.returning(($) => ({ id: $.orgId })),
+						),
+					),
+				)
+
+			/**
+			 * Billing confirmed the credit: the claim is final and the caller's lease is released.
+			 * A lease that lapsed under the call still records the claim, but leaves the next
+			 * holder's reservation alone.
+			 */
 			const finalizeRewardClaim = Effect.fn("OnboardingService.finalizeRewardClaim")(function* (
 				orgId: OrgId,
+				reservedAt: number,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				yield* dbExecute((db) =>
-					db.run(
-						PG.update(OrgOnboardingState)
-							.set({
-								rewardClaimedAt: now,
-								rewardReservedAt: null,
-								updatedAt: now,
-							})
-							.where(($) => [$.orgId.eq(orgId)]),
+				yield* whileReserved(orgId, reservedAt, "claimed", {
+					rewardClaimedAt: now,
+					rewardReservedAt: null,
+					updatedAt: now,
+				}).pipe(
+					Effect.catchTag("@maple/backend/TransitionConflictError", () =>
+						dbExecute((db) =>
+							db.run(
+								PG.update(OrgOnboardingState)
+									.set({ rewardClaimedAt: now, updatedAt: now })
+									.where(($) => [$.orgId.eq(orgId), $.rewardClaimedAt.isNull()]),
+							),
+						),
 					),
 				)
 			})
 
-			/** Billing refused before anything was applied: give the lease back so the org can retry now. */
+			/**
+			 * Billing refused before anything was applied: give the lease back so the org can retry
+			 * now. A lease another holder already took over is theirs, and stays.
+			 */
 			const releaseRewardClaim = Effect.fn("OnboardingService.releaseRewardClaim")(function* (
 				orgId: OrgId,
+				reservedAt: number,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				yield* dbExecute((db) =>
-					db.run(
-						PG.update(OrgOnboardingState)
-							.set({ rewardReservedAt: null, updatedAt: now })
-							.where(($) => [$.orgId.eq(orgId)]),
-					),
-				)
+				yield* whileReserved(orgId, reservedAt, "released", {
+					rewardReservedAt: null,
+					updatedAt: now,
+				}).pipe(Effect.catchTag("@maple/backend/TransitionConflictError", () => Effect.void))
 			})
 
 			const markEmailSent = Effect.fn("OnboardingService.markEmailSent")(function* (
