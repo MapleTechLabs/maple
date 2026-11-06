@@ -61,7 +61,7 @@ describe("escalation chain dialog view", () => {
 			expectView(role("spinbutton", { name: "Repeat the whole chain" })).toHaveAccessibleDescription(
 				`Extra passes after the first, 0 to ${MAX_ESCALATION_REPEATS}. 0 runs it once.`,
 			),
-			expectView(role("spinbutton", { name: /^Then wait/ })).toHaveAttr(
+			expectView(role("spinbutton", { name: /^Step 1: then wait/ })).toHaveAttr(
 				"max",
 				String(MAX_ESCALATION_WAIT_MINUTES),
 			),

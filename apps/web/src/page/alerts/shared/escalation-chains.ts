@@ -132,12 +132,15 @@ export const runView = (
 	const position = `Step ${run.step} of ${run.step_count}${run.pass_count > 1 ? `, pass ${run.pass} of ${run.pass_count}` : ""}`
 	if (run.status === "resolved" || run.status === "exhausted" || run.status === "superseded")
 		return { state: "finished", label: "Finished", detail: ENDED[run.status] }
-	if (run.status === "acknowledged" || isAcknowledged)
+	if (isAcknowledged)
 		return {
 			state: "paused",
 			label: "Paused: acknowledged",
 			detail: `${position}. Resumes if the incident is unacknowledged`,
 		}
+	// Unacknowledged, but the scheduler has not picked the run back up yet.
+	if (run.status === "acknowledged")
+		return { state: "escalating", label: "Resuming", detail: `${position}, on the next check` }
 	return {
 		state: "escalating",
 		label: "Escalating",

@@ -149,13 +149,16 @@ const numberField = (
 
 const isOutOfRange = (raw: string, error: Option.Option<string>) => raw !== "" && Option.isSome(error)
 
+// Numbered, so each step's wait input has its own accessible name.
 const waitLabel = (model: Model, index: number): string =>
-	index < model.steps.length - 1
-		? "Then wait, in minutes"
-		: (numberOf(model.repeatCount) ?? 0) > 0
-			? "Wait before repeating, in minutes"
-			: // The run ends as soon as the last step pages, so this wait only matters once it repeats.
-				"Wait before repeating, in minutes (unused unless the chain repeats)"
+	`Step ${index + 1}: ${
+		index < model.steps.length - 1
+			? "then wait, in minutes"
+			: (numberOf(model.repeatCount) ?? 0) > 0
+				? "wait before repeating, in minutes"
+				: // The run ends as soon as the last step pages, so this wait only matters once it repeats.
+					"wait before repeating, in minutes (unused unless the chain repeats)"
+	}`
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`
 
