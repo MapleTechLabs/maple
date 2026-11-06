@@ -8,7 +8,7 @@ import {
 	quoteWhereValue,
 	splitCsv,
 } from "@maple/domain/where-clause"
-import { Match, Array as Arr, Record as Rec, String as Str, Option } from "effect"
+import { Match, Array as Arr, Record as Rec, String as Str, Option, Result } from "effect"
 
 export type {
 	QueryBuilderDataSource,
@@ -1673,16 +1673,30 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		? resolveGroupBy("metrics", query.groupBy ?? [])
 		: { tokens: [], attributeKeys: [], resourceAttributeKeys: [], warnings: [] }
 	warnings.push(...resolvedGroupBy.warnings)
-	const keyBudget = MAX_METRICS_GROUP_BY_KEYS
-	const attributeKeys = Arr.take(resolvedGroupBy.attributeKeys, keyBudget)
-	const resourceKeys = Arr.take(resolvedGroupBy.resourceAttributeKeys, keyBudget - attributeKeys.length)
-	const droppedKeys =
-		resolvedGroupBy.attributeKeys.length +
-		resolvedGroupBy.resourceAttributeKeys.length -
-		attributeKeys.length -
-		resourceKeys.length
-	if (droppedKeys > 0) {
-		warnings.push(`Metrics queries group by at most ${keyBudget} attribute keys; ignoring ${droppedKeys}`)
+	// The key budget is spent in the order the draft lists its fields, whatever their kind.
+	const orderedKeys = Arr.flatMap(query.addOns?.groupBy ? (query.groupBy ?? []) : [], (raw) => {
+		const one = resolveGroupBy("metrics", [raw])
+		return [
+			...Arr.map(one.attributeKeys, (key) => ({ kind: "attr" as const, key })),
+			...Arr.map(one.resourceAttributeKeys, (key) => ({ kind: "resource" as const, key })),
+		]
+	})
+	const uniqueKeys = Arr.dedupeWith(orderedKeys, (a, b) => a.kind === b.kind && a.key === b.key)
+	const kept = Arr.take(uniqueKeys, MAX_METRICS_GROUP_BY_KEYS)
+	const dropped = Arr.drop(uniqueKeys, MAX_METRICS_GROUP_BY_KEYS)
+	const attributeKeys = Arr.filterMap(kept, (k) =>
+		k.kind === "attr" ? Result.succeed(k.key) : Result.failVoid,
+	)
+	const resourceKeys = Arr.filterMap(kept, (k) =>
+		k.kind === "resource" ? Result.succeed(k.key) : Result.failVoid,
+	)
+	if (dropped.length > 0) {
+		warnings.push(
+			`Metrics queries group by at most ${MAX_METRICS_GROUP_BY_KEYS} attribute keys; ignoring ${Arr.join(
+				Arr.map(dropped, (k) => `${k.kind}.${k.key}`),
+				", ",
+			)}`,
+		)
 	}
 	const groupByTokens = Arr.filter(
 		resolvedGroupBy.tokens,

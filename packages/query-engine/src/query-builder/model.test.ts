@@ -432,7 +432,17 @@ describe("metrics resource.* support", () => {
 		})
 		expect(filters?.groupByAttributeKeys).toEqual(["a", "b", "c", "d"])
 		expect(filters?.groupByResourceAttributeKeys).toEqual(["e"])
-		expect(warnings).toEqual(["Metrics queries group by at most 5 attribute keys; ignoring 1"])
+		expect(warnings).toEqual(["Metrics queries group by at most 5 attribute keys; ignoring resource.f"])
+	})
+
+	it("spends the key budget in the order the draft lists its fields", () => {
+		const { filters, warnings } = metricsFiltersOf({
+			addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+			groupBy: ["resource.r1", "resource.r2", "attr.a", "attr.b", "attr.c", "attr.d"],
+		})
+		expect(filters?.groupByResourceAttributeKeys).toEqual(["r1", "r2"])
+		expect(filters?.groupByAttributeKeys).toEqual(["a", "b", "c"])
+		expect(warnings).toEqual(["Metrics queries group by at most 5 attribute keys; ignoring attr.d"])
 	})
 
 	it("a chart query carries its across-series aggregation, and omits it when unset", () => {
