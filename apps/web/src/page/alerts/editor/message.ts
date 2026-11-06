@@ -71,6 +71,8 @@ export const Message = defineMessageUnion({
 	CompletedReadClock: { nowMs: Schema.Number },
 	CompletedReadGrants: { grants: Schema.Array(Policy.PermissionName) },
 	CompletedFetchConnectors: { connectors: Schema.Array(V2ChatConnector) },
+	/** Back on this tab: a chain made from "Create a chain" (a new tab) can now be picked. */
+	ReturnedToTab: {},
 	CompletedFetchEscalationChains: { chains: Schema.NullOr(Schema.Array(V2EscalationChain)) },
 	CompletedFetchTraceFacets: { key: Schema.String, result: Schema.Result(TraceFacets, LoadFailure) },
 	CompletedFetchAutocomplete: {

@@ -236,6 +236,7 @@ const stepBlock = (h: H, model: Model, inputs: ViewInputs, step: StepDraft, inde
 			toMenuMessage: (message) => Message.GotStepMenuMessage({ key, message }),
 			onRemove: (id) => Message.ClickedRemoveDestination({ key, id }),
 			isDisabled: model.isSaving,
+			context: `step ${index + 1}`,
 			emptyText:
 				inputs.destinations !== null && inputs.destinations.length === 0
 					? "No destinations exist yet. Add one in Routing first."

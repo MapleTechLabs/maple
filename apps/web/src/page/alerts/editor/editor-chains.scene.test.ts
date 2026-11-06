@@ -119,6 +119,12 @@ describe("alert rule editor, escalation chains", () => {
 		)
 	})
 
+	test("returning to the tab reads the chains again, so one made in the Create a chain tab can be picked", () => {
+		expect(names(pageUpdate(ready(), Message.ReturnedToTab()).commands)).toEqual([
+			"FetchAlertEditorChains",
+		])
+	})
+
 	test("the critical tier needs a destination or a chain of its own", () => {
 		const tiered = run(ready(), [Message.ClickedAddCriticalTier()])
 		expect(issuesOf(tiered)).toContain("Critical destinations")

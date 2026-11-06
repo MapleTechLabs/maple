@@ -46,6 +46,7 @@ describe("escalation chain dialog view", () => {
 			expectView(role("textbox", { name: "Name" })).not.toBeDisabled(),
 			expectView(role("spinbutton", { name: "Repeat the whole chain" })).not.toBeDisabled(),
 			expectView(role("button", { name: "Add step" })).not.toBeDisabled(),
+			expectView(role("button", { name: /^Stop notifying .+ in step 1$/u })).toExist(),
 		)
 	})
 
