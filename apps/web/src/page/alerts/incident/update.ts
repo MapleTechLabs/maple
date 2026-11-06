@@ -26,6 +26,7 @@ import {
 	SetIncidentAcknowledged,
 } from "./command"
 import { withAcknowledgement } from "../shared/commands"
+import { isoMs } from "../shared/time"
 import { incidentViewOf, minuteOf, ruleStatesOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -83,7 +84,9 @@ const followData = (model: Model, context: PageContext): Return =>
 			// Keyed on the acknowledgement, so an ack from anywhere (Slack, the API) refetches the history.
 			const activityKey = requestKey(context.orgId, "alertIncidents.listEvents", {
 				id: incidentId,
-				acknowledgedAt: view.incident.acknowledgedAt,
+				// Epoch ms: the synced row and the API spell the same instant differently.
+				acknowledgedAt:
+					view.incident.acknowledgedAt === null ? null : isoMs(view.incident.acknowledgedAt),
 			})
 			const steps: ReadonlyArray<{ patch: Partial<Model>; commands: Commands }> = [
 				...Option.toArray(
