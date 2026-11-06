@@ -1,6 +1,7 @@
 {
 	"include": ["shared/**/*.ts", "server/**/*.ts"],
 	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
 		"target": "ES2023",
 		"module": "ESNext",
 		"lib": ["ES2023"],

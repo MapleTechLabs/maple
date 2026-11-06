@@ -6,6 +6,7 @@ import type { ActorId, ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
 import { AuditLogEntryId as AuditLogEntryIdSchema } from "@maple/domain/primitives"
 import * as CH from "@maple/query-engine/ch"
 import { Clock, Context, DateTime, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
+import { runAfterResponse } from "@maple/backend/platform/after-response"
 import { AuditEventsQueueProducer } from "@maple/backend/platform/bindings"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
@@ -164,13 +165,15 @@ const logDenied = (event: AuditLogEvent) =>
  * succeeded must not 500 because its audit write did not — but let interrupts
  * propagate so fiber teardown never triggers a stray write.
  */
-const neverFail = (action: string) => (write: Effect.Effect<void, unknown>) =>
-	write.pipe(
-		Effect.catch((error) => Effect.logWarning("Audit log write failed", { action, cause: error })),
-		Effect.catchDefect((defect) =>
-			Effect.logWarning("Audit log write failed", { action, cause: defect }),
-		),
-	)
+const neverFail =
+	(action: string) =>
+	<E, R>(write: Effect.Effect<void, E, R>): Effect.Effect<void, never, R> =>
+		write.pipe(
+			Effect.catch((error) => Effect.logWarning("Audit log write failed", { action, cause: error })),
+			Effect.catchDefect((defect) =>
+				Effect.logWarning("Audit log write failed", { action, cause: defect }),
+			),
+		)
 
 /** Which optional filters bind, and the parameter values behind them. */
 const listQueryInputs = (orgId: OrgId, filters: AuditLogListFilters) => {
@@ -227,12 +230,18 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 			// One row through the managed ingest pipeline. `ingest` is pinned to
 			// Tinybird regardless of the org's read backend, which is the point:
 			// the audit log is Maple's record and never lands in a BYO warehouse.
+			// Best effort: `record` drops a failed write anyway, so the insert logs
+			// it at Warn instead of leaving an Error span that opens an issue. A rare
+			// duplicate entry after a 520 beats a lost one, so it retries transients.
 			const writeDirect = (event: AuditLogEvent) =>
 				Effect.gen(function* () {
 					const now = yield* Clock.currentTimeMillis
-					yield* warehouse.ingest(systemTenant(event.orgId), AUDIT_LOG_DATASOURCE, [
-						auditEventToRow(event, now),
-					])
+					yield* warehouse.ingest(
+						systemTenant(event.orgId),
+						AUDIT_LOG_DATASOURCE,
+						[auditEventToRow(event, now)],
+						{ bestEffort: true, retryTransient: true },
+					)
 				})
 
 			/**
@@ -249,7 +258,9 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 			 * local dev, crons, and the consumer itself — none of which are
 			 * serving a response.
 			 */
-			const publish = (event: AuditLogEvent) =>
+			const publish = (
+				event: AuditLogEvent,
+			): Effect.Effect<void, Effect.Error<ReturnType<typeof writeDirect>> | AuditQueueSendError> =>
 				Option.isNone(queue)
 					? writeDirect(event)
 					: queue.value.sendBatch([{ body: encodeAuditLogEventSync(event) }]).pipe(
@@ -271,14 +282,16 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 							),
 						)
 
-			const record: AuditLogServiceApi["record"] = Effect.fn("AuditLogService.record")(
-				function* (input) {
-					const now = yield* Clock.currentTimeMillis
-					const event = makeEvent(input, now)
-					yield* logDenied(event)
-					yield* publish(event).pipe(neverFail(input.action))
-				},
-			)
+			const write = Effect.fn("AuditLogService.record")(function* (event: AuditLogEvent) {
+				yield* logDenied(event)
+				yield* publish(event).pipe(neverFail(event.action))
+			})
+
+			// Stamped now, sent after the response: the send was ~80 ms on every audited read.
+			const record: AuditLogServiceApi["record"] = (input) =>
+				Effect.flatMap(Clock.currentTimeMillis, (now) =>
+					runAfterResponse(write(makeEvent(input, now))),
+				)
 
 			const list: AuditLogServiceApi["list"] = Effect.fn("AuditLogService.list")(
 				function* (orgId, filters) {
@@ -358,11 +371,11 @@ export function makeMemoryAuditLog(): AuditLogServiceApi {
 						Str.endsWith(suffix)(entry.action),
 					),
 			)
-				.sort(
-					(a, b) =>
-						b.occurredAt.getTime() - a.occurredAt.getTime() ||
-						(b.id < a.id ? -1 : b.id > a.id ? 1 : 0),
-				)
+				.sort((a, b) => {
+					const byTime = b.occurredAt.getTime() - a.occurredAt.getTime()
+					if (byTime !== 0) return byTime
+					return b.id < a.id ? -1 : b.id > a.id ? 1 : 0
+				})
 				.slice(filters.offset, filters.offset + filters.limit),
 		)
 	return { record, list }

@@ -116,10 +116,10 @@ const mcpUnavailable = () =>
  */
 const mcpAuditActor = (headers: Record<string, string | undefined>): AuditActorInfo => {
 	const authorization = headers["authorization"] ?? headers["Authorization"]
-	if (authorization?.toLowerCase().startsWith("bearer ") !== true) {
+	if (authorization === undefined || !Str.startsWith("bearer ")(Str.toLowerCase(authorization))) {
 		return { type: "user", source: "mcp" }
 	}
-	const bearer = Str.trim(authorization.slice("bearer ".length))
+	const bearer = Str.trim(Str.slice("bearer ".length)(authorization))
 	return Str.startsWith(INTERNAL_SERVICE_PREFIX)(bearer)
 		? { type: "system", source: "system" }
 		: { type: "api_key", source: "mcp" }
@@ -184,7 +184,7 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 							mcpChallenge(env.MAPLE_API_BASE_URL, false),
 						// A malformed bearer gets its specific fix; other reasons keep the generic text.
 						"@maple/mcp/errors/McpAuthInvalidError": (error) =>
-							error.reason === "malformed_token"
+							error.reason === "malformed_token" || error.reason === "insufficient_scope"
 								? mcpChallenge(env.MAPLE_API_BASE_URL, true, error.message)
 								: mcpChallenge(env.MAPLE_API_BASE_URL, true),
 						"@maple/mcp/errors/McpAuthUnavailableError": mcpUnavailable,

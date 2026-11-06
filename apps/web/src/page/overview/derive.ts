@@ -103,6 +103,23 @@ const affectsHealth = (row: V2AnomalyServiceCount, nowMs: number): boolean => {
 	return row.signal_type !== "error_spike" && !isStale
 }
 
+const serviceKey = (name: string, environment: string): string => `${name}\u0000${environment}`
+
+const groupCauses = <A>(
+	rows: ReadonlyArray<A>,
+	keyOf: (row: A) => string,
+	causeOf: (row: A) => ServiceHealthCause,
+): Map<string, Array<ServiceHealthCause>> => {
+	const byKey = new Map<string, Array<ServiceHealthCause>>()
+	for (const row of rows) {
+		const key = keyOf(row)
+		const list = byKey.get(key)
+		if (list) list.push(causeOf(row))
+		else byKey.set(key, [causeOf(row)])
+	}
+	return byKey
+}
+
 export interface EnrichedService {
 	readonly service: HealthSnapshot
 	readonly health: ServiceHealth
@@ -115,40 +132,37 @@ export const enrichServices = (
 	incidents: ReadonlyArray<Incident>,
 	anomalies: ReadonlyArray<V2AnomalyServiceCount>,
 	nowMs: number,
-): Array<EnrichedService> =>
-	Arr.map(services, (service) => {
-		const alertCauses: Array<ServiceHealthCause> = Arr.map(
-			Arr.filter(
-				incidents,
-				(incident) => incident.status === "open" && incident.groupKey === service.serviceName,
-			),
-			(incident) => ({
-				severity: incident.severity,
-				label: alertIncidentCauseLabel(incident.signalType),
-			}),
-		)
-		const anomalyCauses: Array<ServiceHealthCause> = Arr.map(
-			Arr.filter(
-				anomalies,
-				(row) =>
-					affectsHealth(row, nowMs) &&
-					row.service_name === service.serviceName &&
-					(row.deployment_env || "unknown") === service.environment,
-			),
-			(row) => ({
-				severity: row.severity,
-				label: ANOMALY_LABEL.get(row.signal_type) ?? "",
-				metric: ANOMALY_METRIC.get(row.signal_type),
-				direction: anomalyDirection(row.signal_type),
-			}),
-		)
+): Array<EnrichedService> => {
+	// Indexed once so each row is a lookup, not a scan of every incident and anomaly (with a date parse).
+	const alertCausesByService = groupCauses(
+		Arr.filter(incidents, (incident) => incident.status === "open" && incident.groupKey !== null),
+		(incident) => incident.groupKey ?? "",
+		(incident) => ({ severity: incident.severity, label: alertIncidentCauseLabel(incident.signalType) }),
+	)
+	const anomalyCausesByService = groupCauses(
+		Arr.filter(anomalies, (row) => affectsHealth(row, nowMs)),
+		(row) => serviceKey(row.service_name, row.deployment_env || "unknown"),
+		(row) => ({
+			severity: row.severity,
+			label: ANOMALY_LABEL.get(row.signal_type) ?? "",
+			metric: ANOMALY_METRIC.get(row.signal_type),
+			direction: anomalyDirection(row.signal_type),
+		}),
+	)
+	return Arr.map(services, (service) => {
+		const alertCauses = alertCausesByService.get(service.serviceName) ?? []
+		const anomalyCauses =
+			anomalyCausesByService.get(serviceKey(service.serviceName, service.environment)) ?? []
 		const causes = [...alertCauses, ...anomalyCauses].sort((a, b) =>
 			a.severity === b.severity ? 0 : a.severity === "critical" ? -1 : 1,
 		)
 		return { service, causes, health: deriveServiceHealthFromCauses(causes) }
-	}).sort(
-		(a, b) => healthRank(b.health) - healthRank(a.health) || b.service.errorRate - a.service.errorRate,
+	}).sort((a, b) =>
+		healthRank(b.health) !== healthRank(a.health)
+			? healthRank(b.health) - healthRank(a.health)
+			: b.service.errorRate - a.service.errorRate,
 	)
+}
 
 export const countByHealth = (services: ReadonlyArray<EnrichedService>): Record<ServiceHealth, number> => ({
 	healthy: Arr.filter(services, (entry) => entry.health === "healthy").length,

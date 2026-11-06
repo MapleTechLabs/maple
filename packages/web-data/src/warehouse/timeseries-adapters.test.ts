@@ -139,18 +139,20 @@ describe("timeseries adapters", () => {
 			})
 
 			// 10-min window auto-buckets to 60s → 11 buckets (00:00 … 00:10).
-			assert.strictEqual(response.data.checkout.length, 11)
-			expect(response.data.checkout[0]).toMatchObject({
+			const checkout = response.data.checkout
+			assert.ok(checkout !== undefined)
+			assert.strictEqual(checkout.length, 11)
+			expect(Arr.getUnsafe(checkout, 0)).toMatchObject({
 				bucket: "2026-01-01T00:00:00.000Z",
 				throughput: 3,
 				errorRate: 1,
 			})
-			expect(response.data.checkout[1]).toMatchObject({
+			expect(Arr.getUnsafe(checkout, 1)).toMatchObject({
 				bucket: "2026-01-01T00:01:00.000Z",
 				throughput: 0,
 				errorRate: 0,
 			})
-			expect(response.data.checkout[10]).toMatchObject({
+			expect(Arr.getUnsafe(checkout, 10)).toMatchObject({
 				bucket: "2026-01-01T00:10:00.000Z",
 				throughput: 5,
 				errorRate: 0,

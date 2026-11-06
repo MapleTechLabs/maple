@@ -32,7 +32,7 @@ import type {
 	WorkersGroupDefinition,
 } from "./queries"
 import { parseWarehouseDateTime } from "@maple/query-engine"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 type Attrs = Record<string, string>
 
@@ -152,7 +152,9 @@ export const OTHER_BUCKET = "other"
 export const topNKeys = (weights: ReadonlyMap<string, number>, n: number): ReadonlySet<string> =>
 	new Set(
 		Arr.map(
-			[...weights.entries()].sort((a, b) => b[1] - a[1] || Str.localeCompare(b[0])(a[0])).slice(0, n),
+			[...weights.entries()]
+				.sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : Str.localeCompare(b[0])(a[0])))
+				.slice(0, n),
 			([key]) => key,
 		),
 	)
@@ -287,8 +289,10 @@ const MAX_PATH_LEN = 200
  */
 export const normalizePath = (raw: string | null | undefined): string => {
 	if (raw == null || raw === "") return "unknown"
-	const query = raw.indexOf("?")
-	const path = query === -1 ? raw : Str.slice(0, query)(raw)
+	const path = Option.match(Str.indexOf("?")(raw), {
+		onNone: () => raw,
+		onSome: (query) => Str.slice(0, query)(raw),
+	})
 	if (path === "") return "unknown"
 	return path.length > MAX_PATH_LEN ? `${Str.slice(0, MAX_PATH_LEN)(path)}…` : path
 }

@@ -3,7 +3,7 @@ import type { InspectTraceOutput, TraceSpanOutput } from "@maple/domain/mcp-outp
 import { formatDurationFromMs, toSecondTimestamp, truncate } from "./format"
 import { selectOverviewSpans, type OverviewOptions } from "./span-tree"
 import { doc, type DocBlock, type ToolDoc } from "./tool-doc"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 export interface TraceOverviewLog {
 	readonly timestamp: string
@@ -244,7 +244,7 @@ export function renderTraceOverview(output: Output): ToolDoc {
 	}
 	if (output.logs.length > 0) blocks.push(doc.text(renderLogs(output.logs)))
 	const services = [...new Set(Arr.map(output.spans, (span) => span.serviceName))]
-	const focus = output.spans.find(isErrorSpan) ?? output.spans[0]
+	const focus = Option.getOrElse(Arr.findFirst(output.spans, isErrorSpan), () => output.spans[0])
 	return {
 		title: `Trace ${output.traceId} (${output.serviceCount} services, ${output.spanCount} spans, ${formatDurationFromMs(output.rootDurationMs)})`,
 		scope: [

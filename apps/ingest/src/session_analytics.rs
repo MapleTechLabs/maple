@@ -153,12 +153,47 @@ fn clamp_string_field(
 /// `billable_start: 0` is a second tab or subdomain inside a visit already
 /// charged. An absent key is an SDK predating visits: customers pin SDK
 /// versions, so it keeps the old `version == 1` rule rather than going unbilled.
-pub fn take_billable_session_start(obj: &mut serde_json::Map<String, serde_json::Value>) -> bool {
+fn take_billable_session_start(obj: &mut serde_json::Map<String, serde_json::Value>) -> bool {
     let marker = obj.remove("billable_start");
     if obj.get("version").and_then(serde_json::Value::as_u64) != Some(1) {
         return false;
     }
     marker.is_none_or(|value| value.as_u64() == Some(1))
+}
+
+/// Most browser sessions one metadata request can bill. Every SDK posts one
+/// row per request, so this only bounds a hand-built body.
+const MAX_BILLABLE_SESSIONS_PER_REQUEST: usize = 4;
+
+/// The browser sessions one metadata request bills: each distinct `session_id`
+/// whose row is a billable start (`take_billable_session_start`), counted once
+/// and capped at `MAX_BILLABLE_SESSIONS_PER_REQUEST`.
+#[derive(Debug, Default)]
+pub struct BillableSessionStarts {
+    sessions: std::collections::HashSet<String>,
+}
+
+impl BillableSessionStarts {
+    /// Note one row, removing its `billable_start` marker. A row without a
+    /// string `session_id` counts as the empty id.
+    pub fn note(&mut self, obj: &mut serde_json::Map<String, serde_json::Value>) {
+        if !take_billable_session_start(obj)
+            || self.sessions.len() >= MAX_BILLABLE_SESSIONS_PER_REQUEST
+        {
+            return;
+        }
+        let session_id = obj
+            .get("session_id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        if !self.sessions.contains(session_id) {
+            self.sessions.insert(session_id.to_owned());
+        }
+    }
+
+    pub fn count(&self) -> usize {
+        self.sessions.len()
+    }
 }
 
 /// Clamp the client-supplied fields of one session metadata row in place.
@@ -534,6 +569,58 @@ mod tests {
         assert!(!take_billable_session_start(&mut meta_row(
             r#"{"version":2}"#
         )));
+    }
+
+    fn billed(lines: &[&str]) -> usize {
+        let mut starts = BillableSessionStarts::default();
+        for line in lines {
+            starts.note(&mut meta_row(line));
+        }
+        starts.count()
+    }
+
+    #[test]
+    fn a_session_bills_once_per_request_however_many_rows_claim_it() {
+        let start = r#"{"session_id":"sess_1","version":1,"billable_start":1}"#;
+        assert_eq!(billed(&[start; 1000]), 1);
+        // Id-less rows all share the empty id.
+        assert_eq!(billed(&[r#"{"version":1}"#; 1000]), 1);
+    }
+
+    #[test]
+    fn distinct_sessions_in_one_request_bill_up_to_the_cap() {
+        let rows: Vec<String> = (0..1000)
+            .map(|n| format!(r#"{{"session_id":"sess_{n}","version":1,"billable_start":1}}"#))
+            .collect();
+        let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
+        assert_eq!(billed(&rows[..2]), 2);
+        assert_eq!(billed(&rows), MAX_BILLABLE_SESSIONS_PER_REQUEST);
+    }
+
+    #[test]
+    fn rows_past_the_cap_or_already_counted_still_lose_the_marker() {
+        let mut starts = BillableSessionStarts::default();
+        for n in 0..=MAX_BILLABLE_SESSIONS_PER_REQUEST {
+            let mut row = meta_row(&format!(
+                r#"{{"session_id":"sess_{n}","version":1,"billable_start":1}}"#
+            ));
+            starts.note(&mut row);
+            assert!(!row.contains_key("billable_start"), "row {n}");
+        }
+        let mut repeat = meta_row(r#"{"session_id":"sess_0","version":1,"billable_start":1}"#);
+        starts.note(&mut repeat);
+        assert!(!repeat.contains_key("billable_start"));
+    }
+
+    #[test]
+    fn rows_that_are_not_a_billable_start_do_not_count() {
+        assert_eq!(
+            billed(&[
+                r#"{"session_id":"a","version":2,"billable_start":1}"#,
+                r#"{"session_id":"b","version":1,"billable_start":0}"#,
+            ]),
+            0
+        );
     }
 
     #[test]

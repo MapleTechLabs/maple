@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import {
@@ -55,8 +55,8 @@ const makeLayer = (testDb: TestDb, fake: Fake) =>
 		Layer.merge(Layer.succeed(FetchHttpClient.Fetch, fake.fetch)),
 	)
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_a")
-const USER = Schema.decodeUnknownSync(UserId)("user_a")
+const ORG = Schema.decodeSync(OrgId)("org_a")
+const USER = Schema.decodeSync(UserId)("user_a")
 const asRef = Schema.decodeUnknownSync(SupabaseProjectRef)
 const asTargetId = Schema.decodeUnknownSync(ScrapeTargetId)
 
@@ -68,17 +68,13 @@ const REF_C = "cdefghijklmnopqrstuv"
 const finalize = (fake: Fake) =>
 	Effect.gen(function* () {
 		const oauth = yield* SupabaseOAuthService
-		const { redirectUrl, state } = yield* oauth.startConnect(
-			ORG,
-			Schema.decodeUnknownSync(UserId)("user_a"),
-			{
-				callbackUrl: "https://api.example.com/api/integrations/supabase/callback",
-			},
-		)
+		const { redirectUrl, state } = yield* oauth.startConnect(ORG, Schema.decodeSync(UserId)("user_a"), {
+			callbackUrl: "https://api.example.com/api/integrations/supabase/callback",
+		})
 		fake.state.codeChallenge = new URL(redirectUrl).searchParams.get("code_challenge")
 		const granted = yield* oauth.completeConnect("code", state, {
 			orgId: ORG,
-			userId: Schema.decodeUnknownSync(UserId)("user_a"),
+			userId: Schema.decodeSync(UserId)("user_a"),
 		})
 		return yield* (yield* SupabaseConnectionService).finalizeConnect(
 			granted.orgId,
@@ -260,7 +256,7 @@ describe("Supabase managed scrape targets", () => {
 			yield* finalize(fake)
 			assert.strictEqual(yield* targetCount(testDb), 0)
 			yield* TestClock.adjust("1 hour")
-			yield* (yield* SupabaseConnectionService).discoverAllOrgs()
+			yield* (yield* SupabaseConnectionService).discoverAllOrgs
 			assert.isTrue((yield* targetOf(testDb, REF_A))?.enabled ?? false)
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
 	})
@@ -317,7 +313,8 @@ describe("Supabase managed scrape targets", () => {
 			return Effect.gen(function* () {
 				const scrapeTargets = yield* ScrapeTargetsService
 				yield* connect(fake)
-				const [row] = (yield* scrapeTargets.listAllEnabled()).filter(
+				const [row] = Arr.filter(
+					yield* scrapeTargets.listAllEnabled(),
 					(target) => target.targetType === "supabase",
 				)
 				assert.isDefined(row)

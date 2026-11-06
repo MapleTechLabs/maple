@@ -149,15 +149,21 @@ describe("gcpWorkloads", () => {
 describe("workload health", () => {
 	const DB = ["acme-prod:main", "acme-prod", "europe-west1"]
 	const database = (cpu: number, disk: number) =>
-		gcpWorkloads("cloudSql", [
-			point(DB, "gcp.cloud_sql.cpu.utilization", "", cpu),
-			point(DB, "gcp.cloud_sql.disk.utilization", "", disk),
-		])[0]
+		Arr.getUnsafe(
+			gcpWorkloads("cloudSql", [
+				point(DB, "gcp.cloud_sql.cpu.utilization", "", cpu),
+				point(DB, "gcp.cloud_sql.disk.utilization", "", disk),
+			]),
+			0,
+		)
 	const service = (ok: number, failed: number) =>
-		gcpWorkloads("cloudRun", [
-			point(API, "gcp.cloud_run.requests", "2xx", ok),
-			point(API, "gcp.cloud_run.requests", "5xx", failed),
-		])[0]
+		Arr.getUnsafe(
+			gcpWorkloads("cloudRun", [
+				point(API, "gcp.cloud_run.requests", "2xx", ok),
+				point(API, "gcp.cloud_run.requests", "5xx", failed),
+			]),
+			0,
+		)
 
 	it("rates saturation by the busiest share of a limit", () => {
 		expect(database(0.2, 0.5).saturation).toBe("ok")
@@ -231,7 +237,7 @@ describe("workload identity", () => {
 	it("marks the columns that are totals over the range", () => {
 		expect(
 			Arr.map(
-				GCP_INFRA_COLUMNS.computeEngine.filter((spec) => spec.total),
+				Arr.filter(GCP_INFRA_COLUMNS.computeEngine, (spec) => spec.total === true),
 				(spec) => spec.label,
 			),
 		).toEqual(["Network in", "Network out", "Disk read", "Disk write"])
@@ -263,6 +269,7 @@ describe("formatGcpValue", () => {
 		expect(formatGcpValue("cores", 0.0002)).toBe("<1m")
 		expect(formatGcpValue("cores", 0)).toBe("0m")
 		expect(formatGcpValue("cores", 1.25)).toBe("1.25")
+		expect(formatGcpValue("cores", 0.9996)).toBe("1")
 	})
 })
 

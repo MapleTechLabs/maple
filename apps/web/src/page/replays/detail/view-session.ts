@@ -17,11 +17,13 @@ import { truncatedText } from "@maple/views/ui/truncated-text"
 import { browserIconFor, deviceIconFor } from "../kit/sessions-parts"
 import { recordedMarker } from "../kit/replay-window"
 import { Message } from "./message"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import type { Model, ReplayDetail } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { scrollRegion } from "@maple/views/ui/scroll-region"
 import { Array as Arr, Record as Rec } from "effect"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 // The rail's Session tab.
 
@@ -162,7 +164,7 @@ const summary = (h: H, session: ReplayDetail): Html => {
 			h.div(
 				[h.Class("mt-3 grid grid-cols-3 gap-1.5")],
 				[
-					stat(h, "FileIcon", "Pages", session.pageViews || 1),
+					stat(h, "FileIcon", "Pages", nonZeroOr(session.pageViews, 1)),
 					stat(h, "CursorPointerIcon", "Clicks", session.clickCount),
 					stat(
 						h,
@@ -174,6 +176,26 @@ const summary = (h: H, session: ReplayDetail): Html => {
 				],
 			),
 		],
+	)
+}
+
+const DAY_MS = 86_400_000
+
+/** The user page over a day either side of this session, so the session is in its window. */
+export const sessionUserHref = (
+	userId: string,
+	session: Pick<ReplayDetail, "startTime" | "lastActivityAt">,
+): string => {
+	const startMs = parseWarehouseDateTime(session.startTime)
+	const endMs = session.lastActivityAt === null ? startMs : parseWarehouseDateTime(session.lastActivityAt)
+	return hrefOf(
+		AppRoute.UserDetail({
+			userId,
+			search: {
+				startTime: formatWarehouseDateTime(startMs - DAY_MS),
+				endTime: formatWarehouseDateTime(endMs + DAY_MS),
+			},
+		}),
 	)
 }
 
@@ -209,6 +231,15 @@ const identity = (h: H, model: SessionView, session: ReplayDetail): Html | null 
 							"All sessions from this user",
 						),
 						copy(h, model, "userId", userId, "User ID"),
+					]),
+					row(h, { icon: "UsersIcon", label: "User", title: userId }, [
+						link(
+							h,
+							sessionUserHref(userId, session),
+							"Open user page",
+							"truncate text-xs text-primary underline-offset-2 hover:underline active:underline",
+							"Everything Maple holds for this user: sessions, events and MCP sessions",
+						),
 					]),
 				]
 			: []),

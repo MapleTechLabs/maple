@@ -17,10 +17,11 @@ import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { skeleton, skeletonBlock } from "@maple/views/ui/skeleton"
 import { settingsSection } from "../kit/section"
+import { compliance } from "../../kit/compliance-line"
 import { Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -34,8 +35,10 @@ const billsUsage = (spend: SpendModel) =>
 	Arr.some(spend.features, (feature) => feature.overageAllowed !== false && feature.ratePerUnit !== null)
 
 const priceLabel = (spend: SpendModel): { price: string; suffix: string } => {
-	const plan = spend.charges.find((charge) => charge.kind === "plan")
-	if (plan === undefined || plan.dollars === null) return { price: "Custom", suffix: "negotiated pricing" }
+	const found = Arr.findFirst(spend.charges, (charge) => charge.kind === "plan")
+	if (Option.isNone(found) || found.value.dollars === null)
+		return { price: "Custom", suffix: "negotiated pricing" }
+	const plan = found.value
 	const interval = `/${plan.interval ?? "month"}`
 	return { price: `$${plan.dollars}`, suffix: billsUsage(spend) ? `${interval} + usage` : interval }
 }
@@ -184,7 +187,7 @@ const customPlanPlate = (h: H, spend: SpendModel): Html => {
 	const hasUsage = billsUsage(spend)
 	const included = Arr.join(
 		Arr.map(
-			spend.features.filter((feature) => feature.included !== null || feature.unlimited),
+			Arr.filter(spend.features, (feature) => feature.included !== null || feature.unlimited === true),
 			(feature) =>
 				feature.unlimited
 					? `unlimited ${Str.toLowerCase(feature.label)}`
@@ -266,8 +269,11 @@ const offerPanel = (
 ): Html => {
 	const isActive = !options.isCustom && plan.customerEligibility?.status === "active"
 	const isTrialAvailable = plan.customerEligibility?.trialAvailable === true
-	const retention = getPlanFeatures(Str.toLowerCase(plan.id)).find(
-		(feature) => feature.label === "Data retention",
+	const retention = Option.getOrUndefined(
+		Arr.findFirst(
+			getPlanFeatures(Str.toLowerCase(plan.id)),
+			(feature) => feature.label === "Data retention",
+		),
 	)
 	return panel(
 		h,
@@ -421,6 +427,7 @@ const planOffer = (
 						...Arr.map(offers, (plan) =>
 							offerPanel(h, model, plan, addOns, { isCustom, trialText }),
 						),
+						compliance(h),
 					],
 				),
 			]

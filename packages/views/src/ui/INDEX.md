@@ -177,11 +177,14 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/autocomplete-lookups.ts` `lookupField`, `autocompleteLookup`: The autocomplete lookups a query builder fetches once it is first focused, each reduced to the names it suggests.
 - `apps/web/src/page/kit/clipboard.ts` `writeClipboard`, `copyToast`: `useCopy`'s write: the clipboard API, then the `execCommand` fallback; `true` when it landed.
 - `apps/web/src/page/kit/commit-card.ts` `isResolvableSha`, `commitDetailKey`, `commitDetailsKey`, `readCommitDetail`, `readCommitDetails`, `loadCommitDetail`, `commitDetailBody`: The commit SHA hover card: the body `CommitDetailBody` renders once `commitQueryAtom(sha)` settles, and the lookup itself.
+- `apps/web/src/page/kit/compliance-line.ts` `compliance`: The compliance footnote under the plan pickers (DPA available, SOC 2 and ISO 27001 in progress).
 - `apps/web/src/page/kit/connect-flow.ts` `flowColumns`, `stepCard`, `choiceTiles`, `statusRow`, `foundChips`, `flowRail`, `savedBanner`, `liveChecklist`, `whereToFind`: The parts every source's connect flow is built from: the step card, its status row, the rail beside it and the Go live checklist.
 - `apps/web/src/page/kit/custom-range-view.ts` `view`: The custom range picker's DOM: a two-month range calendar (en-US, rdp-* classes, Maple's `calendarClassNames`), then the Start/End time fields and the actions.
 - `apps/web/src/page/kit/custom-range.ts` `readToday`, `parseTimeInput`, `addToRange`, `appliedRange` (stateful: Model, init, update): The custom range picker: a two-month range calendar and two time inputs in the selected zone's wall clock.
 - `apps/web/src/page/kit/dashboard-page.ts` `pageBody`, `filterRail`, `pageContent`, `pageHeader`, `pageScrollArea`, `dashboardPage`: The dashboard page below the shell's top bar: `PageLayout.Body` with its filter rail, content column, sticky header and scroll area.
+- `apps/web/src/page/kit/destination-picker.ts` `destinationPicker`, `pickedDestination`: `DestinationPicker`: the alert destinations a form notifies, each removable, then an "Add destination" menu of the rest; the owner keeps the menu's Model and the chosen ids.
 - `apps/web/src/page/kit/detail-header.ts` `detailEyebrow`, `detailTitle`, `detailTitleSkeleton`, `detailActions`: `DetailHeader`'s title side and `DetailHeaderSkeleton`.
+- `apps/web/src/page/kit/form-section.ts` `formSection`, `formCard`, `formActionBar`, `managersOnlyPage`: `FormSection`: one row of a form card, what it sets on the left (a title and an optional hint) and its controls on the right; the two stack on phones.
 - `apps/web/src/page/kit/guided-setup.ts` `frameworkIconStrip`, `frameworkPicker`, `agentPromptButton`, `connectInstructions`: `FrameworkIconStrip`, `FrameworkPicker` and `ConnectInstructions`, with `PackageManagerCodeBlock`.
 - `apps/web/src/page/kit/infra-correlation/command.ts` `operationOf`: The four `*InfraTimeseries` reads the panel's charts make, through the read cache under the atom key (`requestKey(org, "<function>", { data })`), so a reopened panel reuses them.
 - `apps/web/src/page/kit/infra-correlation/update.ts` `chartIdOf`, `requestsOf` (stateful: Model, init, update): A chart's slot and chart id, `<kind>-<metric>` (the linked-cursor id).
@@ -189,6 +192,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/infra-correlation/view.ts` `view`: The panel; keyed by the record, so another record remounts it and reads its own window.
 - `apps/web/src/page/kit/infra-correlation/window.ts` `anchoredWindow`: `infraCorrelationWindow` for a parseable anchor: 15 minutes either side, covering the span, on snapped to a 15 s grid before the request is sent.
 - `apps/web/src/page/kit/keyed-step.ts` `slotStep`, `chain`, `chainAll`: One request slot's step and the way steps compose: the Model threaded through, the Commands concatenated, the last OutMessage kept.
+- `apps/web/src/page/kit/last-by.ts` `lastBy`: A derivation that views call on every message, recomputed only when one of its inputs changes.
 - `apps/web/src/page/kit/list-toolbar.ts` `listToolbar`, `toolbarCount`, `toolbarStat`: `ListToolbar`: a list page's row of view tabs, then search, filters and the count readout.
 - `apps/web/src/page/kit/markdown.ts` `escapeDirectives`, `parseMarkdownTexts`: The one markdown parse every page uses (chat, agent sessions).
 - `apps/web/src/page/kit/message-response.ts` `glyph`, `messageResponse`: Lightweight markdown over Streamdown: laid out with Streamdown's element classes.
@@ -196,8 +200,9 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/peek-keys.ts` `peekStepFor`: The list peeks' step keys: down/J forward, up/K back, except in a text field or with a modifier.
 - `apps/web/src/page/kit/pinned-namespace-notice.ts` `pinnedNamespaceNotice`: `PinnedNamespaceNotice`: replaces a rail's Namespace section while the org-global pin is on.
 - `apps/web/src/page/kit/query-builder/change.ts` `withRootOnly`, `applyQueryChange`: One edit a `QueryPanel` makes to its draft (its `onUpdate`, `onAggregationChange` and `onDataSourceChange` callbacks), as data the host applies.
-- `apps/web/src/page/kit/query-builder/metrics-body.ts` `metricsBody`: `MetricsBody`: the metric picker, the where clause, and the two aggregation rows with the one-field breakdown.
-- `apps/web/src/page/kit/query-builder/panel.ts` `metricPickerIdOf`, `metricBreakdownIdOf` (stateful: Model, init, update): Where-editor Messages need `inputs` (the drafts and autocomplete values); without them they are ignored.
+- `apps/web/src/page/kit/query-builder/draft.ts` `groupBySelectionOf`: `QueryBuilderQueryDraft` (@maple/query-engine/query-builder) as a Schema: the query one `QueryPanel` edits, shared by the widget editor and the alert rule editor.
+- `apps/web/src/page/kit/query-builder/metrics-body.ts` `groupByChoicesOf`, `metricsBody`: `MetricsBody`: the metric picker, the where clause, and the two aggregation stages: each series reduced within the interval, then the series combined by any number of fields.
+- `apps/web/src/page/kit/query-builder/panel.ts` `metricPickerIdOf` (stateful: Model, init, update): Where-editor Messages need `inputs` (the drafts and autocomplete values); without them they are ignored.
 - `apps/web/src/page/kit/query-builder/parts.ts` `panelSelect`, `whereClauseEditor`, `textInput`, `addOnToggles`, `addOnSections`: The pieces of a `QueryPanel` body: the where clause, the add-on toggles and their sections.
 - `apps/web/src/page/kit/query-builder/view.ts` `queryPanelView`: `QueryPanel` and `QueryPanelShell`: one query's builder panel and its frame.
 - `apps/web/src/page/kit/query-builder/where-editor.ts` `whereEditor`, `highlightOverlay`: The suggestions of a field kept in the owner's `WhereFields` (`page/kit/where-field.ts`).

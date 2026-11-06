@@ -39,6 +39,7 @@ import {
 	AlertEventType as AlertEventTypeSchema,
 	AlertForbiddenError,
 	AlertIncidentDocument,
+	AlertIncidentEventId,
 	AlertIncidentHoldReason,
 	AlertIncidentStatus,
 	type AlertDestinationNotFoundError,
@@ -57,7 +58,6 @@ import {
 	type AlertSeverity,
 	AlertSignalType as AlertSignalTypeSchema,
 	AlertValidationError,
-	AlertNotificationTemplate,
 	type AlertEventType as AlertEventTypeValue,
 	type AlertRuleUpsertRequest,
 	type AlertGroupBy,
@@ -72,6 +72,7 @@ import {
 	RoleName,
 	WarehouseUpstreamError,
 	type UserId,
+	isManagedSignalType,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import * as Orm from "@maple-dev/effect-orm/database"
@@ -80,6 +81,7 @@ import {
 	type AlertDeliveryEventRow,
 	AlertDestinations,
 	type AlertDestinationRow,
+	AlertIncidentEvents,
 	AlertIncidents,
 	type AlertIncidentRow,
 	AlertRuleClaims,
@@ -163,6 +165,8 @@ import { makeAlertDestinationDelivery, parseAlertDestinationEncryptionKey } from
 import { AlertReadModelsService, type AlertReadModelsServiceApi } from "./AlertReadModelsService"
 import { AlertRulesService, makeAlertRulePersistence, type AlertRulesServiceApi } from "./AlertRulesService"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
+import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
+import { evaluateSloBurn } from "@maple/backend/services/slos/slo-alert-rule"
 import {
 	openForAlertIncident,
 	resolveForAlertIncident,
@@ -180,9 +184,11 @@ import {
 	selectStoredAlertRules,
 	type NormalizedRule,
 	type StoredAlertRuleRow,
-	UPTIME_RULE_MANAGED_MESSAGE,
+	managedRuleMessage,
 } from "./AlertRuleModel"
 import { mapSignalUnit, resolveSignalDisplay } from "./alert-signal-display"
+import { StoredDeliveryPayloadSchema, type StoredDeliveryPayload } from "./delivery/stored-payload"
+import { incidentAcknowledgedBy } from "./delivery/transports/chat"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
@@ -389,51 +395,18 @@ const DELIVERY_LEASE_TTL_MS = 30_000
 /*  Schemas for stored JSON formats                                           */
 /* -------------------------------------------------------------------------- */
 
-const StoredDeliveryPayloadSchema = Schema.StructWithRest(
-	Schema.Struct({
-		event: Schema.optionalKey(Schema.Unknown),
-		eventType: Schema.optionalKey(Schema.String),
-		incidentId: Schema.optionalKey(Schema.NullOr(Schema.String)),
-		incidentStatus: Schema.optionalKey(Schema.String),
-		dedupeKey: Schema.optionalKey(Schema.String),
-		rule: Schema.optionalKey(
-			Schema.Struct({
-				id: Schema.optionalKey(Schema.String),
-				name: Schema.optionalKey(Schema.String),
-				signalType: Schema.optionalKey(Schema.String),
-				severity: Schema.optionalKey(Schema.String),
-				groupKey: Schema.optionalKey(Schema.NullOr(Schema.String)),
-				comparator: Schema.optionalKey(Schema.String),
-				threshold: Schema.optionalKey(Schema.Number),
-				thresholdUpper: Schema.optionalKey(Schema.NullOr(Schema.Number)),
-				windowMinutes: Schema.optionalKey(Schema.Number),
-				severities: Schema.optionalKey(Schema.Array(Schema.String)),
-			}),
-		),
-		peakSeverity: Schema.optionalKey(Schema.NullOr(Schema.String)),
-		observed: Schema.optionalKey(
-			Schema.Struct({
-				value: Schema.optionalKey(Schema.NullOr(Schema.Number)),
-				sampleCount: Schema.optionalKey(Schema.NullOr(Schema.Number)),
-				detail: Schema.optionalKey(Schema.NullOr(Schema.String)),
-			}),
-		),
-		template: Schema.optionalKey(Schema.NullOr(AlertNotificationTemplate)),
-		chart: Schema.optionalKey(
-			Schema.NullOr(
-				Schema.Struct({
-					sparkline: Schema.optionalKey(Schema.String),
-					url: Schema.optionalKey(Schema.String),
-				}),
-			),
-		),
-	}),
-	[Schema.Record(Schema.String, Schema.Unknown)],
-)
-
 const decodeAlertRuleIdSync = Schema.decodeUnknownSync(AlertRuleDocument.fields.id)
 const decodeAlertIncidentIdSync = Schema.decodeUnknownSync(AlertIncidentDocument.fields.id)
 const decodeAlertDeliveryEventIdSync = Schema.decodeUnknownSync(AlertDeliveryEventDocument.fields.id)
+const decodeAlertIncidentEventIdSync = Schema.decodeUnknownSync(AlertIncidentEventId)
+
+/** An incident that leaves `open` stops being acknowledged; its history stays in `alert_incident_events`. */
+const clearedAcknowledgement = {
+	acknowledgedAt: null,
+	acknowledgedByUserId: null,
+	acknowledgedByName: null,
+	acknowledgedVia: null,
+} as const
 const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(AlertDestinationDocument.fields.createdAt)
 const decodeAlertSeveritySync = Schema.decodeUnknownSync(AlertSeveritySchema)
 const decodeAlertSignalTypeSync = Schema.decodeUnknownSync(AlertSignalTypeSchema)
@@ -520,7 +493,7 @@ const isolate =
 
 const toIngestDateTime64 = warehouseDateTime64
 
-type StoredDeliveryPayloadType = Schema.Schema.Type<typeof StoredDeliveryPayloadSchema>
+type StoredDeliveryPayloadType = StoredDeliveryPayload
 
 const parseDeliveryPayload = (
 	value: unknown,
@@ -621,6 +594,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const warehouse = yield* WarehouseQueryService
 			const runtime = yield* AlertRuntime
 			const uptimeAlerts = yield* UptimeAlertSource
+			const sloAlerts = yield* SloAlertSource
 			const httpClient = yield* HttpClient.HttpClient
 			const email = yield* EmailService
 			const orgChSettings = yield* OrgClickHouseSettingsService
@@ -656,7 +630,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const {
 				normalizeRule,
 				normalizeRuleRow,
-				requireAdmin,
+				requireAlertsPermission,
 				requireDestinationIds,
 				requireRuleRow,
 				upsertRuleRow,
@@ -1108,6 +1082,23 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					windowEndMs === undefined
 						? yield* now.pipe(Effect.map(snapAlertWindowEndMs))
 						: windowEndMs
+				// An SLO's rule judges each tier on its own pair of burn windows. An SLO that is
+				// gone observes nothing.
+				if (rule.signalType === "slo_burn_rate") {
+					const observation = yield* sloAlerts
+						.observe(orgId, rule.id, endMs)
+						.pipe(
+							Effect.catchTag("@maple/http/errors/SloPersistenceError", (error) =>
+								Effect.fail(makePersistenceError(error)),
+							),
+						)
+					return Option.match(observation, {
+						onNone: () => [],
+						onSome: (windows) => [
+							{ evaluation: evaluateSloBurn(windows), groupKey: UNGROUPED_GROUP_KEY },
+						],
+					})
+				}
 				const startMs = endMs - rule.windowMinutes * 60_000
 				const plan = rule.compiledPlan
 				const source = yield* planEvaluateSource(plan, rule)
@@ -1298,7 +1289,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							threshold: rule.threshold,
 							thresholdUpper: rule.thresholdUpper,
 							value: evaluation.value,
-							detail: rule.signalType === "uptime" ? evaluation.reason : null,
+							detail: isManagedSignalType(rule.signalType) ? evaluation.reason : null,
 							groupKey: incident.groupKey,
 							serviceNames: rule.serviceNames,
 							windowMinutes: rule.windowMinutes,
@@ -1454,7 +1445,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						value: evaluation.value,
 						sampleCount: evaluation.sampleCount,
 						// The evaluator puts the check's error in the reason of an uptime rule.
-						detail: rule.signalType === "uptime" ? evaluation.reason : null,
+						detail: isManagedSignalType(rule.signalType) ? evaluation.reason : null,
 						sparkline: series?.sparkline ?? null,
 						chartUrl,
 						template: rule.notificationTemplate,
@@ -1564,10 +1555,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					"tenant.userId": userId,
 					"maple.alert.rule_id": ruleId,
 				})
-				yield* requireAdmin(roles)
+				yield* requireAlertsPermission(roles)
 				const oldRow = yield* requireRuleRow(orgId, ruleId)
-				if (oldRow.signalType === "uptime") {
-					return yield* makeValidationError(UPTIME_RULE_MANAGED_MESSAGE)
+				if (isManagedSignalType(oldRow.signalType)) {
+					return yield* makeValidationError(managedRuleMessage(oldRow.signalType))
 				}
 				const oldNormalized = yield* normalizeRuleRow(oldRow)
 				const newNormalized = yield* normalizeRule(orgId, request)
@@ -1605,7 +1596,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				sendNotification = false,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "tenant.userId": userId })
-				yield* requireAdmin(roles)
+				yield* requireAlertsPermission(roles)
 				const normalized = yield* normalizeRule(orgId, request)
 				yield* requireDestinationIds(orgId, normalized.destinationIds)
 
@@ -1794,10 +1785,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 				// Preview only needs `alerts:read`, but a raw-SQL rule executes
 				// user-authored ClickHouse against the org's warehouse — the same
-				// capability `createRule`/`testRule` gate behind org-admin. Previewing
+				// capability `createRule`/`testRule` gate behind `alerts:manage`. Previewing
 				// one must not be a cheaper route to that than creating it.
 				if (plan.kind === "raw_sql") {
-					yield* requireAdmin(roles)
+					yield* requireAlertsPermission(roles)
 				}
 				// Alongside the series query, which spans many windows and so says nothing about one check.
 				const queryTiming = yield* Effect.forkChild(
@@ -2390,6 +2381,36 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					const hydrated = yield* hydrateDestination(destinationRow)
 					const incidentRow: AlertIncidentRow | null =
 						row.incidentId != null ? (incidentMap.get(row.incidentId) ?? null) : null
+					// An escalation since the click cleared the ack and paged again: acking now would silence
+					// that page. Read now, not from the claim batch, so a just-committed escalation counts.
+					const ackIncidentId = row.incidentId
+					const isStaleAcknowledgement =
+						row.eventType === "acknowledge" &&
+						(ackIncidentId === null ||
+							(yield* dbExecute((db) =>
+								db.run(
+									PG.from(AlertIncidents)
+										.select("id")
+										.where(($) => [
+											$.orgId.eq(row.orgId),
+											$.id.eq(ackIncidentId),
+											$.status.eq("open"),
+											$.acknowledgedAt.isNotNull(),
+										])
+										.limit(1),
+								),
+							)).length === 0)
+					if (isStaleAcknowledgement) {
+						yield* finalizeClaimedDelivery(row.id, claimTime, {
+							status: "success",
+							attemptedAt: claimTime,
+							providerMessage: "Skipped: the incident is no longer acknowledged",
+							providerReference: null,
+							responseCode: null,
+							errorMessage: null,
+						})
+						return
+					}
 					const ruleRow = ruleMap.get(row.ruleId) ?? null
 					const payloadRule = payload.rule
 					const storedRule = ruleRow ? yield* decodeStoredAlertRuleMetadata(ruleRow) : null
@@ -2449,6 +2470,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							eventType: decodeAlertEventTypeSync(row.eventType),
 							incidentId: row.incidentId ? decodeAlertIncidentIdSync(row.incidentId) : null,
 							incidentStatus: decodeAlertIncidentStatusSync(incidentRow?.status ?? "resolved"),
+							incidentAcknowledgedBy: incidentAcknowledgedBy(incidentRow),
 							dedupeKey: incidentRow?.dedupeKey ?? String(payload.dedupeKey ?? row.deliveryKey),
 							value: payload.observed?.value ?? null,
 							sampleCount: payload.observed?.sampleCount ?? null,
@@ -2486,7 +2508,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 					yield* clearDestinationFailureStreak(row.destinationId, claimTime)
 
-					if (row.incidentId) {
+					// An acknowledgement is not a notification: it must not restart the reminder clock.
+					if (row.incidentId && row.eventType !== "acknowledge") {
 						const incidentId = row.incidentId
 						yield* dbExecute((db) =>
 							db.run(
@@ -3002,6 +3025,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										severity: decodeAlertSeveritySync(openIncident.severity),
 										firstTriggeredAtMs: openIncident.firstTriggeredAt,
 										lastNotifiedAtMs: openIncident.lastNotifiedAt,
+										acknowledged: openIncident.acknowledgedAt !== null,
 										lastDeliveredEventType:
 											openIncident.lastDeliveredEventType == null
 												? null
@@ -3131,6 +3155,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							lastNotifiedAt: inheritedNotificationAt,
 							holdReason: null,
 							heldSince: null,
+							...clearedAcknowledgement,
 							errorIssueId: null,
 							createdAt: timestamp,
 							updatedAt: timestamp,
@@ -3266,33 +3291,68 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// `status = 'open'` plus RETURNING: the prefetch can predate a resolve
 						// by a tick that held this rule before us, and a resolved incident
 						// must not be refreshed or renotified.
+						// An escalation clears whatever ack stands when it commits, decided in SQL rather
+						// than from the prefetch, which a human ack or unack may have overtaken.
 						const refreshed = yield* writeUnderClaim(claim, (db) =>
-							db.run(
-								PG.update(AlertIncidents)
-									.set({
-										// A rule edit can remap the severity without a transition.
-										...(severity !== openIncident.severity
-											? {
-													severity,
-													peakSeverity,
-													threshold: tierRule.threshold,
-													thresholdUpper: tierRule.thresholdUpper,
-												}
-											: undefined),
-										lastTriggeredAt: timestamp,
-										lastObservedValue: evaluation.value,
-										lastSampleCount: evaluation.sampleCount,
-										lastEvaluatedAt: timestamp,
-										holdReason: null,
-										heldSince: null,
-										updatedAt: timestamp,
-										lastNotifiedAt: lifecycle.advanceNotificationAnchor
-											? timestamp
-											: openIncident.lastNotifiedAt,
-									})
-									.where(($) => [$.id.eq(openIncident.id), $.status.eq("open")])
-									.returning("id"),
-							),
+							Effect.gen(function* () {
+								const updated = yield* db.run(
+									PG.update(AlertIncidents)
+										.set({
+											// A rule edit can remap the severity without a transition.
+											...(severity !== openIncident.severity
+												? {
+														severity,
+														peakSeverity,
+														threshold: tierRule.threshold,
+														thresholdUpper: tierRule.thresholdUpper,
+													}
+												: undefined),
+											lastTriggeredAt: timestamp,
+											lastObservedValue: evaluation.value,
+											lastSampleCount: evaluation.sampleCount,
+											lastEvaluatedAt: timestamp,
+											holdReason: null,
+											heldSince: null,
+											updatedAt: timestamp,
+											lastNotifiedAt: lifecycle.advanceNotificationAnchor
+												? timestamp
+												: openIncident.lastNotifiedAt,
+										})
+										.where(($) => [$.id.eq(openIncident.id), $.status.eq("open")])
+										.returning("id"),
+								)
+								if (updated.length === 0 || lifecycle.transition !== "escalated")
+									return updated
+								const cleared = yield* db.run(
+									PG.update(AlertIncidents)
+										.set(clearedAcknowledgement)
+										.where(($) => [
+											$.id.eq(openIncident.id),
+											$.status.eq("open"),
+											$.acknowledgedAt.isNotNull(),
+										])
+										.returning("id"),
+								)
+								if (cleared.length > 0) {
+									// Stamped at the write, not the tick's start: an ack that committed during
+									// the evaluation must not sort after the event that cleared it.
+									const writeTime = yield* now
+									const clearedAt = Math.max(timestamp, writeTime)
+									yield* db.run(
+										PG.insertInto(AlertIncidentEvents).values({
+											id: decodeAlertIncidentEventIdSync(makeUuid()),
+											orgId: row.orgId,
+											incidentId: openIncident.id,
+											type: "ack_cleared",
+											actorUserId: null,
+											actorName: null,
+											source: null,
+											createdAt: clearedAt,
+										}),
+									)
+								}
+								return updated
+							}),
 						)
 						if (refreshed.length === 0) {
 							return {
@@ -3335,6 +3395,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							lastEvaluatedAt: timestamp,
 							holdReason: null,
 							heldSince: null,
+							...clearedAcknowledgement,
 							updatedAt: timestamp,
 						}
 						// Same `status = 'open'` guard as above: only the write that actually
@@ -3350,6 +3411,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										lastEvaluatedAt: timestamp,
 										holdReason: null,
 										heldSince: null,
+										...clearedAcknowledgement,
 										updatedAt: timestamp,
 									})
 									.where(($) => [$.id.eq(openIncident.id), $.status.eq("open")])
@@ -3655,6 +3717,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										resolvedAt: timestamp,
 										holdReason: null,
 										heldSince: null,
+										...clearedAcknowledgement,
 										updatedAt: timestamp,
 									})
 									.where(($) => [$.id.eq(incident.id), $.status.eq("open")])
@@ -3694,6 +3757,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								resolvedAt: timestamp,
 								holdReason: null,
 								heldSince: null,
+								...clearedAcknowledgement,
 								updatedAt: timestamp,
 							},
 							syntheticEvaluation,
@@ -3838,6 +3902,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 											resolvedAt: timestamp,
 											holdReason: null,
 											heldSince: null,
+											...clearedAcknowledgement,
 											updatedAt: timestamp,
 										})
 										.where(($) => [$.id.eq(incident.id), $.status.eq("open")])
@@ -3878,6 +3943,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										resolvedAt: timestamp,
 										holdReason: null,
 										heldSince: null,
+										...clearedAcknowledgement,
 										updatedAt: timestamp,
 									},
 									syntheticEvaluation,
@@ -5203,7 +5269,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										.limit(1),
 								),
 							))[0]
-							if (!ruleRow) return
+							if (ruleRow == null) return
 							const normalized = yield* normalizeRuleRow(ruleRow)
 							// Budgeted: a sweep that resolves every incident of every
 							// disabled rule is exactly the shape that storms phones.
@@ -5326,6 +5392,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				AlertReadModelsService.layer,
 				AlertRulesService.layer,
 				UptimeAlertSource.layer,
+				SloAlertSource.layer,
 			),
 		),
 	)

@@ -23,12 +23,13 @@ import { settingsSection } from "../../settings/kit/section"
 import { publicAddress, statusPagesHref } from "../shared/commands"
 import { textField } from "../shared/fields"
 import { APPEARANCES, presetCards } from "../shared/look"
+import { monitorStatusOf } from "../shared/derive"
 import { checkedRows } from "../shared/picker"
 import { pickerView } from "../shared/picker-view"
 import { daysOf, previewDocument, previewFrame, previewTheme } from "../shared/preview"
 import { FocusNewRow } from "./command"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { canSubmit, monitorsOf, NAME_ID, nameIssue, PICKER_ID, SLUG_ID, slugError } from "./update"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -176,7 +177,7 @@ const draftDocument = (model: Model): string => {
 			name: Str.trim(row.name) === "" ? "Untitled component" : Str.trim(row.name),
 			description: null,
 			group: Str.trim(row.group) === "" ? null : Str.trim(row.group),
-			monitorStatus: monitors.find((monitor) => monitor.id === row.monitorId)?.state.status ?? null,
+			monitorStatus: monitorStatusOf(monitors, row.monitorId),
 			manualStatus: row.monitorId === null ? row.manualStatus : null,
 			showUptime: true,
 			monitored: row.monitorId !== null,
@@ -305,7 +306,7 @@ const builder = (h: H, model: Model): Html =>
 
 const membersOnly = (h: H): Html =>
 	resourceNotFound(h, {
-		title: "Only org admins can create status pages",
+		title: "Only org admins and engineers can create status pages",
 		description: "Ask an admin to create one. You can read the existing pages.",
 		back: { href: statusPagesHref(), label: "Back to status pages" },
 	})
@@ -323,7 +324,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						skeleton(h, "h-9 w-1/3"),
 						skeleton(h, "h-64 w-full"),
 					])
-				: model.isAdmin
+				: canManage(model)
 					? builder(h, model)
 					: membersOnly(h),
 		],

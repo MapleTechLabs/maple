@@ -196,6 +196,9 @@ export type AlertIncidentId = Schema.Schema.Type<typeof AlertIncidentId>
 export const AlertDeliveryEventId = MapleUuidId("@maple/AlertDeliveryEventId", "Alert Delivery Event ID")
 export type AlertDeliveryEventId = Schema.Schema.Type<typeof AlertDeliveryEventId>
 
+export const AlertIncidentEventId = MapleUuidId("@maple/AlertIncidentEventId", "Alert Incident Event ID")
+export type AlertIncidentEventId = Schema.Schema.Type<typeof AlertIncidentEventId>
+
 export const MobileDeviceId = MapleUuidId("@maple/MobileDeviceId", "Mobile Device ID")
 export type MobileDeviceId = Schema.Schema.Type<typeof MobileDeviceId>
 
@@ -329,6 +332,27 @@ export const UptimeIntervalSeconds = Schema.Number.check(
 	Schema.annotate({ identifier: "@maple/UptimeIntervalSeconds", title: "Uptime Interval Seconds" }),
 )
 export type UptimeIntervalSeconds = Schema.Schema.Type<typeof UptimeIntervalSeconds>
+
+export const SloId = MapleUuidId("@maple/SloId", "SLO ID")
+export type SloId = Schema.Schema.Type<typeof SloId>
+
+/** The rolling window an SLO's error budget is measured over. */
+export const SloWindowDays = Schema.Literals([7, 28, 30]).annotate({
+	identifier: "@maple/SloWindowDays",
+	title: "SLO Window Days",
+})
+export type SloWindowDays = Schema.Schema.Type<typeof SloWindowDays>
+
+/**
+ * Latency SLI thresholds: the ladder the service rollups count spans under, so any
+ * threshold on it reads the rollups instead of raw spans.
+ */
+export const SLO_LATENCY_THRESHOLDS_MS = [50, 100, 250, 500, 1000, 2500, 5000, 10000] as const
+export const SloLatencyThresholdMs = Schema.Literals(SLO_LATENCY_THRESHOLDS_MS).annotate({
+	identifier: "@maple/SloLatencyThresholdMs",
+	title: "SLO Latency Threshold (ms)",
+})
+export type SloLatencyThresholdMs = Schema.Schema.Type<typeof SloLatencyThresholdMs>
 
 export const StatusPageId = MapleUuidId("@maple/StatusPageId", "Status Page ID")
 export type StatusPageId = Schema.Schema.Type<typeof StatusPageId>
@@ -472,6 +496,19 @@ export const SourcePlatform = Schema.Literals([...PUSH_SOURCE_PLATFORMS, ...PULL
 export type SourcePlatform = Schema.Schema.Type<typeof SourcePlatform>
 
 export const isPushSourcePlatform = Schema.is(PushSourcePlatform)
+
+/** A source token: the gateway resolves anything with this prefix by its hash. */
+export const SOURCE_TOKEN_PREFIX = "maple_src_"
+
+/** A public source token: still a source token, but made to ship in client code (browsers). */
+export const PUBLIC_SOURCE_TOKEN_PREFIX = `${SOURCE_TOKEN_PREFIX}pk_`
+
+/** Platforms whose code ships to end users, so their source token is a public one. */
+export const isPublicSourcePlatform = (platform: SourcePlatform): boolean => platform === "browser"
+
+/** The token's prefix for a source on this platform. */
+export const sourceTokenPrefix = (platform: SourcePlatform): string =>
+	isPublicSourcePlatform(platform) ? PUBLIC_SOURCE_TOKEN_PREFIX : SOURCE_TOKEN_PREFIX
 
 /**
  * `default` stands for the org's public/private ingest keys, `token` carries its own

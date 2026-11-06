@@ -6,12 +6,12 @@ import { formatWarehouseDateTime, formatWarehouseDateTimeMs } from "../datetime"
 const StringRecordFromJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String))
 
 const parseAttributes = (raw: string): Effect.Effect<Record<string, string>> =>
-	Schema.decodeUnknownEffect(StringRecordFromJson)(raw).pipe(
+	Schema.decodeEffect(StringRecordFromJson)(raw).pipe(
 		Effect.map((parsed) =>
 			pipe(
 				Rec.toEntries(parsed),
 				Arr.filter(([, v]) => v !== ""),
-				Object.fromEntries,
+				Rec.fromEntries,
 			),
 		),
 		Effect.orElseSucceed(() => ({})),

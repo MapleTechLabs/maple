@@ -130,6 +130,7 @@ export const signalLabels: Record<AlertSignalType, string> = {
 	builder_query: "Query builder",
 	raw_query: "Raw SQL",
 	uptime: "Uptime check",
+	slo_burn_rate: "SLO burn rate",
 } satisfies Record<AlertSignalType, string>
 
 export const RAW_QUERY_REDUCER_LABELS: Record<QueryEngineAlertReducer, string> = {
@@ -185,6 +186,9 @@ export function formatSignalValue(signalType: AlertSignalType, value: number | n
 		// An uptime rule observes 1 while its monitor is down, else 0.
 		case "uptime":
 			return value >= 1 ? "Down" : "Up"
+		// An SLO rule observes how many times faster than sustainable the budget burns.
+		case "slo_burn_rate":
+			return `${value.toFixed(1)}x`
 	}
 }
 
@@ -395,8 +399,10 @@ export function rawSqlHasValueColumn(sql: string): boolean {
 
 	if (/\bas\s+["`]?value["`]?\b/i.test(trimmed)) return true
 
-	const firstFrom = trimmed.search(/\bfrom\b/i)
-	const selectHead = firstFrom >= 0 ? Str.slice(0, firstFrom)(trimmed) : Str.slice(0, 500)(trimmed)
+	const selectHead = Option.match(Str.search(/\bfrom\b/i)(trimmed), {
+		onNone: () => Str.slice(0, 500)(trimmed),
+		onSome: (firstFrom) => Str.slice(0, firstFrom)(trimmed),
+	})
 	return /(?:\bselect\b|,)\s*["`]?value["`]?\s*(?:,|$)/i.test(selectHead)
 }
 
@@ -565,6 +571,7 @@ export function buildRuleCreateParamsV2(form: RuleFormState): V2AlertRuleCreateP
 		renotify_interval_minutes: parsePositiveNumber(form.renotifyIntervalMinutes, 30),
 		apdex_threshold_ms: signalType === "apdex" ? parsePositiveNumber(form.apdexThresholdMs, 500) : null,
 		query_builder_draft:
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 			signalType === "builder_query" ? Rec.fromEntries(Object.entries(form.queryBuilderDraft)) : null,
 		raw_query_sql: signalType === "raw_query" ? Str.trim(form.rawQuerySql) || null : null,
 		raw_query_reducer: signalType === "raw_query" ? form.rawQueryReducer : null,
@@ -603,7 +610,7 @@ export type DestinationFormState = {
 	type: AlertDestinationType
 	name: string
 	enabled: boolean
-	/** Discord or Google Chat incoming-webhook URL. */
+	/** Discord, Google Chat or Microsoft Teams (Workflows) incoming-webhook URL. */
 	webhookUrl: string
 	integrationKey: string
 	url: string
@@ -611,6 +618,11 @@ export type DestinationFormState = {
 	/** Telegram bot token from @BotFather, and the chat it posts to. */
 	telegramBotToken: string
 	telegramChatId: string
+	/** incident.io HTTP alert source: its config id (not secret) and its token (write-only). */
+	incidentIoAlertSourceId: string
+	incidentIoToken: string
+	/** The saved source's id, `""` for a new destination: another source needs its own token. */
+	incidentIoStoredAlertSourceId: string
 	/** Selected workspace-member recipients (email type only). */
 	memberUserIds: string[]
 	/**
@@ -641,6 +653,9 @@ export function defaultDestinationForm(type: AlertDestinationType = "discord"): 
 		signingSecret: "",
 		telegramBotToken: "",
 		telegramChatId: "",
+		incidentIoAlertSourceId: "",
+		incidentIoToken: "",
+		incidentIoStoredAlertSourceId: "",
 		memberUserIds: [],
 		chatWorkspaceId: null,
 		chatConnector: "",
@@ -657,7 +672,8 @@ export function pickDefaultDestination(
 	rules: ReadonlyArray<Pick<AlertRuleDocument, "destinationIds">>,
 ): AlertDestinationDocument["id"] | null {
 	const usable = Arr.filter(destinations, (d) => d.enabled && !d.disabledAt)
-	if (usable.length === 1) return usable[0]!.id
+	const [onlyUsable, ...otherUsable] = usable
+	if (onlyUsable !== undefined && otherUsable.length === 0) return onlyUsable.id
 	const uses = new Map<string, number>()
 	for (const id of Arr.flatMap(rules, (rule) => rule.destinationIds)) uses.set(id, (uses.get(id) ?? 0) + 1)
 	const ranked = Arr.filter(usable, (d) => (uses.get(d.id) ?? 0) > 0).sort(
@@ -691,6 +707,10 @@ export function suggestedDestinationName(form: DestinationFormState): string {
 			return "Telegram"
 		case "google-chat":
 			return "Google Chat"
+		case "microsoft-teams":
+			return "Microsoft Teams"
+		case "incident-io":
+			return "incident.io"
 		case "email":
 			return "Email"
 	}
@@ -709,6 +729,11 @@ export function destinationToFormState(destination: AlertDestinationDocument): D
 		// comes back as `channelLabel` so an edit doesn't demand retyping it.
 		telegramBotToken: "",
 		telegramChatId: destination.type === "telegram" ? (destination.channelLabel ?? "") : "",
+		// Likewise the alert source id comes back as `channelLabel`; the token never does.
+		incidentIoAlertSourceId: destination.type === "incident-io" ? (destination.channelLabel ?? "") : "",
+		incidentIoToken: "",
+		incidentIoStoredAlertSourceId:
+			destination.type === "incident-io" ? (destination.channelLabel ?? "") : "",
 		memberUserIds: destination.memberUserIds != null ? [...destination.memberUserIds] : [],
 		// The stored channel's id isn't returned, its `#name` is — kept so the current
 		// channel stays visible on edit (an empty id keeps the stored one).
@@ -716,7 +741,11 @@ export function destinationToFormState(destination: AlertDestinationDocument): D
 		chatConnector: destination.chatConnector ?? "",
 		chatChannelId: "",
 		chatChannelName:
-			destination.type === "chat" ? (destination.channelLabel?.replace(/^#/, "") ?? "") : "",
+			destination.type === "chat"
+				? destination.channelLabel == null
+					? ""
+					: Str.replace(/^#/, "")(destination.channelLabel)
+				: "",
 		// The team's name is only in the server's "Linear · <team>" summary.
 		linearTeamId: destination.linearTeamId ?? "",
 		linearTeamName:
@@ -764,6 +793,21 @@ export function buildDestinationCreateParamsV2(form: DestinationFormState): V2Al
 				name: Str.trim(form.name),
 				enabled: form.enabled,
 				webhook_url: Str.trim(form.webhookUrl),
+			}
+		case "microsoft-teams":
+			return {
+				type: "microsoft-teams",
+				name: Str.trim(form.name),
+				enabled: form.enabled,
+				webhook_url: Str.trim(form.webhookUrl),
+			}
+		case "incident-io":
+			return {
+				type: "incident-io",
+				name: Str.trim(form.name),
+				enabled: form.enabled,
+				alert_source_config_id: Str.trim(form.incidentIoAlertSourceId),
+				token: Str.trim(form.incidentIoToken),
 			}
 		case "email":
 			return {
@@ -837,6 +881,26 @@ export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2Al
 				enabled: form.enabled,
 				...(name ? { name } : undefined),
 				...(webhookUrl ? { webhook_url: webhookUrl } : undefined),
+			}
+		}
+		case "microsoft-teams": {
+			const webhookUrl = Str.trim(form.webhookUrl)
+			return {
+				type: "microsoft-teams",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(webhookUrl ? { webhook_url: webhookUrl } : undefined),
+			}
+		}
+		case "incident-io": {
+			const alertSourceId = Str.trim(form.incidentIoAlertSourceId)
+			const token = Str.trim(form.incidentIoToken)
+			return {
+				type: "incident-io",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(alertSourceId ? { alert_source_config_id: alertSourceId } : undefined),
+				...(token ? { token } : undefined),
 			}
 		}
 		case "telegram": {
@@ -1006,7 +1070,7 @@ export function v2DeliveryToDocument(delivery: V2AlertDelivery): AlertDeliveryEv
 
 export function computeIncidentStats(incidents: AlertIncidentDocument[]) {
 	const totalTriggered = incidents.length
-	const resolvedIncidents = incidents.filter((i) => i.resolvedAt && i.firstTriggeredAt)
+	const resolvedIncidents = Arr.filter(incidents, (i) => Boolean(i.resolvedAt && i.firstTriggeredAt))
 	const avgResolutionMs =
 		resolvedIncidents.length > 0
 			? Arr.reduce(resolvedIncidents, 0, (sum, i) => {
@@ -1082,6 +1146,7 @@ export const eventTypeMeta: Record<AlertEventType, { label: string; tone: Tone }
 	resolve: { label: "Resolved", tone: "ok" },
 	renotify: { label: "Re-notified", tone: "warn" },
 	test: { label: "Test", tone: "info" },
+	acknowledge: { label: "Acknowledged", tone: "info" },
 } satisfies Record<AlertEventType, { label: string; tone: Tone }>
 
 export type DeliveryStatusVariant = Exclude<Tone, "neutral"> | "outline"
@@ -1117,7 +1182,7 @@ export function groupDeliveryEventsByDay(
 	for (const event of events) {
 		const key = String(startOfDay(Date.parse(event.scheduledAt), timeZone))
 		const last = groups[groups.length - 1]
-		if (last && last.key === key) {
+		if (last !== undefined && last.key === key) {
 			last.events.push(event)
 		} else {
 			groups.push({

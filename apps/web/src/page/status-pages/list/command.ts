@@ -1,6 +1,6 @@
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { readIsAdmin } from "../../alerts/shared/commands"
+import { readGrants } from "../../../data/session-tenant"
 import { listPageSummaries } from "../shared/commands"
 import { Message } from "./message"
 
@@ -13,7 +13,7 @@ export const FetchListSession = Command.define("FetchStatusPagesSession", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedFetchSession],
 	execute: ({ orgId }) =>
-		Effect.map(readIsAdmin, (isAdmin) => Message.CompletedFetchSession({ orgId, isAdmin })),
+		Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ orgId, grants })),
 })
 
 export const FetchStatusPages = Command.define("FetchStatusPageSummaries", {

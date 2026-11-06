@@ -16,7 +16,7 @@ import {
 	clickhouseExec,
 	uniqueDatabase,
 } from "./clickhouse-e2e-support"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 const database = uniqueDatabase("maple_trace_facets_e2e")
 const ORG_ID = "org_trace_facets_e2e"
@@ -132,9 +132,13 @@ describe.skipIf(!clickhouseE2eEnabled)("trace_facets_hourly materialization", ()
 		)
 		assert.deepStrictEqual(await fromRollup(), expected)
 
-		const backfill = migrations
-			.find((migration) => migration.version === 34)!
-			.statements.find((statement) => typeof statement !== "string")!
+		const backfill = Option.getOrThrow(
+			Arr.findFirst(
+				Option.getOrThrow(Arr.findFirst(migrations, (migration) => migration.version === 34))
+					.statements,
+				(statement) => typeof statement !== "string",
+			),
+		)
 		await clickhouseExec("TRUNCATE TABLE trace_facets_hourly", database)
 		await clickhouseExec(renderStatementFull(backfill, database), database)
 		assert.deepStrictEqual(await fromRollup(), expected)
@@ -172,11 +176,11 @@ describe.skipIf(!clickhouseE2eEnabled)("trace_facets_hourly materialization", ()
 				assert.deepStrictEqual(byFacet(await run(facets(false))), byFacet(await run(facets(true))))
 				const [spliced] = await run(stats(false))
 				const [raw] = await run(stats(true))
-				assert.strictEqual(spliced!.minDurationMs, raw!.minDurationMs)
-				assert.strictEqual(spliced!.maxDurationMs, longestMs)
-				assert.strictEqual(raw!.maxDurationMs, longestMs)
+				assert.strictEqual(spliced.minDurationMs, raw.minDurationMs)
+				assert.strictEqual(spliced.maxDurationMs, longestMs)
+				assert.strictEqual(raw.maxDurationMs, longestMs)
 				for (const key of ["p50DurationMs", "p95DurationMs"]) {
-					assert.closeTo(Number(spliced![key]), Number(raw![key]), Number(raw![key]) * 0.01)
+					assert.closeTo(Number(spliced[key]), Number(raw[key]), Number(raw[key]) * 0.01)
 				}
 			}
 		}

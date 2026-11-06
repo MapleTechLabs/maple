@@ -18,12 +18,13 @@ import { detailActions, detailTitle } from "../../kit/detail-header"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
 import { platformMeta, platformTile } from "../kit/platforms"
-import { effectiveTab, hasToken, integrationPlatformOf, focusIdOf, sourceHref, tabsOf } from "../kit/shared"
+import { effectiveTab, hasToken, integrationPlatformOf, focusIdOf, sourceHref } from "../kit/shared"
 import { actionsEmbed, cardEmbed } from "../../integrations/embed"
+import { canManage as canManageIntegrations } from "../../integrations/model"
 import { sourceStatusBadge } from "../kit/status"
 import { Message } from "./message"
-import type { Model } from "./model"
-import { sourceOf } from "./update"
+import { canManage, type Model } from "./model"
+import { shownTabsOf, sourceOf } from "./update"
 import { integrationActions, sourceActions } from "./view-actions"
 import { overviewTab } from "./view-overview"
 import { settingsTab, setupTab } from "./view-tabs"
@@ -51,11 +52,11 @@ const loading = (h: H): Html =>
 	vstack(h, { gap: "3" }, [skeleton(h, "h-10 w-72"), skeleton(h, "h-40 w-full")])
 
 /** `SourceTabs`: links, so the open tab is in the URL; the overview drops `tab`. */
-const tabs = (h: H, source: V2Source, active: SourceTab): Html =>
+const tabs = (h: H, shown: ReadonlyArray<SourceTab>, source: V2Source, active: SourceTab): Html =>
 	underlineTabStrip(
 		h,
 		{ label: "Source sections" },
-		Arr.map(tabsOf(source), (tab) => {
+		Arr.map(shown, (tab) => {
 			const isActive = tab === active
 			return h.keyed("a")(
 				tab,
@@ -107,19 +108,27 @@ const connectionPart = (
 	})
 }
 
-/** Token sources take their own actions; an integration source pauses and deletes beside its integration's. */
+/**
+ * Token sources take their own actions; an integration source pauses and deletes beside its integration's.
+ * Pause and delete need `sources:manage`; the integration's actions (Reconnect and the like) need
+ * `integrations:manage`, which the embedded integration reads into its own grants.
+ */
 const headerActions = (h: H, model: Model, source: V2Source, timeZone: string): Html | undefined => {
-	if (hasToken(source)) return detailActions(h, sourceActions(h, model, source))
 	if (source.is_default) return undefined
-	return detailActions(
-		h,
-		integrationActions(h, model, source, connectionPart(h, model, source, timeZone, "actions")),
-	)
+	if (hasToken(source))
+		return canManage(model) ? detailActions(h, sourceActions(h, model, source)) : undefined
+	const connection =
+		model.connection !== null && canManageIntegrations(model.connection)
+			? connectionPart(h, model, source, timeZone, "actions")
+			: null
+	if (canManage(model)) return detailActions(h, integrationActions(h, model, source, connection))
+	return connection === null ? undefined : detailActions(h, [connection])
 }
 
 const found = (h: H, model: Model, source: V2Source, inputs: PageViewInputs, nowMs: number): Html => {
 	const shown = model.revealed !== null && model.revealed.sourceId === source.id ? model.revealed : null
 	const timeZone = inputs.context.timeZone
+	const shownTabs = shownTabsOf(model, source)
 	const tab = effectiveTab(source, model.tab)
 	return dashboardPage(
 		h,
@@ -149,7 +158,7 @@ const found = (h: H, model: Model, source: V2Source, inputs: PageViewInputs, now
 				],
 			}),
 			actions: headerActions(h, model, source, timeZone),
-			tabs: tabs(h, source, tab),
+			tabs: tabs(h, shownTabs, source, tab),
 			gap: "md",
 		},
 		[
@@ -159,7 +168,10 @@ const found = (h: H, model: Model, source: V2Source, inputs: PageViewInputs, now
 			...(tab === "connection"
 				? [connectionPart(h, model, source, timeZone, "card") ?? loading(h)]
 				: []),
-			...(tab === "settings" ? [settingsTab(h, model, source)] : []),
+			// Settings waits for the grants: an engineer gets the form, a member the overview.
+			...(tab === "settings"
+				? [canManage(model) ? settingsTab(h, model, source, timeZone) : loading(h)]
+				: []),
 		],
 	)
 }

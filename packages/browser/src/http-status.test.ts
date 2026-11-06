@@ -27,7 +27,7 @@ const finish = (
 	build(span)
 	span.end()
 	const [result] = exported.getFinishedSpans()
-	if (!result) throw new Error("nothing exported")
+	if (result === undefined) throw new Error("nothing exported")
 	return result
 }
 
@@ -43,6 +43,17 @@ describe("HttpStatusExporter, by default", () => {
 			expect(span.attributes["error.type"]).toBe(String(status))
 			expect(span.attributes["error.message"]).toBeUndefined()
 		}
+	})
+
+	it("drops the status code 0 a request with no response gets, and keeps it an error", () => {
+		const failed = finish((s) => {
+			s.setAttribute("http.response.status_code", 0)
+			s.setAttribute("error.type", "TypeError")
+			s.setStatus({ code: SpanStatusCode.ERROR })
+		})
+		expect(failed.attributes).not.toHaveProperty("http.response.status_code")
+		expect(failed.attributes["error.type"]).toBe("TypeError")
+		expect(failed.status.code).toBe(SpanStatusCode.ERROR)
 	})
 
 	it("leaves 2xx/3xx, recorded exceptions, network failures and non-client spans alone", () => {

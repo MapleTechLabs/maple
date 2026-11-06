@@ -6,7 +6,7 @@ import { copyButton, type CopyStatus } from "./copy-button"
 import { eyebrow } from "./eyebrow"
 import { icon } from "./icon"
 import { truncationNote } from "./logs/log-message"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 // Port of `ErrorSection` (packages/ui/src/components/error-section.tsx): the error banner, its
 // highlighted body that copies itself, the "Copy as prompt" control and the Show more toggle.
@@ -40,7 +40,7 @@ export type ErrorSectionOptions<M> = Readonly<{
 export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOptions<M>): Html => {
 	const { message } = options
 	const body = parsedErrorBody(message)
-	const isLong = body.full.split("\n", COLLAPSED_LINES + 1).length > COLLAPSED_LINES || message.length > 160
+	const isLong = Str.split("\n")(body.full).length > COLLAPSED_LINES || message.length > 160
 	const isClamped = isLong && !options.isExpanded
 	// Clamped, only the lines that show are built; expanded, a capped head scrolls in its own box.
 	const { shown, omitted } = isClamped

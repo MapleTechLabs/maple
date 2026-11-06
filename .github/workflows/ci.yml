@@ -34,7 +34,6 @@ jobs:
             workers: ${{ steps.filter.outputs.workers == 'true' }}
             ingest: ${{ steps.filter.outputs.ingest == 'true' }}
             collector: ${{ steps.filter.outputs.collector == 'true' }}
-            terraform: ${{ steps.filter.outputs.terraform == 'true' }}
             browser-sdk: ${{ steps.filter.outputs.browser-sdk == 'true' }}
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
@@ -156,9 +155,6 @@ jobs:
                       collector:
                         - '.github/workflows/ci.yml'
                         - 'packages/otel-collector-maple-exporter/**'
-                      terraform:
-                        - '.github/workflows/ci.yml'
-                        - 'packages/terraform-provider-maple/**'
                       # Everything bundled into @maple-dev/browser's dist.
                       browser-sdk:
                         - *base
@@ -473,8 +469,9 @@ jobs:
               run: bun run --cwd lib/effect-clickhouse-http test
 
             # Migration replay and search indexes, raw-vs-rollup parity for web
-            # analytics and the service map (a divergence renders as a plausible wrong number), and the
-            # cascaded trace facets rollup (one that never fires reads as "no data").
+            # analytics, the service map and SLOs (a divergence renders as a plausible wrong number), the
+            # cascaded trace facets rollup (one that never fires reads as "no data"), and the users
+            # directory's group view.
             - name: Replay migrations and verify rollups
               run: >-
                   bun run --filter=@maple/backend test --
@@ -486,6 +483,8 @@ jobs:
                   src/services/warehouse/service-api-materialization.clickhouse.e2e.test.ts
                   src/services/warehouse/service-map-parity.clickhouse.e2e.test.ts
                   src/services/warehouse/host-infra.clickhouse.e2e.test.ts
+                  src/services/warehouse/slo-parity.clickhouse.e2e.test.ts
+                  src/services/users/users-groups.clickhouse.e2e.test.ts
 
             # The fingerprint the error views compute, against the TS mirror every
             # fingerprint unit test exercises: fixed cases, a seeded differential fuzz
@@ -496,6 +495,14 @@ jobs:
                   src/services/warehouse/error-fingerprint-v3.clickhouse.e2e.test.ts
                   src/services/warehouse/error-fingerprint-fuzz.clickhouse.e2e.test.ts
                   src/services/errors/error-tick-fingerprint.clickhouse.e2e.test.ts
+
+            # The metrics builder's two aggregation stages (per series in time, then
+            # across series) against a TS reference: seeded gauges and counters,
+            # random queries through the real engine. Replay with METRICS_FUZZ_SEED.
+            - name: Metrics aggregation differential fuzz
+              run: >-
+                  bun run --filter=@maple/backend test --
+                  src/services/warehouse/metrics-aggregation-fuzz.clickhouse.e2e.test.ts
 
             # Every SQL shape the product emits, against the real analyzer: unit tests
             # only compare SQL text, which is how a NO_COMMON_TYPE reached production.
@@ -534,7 +541,7 @@ jobs:
                   MAPLE_REQUIRE_LIBCHDB: "1"
                   MAPLE_TELEMETRY: off
               run: |
-                  for file in tenant-isolation scoped-delete local-service-map-rollup checkpoint-merge-freeze local-store-traces-rekey local-query-guard; do
+                  for file in tenant-isolation scoped-delete local-service-map-rollup checkpoint-merge-freeze local-store-traces-rekey local-query-guard local-query-guard.fuzz; do
                       bun test --timeout 30000 "test/$file.test.ts"
                   done
 
@@ -774,52 +781,6 @@ jobs:
             - name: go test
               run: go test -race -count=1 ./...
 
-    terraform-provider:
-        name: Terraform provider tests
-        needs: changes
-        if: ${{ needs.changes.outputs.terraform == 'true' }}
-        runs-on: ubuntu-latest
-        timeout-minutes: 15
-        defaults:
-            run:
-                working-directory: packages/terraform-provider-maple
-        steps:
-            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-              with:
-                  persist-credentials: false
-
-            - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-              with:
-                  go-version-file: packages/terraform-provider-maple/go.mod
-                  cache: true
-                  cache-dependency-path: packages/terraform-provider-maple/go.sum
-
-            - name: gofmt -l
-              run: |
-                  diff=$(gofmt -l .)
-                  if [ -n "$diff" ]; then
-                    echo "::error::gofmt found unformatted files:"
-                    echo "$diff"
-                    exit 1
-                  fi
-
-            - name: go vet
-              run: go vet ./...
-
-            # Runs real `terraform` plan/apply/import cycles against an in-process fake
-            # API; terraform-plugin-testing installs a Terraform CLI when none is on PATH.
-            - name: go test
-              run: go test -race -count=1 ./...
-
-            - name: Registry docs are up to date
-              run: |
-                  go generate ./...
-                  if [ -n "$(git status --porcelain -- docs examples)" ]; then
-                    echo "::error::docs/ is stale: run go generate ./... in packages/terraform-provider-maple"
-                    git status --porcelain -- docs examples
-                    exit 1
-                  fi
-
     # The built @maple-dev/browser in a real Chromium against a fake ingest: replay
     # playback, privacy across every channel, unload delivery and consent.
     browser-sdk-e2e:
@@ -873,7 +834,6 @@ jobs:
             - local-archive-native
             - ingest-rust
             - otel-collector
-            - terraform-provider
             - browser-sdk-e2e
         steps:
             - name: Fail if any job failed or was cancelled

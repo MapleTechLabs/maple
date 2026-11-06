@@ -222,6 +222,7 @@ const openableTrigger = (target: EventTarget | null): Option.Option<HTMLElement>
 /** The trigger's id to anchor to, assigned once when the view gave it none. */
 const anchorIdOf = (trigger: HTMLElement): string => {
 	if (trigger.id === "")
+		// @effect-diagnostics-next-line globalRandom:off -- a DOM id suffix, not a seeded value
 		trigger.id = `${ID_PREFIX}${Date.now().toString(36)}-${Str.slice(2)(Math.random().toString(36))}`
 	return trigger.id
 }

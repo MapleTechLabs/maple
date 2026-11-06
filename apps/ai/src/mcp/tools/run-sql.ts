@@ -42,13 +42,19 @@ const MISSING_TABLE_NAME_RES = [
 /** Names the error or the query's FROM/JOIN clauses use that are neither catalog tables nor CTEs. */
 const unknownTableNames = (message: string, sql: string): ReadonlyArray<string> => {
 	const known = new Set(Arr.map(listWarehouseTables(), (t) => t.name))
-	const ctes = new Set(Arr.map([...sql.matchAll(/\b([A-Za-z_]\w*)\s+AS\s*\(/gi)], (m) => m[1]))
+	const ctes = new Set(
+		Arr.flatMap([...sql.matchAll(/\b([A-Za-z_]\w*)\s+AS\s*\(/gi)], (m) =>
+			m[1] === undefined ? [] : [m[1]],
+		),
+	)
 	const named = [
 		...Arr.flatMap(MISSING_TABLE_NAME_RES, (re) => {
 			const name = message.match(re)?.[1]
 			return name === undefined ? [] : [name]
 		}),
-		...Arr.map([...sql.matchAll(/\b(?:FROM|JOIN)\s+([A-Za-z_][\w.]*)/gi)], (m) => m[1]),
+		...Arr.flatMap([...sql.matchAll(/\b(?:FROM|JOIN)\s+([A-Za-z_][\w.]*)/gi)], (m) =>
+			m[1] === undefined ? [] : [m[1]],
+		),
 	]
 	return Arr.filter(
 		[...new Set(named)],
@@ -224,7 +230,8 @@ export const toJson = (value: unknown): Schema.Json => {
 	if (Arr.isArray(value)) return Arr.map(value, toJson)
 	if (typeof value === "object")
 		return Rec.fromEntries(Arr.map(Rec.toEntries(value), ([k, v]) => [k, toJson(v)]))
-	return String(value)
+	// A function or symbol has no JSON form; no warehouse driver returns one.
+	return null
 }
 
 /** Whether a time macro put the window into the statement; otherwise the SQL picks its own range. */
@@ -237,7 +244,7 @@ export function cellToString(value: Schema.Json | undefined, maxChars = DEFAULT_
 		value === null || value === undefined
 			? "null"
 			: typeof value === "object"
-				? (stringifyJson(value) ?? String(value))
+				? (stringifyJson(value) ?? "[unserializable value]")
 				: String(value)
 	return truncate(Str.replace(/\t/g, "\\t")(Str.replace(/\r?\n/g, "\\n")(text)), maxChars)
 }

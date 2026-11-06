@@ -51,7 +51,7 @@ export interface LocalSchemaIdentity {
  */
 export const localSchemaIdentity = (version: number): LocalSchemaIdentity => {
 	const entry = LOCAL_SCHEMA_HISTORY[version]
-	if (!entry || entry.version !== version)
+	if (entry === undefined || entry.version !== version)
 		throw new Error(`local schema history has no entry for version ${version}`)
 	return Object.freeze({
 		version: entry.version,
@@ -95,6 +95,13 @@ export const LOCAL_SCHEMA_V41 = localSchemaIdentity(41)
 export const LOCAL_SCHEMA_V42 = localSchemaIdentity(42)
 export const LOCAL_SCHEMA_V43 = localSchemaIdentity(43)
 export const LOCAL_SCHEMA_V44 = localSchemaIdentity(44)
+export const LOCAL_SCHEMA_V45 = localSchemaIdentity(45)
+export const LOCAL_SCHEMA_V46 = localSchemaIdentity(46)
+export const LOCAL_SCHEMA_V47 = localSchemaIdentity(47)
+export const LOCAL_SCHEMA_V48 = localSchemaIdentity(48)
+export const LOCAL_SCHEMA_V49 = localSchemaIdentity(49)
+export const LOCAL_SCHEMA_V50 = localSchemaIdentity(50)
+export const LOCAL_SCHEMA_V51 = localSchemaIdentity(51)
 
 export const CURRENT_LOCAL_SCHEMA: LocalSchemaIdentity = Object.freeze({
 	version: LOCAL_SCHEMA_VERSION,

@@ -47,7 +47,10 @@ const matchesSearch = (search: string | undefined) => (row: InfraEntityRow) =>
 const byTrouble = (rows: ReadonlyArray<InfraEntityRow>, sort: InfraSort): Array<InfraEntityRow> =>
 	sort === "name" || sort === "last_seen"
 		? sortRows(rows, sort)
-		: [...rows].sort((a, b) => (b.errors ?? 0) - (a.errors ?? 0) || (b.requests ?? 0) - (a.requests ?? 0))
+		: [...rows].sort((a, b) => {
+				const byErrors = (b.errors ?? 0) - (a.errors ?? 0)
+				return byErrors !== 0 ? byErrors : (b.requests ?? 0) - (a.requests ?? 0)
+			})
 
 const zoneRow = (
 	counters: Integrations.CloudflareZoneCountersOutput,
@@ -219,9 +222,15 @@ const fetchProviderRows = (kind: ProviderKind, window: InfraWindow) =>
 					Arr.filter([...databases], (database) => database !== ""),
 					(database) =>
 						planetscaleRow(database, {
-							gauges: gauges.find((row) => row.database === database),
-							connections: connections.find((row) => row.database === database),
-							storage: storage.find((row) => row.database === database),
+							gauges: Option.getOrUndefined(
+								Arr.findFirst(gauges, (row) => row.database === database),
+							),
+							connections: Option.getOrUndefined(
+								Arr.findFirst(connections, (row) => row.database === database),
+							),
+							storage: Option.getOrUndefined(
+								Arr.findFirst(storage, (row) => row.database === database),
+							),
 						}),
 				)
 			}

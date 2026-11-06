@@ -16,6 +16,7 @@ import {
 	COMPONENT_STATUS_TONE,
 	componentStatus,
 	isOpenIncident,
+	monitorStatusOf,
 } from "../shared/derive"
 import {
 	daysOf,
@@ -26,7 +27,7 @@ import {
 	toSnapshotIncident,
 } from "../shared/preview"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
 import { addPanel, componentPanel, composerPanel, incidentPanel, type TimeInputs } from "./view-panel"
 import { typography } from "@maple/views/ui/typography"
@@ -94,8 +95,7 @@ export const canvasDocument = (model: Model, page: V2StatusPage): string => {
 				name: component.name,
 				description: component.description,
 				group: component.group,
-				monitorStatus:
-					monitors.find((monitor) => monitor.id === component.monitor_id)?.state.status ?? null,
+				monitorStatus: monitorStatusOf(monitors, component.monitor_id),
 				manualStatus: component.manual_status,
 				showUptime: component.show_uptime,
 				monitored: component.monitor_id !== null,
@@ -163,7 +163,7 @@ const componentItem = (
 							]),
 				],
 			),
-			...(model.isAdmin
+			...(canManage(model)
 				? [
 						h.div(
 							[
@@ -260,7 +260,7 @@ const onThisPage = (h: H, model: Model): Html => {
 					? h.p(
 							[h.Class("px-2 text-xs text-muted-foreground")],
 							[
-								model.isAdmin
+								canManage(model)
 									? "Nothing yet. Add a monitor and visitors see its status and uptime."
 									: "No monitors on this page yet.",
 							],
@@ -275,7 +275,7 @@ const onThisPage = (h: H, model: Model): Html => {
 								}),
 							),
 						),
-				...(model.isAdmin
+				...(canManage(model)
 					? [
 							button(
 								h,
@@ -314,12 +314,16 @@ const panelView = (h: H, model: Model, time: TimeInputs): ReadonlyArray<Html> =>
 	if (panel === null) return []
 	switch (panel._tag) {
 		case "Component": {
-			const component = componentsOf(model).find((row) => row.id === panel.componentId)
-			return component === undefined ? [] : [componentPanel(h, model, component)]
+			return Option.match(
+				Arr.findFirst(componentsOf(model), (row) => row.id === panel.componentId),
+				{ onNone: () => [], onSome: (component) => [componentPanel(h, model, component)] },
+			)
 		}
 		case "Incident": {
-			const incident = incidentsOf(model).find((row) => row.id === panel.incidentId)
-			return incident === undefined ? [] : [incidentPanel(h, model, incident, time)]
+			return Option.match(
+				Arr.findFirst(incidentsOf(model), (row) => row.id === panel.incidentId),
+				{ onNone: () => [], onSome: (incident) => [incidentPanel(h, model, incident, time)] },
+			)
 		}
 		case "Compose":
 			return [composerPanel(h, model, time.timeZone)]

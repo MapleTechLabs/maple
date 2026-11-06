@@ -83,21 +83,19 @@ function areSpansDuplicates(a: SpanNode, b: SpanNode): boolean {
 }
 
 interface CombinedNode {
-	spans: SpanNode[]
+	spans: Arr.NonEmptyArray<SpanNode>
 	children: CombinedNode[]
 }
 
 function combineConsecutiveDuplicates(children: SpanNode[]): CombinedNode[] {
-	if (children.length === 0) return []
+	const [first, ...rest] = children
+	if (first === undefined) return []
 
 	const result: CombinedNode[] = []
-	let currentGroup: SpanNode[] = [children[0]]
+	let currentGroup: Arr.NonEmptyArray<SpanNode> = [first]
 
-	for (let i = 1; i < children.length; i++) {
-		const child = children[i]
-		const lastInGroup = currentGroup[currentGroup.length - 1]
-
-		if (areSpansDuplicates(child, lastInGroup)) {
+	for (const child of rest) {
+		if (areSpansDuplicates(child, Arr.lastNonEmpty(currentGroup))) {
 			currentGroup.push(child)
 		} else {
 			result.push(createCombinedNode(currentGroup))
@@ -110,7 +108,7 @@ function combineConsecutiveDuplicates(children: SpanNode[]): CombinedNode[] {
 	return result
 }
 
-function createCombinedNode(spans: SpanNode[]): CombinedNode {
+function createCombinedNode(spans: Arr.NonEmptyArray<SpanNode>): CombinedNode {
 	const allChildren: SpanNode[] = []
 	for (const span of spans) {
 		allChildren.push(...span.children)
@@ -144,9 +142,9 @@ function calculateAggregatedDuration(spans: SpanNode[]): AggregatedDuration {
 	}
 }
 
-function getCombinedNodeId(spans: SpanNode[]): string {
+function getCombinedNodeId(spans: Arr.NonEmptyReadonlyArray<SpanNode>): string {
 	if (spans.length === 1) {
-		return spans[0].spanId
+		return Arr.headNonEmpty(spans).spanId
 	}
 	return `combined-${Arr.join(
 		Arr.map(spans, (s) => s.spanId),
@@ -178,7 +176,7 @@ export function transformSpansToFlow(
 	function traverse(combinedNode: CombinedNode, parentId?: string, parentSpan?: SpanNode) {
 		const { spans } = combinedNode
 		const nodeId = getCombinedNodeId(spans)
-		const primarySpan = spans[0]
+		const primarySpan = Arr.headNonEmpty(spans)
 		const count = spans.length
 		const aggregatedDuration = calculateAggregatedDuration(spans)
 

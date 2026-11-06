@@ -1,5 +1,6 @@
 import type { Duration } from "effect"
 import { type MapleRegion, resolveIngestEndpoint, warnIfKeylessMapleIngest } from "@maple/browser-session"
+import { isCommitSha } from "@maple/browser-session/commit-sha"
 import { Effect, Layer } from "effect"
 import { makeOtlpLayer } from "../shared/otlp-layer.js"
 import type { MapleSpanOptions } from "../shared/span-options.js"
@@ -101,7 +102,7 @@ export const layer = (config: MapleClientConfig) => {
 	}
 	// `serviceVersion` may be a semver release string, which belongs in
 	// `service.version` but not in `vcs.*` — only a SHA-shaped value is stamped.
-	if (config.serviceVersion && /^[0-9a-f]{7,40}$/i.test(config.serviceVersion)) {
+	if (isCommitSha(config.serviceVersion)) {
 		attributes["vcs.ref.head.revision"] = config.serviceVersion
 	}
 	if (config.serviceNamespace) attributes["service.namespace"] = config.serviceNamespace

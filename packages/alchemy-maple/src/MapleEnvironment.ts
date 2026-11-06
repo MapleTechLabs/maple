@@ -20,7 +20,7 @@ export class MapleEnvironment extends Context.Service<
 		/** Base URL of the Maple API, without a trailing slash. */
 		readonly baseUrl: string
 		/** A Maple API key (`maple_ak_…`) with the scopes the declared resources need. */
-		readonly apiKey: Redacted.Redacted<string>
+		readonly apiKey: Redacted.Redacted
 	}
 >()("Maple::Environment") {}
 

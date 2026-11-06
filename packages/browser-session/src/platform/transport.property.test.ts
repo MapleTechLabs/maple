@@ -1,4 +1,5 @@
 import fc from "fast-check"
+import * as Arr from "effect/Array"
 import { beforeEach, describe, expect, it } from "vitest"
 import {
 	keepaliveRoom,
@@ -41,7 +42,7 @@ describe("reserveKeepalive", () => {
 							held.push({ bytes: current.bytes, otlp: current.otlp, release, released: false })
 					} else if (held.length > 0) {
 						// Any reservation, released or not: a second release must change nothing.
-						const entry = held[current.pick % held.length]!
+						const entry = Arr.getUnsafe(held, current.pick % held.length)
 						entry.release()
 						entry.released = true
 					}

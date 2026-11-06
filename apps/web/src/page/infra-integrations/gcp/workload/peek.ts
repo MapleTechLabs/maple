@@ -6,6 +6,7 @@ import {
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import type { StatementSpansInput } from "../data"
+import { Option, Array as Arr } from "effect"
 
 // `GcpQueryPeekSheet`'s subject: the statement `search.peek` names, where it sits in the table and
 // what the traces know of it.
@@ -26,7 +27,12 @@ export const resolveQueryPeek = (
 	databases: ReadonlyArray<string>,
 	queryHash: string | undefined,
 ): QueryPeek | null => {
-	const index = queryHash === undefined ? -1 : statements.findIndex((row) => row.queryHash === queryHash)
+	const found =
+		queryHash === undefined
+			? Option.none()
+			: Arr.findFirstIndex(statements, (row) => row.queryHash === queryHash)
+	if (Option.isNone(found)) return null
+	const index = found.value
 	const statement = statements[index]
 	if (statement === undefined) return null
 	return { statement, traced: traced.get(statement.queryHash), databases, index, count: statements.length }

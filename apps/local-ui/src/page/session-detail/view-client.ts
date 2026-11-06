@@ -83,7 +83,7 @@ const traceItem = <M>(h: HtmlBuilder<M>, trace: SessionTrace): Html =>
 							h.Class(
 								cn(
 									"size-1.5 shrink-0 rounded-full",
-									trace.hasError ? "bg-severity-error" : "bg-muted-foreground/40",
+									trace.hasError !== 0 ? "bg-severity-error" : "bg-muted-foreground/40",
 								),
 							),
 						],

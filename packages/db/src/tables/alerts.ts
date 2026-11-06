@@ -2,10 +2,12 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDeliveryEventId,
 	AlertDestinationId,
+	AlertIncidentEventId,
 	AlertIncidentId,
 	AlertRuleId,
 	ErrorIssueId,
 	OrgId,
+	UserId,
 } from "@maple/domain/primitives"
 import { Schema } from "effect"
 
@@ -182,43 +184,55 @@ export const AlertRuleStates = PG.table("alert_rule_states", {
 	tenantColumn: "orgId",
 })
 
+const alertIncidentsColumns = {
+	id: PG.brand(PG.text, AlertIncidentId),
+	orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+	ruleId: PG.column(PG.brand(PG.text, AlertRuleId), { name: "rule_id" }),
+	incidentKey: PG.column(PG.text, { name: "incident_key" }),
+	ruleName: PG.column(PG.text, { name: "rule_name" }),
+	groupKey: PG.column(PG.nullable(PG.text), { name: "group_key" }),
+	signalType: PG.column(PG.text, { name: "signal_type" }),
+	/** Current severity; a tiered rule moves it on escalation and de-escalation. */
+	severity: PG.text,
+	/** Highest severity reached; null on incidents opened before tiers. */
+	peakSeverity: PG.column(PG.nullable(PG.text), { name: "peak_severity" }),
+	status: PG.text,
+	comparator: PG.text,
+	threshold: PG.float8,
+	thresholdUpper: PG.column(PG.nullable(PG.float8), { name: "threshold_upper" }),
+	firstTriggeredAt: PG.column(PG.timestamptzMillis, { name: "first_triggered_at" }),
+	lastTriggeredAt: PG.column(PG.timestamptzMillis, { name: "last_triggered_at" }),
+	resolvedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "resolved_at" }),
+	lastObservedValue: PG.column(PG.nullable(PG.float8), { name: "last_observed_value" }),
+	lastSampleCount: PG.column(PG.nullable(PG.int4), { name: "last_sample_count" }),
+	lastEvaluatedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_evaluated_at" }),
+	dedupeKey: PG.column(PG.text, { name: "dedupe_key" }),
+	lastDeliveredEventType: PG.column(PG.nullable(PG.text), { name: "last_delivered_event_type" }),
+	lastNotifiedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_notified_at" }),
+	// Set while an open incident is waiting on telemetry: the breach stopped
+	// showing up but the liveness probe could not prove the data was still
+	// flowing. Both are null once the incident is firing or resolved.
+	holdReason: PG.column(PG.nullable(PG.text), { name: "hold_reason" }),
+	heldSince: PG.column(PG.nullable(PG.timestamptzMillis), { name: "held_since" }),
+	// Set while an open incident is acknowledged ("someone is on it"): the
+	// scheduler sends no reminders until it is unacknowledged, escalates to a
+	// higher severity, or resolves. All four are null otherwise.
+	acknowledgedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "acknowledged_at" }),
+	acknowledgedByUserId: PG.column(PG.nullable(PG.brand(PG.text, UserId)), {
+		name: "acknowledged_by_user_id",
+	}),
+	acknowledgedByName: PG.column(PG.nullable(PG.text), { name: "acknowledged_by_name" }),
+	acknowledgedVia: PG.column(PG.nullable(PG.text), { name: "acknowledged_via" }),
+	// Issue-hub link: the error_issues row (kind="alert") this incident
+	// feeds, mirroring anomalyIncidents.errorIssueId.
+	errorIssueId: PG.column(PG.nullable(PG.brand(PG.text, ErrorIssueId)), { name: "error_issue_id" }),
+	createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+	updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+}
+type AlertIncidentsColumns = PG.ColumnsOf<typeof alertIncidentsColumns>
+
 export const AlertIncidents = PG.table("alert_incidents", {
-	columns: {
-		id: PG.brand(PG.text, AlertIncidentId),
-		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
-		ruleId: PG.column(PG.brand(PG.text, AlertRuleId), { name: "rule_id" }),
-		incidentKey: PG.column(PG.text, { name: "incident_key" }),
-		ruleName: PG.column(PG.text, { name: "rule_name" }),
-		groupKey: PG.column(PG.nullable(PG.text), { name: "group_key" }),
-		signalType: PG.column(PG.text, { name: "signal_type" }),
-		/** Current severity; a tiered rule moves it on escalation and de-escalation. */
-		severity: PG.text,
-		/** Highest severity reached; null on incidents opened before tiers. */
-		peakSeverity: PG.column(PG.nullable(PG.text), { name: "peak_severity" }),
-		status: PG.text,
-		comparator: PG.text,
-		threshold: PG.float8,
-		thresholdUpper: PG.column(PG.nullable(PG.float8), { name: "threshold_upper" }),
-		firstTriggeredAt: PG.column(PG.timestamptzMillis, { name: "first_triggered_at" }),
-		lastTriggeredAt: PG.column(PG.timestamptzMillis, { name: "last_triggered_at" }),
-		resolvedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "resolved_at" }),
-		lastObservedValue: PG.column(PG.nullable(PG.float8), { name: "last_observed_value" }),
-		lastSampleCount: PG.column(PG.nullable(PG.int4), { name: "last_sample_count" }),
-		lastEvaluatedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_evaluated_at" }),
-		dedupeKey: PG.column(PG.text, { name: "dedupe_key" }),
-		lastDeliveredEventType: PG.column(PG.nullable(PG.text), { name: "last_delivered_event_type" }),
-		lastNotifiedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_notified_at" }),
-		// Set while an open incident is waiting on telemetry: the breach stopped
-		// showing up but the liveness probe could not prove the data was still
-		// flowing. Both are null once the incident is firing or resolved.
-		holdReason: PG.column(PG.nullable(PG.text), { name: "hold_reason" }),
-		heldSince: PG.column(PG.nullable(PG.timestamptzMillis), { name: "held_since" }),
-		// Issue-hub link: the error_issues row (kind="alert") this incident
-		// feeds, mirroring anomalyIncidents.errorIssueId.
-		errorIssueId: PG.column(PG.nullable(PG.brand(PG.text, ErrorIssueId)), { name: "error_issue_id" }),
-		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
-		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
-	},
+	columns: alertIncidentsColumns,
 	primaryKey: ["id"],
 	indexes: [
 		PG.index("alert_incidents_org_idx", ["orgId"]),
@@ -231,8 +245,42 @@ export const AlertIncidents = PG.table("alert_incidents", {
 		// an expired claim impossible instead of merely unlikely. NULL groupKey
 		// rows (pre-scheduler history) escape the constraint; the scheduler always
 		// writes a string key.
-		PG.uniqueIndex("alert_incidents_open_group_idx", ["orgId", "ruleId", "groupKey"], {
-			where: ($) => $.status.eq("open"),
+		PG.uniqueIndex<AlertIncidentsColumns>(
+			"alert_incidents_open_group_idx",
+			["orgId", "ruleId", "groupKey"],
+			{
+				where: ($) => $.status.eq("open"),
+			},
+		),
+	],
+	tenantColumn: "orgId",
+})
+
+/**
+ * Append-only activity on an alert incident: acknowledgements, unacknowledgements and
+ * the scheduler clearing an ack on escalation. The incident row holds the current ack;
+ * this holds its history, and is what on-call escalation reads to stop escalating.
+ */
+export const AlertIncidentEvents = PG.table("alert_incident_events", {
+	columns: {
+		id: PG.brand(PG.text, AlertIncidentEventId),
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		incidentId: PG.column(PG.brand(PG.text, AlertIncidentId), { name: "incident_id" }),
+		type: PG.text,
+		actorUserId: PG.column(PG.nullable(PG.brand(PG.text, UserId)), { name: "actor_user_id" }),
+		actorName: PG.column(PG.nullable(PG.text), { name: "actor_name" }),
+		/** Null for scheduler-written events. */
+		source: PG.nullable(PG.text),
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+	},
+	primaryKey: ["id"],
+	indexes: [PG.index("alert_incident_events_incident_idx", ["orgId", "incidentId", "createdAt"])],
+	foreignKeys: [
+		PG.foreignKey({
+			columns: ["incidentId"],
+			references: AlertIncidents,
+			foreignColumns: ["id"],
+			onDelete: "cascade",
 		}),
 	],
 	tenantColumn: "orgId",
@@ -317,4 +365,5 @@ export type AlertRuleRow = PG.SelectRowOf<typeof AlertRules>
 export type AlertRuleStateRow = PG.SelectRowOf<typeof AlertRuleStates>
 export type AlertIncidentRow = PG.SelectRowOf<typeof AlertIncidents>
 export type AlertDeliveryEventRow = PG.SelectRowOf<typeof AlertDeliveryEvents>
+export type AlertIncidentEventRow = PG.SelectRowOf<typeof AlertIncidentEvents>
 export type AlertLinearIssueRow = PG.SelectRowOf<typeof AlertLinearIssues>

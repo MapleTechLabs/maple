@@ -1,4 +1,4 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import { Context, Effect, Layer, Schema } from "effect"
 
 /** A storage failure reported by an `EdgeCacheBackend` operation. */
@@ -31,7 +31,7 @@ export interface EdgeCacheBackend {
 		bucket: string,
 		hash: string,
 		nowMs: number,
-	) => Effect.Effect<unknown | undefined, EdgeCacheBackendError>
+	) => Effect.Effect<unknown, EdgeCacheBackendError>
 	readonly put: (
 		bucket: string,
 		hash: string,

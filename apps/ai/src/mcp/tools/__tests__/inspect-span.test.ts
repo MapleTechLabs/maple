@@ -12,7 +12,7 @@ let renderOutput: (output: typeof InspectSpanOutput.Type) => string = () =>
 const registrar: McpToolRegistrar = {
 	define: (spec) => {
 		if (spec.name !== "inspect_span") return
-		renderOutput = (output) => renderToolDoc(spec.render(Schema.decodeUnknownSync(spec.output)(output)))
+		renderOutput = (output) => renderToolDoc(spec.render(Schema.decodeSync(spec.output)(output)))
 	},
 }
 registerInspectSpanTool(registrar)

@@ -7,16 +7,25 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { errorState } from "@maple/views/ui/error-state"
 import { excludedEmptyHint } from "@maple/views/ui/filters/excluded-empty-hint"
 import { listFooter, loadingMoreRow } from "@maple/views/ui/list-footer"
-import { ariaSort, sortButton, table, tableBody, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import {
+	ariaSort,
+	sortButton,
+	table,
+	tableBody,
+	tableHead,
+	tableHeader,
+	tableRow,
+} from "@maple/views/ui/table"
 import { tableSkeleton } from "@maple/views/ui/table-skeleton"
 import { signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "@maple/views/data/signal-presence"
-import { canWidenTimeRange, isFiltered, traceFilterChips } from "./derive"
+import { canWidenTimeRange, isFiltered, type TraceFilterChip, traceFilterChips } from "./derive"
 import { Message, type SortKey } from "./message"
 import type { Model } from "./model"
 import { allRows, DEFAULT_PRESET, hasNextPage, hiddenCount, MAX_RETAINED_TRACES } from "./update"
 import { noiseNote, traceRow } from "./view-row"
 import { COUNT_ATTRIBUTE, VirtualizeTraces } from "./virtualize"
+import { Array as Arr } from "effect"
 
 /** `TRACE_COLUMNS`: shared by the table, the skeleton and the header. */
 const COLUMNS = [
@@ -65,7 +74,7 @@ const loadingState = (h: HtmlBuilder<Message>): Html =>
 				rows: 10,
 				rowClassName: "h-11",
 				tableClassName: "w-full table-fixed",
-				columns: COLUMNS.map((column) => ({
+				columns: Arr.map(COLUMNS, (column) => ({
 					header: column.header,
 					headClassName: responsiveOf(column),
 					cellClassName: responsiveOf(column),
@@ -96,7 +105,7 @@ const header = (h: HtmlBuilder<Message>, model: Model): Html => {
 		[
 			tableRow(
 				h,
-				COLUMNS.map((column) => {
+				Arr.map(COLUMNS, (column) => {
 					const width = widthOf(column)
 					return tableHead(
 						h,
@@ -127,39 +136,36 @@ const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string, isMobile:
 	const activeIndex = isMobile ? null : (peekPosition(model)?.index ?? null)
 	const first = model.virtualRows[0]
 	const last = model.virtualRows.at(-1)
-	return tableBody(
-		h,
-		[
-			...(first === undefined ? [] : [spacer(h, "spacer-before", first.start)]),
-			...model.virtualRows.flatMap((item) => {
-				const row = rows[item.index]
-				return row === undefined
-					? []
-					: [
-							traceRow(h, row, item.index, timeZone, model.nowMs, {
-								search: model.search,
-								isFocused: model.focusedIndex === item.index,
-								isActive: activeIndex === item.index,
-								isMobile,
-							}),
-						]
-			}),
-			...(last === undefined ? [] : [spacer(h, "spacer-after", model.totalSize - last.end)]),
-			...(model.pagination.isFetching
-				? [
-						h.tr(
-							[h.Key("loading-more")],
-							[
-								h.td(
-									[h.Attribute("colspan", String(COLUMNS.length)), h.Class("p-2")],
-									[loadingMoreRow(h, "Loading more traces…")],
-								),
-							],
-						),
+	return tableBody(h, [
+		...(first === undefined ? [] : [spacer(h, "spacer-before", first.start)]),
+		...Arr.flatMap(model.virtualRows, (item) => {
+			const row = rows[item.index]
+			return row === undefined
+				? []
+				: [
+						traceRow(h, row, item.index, timeZone, model.nowMs, {
+							search: model.search,
+							isFocused: model.focusedIndex === item.index,
+							isActive: activeIndex === item.index,
+							isMobile,
+						}),
 					]
-				: []),
-		],
-	)
+		}),
+		...(last === undefined ? [] : [spacer(h, "spacer-after", model.totalSize - last.end)]),
+		...(model.pagination.isFetching
+			? [
+					h.tr(
+						[h.Key("loading-more")],
+						[
+							h.td(
+								[h.Attribute("colspan", String(COLUMNS.length)), h.Class("p-2")],
+								[loadingMoreRow(h, "Loading more traces…")],
+							),
+						],
+					),
+				]
+			: []),
+	])
 }
 
 const loadedTable = (
@@ -210,9 +216,10 @@ const loadedTable = (
 }
 
 const emptyTable = (h: HtmlBuilder<Message>, model: Model): Html => {
-	const excluded = traceFilterChips(model.search)
-		.filter((chip) => chip.negated)
-		.flatMap((chip) => chip.values)
+	const excluded = Arr.flatMap(
+		Arr.filter(traceFilterChips(model.search), (chip) => chip.negated),
+		(chip: TraceFilterChip) => chip.values,
+	)
 	return h.div(
 		[h.Class("flex-1 min-h-0 flex flex-col gap-4")],
 		[

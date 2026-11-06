@@ -61,14 +61,14 @@ pub struct WalStoreConfig {
     pub heartbeat_interval: Duration,
 }
 
-/// A segment recovered from the object store, with the key it came from so the
-/// caller can delete it once its frames are durable locally again.
+/// A segment a dead owner left in the object store. Recovery fetches its bytes
+/// one segment at a time, and deletes the key once its frames are durable
+/// locally again.
 #[derive(Debug)]
-pub struct RecoveredSegment {
+pub struct OrphanedSegment {
     pub key: String,
     /// `shard-NNN-<destination>`, as written by the task that owned it.
     pub lane_key: String,
-    pub bytes: Vec<u8>,
 }
 
 pub struct WalSegmentStore {
@@ -227,27 +227,29 @@ impl WalSegmentStore {
         }
     }
 
-    /// Every segment a claimed owner left behind, oldest first, with its bytes.
+    /// Every segment a claimed owner left behind, oldest first, without its
+    /// bytes: a dead owner's backlog can be far larger than this task's memory.
     ///
     /// Keys sort by `(lane, sequence)` and sequences are zero-padded, so the
     /// listing order is the order the frames were written.
-    pub async fn take_segments(&self, owner: &str) -> Result<Vec<RecoveredSegment>, S3Error> {
+    pub async fn list_segments(&self, owner: &str) -> Result<Vec<OrphanedSegment>, S3Error> {
         let prefix = format!("{}/{KEY_SCHEME}/segments/{owner}/", self.prefix);
         let mut objects = self.s3.list(&prefix, MAX_LIST_PAGES).await?;
         objects.sort_by(|a, b| a.key.cmp(&b.key));
-        let mut segments = Vec::with_capacity(objects.len());
-        for object in objects {
-            let Some(lane_key) = lane_key_of(&object.key) else {
-                continue;
-            };
-            let bytes = self.s3.get(&object.key).await?;
-            segments.push(RecoveredSegment {
-                key: object.key,
-                lane_key,
-                bytes,
-            });
-        }
-        Ok(segments)
+        Ok(objects
+            .into_iter()
+            .filter_map(|object| {
+                let lane_key = lane_key_of(&object.key)?;
+                Some(OrphanedSegment {
+                    key: object.key,
+                    lane_key,
+                })
+            })
+            .collect())
+    }
+
+    pub async fn fetch_segment(&self, segment: &OrphanedSegment) -> Result<Vec<u8>, S3Error> {
+        self.s3.get(&segment.key).await
     }
 
     /// Finish a claim: drop the recovered object and, once every segment is

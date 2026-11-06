@@ -27,6 +27,8 @@ import {
 } from "./fix-verification"
 import { VcsProviderId } from "./vcs"
 import { HttpTaggedError } from "./error-policy"
+import { TinybirdDateTime } from "../query-engine"
+import { warehouseReadHttpErrors } from "./warehouse"
 
 // Workflow state machine literals
 
@@ -247,6 +249,13 @@ export const IssueKind = Schema.Literals(["error", "alert", "integration"]).anno
 })
 export type IssueKind = Schema.Schema.Type<typeof IssueKind>
 
+/** Why an issue owns a fingerprint beyond its own: someone merged it in, or a version bump re-keyed it. */
+export const IssueFingerprintSource = Schema.Literals(["merge", "rekey"]).annotate({
+	identifier: "@maple/IssueFingerprintSource",
+	title: "Issue Fingerprint Source",
+})
+export type IssueFingerprintSource = Schema.Schema.Type<typeof IssueFingerprintSource>
+
 export const ErrorIssueEventType = Schema.Literals([
 	"created",
 	"state_change",
@@ -268,6 +277,8 @@ export const ErrorIssueEventType = Schema.Literals([
 	"pr_merged",
 	"verification_started",
 	"verification_verdict",
+	"merge",
+	"unmerge",
 ]).annotate({
 	identifier: "@maple/ErrorIssueEventType",
 	title: "Error Issue Event Type",
@@ -315,6 +326,8 @@ export class ErrorIssueDocument extends Schema.Class<ErrorIssueDocument>("ErrorI
 	id: ErrorIssueId,
 	kind: IssueKind,
 	fingerprintHash: Schema.String,
+	/** Every fingerprint the issue owns, its own first. Warehouse reads for the issue filter on all of them. */
+	fingerprintHashes: Schema.Array(Schema.String),
 	serviceName: Schema.String,
 	exceptionType: Schema.String,
 	exceptionMessage: Schema.String,
@@ -346,6 +359,8 @@ export class ErrorIssueDocument extends Schema.Class<ErrorIssueDocument>("ErrorI
 	resolvedVersions: Schema.Array(Schema.String),
 	snoozeUntil: Schema.NullOr(IsoDateTimeString),
 	archivedAt: Schema.NullOr(IsoDateTimeString),
+	/** Set when this issue was merged into another; it is archived and its hashes land there. */
+	mergedIntoIssueId: Schema.NullOr(ErrorIssueId),
 	hasOpenIncident: Schema.Boolean,
 	// Activity rollups for list surfaces: is anyone talking about this issue,
 	// and where do its linked PRs stand — without a per-issue events fetch.
@@ -475,6 +490,17 @@ export class ErrorIssueSetSeverityRequest extends Schema.Class<ErrorIssueSetSeve
 )({
 	severity: Schema.NullOr(IssueSeverity),
 	note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_000))),
+}) {}
+
+/** How many issues one merge folds into the kept one. */
+export const MAX_ISSUE_MERGE_SOURCES = 50
+
+/** Fold these issues into the one in the path; each is archived pointing at it. */
+export class ErrorIssueMergeRequest extends Schema.Class<ErrorIssueMergeRequest>("ErrorIssueMergeRequest")({
+	sourceIssueIds: Schema.Array(ErrorIssueId).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(MAX_ISSUE_MERGE_SOURCES),
+	),
 }) {}
 
 // Pull request links + fix verification
@@ -660,6 +686,34 @@ export const IssueSeverityListCursor = Schema.String.pipe(
 	}),
 	Schema.decodeTo(Schema.fromJsonString(IssueSeverityListCursorFields)),
 ).annotate({ identifier: "@maple/IssueSeverityListCursor", title: "Issue Severity List Cursor" })
+
+const IssueAffectedUsersQuery = Schema.Struct({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+})
+
+export const IssueAffectedUser = Schema.Struct({
+	userId: Schema.String,
+	hits: Schema.Number,
+	lastSeenMs: Schema.Number,
+})
+export type IssueAffectedUser = typeof IssueAffectedUser.Type
+
+/**
+ * The end users an issue hit in a window, over its own fingerprint and its aliases. `hitsWithUser`
+ * over `hits` is the coverage: occurrences from spans without a user id count only in `hits`.
+ */
+export class ErrorIssueAffectedUsersResponse extends Schema.Class<ErrorIssueAffectedUsersResponse>(
+	"ErrorIssueAffectedUsersResponse",
+)({
+	affectedUsers: Schema.Number,
+	hitsWithUser: Schema.Number,
+	hits: Schema.Number,
+	/** Most hits first, capped. */
+	users: Schema.Array(IssueAffectedUser),
+	/** `false` on a cluster whose `error_events` predates `UserId`, and for non-error issues. */
+	attributed: Schema.Boolean,
+}) {}
 
 const IssueEventsQuery = Schema.Struct({
 	limit: Schema.optional(
@@ -919,11 +973,34 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.post("mergeIssues", "/issues/:issueId/merge", {
+			params: { issueId: ErrorIssueId },
+			payload: ErrorIssueMergeRequest,
+			success: ErrorIssueDocument,
+			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ErrorValidationError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("unmergeIssue", "/issues/:issueId/unmerge", {
+			params: { issueId: ErrorIssueId },
+			success: ErrorIssueDocument,
+			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ErrorValidationError],
+		}),
+	)
+	.add(
 		HttpApiEndpoint.get("listIssueEvents", "/issues/:issueId/events", {
 			params: { issueId: ErrorIssueId },
 			query: IssueEventsQuery,
 			success: ErrorIssueEventsResponse,
 			error: [ErrorPersistenceError, ErrorIssueNotFoundError],
+		}).annotate(AuditedRead, "telemetry.read"),
+	)
+	.add(
+		HttpApiEndpoint.get("listIssueAffectedUsers", "/issues/:issueId/affected-users", {
+			params: { issueId: ErrorIssueId },
+			query: IssueAffectedUsersQuery,
+			success: ErrorIssueAffectedUsersResponse,
+			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ...warehouseReadHttpErrors],
 		}).annotate(AuditedRead, "telemetry.read"),
 	)
 	.add(

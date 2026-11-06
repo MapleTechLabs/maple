@@ -64,19 +64,16 @@ interface Totals {
 const NO_TOTALS: Totals = { connections: 0, lagMax: 0, lagOwner: null, storageMax: null, storageOwner: null }
 
 const totalsOf = (stats: ReadonlyArray<DatabaseStat>): Totals =>
-	stats.reduce<Totals>(
-		(acc, row) => ({
-			connections: acc.connections + row.connectionsAvg,
-			...(row.replicaLagMaxSeconds > acc.lagMax
-				? { lagMax: row.replicaLagMaxSeconds, lagOwner: row.database }
-				: { lagMax: acc.lagMax, lagOwner: acc.lagOwner }),
-			...(row.storageUsedPercent !== null &&
-			(acc.storageMax === null || row.storageUsedPercent > acc.storageMax)
-				? { storageMax: row.storageUsedPercent, storageOwner: row.database }
-				: { storageMax: acc.storageMax, storageOwner: acc.storageOwner }),
-		}),
-		NO_TOTALS,
-	)
+	Arr.reduce(stats, NO_TOTALS, (acc, row) => ({
+		connections: acc.connections + row.connectionsAvg,
+		...(row.replicaLagMaxSeconds > acc.lagMax
+			? { lagMax: row.replicaLagMaxSeconds, lagOwner: row.database }
+			: { lagMax: acc.lagMax, lagOwner: acc.lagOwner }),
+		...(row.storageUsedPercent !== null &&
+		(acc.storageMax === null || row.storageUsedPercent > acc.storageMax)
+			? { storageMax: row.storageUsedPercent, storageOwner: row.database }
+			: { storageMax: acc.storageMax, storageOwner: acc.storageOwner }),
+	}))
 
 const noDatabases = (h: H): Html =>
 	empty(

@@ -29,21 +29,16 @@ type Scan = Readonly<{ lines: ReadonlyArray<string>; fence: string | null }>
 /** Every prose line escaped; lines inside a fenced block pass through until its closing fence. */
 export const escapeDirectives = (text: string): string =>
 	Arr.join(
-		Str.split("\n")(text).reduce<Scan>(
-			(acc, line) => {
-				const marker = FENCE.exec(line)?.[1]
-				if (acc.fence !== null) {
-					const closes =
-						marker !== undefined &&
-						marker[0] === acc.fence[0] &&
-						marker.length >= acc.fence.length
-					return { lines: [...acc.lines, line], fence: closes ? null : acc.fence }
-				}
-				if (marker !== undefined) return { lines: [...acc.lines, line], fence: marker }
-				return { lines: [...acc.lines, escapeLine(line)], fence: null }
-			},
-			{ lines: [], fence: null },
-		).lines,
+		Arr.reduce<string, Scan>(Str.split("\n")(text), { lines: [], fence: null }, (acc, line) => {
+			const marker = FENCE.exec(line)?.[1]
+			if (acc.fence !== null) {
+				const closes =
+					marker !== undefined && marker[0] === acc.fence[0] && marker.length >= acc.fence.length
+				return { lines: [...acc.lines, line], fence: closes ? null : acc.fence }
+			}
+			if (marker !== undefined) return { lines: [...acc.lines, line], fence: marker }
+			return { lines: [...acc.lines, escapeLine(line)], fence: null }
+		}).lines,
 		"\n",
 	)
 

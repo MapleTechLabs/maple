@@ -120,6 +120,7 @@ export const AuditResources = {
 	organization: { verbs: ["deleted", "region_chosen"] },
 	scrape_target: { prefix: PublicIdPrefixes.scrapeTarget, verbs: ["created", "updated", "deleted"] },
 	uptime_monitor: { prefix: PublicIdPrefixes.uptimeMonitor, verbs: ["created", "updated", "deleted"] },
+	slo: { prefix: PublicIdPrefixes.slo, verbs: ["created", "updated", "deleted"] },
 	/** A public status page; component reorders and break-glass token changes are page-level. */
 	status_page: {
 		prefix: PublicIdPrefixes.statusPage,
@@ -211,6 +212,7 @@ export const AuditResourceLabels = {
 	organization: "Organization",
 	scrape_target: "Scrape target",
 	uptime_monitor: "Uptime monitor",
+	slo: "SLO",
 	status_page: "Status page",
 	status_page_component: "Status page component",
 	status_page_incident: "Status page incident",
@@ -283,6 +285,8 @@ export const AuditActionLabels = {
 	"error_issue.pr_merged": "Merged linked pull request",
 	"error_issue.verification_started": "Started fix verification",
 	"error_issue.verification_verdict": "Recorded fix verification result",
+	"error_issue.merge": "Merged issues",
+	"error_issue.unmerge": "Unmerged issue",
 	"gcp_connector.created": "Connected Google Cloud",
 	"gcp_connector.updated": "Updated Google Cloud connector",
 	"gcp_connector.removal_confirmed": "Confirmed Google Cloud resources removed",
@@ -319,6 +323,9 @@ export const AuditActionLabels = {
 	"uptime_monitor.created": "Created uptime monitor",
 	"uptime_monitor.updated": "Updated uptime monitor",
 	"uptime_monitor.deleted": "Deleted uptime monitor",
+	"slo.created": "Created SLO",
+	"slo.updated": "Updated SLO",
+	"slo.deleted": "Deleted SLO",
 	"status_page.created": "Created status page",
 	"status_page.updated": "Updated status page",
 	"status_page.deleted": "Deleted status page",
@@ -355,9 +362,10 @@ export const auditActions = (): ReadonlyArray<string> =>
 		Arr.map(verbs, (verb) => `${resource}.${verb}`),
 	)
 
-const isAuditAction = (action: string): action is AuditAction => Object.hasOwn(AuditActionLabels, action)
+const isAuditAction = (action: string): action is AuditAction =>
+	Rec.has<string, string>(AuditActionLabels, action)
 const isAuditResourceType = (type: string): type is AuditResourceType =>
-	Object.hasOwn(AuditResourceLabels, type)
+	Rec.has<string, string>(AuditResourceLabels, type)
 
 /** Label for an action string read off a row; null for one this build does not know. */
 export const auditActionLabel = (action: string): string | null =>

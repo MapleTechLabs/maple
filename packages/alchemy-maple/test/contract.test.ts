@@ -40,7 +40,7 @@ void _dashboardNotFoundTag
 void _alertRuleNotFoundTag
 void _alertDestinationNotFoundTag
 
-const decodes = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: S, wire: unknown) =>
+const decodes = <S extends Schema.Codec<unknown, unknown>>(schema: S, wire: unknown) =>
 	Effect.runSync(Schema.decodeUnknownEffect(schema)(wire).pipe(Effect.asVoid))
 
 describe("provider request bodies decode against the real v2 create-param schemas", () => {
@@ -91,11 +91,9 @@ describe("provider request bodies decode against the real v2 create-param schema
 			],
 			variables: [{ name: "service", type: "query", source: { kind: "facet", facet: "service" } }],
 		}
-		expect(Schema.decodeUnknownSync(DashboardData)(data)).toEqual(data)
+		expect(Schema.decodeSync(DashboardData)(data)).toEqual(data)
 		expect(
-			Schema.encodeSync(V2DashboardCreateParams)(
-				Schema.decodeUnknownSync(V2DashboardCreateParams)(data),
-			),
+			Schema.encodeSync(V2DashboardCreateParams)(Schema.decodeSync(V2DashboardCreateParams)(data)),
 		).toEqual(data)
 		expect(Schema.is(DashboardWidget)({ ...data.widgets?.[0], visualization: "timeseries" })).toBe(false)
 		expect(

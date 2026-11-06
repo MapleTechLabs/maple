@@ -35,8 +35,9 @@ export const actionSheetContent = (
 	trigger: TipTrigger,
 ): ReadonlyArray<Html> => {
 	const glyph = ACTION_GLYPH[action.kind]
-	const evidence = (report?.evidence ?? []).filter(
-		(item) => item.note || item.traceIds.length > 0 || item.logPatterns.length > 0,
+	const evidence = Arr.filter(
+		report?.evidence ?? [],
+		(item) => Boolean(item.note) || item.traceIds.length > 0 || item.logPatterns.length > 0,
 	)
 	return [
 		sheetDetailHeader(h, {

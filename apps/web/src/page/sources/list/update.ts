@@ -1,10 +1,12 @@
+import * as Policy from "@maple/domain/policy"
 import { Option } from "effect"
 import { Command } from "foldkit"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import * as Keyed from "@maple/views/data/keyed"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { sourcesListKey, sourcesUsageKey } from "../kit/data"
-import { FetchSourcesList, FetchSourcesUsage, ReadSourcesClock } from "./command"
+import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
+import { FetchSourcesList, FetchSourcesUsage, ReadSourcesClock, ReadSourcesGrants } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -47,16 +49,31 @@ export const init = (_route: unknown, context: PageContext): Return => {
 		values: [],
 	})
 	const loaded = load(
-		{ nowMs: null, list: Keyed.idle(), usage: Keyed.idle(), kindFilter, attentionFilter },
+		{
+			nowMs: null,
+			grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
+			list: Keyed.idle(),
+			usage: Keyed.idle(),
+			kindFilter,
+			attentionFilter,
+		},
 		context,
 		"Load",
 	)
-	return { model: loaded.model, commands: [ReadSourcesClock(), ...(loaded.commands ?? [])] }
+	return {
+		model: loaded.model,
+		commands: [
+			ReadSourcesClock(),
+			...(isClerkAuthEnabled ? [ReadSourcesGrants()] : []),
+			...(loaded.commands ?? []),
+		],
+	}
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
+		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		CompletedFetchList: ({ key, result }) => ({
 			model: { ...model, list: Keyed.accept(model.list, key, result) },
 		}),

@@ -56,7 +56,7 @@ import { Message, type Model } from "./model"
 import { DEFAULT_PRESET, viewHref } from "./update"
 import { accountHealthLine, accountMenu, accountsStrip } from "./view-accounts"
 import { type SparkContext, queueTable, workerTable, zoneTable, zoneTableLoading } from "./view-tables"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // `CloudflarePage` and `CloudflareListPage`.
 
@@ -183,7 +183,7 @@ const zonesView = (
 ): Html => {
 	const query = model.search.q ?? ""
 	const q = Str.toLowerCase(Str.trim(query))
-	const zoneScope = ZONE_SCOPES.find((s) => s === model.search.scope)
+	const zoneScope = Option.getOrUndefined(Arr.findFirst(ZONE_SCOPES, (s) => s === model.search.scope))
 	const filtered = Arr.filter(
 		zones,
 		(zone) => (zoneScope === undefined || zoneInScope(zone, zoneScope)) && matches(q, zone.zoneName),
@@ -222,7 +222,7 @@ const zonesView = (
 const workersView = (h: H, model: Model, rows: ReadonlyArray<WorkerListRow>, scope: ListScope): Html => {
 	const query = model.search.q ?? ""
 	const q = Str.toLowerCase(Str.trim(query))
-	const workerScope = WORKER_SCOPES.find((s) => s === model.search.scope)
+	const workerScope = Option.getOrUndefined(Arr.findFirst(WORKER_SCOPES, (s) => s === model.search.scope))
 	const showPreviews = model.search.previews ?? false
 	const previews = Arr.filter(rows, (row) => row.isPreview).length
 	const filtered = sortWorkersByAttention(

@@ -1,4 +1,4 @@
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { describe, expect, it } from "@effect/vitest"
 import { OpenApi } from "effect/http-api"
 import * as Http from "./index"
@@ -79,6 +79,7 @@ describe("HTTP error tag contract", () => {
 		({ spec }) => {
 			const operations = Arr.flatMap(Rec.toEntries(spec.paths ?? {}), ([path, item]) =>
 				Arr.map(
+					// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 					Arr.filter(Object.entries(item ?? {}), ([method]) =>
 						["get", "post", "put", "patch", "delete"].includes(method),
 					),

@@ -39,6 +39,8 @@ import {
 	type AlertThresholds,
 	type QueryBuilderQueryDraftPayload,
 	type OrgId,
+	isManagedSignalType,
+	type ManagedSignalType,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertRules, type AlertRuleRow } from "@maple/db/tables"
@@ -191,7 +193,7 @@ export const normalizedRuleToDocument = (
 }
 
 export const normalizeOptionalString = (value: string | null | undefined) => {
-	const trimmed = value?.trim()
+	const trimmed = value == null ? undefined : Str.trim(value)
 	return trimmed && trimmed.length > 0 ? trimmed : null
 }
 
@@ -229,12 +231,17 @@ const planGroupingTokens = (
 	return groupBy
 }
 
-/** Why the generic rule APIs refuse an `uptime` rule. */
-export const UPTIME_RULE_MANAGED_MESSAGE =
-	"uptime rules belong to an uptime monitor; create, edit or delete the monitor instead"
+/** Why the generic rule APIs refuse a rule another resource owns. */
+export const managedRuleMessage = (signalType: ManagedSignalType): string =>
+	signalType === "uptime"
+		? "uptime rules belong to an uptime monitor; create, edit or delete the monitor instead"
+		: "slo_burn_rate rules belong to an SLO; create, edit or delete the SLO instead"
 
-/** The stored plan of every `uptime` rule: no query, the evaluator reads the monitor's state. */
-export const UPTIME_RULE_PLAN = new CompiledAlertQueryPlan({
+/**
+ * The stored plan of every managed rule (`uptime`, `slo_burn_rate`): no query, the evaluator
+ * reads the owning resource instead.
+ */
+export const MANAGED_RULE_PLAN = new CompiledAlertQueryPlan({
 	kind: "spec",
 	query: null,
 	rawSql: null,
@@ -292,9 +299,9 @@ export const uptimeRuleFields = (monitor: {
 		rawQuerySql: null,
 		destinationIdsJson: [...monitor.destinationIds],
 		querySpecJson: null,
-		reducer: UPTIME_RULE_PLAN.reducer,
+		reducer: MANAGED_RULE_PLAN.reducer,
 		sampleCountStrategy: null,
-		noDataBehavior: UPTIME_RULE_PLAN.noDataBehavior,
+		noDataBehavior: MANAGED_RULE_PLAN.noDataBehavior,
 	} as const
 }
 
@@ -522,7 +529,7 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 			Match.exhaustive,
 		)
 	} else if (rule.signalType === "raw_query") {
-		const sql = rule.rawQuerySql?.trim() ?? ""
+		const sql = Str.trim(rule.rawQuerySql ?? "")
 		if (sql.length === 0) {
 			return yield* makeAlertValidationError("raw_query alerts require rawQuerySql")
 		}
@@ -539,8 +546,8 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 			sampleCountStrategy: null,
 			noDataBehavior,
 		})
-	} else if (rule.signalType === "uptime") {
-		return yield* makeAlertValidationError(UPTIME_RULE_MANAGED_MESSAGE)
+	} else if (isManagedSignalType(rule.signalType)) {
+		return yield* makeAlertValidationError(managedRuleMessage(rule.signalType))
 	} else {
 		return yield* makeAlertValidationError(`Unsupported signal type: ${rule.signalType}`)
 	}
@@ -574,8 +581,8 @@ const parseCompiledPlan = (
 			component: "compiled_plan",
 			cause,
 		})
-	// An uptime rule reads its monitor's state, not the warehouse: no query to decode.
-	if (row.signalType === "uptime") return Effect.succeed(UPTIME_RULE_PLAN)
+	// A managed rule reads its owner (a monitor's state, an SLO's burn), never a stored query.
+	if (isManagedSignalType(row.signalType)) return Effect.succeed(MANAGED_RULE_PLAN)
 	if (row.signalType === "raw_query") {
 		if (row.rawQuerySql == null) {
 			return Effect.fail(invalid("Stored raw alert is missing its SQL query", "rawQuerySql is null"))
@@ -868,8 +875,8 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		request: AlertRuleUpsertRequest,
 		options?: { readonly forPreview?: boolean },
 	): Effect.fn.Return<NormalizedRule, AlertValidationError> {
-		if (request.signalType === "uptime") {
-			return yield* invalidRuleError([UPTIME_RULE_MANAGED_MESSAGE])
+		if (isManagedSignalType(request.signalType)) {
+			return yield* invalidRuleError([managedRuleMessage(request.signalType)])
 		}
 		const name = Str.trim(request.name)
 		// A builder query's draft carries its own scope and never reads the
@@ -951,7 +958,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			details.push("queryBuilderDraft is required for builder_query alerts")
 		}
 		if (request.signalType === "raw_query") {
-			const sql = request.rawQuerySql?.trim() ?? ""
+			const sql = Str.trim(request.rawQuerySql ?? "")
 			if (sql.length === 0) details.push("rawQuerySql is required for raw_query alerts")
 			if (serviceNames.length > 0) details.push("serviceNames is not supported for raw_query alerts")
 			if (groupBy != null) {

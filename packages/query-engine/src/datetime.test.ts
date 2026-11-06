@@ -28,13 +28,14 @@ import {
 	MAX_AUTO_DATA_POINTS,
 	snapRangeForCache,
 	isCalendarAlignedShorthand,
+	isZoneDependentShorthand,
 	startOfDayInTimeZone,
 	timeZoneOffsetMs,
 	warehouseDateTimeToIso,
 	zonedDateParts,
 	zonedPartsToEpochMs,
 } from "./datetime"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 describe("warehouseDateTimeToIso", () => {
 	it("appends Z to a tz-less space-separated DateTime", () => {
@@ -383,7 +384,10 @@ describe("alertQueryLimits", () => {
 
 	it("never lowers a limit as the interval grows", () => {
 		const limits = Arr.map([1, 5, 10, 15, 30, 60], alertQueryLimits)
-		for (const [a, b] of Arr.map(limits.slice(1), (limit, i) => [limits[i]!, limit] as const)) {
+		for (const [a, b] of Arr.map(
+			limits.slice(1),
+			(limit, i) => [Arr.getUnsafe(limits, i), limit] as const,
+		)) {
 			expect(b.timeSeconds).toBeGreaterThanOrEqual(a.timeSeconds)
 			expect(b.memoryBytes).toBeGreaterThanOrEqual(a.memoryBytes)
 		}
@@ -426,7 +430,7 @@ describe("isAlertRuleDue", () => {
 		const phases = new Set(
 			Array.from(
 				{ length: 50 },
-				(_, i) => dueMinutes({ ruleId: `rule-${i}`, intervalMinutes: 5 })[0]! % 5,
+				(_, i) => Arr.getUnsafe(dueMinutes({ ruleId: `rule-${i}`, intervalMinutes: 5 }), 0) % 5,
 			),
 		)
 		expect(phases.size).toBe(5)
@@ -438,9 +442,12 @@ describe("isAlertRuleDue", () => {
 	})
 
 	it("runs a rule edited since its last claim on the next tick", () => {
-		const notDue = [1001, 1002, 1003].find(
-			(n) => !isAlertRuleDue({ ...base, lastClaimedAt: minute(1000), windowEndMs: minute(n) }),
-		)!
+		const notDue = Option.getOrThrow(
+			Arr.findFirst(
+				[1001, 1002, 1003],
+				(n) => !isAlertRuleDue({ ...base, lastClaimedAt: minute(1000), windowEndMs: minute(n) }),
+			),
+		)
 		expect(
 			isAlertRuleDue({
 				...base,
@@ -865,6 +872,17 @@ describe("calendar arithmetic in an IANA zone", () => {
 		// A month start keeps the time of day, so it must slide with the snapped end.
 		expect(isCalendarAlignedShorthand("1mo")).toBe(false)
 	})
+
+	it.each(["today", "7d", "2w", "1mo", "15m", "12h"])(
+		"flags %s as zone-dependent exactly when its window differs across zones",
+		(shorthand) => {
+			// Nov 10 2026, after LA's DST change, so a month start differs by an hour too.
+			const now = Date.parse("2026-11-10T18:00:00Z")
+			const la = resolveRelativeRange(shorthand, now, "America/Los_Angeles")
+			const tokyo = resolveRelativeRange(shorthand, now, "Asia/Tokyo")
+			expect(isZoneDependentShorthand(shorthand)).toBe(la?.startMs !== tokyo?.startMs)
+		},
+	)
 
 	it("disambiguates a day start that rolled into the previous month", () => {
 		// "2w" on 2026-11-07 starts on 2026-10-25, the day Berlin falls back; its

@@ -2,7 +2,7 @@ import type { StatusPageSnapshot } from "@maple/domain/status-page"
 import { escapeHtml, safeUrl } from "./escape"
 import { baseStyles, presetStyles } from "./styles"
 import { resolveSafeTheme, safeTheme } from "./theme"
-import { Array as Arr, String as Str } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 
 export interface RenderOptions {
 	/** CSP nonce for the inline style and script; omitted for static copies. */
@@ -29,7 +29,12 @@ export const renderHeader = (snapshot: StatusPageSnapshot, options: RenderOption
 	const logo = safeUrl(snapshot.page.logoUrl, ["https:"])
 	const website = safeUrl(snapshot.page.websiteUrl, ["https:", "http:"])
 	// Without a logo, a monogram in the theme's brand colour stands in for one.
-	const initial = escapeHtml(Array.from(Str.trim(snapshot.page.name))[0]?.toUpperCase() ?? "")
+	const initial = escapeHtml(
+		Option.match(Arr.head(Array.from(Str.trim(snapshot.page.name))), {
+			onNone: () => "",
+			onSome: (first) => Str.toUpperCase(first),
+		}),
+	)
 	const mark =
 		logo === null
 			? `<span class="mono-mark" aria-hidden="true">${initial}</span>${name}`

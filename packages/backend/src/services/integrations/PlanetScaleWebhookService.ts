@@ -22,6 +22,7 @@ import {
 	Context,
 	Effect,
 	Layer,
+	Option,
 	Redacted,
 	Schema,
 	SchemaGetter,
@@ -62,7 +63,12 @@ export const planetScaleWebhookStatus = (
 	databases: ReadonlyArray<Pick<PlanetScaleDatabaseRow, "webhookId" | "webhookError">>,
 ): PlanetScaleWebhookStatus => {
 	const registeredDatabases = Arr.filter(databases, (row) => row.webhookId !== null).length
-	const lastError = databases.find((row) => row.webhookError !== null)?.webhookError ?? null
+	const lastError = Option.getOrNull(
+		Option.flatMapNullishOr(
+			Arr.findFirst(databases, (row) => row.webhookError !== null),
+			(row) => row.webhookError,
+		),
+	)
 	return new PlanetScaleWebhookStatus({
 		state: !grantsWebhookManagement(scopes)
 			? "needs_reauthorization"
@@ -80,7 +86,7 @@ export const planetScaleWebhookStatus = (
 /** The SDK wraps the signing secret in `Redacted`; a body it passes through unchecked holds a string. */
 const SecretSchema = Schema.Union([
 	Schema.String,
-	Schema.declare((value): value is Redacted.Redacted<string> => Redacted.isRedacted(value)).pipe(
+	Schema.declare((value): value is Redacted.Redacted => Redacted.isRedacted(value)).pipe(
 		Schema.decodeTo(Schema.String, {
 			decode: SchemaGetter.transform((secret) => String(Redacted.value(secret))),
 			encode: SchemaGetter.transform((secret) => Redacted.make(secret)),

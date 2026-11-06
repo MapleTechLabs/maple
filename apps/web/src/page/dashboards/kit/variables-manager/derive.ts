@@ -1,6 +1,6 @@
 import { DashboardVariableName } from "@maple/domain/http"
 import { QUERY_BUILDER_METRIC_TYPES, type QueryBuilderMetricType } from "@maple/query-model"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Schema, Array as Arr, String as Str, Option } from "effect"
 import type { Variable } from "./model"
 
 // The pure half of `VariablesManagerDialog`: labels, summaries, retyping and per-draft validation.
@@ -127,8 +127,9 @@ export const withSourceValue = (variable: QueryVariable, value: string): Variabl
 	const [kind, detail] = Str.split(":")(value)
 	const source = variable.source
 	const attributeKey = source.kind === "facet" ? "" : source.attributeKey
-	const facet = FACETS.find((candidate) => candidate === detail)
-	if (kind === "facet" && facet !== undefined) return { ...variable, source: { kind: "facet", facet } }
+	const facet = Arr.findFirst(FACETS, (candidate) => candidate === detail)
+	if (kind === "facet" && Option.isSome(facet))
+		return { ...variable, source: { kind: "facet", facet: facet.value } }
 	if (kind === "attribute" && (detail === "span" || detail === "resource"))
 		return { ...variable, source: { kind: "attribute", scope: detail, attributeKey } }
 	if (kind === "metric" && (detail === "metric" || detail === "resource"))

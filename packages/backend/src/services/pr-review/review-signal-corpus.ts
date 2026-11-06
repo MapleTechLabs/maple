@@ -32,7 +32,7 @@ import {
 	overlongFinding,
 	prReviewConfidenceTone,
 } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Array as Arr, Option, pipe, Predicate, Record as Rec, Schema, String as Str } from "effect"
 import type { TrackedFinding } from "./findings"
 import { buildPublication } from "./PrReviewService"
 
@@ -71,7 +71,7 @@ const OUTDATED_STUB = "This comment was marked as outdated."
 
 /** `pattern` replaced until the text stops changing, so a removal cannot leave a new match behind. */
 const replaceAll = (text: string, pattern: RegExp, replacement: string): string => {
-	const next = text.replace(pattern, replacement)
+	const next = Str.replace(pattern, replacement)(text)
 	return next === text ? text : replaceAll(next, pattern, replacement)
 }
 
@@ -81,24 +81,26 @@ const replaceAll = (text: string, pattern: RegExp, replacement: string): string 
  * A character count for the eval, never rendered.
  */
 export const visibleText = (body: string): string =>
-	replaceAll(
+	pipe(
 		replaceAll(
-			replaceAll(body, /<!--[\s\S]*?-->/g, "").replace(
-				/<details(?: open)?>\s*<summary>([\s\S]*?)<\/summary>[\s\S]*?<\/details>/g,
-				"▸ $1",
+			replaceAll(
+				Str.replace(
+					/<details(?: open)?>\s*<summary>([\s\S]*?)<\/summary>[\s\S]*?<\/details>/g,
+					"▸ $1",
+				)(replaceAll(body, /<!--[\s\S]*?-->/g, "")),
+				/\[([^\]]*)\]\([^)]*\)/g,
+				"$1",
 			),
-			/\[([^\]]*)\]\([^)]*\)/g,
-			"$1",
+			/<\/?[a-z][^>]*>/gi,
+			"",
 		),
-		/<\/?[a-z][^>]*>/gi,
-		"",
+		Str.replace(/\n{3,}/g, "\n\n"),
+		Str.trim,
 	)
-		.replace(/\n{3,}/g, "\n\n")
-		.trim()
 
 /** A body as the corpus keeps it: the "Prompt to fix" blocks restate the findings, so they go. */
 export const withoutAgentPrompts = (body: string): string =>
-	body.replace(/<details><summary>🤖[\s\S]*?<\/details>\n*/g, "")
+	Str.replace(/<details><summary>🤖[\s\S]*?<\/details>\n*/g, "")(body)
 
 export const snapshotComment = (createdAt: string, body: string): ReviewSignalComment => ({
 	createdAt,
@@ -125,54 +127,61 @@ const STEP_KIND_BY_LABEL = new Map<string, PrReviewMergeStepKind>([
 ])
 
 const unescapeHtml = (value: string) =>
-	value
-		.replace(/<code>([^<]*)<\/code>/g, "`$1`")
-		.replace(/&lt;/g, "<")
-		.replace(/&gt;/g, ">")
-		.replace(/&quot;/g, '"')
-		.replace(/&amp;/g, "&")
+	pipe(
+		value,
+		Str.replace(/<code>([^<]*)<\/code>/g, "`$1`"),
+		Str.replace(/&lt;/g, "<"),
+		Str.replace(/&gt;/g, ">"),
+		Str.replace(/&quot;/g, '"'),
+		Str.replace(/&amp;/g, "&"),
+	)
 
 /** `1.2k` / `3.4M` / `381` back to a number. */
 const parseCount = (text: string): number => {
-	const match = /^([\d.]+)\s*([kKmM]?)/.exec(text.trim())
+	const match = /^([\d.]+)\s*([kKmM]?)/.exec(Str.trim(text))
 	if (match === null) return 0
-	const scale = match[2]?.toLowerCase() === "k" ? 1_000 : match[2]?.toLowerCase() === "m" ? 1_000_000 : 1
+	const unit = match[2] === undefined ? undefined : Str.toLowerCase(match[2])
+	const scale = unit === "k" ? 1_000 : unit === "m" ? 1_000_000 : 1
 	return Math.round(Number(match[1]) * scale)
 }
 
 /** The text under a `### heading`, up to the next one or the footer. */
 const section = (body: string, heading: string): string | undefined => {
-	const start = body.indexOf(`\n### ${heading}\n`)
-	if (start === -1) return undefined
-	const rest = body.slice(start + heading.length + 6)
-	const end = rest.search(/\n### |\n<sub>`[0-9a-f]{7}`/)
-	return end === -1 ? rest : rest.slice(0, end)
+	const start = Str.indexOf(`\n### ${heading}\n`)(body)
+	if (Option.isNone(start)) return undefined
+	const rest = Str.slice(start.value + heading.length + 6)(body)
+	return Option.match(Str.search(/\n### |\n<sub>`[0-9a-f]{7}`/)(rest), {
+		onNone: () => rest,
+		onSome: (end) => Str.slice(0, end)(rest),
+	})
 }
 
 /** The body of the `<details>` whose summary starts with `summary`. */
 const detailsBody = (body: string, summary: string): string | undefined => {
-	const start = body.indexOf(`<details><summary>${summary}`)
-	if (start === -1) return undefined
-	const open = body.indexOf("</summary>", start)
-	const close = body.indexOf("</details>", open)
-	return open === -1 || close === -1 ? undefined : body.slice(open + "</summary>".length, close)
+	const start = Str.indexOf(`<details><summary>${summary}`)(body)
+	if (Option.isNone(start)) return undefined
+	const fromStart = Str.slice(start.value)(body)
+	const open = Str.indexOf("</summary>")(fromStart)
+	if (Option.isNone(open)) return undefined
+	const fromOpen = Str.slice(open.value)(fromStart)
+	const close = Str.indexOf("</details>")(fromOpen)
+	return Option.isNone(close) ? undefined : Str.slice("</summary>".length, close.value)(fromOpen)
 }
 
 const tableRows = (text: string | undefined): ReadonlyArray<ReadonlyArray<string>> =>
-	(text ?? "")
-		.split("\n")
-		.filter(
+	Arr.map(
+		Arr.filter(
+			Str.split("\n")(text ?? ""),
 			(line) =>
-				line.startsWith("| ") &&
-				!line.startsWith("| ---") &&
+				Str.startsWith("| ")(line) &&
+				!Str.startsWith("| ---")(line) &&
 				!/^\| (Change|Issue|File) \|/.test(line),
-		)
-		.map((line) =>
-			line
-				.slice(2, -2)
-				.split(/(?<!\\) \| /)
-				.map((cell) => cell.replace(/\\\|/g, "|").replace(/\\\\/g, "\\").trim()),
-		)
+		),
+		(line) =>
+			Arr.map(pipe(line, Str.slice(2, -2), Str.split(/(?<!\\) \| /)), (cell) =>
+				pipe(cell, Str.replace(/\\\|/g, "|"), Str.replace(/\\\\/g, "\\"), Str.trim),
+			),
+	)
 
 /** `path:12` or `path:12-14`, as a finding's location label prints it. */
 const parseWhere = (label: string) => {
@@ -206,22 +215,21 @@ export interface ParsedReview {
 
 const parseFindings = (body: string): ReadonlyArray<PrReviewFinding> => {
 	const findings = section(body, "Findings") ?? ""
-	return [
-		...findings.matchAll(
-			/<details><summary>\S+ <b>(\w+)<\/b> · (?:(F\d+) · )?([\s\S]*?)<\/summary>\n\n([\s\S]*?)\n<\/details>/g,
-		),
-	].flatMap((match) => {
+	const matches = Str.matchAll(
+		/<details><summary>\S+ <b>(\w+)<\/b> · (?:(F\d+) · )?([\s\S]*?)<\/summary>\n\n([\s\S]*?)\n<\/details>/g,
+	)(findings)
+	return Arr.flatMap([...matches], (match) => {
 		const [, label = "", handle, title = "", inner = ""] = match
-		const [meta = "", ...rest] = inner.split("\n\n")
+		const [meta, ...rest] = Str.split("\n\n")(inner)
 		const [, category, checkId, location = ""] =
 			/^([a-z]+)(?: · ([A-Z]+-[A-Z0-9]+))? · \[`([^`]+)`\]/.exec(meta) ?? []
 		const where = parseWhere(location)
 		const severity = SEVERITY_BY_LABEL.get(label)
 		if (where === undefined || severity === undefined || !isCategory(category)) return []
-		const text = rest.join("\n\n")
+		const text = Arr.join(rest, "\n\n")
 		const fence = /\n?(`{3,})\n([\s\S]*?)\n\1\s*$/.exec(text)
 		const fix = fence?.[2]
-		const findingBody = (fence === null ? text : text.slice(0, fence.index)).trim()
+		const findingBody = Str.trim(fence === null ? text : Str.slice(0, fence.index)(text))
 		return [
 			new PrReviewFinding({
 				...where,
@@ -237,12 +245,11 @@ const parseFindings = (body: string): ReadonlyArray<PrReviewFinding> => {
 	})
 }
 
-const parseMergeSteps = (body: string): ReadonlyArray<PrReviewMergeStep> =>
-	[
-		...(section(body, "Before merge") ?? "").matchAll(
-			/^- \[( |x)\] \*\*([^*]+)\*\* · (.*?)(?: · \[`([^`]+)`\]\([^)]*\))?(?: · ticked by @\S+)? <!-- ms:(\S+) -->$/gm,
-		),
-	].flatMap(([, tick, label = "", title = "", location, key = ""]) => {
+const parseMergeSteps = (body: string): ReadonlyArray<PrReviewMergeStep> => {
+	const matches = Str.matchAll(
+		/^- \[( |x)\] \*\*([^*]+)\*\* · (.*?)(?: · \[`([^`]+)`\]\([^)]*\))?(?: · ticked by @\S+)? <!-- ms:(\S+) -->$/gm,
+	)(section(body, "Before merge") ?? "")
+	return Arr.flatMap([...matches], ([, tick, label = "", title = "", location, key = ""]) => {
 		const kind = STEP_KIND_BY_LABEL.get(label)
 		if (kind === undefined) return []
 		const where = location === undefined ? undefined : (parseWhere(location) ?? { path: location })
@@ -258,6 +265,7 @@ const parseMergeSteps = (body: string): ReadonlyArray<PrReviewMergeStep> =>
 			}),
 		]
 	})
+}
 
 const KIND_BY_LABEL = new Map<string, PrReviewTelemetryKind>([
 	["span name", "span"],
@@ -268,40 +276,45 @@ const KIND_BY_LABEL = new Map<string, PrReviewTelemetryKind>([
 const parseTelemetry = (body: string): PrReviewTelemetry | undefined => {
 	const impact = section(body, "Production impact")
 	if (impact === undefined) return undefined
-	const changes = (sign: string) =>
-		[
-			...(detailsBody(impact, "Telemetry this change adds and removes") ?? "").matchAll(
-				new RegExp(`^- ${sign} (span name|attribute|metric) \`([^\`]+)\`.*?· \`([^\`]+)\`$`, "gm"),
-			),
-		].flatMap(([, label = "", name = "", location = ""]) => {
+	const changes = (sign: string) => {
+		const matches = Str.matchAll(
+			new RegExp(`^- ${sign} (span name|attribute|metric) \`([^\`]+)\`.*?· \`([^\`]+)\`$`, "gm"),
+		)(detailsBody(impact, "Telemetry this change adds and removes") ?? "")
+		return Arr.flatMap([...matches], ([, label = "", name = "", location = ""]) => {
 			const where = parseWhere(location)
 			const kind = KIND_BY_LABEL.get(label)
 			return where === undefined || kind === undefined
 				? []
 				: [new PrReviewTelemetryChange({ kind, name, path: where.path, line: where.line })]
 		})
+	}
 	return new PrReviewTelemetry({
 		windowDays: 7,
 		services: [],
 		contractBreaks: [],
-		hotFiles: tableRows(detailsBody(impact, "Production traffic of the changed files")).map(
+		hotFiles: Arr.map(
+			tableRows(detailsBody(impact, "Production traffic of the changed files")),
 			([path = "", perDay = "0"]) =>
 				new PrReviewHotFile({
-					path: path.replace(/`/g, ""),
+					path: Str.replace(/`/g, "")(path),
 					perDay: parseCount(perDay),
 					operations: [],
 				}),
 		),
-		linkedIssues: tableRows(
-			detailsBody(impact.replace("<details open>", "<details>"), "Open errors in the changed files"),
-		).map(
+		linkedIssues: Arr.map(
+			tableRows(
+				detailsBody(
+					Str.replace("<details open>", "<details>")(impact),
+					"Open errors in the changed files",
+				),
+			),
 			([title = "", service = "", occurrences = "0", path = ""], i) =>
 				new PrReviewLinkedIssue({
 					issueId: `issue-${i}`,
 					fingerprintHash: `fp-${i}`,
 					title,
 					service,
-					path: path.replace(/`/g, ""),
+					path: Str.replace(/`/g, "")(path),
 					topFrame: "",
 					occurrences: parseCount(occurrences),
 					lastSeenAt: 0,
@@ -317,61 +330,81 @@ const parseTelemetry = (body: string): PrReviewTelemetry | undefined => {
 export const parseSummary = (body: string): ParsedReview | undefined => {
 	const head = /<sub>`([0-9a-f]{7})`/.exec(body)?.[1]
 	const scored = /\*\*Confidence (\d+)\/10\*\*/.exec(body)
-	const nothing = body.includes("**Nothing to review**")
+	const nothing = Str.includes("**Nothing to review**")(body)
 	if (head === undefined || (scored === null && !nothing)) return undefined
-	const factors = scored === null ? [] : (/\n<sub>([^<]*)<\/sub>\n/.exec(body)?.[1]?.split(" · ") ?? [])
+	const factorsLine = /\n<sub>([^<]*)<\/sub>\n/.exec(body)?.[1]
+	const factors: ReadonlyArray<string> =
+		scored === null || factorsLine === undefined ? [] : Str.split(" · ")(factorsLine)
 	const factor = (pattern: RegExp) =>
-		factors.map((item) => pattern.exec(item)?.[1]).find((item) => item !== undefined)
-	const tests = factor(/^tests (covered|partial|missing|not needed)/)?.replace(" ", "_")
+		Option.getOrUndefined(
+			Arr.findFirst(
+				Arr.map(factors, (item) => pattern.exec(item)?.[1]),
+				Predicate.isNotUndefined,
+			),
+		)
+	const testsFactor = factor(/^tests (covered|partial|missing|not needed)/)
+	const tests = testsFactor === undefined ? undefined : Str.replace(" ", "_")(testsFactor)
 	const risk = factor(/^risk (low|medium|high)/)
 	// The summary and key changes sit between the factors line (or a notice) and the first section.
-	const lead = body
-		.slice(body.indexOf("</sub>\n") + "</sub>\n".length)
-		.split(/\n### |\n<details>|\n<sub>`/)
-		.at(0)
-		?.replace(/^> \[!WARNING\]\n> .*\n/m, "")
-		.trim()
-	const [summary = "", ...keyChangeBlocks] = (lead ?? "").split("\n\n")
-	const keyChanges = keyChangeBlocks
-		.join("\n")
-		.split("\n")
-		.filter((line) => line.startsWith("- "))
-		.map((line) => line.slice(2))
-	const checked = (detailsBody(body, "What was checked") ?? "")
-		.split("\n")
-		.filter((line) => line.startsWith("- "))
-		.map((line) => line.slice(2))
-	const coverage = tableRows(detailsBody(body, "Observability coverage")).map(
+	const lead = pipe(
+		body,
+		Str.slice(Option.getOrElse(Str.indexOf("</sub>\n")(body), () => -1) + "</sub>\n".length),
+		Str.split(/\n### |\n<details>|\n<sub>`/),
+		Arr.headNonEmpty,
+		Str.replace(/^> \[!WARNING\]\n> .*\n/m, ""),
+		Str.trim,
+	)
+	const [summary, ...keyChangeBlocks] = Str.split("\n\n")(lead)
+	const listItems = (text: string) =>
+		Arr.map(
+			Arr.filter(Str.split("\n")(text), (line) => Str.startsWith("- ")(line)),
+			(line) => Str.slice(2)(line),
+		)
+	const keyChanges = listItems(Arr.join(keyChangeBlocks, "\n"))
+	const checked = listItems(detailsBody(body, "What was checked") ?? "")
+	const coverage = Arr.map(
+		tableRows(detailsBody(body, "Observability coverage")),
 		([unit = "", kind = "", observable = "", evidence = ""]) =>
 			new PrReviewCoverageUnit({ unit, kind, instrumented: observable === "yes", evidence }),
 	)
-	const unreadList = (detailsBody(body, "Files not reviewed") ?? "").split("\n")
-	const more = unreadList.map((line) => /^- and (\d+) more$/.exec(line)?.[1]).find((n) => n !== undefined)
+	const unreadList = Str.split("\n")(detailsBody(body, "Files not reviewed") ?? "")
+	const more = Option.getOrUndefined(
+		Arr.findFirst(
+			Arr.map(unreadList, (line) => /^- and (\d+) more$/.exec(line)?.[1]),
+			Predicate.isNotUndefined,
+		),
+	)
 	const unreviewed = [
-		...unreadList.flatMap((line) => /^- `([^`]+)`$/.exec(line)?.[1] ?? []),
+		...Arr.flatMap(unreadList, (line) => {
+			const path = /^- `([^`]+)`$/.exec(line)?.[1]
+			return path === undefined ? [] : [path]
+		}),
 		...Array.from({ length: Number(more ?? 0) }, (_, i) => `unlisted-${i}`),
 	]
 	const findings = parseFindings(body)
 	const beforeMerge = parseMergeSteps(body)
 	const telemetry = parseTelemetry(body)
-	const carriedOpen = [
-		...(section(body, "Still open from earlier reviews") ?? "").matchAll(
-			/^- \S+ \*\*(\w+)\*\* · (F\d+) · (.*) · \[`([^`]+)`\]/gm,
-		),
-	].flatMap(([, label = "", handle = "", title = "", location = ""]) => {
-		const severity = SEVERITY_BY_LABEL.get(label)
-		const where = parseWhere(location)
-		return severity === undefined || where === undefined
-			? []
-			: [{ handle, severity, title, path: where.path, line: where.line }]
-	})
-	const resolved = [
-		...(section(body, "Fixed since the last review") ?? "").matchAll(/^- ✅ ~~(F\d+) · /gm),
-	].flatMap(([, handle]) => handle ?? [])
-	const hasIssues = [...findings, ...carriedOpen].some((finding) => finding.severity !== "info")
+	const carriedMatches = Str.matchAll(/^- \S+ \*\*(\w+)\*\* · (F\d+) · (.*) · \[`([^`]+)`\]/gm)(
+		section(body, "Still open from earlier reviews") ?? "",
+	)
+	const carriedOpen = Arr.flatMap(
+		[...carriedMatches],
+		([, label = "", handle = "", title = "", location = ""]) => {
+			const severity = SEVERITY_BY_LABEL.get(label)
+			const where = parseWhere(location)
+			return severity === undefined || where === undefined
+				? []
+				: [{ handle, severity, title, path: where.path, line: where.line }]
+		},
+	)
+	const resolvedMatches = Str.matchAll(/^- ✅ ~~(F\d+) · /gm)(
+		section(body, "Fixed since the last review") ?? "",
+	)
+	const resolved = Arr.flatMap([...resolvedMatches], ([, handle]) => (handle === undefined ? [] : [handle]))
+	const hasIssues = Arr.some([...findings, ...carriedOpen], (finding) => finding.severity !== "info")
 	return {
 		head,
-		partial: body.includes("This review ended early"),
+		partial: Str.includes("This review ended early")(body),
 		confidence: scored === null ? undefined : Number(scored[1]),
 		factors,
 		carriedOpen,
@@ -430,20 +463,20 @@ export interface ScoredCase {
 	}>
 }
 
-const REVIEW_ID = Schema.decodeUnknownSync(PrReviewId)("00000000-0000-4000-8000-000000000000")
+const REVIEW_ID = Schema.decodeSync(PrReviewId)("00000000-0000-4000-8000-000000000000")
 const decodeSha = Schema.decodeUnknownSync(GitCommitSha)
 
 export const scoreCase = (
 	item: ReviewSignalCase,
 	labels: Schema.Schema.Type<typeof ReviewSignalLabels> | undefined,
 ): ScoredCase => {
-	const parsed = item.summaries.flatMap((published) => {
+	const parsed = Arr.flatMap(item.summaries, (published) => {
 		const review = parseSummary(published.body)
 		return review === undefined ? [] : [{ published, review }]
 	})
 	// Every finding as first filed, so a carried one keeps its category.
 	const filed = new Map<string, PrReviewFinding>()
-	const reviews = parsed.map(({ published, review }, index): ScoredReview => {
+	const reviews = Arr.map(parsed, ({ published, review }, index): ScoredReview => {
 		const earlier = [...filed.values()]
 		for (const finding of review.report.findings)
 			if (finding.handle !== undefined && !filed.has(finding.handle)) filed.set(finding.handle, finding)
@@ -464,24 +497,27 @@ export const scoreCase = (
 				commentId: null,
 			}
 		}
-		const open = review.carriedOpen.map((finding) => tracked(finding.handle, finding))
+		const open = Arr.map(review.carriedOpen, (finding) => tracked(finding.handle, finding))
 		const openHandles = new Set([
-			...open.map((finding) => finding.handle),
-			...review.report.findings.flatMap((finding) => finding.handle ?? []),
+			...Arr.map(open, (finding) => finding.handle),
+			...Arr.flatMap(review.report.findings, (finding) =>
+				finding.handle === undefined ? [] : [finding.handle],
+			),
 		])
 		// Defects earlier reviews filed that are no longer open here: fixed (or dismissed) before this head.
 		// The corpus predates whole-diff passes, so no fix in it was re-checked.
-		const uncheckedFixes = earlier.filter(
+		const uncheckedFixes = Arr.filter(
+			earlier,
 			(finding) => isPrReviewDefectHistory(finding) && !openHandles.has(finding.handle ?? ""),
 		).length
-		const resolved = review.resolved.flatMap((handle) => {
+		const resolved = Arr.flatMap(review.resolved, (handle) => {
 			const first = filed.get(handle)
 			return first === undefined ? [] : [tracked(handle, first)]
 		})
 		const publication = buildPublication({
 			reviewId: REVIEW_ID,
 			number: item.number,
-			headSha: decodeSha(review.head.padEnd(40, "0")),
+			headSha: decodeSha(Str.padEnd(40, "0")(review.head)),
 			report: review.report,
 			partial: review.partial,
 			repositoryUrl: `https://github.com/${item.repo}`,
@@ -495,27 +531,32 @@ export const scoreCase = (
 			open,
 			confidence: confidencePrReview(review.report, open, review.partial, uncheckedFixes)?.confidence,
 			confidenceWithoutHistory: confidencePrReview(review.report, open, review.partial)?.confidence,
-			openDefect: [...review.report.findings, ...open].some(isPrReviewDefect),
+			openDefect: Arr.some([...review.report.findings, ...open], (finding) =>
+				isPrReviewDefect(finding),
+			),
 			nextFound:
-				next === undefined ? undefined : next.review.report.findings.filter(isPrReviewDefect).length,
+				next === undefined
+					? undefined
+					: Arr.filter(next.review.report.findings, (finding) => isPrReviewDefect(finding)).length,
 			comment: publication.summaryComment.body,
-			inline: publication.comments.map((comment) => comment.body),
-			overlong: review.report.findings.filter((finding) => overlongFinding(finding) !== undefined)
+			inline: Arr.map(publication.comments, (comment) => comment.body),
+			overlong: Arr.filter(review.report.findings, (finding) => overlongFinding(finding) !== undefined)
 				.length,
 		}
 	})
 	const visible = (body: string) => visibleText(body).length
 	const latest = reviews.at(-1)
-	const afterInline = reviews.flatMap((review) => review.inline)
+	const afterInline = Arr.flatMap(reviews, (review) => review.inline)
 	return {
 		id: item.id,
 		reviews,
 		before: {
-			visible: [...item.summaries, ...item.inline].reduce(
-				(sum, comment) => sum + comment.visibleChars,
+			visible: Arr.reduce(
+				[...item.summaries, ...item.inline],
 				0,
+				(sum, comment) => sum + comment.visibleChars,
 			),
-			total: [...item.summaries, ...item.inline].reduce((sum, comment) => sum + comment.chars, 0),
+			total: Arr.reduce([...item.summaries, ...item.inline], 0, (sum, comment) => sum + comment.chars),
 			comments: item.summaries.length + item.inline.length,
 		},
 		after: {
@@ -523,14 +564,14 @@ export const scoreCase = (
 			visible:
 				(item.summaries.length - (latest === undefined ? 0 : 1)) * OUTDATED_STUB.length +
 				(latest === undefined ? 0 : visible(latest.comment)) +
-				afterInline.reduce((sum, body) => sum + visible(body), 0),
+				Arr.reduce(afterInline, 0, (sum, body) => sum + visible(body)),
 			total:
-				reviews.reduce((sum, review) => sum + review.comment.length, 0) +
-				afterInline.reduce((sum, body) => sum + body.length, 0),
+				Arr.reduce(reviews, 0, (sum, review) => sum + review.comment.length) +
+				Arr.reduce(afterInline, 0, (sum, body) => sum + body.length),
 			comments: item.summaries.length + afterInline.length,
 		},
-		missed: (labels?.missed ?? []).map(({ head }) => {
-			const review = reviews.find((item) => item.head === head)
+		missed: Arr.map(labels?.missed ?? [], ({ head }) => {
+			const review = Option.getOrUndefined(Arr.findFirst(reviews, (item) => item.head === head))
 			return { head, before: review?.parsed.confidence, after: review?.confidence }
 		}),
 	}
@@ -575,43 +616,38 @@ export const confidenceBand = (confidence: number): string =>
 const BANDS = ["9-10 safe", "7-8 likely safe", "5-6 attention", "1-4 risky"] as const
 
 export const scoreCorpus = (scored: ReadonlyArray<ScoredCase>): CorpusScore => {
-	const reviews = scored.flatMap((item) => item.reviews)
+	const reviews = Arr.flatMap(scored, (item) => item.reviews)
 	const byBand = (pick: (review: ScoredReview) => number | undefined) =>
-		Object.fromEntries(
-			BANDS.map((band) => {
-				const inBand = reviews.filter((review) => {
-					const value = pick(review)
-					return (
-						value !== undefined &&
-						review.nextFound !== undefined &&
-						confidenceBand(value) === band
-					)
-				})
-				return [
-					band,
-					{
-						found: inBand.filter((review) => (review.nextFound ?? 0) > 0).length,
-						of: inBand.length,
-					},
-				]
-			}),
-		)
+		Rec.fromIterableWith(BANDS, (band) => {
+			const inBand = Arr.filter(reviews, (review) => {
+				const value = pick(review)
+				return value !== undefined && review.nextFound !== undefined && confidenceBand(value) === band
+			})
+			return [
+				band,
+				{
+					found: Arr.filter(inBand, (review) => (review.nextFound ?? 0) > 0).length,
+					of: inBand.length,
+				},
+			]
+		})
 	const histogram = (pick: (review: ScoredReview) => number | undefined) =>
-		reviews.reduce<Record<number, number>>((counts, review) => {
+		Arr.reduce<ScoredReview, Record<number, number>>(reviews, {}, (counts, review) => {
 			const value = pick(review)
 			if (value !== undefined) counts[value] = (counts[value] ?? 0) + 1
 			return counts
-		}, {})
-	const sum = (pick: (item: ScoredCase) => number) => scored.reduce((total, item) => total + pick(item), 0)
+		})
+	const sum = (pick: (item: ScoredCase) => number) =>
+		Arr.reduce(scored, 0, (total, item) => total + pick(item))
 	return {
 		cases: scored.length,
 		reviews: reviews.length,
 		before: { visible: sum((item) => item.before.visible), total: sum((item) => item.before.total) },
 		after: { visible: sum((item) => item.after.visible), total: sum((item) => item.after.total) },
 		safeWithOpenDefect: {
-			before: reviews.filter((review) => review.openDefect && (review.parsed.confidence ?? 0) >= 7)
+			before: Arr.filter(reviews, (review) => review.openDefect && (review.parsed.confidence ?? 0) >= 7)
 				.length,
-			after: reviews.filter((review) => review.openDefect && (review.confidence ?? 0) >= 7).length,
+			after: Arr.filter(reviews, (review) => review.openDefect && (review.confidence ?? 0) >= 7).length,
 		},
 		nextFoundByBand: {
 			before: byBand((review) => review.parsed.confidence),
@@ -621,9 +657,9 @@ export const scoreCorpus = (scored: ReadonlyArray<ScoredCase>): CorpusScore => {
 			before: histogram((review) => review.parsed.confidence),
 			after: histogram((review) => review.confidence),
 		},
-		missed: scored.flatMap((item) => item.missed.map((miss) => ({ id: item.id, ...miss }))),
-		findings: reviews.reduce((total, review) => total + review.parsed.report.findings.length, 0),
-		overlong: reviews.reduce((total, review) => total + review.overlong, 0),
+		missed: Arr.flatMap(scored, (item) => Arr.map(item.missed, (miss) => ({ id: item.id, ...miss }))),
+		findings: Arr.reduce(reviews, 0, (total, review) => total + review.parsed.report.findings.length),
+		overlong: Arr.reduce(reviews, 0, (total, review) => total + review.overlong),
 	}
 }
 
@@ -642,25 +678,28 @@ export const renderCorpusScore = (score: CorpusScore): string => {
 		`Reads 7+ with a defect open: ${score.safeWithOpenDefect.before} → ${score.safeWithOpenDefect.after}`,
 		"",
 		"Next review found a new defect, by the band this one read (before → after):",
-		...BANDS.map((band) => {
+		...Arr.map(BANDS, (band) => {
 			const before = score.nextFoundByBand.before[band] ?? { found: 0, of: 0 }
 			const after = score.nextFoundByBand.after[band] ?? { found: 0, of: 0 }
-			return `  ${band.padEnd(16)} ${`${before.found}/${before.of} ${percent(before.found, before.of)}`.padEnd(14)} → ${after.found}/${after.of} ${percent(after.found, after.of)}`
+			return `  ${Str.padEnd(16)(band)} ${Str.padEnd(14)(`${before.found}/${before.of} ${percent(before.found, before.of)}`)} → ${after.found}/${after.of} ${percent(after.found, after.of)}`
 		}),
 		"",
 		"Distribution (before → after):",
-		...[10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map(
+		...Arr.map(
+			[10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
 			(level) =>
-				`  ${String(level).padStart(2)}  ${String(score.distribution.before[level] ?? 0).padStart(3)} → ${score.distribution.after[level] ?? 0}`,
+				`  ${Str.padStart(2)(String(level))}  ${Str.padStart(3)(String(score.distribution.before[level] ?? 0))} → ${score.distribution.after[level] ?? 0}`,
 		),
 		"",
 		"Labelled misses (read safe while a defect already in the code was found later):",
-		...score.missed.map(
+		...Arr.map(
+			score.missed,
 			(miss) => `  ${miss.id} @${miss.head}: ${miss.before ?? "–"} → ${miss.after ?? "–"}`,
 		),
 	]
-	return lines.join("\n")
+	return Arr.join(lines, "\n")
 }
 
 /** Whether a comment is one of Maple's review summaries rather than a notice, reply or reminder. */
-export const isReviewSummary = (body: string): boolean => body.startsWith(PR_REVIEW_COMMENT_MARKER_PREFIX)
+export const isReviewSummary = (body: string): boolean =>
+	Str.startsWith(PR_REVIEW_COMMENT_MARKER_PREFIX)(body)

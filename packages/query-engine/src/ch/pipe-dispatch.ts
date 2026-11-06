@@ -22,7 +22,7 @@ import {
 	type CompiledQuery,
 } from "@maple-dev/effect-orm/clickhouse"
 import { compilePeriodCompare } from "./period-compare"
-import { Array as A, type DateTime, Effect, Match, Option, Result } from "effect"
+import { Array as A, type DateTime, Effect, Match, Option, Result, String as Str } from "effect"
 import type * as CH from "@maple-dev/effect-orm/expr"
 import { parseUtc } from "../datetime"
 import { exactDateTime64 } from "./tables"
@@ -97,6 +97,10 @@ const paramText = (value: unknown): string | undefined => {
 	return undefined
 }
 
+// Comma-separated param to its non-empty parts.
+const splitCsv = (value: string | undefined): Array<string> | undefined =>
+	value === undefined ? undefined : A.filter(Str.split(",")(value), Str.isNonEmpty)
+
 /**
  * Erase the specific output type for the generic pipe dispatcher.
  *
@@ -105,7 +109,7 @@ const paramText = (value: unknown): string | undefined => {
  * one-expression `eraseType(compile(...))`.
  */
 function eraseType<T>(compiled: Effect.Effect<CompiledQuery<T>, QueryBuilderError>): PipeCompiled {
-	return compiled as PipeCompiled
+	return compiled
 }
 
 type PipeCompiled = Effect.Effect<PipeCompiledQuery, QueryBuilderError>
@@ -177,6 +181,14 @@ export function compilePipeQuery(
 		return key === undefined ? undefined : [{ key, value: str(valueParam), mode: "equals" as const }]
 	}
 
+	// `http_method` is an equality filter on the `http.method` span attribute.
+	const withHttpMethod = (filters: ReadonlyArray<AttributeFilter> | undefined) => {
+		const httpMethod = str("http_method")
+		return httpMethod === undefined
+			? filters
+			: [...(filters ?? []), { key: "http.method", value: httpMethod, mode: "equals" as const }]
+	}
+
 	// Kept in four groups because Pipeable.pipe's typed overloads stop at 20 transformations.
 	// oxlint-disable-next-line effecttsgo/unnecessary-pipe-chain
 	return Match.value(pipe)
@@ -206,9 +218,8 @@ export function compilePipeQuery(
 											? "contains"
 											: undefined,
 								},
-								attributeFilters: equalsFilter(
-									"attribute_filter_key",
-									"attribute_filter_value",
+								attributeFilters: withHttpMethod(
+									equalsFilter("attribute_filter_key", "attribute_filter_value"),
 								),
 								resourceAttributeFilters: equalsFilter(
 									"resource_filter_key",
@@ -317,6 +328,7 @@ export function compilePipeQuery(
 							cursor: str("cursor"),
 							search: str("search"),
 							limit: int("limit", 50),
+							offset: int("offset", 0),
 							environments: strList("deployment_env"),
 							matchModes:
 								str("deployment_env_match_mode") === "contains"
@@ -373,9 +385,9 @@ export function compilePipeQuery(
 				eraseType(
 					compile(
 						serviceOverviewQuery({
-							environments: str("environments")?.split(",").filter(Boolean),
-							namespaces: str("namespaces")?.split(",").filter(Boolean),
-							commitShas: str("commit_shas")?.split(",").filter(Boolean),
+							environments: splitCsv(str("environments")),
+							namespaces: splitCsv(str("namespaces")),
+							commitShas: splitCsv(str("commit_shas")),
 						}),
 						{ orgId, startTime, endTime },
 					),
@@ -385,9 +397,9 @@ export function compilePipeQuery(
 				eraseType(
 					compilePeriodCompare(
 						serviceOverviewQuery({
-							environments: str("environments")?.split(",").filter(Boolean),
-							namespaces: str("namespaces")?.split(",").filter(Boolean),
-							commitShas: str("commit_shas")?.split(",").filter(Boolean),
+							environments: splitCsv(str("environments")),
+							namespaces: splitCsv(str("namespaces")),
+							commitShas: splitCsv(str("commit_shas")),
 						}),
 						{
 							orgId,
@@ -424,6 +436,7 @@ export function compilePipeQuery(
 						compile(
 							serviceApdexTimeseriesQuery({
 								serviceName,
+								environments: strList("deployment_env"),
 								apdexThresholdMs: int("apdex_threshold_ms", 500),
 								bucketSeconds,
 							}),
@@ -437,7 +450,7 @@ export function compilePipeQuery(
 					compile(
 						serviceUsageQuery({
 							serviceName: str("service"),
-							serviceNames: str("services")?.split(",").filter(Boolean),
+							serviceNames: splitCsv(str("services")),
 						}),
 						{ orgId, startTime, endTime },
 					),
@@ -448,7 +461,7 @@ export function compilePipeQuery(
 					compilePeriodCompare(
 						serviceUsageQuery({
 							serviceName: str("service"),
-							serviceNames: str("services")?.split(",").filter(Boolean),
+							serviceNames: splitCsv(str("services")),
 						}),
 						{
 							orgId,
@@ -476,9 +489,9 @@ export function compilePipeQuery(
 					compile(
 						errorsByTypeQuery({
 							rootOnly: bool("root_only"),
-							services: str("services")?.split(",").filter(Boolean),
-							deploymentEnvs: str("deployment_envs")?.split(",").filter(Boolean),
-							fingerprintHashes: str("fingerprint_hashes")?.split(",").filter(Boolean),
+							services: splitCsv(str("services")),
+							deploymentEnvs: splitCsv(str("deployment_envs")),
+							fingerprintHashes: splitCsv(str("fingerprint_hashes")),
 							unexpectedIdentity:
 								str("identity") === "unexpected"
 									? {
@@ -499,7 +512,7 @@ export function compilePipeQuery(
 						compile(
 							errorsTimeseriesQuery({
 								fingerprintHash,
-								services: str("services")?.split(",").filter(Boolean),
+								services: splitCsv(str("services")),
 							}),
 							{ orgId, startTime, endTime, bucketSeconds: int("bucket_seconds", 3600) },
 						),
@@ -511,9 +524,9 @@ export function compilePipeQuery(
 					compileUnion(
 						errorsFacetsQuery({
 							rootOnly: bool("root_only"),
-							services: str("services")?.split(",").filter(Boolean),
-							deploymentEnvs: str("deployment_envs")?.split(",").filter(Boolean),
-							fingerprintHashes: str("fingerprint_hashes")?.split(",").filter(Boolean),
+							services: splitCsv(str("services")),
+							deploymentEnvs: splitCsv(str("deployment_envs")),
+							fingerprintHashes: splitCsv(str("fingerprint_hashes")),
 						}),
 						{ orgId, startTime, endTime },
 					),
@@ -524,9 +537,9 @@ export function compilePipeQuery(
 					compile(
 						errorsSummaryQuery({
 							rootOnly: bool("root_only"),
-							services: str("services")?.split(",").filter(Boolean),
-							deploymentEnvs: str("deployment_envs")?.split(",").filter(Boolean),
-							fingerprintHashes: str("fingerprint_hashes")?.split(",").filter(Boolean),
+							services: splitCsv(str("services")),
+							deploymentEnvs: splitCsv(str("deployment_envs")),
+							fingerprintHashes: splitCsv(str("fingerprint_hashes")),
 						}),
 						{ orgId, startTime, endTime },
 					),
@@ -539,7 +552,7 @@ export function compilePipeQuery(
 							errorDetailTracesQuery({
 								fingerprintHash,
 								rootOnly: bool("root_only"),
-								services: str("services")?.split(",").filter(Boolean),
+								services: splitCsv(str("services")),
 								limit: int("limit", 10),
 							}),
 							{ orgId, startTime, endTime },
@@ -551,10 +564,10 @@ export function compilePipeQuery(
 				eraseType(
 					compile(
 						errorIssuesQuery({
-							services: str("services")?.split(",").filter(Boolean),
-							deploymentEnvs: str("deployment_envs")?.split(",").filter(Boolean),
-							fingerprintHashes: str("fingerprint_hashes")?.split(",").filter(Boolean),
-							exceptionTypes: str("exception_types")?.split(",").filter(Boolean),
+							services: splitCsv(str("services")),
+							deploymentEnvs: splitCsv(str("deployment_envs")),
+							fingerprintHashes: splitCsv(str("fingerprint_hashes")),
+							exceptionTypes: splitCsv(str("exception_types")),
 							limit: int("limit", 50),
 						}),
 						{ orgId, startTime, endTime },
@@ -564,11 +577,10 @@ export function compilePipeQuery(
 			Match.when("error_issue_timeseries", () =>
 				withParam("fingerprint_hash", (fingerprintHash) =>
 					eraseType(
-						compile(errorIssueTimeseriesQuery(), {
+						compile(errorIssueTimeseriesQuery({ fingerprintHashes: [fingerprintHash] }), {
 							orgId,
 							startTime,
 							endTime,
-							fingerprintHash,
 							bucketSeconds: int("bucket_seconds", 3600),
 						}),
 					),
@@ -577,24 +589,34 @@ export function compilePipeQuery(
 			Match.when("error_issue_sample_traces", () =>
 				withParam("fingerprint_hash", (fingerprintHash) =>
 					eraseType(
-						compile(errorIssueSampleTracesQuery({ limit: int("limit", 25) }), {
-							orgId,
-							startTime,
-							endTime,
-							fingerprintHash,
-						}),
+						compile(
+							errorIssueSampleTracesQuery({
+								fingerprintHashes: [fingerprintHash],
+								limit: int("limit", 25),
+							}),
+							{
+								orgId,
+								startTime,
+								endTime,
+							},
+						),
 					),
 				),
 			),
 			Match.when("error_issue_environments", () =>
 				withParam("fingerprint_hash", (fingerprintHash) =>
 					eraseType(
-						compile(errorIssueEnvironmentsQuery({ limit: int("limit", 20) }), {
-							orgId,
-							startTime,
-							endTime,
-							fingerprintHash,
-						}),
+						compile(
+							errorIssueEnvironmentsQuery({
+								fingerprintHashes: [fingerprintHash],
+								limit: int("limit", 20),
+							}),
+							{
+								orgId,
+								startTime,
+								endTime,
+							},
+						),
 					),
 				),
 			),
@@ -902,11 +924,12 @@ function buildAttributeFiltersFromParams(
 		const key = paramText(params[`${prefix}_key${suffix}`])
 		if (key === undefined) return Result.failVoid
 		const exists = params[`${prefix}_exists${suffix}`] === "1"
-		return Result.succeed({
+		const filter: AttrFilter = {
 			key,
 			value: exists ? undefined : paramText(params[`${prefix}_value${suffix}`]),
-			mode: (exists ? "exists" : "equals") as "equals" | "exists",
-		})
+			mode: exists ? "exists" : "equals",
+		}
+		return Result.succeed(filter)
 	})
 	return filters.length > 0 ? filters : undefined
 }
@@ -939,20 +962,20 @@ function pipeParamsToTracesTimeseriesOpts(params: PipeParams): TracesTimeseriesO
 	if (str("group_by_attributes")) groupBy.push("attribute")
 
 	return {
-		metric: "count" as TracesMetric,
+		metric: "count",
 		allMetrics: true,
 		needsSampling: true,
 		groupBy,
-		groupByAttributeKeys: str("group_by_attributes")?.split(",").filter(Boolean),
+		groupByAttributeKeys: splitCsv(str("group_by_attributes")),
 		apdexThresholdMs: int("apdex_threshold_ms", 500),
 		serviceName: str("service_name"),
 		spanName: str("span_name"),
 		rootOnly: !!str("root_only"),
 
 		errorsOnly: errorsOnlyParam(str("errors_only")),
-		environments: str("environments")?.split(",").filter(Boolean),
-		namespaces: str("namespaces")?.split(",").filter(Boolean),
-		commitShas: str("commit_shas")?.split(",").filter(Boolean),
+		environments: splitCsv(str("environments")),
+		namespaces: splitCsv(str("namespaces")),
+		commitShas: splitCsv(str("commit_shas")),
 		attributeFilters: buildAttributeFiltersFromParams(params, "attribute_filter"),
 		resourceAttributeFilters: buildAttributeFiltersFromParams(params, "resource_filter"),
 	}
@@ -977,7 +1000,7 @@ function pipeParamsToTracesBreakdownOpts(params: PipeParams): TracesBreakdownOpt
 	}
 
 	return {
-		metric: "count" as TracesMetric,
+		metric: "count",
 		allMetrics: true,
 		groupBy,
 		groupByAttributeKey,
@@ -988,9 +1011,9 @@ function pipeParamsToTracesBreakdownOpts(params: PipeParams): TracesBreakdownOpt
 		rootOnly: !!str("root_only"),
 
 		errorsOnly: errorsOnlyParam(str("errors_only")),
-		environments: str("environments")?.split(",").filter(Boolean),
-		namespaces: str("namespaces")?.split(",").filter(Boolean),
-		commitShas: str("commit_shas")?.split(",").filter(Boolean),
+		environments: splitCsv(str("environments")),
+		namespaces: splitCsv(str("namespaces")),
+		commitShas: splitCsv(str("commit_shas")),
 		attributeFilters: buildAttributeFiltersFromParams(params, "attribute_filter"),
 		resourceAttributeFilters: buildAttributeFiltersFromParams(params, "resource_filter"),
 	}

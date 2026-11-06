@@ -27,6 +27,8 @@ import { V2InstrumentationRecommendationsApiGroup } from "./recommendations"
 import { V2ScrapeTargetsApiGroup } from "./scrape-targets"
 import { V2SessionReplaysApiGroup } from "./session-replays"
 import { V2UptimeMonitorsApiGroup } from "./uptime-monitors"
+import { V2SlosApiGroup } from "./slos"
+import { V2UsersApiGroup } from "./users"
 import { V2StatusPageIncidentsApiGroup, V2StatusPagesApiGroup } from "./status-pages"
 import { V2InstrumentationAuditApiGroup } from "./setup-audit"
 import { V2SupportChannelApiGroup } from "./support-channel"
@@ -44,7 +46,7 @@ import {
 } from "./telemetry"
 import { V2SchemaErrors, V2UnexpectedErrors } from "./auth"
 import { collapseQueryParameterNullBranches } from "./openapi-nullable"
-import { Record as Rec } from "effect"
+import { Predicate, Record as Rec } from "effect"
 
 const HTTP_OPERATION_METHODS = ["get", "post", "put", "patch", "delete", "head"] as const
 
@@ -115,6 +117,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2AuditLogApiGroup)
 	.add(V2ScrapeTargetsApiGroup)
 	.add(V2UptimeMonitorsApiGroup)
+	.add(V2SlosApiGroup)
 	.add(V2StatusPagesApiGroup)
 	.add(V2StatusPageIncidentsApiGroup)
 	.add(V2InstrumentationRecommendationsApiGroup)
@@ -129,6 +132,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2McpConnectionsApiGroup)
 	.add(V2AgentFeedbackApiGroup)
 	.add(V2SessionReplaysApiGroup)
+	.add(V2UsersApiGroup)
 	.add(V2TracesApiGroup)
 	.add(V2LogsApiGroup)
 	.add(V2MetricsApiGroup)
@@ -168,10 +172,15 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 				const withRateLimitHeaders = collapseQueryParameterNullBranches(
 					addRateLimitResponseHeaders(spec),
 				)
+				// The generated document is `Record<string, any>`; `info` is checked before it is spread.
+				const generatedInfo: unknown = withRateLimitHeaders.info
+				const info: Record<PropertyKey, unknown> = Predicate.isObject(generatedInfo)
+					? generatedInfo
+					: {}
 				return {
 					...withRateLimitHeaders,
 					info: {
-						...withRateLimitHeaders.info,
+						...info,
 						contact: {
 							name: "Maple Support",
 							url: "https://maple.dev",

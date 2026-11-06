@@ -1,3 +1,4 @@
+import { Array as Arr, Option } from "effect"
 import { PLANETSCALE_ALERT_TEMPLATES } from "./planetscale"
 import type { AlertTemplateDefinition } from "./types"
 
@@ -13,4 +14,4 @@ export type { AlertTemplateDefinition } from "./types"
 export const ALERT_TEMPLATES: ReadonlyArray<AlertTemplateDefinition> = [...PLANETSCALE_ALERT_TEMPLATES]
 
 export const getAlertTemplate = (id: string): AlertTemplateDefinition | undefined =>
-	ALERT_TEMPLATES.find((template) => template.id === id)
+	Option.getOrUndefined(Arr.findFirst(ALERT_TEMPLATES, (template) => template.id === id))

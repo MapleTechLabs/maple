@@ -153,8 +153,9 @@ describe("OtlpIngest", () => {
 			assert.strictEqual(error.reason, "scrape_failed")
 			assert.strictEqual(error.statusCode, 401)
 			const [span] = endedSpansNamed(tracer.ended, "OtlpIngest.send")
-			assert.isTrue(Exit.isFailure(span!.exit))
-			assert.strictEqual(span!.attributes.get("http.response.status_code"), 401)
+			assert.isDefined(span)
+			assert.isTrue(Exit.isFailure(span.exit))
+			assert.strictEqual(span.attributes.get("http.response.status_code"), 401)
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
@@ -205,12 +206,13 @@ describe("OtlpIngest", () => {
 			assert.isTrue(Arr.every(tracer.ended, (span) => Exit.isSuccess(span.exit)))
 			const attempts = endedSpansNamed(tracer.ended, "POST")
 			assert.lengthOf(attempts, 2)
-			assert.strictEqual(attempts[0]!.attributes.get("error.type"), "TransportError")
-			assert.strictEqual(attempts[1]!.attributes.get("http.response.status_code"), 200)
+			assert.strictEqual(Arr.getUnsafe(attempts, 0).attributes.get("error.type"), "TransportError")
+			assert.strictEqual(Arr.getUnsafe(attempts, 1).attributes.get("http.response.status_code"), 200)
 			const [chunk] = endedSpansNamed(tracer.ended, "OtlpIngest.send_chunk")
-			assert.isTrue(Arr.every(attempts, (attempt) => attempt.parentSpanId === chunk!.spanId))
+			assert.isDefined(chunk)
+			assert.isTrue(Arr.every(attempts, (attempt) => attempt.parentSpanId === chunk.spanId))
 			// Each attempt propagates its own span, so ingest's server span parents to it.
-			assert.include(recorded[1]!.headers.traceparent, attempts[1]!.spanId)
+			assert.include(Arr.getUnsafe(recorded, 1).headers.traceparent, Arr.getUnsafe(attempts, 1).spanId)
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
@@ -231,9 +233,9 @@ describe("OtlpIngest", () => {
 
 			const spans = endedSpansNamed(tracer.ended, "OtlpIngest.send")
 			assert.lengthOf(spans, 1)
-			assert.isTrue(Exit.isSuccess(spans[0]!.exit))
-			assert.strictEqual(spans[0]!.attributes.get("error.type"), "delivery_blocked")
-			assert.strictEqual(spans[0]!.attributes.get("http.response.status_code"), 402)
+			assert.isTrue(Exit.isSuccess(Arr.getUnsafe(spans, 0).exit))
+			assert.strictEqual(Arr.getUnsafe(spans, 0).attributes.get("error.type"), "delivery_blocked")
+			assert.strictEqual(Arr.getUnsafe(spans, 0).attributes.get("http.response.status_code"), 402)
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
@@ -423,11 +425,12 @@ describe("OtlpIngest", () => {
 				)
 
 				const [span] = endedSpansNamed(tracer.ended, "OtlpIngest.send")
-				assert.isTrue(Exit.isSuccess(span!.exit))
-				assert.strictEqual(span!.attributes.get("error.type"), "delivery_blocked")
-				assert.strictEqual(span!.attributes.get("maple.otlp.data_points"), 5)
-				assert.strictEqual(span!.attributes.get("maple.otlp.chunk_count"), 3)
-				assert.strictEqual(span!.attributes.get("maple.otlp.chunks_delivered"), 1)
+				assert.isDefined(span)
+				assert.isTrue(Exit.isSuccess(span.exit))
+				assert.strictEqual(span.attributes.get("error.type"), "delivery_blocked")
+				assert.strictEqual(span.attributes.get("maple.otlp.data_points"), 5)
+				assert.strictEqual(span.attributes.get("maple.otlp.chunk_count"), 3)
+				assert.strictEqual(span.attributes.get("maple.otlp.chunks_delivered"), 1)
 				assert.lengthOf(endedSpansNamed(tracer.ended, "OtlpIngest.send_chunk"), 2)
 			}).pipe(Effect.provide(ChunkedLayer)),
 		)
@@ -447,8 +450,9 @@ describe("OtlpIngest", () => {
 
 				assert.lengthOf(recorded, 1)
 				const [span] = endedSpansNamed(tracer.ended, "OtlpIngest.send")
-				assert.strictEqual(span!.attributes.get("maple.otlp.chunk_count"), 1)
-				assert.strictEqual(span!.attributes.get("maple.otlp.chunks_delivered"), 1)
+				assert.isDefined(span)
+				assert.strictEqual(span.attributes.get("maple.otlp.chunk_count"), 1)
+				assert.strictEqual(span.attributes.get("maple.otlp.chunks_delivered"), 1)
 			}).pipe(Effect.provide(TestLayer)),
 		)
 	})

@@ -13,7 +13,7 @@ import {
 	ExecutorScratchPath,
 	type ExecutorRunExited,
 } from "@maple/domain/executor"
-import { Effect, Schema, Semaphore, Array as Arr, String as Str } from "effect"
+import { Effect, Ref, Schema, Semaphore, Array as Arr, String as Str } from "effect"
 import { Tool, Toolkit } from "effect/ai"
 import { toolHandlersWithContent } from "../platform/genai-spans"
 import { AUDIT_TOOLKIT, type SourceReaderApi, sourceHandlers, ToolFailure } from "./source"
@@ -28,7 +28,28 @@ export interface AuditExecutionApi {
 		agentId: string,
 		command: ExecutorCommandInput,
 	) => Effect.Effect<ExecutorRunExited, AuditExecutionError>
+	/** Best effort: gives back the agent's scratch, cgroup and artifacts once it is done. */
+	readonly release: (agentId: string) => Effect.Effect<void>
 }
+
+/**
+ * The run's executor as one agent invocation uses it: every command under `executorAgentId`, and
+ * `release`, which frees what they held once the invocation ends, and does nothing if none ran.
+ */
+export const invocationExecution = (execution: AuditExecutionApi, executorAgentId: string) =>
+	Effect.map(Ref.make(false), (ran) => ({
+		run: (_agentId: string, command: ExecutorCommandInput) =>
+			// Before the call: one interrupted mid-flight may still have set the agent up.
+			Ref.set(ran, true).pipe(Effect.andThen(execution.run(executorAgentId, command))),
+		/** `self` (the invocation), releasing once it ends however it ends: done, failed or interrupted. */
+		releasingAfter: <A, E, R>(self: Effect.Effect<A, E, R>) =>
+			Effect.ensuring(
+				self,
+				Effect.flatMap(Ref.get(ran), (any) =>
+					any ? execution.release(executorAgentId) : Effect.void,
+				),
+			),
+	}))
 
 /** Where the executor puts things, as the agent's commands see them. */
 export const EXECUTOR_CHECKOUT = "/work/checkout"
@@ -90,11 +111,11 @@ const decodeScratchPath = Schema.decodeUnknownEffect(ExecutorScratchPath)
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, Math.floor(value)))
 
-const stream = (name: string, text: string, bytes: number) =>
+const stream = (name: string, text: string, bytes: number, truncated: boolean) =>
 	text === "" && bytes === 0
 		? []
 		: [
-				`--- ${name}${bytes > new TextEncoder().encode(text).length ? ` (${bytes} bytes, first ${EXECUTOR_LIMITS.outputBytes / 1024} KiB shown)` : ""} ---`,
+				`--- ${name}${truncated ? ` (${bytes} bytes, first ${EXECUTOR_LIMITS.outputBytes / 1024} KiB shown)` : ""} ---`,
 				text,
 			]
 
@@ -106,8 +127,8 @@ export const renderRun = (agentId: string, result: ExecutorRunExited): string =>
 	Arr.join(
 		[
 			`exit ${result.exitCode}${result.timedOut ? " (killed at its wall clock)" : ""}, ${result.wallTimeMs} ms`,
-			...stream("stdout", result.stdout, result.stdoutBytes),
-			...stream("stderr", result.stderr, result.stderrBytes),
+			...stream("stdout", result.stdout, result.stdoutBytes, result.stdoutTruncated),
+			...stream("stderr", result.stderr, result.stderrBytes, result.stderrTruncated),
 			...(result.promoted.length === 0
 				? []
 				: [
@@ -134,7 +155,7 @@ export const renderRun = (agentId: string, result: ExecutorRunExited): string =>
  */
 export const executionToolHandlers = (
 	source: SourceReaderApi,
-	execution: AuditExecutionApi,
+	execution: Pick<AuditExecutionApi, "run">,
 	agentId: string,
 	onCall: Effect.Effect<void> = Effect.void,
 	onPromoted: (paths: ReadonlyArray<string>) => Effect.Effect<void> = () => Effect.void,

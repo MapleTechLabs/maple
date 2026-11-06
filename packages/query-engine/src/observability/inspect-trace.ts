@@ -40,7 +40,7 @@ const SKIP_ATTR_KEYS = HashSet.fromIterable([
 const StringRecordFromJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String))
 
 const extractKeyAttributes = (raw: string, keepAll: boolean): Effect.Effect<Record<string, string>> =>
-	Schema.decodeUnknownEffect(StringRecordFromJson)(raw).pipe(
+	Schema.decodeEffect(StringRecordFromJson)(raw).pipe(
 		Effect.map((parsed) =>
 			pipe(
 				Rec.toEntries(parsed),
@@ -51,19 +51,19 @@ const extractKeyAttributes = (raw: string, keepAll: boolean): Effect.Effect<Reco
 							(!HashSet.has(SKIP_ATTR_KEYS, k) &&
 								!Arr.some(SKIP_ATTR_PREFIXES, (p) => Str.startsWith(p)(k)))),
 				),
-				Object.fromEntries,
+				Rec.fromEntries,
 			),
 		),
 		Effect.orElseSucceed(() => ({})),
 	)
 
 const parseJsonAttributes = (raw: string): Effect.Effect<Record<string, string>> =>
-	Schema.decodeUnknownEffect(StringRecordFromJson)(raw).pipe(
+	Schema.decodeEffect(StringRecordFromJson)(raw).pipe(
 		Effect.map((parsed) =>
 			pipe(
 				Rec.toEntries(parsed),
 				Arr.filter(([, v]) => v !== ""),
-				Object.fromEntries,
+				Rec.fromEntries,
 			),
 		),
 		Effect.orElseSucceed(() => ({})),
@@ -202,57 +202,54 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 		nowMs - widenedHours * HOUR_MS,
 		options?.timestampHint ? options.timestampHint.getTime() - DEFAULT_LOOKBACK_HOURS * HOUR_MS : nowMs,
 	)
+	const probedRead = Effect.gen(function* () {
+		const probeWindow = (window: ProbeWindow) =>
+			executor.compiledQueryFirst(
+				window.endMs === undefined
+					? CH.compile(CH.recentTraceTimeProbeQuery({ traceId }), {
+							orgId: executor.orgId,
+							startTime: formatWarehouseDateTime(window.startMs),
+						})
+					: CH.compile(CH.recentTraceTimeProbeQuery({ traceId, endBounded: true }), {
+							orgId: executor.orgId,
+							startTime: formatWarehouseDateTime(window.startMs),
+							endTime: formatWarehouseDateTime(window.endMs),
+						}),
+				{ profile: "discovery", context: "inspectTraceProbe" },
+			)
+		const probeTiers = (
+			windows: ReadonlyArray<ProbeWindow>,
+		): Effect.Effect<Option.Option<CH.TraceTimeProbeOutput>, WarehouseExecutorError> => {
+			const [head, ...rest] = windows
+			return head === undefined
+				? Effect.succeedNone
+				: probeWindow(head).pipe(Effect.filterOrElse(Option.isSome, () => probeTiers(rest)))
+		}
+		// The default lookback just read the last day in full, so the tiers start below it.
+		const probe = yield* probeTiers(
+			traceProbeWindows({
+				nowMs,
+				oldestMs: probeStartMs,
+				coveredSinceMs: usingDefaultLookback ? defaultLookbackStartMs : undefined,
+			}),
+		)
+		const foundMs = Option.map(probe, (row) => DateTime.toEpochMillis(row.timestamp))
+		yield* Effect.annotateCurrentSpan("maple.query.widened_lookback", Option.isSome(foundMs))
+		if (Option.isNone(foundMs)) {
+			const probed = {
+				startTime: formatWarehouseDateTime(probeStartMs),
+				endTime: formatWarehouseDateTime(nowMs),
+			}
+			return [firstRead, { ...probed, widened: true }] as const
+		}
+		const around = windowAround(foundMs.value, rangeHours)
+		const reread = yield* readTrace(executor, traceId, around)
+		return [reread, { ...queryRangeToScan(around), widened: true }] as const
+	})
 	const [[spansResult, logsResult], scanned] =
 		firstRead[0].data.length > 0 || options?.timeRange != null
 			? ([firstRead, { ...queryRangeToScan(range), widened: false }] as const)
-			: yield* Effect.gen(function* () {
-					const probeWindow = (window: ProbeWindow) =>
-						executor.compiledQueryFirst(
-							window.endMs === undefined
-								? CH.compile(CH.recentTraceTimeProbeQuery({ traceId }), {
-										orgId: executor.orgId,
-										startTime: formatWarehouseDateTime(window.startMs),
-									})
-								: CH.compile(CH.recentTraceTimeProbeQuery({ traceId, endBounded: true }), {
-										orgId: executor.orgId,
-										startTime: formatWarehouseDateTime(window.startMs),
-										endTime: formatWarehouseDateTime(window.endMs),
-									}),
-							{ profile: "discovery", context: "inspectTraceProbe" },
-						)
-					const probeTiers = (
-						windows: ReadonlyArray<ProbeWindow>,
-					): Effect.Effect<Option.Option<CH.TraceTimeProbeOutput>, WarehouseExecutorError> => {
-						const [head, ...rest] = windows
-						return head === undefined
-							? Effect.succeed(Option.none())
-							: probeWindow(head).pipe(
-									Effect.flatMap((found) =>
-										Option.isSome(found) ? Effect.succeed(found) : probeTiers(rest),
-									),
-								)
-					}
-					// The default lookback just read the last day in full, so the tiers start below it.
-					const probe = yield* probeTiers(
-						traceProbeWindows({
-							nowMs,
-							oldestMs: probeStartMs,
-							coveredSinceMs: usingDefaultLookback ? defaultLookbackStartMs : undefined,
-						}),
-					)
-					const foundMs = Option.map(probe, (row) => DateTime.toEpochMillis(row.timestamp))
-					yield* Effect.annotateCurrentSpan("maple.query.widened_lookback", Option.isSome(foundMs))
-					if (Option.isNone(foundMs)) {
-						const probed = {
-							startTime: formatWarehouseDateTime(probeStartMs),
-							endTime: formatWarehouseDateTime(nowMs),
-						}
-						return [firstRead, { ...probed, widened: true }] as const
-					}
-					const around = windowAround(foundMs.value, rangeHours)
-					const reread = yield* readTrace(executor, traceId, around)
-					return [reread, { ...queryRangeToScan(around), widened: true }] as const
-				})
+			: yield* probedRead
 
 	const spans = spansResult.data
 

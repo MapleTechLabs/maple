@@ -5,7 +5,7 @@ import { PageOutMessage, type PageContext, type PageReturn } from "../contract"
 import { integrationOfSearch } from "./catalog"
 import { ConnectProvider, type ConnectModel, PROVIDERS } from "./connect"
 import type { Message } from "./message"
-import type { Model, Statuses } from "./model"
+import { canManage, type Model, type Statuses } from "./model"
 import { chain, requestStatus } from "./update-status"
 import { TrackConnected } from "./command"
 import * as Cloudflare from "./update-cloudflare"
@@ -52,7 +52,7 @@ export const clickedConnect = (model: Model, githubMode?: "install"): Return => 
 		model.githubCard.selectingInstallation !== null
 	)
 		return { model }
-	if (integration === "linear" && !model.isAdmin) return { model }
+	if (integration === "linear" && !canManage(model)) return { model }
 	const attempt = model.connect.attempts + 1
 	const base = integration === "cloudflare" ? Cloudflare.resetPrime(model) : model
 	const active = { provider: integration, attempt }

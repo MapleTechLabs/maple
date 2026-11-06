@@ -23,7 +23,7 @@ const mounted = [
 ] as const
 
 /** The Overview of `checkout-api` with the org's monitors answered. */
-const withMonitors = (monitors: ReadonlyArray<UptimeMonitor>, isAdmin = true): Model => {
+const withMonitors = (monitors: ReadonlyArray<UptimeMonitor>, canCreate = true): Model => {
 	const start = init({ serviceName: "checkout-api", search: {} }, context).model
 	const resolved = pageUpdate(start, Message.CompletedResolveClock({ nowMs: NOW, mode: "Load" })).model
 	return pageUpdate(
@@ -31,7 +31,7 @@ const withMonitors = (monitors: ReadonlyArray<UptimeMonitor>, isAdmin = true): M
 		Message.CompletedFetchUptimeMonitors({
 			key: resolved.uptimeMonitors.key ?? "",
 			result: Result.succeed(monitors),
-			isAdmin,
+			grants: canCreate ? ["uptime_monitors:manage"] : [],
 		}),
 	).model
 }

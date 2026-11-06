@@ -250,8 +250,8 @@ const MapleStackLive = Layer.effect(
 			workerDev,
 			devEnv,
 			db: yield* declareMapleDb(deployment, profile),
-			awsOidc: yield* createMapleAwsOidcKey(),
-			deviceToken: yield* createMapleDeviceTokenKey(),
+			awsOidc: yield* createMapleAwsOidcKey,
+			deviceToken: yield* createMapleDeviceTokenKey,
 		}
 		return context
 	}),
@@ -279,8 +279,8 @@ const createDevProcess = (app: DevApp, route: Portless.Route) =>
 
 /** Both clouds, unconditionally: stack options are evaluated before the stage is readable. */
 const providers =
-	// `Acm.providers()` needs the AWS credentials, so it is the layer provided TO.
-	Acm.providers().pipe(
+	// `Acm.providers` needs the AWS credentials, so it is the layer provided TO.
+	Acm.providers.pipe(
 		Layer.provideMerge(Cloudflare.providers()),
 		Layer.provideMerge(AWS.providers()),
 		// Its credential lookup runs when the layer is built, and `bun dev` never yields the branch.

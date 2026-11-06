@@ -70,9 +70,9 @@ const trackedDbs: TestDb[] = []
 const NO_ESTIMATES: ReadonlyMap<string, EstimatedSeverity> = new Map()
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG_A = Schema.decodeUnknownSync(OrgId)("org_audit_a")
-const ORG_B = Schema.decodeUnknownSync(OrgId)("org_audit_b")
-const USER = Schema.decodeUnknownSync(UserId)("user_audit")
+const ORG_A = Schema.decodeSync(OrgId)("org_audit_a")
+const ORG_B = Schema.decodeSync(OrgId)("org_audit_b")
+const USER = Schema.decodeSync(UserId)("user_audit")
 const decodeRole = Schema.decodeUnknownSync(RoleName)
 
 /** The bearer token names the caller: `<orgId>|<role>`, so one harness serves several tenants. */
@@ -86,7 +86,7 @@ const AuthorizationStubLayer = Layer.succeed(
 					Str.replace("Bearer ", "")(request.headers.authorization ?? ""),
 				)
 				const tenant = new CurrentTenant.TenantSchema({
-					orgId: Schema.decodeUnknownSync(OrgId)(org),
+					orgId: Schema.decodeSync(OrgId)(org),
 					userId: USER,
 					roles: [decodeRole(role)],
 					authMode: "clerk",
@@ -299,6 +299,35 @@ describe("/api/security-audit access", () => {
 
 			expect(Arr.map(memberCalls, (r) => r.status)).toEqual([200, 200, 403, 403, 403, 403, 403])
 			expect(memberCalls[5]?.body._tag).toBe(tag("SecurityAuditForbiddenError"))
+			expect(Arr.map(harness.started, (p) => p.runId)).toEqual([run.body.id])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("lets engineers read and triage findings but keeps the audit budget to admins", async () => {
+		const harness = makeHarness()
+		try {
+			const engineer = `${ORG_A}|org:engineer`
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const engineerCalls = await Promise.all([
+				harness.call("GET", `/runs/${run.body.id}`, { as: engineer }),
+				harness.call("GET", `/targets/${target.body.id}/findings`, { as: engineer }),
+				harness.call("POST", "/targets", { as: engineer, body: { ...TARGET, branch: "next" } }),
+				harness.call("POST", `/targets/${target.body.id}/runs`, { as: engineer, body: {} }),
+				harness.call("PUT", "/settings", {
+					as: engineer,
+					body: {
+						monthlySpendLimitUsd: 750,
+						discoveryModel: "anthropic/claude-haiku-5.5",
+						validationModel: "openai/gpt-6-luna",
+					},
+				}),
+			])
+
+			expect(Arr.map(engineerCalls, (r) => r.status)).toEqual([200, 200, 403, 403, 403])
+			expect(engineerCalls[3]?.body._tag).toBe(tag("SecurityAuditForbiddenError"))
 			expect(Arr.map(harness.started, (p) => p.runId)).toEqual([run.body.id])
 		} finally {
 			await harness.dispose()

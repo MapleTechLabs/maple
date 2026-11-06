@@ -1,6 +1,6 @@
 // SAFETY-FILE: JSON in this test is the OTLP body the SDK under test posted, parsed before its fields are asserted.
-import { describe, it } from "@effect/vitest"
-import { Effect, Layer, Option } from "effect"
+import { assert, describe, it } from "@effect/vitest"
+import { Effect, Layer, Option, pipe, Array as Arr, Record as Rec, String as Str } from "effect"
 import { afterEach, expect, vi } from "vitest"
 import { make } from "./make.js"
 
@@ -29,7 +29,8 @@ const setup = () => {
 	const bodies: Array<OtlpBody> = []
 	vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-		if (url.endsWith("/v1/traces") && typeof init?.body === "string") bodies.push(JSON.parse(init.body))
+		if (Str.endsWith("/v1/traces")(url) && typeof init?.body === "string")
+			bodies.push(JSON.parse(init.body))
 		return new Response(null, { status: 200 })
 	})
 	const maple = make({
@@ -41,9 +42,9 @@ const setup = () => {
 		captureGlobalErrors: false,
 	})
 	const spans = () =>
-		bodies.flatMap((body) =>
-			(body.resourceSpans ?? []).flatMap((resource) =>
-				resource.scopeSpans.flatMap((scope) => scope.spans),
+		Arr.flatMap(bodies, (body) =>
+			Arr.flatMap(body.resourceSpans ?? [], (resource) =>
+				Arr.flatMap(resource.scopeSpans, (scope) => scope.spans),
 			),
 		)
 	return { target, maple, spans }
@@ -76,7 +77,7 @@ describe("MapleFoldkit.make", () => {
 		const { commands } = app.init(undefined, { pathname: "/services" })
 		// What Foldkit's runtime does with each Command.
 		await Promise.all(
-			commands.map((command) =>
+			Arr.map(commands, (command) =>
 				Effect.runPromise(
 					command.effect.pipe(
 						Effect.withSpan(command.name, { attributes: command.args }),
@@ -88,7 +89,7 @@ describe("MapleFoldkit.make", () => {
 		// The tab closes before the navigation's quiet period ends it.
 		target.dispatchEvent(new Event("pagehide"))
 		await settle()
-		const names = spans().map((span) => span.name)
+		const names = Arr.map(spans(), (span) => span.name)
 		expect(names).toContain("pageload /services")
 		expect(names).toContain("LoadServices")
 		await maple.dispose()
@@ -113,7 +114,7 @@ describe("MapleFoldkit.make", () => {
 		})
 		const { commands } = app.init(undefined, { pathname: "/services" })
 		await Promise.all(
-			commands.map((command) =>
+			Arr.map(commands, (command) =>
 				Effect.runPromise(
 					command.effect.pipe(
 						Effect.withSpan(command.name, { attributes: command.args }),
@@ -125,8 +126,14 @@ describe("MapleFoldkit.make", () => {
 		target.dispatchEvent(new Event("pagehide"))
 		await settle()
 		const attributesOf = (name: string) =>
-			Object.fromEntries(
-				(spans().find((span) => span.name === name)?.attributes ?? []).map((a) => [a.key, a.value]),
+			Rec.fromEntries(
+				Arr.map(
+					Option.match(
+						Arr.findFirst(spans(), (span) => span.name === name),
+						{ onNone: () => [], onSome: (span) => span.attributes },
+					),
+					(a): readonly [string, unknown] => [a.key, a.value],
+				),
 			)
 		const command = attributesOf("LoadServices")
 		expect(command["maple.foldkit.arg.orgId"]).toEqual({ stringValue: "org_1" })
@@ -169,7 +176,7 @@ describe("MapleFoldkit.make", () => {
 		const { commands } = app.init(undefined, { pathname: "/services" })
 		vi.restoreAllMocks()
 		await Promise.all(
-			commands.map((command) =>
+			Arr.map(commands, (command) =>
 				Effect.runPromise(
 					command.effect.pipe(
 						Effect.withSpan(command.name, { attributes: command.args }),
@@ -180,11 +187,12 @@ describe("MapleFoldkit.make", () => {
 		)
 		target.dispatchEvent(new Event("pagehide"))
 		await settle()
-		const pageload = Object.fromEntries(
-			(spans().find((span) => span.name === "pageload /services")?.attributes ?? []).map((a) => [
-				a.key,
-				a.value,
-			]),
+		const pageload = Rec.fromEntries(
+			Arr.map(
+				Option.getOrThrow(Arr.findFirst(spans(), (span) => span.name === "pageload /services"))
+					.attributes,
+				(a): readonly [string, unknown] => [a.key, a.value],
+			),
 		)
 		expect(pageload["maple.pageload.response_start_ms"]).toEqual({ intValue: 40 })
 		expect(pageload["maple.pageload.response_end_ms"]).toEqual({ intValue: 53 })
@@ -211,7 +219,7 @@ describe("MapleFoldkit.make", () => {
 		})
 		const { commands } = app.init(undefined, { pathname: "/services" })
 		await Promise.all(
-			commands.map((command) =>
+			Arr.map(commands, (command) =>
 				Effect.runPromise(
 					command.effect.pipe(
 						Effect.withSpan(command.name, { attributes: command.args }),
@@ -221,7 +229,7 @@ describe("MapleFoldkit.make", () => {
 			),
 		)
 		await maple.dispose()
-		expect(spans().map((span) => span.name)).toContain("pageload /services")
+		expect(Arr.map(spans(), (span) => span.name)).toContain("pageload /services")
 	})
 
 	it("puts the Commands a page load's result Message starts in the page load's trace", async () => {
@@ -265,13 +273,16 @@ describe("MapleFoldkit.make", () => {
 				),
 			)
 		const { commands } = app.init(undefined, { pathname: "/services" })
-		const [loaded] = await Promise.all(commands.map(run))
+		const [loaded] = await Promise.all(Arr.map(commands, run))
+		assert.isDefined(loaded)
 		const followUps = app.update({ filter: "" }, loaded).commands
-		await Promise.all(followUps.map(run))
+		await Promise.all(Arr.map(followUps, run))
 		await maple.dispose()
-		const pageload = spans().find((span) => span.name === "pageload /services")
-		const loadAlerts = spans().find((span) => span.name === "LoadAlerts")
-		expect(loadAlerts?.traceId).toBe(pageload?.traceId)
+		const pageload = Option.getOrThrow(
+			Arr.findFirst(spans(), (span) => span.name === "pageload /services"),
+		)
+		const loadAlerts = Option.getOrThrow(Arr.findFirst(spans(), (span) => span.name === "LoadAlerts"))
+		expect(loadAlerts.traceId).toBe(pageload.traceId)
 	})
 
 	it("reports a crash with the Message that caused it and the recent Messages", async () => {
@@ -285,13 +296,23 @@ describe("MapleFoldkit.make", () => {
 		app.update({ filter: "api" }, { _tag: "ClickedSave" })
 		app.crash.report({ error: new Error("view threw"), message: Option.some({ _tag: "ClickedSave" }) })
 		await settle()
-		const crash = spans().find((span) =>
-			span.attributes.some(
-				(kv) =>
-					kv.key === "maple.exception.source" && JSON.stringify(kv.value).includes("foldkit.crash"),
+		const crash = Option.getOrThrow(
+			Arr.findFirst(spans(), (span) =>
+				Arr.some(
+					span.attributes,
+					(kv) =>
+						kv.key === "maple.exception.source" &&
+						Str.includes("foldkit.crash")(JSON.stringify(kv.value)),
+				),
 			),
 		)
-		const attribute = (key: string) => crash?.attributes.find((kv) => kv.key === key)?.value
+		const attribute = (key: string) =>
+			Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(crash.attributes, (kv) => kv.key === key),
+					(kv) => kv.value,
+				),
+			)
 		expect(attribute("maple.foldkit.message")).toEqual({ stringValue: "ClickedSave" })
 		expect(JSON.stringify(attribute("maple.foldkit.recent_messages"))).toContain("ChangedFilter")
 		await maple.dispose()
@@ -316,10 +337,12 @@ describe("MapleFoldkit.make", () => {
 		onSlow({ _tag: "Update", durationMs: 8000, thresholdMs: 16, message: { _tag: "ElapsedPoll" } })
 		target.dispatchEvent(new Event("pagehide"))
 		await settle()
-		const messages = spans()
-			.filter((span) => span.name === "foldkit.update")
-			.flatMap((span) => span.attributes.filter((a) => a.key === "maple.foldkit.message"))
-			.map((a) => a.value)
+		const messages = pipe(
+			spans(),
+			Arr.filter((span) => span.name === "foldkit.update"),
+			Arr.flatMap((span) => Arr.filter(span.attributes, (a) => a.key === "maple.foldkit.message")),
+			Arr.map((a) => a.value),
+		)
 		expect(messages).toEqual([{ stringValue: "ClickedSave" }])
 		await maple.dispose()
 	})

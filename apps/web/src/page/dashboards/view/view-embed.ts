@@ -17,7 +17,7 @@ import { codeBlock } from "../../settings/kit/code-block"
 import type { Variable } from "../kit/variables"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { optionsByNameOf, variablesOf } from "./plan"
+import { optionsByNameOf, shareLinkRangeOf, variablesOf } from "./plan"
 import { boardShareOf, chartShareOf, embedUrl, ShareMessage } from "./share"
 import { shareLinkRow } from "./view-share"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -181,7 +181,13 @@ const urlOptions = (h: H, model: Model, context: PageContext): Html => {
 			key: "refresh",
 			icon: "ArrowRotateClockwiseIcon",
 			param: "refresh",
-			description: `Seconds: ${REFRESH_INTERVAL_OPTIONS.filter((value) => value > 0).join(", ")}. 0 turns it off`,
+			description: `Seconds: ${Arr.join(
+				Arr.map(
+					Arr.filter(REFRESH_INTERVAL_OPTIONS, (value) => value > 0),
+					String,
+				),
+				", ",
+			)}. 0 turns it off`,
 			example: "&refresh=60",
 		},
 		...(definitions.length === 0
@@ -270,10 +276,22 @@ const embedContent = (h: H, model: Model, context: PageContext): ReadonlyArray<H
 							...shareLinkRow(
 								h,
 								model,
-								embedUrl(model.sharing.origin, share.token),
+								embedUrl(
+									model.sharing.origin,
+									share.token,
+									shareLinkRangeOf(model, context.timeZone),
+								),
 								"Every existing embed of this chart stops working until it is updated with the new link.",
 							),
-							iframeSnippet(h, model, embedUrl(model.sharing.origin, share.token)),
+							iframeSnippet(
+								h,
+								model,
+								embedUrl(
+									model.sharing.origin,
+									share.token,
+									shareLinkRangeOf(model, context.timeZone),
+								),
+							),
 							urlOptions(h, model, context),
 						]
 					: model.sharing.error !== null

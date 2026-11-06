@@ -1,5 +1,6 @@
 import { splitTerminalClauses } from "@maple-dev/effect-orm/sql"
 import { String as Str } from "effect"
+import { codeUnitAt } from "@maple/strings"
 
 /**
  * Cap traced SQL at 16 KB. OTel's default attribute size limit is 32 KB, and
@@ -20,7 +21,7 @@ export const fingerprintSql = (s: string): string => {
 	const normalized = Str.replace(/\b\d+\b/g, "?")(Str.replace(/'[^']*'/g, "'?'")(s))
 	let h = 0x811c9dc5
 	for (let i = 0; i < normalized.length; i++) {
-		h ^= normalized.charCodeAt(i)
+		h ^= codeUnitAt(normalized, i)
 		h = Math.imul(h, 0x01000193)
 	}
 	return Str.padStart(8, "0")((h >>> 0).toString(16))

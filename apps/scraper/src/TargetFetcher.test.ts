@@ -135,8 +135,9 @@ describe("TargetFetcher", () => {
 				Effect.flip,
 			)
 			const [span] = endedSpansNamed(tracer.ended, "TargetFetcher.fetchTarget")
-			assert.isTrue(Exit.isSuccess(span!.exit))
-			assert.strictEqual(span!.attributes.get("http.response.status_code"), 429)
+			assert.isDefined(span)
+			assert.isTrue(Exit.isSuccess(span.exit))
+			assert.strictEqual(span.attributes.get("http.response.status_code"), 429)
 		}).pipe(Effect.provide(FetcherLive)),
 	)
 
@@ -363,7 +364,7 @@ describe("TargetFetcher", () => {
 
 			const [span] = endedSpansNamed(tracer.ended, "TargetFetcher.fetchTarget")
 			assert.isDefined(span)
-			if (!span) return
+			if (span == null) return
 			assert.strictEqual(span.attributes.get("peer.service"), "planetscale-metrics")
 			assert.strictEqual(span.attributes.get("maple.scrape.target_type"), "planetscale")
 			assert.strictEqual(span.attributes.get("server.address"), "branch.metrics.psdb.cloud")

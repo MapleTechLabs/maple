@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { afterEach, expect, it as vitestIt, vi } from "vitest"
-import { Effect, Metric, Redacted, Array as Arr, String as Str } from "effect"
+import { Clock, DateTime, Effect, Metric, Redacted, Array as Arr, String as Str } from "effect"
 import {
 	buildResolved,
 	fetchTransport,
@@ -70,7 +70,7 @@ describe("runFlush", () => {
 	it.live("retains failed and cooldown batches while allowing the other signal to succeed", () =>
 		Effect.gen(function* () {
 			vi.useFakeTimers()
-			vi.setSystemTime(new Date("2026-01-01T00:00:00Z"))
+			vi.setSystemTime(DateTime.toDateUtc(DateTime.makeUnsafe("2026-01-01T00:00:00Z")))
 			const spans = makeSpanBuffer()
 			const logs = makeLogBuffer()
 			const metrics = makeMetricBuffer()
@@ -124,10 +124,12 @@ describe("runFlush", () => {
 			const body = traceBodies[0] as {
 				resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
 			}
-			expect(Arr.map(body.resourceSpans[0]!.scopeSpans[0]!.spans, (span) => span.name)).toEqual([
-				"first",
-				"second",
-			])
+			expect(
+				Arr.map(
+					Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0).scopeSpans, 0).spans,
+					(span) => span.name,
+				),
+			).toEqual(["first", "second"])
 		}),
 	)
 
@@ -135,11 +137,11 @@ describe("runFlush", () => {
 		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 		const signals: Array<AbortSignal | null | undefined> = []
 		const original = globalThis.fetch
-		globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
+		globalThis.fetch = (_input: RequestInfo | URL, init?: RequestInit) => {
 			signals.push(init?.signal)
 			// Ignores the abort, like a request whose owner was cancelled.
 			return new Promise<Response>(() => {})
-		}) as typeof fetch
+		}
 		const spans = makeSpanBuffer()
 		await Effect.runPromise(recordSpan(spans, "slow"))
 		vi.useFakeTimers()
@@ -264,7 +266,12 @@ describe("runFlush", () => {
 									scopeSpans: Array<{ spans: Array<{ name: string }> }>
 								}>
 							}
-							sent.push(Arr.map(resourceSpans[0]!.scopeSpans[0]!.spans, (span) => span.name))
+							sent.push(
+								Arr.map(
+									Arr.getUnsafe(Arr.getUnsafe(resourceSpans, 0).scopeSpans, 0).spans,
+									(span) => span.name,
+								),
+							)
 							// The newest request fails last: completion order must not decide the restore order.
 							if (sent.length === 1) await new Promise((resolve) => setTimeout(resolve, 5))
 							throw new Error("collector unavailable")
@@ -283,7 +290,7 @@ describe("runFlush", () => {
 			yield* Effect.promise(() => flushed)
 
 			expect(errorSpy).toHaveBeenCalledTimes(1)
-			expect(tracesState.disabledUntil).toBeGreaterThan(Date.now())
+			expect(tracesState.disabledUntil).toBeGreaterThan(yield* Clock.currentTimeMillis)
 
 			// No room for even the newest item: one request, in drain order.
 			sent.length = 0
@@ -334,16 +341,19 @@ describe("runFlush", () => {
 					}>
 				}>
 			}
-			const exported = body.resourceMetrics[0]!.scopeMetrics[0]!.metrics[0]!
+			const exported = Arr.getUnsafe(
+				Arr.getUnsafe(Arr.getUnsafe(body.resourceMetrics, 0).scopeMetrics, 0).metrics,
+				0,
+			)
 			expect(exported.name).toBe("test.requests_total")
-			expect(exported.sum.dataPoints[0]!.asDouble).toBe(3)
+			expect(Arr.getUnsafe(exported.sum.dataPoints, 0).asDouble).toBe(3)
 		}),
 	)
 
 	it.live("retries a changed metric after a failed export", () =>
 		Effect.gen(function* () {
 			vi.useFakeTimers()
-			vi.setSystemTime(new Date("2026-01-01T00:00:00Z"))
+			vi.setSystemTime(DateTime.toDateUtc(DateTime.makeUnsafe("2026-01-01T00:00:00Z")))
 			const spans = makeSpanBuffer()
 			const logs = makeLogBuffer()
 			const metrics = makeMetricBuffer()

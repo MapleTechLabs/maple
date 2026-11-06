@@ -233,7 +233,7 @@ const make = Effect.gen(function* () {
 		).pipe(Effect.mapError(unavailable))
 
 		const membership = response.data[0]
-		if (!membership) return Option.none<VerifiedOrgMembership>()
+		if (membership === undefined) return Option.none<VerifiedOrgMembership>()
 		const role = decodeRoleNameOption(membership.role)
 		return Option.map(role, (value): VerifiedOrgMembership => ({ orgId, role: value }))
 	})
@@ -241,8 +241,8 @@ const make = Effect.gen(function* () {
 	const verify = Effect.fn("OrgMembershipService.verify")(function* (userId: UserId, orgId: OrgId) {
 		yield* Effect.annotateCurrentSpan({ "tenant.userId": userId, "tenant.requestedOrgId": orgId })
 		const { memberships, truncated } = yield* load(userId)
-		const found = memberships.find((membership) => membership.orgId === orgId)
-		if (found) return Option.some<VerifiedOrgMembership>(found)
+		const found = Arr.findFirst(memberships, (membership) => membership.orgId === orgId)
+		if (Option.isSome(found)) return Option.some<VerifiedOrgMembership>(found.value)
 		if (!truncated) return Option.none<VerifiedOrgMembership>()
 		return yield* verifyPair(userId, orgId)
 	})

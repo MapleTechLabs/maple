@@ -1,5 +1,5 @@
 import { assert, describe, expect, it } from "@effect/vitest"
-import { Context, Effect, Layer, Schema, Tracer, Array as Arr, String as Str } from "effect"
+import { Context, Effect, Layer, Option, Schema, Tracer, Array as Arr, String as Str } from "effect"
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { ActorId } from "@maple/domain/primitives"
 import { McpToolExecutor } from "./dispatcher"
@@ -29,7 +29,7 @@ const TENANT: TenantContext = {
 const CONNECTOR_TENANT: TenantContext = {
 	...TENANT,
 	userId: "chat-connector" as TenantContext["userId"],
-	actorId: Schema.decodeUnknownSync(ActorId)("00000000-0000-4000-8000-00000000c0de"),
+	actorId: Schema.decodeSync(ActorId)("00000000-0000-4000-8000-00000000c0de"),
 	turnOrigin: {
 		kind: "connector",
 		connectorId: "testchat",
@@ -103,7 +103,9 @@ describe("MCP dispatcher", () => {
 
 	it.effect("publishes an output schema and annotations for every tool declared with define", () =>
 		Effect.gen(function* () {
-			const byName = new Map((yield* listMcpTools).map((descriptor) => [descriptor.name, descriptor]))
+			const byName = new Map(
+				Arr.map(yield* listMcpTools, (descriptor) => [descriptor.name, descriptor]),
+			)
 			for (const definition of mapleToolCatalogFor("mcp")) {
 				const descriptor = byName.get(definition.name)
 				if (definition.outputSchema === undefined) continue
@@ -158,7 +160,7 @@ describe("MCP dispatcher", () => {
 
 		it.effect("does not list an internal tool on the public transport", () =>
 			Effect.gen(function* () {
-				const listed = new Set((yield* listMcpTools).map((descriptor) => descriptor.name))
+				const listed = new Set(Arr.map(yield* listMcpTools, (descriptor) => descriptor.name))
 				expect(Arr.filter(INTERNAL_TOOLS, (name) => listed.has(name))).toEqual([])
 				// The agents' catalogs still carry them.
 				const chat = new Set(Arr.map(mapleToolCatalogFor("chat"), (d) => d.name))
@@ -178,12 +180,12 @@ describe("MCP dispatcher", () => {
 						"sandbox_exec",
 						{ repository: "acme/app", command: "git", args: ["log"] },
 						"mcp",
-					) as Effect.Effect<never, McpToolNotFoundError, never>,
+					) as Effect.Effect<never, McpToolNotFoundError>,
 				)
 				// Same answer as a name that was never registered, so probing cannot
 				// tell the two apart.
 				expect(error._tag).toBe("@maple/mcp/ToolNotFoundError")
-				expect(error.name).toBe("sandbox_exec")
+				expect(error.toolName).toBe("sandbox_exec")
 			}),
 		)
 
@@ -230,12 +232,11 @@ describe("MCP dispatcher", () => {
 			const error = yield* Effect.flip(
 				executor.execute(TENANT, "not_a_maple_tool", {}, "mcp") as Effect.Effect<
 					never,
-					McpToolNotFoundError,
-					never
+					McpToolNotFoundError
 				>,
 			)
 			expect(error._tag).toBe("@maple/mcp/ToolNotFoundError")
-			expect(error.name).toBe("not_a_maple_tool")
+			expect(error.toolName).toBe("not_a_maple_tool")
 		}),
 	)
 
@@ -252,7 +253,9 @@ describe("MCP dispatcher", () => {
 					.execute(TENANT, "inspect_trace", {}, "workflow")
 					.pipe(Effect.withTracer(tracer))
 
-				const executorSpan = spans.find((s) => s.name === "McpToolExecutor.execute")
+				const executorSpan = Option.getOrUndefined(
+					Arr.findFirst(spans, (s) => s.name === "McpToolExecutor.execute"),
+				)
 				assert.isDefined(executorSpan)
 				expect(executorSpan.attributes.get("maple.mcp.tool")).toBe("inspect_trace")
 				expect(executorSpan.attributes.get("maple.mcp.surface")).toBe("workflow")
@@ -272,7 +275,9 @@ describe("MCP dispatcher", () => {
 					.pipe(Effect.withTracer(tracer))
 				expect(result.isError).toBe(true)
 
-				const dispatchSpan = spans.find((s) => s.name === "McpToolDispatcher.call")
+				const dispatchSpan = Option.getOrUndefined(
+					Arr.findFirst(spans, (s) => s.name === "McpToolDispatcher.call"),
+				)
 				assert.isDefined(dispatchSpan)
 				expect(dispatchSpan.attributes.get("maple.mcp.tool")).toBe("inspect_trace")
 				expect(dispatchSpan.attributes.get("result.isError")).toBe(true)
@@ -290,7 +295,9 @@ describe("MCP dispatcher", () => {
 				).pipe(Effect.withSpan("probe"), Effect.withTracer(tracer))
 
 				const recorded = String(
-					spans.find((s) => s.name === "probe")?.attributes.get("maple.mcp.error.message"),
+					Option.getOrUndefined(Arr.findFirst(spans, (s) => s.name === "probe"))?.attributes.get(
+						"maple.mcp.error.message",
+					),
 				)
 				expect(recorded.length).toBeLessThan(message.length)
 				expect(Str.startsWith(recorded)(message)).toBe(true)
@@ -307,7 +314,9 @@ describe("MCP dispatcher", () => {
 
 				yield* executor.execute(TENANT, "inspect_trace", {}, "mcp").pipe(Effect.withTracer(tracer))
 
-				const dispatchSpan = spans.find((s) => s.name === "McpToolDispatcher.call")
+				const dispatchSpan = Option.getOrUndefined(
+					Arr.findFirst(spans, (s) => s.name === "McpToolDispatcher.call"),
+				)
 				assert.isDefined(dispatchSpan)
 				expect(dispatchSpan.attributes.get("error.type")).toBe("@maple/mcp/errors/McpDecodeError")
 				expect(dispatchSpan.attributes.get("http.response.status_code")).toBe(400)
@@ -316,7 +325,9 @@ describe("MCP dispatcher", () => {
 				// The inner registry span still FAILS with the decode error (the typed
 				// error stays in the error channel); the SDK exporter is what turns it
 				// into an Ok span, keyed off the identifier list below.
-				const registrySpan = spans.find((s) => s.name === "McpToolRegistry.execute")
+				const registrySpan = Option.getOrUndefined(
+					Arr.findFirst(spans, (s) => s.name === "McpToolRegistry.execute"),
+				)
 				assert.isDefined(registrySpan)
 				expect(MCP_ANTICIPATED_ERROR_IDENTIFIERS).toContain(dispatchSpan.attributes.get("error.type"))
 			}),
@@ -391,7 +402,9 @@ describe("MCP dispatcher", () => {
 					.pipe(Effect.withTracer(tracer))
 				expect(result.isError).toBe(true)
 
-				const dispatchSpan = spans.find((s) => s.name === "McpToolDispatcher.call")
+				const dispatchSpan = Option.getOrUndefined(
+					Arr.findFirst(spans, (s) => s.name === "McpToolDispatcher.call"),
+				)
 				assert.isDefined(dispatchSpan)
 				expect(dispatchSpan.status._tag).toBe("Ended")
 				if (dispatchSpan.status._tag === "Ended")
@@ -411,7 +424,9 @@ describe("MCP dispatcher", () => {
 					.execute(TENANT, "describe_warehouse_tables", {}, "rpc")
 					.pipe(Effect.withTracer(tracer))
 
-				const dispatchSpan = spans.find((s) => s.name === "McpToolDispatcher.call")
+				const dispatchSpan = Option.getOrUndefined(
+					Arr.findFirst(spans, (s) => s.name === "McpToolDispatcher.call"),
+				)
 				assert.isDefined(dispatchSpan)
 				expect(dispatchSpan.attributes.get("result.isError")).toBe(false)
 			}),

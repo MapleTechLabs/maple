@@ -2,7 +2,8 @@
 // the text, the canonical statement is what runs, and read statements carry
 // `readonly = 1` plus result caps, so enforcement does not rest on a regex.
 
-import { Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { disallowedTableFunction } from "@maple/domain/raw-sql"
+import { Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { Chdb } from "./chdb"
 
 /** Body prefix clients map to a clean "not allowed" error. */
@@ -61,8 +62,9 @@ const WRITE_KEYWORDS = new Set([
 	"SET",
 	"USE",
 ])
-// `readonly` does not cover these: the `file` function reads any local path.
-const DENIED_FUNCTIONS = new Set(["file", "catboostevaluate"])
+// `readonly` does not cover reads (`file` reaches any local path), so table functions
+// get hosted raw SQL's allow list and its readers are refused in any position.
+const DENIED_FUNCTIONS = new Set(["catboostevaluate"])
 
 export interface PreparedLocalQuery {
 	readonly kind: "read" | "write"
@@ -95,7 +97,7 @@ const scanWords = (sql: string): ReadonlyArray<Word> | undefined => {
 		return sql[k] === "("
 	}
 	while (i < sql.length) {
-		const c = sql.charAt(i)
+		const c = Str.slice(i, i + 1)(sql)
 		if (c === "'" || c === '"' || c === "`") {
 			let j = i + 1
 			while (j < sql.length && sql[j] !== c) j += sql[j] === "\\" ? 2 : 1
@@ -118,7 +120,7 @@ const scanWords = (sql: string): ReadonlyArray<Word> | undefined => {
 			i++
 		} else if (isWordStart(c)) {
 			let j = i + 1
-			while (j < sql.length && isWordPart(sql.charAt(j))) j++
+			while (j < sql.length && isWordPart(Str.slice(j, j + 1)(sql))) j++
 			words.push({
 				text: Str.slice(i, j)(sql),
 				start: i,
@@ -131,7 +133,7 @@ const scanWords = (sql: string): ReadonlyArray<Word> | undefined => {
 		} else if (/[0-9]/.test(c)) {
 			// Numeric literals such as 1e9 or 0x1F are not words.
 			let j = i + 1
-			while (j < sql.length && /[0-9A-Za-z_.]/.test(sql.charAt(j))) j++
+			while (j < sql.length && /[0-9A-Za-z_.]/.test(Str.slice(j, j + 1)(sql))) j++
 			i = j
 		} else i++
 	}
@@ -166,10 +168,9 @@ const peelTerminalClauses = (canonical: string, words: ReadonlyArray<Word>): Pee
 	const keyword = (word: Word | undefined, text: string) =>
 		word !== undefined && !word.quoted && word.text === text
 	const peelSettings = () => {
-		const last = topLevel()
-			.reverse()
-			.find((word) => keyword(word, "SETTINGS"))
-		if (last === undefined) return
+		const found = Arr.findLast(topLevel(), (word) => keyword(word, "SETTINGS"))
+		if (Option.isNone(found)) return
+		const last = found.value
 		const parsed = parseAssignments(Str.slice(last.end)(body))
 		if (parsed === undefined) return
 		settings.push(...parsed)
@@ -210,7 +211,7 @@ const settingsClause = (
 	return Result.succeed(Arr.join([...parts, "output_format_json_array_of_rows = 1", "readonly = 1"], ", "))
 }
 
-const escapeLiteral = (value: string) => Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))
+const escapeLiteral = (value: string) => Str.replace(/[\\']/g, "\\$&")(value)
 
 // The wrapper query is noise in a syntax error about the client's SQL.
 const cleanParseError = (message: string) =>
@@ -249,6 +250,8 @@ export const prepareLocalQuery = (
 			if (word.text === "INTO" && words[index + 1]?.text === "OUTFILE")
 				return yield* reject("INTO OUTFILE is not allowed")
 		}
+		const tableFunction = disallowedTableFunction(canonical)
+		if (tableFunction !== null) return yield* reject(`function ${tableFunction} is not allowed`)
 		const leading = Str.startsWith("(")(canonical) ? "SELECT" : first.text
 		if (!READ_STATEMENTS.has(leading)) {
 			if (options.allowWrites) {
@@ -268,6 +271,14 @@ export const prepareLocalQuery = (
 		if (leading === "EXPLAIN" && Arr.some(words, (word) => WRITE_KEYWORDS.has(word.text)))
 			return yield* reject("EXPLAIN is only allowed for read statements")
 		const peeled = peelTerminalClauses(canonical, words)
+		// A subquery's own SETTINGS would apply after the appended `readonly = 1`.
+		if (
+			Arr.some(
+				words,
+				(word) => !word.quoted && word.text === "SETTINGS" && word.end <= peeled.body.length,
+			)
+		)
+			return yield* reject("SETTINGS is only allowed once, at the end of the query")
 		// Schema inference reads whatever a table function points at, and
 		// DESCRIBE skips the readonly check, so only plain tables are described.
 		if (

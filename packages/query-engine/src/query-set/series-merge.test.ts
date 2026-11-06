@@ -256,12 +256,12 @@ describe("shiftResultPoints / shiftRunResults", () => {
 			[{ bucket: "2026-01-01T00:00:00.000Z", series: { all: 1 } }],
 			3600_000,
 		)
-		expect(shifted[0].bucket).toBe("2026-01-01T01:00:00.000Z")
+		expect(Arr.getUnsafe(shifted, 0).bucket).toBe("2026-01-01T01:00:00.000Z")
 	})
 
 	it("passes an unparseable bucket through rather than producing Invalid Date", () => {
 		const shifted = shiftResultPoints([{ bucket: "not-a-date", series: {} }], 1000)
-		expect(shifted[0].bucket).toBe("not-a-date")
+		expect(Arr.getUnsafe(shifted, 0).bucket).toBe("not-a-date")
 	})
 
 	it("shifts every result's points and keeps the rest of the result", () => {
@@ -275,8 +275,8 @@ describe("shiftResultPoints / shiftRunResults", () => {
 			3600_000,
 		)
 
-		expect(shifted[0].warnings).toEqual(["w"])
-		expect(shifted[0].data[0].bucket).toBe("2026-01-01T01:00:00.000Z")
+		expect(Arr.getUnsafe(shifted, 0).warnings).toEqual(["w"])
+		expect(Arr.getUnsafe(Arr.getUnsafe(shifted, 0).data, 0).bucket).toBe("2026-01-01T01:00:00.000Z")
 	})
 })
 
@@ -296,7 +296,7 @@ describe("appendPercentChangeSeries", () => {
 			new Map([["q-1::checkout", "Errors: checkout (prev)"]]),
 		)
 
-		expect(rows[0]["Errors: checkout (%Δ)"]).toBe(100)
+		expect(Arr.getUnsafe(rows, 0)["Errors: checkout (%Δ)"]).toBe(100)
 	})
 
 	it("prev=0 & cur=0 is 0% (genuinely unchanged); prev=0 & cur>0 leaves a gap, not a fake 0%", () => {
@@ -319,7 +319,7 @@ describe("appendPercentChangeSeries", () => {
 			new Map([["q-1::checkout", "Errors: checkout (prev)"]]),
 		)
 
-		expect(rows[0]["Errors: checkout (%Δ)"]).toBe(0)
+		expect(Arr.getUnsafe(rows, 0)["Errors: checkout (%Δ)"]).toBe(0)
 		expect(rows[1]).not.toHaveProperty("Errors: checkout (%Δ)")
 	})
 

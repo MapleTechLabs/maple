@@ -427,7 +427,7 @@ const renderRepositoryRules = (
 const renderConfigRules = (config: PrReviewRepositoryConfig | undefined): ReadonlyArray<string> => {
 	if (config === undefined) return []
 	const lines: Array<string> = []
-	if (config.instructions?.trim()) {
+	if (config.instructions !== undefined && Str.trim(config.instructions) !== "") {
 		lines.push(
 			"Review rules this repository's maintainers set in Maple (binding, like its CLAUDE.md):",
 			"",
@@ -627,8 +627,7 @@ const confidenceMark = (confidence: number) => CONFIDENCE_MARK[prReviewConfidenc
 const categoryLabel = (finding: { readonly category: string; readonly checkId?: string }): string =>
 	finding.checkId === undefined ? finding.category : `${finding.category} · ${finding.checkId}`
 
-const escapeCell = (value: string) =>
-	Str.replace(/\n/g, " ")(Str.replace(/\|/g, "\\|")(Str.replace(/\\/g, "\\\\")(value)))
+const escapeCell = (value: string) => Str.replace(/\n/g, " ")(Str.replace(/[\\|]/g, "\\$&")(value))
 
 export interface ReviewMarkdownInput {
 	readonly report: PrReviewReport
@@ -657,7 +656,13 @@ const escapeHtml = (value: string) =>
  * a fence (a markdown file, a template string) cannot close the block early.
  */
 const fenced = (content: string, info = ""): ReadonlyArray<string> => {
-	const longest = Math.max(0, ...Arr.map(content.match(/`+/g) ?? [], (run) => run.length))
+	const longest = Math.max(
+		0,
+		...Arr.map(
+			Option.getOrElse(Str.match(/`+/g)(content), () => []),
+			(run) => run.length,
+		),
+	)
 	const fence = Str.repeat(Math.max(3, longest + 1))("`")
 	return [`${fence}${info}`, content, fence]
 }

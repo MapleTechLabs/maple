@@ -15,6 +15,8 @@ import {
 import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import { DashboardNotFoundError, DashboardPersistenceError, OrgId, UserId } from "@maple/domain/http"
+import { AlertRuleId } from "@maple/domain/primitives"
+import { alertChartId } from "@maple/db"
 import { DashboardPublicId, DashboardTemplatePublicId, MapleApiV2 } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -42,7 +44,7 @@ import {
 
 const createdDbs: TestDb[] = []
 const encodeDashboardPublicId = Schema.encodeUnknownSync(DashboardPublicId)
-const USER_OTHER = Schema.decodeUnknownSync(UserId)("user_other_org")
+const USER_OTHER = Schema.decodeSync(UserId)("user_other_org")
 afterEach(() => cleanupTestDbs(createdDbs))
 
 const testConfig = () =>
@@ -126,8 +128,8 @@ const makeHarness = () => {
 		disableLogger: true,
 	})
 	const runtime = ManagedRuntime.make(servicesLive)
-	const ORG = Schema.decodeUnknownSync(OrgId)("org_dashboard_e2e")
-	const USER = Schema.decodeUnknownSync(UserId)("user_dashboard_e2e")
+	const ORG = Schema.decodeSync(OrgId)("org_dashboard_e2e")
+	const USER = Schema.decodeSync(UserId)("user_dashboard_e2e")
 
 	const bootstrapKey = (scopes?: ReadonlyArray<string>) =>
 		runtime.runPromise(
@@ -238,6 +240,8 @@ describe("v2 dashboards over HTTP", () => {
 		expect(detail.status).toBe(200)
 		expect(detail.body.snapshot.object).toBe("dashboard")
 		expect(detail.body.snapshot.name).toBe("Operations")
+		// The CAS counter belongs to the live row, never to a history snapshot.
+		expect("version" in detail.body.snapshot).toBe(false)
 
 		const restored = await harness.request(
 			"POST",
@@ -259,6 +263,104 @@ describe("v2 dashboards over HTTP", () => {
 			type: "not_found_error",
 			code: "dashboard_not_found",
 		})
+		await harness.dispose()
+	})
+
+	it("refuses a PATCH based on a stale expected_version, and keeps last-write-wins without one", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:write"])
+		const created = await harness.request("POST", "/v2/dashboards", key.secret, {
+			name: "v1",
+			widgets: [],
+		})
+		const path = `/v2/dashboards/${created.body.id}`
+
+		// Two editors both loaded version 1: the first save lands, the second is a 409.
+		const first = await harness.request("PATCH", path, key.secret, { name: "first", expected_version: 1 })
+		expect(first.status).toBe(200)
+		const stale = await harness.request("PATCH", path, key.secret, {
+			name: "second",
+			expected_version: 1,
+		})
+		expect(stale.status).toBe(409)
+		expect(stale.body.error.code).toBe("dashboard_concurrent_update")
+		expect((await harness.request("GET", path, key.secret)).body.name).toBe("first")
+
+		const blind = await harness.request("PATCH", path, key.secret, { name: "third" })
+		expect(blind.status).toBe(200)
+		expect((await harness.request("GET", path, key.secret)).body.name).toBe("third")
+		await harness.dispose()
+	})
+
+	it("hands out the version an API client sends back as expected_version", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:write"])
+		const created = await harness.request("POST", "/v2/dashboards", key.secret, {
+			name: "v1",
+			widgets: [],
+		})
+		expect(created.body.version).toBe(1)
+		const path = `/v2/dashboards/${created.body.id}`
+
+		const retrieved = await harness.request("GET", path, key.secret)
+		const listed = await harness.request("GET", "/v2/dashboards", key.secret)
+		expect(listed.body.data[0].version).toBe(retrieved.body.version)
+
+		const saved = await harness.request("PATCH", path, key.secret, {
+			name: "edited",
+			expected_version: retrieved.body.version,
+		})
+		expect(saved.status).toBe(200)
+		expect(saved.body.version).toBe(retrieved.body.version + 1)
+		expect((await harness.request("GET", path, key.secret)).body.version).toBe(saved.body.version)
+
+		const resent = await harness.request("PATCH", path, key.secret, {
+			name: "stale",
+			expected_version: retrieved.body.version,
+		})
+		expect(resent.status).toBe(409)
+		await harness.dispose()
+	})
+
+	it("pages the list newest first through an opaque cursor", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:write"])
+		const names = ["a", "b", "c"]
+		for (const name of names) {
+			expect(
+				(await harness.request("POST", "/v2/dashboards", key.secret, { name, widgets: [] })).status,
+			).toBe(200)
+		}
+
+		const first = await harness.request("GET", "/v2/dashboards?limit=2", key.secret)
+		expect(first.body).toMatchObject({ object: "list", has_more: true })
+		const second = await harness.request(
+			"GET",
+			`/v2/dashboards?limit=2&cursor=${encodeURIComponent(first.body.next_cursor)}`,
+			key.secret,
+		)
+		expect(second.body).toMatchObject({ has_more: false, next_cursor: null })
+		const seen = Arr.map(
+			[...first.body.data, ...second.body.data],
+			(dashboard: { name: string }) => dashboard.name,
+		)
+		expect([...seen].sort()).toEqual(names)
+
+		// A foreign scheme, an id that is not base64url, and a timestamp past the safe range.
+		const tampered = [
+			"off_2",
+			"dsh_1_A",
+			`dsh_${Str.repeat(16)("z")}_${Str.split("_")(first.body.next_cursor)[2]}`,
+		]
+		for (const cursor of tampered) {
+			const invalid = await harness.request(
+				"GET",
+				`/v2/dashboards?cursor=${encodeURIComponent(cursor)}`,
+				key.secret,
+			)
+			expect(invalid.status).toBe(400)
+			expect(invalid.body.error.param).toBe("cursor")
+		}
 		await harness.dispose()
 	})
 
@@ -572,6 +674,44 @@ describe("v2 dashboard widget data", () => {
 		await harness.dispose()
 	})
 
+	it("serves a widget only to keys that can read the telemetry it queries", async () => {
+		const harness = makeHarness()
+		const writer = await harness.bootstrapKey(["dashboards:write"])
+		const created = await harness.request("POST", "/v2/dashboards", writer.secret, {
+			name: "Logs",
+			widgets: [
+				{
+					id: "log-volume",
+					visualization: "chart",
+					data_source: {
+						kind: "query",
+						result_shape: "timeseries",
+						queries: [{ id: "a", name: "A", aggregation: "count", data_source: "logs" }],
+					},
+					display: {},
+					layout: { x: 0, y: 0, w: 6, h: 4 },
+				},
+			],
+		})
+		expect(created.status).toBe(200)
+		const read = (token: string) =>
+			harness.request("POST", `/v2/dashboards/${created.body.id}/widget_data`, token, {
+				requests: [{ widget_id: "log-volume" }],
+				time_range: { type: "relative", value: "1h" },
+			})
+
+		const reader = await harness.bootstrapKey(["dashboards:read"])
+		const refused = await read(reader.secret)
+		expect(refused.status).toBe(200)
+		expect(refused.body.results[0]).toMatchObject({ ok: false, reason: "unsupported" })
+		expect(refused.body.results[0].message).toContain("logs:read")
+
+		// An admitted key reaches the harness query engine, which refuses to run: retryable.
+		const logsReader = await harness.bootstrapKey(["dashboards:read", "logs:read"])
+		expect((await read(logsReader.secret)).body.results[0]).toMatchObject({ ok: false, reason: "failed" })
+		await harness.dispose()
+	})
+
 	it("rejects an unresolvable range and an unknown dashboard", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["dashboards:write"])
@@ -865,6 +1005,49 @@ describe("v2 dashboard shares", () => {
 		await harness.dispose()
 	})
 
+	it("hides a share's token from a key that cannot read the telemetry it serves", async () => {
+		const harness = makeHarness()
+		const readOnly = await harness.bootstrapKey(["dashboards:read"])
+		const reader = await harness.bootstrapKey([
+			"dashboards:read",
+			"traces:read",
+			"logs:read",
+			"metrics:read",
+		])
+		const writer = await harness.bootstrapKey(SHARE_SCOPES)
+		const id = await createDashboard(harness, writer.secret)
+		const widgetId = "w-1"
+		const board = await harness.request("PUT", `/v2/dashboards/${id}/share`, writer.secret, {
+			mode: "public",
+		})
+		await harness.request("PUT", `/v2/dashboards/${id}/widgets/${widgetId}/share`, writer.secret, {
+			mode: "public",
+		})
+
+		const reads = (key: string) =>
+			Promise.all([
+				harness.request("GET", `/v2/dashboards/${id}/share`, key),
+				harness.request("GET", `/v2/dashboards/${id}/widgets/${widgetId}/share`, key),
+				harness.request("GET", `/v2/dashboards/${id}/shares`, key),
+			])
+
+		const [hiddenBoard, hiddenWidget, hiddenList] = await reads(readOnly.secret)
+		for (const share of [hiddenBoard.body, hiddenWidget.body, ...hiddenList.body]) {
+			expect(share.token).toBeUndefined()
+			expect(typeof share.token_suffix).toBe("string")
+		}
+
+		const [shownBoard, shownWidget, shownList] = await reads(reader.secret)
+		expect(shownBoard.body.token).toBe(board.body.token)
+		expect(typeof shownWidget.body.token).toBe("string")
+		expect(Arr.map(shownList.body, (share: { token?: string }) => typeof share.token)).toEqual([
+			"string",
+			"string",
+		])
+
+		await harness.dispose()
+	})
+
 	it("enforces dashboard scopes on share management", async () => {
 		const harness = makeHarness()
 		const readOnly = await harness.bootstrapKey(["dashboards:read"])
@@ -897,7 +1080,7 @@ describe("v2 dashboard shares", () => {
 		const foreign = await harness.runtime.runPromise(
 			Effect.gen(function* () {
 				const service = yield* ApiKeysService
-				return yield* service.create(Schema.decodeUnknownSync(OrgId)("org_other"), USER_OTHER, {
+				return yield* service.create(Schema.decodeSync(OrgId)("org_other"), USER_OTHER, {
 					name: "other-org",
 					scopes: ["dashboards:write"],
 				})
@@ -1273,6 +1456,32 @@ describe("v2 share previews", () => {
 		})
 		expect(forged.status).toBe(404)
 
+		await harness.dispose()
+	})
+})
+
+describe("v2 alert chart images", () => {
+	it("answers a warehouse that cannot serve the series with a retryable 503, not a missing chart", async () => {
+		const harness = makeHarness()
+		const chartId = alertChartId(
+			{
+				orgId: harness.ORG,
+				ruleId: Schema.decodeSync(AlertRuleId)("00000000-0000-4000-8000-000000000001"),
+				groupKey: null,
+				fromMs: Date.UTC(2026, 7, 18, 13, 0),
+				toMs: Date.UTC(2026, 7, 18, 14, 0),
+				title: "Error rate",
+				unit: "percent",
+				threshold: 5,
+				breachSide: "above",
+			},
+			"maple-test-share-secret",
+		)
+
+		// The harness warehouse refuses every query, as an outage or timeout would.
+		const response = await harness.request("POST", "/v2/share/alert-chart", undefined, { chartId })
+		expect(response.status).toBe(503)
+		expect(response.body.error._tag).toBe("@maple/http/errors/SharePersistenceError")
 		await harness.dispose()
 	})
 })

@@ -37,7 +37,8 @@ export const Message = defineMessageUnion({
 	ElapsedCustomerGrace: { orgId: Schema.String },
 	CompletedSaveSelectedPlanKnown: {},
 	CompletedReconnectOrgCollections: {},
-	CompletedRestoreDashboardWidgets: {},
+	/** The Undo's write: `error` is why the widgets could not be put back. */
+	CompletedRestoreDashboardWidgets: { error: Schema.NullOr(Schema.String) },
 	CompletedSignOutOfClerk: {},
 	/** The Clerk identity was handed to the telemetry session (`identify`). */
 	CompletedIdentifySession: {},

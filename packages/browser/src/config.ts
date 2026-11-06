@@ -1,5 +1,4 @@
 import {
-	type IdentifyInput,
 	type MapleIdentity,
 	type MapleRegion,
 	normalizeIdentity,
@@ -79,8 +78,10 @@ export interface MapleBrowserConfig extends SignalOptions {
 		/**
 		 * Cross-origin URLs whose `fetch()` requests carry the W3C `traceparent`
 		 * header, so the browser span and your backend's span join one trace.
-		 * Same-origin requests always carry it. Your API must allow the
-		 * `traceparent` header in CORS. Example: `[/^https:\/\/api\.example\.com\//]`.
+		 * Same-origin requests always carry it. A string is a URL prefix
+		 * (`"https://api.example.com"` covers every path on that origin); a RegExp
+		 * is tested against the full URL. Your API must allow the `traceparent`
+		 * header in CORS.
 		 */
 		readonly propagateTraceHeaderCorsUrls?: ReadonlyArray<string | RegExp>
 	}
@@ -149,7 +150,7 @@ export interface ResolvedConfig extends ResolvedSignalOptions {
 	readonly tracingInstrumentFetch: boolean
 	readonly tracingInstrumentXhr: boolean
 	readonly tracingCaptureErrors: boolean
-	readonly propagateTraceHeaderCorsUrls: ReadonlyArray<string | RegExp>
+	readonly propagateTraceHeaderCorsUrls: ReadonlyArray<RegExp>
 	readonly replayEnabled: boolean
 	readonly replaySampleRate: number
 	readonly replayOnErrorSampleRate: number
@@ -177,7 +178,7 @@ export function resolveIdentity(config: {
 	readonly user?: MapleIdentity | undefined
 	readonly userId?: string | null | undefined
 }): ResolvedIdentity | undefined {
-	return normalizeIdentity((config.user ?? config.userId) as IdentifyInput)
+	return normalizeIdentity(config.user ?? config.userId)
 }
 
 let warnedServiceName = false
@@ -213,7 +214,9 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		tracingInstrumentFetch: config.tracing?.instrumentFetch ?? true,
 		tracingInstrumentXhr: config.tracing?.instrumentXhr ?? true,
 		tracingCaptureErrors: config.tracing?.captureErrors ?? true,
-		propagateTraceHeaderCorsUrls: config.tracing?.propagateTraceHeaderCorsUrls ?? [],
+		propagateTraceHeaderCorsUrls: (config.tracing?.propagateTraceHeaderCorsUrls ?? []).map(
+			corsUrlMatcher,
+		),
 		replayEnabled: replay.enabled,
 		replaySampleRate: replay.sampleRate,
 		replayOnErrorSampleRate: replay.onErrorSampleRate,
@@ -230,4 +233,19 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		respectDoNotTrack: config.privacy?.respectDoNotTrack ?? false,
 		sanitizeUrl: config.privacy?.sanitizeUrl,
 	}
+}
+
+export function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+/**
+ * OTel compares a string entry to the whole request URL, so `"https://api.example.com"`
+ * would never match `https://api.example.com/v1/users`. A string is a prefix that
+ * ends on a URL boundary, so it does not also match `https://api.example.com.evil.io`.
+ */
+function corsUrlMatcher(entry: string | RegExp): RegExp {
+	if (typeof entry !== "string") return entry
+	// A configured trailing slash is part of the prefix; without one, the prefix ends on a boundary.
+	return new RegExp(`^${escapeRegExp(entry)}${entry.endsWith("/") ? "" : "(?:[/?#]|$)"}`)
 }

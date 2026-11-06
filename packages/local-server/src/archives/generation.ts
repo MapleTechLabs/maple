@@ -183,7 +183,9 @@ export const assertNoArchiveShrink = (
 
 /** The bundled TTL raised to any configured floor: the longest a day can live. */
 const maximumRetentionDays = (dataDir: string, signal: string): number | null => {
-	const bundled = LOCAL_SCHEMA_MANIFEST.objects.find((object) => object.name === signal)?.ttl
+	const bundled = Option.getOrUndefined(
+		Arr.findFirst(LOCAL_SCHEMA_MANIFEST.objects, (object) => object.name === signal),
+	)?.ttl
 	const days = bundled === undefined ? null : ttlDaysFromDefinition(`TTL ${bundled}`)
 	if (days === null) return null
 	return Math.max(days, readRawTelemetryRetentionDays(dataDir) ?? 0)
@@ -221,7 +223,12 @@ const restoredRetentionDays = (
 		`SELECT engine_full FROM system.tables WHERE database = 'default' AND name = '${signal.name}'`,
 		"JSONEachRow",
 	)
-	const row = decodeEngineFullRow(Str.split("\n")(text).find((line) => Str.trim(line).length > 0) ?? "")
+	const row = decodeEngineFullRow(
+		Option.getOrElse(
+			Arr.findFirst(Str.split("\n")(text), (line) => Str.trim(line).length > 0),
+			() => "",
+		),
+	)
 	return Option.isSome(row) ? ttlDaysFromDefinition(row.value.engine_full) : null
 }
 
@@ -392,7 +399,8 @@ export const createArchiveGeneration = async (
 	signalName: string,
 	rangeDate: string,
 	tuning: ArchiveTuning,
-	checkpointSelector: "current" | "previous" | string = "current",
+	/** `current`, `previous` or a checkpoint id, validated by `parseCheckpointSelector`. */
+	checkpointSelector: string = "current",
 	faults: ArchiveGenerationFaults = {},
 	options: ArchiveGenerationOptions = {},
 ): Promise<ArchiveGenerationResult> => {
@@ -714,7 +722,7 @@ const parseCount = (text: string): number => {
 		(line) => decodeJsonRecord(line),
 	)
 	const row = rows[0]
-	if (!row) return 0
+	if (row === undefined) return 0
 	const value = row["count()"] ?? row.count
 	const count = typeof value === "number" ? value : Number(value ?? 0)
 	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid count result: ${String(value)}`)

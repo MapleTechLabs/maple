@@ -20,6 +20,7 @@ import {
 	Stream,
 	String as Str,
 } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -119,6 +120,7 @@ const make = Effect.gen(function* () {
 	const slack = yield* SupportSlackClient
 	const members = yield* OrgMembersService
 	const organizations = yield* OrganizationService
+	const random = yield* SecureRandom.SecureRandom
 
 	const findRow = (orgId: OrgId) =>
 		dbExecute("find")((db) =>
@@ -144,7 +146,7 @@ const make = Effect.gen(function* () {
 	 */
 	const reserve = Effect.fn("SupportChannelService.reserve")(function* (orgId: OrgId, userId: UserId) {
 		const now = yield* Clock.currentTimeMillis
-		const reservationId = crypto.randomUUID()
+		const reservationId = yield* random.uuidV4()
 		const inserted = yield* dbExecute("reserve")((db) =>
 			db.run(
 				PG.insertInto(OrgSupportChannels)
@@ -223,13 +225,14 @@ const make = Effect.gen(function* () {
 			}
 			return slack.call("users.conversations", args).pipe(
 				Effect.map((response) => {
-					const found = response.channels?.find(
+					const found = Arr.findFirst(
+						response.channels ?? [],
 						(channel) => channel.name === name && channel.creator === botUserId,
 					)
 					const next = response.response_metadata?.next_cursor ?? ""
-					const more = found === undefined && next !== "" && page + 1 < MAX_CHANNEL_PAGES
+					const more = Option.isNone(found) && next !== "" && page + 1 < MAX_CHANNEL_PAGES
 					return [
-						found === undefined ? [] : [found],
+						Option.toArray(found),
 						more ? Option.some({ page: page + 1, cursor: next }) : Option.none(),
 					] as const
 				}),
@@ -485,7 +488,12 @@ export class SupportChannelService extends Context.Service<SupportChannelService
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
-			Layer.mergeAll(SupportSlackClient.layer, OrgMembersService.layer, OrganizationService.layer),
+			Layer.mergeAll(
+				SupportSlackClient.layer,
+				OrgMembersService.layer,
+				OrganizationService.layer,
+				SecureRandom.layerWebCrypto,
+			),
 		),
 	)
 }

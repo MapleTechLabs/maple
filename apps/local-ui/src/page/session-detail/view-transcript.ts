@@ -50,7 +50,7 @@ const body = <M>(h: HtmlBuilder<M>, event: TranscriptEvent): Html => {
 			h.span(
 				[h.Class(cn("ml-1.5 tabular-nums", event.netStatus >= 400 && "text-severity-error"))],
 				[
-					event.netStatus ? String(event.netStatus) : "-",
+					event.netStatus !== 0 ? String(event.netStatus) : "-",
 					" · ",
 					String(Math.round(event.netDurationMs)),
 					"ms",

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest"
 import { Option } from "effect"
-import { compileIngestRegex, ingestRuleProblems, regexProblem, type IngestRuleSpec } from "./ingest-rules"
+import {
+	compileIngestRegex,
+	ingestRuleProblems,
+	orgRegexBudgetProblem,
+	regexBudgetCost,
+	regexProblem,
+	type IngestRuleSpec,
+} from "./ingest-rules"
 
 const redact = (
 	overrides: Partial<Extract<IngestRuleSpec["action"], { _tag: "redact" }>> = {},
@@ -249,5 +256,70 @@ describe("ingestRuleProblems", () => {
 				action: { _tag: "drop", keepPercent: 10 },
 			}),
 		).toEqual(["metrics can only be dropped entirely (keep 0%)"])
+	})
+})
+
+describe("regex budget", () => {
+	const masking = (patterns: ReadonlyArray<string>): IngestRuleSpec => ({
+		signals: ["logs"],
+		conditions: [],
+		action: redact({ detectors: [], patterns }),
+	})
+
+	it("charges at least what the gateway really compiles", () => {
+		// Sizes the gateway's engine reports for these patterns, in MiB. The gateway refuses an org
+		// past twice the API's budget, so an estimate may be low by less than that.
+		const compiled: ReadonlyArray<readonly [string, number]> = [
+			["\\d{3}-\\d{4}", 0.047],
+			["(?i)password", 0.017],
+			["\\b\\s{100}\\b", 0.077],
+			["(?i)k{500}", 0.129],
+			["[^\\s]{400}", 0.784],
+			["[\\u{100}-\\u{10FFFF}]{800}", 0.715],
+			["[ÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸàâäçéèêëîïôöùûüÿ]{800}", 0.667],
+			["日{500}", 0.07],
+			["😀{120}", 0.023],
+			["(?i)[α-ω]{500}", 0.421],
+		]
+		for (const [pattern, mib] of compiled) {
+			expect(regexProblem(pattern)).toBeNull()
+			expect(regexBudgetCost(pattern) * 1.5).toBeGreaterThan(mib)
+		}
+	})
+
+	it("reads hex escapes by their exact length", () => {
+		// `\\x39` then `a-f`: ASCII, so a class weight, not one past ASCII (`\\x39a` would be U+039A).
+		expect(regexBudgetCost("[\\x30-\\x39a-f]{900}")).toBeCloseTo(900 / 3000)
+		expect(regexBudgetCost("[\\u{100}-\\u{200}]{900}")).toBeGreaterThan(0.85)
+	})
+
+	it("refuses rules whose regexes only fit one by one", () => {
+		// Each pattern alone is accepted; ten of them are not, in one rule or spread over an org.
+		const near = "\\d{170}"
+		expect(regexProblem(near)).toBeNull()
+		const fits = Array.from({ length: 4 }, () => masking([near, near]))
+		expect(orgRegexBudgetProblem(fits)).toBeNull()
+		expect(orgRegexBudgetProblem([...fits, masking([near, near])])).toMatch(
+			/too large to compile together \(105%/,
+		)
+		expect(ingestRuleProblems(masking(Array.from({ length: 10 }, () => near)))).toEqual([
+			expect.stringMatching(/^this rule's regexes are too large to compile together/),
+		])
+	})
+
+	it("counts regex conditions as well as redact patterns", () => {
+		const conditions = Array.from({ length: 10 }, () => ({
+			field: "body" as const,
+			op: "regex" as const,
+			value: "\\d{170}",
+		}))
+		const drop: IngestRuleSpec = {
+			signals: ["logs"],
+			conditions,
+			action: { _tag: "drop", keepPercent: 0 },
+		}
+		expect(ingestRuleProblems(drop)).toEqual([
+			expect.stringMatching(/^this rule's regexes are too large to compile together/),
+		])
 	})
 })

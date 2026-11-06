@@ -28,8 +28,8 @@ import {
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_feedback_e2e")
-const USER = Schema.decodeUnknownSync(UserId)("user_feedback_e2e")
+const ORG = Schema.decodeSync(OrgId)("org_feedback_e2e")
+const USER = Schema.decodeSync(UserId)("user_feedback_e2e")
 
 const testConfig = () =>
 	ConfigProvider.layer(

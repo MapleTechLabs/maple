@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { GithubPrReviewSettingsResponse, PrReviewRepositoryConfig, VcsRepositoryId } from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, withViewInputs } from "foldkit/scene"
@@ -12,8 +13,10 @@ import { Message, type Model } from "./model"
 import { init, retainedOf, update } from "./update"
 import { view as pageView } from "./view"
 
+const MEMBER = Policy.grantsOf(["org:member"])
+
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
-const settings = Schema.decodeUnknownSync(GithubPrReviewSettingsResponse)({
+const settings = Schema.decodeSync(GithubPrReviewSettingsResponse)({
 	settings: {
 		model: "anthropic/claude-sonnet-5.5",
 		defaults: { instructions: "Check OrgId.", dailyLimit: 40 },
@@ -116,6 +119,8 @@ describe("code review settings", () => {
 			}),
 		)
 		expect(names(saved.commands)).toEqual(["FetchCodeReviewSettingsStatus"])
+		// The switch shows the new state; a toast would cover the next rows.
+		expect(saved.outMessage).toBeUndefined()
 		const late = pageUpdate(
 			saved.model,
 			Message.CompletedFetchStatus({
@@ -271,7 +276,7 @@ describe("review model select", () => {
 		const model = loaded().model
 		scene(
 			{ update: pageUpdate, view },
-			given({ ...model, isAdmin: false }),
+			given({ ...model, grants: MEMBER }),
 			expectView(role("combobox", { name: "Review model" })).toBeDisabled(),
 		)
 		scene(

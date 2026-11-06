@@ -3,7 +3,7 @@ import { ALL_VALUE, type ResolvedVariable, type VariableValues } from "@maple/qu
 import { countLabel } from "@maple/ui/lib/format"
 import type { IconName } from "@maple/views/ui/icon"
 import type { MetricSeen } from "./model"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Record as Rec, String as Str, Option } from "effect"
 
 /** The empty-dashboard template, pinned below the list and excluded from every count. */
 export const BLANK_TEMPLATE_ID = "blank"
@@ -116,7 +116,7 @@ const READY: TemplateReadiness = {
 const prefixLabel = (prefix: string): string | null => (prefix === "" ? null : `${prefix}*`)
 
 const firstPrefixLabel = (prefixes: ReadonlyArray<string>): string | null =>
-	Arr.map(prefixes, prefixLabel).find((value) => value !== null) ?? null
+	Option.getOrNull(Arr.findFirst(Arr.map(prefixes, prefixLabel), (value) => value !== null))
 
 /** `computeTemplateReadiness`: `metrics: null` (unknown) reads every template as ready. */
 export const computeReadiness = (
@@ -142,10 +142,8 @@ export const computeReadiness = (
 						: (template.requirement?.missing ?? `no ${firstPrefixLabel(prefixes) ?? "data"}`),
 					prefixLabel: firstPrefixLabel(prefixes),
 					metricCount: new Set(Arr.map(flat, (metric) => metric.metricName)).size,
-					lastSeen: flat.reduce<string | null>(
-						(latest, metric) =>
-							latest === null || metric.lastSeen > latest ? metric.lastSeen : latest,
-						null,
+					lastSeen: Arr.reduce<(typeof flat)[number], string | null>(flat, null, (latest, metric) =>
+						latest === null || metric.lastSeen > latest ? metric.lastSeen : latest,
 					),
 				},
 			]
@@ -166,4 +164,28 @@ export const previewVariableValues = (variables: V2DashboardTemplatePreview["var
 					? [[variable.name, { value: ALL_VALUE, isAll: true, options: [] }]]
 					: [],
 		),
+	)
+
+/** The parameters a template is asked with: trimmed, and only those filled in. */
+export const filledParametersOf = (
+	parameters: Readonly<Record<string, string>>,
+): Readonly<Record<string, string>> =>
+	Rec.fromEntries(
+		Arr.filter(
+			Arr.map(Rec.toEntries(parameters), ([key, value]) => [key, Str.trim(value)] as const),
+			([, value]) => value.length > 0,
+		),
+	)
+
+/** The labels of the required parameters still empty. */
+export const missingRequiredOf = (
+	template: Pick<V2DashboardTemplate, "parameters">,
+	parameters: Readonly<Record<string, string>>,
+): ReadonlyArray<string> =>
+	Arr.map(
+		Arr.filter(
+			template.parameters,
+			(parameter) => parameter.required && Str.trim(parameters[parameter.key] ?? "") === "",
+		),
+		(parameter) => parameter.label,
 	)

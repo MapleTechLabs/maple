@@ -33,8 +33,9 @@ export function mergeBreakdownResults(
 	if (successful.length === 0) return []
 
 	// Single query: return simple { name, value } rows
-	if (successful.length === 1) {
-		return Arr.map(successful[0].data, (item) => ({ name: item.name, value: item.value })).sort(
+	const [only] = successful
+	if (successful.length === 1 && only !== undefined) {
+		return Arr.map(only.data, (item) => ({ name: item.name, value: item.value })).sort(
 			(a, b) => b.value - a.value,
 		)
 	}
@@ -68,6 +69,7 @@ export function mergeBreakdownResults(
 	// Ordered by the first query's values — the one the author added first, which
 	// is the one a reader treats as the subject of the chart.
 	const firstCol = columnNames[0]
+	if (firstCol === undefined) return Array.from(rowsByName.values())
 	return Array.from(rowsByName.values()).sort((a, b) => {
 		const aVal = typeof a[firstCol] === "number" ? a[firstCol] : 0
 		const bVal = typeof b[firstCol] === "number" ? b[firstCol] : 0

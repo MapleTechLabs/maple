@@ -28,6 +28,8 @@ import * as AlertIncident from "./alerts/incident"
 import * as AlertRule from "./alerts/rule"
 import * as AlertsUptimeMonitor from "./alerts/uptime-monitor"
 import * as AlertsUptimeNew from "./alerts/uptime-form"
+import * as AlertsSlo from "./alerts/slo"
+import * as AlertsSloNew from "./alerts/slo-form"
 import * as IngestRuleEditor from "./settings/ingest-rule"
 import * as DashboardsList from "./dashboards/list"
 import * as DashboardTemplates from "./dashboards/templates"
@@ -82,6 +84,8 @@ import * as ServiceDetail from "./services/detail"
 import * as ServiceMap from "./service-map"
 import * as ReplayDetail from "./replays/detail"
 import * as ReplaysList from "./replays/list"
+import * as UsersList from "./users/list"
+import * as UserDetail from "./users/detail"
 import * as ServicesList from "./services/list"
 import * as Settings from "./settings"
 import * as Account from "./settings/account"
@@ -117,6 +121,8 @@ export const pages = [
 	AlertRule.page,
 	AlertsUptimeMonitor.page,
 	AlertsUptimeNew.page,
+	AlertsSlo.page,
+	AlertsSloNew.page,
 	StatusPagesList.page,
 	StatusPageBuilder.page,
 	StatusPageEditor.page,
@@ -179,6 +185,8 @@ export const pages = [
 	Account.page,
 	ReplaysList.page,
 	ReplayDetail.page,
+	UsersList.page,
+	UserDetail.page,
 	Share.page,
 	Analytics.page,
 ]
@@ -284,12 +292,11 @@ export const parkPages = (
 		Array.some(pages, (page) => page.id === left._tag && page.isRevivable) &&
 		!hasLoadInFlight(left.model)
 	const sameSlot = (a: PageSlotBase, b: PageSlotBase) => a._tag === b._tag && a.key === b.key
-	const next = Array.filter(
+	const kept = Array.filter(
 		[...(isLeft ? [left] : []), ...parked],
 		(slot) => entered === null || (slot.orgId === entered.orgId && !sameSlot(slot, entered)),
 	)
-		.filter((slot, index, all) => all.findIndex((other) => sameSlot(other, slot)) === index)
-		.slice(0, PARKED_PAGES_MAX)
+	const next = Array.dedupeWith(kept, sameSlot).slice(0, PARKED_PAGES_MAX)
 	// Nothing parked or taken out: the same array, so the root Model can stay the same reference.
 	return next.length === parked.length && Array.every(next, (slot, index) => slot === parked[index])
 		? parked
@@ -350,6 +357,10 @@ export const blockNavigation = (
 		toHeld(page.blockedNavigation(current, url, context)),
 	)
 }
+
+/** The open instance holds unsaved state, so a reload or tab close asks first (`beforeunload`). */
+export const isBlockingUnload = (current: PageSlot | null): boolean =>
+	current !== null && Option.exists(pageById(current._tag), (page) => page.isBlockingNavigation(current))
 
 export const changeContext = (current: PageSlot | null, context: PageContext): PageTransition =>
 	current === null

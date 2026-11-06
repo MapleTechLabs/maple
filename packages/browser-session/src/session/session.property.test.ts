@@ -13,6 +13,7 @@ import {
 	rotateSession,
 	type SessionRecord,
 } from "./session"
+import * as Arr from "effect/Array"
 
 class FakeStorage {
 	private store = new Map<string, string>()
@@ -100,7 +101,7 @@ describe("session counters", () => {
 							const id =
 								current.past === undefined
 									? getSession().id
-									: seen[Math.max(0, seen.length - 1 - current.past)]!
+									: Arr.getUnsafe(seen, Math.max(0, seen.length - 1 - current.past))
 							take(id, current.kind)
 							break
 						}
@@ -126,9 +127,10 @@ describe("session counters", () => {
 					if (id !== undefined && seen.at(-1) !== id) seen.push(id)
 				}
 				for (const { chunks, versions } of issued.values()) {
-					for (let i = 1; i < chunks.length; i++) expect(chunks[i]!).toBeGreaterThan(chunks[i - 1]!)
+					for (let i = 1; i < chunks.length; i++)
+						expect(chunks[i]).toBeGreaterThan(Arr.getUnsafe(chunks, i - 1))
 					for (let i = 1; i < versions.length; i++)
-						expect(versions[i]!).toBeGreaterThan(versions[i - 1]!)
+						expect(versions[i]).toBeGreaterThan(Arr.getUnsafe(versions, i - 1))
 				}
 			}),
 			{ numRuns: 300 },

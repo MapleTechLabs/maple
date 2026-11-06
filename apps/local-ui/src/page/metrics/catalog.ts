@@ -63,6 +63,6 @@ export const foldCatalogRows = (rows: ReadonlyArray<CH.ListMetricsOutput>): Metr
 	const serviceFacets = Arr.map([...byService.entries()], ([name, metrics]) => ({
 		name,
 		count: metrics.size,
-	})).sort((a, b) => b.count - a.count || Str.localeCompare(b.name)(a.name))
+	})).sort((a, b) => (b.count !== a.count ? b.count - a.count : Str.localeCompare(b.name)(a.name)))
 	return { entries: [...byMetric.values()], serviceFacets }
 }

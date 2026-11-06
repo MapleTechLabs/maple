@@ -15,6 +15,7 @@ import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { Clock, Effect } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { handleRequest } from "./handler"
 import { nativeStorage } from "./storage"
@@ -36,7 +37,7 @@ const props = Effect.gen(function* () {
 
 /** Discharge alchemy's phantom color, the way alchemy's own runtime helpers do. */
 const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effect<A, E> =>
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
+	// oxlint-disable-next-line effecttsgo/strict-effect-provide -- a phantom tag with no service behind it; nothing to compose at a root
 	Effect.provide(effect, RuntimeContext.phantom)
 
 export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
@@ -68,7 +69,7 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
 				const response = yield* handleRequest(web, {
 					storage,
 					nowMs,
-					randomId: () => crypto.randomUUID(),
+					randomId: () => SecureRandom.uuidV4Unsafe(),
 				})
 				yield* Effect.annotateCurrentSpan("http.response.status_code", response.status)
 				return HttpServerResponse.fromWeb(response)

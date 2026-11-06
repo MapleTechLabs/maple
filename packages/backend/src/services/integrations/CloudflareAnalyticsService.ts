@@ -1,4 +1,4 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 /**
  * Cloudflare edge-analytics collector.
  *
@@ -67,7 +67,6 @@ import {
 	Ref,
 	Result,
 	Schema,
-	Record as Rec,
 	String as Str,
 } from "effect"
 import * as CloudflareAnalyticsMetrics from "@maple/backend/observability/CloudflareAnalyticsMetrics"
@@ -323,8 +322,10 @@ const httpZoneSettingsNode = (
 	decoded: SettingsResponseContract,
 	row: CloudflareAnalyticsStateRow,
 ): DatasetSettingsContract | null | undefined => {
-	const zone = (decoded.viewer.zones ?? []).find((entry) => entry.zoneTag === row.zoneId)
-	return zone === undefined ? undefined : (zone.settings?.httpRequestsAdaptiveGroups ?? null)
+	return Option.match(
+		Arr.findFirst(decoded.viewer.zones ?? [], (entry) => entry.zoneTag === row.zoneId),
+		{ onNone: () => undefined, onSome: (zone) => zone.settings?.httpRequestsAdaptiveGroups ?? null },
+	)
 }
 
 const httpDataset: DatasetDef = {
@@ -455,8 +456,13 @@ const firewallDataset: DatasetDef = {
 			}),
 		),
 	settingsNode: (decoded, row) => {
-		const zone = (decoded.viewer.zones ?? []).find((entry) => entry.zoneTag === row.zoneId)
-		return zone === undefined ? undefined : (zone.settings?.firewallEventsAdaptiveGroups ?? null)
+		return Option.match(
+			Arr.findFirst(decoded.viewer.zones ?? [], (entry) => entry.zoneTag === row.zoneId),
+			{
+				onNone: () => undefined,
+				onSome: (zone) => zone.settings?.firewallEventsAdaptiveGroups ?? null,
+			},
+		)
 	},
 }
 
@@ -481,8 +487,10 @@ const dnsDataset: DatasetDef = {
 			}),
 		),
 	settingsNode: (decoded, row) => {
-		const zone = (decoded.viewer.zones ?? []).find((entry) => entry.zoneTag === row.zoneId)
-		return zone === undefined ? undefined : (zone.settings?.dnsAnalyticsAdaptiveGroups ?? null)
+		return Option.match(
+			Arr.findFirst(decoded.viewer.zones ?? [], (entry) => entry.zoneTag === row.zoneId),
+			{ onNone: () => undefined, onSome: (zone) => zone.settings?.dnsAnalyticsAdaptiveGroups ?? null },
+		)
 	},
 }
 
@@ -973,15 +981,15 @@ const partForError = (error: CloudflareGraphqlError, parts: ReadonlyArray<WorkPa
 	if (Arr.isArray(error.path)) {
 		for (const segment of error.path) {
 			if (typeof segment !== "string") continue
-			const part = parts.find((candidate) => candidate.dataset.aliases.includes(segment))
-			if (part) return part
+			const part = Arr.findFirst(parts, (candidate) => candidate.dataset.aliases.includes(segment))
+			if (Option.isSome(part)) return part.value
 		}
 	}
 	const message = Str.toLowerCase(error.message)
-	return (
-		parts.find((candidate) =>
+	return Option.getOrNull(
+		Arr.findFirst(parts, (candidate) =>
 			Arr.some(candidate.dataset.quantileNeedles, (needle) => Str.includes(needle)(message)),
-		) ?? null
+		),
 	)
 }
 
@@ -1066,7 +1074,7 @@ const allPartsFailed = (
  */
 const documentRateLimited = (item: WorkItem, message: string): Array<PartResult> => {
 	const part = item.parts[0]
-	if (!part) return []
+	if (part === undefined) return []
 	return [{ part, outcome: { kind: "rate-limited", message } }]
 }
 
@@ -1134,7 +1142,7 @@ type PollStopReason =
  */
 const documentPlanBlocked = (item: WorkItem, message: string): Array<PartResult> => {
 	const part = item.parts[0]
-	if (!part) return []
+	if (part === undefined) return []
 	return [{ part, outcome: { kind: "plan-blocked", message } }]
 }
 
@@ -1192,7 +1200,7 @@ interface ZoneWatchSettings {
 const WATCH_ALL_ZONES: ZoneWatchSettings = { watchNewZones: true, zoneOverrides: {} }
 
 const isZoneWatched = (settings: ZoneWatchSettings, zoneId: string): boolean =>
-	Rec.has(settings.zoneOverrides, zoneId) ? settings.zoneOverrides[zoneId] : settings.watchNewZones
+	settings.zoneOverrides[zoneId] ?? settings.watchNewZones
 
 interface ZoneSettingsUpdate {
 	readonly accountId: string
@@ -1259,7 +1267,7 @@ interface PollAllOrgsSummary {
 }
 
 export interface CloudflareAnalyticsServiceApi {
-	readonly pollAllOrgs: () => Effect.Effect<PollAllOrgsSummary, IntegrationsPersistenceError>
+	readonly pollAllOrgs: Effect.Effect<PollAllOrgsSummary, IntegrationsPersistenceError>
 	readonly pollOrg: (orgId: OrgId) => Effect.Effect<PollOrgSummary, IntegrationsPersistenceError>
 	readonly getStatus: (
 		orgId: OrgId,
@@ -2019,44 +2027,39 @@ export class CloudflareAnalyticsService extends Context.Service<
 				row,
 				liveScripts: context.liveScripts,
 			})
-			const mapped =
-				item.scope === "zone"
-					? yield* Effect.gen(function* () {
-							const envelope = yield* decodeZoneAnalyticsEnvelope(result.data).pipe(
-								Effect.mapError(() => decodeError("zone")),
-							)
-							const nodeByTag = new Map<string, unknown>()
-							for (const node of envelope.viewer.zones ?? []) {
-								const tag = decodeZoneTagOption(node)
-								if (Option.isSome(tag)) nodeByTag.set(tag.value.zoneTag, node)
-							}
-							const targets = cleanParts.flatMap((part) =>
-								part.rows.flatMap((row) => {
-									const node = nodeByTag.get(row.zoneId)
-									return node === undefined ? [] : [{ part, row, node }]
-								}),
-							)
-							return yield* Effect.forEach(targets, ({ part, row, node }) =>
-								part.dataset
-									.mapNode(node, mapContext(row))
-									.pipe(Effect.map((rows) => ({ part, rows }))),
-							)
-						})
-					: yield* Effect.gen(function* () {
-							const envelope = yield* decodeAccountAnalyticsEnvelope(result.data).pipe(
-								Effect.mapError(() => decodeError("account")),
-							)
-							const node = envelope.viewer.accounts?.[0]
-							const targets = cleanParts.flatMap((part) => {
-								const row = part.rows[0]
-								return node === undefined || row === undefined ? [] : [{ part, row, node }]
-							})
-							return yield* Effect.forEach(targets, ({ part, row, node }) =>
-								part.dataset
-									.mapNode(node, mapContext(row))
-									.pipe(Effect.map((rows) => ({ part, rows }))),
-							)
-						})
+			const mappedAccount = Effect.gen(function* () {
+				const envelope = yield* decodeAccountAnalyticsEnvelope(result.data).pipe(
+					Effect.mapError(() => decodeError("account")),
+				)
+				const node = envelope.viewer.accounts?.[0]
+				const targets = cleanParts.flatMap((part) => {
+					const row = part.rows[0]
+					return node === undefined || row === undefined ? [] : [{ part, row, node }]
+				})
+				return yield* Effect.forEach(targets, ({ part, row, node }) =>
+					part.dataset.mapNode(node, mapContext(row)).pipe(Effect.map((rows) => ({ part, rows }))),
+				)
+			})
+			const mappedZone = Effect.gen(function* () {
+				const envelope = yield* decodeZoneAnalyticsEnvelope(result.data).pipe(
+					Effect.mapError(() => decodeError("zone")),
+				)
+				const nodeByTag = new Map<string, unknown>()
+				for (const node of envelope.viewer.zones ?? []) {
+					const tag = decodeZoneTagOption(node)
+					if (Option.isSome(tag)) nodeByTag.set(tag.value.zoneTag, node)
+				}
+				const targets = cleanParts.flatMap((part) =>
+					part.rows.flatMap((row) => {
+						const node = nodeByTag.get(row.zoneId)
+						return node === undefined ? [] : [{ part, row, node }]
+					}),
+				)
+				return yield* Effect.forEach(targets, ({ part, row, node }) =>
+					part.dataset.mapNode(node, mapContext(row)).pipe(Effect.map((rows) => ({ part, rows }))),
+				)
+			})
+			const mapped = item.scope === "zone" ? yield* mappedZone : yield* mappedAccount
 			const combined: CloudflareMetricRows = {
 				sumRows: mapped.flatMap(({ rows }) => rows.sumRows),
 				gaugeRows: mapped.flatMap(({ rows }) => rows.gaugeRows),
@@ -2915,7 +2918,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			} satisfies PollOrgSummary
 		})
 
-		const pollAllOrgs = Effect.fn("CloudflareAnalyticsService.pollAllOrgs")(function* () {
+		const pollAllOrgs = Effect.gen(function* () {
 			const connectionRows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(OAuthConnections)
@@ -3030,7 +3033,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 				skipped,
 				perOrg,
 			} satisfies PollAllOrgsSummary
-		})
+		}).pipe(Effect.withSpan("CloudflareAnalyticsService.pollAllOrgs"))
 
 		const getStatus = Effect.fn("CloudflareAnalyticsService.getStatus")(function* (orgId: OrgId) {
 			const rows = yield* loadStateRows(orgId)

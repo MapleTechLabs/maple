@@ -1,4 +1,4 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import { Clock, Config, Context, Effect, Fiber, Layer, Option, Schema, String as Str } from "effect"
 import { CacheBackend, type EdgeCacheBackend, type EdgeCacheBackendError } from "./cache-backend"
 import { isolateOutboundSlots, trackOutboundSlot, type OutboundSlotsCell } from "./outbound-slots"
@@ -42,7 +42,7 @@ export interface EdgeCacheGetOrComputeOptions<A = unknown, I = unknown> {
 	 * that a deploy with an incompatible schema change cannot poison reads.
 	 * Encode failures fail loud — they indicate a programmer bug.
 	 */
-	readonly schema?: Schema.Codec<A, I, never, never>
+	readonly schema?: Schema.Codec<A, I>
 	/**
 	 * Override the read deadline for this call, in ms. Defaults to the service's.
 	 *
@@ -265,10 +265,7 @@ export const makeEdgeCacheService = (
 		key: string,
 		nowMs: number,
 		timeoutMs: number,
-	): Effect.Effect<
-		{ readonly value: unknown | undefined; readonly timedOut: boolean },
-		EdgeCacheBackendError
-	> =>
+	): Effect.Effect<{ readonly value: unknown; readonly timedOut: boolean }, EdgeCacheBackendError> =>
 		Effect.gen(function* () {
 			// The slot is held until the UNDERLYING read settles, not until the race
 			// does: an abandoned `cache.match()` cannot be cancelled and keeps its

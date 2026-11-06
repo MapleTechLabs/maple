@@ -1,6 +1,6 @@
 import type { PodRestartsResponse } from "@maple/domain/http"
 import type { Tone } from "@maple/ui/lib/tone"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 export type PodRestartRow = PodRestartsResponse["data"][number]
 
@@ -17,7 +17,7 @@ export interface PodRestartSummary {
 export const podKey = (pod: { namespace: string; podName: string }) => `${pod.namespace}/${pod.podName}`
 
 const byMostRestarts = (a: PodRestartRow, b: PodRestartRow) =>
-	b.restarts - a.restarts || b.totalRestarts - a.totalRestarts
+	b.restarts !== a.restarts ? b.restarts - a.restarts : b.totalRestarts - a.totalRestarts
 
 /** Folds per-container rows into one summary per pod, keyed by `podKey`. */
 export function summarizePodRestarts(
@@ -38,8 +38,10 @@ export function summarizePodRestarts(
 				{
 					restarts: Arr.reduce(ranked, 0, (sum, c) => sum + c.restarts),
 					totalRestarts: Arr.reduce(ranked, 0, (sum, c) => sum + c.totalRestarts),
-					lastTerminatedReason:
-						ranked.find((c) => c.lastTerminatedReason !== "")?.lastTerminatedReason ?? "",
+					lastTerminatedReason: Option.match(
+						Arr.findFirst(ranked, (c) => c.lastTerminatedReason !== ""),
+						{ onNone: () => "", onSome: (c) => c.lastTerminatedReason },
+					),
 				},
 			]
 		}),

@@ -111,7 +111,9 @@ const mapRow = (picker: Picker, key: string, change: (row: PickerRow) => PickerR
 
 /** Swaps the row with the next checked row in `offset`'s direction; unchecked rows stay put. */
 export const moveRow = (picker: Picker, key: string, offset: number): Picker => {
-	const from = picker.rows.findIndex((row) => row.key === key)
+	const found = Arr.findFirstIndex(picker.rows, (row) => row.key === key)
+	if (Option.isNone(found)) return picker
+	const from = found.value
 	const checked = Arr.flatMap(picker.rows, (row, index) => (row.isChecked ? [index] : []))
 	const at = checked.indexOf(from)
 	const to = checked[at + (offset < 0 ? -1 : 1)]

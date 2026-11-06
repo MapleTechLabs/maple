@@ -1,5 +1,5 @@
-import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect } from "effect"
+import { assert, describe, expect, it } from "@effect/vitest"
+import { DateTime, Effect, Array as Arr, String as Str, Option } from "effect"
 import { compile, compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	canUseLogsAggregatesHourly,
@@ -502,16 +502,17 @@ describe("logsListQuery", () => {
 					resourceAttributes: "{}",
 				},
 			])
-			expect(DateTime.formatIso(row!.timestamp)).toBe("2024-01-01T12:00:00.123Z")
+			assert.isDefined(row)
+			expect(DateTime.formatIso(row.timestamp)).toBe("2024-01-01T12:00:00.123Z")
 			const next = yield* compile(
 				logsListQuery({
 					limit: 1,
 					cursorIdentity: {
-						timestamp: row!.exactTimestamp,
-						serviceName: row!.serviceName,
-						traceId: row!.traceId,
-						spanId: row!.spanId,
-						recordIdentity: row!.recordIdentity,
+						timestamp: row.exactTimestamp,
+						serviceName: row.serviceName,
+						traceId: row.traceId,
+						spanId: row.spanId,
+						recordIdentity: row.recordIdentity,
 					},
 				}),
 				baseParams,
@@ -579,9 +580,9 @@ describe("logsListQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 
 		// Cutoff subquery reads only Timestamp — no Body, no toJSONString.
-		const cutoffMatch = sql.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)
+		const cutoffMatch = Option.getOrThrow(Str.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)(sql))
 		expect(cutoffMatch).not.toBeNull()
-		const inner = cutoffMatch![1]!
+		const inner = cutoffMatch[1]
 		expect(inner).not.toContain("Body")
 		expect(inner).not.toContain("toJSONString")
 		expect(inner).toContain("ORDER BY ts DESC")
@@ -592,22 +593,24 @@ describe("logsListQuery", () => {
 		const q = logsListQuery({ serviceName: "api", severity: "ERROR" })
 		const { sql } = compileUnsafe(q, baseParams)
 		// Each filter appears twice — once per stage.
-		expect(sql.match(/ServiceName = 'api'/g)).toHaveLength(2)
-		expect(sql.match(/SeverityText IN \('ERROR', 'Error', 'error'\)/g)).toHaveLength(2)
-		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/ServiceName = 'api'/g)(sql))).toHaveLength(2)
+		expect(
+			Arr.fromIterable(Str.matchAll(/SeverityText IN \('ERROR', 'Error', 'error'\)/g)(sql)),
+		).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(sql))).toHaveLength(2)
 	})
 
 	it("reads oldest-first with a max cutoff when order is asc", () => {
 		const { sql } = compileUnsafe(logsListQuery({ limit: 25, order: "asc" }), baseParams)
-		const cutoffMatch = sql.match(/SELECT max\(ts\) FROM \(([\s\S]*?)\)\)/)
+		const cutoffMatch = Option.getOrThrow(Str.match(/SELECT max\(ts\) FROM \(([\s\S]*?)\)\)/)(sql))
 		expect(cutoffMatch).not.toBeNull()
-		expect(cutoffMatch?.[1]).toContain("ORDER BY ts ASC")
-		expect(cutoffMatch?.[1]).toContain("LIMIT 25")
+		expect(cutoffMatch[1]).toContain("ORDER BY ts ASC")
+		expect(cutoffMatch[1]).toContain("LIMIT 25")
 		expect(sql).toContain("Timestamp <= (SELECT max(ts) FROM (")
 		expect(sql).toContain(
 			"ORDER BY timestamp ASC, serviceName ASC, traceId ASC, spanId ASC, recordIdentity ASC",
 		)
-		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(sql))).toHaveLength(2)
 	})
 
 	it("continues an asc page past its cursor, not behind it", () => {
@@ -634,7 +637,7 @@ describe("logsListQuery", () => {
 			}),
 			baseParams,
 		)
-		expect(sql.match(/'k8s\.pod\.name'/g)?.length ?? 0).toBeGreaterThanOrEqual(2)
+		expect(Arr.fromIterable(Str.matchAll(/'k8s\.pod\.name'/g)(sql)).length).toBeGreaterThanOrEqual(2)
 		expect(sql).toContain("'api-7f9'")
 	})
 })
@@ -795,7 +798,7 @@ describe("environments filter", () => {
 		const q = logsFacetsQuery({ environments: ["production"] })
 		const { sql } = compileUnionUnsafe(q, baseParams)
 		expect(sql).toContain("FROM logs_aggregates_hourly")
-		const matches = sql.match(/DeploymentEnv IN \('production'\)/g) || []
+		const matches = Arr.fromIterable(Str.matchAll(/DeploymentEnv IN \('production'\)/g)(sql))
 		expect(matches.length).toBe(4)
 		expect(sql).not.toContain("ResourceAttributes")
 	})

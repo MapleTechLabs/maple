@@ -30,7 +30,7 @@ export interface ClientConfig {
 	readonly url: string
 	readonly database?: string
 	readonly username?: string
-	readonly password?: Redacted.Redacted<string>
+	readonly password?: Redacted.Redacted
 	readonly settings?: Readonly<Record<string, string | number>>
 }
 export interface QueryOptions {
@@ -68,6 +68,7 @@ const validSettings = (settings: ClientConfig["settings"]) =>
 			(typeof value === "string" || Number.isFinite(value)),
 	)
 const validLimits = (limits: Limits | undefined) =>
+	// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.values would need a cast
 	Arr.every(Object.values(limits ?? {}), (n) => n === undefined || (Number.isSafeInteger(n) && n >= 0))
 
 const transportError = (error: { readonly reason: object }, queryId: string) =>

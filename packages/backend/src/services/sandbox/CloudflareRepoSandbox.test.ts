@@ -27,7 +27,7 @@ import type { RepositoryCheckout } from "@maple/backend/services/integrations/vc
 import { admit, makeCloudflareRepoSandbox } from "./CloudflareRepoSandbox"
 import { NETWORK_DISABLED, REPO_SANDBOX_RUNTIME, repoMount } from "./repo-mount"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_sandbox_test")
+const ORG = Schema.decodeSync(OrgId)("org_sandbox_test")
 const SHA = Str.repeat(40)("c")
 
 const request = (overrides: Partial<ConstructorParameters<typeof SandboxRequest>[0]> = {}) =>
@@ -233,6 +233,34 @@ describe("the Cloudflare repository sandbox", () => {
 				`checkout:${ORG}:octo/shop:main`,
 				`exec:git grep -e boom|@src|sha=${SHA}`,
 			])
+		}),
+	)
+
+	it.effect("carries the Worker's cut flag on each output event", () =>
+		Effect.gen(function* () {
+			const sandbox = makeSandbox(
+				() =>
+					new SandboxRunExited({
+						exitCode: 0,
+						stdout: Str.repeat(4)("\uFFFD"),
+						stderr: "warn",
+						stdoutBytes: 9,
+						stderrBytes: 4,
+						stdoutTruncated: true,
+						stderrTruncated: false,
+						wallTimeMs: 40,
+					}),
+			)
+			const events = yield* Stream.runCollect(sandbox.execute(request()))
+			assert.deepStrictEqual(
+				Arr.flatMap(events, (event) =>
+					event._tag === "SandboxOutput" ? [[event.stream, event.bytes, event.truncated]] : [],
+				),
+				[
+					["stdout", 9, true],
+					["stderr", 4, false],
+				],
+			)
 		}),
 	)
 

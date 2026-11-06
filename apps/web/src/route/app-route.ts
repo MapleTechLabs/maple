@@ -1,4 +1,4 @@
-import { AlertRuleId, AnomalyIncidentId, DashboardId, ErrorIssueId } from "@maple/domain/http"
+import { AlertRuleId, AnomalyIncidentId, DashboardId, EndUserId, ErrorIssueId } from "@maple/domain/http"
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Schema } from "effect"
 import { defineRouteUnion } from "foldkit/route"
@@ -32,6 +32,8 @@ export const AppRoute = defineRouteUnion({
 	AlertsCreate: { search: Search.AlertsCreateSearch },
 	AlertsUptimeNew: { search: Search.AlertsUptimeNewSearch },
 	AlertsUptimeMonitor: { monitorId: Schema.String, search: Search.AlertsUptimeMonitorSearch },
+	AlertsSloNew: { search: Search.AlertsSloNewSearch },
+	AlertsSlo: { sloId: Schema.String, search: Search.AlertsSloSearch },
 	IngestRuleNew: { search: Search.IngestRuleNewSearch },
 	IngestRule: { ruleId: Schema.String },
 	AlertsStatusPage: { pageId: Schema.String, search: Search.AlertsStatusPageSearch },
@@ -87,6 +89,8 @@ export const AppRoute = defineRouteUnion({
 	Replays: { search: Search.ReplaysSearch },
 	Services: { search: Search.ServicesSearch },
 	Traces: { search: Search.TracesSearch },
+	Users: { search: Search.UsersSearch },
+	UserDetail: { userId: EndUserId, search: Search.UserDetailSearch },
 	AgentSessionTool: { toolName: Schema.String, search: Search.AgentSessionToolSearch },
 	McpServer: { serviceName: Schema.String, search: Search.McpServersSearch },
 	McpServerTool: { serviceName: Schema.String, toolName: Schema.String, search: Search.McpServersSearch },

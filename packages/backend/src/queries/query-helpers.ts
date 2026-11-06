@@ -8,7 +8,7 @@ import {
 	type PodInfraTimeseriesRequest,
 	type WorkloadInfraTimeseriesRequest,
 } from "@maple/domain/http"
-import { Effect, Result } from "effect"
+import { Array as Arr, Effect, Result } from "effect"
 
 /**
  * Helpers shared between the query-engine handlers and the app-side query
@@ -187,7 +187,7 @@ export const containerMetricSpec = (metric: ContainerInfraTimeseriesRequest["met
 	switch (metric) {
 		case "cpu":
 			return {
-				metricNames: ["container.cpu.utilization"],
+				metricNames: Arr.make("container.cpu.utilization"),
 				unit: "percent" as const,
 				isSum: false,
 				average: undefined,
@@ -197,7 +197,7 @@ export const containerMetricSpec = (metric: ContainerInfraTimeseriesRequest["met
 			}
 		case "memory_percent":
 			return {
-				metricNames: ["container.memory.percent"],
+				metricNames: Arr.make("container.memory.percent"),
 				unit: "percent" as const,
 				isSum: false,
 				average: undefined,
@@ -207,7 +207,7 @@ export const containerMetricSpec = (metric: ContainerInfraTimeseriesRequest["met
 			}
 		case "uptime":
 			return {
-				metricNames: ["container.uptime"],
+				metricNames: Arr.make("container.uptime"),
 				unit: "seconds" as const,
 				isSum: false,
 				average: undefined,
@@ -219,7 +219,7 @@ export const containerMetricSpec = (metric: ContainerInfraTimeseriesRequest["met
 			// Sampled bytes, not a cumulative counter — summing a bucket's samples
 			// would inflate the chart by samples-per-bucket.
 			return {
-				metricNames: ["container.memory.usage.total"],
+				metricNames: Arr.make("container.memory.usage.total"),
 				unit: "bytes" as const,
 				isSum: true,
 				average: true,
@@ -229,7 +229,10 @@ export const containerMetricSpec = (metric: ContainerInfraTimeseriesRequest["met
 			}
 		case "network":
 			return {
-				metricNames: ["container.network.io.usage.rx_bytes", "container.network.io.usage.tx_bytes"],
+				metricNames: Arr.make(
+					"container.network.io.usage.rx_bytes",
+					"container.network.io.usage.tx_bytes",
+				),
 				unit: "bytes" as const,
 				isSum: true,
 				average: undefined,
@@ -242,7 +245,7 @@ export const containerMetricSpec = (metric: ContainerInfraTimeseriesRequest["met
 			}
 		case "disk_io":
 			return {
-				metricNames: ["container.blockio.io_service_bytes_recursive"],
+				metricNames: Arr.make("container.blockio.io_service_bytes_recursive"),
 				unit: "bytes" as const,
 				isSum: true,
 				average: undefined,

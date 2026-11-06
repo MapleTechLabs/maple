@@ -1,4 +1,5 @@
 import type { V2Source } from "@maple/domain/http/v2"
+import * as Policy from "@maple/domain/policy"
 import type { PushSourcePlatform } from "@maple/domain/primitives"
 import { Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -11,7 +12,15 @@ import { sourceRetrieveKey, sourcesListKey } from "../kit/data"
 import { defaultSourceName } from "../kit/platforms"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
-import { CreateSource, FetchCreatedSource, FetchSourcesList, ScrollToTop, WaitFirstDataPoll } from "./command"
+import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
+import {
+	CreateSource,
+	FetchCreatedSource,
+	FetchSourcesList,
+	ReadNewSourceGrants,
+	ScrollToTop,
+	WaitFirstDataPoll,
+} from "./command"
 import { type DataIntegration, initEmbedded, isDataIntegration } from "../../integrations/embed"
 import type { Message as IntegrationMessage } from "../../integrations/message"
 import type { Model as IntegrationModel } from "../../integrations/model"
@@ -92,6 +101,8 @@ export const init = (route: NewRoute, context: PageContext): Return => {
 	const embedded = initEmbedded(integration, context)
 	const model = withForm(
 		{
+			// Read only on the page under Clerk; self-hosted sessions hold every permission.
+			grants: isClerkAuthEnabled ? null : Policy.allPermissions,
 			platform: null,
 			name: "",
 			isAdvancedOpen: false,
@@ -114,6 +125,14 @@ export const init = (route: NewRoute, context: PageContext): Return => {
 	return platform === null && integration === null
 		? lifted
 		: merge(lifted, readList(lifted.model, context, false))
+}
+
+/** The page reads the session's grants: connecting needs `sources:manage`. */
+export const initPage = (route: NewRoute, context: PageContext): Return => {
+	const step = init(route, context)
+	return isClerkAuthEnabled
+		? { ...step, commands: [ReadNewSourceGrants(), ...(step.commands ?? [])] }
+		: step
 }
 
 const scrolledToTop = (step: Return): Return => ({
@@ -244,6 +263,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 
 export const updateFlow = (model: Model, message: Message, context: PageContext): FlowReturn =>
 	Message.match<FlowReturn>(message, {
+		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		ClickedPushPlatform: ({ platform }) => ({
 			model,
 			outMessage: navigate(hrefOf(Routes.SourcesNew({ search: { platform } }))),

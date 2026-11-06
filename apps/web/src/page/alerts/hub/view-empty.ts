@@ -54,7 +54,7 @@ const TILE_TONE = new Map<AlertTemplateId, { glyph: string; hoverBorder: string 
 ])
 
 export type EmptyStateOptions<M> = Readonly<{
-	isAdmin: boolean
+	canEdit: boolean
 	hasDestinations: boolean
 	serviceName: string | undefined
 	/** `useOpenDestinationDialog()`: set on `/alerts` for admins; otherwise the button links to Routing. */
@@ -63,7 +63,7 @@ export type EmptyStateOptions<M> = Readonly<{
 
 export const alertsEmptyState = <M>(h: HtmlBuilder<M>, options: EmptyStateOptions<M>): Html => {
 	const needsDestination = !options.hasDestinations
-	const description = !options.isAdmin
+	const description = !options.canEdit
 		? "Ask an admin to create the first alert rule."
 		: needsDestination
 			? "A rule opens an incident when a signal crosses a threshold, and sends it somewhere. Pick the somewhere first."
@@ -78,7 +78,7 @@ export const alertsEmptyState = <M>(h: HtmlBuilder<M>, options: EmptyStateOption
 				]),
 				emptyDescription(h, [description]),
 			]),
-			...(options.isAdmin ? [adminSteps(h, options, needsDestination)] : [docsLink(h, "alertRules")]),
+			...(options.canEdit ? [adminSteps(h, options, needsDestination)] : [docsLink(h, "alertRules")]),
 		],
 		"py-12",
 	)

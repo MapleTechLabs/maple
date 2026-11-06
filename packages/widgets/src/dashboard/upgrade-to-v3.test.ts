@@ -1,4 +1,4 @@
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { Schema, Array as Arr, Record as Rec } from "effect"
 import { describe, expect, it } from "vitest"
 import {
@@ -10,7 +10,7 @@ import {
 } from "./access"
 import { MARKDOWN_STATIC_ENDPOINT, QUERY_RESULT_ENDPOINTS, RAW_SQL_ENDPOINT } from "./legacy-endpoints"
 import { DashboardDocumentV3 } from "./v3/document"
-import { isDocumentV3, upgradeDocumentToV3 } from "./upgrade-to-v3"
+import { fromLegacyDataSource } from "./upgrade-to-v3"
 
 const query = { id: "a", name: "A", dataSource: "traces", aggregation: "count" }
 
@@ -69,26 +69,7 @@ const documentWith = (dataSource: unknown, display: unknown = { title: "T" }) =>
 	updatedAt: "2026-01-01T00:00:00.000Z",
 })
 
-/**
- * `upgradeDocumentToV3` returns `unknown` on purpose — it takes raw stored JSON
- * and makes no promise about a document it did not understand. These two helpers
- * do the narrowing once, so no assertion below has to.
- */
-const upgraded = (document: unknown): Record<string, unknown> => {
-	const result = upgradeDocumentToV3(document)
-	if (typeof result !== "object" || result === null) throw new Error("expected an object")
-	return result as Record<string, unknown>
-}
-
-const firstWidget = (document: unknown): Record<string, unknown> => {
-	const widgets = upgraded(document).widgets
-	if (!Arr.isArray(widgets)) throw new Error("expected widgets to be an array")
-	const [widget] = widgets
-	if (typeof widget !== "object" || widget === null) throw new Error("expected a widget object")
-	return widget as Record<string, unknown>
-}
-
-const migratedSource = (dataSource: unknown): unknown => firstWidget(documentWith(dataSource)).dataSource
+const migratedSource = (dataSource: unknown): unknown => fromLegacyDataSource(dataSource)
 
 describe("the v3 upgrade preserves meaning", () => {
 	// The strongest assertion available, and it is nearly free: `access.ts` reads
@@ -123,14 +104,6 @@ describe("the v3 upgrade totality and idempotence", () => {
 		expect(migratedSource(once)).toEqual(once)
 	})
 
-	it.each([
-		{ label: "widgets is not an array", document: { widgets: "nope" } },
-		{ label: "widget is not an object", document: { widgets: [42] } },
-		{ label: "widget has no dataSource", document: { widgets: [{ id: "w" }] } },
-	])("returns $label unchanged rather than throwing", ({ document }) => {
-		expect(upgradeDocumentToV3(document)).toEqual(document)
-	})
-
 	it("carries an unrecognised endpoint through as a route, losing nothing", () => {
 		const source = { endpoint: "some_endpoint_this_build_never_heard_of", params: { a: 1 } }
 		expect(migratedSource(source)).toEqual({
@@ -148,69 +121,11 @@ describe("the v3 upgrade totality and idempotence", () => {
 	})
 })
 
-describe("the v3 upgrade recurses into display.sparkline.dataSource", () => {
-	// `display.sparkline.dataSource` embeds a full data source, and `v1ToV2` never
-	// had to recurse — so there is no precedent in this directory that would have
-	// caught a missed sparkline.
-	it("migrates the sparkline's own data source", () => {
-		const document = documentWith(
-			{ endpoint: MARKDOWN_STATIC_ENDPOINT },
-			{
-				title: "T",
-				sparkline: {
-					enabled: true,
-					dataSource: { endpoint: QUERY_RESULT_ENDPOINTS.timeseries, params: { queries: [query] } },
-				},
-			},
-		)
-		const display = firstWidget(document).display as { sparkline: { dataSource: unknown } }
-
-		expect(display.sparkline.dataSource).toEqual({
-			kind: "query",
-			resultShape: "timeseries",
-			queries: [query],
-		})
-	})
-
-	it("leaves a sparkline with no data source alone", () => {
-		const document = documentWith({ endpoint: "list_traces" }, { sparkline: { enabled: false } })
-		expect(firstWidget(document).display).toEqual({ sparkline: { enabled: false } })
-	})
-})
-
 describe("the v3 upgrade output decodes as v3", () => {
 	const decode = Schema.decodeUnknownSync(DashboardDocumentV3)
 
 	it.each(V2_SOURCES)("$label produces a decodable document", ({ source }) => {
-		expect(() => decode({ ...upgraded(documentWith(source)), schemaVersion: 3 })).not.toThrow()
-	})
-})
-
-// The backfill's "is this row done?" test. It has to agree with the transform,
-// or the script either skips rows it should convert or rewrites rows forever.
-describe("isDocumentV3", () => {
-	it.each(V2_SOURCES)("is false for a stored $label, true once upgraded", ({ source }) => {
-		expect(isDocumentV3(documentWith(source))).toBe(false)
-		expect(isDocumentV3(upgradeDocumentToV3(documentWith(source)))).toBe(true)
-	})
-
-	it("is false when only the sparkline is left behind", () => {
-		const halfDone = documentWith(
-			{ kind: "static" },
-			{ sparkline: { enabled: true, dataSource: { endpoint: "list_traces" } } },
-		)
-		expect(isDocumentV3(halfDone)).toBe(false)
-		expect(isDocumentV3(upgradeDocumentToV3(halfDone))).toBe(true)
-	})
-
-	// A document with nothing to convert counts as done, so the backfill leaves it
-	// alone rather than rewriting every empty dashboard on every run.
-	it.each([
-		{ label: "no widgets array", document: {} },
-		{ label: "an empty widget list", document: { widgets: [] } },
-		{ label: "a widget with no data source", document: { widgets: [{ id: "w" }] } },
-	])("treats $label as done", ({ document }) => {
-		expect(isDocumentV3(document)).toBe(true)
+		expect(() => decode({ ...documentWith(migratedSource(source)), schemaVersion: 3 })).not.toThrow()
 	})
 })
 
@@ -232,7 +147,9 @@ describe("repairs v2-era drafts that were never validated", () => {
 
 	it("makes the repaired document decode, where it would otherwise quarantine", () => {
 		const decode = Schema.decodeUnknownSync(DashboardDocumentV3)
-		expect(() => decode({ ...upgraded(documentWith(withLimit(50))), schemaVersion: 3 })).not.toThrow()
+		expect(() =>
+			decode({ ...documentWith(migratedSource(withLimit(50))), schemaVersion: 3 }),
+		).not.toThrow()
 	})
 
 	it("leaves a well-formed string limit alone", () => {

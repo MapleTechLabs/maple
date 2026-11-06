@@ -53,31 +53,38 @@ export const SearchEntry = Schema.Struct({ id: Schema.String, title: Schema.Stri
 export type SearchEntry = typeof SearchEntry.Type
 
 /** Nav rows an org rollout flag can hide; the shell passes the ones it shows. */
-export const FLAGGED_HREFS: ReadonlySet<string> = new Set(["/releases", "/security", "/status-pages"])
+export const FLAGGED_HREFS: ReadonlySet<string> = new Set([
+	"/releases",
+	"/security",
+	"/status-pages",
+	"/users",
+])
 
 const icon = (name: IconName): Glyph => ({ _tag: "Icon", name })
 const href = (url: string): Target => ({ _tag: "Href", href: url })
 
 /** `paletteNavItems`: every section, its children and their views, deduplicated by title and href. */
 const navigationEntries = (): ReadonlyArray<PaletteEntry> => {
-	const rows = Arr.flatMap(navGroups({ releases: true, securityAudit: true, statusPages: true }), (group) =>
-		Arr.flatMap(group.items, (item) => [
-			{ id: `nav:${item.title}`, title: item.title, href: item.href, icon: item.icon },
-			...Arr.flatMap(item.subItems ?? [], (sub) => [
-				{
-					id: `nav:${item.title}:${sub.title}`,
-					title: sub.paletteTitle ?? sub.title,
-					href: sub.href,
-					icon: sub.icon ?? item.icon,
-				},
-				...Arr.map(sub.views ?? [], (view) => ({
-					id: `nav:${item.title}:${sub.title}:${view.title}`,
-					title: view.paletteTitle ?? `${sub.title} ${view.title}`,
-					href: view.href,
-					icon: view.paletteIcon ?? sub.icon ?? item.icon,
-				})),
+	const rows = Arr.flatMap(
+		navGroups({ releases: true, securityAudit: true, statusPages: true, users: true }),
+		(group) =>
+			Arr.flatMap(group.items, (item) => [
+				{ id: `nav:${item.title}`, title: item.title, href: item.href, icon: item.icon },
+				...Arr.flatMap(item.subItems ?? [], (sub) => [
+					{
+						id: `nav:${item.title}:${sub.title}`,
+						title: sub.paletteTitle ?? sub.title,
+						href: sub.href,
+						icon: sub.icon ?? item.icon,
+					},
+					...Arr.map(sub.views ?? [], (view) => ({
+						id: `nav:${item.title}:${sub.title}:${view.title}`,
+						title: view.paletteTitle ?? `${sub.title} ${view.title}`,
+						href: view.href,
+						icon: view.paletteIcon ?? sub.icon ?? item.icon,
+					})),
+				]),
 			]),
-		]),
 	)
 	// One row per page, titled by its most specific row ("Traces", not its "Explore" parent);
 	// every title that opens the same page stays searchable as a keyword.

@@ -1,7 +1,9 @@
 import { rawSqlDisplayTypeFor, widgetTypeByVisualization } from "@maple/domain/http"
+import { rawSqlIssue } from "@maple/domain/raw-sql"
 import { RAW_SQL_TEMPLATES } from "../../../lib/raw-sql/templates"
 import { dataSourceRawSql, dataSourceTransform, makeRawSqlDataSource } from "@maple/widgets/dashboard"
-import { Schema, String as Str } from "effect"
+import { Array as Arr, Schema, String as Str, Record as Rec } from "effect"
+import { toSeriesFieldOptions } from "./drafts"
 import type { EditorState } from "./editor-state"
 import type { Widget } from "./lowering"
 
@@ -54,23 +56,48 @@ export const reseedForType = (rawSql: RawSqlState, before: TypePair, after: Type
 	return { ...rawSql, draft: reseeded, staged: reseeded }
 }
 
-/** `buildRawSqlDataSource`: a stat or gauge without a reduction reads the first row's `value`. */
+/** The column a SQL stat or gauge reduces while none is typed: the templates' `value`. */
+export const SQL_VALUE_FIELD = "value"
+
+type FieldState = Pick<EditorState, "statValueField" | "queries" | "formulas">
+
+/** The SQL value column: the typed field, never a Builder series name (that pick stays for the Builder). */
+export const sqlValueFieldOf = (state: FieldState): string => {
+	const field = Str.trim(state.statValueField)
+	const builderNames = new Set([
+		...toSeriesFieldOptions(state),
+		...Arr.map(state.queries, (query) => query.name),
+		...Arr.map(state.formulas, (formula) => formula.name),
+	])
+	return builderNames.has(field) ? "" : field
+}
+
+/** `buildRawSqlDataSource`: the transform follows the picked type, so only a stat or gauge reduces. */
 export const rawSqlDataSourceOf = (
 	widget: Widget,
 	draft: RawSqlDraft,
-	state: TypePair,
+	state: Pick<EditorState, "visualization" | "chartId" | "statAggregate"> & FieldState,
 ): Widget["dataSource"] => {
-	const existing = dataSourceTransform(widget.dataSource)
-	const needsScalar = widgetTypeByVisualization(state.visualization)?.isScalar === true
-	const transform =
-		needsScalar && existing?.reduceToValue === undefined
-			? { ...existing, reduceToValue: { field: "value", aggregate: "first" as const } }
-			: existing
+	// A builder or endpoint transform (field maps, hidden series) does not describe SQL rows.
+	const stored =
+		dataSourceRawSql(widget.dataSource) === null ? undefined : dataSourceTransform(widget.dataSource)
+	const { reduceToValue: _previous, ...kept } = stored ?? {}
+	const isScalar = widgetTypeByVisualization(state.visualization)?.isScalar === true
+	const field = sqlValueFieldOf(state)
+	const transform = isScalar
+		? {
+				...kept,
+				reduceToValue: {
+					field: field === "" ? SQL_VALUE_FIELD : field,
+					aggregate: state.statAggregate,
+				},
+			}
+		: kept
 	return makeRawSqlDataSource({
 		sql: draft.sql,
 		displayType: displayTypeOf(state),
 		...(draft.granularitySeconds === null ? undefined : { granularitySeconds: draft.granularitySeconds }),
-		...(transform === undefined ? undefined : { transform }),
+		...(Rec.keys<string, unknown>(transform).length === 0 ? undefined : { transform }),
 	})
 }
 
@@ -79,3 +106,6 @@ export const rawSqlErrorOf = (draft: RawSqlDraft): string | null =>
 	Str.includes("$__orgFilter")(draft.sql)
 		? null
 		: "SQL must include $__orgFilter so the query is scoped to your organization"
+
+/** What blocks both Run preview and Apply: the warehouse's own checks, org filter included. */
+export const isRunnableSql = (draft: RawSqlDraft): boolean => rawSqlIssue(draft.sql) === null

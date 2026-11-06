@@ -1,8 +1,15 @@
-import { Duration, Effect, Schema, String as Str } from "effect"
+import { Duration, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import type { AlertSeverity } from "@maple/domain/http"
 import { displayGroupKey, formatAlertHeadline, truncate, uptimeSummaryLine } from "../../alert-formatting"
 import type { DispatchContext } from "../context"
+import {
+	closesCriticalKey,
+	criticalDedupKey,
+	criticalHasOwnKey,
+	keySeverity,
+	pagingDedupKey,
+	primaryDedupKey,
+} from "../paging-dedup"
 import type { HttpRequestSpec, HttpTransport, RenderInput, SecretConfigOf } from "../Transport"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -11,43 +18,30 @@ type Config = SecretConfigOf<"pagerduty">
 
 const EVENTS_URL = "https://events.pagerduty.com/v2/enqueue"
 
-/**
- * A rule with both a warning and a critical tier pages critical under its own
- * dedup key: re-triggering the warning alert's key would only update that alert,
- * and an acknowledged alert does not page again, so an escalation could go
- * unheard. Every other rule keeps the incident's single key, which is what its
- * already-open alerts were raised under.
- */
-const criticalHasOwnKey = (context: Pick<DispatchContext, "ruleSeverities">): boolean =>
-	context.ruleSeverities !== undefined &&
-	context.ruleSeverities.includes("warning") &&
-	context.ruleSeverities.includes("critical")
-
-const criticalDedupKey = (dedupeKey: string): string => `${dedupeKey}:critical`
-
-/**
- * The tier a delivery's key is chosen from: the queued event's, unless the
- * incident has since fallen below it. A critical trigger retried after a
- * de-escalation must not re-open (and re-page) the alert it closed.
- */
-const keySeverity = (context: Pick<DispatchContext, "severity" | "incidentSeverity">): AlertSeverity =>
-	context.severity === "critical" && context.incidentSeverity === "warning" ? "warning" : context.severity
-
-export const pagerDutyDedupKey = (
-	context: Pick<DispatchContext, "dedupeKey" | "ruleSeverities">,
-	severity: AlertSeverity,
-): string =>
-	severity === "critical" && criticalHasOwnKey(context)
-		? criticalDedupKey(context.dedupeKey)
-		: context.dedupeKey
-
-const resolveRequest = (integrationKey: string, dedupKey: string): HttpRequestSpec => ({
+const actionRequest = (
+	integrationKey: string,
+	action: "resolve" | "acknowledge",
+	dedupKey: string,
+): HttpRequestSpec => ({
 	url: EVENTS_URL,
 	headers: { "content-type": "application/json" },
 	guarded: false,
 	sensitivePath: false,
-	body: encodeJson({ routing_key: integrationKey, event_action: "resolve", dedup_key: dedupKey }),
+	body: encodeJson({ routing_key: integrationKey, event_action: action, dedup_key: dedupKey }),
 })
+
+/**
+ * An acknowledgement covers every alert the incident may hold open: its base key, and the critical
+ * key when the rule pages critical under its own key or the incident ever reached critical (the
+ * rule may have dropped that tier since). PagerDuty ignores an acknowledge for a key it has no
+ * open alert for. There is no un-acknowledge in the Events API.
+ */
+export const pagerDutyAcknowledgeKeys = (
+	context: Pick<DispatchContext, "dedupeKey" | "ruleSeverities" | "incidentPeakSeverity">,
+): ReadonlyArray<string> =>
+	criticalHasOwnKey(context) || context.incidentPeakSeverity === "critical"
+		? [context.dedupeKey, criticalDedupKey(context.dedupeKey)]
+		: [context.dedupeKey]
 
 /**
  * PagerDuty Events API v2. The body is machine-facing, so `custom_details`
@@ -62,6 +56,10 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 	providerLabel: "PagerDuty",
 	render: (input: RenderInput<Config>) => {
 		const { context, templated, linkUrl, chatUrl } = input
+		if (context.eventType === "acknowledge") {
+			const [primary = context.dedupeKey] = pagerDutyAcknowledgeKeys(context)
+			return actionRequest(input.config.integrationKey, "acknowledge", primary)
+		}
 		return {
 			// Fixed vendor host: nothing user-supplied to guard against, and the
 			// path carries no credential (the routing key rides in the body).
@@ -74,10 +72,7 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 				event_action: context.eventType === "resolve" ? "resolve" : "trigger",
 				// A resolve closes the warning-keyed alert here and the critical one
 				// in `followUps`.
-				dedup_key: pagerDutyDedupKey(
-					context,
-					context.eventType === "resolve" ? "warning" : keySeverity(context),
-				),
+				dedup_key: primaryDedupKey(context),
 				payload: {
 					summary: truncate(
 						templated?.title ??
@@ -107,25 +102,24 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 			}),
 		}
 	},
-	// The critical alert closes when the incident resolves or falls back to
-	// warning. The rule may have dropped its critical tier since the key was
-	// minted, so an incident that peaked at critical closes it too. Resolving a
-	// key PagerDuty has never seen is a no-op.
+	// The critical alert closes when the incident resolves or falls back to warning.
 	followUps: (input) => {
 		const { context } = input
-		const mayHoldCriticalKey = criticalHasOwnKey(context) || context.incidentPeakSeverity === "critical"
-		// Judged by where the incident is now, not by the queued event: a warning
-		// reminder delivered after an escalation must leave the critical page open.
-		const closesCritical =
-			context.eventType === "resolve" ||
-			(context.eventType !== "test" && (context.incidentSeverity ?? context.severity) === "warning")
-		return mayHoldCriticalKey && closesCritical
-			? [resolveRequest(input.config.integrationKey, criticalDedupKey(context.dedupeKey))]
+		if (context.eventType === "acknowledge") {
+			return Arr.map(Arr.drop(pagerDutyAcknowledgeKeys(context), 1), (key) =>
+				actionRequest(input.config.integrationKey, "acknowledge", key),
+			)
+		}
+		return closesCriticalKey(context)
+			? [actionRequest(input.config.integrationKey, "resolve", criticalDedupKey(context.dedupeKey))]
 			: []
 	},
 	ack: (input) => ({
-		providerMessage: "Delivered to PagerDuty",
-		providerReference: pagerDutyDedupKey(input.context, keySeverity(input.context)),
+		providerMessage:
+			input.context.eventType === "acknowledge"
+				? "Acknowledged in PagerDuty"
+				: "Delivered to PagerDuty",
+		providerReference: pagingDedupKey(input.context, keySeverity(input.context)),
 	}),
 }
 

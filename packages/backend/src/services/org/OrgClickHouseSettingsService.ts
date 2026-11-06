@@ -1,5 +1,6 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+import * as Policy from "@maple/domain/policy"
 import {
 	IsoDateTimeString,
 	OrgClickHouseApplySchemaStarted,
@@ -264,8 +265,6 @@ const toCachedChSettings = (row: CachedSettingsRow): CachedChSettings => ({
 	chPasswordTag: row.chPasswordTag,
 })
 
-const ROOT_ROLE = Schema.decodeSync(RoleName)("root")
-const ORG_ADMIN_ROLE = Schema.decodeSync(RoleName)("org:admin")
 const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(IsoDateTimeString)
 
 const SkippedEntries = Schema.Array(Schema.Struct({ id: Schema.String, reason: Schema.String }))
@@ -577,8 +576,7 @@ const renderCollectorYaml = (input: {
  * Quote a YAML scalar so any `:` / `#` / leading-whitespace doesn't break
  * the serialiser. We always wrap in double quotes for predictability.
  */
-const quoteYaml = (value: string): string =>
-	`"${Str.replace(/"/g, '\\"')(Str.replace(/\\/g, "\\\\")(value))}"`
+const quoteYaml = (value: string): string => `"${Str.replace(/[\\"]/g, "\\$&")(value)}"`
 
 const normalizeHttpUrl = (raw: string): Effect.Effect<string, OrgClickHouseSettingsValidationError> =>
 	validateExternalUrl(raw).pipe(
@@ -633,9 +631,6 @@ export const validateClickHouseCredentialTransport = (
 				: Effect.void
 		}),
 	)
-
-const isOrgAdmin = (roles: ReadonlyArray<RoleName>) =>
-	roles.includes(ROOT_ROLE) || roles.includes(ORG_ADMIN_ROLE)
 
 const isIsoDateTime = (value: number | null | undefined) =>
 	value == null ? null : decodeIsoDateTimeStringSync(new Date(value).toISOString())
@@ -772,7 +767,7 @@ const mapStatusToError = (
 	never,
 	OrgClickHouseSettingsUpstreamRejectedError | OrgClickHouseSettingsUpstreamUnavailableError
 > => {
-	const message = Str.split("\n")(text)[0]?.slice(0, 500) ?? ""
+	const message = Str.slice(0, 500)(Arr.headNonEmpty(Str.split("\n")(text)))
 	if (status === 401 || status === 403) {
 		return Effect.fail(
 			new OrgClickHouseSettingsUpstreamRejectedError({
@@ -910,11 +905,13 @@ const fetchActualSchema = (client: HttpClient.HttpClient, config: ClickHouseExec
 	})
 
 // Malformed rows are skipped: the response comes from our own queries against system.* tables.
-const parseJsonEachRow = <A>(text: string, decode: (line: string) => Option.Option<A>): ReadonlyArray<A> =>
-	Arr.filter(
+const parseJsonEachRow = <A>(text: string, decode: (line: string) => Option.Option<A>): ReadonlyArray<A> => {
+	const lines = Arr.filter(
 		Arr.map(Str.split("\n")(text), (line) => Str.trim(line)),
 		(line) => line.length > 0,
-	).flatMap((line) => Option.toArray(decode(line)))
+	)
+	return Arr.flatMap(lines, (line) => Option.toArray(decode(line)))
+}
 
 // The migration runner + backfill chunking now live in the background
 // schema-apply Workflow (apps/api/src/workflows/ClickHouseSchemaApplyWorkflow.run.ts),
@@ -952,10 +949,11 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		const requireAdmin = Effect.fn("OrgClickHouseSettingsService.requireAdmin")(function* (
 			roles: ReadonlyArray<RoleName>,
 		) {
-			if (isOrgAdmin(roles)) return
-			return yield* new OrgClickHouseSettingsForbiddenError({
-				message: "Only org admins can manage ClickHouse settings",
-			})
+			return yield* Policy.check(
+				roles,
+				"warehouse:manage",
+				(denial) => new OrgClickHouseSettingsForbiddenError({ message: denial.message }),
+			)
 		})
 
 		const selectActiveRow = Effect.fn("OrgClickHouseSettingsService.selectActiveRow")(function* (
@@ -1399,7 +1397,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				),
 			)
 			const row = rows[0]
-			if (!row) {
+			if (row === undefined) {
 				return new OrgClickHouseApplySchemaStatus({
 					status: "idle",
 					phase: null,

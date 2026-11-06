@@ -1,7 +1,7 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { mintOrgReadJwt } from "@maple/backend/services/auth/tinybird-jwt"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 const enabled = process.env.TINYBIRD_LOCAL_E2E === "1"
 const apiBase = Str.replace(/\/$/, "")(process.env.TINYBIRD_LOCAL_E2E_URL ?? "http://127.0.0.1:7181")
@@ -52,11 +52,12 @@ const createWorkspace = async (localTokens: LocalTokens): Promise<LocalWorkspace
 		body: new URLSearchParams({ name: workspaceName }),
 	})
 	await responseJson<Record<string, unknown>>(response)
-	const created = (await listWorkspaces(localTokens.admin_token)).find(
+	const created = Arr.findFirst(
+		await listWorkspaces(localTokens.admin_token),
 		(candidate) => candidate.name === workspaceName,
 	)
-	if (!created) throw new Error("Tinybird Local workspace was not returned after creation")
-	return created
+	if (Option.isNone(created)) throw new Error("Tinybird Local workspace was not returned after creation")
+	return created.value
 }
 
 const buildDatasource = async (target: LocalWorkspace): Promise<void> => {
@@ -106,13 +107,14 @@ const loadWorkspaceSigningKey = async (target: LocalWorkspace): Promise<string> 
 			readonly scopes: ReadonlyArray<{ readonly type: string }>
 		}>
 	}>(response)
-	const adminToken = body.tokens.find(
+	const adminToken = Arr.findFirst(
+		body.tokens,
 		(candidate) =>
 			candidate.name === "workspace admin token" &&
 			Arr.some(candidate.scopes, (scope) => scope.type === "ADMIN"),
 	)
-	if (!adminToken) throw new Error("Tinybird Local did not return a workspace admin token")
-	return adminToken.token
+	if (Option.isNone(adminToken)) throw new Error("Tinybird Local did not return a workspace admin token")
+	return adminToken.value.token
 }
 
 const scopedToken = (target: LocalWorkspace, signingKey: string): string =>

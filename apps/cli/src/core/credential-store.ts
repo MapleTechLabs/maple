@@ -81,7 +81,7 @@ export const writeNativeCredential = (
 ): Effect.Effect<boolean, never, ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const account = credentialAccount(apiUrl)
-		const stored = yield* Effect.gen(function* () {
+		const storeNative = Effect.gen(function* () {
 			if (process.platform === "darwin") {
 				// With -w as the final option and no argument, `security` prompts for
 				// the secret rather than taking it as an argv word, so it never shows
@@ -103,6 +103,7 @@ export const writeNativeCredential = (
 			}
 			return false
 		})
+		const stored = yield* storeNative
 		if (!stored) return false
 		// Neither helper reports a partial write through its exit status, and the
 		// caller drops the file fallback whenever this returns true — so prove the

@@ -18,6 +18,7 @@ import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
 import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
 import { randomUUID } from "node:crypto"
 import { String as Str } from "effect"
+import * as Arr from "effect/Array"
 
 const withArchive = async (run: (archiveDir: string) => Promise<void> | void): Promise<void> => {
 	const parent = mkdtempSync(join(tmpdir(), "maple-archive-manifest-test-"))
@@ -77,7 +78,7 @@ describe("archive generation manifest parser", () => {
 		strictEqual(parsed.generationId, generationId)
 		strictEqual(parsed.signal, "traces")
 		strictEqual(parsed.shards.length, 1)
-		strictEqual(parsed.shards[0]!.bytes, 4096)
+		strictEqual(Arr.getUnsafe(parsed.shards, 0).bytes, 4096)
 	})
 
 	it("rejects an unknown (future) format version", () => {
@@ -153,7 +154,7 @@ describe("archive generation manifest parser", () => {
 
 	it("rejects a malformed shard name", () => {
 		const bad = validGenerationManifest({
-			shards: [{ ...validGenerationManifest().shards[0]!, name: "../escape.parquet" }],
+			shards: [{ ...validGenerationManifest().shards[0], name: "../escape.parquet" }],
 		})
 		throws(() => parseArchiveGenerationManifest(bad), /shard name/)
 	})
@@ -246,9 +247,9 @@ describe("archive manifest tuningConfig identity", () => {
 		})
 		const parsed = parseArchiveGenerationManifest(manifest, "traces", "2026-06-01", generationId)
 		ok(parsed.tuningConfig !== null)
-		strictEqual(parsed.tuningConfig!.configName, "calib-2026.json")
-		strictEqual(parsed.tuningConfig!.sha256, Str.repeat(64)("b"))
-		strictEqual(parsed.tuningConfig!.formatVersion, 1)
+		strictEqual(parsed.tuningConfig.configName, "calib-2026.json")
+		strictEqual(parsed.tuningConfig.sha256, Str.repeat(64)("b"))
+		strictEqual(parsed.tuningConfig.formatVersion, 1)
 	})
 
 	it("accepts null tuningConfig (no config loaded)", () => {

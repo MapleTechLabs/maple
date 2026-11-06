@@ -14,9 +14,11 @@
 import {
 	ConnectorCredentials,
 	decodeChatActionControlId,
+	decodeChatAlertAckControlId,
 	driveChatTurn,
 	WORKSPACE_CREDENTIALS,
 	type ChatActionRequest,
+	type ChatAlertAckAction,
 	type ChatBlock,
 	type ChatChartRef,
 	type ChatConversation,
@@ -38,6 +40,7 @@ import {
 import type { ChatSessionClient } from "@maple/domain/chat-session-stub"
 import { ChatConnectorId, ExternalUserId, type OrgId, type UserId } from "@maple/domain/primitives"
 import { Clock, Duration, Effect, Exit, Option, Schema, Array as Arr, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { settledMessageBlocks } from "./approval.ts"
 import {
@@ -49,6 +52,8 @@ import {
 } from "./conversation.ts"
 import { chatTurnEvents, sessionUnreachable } from "./events.ts"
 import type { RelayTurnCheckpoint } from "./settle.ts"
+
+const secureRandom = SecureRandom.make(SecureRandom.randomBytesUnsafe)
 
 /** The org behind a workspace, and who the person acting is in Maple, when one was asked about. */
 export interface RelayWorkspace {
@@ -72,6 +77,27 @@ export class WorkspaceLookupFailed extends Schema.TaggedError<WorkspaceLookupFai
 	"@maple/chat-bot/WorkspaceLookupFailed",
 	{ connector: ChatConnectorId, message: Schema.String },
 ) {}
+
+/** A click on an alert card's Acknowledge or Unacknowledge button, in the workspace's org. */
+export interface RelayAlertAckRequest {
+	readonly orgId: OrgId
+	readonly connector: ChatConnectorId
+	/** Off the control: forgeable, so the host scopes it to `orgId` and nothing else. */
+	readonly incidentId: string
+	readonly action: ChatAlertAckAction
+	/** The card that was clicked, to redraw it. */
+	readonly messageId: string
+	/** Linked Maple user where the connector can prove one, else only the platform's name. */
+	readonly userId: UserId | null
+	readonly displayName: string
+}
+
+/** What came of an ack click. `card` is the clicked message redrawn, when Maple posted it. */
+export type RelayAlertAckOutcome =
+	| { readonly kind: "applied"; readonly card: Option.Option<ReadonlyArray<ChatBlock>> }
+	| { readonly kind: "resolved"; readonly card: Option.Option<ReadonlyArray<ChatBlock>> }
+	| { readonly kind: "not_found" }
+	| { readonly kind: "unavailable" }
 
 export interface RelayPorts<R = never> {
 	/** The connector's outbound half — how a turn is shown on the platform it was asked on. */
@@ -124,6 +150,8 @@ export interface RelayPorts<R = never> {
 	readonly announceUnlinked: Effect.Effect<boolean>
 	/** Checkpoint the turn's posted messages, for settling it after an eviction (`./settle.ts`). */
 	readonly recordTurn: (checkpoint: RelayTurnCheckpoint) => Effect.Effect<void>
+	/** Acknowledge or unacknowledge an alert incident from its card. Never fails; see the outcome. */
+	readonly alertAck: (request: RelayAlertAckRequest) => Effect.Effect<RelayAlertAckOutcome>
 }
 
 /**
@@ -142,6 +170,10 @@ const BUSY_NOTICE = "Still working on the previous message here — ask again on
 
 const UNAVAILABLE_NOTICE = "Maple's agent can't be reached from here right now."
 
+const ALERT_RESOLVED_NOTICE = "That incident is already resolved, so there is nothing to acknowledge."
+const ALERT_GONE_NOTICE = "That incident no longer exists in Maple."
+const ALERT_UNAVAILABLE_NOTICE = "Maple couldn't record that just now. Try again in a moment."
+
 /** The control outlived what it pointed at: a wiped conversation, or a build that changed the log. */
 const PROPOSAL_GONE_NOTICE = "That change isn't waiting for a decision any more."
 
@@ -151,7 +183,7 @@ const PROPOSAL_GONE_NOTICE = "That change isn't waiting for a decision any more.
  * which is where a session is.
  */
 const linkNotice = (connector: ChatConnectorId, appBaseUrl: string, refused: "ask" | "approve") => {
-	const platform = Str.toUpperCase(connector.charAt(0)) + Str.slice(1)(connector)
+	const platform = Str.toUpperCase(Str.slice(0, 1)(connector)) + Str.slice(1)(connector)
 	const link = `[Link your account](${appBaseUrl}/integrations)`
 	return [
 		{
@@ -385,7 +417,7 @@ const relayMessage = Effect.fn("ChatBotRelay.relayTurn")(function* <R>(
 	const claimed = yield* session
 		.beginTurn({
 			sessionId,
-			messageId: crypto.randomUUID(),
+			messageId: yield* secureRandom.uuidV4(),
 			text: chatTurnText(message, { now, recent, seenUpTo }),
 			tenant: connectorTurnTenant(orgId),
 			origin: {
@@ -464,6 +496,10 @@ const settleAction = Effect.fn("ChatBotRelay.settleApproval")(function* <R>(
 	ports: RelayPorts<R>,
 ) {
 	yield* Effect.annotateCurrentSpan({ "maple.chat.connector": action.connector })
+	const alertAck = decodeChatAlertAckControlId(action.actionToken)
+	if (Option.isSome(alertAck)) {
+		return yield* settleAlertAck(action, alertAck.value.action, alertAck.value.incidentId, ports)
+	}
 	const control = decodeChatActionControlId(action.actionToken)
 	// A platform hands back whatever was on the control that was clicked, which includes controls
 	// Maple never rendered. Not ours is not an error.
@@ -569,6 +605,78 @@ const settleAction = Effect.fn("ChatBotRelay.settleApproval")(function* <R>(
 })
 
 /**
+ * A click on an alert card's ack button. Anyone in the channel may acknowledge: where the connector
+ * can link accounts the ack is recorded as that Maple user, otherwise under the platform name.
+ * The org is the workspace's; the incident id off the control is only looked up inside it.
+ */
+const settleAlertAck = Effect.fn("ChatBotRelay.settleAlertAck")(function* <R>(
+	action: InboundAction,
+	ackAction: ChatAlertAckAction,
+	incidentId: string,
+	ports: RelayPorts<R>,
+) {
+	yield* Effect.annotateCurrentSpan({
+		"maple.chat.alert_ack.action": ackAction,
+		"maple.alert.incident_id": incidentId,
+	})
+	const transport = yield* ports.outbound.transport
+	const clicker = decodeExternalUserId(action.actor.id)
+	const workspace = yield* Effect.exit(
+		ports.resolveWorkspace(action.connector, action.workspaceId, Option.getOrUndefined(clicker)),
+	)
+	if (Exit.isFailure(workspace) || Option.isNone(workspace.value)) {
+		yield* Effect.annotateCurrentSpan({ "maple.chat.alert_ack": "unavailable" })
+		return yield* tellClicker(transport, action, notice(ALERT_UNAVAILABLE_NOTICE))
+	}
+	const { orgId, linkedUserId } = workspace.value.value
+	yield* Effect.annotateCurrentSpan({ orgId })
+
+	const outcome = yield* ports.alertAck({
+		orgId,
+		connector: action.connector,
+		incidentId,
+		action: ackAction,
+		messageId: action.messageId,
+		userId: linkedUserId ?? null,
+		displayName: action.actor.displayName,
+	})
+	yield* Effect.annotateCurrentSpan({ "maple.chat.alert_ack": outcome.kind })
+	const redraw = (card: Option.Option<ReadonlyArray<ChatBlock>>) =>
+		Option.match(card, {
+			onNone: () => Effect.void,
+			onSome: (blocks) =>
+				transport.edit({ target: replyTarget(action), messageId: action.messageId }, blocks).pipe(
+					Effect.tapError((error) =>
+						Effect.logWarning("An acknowledged alert card could not be redrawn").pipe(
+							Effect.annotateLogs({ "error.type": error.operation }),
+						),
+					),
+					Effect.ignore,
+				),
+		})
+	switch (outcome.kind) {
+		case "applied":
+			// No card to redraw (a digest, an old delivery): say it privately instead.
+			return yield* Option.isSome(outcome.card)
+				? redraw(outcome.card)
+				: tellClicker(
+						transport,
+						action,
+						notice(ackAction === "acknowledge" ? "Acknowledged." : "Unacknowledged."),
+					)
+		case "resolved":
+			yield* redraw(outcome.card)
+			return yield* tellClicker(transport, action, notice(ALERT_RESOLVED_NOTICE))
+		case "not_found":
+			return yield* tellClicker(transport, action, notice(ALERT_GONE_NOTICE))
+		case "unavailable":
+			return yield* tellClicker(transport, action, notice(ALERT_UNAVAILABLE_NOTICE))
+		default:
+			return outcome satisfies never
+	}
+})
+
+/**
  * Put the decision on the message that carried the controls.
  *
  * Re-read rather than reported: the session's log is what the decision produced, and rendering it
@@ -594,10 +702,11 @@ const showDecision = Effect.fn("ChatBotRelay.showDecision")(function* <R>(
 		),
 	)
 	// The session just settled this call, so its message is there.
-	const message = history.find((candidate) =>
+	const found = Arr.findFirst(history, (candidate) =>
 		Arr.some(candidate.toolCalls, (call) => call.id === request.toolCallId),
 	)
-	if (message === undefined) return
+	if (Option.isNone(found)) return
+	const message = found.value
 	const transport = yield* ports.outbound.transport
 	const blocks = settledMessageBlocks(
 		message,
@@ -619,12 +728,16 @@ const showDecision = Effect.fn("ChatBotRelay.showDecision")(function* <R>(
 	)
 })
 
+/** What relaying one event can fail with; every failure is caught below. */
+type RelayedError<R> =
+	| Effect.Error<ReturnType<typeof relayMessage<R>>>
+	| Effect.Error<ReturnType<typeof settleAction<R>>>
+
 /**
  * A switch rather than a chain of ternaries: an event kind added to the contract has to be answered
- * here rather than quietly taking the last branch. The error channel is erased because every
- * failure is caught below — nothing above this can do anything with one.
+ * here rather than quietly taking the last branch.
  */
-const relayed = <R>(event: InboundEvent, ports: RelayPorts<R>): Effect.Effect<void, unknown, R> => {
+const relayed = <R>(event: InboundEvent, ports: RelayPorts<R>): Effect.Effect<void, RelayedError<R>, R> => {
 	switch (event.type) {
 		case "message":
 			return relayMessage(event, ports)

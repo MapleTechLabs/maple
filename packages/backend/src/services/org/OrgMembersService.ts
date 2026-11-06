@@ -6,7 +6,7 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import { Array as Arr, Context, Effect, Layer, Option, Redacted, Stream } from "effect"
+import { Array as Arr, Context, Effect, Layer, Option, Redacted, Stream, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 
@@ -82,7 +82,7 @@ const make = Effect.gen(function* () {
 	const env = yield* Env
 
 	const clerk =
-		env.MAPLE_AUTH_MODE.toLowerCase() === "clerk" && Option.isSome(env.CLERK_SECRET_KEY)
+		Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk" && Option.isSome(env.CLERK_SECRET_KEY)
 			? createClerkClient({ secretKey: Redacted.value(env.CLERK_SECRET_KEY.value) })
 			: null
 
@@ -118,13 +118,19 @@ const make = Effect.gen(function* () {
 	}
 
 	const memberName = (member: OrganizationMembership): string | null =>
-		[member.publicUserData?.firstName, member.publicUserData?.lastName].filter(Boolean).join(" ") || null
+		Arr.join(
+			Arr.filter(
+				[member.publicUserData?.firstName, member.publicUserData?.lastName],
+				(part): part is string => typeof part === "string" && part !== "",
+			),
+			" ",
+		) || null
 
 	const listMembers = Effect.fn("OrgMembersService.listMembers")(function* (orgId: OrgId) {
 		yield* Effect.annotateCurrentSpan("orgId", orgId)
 		if (clerk === null) return yield* notConfigured
 		const memberships = yield* listMemberships(clerk, orgId)
-		return memberships.flatMap((member): Array<OrgMember> => {
+		return Arr.flatMap(memberships, (member): Array<OrgMember> => {
 			const userId = member.publicUserData?.userId
 			const email = member.publicUserData?.identifier
 			if (!userId || !email) return []
@@ -143,7 +149,9 @@ const make = Effect.gen(function* () {
 		yield* Effect.annotateCurrentSpan("orgId", orgId)
 		if (clerk === null) return yield* notConfigured
 		const memberships = yield* listMemberships(clerk, orgId)
-		const userIds = memberships.flatMap((member) => member.publicUserData?.userId ?? [])
+		const userIds = Arr.flatMap(memberships, (member) =>
+			Option.toArray(Option.fromNullishOr(member.publicUserData?.userId)),
+		)
 		// Clerk filters by at most 100 user ids per call.
 		const users = yield* Effect.forEach(
 			Arr.chunksOf(userIds, 100),
@@ -163,8 +171,13 @@ const make = Effect.gen(function* () {
 				),
 			{ concurrency: 2 },
 		)
-		const byId = new Map(users.flatMap((page) => page.data).map((user) => [user.id, user]))
-		return memberships.map((member): MemberActivity => {
+		const byId = new Map(
+			Arr.map(
+				Arr.flatMap(users, (page) => page.data),
+				(user) => [user.id, user] as const,
+			),
+		)
+		return Arr.map(memberships, (member): MemberActivity => {
 			const user = byId.get(member.publicUserData?.userId ?? "")
 			return {
 				name: memberName(member),
@@ -197,7 +210,7 @@ const make = Effect.gen(function* () {
 					}),
 			),
 		)
-		return page.data.map((membership): UserOrganization => ({
+		return Arr.map(page.data, (membership): UserOrganization => ({
 			orgId: membership.organization.id,
 			name: membership.organization.name,
 			createdAtMs: membership.organization.createdAt,
@@ -213,7 +226,7 @@ const make = Effect.gen(function* () {
 			"maple.organization.member.requested_count": userIds.length,
 		})
 		const members = yield* listMembers(orgId)
-		const byUserId = new Map(members.map((member) => [member.userId, member]))
+		const byUserId = new Map(Arr.map(members, (member) => [member.userId, member] as const))
 		const resolved: Array<OrgMember> = []
 		const unknown: Array<UserId> = []
 		const seen = new Set<string>()

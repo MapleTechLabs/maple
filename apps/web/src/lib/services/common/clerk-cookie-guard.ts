@@ -60,7 +60,7 @@ export function cookieDomainCandidates(hostname: string): string[] {
 
 function parseCookieNames(cookieHeader: string): string[] {
 	return Arr.filter(
-		Arr.map(Str.split(";")(cookieHeader), (part) => Str.split("=")(part)[0]?.trim() ?? ""),
+		Arr.map(Str.split(";")(cookieHeader), (part) => Str.trim(Str.split("=")(part)[0])),
 		(name) => name.length > 0,
 	)
 }
@@ -89,6 +89,7 @@ export async function purgeForeignClerkCookies(publishableKey: string): Promise<
 		// (e.g. `crypto.subtle` missing on an insecure origin) reproduces exactly
 		// the 403/redirect loop this guard exists to prevent, so leave a
 		// breadcrumb instead of failing silently.
+		// @effect-diagnostics-next-line globalConsole:off -- boot code that runs before the app's logger exists
 		console.warn("[clerk-cookie-guard] failed to purge foreign __client_uat cookies", error)
 	}
 }

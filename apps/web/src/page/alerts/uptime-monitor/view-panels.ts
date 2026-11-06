@@ -4,7 +4,7 @@ import { countLabel, formatBucketLabel, formatNumber } from "@maple/ui/lib/forma
 import { TONE_COLOR, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatAlertDateTime, formatAlertTime } from "@maple/web-data/alerts/form-utils"
-import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str, Order } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
@@ -177,7 +177,7 @@ export const kpiRail = (
 				value: formatShare(share),
 				tone: share !== null && share < 1 ? "warn" : "neutral",
 				compact: true,
-				subline: `Over the last ${monitor.state.recent.length} checks`,
+				subline: `Over the last ${countLabel(monitor.state.recent.length, "check")}`,
 			}),
 		])
 	}
@@ -190,8 +190,8 @@ export const kpiRail = (
 			p50: recent.p50,
 			p95: recent.p95,
 			p99: recent.p99,
-			scope: `last ${monitor.state.recent.length} checks`,
-			subline: `last ${monitor.state.recent.length} checks`,
+			scope: `last ${countLabel(monitor.state.recent.length, "check")}`,
+			subline: `last ${countLabel(monitor.state.recent.length, "check")}`,
 		}),
 		onSome: (data) => ({
 			share: data.checks === 0 ? null : (data.checks - data.failures) / data.checks,
@@ -255,33 +255,33 @@ const breakBuckets = (stats: CheckStats, intervalMs: number): ReadonlyArray<stri
 export const chartRows = (stats: CheckStats, intervalMs: number) => {
 	const stepMs = bucketStepMs(stats.points, stats.windowEndMs)
 	const gapAfterMs = 2 * Math.max(intervalMs, stepMs)
-	return stats.points.reduce<{
-		rows: ReadonlyArray<Record<string, string | number | boolean | null>>
-		emptySinceMs: number | null
-	}>(
-		(acc, point) => {
-			const atMs = isoMs(point.bucket)
-			if (point.totalCount === 0) return { rows: acc.rows, emptySinceMs: acc.emptySinceMs ?? atMs }
-			const broken =
-				acc.rows.length > 0 && acc.emptySinceMs !== null && atMs - acc.emptySinceMs > gapAfterMs
-			const gap = {
-				bucket: new Date(acc.emptySinceMs ?? atMs).toISOString(),
-				p50LatencyMs: null,
-				p95LatencyMs: null,
-				p99LatencyMs: null,
-				partial: false,
-			}
-			const row = {
-				bucket: point.bucket,
-				p50LatencyMs: point.p50LatencyMs,
-				p95LatencyMs: point.p95LatencyMs,
-				p99LatencyMs: point.p99LatencyMs,
-				partial: point.partial,
-			}
-			return { rows: [...acc.rows, ...(broken ? [gap] : []), row], emptySinceMs: null }
-		},
-		{ rows: [], emptySinceMs: null },
-	).rows
+	return Arr.reduce<
+		CheckPoint,
+		{
+			rows: ReadonlyArray<Record<string, string | number | boolean | null>>
+			emptySinceMs: number | null
+		}
+	>(stats.points, { rows: [], emptySinceMs: null }, (acc, point) => {
+		const atMs = isoMs(point.bucket)
+		if (point.totalCount === 0) return { rows: acc.rows, emptySinceMs: acc.emptySinceMs ?? atMs }
+		const broken =
+			acc.rows.length > 0 && acc.emptySinceMs !== null && atMs - acc.emptySinceMs > gapAfterMs
+		const gap = {
+			bucket: new Date(acc.emptySinceMs ?? atMs).toISOString(),
+			p50LatencyMs: null,
+			p95LatencyMs: null,
+			p99LatencyMs: null,
+			partial: false,
+		}
+		const row = {
+			bucket: point.bucket,
+			p50LatencyMs: point.p50LatencyMs,
+			p95LatencyMs: point.p95LatencyMs,
+			p99LatencyMs: point.p99LatencyMs,
+			partial: point.partial,
+		}
+		return { rows: [...acc.rows, ...(broken ? [gap] : []), row], emptySinceMs: null }
+	}).rows
 }
 
 /** The plot's insets in px, shared by every chart on the page so one instant sits at one x (`pl-16`, `pr-3`). */
@@ -296,10 +296,13 @@ const windowDomain = (stats: CheckStats): readonly [number, number] => [
 
 /** The median count of checks in a bucket that holds any. */
 const checksPerBucket = (points: ReadonlyArray<CheckPoint>): number => {
-	const counts = Arr.filter(
-		Arr.map(points, (point) => point.totalCount),
-		(count) => count > 0,
-	).toSorted((a, b) => a - b)
+	const counts = Arr.sort(
+		Arr.filter(
+			Arr.map(points, (point) => point.totalCount),
+			(count) => count > 0,
+		),
+		Order.Number,
+	)
 	return counts[Math.floor(counts.length / 2)] ?? 0
 }
 
@@ -478,7 +481,10 @@ export const responseTimePanel = (h: H, model: Model, context: ChartContext | nu
 /** 1, 2 or 5 times a power of ten, at or above `value`. */
 const niceCeil = (value: number): number => {
 	const power = 10 ** Math.floor(Math.log10(Math.max(1, value)))
-	const step = [1, 2, 5, 10].find((candidate) => candidate * power >= value) ?? 10
+	const step = Option.getOrElse(
+		Arr.findFirst([1, 2, 5, 10], (candidate) => candidate * power >= value),
+		() => 10,
+	)
 	return step * power
 }
 
@@ -854,12 +860,14 @@ const untimed = (point: PhasePoint): boolean => point.timedChecks === 0
  * breaks: where checks stopped, and where checks ran but none was timed.
  */
 export const phaseSeries = (stats: CheckStats, intervalMs: number) => ({
-	rows: Arr.filter(stats.phases, (point) => !untimed(point)).flatMap((point) =>
-		PHASES.map((phase) => ({
-			bucket: point.bucket,
-			attributeValue: phase.label,
-			value: point[phase.key],
-		})),
+	rows: Arr.flatMap(
+		Arr.filter(stats.phases, (point: PhasePoint) => !untimed(point)),
+		(point: PhasePoint) =>
+			Arr.map(PHASES, (phase) => ({
+				bucket: point.bucket,
+				attributeValue: phase.label,
+				value: point[phase.key],
+			})),
 	),
 	breaks: [
 		...breakBuckets(stats, intervalMs),
@@ -1143,10 +1151,11 @@ export const setupPanel = (h: H, model: Model, monitor: UptimeMonitor, serviceHr
 			: destinations === null
 				? countLabel(count, "destination")
 				: Arr.join(
-						Arr.map(
-							monitor.destination_ids,
-							(id) =>
-								destinations.find((row) => row.id === id)?.name ?? "Unavailable destination",
+						Arr.map(monitor.destination_ids, (id) =>
+							Arr.findFirst(destinations, (row) => row.id === id).pipe(
+								Option.flatMapNullishOr((found) => found.name),
+								Option.getOrElse(() => "Unavailable destination"),
+							),
 						),
 						", ",
 					)

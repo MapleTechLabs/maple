@@ -130,14 +130,18 @@ function rollupEnvironmentCondition(
 	$: ColumnAccessor<typeof ServiceOperationsMinutely.columns>,
 	environments: readonly string[] | undefined,
 ) {
-	return environments?.length ? CH.inList($.DeploymentEnv, environments) : undefined
+	return environments !== undefined && environments.length > 0
+		? CH.inList($.DeploymentEnv, environments)
+		: undefined
 }
 
 function hourlyEnvironmentCondition(
 	$: ColumnAccessor<typeof ServiceOperationsHourly.columns>,
 	environments: readonly string[] | undefined,
 ) {
-	return environments?.length ? CH.inList($.DeploymentEnv, environments) : undefined
+	return environments !== undefined && environments.length > 0
+		? CH.inList($.DeploymentEnv, environments)
+		: undefined
 }
 
 export const mergedDurationQuantile = (index: 1 | 2 | 3) =>

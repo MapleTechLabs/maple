@@ -222,8 +222,11 @@ export const initialRanges = (
 	chunks: ReadonlyArray<ReplayChunkMeta>,
 	plan: ReadonlyArray<ReplayRange>,
 ): ReadonlyArray<ReplayRange> => {
-	if (chunks.length === 0) return []
-	const seed = chunks.find((chunk) => chunk.is_checkpoint) ?? chunks[0]!
+	if (!Arr.isReadonlyArrayNonEmpty(chunks)) return []
+	const seed = Option.getOrElse(
+		Arr.findFirst(chunks, (chunk) => chunk.is_checkpoint),
+		() => Arr.headNonEmpty(chunks),
+	)
 	return rangesCovering(chunks, plan, seed.chunk_seq, INITIAL_WINDOW_BYTES)
 }
 
@@ -240,10 +243,12 @@ export const rangesCovering = (
 	fromChunkSeq: number,
 	byteBudget: number,
 ): ReadonlyArray<ReplayRange> => {
-	const startIndex = plan.findIndex(
+	const found = Arr.findFirstIndex(
+		plan,
 		(range) => fromChunkSeq >= range.fromChunkSeq && fromChunkSeq <= range.toChunkSeq,
 	)
-	if (startIndex < 0) return []
+	if (Option.isNone(found)) return []
+	const startIndex = found.value
 	const bytesIn = (range: ReplayRange) =>
 		Arr.reduce(chunks, 0, (sum, chunk) =>
 			chunk.chunk_seq >= range.fromChunkSeq && chunk.chunk_seq <= range.toChunkSeq
@@ -252,8 +257,7 @@ export const rangesCovering = (
 		)
 	const ranges: Array<ReplayRange> = []
 	let bytes = 0
-	for (let i = startIndex; i < plan.length; i++) {
-		const range = plan[i]!
+	for (const range of plan.slice(startIndex)) {
 		ranges.push(range)
 		bytes += bytesIn(range)
 		if (bytes >= byteBudget) break

@@ -11,7 +11,7 @@
 // struct, so there is no struct-offset fragility across libchdb versions.
 
 import { CString, dlopen, FFIType, type Pointer, ptr, read, toArrayBuffer } from "bun:ffi"
-import { Effect, Result, Schema, type Scope, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Result, Schema, type Scope, Array as Arr, String as Str } from "effect"
 import { existsSync } from "node:fs"
 import { lstatSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
@@ -20,6 +20,10 @@ import { decodeJsonSync } from "./json"
 import { durableJson } from "./durable-files"
 import { markStoreClosed, markStoreOpen, storeHasData } from "./store-version"
 import { MAPLE_VERSION } from "./version"
+
+/** bun:ffi hands back a NULL pointer as `null`, a dereferenced one as 0. */
+const isNullPointer = (pointer: Pointer | bigint | null): pointer is null =>
+	pointer === null || pointer === 0 || pointer === 0n
 
 /** A chDB failure — locating libchdb, opening the connection, or bootstrapping
  *  the schema. Carries the underlying message verbatim. */
@@ -57,6 +61,7 @@ export const configureLibchdb = (path: string | undefined): void => {
 function resolveLibchdb(): string {
 	if (configuredLibchdb !== undefined) return configuredLibchdb
 	const candidates: string[] = []
+	// @effect-diagnostics-next-line processEnv:off -- resolved before the Effect runtime starts
 	const override = process.env.MAPLE_LIBCHDB
 	if (override) candidates.push(override)
 
@@ -66,14 +71,14 @@ function resolveLibchdb(): string {
 	const binDir = join(homedir(), ".maple", "bin")
 	candidates.push(join(binDir, "libchdb.so"), join(binDir, "libchdb.dylib"))
 
-	const found = candidates.find((p) => existsSync(p))
-	if (!found) {
+	const found = Arr.findFirst(candidates, (p) => existsSync(p))
+	if (Option.isNone(found)) {
 		throw new Error(
 			`libchdb not found. Looked in:\n  ${Arr.join(candidates, "\n  ")}\n` +
 				`Set MAPLE_LIBCHDB to its path, or keep libchdb next to the maple binary.`,
 		)
 	}
-	return found
+	return found.value
 }
 
 // Never dlclose'd: unloading libchdb runs its static destructors, and the real
@@ -368,6 +373,7 @@ export const pinProcessTimezoneToUtc = (): void => {
 	timezonePinned = true
 	// Keep Bun's own view in sync, so JS `Date` formatting in this process
 	// matches what the engine reports.
+	// @effect-diagnostics-next-line processEnv:off -- pins the process TZ that libchdb reads
 	process.env.TZ = "UTC"
 	const key = cstr("TZ")
 	const value = cstr("UTC")
@@ -415,7 +421,7 @@ export class Chdb {
 			argv[i] = BigInt(ptr(b))
 		})
 		const connPtrPtr = sym.chdb_connect(args.length, ptr(argv))
-		if (!connPtrPtr) {
+		if (isNullPointer(connPtrPtr)) {
 			throw new Error(
 				Chdb.#connectFailure(options.dataDir, "chdb_connect returned NULL", options.configFile),
 			)
@@ -423,7 +429,7 @@ export class Chdb {
 		// chdb_connect returns chdb_connection* (a double pointer); chdb_query
 		// wants chdb_connection — dereference once.
 		const conn = read.ptr(connPtrPtr, 0) as Pointer
-		if (!conn)
+		if (isNullPointer(conn))
 			throw new Error(
 				Chdb.#connectFailure(
 					options.dataDir,
@@ -528,17 +534,17 @@ export class Chdb {
 		const query = cstr(sql)
 		const outputFormat = cstr(format)
 		const res = this.#sym.chdb_query(this.#conn, ptr(query), ptr(outputFormat))
-		if (!res) throw new ChdbQueryError({ message: "chdb_query returned NULL" })
+		if (isNullPointer(res)) throw new ChdbQueryError({ message: "chdb_query returned NULL" })
 		let failure = ""
 		try {
 			const errPtr = this.#sym.chdb_result_error(res)
 			// chdb returns a non-null pointer to an EMPTY string on success; only a
 			// non-empty message is a real error (matches chdb-rust `check_error`).
-			failure = errPtr ? new CString(errPtr).toString() : ""
+			failure = !isNullPointer(errPtr) ? new CString(errPtr).toString() : ""
 			if (failure.length === 0) {
 				const len = Number(this.#sym.chdb_result_length(res))
 				const bufPtr = len === 0 ? null : this.#sym.chdb_result_buffer(res)
-				return bufPtr ? read(new Uint8Array(toArrayBuffer(bufPtr, 0, len))) : empty
+				return !isNullPointer(bufPtr) ? read(new Uint8Array(toArrayBuffer(bufPtr, 0, len))) : empty
 			}
 		} finally {
 			this.#sym.chdb_destroy_query_result(res)
@@ -553,9 +559,9 @@ export class Chdb {
 	#drainPartialOutput(): void {
 		for (let attempt = 0; attempt < 3; attempt++) {
 			const res = this.#sym.chdb_query(this.#conn, ptr(DRAIN_SQL), ptr(DRAIN_FORMAT))
-			if (!res) return
+			if (isNullPointer(res)) return
 			const errPtr = this.#sym.chdb_result_error(res)
-			const clean = !errPtr || new CString(errPtr).toString().length === 0
+			const clean = isNullPointer(errPtr) || new CString(errPtr).toString().length === 0
 			const len = Number(this.#sym.chdb_result_length(res))
 			this.#sym.chdb_destroy_query_result(res)
 			if (clean && len === DRAIN_SENTINEL.length) return
@@ -598,7 +604,7 @@ export const describeChdbOpenFailure = (raw: string, version: string = MAPLE_VER
 			: `Reinstall the verified bundle with \`maple update\` (or \`maple update --tag v${version}\` ` +
 				"to keep this version; Homebrew: `brew reinstall maple`)."
 	return (
-		`could not load libchdb at ${path}: the dynamic loader rejected it (${reason?.split("\n")[0]?.trim()}). ` +
+		`could not load libchdb at ${path}: the dynamic loader rejected it (${reason === undefined ? undefined : Str.trim(Str.split("\n")(reason)[0])}). ` +
 		`The file is damaged or not loadable on this system, so every start fails the same way. ${remedy}`
 	)
 }

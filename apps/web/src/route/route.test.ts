@@ -1,4 +1,5 @@
-import { Option } from "effect"
+import { END_USER_ID_MAX_LENGTH } from "@maple/domain/http"
+import { Option, String as Str } from "effect"
 import { fromString } from "foldkit/url"
 import { describe, expect, test } from "vitest"
 import { DATA_INTEGRATIONS } from "./data-integrations"
@@ -24,6 +25,16 @@ describe("routes", () => {
 		}
 	})
 
+	test("a user page takes any id the API accepts, decoded, and nothing longer", () => {
+		// Cloudflare delivers an encoded `%2F` as a real slash, so the id is the rest of the path.
+		const route = parse("/users/user/42%20ada")
+		expect(route).toMatchObject({ _tag: "UserDetail", userId: "user/42 ada" })
+		expect(hrefOf(route)).toBe("/users/user/42%20ada")
+		expect(parse("/users/user%2F42%20ada")).toMatchObject({ _tag: "UserDetail", userId: "user/42 ada" })
+		expect(parse(`/users/${Str.repeat(END_USER_ID_MAX_LENGTH)("u")}`)._tag).toBe("UserDetail")
+		expect(parse(`/users/${Str.repeat(END_USER_ID_MAX_LENGTH + 1)("u")}`)._tag).not.toBe("UserDetail")
+	})
+
 	test("path params are percent-decoded and printed back encoded", () => {
 		const route = parse("/services/checkout%20api")
 		expect(route).toMatchObject({ _tag: "Service", serviceName: "checkout api" })
@@ -38,6 +49,16 @@ describe("routes", () => {
 		const monitor = parse("/alerts/uptime/upm_abc")
 		expect(monitor).toMatchObject({ _tag: "AlertsUptimeMonitor", monitorId: "upm_abc" })
 		expect(hrefOf(monitor)).toBe("/alerts/uptime/upm_abc")
+	})
+
+	test("SLO routes parse ahead of a rule id and print back", () => {
+		expect(parse("/alerts/slos/new?serviceName=%22checkout%22")).toMatchObject({
+			_tag: "AlertsSloNew",
+			search: { serviceName: "checkout" },
+		})
+		const slo = parse("/alerts/slos/slo_abc")
+		expect(slo).toMatchObject({ _tag: "AlertsSlo", sloId: "slo_abc" })
+		expect(hrefOf(slo)).toBe("/alerts/slos/slo_abc")
 	})
 
 	test("status page routes parse, the builder ahead of a page id, and print back", () => {
@@ -73,12 +94,27 @@ describe("routes", () => {
 
 	test("an org outside the statusPages rollout is sent home from every status page route", () => {
 		for (const path of ["/status-pages", "/status-pages/new", "/status-pages/stp_abc"]) {
-			expect(flaggedRouteRedirect(parse(path), { statusPages: false })).toEqual(
+			expect(flaggedRouteRedirect(parse(path), { statusPages: false, users: true })).toEqual(
 				Option.some({ url: "/", isReplace: true }),
 			)
-			expect(flaggedRouteRedirect(parse(path), { statusPages: true })).toEqual(Option.none())
+			expect(flaggedRouteRedirect(parse(path), { statusPages: true, users: true })).toEqual(
+				Option.none(),
+			)
 		}
-		expect(flaggedRouteRedirect(parse("/services"), { statusPages: false })).toEqual(Option.none())
+		expect(flaggedRouteRedirect(parse("/services"), { statusPages: false, users: false })).toEqual(
+			Option.none(),
+		)
+	})
+
+	test("an org outside the users rollout is sent home from the users pages", () => {
+		for (const path of ["/users", "/users/user_42"]) {
+			expect(flaggedRouteRedirect(parse(path), { statusPages: true, users: false })).toEqual(
+				Option.some({ url: "/", isReplace: true }),
+			)
+			expect(flaggedRouteRedirect(parse(path), { statusPages: true, users: true })).toEqual(
+				Option.none(),
+			)
+		}
 	})
 
 	test("a literal sibling wins over a param route", () => {

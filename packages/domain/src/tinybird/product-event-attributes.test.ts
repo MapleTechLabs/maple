@@ -6,7 +6,7 @@ import {
 	PRODUCT_EVENT_PROP_PREFIX,
 } from "./product-event-attributes"
 import { productEvents } from "./datasources"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 describe("product event span attributes", () => {
 	it("casts the base map to the target key type", () => {
@@ -51,9 +51,9 @@ describe("product event span attributes", () => {
 		// exactly when the key they wanted to correct was already present.
 		const merge = /mapUpdate\(\s*CAST\(/.exec(PRODUCT_EVENTS_TRACE_PROJECTION_SQL)
 		expect(merge, "props must be the SECOND mapUpdate argument").not.toBeNull()
-		expect(PRODUCT_EVENTS_TRACE_PROJECTION_SQL.indexOf("mapApply")).toBeGreaterThan(
-			PRODUCT_EVENTS_TRACE_PROJECTION_SQL.indexOf("mapUpdate"),
-		)
+		const indexIn = (needle: string) =>
+			Option.getOrElse(Str.indexOf(needle)(PRODUCT_EVENTS_TRACE_PROJECTION_SQL), () => -1)
+		expect(indexIn("mapApply")).toBeGreaterThan(indexIn("mapUpdate"))
 	})
 
 	it("keeps the control namespace out of the copied attributes", () => {
@@ -104,7 +104,7 @@ describe("product event span attributes", () => {
 
 		const projected = Arr.map(topLevelParts(PRODUCT_EVENTS_TRACE_PROJECTION_SQL), (part) => {
 			const aliased = /\bAS ([A-Za-z][A-Za-z0-9_]*)$/.exec(part)
-			return aliased ? aliased[1]! : part
+			return aliased ? aliased[1] : part
 		})
 		expect(projected).toEqual(Rec.keys(productEvents._schema))
 	})

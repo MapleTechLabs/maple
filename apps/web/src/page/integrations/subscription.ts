@@ -52,6 +52,7 @@ const openPopup = (name: string, features: string, label: string) =>
 				: Effect.ignore(
 						Effect.try({
 							try: () => {
+								// oxlint-disable-next-line typescript/no-deprecated -- fills a blank popup before it navigates; nothing else writes an about:blank document.
 								popup.document.write(interimDocument(label))
 								popup.document.close()
 							},
@@ -73,33 +74,32 @@ const openPopup = (name: string, features: string, label: string) =>
  */
 const ticker = (attempt: number, polls: boolean, isClosed: () => boolean, graceMs: number | null) =>
 	Stream.callback<Message>((queue) =>
-		Effect.acquireRelease(
-			Effect.sync(() => {
-				const state = { ticks: 0 }
-				const interval = setInterval(() => {
-					state.ticks += 1
-					if (polls && state.ticks % POLL_EVERY_TICKS === 0)
+		Effect.gen(function* () {
+			// One tick; `false` once the popup is gone, which ends the ticking.
+			const tick = (ticks: number) =>
+				Effect.sync(() => {
+					if (polls && ticks % POLL_EVERY_TICKS === 0)
 						Queue.offerUnsafe(queue, Message.PolledConnect({ attempt }))
 					if (graceMs === null && isClosed()) {
-						clearInterval(interval)
 						Queue.offerUnsafe(queue, Message.ClosedConnectPopup({ attempt }))
+						return false
 					}
-				}, POPUP_TICK_MS)
-				const timeout =
-					graceMs === null
-						? undefined
-						: setTimeout(
-								() => Queue.offerUnsafe(queue, Message.EndedConnectGrace({ attempt })),
-								graceMs,
-							)
-				return { interval, timeout }
-			}),
-			({ interval, timeout }) =>
-				Effect.sync(() => {
-					clearInterval(interval)
-					if (timeout !== undefined) clearTimeout(timeout)
-				}),
-		).pipe(Effect.andThen(Effect.never)),
+					return true
+				})
+			const ticking = (ticks: number): Effect.Effect<void> =>
+				Effect.flatMap(Effect.delay(tick(ticks), POPUP_TICK_MS), (isOpen) =>
+					isOpen ? ticking(ticks + 1) : Effect.void,
+				)
+			yield* Effect.forkScoped(ticking(1))
+			if (graceMs !== null)
+				yield* Effect.forkScoped(
+					Effect.delay(
+						Effect.sync(() => Queue.offerUnsafe(queue, Message.EndedConnectGrace({ attempt }))),
+						graceMs,
+					),
+				)
+			return yield* Effect.never
+		}),
 	)
 
 const watchPopup = (popup: Window, attempt: number, polls: boolean) =>

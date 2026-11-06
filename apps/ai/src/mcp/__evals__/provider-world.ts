@@ -5,7 +5,7 @@
  */
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import type { FixtureRule } from "./fake-warehouse"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 export const PROVIDER_WORLD = {
 	failingZone: "api.example.com",
@@ -20,7 +20,7 @@ const bucketed = (sql: string) => has(sql, "bucket")
 const mentions = (sql: string, text: string) => Str.includes(text)(sql)
 
 const windowOf = (sql: string): { start: number; end: number } => {
-	const stamps = Arr.map([...sql.matchAll(/'(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)'/g)], (m) =>
+	const stamps = Arr.map(Arr.fromIterable(Str.matchAll(/'(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)'/g)(sql)), (m) =>
 		parseWarehouseDateTime(m[1] ?? ""),
 	)
 	const start = stamps[0] ?? parseWarehouseDateTime("2026-10-01 06:00:00")
@@ -59,7 +59,10 @@ const ZONES: ReadonlyArray<Zone> = [
 
 /** The zone a single-zone query names, or the failing one. */
 const zoneFor = (sql: string): Zone =>
-	ZONES.find((zone) => mentions(sql, `'cloudflare/${zone.name}'`)) ?? FAILING_ZONE
+	Option.getOrElse(
+		Arr.findFirst(ZONES, (zone) => mentions(sql, `'cloudflare/${zone.name}'`)),
+		() => FAILING_ZONE,
+	)
 
 const WORKERS = [
 	{
@@ -305,8 +308,10 @@ export const providerFixtureRules = (): FixtureRule[] => [
 	{
 		match: (sql) => has(sql, "networkRx"),
 		rows: (sql) => {
-			const service =
-				RAILWAY.find((s) => mentions(sql, `'${s.envId}'`) && mentions(sql, `'${s.id}'`)) ?? RAILWAY[0]
+			const service = Option.getOrElse(
+				Arr.findFirst(RAILWAY, (s) => mentions(sql, `'${s.envId}'`) && mentions(sql, `'${s.id}'`)),
+				() => RAILWAY[0],
+			)
 			return Arr.map(buckets(sql), ({ at, t }) => ({
 				bucket: wire(at),
 				cpuAvg: service.cpu * (0.8 + 0.3 * t),
@@ -346,7 +351,10 @@ export const providerFixtureRules = (): FixtureRule[] => [
 	{
 		match: (sql) => has(sql, "connectionsAvg") && bucketed(sql),
 		rows: (sql) => {
-			const db = DATABASES.find((d) => mentions(sql, `'${d.database}'`)) ?? DATABASES[0]
+			const db = Option.getOrElse(
+				Arr.findFirst(DATABASES, (d) => mentions(sql, `'${d.database}'`)),
+				() => DATABASES[0],
+			)
 			return Arr.map(buckets(sql), ({ at, t }) => ({
 				bucket: wire(at),
 				connectionsAvg: db.conns,

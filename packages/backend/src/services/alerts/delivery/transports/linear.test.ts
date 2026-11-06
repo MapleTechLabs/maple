@@ -1,13 +1,13 @@
 import type { AlertDestinationRow } from "@maple/db/tables"
 import { AlertDeliveryError, AlertDestinationId, OrgId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Schema, Array as Arr } from "effect"
+import { Effect, Schema, Array as Arr, DateTime, Option } from "effect"
 import type { DispatchContext } from "../context"
 import type { LinearDeliveryPort, LinearThread, RenderInput, SecretConfigOf } from "../Transport"
 import { LINEAR_REOPEN_WINDOW_MS, linearEntityId, linearTransport } from "./linear"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_1")
-const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
+const ORG = Schema.decodeSync(OrgId)("org_1")
+const DESTINATION_ID = Schema.decodeSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 const NOW = 1_700_000_000_000
 const HOUR = 60 * 60 * 1000
 
@@ -152,7 +152,7 @@ const fakeLinear = (
 				calls.push({ name: operation.name, variables: operation.variables })
 				const data = answer(operation.name, operation.variables)
 				if (data === null) return null
-				return yield* Schema.decodeUnknownEffect(schema)(data).pipe(
+				return yield* Schema.decodeEffect(schema)(data).pipe(
 					Effect.mapError(
 						() => new AlertDeliveryError({ message: "bad fixture", destinationType: "linear" }),
 					),
@@ -177,7 +177,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 /** The `input` variable of the operation named `name`, failing the test when it was never sent. */
 const inputOf = (calls: ReadonlyArray<Call>, name: string): Record<string, unknown> => {
-	const input = calls.find((call) => call.name === name)?.variables.input
+	const input = Option.getOrUndefined(Arr.findFirst(calls, (call) => call.name === name))?.variables.input
 	assert.isTrue(isRecord(input), `${name} was not sent`)
 	return isRecord(input) ? input : {}
 }
@@ -269,7 +269,7 @@ describe("linear transport", () => {
 
 	it.effect("reopens an issue closed within the window into the team's Triage", () =>
 		Effect.gen(function* () {
-			const closedAt = new Date(NOW - 2 * HOUR).toISOString()
+			const closedAt = DateTime.formatIso(DateTime.makeUnsafe(NOW - 2 * HOUR))
 			const linear = fakeLinear({
 				issues: [issue({ state: { type: "completed" }, completedAt: closedAt })],
 				threads: [openThread()],
@@ -284,7 +284,7 @@ describe("linear transport", () => {
 
 	it.effect("opens a new issue once the old one has been closed longer than the window", () =>
 		Effect.gen(function* () {
-			const closedAt = new Date(NOW - LINEAR_REOPEN_WINDOW_MS - HOUR).toISOString()
+			const closedAt = DateTime.formatIso(DateTime.makeUnsafe(NOW - LINEAR_REOPEN_WINDOW_MS - HOUR))
 			const linear = fakeLinear({
 				issues: [issue({ state: { type: "completed" }, completedAt: closedAt })],
 				threads: [openThread()],
@@ -372,7 +372,7 @@ describe("linear transport", () => {
 
 	it.effect("gives a closed issue a fresh id when the same incident needs a new one", () =>
 		Effect.gen(function* () {
-			const closedAt = new Date(NOW - LINEAR_REOPEN_WINDOW_MS - HOUR).toISOString()
+			const closedAt = DateTime.formatIso(DateTime.makeUnsafe(NOW - LINEAR_REOPEN_WINDOW_MS - HOUR))
 			const oldId = linearEntityId("issue", DESTINATION_ID, "team_1", "inc_1", "")
 			const linear = fakeLinear({
 				issues: [issue({ id: oldId, state: { type: "completed" }, completedAt: closedAt })],
@@ -402,7 +402,7 @@ describe("linear transport", () => {
 describe("linear transport after a resolve or a team change", () => {
 	it.effect("does not reopen an issue for a trigger that arrives after its incident resolved", () =>
 		Effect.gen(function* () {
-			const closedAt = new Date(NOW - 2 * HOUR).toISOString()
+			const closedAt = DateTime.formatIso(DateTime.makeUnsafe(NOW - 2 * HOUR))
 			const linear = fakeLinear({
 				issues: [issue({ state: { type: "completed" }, completedAt: closedAt })],
 				threads: [openThread()],

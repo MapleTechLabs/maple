@@ -82,6 +82,18 @@ describe("where clause autocomplete", () => {
 		expect(result.suggestions[0]?.insertText).toBe('"checkout"')
 	})
 
+	it("escapes every quote and backslash in a suggested value", () => {
+		const expression = "service.name = "
+		const result = getWhereClauseAutocomplete({
+			expression,
+			cursor: expression.length,
+			dataSource: "traces",
+			values: { services: ['a"b\\c"\\'] },
+		})
+
+		expect(result.suggestions[0]?.insertText).toBe('"a\\"b\\\\c\\"\\\\"')
+	})
+
 	it("suggests conjunction after a finished value", () => {
 		const expression = 'service.name = "checkout" '
 		const result = getWhereClauseAutocomplete({
@@ -107,7 +119,7 @@ describe("where clause autocomplete", () => {
 			context: autocomplete.context,
 			replaceStart: autocomplete.replaceStart,
 			replaceEnd: autocomplete.replaceEnd,
-			suggestion: autocomplete.suggestions[0],
+			suggestion: Arr.getUnsafe(autocomplete.suggestions, 0),
 		})
 
 		expect(applied.expression).toBe("service.name = ")
@@ -129,7 +141,7 @@ describe("where clause autocomplete", () => {
 			context: autocomplete.context,
 			replaceStart: autocomplete.replaceStart,
 			replaceEnd: autocomplete.replaceEnd,
-			suggestion: autocomplete.suggestions[0],
+			suggestion: Arr.getUnsafe(autocomplete.suggestions, 0),
 		})
 
 		expect(applied.expression).toBe('service.name = "checkout" ')
@@ -148,7 +160,7 @@ describe("where clause autocomplete", () => {
 			context: autocomplete.context,
 			replaceStart: autocomplete.replaceStart,
 			replaceEnd: autocomplete.replaceEnd,
-			suggestion: autocomplete.suggestions[0],
+			suggestion: Arr.getUnsafe(autocomplete.suggestions, 0),
 		})
 
 		expect(applied.expression).toBe('service.name = "checkout" AND ')

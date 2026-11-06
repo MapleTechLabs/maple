@@ -9,6 +9,7 @@ import {
 	buildBreakdownQuerySpec,
 	buildTimeseriesQuerySpec,
 	formatFiltersAsWhereClause,
+	getMetricsAggregations,
 	GROUP_BY_TOKENS,
 	resolveGroupBy,
 } from "./model"
@@ -34,7 +35,7 @@ function tracesDraft(overrides: Partial<QueryBuilderQueryDraftPayload> = {}): Qu
 		limit: "",
 		legend: "",
 		...overrides,
-	} as QueryBuilderQueryDraftPayload
+	}
 }
 
 function attrFilters(whereClause: string) {
@@ -301,7 +302,7 @@ describe("metrics resource.* support", () => {
 			isMonotonic: false,
 			signalSource: "default",
 			...overrides,
-		} as Partial<QueryBuilderQueryDraftPayload>)
+		})
 	}
 
 	function metricsFiltersOf(overrides: Partial<QueryBuilderQueryDraftPayload>) {
@@ -403,27 +404,77 @@ describe("metrics resource.* support", () => {
 		expect(filters?.groupByResourceAttributeKey).toBe("k8s.pod.name")
 	})
 
-	it("keeps the first attr.* group-by and warns about later dimensions", () => {
+	it("groups by every attr.* key, in order", () => {
 		const { warnings, groupBy, filters } = metricsFiltersOf({
 			addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
 			groupBy: ["attr.http.method", "attr.http.route"],
 		})
 		expect(groupBy).toEqual(["attribute"])
-		expect(filters?.groupByAttributeKey).toBe("http.method")
-		expect(warnings).toEqual([
-			"Metrics queries support a single attr.* group by; ignoring attr.http.route",
-		])
+		expect(filters?.groupByAttributeKeys).toEqual(["http.method", "http.route"])
+		expect(warnings).toEqual([])
 	})
 
-	it("keeps the first dimension and warns when attr.* and resource.* group-bys are combined", () => {
+	it("combines attr.*, resource.* and service.name group-bys", () => {
 		const { warnings, groupBy, filters } = metricsFiltersOf({
 			addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
-			groupBy: ["attr.state", "resource.host.name"],
+			groupBy: ["service.name", "attr.state", "resource.host.name"],
 		})
-		expect(Arr.some(warnings, (w) => Str.includes("single attribute group by")(w))).toBe(true)
-		expect(groupBy).toEqual(["attribute"])
-		expect(filters?.groupByAttributeKey).toBe("state")
-		expect(filters).not.toHaveProperty("groupByResourceAttributeKey")
+		expect(warnings).toEqual([])
+		expect(groupBy).toEqual(["service", "attribute", "resource_attribute"])
+		expect(filters?.groupByAttributeKeys).toEqual(["state"])
+		expect(filters?.groupByResourceAttributeKeys).toEqual(["host.name"])
+	})
+
+	it("warns about and drops group-by keys past the cap", () => {
+		const { warnings, filters } = metricsFiltersOf({
+			addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+			groupBy: ["attr.a", "attr.b", "attr.c", "attr.d", "resource.e", "resource.f"],
+		})
+		expect(filters?.groupByAttributeKeys).toEqual(["a", "b", "c", "d"])
+		expect(filters?.groupByResourceAttributeKeys).toEqual(["e"])
+		expect(warnings).toEqual(["Metrics queries group by at most 5 attribute keys; ignoring resource.f"])
+	})
+
+	it("spends the key budget in the order the draft lists its fields", () => {
+		const { filters, warnings } = metricsFiltersOf({
+			addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+			groupBy: ["resource.r1", "resource.r2", "attr.a", "attr.b", "attr.c", "attr.d"],
+		})
+		expect(filters?.groupByResourceAttributeKeys).toEqual(["r1", "r2"])
+		expect(filters?.groupByAttributeKeys).toEqual(["a", "b", "c"])
+		expect(warnings).toEqual(["Metrics queries group by at most 5 attribute keys; ignoring attr.d"])
+	})
+
+	it("a chart query carries its across-series aggregation, and omits it when unset", () => {
+		const withMax = buildTimeseriesQuerySpec(metricsDraft({ spaceAggregation: "max" }))
+		expect((withMax.query as { spaceAggregation?: string } | null)?.spaceAggregation).toBe("max")
+		const unset = buildTimeseriesQuerySpec(metricsDraft())
+		expect(unset.query).not.toHaveProperty("spaceAggregation")
+	})
+
+	it("a breakdown keeps the chart's across-series aggregation", () => {
+		const result = buildBreakdownQuerySpec(
+			metricsDraft({
+				spaceAggregation: "max",
+				addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+				groupBy: ["attr.state"],
+			}),
+		)
+		expect((result.query as { spaceAggregation?: string } | null)?.spaceAggregation).toBe("max")
+	})
+
+	it("a histogram draft asking for latest is refused, not saved to fail later", () => {
+		const result = buildTimeseriesQuerySpec(
+			metricsDraft({ metricType: "histogram", aggregation: "latest" }),
+		)
+		expect(result.query).toBeNull()
+		expect(result.error).toContain("latest")
+	})
+
+	it("histograms are not offered latest", () => {
+		const values = Arr.map(getMetricsAggregations("histogram"), (option) => option.value)
+		expect(values).not.toContain("latest")
+		expect(Arr.map(getMetricsAggregations("gauge"), (option) => option.value)).toContain("latest")
 	})
 
 	it("resource.* group-by drives breakdown specs", () => {
@@ -474,16 +525,16 @@ describe("GROUP_BY_TOKENS catalog matches the resolvers", () => {
 			addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
 			groupBy: [...groupBy],
 		}
-		if (dataSource === "logs") return { ...base, aggregation: "count" } as QueryBuilderQueryDraftPayload
+		if (dataSource === "logs") return { ...base, aggregation: "count" }
 		if (dataSource === "metrics") {
 			return {
 				...base,
 				aggregation: "avg",
 				metricName: "http.server.duration",
 				metricType: "gauge",
-			} as QueryBuilderQueryDraftPayload
+			}
 		}
-		return base as QueryBuilderQueryDraftPayload
+		return base
 	}
 
 	for (const source of ["traces", "logs", "metrics", "product_events"] as const) {
@@ -588,7 +639,7 @@ describe("aggregation enforcement follows AGGREGATIONS_BY_SOURCE", () => {
 			aggregation: "p95",
 			metricName: "http.server.duration",
 			metricType: "gauge",
-		} as QueryBuilderQueryDraftPayload)
+		})
 		expect(result.error).toContain("Unsupported metrics aggregation")
 		expect(result.error).toContain("rate")
 	})

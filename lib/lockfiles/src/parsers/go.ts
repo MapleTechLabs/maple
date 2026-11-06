@@ -1,4 +1,4 @@
-import { Effect, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Array as Arr, String as Str } from "effect"
 import { LockfileParseError } from "../errors.ts"
 import { pkg } from "../internal/collect.ts"
 import type { LockedPackage, LockfileInput } from "../types.ts"
@@ -78,9 +78,11 @@ const apply = (
 }
 
 const step = (state: GoModState, rawLine: string): GoModState => {
-	const commentAt = rawLine.indexOf("//")
-	const code = Str.trim(commentAt === -1 ? rawLine : Str.slice(0, commentAt)(rawLine))
-	const indirect = commentAt !== -1 && /^\/\/\s*indirect\b/.test(Str.slice(commentAt)(rawLine))
+	const commentAt = Str.indexOf("//")(rawLine)
+	const code = Str.trim(
+		Option.match(commentAt, { onNone: () => rawLine, onSome: (at) => Str.slice(0, at)(rawLine) }),
+	)
+	const indirect = Option.exists(commentAt, (at) => /^\/\/\s*indirect\b/.test(Str.slice(at)(rawLine)))
 	if (code === "") return state
 	if (state.block !== undefined) {
 		return code === ")"
@@ -96,10 +98,13 @@ const step = (state: GoModState, rawLine: string): GoModState => {
 
 const resolve = (req: Require, replaces: ReadonlyArray<Replace>): Require | undefined => {
 	// A version-specific replace wins over a wildcard one, wherever each appears in the file.
-	const match =
-		replaces.find((r) => r.oldPath === req.path && r.oldVersion === req.version) ??
-		replaces.find((r) => r.oldPath === req.path && r.oldVersion === undefined)
-	if (match === undefined) return req
+	const found = Arr.findFirst(replaces, (r) => r.oldPath === req.path && r.oldVersion === req.version).pipe(
+		Option.orElse(() =>
+			Arr.findFirst(replaces, (r) => r.oldPath === req.path && r.oldVersion === undefined),
+		),
+	)
+	if (Option.isNone(found)) return req
+	const match = found.value
 	return match.newVersion === undefined
 		? undefined
 		: { ...req, path: match.newPath, version: match.newVersion }
@@ -132,11 +137,11 @@ export const parseGoSum = Effect.fn("lockfiles.parseGoSum")(function* (input: Lo
 		(line) => line !== "",
 	)
 	const rows = Arr.map(lines, (line) => Str.split(/\s+/)(line))
-	const bad = rows.find((row) => row.length !== 3 || !Str.includes(":")(row[2] ?? ""))
-	if (bad !== undefined)
+	const bad = Arr.findFirst(rows, (row) => row.length !== 3 || !Str.includes(":")(row[2] ?? ""))
+	if (Option.isSome(bad))
 		return yield* new LockfileParseError({
 			path: input.path,
-			message: `bad go.sum line: ${Arr.join(bad, " ")}`,
+			message: `bad go.sum line: ${Arr.join(bad.value, " ")}`,
 		})
 	const packages = Arr.flatMap(rows, ([path, version = ""]): ReadonlyArray<LockedPackage> =>
 		Str.endsWith("/go.mod")(version) ? [] : [pkg("Go", path, version, "unknown")],

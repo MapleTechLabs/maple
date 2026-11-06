@@ -53,7 +53,7 @@ const unusedLinear: EffectTransportDeps["linear"] = {
 }
 
 const baseContext: TemplateRenderContext = {
-	ruleId: "rule_1" as TemplateRenderContext["ruleId"],
+	ruleId: "rule_1",
 	ruleName: "Checkout error rate",
 	eventType: "trigger",
 	severity: "critical",
@@ -65,7 +65,7 @@ const baseContext: TemplateRenderContext = {
 	sampleCount: 1200,
 	groupKey: null,
 	windowMinutes: 5,
-	incidentId: "inc_1" as TemplateRenderContext["incidentId"],
+	incidentId: "inc_1",
 	incidentStatus: "open",
 	dedupeKey: "dedupe_1",
 	template: null,
@@ -87,7 +87,7 @@ const rangeContext: TemplateRenderContext = {
 
 const LINK = "https://web.localhost/alerts"
 const CHAT = "https://web.localhost/alerts/rule_1"
-const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
+const DESTINATION_ID = Schema.decodeSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
 /** Dispatch deps for non-email destinations — email sends must not happen. */
 const noEmailDeps: EffectTransportDeps = {
@@ -483,11 +483,11 @@ describe("dispatchDelivery", () => {
 				Arr.map(sent, (s) => s.to),
 				["ops@acme.test", "oncall@acme.test"],
 			)
-			assert.include(sent[0]!.subject, "Test alert")
-			assert.include(sent[0]!.subject, "Test")
-			assert.include(sent[0]!.html, "Test alert")
-			assert.include(sent[0]!.html, LINK)
-			assert.notInclude(sent[0]!.html, CHAT)
+			assert.include(sent[0].subject, "Test alert")
+			assert.include(sent[0].subject, "Test")
+			assert.include(sent[0].html, "Test alert")
+			assert.include(sent[0].html, LINK)
+			assert.notInclude(sent[0].html, CHAT)
 			assert.strictEqual(result.providerMessage, "Emailed 2 members")
 			assert.strictEqual(result.responseCode, null)
 		}),

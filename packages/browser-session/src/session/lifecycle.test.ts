@@ -3,6 +3,7 @@ import { markActivity, noteNavigation, peekSession, rotateSession } from "./sess
 import { type SessionLifecycleHooks, type SessionSuspendOptions, startSessionLifecycle } from "./lifecycle"
 import { resetVisitClaimForTests } from "../identity/visit"
 import { resetVisitorCacheForTests, setVisitorTracking } from "../identity/visitor"
+import * as Arr from "effect/Array"
 
 // Same in-memory storage stand-in session.test.ts uses, so the rotation logic
 // under test is the real one on a controllable clock.
@@ -61,7 +62,7 @@ let doc: MutableDocumentStub
 let localStorage: FakeStorage
 
 const statuses = (): string[] => posted.map((p) => String(p.row.status))
-const last = (): Record<string, unknown> => posted[posted.length - 1]!.row
+const last = (): Record<string, unknown> => Arr.getUnsafe(posted, posted.length - 1).row
 
 const start = (hooks: Partial<SessionLifecycleHooks> = {}) =>
 	startSessionLifecycle(
@@ -280,7 +281,7 @@ describe("visibility", () => {
 
 		setVisibility("hidden")
 		expect(statuses()).toEqual(["active", "ended"])
-		expect(posted[1]!.keepalive).toBe(true)
+		expect(Arr.getUnsafe(posted, 1).keepalive).toBe(true)
 		expect(suspends).toEqual([{ flush: true, keepalive: true }])
 
 		// A second hide signal (pagehide after visibilitychange) must not post again.
@@ -333,7 +334,7 @@ describe("visibility with an owner that pauses", () => {
 		const id = handle!.sessionId
 		setVisibility("hidden")
 		expect(statuses()).toEqual(["active", "ended"])
-		expect(posted[1]!.keepalive).toBe(true)
+		expect(Arr.getUnsafe(posted, 1).keepalive).toBe(true)
 		setVisibility("visible")
 		expect(statuses()).toEqual(["active", "ended", "active"])
 		expect(calls).toEqual(["start", "pause:true"])
@@ -422,6 +423,33 @@ describe("row contents", () => {
 		vi.advanceTimersByTime(HEARTBEAT)
 		expect(last().click_count).toBe(5)
 	})
+
+	it("counts a rotated session's errors from zero while the old session's sink is still live", async () => {
+		const sinkFor = (sessionId: string, errors: number) => ({
+			sink: {
+				sessionId,
+				getClickCount: () => 0,
+				getErrorCount: () => errors,
+				getPageViews: () => 0,
+				flush: () => Promise.resolve(),
+				stop: () => {},
+			},
+			sessionId,
+		})
+		const globals = globalThis as Record<string, unknown>
+		const handle = start()
+		globals.__MAPLE_SESSION_EVENT_SINK__ = sinkFor(handle!.sessionId, 12)
+
+		// The sink is swapped on its next emit, after the lifecycle has re-armed.
+		rotateSession()
+		await flushMicrotasks()
+		globals.__MAPLE_SESSION_EVENT_SINK__ = sinkFor(handle!.sessionId, 2)
+		vi.advanceTimersByTime(HEARTBEAT)
+
+		expect(last().session_id).toBe(handle!.sessionId)
+		expect(last().error_count).toBe(2)
+		delete globals.__MAPLE_SESSION_EVENT_SINK__
+	})
 })
 
 describe("shutdown", () => {
@@ -429,7 +457,7 @@ describe("shutdown", () => {
 		const handle = start()
 		await handle!.shutdown()
 		expect(statuses()).toEqual(["active", "ended"])
-		expect(posted[1]!.keepalive).toBe(true)
+		expect(Arr.getUnsafe(posted, 1).keepalive).toBe(true)
 
 		vi.advanceTimersByTime(5 * HEARTBEAT)
 		expect(posted).toHaveLength(2)

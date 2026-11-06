@@ -9,6 +9,9 @@ const MAX_SUMMARY_FIELDS = 8
 const MAX_SUMMARY_VALUE = 80
 const MAX_SUMMARY = 300
 
+// `Array.isArray` narrows `unknown` to `any[]`.
+const isUnknownArray = (value: unknown): value is ReadonlyArray<unknown> => Array.isArray(value)
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null
 
@@ -22,6 +25,7 @@ interface ErrorFields {
 }
 
 /** A property read that a throwing getter or Proxy trap cannot turn into a second error. */
+// BOUNDARY: a thrown value's fields can hold anything.
 function read(value: ErrorFields, key: keyof ErrorFields): unknown {
 	try {
 		return value[key]
@@ -84,14 +88,12 @@ function summarize(value: Record<string, unknown>): string {
 		}
 		const rendered =
 			typeof field === "string"
-				? // oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
-					JSON.stringify(clip(field, MAX_SUMMARY_VALUE))
+				? JSON.stringify(clip(field, MAX_SUMMARY_VALUE))
 				: typeof field === "number" || typeof field === "boolean" || field === null
 					? String(field)
 					: typeof field === "bigint"
 						? `${field}n`
 						: undefined
-		// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 		if (rendered !== undefined) fields.push(`${JSON.stringify(clip(key, MAX_SUMMARY_VALUE))}:${rendered}`)
 	}
 	return fields.length > 0 ? clip(`{${fields.join(",")}}`, MAX_SUMMARY) : tagOf(value)
@@ -166,7 +168,7 @@ const linksOf = (value: unknown): unknown[] => {
 	// Arbitrary objects can carry throwing getters and Proxy traps; the error path must survive them.
 	try {
 		const errors = read(value, "errors")
-		if (Array.isArray(errors)) next.push(...errors.slice(0, MAX_LINKED))
+		if (isUnknownArray(errors)) next.push(...errors.slice(0, MAX_LINKED))
 	} catch {}
 	const cause = read(value, "cause")
 	if (cause !== undefined) next.push(cause)

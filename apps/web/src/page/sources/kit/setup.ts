@@ -1,6 +1,6 @@
 import type { SourcePlatform } from "@maple/domain/primitives"
 import { ingestUrl } from "../../../lib/services/common/ingest-url"
-import { Schema, Array as Arr } from "effect"
+import { Schema, Array as Arr, Option } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -100,7 +100,10 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 	const { model, toParentMessage, token } = config
 	const shown = token ?? maskedToken(config.keyPrefix)
 	const snippets = sourceSnippets(config.platform, shown, config.name)
-	const snippet = snippets.find((entry) => entry.id === model.tabs.selected) ?? snippets[0]
+	const snippet = Option.getOrElse(
+		Arr.findFirst(snippets, (entry) => entry.id === model.tabs.selected),
+		() => snippets[0],
+	)
 	return vstack(h, { gap: "4" }, [
 		panel(h, { padded: true, className: "gap-3" }, [
 			vstack(h, { gap: "1.5" }, [

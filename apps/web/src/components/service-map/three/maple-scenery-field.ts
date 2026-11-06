@@ -1,7 +1,8 @@
 import type { FactoryLink } from "./factory-routing"
 import { hash } from "./maple-scenery-sketch"
 import type { District } from "./spatial-layout"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 /** Zone rectangles on the ground plane: centre and half extents. */
 export interface Zone {
@@ -69,14 +70,12 @@ export const smoothstep = (from: number, to: number, value: number) => {
 export function soften(values: number[], passes: number, wrap = true) {
 	const n = values.length
 	const index = (i: number) => (wrap ? (i + n) % n : Math.min(Math.max(i, 0), n - 1))
-	return Array.from({ length: passes }).reduce<number[]>(
-		(current) =>
-			Arr.map(
-				current,
-				(value, i) =>
-					((current[index(i - 1)] ?? value) + value * 2 + (current[index(i + 1)] ?? value)) / 4,
-			),
-		values,
+	return Arr.reduce(Array.from({ length: passes }), values, (current) =>
+		Arr.map(
+			current,
+			(value, i) =>
+				((current[index(i - 1)] ?? value) + value * 2 + (current[index(i + 1)] ?? value)) / 4,
+		),
 	)
 }
 
@@ -176,9 +175,11 @@ export function creekPath(zones: ReadonlyArray<Zone>, belts: BeltPoints, meadow:
 		const track = meadow.radiusAt(theta) - (insets[k] ?? 0)
 		const start = source + (track - source) * smoothstep(0, 0.16, k / steps)
 		const tries = Array.from({ length: 60 }, (_, i) => start + i * 0.2)
-		return (
-			tries.find((r) => safe(meadow.cx + Math.cos(theta) * r, meadow.cz + Math.sin(theta) * r)) ??
-			start + 12
+		return Option.getOrElse(
+			Arr.findFirst(tries, (r) =>
+				safe(meadow.cx + Math.cos(theta) * r, meadow.cz + Math.sin(theta) * r),
+			),
+			() => start + 12,
 		)
 	})
 	// Soften the pushes, then keep whichever radius is further out so the clearance still holds.
@@ -197,16 +198,16 @@ export function creekPath(zones: ReadonlyArray<Zone>, belts: BeltPoints, meadow:
 /** Even samples every quarter unit along the creek: centre, outward normal, half width.
  */
 function resample(line: ReadonlyArray<readonly [number, number]>, meadow: Meadow) {
-	const lengths = line.reduce<number[]>((acc, [x, z], i) => {
+	const lengths = Arr.reduce<readonly [number, number], number[]>(line, [], (acc, [x, z], i) => {
 		const [px, pz] = line[i - 1] ?? [x, z]
 		return [...acc, (acc.at(-1) ?? 0) + Math.hypot(x - px, z - pz)]
-	}, [])
+	})
 	const length = lengths.at(-1) ?? 0
 	const bridge = length * 0.4
 	const along = (s: number) => {
-		const i = Math.max(
-			0,
-			lengths.findIndex((l) => l >= s),
+		const i = Option.getOrElse(
+			Arr.findFirstIndex(lengths, (l) => l >= s),
+			() => 0,
 		)
 		const [ax, az] = line[Math.max(0, i - 1)] ?? [0, 0]
 		const [bx, bz] = line[i] ?? [ax, az]
@@ -221,7 +222,7 @@ function resample(line: ReadonlyArray<readonly [number, number]>, meadow: Meadow
 		const [ax, az] = along(Math.max(0, s - 0.2)),
 			[bx, bz] = along(Math.min(length, s + 0.2))
 		const [tx, tz] = [bx - ax, bz - az]
-		const norm = Math.hypot(tx, tz) || 1
+		const norm = nonZeroOr(Math.hypot(tx, tz), 1)
 		// Of the two normals, the outward one points away from the meadow's centre.
 		const outward = (x - meadow.cx) * tz - (z - meadow.cz) * tx >= 0 ? 1 : -1
 		const w = 0.28 + Math.sin(s * 0.9) * 0.06
@@ -234,7 +235,7 @@ function resample(line: ReadonlyArray<readonly [number, number]>, meadow: Meadow
 			b = samples[i + 1] ?? a
 		const t = f - i
 		const mix = (p: number, q: number) => p + (q - p) * t
-		return a && b
+		return a !== undefined && b != null
 			? {
 					x: mix(a.x, b.x),
 					z: mix(a.z, b.z),
@@ -279,7 +280,13 @@ export function blob(
 		const theta = (k / count) * Math.PI * 2
 		const fits = (q: number) =>
 			!within || within.rim(cx + Math.cos(theta) * q, cz + Math.sin(theta) * q) >= 0.03
-		return Array.from({ length: 40 }, (_, i) => r * (1 - i * 0.025)).find(fits) ?? r * 0.02
+		return Option.getOrElse(
+			Arr.findFirst(
+				Array.from({ length: 40 }, (_, i) => r * (1 - i * 0.025)),
+				(q) => fits(q),
+			),
+			() => r * 0.02,
+		)
 	})
 	const radiusAt = (theta: number) => {
 		const f = ((((theta / (Math.PI * 2)) % 1) + 1) % 1) * count
@@ -323,10 +330,11 @@ export function seat(
 	const at = (r: number) => [meadow.cx + Math.cos(theta) * r, meadow.cz + Math.sin(theta) * r] as const
 	const radii = Array.from({ length: Math.ceil((meadow.reach + 10) / 0.2) }, (_, i) => i * 0.2)
 	const past = Arr.reduce(radii, 0, (last, r) => (zoneGap(zones, ...at(r)) < radius + 0.9 ? r : last))
-	const found = radii.find(
+	const found = Arr.findFirst(
+		radii,
 		(r) => r > past && zoneGap(zones, ...at(r)) >= radius + 1 && beltGap(belts, ...at(r)) >= radius + 0.9,
 	)
-	return at(found ?? past + radius + 1)
+	return at(Option.getOrElse(found, () => past + radius + 1))
 }
 
 /** The lake: an organic water body on the far side, fed out into the creek. */
@@ -345,7 +353,7 @@ export function hillOf(zones: ReadonlyArray<Zone>, belts: BeltPoints, meadow: Me
 	const [x, z] = seat(zones, belts, meadow, theta, radius * 1.6)
 	const steep = theta + Math.PI + (hash(z, x) - 0.5) * 0.6
 	const steps = 3 + Math.floor(hash(x, z) * 2)
-	return Array.from({ length: steps }).reduce<Blob[]>((layers, _, i) => {
+	return Arr.reduce<unknown, Blob[]>(Array.from({ length: steps }), [], (layers, _, i) => {
 		const r = radius * (1 - i * 0.24 - hash(i, x) * 0.06)
 		const shift = (radius - r) * 0.8
 		const side = (hash(z, i) - 0.5) * 0.5 * i
@@ -364,7 +372,7 @@ export function hillOf(zones: ReadonlyArray<Zone>, belts: BeltPoints, meadow: Me
 			below,
 		)
 		return [...layers, layer]
-	}, [])
+	})
 }
 
 /** Anything ducks can paddle along: arc length and a pose at each point. */

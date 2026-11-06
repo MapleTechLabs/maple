@@ -2,9 +2,14 @@ import { describe, expect, it } from "vitest"
 import {
 	chPattern,
 	computeFingerprintInputs,
+	CUSTOM_FINGERPRINT_ATTRIBUTE,
+	CUSTOM_FINGERPRINT_MAX_CHARS,
+	CUSTOM_FINGERPRINT_REDACTIONS,
 	EFFECT_SPAN_FRAME_MARKER,
 	ERROR_MSG_REDACTIONS,
 	FINGERPRINT_HASH_SALT,
+	LIBRARY_FRAME_PATTERN,
+	PREVIOUS_FINGERPRINT_HASH_SALT,
 	FRAME_LINE_PATTERN,
 	FRAME_REDACTIONS,
 	INTERNAL_FRAME_PATTERN,
@@ -19,7 +24,50 @@ import {
 	SPAN_NAME_FRAME_PATTERN,
 } from "./fingerprint"
 import { ERROR_EVENTS_MV_SQL } from "./materializations"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
+
+describe("maple.fingerprint override", () => {
+	const nodeError = (fn: string, message: string, customFingerprint?: string) =>
+		computeFingerprintInputs({
+			exceptionType: "PaymentError",
+			exceptionStacktrace: `PaymentError: ${message}\n    at ${fn} (/app/src/pay.ts:4:2)`,
+			statusMessage: message,
+			customFingerprint,
+		})
+
+	it("groups different stacks and messages by the user key alone", () => {
+		const a = nodeError("charge", "card 4242 declined", "checkout-payment-declined")
+		const b = nodeError("refund", "issuer timeout", "  checkout-payment-declined\n")
+		expect(a.hashInputs).toEqual([CUSTOM_FINGERPRINT_ATTRIBUTE, "checkout-payment-declined"])
+		expect(b.hashInputs).toEqual(a.hashInputs)
+	})
+
+	it("leaves the display fields as the algorithm computes them", () => {
+		const custom = nodeError("charge", "card declined", "checkout")
+		const plain = nodeError("charge", "card declined")
+		expect({ ...custom, hashInputs: [], previousHashInputs: [] }).toEqual({
+			...plain,
+			hashInputs: [],
+			previousHashInputs: [],
+		})
+	})
+
+	it("falls back to the computed inputs, salt included, when the key is blank", () => {
+		const blank = nodeError("charge", "card declined", " \t ")
+		expect(blank.hashInputs).toEqual([
+			"PaymentError",
+			blank.fpFrames,
+			blank.msgSignature,
+			FINGERPRINT_HASH_SALT,
+		])
+		expect(nodeError("charge", "card declined").hashInputs).toEqual(blank.hashInputs)
+	})
+
+	it("caps the key by code point", () => {
+		const long = nodeError("charge", "x", Str.repeat(CUSTOM_FINGERPRINT_MAX_CHARS + 50)("😀"))
+		expect(long.hashInputs[1]).toBe(Str.repeat(CUSTOM_FINGERPRINT_MAX_CHARS)("😀"))
+	})
+})
 
 describe("error fingerprint normalization", () => {
 	it("extracts and normalizes top 3 Node.js frames", () => {
@@ -162,7 +210,7 @@ describe("error fingerprint normalization", () => {
 		expect(a.fpFrames).not.toMatch(/[0-9a-fA-F]{8,}/)
 	})
 
-	it("distinguishes different call sites even when the top frame is shared", () => {
+	it("keeps the callers apart when a library frame throws", () => {
 		const shared = "    at JSON.parse (/node_modules/json/index.js:5:10)"
 		const stackA = `${shared}\n    at loadConfig (/app/config.ts:42:5)`
 		const stackB = `${shared}\n    at loadUser (/app/user.ts:99:3)`
@@ -178,10 +226,70 @@ describe("error fingerprint normalization", () => {
 			statusMessage: "",
 		})
 
-		// Top frame is the same shared library site, but deeper frames differ,
-		// so fpFrames (which feeds the hash) must differ.
-		expect(a.topFrame).toBe(b.topFrame)
-		expect(a.fpFrames).not.toBe(b.fpFrames)
+		// The library frame is skipped, so each issue is named by the app frame that called it.
+		expect(a.topFrame).toBe("    at loadConfig (/app/config.ts)")
+		expect(b.topFrame).toBe("    at loadUser (/app/user.ts)")
+	})
+
+	describe("in-app frames", () => {
+		const inputs = (exceptionStacktrace: string) =>
+			computeFingerprintInputs({ exceptionType: "Error", exceptionStacktrace, statusMessage: "boom" })
+
+		it("groups a throw inside a dependency by the app frames that called it", () => {
+			// A library's internals (which helper threw, after an upgrade) are not a new bug.
+			const caller =
+				"    at saveOrder (/app/src/orders.ts:42:5)\n    at handle (/app/src/routes.ts:9:1)"
+			const a = inputs(`    at validate (/app/node_modules/zod/lib/index.js:1:1)\n${caller}`)
+			const b = inputs(`    at parse (/app/node_modules/zod/lib/types.js:2:2)\n${caller}`)
+			expect(a.fpFrames).toBe(b.fpFrames)
+			expect(a.fpFrames).toBe(
+				"    at saveOrder (/app/src/orders.ts)\n    at handle (/app/src/routes.ts)",
+			)
+		})
+
+		it("skips stdlib and dependency frames in every runtime it knows", () => {
+			const python = inputs(
+				Arr.join(
+					[
+						"Traceback (most recent call last):",
+						'  File "/app/main.py", line 10, in run',
+						'  File "/usr/local/lib/python3.12/json/decoder.py", line 3, in decode',
+						'  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 5, in get',
+					],
+					"\n",
+				),
+			)
+			expect(python.fpFrames).toBe('  File "/app/main.py", , in run')
+			const jvm = inputs(
+				Arr.join(
+					[
+						"\tat java.util.HashMap.get(HashMap.java:10)",
+						"\tat com.acme.Orders.load(Orders.java:42)",
+					],
+					"\n",
+				),
+			)
+			expect(jvm.fpFrames).toBe("\tat com.acme.Orders.load(Orders.java)")
+		})
+
+		it("keeps every frame of a stack that never enters app code", () => {
+			const stack = "    at a (/app/node_modules/x/a.js:1:1)\n    at b (/app/node_modules/x/b.js:2:2)"
+			expect(inputs(stack).fpFrames).toBe(
+				"    at a (node_modules/x/a.js)\n    at b (node_modules/x/b.js)",
+			)
+		})
+
+		it("hashes the previous version's frames for the re-key", () => {
+			const stack =
+				"    at validate (/app/node_modules/zod/lib/index.js:1:1)\n    at saveOrder (/app/src/orders.ts:42:5)"
+			const result = inputs(stack)
+			expect(result.previousHashInputs).toEqual([
+				"Error",
+				"    at validate (node_modules/zod/lib/index.js)\n    at saveOrder (/app/src/orders.ts)",
+				result.msgSignature,
+				PREVIOUS_FINGERPRINT_HASH_SALT,
+			])
+		})
 	})
 
 	describe("frame shape matching", () => {
@@ -371,7 +479,7 @@ describe("error fingerprint normalization", () => {
 				["Cannot GET /.git/index", "Cannot GET /admin/phpmyadmin/"],
 				["Route GET:/.env not found", "Route GET:/backup.sql not found"],
 				['No route found for "GET https://x.dev/.env"', 'No route found for "GET /a (b)"'],
-			]) {
+			] as const) {
 				expect(signature(a)).toBe(signature(b))
 			}
 			expect(signature("RouteNotFound (GET /.env)")).not.toBe(signature("RouteNotFound (POST /.env)"))
@@ -652,6 +760,10 @@ describe("SQL parity", () => {
 	// nothing could see drift. Assert the rendered SQL really does contain them.
 	const sql = ERROR_EVENTS_MV_SQL
 
+	it("escapes every quote and backslash when embedding a pattern in a string literal", () => {
+		expect(chPattern("it's \\d+'\\")).toBe("'it\\'s \\\\d+\\'\\\\'")
+	})
+
 	it("renders the frame matcher and every redaction from the shared constants", () => {
 		expect(sql).toContain(`match(line, ${chPattern(FRAME_LINE_PATTERN)})`)
 		expect(sql).toContain(`position(line, ${chPattern(EFFECT_SPAN_FRAME_MARKER)}) = 0`)
@@ -659,12 +771,14 @@ describe("SQL parity", () => {
 		expect(sql).toContain(`NOT match(line, ${chPattern(SPAN_NAME_FRAME_PATTERN)})`)
 		expect(sql).toContain(`NOT match(line, ${chPattern(INTERNAL_FRAME_PATTERN)})`)
 		// The frame limit reads _msgSig, so the signature must be defined first.
-		expect(sql.indexOf("AS _msgSig")).toBeLessThan(sql.indexOf("AS _topFrames"))
+		const indexIn = (needle: string) => Option.getOrElse(Str.indexOf(needle)(sql), () => -1)
+		expect(indexIn("AS _msgSig")).toBeLessThan(indexIn("AS _topFrames"))
 		for (const [pattern, replacement] of [
 			...FRAME_REDACTIONS,
 			...JSON_TYPE_VALUE_REDACTIONS,
 			...JSON_VALUE_REDACTIONS,
 			...ERROR_MSG_REDACTIONS,
+			...CUSTOM_FINGERPRINT_REDACTIONS,
 		]) {
 			const chReplacement = Str.replace(/\$([1-9])/g, "\\$1")(replacement)
 			expect(sql).toContain(`${chPattern(pattern)}, ${chPattern(chReplacement)}`)
@@ -673,7 +787,11 @@ describe("SQL parity", () => {
 
 	it("hashes the version salt, so a FINGERPRINT_VERSION bump rotates every issue", () => {
 		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the salt is semantic: it rotates every issue
-		expect(sql).toContain(`_msgSig, ${chPattern(FINGERPRINT_HASH_SALT)}) AS FingerprintHash`)
+		expect(sql).toContain(`_msgSig, ${chPattern(FINGERPRINT_HASH_SALT)})\n          ) AS _hash`)
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the previous salt is what the re-key matches on
+		expect(sql).toContain(
+			`_msgSig, ${chPattern(PREVIOUS_FINGERPRINT_HASH_SALT)})\n          ) AS _prevHash`,
+		)
 	})
 
 	it("truncates by character in both implementations, not by byte", () => {
@@ -686,7 +804,7 @@ describe("SQL parity", () => {
 
 	it("keeps the frame limit in step", () => {
 		expect(sql).toContain(
-			`1, if(position(_exType, '/') > 0 AND _msgSig != '', ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES})\n          ) AS _topFrames`,
+			`if(position(_exType, '/') > 0 AND _msgSig != '', ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES}) AS _maxFrames`,
 		)
 	})
 
@@ -694,11 +812,17 @@ describe("SQL parity", () => {
 		// RE2 rejects backreferences and lookaround; JS accepts both, so a pattern
 		// written here can typecheck, pass every test above, and still fail at
 		// deploy time against the warehouse.
-		for (const [pattern] of [...FRAME_REDACTIONS, ...JSON_VALUE_REDACTIONS, ...ERROR_MSG_REDACTIONS]) {
+		for (const [pattern] of [
+			...FRAME_REDACTIONS,
+			...JSON_VALUE_REDACTIONS,
+			...ERROR_MSG_REDACTIONS,
+			...CUSTOM_FINGERPRINT_REDACTIONS,
+		]) {
 			expect(pattern).not.toMatch(/\(\?[=!<]/)
 			expect(pattern).not.toMatch(/\\[1-9]/)
 		}
 		expect(FRAME_LINE_PATTERN).not.toMatch(/\(\?[=!<]/)
+		expect(LIBRARY_FRAME_PATTERN).not.toMatch(/\(\?[=!<]/)
 	})
 
 	it("uses no replacement syntax beyond a group reference both engines share", () => {
@@ -710,7 +834,9 @@ describe("SQL parity", () => {
 			...JSON_VALUE_REDACTIONS,
 			...ERROR_MSG_REDACTIONS,
 		]) {
-			const groups = Arr.map([...replacement.matchAll(/\$([1-9])/g)], (m) => Number(m[1]))
+			const groups = Arr.map(Arr.fromIterable(Str.matchAll(/\$([1-9])/g)(replacement)), (m) =>
+				Number(m[1]),
+			)
 			expect(Str.replace(/\$[1-9]/g, "")(replacement)).not.toMatch(/[$\\]/)
 			const capturing = new RegExp(`${pattern}|`).exec("")?.length ?? 1
 			for (const group of groups) expect(group).toBeLessThan(capturing)
@@ -1262,5 +1388,34 @@ describe("grouping residuals from a production replay", () => {
 		)
 
 		expect(frames(...recursion, "    at main (/app/main.js:1:1)")).toBe("    at walk (/app/tree.js)")
+	})
+
+	it("folds a single-case value, so each occurrence is not its own issue", () => {
+		const d1 = (reference: string) =>
+			signature(`Failed to execute statement: D1_ERROR: internal error; reference = ${reference}`)
+
+		expect(d1("skqdd7q56j7h4ovn7obivsp1")).toBe(d1("m1p0v1bnpbu67m8u0hm8ldo0"))
+		expect(d1("skqdd7q56j7h4ovn7obivsp1")).toBe(
+			"Failed to execute statement: D#_ERROR: internal error; reference = #",
+		)
+		expect(signature("No configuration for team 39E3Q3IEJ6")).toBe(
+			signature("No configuration for team V3KA9MAW2H"),
+		)
+	})
+
+	it("keeps names that interleave letters and digits", () => {
+		const undefinedName = (name: string) => signature(`${name} is not defined`)
+
+		expect(undefinedName("Float32x4Array")).not.toBe(undefinedName("Int32Array2D"))
+		expect(undefinedName("feedbackHandler2")).not.toBe(undefinedName("feedbackHandler3x"))
+		expect(undefinedName("utf8mb4_unicode_520_ci")).not.toBe(undefinedName("utf8mb4_0900_ai_ci"))
+		expect(undefinedName("v1beta2client")).toBe("v#beta#client is not defined")
+		expect(signature("web2#build: command exited (1)")).toBe("web##build: command exited (#)")
+	})
+
+	it("reads a hex literal the same whatever its digits", () => {
+		const selector = (value: string) => signature(`Function selector ${value} does not match value()`)
+
+		expect(selector("0x722713f7")).toBe(selector("0x18160ddd"))
 	})
 })

@@ -1,5 +1,6 @@
 import { HttpRouter, type HttpServerRequest, HttpServerResponse } from "effect/http"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Result, Schema } from "effect"
+import { readBoundedText } from "@maple/backend/http/bounded-body"
 import type { VcsProviderClient } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
@@ -22,6 +23,9 @@ class EnqueueFailure extends Schema.TaggedError<EnqueueFailure>()(
 
 const textResponse = (body: string, status: number) => HttpServerResponse.text(body, { status })
 
+/** GitHub does not deliver payloads over 25 MB, so a larger body is never a real delivery. */
+export const VCS_WEBHOOK_MAX_BYTES = 25 * 1024 * 1024
+
 export const VcsWebhookRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
 		const registry = yield* VcsProviderRegistry
@@ -39,19 +43,30 @@ export const VcsWebhookRouter = HttpRouter.use((router) =>
 						...(deliveryId ? { "vcs.webhook.delivery_id": deliveryId } : undefined),
 					})
 
-					const bodyOpt = yield* req.text.pipe(Effect.option)
-					if (Option.isNone(bodyOpt) || bodyOpt.value.length === 0) {
-						yield* Effect.annotateCurrentSpan({
-							"http.response.status_code": 400,
+					const rejected = (status: number, reason: string, body: string) =>
+						Effect.annotateCurrentSpan({
+							"http.response.status_code": status,
 							"vcs.webhook.outcome": "rejected",
-							"vcs.webhook.reason": "empty_body",
-						})
-						yield* Effect.logInfo("[VCS] webhook rejected: empty request body")
-						return textResponse("Missing request body", 400)
-					}
-					const headers = req.headers as Record<string, string | undefined>
+							"vcs.webhook.reason": reason,
+						}).pipe(Effect.as(textResponse(body, status)))
 
-					return yield* provider.webhookToJobs({ headers, rawBody: bodyOpt.value }).pipe(
+					const headers = req.headers as Record<string, string | undefined>
+					// Refused before the body is read: nothing unsigned or oversized is buffered.
+					if (!headers[provider.webhookSignatureHeader]) {
+						return yield* rejected(401, "missing_signature", "Missing webhook signature")
+					}
+					const read = yield* Effect.result(readBoundedText(req, VCS_WEBHOOK_MAX_BYTES))
+					if (Result.isFailure(read)) {
+						return read.failure._tag === "@maple/backend/http/RequestBodyTooLargeError"
+							? yield* rejected(413, "body_too_large", "Request body too large")
+							: yield* rejected(400, "unreadable_body", "Unreadable request body")
+					}
+					if (read.success.length === 0) {
+						yield* Effect.logInfo("[VCS] webhook rejected: empty request body")
+						return yield* rejected(400, "empty_body", "Missing request body")
+					}
+
+					return yield* provider.webhookToJobs({ headers, rawBody: read.success }).pipe(
 						Effect.flatMap((jobs) =>
 							queue.sendBatch(jobs).pipe(
 								Effect.flatMap(() =>

@@ -15,7 +15,7 @@ import {
 	tracesFacetsQuery,
 } from "./errors"
 import { OrgId } from "@maple/domain"
-import { String as Str } from "effect"
+import { String as Str, Array as Arr, Option } from "effect"
 
 const baseParams = {
 	orgId: OrgId.make("org_1"),
@@ -280,8 +280,12 @@ describe("errorsFacetsQuery", () => {
 		const q = errorsFacetsQuery({ services: ["api"], deploymentEnvs: ["prod"] })
 		const { sql } = compileUnionUnsafe(q, baseParams)
 		const branches = Str.split("UNION ALL")(sql)
-		const serviceBranch = branches.find((b) => Str.includes("'service' AS facetType")(b))
-		const envBranch = branches.find((b) => Str.includes("'environment' AS facetType")(b))
+		const serviceBranch = Option.getOrThrow(
+			Arr.findFirst(branches, (b) => Str.includes("'service' AS facetType")(b)),
+		)
+		const envBranch = Option.getOrThrow(
+			Arr.findFirst(branches, (b) => Str.includes("'environment' AS facetType")(b)),
+		)
 
 		expect(serviceBranch).not.toContain("ServiceName IN ('api')")
 		expect(serviceBranch).toContain("DeploymentEnv IN ('prod')")
@@ -296,8 +300,12 @@ describe("errorsFacetsQuery", () => {
 		const q = errorsFacetsQuery({ excludedServices: ["noisy"], excludedDeploymentEnvs: ["staging"] })
 		const { sql } = compileUnionUnsafe(q, baseParams)
 		const branches = Str.split("UNION ALL")(sql)
-		const serviceBranch = branches.find((b) => Str.includes("'service' AS facetType")(b))
-		const envBranch = branches.find((b) => Str.includes("'environment' AS facetType")(b))
+		const serviceBranch = Option.getOrThrow(
+			Arr.findFirst(branches, (b) => Str.includes("'service' AS facetType")(b)),
+		)
+		const envBranch = Option.getOrThrow(
+			Arr.findFirst(branches, (b) => Str.includes("'environment' AS facetType")(b)),
+		)
 
 		expect(serviceBranch).not.toContain("ServiceName NOT IN ('noisy')")
 		expect(serviceBranch).toContain("DeploymentEnv NOT IN ('staging')")
@@ -422,7 +430,7 @@ describe("tracesFacetsQuery", () => {
 		const q = tracesFacetsQuery({ facet: "service" })
 		const { sql } = compileUnionUnsafe(q, baseParams)
 		// The only UNION left is the branch's own two tiers.
-		expect(sql.match(/UNION ALL/g)).toHaveLength(1)
+		expect(Arr.fromIterable(Str.matchAll(/UNION ALL/g)(sql))).toHaveLength(1)
 		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the facet label proves which branch compiled
 		expect(sql).toContain("'service' AS facetType")
 		expect(sql).not.toContain("'spanName' AS facetType")
@@ -435,11 +443,11 @@ describe("tracesFacetsQuery", () => {
 	it("keeps the non-service branch empty-value guard when facet-scoped", () => {
 		const q = tracesFacetsQuery({ facet: "deploymentEnv" })
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		expect(sql.match(/UNION ALL/g)).toHaveLength(1)
+		expect(Arr.fromIterable(Str.matchAll(/UNION ALL/g)(sql))).toHaveLength(1)
 		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the facet label proves which branch compiled
 		expect(sql).toContain("'deploymentEnv' AS facetType")
 		// On both tiers.
-		expect(sql.match(/DeploymentEnv != ''/g)).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/DeploymentEnv != ''/g)(sql))).toHaveLength(2)
 		expect(sql).toContain("LIMIT 20")
 	})
 })
@@ -454,9 +462,9 @@ describe("trace facets rollup routing", () => {
 			expect(sql).toContain("FROM trace_facets_hourly")
 			expect(sql).toContain("FROM trace_list_mv")
 			// Every filter reaches both tiers.
-			expect(sql.match(/ServiceName IN \('api', 'web'\)/g)).toHaveLength(2)
-			expect(sql.match(/HasError = 1/g)).toHaveLength(2)
-			expect(sql.match(/DeploymentEnv = 'production'/g)).toHaveLength(2)
+			expect(Arr.fromIterable(Str.matchAll(/ServiceName IN \('api', 'web'\)/g)(sql))).toHaveLength(2)
+			expect(Arr.fromIterable(Str.matchAll(/HasError = 1/g)(sql))).toHaveLength(2)
+			expect(Arr.fromIterable(Str.matchAll(/DeploymentEnv = 'production'/g)(sql))).toHaveLength(2)
 		}
 	})
 
@@ -471,7 +479,7 @@ describe("trace facets rollup routing", () => {
 			const facets = compileUnionUnsafe(tracesFacetsQuery(opts), baseParams).sql
 			expect(facets, JSON.stringify(opts)).not.toContain("trace_facets_hourly")
 			expect(facets, JSON.stringify(opts)).not.toContain("INTERVAL 1 HOUR")
-			expect(facets.match(/UNION ALL/g), JSON.stringify(opts)).toHaveLength(6)
+			expect(Arr.fromIterable(Str.matchAll(/UNION ALL/g)(facets)), JSON.stringify(opts)).toHaveLength(6)
 		}
 		const stats = compileUnsafe(tracesDurationStatsQuery({ rawOnly: true }), baseParams).sql
 		expect(stats).not.toContain("trace_facets_hourly")

@@ -10,7 +10,7 @@ import {
 import { fromPanelType } from "../kit/chart-registry"
 import { inferDefaultUnitForQueries } from "./drafts"
 import type { EditorState, QueryDraft } from "./editor-state"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // `useWidgetBuilder`'s actions and the page's query handlers, as pure state steps.
 
@@ -49,8 +49,9 @@ export const addQuery = (state: EditorState, id: string): EditorState => ({
 
 /** `cloneQuery`: a copy appended, then every query relettered in order. */
 export const cloneQuery = (state: EditorState, sourceId: string, id: string): EditorState => {
-	const source = state.queries.find((query) => query.id === sourceId)
-	if (source === undefined) return state
+	const found = Arr.findFirst(state.queries, (query) => query.id === sourceId)
+	if (Option.isNone(found)) return state
+	const source = found.value
 	return {
 		...state,
 		queries: Arr.map([...state.queries, { ...source, id }], (query, index) => ({
@@ -93,8 +94,6 @@ export const removeFormula = (state: EditorState, formulaId: string): EditorStat
 		(formula, index) => ({ ...formula, name: formulaLabel(index) }),
 	),
 })
-
-export { withRootOnly } from "../../kit/query-builder/change"
 
 /**
  * `reconcileFunnelSource` (funnel-source.ts): on a funnel, a product-event query A means the step

@@ -18,7 +18,7 @@
  */
 import { ChatToolCall } from "./chat-session"
 import type { ChatEvent, ChatMessage, ChatTaskRef, ChatTaskState } from "./chat-session"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /**
  * A transcript being folded, event by event.
@@ -165,7 +165,10 @@ const foldInto = (
 		}
 		case "tool-result": {
 			const message = open(event.messageId)
-			const index = message.toolCalls.findIndex((call) => call.id === event.callId)
+			const index = Option.getOrElse(
+				Arr.findFirstIndex(message.toolCalls, (call) => call.id === event.callId),
+				() => -1,
+			)
 			const call = message.toolCalls[index]
 			// Logs written before the adapter dropped it hold the approval gate's own refusal as a
 			// proposal's result; it is not a decision. Can go once those sessions have aged out.
@@ -177,11 +180,11 @@ const foldInto = (
 				break
 			}
 			if (call !== undefined) {
-				message.toolCalls[index] = {
+				message.toolCalls[index] = new ChatToolCall({
 					...call,
 					output: event.output,
 					...(event.isError === true ? { isError: true } : undefined),
-				} as ChatToolCall
+				})
 			}
 			break
 		}
@@ -210,10 +213,10 @@ const settleUnfinished = (drafts: Drafts, messageId: string, nested?: Map<string
 	message.toolCalls = Arr.map(message.toolCalls, (call) => {
 		if (call.output !== undefined || call.proposed === true || call.stopped === true) return call
 		const child = nested?.get(call.id)
-		child?.messages.forEach((draft) => settleUnfinished(child, draft.id))
+		if (child !== undefined) Arr.forEach(child.messages, (draft) => settleUnfinished(child, draft.id))
 		const task =
 			call.task?.status === "running" ? { ...call.task, status: "aborted" as const } : call.task
-		return { ...call, stopped: true, ...(task === undefined ? undefined : { task }) } as ChatToolCall
+		return new ChatToolCall({ ...call, stopped: true, ...(task === undefined ? undefined : { task }) })
 	})
 }
 
@@ -250,8 +253,12 @@ const foldTaskEvent = (
 ): void => {
 	const parent = top.byId.get(ref.parentMessageId)
 	if (!parent) return
-	const index = parent.toolCalls.findIndex((call) => call.id === ref.id)
-	if (index < 0) return
+	const index = Option.getOrElse(
+		Arr.findFirstIndex(parent.toolCalls, (call) => call.id === ref.id),
+		() => -1,
+	)
+	const existing = parent.toolCalls[index]
+	if (existing === undefined) return
 
 	const child = nested.get(ref.id) ?? makeDrafts()
 	nested.set(ref.id, child)
@@ -259,8 +266,12 @@ const foldTaskEvent = (
 
 	// `ChatToolCall` is the readonly wire type, so the call is rebuilt rather than mutated. Keying
 	// the nested transcript by task id rather than by object identity is what makes that safe.
+	// Plain on purpose: `task.messages` must stay the live `child.messages`, which a class
+	// constructor would copy. Like the top-level drafts, the HTTP edge rebuilds real instances.
+	// @effect-diagnostics-next-line schemaClassObjectLiteral:off
 	parent.toolCalls[index] = {
-		...parent.toolCalls[index],
+		...existing,
+		// @effect-diagnostics-next-line schemaClassObjectLiteral:off
 		task: {
 			id: ref.id,
 			agent: ref.agent,
@@ -269,5 +280,5 @@ const foldTaskEvent = (
 			// further, so no `task` field is ever present on them.
 			messages: child.messages,
 		},
-	} as ChatToolCall
+	}
 }

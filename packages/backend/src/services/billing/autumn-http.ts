@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 import {
 	Context,
 	Duration,
@@ -16,6 +16,7 @@ import { BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/h
 import type { BillingCustomerId, BillingLimitType, UpdateBillingUsageAlert } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { AUTUMN_API_VERSION } from "./autumn-api"
+import { replaceWith } from "@maple/strings"
 
 /**
  * Autumn's REST surface, spoken directly.
@@ -138,7 +139,7 @@ const MODEL_RECORD_FIELDS = new Set(["balances", "flags", "total"])
 const OPAQUE_FIELDS = new Set(["metadata", "properties", "grouped_values", "values", "filter_by"])
 
 const toCamel = (key: string): string =>
-	key.replace(/_([a-z0-9])/g, (_, char: string) => Str.toUpperCase(char))
+	replaceWith(key, /_([a-z0-9])/g, (_, char = "") => Str.toUpperCase(char))
 
 export const camelizeKeys = (value: unknown, renameOwnKeys = true): unknown => {
 	// An array has no own keys to protect, so its items rename normally even when

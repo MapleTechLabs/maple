@@ -24,7 +24,7 @@ const window = { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00
 const NOW = Date.UTC(2026, 9, 1, 12)
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 
-const wire = Schema.decodeUnknownSync(V2ErrorIssueDetail)({
+const wire = Schema.decodeSync(V2ErrorIssueDetail)({
 	id: encodePublicId("iss", issueId),
 	object: "error_issue",
 	kind: "error",

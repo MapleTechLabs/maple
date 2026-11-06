@@ -74,7 +74,7 @@ import {
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstackClass } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 // `GcpServicesTable`, `GcpSubscriptionsTable`, `GcpDatabasesTable` and `GcpServiceTable`.
 
@@ -163,12 +163,11 @@ const serviceMeta = (h: H, row: GcpServiceRow, showProject: boolean): ReadonlyAr
 		[h.Class("flex items-center gap-x-2 md:hidden")],
 		[h.span([h.Class("text-foreground-faint")], ["·"]), "idle, still billed"],
 	)
-	const last = items[items.length - 1]
+	const last = items.at(-1)
+	if (last === undefined) return [note]
 	// A string keeps metaLine's 28ch cap, which it applies only to plain strings.
 	const capped = typeof last === "string" ? h.span([h.Class("max-w-[28ch] truncate")], [last]) : last
-	return last === undefined
-		? [note]
-		: [...items.slice(0, -1), h.span([h.Class("flex min-w-0 items-center gap-x-2")], [capped, note])]
+	return [...items.slice(0, -1), h.span([h.Class("flex min-w-0 items-center gap-x-2")], [capped, note])]
 }
 
 export const servicesTable = (
@@ -452,7 +451,10 @@ const databaseMeta = (h: H, row: GcpDatabaseRow, showProject: boolean): Readonly
 	...placeItems(row, showProject),
 ]
 
-const isMysql = (row: GcpDatabaseRow) => row.instance?.databaseVersion?.startsWith("MYSQL") === true
+const isMysql = (row: GcpDatabaseRow) => {
+	const version = row.instance?.databaseVersion
+	return version !== null && version !== undefined && Str.startsWith("MYSQL")(version)
+}
 
 const queriesCell = (h: H, row: GcpDatabaseRow, ctx: RowsContext): Html =>
 	row.queries !== undefined

@@ -51,14 +51,29 @@ export type ReconAgent = keyof typeof VERBATIM.recon
 export const RECON_AGENTS: ReadonlyArray<ReconAgent> = ["1a", "1b", "1c", "1d"]
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-const encodePretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
-const encodePrettyOption = Schema.encodeUnknownOption(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+const encodeJsonOption = Schema.encodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+
+/**
+ * Prompt data as compact JSON, an array one element per line: indentation costs every agent tokens
+ * on every turn (a third of a large ledger) and tells the model nothing.
+ */
+const encodeData = (value: unknown): string =>
+	Arr.isArray(value)
+		? value.length === 0
+			? "[]"
+			: `[\n${Arr.join(
+					Arr.map(value, (item) => encodeJson(item)),
+					",\n",
+				)}\n]`
+		: encodeJson(value)
 
 type Verdict = "confirmed" | "needs_validation" | "rejected"
 
 const schemaBranch = (verdict: Verdict): string => {
-	const branch = reportSchema.items.oneOf.find((b) => b.properties.verdict.const === verdict)
-	return Option.getOrElse(encodePrettyOption(branch), () => String(branch))
+	const branch = Option.getOrUndefined(
+		Arr.findFirst(reportSchema.items.oneOf, (b) => b.properties.verdict.const === verdict),
+	)
+	return Option.getOrElse(encodeJsonOption(branch), () => `(no report schema branch for ${verdict})`)
 }
 
 /**
@@ -181,10 +196,22 @@ export interface SynthesisInput {
 }
 
 /**
+ * Units one synthesis answer seeds. The whole plan is one model call capped at 32k output tokens,
+ * reasoning included: about 60 full units on a large monorepo ran past it. The coverage critic adds
+ * the surfaces left unseeded after each wave. A retry, after an answer that did not fit or decode,
+ * seeds fewer.
+ */
+export const SYNTHESIS_SEED_LIMIT = { first: 40, retry: 20 } as const
+
+/**
  * The parent's synthesis step, delegated: in the skill a model parent writes `architecture.md` and
  * seeds the ledger. Code owns ids, state and validation; this agent owns the judgment.
  */
-export const synthesisPrompt = (input: SynthesisInput, context: AgentContext): string =>
+export const synthesisPrompt = (
+	input: SynthesisInput,
+	context: AgentContext,
+	attempt: keyof typeof SYNTHESIS_SEED_LIMIT = "first",
+): string =>
 	Arr.join(
 		[
 			`You synthesize reconnaissance for a ${input.profile} security audit of ${input.target}. Scope: ${input.scopePaths.length === 0 ? "the whole repository" : Arr.join(input.scopePaths, ", ")}. Write the parent's architecture summary and the initial coverage-ledger units, following the skill's rules below exactly.`,
@@ -204,6 +231,12 @@ export const synthesisPrompt = (input: SynthesisInput, context: AgentContext): s
 					'{"architecture_md": "<the architecture summary, about 1,000 words at most>", "units": [<seed unit>, ...]}',
 					"Each seed unit carries the semantic fields of a ledger unit and nothing else: canonical_refs (surface, boundary, subsystem, attack_class, and lifecycle only when material), surface, boundary, subsystem, attack_class, lifecycle (with canonical_refs.lifecycle), starting_paths, ordinary_attack_class_block, selected_companion_blocks, excluded_blocks. Add priority (an integer, 1 is hunted first) ranking unauthenticated or lowest-trust entry surfaces first, then boundaries protecting the most valuable resources (credentials, cross-tenant data, code execution, release authority). The parent derives coverage_id and every state field.",
 					`Block references must be exact: an ordinary block is one of the list above; a companion block is FILE.md# plus the heading text before any parenthetical qualifier. Seed only in-scope surfaces as assignable units.${input.profile === "deep" ? " This is a deep run: split units per subsystem and per material lifecycle mode." : ""}`,
+					`Your answer must fit one reply. Seed at most ${SYNTHESIS_SEED_LIMIT[attempt]} units, the highest-priority ones; the coverage critic adds the remaining surfaces after each hunting wave, so name every entry surface you found, seeded or not, in architecture_md. Keep each excluded_blocks reason to one short clause, and leave the companion "Core discipline", "Universal moves" and "Validation rules" sections out of selected_companion_blocks: the parent adds them.`,
+					...(attempt === "retry"
+						? [
+								"A previous attempt at this result did not produce a usable answer: it ran out of room or broke the contract. Do not explore the repository again; the reconnaissance above is enough. Answer directly and keep it compact.",
+							]
+						: []),
 				],
 				"\n\n",
 			),
@@ -214,7 +247,7 @@ export const synthesisPrompt = (input: SynthesisInput, context: AgentContext): s
 
 /** The file part of a block reference; the whole reference when it names only a file. */
 export const companionFileOf = (ref: string): string =>
-	Str.includes("#")(ref) ? Str.slice(0, ref.indexOf("#"))(ref) : ref
+	Option.match(Str.indexOf("#")(ref), { onNone: () => ref, onSome: (at) => Str.slice(0, at)(ref) })
 
 /** A selected block's text, plus the sections every selected companion must carry. */
 const selectedBlockTexts = (units: ReadonlyArray<CoverageUnit>): ReadonlyArray<string> => {
@@ -293,7 +326,7 @@ export const hunterPrompt = (input: HunterInput, context: AgentContext): string 
 			`## architecture.md\n\n${input.architectureMd}`,
 			...repoTreeSection(input.repoTree),
 			// 3
-			`## Your assignment\n\n${encodePretty(assignment)}`,
+			`## Your assignment\n\n${encodeData(assignment)}`,
 			// 4
 			`## Selected attack-class blocks\n\n${Arr.join(selectedBlockTexts(input.units), "\n\n")}`,
 			// 5
@@ -314,7 +347,7 @@ export const hunterPrompt = (input: HunterInput, context: AgentContext): string 
 			Arr.join(
 				[
 					"## Exclusions",
-					`Carried same-source confirmed root causes (do not re-report): ${input.carriedExclusions.length === 0 ? "none" : encodePretty(input.carriedExclusions)}`,
+					`Carried same-source confirmed root causes (do not re-report): ${input.carriedExclusions.length === 0 ? "none" : encodeData(input.carriedExclusions)}`,
 					`Peer-owned coverage IDs you must not duplicate: ${input.peerCoverageIds.length === 0 ? "none" : Arr.join(input.peerCoverageIds, ", ")}`,
 				],
 				"\n\n",
@@ -368,12 +401,12 @@ export const criticPrompt = (input: CriticInput, context: AgentContext): string 
 		[
 			`You are a fresh ${input.kind} coverage critic in a defensive security audit. You read source but do not write files or run targets. You propose coverage, not findings.`,
 			VERBATIM.coverageCritic,
-			`## architecture.md\n\n${input.architectureMd}`,
+			`## architecture.md\n\nSynthesis seeded at most ${SYNTHESIS_SEED_LIMIT.first} units, the highest-priority ones. An entry surface named here with no ledger unit is a missing unit, not a deliberate exclusion.\n\n${input.architectureMd}`,
 			...repoTreeSection(input.repoTree),
-			`## Coverage ledger\n\n${encodePretty(input.ledger)}`,
-			`## Candidate fingerprints and states\n\n${input.candidateStates.length === 0 ? "None." : encodePretty(input.candidateStates)}`,
+			`## Coverage ledger\n\nOne unit per line. Each unit's \`id\` is the name to use in \`reassign_ids\`; left out are each unit's owner (\`agent_id\`), its scheduling (\`priority\`, \`failed_attempts\`), check prose (only each check's invariant is listed, as \`checks\`), archived attempts (only their count), and any field that is empty, null or unchanged from a new unit (\`prior_status\` none, \`wave\` 1, no attempts).\n\n${encodeData(input.ledger)}`,
+			`## Candidate fingerprints and states\n\n${input.candidateStates.length === 0 ? "None." : encodeData(input.candidateStates)}`,
 			`## Prior-ledger gaps\n\n${input.priorGapSummary}`,
-			`## Surfaces hunters reported as uncovered\n\n${input.hunterUncovered.length === 0 ? "None." : encodePretty(input.hunterUncovered)}\nAccept each one that is a real, unmapped coverage gap as a missing unit; ignore the rest.`,
+			`## Surfaces hunters reported as uncovered\n\n${input.hunterUncovered.length === 0 ? "None." : encodeData(input.hunterUncovered)}\nAccept each one that is a real, unmapped coverage gap as a missing unit; ignore the rest.`,
 			`## Ordinary attack-class blocks\n\n${Arr.join(ORDINARY_BLOCK_REFS, "\n")}\n\nCompanion blocks are FILE.md# plus the heading text before any parenthetical, from: ${Arr.join(COMPANION_FILES, ", ")}.`,
 			Arr.join(
 				[
@@ -418,9 +451,9 @@ export const candidateVerifierPrompt = (input: CandidateVerifierInput, context: 
 					"\n\n",
 				) || "None."
 			}`,
-			`## Candidate\n\n${encodePretty(input.candidate)}`,
-			`## Linked coverage-unit checks\n\n${encodePretty(input.linkedChecks)}`,
-			`## Prior records with this fingerprint\n\n${input.priorRecords.length === 0 ? "None." : encodePretty(input.priorRecords)}${input.priorEstimate === undefined || input.priorEstimate === null ? "" : `\n\nThe previous run estimated this lead at \`${input.priorEstimate}\` (unverified). Keep or correct it in your estimate.`}`,
+			`## Candidate\n\n${encodeData(input.candidate)}`,
+			`## Linked coverage-unit checks\n\n${encodeData(input.linkedChecks)}`,
+			`## Prior records with this fingerprint\n\n${input.priorRecords.length === 0 ? "None." : encodeData(input.priorRecords)}${input.priorEstimate === undefined || input.priorEstimate === null ? "" : `\n\nThe previous run estimated this lead at \`${input.priorEstimate}\` (unverified). Keep or correct it in your estimate.`}`,
 			`## report-schema.json branches\n\n### confirmed\n\n${schemaBranch("confirmed")}\n\n### needs_validation\n\n${schemaBranch("needs_validation")}\n\n### rejected\n\n${schemaBranch("rejected")}`,
 			VERIFIER_ESTIMATE,
 			...(input.includeRecordChecks === true
@@ -444,7 +477,7 @@ export const recordVerifierPrompt = (
 			"You are a fresh research verifier for one final record of a defensive security audit. You check the structured record, not the hunter write-up, and remain inside source and local boundaries. You did not hunt or validate it.",
 			VERBATIM.recordVerification,
 			executionStatement(context.execution),
-			`## The record\n\n${encodePretty(record)}`,
+			`## The record\n\n${encodeData(record)}`,
 			`## report-schema.json branches (for a replacement)\n\n### confirmed\n\n${schemaBranch("confirmed")}\n\n### needs_validation\n\n${schemaBranch("needs_validation")}\n\n### rejected\n\n${schemaBranch("rejected")}`,
 			recordVerifierEstimate(record.verdict === "needs_validation" ? estimate : undefined),
 			'Return exactly one JSON object and no surrounding prose: {"decision":"verified","fingerprint":"..."} or {"decision":"replace","reason":"...","record":{...}}, adding "estimated_severity":{...} beside "record" when the replacement record is needs_validation.',

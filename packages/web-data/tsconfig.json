@@ -1,6 +1,7 @@
 {
 	"include": ["src/**/*.ts", "vitest.config.ts"],
 	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
 		"target": "ES2023",
 		"module": "ESNext",
 		"lib": ["ES2023", "DOM", "DOM.Iterable"],
@@ -20,7 +21,13 @@
 			{
 				"name": "@effect/language-service",
 				"ignoreEffectWarningsInTscExitCode": true,
-				"diagnosticSeverity": { "unstableApiUsage": "off" }
+				"includeSuggestionsInTsc": false,
+				"diagnosticSeverity": {
+					"unstableApiUsage": "off",
+					"schemaNumber": "off",
+					"schemaClassMissingBrand": "off",
+					"schemaSync": "off"
+				}
 			}
 		]
 	}

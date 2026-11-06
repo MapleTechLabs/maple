@@ -24,6 +24,7 @@ import {
 	Schema,
 	Tracer,
 	String as Str,
+	DateTime,
 } from "effect"
 import { TestClock } from "effect/testing"
 import { AlertRuleUpsertRequest, OrgId } from "@maple/domain/http"
@@ -113,8 +114,8 @@ describe("AlertsService evaluation cadence", () => {
 			assert.strictEqual(longTicks[0], 0)
 			const settled = longTicks.slice(1)
 			assert.isAtLeast(settled.length, 3)
-			Arr.forEach(settled.slice(1), (tick, i) => assert.strictEqual(tick - settled[i]!, 3))
-			assert.isAtMost(settled[0]!, 3)
+			Arr.forEach(settled.slice(1), (tick, i) => assert.strictEqual(tick - settled[i], 3))
+			assert.isAtMost(settled[0], 3)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
 	})
 
@@ -129,15 +130,18 @@ describe("AlertsService evaluation cadence", () => {
 			yield* alerts.runSchedulerTick()
 
 			// One of the next two minutes is off the rule's every-fifth-minute phase.
-			const idle = [1, 2].find(
-				(n) =>
-					!isAlertRuleDue({
-						ruleId: rule.id,
-						intervalMinutes: 5,
-						updatedAt: claimedAt,
-						lastClaimedAt: claimedAt,
-						windowEndMs: snapAlertWindowEndMs(claimedAt + n * 60_000),
-					}),
+			const idle = Option.getOrUndefined(
+				Arr.findFirst(
+					[1, 2],
+					(n) =>
+						!isAlertRuleDue({
+							ruleId: rule.id,
+							intervalMinutes: 5,
+							updatedAt: claimedAt,
+							lastClaimedAt: claimedAt,
+							windowEndMs: snapAlertWindowEndMs(claimedAt + n * 60_000),
+						}),
+				),
 			)!
 			yield* TestClock.adjust(Duration.minutes(idle))
 			// Back on an idle minute: an edit makes the rule due there.
@@ -267,9 +271,9 @@ describe("AlertsService check intervals", () => {
 			// Right away (never claimed), then on its phase minute every ten.
 			assert.strictEqual(ran[0], 0)
 			const settled = ran.slice(1)
-			assert.isAtMost(settled[0]!, 10)
+			assert.isAtMost(settled[0], 10)
 			assert.isAtLeast(settled.length, 2)
-			Arr.forEach(settled.slice(1), (tick, i) => assert.strictEqual(tick - settled[i]!, 10))
+			Arr.forEach(settled.slice(1), (tick, i) => assert.strictEqual(tick - settled[i], 10))
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
 	})
 
@@ -623,7 +627,7 @@ describe("AlertsService scheduler pool", () => {
 			const slotMs = spreadMs / RULE_COUNT
 			Arr.forEach(offsets, (offset, index) => {
 				assert.isAtLeast(offset, index * slotMs)
-				assert.isBelow(offset - offsets[0]!, index * slotMs + 500)
+				assert.isBelow(offset - offsets[0], index * slotMs + 500)
 			})
 		}).pipe(
 			Effect.provide(makeLayer(testDb, stub, { fetch: okFetch, schedulerSpreadMs: () => spreadMs })),
@@ -690,8 +694,8 @@ describe("AlertsService scheduler pool", () => {
 			Arr.forEach(offsets, (offset, index) => {
 				const claimedAt = claimOffset.get(orgAt(index))
 				assert.isDefined(claimedAt)
-				assert.isAtMost(claimedAt!, offset)
-				assert.isBelow(offset - claimedAt!, chunkSpanMs + 500)
+				assert.isAtMost(claimedAt, offset)
+				assert.isBelow(offset - claimedAt, chunkSpanMs + 500)
 			})
 			assert.isAtLeast(claimOffset.get(orgAt(25))!, chunkSpanMs - 100)
 		}).pipe(
@@ -730,7 +734,7 @@ describe("AlertsService scheduler pool", () => {
 				assert.isAtLeast(offset, index * slotMs)
 				assert.isBelow(offset - (firstStart - startedAt), index * slotMs + 500)
 			})
-			const stuckRule = (yield* alerts.listRules(orgAt(0))).rules[0]!
+			const stuckRule = (yield* alerts.listRules(orgAt(0))).rules[0]
 			assert.include(stuckRule.lastEvaluationError ?? "", "exceeded")
 		}).pipe(
 			Effect.provide(
@@ -810,7 +814,13 @@ describe("AlertsService scheduler pool", () => {
 			const recordWindowEnd = (orgId: string, sql: string) =>
 				Ref.update(windowEnds, (ends) => {
 					const latest = Arr.last(
-						Arr.sort(sql.match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/g) ?? [], Order.String),
+						Arr.sort(
+							Option.getOrElse(
+								Str.match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/g)(sql),
+								() => [],
+							),
+							Order.String,
+						),
 					)
 					return Option.match(latest, {
 						onNone: () => ends,
@@ -862,7 +872,7 @@ describe("AlertsService scheduler pool", () => {
 				const windows = yield* Ref.get(checkWindows)
 				assert.strictEqual(windows.length, RULE_COUNT)
 				assert.lengthOf(Arr.dedupe(windows), 1)
-				assert.include(windows[0]!, formatWarehouseDateTime(tickAt - 58_500))
+				assert.include(windows[0], formatWarehouseDateTime(tickAt - 58_500))
 			}).pipe(
 				Effect.provide(
 					makeLayer(testDb, stub, {
@@ -912,7 +922,7 @@ describe("AlertsService scheduler pool", () => {
 			assert.isBelow(wallMs, tickBudgetMs + 2_500)
 			assert.isBelow(HashSet.size(yield* queried), RULE_COUNT)
 			assert.strictEqual(firstTick.evaluatedCount, HashSet.size(yield* queried))
-			const stuckRule = (yield* alerts.listRules(orgAt(0))).rules[0]!
+			const stuckRule = (yield* alerts.listRules(orgAt(0))).rules[0]
 			assert.include(stuckRule.lastEvaluationError ?? "", "deadline")
 
 			// Each tick a minute later, past every claim's TTL. Five more ticks leave
@@ -1044,7 +1054,10 @@ describe("AlertsService claim fence", () => {
 				// the group the second tick had already resolved.
 				assert.sameMembers(
 					Arr.map(incidents, (incident) => incident.resolvedAt),
-					[new Date(firstClaimAt).toISOString(), new Date(secondClaimAt).toISOString()],
+					[
+						DateTime.formatIso(DateTime.makeUnsafe(firstClaimAt)),
+						DateTime.formatIso(DateTime.makeUnsafe(secondClaimAt)),
+					],
 				)
 				const resolveEvents = Arr.filter(
 					(yield* alerts.listDeliveryEvents(orgId)).events,
@@ -1055,8 +1068,12 @@ describe("AlertsService claim fence", () => {
 					Arr.map(incidents, (incident) => incident.id),
 				)
 
-				const lateGroup = incidents.find(
-					(incident) => incident.resolvedAt === new Date(secondClaimAt).toISOString(),
+				const lateGroup = Option.getOrUndefined(
+					Arr.findFirst(
+						incidents,
+						(incident) =>
+							incident.resolvedAt === DateTime.formatIso(DateTime.makeUnsafe(secondClaimAt)),
+					),
 				)!.groupKey
 				const lateState = yield* Effect.promise(() =>
 					queryFirstRow<{ lastEvaluatedAt: Date | null; consecutiveHealthy: number }>(

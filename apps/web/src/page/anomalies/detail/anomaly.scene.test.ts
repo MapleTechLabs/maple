@@ -40,7 +40,7 @@ const ID = Schema.decodeSync(AnomalyIncidentId)("0199a060-0000-7000-8000-0000000
 const NOW = Date.UTC(2026, 9, 1, 12)
 const themed = () => Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
 
-const incident = Schema.decodeUnknownSync(V2AnomalyIncident)({
+const incident = Schema.decodeSync(V2AnomalyIncident)({
 	id: encodePublicId(PublicIdPrefixes.anomalyIncident, ID),
 	object: "anomaly_incident",
 	detector_key: "latency_p95:payment-svc:production",
@@ -127,7 +127,7 @@ describe("anomaly detail", () => {
 	})
 
 	test("a live-refresh read in flight when a resolve lands cannot put the open incident back", () => {
-		const resolved = Schema.decodeUnknownSync(V2AnomalyIncident)({
+		const resolved = Schema.decodeSync(V2AnomalyIncident)({
 			...Schema.encodeSync(V2AnomalyIncident)(incident),
 			status: "resolved",
 			resolved_at: new Date(NOW).toISOString(),
@@ -204,7 +204,7 @@ describe("anomaly detail", () => {
 })
 
 const issueRow = (id: string, exceptionType: string) =>
-	Schema.decodeUnknownSync(V2ErrorIssue)({
+	Schema.decodeSync(V2ErrorIssue)({
 		id,
 		object: "error_issue",
 		kind: "error",
@@ -254,7 +254,7 @@ describe("anomaly link dialog by keyboard", () => {
 				result: Result.succeed(issues),
 			}),
 		).model
-		const timeout = errorIssueFromV2(issues[1] ?? issues[0]).id
+		const timeout = errorIssueFromV2(Arr.getUnsafe(issues, 1) ?? issues[0]).id
 		const input = role("combobox")
 		scene(
 			{ update: pageUpdate, view },

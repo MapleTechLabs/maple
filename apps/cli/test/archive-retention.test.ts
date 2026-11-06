@@ -26,7 +26,7 @@ import type { ArchiveGenerationManifest } from "@maple/local-server/archives/man
 import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
 import { RequestQuiescenceGate } from "@maple/local-server/serve"
 import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex")
 
@@ -36,7 +36,9 @@ const seed = (archiveDir: string, signal: ArchiveSignalName, date: string): stri
 	mkdirSync(shardDir, { recursive: true })
 	const shard = join(shardDir, "00.parquet")
 	writeFileSync(shard, "PAR1")
-	const eventTimeColumn = ARCHIVE_SIGNALS.find((candidate) => candidate.name === signal)!.eventTimeColumn
+	const eventTimeColumn = Option.getOrThrow(
+		Arr.findFirst(ARCHIVE_SIGNALS, (candidate) => candidate.name === signal),
+	).eventTimeColumn
 	const manifest: ArchiveGenerationManifest = {
 		formatVersion: 3,
 		generationId,
@@ -127,20 +129,21 @@ const mockDb = (options: {
 		execs,
 		db: {
 			query(sql: string): string {
-				const described = ARCHIVE_SIGNALS.find(
+				const described = Arr.findFirst(
+					ARCHIVE_SIGNALS,
 					(signal) => sql === `DESCRIBE ${signal.name} FORMAT JSONEachRow`,
 				)
-				if (described)
-					return `${JSON.stringify({ name: described.eventTimeColumn, type: "DateTime64(9)" })}\n`
-				const counted = ARCHIVE_SIGNALS.find((signal) =>
+				if (Option.isSome(described))
+					return `${JSON.stringify({ name: described.value.eventTimeColumn, type: "DateTime64(9)" })}\n`
+				const counted = Arr.findFirst(ARCHIVE_SIGNALS, (signal) =>
 					Str.includes(`FROM ${signal.name} WHERE`)(sql),
 				)
-				if (Str.startsWith("SELECT DISTINCT")(sql) && counted)
-					return counts.get(counted.name) === 0
+				if (Str.startsWith("SELECT DISTINCT")(sql) && Option.isSome(counted))
+					return counts.get(counted.value.name) === 0
 						? ""
 						: `${JSON.stringify({ rangeDate: options.date })}\n`
-				if (Str.startsWith("SELECT count()")(sql) && counted)
-					return `${JSON.stringify({ count: counts.get(counted.name) })}\n`
+				if (Str.startsWith("SELECT count()")(sql) && Option.isSome(counted))
+					return `${JSON.stringify({ count: counts.get(counted.value.name) })}\n`
 				if (Str.startsWith("SELECT concat")(sql)) {
 					digestQueries++
 					if (digestQueries === 1) options.corruptDuringDigest?.()
@@ -150,11 +153,11 @@ const mockDb = (options: {
 			},
 			exec(sql: string): void {
 				execs.push(sql)
-				const signal = ARCHIVE_SIGNALS.find((candidate) =>
+				const signal = Arr.findFirst(ARCHIVE_SIGNALS, (candidate) =>
 					Str.includes(`TABLE ${candidate.name} `)(sql),
 				)
-				if (!signal) throw new Error(`unexpected exec: ${sql}`)
-				counts.set(signal.name, 0)
+				if (Option.isNone(signal)) throw new Error(`unexpected exec: ${sql}`)
+				counts.set(signal.value.name, 0)
 			},
 		},
 	}
@@ -206,7 +209,7 @@ describe("durable retired-day authority", () => {
 				async () =>
 					authority.assertBatchAllowed(
 						"logs",
-						`${JSON.stringify({ timestamp: `${date} 12:00:00.000000000` })}`,
+						JSON.stringify({ timestamp: `${date} 12:00:00.000000000` }),
 					),
 				/retired UTC day/,
 			)

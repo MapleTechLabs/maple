@@ -43,7 +43,7 @@ const project = (ref: string, name: string, metricsEnabled: boolean, lifecycle =
 })
 
 const status = (connected: boolean) =>
-	Schema.decodeUnknownSync(SupabaseIntegrationStatus)({
+	Schema.decodeSync(SupabaseIntegrationStatus)({
 		configured: true,
 		connected,
 		organization: connected ? { id: "o1", slug: "acme", name: "Acme" } : null,
@@ -128,7 +128,7 @@ describe("supabase list", () => {
 		const windowed = steps(entered, [
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 		])
-		const empty = Schema.decodeUnknownSync(SupabaseIntegrationStatus)({
+		const empty = Schema.decodeSync(SupabaseIntegrationStatus)({
 			...status(true),
 			projects: [],
 		})
@@ -219,7 +219,7 @@ describe("supabase list", () => {
 			Message.CompletedFetchIssues({
 				key: model.issues.key ?? "",
 				result: Result.succeed(
-					Schema.decodeUnknownSync(SupabaseLogIssuesResponse)({
+					Schema.decodeSync(SupabaseLogIssuesResponse)({
 						issues: [
 							{
 								projectRef: "storefrontaaaaaaaaaa",

@@ -65,6 +65,7 @@ console.log(`    telemetry → ${MAPLE_ENDPOINT} (run \`maple start\`)`)
 
 const shutdown = () => {
 	void dispose()
+		// oxlint-disable-next-line typescript/no-misused-promises -- Promise.finally awaits the returned promise.
 		.finally(() => server.stop(true))
 		.finally(() => process.exit(0))
 }

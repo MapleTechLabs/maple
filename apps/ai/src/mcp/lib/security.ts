@@ -3,11 +3,18 @@
  * agent can rank code audit findings, vulnerable dependencies, served scanner probes and runtimes on
  * vulnerable or end-of-life versions against each other.
  */
-import { DateTime, Effect, Option, Array as Arr, String as Str } from "effect"
+import { DateTime, Effect, Option, Order, Array as Arr, String as Str } from "effect"
 import type { SecurityAuditFindingRow, SecurityAuditRunRow, SecurityAuditTargetRow } from "@maple/db/tables"
 import type { DependencyFindingView, DependencyScanRepository } from "@maple/domain/http"
 import type { DependencyFindingId } from "@maple/domain/dependency-scan"
-import type { SecurityArea, SecurityFindingRow, SecuritySeverity } from "@maple/domain/mcp-outputs"
+import type {
+	SecurityArea,
+	SecurityAuditRunSummary,
+	SecurityFindingRow,
+	SecurityRepositoryCoverage,
+	SecuritySeverity,
+} from "@maple/domain/mcp-outputs"
+import { aiCreditsUsd } from "@maple/domain/billing"
 import {
 	advisoryKey,
 	advisoryTargetOf,
@@ -26,9 +33,13 @@ import { CH } from "@maple/query-engine"
 import { truncate } from "./format"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { isAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
-import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
+import {
+	type SecurityAuditOrgStore,
+	type SecurityAuditRunFindingCounts,
+	SecurityAuditStore,
+} from "@maple/backend/services/security-audit/SecurityAuditStore"
 import {
 	DependencyScanReader,
 	FINDINGS_LIMIT,
@@ -72,7 +83,9 @@ export interface CodeTarget {
 export type CodeRead = { readonly _tag: "read"; readonly targets: ReadonlyArray<CodeTarget> } | AreaGate
 
 /** A lead is ranked by its estimate; one stored before the engine estimated reads as unknown. */
-export const codeSeverityOf = (row: SecurityAuditFindingRow): SecuritySeverity =>
+export const codeSeverityOf = (
+	row: Pick<SecurityAuditFindingRow, "verdict" | "overallSeverity" | "estimatedSeverity">,
+): SecuritySeverity =>
 	row.verdict === "confirmed"
 		? (row.overallSeverity ?? "unknown")
 		: row.verdict === "needs_validation"
@@ -89,14 +102,14 @@ export const readCode = (tenant: TenantContext) =>
 				message: "The code security audit is not enabled for this organization.",
 			} satisfies CodeRead
 		}
-		if (!isAdmin(tenant.roles)) {
+		if (!Policy.can(tenant.roles, "security:manage")) {
 			return {
 				_tag: "forbidden",
-				message: "Only org admins can read code audit findings.",
+				message: Policy.denialFor("security:manage").message,
 			} satisfies CodeRead
 		}
 		const store = (yield* SecurityAuditStore).forOrg(tenant.orgId)
-		const targets = yield* store.listTargets()
+		const targets = yield* store.listTargets
 		if (targets.length === 0) {
 			return {
 				_tag: "not_connected",
@@ -130,8 +143,66 @@ export const readCode = (tenant: TenantContext) =>
 		),
 	)
 
+/** The org's audit store once the audit is enabled; `admin` says whether findings may be read. */
+export type AuditAccess =
+	| { readonly _tag: "read"; readonly store: SecurityAuditOrgStore; readonly admin: boolean }
+	| Extract<AreaGate, { readonly _tag: "not_enabled" }>
+
+export const auditAccess = (tenant: TenantContext) =>
+	Effect.gen(function* () {
+		const flags = yield* (yield* OrganizationFeatureFlagsService).flags(tenant.orgId)
+		if (!flags.securityAudit) {
+			return {
+				_tag: "not_enabled",
+				message: "The code security audit is not enabled for this organization.",
+			} satisfies AuditAccess
+		}
+		return {
+			_tag: "read",
+			store: (yield* SecurityAuditStore).forOrg(tenant.orgId),
+			admin: Policy.can(tenant.roles, "security:manage"),
+		} satisfies AuditAccess
+	})
+
+/** A run as the tools show it; `counts` is absent for a caller who may not read findings. */
+export const runSummaryOf = (
+	run: SecurityAuditRunRow,
+	target: Pick<SecurityAuditTargetRow, "repository" | "branch"> | undefined,
+	counts: SecurityAuditRunFindingCounts | undefined,
+): SecurityAuditRunSummary => ({
+	runId: run.id,
+	repository: target?.repository ?? "(deleted target)",
+	branch: target?.branch ?? "",
+	kind: run.kind,
+	status: run.status,
+	sourceRef: run.sourceRef,
+	startedAt: isoOf(run.startedAt),
+	finishedAt: run.finishedAt === null ? null : isoOf(run.finishedAt),
+	durationMinutes: run.finishedAt === null ? null : Math.round((run.finishedAt - run.startedAt) / 60_000),
+	stopReason: run.incompleteReason ?? run.error,
+	agentInvocations: run.invocationsSpent,
+	budget: run.budget,
+	costUsd:
+		run.costUsd === null ? null : Math.round((aiCreditsUsd(run.costUsd) + run.sandboxUsd) * 100) / 100,
+	findings:
+		counts === undefined
+			? null
+			: {
+					critical: counts.critical,
+					high: counts.high,
+					medium: counts.medium,
+					low: counts.low,
+					informational: counts.informational,
+					leads: counts.unverified + counts.needsValidation,
+					rejected: counts.rejected,
+				},
+})
+
 const firstLocation = (row: SecurityAuditFindingRow): string => {
-	const sink = row.record.trace.find((step) => step.kind === "sink") ?? row.record.trace[0]
+	const sink = Option.getOrElse(
+		Arr.findFirst(row.record.trace, (step) => step.kind === "sink"),
+		() => row.record.trace[0],
+	)
 	const at = sink ?? row.record.evidence[0]
 	return at === undefined ? "" : `${at.file}:${at.line}`
 }
@@ -156,7 +227,7 @@ const fixedByText = (fixedRunId: string, latestRun: SecurityAuditRunRow | undefi
 	const run = fixedByRun(fixedRunId, latestRun)
 	return run.ref === null
 		? `no longer found by audit run ${run.runId}`
-		: `no longer found by the audit of ${Str.slice(0, 12)(run.ref)} on ${run.at?.slice(0, 10)}`
+		: `no longer found by the audit of ${Str.slice(0, 12)(run.ref)} on ${run.at === null ? undefined : Str.slice(0, 10)(run.at)}`
 }
 
 /** Services running a commit of each repository (by lowercase `owner/name`), from the dependency scanner's join. */
@@ -167,12 +238,10 @@ export const repositoryServicesOf = (read: DependencyRead | undefined): Reposito
 		read?._tag === "read"
 			? Arr.map(read.repositories, (repo) => [
 					Str.toLowerCase(repo.fullName),
-					servicesOf(Arr.flatMap(repo.runningCommits, (commit) => commit.services)).filter(
-						(ref, i, all) =>
-							all.findIndex(
-								(other) =>
-									other.service === ref.service && other.environment === ref.environment,
-							) === i,
+					Arr.dedupeWith(
+						servicesOf(Arr.flatMap(repo.runningCommits, (commit) => commit.services)),
+						(ref, other) =>
+							other.service === ref.service && other.environment === ref.environment,
 					),
 				])
 			: [],
@@ -260,8 +329,10 @@ export const readDependencies = (tenant: TenantContext, options: DependencyReadO
 				capped: false,
 			} satisfies DependencyRead
 		}
-		const wanted = options.repository?.toLowerCase()
-		const repository = repositories.repositories.find((repo) => Str.toLowerCase(repo.fullName) === wanted)
+		const wanted = options.repository === undefined ? undefined : Str.toLowerCase(options.repository)
+		const repository = Option.getOrUndefined(
+			Arr.findFirst(repositories.repositories, (repo) => Str.toLowerCase(repo.fullName) === wanted),
+		)
 		// An unknown repository has no findings; reading the org's would spend the cap on others.
 		const findings =
 			wanted !== undefined && repository === undefined
@@ -338,8 +409,10 @@ export const dependencyFixOf = (
 
 /** The CVE when the advisory has one: what people search for. */
 export const displayAdvisory = (finding: Pick<DependencyFindingView, "advisoryId" | "aliases">): string => {
-	const cve = finding.aliases.find((alias) => Str.startsWith("CVE-")(alias))
-	return cve === undefined ? finding.advisoryId : `${cve} (${finding.advisoryId})`
+	return Option.match(
+		Arr.findFirst(finding.aliases, (alias) => Str.startsWith("CVE-")(alias)),
+		{ onNone: () => finding.advisoryId, onSome: (cve) => `${cve} (${finding.advisoryId})` },
+	)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -433,7 +506,10 @@ export const catchAllServices = (signatures: ReadonlyArray<SignatureRow>): Reado
 
 export const categoryLabelOf = (signature: string): string => {
 	const id = probeCategoryOf(signature)
-	return PROBE_CATEGORIES.find((category) => category.id === id)?.label ?? "Unclassified"
+	return Option.match(
+		Arr.findFirst(PROBE_CATEGORIES, (category) => category.id === id),
+		{ onNone: () => "Unclassified", onSome: (category) => category.label },
+	)
 }
 
 /** What `inspect_security_finding` takes for an answered probe: the service and the path it served. */
@@ -548,13 +624,14 @@ export const readRuntimes = (tenant: TenantContext, window: SecurityWindow) =>
 			return product === undefined || row.runtimeVersion === "" ? [] : [product]
 		})
 		// Busiest services first, so the read cap drops the quietest versions.
-		const targets = Arr.flatMap(
-			rows.toSorted((a, b) => b.spans - a.spans),
-			(row) => {
-				const target = advisoryTargetOf(row)
-				return target === undefined ? [] : [target]
-			},
+		const busiestFirst = Arr.sort(
+			rows,
+			Order.flip(Order.mapInput(Order.Number, (row: (typeof rows)[number]) => row.spans)),
 		)
+		const targets = Arr.flatMap(busiestFirst, (row) => {
+			const target = advisoryTargetOf(row)
+			return target === undefined ? [] : [target]
+		})
 		const [releases, advisories] = yield* Effect.all(
 			[
 				(yield* RuntimeReleaseCatalog).releases(products),
@@ -702,13 +779,14 @@ export const matchesFilters = (row: SecurityFindingRow, filters: FindingFilters)
 	return true
 }
 
+const FINDING_RANK: Order.Order<SecurityFindingRow> = Order.combineAll([
+	Order.mapInput(Order.Number, (row: SecurityFindingRow) => SEVERITY_RANK[row.severity]),
+	Order.flip(Order.mapInput(Order.Number, (row: SecurityFindingRow) => row.services.length)),
+	Order.make((a, b) => Str.localeCompare(a.lastSeen ?? "")(b.lastSeen ?? "")),
+])
+
 export const rankFindings = (rows: ReadonlyArray<SecurityFindingRow>): ReadonlyArray<SecurityFindingRow> =>
-	rows.toSorted(
-		(a, b) =>
-			SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
-			b.services.length - a.services.length ||
-			Str.localeCompare(a.lastSeen ?? "")(b.lastSeen ?? ""),
-	)
+	Arr.sort(rows, FINDING_RANK)
 
 export const countBySeverity = (rows: ReadonlyArray<SecurityFindingRow>) => ({
 	critical: Arr.filter(rows, (row) => row.severity === "critical").length,
@@ -918,4 +996,108 @@ export const runtimeArea = (read: RuntimesRead | AreaGate): AreaResult => {
 				? []
 				: [`Not checked for CVEs this time: ${Arr.join(read.skipped, ", ")}.`],
 	}
+}
+
+// ---------------------------------------------------------------------------------------------
+// Repositories: what audits and scans each one, and whether a filtered one was ever read
+
+/** Every audited or connected repository with its latest audit run and dependency scan. */
+export const repositoryCoverage = (
+	code: CodeRead | undefined,
+	dependencies: DependencyRead | undefined,
+): ReadonlyArray<SecurityRepositoryCoverage> => {
+	const targets = code?._tag === "read" ? code.targets : []
+	const repos = dependencies?._tag === "read" ? dependencies.repositories : []
+	const names = Arr.dedupe([
+		...Arr.map(targets, ({ target }) => target.repository),
+		...Arr.map(repos, (repo) => repo.fullName),
+	])
+	const sameName = (a: string, b: string) => Str.toLowerCase(a) === Str.toLowerCase(b)
+	return Arr.flatMap(names, (name, i): ReadonlyArray<SecurityRepositoryCoverage> => {
+		// Keep the first spelling of each name.
+		if (
+			!Option.contains(
+				Arr.findFirstIndex(names, (other) => sameName(other, name)),
+				i,
+			)
+		)
+			return []
+		// One target per branch: show the branch that ran last (a run beats none), else the first.
+		const audited = Arr.reduce<CodeTarget, CodeTarget | undefined>(
+			Arr.filter(targets, ({ target }) => sameName(target.repository, name)),
+			undefined,
+			(best, next) =>
+				best === undefined ||
+				(next.latestRun !== undefined &&
+					(best.latestRun === undefined || next.latestRun.startedAt > best.latestRun.startedAt))
+					? next
+					: best,
+		)
+		const repo = Option.getOrUndefined(Arr.findFirst(repos, (r) => sameName(r.fullName, name)))
+		const run = audited?.latestRun
+		const scan = repo?.latestScan ?? null
+		return [
+			{
+				repository: name,
+				// No target at all is known, not unreadable.
+				auditReadable: code?._tag === "read" || code?._tag === "not_connected",
+				audit:
+					audited === undefined
+						? null
+						: {
+								branch: audited.target.branch,
+								enabled: audited.target.enabled,
+								lastRunId: run?.id ?? null,
+								lastRunStatus: run?.status ?? null,
+								lastRunAt: run === undefined ? null : isoOf(run.finishedAt ?? run.startedAt),
+								lastRunStopReason:
+									run === undefined ? null : (run.incompleteReason ?? run.error),
+							},
+				dependencyScan:
+					repo === undefined
+						? null
+						: {
+								status: scan?.status ?? null,
+								at: scan === null ? null : isoOf(scan.finishedAt ?? scan.startedAt),
+								commit: scan === null ? null : Str.slice(0, 12)(scan.commitSha),
+							},
+			},
+		]
+	})
+}
+
+/**
+ * Why a repository filter read nothing in a code or dependency area: the repository was never
+ * audited or scanned, or is not set up at all. Undefined when it was read, so its empty area is clear.
+ */
+export const unreadRepository = (
+	area: "code" | "dependencies",
+	repository: string,
+	coverage: ReadonlyArray<SecurityRepositoryCoverage>,
+): { readonly state: "not_scanned" | "not_connected"; readonly note: string } | undefined => {
+	const row = Arr.findFirst(coverage, (r) => Str.toLowerCase(r.repository) === Str.toLowerCase(repository))
+	if (area === "code") {
+		if (Option.isNone(row) || row.value.audit === null)
+			return {
+				state: "not_connected",
+				note: `${repository} is not set up for the code audit, so no code finding is not the same as clear.`,
+			}
+		return row.value.audit.lastRunId === null
+			? {
+					state: "not_scanned",
+					note: `${repository} has never been audited, so no code finding is not the same as clear.`,
+				}
+			: undefined
+	}
+	if (Option.isNone(row) || row.value.dependencyScan === null)
+		return {
+			state: "not_connected",
+			note: `${repository} is not a connected GitHub repository, so its lockfiles are not scanned.`,
+		}
+	return row.value.dependencyScan.status === null
+		? {
+				state: "not_scanned",
+				note: `${repository} has never had a dependency scan, so no dependency finding is not the same as clear.`,
+			}
+		: undefined
 }

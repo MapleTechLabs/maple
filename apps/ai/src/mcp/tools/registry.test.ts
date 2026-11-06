@@ -60,7 +60,7 @@ describe("toInputSchema nullable-union collapse", () => {
 	it("leaves a non-nullable union alone", () => {
 		const schema = toInputSchema(Schema.Struct({ a: Schema.Union([Schema.String, Schema.Number]) }))
 		const properties = schema.properties as Record<string, Record<string, unknown>>
-		const types = Arr.map(properties.a!.anyOf as Array<{ type?: string }>, (member) => member.type)
+		const types = Arr.map(properties.a?.anyOf as Array<{ type?: string }>, (member) => member.type)
 		expect(types).toContain("string")
 		expect(types).toContain("number")
 		expect(types).not.toContain("null")
@@ -71,7 +71,7 @@ describe("toInputSchema nullable-union collapse", () => {
 			Schema.Struct({ a: Schema.optional(Schema.Union([Schema.Literal("x"), Schema.Number])) }),
 		)
 		const properties = schema.properties as Record<string, Record<string, unknown>>
-		const types = Arr.map(properties.a!.anyOf as Array<{ type?: string }>, (member) => member.type)
+		const types = Arr.map(properties.a?.anyOf as Array<{ type?: string }>, (member) => member.type)
 		expect(types).toContain("number")
 		expect(types).not.toContain("null")
 	})
@@ -149,7 +149,7 @@ describe("P.optionalNumber", () => {
 
 	// Absence still means absence — the leniency is about encoding, not presence.
 	it("leaves an omitted parameter omitted", () => {
-		expect(Effect.runSync(Schema.decodeUnknownEffect(schema)({}))).toEqual({})
+		expect(Effect.runSync(Schema.decodeEffect(schema)({}))).toEqual({})
 	})
 })
 

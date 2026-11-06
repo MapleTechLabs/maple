@@ -1,4 +1,5 @@
 import { Array as Arr, String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 /** Which map an attribute lives in: `LogAttributes` or `ResourceAttributes`. */
 export type LogAttributeSource = "log" | "resource"
 
@@ -24,10 +25,9 @@ const ENTRY = /^(!?)(log|res):([^=]+)=([\s\S]*)$/
 
 /** `undefined` for an entry that is not in the `attrs` spelling, so a hand-edited URL drops it. */
 export function decodeLogAttributeFilter(entry: string): LogAttributeFilter | undefined {
-	const match = ENTRY.exec(entry)
-	if (!match) return undefined
-	const [, bang, scope, rawKey, value] = match
-	const key = rawKey.replace(/%(25|3D)/gi, (escape) => (escape === "%25" ? "%" : "="))
+	const [, bang, scope, rawKey, value] = ENTRY.exec(entry) ?? []
+	if (rawKey === undefined || value === undefined) return undefined
+	const key = replaceWith(rawKey, /%(25|3D)/gi, (escape) => (escape === "%25" ? "%" : "="))
 	return { source: scope === "res" ? "resource" : "log", key, value, negated: bang === "!" }
 }
 

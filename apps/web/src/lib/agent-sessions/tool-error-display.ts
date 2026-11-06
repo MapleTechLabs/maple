@@ -11,6 +11,7 @@
 
 import { MSG_TEXT_REDACTIONS } from "@maple/domain/tinybird/fingerprint"
 import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { matchAllIndexed } from "@maple/strings"
 
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Json))
 const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
@@ -75,10 +76,16 @@ export function commonErrorPrefix(texts: ReadonlyArray<string>): string {
 		while (index < length && index < text.length && first[index] === text[index]) index++
 		length = index
 	}
-	const cut = Str.slice(0, length)(first).lastIndexOf(": ")
-	if (cut <= 0) return ""
-	const prefix = Str.slice(0, cut + 2)(first)
-	return Arr.every(texts, (text) => text.length > prefix.length) ? prefix : ""
+	return Option.match(
+		Option.filter(Str.lastIndexOf(": ")(Str.slice(0, length)(first)), (cut) => cut > 0),
+		{
+			onNone: () => "",
+			onSome: (cut) => {
+				const prefix = Str.slice(0, cut + 2)(first)
+				return Arr.every(texts, (text) => text.length > prefix.length) ? prefix : ""
+			},
+		},
+	)
 }
 
 /** One run of a message, as a row draws it. */
@@ -146,13 +153,13 @@ interface Claim {
  * to the redactions and one timestamp to a reader.
  */
 function redactedRanges(text: string): ReadonlyArray<Claim> {
-	const claims: Claim[] = Arr.map([...text.matchAll(TIMESTAMPS)], (match) => ({
+	const claims: Claim[] = Arr.map(matchAllIndexed(text, TIMESTAMPS), (match) => ({
 		start: match.index,
 		end: match.index + match[0].length,
 		label: "<ts>",
 	}))
 	for (const [pattern, replacement] of MSG_TEXT_REDACTIONS) {
-		for (const match of text.matchAll(new RegExp(pattern, "g"))) {
+		for (const match of matchAllIndexed(text, new RegExp(pattern, "g"))) {
 			const start = match.index
 			const end = start + match[0].length
 			if (end === start || Arr.some(claims, (claim) => start < claim.end && end > claim.start)) continue
@@ -178,7 +185,7 @@ const EMPHASIS = /`[^`\n]+`|(?<= )"[^"\n]*"|\n/g
 function plainTokens(text: string, emphasizeQuoted: { value: boolean }): ErrorTextToken[] {
 	const tokens: ErrorTextToken[] = []
 	let cursor = 0
-	for (const match of text.matchAll(EMPHASIS)) {
+	for (const match of matchAllIndexed(text, EMPHASIS)) {
 		if (match.index > cursor) tokens.push({ kind: "text", text: Str.slice(cursor, match.index)(text) })
 		const value = match[0]
 		if (value === "\n") tokens.push({ kind: "break" })
@@ -220,13 +227,13 @@ export function errorTextTokens(text: string): ReadonlyArray<ErrorTextToken> {
 	// which is then what it is about.
 	const emphasizeQuoted = { value: !new RegExp(AT_PATH.source).test(text) }
 	let cursor = 0
-	for (const match of text.matchAll(AT_PATH)) {
+	for (const match of matchAllIndexed(text, AT_PATH)) {
 		tokens.push(...outsideTokens(Str.slice(cursor, match.index)(text), emphasizeQuoted))
 		tokens.push({ kind: "at" })
-		const path = match[1]!
+		const path = match[1] ?? ""
 		tokens.push({
 			kind: "path",
-			parts: Arr.map([...path.matchAll(PATH_SEGMENT)], (segment) =>
+			parts: Arr.map([...Str.matchAll(PATH_SEGMENT)(path)], (segment) =>
 				segment[2] === undefined
 					? { kind: "key" as const, text: segment[0] }
 					: { kind: "mask" as const, label: "[*]", raw: segment[0] },
@@ -236,15 +243,24 @@ export function errorTextTokens(text: string): ReadonlyArray<ErrorTextToken> {
 	}
 	tokens.push(...outsideTokens(Str.slice(cursor)(text), emphasizeQuoted))
 
-	const firstBreak = tokens.findIndex((token) => token.kind === "break")
-	if (firstBreak <= 0) return Arr.filter(tokens, (token) => !(token.kind === "text" && token.text === ""))
-	return Arr.filter(
-		Arr.map(tokens, (token, index) =>
-			index < firstBreak && token.kind === "text"
-				? { kind: "value" as const, text: token.text }
-				: token,
+	return Option.match(
+		Option.filter(
+			Arr.findFirstIndex(tokens, (token) => token.kind === "break"),
+			(firstBreak) => firstBreak > 0,
 		),
-		(token) => !((token.kind === "text" || token.kind === "value") && Str.trim(token.text) === ""),
+		{
+			onNone: () => Arr.filter(tokens, (token) => !(token.kind === "text" && token.text === "")),
+			onSome: (firstBreak) =>
+				Arr.filter(
+					Arr.map(tokens, (token, index) =>
+						index < firstBreak && token.kind === "text"
+							? { kind: "value" as const, text: token.text }
+							: token,
+					),
+					(token) =>
+						!((token.kind === "text" || token.kind === "value") && Str.trim(token.text) === ""),
+				),
+		},
 	)
 }
 
@@ -256,13 +272,14 @@ export type ErrorPath = ReadonlyArray<string | number>
 
 /** The last `at [...]` path of a message, as keys and indices. */
 export function parseErrorPath(text: string): ErrorPath | undefined {
-	const matches = [...text.matchAll(AT_PATH)]
+	const matches = [...Str.matchAll(AT_PATH)(text)]
 	const last = matches[matches.length - 1]
 	if (last === undefined) return undefined
-	return Arr.map([...last[1]!.matchAll(PATH_SEGMENT)], (segment) => {
+	return Arr.map([...Str.matchAll(PATH_SEGMENT)(last[1] ?? "")], (segment) => {
 		if (segment[2] !== undefined) return Number(segment[2])
-		const unescaped = parseJson(`"${segment[1]}"`)
-		return typeof unescaped === "string" ? unescaped : segment[1]
+		const key = segment[1] ?? ""
+		const unescaped = parseJson(`"${key}"`)
+		return typeof unescaped === "string" ? unescaped : key
 	})
 }
 
@@ -373,14 +390,16 @@ const VARIANT_CONTEXT = 10
  * path it sits in, or a few characters either side.
  */
 export function variantDifferences(texts: ReadonlyArray<string>): ReadonlyArray<VariantDifference> {
-	if (texts.length < 2) return Arr.map(texts, (text) => ({ before: "", middle: text, after: "" }))
+	const [reference] = texts
+	if (texts.length < 2 || reference === undefined)
+		return Arr.map(texts, (text) => ({ before: "", middle: text, after: "" }))
 	const shortest = Math.min(...Arr.map(texts, (text) => text.length))
 	let start = 0
-	while (start < shortest && Arr.every(texts, (text) => text[start] === texts[0]![start])) start++
+	while (start < shortest && Arr.every(texts, (text) => text[start] === reference[start])) start++
 	let end = 0
 	while (
 		end < shortest - start &&
-		Arr.every(texts, (text) => text[text.length - 1 - end] === texts[0]![texts[0]!.length - 1 - end])
+		Arr.every(texts, (text) => text[text.length - 1 - end] === reference[reference.length - 1 - end])
 	) {
 		end++
 	}
@@ -393,17 +412,16 @@ export function variantDifferences(texts: ReadonlyArray<string>): ReadonlyArray<
 			to += 1
 		}
 		const prefix = Str.replace(/\s+/g, " ")(Str.slice(0, from)(text))
-		const at = prefix.lastIndexOf(" at ")
+		const at = Str.lastIndexOf(" at ")(prefix)
 		const suffix = Str.replace(/\s+/g, " ")(Str.slice(to)(text))
 		// The rest of a path the difference sits in reads to its end, whole.
 		const pathTail = /^(?:\[(?:"(?:[^"\\]|\\.)*"|\d+)\])+/.exec(suffix)?.[0]
 		return {
-			before:
-				at >= 0
-					? Str.slice(at + 4)(prefix)
-					: prefix.length > VARIANT_CONTEXT
-						? `…${Str.slice(-VARIANT_CONTEXT)(prefix)}`
-						: prefix,
+			before: Option.match(at, {
+				onSome: (index) => Str.slice(index + 4)(prefix),
+				onNone: () =>
+					prefix.length > VARIANT_CONTEXT ? `…${Str.slice(-VARIANT_CONTEXT)(prefix)}` : prefix,
+			}),
 			middle: Str.slice(from, to)(text),
 			after:
 				pathTail ??

@@ -267,7 +267,10 @@ export const rawQueryEditor = (
 	form: RuleForm,
 	timing: AlertQueryTiming | null,
 ): Html => {
-	const sampleWarning = rawAlertSampleCountWarning(form.rawQuerySql, Number(form.minimumSampleCount) || 0)
+	const sampleWarning = rawAlertSampleCountWarning(
+		form.rawQuerySql,
+		Number.isNaN(Number(form.minimumSampleCount)) ? 0 : Number(form.minimumSampleCount),
+	)
 	return h.div(
 		[h.Class("space-y-2")],
 		[

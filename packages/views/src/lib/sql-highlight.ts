@@ -92,7 +92,7 @@ export function tokenizeSql(code: string): SqlHighlightToken[] {
 		} else if (ident) {
 			if (KEYWORDS.has(Str.toUpperCase(ident))) {
 				tokens.push({ text: ident, start: m.index, className: "text-chart-5" })
-			} else if (code.charAt(m.index + ident.length) === "(") {
+			} else if (Str.startsWith("(", m.index + ident.length)(code)) {
 				tokens.push({ text: ident, start: m.index, className: "text-chart-1" })
 			} else {
 				tokens.push({ text: ident, start: m.index })

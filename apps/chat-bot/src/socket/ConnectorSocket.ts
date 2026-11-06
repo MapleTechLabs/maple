@@ -39,7 +39,7 @@ import { connectors } from "@maple/chat-platform/connectors"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect, Layer, Schema, Array as Arr } from "effect"
+import { Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { resolveConnectorConfig, type IngressConnector } from "../config.ts"
 import { InboundHandler } from "../inbound.ts"
@@ -365,7 +365,7 @@ export class ConnectorSocket {
 		// A failed step is logged and the object carries on, exactly as it always did.
 		await Effect.runPromise(
 			program.pipe(
-				// oxlint-disable-next-line effecttsgo/strict-effect-provide
+				// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the Durable Object step is the entry point (see above)
 				Effect.provide(stepLayer(this.relays)),
 				Effect.catchCause((cause) =>
 					Effect.logError("Chat socket step failed").pipe(
@@ -440,8 +440,10 @@ export class ConnectorSocket {
 	private async resolve(): Promise<ResolvedConnector | undefined> {
 		const connectorId = await this.ctx.storage.get<string>(KEY.connectorId)
 		if (connectorId === undefined) return undefined
-		const connector = connectors.find((candidate) => candidate.id === connectorId)
-		if (connector === undefined || connector.ingress.kind !== "socket") return undefined
+		const found = Arr.findFirst(connectors, (candidate) => candidate.id === connectorId)
+		if (Option.isNone(found)) return undefined
+		const connector = found.value
+		if (connector.ingress.kind !== "socket") return undefined
 		const config = await Effect.runPromise(
 			resolveConnectorConfig(connector).pipe(Effect.provide(this.configLayer)),
 		)
@@ -452,6 +454,7 @@ export class ConnectorSocket {
 
 export interface ConnectorSocketApi {
 	readonly ensureConnected: (connectorId: ChatConnectorId) => Effect.Effect<void, ConnectorSocketCallFailed>
+	// @effect-diagnostics-next-line lazyEffect:off -- mirrors the Durable Object's RPC method
 	readonly alarm: () => Effect.Effect<void, ConnectorSocketCallFailed>
 }
 

@@ -11,8 +11,8 @@ import type { QueryEngineServiceApi } from "@maple/backend/services/warehouse/Qu
 import { makeQueryRunners } from "./query-runner"
 
 const tenant: TenantContext = {
-	orgId: Schema.decodeUnknownSync(OrgId)("org_query_runner"),
-	userId: Schema.decodeUnknownSync(UserId)("user_query_runner"),
+	orgId: Schema.decodeSync(OrgId)("org_query_runner"),
+	userId: Schema.decodeSync(UserId)("user_query_runner"),
 	roles: [],
 	authMode: "self_hosted",
 }
@@ -21,7 +21,7 @@ const warehouse = makeWarehouseServiceStub({
 	compiledQuery: ((_tenant: unknown, compiled: unknown) =>
 		Effect.gen(function* () {
 			// SAFETY: the runner hands the stub the definition's unrun compile.
-			const query = (yield* compiled as Effect.Effect<CompiledQuery<unknown>>) as CompiledQuery<unknown>
+			const query = yield* compiled as Effect.Effect<CompiledQuery<unknown>>
 			return yield* query.decodeRows([
 				{
 					fingerprintHash: "42",
@@ -45,7 +45,7 @@ const jsonCache = {
 		_payload: unknown,
 		effect: Effect.Effect<A, E>,
 		_policy?: unknown,
-		schema?: Schema.Codec<A, unknown, never, never>,
+		schema?: Schema.Codec<A, unknown>,
 	) =>
 		Effect.gen(function* () {
 			const value = yield* effect
@@ -64,13 +64,13 @@ describe("makeQueryRunners", () => {
 			// SAFETY: the runner only calls `cachedDirect`.
 			const queryEngine = jsonCache as unknown as QueryEngineServiceApi
 			const { runQuery } = makeQueryRunners({ warehouse, queryEngine })
-			const payload = Schema.decodeUnknownSync(ErrorsByTypeRequest)({
+			const payload = Schema.decodeSync(ErrorsByTypeRequest)({
 				startTime: "2024-01-01 00:00:00",
 				endTime: "2024-01-02 00:00:00",
 			})
 			const [row] = yield* runQuery(Queries.errorsByType, tenant, payload)
 			expect(DateTime.isDateTime(row?.firstSeen)).toBe(true)
-			expect(DateTime.formatIso(row!.lastSeen)).toBe("2024-01-01T11:30:05.000Z")
+			expect(DateTime.formatIso(row.lastSeen)).toBe("2024-01-01T11:30:05.000Z")
 		}),
 	)
 
@@ -80,7 +80,9 @@ describe("makeQueryRunners", () => {
 				compiledQueryWithCapabilities: ((_tenant: unknown, compile: unknown) =>
 					Effect.gen(function* () {
 						// SAFETY: a capability-aware definition hands the stub its compile function.
-						const build = compile as (capabilities: WarehouseCapabilities) => Effect.Effect<CompiledQuery<unknown>>
+						const build = compile as (
+							capabilities: WarehouseCapabilities,
+						) => Effect.Effect<CompiledQuery<unknown>>
 						const query = yield* build(baselineWarehouseCapabilities())
 						return yield* query.decodeRows([
 							{
@@ -107,8 +109,8 @@ describe("makeQueryRunners", () => {
 				endTime: "2024-01-02 00:00:00",
 			})
 			const [row] = yield* runQuery(Queries.listLogs, tenant, payload)
-			expect(DateTime.formatIso(row!.timestamp)).toBe("2024-01-01T10:00:00.123Z")
-			expect(row!.exactTimestamp).toBe("2024-01-01 10:00:00.123456789")
+			expect(DateTime.formatIso(row.timestamp)).toBe("2024-01-01T10:00:00.123Z")
+			expect(row.exactTimestamp).toBe("2024-01-01 10:00:00.123456789")
 		}),
 	)
 })

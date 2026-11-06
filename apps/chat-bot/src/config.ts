@@ -42,7 +42,7 @@ export const optionalSetting = (name: string): Config.Config<Option.Option<strin
 	)
 
 /** {@link optionalSetting} for a secret: kept `Redacted` until the one place that uses it. */
-export const optionalSecret = (name: string): Config.Config<Option.Option<Redacted.Redacted<string>>> =>
+export const optionalSecret = (name: string): Config.Config<Option.Option<Redacted.Redacted>> =>
 	optionalSetting(name).pipe(Config.map(Option.map((value) => Redacted.make(value))))
 
 /**
@@ -60,9 +60,15 @@ export const resolveConnectorConfig = (connector: IngressConnector): Effect.Effe
 		Effect.map((entries): ConnectorConfigResult => {
 			const config = new Map<string, string>()
 			const missing: string[] = []
+			const optional = new Set(
+				Arr.map(
+					Arr.filter(connector.ingress.requiredConfig, (key) => key.optional === true),
+					(key) => key.name,
+				),
+			)
 			for (const [name, value] of entries) {
 				if (Option.isSome(value)) config.set(name, value.value)
-				else missing.push(name)
+				else if (!optional.has(name)) missing.push(name)
 			}
 			return missing.length === 0 ? { _tag: "ready", config } : { _tag: "missing", names: missing }
 		}),

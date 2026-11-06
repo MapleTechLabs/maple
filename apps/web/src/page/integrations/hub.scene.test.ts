@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { LinearIntegrationStatus } from "@maple/domain/http"
 import { V2ChatConnectorList } from "@maple/domain/http/v2"
@@ -12,6 +13,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
+
+const MEMBER = Policy.grantsOf(["org:member"])
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -28,7 +31,7 @@ const entered = (search: Model["search"] = {}) => init({ search }, context).mode
 /** The Hazel chat connector, available and not yet installed. */
 const withHazelConnector = (search: Model["search"]): Model => {
 	const model = entered(search)
-	const connectors = Schema.decodeUnknownSync(V2ChatConnectorList)({
+	const connectors = Schema.decodeSync(V2ChatConnectorList)({
 		object: "chat_connector_list",
 		data: [
 			{
@@ -50,7 +53,7 @@ const withHazelConnector = (search: Model["search"]): Model => {
 }
 
 const linear = (state: "absent" | "connected" | "revoked") =>
-	Schema.decodeUnknownSync(LinearIntegrationStatus)({
+	Schema.decodeSync(LinearIntegrationStatus)({
 		connected: state !== "absent",
 		workspaceName: state === "absent" ? null : "Acme Eng",
 		connectedByUserId: null,
@@ -189,7 +192,7 @@ describe("integrations hub", () => {
 
 	test("every chat connector has a tile for every org, Discord included", () => {
 		const model = entered()
-		const discord = Schema.decodeUnknownSync(V2ChatConnectorList)({
+		const discord = Schema.decodeSync(V2ChatConnectorList)({
 			object: "chat_connector_list",
 			data: [
 				{
@@ -267,7 +270,7 @@ describe("linear card", () => {
 	})
 
 	test("a member cannot start a Linear connect from the header or the card", () => {
-		const member = steps(withLinear("absent"), [Message.CompletedLoadSession({ isAdmin: false })])
+		const member = steps(withLinear("absent"), [Message.CompletedLoadSession({ grants: MEMBER })])
 		scene(
 			{ update: pageUpdate, view },
 			given(member),
@@ -282,7 +285,7 @@ describe("linear card", () => {
 			Message.CompletedLoadLinear({
 				key: model.statuses.linear.key ?? "",
 				result: Result.succeed(
-					Schema.decodeUnknownSync(LinearIntegrationStatus)({
+					Schema.decodeSync(LinearIntegrationStatus)({
 						connected: true,
 						workspaceName: "",
 						connectedByUserId: null,

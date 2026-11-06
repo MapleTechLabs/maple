@@ -12,7 +12,7 @@ const TRACE = "6843a8853182b32339b2dd5120d423f2"
 const traceRoute = AppRoute.Trace({ traceId: TRACE, search: {} })
 
 const preloaded = () => preloadRoute(traceRoute, context, 0)
-const keyOf = () => Option.getOrThrow(Preload.keyOfCommand(preloaded()[0]!))
+const keyOf = () => Option.getOrThrow(Preload.keyOfCommand(Arr.getUnsafe(preloaded(), 0)))
 const holder = pageIdentity({ _tag: "TraceDetail", key: TRACE, orgId, instance: 1 })
 
 describe("intent preload", () => {
@@ -53,7 +53,7 @@ describe("intent preload", () => {
 			context,
 			0,
 		)
-		const nextKey = Option.getOrThrow(Preload.keyOfCommand(nextWindow[0]!))
+		const nextKey = Option.getOrThrow(Preload.keyOfCommand(Arr.getUnsafe(nextWindow, 0)))
 		const entered = Preload.held(Preload.init(), holder, preloaded(), () => [keyOf()])
 		const moved = Preload.held(entered.model, holder, nextWindow, () =>
 			Preload.liveKeysOf({ slot: { key: nextKey, data: { _tag: "Loading" } } }),

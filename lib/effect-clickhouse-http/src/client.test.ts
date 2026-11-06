@@ -1,5 +1,17 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Cause, Deferred, Effect, Exit, Fiber, Layer, Redacted, Schema, Stream, String as Str } from "effect"
+import {
+	Cause,
+	Deferred,
+	Effect,
+	Exit,
+	Fiber,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Stream,
+	String as Str,
+} from "effect"
 import { FetchHttpClient } from "effect/http"
 import {
 	make,
@@ -30,7 +42,7 @@ describe("HTTP request contract", () => {
 			const requests: Array<{ url: URL; init?: RequestInit }> = []
 			const request: typeof fetch = async (input, init) => {
 				requests.push({
-					url: new URL(String(input)),
+					url: new URL(input instanceof Request ? input.url : input),
 					init: { ...init, body: await new Response(init?.body).text() },
 				})
 				return response()
@@ -50,7 +62,9 @@ describe("HTTP request contract", () => {
 					const result = yield* query
 					assert.deepStrictEqual(result.data, [{ n: "42" }])
 					assert.strictEqual(result.queryId, "my query")
-					const { url, init } = requests[0]!
+					const request = requests[0]
+					assert.isDefined(request)
+					const { url, init } = request
 					assert.strictEqual(url.pathname, "/proxy/ch")
 					assert.strictEqual(url.searchParams.get("custom"), "keep")
 					assert.strictEqual(url.searchParams.get("database"), "analytics")
@@ -65,7 +79,9 @@ describe("HTTP request contract", () => {
 					const header = new Headers(init?.headers).get("authorization")!
 					assert.strictEqual(
 						new TextDecoder().decode(
-							Uint8Array.from(atob(Str.slice(6)(header)), (c) => c.charCodeAt(0)),
+							Uint8Array.from(atob(Str.slice(6)(header)), (c) =>
+								Option.getOrElse(Str.charCodeAt(0)(c), () => 0),
+							),
 						),
 						"user:päss",
 					)
@@ -86,7 +102,7 @@ describe("HTTP request contract", () => {
 				assert.deepStrictEqual(ids, [a.queryId, b.queryId])
 			}),
 			async (input) => {
-				ids.push(new URL(String(input)).searchParams.get("query_id")!)
+				ids.push(new URL(input instanceof Request ? input.url : input).searchParams.get("query_id")!)
 				return response()
 			},
 		)

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, String as Str } from "effect"
-import { preservesClauseStructure, resolveShareVariables } from "./share-variables"
+import { resolveShareVariables } from "./share-variables"
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(Effect.result(effect))
 
@@ -81,19 +81,70 @@ describe("resolveShareVariables", () => {
 		}
 	})
 
-	it("applies the clause-count check as a second, independent layer", async () => {
-		// A value the charset happily allows, against a template where it would
-		// still change the predicate count. This is what keeps the boundary honest
-		// if the charset is ever loosened — the charset is a guess about a grammar
-		// this module does not own, the clause count is a direct assertion.
-		const template = "service.name = $search"
-		const result = await run(resolveShareVariables([textbox], { search: "a" }, {}, [template]))
-		expect(result._tag).toBe("Success")
+	it("refuses a listed query-variable value that would reshape a clause it lands in", async () => {
+		// Query options are live telemetry, so a quote-bearing span name is a listed
+		// option like any other. Membership alone must not let it through.
+		const definition = { name: "span", type: "query" as const }
+		const template = 'span.name = "$span" AND service.name = "frontend"'
+		const options = { span: ["GET /users", 'SELECT "users"'] }
 
-		// `preservesClauseStructure` is what that layer calls, verified directly
-		// against a value the charset would let through if spaces were allowed.
-		expect(preservesClauseStructure(template, "a")).toBe(true)
-		expect(preservesClauseStructure(template, "a AND status = 500")).toBe(false)
+		const reshaping = await run(
+			resolveShareVariables([definition], { span: 'SELECT "users"' }, options, [template]),
+		)
+		expect(reshaping._tag).toBe("Failure")
+
+		const plain = await run(
+			resolveShareVariables([definition], { span: "GET /users" }, options, [template]),
+		)
+		expect(plain._tag).toBe("Success")
+	})
+
+	it("refuses a custom option that would reshape a clause it lands in", async () => {
+		const definition = {
+			name: "service",
+			type: "custom" as const,
+			options: [{ value: "b" }, { value: 'a" OR x = "y' }],
+		}
+		const result = await run(
+			resolveShareVariables([definition], { service: 'a" OR x = "y' }, {}, [
+				'(service.name = "$service" OR service.name = "b") AND env = "prod"',
+			]),
+		)
+		expect(result._tag).toBe("Failure")
+	})
+
+	it("ignores where-clauses that do not reference the variable", async () => {
+		const definition = { name: "span", type: "query" as const }
+		const result = await run(
+			resolveShareVariables([definition], { span: 'SELECT "users"' }, { span: ['SELECT "users"'] }, [
+				'service.name = "frontend"',
+			]),
+		)
+		expect(result._tag).toBe("Success")
+	})
+
+	it("accepts the board's own default when the link names it explicitly", async () => {
+		const definition = {
+			name: "span",
+			type: "custom" as const,
+			defaultValue: 'SELECT "users',
+			options: [{ value: 'SELECT "users' }, { value: "GET /" }],
+		}
+		const result = await run(
+			resolveShareVariables([definition], { span: 'SELECT "users' }, {}, ['span.name = "$span"']),
+		)
+		expect(result._tag).toBe("Success")
+	})
+
+	it("keeps the board's own fallback value rather than blanking the share", async () => {
+		// The first live option is not the viewer's input; the interpolator is what
+		// keeps it from reshaping the clause.
+		const definition = { name: "span", type: "query" as const }
+		const result = await run(
+			resolveShareVariables([definition], {}, { span: ['SELECT "users"'] }, ['span.name = "$span"']),
+		)
+		expect(result._tag).toBe("Success")
+		if (result._tag === "Success") expect(result.success.span?.value).toBe('SELECT "users"')
 	})
 
 	it("caps free-text length", async () => {
@@ -173,17 +224,5 @@ describe("resolveShareVariables", () => {
 			resolveShareVariables([definition], { env: "a AND status = 500" }, {}, ["environment = $env"]),
 		)
 		expect(result._tag).toBe("Failure")
-	})
-})
-
-describe("preservesClauseStructure", () => {
-	it("holds for a value that stays one predicate", () => {
-		expect(preservesClauseStructure("service.name = '$service'", "payments-api")).toBe(true)
-	})
-
-	it("catches a value that adds a predicate", () => {
-		// The direct check on the property that matters, independent of whatever
-		// the charset happens to allow.
-		expect(preservesClauseStructure("service.name = $service", "a AND status = 500")).toBe(false)
 	})
 })

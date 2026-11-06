@@ -11,6 +11,7 @@
 // panel renderer, so the two never drift. Keep it pure: it is unit tested
 // directly.
 
+import { Array as Arr, Option } from "effect"
 import type {
 	ContainerInfraMetric,
 	HostInfraMetric,
@@ -126,9 +127,8 @@ export function getActiveInfraCorrelations(
 	// and a declared non-docker runtime (containerd, cri-o, …) has no docker
 	// metrics either — both would render an empty duplicate chart stack.
 	const containerName = attr(resourceAttributes, CONTAINER_NAME_KEY)
-	const containerRuntime = CONTAINER_RUNTIME_KEYS.reduce<string | undefined>(
-		(found, key) => found ?? attr(resourceAttributes, key),
-		undefined,
+	const containerRuntime = Option.getOrUndefined(
+		Arr.findFirst(CONTAINER_RUNTIME_KEYS, (key) => Option.fromUndefinedOr(attr(resourceAttributes, key))),
 	)
 	if (containerName && !podName && (containerRuntime === undefined || containerRuntime === "docker")) {
 		out.push({

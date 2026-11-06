@@ -12,7 +12,7 @@
  * `../worker.ts`.
  */
 import { connectors as registeredConnectors } from "@maple/chat-platform/connectors"
-import { ConfigProvider, Effect, Schema, Array as Arr } from "effect"
+import { ConfigProvider, Effect, Option, Schema, Array as Arr } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/http"
 import { resolveConnectorConfig, type IngressConnector } from "../config.ts"
 import { InboundHandler } from "../inbound.ts"
@@ -65,8 +65,12 @@ export const connectorWebhookRouter = (registry: ReadonlyArray<IngressConnector>
 					// attributable to the id that was asked for rather than anonymous.
 					yield* Effect.annotateCurrentSpan("maple.chat.connector", connectorId)
 
-					const connector = registry.find((candidate) => candidate.id === connectorId)
-					if (connector === undefined || connector.ingress.kind !== "webhook") {
+					const found = Arr.findFirst(registry, (candidate) => candidate.id === connectorId)
+					if (Option.isNone(found)) {
+						return yield* rejectCaller(404, "ConnectorNotFound", "No such connector")
+					}
+					const connector = found.value
+					if (connector.ingress.kind !== "webhook") {
 						return yield* rejectCaller(404, "ConnectorNotFound", "No such connector")
 					}
 

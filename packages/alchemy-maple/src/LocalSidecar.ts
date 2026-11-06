@@ -5,6 +5,7 @@ import { AlchemyContext } from "alchemy/AlchemyContext"
 import type * as LocalProvider from "alchemy/Local/LocalProvider"
 import type * as RpcServer from "alchemy/Local/RpcServer"
 import { Stack } from "alchemy/Stack"
+import * as Config from "effect/Config"
 import * as Effect from "effect/Effect"
 import { FetchHttpClient } from "effect/http"
 import { LocalProviderLocal, type Local, type LocalSpec } from "./Local"
@@ -26,7 +27,7 @@ export const localSpec: LocalSpec = Effect.gen(function* () {
 			// MAPLE_LIBCHDB wins; otherwise the pinned release, downloaded and verified
 			// once into ~/.maple/cache, exactly as the `maple` release bundle gets it.
 			const libchdb =
-				process.env.MAPLE_LIBCHDB ||
+				(yield* Config.String("MAPLE_LIBCHDB").pipe(Config.withDefault(""), Effect.orDie)) ||
 				// The sidecar process's entry point: it owns its HTTP transport.
 				// oxlint-disable-next-line effecttsgo/strict-effect-provide
 				(yield* provisionLibchdb().pipe(Effect.provide(FetchHttpClient.layer))).path
@@ -40,5 +41,5 @@ export const localSpec: LocalSpec = Effect.gen(function* () {
 	} satisfies LocalProvider.LocalProviderSpec<Local, LocalConfig>
 })
 
-const providers: RpcServer.ProviderLayer = LocalProviderLocal()
+const providers = LocalProviderLocal() satisfies RpcServer.ProviderLayer
 export default providers

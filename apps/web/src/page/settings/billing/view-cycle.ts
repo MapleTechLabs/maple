@@ -31,7 +31,7 @@ import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statFigure } from "@maple/views/ui/stat-figure"
 import { seriesLegend } from "../../kit/series-legend"
-import { Message, type Model } from "./model"
+import { canManage, Message, type Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
@@ -119,7 +119,7 @@ const spendChart = (h: H, model: Model, spend: SpendModel, daily: DailySpendResp
 	const projected = spend.projectedCents / 100
 	const peak = Math.max(projected, ...Arr.map(data, (point) => point.total ?? 0), 1)
 	const yMax = Math.ceil((peak * 1.1) / 10) * 10
-	const latest = data.findLast((point) => !point.future)
+	const latest = Option.getOrUndefined(Arr.findLast(data, (point) => !point.future))
 	const lastPoint = data[data.length - 1]
 	const hasFuture = lastPoint !== undefined && lastPoint.future
 	const spec: ChartSpec = {
@@ -366,7 +366,7 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 												inputs.uncappedCount === 1
 													? "1 feature has no cap"
 													: `${inputs.uncappedCount} features have no cap`,
-												...(model.isAdmin
+												...(canManage(model)
 													? [
 															textLink(
 																h,

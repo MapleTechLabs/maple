@@ -76,8 +76,8 @@ const mcpClient = async (loader: ReturnType<typeof McpToolExecutorLoader.layerFr
 		Effect.gen(function* () {
 			const apiKeys = yield* ApiKeysService
 			return yield* apiKeys.create(
-				Schema.decodeUnknownSync(OrgId)("org_test"),
-				Schema.decodeUnknownSync(UserId)("user_test"),
+				Schema.decodeSync(OrgId)("org_test"),
+				Schema.decodeSync(UserId)("user_test"),
 				{ name: "Lazy tools test", kind: "mcp" },
 			)
 		}).pipe(Effect.provide(services)),

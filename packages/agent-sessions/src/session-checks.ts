@@ -36,7 +36,8 @@ import {
 	type SessionTurn,
 	type TurnAnchorKind,
 } from "./session-turns"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 
 /** Below this share of the prompt served from cache, across the calls after
  *  the first, the prefix is not being reused. */
@@ -162,12 +163,12 @@ export function buildSessionChecks(
 		...otherErrorsCheck(Arr.filter(errors, (finding) => finding.tool === undefined)),
 		stallCheck(of("stall")),
 		promptCacheCheck(cacheObservations(spans)),
-	].sort(
-		(a, b) =>
-			STATUS_RANK[a.status] - STATUS_RANK[b.status] ||
-			// The check that ended the run leads: it is what the headline names.
-			Number(endedTheRun(b.findings)) - Number(endedTheRun(a.findings)),
-	)
+	].sort((a, b) => {
+		const byStatus = STATUS_RANK[a.status] - STATUS_RANK[b.status]
+		if (byStatus !== 0) return byStatus
+		// The check that ended the run leads: it is what the headline names.
+		return Number(endedTheRun(b.findings)) - Number(endedTheRun(a.findings))
+	})
 
 	const counts = { failed: 0, warning: 0, passed: 0, skipped: 0 }
 	for (const check of checks) counts[check.status]++
@@ -190,8 +191,11 @@ function reportHeadline(
 ): string {
 	const word = turns[0]?.anchorKind === "trace" ? "segment" : "turn"
 	if (report.verdict.status === "failed") {
-		const cause = report.findings.find((finding) => finding.terminal)
-		return `the final ${word} ${cause === undefined ? "did not close cleanly" : causeText(cause)}`
+		const cause = Arr.findFirst(report.findings, (finding) => finding.terminal)
+		return `the final ${word} ${Option.match(cause, {
+			onNone: () => "did not close cleanly",
+			onSome: causeText,
+		})}`
 	}
 	// A fan-out whose sub-agents failed has not completed the way its verdict word
 	// suggests: the runs that did the work are what the headline names.
@@ -372,8 +376,10 @@ function contextWindowCheck(
 		// after it recovered. The row links the deepest span; the group's own
 		// time is its first member's, which may be a wrapper that started
 		// before that call.
-		const overflow = llmCalls.find((span) => span.spanId === found.spanId)
-		const untilMs = overflow === undefined ? found.atMs : spanStartMs(overflow)
+		const untilMs = Option.match(
+			Arr.findFirst(llmCalls, (span) => span.spanId === found.spanId),
+			{ onNone: () => found.atMs, onSome: spanStartMs },
+		)
 		const sizes = promptSizes(Arr.filter(llmCalls, (span) => spanStartMs(span) <= untilMs))
 		const first = sizes[0]
 		const last = sizes[sizes.length - 1]
@@ -445,9 +451,10 @@ function providerCheck(
 					: `All ${plural(llmCalls, "model call")} were answered first time`,
 		)
 	}
+	const [firstFailure] = failures
 	const parts = [
-		...(failures.length > 0
-			? [`${plural(total(failures), "model call")} failed at the provider on ${where(failures[0])}`]
+		...(firstFailure !== undefined
+			? [`${plural(total(failures), "model call")} failed at the provider on ${where(firstFailure)}`]
 			: []),
 		...Arr.map(
 			retries,
@@ -485,7 +492,10 @@ function replyLengthCheck(
 	const found = findings[0]
 	if (found !== undefined) {
 		const n = total(findings)
-		const limit = llmCalls.find((span) => span.spanId === found.spanId)?.genAi.requestMaxTokens
+		const limit = Arr.findFirst(llmCalls, (span) => span.spanId === found.spanId).pipe(
+			Option.map((span) => span.genAi.requestMaxTokens),
+			Option.getOrUndefined,
+		)
 		return check(
 			identity,
 			foundStatus(findings),
@@ -761,7 +771,7 @@ function clauses(
 
 /** `turn 14 (final)`, `turns 9, 11` — the finding's own attribution, read in a sentence. */
 function where(finding: SessionFinding): string {
-	return finding.turnText.replace(/^(Turn|Segment)/, (word) => Str.toLowerCase(word))
+	return replaceWith(finding.turnText, /^(Turn|Segment)/, (word) => Str.toLowerCase(word))
 }
 
 function toolName(finding: SessionFinding): string {

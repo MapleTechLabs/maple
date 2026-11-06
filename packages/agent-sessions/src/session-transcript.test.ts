@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 
 import type { AiSessionSpan } from "@maple/domain/http"
 
@@ -14,7 +14,7 @@ import {
 } from "./session-transcript"
 import { sessionToolResults } from "./span-detail"
 import { agentSpan, langGraphThreadSpans, llmSpan, makeSpan, toolSpan, T0 } from "./span-test-support"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 const SECOND = 1000
 
@@ -43,9 +43,13 @@ function findRow<K extends TranscriptRow["kind"]>(
 	rows: readonly TranscriptRow[],
 	kind: K,
 ): Extract<TranscriptRow, { kind: K }> {
-	const row = rows.find((candidate) => candidate.kind === kind)
-	if (row === undefined) throw new Error(`no ${kind} row in [${Arr.join(kinds(rows), ", ")}]`)
-	return row as Extract<TranscriptRow, { kind: K }>
+	return Option.getOrThrowWith(
+		Arr.findFirst(
+			rows,
+			(candidate): candidate is Extract<TranscriptRow, { kind: K }> => candidate.kind === kind,
+		),
+		() => new Error(`no ${kind} row in [${Arr.join(kinds(rows), ", ")}]`),
+	)
 }
 
 function findRows<K extends TranscriptRow["kind"]>(
@@ -457,9 +461,9 @@ describe("buildTranscript — message extraction", () => {
 
 		const users = Arr.filter(transcript(spans), (row) => row.kind === "user")
 		expect(users).toHaveLength(1)
-		expect(users[0]!.text).toBe("the new question")
-		expect(users[0]!.earlierCount).toBe(2)
-		expect(users[0]!.history).toHaveLength(3)
+		expect(Arr.getUnsafe(users, 0).text).toBe("the new question")
+		expect(Arr.getUnsafe(users, 0).earlierCount).toBe(2)
+		expect(Arr.getUnsafe(users, 0).history).toHaveLength(3)
 	})
 
 	it("shows one system prompt per turn and counts the calls that re-sent it", () => {
@@ -485,7 +489,7 @@ describe("buildTranscript — message extraction", () => {
 		)
 		const systems = Arr.filter(rows, (row) => row.kind === "system")
 		expect(systems).toHaveLength(1)
-		expect(systems[0]!.callCount).toBe(3)
+		expect(Arr.getUnsafe(systems, 0).callCount).toBe(3)
 	})
 
 	it("splits reasoning out of the reply and drops it when Thinking is off", () => {
@@ -729,8 +733,8 @@ describe("buildTranscript — tool calls", () => {
 
 		const tools = Arr.filter(transcript(spans), (row) => row.kind === "tool")
 		expect(tools).toHaveLength(1)
-		expect(tools[0]!.fromMessageOnly).toBe(true)
-		expect(tools[0]!.toolName).toBe("web_search")
+		expect(Arr.getUnsafe(tools, 0).fromMessageOnly).toBe(true)
+		expect(Arr.getUnsafe(tools, 0).toolName).toBe("web_search")
 	})
 
 	it("does not double-count a call that both a message and a tool span describe", () => {
@@ -765,7 +769,7 @@ describe("buildTranscript — tool calls", () => {
 
 		const tools = Arr.filter(transcript(spans), (row) => row.kind === "tool")
 		expect(tools).toHaveLength(1)
-		expect(tools[0]!.fromMessageOnly).toBe(false)
+		expect(Arr.getUnsafe(tools, 0).fromMessageOnly).toBe(false)
 	})
 
 	it("marks an errored tool call in place", () => {
@@ -891,7 +895,8 @@ describe("buildTranscript — structural fallback and notes", () => {
 	it("says content is missing once, at the top, rather than per span", () => {
 		const notes = Arr.filter(transcript(structural), (row) => row.kind === "note")
 		expect(notes).toHaveLength(1)
-		const note = notes[0]!
+		const note = notes[0]
+		assert.isDefined(note)
 		expect(note.noteKind).toBe("capture-off")
 		expect(note.noteKind === "capture-off" && note.anyCaptured).toBe(false)
 	})
@@ -937,9 +942,9 @@ describe("buildTranscript — structural fallback and notes", () => {
 
 		const rows = transcript([...captured(0), ...captured(1), ...captured(2), ...silent])
 		// No leading banner: capture is the norm in this session.
-		expect(rows[0]!.kind).toBe("turn")
-		const noteIndex = rows.findIndex((row) => row.kind === "note")
-		expect(rows[noteIndex - 1]!.kind).toBe("turn")
+		expect(Arr.getUnsafe(rows, 0).kind).toBe("turn")
+		const noteIndex = Option.getOrThrow(Arr.findFirstIndex(rows, (row) => row.kind === "note"))
+		expect(Arr.getUnsafe(rows, noteIndex - 1).kind).toBe("turn")
 	})
 })
 
@@ -1353,7 +1358,7 @@ describe("buildTranscript — what counts as a captured reply", () => {
 		)
 		const tools = findRows(transcript(spans), "tool")
 		expect(tools).toHaveLength(1)
-		expect(tools[0]!.fromMessageOnly).toBe(false)
+		expect(Arr.getUnsafe(tools, 0).fromMessageOnly).toBe(false)
 	})
 
 	// OpenInference records the call id in the model's output but not on the tool
@@ -1373,7 +1378,7 @@ describe("buildTranscript — what counts as a captured reply", () => {
 		)
 		const tools = findRows(transcript(spans), "tool")
 		expect(tools).toHaveLength(1)
-		expect(tools[0]!.fromMessageOnly).toBe(false)
+		expect(Arr.getUnsafe(tools, 0).fromMessageOnly).toBe(false)
 	})
 
 	// The crewai `fetch_transport_data.run` span: failed, no result attribute, no
@@ -1402,15 +1407,15 @@ describe("buildTranscript — what counts as a captured reply", () => {
 		)
 		const tools = findRows(transcript(spans), "tool")
 		expect(tools).toHaveLength(1)
-		expect(tools[0]!.failed).toBe(true)
-		expect(tools[0]!.result?.text).toBe("transport data service unavailable (503)")
+		expect(Arr.getUnsafe(tools, 0).failed).toBe(true)
+		expect(Arr.getUnsafe(tools, 0).result?.text).toBe("transport data service unavailable (503)")
 	})
 
 	it("keeps the message-only row when no span could be the same call", () => {
 		const spans = outputOnly([{ type: "tool_call", name: "web_search", arguments: { q: "x" } }])
 		const tools = findRows(transcript(spans), "tool")
 		expect(tools).toHaveLength(1)
-		expect(tools[0]!.fromMessageOnly).toBe(true)
+		expect(Arr.getUnsafe(tools, 0).fromMessageOnly).toBe(true)
 	})
 })
 
@@ -1533,7 +1538,7 @@ describe("buildTranscript — capture notes", () => {
 	// is the norm, and a even split is not one.
 	it("holds the banner at exactly half the calls captured", () => {
 		const rows = transcript([...captured(0), ...silent(1)])
-		expect(rows[0]!.kind).toBe("turn")
+		expect(Arr.getUnsafe(rows, 0).kind).toBe("turn")
 	})
 
 	it("raises it once capture is the exception", () => {
@@ -1828,7 +1833,7 @@ describe("buildTranscript — parallel turns", () => {
 		// Collapse hides a turn's body, never its header — so the chapter-level
 		// concurrency survives it.
 		expect(kinds(rows)).toEqual(["parallel-turns", "turn", "turn", "assistant"])
-		expect(findRows(rows, "turn")[0]!.depth).toBe(1)
+		expect(Arr.getUnsafe(findRows(rows, "turn"), 0).depth).toBe(1)
 	})
 
 	it("keeps a staggered run in one cluster", () => {
@@ -2045,7 +2050,8 @@ describe("buildTranscript — investigation fan-out", () => {
 		// The marker opens the cluster: it sits directly before the first lane's
 		// header, and the planner's chapter is untouched ahead of it.
 		const markerAt = rows.indexOf(marker)
-		const next = rows[markerAt + 1]!
+		const next = rows[markerAt + 1]
+		assert.isDefined(next)
 		expect(next.kind).toBe("turn")
 		expect(next.kind === "turn" && next.turn.agentName).toBe("hypothesis-0")
 	})
@@ -2099,7 +2105,7 @@ describe("prepare / assemble", () => {
 		const prepared = prepareTranscript(read)
 
 		const open = new Set<string>()
-		const collapsed = new Set([turns[0]!.id, turns[4]!.id])
+		const collapsed = new Set([Arr.getUnsafe(turns, 0).id, Arr.getUnsafe(turns, 4).id])
 		for (const collapsedTurns of [open, collapsed]) {
 			expect(assembleTranscript(prepared, { collapsedTurns, hasMore: false })).toEqual(
 				buildTranscript({ ...read, collapsedTurns, hasMore: false }),

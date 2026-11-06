@@ -24,7 +24,7 @@
 // wearing one name, and only the shape the fixture happens to select is ever
 // executed. `assertRouteCoverage` below fails when a route is never exercised.
 
-import { Effect, Array as Arr, String as Str } from "effect"
+import { Effect, Array as Arr, String as Str, Option } from "effect"
 import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	DeploymentEnvironment,
@@ -973,24 +973,24 @@ interface CapturedSql {
  * result still contributes its SQL — the SQL is the artifact under test.
  */
 function makeCapturingWarehouse(capabilities: WarehouseCapabilities): {
-	readonly warehouse: QueryEngineWarehouse<QueryTenant>
+	readonly warehouse: QueryEngineWarehouse
 	readonly captured: ReadonlyArray<CapturedSql>
 } {
 	const captured: Array<CapturedSql> = []
 	const empty = Effect.succeed([] as ReadonlyArray<never>)
-	const warehouse: QueryEngineWarehouse<QueryTenant> = {
+	const warehouse: QueryEngineWarehouse = {
 		rawSqlQuery: (_tenant, sql) => {
 			captured.push({ sql })
 			return empty
 		},
 		compiledQuery: (_tenant, input) => {
 			const compiled = compiledQueryOf(input)
-			captured.push({ sql: compiled.sql, compiled: compiled as CompiledQuery<unknown> })
+			captured.push({ sql: compiled.sql, compiled: compiled })
 			return empty
 		},
 		compiledQueryWithCapabilities: (_tenant, compile) => {
 			const compiled = Effect.runSync(compile(capabilities))
-			captured.push({ sql: compiled.sql, compiled: compiled as CompiledQuery<unknown> })
+			captured.push({ sql: compiled.sql, compiled: compiled })
 			return empty
 		},
 	}
@@ -1086,25 +1086,25 @@ export function collectBuilderCatalog(): ReadonlyArray<CatalogEntry> {
 
 /** The benchmark and analyzer consume these same compiled cases. Compilation
  * failures stay typed at CLI boundaries instead of dropping fixtures. */
-export const collectQueryCatalog = () =>
-	Effect.try({
-		try: () => [...collectPipeCatalog(), ...collectQuerySpecCatalog(), ...collectBuilderCatalog()],
-		catch: (cause) =>
-			new BenchmarkError({ message: `Core catalog compilation failed: ${String(cause)}` }),
-	})
+export const collectQueryCatalog = Effect.try({
+	try: () => [...collectPipeCatalog(), ...collectQuerySpecCatalog(), ...collectBuilderCatalog()],
+	catch: (cause) => new BenchmarkError({ message: `Core catalog compilation failed: ${String(cause)}` }),
+})
 
 /** Composition happens in the app, keeping integration knowledge out of core. */
 export const mergeQueryCatalogs = (...catalogs: ReadonlyArray<ReadonlyArray<CatalogEntry>>) => {
 	const entries = catalogs.flat()
 	const seen = new Set<string>()
-	const duplicate = entries.find((entry) => {
+	const duplicate = Arr.findFirst(entries, (entry) => {
 		if (seen.has(entry.id)) return true
 		seen.add(entry.id)
 		return false
 	})
-	return duplicate
-		? Effect.fail(new BenchmarkError({ message: `Duplicate query case ID: ${duplicate.id}` }))
-		: Effect.succeed(entries)
+	return Option.match(duplicate, {
+		onNone: () => Effect.succeed(entries),
+		onSome: (entry) =>
+			Effect.fail(new BenchmarkError({ message: `Duplicate query case ID: ${entry.id}` })),
+	})
 }
 
 /** The only conversion from compiled catalog cases to a serializable workload.
@@ -1267,7 +1267,7 @@ export function routeCoverage(): ReadonlyMap<string, { true: number; false: numb
 				metric: query.metric,
 				needsSampling: true,
 				allMetrics: query.allMetrics === true,
-				groupBy: query.groupBy as ReadonlyArray<string> | undefined,
+				groupBy: query.groupBy,
 				bucketSeconds: query.bucketSeconds,
 				apdexThresholdMs: query.apdexThresholdMs,
 				rootOnly: filters.rootSpansOnly === true,

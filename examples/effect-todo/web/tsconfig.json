@@ -1,6 +1,7 @@
 {
 	"include": ["src/**/*.ts", "src/**/*.tsx", "../shared/**/*.ts", "vite.config.ts"],
 	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
 		"target": "ES2023",
 		"jsx": "react-jsx",
 		"module": "ESNext",

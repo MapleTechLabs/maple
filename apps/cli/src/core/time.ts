@@ -20,13 +20,17 @@ export const formatDateTimeUTC = (d: Date): string =>
 	`${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
 	`${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`
 
+/** `formatDateTimeUTC` for an epoch-millisecond instant. */
+export const formatEpochMsUTC = (ms: number): string => formatDateTimeUTC(new Date(ms))
+
 const SINCE_RE = /^(\d+)(m|h|d|w)$/
 const UNIT_MS = { m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 } as const
 
 /** Parse a relative window like `30m`, `6h`, `7d`, `2w` to milliseconds. */
 export const sinceToMs = (since: string): number | null => {
-	const match = Str.trim(since).match(SINCE_RE)
-	if (!match) return null
+	const parsed = Str.match(SINCE_RE)(Str.trim(since))
+	if (Option.isNone(parsed)) return null
+	const match = parsed.value
 	const unit = match[2]
 	const n = Number(match[1])
 	return unit === "m" || unit === "h" || unit === "d" || unit === "w" ? n * UNIT_MS[unit] : null
@@ -51,9 +55,9 @@ const zoneOffsetMs = (zone: string | undefined): number => {
  * without a zone.
  */
 export const parseTimestampMs = (input: string): number | null => {
-	const match = Str.trim(input).match(TIMESTAMP_RE)
-	if (!match) return null
-	const [, y, mo, d, h = "00", mi = "00", s = "00", zone] = match
+	const parsed = Str.match(TIMESTAMP_RE)(Str.trim(input))
+	if (Option.isNone(parsed)) return null
+	const [, y, mo, d, h = "00", mi = "00", s = "00", zone] = parsed.value
 	const year = Number(y)
 	const month = Number(mo)
 	const day = Number(d)
@@ -85,7 +89,7 @@ export const normalizeTimestamp = (input: string, flag: string): Result.Result<s
 					message: `invalid ${flag} "${input}": expected 'YYYY-MM-DD HH:mm:ss' (UTC) or ISO-8601 like 2026-09-25T22:00:00Z`,
 				}),
 			)
-		: Result.succeed(formatDateTimeUTC(new Date(ms)))
+		: Result.succeed(formatEpochMsUTC(ms))
 }
 
 /**
@@ -129,8 +133,8 @@ export const resolveRangeChecked = (a: {
 			const nowMs = yield* Clock.currentTimeMillis
 			const endMs = end === undefined ? nowMs : (parseTimestampMs(end) ?? nowMs)
 			range = {
-				startTime: start ?? formatDateTimeUTC(new Date(endMs - ms)),
-				endTime: end ?? formatDateTimeUTC(new Date(nowMs)),
+				startTime: start ?? formatEpochMsUTC(endMs - ms),
+				endTime: end ?? formatEpochMsUTC(nowMs),
 			}
 		}
 		// Same-format UTC strings order lexicographically.

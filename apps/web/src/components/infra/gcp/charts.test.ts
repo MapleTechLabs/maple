@@ -13,7 +13,7 @@ import {
 	type GcpChart,
 } from "./charts"
 import { gcpWorkload, type GcpMetricReader } from "./tabs"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 const T1 = "2026-10-08T12:00:00.000Z"
 const T2 = "2026-10-08T12:05:00.000Z"
@@ -56,7 +56,9 @@ const metricsOf = (chart: GcpChart): ReadonlyArray<string> => {
 }
 
 const lineChart = (service: (typeof GCP_INFRA_SERVICE_IDS)[number], title: string) => {
-	const chart = GCP_INFRA_CHARTS[service].find((candidate) => candidate.title === title)
+	const chart = Option.getOrUndefined(
+		Arr.findFirst(GCP_INFRA_CHARTS[service], (candidate) => candidate.title === title),
+	)
 	if (chart?.kind !== "lines") throw new Error(`no line chart ${title}`)
 	return chart
 }
@@ -87,7 +89,7 @@ describe("GCP_INFRA_CHARTS", () => {
 
 	it("opens a counter as a sum and a gauge or percentile as a gauge", () => {
 		// The explorer keeps apart what the chart draws apart: the classes, the percentiles.
-		expect(gcpChartMetric(GCP_INFRA_CHARTS.cloudRun[0], [])).toEqual({
+		expect(gcpChartMetric(Arr.getUnsafe(GCP_INFRA_CHARTS.cloudRun, 0), [])).toEqual({
 			name: "gcp.cloud_run.requests",
 			type: "sum",
 			groupBy: "attr.gcp.metric.labels.response_code_class",

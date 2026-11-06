@@ -30,7 +30,7 @@ import type { HealthSnapshot, Incident, Model } from "./model"
 import { alertFiringHero } from "./view-hero"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // The service health overview: the alerts banner and
 // the health summary rail above the usage cards.
@@ -320,7 +320,9 @@ const serviceRow = <M>(
 	slice: SliceSearch,
 ): Html => {
 	const primary = primaryServiceHealthCause(causes)
-	const latencyCause = causes.find((cause) => cause.metric === "latency")
+	const causeOf = (kind: ServiceHealthCause["metric"]) =>
+		Option.getOrUndefined(Arr.findFirst(causes, (cause) => cause.metric === kind))
+	const latencyCause = causeOf("latency")
 	return h.li(
 		[h.Key(`${service.serviceName}:${service.environment}`)],
 		[
@@ -336,12 +338,7 @@ const serviceRow = <M>(
 				trailing: h.div(
 					[h.Class("flex shrink-0 items-center gap-5 font-mono text-xs tabular-nums")],
 					[
-						metric(
-							h,
-							"err",
-							formatErrorRate(service.errorRate),
-							metricTone(causes.find((cause) => cause.metric === "error")),
-						),
+						metric(h, "err", formatErrorRate(service.errorRate), metricTone(causeOf("error"))),
 						metric(
 							h,
 							"p95",
@@ -355,7 +352,7 @@ const serviceRow = <M>(
 							h,
 							"rps",
 							formatThroughput(service.throughput, "/s"),
-							metricTone(causes.find((cause) => cause.metric === "traffic")),
+							metricTone(causeOf("traffic")),
 						),
 					],
 				),

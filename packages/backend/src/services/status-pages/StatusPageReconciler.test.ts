@@ -1,5 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Array as Arr } from "effect"
+import { Effect, Layer, Array as Arr, DateTime } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
 import { overlayIncidentId, StatusPageKeys, type StatusPageOverlayEntry } from "@maple/domain/status-page"
 import type { StatusPageId } from "@maple/domain/primitives"
@@ -69,7 +70,7 @@ const markPublished = (testDb: TestDb, pageId: string, at: number) =>
 		executeSql(
 			testDb,
 			`UPDATE status_pages SET published_revision = revision, published_at = $2 WHERE id = $1`,
-			[pageId, new Date(at).toISOString()],
+			[pageId, DateTime.formatIso(DateTime.makeUnsafe(at))],
 		),
 	)
 
@@ -100,19 +101,19 @@ describe("StatusPageReconciler", () => {
 		withReconciler(({ testDb, store, reconciler }) =>
 			Effect.gen(function* () {
 				const pageId = newPageId()
-				const componentId = crypto.randomUUID()
+				const componentId = SecureRandom.uuidV4Unsafe()
 				// No token: entries posted before a revoke still import.
 				yield* seedPage(testDb, { id: pageId, slug: "acme-bg" })
 				yield* seedComponent(testDb, { id: componentId, pageId, name: "API", position: 0 })
 
 				const opening = entry({
-					id: crypto.randomUUID(),
+					id: SecureRandom.uuidV4Unsafe(),
 					at: NOW,
 					title: "Login broken",
 					componentIds: [componentId, "not-a-component"],
 				})
 				const followUp = entry({
-					id: crypto.randomUUID(),
+					id: SecureRandom.uuidV4Unsafe(),
 					at: NOW + 60_000,
 					incidentId: overlayIncidentId(opening.id),
 					status: "resolved",
@@ -145,7 +146,7 @@ describe("StatusPageReconciler", () => {
 				)
 				const incidentId = incidents[0]?.id ?? ""
 				assert.deepStrictEqual(
-					(yield* updatesOf(testDb, incidentId)).map((u) => [u.overlay_entry_id, u.source]),
+					Arr.map(yield* updatesOf(testDb, incidentId), (u) => [u.overlay_entry_id, u.source]),
 					[
 						[opening.id, "break_glass"],
 						[followUp.id, "break_glass"],
@@ -154,12 +155,12 @@ describe("StatusPageReconciler", () => {
 				assert.strictEqual((yield* readPage(testDb, pageId))?.revision, "3")
 
 				// Not yet in a published snapshot: the edge must keep overlaying them.
-				const unpublished = yield* reconciler.reconcileAll()
+				const unpublished = yield* reconciler.reconcileAll
 				assert.deepStrictEqual(unpublished, { pages: 1, imported: 0, cleared: 0, failed: 0 })
 				assert.isTrue((yield* store.contents).kv.has(StatusPageKeys.overlayEntry(pageId, opening.id)))
 
 				yield* markPublished(testDb, pageId, NOW + 5 * 60_000)
-				const published = yield* reconciler.reconcileAll()
+				const published = yield* reconciler.reconcileAll
 				assert.deepStrictEqual(published, { pages: 1, imported: 0, cleared: 2, failed: 0 })
 				const { kv } = yield* store.contents
 				assert.isFalse(kv.has(StatusPageKeys.overlayEntry(pageId, opening.id)))
@@ -175,9 +176,9 @@ describe("StatusPageReconciler", () => {
 			Effect.gen(function* () {
 				const pageId = newPageId()
 				yield* seedPage(testDb, { id: pageId, slug: "acme-lag" })
-				const only = entry({ id: crypto.randomUUID(), at: NOW })
+				const only = entry({ id: SecureRandom.uuidV4Unsafe(), at: NOW })
 				yield* putEntry(store, pageId, only)
-				yield* reconciler.reconcileAll()
+				yield* reconciler.reconcileAll
 				// Published, but a later bump (revision past published_revision) is still pending.
 				yield* markPublished(testDb, pageId, NOW + 60_000)
 				yield* Effect.promise(() =>
@@ -185,7 +186,7 @@ describe("StatusPageReconciler", () => {
 						pageId,
 					]),
 				)
-				assert.strictEqual((yield* reconciler.reconcileAll()).cleared, 0)
+				assert.strictEqual((yield* reconciler.reconcileAll).cleared, 0)
 				assert.isTrue((yield* store.contents).kv.has(StatusPageKeys.overlayEntry(pageId, only.id)))
 			}),
 		),
@@ -210,7 +211,7 @@ describe("StatusPageReconciler", () => {
 						{ discard: true },
 					)
 					// Eight keys, three per list call.
-					const result = yield* reconciler.reconcileAll()
+					const result = yield* reconciler.reconcileAll
 					assert.deepStrictEqual(result, { pages: 4, imported: 8, cleared: 0, failed: 0 })
 					const counts = yield* Effect.forEach(pageIds, (pageId) =>
 						incidentsOf(testDb, pageId).pipe(Effect.map((rows) => rows.length)),
@@ -226,7 +227,7 @@ describe("StatusPageReconciler", () => {
 			Effect.gen(function* () {
 				const pageId = newPageId()
 				yield* seedPage(testDb, { id: pageId, slug: "acme-race" })
-				const only = entry({ id: crypto.randomUUID(), at: NOW, title: "Outage" })
+				const only = entry({ id: SecureRandom.uuidV4Unsafe(), at: NOW, title: "Outage" })
 				yield* putEntry(store, pageId, only)
 				const results = yield* Effect.all(
 					[reconciler.reconcile(pageId), reconciler.reconcile(pageId)],
@@ -250,7 +251,7 @@ describe("StatusPageReconciler", () => {
 			Effect.gen(function* () {
 				const pageId = newPageId()
 				yield* seedPage(testDb, { id: pageId, slug: "acme-lost" })
-				const only = entry({ id: crypto.randomUUID(), at: NOW, title: "Outage" })
+				const only = entry({ id: SecureRandom.uuidV4Unsafe(), at: NOW, title: "Outage" })
 				const scope = { orgId: ORG, pageId, componentIds: [] }
 				const database = yield* Database
 				// The second import read no update row, as a concurrent run would have.
@@ -269,7 +270,7 @@ describe("StatusPageReconciler", () => {
 			withReconciler(({ testDb, store, reconciler }) =>
 				Effect.gen(function* () {
 					const pageId = newPageId()
-					const incidentId = crypto.randomUUID()
+					const incidentId = SecureRandom.uuidV4Unsafe()
 					yield* seedPage(testDb, { id: pageId, slug: "acme-keep" })
 					yield* seedIncident(testDb, {
 						id: incidentId,
@@ -283,7 +284,7 @@ describe("StatusPageReconciler", () => {
 						store,
 						pageId,
 						entry({
-							id: crypto.randomUUID(),
+							id: SecureRandom.uuidV4Unsafe(),
 							at: NOW,
 							incidentId,
 							status: null,
@@ -295,7 +296,7 @@ describe("StatusPageReconciler", () => {
 						store,
 						pageId,
 						entry({
-							id: crypto.randomUUID(),
+							id: SecureRandom.uuidV4Unsafe(),
 							at: NOW + 1,
 							incidentId,
 							status: "completed",
@@ -309,7 +310,7 @@ describe("StatusPageReconciler", () => {
 						["identified", "critical", false],
 					)
 					assert.deepStrictEqual(
-						(yield* updatesOf(testDb, incidentId)).map((u) => u.status),
+						Arr.map(yield* updatesOf(testDb, incidentId), (u) => u.status),
 						["identified", "identified", "identified"],
 					)
 				}),
@@ -324,7 +325,7 @@ describe("StatusPageReconciler", () => {
 				yield* putEntry(
 					store,
 					pageId,
-					entry({ id: crypto.randomUUID(), at: NOW, status: null, impact: null }),
+					entry({ id: SecureRandom.uuidV4Unsafe(), at: NOW, status: null, impact: null }),
 				)
 				yield* reconciler.reconcile(pageId)
 				const [incident] = yield* incidentsOf(testDb, pageId)
@@ -339,18 +340,18 @@ describe("StatusPageReconciler.repairAutoIncidents", () => {
 		withReconciler(({ testDb, reconciler }) =>
 			Effect.gen(function* () {
 				const pageId = newPageId()
-				const ruleId = crypto.randomUUID()
-				const monitorId = crypto.randomUUID()
+				const ruleId = SecureRandom.uuidV4Unsafe()
+				const monitorId = SecureRandom.uuidV4Unsafe()
 				yield* seedPage(testDb, { id: pageId, slug: "acme-missed", autoIncidents: "publish" })
 				yield* seedMonitor(testDb, { id: monitorId, status: "down", alertRuleId: ruleId })
 				yield* seedComponent(testDb, {
-					id: crypto.randomUUID(),
+					id: SecureRandom.uuidV4Unsafe(),
 					pageId,
 					name: "Checkout",
 					position: 0,
 					monitorId,
 				})
-				const missed = crypto.randomUUID()
+				const missed = SecureRandom.uuidV4Unsafe()
 				yield* seedAlertIncident(testDb, {
 					id: missed,
 					status: "open",
@@ -359,19 +360,19 @@ describe("StatusPageReconciler.repairAutoIncidents", () => {
 				})
 				// Opened long ago: its page incident may have been deleted on purpose.
 				yield* seedAlertIncident(testDb, {
-					id: crypto.randomUUID(),
+					id: SecureRandom.uuidV4Unsafe(),
 					status: "open",
 					ruleId,
 					firstTriggeredAt: NOW - DAY_MS,
 				})
 
-				assert.strictEqual(yield* reconciler.repairAutoIncidents(), 1)
+				assert.strictEqual(yield* reconciler.repairAutoIncidents, 1)
 				const incidents = yield* incidentsOf(testDb, pageId)
 				assert.deepStrictEqual(
 					Arr.map(incidents, (i) => [i.title, i.status]),
 					[["Checkout is down", "investigating"]],
 				)
-				assert.strictEqual(yield* reconciler.repairAutoIncidents(), 0)
+				assert.strictEqual(yield* reconciler.repairAutoIncidents, 0)
 			}),
 		),
 	)
@@ -381,13 +382,13 @@ describe("StatusPageReconciler.repairAutoIncidents", () => {
 			Effect.gen(function* () {
 				const pageId = newPageId()
 				yield* seedPage(testDb, { id: pageId, slug: "acme-auto" })
-				const resolvedAlert = crypto.randomUUID()
-				const openAlert = crypto.randomUUID()
+				const resolvedAlert = SecureRandom.uuidV4Unsafe()
+				const openAlert = SecureRandom.uuidV4Unsafe()
 				yield* seedAlertIncident(testDb, { id: resolvedAlert, status: "resolved" })
 				yield* seedAlertIncident(testDb, { id: openAlert, status: "open" })
-				const orphanOfResolved = crypto.randomUUID()
-				const orphanOfMissing = crypto.randomUUID()
-				const stillOpen = crypto.randomUUID()
+				const orphanOfResolved = SecureRandom.uuidV4Unsafe()
+				const orphanOfMissing = SecureRandom.uuidV4Unsafe()
+				const stillOpen = SecureRandom.uuidV4Unsafe()
 				const seed = (id: string, alertIncidentId: string, startedAt: number) =>
 					seedIncident(testDb, {
 						id,
@@ -398,11 +399,11 @@ describe("StatusPageReconciler.repairAutoIncidents", () => {
 						alertIncidentId,
 					})
 				yield* seed(orphanOfResolved, resolvedAlert, NOW - 3_000)
-				yield* seed(orphanOfMissing, crypto.randomUUID(), NOW - 2_000)
+				yield* seed(orphanOfMissing, SecureRandom.uuidV4Unsafe(), NOW - 2_000)
 				yield* seed(stillOpen, openAlert, NOW - 1_000)
 				const before = Number((yield* readPage(testDb, pageId))?.revision)
 
-				assert.strictEqual(yield* reconciler.repairAutoIncidents(), 2)
+				assert.strictEqual(yield* reconciler.repairAutoIncidents, 2)
 				const incidents = yield* incidentsOf(testDb, pageId)
 				assert.deepStrictEqual(
 					Arr.map(incidents, (i) => [i.id, i.status]),
@@ -413,14 +414,14 @@ describe("StatusPageReconciler.repairAutoIncidents", () => {
 					],
 				)
 				assert.deepStrictEqual(
-					(yield* updatesOf(testDb, orphanOfMissing)).map((u) => [u.source, u.status]),
+					Arr.map(yield* updatesOf(testDb, orphanOfMissing), (u) => [u.source, u.status]),
 					[
 						["dashboard", "investigating"],
 						["auto", "resolved"],
 					],
 				)
 				assert.strictEqual(Number((yield* readPage(testDb, pageId))?.revision), before + 2)
-				assert.strictEqual(yield* reconciler.repairAutoIncidents(), 0)
+				assert.strictEqual(yield* reconciler.repairAutoIncidents, 0)
 			}),
 		),
 	)

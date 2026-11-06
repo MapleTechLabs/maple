@@ -20,6 +20,7 @@ import { dashboardSections } from "../../../page/dashboards/view/view-grid"
 import type { Resources } from "../../../platform/resources"
 import { icon } from "@maple/views/ui/icon"
 import { defineLabWithFlags } from "../../define"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 /**
  * `/lab/bench/dashboard-grid`: the dashboard grid in edit mode
@@ -316,7 +317,7 @@ export const lab = defineLabWithFlags("Dashboard grid bench", {
 	Model: BenchModel,
 	Flags,
 	flags: Effect.sync(() => ({
-		count: Number(new URLSearchParams(window.location.search).get("n") ?? "50") || 50,
+		count: nonZeroOr(Number(new URLSearchParams(window.location.search).get("n") ?? "50"), 50),
 	})),
 	init,
 	update,

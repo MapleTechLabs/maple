@@ -13,7 +13,7 @@ import {
 	verifyTelegramCredentials,
 } from "./telegram"
 
-const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
+const DESTINATION_ID = Schema.decodeSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
 const BOT_TOKEN = "123456789:AAHqwertyuiopasdfghjklzxcvbnm123456"
 const CHAT_ID = "-1001234567890"
@@ -120,7 +120,7 @@ describe("telegramTransport.render", () => {
 	it("carries the Open in Maple link as the only inline keyboard button", () => {
 		const [row] = render().body.reply_markup.inline_keyboard
 		assert.deepStrictEqual(
-			row?.map((button) => button.url),
+			Arr.map(row ?? [], (button) => button.url),
 			[LINK],
 		)
 	})
@@ -231,7 +231,7 @@ describe("verifyTelegramCredentials", () => {
 		let index = 0
 		const fetchFn: typeof fetch = async (input) => {
 			calls.push(String(input instanceof Request ? input.url : input))
-			const next = responses[Math.min(index++, responses.length - 1)]!
+			const next = responses[Math.min(index++, responses.length - 1)]
 			return new Response(JSON.stringify(next.body), {
 				status: next.status,
 				headers: { "content-type": "application/json" },
@@ -248,7 +248,7 @@ describe("verifyTelegramCredentials", () => {
 			const result = yield* withFetch(verifyTelegramCredentials(BOT_TOKEN, CHAT_ID, 1000), fetchFn)
 			assert.deepStrictEqual(result, { status: "valid" })
 			assert.strictEqual(calls.length, 2)
-			assert.include(calls[1]!, `chat_id=${encodeURIComponent(CHAT_ID)}`)
+			assert.include(calls[1], `chat_id=${encodeURIComponent(CHAT_ID)}`)
 		}),
 	)
 
@@ -340,7 +340,7 @@ describe("fetchTelegramChats", () => {
 			const { fetchFn, calls } = respondWith(200, { ok: true, result: [] })
 			yield* withFetch(fetchTelegramChats(BOT_TOKEN, 1000), fetchFn)
 			assert.lengthOf(calls, 1)
-			assert.notInclude(calls[0]!, "offset")
+			assert.notInclude(calls[0], "offset")
 		}),
 	)
 

@@ -74,7 +74,7 @@ const base = (overrides: Record<string, unknown>): V2Investigation =>
 
 const steps = (labels: ReadonlyArray<string>, lastAt: number) =>
 	Arr.map(labels, (label, index) => ({
-		tool: Str.toLowerCase(Str.split(" ")(label)[0]!),
+		tool: Str.toLowerCase(Str.split(" ")(label)[0]),
 		label,
 		at: lastAt - (labels.length - 1 - index) * 9_000,
 	}))

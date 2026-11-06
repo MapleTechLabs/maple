@@ -1,6 +1,6 @@
 import { encodePublicId, type PublicIdPrefix } from "@maple/domain/http/v2"
 import { type AuditAction, AuditResources, type AuditResourceType } from "@maple/domain/audit-actions"
-import { String as Str } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 // The catalog lives in `@maple/domain` so the web can label entries with it.
 export { type AuditAction, AuditResources, type AuditResourceType }
@@ -32,7 +32,7 @@ export const auditResourceFields = (
 ): { readonly resourceType: AuditResourceType; readonly resourceId?: string } => {
 	// SAFETY: every `AuditAction` is built as `${resource}.${verb}` from the keys
 	// of `AuditResources`, so the segment before the dot is always one of them.
-	const resourceType = Str.slice(0, action.indexOf("."))(action) as AuditResourceType
+	const resourceType = Arr.headNonEmpty(Str.split(".")(action)) as AuditResourceType
 	const resource = AuditResources[resourceType]
 	// Narrow rather than widen: org-singleton resources declare no `prefix` at all.
 	const prefix = "prefix" in resource ? resource.prefix : undefined

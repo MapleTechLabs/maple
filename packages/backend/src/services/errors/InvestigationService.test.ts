@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Schema, Array as Arr } from "effect"
+import { Cause, ConfigProvider, Effect, Exit, Layer, Schema, Array as Arr, Clock } from "effect"
 import {
 	AiTriageEvidence,
 	AiTriageResult,
@@ -71,7 +71,7 @@ const makeHarness = (
 
 const makeLayer = () => makeHarness().layer
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_investigation_test")
+const ORG = Schema.decodeSync(OrgId)("org_investigation_test")
 const asInvestigationId = Schema.decodeUnknownSync(InvestigationId)
 const asIssueId = Schema.decodeUnknownSync(ErrorIssueId)
 
@@ -356,7 +356,7 @@ describe("InvestigationService", () => {
 			)
 			assert.strictEqual(started.status, "investigating")
 			assert.lengthOf(chat.beginTurns, 1)
-			assert.include(chat.beginTurns[0]!.text, "err_incident")
+			assert.include(chat.beginTurns[0].text, "err_incident")
 
 			const rows = yield* database.execute((db) =>
 				db.run(
@@ -424,7 +424,7 @@ describe("InvestigationService", () => {
 		return Effect.gen(function* () {
 			const database = yield* Database
 			const service = yield* InvestigationService
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 
 			// Both ceilings set to one, and one investigation already started today —
 			// so runs and passes are each exhausted before the calls below.
@@ -509,7 +509,7 @@ describe("InvestigationService", () => {
 			const FAST_ID = "1a1a1a1a-0000-4000-8000-000000000001"
 			const FAILED_ID = "2b2b2b2b-0000-4000-8000-000000000002"
 			const MANUAL_ID = "3c3c3c3c-0000-4000-8000-000000000003"
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 			const anomaly = (id: string, triageStatus: "none" | "pending") => ({
 				id: asAnomalyId(id),
 				orgId: ORG,
@@ -599,9 +599,9 @@ describe("InvestigationService", () => {
 			// Labelled sections, not a bare JSON blob. The two facts the prompt opens
 			// by demanding — the interval and the identifiers — were being buried in
 			// one, and the model routinely skipped both.
-			assert.include(chat.beginTurns[0]!.text, "## Interval")
-			assert.include(chat.beginTurns[0]!.text, "err_autonomous_start")
-			assert.include(chat.beginTurns[0]!.text, '"snapshot"')
+			assert.include(chat.beginTurns[0].text, "## Interval")
+			assert.include(chat.beginTurns[0].text, "err_autonomous_start")
+			assert.include(chat.beginTurns[0].text, '"snapshot"')
 
 			const database = yield* Database
 			const databaseRows = yield* database.execute((db) =>
@@ -646,7 +646,7 @@ describe("InvestigationService", () => {
 			const service = yield* InvestigationService
 			const database = yield* Database
 			const issueId = asIssueId(randomUUID())
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 			yield* database.execute((db) =>
 				db.run(
 					PG.insertInto(ErrorIssues).values({
@@ -740,7 +740,7 @@ describe("InvestigationService", () => {
 			)
 
 			const summaries = Arr.map(
-				(yield* timeline).filter((e) => e.type === "ai_triage"),
+				Arr.filter(yield* timeline, (e) => e.type === "ai_triage"),
 				(e) => decodeTriagePayload(e.payloadJson).summary,
 			).sort()
 			assert.deepStrictEqual(summaries, [sampleReport().summary, followUp.summary].sort())

@@ -13,9 +13,9 @@ import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicySe
 import { CurrentMcpTenant } from "../../lib/query-warehouse"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_policy_tools")
-const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_policy_tools_other")
-const USER = Schema.decodeUnknownSync(UserId)("user_policy_tools")
+const ORG = Schema.decodeSync(OrgId)("org_policy_tools")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_policy_tools_other")
+const USER = Schema.decodeSync(UserId)("user_policy_tools")
 const asDestinationId = Schema.decodeUnknownSync(AlertDestinationId)
 const DEST = asDestinationId(randomUUID())
 const FOREIGN_DEST = asDestinationId(randomUUID())
@@ -56,7 +56,7 @@ const makeLayer = (namesFail = false) => {
 		Layer.succeed(CurrentMcpTenant, {
 			orgId: ORG,
 			userId: USER,
-			roles: [Schema.decodeUnknownSync(RoleName)("org:admin")],
+			roles: [Schema.decodeSync(RoleName)("org:admin")],
 			authMode: "self_hosted",
 		} as never),
 		Layer.succeed(AlertsService, {

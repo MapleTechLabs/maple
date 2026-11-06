@@ -1,5 +1,5 @@
 import { rowsToInvestigation } from "@maple/web-data/collections/investigations"
-import { Clock, Duration, Effect, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Schema, Stream, Option, Array as Arr } from "effect"
 import { Subscription } from "foldkit"
 import { OrgCollections } from "../../../data/collections/org-collections"
 import { liveQueryStream } from "../../../data/live-query"
@@ -21,14 +21,18 @@ const investigationStream = (orgId: string, id: string, attempt: number) =>
 			return liveQueryStream(
 				(q) => q.from({ i: collection }),
 				(rows): ReturnType<typeof Message.SyncedInvestigation> => {
-					const row = rows.find((candidate) => candidate.id === id)
-					const investigation = row === undefined ? null : rowsToInvestigation(row)
-					const sync: Sync =
-						row === undefined
-							? { _tag: "Missing" }
-							: investigation === null
-								? { _tag: "Failed" }
-								: { _tag: "Ready", investigation }
+					const sync: Sync = Option.match(
+						Arr.findFirst(rows, (candidate) => candidate.id === id),
+						{
+							onNone: (): Sync => ({ _tag: "Missing" }),
+							onSome: (row): Sync => {
+								const investigation = rowsToInvestigation(row)
+								return investigation === null
+									? { _tag: "Failed" }
+									: { _tag: "Ready", investigation }
+							},
+						},
+					)
 					return Message.SyncedInvestigation({ orgId, id, attempt, sync })
 				},
 			).pipe(Stream.ensuring(collections.releaseInvestigation(collection)))

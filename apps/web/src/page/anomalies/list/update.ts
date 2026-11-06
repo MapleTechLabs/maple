@@ -203,20 +203,28 @@ const pressedListKey = (model: Model, key: "Next" | "Previous" | "Open" | "Escap
 		return model.focusedId === null ? { model } : { model: { ...model, focusedId: null } }
 	const incidents = rowsInOrder(model)
 	if (key === "Open") {
-		const focused = incidents.find((incident) => incident.id === model.focusedId)
-		return focused === undefined
-			? { model }
-			: {
+		return Option.match(
+			Arr.findFirst(incidents, (incident) => incident.id === model.focusedId),
+			{
+				onNone: (): Return => ({ model }),
+				onSome: (focused): Return => ({
 					model,
 					outMessage: PageOutMessage.RequestedNavigation({
 						url: anomalyHref(focused.id),
 						isReplace: false,
 					}),
-				}
+				}),
+			},
+		)
 	}
 	if (incidents.length === 0) return { model }
 	const current =
-		model.focusedId === null ? -1 : incidents.findIndex((incident) => incident.id === model.focusedId)
+		model.focusedId === null
+			? -1
+			: Option.getOrElse(
+					Arr.findFirstIndex(incidents, (incident) => incident.id === model.focusedId),
+					() => -1,
+				)
 	const next =
 		key === "Next"
 			? current < 0

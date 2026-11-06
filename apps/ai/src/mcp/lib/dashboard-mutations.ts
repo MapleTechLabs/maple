@@ -45,6 +45,7 @@ const decodeIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
 const parseJsonValue = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))
 const encodeJsonValue = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
+// BOUNDARY: `hint` reads the parsed JSON before the schema decodes it.
 const jsonTransformation = (hint: (value: unknown) => string | undefined) =>
 	SchemaTransformation.transformEffect<unknown, string>({
 		decode: (text) =>
@@ -73,7 +74,7 @@ const JSON_MEDIA_TYPE = "application/json"
  * a parsed value with a corrective message before the schema's own (much longer) failure.
  */
 // BOUNDARY: `hint` reads the parsed JSON before the schema decodes it.
-export const jsonText = <S extends Schema.Codec<unknown, unknown, never, never>>(
+export const jsonText = <S extends Schema.Codec<unknown, unknown>>(
 	schema: S,
 	description: string,
 	hint: (value: unknown) => string | undefined = noHint,
@@ -87,7 +88,7 @@ export const jsonText = <S extends Schema.Codec<unknown, unknown, never, never>>
  * `Schema.Class`, the data-source union) publishes as a `$ref`, which would otherwise carry it.
  */
 // BOUNDARY: `hint` reads the parsed JSON before the schema decodes it.
-export const optionalJsonText = <S extends Schema.Codec<unknown, unknown, never, never>>(
+export const optionalJsonText = <S extends Schema.Codec<unknown, unknown>>(
 	schema: S,
 	description: string,
 	hint: (value: unknown) => string | undefined = noHint,
@@ -263,6 +264,23 @@ export const defaultSizeForPanelType = (panelType: PanelType): { w: number; h: n
  */
 export { findNextPosition as findNextWidgetPosition }
 
+/** One dashboard of the tenant's org by id; a malformed id is the same not-found as a missing one. */
+export const loadDashboard = Effect.fn("McpDashboardMutations.loadDashboard")(function* (
+	dashboardId: string,
+	tool: string,
+) {
+	const tenant = yield* CurrentMcpTenant
+	const persistence = yield* DashboardPersistenceService
+	const id = yield* decodeDashboardId(dashboardId).pipe(
+		Effect.mapError(() => dashboardNotFound(dashboardId)),
+	)
+	return yield* persistence
+		.get(tenant.orgId, id)
+		.pipe(
+			Effect.mapBoth({ onSuccess: (stored) => stored.document, onFailure: toMcpDashboardError(tool) }),
+		)
+})
+
 /**
  * Shared workflow: resolve tenant, load dashboard by id, run a pure transform
  * over its widgets, and persist the result. The transform receives the
@@ -312,8 +330,10 @@ export const withDashboardMutation = Effect.fn("McpDashboardMutations.withDashbo
 			}),
 		)
 		.pipe(
-			Effect.mapError((error) =>
-				error instanceof McpInvalidInputError ? error : toMcpDashboardError(tool)(error),
-			),
+			Effect.mapBoth({
+				onSuccess: (stored) => stored.document,
+				onFailure: (error) =>
+					Schema.is(McpInvalidInputError)(error) ? error : toMcpDashboardError(tool)(error),
+			}),
 		)
 })

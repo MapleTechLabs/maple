@@ -30,7 +30,7 @@ import type { Endpoint } from "./model-tabs"
 import { SPARK_TOKENS, sparkline } from "./view-api-charts"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // The API tab: endpoint rows and group rows.
 
@@ -516,4 +516,7 @@ export const visibleEndpoints = (
 
 const ENDPOINT_SORTS: ReadonlyArray<EndpointSort> = ["traffic", "path", "errorRate", "p50", "p95", "p99"]
 const endpointSortOf = (key: string | null): EndpointSort =>
-	ENDPOINT_SORTS.find((sort) => sort === key) ?? "traffic"
+	Option.getOrElse(
+		Arr.findFirst(ENDPOINT_SORTS, (sort) => sort === key),
+		(): EndpointSort => "traffic",
+	)

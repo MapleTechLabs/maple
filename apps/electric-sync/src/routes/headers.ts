@@ -1,4 +1,5 @@
 import { Array as Arr, String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 // Upstream response headers that must not survive re-wrapping: the platform
 // re-encodes and re-chunks the streamed body, so a stale content-encoding /
 // content-length would misdescribe it.
@@ -10,7 +11,7 @@ const STRIPPED_UPSTREAM_HEADERS = ["content-encoding", "content-length"]
  * caching, so it's left as-is.
  */
 const appendVary = (existing: string | undefined, header: string): string => {
-	const trimmed = existing?.trim()
+	const trimmed = existing === undefined ? undefined : Str.trim(existing)
 	if (!trimmed) return header
 	if (trimmed === "*") return trimmed
 	const tokens = Arr.filter(
@@ -56,7 +57,7 @@ const MAX_BROWSER_CACHE_SECONDS = 60
 const CAPPED_AGE_DIRECTIVES = /\b(s-maxage|max-age|stale-while-revalidate|stale-if-error)=(\d+)/gi
 
 const capMaxAge = (cacheControl: string): string =>
-	cacheControl.replace(CAPPED_AGE_DIRECTIVES, (directive, name: string, seconds: string) =>
+	replaceWith(cacheControl, CAPPED_AGE_DIRECTIVES, (directive, name = "", seconds = "") =>
 		Number(seconds) > MAX_BROWSER_CACHE_SECONDS ? `${name}=${MAX_BROWSER_CACHE_SECONDS}` : directive,
 	)
 

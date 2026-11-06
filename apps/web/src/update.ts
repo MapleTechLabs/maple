@@ -125,12 +125,14 @@ const shellFoldConfig = {
 		RequestedOrganizationSwitch:
 			({ orgId }) =>
 			(model) => {
-				const picked = model.clerkSnapshot?.memberships.find(
-					(organization) => organization.id === orgId,
-				)
-				return picked === undefined
-					? { model }
-					: {
+				return Option.match(
+					Arr.findFirst(
+						model.clerkSnapshot?.memberships ?? [],
+						(organization) => organization.id === orgId,
+					),
+					{
+						onNone: () => ({ model }),
+						onSome: (picked) => ({
 							model,
 							commands: [
 								Command.mapMessage((message: OrgSwitcher.Message) =>
@@ -144,7 +146,9 @@ const shellFoldConfig = {
 									}),
 								),
 							],
-						}
+						}),
+					},
+				)
 			},
 		RequestedSignOut: () => (model) => ({ model, commands: [SignOutOfClerk()] }),
 		RequestedNavigation:
@@ -199,7 +203,7 @@ const foldTooltip = Update.foldChild({
 // PAGES
 
 /** The org a bare public page (a share link) is keyed under when nobody is signed in. */
-const PUBLIC_ORG = Schema.decodeUnknownOption(OrgIdSchema)("public")
+const PUBLIC_ORG = Schema.decodeOption(OrgIdSchema)("public")
 
 /** A public page's context: the viewer's org when signed in, else `PUBLIC_ORG`; no shell state. */
 const publicContextOf = (model: Model, maybeOrgId: Option.Option<OrgId>): Option.Option<PageContext> =>
@@ -348,7 +352,7 @@ const actOnPageOut = (model: Model, outMessage: Option.Option<PageOutMessage>) =
 					? Option.some(
 							PageOutMessage.RequestedToast({
 								...out.toast,
-								timeoutMs: null,
+								timeoutMs: out.toast.timeoutMs ?? null,
 								action: null,
 							}),
 						)
@@ -359,7 +363,11 @@ const actOnPageOut = (model: Model, outMessage: Option.Option<PageOutMessage>) =
 	const followUp = Option.flatMap(outMessage, (out) =>
 		out._tag === "RequestedNavigation" && out.followUpToast !== undefined
 			? Option.some(
-					PageOutMessage.RequestedToast({ ...out.followUpToast, timeoutMs: null, action: null }),
+					PageOutMessage.RequestedToast({
+						...out.followUpToast,
+						timeoutMs: out.followUpToast.timeoutMs ?? null,
+						action: null,
+					}),
 				)
 			: Option.none(),
 	)
@@ -1084,7 +1092,17 @@ const foldMessage = (model: Model, message: Message) =>
 						? foldToasts(withoutToastActions(model, message.toastId), message)
 						: foldToasts(model, message),
 		CompletedReconnectOrgCollections: () => ({ model }),
-		CompletedRestoreDashboardWidgets: () => ({ model }),
+		CompletedRestoreDashboardWidgets: ({ error }) =>
+			error === null
+				? { model }
+				: showPageToast(
+						model,
+						PageOutMessage.RequestedToast({
+							type: "error",
+							title: "Couldn't restore the widget",
+							description: error,
+						}),
+					),
 		GotPageMessage: ({ message }) => toPage(model, message),
 		GotOnboardingMessage: ({ message }) => updateOnboarding(model, message),
 		IntendedLink: ({ href, isImmediate }) =>

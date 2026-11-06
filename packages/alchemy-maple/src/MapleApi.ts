@@ -1,4 +1,4 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import * as Context from "effect/Context"
 import * as Clock from "effect/Clock"
 import * as Duration from "effect/Duration"

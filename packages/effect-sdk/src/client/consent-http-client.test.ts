@@ -55,7 +55,7 @@ describe("consent OTLP transport", () => {
 		)
 
 		expect(filtered).toBeDefined()
-		const spans = readJson(filtered!).resourceSpans[0].scopeSpans[0].spans
+		const spans = Arr.getUnsafe(Arr.getUnsafe(readJson(filtered!).resourceSpans, 0).scopeSpans, 0).spans
 		expect(Arr.map(spans, (span) => span.name)).toEqual(["after"])
 	})
 
@@ -83,7 +83,7 @@ describe("consent OTLP transport", () => {
 		)
 
 		expect(filtered).toBeDefined()
-		const spans = readJson(filtered!).resourceSpans[0].scopeSpans[0].spans
+		const spans = Arr.getUnsafe(Arr.getUnsafe(readJson(filtered!).resourceSpans, 0).scopeSpans, 0).spans
 		expect(Arr.map(spans, (span) => span.name)).toEqual(["second-grant"])
 	})
 

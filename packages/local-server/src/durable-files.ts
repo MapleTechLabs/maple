@@ -4,6 +4,7 @@ import { access, chmod, lstat, mkdir, open, readdir, rename, rm } from "node:fs/
 import { dirname, join } from "node:path"
 import { Effect, Schema } from "effect"
 import { encodeJsonPretty } from "./json"
+import { errnoCode } from "./store-errors"
 
 export interface DurabilityFaults {
 	readonly beforeFileSync?: (path: string) => void | Promise<void>
@@ -35,10 +36,10 @@ export const ensurePrivateDirectory = async (
 	setMode: (path: string, mode: number) => Promise<void> = chmod,
 ): Promise<void> => {
 	await ensureRealDirectory(path)
-	await setMode(path, 0o700).catch(async (error: NodeJS.ErrnoException) => {
+	await setMode(path, 0o700).catch(async (error: unknown) => {
 		// A bind mount or a dir pre-created by another uid: its mode is not ours
 		// to set, but one already private to its owner and writable by us is fine.
-		if (error.code !== "EPERM" || !(await isWritableDirectory(path))) throw error
+		if (errnoCode(error) !== "EPERM" || !(await isWritableDirectory(path))) throw error
 		const mode = (await lstat(path)).mode & 0o777
 		if ((mode & 0o077) !== 0) {
 			throw new DurableFileError({
@@ -78,8 +79,8 @@ export const ensureParentDirectory = async (path: string): Promise<void> => {
 
 /** Returns whether the directory already existed. */
 const ensureRealDirectory = async (path: string): Promise<boolean> => {
-	const before = await lstat(path).catch((error: NodeJS.ErrnoException) => {
-		if (error.code === "ENOENT") return null
+	const before = await lstat(path).catch((error: unknown) => {
+		if (errnoCode(error) === "ENOENT") return null
 		throw error
 	})
 	if (before?.isSymbolicLink()) throw new Error(`refusing symlink directory: ${path}`)
@@ -164,7 +165,7 @@ export class DurableFileError extends Schema.TaggedError<DurableFileError>()("@m
 	cause: Schema.Defect(),
 }) {}
 
-const durableFileError =
+export const durableFileError =
 	(path: string, action: string) =>
 	(cause: unknown): DurableFileError =>
 		new DurableFileError({

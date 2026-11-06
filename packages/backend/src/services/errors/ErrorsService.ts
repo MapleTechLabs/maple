@@ -32,6 +32,7 @@ import {
 	ErrorFingerprintCandidates,
 	ErrorIssues,
 	ErrorIssueEvents,
+	ErrorIssueFingerprints,
 	type ErrorIssueRow,
 	ErrorIssueStates,
 	ErrorNotificationPolicies,
@@ -40,7 +41,19 @@ import {
 	OrgIngestKeys,
 } from "@maple/db/tables"
 import { CH, parseWarehouseDateTime, formatWarehouseDateTime } from "@maple/query-engine"
-import { Array as Arr, Cause, Clock, Context, DateTime, Effect, Layer, Option, Ref, Schema } from "effect"
+import {
+	Array as Arr,
+	Cause,
+	Clock,
+	Context,
+	DateTime,
+	Effect,
+	Layer,
+	Option,
+	Order,
+	Ref,
+	Schema,
+} from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
 import { STALE_MS, sweepAbandonedInvestigations } from "@maple/backend/services/errors/investigation-stale"
@@ -159,6 +172,8 @@ const ARCHIVED_RETENTION_DAYS = 90
 const RETENTION_PHASE_PERIOD_MS = 60_000
 const RETENTION_PHASE_EVERY_N_TICKS = 60
 const DAY_MS = 24 * 60 * 60 * 1000
+/** How long a pre-bump issue may go unseen before retention retires it; the tick re-keys live ones. */
+const FINGERPRINT_BUMP_GRACE_MS = 7 * DAY_MS
 const DEFAULT_LEASE_DURATION_MS = 30 * 60_000
 const SYSTEM_AGENT_NAME = SYSTEM_ERRORS_AGENT_NAME
 export interface ErrorsServiceApi {
@@ -215,7 +230,7 @@ export interface ErrorsServiceApi {
 			readonly deploymentEnv: string
 		},
 	) => Effect.Effect<void, ErrorPersistenceError>
-	readonly runTick: () => Effect.Effect<
+	readonly runTick: Effect.Effect<
 		{
 			readonly orgsProcessed: number
 			readonly issuesTouched: number
@@ -315,19 +330,20 @@ const make: Effect.Effect<
 			),
 		)
 
-		if (knownOrgs.length === 0) {
+		const [routingOrg] = knownOrgs
+		if (routingOrg === undefined) {
 			yield* Effect.annotateCurrentSpan({
 				"maple.errors.active_orgs": byo.size,
 				"maple.errors.failed_closed": false,
 			})
-			return { active: byo as ReadonlySet<OrgId>, discovered: byoKnown }
+			return { active: byo, discovered: byoKnown }
 		}
 
 		const compiled = CH.compile(CH.activeOrgsByErrorEventsQuery(), {
 			startTime: DateTime.makeUnsafe(nowMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS),
 		})
 		return yield* warehouse
-			.crossOrgQuery(systemTenant(knownOrgs[0]!), compiled, {
+			.crossOrgQuery(systemTenant(routingOrg), compiled, {
 				// Bound the one cross-org scan (no OrgId predicate ⇒ can't prune the
 				// primary key): abort server-side at 5s instead of riding the ~30s
 				// client timeout when the warehouse is slow.
@@ -342,7 +358,7 @@ const make: Effect.Effect<
 					for (const row of rows) {
 						active.add(row.orgId)
 					}
-					return { active: active as ReadonlySet<OrgId>, discovered: byoKnown }
+					return { active: active, discovered: byoKnown }
 				}),
 				Effect.tap(({ active }) =>
 					Effect.annotateCurrentSpan({
@@ -389,7 +405,7 @@ const make: Effect.Effect<
 									"maple.errors.active_orgs": active.size,
 									"maple.errors.failed_closed": true,
 								})
-								return { active: active as ReadonlySet<string>, discovered: false }
+								return { active: active, discovered: false }
 							}),
 				),
 			)
@@ -530,7 +546,8 @@ const make: Effect.Effect<
 			),
 		)
 
-		if (claimed.length === 0) {
+		const [row] = claimed
+		if (row === undefined) {
 			const latestRows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(ErrorIssues)
@@ -542,7 +559,7 @@ const make: Effect.Effect<
 			return yield* leaseConflict(issueId, latestRows[0] ?? null)
 		}
 
-		return { row: claimed[0]!, leaseExpiresAt }
+		return { row, leaseExpiresAt }
 	})
 
 	const claimIssue: ErrorsServiceApi["claimIssue"] = Effect.fn("ErrorsService.claimIssue")(
@@ -877,7 +894,7 @@ const make: Effect.Effect<
 						),
 					)
 					const claimed = claimedRows[0]
-					if (!claimed) return
+					if (claimed === undefined) return
 
 					const payloadOption = decodeErrorNotificationOutboxPayload(claimed.payloadJson)
 					if (Option.isNone(payloadOption)) {
@@ -1112,7 +1129,7 @@ const make: Effect.Effect<
 			}),
 		)
 		const row = claim[0]
-		if (!row) return null
+		if (row === undefined) return null
 		const windowStartMs = row.processedThrough
 		return {
 			claimToken,
@@ -1158,11 +1175,12 @@ const make: Effect.Effect<
 		)
 		// The actor exists after an org's first tick, so the insert path is a
 		// once-per-org cost rather than a per-tick round-trip.
-		const systemActor = preamble.actorRow
-			? rowToActor(preamble.actorRow)
-			: yield* ensureSystemActor(orgId).pipe(
-					Effect.tapError(() => releaseTickClaim(orgId, tickWindow.claimToken, nowMs)),
-				)
+		const systemActor =
+			preamble.actorRow !== null
+				? rowToActor(preamble.actorRow)
+				: yield* ensureSystemActor(orgId).pipe(
+						Effect.tapError(() => releaseTickClaim(orgId, tickWindow.claimToken, nowMs)),
+					)
 		const policy = preamble.policyRow ?? defaultPolicy(orgId, nowMs)
 
 		const leasesExpired = yield* expireLeasesForOrg(
@@ -1214,9 +1232,7 @@ const make: Effect.Effect<
 			readonly issuesRaw: Effect.Success<ScanWindow>
 			readonly splits: number
 		}
-		const shedWindow = (
-			state: ShedWindow,
-		): Effect.Effect<ShedWindow, Effect.Error<ScanWindow>, Effect.Services<ScanWindow>> => {
+		const shedWindow = (state: ShedWindow): Effect.Effect<ShedWindow, Effect.Error<ScanWindow>> => {
 			if (state.issuesRaw.length <= TICK_MAX_WINDOW_ROWS || state.splits >= TICK_MAX_WINDOW_SPLITS) {
 				return Effect.succeed(state)
 			}
@@ -1276,12 +1292,51 @@ const make: Effect.Effect<
 			lastSeenMs: DateTime.toEpochMillis(raw.lastSeen),
 		}))
 
+		// The hash a fingerprint version bump replaced, so the issue it belonged to carries
+		// over. Without it a bump only opens new issues; that is the cost of a failed read.
+		const lineage =
+			rows.length === 0
+				? []
+				: yield* warehouse
+						.compiledQuery(
+							tenant,
+							CH.compile(
+								CH.errorFingerprintLineageQuery({
+									fingerprintHashes: Arr.map(rows, (row) => row.fingerprintHash),
+								}),
+								{
+									orgId,
+									// Lineage rows are stamped with their minute; a window can start mid-minute.
+									startTime: DateTime.makeUnsafe(
+										windowStartMs - (windowStartMs % TICK_MINUTE_MS),
+									),
+									endTime: DateTime.makeUnsafe(windowEndMs),
+								},
+							),
+							{ profile: "list", context: "errorFingerprintLineage" },
+						)
+						.pipe(
+							Effect.catch((error) =>
+								Effect.as(
+									Effect.logWarning("Error tick lineage read failed").pipe(
+										Effect.annotateLogs({ orgId, cause: error.message }),
+									),
+									[],
+								),
+							),
+						)
+		const previousByHash = Arr.groupBy(lineage, (row) => row.fingerprintHash)
+
 		const persistence = yield* dbExecute((db) =>
 			persistErrorTickWindow(db, {
 				orgId,
 				actorId: systemActor.id,
 				rows: Arr.map(rows, (row) => ({
 					fingerprintHash: row.fingerprintHash,
+					previousFingerprintHashes: Arr.map(
+						previousByHash[row.fingerprintHash] ?? [],
+						(entry) => entry.previousFingerprintHash,
+					),
 					serviceName: row.serviceName,
 					exceptionType: row.exceptionType,
 					exceptionMessage: row.exceptionMessage,
@@ -1408,111 +1463,153 @@ const make: Effect.Effect<
 		const incidentsOpened = persistence.incidentsOpened
 		const incidentsResolved = persistence.incidentsResolved
 
+		const retention = Effect.gen(function* () {
+			// Issues a fingerprint-algorithm bump left behind. One that still occurs is
+			// re-keyed onto its new hash by the tick and restamped, so only an issue
+			// quiet for FINGERPRINT_BUMP_GRACE_MS is retired here; if it comes back,
+			// the tick restores it. Error-kind only: alert and integration issues
+			// key off their own identifiers, not the ClickHouse fingerprint.
+			const staleFingerprintRows = yield* dbExecute((db) =>
+				db.run(
+					PG.update(ErrorIssues)
+						.set({ archivedAt: nowMs, updatedAt: nowMs })
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.kind.eq("error"),
+							$.fingerprintVersion.lt(FINGERPRINT_VERSION),
+							$.lastSeenAt.lt(nowMs - FINGERPRINT_BUMP_GRACE_MS),
+							$.archivedAt.isNull(),
+						])
+						.returning("id"),
+				),
+			)
+
+			const resolvedCutoff = nowMs - RESOLVED_RETENTION_DAYS * DAY_MS
+			const archivedRows = yield* dbExecute((db) =>
+				db.run(
+					PG.update(ErrorIssues)
+						.set({ archivedAt: nowMs, updatedAt: nowMs })
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.workflowState.eq("done"),
+							$.archivedAt.isNull(),
+							$.resolvedAt.isNotNull(),
+							$.resolvedAt.lt(resolvedCutoff),
+						])
+						.returning("id"),
+				),
+			)
+
+			// Candidates that never reached the promotion threshold. Without this the
+			// holding table would accumulate every one-off fingerprint forever.
+			yield* dbExecute((db) =>
+				db.run(
+					PG.deleteFrom(ErrorFingerprintCandidates).where(($) => [
+						$.orgId.eq(orgId),
+						$.lastSeenAt.lt(nowMs - CANDIDATE_RETENTION_MS),
+					]),
+				),
+			)
+
+			const archivedCutoff = nowMs - ARCHIVED_RETENTION_DAYS * DAY_MS
+			const toDelete = yield* dbExecute((db) =>
+				db.run(
+					PG.from(ErrorIssues)
+						.select("id")
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.archivedAt.isNotNull(),
+							$.archivedAt.lt(archivedCutoff),
+							// A fixed issue old clients still hit holds the build set that keeps them
+							// from reopening it; deleting it re-mints the bug as a new triage issue.
+							$.lastSeenAt.lt(archivedCutoff),
+						])
+						.limit(500),
+				),
+			)
+			if (toDelete.length > 0) {
+				const ids = Arr.map(toDelete, (r) => r.id)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.deleteFrom(ErrorIncidents).where(($) => [
+							$.orgId.eq(orgId),
+							$.issueId.in_(...ids),
+						]),
+					),
+				)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.deleteFrom(ErrorIssueStates).where(($) => [
+							$.orgId.eq(orgId),
+							$.issueId.in_(...ids),
+						]),
+					),
+				)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.deleteFrom(ErrorIssueEvents).where(($) => [
+							$.orgId.eq(orgId),
+							$.issueId.in_(...ids),
+						]),
+					),
+				)
+				// The issues merged into a purged one get back what they brought, as an unmerge
+				// hands it back: their own hash is their primary again, the rest their aliases.
+				const freed = yield* dbExecute((db) =>
+					db.run(
+						PG.from(ErrorIssues)
+							.select("id", "fingerprintHash")
+							.where(($) => [$.orgId.eq(orgId), $.mergedIntoIssueId.in_(...ids)]),
+					),
+				)
+				yield* Effect.forEach(
+					freed,
+					(issue) =>
+						dbExecute((db) =>
+							Effect.andThen(
+								db.run(
+									PG.deleteFrom(ErrorIssueFingerprints).where(($) => [
+										$.orgId.eq(orgId),
+										$.originIssueId.eq(issue.id),
+										$.fingerprintHash.eq(issue.fingerprintHash),
+									]),
+								),
+								db.run(
+									PG.update(ErrorIssueFingerprints)
+										.set({ issueId: issue.id, originIssueId: null })
+										.where(($) => [$.orgId.eq(orgId), $.originIssueId.eq(issue.id)]),
+								),
+							),
+						),
+					{ discard: true },
+				)
+				// Whatever the purged issues still own stops landing anywhere.
+				yield* dbExecute((db) =>
+					db.run(
+						PG.deleteFrom(ErrorIssueFingerprints).where(($) => [
+							$.orgId.eq(orgId),
+							$.issueId.in_(...ids),
+						]),
+					),
+				)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(ErrorIssues)
+							.set({ mergedIntoIssueId: null, updatedAt: nowMs })
+							.where(($) => [$.orgId.eq(orgId), $.mergedIntoIssueId.in_(...ids)]),
+					),
+				)
+				yield* dbExecute((db) =>
+					db.run(PG.deleteFrom(ErrorIssues).where(($) => [$.orgId.eq(orgId), $.id.in_(...ids)])),
+				)
+			}
+			return {
+				issuesArchived: archivedRows.length + staleFingerprintRows.length,
+				issuesDeleted: toDelete.length,
+			}
+		})
 		const { issuesArchived, issuesDeleted } = runRetention
-			? yield* Effect.gen(function* () {
-					// Issues left behind by a fingerprint-algorithm bump. Their hashes can
-					// never be produced again (v1 and v2 hashes cannot collide), so there is
-					// nothing to wait for: archive them on sight instead of holding a dead
-					// issue in `triage` until the resolved window retires it. Scoped to
-					// error-kind — alert and integration issues key off their own
-					// identifiers, not the ClickHouse fingerprint.
-					const staleFingerprintRows = yield* dbExecute((db) =>
-						db.run(
-							PG.update(ErrorIssues)
-								.set({ archivedAt: nowMs, updatedAt: nowMs })
-								.where(($) => [
-									$.orgId.eq(orgId),
-									$.kind.eq("error"),
-									$.fingerprintVersion.lt(FINGERPRINT_VERSION),
-									$.archivedAt.isNull(),
-								])
-								.returning("id"),
-						),
-					)
-
-					const resolvedCutoff = nowMs - RESOLVED_RETENTION_DAYS * DAY_MS
-					const archivedRows = yield* dbExecute((db) =>
-						db.run(
-							PG.update(ErrorIssues)
-								.set({ archivedAt: nowMs, updatedAt: nowMs })
-								.where(($) => [
-									$.orgId.eq(orgId),
-									$.workflowState.eq("done"),
-									$.archivedAt.isNull(),
-									$.resolvedAt.isNotNull(),
-									$.resolvedAt.lt(resolvedCutoff),
-								])
-								.returning("id"),
-						),
-					)
-
-					// Candidates that never reached the promotion threshold. Without this the
-					// holding table would accumulate every one-off fingerprint forever.
-					yield* dbExecute((db) =>
-						db.run(
-							PG.deleteFrom(ErrorFingerprintCandidates).where(($) => [
-								$.orgId.eq(orgId),
-								$.lastSeenAt.lt(nowMs - CANDIDATE_RETENTION_MS),
-							]),
-						),
-					)
-
-					const archivedCutoff = nowMs - ARCHIVED_RETENTION_DAYS * DAY_MS
-					const toDelete = yield* dbExecute((db) =>
-						db.run(
-							PG.from(ErrorIssues)
-								.select("id")
-								.where(($) => [
-									$.orgId.eq(orgId),
-									$.archivedAt.isNotNull(),
-									$.archivedAt.lt(archivedCutoff),
-									// A fixed issue old clients still hit holds the build set that keeps them
-									// from reopening it; deleting it re-mints the bug as a new triage issue.
-									$.lastSeenAt.lt(archivedCutoff),
-								])
-								.limit(500),
-						),
-					)
-					if (toDelete.length > 0) {
-						const ids = Arr.map(toDelete, (r) => r.id)
-						yield* dbExecute((db) =>
-							db.run(
-								PG.deleteFrom(ErrorIncidents).where(($) => [
-									$.orgId.eq(orgId),
-									$.issueId.in_(...ids),
-								]),
-							),
-						)
-						yield* dbExecute((db) =>
-							db.run(
-								PG.deleteFrom(ErrorIssueStates).where(($) => [
-									$.orgId.eq(orgId),
-									$.issueId.in_(...ids),
-								]),
-							),
-						)
-						yield* dbExecute((db) =>
-							db.run(
-								PG.deleteFrom(ErrorIssueEvents).where(($) => [
-									$.orgId.eq(orgId),
-									$.issueId.in_(...ids),
-								]),
-							),
-						)
-						yield* dbExecute((db) =>
-							db.run(
-								PG.deleteFrom(ErrorIssues).where(($) => [
-									$.orgId.eq(orgId),
-									$.id.in_(...ids),
-								]),
-							),
-						)
-					}
-					return {
-						issuesArchived: archivedRows.length + staleFingerprintRows.length,
-						issuesDeleted: toDelete.length,
-					}
-				})
+			? yield* retention
 			: { issuesArchived: 0, issuesDeleted: 0 }
 
 		return {
@@ -1560,13 +1657,14 @@ const make: Effect.Effect<
 		// place it would pin the cursor for as long as the org stays idle.
 		const unclaimed = ($: PG.ColumnAccessor<typeof ErrorTickStates.columns>) =>
 			PG.or($.claimExpiresAt.isNull(), $.claimExpiresAt.lte(nowMs))
-		const trailing = (yield* dbExecute((db) =>
+		const tickStates = yield* dbExecute((db) =>
 			db.run(
 				PG.from(ErrorTickStates)
 					.select("orgId", "processedThrough")
 					.where(($) => [$.processedThrough.lte(parkedAtMs - TICK_MAX_WINDOW_MS), unclaimed($)]),
 			),
-		)).filter((row) => idle.has(row.orgId))
+		)
+		const trailing = Arr.filter(tickStates, (row) => idle.has(row.orgId))
 
 		// `skip locked` for the reason `claimTickWindow` has it: a lapsed lease can
 		// still have its apply transaction open, holding the row. Waiting on that
@@ -1612,9 +1710,16 @@ const make: Effect.Effect<
 		// read through one by one.
 		const probed = yield* Effect.reduce(
 			Arr.chunksOf(
-				Arr.filter(trailing, (row) => !isObserved(row))
-					// Most recent first: a short outage gap before rows that are weeks old.
-					.toSorted((a, b) => b.processedThrough - a.processedThrough),
+				// Most recent first: a short outage gap before rows that are weeks old.
+				Arr.sort(
+					Arr.filter(trailing, (row) => !isObserved(row)),
+					Order.flip(
+						Order.mapInput(
+							Order.Number,
+							(row: (typeof trailing)[number]) => row.processedThrough,
+						),
+					),
+				),
 				TICK_IDLE_RECOVERY_LOOKUPS,
 			),
 			(): ReadonlyArray<(typeof trailing)[number]> => [],
@@ -1704,7 +1809,7 @@ const make: Effect.Effect<
 	// Align to the latest completed minute. Per-org cursor leases serialize
 	// overlapping cron invocations; the cursor advances atomically with issue,
 	// incident, audit-event, and notification-outbox writes.
-	const runTick: ErrorsServiceApi["runTick"] = Effect.fn("ErrorsService.runTick")(function* () {
+	const runTick: ErrorsServiceApi["runTick"] = Effect.gen(function* () {
 		const nowMs = yield* Clock.currentTimeMillis
 		const cutoffMs = Math.floor(nowMs / TICK_MINUTE_MS) * TICK_MINUTE_MS - TICK_INGESTION_LAG_MS
 
@@ -1862,7 +1967,7 @@ const make: Effect.Effect<
 			retentionRan,
 			investigationsAbandoned,
 		}
-	})
+	}).pipe(Effect.withSpan("ErrorsService.runTick"))
 
 	return ErrorsService.of({
 		transitionIssue,

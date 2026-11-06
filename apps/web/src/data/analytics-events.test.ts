@@ -1,6 +1,6 @@
 import { OrgId, UserId } from "@maple/domain"
 import { V2ApiKey, V2ApiKeyWithSecret } from "@maple/domain/http/v2"
-import { Option, Result, Schema } from "effect"
+import { Array as Arr, Option, Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../page/contract"
 import { Message as IntegrationsMessage } from "../page/integrations/message"
@@ -16,7 +16,7 @@ import { identityOf, isSameIdentity } from "../platform/session-identity"
 
 type Commands = { readonly commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }> }
 const tracked = (result: Commands, name: string) =>
-	result.commands?.find((command) => command.name === name)?.args
+	Option.getOrUndefined(Arr.findFirst(result.commands ?? [], (command) => command.name === name))?.args
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -47,7 +47,7 @@ describe("product events", () => {
 	})
 
 	test("a created API key is api_key_created with its kind and access", () => {
-		const key = Schema.decodeUnknownSync(V2ApiKey)({
+		const key = Schema.decodeSync(V2ApiKey)({
 			id: "key_aXwpxqBkqtYwtBtmsGbR41",
 			object: "api_key",
 			name: "CI deploy",
@@ -63,7 +63,7 @@ describe("product events", () => {
 			created_by: "user_2Nk8mXqPfR3yZ1aB4cD5eF6g",
 			created_by_email: "ada@acme.test",
 		})
-		const secret = Schema.decodeUnknownSync(V2ApiKeyWithSecret)({
+		const secret = Schema.decodeSync(V2ApiKeyWithSecret)({
 			...Schema.encodeSync(V2ApiKey)(key),
 			secret: "s",
 		})

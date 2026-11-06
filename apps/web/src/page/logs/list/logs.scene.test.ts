@@ -299,7 +299,7 @@ describe("logs list", () => {
 			{ search: { severities: ["ERROR"], timePreset: "1h" } },
 			context,
 		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveLogsWindow", "Refresh"],
 		])
 	})
@@ -319,13 +319,17 @@ describe("logs list", () => {
 				message: Chart.Message.ChangedChartFocus({ maybeKey: Option.some(key) }),
 			})
 		const pressed = Arr.reduce(
-			[focus(buckets[0].bucket), Message.PressedVolumeChart(), focus(buckets[1].bucket)],
+			[
+				focus(Arr.getUnsafe(buckets, 0).bucket),
+				Message.PressedVolumeChart(),
+				focus(Arr.getUnsafe(buckets, 1).bucket),
+			],
 			loaded,
 			(model, message) => pageUpdate(model, message).model,
 		)
 		expect(pressed.volumeBrush).toEqual({
-			left: buckets[0].bucket,
-			right: buckets[1].bucket,
+			left: Arr.getUnsafe(buckets, 0).bucket,
+			right: Arr.getUnsafe(buckets, 1).bucket,
 			isSelecting: true,
 		})
 		const released = pageUpdate(pressed, Message.ReleasedVolumeChart())

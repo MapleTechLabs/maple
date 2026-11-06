@@ -97,7 +97,7 @@ const sliceToBytes = (text: string, maxBytes: number): string => {
 	const bytes = encoder.encode(text)
 	if (bytes.length <= maxBytes) return text
 	let end = maxBytes
-	while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end--
+	while (end > 0 && ((bytes[end] ?? 0) & 0xc0) === 0x80) end--
 	return decoder.decode(bytes.subarray(0, end))
 }
 

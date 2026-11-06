@@ -17,6 +17,7 @@ import { AUTONOMOUS_KICKOFF_LEAD, buildIncidentContextMessage } from "@maple/dom
 import type { InvestigationId } from "@maple/domain/primitives"
 import { UserId } from "@maple/domain/primitives"
 import { Effect, Exit, Schema } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -91,7 +92,7 @@ export const startInvestigationTurn: (
 	const claimed = yield* Effect.exit(
 		stub.beginTurn({
 			sessionId,
-			messageId: crypto.randomUUID(),
+			messageId: SecureRandom.uuidV4Unsafe(),
 			text,
 			tenant: encodeChatTurnTenant({
 				orgId,

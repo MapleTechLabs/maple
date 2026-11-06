@@ -38,10 +38,12 @@ export const planAutocomplete = (model: Model, context: PageContext): Planned =>
 			commands: [FetchTraceFacets({ key: facetsKey, window })],
 		}),
 	})
-	return Arr.filter(AUTOCOMPLETE_LOOKUPS, (lookup) => lookup !== "tracesFacets").reduce<Planned>(
+	return Arr.reduce(
+		Arr.filter(AUTOCOMPLETE_LOOKUPS, (lookup) => lookup !== "tracesFacets"),
+		facets,
 		(step, lookup) => {
 			const key = requestKey(context.orgId, `autocomplete.${lookup}`, window)
-			return Option.match(Keyed.request(step.model.autocomplete[lookup] ?? Keyed.idle(), key, "Load"), {
+			return Option.match(Keyed.request(Keyed.at(step.model.autocomplete, lookup), key, "Load"), {
 				onNone: () => step,
 				onSome: (slot) => ({
 					model: { ...step.model, autocomplete: { ...step.model.autocomplete, [lookup]: slot } },
@@ -49,7 +51,6 @@ export const planAutocomplete = (model: Model, context: PageContext): Planned =>
 				}),
 			})
 		},
-		facets,
 	)
 }
 

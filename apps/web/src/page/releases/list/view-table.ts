@@ -411,7 +411,9 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 													],
 													[service.serviceName],
 												),
-												...(service.environment && !input.environments?.length
+												...(service.environment &&
+												(input.environments === undefined ||
+													input.environments.length === 0)
 													? [
 															h.span(
 																[

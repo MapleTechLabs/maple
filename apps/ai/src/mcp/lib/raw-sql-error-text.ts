@@ -1,5 +1,6 @@
 import { listWarehouseTables } from "@maple/backend/services/warehouse/warehouse-catalog"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 
 const DB = "[A-Za-z_]\\w*"
 
@@ -15,8 +16,8 @@ const BARE_WRAPPER = new RegExp(INNER, "g")
  * statement; agents copied both back into their SQL (`FROM maple_us.alert_checks`).
  */
 export const rawSqlErrorText = (message: string): string => {
-	const denied = message.match(/Not enough permissions for datasource '([^']+)'/)
-	if (denied !== null) return `\`${denied[1]}\` cannot be read from run_sql.`
+	const denied = Str.match(/Not enough permissions for datasource '([^']+)'/)(message)
+	if (Option.isSome(denied)) return `\`${denied.value[1]}\` cannot be read from run_sql.`
 	const tables = Arr.join(
 		Arr.map(listWarehouseTables(), (t) => t.name),
 		"|",
@@ -49,7 +50,7 @@ export const rawSqlErrorText = (message: string): string => {
 								BARE_WRAPPER,
 								"$1",
 							)(
-								message.replace(ALIASED_WRAPPER, (_whole, table: string, alias: string) =>
+								replaceWith(message, ALIASED_WRAPPER, (_whole, table = "", alias = "") =>
 									alias === table ? table : `${table} AS ${alias}`,
 								),
 							),

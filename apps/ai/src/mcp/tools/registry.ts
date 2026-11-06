@@ -1,5 +1,6 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
+import { scopeAllows } from "@maple/domain/http/v2"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { Clock, Effect, Schema, type SchemaAST, Array as Arr, Record as Rec, String as Str } from "effect"
 import { registerAddDashboardWidgetTool } from "./add-dashboard-widget"
@@ -9,6 +10,7 @@ import { registerCreateAlertRuleTool } from "./create-alert-rule"
 import { registerPreviewAlertRuleTool } from "./preview-alert-rule"
 import { registerUpdateAlertRuleTool } from "./update-alert-rule"
 import { registerDeleteAlertRuleTool } from "./delete-alert-rule"
+import { registerAcknowledgeAlertIncidentTool } from "./acknowledge-alert-incident"
 import { registerCreateDashboardTool } from "./create-dashboard"
 import { registerDescribeDashboardSchemaTool } from "./describe-dashboard-schema"
 import { registerDiagnoseServiceTool } from "./diagnose-service"
@@ -23,11 +25,14 @@ import { registerAuditSetupTool } from "./audit-setup"
 import { registerListIntegrationsTool } from "./list-integrations"
 import { registerListSecurityFindingsTool } from "./list-security-findings"
 import { registerInspectSecurityFindingTool } from "./inspect-security-finding"
+import { registerListSecurityAuditRunsTool } from "./list-security-audit-runs"
+import { registerInspectSecurityAuditRunTool } from "./inspect-security-audit-run"
 import { registerListSourcesTool } from "./list-sources"
 import { registerCiRunsTool } from "./ci-runs"
 import { registerCompareCommitsTool } from "./compare-commits"
 import { registerIntegrationWriteTools } from "./integration-writes"
 import { registerUptimeMonitorTools } from "./uptime-monitors"
+import { registerSloTools } from "./slos"
 import { registerIngestRuleTools } from "./ingest-rules"
 import { registerStatusPageTools } from "./status-pages"
 import { registerGetInstrumentationRecommendationsTool } from "./get-instrumentation-recommendations"
@@ -57,6 +62,7 @@ import { registerRegisterAgentTool } from "./register-agent"
 import { registerSendMapleFeedbackTool } from "./send-maple-feedback"
 import { registerReleaseErrorIssueTool } from "./release-error-issue"
 import { registerSetIssueSeverityTool } from "./set-issue-severity"
+import { registerMergeErrorIssuesTool } from "./merge-error-issues"
 import { registerTransitionErrorIssueTool } from "./transition-error-issue"
 import { registerTransitionErrorIssuesTool } from "./transition-error-issues"
 import { registerUpdateErrorNotificationPolicyTool } from "./update-error-notification-policy"
@@ -78,6 +84,8 @@ import { registerListProductEventsTool } from "./list-product-events"
 import { registerGetSessionTranscriptTool } from "./get-session-transcript"
 import { registerGetSessionTracesTool } from "./get-session-traces"
 import { registerListAgentSessionsTool } from "./list-agent-sessions"
+import { registerListUsersTool } from "./list-users"
+import { registerInspectUserTool } from "./inspect-user"
 import { registerGetAgentSessionTool } from "./get-agent-session"
 import { registerGetAgentSessionTranscriptTool } from "./get-agent-session-transcript"
 import { registerGetAgentToolsOverviewTool } from "./get-agent-tools-overview"
@@ -86,8 +94,10 @@ import { registerServiceMapTool } from "./service-map"
 import { registerSourceCodeTools } from "./source-code"
 import { registerSandboxTools } from "./sandbox"
 import { registerPullRequestTools } from "./pull-request"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
 import {
 	audienceAdmits,
+	McpAuthInvalidError,
 	type McpToolAudience,
 	type McpToolError,
 	type McpToolHints,
@@ -127,10 +137,11 @@ export interface MapleToolCatalogEntry {
 	readonly schema: Schema.Codec<unknown, unknown, never, unknown>
 	/** How arguments decode; `rejectUnknownKeys` tools refuse nested keys the schema lacks. */
 	readonly parseOptions: SchemaAST.ParseOptions
-	readonly outputSchema: Schema.Codec<unknown, unknown, never, never>
+	readonly outputSchema: Schema.Codec<unknown, unknown>
 	readonly hints: McpToolHints
 	readonly aliases: Readonly<Record<string, string>>
 	readonly audience: McpToolAudience
+	readonly scopeFamily?: string
 	readonly phrases: McpToolPhrases
 }
 
@@ -360,10 +371,11 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 			hints: spec.hints,
 			aliases: spec.aliases ?? {},
 			audience: spec.audience ?? "public",
+			...(spec.scopeFamily === undefined ? undefined : { scopeFamily: spec.scopeFamily }),
 			phrases: spec.phrases,
 			run: (params) =>
 				Effect.gen(function* () {
-					const output = yield* spec.handler(params as typeof spec.parameters.Type)
+					const output = yield* spec.handler(params)
 					// A result that does not match its own schema is a bug, but the text is still right:
 					// the model gets its answer and the UI falls back to the text.
 					const structured = yield* encode(output).pipe(
@@ -395,6 +407,8 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerListProductEventsTool(registrar)
 	registerGetSessionTranscriptTool(registrar)
 	registerGetSessionTracesTool(registrar)
+	registerListUsersTool(registrar)
+	registerInspectUserTool(registrar)
 	registerListAgentSessionsTool(registrar)
 	registerGetAgentSessionTool(registrar)
 	registerGetAgentSessionTranscriptTool(registrar)
@@ -417,6 +431,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerCreateAlertRuleTool(registrar)
 	registerUpdateAlertRuleTool(registrar)
 	registerDeleteAlertRuleTool(registrar)
+	registerAcknowledgeAlertIncidentTool(registrar)
 	registerDescribeDashboardSchemaTool(registrar)
 	registerListDashboardsTool(registrar)
 	registerGetDashboardTool(registrar)
@@ -445,11 +460,14 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerListIntegrationsTool(registrar)
 	registerListSecurityFindingsTool(registrar)
 	registerInspectSecurityFindingTool(registrar)
+	registerListSecurityAuditRunsTool(registrar)
+	registerInspectSecurityAuditRunTool(registrar)
 	registerListSourcesTool(registrar)
 	registerCiRunsTool(registrar)
 	registerCompareCommitsTool(registrar)
 	registerIntegrationWriteTools(registrar)
 	registerUptimeMonitorTools(registrar)
+	registerSloTools(registrar)
 	registerIngestRuleTools(registrar)
 	registerStatusPageTools(registrar)
 	registerSourceCodeTools(registrar)
@@ -459,6 +477,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerTransitionErrorIssueTool(registrar)
 	registerTransitionErrorIssuesTool(registrar)
 	registerSetIssueSeverityTool(registrar)
+	registerMergeErrorIssuesTool(registrar)
 	registerClaimErrorIssueTool(registrar)
 	registerReleaseErrorIssueTool(registrar)
 	registerCommentOnErrorIssueTool(registrar)
@@ -629,9 +648,31 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 			)
 		}
 		return yield* new McpToolNotFoundError({
-			name,
+			toolName: name,
 			message: `Unknown MCP tool: ${name}`,
 		})
+	}
+
+	// A read-only key reaches every read tool; feedback stays open to it, as on v2.
+	if (!definition.hints.readOnly && definition.name !== "send_maple_feedback") {
+		const tenant = yield* CurrentMcpTenant
+		if (tenant.readOnly === true) {
+			return yield* new McpAuthInvalidError({
+				message: `\`${definition.name}\` changes data, and this API key is read-only. Use a key with write access, or connect with OAuth.`,
+				reason: "insufficient_scope",
+			})
+		}
+	}
+
+	if (definition.scopeFamily !== undefined) {
+		const access = definition.hints.readOnly ? "read" : "write"
+		const tenant = yield* CurrentMcpTenant
+		if (!scopeAllows(tenant.scopes, { family: definition.scopeFamily, access })) {
+			return yield* new McpAuthInvalidError({
+				message: `\`${definition.name}\` needs the \`${definition.scopeFamily}:${access}\` scope, which this API key lacks. Add it to the key, or use a full-access key.`,
+				reason: "insufficient_scope",
+			})
+		}
 	}
 
 	const nowMs = yield* Clock.currentTimeMillis

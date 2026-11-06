@@ -27,12 +27,14 @@ export const TURN_IN_FLIGHT_MESSAGE =
 const sessionUrl = (sessionId: string, suffix: string): string =>
 	`${apiBaseUrl}/api/chat/sessions/${encodeURIComponent(sessionId)}${suffix}`
 
+const isChatRequestError = Schema.is(ChatRequestError)
+
 /** A browser `TypeError` and friends surface as their own `message` text. */
 const failWith =
 	(message: string) =>
 	<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, ChatRequestError, R> =>
 		Effect.mapError(effect, (error) =>
-			error instanceof ChatRequestError ? error : new ChatRequestError({ message }),
+			isChatRequestError(error) ? error : new ChatRequestError({ message }),
 		)
 
 /** `GET .../history`: the durable transcript, its resume cursor, and whether a turn is running. */
@@ -158,13 +160,18 @@ export const tailEvents = (
 							),
 							Stream.filter((events) => events.length > 0),
 							Stream.mapEffect((events) => {
-								const endIndex = events.findIndex(isTopLevelTurnEnd)
-								const kept = endIndex === -1 ? events : events.slice(0, endIndex + 1)
+								const endIndex = Arr.findFirstIndex(events, (event) =>
+									isTopLevelTurnEnd(event),
+								)
+								const kept = Option.match(endIndex, {
+									onNone: () => events,
+									onSome: (end) => events.slice(0, end + 1),
+								})
 								const last = kept[kept.length - 1]
 								return Effect.as(
 									Effect.andThen(
 										last === undefined ? Effect.void : Ref.set(seq, last.seq),
-										endIndex === -1 ? Effect.void : Ref.set(ended, true),
+										Option.isNone(endIndex) ? Effect.void : Ref.set(ended, true),
 									),
 									kept,
 								)
@@ -190,7 +197,7 @@ export const tailEvents = (
 					Stream.catch((error) =>
 						retry(
 							failures,
-							error instanceof ChatRequestError ? error.message : "Lost connection to chat.",
+							isChatRequestError(error) ? error.message : "Lost connection to chat.",
 						),
 					),
 				)

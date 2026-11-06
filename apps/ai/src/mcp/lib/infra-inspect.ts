@@ -2,7 +2,7 @@
 import { Array as Arr, Effect, Record as Rec } from "effect"
 import { CH } from "@maple/query-engine"
 import { formatPercent } from "./format"
-import { WarehouseExecutor } from "@maple/query-engine/observability"
+import { WarehouseExecutor, type WarehouseExecutorError } from "@maple/query-engine/observability"
 import type {
 	InfraEntityKind,
 	InfraEntityRow,
@@ -57,7 +57,11 @@ export const inspectInfra = (target: InspectTarget, window: InfraWindow) =>
 		const seriesParams = { ...params, bucketSeconds: bucketSecondsFor(window) }
 		const series = <Row>(query: CH.CompiledQueryInput<Row>, context: string) =>
 			executor.compiledQuery(query, { profile: "aggregation", context })
-		const first = <Row>(query: CH.CompiledQueryInput<Row>, context: string) =>
+		// `NoInfer`: inside `Effect.all([...])` the return type would otherwise infer `Row` as `any`.
+		const first = <Row>(
+			query: CH.CompiledQueryInput<Row>,
+			context: string,
+		): Effect.Effect<NoInfer<Row> | undefined, WarehouseExecutorError> =>
 			executor
 				.compiledQuery(query, { profile: "aggregation", context })
 				.pipe(Effect.map((rows) => rows[0]))

@@ -1,9 +1,10 @@
 import {
 	pickDashboardControlParams,
+	timeRangeParams,
 	variableValuesFromSearch,
 } from "../../../lib/dashboard-controls/search-params"
 import { behindToast } from "../kit/store"
-import { DashboardRefreshIntervalSeconds } from "@maple/domain/http"
+import { type DashboardDocument, DashboardRefreshIntervalSeconds } from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -27,6 +28,7 @@ import {
 	ExportDashboard,
 	FetchShares,
 	ReadClock,
+	ReloadPage,
 	RemoveWidget,
 	RenameDashboard,
 	AddWidget,
@@ -35,11 +37,22 @@ import {
 	SaveRefreshInterval,
 	SaveTimeRange,
 } from "./command"
-import { gestureStep } from "./gesture"
+import { cancelStaleGesture, gestureStep } from "./gesture"
 import { Message } from "./message"
-import type { Model } from "./model"
-import { awaitsRefresh, replan, slotOf, withCharts } from "./plan"
-import { isEditing } from "./mode"
+import type { Model, Snapshot } from "./model"
+import { FallbackReason, FetchDashboardFallback } from "./command-fallback"
+import {
+	awaitsRefresh,
+	isSameTimeRange,
+	replan,
+	replanTile,
+	shownDocumentOf,
+	slotOf,
+	timeRangeOf,
+	viewerTimeRangeOf,
+	withCharts,
+} from "./plan"
+import { isEditing, isWriteBlocked } from "./mode"
 import { PICKER_TABS } from "./picker-catalog"
 import { menuStep } from "./menu-step"
 import { sectionStep } from "./section-update"
@@ -65,7 +78,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		search: route.search,
 		status: "Loading",
 		document: null,
-		timeRange: null,
+		snapshot: { _tag: "Idle" },
 		nowMs: null,
 		refreshVersion: 0,
 		isReloading: false,
@@ -129,9 +142,16 @@ const sameValues = (a: Readonly<Record<string, string>>, b: Readonly<Record<stri
 	Rec.keys(a).length === Rec.keys(b).length &&
 	Arr.every(Rec.toEntries(a), ([key, value]) => b[key] === value)
 
-/** A `var-*` change re-plans the tiles that read the variable (their request keys move). */
+/** The shown range moved after entry: plan on a fresh clock, not the one read when the page opened. */
+const isRangeMoved = (before: Model, after: Model): boolean => {
+	const range = timeRangeOf(before)
+	return after.nowMs !== null && range !== null && !isSameTimeRange(range, timeRangeOf(after))
+}
+
+/** A `var-*` change re-plans the tiles that read the variable; a `range` change reads the clock first. */
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
 	const next = { ...model, search: route.search }
+	if (isRangeMoved(model, next)) return { model: next, commands: [ReadClock()] }
 	return sameValues(variableValuesFromSearch(model.search), variableValuesFromSearch(route.search))
 		? { model: next }
 		: withReplan(next, context, "Load")
@@ -152,10 +172,19 @@ const navigate = (model: Model, url: string, isReplace = false): Return => ({
 	outMessage: PageOutMessage.RequestedNavigation({ url, isReplace }),
 })
 
-/** `handleToggleEdit`: the per-viewer controls survive; only `mode` flips. */
-const toggleEdit = (model: Model): Return => {
-	const controls = pickDashboardControlParams(model.search)
-	return navigate(model, dashboardHref(model, isEditing(model) ? controls : { ...controls, mode: "edit" }))
+/** `handleToggleEdit`: the per-viewer controls survive, except a viewer's range, which editing replaces. */
+const toggleEdit = (model: Model): Return =>
+	navigate(
+		model,
+		isEditing(model)
+			? dashboardHref(model, pickDashboardControlParams(model.search))
+			: editModeHref(model),
+	)
+
+/** Entering edit mode: the viewer controls survive, except a viewer's range (edit works on the board's). */
+const editModeHref = (model: Model): string => {
+	const { range: _range, from: _from, to: _to, ...kept } = pickDashboardControlParams(model.search)
+	return dashboardHref(model, { ...kept, mode: "edit" })
 }
 
 /** `PageRefreshProvider.reload`: a new clock, an unsnapped window and the Reload spinner. */
@@ -188,7 +217,7 @@ const addPicked = (
 	context: PageContext,
 	pick: { readonly presetId: string | null; readonly chartId: string | null },
 ): Return => {
-	if (model.persistenceError !== null) {
+	if (isWriteBlocked(model)) {
 		const shut = closePicker(model)
 		return {
 			...shut,
@@ -220,7 +249,7 @@ const addPicked = (
 				model: updated,
 				commands,
 				outMessage: PageOutMessage.RequestedNavigation({
-					url: dashboardHref(model, { ...pickDashboardControlParams(model.search), mode: "edit" }),
+					url: editModeHref(model),
 					isReplace: false,
 				}),
 			}
@@ -275,23 +304,33 @@ const withReplan = (model: Model, context: PageContext, mode: Keyed.RequestMode)
 	return { model: planned.model, commands: planned.commands }
 }
 
-/** The live document arrived (or changed): seed the range once, then plan the revealed tiles. */
+/** A step that changed one tile's slot: only that tile is planned again. */
+const withTileReplan = (model: Model, context: PageContext, widgetId: string): Return => {
+	const planned = replanTile(model, context, widgetId, "Load")
+	return { model: planned.model, commands: planned.commands }
+}
+
+/**
+ * The document arrived (or changed): plan the revealed tiles against it. The live stream always
+ * wins: its answer replaces a shown HTTP snapshot, and editing comes back.
+ */
 const receiveDocument = (
 	model: Model,
 	context: PageContext,
-	message: Message & { _tag: "UpdatedDashboard" },
+	maybeDocument: Option.Option<DashboardDocument>,
+	snapshot: Snapshot,
 ): Return =>
-	Option.match(message.maybeDocument, {
-		onNone: () => ({ model: { ...model, status: "Missing", document: null } }),
+	Option.match(maybeDocument, {
+		onNone: () => ({ model: { ...model, status: "Missing", document: null, snapshot } }),
 		onSome: (document) => {
 			const next: Model = {
 				...model,
 				status: "Ready",
 				document,
+				snapshot,
 				// The store caught up with a drop (or moved on): the grid draws what it holds.
 				droppedLayout: null,
 				droppedKey: null,
-				timeRange: model.timeRange ?? document.timeRange,
 				charts: withCharts(model, document.widgets),
 				// The toolbar's share dialog reads the shares too, so they load for an empty board as well.
 				shares: model.shares === "Idle" ? "Loading" : model.shares,
@@ -310,13 +349,19 @@ const receiveDocument = (
 						),
 					]
 				: []
-			const planned = withReplan(
-				isDefaultChanged
-					? { ...next, refreshMenu: { ...next.refreshMenu, highlighted: null } }
-					: next,
-				context,
-				"Load",
-			)
+			const settled = isDefaultChanged
+				? { ...next, refreshMenu: { ...next.refreshMenu, highlighted: null } }
+				: next
+			// A tile moved to another container mid-gesture: the gesture ends where it began.
+			const ended = cancelStaleGesture(settled, context)
+			// A new saved range this viewer shows: the clock is read first, and its answer plans.
+			const replanned: Return = isRangeMoved(model, ended.model)
+				? { model: ended.model, commands: [ReadClock()] }
+				: withReplan(ended.model, context, "Load")
+			const planned: Return = {
+				...replanned,
+				commands: [...(ended.commands ?? []), ...(replanned.commands ?? [])],
+			}
 			const isFirstRead = model.shares === "Idle" && next.shares === "Loading"
 			const seq = model.sharing.fetchSeq + 1
 			const shares = isFirstRead ? [FetchShares({ dashboardId: model.dashboardId, seq })] : []
@@ -329,6 +374,13 @@ const receiveDocument = (
 			}
 		},
 	})
+
+/** The board over HTTP while live sync is down; the org's collections reconnect meanwhile. */
+const readSnapshot = (model: Model, reason: typeof FallbackReason.Type): Return => ({
+	model: { ...model, status: "Loading", snapshot: { _tag: "Loading" } },
+	commands: [FetchDashboardFallback({ dashboardId: model.dashboardId, reason })],
+	outMessage: PageOutMessage.RequestedReconnectOrgCollections(),
+})
 
 const sortStep = (model: Model, widgetId: string, field: string, isText: boolean): Return => {
 	const current = model.tableSorts[widgetId] ?? { key: null, dir: "desc" as const }
@@ -350,23 +402,31 @@ const timePickerStep = (model: Model, context: PageContext, message: TimeRangePi
 	const updated = { ...model, timePicker: next.model }
 	const timeRange = TimeRangePicker.dashboardTimeRangeOf(next.outMessage)
 	if (timeRange === undefined) return { model: updated, commands }
-	const isSame =
-		model.timeRange !== null &&
-		model.timeRange.type === "relative" &&
-		timeRange.type === "relative" &&
-		model.timeRange.value === timeRange.value
-	if (isSame) return { model: updated, commands }
-	const planned = withReplan({ ...updated, timeRange }, context, "Load")
-	// `DashboardTimeRangeSync`: a picked range is written to the board.
-	const save = SaveTimeRange({ orgId: context.orgId, dashboardId: model.dashboardId, timeRange })
-	return { ...planned, commands: [...commands, ...(planned.commands ?? []), save] }
+	// Only an edit session saves the pick as the board's range; a viewer's pick stays in their URL.
+	const save =
+		isEditing(model) && !isSameTimeRange(model.document?.timeRange ?? null, timeRange)
+			? [SaveTimeRange({ orgId: context.orgId, dashboardId: model.dashboardId, timeRange })]
+			: []
+	// The saved board answers through the document; the URL holds a viewer's pick, even one equal to the board's.
+	if (isEditing(model) || isSameTimeRange(viewerTimeRangeOf(model), timeRange))
+		return { model: updated, commands: [...commands, ...save] }
+	const controls = { ...pickDashboardControlParams(model.search), ...timeRangeParams(timeRange) }
+	const search = model.search.mode === "edit" ? { ...controls, mode: "edit" as const } : controls
+	return {
+		model: updated,
+		commands: [...commands, ...save],
+		outMessage: PageOutMessage.RequestedNavigation({
+			url: dashboardHref(model, search),
+			isReplace: true,
+		}),
+	}
 }
 
 /** The "More dashboard actions" menu: tags, history, variables, groups, layout, share, export. */
 const moreAction = (model: Model, context: PageContext, value: string): Return => {
 	switch (value) {
 		case "tags": {
-			if (model.persistenceError !== null || model.document === null) return { model }
+			if (!isEditing(model) || model.document === null) return { model }
 			const opened = TagEditor.open(model.tagEditor, model.document.name, model.document.tags ?? [])
 			return {
 				model: { ...model, tagEditor: opened.model },
@@ -376,9 +436,9 @@ const moreAction = (model: Model, context: PageContext, value: string): Return =
 		case "history":
 			return openHistory(model)
 		case "variables":
-			return model.persistenceError === null ? openVariablesManager(model) : { model }
+			return isEditing(model) ? openVariablesManager(model) : { model }
 		case "add-group":
-			return model.persistenceError === null
+			return isEditing(model)
 				? {
 						model,
 						commands: [
@@ -391,15 +451,23 @@ const moreAction = (model: Model, context: PageContext, value: string): Return =
 					}
 				: { model }
 		case "auto-layout":
-			return model.persistenceError === null
+			return isEditing(model)
 				? { model, commands: [AutoLayout({ orgId: context.orgId, dashboardId: model.dashboardId })] }
 				: { model }
 		case "share":
 			return openShare(model)
 		case "export":
+			// A preview still loading has no snapshot yet; exporting now would export the live board.
+			if (model.history.previewed !== null && shownDocumentOf(model) === null) return { model }
 			return {
 				model,
-				commands: [ExportDashboard({ orgId: context.orgId, dashboardId: model.dashboardId })],
+				commands: [
+					ExportDashboard({
+						orgId: context.orgId,
+						dashboardId: model.dashboardId,
+						snapshot: model.history.previewed === null ? null : shownDocumentOf(model),
+					}),
+				],
 			}
 		default:
 			return { model }
@@ -411,7 +479,7 @@ const widgetAction = (model: Model, context: PageContext, widgetId: string, valu
 	const target = { orgId: context.orgId, dashboardId: model.dashboardId, widgetId }
 	const move = moveTargetOf(value)
 	if (move !== undefined)
-		return model.persistenceError !== null
+		return !isEditing(model)
 			? { model }
 			: {
 					model,
@@ -436,10 +504,13 @@ const widgetAction = (model: Model, context: PageContext, widgetId: string, valu
 				),
 			)
 		case "clone":
-			return { model, commands: [CloneWidget(target)] }
+			return isEditing(model) ? { model, commands: [CloneWidget(target)] } : { model }
 		case "delete": {
-			const removed = model.document?.widgets.find((candidate) => candidate.id === widgetId)
-			return removed === undefined
+			const removed = Arr.findFirst(
+				model.document?.widgets ?? [],
+				(candidate) => candidate.id === widgetId,
+			)
+			return Option.isNone(removed) || !isEditing(model)
 				? { model }
 				: {
 						model,
@@ -456,25 +527,34 @@ const widgetAction = (model: Model, context: PageContext, widgetId: string, valu
 									_tag: "RestoreDashboardWidgets",
 									orgId: context.orgId,
 									dashboardId: model.dashboardId,
-									widgets: [removed],
+									widgets: [removed.value],
 								},
 							},
 						}),
 					}
 		}
 		case "alert": {
-			const widget = model.document?.widgets.find((candidate) => candidate.id === widgetId)
-			return widget === undefined
-				? { model }
-				: navigate(
-						model,
-						hrefOf(
-							AppRoute.AlertsCreate({ search: createAlertSearch(model.dashboardId, widget) }),
+			return Option.match(
+				Arr.findFirst(
+					shownDocumentOf(model)?.widgets ?? [],
+					(candidate) => candidate.id === widgetId,
+				),
+				{
+					onNone: (): Return => ({ model }),
+					onSome: (widget) =>
+						navigate(
+							model,
+							hrefOf(
+								AppRoute.AlertsCreate({
+									search: createAlertSearch(model.dashboardId, widget),
+								}),
+							),
 						),
-					)
+				},
+			)
 		}
 		case "embed":
-			return openEmbed(model, widgetId)
+			return model.history.previewed === null ? openEmbed(model, widgetId) : { model }
 		default:
 			return { model }
 	}
@@ -499,34 +579,64 @@ const titleSubmit = (model: Model, context: PageContext): Return => {
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		UpdatedDashboard: (updated) =>
-			updated.orgId === context.orgId ? receiveDocument(model, context, updated) : { model },
+			updated.orgId === context.orgId
+				? receiveDocument(model, context, updated.maybeDocument, { _tag: "Idle" })
+				: { model },
+		// `handleCollectionStuck`: the collections reconnect while the snapshot loads.
+		TimedOutLiveDashboard: ({ orgId }) =>
+			orgId !== context.orgId || model.status !== "Loading" || model.snapshot._tag !== "Idle"
+				? { model }
+				: readSnapshot(model, "live_sync_timeout"),
+		// A late answer after the stream delivered is dropped: the live board is newer.
+		CompletedFetchDashboardFallback: ({ dashboardId, result }) =>
+			dashboardId !== model.dashboardId || model.snapshot._tag !== "Loading"
+				? { model }
+				: Result.match(result, {
+						onSuccess: (document) =>
+							receiveDocument(model, context, Option.some(document), { _tag: "Shown" }),
+						onFailure: (failure) =>
+							failure.code === "dashboard_not_found"
+								? receiveDocument(model, context, Option.none(), { _tag: "Idle" })
+								: {
+										model: {
+											...model,
+											status: "Failed",
+											snapshot: { _tag: "Failed", failure },
+										},
+									},
+					}),
+		// `retryOrgCollections`: a board that could not be read is read again after the reconnect.
+		ClickedRetrySync: () =>
+			model.status === "Failed"
+				? readSnapshot(model, "retry")
+				: { model, outMessage: PageOutMessage.RequestedReconnectOrgCollections() },
 		CompletedReadClock: ({ nowMs }) =>
 			withReplan({ ...model, nowMs }, context, model.refreshVersion > 0 ? "Refresh" : "Load"),
-		MeasuredGrid: ({ width }) => ({ model: { ...model, gridWidth: width } }),
+		MeasuredGrid: ({ width }) => cancelStaleGesture({ ...model, gridWidth: width }, context),
 		MeasuredWidget: ({ widgetId, widthPx }) => {
 			const slot = slotOf(model, widgetId)
 			if (slot.widthPx === widthPx) return { model }
 			const next = { ...model, widgets: { ...model.widgets, [widgetId]: { ...slot, widthPx } } }
-			return slot.isRevealed ? withReplan(next, context, "Load") : { model: next }
+			return slot.isRevealed ? withTileReplan(next, context, widgetId) : { model: next }
 		},
 		ClickedNarrowRange: ({ widgetId }) => {
 			const slot = slotOf(model, widgetId)
 			return slot.isNarrowed === true
 				? { model }
-				: withReplan(
+				: withTileReplan(
 						{
 							...model,
 							widgets: { ...model.widgets, [widgetId]: { ...slot, isNarrowed: true } },
 						},
 						context,
-						"Load",
+						widgetId,
 					)
 		},
 		RevealedWidget: ({ widgetId }) => {
 			const slot = slotOf(model, widgetId)
 			return slot.isRevealed && slot.isOffscreen !== true
 				? { model }
-				: withReplan(
+				: withTileReplan(
 						{
 							...model,
 							widgets: {
@@ -535,7 +645,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							},
 						},
 						context,
-						"Load",
+						widgetId,
 					)
 		},
 		HidWidget: ({ widgetId }) => {
@@ -578,6 +688,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		FailedLoadChartRuntime: ({ reason }) => ({
 			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
 		}),
+		ClickedReloadPage: () => ({ model, commands: [ReloadPage()] }),
+		ReloadedPage: () => ({ model }),
 		GotChartMessage: ({ widgetId, message: inner }) => {
 			const next = Chart.update(model.charts[widgetId] ?? Chart.init(), inner)
 			return {
@@ -636,7 +748,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})
 		},
 		ClickedTitle: () =>
-			model.persistenceError !== null || model.document === null || model.history.previewed !== null
+			isWriteBlocked(model) || model.document === null || model.history.previewed !== null
 				? { model }
 				: { model: { ...model, titleDraft: model.document.name } },
 		ChangedTitleDraft: ({ value }) => ({ model: { ...model, titleDraft: value } }),
@@ -710,7 +822,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						? { model, outMessage: behindToast() }
 						: { model: { ...model, persistenceError: null } },
 			}),
-		CompletedExport: () => ({ model }),
+		ClickedRetryPersistence: () => ({ model: { ...model, persistenceError: null } }),
+		CameBackOnline: () => ({ model: { ...model, persistenceError: null } }),
+		CompletedExport: ({ error }) =>
+			error === null
+				? { model }
+				: {
+						model,
+						outMessage: PageOutMessage.RequestedToast({
+							type: "error",
+							title: "Couldn't export the dashboard",
+							description: error,
+						}),
+					},
 		GotErrorDetailsMessage: ({ widgetId, message: inner }) => {
 			const next = Popover.update(
 				model.errorDetails[widgetId] ?? Popover.init(errorDetailsIdOf(widgetId)),

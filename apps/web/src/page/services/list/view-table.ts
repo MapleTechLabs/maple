@@ -811,7 +811,17 @@ const body = (
 				[
 					overview.length >= SERVICE_OVERVIEW_ROW_CAP
 						? `Showing first ${SERVICE_OVERVIEW_ROW_CAP} services`
-						: `Showing ${[String(services.length), healthFilter, pluralize(services.length, "service")].filter(Boolean).join(" ")}`,
+						: `Showing ${Arr.join(
+								Arr.filter(
+									[
+										String(services.length),
+										healthFilter,
+										pluralize(services.length, "service"),
+									],
+									(part): part is string => part !== undefined && part !== "",
+								),
+								" ",
+							)}`,
 				],
 			),
 			...(unhealthy > 0 || degraded > 0

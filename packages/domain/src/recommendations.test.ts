@@ -104,9 +104,9 @@ describe("detectAttributeRecommendations", () => {
 			[],
 		)
 		expect(Arr.map(recs, (r) => r.kind)).toEqual(["rename", "rename", "naming"])
-		expect(recs[0]!.key).toBe("db.statement")
-		expect(recs[1]!.key).toBe("http.method")
-		expect(recs[2]!.key).toBe("customId")
+		expect(Arr.getUnsafe(recs, 0).key).toBe("db.statement")
+		expect(Arr.getUnsafe(recs, 1).key).toBe("http.method")
+		expect(Arr.getUnsafe(recs, 2).key).toBe("customId")
 	})
 
 	it("returns an empty array for empty input", () => {
@@ -233,6 +233,6 @@ describe("planReconcileIssues", () => {
 
 	it("starts numbering at 1 when there are no existing issues", () => {
 		const plan = planReconcileIssues([rec({ id: "rename:http.status_code" })], [], [])
-		expect(plan.inserts[0]!.number).toBe(1)
+		expect(Arr.getUnsafe(plan.inserts, 0).number).toBe(1)
 	})
 })

@@ -1,6 +1,6 @@
 import { getViewportForBounds } from "@xyflow/system"
 import type { PlacedNode, Rect, Viewport } from "./geometry"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 /** `getInternalNodesBounds` over measured nodes; unmeasured nodes are left out, as in React Flow. */
 export const measuredBounds = (nodes: ReadonlyArray<PlacedNode>): Rect | undefined => {
@@ -42,8 +42,12 @@ const focusPoint = (nodes: ReadonlyArray<PlacedNode>, focusNodeId: string | unde
 					x: node.position.x + node.measured.width / 2,
 					y: node.position.y + node.measured.height / 2,
 				}
-	const focused = nodes.find((node) => node.id === focusNodeId)
-	const point = focused === undefined ? undefined : centre(focused)
+	const point = Option.getOrUndefined(
+		Option.flatMapNullishOr(
+			Arr.findFirst(nodes, (node) => node.id === focusNodeId),
+			centre,
+		),
+	)
 	if (point !== undefined) return point
 	const centres = Arr.flatMap(nodes, (node) => {
 		const c = centre(node)
@@ -126,10 +130,13 @@ export const fitViewport = (
 	const focus = focusPoint(nodes, options.focusNodeId) ?? { x: bounds.x, y: bounds.y }
 	const first = readableViewport(bounds, pane, readable, padding, focus)
 	if (!cropsCard(nodes, first, pane)) return first
-	const clean = Arr.map(nearbyZooms(readable), (zoom) =>
-		readableViewport(bounds, pane, zoom, padding, focus),
-	).find((viewport) => !cropsCard(nodes, viewport, pane))
-	return clean ?? first
+	return Option.getOrElse(
+		Arr.findFirst(
+			Arr.map(nearbyZooms(readable), (zoom) => readableViewport(bounds, pane, zoom, padding, focus)),
+			(viewport) => !cropsCard(nodes, viewport, pane),
+		),
+		() => first,
+	)
 }
 
 /** d3-zoom `scaleBy` around the pane centre (React Flow's `zoomIn` / `zoomOut`, factor 1.2). */

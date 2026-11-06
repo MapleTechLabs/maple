@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 import { DashboardWidgetV2 } from "../v2/widget"
 import { WidgetDataSourceV1 } from "./data-source"
 import { DashboardDocumentV1 } from "./document"
@@ -50,7 +50,7 @@ describe("the frozen v1 schema", () => {
 	// display schema is version-parameterised at all. v1's has to keep taking v1's
 	// opaque params, or a legacy sparkline stops reading.
 	it("keeps a sparkline's embedded data source on the v1 shape", () => {
-		const decoded = Schema.decodeUnknownSync(WidgetDisplayConfigV1)({
+		const decoded = Schema.decodeSync(WidgetDisplayConfigV1)({
 			title: "Requests",
 			sparkline: { enabled: true, dataSource: { endpoint: "legacy_endpoint", params: { any: 1 } } },
 		})
@@ -59,7 +59,7 @@ describe("the frozen v1 schema", () => {
 	})
 
 	it("carries widget params through as an opaque bag", () => {
-		const decoded = Schema.decodeUnknownSync(WidgetDataSourceV1)({
+		const decoded = Schema.decodeSync(WidgetDataSourceV1)({
 			endpoint: "anything_at_all",
 			params: { arbitrary: { nested: [1, "two", null] } },
 		})
@@ -92,9 +92,11 @@ describe("the frozen v1 schema", () => {
 			},
 		],
 	])("accepts %s, which v2 rejects", (_label, override) => {
-		const widget = { ...v1Document.widgets[0], ...override }
+		const [base] = v1Document.widgets
+		assert.isDefined(base)
+		const widget = { ...base, ...override }
 
-		expect(() => Schema.decodeUnknownSync(DashboardWidgetV1)(widget)).not.toThrow()
+		expect(() => Schema.decodeSync(DashboardWidgetV1)(widget)).not.toThrow()
 		expect(() => Schema.decodeUnknownSync(DashboardWidgetV2)(widget)).toThrow()
 	})
 })

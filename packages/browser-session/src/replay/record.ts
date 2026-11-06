@@ -254,7 +254,6 @@ function targetOf(config: IngestConfig): string {
 function readPending(): PendingChunk | undefined {
 	if (!mayUseStorage()) return undefined
 	try {
-		// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 		const parsed: unknown = JSON.parse(window.sessionStorage.getItem(PENDING_CHUNK_KEY) ?? "null")
 		return isPendingChunk(parsed) ? parsed : undefined
 	} catch {
@@ -270,7 +269,6 @@ function storePending(chunk: PendingChunk): boolean {
 	if (!mayUseStorage()) return false
 	try {
 		if (readPending()) return false
-		// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 		window.sessionStorage.setItem(PENDING_CHUNK_KEY, JSON.stringify(chunk))
 		return true
 	} catch {
@@ -558,7 +556,6 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 
 			let json: string
 			try {
-				// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 				json = JSON.stringify(event)
 			} catch {
 				// Unserializable event (cycles) — playback can't use it anyway.
@@ -652,7 +649,7 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 /** rrweb options for `<canvas>` capture: sampled frames as WebP, off unless asked for. */
 function canvasOptions(config: IngestConfig) {
 	// Canvas pixels can carry text (chart labels, grids) that maskAllText cannot reach.
-	if (config.maskAllText || !config.canvasFps || config.canvasFps <= 0) return undefined
+	if (config.maskAllText || !((config.canvasFps ?? 0) > 0)) return undefined
 	return {
 		recordCanvas: true,
 		sampling: { canvas: config.canvasFps },
@@ -717,7 +714,6 @@ export function startBufferedRecording(config: IngestConfig, sessionId: string):
 			if (isClick(event)) clickCount++
 			let json: string
 			try {
-				// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 				json = JSON.stringify(event)
 			} catch {
 				return

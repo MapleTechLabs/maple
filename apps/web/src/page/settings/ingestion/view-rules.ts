@@ -29,7 +29,7 @@ import { docsLink } from "../../kit/signal-empty-state"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { settingsSection } from "../kit/section"
 import { Message } from "./message"
-import type { Model, RecommendationTab } from "./model"
+import { canManageMappings, type Model, type RecommendationTab } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
@@ -98,7 +98,7 @@ const recommendationActions = (h: H, model: Model, issue: V2Recommendation): Rea
 	if (issue.status !== "open") return [badge(h, { variant: status.variant }, [status.label])]
 	const primary =
 		issue.kind === "rename"
-			? model.isAdmin
+			? canManageMappings(model)
 				? [
 						button(
 							h,
@@ -282,7 +282,7 @@ const mappingRow = (h: H, model: Model, mapping: V2AttributeMapping): Html => {
 			),
 			h.div(
 				[h.Class("flex w-10 shrink-0 items-center")],
-				model.isAdmin
+				canManageMappings(model)
 					? switchControl(h, {
 							id: `${menuId}-switch`,
 							inputId: `${menuId}-switch-input`,
@@ -293,7 +293,7 @@ const mappingRow = (h: H, model: Model, mapping: V2AttributeMapping): Html => {
 						})
 					: [h.span([h.Class("text-xs")], [mapping.enabled ? "On" : "Off"])],
 			),
-			...(model.isAdmin
+			...(canManageMappings(model)
 				? [
 						h.div(
 							[h.Class("flex w-7 shrink-0 justify-end")],
@@ -341,7 +341,7 @@ const mappingsTable = (h: H, model: Model, mappings: ReadonlyArray<V2AttributeMa
 						"Applies to",
 					]),
 					eyebrow(h, { variant: "mono", className: "w-10 shrink-0", as: "div" }, ["On"]),
-					...(model.isAdmin ? [h.div([h.Class("w-7 shrink-0")], [])] : []),
+					...(canManageMappings(model) ? [h.div([h.Class("w-7 shrink-0")], [])] : []),
 				],
 			),
 			...Arr.map(mappings, (mapping) => mappingRow(h, model, mapping)),
@@ -360,7 +360,7 @@ const mappingsEmpty = (h: H, model: Model): Html =>
 				]),
 			]),
 			emptyActions(h, [
-				...(model.isAdmin ? [addMappingButton(h)] : []),
+				...(canManageMappings(model) ? [addMappingButton(h)] : []),
 				docsLink(h, "otelConventions"),
 			]),
 		],
@@ -392,7 +392,7 @@ export const mappingsSection = (h: H, model: Model): Html =>
 			title: "Attribute mappings",
 			description: ["Copy or move attribute keys as data arrives. Applies to new data only."],
 			padded: false,
-			actions: model.isAdmin ? addMappingButton(h) : undefined,
+			actions: canManageMappings(model) ? addMappingButton(h) : undefined,
 		},
 		[
 			h.div(

@@ -1,4 +1,4 @@
-import { Effect, Result, Array as Arr, String as Str } from "effect"
+import { Effect, Result, Array as Arr, Record as Rec, String as Str } from "effect"
 import { deepStrictEqual, ok, strictEqual, throws } from "node:assert"
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -74,7 +74,7 @@ const exampleRecordObserved = {
 }
 
 const firstLogRecord = (request: typeof exampleRecordObserved) =>
-	request.resourceLogs[0]!.scopeLogs[0]!.logRecords[0]!
+	Arr.getUnsafe(Arr.getUnsafe(Arr.getUnsafe(request.resourceLogs, 0).scopeLogs, 0).logRecords, 0)
 
 const projection = (overrides: Partial<SignalProjectionSpec> = {}): SignalProjectionSpec => ({
 	id: "example-record-observed",
@@ -280,7 +280,7 @@ describe("LocalEventingRuntime", () => {
 		const batches = encodeLogs(exampleRecordObserved)
 		strictEqual(batches.length, 1)
 		strictEqual(batches[0]?.rowCount, 1)
-		strictEqual(JSON.parse(batches[0]!.ndjson).log_attributes["example.record.sequence"], "42")
+		strictEqual(JSON.parse(batches[0].ndjson).log_attributes["example.record.sequence"], "42")
 	})
 
 	it("uses the first nonblank occurrence alias and derives identity when every alias is blank", () => {
@@ -311,7 +311,12 @@ describe("LocalEventingRuntime", () => {
 		const [signalB] = run(normalizeOtlpLogs(derivedB, "2026-08-07T20:00:00Z"))
 		strictEqual(signalA?.identityQuality, "derived")
 		strictEqual(signalB?.identityQuality, "derived")
-		strictEqual(signalA?.occurrenceId?.startsWith("derived:sha256:"), true)
+		strictEqual(
+			signalA?.occurrenceId !== undefined &&
+				signalA.occurrenceId !== null &&
+				Str.startsWith("derived:sha256:")(signalA.occurrenceId),
+			true,
+		)
 		strictEqual(signalA?.occurrenceId === signalB?.occurrenceId, false)
 	})
 
@@ -345,11 +350,12 @@ describe("LocalEventingRuntime", () => {
 
 	it("uses a locale-independent source-fingerprint field order", () => {
 		const [signal] = run(normalizeOtlpLogs(exampleRecordObserved, "2026-08-07T20:00:00Z"))
-		const fields = new Map(signal!.fields)
+		ok(signal !== undefined)
+		const fields = new Map(signal.fields)
 		fields.set("attribute:ä", { type: "string", value: "umlaut" })
 		fields.set("attribute:z", { type: "string", value: "ascii" })
-		const forward = { ...signal!, fields }
-		const reverse = { ...signal!, fields: new Map([...fields].reverse()) }
+		const forward = { ...signal, fields }
+		const reverse = { ...signal, fields: new Map([...fields].reverse()) }
 		strictEqual(
 			Result.getOrThrow(sourceOccurrenceFingerprint(forward)),
 			Result.getOrThrow(sourceOccurrenceFingerprint(reverse)),
@@ -371,17 +377,19 @@ describe("LocalEventingRuntime", () => {
 			}),
 		)
 		const [signal] = run(normalizeOtlpLogs(request, "2026-08-07T20:00:00Z"))
-		const record = (signal!.data as { record: { attributes: Record<string, JsonValue> } }).record
-		ok(Object.prototype.hasOwnProperty.call(record.attributes, "__proto__"))
+		ok(signal !== undefined)
+		const record = (signal.data as { record: { attributes: Record<string, JsonValue> } }).record
+		ok(Rec.has(record.attributes, "__proto__"))
 		// Attribute maps are null-prototype on purpose, so a `__proto__` key stays data.
 		deepStrictEqual(
 			record.attributes["__proto__"],
 			Object.assign(Object.create(null), { nested: "top-level" }),
 		)
 		const safe = record.attributes.safe as Record<string, JsonValue>
-		ok(Object.prototype.hasOwnProperty.call(safe, "__proto__"))
+		ok(Rec.has(safe, "__proto__"))
 		strictEqual(safe["__proto__"], "nested")
-		strictEqual(Object.prototype.hasOwnProperty.call({}, "nested"), false)
+		const empty: Record<string, JsonValue> = {}
+		strictEqual(Rec.has(empty, "nested"), false)
 	})
 
 	it("catalogs only the scalar body field that the OTLP adapter can populate", async () =>
@@ -431,7 +439,7 @@ describe("LocalEventingRuntime", () => {
 				strictEqual(first.events.length, 1)
 				deepStrictEqual(first.events[0], {
 					specversion: "1.0",
-					id: first.events[0]!.id,
+					id: Arr.getUnsafe(first.events, 0).id,
 					source: "https://events.example.test",
 					type: "dev.maple.example.record.observed.v1",
 					subject: "example/widgets/records/42",
@@ -514,7 +522,7 @@ describe("LocalEventingRuntime", () => {
 						? attr(entry.key, { stringValue: "second" })
 						: entry,
 				)
-				request.resourceLogs[0]!.scopeLogs[0]!.logRecords.push(second)
+				Arr.getUnsafe(Arr.getUnsafe(request.resourceLogs, 0).scopeLogs, 0).logRecords.push(second)
 				throws(
 					() => run(runtime.evaluateOtlp("logs", request)),
 					/source occurrence collision within one ingest batch/,
@@ -535,7 +543,7 @@ describe("LocalEventingRuntime", () => {
 				const request = structuredClone(exampleRecordObserved)
 				const sibling = structuredClone(firstLogRecord(request))
 				sibling.eventName = "example.record.ignored"
-				request.resourceLogs[0]!.scopeLogs[0]!.logRecords.push(sibling)
+				Arr.getUnsafe(Arr.getUnsafe(request.resourceLogs, 0).scopeLogs, 0).logRecords.push(sibling)
 				throws(
 					() => run(runtime.evaluateOtlp("logs", request)),
 					/source occurrence collision within one ingest batch/,
@@ -560,7 +568,7 @@ describe("LocalEventingRuntime", () => {
 						attr(`projection-only-sibling-${index}`, { stringValue: "warehouse-valid" }),
 					),
 				)
-				request.resourceLogs[0]!.scopeLogs[0]!.logRecords.push(sibling)
+				Arr.getUnsafe(Arr.getUnsafe(request.resourceLogs, 0).scopeLogs, 0).logRecords.push(sibling)
 				throws(
 					() => run(runtime.evaluateOtlp("logs", request)),
 					/source occurrence collision with an unprojectable record within one ingest batch/,
@@ -582,7 +590,7 @@ describe("LocalEventingRuntime", () => {
 				const request = structuredClone(exampleRecordObserved)
 				const sibling = structuredClone(firstLogRecord(request))
 				sibling.eventName = "example.record.alternate"
-				request.resourceLogs[0]!.scopeLogs[0]!.logRecords.push(sibling)
+				Arr.getUnsafe(Arr.getUnsafe(request.resourceLogs, 0).scopeLogs, 0).logRecords.push(sibling)
 				throws(
 					() => run(runtime.evaluateOtlp("logs", request)),
 					/source occurrence collision within one ingest batch/,

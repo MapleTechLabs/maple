@@ -3,7 +3,7 @@ import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import type { ChartSpec } from "./chart-spec"
 import { type LongRow, transformRows } from "./infra-metric-series"
 import { resolveColor, type ThemeColors } from "./theme-colors"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Order, Record as Rec, String as Str } from "effect"
 
 // `StackedBreakdownChart`'s data side: the tail fold, the stack order and the palette, resolved for
 // the canvas. The card and legend are the page's.
@@ -26,7 +26,13 @@ const foldTail = (rows: ReadonlyArray<LongRow>): ReadonlyArray<LongRow> => {
 	)
 	if (totals.size <= MAX_SERIES + 1) return rows
 	const keep = new Set(
-		Arr.map([...totals.entries()].toSorted((a, b) => b[1] - a[1]).slice(0, MAX_SERIES), ([name]) => name),
+		Arr.map(
+			Arr.sort(
+				totals.entries(),
+				Order.flip(Order.mapInput(Order.Number, (entry: readonly [string, number]) => entry[1])),
+			).slice(0, MAX_SERIES),
+			([name]) => name,
+		),
 	)
 	const pooled = Arr.reduce(
 		Arr.filter(rows, (row) => !keep.has(row.attributeValue)),
@@ -73,8 +79,11 @@ export const stackedBreakdown = (options: StackedBreakdownOptions): StackedBreak
 	const rank = new Map(Arr.map(options.order, (name, index) => [name, index]))
 	const rankOf = (name: string) =>
 		name === BREAKDOWN_OTHER_KEY ? Number.MAX_SAFE_INTEGER : (rank.get(name) ?? options.order.length)
-	const series = [...transformed.series].toSorted(
-		(a, b) => rankOf(a) - rankOf(b) || Str.localeCompare(b)(a),
+	const series = Arr.sort(
+		transformed.series,
+		Order.combine(Order.mapInput(Order.Number, rankOf), (a: string, b: string) =>
+			Str.localeCompare(b)(a),
+		),
 	)
 	const identityColors = resolveSeriesColors(
 		Arr.filter(series, (name) => options.colors[name] === undefined && name !== BREAKDOWN_OTHER_KEY),

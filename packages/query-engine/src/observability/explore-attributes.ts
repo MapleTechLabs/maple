@@ -1,4 +1,4 @@
-import { Array as Arr, Effect, Order, pipe } from "effect"
+import { Array as Arr, Effect, Order, pipe, Option } from "effect"
 import type {
 	SpanAttributeKeysOutput,
 	SpanAttributeValuesOutput,
@@ -39,7 +39,12 @@ const metricScopeParams = Effect.fnUntraced(function* (input: ExploreAttributesI
 			},
 			{ profile: "discovery" },
 		)
-		metricType = catalog.data.find((row) => row.metricName === input.metricName)?.metricType
+		metricType = Option.getOrUndefined(
+			Option.map(
+				Arr.findFirst(catalog.data, (row) => row.metricName === input.metricName),
+				(row) => row.metricType,
+			),
+		)
 	}
 	return metricType === undefined ? undefined : { metric_name: input.metricName, metric_type: metricType }
 })

@@ -1,4 +1,5 @@
 import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
+import { sloNameFromRuleName } from "@maple/domain/slo"
 
 import {
 	comparatorLabels,
@@ -51,6 +52,12 @@ type IncidentLine = Pick<
 /** Uptime incidents name the monitor ("checkout-api is down"), not a signal and a value. */
 const isUptime = (incident: Pick<AlertIncidentDocument, "signalType">) => incident.signalType === "uptime"
 
+/** SLO incidents name the SLO ("Checkout API is burning its error budget"). */
+const isSlo = (incident: Pick<AlertIncidentDocument, "signalType">) => incident.signalType === "slo_burn_rate"
+
+/** The rule backing an SLO is named `SLO burn: <SLO name>`; the SLO's own name reads better. */
+export const sloNameOf = (ruleName: string): string => sloNameFromRuleName(ruleName) ?? ruleName
+
 /** Raw SQL and builder rules: "Raw SQL 5" says nothing, so the rule name is what fired. */
 export const isQueryIncident = (incident: Pick<AlertIncidentDocument, "signalType">) =>
 	incident.signalType === "raw_query" || incident.signalType === "builder_query"
@@ -59,15 +66,17 @@ export const isQueryIncident = (incident: Pick<AlertIncidentDocument, "signalTyp
 export function incidentTitle(incident: IncidentLine): string {
 	if (isUptime(incident))
 		return `${incident.ruleName} ${incident.status === "resolved" ? "is back up" : "is down"}`
+	if (isSlo(incident))
+		return `${sloNameOf(incident.ruleName)} ${incident.status === "resolved" ? "stopped burning its error budget" : "is burning its error budget"}`
 	if (isQueryIncident(incident)) return incident.ruleName
 	const value = formatSignalValue(incident.signalType, incident.lastObservedValue)
 	const base = `${signalLabels[incident.signalType]} ${value}`
 	return incident.groupKey === null ? base : `${base} on ${incident.groupKey}`
 }
 
-/** The group shown next to the rule name: an uptime incident's only when it is a real service. */
+/** The group shown next to the rule name: an uptime or SLO incident's only when it is a real one. */
 export function incidentScope(incident: IncidentLine): string | null {
-	return isUptime(incident) ? incidentGroup(incident) : incident.groupKey
+	return isUptime(incident) || isSlo(incident) ? incidentGroup(incident) : incident.groupKey
 }
 
 /** The line under the title: the rule and group, or a query rule's kind and group (its name is the title). */
@@ -191,7 +200,11 @@ export function fireLanes(
 		ruleId,
 		ruleName: lane.ruleName,
 		bars: lane.bars,
-	})).sort((a, b) => b.bars.length - a.bars.length || Str.localeCompare(b.ruleName)(a.ruleName))
+	})).sort((a, b) =>
+		b.bars.length !== a.bars.length
+			? b.bars.length - a.bars.length
+			: Str.localeCompare(b.ruleName)(a.ruleName),
+	)
 }
 
 export type RibbonCell = "quiet" | "warning" | "critical"
@@ -203,17 +216,23 @@ export function ruleRibbon(
 	cells: number,
 ): RibbonCell[] {
 	const width = (range.max - range.min) / cells
-	return Array.from({ length: cells }, (_, i) => {
-		const cellStart = range.min + i * width
-		const cellEnd = cellStart + width
-		const hits = Arr.filter(incidents, (incident) => {
-			const start = Date.parse(incident.firstTriggeredAt)
-			const end = incident.resolvedAt === null ? range.max : Date.parse(incident.resolvedAt)
-			return end > cellStart && start < cellEnd
-		})
-		if (Arr.some(hits, (incident) => incident.severity === "critical")) return "critical"
-		return hits.length > 0 ? "warning" : "quiet"
-	})
+	const out: RibbonCell[] = Array.from({ length: cells }, () => "quiet")
+	if (!(width > 0)) return out
+	// Each incident paints only the cells it overlaps (±1 for float edges), so a row costs
+	// O(incidents + cells), not O(incidents × cells) timestamp parses.
+	for (const incident of incidents) {
+		const start = Date.parse(incident.firstTriggeredAt)
+		const end = incident.resolvedAt === null ? range.max : Date.parse(incident.resolvedAt)
+		const first = Math.max(0, Math.floor((start - range.min) / width) - 1)
+		const last = Math.min(cells - 1, Math.ceil((end - range.min) / width))
+		for (let i = first; i <= last; i++) {
+			const cellStart = range.min + i * width
+			if (!(end > cellStart && start < cellStart + width)) continue
+			if (incident.severity === "critical") out[i] = "critical"
+			else if (out[i] === "quiet") out[i] = "warning"
+		}
+	}
+	return out
 }
 
 export type BlindSpotKind = "error" | "stale" | "no-data" | "unrouted" | "delivery" | "slowed"

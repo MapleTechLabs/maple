@@ -1,3 +1,6 @@
+import * as Cloudflare from "@alchemy.run/cloudflare"
+import { AfterResponse } from "@maple/backend/platform/after-response"
+import type { RuntimeContext } from "alchemy/RuntimeContext"
 import { IsolateAge } from "@maple/infra/isolate-age"
 import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/worker-http"
 /**
@@ -60,7 +63,7 @@ export const buildIsolateHandler = <ROut, E>(
 						memoMap,
 						scope,
 					)
-					// oxlint-disable-next-line effecttsgo/return-effect-in-gen -- Return the handler for later requests, never execute it during the build.
+					// oxlint-disable-next-line effecttsgo/return-effect-in-gen, effecttsgo/any-unknown-in-error-context -- Return the handler for later requests, never run it during the build. HttpRouter types its error as unknown; bridgeHandler discharges it.
 					return Context.get(context, HttpRouter.HttpRouter).asHttpEffect()
 				}),
 	).pipe(Effect.map(bridgeHandler))
@@ -117,6 +120,7 @@ export const makeAppGraphs = (isolate: Context.Context<never>, ports: ApiPortsLa
 				Effect.suspend(() => {
 					const previous = tail
 					let release!: () => void
+					// @effect-diagnostics-next-line newPromise:off -- a native Promise hands the waiter back to its own Workers I/O context
 					tail = new Promise<void>((resolve) => {
 						release = resolve
 					})
@@ -134,9 +138,21 @@ export const makeAppGraphs = (isolate: Context.Context<never>, ports: ApiPortsLa
 		}
 	})
 
+/**
+ * The event's `waitUntil`, as the request's after-response runner. Read per event: the isolate
+ * context omits the execution context, so a captured one could never bind another request.
+ */
+const afterResponseOfEvent = Effect.gen(function* () {
+	const execution = yield* Cloudflare.WorkerExecutionContext
+	const runtime = yield* Effect.context<RuntimeContext>()
+	return (work: Effect.Effect<void>) => execution.waitUntil(work).pipe(Effect.provideContext(runtime))
+})
+
 const pathOf = (url: string): string => {
-	const query = url.indexOf("?")
-	return query === -1 ? url : Str.slice(0, query)(url)
+	return Option.match(Str.indexOf("?")(url), {
+		onNone: () => url,
+		onSome: (query) => Str.slice(0, query)(url),
+	})
 }
 
 const isV2Path = (path: string): boolean => path === "/v2" || Str.startsWith("/v2/")(path)
@@ -175,15 +191,21 @@ const recordEscapedCause = (method: string, path: string, cause: Cause.Cause<unk
  * when an unrelated binding is unavailable. Everything else runs the router
  * under one Postgres connection for the request.
  */
-export const makeFetch = (
-	app: Effect.Effect<HttpEffect, unknown>,
+export const makeFetch = <E>(
+	app: Effect.Effect<HttpEffect, E>,
 	ports: Layer.Layer<MapleDbConnection | AiWorkerFetcher>,
-	queryApp: Effect.Effect<HttpEffect, unknown> = app,
+	queryApp: Effect.Effect<HttpEffect, E> = app,
 	vcsSyncBatch?: Effect.Effect<
 		HttpServerResponse.HttpServerResponse,
 		never,
 		HttpServerRequest.HttpServerRequest
 	>,
+	/** How this event defers work past its response; tests pass a recorder. */
+	afterResponseRunner: Effect.Effect<
+		(work: Effect.Effect<void>) => Effect.Effect<void>,
+		never,
+		RuntimeContext
+	> = afterResponseOfEvent,
 ) =>
 	IsolateAge.useSync((isolateAge) => {
 		const serve = Effect.gen(function* () {
@@ -243,8 +265,10 @@ export const makeFetch = (
 				return unavailableResponse(path)
 			}
 
+			const afterResponse = yield* afterResponseRunner
 			const response = yield* withPgConnectionScope(built.value).pipe(
 				Effect.tapCause((cause) => recordEscapedCause(request.method, path, cause)),
+				Effect.provideService(AfterResponse, afterResponse),
 			)
 
 			return response

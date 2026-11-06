@@ -834,14 +834,14 @@ export const inspectActiveOperation = (
 		const reason = error instanceof Error ? error.message : String(error)
 		return { kind: "fail-closed", reason: `active operations directory is unsafe: ${reason}` }
 	}
-	if (ids.length === 0) return null
+	const [operationId] = ids
+	if (operationId === undefined) return null
 	if (ids.length > 1) {
 		return {
 			kind: "fail-closed",
 			reason: `${ids.length} active operations are ambiguous; manual inspection required`,
 		}
 	}
-	const operationId = ids[0]!
 	const dir = operationDir(archiveDir, operationId)
 	const path = intentPath(archiveDir, operationId)
 	if (!existsSync(path)) {

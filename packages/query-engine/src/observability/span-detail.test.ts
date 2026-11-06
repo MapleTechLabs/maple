@@ -64,11 +64,14 @@ const run = (
 		Effect.provide(Layer.succeed(WarehouseExecutor, makeExecutor(sqls, opts))),
 	)
 
+/** A timestamp hint far from where the fixture trace actually is. */
+const STALE_HINT = new Date("2026-04-05T12:00:00Z")
+
 describe("spanDetail", () => {
 	it.effect("retries unbounded once when the hinted window misses", () =>
 		Effect.gen(function* () {
 			const sqls: string[] = []
-			const result = yield* run(sqls, new Date("2026-04-05T12:00:00Z"))
+			const result = yield* run(sqls, STALE_HINT)
 			assert.isTrue(result.found)
 			assert.isTrue(result.widened)
 			assert.lengthOf(sqls, 2)
@@ -84,8 +87,8 @@ describe("spanDetail", () => {
 			assert.isTrue(result.found)
 			assert.isFalse(result.widened)
 			assert.lengthOf(sqls, 2)
-			assert.isTrue(isProbe(sqls[0]!))
-			assert.include(sqls[1]!, "Timestamp >=")
+			assert.isTrue(isProbe(Arr.getUnsafe(sqls, 0)))
+			assert.include(sqls[1], "Timestamp >=")
 		}),
 	)
 

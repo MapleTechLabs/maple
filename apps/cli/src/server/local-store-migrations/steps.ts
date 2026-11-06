@@ -97,6 +97,13 @@ const SERVICE_ENDPOINT_DETAILS_BACKFILL = [
 	"INSERT INTO service_endpoint_details_hourly (OrgId, ServiceName, Hour, DeploymentEnv, SpanName, HttpStatusCode, ErrorType, SpanCount, EstimatedSpanCount, DurationQuantiles, BodySizeQuantiles, BodySizeMax, BodyCount, UserAgents, SlowestDuration, SlowestTraceId, SlowestTimestamp, SlowestBodySize) SELECT OrgId, ServiceName, toStartOfHour(toDateTime(Timestamp)) AS Hour, coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) AS DeploymentEnv, if(((SpanName LIKE 'http.server %' OR SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (SpanAttributes['http.route'] != '' OR SpanAttributes['url.path'] != '')), concat(if(SpanName LIKE 'http.server %', replaceOne(SpanName, 'http.server ', ''), SpanName), ' ', if(SpanAttributes['http.route'] != '', SpanAttributes['http.route'], SpanAttributes['url.path'])), SpanName) AS SpanName, if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) AS HttpStatusCode, SpanAttributes['error.type'] AS ErrorType, count() AS SpanCount, sum(SampleRate) AS EstimatedSpanCount, quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS DurationQuantiles, quantilesTDigestIfState(0.5, 0.95, 0.99)(ifNull(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])), 0), toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS BodySizeQuantiles, maxIf(ifNull(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])), 0), toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS BodySizeMax, countIf(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS BodyCount, approx_top_kState(10)(coalesce(nullIf(SpanAttributes['user_agent.original'], ''), nullIf(SpanAttributes['http.user_agent'], ''), '')) AS UserAgents, max(Duration) AS SlowestDuration, argMaxState(TraceId, Duration) AS SlowestTraceId, argMaxState(Timestamp, Duration) AS SlowestTimestamp, argMaxState(ifNull(toInt64(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length']))), -1), Duration) AS SlowestBodySize FROM traces WHERE SpanKind = 'Server' AND if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) != '' GROUP BY OrgId, ServiceName, Hour, DeploymentEnv, SpanName, HttpStatusCode, ErrorType",
 ] as const
 
+/** Rebuilds the users rollup from every retained span and log; the truncate makes a resumed step converge. */
+const USER_ACTIVITY_HOURLY_BACKFILL = [
+	"TRUNCATE TABLE IF EXISTS user_activity_hourly",
+	"INSERT INTO user_activity_hourly (OrgId, ServiceNamespace, UserId, Hour, ServiceName, SpanCount, ErrorSpanCount, RequestCount, FailedRequestCount, TraceIds, SessionIds, RequestDurationQuantiles, TopRoutes, LogCount, WarnLogCount, ErrorLogCount, FirstSeen, LastSeen) SELECT OrgId, ResourceAttributes['service.namespace'] AS ServiceNamespace, if(SpanAttributes['user.id'] != '', SpanAttributes['user.id'], SpanAttributes['enduser.id']) AS UserId, toStartOfHour(toDateTime(Timestamp)) AS Hour, ServiceName, count() AS SpanCount, countIf(StatusCode = 'Error') AS ErrorSpanCount, countIf(IsEntryPoint = 1) AS RequestCount, countIf(IsEntryPoint = 1 AND StatusCode = 'Error') AS FailedRequestCount, uniqIfState(TraceId, TraceId != '') AS TraceIds, uniqIfState(SpanAttributes['session.id'], SpanAttributes['session.id'] != '') AS SessionIds, quantilesTDigestIfState(0.5, 0.95)(Duration, IsEntryPoint = 1) AS RequestDurationQuantiles, approx_top_kState(10)(if(IsEntryPoint = 1, if(((SpanName LIKE 'http.server %' OR SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (SpanAttributes['http.route'] != '' OR SpanAttributes['url.path'] != '')), concat(if(SpanName LIKE 'http.server %', replaceOne(SpanName, 'http.server ', ''), SpanName), ' ', if(SpanAttributes['http.route'] != '', SpanAttributes['http.route'], SpanAttributes['url.path'])), SpanName), '')) AS TopRoutes, toUInt64(0) AS LogCount, toUInt64(0) AS WarnLogCount, toUInt64(0) AS ErrorLogCount, min(toDateTime(Timestamp)) AS FirstSeen, max(toDateTime(Timestamp)) AS LastSeen FROM traces WHERE if(SpanAttributes['user.id'] != '', SpanAttributes['user.id'], SpanAttributes['enduser.id']) != '' GROUP BY OrgId, ServiceNamespace, UserId, Hour, ServiceName",
+	"INSERT INTO user_activity_hourly (OrgId, ServiceNamespace, UserId, Hour, ServiceName, SpanCount, ErrorSpanCount, RequestCount, FailedRequestCount, TraceIds, SessionIds, RequestDurationQuantiles, TopRoutes, LogCount, WarnLogCount, ErrorLogCount, FirstSeen, LastSeen) SELECT OrgId, ResourceAttributes['service.namespace'] AS ServiceNamespace, if(LogAttributes['user.id'] != '', LogAttributes['user.id'], LogAttributes['enduser.id']) AS UserId, toStartOfHour(TimestampTime) AS Hour, ServiceName, toUInt64(0) AS SpanCount, toUInt64(0) AS ErrorSpanCount, toUInt64(0) AS RequestCount, toUInt64(0) AS FailedRequestCount, uniqIfState(TraceId, toUInt8(0)) AS TraceIds, uniqIfState(LogAttributes['session.id'], LogAttributes['session.id'] != '') AS SessionIds, quantilesTDigestIfState(0.5, 0.95)(toUInt64(0), toUInt8(0)) AS RequestDurationQuantiles, approx_top_kState(10)('') AS TopRoutes, count() AS LogCount, countIf(SeverityNumber >= 13 AND SeverityNumber < 17) AS WarnLogCount, countIf(SeverityNumber >= 17) AS ErrorLogCount, min(TimestampTime) AS FirstSeen, max(TimestampTime) AS LastSeen FROM logs WHERE if(LogAttributes['user.id'] != '', LogAttributes['user.id'], LogAttributes['enduser.id']) != '' GROUP BY OrgId, ServiceNamespace, UserId, Hour, ServiceName",
+] as const
+
 /** The six HTTP measures v39 adds to both service-operations rollups. */
 const SERVICE_OPERATIONS_HTTP_COLUMNS = [
 	["HttpClassifiedSpanCount", "SimpleAggregateFunction(sum, UInt64)"],
@@ -105,6 +112,19 @@ const SERVICE_OPERATIONS_HTTP_COLUMNS = [
 	["Http5xxCount", "SimpleAggregateFunction(sum, UInt64)"],
 	["RequestBodyBytes", "SimpleAggregateFunction(sum, UInt64)"],
 	["RequestBodyCount", "SimpleAggregateFunction(sum, UInt64)"],
+] as const
+
+/** The SLO latency coverage total and eight ladder counters v51 adds to both service-overview rollups. */
+const SERVICE_OVERVIEW_SLO_LATENCY_COLUMNS = [
+	["EstimatedLadderSpanCount", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
+	["EstimatedUnder50Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
+	["EstimatedUnder100Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
+	["EstimatedUnder250Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
+	["EstimatedUnder500Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
+	["EstimatedUnder1000Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
+	["EstimatedUnder2500Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
+	["EstimatedUnder5000Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
+	["EstimatedUnder10000Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
 ] as const
 
 export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
@@ -1721,6 +1741,240 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				...ERROR_RETENTION,
 			},
 			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
+	{
+		id: "local-0044-to-0045-error-fingerprint-interleaved-values",
+		from: 44,
+		to: 45,
+		description: "Recreate the error_events MVs: single-case interleaved value tokens fold",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
+		plan: [
+			[
+				"rebuild-error-events-views",
+				"Drop and recreate the error-events views so a value token whose case never mixes (a request reference, a team id) no longer mints one issue per occurrence",
+			],
+		],
+		verifies: "Verify the v45 physical schema and retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows keep their FingerprintHash untouched; only occurrences whose message carries a single-case interleaved value hash differently after the migration.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
+	{
+		id: "local-0045-to-0046-error-custom-fingerprint",
+		from: 45,
+		to: 46,
+		description: "Recreate the error_events MVs: a maple.fingerprint attribute sets the grouping key",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
+		plan: [
+			[
+				"rebuild-error-events-views",
+				"Drop and recreate the error-events views so an error carrying maple.fingerprint groups by that key per org and service",
+			],
+		],
+		verifies: "Verify the v46 physical schema and retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows keep their FingerprintHash untouched; only occurrences carrying a maple.fingerprint attribute hash differently after the migration.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
+	{
+		id: "local-0046-to-0047-error-fingerprint-v4",
+		from: 46,
+		to: 47,
+		description:
+			"Recreate the error_events MVs for fingerprint v4 (in-app frames) and add the lineage table that re-keys issues",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
+		plan: [
+			[
+				"rebuild-error-events-views",
+				"Drop and recreate the error-events views so the hash keeps the application's own frames, salted fp4",
+			],
+			[
+				"create-error-fingerprint-lineage",
+				"Create error_fingerprint_lineage and its view, recording each re-keyed fingerprint's v3 hashes from now on",
+			],
+		],
+		verifies: "Verify the v47 physical schema and retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows keep their FingerprintHash untouched; new occurrences hash with v4, and the lineage table links each to its v3 hashes.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
+	{
+		// All new (IF NOT EXISTS); the rollup is backfilled from retained traces and logs like v39.
+		id: "local-0047-to-0048-user-activity-hourly",
+		from: 47,
+		to: 48,
+		description: "Create user_activity_hourly and its traces and logs views for the users pages",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [],
+		afterBootstrap: [backfill(...USER_ACTIVITY_HOURLY_BACKFILL)],
+		plan: [
+			[
+				"create-user-activity-hourly",
+				"Create user_activity_hourly and its two views via the v48 bootstrap and backfill it from retained traces and logs",
+			],
+		],
+		verifies: "Verify the v48 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "user_activity_hourly",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Rebuilt from every span and log with a user.id or enduser.id that traces and logs retain, then filled forward by its views.",
+				preservationInterval: "source retention horizon",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 90,
+			},
+		],
+	},
+	{
+		// A metadata-only column on both error tables; the views are recreated to fill it.
+		// Existing rows read UserId '' and are not backfilled: the targets keep no span attributes.
+		id: "local-0048-to-0049-error-events-user-id",
+		from: 48,
+		to: 49,
+		description: "Add UserId to error_events and error_events_by_time and recreate their views",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [
+			addColumns("error_events", [["UserId", "String DEFAULT ''"]]),
+			addColumns("error_events_by_time", [["UserId", "String DEFAULT ''"]]),
+			addIndex("error_events_by_time", "idx_user_id UserId TYPE bloom_filter GRANULARITY 4"),
+			dropTables("error_events_mv", "error_events_by_time_mv"),
+		],
+		plan: [
+			[
+				"add-error-events-user-id",
+				"Add UserId to error_events and error_events_by_time and recreate their views so new occurrences carry the end user",
+			],
+		],
+		verifies: "Verify the v49 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"UserId is added as a metadata-only default; existing rows keep every value and FingerprintHash, and read UserId as empty.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
+	{
+		// Metadata-only request channel counts; both views are recreated to write them. Existing
+		// hours read 0 classified requests and are not backfilled, so the channel shares skip them.
+		id: "local-0049-to-0050-user-activity-channels",
+		from: 49,
+		to: 50,
+		description:
+			"Add the classified, web and mobile request counts to user_activity_hourly and recreate its views",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [
+			addColumns("user_activity_hourly", [
+				["ClassifiedRequestCount", "SimpleAggregateFunction(sum, UInt64) DEFAULT 0"],
+				["WebRequestCount", "SimpleAggregateFunction(sum, UInt64) DEFAULT 0"],
+				["MobileRequestCount", "SimpleAggregateFunction(sum, UInt64) DEFAULT 0"],
+			]),
+			dropTables("user_activity_hourly_traces_mv", "user_activity_hourly_logs_mv"),
+		],
+		plan: [
+			[
+				"add-user-activity-channels",
+				"Add the request channel counts to user_activity_hourly and recreate its two views so new requests are classified",
+			],
+		],
+		verifies: "Verify the v50 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "user_activity_hourly",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"The channel counts are added as metadata-only defaults; existing rows keep every value and read them as 0.",
+			},
+		],
+	},
+	{
+		// TODO(v50 -> v51): what changes, and what is NOT backfilled. Fill beforeBootstrap
+		// with the ADD COLUMN / view drops an IF NOT EXISTS bootstrap cannot do, then the
+		// plan line and dispositions. The v51 physical verify fails an unfinished row.
+		// Metadata-only counters on both service-overview rollups; the views are recreated to fill
+		// them. Existing buckets read 0 and are not backfilled: the hourly tier outlives raw traces.
+		id: "local-0050-to-0051-service-overview-slo-latency-ladder",
+		from: 50,
+		to: 51,
+		description:
+			"Add the SLO latency ladder counters to service_overview_hourly and service_overview_minutely and recreate their views",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [
+			addColumns("service_overview_hourly", SERVICE_OVERVIEW_SLO_LATENCY_COLUMNS),
+			addColumns("service_overview_minutely", SERVICE_OVERVIEW_SLO_LATENCY_COLUMNS),
+			dropViews("service_overview_hourly_mv", "service_overview_minutely_mv"),
+		],
+		counts: {
+			group: "rollupRows",
+			measure: [
+				["hourly", "SELECT toString(count()) AS count FROM service_overview_hourly"],
+				["minutely", "SELECT toString(count()) AS count FROM service_overview_minutely"],
+			],
+			checks: [unchangedRowCount("hourly"), unchangedRowCount("minutely")],
+		},
+		plan: [
+			[
+				"add-service-overview-slo-latency-ladder",
+				"Add the SLO latency coverage total and eight ladder counters to both service-overview rollups and recreate their views so new buckets count spans under each threshold",
+			],
+		],
+		verifies: "Verify the v51 physical schema, retained raw telemetry counts, and the rollup row counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "service_overview_hourly",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Nine counter columns are added as metadata-only defaults; no part is rewritten, the row count is verified unchanged, and existing rows read the ladder and its EstimatedLadderSpanCount coverage as zero.",
+			},
+			{
+				name: "service_overview_minutely",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Nine counter columns are added as metadata-only defaults; no part is rewritten, the row count is verified unchanged, and existing rows read the ladder and its EstimatedLadderSpanCount coverage as zero.",
+			},
 		],
 	},
 	// local-schema:bump appends the next step above this line.

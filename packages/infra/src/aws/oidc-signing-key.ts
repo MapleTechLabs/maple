@@ -11,12 +11,11 @@ import type * as Redacted from "effect/Redacted"
 
 /** The env api and alerting read the key from (`packages/backend/src/platform/Env.ts`). */
 export interface MapleAwsOidcEnv {
-	readonly MAPLE_AWS_OIDC_SIGNING_KEY: Output.Output<Redacted.Redacted<string>>
+	readonly MAPLE_AWS_OIDC_SIGNING_KEY: Output.Output<Redacted.Redacted>
 }
 
-export const createMapleAwsOidcKey = () =>
-	Effect.gen(function* () {
-		const key = yield* Alchemy.KeyPair("aws-oidc-signing-key", { algorithm: "rsa", modulusLength: 2048 })
-		const env: MapleAwsOidcEnv = { MAPLE_AWS_OIDC_SIGNING_KEY: key.privateKey }
-		return env
-	})
+export const createMapleAwsOidcKey = Effect.gen(function* () {
+	const key = yield* Alchemy.KeyPair("aws-oidc-signing-key", { algorithm: "rsa", modulusLength: 2048 })
+	const env: MapleAwsOidcEnv = { MAPLE_AWS_OIDC_SIGNING_KEY: key.privateKey }
+	return env
+})

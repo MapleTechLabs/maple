@@ -4,7 +4,7 @@ import { buildSessionFindings } from "./session-findings"
 import { buildSessionSummary } from "./session-summary"
 import { buildSessionTurns } from "./session-turns"
 import { agentSpan, llmSpan, makeSpan, toolSpan } from "./span-test-support"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND
@@ -88,9 +88,9 @@ describe("buildSessionFindings", () => {
 			spanId: "l-ctx",
 		})
 		// The terminal failure leads the list; the rate limit is its own finding.
-		expect(failed.findings[0]!.label).toBe("context_length_exceeded")
-		expect(failed.findings[0]!.severity).toBe("failure")
-		expect(failed.findings[0]!.turnText).toBe("Turn 2 (final)")
+		expect(Arr.getUnsafe(failed.findings, 0).label).toBe("context_length_exceeded")
+		expect(Arr.getUnsafe(failed.findings, 0).severity).toBe("failure")
+		expect(Arr.getUnsafe(failed.findings, 0).turnText).toBe("Turn 2 (final)")
 		expect(Arr.some(failed.findings, (finding) => finding.label === "rate_limit")).toBe(true)
 	})
 
@@ -112,7 +112,9 @@ describe("buildSessionFindings", () => {
 			]),
 		)
 
-		expect(failed.findings[0]!.detail).toBe("prompt grew 1K → 190K tokens across the session")
+		expect(Arr.getUnsafe(failed.findings, 0).detail).toBe(
+			"prompt grew 1K → 190K tokens across the session",
+		)
 	})
 
 	it("groups a tool's failures into one finding, counted, with the error text", () => {
@@ -151,7 +153,9 @@ describe("buildSessionFindings", () => {
 		// failures on record as something worth a look, not a fix: the agent
 		// carried on past them.
 		expect(result.verdict.status).toBe("attention")
-		const finding = result.findings.find((entry) => entry.label === "error · run_tests")!
+		const finding = Option.getOrThrow(
+			Arr.findFirst(result.findings, (entry) => entry.label === "error · run_tests"),
+		)
 		expect(finding.severity).toBe("anomaly")
 		expect(finding.count).toBe(2)
 		expect(finding.detail).toBe("exit 1")
@@ -187,7 +191,9 @@ describe("buildSessionFindings", () => {
 
 		// "unknown table" is the model naming a table that does not exist: the
 		// tool refused its arguments, and the label says so.
-		const finding = result.findings.find((entry) => entry.label === "tool_arguments · query_data")!
+		const finding = Option.getOrThrow(
+			Arr.findFirst(result.findings, (entry) => entry.label === "tool_arguments · query_data"),
+		)
 		expect(finding.detail).toBe("Query failed: unknown table trace_spans")
 		expect(finding.severity).toBe("anomaly")
 	})
@@ -215,7 +221,9 @@ describe("buildSessionFindings", () => {
 
 		// A parameter schema error is the model's arguments failing the tool's
 		// schema: the row names the parameter rather than quoting the JSON path.
-		const finding = result.findings.find((entry) => entry.label === "tool_arguments · query_data")!
+		const finding = Option.getOrThrow(
+			Arr.findFirst(result.findings, (entry) => entry.label === "tool_arguments · query_data"),
+		)
 		expect(finding.detail).toBe(
 			"invalid arguments: `apdex_threshold_ms`: expected a number, or omit the parameter (an empty string is not a number)",
 		)
@@ -241,7 +249,9 @@ describe("buildSessionFindings", () => {
 			]),
 		)
 
-		const finding = result.findings.find((entry) => entry.label === "tool_error · query_data")!
+		const finding = Option.getOrThrow(
+			Arr.findFirst(result.findings, (entry) => entry.label === "tool_error · query_data"),
+		)
 		expect(finding.detail).toBe("shard 3 is locked")
 	})
 
@@ -267,7 +277,9 @@ describe("buildSessionFindings", () => {
 		)
 
 		expect(result.verdict.status).toBe("attention")
-		const finding = result.findings.find((entry) => entry.label === "rate_limit")!
+		const finding = Option.getOrThrow(
+			Arr.findFirst(result.findings, (entry) => entry.label === "rate_limit"),
+		)
 		expect(finding.severity).toBe("anomaly")
 	})
 
@@ -292,7 +304,9 @@ describe("buildSessionFindings", () => {
 			]),
 		)
 
-		const finding = result.findings.find((entry) => entry.label === "stop length")!
+		const finding = Option.getOrThrow(
+			Arr.findFirst(result.findings, (entry) => entry.label === "stop length"),
+		)
 		expect(finding.count).toBe(1)
 		expect(finding.spanId).toBe("l-cut")
 		expect(finding.severity).toBe("anomaly")
@@ -318,7 +332,9 @@ describe("buildSessionFindings", () => {
 			]),
 		)
 
-		const stall = result.findings.find((entry) => Str.startsWith("idle")(entry.label))!
+		const stall = Option.getOrThrow(
+			Arr.findFirst(result.findings, (entry) => Str.startsWith("idle")(entry.label)),
+		)
 		expect(stall.label).toBe("idle 58s")
 		expect(stall.turnText).toBe("Turn 2")
 		// The five-minute pause between the turns is the user thinking: no finding.
@@ -381,10 +397,10 @@ describe("buildSessionFindings", () => {
 		expect(Arr.map(result.findings, (finding) => [finding.label, finding.count])).toEqual([
 			["tool_unavailable · sandbox_grep", 1],
 		])
-		expect(result.findings[0]!.detail).toBe(
+		expect(Arr.getUnsafe(result.findings, 0).detail).toBe(
 			"GitHub App is not configured (set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY)",
 		)
-		expect(result.findings[0]!.severity).toBe("failure")
+		expect(Arr.getUnsafe(result.findings, 0).severity).toBe("failure")
 	})
 
 	it("names the tool a parameter error is about, not the sibling stamped on the span", () => {
@@ -430,7 +446,9 @@ describe("buildSessionFindings", () => {
 			]),
 		)
 
-		const finding = result.findings.find((entry) => entry.label === "invalid_output")!
+		const finding = Option.getOrThrow(
+			Arr.findFirst(result.findings, (entry) => entry.label === "invalid_output"),
+		)
 		expect(finding.detail).toBe("output rejected by schema: missing key `suggestedActions`")
 		expect(finding.severity).toBe("failure")
 	})
@@ -482,10 +500,10 @@ describe("buildSessionFindings", () => {
 		expect(
 			Arr.map(result.findings, (finding) => [finding.label, finding.count, finding.severity]),
 		).toEqual([["provider_retry", 3, "anomaly"]])
-		expect(result.findings[0]!.detail).toBe(
+		expect(Arr.getUnsafe(result.findings, 0).detail).toBe(
 			"429 ×2 · 502 ×1 — Crusoe, Fireworks, Friendli · all recovered",
 		)
-		expect(result.findings[0]!.spanId).toBe("att-0")
+		expect(Arr.getUnsafe(result.findings, 0).spanId).toBe("att-0")
 	})
 
 	it("keeps the generation that ran out of providers as its own provider_error", () => {

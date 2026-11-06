@@ -149,7 +149,10 @@ export const toLogRowView = (
 	const lines = Str.split("\n")(body)
 	const severity = Str.toUpperCase(severityLabel(log.severityText, log.severityNumber))
 	const compact = formatWith(time.compact, log.timestamp)
-	const dot = compact.lastIndexOf(".")
+	const clock = Option.match(Str.lastIndexOf(".")(compact), {
+		onNone: () => ({ main: compact, fraction: "" }),
+		onSome: (dot) => ({ main: Str.slice(0, dot)(compact), fraction: Str.slice(dot)(compact) }),
+	})
 	const chips = Arr.map(
 		Arr.filter(
 			pickImportantAttributes(log, Number.POSITIVE_INFINITY),
@@ -169,8 +172,8 @@ export const toLogRowView = (
 		},
 	)
 	return {
-		timeMain: dot === -1 ? compact : Str.slice(0, dot)(compact),
-		timeFraction: dot === -1 ? "" : Str.slice(dot)(compact),
+		timeMain: clock.main,
+		timeFraction: clock.fraction,
 		timeTitle: formatWith(time.full, log.timestamp),
 		severity,
 		severityColor: getSeverityColor(severity),

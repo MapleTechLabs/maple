@@ -83,10 +83,10 @@ export interface SchemaApplyWorkflowResult {
 /** The one secret the run needs, resolved by the `ConfigProvider` the Workflow class builds on the env. */
 const ENCRYPTION_KEY_CONFIG = "MAPLE_INGEST_KEY_ENCRYPTION_KEY"
 
-interface LoadOptionalFeatureStateOptions<R> {
-	readonly ensureBookkeeping: Effect.Effect<void, unknown, R>
-	readonly readServerVersion: Effect.Effect<string, unknown, R>
-	readonly readAppliedFeatureRevisions: Effect.Effect<ReadonlyMap<string, number>, unknown, R>
+interface LoadOptionalFeatureStateOptions<E, R> {
+	readonly ensureBookkeeping: Effect.Effect<void, E, R>
+	readonly readServerVersion: Effect.Effect<string, E, R>
+	readonly readAppliedFeatureRevisions: Effect.Effect<ReadonlyMap<string, number>, E, R>
 }
 
 export type OptionalFeatureState =
@@ -111,8 +111,8 @@ const causeMessage = (cause: Cause.Cause<unknown>): string => {
  * is ready for ingest. Keeping this boundary explicit also makes the workflow
  * policy testable without a live durable-workflow runtime.
  */
-export const loadOptionalFeatureState = <R>(
-	options: LoadOptionalFeatureStateOptions<R>,
+export const loadOptionalFeatureState = <E, R>(
+	options: LoadOptionalFeatureStateOptions<E, R>,
 ): Effect.Effect<OptionalFeatureState, never, R> =>
 	Effect.gen(function* () {
 		yield* options.ensureBookkeeping
@@ -180,7 +180,7 @@ const execClickHouse = (
 		if (response.status < 200 || response.status >= 300) {
 			return yield* new ClickHouseExecError({
 				status: response.status,
-				message: `ClickHouse ${response.status}: ${Str.split("\n")(text)[0]?.slice(0, 500) ?? ""}`,
+				message: `ClickHouse ${response.status}: ${Str.slice(0, 500)(Str.split("\n")(text)[0])}`,
 			})
 		}
 		return text
@@ -342,7 +342,7 @@ const loadConfig = (
 			),
 		)
 		const row = rows[0]
-		if (!row) {
+		if (row === undefined) {
 			return yield* new SchemaApplyConfigError({
 				message: `No ClickHouse settings configured for org ${orgId}`,
 			})
@@ -476,7 +476,8 @@ const reconcileSchemaSnapshot = (
 				return [qualifyStatementForDatabase(table.createStatement, cfg.database)]
 			}
 			if (entry.status !== "drifted" || entry.kind !== "table") return []
-			return Arr.filter(entry.columnDrifts, (drift) => drift.kind === "missing").flatMap((drift) => {
+			const missing = Arr.filter(entry.columnDrifts, (drift) => drift.kind === "missing")
+			return Arr.flatMap(missing, (drift) => {
 				const colDef = extractColumnDefinition(table.createStatement, drift.column)
 				return colDef
 					? [
@@ -509,7 +510,7 @@ export const runClickHouseSchemaApply = (
 	Database | Cloudflare.WorkflowStep | HttpClient.HttpClient
 > =>
 	Effect.gen(function* () {
-		const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId).pipe(
+		const orgId = yield* Schema.decodeEffect(OrgId)(payload.orgId).pipe(
 			Effect.mapError(
 				(error) => new SchemaApplyPayloadError({ message: error.message, rawOrgId: payload.orgId }),
 			),

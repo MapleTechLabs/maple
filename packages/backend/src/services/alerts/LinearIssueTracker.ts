@@ -114,7 +114,7 @@ export class LinearIssueTracker extends Context.Service<LinearIssueTracker, Line
 							destinationType: "linear",
 						})
 					}
-					return yield* Schema.decodeUnknownEffect(schema)(result.data).pipe(
+					return yield* Schema.decodeEffect(schema)(result.data).pipe(
 						Effect.mapError(
 							() =>
 								new AlertDeliveryError({

@@ -8,33 +8,52 @@ import {
 } from "@maple/web-data/collections/alerts"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
+import { lastBy } from "../../kit/last-by"
 import type { RuleBucket } from "./message"
 import type { Model } from "./model"
 
+type OverviewKey = readonly [
+	Model["rules"],
+	Model["states"],
+	Model["incidents"],
+	Model["deliveries"]["data"],
+	Model["nowMs"],
+]
+
+const overviewFor = lastBy(
+	([rules, states, incidents, deliveries, nowMs]: OverviewKey): Option.Option<AlertsOverviewReady> => {
+		if (rules === null || incidents === null || nowMs === null) return Option.none()
+		const stateRows = states ?? []
+		const statesByRule = buildRuleStatesByRuleId(stateRows)
+		return Option.some(
+			deriveOverview({
+				rules: Arr.map(rules, (row) => rowToAlertRuleDocument(row, statesByRule)),
+				incidents: Arr.map(incidents, rowToAlertIncidentDocument),
+				states: stateRows,
+				deliveryEvents: Option.getOrElse(AsyncData.getData(deliveries), () => []),
+				now: nowMs,
+			}),
+		)
+	},
+)
+
 /**
  * `AlertsOverviewModel.buildOverview`: rules and incidents gate the hub; evaluation states and
- * deliveries degrade to empty while loading or failed.
+ * deliveries degrade to empty while loading or failed. Recomputed only when one of them changes.
  */
-export const overviewOf = (model: Model): Option.Option<AlertsOverviewReady> => {
-	if (model.rules === null || model.incidents === null || model.nowMs === null) return Option.none()
-	const stateRows = model.states ?? []
-	const statesByRule = buildRuleStatesByRuleId(stateRows)
-	return Option.some(
-		deriveOverview({
-			rules: Arr.map(model.rules, (row) => rowToAlertRuleDocument(row, statesByRule)),
-			incidents: Arr.map(model.incidents, rowToAlertIncidentDocument),
-			states: stateRows,
-			deliveryEvents: Option.getOrElse(AsyncData.getData(model.deliveries.data), () => []),
-			now: model.nowMs,
-		}),
-	)
-}
+export const overviewOf = (model: Model): Option.Option<AlertsOverviewReady> =>
+	overviewFor([model.rules, model.states, model.incidents, model.deliveries.data, model.nowMs])
+
+const destinationsFor = lastBy(
+	([rows]: readonly [Model["destinations"]]): ReadonlyArray<AlertDestinationDocument> =>
+		rowsToAlertDestinationDocuments(rows ?? []),
+)
 
 /** `useAlertDestinationsList()`, `orElse(() => [])`. */
 export const destinationsOf = (model: Model): ReadonlyArray<AlertDestinationDocument> =>
-	rowsToAlertDestinationDocuments(model.destinations ?? [])
+	destinationsFor([model.destinations])
 
-export type AlertsTab = "inbox" | "rules" | "uptime" | "routing"
+export type AlertsTab = "inbox" | "rules" | "uptime" | "slos" | "routing"
 
 /** Legacy `tab` values map onto the current tabs so old links keep resolving. */
 export const resolveTab = (tab: string | undefined): AlertsTab => {
@@ -43,6 +62,8 @@ export const resolveTab = (tab: string | undefined): AlertsTab => {
 			return "rules"
 		case "uptime":
 			return "uptime"
+		case "slos":
+			return "slos"
 		case "routing":
 		case "settings":
 			return "routing"

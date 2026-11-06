@@ -50,11 +50,11 @@ const configRow = (h: H, label: string, children: Children): Html =>
 		],
 	)
 
-const notices = (h: H, source: V2Source, nowMs: number): ReadonlyArray<Html> => [
+const notices = (h: H, source: V2Source, timeZone: string, nowMs: number): ReadonlyArray<Html> => [
 	...(source.status === "paused"
 		? [
 				alert(h, { variant: "warn" }, [
-					alertTitle(h, [pausedLabel(source)]),
+					alertTitle(h, [pausedLabel(source, timeZone)]),
 					alertDescription(
 						h,
 						[
@@ -263,7 +263,7 @@ const collectionSummary = (h: H, model: Model, source: V2Source, nowMs: number):
 
 export const overviewTab = (h: H, model: Model, source: V2Source, timeZone: string, nowMs: number): Html => {
 	return vstack(h, { gap: "4" }, [
-		...notices(h, source, nowMs),
+		...notices(h, source, timeZone, nowMs),
 		h.div(
 			[h.Class("grid gap-3 sm:grid-cols-3")],
 			[

@@ -12,6 +12,7 @@ import { icon } from "@maple/views/ui/icon"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { panel } from "@maple/views/ui/panel"
 import { spinner } from "@maple/views/ui/spinner"
+import { compliance } from "../kit/compliance-line"
 import { Message, type Model } from "./pricing-cards"
 import {
 	ENTERPRISE_DATA_FEATURES,
@@ -337,6 +338,7 @@ const plansGrid = (h: H, plans: ReadonlyArray<CatalogPlan>, model: Model): Html 
 				Arr.filter(plans, (plan) => !plan.addOn && !plan.autoEnable),
 				model.loadingPlanId,
 			),
+			compliance(h),
 		],
 	)
 

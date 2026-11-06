@@ -4,9 +4,18 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as AddToDashboard from "./add-to-dashboard"
 
 const draft = null
-const context = { orgId: "org_acme", draft }
+const timeRange = { type: "relative" as const, value: "7d" }
+const context = { orgId: "org_acme", draft, declaredUnit: "", timeRange }
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
+
+const cpu = {
+	id: "q1",
+	name: "A",
+	dataSource: "metrics" as const,
+	aggregation: "avg",
+	metricName: "cpu",
+}
 
 describe("add to dashboard", () => {
 	test("a blank name creates nothing", () => {
@@ -34,13 +43,17 @@ describe("add to dashboard", () => {
 			AddToDashboard.Message.CompletedCreateDashboard({ result: Result.succeed("dash_1") }),
 			context,
 		)
-		expect(added.outMessage).toEqual(AddToDashboard.OutMessage.OpenedDashboard({ dashboardId: "dash_1" }))
+		expect(added.outMessage).toEqual(
+			AddToDashboard.OutMessage.OpenedDashboard({ dashboardId: "dash_1", isBehind: false }),
+		)
 		expect(added.model.isCreating).toBe(false)
 	})
 
 	test("a second pick while the first add is in flight adds and navigates once", () => {
 		const withDraft = {
 			orgId: "org_acme",
+			declaredUnit: "",
+			timeRange,
 			draft: {
 				id: "q1",
 				name: "A",
@@ -55,11 +68,11 @@ describe("add to dashboard", () => {
 		expect(names(AddToDashboard.update(first.model, pick("dash_1"), withDraft).commands)).toEqual([])
 		expect(names(AddToDashboard.update(first.model, pick("dash_2"), withDraft).commands)).toEqual([])
 		const done = (dashboardId: string) =>
-			AddToDashboard.Message.CompletedAddWidget({ dashboardId, result: Result.void })
+			AddToDashboard.Message.CompletedAddWidget({ dashboardId, result: Result.succeed("Synced") })
 		expect(AddToDashboard.update(first.model, done("dash_2"), withDraft).outMessage).toBeUndefined()
 		const landed = AddToDashboard.update(first.model, done("dash_1"), withDraft)
 		expect(landed.outMessage).toEqual(
-			AddToDashboard.OutMessage.OpenedDashboard({ dashboardId: "dash_1" }),
+			AddToDashboard.OutMessage.OpenedDashboard({ dashboardId: "dash_1", isBehind: false }),
 		)
 		expect(AddToDashboard.update(landed.model, done("dash_1"), withDraft).outMessage).toBeUndefined()
 	})
@@ -74,5 +87,80 @@ describe("add to dashboard", () => {
 		)
 		expect(failed.outMessage).toBeUndefined()
 		expect(failed.model.error?.title).toBe("Couldn't create dashboard")
+	})
+
+	test("a new dashboard opens on the explorer's window, an absolute one included", () => {
+		expect(AddToDashboard.explorerTimeRangeOf({ timePreset: "7d" }, "24h")).toEqual(timeRange)
+		expect(AddToDashboard.explorerTimeRangeOf({}, "24h")).toEqual({ type: "relative", value: "24h" })
+		expect(AddToDashboard.explorerTimeRangeOf({ timePreset: "bogus" }, "24h")).toEqual({
+			type: "relative",
+			value: "24h",
+		})
+		expect(
+			AddToDashboard.explorerTimeRangeOf(
+				{ startTime: "2026-10-01T00:00:00.000Z", endTime: "2026-10-02T00:00:00.000Z" },
+				"24h",
+			).type,
+		).toBe("absolute")
+		const created = AddToDashboard.update(
+			{ ...AddToDashboard.init(), newName: "Latency" },
+			AddToDashboard.Message.ClickedCreate(),
+			{ ...context, draft: cpu },
+		)
+		expect(created.commands?.[0]?.args).toMatchObject({ timeRange })
+	})
+
+	test("the widget carries the unit inferred from the metric", () => {
+		const latency = { ...cpu, metricName: "http.server.duration" }
+		expect(AddToDashboard.widgetOf(latency, "", "q").display).toMatchObject({ unit: "duration_ms" })
+	})
+
+	test("the widget takes the metric's declared unit when the aggregation keeps it", () => {
+		const lag = { ...cpu, metricName: "process.runtime.nodejs.eventloop.lag" }
+		expect(AddToDashboard.widgetOf(lag, "ms", "q").display).toMatchObject({ unit: "duration_ms" })
+		expect(AddToDashboard.widgetOf({ ...lag, aggregation: "max" }, "By", "q").display).toMatchObject({
+			unit: "bytes",
+		})
+	})
+
+	test("a count of a declared-unit metric falls back to the inferred unit", () => {
+		const lag = { ...cpu, metricName: "process.runtime.nodejs.eventloop.lag", aggregation: "count" }
+		expect(AddToDashboard.widgetOf(lag, "ms", "q").display).toMatchObject({ unit: "number" })
+	})
+
+	test("the declared unit reaches the add command", () => {
+		const picked = AddToDashboard.update(
+			AddToDashboard.init(),
+			AddToDashboard.Message.ClickedDashboard({ dashboardId: "dash_1" }),
+			{ ...context, draft: cpu, declaredUnit: "ms" },
+		)
+		expect(picked.commands?.[0]?.args).toMatchObject({ declaredUnit: "ms" })
+	})
+
+	test("picking a dashboard after a failure clears the old error", () => {
+		const failed = {
+			...AddToDashboard.init(),
+			error: { title: "Couldn't add widget", failure: toLoadFailure(new Error("boom")) },
+		}
+		const picked = AddToDashboard.update(
+			failed,
+			AddToDashboard.Message.ClickedDashboard({ dashboardId: "dash_1" }),
+			{ ...context, draft: cpu },
+		)
+		expect(picked.model.error).toBeNull()
+	})
+
+	test("a failed add stays in the dialog with its error instead of navigating", () => {
+		const adding = { ...AddToDashboard.init(), addingTo: "dash_1" }
+		const failed = AddToDashboard.update(
+			adding,
+			AddToDashboard.Message.CompletedAddWidget({
+				dashboardId: "dash_1",
+				result: Result.fail(toLoadFailure(new Error("write rejected"))),
+			}),
+			context,
+		)
+		expect(failed.outMessage).toBeUndefined()
+		expect(failed.model.error?.title).toBe("Couldn't add widget")
 	})
 })

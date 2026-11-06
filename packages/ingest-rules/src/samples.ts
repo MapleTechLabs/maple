@@ -29,7 +29,8 @@ const withService = (resource: Readonly<Record<string, string>>, serviceName: st
 	"service.name" in resource || serviceName === "" ? resource : { ...resource, "service.name": serviceName }
 
 /** `Server`, `SPAN_KIND_SERVER` and `server` all mean the same kind. */
-const spanKindName = (raw: string | undefined) => raw?.toLowerCase().replace(/^span_kind_/, "")
+const spanKindName = (raw: string | undefined) =>
+	raw === undefined ? undefined : Str.replace(/^span_kind_/, "")(Str.toLowerCase(raw))
 
 export const logSampleToRecord = (row: LogSample): RuleRecord => ({
 	signal: "logs",

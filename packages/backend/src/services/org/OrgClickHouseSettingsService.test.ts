@@ -1,5 +1,5 @@
 import { OrgClickHouseSettingsEncryptionError } from "@maple/domain/http"
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, describe, expect, it, layer } from "@effect/vitest"
 import {
 	OrgClickHouseSettingsPersistenceError,
@@ -207,7 +207,7 @@ describe("isRetryableUpstream", () => {
 layer(FetchHttpClient.layer, { excludeTestServices: true })("execClickHouse", (it) => {
 	it.effect("uses manual redirects and rejects every 3xx without following it", () =>
 		Effect.gen(function* () {
-			let redirectMode: RequestRedirect | undefined
+			let redirectMode: RequestInit["redirect"]
 			let calls = 0
 			const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
 				calls += 1
@@ -1017,6 +1017,23 @@ describe("resolveRuntimeConfig caching", () => {
 				.collectorConfig(asOrgId(orgId), [asRole("org:admin")])
 				.pipe(Effect.exit)
 			expect(getError(exit)).toBeInstanceOf(OrgClickHouseSettingsValidationError)
+		}).pipe(Effect.provide(buildLayer(testDb)))
+	})
+
+	it.effect("escapes every quote and backslash in the collector config's quoted values", () => {
+		const testDb = createTestDb(cacheTrackedDbs)
+		const orgId = "org_ch_collector_escaping"
+		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
+			yield* Effect.promise(() => seedRow(testDb, orgId, "https://clickhouse.example.test"))
+			yield* Effect.promise(() =>
+				executeSql(testDb, "UPDATE org_clickhouse_settings SET ch_user = $2 WHERE org_id = $1", [
+					orgId,
+					'we"ird\\user"\\',
+				]),
+			)
+			const config = yield* service.collectorConfig(asOrgId(orgId), [asRole("org:admin")])
+			expect(config.yaml).toContain('    username: "we\\"ird\\\\user\\"\\\\"')
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
 

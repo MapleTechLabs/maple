@@ -37,7 +37,7 @@ import {
 } from "../shared/uptime-derive"
 import { recentChecksStrip, uptimeStatusChip, uptimeStatusSquare } from "../shared/uptime-view"
 import { Message } from "./message"
-import type { Model, UptimeKindFilter } from "./model"
+import { canManage, type Model, type UptimeKindFilter } from "./model"
 import { monitorMenuId } from "./update"
 import {
 	groupMonitors,
@@ -71,7 +71,7 @@ const isKindFilter = (value: string): value is UptimeKindFilter =>
 	Arr.some(KIND_FILTERS, (kind) => kind.value === value)
 
 /** The empty org: what uptime checks are and the first one to add. */
-const uptimeEmptyState = (h: H, serviceName: string | undefined, isAdmin: boolean): Html =>
+const uptimeEmptyState = (h: H, serviceName: string | undefined, canEdit: boolean): Html =>
 	empty(
 		h,
 		[
@@ -82,7 +82,7 @@ const uptimeEmptyState = (h: H, serviceName: string | undefined, isAdmin: boolea
 					"Maple checks a URL, port or DNS record from outside on a schedule, or waits for your cron job to ping it. Each check is a trace, and a failing one opens an incident.",
 				]),
 			]),
-			...(isAdmin
+			...(canEdit
 				? [
 						emptyActions(h, [
 							linkButton(h, { size: "sm", href: newMonitorHref({ serviceName }) }, [
@@ -285,7 +285,7 @@ const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): 
 						isPaused ? "–" : formatShare(uptimeShare(recent)),
 					]),
 					...latencyCells(h, monitor),
-					...(model.isAdmin ? [rowMenu(h, model, monitor)] : [h.span([], [])]),
+					...(canManage(model) ? [rowMenu(h, model, monitor)] : [h.span([], [])]),
 				],
 			),
 		],
@@ -361,7 +361,7 @@ const loaded = (
 	nowMs: number,
 	pinnedNamespace: string | null,
 ): Html => {
-	if (all.length === 0) return uptimeEmptyState(h, model.search.serviceName, model.isAdmin)
+	if (all.length === 0) return uptimeEmptyState(h, model.search.serviceName, canManage(model))
 	const namespaces = AsyncData.getData(model.serviceNamespaces.data)
 	const monitors = scoped(all, namespaces, pinnedNamespace)
 	if (monitors.length === 0)
@@ -420,12 +420,18 @@ const loadingState = (h: H): Html =>
 
 export const deleteMonitorDialog = (h: H, model: Model): Html => {
 	const monitors = AsyncData.getOrElse(model.monitors.data, () => [])
-	const target = monitors.find((monitor) => monitor.id === model.confirmDeleteMonitorId)
+	const targetName = Option.getOrElse(
+		Option.flatMapNullishOr(
+			Arr.findFirst(monitors, (monitor) => monitor.id === model.confirmDeleteMonitorId),
+			(monitor) => monitor.name,
+		),
+		() => "monitor",
+	)
 	return confirmDialog(h, {
 		slotId: "alerts-delete-monitor",
 		model: model.deleteMonitorDialog,
 		toParentMessage: (message) => Message.GotDeleteMonitorDialogMessage({ message }),
-		title: `Delete ${target?.name ?? "monitor"}?`,
+		title: `Delete ${targetName}?`,
 		description:
 			"Maple stops checking it and its incidents close. Recorded check traces stay. This cannot be undone.",
 		confirmLabel: "Delete monitor",

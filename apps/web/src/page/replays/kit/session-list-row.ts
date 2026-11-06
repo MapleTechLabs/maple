@@ -29,6 +29,7 @@ import {
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 // A session list row: its org button, tags and badges.
 
@@ -269,7 +270,7 @@ export const sessionListRow = <M>(
 						? [longBadge(h, p95)]
 						: []),
 					typography(h, { size: "xs", tone: "muted", className: "whitespace-nowrap" }, [
-						countLabel(session.pageViews || 1, "page"),
+						countLabel(nonZeroOr(session.pageViews, 1), "page"),
 						" · ",
 						countLabel(session.clickCount, "click"),
 					]),

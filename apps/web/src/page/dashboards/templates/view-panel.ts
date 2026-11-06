@@ -20,7 +20,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { dataStateOf } from "../kit/data-state"
 import { widgetTile } from "../kit/tiles"
 import { MeasurePreview } from "./command"
-import { previewVariableValues } from "./derive"
+import { missingRequiredOf, previewVariableValues } from "./derive"
 import {
 	CATEGORY_LABELS,
 	compositionLabel,
@@ -32,10 +32,10 @@ import {
 } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { MAX_PREVIEW_WIDGETS } from "./update"
+import { MAX_PREVIEW_WIDGETS, selectedOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr } from "effect"
 
 // `TemplateDetailPanel` and `TemplateLivePreview`: a template's details and live preview.
 
@@ -102,7 +102,16 @@ const previewSkeleton = (h: H): Html => {
 /** `TemplateLivePreview`: the template's widgets drawn over the org's own data. */
 const livePreview = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.match(model.preview.data, {
-		onIdle: () => previewSkeleton(h),
+		// A required parameter still empty holds the preview back: say what it waits on.
+		onIdle: () => {
+			const selected = selectedOf(model)
+			const missing = selected === null ? [] : missingRequiredOf(selected, model.parameters)
+			return missing.length === 0
+				? previewSkeleton(h)
+				: typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						`Fill in ${Arr.join(missing, ", ")} to preview this template.`,
+					])
+		},
 		onLoading: () => previewSkeleton(h),
 		onFailure: () =>
 			h.div(
@@ -371,13 +380,7 @@ const parameterFields = (h: H, model: Model, template: V2DashboardTemplate): Rea
 
 /** The sticky create row: Create, or Set up + Create it anyway for a gated template. */
 const createRow = (h: H, model: Model, template: V2DashboardTemplate, isReady: boolean): Html => {
-	const missing = Arr.map(
-		Arr.filter(
-			template.parameters,
-			(parameter) => parameter.required && Str.trim(model.parameters[parameter.key] ?? "") === "",
-		),
-		(parameter) => parameter.label,
-	)
+	const missing = missingRequiredOf(template, model.parameters)
 	const create = Message.ClickedCreate({ templateId: template.id })
 	return h.div(
 		[h.Class("sticky bottom-0 z-10 -mx-8 -mb-8 bg-[var(--panel-surface)] px-8 pt-3 pb-6")],

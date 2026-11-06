@@ -2,11 +2,12 @@ import { formatWarehouseDateTime } from "@maple/query-engine"
 import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
 import { cn } from "@maple/ui/lib/utils"
 import { errorRate, formatDurationNs } from "@maple/web-data/lib/tool-analytics"
-import { Option, Record, Array as Arr, String as Str } from "effect"
+import { Option, Record, Array as Arr, String as Str, Order } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
 import type { ThemeColors } from "@maple/views/charts/theme-colors"
 import { chartEmpty } from "@maple/views/ui/chart-state"
+import { columnClass } from "@maple/views/ui/column"
 import { badge } from "@maple/views/ui/display"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon, type IconName } from "@maple/views/ui/icon"
@@ -89,7 +90,10 @@ export const scopeText = (subject: string, filters: McpFilters): string => {
 /** One row per bucket: the calls, failures, failure rate and percentiles of a merged series. */
 export const seriesRows = (points: ReadonlyArray<ToolSeriesPoint>): PlotRows =>
 	Arr.map(
-		points.toSorted((a, b) => a.bucket - b.bucket),
+		Arr.sort(
+			points,
+			Order.mapInput(Order.Number, (point: ToolSeriesPoint) => point.bucket),
+		),
 		(point) => ({
 			bucket: formatWarehouseDateTime(point.bucket),
 			calls: point.calls,
@@ -110,15 +114,22 @@ const clientTokens = (names: ReadonlyArray<string>): ReadonlyMap<string, string>
 	return new Map(
 		Arr.map(names, (name) => {
 			const hash = Arr.reduce(
-				Array.from({ length: name.length }, (_, index) => name.charCodeAt(index)),
+				Array.from({ length: name.length }, (_, index) =>
+					Option.getOrElse(Str.charCodeAt(index)(name), () => 0),
+				),
 				7,
 				(sum, code) => (sum * 31 + code) % 9973,
 			)
-			const slot =
-				Array.from(
-					{ length: CLIENT_TOKENS.length },
-					(_, step) => (hash + step) % CLIENT_TOKENS.length,
-				).find((index) => !taken.has(index)) ?? 0
+			const slot = Option.getOrElse(
+				Arr.findFirst(
+					Array.from(
+						{ length: CLIENT_TOKENS.length },
+						(_, step) => (hash + step) % CLIENT_TOKENS.length,
+					),
+					(index) => !taken.has(index),
+				),
+				() => 0,
+			)
 			taken.add(slot)
 			return [name, CLIENT_TOKENS[slot] ?? "--chart-5"]
 		}),
@@ -133,13 +144,16 @@ export const clientPlot = (
 		sum.set(point.seriesKey, (sum.get(point.seriesKey) ?? 0) + point.calls),
 	)
 	const ranked = Arr.map(
-		Arr.filter([...totals], ([, calls]) => calls > 0).toSorted((a, b) => b[1] - a[1]),
+		Arr.sort(
+			Arr.filter([...totals], ([, calls]) => calls > 0),
+			Order.flip(Order.mapInput(Order.Number, (entry: readonly [string, number]) => entry[1])),
+		),
 		([name]) => name,
 	)
 	const named = ranked.slice(0, CLIENT_TOKENS.length)
 	const rest = new Set(ranked.slice(CLIENT_TOKENS.length))
 	const tokens = clientTokens(named)
-	const buckets = [...new Set(Arr.map(points, (point) => point.bucket))].toSorted((a, b) => a - b)
+	const buckets = Arr.sort([...new Set(Arr.map(points, (point) => point.bucket))], Order.Number)
 	const callsAt = (bucket: number, keep: (key: string) => boolean) =>
 		Arr.reduce(
 			Arr.filter(points, (point) => point.bucket === bucket && keep(point.seriesKey)),
@@ -341,7 +355,7 @@ export const durationMeterCell = <M>(
 	)
 
 /** The result lane's width, shared by its header and cells. */
-export const RESULT_LANE = "w-28 shrink-0 pl-4"
+export const RESULT_LANE = columnClass({ width: "28", shrink: false, inset: "4" })
 
 /** A call's result: `ok`, or its `error.type` chip. */
 export const resultCell = <M>(h: HtmlBuilder<M>, errorType: string | null): Html =>

@@ -1,9 +1,10 @@
 import { resolveRefreshIntervalSeconds } from "../../../lib/dashboard-controls/search-params"
 import { Duration, Effect, Queue, Schema, Stream } from "effect"
-import { Subscription } from "foldkit"
+import { Dom, Subscription } from "foldkit"
 import type { Resources } from "../../../platform/resources"
 import type { PageSubscriptionInput } from "../../contract"
 import { documentStream, orgTagsStream } from "../kit/document-stream"
+import { loadTimeout } from "../kit/live-sync"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { isEditing } from "./update"
@@ -76,12 +77,19 @@ export const pointerEvents = (widgetId: string) =>
 					if (isScrolled) pointer.frame = requestAnimationFrame(step)
 				}
 				const onMove = (event: PointerEvent) => {
+					// No button held: the release came before these listeners attached (a quick tap).
+					if (event.buttons === 0) {
+						Queue.offerUnsafe(queue, Message.ReleasedPointer())
+						return
+					}
 					pointer.x = event.clientX
 					pointer.y = event.clientY
 					if (pointer.frame === 0) pointer.frame = requestAnimationFrame(step)
 				}
 				const onUp = () => Queue.offerUnsafe(queue, Message.ReleasedPointer())
 				const onCancel = () => Queue.offerUnsafe(queue, Message.CancelledPointer())
+				// Switching windows mid-drag: the release would land elsewhere, so the tile goes back.
+				const onWindowBlur = () => Queue.offerUnsafe(queue, Message.CancelledPointer())
 				const onKey = (event: KeyboardEvent) => {
 					if (event.key !== "Escape") return
 					event.preventDefault()
@@ -91,12 +99,14 @@ export const pointerEvents = (widgetId: string) =>
 				window.addEventListener("pointerup", onUp)
 				window.addEventListener("pointercancel", onCancel)
 				window.addEventListener("keydown", onKey)
+				window.addEventListener("blur", onWindowBlur)
 				return () => {
 					cancelAnimationFrame(pointer.frame)
 					window.removeEventListener("pointermove", onMove)
 					window.removeEventListener("pointerup", onUp)
 					window.removeEventListener("pointercancel", onCancel)
 					window.removeEventListener("keydown", onKey)
+					window.removeEventListener("blur", onWindowBlur)
 				}
 			}),
 			(detach) => Effect.sync(detach),
@@ -118,13 +128,29 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					),
 			},
 		),
-		/** The org's tags, for the tag editor's suggestions. */
-		orgTags: entry(
-			{ orgId: Schema.String },
+		/** `useCollectionLoadFailed`: a live board still loading after the bounded wait has failed. */
+		loadWatchdog: entry(
+			{ orgId: Schema.NullOr(Schema.String) },
 			{
-				modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
+				modelToDependencies: ({ model, context }) => ({
+					orgId:
+						model.status === "Loading" && model.snapshot._tag === "Idle" ? context.orgId : null,
+				}),
 				dependenciesToStream: ({ orgId }) =>
-					orgTagsStream(orgId, (tags) => Message.UpdatedOrgTags({ tags })),
+					orgId === null ? Stream.empty : loadTimeout(Message.TimedOutLiveDashboard({ orgId })),
+			},
+		),
+		/** The org's tags, for the tag editor's suggestions: read only while the editor is open. */
+		orgTags: entry(
+			{ orgId: Schema.NullOr(Schema.String) },
+			{
+				modelToDependencies: ({ model, context }) => ({
+					orgId: model.tagEditor.dialog.isOpen ? context.orgId : null,
+				}),
+				dependenciesToStream: ({ orgId }) =>
+					orgId === null
+						? Stream.empty
+						: orgTagsStream(orgId, (tags) => Message.UpdatedOrgTags({ tags })),
 			},
 		),
 		/** `useGridInteraction`'s window listeners, attached for the life of a pointer gesture. */
@@ -134,6 +160,21 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				modelToDependencies: ({ model }) => ({ widgetId: model.gesture?.widgetId ?? null }),
 				dependenciesToStream: ({ widgetId }) =>
 					widgetId === null ? Stream.empty : pointerEvents(widgetId),
+			},
+		),
+		/** While a write failure blocks editing: the browser's return online lifts it. */
+		reconnect: entry(
+			{ isBlocked: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({ isBlocked: model.persistenceError !== null }),
+				dependenciesToStream: ({ isBlocked }) =>
+					!isBlocked || typeof window === "undefined"
+						? Stream.empty
+						: Dom.streamFromEvent({
+								target: window,
+								type: "online",
+								mapEvent: () => Message.CameBackOnline(),
+							}),
 			},
 		),
 		/** `useIntervalRefresh`: paused in edit mode and in a preview; paused while hidden or offline. */

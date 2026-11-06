@@ -19,7 +19,7 @@ const rasterOrder = (segments: ReadonlyArray<string>): ReadonlyArray<string> => 
 	return [...segments].sort((a, b) => {
 		const p = origin(a)
 		const q = origin(b)
-		return p.y - q.y || p.x - q.x
+		return p.y !== q.y ? p.y - q.y : p.x - q.x
 	})
 }
 

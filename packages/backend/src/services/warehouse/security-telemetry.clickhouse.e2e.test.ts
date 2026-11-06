@@ -12,7 +12,7 @@ import {
 	clickhouseExec,
 	uniqueDatabase,
 } from "./clickhouse-e2e-support"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Order, Record as Rec, String as Str } from "effect"
 
 const database = uniqueDatabase("maple_security_telemetry_e2e")
 const ORG_ID = "org_security_telemetry_e2e"
@@ -238,7 +238,13 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 			(JSON.parse(body) as { data: ReadonlyArray<{ Signature: string }> }).data,
 			(row) => row.Signature,
 		)
-		assert.deepStrictEqual(stored, Arr.map(PROBE_SIGNATURES, (signature) => signature.token).toSorted())
+		assert.deepStrictEqual(
+			stored,
+			Arr.sort(
+				Arr.map(PROBE_SIGNATURES, (signature) => signature.token),
+				Order.String,
+			),
+		)
 	}, 180_000)
 
 	it("lists only the critical probes the service answered", async () => {
@@ -251,8 +257,11 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 
 	it("counts requests and answers per signature, and sources by address", async () => {
 		const signatures = await read(CH.scannerSignaturesQuery())
-		const bySignature = Object.fromEntries(
-			signatures.map((row) => [row.signature, [row.requests, row.answered, row.sources]]),
+		const bySignature = Rec.fromEntries(
+			Arr.map(signatures, (row): readonly [string, ReadonlyArray<unknown>] => [
+				String(row.signature),
+				[row.requests, row.answered, row.sources],
+			]),
 		)
 		assert.deepStrictEqual(bySignature, {
 			"/.env": [2, 1, 1],

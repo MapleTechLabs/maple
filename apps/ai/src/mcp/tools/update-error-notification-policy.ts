@@ -16,7 +16,7 @@ export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistr
 		name: "update_error_notification_policy",
 		title: "Update Error Notification Policy",
 		description:
-			"Configure the org-wide error notification policy: whether error incidents (first seen, regression, auto-resolve) are delivered to alert destinations, and which ones. Org admins only. Omit a field to leave it unchanged; get_error_notification_policy reads the current policy. A new error becomes an issue (and can notify) only after 3 occurrences; min_occurrence_count cannot lower that.",
+			"Configure the org-wide error notification policy: whether error incidents (first seen, regression, auto-resolve) are delivered to alert destinations, and which ones. Org admins and engineers only. Omit a field to leave it unchanged; get_error_notification_policy reads the current policy. A new error becomes an issue (and can notify) only after 3 occurrences; min_occurrence_count cannot lower that.",
 		parameters: Schema.Struct({
 			enabled: P.optionalFlag("Enable notifications overall"),
 			destination_ids: P.optionalResourceIdList(

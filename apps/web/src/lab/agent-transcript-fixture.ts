@@ -28,7 +28,7 @@ const WORDS = Str.split(" ")(
 function prose(random: () => number, words: number): string {
 	const out: string[] = []
 	for (let i = 0; i < words; i++) {
-		const word = WORDS[Math.floor(random() * WORDS.length)]!
+		const word = Arr.getUnsafe(WORDS, Math.floor(random() * WORDS.length))
 		out.push(i > 0 && i % 17 === 0 ? `${word}.` : word)
 	}
 	return Arr.join(out, " ")
@@ -137,7 +137,7 @@ export function buildLargeSessionFixture(turns: number, seed = 1): readonly AiSe
 		const prompt = `${prose(random, 30 + Math.floor(random() * 600))}\n\n\`\`\`\n${textResult(random, 8)}\n\`\`\``
 		for (let call = 0; call < 3; call++) {
 			const closing = call === 2
-			const tool = closing ? undefined : tools[(turn + call) % tools.length]!
+			const tool = closing ? undefined : tools[(turn + call) % tools.length]
 			const callId = `big-${turn}-${call}`
 			spans.push(
 				llmSpan({

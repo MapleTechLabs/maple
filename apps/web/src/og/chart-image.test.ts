@@ -122,7 +122,7 @@ describe("axis placement", () => {
 		Arr.map((node as { children?: ReadonlyArray<Record<string, unknown>> }).children ?? [], (child) => {
 			const inner = (child.children as ReadonlyArray<Record<string, unknown>>)[0] ?? {}
 			return {
-				style: (child.style ?? {}) as Placed["style"],
+				style: child.style ?? {},
 				text: typeof inner.text === "string" ? inner.text : "",
 				color: (inner.style as { color?: string } | undefined)?.color,
 			}

@@ -1,19 +1,24 @@
+import * as Policy from "@maple/domain/policy"
 import { BillingAccount, BillingAccountUsageResponse, BillingCustomer } from "@maple/domain/http"
 import { OrgId } from "@maple/domain"
 import { AsyncData } from "foldkit"
 import { Result, Schema, Array as Arr } from "effect"
-import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
 import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
 import { view as billingView } from "./view"
+
+const ADMIN = Policy.grantsOf(["org:admin"])
+const MEMBER = Policy.grantsOf(["org:member"])
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
 
 const NOW = 10 * 86_400_000
-const customer = Schema.decodeUnknownSync(BillingCustomer)({
+const customer = Schema.decodeSync(BillingCustomer)({
 	id: "org_acme",
 	subscriptions: [
 		{ planId: "startup", status: "active", currentPeriodStart: 0, currentPeriodEnd: 30 * 86_400_000 },
@@ -57,7 +62,7 @@ const accountRead = (value: BillingAccount) =>
 
 describe("billing account", () => {
 	test("a member org shows who pays and never asks for invoices or billing details", () => {
-		const entered = init(true, false, true)
+		const entered = init(ADMIN, false, true)
 		expect(names(entered.commands)).toContain("FetchBillingAccount")
 		expect(names(entered.commands)).not.toContain("FetchBillingInvoices")
 		const read = step(entered.model, accountRead(member))
@@ -73,17 +78,31 @@ describe("billing account", () => {
 		)
 	})
 
+	test("Compare plans states the DPA and the audits in progress", () => {
+		const read = run(init(ADMIN, false, true).model, accountRead(standalone), Message.ClickedCompare())
+		scene(
+			{ update: step, view },
+			given({ ...read, plans: AsyncData.Success({ data: [] }) }),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text("DPA available · SOC 2 Type II and ISO 27001 in progress")).toExist(),
+			expectView(role("link", { name: "Request the DPA" })).toHaveAttr(
+				"href",
+				"mailto:privacy@maple.dev?subject=DPA%20request",
+			),
+		)
+	})
+
 	test("offers no billing controls before it knows who pays", () => {
 		scene(
 			{ update: step, view },
-			given(init(true, false, true).model),
+			given(init(ADMIN, false, true).model),
 			expectView(role("button", { name: "Manage billing" })).not.toExist(),
 			expectView(text("Compare plans")).not.toExist(),
 		)
 	})
 
 	test("reads the account again when a link fails for an unexplained reason", () => {
-		const read = run(init(true, false, true).model, accountRead(standalone))
+		const read = run(init(ADMIN, false, true).model, accountRead(standalone))
 		const failed = step(
 			read,
 			Message.CompletedLink({
@@ -95,7 +114,7 @@ describe("billing account", () => {
 	})
 
 	test("a member org's non-admin sees who pays with no way to change it", () => {
-		const read = run(init(false, false, true).model, accountRead(member))
+		const read = run(init(MEMBER, false, true).model, accountRead(member))
 		scene(
 			{ update: step, view },
 			given(read),
@@ -105,7 +124,7 @@ describe("billing account", () => {
 	})
 
 	test("a member admin stops billing through the payer after confirming", () => {
-		const read = run(init(true, false, true).model, accountRead(member))
+		const read = run(init(ADMIN, false, true).model, accountRead(member))
 		const opened = step(read, Message.ClickedUnlink({ orgId: orgId("org_acme") }))
 		const confirmed = step(opened.model, Message.ClickedConfirmUnlink())
 		expect(confirmed.commands?.[0]).toMatchObject({
@@ -126,7 +145,7 @@ describe("billing account", () => {
 	})
 
 	test("a failed unlink reads the account again and shows the unlink that landed", () => {
-		const read = run(init(true, false, true).model, accountRead(member))
+		const read = run(init(ADMIN, false, true).model, accountRead(member))
 		const opened = step(read, Message.ClickedUnlink({ orgId: orgId("org_acme") }))
 		const confirmed = step(opened.model, Message.ClickedConfirmUnlink())
 		const failed = step(
@@ -158,7 +177,7 @@ describe("billing account", () => {
 	})
 
 	test("a billing org lists the orgs it pays for with this cycle's volume", () => {
-		const read = step(init(true, false, true).model, accountRead(payer))
+		const read = step(init(ADMIN, false, true).model, accountRead(payer))
 		expect(names(read.commands)).toEqual(
 			expect.arrayContaining([
 				"FetchBillingInvoices",
@@ -166,7 +185,7 @@ describe("billing account", () => {
 				"FetchBillingAccountUsage",
 			]),
 		)
-		const usage = Schema.decodeUnknownSync(BillingAccountUsageResponse)({
+		const usage = Schema.decodeSync(BillingAccountUsageResponse)({
 			cycleStartMs: 0,
 			cycleEndMs: 30 * 86_400_000,
 			orgs: [
@@ -214,7 +233,7 @@ describe("billing account", () => {
 	})
 
 	test("a standalone admin picks another org and links billing to it", () => {
-		const read = step(init(true, false, true).model, accountRead(standalone))
+		const read = step(init(ADMIN, false, true).model, accountRead(standalone))
 		expect(names(read.commands)).toContain("FetchBillingOrgChoices")
 		const choices = run(
 			read.model,
@@ -250,7 +269,7 @@ describe("billing account", () => {
 
 	test("a refused link shows the server's reason in the section", () => {
 		const choices = run(
-			init(true, false, true).model,
+			init(ADMIN, false, true).model,
 			accountRead(standalone),
 			Message.CompletedFetchOrgChoices({
 				result: Result.succeed([{ orgId: orgId("org_acme"), name: "Acme", imageUrl: "" }]),
@@ -273,7 +292,7 @@ describe("billing account", () => {
 
 	test("without other orgs to pick, or for a non-admin, the link section stays hidden", () => {
 		const empty = run(
-			init(true, false, true).model,
+			init(ADMIN, false, true).model,
 			accountRead(standalone),
 			Message.CompletedFetchOrgChoices({ result: Result.succeed([]) }),
 		)
@@ -282,10 +301,10 @@ describe("billing account", () => {
 			given(empty),
 			expectView(text("Bill through another organization")).not.toExist(),
 		)
-		expect(names(step(init(false, false, true).model, accountRead(standalone)).commands)).not.toContain(
+		expect(names(step(init(MEMBER, false, true).model, accountRead(standalone)).commands)).not.toContain(
 			"FetchBillingOrgChoices",
 		)
-		expect(names(step(init(true, false, false).model, accountRead(standalone)).commands)).not.toContain(
+		expect(names(step(init(ADMIN, false, false).model, accountRead(standalone)).commands)).not.toContain(
 			"FetchBillingOrgChoices",
 		)
 	})

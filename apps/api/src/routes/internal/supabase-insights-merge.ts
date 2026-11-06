@@ -69,7 +69,9 @@ export const mergeSupabaseProjects = (
 		Arr.filter(logs, (row) => !withMetrics.has(row.projectRef)),
 		({ lastSeen, ...row }) => ({ ...METRIC_ZEROS, ...row, lastSeen: DateTime.formatIso(lastSeen) }),
 	)
-	return [...fromMetrics, ...logsOnly].toSorted((a, b) => Str.localeCompare(b.projectRef)(a.projectRef))
+	const merged = [...fromMetrics, ...logsOnly]
+	type Merged = (typeof merged)[number]
+	return Arr.sort(merged, (a: Merged, b: Merged) => Str.localeCompare(b.projectRef)(a.projectRef))
 }
 
 /** The bucketed status classes and the window totals as one response. */

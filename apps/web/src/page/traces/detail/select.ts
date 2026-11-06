@@ -1,4 +1,4 @@
-import { Option, String as Str } from "effect"
+import { Option, String as Str, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Model } from "./model"
 import type { SpanNodeData, TraceData } from "@maple/views/traces/trace-data"
@@ -31,11 +31,16 @@ export const findSpan = (
 	const visit = (node: SpanNodeData): SpanNodeData | undefined =>
 		node.spanId === searchId
 			? node
-			: node.children.reduce<SpanNodeData | undefined>(
-					(found, child) => found ?? visit(child),
+			: Arr.reduce<SpanNodeData, SpanNodeData | undefined>(
+					node.children,
 					undefined,
+					(found, child) => found ?? visit(child),
 				)
-	return rootSpans.reduce<SpanNodeData | undefined>((found, root) => found ?? visit(root), undefined)
+	return Arr.reduce<SpanNodeData, SpanNodeData | undefined>(
+		rootSpans,
+		undefined,
+		(found, root) => found ?? visit(root),
+	)
 }
 
 export const selectedSpanOf = (model: Model): SpanNodeData | undefined => {

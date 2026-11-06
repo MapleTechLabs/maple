@@ -114,7 +114,7 @@ describe("MCP HTTP authorization", () => {
 						},
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			expect(response.status).toBe(401)
 			expect(response.headers.get("www-authenticate")).toContain(
@@ -140,8 +140,8 @@ describe("MCP HTTP authorization", () => {
 			}),
 			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
-		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
@@ -183,7 +183,7 @@ describe("MCP HTTP authorization", () => {
 						},
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			expect(response.status).toBe(200)
 
@@ -206,7 +206,7 @@ describe("MCP HTTP authorization", () => {
 						method: "notifications/initialized",
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const called = await handler(
 				new Request("http://internal-worker.invalid/mcp", {
@@ -227,7 +227,7 @@ describe("MCP HTTP authorization", () => {
 						params: { name: "inspect_trace", arguments: {} },
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const calledBody = await called.clone().text()
 			expect({ status: called.status, body: calledBody }).toEqual({
@@ -256,8 +256,8 @@ describe("MCP HTTP authorization", () => {
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
-		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
@@ -291,7 +291,7 @@ describe("MCP HTTP authorization", () => {
 						},
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const initializedBody = await readBody(initialized)
 			expect({
@@ -315,7 +315,7 @@ describe("MCP HTTP authorization", () => {
 						params: { name: "inspect_trace", arguments: {} },
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			expect(called.status).toBe(200)
 		} finally {
@@ -338,8 +338,8 @@ describe("MCP HTTP authorization", () => {
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
-		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
@@ -374,7 +374,7 @@ describe("MCP HTTP authorization", () => {
 						},
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			// No session id on the wire is what keeps clients off the 404 branch.
 			expect({
@@ -396,7 +396,7 @@ describe("MCP HTTP authorization", () => {
 					headers: headers({ "mcp-protocol-version": "2025-06-18" }),
 					body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const body = await listed.clone().text()
 			expect({ status: listed.status, defect: Str.includes("A defect occurred")(body) }).toEqual({
@@ -407,13 +407,22 @@ describe("MCP HTTP authorization", () => {
 			// Claude's connector directory reads `annotations.title`; stock effect drops it for
 			// 2025-06-18+ (patches/effect@*.patch).
 			// SAFETY: a 200 `tools/list` response; a different body fails the expectation below.
-			const inspectTrace = (
-				JSON.parse(body) as {
-					result: {
-						tools: Array<{ name: string; title?: string; annotations?: { title?: string } }>
-					}
-				}
-			).result.tools.find((tool) => tool.name === "inspect_trace")
+			const inspectTrace = Option.getOrUndefined(
+				Arr.findFirst(
+					(
+						JSON.parse(body) as {
+							result: {
+								tools: Array<{
+									name: string
+									title?: string
+									annotations?: { title?: string }
+								}>
+							}
+						}
+					).result.tools,
+					(tool) => tool.name === "inspect_trace",
+				),
+			)
 			expect({ title: inspectTrace?.title, annotationTitle: inspectTrace?.annotations?.title }).toEqual(
 				{
 					title: "Inspect Trace",
@@ -431,7 +440,7 @@ describe("MCP HTTP authorization", () => {
 					}),
 					body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/list" }),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			expect(stale.status).toBe(200)
 			expect(await stale.text()).toContain("inspect_trace")
@@ -458,8 +467,8 @@ describe("MCP HTTP authorization", () => {
 				return Effect.succeed("limited" as const)
 			}),
 		).pipe(Layer.provideMerge(base))
-		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
@@ -490,7 +499,7 @@ describe("MCP HTTP authorization", () => {
 						},
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const body = await readBody(response)
 			expect({
@@ -523,8 +532,8 @@ describe("MCP HTTP authorization", () => {
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
-		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
@@ -553,7 +562,7 @@ describe("MCP HTTP authorization", () => {
 					// @ts-expect-error -- undici requires this for a stream body; not in the DOM lib.
 					duplex: "half",
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const body = await readBody(response)
 			expect({ status: response.status, code: errorCode(body.error) }).toEqual({
@@ -578,8 +587,8 @@ describe("MCP HTTP authorization", () => {
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
-		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
@@ -614,7 +623,7 @@ describe("MCP HTTP authorization", () => {
 						clientInfo: { name: "test", version: "1.0.0" },
 					},
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const result = (await readBody(initialized)).result
 			expect({
@@ -633,7 +642,7 @@ describe("MCP HTTP authorization", () => {
 
 			const listed = await handler(
 				post({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const tools: ReadonlyArray<{ readonly name: string }> =
 				(await readBody(listed)).result?.tools ?? []
@@ -676,8 +685,8 @@ describe("MCP server spans", () => {
 			),
 			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
-		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
@@ -700,7 +709,7 @@ describe("MCP server spans", () => {
 					},
 					body: JSON.stringify(body),
 				}),
-				Context.make(Tracer.Tracer, tracer) as never,
+				Context.make(Tracer.Tracer, tracer),
 			)
 		const callerTrace = "4bf92f3577b34da6a3ce929d0e0e4736"
 		const callerSpan = "00f067aa0ba902b7"
@@ -792,9 +801,9 @@ describe("MCP server spans", () => {
 		expect(Option.map(parent, (span) => ({ traceId: span.traceId, spanId: span.spanId }))).toEqual(
 			Option.some({ traceId: callerTrace, spanId: callerSpan }),
 		)
-		expect(Arr.map(toolCall?.links, (link) => link.span._tag === "Span" && link.span.name)).toEqual([
-			"POST",
-		])
+		expect(Arr.map(toolCall?.links ?? [], (link) => link.span._tag === "Span" && link.span.name)).toEqual(
+			["POST"],
+		)
 		// Without a caller span the HTTP span is the parent, and not linked a second time.
 		const initialize = server[0]
 		expect(initialize?.links).toEqual([])

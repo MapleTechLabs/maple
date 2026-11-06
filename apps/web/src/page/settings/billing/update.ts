@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import {
 	AttachRequest,
 	type BillingAccount,
@@ -45,7 +46,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
 import * as Details from "./details/update"
-import { CAP_INPUT_ID, Message, type Model, type OrgChoice, SpendFeatureId } from "./model"
+import { canManage, CAP_INPUT_ID, Message, type Model, type OrgChoice, SpendFeatureId } from "./model"
 
 type Return = PageReturn<Model, Message>
 
@@ -67,8 +68,8 @@ const loaded =
 	<A, B>(toMessage: (result: Result.Result<A, ReturnType<typeof toLoadFailure>>) => B) =>
 	<E, R>(effect: Effect.Effect<A, E, R>) =>
 		effect.pipe(
-			Effect.catchDefect((defect) => Effect.fail(defect)),
 			Effect.mapError(toLoadFailure),
+			Effect.catchDefect((defect) => Effect.fail(toLoadFailure(defect))),
 			Effect.result,
 			Effect.map(toMessage),
 		)
@@ -122,16 +123,18 @@ const FetchInvoices = Command.define("FetchBillingInvoices", {
 
 const isNotConfigured = Schema.is(BillingNotConfiguredError)
 
+const toProfileFailure = (error: unknown) => ({
+	isNotConfigured: isNotConfigured(error),
+	failure: toLoadFailure(error),
+})
+
 /** A self-hosted API without Stripe answers every profile read with `BillingNotConfiguredError`. */
 const FetchProfile = Command.define("FetchBillingProfile", {
 	messages: [Message.CompletedFetchProfile],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.billing.getBillingProfile()).pipe(
 		// Like `loaded`: a defect must still settle the read, or the details shimmer forever.
-		Effect.catchDefect((defect) => Effect.fail(defect)),
-		Effect.mapError((error) => ({
-			isNotConfigured: isNotConfigured(error),
-			failure: toLoadFailure(error),
-		})),
+		Effect.mapError(toProfileFailure),
+		Effect.catchDefect((defect) => Effect.fail(toProfileFailure(defect))),
 		Effect.result,
 		Effect.map((result) => Message.CompletedFetchProfile({ result })),
 	),
@@ -179,18 +182,21 @@ const FetchOrgChoices = Command.define("FetchBillingOrgChoices", {
 	execute: currentClerkUser.pipe(
 		Effect.map((user): ReadonlyArray<OrgChoice> => {
 			const activeId = window.Clerk?.organization?.id
-			return Arr.map(
-				Arr.filter(
-					user.organizationMemberships ?? [],
-					(membership) =>
-						membership.role === "org:admin" && membership.organization.id !== activeId,
+			return Arr.sort(
+				Arr.map(
+					Arr.filter(
+						user.organizationMemberships ?? [],
+						(membership) =>
+							membership.role === "org:admin" && membership.organization.id !== activeId,
+					),
+					({ organization }) => ({
+						orgId: OrgId.make(organization.id),
+						name: organization.name,
+						imageUrl: organization.hasImage ? (organization.imageUrl ?? "") : "",
+					}),
 				),
-				({ organization }) => ({
-					orgId: OrgId.make(organization.id),
-					name: organization.name,
-					imageUrl: organization.hasImage ? (organization.imageUrl ?? "") : "",
-				}),
-			).toSorted((a, b) => Str.localeCompare(b.name)(a.name))
+				(a: OrgChoice, b: OrgChoice) => Str.localeCompare(b.name)(a.name),
+			)
 		}),
 		loaded((result) => Message.CompletedFetchOrgChoices({ result })),
 	),
@@ -218,8 +224,8 @@ const Link = Command.define("LinkBillingOrg", {
 			client.billing.linkBillingOrg({ payload: new LinkBillingOrgRequest({ billingOrgId }) }),
 		).pipe(
 			withinLinkDeadline,
-			Effect.catchDefect((defect) => Effect.fail(defect)),
 			Effect.mapError(toLinkFailure),
+			Effect.catchDefect((defect) => Effect.fail(toLinkFailure(defect))),
 			Effect.result,
 			Effect.map((result) => Message.CompletedLink({ orgName, result })),
 		),
@@ -233,8 +239,8 @@ const Unlink = Command.define("UnlinkBillingOrg", {
 			client.billing.unlinkBillingOrg({ params: { orgId } }),
 		).pipe(
 			withinLinkDeadline,
-			Effect.catchDefect((defect) => Effect.fail(defect)),
 			Effect.mapError(toLinkFailure),
+			Effect.catchDefect((defect) => Effect.fail(toLinkFailure(defect))),
 			Effect.result,
 			Effect.map((result) => Message.CompletedUnlink({ isSelf, result })),
 		),
@@ -361,9 +367,13 @@ export const profileOf = (model: Model): Option.Option<BillingProfile> => AsyncD
  * `isReturning`: the tab opened with `?checkout=complete`, so it waits on the Stripe to Autumn sync.
  * Invoices and details wait for the account: a member org's billing lives on its billing org.
  */
-export const init = (isAdmin: boolean, isReturning: boolean, isClerk: boolean): Return => ({
+export const init = (
+	grants: ReadonlyArray<Policy.Permission>,
+	isReturning: boolean,
+	isClerk: boolean,
+): Return => ({
 	model: {
-		isAdmin,
+		grants,
 		isClerk,
 		checkoutReturn: isReturning ? "Confirming" : "Idle",
 		plans: AsyncData.Loading(),
@@ -429,8 +439,12 @@ const saveCap = (model: Model, customer: BillingCustomer | null, nowMs: number):
 	const parsed = parseCapInput(model.capDraft)
 	if (featureId === null || !parsed.valid || model.isSavingCap) return { model }
 	const label =
-		spendModelOf(model, customer, nowMs)?.features.find((feature) => feature.featureId === featureId)
-			?.label ?? ""
+		Option.getOrUndefined(
+			Arr.findFirst(
+				spendModelOf(model, customer, nowMs)?.features ?? [],
+				(feature) => feature.featureId === featureId,
+			),
+		)?.label ?? ""
 	return {
 		model: { ...model, isSavingCap: true },
 		commands: [SaveCap({ featureId, label, overageLimit: parsed.cap })],
@@ -501,7 +515,7 @@ const applyAccount = (model: Model, account: BillingAccount, isFresh: boolean): 
 	)
 	const orgChoices = gated(
 		model.orgChoices,
-		account.role === "standalone" && model.isAdmin && model.isClerk,
+		account.role === "standalone" && canManage(model) && model.isClerk,
 		false,
 		FetchOrgChoices,
 	)
@@ -543,7 +557,10 @@ const liftUnlinkDialog = (model: Model, step: ReturnType<typeof Dialog.update>):
 /** The org picked to pay for this one: the draft, else the first choice the select shows. */
 export const linkTargetOf = (model: Model): OrgChoice | null => {
 	const choices = AsyncData.getOrElse(model.orgChoices, () => [])
-	return choices.find((choice) => choice.orgId === model.linkOrgId) ?? choices[0] ?? null
+	return Option.getOrElse(
+		Arr.findFirst(choices, (choice) => choice.orgId === model.linkOrgId),
+		() => choices[0] ?? null,
+	)
 }
 
 /** The account changed hands: the customer, its usage and spend are now another org's. */
@@ -632,7 +649,7 @@ export const update = (
 			const opened =
 				first === undefined
 					? { ...model, editingCap: null }
-					: openCap(model, Schema.decodeUnknownSync(SpendFeatureId)(first.featureId), customer)
+					: openCap(model, Schema.decodeSync(SpendFeatureId)(first.featureId), customer)
 			return same({
 				model: opened,
 				commands: [ScrollToUsage(), ...(opened.editingCap === null ? [] : [FocusCap()])],
@@ -779,8 +796,17 @@ export const update = (
 		ClickedRetryAccountUsage: () =>
 			same({ model: { ...model, accountUsage: AsyncData.Loading() }, commands: [FetchAccountUsage()] }),
 		ChangedLinkOrg: ({ value }) => {
-			const choice = AsyncData.getOrElse(model.orgChoices, () => []).find((org) => org.orgId === value)
-			return same({ model: { ...model, linkOrgId: choice?.orgId ?? null, linkRejection: null } })
+			const choice = Arr.findFirst(
+				AsyncData.getOrElse(model.orgChoices, () => []),
+				(org) => org.orgId === value,
+			)
+			return same({
+				model: {
+					...model,
+					linkOrgId: Option.getOrNull(Option.map(choice, (org) => org.orgId)),
+					linkRejection: null,
+				},
+			})
 		},
 		ClickedLink: () =>
 			linkTargetOf(model) === null || model.isLinking

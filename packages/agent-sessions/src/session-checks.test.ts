@@ -5,7 +5,7 @@ import { buildSessionChecks, type SessionCheck } from "./session-checks"
 import { buildSessionSummary } from "./session-summary"
 import { buildSessionTurns } from "./session-turns"
 import { agentSpan, llmSpan, makeSpan, toolSpan } from "./span-test-support"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND
@@ -18,9 +18,10 @@ function checks(spans: Spans) {
 }
 
 function byId(report: ReturnType<typeof checks>, id: string): SessionCheck {
-	const found = report.checks.find((check) => check.id === id)
-	if (found === undefined) throw new Error(`no check ${id}`)
-	return found
+	return Option.getOrThrowWith(
+		Arr.findFirst(report.checks, (check) => check.id === id),
+		() => new Error(`no check ${id}`),
+	)
 }
 
 /** A clean opening turn, keyed by conversation id so a second turn can follow. */
@@ -69,7 +70,7 @@ describe("buildSessionChecks", () => {
 		expect(report.counts.failed).toBe(0)
 		expect(report.counts.warning).toBe(0)
 		expect(report.headline).toBe(`cleanly — ${report.counts.passed} checks passed across 2 turns`)
-		expect(report.checks.find((check) => check.id === "completion")).toBeUndefined()
+		expect(Option.isNone(Arr.findFirst(report.checks, (check) => check.id === "completion"))).toBe(true)
 		expect(byId(report, "context-window").headline).toBe("The prompt peaked at 1K tokens")
 		expect(byId(report, "tool-timeouts").headline).toBe(
 			"No tool call timed out; the slowest was `read_file` at 2s",
@@ -114,7 +115,7 @@ describe("buildSessionChecks", () => {
 		expect(report.verdict.status).toBe("failed")
 		expect(report.headline).toBe("the final turn died on the context window")
 		// The cause leads the list; the outcome is the headline, not a row.
-		expect(report.checks[0].id).toBe("context-window")
+		expect(Arr.getUnsafe(report.checks, 0).id).toBe("context-window")
 
 		const context = byId(report, "context-window")
 		expect(context.status).toBe("failed")
@@ -162,7 +163,7 @@ describe("buildSessionChecks", () => {
 		expect(limits.status).toBe("warning")
 		expect(limits.headline).toBe("1 model call was rate-limited on turn 2; the session carried on")
 		expect(limits.fixArea).toBe("provider")
-		expect(report.checks[0].id).toBe("rate-limits")
+		expect(Arr.getUnsafe(report.checks, 0).id).toBe("rate-limits")
 	})
 
 	// A tool that cannot run needs fixing whether or not the run survived it,
@@ -634,11 +635,11 @@ describe("buildSessionChecks", () => {
 
 		expect(report.verdict.status).toBe("failed")
 		expect(report.headline).toBe("the final turn died on `fetch_docs` timing out")
-		expect(report.checks[0].id).toBe("tool-timeouts")
-		expect(report.checks[0].headline).toBe(
+		expect(Arr.getUnsafe(report.checks, 0).id).toBe("tool-timeouts")
+		expect(Arr.getUnsafe(report.checks, 0).headline).toBe(
 			"`fetch_docs` timed out once on turn 2 (final): deadline exceeded after 8s",
 		)
-		expect(report.checks[0].fixArea).toBe("tool")
+		expect(Arr.getUnsafe(report.checks, 0).fixArea).toBe("tool")
 	})
 
 	it("names three findings and counts the rest", () => {

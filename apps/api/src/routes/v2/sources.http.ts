@@ -19,16 +19,13 @@ import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { SourceUsageService } from "@maple/backend/services/org/SourceUsageService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { SourceRemovalService } from "@maple/backend/services/integrations/SourceRemovalService"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { timestampMs } from "@maple/backend/platform/time"
 import { diffAuditChanges, pickPresentFields } from "@/routes/v2/audit-changes"
 
 const encodePublicSourceId = Schema.encodeSync(SourcePublicId)
 const decodePublicSourceId = Schema.decodeUnknownOption(SourcePublicId)
 const toIsoTimestamp = (epochMs: number) => timestamp(new Date(epochMs).toISOString())
-
-const adminOnly = (action: string) => () =>
-	V2InsufficientPermissions.make(`Only org admins can ${action} sources`)
 
 const decodeScrapeTargetId = Schema.decodeUnknownOption(ScrapeTargetId)
 const decodeGcpConnectorId = Schema.decodeUnknownOption(GcpConnectorId)
@@ -103,17 +100,20 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 		const sourceUsage = yield* SourceUsageService
 		const removal = yield* SourceRemovalService
 
-		const adminTenant = (action: string) =>
+		// Any member reads sources; changing one needs `sources:manage`.
+		const permittedTenant = () =>
 			Effect.gen(function* () {
 				const tenant = yield* CurrentTenant.Context
-				yield* requireAdmin(tenant.roles, adminOnly(action))
+				yield* Policy.check(tenant.roles, "sources:manage", (denial) =>
+					V2InsufficientPermissions.make(denial.message),
+				)
 				return tenant
 			})
 
 		return handlers
 			.handle("list", ({ query }) =>
 				Effect.gen(function* () {
-					const tenant = yield* adminTenant("view")
+					const tenant = yield* CurrentTenant.Context
 					const keys = yield* sources.list(tenant.orgId)
 					const page = yield* paginateArray(Arr.map(keys, toV2Source), query)
 					return { object: "list" as const, ...page }
@@ -121,14 +121,14 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 			)
 			.handle("retrieve", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* adminTenant("view")
+					const tenant = yield* CurrentTenant.Context
 					const source = yield* sources.get(tenant.orgId, params.id)
 					return toV2Source(source)
 				}),
 			)
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* adminTenant("create")
+					const tenant = yield* permittedTenant()
 					const created = yield* sources.create(
 						tenant.orgId,
 						tenant.userId,
@@ -148,7 +148,7 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 			)
 			.handle("update", ({ params, payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* adminTenant("update")
+					const tenant = yield* permittedTenant()
 					const current = yield* sources.get(tenant.orgId, params.id)
 					const updated = yield* sources.update(
 						tenant.orgId,
@@ -173,7 +173,7 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 			)
 			.handle("pause", ({ params, payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* adminTenant("pause")
+					const tenant = yield* permittedTenant()
 					const until = payload.until ?? null
 					const paused = yield* sources.pause(
 						tenant.orgId,
@@ -191,7 +191,7 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 			)
 			.handle("resume", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* adminTenant("resume")
+					const tenant = yield* permittedTenant()
 					const resumed = yield* sources.resume(tenant.orgId, tenant.userId, params.id)
 					yield* recordHttpAudit("source.resumed", {
 						resourceId: resumed.id,
@@ -203,7 +203,7 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 			)
 			.handle("usage", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* adminTenant("view")
+					const tenant = yield* CurrentTenant.Context
 					yield* sources.get(tenant.orgId, params.id)
 					const usage = yield* sourceUsage.read(tenant, encodePublicSourceId(params.id))
 					return {
@@ -222,7 +222,7 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 			)
 			.handle("usageSummary", () =>
 				Effect.gen(function* () {
-					const tenant = yield* adminTenant("view")
+					const tenant = yield* CurrentTenant.Context
 					const summary = yield* sourceUsage.summary(tenant)
 					return {
 						object: "source_usage_summary" as const,
@@ -248,7 +248,7 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 			)
 			.handle("roll", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* adminTenant("roll")
+					const tenant = yield* permittedTenant()
 					const rolled = yield* sources.roll(tenant.orgId, tenant.userId, params.id)
 					yield* recordHttpAudit("source.rolled", {
 						resourceId: rolled.source.id,
@@ -260,7 +260,7 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 			)
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* adminTenant("delete")
+					const tenant = yield* permittedTenant()
 					const { source: deleted, cleanupScript } = yield* removal.remove(tenant.orgId, params.id)
 					yield* recordHttpAudit("source.deleted", {
 						resourceId: deleted.id,

@@ -10,7 +10,8 @@ import {
 	size,
 	type VirtualElement,
 } from "@floating-ui/dom"
-import { Effect, Queue, Schema, Stream, String as Str } from "effect"
+import { Array as Arr, Effect, Option, Queue, Schema, Stream, String as Str } from "effect"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 /**
  * Base UI's `useAnchorPositioning` (internals/useAnchorPositioning.mjs, @base-ui/react 1.8) on
@@ -65,7 +66,10 @@ export type Placed = Readonly<{ side: Side; align: Align; isPlacedInstead: boole
 
 const SIDES: ReadonlyArray<Side> = ["top", "right", "bottom", "left"]
 const sideOf = (placement: Placement): Side =>
-	SIDES.find((side) => Str.startsWith(side)(placement)) ?? "bottom"
+	Option.getOrElse(
+		Arr.findFirst(SIDES, (side) => Str.startsWith(side)(placement)),
+		(): Side => "bottom",
+	)
 const alignOf = (placement: Placement): Align =>
 	Str.endsWith("-start")(placement) ? "start" : Str.endsWith("-end")(placement) ? "end" : "center"
 const placementOf = (side: Side, align: Align): Placement => (align === "center" ? side : `${side}-${align}`)
@@ -107,9 +111,10 @@ const fakeArrow: Middleware = {
 		const coord = isYAxis ? y : x
 		const endDiff = rects.reference[length] + rects.reference[axis] - coord - rects.floating[length]
 		const startDiff = coord - rects.reference[axis]
-		const clientSize =
-			(isYAxis ? elements.floating.clientHeight : elements.floating.clientWidth) ||
-			rects.floating[length]
+		const clientSize = nonZeroOr(
+			isYAxis ? elements.floating.clientHeight : elements.floating.clientWidth,
+			rects.floating[length],
+		)
 		const center = clientSize / 2 + (endDiff / 2 - startDiff / 2)
 		const clamped = Math.min(Math.max(0, center), clientSize)
 		return { data: { [axis]: clamped, centerOffset: center - clamped } }
@@ -178,7 +183,7 @@ const middlewareFor = (floating: HTMLElement, config: PositionConfig): Array<Mid
 				floating.style.setProperty("--available-width", `${availableWidth}px`)
 				floating.style.setProperty("--available-height", `${availableHeight}px`)
 				const { x, y, width, height } = rects.reference
-				const dpr = window.devicePixelRatio || 1
+				const dpr = nonZeroOr(window.devicePixelRatio, 1)
 				const snap = (start: number, extent: number) =>
 					(Math.round((start + extent) * dpr) - Math.round(start * dpr)) / dpr
 				floating.style.setProperty("--anchor-width", `${snap(x, width)}px`)
@@ -198,7 +203,7 @@ const applyCoordinates = (floating: HTMLElement, config: PositionConfig, x: numb
 		floating.style.left = `${x}px`
 		return
 	}
-	const dpr = window.devicePixelRatio || 1
+	const dpr = nonZeroOr(window.devicePixelRatio, 1)
 	const round = (value: number) => Math.round(value * dpr) / dpr
 	floating.style.top = "0px"
 	floating.style.left = "0px"

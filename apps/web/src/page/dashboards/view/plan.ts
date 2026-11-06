@@ -1,4 +1,4 @@
-import type { DashboardDocument } from "@maple/domain/http"
+import type { DashboardDocument, TimeRange } from "@maple/domain/http"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
 import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 import * as Chart from "@maple/views/charts/chart"
@@ -7,7 +7,7 @@ import type { PageContext } from "../../contract"
 import { DEFAULT_WIDGET_WIDTH_PX, maxDataPointsForWidth, toPanelType } from "../kit/chart-registry"
 import { planWidget, type WidgetGate } from "../kit/widget-data"
 import { FetchVariableOptions, FetchWidget } from "./command"
-import { variableValuesFromSearch } from "../../../lib/dashboard-controls/search-params"
+import { timeRangeFromSearch, variableValuesFromSearch } from "../../../lib/dashboard-controls/search-params"
 import { AsyncData } from "foldkit"
 import {
 	optionsByNameOf as optionsByNameFor,
@@ -15,7 +15,9 @@ import {
 	planOptionRequests,
 	planVariablesOf,
 } from "../kit/variables"
+import { isEditing } from "./mode"
 import type { Model, WidgetSlot } from "./model"
+import type { ShareLinkRange } from "./share"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -23,12 +25,34 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type Widget = DashboardDocument["widgets"][number]
 
+/** A viewer's own pick from the URL; an edit session works on the board's saved range instead. */
+export const viewerTimeRangeOf = (model: Model): TimeRange | null =>
+	isEditing(model) ? null : (timeRangeFromSearch(model.search) ?? null)
+
+/** What a share or embed link built by this viewer pins, in the zone the board is drawn in. */
+export const shareLinkRangeOf = (model: Model, timeZone: string): ShareLinkRange => ({
+	range: viewerTimeRangeOf(model),
+	timeZone,
+})
+
+/** The range the board shows: this viewer's pick, else the board's saved range. */
+export const timeRangeOf = (model: Model): TimeRange | null =>
+	viewerTimeRangeOf(model) ?? model.document?.timeRange ?? null
+
+export const isSameTimeRange = (a: TimeRange | null, b: TimeRange | null): boolean =>
+	a === null || b === null
+		? a === b
+		: a.type === "relative"
+			? b.type === "relative" && a.value === b.value
+			: b.type === "absolute" && a.startTime === b.startTime && a.endTime === b.endTime
+
 /** `resolveTimeRange`: snapped on entry, unsnapped after a reload; a bad preset falls back to 1h. */
 export const windowOf = (model: Model, context: PageContext) => {
-	if (model.timeRange === null || model.nowMs === null) return null
+	const timeRange = timeRangeOf(model)
+	if (timeRange === null || model.nowMs === null) return null
 	const options = { snap: model.refreshVersion === 0, timeZone: context.timeZone, nowMs: model.nowMs }
 	return (
-		resolveTimeRangeWindow(model.timeRange, options) ??
+		resolveTimeRangeWindow(timeRange, options) ??
 		resolveTimeRangeWindow({ type: "relative", value: "1h" }, options)
 	)
 }
@@ -67,7 +91,7 @@ type FetchCommand = ReturnType<typeof FetchWidget> | ReturnType<typeof FetchVari
 export const optionsByNameOf = (model: Model, context: PageContext): Record<string, OptionsState> =>
 	optionsByNameFor(
 		context.orgId,
-		model.document?.variables ?? [],
+		shownDocumentOf(model)?.variables ?? [],
 		model.variableOptions,
 		windowOf(model, context),
 	)
@@ -76,7 +100,7 @@ export const optionsByNameOf = (model: Model, context: PageContext): Record<stri
 export const variablesOf = (model: Model, context: PageContext) =>
 	planVariablesOf(
 		context.orgId,
-		model.document?.variables ?? [],
+		shownDocumentOf(model)?.variables ?? [],
 		variableValuesFromSearch(model.search),
 		model.variableOptions,
 		windowOf(model, context),
@@ -86,7 +110,7 @@ export const variablesOf = (model: Model, context: PageContext) =>
 const planVariableOptions = (model: Model, context: PageContext, mode: Keyed.RequestMode) => {
 	const planned = planOptionRequests(
 		context.orgId,
-		model.document?.variables ?? [],
+		shownDocumentOf(model)?.variables ?? [],
 		model.variableOptions,
 		windowOf(model, context),
 		mode,
@@ -194,20 +218,22 @@ const isInFlight = (requests: Model["requests"], slot: WidgetSlot): boolean => {
 	return request !== undefined && AsyncData.isPending(request.data)
 }
 
+type Planned = { readonly model: Model; readonly commands: ReadonlyArray<FetchCommand> }
+type OptionsPlan = ReturnType<typeof planVariableOptions>
+
 /**
- * Plans every revealed tile against the current window and asks for any request key not yet
+ * Plans the given revealed tiles against the current window and asks for any request key not yet
  * held (`Load`) or held but stale (`Refresh`). Tiles that share a key share one fetch; off-screen
  * tiles are only marked stale and ask once they are back in view.
  */
-export const replan = (
+const planTiles = (
 	model: Model,
 	context: PageContext,
 	mode: Keyed.RequestMode,
-): { readonly model: Model; readonly commands: ReadonlyArray<FetchCommand> } => {
-	const document = shownDocumentOf(model)
-	if (document === null) return { model, commands: [] }
+	widgets: ReadonlyArray<Widget>,
+	options: OptionsPlan,
+): Planned => {
 	const window = windowOf(model, context)
-	const options = planVariableOptions(model, context, mode)
 	const withOptions = { ...model, variableOptions: options.variableOptions }
 	const variables = variablesOf(withOptions, context)
 	const initial: PlanState = {
@@ -216,7 +242,7 @@ export const replan = (
 		commands: options.commands,
 		asked: [],
 	}
-	const planned = Arr.reduce(document.widgets, initial, (state, widget) => {
+	const planned = Arr.reduce(widgets, initial, (state, widget) => {
 		const slot = slotOf(model, widget.id)
 		const keep = (kept: WidgetSlot): PlanState =>
 			kept === state.widgets[widget.id]
@@ -261,4 +287,30 @@ export const replan = (
 		model: { ...withOptions, widgets: planned.widgets, requests: referencedRequests(planned) },
 		commands: planned.commands,
 	}
+}
+
+/** Every revealed tile and the variables' option lists, for a new window, document or variable. */
+export const replan = (model: Model, context: PageContext, mode: Keyed.RequestMode): Planned => {
+	const document = shownDocumentOf(model)
+	if (document === null) return { model, commands: [] }
+	return planTiles(model, context, mode, document.widgets, planVariableOptions(model, context, mode))
+}
+
+/** One tile revealed, measured or narrowed: no other tile's plan can have moved. */
+export const replanTile = (
+	model: Model,
+	context: PageContext,
+	widgetId: string,
+	mode: Keyed.RequestMode,
+): Planned => {
+	const widget = Arr.findFirst(
+		shownDocumentOf(model)?.widgets ?? [],
+		(candidate) => candidate.id === widgetId,
+	)
+	return widget._tag === "None"
+		? { model, commands: [] }
+		: planTiles(model, context, mode, [widget.value], {
+				variableOptions: model.variableOptions,
+				commands: [],
+			})
 }

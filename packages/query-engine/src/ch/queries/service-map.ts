@@ -1344,7 +1344,7 @@ export function serviceExternalEdgesSQL(
 		// Deliberately HAVING, not WHERE: `targetName` is a computed output alias,
 		// and although it happens to be a pure function of grouped columns today,
 		// a future editor shouldn't have to re-derive that to know this is safe.
-		.having(() => [CH.dynamicColumn<string>("targetName").neq("")])
+		.having(() => [CH.dynamicColumn("targetName").neq("")])
 
 	// Addresses this service was observed calling that resolve to a known
 	// internal service in the same window. `GROUP BY` is the DSL's SELECT DISTINCT.

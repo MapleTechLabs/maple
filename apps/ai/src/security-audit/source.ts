@@ -129,23 +129,24 @@ const answer = (effect: Effect.Effect<SourceOutput, SourceReadError>) =>
  * A model's path as a repository-relative one: a leading `./` or `/` and backslashes are spelling,
  * `..` resolves lexically. "" is the root; undefined when the path climbs out of it.
  */
-export const normalizePath = (raw: string): string | undefined =>
-	Arr.filter(
-		Str.split("/")(Str.replaceAll("\\", "/")(Str.trim(raw))),
-		(part) => part !== "" && part !== ".",
+export const normalizePath = (raw: string): string | undefined => {
+	const resolved = Arr.reduce<string, ReadonlyArray<string> | undefined>(
+		Arr.filter(
+			Str.split("/")(Str.replaceAll("\\", "/")(Str.trim(raw))),
+			(part) => part !== "" && part !== ".",
+		),
+		[],
+		(parts, part) =>
+			parts === undefined
+				? undefined
+				: part !== ".."
+					? [...parts, part]
+					: parts.length === 0
+						? undefined
+						: parts.slice(0, -1),
 	)
-		.reduce<ReadonlyArray<string> | undefined>(
-			(parts, part) =>
-				parts === undefined
-					? undefined
-					: part !== ".."
-						? [...parts, part]
-						: parts.length === 0
-							? undefined
-							: parts.slice(0, -1),
-			[],
-		)
-		?.join("/")
+	return resolved === undefined ? undefined : Arr.join(resolved, "/")
+}
 
 const resolvePath = (raw: string): Effect.Effect<string, ToolFailure> => {
 	const path = normalizePath(raw)
@@ -183,7 +184,7 @@ const listing = (path: string, files: ReadonlyArray<string>, truncated: boolean)
  */
 const missedRead = (source: SourceReaderApi, path: string, error: SourceReadError) =>
 	Effect.gen(function* () {
-		const basename = Str.slice(path.lastIndexOf("/") + 1)(path)
+		const basename = Arr.lastNonEmpty(Str.split("/")(path))
 		if (SKILL_REFERENCE_FILES.has(basename))
 			return yield* Effect.fail<ToolFailure>({
 				message: `${path} is not a file of this repository: ${basename} is the audit's own method text, and what you need from it is already in your prompt. Read the target's files instead.`,

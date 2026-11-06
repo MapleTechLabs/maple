@@ -12,6 +12,7 @@ import {
 	SDK_HINT_HEADER,
 	sdkHint,
 } from "./transport"
+import * as Arr from "effect/Array"
 
 const CONFIG = {
 	endpoint: "https://ingest.test",
@@ -245,7 +246,9 @@ describe("transport", () => {
 	it("writes lone surrogates as U+FFFD, so one bad string cannot cost ingest the batch", async () => {
 		await postSessionEvents(CONFIG, [{ message: "cut \ud83d" }])
 		await postSessionMeta(CONFIG, { url: "\udc00tail" })
-		const bodies = fetchMock.mock.calls.map((call) => String((call[1] as RequestInit).body))
+		const bodies = await Promise.all(
+			fetchMock.mock.calls.map((call) => new Response((call[1] as RequestInit).body).text()),
+		)
 		expect(bodies).toEqual(['{"message":"cut \\ufffd"}\n', '{"url":"\\ufffdtail"}\n'])
 	})
 
@@ -254,13 +257,15 @@ describe("transport", () => {
 		const release = reserveKeepalive(true, 40 * 1024)
 		const rows = Array.from({ length: 20 }, (_, seq) => ({ seq, message: "x".repeat(1_000) }))
 		expect(await postSessionEvents(CONFIG, rows, true)).toBe("accepted")
-		const sent = fetchMock.mock.calls.map((call) => {
-			const init = call[1] as RequestInit
-			const body = String(init.body)
-			return { keepalive: init.keepalive, bytes: new TextEncoder().encode(body).byteLength, body }
-		})
+		const sent = await Promise.all(
+			fetchMock.mock.calls.map(async (call) => {
+				const init = call[1] as RequestInit
+				const body = await new Response(init.body).text()
+				return { keepalive: init.keepalive, bytes: new TextEncoder().encode(body).byteLength, body }
+			}),
+		)
 		expect(sent.map((part) => part.keepalive)).toEqual([true, false])
-		expect(sent[0]!.bytes).toBeLessThanOrEqual(8 * 1024)
+		expect(Arr.getUnsafe(sent, 0).bytes).toBeLessThanOrEqual(8 * 1024)
 		// SAFETY: each line is one of the rows above, serialized by the transport.
 		const seqs = sent.flatMap((part) =>
 			part.body

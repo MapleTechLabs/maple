@@ -13,7 +13,7 @@ import {
 	upsertFingerprintEntry,
 	type IncidentFingerprintEntry,
 } from "./consolidation"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 const nowMs = Date.parse("2026-06-12T12:00:00Z")
 
@@ -67,7 +67,7 @@ describe("parseFingerprints", () => {
 	it("tolerates malformed JSON by reseeding", () => {
 		const entries = parseFingerprints(incidentRow({ fingerprintsJson: "{not json" }))
 		expect(entries).toHaveLength(1)
-		expect(entries[0]!.fingerprintHash).toBe("fp1")
+		expect(entries[0].fingerprintHash).toBe("fp1")
 	})
 })
 
@@ -75,7 +75,7 @@ describe("upsertFingerprintEntry", () => {
 	it("replaces an existing fingerprint's entry", () => {
 		const next = upsertFingerprintEntry([entry()], entry({ lastValue: 99 }))
 		expect(next).toHaveLength(1)
-		expect(next[0]!.lastValue).toBe(99)
+		expect(next[0].lastValue).toBe(99)
 	})
 
 	it("appends new fingerprints up to the cap", () => {
@@ -87,7 +87,9 @@ describe("upsertFingerprintEntry", () => {
 		expect(Arr.some(next, (e) => e.fingerprintHash === "overflow")).toBe(false)
 		// Updates to entries already inside the cap still apply.
 		const updated = upsertFingerprintEntry(full, entry({ fingerprintHash: "fp0", lastValue: 7 }))
-		expect(updated.find((e) => e.fingerprintHash === "fp0")!.lastValue).toBe(7)
+		expect(
+			Option.getOrUndefined(Arr.findFirst(updated, (e) => e.fingerprintHash === "fp0"))!.lastValue,
+		).toBe(7)
 	})
 
 	it("round-trips through serialize/parse", () => {
@@ -116,8 +118,12 @@ describe("headlineSeverity", () => {
 describe("markFingerprintResolved", () => {
 	it("stamps only the matching entry", () => {
 		const next = markFingerprintResolved([entry(), entry({ fingerprintHash: "fp2" })], "fp2", nowMs)
-		expect(next.find((e) => e.fingerprintHash === "fp1")!.resolvedAt).toBeNull()
-		expect(next.find((e) => e.fingerprintHash === "fp2")!.resolvedAt).toBe(nowMs)
+		expect(
+			Option.getOrUndefined(Arr.findFirst(next, (e) => e.fingerprintHash === "fp1"))!.resolvedAt,
+		).toBeNull()
+		expect(
+			Option.getOrUndefined(Arr.findFirst(next, (e) => e.fingerprintHash === "fp2"))!.resolvedAt,
+		).toBe(nowMs)
 	})
 
 	it("keeps a consolidated incident active until every fingerprint recovers", () => {

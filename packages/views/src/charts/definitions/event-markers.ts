@@ -2,7 +2,7 @@ import { rect, ruleX, text } from "@tanstack/charts"
 import { decorative } from "@tanstack/charts/mark/decorative"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { type ChartEventMarker, EventTone, type MarkerColors } from "../event-marker-spec"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 
 // Chart event marker marks and their placement in the window, colours resolved by the page.
 
@@ -18,10 +18,13 @@ export const placeMarkersInWindow = (
 	bucketIsos: ReadonlyArray<string>,
 ): ReadonlyArray<PlacedMarker> => {
 	if (bucketIsos.length === 0 || markers.length === 0) return []
-	const times = Arr.filter(
-		Arr.map(bucketIsos, (iso) => toEpochMs(iso)),
-		(ms) => Number.isFinite(ms),
-	).toSorted((a, b) => a - b)
+	const times = Arr.sort(
+		Arr.filter(
+			Arr.map(bucketIsos, (iso) => toEpochMs(iso)),
+			(ms) => Number.isFinite(ms),
+		),
+		Order.Number,
+	)
 	const first = times[0]
 	const last = times[times.length - 1]
 	if (first === undefined || last === undefined) return []

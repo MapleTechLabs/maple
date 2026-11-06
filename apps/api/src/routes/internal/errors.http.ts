@@ -2,19 +2,23 @@ import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant, ErrorForbiddenError, MapleInternalApi } from "@maple/domain/http"
 import { Effect } from "effect"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
+import { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssueMergeService"
+import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { IssueFixVerificationService } from "@maple/backend/services/errors/IssueFixVerificationService"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 
 export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (handlers) =>
 	Effect.gen(function* () {
 		const actors = yield* ErrorActorsService
 		const workflow = yield* ErrorIssueWorkflowService
+		const merges = yield* ErrorIssueMergeService
 		const policies = yield* ErrorPolicyService
 		const errors = yield* ErrorsService
 		const verification = yield* IssueFixVerificationService
+		const readModels = yield* ErrorIssueReadModelsService
 
 		return handlers
 			.handle("transitionIssue", ({ params, payload }) =>
@@ -169,6 +173,25 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (
 					)
 				}).pipe(Effect.withSpan("HttpErrors.setIssueSeverity")),
 			)
+			.handle("mergeIssues", ({ params, payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const actor = yield* actors.ensureUserActor(tenant.orgId, tenant.userId)
+					return yield* merges.mergeIssues(
+						tenant.orgId,
+						actor.id,
+						params.issueId,
+						payload.sourceIssueIds,
+					)
+				}).pipe(Effect.withSpan("HttpErrors.mergeIssues")),
+			)
+			.handle("unmergeIssue", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const actor = yield* actors.ensureUserActor(tenant.orgId, tenant.userId)
+					return yield* merges.unmergeIssue(tenant.orgId, actor.id, params.issueId)
+				}).pipe(Effect.withSpan("HttpErrors.unmergeIssue")),
+			)
 			.handle("listIssueEvents", ({ params, query }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
@@ -183,6 +206,21 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (
 					return response
 				}).pipe(Effect.withSpan("HttpErrors.listIssueEvents")),
 			)
+			.handle("listIssueAffectedUsers", ({ params, query }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* Effect.annotateCurrentSpan({
+						orgId: tenant.orgId,
+						"maple.issue.id": params.issueId,
+					})
+					const response = yield* readModels.listIssueAffectedUsers(tenant.orgId, params.issueId, {
+						startTime: query.startTime,
+						endTime: query.endTime,
+					})
+					yield* Effect.annotateCurrentSpan({ "result.rowCount": response.users.length })
+					return response
+				}).pipe(Effect.withSpan("HttpErrors.listIssueAffectedUsers")),
+			)
 			.handle("getEscalationPolicy", () =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
@@ -194,11 +232,12 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-					yield* requireAdmin(
+					yield* Policy.check(
 						tenant.roles,
-						() =>
+						"error_policy:manage",
+						(denial) =>
 							new ErrorForbiddenError({
-								message: "Only org admins can manage the escalation policy",
+								message: denial.message,
 							}),
 					)
 					return yield* policies.upsertEscalationPolicy(tenant.orgId, tenant.userId, payload)

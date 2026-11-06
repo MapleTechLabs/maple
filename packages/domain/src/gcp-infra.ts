@@ -22,7 +22,7 @@ export interface GcpInfraService {
 	/** The metric group the tab reads. */
 	readonly resourceType: string
 	/** What identifies a row, as column label and resource attribute. The first names the row. */
-	readonly identity: ReadonlyArray<readonly [label: string, attribute: string]>
+	readonly identity: Arr.NonEmptyReadonlyArray<readonly [label: string, attribute: string]>
 }
 
 const PROJECT = ["Project", "cloud.account.id"] as const
@@ -101,18 +101,20 @@ const WORKLOAD_NAME_ATTRIBUTES = ["service.name", "k8s.container.name", "host.na
 
 /** Whether a source's rows are named after the workload; the rest are `gcp/<resource type>`. */
 export const gcpInfraNamesService = (source: GcpInfraSourceId): boolean =>
-	WORKLOAD_NAME_ATTRIBUTES.includes(GCP_INFRA_SOURCES[source].identity[0][1])
+	WORKLOAD_NAME_ATTRIBUTES.includes(Arr.headNonEmpty(GCP_INFRA_SOURCES[source].identity)[1])
 
 /** The `service.name` the series of one workload carry: see `gcpResourceAttributes`. */
 export const gcpInfraServiceName = (source: GcpInfraSourceId, keys: ReadonlyArray<string>): string =>
 	gcpInfraNamesService(source) ? (keys[0] ?? "") : `gcp/${GCP_INFRA_SOURCES[source].resourceType}`
 
 /** The curated metrics behind a tab or a chart source, with those stored under its workloads. */
-export const gcpInfraMetrics = (source: GcpInfraSourceId): ReadonlyArray<GcpMetric> =>
-	Arr.filter(
+export const gcpInfraMetrics = (source: GcpInfraSourceId): ReadonlyArray<GcpMetric> => {
+	const groups = Arr.filter(
 		GCP_METRIC_GROUPS,
 		(group) => (group.workloadOf ?? group.resourceType) === GCP_INFRA_SOURCES[source].resourceType,
-	).flatMap((group) => group.metrics)
+	)
+	return Arr.flatMap(groups, (group) => group.metrics)
+}
 
 /** Cap on the rows of one query: one row per workload or time bucket, metric and label value. */
 export const GCP_INFRA_ROW_LIMIT = 10_000

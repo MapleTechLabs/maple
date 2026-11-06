@@ -25,7 +25,7 @@ describe("node catalogue", () => {
 	it("covers current, lifted and live spine emphasis", () => {
 		expect(Arr.some(spines, (data) => data.current === true)).toBe(true)
 		expect(Arr.some(spines, (data) => data.lifted === true)).toBe(true)
-		expect(spines.some((data) => data.live === true && data.phase)).toBe(true)
+		expect(Arr.some(spines, (data) => data.live === true && Boolean(data.phase))).toBe(true)
 	})
 
 	it("covers every action kind", () => {
@@ -42,7 +42,7 @@ describe("node catalogue", () => {
 		expect(new Set(Arr.map(catalogue.edges, (edge) => edge.kind))).toEqual(new Set(["causal", "roadmap"]))
 		expect(Arr.some(catalogue.edges, (edge) => edge.live === true)).toBe(true)
 		expect(Arr.some(catalogue.edges, (edge) => edge.live === undefined)).toBe(true)
-		expect(catalogue.edges.some((edge) => edge.label)).toBe(true)
+		expect(Arr.some(catalogue.edges, (edge) => Boolean(edge.label))).toBe(true)
 	})
 
 	it("gives every edge two real anchors", () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect } from "effect"
 import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { alertCheckGroupTotalsQuery, alertChecksSummaryQuery, listRuleChecksQuery } from "./alert-checks"
@@ -146,8 +146,9 @@ describe("alert check rows decode timestamps to DateTime.Utc", () => {
 					level: "",
 				},
 			])
-			expect(DateTime.formatIso(row!.timestamp)).toBe("2024-01-01T10:00:00.250Z")
-			expect(DateTime.formatIso(row!.windowEnd)).toBe("2024-01-01T10:00:00.000Z")
+			assert.isDefined(row)
+			expect(DateTime.formatIso(row.timestamp)).toBe("2024-01-01T10:00:00.250Z")
+			expect(DateTime.formatIso(row.windowEnd)).toBe("2024-01-01T10:00:00.000Z")
 		}),
 	)
 
@@ -172,7 +173,8 @@ describe("alert check rows decode timestamps to DateTime.Utc", () => {
 					threshold: 1,
 				},
 			])
-			expect(DateTime.toEpochMillis(row!.bucket)).toBe(Date.UTC(2024, 0, 1, 10))
+			assert.isDefined(row)
+			expect(DateTime.toEpochMillis(row.bucket)).toBe(Date.UTC(2024, 0, 1, 10))
 		}),
 	)
 })

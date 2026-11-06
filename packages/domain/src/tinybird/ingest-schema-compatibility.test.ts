@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { datasources, pipes } from "../generated/tinybird-project-manifest"
-import { String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 describe("Tinybird Events API schema compatibility", () => {
 	it("never combines JSONPaths with aggregate-state column types", () => {
@@ -12,8 +12,12 @@ describe("Tinybird Events API schema compatibility", () => {
 	})
 
 	it("keeps deployed materialized-pipe triggers stable", () => {
-		const timeOrderedErrors = pipes.find(({ name }) => name === "error_events_by_time_mv")
-		const minutelyErrors = pipes.find(({ name }) => name === "error_fingerprints_minutely_mv")
+		const timeOrderedErrors = Option.getOrUndefined(
+			Arr.findFirst(pipes, ({ name }) => name === "error_events_by_time_mv"),
+		)
+		const minutelyErrors = Option.getOrUndefined(
+			Arr.findFirst(pipes, ({ name }) => name === "error_fingerprints_minutely_mv"),
+		)
 
 		// Tinybird rejects changing the trigger datasource of an existing
 		// materialized pipe. This long-lived pipe was deployed from traces.

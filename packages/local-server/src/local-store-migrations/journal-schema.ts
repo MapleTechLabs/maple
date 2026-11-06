@@ -94,7 +94,7 @@ export const MigrationJournalSchema = Schema.Struct({
 	formatVersion: Schema.Literal(2),
 	migrationId: Schema.String.check(Schema.isPattern(migrationIdPattern)),
 	phase: MigrationPhaseSchema,
-	chain: Schema.Array(MigrationStepJournalSchema).check(Schema.isMinLength(1)),
+	chain: Schema.NonEmptyArray(MigrationStepJournalSchema),
 	currentStepIndex: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	sourceDataDir: ResolvedPath,
 	sourceStoreId: NonEmptyString,

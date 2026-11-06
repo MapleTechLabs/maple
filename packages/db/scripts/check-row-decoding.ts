@@ -62,7 +62,9 @@ interface Failure {
 const pageFailures = (
 	keys: ReadonlyArray<string>,
 	rows: ReadonlyArray<Record<string, unknown>>,
-	decode: (rows: ReadonlyArray<Record<string, unknown>>) => Effect.Effect<unknown, unknown>,
+	decode: (
+		rows: ReadonlyArray<Record<string, unknown>>,
+	) => Effect.Effect<unknown, PG.CompiledQueryDecodeError>,
 ) =>
 	Effect.forEach(rows, (row) =>
 		Effect.exit(decode([row])).pipe(
@@ -105,12 +107,20 @@ const decodeTable = (orm: Orm.DatabaseApi, table: AnyTable) => {
 		offset: number,
 		rows: number,
 		failures: ReadonlyArray<Failure>,
-	): Effect.Effect<{ readonly rows: number; readonly failures: ReadonlyArray<Failure> }, unknown> =>
+	): Effect.Effect<
+		{ readonly rows: number; readonly failures: ReadonlyArray<Failure> },
+		Orm.DatabaseError | PG.QueryBuilderError
+	> =>
 		Effect.gen(function* () {
 			const compiled = yield* PG.compile(
 				PG.from(table)
 					.select()
-					.orderBy(($) => Arr.map(keys, (key) => [$[key]!, "asc"] as const))
+					.orderBy(($) =>
+						Arr.flatMap(keys, (key) => {
+							const column = $[key]
+							return column === undefined ? [] : [[column, "asc"] as const]
+						}),
+					)
 					.limit(PAGE)
 					.offset(offset),
 			)

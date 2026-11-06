@@ -1,5 +1,5 @@
 import { asFiniteNumber } from "@maple/ui/components/charts/_shared/breakdown-rows"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Order, String as Str } from "effect"
 
 // The graph and layout of `PathsChart` (packages/ui/src/components/charts/paths/paths-chart.tsx):
 // rows are hops, column 0 is the anchor, `''` ended and `$other` the folded remainder.
@@ -80,6 +80,13 @@ export const toGraph = (
 	return { nodes: [...nodes.values()], links }
 }
 
+/** Kind first, then the larger count, then name descending. */
+const byColumnPlace: Order.Order<PathNode> = Order.combineAll([
+	Order.mapInput(Order.Number, (node: PathNode) => KIND_RANK[node.kind]),
+	Order.flip(Order.mapInput(Order.Number, (node: PathNode) => node.count)),
+	(a: PathNode, b: PathNode) => Str.localeCompare(b.name)(a.name),
+])
+
 const placeNodes = (
 	nodes: ReadonlyArray<PathNode>,
 	columns: ReadonlyArray<number>,
@@ -88,11 +95,9 @@ const placeNodes = (
 ): Map<string, PlacedNode> => {
 	const placed = new Map<string, PlacedNode>()
 	Arr.forEach(columns, (column) => {
-		const ordered = Arr.filter(nodes, (node) => node.column === column).toSorted(
-			(a, b) =>
-				KIND_RANK[a.kind] - KIND_RANK[b.kind] ||
-				b.count - a.count ||
-				Str.localeCompare(b.name)(a.name),
+		const ordered = Arr.sort(
+			Arr.filter(nodes, (node) => node.column === column),
+			byColumnPlace,
 		)
 		Arr.reduce(ordered, HEADER_H, (y, node) => {
 			const h = Math.max(2, node.count * scale)
@@ -111,7 +116,7 @@ export const layoutPaths = (
 	height: number,
 	reverse: boolean,
 ): PathsLayout => {
-	const columns = [...new Set(Arr.map(nodes, (node) => node.column))].toSorted((a, b) => a - b)
+	const columns = Arr.sort(new Set(Arr.map(nodes, (node) => node.column)), Order.Number)
 	const columnX = (column: number): number => {
 		const index = columns.indexOf(column)
 		const x = columns.length === 1 ? 0 : (index * (width - NODE_W)) / (columns.length - 1)
@@ -127,27 +132,23 @@ export const layoutPaths = (
 	const scale = plotH / maxTotal
 	const placed = placeNodes(nodes, columns, columnX, scale)
 	const yOf = (id: string) => placed.get(id)?.y ?? 0
+	const bySourceY = Order.mapInput(Order.Number, (link: PathLink) => yOf(link.source))
+	const byTargetY = Order.mapInput(Order.Number, (link: PathLink) => yOf(link.target))
 	const outOffset = new Map<string, number>()
 	const inOffset = new Map<string, number>()
-	const withSy = Arr.map(
-		links.toSorted((a, b) => yOf(a.source) - yOf(b.source) || yOf(a.target) - yOf(b.target)),
-		(link) => {
-			const h = link.count * scale
-			const sy = yOf(link.source) + (outOffset.get(link.source) ?? 0)
-			outOffset.set(link.source, (outOffset.get(link.source) ?? 0) + h)
-			return { ...link, sy, h }
-		},
-	)
-	const laid = Arr.map(
-		withSy.toSorted((a, b) => yOf(a.target) - yOf(b.target) || yOf(a.source) - yOf(b.source)),
-		(link): PlacedLink => {
-			const ty = yOf(link.target) + (inOffset.get(link.target) ?? 0)
-			inOffset.set(link.target, (inOffset.get(link.target) ?? 0) + link.h)
-			const sx = placed.get(link.source)?.x ?? 0
-			const tx = placed.get(link.target)?.x ?? 0
-			return { ...link, ty, x0: reverse ? sx : sx + NODE_W, x1: reverse ? tx + NODE_W : tx }
-		},
-	)
+	const withSy = Arr.map(Arr.sort(links, Order.combine(bySourceY, byTargetY)), (link) => {
+		const h = link.count * scale
+		const sy = yOf(link.source) + (outOffset.get(link.source) ?? 0)
+		outOffset.set(link.source, (outOffset.get(link.source) ?? 0) + h)
+		return { ...link, sy, h }
+	})
+	const laid = Arr.map(Arr.sort(withSy, Order.combine(byTargetY, bySourceY)), (link): PlacedLink => {
+		const ty = yOf(link.target) + (inOffset.get(link.target) ?? 0)
+		inOffset.set(link.target, (inOffset.get(link.target) ?? 0) + link.h)
+		const sx = placed.get(link.source)?.x ?? 0
+		const tx = placed.get(link.target)?.x ?? 0
+		return { ...link, ty, x0: reverse ? sx : sx + NODE_W, x1: reverse ? tx + NODE_W : tx }
+	})
 	return { nodes: placed, links: laid, columns }
 }
 

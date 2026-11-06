@@ -62,21 +62,30 @@ const fixtureOf = (model: ToolModel) =>
 	)
 
 const errorRowOf = (model: ToolModel, fingerprint: string) =>
-	buildToolErrorsFixture(model.toolName, model.nowMs).find((row) => row.fingerprint === fingerprint)
+	Arr.findFirst(
+		buildToolErrorsFixture(model.toolName, model.nowMs),
+		(row) => row.fingerprint === fingerprint,
+	)
 
 const modalAnswer = (message: ErrorModal.Message) => ToolMessage.GotErrorModalMessage({ message })
 
 /** One page of the open group's samples, after the cursor the page holds, 25 at a time. */
 const samplesPage = (model: ToolModel, args: typeof SamplesArgs.Type) => {
-	const row = errorRowOf(model, args.fingerprint)
-	if (row === undefined) return { occurrences: [], nextCursor: undefined }
+	const found = errorRowOf(model, args.fingerprint)
+	if (Option.isNone(found)) return { occurrences: [], nextCursor: undefined }
+	const row = found.value
 	const all = buildToolErrorDetailFixture(model.toolName, row, {
 		session: args.session,
 		variant: args.variant,
 		pages: Number.POSITIVE_INFINITY,
 	}).occurrences
 	const start =
-		args.before === undefined ? 0 : all.findIndex((sample) => sample.spanId === args.before?.spanId) + 1
+		args.before === undefined
+			? 0
+			: Option.match(
+					Arr.findFirstIndex(all, (sample) => sample.spanId === args.before?.spanId),
+					{ onNone: () => 0, onSome: (index) => index + 1 },
+				)
 	const occurrences = all.slice(start, start + SAMPLES_PAGE)
 	const last = occurrences.at(-1)
 	return {
@@ -153,7 +162,7 @@ const answerModal = (command: PageCommand, model: ToolModel): Option.Option<Tool
 					command.args,
 				),
 				({ key, fingerprint }) =>
-					Option.map(Option.fromUndefinedOr(errorRowOf(model, fingerprint)), (row) =>
+					Option.map(errorRowOf(model, fingerprint), (row) =>
 						modalAnswer(
 							ErrorModal.Message.CompletedFetchDetail({
 								key,
@@ -223,11 +232,13 @@ export const settle = (step: DetailStep, timeZone: string): Settled => {
 		onNone: (): Settled => ({ model: step.model, commands: [] }),
 		onSome: (next) => settle(next, timeZone),
 	})
-	return Arr.flatMap(resolved, ([, maybe]) => Option.toArray(maybe)).reduce<Settled>(
-		(result, message) => {
+	const initial: Settled = { model: navigated.model, commands: [...rest, ...navigated.commands] }
+	return Arr.reduce(
+		Arr.flatMap(resolved, ([, maybe]) => Option.toArray(maybe)),
+		initial,
+		(result, message): Settled => {
 			const next = settle(toolUpdate(result.model, message, contextOf(timeZone)), timeZone)
 			return { model: next.model, commands: [...result.commands, ...next.commands] }
 		},
-		{ model: navigated.model, commands: [...rest, ...navigated.commands] },
 	)
 }

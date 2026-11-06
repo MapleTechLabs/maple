@@ -9,7 +9,7 @@ import type { Model } from "./model"
 import { update } from "./page-update"
 import { init } from "./update"
 
-// The editor previews a query that reads `$service` at the variable's default value.
+// The editor previews a query that reads `$service` at the board's selection, else its default.
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -53,18 +53,22 @@ const board = (variables: ReadonlyArray<unknown>) =>
 		schemaVersion: 3,
 	})
 
-const opened = (variables: ReadonlyArray<unknown>): Step =>
-	[
-		Message.CompletedReadClock({ nowMs: Date.parse("2026-10-01T12:00:00Z") }),
-		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(board(variables)) }),
-	].reduce<Step>(
+const opened = (
+	variables: ReadonlyArray<unknown>,
+	search: Readonly<Record<`var-${string}`, string>> = {},
+): Step =>
+	Arr.reduce<Message, Step>(
+		[
+			Message.CompletedReadClock({ nowMs: Date.parse("2026-10-01T12:00:00Z") }),
+			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(board(variables)) }),
+		],
+		{
+			model: init({ dashboardId: "dash_vars", widgetId: "throughput", search }, context).model,
+			commands: [],
+		},
 		(step, message) => {
 			const next = update(step.model, message, context)
 			return { model: next.model, commands: [...step.commands, ...(next.commands ?? [])] }
-		},
-		{
-			model: init({ dashboardId: "dash_vars", widgetId: "throughput", search: {} }, context).model,
-			commands: [],
 		},
 	)
 
@@ -88,6 +92,22 @@ describe("widget editor variables", () => {
 		])
 		expect(sentParams(step)).toContain("web")
 		expect(sentParams(step)).not.toContain("$service")
+	})
+
+	test("a query reading a variable previews at the board's current selection", () => {
+		const step = opened(
+			[
+				{
+					name: "service",
+					type: "custom",
+					options: [{ value: "api" }, { value: "web" }],
+					defaultValue: "web",
+				},
+			],
+			{ "var-service": "api" },
+		)
+		expect(sentParams(step)).toContain("api")
+		expect(sentParams(step)).not.toContain("web")
 	})
 
 	test("a query variable's options load before the preview runs", () => {

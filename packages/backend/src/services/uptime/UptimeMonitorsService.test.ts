@@ -36,9 +36,11 @@ import { UptimeMonitorsService } from "./UptimeMonitorsService"
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_uptime")
-const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_uptime_other")
-const USER = Schema.decodeUnknownSync(UserId)("user_uptime")
+const ORG = Schema.decodeSync(OrgId)("org_uptime")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_uptime_other")
+const USER = Schema.decodeSync(UserId)("user_uptime")
+const tokenOf = (url: string) =>
+	Str.slice(Option.match(Str.lastIndexOf("/")(url), { onNone: () => 0, onSome: (index) => index + 1 }))(url)
 const UNKNOWN_ID = UptimeMonitorId.make("00000000-0000-4000-8000-000000000000")
 
 const config = () =>
@@ -196,7 +198,7 @@ describe("UptimeMonitorsService", () => {
 			assert.isFalse(paused.enabled)
 			assert.strictEqual(paused.state.status, "paused")
 			// The scraper stops probing a paused monitor; other orgs' monitors are unaffected.
-			const targets = yield* service.listProbeTargets()
+			const targets = yield* service.listProbeTargets
 			assert.deepStrictEqual(
 				Arr.map(targets, (target) => target.id),
 				[other.id],
@@ -409,7 +411,7 @@ describe("UptimeMonitorsService", () => {
 				assert.strictEqual(applied, 1)
 				assert.strictEqual((yield* service.get(ORG, kept.id)).state.status, "down")
 				assert.deepStrictEqual(
-					(yield* service.list(ORG)).map((monitor) => monitor.id),
+					Arr.map(yield* service.list(ORG), (monitor) => monitor.id),
 					[kept.id],
 				)
 			})
@@ -482,7 +484,7 @@ describe("UptimeMonitorsService", () => {
 					[corrupt.id],
 				),
 			)
-			const targets = yield* service.listProbeTargets()
+			const targets = yield* service.listProbeTargets
 			assert.deepStrictEqual(
 				Arr.map(targets, (target) => target.id),
 				[healthy.id],
@@ -564,7 +566,7 @@ describe("UptimeMonitorsService", () => {
 						createdBy: USER,
 					})
 					const url = monitor.heartbeatUrl ?? ""
-					const token = Str.slice(url.lastIndexOf("/") + 1)(url)
+					const token = tokenOf(url)
 					yield* service.recordPing(token, true)
 					const ruleId = monitor.alertRuleId
 					if (ruleId === null) return assert.fail("A heartbeat monitor owns an alert rule")
@@ -641,7 +643,7 @@ describe("UptimeMonitorsService", () => {
 					createdBy: USER,
 				})
 				const url = monitor.heartbeatUrl ?? ""
-				yield* service.recordPing(Str.slice(url.lastIndexOf("/") + 1)(url), true)
+				yield* service.recordPing(tokenOf(url), true)
 				yield* Ref.set(target, monitor.id)
 				// Pinged at 0 every 300 s with 60 s grace: overdue at 1000 s. The read runs at 2, the write at 1.
 				yield* Ref.set(countdown, 2)
@@ -677,7 +679,7 @@ describe("UptimeMonitorsService", () => {
 					createdBy: USER,
 				})
 				const url = monitor.heartbeatUrl ?? ""
-				const token = Str.slice(url.lastIndexOf("/") + 1)(url)
+				const token = tokenOf(url)
 				// Another ping lands between this ping's read (call 1) and write (call 2).
 				yield* racing.arm(2, Effect.orDie(service.recordPing(token, true)))
 				yield* service.recordPing(token, true)
@@ -786,8 +788,8 @@ describe("UptimeMonitorsService", () => {
 			})
 			const url = monitor.heartbeatUrl ?? ""
 			assert.match(url, /^https:\/\/api\.maple\.test\/hb\/[A-Za-z0-9_-]{22,}$/u)
-			const token = Str.slice(url.lastIndexOf("/") + 1)(url)
-			assert.deepStrictEqual(yield* service.listProbeTargets(), [])
+			const token = tokenOf(url)
+			assert.deepStrictEqual(yield* service.listProbeTargets, [])
 
 			yield* service.recordPing(token, true)
 			const up = yield* service.get(ORG, monitor.id)
@@ -864,9 +866,9 @@ describe("UptimeMonitorsService", () => {
 				{ concurrency: 2 },
 			)
 			assert.strictEqual(Arr.filter(results, Result.isSuccess).length, 1)
-			const refused = results.find(Result.isFailure)
+			const refused = Arr.findFirst(results, Result.isFailure)
 			assert.strictEqual(
-				refused === undefined ? null : refused.failure._tag,
+				Option.match(refused, { onNone: () => null, onSome: (failed) => failed.failure._tag }),
 				"@maple/http/errors/UptimeMonitorLimitReachedError",
 			)
 			assert.strictEqual((yield* service.list(ORG)).length, 1)

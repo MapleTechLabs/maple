@@ -1,6 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription } from "@maple/views/ui/alert"
 import { icon } from "@maple/views/ui/icon"
+import { Array as Arr, Option, Predicate } from "effect"
 
 // `memberDisplayName` and `AdminOnlyNotice`.
 
@@ -12,7 +13,13 @@ interface MemberName {
 
 /** A member's display name: full name, else their sign-in identifier, else nothing. */
 export const memberDisplayName = (user: MemberName | null | undefined): string | undefined => {
-	const fullName = [user?.firstName, user?.lastName].filter((part) => part).join(" ")
+	const fullName = Arr.join(
+		Arr.filter(
+			[user?.firstName, user?.lastName],
+			(part): part is string => Predicate.isNotNullish(part) && part !== "",
+		),
+		" ",
+	)
 	return fullName || user?.identifier || undefined
 }
 
@@ -21,8 +28,10 @@ export const otherAdminName = (
 	admins: ReadonlyArray<{ readonly publicUserData?: (MemberName & { readonly userId?: string }) | null }>,
 	viewerId: string | null | undefined,
 ): string | null =>
-	memberDisplayName(admins.find((admin) => admin.publicUserData?.userId !== viewerId)?.publicUserData) ??
-	null
+	memberDisplayName(
+		Option.getOrUndefined(Arr.findFirst(admins, (admin) => admin.publicUserData?.userId !== viewerId))
+			?.publicUserData,
+	) ?? null
 
 /** "Only admins can change X." plus "Ask <name>." when an admin's name is known. */
 export const adminOnlyNoticeText = (subject: string, adminName: string | null): string => {

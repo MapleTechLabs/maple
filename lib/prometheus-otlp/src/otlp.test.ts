@@ -23,6 +23,12 @@ const ctx: ScrapeOtlpContext = {
 
 const convert = (body: string) => convertFamiliesToOtlp(parsePrometheusText(body).families, ctx)
 
+const at = <T>(items: ReadonlyArray<T>, index: number): T => {
+	const item = items[index]
+	if (item === undefined) throw new Error(`no element at ${index}`)
+	return item
+}
+
 const metricByName = (metrics: ReadonlyArray<OtlpMetric>, name: string): OtlpMetric => {
 	const metric = metrics.find((m) => m.name === name)
 	if (!metric) throw new Error(`metric ${name} not found`)
@@ -32,7 +38,7 @@ const metricByName = (metrics: ReadonlyArray<OtlpMetric>, name: string): OtlpMet
 const metricsOf = (body: string): ReadonlyArray<OtlpMetric> => {
 	const { request } = convert(body)
 	if (request === null) throw new Error("expected a request")
-	return request.resourceMetrics[0]!.scopeMetrics[0]!.metrics
+	return at(at(request.resourceMetrics, 0).scopeMetrics, 0).metrics
 }
 
 const attrsToRecord = (attributes: ReadonlyArray<{ key: string; value: { stringValue: string } }>) =>
@@ -56,10 +62,10 @@ describe("convertFamiliesToOtlp", () => {
 
 	it("emits exactly the caller's resource attributes, in order, and scope name", () => {
 		const { request } = convert("# TYPE up gauge\nup 1")
-		const resource = request!.resourceMetrics[0]!.resource.attributes
+		const resource = at(request!.resourceMetrics, 0).resource.attributes
 		expect(resource.map((attr) => attr.key)).toEqual(["service.name", "scrape.target"])
 		expect(attrsToRecord(resource)).toEqual({ "service.name": "node", "scrape.target": "Node Exporter" })
-		expect(request!.resourceMetrics[0]!.scopeMetrics[0]!.scope.name).toBe("test-scraper")
+		expect(at(at(request!.resourceMetrics, 0).scopeMetrics, 0).scope.name).toBe("test-scraper")
 	})
 
 	it("converts counters to cumulative monotonic sums", () => {
@@ -71,7 +77,7 @@ describe("convertFamiliesToOtlp", () => {
 		expect(metric.sum).toBeDefined()
 		expect(metric.sum!.aggregationTemporality).toBe(2)
 		expect(metric.sum!.isMonotonic).toBe(true)
-		const point = metric.sum!.dataPoints[0]!
+		const point = at(metric.sum!.dataPoints, 0)
 		expect(point.asDouble).toBe(100)
 		expect(point.startTimeUnixNano).toBe("0")
 		expect(point.timeUnixNano).toBe(toUnixNano(ctx.scrapeTimeMs))
@@ -79,14 +85,16 @@ describe("convertFamiliesToOtlp", () => {
 
 	it("uses the sample timestamp when present", () => {
 		const metrics = metricsOf('# TYPE g gauge\ng{a="1"} 1 1712345678901')
-		expect(metricByName(metrics, "g").gauge!.dataPoints[0]!.timeUnixNano).toBe(toUnixNano(1712345678901))
+		expect(at(metricByName(metrics, "g").gauge!.dataPoints, 0).timeUnixNano).toBe(
+			toUnixNano(1712345678901),
+		)
 	})
 
 	it("merges target labels and sample labels into data point attributes, system labels win", () => {
 		const metrics = metricsOf(
 			'# TYPE g gauge\ng{job="evil",instance="evil",env="staging",custom="yes"} 1',
 		)
-		const attrs = attrsToRecord(metricByName(metrics, "g").gauge!.dataPoints[0]!.attributes)
+		const attrs = attrsToRecord(at(metricByName(metrics, "g").gauge!.dataPoints, 0).attributes)
 		expect(attrs).toEqual({
 			env: "staging",
 			custom: "yes",
@@ -109,7 +117,7 @@ describe("convertFamiliesToOtlp", () => {
 		)
 		const metric = metricByName(metrics, "lat")
 		expect(metric.histogram!.aggregationTemporality).toBe(2)
-		const point = metric.histogram!.dataPoints[0]!
+		const point = at(metric.histogram!.dataPoints, 0)
 		expect(point.explicitBounds).toEqual([0.1, 1, 5])
 		expect(point.bucketCounts).toEqual([1, 3, 5, 1])
 		// opentelemetry-proto's serde expects count/bucketCounts as JSON numbers (NOT
@@ -145,7 +153,7 @@ describe("convertFamiliesToOtlp", () => {
 		expect(byPath["/a"]?.count).toBe(3)
 		expect(byPath["/a"]?.bucketCounts).toEqual([2, 1])
 		expect(byPath["/b"]?.bucketCounts).toEqual([5, 0])
-		expect(attrsToRecord(byPath["/a"]!.attributes)).not.toHaveProperty("le")
+		expect(attrsToRecord(byPath["/a"].attributes)).not.toHaveProperty("le")
 	})
 
 	it("clamps negative bucket deltas and tolerates a missing _count via the +Inf bucket", () => {
@@ -159,12 +167,12 @@ describe("convertFamiliesToOtlp", () => {
 				"a_sum 1",
 			].join("\n"),
 		)
-		expect(metricByName(clamped, "a").histogram!.dataPoints[0]!.bucketCounts).toEqual([5, 0, 2])
+		expect(at(metricByName(clamped, "a").histogram!.dataPoints, 0).bucketCounts).toEqual([5, 0, 2])
 
 		const viaInf = metricsOf(
 			["# TYPE b histogram", 'b_bucket{le="1"} 1', 'b_bucket{le="+Inf"} 4', "b_sum 2"].join("\n"),
 		)
-		expect(metricByName(viaInf, "b").histogram!.dataPoints[0]!.count).toBe(4)
+		expect(at(metricByName(viaInf, "b").histogram!.dataPoints, 0).count).toBe(4)
 
 		const incomplete = convert(["# TYPE c histogram", 'c_bucket{le="1"} 1', "c_sum 2"].join("\n"))
 		expect(incomplete.request).toBeNull()
@@ -183,7 +191,7 @@ describe("convertFamiliesToOtlp", () => {
 		expect(metricByName(metrics, "rpc_sum").sum!.isMonotonic).toBe(false)
 		expect(metricByName(metrics, "rpc_count").sum!.isMonotonic).toBe(true)
 		const quantiles = metricByName(metrics, "rpc").gauge!.dataPoints
-		expect(attrsToRecord(quantiles[0]!.attributes).quantile).toBe("0.5")
+		expect(attrsToRecord(at(quantiles, 0).attributes).quantile).toBe("0.5")
 	})
 
 	it("drops non-finite values everywhere and counts them", () => {
@@ -232,7 +240,8 @@ describe("splitExportRequest", () => {
 		],
 	})
 
-	const metricsIn = (request: OtlpExportRequest) => request.resourceMetrics[0]!.scopeMetrics[0]!.metrics
+	const metricsIn = (request: OtlpExportRequest) =>
+		at(at(request.resourceMetrics, 0).scopeMetrics, 0).metrics
 
 	it("returns the request untouched when it fits the budget", () => {
 		const request = requestOf([gaugeMetric("up", 10)])
@@ -260,12 +269,12 @@ describe("splitExportRequest", () => {
 
 		expect(chunks.map((chunk) => countDataPoints(chunk))).toEqual([5, 5, 2])
 		for (const chunk of chunks) {
-			expect(chunk.resourceMetrics[0]!.resource).toEqual(request.resourceMetrics[0]!.resource)
-			expect(chunk.resourceMetrics[0]!.scopeMetrics[0]!.scope.name).toBe("test-scraper")
+			expect(at(chunk.resourceMetrics, 0).resource).toEqual(at(request.resourceMetrics, 0).resource)
+			expect(at(at(chunk.resourceMetrics, 0).scopeMetrics, 0).scope.name).toBe("test-scraper")
 		}
 		// `b` straddles the first two chunks: 4 of `a` + 1 of `b`, then the rest.
-		expect(metricsIn(chunks[0]!).map((m) => m.name)).toEqual(["a", "b"])
-		expect(metricsIn(chunks[1]!).map((m) => m.name)).toEqual(["b", "c"])
+		expect(metricsIn(at(chunks, 0)).map((m) => m.name)).toEqual(["a", "b"])
+		expect(metricsIn(at(chunks, 1)).map((m) => m.name)).toEqual(["b", "c"])
 	})
 
 	it("keeps a sum's temporality and monotonicity on every slice", () => {
@@ -281,7 +290,7 @@ describe("splitExportRequest", () => {
 
 		expect(chunks).toHaveLength(2)
 		for (const chunk of chunks) {
-			const sum = metricsIn(chunk)[0]!.sum!
+			const sum = at(metricsIn(chunk), 0).sum!
 			expect(sum.aggregationTemporality).toBe(2)
 			expect(sum.isMonotonic).toBe(true)
 		}
@@ -312,9 +321,9 @@ describe("splitExportRequest", () => {
 
 		expect(chunks.map((chunk) => countDataPoints(chunk))).toEqual([2, 1])
 		for (const chunk of chunks) {
-			const histogram = metricsIn(chunk)[0]!.histogram!
+			const histogram = at(metricsIn(chunk), 0).histogram!
 			expect(histogram.aggregationTemporality).toBe(2)
-			expect(histogram.dataPoints[0]!.bucketCounts).toEqual([1, 9])
+			expect(at(histogram.dataPoints, 0).bucketCounts).toEqual([1, 9])
 		}
 	})
 
@@ -337,7 +346,7 @@ describe("splitExportRequest", () => {
 						sm.metrics.flatMap((m) =>
 							m.gauge!.dataPoints.map(
 								(p) =>
-									`${rm.resource.attributes[0]!.value.stringValue}:${m.name}:${p.asDouble}`,
+									`${at(rm.resource.attributes, 0).value.stringValue}:${m.name}:${p.asDouble}`,
 							),
 						),
 					),
