@@ -1,10 +1,11 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Clock, Duration, Effect, Layer, Option, Array as Arr } from "effect"
+import { Clock, Duration, Effect, Layer, Option, Order, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { AlertDestinationId } from "@maple/domain/primitives"
-import { AlertsService } from "./AlertsService"
+import { WebhookAlertDestinationConfig } from "@maple/domain/http"
+import { AlertsService, type AlertsServiceApi } from "./AlertsService"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -92,7 +93,54 @@ const createSlo = Effect.fn(function* (destinationId: AlertDestinationId | undef
 	})
 })
 
+/** A webhook destination of its own, so a test can tell which tier notified whom. */
+const createNamedWebhook = (alerts: AlertsServiceApi, name: string) =>
+	alerts.createDestination(
+		orgId,
+		userId,
+		adminRoles,
+		new WebhookAlertDestinationConfig({
+			type: "webhook",
+			name,
+			enabled: true,
+			url: `https://example.com/${name}`,
+			signingSecret: "webhook-secret",
+		}),
+	)
+
+/** Opens an incident at `badPerMille` and returns which destinations it notified. */
+const notifiedBy = (badPerMille: number) => {
+	const { layer } = harness({ badPerMille })
+	return Effect.gen(function* () {
+		yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+		const alerts = yield* AlertsService
+		const pager = yield* createNamedWebhook(alerts, "pager")
+		const tickets = yield* createNamedWebhook(alerts, "tickets")
+		const slos = yield* SlosService
+		yield* slos.create(orgId, {
+			name: "Checkout availability",
+			serviceName: "checkout",
+			environments: ["production"],
+			sli: { _tag: "availability" },
+			targetPercent: 99.9,
+			alerting: { criticalDestinationIds: [pager.id], warningDestinationIds: [tickets.id] },
+			createdBy: userId,
+		})
+		yield* alerts.runSchedulerTick()
+		const events = (yield* alerts.listDeliveryEvents(orgId)).events
+		return Arr.sort(Arr.dedupe(Arr.map(events, (event) => event.destinationName)), Order.String)
+	}).pipe(Effect.provide(layer))
+}
+
 describe("AlertsService SLO burn-rate rules", () => {
+	it.effect("a slow burn tickets only the warning destination", () =>
+		Effect.map(notifiedBy(8), (notified) => assert.deepStrictEqual(notified, ["tickets"])),
+	)
+
+	it.effect("a fast burn pages the critical destination, and the warning one too", () =>
+		Effect.map(notifiedBy(20), (notified) => assert.deepStrictEqual(notified, ["pager", "tickets"])),
+	)
+
 	it.effect("a fast burn pages, and a recovered short window resolves it", () => {
 		const traffic: Traffic = { badPerMille: 20 }
 		const { layer } = harness(traffic)
