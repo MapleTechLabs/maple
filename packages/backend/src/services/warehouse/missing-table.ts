@@ -86,6 +86,17 @@ export const isMissingServiceApiColumns = (error: unknown): boolean =>
 	typeof error.message === "string" &&
 	MIGRATION_0048_COLUMNS.test(error.message)
 
+/** `user_activity_hourly` predates its request channel counts (migration 0058): schema drift naming
+ * one of them. The directory then lists users without channels. */
+export const isMissingUserActivityChannels = (error: unknown): boolean =>
+	typeof error === "object" &&
+	error !== null &&
+	"_tag" in error &&
+	error._tag === "@maple/http/errors/WarehouseSchemaDriftError" &&
+	"message" in error &&
+	typeof error.message === "string" &&
+	/\b(?:ClassifiedRequestCount|WebRequestCount|MobileRequestCount)\b/.test(error.message)
+
 /** `error_events.UserId` (migration 0057) is missing: schema drift naming `UserId` only, so every
  * other drift still surfaces. User issues and affected users then answer unattributed. */
 export const isMissingErrorEventsUserId = (error: unknown): boolean =>

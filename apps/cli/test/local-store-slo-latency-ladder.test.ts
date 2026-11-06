@@ -34,7 +34,7 @@ const spanRows = (atMs: number, prefix: string, spans: ReadonlyArray<Span>) =>
 		", ",
 	)
 
-// The coverage total first, then the rungs: a pre-v50 bucket reads 0 on all nine.
+// The coverage total first, then the rungs: a pre-v51 bucket reads 0 on all nine.
 const LADDER = [
 	"EstimatedLadderSpanCount",
 	"EstimatedUnder50Ms",
@@ -86,8 +86,8 @@ const ladder = (
 	)[0]
 }
 
-describeWithChdb("v49 -> v50 service-overview SLO latency ladder", () => {
-	const STEP_ID = "local-0049-to-0050-service-overview-slo-latency-ladder"
+describeWithChdb("v50 -> v51 service-overview SLO latency ladder", () => {
+	const STEP_ID = "local-0050-to-0051-service-overview-slo-latency-ladder"
 	let migration: ReturnType<typeof migrationStep>["migration"]
 	let root = ""
 	let sourceDataDir = ""
@@ -101,7 +101,7 @@ describeWithChdb("v49 -> v50 service-overview SLO latency ladder", () => {
 		root = await mkdtemp(join(tmpdir(), "maple-slo-latency-ladder-"))
 		sourceDataDir = join(root, "source", "data")
 		targetDataDir = join(root, "target", "data")
-		const db = Chdb.open({ dataDir: sourceDataDir, schemaSql: localSchemaSnapshot(49).sql })
+		const db = Chdb.open({ dataDir: sourceDataDir, schemaSql: localSchemaSnapshot(50).sql })
 		db.exec(
 			`INSERT INTO traces (${SPAN_COLUMNS}) VALUES ${spanRows(oldHourMs + 60_000, "old", [
 				{ durationMs: 20, sampleRate: 1 },
@@ -128,7 +128,7 @@ describeWithChdb("v49 -> v50 service-overview SLO latency ladder", () => {
 				hourly: ladder(db, "service_overview_hourly", oldHourMs, oldHourMs + HOUR_MS),
 				minutely: ladder(db, "service_overview_minutely", oldHourMs, oldHourMs + HOUR_MS),
 			}),
-			{ schemaSql: localSchemaSnapshot(50).sql, bootstrapSchema: false },
+			{ schemaSql: localSchemaSnapshot(51).sql, bootstrapSchema: false },
 		)
 		const zeros = Rec.fromEntries(Arr.map(LADDER, (column) => [column, "0"] as const))
 		expect(old.hourly).toEqual({ spans: "2", ...zeros })
@@ -147,7 +147,7 @@ describeWithChdb("v49 -> v50 service-overview SLO latency ladder", () => {
 					minutely: ladder(db, "service_overview_minutely", currentHourMs, currentHourMs + HOUR_MS),
 				}
 			},
-			{ schemaSql: localSchemaSnapshot(50).sql, bootstrapSchema: false },
+			{ schemaSql: localSchemaSnapshot(51).sql, bootstrapSchema: false },
 		)
 		const expected = {
 			spans: "6",

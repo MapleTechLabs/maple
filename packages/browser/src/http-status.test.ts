@@ -45,6 +45,17 @@ describe("HttpStatusExporter, by default", () => {
 		}
 	})
 
+	it("drops the status code 0 a request with no response gets, and keeps it an error", () => {
+		const failed = finish((s) => {
+			s.setAttribute("http.response.status_code", 0)
+			s.setAttribute("error.type", "TypeError")
+			s.setStatus({ code: SpanStatusCode.ERROR })
+		})
+		expect(failed.attributes).not.toHaveProperty("http.response.status_code")
+		expect(failed.attributes["error.type"]).toBe("TypeError")
+		expect(failed.status.code).toBe(SpanStatusCode.ERROR)
+	})
+
 	it("leaves 2xx/3xx, recorded exceptions, network failures and non-client spans alone", () => {
 		const ok = finish((s) => s.setAttribute("http.response.status_code", 204))
 		expect(ok.status.code).toBe(SpanStatusCode.UNSET)
