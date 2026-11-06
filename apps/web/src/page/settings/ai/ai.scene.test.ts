@@ -46,6 +46,39 @@ describe("ai tab", () => {
 		expect(saved.limits?.maxRunsPerDay).toBe("80")
 	})
 
+	test("edits typed while the limits save wait, so the save's echo cannot drop them", () => {
+		const edited = update(loaded(), Message.ChangedLimit({ field: "maxRunsPerDay", value: "80" })).model
+		const saving = update(edited, Message.ClickedSaveLimits()).model
+		const typed = update(saving, Message.ChangedLimit({ field: "maxRunsPerDay", value: "90" })).model
+		expect(typed.limits?.maxRunsPerDay).toBe("80")
+		expect(update(typed, Message.ClickedDiscardLimits()).model.limits?.maxRunsPerDay).toBe("80")
+	})
+
+	test("a key save and a key remove never run together", () => {
+		const key = new OpenRouterKeyDocument({
+			entitled: true,
+			configured: true,
+			keyHint: "sk-...abcd",
+			updatedAt: null,
+			updatedBy: null,
+		})
+		const withKey = update(init(false).model, Message.CompletedFetchKey({ result: Result.succeed(key) })).model
+		const typed = update(
+			withKey,
+			Message.GotKeyDraftMessage({ message: { _tag: "ChangedValue", value: "sk-new" } }),
+		).model
+		const saving = update(typed, Message.SubmittedKey()).model
+		expect(update(saving, Message.ClickedConfirmRemove()).commands ?? []).toEqual([])
+		const saved = update(saving, Message.CompletedSaveKey({ result: Result.succeed(key) })).model
+		const removing = update(saved, Message.ClickedConfirmRemove())
+		expect(Arr.map(removing.commands ?? [], (command) => command.name)).toEqual(["RemoveOpenRouterKey"])
+		const again = update(
+			removing.model,
+			Message.GotKeyDraftMessage({ message: { _tag: "ChangedValue", value: "sk-other" } }),
+		).model
+		expect(update(again, Message.SubmittedKey()).commands ?? []).toEqual([])
+	})
+
 	test("an invalid ceiling blocks the save", () => {
 		const edited = update(loaded(), Message.ChangedLimit({ field: "maxRunsPerDay", value: "0" })).model
 		expect(update(edited, Message.ClickedSaveLimits()).commands ?? []).toEqual([])
