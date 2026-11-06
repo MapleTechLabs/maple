@@ -101,7 +101,9 @@ export const timelineDays = (fromMs: number, toMs: number, timeZone: string): Re
 const BAR_TONE = {
 	neutral: "bg-surface-strong border-border text-foreground",
 	primary: toneBoxClass("primary"),
-	info: toneBoxClass("info"),
+	// An override is the one bar that must stand out, even 8px wide on a dark surface: a stronger
+	// wash and the tone's own edge.
+	info: "bg-severity-info-a3 border-severity-info text-severity-info",
 } as const satisfies Record<TimelineBarTone, string>
 
 /** The narrowest a bar draws, so a short shift stays visible and clickable. */
