@@ -17,19 +17,25 @@ import {
 	type OrgId,
 } from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Layer, Ref, Schema, Array as Arr } from "effect"
+import { Duration, Effect, Layer, Option, Ref, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
 	ChatConnectorRegistry,
 	type RegisteredChatConnector,
 } from "@maple/backend/services/integrations/chat-outbound"
+import {
+	AlertEscalationRunId as AlertEscalationRunIdSchema,
+	ChatIdentityId as ChatIdentityIdSchema,
+} from "@maple/domain/primitives"
+import { EmailService } from "@maple/backend/platform/EmailService"
 import { OrgMembersService, type OrgMember } from "@maple/backend/services/org/OrgMembersService"
 import { AlertsService, type AlertsServiceApi } from "./AlertsService"
-import { AlertIncidentAckService } from "./AlertIncidentAckService"
+import { AlertIncidentPagesService } from "./AlertIncidentPagesService"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { EscalationChainsService } from "./EscalationChainsService"
 import { OnCallSchedulesService } from "./OnCallSchedulesService"
+import { memberNotificationDedupeKey } from "./alert-escalation-runs"
 import {
 	adminRoles,
 	asOrgId,
@@ -67,6 +73,10 @@ interface FakeChat {
 	readonly opened: Array<{ readonly workspaceId: string; readonly userId: string }>
 	readonly posted: Array<{ readonly target: ChatTarget; readonly blocks: ReadonlyArray<ChatBlock> }>
 	readonly attempts: Array<PostMode>
+	/** Workspaces (the platform's ids) that do not know the person: a post there is `not_found`. */
+	readonly unknownIn: Set<string>
+	/** How long each post takes, in test time. */
+	readonly latency: Ref.Ref<Duration.Duration>
 }
 
 const unreachable = () => Effect.die("the page reached another transport method")
@@ -91,27 +101,42 @@ const fakeSlack = (chat: FakeChat): RegisteredChatConnector => ({
 	outbound: {
 		connectorId: SLACK,
 		limits: { maxMessageChars: 1000, minEditInterval: Duration.millis(500) },
+		directMessages: true,
 		requiredConfig: [],
 		transport: Effect.succeed({
 			post: (target, blocks) =>
-				Effect.flatMap(Ref.get(chat.mode), (mode) => {
-					chat.attempts.push(mode)
-					if (mode === "ok") {
-						chat.posted.push({ target, blocks })
-						return Effect.succeed({ target, messageId: "ts-1" })
-					}
-					return Effect.fail(
-						new ChatOutboundError({
-							message:
-								mode === "permanent"
-									? "Slack refused the call: messages_tab_disabled"
-									: "Slack answered 503",
-							connectorId: SLACK,
-							operation: "post",
-							...(mode === "permanent" ? { reason: "not_found" as const } : undefined),
-						}),
-					)
-				}),
+				Ref.get(chat.latency).pipe(
+					Effect.flatMap(TestClock.adjust),
+					Effect.andThen(Ref.get(chat.mode)),
+					Effect.flatMap((mode) => {
+						if (chat.unknownIn.has(target.workspaceId)) {
+							return Effect.fail(
+								new ChatOutboundError({
+									message: "Slack refused the call: user_not_found",
+									connectorId: SLACK,
+									operation: "post",
+									reason: "not_found",
+								}),
+							)
+						}
+						chat.attempts.push(mode)
+						if (mode === "ok") {
+							chat.posted.push({ target, blocks })
+							return Effect.succeed({ target, messageId: "ts-1" })
+						}
+						return Effect.fail(
+							new ChatOutboundError({
+								message:
+									mode === "permanent"
+										? "Slack refused the call: messages_tab_disabled"
+										: "Slack answered 503",
+								connectorId: SLACK,
+								operation: "post",
+								...(mode === "permanent" ? { reason: "not_found" as const } : undefined),
+							}),
+						)
+					}),
+				),
 			directMessage: (workspaceId, userId) =>
 				Effect.sync(() => {
 					chat.opened.push({ workspaceId, userId })
@@ -152,23 +177,51 @@ const errorRate = (value: number): ReadonlyArray<Record<string, unknown>> => [
 	}),
 ]
 
+type SentEmail = { to: string; subject: string; html: string }
+
+/** Records each email, running `onSend` first (to ack the incident, or let time pass). */
+const hookedEmail = (
+	emails: Array<SentEmail>,
+	onSend: Effect.Effect<void>,
+): (typeof EmailService)["Service"] => ({
+	isConfigured: true,
+	send: (to, subject, html) =>
+		Effect.andThen(
+			onSend,
+			Effect.sync(() => {
+				emails.push({ to, subject, html })
+			}),
+		),
+})
+
 const layerFor = (
 	testDb: TestDb,
 	state: { tracesAggregateRows: ReadonlyArray<Record<string, unknown>> },
-	emails: Array<{ to: string; subject: string; html: string }>,
+	emails: Array<SentEmail>,
 	chat: FakeChat,
+	options: {
+		/** Read live, so a test can remove somebody after the schedule is saved. */
+		readonly directory?: Array<OrgMember>
+		readonly email?: (typeof EmailService)["Service"]
+		readonly deliveryTimeoutMs?: number
+	} = {},
 ) => {
-	const members = Layer.succeed(OrgMembersService, stubOrgMembersService(MEMBERS))
+	const directory = options.directory ?? [...MEMBERS]
+	const timeoutMs = options.deliveryTimeoutMs
+	const members = Layer.succeed(OrgMembersService, stubOrgMembersService(directory))
 	return Layer.mergeAll(
 		makeLayer(
 			testDb,
 			makeWarehouseStub(state),
-			{ fetch: okFetch },
-			stubEmailService(emails),
+			{
+				fetch: okFetch,
+				...(timeoutMs === undefined ? undefined : { deliveryTimeoutMs: () => timeoutMs }),
+			},
+			options.email ?? stubEmailService(emails),
 			ChatAlertPoster.layer.pipe(
 				Layer.provide(Layer.succeed(ChatConnectorRegistry, [fakeSlack(chat)])),
 			),
-			MEMBERS,
+			directory,
 		),
 		Layer.effect(EscalationChainsService, EscalationChainsService.make).pipe(
 			Layer.provide(testDb.layer),
@@ -178,19 +231,24 @@ const layerFor = (
 			Layer.provide(testDb.layer),
 			Layer.provide(members),
 		),
-		Layer.effect(AlertIncidentAckService, AlertIncidentAckService.make).pipe(
+		Layer.effect(AlertIncidentPagesService, AlertIncidentPagesService.make).pipe(
 			Layer.provide(testDb.layer),
 			Layer.provide(members),
 		),
 	)
 }
 
-const makeChat = Effect.map(Ref.make<PostMode>("ok"), (mode): FakeChat => ({
-	mode,
-	opened: [],
-	posted: [],
-	attempts: [],
-}))
+const makeChat = Effect.map(
+	Effect.all([Ref.make<PostMode>("ok"), Ref.make(Duration.zero)]),
+	([mode, latency]): FakeChat => ({
+		mode,
+		latency,
+		opened: [],
+		posted: [],
+		attempts: [],
+		unknownIn: new Set<string>(),
+	}),
+)
 
 const tick = (alerts: AlertsServiceApi, minutes = 1) =>
 	Effect.gen(function* () {
@@ -284,11 +342,42 @@ const linkBenOnSlack = (testDb: TestDb, orgId: OrgId) =>
 		)
 	})
 
+/** Ben also linked an account on `connector`, in a workspace linked at `createdAt`. */
+const linkBenOn = (
+	testDb: TestDb,
+	orgId: OrgId,
+	connector: string,
+	workspaceId: string,
+	externalWorkspaceId: string,
+	createdAt = "2026-01-01T00:00:00Z",
+) =>
+	Effect.promise(async () => {
+		await executeSql(
+			testDb,
+			`insert into chat_workspaces (id, org_id, connector, external_workspace_id, name, settings, created_at)
+			 values ($1, $2, $3, $4, 'Other', '{}'::jsonb, $5::timestamptz)`,
+			[workspaceId, orgId, connector, externalWorkspaceId, createdAt],
+		)
+		if (connector !== "slack") {
+			await executeSql(
+				testDb,
+				`insert into chat_identities (id, org_id, connector, external_user_id, user_id, display_name, created_at)
+				 values (gen_random_uuid()::text, $1, $2, 'X_BEN', $3, 'ben', now())`,
+				[orgId, connector, ben],
+			)
+		}
+	})
+
 /** Step 1 notifies a webhook, waits 10 minutes; step 2 pages the "API primary" on-call. */
 const setup = (
 	orgName: string,
 	testDb: TestDb,
-	options: { readonly gap?: boolean; readonly override?: boolean } = {},
+	options: {
+		readonly gap?: boolean
+		readonly override?: boolean
+		/** Who step 2 pages instead of the schedule. */
+		readonly secondStep?: EscalationStep["targets"]
+	} = {},
 ) =>
 	Effect.gen(function* () {
 		const alerts = yield* AlertsService
@@ -310,7 +399,10 @@ const setup = (
 		yield* linkBenOnSlack(testDb, orgId)
 		const steps: [EscalationStep, ...Array<EscalationStep>] = [
 			{ targets: [{ type: "destination", destinationId: team.id }], waitMinutes: 10 },
-			{ targets: [{ type: "schedule", scheduleId: schedule.id }], waitMinutes: 15 },
+			{
+				targets: options.secondStep ?? [{ type: "schedule", scheduleId: schedule.id }],
+				waitMinutes: 15,
+			},
 		]
 		const chain = yield* chains.create(
 			orgId,
@@ -362,6 +454,8 @@ describe("escalation pages the on-call", () => {
 			return yield* Effect.gen(function* () {
 				const { alerts, orgId } = yield* setup("org_page_ben", testDb)
 				assert.deepStrictEqual(yield* pageRows(testDb, orgId), [])
+				// Hazel cannot open a direct message, so Ben's Hazel account is not paged at all.
+				yield* linkBenOn(testDb, orgId, "hazel", "33333333-3333-4333-8333-333333333333", "H_ACME")
 
 				yield* ticks(alerts, 10)
 				// Ben covers Ana's week today, so step 2 pages him and only him.
@@ -386,21 +480,16 @@ describe("escalation pages the on-call", () => {
 				// The timeline names him and the channel, never the address.
 				const [incident] = (yield* alerts.listIncidents(orgId, {})).incidents
 				if (incident === undefined) return assert.fail("expected an incident")
-				const events = yield* (yield* AlertIncidentAckService).listEvents(orgId, incident.id)
+				const pages = yield* (yield* AlertIncidentPagesService).listPages(orgId, [incident.id])
 				// Both pages went out in the same step, so their order is not fixed.
 				assert.sameDeepMembers(
-					Arr.map(events, (event) => [
-						event.type,
-						event.page?.name,
-						event.page?.channel,
-						event.page?.status,
-					]),
+					Arr.map(pages, (entry) => [entry.page.name, entry.page.channel, entry.page.status]),
 					[
-						["paged", "Ben Brook", "email", "sent"],
-						["paged", "Ben Brook", "slack", "sent"],
+						["Ben Brook", "email", "sent"],
+						["Ben Brook", "slack", "sent"],
 					],
 				)
-				assert.notInclude(JSON.stringify(events), "ben@acme.test")
+				assert.notInclude(JSON.stringify(pages), "ben@acme.test")
 			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat)))
 		})
 	})
@@ -487,7 +576,11 @@ describe("escalation pages the on-call", () => {
 					Arr.map(slack, (row) => [row.status, row.attempt_number]),
 					[["failed", 1]],
 				)
-				assert.include(slack[0]?.error_message ?? "", "messages_tab_disabled")
+				// A fixed message: what the platform said stays out of the timeline.
+				assert.strictEqual(
+					slack[0]?.error_message,
+					"No linked chat workspace could reach this member",
+				)
 				assert.deepStrictEqual(chat.attempts, ["permanent"])
 			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat)))
 		})
@@ -506,8 +599,8 @@ describe("escalation pages the on-call", () => {
 				yield* ticks(alerts, 10)
 				const queued = Arr.filter(yield* pageRows(testDb, orgId), (row) => row.channel === "slack")
 				assert.deepStrictEqual(
-					Arr.map(queued, (row) => [row.status, row.attempt_number]),
-					[["queued", 2]],
+					Arr.map(queued, (row) => [row.status, row.attempt_number, row.error_message]),
+					[["queued", 1, "The chat platform could not be reached"]],
 				)
 				yield* Ref.set(chat.mode, "ok")
 				yield* ticks(alerts, 2)
@@ -519,6 +612,212 @@ describe("escalation pages the on-call", () => {
 				assert.deepStrictEqual(chat.attempts, ["transient", "ok"])
 			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat)))
 		})
+	})
+
+	it.effect("tries each of the org's Slack workspaces until one knows the person", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRate(10) }
+		const emails: Array<SentEmail> = []
+		return Effect.gen(function* () {
+			const chat = yield* makeChat
+			chat.unknownIn.add("T_OLD")
+			yield* TestClock.setTime(NOW)
+			return yield* Effect.gen(function* () {
+				const { alerts, orgId } = yield* setup("org_page_two_workspaces", testDb)
+				// Linked before Acme, so it is tried first; Ben is not in it.
+				yield* linkBenOn(
+					testDb,
+					orgId,
+					"slack",
+					"55555555-5555-4555-8555-555555555555",
+					"T_OLD",
+					"2025-01-01T00:00:00Z",
+				)
+				yield* ticks(alerts, 10)
+				assert.deepStrictEqual(
+					Arr.map(chat.opened, (dm) => dm.workspaceId),
+					["T_OLD", "T_ACME"],
+				)
+				assert.deepStrictEqual(
+					Arr.map(chat.posted, (post) => post.target.workspaceId),
+					["T_ACME"],
+				)
+				const slack = Arr.filter(yield* pageRows(testDb, orgId), (row) => row.channel === "slack")
+				assert.deepStrictEqual(
+					Arr.map(slack, (row) => [row.status, row.attempt_number]),
+					[["sent", 1]],
+				)
+			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat)))
+		})
+	})
+
+	it.effect("pages nobody for an on-call member who left the org, and counts it as a gap", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRate(10) }
+		const emails: Array<SentEmail> = []
+		const directory = [...MEMBERS]
+		return Effect.gen(function* () {
+			const chat = yield* makeChat
+			yield* TestClock.setTime(NOW)
+			return yield* Effect.gen(function* () {
+				const { alerts, orgId } = yield* setup("org_page_departed", testDb)
+				// Ben covers today, then leaves before step 2.
+				const leaving = Arr.findFirstIndex(directory, (member) => member.userId === ben)
+				if (Option.isSome(leaving)) directory.splice(leaving.value, 1)
+				yield* ticks(alerts, 10)
+				assert.deepStrictEqual(yield* pageRows(testDb, orgId), [])
+				assert.lengthOf(chat.posted, 0)
+				assert.deepStrictEqual(yield* runStatus(testDb, orgId), {
+					status: "exhausted",
+					steps_sent: 2,
+				})
+			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat, { directory })))
+		})
+	})
+
+	it.effect("skips the pages left in a drain once one of them sees the incident acknowledged", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRate(10) }
+		const emails: Array<SentEmail> = []
+		const ack = Effect.promise(() =>
+			executeSql(
+				testDb,
+				`update alert_incidents set acknowledged_at = now(), acknowledged_by_name = 'Ana',
+				   acknowledged_via = 'web' where org_id = 'org_page_ack_mid_drain'`,
+			),
+		)
+		return Effect.gen(function* () {
+			const chat = yield* makeChat
+			yield* TestClock.setTime(NOW)
+			return yield* Effect.gen(function* () {
+				// Three emails and Ben's DM: more pages than the drain sends at once.
+				const { alerts, orgId } = yield* setup("org_page_ack_mid_drain", testDb, {
+					secondStep: [
+						{ type: "user", userId: ana },
+						{ type: "user", userId: ben },
+						{ type: "user", userId: chen },
+					],
+				})
+				yield* ticks(alerts, 10)
+				const statuses = Arr.map(yield* pageRows(testDb, orgId), (row) => row.status)
+				assert.lengthOf(statuses, 4)
+				// The first email acks; a page claimed after it is not sent.
+				assert.include(statuses, "skipped")
+				assert.isAtMost(emails.length + chat.posted.length, 3)
+			}).pipe(
+				Effect.provide(layerFor(testDb, state, emails, chat, { email: hookedEmail(emails, ack) })),
+			)
+		})
+	})
+
+	it.effect("stops a drain at its time budget and sends the rest on later ticks", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRate(10) }
+		const emails: Array<SentEmail> = []
+		// Each page takes half a minute.
+		const slow = TestClock.adjust(Duration.seconds(30))
+		return Effect.gen(function* () {
+			const chat = yield* makeChat
+			yield* Ref.set(chat.latency, Duration.seconds(30))
+			yield* TestClock.setTime(NOW)
+			return yield* Effect.gen(function* () {
+				const { alerts, orgId } = yield* setup("org_page_budget", testDb, {
+					secondStep: [
+						{ type: "user", userId: ana },
+						{ type: "user", userId: ben },
+						{ type: "user", userId: chen },
+					],
+				})
+				yield* ticks(alerts, 10)
+				const first = Arr.map(yield* pageRows(testDb, orgId), (row) => row.status)
+				// Pages that started before the budget ran out went; the rest wait, still queued.
+				assert.include(first, "sent")
+				assert.include(first, "queued")
+				yield* ticks(alerts, 3)
+				assert.deepStrictEqual(
+					Arr.map(yield* pageRows(testDb, orgId), (row) => row.status),
+					["sent", "sent", "sent", "sent"],
+				)
+			}).pipe(
+				Effect.provide(
+					layerFor(testDb, state, emails, chat, {
+						email: hookedEmail(emails, slow),
+						deliveryTimeoutMs: 60_000,
+					}),
+				),
+			)
+		})
+	})
+
+	it.effect("counts an attempt at claim, so a page stranded mid-send is retried and then given up", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRate(10) }
+		const emails: Array<SentEmail> = []
+		return Effect.gen(function* () {
+			const chat = yield* makeChat
+			yield* TestClock.setTime(NOW)
+			return yield* Effect.gen(function* () {
+				const { alerts, orgId } = yield* setup("org_page_stranded", testDb)
+				yield* ticks(alerts, 10)
+				emails.length = 0
+				// Two email pages a crashed worker left mid-send: one with attempts left, one without.
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`insert into alert_member_notifications (id, org_id, incident_id, run_id, user_id, channel,
+						   status, attempt_number, scheduled_at, claimed_at, claim_expires_at, payload_json,
+						   dedupe_key, created_at, updated_at)
+						 select gen_random_uuid()::text, org_id, incident_id, run_id, n.user_id, channel, 'sending',
+						   n.attempts, scheduled_at, scheduled_at, scheduled_at, payload_json,
+						   dedupe_key || ':' || n.user_id, created_at, updated_at
+						 from alert_member_notifications,
+						   (values ($2, 2), ($3, 5)) as n(user_id, attempts)
+						 where org_id = $1 and channel = 'email'`,
+						[orgId, ana, chen],
+					),
+				)
+				yield* tick(alerts)
+				const stranded = Arr.filter(
+					yield* pageRows(testDb, orgId),
+					(row) => row.user_id === ana || row.user_id === chen,
+				)
+				assert.sameDeepMembers(
+					Arr.map(stranded, (row) => [
+						row.user_id,
+						row.status,
+						row.attempt_number,
+						row.error_message,
+					]),
+					[
+						[ana, "sent", 3, null],
+						[chen, "failed", 5, "Not sent: every attempt was used up"],
+					],
+				)
+				assert.deepStrictEqual(
+					Arr.map(emails, (email) => email.to),
+					["ana@acme.test"],
+				)
+			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat)))
+		})
+	})
+
+	it("keys a chat page by the identity, so two accounts on one connector are two pages", () => {
+		const runId = Schema.decodeSync(AlertEscalationRunIdSchema)("66666666-6666-4666-8666-666666666666")
+		const page = (identityId: string) =>
+			memberNotificationDedupeKey(runId, 1, 2, {
+				userId: ben,
+				channel: SLACK,
+				identityId: Schema.decodeSync(ChatIdentityIdSchema)(identityId),
+				externalUserId: "U_BEN",
+			})
+		assert.notStrictEqual(
+			page("77777777-7777-4777-8777-777777777777"),
+			page("88888888-8888-4888-8888-888888888888"),
+		)
+		assert.notStrictEqual(
+			page("77777777-7777-4777-8777-777777777777"),
+			memberNotificationDedupeKey(runId, 1, 2, { userId: ben, channel: "email" }),
+		)
 	})
 })
 

@@ -113,6 +113,7 @@ export const AlertMemberNotifications = PG.table("alert_member_notifications", {
 		/** `email`, or the chat connector a direct message goes through. */
 		channel: PG.text,
 		status: PG.brand(PG.text, AlertIncidentPageStatus),
+		/** Attempts started; a claim counts one before it sends. */
 		attemptNumber: PG.column(PG.int4, { name: "attempt_number", default: 1 }),
 		scheduledAt: PG.column(PG.timestamptzMillis, { name: "scheduled_at" }),
 		claimedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "claimed_at" }),
@@ -121,7 +122,7 @@ export const AlertMemberNotifications = PG.table("alert_member_notifications", {
 		payloadJson: PG.column(PG.jsonb(Schema.Record(Schema.String, Schema.Unknown)), {
 			name: "payload_json",
 		}),
-		/** `{runId}:{pass}:{step}:{userId}:{channel}`: one page per person, channel and step. */
+		/** `{runId}:{pass}:{step}:{userId}:{channel}`, plus `:{identityId}` for chat: one page per account and step. */
 		dedupeKey: PG.column(PG.text, { name: "dedupe_key" }),
 		errorMessage: PG.column(PG.nullable(PG.text), { name: "error_message" }),
 		attemptedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "attempted_at" }),

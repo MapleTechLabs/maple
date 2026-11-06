@@ -337,8 +337,8 @@ const incidentFor = (): Step<IncidentModel.Model, IncidentMessage.Message> => {
 	return fold(
 		synced,
 		[
-			IncidentMessage.Message.CompletedFetchEvents({
-				key: synced.model.events.key ?? "",
+			IncidentMessage.Message.CompletedFetchActivity({
+				key: synced.model.activity.key ?? "",
 				result: Result.succeed(pagedEvents(INCIDENT_ID, isoMs(row.first_triggered_at))),
 			}),
 			IncidentMessage.Message.CompletedFetchEscalation({

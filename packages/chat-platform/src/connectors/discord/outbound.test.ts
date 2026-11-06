@@ -551,14 +551,18 @@ describe("discord direct messages", () => {
 		}),
 	)
 
-	it.effect("leaves opening DMs too fast retryable", () => {
+	it.effect("marks opening DMs too fast as a rate limit, though Discord answers 400", () => {
 		const http = stub([
 			{ status: 400, body: '{"message":"You are opening direct messages too fast.","code":40003}' },
 		])
 		return Effect.gen(function* () {
 			const transport = yield* discordOutbound.transport
 			const error = yield* Effect.flip(transport.directMessage("guild_1", "user_ben"))
-			expect([error.operation, error.reason, error.status]).toEqual(["direct_message", undefined, 400])
+			expect([error.operation, error.reason, error.status]).toEqual([
+				"direct_message",
+				"rate_limited",
+				400,
+			])
 		}).pipe(Effect.provide(http.layer))
 	})
 })

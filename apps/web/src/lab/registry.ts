@@ -253,6 +253,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/sources",
+		title: "Sources",
+		description:
+			"The `/sources` list, one source and the connect page as an engineer or a member, who reads sources but cannot change them (?page=list|detail|new&role=engineer|member).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/agent-tools",
 		title: "Agent tools",
 		description:

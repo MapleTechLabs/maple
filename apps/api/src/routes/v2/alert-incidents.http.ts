@@ -6,7 +6,7 @@ import type {
 	AlertIncidentId,
 	OrgId,
 } from "@maple/domain/http"
-import { CurrentTenant } from "@maple/domain/http"
+import { CurrentTenant, isAlertNotificationEventType } from "@maple/domain/http"
 import type { V2AlertIncident, V2AlertIncidentEscalation, V2AlertIncidentEvent } from "@maple/domain/http/v2"
 import { MapleApiV2, paginateOffsetQuery } from "@maple/domain/http/v2"
 import { Duration, Effect, Option, Array as Arr } from "effect"
@@ -15,6 +15,10 @@ import {
 	AlertIncidentAckService,
 	type AlertIncidentActor,
 } from "@maple/backend/services/alerts/AlertIncidentAckService"
+import {
+	AlertIncidentPagesService,
+	mergePagesIntoEvents,
+} from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 
@@ -53,7 +57,11 @@ const toV2Incident = (
 	last_observed_value: doc.lastObservedValue,
 	last_sample_count: doc.lastSampleCount,
 	dedupe_key: doc.dedupeKey,
-	last_delivered_event_type: doc.lastDeliveredEventType,
+	// An acknowledgement never becomes the last delivered event; narrow it for the public enum.
+	last_delivered_event_type:
+		doc.lastDeliveredEventType !== null && isAlertNotificationEventType(doc.lastDeliveredEventType)
+			? doc.lastDeliveredEventType
+			: null,
 	last_notified_at: doc.lastNotifiedAt,
 	hold_reason: doc.holdReason,
 	held_since: doc.heldSince,
@@ -95,6 +103,7 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 	Effect.gen(function* () {
 		const readModels = yield* AlertReadModelsService
 		const acks = yield* AlertIncidentAckService
+		const pagesService = yield* AlertIncidentPagesService
 		const members = yield* OrgMembersService
 
 		// One escalation read for a whole page of incidents, never one per incident.
@@ -188,7 +197,9 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 			.handle("listEvents", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const events = yield* acks.listEvents(tenant.orgId, params.id)
+					const ackEvents = yield* acks.listEvents(tenant.orgId, params.id)
+					const pages = yield* pagesService.listPages(tenant.orgId, [params.id])
+					const events = mergePagesIntoEvents(ackEvents, pages)
 					return { object: "list" as const, data: Arr.map(events, toV2Event) }
 				}),
 			)

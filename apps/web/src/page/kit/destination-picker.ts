@@ -21,9 +21,12 @@ export const destinationPicker = <M, Id extends string>(
 		onRemove: (id: Id) => M
 		/** What an empty pick means, in one line. */
 		emptyText: string
+		/** The pick is shown but cannot change (a form whose save is in flight). */
+		isDisabled?: boolean
 	}>,
 ): Html => {
 	const rows = options.rows ?? []
+	const isDisabled = options.isDisabled ?? false
 	// `null` until destinations sync: a neutral name, not "unavailable", for the saved ones.
 	const fallback = options.rows === null ? "Destination" : "Unavailable destination"
 	const selected = Arr.map(options.selectedIds, (id) => ({
@@ -54,6 +57,7 @@ export const destinationPicker = <M, Id extends string>(
 			label: row.name,
 		})),
 		addLabel: "Add destination",
+		isDisabled,
 	})
 }
 

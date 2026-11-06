@@ -25,9 +25,9 @@ describe("alert incident, pages to people", () => {
 	test("the incident reads its events with the escalation, and again when it is acknowledged", () => {
 		const entered = run(init(route, context).model, [Message.ReadClock({ nowMs: NOW })])
 		const first = pageUpdate(entered, Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow()] }))
-		expect(names(first.commands)).toContain("FetchAlertIncidentEvents")
+		expect(names(first.commands)).toContain("FetchAlertIncidentActivity")
 		const same = pageUpdate(first.model, Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow()] }))
-		expect(names(same.commands)).not.toContain("FetchAlertIncidentEvents")
+		expect(names(same.commands)).not.toContain("FetchAlertIncidentActivity")
 		const acked = pageUpdate(
 			first.model,
 			Message.UpdatedIncidents({
@@ -35,7 +35,7 @@ describe("alert incident, pages to people", () => {
 				rows: [incidentRow({ acknowledged_at: "2026-10-01T11:58:00.000Z" })],
 			}),
 		)
-		expect(names(acked.commands)).toContain("FetchAlertIncidentEvents")
+		expect(names(acked.commands)).toContain("FetchAlertIncidentActivity")
 	})
 
 	test("the timeline says who was paged on which channel, and why a page failed", () => {
@@ -46,8 +46,8 @@ describe("alert incident, pages to people", () => {
 			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2)] }),
 		])
 		const model = run(synced, [
-			Message.CompletedFetchEvents({
-				key: synced.events.key ?? "",
+			Message.CompletedFetchActivity({
+				key: synced.activity.key ?? "",
 				result: Result.succeed(pagedEvents(INCIDENT_ID, Date.parse(row.first_triggered_at))),
 			}),
 			Message.CompletedFetchDeliveries({

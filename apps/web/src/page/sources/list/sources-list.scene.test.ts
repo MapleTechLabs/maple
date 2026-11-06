@@ -107,6 +107,18 @@ describe("sources list", () => {
 		)
 	})
 
+	test("a member without sources:manage reads the list without the connect actions", () => {
+		const member = pageUpdate(loaded([defaultSource]), Message.CompletedReadGrants({ grants: [] })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(member),
+			expectView(role("link", { name: "Default" })).toExist(),
+			expectView(text("No sources added yet")).toExist(),
+			expectView(role("link", { name: "Connect source" })).not.toExist(),
+			expectView(role("link", { name: "Cloudflare" })).not.toExist(),
+		)
+	})
+
 	test("an added source hides the empty state and opens on click", () => {
 		const added = source(2, {
 			health: {

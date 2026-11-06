@@ -1133,6 +1133,13 @@ const startOfDay = (ms: number, timeZone: string | undefined): number => {
 	return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
 }
 
+/** Time of day when `value` falls on the same local day as `nowMs`, else date and time. */
+export function formatAlertTimeNear(value: string, timeZone: string, nowMs: number): string {
+	return startOfDay(new Date(value).getTime(), timeZone) === startOfDay(nowMs, timeZone)
+		? formatAlertTime(value, timeZone)
+		: formatAlertDateTime(value, timeZone)
+}
+
 /** Day-bucket heading: `Today` / `Yesterday` / `Jun 4, 2026`. */
 function formatAlertDayHeading(value: string, timeZone: string | undefined, nowMs: number): string {
 	const date = new Date(value)
@@ -1158,6 +1165,7 @@ export const eventTypeMeta: Record<AlertEventType, { label: string; tone: Tone }
 	resolve: { label: "Resolved", tone: "ok" },
 	renotify: { label: "Re-notified", tone: "warn" },
 	test: { label: "Test", tone: "info" },
+	acknowledge: { label: "Acknowledged", tone: "info" },
 } satisfies Record<AlertEventType, { label: string; tone: Tone }>
 
 export type DeliveryStatusVariant = Exclude<Tone, "neutral"> | "outline"

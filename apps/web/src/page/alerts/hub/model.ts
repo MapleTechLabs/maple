@@ -3,6 +3,7 @@ import { UptimeMonitorId } from "@maple/domain"
 import {
 	AlertDeliveryEventDocument,
 	AlertDestinationId,
+	AlertIncidentId,
 	AlertRuleId,
 	EscalationChainId,
 	OnCallScheduleId,
@@ -70,6 +71,8 @@ export const Model = Schema.Struct({
 	isLoadFailed: Schema.Boolean,
 	/** Routing: destinations with a test or delete in flight, and the one awaiting delete confirmation. */
 	testingDestinationIds: Schema.Array(AlertDestinationId),
+	/** Inbox: incidents with an acknowledge or unacknowledge request in flight. */
+	acknowledgingIncidentIds: Schema.Array(AlertIncidentId),
 	deletingDestinationIds: Schema.Array(AlertDestinationId),
 	confirmDeleteId: Schema.NullOr(AlertDestinationId),
 	deleteDialog: Dialog.Model,

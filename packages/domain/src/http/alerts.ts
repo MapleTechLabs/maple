@@ -165,10 +165,32 @@ export const AlertIncidentEventType = Schema.Literals([
 })
 export type AlertIncidentEventType = Schema.Schema.Type<typeof AlertIncidentEventType>
 
-export const AlertEventType = Schema.Literals(["trigger", "resolve", "renotify", "test"]).annotate({
+/** The notifications the public API reports; `acknowledge` stays internal (see AlertEventType). */
+export const AlertNotificationEventType = Schema.Literals([
+	"trigger",
+	"resolve",
+	"renotify",
+	"test",
+]).annotate({
 	identifier: "@maple/AlertEventType",
 	title: "Alert Event Type",
 })
+export type AlertNotificationEventType = Schema.Schema.Type<typeof AlertNotificationEventType>
+
+/**
+ * Every delivery the queue sends. `acknowledge` (a PagerDuty sync) is kept out of the public API:
+ * shipped clients decode the event type as a closed enum and would fail on a new value.
+ */
+export const AlertEventType = Schema.Literals([
+	...AlertNotificationEventType.literals,
+	"acknowledge",
+]).annotate({
+	identifier: "@maple/AlertDeliveryEventType",
+	title: "Alert Delivery Event Type",
+})
+
+export const isAlertNotificationEventType = (type: AlertEventType): type is AlertNotificationEventType =>
+	type !== "acknowledge"
 export type AlertEventType = Schema.Schema.Type<typeof AlertEventType>
 
 export const AlertDeliveryStatus = Schema.Literals(["queued", "processing", "success", "failed"]).annotate({

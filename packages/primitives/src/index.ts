@@ -505,6 +505,19 @@ export type SourcePlatform = Schema.Schema.Type<typeof SourcePlatform>
 
 export const isPushSourcePlatform = Schema.is(PushSourcePlatform)
 
+/** A source token: the gateway resolves anything with this prefix by its hash. */
+export const SOURCE_TOKEN_PREFIX = "maple_src_"
+
+/** A public source token: still a source token, but made to ship in client code (browsers). */
+export const PUBLIC_SOURCE_TOKEN_PREFIX = `${SOURCE_TOKEN_PREFIX}pk_`
+
+/** Platforms whose code ships to end users, so their source token is a public one. */
+export const isPublicSourcePlatform = (platform: SourcePlatform): boolean => platform === "browser"
+
+/** The token's prefix for a source on this platform. */
+export const sourceTokenPrefix = (platform: SourcePlatform): string =>
+	isPublicSourcePlatform(platform) ? PUBLIC_SOURCE_TOKEN_PREFIX : SOURCE_TOKEN_PREFIX
+
 /**
  * `default` stands for the org's public/private ingest keys, `token` carries its own
  * `maple_src_` token, `integration` is owned by an integration row (its `source_id`).

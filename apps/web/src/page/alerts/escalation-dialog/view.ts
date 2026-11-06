@@ -1,4 +1,4 @@
-import { MAX_ESCALATION_STEPS } from "@maple/domain/http"
+import { MAX_ESCALATION_REPEATS, MAX_ESCALATION_STEPS, MAX_ESCALATION_WAIT_MINUTES } from "@maple/domain/http"
 import type { V2EscalationTarget, V2OnCallSchedule } from "@maple/domain/http/v2"
 import type { AlertDestinationRow } from "@maple/web-data/collections/alerts"
 import { Option, Array as Arr, String as Str } from "effect"
@@ -31,7 +31,6 @@ import { memberName, memberOf, type OrgMember } from "../shared/org-members"
 import {
 	descriptionError,
 	targetKey,
-	targetsError,
 	menuIdOf,
 	Message,
 	type Model,
@@ -40,6 +39,7 @@ import {
 	repeatError,
 	type StepDraft,
 	stepsError,
+	targetsError,
 	waitError,
 } from "./dialog"
 
@@ -199,6 +199,7 @@ const textField = (
 		value: string
 		placeholder: string
 		error: Option.Option<string>
+		isDisabled: boolean
 		onInput: (value: string) => Message
 	}>,
 ): Html => {
@@ -208,6 +209,7 @@ const textField = (
 		input(h, {
 			ids: options.ids,
 			state,
+			isDisabled: options.isDisabled,
 			attributes: [
 				h.Value(options.value),
 				h.Placeholder(options.placeholder),
@@ -230,6 +232,7 @@ const numberField = (
 		max: number
 		description?: string
 		error: Option.Option<string>
+		isDisabled: boolean
 		onInput: (value: string) => Message
 	}>,
 ): Html => {
@@ -241,6 +244,7 @@ const numberField = (
 				ids: options.ids,
 				state,
 				className: "w-20",
+				isDisabled: options.isDisabled,
 				attributes: [
 					h.Type("number"),
 					h.Min(String(options.min)),
@@ -293,7 +297,7 @@ const stepBlock = (h: H, model: Model, inputs: ViewInputs, step: StepDraft, inde
 					h,
 					{
 						label: `Move step ${index + 1} up`,
-						isDisabled: index === 0,
+						isDisabled: model.isSaving || index === 0,
 						attributes: [h.OnClick(Message.ClickedMoveStep({ key, direction: "up" }))],
 					},
 					[icon(h, "ArrowUpIcon")],
@@ -302,7 +306,7 @@ const stepBlock = (h: H, model: Model, inputs: ViewInputs, step: StepDraft, inde
 					h,
 					{
 						label: `Move step ${index + 1} down`,
-						isDisabled: index === count - 1,
+						isDisabled: model.isSaving || index === count - 1,
 						attributes: [h.OnClick(Message.ClickedMoveStep({ key, direction: "down" }))],
 					},
 					[icon(h, "ArrowDownIcon")],
@@ -311,7 +315,7 @@ const stepBlock = (h: H, model: Model, inputs: ViewInputs, step: StepDraft, inde
 					h,
 					{
 						label: `Remove step ${index + 1}`,
-						isDisabled: count === 1,
+						isDisabled: model.isSaving || count === 1,
 						attributes: [h.OnClick(Message.ClickedRemoveStep({ key }))],
 					},
 					[icon(h, "TrashIcon")],
@@ -324,6 +328,7 @@ const stepBlock = (h: H, model: Model, inputs: ViewInputs, step: StepDraft, inde
 			toMenuMessage: (message) => Message.GotStepMenuMessage({ key, message }),
 			addEntries: addEntries(inputs, step),
 			addLabel: "Add destination, person or schedule",
+			isDisabled: model.isSaving,
 			emptyText: "Pick who this step pages",
 		}),
 		...Option.match(targets, {
@@ -335,8 +340,9 @@ const stepBlock = (h: H, model: Model, inputs: ViewInputs, step: StepDraft, inde
 			label: waitLabel(model, index),
 			value: step.waitMinutes,
 			min: 1,
-			max: 1440,
+			max: MAX_ESCALATION_WAIT_MINUTES,
 			error: shownError(model, wait, isOutOfRange(step.waitMinutes, wait)),
+			isDisabled: model.isSaving,
 			onInput: (value) => Message.ChangedWait({ key, value }),
 		}),
 	])
@@ -361,7 +367,7 @@ const stepsSection = (h: H, model: Model, inputs: ViewInputs): Html =>
 				variant: "outline",
 				size: "sm",
 				className: "self-start",
-				isDisabled: model.steps.length >= MAX_ESCALATION_STEPS,
+				isDisabled: model.isSaving || model.steps.length >= MAX_ESCALATION_STEPS,
 				attributes: [h.OnClick(Message.ClickedAddStep())],
 			},
 			[icon(h, "PlusIcon"), "Add step"],
@@ -377,6 +383,7 @@ const descriptionField = (h: H, model: Model): Html => {
 		textarea(h, {
 			id: ids.control,
 			defaultValue: model.description,
+			isDisabled: model.isSaving,
 			attributes: [
 				h.AriaLabelledBy(ids.label),
 				h.Placeholder("Optional: who is on this chain and when to change it"),
@@ -408,6 +415,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				value: model.name,
 				placeholder: "Checkout on-call",
 				error: shownError(model, nameError(model.name)),
+				isDisabled: model.isSaving,
 				onInput: (value) => Message.ChangedName({ value }),
 			}),
 			descriptionField(h, model),
@@ -417,9 +425,10 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				label: "Repeat the whole chain",
 				value: model.repeatCount,
 				min: 0,
-				max: 5,
-				description: "Extra passes after the first, 0 to 5. 0 runs it once.",
+				max: MAX_ESCALATION_REPEATS,
+				description: `Extra passes after the first, 0 to ${MAX_ESCALATION_REPEATS}. 0 runs it once.`,
 				error: shownError(model, repeat, isOutOfRange(model.repeatCount, repeat)),
+				isDisabled: model.isSaving,
 				onInput: (value) => Message.ChangedRepeatCount({ value }),
 			}),
 			...(model.saveError === null

@@ -1,5 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
+	AlertMemberDirectoryNotConfiguredError,
 	AlertValidationError,
 	OnCallOverrideCreateRequest,
 	OnCallScheduleCreateRequest,
@@ -8,7 +9,7 @@ import {
 	RoleName,
 	UserId,
 } from "@maple/domain/http"
-import { Effect, Exit, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Exit, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
@@ -30,6 +31,25 @@ const at = (iso: string) => Date.parse(iso)
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
+
+/** A deployment with no member directory, as self-hosted runs. */
+const noDirectoryLayer = (testDb: TestDb) => {
+	const notConfigured = new AlertMemberDirectoryNotConfiguredError({
+		message: "The member directory is not configured",
+	})
+	return Layer.effect(OnCallSchedulesService, OnCallSchedulesService.make).pipe(
+		Layer.provide(
+			Layer.merge(
+				testDb.layer,
+				Layer.succeed(OrgMembersService, {
+					...stubOrgMembersService([]),
+					listMembers: () => Effect.fail(notConfigured),
+					resolveMembers: () => Effect.fail(notConfigured),
+				}),
+			),
+		),
+	)
+}
 
 const makeLayer = (testDb: TestDb) =>
 	Layer.effect(OnCallSchedulesService, OnCallSchedulesService.make).pipe(
@@ -281,6 +301,57 @@ describe("OnCallSchedulesService", () => {
 			assert.deepStrictEqual(left.rows, [{ n: 0 }])
 			const gone = yield* Effect.exit(schedules.get(ORG, schedule.id))
 			assert.strictEqual(errorTag(gone), "@maple/http/errors/OnCallScheduleNotFoundError")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("creates schedules and overrides on a deployment with no member directory", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
+			const schedules = yield* OnCallSchedulesService
+			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			const override = yield* schedules.createOverride(ORG, ana, ADMIN, schedule.id, benCoversAna)
+			assert.strictEqual(override.userId, ben)
+			assert.strictEqual((yield* schedules.memberNames(ORG)).size, 0)
+		}).pipe(Effect.provide(noDirectoryLayer(testDb)))
+	})
+
+	it.effect("lists who is on call now even past a thousand older overrides in the org", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(at("2026-11-12T19:00:00Z"))
+			const schedules = yield* OnCallSchedulesService
+			const busy = yield* schedules.create(
+				ORG,
+				ana,
+				ADMIN,
+				new OnCallScheduleCreateRequest({ ...weekly, name: "Busy" }),
+			)
+			const covered = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			// Past overrides on another schedule, all starting before the active one.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO oncall_overrides (id, org_id, schedule_id, user_id, starts_at, ends_at, created_by, created_at)
+					 SELECT gen_random_uuid()::text, $1, $2, 'user_chen',
+					        '2026-11-01T00:00:00Z'::timestamptz + n * interval '1 minute',
+					        '2026-11-01T00:00:30Z'::timestamptz + n * interval '1 minute', 'seed', now()
+					 FROM generate_series(1, 1200) AS n`,
+					[ORG, busy.id],
+				),
+			)
+			yield* schedules.createOverride(ORG, ana, ADMIN, covered.id, benCoversAna)
+			const listed = yield* schedules.list(ORG)
+			const row = Option.getOrUndefined(Arr.findFirst(listed.schedules, (s) => s.id === covered.id))
+			assert.strictEqual(row?.onCallNow?.userId, ben)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("names members by their name only, never their email", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const names = yield* (yield* OnCallSchedulesService).memberNames(ORG)
+			assert.deepStrictEqual([names.get(ana), names.get(chen)], ["Ana Alves", undefined])
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 })

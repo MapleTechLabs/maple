@@ -22,6 +22,7 @@ import { type ChatSessionStub, chatSessionClientFromStub } from "@maple/domain/c
 import { ChatConnectorId, OrgId, UserId } from "@maple/domain/primitives"
 import {
 	chatActionControlId,
+	chatAlertAckControlId,
 	chatConnectorId,
 	ChatOutboundError,
 	ConnectorCredentials,
@@ -52,7 +53,14 @@ import {
 } from "effect"
 import { TestClock } from "effect/testing"
 import { ConversationNotRecorded, FOLLOW_UP_WINDOW_MS } from "./conversation.ts"
-import { relayInboundEvent, relayWithWorkspace, WorkspaceLookupFailed, type RelayPorts } from "./turn.ts"
+import {
+	relayInboundEvent,
+	relayWithWorkspace,
+	WorkspaceLookupFailed,
+	type RelayAlertAckOutcome,
+	type RelayAlertAckRequest,
+	type RelayPorts,
+} from "./turn.ts"
 
 const TESTCHAT = chatConnectorId("testchat")
 const ORG = Schema.decodeSync(OrgId)("org_1")
@@ -272,6 +280,8 @@ interface Host {
 	readonly announced: { count: number }
 	/** How many workspace lookups the events caused — one database connection each. */
 	readonly lookups: { count: number }
+	/** Every alert ack the relay asked the host for. */
+	readonly alertAcks: Array<RelayAlertAckRequest>
 }
 
 const host = (
@@ -289,8 +299,11 @@ const host = (
 		readonly opened?: ReadonlyArray<string>
 		/** The relay object could not record the conversation the bot just opened. */
 		readonly rememberFails?: boolean
+		/** What the alert ack port answers. */
+		readonly alertAck?: (request: RelayAlertAckRequest) => RelayAlertAckOutcome
 	},
 ): Host => {
+	const alertAcks: Array<RelayAlertAckRequest> = []
 	const forgotten: Array<string> = []
 	const charts: Array<{ orgId: OrgId; ref: ChatChartRef }> = []
 	const opened = new Set<string>(options?.opened ?? [])
@@ -302,6 +315,7 @@ const host = (
 		opened,
 		announced,
 		lookups,
+		alertAcks,
 		ports: {
 			outbound,
 			supportsIdentity: options?.supportsIdentity ?? false,
@@ -356,6 +370,11 @@ const host = (
 						)
 					: Effect.sync(() => void opened.add(conversation.conversationKey)),
 			recordTurn: () => Effect.void,
+			alertAck: (request) =>
+				Effect.sync(() => {
+					alertAcks.push(request)
+					return options?.alertAck?.(request) ?? { kind: "unavailable" }
+				}),
 		},
 	}
 }
@@ -1275,6 +1294,152 @@ describe("settling an approval somebody clicked", () => {
 			expect(notices(blocksOf(platform.calls))).toEqual([
 				"Maple's agent can't be reached from here right now.",
 			])
+		}),
+	)
+})
+
+describe("acknowledging an alert from its card", () => {
+	const INCIDENT = "00000000-0000-4000-8000-0000000000a1"
+	const ackClick = (action: "acknowledge" | "unacknowledge") =>
+		click({ actionToken: chatAlertAckControlId(action, INCIDENT), messageId: "alert-msg" })
+	const redrawn: ReadonlyArray<ChatBlock> = [
+		{
+			kind: "alert",
+			color: "#e01e5a",
+			title: "Checkout errors",
+			summary: "",
+			fields: [],
+			imageUrl: null,
+			imageAlt: "",
+			links: [],
+			footer: [],
+			sentAtMs: null,
+			acknowledge: { incidentId: INCIDENT, acknowledgedBy: "Ada" },
+		},
+	]
+
+	it.effect("acks in the workspace's org and redraws the clicked card", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const deployment = host(platform.outbound, undefined, {
+				alertAck: () => ({ kind: "applied", card: Option.some(redrawn) }),
+			})
+
+			yield* relayInboundEvent(ackClick("acknowledge"), deployment.ports)
+
+			expect(deployment.alertAcks).toEqual([
+				{
+					orgId: ORG,
+					connector: TESTCHAT,
+					incidentId: INCIDENT,
+					action: "acknowledge",
+					messageId: "alert-msg",
+					userId: null,
+					displayName: "Ada",
+				},
+			])
+			expect(platform.calls).toHaveLength(1)
+			expect(platform.calls[0]?.verb).toBe("edit")
+			expect(platform.calls[0]?.ref.messageId).toBe("alert-msg")
+			expect(platform.calls[0]?.blocks).toEqual(redrawn)
+		}),
+	)
+
+	it.effect("records the linked Maple user when the connector can name the clicker", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const deployment = host(platform.outbound, undefined, {
+				supportsIdentity: true,
+				linkedUserId: ADA,
+				alertAck: () => ({ kind: "applied", card: Option.some(redrawn) }),
+			})
+
+			yield* relayInboundEvent(ackClick("unacknowledge"), deployment.ports)
+
+			expect(deployment.alertAcks[0]).toMatchObject({ action: "unacknowledge", userId: ADA })
+		}),
+	)
+
+	it.effect("acks an unlinked clicker under their platform name rather than refusing", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const deployment = host(platform.outbound, undefined, {
+				supportsIdentity: true,
+				alertAck: () => ({ kind: "applied", card: Option.some(redrawn) }),
+			})
+
+			yield* relayInboundEvent(ackClick("acknowledge"), deployment.ports)
+
+			expect(deployment.alertAcks[0]).toMatchObject({ userId: null, displayName: "Ada" })
+			expect(platform.calls[0]?.verb).toBe("edit")
+		}),
+	)
+
+	it.effect("redraws a resolved incident's card and says so privately", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const deployment = host(platform.outbound, undefined, {
+				alertAck: () => ({ kind: "resolved", card: Option.some(redrawn) }),
+			})
+
+			yield* relayInboundEvent(ackClick("acknowledge"), deployment.ports)
+
+			expect(Arr.map(platform.calls, (call) => call.verb)).toEqual(["edit", "whisper"])
+			expect(notices(blocksOf(platform.calls))).toEqual([
+				"That incident is already resolved, so there is nothing to acknowledge.",
+			])
+		}),
+	)
+
+	it.effect("tells the clicker when the incident is gone, and edits nothing", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const deployment = host(platform.outbound, undefined, {
+				alertAck: () => ({ kind: "not_found" }),
+			})
+
+			yield* relayInboundEvent(ackClick("acknowledge"), deployment.ports)
+
+			expect(Arr.map(platform.calls, (call) => call.verb)).toEqual(["whisper"])
+			expect(notices(blocksOf(platform.calls))).toEqual(["That incident no longer exists in Maple."])
+		}),
+	)
+
+	it.effect("confirms privately when there is no card to redraw", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const deployment = host(platform.outbound, undefined, {
+				alertAck: () => ({ kind: "applied", card: Option.none() }),
+			})
+
+			yield* relayInboundEvent(ackClick("acknowledge"), deployment.ports)
+
+			expect(Arr.map(platform.calls, (call) => call.verb)).toEqual(["whisper"])
+			expect(notices(blocksOf(platform.calls))).toEqual(["Acknowledged."])
+		}),
+	)
+
+	it.effect("asks nothing of the host for a workspace nobody linked", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const deployment = host(platform.outbound, undefined, { linked: false })
+
+			yield* relayInboundEvent(ackClick("acknowledge"), deployment.ports)
+
+			expect(deployment.alertAcks).toEqual([])
+			expect(Arr.map(platform.calls, (call) => call.verb)).toEqual(["whisper"])
+		}),
+	)
+
+	it.effect("treats a malformed ack control as not Maple's", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const deployment = host(platform.outbound, undefined)
+
+			yield* relayInboundEvent(click({ actionToken: "alert_ack:not-a-uuid" }), deployment.ports)
+
+			expect(deployment.alertAcks).toEqual([])
+			expect(platform.calls).toEqual([])
 		}),
 	)
 })

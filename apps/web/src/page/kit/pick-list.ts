@@ -40,9 +40,12 @@ export const pickList = <M>(
 		/** The menu's entries; no add row while there are none. */
 		addEntries: ReadonlyArray<MenuView.MenuEntry>
 		addLabel: string
+		/** A save in flight: the picks show, but nothing can be removed, moved or added. */
+		isDisabled?: boolean
 	}>,
-): Html =>
-	panel(h, { className: "divide-y shadow-none" }, [
+): Html => {
+	const isDisabled = options.isDisabled ?? false
+	return panel(h, { className: "divide-y shadow-none" }, [
 		...Arr.map(options.entries, (entry) =>
 			hstack(h, { gap: "2", className: "px-3 py-2", attributes: [h.Key(entry.key)] }, [
 				entry.media,
@@ -59,7 +62,7 @@ export const pickList = <M>(
 								h,
 								{
 									label: `Move ${entry.label} up`,
-									isDisabled: entry.move.up === null,
+									isDisabled: isDisabled || entry.move.up === null,
 									className: "text-muted-foreground",
 									attributes: entry.move.up === null ? [] : [h.OnClick(entry.move.up)],
 								},
@@ -69,7 +72,7 @@ export const pickList = <M>(
 								h,
 								{
 									label: `Move ${entry.label} down`,
-									isDisabled: entry.move.down === null,
+									isDisabled: isDisabled || entry.move.down === null,
 									className: "text-muted-foreground",
 									attributes: entry.move.down === null ? [] : [h.OnClick(entry.move.down)],
 								},
@@ -81,6 +84,7 @@ export const pickList = <M>(
 					{
 						label: entry.removeLabel,
 						className: "text-muted-foreground",
+						isDisabled,
 						attributes: [h.OnClick(entry.onRemove)],
 					},
 					[icon(h, "XmarkIcon")],
@@ -114,6 +118,7 @@ export const pickList = <M>(
 											{
 												className:
 													"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
+												isDisabled,
 												attributes: trigger,
 											},
 											[icon(h, "PlusIcon", { size: 14 }), options.addLabel],
@@ -125,3 +130,4 @@ export const pickList = <M>(
 					}),
 				]),
 	])
+}

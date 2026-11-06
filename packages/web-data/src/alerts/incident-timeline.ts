@@ -1,13 +1,14 @@
 import type {
 	AlertComparator,
 	AlertDeliveryEventDocument,
+	AlertIncidentAckSource,
 	AlertDestinationType,
 	AlertIncidentDocument,
 	AlertIncidentHoldReason,
 	AlertSignalType,
 	InvestigationId,
 } from "@maple/domain/http"
-import type { V2Investigation } from "@maple/domain/http/v2"
+import type { V2AlertIncidentEvent, V2Investigation } from "@maple/domain/http/v2"
 import type { Tone } from "@maple/ui/lib/tone"
 import { UNGROUPED_GROUP_KEY } from "@maple/domain/http"
 import { formatAlertDuration, formatSignalValue, signalLabels } from "./form-utils"
@@ -31,6 +32,79 @@ export const holdReasonLabel: Record<AlertIncidentHoldReason, string> = {
 	sampling_changed: "Sampling changed while the breach cleared. Resolves when the signal settles.",
 	probe_failed: "Maple could not verify telemetry. Resolves on the next successful check.",
 } satisfies Record<AlertIncidentHoldReason, string>
+
+const ackSourceLabel: Record<AlertIncidentAckSource, string> = {
+	web: "the dashboard",
+	api: "the API",
+	mcp: "MCP",
+	slack: "Slack",
+	discord: "Discord",
+} satisfies Record<AlertIncidentAckSource, string>
+
+/** "Dana Kim", or who it was when the source named nobody: an MCP agent or a teammate. */
+export function ackActorLabel(name: string | null, source: AlertIncidentAckSource | null): string {
+	if (name != null) return name
+	return source === "mcp" ? "an agent over MCP" : "a teammate"
+}
+
+/** "Acknowledged by Dana Kim", or null when nobody has acknowledged the incident. */
+export function acknowledgedLine(
+	incident: Pick<AlertIncidentDocument, "acknowledgedAt" | "acknowledgedByName" | "acknowledgedVia">,
+): string | null {
+	return incident.acknowledgedAt == null
+		? null
+		: `Acknowledged by ${ackActorLabel(incident.acknowledgedByName, incident.acknowledgedVia)}`
+}
+
+function activityEntry(event: V2AlertIncidentEvent): IncidentTimelineEntry {
+	const who = ackActorLabel(event.actor?.name ?? null, event.source)
+	const from = event.source != null ? `From ${ackSourceLabel[event.source]}` : null
+	const base = {
+		key: `activity:${event.id}`,
+		at: Date.parse(event.created_at),
+		pending: false,
+		investigation: null,
+	}
+	switch (event.type) {
+		case "acknowledged":
+			return {
+				...base,
+				tone: "info",
+				title: `Acknowledged by ${who}`,
+				detail: Arr.join(
+					Arr.filter([from, "reminders paused"], (p) => p != null),
+					" · ",
+				),
+			}
+		case "unacknowledged":
+			return {
+				...base,
+				tone: "neutral",
+				title: `Unacknowledged by ${who}`,
+				detail: Arr.join(
+					Arr.filter([from, "reminders resume"], (p) => p != null),
+					" · ",
+				),
+			}
+		case "ack_cleared":
+			return {
+				...base,
+				tone: "warn",
+				title: "Acknowledgement cleared",
+				detail: "The incident escalated, so it notified again",
+			}
+		case "paged":
+			// A paged event without its page is malformed; it reads as an unnamed page.
+			return pageEntry({
+				id: event.id,
+				at: event.created_at,
+				name: event.page?.name ?? null,
+				channel: event.page?.channel ?? "email",
+				status: event.page?.status ?? "sent",
+				errorMessage: event.page?.error_message ?? null,
+			})
+	}
+}
 
 const comparatorWords: Record<AlertComparator, string> = {
 	gt: "above",
@@ -217,9 +291,9 @@ function investigationEntries(investigation: V2Investigation): ReadonlyArray<Inc
 export function buildIncidentTimeline(input: {
 	incident: AlertIncidentDocument
 	deliveries: ReadonlyArray<AlertDeliveryEventDocument>
+	/** Acknowledgement history, oldest first. */
+	activity: ReadonlyArray<V2AlertIncidentEvent>
 	investigation: V2Investigation | null
-	/** Escalation pages to members, from the incident's `paged` events. */
-	pages?: ReadonlyArray<IncidentPage>
 	renotifyIntervalMinutes: number | null
 	destinationTypeLabel: (type: AlertDestinationType) => string
 }): ReadonlyArray<IncidentTimelineEntry> {
@@ -248,7 +322,7 @@ export function buildIncidentTimeline(input: {
 		const entry = deliveryEntry(delivery, input.destinationTypeLabel)
 		if (entry != null) events.push(entry)
 	}
-	for (const page of input.pages ?? []) events.push(pageEntry(page))
+	for (const event of input.activity) events.push(activityEntry(event))
 	if (input.investigation != null) events.push(...investigationEntries(input.investigation))
 
 	if (incident.status === "resolved" && incident.resolvedAt != null) {
@@ -273,9 +347,11 @@ export function buildIncidentTimeline(input: {
 		})
 	} else if (incident.status === "open") {
 		const reminder =
-			input.renotifyIntervalMinutes != null
-				? `reminders every ${input.renotifyIntervalMinutes}m while open`
-				: null
+			incident.acknowledgedAt != null
+				? "reminders paused while acknowledged"
+				: input.renotifyIntervalMinutes != null
+					? `reminders every ${input.renotifyIntervalMinutes}m while open`
+					: null
 		events.push({
 			key: "breaching",
 			at: Date.parse(incident.lastTriggeredAt),
@@ -296,9 +372,16 @@ export function buildIncidentTimeline(input: {
 		})
 	}
 
-	// Stable sort keeps the insertion order (opened first) for identical stamps.
-	return Arr.sort(
-		Arr.filter(events, (entry) => Number.isFinite(entry.at)),
-		Order.mapInput(Order.Number, (entry: { readonly at: number }) => entry.at),
-	)
+	// Stable sort keeps the insertion order (opened first) for identical stamps. The state still in
+	// effect ends the story even when an ack came after its stamp (a hold's start, the last check).
+	const isCurrent = (entry: IncidentTimelineEntry) => CURRENT_STATE_KEYS.has(entry.key)
+	return [
+		...Arr.sort(
+			Arr.filter(events, (entry) => !isCurrent(entry) && Number.isFinite(entry.at)),
+			Order.mapInput(Order.Number, (entry: { readonly at: number }) => entry.at),
+		),
+		...Arr.filter(events, isCurrent),
+	]
 }
+
+const CURRENT_STATE_KEYS: ReadonlySet<string> = new Set(["held", "breaching"])

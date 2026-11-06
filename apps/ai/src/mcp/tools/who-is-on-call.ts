@@ -1,6 +1,7 @@
 import type { McpToolRegistrar } from "./types"
 import { Array as Arr, Clock, Effect, Option, Schema } from "effect"
 import { parseWarehouseDateTime } from "@maple/query-engine"
+import { ONCALL_LOOKAROUND_MS } from "@maple/domain/http"
 import { WhoIsOnCallOutput } from "@maple/domain/mcp-outputs"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
@@ -29,18 +30,30 @@ export function registerWhoIsOnCallTool(server: McpToolRegistrar) {
 		handler: Effect.fn("McpTool.whoIsOnCall")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
 			const schedules = yield* OnCallSchedulesService
-			const schedule = yield* resolveSchedule(tenant.orgId, params.schedule, "schedule")
+			const schedule = yield* resolveSchedule(
+				tenant.orgId,
+				params.schedule,
+				"schedule",
+				"who_is_on_call",
+			)
 			const atMs =
 				params.at === undefined ? yield* Clock.currentTimeMillis : parseWarehouseDateTime(params.at)
 			const toError = Effect.mapError(toMcpHttpError("who_is_on_call"))
 			const current = yield* schedules.onCallAt(tenant.orgId, schedule.id, atMs).pipe(toError)
 			const nextFrom = current.shift === null ? atMs : isoMs(current.shift.endsAt)
-			const upcoming = yield* schedules
-				.shifts(tenant.orgId, schedule.id, nextFrom, nextFrom + NEXT_SHIFT_HORIZON_MS)
-				.pipe(
-					Effect.catchTag("@maple/http/errors/AlertValidationError", () => Effect.succeed(null)),
-					toError,
-				)
+			// A shift that ends at the lookaround edge was clamped there, not handed off: the
+			// "next" one would only be the same shift continuing.
+			const clamped = nextFrom >= atMs + ONCALL_LOOKAROUND_MS
+			const upcoming = clamped
+				? null
+				: yield* schedules
+						.shifts(tenant.orgId, schedule.id, nextFrom, nextFrom + NEXT_SHIFT_HORIZON_MS)
+						.pipe(
+							Effect.catchTag("@maple/http/errors/AlertValidationError", () =>
+								Effect.succeed(null),
+							),
+							toError,
+						)
 			const next =
 				upcoming === null
 					? Option.none()
@@ -79,7 +92,9 @@ export function registerWhoIsOnCallTool(server: McpToolRegistrar) {
 						[
 							"Next",
 							output.next === null
-								? "nobody within two weeks"
+								? output.onCall === null
+									? "nobody within two weeks"
+									: "no handoff within two weeks"
 								: `${personLabel(output.next.user)} from ${output.next.startsAt} until ${output.next.endsAt}`,
 						],
 					]),

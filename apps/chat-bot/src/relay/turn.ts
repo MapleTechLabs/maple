@@ -14,9 +14,11 @@
 import {
 	ConnectorCredentials,
 	decodeChatActionControlId,
+	decodeChatAlertAckControlId,
 	driveChatTurn,
 	WORKSPACE_CREDENTIALS,
 	type ChatActionRequest,
+	type ChatAlertAckAction,
 	type ChatBlock,
 	type ChatChartRef,
 	type ChatConversation,
@@ -76,6 +78,27 @@ export class WorkspaceLookupFailed extends Schema.TaggedError<WorkspaceLookupFai
 	{ connector: ChatConnectorId, message: Schema.String },
 ) {}
 
+/** A click on an alert card's Acknowledge or Unacknowledge button, in the workspace's org. */
+export interface RelayAlertAckRequest {
+	readonly orgId: OrgId
+	readonly connector: ChatConnectorId
+	/** Off the control: forgeable, so the host scopes it to `orgId` and nothing else. */
+	readonly incidentId: string
+	readonly action: ChatAlertAckAction
+	/** The card that was clicked, to redraw it. */
+	readonly messageId: string
+	/** Linked Maple user where the connector can prove one, else only the platform's name. */
+	readonly userId: UserId | null
+	readonly displayName: string
+}
+
+/** What came of an ack click. `card` is the clicked message redrawn, when Maple posted it. */
+export type RelayAlertAckOutcome =
+	| { readonly kind: "applied"; readonly card: Option.Option<ReadonlyArray<ChatBlock>> }
+	| { readonly kind: "resolved"; readonly card: Option.Option<ReadonlyArray<ChatBlock>> }
+	| { readonly kind: "not_found" }
+	| { readonly kind: "unavailable" }
+
 export interface RelayPorts<R = never> {
 	/** The connector's outbound half — how a turn is shown on the platform it was asked on. */
 	readonly outbound: ChatOutbound<R>
@@ -127,6 +150,8 @@ export interface RelayPorts<R = never> {
 	readonly announceUnlinked: Effect.Effect<boolean>
 	/** Checkpoint the turn's posted messages, for settling it after an eviction (`./settle.ts`). */
 	readonly recordTurn: (checkpoint: RelayTurnCheckpoint) => Effect.Effect<void>
+	/** Acknowledge or unacknowledge an alert incident from its card. Never fails; see the outcome. */
+	readonly alertAck: (request: RelayAlertAckRequest) => Effect.Effect<RelayAlertAckOutcome>
 }
 
 /**
@@ -144,6 +169,10 @@ const UNLINKED_NOTICE =
 const BUSY_NOTICE = "Still working on the previous message here — ask again once that answer lands."
 
 const UNAVAILABLE_NOTICE = "Maple's agent can't be reached from here right now."
+
+const ALERT_RESOLVED_NOTICE = "That incident is already resolved, so there is nothing to acknowledge."
+const ALERT_GONE_NOTICE = "That incident no longer exists in Maple."
+const ALERT_UNAVAILABLE_NOTICE = "Maple couldn't record that just now. Try again in a moment."
 
 /** The control outlived what it pointed at: a wiped conversation, or a build that changed the log. */
 const PROPOSAL_GONE_NOTICE = "That change isn't waiting for a decision any more."
@@ -467,6 +496,10 @@ const settleAction = Effect.fn("ChatBotRelay.settleApproval")(function* <R>(
 	ports: RelayPorts<R>,
 ) {
 	yield* Effect.annotateCurrentSpan({ "maple.chat.connector": action.connector })
+	const alertAck = decodeChatAlertAckControlId(action.actionToken)
+	if (Option.isSome(alertAck)) {
+		return yield* settleAlertAck(action, alertAck.value.action, alertAck.value.incidentId, ports)
+	}
 	const control = decodeChatActionControlId(action.actionToken)
 	// A platform hands back whatever was on the control that was clicked, which includes controls
 	// Maple never rendered. Not ours is not an error.
@@ -568,6 +601,78 @@ const settleAction = Effect.fn("ChatBotRelay.settleApproval")(function* <R>(
 			return yield* showDecision(action, request, orgId, sessionId, session, ports).pipe(Effect.ignore)
 		default:
 			return outcome.value satisfies never
+	}
+})
+
+/**
+ * A click on an alert card's ack button. Anyone in the channel may acknowledge: where the connector
+ * can link accounts the ack is recorded as that Maple user, otherwise under the platform name.
+ * The org is the workspace's; the incident id off the control is only looked up inside it.
+ */
+const settleAlertAck = Effect.fn("ChatBotRelay.settleAlertAck")(function* <R>(
+	action: InboundAction,
+	ackAction: ChatAlertAckAction,
+	incidentId: string,
+	ports: RelayPorts<R>,
+) {
+	yield* Effect.annotateCurrentSpan({
+		"maple.chat.alert_ack.action": ackAction,
+		"maple.alert.incident_id": incidentId,
+	})
+	const transport = yield* ports.outbound.transport
+	const clicker = decodeExternalUserId(action.actor.id)
+	const workspace = yield* Effect.exit(
+		ports.resolveWorkspace(action.connector, action.workspaceId, Option.getOrUndefined(clicker)),
+	)
+	if (Exit.isFailure(workspace) || Option.isNone(workspace.value)) {
+		yield* Effect.annotateCurrentSpan({ "maple.chat.alert_ack": "unavailable" })
+		return yield* tellClicker(transport, action, notice(ALERT_UNAVAILABLE_NOTICE))
+	}
+	const { orgId, linkedUserId } = workspace.value.value
+	yield* Effect.annotateCurrentSpan({ orgId })
+
+	const outcome = yield* ports.alertAck({
+		orgId,
+		connector: action.connector,
+		incidentId,
+		action: ackAction,
+		messageId: action.messageId,
+		userId: linkedUserId ?? null,
+		displayName: action.actor.displayName,
+	})
+	yield* Effect.annotateCurrentSpan({ "maple.chat.alert_ack": outcome.kind })
+	const redraw = (card: Option.Option<ReadonlyArray<ChatBlock>>) =>
+		Option.match(card, {
+			onNone: () => Effect.void,
+			onSome: (blocks) =>
+				transport.edit({ target: replyTarget(action), messageId: action.messageId }, blocks).pipe(
+					Effect.tapError((error) =>
+						Effect.logWarning("An acknowledged alert card could not be redrawn").pipe(
+							Effect.annotateLogs({ "error.type": error.operation }),
+						),
+					),
+					Effect.ignore,
+				),
+		})
+	switch (outcome.kind) {
+		case "applied":
+			// No card to redraw (a digest, an old delivery): say it privately instead.
+			return yield* Option.isSome(outcome.card)
+				? redraw(outcome.card)
+				: tellClicker(
+						transport,
+						action,
+						notice(ackAction === "acknowledge" ? "Acknowledged." : "Unacknowledged."),
+					)
+		case "resolved":
+			yield* redraw(outcome.card)
+			return yield* tellClicker(transport, action, notice(ALERT_RESOLVED_NOTICE))
+		case "not_found":
+			return yield* tellClicker(transport, action, notice(ALERT_GONE_NOTICE))
+		case "unavailable":
+			return yield* tellClicker(transport, action, notice(ALERT_UNAVAILABLE_NOTICE))
+		default:
+			return outcome satisfies never
 	}
 })
 

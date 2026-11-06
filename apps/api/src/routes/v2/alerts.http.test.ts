@@ -441,6 +441,19 @@ describe("v2 alerts over HTTP", () => {
 			)`,
 		)
 
+		// An internal PagerDuty acknowledgement sync is not a notification: the public list leaves it out.
+		await executeSql(
+			harness.testDb,
+			`insert into alert_delivery_events (
+				id, org_id, rule_id, destination_id, delivery_key, event_type,
+				attempt_number, status, scheduled_at, payload_json, created_at, updated_at
+			)
+			select '00000000-0000-4000-9000-0000000000ac', rules.org_id, rules.id, destinations.id,
+				'ack-sync', 'acknowledge', 1, 'success', timestamp '2026-08-02 12:00:00+00', '{}'::jsonb,
+				timestamp '2026-08-02 12:00:00+00', timestamp '2026-08-02 12:00:00+00'
+			from (select id, org_id from alert_rules where org_id = 'org_alerts_e2e' limit 1) as rules
+			cross join (select id from alert_destinations where org_id = 'org_alerts_e2e' limit 1) as destinations`,
+		)
 		const first = await harness.request("GET", "/v2/alerts/deliveries?limit=60", key.secret)
 		expect(first.status).toBe(200)
 		expect(first.body.data).toHaveLength(60)
@@ -462,7 +475,7 @@ describe("v2 alerts over HTTP", () => {
 		expect(
 			Arr.some(
 				[...first.body.data, ...second.body.data],
-				(item) => item.delivery_key === "foreign-delivery",
+				(item) => item.delivery_key === "foreign-delivery" || item.delivery_key === "ack-sync",
 			),
 		).toBe(false)
 
@@ -1782,6 +1795,19 @@ describe("v2 alerts over HTTP", () => {
 				user_id: "user_ben",
 				starts_at: "2020-01-03T17:00:00.000Z",
 				ends_at: "2020-01-04T08:00:00.000Z",
+			}),
+			// Valid ISO timestamps before 1970: not storable instants, so a 400 rather than a 500.
+			harness.request("POST", "/v2/alerts/oncall_schedules", key.secret, {
+				...weeklySchedule,
+				layers: [{ ...layer, starts_at: "1960-01-01T00:00:00.000Z" }],
+			}),
+			harness.request("PATCH", base, key.secret, {
+				layers: [{ ...layer, starts_at: "1969-12-31T23:59:59.000Z" }],
+			}),
+			harness.request("POST", `${base}/overrides`, key.secret, {
+				user_id: "user_ben",
+				starts_at: "1960-01-01T00:00:00.000Z",
+				ends_at: "2030-01-04T08:00:00.000Z",
 			}),
 		])
 		for (const response of badRequests) {

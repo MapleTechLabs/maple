@@ -38,8 +38,10 @@ export const Model = Schema.Struct({
 	investigation: KeyedSchema(Schema.NullOr(V2Investigation), LoadFailure),
 	/** The incident's latest escalation run (`alertIncidents.retrieve`), re-read as the incident changes. */
 	escalation: KeyedSchema(Schema.NullOr(V2AlertIncidentEscalation), LoadFailure),
-	/** `alertIncidents.listEvents`: the timeline's pages to members, re-read with the escalation. */
-	events: KeyedSchema(Schema.Array(V2AlertIncidentEvent), LoadFailure),
+	/** Acknowledgement history, refetched whenever the incident's acknowledgement changes. */
+	activity: KeyedSchema(Schema.Array(V2AlertIncidentEvent), LoadFailure),
+	/** An acknowledge or unacknowledge request is running. */
+	isUpdatingAcknowledgement: Schema.Boolean,
 	/** An SLO incident's link to its SLO: `slos.list`, read only for one. */
 	slos: KeyedSchema(Schema.Array(V2Slo), LoadFailure),
 	/** An uptime incident's link to its monitor: `uptimeMonitors.list`, read only for one. */

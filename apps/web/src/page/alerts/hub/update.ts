@@ -32,6 +32,7 @@ import {
 	FetchHubMembers,
 	FetchHubSchedules,
 	DeleteChain,
+	AcknowledgeIncident,
 	DeleteDestination,
 	FetchHubChains,
 	DeleteMonitor,
@@ -47,6 +48,7 @@ import {
 	ToggleRule,
 	UpdateDestination,
 } from "./command"
+import { withAcknowledgement } from "../shared/commands"
 import { resolveStatus, resolveTab } from "./derive"
 import { Message, type RuleBucket } from "./message"
 import type { Model } from "./model"
@@ -221,6 +223,7 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		hasToggleFailed: false,
 		isLoadFailed: false,
 		testingDestinationIds: [],
+		acknowledgingIncidentIds: [],
 		deletingDestinationIds: [],
 		confirmDeleteId: null,
 		deleteDialog: Dialog.init(DELETE_DIALOG_ID, "alert-dialog"),
@@ -416,15 +419,16 @@ export const chainRuleNames = (
 	)
 
 /** Why a delete was refused: the API's 409 names no rules, so they come from the chain's own list. */
-const inUseMessage = (model: Model, chainId: EscalationChainId): string =>
-	Option.match(
+// The cached chain can name no rules when one was attached after this tab read the list.
+const inUseMessage = (model: Model, chainId: EscalationChainId): string => {
+	const names = Option.match(
 		Array.findFirst(chainsOf(model), (chain) => chain.id === chainId),
-		{
-			onNone: () => "Alert rules still start this chain. Remove it from their severity tiers first.",
-			onSome: (chain) =>
-				`Still used by ${Array.join(chainRuleNames(model, chain), ", ")}. Remove it from their severity tiers first.`,
-		},
+		{ onNone: () => [], onSome: (chain) => chainRuleNames(model, chain) },
 	)
+	return names.length === 0
+		? "Alert rules still start this chain. Remove it from their severity tiers first."
+		: `Still used by ${Array.join(names, ", ")}. Remove it from their severity tiers first.`
+}
 
 /** Runs the chain delete dialog's update; `Closed` forgets the target and its error. */
 const updateDeleteChainDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => {
@@ -805,6 +809,42 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedToggleRule: ({ result }) => ({
 			model: { ...model, togglingRuleId: null, hasToggleFailed: Result.isFailure(result) },
 		}),
+		ClickedAcknowledgeIncident: ({ incidentId, acknowledged }) =>
+			model.acknowledgingIncidentIds.includes(incidentId)
+				? { model }
+				: {
+						model: {
+							...model,
+							acknowledgingIncidentIds: [...model.acknowledgingIncidentIds, incidentId],
+						},
+						commands: [AcknowledgeIncident({ incidentId, acknowledged })],
+					},
+		CompletedAcknowledgeIncident: ({ incidentId, acknowledged, result }) => {
+			const settled = {
+				...model,
+				acknowledgingIncidentIds: withoutId(model.acknowledgingIncidentIds, incidentId),
+			}
+			return Result.match(result, {
+				onSuccess: (incident) => ({
+					model: {
+						...settled,
+						incidents:
+							settled.incidents === null
+								? null
+								: withAcknowledgement(settled.incidents, incident),
+					},
+				}),
+				onFailure: (failure) => ({
+					model: settled,
+					outMessage: errorToast(
+						acknowledged
+							? "Couldn't acknowledge the incident"
+							: "Couldn't unacknowledge the incident",
+						failure,
+					),
+				}),
+			})
+		},
 		ClickedToggleDestination: ({ destinationId }) => toggleDestination(model, destinationId),
 		CompletedUpdateDestination: ({ result }) =>
 			Result.match(result, {

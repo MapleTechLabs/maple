@@ -1,4 +1,3 @@
-import type { V2AlertIncidentEscalation, V2AlertIncidentEvent } from "@maple/domain/http/v2"
 import type {
 	AlertCheckDocument,
 	AlertIncidentDocument,
@@ -14,8 +13,8 @@ import {
 	signalLabels,
 } from "@maple/web-data/alerts/form-utils"
 import {
+	acknowledgedLine,
 	buildIncidentTimeline,
-	type IncidentPage,
 	conditionPhrase,
 	holdReasonLabel,
 	incidentGroup,
@@ -52,9 +51,10 @@ import { msIso } from "../shared/time"
 import { groupPreviewOf, type IncidentView, incidentViewOf, ruleStatesOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { incidentRail } from "./view-rail"
+import { type EscalationData, incidentRail } from "./view-rail"
 import { incidentTimeline } from "./view-timeline"
 import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -65,8 +65,14 @@ const statusLine = (incident: AlertIncidentDocument, now: number, timeZone: stri
 			: `${formatDateInTimezone(iso, { timeZone })} ${formatTimeInTimezone(iso, { timeZone })}`
 	if (incident.status === "resolved")
 		return `Resolved ${incident.resolvedAt ? at(incident.resolvedAt) : ""} · lasted ${formatAlertDuration(incident.firstTriggeredAt, incident.resolvedAt)}`
-	if (incident.holdReason != null) return `Waiting on data · ${holdReasonLabel[incident.holdReason]}`
-	return `Open ${formatAlertDuration(incident.firstTriggeredAt, msIso(now))} · since ${at(incident.firstTriggeredAt)}`
+	const acked = acknowledgedLine(incident)
+	const ackSuffix =
+		acked === null || incident.acknowledgedAt === null
+			? ""
+			: ` · ${acked} at ${at(incident.acknowledgedAt)}`
+	if (incident.holdReason != null)
+		return `Waiting on data · ${holdReasonLabel[incident.holdReason]}${ackSuffix}`
+	return `Open ${formatAlertDuration(incident.firstTriggeredAt, msIso(now))} · since ${at(incident.firstTriggeredAt)}${ackSuffix}`
 }
 
 /** `IncidentHeader`'s title side. */
@@ -126,7 +132,32 @@ export const headerTitle = <M>(
 	)
 }
 
-const headerAction = (h: H, model: Model, investigation: V2Investigation | null): Html =>
+/** `IncidentHeader`'s Acknowledge or Unacknowledge button; nothing once the incident resolved. */
+export const acknowledgeAction = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{
+		incident: AlertIncidentDocument
+		isLoading: boolean
+		onAcknowledge: (acknowledged: boolean) => M
+	}>,
+): ReadonlyArray<Html> => {
+	if (options.incident.status !== "open") return []
+	const acknowledged = options.incident.acknowledgedAt !== null
+	return [
+		button(
+			h,
+			{
+				variant: acknowledged ? "outline" : "default",
+				size: "sm",
+				isLoading: options.isLoading,
+				attributes: [h.OnClick(options.onAcknowledge(!acknowledged))],
+			},
+			acknowledged ? ["Unacknowledge"] : [icon(h, "CheckIcon"), "Acknowledge"],
+		),
+	]
+}
+
+const investigateAction = (h: H, model: Model, investigation: V2Investigation | null): Html =>
 	investigation !== null
 		? linkButton(
 				h,
@@ -168,8 +199,8 @@ export type IncidentBodyInputs<M> = Readonly<{
 	entries: ReadonlyArray<IncidentTimelineEntry>
 	isEntriesLoading: boolean
 	isEntriesFailed: boolean
-	/** The incident's latest escalation run, once read; `null` without one. */
-	escalation?: V2AlertIncidentEscalation | null
+	/** The read of the incident's latest escalation run; a success of `null` means it has none. */
+	escalation?: EscalationData
 	/** An SLO or uptime incident's SLO or monitor page; its tab stands in until it is known. */
 	sourceHref?: string | null
 	chartId: string
@@ -266,7 +297,7 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 				ruleIncidents: inputs.ruleIncidents,
 				window: inputs.range,
 				now: inputs.now,
-				escalation: inputs.escalation ?? null,
+				escalation: inputs.escalation ?? AsyncData.succeed(null),
 				timeZone: inputs.timeZone,
 			}),
 		],
@@ -300,7 +331,7 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 		incident,
 		rule,
 		sourceHref: Option.getOrNull(incident.signalType === "uptime" ? monitorLink : sloLink),
-		escalation: AsyncData.getOrElse(model.escalation.data, () => null),
+		escalation: model.escalation.data,
 		ruleIncidents: view.ruleIncidents,
 		states: ruleStatesOf(model, incident.ruleId),
 		preview: groupPreviewOf(previewState.preview, incident),
@@ -321,38 +352,22 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 		entries: buildIncidentTimeline({
 			incident,
 			deliveries,
+			activity: AsyncData.getOrElse(model.activity.data, () => []),
 			investigation,
-			pages: pagesOf(AsyncData.getOrElse(model.events.data, () => [])),
 			renotifyIntervalMinutes:
 				rule != null && rule.destinationIds.length > 0 ? rule.renotifyIntervalMinutes : null,
 			destinationTypeLabel: (type) => providerOf(type).label,
 		}),
 		isEntriesLoading:
 			AsyncData.isLoading(model.deliveries.data) || AsyncData.isIdle(model.deliveries.data),
-		isEntriesFailed: AsyncData.isFailure(model.deliveries.data),
+		isEntriesFailed:
+			AsyncData.isFailure(model.deliveries.data) || AsyncData.isFailure(model.activity.data),
 		chartId: "alert-incident-chart",
 		chart: model.chart,
 		toChartMessage: (message) => Message.GotChartMessage({ message }),
 		colors: model.themeColors ?? {},
 	})
 }
-
-/** The incident's `paged` events as the timeline reads them. */
-const pagesOf = (events: ReadonlyArray<V2AlertIncidentEvent>): ReadonlyArray<IncidentPage> =>
-	Arr.flatMap(events, (event): ReadonlyArray<IncidentPage> =>
-		event.type !== "paged" || event.page === undefined
-			? []
-			: [
-					{
-						id: event.id,
-						at: event.created_at,
-						name: event.page.name,
-						channel: event.page.channel,
-						status: event.page.status,
-						errorMessage: event.page.error_message,
-					},
-				],
-	)
 
 const loading = (h: H): Html =>
 	dashboardPage(
@@ -385,11 +400,18 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					titleContent: headerTitle(h, view.incident, view.rule, now, timeZone),
-					actions: headerAction(
-						h,
-						model,
-						AsyncData.getOrElse(model.investigation.data, () => null),
-					),
+					actions: hstack(h, { gap: "2", wrap: true }, [
+						...acknowledgeAction(h, {
+							incident: view.incident,
+							isLoading: model.isUpdatingAcknowledgement,
+							onAcknowledge: (acknowledged) => Message.ClickedAcknowledge({ acknowledged }),
+						}),
+						investigateAction(
+							h,
+							model,
+							AsyncData.getOrElse(model.investigation.data, () => null),
+						),
+					]),
 				},
 				[body(h, model, view, timeZone, now)],
 			)

@@ -7,14 +7,15 @@ order: 1
 
 Maple uses two kinds of credential. **Ingest keys** send telemetry. **API keys** read and change your organization through the REST API and the MCP server. An ingest key cannot read anything, and an API key cannot send telemetry.
 
-| Credential         | Prefix       | Where you get it                                  | What it can do                                 | Safe to ship in client code? |
-| ------------------ | ------------ | ------------------------------------------------- | ---------------------------------------------- | ---------------------------- |
-| Public ingest key  | `maple_pk_`  | **Settings → Ingestion**                          | Send telemetry                                 | Yes                          |
-| Private ingest key | `maple_sk_`  | **Settings → Ingestion**                          | Send telemetry                                 | No                           |
-| Source token       | `maple_src_` | **Sources**, shown once when you connect a source | Send the signals that source allows            | No                           |
-| API key            | `maple_ak_`  | **Settings → Keys**                               | REST API and MCP server, limited by its scopes | No                           |
-| MCP key            | `maple_ak_`  | **Settings → MCP**                                | MCP server only                                | No                           |
-| OAuth token        |              | Issued to an MCP client when you sign in          | MCP server only                                | No                           |
+| Credential          | Prefix          | Where you get it                                          | What it can do                                 | Safe to ship in client code? |
+| ------------------- | --------------- | --------------------------------------------------------- | ---------------------------------------------- | ---------------------------- |
+| Public ingest key   | `maple_pk_`     | **Settings → Ingestion**                                  | Send telemetry                                 | Yes                          |
+| Private ingest key  | `maple_sk_`     | **Settings → Ingestion**                                  | Send telemetry                                 | No                           |
+| Source token        | `maple_src_`    | **Sources**, shown once when you connect a source         | Send the signals that source allows            | No                           |
+| Public source token | `maple_src_pk_` | **Sources**, shown once when you connect a Browser source | Send the signals that source allows            | Yes                          |
+| API key             | `maple_ak_`     | **Settings → Keys**                                       | REST API and MCP server, limited by its scopes | No                           |
+| MCP key             | `maple_ak_`     | **Settings → MCP**                                        | MCP server only                                | No                           |
+| OAuth token         |                 | Issued to an MCP client when you sign in                  | MCP server only                                | No                           |
 
 Every credential belongs to one organization in one [region](/docs/reference/regions). A credential from the US region is rejected by the EU region, and the other way round.
 
@@ -45,7 +46,7 @@ The literal key `MAPLE_TEST` is accepted and returns `200`, but the data is disc
 
 ## Source tokens
 
-A source you connect under **Sources** can get its own ingest token, prefixed `maple_src_`. It is shown once, when the source is created, and is sent the same way as an ingest key. Telemetry sent with it is attributed to that source. A source token can also:
+A source you connect under **Sources** can get its own ingest token, prefixed `maple_src_`. It is shown once, when the source is created, and is sent the same way as an ingest key. Telemetry sent with it is attributed to that source. A **Browser** source gets a public source token, prefixed `maple_src_pk_`, which is made to ship in client code like the public ingest key. Keep every other source token out of client bundles. A source token can also:
 
 - **Allow only some signals**: `traces`, `logs`, `metrics`, `sessions` or `events`. Other signals are rejected with `403` `ingest_signal_not_allowed`.
 - **Expire**: after its expiry it is rejected with `401` `ingest_key_expired`.

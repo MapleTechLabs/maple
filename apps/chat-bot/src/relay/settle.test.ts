@@ -180,6 +180,7 @@ const ports = (
 	announceUnlinked: Effect.succeed(false),
 	ownsConversation: () => Effect.succeed(false),
 	rememberConversation: () => Effect.void,
+	alertAck: () => Effect.succeed({ kind: "unavailable" }),
 	// Cloned, as Durable Object storage does: nothing the fiber holds survives it.
 	recordTurn: (checkpoint) =>
 		Effect.suspend(() => {

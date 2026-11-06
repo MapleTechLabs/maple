@@ -1,5 +1,11 @@
 import { UptimeMonitorId } from "@maple/domain"
-import { AlertDestinationId, AlertRuleId, EscalationChainId, OnCallScheduleId } from "@maple/domain/http"
+import {
+	AlertDestinationId,
+	AlertIncidentId,
+	AlertRuleId,
+	EscalationChainId,
+	OnCallScheduleId,
+} from "@maple/domain/http"
 import { V2AlertDestinationUpdateParams } from "@maple/domain/http/v2"
 import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
@@ -16,6 +22,7 @@ import {
 	setRuleEnabled,
 	testDestination,
 	updateDestination,
+	setIncidentAcknowledged,
 } from "../shared/commands"
 import { deleteEscalationChain, listEscalationChains } from "../shared/escalation-chains"
 import { deleteOnCallSchedule, listOnCallSchedules } from "../shared/oncall-schedules"
@@ -69,6 +76,19 @@ export const ToggleRule = Command.define("ToggleAlertRule", {
 		setRuleEnabled(ruleId, isEnabled).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedToggleRule({ ruleId, result })),
+		),
+})
+
+/** The inbox row's acknowledge button. */
+export const AcknowledgeIncident = Command.define("AcknowledgeAlertIncident", {
+	args: { incidentId: AlertIncidentId, acknowledged: Schema.Boolean },
+	messages: [Message.CompletedAcknowledgeIncident],
+	execute: ({ incidentId, acknowledged }) =>
+		setIncidentAcknowledged(incidentId, acknowledged).pipe(
+			Effect.result,
+			Effect.map((result) =>
+				Message.CompletedAcknowledgeIncident({ incidentId, acknowledged, result }),
+			),
 		),
 })
 

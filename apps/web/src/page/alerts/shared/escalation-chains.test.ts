@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import { chainSummary, formatWait, runView } from "./escalation-chains"
 import { chainDestinations, chainOf, runOf } from "./escalation-test-fixtures"
 import { memberId, mixedTargetChain } from "./oncall-test-fixtures"
+import { NOW } from "./test-rows"
 
 const nameOf = (id: string) =>
 	Option.getOrElse(
@@ -75,25 +76,25 @@ describe("formatWait", () => {
 
 describe("runView", () => {
 	it("an active run says where it is and when it pages next", () => {
-		const view = runView(runOf("active", { nextStepAt: "2026-10-01T14:25:00.000Z" }), false, "UTC")
+		const view = runView(runOf("active", { nextStepAt: "2026-10-01T14:25:00.000Z" }), false, "UTC", NOW)
 		expect(view.state).toBe("escalating")
 		expect(view.detail).toMatch(/^Step 2 of 3, pass 1 of 3, next page at .*2:25/u)
 	})
 
 	it("an acknowledged incident reads as paused even before the run itself pauses", () => {
-		expect(runView(runOf("active"), true, "UTC")).toMatchObject({
+		expect(runView(runOf("active"), true, "UTC", NOW)).toMatchObject({
 			state: "paused",
 			label: "Paused: acknowledged",
 		})
-		expect(runView(runOf("acknowledged"), false, "UTC").state).toBe("paused")
+		expect(runView(runOf("acknowledged"), false, "UTC", NOW).state).toBe("paused")
 	})
 
 	it("an ended run says why it ended", () => {
-		expect(runView(runOf("exhausted"), false, "UTC")).toEqual({
+		expect(runView(runOf("exhausted"), false, "UTC", NOW)).toEqual({
 			state: "finished",
 			label: "Finished",
 			detail: "Every step was sent",
 		})
-		expect(runView(runOf("resolved"), true, "UTC").detail).toBe("Ended when the incident resolved")
+		expect(runView(runOf("resolved"), true, "UTC", NOW).detail).toBe("Ended when the incident resolved")
 	})
 })
