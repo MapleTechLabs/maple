@@ -33,6 +33,7 @@ import {
 	SyncRailwayOutput,
 } from "./integrations"
 import { CiRunsOutput, CompareCommitsOutput } from "./ci"
+import { AlertSilenceMutationOutput, ListAlertSilencesOutput } from "./alert-silences"
 import {
 	CreateAlertRuleOutput,
 	DeleteAlertRuleOutput,
@@ -139,6 +140,7 @@ export const McpToolOutputs = {
 	compare_commits: CompareCommitsOutput,
 	compare_periods: ComparePeriodsOutput,
 	create_alert_rule: CreateAlertRuleOutput,
+	create_alert_silence: AlertSilenceMutationOutput,
 	create_ingest_rule: IngestRuleMutationOutput,
 	create_scrape_target: ScrapeTargetMutationOutput,
 	create_dashboard: CreateDashboardOutput,
@@ -152,6 +154,7 @@ export const McpToolOutputs = {
 	describe_dashboard_schema: DescribeDashboardSchemaOutput,
 	describe_warehouse_tables: DescribeWarehouseTablesOutput,
 	diagnose_service: DiagnoseServiceOutput,
+	end_alert_silence: AlertSilenceMutationOutput,
 	error_detail: ErrorDetailOutput,
 	explore_attributes: ExploreAttributesOutput,
 	find_errors: FindErrorsOutput,
@@ -184,6 +187,7 @@ export const McpToolOutputs = {
 	list_alert_destinations: ListAlertDestinationsOutput,
 	list_alert_incidents: ListAlertIncidentsOutput,
 	list_alert_rules: ListAlertRulesOutput,
+	list_alert_silences: ListAlertSilencesOutput,
 	list_dashboards: ListDashboardsOutput,
 	list_error_incidents: ListErrorIncidentsOutput,
 	list_error_issue_events: ListErrorIssueEventsOutput,

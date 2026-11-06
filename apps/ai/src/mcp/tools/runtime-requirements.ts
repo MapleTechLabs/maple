@@ -3,6 +3,7 @@ import type { AgentFeedbackService } from "@maple/backend/services/feedback/Agen
 import type { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import type { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import type { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
+import type { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
 import type { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import type { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import type { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
@@ -46,6 +47,7 @@ export type McpToolRuntimeRequirements =
 	| DependencyScanReader
 	| AlertReadModelsService
 	| AlertRulesService
+	| AlertSilencesService
 	| DashboardPersistenceService
 	| ErrorActorsService
 	| ErrorIssueReadModelsService
