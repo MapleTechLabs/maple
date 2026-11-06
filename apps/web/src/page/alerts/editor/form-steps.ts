@@ -99,12 +99,15 @@ export const updateTierIds = (
 				}
 
 /**
- * A destination picked for one tier leaves the other: critical pages already reach the warning
- * destinations, so being on both only doubles the notification.
+ * A destination picked for a tier joins it. On an anomaly rule it also leaves the other tier:
+ * critical anomaly pages already reach the warning destinations, so being on both only doubles
+ * the page. A threshold rule keeps it on both, since each of its tiers needs its own destinations.
  */
 export const assignToTier = (form: RuleForm, tier: Tier, id: AlertDestinationId): RuleForm =>
 	updateTierIds(
-		updateTierIds(form, tier === "warning" ? "critical" : "warning", removeId(id)),
+		form.signalType === "anomaly"
+			? updateTierIds(form, tier === "warning" ? "critical" : "warning", removeId(id))
+			: form,
 		tier,
 		addId(id),
 	)

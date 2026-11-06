@@ -1,7 +1,17 @@
 import { OrgId } from "@maple/domain"
 import { AlertRuleId } from "@maple/domain/http"
 import { Schema, Array as Arr } from "effect"
-import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	all,
+	expect as expectView,
+	expectAll,
+	first,
+	given,
+	Mount,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import type { PageContext } from "../../contract"
@@ -116,6 +126,26 @@ describe("alert rule page: anomaly rules", () => {
 			expectView(text("No anomalies in this window.")).toExist(),
 			expectView(text(/fires into the void/)).not.toExist(),
 			expectView(text("Configure destinations")).not.toExist(),
+		)
+	})
+
+	test("lists the window's anomalies newest opening first", () => {
+		const older = anomalyIncidentRow(
+			{ n: 2, ruleN: 8, severity: "warning", service: "demo-api", environment: "staging" },
+			{ first_triggered_at: new Date(NOW - 5 * 3_600_000).toISOString() },
+		)
+		const newer = anomalyIncidentRow(
+			{ n: 3, ruleN: 8, severity: "critical", service: "demo-api", environment: "production" },
+			{ first_triggered_at: new Date(NOW - 10 * 60_000).toISOString() },
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(SCOPED, [older, newer])),
+			themeResolved(),
+			expectAll(all.role("link", { name: /^Anomaly on demo-api/ })).toHaveCount(2),
+			expectView(first(all.role("link", { name: /^Anomaly on demo-api/ }))).toHaveText(
+				"Anomaly on demo-api (production)",
+			),
 		)
 	})
 })

@@ -33,7 +33,11 @@ export const liftDialog = (model: Model, step: ReturnType<typeof DestinationDial
 			model:
 				next.form === null
 					? next
-					: { ...next, form: assignToTier(next.form, next.destinationTier, id) },
+					: {
+							...next,
+							autoDestinationId: null,
+							form: assignToTier(next.form, next.destinationTier, id),
+						},
 			commands,
 			outMessage: PageOutMessage.RequestedToast({
 				type: "success",
@@ -57,7 +61,10 @@ const picked = (model: Model, menuId: string, value: string): Return => {
 		return Option.match(decodeId(Arr.join(rest, ":")), {
 			onNone: () => ({ model }),
 			onSome: (id) => ({
-				model: model.form === null ? model : { ...model, form: assignToTier(model.form, tier, id) },
+				model:
+					model.form === null
+						? model
+						: { ...model, autoDestinationId: null, form: assignToTier(model.form, tier, id) },
 			}),
 		})
 	if (kind === "type")
@@ -156,4 +163,10 @@ export const menuStep = (model: Model, menuId: string, message: Menu.Message): R
 export const removeDestination = (model: Model, tier: Tier, id: AlertDestinationId): Return =>
 	model.form === null
 		? { model }
-		: { model: { ...model, form: updateTierIds(model.form, tier, removeId(id)) } }
+		: {
+				model: {
+					...model,
+					autoDestinationId: null,
+					form: updateTierIds(model.form, tier, removeId(id)),
+				},
+			}

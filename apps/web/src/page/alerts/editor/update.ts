@@ -121,7 +121,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedSignalKind: ({ kind }) => {
 			if (model.form === null || isProtectedDefault(model)) return { model }
 			const moved = F.switchKind(model.form, kind)
-			return editForm({ ...model, kindNotice: moved.notice }, context, () => moved.form)
+			// Anomaly paging is opt-in: a destination the editor chose, not the user, does not carry over.
+			const auto = model.autoDestinationId
+			const form =
+				kind === "anomaly" && auto !== null
+					? F.updateTierIds(
+							F.updateTierIds(moved.form, "warning", F.removeId(auto)),
+							"critical",
+							F.removeId(auto),
+						)
+					: moved.form
+			return editForm(
+				{ ...model, kindNotice: moved.notice, autoDestinationId: kind === "anomaly" ? null : auto },
+				context,
+				() => form,
+			)
 		},
 		GotRadioMessage: ({ group, message: inner }) => radioStep(model, context, group, inner),
 		ClickedOpenInBuilder: () => {

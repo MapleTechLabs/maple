@@ -92,7 +92,8 @@ const anomaliesEmpty = (h: H, status: IncidentStatusFilter, serviceName: string 
 			emptyHeader(h, [
 				emptyMedia(h, { variant: "icon" }, [icon(h, "PulseIcon", { size: 16 })]),
 				emptyTitle(h, [
-					status === "resolved" ? "No resolved anomalies" : "No anomalies",
+					// The hub reads the last 30 days of incidents; older resolved anomalies are not here.
+					status === "resolved" ? "No anomalies resolved in the last 30 days" : "No anomalies",
 					...(serviceName === undefined ? [] : [` on ${serviceName}`]),
 				]),
 				emptyDescription(h, [
@@ -146,7 +147,7 @@ const resolvedList = (h: H, incidents: ReadonlyArray<AlertIncidentDocument>, now
 	return h.section(
 		[h.Class("space-y-3")],
 		[
-			eyebrow(h, { as: "h3" }, ["Resolved"]),
+			eyebrow(h, { as: "h3" }, ["Resolved in the last 30 days"]),
 			borderedBox(h, { overflow: "x-auto" }, [
 				h.div(
 					[h.Class("min-w-[520px]")],

@@ -1,5 +1,5 @@
 import * as Policy from "@maple/domain/policy"
-import { AlertRuleId, DashboardDocument } from "@maple/domain/http"
+import { AlertDestinationId, AlertRuleId, DashboardDocument } from "@maple/domain/http"
 import { V2ChatConnector } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
@@ -86,6 +86,8 @@ export const Model = Schema.Struct({
 	isDashboardsLoadFailed: Schema.Boolean,
 	grants: Schema.Array(Policy.PermissionName),
 	isDefaultDestinationApplied: Schema.Boolean,
+	/** The destination the editor pre-selected for a new rule, until the user picks or removes one. */
+	autoDestinationId: Schema.NullOr(AlertDestinationId),
 	/** `useChatConnectors`: `null` until the list answers. */
 	connectors: Schema.NullOr(Schema.Array(V2ChatConnector)),
 	/** The 24h window the autocomplete provider reads, and the preview's own lookback. */

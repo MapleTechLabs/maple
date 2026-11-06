@@ -208,6 +208,13 @@ const followData = (model: Model, context: PageContext): Return =>
 				acknowledgedAt:
 					view.incident.acknowledgedAt === null ? null : isoMs(view.incident.acknowledgedAt),
 			})
+			// The anomaly's evidence is re-read whenever its alert incident moves (status, severity, a
+			// new breach): the synced row is the change signal, and the previous answer stays on screen.
+			const evidenceVersion = {
+				status: view.incident.status,
+				severity: view.incident.severity,
+				lastTriggeredAt: isoMs(view.incident.lastTriggeredAt),
+			}
 			const steps: ReadonlyArray<{ patch: Partial<Model>; commands: Commands }> = [
 				...Option.toArray(
 					Option.map(
@@ -289,7 +296,10 @@ const followData = (model: Model, context: PageContext): Return =>
 				),
 				...Option.toArray(
 					Option.flatMap(Option.fromNullishOr(view.incident.anomalyIncidentId), (id) => {
-						const key = requestKey(context.orgId, "anomalies.getIncident", { id })
+						const key = requestKey(context.orgId, "anomalies.getIncident", {
+							id,
+							...evidenceVersion,
+						})
 						return Option.map(
 							sameKey(model.anomaly, key)
 								? Option.none()
@@ -303,7 +313,10 @@ const followData = (model: Model, context: PageContext): Return =>
 				),
 				...Option.toArray(
 					Option.flatMap(Option.fromNullishOr(view.incident.anomalyIncidentId), (id) => {
-						const key = requestKey(context.orgId, "anomalies.getIncidentTimeseries", { id })
+						const key = requestKey(context.orgId, "anomalies.getIncidentTimeseries", {
+							id,
+							...evidenceVersion,
+						})
 						return Option.map(
 							sameKey(model.anomalyTimeseries, key)
 								? Option.none()

@@ -181,4 +181,28 @@ describe("alert incident: anomaly rules", () => {
 			expectView(text(/^Silenced until /u)).toExist(),
 		)
 	})
+
+	test("the anomaly evidence is read again when its alert incident moves", () => {
+		const model = synced(SPIKE)
+		const quiet = pageUpdate(
+			model,
+			Message.UpdatedIncidents({ orgId: ORG, rows: [anomalyIncidentRow(SPIKE)] }),
+		)
+		expect(names(quiet.commands)).not.toContain("FetchAlertIncidentAnomaly")
+		const escalated = pageUpdate(
+			model,
+			Message.UpdatedIncidents({
+				orgId: ORG,
+				rows: [
+					anomalyIncidentRow(SPIKE, {
+						last_triggered_at: new Date(NOW + 60_000).toISOString(),
+						severity: "warning",
+					}),
+				],
+			}),
+		)
+		expect(names(escalated.commands)).toEqual(
+			expect.arrayContaining(["FetchAlertIncidentAnomaly", "FetchAlertIncidentAnomalyTimeseries"]),
+		)
+	})
 })
