@@ -14,7 +14,7 @@ import { label } from "../label"
 import { Message as SectionsMessage, type Model as SectionsModel, sectionOf } from "./filter-sections"
 import { searchInput } from "../search-input"
 import { tooltipTrigger } from "../tooltip-host"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Order, String as Str } from "effect"
 
 // Port of `FilterSection` / `SearchableFilterSection` (packages/ui/src/components/filters/filter-section.tsx).
 // Alt+click on a label toggles the exclusion: `OnClick` carries no modifiers, so the root's
@@ -33,6 +33,8 @@ const visibleFilterOptions = (input: {
 	readonly search: string
 	readonly isShowingAll: boolean
 	readonly maxVisible: number
+	/** What a row shows; the search matches it as well as the value. */
+	readonly labelOf?: (name: string) => string
 }) => {
 	const chosen = new Set([...input.selected, ...input.excluded])
 	const present = new Set(Arr.map(input.options, (option) => option.name))
@@ -43,8 +45,13 @@ const visibleFilterOptions = (input: {
 	const ordered =
 		chosen.size === 0
 			? input.options
-			: [...input.options, ...missing].toSorted(
-					(a, b) => Number(chosen.has(b.name)) - Number(chosen.has(a.name)),
+			: Arr.sort(
+					[...input.options, ...missing],
+					Order.flip(
+						Order.mapInput(Order.Number, (option: { readonly name: string }) =>
+							Number(chosen.has(option.name)),
+						),
+					),
 				)
 	if (input.search === "") {
 		return {
@@ -54,7 +61,13 @@ const visibleFilterOptions = (input: {
 		}
 	}
 	const needle = Str.toLowerCase(input.search)
-	const matches = Arr.filter(ordered, (option) => Str.includes(needle)(Str.toLowerCase(option.name)))
+	const matches = Arr.filter(
+		ordered,
+		(option) =>
+			Str.includes(needle)(Str.toLowerCase(option.name)) ||
+			(input.labelOf !== undefined &&
+				Str.includes(needle)(Str.toLowerCase(input.labelOf(option.name)))),
+	)
 	return {
 		visible: matches.slice(0, MAX_SEARCH_RESULTS),
 		hasMore: 0,
@@ -316,6 +329,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 		search: isSearchable ? state.search : "",
 		isShowingAll: state.isShowingAll,
 		maxVisible: config.maxVisible ?? 5,
+		...(config.getOptionLabel !== undefined && { labelOf: config.getOptionLabel }),
 	})
 	const panelId = `filter-section-${config.title}-panel`
 	const toSections = config.toSectionsMessage

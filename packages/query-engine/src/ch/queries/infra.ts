@@ -487,8 +487,8 @@ const podFilterConditions = (
 		const included = opts[include]
 		const excluded = opts[exclude]
 		return [
-			included?.length ? CH.inList(expr, included) : undefined,
-			excluded?.length ? CH.notInList(expr, excluded) : undefined,
+			included !== undefined && included.length > 0 ? CH.inList(expr, included) : undefined,
+			excluded !== undefined && excluded.length > 0 ? CH.notInList(expr, excluded) : undefined,
 		]
 	}),
 	CH.when(
@@ -801,7 +801,7 @@ export function podRestartsQuery(opts: PodRestartsOpts) {
 			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.MetricName.eq("k8s.container.restarts"),
 			$.ResourceAttributes.get("k8s.pod.name").neq(""),
-			opts.podNames?.length
+			opts.podNames !== undefined && opts.podNames.length > 0
 				? CH.inList($.ResourceAttributes.get("k8s.pod.name"), opts.podNames)
 				: undefined,
 			CH.when(opts.namespace, (v: string) => $.ResourceAttributes.get("k8s.namespace.name").eq(v)),
@@ -948,11 +948,13 @@ const nodeFilterConditions = (
 	CH.when(opts.search, (v: string) =>
 		CH.positionCaseInsensitive($.ResourceAttributes.get("k8s.node.name"), CH.lit(v)).gt(0),
 	),
-	opts.nodeNames?.length ? CH.inList($.ResourceAttributes.get("k8s.node.name"), opts.nodeNames) : undefined,
-	opts.clusters?.length
+	opts.nodeNames !== undefined && opts.nodeNames.length > 0
+		? CH.inList($.ResourceAttributes.get("k8s.node.name"), opts.nodeNames)
+		: undefined,
+	opts.clusters !== undefined && opts.clusters.length > 0
 		? CH.inList($.ResourceAttributes.get("k8s.cluster.name"), opts.clusters)
 		: undefined,
-	opts.environments?.length
+	opts.environments !== undefined && opts.environments.length > 0
 		? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
 		: undefined,
 ]
@@ -1123,20 +1125,22 @@ const workloadFilterConditions = (
 	CH.when(opts.search, (v: string) =>
 		CH.positionCaseInsensitive($.ResourceAttributes.get(attrKey), CH.lit(v)).gt(0),
 	),
-	opts.workloadNames?.length ? CH.inList($.ResourceAttributes.get(attrKey), opts.workloadNames) : undefined,
-	opts.namespaces?.length
+	opts.workloadNames !== undefined && opts.workloadNames.length > 0
+		? CH.inList($.ResourceAttributes.get(attrKey), opts.workloadNames)
+		: undefined,
+	opts.namespaces !== undefined && opts.namespaces.length > 0
 		? CH.inList($.ResourceAttributes.get("k8s.namespace.name"), opts.namespaces)
 		: undefined,
-	opts.clusters?.length
+	opts.clusters !== undefined && opts.clusters.length > 0
 		? CH.inList($.ResourceAttributes.get("k8s.cluster.name"), opts.clusters)
 		: undefined,
-	opts.environments?.length
+	opts.environments !== undefined && opts.environments.length > 0
 		? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
 		: undefined,
 	// Pod and restart series carry the compute-type label (k8sattributes copies it from the node);
 	// the replica gauges don't, so they stay in the scan and listWorkloadsQuery drops workloads
 	// with no matching pod series.
-	opts.computeTypes?.length
+	opts.computeTypes !== undefined && opts.computeTypes.length > 0
 		? CH.notInList($.MetricName, [...POD_METRIC_NAMES, CONTAINER_RESTARTS_METRIC]).or(
 				CH.inList($.ResourceAttributes.get("eks.amazonaws.com/compute-type"), opts.computeTypes),
 			)
@@ -1259,7 +1263,9 @@ export function listWorkloadsQuery(opts: ListWorkloadsOpts) {
 			saturation: $.saturation,
 			cpuUsage: $.cpuUsage,
 		}))
-		.where(($) => [opts.computeTypes?.length ? $.podCount.gt(0) : undefined])
+		.where(($) => [
+			opts.computeTypes !== undefined && opts.computeTypes.length > 0 ? $.podCount.gt(0) : undefined,
+		])
 		.orderBy(
 			["shortfall", "desc"],
 			["failedPods", "desc"],
@@ -1518,10 +1524,9 @@ export function infraPresenceQuery(): CHUnionQuery<InfraPresenceOutput> {
 		presenceBranch("k8sNodes", NODE_FACET_PROBE_METRIC, ($) =>
 			$.ResourceAttributes.get("k8s.node.name").neq(""),
 		),
-		presenceBranch("k8sWorkloads", POD_FACET_PROBE_METRIC, ($) =>
-			Arr.map(WORKLOAD_OWNER_KEYS, (key) => $.ResourceAttributes.get(key).neq("")).reduce((a, b) =>
-				a.or(b),
-			),
-		),
+		presenceBranch("k8sWorkloads", POD_FACET_PROBE_METRIC, ($) => {
+			const owned = Arr.map(WORKLOAD_OWNER_KEYS, (key) => $.ResourceAttributes.get(key).neq(""))
+			return Arr.reduce(Arr.tailNonEmpty(owned), Arr.headNonEmpty(owned), (a, b) => a.or(b))
+		}),
 	).format("JSON")
 }

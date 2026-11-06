@@ -233,7 +233,7 @@ export const meterTurn = (
 	).pipe(
 		Effect.timeout(METERING_TIMEOUT),
 		Effect.ignore,
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide -- metering is forked off the turn and runs on its own HTTP client
 		Effect.provide(FetchHttpClient.layer),
 	)
 }
@@ -340,7 +340,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	const prReviewId = prReviewForSession(input.sessionId)
 	const prReplyId = prReplyForSession(input.sessionId)
 
-	const turnBody = (orgKey: Option.Option<Redacted.Redacted<string>>) =>
+	const turnBody = (orgKey: Option.Option<Redacted.Redacted>) =>
 		Effect.gen(function* () {
 			const investigations = yield* InvestigationService
 			const reviews = yield* PrReviewService
@@ -410,19 +410,17 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			const target =
 				prReviewId === undefined
 					? Option.none()
-					: yield* reviews
-							.reviewTarget(tenant.orgId, prReviewId)
-							.pipe(
-								Effect.catch((error) =>
-									Effect.logInfo("Could not read the review's target").pipe(
-										Effect.annotateLogs({
-											sessionId: input.sessionId,
-											error: error.message,
-										}),
-										Effect.as(Option.none()),
-									),
+					: yield* reviews.reviewTarget(tenant.orgId, prReviewId).pipe(
+							Effect.catch((error) =>
+								Effect.logInfo("Could not read the review's target").pipe(
+									Effect.annotateLogs({
+										sessionId: input.sessionId,
+										error: error.message,
+									}),
+									Effect.as(Option.none()),
 								),
-							)
+							),
+						)
 			// Clone the commit while the model reads the diff, rather than when its first source tool
 			// asks and waits on it. A child of the turn (no request Scope here, so `forkRequestScoped`
 			// parents it on this fiber): a clone still running when the turn ends carries on in the container.
@@ -503,17 +501,17 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 							),
 						)
 			// A restarted turn reads from its kickoff: what came after it is the attempt that died.
-			const kickoff =
-				input.resume === undefined
-					? -1
-					: spoken.findIndex(
-							(message) =>
-								message.role === "user" && message.id === input.resume?.userMessageId,
-						)
-			const text = input.resume?.text ?? (latest?.role === "user" ? latest.text : "")
+			const resume = input.resume
+			const text = resume?.text ?? (latest?.role === "user" ? latest.text : "")
 			const prior =
-				input.resume !== undefined
-					? spoken.slice(0, kickoff === -1 ? spoken.length : kickoff)
+				resume !== undefined
+					? Option.match(
+							Arr.findFirstIndex(
+								spoken,
+								(message) => message.role === "user" && message.id === resume.userMessageId,
+							),
+							{ onNone: () => spoken, onSome: (kickoff) => spoken.slice(0, kickoff) },
+						)
 					: latest?.role === "user"
 						? spoken.slice(0, -1)
 						: spoken
@@ -632,12 +630,12 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 						}
 						input.session.append(event)
 					},
-					// oxlint-disable-next-line effecttsgo/strict-effect-provide
+					// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the turn's OpenRouter client is built per turn from its settings
 				}).pipe(Effect.provide(openRouterClient))
 
 			// A pass that failed is a pass with no diagnosis yet, not a dead turn: the close-out below
 			// still gets its say. Interrupts stay interrupts.
-			const recoverAutonomousFailure = <R>(effect: Effect.Effect<ChatRunOutcome, unknown, R>) =>
+			const recoverAutonomousFailure = <E, R>(effect: Effect.Effect<ChatRunOutcome, E, R>) =>
 				effect.pipe(
 					Effect.catchCauseIf(
 						(cause) => !Cause.hasInterruptsOnly(cause),

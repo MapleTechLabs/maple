@@ -5,8 +5,8 @@ import {
 	type StatusPageSnapshot,
 	type StatusPageTheme,
 } from "@maple/domain/status-page"
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
-import { describe, expect, it } from "vitest"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { assert, describe, expect, it } from "vitest"
 import {
 	FIXTURE_NOW,
 	fixtureComponentId,
@@ -23,6 +23,24 @@ import {
 	renderPage,
 	renderStatusJson,
 } from "./index"
+
+/** The text after the first `open`, up to the next `close`; "" when `open` is absent. */
+const between = (text: string, open: string, close: string): string =>
+	Option.match(Arr.get(Str.split(open)(text), 1), {
+		onNone: () => "",
+		onSome: (after) => Str.split(close)(after)[0],
+	})
+
+/** Capture `group` of the first match of `regex`; "" when there is none. */
+const captured = (text: string, regex: RegExp, group: number): string =>
+	Str.match(regex)(text).pipe(
+		Option.flatMapNullishOr((found) => found[group]),
+		Option.getOrElse(() => ""),
+	)
+
+/** Every match of a global `regex`. */
+const allMatches = (text: string, regex: RegExp): ReadonlyArray<RegExpMatchArray> =>
+	Arr.fromIterable(Str.matchAll(regex)(text))
 
 const HOSTILE = `<script>alert("x")</script>&'`
 const live: StatusPageFreshness = { _tag: "live", updatedAt: FIXTURE_NOW - 2 * 60_000 }
@@ -65,22 +83,21 @@ const hostileSnapshot = makeSnapshot({
 
 /** The `<li>` bars of one component, in order. */
 const barsOf = (html: string, componentId: string) => {
-	const block = Str.split(`data-component="${componentId}"`)(html)[1]?.split(`data-component="`)[0] ?? ""
+	const block = between(html, `data-component="${componentId}"`, `data-component="`)
 	return Arr.map(
-		[...block.matchAll(/<li class="d-(\w+)" data-day="([^"]+)" data-state="\w+" title="([^"]*)">/gu)],
+		allMatches(block, /<li class="d-(\w+)" data-day="([^"]+)" data-state="\w+" title="([^"]*)">/gu),
 		(match) => ({ state: match[1], day: match[2], title: match[3] }),
 	)
 }
 
-const delayedBanner = (html: string): string =>
-	html.match(/<div class="notice" id="delayed"[^>]*>/u)?.[0] ?? ""
+const delayedBanner = (html: string): string => captured(html, /<div class="notice" id="delayed"[^>]*>/u, 0)
 
 describe("renderPage", () => {
 	it("escapes every piece of customer text and drops unsafe URLs and colours", () => {
 		const html = renderPage(hostileSnapshot, live, FIXTURE_NOW)
 		expect(html).not.toContain(`<script>alert`)
 		// The nonce'd page script and the inert JSON data block; no customer text opens one.
-		expect(html.match(/<script/gu)).toHaveLength(2)
+		expect(allMatches(html, /<script/gu)).toHaveLength(2)
 		expect(html).toContain("&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;&amp;&#39;")
 		expect(html).not.toContain("javascript:")
 		expect(html).not.toContain("insecure.example")
@@ -138,13 +155,10 @@ describe("renderPage", () => {
 		const html = renderManagePage(makeSnapshot())
 		const group = (label: string) =>
 			Arr.map(
-				[
-					...(
-						html.match(
-							new RegExp(`<optgroup label="${label}"[^>]*>(.*?)</optgroup>`, "u"),
-						)?.[1] ?? ""
-					).matchAll(/value="([a-z_]+)"/gu),
-				],
+				allMatches(
+					captured(html, new RegExp(`<optgroup label="${label}"[^>]*>(.*?)</optgroup>`, "u"), 1),
+					/value="([a-z_]+)"/gu,
+				),
 				(match) => match[1],
 			)
 		expect(group("For incidents")).toEqual(["investigating", "identified", "monitoring", "resolved"])
@@ -187,7 +201,7 @@ describe("renderPage", () => {
 			],
 		})
 		const html = renderPage(snapshot, live, FIXTURE_NOW)
-		const section = (id: string) => Str.split(`id="h-${id}"`)(html)[1]?.split("</section>")[0] ?? ""
+		const section = (id: string) => between(html, `id="h-${id}"`, "</section>")
 		expect(html).toContain("We're experiencing a partial outage")
 		expect(section("active")).toContain("Elevated errors")
 		expect(section("active")).toContain("We found the cause")
@@ -227,15 +241,14 @@ const PageData = Schema.Struct({
 
 /** The JSON the page script pages through, read back the way the browser would. */
 const pageDataOf = (html: string) =>
-	Schema.decodeUnknownSync(Schema.fromJsonString(PageData))(
-		html.match(/<script type="application\/json" id="sp-data">([\s\S]*?)<\/script>/u)?.[1] ?? "",
+	Schema.decodeSync(Schema.fromJsonString(PageData))(
+		captured(html, /<script type="application\/json" id="sp-data">([\s\S]*?)<\/script>/u, 1),
 	)
 
-const heroOf = (html: string): string =>
-	Str.split(`aria-labelledby="h-hero">`)(html)[1]?.split("</section>")[0] ?? ""
-const footerOf = (html: string): string => Str.split("<footer>")(html)[1]?.split("</footer>")[0] ?? ""
+const heroOf = (html: string): string => between(html, `aria-labelledby="h-hero">`, "</section>")
+const footerOf = (html: string): string => between(html, "<footer>", "</footer>")
 const rowOf = (html: string, componentId: string): string =>
-	Str.split(`data-component="${componentId}"`)(html)[1]?.split(`<ol`)[0] ?? ""
+	between(html, `data-component="${componentId}"`, `<ol`)
 
 describe("renderPage layout", () => {
 	const sentences: ReadonlyArray<[StatusPageComponentStatus, string]> = [
@@ -329,7 +342,10 @@ describe("renderPage layout", () => {
 		expect(bars).toHaveLength(90)
 		expect(bars[0]?.day).toBe("2026-07-31")
 		expect(bars.at(-1)?.day).toBe("2026-10-28")
-		const arrows = html.match(/<button type="button" data-nav="[a-z]+"[^>]*>/gu) ?? []
+		const arrows = Arr.map(
+			allMatches(html, /<button type="button" data-nav="[a-z]+"[^>]*>/gu),
+			(found) => found[0],
+		)
 		expect(arrows).toHaveLength(4)
 		expect(Arr.every(arrows, (arrow) => Str.includes(" hidden")(arrow))).toBe(true)
 		const data = pageDataOf(html)
@@ -341,8 +357,7 @@ describe("renderPage layout", () => {
 
 	it("names the status of a component that hides uptime, without bars or a percentage", () => {
 		const html = renderPage(makeSnapshot(), live, FIXTURE_NOW)
-		const docs =
-			Str.split(`data-component="${fixtureComponentId(2)}"`)(html)[1]?.split("</div></div>")[0] ?? ""
+		const docs = between(html, `data-component="${fixtureComponentId(2)}"`, "</div></div>")
 		expect(docs).toContain("Docs")
 		expect(docs).toContain(": Operational")
 		expect(docs).not.toContain("uptime")
@@ -363,7 +378,7 @@ describe("renderPage layout", () => {
 		)
 		const groups = Arr.map(Str.split(`<div class="group">`)(html).slice(1), (group) =>
 			Arr.map(
-				[...group.matchAll(/<span>([^<]+)<\/span><span class="sr">: ([^<]+)</gu)],
+				allMatches(group, /<span>([^<]+)<\/span><span class="sr">: ([^<]+)</gu),
 				(m) => `${m[1]}: ${m[2]}`,
 			),
 		)
@@ -466,7 +481,7 @@ describe("renderPage layout", () => {
 			FIXTURE_NOW,
 		)
 		expect(html).not.toContain("<script>alert(1)")
-		expect(html.match(/<script/gu)).toHaveLength(2)
+		expect(allMatches(html, /<script/gu)).toHaveLength(2)
 		expect(pageDataOf(html).entries[0]?.title).toBe(title)
 	})
 
@@ -549,7 +564,7 @@ describe("renderAtomFeed", () => {
 			],
 		})
 		const xml = renderAtomFeed(snapshot, "https://status.acme.example/")
-		const titles = Arr.map([...xml.matchAll(/<entry>.*?<title>([^<]*)<\/title>/gu)], (match) => match[1])
+		const titles = Arr.map(allMatches(xml, /<entry>.*?<title>([^<]*)<\/title>/gu), (match) => match[1])
 		expect(titles).toEqual([
 			"Errors &amp; timeouts: Resolved",
 			"Incident b: Investigating",
@@ -570,16 +585,12 @@ describe("renderManagePage", () => {
 		})
 		const html = renderManagePage(snapshot, { tone: "error", text: HOSTILE })
 		const incidentOptions = Arr.map(
-			[
-				...(Str.split(`name="incidentId"`)(html)[1]?.split("</select>")[0] ?? "").matchAll(
-					/<option value="([^"]+)"[^>]*>/gu,
-				),
-			],
+			allMatches(between(html, `name="incidentId"`, "</select>"), /<option value="([^"]+)"[^>]*>/gu),
 			(match) => match[1],
 		)
 		expect(incidentOptions).toEqual(["new", "open"])
 		const checkboxes = Arr.map(
-			[...html.matchAll(/name="componentIds" value="([^"]+)"/gu)],
+			allMatches(html, /name="componentIds" value="([^"]+)"/gu),
 			(match) => match[1],
 		)
 		expect(checkboxes).toEqual([fixtureComponentId(0), fixtureComponentId(1), fixtureComponentId(2)])
@@ -591,11 +602,10 @@ describe("renderManagePage", () => {
 		const html = renderManagePage(makeSnapshot({ incidents: [makeIncident("open")] }))
 		const selected = (name: string) =>
 			Arr.map(
-				[
-					...(Str.split(`name="${name}"`)(html)[1]?.split("</select>")[0] ?? "").matchAll(
-						/<option value="([^"]*)" selected>/gu,
-					),
-				],
+				allMatches(
+					between(html, `name="${name}"`, "</select>"),
+					/<option value="([^"]*)" selected>/gu,
+				),
 				(match) => match[1],
 			)
 		expect(selected("status")).toEqual([""])
@@ -609,7 +619,7 @@ const themed = (theme: StatusPageTheme): StatusPageSnapshot => {
 	return { ...snapshot, page: { ...snapshot.page, theme } }
 }
 
-const styleOf = (html: string): string => html.match(/<style[^>]*>([\s\S]*?)<\/style>/u)?.[1] ?? ""
+const styleOf = (html: string): string => captured(html, /<style[^>]*>([\s\S]*?)<\/style>/u, 1)
 
 describe("page theme", () => {
 	it("follows the visitor's scheme in auto, with both token sets", () => {
@@ -629,7 +639,7 @@ describe("page theme", () => {
 		expect(css).toContain("color-scheme:dark;")
 		expect(css).not.toContain("prefers-color-scheme")
 		expect(css).toContain("--bg:#101820")
-		expect(css.match(/--bg:/gu)).toHaveLength(1)
+		expect(allMatches(css, /--bg:/gu)).toHaveLength(1)
 	})
 
 	it("ignores the colour overrides in auto but keeps the accent", () => {
@@ -648,7 +658,7 @@ describe("page theme", () => {
 		expect(css).not.toContain("#101820")
 		expect(css).not.toContain("#fedcba")
 		// Readable on the light background only, so one mode carries it.
-		expect(css.match(/--link:#1d4ed8/gu)).toHaveLength(1)
+		expect(allMatches(css, /--link:#1d4ed8/gu)).toHaveLength(1)
 	})
 
 	it("applies the radius and the font stack", () => {
@@ -739,7 +749,9 @@ describe("editor preview render", () => {
 describe("previewSnapshot", () => {
 	const base = makeSnapshot()
 	const withoutDays = (index: number) => {
-		const { days: _days, ...component } = base.components[index]!
+		const picked = base.components[index]
+		assert.isDefined(picked)
+		const { days: _days, ...component } = picked
 		return component
 	}
 
@@ -764,21 +776,25 @@ describe("previewSnapshot", () => {
 		expect(snapshot.components[1]?.baseStatus).toBe("operational")
 		expect(Arr.map(snapshot.components, (c) => c.days.length)).toEqual([90, 90, 0])
 		expect(Arr.map(snapshot.incidentHistory, (entry) => entry.id)).toEqual(["inc-1"])
-		expect(Arr.every(snapshot.components[0]?.days, (day) => day.checks === 0)).toBe(true)
+		const [first] = snapshot.components
+		assert.isDefined(first)
+		expect(Arr.every(first.days, (day) => day.checks === 0)).toBe(true)
 		const html = renderPage(snapshot, { _tag: "live", updatedAt: FIXTURE_NOW }, FIXTURE_NOW)
 		expect(html).toContain("--link:#123abc")
-		expect(rowOf(html, snapshot.components[0]!.id)).toContain(`<span class="uptime">No data</span>`)
+		expect(rowOf(html, first.id)).toContain(`<span class="uptime">No data</span>`)
 	})
 })
 
 describe("previewSnapshot with history", () => {
 	it("shows the days it is given for a monitored component", () => {
 		const base = makeSnapshot()
-		const days = base.components[0]!.days
+		const [component] = base.components
+		assert.isDefined(component)
+		const days = component.days
 		const snapshot = previewSnapshot({
 			pageId: base.pageId,
 			page: base.page,
-			components: [{ ...base.components[0]!, monitorStatus: "up", manualStatus: null, days }],
+			components: [{ ...component, monitorStatus: "up", manualStatus: null, days }],
 			incidents: [],
 			nowMs: FIXTURE_NOW,
 		})

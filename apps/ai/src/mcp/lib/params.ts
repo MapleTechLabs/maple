@@ -18,7 +18,13 @@ import {
 	String as Str,
 } from "effect"
 import { decodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
-import { AlertDestinationId, AlertRuleId, DashboardId, ErrorIssueId } from "@maple/domain/primitives"
+import {
+	AlertDestinationId,
+	AlertIncidentId,
+	AlertRuleId,
+	DashboardId,
+	ErrorIssueId,
+} from "@maple/domain/primitives"
 import { WarehouseTimeInput, type WarehouseDateTime } from "@maple/query-engine"
 import { McpInvalidInputError } from "../tools/types"
 import { resolveWindow } from "./time"
@@ -141,6 +147,11 @@ export const optionalList = (description: string) =>
 /** The resources a tool takes ids for, with their REST public-id prefix and internal id schema. */
 const RESOURCE_IDS = {
 	alertRule: { prefix: PublicIdPrefixes.alertRule, schema: AlertRuleId, noun: "alert rule" },
+	alertIncident: {
+		prefix: PublicIdPrefixes.alertIncident,
+		schema: AlertIncidentId,
+		noun: "alert incident",
+	},
 	alertDestination: {
 		prefix: PublicIdPrefixes.alertDestination,
 		schema: AlertDestinationId,
@@ -200,9 +211,7 @@ export const decodeResourceId =
 		return Option.match(internalIdOf(kind, raw), {
 			onNone: () => Effect.fail(invalidId(kind, raw, parameter)),
 			onSome: (id) =>
-				Schema.decodeUnknownEffect(schema)(id).pipe(
-					Effect.mapError(() => invalidId(kind, raw, parameter)),
-				),
+				Schema.decodeEffect(schema)(id).pipe(Effect.mapError(() => invalidId(kind, raw, parameter))),
 		})
 	}
 
@@ -243,15 +252,11 @@ export const optionalResourceIdList = (kind: ResourceIdKind, description: string
  * decodes it against the real schema, so a malformed field is a parameter error naming the
  * field rather than a handler-side `JSON.parse` failure.
  */
-export const json = <S extends Schema.Codec<unknown, unknown, never, never>>(
-	schema: S,
-	description: string,
-) => Schema.Union([Schema.fromJsonString(schema), schema]).annotate({ description })
+export const json = <S extends Schema.Codec<unknown, unknown>>(schema: S, description: string) =>
+	Schema.Union([Schema.fromJsonString(schema), schema]).annotate({ description })
 
-export const optionalJson = <S extends Schema.Codec<unknown, unknown, never, never>>(
-	schema: S,
-	description: string,
-) => Schema.optional(json(schema, description))
+export const optionalJson = <S extends Schema.Codec<unknown, unknown>>(schema: S, description: string) =>
+	Schema.optional(json(schema, description))
 
 const clampTo = (spec: { readonly min: number; readonly max: number }) =>
 	SchemaTransformation.transform<number, number>({

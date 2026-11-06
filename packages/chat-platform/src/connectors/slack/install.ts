@@ -1,4 +1,4 @@
-import { Effect, Array as Arr } from "effect"
+import { Effect, Array as Arr, Record as Rec } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	ChatInstallFailed,
@@ -139,7 +139,7 @@ const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 const decodeSettings = (
 	input: ChatWorkspaceSettings,
 ): Effect.Effect<ChatWorkspaceSettings, ChatSettingsRejected> =>
-	Object.keys(input).length === 0
+	Rec.keys<string, string>(input).length === 0
 		? Effect.succeed({})
 		: Effect.fail(
 				new ChatSettingsRejected({

@@ -82,7 +82,7 @@ export function tokenizeJson(source: string): JsonToken[] {
 
 	const push = (text: string, type: JsonTokenType) => {
 		const last = tokens[tokens.length - 1]
-		if (last && last.type === type) last.text += text
+		if (last !== undefined && last.type === type) last.text += text
 		else tokens.push({ text, type })
 	}
 

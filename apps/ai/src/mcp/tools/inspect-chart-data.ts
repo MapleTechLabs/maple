@@ -3,12 +3,11 @@ import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { InspectChartDataOutput } from "@maple/domain/mcp-outputs"
 import { dataSourceEndpoint } from "@maple/widgets/dashboard"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
-import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { inspectWidget, type InspectWidgetTimeRange } from "../lib/inspect-widget"
 import { truncate } from "../lib/format"
-import { resolveDashboardTimeRange, type DashboardTimeRangeInput } from "../lib/resolve-dashboard-time-range"
+import { resolveDashboardTimeRange } from "../lib/resolve-dashboard-time-range"
 import { resolveTimeRange } from "../lib/time"
-import { dashboardNotFound, toMcpDashboardError } from "../lib/dashboard-mutations"
+import { loadDashboard } from "../lib/dashboard-mutations"
 import { stringifyJson, stringifyJsonPretty } from "../lib/json"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
@@ -20,7 +19,7 @@ type QueryResult = Output["queries"][number]
 
 /** A value as JSON, or absent when it has no JSON form. JSON text drops `undefined` keys first. */
 const asJson = (value: unknown): Option.Option<Schema.Json> =>
-	Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Json))(stringifyJson(value) ?? "")
+	Schema.decodeOption(Schema.fromJsonString(Schema.Json))(stringifyJson(value) ?? "")
 
 const decodeRows = Schema.decodeUnknownOption(
 	Schema.fromJsonString(Schema.Array(Schema.Record(Schema.String, Schema.Json))),
@@ -74,7 +73,7 @@ function queryBlocks(query: QueryResult): ReadonlyArray<DocBlock> {
 
 function rawSqlCell(value: Schema.Json | undefined): string {
 	if (value === null || value === undefined) return "null"
-	if (typeof value === "object") return truncate(stringifyJson(value) ?? String(value), 60)
+	if (typeof value === "object") return truncate(stringifyJson(value) ?? "[unserializable value]", 60)
 	return truncate(String(value), 60)
 }
 
@@ -117,14 +116,8 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 			}
 
 			const tenant = yield* CurrentMcpTenant
-			const persistence = yield* DashboardPersistenceService
-
-			const list = yield* persistence
-				.list(tenant.orgId)
-				.pipe(Effect.mapError(toMcpDashboardError(TOOL)))
-
-			const dashboard = list.dashboards.find((d) => d.id === dashboard_id)
-			if (!dashboard) return yield* dashboardNotFound(dashboard_id)
+			// The single-board read, so an undecodable board reports its real error, not "not found".
+			const dashboard = yield* loadDashboard(dashboard_id, TOOL)
 
 			const widget = dashboard.widgets.find((w) => w.id === widget_id)
 			if (!widget) {
@@ -148,9 +141,7 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 				// A widget pinned to its own window is inspected on that window —
 				// otherwise the rows returned here aren't the rows the tile renders.
 				const source = widget.timeRange ? ("widget" as const) : ("dashboard" as const)
-				const resolved = resolveDashboardTimeRange(
-					(widget.timeRange ?? dashboard.timeRange) as DashboardTimeRangeInput,
-				)
+				const resolved = resolveDashboardTimeRange(widget.timeRange ?? dashboard.timeRange)
 				if (resolved) {
 					timeRange = { startTime: resolved.startTime, endTime: resolved.endTime, source }
 				} else {

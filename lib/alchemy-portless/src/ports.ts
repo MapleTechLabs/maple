@@ -1,6 +1,7 @@
 import { createServer } from "node:net"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import { codeUnitAt } from "@maple/strings"
 
 const RANGE_SIZE = 10000
 const PROBE_WIDTH = 16
@@ -11,7 +12,7 @@ export const PortRange = { route: 40000, worker: 50000 } as const
 const fnv1a = (input: string): number => {
 	let hash = 0x811c9dc5
 	for (let i = 0; i < input.length; i++) {
-		hash ^= input.charCodeAt(i)
+		hash ^= codeUnitAt(input, i)
 		hash = Math.imul(hash, 0x01000193) >>> 0
 	}
 	return hash

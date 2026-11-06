@@ -1,4 +1,4 @@
-import { Cause, Option, Schema, Array as Arr, String as Str } from "effect"
+import { Cause, Formatter, Option, Schema, Array as Arr, String as Str } from "effect"
 
 const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 
@@ -7,7 +7,7 @@ export const describeCause = (cause: unknown): string | undefined => {
 	if (cause == null) return undefined
 	if (cause instanceof Error) return cause.stack ?? cause.message
 	if (typeof cause === "string") return cause
-	return encodeJson(cause).pipe(Option.getOrElse(() => String(cause)))
+	return encodeJson(cause).pipe(Option.getOrElse(() => Formatter.format(cause)))
 }
 
 /**

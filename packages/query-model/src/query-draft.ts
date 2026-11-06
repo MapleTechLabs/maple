@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, Option } from "effect"
 
 /**
  * A query-builder draft: the editable description of one warehouse query.
@@ -17,6 +17,9 @@ export type QueryBuilderDataSource = (typeof QUERY_BUILDER_DATA_SOURCES)[number]
 export const QUERY_BUILDER_METRIC_TYPES = ["sum", "gauge", "histogram", "exponential_histogram"] as const
 export type QueryBuilderMetricType = (typeof QUERY_BUILDER_METRIC_TYPES)[number]
 
+export const QUERY_BUILDER_SPACE_AGGREGATIONS = ["sum", "avg", "min", "max", "count"] as const
+export type QueryBuilderSpaceAggregation = (typeof QUERY_BUILDER_SPACE_AGGREGATIONS)[number]
+
 export const QUERY_BUILDER_SIGNAL_SOURCES = ["default", "meter"] as const
 export type QueryBuilderSignalSource = (typeof QUERY_BUILDER_SIGNAL_SOURCES)[number]
 
@@ -31,10 +34,10 @@ export type QueryBuilderSignalSource = (typeof QUERY_BUILDER_SIGNAL_SOURCES)[num
  * `metric_type: "counter"` should be told, not quietly given a gauge.
  */
 export const toQueryBuilderDataSource = (value: unknown): QueryBuilderDataSource | null =>
-	QUERY_BUILDER_DATA_SOURCES.find((candidate) => candidate === value) ?? null
+	Option.getOrNull(Arr.findFirst(QUERY_BUILDER_DATA_SOURCES, (candidate) => candidate === value))
 
 export const toQueryBuilderMetricType = (value: unknown): QueryBuilderMetricType | null =>
-	QUERY_BUILDER_METRIC_TYPES.find((candidate) => candidate === value) ?? null
+	Option.getOrNull(Arr.findFirst(QUERY_BUILDER_METRIC_TYPES, (candidate) => candidate === value))
 
 export const QueryBuilderAddOnsSchema = Schema.Struct({
 	groupBy: Schema.Boolean,
@@ -87,6 +90,9 @@ export const MetricsQueryDraftSchema = Schema.Struct({
 	metricName: Schema.optional(Schema.String),
 	metricType: Schema.optional(Schema.Literals(QUERY_BUILDER_METRIC_TYPES)),
 	isMonotonic: Schema.optional(Schema.Boolean),
+	// How the series of a group combine ("sum by namespace"). Absent: the default
+	// for the aggregation (avg/min/max keep their own, everything else sums).
+	spaceAggregation: Schema.optional(Schema.Literals(QUERY_BUILDER_SPACE_AGGREGATIONS)),
 })
 
 export const ProductEventsQueryDraftSchema = Schema.Struct({

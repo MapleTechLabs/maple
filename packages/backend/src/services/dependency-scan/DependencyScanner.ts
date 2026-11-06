@@ -27,6 +27,7 @@ import {
 import { type DependencyScanMatchInput, DependencyScanStore } from "./DependencyScanStore"
 import {
 	MAX_LOCKFILES,
+	MAX_MANIFEST_BYTES,
 	manifestsFor,
 	type SelectedLockfile,
 	sameLockfiles,
@@ -127,7 +128,7 @@ export class DependencySources extends Context.Service<
 	).pipe(Layer.provide(VcsProviderRegistry.layer))
 }
 
-const TREE_TOO_LARGE = "The repository tree is too large to list in one read"
+const TREE_TOO_LARGE = "The repository tree is too large to list, even directory by directory"
 
 interface ReadLockfile {
 	readonly lockfile: DependencyScanLockfile
@@ -183,12 +184,17 @@ export class DependencyScanner extends Context.Service<DependencyScanner, Depend
 					})
 				const manifests = manifestsFor(selected, tree)
 				const read = Effect.gen(function* () {
-					const content = yield* provider.fetchBlobText(installation, repo, selected.file.sha)
+					const content = yield* provider.fetchBlobText(
+						installation,
+						repo,
+						selected.file.sha,
+						MAX_LOCKFILE_BYTES,
+					)
 					const manifestTexts = yield* Effect.forEach(
 						manifests,
 						(manifest) =>
 							provider
-								.fetchBlobText(installation, repo, manifest.file.sha)
+								.fetchBlobText(installation, repo, manifest.file.sha, MAX_MANIFEST_BYTES)
 								.pipe(Effect.map((text) => [manifest.relativePath, text] as const)),
 						{ concurrency: MANIFEST_CONCURRENCY },
 					)

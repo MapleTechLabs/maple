@@ -35,8 +35,8 @@ afterAll(async () => {
 	await member.dispose()
 })
 
-const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: S, result: McpToolResult) =>
-	Schema.decodeUnknownSync(schema)(result.structuredContent)
+const decode = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
+	Schema.decodeSync(schema)(result.structuredContent)
 
 describe("list_integrations", () => {
 	it("names every broken resource in one call, with unhealthy of total per provider", async () => {
@@ -206,7 +206,7 @@ describe("update_scrape_target", () => {
 			enabled: false,
 		})
 		expect(result.isError).toBe(true)
-		expect(markdown(result)).toContain("only org admins")
+		expect(markdown(result)).toContain("Only org admins and engineers can manage scrape targets")
 	})
 
 	it("pauses a target for an admin and says it is paused", async () => {

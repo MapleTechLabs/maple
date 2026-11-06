@@ -137,7 +137,10 @@ export class SandboxOutput extends Schema.TaggedClass<SandboxOutput>()("SandboxO
 	...SandboxEventBase,
 	stream: Schema.Literals(["stdout", "stderr"]),
 	text: BoundedOutputText,
+	/** The stream's size in bytes before the cut, up to the contract's ceiling. */
 	bytes: Schema.Natural.check(Schema.isLessThanOrEqualTo(MAX_OUTPUT_BYTES)),
+	/** The implementation cut the stream at the output bound; `text` is its prefix. */
+	truncated: Schema.Boolean,
 }) {}
 
 export class SandboxExited extends Schema.TaggedClass<SandboxExited>()("SandboxExited", {

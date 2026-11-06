@@ -1,5 +1,5 @@
-import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect, Record as Rec } from "effect"
+import { assert, describe, expect, it } from "@effect/vitest"
+import { DateTime, Effect, Record as Rec, Array as Arr, String as Str } from "effect"
 import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
@@ -110,7 +110,7 @@ describe("listPodsQuery", () => {
 		const { sql } = compileUnsafe(listPodsQuery({ sortBy: "podName" }), baseParams)
 		// podName defaults to ascending and must appear exactly once.
 		expect(sql).toContain("ORDER BY podName ASC, cpuUsagePeak DESC")
-		expect(sql.match(/podName (ASC|DESC)/g)).toHaveLength(1)
+		expect(Arr.fromIterable(Str.matchAll(/podName (ASC|DESC)/g)(sql))).toHaveLength(1)
 	})
 
 	it("applies search and single-node legacy filters", () => {
@@ -528,7 +528,7 @@ describe("conditional aggregates are NaN-guarded", () => {
 
 	for (const [name, sql] of queries) {
 		it(`${name} wraps every avgIf/maxIf in ifNotFinite`, () => {
-			const unguarded = [...sql.matchAll(/(?:^|[^(])\b(avgIf|maxIf)\(/g)]
+			const unguarded = Arr.fromIterable(Str.matchAll(/(?:^|[^(])\b(avgIf|maxIf)\(/g)(sql))
 			expect(unguarded, `unguarded conditional aggregate in ${name}`).toEqual([])
 			expect(sql).toMatch(/ifNotFinite\((?:avgIf|maxIf)\(/)
 		})
@@ -544,7 +544,7 @@ describe("infraPresenceQuery", () => {
 
 	it("short-circuits each branch instead of aggregating", () => {
 		expect(sql).not.toMatch(/\b(count|uniq|sum|avg|max|min)\w*\(/)
-		expect(sql.match(/LIMIT 1/g)).toHaveLength(5)
+		expect(Arr.fromIterable(Str.matchAll(/LIMIT 1/g)(sql))).toHaveLength(5)
 	})
 
 	it("pins one probe metric per branch rather than the surface's full set", () => {
@@ -605,7 +605,8 @@ describe("infra rows decode timestamps to DateTime.Utc", () => {
 					load15: 1,
 				},
 			])
-			expect(DateTime.formatIso(row!.lastSeen)).toBe("2024-01-01T10:00:00.123Z")
+			assert.isDefined(row)
+			expect(DateTime.formatIso(row.lastSeen)).toBe("2024-01-01T10:00:00.123Z")
 		}),
 	)
 
@@ -618,7 +619,8 @@ describe("infra rows decode timestamps to DateTime.Utc", () => {
 			const [row] = yield* compiled.decodeRows([
 				{ bucket: "2024-01-01 10:00:00.000000000", attributeValue: "", avgValue: 1 },
 			])
-			expect(DateTime.toEpochMillis(row!.bucket)).toBe(Date.UTC(2024, 0, 1, 10))
+			assert.isDefined(row)
+			expect(DateTime.toEpochMillis(row.bucket)).toBe(Date.UTC(2024, 0, 1, 10))
 		}),
 	)
 })

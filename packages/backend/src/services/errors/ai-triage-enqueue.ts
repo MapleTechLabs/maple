@@ -94,7 +94,7 @@ const contextInstant = (
 
 const snapshotFor = (input: MaybeEnqueueTriageInput): InstanceType<typeof InvestigationSubjectSnapshot> => {
 	const serviceName = contextString(input.context, "serviceName")
-	const kindWord = `${input.incidentKind[0]?.toUpperCase() ?? ""}${Str.slice(1)(input.incidentKind)}`
+	const kindWord = `${Str.toUpperCase(Str.slice(0, 1)(input.incidentKind))}${Str.slice(1)(input.incidentKind)}`
 	// The last resort is what the investigations list renders as a title, so it
 	// names the service when there is one — "Alert incident" says nothing the
 	// list's kind marker doesn't already say. (`reason` is deliberately not in
@@ -403,7 +403,7 @@ export const maybeEnqueueTriage: (
 			),
 		)
 		const existing = existingRows[0]
-		if (existing) {
+		if (existing !== undefined) {
 			if (isInvestigationStale(existing, nowMs)) {
 				const budget = STALE_MS
 				yield* database.execute((db) =>
@@ -460,7 +460,13 @@ export const maybeEnqueueTriage: (
 			const latestRows = yield* database.execute((db) =>
 				db.run(
 					PG.from(Investigations)
-						.select("id", "status", "createdAt", "startedAt")
+						.select(($) => ({
+							id: $.id,
+							status: $.status,
+							createdAt: $.createdAt,
+							startedAt: $.startedAt,
+							progressJson: storedProgressJson($),
+						}))
 						.where(($) => [$.orgId.eq(input.orgId), $.issueId.eq(issueId)])
 						.orderBy(["createdAt", "desc"])
 						.limit(1),
@@ -475,6 +481,7 @@ export const maybeEnqueueTriage: (
 							status: latestRow.status,
 							createdAtMs: latestRow.createdAt,
 							startedAtMs: latestRow.startedAt,
+							progressJson: latestRow.progressJson,
 						}
 			const issueGate = evaluateIssueGate({
 				workflowState: issueRows[0]?.workflowState ?? null,

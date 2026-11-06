@@ -54,7 +54,7 @@ export interface PostMergeTickResult {
 
 export interface PrReviewPostMergeServiceApi {
 	/** Never fails: a row that cannot be looked at now is looked at again later. */
-	readonly runTick: () => Effect.Effect<PostMergeTickResult>
+	readonly runTick: Effect.Effect<PostMergeTickResult>
 }
 
 type Outcome = "reported" | "waiting" | "gave_up" | "skipped"
@@ -276,89 +276,87 @@ export class PrReviewPostMergeService extends Context.Service<
 				),
 			)
 
-		const runTick: PrReviewPostMergeServiceApi["runTick"] = () =>
-			Effect.gen(function* () {
-				const now = yield* DateTime.now
-				const due = yield* database.execute((db) =>
-					db.run(
-						PG.from(PrReviews)
-							.select(($) => ({ ...$, telemetryJson: PG.undecoded($.telemetryJson) }))
-							.where(($) => [$.postMergeStatus.eq("waiting"), $.postMergeAfter.lte(toMs(now))])
-							.orderBy(["postMergeAfter", "asc"])
-							.limit(TICK_LIMIT),
-					),
-				)
-				const outcomes = yield* Effect.forEach(
-					due,
-					(row) =>
-						Effect.gen(function* () {
-							const leaseUntil = DateTime.addDuration(now, CLAIM)
-							// Claimed first: an overlapping tick that read the same row finds it leased and
-							// skips it, so the follow-up is posted once.
-							const claimed = yield* database.execute((db) =>
-								db.run(
-									PG.update(PrReviews)
-										.set({ postMergeAfter: toMs(leaseUntil) })
-										.where(($) => [
-											$.id.eq(row.id),
-											$.postMergeStatus.eq("waiting"),
-											$.postMergeAfter.lte(toMs(now)),
-										])
-										.returning("id"),
-								),
-							)
-							if (claimed.length === 0) return "skipped" as const
-							return yield* examine(row, now, leaseUntil)
-						}).pipe(
-							Effect.map((outcome): Outcome | "failed" | "skipped" => outcome),
-							Effect.catchCause((cause) => {
-								const mergedAt =
-									row.mergedAt === null ? now : DateTime.makeUnsafe(row.mergedAt)
-								// A read that keeps failing is given up with the rest, never read as clean.
-								const giveUp = elapsed(mergedAt, now, POST_MERGE_GIVE_UP)
-								return Effect.logWarning(
-									"[PrReviewPostMerge] could not examine a merged review",
-								).pipe(
-									Effect.annotateLogs({
-										orgId: row.orgId,
-										reviewId: row.id,
-										cause: summarizeCause(cause),
-									}),
-									Effect.andThen(
-										(giveUp
-											? settle(row.orgId, row.id, "failed", null, now)
-											: later(
-													row.orgId,
-													row.id,
-													DateTime.addDuration(now, POST_MERGE_RETRY),
-													now,
-												)
-										).pipe(Effect.ignore),
-									),
-									Effect.as("failed" as const),
-								)
-							}),
-						),
-					{ concurrency: 2 },
-				)
-				const count = (outcome: Outcome | "failed" | "skipped") =>
-					outcomes.filter((value) => value === outcome).length
-				return {
-					examined: due.length - count("skipped"),
-					reported: count("reported"),
-					waiting: count("waiting"),
-					gaveUp: count("gave_up"),
-					failedRows: count("failed"),
-				}
-			}).pipe(
-				Effect.withSpan("PrReviewPostMergeService.runTick"),
-				Effect.catchCause((cause) =>
-					Effect.logWarning("[PrReviewPostMerge] tick failed").pipe(
-						Effect.annotateLogs({ cause: summarizeCause(cause) }),
-						Effect.as({ examined: 0, reported: 0, waiting: 0, gaveUp: 0, failedRows: 1 }),
-					),
+		const runTick: PrReviewPostMergeServiceApi["runTick"] = Effect.gen(function* () {
+			const now = yield* DateTime.now
+			const due = yield* database.execute((db) =>
+				db.run(
+					PG.from(PrReviews)
+						.select(($) => ({ ...$, telemetryJson: PG.undecoded($.telemetryJson) }))
+						.where(($) => [$.postMergeStatus.eq("waiting"), $.postMergeAfter.lte(toMs(now))])
+						.orderBy(["postMergeAfter", "asc"])
+						.limit(TICK_LIMIT),
 				),
 			)
+			const outcomes = yield* Effect.forEach(
+				due,
+				(row) =>
+					Effect.gen(function* () {
+						const leaseUntil = DateTime.addDuration(now, CLAIM)
+						// Claimed first: an overlapping tick that read the same row finds it leased and
+						// skips it, so the follow-up is posted once.
+						const claimed = yield* database.execute((db) =>
+							db.run(
+								PG.update(PrReviews)
+									.set({ postMergeAfter: toMs(leaseUntil) })
+									.where(($) => [
+										$.id.eq(row.id),
+										$.postMergeStatus.eq("waiting"),
+										$.postMergeAfter.lte(toMs(now)),
+									])
+									.returning("id"),
+							),
+						)
+						if (claimed.length === 0) return "skipped" as const
+						return yield* examine(row, now, leaseUntil)
+					}).pipe(
+						Effect.map((outcome): Outcome | "failed" | "skipped" => outcome),
+						Effect.catchCause((cause) => {
+							const mergedAt = row.mergedAt === null ? now : DateTime.makeUnsafe(row.mergedAt)
+							// A read that keeps failing is given up with the rest, never read as clean.
+							const giveUp = elapsed(mergedAt, now, POST_MERGE_GIVE_UP)
+							return Effect.logWarning(
+								"[PrReviewPostMerge] could not examine a merged review",
+							).pipe(
+								Effect.annotateLogs({
+									orgId: row.orgId,
+									reviewId: row.id,
+									cause: summarizeCause(cause),
+								}),
+								Effect.andThen(
+									(giveUp
+										? settle(row.orgId, row.id, "failed", null, now)
+										: later(
+												row.orgId,
+												row.id,
+												DateTime.addDuration(now, POST_MERGE_RETRY),
+												now,
+											)
+									).pipe(Effect.ignore),
+								),
+								Effect.as("failed" as const),
+							)
+						}),
+					),
+				{ concurrency: 2 },
+			)
+			const count = (outcome: Outcome | "failed" | "skipped") =>
+				outcomes.filter((value) => value === outcome).length
+			return {
+				examined: due.length - count("skipped"),
+				reported: count("reported"),
+				waiting: count("waiting"),
+				gaveUp: count("gave_up"),
+				failedRows: count("failed"),
+			}
+		}).pipe(
+			Effect.withSpan("PrReviewPostMergeService.runTick"),
+			Effect.catchCause((cause) =>
+				Effect.logWarning("[PrReviewPostMerge] tick failed").pipe(
+					Effect.annotateLogs({ cause: summarizeCause(cause) }),
+					Effect.as({ examined: 0, reported: 0, waiting: 0, gaveUp: 0, failedRows: 1 }),
+				),
+			),
+		)
 
 		return { runTick } satisfies PrReviewPostMergeServiceApi
 	}),

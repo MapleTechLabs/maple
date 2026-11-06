@@ -12,6 +12,7 @@ import {
 	type Vec3,
 } from "./kit"
 import { Array as Arr } from "effect"
+import { codeUnitAt } from "@maple/strings"
 
 /** The shared finish, its `running` read live so a pause needs no rebuild. */
 export type MachineFinish = Omit<LegacyMachineFinish, "running"> & { readonly running: Running }
@@ -39,7 +40,7 @@ export type MapleFinish = MachineFinish & {
 export function seedOf(id: string) {
 	return (
 		Arr.reduce(Array.from(id), 2166136261, (hash, char) =>
-			Math.imul(hash ^ char.charCodeAt(0), 16777619),
+			Math.imul(hash ^ codeUnitAt(char, 0), 16777619),
 		) >>> 0
 	)
 }

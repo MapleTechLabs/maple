@@ -74,8 +74,10 @@ least 16 characters:
   exchanges it for a stateless HMAC session cookie (30 days, keyed by the
   token, so rotating it signs everyone out); scripts and the CLI send it as a
   Bearer token. The server's own maintenance token still opens `/local/*` and
-  the event-consumer token still opens claims and acks. Failed sign-ins are
-  throttled globally (10 a minute).
+  the event-consumer token still opens claims and acks. Failed sign-ins and
+  wrong Bearer tokens are throttled per client address (10 a minute, 429 with
+  `Retry-After`) under a server-wide ceiling of 100 a minute. Behind a proxy
+  every client shares the proxy's address.
 
 With an access token, a browser request is same-origin when its `Origin` host
 matches the request's `Host`, so a platform hostname works without
@@ -521,9 +523,11 @@ Clients POST `{ "sql": "..." }` and get back a bare JSON array of rows.
 The endpoint is **read-only** (`packages/local-server/src/query-guard.ts`). The
 engine's own parser canonicalizes the text and the canonical statement is what
 runs. A body must be exactly one `SELECT`, `WITH`, `SHOW`, `DESCRIBE` (of a plain
-table), `EXISTS` or `EXPLAIN` statement; `INTO OUTFILE`, the `file()` function
-and every table function that reaches the filesystem or network are refused, and
-the statement runs with `readonly = 1` plus caps (30s, 4 GB memory, 1M rows,
+table), `EXISTS` or `EXPLAIN` statement; `INTO OUTFILE` is refused, the only table
+functions are the in-memory `numbers` and `generateSeries`, and functions that
+read files, URLs, object stores or remote servers are refused in any position
+(the check is shared with hosted raw SQL, `packages/domain/src/raw-sql.ts`). The
+statement runs with `readonly = 1` plus caps (30s, 4 GB memory, 1M rows,
 256 MiB result). A refusal is HTTP 400 with a body starting
 `read-only query endpoint: `. Internal writes (ingest, checkpoints, archives)
 and scoped deletes use chDB directly; the native test probes write through `/local/query` with the
@@ -532,7 +536,8 @@ and scoped deletes use chDB directly; the native test probes write through `/loc
 The **server owns the output FORMAT**. `CH.compile(...)` appends
 `FORMAT JSON`; the guard peels any trailing `FORMAT`/`SETTINGS` clause, runs
 the statement as JSON rows, and keeps a client's own SETTINGS only where they
-lower the caps. Clients therefore POST `compiled.sql` verbatim.
+lower the caps. `SETTINGS` anywhere else (a subquery, a `UNION` branch) is
+refused. Clients therefore POST `compiled.sql` verbatim.
 
 `GET /local/status` returns `{service: "maple-local", pid, version, url,
 dataDir, lastIngestAtMs, lastDeleteAtMs}`, where `lastIngestAtMs` is when the
@@ -545,7 +550,9 @@ hosted UI origin (none with `--offline`), the local-ui Vite dev origin
 (`127.0.0.1`/`localhost`/`[::1]` on port 4319), and any origin listed in
 `MAPLE_LOCAL_ALLOWED_ORIGINS` (comma separated). `/v1/*` also accepts loopback
 pages so browser SDKs can export. The Host check against DNS rebinding applies
-to every route.
+to every route. A request with no `Origin` (the CLI, scripts, a page load) to
+anything but `/v1/*` and `/health` must name a loopback or advertised host in
+`Host` (any host once an access token is set), else 403.
 
 ## Where the UI comes from
 

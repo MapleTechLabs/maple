@@ -1,10 +1,10 @@
-// BOUNDARY: tiles render whatever their endpoint answered; rows are untyped query results.
+// BOUNDARY-FILE: tiles render whatever their endpoint answered; rows are untyped query results.
 import type { DashboardDocument } from "@maple/domain/http"
 import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
-import { dataSourceTransform } from "@maple/widgets/dashboard"
-import { Formatter, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { dataSourceTransform, type SharedWidgetDisplayV3 } from "@maple/widgets/dashboard"
+import { Formatter, Schema, Array as Arr, Record as Rec, String as Str, Option, Ordering } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Chart from "@maple/views/charts/chart"
 import type { ChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -36,8 +36,8 @@ export { formatStatValue } from "./tiles-stat"
 // chart through `chartWidgetTile` (./tiles-chart.ts).
 
 /** What a tile reads of its widget; a share's redacted widget satisfies it too. */
-export type TileWidget = Pick<DashboardDocument["widgets"][number], "id" | "display" | "timeRange"> &
-	Readonly<{ visualization: string; dataSource: unknown }>
+export type TileWidget = Pick<DashboardDocument["widgets"][number], "id" | "timeRange"> &
+	Readonly<{ visualization: string; dataSource: unknown; display: typeof SharedWidgetDisplayV3.Type }>
 type Widget = TileWidget
 type Row = Readonly<Record<string, unknown>>
 
@@ -74,6 +74,8 @@ export type TileContext<M> = Readonly<{
 	variables?: VariableValues
 	/** "Show last 7 days" on a list wider than the cap, when the surface offers narrowing. */
 	narrowRange?: M | null
+	/** Reloads the page when the chart code failed to load, on surfaces that offer it. */
+	reloadPage?: M | null
 	/** The "Details" popover under a failed tile's message, when the surface renders one. */
 	errorDetails?: ((message: string) => Html) | null
 }>
@@ -142,7 +144,7 @@ const columnsOf = (
 }
 
 /** `compareValues` (use-table-sort.ts). */
-const compareValues = (a: unknown, b: unknown, dir: "asc" | "desc"): number => {
+const compareValues = (a: unknown, b: unknown, dir: "asc" | "desc"): Ordering.Ordering => {
 	if (
 		(typeof a === "number" && typeof b === "number") ||
 		(isNumericCell(a) && isNumericCell(b) && typeof a === "string" && typeof b === "string")
@@ -150,7 +152,7 @@ const compareValues = (a: unknown, b: unknown, dir: "asc" | "desc"): number => {
 		const an = Number(a)
 		const bn = Number(b)
 		const cmp = an < bn ? -1 : an > bn ? 1 : 0
-		return dir === "asc" ? cmp : -cmp
+		return dir === "asc" ? cmp : Ordering.reverse(cmp)
 	}
 	return dir === "asc" ? Str.localeCompare(String(b))(String(a)) : Str.localeCompare(String(a))(String(b))
 }
@@ -192,7 +194,9 @@ const tableTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): H
 		const textFields = Arr.filter(Rec.keys(rows[0] ?? {}), (field) => !isNumericCell(rows[0]?.[field]))
 		const sortKey = sort.key
 		const sorted =
-			sortKey === null ? rows : rows.toSorted((a, b) => compareValues(a[sortKey], b[sortKey], sort.dir))
+			sortKey === null
+				? rows
+				: Arr.sort(rows, (a: Row, b: Row) => compareValues(a[sortKey], b[sortKey], sort.dir))
 		return [
 			table(h, {}, [
 				tableHeader(h, [
@@ -252,22 +256,40 @@ const KNOWN_MAP_FIELDS = ["rootSpan.attributes", "logAttributes", "resourceAttri
 /** One property of an untyped row value, by name. */
 const property = (value: unknown, key: string): unknown =>
 	value !== null && typeof value === "object"
-		? Rec.toEntries(value).find(([name]) => name === key)?.[1]
+		? Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(Rec.toEntries(value), ([name]) => name === key),
+					([, entry]) => entry,
+				),
+			)
 		: undefined
 
 const nested = (value: unknown, parts: ReadonlyArray<string>): unknown =>
-	parts.reduce<unknown>((current, part) => property(current, part), value)
+	Arr.reduce(parts, value, (current, part) => property(current, part))
 
 const resolveFieldPath = (row: Row, path: string): unknown => {
-	const mapField = KNOWN_MAP_FIELDS.find((field) => Str.startsWith(`${field}.`)(path))
-	if (mapField === undefined) return nested(row, Str.split(".")(path))
-	const map = nested(row, Str.split(".")(mapField))
-	return property(map, Str.slice(mapField.length + 1)(path))
+	return Option.match(
+		Arr.findFirst(KNOWN_MAP_FIELDS, (field) => Str.startsWith(`${field}.`)(path)),
+		{
+			onNone: () => nested(row, Str.split(".")(path)),
+			onSome: (mapField) =>
+				property(nested(row, Str.split(".")(mapField)), Str.slice(mapField.length + 1)(path)),
+		},
+	)
 }
+
+/** A list column's text: array items joined with their own formatting, anything else as one cell. */
+export const listCellText = (value: unknown, unit?: string): string =>
+	Arr.isArray(value)
+		? Arr.join(
+				Arr.map(value, (item) => (item === null || item === undefined ? "" : cellText(item))),
+				", ",
+			)
+		: formatCell(value, unit)
 
 const listCell = <M>(h: HtmlBuilder<M>, column: Column, index: number, row: Row): Html => {
 	const value = resolveFieldPath(row, column.field)
-	const display = Arr.isArray(value) ? value.join(", ") : formatCell(value, column.unit)
+	const display = listCellText(value, column.unit)
 	const className = cn("text-xs", columnVisibilityClass(index))
 	const content: Html | string =
 		column.field === "traceId" && typeof value === "string" && value !== ""

@@ -1,4 +1,4 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import { randomUUID } from "node:crypto"
 import { spawnSync } from "node:child_process"
 import { Worker } from "node:worker_threads"
@@ -19,6 +19,7 @@ import { FileSystem } from "effect/FileSystem"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { CHDB_VERSION, MAPLE_VERSION } from "./version"
 import { serverUrl } from "./local-address"
+import { errnoCode } from "./store-errors"
 import { Chdb, MERGE_TREE_CONFIG_XML, RAW_TELEMETRY_TTL_COLUMNS, writeIngestConfig } from "./chdb"
 import { ttlDaysFromDefinition } from "./schema-manifest"
 import { sha256File } from "./checkpoint-digest"
@@ -649,7 +650,7 @@ const readJsonRows = (text: string): ReadonlyArray<Record<string, unknown>> =>
 
 const countFrom = (rows: ReadonlyArray<Record<string, unknown>>): number => {
 	const row = rows[0]
-	if (!row) throw new Error("count query returned no rows")
+	if (row === undefined) throw new Error("count query returned no rows")
 	const value = row["count()"] ?? row.count
 	const count = typeof value === "number" ? value : Number(value ?? 0)
 	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid count result: ${String(value)}`)
@@ -1343,8 +1344,8 @@ const readMaintenanceOwner = (lockPath: string): Promise<LockHolder | "absent" |
 		.then(async () =>
 			Schema.decodeUnknownSync(LockHolderSchema)(decodeJsonSync(await readFile(ownerPath, "utf8"))),
 		)
-		.catch((error: NodeJS.ErrnoException): "absent" | "uncertain" =>
-			error?.code === "ENOENT" ? "absent" : "uncertain",
+		.catch((error: unknown): "absent" | "uncertain" =>
+			errnoCode(error) === "ENOENT" ? "absent" : "uncertain",
 		)
 }
 
@@ -1478,7 +1479,8 @@ export const reconcileCheckpointOperations = async (
 			)}`,
 		)
 	}
-	const entry = entries[0]!
+	const entry = entries[0]
+	if (entry === undefined) return
 	if (!entry.isDirectory() || !Str.startsWith("checkpoint-")(entry.name)) {
 		throw new Error(`unrecognized checkpoint operation debris: ${join(operationsRoot, entry.name)}`)
 	}
@@ -2249,7 +2251,7 @@ export const formatCheckpointRefreshBackoff = (
 		: `checkpoint refresh failed ${backoff.consecutiveFailures} time(s) in a row` +
 			(backoff.lastError === null
 				? ""
-				: ` (last: ${Str.split("\n")(backoff.lastError)[0]?.slice(0, 200)})`) +
+				: ` (last: ${Str.slice(0, 200)(Str.split("\n")(backoff.lastError)[0])})`) +
 			`; next attempt in ${Duration.format(backoff.delay)}. Run \`${retryCommand}\` to retry now.`
 
 const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (options: CheckpointOptions) {
@@ -2305,6 +2307,7 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 					]) {
 						await ensurePrivateDirectory(path)
 					}
+					// @effect-diagnostics-next-line globalDateInEffect:off -- stamped inside an async durable write, not an Effect
 					const startedAt = new Date().toISOString()
 					let operation: CheckpointOperation = {
 						formatVersion: 1,
@@ -2423,6 +2426,7 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 						revision: operationId,
 						current: checkpointId,
 						previous: oldState?.current ?? null,
+						// @effect-diagnostics-next-line globalDateInEffect:off -- stamped inside an async durable write, not an Effect
 						committedAt: new Date().toISOString(),
 					}
 					await durableJson(checkpointStatePath(options.dataDir), state, options.faults)
@@ -2460,6 +2464,8 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 	)
 })
 
+const isCheckpointPreconditionError = Schema.is(CheckpointPreconditionError)
+
 /**
  * Create a checkpoint, or refuse with an expected outcome.
  *
@@ -2469,8 +2475,9 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
  */
 export const createCheckpoint = (options: CheckpointOptions) =>
 	createCheckpointTraced(options).pipe(
+		// @effect-diagnostics-next-line flatMapConditionalToFilterOrFail:off -- filterOrFail's orFailWith sees the unnarrowed value, widening the error
 		Effect.flatMap((outcome) =>
-			outcome instanceof CheckpointPreconditionError ? Effect.fail(outcome) : Effect.succeed(outcome),
+			isCheckpointPreconditionError(outcome) ? Effect.fail(outcome) : Effect.succeed(outcome),
 		),
 	)
 
@@ -2937,6 +2944,7 @@ export const restoreCheckpoint = Effect.fn("CheckpointService.restore")(function
 					checkpointId: resolvedCheckpoint.checkpointId,
 					quarantineId,
 					phase: "intent",
+					// @effect-diagnostics-next-line globalDateInEffect:off -- stamped inside an async durable write, not an Effect
 					createdAt: new Date().toISOString(),
 					validation: null,
 				}

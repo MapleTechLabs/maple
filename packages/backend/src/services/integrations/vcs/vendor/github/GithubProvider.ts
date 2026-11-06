@@ -411,12 +411,14 @@ const installationReason = (action: string): VcsInstallationSyncReason | null =>
 	}
 }
 
+const WEBHOOK_SIGNATURE_HEADER = "x-hub-signature-256"
+
 const timingSafeEqual = (a: string, b: string): boolean => {
 	const ba = Buffer.from(a)
 	const bb = Buffer.from(b)
 	if (ba.length !== bb.length) return false
 	let mismatch = 0
-	for (let i = 0; i < ba.length; i += 1) mismatch |= ba[i]! ^ bb[i]!
+	for (const [i, byte] of ba.entries()) mismatch |= byte ^ (bb[i] ?? 0)
 	return mismatch === 0
 }
 
@@ -1102,7 +1104,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 
 			const webhookToJobs = (input: VcsWebhookRequest) =>
 				Effect.gen(function* () {
-					yield* verifySignature(input.rawBody, input.headers["x-hub-signature-256"])
+					yield* verifySignature(input.rawBody, input.headers[WEBHOOK_SIGNATURE_HEADER])
 					const parsed = yield* decodeJsonBody(input.rawBody).pipe(
 						Effect.mapError(() => parseError("Invalid JSON body")),
 						Effect.tapError(() =>
@@ -1344,9 +1346,20 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						}),
 					)
 
-			const fetchBlobText: VcsProviderClient["fetchBlobText"] = (installation, repo, blobSha) =>
+			const fetchBlobText: VcsProviderClient["fetchBlobText"] = (
+				installation,
+				repo,
+				blobSha,
+				maxBytes,
+			) =>
 				client
-					.getBlobText(installation.externalInstallationId, repo.owner, repo.name, blobSha)
+					.getBlobText(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						blobSha,
+						maxBytes,
+					)
 					.pipe(Effect.mapError(toVcsCommitError))
 
 			const resolveRef: VcsProviderClient["resolveRef"] = (installation, repo, ref) =>
@@ -1908,6 +1921,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			return {
 				id: PROVIDER,
 				reviewerMention,
+				webhookSignatureHeader: WEBHOOK_SIGNATURE_HEADER,
 				webhookToJobs,
 				fetchRepositories,
 				fetchCommits,

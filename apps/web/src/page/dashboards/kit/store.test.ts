@@ -1,7 +1,12 @@
 import { describe, expect, it } from "@effect/vitest"
 import { createCollection, localOnlyCollectionOptions } from "@tanstack/db"
-import { Effect } from "effect"
-import { DashboardWriteError, settled } from "./store"
+import { UpdateError } from "@maple/effect-db/electric"
+import { DashboardConcurrencyError, DashboardId, publicHttpErrorBody } from "@maple/domain/http"
+import { publicError } from "@maple/domain/http/v2"
+import type { DashboardRow } from "@maple/web-data/collections/dashboards"
+import { Effect, Fiber, Schema } from "effect"
+import { TestClock } from "effect/testing"
+import { DashboardConflictError, DashboardWriteError, mutateDocumentIn, settled } from "./store"
 
 interface Row {
 	readonly id: string
@@ -44,6 +49,181 @@ describe("settled over a real transaction", () => {
 		Effect.gen(function* () {
 			const transaction = collectionWith(() => Promise.reject(txidTimeout())).delete("dash_1")
 			expect(yield* settled(() => transaction.when("settled"))).toBe("Behind")
+		}),
+	)
+})
+
+describe("mutateDocumentIn when someone else saved first", () => {
+	const ID = "3f1b7c62-5a1e-4d0f-9a3b-6c2e8d4f1a90"
+	const payload = (name: string, tags: ReadonlyArray<string>) => ({
+		id: ID,
+		schemaVersion: 3,
+		name,
+		tags,
+		timeRange: { type: "relative", value: "12h" },
+		widgets: [],
+		createdAt: "2026-01-01T00:00:00.000Z",
+		updatedAt: "2026-01-01T00:00:00.000Z",
+	})
+	const row = (version: number): DashboardRow => ({
+		org_id: "org_1",
+		id: ID,
+		name: "Board",
+		payload_json: payload("Board", []),
+		created_at: "2026-01-01T00:00:00.000Z",
+		updated_at: "2026-01-01T00:00:00.000Z",
+		created_by: "user_a",
+		updated_by: "user_a",
+		version,
+	})
+	// A 409 as the collection sees it: effect-db's `UpdateError` around the v2 client's decoded envelope.
+	const conflict = () =>
+		new UpdateError({ message: "Update operation failed", key: ID, cause: conflictEnvelope() })
+	const conflictEnvelope = () =>
+		Schema.decodeSync(publicError(DashboardConcurrencyError))({
+			error: publicHttpErrorBody(
+				new DashboardConcurrencyError({
+					dashboardId: DashboardId.make(ID),
+					message: "Someone else changed this dashboard since it was loaded.",
+				}),
+			),
+		})
+
+	/**
+	 * A collection whose first save is refused with a 409 while the other editor's change
+	 * (a rename, version 2) syncs in; `afterConflict` answers every save after that.
+	 */
+	const raced = (afterConflict: () => Promise<void>) => {
+		const sent: Array<{ readonly version: number; readonly payload: unknown }> = []
+		let calls = 0
+		const collection = createCollection(
+			localOnlyCollectionOptions<DashboardRow, string>({
+				getKey: (r) => r.id,
+				initialData: [row(1)],
+				onUpdate: ({ transaction }) => {
+					calls += 1
+					const { original, modified } = transaction.mutations[0]
+					if (calls === 1) {
+						setTimeout(() =>
+							collection.update(ID, (draft) => {
+								draft.version = 2
+								draft.name = "Renamed elsewhere"
+								draft.payload_json = payload("Renamed elsewhere", [])
+							}),
+						)
+						return Promise.reject(conflict())
+					}
+					// The other editor's change is accepted as it arrives.
+					if (modified.name === "Renamed elsewhere" && original.version === 1)
+						return Promise.resolve()
+					sent.push({ version: original.version, payload: modified.payload_json })
+					return afterConflict()
+				},
+			}),
+		)
+		return { collection, sent }
+	}
+
+	it.effect("waits for the newer version, then re-applies the edit on top of it", () =>
+		Effect.gen(function* () {
+			const { collection, sent } = raced(async () => {})
+			const outcome = yield* mutateDocumentIn(collection, ID, (document, nowIso) => ({
+				...document,
+				tags: ["prod"],
+				updatedAt: nowIso,
+			}))
+
+			expect(outcome).toBe("Synced")
+			// The retry was based on the other editor's version, and its PATCH keeps their rename.
+			expect(sent).toHaveLength(1)
+			expect(sent[0]?.version).toBe(2)
+			expect(sent[0]?.payload).toMatchObject({ name: "Renamed elsewhere", tags: ["prod"] })
+		}),
+	)
+
+	it.effect("says the dashboard changed when the retry conflicts too", () =>
+		Effect.gen(function* () {
+			const { collection } = raced(() => Promise.reject(conflict()))
+			const error = yield* Effect.flip(
+				mutateDocumentIn(collection, ID, (document, nowIso) => ({
+					...document,
+					tags: ["prod"],
+					updatedAt: nowIso,
+				})),
+			)
+
+			expect(error).toBeInstanceOf(DashboardConflictError)
+			expect(error.message).toContain("This dashboard changed before your edit was saved")
+		}),
+	)
+
+	it.effect("gives up with the conflict message when the newer version never syncs in", () =>
+		Effect.gen(function* () {
+			let calls = 0
+			const collection = createCollection(
+				localOnlyCollectionOptions<DashboardRow, string>({
+					getKey: (r) => r.id,
+					initialData: [row(1)],
+					onUpdate: () => {
+						calls += 1
+						return Promise.reject(conflict())
+					},
+				}),
+			)
+			const fiber = yield* Effect.forkChild(
+				Effect.flip(
+					mutateDocumentIn(collection, ID, (document, nowIso) => ({
+						...document,
+						tags: ["prod"],
+						updatedAt: nowIso,
+					})),
+				),
+			)
+			yield* TestClock.adjust("3 seconds")
+			const error = yield* Fiber.join(fiber)
+
+			expect(error).toBeInstanceOf(DashboardConflictError)
+			// No second PATCH: without the newer version there is nothing to re-apply on.
+			expect(calls).toBe(1)
+		}),
+	)
+
+	it.effect("a tab's own overlapping saves go one at a time, each on the version the last one synced", () =>
+		Effect.gen(function* () {
+			const seen: Array<number> = []
+			let inFlight = 0
+			let maxInFlight = 0
+			const collection = createCollection(
+				localOnlyCollectionOptions<DashboardRow, string>({
+					getKey: (r) => r.id,
+					initialData: [row(1)],
+					onUpdate: async ({ transaction }) => {
+						const { original, modified } = transaction.mutations[0]
+						// The server's echo of the previous save: its new version syncing in.
+						if (modified.version !== original.version) return
+						inFlight += 1
+						maxInFlight = Math.max(maxInFlight, inFlight)
+						seen.push(original.version)
+						await new Promise((resolve) => setTimeout(resolve, 5))
+						inFlight -= 1
+						setTimeout(() =>
+							collection.update(ID, (draft) => {
+								draft.version = original.version + 1
+							}),
+						)
+					},
+				}),
+			)
+			const tag = (name: string) =>
+				mutateDocumentIn(collection, ID, (document, nowIso) => ({
+					...document,
+					tags: [...(document.tags ?? []), name],
+					updatedAt: nowIso,
+				}))
+			yield* Effect.all([tag("a"), tag("b")], { concurrency: "unbounded" })
+
+			expect(maxInFlight).toBe(1)
+			expect(seen).toHaveLength(2)
 		}),
 	)
 })

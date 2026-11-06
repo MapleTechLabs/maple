@@ -9,6 +9,7 @@
 // `input` always means the uncached prompt, `output` the visible completion,
 // and a total is always the plain sum of the buckets.
 
+import { Array as Arr, Option, String as Str } from "effect"
 import type { AiSessionSpan } from "@maple/domain/http"
 
 import { formatCurrency, formatDuration, formatNumber } from "@maple/domain/format"
@@ -253,22 +254,24 @@ export function buildSessionSummary({
 	// Sorted here so the first-seen orders below (agent names, vendors) are the
 	// session's own order rather than the order the warehouse returned rows in.
 	const ordered = [...spans].sort((a, b) => spanStartMs(a) - spanStartMs(b))
-	const byId = new Map(ordered.map((span) => [span.spanId, span]))
+	const byId = new Map(Arr.map(ordered, (span) => [span.spanId, span]))
 
 	// Reduced, not spread: a partly loaded session can hold tens of thousands
 	// of spans, past what a spread argument list survives.
-	const startMs = ordered.reduce((min, span) => Math.min(min, spanStartMs(span)), Number.POSITIVE_INFINITY)
-	const endMs = ordered.reduce((max, span) => Math.max(max, spanEndMs(span)), Number.NEGATIVE_INFINITY)
+	const startMs = Arr.reduce(ordered, Number.POSITIVE_INFINITY, (min, span) =>
+		Math.min(min, spanStartMs(span)),
+	)
+	const endMs = Arr.reduce(ordered, Number.NEGATIVE_INFINITY, (max, span) => Math.max(max, spanEndMs(span)))
 	const wallClockMs = endMs - startMs
 
 	const idleGaps = findIdleGaps(ordered)
-	const idleMs = idleGaps.reduce((total, gap) => total + gap.durationMs, 0)
+	const idleMs = Arr.reduce(idleGaps, 0, (total, gap) => total + gap.durationMs)
 
 	const usage = countableUsageSpans(ordered, byId)
 	const calls = countedLlmCalls(ordered, byId, usage.bySpan, usage.costs)
 	// The gateway's verdict alone: the copy a call paused for a human's
 	// approval leaves is stamped no call, and nothing is merged.
-	const toolCalls = ordered.filter(isCountedToolCall)
+	const toolCalls = Arr.filter(ordered, isCountedToolCall)
 	// The counts and the breakdown are two readings of this one list.
 	const events = failureEvents(ordered)
 
@@ -282,9 +285,9 @@ export function buildSessionSummary({
 		agentTime: computeAgentTime(ordered),
 		failed: turns[finalTurnIndex(turns)]?.failed === true,
 		title: turns[0]?.label,
-		agentNames: distinctInOrder(ordered.map((span) => span.genAi.agentName)),
-		vendorIds: distinctInOrder(ordered.map((span) => span.vendorId)),
-		serviceNames: byFrequency(ordered.map((span) => span.serviceName)),
+		agentNames: distinctInOrder(Arr.map(ordered, (span) => span.genAi.agentName)),
+		vendorIds: distinctInOrder(Arr.map(ordered, (span) => span.vendorId)),
+		serviceNames: byFrequency(Arr.map(ordered, (span) => span.serviceName)),
 		models: modelUsage(calls, usage.bySpan, usage.costs),
 		tokens: sumTokens([...usage.bySpan.values()]),
 		tokenReporting: classifyTokenReporting(usage, byId, turns),
@@ -298,7 +301,7 @@ export function buildSessionSummary({
 		failureGroups: groupFailures(events),
 		tools: toolUsage(toolCalls, turns),
 		spanCount: ordered.length,
-		traceCount: new Set(ordered.map((span) => span.traceId)).size,
+		traceCount: new Set(Arr.map(ordered, (span) => span.traceId)).size,
 	}
 }
 
@@ -313,9 +316,9 @@ interface Interval {
 
 /** Merge overlapping intervals into a disjoint, ordered cover. */
 function union(intervals: readonly Interval[]): Interval[] {
-	const sorted = [...intervals]
-		.filter((interval) => interval.endMs > interval.startMs)
-		.sort((a, b) => a.startMs - b.startMs)
+	const sorted = Arr.filter(intervals, (interval) => interval.endMs > interval.startMs).sort(
+		(a, b) => a.startMs - b.startMs,
+	)
 	const merged: Interval[] = []
 	for (const interval of sorted) {
 		const last = merged[merged.length - 1]
@@ -335,11 +338,11 @@ function union(intervals: readonly Interval[]): Interval[] {
  * would scatter the waterfall with meaningless gap rows.
  */
 export function findIdleGaps(spans: readonly AiSessionSpan[]): readonly IdleGap[] {
-	const busy = union(spans.map((span) => ({ startMs: spanStartMs(span), endMs: spanEndMs(span) })))
+	const busy = union(Arr.map(spans, (span) => ({ startMs: spanStartMs(span), endMs: spanEndMs(span) })))
 	const gaps: IdleGap[] = []
-	for (let i = 1; i < busy.length; i++) {
-		const startMs = busy[i - 1].endMs
-		const endMs = busy[i].startMs
+	for (const [previous, current] of Arr.zip(busy, busy.slice(1))) {
+		const startMs = previous.endMs
+		const endMs = current.startMs
 		const durationMs = endMs - startMs
 		if (durationMs > IDLE_GAP_MIN_MS) gaps.push({ id: `gap:${startMs}`, startMs, endMs, durationMs })
 	}
@@ -371,7 +374,7 @@ export function computeAgentTime(spans: readonly AiSessionSpan[]): SessionAgentT
 	const add = (kind: AgentTimeKind, ms: number) => {
 		if (ms > 0) totals.set(kind, (totals.get(kind) ?? 0) + ms)
 	}
-	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const byId = new Map(Arr.map(spans, (span) => [span.spanId, span]))
 	const outermostCall = (span: AiSessionSpan): AiSessionSpan => {
 		let call = span
 		const seen = new Set<string>([span.spanId])
@@ -410,11 +413,12 @@ export function computeAgentTime(spans: readonly AiSessionSpan[]): SessionAgentT
 		add("inference", call.durationMs - ttft)
 	}
 
-	const segments = AGENT_TIME_KIND_ORDER.map((kind) => ({ kind, ms: totals.get(kind) ?? 0 })).filter(
+	const segments = Arr.filter(
+		Arr.map(AGENT_TIME_KIND_ORDER, (kind) => ({ kind, ms: totals.get(kind) ?? 0 })),
 		(segment) => segment.ms > 0,
 	)
 	return {
-		totalMs: segments.reduce((total, segment) => total + segment.ms, 0),
+		totalMs: Arr.reduce(segments, 0, (total, segment) => total + segment.ms),
 		segments,
 	}
 }
@@ -537,9 +541,15 @@ function collapseObservations(
 	const keptTokens = new Map(tokens)
 	const keptCosts = new Map(costs)
 	for (const group of groups.values()) {
+		if (!Arr.isArrayNonEmpty(group)) continue
 		const total = (spanId: string) => tokens.get(spanId)?.total ?? 0
-		const representative = group.reduce((best, spanId) => (total(spanId) > total(best) ? spanId : best))
-		const reported = group.flatMap((spanId) => costs.get(spanId) ?? [])
+		const representative = Arr.reduce(Arr.tailNonEmpty(group), Arr.headNonEmpty(group), (best, spanId) =>
+			total(spanId) > total(best) ? spanId : best,
+		)
+		const reported = Arr.flatMap(group, (spanId) => {
+			const cost = costs.get(spanId)
+			return cost === undefined ? [] : [cost]
+		})
 		for (const spanId of group) {
 			if (spanId === representative) continue
 			keptTokens.delete(spanId)
@@ -570,7 +580,7 @@ function countedLlmCalls(
 		(spanTokenBuckets(span)?.total ?? 0) > 0 || (span.genAi.mapleCost ?? 0) > 0
 	const claimed = (span: AiSessionSpan) =>
 		tokensBySpan.has(span.spanId) || (costsBySpan.get(span.spanId) ?? 0) > 0
-	const deepest = spans.filter((span) => {
+	const deepest = Arr.filter(spans, (span) => {
 		if (!isLlmCall(span)) return false
 		if (reportsUsage(span)) return claimed(span)
 		const seen = new Set<string>([span.spanId])
@@ -600,7 +610,7 @@ function countedLlmCalls(
 /** The spans `work.llmCalls` counts, in start order: for a reading that needs
  *  one span per model call rather than every observation of it. */
 export function sessionLlmCalls(spans: readonly AiSessionSpan[]): readonly AiSessionSpan[] {
-	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const byId = new Map(Arr.map(spans, (span) => [span.spanId, span]))
 	const usage = countableUsageSpans(spans, byId)
 	return countedLlmCalls(spans, byId, usage.bySpan, usage.costs)
 }
@@ -615,7 +625,7 @@ function chargeToNearestReporter<T>(
 	byId: ReadonlyMap<string, AiSessionSpan>,
 	reported: ReadonlyMap<string, T>,
 ): Map<string, { readonly own: T; readonly beneath: T[] }> {
-	const claimed = new Map([...reported].map(([spanId, own]) => [spanId, { own, beneath: [] as T[] }]))
+	const claimed = new Map(Arr.map([...reported], ([spanId, own]) => [spanId, { own, beneath: [] as T[] }]))
 	for (const [spanId, span] of byId) {
 		const value = reported.get(spanId)
 		if (value === undefined) continue
@@ -657,7 +667,7 @@ function costBySpan(
 	}
 
 	for (const [spanId, { own, beneath }] of chargeToNearestReporter(byId, reported)) {
-		bySpan.set(spanId, Math.max(0, own - beneath.reduce((sum, c) => sum + c, 0)))
+		bySpan.set(spanId, Math.max(0, own - Arr.reduce(beneath, 0, (sum, c) => sum + c)))
 	}
 	return bySpan
 }
@@ -693,8 +703,10 @@ function excessTokens(reported: SessionTokenTotals, counted: SessionTokenTotals)
  * next one; a reporter that outlives that boundary covers more than one turn.
  */
 function isSessionLevelReporter(span: AiSessionSpan, turns: readonly SessionTurn[]): boolean {
-	const next = turns.find((turn) => turn.startMs > spanStartMs(span))
-	return next !== undefined && spanEndMs(span) > next.startMs
+	return Option.match(
+		Arr.findFirst(turns, (turn) => turn.startMs > spanStartMs(span)),
+		{ onNone: () => false, onSome: (next) => spanEndMs(span) > next.startMs },
+	)
 }
 
 /**
@@ -721,20 +733,23 @@ export interface SessionTurnUsage {
  * on every call beneath it, so the two have to be counted together.
  */
 export function countTurnUsage(turn: SessionTurn, turns: readonly SessionTurn[]): SessionTurnUsage {
-	const byId = new Map(turn.spans.map((span) => [span.spanId, span]))
+	const byId = new Map(Arr.map(turn.spans, (span) => [span.spanId, span]))
 	const { bySpan, costs } = countableUsageSpans(turn.spans, byId)
 	// Walked over the deduplicated map rather than `turn.spans`: the session-level
 	// test needs the span, and a page-overlapping read can repeat a row.
-	const counted = [...byId.values()].filter((span) => !isSessionLevelReporter(span, turns))
-	const reported = counted.flatMap((span) => costs.get(span.spanId) ?? [])
+	const counted = Arr.filter([...byId.values()], (span) => !isSessionLevelReporter(span, turns))
+	const reported = Arr.flatMap(counted, (span) => {
+		const cost = costs.get(span.spanId)
+		return cost === undefined ? [] : [cost]
+	})
 	return {
 		tokens: sumTokens(
-			counted.flatMap((span) => {
+			Arr.flatMap(counted, (span) => {
 				const tokens = bySpan.get(span.spanId)
 				return tokens === undefined ? [] : [tokens]
 			}),
 		),
-		cost: reported.length > 0 ? reported.reduce((sum, value) => sum + value, 0) : undefined,
+		cost: reported.length > 0 ? Arr.reduce(reported, 0, (sum, value) => sum + value) : undefined,
 	}
 }
 
@@ -744,26 +759,23 @@ function classifyTokenReporting(
 	byId: ReadonlyMap<string, AiSessionSpan>,
 	turns: readonly SessionTurn[],
 ): SessionTokenReporting {
-	const reporters = [...byId.values()].filter((span) => usage.bySpan.has(span.spanId))
+	const reporters = Arr.filter([...byId.values()], (span) => usage.bySpan.has(span.spanId))
 	if (reporters.length === 0) return "none"
-	if (reporters.every((span) => isSessionLevelReporter(span, turns))) {
+	if (Arr.every(reporters, (span) => isSessionLevelReporter(span, turns))) {
 		return "session-level"
 	}
 	return usage.rolledUp ? "roll-up" : "per-call"
 }
 
 function sumTokens(totals: readonly SessionTokenTotals[]): SessionTokenTotals {
-	return totals.reduce(
-		(sum, tokens) => ({
-			input: sum.input + tokens.input,
-			cacheRead: sum.cacheRead + tokens.cacheRead,
-			cacheWrite: sum.cacheWrite + tokens.cacheWrite,
-			output: sum.output + tokens.output,
-			reasoning: sum.reasoning + tokens.reasoning,
-			total: sum.total + tokens.total,
-		}),
-		EMPTY_TOKENS,
-	)
+	return Arr.reduce(totals, EMPTY_TOKENS, (sum, tokens) => ({
+		input: sum.input + tokens.input,
+		cacheRead: sum.cacheRead + tokens.cacheRead,
+		cacheWrite: sum.cacheWrite + tokens.cacheWrite,
+		output: sum.output + tokens.output,
+		reasoning: sum.reasoning + tokens.reasoning,
+		total: sum.total + tokens.total,
+	}))
 }
 
 /**
@@ -794,16 +806,16 @@ function modelUsage(
 		if (cost !== undefined) entry.costs.push(cost)
 	}
 
-	return [...byModel]
-		.map(([model, entry]) => ({
-			model,
-			llmCalls: entry.llmCalls,
-			tokens: sumTokens(entry.tokens),
-			// A model whose calls reported no cost reads as unpriced rather than
-			// free — the session total may still be non-zero from another model.
-			cost: entry.costs.length === 0 ? undefined : sumCosts(entry.costs),
-		}))
-		.sort((a, b) => b.llmCalls - a.llmCalls || b.tokens.total - a.tokens.total)
+	return Arr.map([...byModel], ([model, entry]) => ({
+		model,
+		llmCalls: entry.llmCalls,
+		tokens: sumTokens(entry.tokens),
+		// A model whose calls reported no cost reads as unpriced rather than
+		// free — the session total may still be non-zero from another model.
+		cost: entry.costs.length === 0 ? undefined : sumCosts(entry.costs),
+	})).sort((a, b) =>
+		b.llmCalls !== a.llmCalls ? b.llmCalls - a.llmCalls : b.tokens.total - a.tokens.total,
+	)
 }
 
 /**
@@ -842,19 +854,24 @@ function toolUsage(
 	}
 
 	return (
-		[...byName]
-			.map(([name, entry]) => ({
-				name,
-				calls: entry.events.length,
-				failed: entry.events.filter((event) => event.failed).length,
-				description: entry.description,
-				totalMs: entry.events.reduce((total, event) => total + event.durationMs, 0),
-				slowestMs: Math.max(...entry.events.map((event) => event.durationMs)),
-				events: entry.events,
-			}))
+		Arr.map([...byName], ([name, entry]) => ({
+			name,
+			calls: entry.events.length,
+			failed: Arr.filter(entry.events, (event) => event.failed).length,
+			description: entry.description,
+			totalMs: Arr.reduce(entry.events, 0, (total, event) => total + event.durationMs),
+			slowestMs: Math.max(...Arr.map(entry.events, (event) => event.durationMs)),
+			events: entry.events,
+		}))
 			// Reach leads, time breaks the tie: what the agent kept going back to is
 			// the first thing a reader scans the ledger for.
-			.sort((a, b) => b.calls - a.calls || b.totalMs - a.totalMs || a.name.localeCompare(b.name))
+			.sort((a, b) =>
+				b.calls !== a.calls
+					? b.calls - a.calls
+					: b.totalMs !== a.totalMs
+						? b.totalMs - a.totalMs
+						: Str.localeCompare(b.name)(a.name),
+			)
 	)
 }
 
@@ -863,9 +880,13 @@ function toolUsage(
 /* -------------------------------------------------------------------------- */
 
 function errorSignal(span: AiSessionSpan): string {
-	return [span.genAi.errorType, span.genAi.responseStatus, span.statusMessage]
-		.filter((value): value is string => value !== undefined && value !== "")
-		.join(" ")
+	return Arr.join(
+		Arr.filter(
+			[span.genAi.errorType, span.genAi.responseStatus, span.statusMessage],
+			(value): value is string => value !== undefined && value !== "",
+		),
+		" ",
+	)
 }
 
 /** The error a span reports, or nothing — for a span that did not fail, or one
@@ -887,10 +908,11 @@ function refusalSignal(span: AiSessionSpan): string | undefined {
  * written that way too.
  */
 export function finishReasonsIn(span: AiSessionSpan, keys: ReadonlySet<string>): string | undefined {
-	const reasons = (span.genAi.responseFinishReasons ?? [])
-		.map((reason) => reason.toLowerCase())
-		.filter((reason) => keys.has(reason.replace(/[^a-z0-9]/g, "")))
-	return reasons.length === 0 ? undefined : reasons.join(",")
+	const reasons = Arr.filter(
+		Arr.map(span.genAi.responseFinishReasons ?? [], (reason) => Str.toLowerCase(reason)),
+		(reason) => keys.has(Str.replace(/[^a-z0-9]/g, "")(reason)),
+	)
+	return reasons.length === 0 ? undefined : Arr.join(reasons, ",")
 }
 
 /**
@@ -907,7 +929,7 @@ export function shadowedAncestorIds(
 	spans: readonly AiSessionSpan[],
 	signalOf: (span: AiSessionSpan) => string | undefined,
 ): ReadonlySet<string> {
-	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const byId = new Map(Arr.map(spans, (span) => [span.spanId, span]))
 	const shadowed = new Set<string>()
 	for (const span of spans) {
 		const signal = signalOf(span)
@@ -945,7 +967,7 @@ export function isProviderAttempt(span: AiSessionSpan): boolean {
 const RPC_SPAN_KINDS = new Set(["CLIENT", "SERVER", "PRODUCER", "CONSUMER"])
 
 function isRpcSpan(span: AiSessionSpan): boolean {
-	return RPC_SPAN_KINDS.has(span.spanKind.replace(/^SPAN_KIND_/i, "").toUpperCase())
+	return RPC_SPAN_KINDS.has(Str.toUpperCase(Str.replace(/^SPAN_KIND_/i, "")(span.spanKind)))
 }
 
 /**
@@ -956,8 +978,11 @@ function isRpcSpan(span: AiSessionSpan): boolean {
  * went wrong there.
  */
 function appSpanShadowedIds(spans: readonly AiSessionSpan[]): ReadonlySet<string> {
-	const byId = new Map(spans.map((span) => [span.spanId, span]))
-	const failedAi = spans.filter((span) => span.isAiSpan && spanFailed(span) && !isProviderAttempt(span))
+	const byId = new Map(Arr.map(spans, (span) => [span.spanId, span]))
+	const failedAi = Arr.filter(
+		spans,
+		(span) => span.isAiSpan && spanFailed(span) && !isProviderAttempt(span),
+	)
 	// Every ancestor of a failed AI span is shadowed from below.
 	const shadowed = new Set<string>()
 	for (const span of failedAi) {
@@ -1116,11 +1141,11 @@ const AGENT_LIMIT_PATTERN =
 export function agentLimitName(text: string): string | undefined {
 	const match = AGENT_LIMIT_PATTERN.exec(text)?.[1]
 	if (match === undefined) return undefined
-	const words = match
-		.toLowerCase()
-		.split(" ")
-		.filter((word) => !/^[\d$.]/.test(word) && word !== "microdollar")
-	return words.length === 0 ? undefined : words.join(" ")
+	const words = Arr.filter(
+		Str.split(" ")(Str.toLowerCase(match)),
+		(word) => !/^[\d$.]/.test(word) && word !== "microdollar",
+	)
+	return words.length === 0 ? undefined : Arr.join(words, " ")
 }
 
 function classifyFailure(span: AiSessionSpan): Omit<SessionFailureEvent, "span"> {
@@ -1130,7 +1155,7 @@ function classifyFailure(span: AiSessionSpan): Omit<SessionFailureEvent, "span">
 		return { kind: "contextExceeded", label: "context_length_exceeded" }
 	}
 
-	const raw = (rawFailureText(span) ?? "").slice(0, CLASSIFIED_TEXT_CHARS)
+	const raw = Str.slice(0, CLASSIFIED_TEXT_CHARS)(rawFailureText(span) ?? "")
 	const text = stripFailurePrefixes(raw)
 	if (incompleteRunTool(text) !== undefined) return { kind: "incomplete", label: "incomplete" }
 	// Only an agent run is stopped on a budget; a tool's own `limit` is its business.
@@ -1202,7 +1227,9 @@ export function groupFailures(events: readonly SessionFailureEvent[]): readonly 
 			count: (existing?.count ?? 0) + 1,
 		})
 	}
-	return [...groups.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+	return [...groups.values()].sort((a, b) =>
+		b.count !== a.count ? b.count - a.count : Str.localeCompare(b.label)(a.label),
+	)
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1250,12 +1277,12 @@ export function callMetaParts(span: AiSessionSpan, options?: CallMetaOptions): r
 	const ttftMs = spanTtftMs(span)
 	if (ttftMs !== undefined) parts.push(`ttft ${formatDuration(ttftMs)}`)
 	const finish = span.genAi.responseFinishReasons
-	if (finish !== undefined && finish.length > 0) parts.push(`stop ${finish.join(", ")}`)
+	if (finish !== undefined && finish.length > 0) parts.push(`stop ${Arr.join(finish, ", ")}`)
 	return parts
 }
 
 export function callMetaLine(span: AiSessionSpan, options?: CallMetaOptions): string {
-	return callMetaParts(span, options).join(" · ")
+	return Arr.join(callMetaParts(span, options), " · ")
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1274,5 +1301,8 @@ function distinctInOrder(values: readonly (string | undefined)[]): readonly stri
 function byFrequency(values: readonly string[]): readonly string[] {
 	const counts = new Map<string, number>()
 	for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1)
-	return [...counts].sort((a, b) => b[1] - a[1]).map(([value]) => value)
+	return Arr.map(
+		[...counts].sort((a, b) => b[1] - a[1]),
+		([value]) => value,
+	)
 }

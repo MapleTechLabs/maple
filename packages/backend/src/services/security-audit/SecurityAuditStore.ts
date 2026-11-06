@@ -63,6 +63,7 @@ import {
 	Record as Rec,
 	String as Str,
 } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 
@@ -135,7 +136,7 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 	readonly findConnectedRepository: (
 		repository: string,
 	) => Effect.Effect<Option.Option<ConnectedRepository>, AuditStoreError>
-	readonly listTargets: () => Effect.Effect<ReadonlyArray<SecurityAuditTargetRow>, AuditStoreError>
+	readonly listTargets: Effect.Effect<ReadonlyArray<SecurityAuditTargetRow>, AuditStoreError>
 	readonly getTarget: (
 		targetId: SecurityAuditTargetId,
 	) => Effect.Effect<Option.Option<SecurityAuditTargetRow>, AuditStoreError>
@@ -240,7 +241,7 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 	) => Effect.Effect<void, AuditStoreError>
 	/** What the org's agents cost since `since` (epoch ms), billed as AI credits, in US dollars. */
 	readonly orgSpendUsd: (since: number) => Effect.Effect<number, AuditStoreError>
-	readonly getSettings: () => Effect.Effect<Option.Option<SecurityAuditOrgSettingsRow>, AuditStoreError>
+	readonly getSettings: Effect.Effect<Option.Option<SecurityAuditOrgSettingsRow>, AuditStoreError>
 	readonly saveSettings: (
 		input: SaveSettingsInput,
 	) => Effect.Effect<SecurityAuditOrgSettingsRow, AuditStoreError>
@@ -437,18 +438,16 @@ const keepDecodable = <Raw, A>(
 		return decoded
 	})
 
-const newTargetId = () => Schema.decodeSync(SecurityAuditTargetId)(crypto.randomUUID())
-const newRunId = () => Schema.decodeSync(SecurityAuditRunId)(crypto.randomUUID())
-
 const firstOrFail = <A>(rows: ReadonlyArray<A>, message: string) =>
 	rows[0] === undefined ? Effect.fail(new AuditStoreError({ message })) : Effect.succeed(rows[0])
 
 const toStoreError = makePersistenceErrorMapper(AuditStoreError, "Security audit store operation failed")
 
 const quoteJson = Schema.encodeSync(Schema.fromJsonString(Schema.String))
+const toTargetId = Schema.decodeSync(SecurityAuditTargetId)
 
 const decodeRunId = (raw: string) =>
-	Schema.decodeUnknownEffect(SecurityAuditRunId)(raw).pipe(
+	Schema.decodeEffect(SecurityAuditRunId)(raw).pipe(
 		Effect.mapError(
 			() => new AuditStoreError({ message: `Invalid security audit run id: ${quoteJson(raw)}` }),
 		),
@@ -476,7 +475,7 @@ const eventId = (runId: SecurityAuditRunId, event: AuditEvent) =>
 				? `agent:${event.agentId}:${event.outcome}`
 				: event._tag === "Phase"
 					? `phase:${event.phase}`
-					: `note:${(yield* sha256Hex(event.message)).slice(0, 32)}`
+					: yield* Effect.map(sha256Hex(event.message), (hex) => `note:${Str.slice(0, 32)(hex)}`)
 		return yield* sha256Hex(`${runId}:${key}`)
 	})
 
@@ -662,6 +661,9 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 		make: Effect.gen(function* () {
 			const database = yield* Database
 			const dbExecute = makeDbExecute(database, "SecurityAuditStore", toStoreError)
+			const random = yield* SecureRandom.SecureRandom
+			const newTargetId = Effect.map(random.uuidV4(), toTargetId)
+			const newRunId = Effect.flatMap(random.uuidV4(), decodeRunId)
 
 			const forOrg = (orgId: OrgId): SecurityAuditOrgStore => {
 				/** Updates the org's run while it is unfinished; fails when no such run exists. */
@@ -834,28 +836,29 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										})),
 									),
 								)
+								const findingRows = yield* Effect.forEach(unique, (finding) =>
+									Effect.map(random.uuidV4(), (id) => ({
+										id,
+										orgId,
+										targetId: run.targetId,
+										fingerprint: finding.fingerprint,
+										verdict: finding.verdict,
+										overallSeverity: overallSeverity(finding),
+										estimatedSeverity: estimatedSeverity(finding, estimates),
+										record: finding,
+										status: "open" as const,
+										firstSeenRunId: runId,
+										lastSeenRunId: runId,
+										firstSeenRef: run.sourceRef,
+										lastSeenRef: run.sourceRef,
+										fixedRunId: null,
+										createdAt: now,
+										updatedAt: now,
+									})),
+								)
 								yield* db.run(
 									PG.insertInto(SecurityAuditFindings)
-										.values(
-											Arr.map(unique, (finding) => ({
-												id: crypto.randomUUID(),
-												orgId,
-												targetId: run.targetId,
-												fingerprint: finding.fingerprint,
-												verdict: finding.verdict,
-												overallSeverity: overallSeverity(finding),
-												estimatedSeverity: estimatedSeverity(finding, estimates),
-												record: finding,
-												status: "open" as const,
-												firstSeenRunId: runId,
-												lastSeenRunId: runId,
-												firstSeenRef: run.sourceRef,
-												lastSeenRef: run.sourceRef,
-												fixedRunId: null,
-												createdAt: now,
-												updatedAt: now,
-											})),
-										)
+										.values(findingRows)
 										.onConflictDoUpdate({
 											target: ["targetId", "fingerprint"],
 											set: ($, excluded) => ({
@@ -919,7 +922,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					"SecurityAuditStore.createTarget",
 				)(function* (input) {
 					const now = yield* Clock.currentTimeMillis
-					const id = newTargetId()
+					const id = yield* newTargetId
 					// A repository reference must be this org's: never another tenant's connected repository.
 					const repositoryId = input.vcsRepositoryId
 					if (repositoryId !== undefined) {
@@ -996,7 +999,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 				const startRun: SecurityAuditOrgStore["startRun"] = Effect.fn("SecurityAuditStore.startRun")(
 					function* (input) {
 						const now = yield* Clock.currentTimeMillis
-						const runId = input.runId ?? newRunId()
+						const runId = input.runId ?? (yield* newRunId)
 						const inProgress = new SecurityAuditRunInProgress({
 							message: `Security audit target ${input.targetId} already has a run in progress`,
 							targetId: input.targetId,
@@ -1521,12 +1524,13 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 							}
 							return { ...lifecycle, ...row, orgId, targetId: run.targetId }
 						})
-						.toSorted(
-							(a, b) =>
+						.toSorted((a, b) => {
+							const byRank =
 								findingRank(a.verdict, a.overallSeverity, a.estimatedSeverity) -
-									findingRank(b.verdict, b.overallSeverity, b.estimatedSeverity) ||
-								(a.fingerprint < b.fingerprint ? -1 : a.fingerprint > b.fingerprint ? 1 : 0),
-						)
+								findingRank(b.verdict, b.overallSeverity, b.estimatedSeverity)
+							if (byRank !== 0) return byRank
+							return a.fingerprint < b.fingerprint ? -1 : a.fingerprint > b.fingerprint ? 1 : 0
+						})
 				})
 
 				const countRunFindings: SecurityAuditOrgStore["countRunFindings"] = Effect.fn(
@@ -1664,18 +1668,14 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					)
 				})
 
-				const listTargets: SecurityAuditOrgStore["listTargets"] = Effect.fn(
-					"SecurityAuditStore.listTargets",
-				)(function* () {
-					return yield* dbExecute((db) =>
-						db.run(
-							PG.from(SecurityAuditTargets)
-								.select()
-								.where(($) => [$.orgId.eq(orgId)])
-								.orderBy(($) => [[$.createdAt, "asc"]]),
-						),
-					)
-				})
+				const listTargets: SecurityAuditOrgStore["listTargets"] = dbExecute((db) =>
+					db.run(
+						PG.from(SecurityAuditTargets)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)])
+							.orderBy(($) => [[$.createdAt, "asc"]]),
+					),
+				).pipe(Effect.withSpan("SecurityAuditStore.listTargets"))
 
 				const getTarget: SecurityAuditOrgStore["getTarget"] = Effect.fn(
 					"SecurityAuditStore.getTarget",
@@ -1799,9 +1799,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					return yield* dbExecute((db) => sumSpend(db, orgId, since))
 				})
 
-				const getSettings: SecurityAuditOrgStore["getSettings"] = Effect.fn(
-					"SecurityAuditStore.getSettings",
-				)(function* () {
+				const getSettings: SecurityAuditOrgStore["getSettings"] = Effect.gen(function* () {
 					const rows = yield* dbExecute((db) =>
 						db.run(
 							PG.from(SecurityAuditOrgSettings)
@@ -1811,7 +1809,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 						),
 					)
 					return Option.fromUndefinedOr(rows[0])
-				})
+				}).pipe(Effect.withSpan("SecurityAuditStore.getSettings"))
 
 				const saveSettings: SecurityAuditOrgStore["saveSettings"] = Effect.fn(
 					"SecurityAuditStore.saveSettings",
@@ -1877,7 +1875,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make)
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(SecureRandom.layerWebCrypto))
 
 	/** The engine's `AuditStore` for one org, for the run that org started. */
 	static readonly auditStoreFor = (orgId: OrgId): Layer.Layer<AuditStore, never, SecurityAuditStore> =>

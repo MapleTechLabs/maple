@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect, Record as Rec } from "effect"
 import { compile, compileUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
@@ -26,13 +26,11 @@ describe("metricsTimeseriesQuery", () => {
 		const q = metricsTimeseriesQuery({ metricType: "sum" })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM metrics_sum")
-		expect(sql).toContain("ifNull(ifNotFinite(avg(metrics_sum.Value), 0), 0) AS avgValue")
-		expect(sql).toContain("min(metrics_sum.Value) AS minValue")
-		expect(sql).toContain("max(metrics_sum.Value) AS maxValue")
-		expect(sql).toContain("sum(metrics_sum.Value) AS sumValue")
-		expect(sql).toContain("count() AS dataPointCount")
+		// Stage one reduces each series in the bucket, stage two combines them.
+		expect(sql).toContain("ifNull(ifNotFinite(avg(metrics_sum.Value), 0), 0) AS seriesValue")
+		expect(sql).toContain("GROUP BY bucket, groupName, series")
+		expect(sql).toContain("ifNull(ifNotFinite(avg(per_series.seriesValue), 0), 0) AS value")
 		expect(sql).toContain("INTERVAL 3600 SECOND")
-		expect(sql).toContain("GROUP BY bucket, serviceName")
 		expect(sql).toContain("ORDER BY bucket ASC")
 	})
 
@@ -62,13 +60,17 @@ describe("metricsTimeseriesQuery", () => {
 		const q = metricsTimeseriesQuery({ metricType: "histogram" })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM metrics_histogram")
+		// Observations merge across series: the exact distribution average.
 		expect(sql).toContain("sum(metrics_histogram.Sum) / sum(metrics_histogram.Count)")
+		expect(sql).toContain("sum(metrics_histogram.Count) AS dataPointCount")
+		expect(sql).not.toContain("per_series")
 		// Nullable extrema fall back to 0 so an all-NULL bucket still decodes
 		// through the non-null Float64 row contract.
-		expect(sql).toContain("ifNull(min(metrics_histogram.Min), 0) AS minValue")
-		expect(sql).toContain("ifNull(max(metrics_histogram.Max), 0) AS maxValue")
-		expect(sql).toContain("sum(metrics_histogram.Sum) AS sumValue")
-		expect(sql).toContain("sum(metrics_histogram.Count) AS dataPointCount")
+		const max = compileUnsafe(
+			metricsTimeseriesQuery({ metricType: "histogram", metric: "max" }),
+			baseParams,
+		)
+		expect(max.sql).toContain("ifNull(max(metrics_histogram.Max), 0) AS value")
 	})
 
 	it("compiles exponential_histogram timeseries", () => {
@@ -78,9 +80,33 @@ describe("metricsTimeseriesQuery", () => {
 	})
 
 	it("applies groupByAttributeKey", () => {
-		const q = metricsTimeseriesQuery({ metricType: "sum", groupByAttributeKey: "region" })
+		const q = metricsTimeseriesQuery({
+			metricType: "sum",
+			groupBy: ["attribute"],
+			groupByAttributeKey: "region",
+		})
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("GROUP BY bucket, serviceName, attributeValue")
+		expect(sql).toContain("metrics_sum.Attributes['region']")
+	})
+
+	it("joins several attribute and resource keys into one group label", () => {
+		const q = metricsTimeseriesQuery({
+			metricType: "gauge",
+			groupBy: ["service", "attribute", "resource_attribute"],
+			groupByAttributeKeys: ["namespace", "job"],
+			groupByResourceAttributeKeys: ["host.name"],
+		})
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain(
+			"arrayStringConcat(arrayFilter(x -> x != '', [metrics_gauge.ServiceName, metrics_gauge.Attributes['namespace'], metrics_gauge.Attributes['job'], metrics_gauge.ResourceAttributes['host.name']]), ' · ') AS groupName",
+		)
+	})
+
+	it("combines series with the requested space aggregation", () => {
+		const q = metricsTimeseriesQuery({ metricType: "gauge", metric: "latest", spaceAggregation: "max" })
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("argMax(metrics_gauge.Value, metrics_gauge.TimeUnix) AS seriesValue")
+		expect(sql).toContain("max(per_series.seriesValue) AS value")
 	})
 
 	it("caps grouped value timeseries before returning the long tail", () => {
@@ -90,7 +116,7 @@ describe("metricsTimeseriesQuery", () => {
 			seriesLimit: 7,
 		})
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("max(dataPointCount) OVER (PARTITION BY groupName)")
+		expect(sql).toContain("max(value) OVER (PARTITION BY groupName)")
 		expect(sql).toContain("__series_rank <= 7")
 	})
 
@@ -104,9 +130,13 @@ describe("metricsTimeseriesQuery", () => {
 	})
 
 	it("applies groupByResourceAttributeKey against ResourceAttributes", () => {
-		const q = metricsTimeseriesQuery({ metricType: "gauge", groupByResourceAttributeKey: "host.name" })
+		const q = metricsTimeseriesQuery({
+			metricType: "gauge",
+			groupBy: ["resource_attribute"],
+			groupByResourceAttributeKey: "host.name",
+		})
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("GROUP BY bucket, serviceName, attributeValue")
+		expect(sql).toContain("metrics_gauge.ResourceAttributes['host.name']")
 	})
 
 	it("applies resourceAttributeFilters", () => {
@@ -125,7 +155,7 @@ describe("metricsTimeseriesRateQuery", () => {
 	it("caps grouped rate timeseries before returning the long tail", () => {
 		const q = metricsTimeseriesRateQuery({ groupBy: ["service"], seriesLimit: 7 })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("max(dataPointCount) OVER (PARTITION BY groupName)")
+		expect(sql).toContain("max(value) OVER (PARTITION BY groupName)")
 		expect(sql).toContain("__series_rank <= 7")
 	})
 
@@ -170,11 +200,9 @@ describe("metricsTimeseriesRateQuery", () => {
 		const { sql } = compileUnsafe(metricsTimeseriesRateQuery({}), baseParams)
 		// Divided by the seconds of the bucket inside the window, so a partial
 		// first or last bucket is not understated.
-		expect(sql).toContain("sum(with_deltas.delta) / min(least(")
-		expect(sql).toContain(
-			"greatest(toUnixTimestamp(toStartOfInterval(with_deltas.TimeUnix, INTERVAL 3600 SECOND))",
-		)
-		expect(sql).toContain("sum(with_deltas.delta) AS increaseValue")
+		expect(sql).toContain("sum(with_deltas.delta) AS increase")
+		expect(sql).toContain("sum(per_series.increase) / min(least(")
+		expect(sql).toContain("greatest(toUnixTimestamp(per_series.bucket)")
 		expect(sql).not.toContain("time_delta")
 	})
 
@@ -212,18 +240,19 @@ describe("metricsTimeseriesRateQuery", () => {
 	})
 
 	it("applies groupByAttributeKey", () => {
-		const q = metricsTimeseriesRateQuery({ groupByAttributeKey: "host" })
+		const q = metricsTimeseriesRateQuery({ groupBy: ["attribute"], groupByAttributeKey: "host" })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("Attributes['host']")
-		expect(sql).toContain("GROUP BY bucket, serviceName, attributeValue")
+		expect(sql).toContain("metrics_sum.Attributes['host']")
 	})
 
 	it("applies groupByResourceAttributeKey through the deltas CTE", () => {
-		const q = metricsTimeseriesRateQuery({ groupByResourceAttributeKey: "k8s.pod.name" })
+		const q = metricsTimeseriesRateQuery({
+			groupBy: ["resource_attribute"],
+			groupByResourceAttributeKey: "k8s.pod.name",
+		})
 		const { sql } = compileUnsafe(q, baseParams)
 		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the group key reads the requested attribute
-		expect(sql).toContain("ResourceAttributes['k8s.pod.name'] AS resourceAttributeValue")
-		expect(sql).toContain("GROUP BY bucket, serviceName, attributeValue")
+		expect(sql).toContain("ResourceAttributes['k8s.pod.name'] AS groupName")
 	})
 
 	it("applies resourceAttributeFilters in the CTE", () => {
@@ -263,7 +292,7 @@ describe("metricsTimeseriesRateQuery", () => {
 		expect(sql).toContain("FROM span_metrics_calls_hourly")
 		expect(sql).toContain("argMaxMerge(span_metrics_calls_hourly.LastValue) AS Value")
 		expect(sql).toContain("FROM with_deltas")
-		expect(sql).toContain("sumIf(with_deltas.delta, with_deltas.delta >= 0) AS increaseValue")
+		expect(sql).toContain("sumIf(with_deltas.delta, with_deltas.delta >= 0) / 3600, 0), 0) AS value")
 		expect(sql).not.toContain("FROM metrics_sum")
 	})
 
@@ -272,14 +301,14 @@ describe("metricsTimeseriesRateQuery", () => {
 			metricName: "span.metrics.calls",
 			bucketSeconds: 3600,
 			attributeFilters: [{ key: "span.kind", mode: "equals", value: "SPAN_KIND_SERVER" }],
+			groupBy: ["attribute"],
 			groupByAttributeKey: "span.kind",
 		})
 		const { sql } = compileUnsafe(q, { ...baseParams, metricName: "span.metrics.calls" })
 		expect(sql).toContain("span_metrics_calls_hourly")
 		expect(sql).toContain("SpanKind = 'SPAN_KIND_SERVER'")
 		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the group key reads the requested attribute
-		expect(sql).toContain("SpanKind AS attributeValue")
-		expect(sql).toContain("GROUP BY bucket, serviceName, attributeValue")
+		expect(sql).toContain("with_deltas.SpanKind AS groupName")
 	})
 
 	it("applies an environment filter in the CTE", () => {
@@ -572,24 +601,12 @@ describe("metricsSummaryQuery", () => {
 describe("metric rows decode buckets to DateTime.Utc", () => {
 	const valueRow = {
 		bucket: "2024-01-01 10:00:00.000000000",
-		serviceName: "api",
-		attributeValue: "",
 		groupName: "api",
-		avgValue: 1,
-		minValue: 1,
-		maxValue: 1,
-		sumValue: 1,
+		value: 1,
 		dataPointCount: "1",
+		seriesCount: "1",
 	}
-	const rateRow = {
-		bucket: "2024-01-01 10:00:00",
-		serviceName: "api",
-		attributeValue: "",
-		groupName: "api",
-		rateValue: 1,
-		increaseValue: 1,
-		dataPointCount: "1",
-	}
+	const rateRow = { ...valueRow, bucket: "2024-01-01 10:00:00" }
 	const tenAm = Date.UTC(2024, 0, 1, 10)
 
 	const bucketOf = <A extends { readonly bucket: DateTime.Utc }>(
@@ -600,7 +617,8 @@ describe("metric rows decode buckets to DateTime.Utc", () => {
 			const query = yield* compiled
 			expect(query.rowSchemaSource).not.toBe("none")
 			const [row] = yield* query.decodeRows([wire])
-			return row!.bucket
+			assert.isDefined(row)
+			return row.bucket
 		})
 
 	const cases = {

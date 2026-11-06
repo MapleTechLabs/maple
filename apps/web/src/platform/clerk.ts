@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId, UserId } from "@maple/domain"
 import { organizationFeatureFlagsFrom } from "@maple/domain/organization-feature-flags"
 import {
@@ -216,6 +217,7 @@ export const ClerkOrganization = Schema.Struct({
 		releases: Schema.Boolean,
 		securityAudit: Schema.Boolean,
 		statusPages: Schema.Boolean,
+		users: Schema.Boolean,
 	}),
 })
 export type ClerkOrganization = typeof ClerkOrganization.Type
@@ -323,8 +325,8 @@ export const signOutOfClerk: Effect.Effect<void> = Effect.promise(
 /** The active org's handle for its own rename and invitations (`useOrganization().organization`). */
 export interface ClerkTeamOrganization {
 	readonly name: string
-	/** `useAuth().orgRole === "org:admin"`: the role of the user's membership in it. */
-	readonly isAdmin: boolean
+	/** The user's membership role holds `members:manage`: they may invite and rename. */
+	readonly canManageMembers: boolean
 	readonly update: (input: { name: string }) => Promise<void>
 	readonly inviteMember: (input: { emailAddress: string; role: "org:member" }) => Promise<void>
 	readonly pendingInvitations: () => Promise<ReadonlyArray<string>>
@@ -334,12 +336,15 @@ export const clerkTeamOrganization: Effect.Effect<Option.Option<ClerkTeamOrganiz
 	Option.flatMap(Option.fromNullishOr(window.Clerk?.organization), (organization) => {
 		const { update, inviteMember, getInvitations } = organization
 		const missing = () => Promise.reject(new TypeError("Clerk organization method is missing"))
-		const membership = window.Clerk?.user?.organizationMemberships?.find(
+		const membership = Arr.findFirst(
+			window.Clerk?.user?.organizationMemberships ?? [],
 			(candidate) => candidate.organization.id === organization.id,
 		)
 		return Option.some<ClerkTeamOrganization>({
 			name: organization.name,
-			isAdmin: membership?.role === "org:admin",
+			canManageMembers: Option.exists(membership, (found) =>
+				Policy.can(found.role === undefined ? [] : [found.role], "members:manage"),
+			),
 			update: (input) =>
 				update === undefined ? missing() : update.call(organization, input).then(() => undefined),
 			inviteMember: (input) =>
@@ -351,7 +356,7 @@ export const clerkTeamOrganization: Effect.Effect<Option.Option<ClerkTeamOrganiz
 					? Promise.resolve([])
 					: getInvitations
 							.call(organization, { status: ["pending"] })
-							.then((page) => page.data.map((invitation) => invitation.emailAddress)),
+							.then((page) => Arr.map(page.data, (invitation) => invitation.emailAddress)),
 		})
 	}),
 )
@@ -500,12 +505,13 @@ export const acceptUserInvitation = (invitationId: string): Effect.Effect<string
 	Effect.gen(function* () {
 		const user = yield* currentClerkUser
 		const invitations = yield* userInvitationPage(user)
-		const invitation = invitations.find((candidate) => candidate.id === invitationId)
-		if (invitation === undefined)
+		const found = Arr.findFirst(invitations, (candidate) => candidate.id === invitationId)
+		if (Option.isNone(found))
 			return yield* new ClerkActionError({
 				message: "This invitation is no longer pending",
 				cause: undefined,
 			})
+		const invitation = found.value
 		yield* clerkTry("Could not accept the invitation", () => invitation.accept.call(invitation))
 		return invitation.publicOrganizationData.id
 	})
@@ -525,8 +531,12 @@ export const switchAwayFrom = (orgId: string): Effect.Effect<void> =>
 						Effect.map((page) => page.data),
 						Effect.orElseSucceed(() => []),
 					)
-		const next =
-			memberships.find((membership) => membership.organization.id !== orgId)?.organization.id ?? null
+		const next = Option.getOrNull(
+			Option.map(
+				Arr.findFirst(memberships, (membership) => membership.organization.id !== orgId),
+				(membership) => membership.organization.id,
+			),
+		)
 		// A failed switch falls through to navigation; Clerk's session refreshes on next load.
 		yield* clerkTry("Could not switch organization", () => clerk.setActive({ organization: next })).pipe(
 			Effect.ignore,

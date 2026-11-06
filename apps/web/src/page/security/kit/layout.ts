@@ -5,7 +5,7 @@ import type { IconName } from "@maple/views/ui/icon"
 import { dashboardPage, type DashboardPageOptions } from "../../kit/dashboard-page"
 import { linkTabStrip } from "../../kit/underline-tabs"
 import { navShell, type NavShellSection } from "../../settings/kit/nav-shell"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 // The frame of each Security source's page: the rail of sources, the source's title block, content.
 // The code security audit is the one source with tabs of its own (Overview, Findings, Runs).
 
@@ -94,7 +94,10 @@ export const breadcrumbsOf = (
 	source: SecuritySource,
 	tab: CodeTab = "overview",
 ): ReadonlyArray<BreadcrumbEntry> => {
-	const label = CODE_TABS.find((entry) => entry.tab === tab)?.label ?? ""
+	const label = Option.match(
+		Arr.findFirst(CODE_TABS, (entry) => entry.tab === tab),
+		{ onNone: () => "", onSome: (entry) => entry.label },
+	)
 	return source === "code" && tab !== "overview"
 		? [SECURITY_CRUMB, { label: SOURCE_LABEL.code, href: hrefOf(AppRoute.SecurityCode()) }, { label }]
 		: [SECURITY_CRUMB, { label: SOURCE_LABEL[source] }]
@@ -122,7 +125,7 @@ const codeTabs = <M>(h: HtmlBuilder<M>, active: CodeTab): Html =>
 	)
 
 const DESCRIPTION = {
-	code: "Deep code audits of your connected repositories. Findings are visible to org admins only.",
+	code: "Deep code audits of your connected repositories. Findings are visible to org admins and engineers.",
 	exposure: "Scanners probing your HTTP services over the last 7 days, read from server spans.",
 	runtimes:
 		"The language runtime each service reports, checked for known vulnerabilities and end-of-life dates.",

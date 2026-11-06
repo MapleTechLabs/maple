@@ -1,7 +1,18 @@
 import * as os from "node:os"
 import * as Command from "effect/cli/Command"
 import * as Flag from "effect/cli/Flag"
-import { Clock, Console, Duration, Effect, Fiber, Option, Redacted, Schema, Stream } from "effect"
+import {
+	Clock,
+	Console,
+	Duration,
+	Effect,
+	Fiber,
+	Option,
+	Redacted,
+	Schema,
+	Stream,
+	String as Str,
+} from "effect"
 import { Stdio } from "effect/Stdio"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { MapleConfig } from "../core/config"
@@ -182,7 +193,7 @@ const loginHandler = Effect.fnUntraced(function* (a: {
 	const apiUrl = yield* normalizeApiUrl(Option.getOrElse(a.apiUrl, () => config.defaultApiUrl))
 
 	if (a.withToken) {
-		const token = (yield* readStdinLine).trim()
+		const token = yield* Effect.map(readStdinLine, Str.trim)
 		if (!token) return yield* new CliAuthError({ message: "No token was provided on standard input" })
 		const session = yield* validateToken(apiUrl, token)
 		const store = yield* saveCredential(apiUrl, token, session, false)
@@ -302,7 +313,7 @@ const logoutHandler = Effect.fnUntraced(function* () {
 			),
 		)
 	}
-	yield* config.clearRemoteCredential()
+	yield* config.clearRemoteCredential
 	yield* Console.log("✓ Logged out and removed the stored credential.")
 })
 

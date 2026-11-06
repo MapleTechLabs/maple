@@ -1,7 +1,7 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Effect, Layer, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
 import { MapleInternalApi } from "@maple/domain/http"
@@ -50,8 +50,13 @@ const withApi = (answers: Readonly<Record<string, () => Response>>) => {
 	const fetch: typeof globalThis.fetch = async (input) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		const path = new URL(url, "http://api.test").pathname
-		const answer = Rec.toEntries(answers).find(([suffix]) => Str.endsWith(suffix)(path))?.[1]
-		return answer === undefined ? Promise.reject(new Error(`unmocked ${path}`)) : answer()
+		return Option.match(
+			Arr.findFirst(Rec.toEntries(answers), ([suffix]) => Str.endsWith(suffix)(path)),
+			{
+				onNone: () => Promise.reject(new Error(`unmocked ${path}`)),
+				onSome: ([, answer]) => answer(),
+			},
+		)
 	}
 	return <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 		effect.pipe(

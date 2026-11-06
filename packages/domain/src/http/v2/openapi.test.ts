@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Schema, Struct, Array as Arr, Record as Rec, String as Str } from "effect"
 import { OpenApi } from "effect/http-api"
 import { MapleApiV2 } from "./api"
 import { V2AlertDestinationMutationResponse } from "./alert-destinations"
@@ -8,6 +8,7 @@ import { V2ApiKey, V2ApiKeyCreateParams, V2ApiKeyMutationResponse, V2ApiKeyWithS
 import { V2Investigation } from "./investigations"
 import { V2Organization } from "./organization"
 import { V2SessionReplay, V2SessionReplayListItem } from "./session-replays"
+import { V2User, V2UserProfile } from "./users"
 import { errorTypeForStatus } from "./errors"
 
 /**
@@ -30,11 +31,13 @@ const spec = OpenApi.fromApi(MapleApiV2)
 type GeneratedOpenApiObject = Record<string, any>
 const doc = spec as GeneratedOpenApiObject
 const schemas = doc.components.schemas as GeneratedOpenApiObject
-const operation = (method: string, path: string): GeneratedOpenApiObject =>
-	(spec.paths as GeneratedOpenApiObject)[path][method]
+const paths: GeneratedOpenApiObject = doc.paths
+const operation = (method: string, path: string): GeneratedOpenApiObject => paths[path][method]
+const afterLastSlash = (ref: string): number =>
+	Option.match(Str.lastIndexOf("/")(ref), { onNone: () => 0, onSome: (index) => index + 1 })
 const resolveSchema = (schema: GeneratedOpenApiObject): GeneratedOpenApiObject => {
 	const ref = schema.$ref as string | undefined
-	return ref === undefined ? schema : schemas[Str.slice(ref.lastIndexOf("/") + 1)(ref)]
+	return ref === undefined ? schema : schemas[Str.slice(afterLastSlash(ref))(ref)]
 }
 const schemaBranches = (schema: GeneratedOpenApiObject): ReadonlyArray<GeneratedOpenApiObject> => {
 	const resolved = resolveSchema(schema)
@@ -69,7 +72,7 @@ describe("MapleApiV2 OpenAPI", () => {
 	it("exposes exactly the committed v2 paths", () => {
 		const surface = Arr.flatMap(Rec.toEntries(spec.paths ?? {}), ([path, item]) =>
 			Arr.map(
-				Arr.filter(Object.keys(item ?? {}), (key) =>
+				Arr.filter(Struct.keys(item ?? {}), (key) =>
 					["get", "post", "put", "patch", "delete"].includes(key),
 				),
 				(method) => `${Str.toUpperCase(method)} ${path}`,
@@ -95,6 +98,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"DELETE /v2/mobile_devices/{token}",
 			"DELETE /v2/mobile_devices/{token}/live_activities/{incident_id}",
 			"DELETE /v2/scrape_targets/{id}",
+			"DELETE /v2/slos/{id}",
 			"DELETE /v2/sources/{id}",
 			"DELETE /v2/status_page_incidents/{id}",
 			"DELETE /v2/status_pages/{id}",
@@ -108,6 +112,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/alerts/destinations/{id}",
 			"GET /v2/alerts/incidents",
 			"GET /v2/alerts/incidents/{id}",
+			"GET /v2/alerts/incidents/{id}/events",
 			"GET /v2/alerts/rules",
 			"GET /v2/alerts/rules/{id}",
 			"GET /v2/alerts/rules/{id}/checks",
@@ -171,6 +176,11 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/session_replays/{id}/events",
 			"GET /v2/session_replays/{id}/manifest",
 			"GET /v2/session_replays/{id}/transcript",
+			"GET /v2/slos",
+			"GET /v2/slos/statuses",
+			"GET /v2/slos/{id}",
+			"GET /v2/slos/{id}/history",
+			"GET /v2/slos/{id}/status",
 			"GET /v2/sources",
 			"GET /v2/sources/usage",
 			"GET /v2/sources/{id}",
@@ -186,6 +196,10 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/traces/{trace_id}/spans/{span_id}",
 			"GET /v2/uptime_monitors",
 			"GET /v2/uptime_monitors/{id}",
+			"GET /v2/users",
+			"GET /v2/users/{user_id}",
+			"GET /v2/users/{user_id}/activity",
+			"GET /v2/users/{user_id}/issues",
 			"GET /v2/widget_summary",
 			"PATCH /v2/alerts/destinations/{id}",
 			"PATCH /v2/alerts/rules/{id}",
@@ -197,6 +211,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"PATCH /v2/integrations/chat_workspaces/{id}",
 			"PATCH /v2/integrations/gcp/connectors/{id}",
 			"PATCH /v2/scrape_targets/{id}",
+			"PATCH /v2/slos/{id}",
 			"PATCH /v2/sources/{id}",
 			"PATCH /v2/status_page_incidents/{id}",
 			"PATCH /v2/status_pages/{id}",
@@ -206,6 +221,8 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/alerts/destinations",
 			"POST /v2/alerts/destinations/telegram/chats",
 			"POST /v2/alerts/destinations/{id}/test",
+			"POST /v2/alerts/incidents/{id}/acknowledge",
+			"POST /v2/alerts/incidents/{id}/unacknowledge",
 			"POST /v2/alerts/rules",
 			"POST /v2/alerts/rules/preview",
 			"POST /v2/alerts/rules/test",
@@ -223,8 +240,10 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/dashboards/{id}/widgets/{widget_id}/share/rotate",
 			"POST /v2/device_tokens",
 			"POST /v2/error_issues/{id}/claim",
+			"POST /v2/error_issues/{id}/merge",
 			"POST /v2/error_issues/{id}/release",
 			"POST /v2/error_issues/{id}/transitions",
+			"POST /v2/error_issues/{id}/unmerge",
 			"POST /v2/ingest_keys/private/roll",
 			"POST /v2/ingest_keys/public/roll",
 			"POST /v2/ingest_rules",
@@ -263,6 +282,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/share/og-meta",
 			"POST /v2/share/resolve",
 			"POST /v2/share/widget-data",
+			"POST /v2/slos",
 			"POST /v2/sources",
 			"POST /v2/sources/{id}/pause",
 			"POST /v2/sources/{id}/resume",
@@ -333,6 +353,7 @@ describe("MapleApiV2 OpenAPI", () => {
 	it("gives every operation complete metadata, security, and common error envelopes", () => {
 		const operations = Arr.flatMap(Rec.toEntries(spec.paths ?? {}), ([path, item]) =>
 			Arr.map(
+				// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 				Arr.filter(Object.entries(item ?? {}), ([method]) =>
 					["get", "post", "put", "patch", "delete"].includes(method),
 				),
@@ -485,6 +506,8 @@ describe("MapleApiV2 OpenAPI", () => {
 			["Organization", Schema.decodeUnknownSync(V2Organization), "organization"],
 			["SessionReplayListItem", Schema.decodeUnknownSync(V2SessionReplayListItem), "session_replay"],
 			["SessionReplay", Schema.decodeUnknownSync(V2SessionReplay), "session_replay"],
+			["User", Schema.decodeUnknownSync(V2User), "user"],
+			["UserProfile", Schema.decodeUnknownSync(V2UserProfile), "user"],
 		] as const
 		for (const [name, decode, objectType] of cases) {
 			const component = schemas[name]
@@ -506,6 +529,7 @@ describe("MapleApiV2 OpenAPI", () => {
 
 	it("gives every error response an exhaustive literal-tag union", () => {
 		for (const [path, item] of Rec.toEntries(spec.paths ?? {})) {
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 			for (const [method, candidate] of Object.entries(item ?? {})) {
 				if (!["get", "post", "put", "patch", "delete"].includes(method)) continue
 				const op = candidate as GeneratedOpenApiObject
@@ -661,7 +685,13 @@ describe("MapleApiV2 OpenAPI", () => {
 			expect(responseErrorTags("post", path, "503")).toContain(
 				"@maple/http/errors/ScrapeTargetPersistenceError",
 			)
+			expect(responseErrorTags("post", path, "409")).toContain(
+				"@maple/http/errors/ScrapeTargetLimitReachedError",
+			)
 		}
+		expect(responseErrorTags("post", "/v2/scrape_targets", "409")).toContain(
+			"@maple/http/errors/ScrapeTargetLimitReachedError",
+		)
 		expect(responseErrorTags("delete", "/v2/integrations/planetscale", "503")).toContain(
 			"@maple/http/errors/ScrapeTargetPersistenceError",
 		)
@@ -688,6 +718,8 @@ describe("MapleApiV2 OpenAPI", () => {
 			["get", "/v2/error_issues"],
 			["get", "/v2/error_issues/{id}"],
 			["get", "/v2/anomalies/incidents/{id}/timeseries"],
+			["get", "/v2/users"],
+			["get", "/v2/users/{user_id}/activity"],
 		] as const) {
 			expect(responseErrorTags(method, path, "429")).toContain(
 				"@maple/http/errors/WarehouseQuotaExceededError",
@@ -695,10 +727,13 @@ describe("MapleApiV2 OpenAPI", () => {
 			expect(responseErrorTags(method, path, "503")).toContain(
 				"@maple/http/errors/WarehouseUpstreamError",
 			)
-			const declaredTags = Arr.filter(
-				["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"],
-				(status) => operation(method, path).responses[status] !== undefined,
-			).flatMap((status) => responseErrorTags(method, path, status))
+			const declaredTags = Arr.flatMap(
+				Arr.filter(
+					["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"],
+					(status) => operation(method, path).responses[status] !== undefined,
+				),
+				(status: string) => responseErrorTags(method, path, status),
+			)
 			expect(declaredTags, path).not.toContain(
 				"@maple/http/errors/OrgClickHouseSettingsPersistenceError",
 			)
@@ -792,10 +827,10 @@ describe("MapleApiV2 OpenAPI", () => {
 			["get", "/v2/dashboards/templates"],
 			["post", "/v2/dashboards/templates/{template_id}/preview"],
 		] as const) {
-			const tags = Arr.filter(
-				Rec.keys(operation(method, path).responses),
-				(status) => Number(status) >= 400,
-			).flatMap((status) => responseErrorTags(method, path, status))
+			const tags = Arr.flatMap(
+				Arr.filter(Rec.keys(operation(method, path).responses), (status) => Number(status) >= 400),
+				(status: string) => responseErrorTags(method, path, status),
+			)
 			expect(tags, path).not.toContain("@maple/http/errors/DashboardStoredConfigInvalidError")
 		}
 	})
@@ -805,10 +840,10 @@ describe("MapleApiV2 OpenAPI", () => {
 			["post", "/v2/investigations"],
 			["post", "/v2/investigations/{id}/restart"],
 		] as const) {
-			const tags = Arr.filter(
-				Rec.keys(operation(method, path).responses),
-				(status) => Number(status) >= 400,
-			).flatMap((status) => responseErrorTags(method, path, status))
+			const tags = Arr.flatMap(
+				Arr.filter(Rec.keys(operation(method, path).responses), (status) => Number(status) >= 400),
+				(status: string) => responseErrorTags(method, path, status),
+			)
 			for (const impossibleTag of [
 				"@maple/http/investigations/InvestigationQuotaError",
 				"@maple/http/investigations/InvestigationAutomationDisabledError",
@@ -870,25 +905,31 @@ describe("MapleApiV2 OpenAPI", () => {
 				"@maple/http/errors/AlertDestinationStoredConfigInvalidError",
 			],
 		] as const) {
-			const tags = Arr.filter(
-				Rec.keys(operation(method, path).responses),
-				(status) => Number(status) >= 400,
-			).flatMap((status) => responseErrorTags(method, path, status))
+			const tags = Arr.flatMap(
+				Arr.filter(Rec.keys(operation(method, path).responses), (status) => Number(status) >= 400),
+				(status: string) => responseErrorTags(method, path, status),
+			)
 			expect(tags, path).not.toContain(tag)
 		}
 
-		const previewTags = Arr.filter(
-			["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"],
-			(status) => operation("post", "/v2/alerts/rules/preview").responses[status] !== undefined,
-		).flatMap((status) => responseErrorTags("post", "/v2/alerts/rules/preview", status))
+		const previewTags = Arr.flatMap(
+			Arr.filter(
+				["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"],
+				(status) => operation("post", "/v2/alerts/rules/preview").responses[status] !== undefined,
+			),
+			(status: string) => responseErrorTags("post", "/v2/alerts/rules/preview", status),
+		)
 		expect(previewTags).not.toContain("@maple/http/errors/AlertPersistenceError")
 		expect(previewTags).not.toContain("@maple/http/errors/AlertDestinationDecryptionError")
 		expect(previewTags).not.toContain("@maple/http/errors/AlertDestinationStoredConfigInvalidError")
-		const destinationTestTags = Arr.filter(
-			["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"],
-			(status) =>
-				operation("post", "/v2/alerts/destinations/{id}/test").responses[status] !== undefined,
-		).flatMap((status) => responseErrorTags("post", "/v2/alerts/destinations/{id}/test", status))
+		const destinationTestTags = Arr.flatMap(
+			Arr.filter(
+				["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"],
+				(status) =>
+					operation("post", "/v2/alerts/destinations/{id}/test").responses[status] !== undefined,
+			),
+			(status: string) => responseErrorTags("post", "/v2/alerts/destinations/{id}/test", status),
+		)
 		expect(destinationTestTags).not.toContain("@maple/http/errors/AlertValidationError")
 	})
 
@@ -948,7 +989,7 @@ describe("MapleApiV2 OpenAPI", () => {
 	 */
 	describe("nullable-union rendering", () => {
 		const queryParameters = (): ReadonlyArray<GeneratedOpenApiObject> =>
-			Arr.flatMap(Rec.values(spec.paths as GeneratedOpenApiObject), (item) =>
+			Arr.flatMap(Rec.values(paths), (item) =>
 				Arr.flatMap(
 					Arr.filter(
 						Rec.toEntries(item as GeneratedOpenApiObject),
@@ -964,7 +1005,9 @@ describe("MapleApiV2 OpenAPI", () => {
 		const hasNullBranch = (schema: GeneratedOpenApiObject): boolean => {
 			const resolved = resolveSchema(schema)
 			const members = resolved.anyOf as ReadonlyArray<GeneratedOpenApiObject> | undefined
-			return members?.some((member) => resolveSchema(member).type === "null") === true
+			return (
+				members !== undefined && Arr.some(members, (member) => resolveSchema(member).type === "null")
+			)
 		}
 
 		it("publishes no query parameter that accepts null", () => {
@@ -1013,7 +1056,9 @@ describe("MapleApiV2 OpenAPI", () => {
 		})
 
 		it("keeps the parameter's own documentation when it drops the null branch", () => {
-			const cursor = queryParameters().find((parameter) => parameter.name === "cursor")
+			const cursor = Option.getOrUndefined(
+				Arr.findFirst(queryParameters(), (parameter) => parameter.name === "cursor"),
+			)
 			expect(cursor?.schema).toMatchObject({
 				type: "string",
 				title: "Cursor",
@@ -1049,7 +1094,7 @@ describe("MapleApiV2 OpenAPI", () => {
 				const object = node as GeneratedOpenApiObject
 				const ref = object.$ref as string | undefined
 				if (ref !== undefined) {
-					const name = Str.slice(ref.lastIndexOf("/") + 1)(ref)
+					const name = Str.slice(afterLastSlash(ref))(ref)
 					if (!referenced.has(name)) {
 						referenced.add(name)
 						walk(schemas[name])

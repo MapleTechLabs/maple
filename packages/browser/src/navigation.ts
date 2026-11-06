@@ -202,13 +202,15 @@ function serverContext(): Context | undefined {
 const TRACEPARENT = /^([\da-f]{2})-([\da-f]{32})-([\da-f]{16})-([\da-f]{2})(-.*)?$/
 
 export function parseTraceparent(value: string | undefined): SpanContext | undefined {
-	const match = value?.trim().match(TRACEPARENT)
+	const [, version, traceId, spanId, flags, extra] = value?.trim().match(TRACEPARENT) ?? []
+	if (version === undefined || traceId === undefined || spanId === undefined || flags === undefined)
+		return undefined
 	// Version ff is invalid; version 00 has exactly four fields
-	if (!match || match[1] === "ff" || (match[1] === "00" && match[5] !== undefined)) return undefined
+	if (version === "ff" || (version === "00" && extra !== undefined)) return undefined
 	const spanContext = {
-		traceId: match[2],
-		spanId: match[3],
-		traceFlags: Number.parseInt(match[4], 16),
+		traceId,
+		spanId,
+		traceFlags: Number.parseInt(flags, 16),
 		isRemote: true,
 	}
 	// All-zero ids are well-formed but invalid; rejecting them lets the meta tag stand in

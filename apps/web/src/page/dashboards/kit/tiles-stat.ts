@@ -11,7 +11,7 @@ import { widgetFrame } from "./tile-shell"
 import type { TileContext, TileWidget } from "./tiles"
 import { frame } from "./tiles-frame"
 import { vstackClass } from "@maple/views/ui/stack"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Record as Rec, Option, Order } from "effect"
 
 // The stat widget, with its trend sparkline when
 // `display.sparkline` names a series (`StatSparkline`).
@@ -35,7 +35,16 @@ export const thresholdColor = (
 	if (value === null || value === undefined || typeof value === "object") return undefined
 	const num = typeof value === "number" ? value : Number(value)
 	if (Number.isNaN(num)) return undefined
-	return thresholds.toSorted((a, b) => b.value - a.value).find((threshold) => num >= threshold.value)?.color
+	const descending = Arr.sort(
+		thresholds,
+		Order.flip(Order.mapInput(Order.Number, (threshold: (typeof thresholds)[number]) => threshold.value)),
+	)
+	return Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(descending, (threshold) => num >= threshold.value),
+			(threshold) => threshold.color,
+		),
+	)
 }
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>

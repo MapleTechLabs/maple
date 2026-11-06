@@ -78,6 +78,9 @@ export interface VcsProviderClient {
 	/** How people address the review bot on this provider, e.g. `@maple-review-bot`. */
 	readonly reviewerMention: string
 
+	/** The header carrying the webhook signature; a delivery without it is refused unread. */
+	readonly webhookSignatureHeader: string
+
 	/** Verify the webhook signature, parse the event, and map it to generic jobs. */
 	readonly webhookToJobs: (
 		input: VcsWebhookRequest,
@@ -511,11 +514,12 @@ export interface VcsProviderClient {
 		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
 	>
 
-	/** A file's content as UTF-8 by its blob sha, without the size cap of `fetchSourceFile`. */
+	/** A file's content as UTF-8 by its blob sha, refused past `maxBytes` instead of read whole. */
 	readonly fetchBlobText: (
 		installation: VcsInstallation,
 		repo: VcsRepositoryRef,
 		blobSha: string,
+		maxBytes: number,
 	) => Effect.Effect<
 		string,
 		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError

@@ -335,7 +335,12 @@ export const detailsSection = (
 	const isFailed = spanFailed(span)
 	const failedToolResult =
 		isFailed && classifyAiSpan(span) === "tool"
-			? toolCalls.find((call) => call.own)?.resultText
+			? Option.getOrUndefined(
+					Option.flatMapNullishOr(
+						Arr.findFirst(toolCalls, (call) => call.own),
+						(call) => call.resultText,
+					),
+				)
 			: undefined
 	return h.div(
 		[h.Class("flex flex-col gap-3 pb-1")],

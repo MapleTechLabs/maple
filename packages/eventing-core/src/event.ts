@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr, Record as Rec } from "effect"
 import {
 	MapleCloudEventSchema,
 	type JsonValue,
@@ -50,22 +50,26 @@ export const isJsonValue = (value: unknown, seen: Set<object> = new Set()): valu
 	if (typeof value !== "object") return false
 	if (seen.has(value)) return false
 	seen.add(value)
-	const prototype = Object.getPrototypeOf(value)
-	const valid = Array.isArray(value)
-		? value.every((item) => isJsonValue(item, seen))
+	const prototype: unknown = Object.getPrototypeOf(value)
+	const valid = Arr.isArray(value)
+		? Arr.every(value, (item) => isJsonValue(item, seen))
 		: (prototype === Object.prototype || prototype === null) &&
-			Object.values(value).every((item) => isJsonValue(item, seen))
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.values would need a cast
+			Arr.every(Object.values(value), (item) => isJsonValue(item, seen))
 	seen.delete(value)
 	return valid
 }
 
 const canonicalizeJson = (value: JsonValue): JsonValue => {
 	if (value === null || typeof value !== "object") return value
-	if (Array.isArray(value)) return value.map(canonicalizeJson)
-	return Object.fromEntries(
-		Object.entries(value)
-			.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-			.map(([key, child]) => [key, canonicalizeJson(child)]),
+	// @effect-diagnostics-next-line preferEffectArray:off -- Arr.isArray narrows to a mutable Array and loses the ReadonlyArray branch
+	if (Array.isArray(value)) return Arr.map(value, canonicalizeJson)
+	return Rec.fromEntries(
+		Arr.map(
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
+			Object.entries(value).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
+			([key, child]) => [key, canonicalizeJson(child)],
+		),
 	)
 }
 
@@ -103,7 +107,7 @@ export const validateMapleCloudEvent = (
 		const event = yield* Schema.decodeUnknownResult(MapleCloudEventSchema)(candidate)
 		const eventJson = yield* Schema.encodeResult(UnknownJson)(canonicalizeJson(event))
 		const byteLength = Buffer.byteLength(eventJson, "utf8")
-		yield* Schema.decodeUnknownResult(
+		yield* Schema.decodeResult(
 			Schema.Number.check(
 				Schema.isLessThanOrEqualTo(MAX_CLOUD_EVENT_BYTES, {
 					message: `CloudEvent exceeds ${MAX_CLOUD_EVENT_BYTES} UTF-8 bytes`,
@@ -141,7 +145,7 @@ export const makeCloudEvent = (input: {
 		)
 		const subject = input.subject === undefined ? input.signal.subject : input.subject
 		const time = input.time ?? input.signal.occurredAt
-		yield* Schema.decodeUnknownResult(
+		yield* Schema.decodeResult(
 			Schema.String.check(
 				Schema.makeFilter((value) => timestampToEpochNanos(value) !== null, {
 					expected: "a valid event instant",

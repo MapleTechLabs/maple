@@ -1,7 +1,7 @@
 // Live step list for long-running commands on stderr. On a TTY the running step
 // is a spinner line (with an optional byte progress bar) redrawn in place and
 // replaced by ✓/✗ when it settles; elsewhere only the settled lines print.
-import { Cause, Clock, Effect, Exit, Fiber, Option, Ref, Schedule, String as Str } from "effect"
+import { Cause, Clock, Effect, Exit, Fiber, Option, Ref, Schedule, Array as Arr, String as Str } from "effect"
 import { amber, bold, dim, green, red } from "./style"
 
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const
@@ -68,8 +68,8 @@ export const fitLine = (
 	columns: number,
 ): string => {
 	const base = `${head}${label}`
-	const fit = suffixes.find((suffix) => Bun.stringWidth(base + suffix) < columns)
-	if (fit !== undefined) return base + fit
+	const fit = Arr.findFirst(suffixes, (suffix) => Bun.stringWidth(base + suffix) < columns)
+	if (Option.isSome(fit)) return base + fit.value
 	const room = Math.max(1, columns - 1 - Bun.stringWidth(head))
 	return label.length > room ? `${head}${Str.slice(0, Math.max(0, room - 1))(label)}…` : base
 }

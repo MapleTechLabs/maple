@@ -31,6 +31,7 @@ import {
 	Effect,
 	Layer,
 	Predicate,
+	Option,
 	Schema,
 	String as Str,
 } from "effect"
@@ -144,7 +145,7 @@ export interface PlanetScaleListEventsOptions {
 }
 
 export interface PlanetScaleServiceApi {
-	readonly pollAllOrgs: () => Effect.Effect<PlanetScalePollSummary, IntegrationsPersistenceError>
+	readonly pollAllOrgs: Effect.Effect<PlanetScalePollSummary, IntegrationsPersistenceError>
 	/** The org's (non-deleted) database inventory, for the API surface. */
 	readonly listDatabases: (
 		orgId: OrgId,
@@ -320,7 +321,7 @@ const parseEventCursor = (
 	cursor: string | undefined,
 ): { readonly occurredAtMs: number; readonly id: string } | null => {
 	if (cursor === undefined || cursor === "") return null
-	const separator = cursor.indexOf(":")
+	const separator = Option.getOrElse(Str.indexOf(":")(cursor), () => -1)
 	if (separator <= 0) return null
 	const occurredAtMs = Number(Str.slice(0, separator)(cursor))
 	const id = Str.slice(separator + 1)(cursor)
@@ -922,7 +923,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				),
 			)
 
-			const pollAllOrgs = Effect.fn("PlanetScaleService.pollAllOrgs")(function* () {
+			const pollAllOrgs = Effect.gen(function* () {
 				const connections = yield* dbExecute((db) =>
 					db.run(PG.from(PlanetscaleConnections).select()),
 				).pipe(
@@ -963,7 +964,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					failures: countOutcome("failed"),
 					deployEvents: results.reduce((sum, result) => sum + result.deployEvents, 0),
 				}
-			})
+			}).pipe(Effect.withSpan("PlanetScaleService.pollAllOrgs"))
 
 			const queryInsights = Effect.fn("PlanetScaleService.queryInsights")(function* (
 				orgId: OrgId,

@@ -30,7 +30,7 @@ export const deviceRateLimitKey = (credentialId: string): string => `v2dev:${cre
 /** The token endpoint is unauthenticated, so it is also limited per client IP before any work. */
 export const deviceTokenIpRateLimitKey = (ip: string): string => `v2devip:${ip}`
 
-/** Share links are limited per token, and separately per client IP. */
+/** Share links are limited per token (`ShareLinkRateLimit`), and separately per client IP. */
 export const shareTokenRateLimitKey = (tokenHashPrefix: string): string => `share:${tokenHashPrefix}`
 export const shareIpRateLimitKey = (ip: string): string => `shareip:${ip}`
 

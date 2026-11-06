@@ -28,7 +28,7 @@ import { STATUS_NAMES } from "./update-status"
 import { entryPlate } from "./view-entry"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 
 // `IntegrationsSummary` and `IntegrationCatalog`.
 
@@ -89,22 +89,20 @@ const connectedRow = (
 						),
 					),
 				],
-				[
-					// A failed read says so once above the list; the row keeps a muted "Unknown".
-					...(connected === null && overview.kind === "unavailable" && overview.reason === "failed"
-						? [
-								statusDot(h, { tone: "neutral" }),
-								typography(h, { size: "xs", tone: "muted" }, ["Unknown"]),
-							]
-						: [
-								statusDot(h, {
-									tone: connected !== null ? HEALTH_TONE[connected.health] : "neutral",
-								}),
-								typography(h, { size: "xs", truncate: true }, [
-									connected?.stateLabel ?? "Not configured",
-								]),
+				// A failed read says so once above the list; the row keeps a muted "Unknown".
+				connected === null && overview.kind === "unavailable" && overview.reason === "failed"
+					? [
+							statusDot(h, { tone: "neutral" }),
+							typography(h, { size: "xs", tone: "muted" }, ["Unknown"]),
+						]
+					: [
+							statusDot(h, {
+								tone: connected !== null ? HEALTH_TONE[connected.health] : "neutral",
+							}),
+							typography(h, { size: "xs", truncate: true }, [
+								connected?.stateLabel ?? "Not configured",
 							]),
-				],
+						],
 			),
 			...(connected?.stat
 				? [
@@ -192,10 +190,10 @@ const skeletonRow = (h: H): Html =>
 
 /** The first failed status read, for the one error line above the connected list. */
 const firstStatusFailure = (model: Model): LoadFailure | null =>
-	STATUS_NAMES.reduce<LoadFailure | null>((found, name) => {
+	Arr.reduce<(typeof STATUS_NAMES)[number], LoadFailure | null>(STATUS_NAMES, null, (found, name) => {
 		const { data } = model.statuses[name]
 		return found ?? (data._tag === "Failure" || data._tag === "Stale" ? data.error : null)
-	}, null)
+	})
 
 /** The hub's title and its one-line description, tight under the `<h1>` like every page header. */
 export const hubTitle = (h: H): Html =>
@@ -245,8 +243,13 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 	const shelves = Arr.filter(
 		Arr.map(INTEGRATION_CATEGORIES, (category) => ({
 			...category,
-			entries: Arr.filter(available, ({ entry }) => entry.category === category.id).toSorted(
-				(a, b) => Number(b.entry.isNew ?? false) - Number(a.entry.isNew ?? false),
+			entries: Arr.sort(
+				Arr.filter(available, ({ entry }) => entry.category === category.id),
+				Order.flip(
+					Order.mapInput(Order.Number, (item: (typeof available)[number]) =>
+						Number(item.entry.isNew ?? false),
+					),
+				),
 			),
 		})),
 		(shelf) => shelf.entries.length > 0,

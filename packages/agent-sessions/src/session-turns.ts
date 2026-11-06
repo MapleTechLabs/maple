@@ -20,7 +20,7 @@ import {
 } from "@maple/domain/gen-ai"
 import type { AiSessionSpan } from "@maple/domain/http"
 import { parseWarehouseDateTime } from "@maple/query-engine"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /**
  * How a span reads on the page. Deliberately coarse — these four are the
@@ -224,8 +224,11 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 	// names no turn of its own.
 	let cursor = 0
 	for (const { span, startMs } of ordered) {
-		while (cursor + 1 < anchors.length && anchorStarts[cursor + 1] <= startMs) cursor++
-		buckets[turnOf(span) ?? cursor].push(span)
+		for (let following = anchorStarts[cursor + 1]; following !== undefined && following <= startMs;) {
+			cursor++
+			following = anchorStarts[cursor + 1]
+		}
+		buckets[turnOf(span) ?? cursor]?.push(span)
 	}
 
 	// On rules 2 and 3 the boundary is a guess, and an anchor that opened no
@@ -248,7 +251,7 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 		for (let i = 0; i < buckets.length - 1; i++) {
 			const bucket = buckets[i]
 			const next = buckets[i + 1]
-			if (opened(bucket)) continue
+			if (bucket === undefined || next === undefined || opened(bucket)) continue
 			const endMs = Arr.reduce(bucket, Number.NEGATIVE_INFINITY, (max, span) =>
 				Math.max(max, spanEndMs(span)),
 			)
@@ -265,7 +268,7 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 	// leave the earlier bucket empty.
 	return Arr.map(
 		Arr.filter(
-			Arr.map(anchors, (anchor, index) => ({ anchor, turnSpans: buckets[index] })),
+			Arr.map(anchors, (anchor, index) => ({ anchor, turnSpans: buckets[index] ?? [] })),
 			(entry) => entry.turnSpans.length > 0,
 		),
 		({ anchor, turnSpans }, index) => {
@@ -282,7 +285,11 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 				anchor: anchor.span,
 				label: turnLabel(anchor.span, turnSpans),
 				agentName:
-					anchor.span.genAi.agentName ?? turnSpans.find((s) => s.genAi.agentName)?.genAi.agentName,
+					anchor.span.genAi.agentName ??
+					Arr.findFirst(turnSpans, (s) => Boolean(s.genAi.agentName)).pipe(
+						Option.map((s) => s.genAi.agentName),
+						Option.getOrUndefined,
+					),
 				startMs,
 				endMs,
 				durationMs: endMs - startMs,
@@ -421,14 +428,15 @@ function agentRootTurnResolver(
 			runs,
 			(run) => run.traceId === span.traceId && run.startMs <= startMs && startMs <= run.endMs,
 		)
-		return open.reduce<(typeof runs)[number] | undefined>(
+		return Arr.reduce<(typeof runs)[number], (typeof runs)[number] | undefined>(
+			open,
+			undefined,
 			(outer, run) =>
 				outer === undefined ||
 				run.startMs < outer.startMs ||
 				(run.startMs === outer.startMs && run.endMs > outer.endMs)
 					? run
 					: outer,
-			undefined,
 		)?.turn
 	}
 	return (span) => byParentage(span) ?? enclosingRun(span)
@@ -558,7 +566,12 @@ function turnLabel(anchor: AiSessionSpan, turnSpans: readonly AiSessionSpan[]): 
 
 /** Every user message with readable text in a captured history, oldest first. */
 function userMessageTexts(value: unknown): readonly string[] {
-	return Arr.isArray(value) ? value.flatMap((entry) => lastUserMessageText([entry]) ?? []) : []
+	return Arr.isArray(value)
+		? Arr.flatMap(value, (entry) => {
+				const text = lastUserMessageText([entry])
+				return text === undefined ? [] : [text]
+			})
+		: []
 }
 
 /** Longest turn label the page will render before eliding — a captured prompt

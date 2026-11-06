@@ -11,12 +11,14 @@ import {
 	statusCodeSummaries,
 } from "./derive-api"
 import type { ApiBucket, ApiTotals, Endpoint, StatusRow } from "./model-tabs"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 const endpoint = (spanName: string, patch: Partial<Endpoint> = {}): Endpoint => ({
 	spanName,
 	method: "POST",
-	route: Str.slice(spanName.indexOf(" ") + 1)(spanName),
+	route: Str.slice(
+		Option.match(Str.indexOf(" ")(spanName), { onNone: () => 0, onSome: (space) => space + 1 }),
+	)(spanName),
 	spanCount: 100,
 	estimatedSpanCount: 100,
 	errorCount: 0,

@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Array as Arr, Effect, Record as Rec } from "effect"
 import type { BackendError, WarehouseApiError } from "./effect-utils"
 import type { WarehouseServices } from "./warehouse-services"
 
@@ -75,8 +75,8 @@ export const widgetServerFunctions = {
 
 export type WidgetDataSourceEndpoint = keyof typeof widgetServerFunctions
 
-const isWidgetDataSourceEndpoint = (endpoint: string): endpoint is WidgetDataSourceEndpoint =>
-	Object.prototype.hasOwnProperty.call(widgetServerFunctions, endpoint)
+export const isWidgetDataSourceEndpoint = (endpoint: string): endpoint is WidgetDataSourceEndpoint =>
+	Arr.some(Rec.keys(widgetServerFunctions), (key) => key === endpoint)
 
 /**
  * The server function for a stored endpoint name, or `undefined` for an unknown one. Accepts any

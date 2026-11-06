@@ -34,8 +34,11 @@ interface OtlpBody {
 // A nanosecond timestamp that is not a numeric string throws out of `BigInt`
 // rather than producing NaN, and an event with no readable timestamp cannot be
 // shown to postdate consent — so it is dropped.
-const after = (value: unknown, threshold: bigint): boolean =>
-	trySyncOrUndefined(() => BigInt(String(value ?? 0)) >= threshold) ?? false
+const after = (value: unknown, threshold: bigint): boolean => {
+	const raw = value ?? 0
+	if (typeof raw !== "string" && typeof raw !== "number" && typeof raw !== "bigint") return false
+	return trySyncOrUndefined(() => BigInt(raw) >= threshold) ?? false
+}
 
 const pruneTraces = (body: OtlpBody, threshold: bigint): OtlpBody | undefined => {
 	const resourceSpans = Arr.filter(
@@ -95,7 +98,6 @@ export const filterOtlpRequestForConsent = (
 	// rather than forwarding it unfiltered.
 	return trySyncOrUndefined(() => {
 		// SAFETY: The SDK's OTLP encoder created this body; malformed shapes throw here and fail closed.
-		// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 		const decoded = JSON.parse(new TextDecoder().decode(body.body)) as OtlpBody
 		const threshold = BigInt(Math.trunc(since)) * 1_000_000n
 		const filtered = Str.endsWith("/v1/traces")(request.url)

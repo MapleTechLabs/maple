@@ -24,7 +24,7 @@ import {
 	type SupabaseProjectInsightsRow,
 	type SupabaseProjectRow,
 } from "@maple/db/tables"
-import { Cause, Clock, Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { Cause, Clock, Context, Effect, Layer, Order, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -61,11 +61,13 @@ const LEVEL_ORDER = { ERROR: 0, WARN: 1, INFO: 2 } as const
 
 /** Advisors grouped by level, each group ordered by title then object. */
 export const groupAdvisors = (lints: ReadonlyArray<SupabaseAdvisorLint>) => {
-	const sorted = lints.toSorted(
-		(a, b) =>
-			LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level] ||
-			Str.localeCompare(b.title)(a.title) ||
-			Str.localeCompare(b.object ?? "")(a.object ?? ""),
+	const sorted = Arr.sort(
+		lints,
+		Order.combineAll([
+			Order.mapInput(Order.Number, (lint: SupabaseAdvisorLint) => LEVEL_ORDER[lint.level]),
+			Order.make((a: SupabaseAdvisorLint, b) => Str.localeCompare(b.title)(a.title)),
+			Order.make((a: SupabaseAdvisorLint, b) => Str.localeCompare(b.object ?? "")(a.object ?? "")),
+		]),
 	)
 	return new SupabaseAdvisorsByLevel({
 		error: Arr.filter(sorted, (lint) => lint.level === "ERROR"),
@@ -109,7 +111,7 @@ export interface SupabaseInsightsServiceApi {
 	readonly pollOrg: (
 		orgId: OrgId,
 	) => Effect.Effect<SupabaseInsightsPollOrgSummary, IntegrationsPersistenceError>
-	readonly pollAllOrgs: () => Effect.Effect<SupabaseInsightsPollAllSummary, IntegrationsPersistenceError>
+	readonly pollAllOrgs: Effect.Effect<SupabaseInsightsPollAllSummary, IntegrationsPersistenceError>
 }
 
 export class SupabaseInsightsService extends Context.Service<
@@ -404,7 +406,7 @@ export class SupabaseInsightsService extends Context.Service<
 		const pollOrg = (orgId: OrgId) =>
 			Clock.currentTimeMillis.pipe(Effect.flatMap((started) => pollOrgAt(orgId, started)))
 
-		const pollAllOrgs = Effect.fn("SupabaseInsightsService.pollAllOrgs")(function* () {
+		const pollAllOrgs = Effect.gen(function* () {
 			const started = yield* Clock.currentTimeMillis
 			const orgs = yield* dbExecute((db) => db.run(PG.from(SupabaseConnections).select("orgId")))
 			const summaries = yield* Effect.forEach(
@@ -445,7 +447,7 @@ export class SupabaseInsightsService extends Context.Service<
 				"maple.supabase.insights.failures": summary.failures,
 			})
 			return summary
-		})
+		}).pipe(Effect.withSpan("SupabaseInsightsService.pollAllOrgs"))
 
 		return { getInsights, pollOrg, pollAllOrgs } satisfies SupabaseInsightsServiceApi
 	}),

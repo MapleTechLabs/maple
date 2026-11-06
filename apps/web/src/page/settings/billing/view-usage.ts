@@ -21,7 +21,7 @@ import { segmentedBar } from "@maple/views/ui/meter"
 import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
-import { CAP_INPUT_ID, Message, type Model, SpendFeatureId } from "./model"
+import { canManage, CAP_INPUT_ID, Message, type Model, SpendFeatureId } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
@@ -158,7 +158,9 @@ const capSummary = (h: H, feature: FeatureSpend, cap: number | undefined): Html 
 /** Bytes ingest rules dropped for a signal this cycle; never metered, so never billed. */
 const droppedLine = (h: H, model: Model, featureId: string): ReadonlyArray<Html> => {
 	const stats = AsyncData.getOrElse(model.ruleStats, () => null)
-	const signal = stats?.signals.find((entry) => entry.signal === featureId)
+	const signal = Option.getOrUndefined(
+		Arr.findFirst(stats?.signals ?? [], (entry) => entry.signal === featureId),
+	)
 	return signal === undefined || signal.dropped_bytes <= 0
 		? []
 		: [
@@ -181,7 +183,7 @@ const featureRow = (
 	const hasOverage = feature.overageUnits > 0 && !isHardCapped
 	const meter = usageMeter(feature)
 	const isEditing = model.editingCap === feature.featureId
-	const featureId = Option.getOrNull(Schema.decodeUnknownOption(SpendFeatureId)(feature.featureId))
+	const featureId = Option.getOrNull(Schema.decodeOption(SpendFeatureId)(feature.featureId))
 	const color = FEATURE_COLORS[feature.featureId]
 	return tableRow(
 		h,
@@ -247,7 +249,7 @@ const featureRow = (
 					? capEditor(h, model, feature)
 					: hstack(h, { gap: "2", justify: "between" }, [
 							capSummary(h, feature, cap),
-							...(model.isAdmin && capApplies(feature) && featureId !== null
+							...(canManage(model) && capApplies(feature) && featureId !== null
 								? [
 										button(
 											h,

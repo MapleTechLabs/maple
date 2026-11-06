@@ -25,7 +25,7 @@ export class VcsProviderRegistry extends Context.Service<VcsProviderRegistry, Vc
 
 			const resolve = (provider: string) => {
 				const impl = byId[provider]
-				return impl
+				return impl !== undefined
 					? Effect.succeed(impl)
 					: Effect.fail(
 							new UnknownVcsProviderError({

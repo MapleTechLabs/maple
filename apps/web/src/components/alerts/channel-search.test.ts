@@ -22,7 +22,7 @@ describe("scoreChannelName", () => {
 			scoreChannelName("a-long-eventful-run-tests", "alerts"),
 		] as Array<number>
 		expect(Arr.every(scores, (s) => s !== null)).toBe(true)
-		for (let i = 1; i < scores.length; i++) expect(scores[i]!).toBeLessThan(scores[i - 1]!)
+		for (let i = 1; i < scores.length; i++) expect(scores[i]).toBeLessThan(Arr.getUnsafe(scores, i - 1))
 	})
 
 	it("ignores a typed # and is case-insensitive", () => {

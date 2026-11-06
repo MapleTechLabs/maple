@@ -7,6 +7,7 @@ import {
 	AlertRuleClaims,
 	AlertRuleStates,
 	AlertIncidents,
+	AlertIncidentEvents,
 	AlertDeliveryEvents,
 	AlertLinearIssues,
 } from "./alerts"
@@ -29,6 +30,7 @@ import {
 	Actors,
 	ErrorIssues,
 	ErrorFingerprintCandidates,
+	ErrorIssueFingerprints,
 	ErrorIssueEvents,
 	ErrorIssueStates,
 	ErrorIncidents,
@@ -88,6 +90,7 @@ import {
 	StatusPages,
 } from "./status-pages"
 import { UptimeMonitorDaily, UptimeMonitorStates, UptimeMonitors } from "./uptime"
+import { Slos } from "./slos"
 import {
 	VcsInstallations,
 	VcsRepositories,
@@ -150,10 +153,11 @@ export * from "./status-pages"
 export * from "./supabase"
 export * from "./support-channels"
 export * from "./uptime"
+export * from "./slos"
 export * from "./vcs"
 
 /** Every table the application database has, for schema checks and DDL. */
-export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>> = [
+export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	AgentFeedback,
 	AiTriageSettings,
 	AlertDestinations,
@@ -161,6 +165,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	AlertRuleClaims,
 	AlertRuleStates,
 	AlertIncidents,
+	AlertIncidentEvents,
 	AlertDeliveryEvents,
 	AlertLinearIssues,
 	AnomalyDetectorSettings,
@@ -184,6 +189,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	Actors,
 	ErrorIssues,
 	ErrorFingerprintCandidates,
+	ErrorIssueFingerprints,
 	ErrorIssueEvents,
 	ErrorIssueStates,
 	ErrorIncidents,
@@ -245,6 +251,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	UptimeMonitors,
 	UptimeMonitorStates,
 	UptimeMonitorDaily,
+	Slos,
 	StatusPages,
 	StatusPageComponents,
 	StatusPageIncidents,

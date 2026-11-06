@@ -23,7 +23,7 @@ import {
 } from "../shared/uptime-derive"
 import { uptimeStatusChip } from "../shared/uptime-view"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { monitorOf } from "./update"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
@@ -73,7 +73,7 @@ const eyebrowLine = (monitor: UptimeMonitor): string =>
 
 const headerActions = (h: H, model: Model, monitor: UptimeMonitor): Html =>
 	detailActions(h, [
-		...(model.isAdmin
+		...(canManage(model)
 			? [
 					button(
 						h,
@@ -94,7 +94,7 @@ const headerActions = (h: H, model: Model, monitor: UptimeMonitor): Html =>
 					]),
 				]
 			: []),
-		...(monitor.config.type === "http" && model.isAdmin
+		...(monitor.config.type === "http" && canManage(model)
 			? [
 					button(
 						h,
@@ -113,9 +113,13 @@ const headerActions = (h: H, model: Model, monitor: UptimeMonitor): Html =>
 const openIncidentId = (model: Model, monitor: UptimeMonitor): string | null =>
 	monitor.alert_rule_id === null
 		? null
-		: ((model.incidents ?? []).find(
+		: Arr.findFirst(
+				model.incidents ?? [],
 				(row) => row.rule_id === monitor.alert_rule_id && row.status === "open",
-			)?.id ?? null)
+			).pipe(
+				Option.flatMapNullishOr((found) => found.id),
+				Option.getOrNull,
+			)
 
 /** "Returning 503 since 14:02:18", the check's error, and the way to the failing trace. */
 const incidentBlock = (h: H, model: Model, monitor: UptimeMonitor, timeZone: string): Html => {

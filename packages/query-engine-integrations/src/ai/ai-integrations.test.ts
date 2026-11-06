@@ -92,7 +92,7 @@ describe("the catalog is the contract", () => {
 		it(`maps the canonical key ${def.key} to ${field}`, () => {
 			const mapped = mapAiSpan(row({ [def.key]: SAMPLE_ATTRIBUTE_VALUE[def.type] }))
 
-			expect(mapped.genAi[field as AiGenAiField]).toEqual(SAMPLE_DECODED_VALUE[def.type])
+			expect(mapped.genAi[field]).toEqual(SAMPLE_DECODED_VALUE[def.type])
 		})
 	}
 

@@ -1,6 +1,6 @@
 import { normalizeEvents } from "../../../components/replays/replay-events"
 import { deriveRangeMeta, firstEventMs } from "../kit/replay-meta"
-import { Option, Array as Arr, Record as Rec } from "effect"
+import { Option, Array as Arr, Record as Rec, Order } from "effect"
 import { AsyncData } from "foldkit"
 import {
 	chunkAtOffset,
@@ -98,7 +98,7 @@ const loadedBytes = (model: Model): number =>
  */
 const nextPlanned = (model: Model): ReplayRange | undefined => {
 	const through = loadedThroughSeq(model.loader)
-	return planOf(model).find((range) => range.fromChunkSeq > through)
+	return Option.getOrUndefined(Arr.findFirst(planOf(model), (range) => range.fromChunkSeq > through))
 }
 
 /** The checkpoint a full window slides to: the latest one before the first chunk it lacks, if past its start. */
@@ -135,10 +135,14 @@ export const trailingRanges = (loader: Pick<Loader, "seedCount" | "loaded">): Re
 export const loadedUntilMs = (model: Model): number => {
 	const through = loadedThroughSeq(model.loader)
 	const chunks = chunksOf(model)
-	const last = chunks.findLast((chunk) => chunk.chunk_seq <= through)
-	return through < 0 || last === undefined
-		? 0
-		: chunkStartMs(last) + last.duration_ms - manifestStartMs(chunks)
+	if (through < 0) return 0
+	return Option.match(
+		Arr.findLast(chunks, (chunk) => chunk.chunk_seq <= through),
+		{
+			onNone: () => 0,
+			onSome: (last) => chunkStartMs(last) + last.duration_ms - manifestStartMs(chunks),
+		},
+	)
 }
 
 export const hasMoreChunks = (model: Model): boolean => {
@@ -183,10 +187,14 @@ export const advance = (model: Model, rows: Option.Option<RangeRows>): Model => 
 		return advance({ ...model, loader: { ...loader, queue: loader.queue.slice(1) } }, rows)
 	if (Option.isNone(rows)) return model
 	const through = loadedThroughSeq(loader)
-	const own = Arr.filter(
+	const inRange = Arr.filter(
 		rows.value,
 		(row) => row.chunk_seq >= active.fromChunkSeq && row.chunk_seq <= active.toChunkSeq,
-	).toSorted((a, b) => a.chunk_seq - b.chunk_seq)
+	)
+	const own = Arr.sort(
+		inRange,
+		Order.mapInput(Order.Number, (row: (typeof inRange)[number]) => row.chunk_seq),
+	)
 	const events = normalizeEvents(Arr.flatMap(own, (row) => row.events))
 	const originMs = loader.originMs ?? (events.length > 0 ? firstEventMs(events) : null)
 	const isKnown = Arr.some(loader.rangeMetas, (meta) => meta.fromChunkSeq === active.fromChunkSeq)
@@ -241,7 +249,7 @@ const continueDownload = (model: Model): Model => {
 		fitsWindow(model, playable)
 			? playable
 			: // The first range never fetched, wherever it is: a seek can jump the download past some.
-				planOf(model).find((range) => !isSkipped(range))
+				Option.getOrUndefined(Arr.findFirst(planOf(model), (range) => !isSkipped(range)))
 	return next === undefined ? model : { ...model, loader: { ...loader, queue: [next] } }
 }
 
@@ -264,8 +272,10 @@ const cutSeed = (model: Model): Model => {
 export const loadedFromMs = (model: Model): number => {
 	const from = model.loader.loaded[0]?.range.fromChunkSeq
 	const chunks = chunksOf(model)
-	const first = chunks.find((chunk) => chunk.chunk_seq === from)
-	return first === undefined ? 0 : chunkStartMs(first) - manifestStartMs(chunks)
+	return Option.match(
+		Arr.findFirst(chunks, (chunk) => chunk.chunk_seq === from),
+		{ onNone: () => 0, onSome: (first) => chunkStartMs(first) - manifestStartMs(chunks) },
+	)
 }
 
 /** Whether the recording is larger than the player may hold, so it plays in windows. */

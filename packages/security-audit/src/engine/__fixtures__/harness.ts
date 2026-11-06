@@ -143,7 +143,7 @@ export const hunterAnswer = (
 	ids: ReadonlyArray<string>,
 	candidate: Candidate = keysCandidate,
 ): HunterResult => {
-	const owned = Arr.filter(ids, (id) => Str.includes(`"coverage_id": "${id}"`)(invocation.prompt))
+	const owned = Arr.filter(ids, (id) => Str.includes(`"coverage_id":"${id}"`)(invocation.prompt))
 	const keys = idOf(KEYS)
 	return {
 		units: Arr.map(owned, (id) => ({
@@ -229,7 +229,7 @@ export const runScripted = (
 				const scripted = answer(invocation)
 				return typeof scripted === "string"
 					? Effect.succeed({ text: scripted })
-					: scripted instanceof AuditAgentError
+					: Schema.is(AuditAgentError)(scripted)
 						? Effect.fail(scripted)
 						: Effect.succeed(scripted)
 			}),

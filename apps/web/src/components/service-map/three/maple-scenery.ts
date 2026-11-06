@@ -5,6 +5,7 @@ import { hash, type Prototypes, type Sketch } from "./maple-scenery-sketch"
 import type { Growth, Plant } from "./maple-scenery-plan"
 import type { Vec3 } from "./types"
 import { Array as Arr } from "effect"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 /** Places parts relative to an origin turned by `yaw`; extra rotation stays about y then z. */
 export function placer(sketch: Sketch, [ox, oy, oz]: Vec3, yaw: number, scale = 1) {
@@ -213,7 +214,7 @@ export function drawCreek(
 		const a = edge(i),
 			b = edge(i + 1)
 		const head = creek.samples[i + 1]
-		if (head && submerged(head.x, head.z)) continue
+		if (head !== undefined && submerged(head.x, head.z)) continue
 		sketch.flat([...a.left, ...a.right, ...b.left, ...b.left, ...a.right, ...b.right], palette.water)
 		sketch.lines([...a.left, ...b.left, ...a.right, ...b.right])
 		const seed = hash(i * 0.37, 5.1)
@@ -253,7 +254,7 @@ export function drawFence(
 ) {
 	const [ax, az] = fence.from,
 		[bx, bz] = fence.to
-	const length = Math.hypot(bx - ax, bz - az) || 1
+	const length = nonZeroOr(Math.hypot(bx - ax, bz - az), 1)
 	const [px, pz] = [-(bz - az) / length, (bx - ax) / length]
 	const count = Math.max(2, Math.round(length / 0.6))
 	const posts = Array.from({ length: count + 1 }, (_, i): Vec3 => {
@@ -268,7 +269,7 @@ export function drawFence(
 			color: palette.trunk,
 		})
 		const next = posts[i + 1]
-		if (!next) return
+		if (next === undefined) return
 		const dx = next[0] - x,
 			dz = next[2] - z
 		for (const h of [0.18, 0.36])

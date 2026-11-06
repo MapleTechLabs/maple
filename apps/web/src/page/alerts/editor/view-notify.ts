@@ -19,9 +19,9 @@ import { pressable } from "@maple/views/ui/pressable"
 import { waitingFor } from "../shared/chat-connect"
 import { destinationTarget } from "./derive"
 import { Message, type Tier } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // `DestinationList` and `AddDestinationMenu`: a tier's destinations and the menu that adds one.
 
@@ -30,7 +30,7 @@ type H = HtmlBuilder<Message>
 /** What a tier's list and its Add destination menu read off the Model. */
 export type NotifyView = Pick<
 	Model,
-	"isAdmin" | "connectors" | "menus" | "chatConnect" | "chatConnectMenuId" | "brokenLogos"
+	"grants" | "connectors" | "menus" | "chatConnect" | "chatConnectMenuId" | "brokenLogos"
 >
 
 /** `ProviderLogo size={30} bare`: a destination's mark, the monogram once its image failed. */
@@ -135,7 +135,7 @@ const menuEntries = (
 						}),
 					},
 				]
-	if (!model.isAdmin) return existing
+	if (!canManage(model)) return existing
 	const chat = Arr.flatMap(connectors, (connector): ReadonlyArray<MenuView.MenuItemEntry> => {
 		const mark = logo(h, model, "chat", connector.id, "flex shrink-0")
 		if (connector.workspaces.length > 0)
@@ -201,7 +201,7 @@ const addMenu = (
 	)
 	const menuId = menuIdOf(tier)
 	const waitingId = model.chatConnectMenuId === menuId ? waitingFor(model.chatConnect) : null
-	const waiting = connectors.find((c) => c.id === waitingId)
+	const waiting = Arr.findFirst(connectors, (c) => c.id === waitingId)
 	const menu = model.menus[menuId] ?? Menu.init(menuId)
 	return h.submodel({
 		slotId: menuId,
@@ -227,9 +227,11 @@ const addMenu = (
 							},
 							[
 								icon(h, "PlusIcon", { size: 14 }),
-								waiting === undefined
-									? "Add destination"
-									: `Finish connecting ${waiting.name} in the other window…`,
+								Option.match(waiting, {
+									onNone: () => "Add destination",
+									onSome: (connector) =>
+										`Finish connecting ${connector.name} in the other window…`,
+								}),
 								h.span(
 									[h.AriaHidden(true), h.Class("ml-auto flex items-center gap-1.5")],
 									[
@@ -261,7 +263,7 @@ export const destinationList = (
 	const selected = Arr.filter(destinations, (d) => ids.includes(d.id))
 	const available = Arr.filter(destinations, (d) => !ids.includes(d.id))
 	const unresolved = Arr.filter(ids, (id) => !Arr.some(destinations, (d) => d.id === id))
-	const canAdd = available.length > 0 || model.isAdmin
+	const canAdd = available.length > 0 || canManage(model)
 	return panel(h, { className: "mt-3 divide-y divide-border-subtle border-border-subtle" }, [
 		...Arr.map(selected, (destination) => selectedRow(h, model, tier, destination)),
 		...Arr.map(unresolved, (id) => unresolvedRow(h, tier, id)),

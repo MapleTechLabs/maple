@@ -179,6 +179,7 @@ const wantsEvent = (device: MobileDevice, event: IncidentPushEvent): boolean => 
 				? device.preferences.criticalIncidents
 				: device.preferences.warningIncidents
 		case "test":
+		case "acknowledge":
 			return false
 	}
 }
@@ -204,7 +205,7 @@ const RENOTIFY_TAIL_INTERVAL_MINUTES = 720
 
 const escalationRungsBelow = (openForMs: number): number => {
 	const minutes = openForMs / 60_000
-	const last = RENOTIFY_ESCALATION_MINUTES[RENOTIFY_ESCALATION_MINUTES.length - 1]
+	const last = Arr.lastNonEmpty(RENOTIFY_ESCALATION_MINUTES)
 	const rungs = Arr.filter(RENOTIFY_ESCALATION_MINUTES, (rung) => minutes >= rung).length
 	return minutes >= last ? rungs + Math.floor((minutes - last) / RENOTIFY_TAIL_INTERVAL_MINUTES) : rungs
 }
@@ -265,13 +266,14 @@ const humanDuration = (ms: number): string => {
 export const renderIncidentPush = (
 	event: IncidentPushEvent,
 ): Pick<ApnsPush, "alert" | "interruptionLevel" | "priority" | "sound"> => {
+	const [firstService] = event.serviceNames
 	const service =
 		displayGroupKey(event.groupKey) ??
-		(event.serviceNames.length === 1
-			? event.serviceNames[0]
-			: event.serviceNames.length > 1
-				? `${event.serviceNames[0]} +${event.serviceNames.length - 1}`
-				: null)
+		(firstService === undefined
+			? null
+			: event.serviceNames.length === 1
+				? firstService
+				: `${firstService} +${event.serviceNames.length - 1}`)
 	const severity = event.severity === "critical" ? "Critical" : "Warning"
 	const observed = formatObservedSummary({
 		signalType: event.signalType,
@@ -353,6 +355,8 @@ export const renderIncidentPush = (
 			}
 		case "trigger":
 		case "test":
+		// Never pushed (`wantsEvent` refuses it); rendered like a trigger to keep the switch total.
+		case "acknowledge":
 			return {
 				alert: {
 					title: `${severity} · ${rule}`,

@@ -46,11 +46,11 @@ import {
 	STATUS_FILTERS,
 	statusFilterOf,
 } from "./derive"
-import { Message, type Model } from "./model"
+import { Message, type Model, type StatusFilter } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { vstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // The findings table: one row per advisory on a package in a lockfile, worst first as the server
 // sorts them, under a status and a repository filter.
@@ -113,7 +113,12 @@ export const filterSelect = (
 
 const toolbar = (h: H, model: Model, findings: ReadonlyArray<DependencyFindingView>): Html => {
 	const statusLabel = (value: string) =>
-		STATUS_FILTER_LABEL[STATUS_FILTERS.find((status) => status === value) ?? "open"]
+		STATUS_FILTER_LABEL[
+			Option.getOrElse(
+				Arr.findFirst(STATUS_FILTERS, (status) => status === value),
+				(): StatusFilter => "open",
+			)
+		]
 	return listToolbar(h, {
 		framed: true,
 		trailing: [

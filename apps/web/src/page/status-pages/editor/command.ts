@@ -10,7 +10,7 @@ import {
 } from "@maple/domain/http/v2"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command, Dom, Mount } from "foldkit"
-import { readIsAdmin } from "../../alerts/shared/commands"
+import { readGrants } from "../../../data/session-tenant"
 import {
 	applyPageConfig,
 	createIncident,
@@ -43,7 +43,7 @@ export const FetchEditorSession = Command.define("FetchStatusPageSession", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedFetchSession],
 	execute: ({ orgId }) =>
-		Effect.map(readIsAdmin, (isAdmin) => Message.CompletedFetchSession({ orgId, isAdmin })),
+		Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ orgId, grants })),
 })
 
 export const FetchPage = Command.define("FetchStatusPage", {

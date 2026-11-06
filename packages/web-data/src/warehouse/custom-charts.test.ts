@@ -74,7 +74,7 @@ describe("getServiceDetailThroughputRefinement", () => {
 
 				const calls = spanMetricsCallsOf()
 				assert.strictEqual(calls.length, 1)
-				const request = calls[0][1]
+				const request = Arr.getUnsafe(Arr.getUnsafe(calls, 0), 1)
 				assert.strictEqual(request.query.metric, "increase")
 				// Both known spellings are matched in a single IN(...) — no listMetrics preflight.
 				assert.deepStrictEqual(request.query.filters.metricNames, ["span.metrics.calls", "calls"])
@@ -132,11 +132,11 @@ describe("mergeExactThroughput", () => {
 	it("overrides the estimate with the exact value and recomputes sampling weight/flag", () => {
 		const points = [point("2026-02-01T00:00:00.000Z", 100, 100)]
 		const merged = mergeExactThroughput(points, new Map([["2026-02-01T00:00:00.000Z", 1000]]))
-		expect(merged[0].throughput).toBe(1000)
-		expect(merged[0].samplingWeight).toBe(10)
-		expect(merged[0].hasSampling).toBe(true)
+		expect(Arr.getUnsafe(merged, 0).throughput).toBe(1000)
+		expect(Arr.getUnsafe(merged, 0).samplingWeight).toBe(10)
+		expect(Arr.getUnsafe(merged, 0).hasSampling).toBe(true)
 		// Traced count is left untouched.
-		expect(merged[0].tracedThroughput).toBe(100)
+		expect(Arr.getUnsafe(merged, 0).tracedThroughput).toBe(100)
 	})
 
 	it("leaves buckets without an exact value (or with 0) untouched", () => {
@@ -145,8 +145,8 @@ describe("mergeExactThroughput", () => {
 			point("2026-02-01T00:01:00.000Z", 50, 50),
 		]
 		const merged = mergeExactThroughput(points, new Map([["2026-02-01T00:01:00.000Z", 0]]))
-		expect(merged[0].throughput).toBe(100)
-		expect(merged[1].throughput).toBe(50)
+		expect(Arr.getUnsafe(merged, 0).throughput).toBe(100)
+		expect(Arr.getUnsafe(merged, 1).throughput).toBe(50)
 	})
 
 	it("returns the original points when there is no overlay", () => {
@@ -165,12 +165,15 @@ describe("fillServiceDetailPoints", () => {
 
 		// Non-empty, evenly spaced 120s buckets (no empty/flat fallthrough).
 		expect(result.length).toBeGreaterThan(1)
-		const deltas = Arr.map(result.slice(1), (p, i) => Date.parse(p.bucket) - Date.parse(result[i].bucket))
+		const deltas = Arr.map(
+			result.slice(1),
+			(p, i) => Date.parse(p.bucket) - Date.parse(Arr.getUnsafe(result, i).bucket),
+		)
 		expect([...new Set(deltas)]).toEqual([120_000])
 
 		// The final bucket ends at ~now → still settling → flagged; an early bucket isn't.
-		expect(result[result.length - 1].partial).toBe(true)
-		expect(result[0].partial).toBe(false)
+		expect(Arr.getUnsafe(result, result.length - 1).partial).toBe(true)
+		expect(Arr.getUnsafe(result, 0).partial).toBe(false)
 	})
 
 	it("flags nothing partial for a historical window ending well before now", () => {

@@ -4,6 +4,7 @@
 	// on 2026-10-21), then drop this exclude and the separate tsconfig.test.json.
 	"exclude": ["src/**/*.test.ts"],
 	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
 		"target": "ES2022",
 		"module": "ESNext",
 		"jsx": "react-jsx",
@@ -26,7 +27,13 @@
 			{
 				"name": "@effect/language-service",
 				"ignoreEffectWarningsInTscExitCode": true,
-				"diagnosticSeverity": { "unstableApiUsage": "off" }
+				"includeSuggestionsInTsc": false,
+				"diagnosticSeverity": {
+					"unstableApiUsage": "off",
+					"schemaNumber": "off",
+					"schemaClassMissingBrand": "off",
+					"schemaSync": "off"
+				}
 			}
 		]
 	}

@@ -10,11 +10,14 @@ import { RepoSandboxService, type RepositoryTarget } from "@maple/backend/servic
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
+import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
+import { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssueMergeService"
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
@@ -27,6 +30,7 @@ import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
+import { SlosService } from "@maple/backend/services/slos/SlosService"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
@@ -231,6 +235,7 @@ const callMcpToolUnscoped = (name: string, input: unknown, surface: McpToolSurfa
 	)
 
 export interface McpToolExecutorApi {
+	// BOUNDARY: tool input is unparsed until the tool's own schema decodes it.
 	readonly execute: (
 		tenant: TenantContext,
 		name: string,
@@ -266,6 +271,7 @@ const MAX_PREPARED_REPOSITORIES = 3
 const McpRuntimeServicesLive = Layer.mergeAll(
 	AgentFeedbackService.layer,
 	AlertReadModelsService.layer,
+	AlertIncidentAckService.layer,
 	AlertRulesService.layer,
 	AlertsService.layer,
 	AuditLogService.layer,
@@ -274,6 +280,7 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	ErrorActorsService.layer,
 	ErrorIssueReadModelsService.layer,
 	ErrorIssueWorkflowService.layer,
+	ErrorIssueMergeService.layer,
 	ErrorPolicyService.layer,
 	ErrorsService.layer,
 	IntegrationInventoryService.layer,
@@ -288,9 +295,11 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	ScrapeTargetsService.layer,
 	SecurityAuditStore.layer,
 	SetupAuditService.layer,
+	SlosService.layer,
 	StatusPageSnapshotBuilder.layer,
 	StatusPagesService.layer,
 	UptimeMonitorsService.layer,
+	UsersReadService.layer,
 	IngestRuleService.layer,
 	VcsCommitService.layer,
 	VcsSourceService.layer,

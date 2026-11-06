@@ -173,7 +173,7 @@ export interface SupabaseConnectionServiceApi {
 	readonly discoverOrg: (
 		orgId: OrgId,
 	) => Effect.Effect<SupabaseDiscoverySummary, IntegrationsPersistenceError>
-	readonly discoverAllOrgs: () => Effect.Effect<SupabaseDiscoverAllSummary, IntegrationsPersistenceError>
+	readonly discoverAllOrgs: Effect.Effect<SupabaseDiscoverAllSummary, IntegrationsPersistenceError>
 }
 
 export class SupabaseConnectionService extends Context.Service<
@@ -676,7 +676,10 @@ export class SupabaseConnectionService extends Context.Service<
 				lastDiscoveryError: connection.lastDiscoveryError,
 				projects: projects
 					.filter((row) => row.removedAt === null)
-					.sort((a, b) => a.name.localeCompare(b.name) || a.projectRef.localeCompare(b.projectRef))
+					.sort((a, b) => {
+						const byName = a.name.localeCompare(b.name)
+						return byName !== 0 ? byName : a.projectRef.localeCompare(b.projectRef)
+					})
 					.map(
 						(row) =>
 							new SupabaseProjectStatus({
@@ -1187,7 +1190,7 @@ export class SupabaseConnectionService extends Context.Service<
 			return { disconnected: deleted.length > 0 || grant.disconnected }
 		})
 
-		const discoverAllOrgs = Effect.fn("SupabaseConnectionService.discoverAllOrgs")(function* () {
+		const discoverAllOrgs = Effect.gen(function* () {
 			const started = yield* Clock.currentTimeMillis
 			const due = yield* dbExecute((db) =>
 				db.run(
@@ -1242,7 +1245,7 @@ export class SupabaseConnectionService extends Context.Service<
 				"maple.supabase.failures": summary.failures,
 			})
 			return summary
-		})
+		}).pipe(Effect.withSpan("SupabaseConnectionService.discoverAllOrgs"))
 
 		return {
 			getStatus,

@@ -114,8 +114,8 @@ const makeHarness = (checkRateLimit: RateLimiterApi["check"] = () => Effect.succ
 		}
 	}
 
-	const ORG = Schema.decodeUnknownSync(OrgId)("org_e2e")
-	const USER = Schema.decodeUnknownSync(UserId)("user_e2e")
+	const ORG = Schema.decodeSync(OrgId)("org_e2e")
+	const USER = Schema.decodeSync(UserId)("user_e2e")
 
 	const bootstrapKey = (
 		scopes?: ReadonlyArray<string>,
@@ -563,7 +563,7 @@ describe("v2 api_keys over HTTP", () => {
 			type: "permission_error",
 			code: "insufficient_permissions",
 			title: "Permission required",
-			message: "Only org admins can create API keys",
+			message: "Only org admins can manage API keys.",
 			retryable: false,
 			recovery: "request_access",
 		})
@@ -586,7 +586,7 @@ describe("v2 api_keys over HTTP", () => {
 		expect(revoked.status).toBe(200)
 		expect(revoked.body.revoked).toBe(true)
 
-		const other = Schema.decodeUnknownSync(UserId)("user_other")
+		const other = Schema.decodeSync(UserId)("user_other")
 		const foreign = await harness.bootstrapKey(undefined, "mcp", { userId: other })
 		const { encodePublicId } = await import("@maple/domain/http/v2")
 		const denied = await harness.request("DELETE", `/v2/api_keys/${encodePublicId("key", foreign.id)}`, {
@@ -602,7 +602,7 @@ describe("v2 api_keys over HTTP", () => {
 		const { encodePublicId } = await import("@maple/domain/http/v2")
 		const member = await harness.bootstrapMemberKey()
 		const own = await harness.bootstrapDeviceKey(harness.USER, "installation-own")
-		const other = Schema.decodeUnknownSync(UserId)("user_other")
+		const other = Schema.decodeSync(UserId)("user_other")
 		const foreign = await harness.bootstrapDeviceKey(other, "installation-foreign")
 
 		const revoked = await harness.request("DELETE", `/v2/api_keys/${encodePublicId("key", own.id)}`, {

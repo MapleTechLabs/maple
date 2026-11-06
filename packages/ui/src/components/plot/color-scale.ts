@@ -109,11 +109,11 @@ function parsePercentOrUnit(raw: string, full: number): number {
  * is the exact failure mode d3 would have had.
  */
 function parseOklch(color: string): Oklch | null {
-	const oklch = OKLCH_RE.exec(Str.trim(color))
-	if (oklch) {
-		const l = parsePercentOrUnit(oklch[1], 1)
-		const c = parsePercentOrUnit(oklch[2], 0.4)
-		const h = Number.parseFloat(oklch[3])
+	const [, lightness, chroma, hue] = OKLCH_RE.exec(Str.trim(color)) ?? []
+	if (lightness !== undefined && chroma !== undefined && hue !== undefined) {
+		const l = parsePercentOrUnit(lightness, 1)
+		const c = parsePercentOrUnit(chroma, 0.4)
+		const h = Number.parseFloat(hue)
 		if (!Number.isFinite(l) || !Number.isFinite(c) || !Number.isFinite(h)) return null
 		return { l, c, h }
 	}

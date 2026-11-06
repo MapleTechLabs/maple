@@ -28,7 +28,7 @@
 // prove the scope.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { Array as Arr, Effect, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Effect, Option, Record as Rec, String as Str } from "effect"
 import { compileUnionUnsafe, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { MAPLE_AI_SESSION_ID_ATTR, MAPLE_AI_VENDOR_ID_ATTR } from "@maple/domain/gen-ai"
 import * as Integrations from "@maple/query-engine-integrations"
@@ -543,7 +543,7 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		)
 		// ISO-8601 with a literal Z, fixed width — so the strings sort as the
 		// instants do, which is what lets the client plot them without parsing.
-		assert.isTrue(rows[0]!.bucket < rows[2]!.bucket, `${rows[0]!.bucket} < ${rows[2]!.bucket}`)
+		assert.isTrue(rows[0].bucket < rows[2].bucket, `${rows[0].bucket} < ${rows[2].bucket}`)
 
 		// A tool selected and no model: the same calls, now split by the model
 		// each was attributed to.
@@ -559,7 +559,8 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		const compiled = compileUnionUnsafe(Integrations.aiToolsTotalsQuery(), compareWindow)
 		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
 
-		const period = (name: string) => rows.find((row) => row.period === name)
+		const period = (name: string) =>
+			Option.getOrUndefined(Arr.findFirst(rows, (row) => row.period === name))
 		// Four tool calls across three sessions, one of them failed.
 		assert.deepStrictEqual(
 			{
@@ -608,7 +609,7 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 			compareWindow,
 		)
 		const totalRows = Effect.runSync(totals.decodeRows(await runJson(totals.sql)))
-		const current = totalRows.find((row) => row.period === "current")
+		const current = Option.getOrUndefined(Arr.findFirst(totalRows, (row) => row.period === "current"))
 		assert.deepStrictEqual({ calls: current?.calls, errors: current?.errors }, { calls: 1, errors: 1 })
 	})
 
@@ -631,7 +632,7 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 	it("groups failures that differ only by an array index, and splits the ones that differ by path", async () => {
 		const rows = await readErrorGroups({ tool: "submit_candidate" }, groupsWindow)
 		const group = (predicate: (row: (typeof rows)[number]) => boolean) => {
-			const row = rows.find(predicate)
+			const row = Option.getOrUndefined(Arr.findFirst(rows, predicate))
 			return row === undefined
 				? undefined
 				: {
@@ -665,7 +666,9 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 				trendCalls: 2,
 			},
 		)
-		assert.isUndefined(rows.find((row) => row.message === TRACE_IDS_AT_0))
+		assert.isUndefined(
+			Option.getOrUndefined(Arr.findFirst(rows, (row) => row.message === TRACE_IDS_AT_0)),
+		)
 		// The same missing key at another path is another bug.
 		assert.deepInclude(
 			group((row) => row.message === LOG_PATTERNS_AT_0),
@@ -693,12 +696,18 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 			{ tool: "submit_candidate", failingOnly: true },
 			groupsWindow,
 		)
-		assert.strictEqual(failingOnly.find((row) => row.message === TRACE_IDS_AT_1)?.callsSince, 3)
+		assert.strictEqual(
+			Option.getOrUndefined(Arr.findFirst(failingOnly, (row) => row.message === TRACE_IDS_AT_1))
+				?.callsSince,
+			3,
+		)
 	})
 
 	it("reads one group's sessions, variants and breakdown, and its samples a page at a time", async () => {
 		const groups = await readErrorGroups({ tool: "submit_candidate" }, groupsWindow)
-		const fingerprint = groups.find((row) => row.message === TRACE_IDS_AT_1)!.fingerprint
+		const fingerprint = Option.getOrThrow(
+			Arr.findFirst(groups, (row) => row.message === TRACE_IDS_AT_1),
+		).fingerprint
 		const selection = { tool: "submit_candidate", fingerprint }
 
 		const sessions = compileUnsafe(Integrations.aiToolErrorSessionsQuery(selection), groupsWindow, {
@@ -751,14 +760,14 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		)
 		const second = await page({
 			limit: 1,
-			before: { timestamp: first[0]!.timestamp, spanId: first[0]!.spanId },
+			before: { timestamp: first[0].timestamp, spanId: first[0].spanId },
 		})
 		assert.deepStrictEqual(
 			Arr.map(second, (row) => row.spanId),
 			["tools-groups-1"],
 		)
 		assert.deepStrictEqual(
-			await page({ limit: 1, before: { timestamp: second[0]!.timestamp, spanId: second[0]!.spanId } }),
+			await page({ limit: 1, before: { timestamp: second[0].timestamp, spanId: second[0].spanId } }),
 			[],
 		)
 		// A variant narrows the samples to the calls that said exactly that.
@@ -800,7 +809,9 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 
 	it("lists the sessions and the samples of one group, then their payloads", async () => {
 		const groups = await readErrorGroups({ tool: "flaky_tool" }, flakyWindow, 86_400)
-		const fingerprint = groups.find((row) => row.errorType === "TimeoutError")!.fingerprint
+		const fingerprint = Option.getOrThrow(
+			Arr.findFirst(groups, (row) => row.errorType === "TimeoutError"),
+		).fingerprint
 		const selection = { tool: "flaky_tool", fingerprint }
 
 		const sessions = compileUnsafe(Integrations.aiToolErrorSessionsQuery(selection), flakyWindow, {

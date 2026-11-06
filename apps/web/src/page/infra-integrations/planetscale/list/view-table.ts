@@ -26,6 +26,7 @@ import { formatWholePercent } from "../../../../components/infra/format"
 import { Message, type SortKey } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { column, columnClass } from "@maple/views/ui/column"
+import { Array as Arr, String as Str } from "effect"
 
 // `PlanetScaleDatabaseTable` and its loading state.
 
@@ -73,21 +74,23 @@ const COLUMNS: ReadonlyArray<{
 
 /** `headerCells`: sortable heads only when a sort is given; `metricsPaused` drops the metric columns. */
 const headerCells = (h: H, sort: Sort<SortKey> | undefined, metricsPaused: boolean): ReadonlyArray<Html> =>
-	COLUMNS.filter((column) => !metricsPaused || column.metric !== true).map((column) =>
-		columnHead(h, {
-			label: column.label,
-			width: column.width,
-			align: column.align,
-			hidden: column.hidden,
-			sort:
-				sort === undefined
-					? undefined
-					: {
-							onSort: Message.ClickedSort({ key: column.key }),
-							isActive: sort.key === column.key,
-							dir: sort.dir,
-						},
-		}),
+	Arr.map(
+		Arr.filter(COLUMNS, (column) => !metricsPaused || column.metric !== true),
+		(column) =>
+			columnHead(h, {
+				label: column.label,
+				width: column.width,
+				align: column.align,
+				hidden: column.hidden,
+				sort:
+					sort === undefined
+						? undefined
+						: {
+								onSort: Message.ClickedSort({ key: column.key }),
+								isActive: sort.key === column.key,
+								dir: sort.dir,
+							},
+			}),
 	)
 
 export const databaseTableLoading = (h: H): Html =>
@@ -107,7 +110,7 @@ export const databaseTableLoading = (h: H): Html =>
 	)
 
 const toRow = (db: V2PlanetScaleDatabase, statsByName: ReadonlyMap<string, DatabaseStat>): DatabaseRow => {
-	const stats = statsByName.get(db.name.toLowerCase())
+	const stats = statsByName.get(Str.toLowerCase(db.name))
 	return {
 		id: db.id,
 		name: db.name,
@@ -207,17 +210,15 @@ export type DatabaseTableInputs = Readonly<{
 }>
 
 export const databaseTable = (h: H, inputs: DatabaseTableInputs): Html => {
-	const statsByName = new Map(inputs.stats.map((row) => [row.database.toLowerCase(), row]))
-	const rows = sortRowsByField(
-		inputs.databases.map((db) => toRow(db, statsByName)),
-		inputs.sort,
-	)
+	const statsByName = new Map(Arr.map(inputs.stats, (row) => [Str.toLowerCase(row.database), row]))
+	const unsorted = Arr.map(inputs.databases, (db) => toRow(db, statsByName))
+	const rows = sortRowsByField(unsorted, inputs.sort)
 	return dataTable(
 		h,
 		{ ariaLabel: "PlanetScale databases", isWaiting: inputs.isWaiting },
 		headerCells(h, inputs.sort, inputs.metricsPaused),
 		rows.length === 0
 			? [dataTableEmpty(h, [inputs.emptyMessage])]
-			: rows.map((row) => databaseRow(h, row, inputs.metricsPaused)),
+			: Arr.map(rows, (row) => databaseRow(h, row, inputs.metricsPaused)),
 	)
 }

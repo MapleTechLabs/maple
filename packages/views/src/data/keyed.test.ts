@@ -199,3 +199,9 @@ describe("requestKeepingFailure", () => {
 		expect(Keyed.failureWithoutData(stale)).toEqual(Option.none())
 	})
 })
+
+describe("Keyed.at", () => {
+	test("an Object.prototype key name is an idle slot, not an inherited member", () => {
+		expect(Keyed.at<number, string>({}, "constructor")).toEqual(Keyed.idle())
+	})
+})

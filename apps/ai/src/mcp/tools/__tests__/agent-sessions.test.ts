@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
 import { AI_SESSION_SPANS_MAX_SPANS } from "@maple/domain/http"
 import { mapleToolCatalog, toInputSchema } from "../registry"
-import { clipPayload, MCP_AGENT_SESSION_MAX_SPANS } from "../../lib/agent-sessions"
+import { clipPayload, MCP_AGENT_SESSION_MAX_SPANS, offsetLabel } from "../../lib/agent-sessions"
 import {
 	installFakeWarehouse,
 	readsTraceSpans,
@@ -259,6 +259,13 @@ describe("clipPayload", () => {
 })
 
 // Rendering
+
+describe("offsetLabel", () => {
+	it("carries seconds that round up to a minute into the minute", () => {
+		expect(offsetLabel(119_600)).toBe("+2m0s")
+		expect(offsetLabel(61_000)).toBe("+1m1s")
+	})
+})
 
 describe("list_agent_sessions rendering", () => {
 	it("renders the row and hands the session's own window to the next step", async () => {

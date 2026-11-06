@@ -105,6 +105,8 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 					fitYAxisToData: axis.fitYAxisToData,
 					...(axis.softMin === null ? undefined : { softMin: axis.softMin }),
 					...(axis.softMax === null ? undefined : { softMax: axis.softMax }),
+					...(axis.max === undefined ? undefined : { max: axis.max }),
+					...(axis.zeroLabel === undefined ? undefined : { zeroLabel: axis.zeroLabel }),
 					thresholds: axis.thresholds,
 				}),
 	})

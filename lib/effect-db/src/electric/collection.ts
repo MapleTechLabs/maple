@@ -5,7 +5,7 @@ import { BTreeIndex } from "@tanstack/db"
 import type { ElectricCollectionUtils, Txid } from "@tanstack/electric-db-collection"
 import { electricCollectionOptions } from "@tanstack/electric-db-collection"
 import { createCollection as tanstackCreateCollection } from "@tanstack/db"
-import { Effect, type ManagedRuntime, Schema, String as Str } from "effect"
+import { Effect, type ManagedRuntime, Random, Schema, String as Str } from "effect"
 import { AwaitTxIdError, InvalidTxIdError, TxIdTimeoutError } from "./errors"
 import { convertDeleteHandler, convertInsertHandler, convertUpdateHandler } from "./handlers"
 import type { BackoffConfig, EffectElectricCollectionConfig } from "./types"
@@ -109,9 +109,10 @@ function createBackoffOnError(
 	let resetTimeout: ReturnType<typeof setTimeout> | null = null
 
 	const scheduleReset = () => {
-		if (resetTimeout) {
+		if (resetTimeout !== null) {
 			clearTimeout(resetTimeout)
 		}
+		// @effect-diagnostics-next-line globalTimers:off -- the sync client's callback API, outside Effect
 		resetTimeout = setTimeout(() => {
 			retryCount = 0
 			currentDelay = backoffConfig.initialDelayMs
@@ -167,7 +168,10 @@ function createBackoffOnError(
 			return
 		}
 
-		const delay = backoffConfig.jitter ? currentDelay * (0.5 + Math.random()) : currentDelay
+		const baseDelay = currentDelay
+		const delay = backoffConfig.jitter
+			? await Effect.runPromise(Effect.map(Random.next, (r) => baseDelay * (0.5 + r)))
+			: baseDelay
 
 		logVia(runtime, Effect.logWarning("Connection error, retrying"), {
 			collectionId,
@@ -178,7 +182,7 @@ function createBackoffOnError(
 			cause: error,
 		})
 
-		await new Promise((resolve) => setTimeout(resolve, delay))
+		await Effect.runPromise(Effect.sleep(delay))
 
 		currentDelay = Math.min(currentDelay * backoffConfig.multiplier, backoffConfig.maxDelayMs)
 
@@ -214,7 +218,7 @@ type AnyEffectElectricCollectionConfig =
 	| (EffectElectricCollectionConfig<any, any, any, any, any> & {
 			runtime: ManagedRuntime.ManagedRuntime<any, unknown>
 	  })
-	| (EffectElectricCollectionConfig<any, any, any, any, never> & { runtime?: never })
+	| (EffectElectricCollectionConfig<any, any, any, any> & { runtime?: never })
 
 /** Creates Electric collection options with Effect-based handlers. */
 export function effectElectricCollectionOptions<T extends StandardSchemaV1, R>(
@@ -235,13 +239,7 @@ export function effectElectricCollectionOptions<T extends StandardSchemaV1, R>(
 }
 
 export function effectElectricCollectionOptions<T extends StandardSchemaV1>(
-	config: EffectElectricCollectionConfig<
-		InferSchemaOutput<T>,
-		string | number,
-		T,
-		Record<string, never>,
-		never
-	> & {
+	config: EffectElectricCollectionConfig<InferSchemaOutput<T>, string | number, T> & {
 		schema: T
 		runtime?: never
 	},
@@ -256,18 +254,18 @@ export function effectElectricCollectionOptions<T extends Row<unknown>, R>(
 		schema?: never
 		runtime: ManagedRuntime.ManagedRuntime<R, unknown>
 	},
-): CollectionConfig<T, string | number> & {
+): CollectionConfig<T> & {
 	id?: string
 	utils: EffectElectricCollectionUtils
 	schema?: never
 }
 
 export function effectElectricCollectionOptions<T extends Row<unknown>>(
-	config: EffectElectricCollectionConfig<T, string | number, never, Record<string, never>, never> & {
+	config: EffectElectricCollectionConfig<T> & {
 		schema?: never
 		runtime?: never
 	},
-): CollectionConfig<T, string | number> & {
+): CollectionConfig<T> & {
 	id?: string
 	utils: EffectElectricCollectionUtils
 	schema?: never
@@ -422,6 +420,7 @@ export function createEffectCollection<A extends Row<unknown>, TRuntime>(
 		schema: standardSchema,
 	} as Parameters<typeof effectElectricCollectionOptions>[0])
 
+	// oxlint-disable-next-line typescript/no-unsafe-argument -- no createCollection overload accepts the generic schema config; the result is typed below
 	const collection = tanstackCreateCollection(options as any)
 	return collection as EffectCollection<A>
 }

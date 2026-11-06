@@ -25,8 +25,9 @@ import {
 	themeOf,
 } from "../shared/form"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { isoMs } from "../../alerts/shared/time"
+import { monitorStatusOf } from "../shared/derive"
 import { APPEARANCES, presetCards } from "../shared/look"
 import {
 	daysOf,
@@ -122,7 +123,7 @@ const colorField = (
 
 export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html => {
 	const theme = form.theme
-	const isReadOnly = !model.isAdmin
+	const isReadOnly = !canManage(model)
 	const isAuto = theme.appearance === "auto"
 	const issues = themeColorIssues(theme)
 	const contrast = themeContrastOf(theme)
@@ -235,8 +236,7 @@ export const settingsDocument = (model: Model, page: V2StatusPage, form: Setting
 			name: component.name,
 			description: component.description,
 			group: component.group,
-			monitorStatus:
-				monitors.find((monitor) => monitor.id === component.monitor_id)?.state.status ?? null,
+			monitorStatus: monitorStatusOf(monitors, component.monitor_id),
 			manualStatus: component.manual_status,
 			showUptime: component.show_uptime,
 			monitored: component.monitor_id !== null,

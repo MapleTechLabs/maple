@@ -1,0 +1,66 @@
+{
+	// Stack-agnostic correctness and anti-slop rules. Works without type-aware linting or Effect.
+	"plugins": ["eslint", "unicorn", "typescript", "oxc"],
+	"jsPlugins": ["./plugins/anti-slop.mjs"],
+	"options": {
+		// A stale disable directive is an error, and eslint-disable comments are not honoured, so
+		// every suppression is an `oxlint-disable` that still has a hit under it.
+		"reportUnusedDisableDirectives": "deny",
+		"respectEslintDisableDirectives": false
+	},
+	"rules": {
+		// --- anti-slop: type laundering and low-evidence shapes (plugins/anti-slop, vendored).
+		"anti-slop/no-chained-type-assertions": "error",
+		"anti-slop/no-conditional-empty-object-spread": "error",
+		"anti-slop/no-known-value-widening": "error",
+		"anti-slop/no-module-mocking": ["error", { "allowWithTestSeamComment": true }],
+		"anti-slop/no-object-parameters": "error",
+		"anti-slop/no-reflect-apply": "error",
+		"anti-slop/no-reflect-get": "error",
+		"anti-slop/no-runtime-typeof": [
+			"error",
+			{ "allowInTypeGuards": true, "allowInBoundaryFunctions": true, "checkUnknownOnly": true }
+		],
+		"anti-slop/no-shape-in-symbol-names": "error",
+		"anti-slop/no-unknown-parameters": [
+			"error",
+			{ "allowInBoundaryFunctions": true, "allowWithBoundaryComment": true }
+		],
+		"anti-slop/no-unknown-returns": ["error", { "allowWithBoundaryComment": true }],
+		"anti-slop/no-unknown-type-aliases": "error",
+		"anti-slop/no-unsafe-dictionary-type": "error",
+		"anti-slop/no-widen-then-assert": "error",
+		"anti-slop/require-safety-comment-for-type-assertion": [
+			"error",
+			{ "check": "unsafe", "allowFileSafetyComment": true }
+		],
+
+		// --- Built-in correctness picks.
+		"typescript/no-explicit-any": "error",
+		"typescript/no-non-null-assertion": "error",
+		"typescript/no-non-null-asserted-optional-chain": "error",
+		"typescript/prefer-as-const": "error",
+		"no-alert": "error",
+		"no-loss-of-precision": "error",
+		"no-unused-vars": [
+			"error",
+			{ "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_" }
+		],
+		"no-extra-boolean-cast": "error",
+		"no-unsafe-optional-chaining": "error",
+		"no-unused-expressions": "error",
+		"no-useless-escape": "error",
+		"oxc/double-comparisons": "error",
+		"oxc/approx-constant": "error",
+		"unicorn/no-new-array": "error",
+		"unicorn/no-thenable": "error",
+		"unicorn/no-useless-fallback-in-spread": "error",
+		"unicorn/prefer-string-starts-ends-with": "error",
+		// Generators that only `yield*` nothing are normal in Effect.gen and test helpers.
+		"require-yield": "off"
+	},
+	"overrides": [
+		// Astro frontmatter reads as bare expressions.
+		{ "files": ["**/*.astro"], "rules": { "no-unused-expressions": "off" } }
+	]
+}

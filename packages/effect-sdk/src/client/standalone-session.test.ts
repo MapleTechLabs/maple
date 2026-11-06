@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { getActiveSink } from "@maple/browser-session"
-import { Effect, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Array as Arr, String as Str } from "effect"
 import { afterEach, beforeEach, expect, vi } from "vitest"
 import { make as makeTelemetry } from "./flushable.js"
 import { resetStandaloneSessionForTests } from "./standalone-session.js"
@@ -33,7 +33,7 @@ interface MetaPost {
 const setupFetch = () => {
 	const metaPosts: Array<MetaPost> = []
 	const original = globalThis.fetch
-	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		if (Str.includes("/v1/sessionReplays/meta")(url) && typeof init?.body === "string") {
 			metaPosts.push({
@@ -44,7 +44,7 @@ const setupFetch = () => {
 			})
 		}
 		return new Response(null, { status: 200 })
-	}) as typeof fetch
+	}
 	return { metaPosts, restore: () => void (globalThis.fetch = original) }
 }
 
@@ -106,7 +106,7 @@ describe("standalone session emission (client)", () => {
 		// postSessionMetaRow is fire-and-forget; let the microtask run.
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		expect(metaPosts.length).toBe(1)
-		const row = metaPosts[0].row
+		const row = Arr.getUnsafe(metaPosts, 0).row
 		const stored = JSON.parse(store.get("maple.session")!)
 		expect(row.session_id).toBe(stored.id)
 		expect(row.status).toBe("active")
@@ -133,7 +133,7 @@ describe("standalone session emission (client)", () => {
 		make(baseConfig)
 
 		await new Promise((resolve) => setTimeout(resolve, 0))
-		expect(metaPosts[0].row.user_id).toBe("")
+		expect(Arr.getUnsafe(metaPosts, 0).row.user_id).toBe("")
 	})
 
 	it("keeps persisted click/error totals and adds live capture deltas", async () => {
@@ -157,7 +157,9 @@ describe("standalone session emission (client)", () => {
 
 		const telemetry = make(baseConfig)
 		await new Promise((resolve) => setTimeout(resolve, 0))
-		const active = metaPosts.find((post) => post.row.session_id === "persisted-session")!
+		const active = Option.getOrThrow(
+			Arr.findFirst(metaPosts, (post) => post.row.session_id === "persisted-session"),
+		)
 		expect(active.row.click_count).toBe(7)
 		expect(active.row.error_count).toBe(3)
 
@@ -245,7 +247,7 @@ describe("standalone session emission (client)", () => {
 
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		expect(Arr.map(metaPosts, (post) => post.row.status)).toEqual(["active"])
-		expect(metaPosts[0]!.authorization).toBeNull()
+		expect(Arr.getUnsafe(metaPosts, 0).authorization).toBeNull()
 	})
 
 	it("attaches observed trace ids to the ended row and rotates sessions", async () => {
@@ -268,14 +270,30 @@ describe("standalone session emission (client)", () => {
 		)
 		await new Promise((resolve) => setTimeout(resolve, 0))
 
-		const ended = metaPosts.find((p) => p.row.status === "ended")
-		expect(ended).toBeDefined()
-		expect(ended!.row.session_id).toBe(firstSession)
-		expect(ended!.row.trace_ids.length).toBe(1)
-		expect(ended!.row.trace_ids[0]).toMatch(/^[0-9a-f]{32}$/i)
+		const ended = Option.getOrThrow(Arr.findFirst(metaPosts, (p) => p.row.status === "ended"))
+		expect(ended.row.session_id).toBe(firstSession)
+		expect(ended.row.trace_ids.length).toBe(1)
+		expect(ended.row.trace_ids[0]).toMatch(/^[0-9a-f]{32}$/i)
 
 		const secondActive = Arr.filter(metaPosts, (p) => p.row.status === "active").at(-1)!
 		expect(secondActive.row.session_id).not.toBe(firstSession)
 		expect(secondActive.row.session_id).toBe(JSON.parse(store.get("maple.session")!).id)
+	})
+
+	it("keeps the first 200 trace ids so a busy session's ended row stays sendable", async () => {
+		const { metaPosts, restore: r } = setupFetch()
+		restore = r
+		stubBrowser()
+
+		const telemetry = make(baseConfig)
+		await Effect.runPromise(
+			Effect.forEach(Arr.range(1, 250), (i) => Effect.undefined.pipe(Effect.withSpan(`op-${i}`)), {
+				discard: true,
+			}).pipe(Effect.provide(telemetry.layer)),
+		)
+		await telemetry.dispose()
+
+		const ended = Option.getOrThrow(Arr.findLast(metaPosts, (p) => p.row.status === "ended"))
+		expect(ended.row.trace_ids.length).toBe(200)
 	})
 })

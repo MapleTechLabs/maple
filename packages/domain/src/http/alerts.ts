@@ -3,6 +3,7 @@ import { QueryEngineAlertReducer, QueryEngineNoDataBehavior } from "../query-eng
 import {
 	AlertDeliveryEventId,
 	AlertDestinationId,
+	AlertIncidentEventId,
 	AlertIncidentId,
 	AlertRuleId,
 	ChatConnectorId,
@@ -22,6 +23,8 @@ export const AlertDestinationType = Schema.Literals([
 	"discord",
 	"telegram",
 	"google-chat",
+	"microsoft-teams",
+	"incident-io",
 	"email",
 	"chat",
 	"linear",
@@ -47,11 +50,22 @@ export const AlertSignalType = Schema.Literals([
 	"raw_query",
 	/** The hidden rule behind an uptime monitor; managed only through the monitor. */
 	"uptime",
+	/** The hidden burn-rate rule behind an SLO; managed only through the SLO. */
+	"slo_burn_rate",
 ]).annotate({
 	identifier: "@maple/AlertSignalType",
 	title: "Alert Signal Type",
 })
 export type AlertSignalType = Schema.Schema.Type<typeof AlertSignalType>
+
+/** Signal types whose rule another resource owns: hidden from and refused by the generic rule APIs. */
+export const MANAGED_SIGNAL_TYPES = [
+	"uptime",
+	"slo_burn_rate",
+] as const satisfies ReadonlyArray<AlertSignalType>
+export type ManagedSignalType = (typeof MANAGED_SIGNAL_TYPES)[number]
+export const isManagedSignalType = (signalType: string): signalType is ManagedSignalType =>
+	Arr.some(MANAGED_SIGNAL_TYPES, (managed) => managed === signalType)
 
 export const AlertGroupByDimension = Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed()).annotate({
 	identifier: "@maple/AlertGroupByDimension",
@@ -127,10 +141,53 @@ export const AlertIncidentHoldReason = Schema.Literals([
 })
 export type AlertIncidentHoldReason = Schema.Schema.Type<typeof AlertIncidentHoldReason>
 
-export const AlertEventType = Schema.Literals(["trigger", "resolve", "renotify", "test"]).annotate({
+/** Where an acknowledgement came from. */
+export const AlertIncidentAckSource = Schema.Literals(["web", "api", "mcp", "slack", "discord"]).annotate({
+	identifier: "@maple/AlertIncidentAckSource",
+	title: "Alert Incident Acknowledgement Source",
+})
+export type AlertIncidentAckSource = Schema.Schema.Type<typeof AlertIncidentAckSource>
+
+/**
+ * The incident activity log. `ack_cleared` is written by the scheduler when an
+ * acknowledged incident escalates to a higher severity and pages again.
+ */
+export const AlertIncidentEventType = Schema.Literals([
+	"acknowledged",
+	"unacknowledged",
+	"ack_cleared",
+]).annotate({
+	identifier: "@maple/AlertIncidentEventType",
+	title: "Alert Incident Event Type",
+})
+export type AlertIncidentEventType = Schema.Schema.Type<typeof AlertIncidentEventType>
+
+/** The notifications the public API reports; `acknowledge` stays internal (see AlertEventType). */
+export const AlertNotificationEventType = Schema.Literals([
+	"trigger",
+	"resolve",
+	"renotify",
+	"test",
+]).annotate({
 	identifier: "@maple/AlertEventType",
 	title: "Alert Event Type",
 })
+export type AlertNotificationEventType = Schema.Schema.Type<typeof AlertNotificationEventType>
+
+/**
+ * Every delivery the queue sends. `acknowledge` (a PagerDuty sync) is kept out of the public API:
+ * shipped clients decode the event type as a closed enum and would fail on a new value.
+ */
+export const AlertEventType = Schema.Literals([
+	...AlertNotificationEventType.literals,
+	"acknowledge",
+]).annotate({
+	identifier: "@maple/AlertDeliveryEventType",
+	title: "Alert Delivery Event Type",
+})
+
+export const isAlertNotificationEventType = (type: AlertEventType): type is AlertNotificationEventType =>
+	type !== "acknowledge"
 export type AlertEventType = Schema.Schema.Type<typeof AlertEventType>
 
 export const AlertDeliveryStatus = Schema.Literals(["queued", "processing", "success", "failed"]).annotate({
@@ -329,6 +386,32 @@ export class GoogleChatAlertDestinationConfig extends Schema.Class<GoogleChatAle
 }) {}
 
 /**
+ * A Teams channel's Workflows webhook: the "Post to a channel when a webhook request is received"
+ * flow (`https://….environment.api.powerplatform.com/powerautomate/automations/direct/workflows/…`).
+ */
+export class MicrosoftTeamsAlertDestinationConfig extends Schema.Class<MicrosoftTeamsAlertDestinationConfig>(
+	"MicrosoftTeamsAlertDestinationConfig",
+)({
+	type: Schema.Literal("microsoft-teams"),
+	name: ChannelLabel,
+	/** Write-only: the `sig` query parameter is the credential. */
+	webhookUrl: NonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+/** An incident.io HTTP alert source: its config id (not secret) and its token (write-only). */
+export class IncidentIoAlertDestinationConfig extends Schema.Class<IncidentIoAlertDestinationConfig>(
+	"IncidentIoAlertDestinationConfig",
+)({
+	type: Schema.Literal("incident-io"),
+	name: ChannelLabel,
+	alertSourceConfigId: NonEmptyString,
+	/** The alert source's secret token. Write-only, never returned. */
+	token: NonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+/**
  * A channel in a chat workspace linked through a chat connector. Which connector posts it is read
  * from the workspace row, never taken from the request — the workspace must belong to the org, and
  * the channel must be one the workspace's connector lists; its name is read from that listing.
@@ -377,6 +460,65 @@ export const parseGoogleChatWebhookUrl = (raw: string): Option.Option<{ readonly
 		}),
 	)
 
+/** `URL.hostname` is already lowercase, so this needs no case folding. */
+const TEAMS_WORKFLOWS_HOST = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.environment\.api\.powerplatform\.com$/
+const TEAMS_WORKFLOW_INVOKE_PATH =
+	/^\/powerautomate\/automations\/direct\/workflows\/([A-Za-z0-9]+)\/triggers\/[A-Za-z0-9_]+\/paths\/invoke$/
+
+/**
+ * A Teams Workflows webhook URL. Only the Power Platform host is accepted: Office 365 connector
+ * URLs (`*.webhook.office.com`) were retired in May 2026 and `*.logic.azure.com` flow URLs stopped
+ * triggering on 2025-11-30. The `sig` query parameter is the credential.
+ */
+export const parseTeamsWorkflowWebhookUrl = (raw: string): Option.Option<{ readonly workflowId: string }> =>
+	Option.liftThrowable(() => new URL(Str.trim(raw)))().pipe(
+		Option.flatMap((url) => {
+			const workflow = TEAMS_WORKFLOW_INVOKE_PATH.exec(url.pathname)
+			return url.protocol === "https:" &&
+				url.port === "" &&
+				url.username === "" &&
+				url.password === "" &&
+				TEAMS_WORKFLOWS_HOST.test(url.hostname) &&
+				workflow?.[1] !== undefined &&
+				(url.searchParams.get("sig") ?? "").length > 0
+				? Option.some({ workflowId: workflow[1] })
+				: Option.none()
+		}),
+	)
+
+/** Why a pasted Teams URL is not a Workflows webhook, for the two retired kinds people still have. */
+export const teamsWebhookUrlProblem = (
+	raw: string,
+): "retired-connector" | "retired-logic-apps" | "invalid" | null => {
+	if (Option.isSome(parseTeamsWorkflowWebhookUrl(raw))) return null
+	return Option.match(Option.liftThrowable(() => new URL(Str.trim(raw)))(), {
+		onNone: () => "invalid" as const,
+		onSome: (url) => {
+			const host = url.hostname
+			if (Str.endsWith(".webhook.office.com")(host) || host === "outlook.office.com")
+				return "retired-connector"
+			if (Str.endsWith(".logic.azure.com")(host)) return "retired-logic-apps"
+			return "invalid"
+		},
+	})
+}
+
+/** Why each kind of rejected Teams URL is rejected, shown by the dialog and the API alike. */
+export const TEAMS_WEBHOOK_URL_PROBLEM_MESSAGES = {
+	"retired-connector":
+		'That is an Office 365 connector URL, which Microsoft retired in May 2026. In the Teams channel, create a Workflows webhook ("Post to a channel when a webhook request is received") and paste its URL.',
+	"retired-logic-apps":
+		"That is a logic.azure.com flow URL, which stopped working on 30 November 2025. Open the flow in Power Automate and copy the new URL from its webhook trigger.",
+	invalid:
+		"That isn't a Teams Workflows webhook URL. It is on environment.api.powerplatform.com and ends with a sig parameter; copy it from the channel's Workflows webhook.",
+} as const
+
+/**
+ * incident.io leaves the alert source id's format open, so this only keeps it to what can sit in a
+ * URL path segment as typed: a ULID (`01GW2G3V0S59R238FAHPDS1R66`) today.
+ */
+export const isIncidentIoAlertSourceId = (raw: string): boolean => /^[A-Za-z0-9_-]{1,64}$/.test(Str.trim(raw))
+
 export const MAX_EMAIL_RECIPIENTS = 10
 
 /**
@@ -404,6 +546,8 @@ export const AlertDestinationCreateRequest = Schema.Union([
 	DiscordAlertDestinationConfig,
 	TelegramAlertDestinationConfig,
 	GoogleChatAlertDestinationConfig,
+	MicrosoftTeamsAlertDestinationConfig,
+	IncidentIoAlertDestinationConfig,
 	EmailAlertDestinationConfig,
 	ChatAlertDestinationConfig,
 	LinearAlertDestinationConfig,
@@ -452,6 +596,23 @@ export class UpdateGoogleChatAlertDestinationConfig extends Schema.Class<UpdateG
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
+export class UpdateMicrosoftTeamsAlertDestinationConfig extends Schema.Class<UpdateMicrosoftTeamsAlertDestinationConfig>(
+	"UpdateMicrosoftTeamsAlertDestinationConfig",
+)({
+	name: OptionalNonEmptyString,
+	webhookUrl: Schema.optionalKey(Schema.String),
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+export class UpdateIncidentIoAlertDestinationConfig extends Schema.Class<UpdateIncidentIoAlertDestinationConfig>(
+	"UpdateIncidentIoAlertDestinationConfig",
+)({
+	name: OptionalNonEmptyString,
+	alertSourceConfigId: Schema.optionalKey(Schema.String),
+	token: Schema.optionalKey(Schema.String),
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
 export class UpdateEmailAlertDestinationConfig extends Schema.Class<UpdateEmailAlertDestinationConfig>(
 	"UpdateEmailAlertDestinationConfig",
 )({
@@ -497,6 +658,14 @@ export const AlertDestinationUpdateRequest = Schema.Union([
 	Schema.Struct({
 		type: Schema.Literal("google-chat"),
 		...UpdateGoogleChatAlertDestinationConfig.fields,
+	}),
+	Schema.Struct({
+		type: Schema.Literal("microsoft-teams"),
+		...UpdateMicrosoftTeamsAlertDestinationConfig.fields,
+	}),
+	Schema.Struct({
+		type: Schema.Literal("incident-io"),
+		...UpdateIncidentIoAlertDestinationConfig.fields,
 	}),
 	Schema.Struct({
 		type: Schema.Literal("email"),
@@ -875,7 +1044,30 @@ export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("
 	/** Set while the incident is open but waiting on telemetry; see {@link AlertIncidentHoldReason}. */
 	holdReason: Schema.NullOr(AlertIncidentHoldReason),
 	heldSince: Schema.NullOr(IsoDateTimeString),
+	/**
+	 * Set while an open incident is acknowledged: reminders pause until it is
+	 * unacknowledged, escalates or resolves. All null otherwise.
+	 */
+	acknowledgedAt: Schema.NullOr(IsoDateTimeString),
+	/** The Maple user who acknowledged; null for an unlinked chat account. */
+	acknowledgedByUserId: Schema.NullOr(UserId),
+	/** Display name of whoever acknowledged, as the source reported it. */
+	acknowledgedByName: Schema.NullOr(Schema.String),
+	acknowledgedVia: Schema.NullOr(AlertIncidentAckSource),
 	errorIssueId: Schema.NullOr(ErrorIssueId),
+}) {}
+
+export class AlertIncidentEventDocument extends Schema.Class<AlertIncidentEventDocument>(
+	"AlertIncidentEventDocument",
+)({
+	id: AlertIncidentEventId,
+	incidentId: AlertIncidentId,
+	type: AlertIncidentEventType,
+	actorUserId: Schema.NullOr(UserId),
+	actorName: Schema.NullOr(Schema.String),
+	/** Null for scheduler-written events. */
+	source: Schema.NullOr(AlertIncidentAckSource),
+	createdAt: IsoDateTimeString,
 }) {}
 
 export class AlertIncidentsListResponse extends Schema.Class<AlertIncidentsListResponse>(
@@ -1162,6 +1354,20 @@ export class AlertIncidentNotFoundError extends HttpTaggedError<AlertIncidentNot
 		retry: "never",
 		recovery: "none",
 		exposure: "redacted",
+	},
+) {}
+
+/** Only an open incident can be acknowledged or unacknowledged. */
+export class AlertIncidentResolvedError extends HttpTaggedError<AlertIncidentResolvedError>()(
+	"@maple/http/errors/AlertIncidentResolvedError",
+	{ message: Schema.String, incidentId: AlertIncidentId },
+	{
+		status: 409,
+		code: "alert_incident_resolved",
+		title: "Alert incident already resolved",
+		retry: "never",
+		recovery: "none",
+		exposure: "public_message",
 	},
 ) {}
 

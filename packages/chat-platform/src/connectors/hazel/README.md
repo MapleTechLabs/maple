@@ -14,22 +14,37 @@ declared once, in `api.ts`.
 | ----------------------- | -------------------------------------------- | ------------------------------- |
 | `MAPLE_HAZEL_BOT_TOKEN` | The token shown once when the bot is created | ingress, outbound and install   |
 | `MAPLE_HAZEL_BOT_ID`    | The bot's id (not a secret)                  | install, as the link's `bot_id` |
+| `MAPLE_HAZEL_REGION`    | `eu` on the EU instance; unset on US         | ingress and install (optional)  |
 
 A half whose names are unset is skipped rather than fatal, as for every connector.
 
 1. **Create the bot** with the scopes `messages:read`, `messages:write`, `channels:write` (opens
    threads) and `channels:read` (lists the channels an alert can go to), mark it **public**, and
    make it **mentionable**.
-   A bot created before alerts came through it lacks `channels:read`: add it on each instance's
-   bot (US and EU), or its channel list answers `auth` and no Hazel channel can be picked.
+   A bot created before alerts came through it lacks `channels:read`: add it, or its channel list
+   answers `auth` and no Hazel channel can be picked.
 2. **Register the install redirect URIs** on the bot (Edit Application → Install redirect URIs):
-   `https://api.maple.dev/oauth/chat/hazel/callback`, plus the equivalent origin of any other
+   `https://api.maple.dev/oauth/chat/hazel/callback`, the EU instance's with its region
+   (`https://<eu api origin>/oauth/chat/hazel/callback?hazel_region=eu`), plus the origin of any other
    stage that shares this bot. Hazel compares them exactly.
-3. **Put the two values on the deployment.** The token reaches `chat-bot` and `api`, the id reaches
-   `api`.
+3. **Put the values on the deployment.** The token reaches `chat-bot` and `api`, the id reaches
+   `api`, and the EU instance also sets `MAPLE_HAZEL_REGION=eu` on both.
 
-**One bot per instance.** Hazel allows one gateway session per bot token, so the EU instance runs
-its own bot, with its own redirect URI.
+**One bot for every instance.** Hazel's gateway holds one session per bot and region. Each
+instance identifies with its own region (none for US), and its callback carries the region
+(`?hazel_region=eu`, `hazelRedirectUri`). That URI is registered on the bot and matched exactly, so
+Hazel routes a workspace installed from the EU instance to the EU session before the install
+even exists, and no edited link can name another region. A workspace can be installed from one
+region at a time: Hazel refuses another region's callback until the bot is removed there. Its
+events go only to the EU session: EU data never passes through the US instance, and neither depends on the other being up. In Hazel the bot is
+the Maple integration (Settings → Integrations → Maple), not an entry in Installed Apps.
+
+Moving an instance onto the shared bot: deploy Hazel with regional install support first. Then set
+the instance's token, id and region, and clear its saved gateway session and offset (they belong to
+the old bot's log) before reconnecting its Hazel workspaces (Settings → Integrations → Hazel →
+Connect), which installs the shared bot for the region. The chat-bot reconnects on its own, so do
+not count on the instance staying disconnected meanwhile; its first session on the shared bot
+identifies from new events (`now`).
 
 ## Trying it end to end
 
@@ -95,8 +110,9 @@ sides, which is what this rests on.
   this bot. A gateway that predates `botUserId` delivers nothing until it names it.
 - Events arrive in DISPATCH batches, one in flight at a time; each is acknowledged in the same step
   that hands its events to the host.
-- One session per token: a second IDENTIFY is refused while one is live, and a RESUME of the live
-  session replaces it. So the session is kept across every reconnect and deploy, and only a refused
+- One session per bot and region (`MAPLE_HAZEL_REGION`; none for US): a second IDENTIFY for the
+  same region is refused while one is live, and a RESUME of the live session replaces it. The US
+  and EU instances share the token, each holding its own region's session. So the session is kept across every reconnect and deploy, and only a refused
   token (`Invalid bot token`) stops the loop.
 
 Hazel delivers every message in a workspace to an installed bot. The connector drops its own

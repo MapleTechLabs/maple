@@ -130,9 +130,14 @@ const exploreItem: NavItem = {
 }
 
 /** The org rollout flags that gate a nav row each. */
-export type NavFlags = Readonly<{ releases: boolean; securityAudit: boolean; statusPages: boolean }>
+export type NavFlags = Readonly<{
+	releases: boolean
+	securityAudit: boolean
+	statusPages: boolean
+	users: boolean
+}>
 
-/** `navGroups(flags)`; `releases`, `securityAudit` and `statusPages` gate a row each. */
+/** `navGroups(flags)`; `releases`, `securityAudit`, `statusPages` and `users` gate a row each. */
 export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 	{ id: "overview", items: [{ title: "Overview", href: "/", icon: "HouseIcon" }] },
 	{
@@ -161,6 +166,7 @@ export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 		items: [
 			exploreItem,
 			{ title: "Web analytics", href: "/analytics", icon: "ChartBarHorizontalIcon" },
+			...(flags.users ? [{ title: "Users", href: "/users", icon: "UsersIcon" } as const] : []),
 			{ title: "Dashboards", href: "/dashboards", icon: "GridSquareCirclePlusIcon" },
 		],
 	},
@@ -191,17 +197,18 @@ export const isPathActive = (currentPath: string, href: string): boolean =>
 		: currentPath === href || Str.startsWith(`${href}/`)(currentPath)
 
 export const matchSubItem = (currentPath: string, sub: NavSubItem): string | undefined =>
-	Arr.filter([sub.href, ...Arr.map(sub.views ?? [], (view) => view.href)], (href) =>
-		isPathActive(currentPath, href),
-	).reduce<string | undefined>(
-		(best, href) => (best === undefined || href.length > best.length ? href : best),
+	Arr.reduce<string, string | undefined>(
+		Arr.filter([sub.href, ...Arr.map(sub.views ?? [], (view) => view.href)], (href) =>
+			isPathActive(currentPath, href),
+		),
 		undefined,
+		(best, href) => (best === undefined || href.length > best.length ? href : best),
 	)
 
 export const isNavItemActive = (currentPath: string, item: NavItem): boolean =>
 	isPathActive(currentPath, item.href) ||
-	(item.alsoActive?.some((href) => isPathActive(currentPath, href)) ?? false) ||
-	(item.subItems?.some((sub) => matchSubItem(currentPath, sub) !== undefined) ?? false)
+	Arr.some(item.alsoActive ?? [], (href) => isPathActive(currentPath, href)) ||
+	Arr.some(item.subItems ?? [], (sub) => matchSubItem(currentPath, sub) !== undefined)
 
 export interface NavPreview {
 	readonly glyphs: ReadonlyArray<NavSubItem>
@@ -220,10 +227,7 @@ export const navPreview = (item: NavItem, shown: ReadonlyArray<NavSubItem>): Nav
 		Arr.filter(list, (sub) => sub.href !== item.href && sub.icon !== undefined)
 	const reporting = marked(shown)
 	const candidates = reporting.length > 0 ? reporting : marked(subItems)
-	const unique = Arr.filter(
-		candidates,
-		(sub, index) => candidates.findIndex((other) => other.icon === sub.icon) === index,
-	)
+	const unique = Arr.dedupeWith(candidates, (a, b) => a.icon === b.icon)
 	if (unique.length <= NAV_PREVIEW_MAX_GLYPHS) return { glyphs: unique, overflow: 0 }
 	const glyphs = unique.slice(0, NAV_PREVIEW_MAX_GLYPHS - 1)
 	return { glyphs, overflow: unique.length - glyphs.length }

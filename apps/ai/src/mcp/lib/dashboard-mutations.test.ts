@@ -11,9 +11,13 @@
 // tests drive the real production paths and assert they succeed.
 
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
-import { DashboardDocument, DashboardId, IsoDateTimeString, OrgId, UserId } from "@maple/domain/http"
-import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import { ConfigProvider, Effect, Layer, Ref, Schema, Array as Arr } from "effect"
+import { DashboardDocument, OrgId, PortableDashboardDocument, UserId } from "@maple/domain/http"
+import {
+	DashboardPersistenceService,
+	type DashboardPersistenceServiceApi,
+} from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import type { Database } from "@maple/backend/platform/DatabaseLive"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { Env } from "@maple/backend/platform/Env"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
@@ -51,13 +55,20 @@ const testConfig = () =>
 		}),
 	)
 
-const makeLayer = (testDb: TestDb) =>
+const makeLayer = (
+	testDb: TestDb,
+	persistence: Layer.Layer<
+		DashboardPersistenceService,
+		never,
+		Database
+	> = DashboardPersistenceService.layer,
+) =>
 	Layer.mergeAll(
-		DashboardPersistenceService.layer,
+		persistence,
 		SharedDashboardService.layer,
 		Layer.succeed(CurrentMcpTenant, {
-			orgId: Schema.decodeUnknownSync(OrgId)(ORG),
-			userId: Schema.decodeUnknownSync(UserId)("internal-service"),
+			orgId: Schema.decodeSync(OrgId)(ORG),
+			userId: Schema.decodeSync(UserId)("internal-service"),
 			roles: [],
 			authMode: "self_hosted",
 		}),
@@ -71,13 +82,8 @@ const makeToolServicesLayer = (testDb: TestDb) =>
 		Layer.provide(testConfig()),
 	)
 
-const asDashboardId = Schema.decodeUnknownSync(DashboardId)
-const asIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
-
-const DASHBOARD = asDashboardId("dash-no-tags")
-const NOW = asIsoDateTimeString(new Date("2026-01-01T00:00:00.000Z").toISOString())
 
 type Widget = DashboardDocument["widgets"][number]
 
@@ -92,21 +98,17 @@ const widget = (id: string): Widget => ({
 // A dashboard with NEITHER a `tags` nor a `description` key — the on-disk shape
 // MCP/template-created dashboards can have. Both keys are simply omitted (absent,
 // not `undefined`), which is the only shape the Schema.Class constructor accepts.
-const seed = (): DashboardDocument =>
-	new DashboardDocument({
-		id: DASHBOARD,
+const seed = (): PortableDashboardDocument =>
+	new PortableDashboardDocument({
 		name: "Tag-less dashboard",
 		timeRange: { type: "relative", value: "12h" },
 		widgets: [],
-		createdAt: NOW,
-		updatedAt: NOW,
 	})
 
 // A dashboard using every field a widget mutation must carry forward but never
 // touches: sections with tabs, a variable, and an auto-refresh cadence.
-const grouped = (): DashboardDocument =>
-	new DashboardDocument({
-		id: DASHBOARD,
+const grouped = (): PortableDashboardDocument =>
+	new PortableDashboardDocument({
 		name: "Grouped dashboard",
 		timeRange: { type: "relative", value: "12h" },
 		widgets: [{ ...widget("w-1"), sectionId: "sec-1", tabId: "tab-1" }],
@@ -122,8 +124,6 @@ const grouped = (): DashboardDocument =>
 		],
 		variables: [{ type: "custom", name: "env", options: [{ value: "prod" }, { value: "stg" }] }],
 		refreshIntervalSeconds: 30,
-		createdAt: NOW,
-		updatedAt: NOW,
 	})
 
 // BOUNDARY: the handler is driven with raw tool arguments, decoded by the tool's own schema.
@@ -136,10 +136,14 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 
 		return Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			yield* persistence.upsert(asOrgId(ORG), asUserId("seed-user"), seed())
+			const {
+				document: { id: dashboardId },
+			} = yield* persistence.create(asOrgId(ORG), asUserId("seed-user"), seed())
 
-			const dashboard = yield* withDashboardMutation(DASHBOARD, "update_dashboard_widget", (widgets) =>
-				Effect.succeed([...widgets, widget("w-new")]),
+			const dashboard = yield* withDashboardMutation(
+				dashboardId,
+				"update_dashboard_widget",
+				(widgets) => Effect.succeed([...widgets, widget("w-new")]),
 			)
 
 			assert.strictEqual(dashboard.widgets.length, 1)
@@ -147,7 +151,7 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 			const listed = yield* persistence.list(asOrgId(ORG))
 			assert.strictEqual(listed.dashboards.length, 1)
 			assert.deepStrictEqual(
-				Arr.map(listed.dashboards[0]!.widgets, (w) => w.id),
+				Arr.map(Arr.getUnsafe(listed.dashboards, 0).document.widgets, (w) => w.id),
 				["w-new"],
 			)
 		}).pipe(Effect.provide(layer))
@@ -164,13 +168,15 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 
 		return Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			yield* persistence.upsert(asOrgId(ORG), asUserId("seed-user"), grouped())
+			const {
+				document: { id: dashboardId },
+			} = yield* persistence.create(asOrgId(ORG), asUserId("seed-user"), grouped())
 
-			yield* withDashboardMutation(DASHBOARD, "add_dashboard_widget", (widgets) =>
+			yield* withDashboardMutation(dashboardId, "add_dashboard_widget", (widgets) =>
 				Effect.succeed([...widgets, { ...widget("w-new"), sectionId: "sec-1", tabId: "tab-1" }]),
 			)
 
-			const [stored] = (yield* persistence.list(asOrgId(ORG))).dashboards
+			const stored = (yield* persistence.list(asOrgId(ORG))).dashboards[0]?.document
 			assert.isDefined(stored)
 
 			assert.deepStrictEqual(stored.sections, grouped().sections)
@@ -209,12 +215,14 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 
 		return Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			yield* persistence.upsert(asOrgId(ORG), asUserId("seed-user"), seed())
+			const {
+				document: { id: dashboardId },
+			} = yield* persistence.create(asOrgId(ORG), asUserId("seed-user"), seed())
 
-			yield* invoke({ dashboard_id: DASHBOARD, name: "Renamed" })
+			yield* invoke({ dashboard_id: dashboardId, name: "Renamed" })
 
 			const listed = yield* persistence.list(asOrgId(ORG))
-			assert.strictEqual(listed.dashboards[0]!.name, "Renamed")
+			assert.strictEqual(Arr.getUnsafe(listed.dashboards, 0).document.name, "Renamed")
 		}).pipe(Effect.provide(layer.pipe(Layer.provideMerge(makeToolServicesLayer(testDb)))))
 	})
 
@@ -238,29 +246,35 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 
 		return Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			yield* persistence.upsert(
+			const {
+				document: { id: dashboardId },
+			} = yield* persistence.create(
 				asOrgId(ORG),
 				asUserId("seed-user"),
-				new DashboardDocument({
+				new PortableDashboardDocument({
 					...seed(),
 					widgets: [{ ...widget("w-1"), display: { title: "A very long title", unit: "ms" } }],
 				}),
 			)
 
-			yield* invoke({ dashboard_id: DASHBOARD, widget_id: "w-1", title: "Short" })
+			yield* invoke({ dashboard_id: dashboardId, widget_id: "w-1", title: "Short" })
 			yield* invoke({
-				dashboard_id: DASHBOARD,
+				dashboard_id: dashboardId,
 				widget_id: "w-1",
 				patch_json: '{"display":{"unit":null,"chartId":"bar-chart"}}',
 			})
 
-			const [stored] = (yield* persistence.list(asOrgId(ORG))).dashboards
-			assert.deepStrictEqual(stored!.widgets[0]!.display, { title: "Short", chartId: "bar-chart" })
-			assert.deepStrictEqual(stored!.widgets[0]!.layout, widget("w-1").layout)
+			const stored = (yield* persistence.list(asOrgId(ORG))).dashboards[0]?.document
+			assert.isDefined(stored)
+			assert.deepStrictEqual(Arr.getUnsafe(stored.widgets, 0).display, {
+				title: "Short",
+				chartId: "bar-chart",
+			})
+			assert.deepStrictEqual(Arr.getUnsafe(stored.widgets, 0).layout, widget("w-1").layout)
 
 			const both = yield* Effect.flip(
 				invoke({
-					dashboard_id: DASHBOARD,
+					dashboard_id: dashboardId,
 					widget_id: "w-1",
 					title: "x",
 					widget_json: JSON.stringify(widget("w-1")),
@@ -268,10 +282,132 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 			)
 			assert.include(both.message, "not both")
 			const missing = yield* Effect.flip(
-				invoke({ dashboard_id: DASHBOARD, widget_id: "nope", title: "x" }),
+				invoke({ dashboard_id: dashboardId, widget_id: "nope", title: "x" }),
 			)
 			assert.include(missing.message, "Widget not found: nope")
 		}).pipe(Effect.provide(layer.pipe(Layer.provideMerge(makeToolServicesLayer(testDb)))))
+	})
+})
+
+const handlerOf = (register: (registrar: McpToolRegistrar) => void): ToolHandler => {
+	let handler: ToolHandler = () => Effect.die("tool was not registered")
+	register({
+		define: (spec) => {
+			handler = (params) =>
+				Schema.decodeUnknownEffect(spec.parameters)(params).pipe(
+					Effect.orDie,
+					Effect.flatMap(spec.handler),
+				)
+		},
+	})
+	return (params) => handler(params)
+}
+
+describe("MCP dashboard tools carry the whole document forward", () => {
+	it.effect("update_dashboard keeps sections, variables and refresh on a rename", () => {
+		const testDb = createTestDb(trackedDbs)
+		const invoke = handlerOf(registerUpdateDashboardTool)
+
+		return Effect.gen(function* () {
+			const persistence = yield* DashboardPersistenceService
+			const {
+				document: { id },
+			} = yield* persistence.create(asOrgId(ORG), asUserId("seed-user"), grouped())
+
+			yield* invoke({ dashboard_id: id, name: "Renamed", time_range: "6h" })
+
+			const { document: stored } = yield* persistence.get(asOrgId(ORG), id)
+			assert.strictEqual(stored.name, "Renamed")
+			assert.deepStrictEqual(stored.timeRange, { type: "relative", value: "6h" })
+			assert.deepStrictEqual(stored.sections, grouped().sections)
+			assert.deepStrictEqual(stored.variables, grouped().variables)
+			assert.strictEqual(stored.refreshIntervalSeconds, 30)
+			assert.strictEqual(stored.widgets[0]?.sectionId, "sec-1")
+		}).pipe(Effect.provide(makeLayer(testDb).pipe(Layer.provideMerge(makeToolServicesLayer(testDb)))))
+	})
+
+	it.effect("update_dashboard's dashboard_json keeps the sections and variables it carries", () => {
+		const testDb = createTestDb(trackedDbs)
+		const invoke = handlerOf(registerUpdateDashboardTool)
+
+		return Effect.gen(function* () {
+			const persistence = yield* DashboardPersistenceService
+			const {
+				document: { id },
+			} = yield* persistence.create(asOrgId(ORG), asUserId("seed-user"), seed())
+
+			const { schemaVersion: _version, ...portable } =
+				Schema.encodeSync(PortableDashboardDocument)(grouped())
+			yield* invoke({ dashboard_id: id, dashboard_json: JSON.stringify(portable) })
+
+			const { document: stored } = yield* persistence.get(asOrgId(ORG), id)
+			assert.strictEqual(stored.name, "Grouped dashboard")
+			assert.deepStrictEqual(stored.sections, grouped().sections)
+			assert.deepStrictEqual(stored.variables, grouped().variables)
+			assert.strictEqual(stored.refreshIntervalSeconds, 30)
+		}).pipe(Effect.provide(makeLayer(testDb).pipe(Layer.provideMerge(makeToolServicesLayer(testDb)))))
+	})
+
+	it.effect("update_dashboard_widget merges its patch onto an edit that lands while it runs", () => {
+		const testDb = createTestDb(trackedDbs)
+		const invoke = handlerOf(registerUpdateDashboardWidgetTool)
+		// Another writer changes the widget's unit just before this tool's write lands.
+		const racingPersistence = Layer.effect(
+			DashboardPersistenceService,
+			Effect.gen(function* () {
+				const live = yield* DashboardPersistenceService
+				const raced = yield* Ref.make(false)
+				const mutate: DashboardPersistenceServiceApi["mutate"] = (
+					orgId,
+					userId,
+					id,
+					transform,
+					options,
+				) =>
+					Ref.getAndSet(raced, true).pipe(
+						Effect.flatMap((already) =>
+							already
+								? Effect.void
+								: live.mutate(orgId, userId, id, (current) =>
+										Effect.succeed(
+											new DashboardDocument({
+												...current,
+												widgets: Arr.map(current.widgets, (w) => ({
+													...w,
+													display: { ...w.display, unit: "s" },
+												})),
+											}),
+										),
+									),
+						),
+						Effect.andThen(live.mutate(orgId, userId, id, transform, options)),
+					)
+				return { ...live, mutate }
+			}),
+		).pipe(Layer.provide(DashboardPersistenceService.layer))
+
+		return Effect.gen(function* () {
+			const persistence = yield* DashboardPersistenceService
+			const {
+				document: { id },
+			} = yield* persistence.create(
+				asOrgId(ORG),
+				asUserId("seed-user"),
+				new PortableDashboardDocument({
+					...seed(),
+					widgets: [{ ...widget("w-1"), display: { title: "Long title", unit: "ms" } }],
+				}),
+			)
+
+			yield* invoke({ dashboard_id: id, widget_id: "w-1", title: "Short" })
+
+			const { document: stored } = yield* persistence.get(asOrgId(ORG), id)
+			assert.deepStrictEqual(stored.widgets[0]?.display, { title: "Short", unit: "s" })
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, racingPersistence).pipe(Layer.provideMerge(makeToolServicesLayer(testDb))),
+			),
+		)
 	})
 })
 
@@ -283,7 +419,7 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 describe("legacy v2 payloads get a corrective error", () => {
 	// The parameter schemas the widget tools publish; a failure is what the registry reports.
 	const decodeErrorOf = (json: string) =>
-		Effect.flip(Schema.decodeUnknownEffect(dataSourceJson("test"))(json)).pipe(
+		Effect.flip(Schema.decodeEffect(dataSourceJson("test"))(json)).pipe(
 			Effect.map((error) => error.message),
 		)
 
@@ -330,7 +466,7 @@ describe("legacy v2 payloads get a corrective error", () => {
 	it.effect("a whole widget carrying a v2 dataSource gets the same hint", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(
-				Schema.decodeUnknownEffect(widgetJson("test"))(
+				Schema.decodeEffect(widgetJson("test"))(
 					JSON.stringify({
 						id: "w1",
 						visualization: "markdown",
@@ -358,7 +494,7 @@ describe("legacy v2 payloads get a corrective error", () => {
 	it.effect("a widget with endpoint/params on itself instead of a dataSource is named", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(
-				Schema.decodeUnknownEffect(widgetJson("test"))(
+				Schema.decodeEffect(widgetJson("test"))(
 					JSON.stringify({
 						visualization: "chart",
 						endpoint: "service_overview",
@@ -374,7 +510,7 @@ describe("legacy v2 payloads get a corrective error", () => {
 
 	it.effect("a valid v3 source still decodes untouched", () =>
 		Effect.gen(function* () {
-			const source = yield* Schema.decodeUnknownEffect(dataSourceJson("test"))('{"kind":"static"}')
+			const source = yield* Schema.decodeEffect(dataSourceJson("test"))('{"kind":"static"}')
 			assert.deepStrictEqual(source, { kind: "static" })
 		}),
 	)

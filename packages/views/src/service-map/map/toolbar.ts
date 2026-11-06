@@ -1,4 +1,5 @@
 import { Option, Schema, Array as Arr } from "effect"
+import { countLabel } from "@maple/ui/lib/format"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
 import * as Combobox from "../../ui/combobox"
@@ -189,9 +190,8 @@ const hiddenButton = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>, trigger: T
 			attributes: [...trigger(TIP_HIDDEN), h.OnClick(inputs.onShowAllTraffic)],
 		},
 		[
-			...(inputs.hiddenNodeCount > 0 ? [`${inputs.hiddenNodeCount} services · `] : []),
-			String(inputs.hiddenEdgeCount),
-			" edges hidden",
+			...(inputs.hiddenNodeCount > 0 ? [`${countLabel(inputs.hiddenNodeCount, "service")} · `] : []),
+			`${countLabel(inputs.hiddenEdgeCount, "edge")} hidden`,
 		],
 	)
 

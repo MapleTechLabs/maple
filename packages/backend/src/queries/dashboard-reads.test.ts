@@ -13,8 +13,8 @@ import { makeDashboardReads, withinBudget } from "./dashboard-reads"
 const TRACE_ID = "7f3a4b5c6d7e8f901234567890abcdef"
 
 const tenant: TenantContext = {
-	orgId: Schema.decodeUnknownSync(OrgId)("org_dashboard_reads"),
-	userId: Schema.decodeUnknownSync(UserId)("user_dashboard_reads"),
+	orgId: Schema.decodeSync(OrgId)("org_dashboard_reads"),
+	userId: Schema.decodeSync(UserId)("user_dashboard_reads"),
 	roles: [],
 	authMode: "self_hosted",
 }
@@ -99,7 +99,7 @@ const makeQueryEngine = (
 })
 
 const hierarchyStatement = (statements: ReadonlyArray<string>) =>
-	statements.find((sql) => Str.includes("AS relationship")(sql))
+	Option.getOrUndefined(Arr.findFirst(statements, (sql) => Str.includes("AS relationship")(sql)))
 
 describe("makeDashboardReads.spanHierarchy", () => {
 	it.effect("reads the caller's window without probing", () =>
@@ -207,7 +207,7 @@ const missingRollup = new WarehouseConfigError({
 	clickhouseType: "UNKNOWN_TABLE",
 })
 
-const operationsPayload = Schema.decodeUnknownSync(ServiceOperationsRequest)({
+const operationsPayload = Schema.decodeSync(ServiceOperationsRequest)({
 	serviceName: "api",
 	startTime: "2026-07-15 12:00:00",
 	endTime: "2026-07-15 13:00:00",

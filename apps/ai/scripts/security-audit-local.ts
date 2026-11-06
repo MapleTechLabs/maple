@@ -31,6 +31,7 @@ import {
 	Clock,
 	ConfigProvider,
 	Console,
+	DateTime,
 	Effect,
 	Layer,
 	Option,
@@ -46,25 +47,28 @@ import { makeExecutor } from "@maple/backend/services/sandbox/ExecutorService"
 import {
 	EXECUTOR_DESTROY_PATH,
 	EXECUTOR_PREPARE_PATH,
+	EXECUTOR_RELEASE_PATH,
 	EXECUTOR_RUN_PATH,
 	ExecutorDestroyRequest,
 	ExecutorDestroyResponse,
 	ExecutorPrepareRequest,
 	ExecutorPrepareResponse,
+	ExecutorReleaseRequest,
+	ExecutorReleaseResponse,
 	ExecutorRunRequest,
 	ExecutorRunResponse,
 } from "@maple/domain/executor"
 import { OrgId } from "@maple/domain/http"
 import { SandboxCheckout } from "@maple/domain/sandbox"
-import { makeAuditAgents } from "@/security-audit/agents"
+import { makeAuditAgents } from "../src/security-audit/agents"
 import {
 	type AuditExecutionApi,
 	AuditExecutionError,
 	EXECUTION_TOOL_GUIDANCE,
 	executionPolicy,
-} from "@/security-audit/execution"
-import { AUDIT_TOOL_GUIDANCE, SourceReadError, type SourceReaderApi } from "@/security-audit/source"
-import { layerLlm, loadLlmSettings, resolveSecurityAuditModel } from "@/platform/Llm"
+} from "../src/security-audit/execution"
+import { AUDIT_TOOL_GUIDANCE, SourceReadError, type SourceReaderApi } from "../src/security-audit/source"
+import { layerLlm, loadLlmSettings, resolveSecurityAuditModel } from "../src/platform/Llm"
 
 const MAX_OUTPUT_BYTES = 48 * 1024
 const decodeJson = Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -97,7 +101,7 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 			// Every option takes a value; a missing one, or another option in its place, is a usage error.
 			if (value === undefined || Str.startsWith("--")(value)) {
 				console.error(
-					`${arg} needs a value\n${"usage: bun run security:local <repo-dir> [--ref <commit>] [--scope <path>]... [--profile quick|standard|deep] [--budget <n>] [--concurrency <n>] [--out <dir>] [--prior <run dir>]"}`,
+					`${arg} needs a value\nusage: bun run security:local <repo-dir> [--ref <commit>] [--scope <path>]... [--profile quick|standard|deep] [--budget <n>] [--concurrency <n>] [--out <dir>] [--prior <run dir>]`,
 				)
 				process.exit(2)
 			}
@@ -283,24 +287,27 @@ const fileStore = (out: string): AuditStoreApi => {
 				write("NEEDS-VALIDATION.md", reports.needsValidation),
 			]).pipe(Effect.asVoid),
 		recordEvent: (_, event) =>
-			Effect.sync(() => {
-				appendFileSync(
-					join(out, "events.jsonl"),
-					`${encodeJson({ at: new Date().toISOString(), ...event })}\n`,
-				)
-				const line =
-					event._tag === "Agent"
-						? `${Str.padEnd(18)(event.agentId)} ${event.outcome}${event.usage === undefined ? "" : ` (${event.usage.inputTokens} in / ${event.usage.outputTokens} out${event.usage.costUsd === undefined ? "" : `, $${event.usage.costUsd.toFixed(3)}`})`}${event.message === undefined ? "" : `: ${Str.slice(0, 160)(event.message)}`}`
-						: event._tag === "Phase"
-							? `== ${event.phase}: ${event.detail}`
-							: `-- ${event.message}`
-				return line
-			}).pipe(Effect.flatMap((line) => Console.log(line))),
+			DateTime.now.pipe(
+				Effect.map((now) => {
+					appendFileSync(
+						join(out, "events.jsonl"),
+						`${encodeJson({ at: DateTime.formatIso(now), ...event })}\n`,
+					)
+					const line =
+						event._tag === "Agent"
+							? `${Str.padEnd(18)(event.agentId)} ${event.outcome}${event.usage === undefined ? "" : ` (${event.usage.inputTokens} in / ${event.usage.outputTokens} out${event.usage.costUsd === undefined ? "" : `, $${event.usage.costUsd.toFixed(3)}`})`}${event.message === undefined ? "" : `: ${Str.slice(0, 160)(event.message)}`}`
+							: event._tag === "Phase"
+								? `== ${event.phase}: ${event.detail}`
+								: `-- ${event.message}`
+					return line
+				}),
+				Effect.flatMap((line) => Console.log(line)),
+			),
 	}
 }
 
 /** The executor ignores the org; a local run still names one for the same calls a deployed run makes. */
-const LOCAL_ORG = Schema.decodeUnknownSync(OrgId)("org_local_security_audit")
+const LOCAL_ORG = Schema.decodeSync(OrgId)("org_local_security_audit")
 
 /** The executor wire over HTTP to `executor:local`, decoded with the same schemas as the binding. */
 const httpTransport = (base: string): ExecutorTransport => {
@@ -309,7 +316,7 @@ const httpTransport = (base: string): ExecutorTransport => {
 			HttpClientRequest.post(`${base}${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
 		).pipe(
 			Effect.flatMap((response) => response.json),
-			Effect.flatMap((json) => Schema.decodeUnknownEffect(answer)(json)),
+			Effect.flatMap((json) => Schema.decodeEffect(answer)(json)),
 			Effect.mapBoth({
 				onSuccess: Option.some,
 				onFailure: (error) => new SandboxClientError({ message: `executor:local: ${String(error)}` }),
@@ -328,6 +335,12 @@ const httpTransport = (base: string): ExecutorTransport => {
 			),
 		run: (request) =>
 			send(EXECUTOR_RUN_PATH, Schema.encodeSync(ExecutorRunRequest)(request), ExecutorRunResponse),
+		release: (request) =>
+			send(
+				EXECUTOR_RELEASE_PATH,
+				Schema.encodeSync(ExecutorReleaseRequest)(request),
+				ExecutorReleaseResponse,
+			),
 		destroy: (request) =>
 			send(
 				EXECUTOR_DESTROY_PATH,
@@ -433,8 +446,10 @@ const main = async () => {
 										(error) => new AuditExecutionError({ message: error.message }),
 									),
 								),
+						release: (agentId) => executor.release(executorRun, agentId),
 					}
 		const agents = yield* makeAuditAgents(models, localSource(args.repoDir, sha), execution).pipe(
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide -- script entry point: the local run composes its own LLM layer
 			Effect.provide(layerLlm(settings)),
 		)
 		const input: AuditRunInput = {

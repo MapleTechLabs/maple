@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto"
+import { Array as Arr } from "effect"
 import {
 	fmtMetricTs,
 	type MetricGaugeRow,
@@ -8,7 +9,7 @@ import {
 const SERVICES = ["demo-api", "demo-frontend", "demo-worker", "demo-db"] as const
 type DemoServiceName = (typeof SERVICES)[number]
 
-const HTTP_ROUTES: Array<{ method: string; route: string; service: DemoServiceName }> = [
+const HTTP_ROUTES: Arr.NonEmptyArray<{ method: string; route: string; service: DemoServiceName }> = [
 	{ method: "GET", route: "/api/users", service: "demo-api" },
 	{ method: "GET", route: "/api/users/:id", service: "demo-api" },
 	{ method: "POST", route: "/api/users", service: "demo-api" },
@@ -20,7 +21,7 @@ const HTTP_ROUTES: Array<{ method: string; route: string; service: DemoServiceNa
 	{ method: "GET", route: "/checkout", service: "demo-frontend" },
 ]
 
-const DB_QUERIES = [
+const DB_QUERIES: Arr.NonEmptyReadonlyArray<string> = [
 	"SELECT * FROM users WHERE id = $1",
 	"SELECT * FROM orders WHERE user_id = $1",
 	"INSERT INTO orders (user_id, total) VALUES ($1, $2)",
@@ -28,7 +29,13 @@ const DB_QUERIES = [
 	"UPDATE users SET last_seen = NOW() WHERE id = $1",
 ]
 
-const WORKER_JOBS = ["send_email", "process_payment", "sync_inventory", "generate_report", "refresh_cache"]
+const WORKER_JOBS: Arr.NonEmptyReadonlyArray<string> = [
+	"send_email",
+	"process_payment",
+	"sync_inventory",
+	"generate_report",
+	"refresh_cache",
+]
 
 // Demo data is written straight to the `traces` / `logs` datasources via
 // WarehouseQueryService.ingest (bypassing the billing-enforced ingest gateway),
@@ -102,28 +109,31 @@ export interface DemoRows extends DemoTraceBatch {
 
 const SCOPE_NAME = "@maple/demo-instr"
 
+/** A uniform draw in [0, 1). */
+type Rand = () => number
+
 const traceIdHex = () => randomBytes(16).toString("hex")
 const spanIdHex = () => randomBytes(8).toString("hex")
 
-function pick<T>(arr: readonly T[]): T {
-	return arr[Math.floor(Math.random() * arr.length)]!
+function pick<T>(rand: Rand, arr: Arr.NonEmptyReadonlyArray<T>): T {
+	return arr[Math.floor(rand() * arr.length)] ?? Arr.headNonEmpty(arr)
 }
 
-function gaussian(mean: number, stddev: number): number {
-	const u1 = Math.random()
-	const u2 = Math.random()
+function gaussian(rand: Rand, mean: number, stddev: number): number {
+	const u1 = rand()
+	const u2 = rand()
 	const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2)
 	return mean + z * stddev
 }
 
-function latencyMs(): number {
-	const base = Math.max(5, gaussian(60, 40))
-	if (Math.random() < 0.05) return base + Math.random() * 800
+function latencyMs(rand: Rand): number {
+	const base = Math.max(5, gaussian(rand, 60, 40))
+	if (rand() < 0.05) return base + rand() * 800
 	return base
 }
 
-function dbLatencyMs(): number {
-	return Math.max(1, gaussian(8, 5))
+function dbLatencyMs(rand: Rand): number {
+	return Math.max(1, gaussian(rand, 8, 5))
 }
 
 const fmtTs = fmtMetricTs
@@ -192,20 +202,20 @@ const makeLogRow = (
 	...over,
 })
 
-function generateHttpTrace(timestamp: Date, orgId: string): DemoTraceBatch {
-	const route = pick(HTTP_ROUTES)
+function generateHttpTrace(rand: Rand, timestamp: Date, orgId: string): DemoTraceBatch {
+	const route = pick(rand, HTTP_ROUTES)
 	const traceId = traceIdHex()
 	const rootSpanId = spanIdHex()
 	const dbSpanId = spanIdHex()
 
-	const isError = Math.random() < 0.012
-	const totalLatency = latencyMs() + (isError ? 100 : 0)
-	const dbLatency = Math.min(totalLatency * 0.6, dbLatencyMs())
+	const isError = rand() < 0.012
+	const totalLatency = latencyMs(rand) + (isError ? 100 : 0)
+	const dbLatency = Math.min(totalLatency * 0.6, dbLatencyMs(rand))
 	const startMs = timestamp.getTime()
 	const endMs = startMs + totalLatency
 	const dbStartMs = startMs + Math.floor((totalLatency - dbLatency) / 2)
 
-	const httpStatus = isError ? (Math.random() < 0.5 ? 500 : 503) : Math.random() < 0.04 ? 404 : 200
+	const httpStatus = isError ? (rand() < 0.5 ? 500 : 503) : rand() < 0.04 ? 404 : 200
 
 	const apiRow = makeTraceRow({
 		start_time: fmtTs(startMs),
@@ -254,7 +264,7 @@ function generateHttpTrace(timestamp: Date, orgId: string): DemoTraceBatch {
 		resource_attributes: resourceAttrs("demo-db", orgId),
 		span_attributes: {
 			"db.system.name": "postgresql",
-			"db.query.text": pick(DB_QUERIES),
+			"db.query.text": pick(rand, DB_QUERIES),
 			"db.namespace": "demo",
 			"maple.demo": "true",
 		},
@@ -284,12 +294,12 @@ function generateHttpTrace(timestamp: Date, orgId: string): DemoTraceBatch {
 	return { traceRows: [apiRow, dbRow], logRows }
 }
 
-function generateWorkerTrace(timestamp: Date, orgId: string): DemoTraceBatch {
-	const job = pick(WORKER_JOBS)
+function generateWorkerTrace(rand: Rand, timestamp: Date, orgId: string): DemoTraceBatch {
+	const job = pick(rand, WORKER_JOBS)
 	const traceId = traceIdHex()
 	const spanId = spanIdHex()
-	const isError = Math.random() < 0.008
-	const total = Math.max(20, gaussian(180, 90)) + (isError ? 50 : 0)
+	const isError = rand() < 0.008
+	const total = Math.max(20, gaussian(rand, 180, 90)) + (isError ? 50 : 0)
 	const startMs = timestamp.getTime()
 	const endMs = startMs + total
 
@@ -356,6 +366,7 @@ const makeMetricBase = (service: DemoServiceName, orgId: string, startMs: number
 })
 
 function generateRuntimeMetrics(
+	rand: Rand,
 	orgId: string,
 	startMs: number,
 	endMs: number,
@@ -370,8 +381,7 @@ function generateRuntimeMetrics(
 		for (let tsMs = startMs; tsMs <= endMs; tsMs += METRIC_INTERVAL_MS, point++) {
 			const base = makeMetricBase(service, orgId, startMs, tsMs)
 			// Slow sine around ~120MB with per-service phase offset + jitter.
-			const heapUsed =
-				120e6 + 30e6 * Math.sin(point / 20 + serviceIdx * 1.7) + (Math.random() - 0.5) * 8e6
+			const heapUsed = 120e6 + 30e6 * Math.sin(point / 20 + serviceIdx * 1.7) + (rand() - 0.5) * 8e6
 			metricGaugeRows.push({
 				...base,
 				metric_name: "process.runtime.nodejs.memory.heap.used",
@@ -384,13 +394,13 @@ function generateRuntimeMetrics(
 				metric_unit: "{handles}",
 				value: Math.max(
 					8,
-					Math.round(50 + 18 * Math.sin(point / 12 + serviceIdx) + (Math.random() - 0.5) * 10),
+					Math.round(50 + 18 * Math.sin(point / 12 + serviceIdx) + (rand() - 0.5) * 10),
 				),
 			})
 			// Event loop lag gauge in ms — calm ~8ms baseline with occasional
 			// spikes so the Node.js Runtime template's "Event Loop Lag (Max)"
 			// panel shows visible structure against demo orgs.
-			const lagSpikeMs = Math.random() < 0.06 ? 20 + Math.random() * 60 : 0
+			const lagSpikeMs = rand() < 0.06 ? 20 + rand() * 60 : 0
 			metricGaugeRows.push({
 				...base,
 				metric_name: "process.runtime.nodejs.eventloop.lag",
@@ -398,14 +408,11 @@ function generateRuntimeMetrics(
 				value: Math.max(
 					1,
 					Math.round(
-						8 +
-							3 * Math.sin(point / 15 + serviceIdx * 2.3) +
-							(Math.random() - 0.5) * 4 +
-							lagSpikeMs,
+						8 + 3 * Math.sin(point / 15 + serviceIdx * 2.3) + (rand() - 0.5) * 4 + lagSpikeMs,
 					),
 				),
 			})
-			gcCount += Math.max(0, Math.round(gaussian(4, 2)))
+			gcCount += Math.max(0, Math.round(gaussian(rand, 4, 2)))
 			metricSumRows.push({
 				...base,
 				metric_name: "process.runtime.nodejs.gc.count",
@@ -424,10 +431,13 @@ export function generateDemoRows({
 	orgId,
 	hours,
 	ratePerHour,
+	random: rand,
 }: {
 	orgId: string
 	hours: number
 	ratePerHour: number
+	/** Draws from the caller's Effect `Random`. */
+	random: Rand
 }): DemoRows {
 	const now = Date.now()
 	const traceRows: TraceRow[] = []
@@ -439,14 +449,14 @@ export function generateDemoRows({
 		const offsetMs = Math.floor((i / totalTraces) * hours * 3600 * 1000)
 		const ts = new Date(startMs + offsetMs)
 
-		const isWorker = Math.random() < 0.25
-		const result = isWorker ? generateWorkerTrace(ts, orgId) : generateHttpTrace(ts, orgId)
+		const isWorker = rand() < 0.25
+		const result = isWorker ? generateWorkerTrace(rand, ts, orgId) : generateHttpTrace(rand, ts, orgId)
 
 		traceRows.push(...result.traceRows)
 		logRows.push(...result.logRows)
 	}
 
-	const { metricGaugeRows, metricSumRows } = generateRuntimeMetrics(orgId, startMs, now)
+	const { metricGaugeRows, metricSumRows } = generateRuntimeMetrics(rand, orgId, startMs, now)
 
 	return { traceRows, logRows, metricGaugeRows, metricSumRows }
 }

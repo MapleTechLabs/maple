@@ -56,6 +56,8 @@ const TARGETS: ReadonlyArray<Target> = [
 	hour("service_address_resolutions_hourly"),
 	hour("service_platforms_hourly"),
 	hour("service_runtimes_hourly"),
+	// Shared with logs: the purged hours lose their log counts too.
+	hour("user_activity_hourly"),
 	hour("attribute_keys_hourly", TRACE_SCOPES),
 	hour("attribute_values_hourly", TRACE_SCOPES),
 	raw("product_events", "Source = 'trace'"),
@@ -105,8 +107,7 @@ const parseInstant = (flag: string): Date => {
 }
 
 const decodeMvLineage = Schema.decodeUnknownOption(
-	Schema.Struct({
-		_tag: Schema.Literal("MaterializedView"),
+	Schema.TaggedStruct("MaterializedView", {
 		ddl: Schema.Struct({ to: Schema.String, sources: Schema.Array(Schema.String) }),
 	}),
 )
@@ -182,7 +183,7 @@ const tinybird = async <S extends Schema.Decoder<unknown>>(
 	const body = await response.text()
 	if (!response.ok)
 		fail(`${init?.method ?? "GET"} ${path} → ${response.status}: ${Str.slice(0, 500)(body)}`)
-	return Schema.decodeUnknownSync(Schema.fromJsonString(schema))(body)
+	return Schema.decodeSync(Schema.fromJsonString(schema))(body)
 }
 
 const countRows = async (target: Target, condition: string): Promise<number> => {

@@ -412,6 +412,21 @@ console.log("\nthe command wrapper")
 		Str.slice(0, 200)(big),
 	)
 
+	// Binary output past the bound: decoded as the Worker decodes it, each invalid byte becomes
+	// U+FFFD, so the text re-encodes larger than the stream. Only the measured size tells the cut.
+	const binary = one("BINARY", wrapped("sh", ["-c", "head -c 2000 /dev/zero | tr '\\0' '\\377'"], 1024))
+	const binaryTrailer = parseTrailer(binary)
+	check(
+		"a binary stream is cut at exactly the bound and keeps its true size, though its text re-encodes larger",
+		ISOLATION_EXPECTED === "unavailable" ||
+			(binaryTrailer._tag === "Some" &&
+				// One U+FFFD per invalid byte: exactly the bound's 1024 bytes came back.
+				binaryTrailer.value.body === Str.repeat(1024)("\uFFFD") &&
+				binaryTrailer.value.trailer.stdoutBytes === 2000 &&
+				new TextEncoder().encode(binaryTrailer.value.body).length > 2000),
+		Str.slice(0, 200)(binary),
+	)
+
 	if (ISOLATION_EXPECTED === "unavailable") {
 		const refused = parseTrailer(grep)
 		check(

@@ -8,6 +8,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { HttpAiModelsInternalLive } from "@/routes/internal/ai-models.http"
 import { HttpAiSessionsInternalLive } from "@/routes/internal/ai-sessions.http"
 import { HttpMcpInternalLive } from "@/routes/internal/mcp.http"
+import { HttpUsersInternalLive } from "@/routes/internal/users.http"
 import { HttpAiTriageLive } from "@/routes/internal/ai-triage.http"
 import { HttpOpenRouterKeyLive } from "@/routes/internal/openrouter-key.http"
 import { HttpAuthLive, HttpAuthPublicLive, HttpAuthSessionLive } from "@/routes/auth.http"
@@ -68,12 +69,14 @@ import { HttpV2AuditLogLive } from "@/routes/v2/audit-log.http"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { HttpV2ScrapeTargetsLive } from "@/routes/v2/scrape-targets.http"
 import { HttpV2UptimeMonitorsLive } from "@/routes/v2/uptime-monitors.http"
+import { HttpV2SlosLive } from "@/routes/v2/slos.http"
 import { HttpV2StatusPageIncidentsLive, HttpV2StatusPagesLive } from "@/routes/v2/status-pages.http"
 import { HttpV2InstrumentationAuditLive } from "@/routes/v2/setup-audit.http"
 import { HttpV2OnboardingChecklistLive } from "@/routes/v2/onboarding-checklist.http"
 import { HttpV2SupportChannelLive } from "@/routes/v2/support-channel.http"
 import { HttpV2TelemetrySignalsLive } from "@/routes/v2/telemetry-signals.http"
 import { HttpV2SessionReplaysLive } from "@/routes/v2/session-replays.http"
+import { HttpV2UsersLive } from "@/routes/v2/users.http"
 import {
 	HttpV2EnvironmentsLive,
 	HttpV2LogsLive,
@@ -95,6 +98,7 @@ import {
 import { UserSessionAuthorizationLive } from "@maple/backend/services/auth/UserSessionAuthorizationLive"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { ApiV2RateLimiter } from "@maple/backend/services/auth/ApiV2RateLimiter"
+import { ShareRateLimiter } from "@maple/backend/services/auth/ShareRateLimiter"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
@@ -143,6 +147,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpAiSessionsInternalLive,
 			HttpAiModelsInternalLive,
 			HttpMcpInternalLive,
+			HttpUsersInternalLive,
 		),
 	),
 	Layer.provide(
@@ -190,6 +195,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2AuditLogLive,
 			HttpV2ScrapeTargetsLive,
 			HttpV2UptimeMonitorsLive,
+			HttpV2SlosLive,
 			HttpV2StatusPagesLive,
 			HttpV2StatusPageIncidentsLive,
 			HttpV2InstrumentationRecommendationsLive,
@@ -205,6 +211,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2McpConnectionsLive,
 			HttpV2AgentFeedbackLive,
 			HttpV2SessionReplaysLive,
+			HttpV2UsersLive,
 			HttpV2TracesLive,
 			HttpV2LogsLive,
 			HttpV2MetricsLive,
@@ -281,6 +288,7 @@ export const ApiAuthLive = Layer.mergeAll(
 	UserSessionAuthorizationLive,
 ).pipe(
 	Layer.provideMerge(ApiV2RateLimiter.layer),
+	Layer.provideMerge(ShareRateLimiter.layer),
 	Layer.provideMerge(McpToolRateLimiter.layer),
 	Layer.provideMerge(ApiKeysService.layer),
 	// `Authorization: DPoP` device tokens; also serves the device credential routes.

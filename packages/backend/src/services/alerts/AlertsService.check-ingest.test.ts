@@ -97,7 +97,7 @@ describe("AlertsService alert_checks ingest", () => {
 						),
 					),
 				)
-				const { rule, destination } = rules[0]!
+				const { rule, destination } = rules[0]
 				yield* Effect.promise(() =>
 					insertDeliveryEventRow(testDb, {
 						id: "00000000-0000-4000-8000-000000000901",

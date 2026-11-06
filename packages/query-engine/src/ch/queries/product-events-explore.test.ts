@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect, String as Str } from "effect"
 import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
@@ -157,7 +157,8 @@ describe("product event rows decode timestamps to DateTime.Utc", () => {
 				const compiled = yield* compile(productEventsTimeseriesQuery(opts), params)
 				expect(compiled.rowSchemaSource).not.toBe("none")
 				const [row] = yield* compiled.decodeRows([tsRow])
-				expect(DateTime.toEpochMillis(row!.bucket)).toBe(Date.UTC(2026, 5, 24, 4))
+				assert.isDefined(row)
+				expect(DateTime.toEpochMillis(row.bucket)).toBe(Date.UTC(2026, 5, 24, 4))
 			}),
 		)
 	}
@@ -186,7 +187,8 @@ describe("product event rows decode timestamps to DateTime.Utc", () => {
 					seq: 0,
 				},
 			])
-			expect(DateTime.formatIso(row!.timestamp)).toBe("2026-06-24T04:00:00.250Z")
+			assert.isDefined(row)
+			expect(DateTime.formatIso(row.timestamp)).toBe("2026-06-24T04:00:00.250Z")
 		}),
 	)
 })

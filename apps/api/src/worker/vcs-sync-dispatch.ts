@@ -5,13 +5,14 @@
  * answers one outcome per message, which the consumer applies to the messages it holds.
  */
 import { selfFetcher, workerSecretFor } from "@maple/backend/platform/self-binding"
+import { readBoundedText } from "@maple/backend/http/bounded-body"
 import { isValidInternalBearer } from "@maple/backend/services/auth/internal-auth"
 import type { Message } from "@cloudflare/workers-types"
 // The subpath, not the barrel: this module loads with the Worker.
 import { VcsSyncJob } from "@maple/domain/http/vcs"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect, Option, Schema, Stream, Array as Arr } from "effect"
+import { Effect, Option, Schema, Array as Arr } from "effect"
 import { HttpClient, HttpClientRequest, HttpIncomingMessage, HttpServerRequest } from "effect/http"
 
 /**
@@ -151,47 +152,27 @@ export const dispatchVcsSyncBatch = Effect.fnUntraced(function* (
 })
 
 /** A message with no outcome is delivered again: an unknown outcome is never acked. */
-export const applyOutcome = (message: Message<unknown>, outcome: MessageOutcome | undefined) =>
+export const applyOutcome = (message: Message, outcome: MessageOutcome | undefined) =>
 	Effect.sync(() => {
 		if (outcome?.outcome === "ack") return message.ack()
 		if (outcome?.delaySeconds !== undefined) return message.retry({ delaySeconds: outcome.delaySeconds })
 		return message.retry()
 	})
 
-export const applyOutcomes = (
-	messages: ReadonlyArray<Message<unknown>>,
-	outcomes: ReadonlyArray<MessageOutcome>,
-) => {
+export const applyOutcomes = (messages: ReadonlyArray<Message>, outcomes: ReadonlyArray<MessageOutcome>) => {
 	const byId = new Map(Arr.map(outcomes, (outcome) => [outcome.id, outcome]))
 	return Effect.forEach(messages, (message) => applyOutcome(message, byId.get(message.id)), {
 		discard: true,
 	})
 }
 
-export const toPlacedMessage = (message: Message<unknown>): PlacedMessage => ({
+export const toPlacedMessage = (message: Message): PlacedMessage => ({
 	id: message.id,
 	body: message.body,
 	attempts: message.attempts,
 })
 
 const refused = (status: 400 | 401 | 404, message: string) => new VcsSyncBatchRefused({ message, status })
-
-/** The body as text, refused once it passes `VCS_SYNC_BATCH_MAX_BYTES`, before it is all buffered. */
-const readBoundedBody = (request: HttpServerRequest.HttpServerRequest) =>
-	Stream.runFoldEffect(
-		request.stream.pipe(Stream.mapError(() => refused(400, "Unreadable batch"))),
-		() => ({ bytes: 0, chunks: Array.of<Uint8Array>() }),
-		(read, chunk) =>
-			read.bytes + chunk.byteLength > VCS_SYNC_BATCH_MAX_BYTES
-				? Effect.fail(refused(400, "Batch too large"))
-				: Effect.succeed({ bytes: read.bytes + chunk.byteLength, chunks: [...read.chunks, chunk] }),
-	).pipe(
-		Effect.map(({ bytes, chunks }) => {
-			const joined = new Uint8Array(bytes)
-			Arr.reduce(chunks, 0, (offset, chunk) => (joined.set(chunk, offset), offset + chunk.byteLength))
-			return new TextDecoder().decode(joined)
-		}),
-	)
 
 /**
  * Validates a request to the batch route and decodes its messages. The route serves only the self
@@ -212,13 +193,15 @@ export const authorizeVcsSyncBatchRequest = Effect.fnUntraced(function* (env: Re
 	if (!authorized) {
 		return yield* refused(401, "Missing or invalid hop secret")
 	}
-	if (Number(request.headers["content-length"] ?? 0) > VCS_SYNC_BATCH_MAX_BYTES) {
-		return yield* refused(400, "Batch too large")
-	}
-	const body = yield* readBoundedBody(request).pipe(
+	const body = yield* readBoundedText(request, VCS_SYNC_BATCH_MAX_BYTES).pipe(
 		Effect.flatMap(decodeBatchRequest),
 		Effect.mapError((error) =>
-			error._tag === "@maple/api/errors/VcsSyncBatchRefused" ? error : refused(400, "Unreadable batch"),
+			refused(
+				400,
+				error._tag === "@maple/backend/http/RequestBodyTooLargeError"
+					? "Batch too large"
+					: "Unreadable batch",
+			),
 		),
 	)
 	return {

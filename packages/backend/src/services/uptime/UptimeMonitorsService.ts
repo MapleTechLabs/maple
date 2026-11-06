@@ -194,7 +194,7 @@ export interface UptimeMonitorsServiceApi {
 		monitorId: UptimeMonitorId,
 	) => Effect.Effect<UptimeMonitorId, UptimeMonitorNotFoundError | UptimeMonitorPersistenceError>
 	/** Every enabled http/tcp/dns monitor across orgs, for the scraper. */
-	readonly listProbeTargets: () => Effect.Effect<
+	readonly listProbeTargets: Effect.Effect<
 		ReadonlyArray<UptimeProbeTargetRow>,
 		UptimeMonitorPersistenceError
 	>
@@ -305,11 +305,14 @@ const keepRedactedHeaders = (current: UptimeMonitorConfig, next: UptimeMonitorCo
 	if (next._tag !== "http") return Effect.succeed(next)
 	const stored = current._tag === "http" ? current.headers : {}
 	const entries = Rec.toEntries(next.headers)
-	const orphan = entries.find(
+	const orphan = Arr.findFirst(
+		entries,
 		([name, value]) => value === UPTIME_REDACTED_HEADER_VALUE && stored[name] === undefined,
 	)
-	if (orphan !== undefined) {
-		return Effect.fail(invalid(`Header ${orphan[0]} has no stored value to keep; send its real value`))
+	if (Option.isSome(orphan)) {
+		return Effect.fail(
+			invalid(`Header ${orphan.value[0]} has no stored value to keep; send its real value`),
+		)
 	}
 	return Effect.succeed({
 		...next,
@@ -449,7 +452,18 @@ interface FoldedChecks {
 
 /** Applies one monitor's reports in time order, as one write per report would have. */
 const foldReports = (row: CheckStateRow, reports: ReadonlyArray<UptimeCheckReport>): FoldedChecks =>
-	reports.reduce<FoldedChecks>(
+	Arr.reduce<UptimeCheckReport, FoldedChecks>(
+		reports,
+		{
+			snapshot: {
+				status: row.status,
+				consecutiveFailures: row.consecutiveFailures,
+				consecutiveSuccesses: row.consecutiveSuccesses,
+			},
+			statusChangedAt: row.statusChangedAt,
+			recent: row.recentJson,
+			daily: [],
+		},
 		(acc, report) => {
 			const snapshot = applyUptimeCheck(acc.snapshot, report.ok, row.failuresToDown)
 			return {
@@ -467,16 +481,6 @@ const foldReports = (row: CheckStateRow, reports: ReadonlyArray<UptimeCheckRepor
 					down: snapshot.status === "down",
 				}),
 			}
-		},
-		{
-			snapshot: {
-				status: row.status,
-				consecutiveFailures: row.consecutiveFailures,
-				consecutiveSuccesses: row.consecutiveSuccesses,
-			},
-			statusChangedAt: row.statusChangedAt,
-			recent: row.recentJson,
-			daily: [],
 		},
 	)
 
@@ -964,7 +968,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				return monitorId
 			})
 
-			const listProbeTargets = Effect.fn("UptimeMonitorsService.listProbeTargets")(function* () {
+			const listProbeTargets = Effect.gen(function* () {
 				const rows = yield* dbExecute((db) =>
 					db.run(
 						PG.from(UptimeMonitors)
@@ -1009,7 +1013,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 					),
 				)
 				return Arr.flatten(targets)
-			})
+			}).pipe(Effect.withSpan("UptimeMonitorsService.listProbeTargets"))
 
 			const recordChecks = Effect.fn("UptimeMonitorsService.recordChecks")(function* (
 				reports: ReadonlyArray<UptimeCheckReport>,

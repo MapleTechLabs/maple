@@ -1,4 +1,4 @@
-import { Effect, String as Str } from "effect"
+import { Array as Arr, Effect, Option, String as Str } from "effect"
 import { WarehouseDriverError, WarehouseResponseLimitError } from "@maple/query-engine/execution"
 import { __testables } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeLargeTraceSpans, makeTraceLogs } from "./fixtures"
@@ -75,9 +75,9 @@ export const installFakeWarehouse = (
 								}),
 							)
 						}
-						const rule = rules.find((r) => r.match(sql))
-						if (!rule && unmatched === "empty") return Effect.succeed({ data: [] })
-						if (!rule) {
+						const found = Arr.findFirst(rules, (r) => r.match(sql))
+						if (Option.isNone(found) && unmatched === "empty") return Effect.succeed({ data: [] })
+						if (Option.isNone(found)) {
 							return Effect.fail(
 								new WarehouseDriverError({
 									reason: "unknown",
@@ -85,6 +85,7 @@ export const installFakeWarehouse = (
 								}),
 							)
 						}
+						const rule = found.value
 						if ("failure" in rule) {
 							return Effect.fail(
 								new WarehouseDriverError({

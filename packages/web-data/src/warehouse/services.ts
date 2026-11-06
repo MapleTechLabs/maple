@@ -272,7 +272,7 @@ export interface ServiceTimeSeriesPoint {
 }
 
 function sortByBucket<T extends { bucket: string }>(rows: T[]): T[] {
-	return rows.toSorted((left, right) => Str.localeCompare(right.bucket)(left.bucket))
+	return Arr.sort(rows, (left: T, right: T) => Str.localeCompare(right.bucket)(left.bucket))
 }
 
 function fillServiceApdexPoints(

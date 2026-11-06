@@ -18,6 +18,7 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"create_alert_rule",
 	"update_alert_rule",
 	"delete_alert_rule",
+	"acknowledge_alert_incident",
 	// error issues
 	"claim_error_issue",
 	"release_error_issue",
@@ -25,6 +26,7 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"transition_error_issues",
 	"comment_on_error_issue",
 	"set_issue_severity",
+	"merge_error_issues",
 	"update_error_notification_policy",
 	// fixes / agents
 	"propose_fix",
@@ -35,6 +37,10 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"create_scrape_target",
 	"update_scrape_target",
 	"delete_scrape_target",
+	// SLOs
+	"create_slo",
+	"update_slo",
+	"delete_slo",
 	// uptime monitors
 	"create_uptime_monitor",
 	"update_uptime_monitor",

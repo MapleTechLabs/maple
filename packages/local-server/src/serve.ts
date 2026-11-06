@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 // The local Maple server: OTLP/HTTP ingest + a raw SQL query API + the bundled
 // SPA, all on one port, backed by an embedded chDB. Replaces the Rust
 // `apps/ingest/src/bin/local.rs`. `maple start` calls `startServer`.
@@ -74,6 +74,7 @@ import {
 } from "./query-guard"
 import {
 	accessDenied,
+	type CredentialAttempts,
 	issueSession,
 	LOGIN_ACTION_PATH,
 	LOGIN_PATH,
@@ -82,6 +83,8 @@ import {
 	hasValidSession,
 	NO_REMOTE_AUTH,
 	type RemoteAuth,
+	retryAfterSeconds,
+	throttleClientKey,
 	safeNextPath,
 	secretMatches,
 	sessionCookie,
@@ -196,7 +199,7 @@ export const makeBrowserOriginPolicy = (options: {
 	readonly anySameOriginHost?: boolean
 }): Result.Result<BrowserOriginPolicy, LocalServerConfigError> => {
 	const trusted = new Set<string>()
-	const hosted = options.hostedOrigin?.trim()
+	const hosted = options.hostedOrigin === undefined ? undefined : Str.trim(options.hostedOrigin)
 	if (hosted) {
 		const origin = parseOrigin(hosted)
 		if (origin === undefined)
@@ -240,7 +243,17 @@ export const isBrowserOriginAllowed = (
 	origin: string | null,
 	policy: BrowserOriginPolicy,
 ): boolean => {
-	if (origin === null) return true // SDKs, collectors, and other non-browser clients
+	// SDKs, collectors, the CLI, and same-origin browser GETs (which send no Origin).
+	// OTLP and /health stay open to any Host; elsewhere the Host must be one this
+	// server answers to, so a DNS-rebinding page's plain GET is refused too.
+	if (origin === null)
+		return (
+			Str.startsWith("/v1/")(requestUrl.pathname) ||
+			requestUrl.pathname === "/health" ||
+			policy.anySameOriginHost ||
+			isLoopbackHostname(requestUrl.hostname) ||
+			policy.browserHosts.includes(requestUrl.hostname)
+		)
 	const parsed = Result.try(() => new URL(origin))
 	if (Result.isFailure(parsed)) return false
 	const originUrl = parsed.success
@@ -379,7 +392,7 @@ function decodeOtlp(
 	if (Str.includes("json")(contentType))
 		return Result.try({
 			try: (): unknown =>
-				Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(
+				Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))(
 					new TextDecoder().decode(decodedBytes),
 				),
 			catch: (error) => new OtlpDecodeFailed({ message: describeThrown(error) }),
@@ -874,6 +887,7 @@ export class RequestQuiescenceGate {
 
 	#drain(): Promise<void> {
 		if (this.#active === 0) return Promise.resolve()
+		// @effect-diagnostics-next-line newPromise:off -- Promise-based drain for Bun's server shutdown
 		return new Promise<void>((resolve) => this.#drained.push(resolve))
 	}
 
@@ -952,13 +966,19 @@ const readBoundedBytes = async (
 			return Result.fail(next.failure)
 		}
 		if (next.success.done) break
-		total += next.success.value.byteLength
+		// The host types body chunks as `any`; anything but bytes is not a body we read.
+		const value: unknown = next.success.value
+		if (!(value instanceof Uint8Array)) {
+			reader.releaseLock()
+			return Result.fail(new InvalidJsonBody({ message: "read request body: chunk is not bytes" }))
+		}
+		total += value.byteLength
 		if (total > maximumBytes) {
 			await reader.cancel().catch(() => undefined)
 			reader.releaseLock()
 			return Result.fail(RequestBodyTooLargeError.create(maximumBytes))
 		}
-		chunks.push(next.success.value)
+		chunks.push(value)
 	}
 	reader.releaseLock()
 	return Result.succeed(Buffer.concat(chunks, total))
@@ -1029,6 +1049,7 @@ class ReadinessRecovery implements ReadinessRetry {
 		if (this.#stopped) return
 		const delay = ReadinessRecovery.DELAYS_MS[attempt]
 		if (delay === undefined) return this.#onGiveUp(eventIds.length)
+		// @effect-diagnostics-next-line globalTimers:off -- timers of the Promise-based recovery loop
 		const timer = setTimeout(() => {
 			this.#timers.delete(timer)
 			const leave = this.#gate.enter()
@@ -1494,7 +1515,8 @@ const handleEventingRead = (
 const MAX_LOGIN_BODY_BYTES = 4 * 1024
 
 const authRejections = Metric.counter("maple.local.auth_rejections_total", {
-	description: "Requests refused for a missing or wrong ingest key or access token",
+	description:
+		"Requests refused: a missing or wrong ingest key or access token, a throttled guess, or a disallowed origin or Host",
 	incremental: true,
 })
 
@@ -1508,7 +1530,7 @@ const signInPage = (auth: RemoteAuth, req: Request, url: URL): Response => {
 /** `POST /local/auth/login`: exchange the access token for a session cookie. */
 const loginSpan = (
 	auth: RemoteAuth,
-	throttle: LoginThrottle,
+	attempts: CredentialAttempts,
 	req: Request,
 	url: URL,
 ): Effect.Effect<Response> =>
@@ -1522,10 +1544,10 @@ const loginSpan = (
 		const nowMs = yield* Clock.currentTimeMillis
 		// Check, compare and record in one synchronous step, so parallel attempts cannot pass together.
 		const attempt = yield* Effect.sync(() => {
-			const retryAfterMs = throttle.retryAfterMs(nowMs)
+			const retryAfterMs = attempts.throttle.retryAfterMs(attempts.client, nowMs)
 			if (retryAfterMs > 0) return { outcome: "throttled" as const, retryAfterMs }
 			if (secretMatches(accessToken, form.get("token"))) return { outcome: "ok" as const }
-			throttle.recordFailure(nowMs)
+			attempts.throttle.recordFailure(attempts.client, nowMs)
 			return { outcome: "invalid" as const }
 		})
 		yield* Effect.annotateCurrentSpan({ "maple.auth.outcome": attempt.outcome })
@@ -1535,7 +1557,7 @@ const loginSpan = (
 				next,
 				status: 429,
 			})
-			response.headers.set("retry-after", String(Math.ceil(attempt.retryAfterMs / 1000)))
+			response.headers.set("retry-after", retryAfterSeconds(attempt.retryAfterMs))
 			return response
 		}
 		if (attempt.outcome === "invalid")
@@ -1568,7 +1590,7 @@ interface ServerContext {
 	readonly status: ServerStatus
 	readonly auth: RemoteAuth
 	readonly loginThrottle: LoginThrottle
-	/** Counts a 401 without a span: refusals can come in floods. */
+	/** Counts a refusal (401, 429, origin or Host 403) without a span: they come in floods. */
 	readonly countRejection: (route: "ingest" | "read") => void
 }
 
@@ -1584,25 +1606,44 @@ const statusResponse = (status: ServerStatus): Response =>
 		lastDeleteAtMs: status.lastDeleteAtMs,
 	})
 
+/** The part of Bun's `Server` the handler uses: the connection's peer address. */
+interface PeerAddress {
+	readonly requestIP: (req: Request) => { readonly address: string } | null
+}
+
 /** The `Bun.serve` fetch handler, closed over the chDB connection. Each ingest
  *  and query request is run through `runSpan` so it leaves a trace; `/health`,
  *  `/local/status` and `OPTIONS` are skipped (no health-check noise). */
 const makeFetch =
 	(context: ServerContext) =>
-	async (req: Request): Promise<Response> => {
+	async (req: Request, server: PeerAddress): Promise<Response> => {
 		const { db, options, runSpan, authority, gate, maintenanceToken, consumerToken } = context
 		const url = new URL(req.url)
 		const origin = req.headers.get("origin")
+		const route = Str.startsWith("/v1/")(url.pathname) ? "ingest" : "read"
 		if (!isBrowserOriginAllowed(url, origin, context.policy)) {
-			return text("browser origin not allowed", 403)
+			context.countRejection(route)
+			return origin === null
+				? text("request host not allowed; use the advertised host (--advertise-host)", 403)
+				: text("browser origin not allowed", 403)
+		}
+		const attempts: CredentialAttempts = {
+			throttle: context.loginThrottle,
+			client: throttleClientKey(server.requestIP(req)?.address ?? "unknown"),
 		}
 		const corsHeaders = corsHeadersForAllowedOrigin(origin)
 		const respond = (response: Response): Response => withCors(response, corsHeaders)
 		if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders })
-		const denied = accessDenied(context.auth, { maintenanceToken, consumerToken }, req, url, Date.now())
+		const denied = accessDenied(
+			context.auth,
+			{ maintenanceToken, consumerToken },
+			req,
+			url,
+			Date.now(),
+			attempts,
+		)
 		if (denied !== null) {
-			if (denied.status === 401)
-				context.countRejection(Str.startsWith("/v1/")(url.pathname) ? "ingest" : "read")
+			if (denied.status === 401 || denied.status === 429) context.countRejection(route)
 			return respond(denied)
 		}
 		if (url.pathname === "/health") return respond(text("OK"))
@@ -1611,12 +1652,11 @@ const makeFetch =
 		if (url.pathname === LOGIN_ACTION_PATH)
 			return respond(
 				req.method === "POST"
-					? await runSpan(loginSpan(context.auth, context.loginThrottle, req, url)).then(
-							(response) => {
-								if (response.status === 401) context.countRejection("read")
-								return response
-							},
-						)
+					? await runSpan(loginSpan(context.auth, attempts, req, url)).then((response) => {
+							if (response.status === 401 || response.status === 429)
+								context.countRejection("read")
+							return response
+						})
 					: // A reload of a failed sign-in lands here; show the form again.
 						new Response(null, { status: 303, headers: { location: LOGIN_PATH } }),
 			)
@@ -1693,7 +1733,9 @@ const SHUTDOWN_DRAIN_MS = 10_000
 /** Resolve when `work` settles or after `ms`, whichever is first. */
 const settleWithin = (work: Promise<unknown>, ms: number): Promise<void> => {
 	let timer: ReturnType<typeof setTimeout> | undefined
+	// @effect-diagnostics-next-line newPromise:off -- plain Promise helper for Bun's shutdown path
 	const timeout = new Promise<void>((resolve) => {
+		// @effect-diagnostics-next-line globalTimers:off -- plain Promise helper for Bun's shutdown path
 		timer = setTimeout(resolve, ms)
 	})
 	return Promise.race([work.then(() => undefined), timeout]).finally(() => clearTimeout(timer))

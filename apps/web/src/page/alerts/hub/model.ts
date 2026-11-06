@@ -1,6 +1,12 @@
+import * as Policy from "@maple/domain/policy"
 import { UptimeMonitorId } from "@maple/domain"
-import { AlertDeliveryEventDocument, AlertDestinationId, AlertRuleId } from "@maple/domain/http"
-import { V2UptimeMonitor } from "@maple/domain/http/v2"
+import {
+	AlertDeliveryEventDocument,
+	AlertDestinationId,
+	AlertIncidentId,
+	AlertRuleId,
+} from "@maple/domain/http"
+import { V2Slo, V2SloStatus, V2UptimeMonitor } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -25,6 +31,10 @@ export const UptimeStatusFilter = Schema.Literals(["all", "down", "degraded", "p
 export const UptimeKindFilter = Schema.Literals(["all", "http", "tcp", "dns", "heartbeat"])
 export type UptimeKindFilter = typeof UptimeKindFilter.Type
 
+/** An SLO beside its status (`listSloRows`); `status` is `null` when that read failed. */
+export const SloListRow = Schema.Struct({ slo: V2Slo, status: Schema.NullOr(V2SloStatus) })
+export type SloListRow = typeof SloListRow.Type
+
 export const TestOutcome = Schema.Struct({ message: Schema.String, success: Schema.Boolean })
 
 export const Model = Schema.Struct({
@@ -39,8 +49,8 @@ export const Model = Schema.Struct({
 	deliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
 	/** The Routing tab's own `alertDeliveries.list` read, separate from `deliveries`. */
 	routingDeliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
-	/** `session.roles` has root or org:admin; `false` until the session answers. */
-	isAdmin: Schema.Boolean,
+	/** What the session may do (`Policy.grantsOf`); none until the session answers. */
+	grants: Schema.Array(Policy.PermissionName),
 	/** Rules tab: the search box and "Show all". */
 	rulesQuery: Schema.String,
 	isShowingAllRules: Schema.Boolean,
@@ -51,6 +61,8 @@ export const Model = Schema.Struct({
 	isLoadFailed: Schema.Boolean,
 	/** Routing: destinations with a test or delete in flight, and the one awaiting delete confirmation. */
 	testingDestinationIds: Schema.Array(AlertDestinationId),
+	/** Inbox: incidents with an acknowledge or unacknowledge request in flight. */
+	acknowledgingIncidentIds: Schema.Array(AlertIncidentId),
 	deletingDestinationIds: Schema.Array(AlertDestinationId),
 	confirmDeleteId: Schema.NullOr(AlertDestinationId),
 	deleteDialog: Dialog.Model,
@@ -73,5 +85,10 @@ export const Model = Schema.Struct({
 	deletingMonitorId: Schema.NullOr(UptimeMonitorId),
 	confirmDeleteMonitorId: Schema.NullOr(UptimeMonitorId),
 	deleteMonitorDialog: Dialog.Model,
+	/** SLOs tab: `slos.list` and each SLO's status, read only while the tab is open. */
+	slos: KeyedSchema(Schema.Array(SloListRow), LoadFailure),
 })
 export type Model = typeof Model.Type
+
+/** The viewer may change what this page edits (`alerts:manage`). */
+export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "alerts:manage")

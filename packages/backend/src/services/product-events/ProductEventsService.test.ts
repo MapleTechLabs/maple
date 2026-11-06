@@ -76,7 +76,7 @@ describe("ProductEventsService", () => {
 				timestamp: NOW,
 			})
 			assert.strictEqual(captured.length, 1)
-			const request = captured[0]!
+			const request = captured[0]
 			assert.strictEqual(request.method, "POST")
 			assert.strictEqual(request.url, "https://ingest.example.test/v1/events")
 			assert.strictEqual(request.headers.authorization, "Bearer maple_sk_test")
@@ -84,7 +84,7 @@ describe("ProductEventsService", () => {
 			assert.isTrue(Str.endsWith("\n")(request.body))
 			const lines = Str.split("\n")(Str.trimEnd(request.body))
 			assert.strictEqual(lines.length, 1)
-			assert.deepStrictEqual(JSON.parse(lines[0]!), {
+			assert.deepStrictEqual(JSON.parse(lines[0]), {
 				name: "signup_completed",
 				timestamp: "2026-08-17T12:00:00.000Z",
 				source: "server",

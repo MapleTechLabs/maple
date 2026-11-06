@@ -10,6 +10,7 @@ import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { AppRoute, hrefOf } from "../../route"
+import { validTimeZone } from "../../platform/time-zone"
 import * as Menu from "@maple/views/ui/menu"
 import { type PageReturn, PageOutMessage } from "../contract"
 import { presetLabel } from "../kit/time-controls"
@@ -36,10 +37,22 @@ const BATCH_MAX = 4
 const DEFAULT_SHARE_TIME_RANGE = { type: "relative", value: "1h" } as const
 const decodeTimeRange = Schema.decodeUnknownOption(TimeRangeSchema)
 
+/** The zone the share page resolves and draws in: the link's valid `?tz=`, else the page's own. */
+export const shareTimeZoneOf = (search: Model["search"], pageTimeZone: string): string =>
+	search.tz === undefined ? pageTimeZone : Option.getOrElse(validTimeZone(search.tz), () => pageTimeZone)
+
 /** `resolveShareWindow`: `?from`/`?to`, then `?range`, then the board's own range. */
-export const resolveShareWindow = (model: Model, share: SharedDashboard): ShareWindow | null => {
+export const resolveShareWindow = (
+	model: Model,
+	share: SharedDashboard,
+	pageTimeZone: string,
+): ShareWindow | null => {
 	const { search } = model
-	const options = { snap: model.refreshTick === 0, nowMs: model.nowMs }
+	const options = {
+		snap: model.refreshTick === 0,
+		nowMs: model.nowMs,
+		timeZone: shareTimeZoneOf(search, pageTimeZone),
+	}
 	if (search.from !== undefined && search.to !== undefined)
 		// TODO(range-label): format an absolute window with `formatTimeRangeDisplay`.
 		return { startTime: search.from, endTime: search.to, label: `${search.from} - ${search.to}` }
@@ -136,16 +149,16 @@ const flush = (model: Model): Return => {
 	}
 }
 
-const withWindow = (model: Model): Model => {
+const withWindow = (model: Model, pageTimeZone: string): Model => {
 	const share = shareOf(model)
 	return share === null || model.nowMs === 0
 		? model
-		: { ...model, window: resolveShareWindow(model, share) }
+		: { ...model, window: resolveShareWindow(model, share, pageTimeZone) }
 }
 
-const reload = (model: Model): Return => {
+const reload = (model: Model, pageTimeZone: string): Return => {
 	const refreshTick = model.refreshTick + 1
-	const next = withWindow({ ...model, refreshTick, requested: {} })
+	const next = withWindow({ ...model, refreshTick, requested: {} }, pageTimeZone)
 	return flush(next)
 }
 
@@ -188,8 +201,8 @@ export const init = (route: Route): Return => ({
 })
 
 /** A new search (`?refresh=`, `?range=`): the window re-resolves and changed keys refetch. */
-export const routeChanged = (model: Model, route: Route): Return =>
-	flush(withWindow({ ...model, search: route.search }))
+export const routeChanged = (model: Model, route: Route, pageTimeZone: string): Return =>
+	flush(withWindow({ ...model, search: route.search }, pageTimeZone))
 
 const decodeInterval = (value: string): Option.Option<number> => {
 	const seconds = Number(value)
@@ -198,11 +211,11 @@ const decodeInterval = (value: string): Option.Option<number> => {
 		: Option.none()
 }
 
-export const update = (model: Model, message: Message): Return =>
+export const update = (model: Model, message: Message, pageTimeZone: string): Return =>
 	Message.match<Return>(message, {
-		CompletedResolveClock: ({ nowMs }) => ({ model: withWindow({ ...model, nowMs }) }),
+		CompletedResolveClock: ({ nowMs }) => ({ model: withWindow({ ...model, nowMs }, pageTimeZone) }),
 		CompletedResolveShare: ({ token, resolve }) =>
-			token !== model.token ? { model } : { model: withWindow({ ...model, resolve }) },
+			token !== model.token ? { model } : { model: withWindow({ ...model, resolve }, pageTimeZone) },
 		MeasuredWidget: ({ widgetId, maxDataPoints }) => {
 			if (model.options[widgetId] === maxDataPoints) return { model }
 			const next = { ...model, options: { ...model.options, [widgetId]: maxDataPoints } }
@@ -251,7 +264,7 @@ export const update = (model: Model, message: Message): Return =>
 		},
 		ClickedReload: () => ({ model, commands: [ResolveReloadClock()] }),
 		TickedAutoRefresh: () => ({ model, commands: [ResolveReloadClock()] }),
-		CompletedResolveReloadClock: ({ nowMs }) => reload({ ...model, nowMs }),
+		CompletedResolveReloadClock: ({ nowMs }) => reload({ ...model, nowMs }, pageTimeZone),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
 		FailedLoadChartRuntime: ({ reason }) => ({

@@ -86,6 +86,7 @@ import {
 	REPO_SIZE_COMMAND,
 	refusalReason,
 	repoLimitViolations,
+	lfsSkippedNote,
 } from "./repo-size"
 import { formatRepoTree, REPO_TREE_COMMAND } from "./repo-tree"
 import { sandboxSource } from "./sandbox-source"
@@ -134,10 +135,10 @@ const STEP_RETRY = { retries: { limit: 3, delay: "10 seconds", backoff: "exponen
  */
 const ADMISSION_RETRY = { retries: { limit: 6, delay: "15 seconds", backoff: "exponential" } } as const
 
-/** An agent may run 20 minutes; its step allows that plus a margin, and retries once. */
-const AGENT_STEP = {
+/** An agent may run 60 minutes; its step allows that plus a margin, and retries once. */
+export const AGENT_STEP = {
 	retries: { limit: 1, delay: "30 seconds", backoff: "constant" },
-	timeout: "30 minutes",
+	timeout: "75 minutes",
 } as const
 
 /** A prepare fetches the commit and installs its lockfiles; its wait is 22 minutes, retried once. */
@@ -155,6 +156,13 @@ const preparedNothing = (profile: ExecutionProfile, why: string): ExecutionProfi
 		`the execution sandbox could not prepare the repository: ${Str.slice(0, 300)(why)}`,
 	],
 })
+
+/** The repo-size step's recorded result. */
+interface RepoSizeVerdict {
+	readonly violations: ReadonlyArray<string>
+	/** The run's note on LFS files it did not read; absent when there were none. */
+	readonly lfsNote?: string
+}
 
 /** Counting a very large tree takes a while; the sandbox's own ceiling is 120 seconds. */
 const REPO_SIZE_TIMEOUT_SECONDS = 120
@@ -310,7 +318,7 @@ export const auditWithAgents = <E, R>(
 	options: { readonly ownKey?: boolean } = {},
 ) =>
 	Effect.gen(function* () {
-		const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId)
+		const orgId = yield* Schema.decodeEffect(OrgId)(payload.orgId)
 		yield* Effect.annotateCurrentSpan({
 			"maple.security_audit.run_id": payload.runId,
 			"maple.org_id": orgId,
@@ -352,7 +360,7 @@ export const auditWithAgents = <E, R>(
 
 		// Measured before any agent: a repository over a limit is refused whole, never partly audited.
 		// The limits are read inside the step, so a deploy that changes them cannot flip a replay.
-		const { violations } = yield* durableStep(
+		const { violations, lfsNote }: RepoSizeVerdict = yield* durableStep(
 			"repo-size",
 			Effect.gen(function* () {
 				const result = yield* sandbox
@@ -368,7 +376,13 @@ export const auditWithAgents = <E, R>(
 					}
 				}
 				const limits = yield* securityAuditLimits
-				return { violations: repoLimitViolations(size.value, limits) }
+				return {
+					violations: repoLimitViolations(size.value, limits),
+					...Option.match(lfsSkippedNote(size.value), {
+						onNone: () => ({}),
+						onSome: (note) => ({ lfsNote: note }),
+					}),
+				}
 			}),
 			STEP_RETRY,
 		)
@@ -384,6 +398,13 @@ export const auditWithAgents = <E, R>(
 				STEP_RETRY,
 			)
 			return yield* new AuditRepositoryRefusedError({ message: reason, violations })
+		}
+		if (lfsNote !== undefined) {
+			yield* durableStep(
+				"lfs-note",
+				store.recordEvent(payload.runId, { _tag: "Note", message: lfsNote }),
+				STEP_RETRY,
+			)
 		}
 		// Which ecosystems it builds with, and so whether the execution sandbox can run it.
 		const executor = yield* ExecutorService
@@ -449,6 +470,7 @@ export const auditWithAgents = <E, R>(
 										(error) => new AuditExecutionError({ message: error.message }),
 									),
 								),
+						release: (agentId) => executor.release(payload.runId, agentId),
 					}
 				: undefined
 		yield* durableStep(
@@ -501,7 +523,9 @@ export const auditWithAgents = <E, R>(
 			: {
 					runId: priorRow.value.id,
 					sourceRef: priorRow.value.sourceRef,
-					ledger: (yield* store.listUnits(priorRow.value.id)).map((row) => row.unit),
+					ledger: yield* Effect.map(store.listUnits(priorRow.value.id), (rows) =>
+						Arr.map(rows, (row) => row.unit),
+					),
 					findings: yield* store.listRunFindings(priorRow.value.id),
 					estimates: yield* store.listRunFindingEstimates(priorRow.value.id),
 				}
@@ -561,7 +585,7 @@ export const auditWithAgents = <E, R>(
 				if (!hasCredits) return "no_credits" as const
 				// Read live, so a limit an admin raises or lowers applies to the agents still to come.
 				const limits = yield* securityAuditLimits
-				const settings = yield* store.getSettings()
+				const settings = yield* store.getSettings
 				const limitUsd = Option.match(settings, {
 					onNone: () => limits.defaultMonthlySpendLimitUsd,
 					onSome: (row) => row.monthlySpendLimitUsd,
@@ -623,12 +647,12 @@ export const auditWithAgents = <E, R>(
 			// Only a full pass can say a finding is gone: no disclosed gaps, not quick, not scoped, and
 			// the finding is not tied to a unit this run left unaudited (deferred, blocked, out of scope).
 			const row = yield* store.getRun(payload.runId)
+			const unauditedUnits = Arr.filter(
+				result.ledger,
+				(u) => u.status !== "covered" && u.status !== "candidate" && u.status !== "not_applicable",
+			)
 			const unaudited = new Set(
-				Arr.filter(
-					result.ledger,
-					(u) =>
-						u.status !== "covered" && u.status !== "candidate" && u.status !== "not_applicable",
-				).flatMap((u) => [
+				Arr.flatMap(unauditedUnits, (u) => [
 					...u.result_fingerprints,
 					...(u.carried_fingerprint === undefined ? [] : [u.carried_fingerprint]),
 				]),
@@ -646,7 +670,9 @@ export const auditWithAgents = <E, R>(
 				row.value.finishedAt === null
 			) {
 				const reported = new Set(Arr.map(result.findings, (f) => f.fingerprint))
-				const gone = (yield* store.listFindings(row.value.targetId)).filter(
+				const findings = yield* store.listFindings(row.value.targetId)
+				const gone = Arr.filter(
+					findings,
 					(f) =>
 						f.status === "open" &&
 						f.verdict !== "rejected" &&
@@ -682,7 +708,7 @@ export const auditWithAgents = <E, R>(
 			Cause.hasInterruptsOnly(cause)
 				? Effect.void
 				: Effect.gen(function* () {
-						const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId)
+						const orgId = yield* Schema.decodeEffect(OrgId)(payload.orgId)
 						const store = (yield* SecurityAuditStore).forOrg(orgId)
 						yield* store.finishRun(payload.runId, {
 							status: "failed",
@@ -700,7 +726,7 @@ export const auditWithAgents = <E, R>(
  */
 export const runSecurityAuditWorkflow = (payload: SecurityAuditWorkflowPayload) =>
 	Effect.gen(function* () {
-		const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId)
+		const orgId = yield* Schema.decodeEffect(OrgId)(payload.orgId)
 		const orgKey = yield* (yield* OrgOpenRouterKeyService).resolveForRun(orgId)
 		yield* Effect.annotateCurrentSpan("maple.llm.byok", Option.isSome(orgKey))
 		const deploySettings = yield* loadLlmSettings

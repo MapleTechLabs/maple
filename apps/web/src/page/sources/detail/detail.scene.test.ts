@@ -1,3 +1,4 @@
+import type * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import {
 	encodePublicId,
@@ -49,7 +50,7 @@ const UUID = "0199a0e1-0000-7000-8000-000000000002"
 const PUBLIC_ID = encodePublicId(PublicIdPrefixes.source, UUID)
 
 const source = (fields: Readonly<Record<string, unknown>> = {}) =>
-	Schema.decodeUnknownSync(V2Source)({
+	Schema.decodeSync(V2Source)({
 		id: PUBLIC_ID,
 		object: "source",
 		name: "Checkout API",
@@ -136,6 +137,21 @@ describe("source detail", () => {
 		const onSetup = loaded(source(), "setup")
 		expect(onSetup.usage.key).toBeNull()
 		expect(names(routeChanged(onSetup, route(), context).commands)).toEqual(["FetchSourceUsage"])
+	})
+
+	test("a member sent to Settings reads the overview, without the source's actions", () => {
+		const step = pageUpdate(loaded(source(), "settings"), Message.CompletedReadGrants({ grants: [] }))
+		expect(step.model.tab).toBe("overview")
+		expect(names(step.commands)).toEqual(["FetchSourceUsage"])
+		scene(
+			{ update: pageUpdate, view },
+			given(step.model),
+			resolveTheme,
+			expectView(role("tab", { name: "Overview" })).toExist(),
+			expectView(role("tab", { name: "Settings" })).not.toExist(),
+			expectView(role("button", { name: "Delete" })).not.toExist(),
+			expectView(role("button", { name: "Roll token" })).not.toExist(),
+		)
 	})
 
 	test("a push source the gateway refuses shows Failing and why", () => {
@@ -442,12 +458,50 @@ describe("integration sources", () => {
 		expect(names(pausing.commands)).toContain("PauseSource")
 	})
 
+	test("the integration's actions need integrations:manage, its pause and delete sources:manage", () => {
+		const withGrants = (
+			sourceGrants: ReadonlyArray<Policy.Permission>,
+			integrationGrants: ReadonlyArray<Policy.Permission>,
+		) =>
+			Arr.reduce(
+				[
+					Message.CompletedReadGrants({ grants: sourceGrants }),
+					Message.GotConnectionMessage({
+						message: IntegrationMessage.CompletedLoadSession({ grants: integrationGrants }),
+					}),
+				],
+				loaded(prometheus()),
+				(model, message) => pageUpdate(model, message).model,
+			)
+		scene(
+			{ update: pageUpdate, view },
+			given(withGrants([], [])),
+			resolveTheme,
+			expectView(role("link", { name: "Docs" })).not.toExist(),
+			expectView(role("button", { name: "Delete" })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withGrants([], ["integrations:manage"])),
+			resolveTheme,
+			expectView(role("link", { name: "Docs" })).toExist(),
+			expectView(role("button", { name: "Delete" })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withGrants(["sources:manage"], ["integrations:manage"])),
+			resolveTheme,
+			expectView(role("link", { name: "Docs" })).toExist(),
+			expectView(role("button", { name: "Delete" })).toExist(),
+		)
+	})
+
 	describe("a Google Cloud source's Delete", () => {
 		const connectorUuid = "0199a0e1-0000-7000-8000-0000000000bb"
 		const connectorId = encodePublicId(PublicIdPrefixes.gcpConnector, connectorUuid)
 		const gcp = (integrationId: string | null) =>
 			prometheus({ name: "Google Cloud acme-prod", platform: "gcp", integration_id: integrationId })
-		const gcpStatus = Schema.decodeUnknownSync(V2GcpIntegration)({
+		const gcpStatus = Schema.decodeSync(V2GcpIntegration)({
 			object: "gcp_integration",
 			metrics_available: true,
 			connectors: [
@@ -596,7 +650,7 @@ describe("integration sources", () => {
 			Message.CompletedFetchUsage({
 				key: model.usage.key ?? "",
 				result: Result.succeed(
-					Schema.decodeUnknownSync(V2SourceUsage)({
+					Schema.decodeSync(V2SourceUsage)({
 						object: "source_usage",
 						window_start: "2026-09-30T13:00:00.000Z",
 						window_end: "2026-10-01T12:00:00.000Z",
@@ -637,7 +691,7 @@ describe("integration sources", () => {
 })
 
 const awsConnection = (id: AwsConnectionId): V2AwsConnection =>
-	Schema.decodeUnknownSync(V2AwsConnection)({
+	Schema.decodeSync(V2AwsConnection)({
 		id: encodePublicId(PublicIdPrefixes.awsConnection, id),
 		object: "aws_connection",
 		account_id: "123456789012",

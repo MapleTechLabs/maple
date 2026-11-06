@@ -1,17 +1,21 @@
+import * as Policy from "@maple/domain/policy"
 import { Result, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage } from "../../contract"
 import { Message } from "./model"
 import { init, isNameDirty, leaveEligibilityOf, nameDraftOf, update } from "./update"
 
+const ADMIN = Policy.grantsOf(["org:admin"])
+const MEMBER = Policy.grantsOf(["org:member"])
+
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
 
 const acme = { id: "org_acme", name: "Acme Shop", hasImage: false, region: "us" } as const
 
-const loaded = (isAdmin = true) => {
+const loaded = (canEdit = true) => {
 	const org = update(
-		init(isAdmin).model,
+		init(canEdit ? ADMIN : MEMBER).model,
 		Message.CompletedFetchOrganization({ result: Result.succeed(acme) }),
 	).model
 	return update(
@@ -24,7 +28,7 @@ const loaded = (isAdmin = true) => {
 
 describe("general tab", () => {
 	test("reads the organization and its admins from Clerk", () => {
-		expect(names(init(true).commands)).toEqual(
+		expect(names(init(ADMIN).commands)).toEqual(
 			expect.arrayContaining(["FetchClerkOrganization", "FetchClerkOrganizationAdmins"]),
 		)
 	})

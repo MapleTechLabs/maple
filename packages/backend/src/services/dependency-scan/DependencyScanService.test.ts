@@ -2,7 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { DependencyFindingId } from "@maple/domain/dependency-scan"
 import { GitCommitSha, VcsRepositoryId, type VcsSyncJob } from "@maple/domain/http"
 import { OrgId, UserId } from "@maple/domain/primitives"
-import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Layer, Schema, Array as Arr, String as Str, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
@@ -75,7 +75,9 @@ const seed = Effect.gen(function* () {
 	})
 	yield* vcs.upsertRepositories(installation, [repo("8", "web"), repo("7", "api")])
 	const repositories = yield* vcs.listRepositoriesByInstallation(installation.id, "active")
-	const api = repositories.find((repository) => repository.fullName === "octo/api")
+	const api = Option.getOrUndefined(
+		Arr.findFirst(repositories, (repository) => repository.fullName === "octo/api"),
+	)
 	if (api === undefined) return yield* Effect.die("seeding did not store octo/api")
 	return api
 })
@@ -281,7 +283,7 @@ describe("DependencyScanService production", () => {
 					complete: true,
 				})
 				assert.deepStrictEqual(
-					findings[0]?.production?.map((s) => [
+					Arr.map(findings[0]?.production ?? [], (s) => [
 						s.serviceName,
 						s.environment,
 						Str.slice(0, 1)(s.commitSha),
@@ -303,7 +305,7 @@ describe("DependencyScanService production", () => {
 					[["production", sha("d")]],
 				)
 				assert.deepStrictEqual(
-					repositories[0]?.runningCommits?.map((commit) => [
+					Arr.map(repositories[0]?.runningCommits ?? [], (commit) => [
 						Str.slice(0, 1)(commit.commitSha),
 						commit.scanStatus,
 					]),
@@ -343,7 +345,7 @@ describe("DependencyScanService production", () => {
 
 				const { findings } = yield* service.listFindings(tenant, {})
 				assert.deepStrictEqual(
-					Arr.map(findings, (finding) => finding.production?.map((s) => s.serviceName)),
+					Arr.map(findings, (finding) => Arr.map(finding.production ?? [], (s) => s.serviceName)),
 					[["api-server"]],
 				)
 				assert.deepStrictEqual(sent, [])
@@ -380,7 +382,7 @@ describe("DependencyScanService production", () => {
 
 	it.effect("queues at most a handful of unscanned commits per read", () => {
 		const sent: Array<VcsSyncJob> = []
-		const digits = "0123456789abcdef".split("")
+		const digits = Str.split("")("0123456789abcdef")
 		const telemetry: Telemetry = {
 			rows: Arr.map(digits, (digit, i) => running(`svc-${i}`, "production", digit, 100 - i)),
 		}

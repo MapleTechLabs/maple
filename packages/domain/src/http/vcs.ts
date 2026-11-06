@@ -84,9 +84,9 @@ export type VcsRepoSelection = Schema.Schema.Type<typeof VcsRepoSelection>
 
 /** Completion of the repository enumeration requested by one connect operation. */
 export const VcsRepositoryDiscovery = Schema.Union([
-	Schema.Struct({ _tag: Schema.Literal("Pending"), requestId: Schema.String }),
-	Schema.Struct({ _tag: Schema.Literal("Complete"), requestId: Schema.String }),
-	Schema.Struct({ _tag: Schema.Literal("Failed"), requestId: Schema.String, message: Schema.String }),
+	Schema.TaggedStruct("Pending", { requestId: Schema.String }),
+	Schema.TaggedStruct("Complete", { requestId: Schema.String }),
+	Schema.TaggedStruct("Failed", { requestId: Schema.String, message: Schema.String }),
 ])
 export type VcsRepositoryDiscovery = Schema.Schema.Type<typeof VcsRepositoryDiscovery>
 

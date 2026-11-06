@@ -17,6 +17,7 @@ import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { verticalGradient } from "./fixed-metric-axes"
 import { cursorTooltip } from "./plot-constants"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 // The `/lab/bench/tanstack` chart definitions: throughput area, error rate area and latency line.
 
@@ -128,7 +129,7 @@ const rowsOf = (spec: BenchSpec, bucketSeconds: number | undefined): ReadonlyArr
 	spec.chart !== "Throughput"
 		? spec.rows
 		: Arr.map(spec.rows, (row) => {
-				const throughput = numberOf(row, "throughput") / (bucketSeconds || 1)
+				const throughput = numberOf(row, "throughput") / nonZeroOr(bucketSeconds ?? 1, 1)
 				return { ...row, throughput, errorThroughput: throughput * numberOf(row, "errorRate") }
 			})
 

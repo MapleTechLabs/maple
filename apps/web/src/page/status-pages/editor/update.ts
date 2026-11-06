@@ -118,7 +118,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		incidents: Keyed.idle(),
 		config: Keyed.idle(),
 		monitors: Keyed.idle(),
-		isAdmin: false,
+		grants: [],
 		isSessionLoaded: false,
 		pageMenu: Menu.init(PAGE_MENU_ID),
 		panel: null,
@@ -300,8 +300,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchMonitors: ({ key, result }) => ({
 			model: { ...model, monitors: Keyed.accept(model.monitors, key, result) },
 		}),
-		CompletedFetchSession: ({ orgId, isAdmin }) =>
-			orgId === context.orgId ? { model: { ...model, isAdmin, isSessionLoaded: true } } : { model },
+		CompletedFetchSession: ({ orgId, grants }) =>
+			orgId === context.orgId ? { model: { ...model, grants, isSessionLoaded: true } } : { model },
 		ClickedRetry: () =>
 			chain(
 				model,
@@ -337,14 +337,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						}),
 					}),
 		ReceivedPreviewSelection: ({ kind, id }) => {
-			const component = componentsOf(model).find((row) => row.id === id)
 			return kind === "component"
-				? component === undefined
-					? { model }
-					: selectComponent(model, component.id)
+				? Option.match(
+						Arr.findFirst(componentsOf(model), (row) => row.id === id),
+						{
+							onNone: () => ({ model }),
+							onSome: (component) => selectComponent(model, component.id),
+						},
+					)
 				: Option.match(
-						Option.fromNullishOr(
-							AsyncData.getOrElse(model.incidents.data, () => []).find((row) => row.id === id),
+						Arr.findFirst(
+							AsyncData.getOrElse(model.incidents.data, () => []),
+							(row) => row.id === id,
 						),
 						{
 							onNone: () => ({ model }),

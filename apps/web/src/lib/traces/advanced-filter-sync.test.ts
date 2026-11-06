@@ -138,7 +138,7 @@ describe("parseWhereClause", () => {
 		)
 		const { filters, warnings } = parseWhereClause(clause)
 		expect(filters.attributeFilters).toHaveLength(5)
-		expect(filters.attributeFilters[4].key).toBe("key4")
+		expect(Arr.getUnsafe(filters.attributeFilters, 4).key).toBe("key4")
 		expect(warnings).toHaveLength(2)
 	})
 
@@ -340,7 +340,7 @@ describe("toWhereClause", () => {
 		const { filters, warnings } = parseWhereClause(withDouble ?? "")
 		expect(warnings).toEqual([])
 		expect(filters.service).toBe("C:\\app")
-		expect(filters.attributeFilters[0].value).toBe('say "hi"')
+		expect(Arr.getUnsafe(filters.attributeFilters, 0).value).toBe('say "hi"')
 	})
 
 	it("round-trips negated clauses (canonical emit order: attr.* before excluded named fields)", () => {

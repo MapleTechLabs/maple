@@ -48,7 +48,7 @@ const auditEventOrgId = (body: unknown) => auditEventField(body, "orgId")
 const auditEventAction = (body: unknown) => auditEventField(body, "action")
 
 interface DecodedMessage {
-	readonly message: Message<unknown>
+	readonly message: Message
 	readonly event: AuditLogEvent
 }
 
@@ -56,7 +56,7 @@ interface DecodedMessage {
  * Retrying past the limit is what hands the message to the DLQ; acking there
  * would silently discard it instead.
  */
-const retryOrExhaust = (message: Message<unknown>, cause: unknown) => {
+const retryOrExhaust = (message: Message, cause: unknown) => {
 	const isFinalAttempt = message.attempts > AUDIT_EVENTS_MAX_RETRIES
 	return Effect.annotateCurrentSpan({
 		"maple.audit.queue.message_outcome": isFinalAttempt ? "exhausted_dlq" : "retry",

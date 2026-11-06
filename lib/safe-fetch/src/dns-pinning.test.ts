@@ -47,7 +47,11 @@ const run = (
 ) => {
 	const seen: Array<Seen> = []
 	const fakeFetch: typeof fetch = async (input, init) => {
-		seen.push({ url: String(input), host: hostHeaderOf(init), serverName: serverNameOf(init) })
+		seen.push({
+			url: input instanceof Request ? input.url : String(input),
+			host: hostHeaderOf(init),
+			serverName: serverNameOf(init),
+		})
 		return respond(seen)
 	}
 	return Effect.flatMap(HttpClient.HttpClient, (client) => guardPinned(client, resolve).get(url)).pipe(

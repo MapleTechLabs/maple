@@ -168,7 +168,7 @@ export const audienceAdmits = (audience: McpToolAudience, surface: McpToolSurfac
  */
 export interface McpToolSpec<
 	P extends Schema.Codec<unknown, unknown, never, unknown>,
-	O extends Schema.Codec<unknown, unknown, never, never>,
+	O extends Schema.Codec<unknown, unknown>,
 	R extends McpToolRequirements,
 > {
 	readonly name: string
@@ -181,6 +181,11 @@ export interface McpToolSpec<
 	readonly hints: McpToolHints
 	/** Defaults to `public`. */
 	readonly audience?: McpToolAudience
+	/**
+	 * A v2 scope family a scoped API key must also hold (read for read-only tools, else write), as
+	 * the matching `/v2/<family>` routes require. For data outside the toolset's baseline families.
+	 */
+	readonly scopeFamily?: string
 	readonly phrases: McpToolPhrases
 	/** Retired parameter names mapped to their current name. Accepted, never published. */
 	readonly aliases?: Readonly<Record<string, string>>
@@ -197,7 +202,7 @@ export interface McpToolSpec<
 export interface McpToolRegistrar {
 	define<
 		P extends Schema.Codec<unknown, unknown, never, unknown>,
-		O extends Schema.Codec<unknown, unknown, never, never>,
+		O extends Schema.Codec<unknown, unknown>,
 		R extends McpToolRequirements,
 	>(
 		spec: McpToolSpec<P, O, R>,

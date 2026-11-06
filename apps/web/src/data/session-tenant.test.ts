@@ -3,7 +3,7 @@ import { Effect, Ref, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { makeSessionTenantCache } from "./session-tenant"
 
-const tenant = Schema.decodeUnknownSync(CurrentTenant.TenantSchema)({
+const tenant = Schema.decodeSync(CurrentTenant.TenantSchema)({
 	orgId: "org_parity",
 	userId: "user_ada",
 	roles: ["root"],

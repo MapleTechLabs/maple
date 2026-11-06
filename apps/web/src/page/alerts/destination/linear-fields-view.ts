@@ -8,6 +8,7 @@ import * as SelectView from "@maple/views/ui/select-view"
 import { providerOf } from "../shared/providers"
 import type { DestinationForm } from "./form"
 import {
+	canConnect,
 	isUsable,
 	type LinearTeam,
 	Message as LinearMessage,
@@ -72,13 +73,13 @@ const retry = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, label: string): Html =>
 const connectNote = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, isRevoked: boolean): Html => {
 	const { model } = inputs
 	const accent = providerOf("linear")
-	const isAdmin = model.isAdmin === true
+	const isAllowed = canConnect(model) === true
 	return h.div(
 		[h.Class("space-y-2 rounded-md border border-dashed border-border-subtle p-3")],
 		[
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [
-				model.isAdmin === false
-					? "Ask an org admin to connect Linear on the Integrations page, then check again."
+				canConnect(model) === false
+					? "Ask an org admin or engineer to connect Linear on the Integrations page, then check again."
 					: isRevoked
 						? "Linear revoked Maple's access. Reconnect it, then pick a team here."
 						: "Connect your Linear workspace, then pick the team issues open in.",
@@ -93,7 +94,7 @@ const connectNote = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, isRevoked: boolean
 						]),
 					]),
 			hstack(h, { gap: "2", align: "stretch", wrap: true }, [
-				...(model.isAdmin === false
+				...(canConnect(model) === false
 					? []
 					: [
 							button(
@@ -101,7 +102,7 @@ const connectNote = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, isRevoked: boolean
 								{
 									size: "sm",
 									isLoading: model.isConnecting,
-									isDisabled: !isAdmin,
+									isDisabled: !isAllowed,
 									attributes: [
 										h.OnClick(inputs.toMessage(LinearMessage.ClickedConnect())),
 										h.Style({
@@ -124,7 +125,7 @@ const teamField = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 	const { form, model } = inputs
 	const teams = AsyncData.getOrElse(model.teams.data, () => [])
 	const isLoading = isPending(model.teams.data) || AsyncData.isRefreshing(model.teams.data)
-	const selected = teams.find((team) => team.id === form.linearTeamId)
+	const selected = Arr.findFirst(teams, (team) => team.id === form.linearTeamId)
 	const placeholder = isLoading
 		? "Loading teams…"
 		: inputs.isEditing && form.linearTeamName !== ""
@@ -150,9 +151,10 @@ const teamField = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 				className: "w-full",
 				isDisabled: isLoading || teams.length === 0,
 				renderValue: () =>
-					selected === undefined
-						? [h.span([h.Class("text-muted-foreground")], [placeholder])]
-						: [teamLabel(selected)],
+					Option.match(selected, {
+						onNone: () => [h.span([h.Class("text-muted-foreground")], [placeholder])],
+						onSome: (team) => [teamLabel(team)],
+					}),
 				renderItem: (option) => [option.label],
 			},
 		}),

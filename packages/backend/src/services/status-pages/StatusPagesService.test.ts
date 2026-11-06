@@ -16,9 +16,9 @@ import { StatusPagesService, type CreateStatusPageIncidentInput } from "./Status
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_status")
-const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_status_other")
-const USER = Schema.decodeUnknownSync(UserId)("user_status")
+const ORG = Schema.decodeSync(OrgId)("org_status")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_status_other")
+const USER = Schema.decodeSync(UserId)("user_status")
 const MONITOR = UptimeMonitorId.make("33333333-3333-4333-8333-333333333333")
 const OTHER_MONITOR = UptimeMonitorId.make("44444444-4444-4444-8444-444444444444")
 const DAY = 86_400_000
@@ -263,7 +263,7 @@ describe("StatusPagesService", () => {
 			yield* service.removeComponent(ORG, web.id)
 			const docs = yield* service.createComponent(ORG, page.id, { name: "Docs" })
 			assert.deepStrictEqual(
-				(yield* service.listComponents(ORG, page.id)).map((row) => [row.name, row.position]),
+				Arr.map(yield* service.listComponents(ORG, page.id), (row) => [row.name, row.position]),
 				[
 					["API", 1],
 					["Docs", 2],

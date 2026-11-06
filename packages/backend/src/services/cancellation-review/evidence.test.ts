@@ -219,6 +219,8 @@ describe("otherOrgsOf", () => {
 		)
 		const read = otherOrgsOf(AT, orgs, members)
 		expect(read.total).toBe(11)
-		expect(read.orgs.map((entry) => entry.name)).toEqual(orgs.slice(0, 8).map((entry) => entry.name))
+		expect(Arr.map(read.orgs, (entry) => entry.name)).toEqual(
+			Arr.map(orgs.slice(0, 8), (entry) => entry.name),
+		)
 	})
 })

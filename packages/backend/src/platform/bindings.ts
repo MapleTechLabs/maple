@@ -79,6 +79,10 @@ export interface RateLimiter {
 export class ApiV2RateLimit extends Context.Service<ApiV2RateLimit, RateLimiter>()(
 	"@maple/backend/platform/ApiV2RateLimit",
 ) {}
+/** Every viewer of one share link together; the per-viewer bucket stays on `ApiV2RateLimit`. */
+export class ShareLinkRateLimit extends Context.Service<ShareLinkRateLimit, RateLimiter>()(
+	"@maple/backend/platform/ShareLinkRateLimit",
+) {}
 export class CliAuthRateLimit extends Context.Service<CliAuthRateLimit, RateLimiter>()(
 	"@maple/backend/platform/CliAuthRateLimit",
 ) {}

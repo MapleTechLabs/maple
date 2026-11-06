@@ -14,7 +14,7 @@ import {
 import { basename, join } from "node:path"
 import type { Chdb } from "../chdb"
 import { type ArchiveSignal } from "./signals"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 const decodeJsonRecord = Schema.decodeUnknownSync(
 	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
@@ -137,7 +137,7 @@ const cellText = (value: unknown): string =>
 
 const parseCount = (text: string): number => {
 	const row = readRows(text)[0]
-	if (!row) return 0
+	if (row === undefined) return 0
 	const value = row["count()"] ?? row.count
 	const count = typeof value === "number" ? value : Number(value ?? 0)
 	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid count result: ${String(value)}`)
@@ -200,8 +200,9 @@ export const captureSourceSchema = (
  * "Map(String, String)" }. Returns null for a leaf type with no parentheses.
  */
 const splitType = (type: string): { head: string; inner: string } | null => {
-	const open = type.indexOf("(")
-	if (open < 0) return null
+	const found = Str.indexOf("(")(type)
+	if (Option.isNone(found)) return null
+	const open = found.value
 	const head = Str.trim(Str.slice(0, open)(type))
 	if (!Str.endsWith(")")(type)) return null
 	const inner = Str.slice(open + 1, -1)(type)
@@ -217,7 +218,7 @@ const splitArgs = (inner: string): string[] => {
 	let depth = 0
 	let start = 0
 	for (let i = 0; i < inner.length; i++) {
-		const ch = inner[i]!
+		const ch = inner[i]
 		if (ch === "(") depth++
 		else if (ch === ")") depth--
 		else if (ch === "," && depth === 0) {
@@ -407,9 +408,7 @@ export const compareSchema = (
 			`archive shard validation failed: ${shardPath} column count mismatch: source ${source.length}, Parquet ${parquetCols.length}`,
 		)
 	}
-	for (let i = 0; i < source.length; i++) {
-		const src = source[i]!
-		const par = parquetCols[i]!
+	for (const [i, [src, par]] of Arr.zip(source, parquetCols).entries()) {
 		if (src.name !== par.name) {
 			throw new Error(
 				`archive shard validation failed: ${shardPath} column ${i} name mismatch: source ${src.name}, Parquet ${par.name}`,

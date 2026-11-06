@@ -2,7 +2,7 @@ import type { SourcePlatform } from "@maple/domain/primitives"
 import { type FrameworkId, sdkSnippets } from "../../../components/quick-start/sdk-snippets"
 import { ingestUrl } from "../../../lib/services/common/ingest-url"
 import { dockerCommand, HOST_CONFIG, helmCommand, hostCommand } from "../../infra/kit/install-snippets"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // `sourceSnippets`, `maskedToken`.
 
@@ -40,8 +40,9 @@ const sdkFramework = (platform: SourcePlatform): FrameworkId | null =>
 
 const sdkSnippet = (platform: SourcePlatform, token: string): SourceSnippet | null => {
 	const framework = sdkFramework(platform)
-	const snippet = sdkSnippets.find((entry) => entry.language === framework)
-	if (framework === null || snippet === undefined) return null
+	const found = Arr.findFirst(sdkSnippets, (entry) => entry.language === framework)
+	if (framework === null || Option.isNone(found)) return null
+	const snippet = found.value
 	return {
 		id: "sdk",
 		label: `${snippet.label} SDK`,
@@ -53,11 +54,11 @@ const sdkSnippet = (platform: SourcePlatform, token: string): SourceSnippet | nu
 	}
 }
 
-const browserSnippet = (token: string): SourceSnippet => ({
+const browserSnippet = (token: string, serviceName: string): SourceSnippet => ({
 	id: "browser",
 	label: "Browser SDK",
 	language: "typescript",
-	code: `import { MapleBrowser } from "@maple-dev/browser"\n\nMapleBrowser.init({\n  ingestKey: "${token}",\n  endpoint: "${ingestUrl}",\n})`,
+	code: `import { MapleBrowser } from "@maple-dev/browser"\n\nMapleBrowser.init({\n  ingestKey: "${token}",\n  endpoint: "${ingestUrl}",\n  serviceName: "${serviceName}",\n})`,
 })
 
 const claudeCodeSnippet = (token: string): SourceSnippet => ({
@@ -103,7 +104,7 @@ export const sourceSnippets = (
 				{ id: "host-run", label: "Run", language: "shell", code: hostCommand(token) },
 			]
 		case "browser":
-			return [browserSnippet(token)]
+			return [browserSnippet(token, serviceName)]
 		case "claude_code":
 			return [claudeCodeSnippet(token)]
 		case "opentelemetry":

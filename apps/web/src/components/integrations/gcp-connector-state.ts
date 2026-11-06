@@ -294,7 +294,10 @@ export const GCP_STATE_ORDER = [
 
 /** The worst state among several connections; healthy when there are none. */
 export const gcpWorstState = (states: ReadonlyArray<GcpConnectionState>): GcpConnectionState =>
-	GCP_STATE_ORDER.find((state) => states.includes(state)) ?? "healthy"
+	Option.getOrElse(
+		Arr.findFirst(GCP_STATE_ORDER, (state) => states.includes(state)),
+		(): GcpConnectionState => "healthy",
+	)
 
 /**
  * The capabilities whose failure asks, in the API's words, for another run of the setup script.
@@ -377,7 +380,11 @@ export function gcpMessageParts(text: string): {
 	const [, message = text, answer] = /^(.*?)\s*(\([^()]*\))?$/s.exec(Str.trim(text)) ?? []
 	// A sentence ends at a full stop before a space. An address ends before one too, without a stop.
 	const [headline, ...body] = Str.split(/(?<=\.)\s+|(?<=https:\/\/\S+)\s+(?=[A-Z])/)(message)
-	return { headline: Str.replace(/\.$/, "")(headline), body, answer: answer?.slice(1, -1) ?? null }
+	return {
+		headline: Str.replace(/\.$/, "")(headline),
+		body,
+		answer: answer === undefined ? null : Str.slice(1, -1)(answer),
+	}
 }
 
 export const GCP_SCOPE_NAMES = {

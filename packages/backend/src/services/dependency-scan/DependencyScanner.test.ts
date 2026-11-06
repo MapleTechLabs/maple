@@ -1,7 +1,17 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { GitCommitSha, VcsInstallation, VcsRepo } from "@maple/domain/http"
-import { Deferred, Effect, Fiber, Layer, Option, Schema } from "effect"
+import {
+	Deferred,
+	Effect,
+	Fiber,
+	Layer,
+	Option,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/http"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import type { VcsTreeFile } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
@@ -9,14 +19,14 @@ import { PackageAdvisoryCatalog } from "@maple/backend/services/security/Package
 import osvFixture from "../security/__fixtures__/osv.json"
 import { DependencyScanner, DependencySources, MAX_LOCKFILE_BYTES } from "./DependencyScanner"
 import { DependencyScanStore } from "./DependencyScanStore"
-import { MAX_LOCKFILES } from "./lockfile-selection"
+import { MAX_LOCKFILES, MAX_MANIFEST_BYTES } from "./lockfile-selection"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const sha = (digit: string) => Schema.decodeSync(GitCommitSha)(digit.repeat(40))
+const sha = (digit: string) => Schema.decodeSync(GitCommitSha)(Str.repeat(40)(digit))
 
-const installation = Schema.decodeUnknownSync(VcsInstallation)({
+const installation = Schema.decodeSync(VcsInstallation)({
 	id: "5d7f8a52-1c3e-4b6a-9b1e-2a3c4d5e6f71",
 	orgId: "org_scan",
 	provider: "github",
@@ -35,7 +45,7 @@ const installation = Schema.decodeUnknownSync(VcsInstallation)({
 	updatedAt: 0,
 })
 
-const repository = Schema.decodeUnknownSync(VcsRepo)({
+const repository = Schema.decodeSync(VcsRepo)({
 	id: "7f0c1a52-4d8e-4b6a-9b1e-2a3c4d5e6f70",
 	orgId: "org_scan",
 	provider: "github",
@@ -72,20 +82,23 @@ const packageLock = (lodash: string) =>
 
 const GO_MOD = "module example.com/api\n\ngo 1.22\n\nrequire golang.org/x/net v0.7.0\n"
 
-const CARGO_LOCK = [
-	"version = 3",
-	"",
-	"[[package]]",
-	'name = "shop"',
-	'version = "0.1.0"',
-	'dependencies = ["time"]',
-	"",
-	"[[package]]",
-	'name = "time"',
-	'version = "0.1.43"',
-	'source = "registry+https://github.com/rust-lang/crates.io-index"',
-	"",
-].join("\n")
+const CARGO_LOCK = Arr.join(
+	[
+		"version = 3",
+		"",
+		"[[package]]",
+		'name = "shop"',
+		'version = "0.1.0"',
+		'dependencies = ["time"]',
+		"",
+		"[[package]]",
+		'name = "time"',
+		'version = "0.1.43"',
+		'source = "registry+https://github.com/rust-lang/crates.io-index"',
+		"",
+	],
+	"\n",
+)
 
 interface World {
 	/** Null once the branch is deleted. */
@@ -104,7 +117,7 @@ interface World {
 const world = (files: Record<string, string>): World => ({
 	head: sha("a"),
 	files: new Map(
-		Object.entries(files).map(([path, content]) => [
+		Arr.map(Rec.toEntries(files), ([path, content]) => [
 			path,
 			{ sha: `blob:${path}:${content.length}`, content },
 		]),
@@ -122,7 +135,7 @@ const source = (state: World) => ({
 		Effect.sync(() => {
 			const listing = {
 				truncated: state.truncated,
-				files: [...state.files].map(([path, blob]): VcsTreeFile => ({
+				files: Arr.map([...state.files], ([path, blob]): VcsTreeFile => ({
 					path,
 					sha: blob.sha,
 					size: blob.size ?? blob.content.length,
@@ -135,7 +148,11 @@ const source = (state: World) => ({
 		state.stallBlobs === undefined
 			? Effect.sync(() => {
 					state.blobReads.push(blobSha)
-					return [...state.files.values()].find((blob) => blob.sha === blobSha)?.content ?? ""
+					return (
+						Option.getOrUndefined(
+							Arr.findFirst([...state.files.values()], (blob) => blob.sha === blobSha),
+						)?.content ?? ""
+					)
 				})
 			: Deferred.succeed(state.stallBlobs, undefined).pipe(Effect.andThen(Effect.never)),
 })
@@ -160,19 +177,25 @@ const osv = (state: World) =>
 						? JSON.parse(new TextDecoder().decode(request.body.body))
 						: { queries: [] }
 				return json(request, {
-					results: body.queries.map((query) => {
-						const index = osvFixture.queries.findIndex(
+					results: Arr.map(body.queries, (query) => {
+						const index = Arr.findFirstIndex(
+							osvFixture.queries,
 							(known) =>
 								known.package.ecosystem === query.package.ecosystem &&
 								known.package.name === query.package.name &&
 								known.version === query.version,
 						)
-						return osvFixture.batch.results[index] ?? {}
+						return Option.match(index, {
+							onNone: () => ({}),
+							onSome: (i) => osvFixture.batch.results[i] ?? {},
+						})
 					}),
 				})
 			}
-			const id = decodeURIComponent(url.pathname.replace("/v1/vulns/", ""))
-			const vuln = osvFixture.vulns.find((candidate) => candidate.id === id)
+			const id = decodeURIComponent(Str.replace("/v1/vulns/", "")(url.pathname))
+			const vuln = Option.getOrUndefined(
+				Arr.findFirst(osvFixture.vulns, (candidate) => candidate.id === id),
+			)
 			return vuln === undefined ? json(request, { message: "not found" }, 404) : json(request, vuln)
 		}),
 	)
@@ -222,7 +245,7 @@ describe("DependencyScanner", () => {
 				assert.strictEqual(outcome._tag, "Scanned")
 				if (outcome._tag !== "Scanned") return
 				assert.deepStrictEqual(
-					outcome.scan.lockfiles.map((lockfile) => [
+					Arr.map(outcome.scan.lockfiles, (lockfile) => [
 						lockfile.path,
 						lockfile.status,
 						lockfile.packageCount,
@@ -239,10 +262,11 @@ describe("DependencyScanner", () => {
 				assert.strictEqual(outcome.scan.commitSha, sha("a"))
 
 				const findings = yield* findingsOf
-				const byPackage = (name: string) => findings.filter((finding) => finding.packageName === name)
+				const byPackage = (name: string) =>
+					Arr.filter(findings, (finding) => finding.packageName === name)
 				assert.strictEqual(byPackage("lodash").length, 6)
 				assert.deepStrictEqual(
-					byPackage("minimist").map((finding) => [
+					Arr.map(byPackage("minimist"), (finding) => [
 						finding.severity,
 						finding.relation,
 						finding.fixedIn,
@@ -250,21 +274,23 @@ describe("DependencyScanner", () => {
 					[["critical", "dev", "1.2.6"]],
 				)
 				assert.isTrue(
-					byPackage("golang.org/x/net").every(
+					Arr.every(
+						byPackage("golang.org/x/net"),
 						(finding) => finding.lockfilePath === "services/api/go.mod",
 					),
 				)
 				assert.deepStrictEqual(
-					byPackage("time").map((finding) => finding.relation),
+					Arr.map(byPackage("time"), (finding) => finding.relation),
 					["direct"],
 				)
 				// The go.sum beside go.mod, the vendored lockfile and the binary bun.lockb are never read.
 				assert.isFalse(
-					state.blobReads.some(
+					Arr.some(
+						state.blobReads,
 						(blob) =>
-							blob.includes("go.sum") ||
-							blob.includes("node_modules") ||
-							blob.includes("bun.lockb"),
+							Str.includes("go.sum")(blob) ||
+							Str.includes("node_modules")(blob) ||
+							Str.includes("bun.lockb")(blob),
 					),
 				)
 			}).pipe(Effect.provide(scannerFor(state)))
@@ -279,9 +305,9 @@ describe("DependencyScanner", () => {
 			state.head = sha("b")
 			const second = yield* scanner.scan(installation, repository, { trigger: "schedule" })
 			assert.deepStrictEqual(
-				[first, second].map((outcome) =>
+				Arr.map([first, second], (outcome) =>
 					outcome._tag === "Scanned"
-						? outcome.scan.lockfiles.map((lockfile) => [lockfile.path, lockfile.status])
+						? Arr.map(outcome.scan.lockfiles, (lockfile) => [lockfile.path, lockfile.status])
 						: outcome._tag,
 				),
 				[[["package-lock.json", "failed"]], [["package-lock.json", "failed"]]],
@@ -293,23 +319,24 @@ describe("DependencyScanner", () => {
 	it.effect("parses one blob under each lockfile format it is named as", () => {
 		const content = packageLock("4.17.15")
 		const state = world({ "bun.lock": content, "package-lock.json": content })
-		state.files = new Map([...state.files].map(([path, blob]) => [path, { ...blob, sha: "blob:shared" }]))
+		state.files = new Map(
+			Arr.map([...state.files], ([path, blob]) => [path, { ...blob, sha: "blob:shared" }]),
+		)
 		return Effect.gen(function* () {
 			const scanner = yield* DependencyScanner
 			const outcome = yield* scanner.scan(installation, repository, { trigger: "schedule" })
-			assert.deepStrictEqual(
+			const lockfiles =
 				outcome._tag === "Scanned"
-					? outcome.scan.lockfiles.map((lockfile) => [
+					? Arr.map(outcome.scan.lockfiles, (lockfile) => [
 							lockfile.path,
 							lockfile.status,
 							lockfile.packageCount,
 						])
-					: outcome._tag,
-				[
-					["bun.lock", "failed", 0],
-					["package-lock.json", "parsed", 2],
-				],
-			)
+					: outcome._tag
+			assert.deepStrictEqual(lockfiles, [
+				["bun.lock", "failed", 0],
+				["package-lock.json", "parsed", 2],
+			])
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 
@@ -332,17 +359,17 @@ describe("DependencyScanner", () => {
 			const outcome = yield* scanner.scan(installation, repository, { trigger: "push" })
 			assert.strictEqual(outcome._tag, "Scanned")
 
-			const lodash = (yield* findingsOf).filter((finding) => finding.packageName === "lodash")
+			const lodash = Arr.filter(yield* findingsOf, (finding) => finding.packageName === "lodash")
 			assert.strictEqual(lodash.length, 6)
 			assert.isTrue(
-				lodash.every((finding) => finding.status === "fixed" && finding.fixedSha === sha("c")),
+				Arr.every(lodash, (finding) => finding.status === "fixed" && finding.fixedSha === sha("c")),
 			)
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 
 	it.effect("skips an unchanged push in a repository with more lockfiles than a scan reads", () => {
-		const many = Object.fromEntries(
-			Array.from({ length: MAX_LOCKFILES + 2 }, (_, i) => [
+		const many = Rec.fromEntries(
+			Array.from({ length: MAX_LOCKFILES + 2 }, (_, i): [string, string] => [
 				`pkg${i}/package-lock.json`,
 				packageLock("4.17.15"),
 			]),
@@ -353,7 +380,7 @@ describe("DependencyScanner", () => {
 			const first = yield* scanner.scan(installation, repository, { trigger: "schedule" })
 			assert.strictEqual(
 				first._tag === "Scanned"
-					? first.scan.lockfiles.filter((lockfile) => lockfile.status === "skipped").length
+					? Arr.filter(first.scan.lockfiles, (lockfile) => lockfile.status === "skipped").length
 					: 0,
 				2,
 			)
@@ -396,7 +423,7 @@ describe("DependencyScanner", () => {
 				outcome._tag === "Scanned" ? outcome.scan.error : null,
 				"main moved on to ccccccc during the scan",
 			)
-			assert.isTrue((yield* findingsOf).every((finding) => finding.status === "open"))
+			assert.isTrue(Arr.every(yield* findingsOf, (finding) => finding.status === "open"))
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 
@@ -413,7 +440,7 @@ describe("DependencyScanner", () => {
 				outcome._tag === "Scanned" ? outcome.scan.error : null,
 				"main was deleted during the scan",
 			)
-			assert.isTrue((yield* findingsOf).every((finding) => finding.status === "open"))
+			assert.isTrue(Arr.every(yield* findingsOf, (finding) => finding.status === "open"))
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 
@@ -430,8 +457,8 @@ describe("DependencyScanner", () => {
 			state.headAfterTree = undefined
 			const outcome = yield* scanner.scan(installation, repository, { trigger: "push" })
 			assert.strictEqual(outcome._tag, "Scanned")
-			const lodash = (yield* findingsOf).filter((finding) => finding.packageName === "lodash")
-			assert.isTrue(lodash.length > 0 && lodash.every((finding) => finding.status === "fixed"))
+			const lodash = Arr.filter(yield* findingsOf, (finding) => finding.packageName === "lodash")
+			assert.isTrue(lodash.length > 0 && Arr.every(lodash, (finding) => finding.status === "fixed"))
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 
@@ -452,7 +479,7 @@ describe("DependencyScanner", () => {
 			const scanner = yield* DependencyScanner
 			const store = yield* DependencyScanStore
 			yield* scanner.scan(installation, repository, { trigger: "schedule" })
-			const before = (yield* findingsOf).map(keyOf).sort()
+			const before = Arr.map(yield* findingsOf, keyOf).sort()
 
 			state.osvDown = true
 			state.head = sha("d")
@@ -464,7 +491,7 @@ describe("DependencyScanner", () => {
 			assert.strictEqual(latest?.status, "failed")
 			// The typed failure's message, followed by what caused it.
 			assert.match(latest?.error ?? "", /^Could not read advisories: .+/)
-			assert.deepStrictEqual((yield* findingsOf).map(keyOf).sort(), before)
+			assert.deepStrictEqual(Arr.map(yield* findingsOf, keyOf).sort(), before)
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 
@@ -500,7 +527,7 @@ describe("DependencyScanner", () => {
 					scanner.scan(installation, repository, { trigger: "schedule" }),
 				)
 				assert.include(error.message, "too large")
-				assert.isTrue((yield* findingsOf).every((finding) => finding.status === "open"))
+				assert.isTrue(Arr.every(yield* findingsOf, (finding) => finding.status === "open"))
 			}).pipe(Effect.provide(scannerFor(state)))
 		},
 	)
@@ -522,6 +549,25 @@ describe("DependencyScanner", () => {
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 
+	it.effect("reads a yarn lockfile's manifests but never one too large to be a package.json", () => {
+		const state = world({
+			"yarn.lock": '"lodash@4.17.15":\n  version "4.17.15"\n',
+			"package.json": '{"dependencies":{"lodash":"4.17.15"}}',
+		})
+		state.files.set("packages/huge/package.json", {
+			sha: "huge-manifest",
+			content: "{}",
+			size: MAX_MANIFEST_BYTES + 1,
+		})
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			const outcome = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.strictEqual(outcome._tag, "Scanned")
+			assert.isTrue(state.blobReads.includes(state.files.get("package.json")!.sha))
+			assert.isFalse(state.blobReads.includes("huge-manifest"))
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
 	it.effect("records an oversized lockfile without reading it and keeps its findings open", () => {
 		const state = world({ "package-lock.json": packageLock("4.17.15") })
 		return Effect.gen(function* () {
@@ -534,7 +580,7 @@ describe("DependencyScanner", () => {
 				"too_large",
 			)
 			assert.isFalse(state.blobReads.includes("huge"))
-			assert.isTrue((yield* findingsOf).every((finding) => finding.status === "open"))
+			assert.isTrue(Arr.every(yield* findingsOf, (finding) => finding.status === "open"))
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 

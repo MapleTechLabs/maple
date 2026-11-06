@@ -55,7 +55,7 @@ export const services = Command.make("services", {
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
 			const range = yield* resolveRangeChecked(a)
-			const needle = Option.getOrUndefined(a.service)?.toLowerCase()
+			const needle = Option.getOrUndefined(Option.map(a.service, Str.toLowerCase))
 			const all = yield* Ops.listServices({ range, environment: Option.getOrUndefined(a.environment) })
 			const matching = Arr.filter(
 				[...all],

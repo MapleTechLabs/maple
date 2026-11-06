@@ -1,6 +1,6 @@
 // Shared helpers for the local-store migration steps: journal decoding, the
 // raw-telemetry row counts every step preserves, and the clone into staging.
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { cp, mkdir, rm } from "node:fs/promises"
 import { dirname, join, sep } from "node:path"
 import { RAW_TELEMETRY_TTL_COLUMNS, type Chdb } from "@maple/local-server/chdb"
@@ -31,7 +31,7 @@ export const UnsignedDecimal = Schema.String.check(Schema.isPattern(/^\d+$/u))
 const strict = { onExcessProperty: "error" } as const
 
 /** `decodeUnknownSync` with the strict excess-property policy. */
-export const strictDecoder = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: S) =>
+export const strictDecoder = <S extends Schema.Codec<unknown, unknown>>(schema: S) =>
 	Schema.decodeUnknownSync(schema, strict)
 
 /** Exactly the raw telemetry tables a migration must preserve, in a stable order. */
@@ -71,8 +71,11 @@ export const retainedRawRowCounts = (
 ): Readonly<Record<string, string>> =>
 	Rec.fromEntries(
 		Arr.map(RAW_TELEMETRY_TTL_COLUMNS, ([table, column]) => {
-			const ttl = manifest.objects.find((object) => object.name === table)?.ttl
-			const days = ttl === undefined ? null : ttlDaysFromDefinition(`TTL ${ttl}`)
+			const ttl = Option.flatMapNullishOr(
+				Arr.findFirst(manifest.objects, (object) => object.name === table),
+				(object) => object.ttl,
+			)
+			const days = Option.isNone(ttl) ? null : ttlDaysFromDefinition(`TTL ${ttl.value}`)
 			const retained =
 				days === null
 					? ""

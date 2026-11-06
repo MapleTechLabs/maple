@@ -71,6 +71,13 @@ const looksSecret = (name: string) =>
 	/SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE|CREDENTIAL|API_?KEY|_KEY$|_DSN$|SIGNING/.test(name) &&
 	!/PUBLISHABLE|PUBLIC/.test(name)
 
+/**
+ * A name only a test run reads: a whole `TEST` or `E2E` token, as in `STRIPE_E2E_TEST_SECRET_KEY`.
+ * Whole tokens only, so `LATEST_RELEASE` and `CONTEST_KEY` still count.
+ */
+const testOnlyName = (name: string) =>
+	Arr.some(Str.split("_")(name), (token) => token === "TEST" || token === "E2E")
+
 /** Names every runtime or CI provides; never something to add. */
 const PROVIDED = new Set([
 	"NODE_ENV",
@@ -95,8 +102,12 @@ const PROVIDED = new Set([
 	"BASE_URL",
 ])
 
+/**
+ * A test by folder, or by the file name's last dot segment before the extension: a known test
+ * suffix (`x.e2e.ts`, `x.test-d.ts`) or a custom one ending in it (`x.stripe-live.ts`).
+ */
 const TEST_PATH =
-	/(^|\/)(__tests__|__snapshots__|__fixtures__|tests?|fixtures?|e2e|testdata|mocks?)\/|\.(test|spec|eval|bench)\.[a-z]+$/i
+	/(^|\/)(__tests__|__snapshots__|__fixtures__|tests?|fixtures?|e2e|integration|playwright|testdata|mocks?)\/|\.(test|spec|eval|bench|e2e|integration|it|live|test-d|[\w-]+-(live|e2e|test))\.[a-z]+$/i
 const DOC_PATH = /\.(md|mdx|txt|rst)$/i
 /** Code a developer runs by hand; what it reads is set on their machine, not in a deployment. */
 const LOCAL_PATH = /(^|\/)(scripts?|examples?|benchmarks?|evals?)\//i
@@ -154,16 +165,16 @@ const splitPatch = (patch: string | null) => {
 const namesRead = (text: string): Array<{ name: string; secret: boolean }> => {
 	const found: Array<{ name: string; secret: boolean }> = []
 	for (const pattern of ENV_READS) {
-		for (const match of text.matchAll(pattern)) {
-			const name = match.slice(1).find((group) => group !== undefined)
-			if (name !== undefined) found.push({ name, secret: false })
+		for (const match of Str.matchAll(pattern)(text)) {
+			const name = Arr.findFirst(match.slice(1), (group) => group !== undefined)
+			if (Option.isSome(name)) found.push({ name: name.value, secret: false })
 		}
 	}
-	for (const [, constant = "", name] of text.matchAll(NAMED_CONSTANT)) {
+	for (const [, constant = "", name] of Str.matchAll(NAMED_CONSTANT)(text)) {
 		if (name !== undefined && Str.includes("_")(name))
 			found.push({ name, secret: /SECRET|TOKEN/.test(constant) })
 	}
-	for (const match of text.matchAll(CONFIG_CALL)) {
+	for (const match of Str.matchAll(CONFIG_CALL)(text)) {
 		const [, callee = "", name] = match
 		if (name !== undefined && CONFIG_CALLEE.test(callee))
 			found.push({ name, secret: SECRET_CALLEE.test(callee) })
@@ -223,6 +234,8 @@ export const detectMergeSteps = (files: ReadonlyArray<PullRequestFile>): Detecte
 		if (!readsNamesIn(path)) continue
 		const remember = (candidate: MergeStepName) => {
 			if (PROVIDED.has(candidate.name) || names.has(candidate.name)) return
+			// A CI secret for an e2e run still has to be added to the repository; a runtime read does not.
+			if (!candidate.ci && testOnlyName(candidate.name)) return
 			names.set(candidate.name, candidate)
 		}
 		for (const { text, line } of added) {
@@ -233,7 +246,7 @@ export const detectMergeSteps = (files: ReadonlyArray<PullRequestFile>): Detecte
 				continue
 			}
 			if (WORKFLOW.test(path)) {
-				for (const [, context, name] of text.matchAll(CI_READ)) {
+				for (const [, context, name] of Str.matchAll(CI_READ)(text)) {
 					if (name === undefined) continue
 					remember({ name, kind: context === "secrets" ? "secret" : "env", ci: true, path, line })
 				}
@@ -363,12 +376,14 @@ export const buildChecklist = (input: {
 	// A reviewer step that replaces a diff step takes over its identity, so a tick on either
 	// wording carries across pushes and the comment still labels it a secret, not a manual step.
 	const reviewer = Arr.map(input.reviewer, (step) => {
-		const named = replaced.find(
+		const named = Arr.findFirst(
+			replaced,
 			(other) => other.subject !== undefined && Str.includes(other.subject)(step.title),
 		)
-		return named === undefined
-			? step
-			: new PrReviewMergeStep({ ...named, title: step.title, source: "reviewer" })
+		return Option.match(named, {
+			onNone: () => step,
+			onSome: (other) => new PrReviewMergeStep({ ...other, title: step.title, source: "reviewer" }),
+		})
 	})
 	const all = [...kept, ...reviewer].sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind])
 	const subjects = (steps: ReadonlyArray<PrReviewMergeStep>) =>
@@ -446,8 +461,9 @@ const FILLER = HashSet.fromIterable(
 const words = (text: string): ReadonlyArray<string> =>
 	Arr.dedupe(
 		Arr.filter(
-			Arr.map(Str.toLowerCase(text).match(/[a-z0-9_]{2,}/g) ?? [], (word) =>
-				Str.replace(/(?<=[a-z]{3})s$/, "")(word),
+			Arr.map(
+				Option.getOrElse(Str.match(/[a-z0-9_]{2,}/g)(Str.toLowerCase(text)), () => []),
+				(word) => Str.replace(/(?<=[a-z]{3})s$/, "")(word),
 			),
 			(word) => !HashSet.has(FILLER, word),
 		),

@@ -5,7 +5,7 @@ import {
 	type WarehouseColumnMetadataRow,
 	type WarehouseIndexMetadataRow,
 } from "../capabilities"
-import { String as Str } from "effect"
+import { String as Str, Array as Arr, Option } from "effect"
 
 /**
  * Capabilities for the warehouses whose schema *we* deploy.
@@ -47,8 +47,11 @@ interface TableMetadata {
  */
 const parseTableDdl = (table: string, ddl: string): TableMetadata => {
 	const lines = Str.split("\n")(ddl)
-	const end = lines.findIndex((line, index) => index > 0 && Str.startsWith(")")(line))
-	const body = lines.slice(1, end === -1 ? lines.length : end)
+	const end = Arr.findFirstIndex(lines, (line, index) => index > 0 && Str.startsWith(")")(line))
+	const body = lines.slice(
+		1,
+		Option.getOrElse(end, () => lines.length),
+	)
 
 	const columns: Array<WarehouseColumnMetadataRow> = []
 	const indexes: Array<WarehouseIndexMetadataRow> = []
@@ -73,11 +76,11 @@ const readManagedSchemaMetadata = (): TableMetadata => {
 	const indexes: Array<WarehouseIndexMetadataRow> = []
 
 	for (const table of CAPABILITY_TABLES) {
-		const ddl = latestSnapshotStatements.find((statement) =>
+		const ddl = Arr.findFirst(latestSnapshotStatements, (statement) =>
 			Str.startsWith(`CREATE TABLE IF NOT EXISTS ${table} (`)(statement),
 		)
-		if (ddl === undefined) continue
-		const parsed = parseTableDdl(table, ddl)
+		if (Option.isNone(ddl)) continue
+		const parsed = parseTableDdl(table, ddl.value)
 		columns.push(...parsed.columns)
 		indexes.push(...parsed.indexes)
 	}

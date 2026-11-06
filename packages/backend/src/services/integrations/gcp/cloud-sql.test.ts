@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { GcpSqlInstanceData } from "./api"
 import { gcpSqlSettings } from "./cloud-sql"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 const instance = (name: string, data: Partial<GcpSqlInstanceData> = {}) => ({
 	name: `//cloudsql.googleapis.com/projects/acme-prod/instances/${name}`,
@@ -59,7 +59,10 @@ describe("gcpSqlSettings", () => {
 						settings: { tier: "db-custom-1-3840" },
 					}),
 				]),
-				([name, value]) => [Str.slice(name.lastIndexOf("/") + 1)(name), value],
+				([name, value]) => [
+					Str.slice(Option.getOrElse(Str.lastIndexOf("/")(name), () => -1) + 1)(name),
+					value,
+				],
 			),
 		)
 		expect(settings.get("orders-db-replica")).toMatchObject({

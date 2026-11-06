@@ -1,4 +1,5 @@
 import {
+	ErrorIssueAffectedUsersResponse,
 	ErrorIssueEventsResponse,
 	ErrorIssuePullRequestsResponse,
 	ErrorIssueVerificationsResponse,
@@ -39,6 +40,8 @@ export const IssueWrite = Schema.Union([
 	Schema.TaggedStruct("Heartbeat", {}),
 	Schema.TaggedStruct("Release", {}),
 	Schema.TaggedStruct("SetSeverity", { severity: Schema.NullOr(IssueSeverity) }),
+	/** Splits a merged issue back out of the one it was folded into. */
+	Schema.TaggedStruct("Unmerge", {}),
 ])
 export type IssueWrite = typeof IssueWrite.Type
 
@@ -55,6 +58,7 @@ export const Message = defineMessageUnion({
 	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, mode: RequestMode },
 	CompletedFetchDetail: result(V2ErrorIssueDetail),
 	CompletedFetchEvents: result(ErrorIssueEventsResponse),
+	CompletedFetchAffectedUsers: result(ErrorIssueAffectedUsersResponse),
 	MountedRightRail: {},
 	CompletedFetchInvestigations: result(Schema.Array(V2Investigation)),
 	CompletedFetchPullRequests: result(ErrorIssuePullRequestsResponse),
@@ -81,6 +85,7 @@ export const Message = defineMessageUnion({
 	GotPromptCopyMessage: { message: CopyButton.Message },
 	GotChartMessage: { message: Chart.Message },
 	ClickedClaim: {},
+	ClickedUnmerge: {},
 	ClickedExtendLease: {},
 	ClickedReleaseLease: {},
 	CompletedIssueWrite: { write: IssueWrite, result: Schema.Result(WriteOutcome, LoadFailure) },

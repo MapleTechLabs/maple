@@ -2,7 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ApiKeys } from "@maple/db/tables"
 import { ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
-import { Effect, Schema, Tracer, Array as Arr } from "effect"
+import { Effect, Schema, Tracer, Array as Arr, Option } from "effect"
 import { Database, DatabaseError } from "./DatabaseLive"
 import { postgresErrorType, postgresSqlState } from "./postgres-errors"
 import { cleanupTestDbs, createTestDb, type TestDb } from "./test-pglite"
@@ -55,10 +55,12 @@ describe("effect-orm through Database.execute", () => {
 				.pipe(Effect.withTracer(tracer))
 
 			assert.strictEqual(rows.length, 1)
-			assert.strictEqual(rows[0]!.createdAt, 1_700_000_000_001)
-			assert.strictEqual(rows[0]!.kind, "standard")
-			assert.strictEqual(rows[0]!.revoked, false)
-			const span = spans.find((s) => s.attributes.get("db.system.name") === "postgresql")
+			assert.strictEqual(rows[0].createdAt, 1_700_000_000_001)
+			assert.strictEqual(rows[0].kind, "standard")
+			assert.strictEqual(rows[0].revoked, false)
+			const span = Option.getOrUndefined(
+				Arr.findFirst(spans, (s) => s.attributes.get("db.system.name") === "postgresql"),
+			)
 			assert.isDefined(span)
 			assert.strictEqual(span.name, "SELECT api_keys")
 			assert.include(span.attributes.get("db.query.text") as string, `"org_id" = $1`)

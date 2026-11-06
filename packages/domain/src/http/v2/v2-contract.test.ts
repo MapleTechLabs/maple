@@ -34,7 +34,7 @@ const UUID = "0f8fad5b-d9cb-469f-a165-70867728950e"
 
 describe("V2PlanetScaleIntegration wire format", () => {
 	it("decodes snake_case fields, ISO timestamps, and a scrp_ public ID", () => {
-		const status = Schema.decodeUnknownSync(V2PlanetScaleIntegration)({
+		const status = Schema.decodeSync(V2PlanetScaleIntegration)({
 			object: "planetscale_integration",
 			connected: true,
 			pending_org_selection: false,
@@ -63,7 +63,7 @@ describe("V2PlanetScaleIntegration wire format", () => {
 
 	it("rejects a scrape target ID carrying the wrong prefix", () => {
 		expect(() =>
-			Schema.decodeUnknownSync(V2PlanetScaleScrapeTarget)({
+			Schema.decodeSync(V2PlanetScaleScrapeTarget)({
 				id: encodePublicId("key", UUID),
 				object: "planetscale_integration.scrape_target",
 				enabled: true,
@@ -78,13 +78,13 @@ describe("V2PlanetScaleIntegration wire format", () => {
 
 	it("requires a non-empty token id and secret", () => {
 		expect(() =>
-			Schema.decodeUnknownSync(V2PlanetScaleMetricsTokenRequest)({
+			Schema.decodeSync(V2PlanetScaleMetricsTokenRequest)({
 				token_id: "",
 				token_secret: "pscale_tkn_x",
 			}),
 		).toThrow()
 		expect(
-			Schema.decodeUnknownSync(V2PlanetScaleMetricsTokenRequest)({
+			Schema.decodeSync(V2PlanetScaleMetricsTokenRequest)({
 				token_id: "tok_1",
 				token_secret: "pscale_tkn_x",
 			}).token_id,
@@ -94,7 +94,7 @@ describe("V2PlanetScaleIntegration wire format", () => {
 
 describe("V2ApiKey wire format", () => {
 	it("encodes snake_case fields, an object type, and a key_ public ID", () => {
-		const key = Schema.decodeUnknownSync(V2ApiKey)({
+		const key = Schema.decodeSync(V2ApiKey)({
 			id: encodePublicId("key", UUID),
 			object: "api_key",
 			name: "ci",
@@ -121,7 +121,7 @@ describe("V2ApiKey wire format", () => {
 	})
 
 	it("encodes MCP OAuth tokens, whose stored scope is outside the request grammar", () => {
-		const key = Schema.decodeUnknownSync(V2ApiKey)({
+		const key = Schema.decodeSync(V2ApiKey)({
 			id: encodePublicId("key", UUID),
 			object: "api_key",
 			name: "Claude",
@@ -157,21 +157,21 @@ describe("V2ApiKey wire format", () => {
 			created_by: "user_123",
 			created_by_email: null,
 		}
-		const withSecret = Schema.decodeUnknownSync(V2ApiKeyWithSecret)({
+		const withSecret = Schema.decodeSync(V2ApiKeyWithSecret)({
 			...base,
 			secret: "maple_ak_secret",
 			txid: "81234",
 		})
-		const revoked = Schema.decodeUnknownSync(V2ApiKeyMutationResponse)({ ...base, txid: "81235" })
+		const revoked = Schema.decodeSync(V2ApiKeyMutationResponse)({ ...base, txid: "81235" })
 
 		expect(Schema.encodeSync(V2ApiKeyWithSecret)(withSecret).txid).toBe("81234")
 		expect(Schema.encodeSync(V2ApiKeyMutationResponse)(revoked).txid).toBe("81235")
-		expect("txid" in Schema.encodeSync(V2ApiKey)(Schema.decodeUnknownSync(V2ApiKey)(base))).toBe(false)
+		expect("txid" in Schema.encodeSync(V2ApiKey)(Schema.decodeSync(V2ApiKey)(base))).toBe(false)
 	})
 
 	it("rejects non-Postgres transaction IDs", () => {
 		expect(() =>
-			Schema.decodeUnknownSync(V2ApiKeyMutationResponse)({
+			Schema.decodeSync(V2ApiKeyMutationResponse)({
 				id: encodePublicId("key", UUID),
 				object: "api_key",
 				name: "ci",
@@ -230,7 +230,7 @@ describe("V2ErrorIssue wire format", () => {
 	}
 
 	it("encodes the resource with snake_case fields and an iss_ public ID", () => {
-		const decoded = Schema.decodeUnknownSync(V2ErrorIssue)(issueWire)
+		const decoded = Schema.decodeSync(V2ErrorIssue)(issueWire)
 		expect(decoded.id).toBe(UUID)
 		const wire = Schema.encodeSync(V2ErrorIssue)(decoded)
 		expect(wire.id).toBe(encodePublicId("iss", UUID))
@@ -241,7 +241,7 @@ describe("V2ErrorIssue wire format", () => {
 
 describe("V2Dashboard wire format", () => {
 	it("encodes public IDs and recursively snake_cases the dashboard document", () => {
-		const decoded = Schema.decodeUnknownSync(V2DashboardMutation)({
+		const decoded = Schema.decodeSync(V2DashboardMutation)({
 			id: encodePublicId("dash", UUID),
 			object: "dashboard",
 			name: "Operations",
@@ -298,6 +298,7 @@ describe("V2Dashboard wire format", () => {
 			refresh_interval_seconds: null,
 			created_at: "2026-07-15T00:00:00.000Z",
 			updated_at: "2026-07-16T00:00:00.000Z",
+			version: 3,
 			txid: "81234",
 		})
 
@@ -425,14 +426,14 @@ describe("V2 alerts wire format", () => {
 	})
 
 	it("decodes destination create params per union arm and rejects mismatched configs", () => {
-		const pagerduty = Schema.decodeUnknownSync(V2AlertDestinationCreateParams)({
+		const pagerduty = Schema.decodeSync(V2AlertDestinationCreateParams)({
 			type: "pagerduty",
 			name: "On-call",
 			integration_key: "routing-key",
 		})
 		expect(pagerduty.type).toBe("pagerduty")
 
-		const email = Schema.decodeUnknownSync(V2AlertDestinationCreateParams)({
+		const email = Schema.decodeSync(V2AlertDestinationCreateParams)({
 			type: "email",
 			name: "Leads",
 			member_user_ids: ["user_1", "user_2"],
@@ -477,6 +478,9 @@ describe("V2 alerts wire format", () => {
 			last_notified_at: null,
 			hold_reason: null,
 			held_since: null,
+			acknowledged_at: null,
+			acknowledged_by: null,
+			acknowledged_via: null,
 			error_issue_id: null,
 		})
 		expect(incident.id).toBe(INCIDENT_UUID)
@@ -652,6 +656,7 @@ describe("scopes", () => {
 	it("classifies every scope-protected v2 route template", () => {
 		let checked = 0
 		for (const group of Rec.values(MapleApiV2.groups)) {
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.values would need a cast
 			for (const endpoint of Object.values(group.endpoints)) {
 				const scoped = Arr.some(
 					Array.from(endpoint.middlewares),
@@ -747,21 +752,21 @@ describe("telemetry contracts", () => {
 			end_time: "2026-07-15T01:00:00.000Z",
 		}
 		expect(() =>
-			Schema.decodeUnknownSync(V2TraceTimeseriesParams)({
+			Schema.decodeSync(V2TraceTimeseriesParams)({
 				...base,
 				aggregation: "count",
 				group_by: "attribute",
 			}),
 		).toThrow()
 		expect(() =>
-			Schema.decodeUnknownSync(V2TraceTimeseriesParams)({
+			Schema.decodeSync(V2TraceTimeseriesParams)({
 				...base,
 				aggregation: "count",
 				bucket_seconds: 0,
 			}),
 		).toThrow()
 		expect(() =>
-			Schema.decodeUnknownSync(V2MetricsTimeseriesParams)({
+			Schema.decodeSync(V2MetricsTimeseriesParams)({
 				...base,
 				aggregation: "rate",
 				filters: { metric_name: "requests", metric_type: "gauge" },
@@ -856,11 +861,9 @@ describe("list pagination", () => {
 
 describe("timestamps", () => {
 	it("accepts UTC ISO-8601 timestamps and rejects invalid values", () => {
-		expect(Schema.decodeUnknownSync(Timestamp)("2026-07-15T12:34:56.000Z")).toBe(
-			"2026-07-15T12:34:56.000Z",
-		)
-		expect(() => Schema.decodeUnknownSync(Timestamp)("not-a-date")).toThrow()
-		expect(() => Schema.decodeUnknownSync(Timestamp)("2026-07-15T12:34:56+02:00")).toThrow()
+		expect(Schema.decodeSync(Timestamp)("2026-07-15T12:34:56.000Z")).toBe("2026-07-15T12:34:56.000Z")
+		expect(() => Schema.decodeSync(Timestamp)("not-a-date")).toThrow()
+		expect(() => Schema.decodeSync(Timestamp)("2026-07-15T12:34:56+02:00")).toThrow()
 	})
 })
 

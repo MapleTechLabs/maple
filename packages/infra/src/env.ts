@@ -15,9 +15,9 @@ import { Array as Arr, String as Str } from "effect"
  */
 
 export type PlainEnv = Record<string, string>
-export type SecretEnv = Record<string, Redacted.Redacted<string>>
+export type SecretEnv = Record<string, Redacted.Redacted>
 /** A union-valued record, not `PlainEnv & SecretEnv` (that intersection is uninhabited). */
-export type WorkerEnv = Record<string, string | Redacted.Redacted<string>>
+export type WorkerEnv = Record<string, string | Redacted.Redacted>
 
 /** Present-and-non-blank, trimmed (`optionalString` returns the raw value). */
 const trimmedOption = (key: string): Config.Config<Option.Option<string>> =>
@@ -41,7 +41,7 @@ export const requiredPlain = (key: string): Config.Config<string> =>
 	Config.schema(Schema.Trim.check(Schema.isNonEmpty()), key)
 
 /** Required secret, wrapped in `Redacted`. */
-export const requiredSecret = (key: string): Config.Config<Redacted.Redacted<string>> =>
+export const requiredSecret = (key: string): Config.Config<Redacted.Redacted> =>
 	requiredPlain(key).pipe(Config.map(Redacted.make))
 
 /** Required plain value as a single-entry record, for spreading into a group. */
@@ -56,7 +56,8 @@ export const requireSecretEntry = (key: string): Config.Config<SecretEnv> =>
 export const optionalPlain = (key: string, fallback?: string): Config.Config<PlainEnv> =>
 	trimmedOption(key).pipe(
 		Config.map((value) => {
-			const resolved = Option.getOrUndefined(value) ?? fallback?.trim()
+			const resolved =
+				Option.getOrUndefined(value) ?? (fallback === undefined ? undefined : Str.trim(fallback))
 			return resolved ? { [key]: resolved } : {}
 		}),
 	)

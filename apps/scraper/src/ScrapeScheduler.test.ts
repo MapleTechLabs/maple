@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Exit, Layer, Redacted, Schema, Array as Arr, String as Str } from "effect"
+import { Duration, Effect, Exit, Layer, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { InternalScrapeTarget, type ScrapeResultReport } from "@maple/domain/http"
 import { ApiClient, ApiRequestError, type ApiClientApi } from "./ApiClient"
@@ -7,7 +7,7 @@ import { ScraperEnv, type ScraperEnvConfig } from "./Env"
 import { DELIVERY_BLOCKED_BACKOFF, startJitterMs } from "./policy"
 import { ResultReporter } from "./ResultReporter"
 import { scrapeError, type ScrapeError, type ScrapeFailureReason } from "./ScrapeError"
-import { ScrapeScheduler, StartJitter } from "./ScrapeScheduler"
+import { orgScrapePermits, ScrapeScheduler, StartJitter } from "./ScrapeScheduler"
 import type { OtlpExportRequest } from "@maple/prometheus-otlp"
 import { OtlpIngest } from "./OtlpIngest"
 import { Scraper } from "./Scraper"
@@ -24,6 +24,7 @@ const mkTarget = (
 	id: string,
 	intervalSeconds: number,
 	overrides: Partial<{
+		orgId: string
 		url: string
 		scrapeUrl: string
 		ingestKey: string
@@ -32,7 +33,7 @@ const mkTarget = (
 ): InternalScrapeTarget =>
 	decodeTarget({
 		id,
-		orgId: "org_test",
+		orgId: overrides.orgId ?? "org_test",
 		name: `target-${Str.slice(0, 4)(id)}`,
 		serviceName: null,
 		targetType: "prometheus",
@@ -98,9 +99,9 @@ const scrapesOf = (harness: Harness, id: string, subTargetKey: string | null = n
 /** Real registry, scraper and reporter over a stubbed API, fetcher and ingest. Jitter is zeroed unless asked for. */
 const harnessLayer = (harness: Harness, options: { readonly realJitter?: boolean } = {}) => {
 	const api: ApiClientApi = {
-		listTargets: () => Effect.suspend(() => harness.listImpl()),
+		listTargets: Effect.suspend(() => harness.listImpl()),
 		reportResults: (results) => Effect.sync(() => void harness.reported.push(...results)),
-		listUptimeTargets: () => Effect.succeed([]),
+		listUptimeTargets: Effect.succeed([]),
 		reportUptimeResults: () => Effect.void,
 	}
 	const fetcher = Layer.succeed(TargetFetcher, {
@@ -369,6 +370,43 @@ describe("ScrapeScheduler", () => {
 		)
 	})
 
+	describe("fair share", () => {
+		// More slow targets in one org than the whole pool has permits.
+		const busyOrgTargets = Arr.makeBy(12, (n) =>
+			mkTarget(`aaaaaaaa-aaaa-4aaa-8aaa-${Str.padStart(12, "0")(String(n))}`, 10, {
+				orgId: "org_busy",
+			}),
+		)
+		const quietTarget = mkTarget(TARGET_B, 10, { orgId: "org_quiet" })
+
+		it.effect("one org's slow targets leave permits for another org", () =>
+			Effect.gen(function* () {
+				const harness = makeHarness([...busyOrgTargets, quietTarget])
+				let inFlight = 0
+				let peak = 0
+				harness.scrapeImpl = (target) =>
+					target.orgId === "org_busy"
+						? Effect.acquireUseRelease(
+								Effect.sync(() => {
+									inFlight += 1
+									peak = Math.max(peak, inFlight)
+								}),
+								() => Effect.as(Effect.sleep(Duration.seconds(9)), OK_BODY),
+								() => Effect.sync(() => void (inFlight -= 1)),
+							)
+						: Effect.succeed(OK_BODY)
+				yield* startScheduler.pipe(Effect.provide(harnessLayer(harness)))
+
+				// Queued behind twelve 9s scrapes on one shared pool, it would wait until t=9.
+				assert.strictEqual(scrapesOf(harness, TARGET_B), 1)
+				yield* TestClock.adjust(Duration.seconds(30))
+				assert.strictEqual(peak, orgScrapePermits(testEnv.SCRAPER_CONCURRENCY))
+				// t=0, 10, 20, 30: its cadence holds while the busy org stays capped.
+				assert.strictEqual(scrapesOf(harness, TARGET_B), 4)
+			}),
+		)
+	})
+
 	describe("results", () => {
 		it.effect("reports duration and sample counts, and only the error on failure", () =>
 			Effect.gen(function* () {
@@ -385,16 +423,18 @@ describe("ScrapeScheduler", () => {
 				// Both land within the first two report intervals.
 				yield* TestClock.adjust(Duration.seconds(12))
 
-				const ok = harness.reported.find((r) => r.targetId === TARGET_A)
-				assert.strictEqual(ok?.error, null)
-				assert.strictEqual(ok?.durationMs, 2000)
-				assert.strictEqual(ok?.samplesScraped, 3)
-				assert.strictEqual(ok?.samplesPostMetricRelabeling, 2)
+				const ok = Option.getOrThrow(Arr.findFirst(harness.reported, (r) => r.targetId === TARGET_A))
+				assert.strictEqual(ok.error, null)
+				assert.strictEqual(ok.durationMs, 2000)
+				assert.strictEqual(ok.samplesScraped, 3)
+				assert.strictEqual(ok.samplesPostMetricRelabeling, 2)
 
-				const failed = harness.reported.find((r) => r.targetId === TARGET_B)
-				assert.strictEqual(failed?.error, 'target "target-bbbb" (example.com) failed: target_error')
-				assert.strictEqual(failed?.durationMs, 2000)
-				assert.isUndefined(failed?.samplesScraped)
+				const failed = Option.getOrThrow(
+					Arr.findFirst(harness.reported, (r) => r.targetId === TARGET_B),
+				)
+				assert.strictEqual(failed.error, 'target "target-bbbb" (example.com) failed: target_error')
+				assert.strictEqual(failed.durationMs, 2000)
+				assert.isUndefined(failed.samplesScraped)
 			}),
 		)
 	})

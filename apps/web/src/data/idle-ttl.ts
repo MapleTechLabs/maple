@@ -22,6 +22,18 @@ export const IdleTtl = {
 	listReplays: 30_000,
 	/** `replaysFacetsResultAtom`. */
 	replaysFacets: 30_000,
+	/** `/users`: the directory list. */
+	listUsers: 30_000,
+	/** `/users?groupBy=group`: the directory grouped. */
+	listUserGroups: 30_000,
+	/** `/users`: the rail facets and summary. */
+	usersFacets: 30_000,
+	/** `/users/$userId`: the profile, stats, rail, sessions, events, MCP sessions and timeline. */
+	userOverview: 30_000,
+	/** `/users/$userId`: the Traces tab's requests. */
+	userTraces: 30_000,
+	/** `/users/$userId`: the Logs tab's lines. */
+	userLogs: 30_000,
 	/** `getReplayResultAtom`. */
 	replay: 60_000,
 	/** `getReplayManifestResultAtom`. */

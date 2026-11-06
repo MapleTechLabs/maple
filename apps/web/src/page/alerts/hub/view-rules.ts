@@ -27,7 +27,7 @@ import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { ruleHref } from "../shared/links"
 import { isoMs } from "../shared/time"
 import { Message, type RuleBucket } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { ruleMenuId } from "./update"
 import { searchInput } from "@maple/views/ui/search-input"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -56,7 +56,9 @@ const ROW_GRID =
 	"grid grid-cols-[12px_minmax(0,1fr)_170px_150px_minmax(0,160px)_48px_32px] items-center gap-4"
 
 const capGroups = <T>(groups: ReadonlyArray<TagGroup<T>>, limit: number): Array<TagGroup<T>> =>
-	groups.reduce<{ out: Array<TagGroup<T>>; left: number }>(
+	Arr.reduce<TagGroup<T>, { out: Array<TagGroup<T>>; left: number }>(
+		groups,
+		{ out: [], left: limit },
 		(acc, group) =>
 			acc.left <= 0
 				? acc
@@ -64,7 +66,6 @@ const capGroups = <T>(groups: ReadonlyArray<TagGroup<T>>, limit: number): Array<
 						out: [...acc.out, { ...group, items: group.items.slice(0, acc.left) }],
 						left: acc.left - group.items.length,
 					},
-		{ out: [], left: limit },
 	).out
 
 type H = HtmlBuilder<Message>
@@ -121,13 +122,10 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 			lastValue: worstState(data.statesByRule.get(rule.id) ?? [])?.last_value ?? null,
 			incidents: incidentsByRule.get(rule.id) ?? [],
 			ribbonRange,
-			destinations: Arr.flatMap(
-				rule.destinationIds.filter((id, i, all) => all.indexOf(id) === i),
-				(id) => {
-					const destination = destinationsById.get(id)
-					return destination === undefined ? [] : [destination]
-				},
-			),
+			destinations: Arr.flatMap(Arr.dedupe(rule.destinationIds), (id) => {
+				const destination = destinationsById.get(id)
+				return destination === undefined ? [] : [destination]
+			}),
 			fired: firedByRuleId.get(rule.id) ?? 0,
 			groupKey,
 		})
@@ -352,7 +350,7 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 			),
 			h.span(
 				[h.Class(ROW_LINK_LIFT)],
-				model.isAdmin
+				canManage(model)
 					? [
 							rowActionsMenu(h, {
 								slotId: menuId,

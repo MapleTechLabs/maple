@@ -1,4 +1,5 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
 import * as Checkbox from "@maple/views/ui/checkbox"
 import { badge } from "@maple/views/ui/display"
@@ -11,7 +12,7 @@ import { queryPanelView } from "../../kit/query-builder/view"
 import type { FormulaDraft, QueryDraft } from "./editor-state"
 import { toPanelType } from "../kit/chart-registry"
 import type { EditorState } from "./editor-state"
-import { isNote, isProductEventsFunnel, validationErrorOf } from "./lowering"
+import { isNote, isProductEventsFunnel, queryCapabilitiesOf, validationErrorOf } from "./lowering"
 import { listPanel } from "./view-list"
 import { funnelPanel, pathsPanel } from "./view-panels"
 import { autoIntervalLabel, isSqlSource, showsSourceToggle } from "./update"
@@ -52,8 +53,8 @@ const queryPanel = (
 			metricSearch: model.metricSearch,
 			metricBreakdownKeys:
 				query.dataSource === "metrics"
-					? (model.metricKeys[`${query.metricName}::${query.metricType}`] ?? [])
-					: [],
+					? model.metricKeys[`${query.metricName}::${query.metricType}`]
+					: undefined,
 			autocompleteValues: baseValuesOf(model, query),
 		},
 		toParentMessage: (message) => Message.GotQueryPanelMessage({ message }),
@@ -182,11 +183,28 @@ export const queryEditor = (h: H, model: Model, timeZone: string): Html => {
 									? pathsPanel(h, model, state)
 									: isProductEventsFunnel(state)
 										? funnelPanel(h, model, state)
-										: queryPanels(h, model, state, timeZone)),
+										: state.queryFixed
+											? [fixedQueryNote(h), runPreviewButton(h, false)]
+											: queryPanels(h, model, state, timeZone)),
 						]),
 		],
 	)
 }
+
+/** Applies the staged query and display edits (row limit, aggregate) to the preview. */
+const runPreviewButton = (h: H, isDisabled: boolean): Html =>
+	button(h, { size: "sm", isDisabled, attributes: [h.OnClick(Message.ClickedRunPreview())] }, [
+		"Run preview",
+	])
+
+/** A preset whose query has no builder equivalent: it stays as stored, only its display edits. */
+const fixedQueryNote = (h: H): Html =>
+	alert(h, { variant: "info", size: "sm", role: "status" }, [
+		alertTitle(h, ["This preset's query can't be edited"]),
+		alertDescription(h, [
+			"Change its display options here, or recreate it from the query builder or Raw SQL.",
+		]),
+	])
 
 /** The query panels, formula panels and the toolbar under them. */
 const queryPanels = (h: H, model: Model, state: EditorState, timeZone: string): ReadonlyArray<Html> => {
@@ -213,7 +231,7 @@ const queryPanels = (h: H, model: Model, state: EditorState, timeZone: string): 
 						Arr.map(state.formulas, (formula) => formulaPanel(h, formula)),
 					),
 				]),
-		hstack(h, { gap: "3" }, [
+		hstack(h, { gap: "3", wrap: true }, [
 			button(
 				h,
 				{
@@ -223,24 +241,21 @@ const queryPanels = (h: H, model: Model, state: EditorState, timeZone: string): 
 				},
 				["+ Query"],
 			),
-			button(
-				h,
-				{
-					variant: "outline",
-					size: "sm",
-					attributes: [h.OnClick(Message.ClickedAddFormula())],
-				},
-				["+ Formula"],
-			),
-			button(
-				h,
-				{
-					size: "sm",
-					isDisabled: error !== null,
-					attributes: [h.OnClick(Message.ClickedRunPreview())],
-				},
-				["Run preview"],
-			),
+			// Breakdown rows, grouped tables and histograms drop formulas, so none is offered there.
+			...(queryCapabilitiesOf(state).formulas
+				? [
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								attributes: [h.OnClick(Message.ClickedAddFormula())],
+							},
+							["+ Formula"],
+						),
+					]
+				: []),
+			runPreviewButton(h, error !== null),
 			// Two text nodes once there are formulas.
 			typography(h, { size: "2xs", tone: "muted", className: "ml-auto" }, [
 				Arr.join(

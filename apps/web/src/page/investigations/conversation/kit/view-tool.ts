@@ -1,4 +1,4 @@
-import { Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { Mount } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -47,21 +47,19 @@ export const CompletedMountClock = defineMessageUnion({ CompletedMountClock: {} 
 export const MountRunningClock = Mount.define("MountChatRunningClock", {
 	messages: [CompletedMountClock],
 	execute: ({ element }) =>
-		Effect.as(
-			Effect.acquireRelease(
+		Effect.gen(function* () {
+			const startedAt = yield* Clock.currentTimeMillis
+			const tick = Effect.flatMap(Clock.currentTimeMillis, (nowMs) =>
 				Effect.sync(() => {
-					const startedAt = Date.now()
-					const id = setInterval(() => {
-						const text = formatElapsed(Math.floor((Date.now() - startedAt) / 1000))
-						element.textContent = text
-						element.toggleAttribute("hidden", text === "")
-					}, 1000)
-					return () => clearInterval(id)
+					const text = formatElapsed(Math.floor((nowMs - startedAt) / 1000))
+					element.textContent = text
+					element.toggleAttribute("hidden", text === "")
 				}),
-				(release) => Effect.sync(release),
-			),
-			CompletedMountClock(),
-		),
+			)
+			// Forked into the Mount's scope, so it stops when the element unmounts.
+			yield* Effect.forkScoped(Effect.forever(Effect.delay(tick, "1 second")))
+			return CompletedMountClock()
+		}),
 })
 
 /** The clock's span, drawn hidden; its Mount fills and shows it. */
@@ -216,12 +214,12 @@ export const toolStandalone = <M>(h: HtmlBuilder<M>, part: ToolPart, host: Panel
 type Tally = { readonly label: string; readonly icon: ReturnType<typeof toolIcon>; readonly count: number }
 
 const tally = (names: ReadonlyArray<string>): ReadonlyArray<Tally> =>
-	names.reduce<ReadonlyArray<Tally>>((acc, name) => {
+	Arr.reduce<(typeof names)[number], ReadonlyArray<Tally>>(names, [], (acc, name) => {
 		const label = toolLabel(name)
 		return Arr.some(acc, (entry) => entry.label === label)
 			? Arr.map(acc, (entry) => (entry.label === label ? { ...entry, count: entry.count + 1 } : entry))
 			: [...acc, { label, icon: toolIcon(name), count: 1 }]
-	}, [])
+	})
 
 const NAMED_TOOLS = 3
 

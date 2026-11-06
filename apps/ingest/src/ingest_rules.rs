@@ -7,6 +7,7 @@ use std::cell::Cell;
 use std::collections::hash_map::RandomState;
 use std::hash::BuildHasher;
 use std::sync::LazyLock;
+use std::time::{Duration, Instant};
 
 use hmac::{Hmac, Mac};
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
@@ -21,7 +22,9 @@ use opentelemetry_proto::tonic::metrics::v1::{
 use opentelemetry_proto::tonic::resource::v1::Resource;
 use opentelemetry_proto::tonic::trace::v1::{span, Span};
 use prost::Message;
-use regex::{Regex, RegexBuilder};
+use regex_automata::meta::{self, Regex};
+use regex_automata::util::syntax;
+use regex_automata::{Input, MatchKind};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -30,6 +33,16 @@ type HmacSha256 = Hmac<Sha256>;
 /// Detectors and patterns read at most this many bytes of one string value.
 const SCAN_BYTES: usize = 16 * 1024;
 const REGEX_SIZE_LIMIT: usize = 1 << 20;
+/// Compiled size of one org's rule regexes together. Past it the org's rules are refused, never
+/// partly applied. The API's per-org cap (`regexBudgetPerOrg`) stays well inside it.
+pub const ORG_REGEX_BYTES: usize = 16 << 20;
+/// Bytes one payload's rule pass may scan with conditions, detectors and patterns, summed
+/// over every rule and pass. A payload that needs more is refused, so one request cannot hold
+/// the gateway for long whatever its rules.
+pub const REQUEST_SCAN_BYTES: u64 = 1 << 30;
+/// Wall time one payload's rule pass may take. Some regexes fall back to a slow engine on
+/// non-ASCII text, so bytes alone do not bound the time.
+pub const REQUEST_SCAN_TIME: Duration = Duration::from_secs(2);
 const MASK: &str = "[REDACTED]";
 
 /// The stored rule's id (any string the caller uses to attribute stats).
@@ -160,6 +173,54 @@ pub struct IngestRuleSpec {
 pub struct InvalidRule {
     pub id: RuleId,
     pub reason: String,
+}
+
+/// The org's rule regexes compile past `ORG_REGEX_BYTES` together, so none of its rules apply.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RegexBudgetExceeded {
+    /// Compiled bytes when compiling stopped.
+    pub bytes: usize,
+}
+
+/// A payload needed more scanning than its budget allows. It is left partly redacted and must
+/// not be stored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScanBudgetExceeded;
+
+/// What one payload's rule pass may still scan, and until when.
+#[derive(Debug)]
+struct ScanBudget {
+    remaining: u64,
+    deadline: Instant,
+    /// Bytes charged since the clock was last read; it is read once per `SCAN_BYTES`.
+    unclocked: usize,
+    expired: bool,
+}
+
+impl ScanBudget {
+    fn new(bytes: u64, time: Duration) -> Self {
+        Self {
+            remaining: bytes,
+            deadline: Instant::now() + time,
+            unclocked: 0,
+            expired: false,
+        }
+    }
+
+    fn spent(&self) -> bool {
+        self.remaining == 0 || self.expired
+    }
+
+    fn charge(&mut self, bytes: usize) {
+        self.remaining = self
+            .remaining
+            .saturating_sub(u64::try_from(bytes).unwrap_or(u64::MAX));
+        self.unclocked = self.unclocked.saturating_add(bytes);
+        if self.unclocked >= SCAN_BYTES {
+            self.unclocked = 0;
+            self.expired = Instant::now() >= self.deadline;
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -314,21 +375,64 @@ struct CompiledRule {
     action: CompiledAction,
 }
 
+impl CompiledRule {
+    /// Heap bytes of the rule's compiled regexes.
+    fn regex_bytes(&self) -> usize {
+        let conditions = self.conditions.iter().filter_map(|condition| match &condition.operand {
+            Operand::Pattern(regex) => Some(regex.memory_usage()),
+            _ => None,
+        });
+        let patterns: &[Regex] = match &self.action {
+            CompiledAction::Redact(redaction) => &redaction.patterns,
+            CompiledAction::Drop { .. } => &[],
+        };
+        conditions
+            .chain(patterns.iter().map(Regex::memory_usage))
+            .fold(0, usize::saturating_add)
+    }
+}
+
 /// One org's rules, compiled once and applied to every request.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct CompiledRules {
     ids: Vec<RuleId>,
     rules: Vec<CompiledRule>,
     /// Union of every rule's signal bits, so a signal no rule reads is skipped.
     signals: u8,
     hash_salt: String,
+    /// One payload's pass budget; `REQUEST_SCAN_BYTES` and `REQUEST_SCAN_TIME` outside tests.
+    scan_bytes: u64,
+    scan_time: Duration,
 }
 
+impl Default for CompiledRules {
+    fn default() -> Self {
+        Self {
+            ids: Vec::new(),
+            rules: Vec::new(),
+            signals: 0,
+            hash_salt: String::new(),
+            scan_bytes: REQUEST_SCAN_BYTES,
+            scan_time: REQUEST_SCAN_TIME,
+        }
+    }
+}
+
+/// The `regex` crate's `RegexBuilder` configuration, on its engine directly. Rules never read
+/// captures, which the one-pass DFA only serves; off even if a dependency enables it (up to
+/// 1 MiB per regex).
 fn build_regex(pattern: &str) -> Result<Regex, String> {
-    RegexBuilder::new(pattern)
-        .size_limit(REGEX_SIZE_LIMIT)
-        .dfa_size_limit(REGEX_SIZE_LIMIT)
-        .build()
+    meta::Builder::new()
+        .configure(
+            meta::Config::new()
+                .match_kind(MatchKind::LeftmostFirst)
+                .utf8_empty(true)
+                .onepass(false)
+                .nfa_size_limit(Some(REGEX_SIZE_LIMIT))
+                .hybrid_cache_capacity(REGEX_SIZE_LIMIT),
+        )
+        .syntax(syntax::Config::new().utf8(true))
+        .build(pattern)
         .map_err(|error| format!("invalid regex {pattern:?}: {error}"))
 }
 
@@ -409,18 +513,24 @@ fn compile_rule(spec: IngestRuleSpec) -> Result<CompiledRule, String> {
 
 impl CompiledRules {
     /// Compiles rules in `position` order; a rule that fails to compile is reported and skipped.
+    /// Stops at the rule that takes the org's regexes past `ORG_REGEX_BYTES`.
     pub fn compile(
         rules: Vec<(RuleId, IngestRuleSpec)>,
         hash_salt: String,
-    ) -> (Self, Vec<InvalidRule>) {
+    ) -> Result<(Self, Vec<InvalidRule>), RegexBudgetExceeded> {
         let mut compiled = Self {
             hash_salt,
             ..Self::default()
         };
         let mut invalid = Vec::new();
+        let mut regex_bytes = 0usize;
         for (id, spec) in rules {
             match compile_rule(spec) {
                 Ok(rule) => {
+                    regex_bytes = regex_bytes.saturating_add(rule.regex_bytes());
+                    if regex_bytes > ORG_REGEX_BYTES {
+                        return Err(RegexBudgetExceeded { bytes: regex_bytes });
+                    }
                     compiled.signals |= rule.signals;
                     compiled.rules.push(rule);
                     compiled.ids.push(id);
@@ -428,7 +538,15 @@ impl CompiledRules {
                 Err(reason) => invalid.push(InvalidRule { id, reason }),
             }
         }
-        (compiled, invalid)
+        Ok((compiled, invalid))
+    }
+
+    /// Replaces `REQUEST_SCAN_BYTES` and `REQUEST_SCAN_TIME` for these rules' passes.
+    #[must_use]
+    pub fn with_scan_budget(mut self, bytes: u64, time: Duration) -> Self {
+        self.scan_bytes = bytes;
+        self.scan_time = time;
+        self
     }
 
     pub fn is_empty(&self) -> bool {
@@ -549,7 +667,7 @@ fn borrowed(text: Option<&str>) -> Probe<'_> {
 }
 
 impl CompiledCondition {
-    fn matches(&self, record: &RecordView<'_>) -> bool {
+    fn matches(&self, record: &RecordView<'_>, budget: &mut ScanBudget) -> bool {
         let probe = match self.field {
             ConditionField::ServiceName => match find_attribute(record.resource, "service.name") {
                 Probe::Missing => Probe::Text(Cow::Borrowed("")),
@@ -566,7 +684,7 @@ impl CompiledCondition {
             ConditionField::SpanKind => borrowed(record.span_kind),
             ConditionField::SpanStatus => borrowed(record.span_status),
         };
-        self.matches_probe(&probe)
+        self.matches_probe(&probe, budget)
     }
 
     fn matches_severity(&self, severity: Option<i32>) -> bool {
@@ -580,7 +698,7 @@ impl CompiledCondition {
         }
     }
 
-    fn matches_probe(&self, probe: &Probe<'_>) -> bool {
+    fn matches_probe(&self, probe: &Probe<'_>, budget: &mut ScanBudget) -> bool {
         let text: &str = match probe {
             Probe::Missing => {
                 return matches!(
@@ -600,7 +718,12 @@ impl CompiledCondition {
             (Operand::List(values), ConditionOp::In) => values.iter().any(|v| v == text),
             (Operand::List(values), ConditionOp::NotIn) => !values.iter().any(|v| v == text),
             (Operand::Pattern(pattern), ConditionOp::Regex) => {
-                pattern.is_match(&text[..floor_char_boundary(text, SCAN_BYTES)])
+                let window = &text[..floor_char_boundary(text, SCAN_BYTES)];
+                if budget.spent() {
+                    return false;
+                }
+                budget.charge(window.len());
+                pattern.is_match(window)
             }
             _ => false,
         }
@@ -608,8 +731,8 @@ impl CompiledCondition {
 }
 
 impl CompiledRule {
-    fn matches(&self, signal: u8, record: &RecordView<'_>) -> bool {
-        self.signals & signal != 0 && self.conditions.iter().all(|c| c.matches(record))
+    fn matches(&self, signal: u8, record: &RecordView<'_>, budget: &mut ScanBudget) -> bool {
+        self.signals & signal != 0 && self.conditions.iter().all(|c| c.matches(record, budget))
     }
 }
 
@@ -828,6 +951,8 @@ fn lowercase_key(key: &str) -> Cow<'_, str> {
 struct Redactor<'a> {
     redaction: &'a Redaction,
     salt: &'a [u8],
+    /// The payload's; once spent, no more text is scanned.
+    budget: &'a mut ScanBudget,
     /// Values replaced or removed plus detector and pattern matches.
     count: u64,
 }
@@ -946,15 +1071,18 @@ impl Redactor<'_> {
         let mut out: Option<String> = None;
         let mut copied = 0;
         let mut position = 0;
-        while position <= text.len() {
-            let Some(found) = regex.find_at(text, position) else {
+        // A rejected candidate rescans from one byte later, so each search is charged.
+        while position <= text.len() && !self.budget.spent() {
+            let Some(found) = regex.find(Input::new(text).span(position..text.len())) else {
+                self.budget.charge(text.len() - position);
                 break;
             };
             let (start, end) = (found.start(), found.end());
+            self.budget.charge(end - position);
             if start < end && detector_accepts(detector, text, start, end) {
                 let buffer = out.get_or_insert_with(|| String::with_capacity(text.len()));
                 buffer.push_str(&text[copied..start]);
-                buffer.push_str(&self.replacement(detector.mask(), found.as_str()));
+                buffer.push_str(&self.replacement(detector.mask(), &text[start..end]));
                 self.count += 1;
                 copied = end;
                 position = end;
@@ -973,6 +1101,12 @@ impl Redactor<'_> {
 
     /// Plain leftmost-first, non-overlapping replacement; empty matches are ignored.
     fn replace_pattern(&mut self, pattern: &Regex, text: &str) -> Option<String> {
+        if self.budget.spent() {
+            return None;
+        }
+        // Searches that read ahead past their match (`a(?:.*Z)?`) cost more than the bytes; the
+        // deadline bounds them.
+        self.budget.charge(text.len());
         let mut out: Option<String> = None;
         let mut copied = 0;
         for found in pattern.find_iter(text) {
@@ -981,7 +1115,7 @@ impl Redactor<'_> {
             }
             let buffer = out.get_or_insert_with(|| String::with_capacity(text.len()));
             buffer.push_str(&text[copied..found.start()]);
-            buffer.push_str(&self.replacement(MASK, found.as_str()));
+            buffer.push_str(&self.replacement(MASK, &text[found.range()]));
             self.count += 1;
             copied = found.end();
         }
@@ -1012,6 +1146,7 @@ struct Pass<'a> {
     matched: Vec<bool>,
     /// Resource-scoped redact rules a surviving record of the current resource matched.
     resource_hits: Vec<bool>,
+    budget: ScanBudget,
 }
 
 impl<'a> Pass<'a> {
@@ -1023,6 +1158,17 @@ impl<'a> Pass<'a> {
             stats,
             matched: vec![false; rules.len()],
             resource_hits: vec![false; rules.len()],
+            budget: ScanBudget::new(rules.scan_bytes, rules.scan_time),
+        }
+    }
+
+    /// Totals the stats; a spent budget means some record went unscanned, so the payload is refused.
+    fn finish(self) -> Result<(), ScanBudgetExceeded> {
+        self.stats.refresh_total();
+        if self.budget.spent() {
+            Err(ScanBudgetExceeded)
+        } else {
+            Ok(())
         }
     }
 
@@ -1032,7 +1178,7 @@ impl<'a> Pass<'a> {
         let mut dropped_by = None;
         let mut bucket = None;
         for (index, rule) in self.rules.rules.iter().enumerate() {
-            let hit = rule.matches(self.signal, view);
+            let hit = rule.matches(self.signal, view, &mut self.budget);
             self.matched[index] = hit;
             if !hit {
                 continue;
@@ -1075,6 +1221,7 @@ impl<'a> Pass<'a> {
             let mut redactor = Redactor {
                 redaction,
                 salt: rules.hash_salt.as_bytes(),
+                budget: &mut self.budget,
                 count: 0,
             };
             if redaction.scopes & SCOPE_ATTRIBUTES != 0 {
@@ -1120,6 +1267,7 @@ impl<'a> Pass<'a> {
             let mut redactor = Redactor {
                 redaction,
                 salt: rules.hash_salt.as_bytes(),
+                budget: &mut self.budget,
                 count: 0,
             };
             redactor.redact_attributes(attributes);
@@ -1166,6 +1314,9 @@ impl DataPoint for SummaryDataPoint {
 impl Pass<'_> {
     /// Returns false when the span is dropped.
     fn span(&mut self, resource: &[KeyValue], span: &mut Span) -> bool {
+        if self.budget.spent() {
+            return true;
+        }
         let view = RecordView {
             resource,
             attributes: &span.attributes,
@@ -1191,6 +1342,9 @@ impl Pass<'_> {
 
     /// Returns false when the log record is dropped.
     fn log(&mut self, resource: &[KeyValue], record: &mut LogRecord) -> bool {
+        if self.budget.spent() {
+            return true;
+        }
         let view = RecordView {
             resource,
             attributes: &record.attributes,
@@ -1216,6 +1370,9 @@ impl Pass<'_> {
 
     /// Returns false when the data point is dropped.
     fn point<P: DataPoint>(&mut self, resource: &[KeyValue], name: &str, point: &mut P) -> bool {
+        if self.budget.spent() {
+            return true;
+        }
         let view = RecordView {
             resource,
             attributes: point.attributes(),
@@ -1262,9 +1419,13 @@ fn resource_attributes(resource: Option<&Resource>) -> &[KeyValue] {
 
 /// Drops and redacts spans in place, then removes emptied scopes and resources.
 #[hotpath::measure]
-pub fn apply_traces(rules: &CompiledRules, request: &mut ExportTraceServiceRequest, stats: &mut RuleStats) {
+pub fn apply_traces(
+    rules: &CompiledRules,
+    request: &mut ExportTraceServiceRequest,
+    stats: &mut RuleStats,
+) -> Result<(), ScanBudgetExceeded> {
     if !rules.reads(SIGNAL_TRACES) {
-        return;
+        return Ok(());
     }
     let mut pass = Pass::new(rules, SIGNAL_TRACES, stats);
     request.resource_spans.retain_mut(|resource_spans| {
@@ -1278,14 +1439,18 @@ pub fn apply_traces(rules: &CompiledRules, request: &mut ExportTraceServiceReque
         pass.finish_resource(resource_spans.resource.as_mut().map(|r| &mut r.attributes));
         still_populated(scopes_before, resource_spans.scope_spans.len())
     });
-    pass.stats.refresh_total();
+    pass.finish()
 }
 
 /// Drops and redacts log records in place, then removes emptied scopes and resources.
 #[hotpath::measure]
-pub fn apply_logs(rules: &CompiledRules, request: &mut ExportLogsServiceRequest, stats: &mut RuleStats) {
+pub fn apply_logs(
+    rules: &CompiledRules,
+    request: &mut ExportLogsServiceRequest,
+    stats: &mut RuleStats,
+) -> Result<(), ScanBudgetExceeded> {
     if !rules.reads(SIGNAL_LOGS) {
-        return;
+        return Ok(());
     }
     let mut pass = Pass::new(rules, SIGNAL_LOGS, stats);
     request.resource_logs.retain_mut(|resource_logs| {
@@ -1299,14 +1464,18 @@ pub fn apply_logs(rules: &CompiledRules, request: &mut ExportLogsServiceRequest,
         pass.finish_resource(resource_logs.resource.as_mut().map(|r| &mut r.attributes));
         still_populated(scopes_before, resource_logs.scope_logs.len())
     });
-    pass.stats.refresh_total();
+    pass.finish()
 }
 
 /// Drops and redacts metric data points in place, then removes emptied metrics, scopes and resources.
 #[hotpath::measure]
-pub fn apply_metrics(rules: &CompiledRules, request: &mut ExportMetricsServiceRequest, stats: &mut RuleStats) {
+pub fn apply_metrics(
+    rules: &CompiledRules,
+    request: &mut ExportMetricsServiceRequest,
+    stats: &mut RuleStats,
+) -> Result<(), ScanBudgetExceeded> {
     if !rules.reads(SIGNAL_METRICS) {
-        return;
+        return Ok(());
     }
     let mut pass = Pass::new(rules, SIGNAL_METRICS, stats);
     request.resource_metrics.retain_mut(|resource_metrics| {
@@ -1334,7 +1503,7 @@ pub fn apply_metrics(rules: &CompiledRules, request: &mut ExportMetricsServiceRe
         pass.finish_resource(resource_metrics.resource.as_mut().map(|r| &mut r.attributes));
         still_populated(scopes_before, resource_metrics.scope_metrics.len())
     });
-    pass.stats.refresh_total();
+    pass.finish()
 }
 
 /// Runs one shared-fixture case through the engine. Used by the fixture tests and by the
@@ -1523,7 +1692,9 @@ pub mod conformance {
                 ..Default::default()
             }],
         };
-        apply_traces(rules, &mut request, &mut RuleStats::default());
+        if let Err(refused) = apply_traces(rules, &mut request, &mut RuleStats::default()) {
+            return json!({ "refused": format!("{refused:?}") });
+        }
         let Some(resource_spans) = request.resource_spans.first() else {
             return json!({ "dropped": true });
         };
@@ -1563,7 +1734,9 @@ pub mod conformance {
                 ..Default::default()
             }],
         };
-        apply_logs(rules, &mut request, &mut RuleStats::default());
+        if let Err(refused) = apply_logs(rules, &mut request, &mut RuleStats::default()) {
+            return json!({ "refused": format!("{refused:?}") });
+        }
         let Some(resource_logs) = request.resource_logs.first() else {
             return json!({ "dropped": true });
         };
@@ -1612,7 +1785,9 @@ pub mod conformance {
             vec![number_point(to_kvs(&input.attributes))],
         );
         let mut request = metrics_request(resource_of(input), vec![metric]);
-        apply_metrics(rules, &mut request, &mut RuleStats::default());
+        if let Err(refused) = apply_metrics(rules, &mut request, &mut RuleStats::default()) {
+            return json!({ "refused": format!("{refused:?}") });
+        }
         let Some(resource_metrics) = request.resource_metrics.first() else {
             return json!({ "dropped": true });
         };
@@ -1632,7 +1807,10 @@ pub mod conformance {
             .enumerate()
             .map(|(index, rule)| (format!("r{index}"), rule.clone()))
             .collect();
-        let (compiled, invalid) = CompiledRules::compile(rules, case.salt.clone());
+        let (compiled, invalid) = match CompiledRules::compile(rules, case.salt.clone()) {
+            Ok(compiled) => compiled,
+            Err(error) => return json!({ "invalid": format!("{error:?}") }),
+        };
         if !invalid.is_empty() {
             return json!({ "invalid": format!("{invalid:?}") });
         }
@@ -1770,7 +1948,7 @@ mod tests {
                     "action": { "_tag": "redact", "keys": [key], "detectors": ["email"], "patterns": [pattern], "scopes": ["attributes", "body"], "method": "hash" },
                 });
                 if let Ok(spec) = serde_json::from_value::<IngestRuleSpec>(rule) {
-                    let _ = CompiledRules::compile(vec![("r".to_owned(), spec)], "salt".to_owned());
+                    drop(CompiledRules::compile(vec![("r".to_owned(), spec)], "salt".to_owned()));
                 }
             }
 
@@ -1785,7 +1963,7 @@ mod tests {
                     "conditions": [],
                     "action": { "_tag": "redact", "keys": ["*"], "detectors": ["email", "credit_card", "jwt", "api_token", "ipv4", "ipv6", "phone", "iban"], "patterns": ["[a-z]+"], "scopes": ["attributes", "resource", "body"], "method": method },
                 }));
-                let (rules, invalid) = CompiledRules::compile(vec![("r".to_owned(), rule)], "salt".to_owned());
+                let (rules, invalid) = compile(vec![("r".to_owned(), rule)]);
                 prop_assert!(invalid.is_empty());
                 let protected = |kvs: &[KeyValue]| -> Vec<KeyValue> {
                     kvs.iter().filter(|kv| is_protected_key(&kv.key)).cloned().collect()
@@ -1805,7 +1983,7 @@ mod tests {
                         ..Default::default()
                     }],
                 };
-                apply_logs(&rules, &mut request, &mut RuleStats::default());
+                apply_logs(&rules, &mut request, &mut RuleStats::default()).expect("within budget");
                 let resource_logs = &request.resource_logs[0];
                 prop_assert_eq!(protected(&resource_logs.scope_logs[0].log_records[0].attributes), before.clone());
                 prop_assert_eq!(protected(resource_attributes(resource_logs.resource.as_ref())), before);
@@ -1825,6 +2003,10 @@ mod tests {
 
     fn spec(value: Value) -> IngestRuleSpec {
         serde_json::from_value(value).expect("rule spec")
+    }
+
+    fn compile(rules: Vec<(RuleId, IngestRuleSpec)>) -> (CompiledRules, Vec<InvalidRule>) {
+        CompiledRules::compile(rules, "salt".to_owned()).expect("within the regex budget")
     }
 
     fn string_kv(key: &str, value: &str) -> KeyValue {
@@ -1873,13 +2055,13 @@ mod tests {
 
     #[test]
     fn empty_rules_leave_the_request_untouched() {
-        let (rules, invalid) = CompiledRules::compile(Vec::new(), "salt".to_owned());
+        let (rules, invalid) = compile(Vec::new());
         assert!(rules.is_empty());
         assert!(invalid.is_empty());
         let mut request = traces_request(vec![("api", vec![named_span("a")])]);
         let before = request.clone();
         let mut stats = RuleStats::default();
-        apply_traces(&rules, &mut request, &mut stats);
+        apply_traces(&rules, &mut request, &mut stats).expect("within budget");
         assert_eq!(request, before);
         assert_eq!(stats, RuleStats::default());
     }
@@ -1902,7 +2084,7 @@ mod tests {
             ("bad-condition".to_owned(), bad_condition),
             ("good".to_owned(), drop_spans_named("x")),
         ];
-        let (compiled, invalid) = CompiledRules::compile(rules, String::new());
+        let (compiled, invalid) = compile(rules);
         assert_eq!(compiled.rule_ids(), ["good".to_owned()]);
         let ids: Vec<&str> = invalid.iter().map(|rule| rule.id.as_str()).collect();
         assert_eq!(ids, ["bad-pattern", "bad-condition"]);
@@ -1914,12 +2096,12 @@ mod tests {
             ("first".to_owned(), drop_spans_named("health")),
             ("second".to_owned(), drop_spans_named("health")),
         ];
-        let (compiled, _) = CompiledRules::compile(rules, String::new());
+        let (compiled, _) = compile(rules);
         let dropped = named_span("health");
         let dropped_bytes = u64::try_from(dropped.encoded_len()).expect("small span");
         let mut request = traces_request(vec![("api", vec![dropped, named_span("checkout")])]);
         let mut stats = RuleStats::default();
-        apply_traces(&compiled, &mut request, &mut stats);
+        apply_traces(&compiled, &mut request, &mut stats).expect("within budget");
 
         let names: Vec<&str> = request.resource_spans[0].scope_spans[0]
             .spans
@@ -1940,12 +2122,12 @@ mod tests {
     #[test]
     fn emptied_scopes_and_resources_are_removed() {
         let rules = vec![("health".to_owned(), drop_spans_named("health"))];
-        let (compiled, _) = CompiledRules::compile(rules, String::new());
+        let (compiled, _) = compile(rules);
         let mut request = traces_request(vec![
             ("api", vec![named_span("health")]),
             ("web", vec![named_span("render")]),
         ]);
-        apply_traces(&compiled, &mut request, &mut RuleStats::default());
+        apply_traces(&compiled, &mut request, &mut RuleStats::default()).expect("within budget");
         let services: Vec<Option<Value>> = request
             .resource_spans
             .iter()
@@ -1961,7 +2143,7 @@ mod tests {
             "conditions": [{ "field": "name", "op": "prefix", "value": "process." }],
             "action": { "_tag": "drop", "keepPercent": 50 }
         }));
-        let (compiled, _) = CompiledRules::compile(vec![("process".to_owned(), rule)], String::new());
+        let (compiled, _) = compile(vec![("process".to_owned(), rule)]);
         let sum = Metric {
             name: "process.cpu".to_owned(),
             data: Some(metric::Data::Sum(Sum {
@@ -1973,7 +2155,7 @@ mod tests {
         let duration = gauge("http.server.duration", vec![number_point(Vec::new())]);
         let mut request = metrics_request(None, vec![sum, duration]);
         let mut stats = RuleStats::default();
-        apply_metrics(&compiled, &mut request, &mut stats);
+        apply_metrics(&compiled, &mut request, &mut stats).expect("within budget");
 
         let names: Vec<&str> = request.resource_metrics[0].scope_metrics[0]
             .metrics
@@ -1992,14 +2174,14 @@ mod tests {
             "action": { "_tag": "redact", "keys": [], "detectors": ["email"], "patterns": [],
                 "scopes": ["attributes"], "method": "mask" }
         }));
-        let (compiled, _) = CompiledRules::compile(vec![("email".to_owned(), rule)], String::new());
+        let (compiled, _) = compile(vec![("email".to_owned(), rule)]);
         let mut point = number_point(vec![string_kv("user", "a@b.co")]);
         point.exemplars = vec![Exemplar {
             filtered_attributes: vec![string_kv("enduser.email", "c@d.io")],
             ..Default::default()
         }];
         let mut request = metrics_request(None, vec![gauge("http.server.duration", vec![point])]);
-        apply_metrics(&compiled, &mut request, &mut RuleStats::default());
+        apply_metrics(&compiled, &mut request, &mut RuleStats::default()).expect("within budget");
 
         let Some(metric::Data::Gauge(data)) = &request.resource_metrics[0].scope_metrics[0].metrics[0].data
         else {
@@ -2031,7 +2213,7 @@ mod tests {
                 "scopes": ["attributes"], "method": "mask" }
         }));
         let rules = vec![("host".to_owned(), mask_host), ("k".to_owned(), mask_k_on_h1)];
-        let (compiled, _) = CompiledRules::compile(rules, String::new());
+        let (compiled, _) = compile(rules);
         let record = LogRecord {
             attributes: vec![string_kv("k", "secret")],
             ..Default::default()
@@ -2050,7 +2232,7 @@ mod tests {
             }],
         };
         let mut stats = RuleStats::default();
-        apply_logs(&compiled, &mut request, &mut stats);
+        apply_logs(&compiled, &mut request, &mut stats).expect("within budget");
 
         let resource_logs = &request.resource_logs[0];
         assert_eq!(
@@ -2065,5 +2247,109 @@ mod tests {
         assert_eq!(records, [json!({ "k": "[REDACTED]" }), json!({ "k": "[REDACTED]" })]);
         assert_eq!(stats.per_rule[0].redacted_values, 1);
         assert_eq!(stats.per_rule[1].redacted_values, 2);
+    }
+
+    /// A rule that masks one custom pattern in every log attribute and body.
+    fn mask_pattern(pattern: &str) -> IngestRuleSpec {
+        spec(json!({
+            "signals": ["logs"],
+            "conditions": [],
+            "action": { "_tag": "redact", "keys": [], "detectors": [], "patterns": [pattern],
+                "scopes": ["attributes", "body"], "method": "mask" }
+        }))
+    }
+
+    /// One log record with `values` attributes of `bytes` bytes each.
+    fn logs_with_values(values: usize, bytes: usize) -> ExportLogsServiceRequest {
+        let attributes = (0..values)
+            .map(|index| string_kv(&format!("v{index}"), &format!("{}a@b.co", "x".repeat(bytes - 6))))
+            .collect();
+        ExportLogsServiceRequest {
+            resource_logs: vec![ResourceLogs {
+                scope_logs: vec![ScopeLogs {
+                    log_records: vec![LogRecord { attributes, ..Default::default() }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        }
+    }
+
+    #[test]
+    fn regexes_past_the_org_budget_refuse_every_rule() {
+        // `\w{17}` compiles to just under the 1 MiB per-regex limit.
+        let heavy = |count: usize| -> Vec<(RuleId, IngestRuleSpec)> {
+            (0..count).map(|index| (format!("r{index}"), mask_pattern(r"\w{17}"))).collect()
+        };
+        let (compiled, invalid) = compile(heavy(8));
+        assert_eq!((compiled.len(), invalid.len()), (8, 0));
+
+        let refused = CompiledRules::compile(heavy(24), "salt".to_owned())
+            .expect_err("24 near-limit regexes exceed the org budget");
+        assert!(refused.bytes > ORG_REGEX_BYTES, "{refused:?}");
+    }
+
+    #[test]
+    fn a_payload_past_the_scan_budget_is_refused() {
+        // Four 4 KiB values: one masking rule scans 16 KiB, four rules scan 64 KiB.
+        let budget = 32 * 1024;
+        let one_rule = compile(vec![("a".to_owned(), mask_pattern("a@b"))]).0.with_scan_budget(budget, REQUEST_SCAN_TIME);
+        let mut request = logs_with_values(4, 4096);
+        apply_logs(&one_rule, &mut request, &mut RuleStats::default()).expect("16 KiB fits 32 KiB");
+        let record = &request.resource_logs[0].scope_logs[0].log_records[0];
+        assert!(record.attributes.iter().all(|kv| matches!(
+            kv.value.as_ref().and_then(|v| v.value.as_ref()),
+            Some(any_value::Value::StringValue(text)) if text.ends_with("[REDACTED].co")
+        )));
+
+        let rules = (0..4).map(|index| (format!("r{index}"), mask_pattern("a@b"))).collect();
+        let four_rules = compile(rules).0.with_scan_budget(budget, REQUEST_SCAN_TIME);
+        let mut request = logs_with_values(4, 4096);
+        assert_eq!(
+            apply_logs(&four_rules, &mut request, &mut RuleStats::default()),
+            Err(ScanBudgetExceeded),
+            "the budget is summed over rules"
+        );
+    }
+
+    #[test]
+    fn regex_conditions_spend_the_scan_budget() {
+        let rule = spec(json!({
+            "signals": ["logs"],
+            "conditions": [{ "field": "attribute", "key": "v0", "op": "regex", "value": "never" }],
+            "action": { "_tag": "drop", "keepPercent": 0 }
+        }));
+        let rules = compile(vec![("drop".to_owned(), rule)]).0.with_scan_budget(10_000, REQUEST_SCAN_TIME);
+        let mut request = logs_with_values(1, 4096);
+        // Two records of 4 KiB fit a 10,000-byte budget; four do not.
+        let record = request.resource_logs[0].scope_logs[0].log_records[0].clone();
+        request.resource_logs[0].scope_logs[0].log_records = vec![record.clone(), record.clone()];
+        apply_logs(&rules, &mut request.clone(), &mut RuleStats::default()).expect("8 KiB fits");
+        request.resource_logs[0].scope_logs[0].log_records.extend([record.clone(), record]);
+        assert_eq!(apply_logs(&rules, &mut request, &mut RuleStats::default()), Err(ScanBudgetExceeded));
+    }
+
+    #[test]
+    fn dense_matches_are_charged_once_per_scan() {
+        // 1,000 matches in one 16 KiB value cost one 16 KiB scan, not one per match.
+        let rules = compile(vec![("ord".to_owned(), mask_pattern("ORD-[0-9]+"))])
+            .0
+            .with_scan_budget(20 * 1024, REQUEST_SCAN_TIME);
+        let mut request = logs_with_values(1, 4096);
+        let dense = "ORD-1234567, ".repeat(1260);
+        request.resource_logs[0].scope_logs[0].log_records[0].attributes = vec![string_kv("v", &dense)];
+        apply_logs(&rules, &mut request, &mut RuleStats::default()).expect("one scan fits 20 KiB");
+    }
+
+    #[test]
+    fn a_pass_past_its_deadline_is_refused() {
+        let rules = compile(vec![("a".to_owned(), mask_pattern("a@b"))])
+            .0
+            .with_scan_budget(REQUEST_SCAN_BYTES, Duration::ZERO);
+        // The clock is read once 16 KiB were scanned: the second 16 KiB value is never reached.
+        let mut request = logs_with_values(2, SCAN_BYTES);
+        assert_eq!(apply_logs(&rules, &mut request, &mut RuleStats::default()), Err(ScanBudgetExceeded));
+        let mut small = logs_with_values(1, 4096);
+        apply_logs(&rules, &mut small, &mut RuleStats::default()).expect("under 16 KiB the clock is not read");
     }
 }

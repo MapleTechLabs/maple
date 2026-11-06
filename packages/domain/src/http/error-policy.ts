@@ -114,8 +114,8 @@ const publicHttpErrorBodyFields = {
  * Runtime decoding and endpoint-specific OpenAPI branches share these fields so they cannot drift.
  */
 export const makePublicHttpErrorBodySchema = <Tag extends string, Type extends PublicHttpErrorType>(
-	tag: Schema.Codec<Tag, Tag, never, never>,
-	type: Schema.Codec<Type, Type, never, never>,
+	tag: Schema.Codec<Tag, Tag>,
+	type: Schema.Codec<Type, Type>,
 ) =>
 	Schema.Struct({
 		_tag: tag,
@@ -134,8 +134,8 @@ export const makeExactPublicHttpErrorBodySchema = <
 	Type extends PublicHttpErrorType,
 	Status extends PublicHttpErrorStatus,
 >(
-	tag: Schema.Codec<Tag, Tag, never, never>,
-	type: Schema.Codec<Type, Type, never, never>,
+	tag: Schema.Codec<Tag, Tag>,
+	type: Schema.Codec<Type, Type>,
 	policy: PublicHttpErrorPolicy<Error, Status>,
 ) =>
 	Schema.Struct({

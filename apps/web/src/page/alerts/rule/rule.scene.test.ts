@@ -153,7 +153,7 @@ describe("alert rule", () => {
 		expect(tabbed.commands ?? []).toEqual([])
 		expect(tabbed.model.search).toEqual({ tab: "history" })
 		const moved = routeChanged(tabbed.model, route({ tab: "history", timePreset: "1h" }), context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveAlertRuleWindow", "Refresh"],
 		])
 	})
@@ -252,7 +252,7 @@ describe("alert rule", () => {
 			slowed_at: new Date(NOW - 30 * 60_000).toISOString(),
 		})
 		const model = loaded({}, rule)
-		const timed = Schema.decodeUnknownSync(AlertCheckDocument)({
+		const timed = Schema.decodeSync(AlertCheckDocument)({
 			timestamp: new Date(NOW - 10 * 60_000).toISOString(),
 			groupKey: "__total__",
 			status: "healthy",

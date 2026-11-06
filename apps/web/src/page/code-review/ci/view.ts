@@ -1,6 +1,6 @@
 import type { CodeReviewCiAnalytics } from "@maple/domain/http"
 import { CI_RESULT_LABELS } from "../../../components/code-review/ci/ci-format"
-import { Option, Array as Arr, Record as Rec } from "effect"
+import { Option, Array as Arr, Record as Rec, Order } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
@@ -173,7 +173,8 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 const pipelinesOf = (model: Model): ReadonlyArray<string> =>
 	Option.match(AsyncData.getData(model.pipelines.data), {
 		onNone: () => [],
-		onSome: (analytics) => [...new Set(Arr.map(analytics.pipelines, (row) => row.pipeline))].toSorted(),
+		onSome: (analytics) =>
+			Arr.sort([...new Set(Arr.map(analytics.pipelines, (row) => row.pipeline))], Order.String),
 	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {

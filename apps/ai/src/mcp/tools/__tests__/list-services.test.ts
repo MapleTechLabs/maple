@@ -9,7 +9,7 @@ import type { McpToolRegistrar } from "../types"
 let render: ((output: typeof ListServicesOutput.Encoded) => ToolDoc) | undefined
 const registrar: McpToolRegistrar = {
 	define: (spec) => {
-		render = (output) => spec.render(Schema.decodeUnknownSync(spec.output)(output))
+		render = (output) => spec.render(Schema.decodeSync(spec.output)(output))
 	},
 }
 registerListServicesTool(registrar)

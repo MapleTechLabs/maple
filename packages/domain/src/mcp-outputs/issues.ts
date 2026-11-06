@@ -124,6 +124,17 @@ export const SetIssueSeverityOutput = Schema.Struct({
 	note: Schema.optionalKey(Schema.String),
 })
 
+export const MergeErrorIssuesOutput = Schema.Struct({
+	/** The issue that was kept. */
+	id: Schema.String,
+	mergedIssueIds: Schema.Array(Schema.String),
+	/** Every fingerprint the kept issue now owns, its own first. */
+	fingerprintHashes: Schema.Array(Schema.String),
+	occurrenceCount: Schema.Number,
+	workflowState: Schema.String,
+	serviceName: Schema.String,
+})
+
 export const ClaimErrorIssueOutput = Schema.Struct({
 	id: Schema.String,
 	workflowState: Schema.String,

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { Effect, Option, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { AdoptPolicy } from "alchemy/AdoptPolicy"
 import { AlchemyContext } from "alchemy/AlchemyContext"
 import { Stack } from "alchemy/Stack"
@@ -8,15 +8,16 @@ import { MapleAlertRuleOwnershipError, MapleAlertRuleTagsError } from "./errors"
 
 const prefix = "alchemy:"
 
+// A fixed local identity is encoded for hashing, not sent over a JSON boundary.
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 export const ownershipTags = (tags: ReadonlyArray<string>) =>
 	Arr.filter(tags, (tag) => Str.startsWith(prefix)(tag))
 
 /** Maple limits tags to 32 characters, so hash Alchemy's stack/stage/FQN identity. */
 const ruleOwnerTag = Effect.fn(function* (fqn: string) {
 	const identity = yield* createInternalTags(fqn)
-	// A fixed local identity is encoded for hashing, not sent over a JSON boundary.
-	// oxlint-disable-next-line effecttsgo/global-json-in-effect
-	return `${prefix}${Str.slice(0, 24)(createHash("sha256").update(JSON.stringify(identity)).digest("hex"))}`
+	return `${prefix}${Str.slice(0, 24)(createHash("sha256").update(encodeJson(identity)).digest("hex"))}`
 })
 
 export const ruleOwnerTags = Effect.fn(function* (fqn: string) {
@@ -64,7 +65,8 @@ export const canAdoptRule = Effect.fn(function* (fqn: string) {
 export const ownsRule = (tags: ReadonlyArray<string>, expected: ReadonlyArray<string>, tracked: boolean) => {
 	const owners = ownershipTags(tags)
 	// Existing state is the ownership evidence for pre-tag provider releases.
-	return (owners.length === 1 && expected.includes(owners[0])) || (tracked && owners.length === 0)
+	const [owner, ...others] = owners
+	return owner === undefined ? tracked : others.length === 0 && expected.includes(owner)
 }
 
 export const ownershipError = (fqn: string, ruleName: string) =>

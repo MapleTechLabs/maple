@@ -89,7 +89,11 @@ export const tabsView = (
 	values: ReadonlyArray<TabValue>,
 	panel: (value: TabValue) => ReadonlyArray<Html>,
 ): Html => {
-	const shownOf = (value: string): TabValue => values.find((shown) => shown === value) ?? "details"
+	const shownOf = (value: string): TabValue =>
+		Option.getOrElse(
+			Arr.findFirst(values, (shown) => shown === value),
+			(): TabValue => "details",
+		)
 	return h.submodel({
 		slotId: `span-panel-tabs-${model.tabs.idBase}`,
 		model: { ...model.tabs, values },

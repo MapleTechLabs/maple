@@ -7,8 +7,8 @@ import { VcsRepository } from "./VcsRepository"
 import { CLONE_CREDENTIALS_REUSE, VcsSourceService } from "./VcsSourceService"
 import type { VcsProviderClient } from "./VcsProviderClient"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_source_test")
-const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_other")
+const ORG = Schema.decodeSync(OrgId)("org_source_test")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_other")
 
 const installation = {
 	id: "00000000-0000-4000-8000-000000000001",
@@ -39,6 +39,7 @@ const makeLayer = (providerCalls: string[], connected: { value: boolean } = { va
 	const provider = {
 		id: "github",
 		reviewerMention: "@maple-review-bot",
+		webhookSignatureHeader: "x-hub-signature-256",
 		searchCode: (_installation, repo, query) =>
 			Effect.sync(() => {
 				providerCalls.push(`search:${repo.owner}/${repo.name}:${query}`)

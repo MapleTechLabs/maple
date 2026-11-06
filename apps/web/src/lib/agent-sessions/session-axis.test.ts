@@ -76,12 +76,12 @@ describe("buildSessionAxis", () => {
 		const { ticks } = buildSessionAxis({ startMs: START, endMs: START + durationMs, collapsedGaps: [] })
 
 		expect(ticks.length).toBeGreaterThan(1)
-		expect(ticks[0]!.label).toBe("0s")
-		expect(ticks[0]!.fraction).toBe(0)
+		expect(Arr.getUnsafe(ticks, 0).label).toBe("0s")
+		expect(Arr.getUnsafe(ticks, 0).fraction).toBe(0)
 		for (const [index, tick] of ticks.entries()) {
 			expect(tick.fraction).toBeGreaterThanOrEqual(0)
 			expect(tick.fraction).toBeLessThanOrEqual(1)
-			if (index > 0) expect(tick.fraction).toBeGreaterThan(ticks[index - 1]!.fraction)
+			if (index > 0) expect(tick.fraction).toBeGreaterThan(Arr.getUnsafe(ticks, index - 1).fraction)
 		}
 		expect(new Set(Arr.map(ticks, (tick) => tick.label)).size).toBe(ticks.length)
 	})

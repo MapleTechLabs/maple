@@ -116,39 +116,39 @@ const messageParts = <M>(
 	host: TranscriptHost<M>,
 	message: UIMessage,
 ): ReadonlyArray<Html> => {
-	const { nodes, buffer } = message.parts.reduce<{
-		nodes: ReadonlyArray<Html>
-		buffer: ReadonlyArray<ToolPart>
-	}>(
-		(acc, part, index) => {
-			const flushed = [...acc.nodes, ...toolNodes(h, acc.buffer, `tool-${acc.nodes.length}`, host)]
-			if (part._tag === "text") {
-				const text = stripChatContext(part.text)
-				return { nodes: text === "" ? flushed : [...flushed, richText(h, host, text)], buffer: [] }
+	const { nodes, buffer } = Arr.reduce<
+		(typeof message.parts)[number],
+		{
+			nodes: ReadonlyArray<Html>
+			buffer: ReadonlyArray<ToolPart>
+		}
+	>(message.parts, { nodes: [], buffer: [] }, (acc, part, index) => {
+		const flushed = [...acc.nodes, ...toolNodes(h, acc.buffer, `tool-${acc.nodes.length}`, host)]
+		if (part._tag === "text") {
+			const text = stripChatContext(part.text)
+			return { nodes: text === "" ? flushed : [...flushed, richText(h, host, text)], buffer: [] }
+		}
+		if (part._tag === "task")
+			return {
+				nodes:
+					host.taskCard === undefined
+						? flushed
+						: [
+								...flushed,
+								host.taskCard(part, {
+									richText: (text) => richText(h, host, text),
+									tool: (leaf) => toolStandalone(h, leaf, host),
+								}),
+							],
+				buffer: [],
 			}
-			if (part._tag === "task")
-				return {
-					nodes:
-						host.taskCard === undefined
-							? flushed
-							: [
-									...flushed,
-									host.taskCard(part, {
-										richText: (text) => richText(h, host, text),
-										tool: (leaf) => toolStandalone(h, leaf, host),
-									}),
-								],
-					buffer: [],
-				}
-			if (!isToolPart(part)) return acc
-			if (rendersOwnCard(part)) {
-				const card = host.ownCard?.(part, `${message.id}:${index}`) ?? null
-				return { nodes: card === null ? flushed : [...flushed, card], buffer: [] }
-			}
-			return { nodes: acc.nodes, buffer: [...acc.buffer, part] }
-		},
-		{ nodes: [], buffer: [] },
-	)
+		if (!isToolPart(part)) return acc
+		if (rendersOwnCard(part)) {
+			const card = host.ownCard?.(part, `${message.id}:${index}`) ?? null
+			return { nodes: card === null ? flushed : [...flushed, card], buffer: [] }
+		}
+		return { nodes: acc.nodes, buffer: [...acc.buffer, part] }
+	})
 	return [...nodes, ...toolNodes(h, buffer, `tool-${nodes.length}`, host)]
 }
 

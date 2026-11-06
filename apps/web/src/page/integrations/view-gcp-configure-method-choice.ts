@@ -88,8 +88,10 @@ export const methodChoice = (h: H, configure: ConfigureModel, changing: boolean)
 				[h.Class(cn(GCP_TITLE, "mb-3"))],
 				[changing ? "How do you want to apply the change?" : "How do you want to connect?"],
 			),
-			RadioGroup.radioGroup(h, { className: "gap-0 divide-y divide-border-subtle rounded-md border" }, [
-				...Arr.map(METHODS, (option) =>
+			RadioGroup.radioGroup(
+				h,
+				{ className: "gap-0 divide-y divide-border-subtle rounded-md border" },
+				Arr.map(METHODS, (option) =>
 					vstack(h, { gap: "3", className: "p-4", attributes: [h.Key(option.value)] }, [
 						hstack(h, { gap: "3", align: "start" }, [
 							...RadioGroup.radio(h, config, option.value, "mt-0.5"),
@@ -131,7 +133,7 @@ export const methodChoice = (h: H, configure: ConfigureModel, changing: boolean)
 							: []),
 					]),
 				),
-			]),
+			),
 		],
 	)
 }

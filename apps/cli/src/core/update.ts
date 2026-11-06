@@ -140,17 +140,18 @@ const fetchReleasesPage = (page: number) =>
 		const text = yield* response.text.pipe(
 			Effect.mapError((error) => toUpdateError("could not read GitHub release response", error)),
 		)
-		return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ReleasesResponse))(text).pipe(
+		return yield* Schema.decodeEffect(Schema.fromJsonString(ReleasesResponse))(text).pipe(
 			Effect.mapError((error) => toUpdateError("could not decode GitHub release response", error)),
 		)
 	})
 
 const findCliRelease = (page: number): Effect.Effect<string, UpdateError, HttpClient.HttpClient> =>
 	Effect.flatMap(fetchReleasesPage(page), (releases) => {
-		const latest = releases.find(
+		const latest = Arr.findFirst(
+			releases,
 			(r) => r.draft !== true && r.prerelease !== true && CLI_RELEASE_TAG.test(r.tag_name),
 		)
-		if (latest !== undefined) return Effect.succeed(latest.tag_name)
+		if (Option.isSome(latest)) return Effect.succeed(latest.value.tag_name)
 		if (releases.length < RELEASES_PER_PAGE || page >= MAX_RELEASE_PAGES) {
 			return Effect.fail(
 				new UpdateError({ message: "could not check for updates: no published release found" }),

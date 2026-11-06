@@ -38,7 +38,7 @@ const TodosLive = HttpApiBuilder.group(TodoApi, "todos", (handlers) =>
 	Effect.gen(function* () {
 		const todos = yield* TodoService
 		return handlers
-			.handle("list", () => todos.list())
+			.handle("list", () => todos.list)
 			.handle("create", ({ payload }) => todos.create(payload.title))
 			.handle("toggle", ({ params }) => todos.toggle(params.id))
 			.handle("remove", ({ params }) => todos.remove(params.id))
@@ -88,6 +88,7 @@ console.log(`    notifier  → ${notifierBaseUrl} (run \`bun run notifier\`)`)
 
 const shutdown = () => {
 	void dispose()
+		// oxlint-disable-next-line typescript/no-misused-promises -- Promise.finally awaits the returned promise.
 		.finally(() => server.stop(true))
 		.finally(() => process.exit(0))
 }

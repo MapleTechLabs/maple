@@ -152,7 +152,7 @@ export interface AwsConnectionServiceApi {
 		IntegrationsNotFoundError | AwsIntegrationUnavailableError | IntegrationsPersistenceError
 	>
 	/** The hourly sweep: every connection not checked within the hour, except paused ones. */
-	readonly checkDue: () => Effect.Effect<AwsCheckSweep, IntegrationsPersistenceError>
+	readonly checkDue: Effect.Effect<AwsCheckSweep, IntegrationsPersistenceError>
 	/** Deleting the row is the disconnect: Maple stops assuming the role. */
 	readonly delete: (
 		orgId: OrgId,
@@ -265,7 +265,14 @@ export const interpretCheck = (
 ): CheckResult => {
 	const roleName = awsConnectionResourceNames(row.id).roleName
 	if (result._tag === "Ok") {
-		const version = Number(result.tags.find((tag) => tag.key === AWS_ROLE_TAGS.templateVersion)?.value)
+		const version = Number(
+			Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(result.tags, (tag) => tag.key === AWS_ROLE_TAGS.templateVersion),
+					(tag) => tag.value,
+				),
+			),
+		)
 		const granted = normalizeModules(
 			Arr.flatMap(result.attachedPolicyNames, (name) => {
 				const module = awsModuleOfPolicyName(roleName, name)
@@ -750,11 +757,11 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 					),
 				)
 
-			const checkDue = Effect.fn("AwsConnectionService.checkDue")(function* () {
+			const checkDue = Effect.gen(function* () {
 				if (signer === undefined) return { due: 0, checked: 0, failures: 0 }
 				const startedAt = yield* Clock.currentTimeMillis
 				return yield* sweepFrom(signer, startedAt, { due: 0, checked: 0, failures: 0 })
-			})
+			}).pipe(Effect.withSpan("AwsConnectionService.checkDue"))
 
 			const deleteConnection = Effect.fn("AwsConnectionService.delete")(function* (
 				orgId: OrgId,

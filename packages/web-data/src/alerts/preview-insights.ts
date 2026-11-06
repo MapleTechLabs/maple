@@ -50,7 +50,7 @@ export function focusPreviewOnClosestGroups(
 	}
 	const ranked = Arr.map(
 		Arr.map(preview.series, (series) => ({ series, ...thresholdProximity(series, preview) }))
-			.sort((a, b) => b.breaches - a.breaches || a.gap - b.gap)
+			.sort((a, b) => (b.breaches !== a.breaches ? b.breaches - a.breaches : a.gap - b.gap))
 			.slice(0, limit),
 		(entry) => entry.series,
 	)

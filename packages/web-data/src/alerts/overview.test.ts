@@ -1,5 +1,5 @@
 import { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
-import { Schema, Array as Arr } from "effect"
+import { Order, Schema, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import type { AlertRuleStateRow } from "../collections/alerts"
 import { deriveOverview } from "./overview"
@@ -13,6 +13,7 @@ const iso = (msAgo: number) => new Date(NOW - msAgo).toISOString()
 
 const RULE_A = "00000000-0000-4000-8000-00000000000a"
 const RULE_B = "00000000-0000-4000-8000-00000000000b"
+const RULE_C = "00000000-0000-4000-8000-00000000000c"
 
 function makeRule(overrides: Record<string, unknown> = {}): AlertRuleDocument {
 	return decodeRuleDoc({
@@ -84,6 +85,10 @@ function makeIncident(overrides: Record<string, unknown> = {}): AlertIncidentDoc
 		lastNotifiedAt: null,
 		holdReason: null,
 		heldSince: null,
+		acknowledgedAt: null,
+		acknowledgedByUserId: null,
+		acknowledgedByName: null,
+		acknowledgedVia: null,
 		errorIssueId: null,
 		...overrides,
 	})
@@ -204,18 +209,27 @@ describe("deriveOverview", () => {
 		expect(overview.timelineRange).toEqual({ min: NOW - DAY_MS, max: NOW })
 	})
 
-	it("hides uptime monitors' backing rules but keeps their incidents in the inbox", () => {
+	it("hides monitors' and SLOs' backing rules but keeps their incidents in the inbox", () => {
 		const overview = deriveOverview({
 			rules: [
 				makeRule({ id: RULE_A }),
 				makeRule({ id: RULE_B, signalType: "uptime", name: "API health" }),
+				makeRule({ id: RULE_C, signalType: "slo_burn_rate", name: "SLO burn: Checkout" }),
 			],
-			incidents: [makeIncident({ ruleId: RULE_B, ruleName: "API health", signalType: "uptime" })],
+			incidents: [
+				makeIncident({ ruleId: RULE_B, ruleName: "API health", signalType: "uptime" }),
+				makeIncident({ ruleId: RULE_C, ruleName: "SLO burn: Checkout", signalType: "slo_burn_rate" }),
+			],
 			states: [],
 			deliveryEvents: [],
 			now: NOW,
 		})
 		expect(Arr.map(overview.rules, (rule) => rule.id)).toEqual([RULE_A])
-		expect(Arr.map(overview.openIncidents, (incident) => incident.ruleName)).toEqual(["API health"])
+		expect(
+			Arr.sort(
+				Arr.map(overview.openIncidents, (incident) => incident.ruleName),
+				Order.String,
+			),
+		).toEqual(["API health", "SLO burn: Checkout"])
 	})
 })

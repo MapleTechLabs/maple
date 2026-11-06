@@ -25,9 +25,10 @@ import { type ClerkRequestError, clerkRequest } from "@maple/backend/services/au
 
 /**
  * A region that can no longer change: chosen, or past the choice window (`REGION_CHOICE_WINDOW_MS`,
- * enforced where the choice is written). A minute of reuse is safe.
+ * enforced where the choice is written), so long reuse is safe. At a minute for both tiers, about
+ * one region read in seven still went to Clerk (2026-11).
  */
-const REGIONS_TTL_MS = 60_000
+const SETTLED_TTL_MS = { isolate: 10 * 60_000, edge: 60 * 60_000 } as const
 /**
  * An organization still inside its choice window may pick EU in onboarding, after which this
  * instance must stop serving it. Short enough to close that window.
@@ -36,7 +37,7 @@ const OPEN_REGION_TTL_MS = 5_000
 
 /**
  * The Workers cache tier, shared by every isolate in a data center, so a fresh isolate can skip
- * the Clerk call. Holds only answers that let this instance serve. Same TTLs as the isolate tier.
+ * the Clerk call. Holds only answers that let this instance serve.
  */
 const REGIONS_CACHE_BUCKET = "org-regions"
 /**
@@ -70,8 +71,12 @@ class RegionNotShared extends Schema.TaggedError<RegionNotShared>()(
 	{ message: Schema.String },
 ) {}
 
-const regionTtlMs = (entry: RegionRead, nowMs: number): number =>
-	organizationRegionOpen(entry.metadata, entry.createdAtMs, nowMs) ? OPEN_REGION_TTL_MS : REGIONS_TTL_MS
+type Tier = keyof typeof SETTLED_TTL_MS
+
+const regionTtlMs = (entry: RegionRead, nowMs: number, tier: Tier): number =>
+	organizationRegionOpen(entry.metadata, entry.createdAtMs, nowMs)
+		? OPEN_REGION_TTL_MS
+		: SETTLED_TTL_MS[tier]
 
 /** Where a region answer came from, for the `cache.layer` span attribute. */
 interface RegionAnswer {
@@ -81,8 +86,21 @@ interface RegionAnswer {
 
 const answer = (entry: RegionRead, layer: RegionAnswer["layer"]): RegionAnswer => ({ entry, layer })
 
-const isFresh = (entry: RegionRead, nowMs: number): boolean =>
-	nowMs - entry.readAtMs < regionTtlMs(entry, nowMs)
+// The TTL is picked as of the read: an entry read while the choice window was open must not
+// become a settled answer when the window closes.
+const isFresh = (entry: RegionRead, nowMs: number, tier: Tier): boolean =>
+	nowMs - entry.readAtMs < regionTtlMs(entry, entry.readAtMs, tier)
+
+/** An answer this isolate holds, and since when: an edge hit counts from when it arrived here. */
+interface Held {
+	readonly entry: RegionRead
+	readonly heldAtMs: number
+}
+
+/** Within the isolate tier from arrival, and never past the answer's own edge age. */
+const isHeldFresh = (held: Held, nowMs: number): boolean =>
+	isFresh(held.entry, nowMs, "edge") &&
+	nowMs - held.heldAtMs < regionTtlMs(held.entry, held.entry.readAtMs, "isolate")
 
 /** The organization fields a region decision needs, as the directory returns them. */
 export interface DirectoryOrganization {
@@ -138,10 +156,16 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 	readOrganization: Option.Option<ReadDirectoryOrganization>,
 ) {
 	const edgeCache = yield* EdgeCacheService
-	const remembered = yield* Ref.make(HashMap.empty<OrgId, RegionRead>())
+	const remembered = yield* Ref.make(HashMap.empty<OrgId, Held>())
 	// A counter, not the clock, names a read: Workers' clock stands still between I/O.
 	const readIds = yield* Ref.make(0)
 	const coalescing = yield* Ref.make<Coalescing>({ running: HashMap.empty(), settled: HashMap.empty() })
+	// Bumped by `forget`: a read that started before it must not cache its answer after it.
+	const generations = yield* Ref.make(HashMap.empty<OrgId, number>())
+	const generationOf = (orgId: OrgId) =>
+		Effect.map(Ref.get(generations), (map) => Option.getOrElse(HashMap.get(map, orgId), () => 0))
+	const ifStillCurrent = (orgId: OrgId, generation: number, write: Effect.Effect<void>) =>
+		Effect.flatMap(generationOf(orgId), (now) => (now === generation ? write : Effect.void))
 
 	const readDirectory = Effect.fnUntraced(function* (read: ReadDirectoryOrganization, orgId: OrgId) {
 		const readAtMs = yield* Clock.currentTimeMillis
@@ -158,7 +182,9 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 			.rawGetDetailed<unknown>(REGIONS_CACHE_BUCKET, orgId, { readTimeoutMs: SHARED_READ_DEADLINE_MS })
 			.pipe(
 				Effect.map(({ value }) =>
-					Option.filter(Option.flatMap(value, decodeRegionRead), (entry) => isFresh(entry, nowMs)),
+					Option.filter(Option.flatMap(value, decodeRegionRead), (entry) =>
+						isFresh(entry, nowMs, "edge"),
+					),
 				),
 				// A failed read is a miss. Clerk still answers.
 				Effect.orElseSucceed(() => Option.none<RegionRead>()),
@@ -166,24 +192,28 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 
 	// Only a yes is shared. An organization whose region was just chosen in onboarding arrives
 	// here straight away, and a cached no would refuse it.
-	const readOrigin = (read: ReadDirectoryOrganization, orgId: OrgId) =>
+	const readOrigin = (read: ReadDirectoryOrganization, orgId: OrgId, generation: number) =>
 		readDirectory(read, orgId).pipe(
 			Effect.tap((entry) =>
 				Option.isSome(entry) && organizationServedIn(entry.value.metadata, region)
-					? edgeCache
-							.rawPut(
-								REGIONS_CACHE_BUCKET,
-								orgId,
-								entry.value,
-								Math.ceil(regionTtlMs(entry.value, entry.value.readAtMs) / 1000),
-							)
-							.pipe(
-								Effect.catch((error) =>
-									Effect.logWarning("Could not share the organization's regions").pipe(
-										Effect.annotateLogs({ orgId, error: error.message }),
+					? ifStillCurrent(
+							orgId,
+							generation,
+							edgeCache
+								.rawPut(
+									REGIONS_CACHE_BUCKET,
+									orgId,
+									entry.value,
+									Math.ceil(regionTtlMs(entry.value, entry.value.readAtMs, "edge") / 1000),
+								)
+								.pipe(
+									Effect.catch((error) =>
+										Effect.logWarning("Could not share the organization's regions").pipe(
+											Effect.annotateLogs({ orgId, error: error.message }),
+										),
 									),
 								),
-							)
+						)
 					: Effect.void,
 			),
 			Effect.map(Option.map((entry) => answer(entry, "origin"))),
@@ -193,13 +223,14 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 		read: ReadDirectoryOrganization,
 		orgId: OrgId,
 		nowMs: number,
+		generation: number,
 	) {
 		const shared = yield* Effect.forkChild(readEdge(orgId, nowMs))
 		const early = yield* Fiber.join(shared).pipe(Effect.timeoutOption(CLERK_HEDGE_AFTER_MS))
 		if (Option.isSome(early)) {
 			return Option.isSome(early.value)
 				? Option.some(answer(early.value.value, "edge"))
-				: yield* readOrigin(read, orgId)
+				: yield* readOrigin(read, orgId, generation)
 		}
 		// Usually a fresh isolate's first read. Ask Clerk as well and take whichever answers first.
 		yield* Effect.annotateCurrentSpan("cache.hedged", true)
@@ -211,11 +242,14 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 				}),
 			),
 		)
-		return yield* Effect.race(lateHit, readOrigin(read, orgId))
+		return yield* Effect.race(lateHit, readOrigin(read, orgId, generation))
 	})
 
 	const readTiers = (read: ReadDirectoryOrganization, orgId: OrgId, nowMs: number) =>
-		readShared(read, orgId, nowMs).pipe(
+		Effect.flatMap(generationOf(orgId), (generation) => readTiersAt(read, orgId, nowMs, generation))
+
+	const readTiersAt = (read: ReadDirectoryOrganization, orgId: OrgId, nowMs: number, generation: number) =>
+		readShared(read, orgId, nowMs, generation).pipe(
 			Effect.flatMap(
 				Option.match({
 					onNone: () =>
@@ -229,7 +263,14 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 								"cache.layer": layer,
 							}),
 							organizationServedIn(entry.metadata, region)
-								? Ref.update(remembered, HashMap.set(orgId, entry))
+								? ifStillCurrent(
+										orgId,
+										generation,
+										Ref.update(
+											remembered,
+											HashMap.set(orgId, { entry, heldAtMs: nowMs }),
+										),
+									)
 								: Effect.void,
 						).pipe(Effect.as(found(entry.metadata))),
 				}),
@@ -289,10 +330,10 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 		if (Option.isNone(readOrganization)) return { _tag: "Unreachable" }
 		const nowMs = yield* Clock.currentTimeMillis
 		const rememberedMap = yield* Ref.get(remembered)
-		const local = Option.filter(HashMap.get(rememberedMap, orgId), (entry) => isFresh(entry, nowMs))
+		const local = Option.filter(HashMap.get(rememberedMap, orgId), (held) => isHeldFresh(held, nowMs))
 		if (Option.isSome(local)) {
 			yield* Effect.annotateCurrentSpan({ "cache.hit": true, "cache.layer": "isolate" })
-			return found(local.value.metadata)
+			return found(local.value.entry.metadata)
 		}
 		const id = yield* Ref.updateAndGet(readIds, (n) => n + 1)
 		// Claim the read, or learn which read is already running. No yield between check and set.
@@ -355,21 +396,30 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 
 	const forget: OrganizationRegionServiceApi["forget"] = Effect.fn("OrganizationRegionService.forget")(
 		function* (orgId) {
+			yield* Ref.update(generations, (map) =>
+				HashMap.set(map, orgId, Option.getOrElse(HashMap.get(map, orgId), () => 0) + 1),
+			)
 			yield* Ref.update(remembered, HashMap.remove(orgId))
 			// A read started before the write must not hand its answer to anyone after it.
 			yield* Ref.update(coalescing, (state) => ({
 				running: HashMap.remove(state.running, orgId),
 				settled: HashMap.remove(state.settled, orgId),
 			}))
-			yield* edgeCache
-				.rawDelete(REGIONS_CACHE_BUCKET, orgId)
-				.pipe(
-					Effect.catch((error) =>
-						Effect.logWarning(
-							"Could not drop the shared organization regions; they expire on their TTL",
-						).pipe(Effect.annotateLogs({ orgId, error: error.message })),
-					),
-				)
+			yield* edgeCache.rawDelete(REGIONS_CACHE_BUCKET, orgId).pipe(
+				Effect.catch((error) =>
+					Effect.logWarning(
+						"Could not drop the shared organization regions; they expire on their TTL",
+					).pipe(Effect.annotateLogs({ orgId, error: error.message })),
+				),
+				// A stalled delete must not hold up the write that called this; the TTL still bounds it.
+				Effect.timeoutOrElse({
+					duration: SHARED_READ_DEADLINE_MS,
+					orElse: () =>
+						Effect.logWarning("Dropping the shared organization regions timed out").pipe(
+							Effect.annotateLogs({ orgId }),
+						),
+				}),
+			)
 		},
 	)
 

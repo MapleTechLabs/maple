@@ -10,7 +10,7 @@ import {
 	type TracerProvider,
 } from "@opentelemetry/api"
 import type { ReadableSpan } from "@opentelemetry/sdk-trace"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, assert, beforeEach, describe, expect, it, vi } from "vitest"
 import { resetUrlSanitizersForTests } from "../../browser-session/src/platform/url-privacy"
 
 // What the batch processor hands to the exporter, so assertions are on the
@@ -418,11 +418,13 @@ describe("traced", () => {
 		const loader = named("loader /a")
 		for (const url of ["https://api.test/one", "https://api.test/two"]) {
 			const [span] = fetchSpans(url)
-			expect(parentOf(span!)).toBe(loader.spanContext().spanId)
+			assert.isDefined(span)
+			expect(parentOf(span)).toBe(loader.spanContext().spanId)
 		}
 		const [after] = fetchSpans("https://api.test/after-await")
-		expect(parentOf(after!)).toBeUndefined()
-		expect(after!.spanContext().traceId).not.toBe(loader.spanContext().traceId)
+		assert.isDefined(after)
+		expect(parentOf(after)).toBeUndefined()
+		expect(after.spanContext().traceId).not.toBe(loader.spanContext().traceId)
 	})
 
 	it("records a throw, marks the span Error and rethrows the same error", async () => {
@@ -461,11 +463,13 @@ describe("traced", () => {
 		const thrown = { message: "Request failed with status 500", status: 500 }
 		await expect(
 			MapleBrowser.traced("loader", async () => {
+				// oxlint-disable-next-line typescript/only-throw-error -- the case under test is a thrown non-Error.
 				throw thrown
 			}),
 		).rejects.toBe(thrown)
 		await expect(
 			MapleBrowser.traced("loader-string", async () => {
+				// oxlint-disable-next-line typescript/only-throw-error -- the case under test is a thrown non-Error.
 				throw "plain string"
 			}),
 		).rejects.toBe("plain string")

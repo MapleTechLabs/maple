@@ -8,7 +8,7 @@ import {
 	type VcsRepositoryId,
 } from "@maple/domain/http"
 import { compareVersions } from "@maple/lockfiles/versions"
-import { Duration, Option, Array as Arr, String as Str } from "effect"
+import { Duration, Option, Array as Arr, String as Str, Order } from "effect"
 import { AsyncData } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute, hrefOf } from "../../../route"
@@ -116,12 +116,17 @@ export const filteredFindings = (
 			(repositoryId === null || finding.repositoryId === repositoryId),
 	)
 
+const byNumber = <A>(f: (a: A) => number): Order.Order<A> => Order.mapInput(Order.Number, f)
+
 export const statusFilterOf = (model: Model): StatusFilter =>
-	STATUS_FILTERS.find((status) => status === model.statusSelect.value) ?? "open"
+	Option.getOrElse(
+		Arr.findFirst(STATUS_FILTERS, (status) => status === model.statusSelect.value),
+		(): StatusFilter => "open",
+	)
 
 /** The repository the URL focuses, once it is one of the connected ones. */
 export const focusedRepositoryOf = (model: Model): DependencyScanRepository | null =>
-	repositoriesOf(model).find((repository) => repository.id === model.scope) ?? null
+	Option.getOrNull(Arr.findFirst(repositoriesOf(model), (repository) => repository.id === model.scope))
 
 /** The switcher's item for every repository; the others are each repository's full name. */
 export const ALL_REPOSITORIES = "All repositories"
@@ -143,9 +148,10 @@ export type SeverityCounts = Readonly<Record<AdvisorySeverity, number>>
 const NO_SEVERITIES = { critical: 0, high: 0, medium: 0, low: 0, unknown: 0 } satisfies SeverityCounts
 
 export const openSeverityCounts = (findings: ReadonlyArray<DependencyFindingView>): SeverityCounts =>
-	Arr.filter(findings, (finding) => finding.status === "open").reduce<SeverityCounts>(
-		(counts, finding) => ({ ...counts, [finding.severity]: counts[finding.severity] + 1 }),
+	Arr.reduce<DependencyFindingView, SeverityCounts>(
+		Arr.filter(findings, (finding) => finding.status === "open"),
 		NO_SEVERITIES,
+		(counts, finding) => ({ ...counts, [finding.severity]: counts[finding.severity] + 1 }),
 	)
 
 export const scannedCount = (repositories: ReadonlyArray<DependencyScanRepository>): number =>
@@ -157,8 +163,11 @@ export const isScanPending = (model: Model, repositoryId: VcsRepositoryId): bool
 
 /** A pending scan is done once its repository shows a newer scan that has finished. */
 const isSettled = (pending: PendingScan, repositories: ReadonlyArray<DependencyScanRepository>): boolean => {
-	const scan = repositories.find((repository) => repository.id === pending.repositoryId)?.latestScan ?? null
-	return scan !== null && scan.id !== pending.previousScanId && scan.status !== "running"
+	return Option.exists(
+		Arr.findFirst(repositories, (repository) => repository.id === pending.repositoryId),
+		({ latestScan: scan }) =>
+			scan !== null && scan.id !== pending.previousScanId && scan.status !== "running",
+	)
 }
 
 /** The scans still to poll for, and whether any finished (so the findings are read again). */
@@ -179,7 +188,7 @@ export const unexpiredScans = (
 export const selectedFindingOf = (model: Model): DependencyFindingView | null =>
 	model.selectedId === null
 		? null
-		: (allFindingsOf(model).find((finding) => finding.id === model.selectedId) ?? null)
+		: Option.getOrNull(Arr.findFirst(allFindingsOf(model), (finding) => finding.id === model.selectedId))
 
 export const reasonErrorOf = (reason: string): string | null =>
 	Str.trim(reason) === ""
@@ -249,13 +258,11 @@ const stepOf = (
 	const fixable = Arr.filter(findings, (finding) => finding.fixedIn !== null)
 	const fixes = byAdvisory(fixable)
 	// Every lockfile's fix counts: one advisory can need a higher version in another lockfile.
-	const target = fixable.reduce<string | null>(
-		(highest, finding) =>
-			finding.fixedIn !== null &&
-			(highest === null || compareVersions(ecosystem, finding.fixedIn, highest) > 0)
-				? finding.fixedIn
-				: highest,
-		null,
+	const target = Arr.reduce<DependencyFindingView, string | null>(fixable, null, (highest, finding) =>
+		finding.fixedIn !== null &&
+		(highest === null || compareVersions(ecosystem, finding.fixedIn, highest) > 0)
+			? finding.fixedIn
+			: highest,
 	)
 	// The same service appears once per finding; count each one's traffic once.
 	const spans = new Map(
@@ -273,8 +280,9 @@ const stepOf = (
 		repositoryId,
 		ecosystem,
 		packageName: first?.packageName ?? "",
-		installed: unique(Arr.flatMap(findings, (finding) => finding.versions)).toSorted((a, b) =>
-			compareVersions(ecosystem, a, b),
+		installed: Arr.sort(
+			unique(Arr.flatMap(findings, (finding) => finding.versions)),
+			(a: string, b: string) => Order.Number(compareVersions(ecosystem, a, b), 0),
 		),
 		target,
 		fixes,
@@ -313,16 +321,18 @@ export const upgradePlanOf = (findings: ReadonlyArray<DependencyFindingView>): R
 			repositoryOf.set(key, finding.repositoryId)
 		},
 	)
-	return Arr.flatMap([...groups.entries()], ([key, group]) => {
-		const repositoryId = repositoryOf.get(key)
-		return repositoryId === undefined ? [] : [stepOf(key, repositoryId, group)]
-	}).toSorted(
-		(a, b) =>
-			Number(a.target === null) - Number(b.target === null) ||
-			SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
-			RELATION_RANK[a.relation] - RELATION_RANK[b.relation] ||
-			b.productionSpans - a.productionSpans ||
-			b.fixes.length - a.fixes.length,
+	return Arr.sort(
+		Arr.flatMap([...groups.entries()], ([key, group]) => {
+			const repositoryId = repositoryOf.get(key)
+			return repositoryId === undefined ? [] : [stepOf(key, repositoryId, group)]
+		}),
+		Order.combineAll([
+			byNumber((step: UpgradeStep) => Number(step.target === null)),
+			byNumber((step: UpgradeStep) => SEVERITY_RANK[step.severity]),
+			byNumber((step: UpgradeStep) => RELATION_RANK[step.relation]),
+			Order.flip(byNumber((step: UpgradeStep) => step.productionSpans)),
+			Order.flip(byNumber((step: UpgradeStep) => step.fixes.length)),
+		]),
 	)
 }
 
@@ -330,14 +340,15 @@ export const upgradePlanOf = (findings: ReadonlyArray<DependencyFindingView>): R
 export type PlanSummary = Readonly<{ upgrades: number; fixable: number; unfixed: number; open: number }>
 
 export const planSummaryOf = (plan: ReadonlyArray<UpgradeStep>): PlanSummary =>
-	plan.reduce<PlanSummary>(
+	Arr.reduce<UpgradeStep, PlanSummary>(
+		plan,
+		{ upgrades: 0, fixable: 0, unfixed: 0, open: 0 },
 		(sum, step) => ({
 			upgrades: sum.upgrades + (step.target === null ? 0 : 1),
 			fixable: sum.fixable + step.fixes.length,
 			unfixed: sum.unfixed + step.unfixed.length,
 			open: sum.open + step.fixes.length + step.unfixed.length,
 		}),
-		{ upgrades: 0, fixable: 0, unfixed: 0, open: 0 },
 	)
 
 /** Services that ran one of the repository's commits over the last day. */
@@ -390,13 +401,10 @@ const rowOf = (key: string, steps: ReadonlyArray<UpgradeStep>): PackageRow => {
 			SEVERITY_RANK,
 			"unknown",
 		),
-		target: steps.reduce<string | null>(
-			(highest, step) =>
-				step.target !== null &&
-				(highest === null || compareVersions(ecosystem, step.target, highest) > 0)
-					? step.target
-					: highest,
-			null,
+		target: Arr.reduce<UpgradeStep, string | null>(steps, null, (highest, step) =>
+			step.target !== null && (highest === null || compareVersions(ecosystem, step.target, highest) > 0)
+				? step.target
+				: highest,
 		),
 		productionSpans: Arr.reduce(steps, 0, (sum, step) => sum + step.productionSpans),
 	}
@@ -414,12 +422,14 @@ export const packageMatrixOf = (
 		const key = `${step.ecosystem}/${step.packageName}`
 		groups.set(key, [...(groups.get(key) ?? []), step])
 	})
-	return Arr.map([...groups.entries()], ([key, steps]) => rowOf(key, steps)).toSorted(
-		(a, b) =>
-			SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
-			b.productionSpans - a.productionSpans ||
-			b.steps.size - a.steps.size ||
-			Str.localeCompare(b.packageName)(a.packageName),
+	return Arr.sort(
+		Arr.map([...groups.entries()], ([key, steps]) => rowOf(key, steps)),
+		Order.combineAll([
+			byNumber((row: PackageRow) => SEVERITY_RANK[row.severity]),
+			Order.flip(byNumber((row: PackageRow) => row.productionSpans)),
+			Order.flip(byNumber((row: PackageRow) => row.steps.size)),
+			(a: PackageRow, b: PackageRow) => Str.localeCompare(b.packageName)(a.packageName),
+		]),
 	)
 }
 
@@ -473,11 +483,14 @@ const buildDigest = (
 		const { worst: severity } = statsOf(repository.id)
 		return severity === null ? 5 : SEVERITY_RANK[severity]
 	}
-	const ranked = repositories.toSorted(
-		(a, b) =>
-			rankOf(a) - rankOf(b) ||
-			statsOf(b.id).open - statsOf(a.id).open ||
-			Str.localeCompare(b.fullName)(a.fullName),
+	const ranked = Arr.sort(
+		repositories,
+		Order.combineAll([
+			byNumber(rankOf),
+			Order.flip(byNumber((repository: DependencyScanRepository) => statsOf(repository.id).open)),
+			(a: DependencyScanRepository, b: DependencyScanRepository) =>
+				Str.localeCompare(b.fullName)(a.fullName),
+		]),
 	)
 	return {
 		repositories,

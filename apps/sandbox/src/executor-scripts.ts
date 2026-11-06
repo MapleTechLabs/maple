@@ -15,7 +15,7 @@ import {
 	type ExecutorWorkingDirectory,
 } from "@maple/domain/executor"
 import { shellQuote } from "@maple/domain/sandbox"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { GATEWAY_HOST } from "./executor-probe"
 
 export const CHECKOUT_DIR = "/work/checkout"
@@ -25,6 +25,15 @@ const AUDIT_DIR = "/audit"
 const CGROUP = "/sys/fs/cgroup"
 /** Installed by the image; the skill's promotion procedure, run as root. */
 export const PROMOTE_HELPER = "/usr/local/lib/maple/promote.py"
+
+/**
+ * Every agent's cgroup sits under this one, whose `memory.max` holds all of them, scratch included,
+ * below the container (standard-2: 6 GB): when agents together run out, the kernel kills a command
+ * (each agent cgroup is one OOM group), not the container and the run's prepared checkout with it.
+ */
+const AGENTS_CGROUP = "maple-agents"
+const AGENTS_MEMORY_BYTES = 4608 * 1024 * 1024
+const agentCgroup = (agentId: string) => `${AGENTS_CGROUP}/maple-agent-${agentId}`
 
 /** The uid prepare installs dependencies as. Agents get their own uids from {@link AGENT_UID_BASE}. */
 const PREPARE_UID = 20000
@@ -273,6 +282,8 @@ export const parsePrepareStatus = (stdout: string): PrepareStatus => {
 export const resetPrepareScript = (): string => `rm -rf ${PREPARE_STATE_DIR} ${CHECKOUT_DIR} ${CACHE_DIR}`
 
 const agentDir = (agentId: string) => `${AUDIT_DIR}/agents/${agentId}`
+/** Written when an agent is released; its commands are refused from then on. */
+const releasedMarker = (agentId: string) => `${AUDIT_DIR}/released/${agentId}`
 export const agentScratch = (agentId: string) => `${agentDir(agentId)}/scratch`
 const agentArtifacts = (agentId: string) => `${agentDir(agentId)}/artifacts`
 
@@ -293,7 +304,8 @@ export interface RunScriptInput {
 export const runScript = (input: RunScriptInput): string => {
 	const a = agentDir(input.agentId)
 	const scratch = agentScratch(input.agentId)
-	const g = `${CGROUP}/maple-agent-${input.agentId}`
+	const name = agentCgroup(input.agentId)
+	const g = `${CGROUP}/${name}`
 	const c = `${AUDIT_DIR}/calls/${input.callId}`
 	const limit = EXECUTOR_LIMITS.outputBytes
 	const environment = Arr.join(
@@ -329,8 +341,10 @@ export const runScript = (input: RunScriptInput): string => {
 			"umask 022",
 			`if [ "$(cat ${PREPARE_STATE_DIR}/exit-code 2>/dev/null)" != 0 ]; then printf '\\n${RUN_TRAILER} not-prepared 0 0 0\\n'; exit 0; fi`,
 			`mkdir -p ${AUDIT_DIR}/agents ${AUDIT_DIR}/calls && chmod 711 ${AUDIT_DIR} ${AUDIT_DIR}/agents && chmod 700 ${AUDIT_DIR}/calls || exit 2`,
-			// The agent's uid is its position in creation order, claimed under a lock.
+			// The agent's uid is its position in creation order, claimed under a lock. Release takes the
+			// same lock, so an agent is either set up before it is released or refused after.
 			`exec 9> ${AUDIT_DIR}/agents.lock && flock 9 || exit 2`,
+			`if [ -e ${releasedMarker(input.agentId)} ]; then printf '\\n${RUN_TRAILER} released 0 0 0\\n'; exit 0; fi`,
 			// A counter, never a count of directories: a uid is never handed out twice.
 			`if [ ! -s ${a}/uid ]; then`,
 			`  mkdir -p -m 711 ${a} || exit 2`,
@@ -343,18 +357,23 @@ export const runScript = (input: RunScriptInput): string => {
 			`  install -d -m 700 -o "$u" -g "$u" ${scratch}/.home ${scratch}/.tmp ${scratch}/.cache || exit 2`,
 			"fi",
 			FIND_SHARED_WRITABLE,
-			"flock -u 9; exec 9>&-",
 			CGROUP_SETUP,
-			cgroup(`maple-agent-${input.agentId}`, [
+			cgroup(AGENTS_CGROUP, [
+				["cgroup.subtree_control", `"+memory +pids"`],
+				["memory.max", String(AGENTS_MEMORY_BYTES)],
+			]),
+			cgroup(name, [
 				["memory.max", String(EXECUTOR_LIMITS.memoryBytes)],
+				["memory.oom.group", "1"],
 				["pids.max", String(EXECUTOR_LIMITS.processes)],
 			]),
+			"flock -u 9; exec 9>&-",
 			`mkdir -m 700 ${c} || exit 2`,
 			`(echo $BASHPID > ${g}/cgroup.procs && exec timeout --kill-after=5 ${seconds} unshare --net --mount --pid --ipc --uts --fork --kill-child --mount-proc -- sh -c ${shellQuote(inner)} sh "$u") > ${c}/out 2> ${c}/err < /dev/null`,
 			"rc=$?",
 			// Nothing the command started may outlive it: promotion reads scratch only after this.
-			reap(`maple-agent-${input.agentId}`),
-			`if [ ! -e ${c}/started ]; then state=setup-failed; elif ${drained(`maple-agent-${input.agentId}`)}; then state=started; else state=unreaped; fi`,
+			reap(name),
+			`if [ ! -e ${c}/started ]; then state=setup-failed; elif ${drained(name)}; then state=started; else state=unreaped; fi`,
 			`ob=$(wc -c < ${c}/out) && eb=$(wc -c < ${c}/err)`,
 			`head -c ${limit} ${c}/out`,
 			`head -c ${limit} ${c}/err >&2`,
@@ -365,9 +384,43 @@ export const runScript = (input: RunScriptInput): string => {
 	)
 }
 
+/**
+ * Gives back what an agent held once its invocation ended: kills what is left of its commands, then
+ * unmounts its scratch (tmpfs pages stay charged until then), removes its cgroup and deletes its
+ * promoted artifacts, which the parent already holds. The marker refuses any later command.
+ */
+export const releaseScript = (agentId: string): string => {
+	const name = agentCgroup(agentId)
+	const scratch = agentScratch(agentId)
+	return Arr.join(
+		[
+			"set -u",
+			`mkdir -p ${AUDIT_DIR}/released && chmod 700 ${AUDIT_DIR}/released || exit 2`,
+			`exec 9> ${AUDIT_DIR}/agents.lock && flock 9 || exit 2`,
+			`: > ${releasedMarker(agentId)} || exit 2`,
+			"flock -u 9; exec 9>&-",
+			"left=",
+			// The cgroup goes first: a command that set up before the marker can join it only while it
+			// exists, so kill and remove until it is gone; one that comes later fails to start.
+			`for _ in 1 2 3 4 5; do [ -d ${CGROUP}/${name} ] || break; ${reap(name)}; rmdir ${CGROUP}/${name} 2>/dev/null && break; done`,
+			`[ ! -e ${CGROUP}/${name} ] || left="$left processes"`,
+			// Where an agent's cgroup lived before it moved under the run's bound.
+			`rmdir ${CGROUP}/maple-agent-${agentId} 2>/dev/null`,
+			// Lazily if a process survived: the pages are freed when it finally goes.
+			`if mountpoint -q ${scratch}; then umount ${scratch} 2>/dev/null || umount -l ${scratch} || left="$left scratch"; fi`,
+			`rm -rf ${agentDir(agentId)} || left="$left files"`,
+			`if [ -n "$left" ]; then echo "could not release:$left" >&2; exit 3; fi`,
+		],
+		"\n",
+	)
+}
+
 export interface RunTrailer {
-	/** `unreaped`: it ran, but a process of it could not be stopped, so nothing may be promoted. */
-	readonly state: "started" | "unreaped" | "setup-failed" | "not-prepared"
+	/**
+	 * `unreaped`: it ran, but a process of it could not be stopped, so nothing may be promoted.
+	 * `released`: the agent was released, so the command never ran.
+	 */
+	readonly state: "started" | "unreaped" | "setup-failed" | "not-prepared" | "released"
 	readonly exitCode: number
 	readonly stdoutBytes: number
 	readonly stderrBytes: number
@@ -377,15 +430,17 @@ export interface RunTrailer {
 export const parseRunOutput = (
 	stdout: string,
 ): { readonly body: string; readonly trailer: RunTrailer } | undefined => {
-	const at = stdout.lastIndexOf(RUN_TRAILER)
-	if (at === -1) return undefined
+	const found = Str.lastIndexOf(RUN_TRAILER)(stdout)
+	if (Option.isNone(found)) return undefined
+	const at = found.value
 	const [state, ...numbers] = Str.split(/\s+/u)(Str.trim(Str.slice(at + RUN_TRAILER.length)(stdout)))
 	const [exitCode, stdoutBytes, stderrBytes] = Arr.map(numbers, Number)
 	if (
 		(state !== "started" &&
 			state !== "unreaped" &&
 			state !== "setup-failed" &&
-			state !== "not-prepared") ||
+			state !== "not-prepared" &&
+			state !== "released") ||
 		exitCode === undefined ||
 		stdoutBytes === undefined ||
 		stderrBytes === undefined ||

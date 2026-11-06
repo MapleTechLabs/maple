@@ -10,7 +10,7 @@ import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
-import { readIsAdmin } from "../../alerts/shared/commands"
+import { readGrants } from "../../../data/session-tenant"
 import { Message, SavePurpose } from "./model"
 
 type Api = typeof MapleInternalApiClient.Service
@@ -52,9 +52,9 @@ export const FetchRepoConfig = Command.define("FetchCodeReviewRepoConfig", {
 })
 
 /** `useIsOrgAdmin` under Clerk: the session's roles. */
-export const ReadIsAdmin = Command.define("ReadCodeReviewIsAdmin", {
-	messages: [Message.CompletedReadIsAdmin],
-	execute: Effect.map(readIsAdmin, (isAdmin) => Message.CompletedReadIsAdmin({ isAdmin })),
+export const ReadGrants = Command.define("ReadCodeReviewGrants", {
+	messages: [Message.CompletedReadGrants],
+	execute: Effect.map(readGrants, (grants) => Message.CompletedReadGrants({ grants })),
 })
 
 /** `githubSetPrReviewSettings`: the settings are one row, written whole. */
@@ -107,4 +107,3 @@ export const SaveRepoConfig = Command.define("SaveCodeReviewRepoConfig", {
 			(result) => Message.CompletedSaveRepoConfig({ repositoryId, fullName, result }),
 		),
 })
-

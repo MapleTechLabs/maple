@@ -29,7 +29,7 @@ import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { destinationProvider, providerLogo } from "../shared/providers"
 import { createHref } from "../shared/links"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { destinationMenuId } from "./update"
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
@@ -38,7 +38,7 @@ import { stripClass } from "@maple/views/ui/rule"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // `AlertsRoutingTab` and `DestinationRow`: the hub's Routing tab.
 
@@ -114,11 +114,11 @@ const destinationsSection = (
 					emptyTitle(h, ["No destinations configured"]),
 					emptyDescription(h, [
 						"Add Slack, PagerDuty, or webhook destinations before creating alert rules.",
-						...(model.isAdmin ? [] : [" Ask an org admin to add one."]),
+						...(canManage(model) ? [] : [" Ask an org admin to add one."]),
 					]),
 				]),
 				emptyActions(h, [
-					...(model.isAdmin
+					...(canManage(model)
 						? [
 								button(
 									h,
@@ -189,7 +189,7 @@ type RowInputs = Readonly<{
 export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: RowInputs): Html => {
 	const { destination, recent } = row
 	const provider = destinationProvider(destination.type, destination.chatConnector ?? undefined)
-	const lastSuccess = recent.find((event) => event.status === "success")
+	const lastSuccess = Arr.findFirst(recent, (event) => event.status === "success")
 	const failed = Arr.filter(recent, (event) => event.status === "failed").length
 	const problem =
 		!destination.enabled && destination.disabledReason
@@ -261,15 +261,17 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 											: [],
 										[destination.disabledAt != null ? "auto-disabled" : "disabled"],
 									)
-								: lastSuccess !== undefined
-									? relativeTime(h, {
-											value: lastSuccess.scheduledAt,
-											nowMs: inputs.nowMs,
-											timeZone: inputs.timeZone,
-											variant: "short",
-											tooltip: "title",
-										})
-									: "never",
+								: Option.match(lastSuccess, {
+										onNone: () => "never",
+										onSome: (event) =>
+											relativeTime(h, {
+												value: event.scheduledAt,
+												nowMs: inputs.nowMs,
+												timeZone: inputs.timeZone,
+												variant: "short",
+												tooltip: "title",
+											}),
+									}),
 						],
 					),
 					hstack(h, { gap: "2", justify: "end" }, [
@@ -277,7 +279,7 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 							id: `destination-switch-${destination.id}`,
 							inputId: `destination-switch-input-${destination.id}`,
 							isChecked: destination.enabled,
-							isDisabled: !model.isAdmin,
+							isDisabled: !canManage(model),
 							ariaLabel: destination.enabled ? "Disable destination" : "Enable destination",
 							onToggle: Message.ClickedToggleDestination({ destinationId: destination.id }),
 						}),
@@ -286,7 +288,7 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 							{
 								size: "sm",
 								variant: "outline",
-								isDisabled: !model.isAdmin,
+								isDisabled: !canManage(model),
 								isLoading: model.testingDestinationIds.includes(destination.id),
 								attributes: [
 									h.OnClick(
@@ -296,7 +298,7 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 							},
 							[icon(h, "CheckIcon"), "Test"],
 						),
-						...(model.isAdmin
+						...(canManage(model)
 							? [
 									rowActionsMenu(h, {
 										slotId: menuId,
@@ -394,7 +396,7 @@ const logTable = (
 					]),
 				]),
 				emptyActions(h, [
-					...(model.isAdmin
+					...(canManage(model)
 						? [
 								linkButton(h, { variant: "outline", size: "sm", href: createHref({}) }, [
 									"Create an alert rule",
@@ -453,6 +455,13 @@ const logTable = (
 const logRow = (h: H, model: Model, inputs: RoutingInputs, event: AlertDeliveryEventDocument): Html => {
 	const ev = eventTypeMeta[event.eventType]
 	const status = deliveryStatusMeta[event.status]
+	// Delivery events carry only the type; a `chat` destination's logo comes from its connector.
+	const chatConnector = Option.getOrUndefined(
+		Option.flatMapNullishOr(
+			Arr.findFirst(inputs.destinations, (d) => d.id === event.destinationId),
+			(d) => d.chatConnector,
+		),
+	)
 	return tableRow(h, [
 		tableCell(h, [
 			hstack(h, { gap: "1.5", as: "span" }, [
@@ -480,6 +489,7 @@ const logRow = (h: H, model: Model, inputs: RoutingInputs, event: AlertDeliveryE
 			hstack(h, { gap: "2", as: "span" }, [
 				providerLogo(h, {
 					type: event.destinationType,
+					chatConnector: chatConnector ?? undefined,
 					size: 32,
 					isBare: true,
 					className: hstackClass({ className: "shrink-0" }),

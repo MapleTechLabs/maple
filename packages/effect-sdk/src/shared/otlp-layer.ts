@@ -44,7 +44,7 @@ const tracerLayer = (url: string, options: OtlpLayerOptions) =>
 				exportInterval: options.tracerExportInterval ?? Duration.seconds(5),
 				maxBatchSize: options.maxBatchSize ?? 1000,
 				shutdownTimeout: options.shutdownTimeout ?? Duration.seconds(3),
-				body(spans) {
+				body(spans: OtlpTracer.ScopeSpan["spans"]) {
 					const data: OtlpTracer.TraceData = {
 						resourceSpans: [{ resource, scopeSpans: [{ scope, spans }] }],
 					}

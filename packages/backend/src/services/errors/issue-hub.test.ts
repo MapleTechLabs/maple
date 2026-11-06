@@ -40,9 +40,9 @@ const asOrgId = Schema.decodeUnknownSync(OrgId)
 const ORG = asOrgId("org_issue_hub_test")
 
 // Rule/incident ids are UUID-branded end to end, so fixtures must be real UUIDs.
-const RULE_1 = Schema.decodeUnknownSync(AlertRuleId)("11111111-1111-4111-8111-111111111111")
-const INCIDENT_1 = Schema.decodeUnknownSync(AlertIncidentId)("22222222-2222-4222-8222-222222222222")
-const INCIDENT_2 = Schema.decodeUnknownSync(AlertIncidentId)("33333333-3333-4333-8333-333333333333")
+const RULE_1 = Schema.decodeSync(AlertRuleId)("11111111-1111-4111-8111-111111111111")
+const INCIDENT_1 = Schema.decodeSync(AlertIncidentId)("22222222-2222-4222-8222-222222222222")
+const INCIDENT_2 = Schema.decodeSync(AlertIncidentId)("33333333-3333-4333-8333-333333333333")
 
 // Single time base for the whole file: seeded rows, upsert input timestamps,
 // and the service's own Clock reads (via TestClock.setTime) all derive from T0
@@ -118,7 +118,7 @@ describe("upsertAlertIssue", () => {
 
 			const issues = yield* loadIssue
 			assert.lengthOf(issues, 1)
-			const issue = issues[0]!
+			const issue = issues[0]
 			assert.strictEqual(issue.kind, "alert")
 			assert.strictEqual(issue.workflowState, "triage")
 			assert.strictEqual(issue.severity, "medium")

@@ -1,6 +1,7 @@
 import { UNGROUPED_GROUP_KEY, type AlertIncidentDocument, type AlertRuleDocument } from "@maple/domain/http"
 
 import type { AlertRuleStateRow } from "../collections/alerts"
+import { Array as Arr, Order } from "effect"
 
 /** How close one enabled rule's nearest group sits to firing, from its last recorded check. */
 export interface RuleHeadroom {
@@ -40,10 +41,13 @@ export function ruleHeadroom(
 	rules: ReadonlyArray<AlertRuleDocument>,
 	statesByRule: ReadonlyMap<string, ReadonlyArray<AlertRuleStateRow>>,
 ): RuleHeadroom[] {
-	return rules
-		.filter((rule) => rule.enabled)
-		.flatMap((rule) => {
-			const measured = (statesByRule.get(rule.id) ?? []).flatMap((state) =>
+	const nearestFirst = Order.flip(
+		Order.mapInput(Order.Number, (entry: { readonly closeness: number | null }) => entry.closeness ?? -1),
+	)
+	const enabled = Arr.filter(rules, (rule) => rule.enabled)
+	return Arr.sort(
+		Arr.flatMap(enabled, (rule) => {
+			const measured = Arr.flatMap(statesByRule.get(rule.id) ?? [], (state) =>
 				state.last_value === null
 					? []
 					: [
@@ -58,10 +62,11 @@ export function ruleHeadroom(
 							},
 						],
 			)
-			const nearest = measured.toSorted((a, b) => (b.closeness ?? -1) - (a.closeness ?? -1))[0]
+			const nearest = Arr.sort(measured, nearestFirst)[0]
 			return nearest === undefined ? [] : [{ rule, ...nearest }]
-		})
-		.toSorted((a, b) => (b.closeness ?? -1) - (a.closeness ?? -1))
+		}),
+		nearestFirst,
+	)
 }
 
 /**
@@ -69,10 +74,8 @@ export function ruleHeadroom(
  * null when nothing has fired in the incidents on hand.
  */
 export function quietForMs(incidents: ReadonlyArray<AlertIncidentDocument>, now: number): number | null {
-	const lastResolve = incidents.reduce(
-		(latest, incident) =>
-			incident.resolvedAt === null ? latest : Math.max(latest, Date.parse(incident.resolvedAt)),
-		Number.NEGATIVE_INFINITY,
+	const lastResolve = Arr.reduce(incidents, Number.NEGATIVE_INFINITY, (latest, incident) =>
+		incident.resolvedAt === null ? latest : Math.max(latest, Date.parse(incident.resolvedAt)),
 	)
 	return Number.isFinite(lastResolve) ? Math.max(0, now - lastResolve) : null
 }

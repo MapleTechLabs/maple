@@ -1,5 +1,16 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Exit, Fiber, Ref, Schema, Tracer, Array as Arr, String as Str } from "effect"
+import {
+	Duration,
+	Effect,
+	Exit,
+	Fiber,
+	Ref,
+	Schema,
+	Tracer,
+	Array as Arr,
+	String as Str,
+	Option,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId } from "@maple/domain"
 import { RawSqlValidationError, WarehouseQueryRequest } from "@maple/domain/http"
@@ -17,8 +28,8 @@ import type {
 } from "./ports"
 
 const tenant: ExecutionTenant = {
-	orgId: Schema.decodeUnknownSync(OrgId)("org_test"),
-	userId: Schema.decodeUnknownSync(UserId)("user_test"),
+	orgId: Schema.decodeSync(OrgId)("org_test"),
+	userId: Schema.decodeSync(UserId)("user_test"),
 	authMode: "system",
 }
 
@@ -155,7 +166,9 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 				})
 				.pipe(Effect.withTracer(tracer))
 
-			const span = spans.find((candidate) => candidate.name === "WarehouseQueryService.executeSql")
+			const span = Option.getOrThrow(
+				Arr.findFirst(spans, (candidate) => candidate.name === "WarehouseQueryService.executeSql"),
+			)
 			assert.isDefined(span)
 			assert.strictEqual(span.kind, "client")
 			assert.strictEqual(span.attributes.get("orgId"), "org_test")
@@ -207,7 +220,9 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 				.pipe(Effect.exit, Effect.withTracer(tracer))
 			assert.isTrue(Exit.isFailure(exit))
 
-			const span = spans.find((candidate) => candidate.name === "WarehouseQueryService.executeSql")
+			const span = Option.getOrThrow(
+				Arr.findFirst(spans, (candidate) => candidate.name === "WarehouseQueryService.executeSql"),
+			)
 			assert.isDefined(span)
 			assert.strictEqual(span.attributes.get("db.operation.name"), "SELECT")
 			assert.strictEqual(span.attributes.get("db.collection.name"), "spans_missing")
@@ -229,7 +244,9 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 				.compiledQuery(tenant, scoped("SELECT 1 WHERE OrgId = 'org_test'"), { context: "localSpan" })
 				.pipe(Effect.withTracer(tracer))
 
-			const span = spans.find((candidate) => candidate.name === "WarehouseQueryService.executeSql")
+			const span = Option.getOrThrow(
+				Arr.findFirst(spans, (candidate) => candidate.name === "WarehouseQueryService.executeSql"),
+			)
 			assert.isDefined(span)
 			assert.strictEqual(span.attributes.get("db.system.name"), "clickhouse")
 			assert.strictEqual(span.attributes.get("peer.service"), "chdb")
@@ -245,7 +262,9 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 				.ingest(tenant, "alert_checks", [{ OrgId: "org_test" }])
 				.pipe(Effect.withTracer(tracer))
 
-			const span = spans.find((candidate) => candidate.name === "WarehouseQueryService.insert")
+			const span = Option.getOrThrow(
+				Arr.findFirst(spans, (candidate) => candidate.name === "WarehouseQueryService.insert"),
+			)
 			assert.isDefined(span)
 			assert.strictEqual(span.kind, "client")
 			assert.strictEqual(span.attributes.get("db.system.name"), "tinybird")
@@ -288,6 +307,98 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 		}),
 	)
 
+	const failingInsertDeps = (failures: number, status: number, attempts: { count: number }) => ({
+		...makeDeps([]),
+		createClient: () =>
+			Effect.succeed<WarehouseSqlClient>({
+				sql: () => Effect.succeed({ data: [] }),
+				insert: () =>
+					Effect.suspend(() => {
+						attempts.count += 1
+						return attempts.count <= failures
+							? Effect.fail(
+									new WarehouseDriverError({
+										reason: "server",
+										status,
+										message: `Request failed with status ${status}`,
+									}),
+								)
+							: Effect.void
+					}),
+			}),
+	})
+
+	it.effect("retries an opted-in insert that hits a transient 520, then succeeds", () =>
+		Effect.gen(function* () {
+			const attempts = { count: 0 }
+			const executor = makeWarehouseExecutor(failingInsertDeps(2, 520, attempts))
+			const fiber = yield* Effect.forkChild(
+				executor
+					.ingest(tenant, "audit_log", [{ OrgId: "org_test" }], { retryTransient: true })
+					.pipe(Effect.exit),
+			)
+			yield* TestClock.adjust(Duration.seconds(1))
+			const exit = yield* Fiber.join(fiber)
+			assert.isTrue(Exit.isSuccess(exit))
+			assert.strictEqual(attempts.count, 3)
+		}),
+	)
+
+	it.effect("does not retry a 520 unless the caller opts in, since the rows may have landed", () =>
+		Effect.gen(function* () {
+			const attempts = { count: 0 }
+			const executor = makeWarehouseExecutor(failingInsertDeps(2, 520, attempts))
+			const exit = yield* executor
+				.ingest(tenant, "service_map_edges_hourly", [{ OrgId: "org_test" }])
+				.pipe(Effect.exit)
+			assert.isTrue(Exit.isFailure(exit))
+			assert.strictEqual(attempts.count, 1)
+		}),
+	)
+
+	it.effect("does not retry an insert the warehouse rejects as bad input", () =>
+		Effect.gen(function* () {
+			const attempts = { count: 0 }
+			const executor = makeWarehouseExecutor(failingInsertDeps(5, 400, attempts))
+			const exit = yield* executor
+				.ingest(tenant, "audit_log", [{ OrgId: "org_test" }], { retryTransient: true })
+				.pipe(Effect.exit)
+			assert.isTrue(Exit.isFailure(exit))
+			assert.strictEqual(attempts.count, 1)
+		}),
+	)
+
+	it.effect("swallows a best-effort insert failure inside an Ok span; a plain insert still fails", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			const executor = makeWarehouseExecutor(failingInsertDeps(99, 520, { count: 0 }))
+			const ingestBoth = Effect.gen(function* () {
+				const bestEffort = yield* executor
+					.ingest(tenant, "audit_log", [{ OrgId: "org_test" }], { bestEffort: true })
+					.pipe(Effect.exit)
+				const plain = yield* executor
+					.ingest(tenant, "audit_log", [{ OrgId: "org_test" }])
+					.pipe(Effect.exit)
+				return { bestEffort, plain }
+			}).pipe(Effect.withTracer(tracer))
+			const fiber = yield* Effect.forkChild(ingestBoth)
+			yield* TestClock.adjust(Duration.seconds(5))
+			const { bestEffort, plain } = yield* Fiber.join(fiber)
+
+			assert.isTrue(Exit.isSuccess(bestEffort))
+			assert.isTrue(Exit.isFailure(plain))
+			const inserts = Arr.filter(spans, (span) => span.name === "WarehouseQueryService.insert")
+			const statuses = Arr.map(inserts, (span) =>
+				span.status._tag === "Ended" && Exit.isSuccess(span.status.exit) ? "ok" : "error",
+			)
+			assert.deepStrictEqual(statuses, ["ok", "error"])
+			assert.strictEqual(
+				Arr.getUnsafe(inserts, 0).attributes.get("error.type"),
+				"@maple/http/errors/WarehouseUpstreamError",
+			)
+		}),
+	)
+
 	it.effect("wraps capability metadata probes in an attributed Client span", () =>
 		Effect.gen(function* () {
 			const { spans, tracer } = makeRecordingTracer()
@@ -312,8 +423,11 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 				)
 				.pipe(Effect.withTracer(tracer))
 
-			const span = spans.find(
-				(candidate) => candidate.name === "WarehouseQueryService.inspectCapabilities",
+			const span = Option.getOrThrow(
+				Arr.findFirst(
+					spans,
+					(candidate) => candidate.name === "WarehouseQueryService.inspectCapabilities",
+				),
 			)
 			assert.isDefined(span)
 			assert.strictEqual(span.kind, "client")
@@ -350,7 +464,9 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 
 			assert.strictEqual(exit._tag, "Failure")
 			assert.strictEqual(attempts, 3)
-			const span = spans.find((candidate) => candidate.name === "WarehouseQueryService.executeSql")
+			const span = Option.getOrThrow(
+				Arr.findFirst(spans, (candidate) => candidate.name === "WarehouseQueryService.executeSql"),
+			)
 			assert.isDefined(span)
 			assert.strictEqual(span.attributes.get("db.retry.attempts"), 2)
 		}),
@@ -433,8 +549,8 @@ describe("makeWarehouseExecutor compiled-query defaults", () => {
 			yield* executor.compiledQuery(tenant, untaggedCompiled, { context: "test" })
 			// aggregation = { maxExecutionTime: 30, maxMemoryUsage: 4GB }; previously a
 			// profile-less call emitted no SETTINGS clause at all.
-			assert.isTrue(sqls[0]?.includes("max_execution_time=30"))
-			assert.isTrue(sqls[0]?.includes("max_memory_usage=4000000000"))
+			assert.isTrue(Str.includes("max_execution_time=30")(Option.getOrThrow(Arr.head(sqls))))
+			assert.isTrue(Str.includes("max_memory_usage=4000000000")(Option.getOrThrow(Arr.head(sqls))))
 		}),
 	)
 
@@ -445,8 +561,8 @@ describe("makeWarehouseExecutor compiled-query defaults", () => {
 				makeRecordingDeps({ config: clickhouseConfig, clientCacheKey: "read:org_test" }, sqls),
 			)
 			yield* executor.compiledQuery(tenant, untaggedCompiled, { context: "test", profile: "list" })
-			assert.isTrue(sqls[0]?.includes("max_execution_time=15"))
-			assert.isFalse(sqls[0]?.includes("max_execution_time=30"))
+			assert.isTrue(Str.includes("max_execution_time=15")(Option.getOrThrow(Arr.head(sqls))))
+			assert.isFalse(Str.includes("max_execution_time=30")(Option.getOrThrow(Arr.head(sqls))))
 		}),
 	)
 
@@ -515,7 +631,7 @@ describe("makeWarehouseExecutor wire format", () => {
 			)
 			yield* executor.compiledQuery(tenant, compiled, { context: "test", profile: "list" })
 			assert.lengthOf(sqls, 1)
-			return sqls[0]!
+			return Arr.getUnsafe(sqls, 0)
 		})
 
 	it.effect("declares FORMAT in the statement for the Tinybird SDK backend", () =>
@@ -523,7 +639,10 @@ describe("makeWarehouseExecutor wire format", () => {
 			const sql = yield* runOn(tinybirdConfig)
 			assert.match(sql, /\nFORMAT JSON$/)
 			// SETTINGS must precede FORMAT — Tinybird rejects the inverse order.
-			assert.isTrue(sql.indexOf("SETTINGS") < sql.indexOf("FORMAT JSON"))
+			assert.isTrue(
+				Option.getOrThrow(Str.indexOf("SETTINGS")(sql)) <
+					Option.getOrThrow(Str.indexOf("FORMAT JSON")(sql)),
+			)
 		}),
 	)
 
@@ -552,7 +671,9 @@ describe("makeWarehouseExecutor query fingerprint", () => {
 				makeRecordingDeps({ config, clientCacheKey: "read:managed" }, []),
 			)
 			yield* executor.compiledQuery(tenant, compiled, options).pipe(Effect.withTracer(tracer))
-			const span = spans.find((candidate) => candidate.name === "WarehouseQueryService.executeSql")
+			const span = Option.getOrThrow(
+				Arr.findFirst(spans, (candidate) => candidate.name === "WarehouseQueryService.executeSql"),
+			)
 			assert.isDefined(span)
 			return span.attributes.get("db.query.fingerprint") as string
 		})
@@ -616,7 +737,7 @@ describe("makeWarehouseExecutor restricted-settings strip", () => {
 				settings: { maxBlockSize: 512 },
 			})
 			assert.lengthOf(sqls, 1)
-			assert.isFalse(sqls[0]?.includes("max_block_size"))
+			assert.isFalse(Str.includes("max_block_size")(Option.getOrThrow(Arr.head(sqls))))
 		}),
 	)
 
@@ -630,7 +751,7 @@ describe("makeWarehouseExecutor restricted-settings strip", () => {
 				context: "test",
 				settings: { maxBlockSize: 512 },
 			})
-			assert.isTrue(sqls[0]?.includes("max_block_size=512"))
+			assert.isTrue(Str.includes("max_block_size=512")(Option.getOrThrow(Arr.head(sqls))))
 		}),
 	)
 
@@ -644,7 +765,7 @@ describe("makeWarehouseExecutor restricted-settings strip", () => {
 				context: "test",
 				settings: { maxBlockSize: 512 },
 			})
-			assert.isFalse(sqls[0]?.includes("max_block_size"))
+			assert.isFalse(Str.includes("max_block_size")(Option.getOrThrow(Arr.head(sqls))))
 		}),
 	)
 
@@ -658,7 +779,7 @@ describe("makeWarehouseExecutor restricted-settings strip", () => {
 				context: "test",
 				settings: { maxBlockSize: 512 },
 			})
-			assert.isTrue(sqls[0]?.includes("max_block_size=512"))
+			assert.isTrue(Str.includes("max_block_size=512")(Option.getOrThrow(Arr.head(sqls))))
 		}),
 	)
 })
@@ -955,8 +1076,8 @@ describe("makeWarehouseExecutor capability-aware compilation", () => {
 			)
 
 			assert.lengthOf(executed, 1)
-			assert.include(executed[0]!, "'scan' = 'scan'")
-			assert.notInclude(executed[0]!, "enable_full_text_index")
+			assert.include(executed[0], "'scan' = 'scan'")
+			assert.notInclude(executed[0], "enable_full_text_index")
 		}),
 	)
 
@@ -1005,11 +1126,13 @@ describe("makeWarehouseExecutor capability-aware compilation", () => {
 
 			// The tokenbf prefilter is selected because `logs.idx_lower_body` is in
 			// the deployed schema — the whole point of resolving statically.
-			const executed = sqls.find((sql) => Str.includes("FROM logs WHERE")(sql))
+			const executed = Option.getOrThrow(
+				Arr.findFirst(sqls, (sql) => Str.includes("FROM logs WHERE")(sql)),
+			)
 			assert.isDefined(executed)
-			assert.include(executed!, "'tokenbf' = 'tokenbf'")
+			assert.include(executed, "'tokenbf' = 'tokenbf'")
 			// Managed backends reject inline setting overrides, so no text plan.
-			assert.notInclude(executed!, "enable_full_text_index")
+			assert.notInclude(executed, "enable_full_text_index")
 			assert.isEmpty(Arr.filter(sqls, (sql) => Str.includes("system.")(sql)))
 		}),
 	)
@@ -1067,7 +1190,7 @@ describe("makeWarehouseExecutor capability-aware compilation", () => {
 			yield* TestClock.adjust(Duration.seconds(3))
 			assert.strictEqual(yield* Ref.get(outcome), "success")
 			assert.lengthOf(executed, 1)
-			assert.include(executed[0]!, "'scan' = 'scan'")
+			assert.include(executed[0], "'scan' = 'scan'")
 		}),
 	)
 
@@ -1126,12 +1249,15 @@ describe("makeWarehouseExecutor capability-aware compilation", () => {
 				}),
 			)
 
-			const executed = sqls.find(
-				(sql) => Str.includes("FROM logs")(sql) && Str.includes("hasAllTokens")(sql),
+			const executed = Option.getOrThrow(
+				Arr.findFirst(
+					sqls,
+					(sql) => Str.includes("FROM logs")(sql) && Str.includes("hasAllTokens")(sql),
+				),
 			)
 			assert.isDefined(executed)
-			assert.include(executed!, "Body ILIKE '%Upstream Connection Timeout Reached%'")
-			assert.include(executed!, "enable_full_text_index=1")
+			assert.include(executed, "Body ILIKE '%Upstream Connection Timeout Reached%'")
+			assert.include(executed, "enable_full_text_index=1")
 		}),
 	)
 })
@@ -1149,7 +1275,7 @@ describe("makeWarehouseExecutor SQL normalization", () => {
 			)
 			yield* executor.compiledQuery(tenant, compiled, { context: "test" })
 			assert.isTrue(Str.endsWith("FORMAT JSON")(Str.trimEnd(compiled.sql)))
-			assert.isFalse(sqls[0]?.includes("FORMAT JSON"))
+			assert.isFalse(Str.includes("FORMAT JSON")(Option.getOrThrow(Arr.head(sqls))))
 		}),
 	)
 
@@ -1160,7 +1286,7 @@ describe("makeWarehouseExecutor SQL normalization", () => {
 				makeRecordingDeps({ config: tinybirdGatewayConfig, clientCacheKey: "read:managed" }, sqls),
 			)
 			yield* executor.compiledQuery(tenant, compiled, { context: "test" })
-			assert.isFalse(sqls[0]?.includes("FORMAT JSON"))
+			assert.isFalse(Str.includes("FORMAT JSON")(Option.getOrThrow(Arr.head(sqls))))
 		}),
 	)
 
@@ -1171,7 +1297,7 @@ describe("makeWarehouseExecutor SQL normalization", () => {
 				makeRecordingDeps({ config: tinybirdConfig, clientCacheKey: "read:managed" }, sqls),
 			)
 			yield* executor.compiledQuery(tenant, compiled, { context: "test" })
-			assert.isTrue(Str.endsWith("FORMAT JSON")(sqls[0]?.trimEnd()))
+			assert.isTrue(Str.endsWith("FORMAT JSON")(Str.trimEnd(Option.getOrThrow(Arr.head(sqls)))))
 		}),
 	)
 })

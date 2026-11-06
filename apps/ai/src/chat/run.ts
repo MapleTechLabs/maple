@@ -86,8 +86,7 @@ export const promptFromHistory = (history: ReadonlyArray<ChatMessage>): Readonly
 	// Walk backwards so the newest turns are the ones kept — the tail is what the next turn needs.
 	const kept: Array<ChatMessage> = []
 	let chars = 0
-	for (let i = spoken.length - 1; i >= 0; i--) {
-		const message = spoken[i]!
+	for (const message of Arr.reverse(spoken)) {
 		if (kept.length >= MAX_REPLAYED_MESSAGES) break
 		if (chars + message.text.length > MAX_REPLAYED_CHARS && kept.length > 0) break
 		chars += message.text.length
@@ -102,7 +101,7 @@ export const promptFromHistory = (history: ReadonlyArray<ChatMessage>): Readonly
 }
 
 /** The `n` of a program call's `<program call id>#<n>`: the order the program made its calls in. */
-const programCallIndex = (callId: string): number => Number(Str.slice(callId.lastIndexOf("#") + 1)(callId))
+const programCallIndex = (callId: string): number => Number(Arr.lastNonEmpty(Str.split("#")(callId)))
 
 /** One replayed turn, in the shape `Prompt.make` accepts. */
 export interface PromptMessage {
@@ -423,10 +422,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 			),
 		),
 		// The gate's refusal is how a run stops on a proposal: the turn finished, it did not fail.
-		Effect.catchIf(
-			(error) => error instanceof ApprovalRequired,
-			() => Effect.void,
-		),
+		Effect.catchIf(Schema.is(ApprovalRequired), () => Effect.void),
 		// A landed submission makes any later failure moot, defects included; only an abort stays one.
 		Effect.catchCause((cause) =>
 			!submitted() || !input.holdsTurn()

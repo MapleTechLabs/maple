@@ -1,3 +1,4 @@
+import { isManagedSignalType } from "@maple/domain/http"
 import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
 import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
 import { Option, Array as Arr } from "effect"
@@ -14,15 +15,17 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { linkTabStrip } from "../../kit/underline-tabs"
 import { alertsHref, createHref } from "../shared/links"
+import { newSloHref } from "../shared/slo-commands"
 import { type AlertsTab, destinationsOf, overviewOf, resolveStatus, resolveTab } from "./derive"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { alertsEmptyState } from "./view-empty"
-import { inboxTab } from "./view-inbox"
+import { inboxTab, unacknowledgedCount } from "./view-inbox"
 import { routingTab } from "./view-routing"
 import * as DestinationDialogView from "../destination/view"
 import { rulesTab } from "./view-rules"
 import { deleteMonitorDialog, uptimeTab } from "./view-uptime"
+import { slosTab } from "./view-slos"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `AlertsPage` and `AlertsHub`: the `/alerts` page and its tabs.
@@ -33,6 +36,7 @@ const ALERTS_TABS: ReadonlyArray<{ value: AlertsTab; label: string }> = [
 	{ value: "inbox", label: "Inbox" },
 	{ value: "rules", label: "Rules" },
 	{ value: "uptime", label: "Uptime" },
+	{ value: "slos", label: "SLOs" },
 	{ value: "routing", label: "Routing" },
 ]
 
@@ -45,6 +49,7 @@ const tabBar = (
 	active: AlertsTab,
 ): Html => {
 	const monitorCount = Option.map(AsyncData.getData(model.monitors.data), (monitors) => monitors.length)
+	const sloCount = Option.map(AsyncData.getData(model.slos.data), (slos) => slos.length)
 	return linkTabStrip(
 		h,
 		"Alerts sections",
@@ -52,15 +57,17 @@ const tabBar = (
 			const count =
 				tab.value === "uptime"
 					? Option.getOrUndefined(monitorCount)
-					: Option.match(overview, {
-							onNone: () => undefined,
-							onSome: (data) =>
-								tab.value === "inbox"
-									? data.openIncidents.length
-									: tab.value === "rules"
-										? data.rules.length
-										: undefined,
-						})
+					: tab.value === "slos"
+						? Option.getOrUndefined(sloCount)
+						: Option.match(overview, {
+								onNone: () => undefined,
+								onSome: (data) =>
+									tab.value === "inbox"
+										? unacknowledgedCount(data.openIncidents)
+										: tab.value === "rules"
+											? data.rules.length
+											: undefined,
+							})
 			return {
 				key: tab.value,
 				href: alertsHref({ ...model.search, tab: tab.value }),
@@ -122,7 +129,7 @@ const newRuleButton = (h: H, model: Model): Html =>
 							"Error rate, latency or any query on traces, logs and metrics.",
 						),
 						// Uptime monitors are admin-only to create; the API refuses members too.
-						...(model.isAdmin
+						...(canManage(model)
 							? [
 									newRuleItem(
 										h,
@@ -130,6 +137,13 @@ const newRuleButton = (h: H, model: Model): Html =>
 										"Uptime check",
 										"GlobeIcon",
 										"Check a URL, port, DNS record or cron job from outside.",
+									),
+									newRuleItem(
+										h,
+										"slo",
+										"SLO",
+										"GaugeIcon",
+										"An error budget on a service's availability or latency, with burn-rate alerts.",
 									),
 								]
 							: []),
@@ -158,10 +172,27 @@ const newRuleButton = (h: H, model: Model): Html =>
 		],
 	)
 
-// Destinations are a Routing concern, so "New destination" only shows on that tab.
+/** The SLOs tab lists some; the empty one offers "New SLO" itself. */
+const hasSlos = (model: Model): boolean =>
+	Option.exists(AsyncData.getData(model.slos.data), (rows) => rows.length > 0)
+
+// Destinations are a Routing concern, so "New destination" only shows on that tab; "New SLO" likewise.
 const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
 	hstack(h, { gap: "2" }, [
-		...(model.isAdmin && tab === "routing"
+		...(canManage(model) && tab === "slos" && hasSlos(model)
+			? [
+					linkButton(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							href: newSloHref({ serviceName: model.search.serviceName }),
+						},
+						[icon(h, "PlusIcon"), "New SLO"],
+					),
+				]
+			: []),
+		...(canManage(model) && tab === "routing"
 			? [
 					button(
 						h,
@@ -213,18 +244,23 @@ const hubBody = (
 		onSome: (data) => {
 			const destinations = destinationsOf(model)
 			const emptyState = alertsEmptyState(h, {
-				isAdmin: model.isAdmin,
+				canEdit: canManage(model),
 				hasDestinations: destinations.length > 0,
 				serviceName: model.search.serviceName,
-				onAddDestination: model.isAdmin ? Message.ClickedNewDestination() : undefined,
+				onAddDestination: canManage(model) ? Message.ClickedNewDestination() : undefined,
 			})
-			// An org with only uptime monitors has no visible rules but may have open incidents to show.
-			const hasUptimeIncidents = Arr.some(
-				data.openIncidents,
-				(incident) => incident.signalType === "uptime",
+			// An org with only monitors or SLOs has no visible rules but may have open incidents to show.
+			const hasManagedIncidents = Arr.some(data.openIncidents, (incident) =>
+				isManagedSignalType(incident.signalType),
 			)
 			if (tab === "inbox")
-				return data.rules.length === 0 && !hasUptimeIncidents ? emptyState : inboxTab(h, data)
+				return data.rules.length === 0 && !hasManagedIncidents
+					? emptyState
+					: inboxTab(h, data, {
+							onAcknowledge: (incidentId, acknowledged) =>
+								Message.ClickedAcknowledgeIncident({ incidentId, acknowledged }),
+							pendingIds: model.acknowledgingIncidentIds,
+						})
 			return rulesTab(h, model, {
 				data,
 				destinations,
@@ -235,12 +271,18 @@ const hubBody = (
 	})
 
 const deleteDialog = (h: H, model: Model): Html => {
-	const target = (model.destinations ?? []).find((row) => row.id === model.confirmDeleteId)
+	const targetName = Option.getOrElse(
+		Option.flatMapNullishOr(
+			Arr.findFirst(model.destinations ?? [], (row) => row.id === model.confirmDeleteId),
+			(row) => row.name,
+		),
+		() => "destination",
+	)
 	return confirmDialog(h, {
 		slotId: "alerts-delete-destination",
 		model: model.deleteDialog,
 		toParentMessage: (message) => Message.GotDeleteDialogMessage({ message }),
-		title: `Delete ${target?.name ?? "destination"}?`,
+		title: `Delete ${targetName}?`,
 		description: "Alert rules will stop notifying this destination. This cannot be undone.",
 		confirmLabel: "Delete destination",
 		isPending:
@@ -271,7 +313,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							})
 						: tab === "uptime"
 							? uptimeTab(h, model, model.nowMs ?? 0, inputs.context.pinnedNamespace)
-							: hubBody(h, model, overview, tab),
+							: tab === "slos"
+								? slosTab(h, model)
+								: hubBody(h, model, overview, tab),
 				],
 			),
 			deleteDialog(h, model),

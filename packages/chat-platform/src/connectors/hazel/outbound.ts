@@ -50,8 +50,9 @@ import {
 	type HazelLiveBody,
 	type HazelMessageBody,
 } from "./render"
+import { replaceWith } from "@maple/strings"
 
-const botToken = (config: ConnectorConfig): Redacted.Redacted<string> =>
+const botToken = (config: ConnectorConfig): Redacted.Redacted =>
 	Redacted.make(config.get(BOT_TOKEN_CONFIG) ?? "")
 
 /** Under the renderer's own clamp, so a connector's decoration has somewhere to go. */
@@ -170,14 +171,16 @@ interface Person {
 const MENTION = /@\[userId:([0-9a-f-]{36})\]/gu
 
 const mentionedIds = (text: string): ReadonlyArray<string> =>
-	Arr.flatMap(Array.from(text.matchAll(MENTION)), (match) => (match[1] === undefined ? [] : [match[1]]))
+	Arr.flatMap(Array.from(Str.matchAll(MENTION)(text)), (match) =>
+		match[1] === undefined ? [] : [match[1]],
+	)
 
 /**
  * A conversation's key: the channel (or thread) id without its dashes, which the key's charset
  * refuses. Hazel ids are UUIDs, so nothing is lost.
  */
 const decodeConversationKey = (channelId: string) =>
-	Schema.decodeUnknownOption(ChatConversationKey)(Str.replaceAll("-", "")(channelId))
+	Schema.decodeOption(ChatConversationKey)(Str.replaceAll("-", "")(channelId))
 
 /** The thread when the turn is in one, the channel otherwise — on Hazel both are channel ids. */
 const channelOf = (target: ChatTarget): string => target.threadId ?? target.channelId
@@ -207,7 +210,7 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 		const token = Effect.map(credentials, botToken)
 
 		const attempt = Effect.fn("Hazel.request", { kind: "client" })(function* (
-			bearer: Redacted.Redacted<string>,
+			bearer: Redacted.Redacted,
 			operation: ChatOutboundOperation,
 			route: string,
 			request: HttpClientRequest.HttpClientRequest,
@@ -275,7 +278,7 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 			response.json.pipe(
 				Effect.mapError((cause) => failed(operation, "Hazel's reply could not be read", { cause })),
 				Effect.flatMap((json) =>
-					Schema.decodeUnknownEffect(schema)(json).pipe(
+					Schema.decodeEffect(schema)(json).pipe(
 						Effect.mapError(() => failed(operation, `Hazel answered with ${what}`)),
 					),
 				),
@@ -515,9 +518,10 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 						return Option.some({
 							displayName: author?.displayName ?? "Someone",
 							isBot: author?.isBot ?? false,
-							text: message.content.replace(
+							text: replaceWith(
+								message.content,
 								MENTION,
-								(_, id: string) => `@${names.get(id)?.displayName ?? "someone"}`,
+								(_, id = "") => `@${names.get(id)?.displayName ?? "someone"}`,
 							),
 							at,
 						})
@@ -630,7 +634,7 @@ const retryAfter = (response: HttpClientResponse.HttpClientResponse) =>
  * is the default rather than zero, which would retry at once into the same limit.
  */
 export const headerRetryAfter = (value: string | undefined, now: number): Duration.Duration => {
-	const trimmed = value?.trim() ?? ""
+	const trimmed = value === undefined ? "" : Str.trim(value)
 	if (trimmed === "") return DEFAULT_RETRY_AFTER
 	if (/^\d+$/u.test(trimmed)) return Duration.seconds(Number(trimmed))
 	const at = Date.parse(trimmed)

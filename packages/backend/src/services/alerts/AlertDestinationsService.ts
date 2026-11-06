@@ -22,6 +22,10 @@ import {
 	type OrgId,
 	type UserId,
 	parseGoogleChatWebhookUrl,
+	isIncidentIoAlertSourceId,
+	parseTeamsWorkflowWebhookUrl,
+	TEAMS_WEBHOOK_URL_PROBLEM_MESSAGES,
+	teamsWebhookUrlProblem,
 } from "@maple/domain/http"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -39,6 +43,7 @@ import {
 	type LinearOAuthServiceApi,
 	type LinearTeam,
 } from "@maple/backend/services/auth/LinearOAuthService"
+import * as Policy from "@maple/domain/policy"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makePersistenceError } from "./alert-persistence"
 import {
@@ -68,16 +73,13 @@ const decodeAlertDestinationIdSync = Schema.decodeUnknownSync(AlertDestinationDo
 const decodeAlertDestinationTypeSync = Schema.decodeUnknownSync(AlertDestinationTypeSchema)
 const decodeAlertRuleIdSync = Schema.decodeUnknownSync(AlertRuleDocument.fields.id)
 const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(AlertDestinationDocument.fields.createdAt)
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
 const isoFromMs = (ms: number) => decodeIsoDateTimeStringSync(new Date(ms).toISOString())
-
-const adminRoles = [decodeRoleNameSync("root"), decodeRoleNameSync("org:admin")]
 
 const makeValidationError = (message: string, details: ReadonlyArray<string> = [], cause?: unknown) =>
 	new AlertValidationError({ message, details, ...(!(cause === undefined) ? { cause } : undefined) })
 
 const normalizeOptionalString = (value: string | null | undefined) => {
-	const trimmed = value?.trim()
+	const trimmed = value == null ? undefined : Str.trim(value)
 	return trimmed && trimmed.length > 0 ? trimmed : null
 }
 
@@ -169,6 +171,31 @@ const validateGoogleChatWebhookUrl = (rawUrl: string): Effect.Effect<string, Ale
 				),
 			)
 
+/** The workflow id is not a secret; the `sig` query parameter is. */
+const teamsSummary = (webhookUrl: string) =>
+	Option.match(parseTeamsWorkflowWebhookUrl(webhookUrl), {
+		onNone: () => "Teams workflow",
+		onSome: ({ workflowId }) => `Workflow ${Str.slice(0, 8)(workflowId)}…`,
+	})
+
+const validateTeamsWebhookUrl = (rawUrl: string): Effect.Effect<string, AlertValidationError> => {
+	const problem = teamsWebhookUrlProblem(rawUrl)
+	return problem === null
+		? validateDestinationUrl(rawUrl, "webhookUrl")
+		: Effect.fail(makeValidationError(TEAMS_WEBHOOK_URL_PROBLEM_MESSAGES[problem]))
+}
+
+const incidentIoSummary = (alertSourceConfigId: string) => `Alert source ${Str.trim(alertSourceConfigId)}`
+
+const validateIncidentIoAlertSourceId = (id: string): Effect.Effect<void, AlertValidationError> =>
+	isIncidentIoAlertSourceId(id)
+		? Effect.void
+		: Effect.fail(
+				makeValidationError(
+					"incident.io alert source config ID must be the last part of the source's URL, e.g. `01GW2G3V0S59R238FAHPDS1R66`.",
+				),
+			)
+
 /** A chat id is not a secret, but it is also not a name — label it as what it is. */
 const telegramSummary = (chatId: string) => `Chat ${Str.trim(chatId)}`
 
@@ -201,6 +228,12 @@ const buildPublicConfig = (
 			// — without that, renaming a destination would demand retyping the id.
 			telegram: (r) => ({ summary: telegramSummary(r.chatId), channelLabel: Str.trim(r.chatId) }),
 			"google-chat": (r) => ({ summary: googleChatSummary(r.webhookUrl), channelLabel: null }),
+			"microsoft-teams": (r) => ({ summary: teamsSummary(r.webhookUrl), channelLabel: null }),
+			// The config id is not a secret; it rides in `channelLabel` so an edit can prefill it.
+			"incident-io": (r) => ({
+				summary: incidentIoSummary(r.alertSourceConfigId),
+				channelLabel: Str.trim(r.alertSourceConfigId),
+			}),
 		}),
 	)
 
@@ -222,6 +255,15 @@ const buildSecretConfig = (
 				chatId: Str.trim(r.chatId),
 			}),
 			"google-chat": (r) => ({ type: "google-chat" as const, webhookUrl: Str.trim(r.webhookUrl) }),
+			"microsoft-teams": (r) => ({
+				type: "microsoft-teams" as const,
+				webhookUrl: Str.trim(r.webhookUrl),
+			}),
+			"incident-io": (r) => ({
+				type: "incident-io" as const,
+				alertSourceConfigId: Str.trim(r.alertSourceConfigId),
+				token: Str.trim(r.token),
+			}),
 		}),
 	)
 
@@ -383,15 +425,19 @@ export class AlertDestinationsService extends Context.Service<
 
 		const dbExecute = makeDbExecute(database, "AlertDestinationsService", makePersistenceError)
 
-		const requireAdmin = Effect.fn("AlertDestinationsService.requireAdmin")(function* (
-			roles: ReadonlyArray<RoleName>,
-		) {
-			if (roles.some((role) => adminRoles.includes(role))) return
-			return yield* new AlertForbiddenError({
-				message: "Only org admins can manage alerts",
-				...(roles.length > 0 ? { roles: [...roles] } : undefined),
-			})
-		})
+		const requireAlertsPermission = Effect.fn("AlertDestinationsService.requireAlertsPermission")(
+			function* (roles: ReadonlyArray<RoleName>) {
+				return yield* Policy.check(
+					roles,
+					"alerts:manage",
+					(denial) =>
+						new AlertForbiddenError({
+							message: denial.message,
+							...(roles.length > 0 ? { roles: [...roles] } : undefined),
+						}),
+				)
+			},
+		)
 
 		const requireDestinationRow = Effect.fn("AlertDestinationsService.requireDestinationRow")(function* (
 			orgId: OrgId,
@@ -405,7 +451,7 @@ export class AlertDestinationsService extends Context.Service<
 						.limit(1),
 				),
 			)
-			if (rows[0]) return rows[0]
+			if (rows[0] !== undefined) return rows[0]
 			return yield* new AlertDestinationNotFoundError({
 				message: "Alert destination not found",
 				destinationId,
@@ -512,10 +558,10 @@ export class AlertDestinationsService extends Context.Service<
 		const listTelegramChats: AlertDestinationsServiceApi["listTelegramChats"] = Effect.fn(
 			"AlertDestinationsService.listTelegramChats",
 		)(function* (roles, botToken) {
-			// Admin-gated for the same reason a chat workspace's channel list is: it reads
+			// Gated for the same reason a chat workspace's channel list is: it reads
 			// somebody's chat inventory, and it accepts an arbitrary token, so it
 			// must not be a probe any org member can drive.
-			yield* requireAdmin(roles)
+			yield* requireAlertsPermission(roles)
 			const trimmed = botToken.trim()
 			if (!TELEGRAM_BOT_TOKEN_PATTERN.test(trimmed)) {
 				return yield* makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE)
@@ -530,11 +576,15 @@ export class AlertDestinationsService extends Context.Service<
 		const createDestination: AlertDestinationsServiceApi["createDestination"] = Effect.fn(
 			"AlertDestinationsService.createDestination",
 		)(function* (orgId, userId, roles, request) {
-			yield* requireAdmin(roles)
+			yield* requireAlertsPermission(roles)
 			if (request.type === "webhook") yield* validateDestinationUrl(request.url, "url")
 			else if (request.type === "discord") {
 				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
 			} else if (request.type === "google-chat") yield* validateGoogleChatWebhookUrl(request.webhookUrl)
+			else if (request.type === "microsoft-teams") yield* validateTeamsWebhookUrl(request.webhookUrl)
+			else if (request.type === "incident-io") {
+				yield* validateIncidentIoAlertSourceId(request.alertSourceConfigId)
+			}
 			const destinationId = decodeAlertDestinationIdSync(runtime.makeUuid())
 			let publicConfig: DestinationPublicConfig
 			let secretConfig: DestinationSecretConfig
@@ -604,7 +654,7 @@ export class AlertDestinationsService extends Context.Service<
 		const updateDestination: AlertDestinationsServiceApi["updateDestination"] = Effect.fn(
 			"AlertDestinationsService.updateDestination",
 		)(function* (orgId, userId, roles, destinationId, request) {
-			yield* requireAdmin(roles)
+			yield* requireAlertsPermission(roles)
 			const existing = yield* requireDestinationRow(orgId, destinationId)
 			if (existing.type !== request.type) {
 				return yield* makeValidationError("Destination type cannot be changed")
@@ -624,6 +674,17 @@ export class AlertDestinationsService extends Context.Service<
 				request.webhookUrl.trim().length > 0
 			) {
 				yield* validateGoogleChatWebhookUrl(request.webhookUrl)
+			} else if (
+				request.type === "microsoft-teams" &&
+				request.webhookUrl != null &&
+				request.webhookUrl.trim().length > 0
+			) {
+				yield* validateTeamsWebhookUrl(request.webhookUrl)
+			} else if (
+				request.type === "incident-io" &&
+				normalizeOptionalString(request.alertSourceConfigId) != null
+			) {
+				yield* validateIncidentIoAlertSourceId(request.alertSourceConfigId ?? "")
 			}
 
 			const { nextPublicConfig, nextSecretConfig } = yield* Match.value(request).pipe(
@@ -699,6 +760,56 @@ export class AlertDestinationsService extends Context.Service<
 									(hydrated.secretConfig.type === "google-chat"
 										? hydrated.secretConfig.webhookUrl
 										: ""),
+							} satisfies DestinationSecretConfig,
+						})
+					},
+					"microsoft-teams": (r) => {
+						const nextUrl = normalizeOptionalString(r.webhookUrl)
+						return Effect.succeed({
+							nextPublicConfig: {
+								summary:
+									nextUrl != null ? teamsSummary(nextUrl) : hydrated.publicConfig.summary,
+								channelLabel: null,
+							} satisfies DestinationPublicConfig,
+							nextSecretConfig: {
+								type: "microsoft-teams" as const,
+								webhookUrl:
+									nextUrl ??
+									(hydrated.secretConfig.type === "microsoft-teams"
+										? hydrated.secretConfig.webhookUrl
+										: ""),
+							} satisfies DestinationSecretConfig,
+						})
+					},
+					"incident-io": (r) => {
+						const previous =
+							hydrated.secretConfig.type === "incident-io" ? hydrated.secretConfig : null
+						const nextId = normalizeOptionalString(r.alertSourceConfigId)
+						const nextToken = normalizeOptionalString(r.token)
+						// Each alert source has its own token, so a moved id cannot keep the old one.
+						if (
+							nextId !== null &&
+							nextId !== previous?.alertSourceConfigId &&
+							nextToken === null
+						) {
+							return Effect.fail(
+								makeValidationError(
+									"A different incident.io alert source needs its own token. Paste it too.",
+								),
+							)
+						}
+						return Effect.succeed({
+							nextPublicConfig: {
+								summary:
+									nextId != null
+										? incidentIoSummary(nextId)
+										: hydrated.publicConfig.summary,
+								channelLabel: nextId ?? hydrated.publicConfig.channelLabel,
+							} satisfies DestinationPublicConfig,
+							nextSecretConfig: {
+								type: "incident-io" as const,
+								alertSourceConfigId: nextId ?? previous?.alertSourceConfigId ?? "",
+								token: nextToken ?? previous?.token ?? "",
 							} satisfies DestinationSecretConfig,
 						})
 					},
@@ -885,7 +996,7 @@ export class AlertDestinationsService extends Context.Service<
 		const deleteDestination: AlertDestinationsServiceApi["deleteDestination"] = Effect.fn(
 			"AlertDestinationsService.deleteDestination",
 		)(function* (orgId, roles, destinationId) {
-			yield* requireAdmin(roles)
+			yield* requireAlertsPermission(roles)
 			yield* requireDestinationRow(orgId, destinationId)
 			const dependentRules = yield* dbExecute((db) =>
 				db.run(
@@ -967,7 +1078,7 @@ export class AlertDestinationsService extends Context.Service<
 		const testDestination: AlertDestinationsServiceApi["testDestination"] = Effect.fn(
 			"AlertDestinationsService.testDestination",
 		)(function* (orgId, _userId, roles, destinationId) {
-			yield* requireAdmin(roles)
+			yield* requireAlertsPermission(roles)
 			const row = yield* requireDestinationRow(orgId, destinationId)
 			const sent = yield* delivery
 				.sendImmediateNotification(row, {

@@ -64,6 +64,10 @@ export const dashboardViewParamsSchema = {
 	tab: Schema.optional(Schema.String),
 	widget: Schema.optional(Schema.String),
 	refresh: Schema.optional(Schema.Union([Schema.Number, Schema.String])),
+	/** This viewer's time range; read leniently by `timeRangeFromSearch`, so a bad value is ignored. */
+	range: Schema.optional(Schema.Unknown),
+	from: Schema.optional(Schema.Unknown),
+	to: Schema.optional(Schema.Unknown),
 }
 
 // Agent tool analytics and search
@@ -360,6 +364,14 @@ export const AlertsUptimeNewSearch = Schema.Struct({
 
 export const AlertsUptimeMonitorSearch = Schema.Struct({})
 
+/** `/alerts/slos/new`: `sloId` edits that SLO; `serviceName` prefills a new one. */
+export const AlertsSloNewSearch = Schema.Struct({
+	sloId: Schema.optional(Schema.String),
+	serviceName: Schema.optional(Schema.String),
+})
+
+export const AlertsSloSearch = Schema.Struct({})
+
 /** `/settings/ingestion/rules/new`: `template` prefills the editor from an empty-state template. */
 export const IngestRuleNewSearch = Schema.Struct({
 	template: Schema.optional(Schema.String),
@@ -418,7 +430,9 @@ export const InvestigationSearch = Schema.Struct({
 // sessionTimeRangeSearchMiddleware()
 export const MetricSearch = Schema.Struct({
 	type: Schema.optional(Schema.Literals(QUERY_BUILDER_METRIC_TYPES)),
-	agg: Schema.optional(Schema.Literals(["avg", "sum", "min", "max", "count", "rate", "increase"])),
+	agg: Schema.optional(
+		Schema.Literals(["avg", "sum", "min", "max", "count", "latest", "rate", "increase"]),
+	),
 	where: Schema.optional(Schema.String),
 	groupBy: Schema.optional(Schema.String),
 	step: Schema.optional(Schema.String),
@@ -453,6 +467,8 @@ export const ShareSearch = Schema.StructWithRest(
 		from: Schema.optional(Schema.String),
 		to: Schema.optional(Schema.String),
 		range: Schema.optional(Schema.String),
+		/** The link creator's IANA zone; a calendar range ("today", "7d") resolves in it. */
+		tz: Schema.optional(Schema.String),
 		refresh: Schema.optional(Schema.Union([Schema.Number, Schema.String])),
 	}),
 	[variableSearchRest],
@@ -614,6 +630,29 @@ export const ReplaysSearch = Schema.Struct({
 	q: Schema.optional(Schema.String),
 	page: Schema.optional(Schema.String),
 	tags: OptionalStringArrayParam,
+	...TimeRangeSearchFields,
+})
+
+/** `/users`: the directory's search, toggles and facet picks (a pinned namespace overrides `namespaces`). */
+export const UsersSearch = Schema.Struct({
+	q: Schema.optional(Schema.String),
+	hasErrors: BooleanParam,
+	hasReplay: BooleanParam,
+	namespaces: OptionalStringArrayParam,
+	groups: OptionalStringArrayParam,
+	/** `group`: one row per `identify()` group instead of per user. */
+	groupBy: Schema.optional(Schema.Literal("group")),
+	...TimeRangeSearchFields,
+})
+
+/** `/users/$userId`'s tabs; absent in the URL is `activity`. */
+export const USER_DETAIL_TABS = ["activity", "sessions", "mcp", "errors", "traces", "logs", "events"] as const
+export type UserDetailTab = (typeof USER_DETAIL_TABS)[number]
+
+/** `/users/$userId`: the tab and a namespace picked on the page (the org pin overrides it). */
+export const UserDetailSearch = Schema.Struct({
+	tab: Schema.optional(Schema.Literals(USER_DETAIL_TABS)),
+	namespace: Schema.optional(Schema.String),
 	...TimeRangeSearchFields,
 })
 

@@ -21,8 +21,8 @@ export interface InboundHandlerApi {
 }
 
 /** How the handler reaches a conversation's relay. The alchemy namespace client in production; a fake in tests. */
-export interface InboundRelay {
-	readonly deliver: (event: InboundEvent) => Effect.Effect<void, unknown>
+export interface InboundRelay<E = never> {
+	readonly deliver: (event: InboundEvent) => Effect.Effect<void, E>
 }
 
 export class InboundHandler extends Context.Service<InboundHandler, InboundHandlerApi>()(
@@ -56,7 +56,7 @@ const worthRelaying = (message: InboundMessage): boolean =>
 /**
  * The handler over one way of reaching the relay.
  */
-export const inboundHandler = (relay: InboundRelay): InboundHandlerApi => ({
+export const inboundHandler = <E>(relay: InboundRelay<E>): InboundHandlerApi => ({
 	handle: (event) => {
 		const attributes = {
 			"maple.chat.event": event.type,

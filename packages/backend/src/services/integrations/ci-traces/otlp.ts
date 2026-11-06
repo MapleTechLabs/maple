@@ -15,7 +15,7 @@ import {
 	type WorkflowStep,
 } from "@maple/domain/http"
 import { CI_SERVICE_NAME } from "@maple/domain/tinybird"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 export const SCOPE_NAME = "@maple/ci-traces"
 
@@ -106,10 +106,12 @@ export const ciStepName = (name: string) => Str.replace(/@[0-9a-f]{7,40}\b/g, ""
 const failureReason = (annotations: ReadonlyArray<WorkflowJobAnnotation>) => {
 	const failures = Arr.filter(annotations, (annotation) => annotation.level === "failure")
 	const specific = Arr.filter(failures, (annotation) => !GENERIC_EXIT_MESSAGE.test(annotation.message))
-	const reason =
-		specific.find((annotation) => annotation.path !== null || annotation.title !== null) ??
-		specific[0] ??
-		failures[0]
+	const reason = Option.getOrUndefined(
+		Option.orElse(
+			Arr.findFirst(specific, (annotation) => annotation.path !== null || annotation.title !== null),
+			() => Option.orElse(Arr.head(specific), () => Arr.head(failures)),
+		),
+	)
 	if (reason === undefined) return undefined
 	const where =
 		reason.path === null
@@ -185,18 +187,22 @@ export const attrs = (entries: Record<string, string | number | null | undefined
 /** The repository's web URL, from a run or job URL under it (`.../owner/repo/actions/runs/1`). */
 const repositoryUrlOf = (url: string) => {
 	// The last match: a repository may itself be named `actions` or `runs`.
-	const actions = url.lastIndexOf("/actions/runs/")
-	return actions === -1 ? undefined : Str.slice(0, actions)(url)
+	return Option.getOrUndefined(
+		Option.map(Str.lastIndexOf("/actions/runs/")(url), (actions) => Str.slice(0, actions)(url)),
+	)
 }
 
 /** `sourceId` is the installation's pull source, stamped as `maple_source_id` when known. */
 export const resourceOf = (repoFullName: string, url: string, sourceId?: string) => {
-	const slash = repoFullName.indexOf("/")
+	const slash = Str.indexOf("/")(repoFullName)
 	return attrs({
 		"service.name": CI_SERVICE_NAME,
 		"vcs.provider.name": "github",
-		"vcs.owner.name": slash === -1 ? undefined : Str.slice(0, slash)(repoFullName),
-		"vcs.repository.name": slash === -1 ? repoFullName : Str.slice(slash + 1)(repoFullName),
+		"vcs.owner.name": Option.getOrUndefined(Option.map(slash, (at) => Str.slice(0, at)(repoFullName))),
+		"vcs.repository.name": Option.match(slash, {
+			onNone: () => repoFullName,
+			onSome: (at) => Str.slice(at + 1)(repoFullName),
+		}),
 		"vcs.repository.url.full": repositoryUrlOf(url),
 		[SOURCE_ID_ATTRIBUTE]: sourceId,
 	})

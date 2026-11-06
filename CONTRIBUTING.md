@@ -288,6 +288,10 @@ Override it with `MAPLE_TRIAGE_MODEL`.
 > session the API never seeded, and the transcript stays empty forever. Unset it,
 > or set it to your Clerk org id, when working on chat.
 
+In Clerk mode the pin admits a user who is not a member of the pinned org only when
+`MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS=true` and `MAPLE_ENVIRONMENT=development`. `bun dev`
+sets the opt-in for you; set it yourself when you run the API outside the dev stack.
+
 When an autonomous investigation fails to start, the `investigations.error` column names it:
 
 | `error` value                                                    | Cause                                                                               |

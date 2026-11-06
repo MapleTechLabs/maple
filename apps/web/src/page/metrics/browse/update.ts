@@ -88,7 +88,7 @@ const requestSparklines = (model: Model, context: PageContext, mode: RequestMode
 			const metricNames = namesOfType(entries, metricType)
 			if (metricNames.length === 0) return []
 			const { key: slotKey, input } = sparklineRequest(context.orgId, window, metricType, metricNames)
-			const step = keyed(model.sparklines[slotKey] ?? Keyed.idle(), slotKey, mode, (key) =>
+			const step = keyed(Keyed.at(model.sparklines, slotKey), slotKey, mode, (key) =>
 				FetchSparklines({ slot: slotKey, key, input }),
 			)
 			return [{ slotKey, ...step }]

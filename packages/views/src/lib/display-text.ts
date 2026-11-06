@@ -53,14 +53,20 @@ export const capForDisplay = (
 /** At most `limit` characters of `text`, opening just before the first `query` match so it stays visible. */
 export const textWindow = (text: string, query: string | undefined, limit: number): string => {
 	if (text.length <= limit) return text
-	const needle = query?.trim().toLowerCase() ?? ""
-	const hit = needle === "" ? -1 : Str.toLowerCase(text).indexOf(needle)
-	const at = hit === -1 ? 0 : Math.max(0, hit - MATCH_LEAD_CHARS)
+	const needle = query === undefined ? "" : Str.toLowerCase(Str.trim(query))
+	const at =
+		needle === ""
+			? 0
+			: Option.match(Str.indexOf(needle)(Str.toLowerCase(text)), {
+					onNone: () => 0,
+					onSome: (hit) => Math.max(0, hit - MATCH_LEAD_CHARS),
+				})
 	return `${at > 0 ? "…" : ""}${Str.slice(at, at + limit)(text)}${at + limit < text.length ? "…" : ""}`
 }
 
 /** The first `count` lines of `text`. */
-export const headLines = (text: string, count: number): string => Arr.join(text.split("\n", count), "\n")
+export const headLines = (text: string, count: number): string =>
+	Arr.join(Arr.take(Str.split("\n")(text), count), "\n")
 
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 const encodePrettyJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown, { space: 2 }))

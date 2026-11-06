@@ -6,7 +6,9 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Chart from "@maple/views/charts/chart"
 import { ResolveThemeColors, resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
+import { linkButton } from "@maple/views/ui/button"
 import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
 import { pageDescription, pageTitle } from "@maple/views/ui/page-layout"
 import { skeleton } from "@maple/views/ui/skeleton"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
@@ -36,7 +38,15 @@ import { toolBody } from "../view-tool"
 import { overviewOf, serverRows, sessionsScreen, toolOf } from "./data-map"
 import { Message } from "./message"
 import { DEFAULT_MCP_PRESET, type Model } from "./model"
-import { bucketSecondsOf, hrefOfView, shownPreset, tabSearch, widerPreset } from "./update"
+import {
+	bucketSecondsOf,
+	hrefOfView,
+	sessionHref,
+	shownPreset,
+	tabSearch,
+	userHref,
+	widerPreset,
+} from "./update"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
@@ -422,7 +432,8 @@ const sessionsView = (h: H, model: Model, service: string, timeZone: string): Ht
 					scope: scopeText("all sessions", filters),
 					isWaiting: AsyncData.isRefreshing(sessions),
 					isFailingOnly: filters.isFailingOnly,
-					onOpenSession: (sessionId) => Message.ClickedOpenSession({ sessionId }),
+					sessionHref: (sessionId) => sessionHref(service, sessionId, model.search),
+					userHref: (userId) => userHref(userId, model.search),
 					nowMs: model.nowMs,
 					timeZone,
 				}),
@@ -504,6 +515,23 @@ const sessionView = (h: H, model: Model, service: string, sessionId: string, tim
 				[
 					pageTitle(h, { title, className: "truncate font-mono leading-8" }, [title]),
 					pageDescription(h, [description], "text-sm"),
+					...(data === undefined || data.user === null
+						? []
+						: [
+								linkButton(
+									h,
+									{
+										variant: "link",
+										size: "xs",
+										className: "h-auto self-start p-0",
+										href: userHref(data.user, model.search),
+									},
+									[
+										icon(h, "UserIcon", { size: 12 }),
+										`View user ${userLabel ?? data.user}`,
+									],
+								),
+							]),
 				],
 			),
 			actions: timeActions(h, model),

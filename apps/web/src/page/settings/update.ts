@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { withoutCheckoutReturn } from "../../lib/billing/checkout-return"
 import { hasBringYourOwnCloudAddOn } from "../../lib/billing/plan-gating"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
@@ -46,26 +47,31 @@ type SettingsRoute = Extract<AppRoute, { readonly _tag: "Settings" }>
 // VISIBILITY (`useVisibleSettingsSections`)
 
 export const visibilityOf = (model: Model): Visibility => {
-	const isAdmin = isClerkAuthEnabled
-		? AsyncData.getOrElse(
-				AsyncData.map(model.session, (session) => session.isAdmin),
-				() => false,
-			)
-		: true
+	const grants = grantsOf(model)
+	const canManageWarehouse = Policy.has(grants, "warehouse:manage")
 	const hasByoc = AsyncData.getOrElse(AsyncData.map(model.customer, hasBringYourOwnCloudAddOn), () => false)
 	return {
 		isClerk: isClerkAuthEnabled,
-		isAdmin,
-		canAccessDataPlatform: isAdmin && hasByoc,
-		isDataPlatformLocked: isClerkAuthEnabled && isAdmin && !hasByoc,
+		grants,
+		canAccessDataPlatform: canManageWarehouse && hasByoc,
+		isDataPlatformLocked: isClerkAuthEnabled && canManageWarehouse && !hasByoc,
 	}
 }
 
-/** The session read answered and says the viewer is a member, not an admin: only then do notices say so. */
+/** The session's permissions: every one off Clerk, none until (or unless) the session answers. */
+export const grantsOf = (model: Model): ReadonlyArray<Policy.Permission> =>
+	isClerkAuthEnabled
+		? AsyncData.getOrElse(
+				AsyncData.map(model.session, (session) => session.grants),
+				(): ReadonlyArray<Policy.Permission> => [],
+			)
+		: Policy.allPermissions
+
+/** The session read answered, so the viewer's role is known: only then do tabs say what it lacks. */
 export const isKnownMember = (model: Model): boolean =>
 	isClerkAuthEnabled &&
 	AsyncData.getOrElse(
-		AsyncData.map(model.session, (session) => !session.isAdmin),
+		AsyncData.map(model.session, () => true),
 		() => false,
 	)
 
@@ -104,7 +110,12 @@ type TabOf<T extends TabModel["_tag"]> = Extract<TabModel, { readonly _tag: T }>
 
 /** The open tab or a kept one: a kept tab still takes the answers to what it asked for. */
 const tabNamed = <T extends TabModel["_tag"]>(model: Model, tag: T): TabOf<T> | undefined =>
-	[model.tab, ...model.kept].find((tab): tab is TabOf<T> => tab !== null && tab._tag === tag)
+	Option.getOrUndefined(
+		Array.findFirst(
+			[model.tab, ...model.kept],
+			(tab): tab is TabOf<T> => tab !== null && tab._tag === tag,
+		),
+	)
 
 /** Writes a tab back where it lives: open, or kept. */
 const putTab = (model: Model, tab: TabModel): Model =>
@@ -123,7 +134,7 @@ const leaveTab = (model: Model): Model =>
 			}
 
 const sessionOf = (model: Model) => ({
-	isAdmin: visibilityOf(model).isAdmin,
+	grants: grantsOf(model),
 	userId: AsyncData.getOrElse(
 		AsyncData.map(model.session, (session) => session.userId),
 		() => null,
@@ -132,7 +143,7 @@ const sessionOf = (model: Model) => ({
 
 /** The Ingestion tab's options: the quick-start key is the org in Clerk mode, `default` self-hosted. */
 export const ingestionOptionsOf = (model: Model, context: PageContext): Ingestion.InitOptions => ({
-	isAdmin: visibilityOf(model).isAdmin,
+	grants: grantsOf(model),
 	orgKey: isClerkAuthEnabled ? context.orgId : "default",
 	timeZone: context.timeZone,
 	pinnedNamespace: context.pinnedNamespace,
@@ -192,7 +203,9 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 				AsyncData.map(model.session, (session) => session.hasAiAutoTriage),
 				() => false,
 			)
-			const step = Ai.init(visibilityOf(model).isAdmin && (!isClerkAuthEnabled || hasFlag))
+			const step = Ai.init(
+				Policy.has(grantsOf(model), "llm_keys:manage") && (!isClerkAuthEnabled || hasFlag),
+			)
 			return {
 				model: { ...model, tab: { _tag: "Ai", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>
@@ -201,7 +214,7 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			}
 		}
 		case "Automation": {
-			const step = Automation.init(visibilityOf(model).isAdmin)
+			const step = Automation.init(grantsOf(model))
 			return {
 				model: { ...model, tab: { _tag: "Automation", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>
@@ -228,7 +241,7 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			}
 		}
 		case "General": {
-			const step = General.init(visibilityOf(model).isAdmin)
+			const step = General.init(grantsOf(model))
 			return {
 				model: { ...model, tab: { _tag: "General", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>
@@ -237,7 +250,7 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			}
 		}
 		case "Members": {
-			const step = Members.init(visibilityOf(model).isAdmin)
+			const step = Members.init(grantsOf(model))
 			return {
 				model: { ...model, tab: { _tag: "Members", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>
@@ -246,11 +259,10 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			}
 		}
 		case "Billing": {
-			const visibility = visibilityOf(model)
 			const step = Billing.init(
-				visibility.isAdmin,
+				grantsOf(model),
 				model.search.checkout === "complete",
-				visibility.isClerk,
+				isClerkAuthEnabled,
 			)
 			return {
 				model: { ...model, tab: { _tag: "Billing", model: step.model } },
@@ -380,14 +392,18 @@ const revisitTab = (model: Model, kept: TabModel, context: PageContext): Return 
 /** Opens `tab`, keeping the one left: a kept tab comes back with its data, any other starts fresh. */
 const enterTab = (model: Model, tab: SettingsTab, context: PageContext): Return => {
 	const left = leaveTab(model)
-	const returning = left.kept.find((kept) => isTabCurrent(kept, tab))
-	return returning === undefined
-		? initTab(left, tab, context)
-		: revisitTab(
-				{ ...left, kept: Array.filter(left.kept, (kept) => kept !== returning) },
-				returning,
-				context,
-			)
+	return Option.match(
+		Array.findFirst(left.kept, (kept) => isTabCurrent(kept, tab)),
+		{
+			onNone: () => initTab(left, tab, context),
+			onSome: (returning) =>
+				revisitTab(
+					{ ...left, kept: Array.filter(left.kept, (kept) => kept !== returning) },
+					returning,
+					context,
+				),
+		},
+	)
 }
 
 /** Mounts the active tab's section once the nav can resolve it, keeping the previous one. */

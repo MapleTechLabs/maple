@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { agentSpan, llmSpan, makeSpan, toolSpan } from "./span-test-support"
 import { buildSessionTurns } from "./session-turns"
 import { buildSessionSummary, countTurnTokens, findIdleGaps, type AgentTimeKind } from "./session-summary"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND
@@ -14,7 +14,13 @@ const summarize = (spans: Parameters<typeof buildSessionTurns>[0]) =>
 const segment = (
 	segments: readonly { readonly kind: AgentTimeKind; readonly ms: number }[],
 	kind: AgentTimeKind,
-) => segments.find((entry) => entry.kind === kind)?.ms
+) =>
+	Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(segments, (entry) => entry.kind === kind),
+			(entry) => entry.ms,
+		),
+	)
 
 describe("findIdleGaps", () => {
 	it("finds the stretches where nothing was running", () => {
@@ -24,7 +30,7 @@ describe("findIdleGaps", () => {
 		])
 
 		expect(gaps).toHaveLength(1)
-		expect(gaps[0]!.durationMs).toBe(60 * SECOND)
+		expect(Arr.getUnsafe(gaps, 0).durationMs).toBe(60 * SECOND)
 	})
 
 	it("ignores a hole too short to be a human", () => {
@@ -593,7 +599,7 @@ describe("countTurnTokens", () => {
 	it("counts a duplicated span row once, as the session total does", () => {
 		// A page-overlapping read repeats a row (`session-transcript.ts` dedupes by
 		// id for the same reason); both totals are keyed by span id.
-		const duplicated = [...perCall, { ...perCall[1]! }]
+		const duplicated = [...perCall, { ...Arr.getUnsafe(perCall, 1) }]
 		const turns = buildSessionTurns(duplicated)
 		const total = Arr.reduce(turns, 0, (sum, turn) => sum + countTurnTokens(turn, turns).total)
 
@@ -1159,8 +1165,15 @@ describe("per-model cost, tools and failure groups", () => {
 		])
 
 		expect(summary.cost).toBeCloseTo(0.5)
-		expect(summary.models.find((model) => model.model === "claude-opus-5")?.cost).toBeCloseTo(0.5)
-		expect(summary.models.find((model) => model.model === "claude-haiku-4-5")?.cost).toBeUndefined()
+		expect(
+			Option.getOrThrow(Arr.findFirst(summary.models, (model) => model.model === "claude-opus-5")).cost,
+		).toBeCloseTo(0.5)
+		expect(
+			Arr.findFirst(summary.models, (model) => model.model === "claude-haiku-4-5").pipe(
+				Option.map((model) => model.cost),
+				Option.getOrUndefined,
+			),
+		).toBeUndefined()
 	})
 
 	it("nets a sub-agent's cost through its tool span, and past a zero-cost wrapper", () => {
@@ -1244,7 +1257,10 @@ describe("per-model cost, tools and failure groups", () => {
 
 		expect(summary.work.toolCalls).toBe(2)
 		expect(Arr.map(summary.tools, (tool) => [tool.name, tool.calls])).toEqual([["delete_file", 2]])
-		expect(Arr.map(summary.tools[0]!.events, (event) => event.spanId)).toEqual(["no-result", "approved"])
+		expect(Arr.map(Arr.getUnsafe(summary.tools, 0).events, (event) => event.spanId)).toEqual([
+			"no-result",
+			"approved",
+		])
 		expect(summary.failures.errors).toBe(0)
 	})
 
@@ -1282,7 +1298,7 @@ describe("per-model cost, tools and failure groups", () => {
 		])
 
 		expect(
-			Arr.map(summary.tools[0]?.events, (event) => ({
+			Arr.map(Arr.getUnsafe(summary.tools, 0)?.events, (event) => ({
 				...event,
 				startMs: event.startMs - summary.startMs,
 			})),
@@ -1398,7 +1414,8 @@ describe("per-model cost, tools and failure groups", () => {
 
 		for (const tool of summary.tools) {
 			expect(tool.events[0]?.errorDetail?.length).toBe(140)
-			expect(tool.events[0]?.errorDetail?.endsWith("…")).toBe(true)
+			const detail = tool.events[0]?.errorDetail
+			expect(detail !== undefined && Str.endsWith("…")(detail)).toBe(true)
 		}
 	})
 

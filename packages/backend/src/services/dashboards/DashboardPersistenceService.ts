@@ -7,7 +7,6 @@ import {
 	DashboardStoredConfigInvalidError,
 	DashboardValidationError,
 	DashboardDocument,
-	DashboardsListResponse,
 	DashboardVersionDetail,
 	DashboardVersionId,
 	DashboardVersionNotFoundError,
@@ -16,7 +15,6 @@ import {
 	IsoDateTimeString,
 	OrgId,
 	PortableDashboardDocument,
-	type PostgresTransactionId,
 	sanitizeDashboardSections,
 	UserId,
 } from "@maple/domain/http"
@@ -25,6 +23,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { Dashboards, DashboardVersions, type DashboardVersionRow } from "@maple/db/tables"
 import { DateTime, Clock, Effect, Layer, Option, Schema, Context, Array as Arr } from "effect"
 import { randomUUID } from "node:crypto"
+import type { MapleDb } from "@maple/db/client"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
@@ -69,11 +68,10 @@ const parseTimestamp = (field: "createdAt" | "updatedAt", value: string) => {
  * Reads a stored payload: migrate the raw JSON up to the current schema version,
  * then decode.
  *
- * A rejection is a hard failure here because this is the *writable* path — every
- * document read through it can be handed to `mutate`, which writes it back. A
- * partially-decoded document would be silently persisted by that round trip and
- * the original lost, so the only safe answer to "this payload doesn't decode" is
- * to refuse it. The read-only version-history path may degrade instead.
+ * A rejection is a hard failure for `get`, `mutate` and version reads: a
+ * partially-decoded document handed to `mutate` would be written back and the
+ * original lost. Only `list` and `listPage` skip a rejected row (logged), so one
+ * bad board cannot hide the rest of the org's.
  */
 const parsePayload = Effect.fnUntraced(function* (
 	payloadJson: unknown,
@@ -109,13 +107,33 @@ const parsePayload = Effect.fnUntraced(function* (
 
 // jsonb columns take the document object directly; this guard preserves the
 // pre-Postgres validation that the payload is JSON-serializable before write.
-const validatePayload = Effect.fnUntraced(function* (dashboard: DashboardDocument) {
-	const names = Arr.map(dashboard.variables ?? [], (variable) => variable.name)
-	const duplicates = Arr.filter(names, (name, index) => names.indexOf(name) !== index)
-	if (duplicates.length > 0) {
+const duplicatesOf = (values: ReadonlyArray<string>) => [
+	...new Set(Arr.filter(values, (value, index) => values.indexOf(value) !== index)),
+]
+
+const validatePayload = Effect.fnUntraced(function* (
+	dashboard: DashboardDocument,
+	previous?: DashboardDocument,
+) {
+	const duplicateNames = duplicatesOf(Arr.map(dashboard.variables ?? [], (variable) => variable.name))
+	if (duplicateNames.length > 0) {
 		return yield* new DashboardValidationError({
 			message: "Dashboard variable names must be unique",
-			details: Arr.map([...new Set(duplicates)], (name) => `Duplicate variable name: ${name}`),
+			details: Arr.map(duplicateNames, (name) => `Duplicate variable name: ${name}`),
+		})
+	}
+
+	// Widget ids address shares, patches and widget_data requests; a duplicate makes them ambiguous.
+	// Boards stored with duplicates before this rule stay editable: only a new duplicate is refused.
+	const storedDuplicates = new Set(duplicatesOf(Arr.map(previous?.widgets ?? [], (widget) => widget.id)))
+	const duplicateWidgetIds = Arr.filter(
+		duplicatesOf(Arr.map(dashboard.widgets, (widget) => widget.id)),
+		(id) => !storedDuplicates.has(id),
+	)
+	if (duplicateWidgetIds.length > 0) {
+		return yield* new DashboardValidationError({
+			message: "Dashboard widget ids must be unique",
+			details: Arr.map(duplicateWidgetIds, (id) => `Duplicate widget id: ${id}`),
 		})
 	}
 
@@ -176,10 +194,30 @@ const versionRowToSummary = (row: DashboardVersionRow): DashboardVersionSummary 
 		createdBy: row.createdBy,
 	})
 
-type VersionOptions = {
+export type MutateOptions = {
 	readonly forceKind?: DashboardVersionSummary["changeKind"]
 	readonly forceSummary?: string
 	readonly sourceVersionId?: DashboardVersionId | null
+	/** The `dashboards.version` the caller's edit was based on; any other current version is a conflict. */
+	readonly expectedVersion?: number
+}
+
+/** Keyset position in the newest-first list: the last row a page returned. */
+export interface DashboardPageCursor {
+	readonly updatedAt: number
+	readonly id: DashboardId
+}
+
+/** A stored document with its `dashboards.version`, the CAS token a client sends back as `expected_version`. */
+export interface StoredDashboard {
+	readonly document: DashboardDocument
+	readonly version: number
+}
+
+export interface DashboardPage {
+	readonly dashboards: ReadonlyArray<StoredDashboard>
+	/** Where the next page starts, `null` on the last page. */
+	readonly next: DashboardPageCursor | null
 }
 
 export interface DashboardPersistenceServiceApi {
@@ -187,36 +225,31 @@ export interface DashboardPersistenceServiceApi {
 		orgId: OrgId,
 		userId: UserId,
 		dashboard: PortableDashboardDocument,
-	) => Effect.Effect<DashboardDocument, DashboardValidationError | DashboardPersistenceError>
+	) => Effect.Effect<StoredDashboard, DashboardValidationError | DashboardPersistenceError>
+	/** Every dashboard of the org, newest first; a row that does not decode is logged and skipped. */
 	readonly list: (
 		orgId: OrgId,
-	) => Effect.Effect<DashboardsListResponse, DashboardPersistenceError | DashboardStoredConfigInvalidError>
+	) => Effect.Effect<{ readonly dashboards: ReadonlyArray<StoredDashboard> }, DashboardPersistenceError>
+	/** One page of `list`, paginated in SQL on (updatedAt, id). */
+	readonly listPage: (
+		orgId: OrgId,
+		page: { readonly limit: number; readonly after?: DashboardPageCursor },
+	) => Effect.Effect<DashboardPage, DashboardPersistenceError>
 	readonly get: (
 		orgId: OrgId,
 		dashboardId: DashboardId,
 	) => Effect.Effect<
-		DashboardDocument,
+		StoredDashboard,
 		DashboardPersistenceError | DashboardNotFoundError | DashboardStoredConfigInvalidError
-	>
-	readonly upsert: (
-		orgId: OrgId,
-		userId: UserId,
-		dashboard: DashboardDocument,
-	) => Effect.Effect<
-		DashboardDocument,
-		| DashboardValidationError
-		| DashboardPersistenceError
-		| DashboardConcurrencyError
-		| DashboardStoredConfigInvalidError
 	>
 	readonly mutate: <E>(
 		orgId: OrgId,
 		userId: UserId,
 		dashboardId: DashboardId,
 		transform: (dashboard: DashboardDocument) => Effect.Effect<DashboardDocument, E>,
-		versionOptions?: VersionOptions,
+		options?: MutateOptions,
 	) => Effect.Effect<
-		DashboardDocument,
+		StoredDashboard,
 		| E
 		| DashboardNotFoundError
 		| DashboardValidationError
@@ -253,7 +286,7 @@ export interface DashboardPersistenceServiceApi {
 		dashboardId: DashboardId,
 		versionId: DashboardVersionId,
 	) => Effect.Effect<
-		DashboardDocument,
+		StoredDashboard,
 		| DashboardPersistenceError
 		| DashboardNotFoundError
 		| DashboardVersionNotFoundError
@@ -288,70 +321,62 @@ export class DashboardPersistenceService extends Context.Service<
 			)
 
 			const row = rows[0]
-			if (!row) return null
+			if (row === undefined) return null
 			const document = yield* parsePayload(row.payloadJson, {
 				dashboardId,
 				component: "document",
 			})
-			return { document, version: row.version }
+			return { document, version: row.version } satisfies StoredDashboard
 		})
 
-		const recordVersion = Effect.fn("DashboardPersistenceService.recordVersion")(function* (
+		// Runs inside the dashboard write's transaction, after its row is written and
+		// locked, so concurrent saves serialize on that lock and `max + 1` cannot collide.
+		const recordVersionIn = (
+			db: MapleDb,
 			orgId: OrgId,
 			userId: UserId,
 			dashboard: DashboardDocument,
+			snapshotJson: DashboardDocument,
 			previous: DashboardDocument | null,
-			options: VersionOptions = {},
-		) {
-			yield* Effect.annotateCurrentSpan({
-				orgId,
-				"tenant.userId": userId,
-				"maple.dashboard.id": dashboard.id,
-			})
-			const summary = summarizeDashboardChange(previous, dashboard)
-			const kind = options.forceKind ?? summary.kind
-			const summaryText = options.forceSummary ?? summary.summary
-			const snapshotJson = yield* validatePayload(dashboard)
-			const now = yield* Clock.currentTimeMillis
+			now: number,
+			options: MutateOptions = {},
+		) =>
+			Effect.gen(function* () {
+				const summary = summarizeDashboardChange(previous, dashboard)
+				const kind = options.forceKind ?? summary.kind
+				const summaryText = options.forceSummary ?? summary.summary
 
-			const latest: ReadonlyArray<DashboardVersionRow> = yield* dbExecute((db) =>
-				db.run(
+				const latest: ReadonlyArray<DashboardVersionRow> = yield* db.run(
 					PG.from(DashboardVersions)
 						.select()
 						.where(($) => [$.orgId.eq(orgId), $.dashboardId.eq(dashboard.id)])
 						.orderBy(["versionNumber", "desc"])
 						.limit(1),
-				),
-			)
-
-			const latestRow = latest[0]
-			const canCoalesce =
-				!options.sourceVersionId &&
-				!options.forceKind &&
-				latestRow !== undefined &&
-				latestRow.createdBy === userId &&
-				latestRow.changeKind === kind &&
-				now - latestRow.createdAt < COALESCE_WINDOW_MS
-
-			if (canCoalesce && latestRow) {
-				yield* dbExecute((db) =>
-					db.run(
-						PG.update(DashboardVersions)
-							.set({
-								snapshotJson,
-								changeSummary: summaryText,
-								createdAt: now,
-							})
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(latestRow.id)]),
-					),
 				)
-				return
-			}
 
-			const versionNumber = (latestRow?.versionNumber ?? 0) + 1
+				const latestRow = latest[0]
+				// Measured from the version's own createdAt, which a merge never moves,
+				// so a steady stream of edits still cuts a new version every window.
+				const canCoalesce =
+					!options.sourceVersionId &&
+					!options.forceKind &&
+					latestRow !== undefined &&
+					latestRow.createdBy === userId &&
+					latestRow.changeKind === kind &&
+					now - latestRow.createdAt < COALESCE_WINDOW_MS
 
-			yield* dbExecute((db) =>
-				db.run(
+				if (canCoalesce && latestRow !== undefined) {
+					yield* db.run(
+						PG.update(DashboardVersions)
+							.set({ snapshotJson, changeSummary: summaryText })
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(latestRow.id)]),
+					)
+					return
+				}
+
+				const versionNumber = (latestRow?.versionNumber ?? 0) + 1
+
+				yield* db.run(
 					PG.insertInto(DashboardVersions).values({
 						orgId,
 						id: decodeDashboardVersionIdSync(randomUUID()),
@@ -364,29 +389,93 @@ export class DashboardPersistenceService extends Context.Service<
 						createdAt: now,
 						createdBy: userId,
 					}),
+				)
+			})
+
+		/** Decode listed rows, logging and dropping any that `get` would refuse. */
+		const decodeListed = (
+			rows: ReadonlyArray<{
+				readonly id: DashboardId
+				readonly payloadJson: unknown
+				readonly version: number
+			}>,
+		) =>
+			Effect.forEach(rows, (row) =>
+				parsePayload(row.payloadJson, { dashboardId: row.id, component: "document" }).pipe(
+					Effect.map((document): Option.Option<StoredDashboard> =>
+						Option.some({ document, version: row.version }),
+					),
+					Effect.catchTag("@maple/http/errors/DashboardStoredConfigInvalidError", () =>
+						Effect.logWarning("Skipping undecodable dashboard in list").pipe(
+							Effect.annotateLogs({ "maple.dashboard.id": row.id }),
+							Effect.as(Option.none<StoredDashboard>()),
+						),
+					),
 				),
-			)
-		})
+			).pipe(Effect.map(Arr.getSomes))
 
 		const list = Effect.fn("DashboardPersistenceService.list")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 			const rows: ReadonlyArray<{
 				readonly id: DashboardId
 				readonly payloadJson: unknown
+				readonly version: number
 			}> = yield* dbExecute((db) =>
 				db.run(
 					PG.from(Dashboards)
-						.select("id", "payloadJson")
+						.select("id", "payloadJson", "version")
 						.where(($) => [$.orgId.eq(orgId)])
-						.orderBy(($) => [[$.updatedAt, "desc"]]),
+						.orderBy(($) => [
+							[$.updatedAt, "desc"],
+							[$.id, "desc"],
+						]),
 				),
 			)
 
-			const dashboardDocuments = yield* Effect.forEach(rows, (row) =>
-				parsePayload(row.payloadJson, { dashboardId: row.id, component: "document" }),
+			return { dashboards: yield* decodeListed(rows) }
+		})
+
+		const listPage = Effect.fn("DashboardPersistenceService.listPage")(function* (
+			orgId: OrgId,
+			page: { readonly limit: number; readonly after?: DashboardPageCursor },
+		) {
+			yield* Effect.annotateCurrentSpan("orgId", orgId)
+			const after = page.after
+			// One row of lookahead says whether another page exists.
+			const rows: ReadonlyArray<{
+				readonly id: DashboardId
+				readonly payloadJson: unknown
+				readonly version: number
+				readonly updatedAt: number
+			}> = yield* dbExecute((db) =>
+				db.run(
+					PG.from(Dashboards)
+						.select("id", "payloadJson", "version", "updatedAt")
+						.where(($) => [
+							$.orgId.eq(orgId),
+							after === undefined
+								? undefined
+								: PG.or(
+										$.updatedAt.lt(after.updatedAt),
+										PG.and($.updatedAt.eq(after.updatedAt), $.id.lt(after.id)),
+									),
+						])
+						.orderBy(($) => [
+							[$.updatedAt, "desc"],
+							[$.id, "desc"],
+						])
+						.limit(page.limit + 1),
+				),
 			)
 
-			return new DashboardsListResponse({ dashboards: dashboardDocuments })
+			const pageRows = rows.slice(0, page.limit)
+			const last = pageRows[pageRows.length - 1]
+			// The cursor follows the last row read, decodable or not, so a skipped row never stalls paging.
+			const next =
+				rows.length > page.limit && last !== undefined
+					? { updatedAt: last.updatedAt, id: last.id }
+					: null
+			return { dashboards: yield* decodeListed(pageRows), next } satisfies DashboardPage
 		})
 
 		const get = Effect.fn("DashboardPersistenceService.get")(function* (
@@ -398,144 +487,53 @@ export class DashboardPersistenceService extends Context.Service<
 			if (current === null) {
 				return yield* new DashboardNotFoundError({ dashboardId, message: "Dashboard not found" })
 			}
-			return current.document
+			return current
 		})
 
-		// Compare-and-swap update against `dashboards.version`. Returns
-		// `true` when the row was updated (we won the CAS), `false` when
-		// the expected version no longer matches (a concurrent writer beat
-		// us). The history snapshot insert is best-effort and runs only
-		// after the CAS update succeeds, so a stale conflicting attempt
-		// never produces a phantom audit row.
-		const tryCasUpdate = Effect.fn("DashboardPersistenceService.tryCasUpdate")(function* (
+		// Compare-and-swap on `dashboards.version` and the history row, in one
+		// transaction: a lost CAS writes nothing, and a saved edit always has its version.
+		const writeVersioned = Effect.fn("DashboardPersistenceService.writeVersioned")(function* (
 			orgId: OrgId,
 			userId: UserId,
-			dashboard: DashboardDocument,
+			next: DashboardDocument,
+			previous: DashboardDocument,
 			expectedVersion: number,
-			updatedAt: number,
-			payloadJson: DashboardDocument,
+			conflict: DashboardConcurrencyError,
+			options: MutateOptions,
 		) {
 			yield* Effect.annotateCurrentSpan({
 				orgId,
 				"tenant.userId": userId,
-				"maple.dashboard.id": dashboard.id,
+				"maple.dashboard.id": next.id,
 			})
-			const updated: ReadonlyArray<{ readonly id: string; readonly txid: string }> = yield* dbExecute(
-				(db) =>
-					db.run(
-						PG.update(Dashboards)
-							.set({
-								name: dashboard.name,
-								payloadJson,
-								updatedAt,
-								updatedBy: userId,
-								version: expectedVersion + 1,
-							})
-							.where(($) => [
-								$.orgId.eq(orgId),
-								$.id.eq(dashboard.id),
-								$.version.eq(expectedVersion),
-							])
-							.returning(($) => ({ id: $.id, txid: currentTxid })),
-					),
-			)
-
-			return { won: updated.length > 0, txid: readTxid(updated) }
-		})
-
-		const insertNew = (
-			orgId: OrgId,
-			userId: UserId,
-			dashboard: DashboardDocument,
-			createdAt: number,
-			updatedAt: number,
-			payloadJson: DashboardDocument,
-		) =>
-			dbExecute((db) =>
-				db.run(
-					PG.insertInto(Dashboards)
-						.values({
-							orgId,
-							id: dashboard.id,
-							name: dashboard.name,
-							payloadJson,
-							createdAt,
-							updatedAt,
-							createdBy: userId,
-							updatedBy: userId,
-							version: 1,
-						})
-						.returning(() => ({ txid: currentTxid })),
+			const payloadJson = yield* validatePayload(next, previous)
+			const updatedAt = yield* parseTimestamp("updatedAt", next.updatedAt)
+			const now = yield* Clock.currentTimeMillis
+			return yield* dbExecute((db) =>
+				db.transaction(
+					Effect.gen(function* () {
+						const updated = yield* db.run(
+							PG.update(Dashboards)
+								.set({
+									name: next.name,
+									payloadJson,
+									updatedAt,
+									updatedBy: userId,
+									version: expectedVersion + 1,
+								})
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.id.eq(next.id),
+									$.version.eq(expectedVersion),
+								])
+								.returning(($) => ({ id: $.id, txid: currentTxid })),
+						)
+						if (updated.length === 0) return yield* conflict
+						yield* recordVersionIn(db, orgId, userId, next, payloadJson, previous, now, options)
+						return readTxid(updated)
+					}),
 				),
-			).pipe(Effect.map(readTxid))
-
-		const upsertInternal = Effect.fn("DashboardPersistenceService.upsertInternal")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			dashboard: DashboardDocument,
-			versionOptions: VersionOptions = {},
-		) {
-			yield* Effect.annotateCurrentSpan({
-				orgId,
-				"tenant.userId": userId,
-				"maple.dashboard.id": dashboard.id,
-			})
-			const payloadJson = yield* validatePayload(dashboard)
-			const createdAt = yield* parseTimestamp("createdAt", dashboard.createdAt)
-			const updatedAt = yield* parseTimestamp("updatedAt", dashboard.updatedAt)
-
-			const current = yield* loadCurrent(orgId, dashboard.id)
-
-			let txid: PostgresTransactionId | undefined
-			if (current === null) {
-				txid = yield* insertNew(orgId, userId, dashboard, createdAt, updatedAt, payloadJson)
-			} else {
-				const result = yield* tryCasUpdate(
-					orgId,
-					userId,
-					dashboard,
-					current.version,
-					updatedAt,
-					payloadJson,
-				)
-				if (!result.won) {
-					return yield* new DashboardConcurrencyError({
-						dashboardId: dashboard.id,
-						message: "Dashboard was modified by another writer. Refetch and try again.",
-					})
-				}
-				txid = result.txid
-			}
-
-			// History recording is best-effort: a failure here must not roll
-			// back the dashboard write. The dashboard table is the source of
-			// truth; versions are an append-only audit trail.
-			yield* recordVersion(orgId, userId, dashboard, current?.document ?? null, versionOptions).pipe(
-				Effect.tapError((error) =>
-					Effect.logWarning("Failed to record dashboard version").pipe(
-						Effect.annotateLogs({ dashboardId: dashboard.id, error: String(error) }),
-					),
-				),
-				Effect.ignore,
 			)
-
-			// Attach the write's txid only to the returned document — never to
-			// the stored payload or version snapshot, which were computed above
-			// from the txid-free input.
-			return txid === undefined ? dashboard : new DashboardDocument({ ...dashboard, txid })
-		})
-
-		const upsert = Effect.fn("DashboardPersistenceService.upsert")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			dashboard: DashboardDocument,
-		) {
-			yield* Effect.annotateCurrentSpan({
-				orgId,
-				"tenant.userId": userId,
-				"maple.dashboard.id": dashboard.id,
-			})
-			return yield* upsertInternal(orgId, userId, dashboard)
 		})
 
 		const create = Effect.fn("DashboardPersistenceService.create")(function* (
@@ -550,37 +548,53 @@ export class DashboardPersistenceService extends Context.Service<
 			const payloadJson = yield* validatePayload(createdDashboard)
 			const createdAt = yield* parseTimestamp("createdAt", createdDashboard.createdAt)
 			const updatedAt = yield* parseTimestamp("updatedAt", createdDashboard.updatedAt)
-			const txid = yield* insertNew(orgId, userId, createdDashboard, createdAt, updatedAt, payloadJson)
-
-			// Version history is secondary to the authoritative dashboard row.
-			yield* recordVersion(orgId, userId, createdDashboard, null).pipe(
-				Effect.tapError((error) =>
-					Effect.logWarning("Failed to record initial dashboard version").pipe(
-						Effect.annotateLogs({ dashboardId: createdDashboard.id, error: String(error) }),
-					),
+			const txid = yield* dbExecute((db) =>
+				db.transaction(
+					Effect.gen(function* () {
+						const inserted = yield* db.run(
+							PG.insertInto(Dashboards)
+								.values({
+									orgId,
+									id: createdDashboard.id,
+									name: createdDashboard.name,
+									payloadJson,
+									createdAt,
+									updatedAt,
+									createdBy: userId,
+									updatedBy: userId,
+									version: 1,
+								})
+								.returning(() => ({ txid: currentTxid })),
+						)
+						yield* recordVersionIn(
+							db,
+							orgId,
+							userId,
+							createdDashboard,
+							payloadJson,
+							null,
+							nowMillis,
+						)
+						return readTxid(inserted)
+					}),
 				),
-				Effect.ignore,
 			)
 
-			return txid === undefined
-				? createdDashboard
-				: new DashboardDocument({ ...createdDashboard, txid })
+			const document =
+				txid === undefined ? createdDashboard : new DashboardDocument({ ...createdDashboard, txid })
+			return { document, version: 1 } satisfies StoredDashboard
 		})
 
-		// Read-modify-write helper used by the MCP dashboard tools. Loads
-		// the current dashboard, runs the caller's transform on top of it,
-		// and attempts a compare-and-swap update. On CAS conflict (a
-		// concurrent writer slipped in between read and write) we re-read
-		// and re-apply the transform up to MUTATE_MAX_ATTEMPTS times before
-		// giving up with a typed `DashboardConcurrencyError`. This is the
-		// pattern that prevents lost updates between concurrent MCP tool
-		// calls and HTTP edits.
+		// Read-modify-write behind every edit: load, run the caller's transform, CAS.
+		// A lost CAS re-reads and re-applies the transform, up to MUTATE_MAX_ATTEMPTS.
+		// With `expectedVersion` the caller's own read is the base instead, so a
+		// current version other than it fails at once rather than being merged over.
 		const mutate = Effect.fn("DashboardPersistenceService.mutate")(function* <E>(
 			orgId: OrgId,
 			userId: UserId,
 			dashboardId: DashboardId,
 			transform: (dashboard: DashboardDocument) => Effect.Effect<DashboardDocument, E>,
-			versionOptions: VersionOptions = {},
+			options: MutateOptions = {},
 		) {
 			yield* Effect.annotateCurrentSpan({
 				orgId,
@@ -602,33 +616,28 @@ export class DashboardPersistenceService extends Context.Service<
 						message: "Dashboard not found",
 					})
 				}
+				if (options.expectedVersion !== undefined && options.expectedVersion !== current.version) {
+					return yield* new DashboardConcurrencyError({
+						dashboardId,
+						message:
+							"Someone else changed this dashboard since it was loaded. Reload and try again.",
+					})
+				}
 
 				const next = yield* transform(current.document)
-				const payloadJson = yield* validatePayload(next)
-				const updatedAt = yield* parseTimestamp("updatedAt", next.updatedAt)
-
-				const result = yield* tryCasUpdate(
+				const txid = yield* writeVersioned(
 					orgId,
 					userId,
 					next,
+					current.document,
 					current.version,
-					updatedAt,
-					payloadJson,
-				)
-				if (!result.won) return yield* conflict
-
-				yield* recordVersion(orgId, userId, next, current.document, versionOptions).pipe(
-					Effect.tapError((error) =>
-						Effect.logWarning("Failed to record dashboard version").pipe(
-							Effect.annotateLogs({ dashboardId, error: String(error) }),
-						),
-					),
-					Effect.ignore,
+					conflict,
+					options,
 				)
 
-				return result.txid === undefined
-					? next
-					: new DashboardDocument({ ...next, txid: result.txid })
+				const document = txid === undefined ? next : new DashboardDocument({ ...next, txid })
+				// writeVersioned committed `current.version + 1`.
+				return { document, version: current.version + 1 } satisfies StoredDashboard
 			})
 
 			return yield* attempt.pipe(
@@ -641,38 +650,31 @@ export class DashboardPersistenceService extends Context.Service<
 			dashboardId: DashboardId,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.dashboard.id": dashboardId })
+			const notFound = new DashboardNotFoundError({ dashboardId, message: "Dashboard not found" })
+			// History goes with the board, atomically: a failed delete leaves both.
 			const rows = yield* dbExecute((db) =>
-				db.run(
-					PG.deleteFrom(Dashboards)
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(dashboardId)])
-						.returning(($) => ({ id: $.id, txid: currentTxid })),
+				db.transaction(
+					Effect.gen(function* () {
+						const deleted = yield* db.run(
+							PG.deleteFrom(Dashboards)
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(dashboardId)])
+								.returning(($) => ({ id: $.id, txid: currentTxid })),
+						)
+						if (deleted.length === 0) return yield* notFound
+						yield* db.run(
+							PG.deleteFrom(DashboardVersions).where(($) => [
+								$.orgId.eq(orgId),
+								$.dashboardId.eq(dashboardId),
+							]),
+						)
+						return deleted
+					}),
 				),
 			)
-
-			const deleted = Option.fromNullishOr(rows[0])
-
-			if (Option.isNone(deleted)) {
-				return yield* new DashboardNotFoundError({
-					dashboardId,
-					message: "Dashboard not found",
-				})
-			}
 
 			const txid = readTxid(rows)
-
-			// Drop history rows when the dashboard is deleted — they're tied to
-			// a dashboard that no longer exists.
-			yield* dbExecute((db) =>
-				db.run(
-					PG.deleteFrom(DashboardVersions).where(($) => [
-						$.orgId.eq(orgId),
-						$.dashboardId.eq(dashboardId),
-					]),
-				),
-			)
-
 			return new DashboardDeleteResponse({
-				id: deleted.value.id,
+				id: rows[0]?.id ?? dashboardId,
 				...(txid !== undefined ? { txid } : undefined),
 			})
 		})
@@ -749,7 +751,7 @@ export class DashboardPersistenceService extends Context.Service<
 			)
 
 			const row = rows[0]
-			if (!row || row.dashboardId !== dashboardId) {
+			if (row === undefined || row.dashboardId !== dashboardId) {
 				return yield* new DashboardVersionNotFoundError({
 					dashboardId,
 					versionId,
@@ -799,7 +801,7 @@ export class DashboardPersistenceService extends Context.Service<
 				updatedAt: nowIso,
 			})
 
-			return yield* upsertInternal(orgId, userId, restored, {
+			return yield* mutate(orgId, userId, dashboardId, () => Effect.succeed(restored), {
 				forceKind: "restored",
 				forceSummary: `Restored from v${detail.versionNumber}`,
 				sourceVersionId: detail.id,
@@ -809,8 +811,8 @@ export class DashboardPersistenceService extends Context.Service<
 		return {
 			create,
 			list,
+			listPage,
 			get,
-			upsert,
 			mutate,
 			delete: remove,
 			listVersions,

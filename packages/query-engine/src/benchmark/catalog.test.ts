@@ -37,6 +37,7 @@ import * as signalPresenceQueries from "../ch/queries/signal-presence"
 import * as sourceUsageQueries from "../ch/queries/source-usage"
 import * as logQueries from "../ch/queries/logs"
 import * as mcpQueries from "../ch/queries/mcp"
+import * as userQueries from "../ch/queries/users"
 import * as metricQueries from "../ch/queries/metrics"
 import * as serviceInfraQueries from "../ch/queries/service-infra"
 import * as serviceMapRollupQueries from "../ch/queries/service-map-rollup"
@@ -47,12 +48,14 @@ import * as serviceEndpointDetailQueries from "../ch/queries/service-endpoint-de
 import * as serviceOperationQueries from "../ch/queries/service-operations"
 import * as prReviewQueries from "../ch/queries/pr-review"
 import * as serviceQueries from "../ch/queries/services"
+import * as sloQueries from "../ch/queries/slos"
 import * as releaseQueries from "../ch/queries/releases"
 import * as sessionEventQueries from "../ch/queries/session-events"
 import * as sessionReplayQueries from "../ch/queries/session-replays"
 import * as webAnalyticsQueries from "../ch/queries/web-analytics"
 import * as webAnalyticsAiQueries from "../ch/queries/web-analytics-ai"
 import * as securityTelemetryQueries from "../ch/queries/security-telemetry"
+import * as userActivityQueries from "../ch/queries/user-activity"
 import * as productEventQueries from "../ch/queries/product-events"
 import * as productEventPathQueries from "../ch/queries/product-events-paths"
 import * as productEventExploreQueries from "../ch/queries/product-events-explore"
@@ -75,7 +78,7 @@ const CROSS_ORG_BUILDERS: ReadonlySet<string> = new Set([
 describe("sql catalog", () => {
 	const pipeEntries = collectPipeCatalog()
 	const specEntries = collectQuerySpecCatalog()
-	const entries = Effect.runSync(collectQueryCatalog())
+	const entries = Effect.runSync(collectQueryCatalog)
 
 	it("exports the same compiled cases for replay without decoder internals", async () => {
 		const suite = await Effect.runPromise(suiteFromCatalog(entries))
@@ -227,7 +230,7 @@ describe("sql catalog", () => {
 			).sort((a, b) => b.label.length - a.label.length)[0]
 			const query = fixture?.query
 			const bucketSeconds =
-				query && "bucketSeconds" in query && typeof query.bucketSeconds === "number"
+				query !== undefined && "bucketSeconds" in query && typeof query.bucketSeconds === "number"
 					? query.bucketSeconds
 					: 0
 			expect(bucketSeconds, `${entry.id} has no bucketSeconds`).toBeGreaterThan(0)
@@ -294,6 +297,7 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	"pr-review": prReviewQueries,
 	"service-operations": serviceOperationQueries,
 	services: serviceQueries,
+	slos: sloQueries,
 	"signal-presence": signalPresenceQueries,
 	"source-usage": sourceUsageQueries,
 	"aws-ingest": awsIngestQueries,
@@ -304,10 +308,12 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	"web-analytics": webAnalyticsQueries,
 	"web-analytics-ai": webAnalyticsAiQueries,
 	"security-telemetry": securityTelemetryQueries,
+	"user-activity": userActivityQueries,
 	"product-events": productEventQueries,
 	"product-events-paths": productEventPathQueries,
 	"product-events-explore": productEventExploreQueries,
 	traces: traceQueries,
+	users: userQueries,
 } satisfies Record<string, Record<string, unknown>>
 
 /**

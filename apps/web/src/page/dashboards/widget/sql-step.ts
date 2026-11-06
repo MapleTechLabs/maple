@@ -3,7 +3,7 @@ import { Command } from "foldkit"
 import type { PageContext } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
-import type { RawSqlState } from "./raw-sql"
+import { isRunnableSql, type RawSqlState } from "./raw-sql"
 import { planPreview, type Return } from "./update"
 
 // `RawSqlEditorPanel`'s steps: typing, the bucket, the chips inserted at the caret, Run preview.
@@ -100,9 +100,11 @@ export const sqlStep = (model: Model, message: SqlMessage): Return => {
 	}
 }
 
-/** Run preview in Raw SQL: the draft is staged and the preview re-planned. */
+/** Run preview in Raw SQL: the draft is staged and the preview re-planned, unless Apply would refuse it. */
 export const runSqlPreview = (model: Model, context: PageContext): Return =>
-	planPreview(
-		withSql(model, (sql) => ({ ...sql, staged: sql.draft })),
-		context,
-	)
+	model.rawSql === null || !isRunnableSql(model.rawSql.draft)
+		? { model }
+		: planPreview(
+				withSql(model, (sql) => ({ ...sql, staged: sql.draft })),
+				context,
+			)

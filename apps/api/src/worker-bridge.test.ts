@@ -25,6 +25,7 @@ import { AiWorkerFetcher, MapleDbConnection } from "@maple/backend/platform/bind
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import { recordRenderedFailure } from "@maple/backend/http/rendered-failure"
+import { runAfterResponse } from "@maple/backend/platform/after-response"
 import { buildIsolateHandler, makeFetch } from "./worker/http"
 
 /**
@@ -89,25 +90,39 @@ const stubFetch = (recorded: Array<RecordedRequest>): typeof globalThis.fetch =>
 		return new Response("{}", { status: 200 })
 	}) as typeof globalThis.fetch
 
-const serverSpans = (recorded: ReadonlyArray<RecordedRequest>): Array<ExportedSpan> =>
-	Arr.flatMap(
-		Arr.filter(recorded, (request) => Str.endsWith("/v1/traces")(request.url)).flatMap(
-			(request) => decodeExportedTraces(JSON.parse(request.body ?? "{}")).resourceSpans ?? [],
-		),
-		(resource) => resource.scopeSpans.flatMap((scope) => scope.spans),
-	).filter((span) => span.kind === SERVER_KIND)
+const serverSpans = (recorded: ReadonlyArray<RecordedRequest>): Array<ExportedSpan> => {
+	const traceRequests = Arr.filter(recorded, (request) => Str.endsWith("/v1/traces")(request.url))
+	const resources = Arr.flatMap(
+		traceRequests,
+		(request) => decodeExportedTraces(JSON.parse(request.body ?? "{}")).resourceSpans ?? [],
+	)
+	const spans = Arr.flatMap(resources, (resource) =>
+		Arr.flatMap(resource.scopeSpans, (scope) => scope.spans),
+	)
+	return Arr.filter(spans, (span) => span.kind === SERVER_KIND)
+}
 
-const logBodies = (recorded: ReadonlyArray<RecordedRequest>): Array<string> =>
-	Arr.flatMap(
-		Arr.filter(recorded, (request) => Str.endsWith("/v1/logs")(request.url)).flatMap(
-			(request) => decodeExportedLogs(JSON.parse(request.body ?? "{}")).resourceLogs ?? [],
-		),
-		(resource) => resource.scopeLogs.flatMap((scope) => scope.logRecords),
-	).flatMap((record) => (record.body?.stringValue === undefined ? [] : [record.body.stringValue]))
+const logBodies = (recorded: ReadonlyArray<RecordedRequest>): Array<string> => {
+	const logRequests = Arr.filter(recorded, (request) => Str.endsWith("/v1/logs")(request.url))
+	const resources = Arr.flatMap(
+		logRequests,
+		(request) => decodeExportedLogs(JSON.parse(request.body ?? "{}")).resourceLogs ?? [],
+	)
+	const records = Arr.flatMap(resources, (resource) =>
+		Arr.flatMap(resource.scopeLogs, (scope) => scope.logRecords),
+	)
+	return Arr.flatMap(records, (record) =>
+		record.body?.stringValue === undefined ? [] : [record.body.stringValue],
+	)
+}
 
 /** One attribute as its rendered value — OTLP JSON carries ints as strings anyway. */
 const attributeOf = (span: ExportedSpan | undefined, key: string): string | undefined => {
-	const value = span?.attributes.find((attribute) => attribute.key === key)?.value
+	const value =
+		span === undefined
+			? undefined
+			: Option.getOrUndefined(Arr.findFirst(span.attributes, (attribute) => attribute.key === key))
+					?.value
 	const rendered = value === undefined ? undefined : Rec.values(value)[0]
 	if (rendered === undefined) return undefined
 	return typeof rendered === "string" || typeof rendered === "number" || typeof rendered === "boolean"
@@ -122,8 +137,15 @@ const statusCodeOf = (span: ExportedSpan | undefined): number | undefined => {
 
 /** What error tracking will group this span's failure under. */
 const exceptionTypeOf = (span: ExportedSpan | undefined): string | undefined => {
-	const event = span?.events?.find((candidate) => candidate.name === "exception")
-	const value = event?.attributes.find((attribute) => attribute.key === "exception.type")?.value
+	const event =
+		span?.events === undefined
+			? Option.none()
+			: Arr.findFirst(span.events, (candidate) => candidate.name === "exception")
+	const value = Option.isNone(event)
+		? undefined
+		: Option.getOrUndefined(
+				Arr.findFirst(event.value.attributes, (attribute) => attribute.key === "exception.type"),
+			)?.value
 	const rendered = value === undefined ? undefined : Rec.values(value)[0]
 	if (rendered === undefined) return undefined
 	return typeof rendered === "string" || typeof rendered === "number" || typeof rendered === "boolean"
@@ -149,17 +171,17 @@ class GraphBuildFailure extends Schema.TaggedError<GraphBuildFailure>()("GraphBu
 }) {}
 
 /** A route graph that answers everything with 404, as the real one does for an unknown path. */
-const notFoundApp: Effect.Effect<HttpEffect, never> = Effect.succeed(
+const notFoundApp: Effect.Effect<HttpEffect> = Effect.succeed(
 	Effect.succeed(HttpServerResponse.text("Not Found", { status: 404 })),
 )
 
 /** A graph that renders its own 500, the shape the unattributed prod 500s arrive in. */
-const renderedServerErrorApp: Effect.Effect<HttpEffect, never> = Effect.succeed(
+const renderedServerErrorApp: Effect.Effect<HttpEffect> = Effect.succeed(
 	Effect.succeed(HttpServerResponse.text("", { status: 500 })),
 )
 
 /** A graph whose handler dies, so the cause is still live when it leaves the router. */
-const dyingApp: Effect.Effect<HttpEffect, never> = Effect.succeed(Effect.die(new Error("handler exploded")))
+const dyingApp: Effect.Effect<HttpEffect> = Effect.succeed(Effect.die(new Error("handler exploded")))
 
 /** One route that answers with the bearer it was called with — the header a leaked request would get wrong. */
 const EchoGroup = HttpApiGroup.make("echo").add(
@@ -225,10 +247,13 @@ const event = (
 	path: string,
 	app: Effect.Effect<HttpEffect, unknown>,
 	headers?: Record<string, string>,
+	afterResponseRunner?: Effect.Effect<(work: Effect.Effect<void>) => Effect.Effect<void>>,
 ) =>
 	Effect.gen(function* () {
 		// A fresh isolate per event, so every request here is its isolate's first.
-		const fetch = yield* makeFetch(app, noPorts).pipe(Effect.provide(IsolateAge.layer))
+		const fetch = yield* makeFetch(app, noPorts, app, undefined, afterResponseRunner).pipe(
+			Effect.provide(IsolateAge.layer),
+		)
 		const recorded: Array<RecordedRequest> = []
 		const realFetch = globalThis.fetch
 		globalThis.fetch = stubFetch(recorded)
@@ -242,9 +267,11 @@ const event = (
 		// One tag under two types: the SDK reads its env where the bridge provides the Worker's.
 		const services = yield* Layer.buildWithScope(
 			Layer.mergeAll(
-				MapleCloudflareSDK.make(workerTelemetryConfig({ serviceName: "maple-api" })).requestLayer,
+				MapleCloudflareSDK.make(
+					workerTelemetryConfig({ serviceName: "maple-api" }),
+				).requestLayer.pipe(Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env))),
 				Layer.succeed(Cloudflare.WorkerEnvironment, env),
-			).pipe(Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env))),
+			),
 			request,
 		)
 		// Alchemy currently erases this helper's return type to any. Restore its boundary contract.
@@ -264,6 +291,31 @@ const event = (
 	}).pipe(Effect.scoped)
 
 describe("the api Worker through alchemy's bridge", () => {
+	it.effect("hands a route's after-response work to the event instead of running it first", () =>
+		Effect.gen(function* () {
+			const handedOver: Array<Effect.Effect<void>> = []
+			let ran = false
+			const app: Effect.Effect<HttpEffect> = Effect.succeed(
+				runAfterResponse(
+					Effect.sync(() => {
+						ran = true
+					}),
+				).pipe(Effect.as(HttpServerResponse.text("ok"))),
+			)
+			const result = yield* event(
+				"GET",
+				"/deferred",
+				app,
+				undefined,
+				Effect.succeed((work) => Effect.sync(() => handedOver.push(work))),
+			)
+			assert.strictEqual(result.response.status, 200)
+			assert.isFalse(ran)
+			yield* Effect.forEach(handedOver, (work) => work, { discard: true })
+			assert.isTrue(ran)
+		}),
+	)
+
 	it.effect("records isolate age for successful requests and graph-build failures", () =>
 		Effect.gen(function* () {
 			const success = yield* event(

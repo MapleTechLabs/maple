@@ -1,5 +1,5 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
-import { describe, it } from "@effect/vitest"
+import { assert, describe, it } from "@effect/vitest"
 import {
 	OTLP_KEEPALIVE_BYTES,
 	OTLP_UNLOAD_TAIL_BYTES,
@@ -7,7 +7,7 @@ import {
 	resetConsentForTests,
 	setConsent,
 } from "@maple/browser-session"
-import { Deferred, Effect, Fiber, Metric, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Deferred, Effect, Fiber, Metric, Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as HttpClient from "effect/http/HttpClient"
 import { afterEach, expect, vi } from "vitest"
@@ -27,7 +27,7 @@ const setupFetch = (
 ) => {
 	const calls: Array<FetchCall> = []
 	const original = globalThis.fetch
-	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		const headers: Record<string, string> = {}
 		const initHeaders = init?.headers
@@ -47,7 +47,7 @@ const setupFetch = (
 			bytes: new TextEncoder().encode(text).byteLength,
 		})
 		return responder(url, init)
-	}) as typeof fetch
+	}
 	return { calls, restore: () => void (globalThis.fetch = original) }
 }
 
@@ -77,8 +77,17 @@ const traceCalls = (calls: ReadonlyArray<FetchCall>) =>
 const spanNames = (calls: ReadonlyArray<FetchCall>): Array<string> =>
 	Arr.flatMap(traceCalls(calls), (c) =>
 		Arr.map(
-			(c.body as { resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }> })
-				.resourceSpans[0].scopeSpans[0].spans,
+			Arr.getUnsafe(
+				Arr.getUnsafe(
+					(
+						c.body as {
+							resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
+						}
+					).resourceSpans,
+					0,
+				).scopeSpans,
+				0,
+			).spans,
 			(span) => span.name,
 		),
 	)
@@ -169,20 +178,21 @@ describe("MapleFlush.make (client)", () => {
 		)
 		await telemetry.flush()
 
-		const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
-		expect(traceCall).toBeDefined()
-		expect(traceCall!.url).toBe("https://collector.test/v1/traces")
-		expect(traceCall!.headers.authorization).toBe("Bearer secret")
+		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
+		expect(traceCall.url).toBe("https://collector.test/v1/traces")
+		expect(traceCall.headers.authorization).toBe("Bearer secret")
 		// Must use fetch(keepalive), not sendBeacon — see flushable.ts header.
-		expect(traceCall!.keepalive).toBe(true)
-		const body = traceCall!.body as {
+		expect(traceCall.keepalive).toBe(true)
+		const body = traceCall.body as {
 			resourceSpans: Array<{
 				resource: { attributes: Array<{ key: string; value: { stringValue?: string } }> }
 				scopeSpans: Array<{ spans: Array<{ name: string }> }>
 			}>
 		}
-		expect(Arr.map(body.resourceSpans[0].scopeSpans[0].spans, (s) => s.name)).toEqual(["op-1"])
-		const attrs = body.resourceSpans[0].resource.attributes
+		expect(
+			Arr.map(Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0).scopeSpans, 0).spans, (s) => s.name),
+		).toEqual(["op-1"])
+		const attrs = Arr.getUnsafe(body.resourceSpans, 0).resource.attributes
 		const attrMap = Rec.fromEntries(Arr.map(attrs, (a) => [a.key, a.value.stringValue]))
 		expect(attrMap["service.name"]).toBe("unit-test")
 		expect(attrMap["maple.sdk.type"]).toBe("client")
@@ -219,13 +229,16 @@ describe("MapleFlush.make (client)", () => {
 			]).pipe(Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
-		const traceCall = calls.find((call) => Str.endsWith("/v1/traces")(call.url))
-		expect(traceCall).toBeDefined()
-		const spans = (traceCall!.body as any).resourceSpans[0].scopeSpans[0].spans
+		const traceCall = Option.getOrThrow(
+			Arr.findFirst(calls, (call) => Str.endsWith("/v1/traces")(call.url)),
+		)
+		const spans = (traceCall.body as any).resourceSpans[0].scopeSpans[0].spans
 		expect(spans.map((span: { name: string }) => span.name)).toEqual(["after-consent"])
 		expect(recordTraceId).toHaveBeenCalledTimes(1)
-		const metricCall = calls.find((call) => Str.endsWith("/v1/metrics")(call.url))
-		const metrics = (metricCall!.body as any).resourceMetrics[0].scopeMetrics[0].metrics
+		const metricCall = Option.getOrThrow(
+			Arr.findFirst(calls, (call) => Str.endsWith("/v1/metrics")(call.url)),
+		)
+		const metrics = (metricCall.body as any).resourceMetrics[0].scopeMetrics[0].metrics
 		expect(
 			metrics.find((metric: { name: string }) => metric.name === "consent_counter").sum.dataPoints[0]
 				.asDouble,
@@ -269,8 +282,10 @@ describe("MapleFlush.make (client)", () => {
 		await Effect.runPromise(Metric.update(counter, 3).pipe(Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
-		const metricCall = calls.find((call) => Str.endsWith("/v1/metrics")(call.url))
-		expect(metricCall?.body).toMatchObject({
+		const metricCall = Option.getOrThrow(
+			Arr.findFirst(calls, (call) => Str.endsWith("/v1/metrics")(call.url)),
+		)
+		expect(metricCall.body).toMatchObject({
 			resourceMetrics: [
 				{
 					scopeMetrics: [
@@ -295,14 +310,17 @@ describe("MapleFlush.make (client)", () => {
 		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
-		const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))!
-		const attrs = (
-			traceCall.body as {
-				resourceSpans: Array<{
-					resource: { attributes: Array<{ key: string; value: { stringValue?: string } }> }
-				}>
-			}
-		).resourceSpans[0].resource.attributes
+		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
+		const attrs = Arr.getUnsafe(
+			(
+				traceCall.body as {
+					resourceSpans: Array<{
+						resource: { attributes: Array<{ key: string; value: { stringValue?: string } }> }
+					}>
+				}
+			).resourceSpans,
+			0,
+		).resource.attributes
 		const attrMap = Rec.fromEntries(Arr.map(attrs, (a) => [a.key, a.value.stringValue]))
 		expect(attrMap["user_agent.original"]).toBe("TestAgent/1.0")
 		expect(attrMap["browser.language"]).toBe("en-GB")
@@ -326,20 +344,32 @@ describe("MapleFlush.make (client)", () => {
 		await telemetry.flush()
 
 		expect(recordTraceId).toHaveBeenCalledTimes(1)
-		expect(recordTraceId.mock.calls[0][0]).toMatch(/^[0-9a-f]{32}$/i)
+		expect(Arr.getUnsafe(Arr.getUnsafe(recordTraceId.mock.calls, 0), 0)).toMatch(/^[0-9a-f]{32}$/i)
 
-		const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))!
-		const span = (
-			traceCall.body as {
-				resourceSpans: Array<{
-					scopeSpans: Array<{
-						spans: Array<{ attributes: Array<{ key: string; value: { stringValue?: string } }> }>
-					}>
-				}>
-			}
-		).resourceSpans[0].scopeSpans[0].spans[0]
-		const sessionAttr = span.attributes.find((a) => a.key === "session.id")
-		expect(sessionAttr?.value.stringValue).toBe("sess-123")
+		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
+		const span = Arr.getUnsafe(
+			Arr.getUnsafe(
+				Arr.getUnsafe(
+					(
+						traceCall.body as {
+							resourceSpans: Array<{
+								scopeSpans: Array<{
+									spans: Array<{
+										attributes: Array<{ key: string; value: { stringValue?: string } }>
+									}>
+								}>
+							}>
+						}
+					).resourceSpans,
+					0,
+				).scopeSpans,
+				0,
+			).spans,
+			0,
+		)
+		assert.isDefined(span)
+		const sessionAttr = Option.getOrThrow(Arr.findFirst(span.attributes, (a) => a.key === "session.id"))
+		expect(sessionAttr.value.stringValue).toBe("sess-123")
 	})
 
 	it("stamps session.id from the self-managed session when no sink is published", async () => {
@@ -376,7 +406,7 @@ describe("MapleFlush.make (client)", () => {
 		await telemetry.flush()
 
 		const stored = JSON.parse(store.get("maple.session")!) as { id: string }
-		const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))!
+		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
 		const spans = Arr.flatMap(
 			(
 				traceCall.body as {
@@ -393,8 +423,10 @@ describe("MapleFlush.make (client)", () => {
 		)
 		expect(spans.length).toBeGreaterThanOrEqual(2)
 		for (const span of spans) {
-			const sessionAttr = span.attributes.find((a) => a.key === "session.id")
-			expect(sessionAttr?.value.stringValue).toBe(stored.id)
+			const sessionAttr = Option.getOrThrow(
+				Arr.findFirst(span.attributes, (a) => a.key === "session.id"),
+			)
+			expect(sessionAttr.value.stringValue).toBe(stored.id)
 		}
 		await telemetry.dispose()
 	})
@@ -447,6 +479,39 @@ describe("MapleFlush.make (client)", () => {
 		await telemetry.flush()
 
 		expect(spanNames(calls)).toEqual(["browser.uncaught_error", "browser.unhandled_rejection"])
+		await telemetry.dispose()
+	})
+
+	it("redacts credentials from the page URL and script path on uncaught errors", async () => {
+		const { calls, restore: rf } = setupFetch()
+		const dom = setupDom()
+		vi.stubGlobal("location", { href: "https://app.test/reset?token=s3cr3t&tab=1" })
+		restore = () => {
+			rf()
+			dom.restore()
+			vi.unstubAllGlobals()
+		}
+		const telemetry = make(baseConfig)
+
+		dom.dispatch("error", {
+			error: new TypeError("app bug"),
+			filename: "https://app.test/assets/app.js?api_key=k3y",
+		})
+		await telemetry.flush()
+
+		const body = Arr.getUnsafe(traceCalls(calls), 0).body as {
+			resourceSpans: Array<{
+				scopeSpans: Array<{
+					spans: Array<{ attributes: Array<{ key: string; value: { stringValue?: string } }> }>
+				}>
+			}>
+		}
+		const span = Arr.getUnsafe(Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0).scopeSpans, 0).spans, 0)
+		const attr = (key: string) =>
+			Option.getOrThrow(Arr.findFirst(span.attributes, (a) => a.key === key)).value.stringValue
+		expect(attr("url.full")).not.toContain("s3cr3t")
+		expect(attr("url.full")).toContain("tab=1")
+		expect(attr("code.file.path")).not.toContain("k3y")
 		await telemetry.dispose()
 	})
 
@@ -510,9 +575,8 @@ describe("MapleFlush.make (client)", () => {
 		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
-		const traces = calls.find((call) => Str.endsWith("/v1/traces")(call.url))
-		expect(traces).toBeDefined()
-		expect(traces!.headers).not.toHaveProperty("authorization")
+		const traces = Option.getOrThrow(Arr.findFirst(calls, (call) => Str.endsWith("/v1/traces")(call.url)))
+		expect(traces.headers).not.toHaveProperty("authorization")
 		// A custom endpoint is a proxy or collector: keyless is legitimate there.
 		expect(warnSpy).not.toHaveBeenCalled()
 	})
@@ -578,14 +642,14 @@ describe("MapleFlush.make (client)", () => {
 		await recordSpans(telemetry, numbered("big", 400))
 		await telemetry.flush()
 		expect(traceCalls(calls)).toHaveLength(1)
-		expect(traceCalls(calls)[0].bytes).toBeGreaterThan(OTLP_KEEPALIVE_BYTES)
+		expect(Arr.getUnsafe(traceCalls(calls), 0).bytes).toBeGreaterThan(OTLP_KEEPALIVE_BYTES)
 		// The browser would reject this body with keepalive set, whatever the server says.
-		expect(traceCalls(calls)[0].keepalive).toBe(false)
+		expect(Arr.getUnsafe(traceCalls(calls), 0).keepalive).toBe(false)
 
 		await recordSpans(telemetry, ["small"])
 		await telemetry.flush()
 		expect(traceCalls(calls)).toHaveLength(2)
-		expect(traceCalls(calls)[1].keepalive).toBe(true)
+		expect(Arr.getUnsafe(traceCalls(calls), 1).keepalive).toBe(true)
 		expect(spanNames(calls)).toHaveLength(401)
 	})
 
@@ -705,6 +769,8 @@ describe("MapleFlush.make (client)", () => {
 			"metrics",
 		])
 		const [newest, older] = traceCalls(calls)
+		assert.isDefined(older)
+		assert.isDefined(newest)
 		const tail = spanNames([newest])
 		expect(tail.length).toBeGreaterThan(1)
 		expect(tail).toEqual(names.slice(-tail.length))
@@ -759,8 +825,10 @@ describe("MapleFlush.make (client)", () => {
 		])
 		// Both newest-first bodies are full, the older parts are too large for what
 		// is left, and OTLP's share still holds the metrics snapshot.
-		const keepalive = calls.filter((call) => call.keepalive)
-		expect(keepalive[0].bytes + keepalive[1].bytes).toBeGreaterThan(24 * 1024)
+		const keepalive = Arr.filter(calls, (call) => call.keepalive === true)
+		expect(Arr.getUnsafe(keepalive, 0).bytes + Arr.getUnsafe(keepalive, 1).bytes).toBeGreaterThan(
+			24 * 1024,
+		)
 		expect(Arr.reduce(keepalive, 0, (sum, call) => sum + call.bytes)).toBeLessThanOrEqual(
 			OTLP_KEEPALIVE_BYTES,
 		)
@@ -783,6 +851,8 @@ describe("MapleFlush.make (client)", () => {
 		dom.fire("pagehide")
 
 		const [newest, older] = traceCalls(calls)
+		assert.isDefined(older)
+		assert.isDefined(newest)
 		expect(newest.keepalive).toBe(true)
 		expect(newest.bytes).toBeLessThanOrEqual(OTLP_UNLOAD_TAIL_BYTES)
 		// A plain request issued at unload is often lost, so room that is left is used.
@@ -812,6 +882,9 @@ describe("MapleFlush.make (client)", () => {
 		dom.fire("pagehide")
 
 		const [inFlight, newest, older] = traceCalls(calls)
+		assert.isDefined(older)
+		assert.isDefined(newest)
+		assert.isDefined(inFlight)
 		expect(inFlight.keepalive).toBe(true)
 		// The newest spans take what is left of OTLP's share; the older ones go plain.
 		const tail = spanNames([newest])
@@ -847,7 +920,7 @@ describe("MapleFlush.make (client)", () => {
 
 		// Session bytes count against the shared total, not against OTLP's share.
 		expect(traceCalls(calls)).toHaveLength(1)
-		expect(traceCalls(calls)[0].keepalive).toBe(true)
+		expect(Arr.getUnsafe(traceCalls(calls), 0).keepalive).toBe(true)
 
 		inflight.resolveAll()
 		await sessionRows
@@ -997,15 +1070,28 @@ describe("MapleFlush.make (client)", () => {
 			readonly attributes: ReadonlyArray<{ key: string; value: { stringValue?: string } }>
 		}
 		const exportedClientSpan = (calls: ReadonlyArray<FetchCall>) =>
-			Arr.flatMap(
-				traceCalls(calls),
-				(c) =>
-					(
-						c.body as {
-							resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<ExportedSpan> }> }>
-						}
-					).resourceSpans[0].scopeSpans[0].spans,
-			).find((span) => span.kind === 3 /* client */)
+			Option.getOrThrow(
+				Arr.findFirst(
+					Arr.flatMap(
+						traceCalls(calls),
+						(c) =>
+							Arr.getUnsafe(
+								Arr.getUnsafe(
+									(
+										c.body as {
+											resourceSpans: Array<{
+												scopeSpans: Array<{ spans: Array<ExportedSpan> }>
+											}>
+										}
+									).resourceSpans,
+									0,
+								).scopeSpans,
+								0,
+							).spans,
+					),
+					(span) => span.kind === 3 /* client */,
+				),
+			)
 
 		// Runs one HttpClient request whose fetch rejects only after `during` has run.
 		const failRequest = (telemetry: ReturnType<typeof make>, during: () => void) =>
@@ -1042,10 +1128,11 @@ describe("MapleFlush.make (client)", () => {
 			await telemetry.flush()
 
 			const span = exportedClientSpan(calls)
-			expect(span?.status.code).toBe(0)
-			expect(span?.attributes.find((a) => a.key === "maple.connection_lost")?.value.stringValue).toBe(
-				"page_unload",
-			)
+			expect(span.status.code).toBe(0)
+			expect(
+				Option.getOrThrow(Arr.findFirst(span.attributes, (a) => a.key === "maple.connection_lost"))
+					.value.stringValue,
+			).toBe("page_unload")
 			await telemetry.dispose()
 		})
 
@@ -1062,7 +1149,7 @@ describe("MapleFlush.make (client)", () => {
 			dom.fire("pageshow")
 			await telemetry.flush()
 
-			expect(exportedClientSpan(calls)?.status.code).toBe(0)
+			expect(exportedClientSpan(calls).status.code).toBe(0)
 			await telemetry.dispose()
 		})
 
@@ -1081,7 +1168,7 @@ describe("MapleFlush.make (client)", () => {
 			await Effect.runPromise(failRequest(telemetry, () => {}))
 			await telemetry.flush()
 
-			expect(exportedClientSpan(calls)?.status.code).toBe(2)
+			expect(exportedClientSpan(calls).status.code).toBe(2)
 			await telemetry.dispose()
 		})
 	})

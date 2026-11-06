@@ -87,7 +87,7 @@ describe("alert rule editor", () => {
 			expect.arrayContaining([
 				"GenerateAlertDraftId",
 				"ReadAlertEditorClock",
-				"ReadAlertEditorIsAdmin",
+				"ReadAlertEditorGrants",
 				"FetchAlertEditorConnectors",
 			]),
 		)
@@ -189,7 +189,7 @@ describe("alert rule editor", () => {
 
 	test("a raw SQL query too slow for its interval says so, blocks save, and switches in one click", () => {
 		const timing = (elapsedMs: number) =>
-			Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+			Schema.decodeSync(AlertRulePreviewResponse)({
 				bucketSeconds: 300,
 				windowMinutes: 5,
 				threshold: 5,
@@ -244,7 +244,7 @@ describe("alert rule editor", () => {
 			// A fast query keeps its cheaper-filter suggestions to itself.
 			expectView(text(/^Line 4:/)).not.toExist(),
 		)
-		const heavy = Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+		const heavy = Schema.decodeSync(AlertRulePreviewResponse)({
 			...Schema.encodeSync(AlertRulePreviewResponse)(timing(7_800)),
 			seriesFailure: "query_too_slow",
 		})
@@ -573,7 +573,7 @@ describe("alert rule editor", () => {
 	// section keyed on the wrong input would keep showing it.
 	test("each section follows the edit or sync it reads, after rendering the one before", () => {
 		const ready = withLists(entered({ template: "slow_p95" }))
-		const firing = Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+		const firing = Schema.decodeSync(AlertRulePreviewResponse)({
 			bucketSeconds: 300,
 			windowMinutes: 5,
 			threshold: 1500,

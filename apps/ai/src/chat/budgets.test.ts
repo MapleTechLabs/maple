@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest"
 import * as Duration from "effect/Duration"
 import { AGENTS, agentPolicyFor } from "./agents"
 import {
+	AUDIT_MAX_LIVE_CONTEXT_TOKENS,
 	CHAT_BUDGET,
 	INVESTIGATION_BUDGET,
 	liveContextLimit,
@@ -50,6 +51,21 @@ describe("liveContextLimit", () => {
 
 	it("never exceeds the absolute cap, whatever the model claims", () => {
 		expect(liveContextLimit(10_000_000)).toBe(MAX_LIVE_CONTEXT_TOKENS)
+	})
+})
+
+describe("liveContextLimit, security audit", () => {
+	/** `critic-w2-post`, 2026-11-04: its first prompt alone, before it read a file. */
+	const CRITIC_FIRST_PROMPT = 113_342
+
+	it("leaves a large-ledger critic room to read source on a million-token model", () => {
+		expect(liveContextLimit(GLM_CONTEXT, AUDIT_MAX_LIVE_CONTEXT_TOKENS)).toBeGreaterThan(
+			CRITIC_FIRST_PROMPT * 4,
+		)
+	})
+
+	it("still leaves a small-window model room for its own output", () => {
+		expect(liveContextLimit(128_000, AUDIT_MAX_LIVE_CONTEXT_TOKENS)).toBe(liveContextLimit(128_000))
 	})
 })
 
@@ -95,14 +111,14 @@ describe("agent budgets", () => {
 describe("agentPolicyFor", () => {
 	/** It ignored its agent argument until 2026-09-20, so every surface got the same rail. */
 	it("reads the agent's own budget rather than one shared number", () => {
-		const investigate = agentPolicyFor(AGENTS.investigate!, GLM_CONTEXT)
-		const chat = agentPolicyFor(AGENTS.default!, GLM_CONTEXT)
+		const investigate = agentPolicyFor(AGENTS.investigate, GLM_CONTEXT)
+		const chat = agentPolicyFor(AGENTS.default, GLM_CONTEXT)
 		expect(investigate.maxToolCalls).not.toBe(chat.maxToolCalls)
 		expect(investigate.tokenBudget).not.toBe(chat.tokenBudget)
 	})
 
 	it("derives the context limit instead of passing the window through", () => {
-		expect(agentPolicyFor(AGENTS.investigate!, GLM_CONTEXT).contextTokenLimit).toBe(
+		expect(agentPolicyFor(AGENTS.investigate, GLM_CONTEXT).contextTokenLimit).toBe(
 			liveContextLimit(GLM_CONTEXT),
 		)
 	})
@@ -112,15 +128,15 @@ describe("agentPolicyFor", () => {
 	 * a chat turn keeps its cached prompt untouched.
 	 */
 	it("shows the unattended passes their run status, and not the chat turn", () => {
-		expect(agentPolicyFor(AGENTS["pr-review"]!, GLM_CONTEXT, true).runStatus).toBe("appended")
-		expect(agentPolicyFor(AGENTS.investigate!, GLM_CONTEXT, true).runStatus).toBe("appended")
-		expect(agentPolicyFor(AGENTS.default!, GLM_CONTEXT, true).runStatus).toBe("off")
+		expect(agentPolicyFor(AGENTS["pr-review"], GLM_CONTEXT, true).runStatus).toBe("appended")
+		expect(agentPolicyFor(AGENTS.investigate, GLM_CONTEXT, true).runStatus).toBe("appended")
+		expect(agentPolicyFor(AGENTS.default, GLM_CONTEXT, true).runStatus).toBe("off")
 	})
 
 	// An attended follow-up in an `inv-` or `pr-` session runs on the same agent, and must answer
 	// rather than be told to file a partial at the warning.
 	it("keeps the run status off an attended follow-up on an investigation or review", () => {
-		expect(agentPolicyFor(AGENTS.investigate!, GLM_CONTEXT, false).runStatus).toBe("off")
-		expect(agentPolicyFor(AGENTS["pr-review"]!, GLM_CONTEXT, false).runStatus).toBe("off")
+		expect(agentPolicyFor(AGENTS.investigate, GLM_CONTEXT, false).runStatus).toBe("off")
+		expect(agentPolicyFor(AGENTS["pr-review"], GLM_CONTEXT, false).runStatus).toBe("off")
 	})
 })

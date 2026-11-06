@@ -38,7 +38,7 @@ import { parseWarehouseDateTime, WarehouseTimeInput } from "@maple/query-engine"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { auditAttribution, originMetadata } from "@maple/backend/services/audit/audit-access"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { stringifyJsonPretty } from "../lib/json"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
@@ -208,7 +208,7 @@ const resolvePage = Effect.fnUntraced(function* (tool: string, orgId: OrgId, ref
 
 const decodeIncidentId = (ref: string) => {
 	const value = Str.trim(ref)
-	return Schema.decodeUnknownEffect(StatusPageIncidentId)(
+	return Schema.decodeEffect(StatusPageIncidentId)(
 		decodePublicId(PublicIdPrefixes.statusPageIncident, value) ?? value,
 	).pipe(
 		Effect.mapError(
@@ -710,7 +710,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		name: "apply_status_page_config",
 		title: "Apply Status Page Config",
 		description:
-			"Replace a status page with a config document from get_status_page_config, in one write that fully applies or not at all. Components with an `id` are updated, without one created, and left out deleted; list order is display order; omitted optional fields take their defaults; unknown keys are refused. The document's `version` guards the write: if the config changed since it was read, nothing is applied and you must read it again. Only org admins may call it, and the result is public on the page.",
+			"Replace a status page with a config document from get_status_page_config, in one write that fully applies or not at all. Components with an `id` are updated, without one created, and left out deleted; list order is display order; omitted optional fields take their defaults; unknown keys are refused. The document's `version` guards the write: if the config changed since it was read, nothing is applied and you must read it again. Only org admins and engineers may call it, and the result is public on the page.",
 		parameters: Schema.Struct({
 			page: P.text("The page's slug, name or id"),
 			config: P.json(
@@ -728,11 +728,12 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		handler: Effect.fn("McpTool.applyStatusPageConfig")(function* (params) {
 			const tool = "apply_status_page_config"
 			const tenant = yield* tenantInRollout(tool)
-			yield* requireAdmin(
+			yield* Policy.check(
 				tenant.roles,
+				"status_pages:edit",
 				() =>
 					new McpUnavailableError({
-						message: `${tool} changes a public status page, which only org admins may do. Ask an admin, or edit it in Maple under Status pages.`,
+						message: `${tool} changes a public status page, which only org admins and engineers may do. Ask an admin or engineer, or edit it in Maple under Status pages.`,
 						capability: "org_admin",
 					}),
 			)

@@ -124,7 +124,8 @@ const listLogsEffect = Effect.fn("QueryEngine.listLogs")(function* ({ data }: { 
 
 	const logs = coerceLogRows(logsResult.data)
 	// The exact stored literal: a millisecond cursor would skip rows sharing the boundary millisecond.
-	const cursor = logs.length === limit && logs.length > 0 ? logs[logs.length - 1].exactTimestamp : null
+	const lastLog = logs.at(-1)
+	const cursor = logs.length === limit && lastLog !== undefined ? lastLog.exactTimestamp : null
 
 	return {
 		data: logs,
@@ -174,7 +175,7 @@ const getLogEffect = Effect.fn("QueryEngine.getLog")(function* ({ data }: { data
 	)
 
 	return {
-		data: response.data.length > 0 ? coerceLogRow(response.data[0]) : null,
+		data: response.data[0] === undefined ? null : coerceLogRow(response.data[0]),
 	} satisfies GetLogResult
 })
 
@@ -213,17 +214,19 @@ const getLogsCountEffect = Effect.fn("QueryEngine.getLogsCount")(function* ({
 					severities: input.severities,
 					traceId: input.traceId,
 					search: input.search,
-					environments: input.deploymentEnvs?.length
-						? input.deploymentEnvs
-						: input.deploymentEnv
-							? [input.deploymentEnv]
-							: undefined,
+					environments:
+						input.deploymentEnvs !== undefined && input.deploymentEnvs.length > 0
+							? input.deploymentEnvs
+							: input.deploymentEnv
+								? [input.deploymentEnv]
+								: undefined,
 					deploymentEnvMatchMode: input.deploymentEnvMatchMode,
-					namespaces: input.namespaces?.length
-						? input.namespaces
-						: input.namespace
-							? [input.namespace]
-							: undefined,
+					namespaces:
+						input.namespaces !== undefined && input.namespaces.length > 0
+							? input.namespaces
+							: input.namespace
+								? [input.namespace]
+								: undefined,
 					namespaceMatchMode: input.namespaceMatchMode,
 					excludedServiceNames: input.excludedServices,
 					excludedSeverities: input.excludedSeverities,
@@ -290,11 +293,12 @@ const getLogsFacetsEffect = Effect.fn("QueryEngine.getLogsFacets")(function* ({
 					severity: input.severity,
 					environments: input.deploymentEnv ? [input.deploymentEnv] : undefined,
 					deploymentEnvMatchMode: input.deploymentEnvMatchMode,
-					namespaces: input.namespaces?.length
-						? input.namespaces
-						: input.namespace
-							? [input.namespace]
-							: undefined,
+					namespaces:
+						input.namespaces !== undefined && input.namespaces.length > 0
+							? input.namespaces
+							: input.namespace
+								? [input.namespace]
+								: undefined,
 					namespaceMatchMode: input.namespaceMatchMode,
 					attributeFilters: input.attributeFilters,
 					resourceAttributeFilters: input.resourceAttributeFilters,
@@ -364,7 +368,7 @@ const getLogsFacetValuesEffect = Effect.fn("QueryEngine.getLogsFacetValues")(fun
 
 	return {
 		data: Arr.map(
-			extractFacets(response).filter((row) => row.facetType === input.facet && row.name),
+			Arr.filter(extractFacets(response), (row) => row.facetType === input.facet && row.name !== ""),
 			(row): FacetItem => ({ name: row.name, count: Number(row.count) }),
 		),
 	}

@@ -38,8 +38,9 @@ export class SecurityAuditResultError extends Schema.TaggedError<SecurityAuditRe
 /** The object inside a lone markdown fence, by plain string operations (no backtracking regex). */
 const unfence = (text: string): string => {
 	if (!Str.startsWith("```")(text) || !Str.endsWith("```")(text) || text.length < 6) return text
-	const firstNewline = text.indexOf("\n")
-	if (firstNewline < 0) return text
+	const newline = Str.indexOf("\n")(text)
+	if (Option.isNone(newline)) return text
+	const firstNewline = newline.value
 	const opener = Str.trim(Str.slice(3, firstNewline)(text))
 	return opener === "" || opener === "json" ? Str.trim(Str.slice(firstNewline + 1, -3)(text)) : text
 }
@@ -77,7 +78,7 @@ export const decodeAgentJson = <S extends Schema.Top>(role: string, schema: S, t
 		if (!Str.startsWith("{")(body) || !Str.endsWith("}")(body)) {
 			return yield* fail(`${role} answered prose, not exactly one JSON object`, [])
 		}
-		return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(body).pipe(
+		return yield* Schema.decodeEffect(Schema.fromJsonString(schema))(body).pipe(
 			Effect.mapError((cause) =>
 				fail(
 					`${role} result is not valid JSON for its contract: ${cause.message}`,

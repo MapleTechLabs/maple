@@ -50,9 +50,7 @@ const call = (name: string, params: unknown): Promise<McpToolResult> => {
 
 const WINDOW = { start_time: "2026-09-24 00:00:00", end_time: "2026-09-24 06:00:00" }
 
-const cases: ReadonlyArray<
-	readonly [string, Record<string, unknown>, Schema.Codec<unknown, unknown, never, never>]
-> = [
+const cases: ReadonlyArray<readonly [string, Record<string, unknown>, Schema.Codec<unknown, unknown>]> = [
 	["list_services", WINDOW, ListServicesOutput],
 	["diagnose_service", { ...WINDOW, service: "checkout" }, DiagnoseServiceOutput],
 	["get_service_top_operations", { ...WINDOW, service: "checkout" }, GetServiceTopOperationsOutput],
@@ -76,7 +74,7 @@ describe("services, metrics and query tools on define", () => {
 			const result = await call(name, params)
 			expect(result.isError, markdown(result)).toBeUndefined()
 			// Decoding throws a readable schema error naming the failing path.
-			Schema.decodeUnknownSync(schema)(result.structuredContent)
+			Schema.decodeSync(schema)(result.structuredContent)
 			expect(markdown(result)).not.toContain("__maple_ui")
 		})
 	}

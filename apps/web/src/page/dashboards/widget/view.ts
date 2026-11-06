@@ -17,7 +17,7 @@ import { widgetTile } from "../kit/tiles"
 import { MeasurePreview } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { previewWidgetOf } from "./update"
+import { canApply, previewWidgetOf } from "./update"
 import type { Widget } from "./lowering"
 import { leaveDialog } from "./view-dialog"
 import { queryEditor } from "./view-query"
@@ -81,7 +81,6 @@ const timeLabel = (model: Model): string =>
 			? presetLabel(model.timeRange.value)
 			: `${model.timeRange.startTime} - ${model.timeRange.endTime}`
 
-/** The preview hero: the board's range picker over the widget as it would render. */
 /** The previewed stat's sparkline series, read like any tile's data (its own data source). */
 const sparklineState = (model: Model, widget: Widget) => {
 	const source = widget.display.sparkline?.dataSource
@@ -90,6 +89,7 @@ const sparklineState = (model: Model, widget: Widget) => {
 		: dataStateOf(model.requests, { ...widget, dataSource: source }, model.sparkGate)
 }
 
+/** The preview hero: the editor's range picker over the widget as it would render. */
 const preview = (h: H, model: Model, timeZone: string): Html => {
 	const widget = previewWidgetOf(model)
 	return h.div(
@@ -152,14 +152,23 @@ const preview = (h: H, model: Model, timeZone: string): Html => {
 
 const editor = (h: H, model: Model, timeZone: string): Html =>
 	h.div(
-		[h.Class("animate-in fade-in slide-in-from-bottom-2 duration-200 flex flex-1 min-h-0 -m-4")],
+		// Below `md` the rail stacks under the editor and the page scrolls; from `md` each pane scrolls.
+		[
+			h.Class(
+				"animate-in fade-in slide-in-from-bottom-2 duration-200 flex flex-col md:flex-row md:flex-1 md:min-h-0 -m-4",
+			),
+		],
 		[
 			h.div(
-				[h.Class("flex-1 min-w-0 overflow-y-auto")],
+				[h.Class("min-w-0 md:flex-1 md:overflow-y-auto")],
 				[preview(h, model, timeZone), queryEditor(h, model, timeZone)],
 			),
 			h.aside(
-				[h.Class("w-[272px] shrink-0 border-l overflow-y-auto p-5 bg-surface-faint")],
+				[
+					h.Class(
+						"w-full md:w-[272px] shrink-0 border-t md:border-t-0 md:border-l md:overflow-y-auto p-5 bg-surface-faint",
+					),
+				],
 				[settingsRail(h, model, timeZone)],
 			),
 		],
@@ -201,6 +210,7 @@ export const topbarActions = Submodel.defineView<Model, Message, PageViewInputs>
 					{
 						size: "sm",
 						isLoading: model.isSaving,
+						isDisabled: !canApply(model),
 						attributes: [h.OnClick(Message.ClickedApply())],
 					},
 					["Apply"],

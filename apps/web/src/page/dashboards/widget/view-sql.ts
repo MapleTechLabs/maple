@@ -13,13 +13,13 @@ import { input } from "@maple/views/ui/input"
 import { sqlEditor } from "@maple/views/ui/sql-editor"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { type RawSqlState, rawSqlErrorOf } from "./raw-sql"
+import { isRunnableSql, type RawSqlState, rawSqlErrorOf } from "./raw-sql"
 import { SQL_TEXTAREA_ID } from "./sql-step"
 import { widgetOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { queryPanelBar } from "../../kit/query-panel-bar"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // `RawSqlEditorPanel` under the editor's Raw SQL
 // tab: the highlighted SQL, the macro and variable chips, the bucket, Run preview.
@@ -96,7 +96,10 @@ const chip = (h: H, token: string, className: string, trigger: ReadonlyArray<Chi
 
 /** What a chip's tooltip says: the macro's expansion, or how a variable expands. */
 const chipDescription = (chips: ReadonlyArray<readonly [string, string]>, triggerId: string): string =>
-	chips.find((_, index) => chipTriggerId(index) === triggerId)?.[1] ?? ""
+	Arr.findFirst(chips, (_, index) => chipTriggerId(index) === triggerId).pipe(
+		Option.flatMapNullishOr((found) => found[1]),
+		Option.getOrElse(() => ""),
+	)
 
 const IDLE: FieldState = {
 	isInvalid: false,
@@ -201,7 +204,6 @@ const footerRow = (h: H, rawSql: RawSqlState, chips: Html): Html => {
 /** The Raw SQL tab's body: the `$__orgFilter` message, the panel, and Run preview. */
 export const rawSqlEditor = (h: H, model: Model, rawSql: RawSqlState): ReadonlyArray<Html> => {
 	const error = rawSqlErrorOf(rawSql.draft)
-	const issue = rawSqlIssue(rawSql.draft.sql)
 	return [
 		...(error === null ? [] : [fieldErrorText(h, { className: "font-medium" }, error)]),
 		h.div(
@@ -226,14 +228,16 @@ export const rawSqlEditor = (h: H, model: Model, rawSql: RawSqlState): ReadonlyA
 						h,
 						{
 							size: "sm",
-							isDisabled: issue !== null,
+							isDisabled: !isRunnableSql(rawSql.draft),
 							attributes: [h.OnClick(Message.ClickedRunPreview())],
 						},
 						["Run preview"],
 					),
 					typography(h, { size: "2xs", tone: "muted", className: "ml-auto" }, [
 						"Targets ",
-						inlineCode(h, {}, [widgetOf(model)?.visualization ?? ""]),
+						inlineCode(h, {}, [
+							model.state?.visualization ?? widgetOf(model)?.visualization ?? "",
+						]),
 					]),
 				]),
 			],

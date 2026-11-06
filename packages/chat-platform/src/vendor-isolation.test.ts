@@ -107,8 +107,9 @@ describe("vendor isolation", () => {
 				join(repoRoot, root, "connectors", "index.ts"),
 				join(repoRoot, root, "connectors", "manifests.ts"),
 			]
-			const offenders = Arr.filter(sourcesUnder(join(repoRoot, root)), (file) => file !== SELF).flatMap(
-				(file) => offendingLines(file, [], registries.includes(file) ? isRegistration : never),
+			const sources = Arr.filter(sourcesUnder(join(repoRoot, root)), (file) => file !== SELF)
+			const offenders = Arr.flatMap(sources, (file) =>
+				offendingLines(file, [], registries.includes(file) ? isRegistration : never),
 			)
 
 			expect(offenders).toEqual([])
@@ -122,7 +123,7 @@ describe("vendor isolation", () => {
 		it(`keeps ${root} free of vendor file names`, () => {
 			const offenders = Arr.map(
 				Arr.filter(
-					Arr.filter(sourcesUnder(join(repoRoot, root)), (file) => file !== SELF),
+					Arr.filter(sourcesUnder(join(repoRoot, root)), (file: string) => file !== SELF),
 					(file) => {
 						const name = Str.toLowerCase(basename(file))
 						return Arr.some(VENDORS, (vendor) => Str.includes(vendor)(name))

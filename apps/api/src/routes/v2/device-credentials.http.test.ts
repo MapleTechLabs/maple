@@ -55,9 +55,9 @@ afterEach(() => cleanupTestDbs(createdDbs))
 const BASE = "http://maple.test"
 const TEAM_ID = "TEAMID1234"
 const APP_ID = `${TEAM_ID}.com.maple.mobile`
-const ORG = Schema.decodeUnknownSync(OrgId)("org_device_cred")
-const USER = Schema.decodeUnknownSync(UserId)("user_device_cred")
-const OTHER_USER = Schema.decodeUnknownSync(UserId)("user_device_other")
+const ORG = Schema.decodeSync(OrgId)("org_device_cred")
+const USER = Schema.decodeSync(UserId)("user_device_cred")
+const OTHER_USER = Schema.decodeSync(UserId)("user_device_other")
 const INSTALLATION = "F9E1B4C0-8F2A-4C6D-9E1B-4C08F2A4C6D9"
 const SIGNING_KEY = generateKeyPairSync("ec", {
 	namedCurve: "P-256",
@@ -137,7 +137,7 @@ const proof = async (key: DeviceKey, options: ProofOptions) => {
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 /** The same 32 bytes spelled differently: the last character's unused low bit set. */
 const nonCanonical = (coordinate: string) =>
-	`${Str.slice(0, -1)(coordinate)}${ALPHABET[ALPHABET.indexOf(Str.slice(-1)(coordinate)) | 1]}`
+	`${Str.slice(0, -1)(coordinate)}${ALPHABET[Option.getOrElse(Str.indexOf(Str.slice(-1)(coordinate))(ALPHABET), () => -1) | 1]}`
 
 const testConfig = () =>
 	ConfigProvider.layer(
@@ -306,7 +306,7 @@ const makeHarness = (trustAnchor?: Uint8Array, limited?: (key: string) => boolea
 	/** Whoever the self-hosted session resolves to, read back from the registered row. */
 	const sessionUser = Effect.promise(() =>
 		testDb.pglite.query<{ user_id: string }>("select user_id from device_credentials limit 1"),
-	).pipe(Effect.map((result) => Schema.decodeUnknownSync(UserId)(result.rows[0]?.user_id)))
+	).pipe(Effect.map((result) => Schema.decodeSync(UserId)(result.rows[0]?.user_id)))
 
 	const sql = (statement: string, params: ReadonlyArray<unknown>) =>
 		testDb.pglite.query(statement, [...params])

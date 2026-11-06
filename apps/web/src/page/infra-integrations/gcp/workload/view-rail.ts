@@ -72,7 +72,7 @@ const externalLink = (h: H, href: string, name: IconName, text: string): Html =>
 /** Rail keys in sentence case; the signal modules keep lowercase keys for their own prose. */
 const railKey = (label: string): string => {
 	const [first, ...rest] = Str.split(" ")(label)
-	const lead = first === "cpu" ? "CPU" : Str.toUpperCase(first.charAt(0)) + Str.slice(1)(first)
+	const lead = first === "cpu" ? "CPU" : Str.toUpperCase(Str.slice(0, 1)(first)) + Str.slice(1)(first)
 	return Arr.join([lead, ...rest], " ")
 }
 

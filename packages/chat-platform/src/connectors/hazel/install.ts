@@ -1,15 +1,25 @@
-import { Effect, Schema } from "effect"
+import { Effect, Record as Rec, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	ChatInstallFailed,
 	ChatSettingsRejected,
 	requireConfig,
+	type ChatConnectorConfig,
 	type ChatConnectorInstall,
 	type ChatInstallCallback,
 	type ChatInstallStart,
 	type ChatWorkspaceSettings,
 } from "../../install"
-import { API_BASE, API_HOST, BOT_ID_CONFIG, BOT_SETTINGS_URL, BOT_TOKEN_CONFIG, INSTALL_URL } from "./api"
+import {
+	API_BASE,
+	API_HOST,
+	BOT_ID_CONFIG,
+	BOT_SETTINGS_URL,
+	BOT_TOKEN_CONFIG,
+	INSTALL_URL,
+	REGION_CONFIG,
+	REGION_CONFIG_KEY,
+} from "./api"
 import { HAZEL_CONNECTOR_ID } from "./id"
 
 /**
@@ -32,9 +42,26 @@ export const hazelInstallUrl = (botId: string, input: { state: string; redirectU
 	return `${INSTALL_URL}?${params.toString()}`
 }
 
+/**
+ * This instance's callback as Hazel knows it: with `?hazel_region=` when the deployment has one
+ * ({@link REGION_CONFIG}). The region is part of the URI registered on the bot, and Hazel matches
+ * that URI exactly, so it routes the workspace to this instance's gateway session before the
+ * install exists, and no link can name a region its callback was not registered for.
+ */
+export const hazelRedirectUri = (redirectUri: string, config: ChatConnectorConfig): string => {
+	const region = config.get(REGION_CONFIG)
+	if (region === undefined) return redirectUri
+	const url = new URL(redirectUri)
+	url.searchParams.set("hazel_region", Redacted.value(region))
+	return url.toString()
+}
+
 const authorizeUrl = (input: ChatInstallStart) =>
 	Effect.map(requireConfig(input.config, HAZEL_CONNECTOR_ID, BOT_ID_CONFIG), (botId) =>
-		hazelInstallUrl(botId, { state: input.state, redirectUri: input.redirectUri }),
+		hazelInstallUrl(botId, {
+			state: input.state,
+			redirectUri: hazelRedirectUri(input.redirectUri, input.config),
+		}),
 	)
 
 /** The redemption POST, as one client span on the service map. */
@@ -112,7 +139,8 @@ const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 	const code = input.params.get("code")
 	if (code === null) return yield* installFailed("Hazel's callback carried no install code")
 	const token = yield* requireConfig(input.config, HAZEL_CONNECTOR_ID, BOT_TOKEN_CONFIG)
-	const response = yield* redeem(token, code, input.redirectUri)
+	// The grant is bound to the URI the link named, region included.
+	const response = yield* redeem(token, code, hazelRedirectUri(input.redirectUri, input.config))
 	if (response.status === 400) {
 		return yield* installFailed("Hazel refused the install code: it expired or was already used")
 	}
@@ -134,7 +162,7 @@ const decodeSettings = (
 ): Effect.Effect<ChatWorkspaceSettings, ChatSettingsRejected> =>
 	// Checked explicitly rather than through an empty schema: a struct with no keys has nothing to
 	// call excess, so that decode accepts everything.
-	Object.keys(input).length === 0
+	Rec.keys<string, string>(input).length === 0
 		? Effect.succeed({})
 		: Effect.fail(
 				new ChatSettingsRejected({
@@ -147,6 +175,7 @@ export const hazelInstall: ChatConnectorInstall = {
 	requiredConfig: [
 		{ name: BOT_ID_CONFIG, secret: false },
 		{ name: BOT_TOKEN_CONFIG, secret: true },
+		REGION_CONFIG_KEY,
 	],
 	authorizeUrl,
 	complete,

@@ -1,7 +1,7 @@
 // Pure geometry + derivation for the chart's commit deploy markers. Kept free of
 // rendering so it unit-tests cleanly and the overlay component stays thin.
 import { shortId } from "@maple/ui/lib/ids"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Order, String as Str } from "effect"
 
 /** A row of the per-bucket release timeline (one per distinct commit per bucket). */
 export interface ReleasePoint {
@@ -97,9 +97,10 @@ function snapBucket(ms: number, chartMs: ReadonlyArray<{ b: string; ms: number }
 // Representative ordering within a bucket: highest span count first (the version
 // that actually took most of the traffic in that bucket is the most useful label),
 // ties broken by sha so the pick is deterministic.
-function byRepresentative(a: MarkerCommit, b: MarkerCommit): number {
-	return b.count - a.count || (a.sha < b.sha ? -1 : 1)
-}
+const byRepresentative: Order.Order<MarkerCommit> = Order.combine(
+	Order.flip(Order.mapInput(Order.Number, (commit: MarkerCommit) => commit.count)),
+	Order.mapInput(Order.String, (commit: MarkerCommit) => commit.sha),
+)
 
 /**
  * Derives deploy markers from the per-bucket release timeline.
@@ -157,8 +158,8 @@ export function buildCommitMarkers(
 	}
 
 	return Arr.map(Array.from(byBucket.entries()), ([bucket, commits]): CommitMarker => {
-		const ordered = commits.toSorted(byRepresentative)
-		return { bucket, label: shortLabel(ordered[0].sha), commits: ordered }
+		const ordered = Arr.sort(commits, byRepresentative)
+		return { bucket, label: shortLabel(ordered[0]?.sha ?? ""), commits: ordered }
 	}).sort((a, b) => bucketMs(a.bucket) - bucketMs(b.bucket))
 }
 
@@ -230,8 +231,8 @@ function placeLabel(
 	plotLeft: number,
 	plotRight: number,
 ): { boxLeft: number; boxWidth: number } {
-	const minX = dashXs[0]
-	const maxX = dashXs[dashXs.length - 1]
+	const minX = dashXs[0] ?? plotLeft
+	const maxX = dashXs.at(-1) ?? minX
 	// HARD bounds — never violated: don't overlap the previous label, don't leave the plot.
 	const hardLo = Math.max(prevRight, plotLeft)
 	// Cap the width to the space left before the plot's right edge so the box can never be
@@ -273,7 +274,7 @@ export function layoutMarkerLabels(
 	const groups: LabelGroup[] = []
 	for (const p of positioned) {
 		const last = groups[groups.length - 1]
-		const prevRight = last ? last.boxLeft + last.boxWidth + gap : plotLeft
+		const prevRight = last !== undefined ? last.boxLeft + last.boxWidth + gap : plotLeft
 		// Merge when either:
 		//  - the dash hits the previous label: there's no room to the right of it to seat a
 		//    fresh label that both clears it (by `gap`) AND keeps this dash inset from its
@@ -284,7 +285,7 @@ export function layoutMarkerLabels(
 		//    previous label (+N).
 		const hitsPrevious = p.x < prevRight + EDGE_INSET
 		const noRoomBeforeEdge = plotRight - prevRight < MIN_LABEL_WIDTH
-		if (last && (hitsPrevious || noRoomBeforeEdge)) {
+		if (last !== undefined && (hitsPrevious || noRoomBeforeEdge)) {
 			last.dashXs.push(p.x)
 			last.commits.push(...p.marker.commits)
 		} else {
@@ -301,9 +302,10 @@ export function layoutMarkerLabels(
 		// freshly pushed) is re-placed clearing the label BEFORE it (groups[-2]). For a
 		// fresh group `before` is the old `last`, so `beforeRight === prevRight` computed
 		// above — same input the standalone-placement path used.
-		const group = groups[groups.length - 1]
-		const before = groups[groups.length - 2]
-		const beforeRight = before ? before.boxLeft + before.boxWidth + gap : plotLeft
+		const group = groups.at(-1)
+		if (group === undefined) continue
+		const before = groups.at(-2)
+		const beforeRight = before !== undefined ? before.boxLeft + before.boxWidth + gap : plotLeft
 		const box = placeLabel(
 			group.dashXs,
 			estimateLabelWidth(group.label, group.commits.length),

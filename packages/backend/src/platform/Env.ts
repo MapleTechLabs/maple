@@ -17,22 +17,22 @@ class EnvValidationError extends Schema.TaggedError<EnvValidationError>()(
 export interface EnvConfig {
 	readonly PORT: number
 	readonly TINYBIRD_HOST: string
-	readonly TINYBIRD_TOKEN: Redacted.Redacted<string>
-	readonly TINYBIRD_SIGNING_KEY: Option.Option<Redacted.Redacted<string>>
+	readonly TINYBIRD_TOKEN: Redacted.Redacted
+	readonly TINYBIRD_SIGNING_KEY: Option.Option<Redacted.Redacted>
 	readonly TINYBIRD_WORKSPACE_ID: Option.Option<string>
 	/** Optional Tinybird-enforced RPS ceiling, bucketed independently per org. */
 	readonly TINYBIRD_RAW_SQL_JWT_RPS_LIMIT: Option.Option<number>
 	readonly CLICKHOUSE_URL: Option.Option<string>
 	readonly CLICKHOUSE_PROVIDER: string
 	readonly CLICKHOUSE_USER: string
-	readonly CLICKHOUSE_PASSWORD: Option.Option<Redacted.Redacted<string>>
+	readonly CLICKHOUSE_PASSWORD: Option.Option<Redacted.Redacted>
 	readonly CLICKHOUSE_DATABASE: string
 	readonly MAPLE_DB_URL: string
 	readonly MAPLE_AUTH_MODE: string
-	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted<string>>
+	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted>
 	readonly MAPLE_DEFAULT_ORG_ID: string
-	readonly MAPLE_INGEST_KEY_ENCRYPTION_KEY: Redacted.Redacted<string>
-	readonly MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: Redacted.Redacted<string>
+	readonly MAPLE_INGEST_KEY_ENCRYPTION_KEY: Redacted.Redacted
+	readonly MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: Redacted.Redacted
 	/**
 	 * Keyed HMAC for dashboard share-link tokens. Optional here, and required by
 	 * `alchemy.run.ts`, so a deploy without it fails loudly while the many test
@@ -40,7 +40,7 @@ export interface EnvConfig {
 	 * share operation fails with `ShareNotConfiguredError` rather than silently
 	 * hashing under a fallback key.
 	 */
-	readonly MAPLE_SHARE_TOKEN_HMAC_KEY: Option.Option<Redacted.Redacted<string>>
+	readonly MAPLE_SHARE_TOKEN_HMAC_KEY: Option.Option<Redacted.Redacted>
 	readonly MAPLE_INGEST_PUBLIC_URL: string
 	readonly MAPLE_APP_BASE_URL: string
 	/**
@@ -58,32 +58,34 @@ export interface EnvConfig {
 	readonly MAPLE_EMAIL_ALLOW_NONPROD: boolean
 	/** Route every org to the managed warehouse; honoured only in development. */
 	readonly MAPLE_IGNORE_ORG_CLICKHOUSE: boolean
-	readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
+	readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted>
 	readonly CLERK_PUBLISHABLE_KEY: Option.Option<string>
-	readonly CLERK_JWT_KEY: Option.Option<Redacted.Redacted<string>>
+	readonly CLERK_JWT_KEY: Option.Option<Redacted.Redacted>
 	/** Svix signing secret (`whsec_…`) for `POST /webhooks/clerk`; the route answers 503 while unset. */
-	readonly CLERK_WEBHOOK_SECRET: Option.Option<Redacted.Redacted<string>>
+	readonly CLERK_WEBHOOK_SECRET: Option.Option<Redacted.Redacted>
 	/** Shared access key for PR-preview sign-in; bound on `pr-<n>` stages only (`PreviewSignInService`). */
-	readonly PREVIEW_SIGNIN_KEY: Option.Option<Redacted.Redacted<string>>
+	readonly PREVIEW_SIGNIN_KEY: Option.Option<Redacted.Redacted>
 	readonly MAPLE_ORG_ID_OVERRIDE: Option.Option<string>
-	readonly AUTUMN_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
+	/** Dev-only opt-in: the org pin admits a non-member with their session role. */
+	readonly MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS: boolean
+	readonly AUTUMN_SECRET_KEY: Option.Option<Redacted.Redacted>
 	readonly AUTUMN_API_URL: string
 	/** Svix signing secret (`whsec_…`) for `POST /webhooks/autumn`; the route answers 503 while unset. */
-	readonly AUTUMN_WEBHOOK_SECRET: Option.Option<Redacted.Redacted<string>>
+	readonly AUTUMN_WEBHOOK_SECRET: Option.Option<Redacted.Redacted>
 	/**
 	 * Stripe secret (or restricted, Customers read/write) key for the billing
 	 * details the Autumn API has no surface for — company name, address and tax
 	 * IDs on the Stripe customer Autumn links. Unset → those routes answer
 	 * `BillingNotConfiguredError`; nothing else depends on it.
 	 */
-	readonly STRIPE_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
+	readonly STRIPE_SECRET_KEY: Option.Option<Redacted.Redacted>
 	readonly STRIPE_API_URL: string
 	/**
 	 * Bot token in Maple's OWN Slack workspace, for creating customers' shared support channels
 	 * (scopes `channels:manage`, `channels:read`, `conversations.connect:write`, `chat:write`). Unset → the dashboard
 	 * reports the feature unavailable. Unrelated to the chat connector's per-workspace tokens.
 	 */
-	readonly MAPLE_SUPPORT_SLACK_BOT_TOKEN: Option.Option<Redacted.Redacted<string>>
+	readonly MAPLE_SUPPORT_SLACK_BOT_TOKEN: Option.Option<Redacted.Redacted>
 	/** Comma-separated Slack user ids of the Maple team, added to every new support channel. */
 	readonly MAPLE_SUPPORT_SLACK_TEAM_USER_IDS: Option.Option<string>
 	/**
@@ -100,16 +102,16 @@ export interface EnvConfig {
 	 * Self-observability ingest key (`@maple-dev/effect-sdk` reads the same variable
 	 * for OTLP export). Also the default credential for server-side product events.
 	 */
-	readonly MAPLE_INGEST_KEY: Option.Option<Redacted.Redacted<string>>
+	readonly MAPLE_INGEST_KEY: Option.Option<Redacted.Redacted>
 	/** Ingest gateway base URL for the SDK's OTLP export; product events reuse it, falling back to MAPLE_INGEST_PUBLIC_URL. */
 	readonly MAPLE_ENDPOINT: Option.Option<string>
 	/** Overrides MAPLE_INGEST_KEY for product events when the dogfood org differs from the tracing org. */
-	readonly MAPLE_PRODUCT_EVENTS_INGEST_KEY: Option.Option<Redacted.Redacted<string>>
-	readonly SD_INTERNAL_TOKEN: Option.Option<Redacted.Redacted<string>>
-	readonly INTERNAL_SERVICE_TOKEN: Option.Option<Redacted.Redacted<string>>
+	readonly MAPLE_PRODUCT_EVENTS_INGEST_KEY: Option.Option<Redacted.Redacted>
+	readonly SD_INTERNAL_TOKEN: Option.Option<Redacted.Redacted>
+	readonly INTERNAL_SERVICE_TOKEN: Option.Option<Redacted.Redacted>
 	readonly EMAIL_FROM: string
 	readonly LINEAR_OAUTH_CLIENT_ID: Option.Option<string>
-	readonly LINEAR_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
+	readonly LINEAR_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted>
 	/**
 	 * Resolved config for every chat connector the registry ships, keyed by the
 	 * name the connector declared. The catalog stays platform-neutral on purpose:
@@ -130,7 +132,7 @@ export interface EnvConfig {
 	 * deployment whose job is running model-chosen commands. There is no fallback
 	 * — the sandbox tools report themselves unavailable while it is unset.
 	 */
-	readonly SANDBOX_INTERNAL_SERVICE_TOKEN: Option.Option<Redacted.Redacted<string>>
+	readonly SANDBOX_INTERNAL_SERVICE_TOKEN: Option.Option<Redacted.Redacted>
 	/**
 	 * Apple Push Notification service — token auth for the iOS app. All three
 	 * must be set for push to be live; otherwise the fan-out is a no-op and
@@ -140,13 +142,13 @@ export interface EnvConfig {
 	readonly APNS_TEAM_ID: Option.Option<string>
 	readonly APNS_KEY_ID: Option.Option<string>
 	/** The `.p8` contents, PEM. */
-	readonly APNS_PRIVATE_KEY: Option.Option<Redacted.Redacted<string>>
+	readonly APNS_PRIVATE_KEY: Option.Option<Redacted.Redacted>
 	readonly GITHUB_APP_ID: Option.Option<string>
 	readonly GITHUB_APP_SLUG: Option.Option<string>
-	readonly GITHUB_APP_PRIVATE_KEY: Option.Option<Redacted.Redacted<string>>
+	readonly GITHUB_APP_PRIVATE_KEY: Option.Option<Redacted.Redacted>
 	readonly GITHUB_APP_CLIENT_ID: Option.Option<string>
-	readonly GITHUB_APP_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
-	readonly GITHUB_APP_WEBHOOK_SECRET: Option.Option<Redacted.Redacted<string>>
+	readonly GITHUB_APP_CLIENT_SECRET: Option.Option<Redacted.Redacted>
+	readonly GITHUB_APP_WEBHOOK_SECRET: Option.Option<Redacted.Redacted>
 	readonly GITHUB_API_BASE_URL: string
 	/**
 	 * Maple's own Google service account. Customers grant it permission to impersonate the
@@ -157,23 +159,23 @@ export interface EnvConfig {
 	 * A key of that service account: its JSON key file, base64-encoded. The metrics and resource
 	 * poller signs in with it. Unset: nothing is polled.
 	 */
-	readonly MAPLE_GCP_SERVICE_ACCOUNT_KEY: Option.Option<Redacted.Redacted<string>>
+	readonly MAPLE_GCP_SERVICE_ACCOUNT_KEY: Option.Option<Redacted.Redacted>
 	/**
 	 * Maple's AWS OIDC signing key (PKCS#8 PEM, RSA). Customer roles trust the tokens it signs for
 	 * the `{MAPLE_API_BASE_URL}/oidc/aws` issuer. Unset: AWS cannot be connected.
 	 */
-	readonly MAPLE_AWS_OIDC_SIGNING_KEY: Option.Option<Redacted.Redacted<string>>
+	readonly MAPLE_AWS_OIDC_SIGNING_KEY: Option.Option<Redacted.Redacted>
 	/**
 	 * Signs device access tokens and App Attest challenges (PKCS#8 PEM, EC P-256). A sibling of the
 	 * AWS key, not the same one. Unset: device credentials can be registered but get no tokens.
 	 */
-	readonly MAPLE_DEVICE_TOKEN_SIGNING_KEY: Option.Option<Redacted.Redacted<string>>
+	readonly MAPLE_DEVICE_TOKEN_SIGNING_KEY: Option.Option<Redacted.Redacted>
 	/** The iOS app's bundle id; with `APNS_TEAM_ID` it is the App ID App Attest attests to. */
 	readonly MAPLE_IOS_BUNDLE_ID: string
 	/** Accept App Attest's `appattestdevelop` environment (Xcode builds). Never in production. */
 	readonly MAPLE_APP_ATTEST_ALLOW_DEVELOPMENT: boolean
 	readonly CLOUDFLARE_OAUTH_CLIENT_ID: Option.Option<string>
-	readonly CLOUDFLARE_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
+	readonly CLOUDFLARE_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted>
 	readonly CLOUDFLARE_OAUTH_SCOPES: string
 	readonly CLOUDFLARE_OAUTH_AUTHORIZE_URL: string
 	readonly CLOUDFLARE_OAUTH_TOKEN_URL: string
@@ -188,7 +190,7 @@ export interface EnvConfig {
 	readonly MAPLE_PLANETSCALE_API_BASE_URL: string
 	readonly PLANETSCALE_OAUTH_CLIENT_ID: Option.Option<string>
 	/** Required alongside the client id — PlanetScale OAuth apps are confidential clients. */
-	readonly PLANETSCALE_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
+	readonly PLANETSCALE_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted>
 	readonly PLANETSCALE_OAUTH_AUTHORIZE_URL: string
 	readonly PLANETSCALE_OAUTH_TOKEN_URL: string
 	/** OAuth token introspection (`/oauth/token/info`) — consulted when the v1 API rejects a fresh token. */
@@ -204,7 +206,7 @@ export interface EnvConfig {
 	readonly PLANETSCALE_OAUTH_SCOPES: string
 	/** Supabase Management API OAuth app. Both unset: the integration reads as not configured. */
 	readonly SUPABASE_OAUTH_CLIENT_ID: Option.Option<string>
-	readonly SUPABASE_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
+	readonly SUPABASE_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted>
 	/** Base URL for the Supabase Management API, OAuth endpoints included (overridable for tests). */
 	readonly MAPLE_SUPABASE_API_BASE_URL: string
 }
@@ -247,6 +249,10 @@ const envConfig = Config.all({
 	CLERK_WEBHOOK_SECRET: optionalRedacted("CLERK_WEBHOOK_SECRET"),
 	PREVIEW_SIGNIN_KEY: optionalRedacted("PREVIEW_SIGNIN_KEY"),
 	MAPLE_ORG_ID_OVERRIDE: optionalString("MAPLE_ORG_ID_OVERRIDE"),
+	MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS: stringWithDefault(
+		"MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS",
+		"false",
+	).pipe(Config.map((value) => value === "1" || value === "true")),
 	AUTUMN_SECRET_KEY: optionalRedacted("AUTUMN_SECRET_KEY"),
 	AUTUMN_API_URL: stringWithDefault("AUTUMN_API_URL", "https://api.useautumn.com"),
 	AUTUMN_WEBHOOK_SECRET: optionalRedacted("AUTUMN_WEBHOOK_SECRET"),

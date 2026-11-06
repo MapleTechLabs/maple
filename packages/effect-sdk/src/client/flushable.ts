@@ -13,8 +13,10 @@ import {
 	otlpKeepaliveRoom,
 	postToIngest,
 	resolveIngestEndpoint,
+	scrubUrl,
 	warnIfKeylessMapleIngest,
 } from "@maple/browser-session"
+import { isCommitSha } from "@maple/browser-session/commit-sha"
 import { SDK_VERSION } from "../version.js"
 import { Layer, Redacted, String as Str } from "effect"
 import {
@@ -154,7 +156,6 @@ export interface FlushableTelemetry {
 
 /** Keepalive-budgeted POST (see file header), aborted when it takes too long. */
 const postOtlp = (url: string, headers: Record<string, string>, body: unknown) => {
-	// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 	const json = JSON.stringify(body)
 	const timeoutMs = POST_TIMEOUT_MS + (json.length / 1024) * POST_TIMEOUT_MS_PER_KIB
 	const controller = new AbortController()
@@ -181,7 +182,7 @@ const buildBrowserAttributes = (config: MapleClientFlushableConfig): Record<stri
 	}
 	// `serviceVersion` may be a semver release string, which belongs in
 	// `service.version` but not in `vcs.*` — only a SHA-shaped value is stamped.
-	if (config.serviceVersion && /^[0-9a-f]{7,40}$/i.test(config.serviceVersion)) {
+	if (isCommitSha(config.serviceVersion)) {
 		attributes["vcs.ref.head.revision"] = config.serviceVersion
 	}
 	if (config.serviceNamespace) attributes["service.namespace"] = config.serviceNamespace
@@ -337,7 +338,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	 * boundary-caught error in development, so a boundary that reports it *and*
 	 * `window.onerror` would otherwise fingerprint the same crash twice.
 	 */
-	const reported = new WeakSet<object>()
+	const reported = new WeakSet()
 	const captureException = (error: unknown, options: CaptureExceptionOptions = {}): void => {
 		if (typeof error === "object" && error !== null) {
 			if (reported.has(error)) return
@@ -347,7 +348,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		spans.captureException(error, {
 			...options,
 			attributes: {
-				...(page !== undefined ? { "url.full": page } : undefined),
+				...(page !== undefined ? { "url.full": scrubUrl(page) } : undefined),
 				...options.attributes,
 			},
 		})
@@ -370,8 +371,8 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 				// reads the names they replaced, so they are dropped rather than
 				// dual-emitted — carrying both would put four near-identical rows on
 				// every uncaught error in the attribute list.
-				...(event.filename ? { "code.file.path": event.filename } : undefined),
-				...(event.lineno ? { "code.line.number": event.lineno } : undefined),
+				...(event.filename ? { "code.file.path": scrubUrl(event.filename) } : undefined),
+				...(event.lineno > 0 ? { "code.line.number": event.lineno } : undefined),
 			},
 		})
 	}

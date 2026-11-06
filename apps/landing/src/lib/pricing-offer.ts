@@ -131,11 +131,14 @@ export async function getOffer(): Promise<Offer> {
 
 		const product = products[0]
 
-		if (product) {
+		if (product !== undefined) {
 			return {
 				name: product.name,
 				price: product.price?.amount ?? 0,
-				interval: product.price?.interval ? `/${product.price.interval}` : undefined,
+				interval:
+					product.price?.interval == null || product.price.interval === ""
+						? undefined
+						: `/${product.price.interval}`,
 				hasTrial: !!product.freeTrial,
 				trialDuration: product.freeTrial?.durationLength,
 				allotments: Arr.map(
@@ -173,10 +176,10 @@ export async function getOffer(): Promise<Offer> {
 		hasTrial: true,
 		trialDuration: 14,
 		allotments: [
-			{ featureId: "logs", label: labels.logs!, unit: "gb", included: 100, rate: 0.3, rateUnits: 1 },
+			{ featureId: "logs", label: labels.logs, unit: "gb", included: 100, rate: 0.3, rateUnits: 1 },
 			{
 				featureId: "traces",
-				label: labels.traces!,
+				label: labels.traces,
 				unit: "gb",
 				included: 100,
 				rate: 0.3,
@@ -184,7 +187,7 @@ export async function getOffer(): Promise<Offer> {
 			},
 			{
 				featureId: "metrics",
-				label: labels.metrics!,
+				label: labels.metrics,
 				unit: "gb",
 				included: 100,
 				rate: 0.3,
@@ -192,7 +195,7 @@ export async function getOffer(): Promise<Offer> {
 			},
 			{
 				featureId: "browser_sessions",
-				label: labels.browser_sessions!,
+				label: labels.browser_sessions,
 				unit: "sessions",
 				included: 5000,
 				rate: 0.002,
@@ -200,7 +203,7 @@ export async function getOffer(): Promise<Offer> {
 			},
 			{
 				featureId: "product_events",
-				label: labels.product_events!,
+				label: labels.product_events,
 				unit: "events",
 				// Mirrors `apps/api/autumn.config.ts`: $0.005 per 1,000, quoted per 1M.
 				included: 1_000_000,
@@ -209,7 +212,7 @@ export async function getOffer(): Promise<Offer> {
 			},
 			{
 				featureId: "ai_credits",
-				label: labels.ai_credits!,
+				label: labels.ai_credits,
 				unit: "usd",
 				included: 10,
 				rate: 1,

@@ -29,7 +29,14 @@ export const stripMention = (text: string, botUserId: string): string => {
 		)(
 			Arr.join(
 				Arr.map(parts, (part, index) =>
-					index === 0 ? part : Str.slice(part.indexOf(">") + 1)(part),
+					index === 0
+						? part
+						: Str.slice(
+								Option.match(Str.indexOf(">")(part), {
+									onNone: () => 0,
+									onSome: (at) => at + 1,
+								}),
+							)(part),
 				),
 				" ",
 			),
@@ -143,7 +150,9 @@ export const blockActionsToInbound = (payload: SlackBlockActions): ReadonlyArray
 	const workspaceId = payload.team?.id
 	const channelId = payload.channel?.id ?? payload.container?.channel_id
 	const messageId = payload.container?.message_ts ?? payload.message?.ts
-	const actionToken = payload.actions.find((action) => action.value !== undefined)?.value
+	const actionToken = Option.getOrUndefined(
+		Arr.findFirst(payload.actions, (action) => Option.fromUndefinedOr(action.value)),
+	)
 	if (workspaceId === undefined || channelId === undefined || messageId === undefined) return []
 	if (actionToken === undefined) return []
 	// The control sits on Maple's own answer, which lives in the thread the question opened — so

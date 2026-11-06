@@ -2,8 +2,8 @@
  * The transport against a stubbed HTTP client: the requests Hazel's bot API expects, a turn streamed
  * through a message's live state, a 429 waited out, and the conversation a mention opens.
  */
-import { describe, expect, it } from "@effect/vitest"
-import { Duration, Effect, Fiber, Layer } from "effect"
+import { assert, describe, expect, it } from "@effect/vitest"
+import { Array as Arr, Duration, Effect, Fiber, Layer, Option, String as Str } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import { TestClock } from "effect/testing"
 import { encodeChatActionToken } from "../../action-token"
@@ -24,15 +24,17 @@ const stub = (routes: ReadonlyArray<readonly [string, Reply | ReadonlyArray<Repl
 	const counts = new Map<string, number>()
 	const client = HttpClient.make((request) => {
 		seen.push(request)
-		const path = request.url.replace("https://api.hazel.sh/api/v1", "")
-		const [prefix, replies] = routes.find(([route]) => path.startsWith(route)) ?? [
-			"",
-			{ status: 500, body: "" },
-		]
-		const list = Array.isArray(replies) ? replies : [replies as Reply]
+		const path = Str.replace("https://api.hazel.sh/api/v1", "")(request.url)
+		const fallback: readonly [string, Reply] = ["", { status: 500, body: "" }]
+		const [prefix, replies] = Option.getOrElse(
+			Arr.findFirst(routes, ([route]) => Str.startsWith(route)(path)),
+			() => fallback,
+		)
+		const list = Arr.isArray<Reply | ReadonlyArray<Reply>>(replies) ? replies : [replies]
 		const index = counts.get(prefix) ?? 0
 		counts.set(prefix, index + 1)
-		const reply = list[Math.min(index, list.length - 1)]!
+		const reply = list[Math.min(index, list.length - 1)]
+		assert.isDefined(reply)
 		return Effect.succeed(
 			HttpClientResponse.fromWeb(request, new Response(reply.body, { status: reply.status })),
 		)
@@ -132,10 +134,10 @@ describe("hazel transport", () => {
 				yield* transport.edit(ref, [{ kind: "prose", markdown: "Done." }], "streaming")
 				yield* transport.edit(ref, [{ kind: "prose", markdown: "Done." }], "final")
 
-				const calls = http.seen.map((request) => {
+				const calls = Arr.map(http.seen, (request) => {
 					const body = sentBody(request)
-					const route = request.url.replace("https://api.hazel.sh/api/v1", "")
-					return `${request.method} ${route}${route.endsWith("/live") ? ` ${JSON.stringify(body.action)}` : ""}`
+					const route = Str.replace("https://api.hazel.sh/api/v1", "")(request.url)
+					return `${request.method} ${route}${Str.endsWith("/live")(route) ? ` ${JSON.stringify(body.action)}` : ""}`
 				})
 				expect(calls).toEqual([
 					"POST /messages",
@@ -207,7 +209,10 @@ describe("hazel transport", () => {
 				],
 				"final",
 			)
-			const routes = http.seen.map((request) => `${request.method} ${request.url.split("/v1")[1]}`)
+			const routes = Arr.map(
+				http.seen,
+				(request) => `${request.method} ${Str.split("/v1")(request.url)[1]}`,
+			)
 			expect(routes).toEqual([
 				"POST /messages",
 				"POST /messages/m1/live",
@@ -258,7 +263,7 @@ describe("hazel transport", () => {
 			const ref = yield* transport.post(target, [], "streaming")
 			expect(ref.messageId).toBe("m1")
 			yield* transport.edit(ref, [{ kind: "prose", markdown: "Hi" }], "streaming")
-			expect(http.seen.slice(1).map((request) => sentBody(request).action)).toEqual([
+			expect(Arr.map(http.seen.slice(1), (request) => sentBody(request).action)).toEqual([
 				{ _tag: "Start" },
 				{ _tag: "Start" },
 				{ _tag: "AppendText", text: "Hi" },
@@ -278,7 +283,7 @@ describe("hazel transport", () => {
 				[{ kind: "prose", markdown: "Done." }],
 				"final",
 			)
-			expect(http.seen.map((request) => sentBody(request).action ?? request.method)).toEqual([
+			expect(Arr.map(http.seen, (request) => sentBody(request).action ?? request.method)).toEqual([
 				{ _tag: "SetText", text: "Done." },
 				{ _tag: "Complete", persist: false },
 				"PATCH",
@@ -314,7 +319,7 @@ describe("hazel transport", () => {
 			const transport = yield* hazelOutbound.transport
 			const conversation = yield* transport.conversation(mention)
 			expect(conversation).toEqual({
-				conversationKey: THREAD.replaceAll("-", ""),
+				conversationKey: Str.replaceAll("-", "")(THREAD),
 				target: { workspaceId: ORG, channelId: THREAD },
 				opened: true,
 			})
@@ -443,7 +448,9 @@ describe("hazel transport", () => {
 			])
 			const limited = yield* Effect.flip(transport.history(target, { limit: 20, before: "m3" }))
 			expect(limited.status).toBe(429)
-			expect(http.seen.filter((request) => request.url.includes("/messages?"))).toHaveLength(2)
+			expect(Arr.filter(http.seen, (request) => Str.includes("/messages?")(request.url))).toHaveLength(
+				2,
+			)
 		}).pipe(Effect.provide(http.layer))
 	})
 

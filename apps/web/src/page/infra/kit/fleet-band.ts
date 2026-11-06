@@ -39,7 +39,7 @@ export type FleetBandOptions<S extends string, M> = Readonly<{
 	className?: string
 }>
 
-const capitalize = (text: string): string => Str.toUpperCase(text.charAt(0)) + Str.slice(1)(text)
+const capitalize = (text: string): string => Str.toUpperCase(Str.slice(0, 1)(text)) + Str.slice(1)(text)
 
 const BAND = "flex flex-col border-b bg-background md:flex-row md:items-stretch"
 

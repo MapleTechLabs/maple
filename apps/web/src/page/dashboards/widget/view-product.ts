@@ -32,7 +32,7 @@ import { pageSelect } from "./view-select"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { queryPanelBar } from "../../kit/query-panel-bar"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // `QueryPanelShell` and `AddOnToggleBar`, and the rows the funnel and
 // paths panels share: the population filter, Count by, the window, the breakdown.
@@ -180,9 +180,13 @@ export const keyByRow = (h: H, model: Model, scope: StepScope, value: string): H
 			className: "w-56",
 			ariaLabel: "Count by",
 			renderItem: (option) => {
-				const description =
-					FUNNEL_KEY_BY_OPTIONS.find((candidate) => candidate.value === option.value)
-						?.description ?? ""
+				const description = Arr.findFirst(
+					FUNNEL_KEY_BY_OPTIONS,
+					(candidate) => candidate.value === option.value,
+				).pipe(
+					Option.flatMapNullishOr((found) => found.description),
+					Option.getOrElse(() => ""),
+				)
 				return [
 					h.span(
 						[h.Class("flex flex-col")],

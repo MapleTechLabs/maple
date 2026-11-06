@@ -1,7 +1,7 @@
 import { getIdentityColorBySlot, getIdentitySlot, IDENTITY_SLOT_COUNT } from "./colors"
 import { HTTP_METHOD_HEX } from "./http"
 import { SEVERITY_COLORS } from "./severity"
-import { String as Str } from "effect"
+import { Option, String as Str } from "effect"
 
 const SPAN_STATUS_COLORS: Record<string, string> = {
 	ok: "var(--severity-info)",
@@ -36,7 +36,7 @@ const STATUS_CLASS_BASES: Record<number, { l: number; c: number; h: number }> = 
 function getHttpStatusColor(code: number): string | null {
 	const classDigit = Math.floor(code / 100)
 	const base = STATUS_CLASS_BASES[classDigit]
-	if (!base) return null
+	if (base === undefined) return null
 
 	// For class labels (2xx, 3xx) use the base color directly
 	if (code % 100 === 0 && code === classDigit * 100) return statusOklch(base, 0)
@@ -67,8 +67,8 @@ function detectColor(key: string): string | null {
 	const lower = Str.toLowerCase(key)
 
 	// Span status codes ("error" is matched here, before the severity map)
-	if (lower in SPAN_STATUS_COLORS) return SPAN_STATUS_COLORS[lower]
-	if (lower in RUN_RESULT_COLORS) return RUN_RESULT_COLORS[lower]
+	if (lower in SPAN_STATUS_COLORS) return SPAN_STATUS_COLORS[lower] ?? null
+	if (lower in RUN_RESULT_COLORS) return RUN_RESULT_COLORS[lower] ?? null
 
 	// Log severities — the shared uppercase-keyed map from ./severity
 	const severity = SEVERITY_COLORS[Str.toUpperCase(lower)]
@@ -79,14 +79,14 @@ function detectColor(key: string): string | null {
 	if (method) return method
 
 	// Latency percentiles — these have dedicated chart tokens
-	if (lower in AGGREGATE_COLORS) return AGGREGATE_COLORS[lower]
+	if (lower in AGGREGATE_COLORS) return AGGREGATE_COLORS[lower] ?? null
 
 	// HTTP status code classes (e.g., "2xx", "5xx")
-	const classMatch = key.match(STATUS_CLASS_PATTERN)
-	if (classMatch) {
-		const classDigit = Number(classMatch[1])
+	const classMatch = Str.match(STATUS_CLASS_PATTERN)(key)
+	if (Option.isSome(classMatch)) {
+		const classDigit = Number(classMatch.value[1])
 		const base = STATUS_CLASS_BASES[classDigit]
-		if (base) return statusOklch(base, 0)
+		if (base !== undefined) return statusOklch(base, 0)
 	}
 
 	// Individual HTTP status codes (e.g., "200", "404", "500")
@@ -109,12 +109,13 @@ export function getSemanticSeriesColor(seriesKey: string): string | null {
 	const direct = detectColor(trimmed)
 	if (direct) return direct
 
-	const colonIndex = trimmed.indexOf(": ")
-	if (colonIndex > 0) {
-		return detectColor(Str.trim(Str.slice(colonIndex + 2)(trimmed)))
-	}
-
-	return null
+	return Option.match(
+		Option.filter(Str.indexOf(": ")(trimmed), (colonIndex) => colonIndex > 0),
+		{
+			onNone: () => null,
+			onSome: (colonIndex) => detectColor(Str.trim(Str.slice(colonIndex + 2)(trimmed))),
+		},
+	)
 }
 
 /** The default color for a chart that plots a single, unnamed value. */

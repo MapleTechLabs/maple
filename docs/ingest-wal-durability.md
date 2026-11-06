@@ -36,6 +36,17 @@ Appends go to the active segment and `sync_data` before the request is acknowled
 `INGEST_WAL_SEGMENT_MAX_BYTES` (8 MiB) the segment is **sealed**: the file is closed and the next
 one opened. Sealing is an `open` plus a directory fsync. There is no copy on the append path.
 
+Syncs are **group commits**. An append writes its frame under the lane's append lock, then waits
+for a sync that started after the write. If no sync is running it leads one: it takes every frame
+written since the last sync, releases the lock, calls `sync_data`, and on success hands those frames
+to the export channel in segment order before waking their appenders. Frames written while that
+sync runs join the next one. A request is still acknowledged only after a sync that covers its
+bytes; what changed is that one slow fsync now costs a request about two syncs instead of one per
+append queued ahead of it on the lane. A failed sync refuses every frame in its batch: none is
+delivered or counted as backlog, and each request's org reservation is released. A full segment
+takes no more frames until it is synced and sealed, so a segment still overshoots by at most one
+frame.
+
 The exporter advances `lane.cursor` and unlinks every segment behind it. **Appends and exports take
 different locks**, so an export can never stall a commit. That separation is the fix for the
 `ingest.wal_commit` p95 that used to swing between 145ms and 998ms against a flat 3ms p50: the
@@ -77,10 +88,13 @@ traffic. When a segment exports, its object is deleted.
 **Claiming.** On boot, a task lists `owners/`, takes every owner whose heartbeat is older than
 `INGEST_WAL_S3_ORPHAN_AFTER_SECS` (10 min), and claims it with a conditional `PUT … If-None-Match: *`.
 S3 answers 412 when the key exists, so exactly one task wins without a lock service. The winner
-downloads that owner's segments, re-commits their frames to its own lanes, **re-ships them under its
-own owner id, and only then** deletes the source objects, so the frames are never only on one
-task's disk. A claim older than 30 minutes is taken over unconditionally, because the task that
-wrote it evidently died before finishing.
+lists that owner's segments and takes them **one at a time**: download, re-commit the frames to its
+own lane, seal that lane and **re-ship it under its own owner id, and only then** delete the source
+object, so the frames are never only on one task's disk. Memory holds one segment however large the
+dead owner's backlog is. A segment that fails any step keeps its source object and the owner stays
+claimable, so a later boot retries it (at-least-once); a failed re-commit or re-ship also stops that
+owner's recovery, so the rest is not piled onto local disk only to be replayed again. A claim older than 30 minutes is taken over
+unconditionally, because the task that wrote it evidently died before finishing.
 
 **Shutdown.** After `INGEST_SHUTDOWN_DRAIN_SECS`, whatever did not export is sealed and shipped, and
 the owner heartbeat is deleted, so the next task claims it immediately instead of waiting out the
@@ -140,24 +154,36 @@ Two limits close that gap:
   requests answer 503 `@maple/ingest/RequestTimeout` with `Retry-After`, and are counted by
   `ingest_request_timeouts_total`.
 
-`ingest_wal_append_duration_seconds` splits into `ingest_wal_lock_wait_duration_seconds` and
-`ingest_wal_fsync_duration_seconds`. When `ingest.wal_commit` climbs, their ratio is what says which
-lever helps: lock wait dominating means the lane count is the ceiling, so more lanes (more vCPU,
-`INGEST_WAL_SHARDS`) buys headroom; fsync dominating means the device is the ceiling, and more lanes
-only redistribute the same IO.
+`ingest_wal_append_duration_seconds` splits into `ingest_wal_lock_wait_duration_seconds` (the
+append lock, held only for the write) and `ingest_wal_sync_wait_duration_seconds` (from the write to
+the sync that covered it). `ingest_wal_fsync_duration_seconds` is recorded once per sync and
+`ingest_wal_sync_batch_frames` says how many frames each sync covered, so their counts divided by
+the append count is fsyncs per append. Sync wait near one fsync with batches above 1 is group commit
+absorbing a slow device; sync wait well above two fsyncs means the device cannot keep up even
+batched, and more lanes only redistribute the same IO. The `ingest.wal_commit` span carries the same
+split as `maple.ingest.wal_lock_wait_ms`, `maple.ingest.wal_sync_wait_ms` and
+`maple.ingest.wal_batch_frames`.
+
+The gateway's resource attributes name its host: `host.id`, `host.type`, `host.image.id`,
+`cloud.availability_zone` and `aws.ecs.task.arn` from the EC2 and ECS metadata endpoints, and
+`maple.ingest.wal.device`, `.fs_type`, `.mount_point` and `.device_model` for the filesystem under
+`INGEST_QUEUE_DIR`. A host whose fsync is slow can be told apart by AMI or by an instance-store
+device that is not actually under the WAL.
 
 ## Metrics
 
-| Metric                              | Read it for                                                        |
-| ----------------------------------- | ------------------------------------------------------------------ |
-| `ingest_wal_shard_bytes`            | Bytes a lane holds on disk, exported prefix included               |
-| `ingest_wal_shard_full_total`       | Appends rejected because a lane hit its cap: customer-visible 429s |
-| `ingest_wal_segments_sealed_total`  | Segment rotation rate                                              |
-| `ingest_wal_reclaimed_bytes_total`  | Bytes freed by deleting exported segments                          |
-| `ingest_wal_shipped_bytes_total`    | Bytes that reached the bucket                                      |
-| `ingest_wal_ship_outcomes_total`    | `outcome=exported_first` (healthy), `queue_full`, `failed`         |
-| `ingest_wal_frames_recovered_total` | Frames claimed from a dead task; non-zero means a task died dirty  |
-| `ingest_wal_commit_bytes`           | Per-append size; the `ingest.wal_commit` span carries the latency  |
+| Metric                                  | Read it for                                                        |
+| --------------------------------------- | ------------------------------------------------------------------ |
+| `ingest_wal_shard_bytes`                | Bytes a lane holds on disk, exported prefix included               |
+| `ingest_wal_shard_full_total`           | Appends rejected because a lane hit its cap: customer-visible 429s |
+| `ingest_wal_segments_sealed_total`      | Segment rotation rate                                              |
+| `ingest_wal_reclaimed_bytes_total`      | Bytes freed by deleting exported segments                          |
+| `ingest_wal_shipped_bytes_total`        | Bytes that reached the bucket                                      |
+| `ingest_wal_ship_outcomes_total`        | `outcome=exported_first` (healthy), `queue_full`, `failed`         |
+| `ingest_wal_frames_recovered_total`     | Frames claimed from a dead task; non-zero means a task died dirty  |
+| `ingest_wal_commit_bytes`               | Per-append size; the `ingest.wal_commit` span carries the latency  |
+| `ingest_wal_sync_batch_frames`          | Frames per group-commit sync; its count is the fsync count         |
+| `ingest_wal_sync_wait_duration_seconds` | Write to covering sync, per append                                 |
 
 `queue_full` means the object store cannot keep up with segment rotation, and those segments stay
 local-only. Sustained non-zero is the signal that the durability tier is not actually covering the

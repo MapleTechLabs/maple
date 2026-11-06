@@ -4,11 +4,12 @@ import {
 	AlertDeliveryError,
 	AlertDeliveryRejectedError,
 	ChatAlertDestinationConfig,
+	PagerDutyAlertDestinationConfig,
 	WebhookAlertDestinationConfig,
 } from "@maple/domain/http"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, Clock, Duration, Effect, Layer, Schema, String as Str } from "effect"
+import { Array as Arr, Clock, Duration, Effect, Layer, Schema, String as Str, DateTime, Option } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	type AlertDestinationId,
@@ -296,7 +297,9 @@ describe("AlertsService tick isolation", () => {
 
 			const incidents = yield* alerts.listIncidents(healthyOrg)
 			assert.strictEqual(incidents.incidents[0]?.status, "open")
-			const crashed = (yield* alerts.listRules(crashingOrg)).rules.find((r) => r.id === crashing.id)
+			const crashed = Option.getOrUndefined(
+				Arr.findFirst((yield* alerts.listRules(crashingOrg)).rules, (r) => r.id === crashing.id),
+			)
 			assert.include(crashed?.lastEvaluationError ?? "", "Internal error")
 		}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: okFetch })))
 	})
@@ -438,7 +441,7 @@ describe("AlertsService delivery drain", () => {
 
 describe("AlertsService chat digests", () => {
 	const fixedTime = 1_710_000_900_000
-	const workspaceId = Schema.decodeUnknownSync(ChatWorkspaceId)("44444444-4444-4444-8444-444444444444")
+	const workspaceId = Schema.decodeSync(ChatWorkspaceId)("44444444-4444-4444-8444-444444444444")
 
 	/** Queues `count` trigger deliveries for one chat destination, runs a tick, and reads the queue. */
 	const runBurst = (
@@ -470,7 +473,7 @@ describe("AlertsService chat digests", () => {
 				}),
 			findChannel: () =>
 				Effect.succeed({
-					connector: Schema.decodeUnknownSync(ChatConnectorId)("testchat"),
+					connector: Schema.decodeSync(ChatConnectorId)("testchat"),
 					workspaceName: "Acme",
 					channelName: "incidents",
 				}),
@@ -733,14 +736,12 @@ describe("AlertsService held incidents", () => {
 					// union shape.
 					if (Str.includes("service_overview_spans")(query.sql)) {
 						const startMs = probeWindowStartMs(query.sql) ?? state.liveness.nowMs
-						return yield* query
-							.decodeRows([
-								{ signal: "spans", count: probeCount(state.liveness, startMs), lastSeen: "" },
-							])
-							.pipe(Effect.orDie)
+						return yield* query.decodeRows([
+							{ signal: "spans", count: probeCount(state.liveness, startMs), lastSeen: "" },
+						])
 					}
-					return yield* query.decodeRows(rowsForQuery(query.sql)).pipe(Effect.orDie)
-				}),
+					return yield* query.decodeRows(rowsForQuery(query.sql))
+				}).pipe(Effect.orDie),
 			compiledQueryWithCapabilities: (_tenant, compile) => {
 				const query = Effect.runSync(compile(baselineWarehouseCapabilities()))
 				return query.decodeRows(rowsForQuery(query.sql)).pipe(Effect.orDie)
@@ -814,7 +815,9 @@ describe("AlertsService held incidents", () => {
 
 	const paymentsIncident = (alerts: AlertsServiceApi, orgId: ReturnType<typeof asOrgId>) =>
 		Effect.map(alerts.listIncidents(orgId), (list) => {
-			const incident = list.incidents.find((i) => i.groupKey === "payments")
+			const incident = Option.getOrUndefined(
+				Arr.findFirst(list.incidents, (i) => i.groupKey === "payments"),
+			)
 			assert.ok(incident, "payments incident missing")
 			return incident
 		})
@@ -846,7 +849,10 @@ describe("AlertsService held incidents", () => {
 			const held = yield* paymentsIncident(alerts, orgId)
 			assert.strictEqual(held.status, "open")
 			assert.strictEqual(held.holdReason, "volume_collapsed")
-			assert.strictEqual(held.heldSince, new Date(DEFAULT_CLOCK_EPOCH_MS + 60_000).toISOString())
+			assert.strictEqual(
+				held.heldSince,
+				DateTime.formatIso(DateTime.makeUnsafe(DEFAULT_CLOCK_EPOCH_MS + 60_000)),
+			)
 			assert.strictEqual(held.resolvedAt, null)
 			const eventsWhileHeld = yield* alerts.listDeliveryEvents(orgId)
 			assert.deepStrictEqual(
@@ -881,8 +887,11 @@ describe("AlertsService held incidents", () => {
 			)
 
 			// The still-breaching group was never touched.
-			const checkout = (yield* alerts.listIncidents(orgId)).incidents.find(
-				(i) => i.groupKey === "checkout",
+			const checkout = Option.getOrUndefined(
+				Arr.findFirst(
+					(yield* alerts.listIncidents(orgId)).incidents,
+					(i) => i.groupKey === "checkout",
+				),
 			)
 			assert.strictEqual(checkout?.status, "open")
 			assert.strictEqual(checkout?.holdReason, null)
@@ -1027,7 +1036,10 @@ describe("AlertsService held incidents", () => {
 			yield* tickAfter(state, alerts, 25)
 			const secondHold = yield* paymentsIncident(alerts, orgId)
 			assert.strictEqual(secondHold.status, "open")
-			assert.strictEqual(secondHold.heldSince, new Date(state.liveness.nowMs).toISOString())
+			assert.strictEqual(
+				secondHold.heldSince,
+				DateTime.formatIso(DateTime.makeUnsafe(state.liveness.nowMs)),
+			)
 			yield* tickAfter(state, alerts, 5)
 			assert.strictEqual((yield* paymentsIncident(alerts, orgId)).status, "open")
 		}).pipe(Effect.provide(makeLayer(testDb, makeLivenessStub(state), { fetch: okFetch })))
@@ -1117,4 +1129,121 @@ describe("AlertsService held incidents", () => {
 			assert.strictEqual((yield* paymentsIncident(alerts, orgId)).status, "resolved")
 		}).pipe(Effect.provide(makeLayer(testDb, makeLivenessStub(state), { fetch: okFetch })))
 	})
+})
+
+describe("AlertsService PagerDuty acknowledgements", () => {
+	const fixedTime = 1_710_000_400_000
+
+	const run = (acknowledged: boolean) => {
+		const testDb = createTestDb(trackedDbs)
+		const bodies: Array<string> = []
+		const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+			bodies.push(requestBodyText(init?.body))
+			return new Response("{}", { status: 202 })
+		}) as typeof fetch
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(fixedTime)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_pd_ack")
+			const userId = asUserId("user_pd_ack")
+			const destination = yield* alerts.createDestination(
+				orgId,
+				userId,
+				adminRoles,
+				new PagerDutyAlertDestinationConfig({
+					type: "pagerduty",
+					name: "On-call",
+					enabled: true,
+					integrationKey: "abcdefghijklmnopqrstuvwxyz012345",
+				}),
+			)
+			const rule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+			// Break the rule's stored query so the tick queues nothing of its own.
+			yield* Effect.promise(() =>
+				executeSql(testDb, "update alert_rules set query_spec_json = $1::jsonb where id = $2", [
+					"{}",
+					rule.id,
+				]),
+			)
+			const incidentId = "00000000-0000-4000-8000-000000000401"
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO alert_incidents
+					   (id, org_id, rule_id, incident_key, rule_name, group_key, signal_type, severity, status,
+					    comparator, threshold, first_triggered_at, last_triggered_at, dedupe_key,
+					    last_notified_at, acknowledged_at, acknowledged_by_name, acknowledged_via,
+					    created_at, updated_at)
+					 VALUES ($1, $2, $3, 'k', 'Checkout error rate', '__total__', 'error_rate', 'warning', 'open',
+					    'gt', 5, now(), now(), 'dedupe-ack', to_timestamp(1000), $4, 'sam', 'slack', now(), now())`,
+					[incidentId, orgId, rule.id, acknowledged ? new Date(fixedTime - 1000) : null],
+				),
+			)
+			bodies.length = 0
+			yield* Effect.promise(() =>
+				insertDeliveryEventRow(testDb, {
+					id: "00000000-0000-4000-8000-000000000402",
+					orgId,
+					incidentId,
+					ruleId: rule.id,
+					destinationId: destination.id,
+					deliveryKey: "ack-1",
+					eventType: "acknowledge",
+					attemptNumber: 1,
+					status: "queued",
+					scheduledAt: fixedTime - 500,
+					payloadJson: JSON.stringify({
+						eventType: "acknowledge",
+						incidentId,
+						dedupeKey: "dedupe-ack",
+						rule: { id: rule.id, name: "Checkout error rate", severity: "warning" },
+					}),
+				}),
+			)
+			yield* alerts.runSchedulerTick()
+			const row = yield* Effect.promise(() =>
+				queryFirstRow<{ status: string; message: string | null; notified: Date | null }>(
+					testDb,
+					`select d.status, d.provider_message as message, i.last_notified_at as notified
+					   from alert_delivery_events d join alert_incidents i on i.id = d.incident_id
+					  where d.delivery_key = 'ack-1'`,
+					[],
+				),
+			)
+			return { bodies, row }
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
+					fetch: fetchImpl,
+				}),
+			),
+		)
+	}
+
+	it.effect("sends the queued acknowledge without restarting the reminder clock", () =>
+		Effect.gen(function* () {
+			const { bodies, row } = yield* run(true)
+			assert.deepStrictEqual(
+				Arr.map(bodies, (body) => JSON.parse(body)),
+				[
+					{
+						routing_key: "abcdefghijklmnopqrstuvwxyz012345",
+						event_action: "acknowledge",
+						dedup_key: "dedupe-ack",
+					},
+				],
+			)
+			assert.strictEqual(row?.status, "success")
+			assert.strictEqual(row?.notified?.getTime(), 1_000_000)
+		}),
+	)
+
+	it.effect("skips an acknowledge the incident no longer holds, so a fresh page stays loud", () =>
+		Effect.gen(function* () {
+			const { bodies, row } = yield* run(false)
+			assert.deepStrictEqual(bodies, [])
+			assert.strictEqual(row?.status, "success")
+			assert.strictEqual(row?.message, "Skipped: the incident is no longer acknowledged")
+		}),
+	)
 })

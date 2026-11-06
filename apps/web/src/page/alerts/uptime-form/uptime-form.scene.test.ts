@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { UptimeMonitorPublicId } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
@@ -24,6 +25,9 @@ import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
+const ENGINEER = Policy.grantsOf(["org:engineer"])
+const MEMBER = Policy.grantsOf(["org:member"])
+
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const publicId = Schema.encodeSync(UptimeMonitorPublicId)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -33,7 +37,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 
 const asAdmin = (model: Model): Model =>
-	pageUpdate(model, Message.CompletedFetchSession({ orgId: ORG, isAdmin: true })).model
+	pageUpdate(model, Message.CompletedFetchSession({ orgId: ORG, grants: ENGINEER })).model
 
 const fresh = (search: Model["search"] = {}): Model =>
 	asAdmin(init({ _tag: "AlertsUptimeNew", search }, context).model)
@@ -231,12 +235,12 @@ describe("uptime monitor form", () => {
 	test("a member sees that the form is admin-only, and cannot save", () => {
 		const member = pageUpdate(
 			init({ _tag: "AlertsUptimeNew", search: {} }, context).model,
-			Message.CompletedFetchSession({ orgId: ORG, isAdmin: false }),
+			Message.CompletedFetchSession({ orgId: ORG, grants: MEMBER }),
 		).model
 		scene(
 			{ update: pageUpdate, view },
 			given(member),
-			expectView(text("Only org admins can create or change uptime monitors")).toExist(),
+			expectView(text("Only org admins and engineers can create or change uptime monitors")).toExist(),
 			expectView(role("button", { name: "Create monitor" })).not.toExist(),
 		)
 		const tried = pageUpdate(

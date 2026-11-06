@@ -16,7 +16,7 @@ import type { SeriesData } from "../../kit/series"
 import type { PodRow, PodSummary } from "../pod-data"
 import { FetchPeekSeries, FetchPeekSummary, Message, OutMessage } from "./message"
 import { type Model, PEEK_METRICS, seriesId } from "./model"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 export type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
@@ -34,8 +34,10 @@ export const init = (id: string): Model => ({
 
 /** The peek on the page on screen; a key no row matches means the sheet is closed. */
 export const resolvePeek = (pods: ReadonlyArray<PodRow>, key: string | undefined): Peek | null => {
-	const index = key === undefined ? -1 : pods.findIndex((pod) => podKey(pod) === key)
-	const pod = index >= 0 ? pods[index] : undefined
+	const found = key === undefined ? Option.none() : Arr.findFirstIndex(pods, (pod) => podKey(pod) === key)
+	if (Option.isNone(found)) return null
+	const index = found.value
+	const pod = pods[index]
 	if (pod === undefined) return null
 	const neighbors = Arr.filter(
 		[pods[index - 1], pods[index + 1]],

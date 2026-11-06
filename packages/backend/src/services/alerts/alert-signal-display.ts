@@ -14,12 +14,13 @@
  * metrics query is an unknown unit that must render as a plain number. Deriving
  * them separately is how the observed value and its threshold drift apart.
  */
-import type { AlertSignalType, QueryBuilderQueryDraftPayload } from "@maple/domain/http"
+import type { QueryBuilderQueryDraftPayload } from "@maple/domain/http"
 import { AGGREGATIONS_BY_SOURCE } from "@maple/query-engine/query-builder"
 import type { ChartUnit } from "@maple/widgets/chart/static-chart"
 import { Array as Arr, String as Str } from "effect"
 
-export type SignalUnit = "ratio" | "ms" | "rpm" | "apdex" | "count" | "plain"
+/** `burn`: an SLO burn rate, a multiple of the sustainable rate shown as `14.4x`. */
+export type SignalUnit = "ratio" | "ms" | "rpm" | "apdex" | "count" | "plain" | "burn"
 
 export interface SignalDisplay {
 	/** Human-readable name of the measured quantity, e.g. `sum(db.query.duration)`. */
@@ -28,7 +29,7 @@ export interface SignalDisplay {
 }
 
 export interface SignalDisplayInput {
-	readonly signalType: AlertSignalType | string
+	readonly signalType: string
 	readonly queryBuilderDraft?: QueryBuilderQueryDraftPayload | null
 	/**
 	 * Widened to `string` so the undecoded `alert_rules.reducer` column can be
@@ -45,6 +46,7 @@ const PRESET_SIGNALS: Record<string, SignalDisplay> = {
 	apdex: { label: "Apdex", unit: "apdex" },
 	throughput: { label: "Throughput", unit: "rpm" },
 	uptime: { label: "Uptime check", unit: "plain" },
+	slo_burn_rate: { label: "SLO burn rate", unit: "burn" },
 } satisfies Record<string, SignalDisplay>
 
 /**
@@ -75,7 +77,7 @@ const tracesAggregationUnit = (aggregation: string): SignalUnit => {
 const humanize = (value: string): string => {
 	const words = Str.trim(Str.replace(/[_-]+/g, " ")(value))
 	if (words.length === 0) return "Signal"
-	return Str.toUpperCase(words.charAt(0)) + Str.slice(1)(words)
+	return Str.toUpperCase(Str.slice(0, 1)(words)) + Str.slice(1)(words)
 }
 
 const call = (fn: string, arg: string | undefined): string =>
@@ -115,7 +117,7 @@ const rawQueryDisplay = (reducer: string | null | undefined): SignalDisplay => (
 
 export const resolveSignalDisplay = (input: SignalDisplayInput): SignalDisplay => {
 	const preset = PRESET_SIGNALS[input.signalType]
-	if (preset) return preset
+	if (preset !== undefined) return preset
 	if (input.signalType === "builder_query" && input.queryBuilderDraft != null) {
 		return builderQueryDisplay(input.queryBuilderDraft)
 	}
@@ -146,6 +148,7 @@ export const mapSignalUnit = (unit: SignalUnit): ChartUnit => {
 		case "apdex":
 		case "count":
 		case "plain":
+		case "burn":
 			return "number"
 	}
 }

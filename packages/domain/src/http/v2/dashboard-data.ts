@@ -25,6 +25,7 @@ import {
 } from "@maple/query-model"
 import { RawSqlText } from "../../raw-sql"
 import { Timestamp } from "./timestamp"
+import { replaceWith } from "@maple/strings"
 
 const optional = <S extends Schema.Top>(schema: S) => Schema.optionalKey(schema)
 
@@ -61,9 +62,9 @@ const mapJsonKeys = (value: unknown, mapKey: (key: string) => string): Schema.Js
 	mapDecodedJsonKeys(decodeJsonValueSync(value), mapKey)
 
 const toSnakeKey = (key: string): string =>
-	key.replace(/[A-Z]/g, (character) => `_${Str.toLowerCase(character)}`)
+	replaceWith(key, /[A-Z]/g, (character) => `_${Str.toLowerCase(character)}`)
 const toCamelKey = (key: string): string =>
-	key.replace(/_([a-z])/g, (_, character: string) => Str.toUpperCase(character))
+	replaceWith(key, /_([a-z])/g, (_, character = "") => Str.toUpperCase(character))
 
 /** Opaque widget params still obey the v2 recursive snake_case wire convention. */
 const UnknownRecord = UnknownRecordWire.pipe(
@@ -102,7 +103,7 @@ const snakeCasedWire = <S extends Schema.Top>(schema: S) =>
 			decode: SchemaGetter.transform((value) => {
 				const mapped = mapJsonKeys(value, toCamelKey)
 				// SAFETY: Every schema passed below decodes the same object after its wire keys are camel-cased.
-				return mapped as S["Encoded"]
+				return mapped
 			}),
 			encode: SchemaGetter.transform((value) => {
 				const mapped = mapJsonKeys(value, toSnakeKey)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Arbitrary, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Arbitrary, Schema, Array as Arr, Record as Rec, String as Str, Option } from "effect"
 import { criticalUpgrades, runtimeEntries, runtimeTotals } from "./derive"
 import type { Runtimes } from "./model"
 
@@ -135,8 +135,12 @@ describe("runtime verdicts", () => {
 		"a version a service upgraded away from changes nothing the page asks you to fix",
 		[World, RowSeed],
 		([runtimes, seed]) => {
-			const base = runtimes.runtimes.find((row) => deploymentKey(row) === deploymentKey(toRow(seed)))
-			if (base === undefined) return
+			const found = Arr.findFirst(
+				runtimes.runtimes,
+				(row) => deploymentKey(row) === deploymentKey(toRow(seed)),
+			)
+			if (Option.isNone(found)) return
+			const base = found.value
 			// The same deployment, on any version, last seen strictly before its newest hour.
 			const older: Row = {
 				...toRow(seed),
@@ -180,9 +184,12 @@ describe("runtime verdicts", () => {
 				)
 			})
 			// History sits below everything current.
-			const firstReplaced = entries.findIndex((entry) => entry.replaced)
+			const firstReplaced = Arr.findFirstIndex(entries, (entry) => entry.replaced)
 			expect(
-				firstReplaced === -1 || Arr.every(entries.slice(firstReplaced), (entry) => entry.replaced),
+				Option.match(firstReplaced, {
+					onNone: () => true,
+					onSome: (index) => Arr.every(entries.slice(index), (entry) => entry.replaced),
+				}),
 			).toBe(true)
 		},
 	)

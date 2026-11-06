@@ -1,4 +1,4 @@
-import { Effect, Layer, Redacted, Array as Arr, String as Str } from "effect"
+import { Effect, Layer, Option, Redacted, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, it } from "vitest"
 import { ScraperEnv, type ScraperEnvConfig } from "./Env"
@@ -125,17 +125,23 @@ describe("scraper telemetry", () => {
 				Arr.flatMap(resource.scopeSpans, (scope) => scope.spans),
 			),
 		)
-		const client = spans.find((span) => span.kind === 3 /* client */)
-		expect(client?.attributes.find((a) => a.key === "http.response.status_code")?.value.intValue).toBe(
-			402,
-		)
+		const client = Option.getOrThrow(Arr.findFirst(spans, (span) => span.kind === 3 /* client */))
+		expect(
+			Option.map(
+				Arr.findFirst(client.attributes, (a) => a.key === "http.response.status_code"),
+				(a) => a.value.intValue,
+			),
+		).toEqual(Option.some(402))
 		// A 402 is a billing block, not a fault: no Error span, so no error issue.
 		expect(Arr.map(spans, (span) => span.status.code)).not.toContain(2 /* Error */)
 		expect(Arr.flatMap(spans, (span) => Arr.map(span.events, (event) => event.name))).not.toContain(
 			"exception",
 		)
-		expect(Arr.map(collector.bodies[0]?.resourceSpans[0]?.resource.attributes, (a) => a.key)).toContain(
-			"vcs.repository.url.full",
-		)
+		expect(
+			Arr.map(
+				Arr.getUnsafe(Arr.getUnsafe(collector.bodies, 0)?.resourceSpans, 0)?.resource.attributes,
+				(a) => a.key,
+			),
+		).toContain("vcs.repository.url.full")
 	})
 })

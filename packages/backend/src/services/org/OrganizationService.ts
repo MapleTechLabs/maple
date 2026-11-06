@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { createClerkClient } from "@clerk/backend"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { UPTIME_MONITORS_FEATURE_ID } from "@maple/domain/billing"
@@ -29,6 +30,7 @@ import {
 	Actors,
 	AgentFeedback,
 	AlertDeliveryEvents,
+	AlertIncidentEvents,
 	AlertDestinations,
 	AlertIncidents,
 	AlertLinearIssues,
@@ -50,6 +52,7 @@ import {
 	DigestSubscriptions,
 	ErrorIncidents,
 	ErrorIssueEvents,
+	ErrorIssueFingerprints,
 	ErrorIssueStates,
 	ErrorIssues,
 	ErrorNotificationPolicies,
@@ -81,6 +84,7 @@ import {
 	StatusPages,
 	UptimeMonitorDaily,
 	UptimeMonitorStates,
+	Slos,
 	UptimeMonitors,
 	SupabaseProjectInsights,
 	SupabaseProjects,
@@ -115,12 +119,6 @@ import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { responseHasPlanHistory } from "@maple/backend/services/billing/autumn-client"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 
-const ROOT_ROLE = Schema.decodeSync(RoleName)("root")
-const ORG_ADMIN_ROLE = Schema.decodeSync(RoleName)("org:admin")
-
-const isOrgAdmin = (roles: ReadonlyArray<RoleName>) =>
-	roles.includes(ROOT_ROLE) || roles.includes(ORG_ADMIN_ROLE)
-
 const toPersistenceError = (error: unknown) =>
 	new OrganizationPersistenceError({
 		message: error instanceof Error ? error.message : "Organization persistence failed",
@@ -143,6 +141,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	DashboardVersions,
 	Dashboards,
 	AlertDeliveryEvents,
+	// Before its incident: an event row references it.
+	AlertIncidentEvents,
 	AlertIncidents,
 	AlertRuleStates,
 	AlertRules,
@@ -167,6 +167,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	UptimeMonitorDaily,
 	UptimeMonitorStates,
 	UptimeMonitors,
+	// An SLO points at its burn-rate rule, which goes with the org's alert rules.
+	Slos,
 	OAuthConnections,
 	OAuthAuthStates,
 	// The binding that makes a chat workspace's members act as the org. Deleting
@@ -186,6 +188,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	ErrorIssueEvents,
 	ErrorIssueStates,
 	ErrorIncidents,
+	// The aliases go with the issues they point at.
+	ErrorIssueFingerprints,
 	ErrorIssues,
 	ErrorNotificationPolicies,
 	Actors,
@@ -370,10 +374,14 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				roles: ReadonlyArray<RoleName>,
 				action: string,
 			) {
-				if (isOrgAdmin(roles)) return
-				return yield* new OrganizationForbiddenError({
-					message: `Only org admins can ${action}`,
-				})
+				return yield* Policy.check(
+					roles,
+					"organization:manage",
+					(denial) =>
+						new OrganizationForbiddenError({
+							message: `Only ${Policy.holdersPhrase(denial.required)} can ${action}.`,
+						}),
+				)
 			})
 
 			const purgeOrgScopedRows = Effect.fn("OrganizationService.purgeOrgScopedRows")(function* (
@@ -465,7 +473,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 						publicMetadata: organizationRegionMetadata(region),
 					}),
 				).pipe(Effect.mapError((error) => toProviderError(error.cause)))
-				const orgId = yield* Schema.decodeUnknownEffect(OrgId)(org.id).pipe(
+				const orgId = yield* Schema.decodeEffect(OrgId)(org.id).pipe(
 					Effect.mapError(
 						() =>
 							new OrganizationProviderError({
@@ -609,6 +617,8 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				}
 				yield* purgeOrgScopedRows(orgId)
 				yield* deleteClerkOrganization(orgId)
+				// A cached "served here" would outlive the organization by up to an hour.
+				yield* regions.forget(orgId)
 				return new DeleteOrganizationResponse({ deleted: true })
 			})
 

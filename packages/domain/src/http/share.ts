@@ -60,10 +60,9 @@ export type ShareToken = Schema.Schema.Type<typeof ShareToken>
 /**
  * A share as its owner sees it, raw token included.
  *
- * The token is readable on every response, not just the one that minted it:
- * anyone who can read this can already mint a replacement, so withholding it
- * bought no safety and cost the obvious thing — you had to destroy a live link
- * in order to see it.
+ * The token is readable on every response, not just the one that minted it, so
+ * seeing a live link never means destroying it. The v2 routes hand it only to a
+ * caller that could mint the link (`toV2DashboardShare`): it serves telemetry.
  */
 export class DashboardShare extends Schema.Class<DashboardShare>("DashboardShare")({
 	id: DashboardShareId,
@@ -222,8 +221,8 @@ export class ShareUnsupportedWidgetError extends HttpTaggedError<ShareUnsupporte
 		// arriving through a 5xx side door.
 		status: 422,
 		code: "share_widget_unsupported",
-		title: "Widget unavailable in shared views",
-		message: "This widget isn't available in shared views.",
+		title: "Widget type unsupported",
+		message: "This widget type can't be read outside the dashboard yet.",
 		retry: "never",
 		recovery: "none",
 		exposure: "redacted",

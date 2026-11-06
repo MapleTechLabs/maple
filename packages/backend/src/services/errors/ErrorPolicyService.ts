@@ -1,4 +1,4 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import {
 	AlertDestinationId,
 	ErrorNotificationPolicyDocument,
@@ -35,7 +35,7 @@ import {
 } from "@maple/db/tables"
 import { Array as Arr, Clock, Context, Effect, HashSet, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { evaluateEscalationPolicy as evaluateRoutingPolicy } from "@maple/backend/services/alerts/escalation-policy"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 
@@ -204,11 +204,12 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 		"ErrorPolicyService.upsertNotificationPolicy",
 	)(function* (orgId, userId, roles, request) {
 		yield* Effect.annotateCurrentSpan({ orgId })
-		yield* requireAdmin(
+		yield* Policy.check(
 			roles,
-			() =>
+			"error_policy:manage",
+			(denial) =>
 				new ErrorForbiddenError({
-					message: "Only org admins can manage error notification policy",
+					message: denial.message,
 				}),
 		)
 		const timestamp = yield* Clock.currentTimeMillis
@@ -297,13 +298,13 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 
 		if (request.rules !== undefined) {
 			const rules = request.rules
-			const duplicate = rules.find(
-				(rule, index) => rules.findIndex((other) => other.severity === rule.severity) !== index,
+			const duplicate = Arr.findFirst(rules, (rule, index) =>
+				Arr.some(Arr.take(rules, index), (other) => other.severity === rule.severity),
 			)
-			if (duplicate !== undefined) {
+			if (Option.isSome(duplicate)) {
 				return yield* new ErrorValidationError({
 					message: "Escalation policy has duplicate severity rules",
-					details: [duplicate.severity],
+					details: [duplicate.value.severity],
 				})
 			}
 

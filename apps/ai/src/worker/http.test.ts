@@ -5,7 +5,17 @@ import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import type { HttpEffect } from "alchemy/Http"
-import { Effect, Exit, Layer, Option, Schema, Scope } from "effect"
+import {
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Schema,
+	Scope,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { HttpServerResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { MapleDbConnection } from "@maple/backend/platform/bindings"
@@ -46,8 +56,11 @@ const noPorts = Layer.mergeAll(Layer.succeed(MapleDbConnection, Option.none()), 
 
 /** One attribute as its rendered value; OTLP JSON carries ints as strings anyway. */
 const attributeOf = (span: ExportedSpan | undefined, key: string): string | undefined => {
-	const value = span?.attributes.find((attribute) => attribute.key === key)?.value
-	return value === undefined ? undefined : String(Object.values(value)[0])
+	if (span === undefined) return undefined
+	return Option.match(
+		Arr.findFirst(span.attributes, (attribute) => attribute.key === key),
+		{ onNone: () => undefined, onSome: ({ value }) => String(Rec.values(value)[0]) },
+	)
 }
 
 /** The server spans the event exported, read off the OTLP requests the exporter sent. */
@@ -57,19 +70,19 @@ const capturedServerSpans = Effect.acquireRelease(
 	),
 	(spy) => Effect.sync(() => spy.mockRestore()),
 ).pipe(
-	Effect.map(
-		(spy) => () =>
-			spy.mock.calls
-				.filter(([input]) =>
-					(input instanceof Request ? input.url : input.toString()).endsWith("/v1/traces"),
-				)
-				.flatMap(
-					([, init]) =>
-						decodeExportedTraces(JSON.parse(requestBodyText(init?.body))).resourceSpans ?? [],
-				)
-				.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans))
-				.filter((span) => span.kind === SERVER_KIND),
-	),
+	Effect.map((spy) => () => {
+		const traceCalls = Arr.filter(spy.mock.calls, ([input]) =>
+			Str.endsWith("/v1/traces")(input instanceof Request ? input.url : input.toString()),
+		)
+		const resources = Arr.flatMap(
+			traceCalls,
+			([, init]) => decodeExportedTraces(JSON.parse(requestBodyText(init?.body))).resourceSpans ?? [],
+		)
+		const spans = Arr.flatMap(resources, (resource) =>
+			Arr.flatMap(resource.scopeSpans, (scope) => scope.spans),
+		)
+		return Arr.filter(spans, (span) => span.kind === SERVER_KIND)
+	}),
 )
 
 const event = (fetch: HttpEffect, method: string, path: string) =>
@@ -78,9 +91,11 @@ const event = (fetch: HttpEffect, method: string, path: string) =>
 		const request = yield* Scope.make()
 		const services = yield* Layer.buildWithScope(
 			Layer.mergeAll(
-				MapleCloudflareSDK.make(workerTelemetryConfig({ serviceName: "maple-ai" })).requestLayer,
+				MapleCloudflareSDK.make(workerTelemetryConfig({ serviceName: "maple-ai" })).requestLayer.pipe(
+					Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env)),
+				),
 				Layer.succeed(Cloudflare.WorkerEnvironment, env),
-			).pipe(Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env))),
+			),
 			request,
 		)
 		// Alchemy erases this helper's return type to any. Restore its boundary contract.

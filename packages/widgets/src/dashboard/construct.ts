@@ -178,8 +178,9 @@ export const makeProductEventsFunnelDataSource = (
 	funnel: ProductEventsFunnelDefinition,
 	transform?: WidgetDataSourceTransform,
 ) => {
+	const given: Readonly<Record<string, string | undefined>> = funnel.filters ?? {}
 	const filters = Rec.fromEntries(
-		Arr.filter(Object.entries(funnel.filters ?? {}), ([, value]) => value !== undefined && value !== ""),
+		Arr.filter(Rec.toEntries(given), ([, value]) => value !== undefined && value !== ""),
 	)
 	return makeRouteDataSource(
 		PRODUCT_EVENTS_FUNNEL_ENDPOINT,
@@ -222,8 +223,9 @@ export const makeProductEventsPathsDataSource = (
 	paths: ProductEventsPathsDefinition,
 	transform?: WidgetDataSourceTransform,
 ) => {
+	const given: Readonly<Record<string, string | undefined>> = paths.filters ?? {}
 	const filters = Rec.fromEntries(
-		Arr.filter(Object.entries(paths.filters ?? {}), ([, value]) => value !== undefined && value !== ""),
+		Arr.filter(Rec.toEntries(given), ([, value]) => value !== undefined && value !== ""),
 	)
 	return makeRouteDataSource(
 		PRODUCT_EVENTS_PATHS_ENDPOINT,

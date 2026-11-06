@@ -1,4 +1,4 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 // Shared flush core (platform-agnostic)
 //
 // The buffer-drain → OTLP-encode → POST machinery shared by every flushable
@@ -6,7 +6,7 @@
 // resolution (env-lazy on Workers, env-auto-detect on Node, programmatic in the
 // browser) and its transport (plain `fetch` vs `fetch(keepalive)`); everything
 // downstream of a resolved endpoint lives here.
-import { Effect, Redacted, Result, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Cause, Effect, Redacted, Result, Array as Arr, Record as Rec, String as Str } from "effect"
 import { isMapleIngestEndpoint } from "@maple/browser-session/region"
 import type { LogBuffer, LogRecord } from "./flushable-logger.js"
 import type { MetricBuffer } from "./flushable-metrics.js"
@@ -30,7 +30,7 @@ const FLUSH_LINK_TIMEOUT_MS = 15_000
  */
 export interface ResourceInput {
 	readonly endpoint: string | undefined
-	readonly ingestKey: Redacted.Redacted<string> | undefined
+	readonly ingestKey: Redacted.Redacted | undefined
 	readonly resource: {
 		readonly serviceName: string
 		readonly serviceVersion: string | undefined
@@ -155,7 +155,6 @@ const send = async (
 	body: unknown,
 	signal: AbortSignal,
 ): Promise<void> => {
-	// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 	const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal })
 	if (!res.ok) {
 		throw new Error(`OTLP ${res.status} ${res.statusText}`)
@@ -170,7 +169,7 @@ const post = (url: string, headers: Record<string, string>, body: unknown): Prom
 	Effect.runPromise(
 		Effect.tryPromise({
 			try: (signal) => send(url, headers, body, signal),
-			catch: (cause) => cause,
+			catch: (cause) => new Cause.UnknownError(cause),
 		}).pipe(Effect.timeout(EXPORT_TIMEOUT_MS)),
 	)
 
@@ -190,7 +189,7 @@ const flushSignal = async <A>(args: {
 	readonly ignoreCooldown: boolean | undefined
 }): Promise<void> => {
 	const { url, headers, buffer, body, state, signal, transport, logPrefix, tailBytes } = args
-	if (!args.ignoreCooldown && state.disabledUntil && Date.now() < state.disabledUntil) {
+	if (!args.ignoreCooldown && state.disabledUntil > 0 && Date.now() < state.disabledUntil) {
 		console.warn(
 			`${logPrefix} ${signal} flush skipped (cooldown ${state.disabledUntil - Date.now()}ms remaining)`,
 		)
@@ -202,7 +201,7 @@ const flushSignal = async <A>(args: {
 	// Asked per signal, right before the split: the room depends on what the
 	// signals before this one have just reserved.
 	const tail = tailBytes?.()
-	const chunks = tail ? newestFirst(batch, body, tail) : [batch]
+	const chunks = tail !== undefined && tail !== 0 ? newestFirst(batch, body, tail) : [batch]
 	const posted = await Promise.all(
 		Arr.map(chunks, async (chunk) => ({
 			chunk,
@@ -210,7 +209,9 @@ const flushSignal = async <A>(args: {
 				Effect.result(
 					Effect.tryPromise({
 						try: () => transport.post(url, headers, body(chunk)),
-						catch: (cause) => cause,
+						// The fetch transport already rejects with one; the log prints what it wraps.
+						catch: (cause) =>
+							Cause.isUnknownError(cause) ? cause : new Cause.UnknownError(cause),
 					}),
 				),
 			),
@@ -220,11 +221,11 @@ const flushSignal = async <A>(args: {
 		Result.isFailure(result) ? [{ chunk, cause: result.failure }] : [],
 	)
 	const [first] = failed
-	if (first) {
+	if (first !== undefined) {
 		// One restore, back in drain order.
 		buffer.restore(Arr.flatMap(failed.reverse(), ({ chunk }) => chunk))
 		state.disabledUntil = Date.now() + COOLDOWN_MS
-		console.error(`${logPrefix} ${signal} flush failed; cooldown 60s:`, first.cause)
+		console.error(`${logPrefix} ${signal} flush failed; cooldown 60s:`, first.cause.cause)
 	}
 }
 
@@ -240,7 +241,6 @@ const newestFirst = <A>(
 	maxBytes: number,
 ): Array<ReadonlyArray<A>> => {
 	const encoder = new TextEncoder()
-	// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 	const size = (chunk: ReadonlyArray<A>) => encoder.encode(JSON.stringify(body(chunk))).byteLength
 	const envelope = size([])
 	let start = items.length
@@ -269,9 +269,14 @@ export const guardFlush =
 	<Args extends ReadonlyArray<unknown>>(logPrefix: string, run: (...args: Args) => Promise<void>) =>
 	async (...args: Args): Promise<void> => {
 		const outcome = await Effect.runPromise(
-			Effect.result(Effect.tryPromise({ try: () => run(...args), catch: (cause) => cause })),
+			Effect.result(
+				Effect.tryPromise({
+					try: () => run(...args),
+					catch: (cause) => new Cause.UnknownError(cause),
+				}),
+			),
 		)
-		if (Result.isFailure(outcome)) console.error(`${logPrefix} flush failed:`, outcome.failure)
+		if (Result.isFailure(outcome)) console.error(`${logPrefix} flush failed:`, outcome.failure.cause)
 	}
 
 /**

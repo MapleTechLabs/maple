@@ -25,19 +25,16 @@ import {
 export type HandOff =
 	| { readonly run: "placed" }
 	| { readonly run: "inline" }
-	| { readonly run: "exhausted"; readonly messages: ReadonlyArray<Message<unknown>> }
+	| { readonly run: "exhausted"; readonly messages: ReadonlyArray<Message> }
 
-const isFinalDelivery = (message: Message<unknown>) => message.attempts > VCS_SYNC_MAX_RETRIES
+const isFinalDelivery = (message: Message) => message.attempts > VCS_SYNC_MAX_RETRIES
 
 /**
  * Hands `messages` to the placed fetch handler and applies its outcomes. The whole batch runs
  * inline only when nothing ran there. A hop that failed after it may have started retries every
  * message, except those on their final delivery: those still get their terminal status recorded.
  */
-export const handOffVcsSyncBatch = (
-	env: Record<string, unknown>,
-	messages: ReadonlyArray<Message<unknown>>,
-) =>
+export const handOffVcsSyncBatch = (env: Record<string, unknown>, messages: ReadonlyArray<Message>) =>
 	dispatchVcsSyncBatch(Arr.map(messages, toPlacedMessage), env).pipe(
 		Effect.flatMap((outcomes) => applyOutcomes(messages, outcomes)),
 		Effect.andThen(Effect.annotateCurrentSpan("maple.vcs.dispatch", "placed")),
@@ -108,7 +105,7 @@ export const consumeVcsSyncBatch = (
 	ports: ApiPortsLayer,
 	env: Record<string, unknown>,
 	caches: VcsSyncIsolateCaches,
-	messages: ReadonlyArray<Message<unknown>>,
+	messages: ReadonlyArray<Message>,
 ) =>
 	handOffVcsSyncBatch(env, messages).pipe(
 		// Released here, which flushes the dispatch span before an inline run builds its own graph.

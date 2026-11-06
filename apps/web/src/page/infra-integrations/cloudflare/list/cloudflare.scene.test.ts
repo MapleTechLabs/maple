@@ -40,7 +40,7 @@ const account = (accountId: string, accountName: string, zones: ReadonlyArray<st
 })
 
 const status = (overrides: Readonly<Record<string, unknown>> = {}) =>
-	Schema.decodeUnknownSync(CloudflareIntegrationStatus)({
+	Schema.decodeSync(CloudflareIntegrationStatus)({
 		connected: true,
 		accountId: "acc_a",
 		accountName: "Acme",

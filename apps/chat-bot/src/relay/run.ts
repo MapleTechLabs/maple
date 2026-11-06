@@ -10,12 +10,18 @@
 import type { ChatConnector, ConnectorCredentials, InboundEvent } from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
 import type { ChatConnectorId, OrgId } from "@maple/domain/primitives"
-import type { IntegrationsPersistenceError } from "@maple/domain/http"
+import {
+	AlertIncidentAckSource,
+	AlertIncidentId,
+	type IntegrationsPersistenceError,
+} from "@maple/domain/http"
+import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
+import { AlertChatCardService } from "@maple/backend/services/alerts/AlertChatCardService"
 import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
 import { ChatSessions, type ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
-import { Cause, Config, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Cause, Config, Effect, Layer, Option, Redacted, Schema, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
@@ -35,6 +41,7 @@ import {
 	relayWithWorkspace,
 	withWorkspace,
 	WorkspaceLookupFailed,
+	type RelayAlertAckOutcome,
 	type RelayPorts,
 	type ResolvedWorkspace,
 } from "./turn.ts"
@@ -201,6 +208,68 @@ const lookupWorkspace = (
 		).pipe(lookupFailed(connectorId, "The chat workspace could not be read")),
 	)
 
+const decodeAckSource = Schema.decodeUnknownOption(AlertIncidentAckSource)
+const decodeIncidentId = Schema.decodeUnknownOption(AlertIncidentId)
+
+/**
+ * An alert card's ack click, in one connection: the ack (which also queues the PagerDuty
+ * acknowledgement), then the card redrawn with its new state. Every failure is an outcome.
+ */
+const alertAck =
+	(host: Pick<RelayHost, "env">): RelayPorts["alertAck"] =>
+	(request) => {
+		const source = decodeAckSource(request.connector)
+		const incidentId = decodeIncidentId(request.incidentId)
+		if (Option.isNone(source)) return Effect.succeed<RelayAlertAckOutcome>({ kind: "unavailable" })
+		if (Option.isNone(incidentId)) return Effect.succeed<RelayAlertAckOutcome>({ kind: "not_found" })
+		return withDatabase(
+			host.env,
+			Effect.gen(function* () {
+				const acks = yield* AlertIncidentAckService
+				const cards = yield* AlertChatCardService
+				const actor = { userId: request.userId, name: request.displayName, source: source.value }
+				const change =
+					request.action === "acknowledge"
+						? acks.acknowledge(request.orgId, incidentId.value, actor)
+						: acks.unacknowledge(request.orgId, incidentId.value, actor)
+				const applied = yield* change.pipe(
+					Effect.as<"applied" | "resolved" | "not_found">("applied"),
+					Effect.catchTags({
+						"@maple/http/errors/AlertIncidentNotFoundError": () =>
+							Effect.succeed("not_found" as const),
+						"@maple/http/errors/AlertIncidentResolvedError": () =>
+							Effect.succeed("resolved" as const),
+					}),
+				)
+				if (applied === "not_found") return { kind: "not_found" } satisfies RelayAlertAckOutcome
+				// The ack stands even when the card cannot be redrawn; the clicker is told instead.
+				const card = yield* cards
+					.cardForMessage(request.orgId, incidentId.value, request.messageId)
+					.pipe(
+						Effect.tapError((error) =>
+							Effect.logWarning("An alert card could not be rebuilt").pipe(
+								Effect.annotateLogs({ "error.type": error._tag }),
+							),
+						),
+						Effect.orElseSucceed(() => Option.none()),
+					)
+				return { kind: applied, card } satisfies RelayAlertAckOutcome
+			}).pipe(
+				// Built per event: the services hold the event's own connection.
+				Effect.provide([AlertIncidentAckService.layer, AlertChatCardService.layer]),
+			),
+		).pipe(
+			Effect.catchCause((cause) =>
+				Cause.hasInterruptsOnly(cause)
+					? Effect.interrupt
+					: Effect.logError("An alert acknowledgement from chat failed").pipe(
+							Effect.annotateLogs({ "error.type": summarizeCause(cause) }),
+							Effect.as<RelayAlertAckOutcome>({ kind: "unavailable" }),
+						),
+			),
+		)
+	}
+
 /** What a relayed event reads from the graph rather than the object: settings and the chat-session port. */
 interface RelayEnvironment {
 	readonly settings: RelaySettings
@@ -258,6 +327,7 @@ const ports = (
 	ownsConversation: host.ownsConversation,
 	rememberConversation: host.rememberConversation,
 	recordTurn: host.recordTurn,
+	alertAck: alertAck(host),
 })
 
 /**
@@ -268,8 +338,9 @@ const ports = (
  * for, and the trigger already says so once per isolate.
  */
 export const runInboundEvent = async (host: RelayHost, event: InboundEvent): Promise<void> => {
-	const connector = connectors.find((candidate) => candidate.id === event.connector)
-	if (connector === undefined) return
+	const found = Arr.findFirst(connectors, (candidate) => candidate.id === event.connector)
+	if (Option.isNone(found)) return
+	const connector = found.value
 
 	await Effect.runPromise(
 		Effect.gen(function* () {
@@ -324,9 +395,9 @@ export const settleInboundTurn = async (
 	stored: unknown,
 ): Promise<SettleOutcome> => {
 	const checkpoint = decodeRelayTurnCheckpoint(stored)
-	const connector = Option.isNone(checkpoint)
-		? undefined
-		: connectors.find((candidate) => candidate.id === checkpoint.value.connector)
+	const connector = Option.flatMap(checkpoint, (turn) =>
+		Arr.findFirst(connectors, (candidate) => candidate.id === turn.connector),
+	)
 	const relayHost: RelayHost = {
 		...host,
 		announceUnlinked: Effect.succeed(false),
@@ -335,8 +406,10 @@ export const settleInboundTurn = async (
 	}
 	return Effect.runPromise(
 		Effect.gen(function* () {
-			const config = connector === undefined ? undefined : yield* resolveConnectorConfig(connector)
-			if (Option.isNone(checkpoint) || connector === undefined || config?._tag !== "ready") {
+			const config = Option.isNone(connector)
+				? undefined
+				: yield* resolveConnectorConfig(connector.value)
+			if (Option.isNone(checkpoint) || Option.isNone(connector) || config?._tag !== "ready") {
 				yield* Effect.logWarning("A turn checkpoint this build cannot settle was dropped")
 				return "done" satisfies SettleOutcome
 			}
@@ -347,12 +420,12 @@ export const settleInboundTurn = async (
 				lookupWorkspace(
 					relayHost,
 					environment.settings,
-					connector,
+					connector.value,
 					checkpoint.value.connector,
 					target.workspaceId,
 					undefined,
 				),
-				(resolveWorkspace) => ports(relayHost, environment, connector, resolveWorkspace),
+				(resolveWorkspace) => ports(relayHost, environment, connector.value, resolveWorkspace),
 				(settlePorts) => settleRelayedTurn(checkpoint.value, settlePorts),
 			)
 		}).pipe(inRuntime(host)),

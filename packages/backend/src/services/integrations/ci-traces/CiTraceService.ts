@@ -31,7 +31,7 @@ import { type OtlpTracesPayload, workflowJobToOtlp, workflowRunToOtlp } from "./
 
 /** Short, with two retries: a webhook job should not wait on a stalled gateway for long. */
 const INGEST_TIMEOUT = Duration.seconds(15)
-const SYSTEM_USER_ID = Schema.decodeUnknownSync(UserId)("system-ci-traces")
+const SYSTEM_USER_ID = Schema.decodeSync(UserId)("system-ci-traces")
 /** Log records per ingest request: about 1 MB of JSON, well under the gateway's body limit. */
 const LOG_BATCH_SIZE = 1000
 const UNLINKED = { stamped: undefined, paused: false } as const

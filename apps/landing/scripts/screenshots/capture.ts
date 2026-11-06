@@ -99,7 +99,7 @@ const mintTicket = Effect.fn("capture.mintTicket")(
 				Effect.flatMap(Schema.decodeUnknownEffect(ClerkUsers)),
 			)
 		const user = users[0]
-		if (!user) return yield* new CaptureError({ message: `no Clerk user ${email}` })
+		if (user === undefined) return yield* new CaptureError({ message: `no Clerk user ${email}` })
 		const ticketRequest = yield* encodeTicketRequest({ user_id: user.id, expires_in_seconds: 600 })
 		const ticket = yield* client
 			.execute(

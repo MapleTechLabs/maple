@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 
 import {
 	ROOT_CONTAINER_KEY,
@@ -120,8 +120,9 @@ describe("sanitizeDashboardSections", () => {
 	it("ungroups a widget whose section is gone", () => {
 		const doc = { widgets: [widget("a", "gone", "t1")], sections: [section("s1", ["t1"])] }
 		const [repaired] = sanitizeDashboardSections(doc).widgets
-		expect("sectionId" in repaired!).toBe(false)
-		expect("tabId" in repaired!).toBe(false)
+		assert.isDefined(repaired)
+		expect("sectionId" in repaired).toBe(false)
+		expect("tabId" in repaired).toBe(false)
 	})
 
 	it("reassigns a dangling tabId to the section's first tab", () => {
@@ -140,7 +141,9 @@ describe("sanitizeDashboardSections", () => {
 
 	it("drops a tabId that has no sectionId", () => {
 		const doc = { widgets: [widget("a", undefined, "t1")], sections: [section("s1", ["t1"])] }
-		expect("tabId" in sanitizeDashboardSections(doc).widgets[0]!).toBe(false)
+		const [repaired] = sanitizeDashboardSections(doc).widgets
+		assert.isDefined(repaired)
+		expect("tabId" in repaired).toBe(false)
 	})
 
 	it("synthesises a tab for a section that has none", () => {
@@ -189,9 +192,12 @@ describe("sanitizeDashboardSections", () => {
 	// a section that is no longer in the document.
 	it("ungroups widgets whose section was cut by the cap", () => {
 		const sections = Array.from({ length: DASHBOARD_MAX_SECTIONS + 1 }, (_, i) => section(`s${i}`, ["t"]))
-		const doomed = sections[DASHBOARD_MAX_SECTIONS]!
+		const doomed = sections[DASHBOARD_MAX_SECTIONS]
+		assert.isDefined(doomed)
 		const doc = { widgets: [widget("a", doomed.id, "t")], sections }
-		expect("sectionId" in sanitizeDashboardSections(doc).widgets[0]!).toBe(false)
+		const [repaired] = sanitizeDashboardSections(doc).widgets
+		assert.isDefined(repaired)
+		expect("sectionId" in repaired).toBe(false)
 	})
 
 	// "Collapsed by default" + "can never be collapsed" would render the group
@@ -211,8 +217,9 @@ describe("sanitizeDashboardSections", () => {
 			],
 		}
 		const repaired = sanitizeDashboardSections(doc).sections?.[0]
-		expect("collapsed" in repaired!).toBe(false)
-		expect(repaired!.collapsible).toBe(false)
+		assert.isDefined(repaired)
+		expect("collapsed" in repaired).toBe(false)
+		expect(repaired.collapsible).toBe(false)
 	})
 
 	it("leaves a collapsible section's stored default alone", () => {

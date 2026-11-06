@@ -1,9 +1,15 @@
 import { assert, describe, it } from "@effect/vitest"
-import { ExecutorPrepareRequest, ExecutorPromotion, ExecutorRunRequest } from "@maple/domain/executor"
-import { Effect, Array as Arr, String as Str } from "effect"
+import {
+	EXECUTOR_LIMITS,
+	ExecutorPrepareRequest,
+	ExecutorPromotion,
+	ExecutorReleaseRequest,
+	ExecutorRunRequest,
+} from "@maple/domain/executor"
+import { Effect, Option, Array as Arr, String as Str } from "effect"
 import type { GatewayProps } from "./executor-gateway"
 import { PREPARE_STATE_DIR, PROMOTE_HELPER, RUN_TRAILER } from "./executor-scripts"
-import { type ExecResult, type ExecutorHost, destroy, prepare, run } from "./executor-session"
+import { type ExecResult, type ExecutorHost, destroy, prepare, release, run } from "./executor-session"
 
 const SHA = Str.repeat(40)("b")
 const TOKEN = "ghs_clone_token"
@@ -52,8 +58,9 @@ const fakeHost = (
 		},
 		exec: (script) => {
 			execs.push(script)
-			const answer = answers.find(([matches]) => matches(script))?.[1]
-			if (answer === undefined) return Effect.fail(`no answer for ${Str.slice(0, 60)(script)}`)
+			const found = Arr.findFirst(answers, ([matches]) => matches(script))
+			if (Option.isNone(found)) return Effect.fail(`no answer for ${Str.slice(0, 60)(script)}`)
+			const answer = found.value[1]
 			return typeof answer === "string" ? Effect.fail(answer) : Effect.succeed(answer)
 		},
 		spawn: (script) => {
@@ -189,6 +196,25 @@ describe("run", () => {
 		}),
 	)
 
+	it.effect("marks a cut stream from the measured bytes, even when its text decoded lossily", () =>
+		Effect.gen(function* () {
+			// A binary stream: each invalid byte decodes to U+FFFD, three bytes when re-encoded.
+			const limit = EXECUTOR_LIMITS.outputBytes
+			const body = Str.repeat(limit)("\uFFFD")
+			const fake = fakeHost([
+				[isRun, exited(`${body}\n${RUN_TRAILER} started 0 ${limit * 2} ${limit}\n`, "e")],
+			])
+			const answer = yield* run(fake.host, runRequest(), "call-1")
+			assert.strictEqual(answer._tag, "ExecutorRunExited")
+			if (answer._tag !== "ExecutorRunExited") return
+			assert.isTrue(answer.stdoutTruncated)
+			assert.strictEqual(answer.stdoutBytes, limit * 2)
+			// Exactly at the bound is whole.
+			assert.isFalse(answer.stderrTruncated)
+			assert.strictEqual(answer.stderrBytes, limit)
+		}),
+	)
+
 	it.effect("skips promotion when nothing was declared", () =>
 		Effect.gen(function* () {
 			const fake = fakeHost([[isRun, exited(`ok\n${RUN_TRAILER} started 0 3 0\n`)]])
@@ -236,6 +262,19 @@ describe("run", () => {
 		}),
 	)
 
+	it.effect("refuses a command from an agent that was released", () =>
+		Effect.gen(function* () {
+			const fake = fakeHost([[isRun, exited(`\n${RUN_TRAILER} released 0 0 0\n`)]])
+			const answer = yield* run(
+				fake.host,
+				runRequest([new ExecutorPromotion({ path: "a", maxBytes: 1 })]),
+				"c",
+			)
+			assert.strictEqual(answer._tag, "ExecutorUnavailable")
+			assert.isFalse(Arr.some(fake.execs, isPromote))
+		}),
+	)
+
 	it.effect("never reports a command whose isolation failed as having run", () =>
 		Effect.gen(function* () {
 			const fake = fakeHost([
@@ -245,6 +284,39 @@ describe("run", () => {
 			assert.strictEqual(answer._tag, "ExecutorUnavailable")
 			if (answer._tag !== "ExecutorUnavailable") return
 			assert.include(answer.message, "Operation not permitted")
+		}),
+	)
+})
+
+describe("release", () => {
+	const releaseRequest = new ExecutorReleaseRequest({ executorKey: "run-1", agentId: "hunter-3" })
+	const isRelease = (script: string) => Str.includes("/audit/released/hunter-3")(script)
+
+	it.effect("runs the agent's release in its container", () =>
+		Effect.gen(function* () {
+			const fake = fakeHost([[isRelease, exited("")]])
+			assert.strictEqual((yield* release(fake.host, releaseRequest))._tag, "ExecutorReleased")
+			assert.lengthOf(fake.execs, 1)
+		}),
+	)
+
+	it.effect("has nothing to do when the container is gone", () =>
+		Effect.gen(function* () {
+			const fake = fakeHost([], { running: false })
+			assert.strictEqual((yield* release(fake.host, releaseRequest))._tag, "ExecutorReleased")
+			assert.lengthOf(fake.execs, 0)
+		}),
+	)
+
+	it.effect("answers unavailable, with what was left, when a step failed", () =>
+		Effect.gen(function* () {
+			const fake = fakeHost([
+				[isRelease, { exitCode: 3, stdout: "", stderr: "could not release: cgroup", durationMs: 5 }],
+			])
+			const answer = yield* release(fake.host, releaseRequest)
+			assert.strictEqual(answer._tag, "ExecutorUnavailable")
+			if (answer._tag !== "ExecutorUnavailable") return
+			assert.include(answer.message, "cgroup")
 		}),
 	)
 })

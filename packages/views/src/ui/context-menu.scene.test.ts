@@ -24,6 +24,7 @@ import {
 	WaitForContextMenuExit,
 } from "./context-menu"
 import { view } from "./context-menu-view"
+import { Array as Arr } from "effect"
 
 /** Context menu: a right-click opens it; arrows move the highlight; Enter picks; Escape closes. */
 const ID = "span-menu"
@@ -100,7 +101,9 @@ describe("context menu scene", () => {
 
 	test("hovering an item highlights it and moves focus to it", () => {
 		const hovered = update(init(ID, { isOpen: true }), Message.HoveredItem({ index: 1 }))
-		assert(hovered.commands?.map((command) => command.name)).toEqual(["FocusMenuItem"])
+		assert(
+			hovered.commands === undefined ? undefined : Arr.map(hovered.commands, (command) => command.name),
+		).toEqual(["FocusMenuItem"])
 		scene(
 			config,
 			given(hovered.model),

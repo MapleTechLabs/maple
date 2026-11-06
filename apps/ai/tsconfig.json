@@ -1,6 +1,7 @@
 {
 	"include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts"],
 	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
 		"customConditions": ["bun"],
 		"ignoreDeprecations": "6.0",
 		"target": "ES2022",
@@ -23,7 +24,13 @@
 			{
 				"name": "@effect/language-service",
 				"ignoreEffectWarningsInTscExitCode": true,
-				"diagnosticSeverity": { "unstableApiUsage": "off" }
+				"includeSuggestionsInTsc": false,
+				"diagnosticSeverity": {
+					"unstableApiUsage": "off",
+					"schemaNumber": "off",
+					"schemaClassMissingBrand": "off",
+					"schemaSync": "off"
+				}
 			}
 		]
 	}

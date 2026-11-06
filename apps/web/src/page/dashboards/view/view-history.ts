@@ -16,8 +16,9 @@ import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { actorInitials, KIND_DOT, KIND_LABEL, type VersionRow } from "./history"
 import { Message } from "./message"
+import { isWriteBlocked } from "./mode"
 import type { Model } from "./model"
-import { typographyClass } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { scrollRegion } from "@maple/views/ui/scroll-region"
 import { Array as Arr, String as Str } from "effect"
@@ -222,60 +223,86 @@ export const historyPanel = (h: H, model: Model, clock: Clock): Html => {
 	])
 }
 
-/** `PreviewBanner` and its restore confirmation. */
-export const previewBanner = (h: H, model: Model, version: VersionRow, clock: Clock): ReadonlyArray<Html> => [
-	h.div(
-		[h.Class("mb-4 flex items-center gap-3 rounded-md border border-primary-a3 bg-primary-a1 px-3 py-2")],
-		[
-			icon(h, "HistoryIcon", { className: "size-4 shrink-0 text-primary" }),
-			h.div(
-				[h.Class("flex min-w-0 flex-1 items-center gap-1.5 font-mono text-2xs text-foreground-soft")],
-				[
-					h.span([h.Class("font-semibold text-primary")], ["PREVIEW"]),
-					dot(h),
-					h.span([], ["v", String(version.versionNumber)]),
-					dot(h),
-					relativeTime(h, { value: version.createdAt, ...clock, className: "truncate" }),
-				],
-			),
-			hstack(h, { gap: "1.5" }, [
-				button(
-					h,
-					{
-						variant: "ghost",
-						size: "sm",
-						attributes: [h.OnClick(Message.ClickedCancelPreview())],
-					},
-					["Cancel"],
+const RESTORE_BLOCKED_ID = "dashboard-restore-blocked"
+
+/** `PreviewBanner` and its restore confirmation; restore is a write, so it is off when writes are. */
+export const previewBanner = (h: H, model: Model, version: VersionRow, clock: Clock): ReadonlyArray<Html> => {
+	const isRestoreBlocked = isWriteBlocked(model)
+	return [
+		h.div(
+			[
+				h.Class(
+					"mb-4 flex items-center gap-3 rounded-md border border-primary-a3 bg-primary-a1 px-3 py-2",
 				),
-				button(
-					h,
-					{
-						variant: "default",
-						size: "sm",
-						attributes: [h.OnClick(Message.ClickedRestoreVersion())],
-					},
+			],
+			[
+				icon(h, "HistoryIcon", { className: "size-4 shrink-0 text-primary" }),
+				h.div(
 					[
-						icon(h, "ArrowPathIcon", {
-							attributes: [h.DataAttribute("icon", "inline-start")],
-						}),
-						"Restore this version",
+						h.Class(
+							"flex min-w-0 flex-1 items-center gap-1.5 font-mono text-2xs text-foreground-soft",
+						),
+					],
+					[
+						h.span([h.Class("font-semibold text-primary")], ["PREVIEW"]),
+						dot(h),
+						h.span([], ["v", String(version.versionNumber)]),
+						dot(h),
+						relativeTime(h, { value: version.createdAt, ...clock, className: "truncate" }),
 					],
 				),
-			]),
-		],
-	),
-	confirmDialog(h, {
-		slotId: "dashboard-restore-version",
-		model: model.history.restoreDialog,
-		toParentMessage: (message) => Message.GotRestoreDialogMessage({ message }),
-		tone: "default",
-		hasIcon: false,
-		title: `Restore version v${version.versionNumber}?`,
-		description:
-			"The current dashboard will be replaced with this version. The current state will be saved as a new history entry, so this is undoable.",
-		confirmLabel: "Restore",
-		isPending: model.history.isRestoring,
-		onConfirm: Message.ConfirmedRestore(),
-	}),
-]
+				hstack(h, { gap: "1.5" }, [
+					...(isRestoreBlocked
+						? [
+								typography(
+									h,
+									{ size: "2xs", tone: "muted", attributes: [h.Id(RESTORE_BLOCKED_ID)] },
+									["Restore is off while editing is unavailable"],
+								),
+							]
+						: []),
+					button(
+						h,
+						{
+							variant: "ghost",
+							size: "sm",
+							attributes: [h.OnClick(Message.ClickedCancelPreview())],
+						},
+						["Cancel"],
+					),
+					button(
+						h,
+						{
+							variant: "default",
+							size: "sm",
+							isDisabled: isRestoreBlocked,
+							attributes: [
+								h.OnClick(Message.ClickedRestoreVersion()),
+								...(isRestoreBlocked ? [h.AriaDescribedBy(RESTORE_BLOCKED_ID)] : []),
+							],
+						},
+						[
+							icon(h, "ArrowPathIcon", {
+								attributes: [h.DataAttribute("icon", "inline-start")],
+							}),
+							"Restore this version",
+						],
+					),
+				]),
+			],
+		),
+		confirmDialog(h, {
+			slotId: "dashboard-restore-version",
+			model: model.history.restoreDialog,
+			toParentMessage: (message) => Message.GotRestoreDialogMessage({ message }),
+			tone: "default",
+			hasIcon: false,
+			title: `Restore version v${version.versionNumber}?`,
+			description:
+				"The current dashboard will be replaced with this version. The current state will be saved as a new history entry, so this is undoable.",
+			confirmLabel: "Restore",
+			isPending: model.history.isRestoring,
+			onConfirm: Message.ConfirmedRestore(),
+		}),
+	]
+}

@@ -19,10 +19,10 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@
 import { errorState } from "@maple/views/ui/error-state"
 import { INLINE_LINK_CLASS, settingsSection } from "../kit/section"
 import { taxIdValue, view as detailsDialogView } from "./details/view"
-import { Message, type Model } from "./model"
+import { canManage, Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Order } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -150,7 +150,7 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 		(a, b) => b.createdAt - a.createdAt,
 	)
 	// Unpaid invoices always stay in the compact list, however old.
-	const visible = model.isAdmin
+	const visible = canManage(model)
 		? Arr.filter(invoices, (invoice, index) => index < RECENT_INVOICES || isUnpaid(invoice))
 		: invoices
 	const body = AsyncData.matchDataSplitEmpty(model.invoices, {
@@ -169,7 +169,7 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 					typography(
 						h,
 						{ size: "xs", tone: "muted", as: "p", className: "font-prose" },
-						model.isAdmin
+						canManage(model)
 							? [
 									"You can still view them in the ",
 									button(
@@ -233,7 +233,7 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 			id: "settings-billing-invoices",
 			title: "Invoices",
 			framed: false,
-			...(model.isAdmin &&
+			...(canManage(model) &&
 				invoices.length > 0 && {
 					actions: button(
 						h,
@@ -334,7 +334,7 @@ export const detailsSection = (h: H, model: Model): Html => {
 			title: "Billing details",
 			description: ["Printed on every invoice."],
 			framed: false,
-			...(model.isAdmin &&
+			...(canManage(model) &&
 				profile !== null && {
 					actions: button(
 						h,
@@ -366,10 +366,13 @@ export const detailsSection = (h: H, model: Model): Html => {
 
 /** Above everything else on the tab: what is owed and a direct way to pay it on Stripe's invoice page. */
 export const unpaidInvoicesNotice = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
-	const unpaid = Arr.filter(
-		AsyncData.getOrElse(model.invoices, () => []),
-		isUnpaid,
-	).toSorted((a, b) => a.createdAt - b.createdAt)
+	const unpaid = Arr.sort(
+		Arr.filter(
+			AsyncData.getOrElse(model.invoices, () => []),
+			isUnpaid,
+		),
+		Order.mapInput(Order.Number, (invoice: { readonly createdAt: number }) => invoice.createdAt),
+	)
 	const oldest = unpaid[0]
 	if (oldest === undefined) return []
 	const overdue = Arr.some(unpaid, (invoice) => Str.toLowerCase(invoice.status) !== "open")
@@ -392,11 +395,11 @@ export const unpaidInvoicesNotice = (h: H, model: Model, timeZone: string): Read
 			icon(h, "CircleWarningIcon"),
 			alertTitle(h, [title]),
 			alertDescription(h, [
-				model.isAdmin
+				canManage(model)
 					? `${unpaid.length === 1 ? "Issued" : "The oldest was issued"} ${since}. Pay it with a card or bank transfer on the invoice page; it updates here once Stripe confirms the payment.`
 					: `${unpaid.length === 1 ? "Issued" : "The oldest was issued"} ${since}. An org admin can pay it from this page.`,
 			]),
-			...(model.isAdmin
+			...(canManage(model)
 				? [
 						alertAction(h, [
 							url === null

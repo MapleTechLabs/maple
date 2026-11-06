@@ -1,7 +1,13 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { queryWarehouse } from "../lib/query-warehouse"
 import { resolveTimeRange } from "../lib/time"
-import { formatDelta, formatPercent, formatDurationFromMs, formatNumber } from "../lib/format"
+import {
+	formatDelta,
+	formatPercent,
+	formatPointsDelta,
+	formatDurationFromMs,
+	formatNumber,
+} from "../lib/format"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
 import { Effect, Schema, Array as Arr } from "effect"
@@ -189,7 +195,7 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 							"Error rate",
 							formatPercent(previous.errorRate),
 							formatPercent(current.errorRate),
-							formatDelta(current.errorRate, previous.errorRate),
+							formatPointsDelta(current.errorRate, previous.errorRate),
 						],
 					],
 				),

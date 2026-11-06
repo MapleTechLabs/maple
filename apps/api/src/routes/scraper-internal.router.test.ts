@@ -24,7 +24,7 @@ const asIso = Schema.decodeUnknownSync(IsoDateTimeString)
 const decodeTargets = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(InternalScrapeTarget)))
 
 // Only the first row is linked to a source; the rest must send without one.
-const FIRST_SOURCE = Schema.decodeUnknownSync(SourceId)("00000000-0000-4000-8000-0000000000aa")
+const FIRST_SOURCE = Schema.decodeSync(SourceId)("00000000-0000-4000-8000-0000000000aa")
 
 const makeRow = (index: number): ScrapeTargetRow => ({
 	id: asTargetId(`00000000-0000-4000-8000-00000000000${index}`),

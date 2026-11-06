@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr, Option } from "effect"
 import { OrgId } from "@maple/domain/http"
 import { WarehouseQuotaExceededError } from "@maple/domain/http/warehouse-errors"
 import { searchLogs } from "./search-logs"
@@ -53,23 +53,27 @@ describe("searchLogs", () => {
 					Effect.provide(makeLayer(makeMockExecutor(captured))),
 				)
 
-				const list = captured.pipeCalls.find((c) => c.pipe === "list_logs")
-				const count = captured.pipeCalls.find((c) => c.pipe === "logs_count")
+				const list = Option.getOrThrow(
+					Arr.findFirst(captured.pipeCalls, (c) => c.pipe === "list_logs"),
+				)
+				const count = Option.getOrThrow(
+					Arr.findFirst(captured.pipeCalls, (c) => c.pipe === "logs_count"),
+				)
 				assert.isDefined(list)
 				assert.isDefined(count)
 
 				// The dispatch reads `str("search")`; emitting `body_search` would be
 				// silently dropped. Assert the canonical key is present and the stale
 				// key is absent on BOTH pipe calls.
-				assert.strictEqual(list!.params.search, "boom")
-				assert.isUndefined(list!.params.body_search)
-				assert.strictEqual(count!.params.search, "boom")
-				assert.isUndefined(count!.params.body_search)
+				assert.strictEqual(list.params.search, "boom")
+				assert.isUndefined(list.params.body_search)
+				assert.strictEqual(count.params.search, "boom")
+				assert.isUndefined(count.params.body_search)
 
 				// Body search reads the wide Body column — both calls must carry the
 				// block-size guardrail (see WarehouseQuerySettings.maxBlockSize).
-				assert.strictEqual(list!.options?.settings?.maxBlockSize, 512)
-				assert.strictEqual(count!.options?.settings?.maxBlockSize, 512)
+				assert.strictEqual(list.options?.settings?.maxBlockSize, 512)
+				assert.strictEqual(count.options?.settings?.maxBlockSize, 512)
 			}),
 	)
 
@@ -84,10 +88,10 @@ describe("searchLogs", () => {
 			// Feed the exact params searchLogs produced through the real dispatcher —
 			// proves the free-text filter reaches the compiled SQL end-to-end.
 			for (const pipe of ["list_logs", "logs_count"] as const) {
-				const call = captured.pipeCalls.find((c) => c.pipe === pipe)!
+				const call = Option.getOrThrow(Arr.findFirst(captured.pipeCalls, (c) => c.pipe === pipe))
 				const compiled = compilePipeQuery(pipe, { ...call.params, org_id: asOrgId("org_test") })
 				assert.isDefined(compiled)
-				assert.include(compiled!.sql, "Body ILIKE '%boom%'")
+				assert.include(compiled.sql, "Body ILIKE '%boom%'")
 			}
 		}),
 	)

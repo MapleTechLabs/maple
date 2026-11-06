@@ -11,7 +11,8 @@ import type {
 	Finding,
 	RunMetadata,
 } from "@maple/security-audit"
-import { Effect, Layer, Option, Schema, Array as Arr, Record as Rec } from "effect"
+import { Effect, Layer, Option, Order, Schema, Array as Arr, Record as Rec } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { SecurityAuditStore, type SecurityAuditStoreApi } from "./SecurityAuditStore"
@@ -21,9 +22,9 @@ afterEach(() => cleanupTestDbs(trackedDbs))
 /** Saves whose findings carry no estimated severity. */
 const NO_ESTIMATES: ReadonlyMap<string, EstimatedSeverity> = new Map()
 
-const orgA = Schema.decodeUnknownSync(OrgId)("org_a")
-const orgB = Schema.decodeUnknownSync(OrgId)("org_b")
-const user = Schema.decodeUnknownSync(UserId)("user_a")
+const orgA = Schema.decodeSync(OrgId)("org_a")
+const orgB = Schema.decodeSync(OrgId)("org_b")
+const user = Schema.decodeSync(UserId)("user_a")
 /** A spend check no test reaches, for tests about the plan's invocations. */
 const NO_SPEND_LIMIT = { since: 0, limitUsd: Number.MAX_SAFE_INTEGER, sandboxFeeUsd: 0 }
 
@@ -199,7 +200,7 @@ describe("SecurityAuditStore findings lifecycle", () => {
 				yield* scoped.saveFindings(second.runId, [confirmed("f1", "low")], NO_ESTIMATES)
 
 				const findings = yield* scoped.listFindings(first.targetId)
-				const f1 = findings.find((f) => f.fingerprint === "f1")
+				const f1 = Option.getOrUndefined(Arr.findFirst(findings, (f) => f.fingerprint === "f1"))
 				assert.deepStrictEqual(
 					[
 						f1?.status,
@@ -211,7 +212,7 @@ describe("SecurityAuditStore findings lifecycle", () => {
 					],
 					["open", "low", first.runId, second.runId, "sha-1", "sha-2"],
 				)
-				const f2 = findings.find((f) => f.fingerprint === "f2")
+				const f2 = Option.getOrUndefined(Arr.findFirst(findings, (f) => f.fingerprint === "f2"))
 				assert.deepStrictEqual(
 					[f2?.verdict, f2?.overallSeverity, f2?.lastSeenRunId],
 					["rejected", null, first.runId],
@@ -246,7 +247,11 @@ describe("SecurityAuditStore findings lifecycle", () => {
 				)
 				const afterFix = yield* scoped.listFindings(first.targetId)
 				assert.deepStrictEqual(
-					[marked, afterFix.find((f) => f.fingerprint === "fixed")?.fixedRunId],
+					[
+						marked,
+						Option.getOrUndefined(Arr.findFirst(afterFix, (f) => f.fingerprint === "fixed"))
+							?.fixedRunId,
+					],
 					[2, revalidation.runId],
 				)
 
@@ -670,7 +675,7 @@ describe("SecurityAuditStore runs and events", () => {
 	it.effect("refuses a target that names another org's repository", () =>
 		withStore((store) =>
 			Effect.gen(function* () {
-				const repositoryId = Schema.decodeUnknownSync(VcsRepositoryId)(crypto.randomUUID())
+				const repositoryId = Schema.decodeSync(VcsRepositoryId)(SecureRandom.uuidV4Unsafe())
 				const refused = yield* Effect.flip(
 					store.forOrg(orgA).createTarget({
 						repository: "acme/api",
@@ -862,7 +867,7 @@ describe("SecurityAuditStore triage", () => {
 					targetId: done.targetId,
 					statuses: ["complete", "incomplete"],
 				})
-				const targets = yield* scoped.listTargets()
+				const targets = yield* scoped.listTargets
 				const foreignTarget = yield* scoped.getTarget(other.targetId)
 
 				assert.deepStrictEqual(
@@ -1125,7 +1130,10 @@ describe("SecurityAuditStore lenient run and event reads", () => {
 					[
 						Option.map(run, (r) => [r.metadata, r.reports]),
 						Arr.map(runs, (r) => r.reports),
-						Arr.map(events, (e) => e.detail?.message ?? null).toSorted(),
+						Arr.sort(
+							Arr.map(events, (e) => e.detail?.message ?? null),
+							Order.mapInput(Order.String, (message: string | null) => String(message)),
+						),
 					],
 					[Option.some([null, null]), [null], ["kept", null]],
 				)
@@ -1254,7 +1262,7 @@ describe("SecurityAuditStore cancellation", () => {
 				yield* scoped.finishRun(runId, { status: "complete" })
 				yield* scoped.finishRun(runId, { status: "failed", error: "interrupted" })
 				const missing = yield* Effect.flip(
-					scoped.finishRun(crypto.randomUUID(), { status: "complete" }),
+					scoped.finishRun(SecureRandom.uuidV4Unsafe(), { status: "complete" }),
 				)
 
 				const run = Option.getOrThrow(yield* scoped.getRun(runId))
@@ -1341,7 +1349,7 @@ describe("SecurityAuditStore writes after a run finished", () => {
 						run.reports,
 						run.invocationsSpent,
 						(yield* scoped.listUnits(runId)).length,
-						(yield* scoped.listEvents(runId)).map((e) => e.kind),
+						Arr.map(yield* scoped.listEvents(runId), (e) => e.kind),
 					],
 					[0, null, null, 0, 0, ["Note"]],
 				)
@@ -1558,7 +1566,7 @@ describe("SecurityAuditStore org spend limit", () => {
 		withStore((store) =>
 			Effect.gen(function* () {
 				const a = store.forOrg(orgA)
-				const before = yield* a.getSettings()
+				const before = yield* a.getSettings
 				yield* a.saveSettings({
 					monthlySpendLimitUsd: 50,
 					discoveryModel: "deepseek/deepseek-v4.1-flash-1017:nitro",
@@ -1571,8 +1579,8 @@ describe("SecurityAuditStore org spend limit", () => {
 					validationModel: "anthropic/claude-sonnet-5.5",
 					updatedBy: user,
 				})
-				const read = yield* a.getSettings()
-				const otherOrg = yield* store.forOrg(orgB).getSettings()
+				const read = yield* a.getSettings
+				const otherOrg = yield* store.forOrg(orgB).getSettings
 				assert.deepStrictEqual(
 					[
 						Option.isNone(before),

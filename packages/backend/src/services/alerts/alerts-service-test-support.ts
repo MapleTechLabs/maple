@@ -1,5 +1,5 @@
 // Shared fixtures for the AlertsService suites, split across files so CI can shard them.
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"
@@ -17,6 +17,7 @@ import {
 	Array as Arr,
 	String as Str,
 } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { FetchHttpClient } from "effect/http"
 import {
 	AlertRecipientSelectionError,
@@ -33,6 +34,7 @@ import { AlertRuntime, type AlertRuntimeApi, AlertsService, type AlertsServiceAp
 import { AlertDestinationsService } from "./AlertDestinationsService"
 import { AlertReadModelsService } from "./AlertReadModelsService"
 import { AlertRulesService } from "./AlertRulesService"
+import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import { BucketCacheService } from "@maple/query-engine/caching"
 import { EdgeCacheService } from "@maple/cache"
@@ -132,11 +134,16 @@ export function makeWarehouseStub(state: {
 	// Route the response based on what data is configured in the test state.
 	const sqlQueryStub = () => {
 		// Return whichever data is configured — tests evaluate one rule type at a time
-		if (state.rawQueryRows?.length) return succeedRows(state.rawQueryRows)
-		if (state.logsAggregateByServiceRows?.length) return succeedRows(state.logsAggregateByServiceRows)
-		if (state.tracesAggregateRows?.length) return succeedRows(state.tracesAggregateRows)
-		if (state.metricsAggregateRows?.length) return succeedRows(state.metricsAggregateRows)
-		if (state.logsAggregateRows?.length) return succeedRows(state.logsAggregateRows)
+		if (state.rawQueryRows !== undefined && state.rawQueryRows.length > 0)
+			return succeedRows(state.rawQueryRows)
+		if (state.logsAggregateByServiceRows !== undefined && state.logsAggregateByServiceRows.length > 0)
+			return succeedRows(state.logsAggregateByServiceRows)
+		if (state.tracesAggregateRows !== undefined && state.tracesAggregateRows.length > 0)
+			return succeedRows(state.tracesAggregateRows)
+		if (state.metricsAggregateRows !== undefined && state.metricsAggregateRows.length > 0)
+			return succeedRows(state.metricsAggregateRows)
+		if (state.logsAggregateRows !== undefined && state.logsAggregateRows.length > 0)
+			return succeedRows(state.logsAggregateRows)
 		return succeedRows(emptyWarehouseRows)
 	}
 
@@ -174,7 +181,7 @@ export const defaultTestRuntime: AlertRuntimeApi = {
 	// scheduler-timestamp tests drive it deterministically via TestClock.setTime /
 	// TestClock.adjust. Real `fetch`/`Effect.timeout` settle on the live event loop.
 	now: Clock.currentTimeMillis,
-	makeUuid: () => crypto.randomUUID(),
+	makeUuid: () => SecureRandom.uuidV4Unsafe(),
 	deliveryTimeoutMs: () => 15_000,
 	schedulerTickBudgetMs: () => 25_000,
 	schedulerEvalTimeoutMs: () => 15_000,
@@ -321,6 +328,11 @@ export const makeLayer = (
 		Layer.provide(alertReadModelsLive),
 		Layer.provide(alertRulesLive),
 		Layer.provide(UptimeAlertSource.layer.pipe(Layer.provide(databaseLive))),
+		Layer.provide(
+			Layer.effect(SloAlertSource, SloAlertSource.make).pipe(
+				Layer.provide(Layer.mergeAll(databaseLive, warehouseLive)),
+			),
+		),
 		Layer.provide(chatSessions === undefined ? Layer.empty : Layer.succeed(ChatSessions, chatSessions)),
 	)
 	return Layer.mergeAll(alertDestinationsLive, alertReadModelsLive, alertRulesLive, alertsLive).pipe(
@@ -390,7 +402,7 @@ export const makeUuidSequence = (...values: string[]): Pick<AlertRuntimeApi, "ma
 	}
 }
 
-export const okFetch: typeof fetch = (async () => new Response("ok", { status: 200 })) as typeof fetch
+export const okFetch: typeof fetch = async () => new Response("ok", { status: 200 })
 
 export const insertDeliveryEventRow = async (
 	db: TestDb,

@@ -13,7 +13,7 @@ import {
 	type ChatEvent,
 	type ChatEventInput,
 } from "@maple/domain/chat-session"
-import { Duration, Effect, Fiber, Stream, Array as Arr, String as Str } from "effect"
+import { Duration, Effect, Fiber, Option, Stream, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { chatConnectorId } from "./connector"
 import { driveChatTurn } from "./driver"
@@ -136,12 +136,12 @@ describe("driveChatTurn", () => {
 
 			expect(Arr.map(chat.calls, (call) => call.verb)).toEqual(["post", "edit", "edit"])
 			// The placeholder says the bot is working before a single token has landed.
-			expect(chat.calls[0].blocks).toEqual([
+			expect(Arr.getUnsafe(chat.calls, 0).blocks).toEqual([
 				{ kind: "notice", tone: "pending", text: "Working on it…" },
 			])
 			// Two deltas, one edit: the throttle coalesces rather than editing per token.
-			expect(prose(chat.calls[1].blocks)).toBe("Checking")
-			expect(prose(chat.calls[2].blocks)).toBe("Checking it.")
+			expect(prose(Arr.getUnsafe(chat.calls, 1).blocks)).toBe("Checking")
+			expect(prose(Arr.getUnsafe(chat.calls, 2).blocks)).toBe("Checking it.")
 			expect(chat.typing).toEqual(["chan_1"])
 		}),
 	)
@@ -224,7 +224,12 @@ describe("driveChatTurn", () => {
 
 			// The first thing the reader sees after the placeholder: the tool, and none of the
 			// narration the model wrote on its way into it.
-			expect(chat.calls.find((call) => working(call.blocks).length > 0)?.blocks).toEqual([
+			expect(
+				Arr.findFirst(chat.calls, (call) => working(call.blocks).length > 0).pipe(
+					Option.map((call) => call.blocks),
+					Option.getOrUndefined,
+				),
+			).toEqual([
 				{ kind: "activity", tools: [{ label: "Finding errors", status: "running", detail: null }] },
 			])
 			const lines = Arr.map(chat.calls, (call) => working(call.blocks))
@@ -232,14 +237,15 @@ describe("driveChatTurn", () => {
 			for (const line of lines) expect(line.length).toBeLessThanOrEqual(1)
 			// The two calls, in the order the turn made them. Repeats are a call whose status
 			// changed under the same name, which is one line either way.
-			expect(lines.flat().filter((label, index, all) => label !== all[index - 1])).toEqual([
+			const flat = Arr.flatten(lines)
+			expect(Arr.filter(flat, (label, index) => label !== flat[index - 1])).toEqual([
 				"Finding errors",
 				"Searching traces",
 			])
 			// The words the model wrote to itself between its calls never reach the channel.
 			for (const call of chat.calls) expect(prose(call.blocks)).not.toMatch(/Let me|Now I'll/)
 			// The finished message is the answer and nothing else.
-			expect(chat.calls[chat.calls.length - 1].blocks).toEqual([
+			expect(Arr.getUnsafe(chat.calls, chat.calls.length - 1).blocks).toEqual([
 				{ kind: "prose", markdown: "checkout times out on the database." },
 			])
 		}),
@@ -273,7 +279,7 @@ describe("driveChatTurn", () => {
 				context,
 			})
 
-			expect(chat.calls[chat.calls.length - 1].blocks).toEqual([
+			expect(Arr.getUnsafe(chat.calls, chat.calls.length - 1).blocks).toEqual([
 				{ kind: "notice", tone: "info", text: "Finished without a reply." },
 			])
 		}),
@@ -320,7 +326,12 @@ describe("driveChatTurn", () => {
 			yield* Fiber.join(fiber)
 
 			// The delegation is a line on the same status block, named for the agent it runs.
-			expect(chat.calls.find((call) => working(call.blocks).length > 0)?.blocks).toEqual([
+			expect(
+				Arr.findFirst(chat.calls, (call) => working(call.blocks).length > 0).pipe(
+					Option.map((call) => call.blocks),
+					Option.getOrUndefined,
+				),
+			).toEqual([
 				{
 					kind: "activity",
 					tools: [{ label: "Delegating to reviewer", status: "running", detail: "1 step" }],
@@ -356,7 +367,7 @@ describe("driveChatTurn", () => {
 				context,
 			})
 
-			expect(prose(chat.calls[chat.calls.length - 1].blocks)).toBe("The answer.")
+			expect(prose(Arr.getUnsafe(chat.calls, chat.calls.length - 1).blocks)).toBe("The answer.")
 		}),
 	)
 
@@ -415,7 +426,7 @@ describe("driveChatTurn", () => {
 				context,
 			})
 
-			expect(chat.calls[chat.calls.length - 1].blocks).toEqual([
+			expect(Arr.getUnsafe(chat.calls, chat.calls.length - 1).blocks).toEqual([
 				{
 					kind: "approval",
 					toolName: "create_alert_rule",
@@ -454,7 +465,7 @@ describe("driveChatTurn", () => {
 				context,
 			})
 
-			expect(chat.calls[chat.calls.length - 1].blocks).toEqual([
+			expect(Arr.getUnsafe(chat.calls, chat.calls.length - 1).blocks).toEqual([
 				{
 					kind: "approval",
 					toolName: "create_dashboard",
@@ -485,7 +496,7 @@ describe("driveChatTurn", () => {
 			})
 
 			expect(Arr.map(chat.calls, (call) => call.verb)).toEqual(["post", "edit"])
-			expect(chat.calls[1].blocks).toEqual([
+			expect(Arr.getUnsafe(chat.calls, 1).blocks).toEqual([
 				{ kind: "notice", tone: "error", text: "Failed: no model" },
 			])
 		}),
@@ -655,7 +666,7 @@ describe("driveChatTurn", () => {
 			const second = Arr.filter(chat.calls, (call) => call.ref.messageId === "m2")
 			expect(second.length).toBeGreaterThan(1)
 			// The follow-up message is emptied rather than left holding text the turn took back.
-			expect(second[second.length - 1].blocks).toEqual([])
+			expect(Arr.getUnsafe(second, second.length - 1).blocks).toEqual([])
 		}),
 	)
 
@@ -672,7 +683,7 @@ describe("driveChatTurn", () => {
 			)
 
 			expect(error).toBe("the session went away")
-			const last = chat.calls[chat.calls.length - 1].blocks
+			const last = Arr.getUnsafe(chat.calls, chat.calls.length - 1).blocks
 			expect(last[last.length - 1]).toMatchObject({ kind: "notice", tone: "error" })
 		}),
 	)
@@ -699,7 +710,7 @@ describe("driveChatTurn", () => {
 			})
 
 			expect(Arr.filter(chat.calls, (call) => call.verb === "post")).toHaveLength(1)
-			expect(prose(chat.calls[chat.calls.length - 1].blocks)).toBe("Checking.")
+			expect(prose(Arr.getUnsafe(chat.calls, chat.calls.length - 1).blocks)).toBe("Checking.")
 		}),
 	)
 })

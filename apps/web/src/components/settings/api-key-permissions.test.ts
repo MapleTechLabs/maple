@@ -12,13 +12,13 @@ describe("apiKeyRowPermissions", () => {
 		expect(
 			apiKeyRowPermissions(
 				{ ...live, kind: "standard", created_by: OTHER },
-				{ isAdmin: true, userId: ME },
+				{ canManageKeys: true, userId: ME },
 			),
 		).toEqual({ canRoll: true, canRevoke: true })
 	})
 
 	it("lets a member revoke only their own MCP key, and never roll", () => {
-		const member = { isAdmin: false, userId: ME }
+		const member = { canManageKeys: false, userId: ME }
 		expect(apiKeyRowPermissions({ ...live, kind: "mcp" }, member)).toEqual({
 			canRoll: false,
 			canRevoke: true,
@@ -34,33 +34,38 @@ describe("apiKeyRowPermissions", () => {
 	})
 
 	it("lets a member revoke their own phone's device key; an admin revokes any but rolls none", () => {
-		expect(apiKeyRowPermissions({ ...live, kind: "device" }, { isAdmin: false, userId: ME })).toEqual({
+		expect(
+			apiKeyRowPermissions({ ...live, kind: "device" }, { canManageKeys: false, userId: ME }),
+		).toEqual({
 			canRoll: false,
 			canRevoke: true,
 		})
 		expect(
 			apiKeyRowPermissions(
 				{ ...live, kind: "device", created_by: OTHER },
-				{ isAdmin: false, userId: ME },
+				{ canManageKeys: false, userId: ME },
 			),
 		).toEqual({ canRoll: false, canRevoke: false })
 		expect(
 			apiKeyRowPermissions(
 				{ ...live, kind: "device", created_by: OTHER },
-				{ isAdmin: true, userId: ME },
+				{ canManageKeys: true, userId: ME },
 			),
 		).toEqual({ canRoll: false, canRevoke: true })
 	})
 
 	it("offers nothing on a revoked key or before the session names the viewer", () => {
 		expect(
-			apiKeyRowPermissions({ ...live, kind: "mcp", revoked: true }, { isAdmin: true, userId: ME }),
+			apiKeyRowPermissions(
+				{ ...live, kind: "mcp", revoked: true },
+				{ canManageKeys: true, userId: ME },
+			),
 		).toEqual({
 			canRoll: false,
 			canRevoke: false,
 		})
 		expect(
-			apiKeyRowPermissions({ ...live, kind: "mcp" }, { isAdmin: false, userId: null }).canRevoke,
+			apiKeyRowPermissions({ ...live, kind: "mcp" }, { canManageKeys: false, userId: null }).canRevoke,
 		).toBe(false)
 	})
 })

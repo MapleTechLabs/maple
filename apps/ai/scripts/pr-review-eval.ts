@@ -291,7 +291,7 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 		}
 		for (const sha of Str.split("..")(c.range)) git(["cat-file", "-e", `${sha}^{commit}`])
 		const [base, head] = Str.split("..")(c.range)
-		if (Str.trim(git(["merge-base", base!, head!])) !== base) {
+		if (Str.trim(git(["merge-base", base, head])) !== base) {
 			console.error(`${c.id}: pinned base must be an ancestor of head`)
 			process.exit(2)
 		}
@@ -333,7 +333,7 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 	const jobs = Array.from({ length: repeats }, (_, repeat) =>
 		Arr.flatMap(groups, (range) =>
 			Arr.map(variants, (_, v) => {
-				const variant = variants[(v + repeat) % variants.length]!
+				const variant = variants[(v + repeat) % variants.length]
 				return {
 					repeat,
 					range,
@@ -349,12 +349,12 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 		order: number,
 	) => {
 		const promptFile = join(out, `prompt-${variant.prompt}.txt`)
-		writeFileSync(promptFile, promptTexts[variant.prompt]!)
-		console.log(`\n${runId}: PR #${labels[0]!.number}`)
+		writeFileSync(promptFile, promptTexts[variant.prompt])
+		console.log(`\n${runId}: PR #${labels[0].number}`)
 		const dir = await reviewLocally([
 			REPOSITORY,
 			"--number",
-			String(labels[0]!.number),
+			String(labels[0].number),
 			"--range",
 			range!,
 			"--repo-dir",
@@ -465,10 +465,10 @@ const score = (argv: ReadonlyArray<string>) => {
 	const cases: { cases: ReadonlyArray<EvalCase> } = decodeTrustedJson(
 		readFileSync(join(dir, "corpus.json"), "utf8"),
 	)
-	const grades = Schema.decodeUnknownSync(
+	const grades = Schema.decodeSync(
 		Schema.fromJsonString(Schema.Array(Schema.Struct({ ...Grade.fields, runId: Schema.String }))),
 	)(readFileSync(join(dir, "grades.json"), "utf8"))
-	const results = Schema.decodeUnknownSync(
+	const results = Schema.decodeSync(
 		Schema.fromJsonString(
 			Schema.Array(
 				Schema.Struct({
@@ -489,7 +489,7 @@ const score = (argv: ReadonlyArray<string>) => {
 			const matching = Arr.filter(grades, (g) => g.runId === run.runId && g.caseId === caseId)
 			const scored =
 				matching.length === 1
-					? scoreGrade(matching[0]!, run.findings.length, c.expected ?? "present")
+					? scoreGrade(matching[0], run.findings.length, c.expected ?? "present")
 					: null
 			return {
 				runId: run.runId,
@@ -517,12 +517,10 @@ const score = (argv: ReadonlyArray<string>) => {
 			graded: graded.length,
 			pending: Arr.filter(selected, (r) => r.status === "ungraded").length,
 			failed: Arr.filter(selected, (r) => r.status === "failed").length,
-			targetRecall: positives.length
-				? positives.filter((r) => r.passed).length / positives.length
-				: null,
-			controlPassRate: controls.length
-				? controls.filter((r) => r.passed).length / controls.length
-				: null,
+			targetRecall:
+				positives.length > 0 ? positives.filter((r) => r.passed).length / positives.length : null,
+			controlPassRate:
+				controls.length > 0 ? controls.filter((r) => r.passed).length / controls.length : null,
 		}
 	})
 	writeFileSync(join(dir, "summary.json"), encodeTabbedJson(summary))

@@ -203,7 +203,7 @@ function gaugeStrip(
 		unit,
 		rows,
 		threshold: unit === "percent",
-		summary: latestAndPeak(rows, series[0].name, unit),
+		summary: latestAndPeak(rows, series[0]?.name ?? "", unit),
 	}
 }
 
@@ -433,7 +433,7 @@ export function gcpWorkloadStrips(
 					rows,
 					threshold: chart.threshold,
 					summary: {
-						value: figure(peakOf(rows, chart.series[0].name), chart.unit),
+						value: figure(peakOf(rows, chart.series[0]?.name ?? ""), chart.unit),
 						caption: "peak",
 					},
 				}
@@ -514,11 +514,14 @@ export function gcpTraceGap(
 	const atPeak =
 		peak > 0 &&
 		Arr.every(erroring, (bucket) => bucket.instances !== undefined && bucket.instances >= peak * AT_PEAK)
+	const firstErroring = erroring[0]
+	const lastErroring = erroring.at(-1)
+	if (firstErroring === undefined || lastErroring === undefined) return null
 	return {
 		platformErrors,
 		tracedErrors,
-		fromMs: erroring[0].at,
-		untilMs: erroring[erroring.length - 1].at + bucketSeconds * 1000,
+		fromMs: firstErroring.at,
+		untilMs: lastErroring.at + bucketSeconds * 1000,
 		peakInstances: atPeak ? Math.round(peak) : undefined,
 	}
 }
@@ -537,7 +540,7 @@ export const gcpShareTone = (fraction: number | undefined): UtilizationLevel | u
 
 /** The latest reading of a gauge in the window, by bucket. */
 function latest(points: ReadonlyArray<GcpBucketPoint>, bucketSeconds: number, metric: string) {
-	for (const { points: bucketPoints } of gcpBuckets(points, bucketSeconds).toReversed()) {
+	for (const { points: bucketPoints } of Arr.reverse(gcpBuckets(points, bucketSeconds))) {
 		const value = gcpMetricReader(bucketPoints).mean(metric)
 		if (value !== undefined) return value
 	}

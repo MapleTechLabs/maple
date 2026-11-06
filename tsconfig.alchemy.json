@@ -1,5 +1,6 @@
 {
 	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
 		// apps/api's exact lib list: this program reaches its graph through
 		// alerting's ticks. workers-types alone lacks DOM-only members that code
 		// uses (`ResponseType` values, TextDecoder options), and `esnext` in place
@@ -17,7 +18,13 @@
 			{
 				"name": "@effect/language-service",
 				"ignoreEffectWarningsInTscExitCode": true,
-				"diagnosticSeverity": { "unstableApiUsage": "off" }
+				"includeSuggestionsInTsc": false,
+				"diagnosticSeverity": {
+					"unstableApiUsage": "off",
+					"schemaNumber": "off",
+					"schemaClassMissingBrand": "off",
+					"schemaSync": "off"
+				}
 			}
 		],
 		// workers-types is load-bearing for the binding parity gates: without the

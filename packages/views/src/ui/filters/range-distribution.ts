@@ -1,7 +1,7 @@
 import { formatValue, type RangeUnit } from "./range-format"
 import type { RangePreset } from "./range-filter-section"
 import type { RangeBucket } from "./range-histogram"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 /** One non-empty log bucket as the warehouse counts it: its floor, in the control's unit. */
 export interface LogBucketCount {
@@ -36,12 +36,14 @@ export const toLogBuckets = (
 	)
 	const total = Arr.reduce(buckets, 0, (sum, bucket) => sum + bucket.count)
 	if (total === 0) return buckets
-	const covering = buckets.findIndex(
+	const found = Arr.findFirstIndex(
+		buckets,
 		(_, index) =>
 			Arr.reduce(buckets.slice(0, index + 1), 0, (sum, bucket) => sum + bucket.count) >=
 			total * AXIS_COVERAGE,
 	)
-	if (covering === -1) return buckets
+	if (Option.isNone(found)) return buckets
+	const covering = found.value
 	const tail = buckets.slice(covering + 1)
 	const tailCount = Arr.reduce(tail, 0, (sum, bucket) => sum + bucket.count)
 	const head = buckets.slice(0, covering + 1)
@@ -61,14 +63,19 @@ const roundThreshold = (value: number, unit: RangeUnit): number => {
 
 /** "> p50" and "> p95" shortcuts, each carrying the threshold it resolves to. */
 export const percentilePresets = (p50: number, p95: number, unit: RangeUnit): ReadonlyArray<RangePreset> =>
-	(
+	Arr.reduce(
 		[
 			["p50", p50],
 			["p95", p95],
-		] as const
-	).reduce<ReadonlyArray<RangePreset>>((presets, [key, value]) => {
-		const threshold = roundThreshold(value, unit)
-		return threshold < MIN_THRESHOLD[unit] || Arr.some(presets, (preset) => preset.min === threshold)
-			? presets
-			: [...presets, { key, label: `> ${key}`, value: formatValue(threshold, unit), min: threshold }]
-	}, [])
+		] as const,
+		[],
+		(presets: ReadonlyArray<RangePreset>, [key, value]) => {
+			const threshold = roundThreshold(value, unit)
+			return threshold < MIN_THRESHOLD[unit] || Arr.some(presets, (preset) => preset.min === threshold)
+				? presets
+				: [
+						...presets,
+						{ key, label: `> ${key}`, value: formatValue(threshold, unit), min: threshold },
+					]
+		},
+	)

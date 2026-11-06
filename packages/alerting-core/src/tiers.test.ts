@@ -30,7 +30,7 @@ const evaluate = (tiers: ReadonlyArray<AlertThresholdTier>, value: number | null
 	evaluateAlertObservation(
 		{
 			comparator: "gt",
-			threshold: tiers[0]!.value,
+			threshold: tiers[0]?.value ?? 0,
 			thresholdUpper: null,
 			tiers,
 			minimumSampleCount: 0,
@@ -204,33 +204,36 @@ describe("single-tier rules behave exactly as the consecutive-count machine did"
 	const lcg = (seed: number) => {
 		const next = (state: number) => (state * 1_103_515_245 + 12_345) % 2_147_483_648
 		return (count: number) =>
-			Array.from({ length: count }).reduce<{ seed: number; out: number[] }>(
+			Arr.reduce<unknown, { seed: number; out: number[] }>(
+				Array.from({ length: count }),
+				{ seed, out: [] },
 				(acc) => {
 					const seedNext = next(acc.seed)
 					return { seed: seedNext, out: [...acc.out, seedNext / 2_147_483_648] }
 				},
-				{ seed, out: [] },
 			).out
 	}
 
 	it.each([1, 2, 3, 7, 42, 1234])("seed %i", (seed) => {
 		const rolls = lcg(seed)(300)
-		const n = 1 + Math.floor(rolls[0]! * 3)
-		const r = 1 + Math.floor(rolls[1]! * 3)
+		const [first = 0, second = 0] = rolls
+		const n = 1 + Math.floor(first * 3)
+		const r = 1 + Math.floor(second * 3)
 		const values = Arr.map(rolls.slice(2), (roll) => (roll < 0.1 ? null : roll < 0.55 ? 15 : 5))
 
 		const tiered = replay([warnAt(10)], values, { n, r })
 
 		const config = { breachesToOpen: n, healthyToResolve: r, cooldownMs: 0 }
+		const initialRow: HysteresisRow = {
+			consecutiveBreaches: 0,
+			consecutiveHealthy: 0,
+			incidentOpen: false,
+			lastResolvedAtMs: null,
+		}
 		const legacy = Arr.reduce(
 			values,
 			{
-				row: {
-					consecutiveBreaches: 0,
-					consecutiveHealthy: 0,
-					incidentOpen: false,
-					lastResolvedAtMs: null,
-				} as HysteresisRow,
+				row: initialRow,
 				outcomes: [] as ReadonlyArray<{
 					transition: string
 					consecutiveBreaches: number
@@ -283,5 +286,68 @@ describe("single-tier rules behave exactly as the consecutive-count machine did"
 			nowMs: 0,
 		})
 		expect(next).toMatchObject({ transition: "opened", severity: "critical" })
+	})
+})
+
+describe("acknowledged incidents", () => {
+	const tiers = [warnAt(10), critAt(20)]
+	const tieredPolicy = {
+		consecutiveBreachesRequired: 1,
+		breachWindow: 1,
+		consecutiveHealthyRequired: 1,
+		renotifyIntervalMinutes: 10,
+		severities: ["warning" as const, "critical" as const],
+	}
+	const openAt = (severity: "warning" | "critical", acknowledged: boolean): AlertLifecycleIncident => ({
+		severity,
+		firstTriggeredAtMs: 0,
+		lastNotifiedAtMs: 0,
+		lastDeliveredEventType: "trigger",
+		acknowledged,
+	})
+	const tick = (value: number, incident: AlertLifecycleIncident) =>
+		plan({
+			policy: tieredPolicy,
+			evaluation: evaluate(tiers, value),
+			state: { consecutiveBreaches: 1, consecutiveHealthy: 0 },
+			openIncident: incident,
+			// Well past the 10-minute reminder interval.
+			nowMs: 60 * 60_000,
+		})
+
+	it("sends no reminder and keeps the reminder clock while acknowledged", () => {
+		expect(tick(15, openAt("warning", false))).toMatchObject({
+			eventType: "renotify",
+			advanceNotificationAnchor: true,
+		})
+		expect(tick(15, openAt("warning", true))).toMatchObject({
+			transition: "continued",
+			eventType: null,
+			advanceNotificationAnchor: false,
+		})
+	})
+
+	it("pages an escalation despite the ack", () => {
+		expect(tick(25, openAt("warning", true))).toMatchObject({
+			transition: "escalated",
+			eventType: "trigger",
+			advanceNotificationAnchor: true,
+		})
+	})
+
+	it("de-escalates quietly while acknowledged", () => {
+		expect(tick(15, openAt("critical", true))).toMatchObject({
+			transition: "deescalated",
+			severity: "warning",
+			eventType: null,
+			advanceNotificationAnchor: false,
+		})
+	})
+
+	it("still sends the all-clear when an acknowledged incident resolves", () => {
+		expect(tick(5, openAt("warning", true))).toMatchObject({
+			transition: "resolved",
+			eventType: "resolve",
+		})
 	})
 })

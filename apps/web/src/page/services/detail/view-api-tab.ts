@@ -136,10 +136,10 @@ const leadingCode = (summaries: ReadonlyArray<StatusCodeSummary> | null, isServe
 
 /** "3.0 MB/s" as value and unit, so the unit sits small beside the figure like "req/s". */
 const splitUnit = (text: string): Readonly<{ value: string; unit?: string }> => {
-	const space = text.indexOf(" ")
-	return space < 0
-		? { value: text }
-		: { value: Str.slice(0, space)(text), unit: Str.slice(space + 1)(text) }
+	return Option.match(Str.indexOf(" ")(text), {
+		onNone: () => ({ value: text }),
+		onSome: (space) => ({ value: Str.slice(0, space)(text), unit: Str.slice(space + 1)(text) }),
+	})
 }
 
 /** "+12%" / "−8%"; under half a percent either way reads as unchanged. */
@@ -360,7 +360,7 @@ const codeRow = (h: H, summary: StatusCodeSummary): Html => {
 }
 
 const breakdownPanel = (h: H, summaries: ReadonlyArray<StatusCodeSummary> | null): Html => {
-	const total = summaries?.reduce((sum, summary) => sum + summary.count, 0) ?? 0
+	const total = summaries === null ? 0 : Arr.reduce(summaries, 0, (sum, summary) => sum + summary.count)
 	return panel(h, { className: "w-full shrink-0 lg:w-[400px]" }, [
 		panelHeader(h, {
 			title: "Non-2xx responses",

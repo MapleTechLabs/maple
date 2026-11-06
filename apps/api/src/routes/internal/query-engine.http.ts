@@ -127,7 +127,7 @@ import { AWS_INFRA_KIND_IDS, AWS_INFRA_KINDS } from "@maple/domain/aws-infra"
 import { GCP_INFRA_SERVICE_IDS, gcpInfraMetrics } from "@maple/domain/gcp-infra"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
 import { isAiContentFormat } from "@maple/domain/ai-traffic"
-import { DateTime, Duration, Effect, Option, Schema, Array as Arr } from "effect"
+import { DateTime, Duration, Effect, Option, Order, Schema, Array as Arr } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import {
 	isMissingProductEvents,
@@ -198,13 +198,15 @@ const withDbEdgesMinutelyFallback = makeRollupFallback(
  */
 const DB_EDGES_BUDGET = Duration.seconds(12)
 
+/** A list's denominator: the count query's total, or the rows on screen when that read failed or found none. */
+const countOrRowCount = (count: number | undefined, rowCount: number): number =>
+	count !== undefined && count > 0 ? count : rowCount
+
 /** Endpoint detail has no raw fallback: without migration 0048 the panel is empty. */
 const orEmptyWithoutEndpointDetails = <A, E, R>(effect: Effect.Effect<A, E, R>, empty: A) =>
 	effect.pipe(
-		Effect.catch((error) =>
-			isMissingServiceEndpointDetails(error)
-				? Effect.as(Effect.annotateCurrentSpan("query.rollup.missing", true), empty)
-				: Effect.fail(error),
+		Effect.catchIf(isMissingServiceEndpointDetails, () =>
+			Effect.as(Effect.annotateCurrentSpan("query.rollup.missing", true), empty),
 		),
 	)
 
@@ -314,13 +316,13 @@ const toReleaseTimelinePoint = (row: CH.ReleasesTimelineOutput) => ({
 })
 
 const nodeCapacity = (row: CH.NodeCapacityOutput) => ({
-	cpuUsage: row.cpuUsage || 0,
-	cpuAllocatable: row.cpuAllocatable || 0,
-	cpuUtilization: row.cpuUtilization || 0,
-	memoryUsage: row.memoryUsage || 0,
-	memoryAllocatable: row.memoryAllocatable || 0,
-	memoryUtilization: row.memoryUtilization || 0,
-	uptime: row.uptime || 0,
+	cpuUsage: row.cpuUsage,
+	cpuAllocatable: row.cpuAllocatable,
+	cpuUtilization: row.cpuUtilization,
+	memoryUsage: row.memoryUsage,
+	memoryAllocatable: row.memoryAllocatable,
+	memoryUtilization: row.memoryUtilization,
+	uptime: row.uptime,
 })
 
 const toServiceWorkloadRow = (row: CH.ServiceWorkloadsOutput) => ({
@@ -329,7 +331,7 @@ const toServiceWorkloadRow = (row: CH.ServiceWorkloadsOutput) => ({
 	workloadName: row.workloadName,
 	namespace: row.namespace,
 	clusterName: row.clusterName,
-	podCount: row.podCount || 0,
+	podCount: row.podCount,
 	avgCpuLimitUtilization: row.avgCpuLimitUtilization == null ? null : row.avgCpuLimitUtilization,
 	avgMemoryLimitUtilization: row.avgMemoryLimitUtilization == null ? null : row.avgMemoryLimitUtilization,
 })
@@ -1135,13 +1137,13 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 										topKeys,
 									})
 						const coverage = coverageRows[0]
-						const zoneRequests = zoneRows.find((row) => row.serviceName === payload.serviceName)
+						const zoneRequests = Option.match(
+							Arr.findFirst(zoneRows, (row) => row.serviceName === payload.serviceName),
+							{ onNone: () => 0, onSome: (row) => row.requests ?? 0 },
+						)
 						// Breakdown metrics are a per-window top-N fold of what Cloudflare returned, so
 						// they can only ever undercount the zone. Clamp rather than surface a negative.
-						const unattributed = Math.max(
-							0,
-							(zoneRequests?.requests ?? 0) - (coverage?.attributedRequests ?? 0),
-						)
+						const unattributed = Math.max(0, zoneRequests - (coverage?.attributedRequests ?? 0))
 						return new CloudflareInfraZoneBreakdownResponse({
 							totals: Arr.map(totalRows, (row) => ({ ...row })),
 							buckets: Arr.map(bucketRows, (row) => ({ ...row })),
@@ -1174,7 +1176,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						for (const row of rows) {
 							// `count` is decoded by the union's derived row schema; `|| 0` only
 							// covers a NaN sum.
-							const entry = { name: row.name, count: row.count || 0 }
+							const entry = { name: row.name, count: row.count }
 							switch (row.facetType) {
 								case "host":
 									buckets.hosts.push(entry)
@@ -1797,10 +1799,10 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								hostArch: row.hostArch,
 								cloudProvider: row.cloudProvider,
 								lastSeen: DateTime.formatIso(row.lastSeen),
-								cpuPct: row.cpuPct || 0,
-								memoryPct: row.memoryPct || 0,
-								diskPct: row.diskPct || 0,
-								load15: row.load15 || 0,
+								cpuPct: row.cpuPct,
+								memoryPct: row.memoryPct,
+								diskPct: row.diskPct,
+								load15: row.load15,
 							})),
 						})
 					}),
@@ -1820,10 +1822,10 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 										sourceId: row.sourceId,
 										firstSeen: DateTime.formatIso(row.firstSeen),
 										lastSeen: DateTime.formatIso(row.lastSeen),
-										cpuPct: row.cpuPct || 0,
-										memoryPct: row.memoryPct || 0,
-										diskPct: row.diskPct || 0,
-										load15: row.load15 || 0,
+										cpuPct: row.cpuPct,
+										memoryPct: row.memoryPct,
+										diskPct: row.diskPct,
+										load15: row.load15,
 									}
 								: null,
 						})
@@ -1841,7 +1843,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								data: Arr.map(rows, (row) => ({
 									bucket: DateTime.formatIso(row.bucket),
 									attributeValue: row.attributeValue,
-									value: row.sumValue || 0,
+									value: row.sumValue,
 								})),
 								groupByAttributeKey: spec.groupByAttributeKey,
 								unit: spec.unit,
@@ -1853,7 +1855,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							data: Arr.map(rows, (row) => ({
 								bucket: DateTime.formatIso(row.bucket),
 								attributeValue: row.attributeValue,
-								value: Number(row.avgValue) || 0,
+								value: row.avgValue ?? 0,
 							})),
 							groupByAttributeKey: spec.groupByAttributeKey,
 							unit: spec.unit,
@@ -1886,37 +1888,35 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								podUid: row.podUid,
 								computeType: row.computeType,
 								lastSeen: DateTime.formatIso(row.lastSeen),
-								cpuUsage: row.cpuUsage || 0,
-								cpuLimitPct: row.cpuLimitPct || 0,
-								memoryLimitPct: row.memoryLimitPct || 0,
-								cpuRequestPct: row.cpuRequestPct || 0,
-								memoryRequestPct: row.memoryRequestPct || 0,
-								cpuUsagePeak: row.cpuUsagePeak || 0,
-								cpuLimitPctPeak: row.cpuLimitPctPeak || 0,
-								memoryLimitPctPeak: row.memoryLimitPctPeak || 0,
-								saturation: row.saturation || 0,
+								cpuUsage: row.cpuUsage,
+								cpuLimitPct: row.cpuLimitPct,
+								memoryLimitPct: row.memoryLimitPct,
+								cpuRequestPct: row.cpuRequestPct,
+								memoryRequestPct: row.memoryRequestPct,
+								cpuUsagePeak: row.cpuUsagePeak,
+								cpuLimitPctPeak: row.cpuLimitPctPeak,
+								memoryLimitPctPeak: row.memoryLimitPctPeak,
+								saturation: row.saturation,
 							})),
 							// The denominator has to match the predicate the list ran, or a scoped
 							// view reads "Top 17 of 541". The scope counts are already computed
 							// within the requested lifecycle, so only the unscoped case has to
 							// pick which lifecycle total it wants.
-							totalCount:
-								Number(
-									payload.scope === "saturated"
-										? countRow?.saturatedPods
-										: payload.scope === "elevated"
-											? countRow?.elevatedPods
-											: payload.scope === "unbounded"
-												? countRow?.unboundedPods
-												: payload.lifecycle === "ended"
-													? countRow?.endedPods
-													: payload.lifecycle === "all"
-														? (countRow?.livePods ?? 0) +
-															(countRow?.endedPods ?? 0)
-														: countRow?.livePods,
-								) ||
+							totalCount: countOrRowCount(
+								payload.scope === "saturated"
+									? countRow?.saturatedPods
+									: payload.scope === "elevated"
+										? countRow?.elevatedPods
+										: payload.scope === "unbounded"
+											? countRow?.unboundedPods
+											: payload.lifecycle === "ended"
+												? countRow?.endedPods
+												: payload.lifecycle === "all"
+													? (countRow?.livePods ?? 0) + (countRow?.endedPods ?? 0)
+													: countRow?.livePods,
 								// A failed count must not render as "0 of 0" under a list with rows.
 								rows.length,
+							),
 						})
 					}),
 				)
@@ -1925,11 +1925,11 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const tenant = yield* CurrentTenant.Context
 						const row = yield* runQueryFirst(Queries.podsSummary, tenant, payload)
 						return new PodsSummaryResponse({
-							livePods: Number(row?.livePods) || 0,
-							endedPods: Number(row?.endedPods) || 0,
-							saturatedPods: Number(row?.saturatedPods) || 0,
-							elevatedPods: Number(row?.elevatedPods) || 0,
-							unboundedPods: Number(row?.unboundedPods) || 0,
+							livePods: row?.livePods ?? 0,
+							endedPods: row?.endedPods ?? 0,
+							saturatedPods: row?.saturatedPods ?? 0,
+							elevatedPods: row?.elevatedPods ?? 0,
+							unboundedPods: row?.unboundedPods ?? 0,
 						})
 					}),
 				)
@@ -1953,11 +1953,11 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 										sourceId: row.sourceId,
 										firstSeen: DateTime.formatIso(row.firstSeen),
 										lastSeen: DateTime.formatIso(row.lastSeen),
-										cpuUsage: row.cpuUsage || 0,
-										cpuLimitPct: row.cpuLimitPct || 0,
-										memoryLimitPct: row.memoryLimitPct || 0,
-										cpuRequestPct: row.cpuRequestPct || 0,
-										memoryRequestPct: row.memoryRequestPct || 0,
+										cpuUsage: row.cpuUsage,
+										cpuLimitPct: row.cpuLimitPct,
+										memoryLimitPct: row.memoryLimitPct,
+										cpuRequestPct: row.cpuRequestPct,
+										memoryRequestPct: row.memoryRequestPct,
 									}
 								: null,
 						})
@@ -1972,8 +1972,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								podName: row.podName,
 								namespace: row.namespace,
 								containerName: row.containerName,
-								restarts: Number(row.restarts) || 0,
-								totalRestarts: Number(row.totalRestarts) || 0,
+								restarts: row.restarts,
+								totalRestarts: row.totalRestarts,
 								lastTerminatedReason: row.lastTerminatedReason,
 							})),
 						})
@@ -1988,7 +1988,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							data: Arr.map(rows, (row) => ({
 								bucket: DateTime.formatIso(row.bucket),
 								attributeValue: row.attributeValue,
-								value: Number(row.avgValue) || 0,
+								value: row.avgValue ?? 0,
 							})),
 							unit: spec.unit,
 						})
@@ -2016,27 +2016,26 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								runtime: row.runtime,
 								environment: row.environment,
 								lastSeen: DateTime.formatIso(row.lastSeen),
-								cpuPct: row.cpuPct || 0,
-								memoryPct: row.memoryPct || 0,
-								cpuPctPeak: row.cpuPctPeak || 0,
-								memoryPctPeak: row.memoryPctPeak || 0,
-								cpuLimitCores: row.cpuLimitCores || 0,
-								uptimeSeconds: row.uptimeSeconds || 0,
-								saturation: row.saturation || 0,
+								cpuPct: row.cpuPct,
+								memoryPct: row.memoryPct,
+								cpuPctPeak: row.cpuPctPeak,
+								memoryPctPeak: row.memoryPctPeak,
+								cpuLimitCores: row.cpuLimitCores,
+								uptimeSeconds: row.uptimeSeconds,
+								saturation: row.saturation,
 							})),
 							// The denominator has to match the predicate the list ran (see listPods).
-							totalCount:
-								Number(
-									payload.scope === "saturated"
-										? countRow?.saturatedContainers
-										: payload.scope === "elevated"
-											? countRow?.elevatedContainers
-											: payload.scope === "stale"
-												? countRow?.staleContainers
-												: countRow?.totalContainers,
-								) ||
+							totalCount: countOrRowCount(
+								payload.scope === "saturated"
+									? countRow?.saturatedContainers
+									: payload.scope === "elevated"
+										? countRow?.elevatedContainers
+										: payload.scope === "stale"
+											? countRow?.staleContainers
+											: countRow?.totalContainers,
 								// A failed count must not render as "0 of 0" under a list with rows.
 								rows.length,
+							),
 						})
 					}),
 				)
@@ -2045,10 +2044,10 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const tenant = yield* CurrentTenant.Context
 						const row = yield* runQueryFirst(Queries.containersSummary, tenant, payload)
 						return new ContainersSummaryResponse({
-							totalContainers: Number(row?.totalContainers) || 0,
-							saturatedContainers: Number(row?.saturatedContainers) || 0,
-							elevatedContainers: Number(row?.elevatedContainers) || 0,
-							staleContainers: Number(row?.staleContainers) || 0,
+							totalContainers: row?.totalContainers ?? 0,
+							saturatedContainers: row?.saturatedContainers ?? 0,
+							elevatedContainers: row?.elevatedContainers ?? 0,
+							staleContainers: row?.staleContainers ?? 0,
 						})
 					}),
 				)
@@ -2078,14 +2077,14 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 										sourceId: row.sourceId,
 										firstSeen: DateTime.formatIso(row.firstSeen),
 										lastSeen: DateTime.formatIso(row.lastSeen),
-										cpuPct: row.cpuPct || 0,
-										memoryPct: row.memoryPct || 0,
-										cpuLimitCores: row.cpuLimitCores || 0,
-										uptimeSeconds: row.uptimeSeconds || 0,
-										memoryBytesAvg: Number(counters?.memoryBytesAvg) || 0,
-										memoryLimitBytes: Number(counters?.memoryLimitBytes) || 0,
-										restartsDelta: Number(counters?.restartsDelta) || 0,
-										pidsAvg: Number(counters?.pidsAvg) || 0,
+										cpuPct: row.cpuPct,
+										memoryPct: row.memoryPct,
+										cpuLimitCores: row.cpuLimitCores,
+										uptimeSeconds: row.uptimeSeconds,
+										memoryBytesAvg: counters?.memoryBytesAvg ?? 0,
+										memoryLimitBytes: counters?.memoryLimitBytes ?? 0,
+										restartsDelta: counters?.restartsDelta ?? 0,
+										pidsAvg: counters?.pidsAvg ?? 0,
 									}
 								: null,
 						})
@@ -2102,7 +2101,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								data: Arr.map(rows, (row) => ({
 									bucket: DateTime.formatIso(row.bucket),
 									attributeValue: row.attributeValue,
-									value: Number(row.sumValue) || 0,
+									value: row.sumValue ?? 0,
 								})),
 								unit: spec.unit,
 							})
@@ -2113,7 +2112,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							data: Arr.map(rows, (row) => ({
 								bucket: DateTime.formatIso(row.bucket),
 								attributeValue: row.attributeValue,
-								value: Number(row.avgValue) || 0,
+								value: row.avgValue ?? 0,
 							})),
 							unit: spec.unit,
 						})
@@ -2132,7 +2131,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							environments: [] as Array<{ name: string; count: number }>,
 						}
 						for (const row of rows) {
-							const entry = { name: row.name, count: row.count || 0 }
+							const entry = { name: row.name, count: row.count }
 							switch (row.facetType) {
 								case "container":
 									buckets.containers.push(entry)
@@ -2203,7 +2202,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							data: Arr.map(rows, (row) => ({
 								bucket: DateTime.formatIso(row.bucket),
 								attributeValue: row.attributeValue,
-								value: Number(row.avgValue) || 0,
+								value: row.avgValue ?? 0,
 							})),
 							unit: spec.unit,
 						})
@@ -2219,16 +2218,16 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								namespace: row.namespace,
 								clusterName: row.clusterName,
 								environment: row.environment,
-								podCount: row.podCount || 0,
+								podCount: row.podCount,
 								lastSeen: DateTime.formatIso(row.lastSeen),
 								desiredReplicas: row.replicaSamples > 0 ? row.desiredReplicas : null,
 								readyReplicas: row.replicaSamples > 0 ? row.readyReplicas : null,
-								failedPods: row.failedPods || 0,
-								restarts: row.restarts || 0,
+								failedPods: row.failedPods,
+								restarts: row.restarts,
 								lastTerminatedReason: row.lastTerminatedReason,
-								peakCpuLimitPct: row.peakCpuLimitPct || 0,
-								peakMemoryLimitPct: row.peakMemoryLimitPct || 0,
-								cpuUsage: row.cpuUsage || 0,
+								peakCpuLimitPct: row.peakCpuLimitPct,
+								peakMemoryLimitPct: row.peakMemoryLimitPct,
+								cpuUsage: row.cpuUsage,
 							})),
 						})
 					}),
@@ -2243,13 +2242,13 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 										workloadName: row.workloadName,
 										kind: payload.kind,
 										namespace: row.namespace,
-										podCount: row.podCount || 0,
+										podCount: row.podCount,
 										sourceId: row.sourceId,
 										firstSeen: DateTime.formatIso(row.firstSeen),
 										lastSeen: DateTime.formatIso(row.lastSeen),
-										avgCpuLimitPct: row.avgCpuLimitPct || 0,
-										avgMemoryLimitPct: row.avgMemoryLimitPct || 0,
-										avgCpuUsage: row.avgCpuUsage || 0,
+										avgCpuLimitPct: row.avgCpuLimitPct,
+										avgMemoryLimitPct: row.avgMemoryLimitPct,
+										avgCpuUsage: row.avgCpuUsage,
 									}
 								: null,
 						})
@@ -2264,7 +2263,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							data: Arr.map(rows, (row) => ({
 								bucket: DateTime.formatIso(row.bucket),
 								attributeValue: row.attributeValue,
-								value: Number(row.avgValue) || 0,
+								value: row.avgValue ?? 0,
 							})),
 							unit: spec.unit,
 						})
@@ -2287,7 +2286,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							computeTypes: [] as Array<{ name: string; count: number }>,
 						}
 						for (const row of rows) {
-							const entry = { name: row.name, count: row.count || 0 }
+							const entry = { name: row.name, count: row.count }
 							switch (row.facetType) {
 								case "pod":
 									buckets.pods.push(entry)
@@ -2334,7 +2333,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							environments: [] as Array<{ name: string; count: number }>,
 						}
 						for (const row of rows) {
-							const entry = { name: row.name, count: row.count || 0 }
+							const entry = { name: row.name, count: row.count }
 							switch (row.facetType) {
 								case "node":
 									buckets.nodes.push(entry)
@@ -2362,7 +2361,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							computeTypes: [] as Array<{ name: string; count: number }>,
 						}
 						for (const row of rows) {
-							const entry = { name: row.name, count: row.count || 0 }
+							const entry = { name: row.name, count: row.count }
 							switch (row.facetType) {
 								case "workload":
 									buckets.workloads.push(entry)
@@ -2397,13 +2396,13 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						// zeroes — the page needs the zeroes to render its empty state.
 						return new WebAnalyticsSummaryResponse({
 							data: {
-								visitors: Number(row?.visitors) || 0,
-								sessions: Number(row?.sessions) || 0,
-								newSessions: Number(row?.newSessions) || 0,
-								bouncedSessions: Number(row?.bouncedSessions) || 0,
-								identifiedSessions: Number(row?.identifiedSessions) || 0,
-								avgDurationMs: Number(row?.avgDurationMs) || 0,
-								botSessions: Number(row?.botSessions) || 0,
+								visitors: row?.visitors ?? 0,
+								sessions: row?.sessions ?? 0,
+								newSessions: row?.newSessions ?? 0,
+								bouncedSessions: row?.bouncedSessions ?? 0,
+								identifiedSessions: row?.identifiedSessions ?? 0,
+								avgDurationMs: row?.avgDurationMs ?? 0,
+								botSessions: row?.botSessions ?? 0,
 							},
 						})
 					}),
@@ -2421,8 +2420,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						// "0 online" is the whole point of the badge, so fill them in.
 						return new WebAnalyticsLiveResponse({
 							data: {
-								visitors: Number(row?.visitors) || 0,
-								sessions: Number(row?.sessions) || 0,
+								visitors: row?.visitors ?? 0,
+								sessions: row?.sessions ?? 0,
 								windowSeconds: SESSION_LIVE_WINDOW_SECONDS,
 							},
 						})
@@ -2440,12 +2439,12 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new WebAnalyticsTimeseriesResponse({
 							data: Arr.map(rows, (row) => ({
 								bucket: DateTime.formatIso(row.bucket),
-								visitors: row.visitors || 0,
-								sessions: row.sessions || 0,
-								newSessions: row.newSessions || 0,
-								bouncedSessions: row.bouncedSessions || 0,
-								identifiedSessions: row.identifiedSessions || 0,
-								avgDurationMs: row.avgDurationMs || 0,
+								visitors: row.visitors,
+								sessions: row.sessions,
+								newSessions: row.newSessions,
+								bouncedSessions: row.bouncedSessions,
+								identifiedSessions: row.identifiedSessions,
+								avgDurationMs: row.avgDurationMs,
 							})),
 						})
 					}),
@@ -2462,8 +2461,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new WebAnalyticsPageviewsResponse({
 							data: Arr.map(rows, (row) => ({
 								bucket: DateTime.formatIso(row.bucket),
-								pageViews: row.pageViews || 0,
-								sessions: row.sessions || 0,
+								pageViews: row.pageViews,
+								sessions: row.sessions,
 							})),
 						})
 					}),
@@ -2481,8 +2480,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							data: Arr.map(rows, (row) => ({
 								host: row.host,
 								pagePath: row.pagePath,
-								pageViews: row.pageViews || 0,
-								sessions: row.sessions || 0,
+								pageViews: row.pageViews,
+								sessions: row.sessions,
 							})),
 						})
 					}),
@@ -2499,8 +2498,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new WebAnalyticsEventsResponse({
 							data: Arr.map(rows, (row) => ({
 								name: row.name,
-								events: row.events || 0,
-								sessions: row.sessions || 0,
+								events: row.events,
+								sessions: row.sessions,
 							})),
 						})
 					}),
@@ -2547,7 +2546,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						} satisfies Record<string, keyof typeof buckets>
 						for (const row of rows) {
 							const key = bucketOf[row.facetType]
-							if (key) buckets[key].push({ name: row.name, count: row.count || 0 })
+							if (key) buckets[key].push({ name: row.name, count: row.count })
 						}
 						return new WebAnalyticsBreakdownsResponse({ data: buckets })
 					}),
@@ -2565,7 +2564,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							data: Arr.map(rows, (row) => ({
 								bucket: DateTime.formatIso(row.bucket),
 								product: row.product,
-								sessions: row.sessions || 0,
+								sessions: row.sessions,
 							})),
 						})
 					}),
@@ -2588,9 +2587,9 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							data: {
 								crawlers: Arr.map(crawlers, (row) => ({
 									crawler: row.crawler,
-									requests: row.requests || 0,
-									failedRequests: row.failedRequests || 0,
-									pages: row.pages || 0,
+									requests: row.requests,
+									failedRequests: row.failedRequests,
+									pages: row.pages,
 									lastSeen: DateTime.formatIso(row.lastSeen),
 								})),
 								formats: Arr.flatMap(formats, (row) =>
@@ -2598,9 +2597,9 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 										? [
 												{
 													format: row.format,
-													requests: row.requests || 0,
-													failedRequests: row.failedRequests || 0,
-													pages: row.pages || 0,
+													requests: row.requests,
+													failedRequests: row.failedRequests,
+													pages: row.pages,
 													crawlers: row.crawlers,
 												},
 											]
@@ -2609,7 +2608,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								pages: Arr.map(pages, (row) => ({
 									host: row.host,
 									path: row.path,
-									requests: row.requests || 0,
+									requests: row.requests,
 									crawlers: row.crawlers,
 									lastSeen: DateTime.formatIso(row.lastSeen),
 								})),
@@ -2636,9 +2635,9 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								signatures: Arr.map(signatures, (row) => ({
 									signature: row.signature,
 									service: row.service,
-									requests: row.requests || 0,
-									answered: row.answered || 0,
-									sources: row.sources || 0,
+									requests: row.requests,
+									answered: row.answered,
+									sources: row.sources,
 									lastSeen: DateTime.formatIso(row.lastSeen),
 								})),
 								exposed: Arr.map(exposed, (row) => ({
@@ -2646,23 +2645,23 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 									host: row.host,
 									path: row.path,
 									signature: row.signature,
-									httpStatus: row.httpStatus || 0,
-									requests: row.requests || 0,
+									httpStatus: row.httpStatus,
+									requests: row.requests,
 									lastSeen: DateTime.formatIso(row.lastSeen),
 									sampleTraceId: row.sampleTraceId,
 								})),
 								sources: Arr.map(sources, (row) => ({
 									clientAddress: row.clientAddress,
-									requests: row.requests || 0,
-									signatures: row.signatures || 0,
+									requests: row.requests,
+									signatures: row.signatures,
 									scanner: row.scanner,
 									userAgent: row.userAgent,
 									lastSeen: DateTime.formatIso(row.lastSeen),
 								})),
 								timeline: Arr.map(timeline, (row) => ({
 									bucket: DateTime.formatIso(row.bucket),
-									requests: row.requests || 0,
-									answered: row.answered || 0,
+									requests: row.requests,
+									answered: row.answered,
 								})),
 							},
 						})
@@ -2678,13 +2677,16 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							return product === undefined || row.runtimeVersion === "" ? [] : [product]
 						})
 						// Busiest services first, so the read cap drops the quietest versions.
-						const targets = Arr.flatMap(
-							rows.toSorted((a, b) => (b.spans || 0) - (a.spans || 0)),
-							(row) => {
-								const target = advisoryTargetOf(row)
-								return target === undefined ? [] : [target]
-							},
+						const busiestFirst = Arr.sort(
+							rows,
+							Order.flip(
+								Order.mapInput(Order.Number, (row: (typeof rows)[number]) => row.spans),
+							),
 						)
+						const targets = Arr.flatMap(busiestFirst, (row) => {
+							const target = advisoryTargetOf(row)
+							return target === undefined ? [] : [target]
+						})
 						const [releases, advisories] = yield* Effect.all(
 							[runtimeReleases.releases(products), runtimeAdvisories.advisories(targets)],
 							{ concurrency: 2 },
@@ -2700,7 +2702,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 									sdkLanguage: row.sdkLanguage,
 									sdkName: row.sdkName,
 									sdkVersion: row.sdkVersion,
-									spans: row.spans || 0,
+									spans: row.spans,
 									lastSeen: DateTime.formatIso(row.lastSeen),
 								})),
 								releases,
@@ -2720,8 +2722,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const rows = yield* runQuery(Queries.productEventsFunnel, tenant, payload)
 						return new ProductEventsFunnelResponse({
 							data: Arr.map(rows, (row) => ({
-								step: row.step || 0,
-								count: row.count || 0,
+								step: row.step,
+								count: row.count,
 							})),
 						})
 					}),
@@ -2740,8 +2742,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new ProductEventsFunnelBreakdownResponse({
 							data: Arr.map(rows, (row) => ({
 								group: row.group,
-								step: row.step || 0,
-								count: row.count || 0,
+								step: row.step,
+								count: row.count,
 							})),
 						})
 					}),
@@ -2753,9 +2755,9 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const rows = yield* runQuery(Queries.productEventsFunnelTiming, tenant, payload)
 						return new ProductEventsFunnelTimingResponse({
 							data: Arr.map(rows, (row) => ({
-								step: row.step || 0,
-								p50Ms: row.p50Ms || 0,
-								p90Ms: row.p90Ms || 0,
+								step: row.step,
+								p50Ms: row.p50Ms,
+								p90Ms: row.p90Ms,
 							})),
 						})
 					}),
@@ -2767,9 +2769,9 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const rows = yield* runQuery(Queries.productEventsFunnelLeavers, tenant, payload)
 						return new ProductEventsFunnelLeaversResponse({
 							data: Arr.map(rows, (row) => ({
-								step: row.step || 0,
+								step: row.step,
 								next: row.next,
-								count: row.count || 0,
+								count: row.count,
 							})),
 						})
 					}),
@@ -2781,10 +2783,10 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const rows = yield* runQuery(Queries.productEventsPaths, tenant, payload)
 						return new ProductEventsPathsResponse({
 							data: Arr.map(rows, (row) => ({
-								hop: row.hop || 0,
+								hop: row.hop,
 								fromNode: row.fromNode,
 								toNode: row.toNode,
-								count: row.count || 0,
+								count: row.count,
 							})),
 						})
 					}),
@@ -2797,9 +2799,9 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							data: Arr.map(rows, (row) => ({
 								eventName: row.eventName,
 								kind: row.kind,
-								count: row.count || 0,
-								sessions: row.sessions || 0,
-								persons: row.persons || 0,
+								count: row.count,
+								sessions: row.sessions,
+								persons: row.persons,
 							})),
 						})
 					}),

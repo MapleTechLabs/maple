@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import {
 	GitCommitSha,
 	OrgId,
@@ -22,17 +22,17 @@ import { CodeReviewTeamService, median } from "./CodeReviewTeamService"
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_team")
-const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_other")
-const REPO = Schema.decodeUnknownSync(VcsRepositoryId)("00000000-0000-4000-8000-000000000001")
-const OTHER_REPO = Schema.decodeUnknownSync(VcsRepositoryId)("00000000-0000-4000-8000-000000000002")
-const INSTALLATION = Schema.decodeUnknownSync(VcsInstallationId)("00000000-0000-4000-8000-0000000000aa")
+const ORG = Schema.decodeSync(OrgId)("org_team")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_other")
+const REPO = Schema.decodeSync(VcsRepositoryId)("00000000-0000-4000-8000-000000000001")
+const OTHER_REPO = Schema.decodeSync(VcsRepositoryId)("00000000-0000-4000-8000-000000000002")
+const INSTALLATION = Schema.decodeSync(VcsInstallationId)("00000000-0000-4000-8000-0000000000aa")
 const reviewId = (n: number) =>
-	Schema.decodeUnknownSync(PrReviewId)(`00000000-0000-4000-9000-${Str.padStart(12, "0")(String(n))}`)
+	Schema.decodeSync(PrReviewId)(`00000000-0000-4000-9000-${Str.padStart(12, "0")(String(n))}`)
 const tenant: TenantContext = {
 	orgId: ORG,
-	userId: Schema.decodeUnknownSync(UserId)("user_team"),
-	roles: [Schema.decodeUnknownSync(RoleName)("org:admin")],
+	userId: Schema.decodeSync(UserId)("user_team"),
+	roles: [Schema.decodeSync(RoleName)("org:admin")],
 	authMode: "self_hosted",
 }
 
@@ -71,7 +71,7 @@ const review = (input: {
 	orgId: input.orgId ?? ORG,
 	repositoryId: input.repositoryId ?? REPO,
 	number: input.number,
-	headSha: Schema.decodeUnknownSync(GitCommitSha)(Str.repeat(39)("a") + String(input.n % 10)),
+	headSha: Schema.decodeSync(GitCommitSha)(Str.repeat(39)("a") + String(input.n % 10)),
 	url: `https://github.com/acme/web/pull/${input.number}`,
 	authorLogin: input.author,
 	status: "completed" as const,
@@ -310,7 +310,10 @@ describe("CodeReviewTeamService.team", () => {
 			Effect.gen(function* () {
 				const service = yield* CodeReviewTeamService
 				yield* service.team(tenant, { ...window, repositoryId: REPO })
-				const sql = reads.find((read) => read.context === "ciActorStats")?.sql ?? ""
+				const sql = Option.match(
+					Arr.findFirst(reads, (read) => read.context === "ciActorStats"),
+					{ onNone: () => "", onSome: (read) => read.sql },
+				)
 				assert.include(sql, "ci_runs.Owner = 'acme' AND ci_runs.Repository = 'web'")
 				assert.include(sql, "ci_runs.Branch = 'trunk'")
 				assert.notInclude(sql, "'main'")

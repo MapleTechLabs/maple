@@ -1,6 +1,16 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
-import { ConfigProvider, Effect, Exit, Layer, Schema, Tracer } from "effect"
+import {
+	ConfigProvider,
+	Effect,
+	Exit,
+	Layer,
+	Schema,
+	Tracer,
+	Array as Arr,
+	String as Str,
+	Option,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -127,7 +137,7 @@ const fakePlanetScale = (
 			ingested.push((await request.json()) as OtlpPayload)
 			return new Response(null, { status: options.ingestStatus ?? 200 })
 		}
-		if (url.pathname.endsWith("/oauth/token")) {
+		if (Str.endsWith("/oauth/token")(url.pathname)) {
 			return json({
 				access_token: "ps-access-token",
 				refresh_token: "ps-refresh-token",
@@ -138,9 +148,10 @@ const fakePlanetScale = (
 		}
 		if (url.pathname === "/v1/user") return json({ id: "psuser_1" })
 		if (url.pathname === "/v1/organizations") return json({ data: [{ id: "psorg_1", name: "acme" }] })
-		const metrics = url.pathname.match(/\/branches\/([^/]+)\/metrics$/)
-		if (metrics) {
-			const branch = decodeURIComponent(metrics[1]!)
+		const metricsMatch = Str.match(/\/branches\/([^/]+)\/metrics$/)(url.pathname)
+		if (Option.isSome(metricsMatch)) {
+			const metrics = metricsMatch.value
+			const branch = decodeURIComponent(metrics[1])
 			metricRequests.push({
 				branch,
 				metrics: url.searchParams.get("metrics"),
@@ -158,7 +169,7 @@ const fakePlanetScale = (
 				series: [{ metric: "planetscale_pods_cpu_util_percentages", label: "CPU usage", points }],
 			})
 		}
-		if (url.pathname.endsWith("/databases/ledger/branches")) {
+		if (Str.endsWith("/databases/ledger/branches")(url.pathname)) {
 			return json({
 				data: [
 					{ id: "br_main", name: "main", production: true, ready: true },
@@ -168,7 +179,7 @@ const fakePlanetScale = (
 			})
 		}
 		if (/\/(deploy-requests|webhooks)$/.test(url.pathname)) return json({ data: [] })
-		if (url.pathname.endsWith("/databases")) {
+		if (Str.endsWith("/databases")(url.pathname)) {
 			return json({ data: [{ id: "db_1", name: "ledger", kind: "postgresql" }] })
 		}
 		return json([])
@@ -192,36 +203,42 @@ const connectAndLoadInventory = (excludeBranches: ReadonlyArray<string> = []) =>
 			organization: "acme",
 			excludeBranches,
 		})
-		yield* (yield* PlanetScaleService).pollAllOrgs()
+		yield* (yield* PlanetScaleService).pollAllOrgs
 	})
 
+type OtlpMetric = OtlpPayload["resourceMetrics"][number]["scopeMetrics"][number]["metrics"][number]
+
+const cpuMetrics = (metrics: ReadonlyArray<OtlpMetric>) =>
+	Arr.filter(metrics, (metric) => metric.name === "planetscale_pods_cpu_util_percentages")
+
 const cpuPoints = (payloads: ReadonlyArray<OtlpPayload>) =>
-	payloads.flatMap((payload) =>
-		payload.resourceMetrics.flatMap((resource) =>
-			resource.scopeMetrics.flatMap((scope) =>
-				scope.metrics
-					.filter((metric) => metric.name === "planetscale_pods_cpu_util_percentages")
-					.flatMap((metric) =>
-						(metric.gauge?.dataPoints ?? []).map((point) => ({ time: point.timeUnixNano })),
-					),
+	Arr.flatMap(payloads, (payload) =>
+		Arr.flatMap(payload.resourceMetrics, (resource) =>
+			Arr.flatMap(resource.scopeMetrics, (scope) =>
+				Arr.flatMap(cpuMetrics(scope.metrics), (metric) =>
+					Arr.map(metric.gauge?.dataPoints ?? [], (point) => ({ time: point.timeUnixNano })),
+				),
 			),
 		),
 	)
 
 const ingestedCpu = (payloads: ReadonlyArray<OtlpPayload>) =>
-	payloads.flatMap((payload) =>
-		payload.resourceMetrics.flatMap((resource) =>
-			resource.scopeMetrics.flatMap((scope) =>
-				scope.metrics
-					.filter((metric) => metric.name === "planetscale_pods_cpu_util_percentages")
-					.flatMap((metric) =>
-						(metric.gauge?.dataPoints ?? []).map(
-							(point) =>
-								point.attributes.find(
+	Arr.flatMap(payloads, (payload) =>
+		Arr.flatMap(payload.resourceMetrics, (resource) =>
+			Arr.flatMap(resource.scopeMetrics, (scope) =>
+				Arr.flatMap(cpuMetrics(scope.metrics), (metric) =>
+					Arr.map(metric.gauge?.dataPoints ?? [], (point) =>
+						Option.getOrUndefined(
+							Option.map(
+								Arr.findFirst(
+									point.attributes,
 									(attribute) => attribute.key === "planetscale_branch_name",
-								)?.value.stringValue,
+								),
+								(attribute) => attribute.value.stringValue,
+							),
 						),
 					),
+				),
 			),
 		),
 	)
@@ -232,10 +249,10 @@ describe("PlanetScaleMetricsService", () => {
 		const api = fakePlanetScale()
 		return Effect.gen(function* () {
 			yield* connectAndLoadInventory(["pr-*"])
-			const summary = yield* (yield* PlanetScaleMetricsService).pollAll()
+			const summary = yield* (yield* PlanetScaleMetricsService).pollAll
 
 			assert.deepStrictEqual(
-				api.metricRequests.map((request) => request.branch),
+				Arr.map(api.metricRequests, (request) => request.branch),
 				["main"],
 			)
 			// One comma list: PlanetScale keeps only the last of repeated `metrics=` parameters.
@@ -263,7 +280,7 @@ describe("PlanetScaleMetricsService", () => {
 					 auth_credentials_iv = 'x', auth_credentials_tag = 'x', enabled = true WHERE org_id = 'org_1'`,
 				),
 			)
-			yield* (yield* PlanetScaleMetricsService).pollAll()
+			yield* (yield* PlanetScaleMetricsService).pollAll
 
 			assert.lengthOf(api.metricRequests, 0)
 			const status = yield* (yield* PlanetScaleConnectionService).getStatus(asOrgId("org_1"))
@@ -276,7 +293,7 @@ describe("PlanetScaleMetricsService", () => {
 		const api = fakePlanetScale({ ingestStatus: 503 })
 		return Effect.gen(function* () {
 			yield* connectAndLoadInventory(["pr-*"])
-			yield* (yield* PlanetScaleMetricsService).pollAll()
+			yield* (yield* PlanetScaleMetricsService).pollAll
 
 			const state = yield* Effect.promise(() =>
 				queryFirstRow<{ watermark_at: Date | null; last_error: string | null }>(
@@ -303,9 +320,9 @@ describe("PlanetScaleMetricsService", () => {
 		})
 		return Effect.gen(function* () {
 			yield* connectAndLoadInventory(["pr-*"])
-			yield* (yield* PlanetScaleMetricsService)
-				.pollAll()
-				.pipe(Effect.provideService(Tracer.Tracer, tracer))
+			yield* (yield* PlanetScaleMetricsService).pollAll.pipe(
+				Effect.provideService(Tracer.Tracer, tracer),
+			)
 
 			const state = yield* Effect.promise(() =>
 				queryFirstRow<{ watermark_at: Date | null; last_error: string | null }>(
@@ -316,9 +333,9 @@ describe("PlanetScaleMetricsService", () => {
 			assert.isNull(state?.watermark_at ?? null)
 			assert.include(state?.last_error ?? "", "402")
 			assert.lengthOf(api.ingested, 1)
-			const polls = spans.filter((span) => span.name === "PlanetScaleMetricsService.pollBranch")
+			const polls = Arr.filter(spans, (span) => span.name === "PlanetScaleMetricsService.pollBranch")
 			assert.deepStrictEqual(
-				polls.map((span) => [
+				Arr.map(polls, (span) => [
 					span.status._tag === "Ended" && Exit.isSuccess(span.status.exit),
 					span.attributes.get("maple.ingest.outcome"),
 				]),
@@ -335,7 +352,7 @@ describe("PlanetScaleMetricsService", () => {
 			yield* Effect.promise(() =>
 				executeSql(testDb, `UPDATE scrape_targets SET enabled = true WHERE org_id = 'org_1'`),
 			)
-			yield* (yield* PlanetScaleMetricsService).pollAll()
+			yield* (yield* PlanetScaleMetricsService).pollAll
 
 			const target = yield* Effect.promise(() =>
 				queryFirstRow<{ enabled: boolean }>(
@@ -353,11 +370,11 @@ describe("PlanetScaleMetricsService", () => {
 		return Effect.gen(function* () {
 			yield* connectAndLoadInventory(["pr-*"])
 			const metrics = yield* PlanetScaleMetricsService
-			yield* metrics.pollAll()
+			yield* metrics.pollAll
 			yield* TestClock.adjust("5 minutes")
-			yield* metrics.pollAll()
+			yield* metrics.pollAll
 
-			const times = cpuPoints(api.ingested).map((point) => point.time)
+			const times = Arr.map(cpuPoints(api.ingested), (point) => point.time)
 			assert.lengthOf(times, 11 + 5)
 			assert.strictEqual(new Set(times).size, times.length)
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -369,7 +386,7 @@ describe("PlanetScaleMetricsService", () => {
 		return Effect.gen(function* () {
 			yield* connectAndLoadInventory()
 			const metrics = yield* PlanetScaleMetricsService
-			const summary = yield* metrics.pollAll()
+			const summary = yield* metrics.pollAll
 
 			assert.lengthOf(cpuPoints(api.ingested), 11)
 			assert.strictEqual(summary.failures, 1)
@@ -379,8 +396,8 @@ describe("PlanetScaleMetricsService", () => {
 
 			// The failed branch asks for its first window again; main asks only for what is new.
 			yield* TestClock.adjust("5 minutes")
-			yield* metrics.pollAll()
-			const windows = api.metricRequests.slice(-2).map((request) => [request.branch, request.from])
+			yield* metrics.pollAll
+			const windows = Arr.map(api.metricRequests.slice(-2), (request) => [request.branch, request.from])
 			assert.sameDeepMembers(windows, [
 				["main", "2026-10-23T23:59:00.000Z"],
 				["pr-12", "2026-10-23T23:53:00.000Z"],

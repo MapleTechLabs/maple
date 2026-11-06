@@ -45,13 +45,9 @@ import { DashboardDocument, redactForShare, variablesForWidget } from "@maple/wi
 import { Effect, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
-import {
-	ApiV2RateLimiter,
-	shareIpRateLimitKey,
-	shareOgRateLimitKey,
-	shareTokenRateLimitKey,
-} from "@maple/backend/services/auth/ApiV2RateLimiter"
-import { loadChartSeries } from "@maple/backend/services/alerts/alert-chart-series"
+import { ApiV2RateLimiter, shareOgRateLimitKey } from "@maple/backend/services/auth/ApiV2RateLimiter"
+import { ShareRateLimiter } from "@maple/backend/services/auth/ShareRateLimiter"
+import { readChartSeries } from "@maple/backend/services/alerts/alert-chart-series"
 import { chatChartFrom, chatChartSession } from "@maple/backend/services/chat/chat-chart"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
@@ -73,6 +69,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 		const auth = yield* AuthService
 		const env = yield* Env
 		const rateLimiter = yield* ApiV2RateLimiter
+		const shareRateLimiter = yield* ShareRateLimiter
 		const organizations = yield* OrganizationService
 		const shares = yield* SharedDashboardService
 		const persistence = yield* DashboardPersistenceService
@@ -83,6 +80,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 		// "no such link", identical to an unknown token; a database failure stays a 503.
 		const sharedDocument = (orgId: OrgId, dashboardId: DashboardId) =>
 			persistence.get(orgId, dashboardId).pipe(
+				Effect.map((stored) => stored.document),
 				Effect.catchTags({
 					"@maple/http/errors/DashboardNotFoundError": () => notFound,
 					"@maple/http/errors/DashboardStoredConfigInvalidError": () => notFound,
@@ -94,8 +92,9 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 		/**
 		 * Two keys, both must pass: per token, so a leaked link cannot be scraped
 		 * without bound, and per client IP, so one actor cannot fan out across many
-		 * links. Fails open, like the v2 limiter — a limiter outage must not take
-		 * every shared dashboard down with it.
+		 * links. The token bucket is the larger one (`ShareRateLimiter`), so one
+		 * client cannot exhaust a link for everyone else. Fails open, like the v2
+		 * limiter: a limiter outage must not take every shared dashboard down with it.
 		 */
 		const enforceRateLimit = Effect.fn("HttpV2SharePublic.rateLimit")(function* (tokenHash: string) {
 			const request = yield* HttpServerRequest.HttpServerRequest
@@ -105,11 +104,11 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 			// "unknown" key would put every viewer in the world in one bucket, so one
 			// person could rate-limit everyone. Skip the IP limit there; the per-token
 			// limit still applies, and it is the one that bounds a leaked link.
-			const outcomes = yield* Effect.all([
-				rateLimiter.check(shareTokenRateLimitKey(Str.slice(0, 24)(tokenHash))),
-				...(ip === undefined ? [] : [rateLimiter.check(shareIpRateLimitKey(ip))]),
-			])
-			if (Arr.some(outcomes, (outcome) => outcome === "limited")) {
+			const outcome = yield* shareRateLimiter.check({
+				tokenHashPrefix: Str.slice(0, 24)(tokenHash),
+				ip,
+			})
+			if (outcome === "limited") {
 				return yield* new ShareRateLimitedError({
 					message: "This shared dashboard is receiving too many requests. Try again shortly.",
 				})
@@ -149,7 +148,10 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 		const enforceChartRateLimit = Effect.fn("HttpV2SharePublic.chartRateLimit")(function* (
 			chartId: string,
 		) {
-			const signature = Str.slice(chartId.indexOf(".") + 1)(chartId)
+			const signature = Option.match(Str.indexOf(".")(chartId), {
+				onNone: () => chartId,
+				onSome: (dot) => Str.slice(dot + 1)(chartId),
+			})
 			const outcome = yield* rateLimiter.check(shareOgRateLimitKey(Str.slice(0, 24)(signature)))
 			if (outcome === "limited") {
 				return yield* new ShareRateLimitedError({
@@ -193,7 +195,8 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 
 			// Self-hosted has no directory, so the name comes back null and the card
 			// simply carries no byline.
-			const name = info.value.name?.trim()
+			const rawName = info.value.name
+			const name = rawName === null || rawName === undefined ? undefined : Str.trim(rawName)
 			if (name === undefined || name.length === 0) return undefined
 
 			const imageUrl = info.value.imageUrl
@@ -281,18 +284,17 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					// That includes the board's variables: only the widget's own resolve.
 					const sharedWidget =
 						share.widgetId === undefined
-							? undefined
-							: document.widgets.find((widget) => widget.id === share.widgetId)
+							? Option.none()
+							: Arr.findFirst(document.widgets, (widget) => widget.id === share.widgetId)
 					// A chart link whose widget is gone gets no variables, not the board's.
 					const scoped =
 						share.widgetId === undefined || document.variables === undefined
 							? document
 							: new DashboardDocument({
 									...document,
-									variables:
-										sharedWidget === undefined
-											? []
-											: variablesForWidget(document.variables, sharedWidget),
+									variables: Option.isNone(sharedWidget)
+										? []
+										: variablesForWidget(document.variables, sharedWidget.value),
 								})
 					const { results, variables } = yield* widgetData.resolveBatch(orgId, scoped, {
 						requests: Arr.map(payload.requests, (request) => ({
@@ -305,9 +307,9 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 						window: payload.timeRange,
 						variableValues: payload.variableValues ?? {},
 						...(share.widgetId === undefined ? undefined : { onlyWidgetId: share.widgetId }),
-						// Stored SQL is only ever written by a caller that can read the telemetry
-						// (see the dashboards write routes), the same bar as minting the share.
-						rawSqlAllowed: true,
+						// Minting a share already required reading all of its telemetry, and stored
+						// SQL is only written by a caller that can (see the dashboards write routes).
+						canRead: () => true,
 					})
 					return new ShareWidgetDataResponse({ results, variables })
 				}),
@@ -438,7 +440,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					// threshold, which side to shade — is pinned in the signed id, so a
 					// rule renamed or deleted after delivery cannot change what an
 					// already-sent alert's picture says.
-					const series = yield* loadChartSeries(warehouse, systemTenant(orgId), {
+					const series = yield* readChartSeries(warehouse, systemTenant(orgId), {
 						orgId,
 						ruleId,
 						groupKey: claims.groupKey,
@@ -448,10 +450,14 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 						threshold: claims.threshold ?? 0,
 						fromMs: claims.fromMs,
 						toMs: claims.toMs,
-					})
-					// A window whose checks have aged out of `alert_checks` retention,
-					// or a warehouse that would not answer. Either way there is no
-					// picture to draw, and the uniform not-found is the honest reply.
+					}).pipe(
+						// A slow or failing warehouse is a retryable 503, not a missing chart.
+						Effect.catchTag("@maple/backend/alerts/AlertChartSeriesUnavailableError", (error) =>
+							Effect.fail(new SharePersistenceError({ message: error.message, cause: error })),
+						),
+					)
+					// A window whose checks have aged out of `alert_checks` retention:
+					// there is no picture to draw, and the uniform not-found is the honest reply.
 					if (series === null) return yield* notFound
 
 					// One series, because that is what a rule measures. The card puts

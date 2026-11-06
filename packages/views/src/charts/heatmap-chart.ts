@@ -95,7 +95,7 @@ export const HEATMAP_TOKENS: ReadonlyArray<string> = [
 	"--foreground",
 ]
 
-const isKnownScale = (value: string): value is HeatmapColorScale & (typeof SCALES)[number] =>
+const isKnownScale = (value: string): value is HeatmapColorScale =>
 	Arr.some(SCALES, (scale) => scale === value)
 
 const rampStops = (theme: ThemeColors, scale: (typeof SCALES)[number]): ReadonlyArray<string> =>
@@ -225,8 +225,13 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 	const hovered =
 		hoveredKey === null
 			? null
-			: ([...model.cells, ...model.holes].find((slot) => `${slot.x}\u0000${slot.y}` === hoveredKey)
-					?.value ?? null)
+			: Option.match(
+					Arr.findFirst(
+						[...model.cells, ...model.holes],
+						(slot) => `${slot.x}\u0000${slot.y}` === hoveredKey,
+					),
+					{ onNone: () => null, onSome: (slot) => slot.value ?? null },
+				)
 	const spec = ChartSpec.Heatmap({
 		cells: model.cells,
 		holes: model.holes,

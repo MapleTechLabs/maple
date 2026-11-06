@@ -49,9 +49,11 @@ use maple_ingest::ai_session;
 use maple_ingest::aws::CredentialsProvider as AwsCredentialsProvider;
 use maple_ingest::aws_metric_stream;
 use maple_ingest::clickhouse_insert_mappings::SCHEMA_VERSION as CLICKHOUSE_SCHEMA_VERSION;
-use maple_ingest::decompress::{gunzip_bounded, gunzip_len_bounded, GunzipError};
+use maple_ingest::decode_budget::{self, DecodeMemory, DecodeReservation, OtlpSignal};
+use maple_ingest::decompress::{gunzip_bounded, gunzip_declared, gunzip_len_bounded, GunzipError};
 use maple_ingest::gcp_logging;
 use maple_ingest::gcp_push_auth::{GooglePushAuth, PushAuthError};
+use maple_ingest::host_identity;
 use maple_ingest::ingest_rules::{self, IngestSignal, RuleStats};
 use maple_ingest::metrics;
 use maple_ingest::otel::{
@@ -63,7 +65,7 @@ use maple_ingest::otlp_json;
 use maple_ingest::r2::{replay_object_key, ReplayBlobStore};
 use maple_ingest::session_analytics::{
     derive_referrer_host, sanitize_product_event, sanitize_session_event, sanitize_session_meta,
-    take_billable_session_start,
+    BillableSessionStarts,
 };
 use maple_ingest::telemetry::{
     AttributeMappingRule, ClickHouseBreakerConfig, ClickHouseTarget, ClickHouseTargetProvider,
@@ -172,6 +174,12 @@ struct AppConfig {
     max_request_body_bytes: usize,
     /// Ceiling on a gzip body after decompression; past it the request is a 413.
     max_decoded_body_bytes: usize,
+    /// Ceiling on what decoding one OTLP payload may allocate, estimated before
+    /// decoding (`decode_budget`); past it the request is a 413.
+    max_decode_heap_bytes: u64,
+    /// Process-wide memory for request bodies being decoded, shared by every
+    /// request; past it a request is shed with a retryable 503.
+    decode_memory_bytes: u64,
     org_max_in_flight: u64,
     /// Gateway instances sharing each source's requests/second limit.
     rate_limit_fleet_size: u32,
@@ -469,6 +477,25 @@ impl AppConfig {
                     .to_owned(),
             );
         }
+        // Real protobuf telemetry is estimated at 5-13x its size: this admits the largest
+        // batches seen in prd (~50 MB) while one request stays well inside the task.
+        let max_decode_heap_bytes = parse_u64(
+            "INGEST_MAX_DECODE_HEAP_BYTES",
+            std::env::var("INGEST_MAX_DECODE_HEAP_BYTES").ok(),
+            768 * 1024 * 1024,
+        )?;
+        // Holds one request at every ceiling at once, inside the 1536 MiB task; raised
+        // to that if set lower (plus a KiB per part for rounding), so it always admits one.
+        let largest_request = (max_request_body_bytes as u64)
+            .saturating_add(max_decoded_body_bytes as u64)
+            .saturating_add(max_decode_heap_bytes)
+            .saturating_add(3 * 1024);
+        let decode_memory_bytes = parse_u64(
+            "INGEST_DECODE_MEMORY_BYTES",
+            std::env::var("INGEST_DECODE_MEMORY_BYTES").ok(),
+            1024 * 1024 * 1024,
+        )?
+        .max(largest_request);
         let org_max_in_flight = parse_u64(
             "INGEST_ORG_MAX_IN_FLIGHT",
             std::env::var("INGEST_ORG_MAX_IN_FLIGHT").ok(),
@@ -734,6 +761,8 @@ impl AppConfig {
             tinybird,
             max_request_body_bytes,
             max_decoded_body_bytes,
+            max_decode_heap_bytes,
+            decode_memory_bytes,
             org_max_in_flight,
             rate_limit_fleet_size,
             gcp_org_max_in_flight,
@@ -1486,6 +1515,16 @@ async fn entitlement_rejection(
     ))
 }
 
+/// The `browser_sessions` gate every browser-session route shares: events,
+/// replay metadata and replay chunks. A denied org gets nothing from any of them,
+/// so a refused session never leaves a stored transcript or recording behind.
+async fn browser_sessions_rejection(state: &AppState, org_id: &str) -> Option<ApiError> {
+    if org_id == SENTINEL_ORG_ID {
+        return None;
+    }
+    entitlement_rejection(state, org_id, BROWSER_SESSIONS_FEATURE_ID).await
+}
+
 #[derive(Clone, Debug)]
 struct ClickHouseTargetRow {
     ch_url: String,
@@ -1508,6 +1547,8 @@ struct AppState {
     key_store_ready: Arc<AtomicBool>,
     resolver: IngestKeyResolver,
     org_inflight_limiter: OrgInFlightLimiter,
+    /// Memory every request's body is decoded inside; see `decode_otlp_body`.
+    decode_memory: DecodeMemory,
     key_rate_limiter: SourceRateLimiter,
     /// GCP pushes only, taken before `org_inflight_limiter`.
     gcp_inflight_limiter: OrgInFlightLimiter,
@@ -1659,6 +1700,8 @@ enum GcpPushOutcome {
     SetupReport,
     /// The connector's integration source is paused.
     SourcePaused,
+    /// The org's ingest rules need more scanning than one entry may use; redelivery would too.
+    RulesScanBudget,
 }
 
 #[derive(Clone, Copy)]
@@ -1709,6 +1752,14 @@ impl Signal {
             Self::Traces => IngestSignal::Traces,
             Self::Logs => IngestSignal::Logs,
             Self::Metrics => IngestSignal::Metrics,
+        }
+    }
+
+    fn otlp_signal(self) -> OtlpSignal {
+        match self {
+            Self::Traces => OtlpSignal::Traces,
+            Self::Logs => OtlpSignal::Logs,
+            Self::Metrics => OtlpSignal::Metrics,
         }
     }
 }
@@ -2046,6 +2097,18 @@ static INGEST_RULES_UNAVAILABLE: FailureKind = FailureKind {
     retryable: true,
     error_kind: "rules_unavailable",
     retry_after_seconds: Some(5),
+};
+
+/// The org's own rules need more scanning than one payload may use. Not the sender's fault and
+/// its data is lost, so the span is `Error`; smaller batches fit.
+static INGEST_RULES_SCAN_BUDGET: FailureKind = FailureKind {
+    tag: "@maple/ingest/IngestRulesScanBudget",
+    code: "ingest_rules_scan_budget",
+    title: "Ingest rules scan budget exceeded",
+    recovery: "fix_request",
+    retryable: false,
+    error_kind: "rules_scan_budget",
+    retry_after_seconds: None,
 };
 
 static INGEST_INTERNAL_ERROR: FailureKind = FailureKind {
@@ -2480,6 +2543,7 @@ fn init_tracing(
     bind_port: u16,
     service_instance_id: &str,
     internal_org_id: &str,
+    host_attributes: &[opentelemetry::KeyValue],
     trace_sample_ratio: f64,
 ) -> Option<TelemetryProviders> {
     // Two filters on purpose. The registry-wide filter is pinned at `info`
@@ -2524,6 +2588,7 @@ fn init_tracing(
         service_instance_id: service_instance_id.to_owned(),
         deployment_env,
         internal_org_id: internal_org_id.to_owned(),
+        host_attributes: host_attributes.to_vec(),
     });
 
     let exporter = match SpanExporter::builder()
@@ -2675,6 +2740,7 @@ fn init_metrics(
     bind_port: u16,
     service_instance_id: &str,
     internal_org_id: &str,
+    host_attributes: &[opentelemetry::KeyValue],
 ) -> Option<SdkMeterProvider> {
     let deployment_env = resolve_deployment_env();
     let forward_explicit = std::env::var("INGEST_FORWARD_OTLP_ENDPOINT").is_ok();
@@ -2690,6 +2756,7 @@ fn init_metrics(
         service_instance_id: service_instance_id.to_owned(),
         deployment_env,
         internal_org_id: internal_org_id.to_owned(),
+        host_attributes: host_attributes.to_vec(),
     });
 
     let exporter = match MetricExporter::builder()
@@ -2738,6 +2805,7 @@ fn init_usage_metrics(
     bind_port: u16,
     service_instance_id: &str,
     internal_org_id: &str,
+    host_attributes: &[opentelemetry::KeyValue],
 ) -> Option<UsageMetrics> {
     let deployment_env = resolve_deployment_env();
     let forward_explicit = std::env::var("INGEST_FORWARD_OTLP_ENDPOINT").is_ok();
@@ -2753,6 +2821,7 @@ fn init_usage_metrics(
         service_instance_id: service_instance_id.to_owned(),
         deployment_env,
         internal_org_id: internal_org_id.to_owned(),
+        host_attributes: host_attributes.to_vec(),
     });
 
     let exporter = match MetricExporter::builder()
@@ -2818,11 +2887,13 @@ async fn main() {
     // One UUID per process, shared by the trace and metric resources so both
     // signals attribute to the same `service.instance.id`.
     let service_instance_id = uuid::Uuid::new_v4().to_string();
+    let host_attributes = host_identity::detect(&config.tinybird.queue_dir).await;
     let telemetry_providers = init_tracing(
         &config.forward_endpoint,
         config.port,
         &service_instance_id,
         &config.internal_org_id,
+        &host_attributes,
         config.self_trace_sample_ratio,
     );
     let meter_provider = init_metrics(
@@ -2830,12 +2901,14 @@ async fn main() {
         config.port,
         &service_instance_id,
         &config.internal_org_id,
+        &host_attributes,
     );
     let usage_metrics = init_usage_metrics(
         &config.forward_endpoint,
         config.port,
         &service_instance_id,
         &config.internal_org_id,
+        &host_attributes,
     )
     .map(Arc::new);
 
@@ -3046,6 +3119,7 @@ async fn main() {
             blocked_keys: Arc::clone(&config.blocked_ingest_keys),
         },
         org_inflight_limiter: OrgInFlightLimiter::new(config.org_max_in_flight),
+        decode_memory: DecodeMemory::new(config.decode_memory_bytes),
         key_rate_limiter: SourceRateLimiter::new(config.rate_limit_fleet_size),
         gcp_inflight_limiter: OrgInFlightLimiter::for_route(
             config.gcp_org_max_in_flight,
@@ -3318,39 +3392,22 @@ async fn run_grpc_server(state: Arc<AppState>, port: u16) {
     }
 }
 
-/// The three OTLP services behind `grpc_admission`.
-///
-/// gzip is the OTel Collector's default exporter compression. Admission caps the
-/// body at the HTTP path's raw limit; tonic's message limit (frame and
-/// decompressed) is its decoded ceiling. tonic's own default is 4 MiB.
+/// The three OTLP services behind `grpc_admission`, which decodes every export
+/// itself and hands tonic one empty message, so tonic never parses client bytes.
 fn grpc_router(state: Arc<AppState>) -> Router {
     use opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsServiceServer;
     use opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server::MetricsServiceServer;
     use opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::TraceServiceServer;
-    use tonic::codec::CompressionEncoding;
 
-    let max_message_bytes = state.config.max_decoded_body_bytes;
-    tonic::service::Routes::new(
-        TraceServiceServer::new(GrpcTraceService {
-            state: Arc::clone(&state),
-        })
-        .accept_compressed(CompressionEncoding::Gzip)
-        .max_decoding_message_size(max_message_bytes),
-    )
-    .add_service(
-        LogsServiceServer::new(GrpcLogsService {
-            state: Arc::clone(&state),
-        })
-        .accept_compressed(CompressionEncoding::Gzip)
-        .max_decoding_message_size(max_message_bytes),
-    )
-    .add_service(
-        MetricsServiceServer::new(GrpcMetricsService {
-            state: Arc::clone(&state),
-        })
-        .accept_compressed(CompressionEncoding::Gzip)
-        .max_decoding_message_size(max_message_bytes),
-    )
+    tonic::service::Routes::new(TraceServiceServer::new(GrpcTraceService {
+        state: Arc::clone(&state),
+    }))
+    .add_service(LogsServiceServer::new(GrpcLogsService {
+        state: Arc::clone(&state),
+    }))
+    .add_service(MetricsServiceServer::new(GrpcMetricsService {
+        state: Arc::clone(&state),
+    }))
     .into_axum_router()
     .layer(axum::middleware::from_fn_with_state(state, grpc_admission))
 }
@@ -3358,13 +3415,9 @@ fn grpc_router(state: Arc<AppState>) -> Router {
 /// A gRPC frame holding one zero-length (all-default) message, uncompressed.
 const EMPTY_GRPC_MESSAGE: &[u8] = &[0, 0, 0, 0, 0];
 
-/// Authenticate and entitlement-gate an OTLP/gRPC export on its headers alone.
-///
-/// tonic reads and decodes the whole message before a service method runs, so a
-/// check inside `export` runs only after the request it refuses has been
-/// received and decoded. Made here, in front of the services, an unknown key or
-/// a denied org is turned away before any of the message is read. The resolved
-/// key reaches `export` through the request extensions.
+/// Admits an OTLP/gRPC export on its headers alone, so a refused one is never read,
+/// then decodes it under the HTTP path's limits (`decode_grpc_export`). The export
+/// reaches the service through the request extensions; tonic gets an empty message.
 async fn grpc_admission(
     State(state): State<Arc<AppState>>,
     mut request: Request,
@@ -3382,22 +3435,35 @@ async fn grpc_admission(
         let admitted = admit_grpc_export(&state, request.headers(), signal).await;
         match admitted {
             Ok((resolved, admission)) => {
-                if admission == KeyAdmission::Drop {
-                    // Paused: hand tonic one empty message instead of the upload, so
-                    // nothing is read or decoded and the client still gets an OK reply.
-                    *request.body_mut() = axum::body::Body::from(EMPTY_GRPC_MESSAGE);
-                    request.headers_mut().remove("grpc-encoding");
-                    request
-                        .headers_mut()
-                        .remove(axum::http::header::CONTENT_LENGTH);
-                } else if let Err(status) =
-                    limit_grpc_body(&mut request, state.config.max_request_body_bytes)
-                {
-                    return status.into_http();
+                // Held until tonic has answered: the org's in-flight slot, taken before
+                // the body is read as on the HTTP path, and the export's decode memory.
+                let mut in_flight = None;
+                // Paused, or the public placeholder token whose upload is never
+                // kept: nothing is read or decoded and the client still gets an OK reply.
+                if admission != KeyAdmission::Drop && resolved.org_id != SENTINEL_ORG_ID {
+                    let Some(org_permit) = state.org_inflight_limiter.try_acquire(&resolved.org_id)
+                    else {
+                        return tonic::Status::resource_exhausted("Per-org ingest limit exceeded")
+                            .into_http();
+                    };
+                    match decode_grpc_export(&state, &mut request, signal).await {
+                        Ok((export, memory)) => {
+                            request.extensions_mut().insert(GrpcExportSlot::new(export));
+                            in_flight = Some((org_permit, memory));
+                        }
+                        Err(status) => return status.into_http(),
+                    }
                 }
+                *request.body_mut() = axum::body::Body::from(EMPTY_GRPC_MESSAGE);
+                request.headers_mut().remove("grpc-encoding");
+                request
+                    .headers_mut()
+                    .remove(axum::http::header::CONTENT_LENGTH);
                 request.extensions_mut().insert(resolved);
                 request.extensions_mut().insert(admission);
-                next.run(request).await
+                let response = next.run(request).await;
+                drop(in_flight);
+                response
             }
             Err(status) => status.into_http(),
         }
@@ -3423,6 +3489,96 @@ async fn grpc_admission(
     };
     record_grpc_outcome(&span_handle, &response);
     response
+}
+
+/// An export `grpc_admission` decoded, with its size as received.
+struct GrpcExport {
+    decoded: DecodedPayload,
+    decoded_bytes: usize,
+}
+
+/// Carries a `GrpcExport` through the request extensions, which must be `Clone`,
+/// to the one service call that takes it.
+#[derive(Clone)]
+struct GrpcExportSlot(Arc<std::sync::Mutex<Option<GrpcExport>>>);
+
+impl GrpcExportSlot {
+    fn new(export: GrpcExport) -> Self {
+        Self(Arc::new(std::sync::Mutex::new(Some(export))))
+    }
+
+    fn take(&self) -> Option<GrpcExport> {
+        self.0.lock().ok()?.take()
+    }
+}
+
+/// Reads an export's one gRPC message and decodes it as the HTTP path does
+/// (`decode_otlp_body`), returning the decode memory it holds.
+async fn decode_grpc_export(
+    state: &AppState,
+    request: &mut Request,
+    signal: Signal,
+) -> Result<(GrpcExport, DecodeReservation), tonic::Status> {
+    limit_grpc_body(request, state.config.max_request_body_bytes)?;
+    let frame = axum::body::to_bytes(std::mem::take(request.body_mut()), usize::MAX)
+        .await
+        .map_err(|error| tonic::Status::from_error(error.into_inner()))?;
+    let truncated = || tonic::Status::internal("Unexpected end of the gRPC message");
+    let Some(&[compressed, a, b, c, d]) = frame.first_chunk::<5>() else {
+        return Err(truncated());
+    };
+    let message = frame.slice(5..);
+    if usize::try_from(u32::from_be_bytes([a, b, c, d])).ok() != Some(message.len()) {
+        return Err(truncated());
+    }
+    let gzip = match compressed {
+        0 => false,
+        1 => {
+            match request
+                .headers()
+                .get("grpc-encoding")
+                .and_then(|value| value.to_str().ok())
+            {
+                Some("gzip") => {}
+                // A compressed message must name its encoding (gRPC spec: INTERNAL).
+                None | Some("identity") => {
+                    return Err(tonic::Status::internal(
+                        "Compressed message without a grpc-encoding",
+                    ))
+                }
+                Some(other) => {
+                    let mut status = tonic::Status::unimplemented(format!(
+                        "Message compression `{other}` is not supported; use gzip"
+                    ));
+                    status.metadata_mut().insert(
+                        "grpc-accept-encoding",
+                        tonic::metadata::MetadataValue::from_static("gzip"),
+                    );
+                    return Err(status);
+                }
+            }
+            true
+        }
+        _ => return Err(tonic::Status::internal("Invalid gRPC compression flag")),
+    };
+    let DecodedBody {
+        payload,
+        decoded_bytes,
+        memory,
+    } = decode_otlp_body(state, message, gzip, signal, PayloadFormat::Protobuf)
+        .await
+        .map_err(|DecodeRefusal { error, .. }| match error.status {
+            StatusCode::PAYLOAD_TOO_LARGE => tonic::Status::resource_exhausted(error.message),
+            status if status.is_server_error() => tonic::Status::unavailable(error.message),
+            _ => tonic::Status::invalid_argument(error.message),
+        })?;
+    Ok((
+        GrpcExport {
+            decoded: payload,
+            decoded_bytes,
+        },
+        memory,
+    ))
 }
 
 /// The HTTP path's raw body cap, and one message per export (`SingleGrpcFrame`).
@@ -3578,32 +3734,14 @@ impl opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::Tra
 {
     async fn export(
         &self,
-        mut request: tonic::Request<ExportTraceServiceRequest>,
+        request: tonic::Request<ExportTraceServiceRequest>,
     ) -> Result<
         tonic::Response<
             opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceResponse,
         >,
         tonic::Status,
     > {
-        let (resolved, admission) = grpc_admitted_key(&mut request)?;
-        let inner = request.into_inner();
-        // Sized before enrichment injects resource attributes, so this is the
-        // client's own payload size — the same basis as the HTTP path's
-        // `decoded_payload.len()`.
-        let decoded_bytes = inner.encoded_len();
-        let mut decoded = DecodedPayload::Traces(inner);
-        let (admission, claims) =
-            admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
-        accept_grpc_decoded(
-            &self.state,
-            Signal::Traces,
-            decoded,
-            &resolved,
-            admission,
-            decoded_bytes,
-            &claims,
-        )
-        .await?;
+        serve_grpc_export(&self.state, Signal::Traces, request, DecodedPayload::Traces).await?;
         Ok(tonic::Response::new(
             opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceResponse {
                 partial_success: None,
@@ -3618,27 +3756,12 @@ impl opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsS
 {
     async fn export(
         &self,
-        mut request: tonic::Request<ExportLogsServiceRequest>,
+        request: tonic::Request<ExportLogsServiceRequest>,
     ) -> Result<
         tonic::Response<opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceResponse>,
         tonic::Status,
     > {
-        let (resolved, admission) = grpc_admitted_key(&mut request)?;
-        let inner = request.into_inner();
-        let decoded_bytes = inner.encoded_len();
-        let mut decoded = DecodedPayload::Logs(inner);
-        let (admission, claims) =
-            admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
-        accept_grpc_decoded(
-            &self.state,
-            Signal::Logs,
-            decoded,
-            &resolved,
-            admission,
-            decoded_bytes,
-            &claims,
-        )
-        .await?;
+        serve_grpc_export(&self.state, Signal::Logs, request, DecodedPayload::Logs).await?;
         Ok(tonic::Response::new(
             opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceResponse {
                 partial_success: None,
@@ -3653,35 +3776,50 @@ impl opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server:
 {
     async fn export(
         &self,
-        mut request: tonic::Request<ExportMetricsServiceRequest>,
+        request: tonic::Request<ExportMetricsServiceRequest>,
     ) -> Result<
         tonic::Response<
             opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceResponse,
         >,
         tonic::Status,
     > {
-        let (resolved, admission) = grpc_admitted_key(&mut request)?;
-        let inner = request.into_inner();
-        let decoded_bytes = inner.encoded_len();
-        let mut decoded = DecodedPayload::Metrics(inner);
-        let (admission, claims) =
-            admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
-        accept_grpc_decoded(
-            &self.state,
-            Signal::Metrics,
-            decoded,
-            &resolved,
-            admission,
-            decoded_bytes,
-            &claims,
-        )
-        .await?;
+        serve_grpc_export(&self.state, Signal::Metrics, request, DecodedPayload::Metrics).await?;
         Ok(tonic::Response::new(
             opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceResponse {
                 partial_success: None,
             },
         ))
     }
+}
+
+/// Accepts an export `grpc_admission` admitted and, unless it was dropped there,
+/// decoded. A dropped export reaches tonic as one empty message.
+async fn serve_grpc_export<T>(
+    state: &AppState,
+    signal: Signal,
+    mut request: tonic::Request<T>,
+    empty: fn(T) -> DecodedPayload,
+) -> Result<(), tonic::Status> {
+    let (resolved, admission) = grpc_admitted_key(&mut request)?;
+    let export = request
+        .extensions_mut()
+        .remove::<GrpcExportSlot>()
+        .and_then(|slot| slot.take());
+    let (mut decoded, decoded_bytes) = match export {
+        Some(export) => (export.decoded, export.decoded_bytes),
+        None => (empty(request.into_inner()), 0),
+    };
+    let (admission, claims) = admit_grpc_claims(state, admission, &mut decoded, &resolved).await;
+    accept_grpc_decoded(
+        state,
+        signal,
+        decoded,
+        &resolved,
+        admission,
+        decoded_bytes,
+        &claims,
+    )
+    .await
 }
 
 /// Verifies a gRPC export's source claims; a batch of only paused pull sources
@@ -3692,8 +3830,8 @@ async fn admit_grpc_claims(
     decoded: &mut DecodedPayload,
     resolved: &ResolvedIngestKey,
 ) -> (KeyAdmission, ClaimOutcome) {
-    // A paused source's export reaches here empty (see `grpc_admission`).
-    if admission != KeyAdmission::Ingest {
+    // A paused source's or the sentinel's export reaches here empty (see `grpc_admission`).
+    if admission != KeyAdmission::Ingest || resolved.org_id == SENTINEL_ORG_ID {
         return (admission, ClaimOutcome::default());
     }
     let claims = verify_claims_and_enrich(state, decoded, resolved).await;
@@ -3718,10 +3856,9 @@ async fn accept_grpc_decoded(
     decoded_bytes: usize,
     claims: &ClaimOutcome,
 ) -> Result<(), tonic::Status> {
-    // The sentinel token is a PUBLIC constant, so anything it carries is
-    // attacker-authored and must never be stored. Discarded here for the same
-    // reasons and with the same shape as `handle_signal_inner`'s HTTP
-    // short-circuit: success to the client, nothing resolved, nothing forwarded.
+    // The sentinel token is a PUBLIC constant, so anything it carries is never
+    // stored. `grpc_admission` already swapped its upload for an empty message;
+    // this answers it like `handle_signal_inner`'s HTTP short-circuit.
     if resolved.org_id == SENTINEL_ORG_ID {
         metrics::sentinel(signal.path());
         Span::current().record("maple.ingest.key_type", "sentinel");
@@ -3733,10 +3870,7 @@ async fn accept_grpc_decoded(
         return Ok(());
     }
 
-    let _org_inflight_permit = state
-        .org_inflight_limiter
-        .try_acquire(&resolved.org_id)
-        .ok_or_else(|| tonic::Status::resource_exhausted("Per-org ingest limit exceeded"))?;
+    // The org's in-flight slot is held by `grpc_admission`.
     let item_count = decoded.item_count();
     let mut retained = claims.retained;
 
@@ -3777,13 +3911,16 @@ async fn accept_grpc_decoded(
             }
             Ok(())
         }
-        Err(error) => {
-            if error.status == StatusCode::TOO_MANY_REQUESTS {
-                Err(tonic::Status::resource_exhausted(error.message))
-            } else {
-                Err(tonic::Status::unavailable(error.message))
-            }
+        // OTLP exporters retry neither `INTERNAL` nor `INVALID_ARGUMENT`; resending would be refused
+        // again. A scan-budget refusal drops a healthy sender's data, so it must read as an error.
+        Err(error) if error.error_kind() == INGEST_RULES_SCAN_BUDGET.error_kind => {
+            Err(tonic::Status::internal(error.message))
         }
+        Err(error) => match error.status {
+            StatusCode::TOO_MANY_REQUESTS => Err(tonic::Status::resource_exhausted(error.message)),
+            StatusCode::PAYLOAD_TOO_LARGE => Err(tonic::Status::invalid_argument(error.message)),
+            _ => Err(tonic::Status::unavailable(error.message)),
+        },
     }
 }
 
@@ -4270,6 +4407,12 @@ async fn handle_replay_meta_inner(
                 ApiError::too_many_requests("Per-org ingest limit exceeded")
             })?;
 
+    // Gated on every request, not only on a billable session start: a denied org
+    // must not keep storing the continuation rows and chunks of its sessions.
+    if let Some(error) = browser_sessions_rejection(state, &org_id).await {
+        return Err(error);
+    }
+
     let pipeline = native_rows_pipeline_for(
         state,
         destination,
@@ -4282,10 +4425,10 @@ async fn handle_replay_meta_inner(
     // Meter one browser session per visit to Autumn: the SDK claims a visit once
     // per visitor per 30-minute idle window across tabs and subdomains, and marks
     // the claiming session's rows `billable_start: 1`. See
-    // `take_billable_session_start` for the rule and its legacy-SDK fallback.
+    // `BillableSessionStarts` for the rule and its per-request bound.
     let country = derive_country(headers, state.config.trust_proxy_geo);
     let mut rows: Vec<Vec<u8>> = Vec::new();
-    let mut session_starts: u64 = 0;
+    let mut session_starts = BillableSessionStarts::default();
     for line in body.split(|&b| b == b'\n') {
         if line.iter().all(u8::is_ascii_whitespace) {
             continue;
@@ -4327,9 +4470,7 @@ async fn handle_replay_meta_inner(
         // LowCardinality columns. Clamp before it reaches the warehouse — the
         // SDK's own trimming ships in customer JavaScript.
         sanitize_session_meta(obj);
-        if take_billable_session_start(obj) {
-            session_starts += 1;
-        }
+        session_starts.note(obj);
         rows.push(
             serde_json::to_vec(&value).map_err(|e| {
                 ApiError::bad_request(format!("failed to re-serialize metadata: {e}"))
@@ -4343,9 +4484,9 @@ async fn handle_replay_meta_inner(
     let count = rows.len();
     #[expect(
         clippy::cast_precision_loss,
-        reason = "a single request carries far fewer than 2^53 session starts"
+        reason = "a request bills at most a handful of session starts"
     )]
-    let billable_sessions = session_starts as f64;
+    let billable_sessions = session_starts.count() as f64;
     metered_enqueue(
         state,
         &org_id,
@@ -4481,12 +4622,8 @@ async fn handle_session_events_inner(
     // `/v1/events`). The REJECTION here deliberately stays on `browser_sessions`:
     // an exhausted product-events allowance is billed as usage_based overage and
     // must not 402 a whole session transcript.
-    if org_id != SENTINEL_ORG_ID {
-        if let Some(error) =
-            entitlement_rejection(state, &org_id, BROWSER_SESSIONS_FEATURE_ID).await
-        {
-            return Err(error);
-        }
+    if let Some(error) = browser_sessions_rejection(state, &org_id).await {
+        return Err(error);
     }
 
     let pipeline = native_rows_pipeline_for(
@@ -4870,6 +5007,12 @@ async fn handle_replay_blob_inner(
                 warn!(org_id = %org_id, "Per-org in-flight ingest limit exceeded");
                 ApiError::too_many_requests("Per-org ingest limit exceeded")
             })?;
+
+    // Gated on every request, not only on a billable session start: a denied org
+    // must not keep storing the continuation rows and chunks of its sessions.
+    if let Some(error) = browser_sessions_rejection(state, &org_id).await {
+        return Err(error);
+    }
 
     let pipeline = native_rows_pipeline_for(
         state,
@@ -5435,64 +5578,45 @@ async fn handle_signal_inner(
         }
     }
 
-    let encoding_label = content_encoding.as_deref().unwrap_or("identity");
-    // Synchronous, so the span is entered rather than instrumented. Scoped so the
-    // span closes on the decompress itself and not on the rest of the handler.
-    let decoded_payload = {
-        let decode_span = decode_internal_span(encoding_label, body.len());
-        let _guard = decode_span.enter();
-        let decoded_payload = decode_payload(
-            &body,
-            content_encoding.as_deref(),
-            state.config.max_decoded_body_bytes,
-        )
-        .map_err(|e| {
-            // Over the decoded ceiling is the same refusal as an oversized body.
-            if e.status == StatusCode::PAYLOAD_TOO_LARGE {
-                warn!(body_bytes = body.len(), "Decoded payload too large");
-                record_stage_error(&decode_span, "payload_too_large", &e.message, false);
-                return (e, "payload_too_large");
-            }
-            warn!(body_bytes = body.len(), "Failed to decode payload");
-            record_stage_error(&decode_span, "decode", &e.message, false);
+    let gzip = match content_encoding.as_deref() {
+        None => false,
+        Some("gzip") => true,
+        Some(_) => {
             metrics::org_data_loss(&resolved_key.org_id, signal.path(), "decode");
-            (e, "decode")
+            return Err((
+                ApiError::unsupported_media_type("Unsupported content-encoding"),
+                "decode",
+            ));
+        }
+    };
+    let body_bytes = body.len();
+    let DecodedBody {
+        payload: mut decoded,
+        decoded_bytes,
+        memory: _decode_memory,
+    } = decode_otlp_body(state, body, gzip, signal, payload_format)
+        .await
+        .map_err(|DecodeRefusal { error, stage }| {
+            warn!(
+                format = payload_format.label(),
+                signal = signal.path(),
+                org_id = resolved_key.org_id.as_str(),
+                key_type = resolved_key.key_type.as_str(),
+                body_bytes,
+                stage,
+                reason = %error.message,
+                "OTLP payload refused while decoding"
+            );
+            if matches!(stage, "decode" | "enrich") {
+                metrics::org_data_loss(&resolved_key.org_id, signal.path(), stage);
+            }
+            (error, stage)
         })?;
-        decode_span.record("maple.ingest.decoded_bytes", decoded_payload.len());
-        decoded_payload
-    };
 
-    Span::current().record("maple.ingest.decoded_bytes", decoded_payload.len());
-    debug!(
-        decoded_bytes = decoded_payload.len(),
-        encoding = encoding_label,
-        "Payload decoded"
-    );
-    metrics::decoded_body_bytes(signal.path(), decoded_payload.len() as u64);
+    Span::current().record("maple.ingest.decoded_bytes", decoded_bytes);
+    debug!(decoded_bytes, "Payload decoded");
+    metrics::decoded_body_bytes(signal.path(), decoded_bytes as u64);
 
-    let mut decoded = {
-        let parse_span = parse_internal_span(payload_format.label(), signal.path());
-        let _guard = parse_span.enter();
-        let decoded =
-            decode_otlp_payload(signal, payload_format, &decoded_payload).map_err(|e| {
-                warn!(
-                    format = payload_format.label(),
-                    signal = signal.path(),
-                    org_id = resolved_key.org_id.as_str(),
-                    key_type = resolved_key.key_type.as_str(),
-                    decoded_bytes = decoded_payload.len(),
-                    reason = %e.message,
-                    "Invalid OTLP payload"
-                );
-                // The reason previously only reached the log; on the span it
-                // is what tells you *why* a customer's SDK is being rejected.
-                record_stage_error(&parse_span, "enrich", &e.message, false);
-                metrics::org_data_loss(&resolved_key.org_id, signal.path(), "enrich");
-                (e, "enrich")
-            })?;
-        parse_span.record("maple.ingest.item_count", decoded.item_count());
-        decoded
-    };
     let mut claims = verify_claims_and_enrich(state, &mut decoded, &resolved_key).await;
     if claims.all_paused {
         // Like a paused token source: success to the sender, nothing written or billed.
@@ -5521,10 +5645,14 @@ async fn handle_signal_inner(
     )
     .await;
     // Only the share left after paused-source drops and ingest rules is metered.
-    let decoded_bytes = claims.metered_bytes(decoded_payload.len());
+    let decoded_bytes = claims.metered_bytes(decoded_bytes);
     let item_count = claims.retained.metered_items(item_count);
 
-    let response = response_result.map_err(|error| (error, "forward"))?;
+    // A scan-budget refusal keeps its own kind: it loses the sender's data, unlike a forward failure.
+    let response = response_result.map_err(|error| {
+        let kind = error.error_kind();
+        (error, if kind == INGEST_RULES_SCAN_BUDGET.error_kind { kind } else { "forward" })
+    })?;
     if response.status().is_success() {
         state.resolver.note_source_use(&resolved_key, kept_claim);
         state
@@ -5893,6 +6021,13 @@ async fn handle_gcp_logpush(
                     span_handle.record("maple.ingest.reject_reason", "source_paused");
                     metrics::request_completed("logs", "ok", "none", duration);
                 }
+                GcpPushOutcome::RulesScanBudget => {
+                    // Acked, but the entry is gone: an `Error`, like a decode failure.
+                    let kind = INGEST_RULES_SCAN_BUDGET.error_kind;
+                    span_handle.record("error.type", kind);
+                    record_rejection_reason(&span_handle, 200, kind, "Ingest rules scan budget exceeded");
+                    metrics::request_completed("logs", "error", kind, duration);
+                }
             }
             response
         }
@@ -6109,6 +6244,14 @@ async fn handle_gcp_logpush_inner(
     .await
     {
         Ok(response) => response,
+        // The same entry and rules are refused on every redelivery: ack it instead.
+        Err(error) if error.error_kind() == INGEST_RULES_SCAN_BUDGET.error_kind => {
+            state
+                .gcp_resolver
+                .record_health(connector_id, Some(gcp_logging::RULES_SCAN_BUDGET))
+                .await;
+            return Ok((StatusCode::OK.into_response(), GcpPushOutcome::RulesScanBudget));
+        }
         Err(error) => {
             state
                 .gcp_resolver
@@ -6920,6 +7063,149 @@ fn encode_payload(payload: &[u8], content_encoding: Option<&str>) -> Result<Vec<
     }
 }
 
+/// What decoding `payload` would allocate, refused past `heap_budget` before any
+/// of it is allocated.
+fn otlp_decode_cost(
+    signal: Signal,
+    payload_format: PayloadFormat,
+    payload: &[u8],
+    heap_budget: u64,
+) -> Result<u64, ApiError> {
+    match payload_format {
+        PayloadFormat::Protobuf => {
+            decode_budget::protobuf_cost(signal.otlp_signal(), payload, heap_budget)
+        }
+        PayloadFormat::Json => decode_budget::json_cost(payload, heap_budget),
+    }
+    .map_err(|decode_budget::OverBudget| {
+        ApiError::payload_too_large(format!(
+            "Request decodes past the {} MiB the gateway allows one request; send smaller batches",
+            heap_budget / (1024 * 1024)
+        ))
+    })
+}
+
+/// Why `decode_otlp_body` refused a body, and the stage that refused it, named as
+/// the ingest spans' `error.type`.
+struct DecodeRefusal {
+    error: ApiError,
+    stage: &'static str,
+}
+
+/// An OTLP body inflated and decoded, and the decode memory it holds until dropped.
+struct DecodedBody {
+    payload: DecodedPayload,
+    decoded_bytes: usize,
+    memory: DecodeReservation,
+}
+
+static INGEST_DECODE_BUSY: FailureKind = FailureKind {
+    tag: "@maple/ingest/DecodeBusy",
+    code: "ingest_decode_busy",
+    title: "Ingest gateway busy",
+    recovery: "retry",
+    retryable: true,
+    error_kind: "decode_busy",
+    retry_after_seconds: Some(1),
+};
+
+/// Inflates and decodes an OTLP body on the blocking pool, inside the process-wide
+/// decode memory budget: the inflated size and the decode estimate are reserved
+/// before they are allocated, and a request that does not fit is shed with a 503.
+async fn decode_otlp_body(
+    state: &AppState,
+    body: Bytes,
+    gzip: bool,
+    signal: Signal,
+    payload_format: PayloadFormat,
+) -> Result<DecodedBody, DecodeRefusal> {
+    let mut reservation = state.decode_memory.reservation();
+    let (max_decoded, heap_budget) = (
+        state.config.max_decoded_body_bytes,
+        state.config.max_decode_heap_bytes,
+    );
+    let parent = Span::current();
+    tokio::task::spawn_blocking(move || {
+        let refuse = |span: &Span, error: ApiError, stage: &'static str| {
+            record_stage_error(span, stage, &error.message, error.status.is_server_error());
+            DecodeRefusal { error, stage }
+        };
+        let busy = || {
+            ApiError::tagged(
+                StatusCode::SERVICE_UNAVAILABLE,
+                &INGEST_DECODE_BUSY,
+                "Ingest gateway is busy decoding other requests; retry shortly",
+            )
+        };
+        let encoding = if gzip { "gzip" } else { "identity" };
+        let decode_span = parent.in_scope(|| decode_internal_span(encoding, body.len()));
+        let payload = {
+            let _guard = decode_span.enter();
+            // The body is already buffered; counting it sheds the rest of a burst.
+            if !reservation.try_add(body.len() as u64) {
+                return Err(refuse(&decode_span, busy(), "decode_busy"));
+            }
+            let payload = if gzip {
+                let invalid = || ApiError::bad_request("Invalid gzip body");
+                let declared = decode_budget::gzip_declared_len(&body)
+                    .ok_or_else(|| refuse(&decode_span, invalid(), "decode"))?;
+                let declared = usize::try_from(declared).unwrap_or(usize::MAX);
+                if declared > max_decoded {
+                    return Err(refuse(&decode_span, too_large_decoded(), "payload_too_large"));
+                }
+                if !reservation.try_add(declared as u64) {
+                    return Err(refuse(&decode_span, busy(), "decode_busy"));
+                }
+                let inflated = gunzip_declared(&body, declared).map_err(|error| match error {
+                    GunzipError::Invalid(_) => refuse(&decode_span, invalid(), "decode"),
+                    GunzipError::TooLarge => {
+                        refuse(&decode_span, too_large_decoded(), "payload_too_large")
+                    }
+                })?;
+                drop(body);
+                Bytes::from(inflated)
+            } else {
+                body
+            };
+            decode_span.record("maple.ingest.decoded_bytes", payload.len());
+            payload
+        };
+        let parse_span =
+            parent.in_scope(|| parse_internal_span(payload_format.label(), signal.path()));
+        let _guard = parse_span.enter();
+        let estimate = otlp_decode_cost(signal, payload_format, &payload, heap_budget)
+            .map_err(|error| refuse(&parse_span, error, "payload_too_large"))?;
+        parse_span.record("maple.ingest.decode_heap_estimate", estimate);
+        if !reservation.try_add(estimate) {
+            return Err(refuse(&parse_span, busy(), "decode_busy"));
+        }
+        let decoded = decode_otlp_payload(signal, payload_format, &payload)
+            .map_err(|error| refuse(&parse_span, error, "enrich"))?;
+        parse_span.record("maple.ingest.item_count", decoded.item_count());
+        // Only the decoded form outlives this closure; the buffers go with it.
+        let decoded_bytes = payload.len();
+        drop(payload);
+        reservation.shrink_to(estimate);
+        Ok(DecodedBody {
+            payload: decoded,
+            decoded_bytes,
+            memory: reservation,
+        })
+    })
+    .await
+    .unwrap_or_else(|join_error| {
+        error!(error = %join_error, "OTLP decode task failed");
+        Err(DecodeRefusal {
+            error: ApiError::service_unavailable("Ingest gateway failed to decode the request"),
+            stage: "decode_panic",
+        })
+    })
+}
+
+fn too_large_decoded() -> ApiError {
+    ApiError::payload_too_large("Decompressed request body too large")
+}
+
 #[hotpath::measure]
 fn decode_otlp_payload(
     signal: Signal,
@@ -7554,12 +7840,14 @@ async fn apply_ingest_rules(
     if !resolver.enabled() || org_id == SENTINEL_ORG_ID {
         return Ok(None);
     }
-    let rules = resolver.resolve_rules(org_id).await.map_err(|_| {
-        ApiError::tagged(
-            StatusCode::SERVICE_UNAVAILABLE,
-            &INGEST_RULES_UNAVAILABLE,
-            "Ingest rules could not be loaded; retry shortly",
-        )
+    let rules = resolver.resolve_rules(org_id).await.map_err(|unavailable| {
+        let message = match unavailable {
+            rules_gateway::RulesUnavailable::Store => "Ingest rules could not be loaded; retry shortly",
+            rules_gateway::RulesUnavailable::RegexBudget => {
+                "This organization's ingest rule regexes are too large to compile together; simplify or remove some"
+            }
+        };
+        ApiError::tagged(StatusCode::SERVICE_UNAVAILABLE, &INGEST_RULES_UNAVAILABLE, message)
     })?;
     let signal = decoded.signal();
     if !rules.compiled.covers(signal.ingest_signal()) {
@@ -7567,14 +7855,20 @@ async fn apply_ingest_rules(
     }
     let mut stats = RuleStats::default();
     match decoded {
-        DecodedPayload::Traces(request) => {
-            ingest_rules::apply_traces(&rules.compiled, request, &mut stats);
-        }
+        DecodedPayload::Traces(request) => ingest_rules::apply_traces(&rules.compiled, request, &mut stats),
         DecodedPayload::Logs(request) => ingest_rules::apply_logs(&rules.compiled, request, &mut stats),
-        DecodedPayload::Metrics(request) => {
-            ingest_rules::apply_metrics(&rules.compiled, request, &mut stats);
-        }
+        DecodedPayload::Metrics(request) => ingest_rules::apply_metrics(&rules.compiled, request, &mut stats),
     }
+    .map_err(|ingest_rules::ScanBudgetExceeded| {
+        warn!(org_id, signal = signal.path(), "Payload exceeds the ingest rule scan budget; refused");
+        // Counted per refusal; a transport that retries a 413 counts each attempt.
+        metrics::org_data_loss(org_id, signal.path(), INGEST_RULES_SCAN_BUDGET.error_kind);
+        ApiError::tagged(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            &INGEST_RULES_SCAN_BUDGET,
+            "This payload needs more ingest rule scanning than one request may use; send smaller batches",
+        )
+    })?;
     let span = Span::current();
     span.record("maple.ingest.rules.count", rules.compiled.len());
     span.record("maple.ingest.rules.dropped_items", stats.total.dropped);
@@ -11474,6 +11768,8 @@ mod tests {
                 tinybird,
                 max_request_body_bytes: 1024 * 1024,
                 max_decoded_body_bytes: 8 * 1024 * 1024,
+                max_decode_heap_bytes: 64 * 1024 * 1024,
+                decode_memory_bytes: 128 * 1024 * 1024,
                 org_max_in_flight: 100,
                 rate_limit_fleet_size: 1,
                 gcp_org_max_in_flight: 100,
@@ -11526,6 +11822,7 @@ mod tests {
                 blocked_keys: Arc::default(),
             },
             org_inflight_limiter: OrgInFlightLimiter::new(100),
+            decode_memory: DecodeMemory::new(128 * 1024 * 1024),
             key_rate_limiter: SourceRateLimiter::new(1),
             gcp_inflight_limiter: OrgInFlightLimiter::for_route(100, "gcp_in_flight"),
             sampling_resolver: SamplingPolicyResolver {
@@ -11676,9 +11973,9 @@ mod tests {
         StatusCode::INTERNAL_SERVER_ERROR
     }
 
-    fn gzip_bytes(plain: &str) -> Bytes {
+    fn gzip_bytes(plain: impl AsRef<[u8]>) -> Bytes {
         let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
-        encoder.write_all(plain.as_bytes()).unwrap();
+        encoder.write_all(plain.as_ref()).unwrap();
         Bytes::from(encoder.finish().unwrap())
     }
 
@@ -12116,6 +12413,38 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&queue_dir);
     }
+
+    #[tokio::test]
+    async fn session_metadata_bills_a_repeated_session_start_once() {
+        let queue_dir = unique_main_test_dir("replay-meta-billing");
+        let state = replay_blob_test_state(
+            "maple_sk_test_meta_bill",
+            "org_meta_bill",
+            queue_dir.clone(),
+        )
+        .await;
+        let (state, mut rx) = with_fake_autumn(state).await;
+
+        let body = r#"{"session_id":"sess_1","version":1,"billable_start":1}"#.to_owned() + "\n";
+        let accepted = handle_replay_meta_inner(
+            &state,
+            &bearer_headers("maple_sk_test_meta_bill"),
+            Bytes::from(body.repeat(1000)),
+        )
+        .await
+        .expect("session metadata should be accepted");
+        assert_eq!(accepted, 1000, "every row is still stored");
+
+        let calls = drain_autumn_calls(&mut rx).await;
+        assert_eq!(
+            tracked(&calls),
+            vec![("browser_sessions", 1.0)],
+            "{calls:?}"
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
     #[tokio::test]
     async fn replay_chunks_stay_inline_when_no_blob_store_is_configured() {
         // The self-hosted / BYO-ClickHouse path, and the pre-cutover managed
@@ -12196,6 +12525,89 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn replay_routes_refuse_a_denied_org_before_storing_anything() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route("/{*path}", axum::routing::put(fake_r2_put))
+            .with_state(tx);
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let queue_dir = unique_main_test_dir("replay-denied");
+        let store = Arc::new(FakeKeyStore::default());
+        let (denied, allowed) = (
+            "maple_sk_test_replay_denied",
+            "maple_sk_test_replay_allowed",
+        );
+        for (raw_key, org_id) in [
+            (denied, "org_replay_denied"),
+            (allowed, "org_replay_allowed"),
+        ] {
+            store.insert_private(
+                raw_key,
+                KeyRow {
+                    org_id: org_id.to_owned(),
+                    self_managed: true,
+                    clickhouse_ready: true,
+                },
+            );
+        }
+        let state = test_app_state(
+            store,
+            queue_dir.clone(),
+            "http://127.0.0.1:1".to_owned(),
+            Duration::from_secs(30),
+        )
+        .await;
+        let state = with_autumn_denying(state, "org_replay_denied").await;
+        let state = with_replay_blob_store(state, format!("http://{addr}"));
+        let chunk = || gzip_bytes(r#"[{"type":2,"timestamp":1}]"#);
+
+        let before = queue_dir_bytes(&queue_dir);
+        let error = handle_replay_blob_inner(
+            &state,
+            &replay_blob_headers(denied, "sess_denied", 3),
+            chunk(),
+        )
+        .await
+        .expect_err("a denied org's replay chunk must be refused");
+        assert_eq!(error.status, StatusCode::PAYMENT_REQUIRED);
+
+        // A continuation row (no billable session start) is refused too.
+        let error = handle_replay_meta_inner(
+            &state,
+            &bearer_headers(denied),
+            Bytes::from_static(br#"{"session_id":"sess_denied","version":2,"billable_start":0}"#),
+        )
+        .await
+        .expect_err("a denied org's session metadata must be refused");
+        assert_eq!(error.status, StatusCode::PAYMENT_REQUIRED);
+
+        assert!(rx.try_recv().is_err(), "nothing may reach the blob store");
+        assert_eq!(
+            queue_dir_bytes(&queue_dir),
+            before,
+            "nothing may be enqueued"
+        );
+
+        handle_replay_blob_inner(
+            &state,
+            &replay_blob_headers(allowed, "sess_ok", 0),
+            chunk(),
+        )
+        .await
+        .expect("an allowed org's chunk is accepted");
+        assert!(rx.recv().await.is_some(), "the allowed chunk is stored");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
     async fn inline_replay_and_otlp_refuse_gzip_bombs() {
         let queue_dir = unique_main_test_dir("inline-bomb");
         let (raw_key, org_id) = ("maple_sk_test_inline_bomb", "org_inline_bomb");
@@ -12219,6 +12631,156 @@ mod tests {
             .expect_err("OTLP must refuse a gzip bomb");
         assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
         assert_eq!(error_kind, "payload_too_large");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    /// A logs export of one record carrying `attributes` empty attributes: two
+    /// bytes each on the wire, a whole `KeyValue` each once decoded.
+    fn many_empty_attributes(attributes: usize) -> ExportLogsServiceRequest {
+        let mut request = test_log_request("many attributes");
+        request.resource_logs[0].scope_logs[0].log_records[0].attributes =
+            vec![KeyValue::default(); attributes];
+        request
+    }
+
+    #[tokio::test]
+    async fn otlp_refuses_a_payload_that_decodes_past_the_memory_budget() {
+        let (forward_url, mut forward_rx) = spawn_forward_collector().await;
+        let queue_dir = unique_main_test_dir("otlp-decode-budget");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_test_decode_budget";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_decode_budget".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        let mut state = test_app_state(
+            store,
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_millis(5),
+        )
+        .await;
+        state.config.max_decode_heap_bytes = 4 * 1024 * 1024;
+
+        let protobuf = many_empty_attributes(50_000).encode_to_vec();
+        assert!(protobuf.len() < 128 * 1024, "fixture stays small on the wire");
+        let json = format!("{{\"resourceLogs\":[{}{{}}]}}", "{},".repeat(30_000));
+        let mut json_headers = test_headers(raw_key);
+        json_headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
+        let mut gzip_headers = test_headers(raw_key);
+        gzip_headers.insert(CONTENT_ENCODING, "gzip".parse().unwrap());
+        for (case, headers, body) in [
+            ("protobuf", test_headers(raw_key), Bytes::from(protobuf.clone())),
+            ("gzip protobuf", gzip_headers, gzip_bytes(&protobuf)),
+            ("json", json_headers, Bytes::from(json)),
+        ] {
+            let (error, error_kind) = handle_signal_inner(&state, &headers, body, Signal::Logs)
+                .await
+                .expect_err(case);
+            assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE, "{case}");
+            assert_eq!(error_kind, "payload_too_large", "{case}");
+        }
+        assert!(forward_rx.try_recv().is_err(), "nothing refused is forwarded");
+
+        // A real batch under the same budget is still accepted.
+        let (response, item_count, _, _) = handle_signal_inner(
+            &state,
+            &test_headers(raw_key),
+            Bytes::from(many_empty_attributes(100).encode_to_vec()),
+            Signal::Logs,
+        )
+        .await
+        .expect("a batch within the budget is accepted");
+        assert_eq!((response.status(), item_count), (StatusCode::OK, 1));
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn otlp_sheds_a_body_the_shared_decode_memory_cannot_hold() {
+        let (forward_url, _forward_rx) = spawn_forward_collector().await;
+        let queue_dir = unique_main_test_dir("otlp-decode-memory");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_test_decode_memory";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_decode_memory".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        let state = test_app_state(
+            store,
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_millis(5),
+        )
+        .await;
+        let batch = || Bytes::from(test_log_request("shared memory").encode_to_vec());
+
+        // Other requests hold all but a sliver of the shared memory.
+        let memory = state.decode_memory.clone();
+        let mut others = memory.reservation();
+        assert!(others.try_add(memory.total_bytes()));
+        let (error, error_kind) =
+            handle_signal_inner(&state, &test_headers(raw_key), batch(), Signal::Logs)
+                .await
+                .expect_err("no memory is free");
+        assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(error_kind, "decode_busy");
+        let response = error.into_response();
+        assert_eq!(response.headers()[RETRY_AFTER], "1", "the client retries");
+
+        drop(others);
+        let (response, item_count, _, _) =
+            handle_signal_inner(&state, &test_headers(raw_key), batch(), Signal::Logs)
+                .await
+                .expect("accepted once memory frees up");
+        assert_eq!((response.status(), item_count), (StatusCode::OK, 1));
+        assert_eq!(memory.reserved_bytes(), 0, "a finished request returns its memory");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn otlp_gzip_is_inflated_only_up_to_the_size_it_declares() {
+        let queue_dir = unique_main_test_dir("otlp-gzip-declared");
+        let (raw_key, org_id) = ("maple_sk_test_gzip_declared", "org_gzip_declared");
+        let state = replay_blob_test_state(raw_key, org_id, queue_dir.clone()).await;
+        let mut headers = test_headers(raw_key);
+        headers.insert(CONTENT_ENCODING, "gzip".parse().unwrap());
+        let gzip = gzip_bytes(test_log_request("declared").encode_to_vec());
+
+        // A trailer declaring more than the decoded ceiling is refused unread.
+        let mut overdeclared = gzip.to_vec();
+        let at = overdeclared.len() - 4;
+        overdeclared[at..].copy_from_slice(&u32::MAX.to_le_bytes());
+        // One declaring less than it inflates to is cut off at what it declared.
+        let mut underdeclared = gzip.to_vec();
+        underdeclared[at..].copy_from_slice(&1_u32.to_le_bytes());
+        for (case, body) in [("over", overdeclared), ("under", underdeclared)] {
+            let (error, error_kind) =
+                handle_signal_inner(&state, &headers, Bytes::from(body), Signal::Logs)
+                    .await
+                    .expect_err(case);
+            assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE, "{case}");
+            assert_eq!(error_kind, "payload_too_large", "{case}");
+        }
+        // A second member used to be dropped silently; now the request is refused.
+        let mut two_members = gzip.to_vec();
+        two_members.extend_from_slice(&gzip);
+        let (error, error_kind) =
+            handle_signal_inner(&state, &headers, Bytes::from(two_members), Signal::Logs)
+                .await
+                .expect_err("two members");
+        assert_eq!((error.status, error_kind), (StatusCode::BAD_REQUEST, "decode"));
+        assert_eq!(state.decode_memory.reserved_bytes(), 0);
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
@@ -13360,6 +13922,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn gcp_logpush_acks_an_entry_past_the_rule_scan_budget() {
+        let (ch_url, mut ch_rx) = spawn_fake_clickhouse().await;
+        let (mut state, store, queue_dir) = gcp_logpush_state("gcp-logpush-scan", &ch_url).await;
+        store.set_ingest_rules("org_gcp", &[mask_emails_rule()]);
+        Arc::get_mut(&mut state).expect("the state is not shared yet").ingest_rule_resolver =
+            IngestRuleResolver::new(Arc::<FakeKeyStore>::clone(&store), true, Duration::from_secs(30), 16)
+                .with_scan_budget(1);
+
+        // Redelivery would be refused the same way, so it is acked, and nothing is stored.
+        let refused = gcp_push(&state, "gcp_conn_1", Some("gcp-secret"), GCP_LOG_ENTRY).await;
+        assert_eq!(refused.status(), StatusCode::OK);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), ch_rx.recv())
+                .await
+                .is_err(),
+            "an unscanned entry must not be stored"
+        );
+        assert_eq!(
+            *store.connector_failures.lock().unwrap(),
+            [(GCP_CONNECTORS_TABLE, gcp_logging::RULES_SCAN_BUDGET.to_owned())]
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
     async fn gcp_logpush_acks_and_drops_while_log_forwarding_is_off() {
         let (ch_url, mut ch_rx) = spawn_fake_clickhouse().await;
         let (state, store, queue_dir) = gcp_logpush_state("gcp-logpush-off", &ch_url).await;
@@ -13571,8 +14159,8 @@ mod tests {
 
     impl SpanTreeCapture {
         /// Scoped to the calling thread. `#[tokio::test]` uses a current-thread
-        /// runtime, so the handler and the export worker it spawns both run here,
-        /// while other tests' spans are filtered out.
+        /// runtime, so the handler and the export worker it spawns both run here
+        /// (and children inherit it), while other tests' spans are filtered out.
         #[expect(
             clippy::option_option,
             reason = "the two levels are distinct answers: the outer is whether the span was \
@@ -13613,12 +14201,19 @@ mod tests {
             let Some(span) = ctx.span(id) else {
                 return;
             };
-            let parent = span.parent().map(|parent| parent.name().to_owned());
-            self.spans.lock().unwrap().push((
-                std::thread::current().id(),
-                span.name().to_owned(),
-                parent,
-            ));
+            // A child keeps its parent's thread, so a test's tree stays together
+            // across work moved to the blocking pool.
+            let parent = span.parent();
+            let thread = parent
+                .as_ref()
+                .and_then(|parent| parent.extensions().get::<std::thread::ThreadId>().copied())
+                .unwrap_or_else(|| std::thread::current().id());
+            span.extensions_mut().insert(thread);
+            let parent = parent.map(|parent| parent.name().to_owned());
+            self.spans
+                .lock()
+                .unwrap()
+                .push((thread, span.name().to_owned(), parent));
         }
     }
 
@@ -14087,15 +14682,23 @@ mod tests {
             "an unknown key is UNAUTHENTICATED"
         );
 
-        // The sentinel token has no org to bill, so it is never gated.
-        let sentinel = router
-            .call(grpc_export_request(
-                "MAPLE_TEST",
-                grpc_frame(&test_log_request("sentinel").encode_to_vec()),
-            ))
+        // The sentinel token has no org to bill, so it is never gated, and its
+        // upload is never kept, so it is never decoded either: undecodable bytes
+        // that claim gzip still get one empty OK reply.
+        let mut sentinel_request = grpc_export_request("MAPLE_TEST", UNDECODABLE_BODY.to_vec());
+        sentinel_request
+            .headers_mut()
+            .insert("grpc-encoding", HeaderValue::from_static("gzip"));
+        let sentinel = router.call(sentinel_request).await.unwrap();
+        assert_eq!(grpc_header_status(&sentinel), None);
+        let body = axum::body::to_bytes(sentinel.into_body(), 1024)
             .await
             .unwrap();
-        assert_eq!(grpc_header_status(&sentinel), None);
+        assert_eq!(
+            body.as_ref(),
+            EMPTY_GRPC_MESSAGE,
+            "one empty export response"
+        );
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
@@ -14118,12 +14721,23 @@ mod tests {
     async fn grpc_export_takes_gzip_within_the_http_body_limits() {
         use tonic::codegen::Service as _;
 
+        let (forward_url, _forward_rx) = spawn_forward_collector().await;
         let queue_dir = unique_main_test_dir("grpc-gzip-limit");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_test_grpc_gzip";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_grpc_gzip".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
         let state = test_app_state(
-            Arc::new(FakeKeyStore::default()),
+            store,
             queue_dir.clone(),
-            "http://127.0.0.1:1".to_owned(),
-            Duration::from_secs(30),
+            forward_url,
+            Duration::from_millis(5),
         )
         .await;
         let (raw_limit, decoded_limit) = (
@@ -14132,13 +14746,26 @@ mod tests {
         );
         let mut router = grpc_router(Arc::new(state));
         let message = |len: usize| test_log_request(&"x".repeat(len)).encode_to_vec();
-        let gzip_request = |message: &[u8]| {
-            let mut request = grpc_export_request("MAPLE_TEST", gzip_grpc_frame(message));
+        let gzip_request_as = |raw_key: &str, message: &[u8]| {
+            let mut request = grpc_export_request(raw_key, gzip_grpc_frame(message));
             request
                 .headers_mut()
                 .insert("grpc-encoding", HeaderValue::from_static("gzip"));
             request
         };
+        let gzip_request = |message: &[u8]| gzip_request_as(raw_key, message);
+
+        // The sentinel's upload is swapped out before tonic reads it, so even one
+        // that would inflate past the decoded ceiling is never inflated.
+        let sentinel = router
+            .call(gzip_request_as("MAPLE_TEST", &message(decoded_limit)))
+            .await
+            .unwrap();
+        assert_eq!(
+            grpc_header_status(&sentinel),
+            None,
+            "a sentinel export is answered without being inflated"
+        );
 
         // Past tonic's 4 MiB default, inside the decoded ceiling, compressed under the raw one.
         let accepted = router
@@ -14161,11 +14788,24 @@ mod tests {
             "gzip that inflates past the decoded limit is RESOURCE_EXHAUSTED"
         );
 
+        // A compressed message must say how; one in an encoding we do not take is
+        // UNIMPLEMENTED, as tonic answered.
+        for (encoding, code) in [(None, "13"), (Some("zstd"), "12")] {
+            let mut request = grpc_export_request(raw_key, gzip_grpc_frame(&message(16)));
+            if let Some(encoding) = encoding {
+                request
+                    .headers_mut()
+                    .insert("grpc-encoding", HeaderValue::from_static(encoding));
+            }
+            let response = router.call(request).await.unwrap();
+            assert_eq!(grpc_header_status(&response), Some(code), "{encoding:?}");
+        }
+
         // Each extra frame would be decompressed up to the decoded limit.
         let mut two_frames = gzip_grpc_frame(&message(16));
         two_frames.extend(gzip_grpc_frame(&message(16)));
         let extra_frame = {
-            let mut request = grpc_export_request("MAPLE_TEST", two_frames);
+            let mut request = grpc_export_request(raw_key, two_frames);
             request
                 .headers_mut()
                 .insert("grpc-encoding", HeaderValue::from_static("gzip"));
@@ -14179,7 +14819,7 @@ mod tests {
 
         let oversized = grpc_frame(&message(2 * raw_limit));
         let streamed = router
-            .call(grpc_export_request("MAPLE_TEST", oversized.clone()))
+            .call(grpc_export_request(raw_key, oversized.clone()))
             .await
             .unwrap();
         assert_eq!(
@@ -14188,7 +14828,7 @@ mod tests {
             "a body past the raw limit is RESOURCE_EXHAUSTED"
         );
         let declared = {
-            let mut request = grpc_export_request("MAPLE_TEST", oversized.clone());
+            let mut request = grpc_export_request(raw_key, oversized.clone());
             request
                 .headers_mut()
                 .insert(axum::http::header::CONTENT_LENGTH, oversized.len().into());
@@ -14204,12 +14844,147 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn grpc_export_past_the_memory_budget_is_resource_exhausted() {
+        use tonic::codegen::Service as _;
+
+        let (forward_url, mut forward_rx) = spawn_forward_collector().await;
+        let queue_dir = unique_main_test_dir("grpc-decode-budget");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_test_grpc_decode_budget";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_grpc_decode_budget".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        let mut state = test_app_state(
+            store,
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_millis(5),
+        )
+        .await;
+        state.config.max_decode_heap_bytes = 4 * 1024 * 1024;
+        let mut router = grpc_router(Arc::new(state));
+
+        let message = many_empty_attributes(50_000).encode_to_vec();
+        let plain = router
+            .call(grpc_export_request(raw_key, grpc_frame(&message)))
+            .await
+            .unwrap();
+        assert_eq!(grpc_header_status(&plain), Some("8"), "RESOURCE_EXHAUSTED");
+        let mut gzip = grpc_export_request(raw_key, gzip_grpc_frame(&message));
+        gzip.headers_mut()
+            .insert("grpc-encoding", HeaderValue::from_static("gzip"));
+        let gzip = router.call(gzip).await.unwrap();
+        assert_eq!(grpc_header_status(&gzip), Some("8"), "RESOURCE_EXHAUSTED");
+        assert!(forward_rx.try_recv().is_err(), "nothing refused is forwarded");
+
+        let within = router
+            .call(grpc_export_request(
+                raw_key,
+                grpc_frame(&many_empty_attributes(100).encode_to_vec()),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(grpc_header_status(&within), None, "a batch within the budget is accepted");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn grpc_admission_holds_the_org_slot_and_decode_memory_before_reading() {
+        use tonic::codegen::Service as _;
+
+        let (forward_url, _forward_rx) = spawn_forward_collector().await;
+        let queue_dir = unique_main_test_dir("grpc-org-slot");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_test_grpc_org_slot";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_grpc_org_slot".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        let mut state = test_app_state(
+            store,
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_millis(5),
+        )
+        .await;
+        state.org_inflight_limiter = OrgInFlightLimiter::new(1);
+        let state = Arc::new(state);
+        let mut router = grpc_router(Arc::clone(&state));
+        let undecodable_gzip = || {
+            let mut request = grpc_export_request(raw_key, UNDECODABLE_BODY.to_vec());
+            request
+                .headers_mut()
+                .insert("grpc-encoding", HeaderValue::from_static("gzip"));
+            request
+        };
+
+        // The org's one slot is taken: refused before its bytes are read, so not a
+        // decode error.
+        let slot = state
+            .org_inflight_limiter
+            .try_acquire("org_grpc_org_slot")
+            .unwrap();
+        let refused = router.call(undecodable_gzip()).await.unwrap();
+        assert_eq!(grpc_header_status(&refused), Some("8"), "RESOURCE_EXHAUSTED");
+        drop(slot);
+
+        // No decode memory is free: UNAVAILABLE, which exporters retry.
+        let mut others = state.decode_memory.reservation();
+        assert!(others.try_add(state.decode_memory.total_bytes()));
+        let busy = router
+            .call(grpc_export_request(
+                raw_key,
+                grpc_frame(&test_log_request("busy").encode_to_vec()),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(grpc_header_status(&busy), Some("14"), "UNAVAILABLE");
+        drop(others);
+
+        let accepted = router
+            .call(grpc_export_request(
+                raw_key,
+                grpc_frame(&test_log_request("accepted").encode_to_vec()),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(grpc_header_status(&accepted), None);
+        assert_eq!(state.decode_memory.reserved_bytes(), 0);
+        assert!(
+            state.org_inflight_limiter.try_acquire("org_grpc_org_slot").is_some(),
+            "the slot is returned after the reply"
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
     async fn grpc_export_past_the_deadline_is_unavailable() {
         use tonic::codegen::Service as _;
 
         let queue_dir = unique_main_test_dir("grpc-deadline");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_test_grpc_deadline";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_grpc_deadline".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
         let mut state = test_app_state(
-            Arc::new(FakeKeyStore::default()),
+            store,
             queue_dir.clone(),
             "http://127.0.0.1:1".to_owned(),
             Duration::from_secs(30),
@@ -14225,7 +15000,7 @@ mod tests {
             futures_util::stream::once(async move { Ok::<_, std::io::Error>(half) }),
             futures_util::stream::pending(),
         );
-        let mut request = grpc_export_request("MAPLE_TEST", Vec::new());
+        let mut request = grpc_export_request(raw_key, Vec::new());
         *request.body_mut() = axum::body::Body::from_stream(stalled);
 
         let response = tokio::time::timeout(Duration::from_secs(5), router.call(request))
@@ -16606,6 +17381,123 @@ mod tests {
                 .is_err(),
             "nothing may be forwarded unredacted"
         );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    /// Sends one email-bearing log as `raw_key` and returns the refusal and the kind its span
+    /// records; nothing may be forwarded.
+    async fn refused_unforwarded(
+        state: &AppState,
+        raw_key: &str,
+        forward_rx: &mut tokio::sync::mpsc::UnboundedReceiver<Bytes>,
+    ) -> (ApiError, &'static str) {
+        let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
+        let Err((error, kind)) =
+            handle_signal_inner(state, &test_headers(raw_key), Bytes::from(body), Signal::Logs).await
+        else {
+            panic!("the payload must be refused");
+        };
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), forward_rx.recv())
+                .await
+                .is_err(),
+            "nothing may be forwarded unredacted"
+        );
+        (error, kind)
+    }
+
+    #[tokio::test]
+    async fn rules_past_the_org_regex_budget_refuse_that_org_only() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let raw_key = "maple_sk_rules_heavy";
+        let (state, store, queue_dir) =
+            rules_forward_state("rules-heavy", raw_key, "org_rules_heavy", forward_url).await;
+        // Each `\w{17}` compiles to just under 1 MiB; 24 of them pass the org budget.
+        let heavy = serde_json::json!({
+            "signals": ["logs"],
+            "conditions": [],
+            "action": { "_tag": "redact", "keys": [], "detectors": [], "patterns": [r"\w{17}"],
+                "scopes": ["attributes"], "method": "mask" }
+        });
+        let mut rules = vec![mask_emails_rule()];
+        rules.extend(std::iter::repeat_n(heavy, 24));
+        store.set_ingest_rules("org_rules_heavy", &rules);
+        let other_key = "maple_sk_rules_light";
+        store.insert_private(
+            other_key,
+            KeyRow {
+                org_id: "org_rules_light".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        store.set_ingest_rules("org_rules_light", &[mask_emails_rule()]);
+        let state = with_ingest_rules(state, &store);
+
+        for _ in 0..2 {
+            let (error, _) = refused_unforwarded(&state, raw_key, &mut forward_rx).await;
+            assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE);
+        }
+        assert_eq!(
+            store.ingest_rule_fetches.load(Ordering::Relaxed),
+            1,
+            "the refusal is cached, not recompiled per request"
+        );
+
+        let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
+        handle_signal_inner(&state, &test_headers(other_key), Bytes::from(body), Signal::Logs)
+            .await
+            .expect("another org's rules still apply");
+        let forwarded = next_forwarded_logs(&mut forward_rx).await;
+        assert_eq!(forwarded_bodies(&forwarded), ["login from [REDACTED:email]"]);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_payload_past_the_rule_scan_budget_is_refused_with_413() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let raw_key = "maple_sk_rules_scan";
+        let (mut state, store, queue_dir) =
+            rules_forward_state("rules-scan", raw_key, "org_rules_scan", forward_url).await;
+        store.set_ingest_rules("org_rules_scan", &[mask_emails_rule()]);
+        // The 27-byte body is scanned again after a mask: 54 bytes.
+        state.ingest_rule_resolver =
+            IngestRuleResolver::new(Arc::<FakeKeyStore>::clone(&store), true, Duration::from_secs(30), 16)
+                .with_scan_budget(40);
+
+        let (error, kind) = refused_unforwarded(&state, raw_key, &mut forward_rx).await;
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+        // `kind` is what the HTTP server span records.
+        assert_eq!(
+            otel_status_for_rejection(error.status.as_u16(), kind),
+            "Error",
+            "the sender's data is lost, so the span must count as an error"
+        );
+
+        // Over gRPC the refusal is a code exporters do not retry.
+        let resolved = state
+            .resolver
+            .resolve_ingest_key(raw_key)
+            .await
+            .expect("resolution should not fail")
+            .expect("the test key resolves");
+        let payload = log_request_at("login from jane@example.com", 9);
+        let decoded_bytes = payload.encoded_len();
+        let status = accept_grpc_decoded(
+            &state,
+            Signal::Logs,
+            DecodedPayload::Logs(payload),
+            &resolved,
+            KeyAdmission::Ingest,
+            decoded_bytes,
+            &ClaimOutcome::default(),
+        )
+        .await
+        .expect_err("past the scan budget");
+        assert_eq!(status.code(), tonic::Code::Internal);
+        assert_eq!(grpc_otel_status_for_rejection(status.code()), "Error");
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }

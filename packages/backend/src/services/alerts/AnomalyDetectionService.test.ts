@@ -11,6 +11,7 @@ import {
 	Semaphore,
 	Array as Arr,
 	String as Str,
+	Option,
 } from "effect"
 import { CacheBackend, EdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import { Timestamp } from "@maple/domain/http/v2"
@@ -180,8 +181,11 @@ describe("AnomalyDetectionService.countIncidentsByService", () => {
 			const anomalies = yield* AnomalyDetectionService
 			const rows = yield* anomalies.countIncidentsByService(ORG, {})
 
-			const production = rows.find(
-				(row) => row.deploymentEnv === "production" && row.signalType === "error_rate",
+			const production = Option.getOrUndefined(
+				Arr.findFirst(
+					rows,
+					(row) => row.deploymentEnv === "production" && row.signalType === "error_rate",
+				),
 			)
 			expect(rows).toHaveLength(2)
 			expect(production).toBeDefined()
@@ -192,7 +196,9 @@ describe("AnomalyDetectionService.countIncidentsByService", () => {
 			// The whole point: the handler hands this straight to `timestamp()`.
 			expect(() => decodeTimestamp(production?.lastTriggeredAt)).not.toThrow()
 
-			const staging = rows.find((row) => row.deploymentEnv === "staging")
+			const staging = Option.getOrUndefined(
+				Arr.findFirst(rows, (row) => row.deploymentEnv === "staging"),
+			)
 			expect(staging?.incidentCount).toBe(1)
 			expect(staging?.severity).toBe("warning")
 
@@ -270,7 +276,7 @@ describe("AnomalyDetectionService.runTick baseline cache", () => {
 				),
 			)
 			const service = yield* AnomalyDetectionService
-			yield* service.runTick()
+			yield* service.runTick
 
 			// The tick evaluated the org: it fetched the current windows fresh...
 			expect(contexts).toContain("anomalyTraceSignalsCurrent")
@@ -333,7 +339,7 @@ describe("AnomalyDetectionService.runTick baseline cache", () => {
 				),
 			)
 			const service = yield* AnomalyDetectionService
-			yield* service.runTick()
+			yield* service.runTick
 			expect(baselineContexts()).toEqual([
 				"anomalyErrorSpikeBaseline",
 				"anomalyLogVolumeBaseline",
@@ -349,7 +355,7 @@ describe("AnomalyDetectionService.runTick baseline cache", () => {
 				),
 			)
 			contexts.length = 0
-			yield* service.runTick()
+			yield* service.runTick
 			expect(contexts).toContain("anomalyTraceSignalsCurrent")
 			expect(baselineContexts()).toEqual([])
 		}).pipe(Effect.provide(layer))
@@ -408,7 +414,7 @@ describe("AnomalyDetectionService.runTick org config priming", () => {
 			)
 
 			const result = yield* AnomalyDetectionService.pipe(
-				Effect.flatMap((service) => service.runTick()),
+				Effect.flatMap((service) => service.runTick),
 				Effect.provide(layer),
 			)
 
@@ -549,7 +555,7 @@ describe("AnomalyDetectionService.runTick outbound budget", () => {
 			)
 			const startedAt = yield* Clock.currentTimeMillis
 			const result = yield* AnomalyDetectionService.pipe(
-				Effect.flatMap((service) => service.runTick()),
+				Effect.flatMap((service) => service.runTick),
 				Effect.provide(layer),
 			)
 			return {

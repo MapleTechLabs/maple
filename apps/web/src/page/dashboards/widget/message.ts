@@ -15,6 +15,7 @@ import { AutocompleteLookup, LookupNames } from "../../kit/autocomplete-lookups"
 import { WhereFieldMessage } from "../../kit/where-field"
 import { WidgetFailure } from "../kit/widget-data"
 import { LegendPosition, PointsMode } from "./editor-state"
+import { MetricKeysSchema } from "../../kit/query-builder/metrics-body"
 import { MetricPageSchema } from "./metric-option"
 import { ProductEdit } from "./product-edit"
 import { Suggestion, SuggestionLookup } from "./suggestions"
@@ -44,7 +45,6 @@ export const Message = defineMessageUnion({
 	ClickedSortColumn: { field: Schema.String, isText: Schema.Boolean },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotRangePickerMessage: { message: TimeRangePicker.Message },
-	CompletedSaveTimeRange: { error: Schema.NullOr(Schema.String) },
 	GotSourceTabsMessage: { message: Tabs.Message },
 	GotSelectMessage: { id: Schema.String, message: Select.Message },
 	GotQueryPanelMessage: { message: QueryPanel.Message },
@@ -86,6 +86,7 @@ export const Message = defineMessageUnion({
 	ToggledSparkline: {},
 	ChangedGaugeBound: { bound: Schema.Literals(["min", "max"]), value: Schema.String },
 	ChangedTableLimit: { value: Schema.String },
+	ChangedStatValueField: { value: Schema.String },
 	ChangedHeatmapScaleType: { scaleType: Schema.Literals(HEATMAP_SCALE_TYPES) },
 	ClickedApply: {},
 	CompletedSave: { error: Schema.NullOr(Schema.String) },
@@ -115,7 +116,7 @@ export const Message = defineMessageUnion({
 	},
 	CompletedFetchMetricKeys: {
 		metric: Schema.String,
-		result: Schema.Result(Schema.Array(Schema.String), LoadFailure),
+		result: Schema.Result(MetricKeysSchema, LoadFailure),
 	},
 	CompletedFetchAutocomplete: {
 		key: Schema.String,

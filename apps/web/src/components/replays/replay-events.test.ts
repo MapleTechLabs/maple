@@ -37,6 +37,6 @@ describe("normalizeEvents", () => {
 		]
 		const out = normalizeEvents(events) as Array<{ timestamp: number }>
 		expect(Arr.map(out, (e) => e.timestamp)).toEqual([1000, 42_000, 12_465_000])
-		expect(out.at(-1)!.timestamp - out[0]!.timestamp).toBe(12_464_000)
+		expect(out.at(-1)!.timestamp - Arr.getUnsafe(out, 0).timestamp).toBe(12_464_000)
 	})
 })

@@ -10,6 +10,7 @@ import {
 	type Tracer,
 	type TracerProvider,
 } from "@opentelemetry/api"
+import { TraceState } from "@opentelemetry/core"
 import type { ReadableSpan, Span } from "@opentelemetry/sdk-trace"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -204,6 +205,34 @@ describe("setupTracing unload flush", () => {
 		expect(headers.baggage).toBe("tenant=acme")
 	})
 
+	it("keeps the sampling threshold off cross-origin requests only, so CORS allowing traceparent still passes", () => {
+		shutdown = setupTracing(CONFIG)
+		// A sampled parent as `tracing.sampleRate: 0.25` makes it, plus a vendor's own member.
+		const parent = trace.setSpanContext(context.active(), {
+			traceId: "0123456789abcdef0123456789abcdef",
+			spanId: "0123456789abcdef",
+			traceFlags: 1,
+			traceState: new TraceState("vendor=abc,ot=th:c;rv:d5a8b2c1e3f405"),
+		})
+		const headersFor = (url: string) => {
+			const request = trace
+				.getTracer("test")
+				.startSpan("GET", { attributes: { "url.full": url } }, parent)
+			const headers: Record<string, string> = {}
+			propagation.inject(trace.setSpan(context.active(), request), headers)
+			request.end()
+			return headers
+		}
+
+		// Same origin: no CORS, and the server span keeps its sampling weight.
+		expect(headersFor(`${location.origin}/api/users`).tracestate).toBe(
+			"vendor=abc,ot=th:c;rv:d5a8b2c1e3f405",
+		)
+		const crossOrigin = headersFor("https://api.example.com/v1/users")
+		expect(crossOrigin.traceparent).toMatch(/^00-0123456789abcdef0123456789abcdef-[0-9a-f]{16}-01$/)
+		expect(crossOrigin.tracestate).toBe("vendor=abc")
+	})
+
 	it("parents a span started inside an active span through the context manager", async () => {
 		shutdown = setupTracing(CONFIG)
 		const tracer = trace.getTracer("test")
@@ -239,8 +268,9 @@ describe("setupTracing unload flush", () => {
 		// A host that registered its own provider owns the globals; losing them
 		// (trace.disable) would break the host's tracing, not just ours.
 		const hostSpan: ApiSpan = trace.wrapSpanContext(INVALID_SPAN_CONTEXT)
+		const startSpan = vi.fn(() => hostSpan)
 		const hostTracer: Tracer = {
-			startSpan: vi.fn(() => hostSpan),
+			startSpan,
 			startActiveSpan: vi.fn(),
 		}
 		const hostProvider: TracerProvider = { getTracer: () => hostTracer }
@@ -250,7 +280,7 @@ describe("setupTracing unload flush", () => {
 		await teardown()
 
 		expect(trace.getTracer("host").startSpan("still-host")).toBeDefined()
-		expect(hostTracer.startSpan).toHaveBeenCalledWith("still-host")
+		expect(startSpan).toHaveBeenCalledWith("still-host")
 	})
 
 	it("exports a fetch span that settled just before pagehide", async () => {
@@ -331,6 +361,8 @@ describe("setupTracing unload flush", () => {
 
 		expect(exported[0]?.status.code).toBe(2)
 		expect(exported[0]?.attributes["error.type"]).toBe("TypeError")
+		// No response, so no status code: the instrumentation's 0 is not a status.
+		expect(exported[0]?.attributes).not.toHaveProperty("http.response.status_code")
 		// error.message is deprecated in the conventions; error.type carries the class of failure.
 		expect(exported[0]?.attributes["error.message"]).toBeUndefined()
 	})

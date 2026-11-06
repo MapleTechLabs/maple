@@ -6,7 +6,7 @@ import {
 	SupabaseProjectCallersResponse,
 	SupabaseProjectInsights,
 } from "@maple/domain/http"
-import { Result, Schema, Array as Arr } from "effect"
+import { Result, Schema, Array as Arr, Order } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
@@ -30,7 +30,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 
 const status = (logsEnabled: boolean) =>
-	Schema.decodeUnknownSync(SupabaseIntegrationStatus)({
+	Schema.decodeSync(SupabaseIntegrationStatus)({
 		configured: true,
 		connected: true,
 		organization: { id: "o1", slug: "acme", name: "Acme" },
@@ -59,7 +59,7 @@ const status = (logsEnabled: boolean) =>
 		],
 	})
 
-const insights = Schema.decodeUnknownSync(SupabaseProjectInsights)({
+const insights = Schema.decodeSync(SupabaseProjectInsights)({
 	projectRef: REF,
 	advisors: { error: [], warn: [], info: [] },
 	advisorsCheckedAt: null,
@@ -120,15 +120,18 @@ describe("supabase project", () => {
 			entered.model,
 			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
 		)
-		expect(names(resolved.commands).toSorted()).toEqual(
-			[
-				"FetchSupabaseApiTopPaths",
-				"FetchSupabaseApiTraffic",
-				"FetchSupabaseProjectCallers",
-				"FetchSupabaseProjectLogIssues",
-				"FetchSupabaseProjectRows",
-				"FetchSupabaseProjectTimeseries",
-			].toSorted(),
+		expect(Arr.sort(names(resolved.commands), Order.String)).toEqual(
+			Arr.sort(
+				[
+					"FetchSupabaseApiTopPaths",
+					"FetchSupabaseApiTraffic",
+					"FetchSupabaseProjectCallers",
+					"FetchSupabaseProjectLogIssues",
+					"FetchSupabaseProjectRows",
+					"FetchSupabaseProjectTimeseries",
+				],
+				Order.String,
+			),
 		)
 	})
 

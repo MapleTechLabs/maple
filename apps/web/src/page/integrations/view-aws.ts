@@ -633,13 +633,19 @@ const removedPanel = (h: H, model: Model, focusId: string | null): ReadonlyArray
 /** Mounted once: by the card on the integrations page, by the header on a source page. */
 export const awsDisconnectDialog = (h: H, model: Model): Html => {
 	const status = Option.getOrNull(AsyncData.getData(model.statuses.aws.data))
-	const connection = status?.connections.find((entry) => entry.id === model.awsCard.disconnectId)
+	const accountId = Option.getOrElse(
+		Option.map(
+			Arr.findFirst(status?.connections ?? [], (entry) => entry.id === model.awsCard.disconnectId),
+			(connection) => connection.account_id,
+		),
+		() => "",
+	)
 	return disconnectConfirm(h, {
 		provider: "aws",
 		slotId: "aws-disconnect",
 		model: model.awsCard.disconnectDialog,
 		toParentMessage: (message) => Message.GotAwsDisconnectDialogMessage({ message }),
-		subject: `AWS account ${connection?.account_id ?? ""}`,
+		subject: `AWS account ${accountId}`,
 		isPending: model.awsCard.isDisconnecting,
 		onConfirm: Message.ConfirmedAwsDisconnect(),
 	})

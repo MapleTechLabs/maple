@@ -6,7 +6,7 @@ import {
 } from "@maple/domain/http"
 import { sortWidgetsForLayout, widgetsInContainer } from "./layout"
 import type { DocumentFields } from "./store"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // The dashboard section edits as pure
 // document updaters; an edit that changes nothing hands the document back unchanged.
@@ -101,15 +101,15 @@ export const withReorderedSections = (
 	return touch(document, [...without.slice(0, toIndex), moved, ...without.slice(toIndex)], nowIso)
 }
 
-const rootBottom = (widgets: ReadonlyArray<Widget>): number => {
-	const root = widgetsInContainer(widgets, null)
+const rootBottom = (document: DashboardDocument): number => {
+	const root = widgetsInContainer(document, null)
 	return root.length === 0 ? 0 : Math.max(...Arr.map(root, (widget) => widget.layout.y + widget.layout.h))
 }
 
 /** `ungroupSectionWidgets`: the group's tiles land on the root canvas below what is there. */
-const ungroup = (widgets: ReadonlyArray<Widget>, sectionId: string): ReadonlyArray<Widget> => {
-	const offset = rootBottom(widgets)
-	return Arr.map(widgets, (widget) => {
+const ungroup = (document: DashboardDocument, sectionId: string): ReadonlyArray<Widget> => {
+	const offset = rootBottom(document)
+	return Arr.map(document.widgets, (widget) => {
 		if (widget.sectionId !== sectionId) return widget
 		const moved = withSectionTarget(widget, null)
 		return { ...moved, layout: { ...moved.layout, y: moved.layout.y + offset } }
@@ -133,7 +133,7 @@ export const withoutSection = (
 		),
 		widgets:
 			action === "ungroup"
-				? ungroup(document.widgets, sectionId)
+				? ungroup(document, sectionId)
 				: Arr.filter(document.widgets, (widget) => widget.sectionId !== sectionId),
 	}
 }
@@ -175,18 +175,15 @@ export const withoutTab = (
 	nowIso: NowIso,
 ): DocumentFields => {
 	const sections = document.sections ?? []
-	const section = sections.find((candidate) => candidate.id === sectionId)
-	if (
-		section === undefined ||
-		section.tabs.length <= 1 ||
-		!Arr.some(section.tabs, (tab) => tab.id === tabId)
-	)
-		return document
+	const found = Arr.findFirst(sections, (candidate) => candidate.id === sectionId)
+	if (Option.isNone(found)) return document
+	const section = found.value
+	if (section.tabs.length <= 1 || !Arr.some(section.tabs, (tab) => tab.id === tabId)) return document
 	const remaining = Arr.filter(section.tabs, (tab) => tab.id !== tabId)
 	const destination = remaining[0]
 	if (destination === undefined) return document
 	const isDoomed = (widget: Widget) => widget.sectionId === sectionId && widget.tabId === tabId
-	const offsetBase = widgetsInContainer(document.widgets, { sectionId, tabId: destination.id })
+	const offsetBase = widgetsInContainer(document, { sectionId, tabId: destination.id })
 	const offset =
 		offsetBase.length === 0 ? 0 : Math.max(...Arr.map(offsetBase, (w) => w.layout.y + w.layout.h))
 	const widgets =
@@ -226,10 +223,11 @@ export const withMovedWidget = (
 	target: SectionTarget,
 	nowIso: NowIso,
 ): DocumentFields => {
-	const widget = document.widgets.find((candidate) => candidate.id === widgetId)
-	if (widget === undefined) return document
+	const found = Arr.findFirst(document.widgets, (candidate) => candidate.id === widgetId)
+	if (Option.isNone(found)) return document
+	const widget = found.value
 	const position = findNextPosition(
-		Arr.filter(widgetsInContainer(document.widgets, target), (w) => w.id !== widgetId),
+		Arr.filter(widgetsInContainer(document, target), (w) => w.id !== widgetId),
 		widget.layout.w,
 	)
 	const moved = withSectionTarget({ ...widget, layout: { ...widget.layout, ...position } }, target)

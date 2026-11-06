@@ -15,6 +15,8 @@ import {
 	type AlertRuleUpsertRequest,
 	type OrgId,
 	type UserId,
+	isManagedSignalType,
+	MANAGED_SIGNAL_TYPES,
 } from "@maple/domain/http"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -39,19 +41,16 @@ import {
 	rowToRuleDocument,
 	selectStoredAlertRules,
 	storedRuleCondition,
-	UPTIME_RULE_MANAGED_MESSAGE,
+	managedRuleMessage,
 	type RuleEvaluationState,
 } from "./AlertRuleModel"
 import { tierConditionChanged } from "./alert-thresholds"
 import { makePersistenceError } from "./alert-persistence"
 import { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
+import * as Policy from "@maple/domain/policy"
 
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
 const decodeErrorKindOption = Schema.decodeUnknownOption(AlertEvaluationErrorKind)
-const adminRoles = [decodeRoleNameSync("root"), decodeRoleNameSync("org:admin")]
 const MAX_ACTIVE_ALERT_RULES_PER_ORG = 100
-
-const isAdmin = (roles: ReadonlyArray<RoleName>) => Arr.some(roles, (role) => adminRoles.includes(role))
 
 export interface AlertRulesServiceApi {
 	readonly listRules: (
@@ -104,14 +103,18 @@ export const makeAlertRulePersistence = (options: {
 
 	const dbExecute = makeDbExecute(database, "AlertRulesService", makePersistenceError)
 
-	const requireAdmin = Effect.fn("AlertRulesService.requireAdmin")(function* (
+	const requireAlertsPermission = Effect.fn("AlertRulesService.requireAlertsPermission")(function* (
 		roles: ReadonlyArray<RoleName>,
 	) {
-		if (isAdmin(roles)) return
-		return yield* new AlertForbiddenError({
-			message: "Only org admins can manage alerts",
-			...(roles.length > 0 ? { roles: [...roles] } : undefined),
-		})
+		return yield* Policy.check(
+			roles,
+			"alerts:manage",
+			(denial) =>
+				new AlertForbiddenError({
+					message: denial.message,
+					...(roles.length > 0 ? { roles: [...roles] } : undefined),
+				}),
+		)
 	})
 
 	const findRuleRow = Effect.fn("AlertRulesService.findRuleRow")(function* (
@@ -236,13 +239,14 @@ export const makeAlertRulePersistence = (options: {
 								.where(($) => [$.orgId.eq(orgId), $.id.in_(...normalized.destinationIds)]),
 						)
 						const existingIds = new Set(Arr.map(destinationRows, (destination) => destination.id))
-						const missingDestinationId = normalized.destinationIds.find(
+						const missingDestinationId = Arr.findFirst(
+							normalized.destinationIds,
 							(id) => !existingIds.has(id),
 						)
-						if (missingDestinationId !== undefined) {
+						if (Option.isSome(missingDestinationId)) {
 							return yield* new AlertRuleDestinationNotFoundError({
 								message: "Alert rule references an unknown destination",
-								destinationId: missingDestinationId,
+								destinationId: missingDestinationId.value,
 							})
 						}
 					}
@@ -250,11 +254,11 @@ export const makeAlertRulePersistence = (options: {
 						const activeRows = yield* db.run(
 							PG.from(AlertRules)
 								.select("id")
-								// Monitors' backing rules are capped by the monitor allowance instead.
+								// Managed rules (monitors, SLOs) are not counted against the rule cap.
 								.where(($) => [
 									$.orgId.eq(orgId),
 									$.enabled.eq(true),
-									$.signalType.neq("uptime"),
+									$.signalType.notIn(...MANAGED_SIGNAL_TYPES),
 								]),
 						)
 						const alreadyActive =
@@ -362,7 +366,7 @@ export const makeAlertRulePersistence = (options: {
 			db.run(
 				// Monitors' backing rules are managed through the monitor, so the rule list hides them.
 				selectStoredAlertRules()
-					.where(($) => [$.orgId.eq(orgId), $.signalType.neq("uptime")])
+					.where(($) => [$.orgId.eq(orgId), $.signalType.notIn(...MANAGED_SIGNAL_TYPES)])
 					.orderBy(["createdAt", "desc"], ["id", "desc"]),
 			),
 		)
@@ -395,7 +399,7 @@ export const makeAlertRulePersistence = (options: {
 		roles: ReadonlyArray<RoleName>,
 		request: AlertRuleUpsertRequest,
 	) {
-		yield* requireAdmin(roles)
+		yield* requireAlertsPermission(roles)
 		const { normalized, timestamp, txid } = yield* writeRuleRow(orgId, userId, null, request)
 		return normalizedRuleToDocument(normalized, {
 			notes: normalizeOptionalString(request.notes),
@@ -410,11 +414,11 @@ export const makeAlertRulePersistence = (options: {
 		roles: ReadonlyArray<RoleName>,
 		ruleId: AlertRuleDocument["id"],
 	) {
-		yield* requireAdmin(roles)
+		yield* requireAlertsPermission(roles)
 		const row = yield* requireRuleRow(orgId, ruleId)
-		// Hidden from the generic rule APIs: a monitor's rule is deleted with its monitor.
-		if (row.signalType === "uptime") {
-			return yield* new AlertRuleNotFoundError({ message: UPTIME_RULE_MANAGED_MESSAGE, ruleId })
+		// Hidden from the generic rule APIs: a managed rule is deleted with its owner.
+		if (isManagedSignalType(row.signalType)) {
+			return yield* new AlertRuleNotFoundError({ message: managedRuleMessage(row.signalType), ruleId })
 		}
 		const deleted = yield* dbExecute((db) => db.transaction(deleteRuleRows(db, orgId, ruleId)))
 		const txid = readTxid(deleted)
@@ -428,7 +432,7 @@ export const makeAlertRulePersistence = (options: {
 		listRules,
 		createRule,
 		deleteRule,
-		requireAdmin,
+		requireAlertsPermission,
 		normalizeRule,
 		normalizeRuleRow,
 		requireRuleRow,

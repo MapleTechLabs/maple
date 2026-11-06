@@ -1,4 +1,4 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import { randomUUID } from "node:crypto"
 import {
 	IsoDateTimeString,
@@ -8,6 +8,7 @@ import {
 	ScrapeTargetDeleteResponse,
 	ScrapeTargetEncryptionError,
 	ScrapeTargetId,
+	ScrapeTargetLimitReachedError,
 	ScrapeTargetNotFoundError,
 	ScrapeTargetPersistenceError,
 	ScrapeTargetProbeResponse,
@@ -158,7 +159,8 @@ export const summarizeScrapeResults = (
  * Mutation options for the scrape-target write paths. Integration-owned rows
  * (`managedBy` set) are refused by default so a generic `scrape_targets:write`
  * caller cannot delete, disable, or re-credential a row an integration owns;
- * the owning integration passes `allowManaged` for its own writes.
+ * the owning integration passes `allowManaged` for its own writes. On create it
+ * only skips the per-org limit; the integration still sets `managedBy` itself.
  */
 export interface ScrapeTargetMutationOptions {
 	readonly allowManaged?: boolean
@@ -181,9 +183,13 @@ export interface ScrapeTargetsServiceApi {
 	readonly create: (
 		orgId: OrgId,
 		request: CreateScrapeTargetRequest,
+		options?: ScrapeTargetMutationOptions,
 	) => Effect.Effect<
 		ScrapeTargetResponse,
-		ScrapeTargetValidationError | ScrapeTargetPersistenceError | ScrapeTargetEncryptionError
+		| ScrapeTargetValidationError
+		| ScrapeTargetPersistenceError
+		| ScrapeTargetEncryptionError
+		| ScrapeTargetLimitReachedError
 	>
 	readonly update: (
 		orgId: OrgId,
@@ -294,6 +300,19 @@ const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(IsoDateTimeString)
 const decodeScrapeIntervalSecondsSync = Schema.decodeUnknownSync(ScrapeIntervalSeconds)
 const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const ScrapeLabelsSchema = Schema.Record(Schema.String, Schema.String)
+
+/**
+ * User-created targets one org may hold, enabled or not. Every org's scrapes
+ * share one scraper; this keeps one org from registering targets without bound.
+ * Integration-owned rows are bounded by their integration and not counted.
+ */
+export const MAX_SCRAPE_TARGETS_PER_ORG = 50
+
+const targetLimitReached = () =>
+	new ScrapeTargetLimitReachedError({
+		message: `This organization already has ${MAX_SCRAPE_TARGETS_PER_ORG} scrape targets, the most one organization can have. Delete one to add another.`,
+		limit: MAX_SCRAPE_TARGETS_PER_ORG,
+	})
 
 /** Cap pattern lists so a target config stays small and bounded. */
 const MAX_BRANCH_PATTERNS = 50
@@ -590,8 +609,8 @@ const validateBranchPatterns = (
 			}),
 		)
 	}
-	const tooLong = normalized.find((pattern) => pattern.length > MAX_BRANCH_PATTERN_LENGTH)
-	if (tooLong !== undefined) {
+	const tooLong = Arr.findFirst(normalized, (pattern) => pattern.length > MAX_BRANCH_PATTERN_LENGTH)
+	if (Option.isSome(tooLong)) {
 		return Effect.fail(
 			new ScrapeTargetValidationError({
 				message: `${field} patterns must be at most ${MAX_BRANCH_PATTERN_LENGTH} characters`,
@@ -703,6 +722,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			const create = Effect.fn("ScrapeTargetsService.create")(function* (
 				orgId: OrgId,
 				request: CreateScrapeTargetRequest,
+				options?: ScrapeTargetMutationOptions,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const targetType = request.targetType ?? "prometheus"
@@ -804,6 +824,20 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const inserted = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
+							if (options?.allowManaged !== true) {
+								// Counted under a per-org lock, so concurrent creates cannot both take the last slot.
+								yield* db.execute(
+									Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}), hashtext('scrape_targets'))`,
+								)
+								const existing = yield* db.run(
+									PG.from(ScrapeTargets)
+										.select(() => ({ count: PG.count() }))
+										.where(($) => [$.orgId.eq(orgId), $.managedBy.isNull()]),
+								)
+								if (Number(existing[0]?.count ?? 0) >= MAX_SCRAPE_TARGETS_PER_ORG) {
+									return yield* targetLimitReached()
+								}
+							}
 							const sourceId = yield* createIntegrationSource(
 								db,
 								orgId,
@@ -1024,7 +1058,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					const currentAuthType = existing.authType
 					if (!isCredentialLessAuthType(currentAuthType)) {
 						yield* validateAuthCredentials(currentAuthType, request.authCredentials)
-						const encrypted = yield* encryptCredentials(request.authCredentials!, encryptionKey)
+						const encrypted = yield* encryptCredentials(request.authCredentials, encryptionKey)
 						updates.authCredentialsCiphertext = encrypted.ciphertext
 						updates.authCredentialsIv = encrypted.iv
 						updates.authCredentialsTag = encrypted.tag

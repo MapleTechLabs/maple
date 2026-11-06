@@ -24,6 +24,8 @@ import {
 	Semaphore,
 	Stream,
 	Array as Arr,
+	Option,
+	Schema,
 	String as Str,
 } from "effect"
 import type { ChatMessageRef, ChatOutbound, ChatTarget, ChatWritePhase } from "./outbound"
@@ -89,9 +91,10 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 			// Messages an earlier run posted already say more than a render of no events would.
 			if (resumed && transcript.seq === 0) return
 			const { ending, running } = yield* Ref.updateAndGet(turn, (state) => ({ ...state, dirty: false }))
-			const message = transcript.messages.find((candidate) => candidate.id === messageId)
-			const blocks: Array<ChatBlock> =
-				message === undefined ? [] : [...renderChatMessage(message, context, running)]
+			const blocks: Array<ChatBlock> = Option.match(
+				Arr.findFirst(transcript.messages, (candidate) => candidate.id === messageId),
+				{ onNone: () => [], onSome: (message) => [...renderChatMessage(message, context, running)] },
+			)
 			if (ending !== null) blocks.push(ending)
 			// A finished turn must never be left under the placeholder: a model that stops after a
 			// tool call without a closing word renders as nothing at all, and "Working on it…" would
@@ -107,12 +110,10 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 					Effect.gen(function* () {
 						// A retraction can shrink a turn below a message it had already needed, so a surplus
 						// message is emptied rather than left holding text the turn no longer says.
-						const group = index < groups.length ? groups[index] : NO_BLOCKS
-						// A fingerprint of what this message should now say, not a wire format — nothing decodes
-						// it, it is only ever compared with the previous flush's.
-						// oxlint-disable-next-line effecttsgo/global-json-in-effect
-						const rendered = JSON.stringify(group)
-						if (index >= posted.length) {
+						const group = groups[index] ?? NO_BLOCKS
+						const rendered = renderedKey(group)
+						const existing = posted[index]
+						if (existing === undefined) {
 							const postedMessage = yield* transport.post(target, group, phase)
 							posted.push(postedMessage)
 							sent.push(rendered)
@@ -125,7 +126,7 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 						// platform's edit budget is per channel, not per message. A live message is the
 						// exception at the end: it shows as still being written until its final write.
 						if (sent[index] === rendered && (running || outbound.liveMessages !== true)) return
-						yield* transport.edit(posted[index], group, phase)
+						yield* transport.edit(existing, group, phase)
 						sent[index] = rendered
 					}),
 				{ discard: true },
@@ -225,6 +226,11 @@ interface TurnState {
 }
 
 const NO_BLOCKS: ReadonlyArray<ChatBlock> = []
+
+/** A fingerprint of what a message should say; only compared with the previous flush's. */
+const renderedKey: (group: ReadonlyArray<ChatBlock>) => string = Schema.encodeSync(
+	Schema.fromJsonString(Schema.Unknown),
+)
 
 const PENDING: ChatNoticeBlock = { kind: "notice", tone: "pending", text: "Working on it…" }
 

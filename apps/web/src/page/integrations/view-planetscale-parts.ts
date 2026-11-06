@@ -83,8 +83,10 @@ export const metricsHealth = (
 						),
 					]
 				: []),
-			hstack(h, { gap: "2", className: "ml-auto" }, [
-				...(state === "degraded"
+			hstack(
+				h,
+				{ gap: "2", className: "ml-auto" },
+				state === "degraded"
 					? [
 							button(
 								h,
@@ -97,8 +99,8 @@ export const metricsHealth = (
 								[isOpen ? "Hide details" : "Show details"],
 							),
 						]
-					: []),
-			]),
+					: [],
+			),
 		]),
 		...(state === "degraded" && isOpen
 			? [

@@ -10,7 +10,7 @@
 import type { AiSessionSpan } from "@maple/domain/http"
 
 import { classifyAiSpan } from "./session-turns"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /** Status messages a framework stamps on every failed tool call regardless of
  *  cause. They name nothing, so the recorded result is read instead. */
@@ -154,11 +154,12 @@ export function describeSchemaFailure(text: string): string | undefined {
 			? "expected"
 			: undefined
 	if (kind === undefined) return undefined
-	const marker = message.indexOf(SCHEMA_PATH_MARKER)
-	if (marker === -1) return undefined
+	const markerIndex = Str.indexOf(SCHEMA_PATH_MARKER)(message)
+	if (Option.isNone(markerIndex)) return undefined
+	const marker = markerIndex.value
 	const path = SCHEMA_PATH.exec(Str.slice(marker + SCHEMA_PATH_MARKER.length - 1)(message))?.[0]
 	if (path === undefined) return undefined
-	const keys = Arr.flatMap([...path.matchAll(SCHEMA_PATH_KEY)], (entry) =>
+	const keys = Arr.flatMap([...Str.matchAll(SCHEMA_PATH_KEY)(path)], (entry) =>
 		entry[1] === undefined ? [] : [entry[1]],
 	)
 	const field = keys[keys.length - 1]

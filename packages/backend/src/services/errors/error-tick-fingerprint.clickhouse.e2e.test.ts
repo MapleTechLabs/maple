@@ -4,14 +4,24 @@
 
 import { randomUUID } from "node:crypto"
 import { afterAll, afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import {
+	ConfigProvider,
+	Effect,
+	Layer,
+	Schema,
+	Array as Arr,
+	String as Str,
+	DateTime,
+	Clock,
+	Option,
+} from "effect"
 import { FetchHttpClient } from "effect/http"
 import { migrations } from "@maple/domain/clickhouse"
 import { OrgId } from "@maple/domain/http"
 import { ErrorIssueId } from "@maple/domain/primitives"
 import { FINGERPRINT_VERSION } from "@maple/domain/tinybird/fingerprint"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { ErrorIssues } from "@maple/db/tables"
+import { ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
@@ -47,7 +57,7 @@ afterAll(async () => {
 	for (const name of createdDatabases) await clickhouseExec(`DROP DATABASE IF EXISTS ${name}`)
 })
 
-const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 
 interface Span {
 	readonly type: string
@@ -65,7 +75,12 @@ const spanTimestamp = () =>
 	Str.slice(
 		0,
 		23,
-	)(Str.replace("Z", "")(Str.replace("T", " ")(new Date(Date.now() - 150_000).toISOString())))
+	)(
+		Str.replace(
+			"Z",
+			"",
+		)(Str.replace("T", " ")(DateTime.formatIso(DateTime.makeUnsafe(Date.now() - 150_000)))),
+	)
 
 /** Three of each, so every fingerprint clears the promotion threshold. */
 const insertSpans = async (database: string, spans: ReadonlyArray<Span>): Promise<void> => {
@@ -89,6 +104,18 @@ const materializedHashes = async (database: string): Promise<ReadonlyArray<strin
 		Str.split("\n")(
 			await clickhouseExec(
 				`SELECT DISTINCT toString(FingerprintHash) FROM error_events WHERE OrgId = ${quote(ORG)} ORDER BY 1 FORMAT TabSeparated`,
+				database,
+			),
+		),
+		(line) => line !== "",
+	)
+
+/** The v3 hash the lineage view recorded for each re-keyed fingerprint. */
+const lineageHashes = async (database: string): Promise<ReadonlyArray<string>> =>
+	Arr.filter(
+		Str.split("\n")(
+			await clickhouseExec(
+				`SELECT DISTINCT toString(PreviousFingerprintHash) FROM error_fingerprint_lineage WHERE OrgId = ${quote(ORG)} FORMAT TabSeparated`,
 				database,
 			),
 		),
@@ -179,7 +206,7 @@ const makeTickLayer = (database: string) => {
 const PLACEHOLDER_HASH = "placeholder"
 const seedOrgState = Effect.gen(function* () {
 	const database = yield* Database
-	const now = Date.now()
+	const now = yield* Clock.currentTimeMillis
 	yield* database.execute((db) =>
 		db.run(
 			PG.insertInto(ErrorIssues).values({
@@ -249,7 +276,7 @@ describe.skipIf(!clickhouseE2eEnabled)("errors tick over the v3 fingerprint (Cli
 				return yield* Effect.gen(function* () {
 					yield* seedOrgState
 					const errors = yield* ErrorsService
-					yield* errors.runTick()
+					yield* errors.runTick
 
 					const issues = yield* loadIssues
 					assert.sameMembers(
@@ -277,7 +304,9 @@ describe.skipIf(!clickhouseE2eEnabled)("errors tick over the v3 fingerprint (Cli
 				// A self-hosted warehouse that has not applied migration 0039 yet: put
 				// the v2 views (0030) back over the v3 ones.
 				const database = yield* Effect.promise(prepareWarehouse)
-				const v2 = migrations.find((migration) => migration.version === 30)
+				const v2 = Option.getOrUndefined(
+					Arr.findFirst(migrations, (migration) => migration.version === 30),
+				)
 				assert.isDefined(v2)
 				for (const statement of v2.statements) {
 					assert.isString(statement)
@@ -299,7 +328,7 @@ describe.skipIf(!clickhouseE2eEnabled)("errors tick over the v3 fingerprint (Cli
 					// Archived by the version sweep while its old hash was still live.
 					const issueId = asIssueId(randomUUID())
 					const db = yield* Database
-					const archivedAt = Date.now() - 60 * 60_000
+					const archivedAt = (yield* Clock.currentTimeMillis) - 60 * 60_000
 					yield* db.execute((tx) =>
 						tx.run(
 							PG.insertInto(ErrorIssues).values({
@@ -323,7 +352,7 @@ describe.skipIf(!clickhouseE2eEnabled)("errors tick over the v3 fingerprint (Cli
 						),
 					)
 					const errors = yield* ErrorsService
-					yield* errors.runTick()
+					yield* errors.runTick
 
 					const [issue] = yield* loadIssues
 					assert.isDefined(issue)
@@ -333,6 +362,79 @@ describe.skipIf(!clickhouseE2eEnabled)("errors tick over the v3 fingerprint (Cli
 					assert.strictEqual(issue.priority, 1)
 					assert.strictEqual(issue.occurrenceCount, 43)
 					assert.strictEqual(issue.fingerprintVersion, FINGERPRINT_VERSION)
+				}).pipe(Effect.provide(makeTickLayer(database)))
+			}),
+		120_000,
+	)
+
+	it.live(
+		"re-keys an issue onto its v4 hash through the lineage view instead of opening a new one",
+		() =>
+			Effect.gen(function* () {
+				const database = yield* Effect.promise(prepareWarehouse)
+				// A dependency throws under an app caller: v4 hashes the caller, v3 hashed both.
+				yield* Effect.promise(() =>
+					insertSpans(database, [
+						{
+							type: "ZodError",
+							message: "invalid order payload",
+							stacktrace: frames(
+								"    at parse (/app/node_modules/zod/lib/types.js:120:7)",
+								"    at saveOrder (/app/src/orders.ts:42:5)",
+							),
+						},
+					]),
+				)
+				const [v4Hash] = yield* Effect.promise(() => materializedHashes(database))
+				const [v3Hash] = yield* Effect.promise(() => lineageHashes(database))
+				assert.isString(v4Hash)
+				assert.isString(v3Hash)
+				assert.notStrictEqual(v3Hash, v4Hash)
+
+				return yield* Effect.gen(function* () {
+					const issueId = asIssueId(randomUUID())
+					const db = yield* Database
+					const seenAt = Date.now() - 60 * 60_000
+					yield* db.execute((tx) =>
+						tx.run(
+							PG.insertInto(ErrorIssues).values({
+								id: issueId,
+								orgId: ORG,
+								fingerprintHash: v3Hash,
+								fingerprintVersion: FINGERPRINT_VERSION - 1,
+								serviceName: SERVICE,
+								exceptionType: "ZodError",
+								exceptionMessage: "invalid order payload",
+								topFrame: "",
+								workflowState: "in_progress",
+								occurrenceCount: 40,
+								firstSeenAt: seenAt - 86_400_000,
+								lastSeenAt: seenAt,
+								createdAt: seenAt - 86_400_000,
+								updatedAt: seenAt,
+							}),
+						),
+					)
+					const errors = yield* ErrorsService
+					yield* errors.runTick
+
+					const issues = yield* loadIssues
+					assert.deepStrictEqual(
+						Arr.map(issues, (issue) => [
+							issue.id,
+							issue.occurrenceCount,
+							issue.fingerprintVersion,
+						]),
+						[[issueId, 43, FINGERPRINT_VERSION]],
+					)
+					const aliases = yield* db.execute((tx) =>
+						tx.run(
+							PG.from(ErrorIssueFingerprints)
+								.select("fingerprintHash", "issueId", "source")
+								.where(($) => [$.orgId.eq(ORG)]),
+						),
+					)
+					assert.deepStrictEqual(aliases, [{ fingerprintHash: v4Hash, issueId, source: "rekey" }])
 				}).pipe(Effect.provide(makeTickLayer(database)))
 			}),
 		120_000,

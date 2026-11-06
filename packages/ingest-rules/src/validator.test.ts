@@ -47,7 +47,7 @@ const index = Arbitrary.schema(
 )
 const regexText = Arbitrary.map(Arbitrary.array(index, { maxLength: 12 }), (picks) =>
 	Arr.join(
-		Arr.map(picks, (pick) => FRAGMENTS[pick]),
+		Arr.map(picks, (pick) => Arr.getUnsafe(FRAGMENTS, pick)),
 		"",
 	),
 )

@@ -1,4 +1,5 @@
 import { String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 /**
  * The whole email runtime: HTML escaping plus a token/slot splicer for the
  * templates compiled into `src/generated/`.
@@ -39,7 +40,7 @@ export function fill(
 	values: Readonly<Record<string, string>> = {},
 	slots: Readonly<Record<string, string>> = {},
 ): string {
-	return template.replace(TOKEN, (_match, raw: string, name: string) => {
+	return replaceWith(template, TOKEN, (_match, raw = "", name = "") => {
 		if (raw === "#") {
 			const slot = slots[name]
 			if (slot === undefined) throw new Error(`Email template is missing slot "${name}"`)

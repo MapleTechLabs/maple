@@ -131,7 +131,7 @@ const defaultRulesSection = (h: H): Html =>
 	)
 
 /** An integration source: no token, rate limit or signal filter to set, so pausing is its control. */
-const ingestionSection = (h: H, model: Model, source: V2Source): Html => {
+const ingestionSection = (h: H, model: Model, source: V2Source, timeZone: string): Html => {
 	const isPaused = source.status === "paused"
 	return settingsSection(
 		h,
@@ -147,7 +147,7 @@ const ingestionSection = (h: H, model: Model, source: V2Source): Html => {
 				vstack(h, { gap: "1", shrink: true }, [
 					sourceStatusBadge(h, source, { nowMs: model.nowMs ?? 0, showTime: false }),
 					typography(h, { size: "xs", tone: "muted" }, [
-						isPaused ? pausedLabel(source) : "Collected and stored as it arrives",
+						isPaused ? pausedLabel(source, timeZone) : "Collected and stored as it arrives",
 					]),
 				]),
 				isPaused
@@ -199,7 +199,7 @@ const deleteSection = (h: H, source: V2Source): Html =>
 	])
 
 /** General for every source; rules for token sources, pausing and deleting for integrations. */
-export const settingsTab = (h: H, model: Model, source: V2Source): Html => {
+export const settingsTab = (h: H, model: Model, source: V2Source, timeZone: string): Html => {
 	const form = model.settings
 	if (form === null) return h.empty
 	const isToken = hasToken(source)
@@ -237,7 +237,7 @@ export const settingsTab = (h: H, model: Model, source: V2Source): Html => {
 				generalSection(h, form, source),
 				...(source.is_default
 					? [defaultRulesSection(h)]
-					: [ingestionSection(h, model, source), deleteSection(h, source)]),
+					: [ingestionSection(h, model, source, timeZone), deleteSection(h, source)]),
 				...save,
 			]
 	return h.form(

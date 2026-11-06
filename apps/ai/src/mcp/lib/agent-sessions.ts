@@ -3,7 +3,7 @@
 // more than one tool prints. These are the `maple_ai.*` agent traces, not the
 // browser session replays `search_sessions` serves.
 
-import { Effect, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Effect, Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	AI_SESSION_SPANS_MAX_SPANS,
 	GetAiSessionSpansRequest,
@@ -81,8 +81,8 @@ const keptMessages = (messages: ReadonlyArray<unknown>): ReadonlyArray<unknown> 
 			break
 		}
 	}
-	const first = messages.findIndex(hasUserText)
-	return Arr.filter(messages, (_, i) => i === first || i === newest || i === last)
+	const first = Arr.findFirstIndex(messages, hasUserText)
+	return Arr.filter(messages, (_, i) => Option.contains(first, i) || i === newest || i === last)
 }
 
 /** A span's content cut to what a whole-session read retains; a tool needing
@@ -318,8 +318,8 @@ export function clipPayload(text: string, chars: number): string {
 export function offsetLabel(ms: number): string {
 	if (ms < 1000) return `+${Math.round(ms)}ms`
 	if (ms < 60_000) return `+${(ms / 1000).toFixed(1)}s`
-	const minutes = Math.floor(ms / 60_000)
-	return `+${minutes}m${Math.round((ms % 60_000) / 1000)}s`
+	const seconds = Math.round(ms / 1000)
+	return `+${Math.floor(seconds / 60)}m${seconds % 60}s`
 }
 
 /** How a span reads: the four categories the session model classifies into. */

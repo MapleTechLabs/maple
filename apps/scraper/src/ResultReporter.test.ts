@@ -26,8 +26,8 @@ const reporterLayer = (harness: Harness) =>
 	ResultReporter.layer.pipe(
 		Layer.provide(
 			Layer.succeed(ApiClient, {
-				listTargets: () => Effect.succeed([]),
-				listUptimeTargets: () => Effect.succeed([]),
+				listTargets: Effect.succeed([]),
+				listUptimeTargets: Effect.succeed([]),
 				reportUptimeResults: () => Effect.void,
 				reportResults: (results) =>
 					Effect.suspend(() => harness.reportImpl()).pipe(
@@ -124,8 +124,8 @@ describe("ResultReporter", () => {
 				yield* TestClock.adjust(REPORT_INTERVAL)
 				const spans = endedSpansNamed(tracer.ended, "ResultReporter.deliver")
 				assert.lengthOf(spans, 2)
-				assert.isTrue(Exit.isSuccess(spans[0]!.exit))
-				assert.isTrue(Exit.isFailure(spans[1]!.exit))
+				assert.isTrue(Exit.isSuccess(Arr.getUnsafe(spans, 0).exit))
+				assert.isTrue(Exit.isFailure(Arr.getUnsafe(spans, 1).exit))
 			}).pipe(Effect.provide(Layer.merge(reporterLayer(harness), tracer.layer)))
 		}),
 	)
@@ -208,7 +208,7 @@ describe("ResultReporter", () => {
 
 				yield* Fiber.interrupt(fiber)
 				const flushes = endedSpansNamed(tracer.ended, "ResultReporter.shutdown_flush")
-				assert.isTrue(flushes.length > 0 && Exit.isFailure(flushes[0]!.exit))
+				assert.isTrue(flushes.length > 0 && Exit.isFailure(Arr.getUnsafe(flushes, 0).exit))
 			}).pipe(Effect.provide(Layer.merge(reporterLayer(harness), tracer.layer)))
 		}),
 	)
@@ -221,8 +221,8 @@ describe("UptimeReporter", () => {
 			const layer = UptimeReporter.layer.pipe(
 				Layer.provide(
 					Layer.succeed(ApiClient, {
-						listTargets: () => Effect.succeed([]),
-						listUptimeTargets: () => Effect.succeed([]),
+						listTargets: Effect.succeed([]),
+						listUptimeTargets: Effect.succeed([]),
 						reportResults: () => Effect.void,
 						reportUptimeResults: (results) => Effect.sync(() => void delivered.push(results)),
 					}),

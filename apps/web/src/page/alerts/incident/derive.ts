@@ -4,6 +4,7 @@ import {
 	type AlertRuleDocument,
 	type AlertRuleId,
 	IsoDateTimeString,
+	isManagedSignalType,
 } from "@maple/domain/http"
 import type { V2AlertRulePreviewParams } from "@maple/domain/http/v2"
 import { formatWarehouseDateTime } from "@maple/query-engine"
@@ -15,6 +16,7 @@ import {
 	rowToAlertRuleDocument,
 } from "@maple/web-data/collections/alerts"
 import { Option, Array as Arr } from "effect"
+import { lastBy } from "../../kit/last-by"
 import { previewPayload } from "../shared/preview"
 import { isoMs } from "../shared/time"
 import type { Model } from "./model"
@@ -27,31 +29,52 @@ export interface IncidentView {
 	readonly ruleIncidents: ReadonlyArray<AlertIncidentDocument>
 	readonly range: Readonly<{ start: number; end: number }>
 	readonly payload: Option.Option<V2AlertRulePreviewParams>
-	/** The rule's recorded checks over `range`; `None` without a rule or for an uptime incident. */
+	/** The rule's recorded checks over `range`; `None` without a rule or for a monitor or SLO incident. */
 	readonly checksQuery: Option.Option<
 		Readonly<{ ruleId: AlertRuleId; since: IsoDateTimeString; until: IsoDateTimeString }>
 	>
 }
 
 /** The state rows of one rule (one per group). */
-export const ruleStatesOf = (model: Model, ruleId: string): ReadonlyArray<AlertRuleStateRow> =>
-	Arr.filter(model.states ?? [], (row) => row.rule_id === ruleId)
+export const ruleStatesOf = (
+	model: Pick<Model, "states">,
+	ruleId: string,
+): ReadonlyArray<AlertRuleStateRow> => Arr.filter(model.states ?? [], (row) => row.rule_id === ruleId)
+
+type ViewKey = Pick<Model, "incidents" | "rules" | "states" | "incidentId" | "nowMs">
 
 /** The incident and its rule, or `None` while the incidents list has not answered or lacks it. */
-export const incidentViewOf = (model: Model): Option.Option<IncidentView> => {
+export const incidentViewOf = (model: Model): Option.Option<IncidentView> =>
+	incidentViewFor([model.incidents, model.rules, model.states, model.incidentId, model.nowMs])
+
+const incidentViewFor = lastBy(
+	([incidents, rules, states, incidentId, nowMs]: readonly [
+		ViewKey["incidents"],
+		ViewKey["rules"],
+		ViewKey["states"],
+		ViewKey["incidentId"],
+		ViewKey["nowMs"],
+	]) => deriveIncidentView({ incidents, rules, states, incidentId, nowMs }),
+)
+
+const deriveIncidentView = (model: ViewKey): Option.Option<IncidentView> => {
 	if (model.incidents === null || model.nowMs === null) return Option.none()
-	const incidentRow = model.incidents.find((row) => row.id === model.incidentId)
-	if (incidentRow === undefined) return Option.none()
+	const foundIncident = Arr.findFirst(model.incidents, (row) => row.id === model.incidentId)
+	if (Option.isNone(foundIncident)) return Option.none()
+	const incidentRow = foundIncident.value
 	// Only this incident's rule is decoded: the org's other rules and incidents are never shown here.
 	const incident = rowToAlertIncidentDocument(incidentRow)
-	const ruleRow = (model.rules ?? []).find((row) => row.id === incidentRow.rule_id)
-	const rule =
-		ruleRow === undefined
-			? null
-			: rowToAlertRuleDocument(
+	const rule = Option.match(
+		Arr.findFirst(model.rules ?? [], (row) => row.id === incidentRow.rule_id),
+		{
+			onNone: () => null,
+			onSome: (ruleRow) =>
+				rowToAlertRuleDocument(
 					ruleRow,
 					buildRuleStatesByRuleId(ruleStatesOf(model, incidentRow.rule_id)),
-				)
+				),
+		},
+	)
 	const now = model.nowMs
 	const start = isoMs(incident.firstTriggeredAt)
 	const pad = Math.max(30, (rule?.windowMinutes ?? 5) * 4) * MINUTE_MS
@@ -66,16 +89,16 @@ export const incidentViewOf = (model: Model): Option.Option<IncidentView> => {
 		),
 		range,
 		checksQuery:
-			rule === null || incident.signalType === "uptime"
+			rule === null || isManagedSignalType(incident.signalType)
 				? Option.none()
 				: Option.some({
 						ruleId: rule.id,
 						since: IsoDateTimeString.make(new Date(range.start).toISOString()),
 						until: IsoDateTimeString.make(new Date(range.end).toISOString()),
 					}),
-		// An uptime rule has no query to replay: its signal is the monitor's checks.
+		// A monitor's or SLO's rule has no query to replay: its signal is the checks or the burn rate.
 		payload:
-			rule === null || incident.signalType === "uptime"
+			rule === null || isManagedSignalType(incident.signalType)
 				? Option.none()
 				: previewPayload(ruleToFormState(rule), {
 						startTime: formatWarehouseDateTime(range.start),

@@ -30,7 +30,7 @@ export type CacheValue =
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
 	if (value === null || typeof value !== "object") return false
-	const proto = Object.getPrototypeOf(value)
+	const proto: unknown = Object.getPrototypeOf(value)
 	return proto === Object.prototype || proto === null
 }
 
@@ -62,7 +62,12 @@ const encodeAt = (value: unknown, depth: number): Option.Option<Encoded> => {
 		depth,
 	)
 	return Option.map(fields, (encoded) => {
-		const object = Rec.fromEntries(Arr.map(entries, ([key], index) => [key, encoded[index]]))
+		const object = Rec.fromEntries(
+			Arr.zip(
+				Arr.map(entries, ([key]) => key),
+				encoded,
+			),
+		)
 		// A real field named like the tag is wrapped so decode never mistakes it for one.
 		return TAG in value ? { [TAG]: "object", v: object } : object
 	})

@@ -43,6 +43,7 @@ const leadingSlot = <M>(h: HtmlBuilder<M>, leading: Child): Html =>
 const trailingSlot = <M>(h: HtmlBuilder<M>, trailing: Child | ReadonlyArray<Child>): Html =>
 	h.span(
 		[h.Class(listRowTrailingStyles), h.DataAttribute("slot", "list-row-trailing")],
+		// @effect-diagnostics-next-line preferEffectArray:off -- Arr.isArray narrows to a mutable Array and loses the ReadonlyArray branch
 		typeof trailing === "string" || !Array.isArray(trailing) ? [trailing] : trailing,
 	)
 

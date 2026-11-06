@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto"
+import { createHash, createHmac, randomUUID } from "node:crypto"
 import {
 	canonicalJson,
 	CompiledProjectionRegistry,
@@ -22,9 +22,10 @@ import {
 	PlanetscaleEvents,
 	type ErrorIssueRow,
 } from "@maple/db/tables"
-import { Clock, Effect, Result, Schema, String as Str } from "effect"
+import { Clock, Effect, Option, Result, Schema, String as Str } from "effect"
 import { timestampMs } from "@maple/backend/platform/time"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import { secretsEqual } from "@maple/backend/services/auth/secret-equal"
 
 /**
  * PlanetScale webhook event handling: signature verification, payload decode,
@@ -43,9 +44,7 @@ export const verifyPlanetScaleSignature = (
 ): boolean => {
 	if (!signatureHeader) return false
 	const expected = createHmac("sha256", secret).update(rawBody, "utf8").digest("hex")
-	const provided = Str.toLowerCase(Str.trim(signatureHeader))
-	if (provided.length !== expected.length) return false
-	return timingSafeEqual(Buffer.from(expected, "utf8"), Buffer.from(provided, "utf8"))
+	return secretsEqual(Str.toLowerCase(Str.trim(signatureHeader)), expected)
 }
 
 export const PlanetScaleWebhookPayload = Schema.Struct({
@@ -83,7 +82,7 @@ const EpochMillisSchema = Schema.Int.check(
 	Schema.isGreaterThanOrEqualTo(0),
 	Schema.isLessThanOrEqualTo(8_640_000_000_000_000),
 )
-const validDate = (epochMs: number): Date => new Date(Schema.decodeUnknownSync(EpochMillisSchema)(epochMs))
+const validDate = (epochMs: number): Date => new Date(Schema.decodeSync(EpochMillisSchema)(epochMs))
 
 export const planetScaleWebhookTimestampMillis = (payload: PlanetScaleWebhookPayload): number | null => {
 	if (payload.timestamp == null || !Number.isFinite(payload.timestamp) || payload.timestamp <= 0)
@@ -109,7 +108,7 @@ export const PLANETSCALE_WEBHOOK_ADAPTER: SignalSourceAdapter<
 	},
 	normalize: ({ connectionId, payload }, context) => {
 		const observedAtDate = validDate(timestampMs(context.acceptedAt))
-		const payloadJson = Schema.decodeUnknownSync(PlanetScaleWebhookPayload)(payload)
+		const payloadJson = Schema.decodeSync(PlanetScaleWebhookPayload)(payload)
 		const occurredAtMs = planetScaleWebhookTimestampMillis(payload) ?? observedAtDate.getTime()
 		const occurredAt = validDate(occurredAtMs).toISOString()
 		const occurrenceId = `derived:sha256:${createHash("sha256")
@@ -249,7 +248,7 @@ export const projectPlanetScaleWebhookEvent = (
 			cause,
 		})
 	return Result.gen(function* () {
-		const decoded = yield* Schema.decodeUnknownResult(ProjectionInputSchema)(input).pipe(
+		const decoded = yield* Schema.decodeResult(ProjectionInputSchema)(input).pipe(
 			Result.mapError(invalid),
 		)
 		const observedAt = new Date(decoded.receivedAt).toISOString()
@@ -367,8 +366,7 @@ export const deployRequestNumber = (payload: PlanetScaleWebhookPayload): string 
 
 /** The lifecycle state a `deploy_request.*` / `branch.*` event represents. */
 const stateFromEvent = (event: string): string | null => {
-	const dot = event.indexOf(".")
-	return dot === -1 ? null : Str.slice(dot + 1)(event)
+	return Option.getOrNull(Option.map(Str.indexOf(".")(event), (dot) => Str.slice(dot + 1)(event)))
 }
 
 /** The events Maple subscribes its registered webhooks to: every one the map below acts on. */
@@ -690,7 +688,7 @@ export const upsertPlanetScaleIssue: (
 									.limit(1),
 							)
 						const existing = yield* selectActor()
-						if (existing[0]) return existing[0].id
+						if (existing[0] !== undefined) return existing[0].id
 						yield* db.run(
 							PG.insertInto(Actors)
 								.values({
@@ -710,7 +708,7 @@ export const upsertPlanetScaleIssue: (
 						const row = (yield* selectActor())[0]
 						// The queue consumer retries on `DatabaseError`, so this unreachable
 						// state keeps the failure class it always surfaced as.
-						if (!row) {
+						if (row === undefined) {
 							return yield* new DatabaseError({
 								message: "Failed to ensure system-integrations actor row",
 								cause: undefined,

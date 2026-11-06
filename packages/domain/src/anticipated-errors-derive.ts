@@ -1,4 +1,4 @@
-// BOUNDARY: Reflection reads heterogeneous schema/class exports and narrows every value before use.
+// BOUNDARY-FILE: Reflection reads heterogeneous schema/class exports and narrows every value before use.
 // Reflection-based derivation of anticipated (4xx) error identifiers.
 //
 // This module intentionally imports the entire domain HTTP surface and must not

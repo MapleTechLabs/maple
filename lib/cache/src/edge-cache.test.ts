@@ -331,8 +331,8 @@ describe("EdgeCacheService.getOrCompute (with Schema.Class schema)", () => {
 				crypto.subtle.digest("SHA-256", new TextEncoder().encode(input)).then((digest) => {
 					const view = new Uint8Array(digest)
 					let out = ""
-					for (let i = 0; i < view.length; i++) {
-						out += Str.padStart(2, "0")(view[i]!.toString(16))
+					for (const byte of view) {
+						out += Str.padStart(2, "0")(byte.toString(16))
 					}
 					return out
 				})

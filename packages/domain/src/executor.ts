@@ -10,7 +10,14 @@ import { SandboxCheckout } from "./sandbox"
 
 export const EXECUTOR_PREPARE_PATH = "/internal/executor/prepare"
 export const EXECUTOR_RUN_PATH = "/internal/executor/run"
+export const EXECUTOR_RELEASE_PATH = "/internal/executor/release"
 export const EXECUTOR_DESTROY_PATH = "/internal/executor/destroy"
+
+/**
+ * How long an idle executor lives. Recon and synthesis send it no commands after prepare, so this
+ * outlasts parallel recon and two syntheses at the audit agent rail. The run destroys it when it ends.
+ */
+export const EXECUTOR_INACTIVITY_TIMEOUT_MS = 4 * 60 * 60 * 1000
 
 /** What every target-controlled command is held to; the agents' prompt quotes {@link executorLimitsText}. */
 export const EXECUTOR_LIMITS = {
@@ -72,8 +79,7 @@ export const ExecutorScratchPath = Schema.String.check(
 	Schema.makeFilter(
 		(value: string) =>
 			!Str.startsWith("/")(value) &&
-			// eslint-disable-next-line no-control-regex
-			!/[\u0000-\u001f]/u.test(value) &&
+			!/\p{Cc}/u.test(value) &&
 			Arr.every(Str.split("/")(value), (part) => part !== "" && part !== "." && part !== ".."),
 		{ title: "executorScratchPath", expected: "a scratch-relative path with no empty, `.` or `..` part" },
 	),
@@ -115,6 +121,15 @@ export interface ExecutorCommandInput {
 	readonly timeoutMs: number
 	readonly promote: ReadonlyArray<ExecutorPromotion>
 }
+
+/**
+ * The agent is done with the executor: its processes, scratch, cgroup and promoted artifacts are
+ * removed, and later commands under its id are refused.
+ */
+export class ExecutorReleaseRequest extends Schema.Class<ExecutorReleaseRequest>("ExecutorReleaseRequest")({
+	executorKey: ExecutorKey,
+	agentId: ExecutorAgentId,
+}) {}
 
 export class ExecutorDestroyRequest extends Schema.Class<ExecutorDestroyRequest>("ExecutorDestroyRequest")({
 	executorKey: ExecutorKey,
@@ -176,8 +191,12 @@ export class ExecutorRunExited extends Schema.TaggedClass<ExecutorRunExited>()("
 	timedOut: Schema.Boolean,
 	stdout: Schema.String,
 	stderr: Schema.String,
+	/** Each stream's full size in bytes, before the cut at {@link EXECUTOR_LIMITS}`.outputBytes`. */
 	stdoutBytes: Schema.Finite,
 	stderrBytes: Schema.Finite,
+	/** The stream was cut; what came back is its prefix. */
+	stdoutTruncated: Schema.Boolean,
+	stderrTruncated: Schema.Boolean,
 	wallTimeMs: Schema.Finite,
 	promoted: Schema.Array(ExecutorArtifact),
 	rejected: Schema.Array(ExecutorRejectedArtifact),
@@ -190,6 +209,11 @@ export class ExecutorNotPrepared extends Schema.TaggedClass<ExecutorNotPrepared>
 
 export const ExecutorRunResponse = Schema.Union([ExecutorRunExited, ExecutorNotPrepared, ExecutorUnavailable])
 export type ExecutorRunResponse = typeof ExecutorRunResponse.Type
+
+export class ExecutorReleased extends Schema.TaggedClass<ExecutorReleased>()("ExecutorReleased", {}) {}
+
+export const ExecutorReleaseResponse = Schema.Union([ExecutorReleased, ExecutorUnavailable])
+export type ExecutorReleaseResponse = typeof ExecutorReleaseResponse.Type
 
 export class ExecutorDestroyed extends Schema.TaggedClass<ExecutorDestroyed>()("ExecutorDestroyed", {}) {}
 

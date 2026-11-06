@@ -126,7 +126,7 @@ export function attributeFilterOperator(entry: Pick<AttributeFilterEntry, "match
 
 /** An attribute filter entry as where-clause text; a group reads back as `(a OR b)`. */
 export function formatAttributeClause(prefix: string, entry: AttributeFilterEntry): string {
-	if (entry.or?.length) {
+	if (entry.or !== undefined && entry.or.length > 0) {
 		const { or, ...first } = entry
 		return `(${Arr.join(
 			Arr.map([first, ...or], (member) => formatAttributeClause(prefix, member)),
@@ -338,6 +338,7 @@ export function parseWhereClause(whereClause: string | undefined): {
 				memberWarnings,
 			)
 			const setsOtherField = Arr.some(
+				// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 				Object.entries(alone),
 				([field, value]) =>
 					field !== "attributeFilters" &&
@@ -501,14 +502,18 @@ function clauseFields(filters: ParsedWhereClauseFilters): ClauseFields {
 	if (filters.resourceAttributeFilters.length > 0) {
 		fields.resourceAttributeFilters = filters.resourceAttributeFilters
 	}
-	if (filters.excludedServices?.length) fields.excludedServices = filters.excludedServices
-	if (filters.excludedSpanNames?.length) fields.excludedSpanNames = filters.excludedSpanNames
-	if (filters.excludedDeploymentEnvs?.length) {
+	if (filters.excludedServices !== undefined && filters.excludedServices.length > 0)
+		fields.excludedServices = filters.excludedServices
+	if (filters.excludedSpanNames !== undefined && filters.excludedSpanNames.length > 0)
+		fields.excludedSpanNames = filters.excludedSpanNames
+	if (filters.excludedDeploymentEnvs !== undefined && filters.excludedDeploymentEnvs.length > 0) {
 		fields.excludedDeploymentEnvs = filters.excludedDeploymentEnvs
 	}
-	if (filters.excludedNamespaces?.length) fields.excludedNamespaces = filters.excludedNamespaces
-	if (filters.excludedHttpMethods?.length) fields.excludedHttpMethods = filters.excludedHttpMethods
-	if (filters.excludedHttpStatusCodes?.length) {
+	if (filters.excludedNamespaces !== undefined && filters.excludedNamespaces.length > 0)
+		fields.excludedNamespaces = filters.excludedNamespaces
+	if (filters.excludedHttpMethods !== undefined && filters.excludedHttpMethods.length > 0)
+		fields.excludedHttpMethods = filters.excludedHttpMethods
+	if (filters.excludedHttpStatusCodes !== undefined && filters.excludedHttpStatusCodes.length > 0) {
 		fields.excludedHttpStatusCodes = filters.excludedHttpStatusCodes
 	}
 
@@ -558,6 +563,7 @@ export function applyWhereClause(search: TracesSearchLike, whereClause: string):
 
 	const carried: TracesSearchLike = { ...search }
 	if (search.whereClause) {
+		// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
 		for (const key of Object.keys(clauseFields(parseWhereClause(search.whereClause).filters))) {
 			delete carried[key as keyof ClauseFields]
 		}

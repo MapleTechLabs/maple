@@ -10,7 +10,7 @@ import {
 	type PrReviewFinding,
 	type PrReviewFindingSubmission,
 } from "@maple/domain/http"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 export interface ChildFindings {
 	/** One child's answer, as the parent received it. */
@@ -48,16 +48,25 @@ export const parseChildFindings = (answer: string): ReadonlyArray<PrReviewFindin
 	Arr.flatMap(Str.split("\n")(answer), (line) => {
 		const parts = Arr.map(Str.split("|")(line), (part) => Str.trim(part))
 		const anchor = ANCHOR.exec(Str.replaceAll("`", "")(Str.replace(/^[-*]\s+/, "")(parts[0] ?? "")))
-		if (parts.length < 6 || anchor === null) return []
 		const [, severity, category, title, why, fix, check] = parts
+		const path = anchor?.[1]
+		if (
+			path === undefined ||
+			severity === undefined ||
+			category === undefined ||
+			title === undefined ||
+			why === undefined ||
+			fix === undefined
+		)
+			return []
 		return [
 			{
-				path: canonicalPath(anchor[1]!),
-				line: Number(anchor[2]),
-				severity: severityOf(severity!),
-				category: Str.toLowerCase(category!),
-				title: title!,
-				body: why!,
+				path: canonicalPath(path),
+				line: Number(anchor?.[2]),
+				severity: severityOf(severity),
+				category: Str.toLowerCase(category),
+				title: title,
+				body: why,
 				...(fix ? { suggestion: fix } : undefined),
 				...(check && check !== "-" ? { checkId: check } : undefined),
 			},
@@ -85,9 +94,9 @@ export const unaccountedChildFindings = (
 	const accounts = [...Arr.filter(filed, (finding) => finding.severity !== "info"), ...dismissed]
 	return Arr.filter(children, (child) => {
 		if (child.severity === "info") return false
-		const match = accounts.find((entry) => !claimed.has(entry) && near(entry, child))
-		if (match !== undefined) claimed.add(match)
-		return match === undefined
+		const match = Arr.findFirst(accounts, (entry) => !claimed.has(entry) && near(entry, child))
+		if (Option.isSome(match)) claimed.add(match.value)
+		return Option.isNone(match)
 	})
 }
 

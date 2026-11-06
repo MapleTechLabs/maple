@@ -96,7 +96,7 @@ describe("convertPersesDashboardToPortable", () => {
 	it.effect("converts a ClickHouse time series panel into a raw SQL chart widget", () =>
 		Effect.gen(function* () {
 			const result = yield* convertPersesDashboardToPortable(persesDashboard())
-			const widget = result.dashboard.widgets[0]!
+			const widget = result.dashboard.widgets[0]
 
 			assert.strictEqual(result.dashboard.name, "System Overview")
 			assert.strictEqual(result.dashboard.description, "Imported from Perses")
@@ -163,7 +163,7 @@ describe("convertPersesDashboardToPortable", () => {
 			})
 
 			const result = yield* convertPersesDashboardToPortable(input)
-			const widget = result.dashboard.widgets[0]!
+			const widget = result.dashboard.widgets[0]
 
 			assert.strictEqual(widget.visualization, "markdown")
 			assert.include(widget.display.markdown?.content ?? "", "PrometheusTimeSeriesQuery")
@@ -220,7 +220,7 @@ describe("convertPersesDashboardToPortable", () => {
 			})
 
 			const result = yield* convertPersesDashboardToPortable(input)
-			const widget = result.dashboard.widgets[0]!
+			const widget = result.dashboard.widgets[0]
 
 			assert.strictEqual(widget.visualization, "markdown")
 			assert.include(widget.display.markdown?.content ?? "", "needs Maple org scoping")
@@ -279,7 +279,7 @@ describe("convertPersesDashboardToPortable", () => {
 			})
 
 			const result = yield* convertPersesDashboardToPortable(input)
-			const widget = result.dashboard.widgets[0]!
+			const widget = result.dashboard.widgets[0]
 			if (widget.dataSource.kind !== "raw_sql") throw new Error("expected a raw_sql data source")
 			const params: Record<string, unknown> = widget.dataSource
 
@@ -312,7 +312,7 @@ describe("convertPersesDashboardToPortable", () => {
 				}),
 			)
 
-			const widget = result.dashboard.widgets[0]!
+			const widget = result.dashboard.widgets[0]
 			assert.strictEqual(widget.visualization, "markdown")
 			assert.strictEqual(widget.display.markdown?.content, "Hello from Perses")
 			assert.deepStrictEqual(widget.layout, { x: 0, y: 0, w: 6, h: 5, minW: 3, minH: 3 })
@@ -326,7 +326,7 @@ describe("convertPersesDashboardToPortable", () => {
 		return Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
 			const converted = yield* convertPersesDashboardToPortable(persesDashboard())
-			const created = yield* persistence.create(
+			const { document: created } = yield* persistence.create(
 				asOrgId("org_perses"),
 				asUserId("user_perses"),
 				converted.dashboard,
@@ -336,7 +336,7 @@ describe("convertPersesDashboardToPortable", () => {
 			assert.strictEqual(created.name, "System Overview")
 			assert.strictEqual(created.widgets.length, 1)
 			assert.strictEqual(listed.dashboards.length, 1)
-			assert.strictEqual(listed.dashboards[0]?.name, "System Overview")
+			assert.strictEqual(listed.dashboards[0]?.document.name, "System Overview")
 		}).pipe(Effect.provide(makePersistenceLayer(testDb)))
 	})
 })

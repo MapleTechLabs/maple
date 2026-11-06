@@ -156,8 +156,8 @@ const containerFilterConditions = (
 		const included = opts[include]
 		const excluded = opts[exclude]
 		return [
-			included?.length ? CH.inList(expr, included) : undefined,
-			excluded?.length ? CH.notInList(expr, excluded) : undefined,
+			included !== undefined && included.length > 0 ? CH.inList(expr, included) : undefined,
+			excluded !== undefined && excluded.length > 0 ? CH.notInList(expr, excluded) : undefined,
 		]
 	}),
 ]
@@ -424,7 +424,10 @@ export function containerGaugeTimeseriesQuery(opts: ContainerGaugeTimeseriesOpts
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
 			attributeValue: CH.lit(""),
-			avgValue: opts.divideBy ? CH.avg($.Value).div(opts.divideBy) : CH.avg($.Value),
+			avgValue:
+				opts.divideBy !== undefined && opts.divideBy !== 0
+					? CH.avg($.Value).div(opts.divideBy)
+					: CH.avg($.Value),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -466,17 +469,19 @@ export function containerSumTimeseriesQuery(opts: ContainerSumTimeseriesOpts) {
 	return from(MetricsSum)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
-			attributeValue: labels?.length
-				? CH.multiIf(
-						Arr.map(
-							labels,
-							([metricName, label]) => [$.MetricName.eq(metricName), CH.lit(label)] as const,
-						) as Array<[CH.Condition, CH.Expr<string>]>,
-						CH.lit(""),
-					)
-				: opts.groupByAttributeKey
-					? $.Attributes.get(opts.groupByAttributeKey)
-					: CH.lit(""),
+			attributeValue:
+				labels !== undefined && labels.length > 0
+					? CH.multiIf(
+							Arr.map(
+								labels,
+								([metricName, label]) =>
+									[$.MetricName.eq(metricName), CH.lit(label)] as const,
+							),
+							CH.lit(""),
+						)
+					: opts.groupByAttributeKey
+						? $.Attributes.get(opts.groupByAttributeKey)
+						: CH.lit(""),
 			sumValue: opts.average ? CH.avg($.Value) : CH.sum($.Value),
 		}))
 		.where(($) => [

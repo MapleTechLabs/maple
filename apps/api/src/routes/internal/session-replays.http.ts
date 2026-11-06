@@ -63,9 +63,13 @@ export const HttpSessionReplaysInternalLive = HttpApiBuilder.group(
 							)
 						// The percentile branches ride the same {name, count} shape as the
 						// facets, with the quantile in `count` — read them back by label.
+						const countOf = (predicate: (row: (typeof rows)[number]) => boolean) =>
+							Option.match(Arr.findFirst(rows, predicate), {
+								onNone: () => 0,
+								onSome: (row) => row.count,
+							})
 						const stat = (name: string) =>
-							rows.find((row) => row.facetType === "durationStat" && row.name === name)
-								?.count ?? 0
+							countOf((row) => row.facetType === "durationStat" && row.name === name)
 						return new ReplaysFacetsResponse({
 							services: pick("service"),
 							browsers: pick("browser"),
@@ -74,9 +78,9 @@ export const HttpSessionReplaysInternalLive = HttpApiBuilder.group(
 							groups: pick("group"),
 							pages: pick("page"),
 							tags: pick("tag"),
-							errorCount: rows.find((row) => row.facetType === "error")?.count ?? 0,
-							totalSessions: rows.find((row) => row.facetType === "total")?.count ?? 0,
-							liveSessions: rows.find((row) => row.facetType === "live")?.count ?? 0,
+							errorCount: countOf((row) => row.facetType === "error"),
+							totalSessions: countOf((row) => row.facetType === "total"),
+							liveSessions: countOf((row) => row.facetType === "live"),
 							durationBuckets: pick("durationBucket"),
 							durationP50: stat("p50"),
 							durationP95: stat("p95"),

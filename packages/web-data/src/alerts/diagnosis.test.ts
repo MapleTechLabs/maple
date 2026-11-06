@@ -1,5 +1,5 @@
 import { AlertRuleDocument } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Array as Arr, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import type { AlertRuleStateRow } from "../collections/alerts"
 import { buildDiagnosis, diagnosisVerdict, intervalBeforeSlowdown, type DiagnosisInput } from "./diagnosis"
@@ -87,7 +87,8 @@ const diagnose = (overrides: Partial<DiagnosisInput> = {}) =>
 		...overrides,
 	})
 
-const stage = (stages: ReturnType<typeof buildDiagnosis>, id: string) => stages.find((s) => s.id === id)!
+const stage = (stages: ReturnType<typeof buildDiagnosis>, id: string) =>
+	Option.getOrThrow(Arr.findFirst(stages, (s) => s.id === id))
 
 describe("buildDiagnosis", () => {
 	it("passes all stages for a healthy delivering rule", () => {
@@ -185,12 +186,18 @@ describe("buildDiagnosis", () => {
 			diagnose({
 				rule: makeRule({
 					signalType: "raw_query",
-					rawQuerySql: "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+					rawQuerySql:
+						"SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
 					rawQueryReducer: "identity",
 					windowMinutes: 30,
 					evaluationIntervalMinutes: 5,
 				}),
-				states: [makeState({ last_error: "Memory limit exceeded", last_error_kind: "query_too_much_memory" })],
+				states: [
+					makeState({
+						last_error: "Memory limit exceeded",
+						last_error_kind: "query_too_much_memory",
+					}),
+				],
 			}),
 			"query",
 		)

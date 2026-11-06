@@ -15,7 +15,7 @@ import { spawnSync } from "node:child_process"
 import { mkdirSync, writeFileSync, appendFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { DateTime, Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Config, DateTime, Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { Transcript } from "./chat-turn"
 import { passAt1, passAtK, passHatK, type Estimate, type TaskTally } from "./stats"
 import type { Grade } from "./targets"
@@ -86,7 +86,7 @@ export interface RunSummary {
 const APP_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..")
 
 const git = (args: ReadonlyArray<string>): string =>
-	spawnSync("git", args, { cwd: APP_ROOT, encoding: "utf8" }).stdout?.trim() ?? ""
+	Str.trim(spawnSync("git", args, { cwd: APP_ROOT, encoding: "utf8" }).stdout ?? "")
 
 const slug = (value: string) => Str.replace(/[^a-zA-Z0-9.-]+/g, "_")(value)
 
@@ -136,9 +136,10 @@ const summarize = <T extends EvalTask>(
 		),
 		(tally) => ({
 			...tally,
-			example:
-				records.find((record) => record.task === tally.task && !record.grade.pass)?.grade
-					.explanation ?? "",
+			example: Option.match(
+				Arr.findFirst(records, (record) => record.task === tally.task && !record.grade.pass),
+				{ onNone: () => "", onSome: (record) => record.grade.explanation },
+			),
 		}),
 	)
 	return {
@@ -281,25 +282,36 @@ export const runSuite = <T extends EvalTask>(options: RunOptions<T>): Effect.Eff
 		return summary
 	})
 
-const intFromEnv = (name: string, fallback: number): number => {
-	const value = Number(process.env[name])
-	return Number.isSafeInteger(value) && value > 0 ? value : fallback
-}
+/** A positive integer setting, or `fallback` when it is unset or not one. */
+const positiveInt = (name: string, fallback: number) =>
+	Config.Int(name).pipe(
+		Config.orElse(() => Config.succeed(fallback)),
+		Config.map((value) => (value > 0 ? value : fallback)),
+	)
+
+const RunEnv = Config.all({
+	k: positiveInt("EVAL_K", 1),
+	concurrency: positiveInt("EVAL_CONCURRENCY", 4),
+	tier: Config.option(Config.Literals(["regression", "capability"], "EVAL_TIER")).pipe(
+		Config.orElse(() => Config.succeed(Option.none<"regression" | "capability">())),
+	),
+	tasks: Config.String("EVAL_TASKS").pipe(Config.orElse(() => Config.succeed(""))),
+})
 
 /** Run settings from the environment: `EVAL_K`, `EVAL_CONCURRENCY`, `EVAL_TIER`, `EVAL_TASKS`. */
-export const runSettings = () => ({
-	k: intFromEnv("EVAL_K", 1),
-	concurrency: intFromEnv("EVAL_CONCURRENCY", 4),
-	tier:
-		process.env.EVAL_TIER === "regression" || process.env.EVAL_TIER === "capability"
-			? process.env.EVAL_TIER
-			: undefined,
-	/** Comma-separated task ids or `tag:<tag>` selectors. */
-	tasks: Arr.filter(
-		Arr.map(Str.split(",")(process.env.EVAL_TASKS ?? ""), (entry) => Str.trim(entry)),
-		Boolean,
-	),
-})
+export const runSettings = () => {
+	const env = Effect.runSync(RunEnv)
+	return {
+		k: env.k,
+		concurrency: env.concurrency,
+		tier: Option.getOrUndefined(env.tier),
+		/** Comma-separated task ids or `tag:<tag>` selectors. */
+		tasks: Arr.filter(
+			Arr.map(Str.split(",")(env.tasks), (entry) => Str.trim(entry)),
+			Boolean,
+		),
+	}
+}
 
 export const selectTasks = <T extends EvalTask>(
 	tasks: ReadonlyArray<T>,

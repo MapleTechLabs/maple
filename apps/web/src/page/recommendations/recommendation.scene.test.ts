@@ -20,7 +20,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 
 const rec = (status: "open" | "dismissed" = "open") =>
-	Schema.decodeUnknownSync(V2Recommendation)({
+	Schema.decodeSync(V2Recommendation)({
 		id: encodePublicId(PublicIdPrefixes.recommendation, UUID),
 		object: "recommendation",
 		number: 3,

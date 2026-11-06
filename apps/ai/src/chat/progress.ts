@@ -73,7 +73,7 @@ const ArgText = Schema.Union([Scalar, Schema.NonEmptyArray(Scalar)]).pipe(
 const decodeArg = Schema.decodeUnknownOption(ArgText)
 
 const clamp = (value: string): string => {
-	const line = Str.trim(Str.split("\n")(value)[0]!)
+	const line = Str.trim(Str.split("\n")(value)[0])
 	return line.length > ARG_MAX ? `${Str.trimEnd(Str.slice(0, ARG_MAX - 1)(line))}…` : line
 }
 
@@ -91,7 +91,7 @@ const word = (raw: string, first: boolean): string =>
 	ACRONYMS.has(raw)
 		? Str.toUpperCase(raw)
 		: first
-			? `${Str.toUpperCase(raw.charAt(0))}${Str.slice(1)(raw)}`
+			? `${Str.toUpperCase(Str.slice(0, 1)(raw))}${Str.slice(1)(raw)}`
 			: raw
 
 /**

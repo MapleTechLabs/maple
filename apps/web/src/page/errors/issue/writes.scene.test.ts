@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { ErrorIssueEventsResponse, ErrorIssueId } from "@maple/domain/http"
-import { Result, Schema, Array as Arr } from "effect"
+import { Result, Schema, Array as Arr, Option } from "effect"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
@@ -50,6 +50,7 @@ describe("error issue writes", () => {
 		expect(names(done.commands)).toEqual(
 			expect.arrayContaining([
 				"FetchErrorIssueDetail",
+				"FetchErrorIssueAffectedUsers",
 				"FetchErrorIssueEvents",
 				"FetchErrorIssueEscalations",
 				"FetchErrorIssuePullRequests",
@@ -88,7 +89,11 @@ describe("error issue writes", () => {
 			}),
 		)
 		const confirmed = pageUpdate(routed.model, Message.ClickedConfirmSeverity())
-		expect(confirmed.commands?.find(({ name }) => name === "RunErrorIssueWrite")).toMatchObject({
+		expect(
+			Option.getOrUndefined(
+				Arr.findFirst(confirmed.commands ?? [], ({ name }) => name === "RunErrorIssueWrite"),
+			),
+		).toMatchObject({
 			args: { write: { _tag: "SetSeverity", severity: "high" } },
 		})
 		expect(confirmed.model.busy).toEqual(["claim", "severity"])

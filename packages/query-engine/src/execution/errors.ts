@@ -16,7 +16,8 @@ import {
 } from "@maple/domain/http"
 import type { WarehouseDriverError, WarehouseDriverFailureReason } from "./driver-error"
 import { detectQuotaSetting } from "../profiles"
-import { String as Str } from "effect"
+import { String as Str, Option } from "effect"
+import { indexOfFrom } from "@maple/strings"
 
 /**
  * The OTel database conventions' failure attributes for a warehouse span.
@@ -53,13 +54,13 @@ const redactInvalidTokens = (message: string): string => {
 	let out = ""
 	let cursor = 0
 	for (;;) {
-		const at = lower.indexOf(INVALID_TOKEN_MARKER, cursor)
+		const at = indexOfFrom(lower, INVALID_TOKEN_MARKER, cursor)
 		if (at === -1) break
 		let i = at + INVALID_TOKEN_MARKER.length
-		while (i < message.length && /\s/.test(message.charAt(i))) i++
+		while (i < message.length && Option.exists(Str.charAt(message, i), (ch) => /\s/.test(ch))) i++
 		if (message[i] === "b") i++
 		const quote = message[i]
-		const close = quote === "'" || quote === '"' ? message.indexOf(quote, i + 1) : -1
+		const close = quote === "'" || quote === '"' ? indexOfFrom(message, quote, i + 1) : -1
 		if (close === -1) {
 			out += Str.slice(cursor, i)(message)
 			cursor = i
@@ -86,8 +87,8 @@ const HTML_TAG =
 export const cleanErrorMessage = (raw: string): string => {
 	const redacted = redactWarehouseCredentials(raw)
 	let cleaned = redacted
-	const htmlIndex = cleaned.search(/<(!doctype|html|head|body|center|h1|hr|title)\b/i)
-	if (htmlIndex >= 0) cleaned = Str.slice(0, htmlIndex)(cleaned)
+	const htmlIndex = Str.search(cleaned, /<(!doctype|html|head|body|center|h1|hr|title)\b/i)
+	if (Option.isSome(htmlIndex)) cleaned = Str.slice(0, htmlIndex.value)(cleaned)
 	cleaned = Str.trim(
 		Str.replace(
 			/\s+/g,
@@ -99,10 +100,10 @@ export const cleanErrorMessage = (raw: string): string => {
 }
 
 const extractUpstreamStatus = (message: string): number | undefined => {
-	const match = message.match(/(?:status|HTTP status|response status code)[:\s]+(\d{3})/i)
-	if (match) return Number(match[1])
-	const titleMatch = message.match(/\b(\d{3})\s+(?:error|service temporarily unavailable)\b/i)
-	if (titleMatch) return Number(titleMatch[1])
+	const match = Str.match(/(?:status|HTTP status|response status code)[:\s]+(\d{3})/i)(message)
+	if (Option.isSome(match)) return Number(match.value[1])
+	const titleMatch = Str.match(/\b(\d{3})\s+(?:error|service temporarily unavailable)\b/i)(message)
+	if (Option.isSome(titleMatch)) return Number(titleMatch.value[1])
 	return undefined
 }
 
@@ -250,11 +251,16 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 			"CANNOT_PARSE_DATETIME",
 			"NOT_AN_AGGREGATE",
 			"UNKNOWN_AGGREGATE_FUNCTION",
+			// A range join (`ON abs(dateDiff(...)) < 1500`), a bad timezone or format argument.
+			"INVALID_JOIN_ON_EXPRESSION",
+			"BAD_ARGUMENTS",
 		]),
+		// Some Tinybird messages name no exception type at all, so they match by wording:
+		// a nested aggregate (`median(median(x))`) and an IP function fed an empty string.
 		// `modifiers FINAL`: `FROM t FINAL` on Tinybird, whose tenant filter makes every table a
 		// subquery. Matched by message: its UNSUPPORTED_METHOD type also covers server-side limits.
 		pattern:
-			/There is no supertype|Illegal type .* of argument|Number of arguments doesn't match|Syntax error|Array does not start with '\['|Unknown (?:aggregate )?function|is not under aggregate function|modifiers FINAL are not supported/i,
+			/There is no supertype|Illegal type .* of argument|Number of arguments doesn't match|Syntax error|Array does not start with '\['|Unknown (?:aggregate )?function|is not under aggregate function|modifiers FINAL are not supported|inside another aggregate function|Neither IPv4 nor IPv6 address/i,
 		make: (base) => new WarehouseInvalidSqlError(base),
 	},
 	{
@@ -332,11 +338,15 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 	},
 ]
 
-/** `[Error] Unknown expression identifier `x` ... FORMAT JSON. (UNKNOWN_IDENTIFIER)` */
-const TRAILING_EXCEPTION_TYPE = /\(([A-Z][A-Z0-9_]{2,})\)\s*$/
+/**
+ * `[Error] ... FORMAT JSON. (UNKNOWN_IDENTIFIER)`, which Tinybird may follow with
+ * `(version 25.8.40.3 (official build))` and `(query_id=...)`. The type is the
+ * last upper-case group ending the message or followed by one of those two.
+ */
+const EXCEPTION_TYPE = /\(([A-Z][A-Z0-9_]{2,})\)(?=\s*(?:$|\(version |\(query_id=))/g
 
 const exceptionTypeFromMessage = (message: string): string | undefined =>
-	TRAILING_EXCEPTION_TYPE.exec(message)?.[1]
+	Array.from(Str.matchAll(EXCEPTION_TYPE)(message)).at(-1)?.[1]
 
 export const toWarehouseQueryError = (pipe: string, error: unknown) => {
 	const rawMessage = unknownToMessage(error, "Warehouse query failed")
@@ -364,6 +374,9 @@ export const mapWarehouseError = (
 	const { code, type } = error
 	const redacted = redactWarehouseCredentials(rawMessage)
 	const message = cleanErrorMessage(rawMessage)
+	// Tinybird names the exception only in its text. Read it for caller SQL alone, so the
+	// classification of Maple's own queries is unchanged. A named type outranks the HTTP status.
+	const ruleType = type ?? (authoredBy === "caller" ? exceptionTypeFromMessage(rawMessage) : undefined)
 	const base: ClassifiedBase = {
 		pipeName: pipe,
 		message,
@@ -371,7 +384,8 @@ export const mapWarehouseError = (
 		// leak it through Effect's cause/stack rendering even with a clean message.
 		cause: redacted === rawMessage ? error : redacted,
 		clickhouseCode: code,
-		clickhouseType: type,
+		// On the span as `error.type`, so a caller's ILLEGAL_AGGREGATION reads as itself.
+		clickhouseType: ruleType,
 	}
 
 	// The driver refused to run: an endpoint it cannot address, settings it will
@@ -385,9 +399,6 @@ export const mapWarehouseError = (
 	}
 
 	const upstreamStatus = error.status ?? extractUpstreamStatus(rawMessage)
-	// Tinybird names the exception only in its text. Read it for caller SQL alone, so the
-	// classification of Maple's own queries is unchanged. A named type outranks the HTTP status.
-	const ruleType = type ?? (authoredBy === "caller" ? exceptionTypeFromMessage(rawMessage) : undefined)
 	const hasIdentity = code !== undefined || ruleType !== undefined
 	for (const rule of CLASSIFICATION_RULES) {
 		if (rule.authoredBy !== undefined && rule.authoredBy !== authoredBy) continue

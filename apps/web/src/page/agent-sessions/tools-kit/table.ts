@@ -7,7 +7,7 @@ import { meter } from "@maple/views/ui/meter"
 import { pressable } from "@maple/views/ui/pressable"
 import { selectableRow } from "@maple/views/ui/selectable-row"
 import { sortButton } from "@maple/views/ui/table"
-import { String as Str } from "effect"
+import { String as Str, Array as Arr, Ordering } from "effect"
 
 // The table chrome the tools pages share: open,
 // mono, uppercase heads and 38px rows, with client-side column sorting.
@@ -27,12 +27,12 @@ const isNumericString = (value: SortValue): value is string =>
 	typeof value === "string" && Str.trim(value) !== "" && Number.isFinite(Number(value))
 
 /** `compareValues`: numeric when both sides are numbers (or numeric strings), else text. */
-const compareValues = (av: SortValue, bv: SortValue, dir: SortDir): number => {
+const compareValues = (av: SortValue, bv: SortValue, dir: SortDir): Ordering.Ordering => {
 	const numeric =
 		(typeof av === "number" && typeof bv === "number") || (isNumericString(av) && isNumericString(bv))
 	if (numeric) {
 		const cmp = Number(av) < Number(bv) ? -1 : Number(av) > Number(bv) ? 1 : 0
-		return dir === "asc" ? cmp : -cmp
+		return dir === "asc" ? cmp : Ordering.reverse(cmp)
 	}
 	return dir === "asc"
 		? Str.localeCompare(String(bv))(String(av))
@@ -45,7 +45,9 @@ export const sortRows = <Row>(
 	read: (row: Row, key: string) => SortValue,
 ): ReadonlyArray<Row> => {
 	const { key } = sort
-	return key === null ? rows : rows.toSorted((a, b) => compareValues(read(a, key), read(b, key), sort.dir))
+	return key === null
+		? rows
+		: Arr.sort(rows, (a: Row, b: Row) => compareValues(read(a, key), read(b, key), sort.dir))
 }
 
 /** `ToolTable`: scrolls sideways once the fixed lanes outgrow the panel. */
