@@ -45,6 +45,7 @@ const PRESET_SIGNALS: Record<string, SignalDisplay> = {
 	apdex: { label: "Apdex", unit: "apdex" },
 	throughput: { label: "Throughput", unit: "rpm" },
 	uptime: { label: "Uptime check", unit: "plain" },
+	slo_burn_rate: { label: "SLO burn rate", unit: "plain" },
 } satisfies Record<string, SignalDisplay>
 
 /**

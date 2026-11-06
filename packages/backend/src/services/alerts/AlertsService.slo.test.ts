@@ -5,7 +5,13 @@ import { compiledQueryOf } from "@maple/query-engine/execution"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { AlertDestinationId } from "@maple/domain/primitives"
 import { AlertsService } from "./AlertsService"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { SlosService } from "@maple/backend/services/slos/SlosService"
@@ -24,6 +30,8 @@ afterEach(() => cleanupTestDbs(trackedDbs))
 /** Bad events per 1000 in every minute the burn read sees; mutated as a test moves on. */
 interface Traffic {
 	badPerMille: number
+	/** No spans at all: the service is down or ingest stalled. */
+	silent?: boolean
 }
 
 /**
@@ -37,7 +45,7 @@ const sloWarehouse = (traffic: Traffic) =>
 				const nowMs = yield* Clock.currentTimeMillis
 				const minute = Math.floor(nowMs / 60_000) * 60_000
 				const rows =
-					options?.context === "sloBurnWindows"
+					options?.context === "sloBurnWindows" && traffic.silent !== true
 						? Arr.makeBy(400, (index) => ({
 								bucket: formatWarehouseDateTime(minute - index * 60_000),
 								total: 1000,
@@ -101,6 +109,41 @@ describe("AlertsService SLO burn-rate rules", () => {
 			yield* alerts.runSchedulerTick()
 			const resolved = (yield* alerts.listIncidents(orgId)).incidents
 			assert.strictEqual(resolved[0]?.status, "resolved")
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("a page stays open while the service sends no spans at all", () => {
+		const traffic: Traffic = { badPerMille: 20 }
+		const { layer } = harness(traffic)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			yield* createSlo(undefined)
+			yield* alerts.runSchedulerTick()
+			assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.status, "open")
+
+			// An outage zeroes every window: that is no data, not a recovery.
+			traffic.silent = true
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+			const held = (yield* alerts.listIncidents(orgId)).incidents
+			assert.strictEqual(held[0]?.status, "open")
+			assert.strictEqual(held[0]?.severity, "critical")
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("an edit brings back a rule whose row is gone", () => {
+		const { layer, testDb } = harness({ badPerMille: 0 })
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const slos = yield* SlosService
+			const slo = yield* createSlo(undefined)
+			yield* Effect.promise(() =>
+				executeSql(testDb, "delete from alert_rules where id = $1", [slo.alertRuleId]),
+			)
+			const updated = yield* slos.update(orgId, slo.id, { targetPercent: 99.5, updatedBy: userId })
+			assert.strictEqual(updated.alertRuleId, slo.alertRuleId)
+			assert.isTrue(updated.alerting.enabled)
 		}).pipe(Effect.provide(layer))
 	})
 
