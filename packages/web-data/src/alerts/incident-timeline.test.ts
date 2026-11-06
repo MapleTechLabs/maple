@@ -147,6 +147,10 @@ describe("buildIncidentTimeline", () => {
 		expect(silenced?.title).toBe("Page to #alerts held back by a silence")
 		expect(silenced?.tone).toBe("neutral")
 		expect(silenced?.pending).toBe(false)
+		const [, reminder] = build(makeIncident(), [
+			makeDelivery({ status: "silenced", eventType: "renotify" }),
+		])
+		expect(reminder?.title).toBe("Reminder to #alerts held back by a silence")
 	})
 
 	it("ends a held incident on the hold instead of a breach", () => {

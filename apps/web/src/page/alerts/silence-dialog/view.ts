@@ -2,7 +2,7 @@ import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "@maple/views/ui/eyebrow"
-import { fieldDescription, fieldLabel, type FieldIds, input } from "@maple/views/ui/field"
+import { fieldDescription, fieldError, fieldLabel, type FieldIds, input } from "@maple/views/ui/field"
 import { formDialog } from "@maple/views/ui/form-dialog"
 import type { FieldState } from "@maple/views/ui/input"
 import { panel } from "@maple/views/ui/panel"
@@ -42,8 +42,8 @@ const submitLabel = (model: Model): string =>
 						`Silence until ${formatSilenceTime(endMs, model.nowMs, model.timeZone)}`,
 				})
 
-const stateOf = (value: string): FieldState => ({
-	isInvalid: false,
+const stateOf = (value: string, isInvalid = false): FieldState => ({
+	isInvalid,
 	isDirty: false,
 	isFilled: value !== "",
 	isFocused: false,
@@ -67,16 +67,17 @@ const textField = (
 		onInput: (value: string) => Message
 		type?: string
 		description?: string
+		error?: Option.Option<string>
 	}>,
 ): Html => {
 	const fieldIds = ids(options.name, options.description !== undefined)
+	const error = options.error ?? Option.none()
+	const state = stateOf(options.value, Option.isSome(error))
 	return vstack(h, { gap: "1.5" }, [
-		fieldLabel(h, { ids: fieldIds, className: "text-xs", state: stateOf(options.value) }, [
-			options.label,
-		]),
+		fieldLabel(h, { ids: fieldIds, className: "text-xs", state }, [options.label]),
 		input(h, {
 			ids: fieldIds,
-			state: stateOf(options.value),
+			state,
 			attributes: [
 				h.Value(options.value),
 				h.Placeholder(options.placeholder),
@@ -87,7 +88,12 @@ const textField = (
 		}),
 		...(options.description === undefined
 			? []
-			: [fieldDescription(h, { ids: fieldIds, state: stateOf(options.value) }, [options.description])]),
+			: [fieldDescription(h, { ids: fieldIds, state }, [options.description])]),
+		...Option.toArray(
+			Option.map(error, (message) =>
+				fieldError(h, { ids: fieldIds, state, attributes: [h.Role("alert")] }, [message]),
+			),
+		),
 	])
 }
 
@@ -150,12 +156,8 @@ const durationSection = (h: H, model: Model): Html =>
 						type: "datetime-local",
 						onInput: (value) => Message.ChangedUntil({ value }),
 						description: `In ${model.timeZone}. At most 30 days from now.`,
+						error: untilError(model),
 					}),
-					...Option.toArray(
-						Option.map(untilError(model), (message) =>
-							typography(h, { size: "xs", tone: "destructive", as: "p" }, [message]),
-						),
-					),
 				]
 			: []),
 	])

@@ -121,13 +121,14 @@ describe("saving", () => {
 		expect(saved.outMessage).toEqual(OutMessage.CreatedSilence({ silence: SILENCE }))
 	})
 
-	it("keeps a reopened form open when an older save lands", () => {
+	it("leaves a reopened form alone when an older save lands", () => {
 		const model = saving()
 		const saved = update(
 			model,
 			Message.CompletedSave({ openCount: model.openCount - 1, result: Result.succeed(SILENCE) }),
 		)
 		expect(saved.model.dialog.isOpen).toBe(true)
+		expect(saved.model.isSaving).toBe(true)
 		expect(saved.outMessage).toEqual(OutMessage.CreatedSilence({ silence: SILENCE }))
 	})
 

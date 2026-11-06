@@ -386,6 +386,7 @@ const withIncidents = (
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => followData({ ...model, nowMs: minuteOf(nowMs), clockMs: nowMs }, context),
+		TickedClock: ({ nowMs }) => ({ model: { ...model, clockMs: nowMs } }),
 		UpdatedIncidents: ({ orgId, rows }) => withIncidents(model, context, orgId, rows),
 		UpdatedRules: ({ orgId, rows }) => withRuleRows(model, context, orgId, { rules: rows }),
 		UpdatedRuleStates: ({ orgId, rows }) => withRuleRows(model, context, orgId, { states: rows }),

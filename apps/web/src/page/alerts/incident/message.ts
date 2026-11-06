@@ -26,6 +26,8 @@ const rows = <S extends Schema.Top>(row: S) => ({ orgId: Schema.String, rows: Sc
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
+	/** The minute clock while the incident is open, so a silence badge ends on time. */
+	TickedClock: { nowMs: Schema.Number },
 	UpdatedIncidents: rows(AlertIncidentRowSchema),
 	UpdatedRules: rows(AlertRuleRowSchema),
 	UpdatedRuleStates: rows(AlertRuleStateRowSchema),

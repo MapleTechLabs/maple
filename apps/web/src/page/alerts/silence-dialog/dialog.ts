@@ -264,15 +264,15 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedSave: ({ openCount, result }) =>
 			Result.match(result, {
 				onSuccess: (silence) => {
-					const settled = { ...model, isSaving: false }
+					// A result from an earlier open still refreshes the list, but leaves this form alone.
 					const closed =
 						openCount === model.openCount
-							? liftDialog(settled, Dialog.close(model.dialog))
-							: { model: settled }
+							? liftDialog({ ...model, isSaving: false }, Dialog.close(model.dialog))
+							: { model }
 					return { ...closed, outMessage: OutMessage.CreatedSilence({ silence }) }
 				},
 				onFailure: (failure) => ({
-					model: { ...model, isSaving: false },
+					model: openCount === model.openCount ? { ...model, isSaving: false } : model,
 					outMessage: OutMessage.RequestedToast({
 						type: "error",
 						title: "Couldn't silence alerts",

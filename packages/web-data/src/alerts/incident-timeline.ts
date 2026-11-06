@@ -144,7 +144,9 @@ function deliveryEntry(
 	const title = silenced
 		? event.eventType === "resolve"
 			? `All-clear to ${name} held back by a silence`
-			: `Page to ${name} held back by a silence`
+			: event.eventType === "renotify"
+				? `Reminder to ${name} held back by a silence`
+				: `Page to ${name} held back by a silence`
 		: sending
 			? `Sending to ${name}`
 			: event.eventType === "resolve"
