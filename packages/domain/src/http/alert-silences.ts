@@ -142,6 +142,8 @@ export interface AlertSilenceTarget {
 	readonly groupBy: AlertGroupBy | null
 	/** The incident's group; null or `__total__` for an ungrouped rule. */
 	readonly groupKey: string | null
+	/** Labels recorded on the incident itself; they win over scope and group key. */
+	readonly labels?: { readonly service?: string; readonly environment?: string } | null
 }
 
 const groupedBy = (target: AlertSilenceTarget, dimension: string): string | null =>
@@ -154,11 +156,13 @@ const groupedBy = (target: AlertSilenceTarget, dimension: string): string | null
 		: null
 
 /**
- * The services an incident covers: its group when the rule groups by service
+ * The services an incident covers: its service label, else its group when the rule groups by service
  * (or keys a multi-service rule by service), else the rule's scope. Empty means
  * every service, which no service list covers.
  */
 const scopedServices = (target: AlertSilenceTarget): ReadonlyArray<string> => {
+	const label = target.labels?.service
+	if (label !== undefined) return [label]
 	const group = groupedBy(target, "service.name")
 	if (group !== null) return [group]
 	if (
@@ -171,6 +175,8 @@ const scopedServices = (target: AlertSilenceTarget): ReadonlyArray<string> => {
 }
 
 const scopedEnvironments = (target: AlertSilenceTarget): ReadonlyArray<string> => {
+	const label = target.labels?.environment
+	if (label !== undefined) return [label]
 	const group = groupedBy(target, "deployment.environment")
 	return group !== null ? [group] : target.environments
 }
