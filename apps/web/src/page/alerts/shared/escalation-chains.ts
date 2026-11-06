@@ -4,7 +4,7 @@ import type {
 	V2EscalationChain,
 	V2EscalationChainCreateParams,
 } from "@maple/domain/http/v2"
-import { formatAlertTime } from "@maple/web-data/alerts/form-utils"
+import { formatAlertTimeNear } from "@maple/web-data/alerts/form-utils"
 import { Array as Arr, Effect } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
@@ -127,6 +127,7 @@ export const runView = (
 	run: V2AlertIncidentEscalation,
 	isAcknowledged: boolean,
 	timeZone: string,
+	nowMs: number,
 ): RunView => {
 	const position = `Step ${run.step} of ${run.step_count}${run.pass_count > 1 ? `, pass ${run.pass} of ${run.pass_count}` : ""}`
 	if (run.status === "resolved" || run.status === "exhausted" || run.status === "superseded")
@@ -143,6 +144,6 @@ export const runView = (
 		detail:
 			run.next_step_at === null
 				? position
-				: `${position}, next page at ${formatAlertTime(run.next_step_at, timeZone)}`,
+				: `${position}, next page at ${formatAlertTimeNear(run.next_step_at, timeZone, nowMs)}`,
 	}
 }

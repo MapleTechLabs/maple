@@ -17,7 +17,8 @@ import type { Tone } from "@maple/ui/lib/tone"
 import { isoMs } from "../shared/time"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
+import { AsyncData } from "foldkit"
 
 // `IncidentRail`: the incident detail's side rail.
 
@@ -290,8 +291,9 @@ export const escalationSection = <M>(
 	run: V2AlertIncidentEscalation,
 	incident: AlertIncidentDocument,
 	timeZone: string,
+	now: number,
 ): Html => {
-	const view = runView(run, incident.acknowledgedAt !== null, timeZone)
+	const view = runView(run, incident.acknowledgedAt !== null, timeZone, now)
 	return railSection(
 		h,
 		["Escalation"],
@@ -319,6 +321,29 @@ export const escalationSection = <M>(
 	)
 }
 
+export type EscalationData = AsyncData.AsyncData<V2AlertIncidentEscalation | null, unknown>
+
+const escalationNote = <M>(h: HtmlBuilder<M>, text: string): Html =>
+	railSection(h, ["Escalation"], null, [typography(h, { size: "xs", tone: "muted", as: "p" }, [text])])
+
+/** The run once read, a note while it loads or after it failed, nothing for an incident without one. */
+const escalationBlock = <M>(
+	h: HtmlBuilder<M>,
+	escalation: EscalationData,
+	incident: AlertIncidentDocument,
+	timeZone: string,
+	now: number,
+): ReadonlyArray<Html> =>
+	Option.match(AsyncData.getData(escalation), {
+		onSome: (run) => (run === null ? [] : [escalationSection(h, run, incident, timeZone, now)]),
+		onNone: () => [
+			escalationNote(
+				h,
+				AsyncData.isFailure(escalation) ? "Couldn't load the escalation." : "Loading the escalation…",
+			),
+		],
+	})
+
 export const incidentRail = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
@@ -328,7 +353,7 @@ export const incidentRail = <M>(
 		ruleIncidents: ReadonlyArray<AlertIncidentDocument>
 		window: Readonly<{ start: number; end: number }>
 		now: number
-		escalation: V2AlertIncidentEscalation | null
+		escalation: EscalationData
 		timeZone: string
 	}>,
 ): Html => {
@@ -337,9 +362,7 @@ export const incidentRail = <M>(
 	return h.aside(
 		[h.Class("space-y-5 lg:border-l lg:pl-6")],
 		[
-			...(options.escalation === null
-				? []
-				: [escalationSection(h, options.escalation, incident, options.timeZone)]),
+			...escalationBlock(h, options.escalation, incident, options.timeZone, options.now),
 			...(isGrouped && rule !== null
 				? [
 						groupsSection(

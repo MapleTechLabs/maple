@@ -4,6 +4,7 @@ import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
 import { runOf } from "../shared/escalation-test-fixtures"
 import { incidentRow, INCIDENT_ID, NOW, ORG, ruleRow } from "../shared/test-rows"
@@ -64,6 +65,44 @@ describe("alert incident, escalation", () => {
 			expectView(text("Checkout on-call")).toExist(),
 			expectView(text(/^Step 2 of 3, pass 1 of 3, next page at /u)).toExist(),
 			expectView(text("1 step paged so far")).toExist(),
+		)
+	})
+
+	test("a page due later today reads as a time, one due tomorrow carries its date", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withRun(synced(), runOf("active", { nextStepAt: "2026-10-01T23:30:00.000Z" }))),
+			themeResolved(),
+			expectView(text(/next page at 11:30\s?PM$/u)).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withRun(synced(), runOf("active", { nextStepAt: "2026-10-02T09:30:00.000Z" }))),
+			themeResolved(),
+			expectView(text(/next page at Oct 2, 2026, 09:30\s?AM$/u)).toExist(),
+		)
+	})
+
+	test("a failed read keeps the section and says so; a pending one says it is loading", () => {
+		const failed = pageUpdate(
+			synced(),
+			Message.CompletedFetchEscalation({
+				key: synced().escalation.key ?? "",
+				result: Result.fail(toLoadFailure("upstream down")),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			themeResolved(),
+			expectView(role("heading", { name: "Escalation" })).toExist(),
+			expectView(text("Couldn't load the escalation.")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(synced()),
+			themeResolved(),
+			expectView(text("Loading the escalation…")).toExist(),
 		)
 	})
 
