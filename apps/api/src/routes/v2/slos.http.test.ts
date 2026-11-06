@@ -1,0 +1,253 @@
+import { afterEach, describe, expect, it } from "@effect/vitest"
+import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema, Array as Arr } from "effect"
+import { HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
+import { OrgId, UserId } from "@maple/domain/http"
+import { MapleApiV2 } from "@maple/domain/http/v2"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { Env } from "@maple/backend/platform/Env"
+import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
+import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
+import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
+import { V2TransportErrorBoundaryLive } from "./error-envelope"
+import {
+	AlertsServiceStubLayer,
+	AllV2GroupLayersLive,
+	ApiV2RateLimiterAllowAllLayer,
+	ConfigResourceServiceStubsLayer,
+	Phase1ResourceStubsLayer,
+	PlanetScaleServiceStubsLayer,
+	TelemetryServiceStubsLayer,
+} from "./v2-test-support"
+
+/** `/v2/slos` over an embedded PGlite with the real service. */
+
+const createdDbs: TestDb[] = []
+afterEach(() => cleanupTestDbs(createdDbs))
+
+const ORG = Schema.decodeSync(OrgId)("org_slo_e2e")
+const USER = Schema.decodeSync(UserId)("user_slo_e2e")
+
+const testConfig = () =>
+	ConfigProvider.layer(
+		ConfigProvider.fromUnknown({
+			PORT: "3488",
+			MCP_PORT: "3489",
+			TINYBIRD_HOST: "https://api.tinybird.co",
+			TINYBIRD_TOKEN: "test-token",
+			MAPLE_AUTH_MODE: "self_hosted",
+			MAPLE_ROOT_PASSWORD: "test-root-password",
+			MAPLE_DEFAULT_ORG_ID: "default",
+			MAPLE_API_BASE_URL: "https://api.maple.test",
+			MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
+			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
+			INTERNAL_SERVICE_TOKEN: "test-internal-token",
+		}),
+	)
+
+const makeHarness = () => {
+	const testDb = createTestDb(createdDbs)
+	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
+	const servicesLive = Layer.mergeAll(
+		ApiKeysService.layer,
+		AuthService.layer,
+		DashboardPersistenceService.layer,
+		SharedDashboardService.layer,
+		MobileDevicesService.layer,
+		LiveActivitiesService.layer,
+	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
+
+	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
+		Layer.provide(AllV2GroupLayersLive),
+		Layer.provide(V2TransportErrorBoundaryLive),
+		Layer.provide(AlertsServiceStubLayer),
+		Layer.provide(ConfigResourceServiceStubsLayer),
+		Layer.provide(Phase1ResourceStubsLayer),
+		Layer.provide(PlanetScaleServiceStubsLayer),
+		Layer.provide(TelemetryServiceStubsLayer),
+		Layer.provideMerge(ApiAuthorizationV2Live),
+		Layer.provideMerge(AuditLogService.layerMemory),
+		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
+		Layer.provideMerge(servicesLive),
+	)
+	const { handler, dispose: disposeHandler } = HttpRouter.toWebHandler(routes, { disableLogger: true })
+	const runtime = ManagedRuntime.make(servicesLive)
+
+	const request = async (method: string, path: string, token: string, body?: unknown) => {
+		const response = await handler(
+			new Request(`http://maple.test${path}`, {
+				method,
+				headers: {
+					authorization: `Bearer ${token}`,
+					...(body !== undefined ? { "content-type": "application/json" } : undefined),
+				},
+				body: body === undefined ? undefined : JSON.stringify(body),
+			}),
+			Context.empty() as never,
+		)
+		const text = await response.text()
+		return { status: response.status, body: text.length === 0 ? null : JSON.parse(text) }
+	}
+
+	const bootstrapKey = (metadataJson?: Record<string, unknown>, scopes?: ReadonlyArray<string>) =>
+		runtime.runPromise(
+			Effect.gen(function* () {
+				const service = yield* ApiKeysService
+				return yield* service.create(ORG, USER, {
+					name: "slo-test",
+					metadataJson,
+					...(scopes === undefined ? undefined : { scopes: [...scopes] }),
+				})
+			}),
+		)
+
+	return {
+		request,
+		bootstrapKey,
+		dispose: async () => {
+			await disposeHandler()
+			await runtime.dispose()
+		},
+	}
+}
+
+const withHarness = (body: (harness: ReturnType<typeof makeHarness>) => Promise<void>) =>
+	Effect.runPromise(
+		Effect.acquireUseRelease(
+			Effect.sync(makeHarness),
+			(harness) => Effect.promise(() => body(harness)),
+			(harness) => Effect.promise(() => harness.dispose()),
+		),
+	)
+
+const MEMBER = { source: "maple_cli", roles: ["org:member"], deviceName: "laptop" }
+
+const checkoutSlo = {
+	name: "Checkout availability",
+	service_name: "checkout",
+	environments: ["production", "production"],
+	sli: { type: "availability" },
+	target_percent: 99.9,
+}
+
+describe("v2 slos", () => {
+	it("creates, lists, retrieves, updates and deletes an SLO", () =>
+		withHarness(async (harness) => {
+			const { secret: token } = await harness.bootstrapKey()
+
+			const created = await harness.request("POST", "/v2/slos", token, checkoutSlo)
+			expect(created.status).toBe(200)
+			expect(created.body.id).toMatch(/^slo_/)
+			// Environments are deduplicated; the window defaults to 30 days.
+			expect(created.body).toMatchObject({
+				object: "slo",
+				name: "Checkout availability",
+				description: null,
+				service_name: "checkout",
+				environments: ["production"],
+				sli: { type: "availability" },
+				target_percent: 99.9,
+				window_days: 30,
+			})
+			const id: string = created.body.id
+
+			const listed = await harness.request("GET", "/v2/slos", token)
+			expect(listed.body.data.map((slo: { readonly id: string }) => slo.id)).toEqual([id])
+
+			const updated = await harness.request("PATCH", `/v2/slos/${id}`, token, {
+				sli: { type: "latency", threshold_ms: 250 },
+				target_percent: 99,
+				window_days: 7,
+				environments: [],
+			})
+			expect(updated.status).toBe(200)
+			expect(updated.body).toMatchObject({
+				name: "Checkout availability",
+				sli: { type: "latency", threshold_ms: 250 },
+				target_percent: 99,
+				window_days: 7,
+				environments: [],
+			})
+
+			const retrieved = await harness.request("GET", `/v2/slos/${id}`, token)
+			expect(retrieved.body).toEqual(updated.body)
+
+			const removed = await harness.request("DELETE", `/v2/slos/${id}`, token)
+			expect(removed.body).toEqual({ id, object: "slo", deleted: true })
+			const missing = await harness.request("GET", `/v2/slos/${id}`, token)
+			expect(missing.status).toBe(404)
+			expect(missing.body.error.code).toBe("slo_not_found")
+		}))
+
+	it("rejects a target, window or latency threshold off the allowed values", () =>
+		withHarness(async (harness) => {
+			const { secret: token } = await harness.bootstrapKey()
+			const statuses = await Promise.all(
+				Arr.map(
+					[
+						{ ...checkoutSlo, target_percent: 100 },
+						{ ...checkoutSlo, target_percent: 10 },
+						{ ...checkoutSlo, window_days: 14 },
+						{ ...checkoutSlo, sli: { type: "latency", threshold_ms: 300 } },
+						{ ...checkoutSlo, service_name: "" },
+					],
+					async (body) => (await harness.request("POST", "/v2/slos", token, body)).status,
+				),
+			)
+			expect(statuses).toEqual([400, 400, 400, 400, 400])
+			expect((await harness.request("GET", "/v2/slos", token)).body.data).toEqual([])
+		}))
+
+	it("keeps names unique within the org", () =>
+		withHarness(async (harness) => {
+			const { secret: token } = await harness.bootstrapKey()
+			expect((await harness.request("POST", "/v2/slos", token, checkoutSlo)).status).toBe(200)
+			const other = await harness.request("POST", "/v2/slos", token, { ...checkoutSlo, name: "Other" })
+			expect(other.status).toBe(200)
+
+			const duplicate = await harness.request("POST", "/v2/slos", token, checkoutSlo)
+			expect(duplicate.status).toBe(400)
+			expect(duplicate.body.error.code).toBe("slo_invalid")
+			const rename = await harness.request("PATCH", `/v2/slos/${other.body.id}`, token, {
+				name: checkoutSlo.name,
+			})
+			expect(rename.status).toBe(400)
+		}))
+
+	it("lets members read but not write", () =>
+		withHarness(async (harness) => {
+			const { secret: admin } = await harness.bootstrapKey()
+			const { secret: member } = await harness.bootstrapKey(MEMBER)
+			const created = await harness.request("POST", "/v2/slos", admin, checkoutSlo)
+			const path = `/v2/slos/${created.body.id}`
+
+			expect((await harness.request("GET", "/v2/slos", member)).status).toBe(200)
+			expect((await harness.request("GET", path, member)).status).toBe(200)
+			const writes = [
+				await harness.request("POST", "/v2/slos", member, { ...checkoutSlo, name: "Mine" }),
+				await harness.request("PATCH", path, member, { target_percent: 99 }),
+				await harness.request("DELETE", path, member),
+			]
+			expect(Arr.map(writes, (response) => response.status)).toEqual([403, 403, 403])
+		}))
+
+	it("enforces the slos read and write scopes derived from the route", () =>
+		withHarness(async (harness) => {
+			const { secret: full } = await harness.bootstrapKey()
+			const created = await harness.request("POST", "/v2/slos", full, checkoutSlo)
+			const path = `/v2/slos/${created.body.id}`
+
+			const { secret: reader } = await harness.bootstrapKey(undefined, ["slos:read"])
+			expect((await harness.request("GET", path, reader)).status).toBe(200)
+			const denied = await harness.request("PATCH", path, reader, { target_percent: 99 })
+			expect([denied.status, denied.body.error.code]).toEqual([403, "insufficient_scope"])
+
+			const { secret: writer } = await harness.bootstrapKey(undefined, ["slos:write"])
+			expect((await harness.request("PATCH", path, writer, { target_percent: 99 })).status).toBe(200)
+		}))
+})
