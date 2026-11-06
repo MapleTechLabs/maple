@@ -106,6 +106,33 @@ export const alertSilenceStatusAt = (
 ): AlertSilenceStatus =>
 	nowMs < window.startsAtMs ? "scheduled" : nowMs < window.endsAtMs ? "active" : "ended"
 
+/** Group-by spellings the query builder accepts for the dimensions a silence matches on. */
+const GROUP_BY_ALIASES = new Map([
+	["service_name", "service.name"],
+	["deployment_environment", "deployment.environment"],
+])
+
+/**
+ * The grouping an incident's group key comes from: the rule's own, or for a builder query
+ * that groups through its draft, the draft's, in canonical spelling.
+ */
+export const alertSilenceGroupBy = (rule: {
+	readonly groupBy: AlertGroupBy | null
+	readonly signalType: string
+	readonly queryBuilderDraft: {
+		readonly addOns?: { readonly groupBy?: boolean } | undefined
+		readonly groupBy?: ReadonlyArray<string> | null | undefined
+	} | null
+}): AlertGroupBy | null => {
+	const keys =
+		rule.groupBy !== null && rule.groupBy.length > 0
+			? rule.groupBy
+			: rule.signalType === "builder_query" && rule.queryBuilderDraft?.addOns?.groupBy === true
+				? (rule.queryBuilderDraft.groupBy ?? [])
+				: []
+	return keys.length === 0 ? null : Arr.map(keys, (key) => GROUP_BY_ALIASES.get(key) ?? key)
+}
+
 /** The parts of a rule and incident group a silence is matched against. */
 export interface AlertSilenceTarget {
 	readonly ruleId: AlertRuleId
