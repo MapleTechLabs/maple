@@ -409,12 +409,24 @@ export type ChipsViewInputs = Readonly<{
 	isUnfiltered?: boolean
 }>
 
+/** "Remove checkout", or "Remove Ada Lovelace (user_ada)" when another chip has the same label. */
+const removeLabel = (
+	value: string,
+	chipLabel: ChipsViewInputs["chipLabel"],
+	isLabelShared: boolean,
+): string => {
+	const label = chipLabel?.(value) ?? value
+	return isLabelShared && label !== value ? `Remove ${label} (${value})` : `Remove ${label}`
+}
+
 /** Base UI hides the chips from assistive tech while the list is open. */
 const chip = (
 	h: H,
 	value: string,
 	isOpen: boolean,
 	parts: Pick<ChipsViewInputs, "chipLeading" | "chipLabel"> = {},
+	/** Another chip reads the same: the remove button names the value too, so the two differ. */
+	isLabelShared = false,
 ): Html =>
 	h.div(
 		[
@@ -434,7 +446,7 @@ const chip = (
 				[
 					h.AriaDisabled(false),
 					// Named for its chip, so a screen reader can tell several remove buttons apart.
-					h.AriaLabel(`Remove ${parts.chipLabel?.(value) ?? value}`),
+					h.AriaLabel(removeLabel(value, parts.chipLabel, isLabelShared)),
 					h.Class(C.comboboxChipRemoveStyles),
 					h.DataAttribute("slot", "combobox-chip-remove"),
 					h.Tabindex(-1),
@@ -463,7 +475,14 @@ export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((m
 			...(model.selected.length === 0 ? [] : [h.Role("toolbar")]),
 		],
 		[
-			...Arr.map(model.selected, (value) => chip(h, value, isOpen, inputs)),
+			...Arr.map(model.selected, (value) => {
+				const label = inputs.chipLabel?.(value) ?? value
+				const isLabelShared = Arr.some(
+					model.selected,
+					(other) => other !== value && (inputs.chipLabel?.(other) ?? other) === label,
+				)
+				return chip(h, value, isOpen, inputs, isLabelShared)
+			}),
 			...(isOpen ? [dismissButton(h)] : []),
 			h.input([
 				h.Class(cn(C.comboboxChipsInputStyles, C.comboboxChipsInputDefaultStyles)),

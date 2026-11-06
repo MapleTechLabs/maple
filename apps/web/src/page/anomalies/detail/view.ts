@@ -37,8 +37,12 @@ import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
-/** The anomalies list is the Alerts Inbox's Anomalies view. */
-const ANOMALIES_HREF = alertsHref({ signal: "anomaly" })
+/**
+ * The anomalies list is the Alerts Inbox's Anomalies view, which opens on open anomalies: a resolved
+ * one, or one that could not be found, links to all of them so the list can include it.
+ */
+const anomaliesHref = (status: AnomalyIncidentDocument["status"] | null): string =>
+	alertsHref(status === "open" ? { signal: "anomaly" } : { signal: "anomaly", anomalyStatus: "all" })
 
 const headerActions = (h: H, model: Model, incident: AnomalyIncidentDocument, timeZone: string): Html => {
 	const isOpen = incident.status === "open"
@@ -177,7 +181,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						resourceNotFound(h, {
 							title: "Anomaly not found",
 							description: "It may have been pruned, or the link is stale.",
-							back: { href: ANOMALIES_HREF, label: "Back to anomalies" },
+							back: { href: anomaliesHref(null), label: "Back to anomalies" },
 						}),
 					])
 				: state._tag === "Failed"
@@ -205,7 +209,10 @@ export const breadcrumbsOf = (model: Model): ReadonlyArray<BreadcrumbEntry> => {
 	const state = pageStateOf(model)
 	return [
 		{ label: "Alerts", href: alertsHref({}) },
-		{ label: "Anomalies", href: ANOMALIES_HREF },
+		{
+			label: "Anomalies",
+			href: anomaliesHref(state._tag === "Loaded" ? state.incident.status : null),
+		},
 		{
 			label:
 				state._tag === "Loaded"

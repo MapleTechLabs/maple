@@ -23,6 +23,9 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"create_alert_silence",
 	"end_alert_silence",
 	"acknowledge_alert_incident",
+	"create_escalation_chain",
+	"update_escalation_chain",
+	"delete_escalation_chain",
 	// error issues
 	"claim_error_issue",
 	"release_error_issue",

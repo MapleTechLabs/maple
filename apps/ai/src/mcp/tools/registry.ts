@@ -17,6 +17,10 @@ import { registerListAlertSilencesTool } from "./list-alert-silences"
 import { registerCreateAlertSilenceTool } from "./create-alert-silence"
 import { registerEndAlertSilenceTool } from "./end-alert-silence"
 import { registerAcknowledgeAlertIncidentTool } from "./acknowledge-alert-incident"
+import { registerListEscalationChainsTool } from "./list-escalation-chains"
+import { registerCreateEscalationChainTool } from "./create-escalation-chain"
+import { registerUpdateEscalationChainTool } from "./update-escalation-chain"
+import { registerDeleteEscalationChainTool } from "./delete-escalation-chain"
 import { registerCreateDashboardTool } from "./create-dashboard"
 import { registerDescribeDashboardSchemaTool } from "./describe-dashboard-schema"
 import { registerDiagnoseServiceTool } from "./diagnose-service"
@@ -444,6 +448,10 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerCreateAlertSilenceTool(registrar)
 	registerEndAlertSilenceTool(registrar)
 	registerAcknowledgeAlertIncidentTool(registrar)
+	registerListEscalationChainsTool(registrar)
+	registerCreateEscalationChainTool(registrar)
+	registerUpdateEscalationChainTool(registrar)
+	registerDeleteEscalationChainTool(registrar)
 	registerDescribeDashboardSchemaTool(registrar)
 	registerListDashboardsTool(registrar)
 	registerGetDashboardTool(registrar)

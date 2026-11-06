@@ -4,6 +4,7 @@ import {
 	AlertSeverity,
 	AlertSignalType,
 	AnomalySignalType,
+	EscalationChainId,
 } from "@maple/domain/http"
 import { QueryEngineAlertReducer } from "@maple/domain/query-engine"
 import type { RuleFormState } from "@maple/web-data/alerts/form-utils"
@@ -20,6 +21,7 @@ export const EscalationTier = Schema.Struct({
 	threshold: Schema.String,
 	recoveryValue: Schema.String,
 	destinationIds: DestinationIds,
+	escalationChainId: Schema.NullOr(EscalationChainId),
 })
 
 export const RuleForm = Schema.Struct({
@@ -52,6 +54,7 @@ export const RuleForm = Schema.Struct({
 	rawQuerySql: Schema.String,
 	rawQueryReducer: QueryEngineAlertReducer,
 	destinationIds: DestinationIds,
+	escalationChainId: Schema.NullOr(EscalationChainId),
 	notificationTitle: Schema.String,
 	notificationBody: Schema.String,
 })

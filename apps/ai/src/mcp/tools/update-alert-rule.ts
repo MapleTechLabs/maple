@@ -1,5 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Array as Arr, Effect, Schema } from "effect"
+import { Array as Arr, Effect, Option, Schema, String as Str } from "effect"
 import { UpdateAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
@@ -15,6 +15,7 @@ import {
 	type AlertComparator,
 	type AlertRuleDocument,
 	type AlertThreshold,
+	type EscalationChainId,
 } from "@maple/domain/http"
 import { MAX_RAW_SQL_ALERT_GROUPS } from "@maple/domain/raw-sql"
 import {
@@ -108,6 +109,14 @@ export const UpdateAlertRuleParameters = Schema.Struct({
 	notification_body: P.optionalText(
 		"Notification body template (Markdown) with {{ variable }} and {{#if key}}...{{/if}}",
 	),
+	escalation_chain_id: P.optionalResourceId(
+		"escalationChain",
+		'Escalation chain an incident starts on top of the destinations (from list_escalation_chains), or "none" to detach. Applies to escalation_chain_tier; without it, an id sets the critical (or only) tier and "none" detaches every tier',
+	),
+	escalation_chain_tier: P.optionalOneOf(
+		["warning", "critical"],
+		"The tier escalation_chain_id sets or detaches, leaving the other tier's chain as it is",
+	),
 })
 
 /**
@@ -135,7 +144,17 @@ export const buildUpdatedRequest = Effect.fnUntraced(function* (
 	const signalType = params.signal_type ?? current.signalType
 	const comparator = params.comparator ?? current.comparator
 	const keepsRawQuery = signalType === "raw_query"
-	const thresholds = yield* mergeThresholds(current, params, comparator)
+	const chain =
+		params.escalation_chain_id === undefined
+			? undefined
+			: Str.toLowerCase(params.escalation_chain_id) === "none"
+				? null
+				: yield* P.decodeResourceId(
+						"escalationChain",
+						"escalation_chain_id",
+					)(params.escalation_chain_id)
+	const merged = yield* mergeThresholds(current, params, comparator)
+	const thresholds = yield* withEscalationChain(current.name, merged, chain, params.escalation_chain_tier)
 
 	return {
 		name: params.name ?? current.name,
@@ -234,6 +253,49 @@ const mergeThresholds = (
 				index === 0 ? params : { remove_destination_ids: params.remove_destination_ids },
 			),
 		})),
+	)
+}
+
+/** Sets the chain on the only tier, or on the critical one of two; `undefined` keeps every tier's. */
+/**
+ * Sets or detaches a tier's chain. A named tier changes only that tier; without one, an id sets the
+ * critical (or only) tier and "none" detaches every tier.
+ */
+const withEscalationChain = <T extends { readonly severity: AlertThreshold["severity"] }>(
+	ruleName: string,
+	tiers: Arr.NonEmptyReadonlyArray<T>,
+	chain: EscalationChainId | null | undefined,
+	tier: AlertThreshold["severity"] | undefined,
+): Effect.Effect<Arr.NonEmptyReadonlyArray<T>, McpInvalidInputError> => {
+	if (chain === undefined) {
+		return tier === undefined
+			? Effect.succeed(tiers)
+			: Effect.fail(
+					new McpInvalidInputError({
+						message:
+							'escalation_chain_tier needs escalation_chain_id (an id, or "none" to detach)',
+						parameter: "escalation_chain_tier",
+					}),
+				)
+	}
+	if (tier !== undefined) {
+		if (!Arr.some(tiers, (t) => t.severity === tier)) {
+			return Effect.fail(
+				new McpInvalidInputError({
+					message: `"${ruleName}" has no ${tier} tier`,
+					parameter: "escalation_chain_tier",
+				}),
+			)
+		}
+		return Effect.succeed(
+			Arr.map(tiers, (t) => (t.severity === tier ? { ...t, escalationChainId: chain } : t)),
+		)
+	}
+	if (chain === null) return Effect.succeed(Arr.map(tiers, (t) => ({ ...t, escalationChainId: null })))
+	const critical = Arr.findLastIndex(tiers, (t) => t.severity === "critical")
+	const target = tiers.length === 1 ? 0 : Option.getOrElse(critical, () => tiers.length - 1)
+	return Effect.succeed(
+		Arr.map(tiers, (t, index) => (index === target ? { ...t, escalationChainId: chain } : t)),
 	)
 }
 

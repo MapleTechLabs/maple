@@ -3,7 +3,7 @@ import { ANOMALY_SIGNAL_LABELS } from "@maple/web-data/alerts/anomaly-rule"
 import { formatAlertDuration } from "@maple/web-data/alerts/form-utils"
 import { incidentTitle } from "@maple/web-data/alerts/overview-derive"
 import { formatDateInTimezone, formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { card, cardPanel } from "@maple/views/ui/card"
 import { badge } from "@maple/views/ui/display"
@@ -23,6 +23,11 @@ import { isoMs } from "../shared/time"
 
 const INCIDENT_LIMIT = 20
 
+/** The list shows when each anomaly opened, so the newest opening leads. */
+const newestFirst = Order.flip(
+	Order.mapInput(Order.Number, (incident: AlertIncidentDocument) => isoMs(incident.firstTriggeredAt)),
+)
+
 const overlaps = (incident: AlertIncidentDocument, range: Readonly<{ min: number; max: number }>): boolean =>
 	isoMs(incident.firstTriggeredAt) <= range.max &&
 	(incident.resolvedAt === null || isoMs(incident.resolvedAt) >= range.min)
@@ -39,7 +44,10 @@ export const anomalyIncidentsSection = <M>(
 	}>,
 ): Html => {
 	const inWindow = Arr.take(
-		Arr.filter(options.incidents, (incident) => overlaps(incident, options.range)),
+		Arr.sort(
+			Arr.filter(options.incidents, (incident) => overlaps(incident, options.range)),
+			newestFirst,
+		),
 		INCIDENT_LIMIT,
 	)
 	const at = (iso: string) =>

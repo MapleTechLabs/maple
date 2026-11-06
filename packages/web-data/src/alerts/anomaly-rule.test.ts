@@ -1,3 +1,5 @@
+import { AlertDestinationId } from "@maple/domain/http"
+
 import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { anomalyScopeSummary, isDefaultAnomalyRule } from "./anomaly-rule"
@@ -36,10 +38,18 @@ describe("anomaly rules", () => {
 	})
 
 	it("leaving the anomaly kind starts a query from error rate with both tiers' destinations", () => {
-		const anomaly = anomalyForm({ serviceNames: ["checkout"] })
+		const warning = AlertDestinationId.make("00000000-0000-4000-8000-0000000000a1")
+		const critical = AlertDestinationId.make("00000000-0000-4000-8000-0000000000b2")
+		const scoped = anomalyForm({ serviceNames: ["checkout"], destinationIds: [warning] })
+		const anomaly = {
+			...scoped,
+			escalation:
+				scoped.escalation === null ? null : { ...scoped.escalation, destinationIds: [critical] },
+		}
 		const left = switchSignalKind(anomaly, "builtin").form
 		expect(left.signalType).toBe("error_rate")
 		expect(left.escalation).toBeNull()
+		expect(left.destinationIds).toEqual([warning, critical])
 		expect(left.serviceNames).toEqual(["checkout"])
 		expect(left.threshold).toBe(defaultRuleForm().threshold)
 	})

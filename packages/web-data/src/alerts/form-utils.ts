@@ -16,6 +16,7 @@ import {
 	type AlertComparator,
 	type AlertDeliveryStatus,
 	type AlertDestinationId,
+	type EscalationChainId,
 	type AlertDestinationType,
 	type AlertEventType,
 	type AlertSeverity,
@@ -108,6 +109,8 @@ export type RuleFormState = {
 	rawQuerySql: string
 	rawQueryReducer: QueryEngineAlertReducer
 	destinationIds: AlertDestinationId[]
+	/** The escalation chain the main tier starts; null when it only notifies its destinations. */
+	escalationChainId: EscalationChainId | null
 	/**
 	 * Custom notification message. Empty strings mean "use the built-in format".
 	 * `title` + Markdown `body` support `{{ variable }}` substitution; channels
@@ -122,6 +125,7 @@ export interface EscalationTierForm {
 	threshold: string
 	recoveryValue: string
 	destinationIds: AlertDestinationId[]
+	escalationChainId: EscalationChainId | null
 }
 
 export const signalLabels: Record<AlertSignalType, string> = {
@@ -339,6 +343,7 @@ export function defaultRuleForm(serviceName?: string): RuleFormState {
 		rawQuerySql: DEFAULT_RAW_QUERY_SQL,
 		rawQueryReducer: "identity",
 		destinationIds: [],
+		escalationChainId: null,
 		notificationTitle: "",
 		notificationBody: "",
 	}
@@ -361,6 +366,7 @@ export function anomalyRuleForm(form: RuleFormState): RuleFormState {
 			threshold: "2",
 			recoveryValue: "",
 			destinationIds: form.escalation?.destinationIds ?? [],
+			escalationChainId: form.escalation?.escalationChainId ?? null,
 		},
 		excludeServiceNames: [],
 		groupBy: [],
@@ -413,6 +419,7 @@ export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 						threshold: toForm(escalation.value),
 						recoveryValue: toForm(escalation.recoveryValue),
 						destinationIds: [...escalation.destinationIds],
+						escalationChainId: escalation.escalationChainId ?? null,
 					},
 		windowMinutes: String(rule.windowMinutes),
 		evaluationIntervalMinutes:
@@ -428,6 +435,7 @@ export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 		rawQuerySql: rule.rawQuerySql ?? DEFAULT_RAW_QUERY_SQL,
 		rawQueryReducer: rule.rawQueryReducer ?? "identity",
 		destinationIds: [...primary.destinationIds],
+		escalationChainId: primary.escalationChainId ?? null,
 		notificationTitle: rule.notificationTemplate?.title ?? "",
 		notificationBody: rule.notificationTemplate?.body ?? "",
 	}
@@ -525,9 +533,15 @@ export function deriveTierIssues(form: RuleFormState): string[] {
 			issues.push("Critical recovery past warning")
 		}
 		recoveryIssue("Critical recovery value", escalation.threshold, escalation.recoveryValue)
-		// An anomaly tier may stay unrouted: the default rule ships that way.
-		if (escalation.destinationIds.length === 0 && form.signalType !== "anomaly")
+		// An escalation chain routes the tier on its own, as on the server; an anomaly tier may
+		// stay unrouted, as the default rule ships.
+		if (
+			escalation.destinationIds.length === 0 &&
+			escalation.escalationChainId === null &&
+			form.signalType !== "anomaly"
+		) {
 			issues.push("Critical destinations")
+		}
 	}
 	if (Str.trim(form.breachesOutOf).length > 0) {
 		const outOf = Number(form.breachesOutOf)
@@ -549,6 +563,7 @@ export function formThresholds(form: RuleFormState): Arr.NonEmptyReadonlyArray<V
 		upper: isRangeComparator(form.comparator) ? optionalFormThreshold(form, form.thresholdUpper) : null,
 		recovery_value: tiered ? optionalFormThreshold(form, form.recoveryValue) : null,
 		destination_ids: [...new Set(form.destinationIds)],
+		escalation_chain_id: form.escalationChainId,
 	}
 	if (escalation === null) return [primary]
 	return [
@@ -559,6 +574,7 @@ export function formThresholds(form: RuleFormState): Arr.NonEmptyReadonlyArray<V
 			upper: null,
 			recovery_value: optionalFormThreshold(form, escalation.recoveryValue),
 			destination_ids: [...new Set(escalation.destinationIds)],
+			escalation_chain_id: escalation.escalationChainId,
 		},
 	]
 }

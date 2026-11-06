@@ -26,6 +26,7 @@ import {
 	AlertSilenceId,
 	DashboardId,
 	ErrorIssueId,
+	EscalationChainId,
 } from "@maple/domain/primitives"
 import { WarehouseTimeInput, type WarehouseDateTime } from "@maple/query-engine"
 import { McpInvalidInputError } from "../tools/types"
@@ -158,6 +159,11 @@ const RESOURCE_IDS = {
 		prefix: PublicIdPrefixes.alertDestination,
 		schema: AlertDestinationId,
 		noun: "alert destination",
+	},
+	escalationChain: {
+		prefix: PublicIdPrefixes.escalationChain,
+		schema: EscalationChainId,
+		noun: "escalation chain",
 	},
 	alertMaintenanceWindow: {
 		prefix: PublicIdPrefixes.alertMaintenanceWindow,

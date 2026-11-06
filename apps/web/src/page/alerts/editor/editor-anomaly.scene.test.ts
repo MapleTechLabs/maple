@@ -311,4 +311,31 @@ describe("alert rule editor: anomaly rules", () => {
 		)
 		expect(dryRun.outMessage).toMatchObject({ title: "Couldn't preview rule" })
 	})
+
+	test("a tiered threshold rule keeps one destination on both tiers and saves", () => {
+		const tiered = run(opened({ template: "slow_p95" }), [
+			Message.ChangedField({ field: "name", value: "Slow checkout" }),
+			Message.ClickedAddCriticalTier(),
+			pickExisting("critical", DESTINATION),
+		])
+		expect(tiered.form?.destinationIds).toEqual([DESTINATION])
+		expect(tiered.form?.escalation?.destinationIds).toEqual([DESTINATION])
+		const saved = pageUpdate(tiered, Message.ClickedSave())
+		expect(saved.commands?.[0]?.name).toBe("SaveAlertRule")
+	})
+
+	test("switching to Anomaly drops the destination the editor pre-selected, not one the user picked", () => {
+		const blank = opened({})
+		// A new query rule starts on the org's usual destination.
+		expect(blank.form?.destinationIds).toEqual([DESTINATION])
+		const anomaly = pageUpdate(blank, Message.ClickedSignalKind({ kind: "anomaly" })).model
+		expect(anomaly.form?.destinationIds).toEqual([])
+		expect(anomaly.form?.escalation?.destinationIds).toEqual([])
+		const chosen = run(blank, [
+			Message.ClickedRemoveDestination({ tier: "warning", id: DESTINATION }),
+			pickExisting("warning", DESTINATION),
+			Message.ClickedSignalKind({ kind: "anomaly" }),
+		])
+		expect(chosen.form?.destinationIds).toEqual([DESTINATION])
+	})
 })

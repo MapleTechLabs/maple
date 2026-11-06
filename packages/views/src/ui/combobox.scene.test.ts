@@ -67,6 +67,31 @@ const exited = (id: string, generation: number) => [
 ]
 
 describe("combobox scene (chips)", () => {
+	test("chips that read the same name their value on the remove button; distinct ones do not", () => {
+		const NAMES = new Map([
+			["ada@acme.test", "Ada Lovelace"],
+			["ada@other.test", "Ada Lovelace"],
+			["grace@acme.test", "Grace Hopper"],
+		])
+		scene(
+			{
+				update,
+				view: withViewInputs(chipsView, {
+					items: [...NAMES.keys()],
+					ariaLabel: "Members",
+					placeholder: "Add a member",
+					emptyText: "No members found.",
+					chipLabel: (value) => NAMES.get(value) ?? value,
+					toView: (parts) => ih.main([], parts),
+				})(),
+			},
+			given(init("members", "multiple", { selected: [...NAMES.keys()] })),
+			expect(role("button", { name: "Remove Ada Lovelace (ada@acme.test)" })).toExist(),
+			expect(role("button", { name: "Remove Ada Lovelace (ada@other.test)" })).toExist(),
+			expect(role("button", { name: "Remove Grace Hopper" })).toExist(),
+		)
+	})
+
 	test("the selection shows as chips and as selected options", () => {
 		scene(
 			chips,

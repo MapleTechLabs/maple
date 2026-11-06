@@ -135,6 +135,8 @@ describe("alerts hub: anomalies", () => {
 			given(loaded({ signal: "anomaly", serviceName: "checkout", anomalyStatus: "resolved" })),
 			expectView(role("link", { name: "Anomaly on checkout (staging)" })).toExist(),
 			expectView(role("link", { name: "Anomaly on checkout (production)" })).not.toExist(),
+			// The hub holds 30 days of incidents, and the heading says so.
+			expectView(text("Resolved in the last 30 days")).toExist(),
 			expectView(role("link", { name: "Anomaly on search (production)" })).not.toExist(),
 			click(role("button", { name: "Remove checkout" })),
 			expectOutMessage(

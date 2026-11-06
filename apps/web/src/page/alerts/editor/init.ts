@@ -39,6 +39,7 @@ export const init = (route: CreateRoute, _context: PageContext): PageReturn<Mode
 		isDashboardsLoadFailed: false,
 		grants: [],
 		isDefaultDestinationApplied: false,
+		autoDestinationId: null,
 		connectors: null,
 		autocompleteWindow: null,
 		previewPreset: DEFAULT_PREVIEW_PRESET,

@@ -4,6 +4,7 @@ import type { AlertsService } from "@maple/backend/services/alerts/AlertsService
 import type { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import type { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import type { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
+import type { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
 import type { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
 import type { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
 import type { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -51,6 +52,7 @@ export type McpToolRuntimeRequirements =
 	| AlertReadModelsService
 	| AlertIncidentAckService
 	| AlertRulesService
+	| EscalationChainsService
 	| AlertMaintenanceWindowsService
 	| AlertSilencesService
 	| DashboardPersistenceService

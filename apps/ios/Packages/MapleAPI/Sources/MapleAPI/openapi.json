@@ -677,6 +677,7 @@
                 "destination_ids": [
                   "dest_oybbpTBhtSFGShMjjLiCrh"
                 ],
+                "escalation_chain_id": null,
                 "recovery_value": null,
                 "severity": "critical",
                 "upper": null,
@@ -1357,6 +1358,7 @@
                 "destination_ids": [
                   "dest_oybbpTBhtSFGShMjjLiCrh"
                 ],
+                "escalation_chain_id": null,
                 "recovery_value": null,
                 "severity": "critical",
                 "upper": null,
@@ -1480,6 +1482,10 @@
               "$ref": "#/components/schemas/_maple_AlertDestinationId"
             },
             "type": "array"
+          },
+          "escalation_chain_id": {
+            "$ref": "#/components/schemas/_maple_EscalationChainId",
+            "description": "Escalation chain (`esc_…`) an incident at this severity starts, on top of `destination_ids`, or `null` for none. It pages step by step until the incident is acknowledged or resolved. Omitted on create means none; omitted on update keeps the tier's current chain."
           },
           "recovery_value": {
             "description": "The value the signal must cross back over before this tier clears, or `null` (the default) to clear as soon as it stops breaching. Must sit on the healthy side of `value`.",
@@ -7239,6 +7245,15 @@
         "description": "Opaque, prefixed public object ID (e.g. `iss_YofPTrK9782DWwcnXhpcCw`). A reversible base58 encoding of the internal ID — treat it as an opaque string.",
         "examples": [
           "iss_YofPTrK9782DWwcnXhpcCw"
+        ],
+        "format": "maple.public_id",
+        "title": "Public ID",
+        "type": "string"
+      },
+      "_maple_EscalationChainId": {
+        "description": "Opaque, prefixed public object ID (e.g. `esc_YofPTrK9782DWwcnXhpcCw`). A reversible base58 encoding of the internal ID — treat it as an opaque string.",
+        "examples": [
+          "esc_YofPTrK9782DWwcnXhpcCw"
         ],
         "format": "maple.public_id",
         "title": "Public ID",
@@ -14130,6 +14145,10 @@
     {
       "description": "The incident history produced by your alert rules. Incidents open when a rule breaches for enough consecutive checks and resolve automatically once the signal recovers. An open incident can be acknowledged to pause its reminders.",
       "name": "Alert Incidents"
+    },
+    {
+      "description": "Step-by-step paging for alert incidents: notify the first responder, wait for an acknowledgement, then widen the circle. A rule's severity tier names the chain it starts.",
+      "name": "Escalation Chains"
     },
     {
       "description": "Maintenance windows for alerting: quiet a deploy or a planned migration without disabling rules. Rules keep evaluating and incidents still open and resolve; only notifications are held back.",

@@ -36,6 +36,8 @@ export const StoredDeliveryPayloadSchema = Schema.StructWithRest(
 			}),
 		),
 		template: Schema.optionalKey(Schema.NullOr(AlertNotificationTemplate)),
+		/** Set on an escalation step's trigger. */
+		escalation: Schema.optionalKey(Schema.Unknown),
 		linkUrl: Schema.optionalKey(Schema.String),
 		chatUrl: Schema.optionalKey(Schema.String),
 		chart: Schema.optionalKey(

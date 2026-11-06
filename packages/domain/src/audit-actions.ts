@@ -72,6 +72,10 @@ export const AuditResources = {
 	device_credential: { prefix: PublicIdPrefixes.deviceCredential, verbs: ["registered", "revoked"] },
 	/** Verbs mirror the issue event types: `recordEvent` audits every one it attributes. */
 	error_issue: { prefix: PublicIdPrefixes.errorIssue, verbs: ErrorIssueEventType.literals },
+	escalation_chain: {
+		prefix: PublicIdPrefixes.escalationChain,
+		verbs: ["created", "updated", "deleted"],
+	},
 	/** One connected Google Cloud scope; the scope and what it collects are in `metadata`. */
 	gcp_connector: {
 		prefix: PublicIdPrefixes.gcpConnector,
@@ -193,6 +197,7 @@ export const AuditResourceLabels = {
 	ai_provider_key: "AI provider key",
 	alert_destination: "Alert destination",
 	alert_rule: "Alert rule",
+	escalation_chain: "Escalation chain",
 	alert_silence: "Alert silence",
 	alert_maintenance_window: "Maintenance window",
 	anomaly_incident: "Anomaly",
@@ -246,6 +251,9 @@ export const AuditActionLabels = {
 	"alert_rule.created": "Created alert rule",
 	"alert_rule.updated": "Updated alert rule",
 	"alert_rule.deleted": "Deleted alert rule",
+	"escalation_chain.created": "Created escalation chain",
+	"escalation_chain.updated": "Updated escalation chain",
+	"escalation_chain.deleted": "Deleted escalation chain",
 	"alert_silence.created": "Silenced alerts",
 	"alert_silence.updated": "Updated alert silence",
 	"alert_silence.ended": "Ended alert silence",

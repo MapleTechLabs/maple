@@ -145,6 +145,10 @@ export const CreateAlertRuleParameters = Schema.Struct({
 		"Custom notification body template (Markdown). Supports {{ variable }} substitution and " +
 			'{{#if key}}…{{/if}} blocks, e.g. "*Severity:* {{ severity }}\\n*Observed:* {{ observed.summary }}". Omit for the built-in format.',
 	),
+	escalation_chain_id: P.optionalResourceId(
+		"escalationChain",
+		"Escalation chain an incident starts on top of destination_ids, paging step by step until acknowledged (from list_escalation_chains)",
+	),
 })
 
 const invalid = (message: string, parameter: string, example?: string) =>
@@ -234,10 +238,16 @@ export const buildAlertRuleRequest = Effect.fnUntraced(function* (
 	// service scope are mutually exclusive, so an inherited groupBy must step aside
 	// for a caller-supplied service; an explicit group_by is left to be rejected on its own terms.
 	const effectiveGroupBy = groupBy ?? (services === undefined ? template?.groupBy : undefined)
+	const severity = params.severity ?? "warning"
+	// A chain lives on a tier, so a rule with one is sent as its single tier.
+	const escalationChainId =
+		params.escalation_chain_id === undefined
+			? undefined
+			: yield* P.decodeResourceId("escalationChain", "escalation_chain_id")(params.escalation_chain_id)
 
 	return {
 		name: params.name,
-		severity: params.severity ?? "warning",
+		severity,
 		signalType,
 		comparator,
 		threshold,
@@ -246,6 +256,20 @@ export const buildAlertRuleRequest = Effect.fnUntraced(function* (
 			? undefined
 			: { evaluationIntervalMinutes: params.evaluation_interval_minutes }),
 		destinationIds: params.destination_ids,
+		...(escalationChainId === undefined
+			? undefined
+			: {
+					thresholds: [
+						{
+							severity,
+							value: threshold,
+							upper: null,
+							recoveryValue: null,
+							destinationIds: params.destination_ids,
+							escalationChainId,
+						},
+					],
+				}),
 		...(params.enabled === undefined ? undefined : { enabled: params.enabled }),
 		...(services === undefined ? undefined : { serviceNames: services }),
 		...(params.environments === undefined || params.environments.length === 0
@@ -298,7 +322,7 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 		// repeating them here cost tokens twice for one fact.
 		description:
 			"Create an alert rule. Pick a `template` for the common cases; otherwise pass signal_type, comparator and threshold yourself. " +
-			"destination_ids is required (at least one, from list_alert_destinations).",
+			"destination_ids is required (at least one, from list_alert_destinations). escalation_chain_id adds step-by-step paging on top.",
 		parameters: CreateAlertRuleParameters,
 		aliases: { service_names: "services" },
 		output: CreateAlertRuleOutput,

@@ -105,6 +105,32 @@ describe("alert incident: anomaly rules", () => {
 		)
 	})
 
+	test("an investigation of an anomaly sends the detector's readings, never severity codes", () => {
+		const model = synced(SPIKE)
+		const asked = pageUpdate(
+			model,
+			Message.CompletedFetchInvestigation({
+				key: model.investigation.key ?? "",
+				result: Result.succeed(null),
+			}),
+		).model
+		const factsOf = (from: typeof model) =>
+			JSON.stringify(pageUpdate(from, Message.ClickedInvestigate()).commands?.[0]?.args ?? {})
+		// Before the evidence loads there are no facts to send rather than "Observed: Critical".
+		expect(factsOf(asked)).not.toMatch(/Critical|Warning|Threshold/)
+		const loaded = pageUpdate(
+			asked,
+			Message.CompletedFetchAnomaly({
+				key: asked.anomaly.key ?? "",
+				result: Result.succeed(anomalyWire(3, "error_spike", "critical", "checkout")),
+			}),
+		).model
+		const facts = factsOf(loaded)
+		expect(facts).toContain("Baseline")
+		expect(facts).toContain("Error frequency increase")
+		expect(facts).not.toMatch(/"Threshold"|"Critical"/)
+	})
+
 	test("a warning anomaly without grouped errors has no fingerprint list or issue link", () => {
 		const scenario = { ...SPIKE, n: 4, severity: "warning" } as const
 		const model = synced(scenario)
@@ -180,6 +206,30 @@ describe("alert incident: anomaly rules", () => {
 			expectView(role("button", { name: "Silence" })).toExist(),
 			// The default rule has no scope: the incident's own service is what the silence covers.
 			expectView(text(/^Silenced until /u)).toExist(),
+		)
+	})
+
+	test("the anomaly evidence is read again when its alert incident moves", () => {
+		const model = synced(SPIKE)
+		const quiet = pageUpdate(
+			model,
+			Message.UpdatedIncidents({ orgId: ORG, rows: [anomalyIncidentRow(SPIKE)] }),
+		)
+		expect(names(quiet.commands)).not.toContain("FetchAlertIncidentAnomaly")
+		const escalated = pageUpdate(
+			model,
+			Message.UpdatedIncidents({
+				orgId: ORG,
+				rows: [
+					anomalyIncidentRow(SPIKE, {
+						last_triggered_at: new Date(NOW + 60_000).toISOString(),
+						severity: "warning",
+					}),
+				],
+			}),
+		)
+		expect(names(escalated.commands)).toEqual(
+			expect.arrayContaining(["FetchAlertIncidentAnomaly", "FetchAlertIncidentAnomalyTimeseries"]),
 		)
 	})
 })

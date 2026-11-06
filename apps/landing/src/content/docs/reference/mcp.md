@@ -114,6 +114,10 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `create_alert_rule`         | write  | Create an alert rule from a template or from signal type, comparator and threshold       |
 | `update_alert_rule`         | write  | Change the fields you pass on an alert rule                                              |
 | `delete_alert_rule`         | write  | Delete an alert rule and its incident history. Requires `confirm=true`                   |
+| `list_escalation_chains`    | read   | Escalation chains with their steps, repeats and the rules using them                     |
+| `create_escalation_chain`   | write  | Page destinations step by step, waiting for an acknowledgement between steps             |
+| `update_escalation_chain`   | write  | Change a chain's name, steps, repeats or description                                     |
+| `delete_escalation_chain`   | write  | Delete a chain no rule uses                                                              |
 | `list_maintenance_windows`  | read   | One-off and weekly maintenance windows with their schedule, matchers and next occurrence |
 | `create_maintenance_window` | write  | Silence matching rules once or every week; can keep those hours out of anomaly baselines |
 | `delete_maintenance_window` | write  | Delete a maintenance window and end an occurrence in progress. Requires `confirm=true`   |
