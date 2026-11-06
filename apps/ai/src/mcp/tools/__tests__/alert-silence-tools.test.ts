@@ -228,6 +228,31 @@ describe("alert silence tools", () => {
 		expect(seen.created).toBeUndefined()
 	})
 
+	it("create_alert_silence passes an ends_at alone through, starting now", async () => {
+		const seen = fresh()
+		await ok(
+			"create_alert_silence",
+			{ reason: "Migration", environments: ["production"], ends_at: "2030-01-01 06:00:00" },
+			seen,
+		)
+		expect(seen.created?.matchers).toEqual({ environments: ["production"] })
+		expect(seen.created?.startsAt).toBeUndefined()
+		expect(seen.created?.endsAt).toBe("2030-01-01T06:00:00.000Z")
+	})
+
+	it("create_alert_silence refuses a duration that is not positive", async () => {
+		const seen = fresh()
+		for (const duration_minutes of [0, -15]) {
+			const result = await run(
+				"create_alert_silence",
+				{ reason: "x", tags: ["a"], duration_minutes },
+				seen,
+			)
+			expect(invalidParameter(result)).toBe("duration_minutes")
+		}
+		expect(seen.created).toBeUndefined()
+	})
+
 	it("list_alert_silences shows active and scheduled silences by default, not ended ones", async () => {
 		const seen = fresh()
 		const result = await ok("list_alert_silences", {}, seen)
