@@ -302,12 +302,16 @@ const rotationField = (h: H, layer: LayerDraft): Html => {
 	])
 }
 
-/** One weekly window: its days, from and to (an end at or before the start crosses midnight). */
+/** One weekly window: its days, from and to (an end before the start crosses midnight). */
 const restrictionRow = (h: H, layer: LayerDraft, restriction: RestrictionDraft): Html => {
 	const key = layer.key
 	const restrictionKey = restriction.key
-	const isComplete = isLocalTime(restriction.startTime) && isLocalTime(restriction.endTime)
-	const crossesMidnight = isComplete && restriction.endTime <= restriction.startTime
+	// Equal times are refused with a field error, so they get no note either.
+	const isComplete =
+		isLocalTime(restriction.startTime) &&
+		isLocalTime(restriction.endTime) &&
+		restriction.endTime !== restriction.startTime
+	const crossesMidnight = isComplete && restriction.endTime < restriction.startTime
 	return vstack(h, { gap: "2", className: "rounded-md border p-3", attributes: [h.Key(restrictionKey)] }, [
 		hstack(h, { gap: "2", justify: "between", wrap: true }, [
 			multiSegmentedSelect(h, {

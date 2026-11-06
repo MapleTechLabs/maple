@@ -251,6 +251,8 @@ describe("schedule form", () => {
 			{ update: pageUpdate, view },
 			given(model),
 			expectView(text("From and To can't be the same time")).toExist(),
+			expectView(text("Ends the next morning")).not.toExist(),
+			expectView(text("Same day")).not.toExist(),
 		)
 	})
 
