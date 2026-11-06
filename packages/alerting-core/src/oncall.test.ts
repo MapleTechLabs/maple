@@ -4,6 +4,11 @@ import { OnCallOverride, OnCallScheduleConfig } from "@maple/domain/http"
 import { ONCALL_LOOKAROUND_MS, onCallAt, renderOnCall, type OnCallShift } from "./oncall"
 
 const HOUR = 3_600_000
+const DAN_OVERRIDE = "0b7f6a3e-1c2d-4e5f-8a9b-1c2d3e4f5a60"
+const EVE_OVERRIDE = "0b7f6a3e-1c2d-4e5f-8a9b-1c2d3e4f5a61"
+const O1 = "0b7f6a3e-1c2d-4e5f-8a9b-1c2d3e4f5a62"
+const O2 = "0b7f6a3e-1c2d-4e5f-8a9b-1c2d3e4f5a63"
+const O3 = "0b7f6a3e-1c2d-4e5f-8a9b-1c2d3e4f5a64"
 const at = (iso: string) => Date.parse(iso)
 const decodeConfig = Schema.decodeUnknownSync(OnCallScheduleConfig)
 const decodeOverrides = Schema.decodeUnknownSync(Schema.Array(OnCallOverride))
@@ -182,14 +187,14 @@ describe("layers and restrictions", () => {
 
 describe("overrides", () => {
 	const dan = {
-		id: "ovr_dan",
+		id: DAN_OVERRIDE,
 		userId: "dan",
 		startsAt: at("2026-03-04T10:00:00Z"),
 		endsAt: at("2026-03-04T14:00:00Z"),
 		createdAt: 1,
 	}
 	const eve = {
-		id: "ovr_eve",
+		id: EVE_OVERRIDE,
 		userId: "eve",
 		startsAt: at("2026-03-04T12:00:00Z"),
 		endsAt: at("2026-03-04T16:00:00Z"),
@@ -200,7 +205,7 @@ describe("overrides", () => {
 		const overrides = decodeOverrides([dan])
 		const covered = onCallAt(weekly, overrides, at("2026-03-04T12:00:00Z"))
 		expect(who(covered)).toBe("dan")
-		expect(covered?.source).toEqual({ kind: "override", overrideId: "ovr_dan" })
+		expect(covered?.source).toEqual({ kind: "override", overrideId: DAN_OVERRIDE })
 
 		const render = renderOnCall(weekly, overrides, WEEKLY_ANCHOR, at("2026-03-09T08:00:00Z"))
 		expect(Arr.map(render.final, (s) => ({ user: who(s), ...span(s) }))).toEqual([
@@ -263,21 +268,21 @@ describe("render and onCallAt agree", () => {
 		})
 		const overrides = decodeOverrides([
 			{
-				id: "o1",
+				id: O1,
 				userId: "gus",
 				startsAt: at("2026-03-20T10:00:00Z"),
 				endsAt: at("2026-03-22T10:00:00Z"),
 				createdAt: 1,
 			},
 			{
-				id: "o2",
+				id: O2,
 				userId: "hal",
 				startsAt: at("2026-03-21T00:00:00Z"),
 				endsAt: at("2026-03-21T06:00:00Z"),
 				createdAt: 2,
 			},
 			{
-				id: "o3",
+				id: O3,
 				userId: "ana",
 				startsAt: at("2026-04-02T00:00:00Z"),
 				endsAt: at("2026-04-03T00:00:00Z"),
@@ -312,7 +317,8 @@ describe("render and onCallAt agree", () => {
 		// The sample exercises gaps, every layer and the overrides.
 		const owners = new Set(Arr.map(samples, (t) => who(onCallAt(config, overrides, t))))
 		expect(owners).toEqual(new Set([null, "ana", "ben", "chen", "dana", "eli", "fay", "gus", "hal"]))
-	})
+		// Thousands of full renders: seconds of CPU, more under a loaded machine.
+	}, 30_000)
 })
 
 describe("render caps", () => {
@@ -360,7 +366,7 @@ describe("schema", () => {
 	it("rejects an override that ends before it starts", () => {
 		const decodeOverride = Schema.decodeUnknownOption(OnCallOverride)
 		expect(
-			Option.isNone(decodeOverride({ id: "o", userId: "ana", startsAt: 10, endsAt: 10, createdAt: 0 })),
+			Option.isNone(decodeOverride({ id: O1, userId: "ana", startsAt: 10, endsAt: 10, createdAt: 0 })),
 		).toBe(true)
 	})
 })

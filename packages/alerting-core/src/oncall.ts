@@ -7,7 +7,7 @@ import type {
 	OnCallScheduleConfig,
 	OnCallWeekday,
 } from "@maple/domain/http"
-import type { UserId } from "@maple/domain/primitives"
+import type { OnCallOverrideId, UserId } from "@maple/domain/primitives"
 
 // Pure on-call resolution. Handoffs and restrictions are local wall-clock times in the
 // schedule's zone. A local time inside a DST gap moves forward by the gap (02:30 becomes
@@ -21,7 +21,7 @@ export const MAX_ONCALL_SHIFTS_PER_LAYER = 5_000
 export const ONCALL_LOOKAROUND_MS = 15 * 86_400_000
 
 export type OnCallSource =
-	| { readonly kind: "override"; readonly overrideId: string }
+	| { readonly kind: "override"; readonly overrideId: OnCallOverrideId }
 	| { readonly kind: "layer"; readonly layerIndex: number }
 
 export interface OnCallShift {
