@@ -122,6 +122,7 @@ const causeMessage = (cause: Cause.Cause<unknown>): string => {
 
 /** An optional step may be skipped, but a lost fence must still stop the run. */
 const isSkippable = <E>(cause: Cause.Cause<E>): boolean =>
+	!Cause.hasInterrupts(cause) &&
 	!Arr.some(
 		cause.reasons,
 		(reason) =>
@@ -425,7 +426,7 @@ type RunPatch = Partial<{
 type RunStatus = "queued" | "running" | "succeeded" | "failed"
 
 /** The run row this instance owns: the org's row while it still carries the claim's run id. */
-interface RunFence {
+export interface RunFence {
 	readonly database: DatabaseApi
 	readonly orgId: OrgId
 	readonly runId: string
@@ -476,9 +477,9 @@ const RUN_HEARTBEAT = "5 minutes"
 
 /**
  * Runs one long statement (a backfill chunk) while touching the run row, so a live run never
- * reads as stale. Losing the fence ends the statement; a failed touch is retried next beat.
+ * reads as stale. Losing the fence abandons the request (the server may still finish it).
  */
-const withRunHeartbeat = <A, E, R>(fence: RunFence, statement: Effect.Effect<A, E, R>) =>
+export const withRunHeartbeat = <A, E, R>(fence: RunFence, statement: Effect.Effect<A, E, R>) =>
 	Effect.raceFirst(
 		statement,
 		Effect.sleep(RUN_HEARTBEAT).pipe(
@@ -771,6 +772,8 @@ const applySchema = (fence: RunFence) =>
 		yield* durableStep(
 			"stamp-correctness",
 			Effect.gen(function* () {
+				// Only the run that still owns the row speaks for the org's settings.
+				yield* updateRun(fence, { phase: "stamping schema version" })
 				const stampedAt = yield* Clock.currentTimeMillis
 				yield* database.execute((db) =>
 					db.run(

@@ -5,7 +5,6 @@ import type { OrgId } from "@maple/domain/http"
 import { Clock, Context, Effect, Layer, Option } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import { transitionRow } from "@maple/backend/platform/transition-row"
 
 const toPersistenceError = (error: unknown) =>
 	new OnboardingPersistenceError({
@@ -228,23 +227,16 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				return result.length > 0 ? Option.some(now) : Option.none<number>()
 			})
 
-			/** A write that applies only while the org's lease is still the reservation the caller took. */
-			const whileReserved = (
-				orgId: OrgId,
-				reservedAt: number,
-				to: "claimed" | "released",
-				set: Partial<OrgOnboardingStateRow>,
-			) =>
-				transitionRow({ table: "org_onboarding_state", id: orgId, from: ["reserved"], to }, () =>
-					dbExecute((db) =>
-						db.run(
-							PG.update(OrgOnboardingState)
-								.set(set)
-								.where(($) => [$.orgId.eq(orgId), $.rewardReservedAt.eq(reservedAt)])
-								.returning(($) => ({ id: $.orgId })),
-						),
+			/** Applies `set` only while the org's lease is still the reservation the caller took. */
+			const whileReserved = (orgId: OrgId, reservedAt: number, set: Partial<OrgOnboardingStateRow>) =>
+				dbExecute((db) =>
+					db.run(
+						PG.update(OrgOnboardingState)
+							.set(set)
+							.where(($) => [$.orgId.eq(orgId), $.rewardReservedAt.eq(reservedAt)])
+							.returning(($) => ({ id: $.orgId })),
 					),
-				)
+				).pipe(Effect.map((rows) => rows.length > 0))
 
 			/**
 			 * Billing confirmed the credit: the claim is final and the caller's lease is released.
@@ -256,19 +248,17 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				reservedAt: number,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				yield* whileReserved(orgId, reservedAt, "claimed", {
+				const held = yield* whileReserved(orgId, reservedAt, {
 					rewardClaimedAt: now,
 					rewardReservedAt: null,
 					updatedAt: now,
-				}).pipe(
-					Effect.catchTag("@maple/backend/TransitionConflictError", () =>
-						dbExecute((db) =>
-							db.run(
-								PG.update(OrgOnboardingState)
-									.set({ rewardClaimedAt: now, updatedAt: now })
-									.where(($) => [$.orgId.eq(orgId), $.rewardClaimedAt.isNull()]),
-							),
-						),
+				})
+				if (held) return
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(OrgOnboardingState)
+							.set({ rewardClaimedAt: now, updatedAt: now })
+							.where(($) => [$.orgId.eq(orgId), $.rewardClaimedAt.isNull()]),
 					),
 				)
 			})
@@ -282,10 +272,7 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				reservedAt: number,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				yield* whileReserved(orgId, reservedAt, "released", {
-					rewardReservedAt: null,
-					updatedAt: now,
-				}).pipe(Effect.catchTag("@maple/backend/TransitionConflictError", () => Effect.void))
+				yield* whileReserved(orgId, reservedAt, { rewardReservedAt: null, updatedAt: now })
 			})
 
 			const markEmailSent = Effect.fn("OnboardingService.markEmailSent")(function* (

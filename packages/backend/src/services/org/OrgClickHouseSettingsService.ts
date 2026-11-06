@@ -1302,7 +1302,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			// concurrent applySchema calls wins (interleaved workflow instances
 			// would race destructive DROP/TRUNCATE/backfill migrations). A
 			// queued/running row that stopped updating for STALE_APPLY_RUN_MS is
-			// reclaimable — the workflow stamps progress on every step and heartbeats
+			// reclaimable: the workflow stamps progress on every step and heartbeats
 			// long ones, so a silent stall that long means the instance died.
 			const now = yield* Clock.currentTimeMillis
 			// The run id fences every progress write: an instance reclaimed as stale finds it

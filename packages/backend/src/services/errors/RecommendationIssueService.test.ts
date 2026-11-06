@@ -79,16 +79,25 @@ const issueState = (testDb: TestDb) =>
 describe("RecommendationIssueService reconcile", () => {
 	it.effect("a dismissal that lands after reconcile read the issue stays dismissed", () => {
 		const testDb = createTestDb(trackedDbs)
-		const dismissMidReconcile = Effect.promise(() =>
-			executeSql(testDb, "UPDATE org_recommendation_issues SET status = 'dismissed' WHERE id = $1", [
-				ISSUE,
-			]),
-		).pipe(Effect.asVoid)
+		// Reconcile has read the issue and not yet written it: it must still be open here.
+		const dismissMidReconcile = Effect.gen(function* () {
+			assert.strictEqual((yield* issueState(testDb))?.status, "open")
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"UPDATE org_recommendation_issues SET status = 'dismissed' WHERE id = $1",
+					[ISSUE],
+				),
+			)
+			injected = true
+		})
+		let injected = false
 		// Calls: the mappings read, the issues read, then the planned status update.
 		const database = racingDatabase(testDb, 3, dismissMidReconcile)
 		return Effect.gen(function* () {
 			yield* seedOpenIssue(testDb)
 			const list = yield* (yield* RecommendationIssueService).listReconciled(tenant)
+			assert.isTrue(injected)
 			assert.strictEqual(list.issues[0]?.status, "dismissed")
 			assert.strictEqual((yield* issueState(testDb))?.status, "dismissed")
 		}).pipe(Effect.provide(layerFor(testDb, database)))

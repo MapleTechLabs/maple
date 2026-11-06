@@ -1,6 +1,9 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Cause, Effect, Exit, Layer, Schema, Array as Arr } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, Schema, Array as Arr } from "effect"
+import { TestClock } from "effect/testing"
+import { Database } from "@maple/backend/platform/DatabaseLive"
+import { OrgId } from "@maple/domain/http"
 import { FetchHttpClient } from "effect/http"
 
 import {
@@ -12,7 +15,11 @@ import {
 } from "@maple/backend/platform/test-pglite"
 import { durableStep } from "@maple/backend/platform/durable-step"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import { loadOptionalFeatureState, runClickHouseSchemaApply } from "./ClickHouseSchemaApplyWorkflow.run"
+import {
+	loadOptionalFeatureState,
+	runClickHouseSchemaApply,
+	withRunHeartbeat,
+} from "./ClickHouseSchemaApplyWorkflow.run"
 
 /** The step's Effect as `task` hands it over, with the body context already provided. */
 const stepEffect = <T>(options: Cloudflare.WorkflowTaskOptions<T, any, any>): Effect.Effect<T> =>
@@ -225,4 +232,54 @@ describe("runClickHouseSchemaApply failure bookkeeping", () => {
 			assert.include(row?.error_message ?? "", "MAPLE_INGEST_KEY_ENCRYPTION_KEY")
 		}),
 	)
+})
+
+describe("withRunHeartbeat", () => {
+	const trackedDbs: TestDb[] = []
+	afterEach(() => cleanupTestDbs(trackedDbs))
+	const ORG = Schema.decodeSync(OrgId)("org_wf_heartbeat")
+
+	const updatedAt = (testDb: TestDb) =>
+		Effect.promise(() =>
+			queryFirstRow<{ updated_at: Date }>(
+				testDb,
+				"SELECT updated_at FROM org_clickhouse_schema_apply_runs WHERE org_id = $1",
+				[ORG],
+			),
+		).pipe(Effect.map((row) => row?.updated_at.getTime()))
+
+	it.effect("keeps a long statement's run fresh, and abandons it once the run is reclaimed", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO org_clickhouse_schema_apply_runs (org_id, workflow_instance_id, status, created_at, updated_at)
+					 VALUES ($1, 'run-1', 'running', to_timestamp(0), to_timestamp(0))`,
+					[ORG],
+				),
+			)
+			const fence = { database: yield* Database, orgId: ORG, runId: "run-1" }
+			// A backfill chunk that outlasts the staleness window.
+			const fiber = yield* withRunHeartbeat(fence, Effect.never).pipe(Effect.forkChild)
+
+			yield* TestClock.adjust("5 minutes")
+			assert.strictEqual(yield* updatedAt(testDb), 5 * 60_000)
+
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"UPDATE org_clickhouse_schema_apply_runs SET workflow_instance_id = 'run-2' WHERE org_id = $1",
+					[ORG],
+				),
+			)
+			yield* TestClock.adjust("5 minutes")
+			const exit = yield* Fiber.await(fiber)
+			assert.isTrue(Exit.isFailure(exit))
+			if (Exit.isFailure(exit)) {
+				assert.include(String(Cause.squash(exit.cause)), "SchemaApplyRunSuperseded")
+			}
+			assert.strictEqual(yield* updatedAt(testDb), 5 * 60_000)
+		}).pipe(Effect.provide(testDb.layer))
+	})
 })
