@@ -101,25 +101,26 @@ describe("buildSessionTurns", () => {
 		// An agent engine stamps its thread id — the session — on `execute_tool`
 		// spans and no session id; the model calls carry the session and a turn id.
 		const turns = buildSessionTurns([
-			agentSpan({
+			llmSpan({
 				spanId: "chat-1",
 				startMs: 0,
 				durationMs: 4 * SECOND,
 				sessionId: "sess-1",
-				genAi: { operationName: "chat", conversationId: "turn-1" },
+				genAi: { conversationId: "turn-1" },
 			}),
-			agentSpan({
+			toolSpan({
 				spanId: "tool-1",
 				startMs: 4 * SECOND,
 				durationMs: 2 * SECOND,
-				genAi: { operationName: "execute_tool", toolName: "search_logs", conversationId: "sess-1" },
+				toolName: "search_logs",
+				genAi: { conversationId: "sess-1" },
 			}),
-			agentSpan({
+			llmSpan({
 				spanId: "chat-2",
 				startMs: 6 * SECOND,
 				durationMs: 4 * SECOND,
 				sessionId: "sess-1",
-				genAi: { operationName: "chat", conversationId: "turn-1" },
+				genAi: { conversationId: "turn-1" },
 			}),
 		])
 
@@ -577,74 +578,7 @@ describe("buildSessionTurns", () => {
 })
 
 describe("classifyAiSpan", () => {
-	it("reads gen_ai.operation.name when it is there", () => {
-		expect(classifyAiSpan(llmSpan({ spanId: "a", startMs: 0, durationMs: 1 }))).toBe("inference")
-		expect(classifyAiSpan(toolSpan({ spanId: "b", startMs: 0, durationMs: 1 }))).toBe("tool")
-		expect(classifyAiSpan(agentSpan({ spanId: "c", startMs: 0, durationMs: 1 }))).toBe("agent")
-	})
-
-	it("accepts operation names outside the documented set", () => {
-		const vercelStep = makeSpan({
-			spanId: "a",
-			startMs: 0,
-			durationMs: 1,
-			genAi: { operationName: "agent_step" },
-		})
-
-		expect(classifyAiSpan(vercelStep)).toBe("agent")
-	})
-
-	it("falls back to the span name when the operation is not recorded", () => {
-		// A name-only AI span is one the ingest gateway stamped from its scope: a
-		// vendor id, no decoded gen_ai attributes.
-		const named = (spanName: string) =>
-			classifyAiSpan(
-				makeSpan({ spanId: "a", startMs: 0, durationMs: 1, spanName, vendorId: "vercel_ai_sdk" }),
-			)
-
-		expect(named("ai.toolCall")).toBe("tool")
-		expect(named("workflow.run")).toBe("agent")
-		expect(named("chat gpt-5")).toBe("inference")
-	})
-
-	it("does not read 'tool' off the name of a span that names an unknown operation", () => {
-		// `blind-ts-mastra` (EU, 2026-09-29): the Mastra exporter lowercases a span
-		// type the convention has no name for into `gen_ai.operation.name`; a
-		// LangSmith OTel `chain` wraps LangGraph's `tools` node.
-		const unknownOp = (spanName: string, operationName: string) =>
-			makeSpan({
-				spanId: "a",
-				startMs: 0,
-				durationMs: 1,
-				spanName,
-				vendorId: "mastra",
-				genAi: { operationName },
-			})
-
-		for (const span of [
-			unknownOp("scorer_run code-tool-call-accuracy-scorer", "scorer_run"),
-			unknownOp("scorer_step code-tool-call-accuracy-scorer", "scorer_step"),
-			unknownOp("tools", "chain"),
-			unknownOp("HumanInTheLoopMiddleware.wrap_tool_call", "chain"),
-		]) {
-			expect(classifyAiSpan(span)).toBe("agent")
-			expect(isLlmCall(span)).toBe(false)
-		}
-		// A tool name is still a tool call, whatever the operation says.
-		expect(
-			classifyAiSpan(
-				makeSpan({
-					spanId: "a",
-					startMs: 0,
-					durationMs: 1,
-					spanName: "mcp_tool_call search",
-					genAi: { operationName: "mcp_tool_call", toolName: "search" },
-				}),
-			),
-		).toBe("tool")
-	})
-
-	it("classifies a span with no AI signal as other, whatever it is called", () => {
+	it("classifies a span the gateway did not stamp as other, whatever it says", () => {
 		const httpSpan = makeSpan({
 			spanId: "a",
 			startMs: 0,
@@ -652,51 +586,18 @@ describe("classifyAiSpan", () => {
 			spanName: "POST /v1/agent/chat",
 			isAiSpan: false,
 		})
+		// An MCP server's `tools/call`: the tool, not an agent calling one.
+		const mcpServer = makeSpan({
+			spanId: "b",
+			startMs: 0,
+			durationMs: 1,
+			spanName: "tools/call search",
+			genAi: { operationName: "execute_tool", toolName: "search" },
+		})
 
 		expect(classifyAiSpan(httpSpan)).toBe("other")
-	})
-})
-
-describe("isLlmCall", () => {
-	it("counts chat-shaped operations", () => {
-		expect(isLlmCall(llmSpan({ spanId: "a", startMs: 0, durationMs: 1 }))).toBe(true)
-	})
-
-	it("agrees with classifyAiSpan on an operation name outside the documented set", () => {
-		const openSet = makeSpan({
-			spanId: "a",
-			startMs: 0,
-			durationMs: 1,
-			genAi: { operationName: "generate_text", responseModel: "gpt-5" },
-		})
-
-		expect(classifyAiSpan(openSet)).toBe("inference")
-		expect(isLlmCall(openSet)).toBe(true)
-	})
-
-	it("does not count embeddings, which are inference but not a model turn", () => {
-		const embedding = makeSpan({
-			spanId: "a",
-			startMs: 0,
-			durationMs: 1,
-			genAi: { operationName: "embeddings" },
-		})
-
-		expect(classifyAiSpan(embedding)).toBe("inference")
-		expect(isLlmCall(embedding)).toBe(false)
-	})
-
-	it("reads a memory operation as agent work, even when it names a model", () => {
-		const memory = makeSpan({
-			spanId: "a",
-			startMs: 0,
-			durationMs: 1,
-			spanName: "search_memory chat-history",
-			genAi: { operationName: "search_memory", requestModel: "text-embedding-3-small" },
-		})
-
-		expect(classifyAiSpan(memory)).toBe("agent")
-		expect(isLlmCall(memory)).toBe(false)
+		expect(classifyAiSpan(mcpServer)).toBe("other")
+		expect(isCountedToolCall(mcpServer)).toBe(false)
 	})
 })
 
@@ -735,20 +636,17 @@ describe("the ingest gateway's verdicts", () => {
 		expect(
 			isCountedToolCall(stamped("execute_tool delete_file", { mapleLlmCall: 0, mapleToolCall: 1 })),
 		).toBe(true)
-		// Before the gateway stamped: the classifier's rule.
-		expect(
-			isCountedToolCall(stamped("execute_tool delete_file", { operationName: "execute_tool" })),
-		).toBe(true)
 	})
 
 	it("decide whether a stamped span failed", () => {
 		expect(spanFailed(stamped("execute_tool", { mapleLlmCall: 0, mapleError: 1 }))).toBe(true)
 		// The gateway already weighed the span's own `error.type`.
 		expect(spanFailed(stamped("execute_tool", { mapleLlmCall: 0, errorType: "Timeout" }))).toBe(false)
-		// A span before the gateway stamped: the attribute rule.
-		expect(
-			spanFailed(makeSpan({ spanId: "a", startMs: 0, durationMs: 1, genAi: { errorType: "Timeout" } })),
-		).toBe(true)
+		// A span it did not stamp: its status alone.
+		const unstamped = (statusCode: string) =>
+			makeSpan({ spanId: "a", startMs: 0, durationMs: 1, statusCode, genAi: { errorType: "404" } })
+		expect(spanFailed(unstamped("Unset"))).toBe(false)
+		expect(spanFailed(unstamped("Error"))).toBe(true)
 	})
 })
 

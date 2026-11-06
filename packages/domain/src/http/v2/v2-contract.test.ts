@@ -646,6 +646,8 @@ describe("V2 alerts wire format", () => {
 				steps_sent: 1,
 				next_step_at: "2026-07-15T09:25:00.000Z",
 			},
+			silence_id: null,
+			silenced_at: null,
 		})
 		expect(incident.id).toBe(INCIDENT_UUID)
 		expect(incident.rule_id).toBe(UUID)

@@ -24,7 +24,7 @@ function twoTurns(secondTurn: readonly Parameters<typeof buildSessionTurns>[0][n
 			startMs: SECOND,
 			durationMs: SECOND,
 			model: "claude-opus-5",
-			genAi: { conversationId: "t1", usageInputTokens: 1000, usageOutputTokens: 100 },
+			genAi: { conversationId: "t1", mapleInputTokens: 1000, mapleOutputTokens: 100 },
 		}),
 		...secondTurn,
 	]
@@ -77,7 +77,7 @@ describe("buildSessionFindings", () => {
 					genAi: {
 						conversationId: "t2",
 						errorType: "context_length_exceeded",
-						usageInputTokens: 190_000,
+						mapleInputTokens: 190_000,
 					},
 				}),
 			]),
@@ -106,7 +106,7 @@ describe("buildSessionFindings", () => {
 					genAi: {
 						conversationId: "t2",
 						errorType: "context_length_exceeded",
-						usageInputTokens: 190_000,
+						mapleInputTokens: 190_000,
 					},
 				}),
 			]),

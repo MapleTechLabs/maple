@@ -144,21 +144,18 @@ export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: He
 						value: String(counts.healthy),
 						tone: tone("healthy", "ok"),
 						action: railAction(h, slice, "healthy"),
-						delay: 60,
 					}),
 					statRailItem(h, {
 						eyebrow: "Degraded",
 						value: String(counts.degraded),
 						tone: tone("degraded", "warn"),
 						action: railAction(h, slice, "degraded"),
-						delay: 120,
 					}),
 					statRailItem(h, {
 						eyebrow: "Unhealthy",
 						value: String(counts.unhealthy),
 						tone: tone("unhealthy", "crit"),
 						action: railAction(h, slice, "unhealthy"),
-						delay: 180,
 					}),
 				]),
 			])

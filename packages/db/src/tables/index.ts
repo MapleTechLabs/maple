@@ -10,6 +10,7 @@ import {
 	AlertIncidentEvents,
 	AlertDeliveryEvents,
 	AlertLinearIssues,
+	AlertSilences,
 } from "./alerts"
 import { AnomalyDetectorSettings, AnomalyDetectorStates, AnomalyIncidents } from "./anomalies"
 import { ApiKeys } from "./api-keys"
@@ -172,6 +173,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	AlertIncidentEvents,
 	AlertDeliveryEvents,
 	AlertLinearIssues,
+	AlertSilences,
 	AnomalyDetectorSettings,
 	AnomalyDetectorStates,
 	AnomalyIncidents,

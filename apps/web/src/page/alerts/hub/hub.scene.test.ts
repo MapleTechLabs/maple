@@ -124,6 +124,8 @@ describe("alerts hub", () => {
 		acknowledged_via: null,
 		error_issue_id: null,
 		escalation: null,
+		silence_id: null,
+		silenced_at: null,
 	})
 
 	test("the inbox acknowledges a firing incident and moves it out of the firing count", () => {

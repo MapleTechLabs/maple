@@ -8,7 +8,7 @@ import type {
 } from "@maple/domain/http"
 import { CurrentTenant, isAlertNotificationEventType } from "@maple/domain/http"
 import type { V2AlertIncident, V2AlertIncidentEscalation, V2AlertIncidentEvent } from "@maple/domain/http/v2"
-import { MapleApiV2, paginateOffsetQuery } from "@maple/domain/http/v2"
+import { MapleApiV2, paginateOffsetQuery, timestampOrNull } from "@maple/domain/http/v2"
 import { Duration, Effect, Option, Array as Arr } from "effect"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import {
@@ -73,6 +73,8 @@ const toV2Incident = (
 	acknowledged_via: doc.acknowledgedVia,
 	error_issue_id: doc.errorIssueId,
 	escalation: escalation === undefined ? null : toV2Escalation(escalation),
+	silence_id: doc.silenceId,
+	silenced_at: timestampOrNull(doc.silencedAt),
 })
 
 const toV2Event = (doc: AlertIncidentEventDocument): V2AlertIncidentEvent => ({

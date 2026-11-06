@@ -20,12 +20,13 @@ import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import {
 	AlertMemberDirectoryUnavailableError,
+	AlertSilenceId,
 	IntegrationsRevokedError,
 	OrgId,
 	UserId,
 	WarehouseQuotaExceededError,
 } from "@maple/domain/http"
-import { encodePublicId, MapleApiV2 } from "@maple/domain/http/v2"
+import { AlertSilencePublicId, encodePublicId, MapleApiV2 } from "@maple/domain/http/v2"
 import { BucketCacheService } from "@maple/query-engine/caching"
 import { EdgeCacheService } from "@maple/cache"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
@@ -1970,6 +1971,90 @@ describe("v2 alerts over HTTP", () => {
 			"alert_destination_in_use",
 			"The alert destination is currently used by one or more alert rules or escalation chains.",
 		])
+
+		await harness.dispose()
+	})
+
+	it("creates, lists, extends and ends an alert silence", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const { rule } = await createWebhookAndRule(harness, key.secret)
+
+		const created = await harness.request("POST", "/v2/alerts/silences", key.secret, {
+			reason: "Deploying checkout v2.3",
+			matchers: { rule_ids: [rule.body.id], services: ["checkout"] },
+			duration_minutes: 60,
+		})
+		expect(created.status).toBe(200)
+		expect(created.body).toMatchObject({
+			object: "alert_silence",
+			status: "active",
+			matchers: { rule_ids: [rule.body.id], services: ["checkout"] },
+		})
+		expect(created.body.id).toMatch(/^sil_/)
+		expect(Date.parse(created.body.ends_at) - Date.parse(created.body.starts_at)).toBe(60 * 60_000)
+		const id: string = created.body.id
+
+		const active = await harness.request("GET", "/v2/alerts/silences?status=active", key.secret)
+		expect(active.body.data.map((silence: { id: string }) => silence.id)).toEqual([id])
+
+		const endsAt = new Date(Date.parse(created.body.ends_at) + 60 * 60_000).toISOString()
+		const extended = await harness.request("PATCH", `/v2/alerts/silences/${id}`, key.secret, {
+			ends_at: endsAt,
+		})
+		expect(extended.status).toBe(200)
+		expect(extended.body.ends_at).toBe(endsAt)
+
+		const ended = await harness.request("POST", `/v2/alerts/silences/${id}/end`, key.secret)
+		expect(ended.status).toBe(200)
+		expect(ended.body.status).toBe("ended")
+		const stillActive = await harness.request("GET", "/v2/alerts/silences?status=active", key.secret)
+		expect(stillActive.body.data).toEqual([])
+
+		const unknownId = Schema.encodeSync(AlertSilencePublicId)(
+			Schema.decodeSync(AlertSilenceId)("0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80"),
+		)
+		const missing = await harness.request("GET", `/v2/alerts/silences/${unknownId}`, key.secret)
+		expect(missing.status).toBe(404)
+
+		await harness.dispose()
+	})
+
+	it("rejects a silence without a matcher, an end or a sensible window", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const post = (body: unknown) => harness.request("POST", "/v2/alerts/silences", key.secret, body)
+
+		const noMatcher = await post({ reason: "x", matchers: {}, duration_minutes: 10 })
+		const noEnd = await post({ reason: "x", matchers: { tags: ["db"] } })
+		const both = await post({
+			reason: "x",
+			matchers: { tags: ["db"] },
+			duration_minutes: 10,
+			ends_at: new Date(Date.now() + 60_000).toISOString(),
+		})
+		const tooLong = await post({
+			reason: "x",
+			matchers: { tags: ["db"] },
+			duration_minutes: 31 * 24 * 60,
+		})
+		const ended = await post({
+			reason: "x",
+			matchers: { tags: ["db"] },
+			ends_at: new Date(Date.now() - 60_000).toISOString(),
+		})
+		for (const response of [noMatcher, noEnd, both, tooLong, ended]) {
+			expect(response.status).toBe(400)
+			expect(response.body.error.type).toBe("invalid_request_error")
+		}
+
+		const readOnly = await harness.bootstrapKey(["alerts:read"])
+		const denied = await harness.request("POST", "/v2/alerts/silences", readOnly.secret, {
+			reason: "x",
+			matchers: { tags: ["db"] },
+			duration_minutes: 10,
+		})
+		expect(denied.status).toBe(403)
 
 		await harness.dispose()
 	})
