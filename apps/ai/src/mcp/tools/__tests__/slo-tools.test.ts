@@ -223,6 +223,13 @@ describe("inspect_slo", () => {
 		expect(byId.slo.name).toBe("Search latency")
 		expect(Arr.every(byId.status.tiers, (tier) => !tier.breached)).toBe(true)
 
+		// The incident tools hint at inspect_slo by the incident's rule id.
+		const byRule = decode(
+			InspectSloOutput,
+			await runToolDirect(member, "inspect_slo", { slo: byId.slo.alerting.alertRuleId ?? "missing" }),
+		)
+		expect(byRule.slo.id).toBe(byId.slo.id)
+
 		const missing = await runToolDirect(member, "inspect_slo", { slo: "Nope" })
 		expect(missing.isError).toBe(true)
 		expect(markdown(missing)).toContain("list_slos")

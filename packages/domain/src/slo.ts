@@ -1,4 +1,4 @@
-import { Array as Arr, Option, Schema } from "effect"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 import { SloLatencyThresholdMs } from "./primitives"
 
 // Service level objectives: what counts as a good event (the SLI), the target share of good
@@ -91,6 +91,22 @@ export const tierObserved = (tier: SloBurnTier, windows: ReadonlyArray<SloBurnWi
 		onNone: () => false,
 		onSome: (window) => window.total > 0,
 	})
+
+/** How a tier reads now: firing, holding its state (no events in its short window), or clear. */
+export type SloTierState = "breach" | "hold" | "clear"
+
+export const tierState = (tier: SloBurnTier, windows: ReadonlyArray<SloBurnWindow>): SloTierState =>
+	!tierObserved(tier, windows) ? "hold" : tierBreached(tier, windows) ? "breach" : "clear"
+
+/** `5m`, `30m`, `1h`, `6h`. */
+export const windowLabel = (minutes: number): string => (minutes >= 60 ? `${minutes / 60}h` : `${minutes}m`)
+
+/** The hidden burn-rate rule's name: it titles incidents and notifications. */
+export const SLO_RULE_NAME_PREFIX = "SLO burn: "
+export const sloRuleName = (sloName: string): string => `${SLO_RULE_NAME_PREFIX}${sloName}`
+/** The SLO name inside a burn-rate rule's name, or `null` for any other rule name. */
+export const sloNameFromRuleName = (ruleName: string): string | null =>
+	Str.startsWith(SLO_RULE_NAME_PREFIX)(ruleName) ? Str.slice(SLO_RULE_NAME_PREFIX.length)(ruleName) : null
 
 /** A bucket of events starting at `startMs`. */
 export interface SloBucket extends SloCounts {
