@@ -1,12 +1,14 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { OrgId, UserId } from "@maple/domain/http"
+import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { registerAcknowledgeAlertIncidentTool } from "./acknowledge-alert-incident"
+import { renderToolDoc } from "../lib/tool-doc"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import type { McpToolError, McpToolRegistrar } from "./types"
 import type { McpToolRequirements } from "./runtime-requirements"
@@ -23,12 +25,17 @@ type Invoke = (
 	params: Readonly<Record<string, unknown>>,
 ) => Effect.Effect<unknown, McpToolError, McpToolRequirements>
 
-const acknowledgeTool = (): Invoke => {
+/** Calls the tool's handler; with `rendered`, returns the text the model reads instead. */
+const acknowledgeTool = (rendered = false): Invoke => {
 	let invoke: Invoke = () => Effect.die("unregistered")
 	const registrar: McpToolRegistrar = {
 		define: (spec) => {
 			invoke = (params) =>
-				Schema.decodeEffect(spec.parameters)(params).pipe(Effect.orDie, Effect.flatMap(spec.handler))
+				Schema.decodeEffect(spec.parameters)(params).pipe(
+					Effect.orDie,
+					Effect.flatMap(spec.handler),
+					Effect.map((output) => (rendered ? renderToolDoc(spec.render(output)) : output)),
+				)
 		},
 	}
 	registerAcknowledgeAlertIncidentTool(registrar)
@@ -87,7 +94,8 @@ describe("acknowledge_alert_incident", () => {
 		const call = acknowledgeTool()
 		return Effect.gen(function* () {
 			yield* seed(testDb)
-			const acked = yield* call({ incident_id: OPEN })
+			// The `inc_…` id the v2 API and the other tools print, not the internal UUID.
+			const acked = yield* call({ incident_id: encodePublicId(PublicIdPrefixes.alertIncident, OPEN) })
 			assert.deepInclude(acked, {
 				id: OPEN,
 				status: "open",
@@ -102,6 +110,25 @@ describe("acknowledge_alert_incident", () => {
 				acknowledgedBy: null,
 				changed: true,
 			})
+		}).pipe(Effect.provide(layerFor(testDb)))
+	})
+
+	it.effect("renders the change, a no-op notice, and the timeline as the next call", () => {
+		const testDb = createTestDb(trackedDbs)
+		const render = acknowledgeTool(true)
+		return Effect.gen(function* () {
+			yield* seed(testDb)
+			const acked = yield* render({ incident_id: OPEN })
+			assert.include(acked, "## Incident Acknowledged")
+			assert.include(acked, "Checkout errors")
+			assert.include(acked, "someone via mcp")
+			assert.include(acked, "get_incident_timeline")
+			assert.include(acked, "00000000-0000-4000-8000-0000000000b0")
+			assert.notInclude(acked, "nothing changed")
+			assert.include(yield* render({ incident_id: OPEN }), "Already acknowledged; nothing changed.")
+			const unacked = yield* render({ incident_id: OPEN, acknowledged: false })
+			assert.include(unacked, "## Incident Unacknowledged")
+			assert.notInclude(unacked, "someone via mcp")
 		}).pipe(Effect.provide(layerFor(testDb)))
 	})
 
