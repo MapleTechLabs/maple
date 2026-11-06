@@ -332,6 +332,7 @@ const stepBlock = (h: H, model: Model, inputs: ViewInputs, step: StepDraft, inde
 			addEntries: addEntries(inputs, step),
 			addLabel: "Add destination, person or schedule",
 			isDisabled: model.isSaving,
+			context: `step ${index + 1}`,
 			emptyText: "Pick who this step pages",
 		}),
 		...Option.match(targets, {

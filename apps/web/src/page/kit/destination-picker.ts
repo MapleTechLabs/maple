@@ -23,6 +23,8 @@ export const destinationPicker = <M, Id extends string>(
 		emptyText: string
 		/** The pick is shown but cannot change (a form whose save is in flight). */
 		isDisabled?: boolean
+		/** Names the list in its buttons ("step 2") when one form shows several pickers. */
+		context?: string
 	}>,
 ): Html => {
 	const rows = options.rows ?? []
@@ -58,6 +60,7 @@ export const destinationPicker = <M, Id extends string>(
 		})),
 		addLabel: "Add destination",
 		isDisabled,
+		...(options.context === undefined ? undefined : { context: options.context }),
 	})
 }
 

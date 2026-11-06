@@ -46,9 +46,12 @@ export const pickList = <M>(
 		addLabel: string
 		/** A save in flight: the picks show, but nothing can be removed, moved or added. */
 		isDisabled?: boolean
+		/** Names the list in its remove and add buttons ("step 2") when a form shows several. */
+		context?: string
 	}>,
 ): Html => {
 	const isDisabled = options.isDisabled ?? false
+	const inContext = options.context === undefined ? "" : ` in ${options.context}`
 	return panel(h, { className: "divide-y shadow-none" }, [
 		...Arr.map(options.entries, (entry) =>
 			hstack(h, { gap: "2", className: "px-3 py-2", attributes: [h.Key(entry.key)] }, [
@@ -86,7 +89,7 @@ export const pickList = <M>(
 				iconButton(
 					h,
 					{
-						label: entry.removeLabel,
+						label: `${entry.removeLabel}${inContext}`,
 						className: "text-muted-foreground",
 						isDisabled,
 						attributes: [h.OnClick(entry.onRemove)],
@@ -123,7 +126,15 @@ export const pickList = <M>(
 												className:
 													"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
 												isDisabled,
-												attributes: trigger,
+												attributes:
+													options.context === undefined
+														? trigger
+														: [
+																...trigger,
+																h.AriaLabel(
+																	`${options.addLabel} to ${options.context}`,
+																),
+															],
 											},
 											[icon(h, "PlusIcon", { size: 14 }), options.addLabel],
 										),
