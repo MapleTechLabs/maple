@@ -211,6 +211,7 @@ export const rowToIncidentDocument = (row: AlertIncidentRow) =>
 		errorIssueId: row.errorIssueId != null ? decodeErrorIssueIdSync(row.errorIssueId) : null,
 		...(row.signalType === "anomaly" ? { anomalyIncidentId: row.anomalyIncidentId } : undefined),
 		...(row.groupLabel === null ? undefined : { groupLabel: row.groupLabel }),
+		...(row.labelsJson === null ? undefined : { labels: row.labelsJson }),
 		silenceId: row.silenceId,
 		silencedAt: toIso(row.silencedAt),
 	})
