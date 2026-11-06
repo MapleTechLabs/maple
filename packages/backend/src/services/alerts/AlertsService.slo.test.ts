@@ -32,6 +32,8 @@ interface Traffic {
 	badPerMille: number
 	/** No spans at all: the service is down or ingest stalled. */
 	silent?: boolean
+	/** No spans in only the newest minutes; older minutes keep their traffic. */
+	silentMinutes?: number
 }
 
 /**
@@ -46,11 +48,17 @@ const sloWarehouse = (traffic: Traffic) =>
 				const minute = Math.floor(nowMs / 60_000) * 60_000
 				const rows =
 					options?.context === "sloBurnWindows" && traffic.silent !== true
-						? Arr.makeBy(400, (index) => ({
-								bucket: formatWarehouseDateTime(minute - index * 60_000),
-								total: 1000,
-								good: 1000 - traffic.badPerMille,
-							}))
+						? Arr.map(
+								Arr.filter(
+									Arr.makeBy(400, (index) => index),
+									(index) => index >= (traffic.silentMinutes ?? 0),
+								),
+								(index) => ({
+									bucket: formatWarehouseDateTime(minute - index * 60_000),
+									total: 1000,
+									good: 1000 - traffic.badPerMille,
+								}),
+							)
 						: []
 				return yield* compiledQueryOf(compiled).decodeRows(rows).pipe(Effect.orDie)
 			}),
@@ -124,6 +132,27 @@ describe("AlertsService SLO burn-rate rules", () => {
 
 			// An outage zeroes every window: that is no data, not a recovery.
 			traffic.silent = true
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+			const held = (yield* alerts.listIncidents(orgId)).incidents
+			assert.strictEqual(held[0]?.status, "open")
+			assert.strictEqual(held[0]?.severity, "critical")
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("a page stays open while its 5m window is empty, even once the warning tier clears", () => {
+		const traffic: Traffic = { badPerMille: 20 }
+		const { layer } = harness(traffic)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			yield* createSlo(undefined)
+			yield* alerts.runSchedulerTick()
+			assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.severity, "critical")
+
+			// The newest minutes go quiet and the older ones turn healthy: warning clears, critical holds.
+			traffic.badPerMille = 0
+			traffic.silentMinutes = 6
 			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
 			const held = (yield* alerts.listIncidents(orgId)).incidents
