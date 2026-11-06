@@ -14,6 +14,9 @@ export const OverrideDraft = Schema.Struct({
 	userId: Schema.String,
 	startsAt: Schema.String,
 	endsAt: Schema.String,
+	/** The exact instants the dialog opened on, sent back until their text is edited. */
+	startMs: Schema.NullOr(Schema.Number),
+	endMs: Schema.NullOr(Schema.Number),
 })
 export type OverrideDraft = typeof OverrideDraft.Type
 
@@ -27,6 +30,7 @@ export const Model = Schema.Struct({
 	weekOffset: Schema.Number,
 	shifts: KeyedSchema(V2OnCallShifts, LoadFailure),
 	overrides: KeyedSchema(Schema.Array(V2OnCallOverride), LoadFailure),
+	/** `null` until Clerk answers, and after a failed read: names then read neutrally. */
 	members: Schema.NullOr(Schema.Array(OrgMember)),
 	grants: Schema.Array(Policy.PermissionName),
 	overrideDialog: Dialog.Model,
@@ -37,6 +41,9 @@ export const Model = Schema.Struct({
 	/** Bumped on every open: a create's result only settles the dialog it was sent from. */
 	overrideOpenCount: Schema.Number,
 	deletingOverrideId: Schema.NullOr(OnCallOverrideId),
+	/** The override awaiting delete confirmation. */
+	confirmDeleteOverrideId: Schema.NullOr(OnCallOverrideId),
+	deleteOverrideDialog: Dialog.Model,
 })
 export type Model = typeof Model.Type
 

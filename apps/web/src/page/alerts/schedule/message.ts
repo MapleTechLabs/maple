@@ -11,16 +11,21 @@ const outcome = <S extends Schema.Top>(success: S) => Schema.Result(success, Loa
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
-	CompletedFetchSchedule: { key: Schema.String, result: outcome(V2OnCallSchedule) },
+	CompletedFetchSchedule: {
+		key: Schema.String,
+		readAtMs: Schema.Number,
+		result: outcome(V2OnCallSchedule),
+	},
 	CompletedFetchShifts: { key: Schema.String, result: outcome(V2OnCallShifts) },
 	CompletedFetchOverrides: { key: Schema.String, result: outcome(Schema.Array(V2OnCallOverride)) },
 	CompletedFetchMembers: { result: Schema.Result(Schema.Array(OrgMember), Schema.String) },
 	CompletedFetchSession: { orgId: Schema.String, grants: Schema.Array(Policy.PermissionName) },
 	ClickedRetry: {},
+	ClickedRetryShifts: {},
 	ClickedPreviousWeek: {},
 	ClickedNextWeek: {},
 	ClickedThisWeek: {},
-	/** A final shift's bar: an override for its range, its person preselected. */
+	/** A final shift's bar: an override over its whole range, for someone else to cover. */
 	ClickedShift: { startMs: Schema.Number, endMs: Schema.Number },
 	ClickedNewOverride: {},
 	GotOverrideDialogMessage: { message: Dialog.Message },
@@ -30,6 +35,8 @@ export const Message = defineMessageUnion({
 	ClickedCreateOverride: {},
 	CompletedCreateOverride: { openCount: Schema.Number, result: outcome(V2OnCallOverride) },
 	ClickedDeleteOverride: { overrideId: OnCallOverrideId },
+	ClickedConfirmDeleteOverride: {},
+	GotDeleteOverrideDialogMessage: { message: Dialog.Message },
 	CompletedDeleteOverride: { overrideId: OnCallOverrideId, result: outcome(Schema.Void) },
 })
 export type Message = typeof Message.Type

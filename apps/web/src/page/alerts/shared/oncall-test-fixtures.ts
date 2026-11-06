@@ -60,7 +60,7 @@ const wallClock = (ms: number, timeZone: string, dayOffset: number, hour: number
 	return zonedPartsToEpochMs({ ...parts, day: parts.day + dayOffset, hour, minute: 0, second: 0 }, timeZone)
 }
 
-const DAYS = Arr.range(-8, 16)
+const DAYS = Arr.range(-8, 50)
 const DAY_MS = 86_400_000
 
 /** Whose turn a shift starting at `startMs` is: counted from the epoch, so any range agrees. */

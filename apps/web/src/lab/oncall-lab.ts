@@ -277,6 +277,7 @@ const scheduleFor = (state: LabState): Step<ScheduleModel.Model, ScheduleMessage
 			ScheduleMessage.Message.ReadClock({ nowMs }),
 			ScheduleMessage.Message.CompletedFetchSchedule({
 				key: start.model.schedule.key ?? "",
+				readAtMs: nowMs,
 				result: Result.succeed(schedule),
 			}),
 			ScheduleMessage.Message.CompletedFetchOverrides({
@@ -287,13 +288,13 @@ const scheduleFor = (state: LabState): Step<ScheduleModel.Model, ScheduleMessage
 		scheduleStep,
 	)
 	const fromMs = zonedDayStart(nowMs, schedule.time_zone)
-	const toMs = zonedDayStart(nowMs, schedule.time_zone, ScheduleUpdate.CALENDAR_DAYS)
+	const read = Option.getOrElse(ScheduleUpdate.readRangeOf(loaded.model), () => ({ fromMs, toMs: fromMs }))
 	const withShifts = fold(
 		loaded,
 		[
 			ScheduleMessage.Message.CompletedFetchShifts({
 				key: loaded.model.shifts.key ?? "",
-				result: Result.succeed(checkoutShifts(nowMs, fromMs, toMs)),
+				result: Result.succeed(checkoutShifts(nowMs, read.fromMs, read.toMs)),
 			}),
 		],
 		scheduleStep,

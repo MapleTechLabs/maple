@@ -3,6 +3,8 @@ import { OrgId } from "@maple/domain"
 import { OnCallOverrideId } from "@maple/domain/http"
 import { zonedDayStart } from "@maple/views/ui/shift-timeline"
 import { Option, Result, Schema, Array as Arr } from "effect"
+import { AsyncData } from "foldkit"
+import { isoMs } from "../shared/time"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
@@ -20,7 +22,7 @@ import {
 import { ORG } from "../shared/test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { CALENDAR_DAYS, init, overrideIssue, update } from "./update"
+import { init, overrideIssue, rangeOf, readRangeOf, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
@@ -47,6 +49,7 @@ const loaded = (nowMs: number, grants = ENGINEER) => {
 		Message.ReadClock({ nowMs }),
 		Message.CompletedFetchSchedule({
 			key: entered.model.schedule.key ?? "",
+			readAtMs: nowMs,
 			result: Result.succeed(checkoutSchedule(nowMs)),
 		}),
 		Message.CompletedFetchOverrides({
@@ -54,15 +57,29 @@ const loaded = (nowMs: number, grants = ENGINEER) => {
 			result: Result.succeed(checkoutOverrides(nowMs)),
 		}),
 	])
-	const fromMs = zonedDayStart(nowMs, BERLIN)
-	const toMs = zonedDayStart(nowMs, BERLIN, CALENDAR_DAYS)
-	return run(base, [
-		Message.CompletedFetchShifts({
-			key: base.shifts.key ?? "",
-			result: Result.succeed(checkoutShifts(nowMs, fromMs, toMs)),
-		}),
-	])
+	return withShifts(base, nowMs)
 }
+
+/** The shifts the page asked for, over the range it asked for (wider than the week drawn). */
+const withShifts = (model: Model, nowMs: number) =>
+	Option.match(readRangeOf(model), {
+		onNone: () => model,
+		onSome: ({ fromMs, toMs }) =>
+			run(model, [
+				Message.CompletedFetchShifts({
+					key: model.shifts.key ?? "",
+					result: Result.succeed(checkoutShifts(nowMs, fromMs, toMs)),
+				}),
+			]),
+	})
+
+const commandArgs = (
+	commands: ReadonlyArray<{ readonly name: string; readonly args?: unknown }> | undefined,
+	name: string,
+) =>
+	Arr.findFirst(commands ?? [], (command) => command.name === name).pipe(
+		Option.map((command) => command.args),
+	)
 
 describe("on-call schedule page", () => {
 	test("the week reads each layer and the final row in the schedule's zone, noting the viewer's", () => {
@@ -93,12 +110,135 @@ describe("on-call schedule page", () => {
 		)
 	})
 
-	test("moving a week reads that week's shifts; Today comes back", () => {
+	test("moving a week reads that week's shifts and shows a skeleton, not last week's bars, until they land", () => {
 		const model = loaded(ONCALL_NOW)
 		const next = pageUpdate(model, Message.ClickedNextWeek())
 		expect(names(next.commands)).toEqual(["FetchOnCallShifts"])
 		expect(next.model.weekOffset).toBe(1)
+		scene(
+			{ update: pageUpdate, view },
+			given(next.model),
+			expectView(text("17 Nov to 23 Nov")).toExist(),
+			expectView(role("rowheader", { name: /Final schedule/u })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withShifts(next.model, ONCALL_NOW)),
+			expectView(role("rowheader", { name: /Final schedule/u })).toExist(),
+		)
 		expect(pageUpdate(next.model, Message.ClickedThisWeek()).model.weekOffset).toBe(0)
+	})
+
+	test("an override over a shift crossing the week's edge covers the whole shift, not the drawn part", () => {
+		const model = loaded(ONCALL_NOW)
+		const weekEnd = Option.getOrElse(
+			Option.map(rangeOf(model), (range) => range.toMs),
+			() => 0,
+		)
+		const shifts = Option.getOrElse(AsyncData.getData(model.shifts.data), () => checkoutShifts(0, 0, 1))
+		const crossing = Arr.findFirst(
+			shifts.final,
+			(shift) => isoMs(shift.starts_at) < weekEnd && isoMs(shift.ends_at) > weekEnd,
+		)
+		expect(Option.isSome(crossing)).toBe(true)
+		const shift = Option.getOrElse(crossing, () => shifts.final[0])
+		const created = pageUpdate(
+			run(model, [
+				Message.ClickedShift({
+					startMs: isoMs(shift?.starts_at ?? ""),
+					endMs: isoMs(shift?.ends_at ?? ""),
+				}),
+				Message.ChangedOverrideUser({ value: memberId(7) }),
+			]),
+			Message.ClickedCreateOverride(),
+		)
+		expect(commandArgs(created.commands, "CreateOnCallOverride")).toEqual(
+			Option.some(
+				expect.objectContaining({
+					payload: { user_id: memberId(7), starts_at: shift?.starts_at, ends_at: shift?.ends_at },
+				}),
+			),
+		)
+	})
+
+	test("an override opened on an instant with seconds sends that instant back while its text is untouched", () => {
+		const startMs = Date.UTC(2026, 10, 12, 8, 0, 30)
+		const opened = run(loaded(ONCALL_NOW), [
+			Message.ClickedShift({ startMs, endMs: startMs + 3_600_000 }),
+			Message.ChangedOverrideUser({ value: memberId(7) }),
+		])
+		const created = pageUpdate(opened, Message.ClickedCreateOverride())
+		expect(commandArgs(created.commands, "CreateOnCallOverride")).toEqual(
+			Option.some(
+				expect.objectContaining({
+					payload: expect.objectContaining({ starts_at: "2026-11-12T08:00:30.000Z" }),
+				}),
+			),
+		)
+		const edited = pageUpdate(
+			run(opened, [Message.ChangedOverrideStart({ value: "2026-11-12T10:00" })]),
+			Message.ClickedCreateOverride(),
+		)
+		expect(commandArgs(edited.commands, "CreateOnCallOverride")).toEqual(
+			Option.some(
+				expect.objectContaining({
+					payload: expect.objectContaining({ starts_at: "2026-11-12T09:00:00.000Z" }),
+				}),
+			),
+		)
+	})
+
+	test("the header's on-call is read again after its handoff passes, and after an override is written", () => {
+		const model = loaded(ONCALL_NOW)
+		const handoff = Option.getOrElse(
+			Option.flatMap(AsyncData.getData(model.schedule.data), (schedule) =>
+				Option.map(Option.fromNullishOr(schedule.on_call_now), (now) => isoMs(now.ends_at)),
+			),
+			() => 0,
+		)
+		expect(
+			names(pageUpdate(model, Message.ReadClock({ nowMs: handoff - 60_000 })).commands),
+		).not.toContain("FetchOnCallSchedule")
+		expect(names(pageUpdate(model, Message.ReadClock({ nowMs: handoff })).commands)).toContain(
+			"FetchOnCallSchedule",
+		)
+		const created = pageUpdate(
+			run(model, [Message.ClickedNewOverride(), Message.ChangedOverrideUser({ value: memberId(7) })]),
+			Message.ClickedCreateOverride(),
+		)
+		const done = pageUpdate(
+			created.model,
+			Message.CompletedCreateOverride({
+				openCount: created.model.overrideOpenCount,
+				result: Result.succeed(Option.getOrThrow(Arr.head(checkoutOverrides(ONCALL_NOW)))),
+			}),
+		)
+		expect(names(done.commands)).toContain("FetchOnCallSchedule")
+	})
+
+	test("a failed shifts read waits for Try again instead of retrying every clock tick", () => {
+		const model = loaded(ONCALL_NOW)
+		const failed = run(model, [Message.ClickedNextWeek()])
+		const settled = run(failed, [
+			Message.CompletedFetchShifts({
+				key: failed.shifts.key ?? "",
+				result: Result.fail({
+					_tag: "@maple/http/errors/AlertPersistenceError",
+					type: "api_error",
+					code: "persistence_error",
+					title: "Couldn't read",
+					message: "Couldn't read the schedule",
+					retryable: true,
+					recovery: "retry",
+				}),
+			}),
+		])
+		expect(
+			names(pageUpdate(settled, Message.ReadClock({ nowMs: ONCALL_NOW + 30_000 })).commands),
+		).not.toContain("FetchOnCallShifts")
+		expect(names(pageUpdate(settled, Message.ClickedRetryShifts()).commands)).toContain(
+			"FetchOnCallShifts",
+		)
 	})
 
 	test("a final shift opens an override for its range; creating one sends the times in UTC", () => {
@@ -113,7 +253,13 @@ describe("on-call schedule page", () => {
 	})
 
 	test("an override has to end after it starts and in the future", () => {
-		const draft = { userId: memberId(1), startsAt: "2026-11-12T10:00", endsAt: "2026-11-12T09:00" }
+		const draft = {
+			userId: memberId(1),
+			startsAt: "2026-11-12T10:00",
+			endsAt: "2026-11-12T09:00",
+			startMs: null,
+			endMs: null,
+		}
 		expect(overrideIssue(draft, BERLIN, ONCALL_NOW)).toEqual(
 			Option.some("End the override after it starts"),
 		)
@@ -132,19 +278,33 @@ describe("on-call schedule page", () => {
 		)
 	})
 
-	test("deleting an override sends one delete, then reads the overrides and shifts again", () => {
+	test("deleting an override asks first, sends one delete, and reads the list again even when it fails", () => {
 		const overrideId = Schema.decodeSync(OnCallOverrideId)(overrideUuid(1))
 		const asked = pageUpdate(loaded(ONCALL_NOW), Message.ClickedDeleteOverride({ overrideId }))
-		expect(names(asked.commands)).toEqual(["DeleteOnCallOverride"])
+		expect(names(asked.commands)).not.toContain("DeleteOnCallOverride")
+		expect(asked.model.confirmDeleteOverrideId).toBe(overrideId)
+		const confirmed = pageUpdate(asked.model, Message.ClickedConfirmDeleteOverride())
+		expect(names(confirmed.commands)).toContain("DeleteOnCallOverride")
 		expect(
-			names(pageUpdate(asked.model, Message.ClickedDeleteOverride({ overrideId })).commands),
-		).toEqual([])
-		const done = pageUpdate(
-			asked.model,
-			Message.CompletedDeleteOverride({ overrideId, result: Result.void }),
+			names(pageUpdate(confirmed.model, Message.ClickedConfirmDeleteOverride()).commands),
+		).not.toContain("DeleteOnCallOverride")
+		const gone = pageUpdate(
+			confirmed.model,
+			Message.CompletedDeleteOverride({
+				overrideId,
+				result: Result.fail({
+					_tag: "@maple/http/errors/OnCallOverrideNotFoundError",
+					type: "not_found_error",
+					code: "oncall_override_not_found",
+					title: "Override not found",
+					message: "The override no longer exists.",
+					retryable: false,
+					recovery: "fix_request",
+				}),
+			}),
 		)
-		expect(names(done.commands)).toContain("FetchOnCallOverrides")
-		expect(names(done.commands)).toContain("FetchOnCallShifts")
+		expect(names(gone.commands)).toContain("FetchOnCallOverrides")
+		expect(names(gone.commands)).toContain("FetchOnCallShifts")
 	})
 
 	test("a member reads the calendar but cannot add or delete an override", () => {

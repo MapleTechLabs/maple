@@ -22,10 +22,11 @@ export const FetchSchedule = Command.define("FetchOnCallSchedule", {
 	args: { key: Schema.String, scheduleId: OnCallScheduleId },
 	messages: [Message.CompletedFetchSchedule],
 	execute: ({ key, scheduleId }) =>
-		retrieveOnCallSchedule(scheduleId).pipe(
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSchedule({ key, result })),
-		),
+		Effect.gen(function* () {
+			const result = yield* Effect.result(retrieveOnCallSchedule(scheduleId))
+			const readAtMs = yield* Clock.currentTimeMillis
+			return Message.CompletedFetchSchedule({ key, readAtMs, result })
+		}),
 })
 
 export const FetchShifts = Command.define("FetchOnCallShifts", {

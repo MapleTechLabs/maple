@@ -22,12 +22,13 @@ import {
 } from "./command"
 import { Message } from "./message"
 import { canManage, type Model, type OverrideDraft } from "./model"
-import { msIso } from "../shared/time"
+import { isoMs, msIso } from "../shared/time"
 
 type Return = PageReturn<Model, Message>
 type ScheduleRoute = Extract<AppRoute, { readonly _tag: "AlertsSchedule" }>
 
 export const OVERRIDE_DIALOG_ID = "schedule-override"
+export const DELETE_OVERRIDE_DIALOG_ID = "schedule-delete-override"
 
 /** The calendar shows one week of the schedule zone's days, from today. */
 export const CALENDAR_DAYS = 7
@@ -50,6 +51,19 @@ export const rangeOf = (model: Model): Option.Option<Readonly<{ fromMs: number; 
 				}),
 	)
 
+/**
+ * The shifts are read this far past either edge: the API clips shifts to the range it is asked,
+ * so a shift crossing the week's edge keeps its real bounds (a custom layer's longest is 14 days).
+ */
+export const SHIFT_READ_MARGIN_MS = 14 * 86_400_000
+
+/** The range the shifts are read over: the calendar's, widened by the margin. */
+export const readRangeOf = (model: Model): Option.Option<Readonly<{ fromMs: number; toMs: number }>> =>
+	Option.map(rangeOf(model), ({ fromMs, toMs }) => ({
+		fromMs: fromMs - SHIFT_READ_MARGIN_MS,
+		toMs: toMs + SHIFT_READ_MARGIN_MS,
+	}))
+
 export const init = (route: ScheduleRoute, context: PageContext): Return => {
 	const scheduleId = Option.getOrNull(scheduleIdFromUrl(route.scheduleId))
 	const model: Model = {
@@ -63,12 +77,14 @@ export const init = (route: ScheduleRoute, context: PageContext): Return => {
 		members: null,
 		grants: [],
 		overrideDialog: Dialog.init(OVERRIDE_DIALOG_ID, "dialog"),
-		overrideDraft: { userId: "", startsAt: "", endsAt: "" },
+		overrideDraft: { userId: "", startsAt: "", endsAt: "", startMs: null, endMs: null },
 		isShowingOverrideErrors: false,
 		isCreatingOverride: false,
 		overrideError: null,
 		overrideOpenCount: 0,
 		deletingOverrideId: null,
+		confirmDeleteOverrideId: null,
+		deleteOverrideDialog: Dialog.init(DELETE_OVERRIDE_DIALOG_ID, "alert-dialog"),
 	}
 	const common = [
 		ReadScheduleClock(),
@@ -94,15 +110,22 @@ export const init = (route: ScheduleRoute, context: PageContext): Return => {
 	}
 }
 
-/** The shifts of the range on screen; a new range or a write reads them again. */
+/**
+ * The shifts of the range on screen; a new range or a write reads them again. A tick's `Load`
+ * leaves a failure on screen: only Try again asks again.
+ */
 const requestShifts = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
 	const scheduleId = model.scheduleId
-	return Option.match(rangeOf(model), {
+	return Option.match(readRangeOf(model), {
 		onNone: () => ({ model }),
 		onSome: ({ fromMs, toMs }) => {
 			if (scheduleId === null) return { model }
 			const key = requestKey(context.orgId, "oncallSchedules.shifts", { id: scheduleId, fromMs, toMs })
-			return Option.match(Keyed.requestFor(model.shifts, key, mode), {
+			const requested =
+				mode === "Supersede"
+					? Keyed.requestFor(model.shifts, key, mode)
+					: Keyed.requestKeepingFailure(model.shifts, key, mode)
+			return Option.match(requested, {
 				onNone: () => ({ model }),
 				onSome: (shifts) => ({
 					model: { ...model, shifts },
@@ -113,16 +136,53 @@ const requestShifts = (model: Model, context: PageContext, mode: Keyed.ReadMode)
 	})
 }
 
+/** The schedule read again: its header's "on call now" moves with a handoff or an override. */
+const refreshSchedule = (model: Model, context: PageContext): Return => {
+	const scheduleId = model.scheduleId
+	if (scheduleId === null) return { model }
+	const schedule = Keyed.supersede(
+		model.schedule,
+		requestKey(context.orgId, "oncallSchedules.retrieve", { id: scheduleId }),
+	)
+	return { model: { ...model, schedule }, commands: [FetchSchedule({ key: schedule.key, scheduleId })] }
+}
+
+/** An override write: the overrides, the shifts and the schedule's "on call now" are read again. */
 const refreshOverrides = (model: Model, context: PageContext): Return => {
 	const scheduleId = model.scheduleId
 	if (scheduleId === null) return { model }
 	const key = requestKey(context.orgId, "oncallSchedules.listOverrides", { id: scheduleId })
 	const overrides = Keyed.supersede(model.overrides, key)
 	const shifts = requestShifts({ ...model, overrides }, context, "Supersede")
+	const schedule = refreshSchedule(shifts.model, context)
 	return {
-		model: shifts.model,
-		commands: [FetchOverrides({ key: overrides.key, scheduleId }), ...(shifts.commands ?? [])],
+		model: schedule.model,
+		commands: [
+			FetchOverrides({ key: overrides.key, scheduleId }),
+			...(shifts.commands ?? []),
+			...(schedule.commands ?? []),
+		],
 	}
+}
+
+/** With nobody on call there is no handoff to wait for, so the header is read again every 5 minutes. */
+const SCHEDULE_MAX_AGE_MS = 5 * 60_000
+
+/** The header's shift has handed off, or a gap has gone unchecked too long. */
+export const isScheduleStale = (model: Model, nowMs: number): boolean =>
+	AsyncData.isSuccess(model.schedule.data) &&
+	Option.exists(scheduleOf(model), (schedule) =>
+		Option.match(Option.fromNullishOr(schedule.on_call_now), {
+			onSome: (now) => isoMs(now.ends_at) <= nowMs,
+			onNone: () => nowMs - (model.schedule.updatedAtMs ?? nowMs) >= SCHEDULE_MAX_AGE_MS,
+		}),
+	)
+
+const clockRead = (model: Model, context: PageContext, nowMs: number): Return => {
+	const shifts = requestShifts({ ...model, nowMs }, context, "Load")
+	if (!isScheduleStale(shifts.model, nowMs)) return shifts
+	const schedule = refreshSchedule(shifts.model, context)
+	return { model: schedule.model, commands: [...(shifts.commands ?? []), ...(schedule.commands ?? [])] }
 }
 
 const decodeUserId = Schema.decodeUnknownOption(UserId)
@@ -133,8 +193,8 @@ export const overrideIssue = (
 	timeZone: string,
 	nowMs: number,
 ): Option.Option<string> => {
-	const start = localInputMs(draft.startsAt, timeZone)
-	const end = localInputMs(draft.endsAt, timeZone)
+	const start = draft.startMs === null ? localInputMs(draft.startsAt, timeZone) : Option.some(draft.startMs)
+	const end = draft.endMs === null ? localInputMs(draft.endsAt, timeZone) : Option.some(draft.endMs)
 	if (Option.isNone(decodeUserId(draft.userId))) return Option.some("Pick who covers the shift")
 	if (Option.isNone(start) || Option.isNone(end))
 		return Option.some("Pick when the override starts and ends")
@@ -154,8 +214,12 @@ const payloadOf = (
 		: Option.flatMap(decodeUserId(draft.userId), (user_id) =>
 				Option.flatMap(
 					Option.all([
-						localInputMs(draft.startsAt, timeZone),
-						localInputMs(draft.endsAt, timeZone),
+						draft.startMs === null
+							? localInputMs(draft.startsAt, timeZone)
+							: Option.some(draft.startMs),
+						draft.endMs === null
+							? localInputMs(draft.endsAt, timeZone)
+							: Option.some(draft.endMs),
 					]),
 					([start, end]) =>
 						Option.some({
@@ -177,22 +241,26 @@ const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Retur
 const openOverride = (model: Model, startMs: number, endMs: number): Return =>
 	Option.match(scheduleOf(model), {
 		onNone: () => ({ model }),
-		onSome: (schedule) =>
-			liftDialog(
+		onSome: (schedule) => {
+			// An override cannot lie wholly in the past: one over a running shift starts now.
+			const fromMs = Math.max(startMs, model.nowMs ?? startMs)
+			return liftDialog(
 				{
 					...model,
 					overrideDraft: {
 						userId: "",
-						// An override cannot lie wholly in the past: one over a running shift starts now.
-						startsAt: localInputOf(Math.max(startMs, model.nowMs ?? startMs), schedule.time_zone),
+						startsAt: localInputOf(fromMs, schedule.time_zone),
 						endsAt: localInputOf(endMs, schedule.time_zone),
+						startMs: fromMs,
+						endMs,
 					},
 					isShowingOverrideErrors: false,
 					overrideError: null,
 					overrideOpenCount: model.overrideOpenCount + 1,
 				},
 				Dialog.open(model.overrideDialog),
-			),
+			)
+		},
 	})
 
 const HOUR_MS = 3_600_000
@@ -216,6 +284,18 @@ const createOverride = (model: Model): Return => {
 	})
 }
 
+/** Runs the delete confirmation's update; `Closed` forgets the target. */
+const updateDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
+	model: {
+		...model,
+		deleteOverrideDialog: step.model,
+		confirmDeleteOverrideId: step.outMessage?._tag === "Closed" ? null : model.confirmDeleteOverrideId,
+	},
+	commands: FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
+		Message.GotDeleteOverrideDialogMessage({ message }),
+	),
+})
+
 const toast = (type: "success" | "error", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
 
@@ -224,9 +304,14 @@ const moveWeek = (model: Model, context: PageContext, weekOffset: number): Retur
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		ReadClock: ({ nowMs }) => requestShifts({ ...model, nowMs }, context, "Load"),
-		CompletedFetchSchedule: ({ key, result }) =>
-			requestShifts({ ...model, schedule: Keyed.accept(model.schedule, key, result) }, context, "Load"),
+		ReadClock: ({ nowMs }) => clockRead(model, context, nowMs),
+		CompletedFetchSchedule: ({ key, readAtMs, result }) =>
+			requestShifts(
+				{ ...model, schedule: Keyed.accept(model.schedule, key, result, readAtMs) },
+				context,
+				"Load",
+			),
+		ClickedRetryShifts: () => requestShifts(model, context, "Supersede"),
 		CompletedFetchShifts: ({ key, result }) => ({
 			model: { ...model, shifts: Keyed.accept(model.shifts, key, result) },
 		}),
@@ -236,22 +321,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchMembers: ({ result }) =>
 			Result.match(result, {
 				onSuccess: (members) => ({ model: { ...model, members } }),
-				onFailure: () => ({ model: { ...model, members: [] } }),
+				// A failed read keeps names neutral ("Member") rather than calling everyone a former member.
+				onFailure: () => ({ model }),
 			}),
 		CompletedFetchSession: ({ orgId, grants }) =>
 			orgId === context.orgId ? { model: { ...model, grants } } : { model },
-		ClickedRetry: () => {
-			const scheduleId = model.scheduleId
-			if (scheduleId === null) return { model }
-			const schedule = Keyed.supersede(
-				model.schedule,
-				requestKey(context.orgId, "oncallSchedules.retrieve", { id: scheduleId }),
-			)
-			return {
-				model: { ...model, schedule },
-				commands: [FetchSchedule({ key: schedule.key, scheduleId })],
-			}
-		},
+		ClickedRetry: () => refreshSchedule(model, context),
 		ClickedPreviousWeek: () => moveWeek(model, context, model.weekOffset - 1),
 		ClickedNextWeek: () => moveWeek(model, context, model.weekOffset + 1),
 		ClickedThisWeek: () => moveWeek(model, context, 0),
@@ -270,10 +345,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, overrideDraft: { ...model.overrideDraft, userId: value } },
 		}),
 		ChangedOverrideStart: ({ value }) => ({
-			model: { ...model, overrideDraft: { ...model.overrideDraft, startsAt: value } },
+			model: { ...model, overrideDraft: { ...model.overrideDraft, startsAt: value, startMs: null } },
 		}),
 		ChangedOverrideEnd: ({ value }) => ({
-			model: { ...model, overrideDraft: { ...model.overrideDraft, endsAt: value } },
+			model: { ...model, overrideDraft: { ...model.overrideDraft, endsAt: value, endMs: null } },
 		}),
 		ClickedCreateOverride: () => createOverride(model),
 		CompletedCreateOverride: ({ openCount, result }) =>
@@ -297,24 +372,39 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						}),
 					}),
 		ClickedDeleteOverride: ({ overrideId }) =>
-			model.deletingOverrideId !== null || model.scheduleId === null
+			model.deletingOverrideId !== null || !canManage(model)
+				? { model }
+				: updateDeleteDialog(
+						{ ...model, confirmDeleteOverrideId: overrideId },
+						Dialog.open(model.deleteOverrideDialog),
+					),
+		ClickedConfirmDeleteOverride: () => {
+			const overrideId = model.confirmDeleteOverrideId
+			return overrideId === null || model.deletingOverrideId !== null || model.scheduleId === null
 				? { model }
 				: {
 						model: { ...model, deletingOverrideId: overrideId },
 						commands: [DeleteOverride({ scheduleId: model.scheduleId, overrideId })],
-					},
+					}
+		},
+		GotDeleteOverrideDialogMessage: ({ message: child }) =>
+			// The dialog ignores dismissal while the delete is in flight.
+			model.deletingOverrideId !== null
+				? { model }
+				: updateDeleteDialog(model, Dialog.update(model.deleteOverrideDialog, child)),
 		CompletedDeleteOverride: ({ result }) => {
 			const settled = { ...model, deletingOverrideId: null }
-			return Result.match(result, {
-				onSuccess: (): Return => ({
-					...refreshOverrides(settled, context),
-					outMessage: toast("success", "Override deleted"),
+			const closed = updateDeleteDialog(settled, Dialog.close(settled.deleteOverrideDialog))
+			// Either way the list is read again: a 404 means someone else already removed it.
+			const refreshed = refreshOverrides(closed.model, context)
+			return {
+				model: refreshed.model,
+				commands: [...(closed.commands ?? []), ...(refreshed.commands ?? [])],
+				outMessage: Result.match(result, {
+					onSuccess: () => toast("success", "Override deleted"),
+					onFailure: (failure) => toast("error", "Couldn't delete the override", failure.message),
 				}),
-				onFailure: (failure): Return => ({
-					model: settled,
-					outMessage: toast("error", "Couldn't delete the override", failure.message),
-				}),
-			})
+			}
 		},
 	})
 

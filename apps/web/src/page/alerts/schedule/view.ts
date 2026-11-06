@@ -5,6 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { button, linkButton } from "@maple/views/ui/button"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { errorState } from "@maple/views/ui/error-state"
 import { fieldErrorText } from "@maple/views/ui/field"
 import { formDialog } from "@maple/views/ui/form-dialog"
@@ -27,7 +28,15 @@ import { editScheduleHref, formatShiftEdge, oncallTabHref } from "../shared/onca
 import { memberName, memberOf, type OrgMember } from "../shared/org-members"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
-import { OVERRIDE_DIALOG_ID, overrideIssue, overridesOf, rangeOf, scheduleOf } from "./update"
+import {
+	DELETE_OVERRIDE_DIALOG_ID,
+	OVERRIDE_DIALOG_ID,
+	overrideIssue,
+	overridesOf,
+	rangeOf,
+	readRangeOf,
+	scheduleOf,
+} from "./update"
 import { isoMs } from "../shared/time"
 
 // `/alerts/schedules/$scheduleId`: who is on call now, the week's calendar (each layer and the
@@ -83,7 +92,7 @@ const timelineRows = (
 		label: "Final schedule",
 		detail: "Who gets paged",
 		bars: Arr.map(shifts.final, (shift, index) => barOf(model, schedule, shift, `final-${index}`, true)),
-		emptyText: "Nobody on call this week",
+		emptyText: "Nobody on call in this range",
 	},
 	...Arr.reverse(
 		Arr.map(schedule.layers, (layer, index): TimelineRow<Message> => ({
@@ -93,7 +102,7 @@ const timelineRows = (
 			bars: Arr.map(shifts.layers[index] ?? [], (shift, at) =>
 				barOf(model, schedule, shift, `layer-${index}-${at}`, false),
 			),
-			emptyText: "Not active this week",
+			emptyText: "Not active in this range",
 		})),
 	),
 ]
@@ -108,27 +117,36 @@ const weekLabel = (fromMs: number, toMs: number, timeZone: string): string => {
 const calendarSection = (h: H, model: Model, schedule: V2OnCallSchedule, viewerZone: string): Html => {
 	const range = rangeOf(model)
 	const nowMs = model.nowMs ?? 0
+	// Shifts kept from another week (a week's read still in flight) draw as the skeleton, not blank rows.
 	const timeline = (fromMs: number, toMs: number, shifts: V2OnCallShifts): Html =>
-		shiftTimeline(h, {
-			fromMs,
-			toMs,
-			timeZone: schedule.time_zone,
-			nowMs,
-			rows: timelineRows(model, schedule, shifts),
-			ariaLabel: `Shifts for ${schedule.name}`,
-			legend: [
-				{ tone: "primary", label: "On call" },
-				{ tone: "info", label: "Override" },
-				{ tone: "neutral", label: "Layer shift" },
-			],
-		})
+		!Option.exists(readRangeOf(model), (read) => isoMs(shifts.from) === read.fromMs)
+			? skeleton(h, "h-40 w-full")
+			: shiftTimeline(h, {
+					fromMs,
+					toMs,
+					timeZone: schedule.time_zone,
+					nowMs,
+					rows: timelineRows(model, schedule, shifts),
+					ariaLabel: `Shifts for ${schedule.name}`,
+					nowLabel: `Now, ${formatShiftEdge(nowMs, schedule.time_zone)}`,
+					legend: [
+						{ tone: "primary", label: "On call" },
+						{ tone: "info", label: "Override" },
+						{ tone: "neutral", label: "Layer shift" },
+					],
+				})
 	const body = Option.match(range, {
 		onNone: () => skeleton(h, "h-40 w-full"),
 		onSome: ({ fromMs, toMs }) =>
 			AsyncData.match(model.shifts.data, {
 				onIdle: () => skeleton(h, "h-40 w-full"),
 				onLoading: () => skeleton(h, "h-40 w-full"),
-				onFailure: (failure) => errorState(h, { failure, title: "Couldn't load the shifts" }),
+				onFailure: (failure) =>
+					errorState(h, {
+						failure,
+						title: "Couldn't load the shifts",
+						onRetry: Message.ClickedRetryShifts(),
+					}),
 				onRefreshing: (shifts) => timeline(fromMs, toMs, shifts),
 				onStale: ({ data }) => timeline(fromMs, toMs, data),
 				onSuccess: (shifts) => timeline(fromMs, toMs, shifts),
@@ -325,6 +343,32 @@ const overrideDialog = (h: H, model: Model, schedule: V2OnCallSchedule): Html =>
 	})
 }
 
+/** "Delete {person}'s override?": the layers decide that window again. */
+const deleteOverrideDialog = (h: H, model: Model, schedule: V2OnCallSchedule): Html => {
+	const target = Arr.findFirst(
+		overridesOf(model),
+		(override) => override.id === model.confirmDeleteOverrideId,
+	)
+	const name = Option.getOrElse(
+		Option.map(target, (override) => `${memberName(model.members, override.user_id)}'s override`),
+		() => "this override",
+	)
+	return confirmDialog(h, {
+		slotId: DELETE_OVERRIDE_DIALOG_ID,
+		model: model.deleteOverrideDialog,
+		toParentMessage: (message) => Message.GotDeleteOverrideDialogMessage({ message }),
+		title: `Delete ${name}?`,
+		description: Option.match(target, {
+			onNone: () => "The layers decide who is on call again.",
+			onSome: (override) =>
+				`The layers decide who is on call again from ${rangeText(isoMs(override.starts_at), isoMs(override.ends_at), schedule.time_zone)}.`,
+		}),
+		confirmLabel: "Delete override",
+		isPending: model.deletingOverrideId !== null,
+		onConfirm: Message.ClickedConfirmDeleteOverride(),
+	})
+}
+
 const page = (h: H, model: Model, viewerZone: string): Html => {
 	const notFound = dashboardPage(h, {}, [
 		resourceNotFound(h, {
@@ -405,6 +449,7 @@ const page = (h: H, model: Model, viewerZone: string): Html => {
 						],
 					),
 					overrideDialog(h, model, schedule),
+					deleteOverrideDialog(h, model, schedule),
 				],
 			),
 	})
