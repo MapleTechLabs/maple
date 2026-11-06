@@ -1,4 +1,4 @@
-import { ErrorIssueId } from "@maple/domain/http"
+import { ErrorIssueId, WorkflowState } from "@maple/domain/http"
 import { V2ErrorIssueListQuery } from "@maple/domain/http/v2"
 import {
 	getErrorsByType,
@@ -207,10 +207,18 @@ export const MountFilterRail = Mount.define("MountErrorsFilterRail", {
 
 /** A row's or the selection's workflow write. */
 export const RunHubWrite = Command.define("RunErrorsHubWrite", {
-	args: { ids: Schema.Array(ErrorIssueId), write: HubWrite, isBulk: Schema.Boolean },
+	args: {
+		ids: Schema.Array(ErrorIssueId),
+		write: HubWrite,
+		isBulk: Schema.Boolean,
+		/** The state each row showed when picked, so a move another tab beat is refused (409). */
+		expectedStates: Schema.Record(Schema.String, WorkflowState),
+	},
 	messages: [Message.CompletedHubWrite],
-	execute: ({ ids, write, isBulk }) =>
-		runHubWrite(ids, write, (outcome) => Message.CompletedHubWrite({ ids, write, isBulk, outcome })),
+	execute: ({ ids, write, isBulk, expectedStates }) =>
+		runHubWrite(ids, write, expectedStates, (outcome) =>
+			Message.CompletedHubWrite({ ids, write, isBulk, outcome }),
+		),
 })
 
 /**

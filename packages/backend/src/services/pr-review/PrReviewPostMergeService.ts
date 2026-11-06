@@ -21,6 +21,7 @@ import { PrReviews, type PrReviewRow } from "@maple/db/tables"
 import { Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { transitionRow } from "@maple/backend/platform/transition-row"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { PrReviewTelemetryService } from "./telemetry/PrReviewTelemetryService"
@@ -78,23 +79,41 @@ export class PrReviewPostMergeService extends Context.Service<
 		const repositories = yield* VcsRepository
 		const providers = yield* VcsProviderRegistry
 
+		/**
+		 * Applies only while the row is still `waiting` under the lease this examination took: a
+		 * look that outlived it lost the row to a later tick, which may already have reported.
+		 */
 		const settle = (
 			orgId: OrgId,
 			id: PrReviewId,
+			leaseUntil: DateTime.Utc,
 			status: PrReviewPostMergeStatus,
 			postMergeAfter: number | null,
 			now: DateTime.Utc,
 		) =>
-			database.execute((db) =>
-				db.run(
-					PG.update(PrReviews)
-						.set({ postMergeStatus: status, updatedAt: toMs(now), postMergeAfter })
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
+			transitionRow({ table: "pr_reviews", id, from: ["waiting"], to: status }, (from) =>
+				database.execute((db) =>
+					db.run(
+						PG.update(PrReviews)
+							.set({ postMergeStatus: status, updatedAt: toMs(now), postMergeAfter })
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.id.eq(id),
+								$.postMergeStatus.in_(...from),
+								$.postMergeAfter.eq(toMs(leaseUntil)),
+							])
+							.returning("id"),
+					),
 				),
 			)
 
-		const later = (orgId: OrgId, id: PrReviewId, at: DateTime.Utc, now: DateTime.Utc) =>
-			settle(orgId, id, "waiting", toMs(at), now)
+		const later = (
+			orgId: OrgId,
+			id: PrReviewId,
+			leaseUntil: DateTime.Utc,
+			at: DateTime.Utc,
+			now: DateTime.Utc,
+		) => settle(orgId, id, leaseUntil, "waiting", toMs(at), now)
 
 		const examine = Effect.fn("PrReviewPostMergeService.examine")(function* (
 			row: DueRow,
@@ -112,7 +131,7 @@ export class PrReviewPostMergeService extends Context.Service<
 			const breaksOnly =
 				facts !== undefined && services.length === 0 && openContractBreaks(facts).length > 0
 			if (facts === undefined || (services.length === 0 && !breaksOnly)) {
-				yield* settle(orgId, row.id, "no_traffic", null, now)
+				yield* settle(orgId, row.id, leaseUntil, "no_traffic", null, now)
 				return "gave_up" satisfies Outcome
 			}
 			const versions = yield* telemetry.deploymentsSince(orgId, services, mergedAt, now)
@@ -131,10 +150,10 @@ export class PrReviewPostMergeService extends Context.Service<
 			})
 			if (picked === undefined) {
 				if (elapsed(mergedAt, now, POST_MERGE_GIVE_UP)) {
-					yield* settle(orgId, row.id, "no_deploy", null, now)
+					yield* settle(orgId, row.id, leaseUntil, "no_deploy", null, now)
 					return "gave_up" satisfies Outcome
 				}
-				yield* later(orgId, row.id, DateTime.addDuration(now, POST_MERGE_RETRY), now)
+				yield* later(orgId, row.id, leaseUntil, DateTime.addDuration(now, POST_MERGE_RETRY), now)
 				return "waiting" satisfies Outcome
 			}
 			const deployAt = picked.deploy.firstSeen
@@ -143,7 +162,7 @@ export class PrReviewPostMergeService extends Context.Service<
 			// A full window of traffic after the deploy, and its rollups landed.
 			const readable = DateTime.addDuration(windowEnd, ROLLUP_LAG)
 			if (DateTime.isLessThan(now, readable)) {
-				yield* later(orgId, row.id, readable, now)
+				yield* later(orgId, row.id, leaseUntil, readable, now)
 				return "waiting" satisfies Outcome
 			}
 
@@ -233,6 +252,7 @@ export class PrReviewPostMergeService extends Context.Service<
 							updatedAt: toMs(now),
 						})
 						.where(($) => [
+							$.orgId.eq(orgId),
 							$.id.eq(row.id),
 							$.postMergeStatus.eq("waiting"),
 							$.postMergeAfter.eq(toMs(leaseUntil)),
@@ -289,9 +309,9 @@ export class PrReviewPostMergeService extends Context.Service<
 			)
 			const outcomes = yield* Effect.forEach(
 				due,
-				(row) =>
-					Effect.gen(function* () {
-						const leaseUntil = DateTime.addDuration(now, CLAIM)
+				(row) => {
+					const leaseUntil = DateTime.addDuration(now, CLAIM)
+					return Effect.gen(function* () {
 						// Claimed first: an overlapping tick that read the same row finds it leased and
 						// skips it, so the follow-up is posted once.
 						const claimed = yield* database.execute((db) =>
@@ -307,7 +327,12 @@ export class PrReviewPostMergeService extends Context.Service<
 							),
 						)
 						if (claimed.length === 0) return "skipped" as const
-						return yield* examine(row, now, leaseUntil)
+						return yield* examine(row, now, leaseUntil).pipe(
+							// A later tick took the row over; it settles or reports it instead.
+							Effect.catchTag("@maple/backend/TransitionConflictError", () =>
+								Effect.succeed("skipped" as const),
+							),
+						)
 					}).pipe(
 						Effect.map((outcome): Outcome | "failed" | "skipped" => outcome),
 						Effect.catchCause((cause) => {
@@ -324,10 +349,11 @@ export class PrReviewPostMergeService extends Context.Service<
 								}),
 								Effect.andThen(
 									(giveUp
-										? settle(row.orgId, row.id, "failed", null, now)
+										? settle(row.orgId, row.id, leaseUntil, "failed", null, now)
 										: later(
 												row.orgId,
 												row.id,
+												leaseUntil,
 												DateTime.addDuration(now, POST_MERGE_RETRY),
 												now,
 											)
@@ -336,7 +362,8 @@ export class PrReviewPostMergeService extends Context.Service<
 								Effect.as("failed" as const),
 							)
 						}),
-					),
+					)
+				},
 				{ concurrency: 2 },
 			)
 			const count = (outcome: Outcome | "failed" | "skipped") =>
