@@ -20,6 +20,8 @@ import { MountChart } from "@maple/views/charts/chart-mounts"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
+import { sloHref, slosTabHref } from "../shared/slo-commands"
+import { checkoutSlo } from "../shared/slo-test-fixtures"
 import { incidentRow, INCIDENT_ID, NOW, ORG, ruleRow, stateRow } from "../shared/test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -175,6 +177,55 @@ describe("alert incident", () => {
 			given(withRule.model),
 			themeResolved(),
 			expectView(text("resolves when one passes again", { exact: false })).toExist(),
+		)
+	})
+
+	test("an SLO incident asks for no rule preview, offers no rule edit, and links its SLO once known", () => {
+		const sloIncident = incidentRow({
+			rule_name: "SLO burn: Checkout API",
+			signal_type: "slo_burn_rate",
+			comparator: "gte",
+			threshold: 6,
+			last_observed_value: 16.1,
+			group_key: "__total__",
+		})
+		const loaded = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedIncidents({ orgId: ORG, rows: [sloIncident] }),
+			],
+			init(route(), context).model,
+			(model, message) => step(model, message).model,
+		)
+		const withRule = step(
+			loaded,
+			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2, { signal_type: "slo_burn_rate" })] }),
+		)
+		expect(names(withRule.commands)).not.toContain("FetchAlertIncidentPreview")
+		expect(names(withRule.commands)).not.toContain("FetchAlertIncidentChecks")
+		expect(names(step(loaded, Message.ReadClock({ nowMs: NOW })).commands)).not.toContain(
+			"FetchAlertIncidentSlos",
+		)
+		expect(withRule.model.slos.key).not.toBeNull()
+		scene(
+			{ update: pageUpdate, view },
+			given(withRule.model),
+			themeResolved(),
+			expectView(role("heading", { name: "Checkout API is burning its error budget" })).toExist(),
+			expectView(text(/__total__/u)).not.toExist(),
+			expectView(role("link", { name: "Edit rule" })).not.toExist(),
+			expectView(role("link", { name: "Open SLOs" })).toHaveAttr("href", slosTabHref()),
+		)
+		const slo = checkoutSlo({ alert_rule_id: sloIncident.rule_id })
+		const linked = step(
+			withRule.model,
+			Message.CompletedFetchSlos({ key: withRule.model.slos.key ?? "", result: Result.succeed([slo]) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(linked),
+			themeResolved(),
+			expectView(role("link", { name: "Open SLO" })).toHaveAttr("href", sloHref(slo.id)),
 		)
 	})
 

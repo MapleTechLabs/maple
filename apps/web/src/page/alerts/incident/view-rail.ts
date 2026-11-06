@@ -1,5 +1,5 @@
 import { pluralize } from "@maple/ui/lib/format"
-import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
+import { type AlertIncidentDocument, type AlertRuleDocument, isManagedSignalType } from "@maple/domain/http"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { cn } from "@maple/ui/lib/utils"
 import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
@@ -293,7 +293,9 @@ export const incidentRail = <M>(
 					]
 				: []),
 			evidenceSection(h, rule, incident, options.window),
-			...(rule !== null ? [ruleSection(h, rule, options.ruleIncidents, options.now)] : []),
+			...(rule !== null && !isManagedSignalType(rule.signalType)
+				? [ruleSection(h, rule, options.ruleIncidents, options.now)]
+				: []),
 		],
 	)
 }

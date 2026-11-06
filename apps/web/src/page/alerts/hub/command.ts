@@ -17,6 +17,7 @@ import {
 	testDestination,
 	updateDestination,
 } from "../shared/commands"
+import { listSloRows } from "../shared/slo-commands"
 import { deleteMonitor, listMonitors, setMonitorEnabled } from "../shared/uptime-commands"
 import { Message } from "./message"
 import { ServiceNamespaces, serviceNamespaces } from "./uptime-groups"
@@ -150,5 +151,16 @@ export const DeleteMonitor = Command.define("DeleteUptimeMonitor", {
 		deleteMonitor(monitorId).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedDeleteMonitor({ monitorId, result })),
+		),
+})
+
+/** The SLOs tab's list, each row with its status. */
+export const FetchHubSlos = Command.define("FetchAlertsHubSlos", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchSlos],
+	execute: ({ key }) =>
+		listSloRows.pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchSlos({ key, result })),
 		),
 })

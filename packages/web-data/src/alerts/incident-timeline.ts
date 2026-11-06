@@ -174,7 +174,9 @@ export function buildIncidentTimeline(input: {
 	const condition =
 		incident.signalType === "uptime"
 			? `${incident.ruleName} went down`
-			: `${signalTitle(incident.signalType)} ${conditionPhrase(incident)}`
+			: incident.signalType === "slo_burn_rate"
+				? `SLO burning its error budget at ${formatSignalValue(incident.signalType, incident.lastObservedValue)}`
+				: `${signalTitle(incident.signalType)} ${conditionPhrase(incident)}`
 
 	const opened: IncidentTimelineEntry = {
 		key: "opened",

@@ -21,8 +21,10 @@ import {
 	FetchIncidentDeliveries,
 	FetchIncidentInvestigation,
 	FetchIncidentPreview,
+	FetchIncidentSlos,
 	ReadIncidentClock,
 } from "./command"
+import { SLO_LIST_LIMIT } from "../shared/slo-commands"
 import { incidentViewOf, minuteOf, ruleStatesOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -42,6 +44,7 @@ export const init = (route: IncidentRoute, _context: PageContext): Return => ({
 		checks: Keyed.idle(),
 		deliveries: Keyed.idle(),
 		investigation: Keyed.idle(),
+		slos: Keyed.idle(),
 		isStartingInvestigation: false,
 		chart: Chart.init(),
 		chartRuntime: { _tag: "Loading" },
@@ -56,6 +59,9 @@ export const init = (route: IncidentRoute, _context: PageContext): Return => ({
 		),
 	],
 })
+
+const slosKey = (context: PageContext) =>
+	requestKey(context.orgId, "slos.list", { query: { limit: SLO_LIST_LIMIT } })
 
 /** An atom never refetches a failed read on its own: a same-key `Load` leaves the slot alone. */
 const sameKey = <A, E>(slot: Keyed.Keyed<A, E>, key: string) => slot.key === key
@@ -111,6 +117,20 @@ const followData = (model: Model, context: PageContext): Return =>
 							}),
 						)
 					}),
+				),
+				...Option.toArray(
+					Option.flatMap(
+						view.incident.signalType === "slo_burn_rate"
+							? Option.some(slosKey(context))
+							: Option.none(),
+						(key) =>
+							Option.map(
+								sameKey(model.slos, key)
+									? Option.none()
+									: Keyed.request(model.slos, key, "Load"),
+								(slos) => ({ patch: { slos }, commands: [FetchIncidentSlos({ key })] }),
+							),
+					),
 				),
 				...Option.toArray(
 					Option.flatMap(view.payload, (payload) => {
@@ -244,6 +264,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		CompletedFetchInvestigation: ({ key, result }) => ({
 			model: { ...model, investigation: Keyed.accept(model.investigation, key, result) },
+		}),
+		CompletedFetchSlos: ({ key, result }) => ({
+			model: { ...model, slos: Keyed.accept(model.slos, key, result) },
 		}),
 		ClickedInvestigate: () =>
 			model.isStartingInvestigation

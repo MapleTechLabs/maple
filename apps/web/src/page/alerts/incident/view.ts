@@ -34,11 +34,13 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { pageTitle } from "@maple/views/ui/page-layout"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { vstack } from "@maple/views/ui/stack"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { severityBadge } from "../shared/badges"
 import { alertsHref } from "../shared/links"
+import { sloHref, slosTabHref } from "../shared/slo-commands"
 import { incidentChecksOf, summaryChecksOf } from "../shared/check-summary"
 import { previewIssue, previewStateOf } from "../shared/preview"
 import { providerOf } from "../shared/providers"
@@ -74,23 +76,30 @@ export const headerTitle = <M>(
 ) => {
 	const group = incidentGroup(incident)
 	const isUptime = incident.signalType === "uptime"
+	const isSlo = incident.signalType === "slo_burn_rate"
 	const isQuery = isQueryIncident(incident)
-	// An uptime incident names its monitor and a query incident its rule; neither has a signal to spell out.
+	// An uptime or SLO incident names its monitor or SLO and a query incident its rule.
 	const title =
-		isUptime || isQuery
+		isUptime || isSlo || isQuery
 			? incidentTitle(incident)
 			: `${signalTitle(incident.signalType)} ${formatSignalValue(incident.signalType, incident.lastObservedValue)}${group != null ? ` on ${group}` : ""}`
 	const subline = Arr.join(
 		Arr.filter(
 			isUptime
 				? ["Uptime check", group]
-				: [
-						isQuery ? group : `Rule ${rule?.name ?? incident.ruleName}`,
-						`${isQuery ? "value" : Str.toLowerCase(signalLabels[incident.signalType])} ${conditionPhrase(incident)}${rule != null ? ` over ${rule.windowMinutes}m` : ""}`,
-						rule != null && rule.environments.length > 0
-							? Arr.join(rule.environments, ", ")
-							: null,
-					],
+				: isSlo
+					? [
+							"SLO burn rate",
+							`now ${formatSignalValue(incident.signalType, incident.lastObservedValue)}`,
+							group,
+						]
+					: [
+							isQuery ? group : `Rule ${rule?.name ?? incident.ruleName}`,
+							`${isQuery ? "value" : Str.toLowerCase(signalLabels[incident.signalType])} ${conditionPhrase(incident)}${rule != null ? ` over ${rule.windowMinutes}m` : ""}`,
+							rule != null && rule.environments.length > 0
+								? Arr.join(rule.environments, ", ")
+								: null,
+						],
 			(part) => part != null,
 		),
 		" · ",
@@ -153,6 +162,8 @@ export type IncidentBodyInputs<M> = Readonly<{
 	entries: ReadonlyArray<IncidentTimelineEntry>
 	isEntriesLoading: boolean
 	isEntriesFailed: boolean
+	/** An SLO incident's SLO page, or the SLOs tab until the SLO is known. */
+	sloHref?: string | null
 	chartId: string
 	chart: Chart.Model
 	toChartMessage: (message: Chart.Message) => M
@@ -180,28 +191,48 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 								? typography(h, { size: "sm", tone: "muted", as: "p" }, [
 										"This incident follows an uptime monitor: it opened when the monitor's checks went down and resolves when one passes again. The monitor's page lists each check with its failing trace.",
 									])
-								: rule === null
-									? typography(h, { size: "sm", tone: "muted", as: "p" }, [
-											"The rule behind this incident was deleted, so its signal cannot be replayed.",
+								: incident.signalType === "slo_burn_rate"
+									? vstack(h, { gap: "3", align: "start" }, [
+											typography(h, { size: "sm", tone: "muted", as: "p" }, [
+												"This incident follows an SLO burning its error budget: it opened when the burn rate held at a tier's factor over both of its windows, and resolves when the short window cools. The SLO's page charts the budget and each window's burn rate.",
+											]),
+											linkButton(
+												h,
+												{
+													size: "sm",
+													variant: "outline",
+													href: inputs.sloHref ?? slosTabHref(),
+												},
+												[
+													inputs.sloHref === undefined || inputs.sloHref === null
+														? "Open SLOs"
+														: "Open SLO",
+													icon(h, "ArrowRightIcon"),
+												],
+											),
 										])
-									: ruleChart(h, {
-											chartId: inputs.chartId,
-											chart: inputs.chart,
-											toChartMessage: inputs.toChartMessage,
-											colors: inputs.colors,
-											timeZone: inputs.timeZone,
-											preview: inputs.preview,
-											checks: inputs.checks,
-											incidents: [incident],
-											threshold: incident.threshold,
-											thresholdUpper: incident.thresholdUpper,
-											comparator: incident.comparator,
-											signalType: incident.signalType,
-											window: { min: inputs.range.start, max: inputs.range.end },
-											source: "preview",
-											isLoading: inputs.isPreviewLoading,
-											error: inputs.previewError,
-										}),
+									: rule === null
+										? typography(h, { size: "sm", tone: "muted", as: "p" }, [
+												"The rule behind this incident was deleted, so its signal cannot be replayed.",
+											])
+										: ruleChart(h, {
+												chartId: inputs.chartId,
+												chart: inputs.chart,
+												toChartMessage: inputs.toChartMessage,
+												colors: inputs.colors,
+												timeZone: inputs.timeZone,
+												preview: inputs.preview,
+												checks: inputs.checks,
+												incidents: [incident],
+												threshold: incident.threshold,
+												thresholdUpper: incident.thresholdUpper,
+												comparator: incident.comparator,
+												signalType: incident.signalType,
+												window: { min: inputs.range.start, max: inputs.range.end },
+												source: "preview",
+												isLoading: inputs.isPreviewLoading,
+												error: inputs.previewError,
+											}),
 						],
 					),
 					incidentTimeline(h, {
@@ -235,9 +266,18 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 	const deliveries = AsyncData.getOrElse(model.deliveries.data, () => [])
 	const investigation = AsyncData.getOrElse(model.investigation.data, () => null)
 	const isChartReady = model.themeColors !== null && isChartRuntimeReady(model.chartRuntime)
+	const sloLink = Option.getOrUndefined(
+		Option.flatMap(AsyncData.getData(model.slos.data), (slos) =>
+			Option.map(
+				Arr.findFirst(slos, (slo) => slo.alert_rule_id === incident.ruleId),
+				(slo) => sloHref(slo.id),
+			),
+		),
+	)
 	return incidentBody(h, {
 		incident,
 		rule,
+		sloHref: sloLink ?? null,
 		ruleIncidents: view.ruleIncidents,
 		states: ruleStatesOf(model, incident.ruleId),
 		preview: groupPreviewOf(previewState.preview, incident),
