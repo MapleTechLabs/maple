@@ -177,6 +177,8 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/session_replays/{id}/transcript",
 			"GET /v2/slos",
 			"GET /v2/slos/{id}",
+			"GET /v2/slos/{id}/history",
+			"GET /v2/slos/{id}/status",
 			"GET /v2/sources",
 			"GET /v2/sources/usage",
 			"GET /v2/sources/{id}",

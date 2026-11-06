@@ -122,6 +122,45 @@ export const HttpV2SlosLive = HttpApiBuilder.group(MapleApiV2, "slos", (handlers
 					return toV2Slo(updated)
 				}),
 			)
+			.handle("status", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const status = yield* service.status(tenant, params.id)
+					return {
+						object: "slo.status" as const,
+						slo_id: params.id,
+						as_of: isoTimestamp(status.asOfMs),
+						total_events: status.total,
+						good_events: status.good,
+						sli: status.sli,
+						budget_remaining: status.budgetRemaining,
+						burn_windows: Arr.map(status.burnWindows, (window) => ({
+							window_minutes: window.windowMinutes,
+							burn_rate: window.burnRate,
+							total_events: window.total,
+							good_events: window.good,
+						})),
+					}
+				}),
+			)
+			.handle("history", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const history = yield* service.history(tenant, params.id)
+					return {
+						object: "slo.history" as const,
+						slo_id: params.id,
+						as_of: isoTimestamp(history.asOfMs),
+						bucket_seconds: history.bucketSeconds,
+						points: Arr.map(history.points, (point) => ({
+							at: isoTimestamp(point.atMs),
+							sli: point.sli,
+							budget_remaining: point.budgetRemaining,
+							burn_rate: point.burnRate,
+						})),
+					}
+				}),
+			)
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* requireManage

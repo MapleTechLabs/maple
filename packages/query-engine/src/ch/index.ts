@@ -880,3 +880,13 @@ export {
 	type UptimeChecksOutput,
 	type UptimePhaseTimingsOutput,
 } from "./queries/uptime"
+export {
+	sloBucketsQuery,
+	sloBucketsRowSchema,
+	sloTotalsQuery,
+	sloTotalsRowSchema,
+	type SloBucketsOutput,
+	type SloReadGrain,
+	type SloSliQueryOpts,
+	type SloTotalsOutput,
+} from "./queries/slos"
