@@ -1,4 +1,9 @@
-import type { IssueSeverity } from "@maple/domain/http"
+import {
+	type InvestigationStatus,
+	type IssueSeverity,
+	MANUAL_INVESTIGATION_TRANSITIONS,
+	RESTARTABLE_INVESTIGATION_STATUSES,
+} from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { investigationHeadline, investigationScope } from "@maple/web-data/investigations/display"
 import { Mount, Submodel } from "foldkit"
@@ -81,6 +86,13 @@ const titleContent = (h: H, investigation: V2Investigation): Html => {
 const headerActions = (h: H, model: Model, investigation: V2Investigation): Html => {
 	const status = investigation.status
 	const isBusy = model.busy !== null
+	// The server's own rules: a run in flight can be neither resolved nor restarted.
+	const manualMoves: ReadonlyArray<InvestigationStatus> = MANUAL_INVESTIGATION_TRANSITIONS[status]
+	const restartable: ReadonlyArray<InvestigationStatus> = RESTARTABLE_INVESTIGATION_STATUSES
+	const canResolve = manualMoves.includes("resolved")
+	// A run whose start never claimed it (no `started_at`) is not in flight and can be restarted.
+	const canRestart =
+		restartable.includes(status) || (status === "investigating" && investigation.started_at === null)
 	const primary =
 		status === "failed"
 			? { label: "Retry", variant: "default" as const }
@@ -89,11 +101,25 @@ const headerActions = (h: H, model: Model, investigation: V2Investigation): Html
 				: status === "resolved"
 					? { label: "Reopen", variant: "outline" as const }
 					: { label: "Resolve", variant: "default" as const }
+	const primaryAllowed = status === "diagnosed" || status === "investigating" ? canResolve : canRestart
 	const entries: ReadonlyArray<MenuView.MenuEntry> = [
-		{ _tag: "Item", value: "restart", label: "Run again", icon: "ArrowPathIcon", isDisabled: isBusy },
+		{
+			_tag: "Item",
+			value: "restart",
+			label: "Run again",
+			icon: "ArrowPathIcon",
+			isDisabled: isBusy || !canRestart,
+		},
 		...(status === "resolved"
 			? []
-			: [{ _tag: "Item" as const, value: "resolve", label: "Mark resolved", isDisabled: isBusy }]),
+			: [
+					{
+						_tag: "Item" as const,
+						value: "resolve",
+						label: "Mark resolved",
+						isDisabled: isBusy || !canResolve,
+					},
+				]),
 	]
 	return detailActions(h, [
 		hstack(h, { gap: "2" }, [
@@ -102,7 +128,7 @@ const headerActions = (h: H, model: Model, investigation: V2Investigation): Html
 				{
 					size: "sm",
 					variant: primary.variant,
-					isDisabled: isBusy,
+					isDisabled: isBusy || !primaryAllowed,
 					attributes: [h.OnClick(Message.ClickedPrimary())],
 				},
 				[primary.label],

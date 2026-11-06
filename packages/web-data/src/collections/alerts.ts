@@ -17,6 +17,8 @@ import {
 	AlertSeverity,
 	AlertSignalType,
 	AlertThresholds,
+	AnomalyIncidentId,
+	AnomalySignalType,
 	ChatConnectorId,
 	ChatWorkspaceId,
 	ErrorIssueId,
@@ -60,6 +62,9 @@ const decodeNotificationTemplate = Schema.decodeUnknownOption(AlertNotificationT
 const decodeQueryBuilderDraft = Schema.decodeUnknownOption(QueryBuilderQueryDraftSchema)
 const decodeThresholds = Schema.decodeUnknownOption(AlertThresholds)
 const decodeStringArray = Schema.decodeUnknownOption(Schema.Array(Schema.String))
+// Lenient: a signal added by a newer server drops the list rather than breaking the alerts list.
+const decodeAnomalySignals = Schema.decodeUnknownOption(Schema.Array(AnomalySignalType))
+const decodeAnomalyIncidentId = Schema.decodeUnknownOption(AnomalyIncidentId)
 // The stored `group_by` column is a JSON-encoded string array (mirrors the
 // server's `Schema.fromJsonString(AlertGroupBy)`).
 const decodeGroupByFromJson = Schema.decodeUnknownSync(Schema.fromJsonString(AlertGroupBy))
@@ -91,6 +96,7 @@ export const AlertRuleRowSchema = Schema.Struct({
 	service_names_json: Schema.NullOr(Schema.Unknown),
 	exclude_service_names_json: Schema.NullOr(Schema.Unknown),
 	environments_json: Schema.NullOr(Schema.Unknown),
+	anomaly_signals_json: Schema.optionalKey(Schema.NullOr(Schema.Unknown)),
 	tags_json: Schema.NullOr(Schema.Unknown),
 	signal_type: Schema.String,
 	comparator: Schema.String,
@@ -175,6 +181,8 @@ export const AlertIncidentRowSchema = Schema.Struct({
 	acknowledged_by_name: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	acknowledged_via: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	error_issue_id: Schema.NullOr(Schema.String),
+	anomaly_incident_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	group_label: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	silence_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	silenced_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	created_at: Schema.String,
@@ -242,6 +250,13 @@ export const rowToAlertRuleDocument = (
 		serviceNames: [...safeParseStringArray(row.service_names_json)],
 		excludeServiceNames: [...safeParseStringArray(row.exclude_service_names_json)],
 		environments: [...safeParseStringArray(row.environments_json)],
+		...(row.signal_type === "anomaly"
+			? {
+					anomalySignals: [
+						...Option.getOrElse(decodeAnomalySignals(row.anomaly_signals_json ?? []), () => []),
+					],
+				}
+			: undefined),
 		tags: [...safeParseStringArray(row.tags_json)],
 		groupBy: row.group_by == null ? null : decodeGroupByFromJson(row.group_by),
 		signalType: asSignalType(row.signal_type),
@@ -314,6 +329,15 @@ export const rowToAlertIncidentDocument = (row: AlertIncidentRow): AlertIncident
 		acknowledgedVia:
 			row.acknowledged_via != null ? Option.getOrNull(decodeAckSource(row.acknowledged_via)) : null,
 		errorIssueId: row.error_issue_id != null ? asErrorIssueId(row.error_issue_id) : null,
+		...(row.signal_type === "anomaly"
+			? {
+					anomalyIncidentId:
+						row.anomaly_incident_id == null
+							? null
+							: Option.getOrNull(decodeAnomalyIncidentId(row.anomaly_incident_id)),
+				}
+			: undefined),
+		...(row.group_label == null ? undefined : { groupLabel: row.group_label }),
 		silenceId: row.silence_id == null ? null : asAlertSilenceId(row.silence_id),
 		silencedAt: row.silenced_at == null ? null : decodeIso(row.silenced_at),
 	})

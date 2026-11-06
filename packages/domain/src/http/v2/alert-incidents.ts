@@ -22,6 +22,7 @@ import {
 	AlertIncidentEventPublicId,
 	AlertIncidentPublicId,
 	AlertRulePublicId,
+	AnomalyIncidentPublicId,
 	ErrorIssuePublicId,
 	EscalationChainPublicId,
 } from "./resource-ids"
@@ -204,6 +205,18 @@ export const V2AlertIncident = Schema.Struct({
 		description:
 			"The incident's latest escalation chain run, or `null` when its severity tier names no chain.",
 	}),
+	group_label: Schema.optionalKey(
+		Schema.NullOr(Schema.String).annotate({
+			description:
+				"What to show as the incident's group when `group_key` is not readable, e.g. an anomaly's `checkout (production)`. Absent when the group key is its own label.",
+		}),
+	),
+	anomaly_incident_id: Schema.optionalKey(
+		Schema.NullOr(AnomalyIncidentPublicId).annotate({
+			description:
+				"`anomaly` rules only: the anomaly incident this alert incident pages on. Absent on other rules.",
+		}),
+	),
 	silence_id: Schema.NullOr(AlertSilencePublicId).annotate({
 		description:
 			"The alert silence (`sil_…`) that last held back one of this incident's notifications, or `null`.",

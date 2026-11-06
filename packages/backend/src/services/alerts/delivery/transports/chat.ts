@@ -2,7 +2,7 @@ import type { ChatAlertBlock, ChatBlock } from "@maple/chat-platform"
 import { Effect } from "effect"
 import { buildSummaryLine } from "../../AlertDeliveryDispatch"
 import {
-	displayGroupKey,
+	displayGroup,
 	eventTypeEmoji,
 	formatAlertHeadline,
 	formatSeverityLabel,
@@ -66,7 +66,7 @@ const ackControl = (context: ChatAlertCardInput["context"]): Pick<ChatAlertBlock
 
 export const buildChatAlertBlocks = (input: ChatAlertCardInput): ReadonlyArray<ChatBlock> => {
 	const { context, templated, linkUrl } = input
-	const group = displayGroupKey(context.groupKey)
+	const group = displayGroup(context)
 	const card: Omit<ChatAlertBlock, "title" | "summary" | "fields"> = {
 		...ackControl(context),
 		kind: "alert",

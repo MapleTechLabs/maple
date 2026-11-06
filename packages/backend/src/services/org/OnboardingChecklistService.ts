@@ -280,7 +280,7 @@ const make = Effect.gen(function* () {
 			"reserveRewardClaim",
 			onboarding.reserveRewardClaim(orgId, CLAIM_LEASE_MS),
 		)
-		if (!reserved) {
+		if (Option.isNone(reserved)) {
 			return yield* new OnboardingRewardNotClaimableError({
 				message: "Another admin is claiming the reward right now. Try again in a moment.",
 				reason: "in_progress",
@@ -288,7 +288,7 @@ const make = Effect.gen(function* () {
 		}
 
 		const release = onboarding
-			.releaseRewardClaim(orgId)
+			.releaseRewardClaim(orgId, reserved.value)
 			.pipe(
 				Effect.catchCause((cause) =>
 					Effect.logError("Onboarding reward lease could not be released").pipe(
@@ -350,7 +350,7 @@ const make = Effect.gen(function* () {
 						).pipe(Effect.annotateLogs({ orgId, error }), Effect.andThen(Effect.fail(error))),
 				}),
 			)
-		yield* unavailable("finalizeRewardClaim", onboarding.finalizeRewardClaim(orgId))
+		yield* unavailable("finalizeRewardClaim", onboarding.finalizeRewardClaim(orgId, reserved.value))
 		yield* edgeCache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: orgId })
 		yield* Effect.annotateCurrentSpan({ orgId, "maple.onboarding.reward_claimed": true })
 

@@ -243,6 +243,9 @@ export const HttpV2ErrorIssuesLive = HttpApiBuilder.group(MapleApiV2, "errorIssu
 						...(payload.snooze_until === undefined
 							? undefined
 							: { snoozeUntil: payload.snooze_until }),
+						...(payload.expected_state === undefined
+							? undefined
+							: { expectedState: payload.expected_state }),
 					})
 					return toV2Issue(issue)
 				}).pipe(

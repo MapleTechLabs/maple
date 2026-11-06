@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "f026637a9f294e8b3aab7c3ce5d17e1714bd3d3e73846017922929c7811de849",
+	"id": "d4f60c29a47c060274233ef3ae52f05427d0198a8417c722f776af455e953654",
 	"prevIds": [
-		"7d9aa0ab9443aac1728d2aff84c6ca36ea7b5e04c8a2d896c5c35e1685ea650c"
+		"4c8ba36f4314b95b0eb0a3501615bc288b0028df9841e8215a20ec6802d9601b"
 	],
 	"entities": [
 		{
@@ -91,16 +91,6 @@
 			"name": "alert_linear_issues",
 			"primaryKey": {
 				"name": "alert_linear_issues_pkey",
-				"columns": [
-					"id"
-				]
-			}
-		},
-		{
-			"kind": "table",
-			"name": "alert_member_notifications",
-			"primaryKey": {
-				"name": "alert_member_notifications_pkey",
 				"columns": [
 					"id"
 				]
@@ -617,26 +607,6 @@
 			"name": "oauth_connections",
 			"primaryKey": {
 				"name": "oauth_connections_pkey",
-				"columns": [
-					"id"
-				]
-			}
-		},
-		{
-			"kind": "table",
-			"name": "oncall_overrides",
-			"primaryKey": {
-				"name": "oncall_overrides_pkey",
-				"columns": [
-					"id"
-				]
-			}
-		},
-		{
-			"kind": "table",
-			"name": "oncall_schedules",
-			"primaryKey": {
-				"name": "oncall_schedules_pkey",
 				"columns": [
 					"id"
 				]
@@ -2474,7 +2444,7 @@
 		{
 			"kind": "column",
 			"table": "alert_incidents",
-			"name": "silence_id",
+			"name": "anomaly_incident_id",
 			"position": 29,
 			"type": "text",
 			"notNull": false,
@@ -2484,8 +2454,28 @@
 		{
 			"kind": "column",
 			"table": "alert_incidents",
-			"name": "silenced_at",
+			"name": "group_label",
 			"position": 30,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incidents",
+			"name": "silence_id",
+			"position": 31,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incidents",
+			"name": "silenced_at",
+			"position": 32,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -2495,7 +2485,7 @@
 			"kind": "column",
 			"table": "alert_incidents",
 			"name": "created_at",
-			"position": 31,
+			"position": 33,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -2505,7 +2495,7 @@
 			"kind": "column",
 			"table": "alert_incidents",
 			"name": "updated_at",
-			"position": 32,
+			"position": 34,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -2616,176 +2606,6 @@
 			"table": "alert_linear_issues",
 			"name": "updated_at",
 			"position": 10,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_member_notifications",
-			"name": "id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_member_notifications",
-			"name": "org_id",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_member_notifications",
-			"name": "incident_id",
-			"position": 2,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_member_notifications",
-			"name": "run_id",
-			"position": 3,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_member_notifications",
-			"name": "user_id",
-			"position": 4,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_member_notifications",
-			"name": "channel",
-			"position": 5,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_member_notifications",
-			"name": "status",
-			"position": 6,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_member_notifications",
-			"name": "attempt_number",
-			"position": 7,
-			"type": "integer",
-			"notNull": true,
-			"default": "1",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_member_notifications",
-			"name": "scheduled_at",
-			"position": 8,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_member_notifications",
-			"name": "claimed_at",
-			"position": 9,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_member_notifications",
-			"name": "claim_expires_at",
-			"position": 10,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_member_notifications",
-			"name": "payload_json",
-			"position": 11,
-			"type": "jsonb",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_member_notifications",
-			"name": "dedupe_key",
-			"position": 12,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_member_notifications",
-			"name": "error_message",
-			"position": 13,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_member_notifications",
-			"name": "attempted_at",
-			"position": 14,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_member_notifications",
-			"name": "created_at",
-			"position": 15,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_member_notifications",
-			"name": "updated_at",
-			"position": 16,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -3064,7 +2884,7 @@
 		{
 			"kind": "column",
 			"table": "alert_rules",
-			"name": "tags_json",
+			"name": "anomaly_signals_json",
 			"position": 10,
 			"type": "jsonb",
 			"notNull": false,
@@ -3074,17 +2894,17 @@
 		{
 			"kind": "column",
 			"table": "alert_rules",
-			"name": "signal_type",
+			"name": "tags_json",
 			"position": 11,
-			"type": "text",
-			"notNull": true,
+			"type": "jsonb",
+			"notNull": false,
 			"default": null,
 			"identity": null
 		},
 		{
 			"kind": "column",
 			"table": "alert_rules",
-			"name": "comparator",
+			"name": "signal_type",
 			"position": 12,
 			"type": "text",
 			"notNull": true,
@@ -3094,8 +2914,18 @@
 		{
 			"kind": "column",
 			"table": "alert_rules",
-			"name": "threshold",
+			"name": "comparator",
 			"position": 13,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_rules",
+			"name": "threshold",
+			"position": 14,
 			"type": "double precision",
 			"notNull": true,
 			"default": null,
@@ -3105,7 +2935,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "threshold_upper",
-			"position": 14,
+			"position": 15,
 			"type": "double precision",
 			"notNull": false,
 			"default": null,
@@ -3115,7 +2945,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "thresholds_json",
-			"position": 15,
+			"position": 16,
 			"type": "jsonb",
 			"notNull": false,
 			"default": null,
@@ -3125,7 +2955,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "window_minutes",
-			"position": 16,
+			"position": 17,
 			"type": "integer",
 			"notNull": true,
 			"default": null,
@@ -3135,16 +2965,6 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "evaluation_interval_minutes",
-			"position": 17,
-			"type": "integer",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_rules",
-			"name": "slowed_interval_minutes",
 			"position": 18,
 			"type": "integer",
 			"notNull": false,
@@ -3154,8 +2974,18 @@
 		{
 			"kind": "column",
 			"table": "alert_rules",
-			"name": "slowed_at",
+			"name": "slowed_interval_minutes",
 			"position": 19,
+			"type": "integer",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_rules",
+			"name": "slowed_at",
+			"position": 20,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -3165,7 +2995,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "minimum_sample_count",
-			"position": 20,
+			"position": 21,
 			"type": "integer",
 			"notNull": true,
 			"default": "0",
@@ -3175,7 +3005,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "consecutive_breaches_required",
-			"position": 21,
+			"position": 22,
 			"type": "integer",
 			"notNull": true,
 			"default": "2",
@@ -3185,7 +3015,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "breaches_out_of",
-			"position": 22,
+			"position": 23,
 			"type": "integer",
 			"notNull": false,
 			"default": null,
@@ -3195,7 +3025,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "consecutive_healthy_required",
-			"position": 23,
+			"position": 24,
 			"type": "integer",
 			"notNull": true,
 			"default": "2",
@@ -3205,7 +3035,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "renotify_interval_minutes",
-			"position": 24,
+			"position": 25,
 			"type": "integer",
 			"notNull": true,
 			"default": "30",
@@ -3215,7 +3045,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "apdex_threshold_ms",
-			"position": 25,
+			"position": 26,
 			"type": "double precision",
 			"notNull": false,
 			"default": null,
@@ -3225,7 +3055,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "query_builder_draft_json",
-			"position": 26,
+			"position": 27,
 			"type": "jsonb",
 			"notNull": false,
 			"default": null,
@@ -3235,16 +3065,6 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "raw_query_sql",
-			"position": 27,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_rules",
-			"name": "group_by",
 			"position": 28,
 			"type": "text",
 			"notNull": false,
@@ -3254,8 +3074,18 @@
 		{
 			"kind": "column",
 			"table": "alert_rules",
-			"name": "destination_ids_json",
+			"name": "group_by",
 			"position": 29,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_rules",
+			"name": "destination_ids_json",
+			"position": 30,
 			"type": "jsonb",
 			"notNull": true,
 			"default": null,
@@ -3265,7 +3095,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "query_spec_json",
-			"position": 30,
+			"position": 31,
 			"type": "jsonb",
 			"notNull": false,
 			"default": null,
@@ -3275,7 +3105,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "reducer",
-			"position": 31,
+			"position": 32,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -3285,7 +3115,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "sample_count_strategy",
-			"position": 32,
+			"position": 33,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -3295,7 +3125,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "no_data_behavior",
-			"position": 33,
+			"position": 34,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -3305,7 +3135,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "last_scheduled_at",
-			"position": 34,
+			"position": 35,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -3315,16 +3145,6 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "created_at",
-			"position": 35,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_rules",
-			"name": "updated_at",
 			"position": 36,
 			"type": "timestamp with time zone",
 			"notNull": true,
@@ -3334,8 +3154,18 @@
 		{
 			"kind": "column",
 			"table": "alert_rules",
-			"name": "created_by",
+			"name": "updated_at",
 			"position": 37,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_rules",
+			"name": "created_by",
+			"position": 38,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -3345,7 +3175,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "updated_by",
-			"position": 38,
+			"position": 39,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -8954,8 +8784,18 @@
 		{
 			"kind": "column",
 			"table": "issue_escalations",
-			"name": "dedupe_key",
+			"name": "claimed_at",
 			"position": 12,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "issue_escalations",
+			"name": "dedupe_key",
+			"position": 13,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -8965,7 +8805,7 @@
 			"kind": "column",
 			"table": "issue_escalations",
 			"name": "error",
-			"position": 13,
+			"position": 14,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -8975,7 +8815,7 @@
 			"kind": "column",
 			"table": "issue_escalations",
 			"name": "created_at",
-			"position": 14,
+			"position": 15,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -8985,7 +8825,7 @@
 			"kind": "column",
 			"table": "issue_escalations",
 			"name": "processed_at",
-			"position": 15,
+			"position": 16,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -9947,186 +9787,6 @@
 			"name": "updated_at",
 			"position": 19,
 			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "oncall_overrides",
-			"name": "id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "oncall_overrides",
-			"name": "org_id",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "oncall_overrides",
-			"name": "schedule_id",
-			"position": 2,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "oncall_overrides",
-			"name": "user_id",
-			"position": 3,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "oncall_overrides",
-			"name": "starts_at",
-			"position": 4,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "oncall_overrides",
-			"name": "ends_at",
-			"position": 5,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "oncall_overrides",
-			"name": "created_by",
-			"position": 6,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "oncall_overrides",
-			"name": "created_at",
-			"position": 7,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "oncall_schedules",
-			"name": "id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "oncall_schedules",
-			"name": "org_id",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "oncall_schedules",
-			"name": "name",
-			"position": 2,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "oncall_schedules",
-			"name": "description",
-			"position": 3,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "oncall_schedules",
-			"name": "time_zone",
-			"position": 4,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "oncall_schedules",
-			"name": "layers_json",
-			"position": 5,
-			"type": "jsonb",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "oncall_schedules",
-			"name": "created_at",
-			"position": 6,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "oncall_schedules",
-			"name": "updated_at",
-			"position": 7,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "oncall_schedules",
-			"name": "created_by",
-			"position": 8,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "oncall_schedules",
-			"name": "updated_by",
-			"position": 9,
-			"type": "text",
 			"notNull": true,
 			"default": null,
 			"identity": null
@@ -17430,41 +17090,6 @@
 		},
 		{
 			"kind": "index",
-			"table": "alert_member_notifications",
-			"name": "alert_member_notifications_dedupe_idx",
-			"unique": true,
-			"method": "btree",
-			"columns": [
-				"\"dedupe_key\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "alert_member_notifications",
-			"name": "alert_member_notifications_due_idx",
-			"unique": false,
-			"method": "btree",
-			"columns": [
-				"\"status\"",
-				"\"scheduled_at\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "alert_member_notifications",
-			"name": "alert_member_notifications_org_incident_idx",
-			"unique": false,
-			"method": "btree",
-			"columns": [
-				"\"org_id\"",
-				"\"incident_id\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
 			"table": "alert_rule_claims",
 			"name": "alert_rule_claims_org_idx",
 			"unique": false,
@@ -18726,30 +18351,6 @@
 		},
 		{
 			"kind": "index",
-			"table": "oncall_overrides",
-			"name": "oncall_overrides_org_schedule_ends_idx",
-			"unique": false,
-			"method": "btree",
-			"columns": [
-				"\"org_id\"",
-				"\"schedule_id\"",
-				"\"ends_at\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "oncall_schedules",
-			"name": "oncall_schedules_org_idx",
-			"unique": false,
-			"method": "btree",
-			"columns": [
-				"\"org_id\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
 			"table": "org_billing_links",
 			"name": "org_billing_links_billing_org_idx",
 			"unique": false,
@@ -19778,20 +19379,6 @@
 		},
 		{
 			"kind": "foreign_key",
-			"table": "alert_member_notifications",
-			"name": "alert_member_notifications_incident_id_alert_incidents_id_fk",
-			"columns": [
-				"incident_id"
-			],
-			"foreignTable": "alert_incidents",
-			"foreignColumns": [
-				"id"
-			],
-			"onDelete": "CASCADE",
-			"onUpdate": "NO ACTION"
-		},
-		{
-			"kind": "foreign_key",
 			"table": "aws_connections",
 			"name": "aws_connections_source_id_sources_id_fk",
 			"columns": [
@@ -19870,20 +19457,6 @@
 				"source_id"
 			],
 			"foreignTable": "sources",
-			"foreignColumns": [
-				"id"
-			],
-			"onDelete": "CASCADE",
-			"onUpdate": "NO ACTION"
-		},
-		{
-			"kind": "foreign_key",
-			"table": "oncall_overrides",
-			"name": "oncall_overrides_schedule_id_oncall_schedules_id_fk",
-			"columns": [
-				"schedule_id"
-			],
-			"foreignTable": "oncall_schedules",
 			"foreignColumns": [
 				"id"
 			],

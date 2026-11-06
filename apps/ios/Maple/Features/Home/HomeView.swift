@@ -241,7 +241,7 @@ struct IncidentCardView: View {
 			if names.isEmpty { "All services" }
 			else if names.count <= 2 { names.joined(separator: ", ") }
 			else { "\(names[0]), \(names[1]) +\(names.count - 2)" }
-		if let group = incident.groupKey, group != "__total__" { label += " · \(group)" }
+		if let group = incident.groupLabel ?? incident.groupKey, group != "__total__" { label += " · \(group)" }
 		return label
 	}
 }

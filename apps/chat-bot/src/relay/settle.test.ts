@@ -188,6 +188,7 @@ const ports = (
 			stored.writes += 1
 			return onRecord(checkpoint)
 		}),
+	handOffTurn: () => Effect.void,
 })
 
 /** What a fresh activation reads back — through the schema, as the object does. */
@@ -357,7 +358,7 @@ describe("settling a relayed turn", () => {
 	it.effect("drops a checkpoint older than any turn the session would still be running", () =>
 		Effect.gen(function* () {
 			const chat = platform()
-			yield* TestClock.adjust("31 minutes")
+			yield* TestClock.adjust("36 minutes")
 
 			const outcome = yield* settleRelayedTurn(
 				checkpointOf(["m1"]),

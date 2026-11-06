@@ -60,7 +60,8 @@ export type DiagnosisInputs = Readonly<{
 
 export const diagnosisPanel = (h: H, model: Model, inputs: DiagnosisInputs): Html => {
 	const keys = [...new Set(Arr.map(inputs.states, (s) => s.group_key))].sort()
-	const groupKeys = keys.length > 1 ? keys : []
+	// An anomaly rule's keys are a heartbeat and incident ids, not groups anyone picks.
+	const groupKeys = keys.length > 1 && inputs.rule.signalType !== "anomaly" ? keys : []
 	const activeGroup = model.selectedGroup ?? worstState(inputs.states)?.group_key ?? null
 	const stages = buildDiagnosis({
 		rule: inputs.rule,

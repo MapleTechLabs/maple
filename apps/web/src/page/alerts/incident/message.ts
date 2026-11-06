@@ -3,6 +3,7 @@ import {
 	V2AlertIncident,
 	V2AlertIncidentEscalation,
 	V2AlertIncidentEvent,
+	V2AlertSilence,
 	V2Investigation,
 	V2Slo,
 	V2UptimeMonitor,
@@ -13,17 +14,21 @@ import {
 	AlertRuleStateRowSchema,
 } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
+import * as Policy from "@maple/domain/policy"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { CheckSummary } from "../shared/check-summary"
 import { PreviewFailure } from "../shared/preview"
+import * as SilenceDialog from "../silence-dialog/dialog"
 
 const rows = <S extends Schema.Top>(row: S) => ({ orgId: Schema.String, rows: Schema.Array(row) })
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
+	/** The minute clock while the incident is open, so a silence badge ends on time. */
+	TickedClock: { nowMs: Schema.Number },
 	UpdatedIncidents: rows(AlertIncidentRowSchema),
 	UpdatedRules: rows(AlertRuleRowSchema),
 	UpdatedRuleStates: rows(AlertRuleStateRowSchema),
@@ -64,5 +69,12 @@ export const Message = defineMessageUnion({
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },
 	GotChartMessage: { message: Chart.Message },
+	CompletedFetchSilences: {
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(V2AlertSilence), LoadFailure),
+	},
+	ClickedSilence: {},
+	GotSilenceDialogMessage: { message: SilenceDialog.Message },
+	CompletedFetchSession: { grants: Schema.Array(Policy.PermissionName) },
 })
 export type Message = typeof Message.Type

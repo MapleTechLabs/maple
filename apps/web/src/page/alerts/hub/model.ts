@@ -5,9 +5,10 @@ import {
 	AlertDestinationId,
 	AlertIncidentId,
 	AlertRuleId,
+	AlertSilenceId,
 	EscalationChainId,
 } from "@maple/domain/http"
-import { V2EscalationChain, V2Slo, V2SloStatus, V2UptimeMonitor } from "@maple/domain/http/v2"
+import { V2AlertSilence, V2EscalationChain, V2Slo, V2SloStatus, V2UptimeMonitor } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -22,6 +23,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChainDialog from "../escalation-dialog/dialog"
+import * as SilenceDialog from "../silence-dialog/dialog"
 import { ServiceNamespaces } from "./uptime-groups"
 
 // The `/alerts` hub.
@@ -97,6 +99,10 @@ export const Model = Schema.Struct({
 	deletingChainId: Schema.NullOr(EscalationChainId),
 	deleteChainError: Schema.NullOr(Schema.String),
 	deleteChainDialog: Dialog.Model,
+	/** Silences tab: `alertSilences.list`, read while the tab is open. */
+	silences: KeyedSchema(Schema.Array(V2AlertSilence), LoadFailure),
+	endingSilenceIds: Schema.Array(AlertSilenceId),
+	silenceDialog: SilenceDialog.Model,
 })
 export type Model = typeof Model.Type
 

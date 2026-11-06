@@ -327,7 +327,7 @@ describe("upsertPlanetScaleIssue", () => {
 					[first.issueId],
 				),
 			)
-			assert.strictEqual(reopened?.workflow_state, "triage")
+			assert.strictEqual(reopened?.workflow_state, "regressed")
 			assert.strictEqual(reopened?.occurrence_count, 3)
 		}).pipe(Effect.provide(testDb.layer))
 	})
@@ -414,7 +414,7 @@ describe("upsertPlanetScaleIssue", () => {
 					[initial.issueId],
 				),
 			)
-			assert.strictEqual(aggregate?.workflow_state, "triage")
+			assert.strictEqual(aggregate?.workflow_state, "regressed")
 			assert.strictEqual(aggregate?.occurrence_count, 3)
 			assert.strictEqual(aggregate?.state_changes, 1)
 			assert.strictEqual(aggregate?.regressions, 1)

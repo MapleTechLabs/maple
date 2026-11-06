@@ -8,6 +8,8 @@ import { listDeliveries, listIncidentActivity, setIncidentAcknowledged } from ".
 import { listSlos } from "../shared/slo-commands"
 import { listMonitors } from "../shared/uptime-commands"
 import { retrieveIncidentEscalation } from "../shared/escalation-chains"
+import { listActiveSilences } from "../shared/silences"
+import { readGrants } from "../../../data/session-tenant"
 import { fetchCheckSummary } from "../shared/check-summary"
 import { fetchPreview } from "../shared/preview"
 import { Message } from "./message"
@@ -131,4 +133,19 @@ export const FetchIncidentMonitors = Command.define("FetchAlertIncidentMonitors"
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchMonitors({ key, result })),
 		),
+})
+
+export const FetchIncidentSilences = Command.define("FetchAlertIncidentSilences", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchSilences],
+	execute: ({ key }) =>
+		listActiveSilences.pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchSilences({ key, result })),
+		),
+})
+
+export const FetchIncidentSession = Command.define("FetchAlertIncidentSession", {
+	messages: [Message.CompletedFetchSession],
+	execute: Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ grants })),
 })

@@ -413,6 +413,100 @@ describe("ErrorIssueWorkflowService", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
+	it.effect("gives the conflict to the second of two writers that read the same state", () =>
+		Effect.gen(function* () {
+			const workflow = yield* ErrorIssueWorkflowService
+			const database = yield* Database
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId, { workflowState: "triage" })
+			// Both callers read `triage` before either wrote.
+			const seenByBoth = yield* workflow.requireIssue(ORG, issueId)
+
+			yield* workflow.applyTransition(ORG, null, seenByBoth, "cancelled")
+			const loser = yield* Effect.flip(workflow.applyTransition(ORG, null, seenByBoth, "done"))
+			assert.strictEqual(loser._tag, "@maple/http/errors/ErrorIssueTransitionError")
+
+			const [after] = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [$.id.eq(issueId)]),
+				),
+			)
+			assert.strictEqual(after?.workflowState, "cancelled")
+			assert.isNull(after?.resolvedAt)
+			// The loser's timeline event rolled back with its UPDATE.
+			const events = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorIssueEvents)
+						.select()
+						.where(($) => [$.issueId.eq(issueId)]),
+				),
+			)
+			assert.deepStrictEqual(
+				Arr.map(events, (event) => event.toState),
+				["cancelled"],
+			)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("a snooze wakeup loses to a snooze renewed after it was read", () =>
+		Effect.gen(function* () {
+			const workflow = yield* ErrorIssueWorkflowService
+			const database = yield* Database
+			const now = yield* Clock.currentTimeMillis
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId, { workflowState: "wontfix", snoozeUntil: now - 1_000 })
+			const readByTick = yield* workflow.requireIssue(ORG, issueId)
+			// A person re-snoozes it before the tick writes.
+			yield* database.execute((db) =>
+				db.run(
+					PG.update(ErrorIssues)
+						.set({ snoozeUntil: now + 3_600_000 })
+						.where(($) => [$.id.eq(issueId)]),
+				),
+			)
+
+			const lost = yield* Effect.flip(
+				workflow.applyTransition(ORG, null, readByTick, "triage", { snoozeElapsedBy: now }),
+			)
+			assert.strictEqual(lost._tag, "@maple/http/errors/ErrorIssueTransitionError")
+			const after = yield* workflow.requireIssue(ORG, issueId)
+			assert.strictEqual(after.workflowState, "wontfix")
+			assert.strictEqual(after.snoozeUntil, now + 3_600_000)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("a lease-expiry drop to todo loses to a claim taken after the lease was cleared", () =>
+		Effect.gen(function* () {
+			const workflow = yield* ErrorIssueWorkflowService
+			const actors = yield* ErrorActorsService
+			const database = yield* Database
+			const now = yield* Clock.currentTimeMillis
+			const holder = yield* actors.ensureUserActor(ORG, USER)
+			const issueId = asIssueId(randomUUID())
+			// The tick cleared the expired lease and read the issue still in progress.
+			yield* seedIssue(issueId, { workflowState: "in_progress" })
+			const readByTick = yield* workflow.requireIssue(ORG, issueId)
+			// A new holder claims it before the tick writes `todo`.
+			yield* database.execute((db) =>
+				db.run(
+					PG.update(ErrorIssues)
+						.set({ leaseHolderActorId: holder.id, claimedAt: now, leaseExpiresAt: now + 60_000 })
+						.where(($) => [$.id.eq(issueId)]),
+				),
+			)
+
+			const lost = yield* Effect.flip(
+				workflow.applyTransition(ORG, null, readByTick, "todo", { unleased: true }),
+			)
+			assert.strictEqual(lost._tag, "@maple/http/errors/ErrorIssueTransitionError")
+			const after = yield* workflow.requireIssue(ORG, issueId)
+			assert.strictEqual(after.workflowState, "in_progress")
+			assert.strictEqual(after.leaseHolderActorId, holder.id)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
 	// The lease used to advance only via an explicit `heartbeat` call, which agents
 	// never made: `claim` was used 11 times in 8 days, `heartbeat` zero. Issues were
 	// claimed, worked, and silently dropped back to `todo` when the lease lapsed.

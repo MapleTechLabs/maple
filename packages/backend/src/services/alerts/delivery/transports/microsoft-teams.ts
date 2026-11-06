@@ -1,7 +1,7 @@
 import { Array as Arr, Schema, String as Str } from "effect"
 import { buildSummaryLine } from "../../AlertDeliveryDispatch"
 import {
-	displayGroupKey,
+	displayGroup,
 	eventTypeEmoji,
 	formatAlertHeadline,
 	formatEventTypeLabel,
@@ -39,7 +39,7 @@ const textBlock = (text: string, extra?: Record<string, unknown>) => ({
 
 export const buildTeamsAdaptiveCard = (input: RenderInput<Config>) => {
 	const { context, templated, linkUrl, chatUrl } = input
-	const group = displayGroupKey(context.groupKey)
+	const group = displayGroup(context)
 	const title = templated?.title ?? `${eventTypeEmoji(context.eventType)} ${formatAlertHeadline(context)}`
 	const lead = templated
 		? truncate(templated.body, MAX_TEMPLATED_BODY_CHARS)

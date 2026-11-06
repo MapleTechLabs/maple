@@ -216,7 +216,10 @@ const runWrite = (issueId: ErrorIssueId, write: IssueWrite) =>
 			case "Transition":
 				return yield* client.errors.transitionIssue({
 					params,
-					payload: new ErrorIssueTransitionRequest({ toState: write.toState }),
+					payload: new ErrorIssueTransitionRequest({
+						toState: write.toState,
+						expectedState: write.fromState,
+					}),
 				})
 			case "Claim":
 				return yield* client.errors.claimIssue({ params, payload: new ErrorIssueClaimRequest({}) })

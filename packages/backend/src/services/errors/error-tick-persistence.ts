@@ -598,6 +598,65 @@ const buildNotificationRows = (input: PersistErrorTickWindowInput, payload: Noti
 }
 
 /**
+ * Reopen fixed issues as `regressed`, guarded on `done`: the scan read the state with a plain
+ * SELECT, so a human transition committed since then (a re-triage, a `cancelled`) wins and the
+ * row is left alone. Returns the ids that actually reopened, plus the lost ones whose current
+ * state still suppresses them (closed again, or a `wontfix` under an active snooze), so the
+ * tick keeps them out of the incident path instead of trusting the scan's stale read.
+ */
+export const applyRegressions = (
+	tx: MapleDb,
+	input: Pick<PersistErrorTickWindowInput, "orgId" | "windowEndMs">,
+	issueIds: ReadonlyArray<ErrorIssueId>,
+): Effect.Effect<
+	{ readonly reopened: ReadonlySet<ErrorIssueId>; readonly stillSuppressed: ReadonlySet<ErrorIssueId> },
+	MapleDbError
+> =>
+	Effect.gen(function* () {
+		const reopened = yield* inChunks(issueIds, (chunk) =>
+			tx.run(
+				PG.update(ErrorIssues)
+					.set(($) => ({
+						workflowState: "regressed",
+						resolvedAt: null,
+						resolvedByActorId: null,
+						lastRegressedAt: input.windowEndMs,
+						regressionCount: $.regressionCount.add(1),
+						// A regression on an issue retention already archived must be seen.
+						archivedAt: null,
+						updatedAt: input.windowEndMs,
+					}))
+					.where(($) => [$.orgId.eq(input.orgId), $.id.in_(...chunk), $.workflowState.eq("done")])
+					.returning("id"),
+			),
+		)
+		const lost = issueIds.length - reopened.length
+		if (lost > 0) {
+			yield* Effect.annotateCurrentSpan({ "maple.error_tick.regressions_lost": lost })
+			yield* Effect.logInfo("Regression lost to a concurrent transition").pipe(
+				Effect.annotateLogs({ orgId: input.orgId, lost }),
+			)
+		}
+		const reopenedIds = new Set(Arr.map(reopened, (row) => row.id))
+		const lostIds = Arr.filter(issueIds, (id) => !reopenedIds.has(id))
+		const current = yield* inChunks(lostIds, (chunk) =>
+			tx.run(
+				PG.from(ErrorIssues)
+					.select("id", "workflowState", "snoozeUntil")
+					.where(($) => [$.orgId.eq(input.orgId), $.id.in_(...chunk)]),
+			),
+		)
+		const stillSuppressed = Arr.filter(
+			current,
+			(row) =>
+				row.workflowState === "done" ||
+				(row.workflowState === "wontfix" &&
+					(row.snoozeUntil === null || row.snoozeUntil > input.windowEndMs)),
+		)
+		return { reopened: reopenedIds, stillSuppressed: new Set(Arr.map(stillSuppressed, (row) => row.id)) }
+	})
+
+/**
  * Apply one claimed, half-open evaluator window atomically. The durable cursor
  * advances only if every issue, incident, event, and notification-outbox write
  * commits. A transaction retry is safe because none of its generated IDs can
@@ -804,6 +863,19 @@ export const persistErrorTickWindow = (
 							)
 				})
 
+				// Apply the reopen decided above. Reopening lands in `regressed`, not
+				// `triage`: an issue that was fixed and came back is not the same thing
+				// as one nobody has looked at, and flattening the two is what let the
+				// same bug be picked up and fixed again from scratch.
+				const { reopened: regressedIds, stillSuppressed } = yield* applyRegressions(
+					tx,
+					input,
+					Arr.map(
+						Arr.filter(resolvedRows, (entry) => entry.regression),
+						(entry) => entry.issueId,
+					),
+				)
+
 				for (const { row, prior, regression, suppressed, issueId } of resolvedRows) {
 					if (!prior) {
 						events.push(
@@ -818,7 +890,9 @@ export const persistErrorTickWindow = (
 						)
 					}
 
-					const wasRegression = regression
+					// Only a reopen that actually applied is a regression; one that lost to a
+					// concurrent human transition is an ordinary occurrence on the new state.
+					const wasRegression = regression && regressedIds.has(issueId)
 					if (wasRegression) {
 						events.push(
 							buildEvent(input, issueId, "state_change", {
@@ -835,7 +909,8 @@ export const persistErrorTickWindow = (
 					// Counters were accumulated by the upsert above; everything downstream
 					// of `observed` is the incident/notification/investigation path, which
 					// a pre-fix straggler must not enter.
-					if (suppressed) continue
+					// A lost reopen is suppressed by the state it lost to, not the scan's read.
+					if (suppressed || stillSuppressed.has(issueId)) continue
 
 					observed.push({
 						issueId,
@@ -844,34 +919,6 @@ export const persistErrorTickWindow = (
 						priorSeverity: prior?.severity ?? null,
 					})
 				}
-
-				// Apply the reopen decided above. Reopening lands in `regressed`, not
-				// `triage`: an issue that was fixed and came back is not the same thing
-				// as one nobody has looked at, and flattening the two is what let the
-				// same bug be picked up and fixed again from scratch.
-				const regressedIds = Arr.map(
-					Arr.filter(observed, (entry) => entry.wasRegression),
-					(entry) => entry.issueId,
-				)
-				yield* Effect.forEach(
-					chunks(regressedIds),
-					(chunk) =>
-						tx.run(
-							PG.update(ErrorIssues)
-								.set(($) => ({
-									workflowState: "regressed",
-									resolvedAt: null,
-									resolvedByActorId: null,
-									lastRegressedAt: windowEnd,
-									regressionCount: $.regressionCount.add(1),
-									// A regression on an issue retention already archived must be seen.
-									archivedAt: null,
-									updatedAt: windowEnd,
-								}))
-								.where(($) => [$.orgId.eq(input.orgId), $.id.in_(...chunk)]),
-						),
-					{ discard: true },
-				)
 
 				// Only retention archives an issue, on the premise that it stopped occurring.
 				// One that occurs again was retired too early: a fingerprint bump whose new

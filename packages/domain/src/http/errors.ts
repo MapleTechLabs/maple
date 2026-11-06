@@ -462,6 +462,8 @@ export class ErrorIssueTransitionRequest extends Schema.Class<ErrorIssueTransiti
 	toState: WorkflowState,
 	note: Schema.optionalKey(Schema.String),
 	snoozeUntil: Schema.optionalKey(Schema.NullOr(IsoDateTimeString)),
+	// The state the client last saw; when it no longer matches, the move is refused with a 409.
+	expectedState: Schema.optionalKey(WorkflowState),
 }) {}
 
 export class ErrorIssueClaimRequest extends Schema.Class<ErrorIssueClaimRequest>("ErrorIssueClaimRequest")({
@@ -871,7 +873,8 @@ export class ErrorIssueNotFoundError extends HttpTaggedError<ErrorIssueNotFoundE
 	}
 }
 
-export class ErrorIssueTransitionError extends Schema.TaggedError<ErrorIssueTransitionError>()(
+// Self-describing so clients read its message: the dashboard toasts it on a refused or stale move.
+export class ErrorIssueTransitionError extends HttpTaggedError<ErrorIssueTransitionError>()(
 	"@maple/http/errors/ErrorIssueTransitionError",
 	{
 		message: Schema.String,
@@ -879,7 +882,14 @@ export class ErrorIssueTransitionError extends Schema.TaggedError<ErrorIssueTran
 		fromState: WorkflowState,
 		toState: WorkflowState,
 	},
-	{ httpApiStatus: 409 },
+	{
+		status: 409,
+		code: "error_issue_transition_conflict",
+		title: "Issue state changed",
+		retry: "never",
+		recovery: "refresh",
+		exposure: "public_message",
+	},
 ) {}
 
 export class ErrorIssueLeaseConflictError extends Schema.TaggedError<ErrorIssueLeaseConflictError>()(

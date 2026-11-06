@@ -7,6 +7,7 @@
  */
 import { AlertsService, type AlertSchedulerLane } from "@maple/backend/services/alerts/AlertsService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
+import { AnomalyAlertSource } from "@maple/backend/services/alerts/anomaly/AnomalyAlertSource"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
 import { DigestService } from "@maple/backend/services/digest/DigestService"
 import { WebAnalyticsDigestService } from "@maple/backend/services/digest/WebAnalyticsDigestService"
@@ -71,6 +72,7 @@ export const layerTick = (
 	Layer.mergeAll(
 		AlertsService.layer,
 		AnomalyDetectionService.layer,
+		AnomalyAlertSource.layer,
 		CloudflareAnalyticsService.layer,
 		GcpMetricsService.layer,
 		PlanetScaleService.layer,
@@ -260,7 +262,7 @@ const serviceMapRollupTick = makeTick(
 	}),
 )
 
-const anomalyTick = makeTick(
+const anomalyDetectionTick = makeTick(
 	AnomalyDetectionService.use((anomalies) => anomalies.runTick),
 	"anomaly",
 	(result) => ({
@@ -274,6 +276,16 @@ const anomalyTick = makeTick(
 		orgFailures: result.orgFailures,
 	}),
 )
+
+// Gives each org with an open anomaly its default anomaly alert rule. Its own tick, so a
+// failure only logs and never touches detection.
+const anomalyDefaultRulesTick = makeTick(
+	AnomalyAlertSource.use((source) => source.backfillDefaultRules),
+	"anomaly_default_rules",
+	(created) => (created > 0 ? { defaultAnomalyRulesCreated: created } : undefined),
+)
+
+const anomalyTick = Effect.andThen(anomalyDetectionTick, anomalyDefaultRulesTick)
 
 const cloudflareAnalyticsTick = makeTick(
 	CloudflareAnalyticsService.use((analytics) => analytics.pollAllOrgs),
@@ -540,6 +552,7 @@ export const selectLaneProgram = <R>(
 type ScheduledServices =
 	| AlertsService
 	| AnomalyDetectionService
+	| AnomalyAlertSource
 	| AwsConnectionService
 	| CloudflareAnalyticsService
 	| DigestService
