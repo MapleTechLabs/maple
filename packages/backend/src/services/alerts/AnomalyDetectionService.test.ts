@@ -615,3 +615,309 @@ describe("AnomalyDetectionService.runTick outbound budget", () => {
 		}),
 	)
 })
+
+/**
+ * Runs `sideSql` once, right before the first statement `match` accepts: a write that lands in the
+ * window between the tick's read and its UPDATE, as a concurrent request or overlapping tick would.
+ */
+const interleaveBefore = (
+	testDb: TestDb,
+	match: (sql: string, params: ReadonlyArray<unknown>) => boolean,
+	sideSql: string,
+	sideParams: unknown[],
+) => {
+	const original = testDb.pglite.query.bind(testDb.pglite)
+	let fired = false
+	Object.defineProperty(testDb.pglite, "query", {
+		configurable: true,
+		value: (sql: string, params: unknown[] = [], ...rest: unknown[]) => {
+			if (fired || !match(sql, params)) return original(sql, params, ...rest)
+			fired = true
+			return original(sideSql, sideParams).then(() => original(sql, params, ...rest))
+		},
+	})
+	return () => fired
+}
+
+const isNoDataResolve = (sql: string, params: ReadonlyArray<unknown>) =>
+	Str.startsWith('UPDATE "anomaly_incidents"')(sql) && params.includes("no_data")
+
+const STALE_INCIDENT = {
+	n: 7,
+	orgId: ORG,
+	serviceName: "payments",
+	deploymentEnv: "production",
+	signalType: "error_rate",
+	severity: "warning",
+	status: "open",
+} as const
+const STALE_INCIDENT_ID = asIncidentId("00000000-0000-4000-8000-000000000007")
+const STALE_DETECTOR_KEY = "error_rate:payments:production:7"
+
+const seedDetectorState = (testDb: TestDb) =>
+	executeSql(
+		testDb,
+		`INSERT INTO anomaly_detector_states
+		   (org_id, detector_key, signal_type, service_name, deployment_env, open_incident_id,
+		    last_evaluated_at, updated_at)
+		 VALUES ($1, $2, 'error_rate', 'payments', 'production', $3, now(), now())`,
+		[ORG, STALE_DETECTOR_KEY, STALE_INCIDENT_ID],
+	)
+
+const readIncident = (testDb: TestDb) =>
+	Effect.promise(() =>
+		testDb.pglite.query<{ status: string; resolve_reason: string | null; resolved_at: Date | null }>(
+			"SELECT status, resolve_reason, resolved_at FROM anomaly_incidents WHERE id = $1",
+			[STALE_INCIDENT_ID],
+		),
+	).pipe(Effect.map((result) => result.rows[0]))
+
+const readDetectorPointer = (testDb: TestDb) =>
+	Effect.promise(() =>
+		testDb.pglite.query<{ open_incident_id: string | null }>(
+			"SELECT open_incident_id FROM anomaly_detector_states WHERE org_id = $1 AND detector_key = $2",
+			[ORG, STALE_DETECTOR_KEY],
+		),
+	).pipe(Effect.map((result) => result.rows[0]?.open_incident_id))
+
+const runTickWith = (testDb: TestDb) =>
+	AnomalyDetectionService.pipe(
+		Effect.flatMap((service) => service.runTick),
+		Effect.provide(makeLayer(testDb)),
+	)
+
+describe("AnomalyDetectionService.runTick no-data sweep races", () => {
+	it.live("resolves a silent incident as no_data and clears the detector pointer", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			yield* Effect.promise(async () => {
+				await seedIncident(testDb, STALE_INCIDENT)
+				await seedDetectorState(testDb)
+			})
+
+			const result = yield* runTickWith(testDb)
+
+			expect(result.incidentsResolved).toBe(1)
+			expect((yield* readIncident(testDb))?.resolve_reason).toBe("no_data")
+			expect(yield* readDetectorPointer(testDb)).toBeNull()
+		})
+	})
+
+	it.live("a manual resolve that lands first keeps its reason and time", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			yield* Effect.promise(() => seedIncident(testDb, STALE_INCIDENT))
+			const manualAt = "2026-07-20T10:00:00.000Z"
+			const fired = interleaveBefore(
+				testDb,
+				isNoDataResolve,
+				"UPDATE anomaly_incidents SET status = 'resolved', resolve_reason = 'manual', resolved_at = $2 WHERE id = $1",
+				[STALE_INCIDENT_ID, manualAt],
+			)
+
+			const result = yield* runTickWith(testDb)
+
+			expect(fired()).toBe(true)
+			expect(result.incidentsResolved).toBe(0)
+			const incident = yield* readIncident(testDb)
+			expect(incident?.resolve_reason).toBe("manual")
+			expect(incident?.resolved_at?.toISOString()).toBe(manualAt)
+		})
+	})
+
+	it.live("an overlapping tick that saw the series fire keeps the incident open and pointed at", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			yield* Effect.promise(async () => {
+				await seedIncident(testDb, STALE_INCIDENT)
+				await seedDetectorState(testDb)
+			})
+			const fired = interleaveBefore(
+				testDb,
+				isNoDataResolve,
+				"UPDATE anomaly_incidents SET last_triggered_at = now() WHERE id = $1",
+				[STALE_INCIDENT_ID],
+			)
+
+			const result = yield* runTickWith(testDb)
+
+			expect(fired()).toBe(true)
+			expect(result.incidentsResolved).toBe(0)
+			expect((yield* readIncident(testDb))?.status).toBe("open")
+			expect(yield* readDetectorPointer(testDb)).toBe(STALE_INCIDENT_ID)
+		})
+	})
+})
+
+describe("AnomalyDetectionService.runTick baseline resolve races", () => {
+	const SPIKE_INCIDENT_ID = asIncidentId("00000000-0000-4000-8000-000000000008")
+	const RECOVERING_KEY = "error_spike:production:41"
+	const NEW_SPIKE_KEY = "error_spike:production:43"
+
+	const isBaselineResolve = (sql: string, params: ReadonlyArray<unknown>) =>
+		Str.startsWith('UPDATE "anomaly_incidents"')(sql) && params.includes("returned_to_baseline")
+
+	/** One open spike incident whose only series (fingerprint 41) is one healthy tick from resolving. */
+	const seedRecoveringSpike = (testDb: TestDb) =>
+		Effect.promise(async () => {
+			await executeSql(
+				testDb,
+				`INSERT INTO anomaly_incidents
+				   (id, org_id, detector_key, signal_type, service_name, deployment_env, fingerprint_hash,
+				    status, severity, opened_value, baseline_median, baseline_sigma, threshold_value,
+				    last_observed_value, last_sample_count, first_triggered_at, last_triggered_at,
+				    triage_status, dedupe_key, fingerprints_json, reopen_count, created_at, updated_at)
+				 VALUES ($1, $2, $3, 'error_spike', 'payments', 'production', '41', 'open', 'warning',
+				         40, 1, 1, 11, 40, 40, now() - interval '10 minutes', now() - interval '5 minutes',
+				         'none', $1, '[]'::jsonb, 0, now() - interval '10 minutes', now())`,
+				[SPIKE_INCIDENT_ID, ORG, RECOVERING_KEY],
+			)
+			await executeSql(
+				testDb,
+				`INSERT INTO anomaly_detector_states
+				   (org_id, detector_key, signal_type, service_name, deployment_env, fingerprint_hash,
+				    consecutive_healthy, open_incident_id, last_evaluated_at, updated_at)
+				 VALUES ($1, $2, 'error_spike', 'payments', 'production', '41', 2, $3, now(), now())`,
+				[ORG, RECOVERING_KEY, SPIKE_INCIDENT_ID],
+			)
+			// A second fingerprint one breach away from opening, for the follow-up tick.
+			await executeSql(
+				testDb,
+				`INSERT INTO anomaly_detector_states
+				   (org_id, detector_key, signal_type, service_name, deployment_env, fingerprint_hash,
+				    consecutive_breaches, last_evaluated_at, updated_at)
+				 VALUES ($1, $2, 'error_spike', 'payments', 'production', '43', 1, now(), now())`,
+				[ORG, NEW_SPIKE_KEY],
+			)
+		})
+
+	const readSpikeIncidents = (testDb: TestDb) =>
+		Effect.promise(() =>
+			testDb.pglite.query<{ id: string; status: string; resolve_reason: string | null }>(
+				"SELECT id, status, resolve_reason FROM anomaly_incidents WHERE org_id = $1",
+				[ORG],
+			),
+		).pipe(Effect.map((result) => result.rows))
+
+	const readState = (testDb: TestDb, detectorKey: string) =>
+		Effect.promise(() =>
+			testDb.pglite.query<{ open_incident_id: string | null; last_resolved_at: Date | null }>(
+				"SELECT open_incident_id, last_resolved_at FROM anomaly_detector_states WHERE org_id = $1 AND detector_key = $2",
+				[ORG, detectorKey],
+			),
+		).pipe(Effect.map((result) => result.rows[0]))
+
+	/** Fingerprint 41 is silent (healthy); fingerprint 43 fires only once `fire43` is set. */
+	const makeSpikeLayer = (testDb: TestDb, fire43: { value: boolean }) => {
+		const warehouse = makeWarehouseServiceStub({
+			crossOrgQuery: (_tenant, compiled) =>
+				compiledQueryOf(compiled)
+					.decodeRows([{ orgId: ORG }])
+					.pipe(Effect.orDie),
+			compiledQuery: (_tenant, compiled, options) => {
+				const rows =
+					options?.context === "anomalyErrorSpikeCurrent" && fire43.value
+						? [
+								{
+									fingerprintHash: "43",
+									serviceName: "payments",
+									errorLabel: "Boom",
+									deploymentEnv: "production",
+									count: 50,
+								},
+							]
+						: options?.context === "anomalyErrorSpikeBaseline"
+							? [
+									{
+										fingerprintHash: "43",
+										deploymentEnv: "production",
+										totalCount: 336,
+										medianNonzeroHourly: 2,
+										maxHourly: 4,
+									},
+								]
+							: []
+				return compiledQueryOf(compiled).decodeRows(rows).pipe(Effect.orDie)
+			},
+		})
+		const configLive = makeConfig()
+		return Layer.effect(AnomalyDetectionService, AnomalyDetectionService.make).pipe(
+			Layer.provide(
+				Layer.mergeAll(
+					Layer.succeed(WarehouseQueryService, warehouse),
+					OrgClickHouseSettingsService.layer,
+				),
+			),
+			Layer.provide(
+				Layer.mergeAll(
+					testDb.layer,
+					EdgeCacheService.layer.pipe(
+						Layer.provide(Layer.succeed(CacheBackend, CacheBackend.of(makeMemoryBackend()))),
+					),
+					Env.layer.pipe(Layer.provide(configLive)),
+				),
+			),
+			Layer.provide(configLive),
+		)
+	}
+
+	const RACES = [
+		{
+			name: "an overlapping tick's lastTriggeredAt bump",
+			sql: "UPDATE anomaly_incidents SET last_triggered_at = now() WHERE id = $1",
+		},
+		{
+			// Same last_triggered_at, so only the reopen count tells the two rows apart.
+			name: "an overlapping tick's resolve and reopen",
+			sql: "UPDATE anomaly_incidents SET reopen_count = reopen_count + 1, last_reopened_at = now() WHERE id = $1",
+		},
+	] as const
+
+	Arr.forEach(RACES, (race) =>
+		it.live(
+			`a lost returned_to_baseline resolve after ${race.name} keeps the incident and its pointer`,
+			() => {
+				const testDb = createTestDb(createdDbs)
+				const fire43 = { value: false }
+				const runTick = AnomalyDetectionService.pipe(Effect.flatMap((service) => service.runTick))
+				return Effect.gen(function* () {
+					yield* seedRecoveringSpike(testDb)
+					const fired = interleaveBefore(testDb, isBaselineResolve, race.sql, [SPIKE_INCIDENT_ID])
+
+					const first = yield* runTick
+
+					expect(fired()).toBe(true)
+					expect(first.incidentsResolved).toBe(0)
+					expect(yield* readSpikeIncidents(testDb)).toEqual([
+						{ id: SPIKE_INCIDENT_ID, status: "open", resolve_reason: null },
+					])
+					expect(yield* readState(testDb, RECOVERING_KEY)).toEqual({
+						open_incident_id: SPIKE_INCIDENT_ID,
+						last_resolved_at: null,
+					})
+
+					// Opens run before resolves within a tick, so the attach target is exercised on the next one:
+					// a co-onset fingerprint on the same service attaches instead of opening a duplicate.
+					yield* Effect.promise(() =>
+						executeSql(
+							testDb,
+							"UPDATE anomaly_detector_settings SET last_tick_at = NULL WHERE org_id = $1",
+							[ORG],
+						),
+					)
+					fire43.value = true
+					const second = yield* runTick
+
+					expect(second.incidentsOpened).toBe(0)
+					expect(second.incidentsAttached).toBe(1)
+					expect(yield* readSpikeIncidents(testDb)).toEqual([
+						{ id: SPIKE_INCIDENT_ID, status: "open", resolve_reason: null },
+					])
+					expect((yield* readState(testDb, NEW_SPIKE_KEY))?.open_incident_id).toBe(
+						SPIKE_INCIDENT_ID,
+					)
+				}).pipe(Effect.provide(makeSpikeLayer(testDb, fire43)))
+			},
+		),
+	)
+})
