@@ -5,6 +5,7 @@ import {
 	EscalationChainCreateRequest,
 	EscalationChainId,
 	EscalationChainInUseError,
+	EscalationChainUpdateRequest,
 	WebhookAlertDestinationConfig,
 	type AlertDestinationId,
 	type AlertThreshold,
@@ -492,6 +493,34 @@ describe("escalation chains", () => {
 					["Page chain", "exhausted"],
 				],
 			)
+		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+	})
+
+	it.effect("refuses deleting a destination a running escalation still pages from its snapshot", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const requests: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const { alerts, chains, orgId, userId, slack, pager, chain } =
+				yield* setup("org_esc_snapshot_guard")
+			yield* alerts.runSchedulerTick()
+			yield* tick(alerts)
+			// The chain stops naming slack, but the open incident's run still has it in its snapshot.
+			yield* chains.update(
+				orgId,
+				userId,
+				adminRoles,
+				chain.id,
+				new EscalationChainUpdateRequest({
+					steps: [{ targets: [{ type: "destination", destinationId: pager.id }], waitMinutes: 10 }],
+				}),
+			)
+			const refused = getError(
+				yield* Effect.exit(alerts.deleteDestination(orgId, adminRoles, slack.id)),
+			)
+			if (!Schema.is(AlertDestinationInUseError)(refused)) return assert.fail("expected in use")
+			assert.include(refused.message, "escalating an open incident")
 		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
 	})
 
