@@ -25,6 +25,7 @@ import {
 	ErrorIssuePublicId,
 	EscalationChainPublicId,
 } from "./resource-ids"
+import { AlertSilencePublicId } from "./alert-silences"
 
 const alertIncidentExample = {
 	id: "inc_tC4d9V79DCDzgbGKhAnff9",
@@ -64,6 +65,8 @@ const alertIncidentExample = {
 		steps_sent: 1,
 		next_step_at: null,
 	},
+	silence_id: null,
+	silenced_at: null,
 } as const
 
 const V2AlertIncidentActor = Schema.Struct({
@@ -200,6 +203,14 @@ export const V2AlertIncident = Schema.Struct({
 	escalation: Schema.NullOr(V2AlertIncidentEscalation).annotate({
 		description:
 			"The incident's latest escalation chain run, or `null` when its severity tier names no chain.",
+	}),
+	silence_id: Schema.NullOr(AlertSilencePublicId).annotate({
+		description:
+			"The alert silence (`sil_…`) that last held back one of this incident's notifications, or `null`.",
+	}),
+	silenced_at: Schema.NullOr(Timestamp).annotate({
+		description:
+			"Set while a silenced notification is still owed: the first breaching check after the silence ends sends it and clears this. `null` otherwise.",
 	}),
 }).annotate({
 	identifier: "AlertIncident",

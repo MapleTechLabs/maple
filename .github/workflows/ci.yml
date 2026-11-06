@@ -482,6 +482,7 @@ jobs:
                   src/services/warehouse/ci-runs.clickhouse.e2e.test.ts
                   src/services/warehouse/service-api-materialization.clickhouse.e2e.test.ts
                   src/services/warehouse/service-map-parity.clickhouse.e2e.test.ts
+                  src/services/warehouse/host-infra.clickhouse.e2e.test.ts
                   src/services/warehouse/slo-parity.clickhouse.e2e.test.ts
                   src/services/users/users-groups.clickhouse.e2e.test.ts
 

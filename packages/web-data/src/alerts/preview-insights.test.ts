@@ -80,6 +80,8 @@ function incident(groupKey: string | null, status = "open"): AlertIncidentDocume
 		acknowledgedByName: null,
 		acknowledgedVia: null,
 		errorIssueId: null,
+		silenceId: null,
+		silencedAt: null,
 	})
 }
 

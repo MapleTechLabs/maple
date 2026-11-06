@@ -104,9 +104,9 @@ function textResult(random: () => number, lines: number): string {
 
 function usage(inputTokens: number, outputTokens: number): AiSessionGenAiValues {
 	return {
-		usageInputTokens: inputTokens,
-		usageOutputTokens: outputTokens,
-		usageCost: inputTokens * 0.000003 + outputTokens * 0.000015,
+		mapleInputTokens: inputTokens,
+		mapleOutputTokens: outputTokens,
+		mapleCost: inputTokens * 0.000003 + outputTokens * 0.000015,
 	}
 }
 

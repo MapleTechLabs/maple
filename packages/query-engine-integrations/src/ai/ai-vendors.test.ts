@@ -19,19 +19,17 @@ const row = (vendorId: string, spanAttributes: Record<string, string>): AiSessio
 })
 
 describe("vercel_ai_sdk", () => {
-	it("reads the older ai.* usage keys the default integration knows nothing about", () => {
+	it("reads the older ai.* keys the default integration knows nothing about", () => {
 		const mapped = mapAiSpan(
 			row("vercel_ai_sdk", {
-				"ai.usage.promptTokens": "5033",
-				"ai.usage.completionTokens": "38",
+				"ai.usage.cachedInputTokens": "4924",
 				"ai.model.id": "openai/gpt-5.6-luna",
 				"ai.model.provider": "openrouter",
 				"ai.response.finishReason": "stop",
 			}),
 		)
 
-		expect(mapped.genAi.usageInputTokens).toBe(5033)
-		expect(mapped.genAi.usageOutputTokens).toBe(38)
+		expect(mapped.genAi.usageCacheReadInputTokens).toBe(4924)
 		expect(mapped.genAi.requestModel).toBe("openai/gpt-5.6-luna")
 		expect(mapped.genAi.providerName).toBe("openrouter")
 		expect(mapped.genAi.responseFinishReasons).toEqual(["stop"])
@@ -42,10 +40,10 @@ describe("vercel_ai_sdk", () => {
 		// Current AI SDK versions emit both dialects on the same span; the
 		// convention's key has to be the one that lands.
 		const mapped = mapAiSpan(
-			row("vercel_ai_sdk", { "gen_ai.usage.input_tokens": "5033", "ai.usage.promptTokens": "1" }),
+			row("vercel_ai_sdk", { "gen_ai.request.model": "gpt-5", "ai.model.id": "gpt-4" }),
 		)
 
-		expect(mapped.genAi.usageInputTokens).toBe(5033)
+		expect(mapped.genAi.requestModel).toBe("gpt-5")
 	})
 
 	it("maps the tool dialect of an older SDK span", () => {
@@ -301,9 +299,6 @@ describe("openinference", () => {
 		expect(mapped.genAi).toMatchObject({
 			operationName: "chat",
 			requestModel: "openai/gpt-4o-mini",
-			usageInputTokens: 171,
-			usageOutputTokens: 46,
-			usageCost: 5.325e-5,
 			inputMessages: [
 				{
 					id: "9b4bbc03-0b5a-4f0f-9383-1ad696468e2e",
@@ -334,10 +329,7 @@ describe("openinference", () => {
 		expect(mapped.genAi).toMatchObject({
 			requestModel: "gpt-5",
 			providerName: "openai",
-			usageInputTokens: 5033,
-			usageOutputTokens: 38,
 			usageCacheReadInputTokens: 4924,
-			usageReasoningOutputTokens: 12,
 			inputMessages: [{ role: "user" }],
 			outputMessages: [{ role: "assistant" }],
 			toolName: "search",
@@ -365,12 +357,12 @@ describe("openinference", () => {
 	it("still reads the default's legacy aliases it did not supersede", () => {
 		const mapped = mapAiSpan(
 			row("openinference-openai", {
-				"gen_ai.usage.prompt_tokens": "120",
+				"gen_ai.usage.input_tokens.cached": "120",
 				"gen_ai.completion": '[{"role":"assistant"}]',
 			}),
 		)
 
-		expect(mapped.genAi.usageInputTokens).toBe(120)
+		expect(mapped.genAi.usageCacheReadInputTokens).toBe(120)
 		expect(mapped.genAi.outputMessages).toEqual([{ role: "assistant" }])
 	})
 
@@ -504,8 +496,6 @@ describe("eve", () => {
 		expect(mapped.genAi.operationName).toBe("chat")
 		expect(mapped.genAi.requestModel).toBe("openai/gpt-4o-mini")
 		expect(mapped.genAi.providerName).toBe("openrouter")
-		expect(mapped.genAi.usageInputTokens).toBe(2157)
-		expect(mapped.genAi.usageOutputTokens).toBe(54)
 		expect(mapped.genAi.agentName).toBe("support-agent")
 		expect(mapped.genAi.conversationId).toBe("wrun_01M4TB7Z6ACQ2Z7YJ7VEBZPQRM")
 		expect(mapped.sessionId).toBe("wrun_01M4TB7Z6ACQ2Z7YJ7VEBZPQRM")
@@ -546,7 +536,6 @@ describe("maple", () => {
 
 		expect(mapped.genAi.conversationId).toBe("msg_1")
 		expect(mapped.genAi.operationName).toBe("chat")
-		expect(mapped.genAi.usageInputTokens).toBe(15400)
 		expect(mapped.sessionId).toBe("org_1:inv-abc")
 		expect(resolveAiIntegration("maple").id).toBe("maple")
 		expect(mapped.isAiSpan).toBe(true)

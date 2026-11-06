@@ -209,6 +209,8 @@ export const rowToIncidentDocument = (row: AlertIncidentRow) =>
 				? null
 				: Option.getOrNull(decodeAlertIncidentAckSource(row.acknowledgedVia)),
 		errorIssueId: row.errorIssueId != null ? decodeErrorIssueIdSync(row.errorIssueId) : null,
+		silenceId: row.silenceId,
+		silencedAt: toIso(row.silencedAt),
 	})
 
 /** An optional request bound, or `null` when it does not parse (the filter is then skipped). */
