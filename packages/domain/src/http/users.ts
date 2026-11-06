@@ -58,7 +58,8 @@ export const UserListItem = Schema.Struct({
 	signals: Schema.Array(UserSignalKind),
 	/**
 	 * The user's classified requests per channel, most first, channels without any left out. Empty
-	 * when none was classified (hours before migration 0058, or a cluster without it).
+	 * when none was classified (rollup hours before migration 0058, or a rollup without it); without
+	 * the rollup, only MCP tool calls.
 	 */
 	channels: Schema.Array(UserChannel),
 })

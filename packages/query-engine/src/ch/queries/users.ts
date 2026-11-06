@@ -280,9 +280,9 @@ const mcpUsers = (scope: UsersScope) =>
 			events: zero(),
 			spans: zero(),
 			logLines: zero(),
-			// Every request here is an MCP request.
-			classifiedRequests: CH.toUInt64(CH.count()),
-			mcpRequests: CH.toUInt64(CH.count()),
+			// Every request here is an MCP tool call, counted as `requests` counts them.
+			classifiedRequests: CH.toUInt64(CH.countIf(mcpMethod($).eq("tools/call"))),
+			mcpRequests: CH.toUInt64(CH.countIf(mcpMethod($).eq("tools/call"))),
 			webRequests: zero(),
 			mobileRequests: zero(),
 			groupIds: noGroups(),

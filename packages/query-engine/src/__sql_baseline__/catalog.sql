@@ -10272,7 +10272,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- builder:users:usersFacetsQuery:default  [ba3af346]
+-- builder:users:usersFacetsQuery:default  [c8c283ee]
 SELECT
           signals.namespace AS name,
           uniqExact(signals.userId) AS count,
@@ -10364,8 +10364,8 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
-          toUInt64(count()) AS classifiedRequests,
-          toUInt64(count()) AS mcpRequests,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS classifiedRequests,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS mcpRequests,
           toUInt64(0) AS webRequests,
           toUInt64(0) AS mobileRequests,
           CAST([], 'Array(String)') AS groupIds,
@@ -10488,8 +10488,8 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
-          toUInt64(count()) AS classifiedRequests,
-          toUInt64(count()) AS mcpRequests,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS classifiedRequests,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS mcpRequests,
           toUInt64(0) AS webRequests,
           toUInt64(0) AS mobileRequests,
           CAST([], 'Array(String)') AS groupIds,
@@ -10512,7 +10512,7 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- builder:users:usersFacetsQuery:pinned  [58b5eec8]
+-- builder:users:usersFacetsQuery:pinned  [e2850b12]
 SELECT
           arrayJoin(signals.groupIds) AS name,
           uniqExact(signals.userId) AS count,
@@ -10614,8 +10614,8 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
-          toUInt64(count()) AS classifiedRequests,
-          toUInt64(count()) AS mcpRequests,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS classifiedRequests,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS mcpRequests,
           toUInt64(0) AS webRequests,
           toUInt64(0) AS mobileRequests,
           CAST([], 'Array(String)') AS groupIds,
@@ -10933,7 +10933,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:users:usersListQuery:namespaceFiltered  [1ac6dd01]
+-- builder:users:usersListQuery:namespaceFiltered  [5a3cb3cf]
 SELECT
           signals.userId AS userId,
           argMax(signals.name, signals.nameAt) AS name,
@@ -11052,8 +11052,8 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
-          toUInt64(count()) AS classifiedRequests,
-          toUInt64(count()) AS mcpRequests,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS classifiedRequests,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS mcpRequests,
           toUInt64(0) AS webRequests,
           toUInt64(0) AS mobileRequests,
           CAST([], 'Array(String)') AS groupIds,
@@ -11209,7 +11209,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:users:usersListQuery:unscoped  [65009ee9]
+-- builder:users:usersListQuery:unscoped  [815d520b]
 SELECT
           signals.userId AS userId,
           argMax(signals.name, signals.nameAt) AS name,
@@ -11318,8 +11318,8 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
-          toUInt64(count()) AS classifiedRequests,
-          toUInt64(count()) AS mcpRequests,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS classifiedRequests,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS mcpRequests,
           toUInt64(0) AS webRequests,
           toUInt64(0) AS mobileRequests,
           CAST([], 'Array(String)') AS groupIds,
@@ -11433,7 +11433,7 @@ SELECT
         LIMIT 2000
         FORMAT JSON
 
--- builder:users:usersSummaryQuery:default  [5c4fa186]
+-- builder:users:usersSummaryQuery:default  [48c9b564]
 SELECT
           count() AS identified,
           countIf(users.lastSeen >= '2026-01-01 10:30:00') AS activeToday,
@@ -11531,8 +11531,8 @@ SELECT
           toUInt64(0) AS events,
           toUInt64(0) AS spans,
           toUInt64(0) AS logLines,
-          toUInt64(count()) AS classifiedRequests,
-          toUInt64(count()) AS mcpRequests,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS classifiedRequests,
+          toUInt64(countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call')) AS mcpRequests,
           toUInt64(0) AS webRequests,
           toUInt64(0) AS mobileRequests,
           CAST([], 'Array(String)') AS groupIds,
