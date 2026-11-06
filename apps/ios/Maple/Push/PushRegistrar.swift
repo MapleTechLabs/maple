@@ -39,7 +39,7 @@ final class PushRegistrar: NSObject {
 	/// Bumped by every sync and by sign-out. A registration finishing under an
 	/// older generation was superseded, so its outcome is dropped.
 	@ObservationIgnored private var generation = 0
-	/// The latest sync. The next one cancels and waits for it, so registrations never overlap.
+	/// The latest sync. The next one waits for it, so registrations reach the server in order.
 	@ObservationIgnored private var inFlight: Task<Void, Never>?
 
 	/// Set by the app at launch so a notification tap can be routed — including
@@ -138,13 +138,13 @@ final class PushRegistrar: NSObject {
 	}
 
 	/// Register (or refresh) this phone for the active organization. A newer call,
-	/// or sign-out, supersedes this one: it is cancelled and its result dropped.
+	/// or sign-out, supersedes this one: if it has not sent yet it never does, and
+	/// its result is dropped.
 	func sync(api: any MapleAPI, orgId: String) async {
 		guard authorization == .authorized, let deviceToken else { return }
 		generation += 1
 		let generation = generation
 		let previous = inFlight
-		previous?.cancel()
 		let task = Task { @MainActor in
 			await previous?.value
 			guard !Task.isCancelled, generation == self.generation else { return }
@@ -208,7 +208,6 @@ final class PushRegistrar: NSObject {
 		generation += 1
 		let pending = inFlight
 		inFlight = nil
-		pending?.cancel()
 		isSyncing = false
 		lastError = nil
 		await pending?.value
