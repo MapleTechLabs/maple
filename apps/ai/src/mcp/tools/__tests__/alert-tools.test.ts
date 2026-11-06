@@ -556,7 +556,7 @@ describe("alert tools", () => {
 
 	it("create_alert_rule takes an anomaly rule without comparator or threshold", async () => {
 		const seen: Seen = {}
-		await ok(
+		const result = await ok(
 			"create_alert_rule",
 			{
 				name: "Checkout anomalies",
@@ -574,6 +574,9 @@ describe("alert tools", () => {
 			serviceNames: ["checkout"],
 			anomalySignals: ["error_rate", "latency_p95"],
 		})
+		// No query window exists, so the model is told why instead of "returned no series".
+		expect(text(result)).toContain("there is no query window to preview")
+		expect(text(result)).not.toContain("returned no series")
 	})
 
 	it("update_alert_rule replaces an anomaly rule's signals only when asked", () => {
