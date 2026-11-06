@@ -137,9 +137,6 @@ function deliveryEntry(
 	typeLabel: (type: AlertDestinationType) => string,
 ): IncidentTimelineEntry | null {
 	if (event.eventType === "test") return null
-	// The dispatcher skips an acknowledgement an escalation overtook: nothing reached PagerDuty.
-	if (event.eventType === "acknowledge" && event.status === "success" && event.responseCode === null)
-		return null
 	const name = event.destinationName
 	const failed = event.status === "failed"
 	const sending = event.status === "queued" || event.status === "processing"
@@ -153,13 +150,9 @@ function deliveryEntry(
 				? failed
 					? `Reminder to ${name} failed`
 					: `Reminded ${name}`
-				: event.eventType === "acknowledge"
-					? failed
-						? `Acknowledgement to ${name} failed`
-						: `Sent acknowledgement to ${name}`
-					: failed
-						? `Could not notify ${name}`
-						: `Notified ${name}`
+				: failed
+					? `Could not notify ${name}`
+					: `Notified ${name}`
 	const reason = failed
 		? (event.errorMessage ?? (event.responseCode != null ? `HTTP ${event.responseCode}` : null))
 		: null

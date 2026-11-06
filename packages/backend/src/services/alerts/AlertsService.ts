@@ -2360,13 +2360,26 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					const hydrated = yield* hydrateDestination(destinationRow)
 					const incidentRow: AlertIncidentRow | null =
 						row.incidentId != null ? (incidentMap.get(row.incidentId) ?? null) : null
-					// An escalation since the click cleared the ack and paged again: acking now would silence that page.
-					if (
+					// An escalation since the click cleared the ack and paged again: acking now would silence
+					// that page. Read now, not from the claim batch, so a just-committed escalation counts.
+					const ackIncidentId = row.incidentId
+					const isStaleAcknowledgement =
 						row.eventType === "acknowledge" &&
-						(incidentRow === null ||
-							incidentRow.status !== "open" ||
-							incidentRow.acknowledgedAt === null)
-					) {
+						(ackIncidentId === null ||
+							(yield* dbExecute((db) =>
+								db.run(
+									PG.from(AlertIncidents)
+										.select("id")
+										.where(($) => [
+											$.orgId.eq(row.orgId),
+											$.id.eq(ackIncidentId),
+											$.status.eq("open"),
+											$.acknowledgedAt.isNotNull(),
+										])
+										.limit(1),
+								),
+							)).length === 0)
+					if (isStaleAcknowledgement) {
 						yield* finalizeClaimedDelivery(row.id, claimTime, {
 							status: "success",
 							attemptedAt: claimTime,

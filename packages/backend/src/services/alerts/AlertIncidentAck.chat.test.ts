@@ -91,7 +91,8 @@ const seed = (testDb: TestDb) =>
 			linkUrl: `https://app.maple.dev/alerts/incidents/${INCIDENT}`,
 			chatUrl: `https://app.maple.dev/alerts/rules/${RULE}`,
 		})
-		// The card the channel got, and a page the former on-call destination got.
+		// The card the channel got, a page the former on-call destination got, and a page to the
+		// rule's on-call that is still waiting to go out.
 		await executeSql(
 			testDb,
 			`INSERT INTO alert_delivery_events
@@ -101,8 +102,10 @@ const seed = (testDb: TestDb) =>
 			   ('00000000-0000-4000-8000-0000000000e1', $1, $2, $3, $4, 'k1', 'trigger', 1, 'success',
 			    '2026-11-06T09:00:00Z', '2026-11-06T09:00:01Z', $5, $6::jsonb, now(), now()),
 			   ('00000000-0000-4000-8000-0000000000e2', $1, $2, $3, $7, 'k2', 'trigger', 1, 'success',
-			    '2026-11-06T09:00:00Z', '2026-11-06T09:00:01Z', 'd-open', $6::jsonb, now(), now())`,
-			[ORG, INCIDENT, RULE, CHAT_DEST, MESSAGE_TS, payload, PD_PRIOR],
+			    '2026-11-06T09:00:00Z', '2026-11-06T09:00:01Z', 'd-open', $6::jsonb, now(), now()),
+			   ('00000000-0000-4000-8000-0000000000e3', $1, $2, $3, $8, 'k3', 'trigger', 2, 'queued',
+			    '2026-11-06T09:05:00Z', null, null, $6::jsonb, now(), now())`,
+			[ORG, INCIDENT, RULE, CHAT_DEST, MESSAGE_TS, payload, PD_PRIOR, PD_RULE],
 		)
 	})
 
@@ -115,7 +118,7 @@ const queuedAcks = (testDb: TestDb) =>
 	).pipe(Effect.map((result) => result.rows))
 
 describe("acknowledging an incident queues PagerDuty acknowledgements", () => {
-	it.effect("to the enabled PagerDuty destinations of the rule and of the incident's past pages", () => {
+	it.effect("only to the PagerDuty destinations this incident already paged", () => {
 		const testDb = createTestDb(createdDbs)
 		return Effect.gen(function* () {
 			yield* seed(testDb)
@@ -126,10 +129,8 @@ describe("acknowledging an incident queues PagerDuty acknowledgements", () => {
 			const queued = yield* queuedAcks(testDb)
 			assert.deepStrictEqual(
 				Arr.map(queued, (row) => [row.destination_id, row.status, row.payload_json.dedupeKey]),
-				[
-					[PD_RULE, "queued", "d-open"],
-					[PD_PRIOR, "queued", "d-open"],
-				],
+				// The rule's on-call has not been paged yet: an ack there would land before the page.
+				[[PD_PRIOR, "queued", "d-open"]],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
@@ -144,7 +145,7 @@ describe("acknowledging an incident queues PagerDuty acknowledgements", () => {
 			yield* acks.acknowledge(ORG, INCIDENT, sam)
 			yield* acks.unacknowledge(ORG, INCIDENT, sam)
 
-			assert.lengthOf(yield* queuedAcks(testDb), 2)
+			assert.lengthOf(yield* queuedAcks(testDb), 1)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 })

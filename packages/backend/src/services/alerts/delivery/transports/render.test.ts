@@ -442,23 +442,22 @@ describe("pagerduty acknowledge", () => {
 		])
 	})
 
-	it("acknowledges both alerts a critical incident of a tiered rule may hold open", () => {
-		assert.deepStrictEqual(
-			Arr.map(
-				ack({ ...tiered, severity: "critical", incidentSeverity: "critical" }),
-				(body) => `${body.event_action} ${body.dedup_key}`,
-			),
-			["acknowledge org_1:rule_1:checkout:critical", "acknowledge org_1:rule_1:checkout"],
-		)
+	it("acknowledges both keys an incident of a tiered rule may hold open, whatever its tier now", () => {
+		const keys = (overrides: Partial<DispatchContext>) =>
+			Arr.map(ack(overrides), (body) => `${body.event_action} ${body.dedup_key}`)
+		const both = ["acknowledge org_1:rule_1:checkout", "acknowledge org_1:rule_1:checkout:critical"]
+		assert.deepStrictEqual(keys({ ...tiered, severity: "critical", incidentSeverity: "critical" }), both)
+		// A warning alert stays open beside a critical one; PagerDuty ignores a key with no open alert.
+		assert.deepStrictEqual(keys({ ...tiered, severity: "warning", incidentSeverity: "warning" }), both)
 	})
 
-	it("acknowledges only the warning key once the incident has fallen back to warning", () => {
+	it("acknowledges the critical key of an incident that peaked there, after the rule lost its tiers", () => {
 		assert.deepStrictEqual(
 			Arr.map(
-				ack({ ...tiered, severity: "critical", incidentSeverity: "warning" }),
+				ack({ ruleSeverities: ["critical"], incidentPeakSeverity: "critical" }),
 				(body) => `${body.event_action} ${body.dedup_key}`,
 			),
-			["acknowledge org_1:rule_1:checkout"],
+			["acknowledge org_1:rule_1:checkout", "acknowledge org_1:rule_1:checkout:critical"],
 		)
 	})
 })

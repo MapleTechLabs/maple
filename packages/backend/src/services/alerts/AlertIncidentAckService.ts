@@ -24,7 +24,6 @@ import {
 	AlertDestinations,
 	AlertIncidentEvents,
 	AlertIncidents,
-	AlertRules,
 	type AlertIncidentRow,
 } from "@maple/db/tables"
 import { makeAlertDeliveryKey } from "@maple/alerting-core"
@@ -74,7 +73,6 @@ export interface AlertIncidentAckServiceApi {
 
 const decodeEventId = Schema.decodeUnknownSync(AlertIncidentEventId)
 const decodeDeliveryId = Schema.decodeUnknownSync(AlertDeliveryEventId)
-const decodeIdList = Schema.decodeUnknownOption(Schema.Array(AlertDestinationId))
 const decodeEventType = Schema.decodeUnknownOption(AlertIncidentEventType)
 const decodeSource = Schema.decodeUnknownOption(AlertIncidentAckSource)
 const decodeIso = Schema.decodeUnknownSync(AlertIncidentEventDocument.fields.createdAt)
@@ -110,8 +108,9 @@ export class AlertIncidentAckService extends Context.Service<
 			)
 
 		/**
-		 * Queue a PagerDuty `acknowledge` for each enabled PagerDuty destination of the rule or that
-		 * this incident already paged. Written in the ack's transaction; the alerting dispatcher sends it.
+		 * Queue a PagerDuty `acknowledge` for each enabled PagerDuty destination this incident already
+		 * paged, so it never reaches a pager that was not notified or lands before the page itself.
+		 * Written in the ack's transaction; the alerting dispatcher sends it.
 		 */
 		const queuePagerDutyAcknowledge = (
 			db: MapleDb,
@@ -120,30 +119,17 @@ export class AlertIncidentAckService extends Context.Service<
 			makeUuid: () => string,
 		) =>
 			Effect.gen(function* () {
-				const [ruleRows, priorRows] = yield* Effect.all([
-					db.run(
-						PG.from(AlertRules)
-							.select(($) => ({ destinationIdsJson: PG.undecoded($.destinationIdsJson) }))
-							.where(($) => [$.orgId.eq(incident.orgId), $.id.eq(incident.ruleId)])
-							.limit(1),
-					),
-					db.run(
-						PG.from(AlertDeliveryEvents)
-							.select("destinationId")
-							.where(($) => [$.orgId.eq(incident.orgId), $.incidentId.eq(incident.id)]),
-					),
-				])
-				// A corrupt stored list must not fail the ack; the incident's own deliveries still count.
-				const ruleIds = Arr.flatMap(ruleRows, (row) =>
-					Option.getOrElse(
-						decodeIdList(row.destinationIdsJson),
-						(): ReadonlyArray<AlertDestinationId> => [],
-					),
+				const paged = yield* db.run(
+					PG.from(AlertDeliveryEvents)
+						.select("destinationId")
+						.where(($) => [
+							$.orgId.eq(incident.orgId),
+							$.incidentId.eq(incident.id),
+							$.status.eq("success"),
+							$.eventType.in_("trigger", "renotify"),
+						]),
 				)
-				const candidateIds = Arr.dedupe([
-					...ruleIds,
-					...Arr.map(priorRows, (row) => row.destinationId),
-				])
+				const candidateIds = Arr.dedupe(Arr.map(paged, (row) => row.destinationId))
 				if (candidateIds.length === 0) return 0
 				const destinations = yield* db.run(
 					PG.from(AlertDestinations)

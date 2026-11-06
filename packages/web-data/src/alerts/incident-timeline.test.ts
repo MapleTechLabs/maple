@@ -121,17 +121,6 @@ describe("buildIncidentTimeline", () => {
 		expect(failed?.detail).toBe("discord · webhook returned 500")
 	})
 
-	it("names a PagerDuty acknowledgement as one, not as a notification", () => {
-		const [, sent] = build(makeIncident(), [
-			makeDelivery({
-				eventType: "acknowledge",
-				destinationName: "On-call",
-				destinationType: "pagerduty",
-			}),
-		])
-		expect(sent?.title).toBe("Sent acknowledgement to On-call")
-	})
-
 	it("ends a held incident on the hold instead of a breach", () => {
 		const entries = build(makeIncident({ holdReason: "no_data", heldSince: "2026-10-15T14:40:00.000Z" }))
 		expect(entries.at(-1)?.title).toBe("Waiting on data")
@@ -201,27 +190,6 @@ describe("buildIncidentTimeline", () => {
 		)
 		expect(entries[1]).toMatchObject({ title: "Acknowledgement cleared", tone: "warn" })
 		expect(entries.at(-1)?.detail).toBe("Last value 8.4% · reminders every 30m while open")
-	})
-
-	it("leaves out an acknowledgement the dispatcher skipped", () => {
-		const sent = makeDelivery({
-			eventType: "acknowledge",
-			destinationType: "pagerduty",
-			responseCode: 202,
-		})
-		const skipped = makeDelivery({
-			id: "00000000-0000-4000-8000-0000000000e9",
-			eventType: "acknowledge",
-			destinationType: "pagerduty",
-			responseCode: null,
-			providerMessage: "Skipped: the incident is no longer acknowledged",
-		})
-		expect(Arr.map(build(makeIncident(), [sent]), (entry) => entry.title)).toContain(
-			"Sent acknowledgement to #alerts",
-		)
-		expect(Arr.map(build(makeIncident(), [skipped]), (entry) => entry.title)).not.toContain(
-			"Sent acknowledgement to #alerts",
-		)
 	})
 
 	it("keeps the state still in effect last when an ack came after it", () => {

@@ -54,17 +54,17 @@ const actionRequest = (
 })
 
 /**
- * An acknowledgement covers every alert the incident may hold open: the current tier's key, and
- * for a critical incident of a tiered rule also the warning key it opened under (a de-escalation
- * already resolved the critical key, so a warning incident holds only one). PagerDuty ignores an
- * acknowledge for a key it has no open alert for. There is no un-acknowledge in the Events API.
+ * An acknowledgement covers every alert the incident may hold open: its base key, and the critical
+ * key when the rule pages critical under its own key or the incident ever reached critical (the
+ * rule may have dropped that tier since). PagerDuty ignores an acknowledge for a key it has no
+ * open alert for. There is no un-acknowledge in the Events API.
  */
 export const pagerDutyAcknowledgeKeys = (
-	context: Pick<DispatchContext, "dedupeKey" | "ruleSeverities" | "severity" | "incidentSeverity">,
-): ReadonlyArray<string> => {
-	const primary = pagerDutyDedupKey(context, keySeverity(context))
-	return primary === context.dedupeKey ? [primary] : [primary, context.dedupeKey]
-}
+	context: Pick<DispatchContext, "dedupeKey" | "ruleSeverities" | "incidentPeakSeverity">,
+): ReadonlyArray<string> =>
+	criticalHasOwnKey(context) || context.incidentPeakSeverity === "critical"
+		? [context.dedupeKey, criticalDedupKey(context.dedupeKey)]
+		: [context.dedupeKey]
 
 /**
  * PagerDuty Events API v2. The body is machine-facing, so `custom_details`
