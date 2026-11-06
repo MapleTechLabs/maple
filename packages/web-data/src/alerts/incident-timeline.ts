@@ -95,14 +95,19 @@ function activityEntry(event: V2AlertIncidentEvent): IncidentTimelineEntry {
 			}
 		case "paged": {
 			const page = event.page
+			const who = page?.name ?? "a member"
 			const channel =
 				page === undefined ? "" : page.channel === "email" ? " by email" : ` by ${page.channel} DM`
-			return {
-				...base,
-				tone: page?.status === "failed" ? "warn" : "info",
-				title: `Paged ${page?.name ?? page?.user_id ?? "a member"}${channel}`,
-				detail: page === undefined || page.status === "sent" ? null : page.status,
-			}
+			// The title says what happened to the page, not only that one was attempted.
+			const outcome =
+				page?.status === "failed"
+					? { tone: "warn" as const, title: `Could not page ${who}${channel}`, pending: false }
+					: page?.status === "skipped"
+						? { tone: "neutral" as const, title: `Did not page ${who}${channel}`, pending: false }
+						: page?.status === "queued" || page?.status === "sending"
+							? { tone: "info" as const, title: `Paging ${who}${channel}`, pending: true }
+							: { tone: "info" as const, title: `Paged ${who}${channel}`, pending: false }
+			return { ...base, ...outcome, detail: page?.error_message ?? null }
 		}
 	}
 }
