@@ -4672,6 +4672,9 @@
       "ErrorIssueTransitionParams": {
         "additionalProperties": false,
         "properties": {
+          "expected_state": {
+            "$ref": "#/components/schemas/_maple_WorkflowState"
+          },
           "note": {
             "type": "string"
           },

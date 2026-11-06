@@ -106,6 +106,8 @@ export interface SetFindingStatusInput {
 	readonly actor: UserId
 }
 
+const ABANDONED_SCAN_ERROR = "The scan stopped before it finished"
+
 export interface DependencyScanStoreApi {
 	readonly startScan: (
 		input: StartScanInput,
@@ -117,6 +119,15 @@ export interface DependencyScanStoreApi {
 		DependencyScanRow,
 		DependencyScanPersistenceError | DependencyScanNotFoundError | DependencyScanNotRunningError
 	>
+	/**
+	 * Settles a repository's scans still `running` past `startedBefore` as failed: their worker
+	 * died. A scan that settled first is left as it is. Returns how many were failed.
+	 */
+	readonly failAbandonedScans: (input: {
+		readonly orgId: OrgId
+		readonly repositoryId: VcsRepositoryId
+		readonly startedBefore: number
+	}) => Effect.Effect<number, DependencyScanPersistenceError>
 	readonly failScan: (input: {
 		readonly orgId: OrgId
 		readonly scanId: DependencyScanId
@@ -589,6 +600,26 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 				)
 			})
 
+			const failAbandonedScans: DependencyScanStoreApi["failAbandonedScans"] = Effect.fn(
+				"DependencyScanStore.failAbandonedScans",
+			)(function* (input) {
+				const now = yield* Clock.currentTimeMillis
+				const failed = yield* dbExecute((db) =>
+					db.run(
+						PG.update(DependencyScans)
+							.set({ status: "failed", error: ABANDONED_SCAN_ERROR, finishedAt: now })
+							.where(($) => [
+								$.orgId.eq(input.orgId),
+								$.repositoryId.eq(input.repositoryId),
+								$.status.eq("running"),
+								$.startedAt.lt(input.startedBefore),
+							])
+							.returning("id"),
+					),
+				)
+				return failed.length
+			})
+
 			const failScan: DependencyScanStoreApi["failScan"] = Effect.fn("DependencyScanStore.failScan")(
 				function* (input) {
 					const now = yield* Clock.currentTimeMillis
@@ -818,6 +849,7 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 				matchesOfScans,
 				startScan,
 				completeScan,
+				failAbandonedScans,
 				failScan,
 				listFindings,
 				getFinding,

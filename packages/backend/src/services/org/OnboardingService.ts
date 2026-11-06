@@ -204,7 +204,8 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 			/**
 			 * Take the reward claim lease: stamps `rewardReservedAt` if the reward is not
 			 * claimed and no live reservation exists (a reservation older than `leaseMs`
-			 * is a crashed attempt and may be taken over). Reports whether this call won.
+			 * is a crashed attempt and may be taken over). Returns the reservation this call
+			 * holds, or `None` when another holder has it.
 			 */
 			const reserveRewardClaim = Effect.fn("OnboardingService.reserveRewardClaim")(function* (
 				orgId: OrgId,
@@ -223,39 +224,55 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 							.returning(($) => ({ id: $.orgId })),
 					),
 				)
-				return result.length > 0
+				return result.length > 0 ? Option.some(now) : Option.none<number>()
 			})
 
-			/** Billing confirmed the credit: the claim is final and the lease is released. */
+			/** Applies `set` only while the org's lease is still the reservation the caller took. */
+			const whileReserved = (orgId: OrgId, reservedAt: number, set: Partial<OrgOnboardingStateRow>) =>
+				dbExecute((db) =>
+					db.run(
+						PG.update(OrgOnboardingState)
+							.set(set)
+							.where(($) => [$.orgId.eq(orgId), $.rewardReservedAt.eq(reservedAt)])
+							.returning(($) => ({ id: $.orgId })),
+					),
+				).pipe(Effect.map((rows) => rows.length > 0))
+
+			/**
+			 * Billing confirmed the credit: the claim is final and the caller's lease is released.
+			 * A lease that lapsed under the call still records the claim, but leaves the next
+			 * holder's reservation alone.
+			 */
 			const finalizeRewardClaim = Effect.fn("OnboardingService.finalizeRewardClaim")(function* (
 				orgId: OrgId,
+				reservedAt: number,
 			) {
 				const now = yield* Clock.currentTimeMillis
+				const held = yield* whileReserved(orgId, reservedAt, {
+					rewardClaimedAt: now,
+					rewardReservedAt: null,
+					updatedAt: now,
+				})
+				if (held) return
 				yield* dbExecute((db) =>
 					db.run(
 						PG.update(OrgOnboardingState)
-							.set({
-								rewardClaimedAt: now,
-								rewardReservedAt: null,
-								updatedAt: now,
-							})
-							.where(($) => [$.orgId.eq(orgId)]),
+							.set({ rewardClaimedAt: now, updatedAt: now })
+							.where(($) => [$.orgId.eq(orgId), $.rewardClaimedAt.isNull()]),
 					),
 				)
 			})
 
-			/** Billing refused before anything was applied: give the lease back so the org can retry now. */
+			/**
+			 * Billing refused before anything was applied: give the lease back so the org can retry
+			 * now. A lease another holder already took over is theirs, and stays.
+			 */
 			const releaseRewardClaim = Effect.fn("OnboardingService.releaseRewardClaim")(function* (
 				orgId: OrgId,
+				reservedAt: number,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				yield* dbExecute((db) =>
-					db.run(
-						PG.update(OrgOnboardingState)
-							.set({ rewardReservedAt: null, updatedAt: now })
-							.where(($) => [$.orgId.eq(orgId)]),
-					),
-				)
+				yield* whileReserved(orgId, reservedAt, { rewardReservedAt: null, updatedAt: now })
 			})
 
 			const markEmailSent = Effect.fn("OnboardingService.markEmailSent")(function* (

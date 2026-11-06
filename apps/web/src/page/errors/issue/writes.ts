@@ -87,7 +87,7 @@ export const pickedState = (model: Model, value: string): Return => {
 	const next = Arr.findFirst(allowed, (state) => state === value)
 	return Option.isNone(next) || next.value === issue.workflow_state
 		? { model }
-		: startWrite(model, { _tag: "Transition", toState: next.value })
+		: startWrite(model, { _tag: "Transition", fromState: issue.workflow_state, toState: next.value })
 }
 
 /** `changeSeverity`: clearing writes at once, a level asks the escalation policy first. */
@@ -163,10 +163,14 @@ export const completedWrite = (
 ): Return => {
 	const settled = { ...model, busy: settledBusy(model.busy, BUSY[write._tag]) }
 	return Result.match(result, {
-		onFailure: (failure) => ({
-			model: settled,
-			outMessage: toast("error", ERROR_TITLE[write._tag], failure.message),
-		}),
+		// A conflict means this tab is stale: re-read so it shows the state that won.
+		onFailure: (failure) =>
+			failure.type === "conflict_error"
+				? {
+						...refresh(settled),
+						outMessage: toast("error", ERROR_TITLE[write._tag], failure.message),
+					}
+				: { model: settled, outMessage: toast("error", ERROR_TITLE[write._tag], failure.message) },
 		onSuccess: ({ severity }) => {
 			const refreshed = refresh(settled)
 			return {

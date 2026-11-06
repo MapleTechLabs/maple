@@ -639,6 +639,8 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 									.where(($) => [
 										$.orgId.eq(orgId),
 										$.id.eq(id),
+										// Only from the status read above, so a concurrent resolve is a conflict.
+										$.status.eq(existing.status),
 										PG.or(
 											$.status.in_(...from),
 											PG.and($.status.eq("investigating"), $.startedAt.isNull()),

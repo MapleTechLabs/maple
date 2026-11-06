@@ -1,5 +1,6 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+import { randomUUID } from "node:crypto"
 import * as Policy from "@maple/domain/policy"
 import {
 	IsoDateTimeString,
@@ -1301,15 +1302,18 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			// concurrent applySchema calls wins (interleaved workflow instances
 			// would race destructive DROP/TRUNCATE/backfill migrations). A
 			// queued/running row that stopped updating for STALE_APPLY_RUN_MS is
-			// reclaimable — the workflow stamps progress on every step, so a silent
-			// stall that long means the instance died without reaching its catch.
+			// reclaimable: the workflow stamps progress on every step and heartbeats
+			// long ones, so a silent stall that long means the instance died.
 			const now = yield* Clock.currentTimeMillis
+			// The run id fences every progress write: an instance reclaimed as stale finds it
+			// replaced and stops instead of writing over (or migrating under) the new run.
+			const runId = yield* Effect.sync(() => randomUUID())
 			const claimed = yield* dbExecute((db) =>
 				db.run(
 					PG.insertInto(OrgClickHouseSchemaApplyRuns)
 						.values({
 							orgId,
-							workflowInstanceId: null,
+							workflowInstanceId: runId,
 							status: "queued",
 							phase: "queued",
 							currentMigration: null,
@@ -1331,6 +1335,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 									$.updatedAt.lt(now - STALE_APPLY_RUN_MS),
 								),
 							set: {
+								workflowInstanceId: runId,
 								status: "queued",
 								phase: "queued",
 								currentMigration: null,
@@ -1351,7 +1356,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				return new OrgClickHouseApplySchemaStarted({ status: "already_running" })
 			}
 
-			yield* workflow.create({ orgId }).pipe(
+			yield* workflow.create({ orgId, runId }).pipe(
 				Effect.mapError(
 					(error) =>
 						new OrgClickHouseSettingsPersistenceError({
@@ -1372,7 +1377,11 @@ export class OrgClickHouseSettingsService extends Context.Service<
 										finishedAt: now,
 										updatedAt: now,
 									})
-									.where(($) => [$.orgId.eq(orgId), $.status.eq("queued")]),
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.workflowInstanceId.eq(runId),
+										$.status.eq("queued"),
+									]),
 							),
 						)
 						.pipe(Effect.ignore),
