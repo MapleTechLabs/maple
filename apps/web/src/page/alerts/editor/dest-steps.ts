@@ -8,7 +8,7 @@ import { PageOutMessage } from "../../contract"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChatConnect from "../shared/chat-connect"
 import { FetchEditorConnectors } from "./command"
-import { addId, removeId, updateTierIds } from "./form-steps"
+import { assignToTier, removeId, updateTierIds } from "./form-steps"
 import { Message, type Tier } from "./message"
 import type { Model } from "./model"
 import type { Return } from "./steps"
@@ -33,7 +33,7 @@ export const liftDialog = (model: Model, step: ReturnType<typeof DestinationDial
 			model:
 				next.form === null
 					? next
-					: { ...next, form: updateTierIds(next.form, next.destinationTier, addId(id)) },
+					: { ...next, form: assignToTier(next.form, next.destinationTier, id) },
 			commands,
 			outMessage: PageOutMessage.RequestedToast({
 				type: "success",
@@ -57,10 +57,7 @@ const picked = (model: Model, menuId: string, value: string): Return => {
 		return Option.match(decodeId(Arr.join(rest, ":")), {
 			onNone: () => ({ model }),
 			onSome: (id) => ({
-				model:
-					model.form === null
-						? model
-						: { ...model, form: updateTierIds(model.form, tier, addId(id)) },
+				model: model.form === null ? model : { ...model, form: assignToTier(model.form, tier, id) },
 			}),
 		})
 	if (kind === "type")

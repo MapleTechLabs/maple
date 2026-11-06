@@ -433,7 +433,8 @@ const chip = (
 			h.button(
 				[
 					h.AriaDisabled(false),
-					h.AriaLabel("Remove"),
+					// Named for its chip, so a screen reader can tell several remove buttons apart.
+					h.AriaLabel(`Remove ${parts.chipLabel?.(value) ?? value}`),
 					h.Class(C.comboboxChipRemoveStyles),
 					h.DataAttribute("slot", "combobox-chip-remove"),
 					h.Tabindex(-1),

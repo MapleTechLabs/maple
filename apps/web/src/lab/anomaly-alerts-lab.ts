@@ -4,7 +4,8 @@ import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "eff
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import { AlertDestinationId } from "@maple/domain/http"
+import { AlertDestinationId, AlertRuleId } from "@maple/domain/http"
+import { formatWarehouseDateTime } from "@maple/query-engine"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../page/alerts/destination/dialog"
 import { menuIdOf } from "../page/alerts/editor/dest-steps"
@@ -17,6 +18,10 @@ import * as HubMessage from "../page/alerts/hub/message"
 import * as HubModel from "../page/alerts/hub/model"
 import * as HubUpdate from "../page/alerts/hub/update"
 import { view as hubView } from "../page/alerts/hub/view"
+import * as RuleMessage from "../page/alerts/rule/message"
+import * as RuleModel from "../page/alerts/rule/model"
+import * as RuleUpdate from "../page/alerts/rule/update"
+import { breadcrumbsOf as ruleCrumbs, view as ruleView } from "../page/alerts/rule/view"
 import * as IncidentMessage from "../page/alerts/incident/message"
 import * as IncidentModel from "../page/alerts/incident/model"
 import * as IncidentUpdate from "../page/alerts/incident/update"
@@ -42,11 +47,12 @@ import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
 
 // `/lab/anomaly-alerts`: anomalies paging through alert rules, over fixtures. `?state=` picks one:
-// editor-new, editor-scoped, editor-default, editor-critical-destination, incident-warning, incident-critical, incident-spike,
-// hub-anomalies, hub-anomalies-resolved, hub-anomalies-empty, hub-rules.
+// editor-new, editor-blank, editor-scoped, editor-default, editor-critical-destination, incident-warning, incident-critical, incident-spike,
+// hub-anomalies, hub-anomalies-resolved, hub-anomalies-empty, hub-rules, rule-anomaly.
 
 export const LabState = Schema.Literals([
 	"editor-new",
+	"editor-blank",
 	"editor-scoped",
 	"editor-default",
 	"editor-critical-destination",
@@ -57,6 +63,7 @@ export const LabState = Schema.Literals([
 	"hub-anomalies-resolved",
 	"hub-anomalies-empty",
 	"hub-rules",
+	"rule-anomaly",
 ])
 export type LabState = typeof LabState.Type
 
@@ -75,6 +82,7 @@ export const Model = Schema.Struct({
 	hub: HubModel.Model,
 	editor: EditorModel.Model,
 	incident: IncidentModel.Model,
+	rule: RuleModel.Model,
 })
 export type Model = typeof Model.Type
 
@@ -82,6 +90,7 @@ export const Message = defineMessageUnion({
 	GotHubMessage: { message: HubMessage.Message },
 	GotEditorMessage: { message: EditorMessage.Message },
 	GotIncidentMessage: { message: IncidentMessage.Message },
+	GotRuleMessage: { message: RuleMessage.Message },
 })
 export type Message = typeof Message.Type
 
@@ -302,6 +311,37 @@ const incidentFor = (state: LabState) => {
 
 const PAGER_ID = Schema.decodeSync(AlertDestinationId)("0199a001-0000-7000-8000-000000000009")
 
+/** The scoped anomaly rule's page, with its anomalies in the window. */
+const ruleFor = () => {
+	const rule = scopedAnomalyRuleRow()
+	const entered = RuleUpdate.init(
+		{ _tag: "AlertRule", ruleId: Schema.decodeSync(AlertRuleId)(rule.id), search: {} },
+		CONTEXT,
+	).model
+	return fold(
+		entered,
+		[
+			RuleMessage.Message.CompletedResolveWindow({
+				window: {
+					startTime: formatWarehouseDateTime(NOW - 24 * 3_600_000),
+					endTime: formatWarehouseDateTime(NOW),
+				},
+				nowMs: NOW,
+				mode: "Load",
+			}),
+			RuleMessage.Message.ReadDiagnosisClock({ nowMs: NOW }),
+			RuleMessage.Message.UpdatedRules({ orgId: ORG, rows: RULES }),
+			RuleMessage.Message.UpdatedRuleStates({
+				orgId: ORG,
+				rows: [stateRow(8, { group_key: "__total__", last_value: 2 })],
+			}),
+			RuleMessage.Message.UpdatedIncidents({ orgId: ORG, rows: [...OPEN, ...RESOLVED] }),
+			RuleMessage.Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow()] }),
+		],
+		(model, message) => RuleUpdate.update(model, message, CONTEXT),
+	)
+}
+
 const isEditor = Str.startsWith("editor")
 const isIncident = Str.startsWith("incident")
 
@@ -311,6 +351,7 @@ export const init = (flags: Flags): Return => ({
 		hub: hubFor(flags.state),
 		editor: editorFor(flags.state),
 		incident: incidentFor(flags.state),
+		rule: ruleFor(),
 	},
 	// The incident page's chart runtime still loads, so its anomaly chart draws.
 	commands: Command.mapMessages(
@@ -344,6 +385,15 @@ export const update = (model: Model, message: Message): Return =>
 				),
 			}
 		},
+		GotRuleMessage: ({ message: child }) => {
+			const next = RuleUpdate.update(model.rule, child, CONTEXT)
+			return {
+				model: { ...model, rule: next.model },
+				commands: Command.mapMessages(keepLocal(next.commands), (inner) =>
+					Message.GotRuleMessage({ message: inner }),
+				),
+			}
+		},
 		GotIncidentMessage: ({ message: child }) => {
 			const next = IncidentUpdate.update(model.incident, child, CONTEXT)
 			return {
@@ -356,34 +406,45 @@ export const update = (model: Model, message: Message): Return =>
 	})
 
 export const breadcrumbs = (model: Model) =>
-	isEditor(model.state)
-		? editorCrumbs(model.editor)
-		: isIncident(model.state)
-			? incidentCrumbs(model.incident)
-			: [{ label: "Alerts" }]
+	model.state === "rule-anomaly"
+		? ruleCrumbs(model.rule)
+		: isEditor(model.state)
+			? editorCrumbs(model.editor)
+			: isIncident(model.state)
+				? incidentCrumbs(model.incident)
+				: [{ label: "Alerts" }]
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
-	isEditor(model.state)
+	model.state === "rule-anomaly"
 		? h.submodel({
-				slotId: "lab-anomaly-editor",
-				model: model.editor,
-				view: editorView,
+				slotId: "lab-anomaly-rule",
+				model: model.rule,
+				view: ruleView,
 				viewInputs: { context: CONTEXT },
-				toParentMessage: (message: EditorMessage.Message) => Message.GotEditorMessage({ message }),
+				toParentMessage: (message: RuleMessage.Message) => Message.GotRuleMessage({ message }),
 			})
-		: isIncident(model.state)
+		: isEditor(model.state)
 			? h.submodel({
-					slotId: "lab-anomaly-incident",
-					model: model.incident,
-					view: incidentView,
+					slotId: "lab-anomaly-editor",
+					model: model.editor,
+					view: editorView,
 					viewInputs: { context: CONTEXT },
-					toParentMessage: (message: IncidentMessage.Message) =>
-						Message.GotIncidentMessage({ message }),
+					toParentMessage: (message: EditorMessage.Message) =>
+						Message.GotEditorMessage({ message }),
 				})
-			: h.submodel({
-					slotId: "lab-anomaly-hub",
-					model: model.hub,
-					view: hubView,
-					viewInputs: { context: CONTEXT },
-					toParentMessage: (message: HubMessage.Message) => Message.GotHubMessage({ message }),
-				})
+			: isIncident(model.state)
+				? h.submodel({
+						slotId: "lab-anomaly-incident",
+						model: model.incident,
+						view: incidentView,
+						viewInputs: { context: CONTEXT },
+						toParentMessage: (message: IncidentMessage.Message) =>
+							Message.GotIncidentMessage({ message }),
+					})
+				: h.submodel({
+						slotId: "lab-anomaly-hub",
+						model: model.hub,
+						view: hubView,
+						viewInputs: { context: CONTEXT },
+						toParentMessage: (message: HubMessage.Message) => Message.GotHubMessage({ message }),
+					})
