@@ -27,27 +27,31 @@ function formatTimestamp(iso: string | null): string | undefined {
 const channelLabel = (channel: string): string =>
 	channel === "email" ? "email" : `${Str.capitalize(channel)} DM`
 
-const pageStatus = (status: string): string =>
-	status === "sent"
-		? ""
-		: status === "skipped"
-			? " (not sent: incident acknowledged or resolved)"
-			: ` (${status})`
+interface PageRow {
+	readonly userId: string
+	readonly name: string | null
+	readonly channel: string
+	readonly status: string
+	readonly errorMessage?: string
+}
 
-/** e.g. `Ben by email, Ben by Slack DM (failed)`; never the address. */
-const formatPages = (
-	pages: ReadonlyArray<{
-		readonly userId: string
-		readonly name: string | null
-		readonly channel: string
-		readonly status: string
-	}>,
-): string =>
+// A queued page with an error is waiting on a retry, not stuck.
+const pageStatus = ({ status, errorMessage }: PageRow): string => {
+	if (status === "sent") return ""
+	if (errorMessage === undefined) {
+		return status === "skipped" ? " (not sent: incident acknowledged or resolved)" : ` (${status})`
+	}
+	if (status === "skipped") return ` (${errorMessage})`
+	if (status === "queued" || status === "sending") return ` (retrying: ${errorMessage})`
+	return ` (${status}: ${errorMessage})`
+}
+
+/** e.g. `Ben by email, Ben by Slack DM (failed: …)`; never the address. */
+const formatPages = (pages: ReadonlyArray<PageRow>): string =>
 	Arr.join(
 		Arr.map(
 			pages,
-			(page) =>
-				`${page.name ?? page.userId} by ${channelLabel(page.channel)}${pageStatus(page.status)}`,
+			(page) => `${page.name ?? page.userId} by ${channelLabel(page.channel)}${pageStatus(page)}`,
 		),
 		", ",
 	)
@@ -147,6 +151,9 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 										name: entry.page.name,
 										channel: entry.page.channel,
 										status: entry.page.status,
+										...(entry.page.errorMessage === null
+											? undefined
+											: { errorMessage: entry.page.errorMessage }),
 										at: DateTime.formatIso(DateTime.makeUnsafe(entry.createdAt)),
 									})),
 								}),

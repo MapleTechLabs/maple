@@ -69,9 +69,16 @@ export const V2OnCallRotation = Schema.Union([
 })
 export type V2OnCallRotation = Schema.Schema.Type<typeof V2OnCallRotation>
 
+// Stored as epoch ms, so an instant before 1970 is refused on the wire with its field.
+const OnCallInstant = Timestamp.check(
+	Schema.makeFilter((value: string) => Date.parse(value) >= 0, {
+		message: "must be on or after 1970-01-01T00:00:00Z",
+	}),
+)
+
 export const V2OnCallRestriction = Schema.Struct({
 	weekdays: Schema.Array(OnCallWeekday)
-		.pipe(Schema.refine(Arr.isReadonlyArrayNonEmpty))
+		.pipe(Schema.refine(Arr.isReadonlyArrayNonEmpty, { message: "needs at least one weekday" }))
 		.check(Schema.isMinLength(1), Schema.isMaxLength(7))
 		.annotate({ description: "Days the window starts on." }),
 	start_time: OnCallLocalTime.annotate({ description: "Local start time, `HH:MM`.", examples: ["18:00"] }),
@@ -92,13 +99,13 @@ export const V2OnCallLayer = Schema.Struct({
 		examples: ["Primary"],
 	}),
 	participants: Schema.Array(ScheduleUserId)
-		.pipe(Schema.refine(Arr.isReadonlyArrayNonEmpty))
+		.pipe(Schema.refine(Arr.isReadonlyArrayNonEmpty, { message: "needs at least one member" }))
 		.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_ONCALL_PARTICIPANTS))
 		.annotate({
 			description: `Who rotates through the layer, in order: 1 to ${MAX_ONCALL_PARTICIPANTS} members.`,
 		}),
 	rotation: V2OnCallRotation,
-	starts_at: Timestamp.annotate({
+	starts_at: OnCallInstant.annotate({
 		description: "Rotation anchor: the first participant holds the shift that contains this instant.",
 	}),
 	restrictions: Schema.optionalKey(
@@ -116,7 +123,7 @@ export const V2OnCallLayer = Schema.Struct({
 export type V2OnCallLayer = Schema.Schema.Type<typeof V2OnCallLayer>
 
 export const V2OnCallLayers = Schema.Array(V2OnCallLayer)
-	.pipe(Schema.refine(Arr.isReadonlyArrayNonEmpty))
+	.pipe(Schema.refine(Arr.isReadonlyArrayNonEmpty, { message: "needs at least one layer" }))
 	.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_ONCALL_LAYERS))
 	.annotate({ description: `The layers, bottom first: 1 to ${MAX_ONCALL_LAYERS}.` })
 
@@ -414,8 +421,8 @@ export type V2OnCallOverride = Schema.Schema.Type<typeof V2OnCallOverride>
 
 export const V2OnCallOverrideCreateParams = Schema.Struct({
 	user_id: ScheduleUserId,
-	starts_at: Timestamp,
-	ends_at: Timestamp.annotate({
+	starts_at: OnCallInstant,
+	ends_at: OnCallInstant.annotate({
 		description: "After `starts_at`, in the future, and at most 90 days after `starts_at`.",
 	}),
 }).annotate({

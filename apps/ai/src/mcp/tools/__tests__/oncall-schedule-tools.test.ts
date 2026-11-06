@@ -16,8 +16,8 @@ import {
 	OnCallScheduleNotFoundError,
 	EscalationChainId,
 	OnCallSchedulesListResponse,
+	OnCallShiftDocument,
 	OnCallShiftsResponse,
-	ONCALL_LOOKAROUND_MS,
 	OrgId,
 	UserId,
 	type OnCallOverrideCreateRequest,
@@ -77,9 +77,27 @@ interface Seen {
 	rejectMember?: boolean
 	/** An escalation chain still pages the schedule. */
 	inUse?: boolean
-	/** Ana's shift runs past the 15-day lookaround, so its end is the clamp, not a handoff. */
-	longShift?: boolean
+	/** The effective shifts the service resolves from; defaults to `OVERRIDE_THEN_ANA`. */
+	timeline?: ReadonlyArray<typeof OnCallShiftDocument.Encoded>
 }
+
+// Ben's evening override, then Ana's layer shift from the next morning.
+const OVERRIDE_THEN_ANA: ReadonlyArray<typeof OnCallShiftDocument.Encoded> = [
+	{
+		userId: "user_ben",
+		startsAt: "2026-11-12T17:00:00.000Z",
+		endsAt: "2026-11-13T08:00:00.000Z",
+		source: { kind: "override", overrideId: OVERRIDE_ID },
+	},
+	{
+		userId: "user_ana",
+		startsAt: "2026-11-13T08:00:00.000Z",
+		endsAt: "2026-11-16T08:00:00.000Z",
+		source: { kind: "layer", layerIndex: 0 },
+	},
+]
+
+const timelineOf = (seen: Seen) => seen.timeline ?? OVERRIDE_THEN_ANA
 
 const rejectMember = () => {
 	const message = "Not members of this workspace: user_zed"
@@ -132,65 +150,28 @@ const layer = (seen: Seen) =>
 					: Effect.void
 			},
 			onCallAt: (_org, _id, atMs) => {
-				seen.onCallAt = atMs
-				if (seen.longShift === true) {
-					return Effect.succeed(
-						Schema.decodeSync(OnCallAtResponse)({
-							at: new Date(atMs).toISOString(),
-							shift: {
-								userId: "user_ana",
-								startsAt: new Date(atMs - ONCALL_LOOKAROUND_MS).toISOString(),
-								endsAt: new Date(atMs + ONCALL_LOOKAROUND_MS).toISOString(),
-								source: { kind: "layer", layerIndex: 0 },
-							},
-						}),
-					)
-				}
+				seen.onCallAt ??= atMs
+				const shift = timelineOf(seen).find(
+					(s) => Date.parse(s.startsAt) <= atMs && atMs < Date.parse(s.endsAt),
+				)
 				return Effect.succeed(
 					Schema.decodeSync(OnCallAtResponse)({
 						at: new Date(atMs).toISOString(),
-						shift: {
-							userId: "user_ben",
-							startsAt: "2026-11-12T17:00:00.000Z",
-							endsAt: "2026-11-13T08:00:00.000Z",
-							source: { kind: "override", overrideId: OVERRIDE_ID },
-						},
+						shift: shift ?? null,
 					}),
 				)
 			},
 			shifts: (_org, _id, fromMs, toMs) =>
-				seen.longShift === true
-					? // Rendered from the clamp edge: the same shift, carrying on.
-						Effect.succeed(
-							Schema.decodeSync(OnCallShiftsResponse)({
-								from: new Date(fromMs).toISOString(),
-								to: new Date(toMs).toISOString(),
-								layers: [],
-								final: [
-									{
-										userId: "user_ana",
-										startsAt: new Date(fromMs).toISOString(),
-										endsAt: new Date(toMs).toISOString(),
-										source: { kind: "layer", layerIndex: 0 },
-									},
-								],
-							}),
-						)
-					: Effect.succeed(
-							Schema.decodeSync(OnCallShiftsResponse)({
-								from: "2026-11-13T08:00:00.000Z",
-								to: "2026-11-27T08:00:00.000Z",
-								layers: [],
-								final: [
-									{
-										userId: "user_ana",
-										startsAt: "2026-11-13T08:00:00.000Z",
-										endsAt: "2026-11-16T08:00:00.000Z",
-										source: { kind: "layer", layerIndex: 0 },
-									},
-								],
-							}),
+				Effect.succeed(
+					Schema.decodeSync(OnCallShiftsResponse)({
+						from: new Date(fromMs).toISOString(),
+						to: new Date(toMs).toISOString(),
+						layers: [],
+						final: timelineOf(seen).filter(
+							(s) => Date.parse(s.endsAt) > fromMs && Date.parse(s.startsAt) < toMs,
 						),
+					}),
+				),
 			createOverride: (_org, _user, _roles, id, request) => {
 				seen.overrideCreated = request
 				if (seen.rejectMember === true) return rejectMember()
@@ -273,11 +254,39 @@ describe("on-call schedule tools", () => {
 		expect(text(result)).toContain("Ana Alves (user_ana) from 2026-11-13T08:00:00.000Z")
 	})
 
-	it("who_is_on_call reports no next shift when the current one runs past the lookaround", async () => {
-		const result = await ok("who_is_on_call", { schedule: SCHEDULE_ID }, { longShift: true })
-		const output = Schema.decodeUnknownSync(WhoIsOnCallOutput)(result.structuredContent)
+	it("who_is_on_call names the same person's next shift when a one-person rotation hands off", async () => {
+		const ana = (startsAt: string, endsAt: string) => ({
+			userId: "user_ana",
+			startsAt,
+			endsAt,
+			source: { kind: "layer", layerIndex: 0 } as const,
+		})
+		const result = await ok(
+			"who_is_on_call",
+			{ schedule: SCHEDULE_ID, at: "2026-11-12 19:00:00" },
+			{
+				timeline: [
+					ana("2026-11-09T08:00:00.000Z", "2026-11-16T08:00:00.000Z"),
+					ana("2026-11-16T08:00:00.000Z", "2026-11-23T08:00:00.000Z"),
+				],
+			},
+		)
+		expect(text(result)).toContain("until 2026-11-16T08:00:00.000Z")
+		expect(text(result)).toContain(
+			"Ana Alves (user_ana) from 2026-11-16T08:00:00.000Z until 2026-11-23T08:00:00.000Z",
+		)
+	})
+
+	it("who_is_on_call finds the first shift after a gap and says when nothing follows", async () => {
+		const gap = await ok("who_is_on_call", { schedule: SCHEDULE_ID, at: "2026-11-12 10:00:00" })
+		expect(text(gap)).toContain("Nobody is on call")
+		expect(text(gap)).toContain(
+			"Ben Brook (user_ben) from 2026-11-12T17:00:00.000Z until 2026-11-13T08:00:00.000Z",
+		)
+		const last = await ok("who_is_on_call", { schedule: SCHEDULE_ID, at: "2026-11-14 10:00:00" })
+		const output = Schema.decodeUnknownSync(WhoIsOnCallOutput)(last.structuredContent)
 		expect([output.onCall?.user.userId, output.next]).toEqual(["user_ana", null])
-		expect(text(result)).toContain("no handoff within two weeks")
+		expect(text(last)).toContain("no handoff within two weeks")
 	})
 
 	it("who_is_on_call takes a REST id and refuses an unknown schedule on the parameter", async () => {

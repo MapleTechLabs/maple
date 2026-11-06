@@ -64,6 +64,54 @@ describe("weekly rotation", () => {
 	})
 })
 
+describe("one person on consecutive shifts", () => {
+	// Thursday 2026-03-12 12:34:56.789Z, so a bound built from the instant would show it.
+	const thursday = at("2026-03-12T12:34:56.789Z")
+	const solo = (participants: ReadonlyArray<string>) =>
+		decodeConfig({ timeZone: "Europe/Berlin", layers: [{ ...weeklyLayer, participants }] })
+
+	it("bounds a one-person weekly rotation by its Monday 09:00 handoffs", () => {
+		const shift = onCallAt(solo(["ana"]), [], thursday)
+		expect(who(shift)).toBe("ana")
+		expect(span(shift)).toEqual({ start: "2026-03-09T08:00:00.000Z", end: "2026-03-16T08:00:00.000Z" })
+	})
+
+	it("bounds a rotation repeating the same person by its handoffs too", () => {
+		expect(span(onCallAt(solo(["ana", "ana"]), [], thursday))).toEqual({
+			start: "2026-03-09T08:00:00.000Z",
+			end: "2026-03-16T08:00:00.000Z",
+		})
+	})
+
+	it("keeps the calendar merged while the effective schedule splits at each handoff", () => {
+		const render = renderOnCall(solo(["ana"]), [], WEEKLY_ANCHOR, at("2026-03-23T08:00:00Z"))
+		expect(Arr.map(render.final, span)).toEqual([
+			{ start: "2026-03-02T08:00:00.000Z", end: "2026-03-23T08:00:00.000Z" },
+		])
+		expect(Arr.map(render.effective, (s) => span(s)?.end)).toEqual([
+			"2026-03-09T08:00:00.000Z",
+			"2026-03-16T08:00:00.000Z",
+			"2026-03-23T08:00:00.000Z",
+		])
+	})
+
+	it("reports an override longer than the lookaround by its own bounds", () => {
+		const overrides = decodeOverrides([
+			{
+				id: DAN_OVERRIDE,
+				userId: "dan",
+				startsAt: at("2026-03-01T00:00:00Z"),
+				endsAt: at("2026-04-30T00:00:00Z"),
+				createdAt: 1,
+			},
+		])
+		expect(span(onCallAt(weekly, overrides, thursday))).toEqual({
+			start: "2026-03-01T00:00:00.000Z",
+			end: "2026-04-30T00:00:00.000Z",
+		})
+	})
+})
+
 describe("daily and custom rotations", () => {
 	it("hands off daily at the local handoff time", () => {
 		const daily = decodeConfig({
@@ -171,8 +219,12 @@ describe("layers and restrictions", () => {
 	it("covers a restriction window that crosses midnight", () => {
 		const night = onCallAt(nights, [], at("2026-01-06T03:00:00Z"))
 		expect(who(night)).toBe("ana")
-		// Pieces of consecutive daily shifts for the same user merge into one window.
-		expect(span(night)).toEqual({ start: "2026-01-05T22:00:00.000Z", end: "2026-01-06T06:00:00.000Z" })
+		// The midnight rotation handoff bounds the shift even though Ana carries on.
+		expect(span(night)).toEqual({ start: "2026-01-06T00:00:00.000Z", end: "2026-01-06T06:00:00.000Z" })
+		expect(span(onCallAt(nights, [], at("2026-01-05T23:00:00Z")))).toEqual({
+			start: "2026-01-05T22:00:00.000Z",
+			end: "2026-01-06T00:00:00.000Z",
+		})
 	})
 
 	it("reports a gap where no layer is active", () => {
@@ -299,7 +351,7 @@ describe("render and onCallAt agree", () => {
 		)
 
 		const mismatches = Arr.filter(samples, (t) => {
-			const expected = Arr.findFirst(render.final, (s) => s.startMs <= t && t < s.endMs).pipe(
+			const expected = Arr.findFirst(render.effective, (s) => s.startMs <= t && t < s.endMs).pipe(
 				Option.getOrNull,
 			)
 			const actual = onCallAt(config, overrides, t)

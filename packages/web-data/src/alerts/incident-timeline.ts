@@ -236,7 +236,10 @@ export function pageEntry(page: IncidentPage): IncidentTimelineEntry {
 			page.status === "failed" || page.status === "skipped"
 				? (page.errorMessage ??
 					(page.status === "skipped" ? "Acknowledged or resolved first" : "The channel refused it"))
-				: null,
+				: // A pending page with an error is between retries.
+					sending && page.errorMessage !== null
+					? `Retrying: ${page.errorMessage}`
+					: null,
 		investigation: null,
 	}
 }
