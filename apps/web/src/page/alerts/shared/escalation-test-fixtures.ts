@@ -8,6 +8,7 @@ import { destinationRow, NOW } from "./test-rows"
 const pad = (n: number) => Str.padStart(12, "0")(String(n))
 export const chainUuid = (n: number) => `0199a00e-0000-7000-8000-${pad(n)}`
 export const chainDestinationUuid = (n: number) => `0199a001-0000-7000-8000-${pad(100 + n)}`
+export const chainScheduleUuid = (n: number) => `0199a00f-0000-7000-8000-${pad(200 + n)}`
 
 const NAMES = [
 	"Slack #alerts-api",
@@ -32,7 +33,15 @@ export type ChainSpec = Readonly<{
 	name: string
 	description?: string | null
 	/** Each step's destinations, by `chainDestinationUuid` number, and its wait. */
-	steps: ReadonlyArray<Readonly<{ destinations: ReadonlyArray<number>; wait: number }>>
+	steps: ReadonlyArray<
+		Readonly<{
+			destinations: ReadonlyArray<number>
+			wait: number
+			/** On-call schedules, by `chainScheduleUuid` number, and member user ids. */
+			schedules?: ReadonlyArray<number>
+			users?: ReadonlyArray<string>
+		}>
+	>
 	repeat?: number
 	ruleIds?: ReadonlyArray<string>
 }>
@@ -47,10 +56,17 @@ export const chainOf = (spec: ChainSpec): V2EscalationChain =>
 		name: spec.name,
 		description: spec.description ?? null,
 		steps: Arr.map(spec.steps, (step) => ({
-			targets: Arr.map(step.destinations, (d) => ({
-				type: "destination",
-				destination_id: encodePublicId("dest", chainDestinationUuid(d)),
-			})),
+			targets: [
+				...Arr.map(step.destinations, (d) => ({
+					type: "destination",
+					destination_id: encodePublicId("dest", chainDestinationUuid(d)),
+				})),
+				...Arr.map(step.users ?? [], (userId) => ({ type: "user", user_id: userId })),
+				...Arr.map(step.schedules ?? [], (n) => ({
+					type: "schedule",
+					schedule_id: encodePublicId("onc", chainScheduleUuid(n)),
+				})),
+			],
 			wait_minutes: step.wait,
 		})),
 		repeat_count: spec.repeat ?? 0,

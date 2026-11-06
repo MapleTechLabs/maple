@@ -14,6 +14,7 @@ import {
 	V2EscalationChain,
 	V2EscalationChainCreateParams,
 	type V2EscalationStep,
+	V2EscalationTarget,
 } from "@maple/domain/http/v2"
 import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
@@ -30,6 +31,8 @@ import { saveEscalationChain } from "../shared/escalation-chains"
 export const StepDraft = Schema.Struct({
 	key: Schema.String,
 	destinationIds: Schema.Array(AlertDestinationId),
+	/** Member and schedule targets: not editable here yet, so a save sends them back unchanged. */
+	otherTargets: Schema.Array(V2EscalationTarget),
 	waitMinutes: Schema.String,
 })
 export type StepDraft = typeof StepDraft.Type
@@ -58,6 +61,7 @@ export const DEFAULT_WAIT_MINUTES = "10"
 const emptyStep = (key: number): StepDraft => ({
 	key: `s${key}`,
 	destinationIds: [],
+	otherTargets: [],
 	waitMinutes: DEFAULT_WAIT_MINUTES,
 })
 
@@ -132,12 +136,21 @@ export const waitError = (raw: string): Option.Option<string> =>
 export const repeatError = (raw: string): Option.Option<string> =>
 	isRepeat(numberOf(raw)) ? Option.none() : Option.some(`Repeat 0 to ${MAX_ESCALATION_REPEATS} times`)
 
-export const destinationsError = (ids: ReadonlyArray<AlertDestinationId>): Option.Option<string> =>
-	ids.length === 0
+/** A step needs one target; its carried member and schedule targets count toward both limits. */
+export const targetsError = (
+	step: Pick<StepDraft, "destinationIds" | "otherTargets">,
+): Option.Option<string> => {
+	const total = step.destinationIds.length + step.otherTargets.length
+	return total === 0
 		? Option.some("Pick at least one destination")
-		: ids.length > MAX_ESCALATION_STEP_TARGETS
-			? Option.some(`A step notifies at most ${MAX_ESCALATION_STEP_TARGETS} destinations`)
-			: Option.none()
+		: total <= MAX_ESCALATION_STEP_TARGETS
+			? Option.none()
+			: Option.some(
+					step.otherTargets.length === 0
+						? `A step notifies at most ${MAX_ESCALATION_STEP_TARGETS} destinations`
+						: `A step notifies at most ${MAX_ESCALATION_STEP_TARGETS} targets, members and schedules included`,
+				)
+}
 
 export const stepsError = (steps: ReadonlyArray<StepDraft>): Option.Option<string> =>
 	steps.length === 0
@@ -147,13 +160,13 @@ export const stepsError = (steps: ReadonlyArray<StepDraft>): Option.Option<strin
 			: Option.none()
 
 const stepOf = (step: StepDraft): Option.Option<V2EscalationStep> => {
-	const targets = Arr.map(step.destinationIds, (id) => ({
-		type: "destination" as const,
-		destination_id: id,
-	}))
+	const targets: ReadonlyArray<V2EscalationTarget> = [
+		...Arr.map(step.destinationIds, (id) => ({ type: "destination" as const, destination_id: id })),
+		...step.otherTargets,
+	]
 	const minutes = numberOf(step.waitMinutes)
 	return Arr.isReadonlyArrayNonEmpty(targets) &&
-		Option.isNone(destinationsError(step.destinationIds)) &&
+		Option.isNone(targetsError(step)) &&
 		minutes !== null &&
 		isWait(minutes)
 		? Option.some({ targets, wait_minutes: minutes })
@@ -246,6 +259,7 @@ export const openEdit = (model: Model, chain: V2EscalationChain): Return =>
 			destinationIds: Arr.flatMap(step.targets, (target) =>
 				target.type === "destination" ? [target.destination_id] : [],
 			),
+			otherTargets: Arr.filter(step.targets, (target) => target.type !== "destination"),
 			waitMinutes: String(step.wait_minutes),
 		})),
 		repeatCount: String(chain.repeat_count),

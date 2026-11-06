@@ -26,7 +26,6 @@ import { destinationPicker } from "../../kit/destination-picker"
 import { formatWait } from "../shared/escalation-chains"
 import {
 	descriptionError,
-	destinationsError,
 	menuIdOf,
 	Message,
 	type Model,
@@ -35,6 +34,7 @@ import {
 	repeatError,
 	type StepDraft,
 	stepsError,
+	targetsError,
 	waitError,
 } from "./dialog"
 
@@ -153,11 +153,30 @@ const waitLabel = (model: Model, index: number): string =>
 			: // The run ends as soon as the last step pages, so this wait only matters once it repeats.
 				"Wait before repeating, in minutes (unused unless the chain repeats)"
 
+const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`
+
+/** The step's member and schedule targets, which this dialog keeps but cannot edit yet. */
+const carriedLine = (h: H, step: StepDraft): ReadonlyArray<Html> => {
+	const members = Arr.filter(step.otherTargets, (target) => target.type === "user").length
+	const schedules = Arr.filter(step.otherTargets, (target) => target.type === "schedule").length
+	const parts = [
+		...(members === 0 ? [] : [plural(members, "member", "members")]),
+		...(schedules === 0 ? [] : [`whoever is on call on ${plural(schedules, "schedule", "schedules")}`]),
+	]
+	return parts.length === 0
+		? []
+		: [
+				typography(h, { size: "xs", tone: "muted" }, [
+					`Also pages ${Arr.join(parts, " and ")}. Saving keeps them.`,
+				]),
+			]
+}
+
 const stepBlock = (h: H, model: Model, inputs: ViewInputs, step: StepDraft, index: number): Html => {
 	const count = model.steps.length
 	const previous = index === 0 ? undefined : model.steps[index - 1]
 	const wait = waitError(step.waitMinutes)
-	const destinations = shownError(model, destinationsError(step.destinationIds))
+	const destinations = shownError(model, targetsError(step))
 	const key = step.key
 	return panel(h, { padded: "sm", className: "gap-3", attributes: [h.Key(key)] }, [
 		hstack(h, { gap: "2", justify: "between" }, [
@@ -214,6 +233,7 @@ const stepBlock = (h: H, model: Model, inputs: ViewInputs, step: StepDraft, inde
 					? "No destinations exist yet. Add one in Routing first."
 					: "Pick who this step pages",
 		}),
+		...carriedLine(h, step),
 		...Option.match(destinations, {
 			onNone: () => [],
 			onSome: (text) => [fieldErrorText(h, { attributes: [h.Role("alert")] }, [text])],

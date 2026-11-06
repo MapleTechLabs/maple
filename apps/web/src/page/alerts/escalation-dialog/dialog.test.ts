@@ -83,4 +83,32 @@ describe("escalation chain dialog", () => {
 		)
 		expect(full.steps).toHaveLength(10)
 	})
+
+	it("an edit sends a step's member and schedule targets back, and a schedule alone is enough", () => {
+		const chain = chainOf({
+			n: 2,
+			name: "Checkout on-call",
+			steps: [
+				{ destinations: [1], users: ["user_ben"], wait: 10 },
+				{ destinations: [], schedules: [1], wait: 15 },
+			],
+		})
+		const renamed = run(openEdit(init("chain"), chain).model, [
+			Message.ChangedName({ value: "Checkout" }),
+		])
+		const saving = update(renamed, Message.ClickedSave())
+		expect(saving.commands?.[0]?.args).toMatchObject({
+			payload: {
+				name: "Checkout",
+				steps: Arr.map(chain.steps, (step) => ({ targets: step.targets })),
+			},
+		})
+		const key = renamed.steps[0]?.key ?? ""
+		const withoutDestination = run(renamed, [
+			Message.ClickedRemoveDestination({ key, id: asDestination(chainDestinationUuid(1)) }),
+		])
+		expect(Option.map(payloadOf(withoutDestination), ({ steps }) => steps[0].targets)).toEqual(
+			Option.some([{ type: "user", user_id: "user_ben" }]),
+		)
+	})
 })
