@@ -36,6 +36,11 @@ final class PushRegistrar: NSObject {
 	private(set) var lastError: String?
 	/// True while a sync is in flight; the settings sheet dims its toggles.
 	private(set) var isSyncing = false
+	/// Bumped by every sync and by sign-out. A registration finishing under an
+	/// older generation was superseded, so its outcome is dropped.
+	@ObservationIgnored private var generation = 0
+	/// The latest sync. The next one cancels and waits for it, so registrations never overlap.
+	@ObservationIgnored private var inFlight: Task<Void, Never>?
 
 	/// Set by the app at launch so a notification tap can be routed — including
 	/// into the organization the alert actually fired in.
@@ -132,20 +137,43 @@ final class PushRegistrar: NSObject {
 		].joined(separator: "|")
 	}
 
-	/// Register (or refresh) this phone for the active organization.
+	/// Register (or refresh) this phone for the active organization. A newer call,
+	/// or sign-out, supersedes this one: it is cancelled and its result dropped.
 	func sync(api: any MapleAPI, orgId: String) async {
 		guard authorization == .authorized, let deviceToken else { return }
-		isSyncing = true
-		defer { isSyncing = false }
-		await Telemetry.span(
-			Telemetry.Name.pushSync,
-			attributes: [Telemetry.Key.organizationId: .string(orgId)]
-		) { span in
-			await self.sync(api: api, orgId: orgId, deviceToken: deviceToken, span: span)
+		generation += 1
+		let generation = generation
+		let previous = inFlight
+		previous?.cancel()
+		let task = Task { @MainActor in
+			await previous?.value
+			guard !Task.isCancelled, generation == self.generation else { return }
+			await Telemetry.span(
+				Telemetry.Name.pushSync,
+				attributes: [Telemetry.Key.organizationId: .string(orgId)]
+			) { span in
+				await self.register(api: api, orgId: orgId, deviceToken: deviceToken, generation: generation, span: span)
+			}
 		}
+		inFlight = task
+		isSyncing = true
+		await withTaskCancellationHandler {
+			await task.value
+		} onCancel: {
+			task.cancel()
+		}
+		guard generation == self.generation else { return }
+		inFlight = nil
+		isSyncing = false
 	}
 
-	private func sync(api: any MapleAPI, orgId: String, deviceToken: String, span: Span?) async {
+	private func register(
+		api: any MapleAPI,
+		orgId: String,
+		deviceToken: String,
+		generation: Int,
+		span: Span?
+	) async {
 		do {
 			_ = try await api.registerDevice(
 				DeviceRegistration(
@@ -158,15 +186,16 @@ final class PushRegistrar: NSObject {
 					liveActivityStartToken: LiveActivityController.shared.pushToStartToken
 				)
 			)
-			lastError = nil
+			if generation == self.generation { lastError = nil }
 		} catch is CancellationError {
 		} catch {
 			// A phone that failed to register is a phone that will not be told
 			// about the next incident — the one push failure worth an alert.
 			let apiError = error as? MapleAPIError
-			lastError = apiError?.message ?? error.localizedDescription
+			let message = apiError?.message ?? error.localizedDescription
 			span?.setAttribute(Telemetry.Key.errorType, apiError?.telemetryType ?? "transport")
-			span?.setStatus(.error(lastError ?? "registration failed"))
+			span?.setStatus(.error(message))
+			if generation == self.generation { lastError = message }
 		}
 	}
 
@@ -174,6 +203,15 @@ final class PushRegistrar: NSObject {
 	/// effort — the token is dead to the server once the user is gone anyway,
 	/// but leaving rows behind means stray pushes until APNs reports it.
 	func unregisterAll(api: any MapleAPI) async {
+		// Supersede any sync, and let a registration already sent land first:
+		// arriving after the unregister, it would re-register a signed-out phone.
+		generation += 1
+		let pending = inFlight
+		inFlight = nil
+		pending?.cancel()
+		isSyncing = false
+		lastError = nil
+		await pending?.value
 		guard let deviceToken else { return }
 		// The token is what matters; the org travels in the session, so a
 		// sign-out can only unregister the org whose token we still hold.
