@@ -5,7 +5,6 @@
  */
 import {
 	AlertDeliveryEventId,
-	AlertDestinationId,
 	AlertIncidentAckSource,
 	AlertIncidentEventDocument,
 	AlertIncidentEventId,
