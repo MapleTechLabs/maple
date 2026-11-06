@@ -14036,6 +14036,10 @@
       "name": "Uptime Monitors"
     },
     {
+      "description": "Service level objectives over a service's entry-point spans, with an error budget measured over a rolling window.",
+      "name": "SLOs"
+    },
+    {
       "description": "Public status pages for your customers, served from edge storage so they stay up when Maple does not. Components follow your uptime monitors.",
       "name": "Status Pages"
     },
