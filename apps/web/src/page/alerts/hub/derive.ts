@@ -45,7 +45,7 @@ export const overviewOf = (model: Model): Option.Option<AlertsOverviewReady> =>
 	overviewFor([model.rules, model.states, model.incidents, model.deliveries.data, model.nowMs])
 
 /** An incident is about a service: its labels say so, else its stored "service (env)" label. */
-const isAboutService = (incident: AlertIncidentDocument, serviceName: string): boolean =>
+export const isAboutService = (incident: AlertIncidentDocument, serviceName: string): boolean =>
 	incident.labels?.service !== undefined
 		? incident.labels.service === serviceName
 		: incident.groupLabel === serviceName ||

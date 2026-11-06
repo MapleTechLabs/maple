@@ -155,6 +155,20 @@ describe("alerts hub: anomalies", () => {
 		)
 	})
 
+	test("narrowed to a service, the chip counts and the empty state speak for that service", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ signal: "anomaly", serviceName: "checkout" })),
+			expectView(role("button", { name: /^Anomalies\s*1$/ })).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ signal: "anomaly", serviceName: "payments" })),
+			expectView(text(/on payments, and opens an anomaly/)).toExist(),
+			expectView(text(/every service/)).not.toExist(),
+		)
+	})
+
 	test("with only resolved anomalies the open view still says there are none", () => {
 		scene(
 			{ update: pageUpdate, view },
