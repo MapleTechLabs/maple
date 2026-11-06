@@ -524,3 +524,16 @@ describe("hazel transport", () => {
 		}).pipe(Effect.provide(http.layer))
 	})
 })
+
+describe("hazel direct messages", () => {
+	it.effect("refuses to page a person, permanently and without a call", () => {
+		const http = stub([])
+		return Effect.gen(function* () {
+			const transport = yield* hazelOutbound.transport
+			const error = yield* Effect.flip(transport.directMessage("org_1", "user_ben"))
+			expect([error.operation, error.reason]).toEqual(["direct_message", "rejected"])
+			expect(error.message).toContain("does not support direct messages")
+			expect(http.seen).toHaveLength(0)
+		}).pipe(Effect.provide(http.layer))
+	})
+})

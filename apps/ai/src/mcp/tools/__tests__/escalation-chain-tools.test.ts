@@ -12,6 +12,7 @@ import {
 	EscalationChainInUseError,
 	EscalationChainNotFoundError,
 	EscalationChainsListResponse,
+	OnCallSchedulesListResponse,
 	OrgId,
 	UserId,
 	type EscalationChainCreateRequest,
@@ -21,6 +22,7 @@ import { encodePublicId } from "@maple/domain/http/v2"
 import { ListEscalationChainsOutput } from "@maple/domain/mcp-outputs"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
+import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
 import { CurrentMcpTenant } from "../../lib/query-warehouse"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import type { McpToolResult } from "../types"
@@ -30,6 +32,7 @@ const MISSING_ID = "9b8c7d6e-5f4a-4b3c-9d2e-1f0a9b8c7d6e"
 const RULE_ID = "7f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
 const PRIMARY = "0e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a6b"
 const SECONDARY = "1f2e3d4c-5b6a-4798-8a0b-2c3d4e5f6a7b"
+const SCHEDULE = "5a4b3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d"
 const NOW = "2026-11-06T10:00:00.000Z"
 
 const chainDoc = (overrides: Partial<typeof EscalationChainDocument.Encoded> = {}) =>
@@ -109,6 +112,38 @@ const layer = (seen: Seen) =>
 						)
 					: Effect.void
 			},
+		}),
+		Layer.mock(OnCallSchedulesService)({
+			memberNames: () => Effect.succeed(new Map([["user_ana", "Ana Alves"]])),
+			list: () =>
+				Effect.succeed(
+					Schema.decodeSync(OnCallSchedulesListResponse)({
+						schedules: [
+							{
+								id: SCHEDULE,
+								name: "API primary",
+								description: null,
+								timeZone: "Europe/Berlin",
+								layers: [
+									{
+										name: "Primary",
+										participants: ["user_ana"],
+										rotation: {
+											kind: "weekly",
+											handoffWeekday: "mon",
+											handoffTime: "09:00",
+										},
+										startsAt: Date.parse(NOW),
+									},
+								],
+								onCallNow: null,
+								chainIds: [CHAIN_ID],
+								createdAt: NOW,
+								updatedAt: NOW,
+							},
+						],
+					}),
+				),
 		}),
 		Layer.mock(AlertsService)({
 			listDestinations: () =>
@@ -202,6 +237,42 @@ describe("escalation chain tools", () => {
 		expect(text(result)).toContain(
 			"2. notify Ops channel (webhook), Primary pager (pagerduty), then wait 15m",
 		)
+	})
+
+	it("create_escalation_chain pages members and on-call schedules, and names them in the steps", async () => {
+		const seen: Seen = {}
+		const result = await ok(
+			"create_escalation_chain",
+			{
+				name: "API on-call",
+				steps: JSON.stringify([
+					{
+						schedule_ids: [encodePublicId("onc", SCHEDULE)],
+						user_ids: ["user_ana"],
+						wait_minutes: 5,
+					},
+					{ destination_ids: [PRIMARY], wait_minutes: 10 },
+				]),
+			},
+			seen,
+		)
+		expect(seen.created?.steps).toEqual([
+			{
+				targets: [
+					{ type: "user", userId: "user_ana" },
+					{ type: "schedule", scheduleId: SCHEDULE },
+				],
+				waitMinutes: 5,
+			},
+			{ targets: [{ type: "destination", destinationId: PRIMARY }], waitMinutes: 10 },
+		])
+		expect(text(result)).toContain("1. notify Ana Alves, whoever is on call on API primary, then wait 5m")
+		const badSchedule = await run(
+			"create_escalation_chain",
+			{ name: "Bad", steps: [{ schedule_ids: ["dest_nope"], wait_minutes: 5 }] },
+			{},
+		)
+		expect(invalidParameter(badSchedule)).toBe("steps")
 	})
 
 	it("create_escalation_chain refuses bad steps before the service and maps an unknown destination to steps", async () => {

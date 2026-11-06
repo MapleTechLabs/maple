@@ -54,6 +54,17 @@ const toV2Event = (doc: AlertIncidentEventDocument): V2AlertIncidentEvent => ({
 			? null
 			: { user_id: doc.actorUserId, name: doc.actorName },
 	source: doc.source,
+	...(doc.page === undefined
+		? undefined
+		: {
+				page: {
+					user_id: doc.page.userId,
+					name: doc.page.name,
+					channel: doc.page.channel,
+					status: doc.page.status,
+					error_message: doc.page.errorMessage,
+				},
+			}),
 	created_at: doc.createdAt,
 })
 

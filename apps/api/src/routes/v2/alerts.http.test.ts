@@ -2,6 +2,7 @@ import { LiveActivitiesService } from "@maple/backend/services/push/LiveActiviti
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"
 import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
+import { AlertMemberNotifier } from "@maple/backend/services/alerts/AlertMemberNotifier"
 import { ChatAlertPoster } from "@maple/backend/services/alerts/ChatAlertPoster"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import {
@@ -190,6 +191,12 @@ const makeHarness = (
 				alertDestinationsLive,
 				alertReadModelsLive,
 				alertRulesLive,
+				Layer.effect(AlertMemberNotifier, AlertMemberNotifier.make).pipe(
+					Layer.provide(ChatAlertPoster.layer),
+					Layer.provide(
+						Layer.mergeAll(envLive, testDb.layer, runtimeLive, emailLive, orgMembersLive),
+					),
+				),
 				UptimeAlertSource.layer.pipe(Layer.provide(testDb.layer)),
 				Layer.effect(SloAlertSource, SloAlertSource.make).pipe(
 					Layer.provide(Layer.mergeAll(testDb.layer, warehouseLive)),
@@ -1580,6 +1587,72 @@ describe("v2 alerts over HTTP", () => {
 		const gone = await harness.request("GET", base, key.secret)
 		expect(gone.status).toBe(404)
 		expect(gone.body.error.code).toBe("oncall_schedule_not_found")
+
+		await harness.dispose()
+	})
+
+	it("pages a schedule and a user from a chain step, and keeps a paged schedule from being deleted", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const schedule = await harness.request(
+			"POST",
+			"/v2/alerts/oncall_schedules",
+			key.secret,
+			weeklySchedule,
+		)
+		const scheduleId: string = schedule.body.id
+		const steps = [
+			{
+				targets: [
+					{ type: "schedule", schedule_id: scheduleId },
+					{ type: "user", user_id: "user_chen" },
+				],
+				wait_minutes: 10,
+			},
+		]
+		const chain = await harness.request("POST", "/v2/alerts/escalation_chains", key.secret, {
+			name: "API on-call",
+			steps,
+		})
+		expect(chain.status, JSON.stringify(chain.body)).toBe(200)
+		expect(chain.body.steps).toEqual(steps)
+		const fetched = await harness.request(
+			"GET",
+			`/v2/alerts/escalation_chains/${chain.body.id}`,
+			key.secret,
+		)
+		expect(fetched.body.steps).toEqual(steps)
+
+		const paged = await harness.request("GET", `/v2/alerts/oncall_schedules/${scheduleId}`, key.secret)
+		expect(paged.body.chain_ids).toEqual([chain.body.id])
+		const inUse = await harness.request("DELETE", `/v2/alerts/oncall_schedules/${scheduleId}`, key.secret)
+		expect(inUse.status).toBe(409)
+		expect(inUse.body.error.code).toBe("oncall_schedule_in_use")
+
+		const unknownSchedule = await harness.request("POST", "/v2/alerts/escalation_chains", key.secret, {
+			name: "Nowhere",
+			steps: [
+				{
+					targets: [
+						{
+							type: "schedule",
+							schedule_id: encodePublicId("onc", "0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80"),
+						},
+					],
+					wait_minutes: 5,
+				},
+			],
+		})
+		expect(unknownSchedule.status).toBe(400)
+		expect(unknownSchedule.body.error.message).toContain("on-call schedule")
+
+		await harness.request("DELETE", `/v2/alerts/escalation_chains/${chain.body.id}`, key.secret)
+		const deleted = await harness.request(
+			"DELETE",
+			`/v2/alerts/oncall_schedules/${scheduleId}`,
+			key.secret,
+		)
+		expect(deleted.body).toEqual({ id: scheduleId, object: "oncall_schedule", deleted: true })
 
 		await harness.dispose()
 	})

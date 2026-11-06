@@ -12,7 +12,9 @@ import {
 	OnCallOverrideNotFoundError,
 	OnCallScheduleDocument,
 	OnCallScheduleId,
+	OnCallScheduleInUseError,
 	OnCallScheduleNotFoundError,
+	EscalationChainId,
 	OnCallSchedulesListResponse,
 	OnCallShiftsResponse,
 	OrgId,
@@ -72,6 +74,8 @@ interface Seen {
 	onCallAt?: number
 	/** The service refuses writes as an unknown member. */
 	rejectMember?: boolean
+	/** An escalation chain still pages the schedule. */
+	inUse?: boolean
 }
 
 const rejectMember = () => {
@@ -109,7 +113,20 @@ const layer = (seen: Seen) =>
 			},
 			delete: (_org, _roles, id) => {
 				seen.deletedSchedule = id
-				return Effect.void
+				return seen.inUse === true
+					? Effect.fail(
+							new OnCallScheduleInUseError({
+								message: "in use",
+								scheduleId: Schema.decodeSync(OnCallScheduleId)(id),
+								chainIds: [
+									Schema.decodeSync(EscalationChainId)(
+										"3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b",
+									),
+								],
+								chainNames: ["API escalation"],
+							}),
+						)
+					: Effect.void
 			},
 			onCallAt: (_org, _id, atMs) => {
 				seen.onCallAt = atMs
@@ -367,5 +384,8 @@ describe("on-call schedule tools", () => {
 		expect(text(result)).toContain("Checkout primary")
 		const missing = await run("delete_oncall_schedule", { schedule_id: MISSING_ID }, {})
 		expect(invalidParameter(missing)).toBe("schedule_id")
+		const inUse = await run("delete_oncall_schedule", { schedule_id: SCHEDULE_ID }, { inUse: true })
+		expect(invalidParameter(inUse)).toBe("schedule_id")
+		expect(inUse._tag === "Failure" ? inUse.failure.message : "").toContain('"API escalation"')
 	})
 })

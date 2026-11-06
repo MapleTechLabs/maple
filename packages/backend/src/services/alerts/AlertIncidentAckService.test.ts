@@ -3,7 +3,9 @@ import { AlertIncidentId, AlertRuleId, OrgId, UserId } from "@maple/domain/http"
 import { Duration, Effect, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { AlertIncidentAckService, type AlertIncidentActor } from "./AlertIncidentAckService"
+import { stubOrgMembersService } from "./alerts-service-test-support"
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asRuleId = Schema.decodeUnknownSync(AlertRuleId)
@@ -22,7 +24,11 @@ const slackClick: AlertIncidentActor = { userId: null, name: "sam", source: "sla
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const makeLayer = (testDb: TestDb) => AlertIncidentAckService.layer.pipe(Layer.provide(testDb.layer))
+const makeLayer = (testDb: TestDb) =>
+	Layer.effect(AlertIncidentAckService, AlertIncidentAckService.make).pipe(
+		Layer.provide(testDb.layer),
+		Layer.provide(Layer.succeed(OrgMembersService, stubOrgMembersService())),
+	)
 
 const seed = (testDb: TestDb) =>
 	Effect.promise(() =>

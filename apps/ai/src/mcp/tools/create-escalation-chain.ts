@@ -7,7 +7,7 @@ import { CurrentMcpTenant } from "../lib/query-warehouse"
 import {
 	chainBlocks,
 	createChainErrors,
-	destinationDirectory,
+	targetDirectory,
 	StepsInput,
 	stepsParameterDescription,
 	toEscalationChainRow,
@@ -23,7 +23,7 @@ export function registerCreateEscalationChainTool(server: McpToolRegistrar) {
 		name: "create_escalation_chain",
 		title: "Create Escalation Chain",
 		description:
-			"Create an escalation chain: steps that each notify their destinations, then wait for an acknowledgement before the next step. " +
+			"Create an escalation chain: steps that each page their targets (alert destinations, members by email and chat DM, or whoever is on call on a schedule), then wait for an acknowledgement before the next step. " +
 			"A rule tier that names the chain still notifies its own destinations at once; the chain pages on top until the incident is acknowledged or resolved. " +
 			"Attach it with create_alert_rule / update_alert_rule escalation_chain_id.",
 		parameters: Schema.Struct({
@@ -58,8 +58,8 @@ export function registerCreateEscalationChainTool(server: McpToolRegistrar) {
 			const chain = yield* chains
 				.create(tenant.orgId, tenant.userId, tenant.roles, request)
 				.pipe(Effect.catchTags(createChainErrors))
-			const destinations = yield* destinationDirectory(tenant.orgId)
-			return { chain: toEscalationChainRow(chain, destinations) }
+			const directory = yield* targetDirectory(tenant.orgId)
+			return { chain: toEscalationChainRow(chain, directory) }
 		}),
 		render: (output) => ({
 			title: "Escalation Chain Created",

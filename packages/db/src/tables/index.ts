@@ -41,7 +41,7 @@ import {
 	ErrorIssueVerifications,
 } from "./errors"
 import { IssueEscalationPolicies, IssueEscalations } from "./escalations"
-import { AlertEscalationRuns, EscalationChains } from "./escalation-chains"
+import { AlertEscalationRuns, AlertMemberNotifications, EscalationChains } from "./escalation-chains"
 import { OnCallOverrides, OnCallSchedules } from "./oncall-schedules"
 import { AwsConnections } from "./aws-connections"
 import { GcpConnectors } from "./gcp-connectors"
@@ -206,6 +206,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	IssueEscalations,
 	EscalationChains,
 	AlertEscalationRuns,
+	AlertMemberNotifications,
 	OnCallSchedules,
 	OnCallOverrides,
 	GcpConnectors,

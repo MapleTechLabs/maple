@@ -10,6 +10,7 @@ import {
 	alertAccentColor,
 	truncate,
 } from "../../alert-formatting"
+import type { DispatchContext } from "../context"
 import type { EffectTransport, RenderInput, SecretConfigOf } from "../Transport"
 
 type Config = SecretConfigOf<"chat">
@@ -20,6 +21,13 @@ type Config = SecretConfigOf<"chat">
  */
 const MAX_TEMPLATED_BODY_CHARS = 1200
 
+/** What the card reads: no destination, so a direct message to a person renders the same card. */
+export interface ChatAlertCardInput {
+	readonly context: Omit<DispatchContext, "deliveryKey" | "destination" | "publicConfig" | "secretConfig">
+	readonly templated: RenderInput<Config>["templated"]
+	readonly linkUrl: string
+}
+
 /**
  * The alert as one neutral alert card, which the connector renders in its own dialect — and
  * which is where its mention-neutralising lives, so a rule named `@everyone` pings nobody.
@@ -29,7 +37,7 @@ const MAX_TEMPLATED_BODY_CHARS = 1200
  * and a footer carrying the sparkline, the incident and the time. A rule's own template, when it
  * has one, replaces the title and the summary and drops the fields, as it does there.
  */
-export const buildChatAlertBlocks = (input: RenderInput<Config>): ReadonlyArray<ChatBlock> => {
+export const buildChatAlertBlocks = (input: ChatAlertCardInput): ReadonlyArray<ChatBlock> => {
 	const { context, templated, linkUrl } = input
 	const group = displayGroupKey(context.groupKey)
 	const card: Omit<ChatAlertBlock, "title" | "summary" | "fields"> = {

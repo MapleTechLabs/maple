@@ -471,6 +471,7 @@ describe("AlertsService", () => {
 		const lookups: Array<string> = []
 		const poster = Layer.succeed(ChatAlertPoster, {
 			post: () => Effect.die("no alert is posted here"),
+			postDirect: () => Effect.die("no person is paged here"),
 			findChannel: (_orgId, _workspaceId, channelId) =>
 				Effect.suspend(() => {
 					lookups.push(channelId)

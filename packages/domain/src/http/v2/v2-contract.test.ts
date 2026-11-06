@@ -446,8 +446,9 @@ describe("V2 alerts wire format", () => {
 		).toThrow()
 	})
 
-	it("encodes an escalation chain with esc_/dest_/alrt_ ids and snake_case steps", () => {
+	it("encodes an escalation chain with esc_/dest_/onc_/alrt_ ids, user targets and snake_case steps", () => {
 		const CHAIN_UUID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b"
+		const SCHEDULE_UUID = "5a4b3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d"
 		const chainWire = {
 			id: encodePublicId("esc", CHAIN_UUID),
 			object: "escalation_chain",
@@ -458,6 +459,13 @@ describe("V2 alerts wire format", () => {
 					targets: [{ type: "destination", destination_id: encodePublicId("dest", DEST_UUID) }],
 					wait_minutes: 10,
 				},
+				{
+					targets: [
+						{ type: "schedule", schedule_id: encodePublicId("onc", SCHEDULE_UUID) },
+						{ type: "user", user_id: "user_ana" },
+					],
+					wait_minutes: 15,
+				},
 			],
 			repeat_count: 1,
 			rule_ids: [encodePublicId("alrt", UUID)],
@@ -466,7 +474,11 @@ describe("V2 alerts wire format", () => {
 		}
 		const chain = Schema.decodeUnknownSync(V2EscalationChain)(chainWire)
 		expect(chain.id).toBe(CHAIN_UUID)
-		expect(chain.steps[0]?.targets[0]?.destination_id).toBe(DEST_UUID)
+		expect(chain.steps[0]?.targets[0]).toEqual({ type: "destination", destination_id: DEST_UUID })
+		expect(chain.steps[1]?.targets).toEqual([
+			{ type: "schedule", schedule_id: SCHEDULE_UUID },
+			{ type: "user", user_id: "user_ana" },
+		])
 		expect(chain.rule_ids).toEqual([UUID])
 		expect(Schema.encodeSync(V2EscalationChain)(chain)).toEqual(chainWire)
 		expect(() => Schema.decodeUnknownSync(V2EscalationChain)({ ...chainWire, steps: [] })).toThrow()
@@ -474,6 +486,17 @@ describe("V2 alerts wire format", () => {
 			Schema.decodeUnknownSync(V2EscalationChain)({
 				...chainWire,
 				steps: [{ ...chainWire.steps[0], wait_minutes: 0 }],
+			}),
+		).toThrow()
+		expect(() =>
+			Schema.decodeUnknownSync(V2EscalationChain)({
+				...chainWire,
+				steps: [
+					{
+						targets: [{ type: "schedule", schedule_id: encodePublicId("dest", SCHEDULE_UUID) }],
+						wait_minutes: 5,
+					},
+				],
 			}),
 		).toThrow()
 	})

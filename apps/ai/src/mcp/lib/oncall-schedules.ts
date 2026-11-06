@@ -12,6 +12,7 @@ import type {
 	OnCallRestriction,
 	OnCallRotation,
 	OnCallScheduleDocument,
+	OnCallScheduleInUseError,
 	OnCallScheduleNotFoundError,
 	OnCallShiftDocument,
 	OrgId,
@@ -203,6 +204,16 @@ export const createOverrideErrors = {
 	"@maple/http/errors/OnCallScheduleNotFoundError": notFound,
 }
 export const deleteScheduleErrors = {
+	"@maple/http/errors/OnCallScheduleInUseError": (error: OnCallScheduleInUseError) =>
+		Effect.fail(
+			new McpInvalidInputError({
+				message: `On-call schedule is still paged by escalation chains: ${Arr.join(
+					Arr.map(error.chainIds, (id, index) => `"${error.chainNames[index] ?? id}" (${id})`),
+					", ",
+				)}. Remove it from their steps first with update_escalation_chain.`,
+				parameter: "schedule_id",
+			}),
+		),
 	"@maple/http/errors/AlertForbiddenError": failWith("delete_oncall_schedule"),
 	"@maple/http/errors/AlertPersistenceError": failWith("delete_oncall_schedule"),
 	"@maple/http/errors/OnCallScheduleNotFoundError": notFound,

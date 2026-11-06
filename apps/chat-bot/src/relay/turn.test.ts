@@ -134,6 +134,7 @@ const chat = (
 							}),
 				typing: () => Effect.void,
 				openThread: (request) => Effect.succeed(request.anchorMessageId),
+				directMessage: () => Effect.die("a turn opened a direct message"),
 				conversation: (event) =>
 					Effect.sync(() => {
 						// Only a mention opens a thread here, exactly as a real connector does: a message

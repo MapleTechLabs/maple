@@ -188,13 +188,26 @@ const v2GroupLayersExceptOnboardingChecklist = (
 		HttpV2AlertDeliveriesLive,
 		HttpV2AlertRulesLive,
 		HttpV2AlertDestinationsLive,
-		// Real ack service: it needs only the Database. API keys are named by their label, so the
-		// empty member directory is never asked for one.
+		// Real ack service over the Database. API keys are named by their label, so the
+		// empty member directory is never asked for one; pages it names go unnamed.
 		HttpV2AlertIncidentsLive.pipe(
-			Layer.provide(Layer.merge(AlertIncidentAckService.layer, OrgMembersServiceStubLayer)),
+			Layer.provide(
+				Layer.merge(
+					Layer.effect(AlertIncidentAckService, AlertIncidentAckService.make).pipe(
+						Layer.provide(OrgMembersServiceStubLayer),
+					),
+					OrgMembersServiceStubLayer,
+				),
+			),
 		),
-		// Real service: it needs only the Database every harness already provides.
-		HttpV2EscalationChainsLive.pipe(Layer.provide(EscalationChainsService.layer)),
+		// Real service; the stub member directory accepts every paged user.
+		HttpV2EscalationChainsLive.pipe(
+			Layer.provide(
+				Layer.effect(EscalationChainsService, EscalationChainsService.make).pipe(
+					Layer.provide(OrgMembersServiceStubLayer),
+				),
+			),
+		),
 		// Real service; the empty member directory accepts every participant.
 		HttpV2OnCallSchedulesLive.pipe(
 			Layer.provide(

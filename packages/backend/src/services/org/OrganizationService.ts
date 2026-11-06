@@ -31,6 +31,7 @@ import {
 	AgentFeedback,
 	AlertDeliveryEvents,
 	AlertEscalationRuns,
+	AlertMemberNotifications,
 	AlertIncidentEvents,
 	AlertDestinations,
 	AlertIncidents,
@@ -148,6 +149,7 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	// Before its incident: an event row references it.
 	AlertIncidentEvents,
 	AlertEscalationRuns,
+	AlertMemberNotifications,
 	AlertIncidents,
 	EscalationChains,
 	// Before its schedule: an override row references it.

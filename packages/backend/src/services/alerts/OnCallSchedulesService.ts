@@ -14,12 +14,14 @@ import {
 	OnCallOverridesListResponse,
 	OnCallScheduleDocument,
 	OnCallScheduleId as OnCallScheduleIdSchema,
+	OnCallScheduleInUseError,
 	OnCallScheduleNotFoundError,
 	OnCallSchedulesListResponse,
 	OnCallShiftDocument,
 	OnCallShiftsResponse,
 	type AlertMemberDirectoryNotConfiguredError,
 	type AlertMemberDirectoryUnavailableError,
+	type EscalationChainId,
 	type OnCallLayers,
 	type OnCallOverride,
 	type OnCallOverrideCreateRequest,
@@ -34,6 +36,7 @@ import {
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
+	EscalationChains,
 	OnCallOverrides,
 	OnCallSchedules,
 	type OnCallOverrideRow,
@@ -87,7 +90,7 @@ export interface OnCallSchedulesServiceApi {
 		orgId: OrgId,
 		roles: ReadonlyArray<RoleName>,
 		scheduleId: OnCallScheduleId,
-	) => Effect.Effect<void, AlertForbiddenError | ScheduleReadError>
+	) => Effect.Effect<void, AlertForbiddenError | ScheduleReadError | OnCallScheduleInUseError>
 	/** Overrides that end after `fromMs` (default now), by start. */
 	readonly listOverrides: (
 		orgId: OrgId,
@@ -128,6 +131,34 @@ const validationError = (message: string) => new AlertValidationError({ message,
 const decodeScheduleIdSync = Schema.decodeUnknownSync(OnCallScheduleIdSchema)
 const decodeOverrideIdSync = Schema.decodeUnknownSync(OnCallOverrideIdSchema)
 const decodeIsoSync = Schema.decodeUnknownSync(IsoDateTimeString)
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
+/** Chains with a step that targets each schedule, from every chain's steps. */
+const chainIdsBySchedule = (db: MapleDb, orgId: OrgId) =>
+	db
+		.run(
+			PG.from(EscalationChains)
+				.select("id", "stepsJson")
+				.where(($) => [$.orgId.eq(orgId)]),
+		)
+		.pipe(
+			Effect.map((rows) => {
+				const bySchedule = new Map<string, Array<EscalationChainId>>()
+				Arr.forEach(rows, (row) => {
+					const scheduleIds = Arr.dedupe(
+						Arr.flatMap(row.stepsJson, (step) =>
+							Arr.flatMap(step.targets, (target) =>
+								target.type === "schedule" ? [target.scheduleId] : [],
+							),
+						),
+					)
+					Arr.forEach(scheduleIds, (scheduleId) => {
+						bySchedule.set(scheduleId, [...(bySchedule.get(scheduleId) ?? []), row.id])
+					})
+				})
+				return bySchedule
+			}),
+		)
 const iso = (ms: number) => decodeIsoSync(DateTime.formatIso(DateTime.makeUnsafe(ms)))
 
 const configOf = (row: Pick<OnCallScheduleRow, "timeZone" | "layersJson">): OnCallScheduleConfig => ({
@@ -162,7 +193,12 @@ const toOverrideDocument = (row: OnCallOverrideRow) =>
 		createdAt: iso(row.createdAt),
 	})
 
-const toDocument = (row: OnCallScheduleRow, overrides: ReadonlyArray<OnCallOverrideRow>, nowMs: number) => {
+const toDocument = (
+	row: OnCallScheduleRow,
+	overrides: ReadonlyArray<OnCallOverrideRow>,
+	nowMs: number,
+	chainIds: ReadonlyArray<EscalationChainId>,
+) => {
 	const now = resolveOnCallAt(configOf(row), Arr.map(overrides, toOverride), nowMs)
 	return new OnCallScheduleDocument({
 		id: row.id,
@@ -174,8 +210,7 @@ const toDocument = (row: OnCallScheduleRow, overrides: ReadonlyArray<OnCallOverr
 			now === null
 				? null
 				: new OnCallNow({ userId: now.userId, startsAt: iso(now.startMs), endsAt: iso(now.endMs) }),
-		// No escalation chain targets a schedule yet.
-		chainIds: [],
+		chainIds,
 		createdAt: iso(row.createdAt),
 		updatedAt: iso(row.updatedAt),
 	})
@@ -271,7 +306,7 @@ export class OnCallSchedulesService extends Context.Service<
 		const list = Effect.fn("OnCallSchedulesService.list")(function* (orgId: OrgId) {
 			const nowMs = yield* runtime.now
 			const [from, to] = nowWindow(nowMs)
-			const [rows, overrides] = yield* dbExecute((db) =>
+			const [rows, overrides, chains] = yield* dbExecute((db) =>
 				Effect.all([
 					db.run(
 						PG.from(OnCallSchedules)
@@ -281,6 +316,7 @@ export class OnCallSchedulesService extends Context.Service<
 							.limit(MAX_ONCALL_SCHEDULES_PER_ORG),
 					),
 					overlappingOverrides(db, orgId, from, to),
+					chainIdsBySchedule(db, orgId),
 				]),
 			)
 			yield* Effect.annotateCurrentSpan("result.rowCount", rows.length)
@@ -290,6 +326,7 @@ export class OnCallSchedulesService extends Context.Service<
 						row,
 						Arr.filter(overrides, (o) => o.scheduleId === row.id),
 						nowMs,
+						chains.get(row.id) ?? [],
 					),
 				),
 			})
@@ -300,7 +337,12 @@ export class OnCallSchedulesService extends Context.Service<
 			return Effect.all([
 				findRow(db, orgId, scheduleId),
 				overlappingOverrides(db, orgId, from, to, scheduleId),
-			]).pipe(Effect.map(([row, overrides]) => toDocument(row, overrides, nowMs)))
+				chainIdsBySchedule(db, orgId),
+			]).pipe(
+				Effect.map(([row, overrides, chains]) =>
+					toDocument(row, overrides, nowMs, chains.get(row.id) ?? []),
+				),
+			)
 		}
 
 		const get = Effect.fn("OnCallSchedulesService.get")(function* (
@@ -361,7 +403,7 @@ export class OnCallSchedulesService extends Context.Service<
 			if (row === undefined) {
 				return yield* new AlertPersistenceError({ message: "On-call schedule was not created" })
 			}
-			return toDocument(row, [], nowMs)
+			return toDocument(row, [], nowMs, [])
 		})
 
 		const update = Effect.fn("OnCallSchedulesService.update")(function* (
@@ -413,7 +455,31 @@ export class OnCallSchedulesService extends Context.Service<
 			yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
+						// Chain writes check their schedules under this lock, so none can start
+						// targeting this one between the check and the delete.
+						yield* lockOrgAlertRules(db, orgId)
 						yield* findRow(db, orgId, scheduleId)
+						const chains = yield* db.run(
+							PG.from(EscalationChains)
+								.select("id", "name")
+								.where(($) => [
+									$.orgId.eq(orgId),
+									PG.sql.cond`${$.stepsJson} @> ${encodeJson([
+										{ targets: [{ type: "schedule", scheduleId }] },
+									])}::jsonb`,
+								]),
+						)
+						if (chains.length > 0) {
+							return yield* new OnCallScheduleInUseError({
+								message: `On-call schedule is still paged by escalation chains: ${Arr.join(
+									Arr.map(chains, (chain) => chain.name),
+									", ",
+								)}`,
+								scheduleId,
+								chainIds: Arr.map(chains, (chain) => chain.id),
+								chainNames: Arr.map(chains, (chain) => chain.name),
+							})
+						}
 						// Overrides go with it through the foreign key's cascade.
 						yield* db.run(
 							PG.deleteFrom(OnCallSchedules).where(($) => [

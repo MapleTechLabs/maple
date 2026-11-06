@@ -615,3 +615,31 @@ describe("slack transport", () => {
 		}).pipe(Effect.provide(http.layer))
 	})
 })
+
+describe("slack direct messages", () => {
+	it.effect("addresses a person by their user id, which chat.postMessage opens a DM for", () => {
+		const http = stub([{ status: 200, body: '{"ok":true,"channel":"D1","ts":"1700000000.000400"}' }])
+		return Effect.gen(function* () {
+			const transport = yield* slackOutbound.transport
+			const dm = yield* transport.directMessage("T1", "U_BEN")
+			// Opening one costs no call: only the post goes out.
+			expect(http.seen).toHaveLength(0)
+			yield* transport.post(dm, [{ kind: "prose", markdown: "you are paged" }])
+			expect(Arr.getUnsafe(http.seen, 0).url).toBe("https://slack.com/api/chat.postMessage")
+			expect(sentBody(Arr.getUnsafe(http.seen, 0))).toMatchObject({ channel: "U_BEN" })
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("reads a person who turned off the app's messages, or left, as a permanent refusal", () =>
+		Effect.forEach(["messages_tab_disabled", "user_not_found", "channel_not_found"], (code) => {
+			const http = stub([{ status: 200, body: `{"ok":false,"error":"${code}"}` }])
+			return Effect.gen(function* () {
+				const transport = yield* slackOutbound.transport
+				const dm = yield* transport.directMessage("T1", "U_GONE")
+				const error = yield* Effect.flip(transport.post(dm, [{ kind: "prose", markdown: "paged" }]))
+				expect([code, error.reason]).toEqual([code, "not_found"])
+				expect(http.seen).toHaveLength(1)
+			}).pipe(Effect.provide(http.layer))
+		}),
+	)
+})

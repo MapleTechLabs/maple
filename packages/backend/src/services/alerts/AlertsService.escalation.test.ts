@@ -27,8 +27,10 @@ import {
 	getError,
 	makeLayer,
 	makeWarehouseStub,
+	stubOrgMembersService,
 	tracesRow,
 } from "./alerts-service-test-support"
+import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 
 const decodeChainId = Schema.decodeUnknownSync(EscalationChainId)
 const trackedDbs: TestDb[] = []
@@ -65,7 +67,10 @@ const layerFor = (
 ) =>
 	Layer.mergeAll(
 		makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
-		EscalationChainsService.layer.pipe(Layer.provide(testDb.layer)),
+		Layer.effect(EscalationChainsService, EscalationChainsService.make).pipe(
+			Layer.provide(testDb.layer),
+			Layer.provide(Layer.succeed(OrgMembersService, stubOrgMembersService())),
+		),
 		testDb.layer,
 	)
 

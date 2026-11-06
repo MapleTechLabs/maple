@@ -4,9 +4,12 @@ import { Schema } from "effect"
 const NullableString = Schema.NullOr(Schema.String)
 
 export const EscalationTargetRow = Schema.Struct({
-	destinationId: Schema.String,
-	/** Null when the destination list could not be read or the destination is gone. */
+	/** A destination, a member paged directly, or whoever is on call on a schedule. */
+	kind: Schema.Literals(["destination", "user", "schedule"]),
+	id: Schema.String,
+	/** Null when the name could not be read or the target is gone. */
 	name: NullableString,
+	/** The destination's type; null for a user or schedule. */
 	type: NullableString,
 })
 

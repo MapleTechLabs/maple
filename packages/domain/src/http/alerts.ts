@@ -151,12 +151,14 @@ export type AlertIncidentAckSource = Schema.Schema.Type<typeof AlertIncidentAckS
 
 /**
  * The incident activity log. `ack_cleared` is written by the scheduler when an
- * acknowledged incident escalates to a higher severity and pages again.
+ * acknowledged incident escalates to a higher severity and pages again; `paged`
+ * is an escalation step paging a person.
  */
 export const AlertIncidentEventType = Schema.Literals([
 	"acknowledged",
 	"unacknowledged",
 	"ack_cleared",
+	"paged",
 ]).annotate({
 	identifier: "@maple/AlertIncidentEventType",
 	title: "Alert Incident Event Type",
@@ -1038,6 +1040,32 @@ export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("
 	errorIssueId: Schema.NullOr(ErrorIssueId),
 }) {}
 
+/** Where a page to a person stands: queued, out, refused, or dropped because the incident moved on. */
+export const AlertIncidentPageStatus = Schema.Literals([
+	"queued",
+	"sending",
+	"sent",
+	"failed",
+	"skipped",
+]).annotate({
+	identifier: "@maple/AlertIncidentPageStatus",
+	title: "Alert Incident Page Status",
+})
+export type AlertIncidentPageStatus = Schema.Schema.Type<typeof AlertIncidentPageStatus>
+
+/** A person an escalation step paged, on one channel. Never carries the address. */
+export const AlertIncidentPage = Schema.Struct({
+	userId: UserId,
+	/** The member's display name, or null when the directory could not name them. */
+	name: Schema.NullOr(Schema.String),
+	/** `email`, or the chat connector of the direct message (`slack`, `discord`). */
+	channel: Schema.String,
+	status: AlertIncidentPageStatus,
+	/** Why it was not sent, for a `failed` or `skipped` page. */
+	errorMessage: Schema.NullOr(Schema.String),
+})
+export type AlertIncidentPage = Schema.Schema.Type<typeof AlertIncidentPage>
+
 export class AlertIncidentEventDocument extends Schema.Class<AlertIncidentEventDocument>(
 	"AlertIncidentEventDocument",
 )({
@@ -1048,6 +1076,8 @@ export class AlertIncidentEventDocument extends Schema.Class<AlertIncidentEventD
 	actorName: Schema.NullOr(Schema.String),
 	/** Null for scheduler-written events. */
 	source: Schema.NullOr(AlertIncidentAckSource),
+	/** Set on a `paged` event. */
+	page: Schema.optionalKey(AlertIncidentPage),
 	createdAt: IsoDateTimeString,
 }) {}
 
