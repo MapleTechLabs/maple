@@ -1577,22 +1577,24 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					if (deliveries.length > 0)
 						yield* dbExecute((db) => insertIncidentDeliveries(db, deliveries))
 					if (silenceId !== null) {
-						yield* Metric.update(AlertingMetrics.notificationsSilencedTotal, 1)
-						yield* Effect.logInfo("Alert notification held back by a silence").pipe(
-							Effect.annotateLogs({
-								ruleId: rule.id,
-								incidentId: incident.id,
-								silenceId,
-								eventType,
-							}),
-						)
-						// The phone hears the all-clear of a page it already got: only a page still owed with
-						// nothing ever delivered was never pushed (a phone-only rule delivers nothing).
-						if (
+						// The phone hears the all-clear of a page it already got. Only an incident that
+						// opened under a silence (its owed mark set when it opened) never pushed one.
+						const isPushHeld =
 							eventType !== "resolve" ||
-							(incident.silencedAt !== null && incident.lastDeliveredEventType === null)
-						)
-							return
+							(incident.silencedAt !== null &&
+								incident.silencedAt === incident.firstTriggeredAt)
+						if (isPushHeld || Arr.some(deliveries, (delivery) => delivery.silenceId !== null)) {
+							yield* Metric.update(AlertingMetrics.notificationsSilencedTotal, 1)
+							yield* Effect.logInfo("Alert notification held back by a silence").pipe(
+								Effect.annotateLogs({
+									ruleId: rule.id,
+									incidentId: incident.id,
+									silenceId,
+									eventType,
+								}),
+							)
+						}
+						if (isPushHeld) return
 					}
 					yield* pushIncidentNotification(
 						orgId,
