@@ -35,8 +35,11 @@ export type RelayTurnCheckpoint = typeof RelayTurnCheckpoint.Type
 
 export const decodeRelayTurnCheckpoint = Schema.decodeUnknownOption(RelayTurnCheckpoint)
 
-/** The session's `TURN_STALE_MS` (25 min, when it expires a turn nobody ended) plus a margin. */
-const CHECKPOINT_TTL_MS = 30 * 60 * 1000
+/**
+ * The session's `TURN_STALE_MS` (25 min, when it expires a turn nobody ended) plus a margin past
+ * the relay's own timeout (27 min), so a turn handed off at that timeout is still settled.
+ */
+const CHECKPOINT_TTL_MS = 35 * 60 * 1000
 
 /** `"pending"`: the session is still running the turn, so the checkpoint waits for its next job. */
 export type SettleOutcome = "pending" | "done"

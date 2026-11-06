@@ -43,6 +43,7 @@ import {
 	Context,
 	Duration,
 	Effect,
+	Fiber,
 	Logger,
 	Option,
 	References,
@@ -54,6 +55,7 @@ import {
 import { TestClock } from "effect/testing"
 import { ConversationNotRecorded, FOLLOW_UP_WINDOW_MS } from "./conversation.ts"
 import {
+	RELAY_TIMEOUT,
 	relayInboundEvent,
 	relayWithWorkspace,
 	WorkspaceLookupFailed,
@@ -369,6 +371,7 @@ const host = (
 						)
 					: Effect.sync(() => void opened.add(conversation.conversationKey)),
 			recordTurn: () => Effect.void,
+			handOffTurn: () => Effect.void,
 			alertAck: (request) =>
 				Effect.sync(() => {
 					alertAcks.push(request)
@@ -482,6 +485,59 @@ describe("relaying a mention", () => {
 
 			expect(notices(blocksOf(platform.calls))).toEqual([
 				"Stopped at the step limit — a narrower question will get further.",
+			])
+		}),
+	)
+
+	it.effect("leaves the streaming render and keeps the checkpoint when it stops following a turn", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([])
+			// A connection that never closes: the session is still running the turn at the timeout.
+			const frames = new TextEncoder().encode(
+				"retry: 1000\n\n" +
+					Arr.join(
+						Arr.map(
+							[
+								event(1, { type: "turn-start", messageId: "a1" }),
+								event(2, { type: "text-delta", messageId: "a1", text: "Still digging" }),
+							],
+							(next) => `id: ${next.seq}\ndata: ${JSON.stringify(next)}\n\n`,
+						),
+						"",
+					),
+			)
+			const stub: ChatSessionStub = {
+				...agent.stub,
+				subscribe: () =>
+					Promise.resolve(
+						new ReadableStream<Uint8Array>({ start: (controller) => controller.enqueue(frames) }),
+					),
+			}
+			const deployment = host(platform.outbound, stub)
+			const recorded: Array<string> = []
+			const handedOff: Array<string> = []
+			const ports: RelayPorts = {
+				...deployment.ports,
+				recordTurn: (checkpoint) => Effect.sync(() => void recorded.push(checkpoint.turnMessageId)),
+				handOffTurn: (checkpoint) => Effect.sync(() => void handedOff.push(checkpoint.turnMessageId)),
+			}
+
+			const relayed = yield* Effect.forkChild(relayInboundEvent(mention, ports))
+			// The stream is read off real promises; let it deliver both frames before the clock moves.
+			yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 50)))
+			yield* TestClock.adjust(RELAY_TIMEOUT)
+			yield* Fiber.join(relayed)
+
+			// The checkpoint the driver recorded is handed to the settle path, not dropped.
+			expect(recorded).toContain("a1")
+			expect(handedOff).toEqual(["a1"])
+			// And the message leaves "Working on it" for what was said, with a line saying more is coming.
+			const last = platform.calls[platform.calls.length - 1]
+			expect(last?.verb).toBe("edit")
+			expect(prose(blocksOf(platform.calls))).toBe("Still digging")
+			expect(notices(blocksOf(platform.calls))).toEqual([
+				"Still working on this. The full answer will replace this message when it is ready.",
 			])
 		}),
 	)

@@ -86,53 +86,66 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 		running: true,
 	})
 
-	const flush = gate.withPermit(
-		Effect.gen(function* () {
-			// Messages an earlier run posted already say more than a render of no events would.
-			if (resumed && transcript.seq === 0) return
-			const { ending, running } = yield* Ref.updateAndGet(turn, (state) => ({ ...state, dirty: false }))
-			const blocks: Array<ChatBlock> = Option.match(
-				Arr.findFirst(transcript.messages, (candidate) => candidate.id === messageId),
-				{ onNone: () => [], onSome: (message) => [...renderChatMessage(message, context, running)] },
-			)
-			if (ending !== null) blocks.push(ending)
-			// A finished turn must never be left under the placeholder: a model that stops after a
-			// tool call without a closing word renders as nothing at all, and "Working on it…" would
-			// then be the last thing the channel ever says about it.
-			if (blocks.length === 0) blocks.push(running ? PENDING : NOTHING_SAID)
+	/** `mayPost` false only edits what is posted: an interrupted driver must not grow the turn. */
+	const render = (mayPost: boolean) =>
+		gate.withPermit(
+			Effect.gen(function* () {
+				// Messages an earlier run posted already say more than a render of no events would.
+				if (resumed && transcript.seq === 0) return
+				const { ending, running } = yield* Ref.updateAndGet(turn, (state) => ({
+					...state,
+					dirty: false,
+				}))
+				const blocks: Array<ChatBlock> = Option.match(
+					Arr.findFirst(transcript.messages, (candidate) => candidate.id === messageId),
+					{
+						onNone: () => [],
+						onSome: (message) => [...renderChatMessage(message, context, running)],
+					},
+				)
+				if (ending !== null) blocks.push(ending)
+				// A finished turn must never be left under the placeholder: a model that stops after a
+				// tool call without a closing word renders as nothing at all, and "Working on it…" would
+				// then be the last thing the channel ever says about it.
+				if (blocks.length === 0) blocks.push(running ? PENDING : NOTHING_SAID)
 
-			const groups = splitBlocks(blocks, outbound.limits.maxMessageChars)
-			const phase: ChatWritePhase = running ? "streaming" : "final"
-			// Messages a flush posts extend `posted` as it goes; the count is fixed up front.
-			yield* Effect.forEach(
-				Array.from({ length: Math.max(groups.length, posted.length) }, (_, index) => index),
-				(index) =>
-					Effect.gen(function* () {
-						// A retraction can shrink a turn below a message it had already needed, so a surplus
-						// message is emptied rather than left holding text the turn no longer says.
-						const group = groups[index] ?? NO_BLOCKS
-						const rendered = renderedKey(group)
-						const existing = posted[index]
-						if (existing === undefined) {
-							const postedMessage = yield* transport.post(target, group, phase)
-							posted.push(postedMessage)
-							sent.push(rendered)
-							// At least once: a run lost between the post and this report posts it again later.
-							if (options.onPosted !== undefined) yield* options.onPosted([...posted])
-							return
-						}
-						// Only what changed. A turn cut into three messages would otherwise spend three edits
-						// per tick, almost all of them rewriting a message with what it already says — and a
-						// platform's edit budget is per channel, not per message. A live message is the
-						// exception at the end: it shows as still being written until its final write.
-						if (sent[index] === rendered && (running || outbound.liveMessages !== true)) return
-						yield* transport.edit(existing, group, phase)
-						sent[index] = rendered
-					}),
-				{ discard: true },
-			)
-		}),
-	)
+				const groups = splitBlocks(blocks, outbound.limits.maxMessageChars)
+				const phase: ChatWritePhase = running ? "streaming" : "final"
+				// Messages a flush posts extend `posted` as it goes; the count is fixed up front.
+				yield* Effect.forEach(
+					Array.from(
+						{ length: mayPost ? Math.max(groups.length, posted.length) : posted.length },
+						(_, index) => index,
+					),
+					(index) =>
+						Effect.gen(function* () {
+							// A retraction can shrink a turn below a message it had already needed, so a surplus
+							// message is emptied rather than left holding text the turn no longer says.
+							const group = groups[index] ?? NO_BLOCKS
+							const rendered = renderedKey(group)
+							const existing = posted[index]
+							if (existing === undefined) {
+								const postedMessage = yield* transport.post(target, group, phase)
+								posted.push(postedMessage)
+								sent.push(rendered)
+								// At least once: a run lost between the post and this report posts it again later.
+								if (options.onPosted !== undefined) yield* options.onPosted([...posted])
+								return
+							}
+							// Only what changed. A turn cut into three messages would otherwise spend three edits
+							// per tick, almost all of them rewriting a message with what it already says — and a
+							// platform's edit budget is per channel, not per message. A live message is the
+							// exception at the end: it shows as still being written until its final write.
+							if (sent[index] === rendered && (running || outbound.liveMessages !== true))
+								return
+							yield* transport.edit(existing, group, phase)
+							sent[index] = rendered
+						}),
+					{ discard: true },
+				)
+			}),
+		)
+	const flush = render(true)
 
 	const onEvent = Effect.fnUntraced(function* (event: ChatEvent) {
 		const now = yield* Clock.currentTimeMillis
@@ -175,28 +188,40 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 	// notice before the stream completes. An earlier turn's does not stop the stream.
 	const endsThisTurn = (event: ChatEvent) =>
 		event.type === "turn-end" && event.task === undefined && event.messageId === messageId
+	// Whatever ended the turn, the last render is the finished message: the answer, and none of the
+	// working. Set here rather than on `turn-end`, so a stream that died, and never reaches one,
+	// settles the same way. Cleared only once the throttle fiber is gone, so no flush reads it half
+	// way through a turn it has not finished.
+	const finish = (mayPost: boolean) =>
+		Effect.gen(function* () {
+			yield* Fiber.interrupt(throttled)
+			yield* Ref.update(turn, (state) => ({ ...state, running: false }))
+			yield* render(mayPost)
+			yield* Effect.annotateCurrentSpan({
+				"maple.chat.turn.end_reason": (yield* Ref.get(turn)).endReason,
+				"maple.chat.messages": posted.length,
+			})
+		})
+	const endWith = (ending: ChatNoticeBlock, endReason: string) =>
+		Ref.update(turn, (state) => (state.ending === null ? { ...state, ending, endReason } : state))
 	const outcome = yield* Stream.runForEach(
 		options.events.pipe(Stream.takeUntil(endsThisTurn)),
 		onEvent,
 	).pipe(
 		// A stream that dies has no `turn-end` to close on, and the reader would be left looking at
 		// the placeholder forever. Say so, flush, and then fail.
-		Effect.tapError(() =>
-			Ref.update(turn, (state) => (state.ending === null ? { ...state, ending: DISCONNECTED } : state)),
+		Effect.tapError(() => endWith(DISCONNECTED, "disconnected")),
+		// Interrupted (a caller's timeout): the message still leaves its streaming render, saying the
+		// answer is not in yet. Best effort, since nothing is left to report a failure to.
+		Effect.onInterrupt(() =>
+			endWith(STOPPED_FOLLOWING, "interrupted").pipe(
+				Effect.andThen(finish(false)),
+				Effect.catchCause(report("A turn's final message could not be written")),
+			),
 		),
 		Effect.exit,
 	)
-	yield* Fiber.interrupt(throttled)
-	// Whatever ended the turn, the last render is the finished message: the answer, and none of the
-	// working. Set here rather than on `turn-end`, so a stream that died — and never reaches one —
-	// settles the same way. Cleared only once the throttle fiber is gone, so no flush reads it half
-	// way through a turn it has not finished.
-	yield* Ref.update(turn, (state) => ({ ...state, running: false }))
-	yield* flush
-	yield* Effect.annotateCurrentSpan({
-		"maple.chat.turn.end_reason": (yield* Ref.get(turn)).endReason,
-		"maple.chat.messages": posted.length,
-	})
+	yield* finish(true)
 	return yield* outcome
 })
 
@@ -239,6 +264,13 @@ const NOTHING_SAID: ChatNoticeBlock = {
 	kind: "notice",
 	tone: "info",
 	text: "Finished without a reply.",
+}
+
+/** The render a turn is left with when its driver is stopped before the turn ends. */
+const STOPPED_FOLLOWING: ChatNoticeBlock = {
+	kind: "notice",
+	tone: "info",
+	text: "Still working on this. The full answer will replace this message when it is ready.",
 }
 
 const DISCONNECTED: ChatNoticeBlock = {

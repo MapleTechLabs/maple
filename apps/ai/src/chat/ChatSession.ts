@@ -176,6 +176,34 @@ export const MAX_TURN_RESUMES = 2
 /** What the dead attempt's assistant message is closed with when the turn is started again. */
 const TURN_RESTARTED = "Maple was restarted mid-review and is starting this review again."
 
+/** How a conversation turn ended: its one `turn-end`, without the message it lands on. */
+export type TurnEnding = Omit<
+	Extract<ChatEventInput, { readonly type: "turn-end" }>,
+	"type" | "messageId" | "task"
+>
+
+const TURN_FAILED: TurnEnding = { reason: "error", error: CHAT_TURN_FAILED }
+const TURN_ABANDONED: TurnEnding = {
+	reason: "error",
+	error: "The turn stopped responding and was abandoned.",
+}
+
+/** The turn slot. `Stale` is a claim past {@link TURN_STALE_MS}, or a legacy one with no start time or id. */
+type TurnSlot =
+	| { readonly _tag: "Idle" }
+	| { readonly _tag: "Held"; readonly messageId: string }
+	| { readonly _tag: "Stale"; readonly messageId: string | undefined }
+
+const IDLE: TurnSlot = { _tag: "Idle" }
+
+/** The changes {@link ChatSession.transition} makes to the slot, each compared against it first. */
+type SlotChange =
+	| { readonly _tag: "Begin"; readonly messageId: string; readonly input: TurnInput }
+	| { readonly _tag: "End"; readonly messageId: string; readonly ending: TurnEnding }
+	| { readonly _tag: "Abort"; readonly reason: ChatAbortReason }
+	| { readonly _tag: "Expire" }
+	| { readonly _tag: "Resume"; readonly from: string; readonly to: string; readonly resumes: number }
+
 /**
  * What an evicted turn needs to run again: everything `beginTurn` was given. Plain JSON in the
  * session row, decoded back through the same schemas that describe it on the wire.
@@ -307,50 +335,88 @@ export class ChatSession {
 	}
 
 	/**
-	 * The message id of the turn that holds the slot *right now*, or `undefined` if none does.
-	 *
-	 * Expiring a stale claim here rather than in a separate sweep means every caller — `beginTurn`,
-	 * the turn's own between-step check — agrees on the answer without needing an alarm to have
-	 * fired first.
-	 *
-	 * One read serves both questions callers ask ("is anything running?" and "is *this* running?").
-	 * They used to be separate methods issuing the same SELECT, and `holdsTurn` — called once per
-	 * streamed event — paid for both.
+	 * The turn slot, read and nothing else. Called once per streamed event, so it never writes:
+	 * expiring a stale claim is a {@link transition}, taken by `beginTurn` and the alarm.
 	 */
-	private runningTurn(): string | undefined | null {
+	private slot(): TurnSlot {
 		const row = this.sessionRow()
-		if (row.running !== 1) return undefined
-		if (row.running_since !== null && Date.now() - row.running_since > TURN_STALE_MS) {
-			const messageId = row.running_message_id
-			this.clearRunning()
-			if (messageId !== null) {
+		if (row.running !== 1) return IDLE
+		// A row with no start time or no id (pre-watchdog) can never be judged fresh, so it is stale.
+		if (
+			row.running_since === null ||
+			row.running_message_id === null ||
+			Date.now() - row.running_since > TURN_STALE_MS
+		) {
+			return { _tag: "Stale", messageId: row.running_message_id ?? undefined }
+		}
+		return { _tag: "Held", messageId: row.running_message_id }
+	}
+
+	/**
+	 * Every change to the turn slot, and the only writer of a conversation turn's `turn-end`.
+	 *
+	 * Each change is a compare-and-set against the slot it was decided on, and every way a turn
+	 * leaves the slot appends its one `turn-end` in the same synchronous step, so a turn that is
+	 * ended, aborted and expired at once still gets exactly one. Returns whether anything changed.
+	 */
+	private transition(change: SlotChange): boolean {
+		const slot = this.slot()
+		switch (change._tag) {
+			case "Begin": {
+				if (slot._tag !== "Idle") return false
+				this.sql.exec(
+					"UPDATE session SET running = 1, running_since = ?, running_message_id = ?, running_input = ?, running_resumes = 0 WHERE id = 1",
+					Date.now(),
+					change.messageId,
+					encodeTurnInput(change.input),
+				)
+				return true
+			}
+			case "End": {
+				if (slot._tag === "Idle" || slot.messageId !== change.messageId) return false
+				this.release(slot.messageId, change.ending)
+				return true
+			}
+			case "Abort": {
+				if (slot._tag === "Idle") return false
+				this.release(slot.messageId, { reason: "aborted" }, change.reason)
+				return true
+			}
+			case "Expire": {
+				if (slot._tag !== "Stale") return false
+				this.release(slot.messageId, TURN_ABANDONED, "stale")
+				return true
+			}
+			case "Resume": {
+				if (slot._tag !== "Held" || slot.messageId !== change.from) return false
 				this.append({
 					type: "turn-end",
-					messageId,
+					messageId: change.from,
 					reason: "error",
-					error: "The turn stopped responding and was abandoned.",
+					error: TURN_RESTARTED,
 				})
-				this.interruptTurn(messageId, "stale")
+				this.sql.exec(
+					"UPDATE session SET running_since = ?, running_message_id = ?, running_resumes = ? WHERE id = 1",
+					Date.now(),
+					change.to,
+					change.resumes,
+				)
+				return true
 			}
-			return undefined
 		}
-		// `null` means running but with no recorded id — pre-watchdog rows only.
-		return row.running_message_id
 	}
 
-	private isRunning(): boolean {
-		return this.runningTurn() !== undefined
-	}
-
-	private clearRunning(): void {
+	/**
+	 * Clear the slot and close the turn that held it. A legacy claim with no id names no message a
+	 * client is rendering, so there is no `turn-end` to write for it.
+	 */
+	private release(messageId: string | undefined, ending: TurnEnding, interrupt?: ChatAbortReason): void {
 		this.sql.exec(
 			"UPDATE session SET running = 0, running_since = NULL, running_message_id = NULL, running_input = NULL, running_resumes = NULL WHERE id = 1",
 		)
-	}
-
-	/** The message id of the turn currently holding the slot, if any. */
-	private runningMessageId(): string | undefined {
-		return this.runningTurn() ?? undefined
+		if (messageId === undefined) return
+		this.append({ type: "turn-end", messageId, ...ending })
+		if (interrupt !== undefined) this.interruptTurn(messageId, interrupt)
 	}
 
 	/**
@@ -483,7 +549,7 @@ export class ChatSession {
 		/** Who is driving the turn, stated by whoever raised it. */
 		readonly origin: ChatTurnOrigin
 	}): { cursor: number; messageId: string; turnMessageId: string } | undefined {
-		if (this.isRunning()) return undefined
+		this.transition({ _tag: "Expire" })
 		const cursor = this.cursor()
 		// The assistant's message needs an id of its OWN. Reusing the user's meant `history()` found
 		// the user message when opening the assistant one, so every text delta was appended to the
@@ -497,12 +563,7 @@ export class ChatSession {
 			tenant: input.tenant,
 			origin: input.origin,
 		}
-		this.sql.exec(
-			"UPDATE session SET running = 1, running_since = ?, running_message_id = ?, running_input = ?, running_resumes = 0 WHERE id = 1",
-			Date.now(),
-			turnId,
-			encodeTurnInput(turn),
-		)
+		if (!this.transition({ _tag: "Begin", messageId: turnId, input: turn })) return undefined
 		this.append({ type: "user-message", id: input.messageId, text: input.text })
 		this.startTurn(turnId, turn)
 		return { cursor, messageId: input.messageId, turnMessageId: turnId }
@@ -606,18 +667,19 @@ export class ChatSession {
 	 * effect promptly, and so a turn that has already been superseded stops writing.
 	 */
 	holdsTurn(messageId: string): boolean {
-		return this.runningTurn() === messageId
+		const slot = this.slot()
+		return slot._tag === "Held" && slot.messageId === messageId
 	}
 
 	/**
-	 * Release the slot, but only if `messageId` still owns it.
+	 * End `messageId`'s turn with `ending`, but only if it still owns the slot. Returns whether this
+	 * call wrote the turn's `turn-end`; a later call for the same turn writes nothing.
 	 *
 	 * The compare-and-clear matters: an aborted turn keeps draining its in-flight model call for a
 	 * while, and a plain `running = 0` from that straggler would release a *newer* turn's claim.
 	 */
-	endTurn(messageId: string): void {
-		if (this.runningMessageId() !== messageId) return
-		this.clearRunning()
+	endTurn(messageId: string, ending: TurnEnding): boolean {
+		return this.transition({ _tag: "End", messageId, ending })
 	}
 
 	/**
@@ -626,18 +688,11 @@ export class ChatSession {
 	 * Clears the claim, records the terminal event against the message that actually holds it, and
 	 * interrupts that turn's fiber, sub-agents included, rather than letting it run to its next event.
 	 * Taking the message id from the session rather than the caller is what makes the emitted
-	 * `turn-end` land on the assistant message the client is rendering; a caller-supplied id named a
-	 * message that never existed, so no client ever cleared its streaming state.
+	 * `turn-end` land on the assistant message the client is rendering.
 	 */
 	abort(reason?: ChatAbortReason): void {
-		const messageId = this.runningTurn()
-		if (messageId === undefined) return
-		this.clearRunning()
-		if (messageId !== null) {
-			this.append({ type: "turn-end", messageId, reason: "aborted" })
-			// Over RPC from another Worker, so not trusted to be one of ours.
-			this.interruptTurn(messageId, isChatAbortReason(reason) ? reason : "user")
-		}
+		// Over RPC from another Worker, so not trusted to be one of ours.
+		this.transition({ _tag: "Abort", reason: isChatAbortReason(reason) ? reason : "user" })
 	}
 
 	/** Interrupt `messageId`'s fiber if this activation runs it; a straggler's id matches nothing. */
@@ -645,25 +700,30 @@ export class ChatSession {
 		if (this.liveTurn?.messageId === messageId) this.liveTurn.controller.abort(reason)
 	}
 
+	/** Whether a live claim holds the slot. A stale one does not: the next `beginTurn` expires it. */
 	running(): boolean {
-		return this.isRunning()
+		return this.slot()._tag === "Held"
 	}
 
 	/**
 	 * The heartbeat. Re-arms while this activation runs the turn that holds the slot.
 	 *
-	 * A slot held by a turn this activation is not running means the object was evicted mid-turn (a
-	 * deploy, or eviction before the heartbeat existed): the fiber is gone, so the slot is released
-	 * with a terminal event now rather than when the 15-minute watchdog expires it.
+	 * A stale claim is expired. A slot held by a turn this activation is not running means the
+	 * object was evicted mid-turn (a deploy, or eviction before the heartbeat existed): the fiber is
+	 * gone, so the slot is released with a terminal event now rather than when it goes stale.
 	 */
 	alarm(): void {
-		const messageId = this.runningTurn()
-		if (messageId === undefined) return
-		if (messageId !== null && this.liveTurn?.messageId !== messageId) {
-			this.recoverEvictedTurn(messageId)
-			return
+		const slot = this.slot()
+		switch (slot._tag) {
+			case "Idle":
+				return
+			case "Stale":
+				this.transition({ _tag: "Expire" })
+				return
+			case "Held":
+				if (this.liveTurn?.messageId === slot.messageId) return this.armHeartbeat()
+				return this.recoverEvictedTurn(slot.messageId)
 		}
-		this.armHeartbeat()
 	}
 
 	/**
@@ -679,19 +739,13 @@ export class ChatSession {
 		const turn = row.running_input === null ? Option.none() : decodeTurnInput(row.running_input)
 		const resumes = row.running_resumes ?? 0
 		if (Option.isSome(turn) && resumable(turn.value) && resumes < MAX_TURN_RESUMES) {
-			this.append({ type: "turn-end", messageId, reason: "error", error: TURN_RESTARTED })
 			const turnId = SecureRandom.uuidV4Unsafe()
-			this.sql.exec(
-				"UPDATE session SET running_since = ?, running_message_id = ?, running_resumes = ? WHERE id = 1",
-				Date.now(),
-				turnId,
-				resumes + 1,
-			)
-			this.startTurn(turnId, turn.value, { resume: resumes + 1 })
+			if (this.transition({ _tag: "Resume", from: messageId, to: turnId, resumes: resumes + 1 })) {
+				this.startTurn(turnId, turn.value, { resume: resumes + 1 })
+			}
 			return
 		}
-		this.clearRunning()
-		this.append({ type: "turn-end", messageId, reason: "error", error: CHAT_TURN_FAILED })
+		if (!this.endTurn(messageId, TURN_FAILED)) return
 		if (Option.isSome(turn) && resumable(turn.value)) {
 			const input = { ...this.turnRunInput(messageId, turn.value), abandoned: true as const }
 			this.ctx.waitUntil(
@@ -758,33 +812,21 @@ export class ChatSession {
 	 * Drive one turn to completion, appending events as they are produced.
 	 *
 	 * Everything heavy — the Effect runtime, the service graph, the agent engine — is behind this
-	 * dynamic import so none of it is evaluated at module scope. Failures are recorded as a
-	 * terminal event rather than thrown: the log is what the client reads, so a turn that dies
-	 * silently is indistinguishable from one that hung.
+	 * dynamic import so none of it is evaluated at module scope. A runner that returns or fails
+	 * without ending its turn is ended here as failed: the log is what the client reads, so a turn
+	 * that dies silently is indistinguishable from one that hung.
 	 */
 	private runTurn(input: RunChatSessionTurnInput): Promise<void> {
 		const messageId = input.messageId
 		return Effect.runPromise(
-			attempt("Failed to start turn runner", () => this.runner(input)).pipe(
+			attempt("Failed to run the turn", () => this.runner(input)).pipe(
 				Effect.catchTag("@maple/ai/chat/ChatSessionError", (error) =>
-					Effect.logError("[chat.turn] Failed to start turn runner", error.cause).pipe(
-						Effect.andThen(
-							Effect.sync(() => {
-								if (!this.holdsTurn(messageId)) return
-								this.append({
-									type: "turn-end",
-									messageId,
-									reason: "error",
-									error: CHAT_TURN_FAILED,
-								})
-							}),
-						),
-					),
+					Effect.logError("[chat.turn] Failed to run the turn", error.cause),
 				),
 				Effect.ensuring(
 					Effect.sync(() => {
 						if (this.liveTurn?.messageId === messageId) this.liveTurn = undefined
-						this.endTurn(messageId)
+						this.endTurn(messageId, TURN_FAILED)
 					}),
 				),
 			),
@@ -828,7 +870,8 @@ export const chatSessionRpc = (session: ChatSession) =>
 		beginTurn: (input) => Effect.sync(() => session.beginTurn(input)),
 		settleProposal: (input) => Effect.promise(() => session.settleProposal(input)),
 		holdsTurn: (messageId) => Effect.sync(() => session.holdsTurn(messageId)),
-		endTurn: (messageId) => Effect.sync(() => session.endTurn(messageId)),
+		// A caller releasing a turn without saying how it ended is ending one that failed.
+		endTurn: (messageId) => Effect.sync(() => void session.endTurn(messageId, TURN_FAILED)),
 		abort: (reason) => Effect.sync(() => session.abort(reason)),
 		alarm: () => Effect.sync(() => session.alarm()),
 	}) satisfies ChatSessionRpc

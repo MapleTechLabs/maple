@@ -150,18 +150,23 @@ export interface RelayPorts<R = never> {
 	readonly announceUnlinked: Effect.Effect<boolean>
 	/** Checkpoint the turn's posted messages, for settling it after an eviction (`./settle.ts`). */
 	readonly recordTurn: (checkpoint: RelayTurnCheckpoint) => Effect.Effect<void>
+	/**
+	 * Stop following a turn that outlived {@link RELAY_TIMEOUT}, keeping its checkpoint: the
+	 * scheduled settle (`./settle.ts`) renders the answer once the session ends the turn.
+	 */
+	readonly handOffTurn: (checkpoint: RelayTurnCheckpoint) => Effect.Effect<void>
 	/** Acknowledge or unacknowledge an alert incident from its card. Never fails; see the outcome. */
 	readonly alertAck: (request: RelayAlertAckRequest) => Effect.Effect<RelayAlertAckOutcome>
 }
 
 /**
- * How long a relayed turn may run before it is abandoned.
+ * How long a relayed turn is followed before it is handed to the settle path.
  *
- * The session ends a turn of its own accord — the run finishes, or its heartbeat fails a turn
- * whose object was evicted — so this is the bound on everything that could keep the stream open
- * without one, and it matches the session's own staleness ceiling (`TURN_STALE_MS`).
+ * The session ends a turn of its own accord: the run finishes, or its heartbeat expires a claim
+ * past its staleness ceiling (`TURN_STALE_MS`, 25 minutes). Following it two minutes past that
+ * ceiling lets the session's own ending win, rather than racing it at the same instant.
  */
-const RELAY_TIMEOUT = Duration.minutes(25)
+export const RELAY_TIMEOUT = Duration.minutes(27)
 
 const UNLINKED_NOTICE =
 	"This workspace isn't connected to a Maple organization yet — an admin can link it under Integrations in Maple."
@@ -461,7 +466,7 @@ const relayMessage = Effect.fn("ChatBotRelay.relayTurn")(function* <R>(
 		messages: [],
 		recordedAt: now,
 	}
-	yield* driveChatTurn({
+	const followed = yield* driveChatTurn({
 		// From the cursor the claim answered with, so the turn's own first event is the first one
 		// this sees.
 		events: chatTurnEvents(session, sessionId, claimed.value.cursor),
@@ -474,7 +479,11 @@ const relayMessage = Effect.fn("ChatBotRelay.relayTurn")(function* <R>(
 			chartImageUrl: (ref) => ports.chartImageUrl(orgId, ref),
 		},
 		onPosted: (messages) => ports.recordTurn({ ...checkpoint, messages }),
-	}).pipe(Effect.timeout(RELAY_TIMEOUT))
+	}).pipe(Effect.timeoutOption(RELAY_TIMEOUT))
+	if (Option.isNone(followed)) {
+		yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "handed_off" })
+		yield* ports.handOffTurn(checkpoint)
+	}
 })
 
 /**

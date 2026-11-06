@@ -357,7 +357,7 @@ describe("ChatSession turn mutex", () => {
 		const second = turnId()!
 
 		// The aborted turn keeps draining and eventually calls `endTurn` for its own message.
-		session.endTurn(first)
+		session.endTurn(first, { reason: "stop" })
 
 		assert.notEqual(first, second)
 		assert.isTrue(session.running(), "the second turn still owns the slot")
@@ -402,6 +402,82 @@ describe("ChatSession turn mutex", () => {
 	})
 })
 
+describe("ChatSession turn slot transitions", () => {
+	const begin = (session: ChatSession, messageId = "m1") =>
+		session.beginTurn({ sessionId: "org_test:tab", messageId, text: "hi", tenant: TENANT, origin: APP })
+	const turnEnds = (session: ChatSession, messageId: string | undefined) =>
+		Arr.filter(session.since(0), (event) => event.type === "turn-end" && event.messageId === messageId)
+
+	it("reads a stale claim without expiring it; only a transition does", () => {
+		const { session, state, turnId } = makeSession()
+		begin(session)
+		const turn = turnId()
+		state.storage.sql.exec(
+			"UPDATE session SET running_since = ? WHERE id = 1",
+			Date.now() - TURN_STALE_MS - 1,
+		)
+
+		assert.isFalse(session.running())
+		assert.isFalse(session.holdsTurn(turn!))
+		assert.lengthOf(turnEnds(session, turn), 0, "a read appends nothing")
+
+		session.alarm()
+		assert.lengthOf(turnEnds(session, turn), 1)
+		assert.strictEqual(turnId(), undefined)
+	})
+
+	it("treats a legacy claim with no start time as stale, so a new turn is admitted", () => {
+		const { session, state } = makeSession()
+		state.storage.sql.exec(
+			"UPDATE session SET running = 1, running_since = NULL, running_message_id = NULL WHERE id = 1",
+		)
+
+		assert.isFalse(session.running())
+		assert.isDefined(begin(session), "the legacy claim no longer wedges the conversation")
+	})
+
+	it("stops the heartbeat on a legacy claim instead of re-arming it forever", () => {
+		const { session, state } = makeSession()
+		state.storage.sql.exec(
+			"UPDATE session SET running = 1, running_since = NULL, running_message_id = 'legacy' WHERE id = 1",
+		)
+
+		session.alarm()
+
+		assert.lengthOf(state.alarms, 0)
+		assert.lengthOf(turnEnds(session, "legacy"), 1)
+		assert.isFalse(session.running())
+	})
+
+	it("writes one turn-end when the turn ends and is aborted at once", () => {
+		const { session, turnId } = makeSession()
+		begin(session)
+		const turn = turnId()!
+
+		session.abort("user")
+		const ended = session.endTurn(turn, { reason: "stop" })
+
+		assert.isFalse(ended)
+		const ends = turnEnds(session, turn)
+		assert.lengthOf(ends, 1)
+		assert.strictEqual(ends[0]?.type === "turn-end" ? ends[0].reason : undefined, "aborted")
+	})
+
+	it("writes one turn-end when an ended turn is then aborted or ended again", () => {
+		const { session, turnId } = makeSession()
+		begin(session)
+		const turn = turnId()!
+
+		assert.isTrue(session.endTurn(turn, { reason: "max-steps" }))
+		session.abort("user")
+		assert.isFalse(session.endTurn(turn, { reason: "error", error: "late" }))
+
+		const ends = turnEnds(session, turn)
+		assert.lengthOf(ends, 1)
+		assert.strictEqual(ends[0]?.type === "turn-end" ? ends[0].reason : undefined, "max-steps")
+	})
+})
+
 describe("ChatSession turn heartbeat", () => {
 	/**
 	 * An outbound fetch never keeps a Durable Object alive, so an autonomous turn nobody was watching
@@ -432,7 +508,7 @@ describe("ChatSession turn heartbeat", () => {
 			tenant: TENANT,
 			origin: APP,
 		})
-		session.endTurn(turnId()!)
+		session.endTurn(turnId()!, { reason: "stop" })
 
 		session.alarm()
 		assert.lengthOf(state.alarms, 1)
@@ -626,6 +702,7 @@ describe("ChatSession abort interrupts the running turn", () => {
 		)
 
 		assert.isFalse(session.running())
+		session.alarm()
 
 		assert.strictEqual((await span)?.attributes.get("maple.chat.abort_reason"), "stale")
 	})

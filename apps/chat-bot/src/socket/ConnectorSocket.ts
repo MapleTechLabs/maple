@@ -17,10 +17,9 @@
  *
  * What one step of a connector's protocol CAUSES lives in `./driver.ts`, where a
  * fake connector drives it without workerd. What is left here is the socket, the
- * alarm and the storage keys. The lifecycle this class owns on top of that —
- * when to dial, when to back off, how long a fatal directive holds — is not
- * covered by a test today; it needs a fake Durable Object state, which is worth
- * building the first time one of these rules changes.
+ * alarm and the storage keys. The lifecycle this class owns on top of that
+ * (when to dial, how long a dial may take to open, when a heartbeat is due) is
+ * covered by `./ConnectorSocket.test.ts` against a fake state and socket.
  *
  * All socket I/O happens inside this object: the socket is created here, its
  * handlers run here under the object's own `waitUntil`, and no promise crosses
@@ -85,6 +84,12 @@ const WATCHDOG_MS = 60_000
 
 /** Never schedule an alarm closer than this, so a misbehaving step cannot spin. */
 const MIN_ALARM_MS = 1_000
+
+/**
+ * How long a dialled socket may take to open. A connector's own handshake timer
+ * starts in `onOpen`, so without this a socket that never opens is never noticed.
+ */
+export const OPEN_TIMEOUT_MS = 30_000
 
 /** A connection that stayed up this long counts as established, and resets the backoff. */
 const ESTABLISHED_MS = 60_000
@@ -180,6 +185,8 @@ export class ConnectorSocket {
 	 */
 	private generation = 0
 	private connectedAt: number | undefined
+	/** When a dialled socket that has not opened yet is given up on. */
+	private openBy: number | undefined
 
 	/**
 	 * Steps run one at a time, in arrival order.
@@ -237,6 +244,14 @@ export class ConnectorSocket {
 		if (this.socket === undefined) {
 			const reconnectAt = await this.ctx.storage.get<number>(KEY.reconnectAt)
 			if (reconnectAt === undefined || reconnectAt <= now) await this.connect()
+		} else if (this.connectedAt === undefined) {
+			// Dialled and not open: no heartbeat is this connection's yet, only the open deadline.
+			if (this.openBy !== undefined && this.openBy <= now) {
+				await this.enqueue(this.generation, (_ingress, state) => ({
+					state,
+					directive: { _tag: "reconnect", closeCode: NORMAL_CLOSE },
+				}))
+			}
 		} else {
 			const heartbeatAt = await this.ctx.storage.get<number>(KEY.heartbeatAt)
 			if (heartbeatAt !== undefined && heartbeatAt <= now) {
@@ -272,12 +287,18 @@ export class ConnectorSocket {
 				await this.applyDirective({ _tag: "reconnect", closeCode: NORMAL_CLOSE }, Date.now())
 				return
 			}
+			// A heartbeat stored by an evicted activation belongs to the dead connection: due
+			// before this one's `onOpen` resets the protocol, it would judge the new socket stale.
+			await this.ctx.storage.delete(KEY.heartbeatAt)
 			const generation = ++this.generation
 			const socket = new WebSocket(url)
 			this.socket = socket
 			this.connectedAt = undefined
+			this.openBy = Date.now() + OPEN_TIMEOUT_MS
 			socket.addEventListener("open", () => {
+				if (generation !== this.generation) return
 				this.connectedAt = Date.now()
+				this.openBy = undefined
 				this.dispatch(generation, (ingress, current, now) => ingress.onOpen(current, now))
 			})
 			socket.addEventListener("message", (event) => {
@@ -391,6 +412,7 @@ export class ConnectorSocket {
 		this.socket?.close(directive._tag === "reconnect" ? directive.closeCode : NORMAL_CLOSE)
 		this.socket = undefined
 		this.connectedAt = undefined
+		this.openBy = undefined
 		await this.ctx.storage.delete(KEY.heartbeatAt)
 
 		if (directive._tag === "stop") {
@@ -420,6 +442,7 @@ export class ConnectorSocket {
 				now + WATCHDOG_MS,
 				await this.ctx.storage.get<number>(KEY.heartbeatAt),
 				this.socket === undefined ? await this.ctx.storage.get<number>(KEY.reconnectAt) : undefined,
+				this.openBy,
 			],
 			(at): at is number => at !== undefined,
 		)
