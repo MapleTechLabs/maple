@@ -283,6 +283,14 @@ describe("escalation chain tools", () => {
 		)
 		expect(seen.updated).toEqual({ name: "Renamed" })
 
+		// "none" clears the notes; any other text sets them.
+		const cleared: Seen = {}
+		await ok("update_escalation_chain", { chain_id: CHAIN_ID, description: "none" }, cleared)
+		expect(cleared.updated).toEqual({ description: null })
+		const noted: Seen = {}
+		await ok("update_escalation_chain", { chain_id: CHAIN_ID, description: "Weekend coverage" }, noted)
+		expect(noted.updated).toEqual({ description: "Weekend coverage" })
+
 		const nothing = await run("update_escalation_chain", { chain_id: CHAIN_ID }, {})
 		expect(invalidParameter(nothing)).toBe("steps")
 		const missing = await run("update_escalation_chain", { chain_id: MISSING_ID, repeat_count: 0 }, {})
