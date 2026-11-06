@@ -4626,3 +4626,58 @@ describe("ErrorsService.runTick org config priming", () => {
 		}),
 	)
 })
+
+describe("ErrorsService.transitionIssue expectedState", () => {
+	// A stale tab saw `triage`; another tab already moved the issue to `in_review`.
+	// `in_progress` is reachable from both, so only the expected state can catch it.
+	it.effect("refuses a move from a state the issue has left, and writes nothing", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const actorService = yield* ErrorActorsService
+			const database = yield* Database
+			const issueId = asIssueId(randomUUID())
+			const actor = yield* actorService.ensureUserActor(ORG, USER)
+			yield* seedIssue(issueId, { workflowState: "in_review" })
+
+			const failure = yield* Effect.flip(
+				errors.transitionIssue(ORG, actor.id, issueId, "in_progress", { expectedState: "triage" }),
+			)
+
+			assert.strictEqual(failure._tag, "@maple/http/errors/ErrorIssueTransitionError")
+			expect(failure.message).toContain("in_review")
+			const [row] = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorIssues)
+						.select("workflowState", "leaseHolderActorId")
+						.where(($) => [$.id.eq(issueId)]),
+				),
+			)
+			assert.strictEqual(row?.workflowState, "in_review")
+			assert.isNull(row?.leaseHolderActorId)
+			const events = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorIssueEvents)
+						.select("type")
+						.where(($) => [$.issueId.eq(issueId)]),
+				),
+			)
+			assert.lengthOf(events, 0)
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+
+	it.effect("applies the move when the issue is still in the expected state", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const actorService = yield* ErrorActorsService
+			const issueId = asIssueId(randomUUID())
+			const actor = yield* actorService.ensureUserActor(ORG, USER)
+			yield* seedIssue(issueId, { workflowState: "in_review" })
+
+			const moved = yield* errors.transitionIssue(ORG, actor.id, issueId, "in_progress", {
+				expectedState: "in_review",
+			})
+
+			assert.strictEqual(moved.workflowState, "in_progress")
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+})

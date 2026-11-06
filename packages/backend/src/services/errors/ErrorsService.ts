@@ -182,7 +182,12 @@ export interface ErrorsServiceApi {
 		actorId: ActorId,
 		issueId: ErrorIssueId,
 		toState: WorkflowState,
-		opts?: { readonly note?: string; readonly snoozeUntil?: string | null },
+		opts?: {
+			readonly note?: string
+			readonly snoozeUntil?: string | null
+			/** The state the caller last saw; a mismatch is a 409 so a stale client cannot overwrite. */
+			readonly expectedState?: WorkflowState
+		},
 	) => Effect.Effect<
 		ErrorIssueDocument,
 		ErrorPersistenceError | ErrorIssueNotFoundError | ErrorIssueTransitionError | ErrorValidationError
@@ -439,6 +444,16 @@ const make: Effect.Effect<
 			})
 			const timestamp = yield* Clock.currentTimeMillis
 			const current = yield* requireIssue(orgId, issueId)
+			// Checked before the lease is taken, so a stale move writes nothing at all.
+			// `applyTransition` then guards its UPDATE on this same state.
+			if (opts?.expectedState !== undefined && opts.expectedState !== current.workflowState) {
+				return yield* new ErrorIssueTransitionError({
+					message: `This issue is now '${current.workflowState}', not '${opts.expectedState}'. Another change landed first; refresh and retry.`,
+					issueId,
+					fromState: current.workflowState,
+					toState,
+				})
+			}
 
 			let snoozeUntilMs: number | null | undefined
 			if (opts?.snoozeUntil !== undefined) {
