@@ -371,7 +371,9 @@ const timelineCell = (h: H, bar: Bar, state: RowState, durationLabel: string): H
 export const timelineRow = (h: H, bar: Bar, state: RowState): Html => {
 	const spanId = bar.span.spanId
 	const durationLabel = formatDuration(bar.span.durationMs)
-	return h.div(
+	// Keyed by span: memoized rows reuse their VNode, which snabbdom must match by key, not position.
+	return h.keyed("div")(
+		spanId,
 		[
 			attr(
 				h,

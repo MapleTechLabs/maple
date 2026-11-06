@@ -202,4 +202,9 @@ describe("trace timeline", () => {
 	test("a render with an unchanged model reuses the minimap silhouette", () => {
 		Lazy.expectAllReused({ view, model: entered() })
 	})
+
+	test("a render with an unchanged model reuses every visible row", () => {
+		const model = update(entered(), Message.MeasuredScroller({ width: 900, height: 400 })).model
+		Lazy.expectAllReused({ view, model })
+	})
 })
