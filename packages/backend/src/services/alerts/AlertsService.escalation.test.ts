@@ -183,8 +183,8 @@ const setAck = (testDb: TestDb, orgId: OrgId, acknowledged: boolean) =>
 		),
 	)
 
-/** Silences the `checkout` service for an hour; ended early with `silences.end`. */
-const silenceCheckout = (orgId: OrgId, userId: UserId) =>
+/** Silences the `checkout` service, for an hour by default; ended early with `silences.end`. */
+const silenceCheckout = (orgId: OrgId, userId: UserId, minutes = 60) =>
 	Effect.gen(function* () {
 		const silences = yield* AlertSilencesService
 		const nowMs = yield* Clock.currentTimeMillis
@@ -195,7 +195,7 @@ const silenceCheckout = (orgId: OrgId, userId: UserId) =>
 			new AlertSilenceCreateRequest({
 				reason: "checkout deploy",
 				matchers: { services: ["checkout"] },
-				endsAt: decodeIso(new Date(nowMs + 60 * 60_000).toISOString()),
+				endsAt: decodeIso(new Date(nowMs + minutes * 60_000).toISOString()),
 			}),
 		)
 		return { end: silences.end(orgId, userId, adminRoles, silence.id) }
@@ -560,6 +560,47 @@ describe("escalation chains", () => {
 			yield* TestClock.adjust(Duration.seconds(90))
 			yield* alerts.runSchedulerTick()
 			assert.deepStrictEqual(requests, ["trigger team"])
+		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+	})
+
+	it.effect("does not page a held step's destination again when the catch-up is a renotify", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const requests: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const chains = yield* EscalationChainsService
+			const orgId = asOrgId("org_esc_silenced_renotify")
+			const userId = asUserId("user_esc_silenced_renotify")
+			const team = yield* webhook(alerts, orgId, userId, "team")
+			const step = {
+				targets: [{ type: "destination" as const, destinationId: team.id }],
+				waitMinutes: 5,
+			}
+			const chain = yield* chains.create(
+				orgId,
+				userId,
+				adminRoles,
+				new EscalationChainCreateRequest({ name: "Team twice", steps: [step, step] }),
+			)
+			yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				ruleRequest([tier("critical", 5, [team.id], chain.id)]),
+			)
+			yield* alerts.runSchedulerTick()
+			yield* tick(alerts)
+			assert.deepStrictEqual(requests, ["trigger team"])
+			const silence = yield* silenceCheckout(orgId, userId, 120)
+			// Step 2 falls due at minute 5 and the hourly reminder at 60; the silence holds both.
+			yield* ticks(alerts, 62)
+			assert.deepStrictEqual(requests, ["trigger team"])
+			yield* silence.end
+			yield* tick(alerts)
+			yield* ticks(alerts, 3)
+			assert.deepStrictEqual(requests, ["trigger team", "renotify team"])
 		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
 	})
 
