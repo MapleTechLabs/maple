@@ -520,4 +520,38 @@ describe("AlertsService anomaly rules", () => {
 			assert.deepStrictEqual(states?.keys, [errorRateSpike.id])
 		}).pipe(Effect.provide(layer))
 	})
+
+	it.effect("a rule test reads the open anomalies in an unsaved rule's scope", () => {
+		const { layer } = harness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* insertAnomaly({ ...errorRateSpike, severity: "critical" })
+			const testScope = (serviceNames: ReadonlyArray<string>) =>
+				alerts.testRule(
+					orgId,
+					userId,
+					adminRoles,
+					anomalyRule({
+						name: "Unsaved",
+						serviceNames,
+						thresholds: criticalRouted(destination.id),
+					}),
+				)
+
+			const checkout = yield* testScope(["checkout"])
+			expect(checkout).toMatchObject({
+				status: "breached",
+				value: 2,
+				reason: "error rate 4.2% vs baseline 0.3% in checkout (production)",
+			})
+			const payments = yield* testScope(["payments"])
+			expect(payments).toMatchObject({
+				status: "healthy",
+				value: 0,
+				reason: "No open anomaly in this rule's scope",
+			})
+		}).pipe(Effect.provide(layer))
+	})
 })
