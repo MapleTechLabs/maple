@@ -23,6 +23,7 @@ export function registerListAlertSilencesTool(server: McpToolRegistrar) {
 				"Only silences in this status (default: active and scheduled)",
 			),
 			limit: P.limit({ default: 50, max: MAX_LIMIT, noun: "silences" }),
+			offset: P.offset({ max: 10_000 }),
 		}),
 		output: ListAlertSilencesOutput,
 		hints: { readOnly: true },
@@ -35,7 +36,12 @@ export function registerListAlertSilencesTool(server: McpToolRegistrar) {
 
 			const pages = yield* Effect.forEach(statuses, (status) =>
 				silences
-					.list(tenant.orgId, { status, limit: params.limit + 1 })
+					.list(tenant.orgId, {
+						status,
+						limit: params.limit + 1,
+						// Paging is for one status; the default view shares one window between two.
+						...(params.status === undefined ? undefined : { offset: params.offset }),
+					})
 					.pipe(Effect.mapError(toMcpHttpError("list_alert_silences"))),
 			)
 			// Both statuses share the window: a full page of active silences must not hide every
@@ -59,6 +65,7 @@ export function registerListAlertSilencesTool(server: McpToolRegistrar) {
 				total: shown.length,
 				...(params.status === undefined ? undefined : { status: params.status }),
 				limit: params.limit,
+				...(params.status === undefined ? undefined : { offset: params.offset }),
 				hasMore: total > shown.length,
 			}
 		}),
@@ -98,23 +105,35 @@ export function registerListAlertSilencesTool(server: McpToolRegistrar) {
 						truncation: {
 							shown: output.silences.length,
 							noun: "silences",
-							...(output.limit < MAX_LIMIT
+							...(output.status !== undefined
 								? {
 										next: doc.next(
 											"list_alert_silences",
-											{ status: output.status, limit: MAX_LIMIT },
-											"more silences",
+											{
+												status: output.status,
+												limit: output.limit,
+												offset: (output.offset ?? 0) + output.silences.length,
+											},
+											"the next page",
 										),
 									}
-								: output.status === undefined
+								: output.limit < MAX_LIMIT
 									? {
 											next: doc.next(
 												"list_alert_silences",
-												{ status: "scheduled", limit: MAX_LIMIT },
-												"the scheduled silences on their own",
+												{ limit: MAX_LIMIT },
+												"more silences",
 											),
 										}
-									: undefined),
+									: output.status === undefined
+										? {
+												next: doc.next(
+													"list_alert_silences",
+													{ status: "scheduled", limit: MAX_LIMIT },
+													"the scheduled silences on their own",
+												),
+											}
+										: undefined),
 						},
 					}
 				: undefined),
