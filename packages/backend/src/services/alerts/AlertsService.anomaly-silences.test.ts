@@ -82,7 +82,10 @@ const insertCheckoutAnomaly = Effect.gen(function* () {
 	)
 }).pipe(Effect.orDie)
 
-/** An anomaly rule over every service, like the default one, whose critical tier pages a webhook. */
+/**
+ * An anomaly rule over every service in production, whose critical tier pages a webhook. Only Maple
+ * creates the fully unscoped default, so the environment scope stands in for it here.
+ */
 const createUnscopedAnomalyRule = (alerts: AlertsServiceApi) =>
 	Effect.gen(function* () {
 		const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -91,9 +94,10 @@ const createUnscopedAnomalyRule = (alerts: AlertsServiceApi) =>
 			userId,
 			adminRoles,
 			new AlertRuleUpsertRequest({
-				name: "Anomalies",
+				name: "Production anomalies",
 				enabled: true,
 				signalType: "anomaly",
+				environments: ["production"],
 				comparator: "gte",
 				windowMinutes: 5,
 				thresholds: [
