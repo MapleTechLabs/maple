@@ -27,7 +27,7 @@ const DURATIONS: ReadonlyArray<{ value: SilenceDuration; label: string }> = [
 	{ value: "1h", label: "1 hour" },
 	{ value: "4h", label: "4 hours" },
 	{ value: "morning", label: "Until 09:00" },
-	{ value: "custom", label: "Until…" },
+	{ value: "custom", label: "Pick time" },
 ]
 
 /** "Silence for 1 hour", or the end it will stop at: "Silence until Nov 7, 18:30". */
@@ -124,7 +124,7 @@ const scopeSection = (h: H, model: Model): Html =>
 						}),
 					),
 					typography(h, { size: "xs", tone: "muted" }, [
-						"Fill in at least one. A rule is silenced when all of its services and environments are listed and it carries one of the tags.",
+						"Fill in at least one. Every listed field must match: a rule's services and environments all listed, and one of its tags.",
 					]),
 				]),
 	])
@@ -138,6 +138,7 @@ const durationSection = (h: H, model: Model): Html =>
 			value: model.duration,
 			onChange: (duration) => Message.ChangedDuration({ duration }),
 			size: "sm",
+			className: "max-w-full overflow-x-auto",
 		}),
 		...(model.duration === "custom"
 			? [

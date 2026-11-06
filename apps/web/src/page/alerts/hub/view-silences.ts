@@ -49,11 +49,14 @@ const windowText = (silence: V2AlertSilence, nowMs: number, timeZone: string): s
 	const status = silenceStatusAt(silence, nowMs)
 	const start = formatSilenceTime(startsAtMs(silence), nowMs, timeZone)
 	const end = formatSilenceTime(endsAtMs(silence), nowMs, timeZone)
+	// A cancelled silence comes back with its window collapsed to one instant: it never ran.
 	return status === "active"
 		? `Until ${end}`
 		: status === "scheduled"
 			? `${start} to ${end}`
-			: `Ended ${end}`
+			: startsAtMs(silence) === endsAtMs(silence)
+				? `Cancelled ${end}`
+				: `Ended ${end}`
 }
 
 const silenceRow = (
@@ -72,7 +75,7 @@ const silenceRow = (
 	return listRow(h, {
 		divided: true,
 		leading: icon(h, "BellSlashIcon", { size: 16 }),
-		title: silence.reason,
+		title: h.span([h.Title(silence.reason)], [silence.reason]),
 		meta: Arr.join(
 			[
 				windowText(silence, options.nowMs, options.timeZone),
@@ -81,6 +84,14 @@ const silenceRow = (
 					options.rulesLoaded ? silence.matchers : { ...silence.matchers, rule_ids: [] },
 					options.ruleName,
 				),
+				// Until rules sync, a rule-scoped silence still says it covers rules.
+				...(options.rulesLoaded || (silence.matchers.rule_ids ?? []).length === 0
+					? []
+					: [
+							(silence.matchers.rule_ids ?? []).length === 1
+								? "1 rule"
+								: `${(silence.matchers.rule_ids ?? []).length} rules`,
+						]),
 			],
 			" · ",
 		),
@@ -153,12 +164,12 @@ const loaded = (
 	if (active.length + scheduled.length + ended.length === 0) return silencesEmptyState(h)
 	const options = { nowMs, timeZone, ruleName, rulesLoaded: model.rules !== null }
 	return vstack(h, { gap: "6" }, [
-		...section(h, model, "Active", active, options),
-		...section(h, model, "Scheduled", scheduled, options),
-		...section(h, model, "Ended in the last 7 days", ended, options),
 		...(active.length === 0
 			? [typography(h, { size: "xs", tone: "muted" }, ["Nothing is silenced right now"])]
 			: []),
+		...section(h, model, "Active", active, options),
+		...section(h, model, "Scheduled", scheduled, options),
+		...section(h, model, "Ended in the last 7 days", ended, options),
 	])
 }
 

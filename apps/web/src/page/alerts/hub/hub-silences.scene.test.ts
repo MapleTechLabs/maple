@@ -1,6 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
-import { AlertSilenceId } from "@maple/domain/http"
+import { AlertRuleId, AlertSilenceId } from "@maple/domain/http"
 import type { V2AlertSilence } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
 import * as Animation from "@foldkit/ui/animation"
@@ -30,6 +30,7 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const asSilenceId = Schema.decodeSync(AlertSilenceId)
+const asRuleId = Schema.decodeSync(AlertRuleId)
 const iso = (ms: number) => new Date(ms).toISOString()
 
 const silence = (
@@ -138,6 +139,35 @@ describe("alerts hub, Silences tab", () => {
 		expect(toastOf(silence({ startMin: -30, endMin: 0, status: "ended" }))).toMatchObject({
 			title: "Silence ended",
 		})
+	})
+
+	test("reads the clock again when the list lands, so a new silence is placed by it", () => {
+		const entered = init({ _tag: "Alerts", search: { tab: "silences" } }, context).model
+		const step = pageUpdate(
+			entered,
+			Message.CompletedFetchSilences({ key: entered.silences.key ?? "", result: Result.succeed([]) }),
+		)
+		expect(Arr.map(step.commands ?? [], ({ name }) => name)).toContain("ReadAlertsHubClock")
+	})
+
+	test("names a cancelled silence as cancelled, and a rule scope before rules sync", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				onSilences(ENGINEER, [
+					silence({ startMin: -5, endMin: -5, status: "ended" }),
+					silence({
+						id: asSilenceId("44444444-4444-4444-8444-444444444444"),
+						reason: "Rule only",
+						matchers: { rule_ids: [asRuleId("11111111-1111-4111-8111-111111111111")] },
+						startMin: -10,
+						endMin: 50,
+					}),
+				]),
+			),
+			expectView(text(/^Cancelled /u)).toExist(),
+			expectView(text(/· 1 rule$/u)).toExist(),
+		)
 	})
 
 	test("New silence opens the dialog with typed scope fields", () => {

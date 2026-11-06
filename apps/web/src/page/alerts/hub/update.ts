@@ -606,8 +606,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 			})
 		},
+		// Rows are placed by the clock: read it again once the list lands, so a silence created or
+		// ended a moment ago is in its section now, not at the next 30-second tick.
 		CompletedFetchSilences: ({ key, result }) => ({
 			model: { ...model, silences: Keyed.accept(model.silences, key, result) },
+			commands: [ReadHubClock()],
 		}),
 		ClickedRetrySilences: () => refreshSilences(model, context),
 		ClickedNewSilence: () =>
