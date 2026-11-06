@@ -20,6 +20,7 @@ import {
 	type AlertsTab,
 	anomalyOverviewOf,
 	destinationsOf,
+	isAboutService,
 	overviewOf,
 	resolveIncidentStatus,
 	resolveSignal,
@@ -300,9 +301,13 @@ const hubBody = (
 					signal,
 					status: resolveIncidentStatus(model.search.anomalyStatus),
 					serviceName: model.search.serviceName,
+					// Counted under the same service filter the list applies.
 					openAnomalies: Arr.filter(
 						data.openIncidents,
-						(incident) => incident.signalType === "anomaly",
+						(incident) =>
+							incident.signalType === "anomaly" &&
+							(model.search.serviceName === undefined ||
+								isAboutService(incident, model.search.serviceName)),
 					).length,
 				})
 				const body =

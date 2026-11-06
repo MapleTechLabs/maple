@@ -96,7 +96,7 @@ const anomaliesEmpty = (h: H, status: IncidentStatusFilter, serviceName: string 
 					...(serviceName === undefined ? [] : [` on ${serviceName}`]),
 				]),
 				emptyDescription(h, [
-					"Maple watches error rate, latency, throughput, error spikes and log volume on every service, and opens an anomaly here when one looks unusual against its baseline.",
+					`Maple watches error rate, latency, throughput, error spikes and log volume on ${serviceName ?? "every service"}, and opens an anomaly here when one looks unusual against its baseline.`,
 				]),
 			]),
 		],
