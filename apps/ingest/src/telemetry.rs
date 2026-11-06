@@ -237,65 +237,216 @@ impl Default for ClickHouseBreakerConfig {
     }
 }
 
+/// Identifies one admitted half-open probe, so only that probe's outcome settles it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum BreakerDecision {
-    /// The target looks healthy enough to attempt an export.
-    Allow,
-    /// The target is in the open state; make no attempt. The caller defers the
-    /// batch for one short window, then sheds it.
+struct ProbeTicket {
+    id: u64,
+    started_at: Instant,
+}
+
+/// Per-org breaker state. Each variant carries only the fields that mean something
+/// in it, so a probe on a closed breaker or a spent deferral without an outage cannot exist.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BreakerState {
+    Closed {
+        failures: u32,
+    },
+    /// Shedding; past the cooldown the next admission becomes the probe.
+    /// `deferral_spent`: a batch already waited out a full window in this outage,
+    /// so later batches shed at once instead of each holding the lane again.
+    Open {
+        opened_at: Instant,
+        deferral_spent: bool,
+    },
+    /// Open, with exactly one probe in flight.
+    HalfOpen {
+        opened_at: Instant,
+        deferral_spent: bool,
+        probe: ProbeTicket,
+    },
+}
+
+/// The pure result of one admission check.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AdmitStep {
+    /// Attempt the export; `Some` when this attempt is the half-open probe.
+    Attempt { probe: Option<u64> },
+    /// Open, and this batch still has deferral window left: wait, cursor held.
+    Defer,
+    /// Open, and the window is spent (by this batch or an earlier one): shed.
     Shed,
 }
 
-#[derive(Debug, Default)]
-struct BreakerState {
-    consecutive_failures: u32,
-    /// When the breaker last tripped open. `None` while closed.
-    opened_at: Option<Instant>,
-    /// When the in-flight half-open probe was admitted. `None` when no probe is
-    /// outstanding. Only meaningful while `opened_at` is set.
-    probe_started_at: Option<Instant>,
-    /// A batch already waited out a full deferral window in this outage, so later
-    /// batches shed at once instead of each holding the lane again. Cleared on success.
-    deferral_spent: bool,
+impl BreakerState {
+    /// Admission under the lock. Takes `now` rather than reading the clock so the
+    /// state machine is unit-testable with a synthetic one.
+    fn admit(
+        &mut self,
+        cfg: ClickHouseBreakerConfig,
+        now: Instant,
+        window_spent: bool,
+        next_probe_id: impl FnOnce() -> u64,
+    ) -> AdmitStep {
+        let (opened_at, deferral_spent, probe_free) = match *self {
+            Self::Closed { .. } => return AdmitStep::Attempt { probe: None },
+            Self::Open {
+                opened_at,
+                deferral_spent,
+            } => (
+                opened_at,
+                deferral_spent,
+                now.saturating_duration_since(opened_at) >= cfg.cooldown,
+            ),
+            // A probe silent for a whole cooldown is treated as abandoned, so a worker
+            // that dies mid-probe cannot wedge the breaker open forever.
+            Self::HalfOpen {
+                opened_at,
+                deferral_spent,
+                probe,
+            } => (
+                opened_at,
+                deferral_spent,
+                now.saturating_duration_since(probe.started_at) >= cfg.cooldown,
+            ),
+        };
+        if probe_free {
+            // One probe at a time: every lane worker consults this state, and an
+            // ungated half-open sends all of them at the recovering target at once.
+            let id = next_probe_id();
+            *self = Self::HalfOpen {
+                opened_at,
+                deferral_spent,
+                probe: ProbeTicket {
+                    id,
+                    started_at: now,
+                },
+            };
+            return AdmitStep::Attempt { probe: Some(id) };
+        }
+        if !(deferral_spent || window_spent) {
+            return AdmitStep::Defer;
+        }
+        if let Self::Open { deferral_spent, .. } | Self::HalfOpen { deferral_spent, .. } = self {
+            *deferral_spent = true;
+        }
+        AdmitStep::Shed
+    }
+
+    /// A delivery proves the target healthy, whichever attempt made it.
+    fn succeed(&mut self) {
+        *self = Self::Closed { failures: 0 };
+    }
+
+    fn fail(&mut self, cfg: ClickHouseBreakerConfig, probe: Option<u64>, now: Instant) {
+        match *self {
+            Self::Closed { failures } => {
+                let failures = failures.saturating_add(1);
+                *self = if failures >= cfg.failure_threshold {
+                    Self::Open {
+                        opened_at: now,
+                        deferral_spent: false,
+                    }
+                } else {
+                    Self::Closed { failures }
+                };
+            }
+            // The probe failed: back off for another cooldown.
+            Self::HalfOpen {
+                deferral_spent,
+                probe: ticket,
+                ..
+            } if probe == Some(ticket.id) => {
+                *self = Self::Open {
+                    opened_at: now,
+                    deferral_spent,
+                };
+            }
+            // A late attempt admitted before the breaker opened, or a superseded probe:
+            // the breaker already knows, and the running probe must keep its slot.
+            Self::Open { .. } | Self::HalfOpen { .. } => {}
+        }
+    }
+
+    /// The probe ended without a verdict on the target (a config-class drop):
+    /// free the slot so the next admission probes at once.
+    fn release(&mut self, probe: Option<u64>) {
+        if let Self::HalfOpen {
+            opened_at,
+            deferral_spent,
+            probe: ticket,
+        } = *self
+        {
+            if probe == Some(ticket.id) {
+                *self = Self::Open {
+                    opened_at,
+                    deferral_spent,
+                };
+            }
+        }
+    }
 }
 
-/// Pure transition: should the next attempt run, given the current state? Kept
-/// free of `Instant::now()` so the state machine is unit-testable with a
-/// synthetic clock.
-fn breaker_decision(
-    state: &BreakerState,
-    cfg: ClickHouseBreakerConfig,
-    now: Instant,
-) -> BreakerDecision {
-    // Closed → nothing to gate.
-    let Some(opened) = state.opened_at else {
-        return BreakerDecision::Allow;
-    };
-    // Still within the cooldown window → keep shedding.
-    if now.duration_since(opened) < cfg.cooldown {
-        return BreakerDecision::Shed;
+/// What the export loop does next for one org.
+enum Admission<'a> {
+    Attempt(ExportPermit<'a>),
+    Defer,
+    Shed,
+}
+
+/// One admitted export attempt. Settle it with `succeed` or `fail`; dropping it
+/// unsettled (every config-class `Dropped` exit, or a cancelled future) releases a
+/// half-open probe without counting as target health either way.
+#[must_use]
+struct ExportPermit<'a> {
+    registry: &'a ClickHouseBreakerRegistry,
+    org_id: &'a str,
+    probe: Option<u64>,
+    settled: bool,
+}
+
+impl ExportPermit<'_> {
+    fn succeed(mut self) {
+        self.settled = true;
+        if let Some(state) = self.registry.states.get(self.org_id) {
+            lock_state(&state).succeed();
+        }
     }
-    // Half-open, and gated to a single probe. Every lane worker checks this
-    // registry, so an ungated half-open let all of them attempt the recovering
-    // target at once the instant cooldown elapsed — a thundering herd against a
-    // target that had just been declared unhealthy, repeated every cooldown.
-    //
-    // A probe that has not reported an outcome within one cooldown is treated as
-    // abandoned and a fresh one is admitted, so a worker that dies mid-probe
-    // cannot wedge the breaker open forever.
-    match state.probe_started_at {
-        Some(started) if now.duration_since(started) < cfg.cooldown => BreakerDecision::Shed,
-        _ => BreakerDecision::Allow,
+
+    fn fail(mut self, now: Instant) {
+        self.settled = true;
+        if !self.registry.enabled() {
+            return;
+        }
+        let state = self.registry.state_for(self.org_id);
+        lock_state(&state).fail(self.registry.cfg, self.probe, now);
     }
+}
+
+impl Drop for ExportPermit<'_> {
+    fn drop(&mut self) {
+        if self.settled || self.probe.is_none() {
+            return;
+        }
+        if let Some(state) = self.registry.states.get(self.org_id) {
+            lock_state(&state).release(self.probe);
+        }
+    }
+}
+
+fn lock_state(state: &Mutex<BreakerState>) -> std::sync::MutexGuard<'_, BreakerState> {
+    state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Per-org ClickHouse circuit breakers. An org's CH frames may span several
 /// shards (traces shard by trace id), so breaker state is shared across all
-/// lane workers rather than living inside one worker — the first worker to
+/// lane workers rather than living inside one worker; the first worker to
 /// observe an unhealthy target trips it for the rest.
 struct ClickHouseBreakerRegistry {
     cfg: ClickHouseBreakerConfig,
     states: DashMap<String, Arc<Mutex<BreakerState>>>,
+    next_probe_id: AtomicU64,
 }
 
 impl ClickHouseBreakerRegistry {
@@ -303,6 +454,7 @@ impl ClickHouseBreakerRegistry {
         Self {
             cfg,
             states: DashMap::new(),
+            next_probe_id: AtomicU64::new(0),
         }
     }
 
@@ -322,23 +474,6 @@ impl ClickHouseBreakerRegistry {
         }
     }
 
-    fn deferral_spent(&self, org_id: &str) -> bool {
-        self.states.get(org_id).is_some_and(|state| {
-            state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .deferral_spent
-        })
-    }
-
-    fn mark_deferral_spent(&self, org_id: &str) {
-        let state = self.state_for(org_id);
-        state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .deferral_spent = true;
-    }
-
     /// How often a breaker-deferred batch re-checks for a half-open probe slot.
     fn poll_interval(&self) -> Duration {
         self.cfg
@@ -350,66 +485,31 @@ impl ClickHouseBreakerRegistry {
     fn state_for(&self, org_id: &str) -> Arc<Mutex<BreakerState>> {
         self.states
             .entry(org_id.to_owned())
-            .or_insert_with(|| Arc::new(Mutex::new(BreakerState::default())))
+            .or_insert_with(|| Arc::new(Mutex::new(BreakerState::Closed { failures: 0 })))
             .clone()
     }
 
-    /// Decide whether to attempt an export for `org_id`, claiming the half-open
-    /// probe slot when this caller is the one admitted. Never allocates breaker
-    /// state for an org that has only ever succeeded.
-    fn decide(&self, org_id: &str, now: Instant) -> BreakerDecision {
-        if !self.enabled() {
-            return BreakerDecision::Allow;
-        }
-        let Some(state) = self.states.get(org_id) else {
-            return BreakerDecision::Allow;
+    /// Admit, defer or shed one attempt for `org_id`, deciding and recording any
+    /// spent deferral under one lock. `window_spent` is this batch's own deferral
+    /// running out. Never allocates state for an org that has only ever succeeded.
+    fn admit<'a>(&'a self, org_id: &'a str, now: Instant, window_spent: bool) -> Admission<'a> {
+        let step = match self.states.get(org_id) {
+            Some(state) if self.enabled() => {
+                lock_state(&state).admit(self.cfg, now, window_spent, || {
+                    self.next_probe_id.fetch_add(1, Ordering::Relaxed)
+                })
+            }
+            _ => AdmitStep::Attempt { probe: None },
         };
-        let mut guard = state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let decision = breaker_decision(&guard, self.cfg, now);
-        // An `Allow` while open is the half-open probe, and the slot is claimed
-        // under the same lock the decision was read under — otherwise two workers
-        // racing here would both be told to probe.
-        if decision == BreakerDecision::Allow && guard.opened_at.is_some() {
-            guard.probe_started_at = Some(now);
-        }
-        decision
-    }
-
-    fn on_success(&self, org_id: &str) {
-        if !self.enabled() {
-            return;
-        }
-        if let Some(state) = self.states.get(org_id) {
-            let mut guard = state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            guard.consecutive_failures = 0;
-            guard.opened_at = None;
-            guard.probe_started_at = None;
-            guard.deferral_spent = false;
-        }
-    }
-
-    fn on_failure(&self, org_id: &str, now: Instant) {
-        if !self.enabled() {
-            return;
-        }
-        let state = self.state_for(org_id);
-        let mut guard = state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        guard.consecutive_failures = guard.consecutive_failures.saturating_add(1);
-        // The probe (if this was one) has reported; release the slot so the next
-        // cooldown can admit a fresh one.
-        guard.probe_started_at = None;
-        if guard.consecutive_failures >= self.cfg.failure_threshold {
-            // Re-stamped on every failure on purpose: `on_failure` only runs for
-            // attempts the breaker *allowed*, so each one is either a pre-open
-            // failure or a half-open probe. Restarting the cooldown after a failed
-            // probe is the intended back-off.
-            guard.opened_at = Some(now);
+        match step {
+            AdmitStep::Attempt { probe } => Admission::Attempt(ExportPermit {
+                registry: self,
+                org_id,
+                probe,
+                settled: false,
+            }),
+            AdmitStep::Defer => Admission::Defer,
+            AdmitStep::Shed => Admission::Shed,
         }
     }
 }
@@ -1810,10 +1910,10 @@ impl WalLane {
 
     /// Hand a segment event to the shipper, if one is attached.
     ///
-    /// A full channel drops the event rather than blocking the caller — an
-    /// append must not wait on S3. A dropped `Sealed` leaves that segment local
-    /// only; a dropped `Exported` leaves an object behind that a later claim
-    /// replays, which is the at-least-once this whole tier is built on.
+    /// A full channel drops the event rather than blocking the caller: an append
+    /// must not wait on S3. A dropped `Sealed` is shipped with the lane's next one;
+    /// a dropped `Exported` leaves an object behind that a later claim replays,
+    /// which is the at-least-once this whole tier is built on.
     fn notify(&self, event: SegmentEvent) {
         let Some(shipper) = self.shipper.get() else {
             return;
@@ -2215,34 +2315,13 @@ impl ShardedWal {
                     continue;
                 }
             }
-            let segments = match store.list_segments(&owner).await {
-                Ok(segments) => segments,
-                Err(error) => {
-                    warn!(owner, error = %error, "Failed to list orphaned WAL segments");
-                    continue;
-                }
+            let recovery = store.while_claimed(
+                &owner,
+                self.recover_owner(cfg, store, &owner, &mut reshipped_below),
+            );
+            let Some((recovered_frames, left_behind)) = recovery.await else {
+                continue;
             };
-            let mut recovered_frames = 0usize;
-            // Segments still in the bucket after this pass. Any at all keeps the
-            // owner discoverable so a later boot retries them.
-            let mut left_behind = 0usize;
-            for segment in segments {
-                let (frames, outcome) = self
-                    .recover_segment(cfg, store, &owner, &segment, &mut reshipped_below)
-                    .await;
-                recovered_frames += frames;
-                match outcome {
-                    SegmentRecovery::Released => {}
-                    SegmentRecovery::Kept => left_behind += 1,
-                    // Local disk or re-shipping is failing: carrying on would
-                    // only pile the rest onto this disk for a later boot to
-                    // replay again.
-                    SegmentRecovery::Halted => {
-                        left_behind += 1;
-                        break;
-                    }
-                }
-            }
             if left_behind > 0 {
                 warn!(
                     owner,
@@ -2261,6 +2340,45 @@ impl ShardedWal {
                 );
             }
         }
+    }
+
+    /// Recover every segment of one claimed owner. Returns the frames committed
+    /// and how many segments stay in the bucket, or `None` if they could not be listed.
+    async fn recover_owner(
+        &self,
+        cfg: &TinybirdConfig,
+        store: &WalSegmentStore,
+        owner: &str,
+        reshipped_below: &mut [u64],
+    ) -> Option<(usize, usize)> {
+        let segments = match store.list_segments(owner).await {
+            Ok(segments) => segments,
+            Err(error) => {
+                warn!(owner, error = %error, "Failed to list orphaned WAL segments");
+                return None;
+            }
+        };
+        let mut recovered_frames = 0usize;
+        // Segments still in the bucket after this pass. Any at all keeps the
+        // owner discoverable so a later boot retries them.
+        let mut left_behind = 0usize;
+        for segment in segments {
+            let (frames, outcome) = self
+                .recover_segment(cfg, store, owner, &segment, reshipped_below)
+                .await;
+            recovered_frames += frames;
+            match outcome {
+                SegmentRecovery::Released => {}
+                SegmentRecovery::Kept => left_behind += 1,
+                // Local disk or re-shipping is failing: carrying on would only
+                // pile the rest onto this disk for a later boot to replay again.
+                SegmentRecovery::Halted => {
+                    left_behind += 1;
+                    break;
+                }
+            }
+        }
+        Some((recovered_frames, left_behind))
     }
 
     /// Re-commit one orphaned segment to its local lane, re-ship that lane, and
@@ -2514,11 +2632,13 @@ impl WalLaneBench {
 }
 
 /// Keep this task's owner marker fresh, so a booting task can tell a live
-/// writer's segments from a dead one's.
+/// writer's segments from a dead one's. Ends once the owner is retired.
 async fn run_owner_heartbeat(store: Arc<WalSegmentStore>, interval: Duration) {
     loop {
-        if let Err(error) = store.heartbeat().await {
-            warn!(error = %error, "Failed to refresh the WAL owner heartbeat");
+        match store.heartbeat().await {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(error) => warn!(error = %error, "Failed to refresh the WAL owner heartbeat"),
         }
         sleep(interval).await;
     }
@@ -2533,53 +2653,61 @@ async fn run_segment_shipper(
     store: Arc<WalSegmentStore>,
     mut receiver: mpsc::Receiver<SegmentEvent>,
 ) {
+    // Per lane, the next segment expected to seal. A lane seals in sequence, so a
+    // `Sealed` past it means events were dropped on a full channel: ship the gap too.
+    let mut next_sealed: Vec<u64> = lanes
+        .iter()
+        .map(|lane| lane.active_seq.load(Ordering::Acquire))
+        .collect();
     while let Some(event) = receiver.recv().await {
         let (SegmentEvent::Sealed { lane, seq } | SegmentEvent::Exported { lane, seq }) = event;
-        let Some(lane_ref) = lanes.get(lane) else {
+        let (Some(lane_ref), Some(next)) = (lanes.get(lane), next_sealed.get_mut(lane)) else {
             continue;
         };
-        let result = match event {
+        match event {
             SegmentEvent::Sealed { .. } => {
-                // A healthy pipeline exports a segment well before its upload
-                // comes up, and a segment already in the warehouse needs no
-                // backup — which is why this tier costs almost nothing.
-                if lane_ref.is_exported(seq) {
-                    metrics::wal_ship_skipped(lane_ref.shard, lane_ref.destination.as_str());
-                    continue;
+                let from = (*next).min(seq);
+                *next = seq.saturating_add(1);
+                for sealed in from..=seq {
+                    ship_sealed_segment(lane_ref, &store, sealed).await;
                 }
-                let Some(bytes) = lane_ref.read_segment(seq) else {
-                    continue;
-                };
-                let len = bytes.len() as u64;
-                store
-                    .put_segment(&lane_ref.lane_key, seq, bytes)
-                    .await
-                    .inspect(|()| {
-                        metrics::wal_segment_shipped(
-                            lane_ref.shard,
-                            lane_ref.destination.as_str(),
-                            len,
-                        );
-                    })
             }
-            SegmentEvent::Exported { .. } => store.delete_segment(&lane_ref.lane_key, seq).await,
-        };
-        if let Err(error) = result {
-            metrics::wal_ship_failed(
-                lane_ref.shard,
-                lane_ref.destination.as_str(),
-                error.error_kind(),
-            );
-            warn!(
-                shard = lane_ref.shard,
-                destination = lane_ref.destination.as_str(),
-                segment = seq,
-                error_kind = error.error_kind(),
-                %error,
-                "WAL segment shipping failed"
-            );
+            SegmentEvent::Exported { .. } => {
+                if let Err(error) = store.delete_segment(&lane_ref.lane_key, seq).await {
+                    report_ship_failure(lane_ref, seq, &error);
+                }
+            }
         }
     }
+}
+
+async fn ship_sealed_segment(lane: &WalLane, store: &WalSegmentStore, seq: u64) {
+    // A healthy pipeline exports a segment well before its upload comes up, and
+    // a segment already in the warehouse needs no backup, which keeps this tier cheap.
+    if lane.is_exported(seq) {
+        metrics::wal_ship_skipped(lane.shard, lane.destination.as_str());
+        return;
+    }
+    let Some(bytes) = lane.read_segment(seq) else {
+        return;
+    };
+    let len = bytes.len() as u64;
+    match store.put_segment(&lane.lane_key, seq, bytes).await {
+        Ok(()) => metrics::wal_segment_shipped(lane.shard, lane.destination.as_str(), len),
+        Err(error) => report_ship_failure(lane, seq, &error),
+    }
+}
+
+fn report_ship_failure(lane: &WalLane, seq: u64, error: &crate::aws::S3Error) {
+    metrics::wal_ship_failed(lane.shard, lane.destination.as_str(), error.error_kind());
+    warn!(
+        shard = lane.shard,
+        destination = lane.destination.as_str(),
+        segment = seq,
+        error_kind = error.error_kind(),
+        %error,
+        "WAL segment shipping failed"
+    );
 }
 
 fn write_cursor(path: &Path, cursor: SegmentCursor) -> Result<(), String> {
@@ -3442,12 +3570,12 @@ impl ExportWorker {
             // so a blip is delivered without loss; past it the batch sheds, which bounds
             // how long co-sharded orgs on this lane wait behind a broken target.
             let now = Instant::now();
-            if self.clickhouse_breakers.decide(org_id, now) == BreakerDecision::Shed {
-                let window_spent = self.clickhouse_breakers.deferral_spent(org_id)
-                    || deferred_since
-                        .is_some_and(|since| now.duration_since(since) >= deferral_window);
-                if window_spent {
-                    self.clickhouse_breakers.mark_deferral_spent(org_id);
+            let window_spent =
+                deferred_since.is_some_and(|since| now.duration_since(since) >= deferral_window);
+            // Every exit below that drops the permit unsettled releases a half-open probe.
+            let permit = match self.clickhouse_breakers.admit(org_id, now, window_spent) {
+                Admission::Attempt(permit) => permit,
+                Admission::Shed => {
                     // A shed makes no HTTP call, but it discards customer data, so it
                     // still gets a span or the drop is invisible in traces.
                     let span =
@@ -3464,26 +3592,28 @@ impl ExportWorker {
                     );
                     return Ok(ClickHouseExportOutcome::Dropped);
                 }
-                let since = *deferred_since.get_or_insert_with(|| {
-                    // One span per deferred batch, left Unset: waiting is not a failure.
-                    let span =
-                        clickhouse_export_span(org_id, datasource, attempt, rows, &compressed);
-                    span.record("maple.ingest.outcome", "deferred_circuit_open");
-                    metrics::clickhouse_export_retry(datasource, "circuit_open");
-                    warn!(
-                        org_id,
-                        datasource,
-                        rows,
-                        attempt,
-                        "Deferring ClickHouse batch: target circuit breaker open"
-                    );
-                    now
-                });
-                waited_on_breaker = true;
-                let remaining = deferral_window.saturating_sub(now.duration_since(since));
-                sleep(self.clickhouse_breakers.poll_interval().min(remaining)).await;
-                continue;
-            }
+                Admission::Defer => {
+                    let since = *deferred_since.get_or_insert_with(|| {
+                        // One span per deferred batch, left Unset: waiting is not a failure.
+                        let span =
+                            clickhouse_export_span(org_id, datasource, attempt, rows, &compressed);
+                        span.record("maple.ingest.outcome", "deferred_circuit_open");
+                        metrics::clickhouse_export_retry(datasource, "circuit_open");
+                        warn!(
+                            org_id,
+                            datasource,
+                            rows,
+                            attempt,
+                            "Deferring ClickHouse batch: target circuit breaker open"
+                        );
+                        now
+                    });
+                    waited_on_breaker = true;
+                    let remaining = deferral_window.saturating_sub(now.duration_since(since));
+                    sleep(self.clickhouse_breakers.poll_interval().min(remaining)).await;
+                    continue;
+                }
+            };
             // Backoff is taken here (before the attempt) so that when the breaker
             // trips mid-batch the shed-check above can wait without first sleeping
             // out the previous failure's backoff; a breaker wait replaces it.
@@ -3512,7 +3642,7 @@ impl ExportWorker {
                         attempt,
                         "Retrying ClickHouse batch because no ready target resolved"
                     );
-                    self.clickhouse_breakers.on_failure(org_id, Instant::now());
+                    permit.fail(Instant::now());
                     attempt = attempt.saturating_add(1);
                     if attempt >= max_attempts {
                         span.record("maple.ingest.outcome", "dropped");
@@ -3550,7 +3680,7 @@ impl ExportWorker {
                         error = %error,
                         "Retrying ClickHouse batch after target resolution error"
                     );
-                    self.clickhouse_breakers.on_failure(org_id, Instant::now());
+                    permit.fail(Instant::now());
                     attempt = attempt.saturating_add(1);
                     if attempt >= max_attempts {
                         span.record("maple.ingest.outcome", "dropped");
@@ -3662,7 +3792,7 @@ impl ExportWorker {
                         started.elapsed().as_secs_f64(),
                         rows as u64,
                     );
-                    self.clickhouse_breakers.on_success(org_id);
+                    permit.succeed();
                     return Ok(ClickHouseExportOutcome::Delivered);
                 }
                 Ok(response) => {
@@ -3728,7 +3858,7 @@ impl ExportWorker {
                         body = %body,
                         "Retrying ClickHouse batch"
                     );
-                    self.clickhouse_breakers.on_failure(org_id, Instant::now());
+                    permit.fail(Instant::now());
                     last_status = bucket.to_owned();
                 }
                 Err(error) if outbound::is_blocked_address(&error) => {
@@ -3757,7 +3887,7 @@ impl ExportWorker {
                         error = %error,
                         "Retrying ClickHouse batch after transport error"
                     );
-                    self.clickhouse_breakers.on_failure(org_id, Instant::now());
+                    permit.fail(Instant::now());
                     last_status = "transport".to_owned();
                 }
             }
@@ -6441,114 +6571,213 @@ mod tests {
         assert_eq!(ClickHouseBreakerConfig::default().failure_threshold, 2);
     }
 
+    fn breaker(failure_threshold: u32, cooldown: Duration) -> ClickHouseBreakerRegistry {
+        ClickHouseBreakerRegistry::new(ClickHouseBreakerConfig {
+            failure_threshold,
+            cooldown,
+        })
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    enum Seen {
+        Attempt,
+        Probe,
+        Defer,
+        Shed,
+    }
+
+    fn seen(admission: &Admission<'_>) -> Seen {
+        match admission {
+            Admission::Attempt(permit) if permit.probe.is_some() => Seen::Probe,
+            Admission::Attempt(_) => Seen::Attempt,
+            Admission::Defer => Seen::Defer,
+            Admission::Shed => Seen::Shed,
+        }
+    }
+
+    /// Admission kind for `org`, settling nothing: a dropped probe permit is released.
+    fn check(registry: &ClickHouseBreakerRegistry, now: Instant, window_spent: bool) -> Seen {
+        seen(&registry.admit("org", now, window_spent))
+    }
+
+    fn permit(registry: &ClickHouseBreakerRegistry, now: Instant) -> ExportPermit<'_> {
+        match registry.admit("org", now, false) {
+            Admission::Attempt(permit) => permit,
+            other => panic!("expected an attempt, got {:?}", seen(&other)),
+        }
+    }
+
+    fn state(registry: &ClickHouseBreakerRegistry) -> BreakerState {
+        *lock_state(&registry.states.get("org").expect("org has breaker state"))
+    }
+
     #[test]
-    fn clickhouse_breaker_trips_sheds_and_recovers() {
-        let registry = ClickHouseBreakerRegistry::new(ClickHouseBreakerConfig {
-            failure_threshold: 3,
-            cooldown: Duration::from_secs(30),
-        });
+    fn clickhouse_breaker_trips_defers_sheds_and_recovers() {
+        let cooldown = Duration::from_secs(30);
+        let registry = breaker(3, cooldown);
         let t0 = Instant::now();
 
-        // Unknown org: allowed, and no state is allocated.
-        assert_eq!(registry.decide("org", t0), BreakerDecision::Allow);
+        // Unknown org: attempted, and no state is allocated.
+        permit(&registry, t0).succeed();
+        assert!(registry.states.is_empty());
 
-        // Below threshold stays closed.
-        registry.on_failure("org", t0);
-        registry.on_failure("org", t0);
-        assert_eq!(registry.decide("org", t0), BreakerDecision::Allow);
+        // Below threshold stays closed; the threshold-th failure opens it.
+        permit(&registry, t0).fail(t0);
+        permit(&registry, t0).fail(t0);
+        assert_eq!(check(&registry, t0, false), Seen::Attempt);
+        permit(&registry, t0).fail(t0);
 
-        // Threshold-th failure trips it open → shed for the whole cooldown.
-        registry.on_failure("org", t0);
-        assert_eq!(registry.decide("org", t0), BreakerDecision::Shed);
+        // Open: a batch defers until its own window runs out, then sheds, and
+        // every later batch in this outage sheds at once.
+        assert_eq!(check(&registry, t0, false), Seen::Defer);
         assert_eq!(
-            registry.decide("org", t0 + Duration::from_secs(29)),
-            BreakerDecision::Shed
+            check(&registry, t0 + Duration::from_secs(29), true),
+            Seen::Shed
+        );
+        assert_eq!(
+            check(&registry, t0 + Duration::from_secs(29), false),
+            Seen::Shed
         );
 
-        // After the cooldown a single probe is allowed (half-open).
-        let after_cooldown = t0 + Duration::from_secs(31);
+        // After the cooldown one probe is admitted; its failure re-opens.
+        let half_open = t0 + cooldown + Duration::from_secs(1);
+        permit(&registry, half_open).fail(half_open);
         assert_eq!(
-            registry.decide("org", after_cooldown),
-            BreakerDecision::Allow
+            check(&registry, half_open + Duration::from_secs(1), false),
+            Seen::Shed
         );
 
-        // A failed probe re-opens for another cooldown.
-        registry.on_failure("org", after_cooldown);
-        assert_eq!(
-            registry.decide("org", after_cooldown + Duration::from_secs(1)),
-            BreakerDecision::Shed
-        );
-
-        // Success closes the breaker and resets the failure count, so it takes a
-        // full `failure_threshold` again to re-trip.
-        registry.on_success("org");
-        let recovered = after_cooldown + Duration::from_secs(2);
-        assert_eq!(registry.decide("org", recovered), BreakerDecision::Allow);
-        registry.on_failure("org", recovered);
-        registry.on_failure("org", recovered);
-        assert_eq!(registry.decide("org", recovered), BreakerDecision::Allow);
+        // A successful probe closes it, and the failure count starts over.
+        let recovered = half_open + cooldown + Duration::from_secs(1);
+        let probe = permit(&registry, recovered);
+        assert!(probe.probe.is_some());
+        probe.succeed();
+        assert_eq!(state(&registry), BreakerState::Closed { failures: 0 });
+        permit(&registry, recovered).fail(recovered);
+        permit(&registry, recovered).fail(recovered);
+        assert_eq!(check(&registry, recovered, false), Seen::Attempt);
     }
 
     #[test]
     fn clickhouse_breaker_half_open_admits_one_probe_at_a_time() {
         // Every lane worker consults this registry, so an ungated half-open let
-        // all of them hit the recovering target the instant cooldown elapsed —
-        // a thundering herd against a target that had just been declared
-        // unhealthy, repeated every cooldown for as long as it stayed down.
+        // all of them hit the recovering target the instant cooldown elapsed.
         let cooldown = Duration::from_secs(30);
-        let registry = ClickHouseBreakerRegistry::new(ClickHouseBreakerConfig {
-            failure_threshold: 1,
-            cooldown,
-        });
+        let registry = breaker(1, cooldown);
         let t0 = Instant::now();
-        registry.on_failure("org", t0);
-        assert_eq!(registry.decide("org", t0), BreakerDecision::Shed);
+        permit(&registry, t0).fail(t0);
 
         let half_open = t0 + cooldown + Duration::from_secs(1);
-        assert_eq!(registry.decide("org", half_open), BreakerDecision::Allow);
-        // Every other worker arriving in the same window is shed, not admitted.
+        let probe = permit(&registry, half_open);
         for _ in 0..10 {
-            assert_eq!(registry.decide("org", half_open), BreakerDecision::Shed);
+            assert_eq!(check(&registry, half_open, false), Seen::Defer);
         }
+        probe.succeed();
+        assert_eq!(check(&registry, half_open, false), Seen::Attempt);
+    }
 
-        // The probe succeeding closes the breaker for everyone.
-        registry.on_success("org");
-        assert_eq!(registry.decide("org", half_open), BreakerDecision::Allow);
+    #[test]
+    fn clickhouse_breaker_shed_cannot_mark_a_breaker_another_worker_closed() {
+        // The old shed path decided, then re-locked to mark the deferral spent; a
+        // probe closing the breaker in between left a closed breaker marked, so the
+        // next outage got no deferral window. Deciding and marking is now one step.
+        let cooldown = Duration::from_secs(30);
+        let registry = breaker(1, cooldown);
+        let t0 = Instant::now();
+        permit(&registry, t0).fail(t0);
+
+        let half_open = t0 + cooldown + Duration::from_secs(1);
+        let probe = permit(&registry, half_open);
+        probe.succeed();
+        // The losing worker's window ran out while the probe was in flight.
+        assert_eq!(check(&registry, half_open, true), Seen::Attempt);
+        assert_eq!(state(&registry), BreakerState::Closed { failures: 0 });
+
+        // The next outage still gets its deferral window.
+        let later = half_open + Duration::from_secs(1);
+        permit(&registry, later).fail(later);
+        assert_eq!(check(&registry, later, false), Seen::Defer);
+    }
+
+    #[test]
+    fn clickhouse_breaker_dropped_probe_releases_the_slot_without_a_verdict() {
+        // Config-class drops (bad URL, insecure or blocked endpoint, redirect, 4xx)
+        // return without settling the permit. That must free the probe slot at
+        // once, and neither close the breaker nor restart its cooldown.
+        let cooldown = Duration::from_secs(30);
+        let registry = breaker(1, cooldown);
+        let t0 = Instant::now();
+        permit(&registry, t0).fail(t0);
+        assert_eq!(check(&registry, t0, true), Seen::Shed);
+
+        let half_open = t0 + cooldown + Duration::from_secs(1);
+        drop(permit(&registry, half_open));
+        assert_eq!(
+            state(&registry),
+            BreakerState::Open {
+                opened_at: t0,
+                deferral_spent: true
+            }
+        );
+        // Not a cooldown later: the very next batch probes.
+        assert_eq!(check(&registry, half_open, false), Seen::Probe);
+    }
+
+    #[test]
+    fn clickhouse_breaker_late_failure_does_not_free_a_running_probe() {
+        let cooldown = Duration::from_secs(30);
+        let registry = breaker(1, cooldown);
+        let t0 = Instant::now();
+        // Admitted while closed, still in flight when another attempt opens the breaker.
+        let straggler = permit(&registry, t0);
+        permit(&registry, t0).fail(t0);
+
+        let half_open = t0 + cooldown + Duration::from_secs(1);
+        let probe = permit(&registry, half_open);
+        straggler.fail(half_open);
+        assert_eq!(check(&registry, half_open, false), Seen::Defer);
+
+        // Only the probe's own failure settles it.
+        probe.fail(half_open);
+        assert_eq!(
+            state(&registry),
+            BreakerState::Open {
+                opened_at: half_open,
+                deferral_spent: false
+            }
+        );
     }
 
     #[test]
     fn clickhouse_breaker_readmits_a_probe_that_never_reported() {
-        // A worker that dies between being admitted and recording an outcome
-        // must not wedge the breaker open forever: the claim expires after one
-        // cooldown and the next caller probes.
+        // A probe that hangs past one cooldown must not wedge the breaker open; the
+        // next caller probes, and the hung probe's late outcome no longer counts.
         let cooldown = Duration::from_secs(30);
-        let registry = ClickHouseBreakerRegistry::new(ClickHouseBreakerConfig {
-            failure_threshold: 1,
-            cooldown,
-        });
+        let registry = breaker(1, cooldown);
         let t0 = Instant::now();
-        registry.on_failure("org", t0);
+        permit(&registry, t0).fail(t0);
 
         let half_open = t0 + cooldown + Duration::from_secs(1);
-        assert_eq!(registry.decide("org", half_open), BreakerDecision::Allow);
-        assert_eq!(registry.decide("org", half_open), BreakerDecision::Shed);
+        let hung = permit(&registry, half_open);
+        assert_eq!(check(&registry, half_open, false), Seen::Defer);
 
-        // No on_success/on_failure ever arrived for that probe.
         let abandoned = half_open + cooldown + Duration::from_secs(1);
-        assert_eq!(registry.decide("org", abandoned), BreakerDecision::Allow);
+        let fresh = permit(&registry, abandoned);
+        hung.fail(abandoned);
+        assert_eq!(check(&registry, abandoned, false), Seen::Defer);
+        fresh.succeed();
+        assert_eq!(state(&registry), BreakerState::Closed { failures: 0 });
     }
 
     #[test]
     fn clickhouse_breaker_disabled_when_threshold_zero() {
-        let registry = ClickHouseBreakerRegistry::new(ClickHouseBreakerConfig {
-            failure_threshold: 0,
-            cooldown: Duration::from_secs(30),
-        });
+        let registry = breaker(0, Duration::from_secs(30));
         let t0 = Instant::now();
         for _ in 0..10 {
-            registry.on_failure("org", t0);
+            permit(&registry, t0).fail(t0);
         }
-        assert_eq!(registry.decide("org", t0), BreakerDecision::Allow);
+        assert_eq!(check(&registry, t0, true), Seen::Attempt);
+        assert!(registry.states.is_empty());
     }
 
     #[tokio::test]
@@ -8189,6 +8418,97 @@ mod tests {
         .await;
 
         drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_dropped_sealed_event_is_shipped_with_the_next_one() {
+        // `notify` drops events on a full channel rather than block an append. A
+        // lost `Sealed` must not leave its segment local-only for good.
+        let queue_dir = unique_test_dir("wal-ship-gap");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, 240);
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let wal = ShardedWal::open(&cfg).expect("open WAL");
+        let store = test_wal_store(&endpoint);
+        let owner = store.owner().to_owned();
+        let (events, receiver) = mpsc::channel(8);
+        tokio::spawn(run_segment_shipper(wal.lanes.clone(), store, receiver));
+
+        let frame = wal_test_frame(200);
+        let (first, _, _) = wal.append(0, &frame).await.expect("append a");
+        let (second, _, _) = wal.append(0, &frame).await.expect("append b");
+        wal.append(0, &frame).await.expect("append c");
+        assert_eq!(second, first + 1, "each append sealed the one before");
+
+        // Only the later segment's event arrives.
+        events
+            .send(SegmentEvent::Sealed {
+                lane: 0,
+                seq: second,
+            })
+            .await
+            .unwrap();
+        for seq in [first, second] {
+            let key = format!("wal/v1/segments/{owner}/shard-000-tinybird/{seq:012}.seg");
+            wait_for("every sealed segment to ship", || {
+                bucket.get(&key).is_some()
+            })
+            .await;
+        }
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn retire_stops_the_heartbeat_for_good() {
+        // A heartbeat landing after retire recreated `owners/<id>`, so the owner
+        // looked alive and its shipped tail waited out the staleness window.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let store = test_wal_store(&endpoint);
+        let owner_key = format!("wal/v1/owners/{}", store.owner());
+        let heartbeat = tokio::spawn(run_owner_heartbeat(
+            Arc::clone(&store),
+            Duration::from_millis(5),
+        ));
+        wait_for("the first heartbeat", || bucket.get(&owner_key).is_some()).await;
+
+        store.retire().await.expect("retire");
+        tokio::time::timeout(Duration::from_secs(3), heartbeat)
+            .await
+            .expect("the heartbeat task ends once the owner retires")
+            .unwrap();
+        assert_eq!(bucket.get(&owner_key), None);
+        assert!(!store.heartbeat().await.expect("heartbeat"));
+        assert_eq!(bucket.get(&owner_key), None);
+    }
+
+    #[tokio::test]
+    async fn a_claim_under_recovery_is_renewed_so_it_is_not_taken_over() {
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let recovering = test_wal_store(&endpoint);
+        let booting = test_wal_store(&endpoint);
+        let now = Utc::now();
+        // Two claims, each held 25 minutes already; only one is still recovering.
+        for owner in ["renewed", "idle"] {
+            assert!(recovering.claim(owner, now).await.unwrap());
+            bucket.put_aged(
+                &format!("wal/v1/claims/{owner}"),
+                recovering.owner().as_bytes().to_vec(),
+                chrono::Duration::minutes(25),
+            );
+        }
+        recovering
+            .while_claimed_every(
+                "renewed",
+                Duration::from_millis(10),
+                sleep(Duration::from_millis(100)),
+            )
+            .await;
+
+        // Ten minutes on, the idle claim is past its lease; the renewed one is not.
+        let later = Utc::now() + chrono::Duration::minutes(10);
+        assert!(!booting.claim("renewed", later).await.unwrap());
+        assert!(booting.claim("idle", later).await.unwrap());
     }
 
     #[tokio::test]

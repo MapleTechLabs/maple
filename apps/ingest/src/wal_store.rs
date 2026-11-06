@@ -15,10 +15,12 @@
 //! sequence number is never reused across boots and a claim can never race a
 //! live writer for the same key.
 
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use tracing::warn;
 
 use crate::aws::{CredentialsProvider, S3Client, S3Error, S3Object};
 use crate::telemetry::HttpClient;
@@ -49,6 +51,10 @@ pub const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(60);
 /// already exported — at-least-once again, and the alternative is loss.
 const CLAIM_LEASE: Duration = Duration::from_secs(30 * 60);
 
+/// How often a claim under recovery is re-stamped. Well inside `CLAIM_LEASE`, so
+/// several renewals can fail before a live recovery looks abandoned.
+const CLAIM_RENEW_EVERY: Duration = Duration::from_secs(5 * 60);
+
 #[derive(Clone, Debug)]
 pub struct WalStoreConfig {
     pub endpoint: String,
@@ -78,6 +84,9 @@ pub struct WalSegmentStore {
     /// under it and its segments are unambiguously ours to delete.
     owner: String,
     orphan_after: Duration,
+    /// Set by `retire`. Heartbeats take the same lock, so none can land after
+    /// the retire starts and recreate the owner key it deletes.
+    retired: tokio::sync::Mutex<bool>,
 }
 
 impl std::fmt::Debug for WalSegmentStore {
@@ -108,6 +117,7 @@ impl WalSegmentStore {
             prefix: cfg.prefix.trim_end_matches('/').to_owned(),
             owner: uuid::Uuid::new_v4().to_string(),
             orphan_after: cfg.orphan_after,
+            retired: tokio::sync::Mutex::new(false),
         }
     }
 
@@ -158,17 +168,24 @@ impl WalSegmentStore {
     }
 
     /// Refresh this owner's heartbeat. Liveness is the object's `LastModified`,
-    /// so the body carries nothing.
-    pub async fn heartbeat(&self) -> Result<(), S3Error> {
+    /// so the body carries nothing. Returns `false`, writing nothing, once retired.
+    pub async fn heartbeat(&self) -> Result<bool, S3Error> {
+        let retired = self.retired.lock().await;
+        if *retired {
+            return Ok(false);
+        }
         self.s3
             .put(&self.owner_key(&self.owner), Vec::new(), false)
-            .await
+            .await?;
+        Ok(true)
     }
 
     /// Mark this owner as gone for good, so a successor claims whatever we
-    /// shipped at shutdown right away. The marker lands before the heartbeat is
-    /// dropped, so the owner is never invisible to `stale_owners`.
+    /// shipped at shutdown right away. Heartbeats stop first, and the marker lands
+    /// before the heartbeat is dropped, so the owner is never invisible to `stale_owners`.
     pub async fn retire(&self) -> Result<(), S3Error> {
+        let mut retired = self.retired.lock().await;
+        *retired = true;
         self.s3
             .put(&self.retired_key(&self.owner), Vec::new(), false)
             .await?;
@@ -224,6 +241,38 @@ impl WalSegmentStore {
                 Ok(true)
             }
             Err(error) => Err(error),
+        }
+    }
+
+    /// Run `work` (one owner's recovery) while keeping this task's claim on
+    /// `owner` fresh, so a recovery longer than `CLAIM_LEASE` is not taken over
+    /// and replayed a second time.
+    pub async fn while_claimed<T>(&self, owner: &str, work: impl Future<Output = T>) -> T {
+        self.while_claimed_every(owner, CLAIM_RENEW_EVERY, work)
+            .await
+    }
+
+    pub(crate) async fn while_claimed_every<T>(
+        &self,
+        owner: &str,
+        every: Duration,
+        work: impl Future<Output = T>,
+    ) -> T {
+        let mut work = std::pin::pin!(work);
+        let mut renew = tokio::time::interval_at(tokio::time::Instant::now() + every, every);
+        renew.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tokio::select! {
+                out = &mut work => return out,
+                _ = renew.tick() => {
+                    // Unconditional, like a takeover: a renewal only ever races a
+                    // task that took the claim over, and both replaying is at-least-once.
+                    let key = self.claim_key(owner);
+                    if let Err(error) = self.s3.put(&key, self.owner.as_bytes().to_vec(), false).await {
+                        warn!(owner, error = %error, "Failed to renew a WAL owner claim");
+                    }
+                }
+            }
         }
     }
 

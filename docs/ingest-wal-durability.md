@@ -93,12 +93,17 @@ own lane, seal that lane and **re-ship it under its own owner id, and only then*
 object, so the frames are never only on one task's disk. Memory holds one segment however large the
 dead owner's backlog is. A segment that fails any step keeps its source object and the owner stays
 claimable, so a later boot retries it (at-least-once); a failed re-commit or re-ship also stops that
-owner's recovery, so the rest is not piled onto local disk only to be replayed again. A claim older than 30 minutes is taken over
-unconditionally, because the task that wrote it evidently died before finishing.
+owner's recovery, so the rest is not piled onto local disk only to be replayed again. The winner
+re-stamps its claim every 5 minutes while that recovery runs. A claim older than 30 minutes is taken
+over unconditionally, because the task that wrote it evidently died before finishing.
+
+**Shipping gaps.** A full shipper channel drops a segment event rather than block an append. A lane
+seals in sequence, so when a `Sealed` arrives past the one the shipper expected, it ships the skipped
+segments too.
 
 **Shutdown.** After `INGEST_SHUTDOWN_DRAIN_SECS`, whatever did not export is sealed and shipped, and
 the owner heartbeat is deleted, so the next task claims it immediately instead of waiting out the
-staleness window.
+staleness window. Retiring stops the heartbeat first, so no late refresh can recreate the key.
 
 Credentials come from the ECS task role (`AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`, refreshed 5
 minutes before expiry) unless `INGEST_WAL_S3_ACCESS_KEY_ID`/`_SECRET_ACCESS_KEY` are set. The VPC
@@ -145,7 +150,9 @@ Two limits close that gap:
   one window: one breaker cooldown, at most 30s and at most a quarter of the max queue age. A
   target blip shorter than that is delivered without loss. Past the window that org's batch is
   shed as `shed_circuit_open` (metered as `circuit_open`) and the cursor advances, and later
-  batches for the org shed at once until a probe succeeds. One lane exports every org on its
+  batches for the org shed at once until a probe succeeds. A probe that ends in a config-class drop
+  (bad or blocked endpoint, redirect, 4xx) gives no verdict on the target: it frees the probe slot
+  without closing the breaker or restarting its cooldown. One lane exports every org on its
   shard in turn, so the window is also the most a broken target delays the other orgs there:
   waiting longer would age their frames out instead.
 - **`INGEST_REQUEST_TIMEOUT_SECS`** bounds one HTTP request. Without it the accept path had no
