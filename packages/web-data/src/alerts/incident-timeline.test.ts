@@ -1,5 +1,5 @@
 import { AlertDeliveryEventDocument, AlertIncidentDocument } from "@maple/domain/http"
-import { Option, Schema, Array as Arr } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { buildIncidentTimeline } from "./incident-timeline"
 
@@ -135,5 +135,49 @@ describe("buildIncidentTimeline", () => {
 			}),
 		)
 		expect(entries.at(-1)).toMatchObject({ title: "Resolved", detail: "After 38m" })
+	})
+})
+
+describe("paged events", () => {
+	it("read who was paged on which channel, in order, with a failure's reason", () => {
+		const entries = buildIncidentTimeline({
+			incident: makeIncident(),
+			deliveries: [],
+			investigation: null,
+			pages: [
+				{
+					id: "p2",
+					at: "2026-10-15T14:20:00.000Z",
+					name: "Ben Brook",
+					channel: "email",
+					status: "failed",
+					errorMessage: "Mailbox full",
+				},
+				{
+					id: "p1",
+					at: "2026-10-15T14:15:00.000Z",
+					name: "Ben Brook",
+					channel: "slack",
+					status: "sent",
+					errorMessage: null,
+				},
+				{
+					id: "p3",
+					at: "2026-10-15T14:21:00.000Z",
+					name: null,
+					channel: "discord",
+					status: "skipped",
+					errorMessage: null,
+				},
+			],
+			renotifyIntervalMinutes: null,
+			destinationTypeLabel: (type) => type,
+		})
+		const pages = Arr.filter(entries, (entry) => Str.startsWith("page:")(entry.key))
+		expect(Arr.map(pages, (entry) => [entry.title, entry.detail, entry.tone])).toEqual([
+			["Paged Ben Brook by Slack DM", null, "info"],
+			["Couldn't page Ben Brook by email", "Mailbox full", "crit"],
+			["Skipped paging a former member by Discord DM", "Acknowledged or resolved first", "neutral"],
+		])
 	})
 })

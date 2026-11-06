@@ -112,3 +112,19 @@ export const FetchIncidentMonitors = Command.define("FetchAlertIncidentMonitors"
 			Effect.map((result) => Message.CompletedFetchMonitors({ key, result })),
 		),
 })
+
+/** The incident's activity, oldest first: the timeline reads its `paged` events. */
+export const FetchIncidentEvents = Command.define("FetchAlertIncidentEvents", {
+	args: { key: Schema.String, incidentId: AlertIncidentId },
+	messages: [Message.CompletedFetchEvents],
+	execute: ({ key, incidentId }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiV2Client
+			const list = yield* client.alertIncidents.listEvents({ params: { id: incidentId } })
+			return list.data
+		}).pipe(
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchEvents({ key, result })),
+		),
+})

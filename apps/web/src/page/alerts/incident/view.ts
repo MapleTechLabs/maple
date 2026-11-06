@@ -1,4 +1,4 @@
-import type { V2AlertIncidentEscalation } from "@maple/domain/http/v2"
+import type { V2AlertIncidentEscalation, V2AlertIncidentEvent } from "@maple/domain/http/v2"
 import type {
 	AlertCheckDocument,
 	AlertIncidentDocument,
@@ -15,6 +15,7 @@ import {
 } from "@maple/web-data/alerts/form-utils"
 import {
 	buildIncidentTimeline,
+	type IncidentPage,
 	conditionPhrase,
 	holdReasonLabel,
 	incidentGroup,
@@ -321,6 +322,7 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 			incident,
 			deliveries,
 			investigation,
+			pages: pagesOf(AsyncData.getOrElse(model.events.data, () => [])),
 			renotifyIntervalMinutes:
 				rule != null && rule.destinationIds.length > 0 ? rule.renotifyIntervalMinutes : null,
 			destinationTypeLabel: (type) => providerOf(type).label,
@@ -334,6 +336,23 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 		colors: model.themeColors ?? {},
 	})
 }
+
+/** The incident's `paged` events as the timeline reads them. */
+const pagesOf = (events: ReadonlyArray<V2AlertIncidentEvent>): ReadonlyArray<IncidentPage> =>
+	Arr.flatMap(events, (event): ReadonlyArray<IncidentPage> =>
+		event.type !== "paged" || event.page === undefined
+			? []
+			: [
+					{
+						id: event.id,
+						at: event.created_at,
+						name: event.page.name,
+						channel: event.page.channel,
+						status: event.page.status,
+						errorMessage: event.page.error_message,
+					},
+				],
+	)
 
 const loading = (h: H): Html =>
 	dashboardPage(

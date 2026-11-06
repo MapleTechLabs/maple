@@ -111,6 +111,59 @@ function deliveryEntry(
 	}
 }
 
+/** A `paged` incident event: an escalation step paged one member on one channel. */
+export interface IncidentPage {
+	readonly id: string
+	/** ISO timestamp. */
+	readonly at: string
+	readonly name: string | null
+	readonly channel: string
+	readonly status: "queued" | "sending" | "sent" | "failed" | "skipped"
+	readonly errorMessage: string | null
+}
+
+/** "email", "Slack DM", "Discord DM". */
+export function pageChannelLabel(channel: string): string {
+	switch (channel) {
+		case "email":
+			return "email"
+		case "slack":
+			return "Slack DM"
+		case "discord":
+			return "Discord DM"
+		default:
+			return `${channel} DM`
+	}
+}
+
+/** "Paged Ben Brook by Slack DM"; a failed or skipped page says so and why. */
+export function pageEntry(page: IncidentPage): IncidentTimelineEntry {
+	const who = page.name ?? "a former member"
+	const by = pageChannelLabel(page.channel)
+	const sending = page.status === "queued" || page.status === "sending"
+	const title =
+		page.status === "failed"
+			? `Couldn't page ${who} by ${by}`
+			: page.status === "skipped"
+				? `Skipped paging ${who} by ${by}`
+				: sending
+					? `Paging ${who} by ${by}`
+					: `Paged ${who} by ${by}`
+	return {
+		key: `page:${page.id}`,
+		at: Date.parse(page.at),
+		tone: page.status === "failed" ? "crit" : page.status === "skipped" || sending ? "neutral" : "info",
+		pending: sending,
+		title,
+		detail:
+			page.status === "failed" || page.status === "skipped"
+				? (page.errorMessage ??
+					(page.status === "skipped" ? "Acknowledged or resolved first" : "The channel refused it"))
+				: null,
+		investigation: null,
+	}
+}
+
 function investigationEntries(investigation: V2Investigation): ReadonlyArray<IncidentTimelineEntry> {
 	const started: IncidentTimelineEntry = {
 		key: `investigation:${investigation.id}:started`,
@@ -165,6 +218,8 @@ export function buildIncidentTimeline(input: {
 	incident: AlertIncidentDocument
 	deliveries: ReadonlyArray<AlertDeliveryEventDocument>
 	investigation: V2Investigation | null
+	/** Escalation pages to members, from the incident's `paged` events. */
+	pages?: ReadonlyArray<IncidentPage>
 	renotifyIntervalMinutes: number | null
 	destinationTypeLabel: (type: AlertDestinationType) => string
 }): ReadonlyArray<IncidentTimelineEntry> {
@@ -193,6 +248,7 @@ export function buildIncidentTimeline(input: {
 		const entry = deliveryEntry(delivery, input.destinationTypeLabel)
 		if (entry != null) events.push(entry)
 	}
+	for (const page of input.pages ?? []) events.push(pageEntry(page))
 	if (input.investigation != null) events.push(...investigationEntries(input.investigation))
 
 	if (incident.status === "resolved" && incident.resolvedAt != null) {

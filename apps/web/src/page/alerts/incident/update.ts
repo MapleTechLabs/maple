@@ -20,6 +20,7 @@ import {
 	FetchIncidentChecks,
 	FetchIncidentDeliveries,
 	FetchIncidentEscalation,
+	FetchIncidentEvents,
 	FetchIncidentInvestigation,
 	FetchIncidentMonitors,
 	FetchIncidentPreview,
@@ -48,6 +49,7 @@ export const init = (route: IncidentRoute, _context: PageContext): Return => ({
 		deliveries: Keyed.idle(),
 		investigation: Keyed.idle(),
 		escalation: Keyed.idle(),
+		events: Keyed.idle(),
 		slos: Keyed.idle(),
 		monitors: Keyed.idle(),
 		isStartingInvestigation: false,
@@ -97,6 +99,14 @@ const followData = (model: Model, context: PageContext): Return =>
 				lastNotifiedAt: view.incident.lastNotifiedAt,
 				acknowledgedAt: view.incident.acknowledgedAt,
 			})
+			// Pages land as the escalation moves, so the events follow the same changes.
+			const eventsKey = requestKey(context.orgId, "alertIncidents.listEvents", {
+				id: incidentId,
+				status: view.incident.status,
+				severity: view.incident.severity,
+				lastNotifiedAt: view.incident.lastNotifiedAt,
+				acknowledgedAt: view.incident.acknowledgedAt,
+			})
 			const steps: ReadonlyArray<{ patch: Partial<Model>; commands: Commands }> = [
 				...Option.toArray(
 					Option.map(
@@ -106,6 +116,17 @@ const followData = (model: Model, context: PageContext): Return =>
 						(escalation) => ({
 							patch: { escalation },
 							commands: [FetchIncidentEscalation({ key: escalationKey, incidentId })],
+						}),
+					),
+				),
+				...Option.toArray(
+					Option.map(
+						sameKey(model.events, eventsKey)
+							? Option.none()
+							: Keyed.request(model.events, eventsKey, "Load"),
+						(events) => ({
+							patch: { events },
+							commands: [FetchIncidentEvents({ key: eventsKey, incidentId })],
 						}),
 					),
 				),
@@ -311,6 +332,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		CompletedFetchEscalation: ({ key, result }) => ({
 			model: { ...model, escalation: Keyed.accept(model.escalation, key, result) },
+		}),
+		CompletedFetchEvents: ({ key, result }) => ({
+			model: { ...model, events: Keyed.accept(model.events, key, result) },
 		}),
 		CompletedFetchSlos: ({ key, result }) => ({
 			model: { ...model, slos: Keyed.accept(model.slos, key, result) },
