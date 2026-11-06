@@ -44,6 +44,7 @@ import {
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { transitionRow } from "@maple/backend/platform/transition-row"
 import {
 	deleteSourcesOf,
 	upsertWithSource,
@@ -215,9 +216,19 @@ interface UpsertInstallationInput {
 
 interface RepoSyncStatusUpdate {
 	readonly status: VcsRepoSyncStatus
+	/** The states this writer expects; a repo another sync moved since is left alone. */
+	readonly from: Arr.NonEmptyReadonlyArray<VcsRepoSyncStatus>
 	readonly error?: string | null
 	readonly syncedAt?: number | null
 }
+
+/** Every sync status: a fresh sync start, or a provider verdict that holds whatever the walk state. */
+export const ANY_REPO_SYNC_STATUS: Arr.NonEmptyReadonlyArray<VcsRepoSyncStatus> = [
+	"pending",
+	"backfilling",
+	"ready",
+	"error",
+]
 
 /**
  * Read scope for repository queries — a required argument so every caller must
@@ -784,51 +795,54 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				return true
 			})
 
-			// Write a sync-status transition. `last_synced_at` is touched ONLY when the
-			// caller passes `syncedAt` (i.e. a sync actually completed) — so marking a repo
-			// "backfilling" at the start of / mid a run never stamps a misleading sync time;
-			// it stays whatever the last *successful* sync left.
+			// Write a sync-status transition, guarded on the states the caller expects and on the
+			// repo still being active. `last_synced_at` is touched ONLY when the caller passes
+			// `syncedAt` (a sync actually completed). Reports whether the write applied.
 			const updateRepoSyncStatus = Effect.fn("VcsRepository.updateRepoSyncStatus")(function* (
 				repositoryId: VcsRepositoryId,
 				update: RepoSyncStatusUpdate,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				yield* dbExecute((db) =>
-					db.run(
-						PG.update(VcsRepositories)
-							.set({
-								syncStatus: update.status,
-								lastSyncError: update.error ?? null,
-								...("syncedAt" in update
-									? { lastSyncedAt: update.syncedAt ?? null }
-									: undefined),
-								updatedAt: now,
-							})
-							.where(($) => [$.id.eq(repositoryId)]),
-					),
+				const applied = yield* transitionRow(
+					{ table: "vcs_repositories", id: repositoryId, from: update.from, to: update.status },
+					(from) =>
+						dbExecute((db) =>
+							db.run(
+								PG.update(VcsRepositories)
+									.set({
+										syncStatus: update.status,
+										lastSyncError: update.error ?? null,
+										...("syncedAt" in update
+											? { lastSyncedAt: update.syncedAt ?? null }
+											: undefined),
+										updatedAt: now,
+									})
+									.where(($) => [
+										$.id.eq(repositoryId),
+										$.status.eq("active"),
+										$.syncStatus.in_(...from),
+									])
+									.returning("id"),
+							),
+						),
+				).pipe(
+					Effect.as(true),
+					Effect.catchTag("@maple/backend/TransitionConflictError", () => Effect.succeed(false)),
 				)
 				// Only a settled sync speaks for the installation; a start or a backfill step does not.
-				if (update.status === "ready" || update.status === "error") {
+				if (applied && (update.status === "ready" || update.status === "error")) {
 					yield* reportInstallationSync(repositoryId, now)
 				}
+				return applied
 			})
 
 			// Flag a single repo's sync as errored without touching its cursor /
 			// last-synced time (a failed fetch must not wipe prior progress).
-			const markRepoSyncError = Effect.fn("VcsRepository.markRepoSyncError")(function* (
+			const markRepoSyncError = (
 				repositoryId: VcsRepositoryId,
 				message: string,
-			) {
-				const now = yield* Clock.currentTimeMillis
-				yield* dbExecute((db) =>
-					db.run(
-						PG.update(VcsRepositories)
-							.set({ syncStatus: "error", lastSyncError: message, updatedAt: now })
-							.where(($) => [$.id.eq(repositoryId)]),
-					),
-				)
-				yield* reportInstallationSync(repositoryId, now)
-			})
+				from: Arr.NonEmptyReadonlyArray<VcsRepoSyncStatus>,
+			) => updateRepoSyncStatus(repositoryId, { status: "error", from, error: message })
 
 			// Persist commits for an already-resolved repository. Commits belong to the
 			// repo only (no commit↔branch link — a repo tracks one branch at a time).
