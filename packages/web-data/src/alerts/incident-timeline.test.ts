@@ -142,6 +142,17 @@ describe("buildIncidentTimeline", () => {
 		expect(failed?.detail).toBe("discord · webhook returned 500")
 	})
 
+	it("names a page a silence held back", () => {
+		const [, silenced] = build(makeIncident(), [makeDelivery({ status: "silenced" })])
+		expect(silenced?.title).toBe("Page to #alerts held back by a silence")
+		expect(silenced?.tone).toBe("neutral")
+		expect(silenced?.pending).toBe(false)
+		const [, reminder] = build(makeIncident(), [
+			makeDelivery({ status: "silenced", eventType: "renotify" }),
+		])
+		expect(reminder?.title).toBe("Reminder to #alerts held back by a silence")
+	})
+
 	it("ends a held incident on the hold instead of a breach", () => {
 		const entries = build(makeIncident({ holdReason: "no_data", heldSince: "2026-10-15T14:40:00.000Z" }))
 		expect(entries.at(-1)?.title).toBe("Waiting on data")

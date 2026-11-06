@@ -6,6 +6,7 @@ import {
 	AlertRuleStateRowSchema,
 } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
+import * as Policy from "@maple/domain/policy"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
@@ -13,6 +14,8 @@ import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { AlertRuleSearch } from "../../../route/search"
+import { V2AlertSilence } from "@maple/domain/http/v2"
+import * as SilenceDialog from "../silence-dialog/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { CheckSummary } from "../shared/check-summary"
@@ -88,5 +91,10 @@ export const Model = Schema.Struct({
 	chart: Chart.Model,
 	chartRuntime: ChartRuntime,
 	themeColors: Schema.NullOr(ThemeColors),
+	/** `alertSilences.list`: which silence, if any, holds back this rule's notifications. */
+	silences: KeyedSchema(Schema.Array(V2AlertSilence), LoadFailure),
+	silenceDialog: SilenceDialog.Model,
+	/** What the session may do (`Policy.grantsOf`); none until it answers, so Silence stays hidden. */
+	grants: Schema.Array(Policy.PermissionName),
 })
 export type Model = typeof Model.Type
