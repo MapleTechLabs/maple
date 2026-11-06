@@ -1146,6 +1146,7 @@ export const eventTypeMeta: Record<AlertEventType, { label: string; tone: Tone }
 	resolve: { label: "Resolved", tone: "ok" },
 	renotify: { label: "Re-notified", tone: "warn" },
 	test: { label: "Test", tone: "info" },
+	acknowledge: { label: "Acknowledged", tone: "info" },
 } satisfies Record<AlertEventType, { label: string; tone: Tone }>
 
 export type DeliveryStatusVariant = Exclude<Tone, "neutral"> | "outline"
