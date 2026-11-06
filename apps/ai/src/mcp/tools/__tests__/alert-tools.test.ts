@@ -1093,6 +1093,29 @@ describe("alert tools", () => {
 		})
 		expect(chainOf(tiered, { escalation_chain_id: CHAIN_ID })).toEqual([undefined, CHAIN_ID])
 
+		// A named tier changes only that tier: detaching the warning chain keeps the critical one.
+		const bothChained = Schema.decodeSync(AlertRuleDocument)({
+			...tiered,
+			thresholds: Arr.map(tiered.thresholds, (tier) => ({ ...tier, escalationChainId: CHAIN_ID })),
+		})
+		expect(
+			chainOf(bothChained, { escalation_chain_id: "none", escalation_chain_tier: "warning" }),
+		).toEqual([null, CHAIN_ID])
+		expect(chainOf(tiered, { escalation_chain_id: CHAIN_ID, escalation_chain_tier: "warning" })).toEqual([
+			CHAIN_ID,
+			undefined,
+		])
+		const tierAlone = Effect.runSync(
+			Effect.flip(buildUpdatedRequest(tiered, { escalation_chain_tier: "warning" })),
+		)
+		expect(tierAlone.parameter).toBe("escalation_chain_tier")
+		const missingTier = Effect.runSync(
+			Effect.flip(
+				buildUpdatedRequest(rule, { escalation_chain_id: "none", escalation_chain_tier: "warning" }),
+			),
+		)
+		expect(missingTier.parameter).toBe("escalation_chain_tier")
+
 		const malformed = Effect.runSync(
 			Effect.flip(buildUpdatedRequest(rule, { escalation_chain_id: "not-a-chain" })),
 		)

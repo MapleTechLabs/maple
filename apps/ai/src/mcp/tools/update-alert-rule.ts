@@ -105,7 +105,11 @@ export const UpdateAlertRuleParameters = Schema.Struct({
 	),
 	escalation_chain_id: P.optionalResourceId(
 		"escalationChain",
-		'Escalation chain an incident starts on top of the destinations (from list_escalation_chains), or "none" to detach it from every tier. On a rule with warning and critical tiers an id sets the critical tier',
+		'Escalation chain an incident starts on top of the destinations (from list_escalation_chains), or "none" to detach. Applies to escalation_chain_tier; without it, an id sets the critical (or only) tier and "none" detaches every tier',
+	),
+	escalation_chain_tier: P.optionalOneOf(
+		["warning", "critical"],
+		"The tier escalation_chain_id sets or detaches, leaving the other tier's chain as it is",
 	),
 })
 
@@ -144,7 +148,7 @@ export const buildUpdatedRequest = Effect.fnUntraced(function* (
 						"escalation_chain_id",
 					)(params.escalation_chain_id)
 	const merged = yield* mergeThresholds(current, params, comparator)
-	const thresholds = withEscalationChain(merged, chain)
+	const thresholds = yield* withEscalationChain(current.name, merged, chain, params.escalation_chain_tier)
 
 	return {
 		name: params.name ?? current.name,
@@ -241,16 +245,46 @@ const mergeThresholds = (
 }
 
 /** Sets the chain on the only tier, or on the critical one of two; `undefined` keeps every tier's. */
+/**
+ * Sets or detaches a tier's chain. A named tier changes only that tier; without one, an id sets the
+ * critical (or only) tier and "none" detaches every tier.
+ */
 const withEscalationChain = <T extends { readonly severity: AlertThreshold["severity"] }>(
+	ruleName: string,
 	tiers: Arr.NonEmptyReadonlyArray<T>,
 	chain: EscalationChainId | null | undefined,
-): Arr.NonEmptyReadonlyArray<T> => {
-	if (chain === undefined) return tiers
-	// "none" detaches every tier's chain, wherever it was set.
-	if (chain === null) return Arr.map(tiers, (tier) => ({ ...tier, escalationChainId: null }))
-	const critical = Arr.findLastIndex(tiers, (tier) => tier.severity === "critical")
+	tier: AlertThreshold["severity"] | undefined,
+): Effect.Effect<Arr.NonEmptyReadonlyArray<T>, McpInvalidInputError> => {
+	if (chain === undefined) {
+		return tier === undefined
+			? Effect.succeed(tiers)
+			: Effect.fail(
+					new McpInvalidInputError({
+						message:
+							'escalation_chain_tier needs escalation_chain_id (an id, or "none" to detach)',
+						parameter: "escalation_chain_tier",
+					}),
+				)
+	}
+	if (tier !== undefined) {
+		if (!Arr.some(tiers, (t) => t.severity === tier)) {
+			return Effect.fail(
+				new McpInvalidInputError({
+					message: `"${ruleName}" has no ${tier} tier`,
+					parameter: "escalation_chain_tier",
+				}),
+			)
+		}
+		return Effect.succeed(
+			Arr.map(tiers, (t) => (t.severity === tier ? { ...t, escalationChainId: chain } : t)),
+		)
+	}
+	if (chain === null) return Effect.succeed(Arr.map(tiers, (t) => ({ ...t, escalationChainId: null })))
+	const critical = Arr.findLastIndex(tiers, (t) => t.severity === "critical")
 	const target = tiers.length === 1 ? 0 : Option.getOrElse(critical, () => tiers.length - 1)
-	return Arr.map(tiers, (tier, index) => (index === target ? { ...tier, escalationChainId: chain } : tier))
+	return Effect.succeed(
+		Arr.map(tiers, (t, index) => (index === target ? { ...t, escalationChainId: chain } : t)),
+	)
 }
 
 /** `destination_ids` replaces; add/remove edit the current (or replaced) list in place. */
