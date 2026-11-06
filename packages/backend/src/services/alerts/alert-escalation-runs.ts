@@ -21,7 +21,7 @@ import type {
 	OnCallScheduleId,
 	OrgId,
 } from "@maple/domain/http"
-import type { AlertEscalationRunId, ChatConnectorId, ChatWorkspaceId, UserId } from "@maple/domain/primitives"
+import type { AlertEscalationRunId, ChatConnectorId, ChatIdentityId, UserId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDeliveryEvents,
@@ -257,14 +257,14 @@ export const enabledDestinationIds = (db: MapleDb, orgId: OrgId, ids: ReadonlyAr
 				)
 				.pipe(Effect.map((rows) => new Set(Arr.map(rows, (row) => row.id))))
 
-/** One channel a person is paged on: email, or a direct message through a linked chat account. */
+/** One channel a person is paged on: email, or a direct message to a linked chat account. */
 export type MemberRecipient =
 	| { readonly userId: UserId; readonly channel: "email" }
 	| {
 			readonly userId: UserId
 			readonly channel: ChatConnectorId
-			/** The `chat_workspaces` row the message goes out through. */
-			readonly workspaceId: ChatWorkspaceId
+			/** The `chat_identities` row; the workspace is chosen at delivery. */
+			readonly identityId: ChatIdentityId
 			readonly externalUserId: string
 	  }
 
@@ -280,13 +280,24 @@ export interface StepRecipients {
 	readonly userIds: ReadonlyArray<UserId>
 	/** Schedule targets with nobody on call at `nowMs` (or deleted since). */
 	readonly gapScheduleIds: ReadonlyArray<OnCallScheduleId>
+	/** Each schedule target's on-call user at `nowMs`. */
+	readonly onCall: ReadonlyArray<{ readonly scheduleId: OnCallScheduleId; readonly userId: UserId }>
+	/** Resolved users dropped because they are no longer org members. */
+	readonly missingUserIds: ReadonlyArray<UserId>
 }
 
 /**
  * Who a step pages at `nowMs`: its user targets, plus whoever each schedule target has on call.
- * Each person gets an email row and one row per chat account they linked in the org.
+ * Each person gets an email row and one row per chat account they linked in the org, on a
+ * connector in `directMessageConnectors` with a workspace linked in the org.
  */
-export const loadStepRecipients = (db: MapleDb, orgId: OrgId, step: EscalationStep, nowMs: number) =>
+export const loadStepRecipients = (
+	db: MapleDb,
+	orgId: OrgId,
+	step: EscalationStep,
+	nowMs: number,
+	directMessageConnectors: ReadonlySet<ChatConnectorId>,
+) =>
 	Effect.gen(function* () {
 		const directUserIds = Arr.flatMap(step.targets, (target) =>
 			target.type === "user" ? [target.userId] : [],
@@ -315,7 +326,7 @@ export const loadStepRecipients = (db: MapleDb, orgId: OrgId, step: EscalationSt
 							]),
 					),
 		])
-		const onCall = Arr.map(scheduleIds, (scheduleId) => {
+		const shifts = Arr.map(scheduleIds, (scheduleId) => {
 			const schedule = Arr.findFirst(schedules, (row) => row.id === scheduleId)
 			if (Option.isNone(schedule)) return { scheduleId, userId: null }
 			const shift = onCallAt(
@@ -325,47 +336,83 @@ export const loadStepRecipients = (db: MapleDb, orgId: OrgId, step: EscalationSt
 			)
 			return { scheduleId, userId: shift === null ? null : shift.userId }
 		})
-		const userIds = Arr.dedupe([
-			...directUserIds,
-			...Arr.flatMap(onCall, (entry) => (entry.userId === null ? [] : [entry.userId])),
-		])
-		const gapScheduleIds = Arr.flatMap(onCall, (entry) =>
+		const onCall = Arr.flatMap(shifts, ({ scheduleId, userId }) =>
+			userId === null ? [] : [{ scheduleId, userId }],
+		)
+		const userIds = Arr.dedupe([...directUserIds, ...Arr.map(onCall, (entry) => entry.userId)])
+		const gapScheduleIds = Arr.flatMap(shifts, (entry) =>
 			entry.userId === null ? [entry.scheduleId] : [],
 		)
-		if (userIds.length === 0) return { recipients: [], userIds, gapScheduleIds } satisfies StepRecipients
+		const base = { userIds, gapScheduleIds, onCall, missingUserIds: [] }
+		if (userIds.length === 0) return { ...base, recipients: [] } satisfies StepRecipients
 		const [identities, workspaces] = yield* Effect.all([
 			db.run(
 				PG.from(ChatIdentities)
-					.select("userId", "connector", "externalUserId")
-					.where(($) => [$.orgId.eq(orgId), $.userId.in_(...userIds)]),
+					.select("id", "userId", "connector", "externalUserId", "createdAt")
+					.where(($) => [$.orgId.eq(orgId), $.userId.in_(...userIds)])
+					.orderBy(["createdAt", "asc"], ["id", "asc"]),
 			),
 			db.run(
 				PG.from(ChatWorkspaces)
-					.select("id", "connector", "createdAt")
-					.where(($) => [$.orgId.eq(orgId)])
-					.orderBy(["createdAt", "asc"]),
+					.select("connector")
+					.where(($) => [$.orgId.eq(orgId)]),
 			),
 		])
-		// A linked account is reached through the org's first workspace on its connector.
-		const chatRecipients = Arr.flatMap(identities, (identity): ReadonlyArray<MemberRecipient> => {
-			const workspace = Arr.findFirst(workspaces, (row) => row.connector === identity.connector)
-			return Option.isNone(workspace)
-				? []
-				: [
+		const linked = new Set(Arr.map(workspaces, (row) => row.connector))
+		// A connector that cannot open a DM, or with no workspace to send through, pages nobody.
+		const chatRecipients = Arr.flatMap(identities, (identity): ReadonlyArray<MemberRecipient> =>
+			directMessageConnectors.has(identity.connector) && linked.has(identity.connector)
+				? [
 						{
 							userId: identity.userId,
 							channel: identity.connector,
-							workspaceId: workspace.value.id,
+							identityId: identity.id,
 							externalUserId: identity.externalUserId,
 						},
 					]
-		})
+				: [],
+		)
 		const recipients = Arr.flatMap(userIds, (userId): ReadonlyArray<MemberRecipient> => [
 			{ userId, channel: "email" },
 			...Arr.filter(chatRecipients, (recipient) => recipient.userId === userId),
 		])
-		return { recipients, userIds, gapScheduleIds } satisfies StepRecipients
+		return { ...base, recipients } satisfies StepRecipients
 	})
+
+/**
+ * Drops users the member directory no longer lists; a schedule whose on-call person left counts
+ * as a gap. `members` null (no directory, or it could not be read) keeps everyone.
+ */
+export const withoutDepartedMembers = (
+	paged: StepRecipients,
+	members: ReadonlySet<string> | null,
+): StepRecipients => {
+	if (members === null) return paged
+	const isMember = (userId: UserId) => members.has(userId)
+	const departed = Arr.filter(paged.userIds, (userId) => !isMember(userId))
+	if (departed.length === 0) return paged
+	return {
+		recipients: Arr.filter(paged.recipients, (recipient) => isMember(recipient.userId)),
+		userIds: Arr.filter(paged.userIds, isMember),
+		gapScheduleIds: [
+			...paged.gapScheduleIds,
+			...Arr.flatMap(paged.onCall, (entry) => (isMember(entry.userId) ? [] : [entry.scheduleId])),
+		],
+		onCall: Arr.filter(paged.onCall, (entry) => isMember(entry.userId)),
+		missingUserIds: departed,
+	}
+}
+
+/** One row per person, channel and step; a chat row is also keyed by its identity. */
+export const memberNotificationDedupeKey = (
+	runId: AlertEscalationRunId,
+	pass: number,
+	step: number,
+	recipient: MemberRecipient,
+) =>
+	"identityId" in recipient
+		? `${runId}:${pass}:${step}:${recipient.userId}:${recipient.channel}:${recipient.identityId}`
+		: `${runId}:${pass}:${step}:${recipient.userId}:email`
 
 export type EscalationApplyOutcome = "sent" | "ended" | "paused" | "resumed" | "deferred" | "lost" | "idle"
 
@@ -517,12 +564,18 @@ export const applyEscalationPlan = (db: MapleDb, input: ApplyEscalationPlanInput
 									userId: recipient.userId,
 									channel: recipient.channel,
 									status: "queued",
-									attemptNumber: 1,
+									// Attempts started: each claim counts one before it sends.
+									attemptNumber: 0,
 									scheduledAt: nowMs,
 									claimedAt: null,
 									claimExpiresAt: null,
 									payloadJson: { ...payload, recipient },
-									dedupeKey: `${row.id}:${plan.passIndex + 1}:${plan.stepIndex + 1}:${recipient.userId}:${recipient.channel}`,
+									dedupeKey: memberNotificationDedupeKey(
+										row.id,
+										plan.passIndex + 1,
+										plan.stepIndex + 1,
+										recipient,
+									),
 									errorMessage: null,
 									attemptedAt: null,
 									createdAt: nowMs,

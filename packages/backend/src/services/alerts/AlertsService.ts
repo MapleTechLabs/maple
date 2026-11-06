@@ -149,6 +149,7 @@ import {
 	enabledDestinationIds,
 	loadStepRecipients,
 	stepDestinationIds,
+	withoutDepartedMembers,
 	type EscalationWorkRow,
 	endEscalationRunsAbove,
 	loadEscalationChain,
@@ -163,6 +164,8 @@ import { makeIncidentPushBudget, type IncidentPushBudget } from "./alert-push-bu
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
+import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
+import { ChatConnectorRegistry } from "@maple/backend/services/integrations/chat-outbound"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makePersistenceError } from "./alert-persistence"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -659,6 +662,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const orgChSettings = yield* OrgClickHouseSettingsService
 			const chatAlertPoster = yield* ChatAlertPoster
 			const memberNotifier = yield* AlertMemberNotifier
+			const orgMembers = yield* OrgMembersService
+			const chatConnectors = yield* ChatConnectorRegistry
+			// Connectors a page can reach a person through; the rest are not paged at all.
+			const directMessageConnectors = new Set(
+				Arr.flatMap(chatConnectors, (connector) =>
+					connector.outbound.directMessages === true ? [connector.id] : [],
+				),
+			)
 			const mobilePush = yield* MobilePushService
 			const encryptionKey = yield* parseAlertDestinationEncryptionKey(
 				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
@@ -5520,6 +5531,27 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				}
 			})
 
+			/**
+			 * The org's member ids, or null to page everyone resolved: no directory on this
+			 * deployment, or one that could not be read (delivery then decides).
+			 */
+			const currentMemberIds = (orgId: OrgId) =>
+				orgMembers.listMembers(orgId).pipe(
+					Effect.map(
+						(members): ReadonlySet<string> | null =>
+							new Set(Arr.map(members, (member) => member.userId)),
+					),
+					Effect.catchTags({
+						"@maple/http/errors/AlertMemberDirectoryNotConfiguredError": () =>
+							Effect.succeed(null),
+						"@maple/http/errors/AlertMemberDirectoryUnavailableError": () =>
+							Effect.as(
+								Effect.logWarning("Member directory unavailable at an escalation step"),
+								null,
+							),
+					}),
+				)
+
 			/** One run: plan from the row, then a conditional write that only one tick can win. */
 			const advanceEscalationRun = Effect.fn("AlertsService.advanceEscalationRun")(function* (
 				row: EscalationWorkRow,
@@ -5540,10 +5572,31 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							)
 						: new Set<AlertDestinationId>()
 				// Who is on call is read now, at step time, not when the chain was saved.
-				const paged =
+				const resolved =
 					plan.kind === "send"
-						? yield* dbExecute((db) => loadStepRecipients(db, row.orgId, plan.step, nowMs))
+						? yield* dbExecute((db) =>
+								loadStepRecipients(db, row.orgId, plan.step, nowMs, directMessageConnectors),
+							)
 						: null
+				const paged =
+					resolved === null || resolved.userIds.length === 0
+						? resolved
+						: yield* Effect.map(currentMemberIds(row.orgId), (members) =>
+								withoutDepartedMembers(resolved, members),
+							)
+				if (paged !== null && paged.missingUserIds.length > 0) {
+					yield* Effect.annotateCurrentSpan(
+						"maple.escalation.recipients_missing",
+						paged.missingUserIds.length,
+					)
+					yield* Effect.logWarning("Escalation step targets people who left the organization").pipe(
+						Effect.annotateLogs({
+							runId: row.id,
+							incidentId: row.incidentId,
+							userIds: Arr.join(paged.missingUserIds, ","),
+						}),
+					)
+				}
 				if (paged !== null && paged.gapScheduleIds.length > 0) {
 					yield* Effect.annotateCurrentSpan("maple.escalation.oncall_gap", true)
 					yield* Effect.logWarning("Escalation step targets a schedule with nobody on call").pipe(
@@ -5687,6 +5740,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 		Layer.provide(
 			Layer.mergeAll(
 				AlertMemberNotifier.layer,
+				OrgMembersService.layer,
 				ChatAlertPoster.layer,
 				LinearIssueTracker.layer,
 				MobilePushService.layer,
