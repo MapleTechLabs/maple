@@ -33,6 +33,14 @@ export const dispatchDelivery = (
 	/** `sendEmail` (the platform email channel) and `postChatAlert` (a chat connector). */
 	deps: EffectTransportDeps,
 ): Effect.Effect<DispatchResult, AlertDeliveryFailure, HttpClient.HttpClient> => {
+	// Only PagerDuty has an acknowledge; the queue never sends one elsewhere, this keeps it so.
+	if (context.eventType === "acknowledge" && context.secretConfig.type !== "pagerduty") {
+		return Effect.succeed({
+			providerMessage: "Skipped: acknowledgements are only sent to PagerDuty",
+			providerReference: null,
+			responseCode: null,
+		})
+	}
 	const runtime: TransportRuntime = { timeoutMs }
 	/**
 	 * Resolved once here rather than by each provider: the template is a

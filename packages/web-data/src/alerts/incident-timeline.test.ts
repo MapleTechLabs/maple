@@ -101,6 +101,17 @@ describe("buildIncidentTimeline", () => {
 		expect(failed?.detail).toBe("discord · webhook returned 500")
 	})
 
+	it("names a PagerDuty acknowledgement as one, not as a notification", () => {
+		const [, sent] = build(makeIncident(), [
+			makeDelivery({
+				eventType: "acknowledge",
+				destinationName: "On-call",
+				destinationType: "pagerduty",
+			}),
+		])
+		expect(sent?.title).toBe("Sent acknowledgement to On-call")
+	})
+
 	it("ends a held incident on the hold instead of a breach", () => {
 		const entries = build(makeIncident({ holdReason: "no_data", heldSince: "2026-10-15T14:40:00.000Z" }))
 		expect(entries.at(-1)?.title).toBe("Waiting on data")

@@ -58,7 +58,6 @@ import {
 	type AlertSeverity,
 	AlertSignalType as AlertSignalTypeSchema,
 	AlertValidationError,
-	AlertNotificationTemplate,
 	type AlertEventType as AlertEventTypeValue,
 	type AlertRuleUpsertRequest,
 	type AlertGroupBy,
@@ -185,6 +184,8 @@ import {
 	UPTIME_RULE_MANAGED_MESSAGE,
 } from "./AlertRuleModel"
 import { mapSignalUnit, resolveSignalDisplay } from "./alert-signal-display"
+import { StoredDeliveryPayloadSchema, type StoredDeliveryPayload } from "./delivery/stored-payload"
+import { incidentAcknowledgedBy } from "./delivery/transports/chat"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
@@ -391,48 +392,6 @@ const DELIVERY_LEASE_TTL_MS = 30_000
 /*  Schemas for stored JSON formats                                           */
 /* -------------------------------------------------------------------------- */
 
-const StoredDeliveryPayloadSchema = Schema.StructWithRest(
-	Schema.Struct({
-		event: Schema.optionalKey(Schema.Unknown),
-		eventType: Schema.optionalKey(Schema.String),
-		incidentId: Schema.optionalKey(Schema.NullOr(Schema.String)),
-		incidentStatus: Schema.optionalKey(Schema.String),
-		dedupeKey: Schema.optionalKey(Schema.String),
-		rule: Schema.optionalKey(
-			Schema.Struct({
-				id: Schema.optionalKey(Schema.String),
-				name: Schema.optionalKey(Schema.String),
-				signalType: Schema.optionalKey(Schema.String),
-				severity: Schema.optionalKey(Schema.String),
-				groupKey: Schema.optionalKey(Schema.NullOr(Schema.String)),
-				comparator: Schema.optionalKey(Schema.String),
-				threshold: Schema.optionalKey(Schema.Number),
-				thresholdUpper: Schema.optionalKey(Schema.NullOr(Schema.Number)),
-				windowMinutes: Schema.optionalKey(Schema.Number),
-				severities: Schema.optionalKey(Schema.Array(Schema.String)),
-			}),
-		),
-		peakSeverity: Schema.optionalKey(Schema.NullOr(Schema.String)),
-		observed: Schema.optionalKey(
-			Schema.Struct({
-				value: Schema.optionalKey(Schema.NullOr(Schema.Number)),
-				sampleCount: Schema.optionalKey(Schema.NullOr(Schema.Number)),
-				detail: Schema.optionalKey(Schema.NullOr(Schema.String)),
-			}),
-		),
-		template: Schema.optionalKey(Schema.NullOr(AlertNotificationTemplate)),
-		chart: Schema.optionalKey(
-			Schema.NullOr(
-				Schema.Struct({
-					sparkline: Schema.optionalKey(Schema.String),
-					url: Schema.optionalKey(Schema.String),
-				}),
-			),
-		),
-	}),
-	[Schema.Record(Schema.String, Schema.Unknown)],
-)
-
 const decodeAlertRuleIdSync = Schema.decodeUnknownSync(AlertRuleDocument.fields.id)
 const decodeAlertIncidentIdSync = Schema.decodeUnknownSync(AlertIncidentDocument.fields.id)
 const decodeAlertDeliveryEventIdSync = Schema.decodeUnknownSync(AlertDeliveryEventDocument.fields.id)
@@ -531,7 +490,7 @@ const isolate =
 
 const toIngestDateTime64 = warehouseDateTime64
 
-type StoredDeliveryPayloadType = Schema.Schema.Type<typeof StoredDeliveryPayloadSchema>
+type StoredDeliveryPayloadType = StoredDeliveryPayload
 
 const parseDeliveryPayload = (
 	value: unknown,
@@ -2401,6 +2360,23 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					const hydrated = yield* hydrateDestination(destinationRow)
 					const incidentRow: AlertIncidentRow | null =
 						row.incidentId != null ? (incidentMap.get(row.incidentId) ?? null) : null
+					// An escalation since the click cleared the ack and paged again: acking now would silence that page.
+					if (
+						row.eventType === "acknowledge" &&
+						(incidentRow === null ||
+							incidentRow.status !== "open" ||
+							incidentRow.acknowledgedAt === null)
+					) {
+						yield* finalizeClaimedDelivery(row.id, claimTime, {
+							status: "success",
+							attemptedAt: claimTime,
+							providerMessage: "Skipped: the incident is no longer acknowledged",
+							providerReference: null,
+							responseCode: null,
+							errorMessage: null,
+						})
+						return
+					}
 					const ruleRow = ruleMap.get(row.ruleId) ?? null
 					const payloadRule = payload.rule
 					const storedRule = ruleRow ? yield* decodeStoredAlertRuleMetadata(ruleRow) : null
@@ -2460,6 +2436,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							eventType: decodeAlertEventTypeSync(row.eventType),
 							incidentId: row.incidentId ? decodeAlertIncidentIdSync(row.incidentId) : null,
 							incidentStatus: decodeAlertIncidentStatusSync(incidentRow?.status ?? "resolved"),
+							incidentAcknowledgedBy: incidentAcknowledgedBy(incidentRow),
 							dedupeKey: incidentRow?.dedupeKey ?? String(payload.dedupeKey ?? row.deliveryKey),
 							value: payload.observed?.value ?? null,
 							sampleCount: payload.observed?.sampleCount ?? null,
@@ -2497,7 +2474,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 					yield* clearDestinationFailureStreak(row.destinationId, claimTime)
 
-					if (row.incidentId) {
+					// An acknowledgement is not a notification: it must not restart the reminder clock.
+					if (row.incidentId && row.eventType !== "acknowledge") {
 						const incidentId = row.incidentId
 						yield* dbExecute((db) =>
 							db.run(

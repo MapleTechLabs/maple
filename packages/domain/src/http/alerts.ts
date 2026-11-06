@@ -149,7 +149,13 @@ export const AlertIncidentEventType = Schema.Literals([
 })
 export type AlertIncidentEventType = Schema.Schema.Type<typeof AlertIncidentEventType>
 
-export const AlertEventType = Schema.Literals(["trigger", "resolve", "renotify", "test"]).annotate({
+export const AlertEventType = Schema.Literals([
+	"trigger",
+	"resolve",
+	"renotify",
+	"test",
+	"acknowledge",
+]).annotate({
 	identifier: "@maple/AlertEventType",
 	title: "Alert Event Type",
 })

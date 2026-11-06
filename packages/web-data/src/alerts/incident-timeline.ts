@@ -86,9 +86,13 @@ function deliveryEntry(
 				? failed
 					? `Reminder to ${name} failed`
 					: `Reminded ${name}`
-				: failed
-					? `Could not notify ${name}`
-					: `Notified ${name}`
+				: event.eventType === "acknowledge"
+					? failed
+						? `Acknowledgement to ${name} failed`
+						: `Sent acknowledgement to ${name}`
+					: failed
+						? `Could not notify ${name}`
+						: `Notified ${name}`
 	const reason = failed
 		? (event.errorMessage ?? (event.responseCode != null ? `HTTP ${event.responseCode}` : null))
 		: null

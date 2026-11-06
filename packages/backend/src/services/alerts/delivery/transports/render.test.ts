@@ -422,3 +422,43 @@ describe("transport render: uptime monitors", () => {
 		)
 	})
 })
+
+describe("pagerduty acknowledge", () => {
+	const ack = (overrides: Partial<DispatchContext>) => {
+		const input = inputFor(
+			{ type: "pagerduty" as const, integrationKey: "k" },
+			{ context: { ...context, eventType: "acknowledge", ...overrides } },
+		)
+		return Arr.map(
+			[pagerDutyTransport.render(input), ...(pagerDutyTransport.followUps?.(input) ?? [])],
+			(spec) => JSON.parse(spec.body),
+		)
+	}
+	const tiered = { ruleSeverities: ["warning", "critical"] as const }
+
+	it("acknowledges the incident's key with a bare acknowledge event", () => {
+		assert.deepStrictEqual(ack({ ruleSeverities: ["critical"] }), [
+			{ routing_key: "k", event_action: "acknowledge", dedup_key: "org_1:rule_1:checkout" },
+		])
+	})
+
+	it("acknowledges both alerts a critical incident of a tiered rule may hold open", () => {
+		assert.deepStrictEqual(
+			Arr.map(
+				ack({ ...tiered, severity: "critical", incidentSeverity: "critical" }),
+				(body) => `${body.event_action} ${body.dedup_key}`,
+			),
+			["acknowledge org_1:rule_1:checkout:critical", "acknowledge org_1:rule_1:checkout"],
+		)
+	})
+
+	it("acknowledges only the warning key once the incident has fallen back to warning", () => {
+		assert.deepStrictEqual(
+			Arr.map(
+				ack({ ...tiered, severity: "critical", incidentSeverity: "warning" }),
+				(body) => `${body.event_action} ${body.dedup_key}`,
+			),
+			["acknowledge org_1:rule_1:checkout"],
+		)
+	})
+})
