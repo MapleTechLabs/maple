@@ -1,6 +1,6 @@
 import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
 import { QueryEngineTimeoutError } from "@maple/domain/http"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { Effect, Option, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -79,7 +79,7 @@ const timeActions = (h: H, model: Model, extra: ReadonlyArray<Html> = []): Html 
 		],
 	)
 
-const serverTitle = (h: H, name: string, description: string): Html =>
+const serverTitle = (h: H, name: string, description: ReadonlyArray<Html | string>): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-1")],
 		[
@@ -90,12 +90,35 @@ const serverTitle = (h: H, name: string, description: string): Html =>
 				}),
 				name,
 			]),
-			pageDescription(h, [description], "text-sm"),
+			pageDescription(h, description, "text-sm"),
 		],
 	)
 
-const SERVER_DESCRIPTION = `MCP ${MCP_OVERVIEW.protocolVersion} over ${MCP_OVERVIEW.transport} · ${MCP_OVERVIEW.tools.length} tools called · first MCP spans today ${formatClock(MCP_OVERVIEW.firstSpanMs, TIME_ZONE)}`
-const TOOL_DESCRIPTION = `${MCP_RUN_SQL.calls} calls from ${MCP_RUN_SQL.clients} clients · first call today ${formatClock(MCP_RUN_SQL.firstCallMs, TIME_ZONE)} · last call ${formatRelativeTime(MCP_RUN_SQL.lastCallMs, MCP_NOW)}`
+/** A wall-clock instant in a description: the hub's clock text over the timezone card. */
+const clockStamp = (h: H, epochMs: number): Html =>
+	timestamp(h, {
+		value: epochMs,
+		timeZone: TIME_ZONE,
+		nowMs: MCP_NOW,
+		label: formatClock(epochMs, TIME_ZONE),
+	})
+
+const serverDescription = (h: H): ReadonlyArray<Html | string> => [
+	`MCP ${MCP_OVERVIEW.protocolVersion} over ${MCP_OVERVIEW.transport} · ${MCP_OVERVIEW.tools.length} tools called · first MCP spans today `,
+	clockStamp(h, MCP_OVERVIEW.firstSpanMs),
+]
+const toolDescription = (h: H): ReadonlyArray<Html | string> => [
+	`${MCP_RUN_SQL.calls} calls from ${MCP_RUN_SQL.clients} clients · first call today `,
+	clockStamp(h, MCP_RUN_SQL.firstCallMs),
+	" · ",
+	timestamp(h, {
+		value: MCP_RUN_SQL.lastCallMs,
+		format: "relative",
+		nowMs: MCP_NOW,
+		timeZone: TIME_ZONE,
+		prefix: "last call",
+	}),
+]
 
 /** The facets list callers only, as the API's `allClients` does. */
 const CALLERS = Arr.filter(MCP_OVERVIEW.clients, (client) => client.calls > 0)
@@ -202,7 +225,7 @@ const serverPage = (h: H, model: Model, body: Html): Html =>
 	dashboardPage(
 		h,
 		{
-			titleContent: serverTitle(h, MCP_OVERVIEW.service, SERVER_DESCRIPTION),
+			titleContent: serverTitle(h, MCP_OVERVIEW.service, serverDescription(h)),
 			actions: timeActions(h, model, [
 				button(
 					h,
@@ -298,7 +321,7 @@ const pageView = (model: Model, h: H): Html => {
 							pageTitle(h, { title: MCP_RUN_SQL.tool, className: "font-mono leading-8" }, [
 								MCP_RUN_SQL.tool,
 							]),
-							pageDescription(h, [TOOL_DESCRIPTION], "text-sm"),
+							pageDescription(h, toolDescription(h), "text-sm"),
 						],
 					),
 					actions: timeActions(h, model, [

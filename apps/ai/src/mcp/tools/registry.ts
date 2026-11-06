@@ -10,6 +10,9 @@ import { registerCreateAlertRuleTool } from "./create-alert-rule"
 import { registerPreviewAlertRuleTool } from "./preview-alert-rule"
 import { registerUpdateAlertRuleTool } from "./update-alert-rule"
 import { registerDeleteAlertRuleTool } from "./delete-alert-rule"
+import { registerListAlertSilencesTool } from "./list-alert-silences"
+import { registerCreateAlertSilenceTool } from "./create-alert-silence"
+import { registerEndAlertSilenceTool } from "./end-alert-silence"
 import { registerAcknowledgeAlertIncidentTool } from "./acknowledge-alert-incident"
 import { registerCreateDashboardTool } from "./create-dashboard"
 import { registerDescribeDashboardSchemaTool } from "./describe-dashboard-schema"
@@ -431,6 +434,9 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerCreateAlertRuleTool(registrar)
 	registerUpdateAlertRuleTool(registrar)
 	registerDeleteAlertRuleTool(registrar)
+	registerListAlertSilencesTool(registrar)
+	registerCreateAlertSilenceTool(registrar)
+	registerEndAlertSilenceTool(registrar)
 	registerAcknowledgeAlertIncidentTool(registrar)
 	registerDescribeDashboardSchemaTool(registrar)
 	registerListDashboardsTool(registrar)

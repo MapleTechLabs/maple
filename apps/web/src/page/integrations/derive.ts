@@ -115,13 +115,16 @@ const NOT_CONFIGURED: CardStatus = { label: "Not configured", variant: "outline"
 /** The status read failed: a warning, not the neutral look of a quiet connection. */
 const STATUS_UNAVAILABLE: CardStatus = { label: "Couldn't check status", variant: "warn" }
 
+/** The newest data or sync, read as `{verb} {relative time}`: `synced 3m ago`. */
+export type LastSync = Readonly<{ verb: string; at: number }>
+
 export interface ConnectedOverview {
 	readonly kind: "connected"
 	readonly health: "healthy" | "attention" | "pending"
 	readonly stateLabel: string
 	readonly context: string | null
 	readonly stat: string | null
-	readonly lastSyncLabel: string | null
+	readonly lastSync: LastSync | null
 	readonly issue: string | null
 }
 export interface AvailableOverview {
@@ -147,8 +150,12 @@ export const HEALTH_TONE = {
 	unavailable: "warn",
 } as const
 
-const syncedLabel = (ms: number | null, nowMs: number, verb = "synced"): string | null =>
-	ms === null ? null : `${verb} ${formatRelativeTime(ms, nowMs)}`
+const lastSyncOf = (ms: number | null, verb = "synced"): LastSync | null =>
+	ms === null ? null : { verb, at: ms }
+
+/** `synced 3m ago`: a last sync as plain text, for places that cannot hold a timestamp. */
+export const lastSyncText = (lastSync: LastSync, nowMs: number): string =>
+	`${lastSync.verb} ${formatRelativeTime(lastSync.at, nowMs)}`
 
 const maxMs = (values: ReadonlyArray<number | null | undefined>): number | null =>
 	Arr.reduce<(typeof values)[number], number | null>(values, null, (acc, v) =>
@@ -356,7 +363,7 @@ const gcpOverview = (statuses: Statuses, nowMs: number) =>
 					),
 					" · ",
 				),
-				lastSyncLabel: worst === "waiting" ? null : syncedLabel(lastData, nowMs, "last data"),
+				lastSync: worst === "waiting" ? null : lastSyncOf(lastData, "last data"),
 				issue:
 					worst === "attention"
 						? `${countLabel(count("attention"), "connection")} failing`
@@ -402,13 +409,12 @@ const awsOverview = (statuses: Statuses, nowMs: number) =>
 				...health,
 				context: status.connections.length === 1 ? (status.connections[0]?.account_id ?? null) : null,
 				stat: conditions.includes("setup") ? accounts : `${receiving} of ${accounts} sending metrics`,
-				lastSyncLabel: syncedLabel(
+				lastSync: lastSyncOf(
 					maxMs(
 						Arr.map(status.connections, (connection) =>
 							isoMs(connection.metrics_last_received_at),
 						),
 					),
-					nowMs,
 					"last data",
 				),
 				issue,
@@ -417,7 +423,7 @@ const awsOverview = (statuses: Statuses, nowMs: number) =>
 		unavailableOverview,
 	)
 
-const railwayOverview = (statuses: Statuses, nowMs: number) =>
+const railwayOverview = (statuses: Statuses) =>
 	fold(
 		statuses.railway,
 		(status): IntegrationOverview => {
@@ -436,14 +442,14 @@ const railwayOverview = (statuses: Statuses, nowMs: number) =>
 				...attentionOr(issue),
 				context: status.workspaceNames,
 				stat: `${countLabel(status.environments.length, "environment")} polled`,
-				lastSyncLabel: syncedLabel(status.lastSyncedAt ?? null, nowMs),
+				lastSync: lastSyncOf(status.lastSyncedAt ?? null),
 				issue,
 			}
 		},
 		unavailableOverview,
 	)
 
-const supabaseOverview = (statuses: Statuses, nowMs: number) =>
+const supabaseOverview = (statuses: Statuses) =>
 	fold(
 		statuses.supabase,
 		(status): IntegrationOverview => {
@@ -460,14 +466,14 @@ const supabaseOverview = (statuses: Statuses, nowMs: number) =>
 				...attentionOr(issue),
 				context: status.organization?.name ?? null,
 				stat: `${countLabel(status.projects.length, "project")} · ${collecting} collecting metrics`,
-				lastSyncLabel: syncedLabel(status.lastDiscoveryAt, nowMs),
+				lastSync: lastSyncOf(status.lastDiscoveryAt),
 				issue,
 			}
 		},
 		unavailableOverview,
 	)
 
-const cloudflareOverview = (statuses: Statuses, nowMs: number) =>
+const cloudflareOverview = (statuses: Statuses) =>
 	fold(
 		statuses.cloudflare,
 		(status): IntegrationOverview => {
@@ -494,9 +500,8 @@ const cloudflareOverview = (statuses: Statuses, nowMs: number) =>
 				...attentionOr(issue),
 				context: status.accountName,
 				stat: statParts.length > 0 ? Arr.join(statParts, " · ") : null,
-				lastSyncLabel: syncedLabel(
+				lastSync: lastSyncOf(
 					maxMs([...Arr.map(zones, (zone) => zone.lastSyncedAt), status.workers?.lastSyncedAt]),
-					nowMs,
 				),
 				issue,
 			}
@@ -504,7 +509,7 @@ const cloudflareOverview = (statuses: Statuses, nowMs: number) =>
 		unavailableOverview,
 	)
 
-const scrapeOverview = (statuses: Statuses, nowMs: number, targetType: "prometheus" | "planetscale") =>
+const scrapeOverview = (statuses: Statuses, targetType: "prometheus" | "planetscale") =>
 	fold(
 		statuses.scrapeTargets,
 		(data): IntegrationOverview => {
@@ -522,18 +527,14 @@ const scrapeOverview = (statuses: Statuses, nowMs: number, targetType: "promethe
 				stateLabel: failing > 0 ? "Needs attention" : "Healthy",
 				context: countLabel(targets.length, `scrape ${noun}`),
 				stat: `${enabled} of ${targets.length} enabled`,
-				lastSyncLabel: syncedLabel(
-					maxMs(Arr.map(targets, (t) => isoMs(t.last_scrape_at))),
-					nowMs,
-					"scraped",
-				),
+				lastSync: lastSyncOf(maxMs(Arr.map(targets, (t) => isoMs(t.last_scrape_at))), "scraped"),
 				issue: failing > 0 ? `${countLabel(failing, noun)} failing` : null,
 			}
 		},
 		unavailableOverview,
 	)
 
-const planetscaleOverview = (statuses: Statuses, nowMs: number) => {
+const planetscaleOverview = (statuses: Statuses) => {
 	const dbCount = fold(
 		statuses.planetscaleDatabases,
 		(response): number | null => response.databases.length,
@@ -542,7 +543,7 @@ const planetscaleOverview = (statuses: Statuses, nowMs: number) => {
 	return fold(
 		statuses.planetscale,
 		(status): IntegrationOverview => {
-			if (!status.connected) return scrapeOverview(statuses, nowMs, "planetscale")
+			if (!status.connected) return scrapeOverview(statuses, "planetscale")
 			const issue = status.pending_org_selection
 				? "Finish org selection"
 				: metricsLastError(status) !== null
@@ -562,9 +563,8 @@ const planetscaleOverview = (statuses: Statuses, nowMs: number) => {
 						: metricsAuthOf(status) === "api" || status.scrape_target?.enabled === true
 							? "Branch metrics on"
 							: null,
-				lastSyncLabel: syncedLabel(
+				lastSync: lastSyncOf(
 					maxMs(Arr.map([metricsLastCollectedAt(status), status.last_inventory_at], isoMs)),
-					nowMs,
 				),
 				issue,
 			}
@@ -584,7 +584,7 @@ const linearOverview = (statuses: Statuses) =>
 						stateLabel: "Revoked",
 						context: status.workspaceName,
 						stat: null,
-						lastSyncLabel: null,
+						lastSync: null,
 						issue: "Reconnect Linear",
 					}
 				: status.connected
@@ -594,14 +594,14 @@ const linearOverview = (statuses: Statuses) =>
 							stateLabel: "Healthy",
 							context: status.workspaceName,
 							stat: "Incident issues ready",
-							lastSyncLabel: null,
+							lastSync: null,
 							issue: null,
 						}
 					: CONNECT,
 		unavailableOverview,
 	)
 
-const githubOverview = (statuses: Statuses, nowMs: number) =>
+const githubOverview = (statuses: Statuses) =>
 	fold(
 		statuses.github,
 		(status): IntegrationOverview => {
@@ -613,7 +613,7 @@ const githubOverview = (statuses: Statuses, nowMs: number) =>
 				stateLabel,
 				context,
 				stat: null,
-				lastSyncLabel: null,
+				lastSync: null,
 				issue,
 			})
 			if (status.state === "disconnected") return halted("Deactivated", "Reinstall the app")
@@ -633,7 +633,7 @@ const githubOverview = (statuses: Statuses, nowMs: number) =>
 				...attentionOr(issue),
 				context,
 				stat: active.length > 0 ? `${countLabel(active.length, "repo")} synced` : null,
-				lastSyncLabel: syncedLabel(maxMs(Arr.map(active, (repo) => repo.lastSyncedAt)), nowMs),
+				lastSync: lastSyncOf(maxMs(Arr.map(active, (repo) => repo.lastSyncedAt))),
 				issue,
 			}
 		},
@@ -661,7 +661,7 @@ const chatOverview = (statuses: Statuses, id: IntegrationId) =>
 						? (workspaces[0]?.name ?? null)
 						: countLabel(workspaces.length, "workspace"),
 				stat: "Alerts & agent ready",
-				lastSyncLabel: null,
+				lastSync: null,
 				issue: null,
 			}
 		},
@@ -676,21 +676,21 @@ export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId)
 		case "aws":
 			return awsOverview(statuses, nowMs)
 		case "railway":
-			return railwayOverview(statuses, nowMs)
+			return railwayOverview(statuses)
 		case "supabase":
-			return supabaseOverview(statuses, nowMs)
+			return supabaseOverview(statuses)
 		case "cloudflare":
-			return cloudflareOverview(statuses, nowMs)
+			return cloudflareOverview(statuses)
 		case "prometheus":
-			return scrapeOverview(statuses, nowMs, "prometheus")
+			return scrapeOverview(statuses, "prometheus")
 		case "planetscale":
-			return planetscaleOverview(statuses, nowMs)
+			return planetscaleOverview(statuses)
 		case "warpstream":
 			return SET_UP
 		case "linear":
 			return linearOverview(statuses)
 		case "github":
-			return githubOverview(statuses, nowMs)
+			return githubOverview(statuses)
 		default:
 			return chatOverview(statuses, id)
 	}

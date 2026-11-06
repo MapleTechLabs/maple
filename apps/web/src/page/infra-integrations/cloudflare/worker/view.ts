@@ -40,6 +40,7 @@ import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
 import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { timestamp } from "@maple/views/ui/timestamp"
 import type { WorkerDetail } from "../data"
 import { MountLinkedCursor } from "./command"
 import { type PageData, pageOf, type Traced } from "./derive"
@@ -436,6 +437,11 @@ const rail = (h: H, data: PageData, timeZone: string): Html => {
 									icon: "CodeIcon",
 									label: shortId(deploy.commitSha, "sha"),
 									value: formatTimeInTimezone(deploy.firstSeen, { timeZone }),
+									display: timestamp(h, {
+										value: deploy.firstSeen,
+										timeZone,
+										label: formatTimeInTimezone(deploy.firstSeen, { timeZone }),
+									}),
 								}),
 							),
 						),

@@ -7,19 +7,17 @@ import {
 } from "../../../components/code-review/code-review-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
-import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
+import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
 import { listRow } from "@maple/views/ui/list-row"
 import { middleTruncate } from "@maple/views/ui/middle-truncate"
 import { panel } from "@maple/views/ui/panel"
-import * as Tooltip from "@maple/views/ui/tooltip"
 import { relativeTime } from "../../kit/relative-time"
 import { Message, type Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
 
-// `FindingRow` under one `RelativeTime` tooltip.
+// `FindingRow` and the findings list.
 
 type H = HtmlBuilder<Message>
 
@@ -29,13 +27,10 @@ const basename = (path: string) =>
 		path,
 	)
 
-const timeTriggerId = (finding: CodeReviewFinding) => `code-review-finding-time-${finding.id}`
-
 type RowContext = Readonly<{
 	selected: string | undefined
 	nowMs: number
 	timeZone: string
-	trigger: (id: string) => ReadonlyArray<ChildAttribute>
 }>
 
 const findingRow = (h: H, finding: CodeReviewFinding, context: RowContext): Html =>
@@ -74,7 +69,6 @@ const findingRow = (h: H, finding: CodeReviewFinding, context: RowContext): Html
 						value: finding.createdAt,
 						nowMs: context.nowMs,
 						timeZone: context.timeZone,
-						trigger: context.trigger(timeTriggerId(finding)),
 						className: "hidden w-20 text-right text-xs text-muted-foreground md:block",
 					}),
 				],
@@ -88,43 +82,15 @@ export const findingsList = (
 	findings: ReadonlyArray<CodeReviewFinding>,
 	timeZone: string,
 ): Html =>
-	h.submodel({
-		slotId: model.timeTooltip.id,
-		model: model.timeTooltip,
-		view: Tooltip.view,
-		toParentMessage: (message: Tooltip.Message) => Message.GotTimeTooltipMessage({ message }),
-		viewInputs: {
-			triggerIds: Arr.map(findings, timeTriggerId),
-			toContent: (triggerId) => {
-				return Option.match(
-					Arr.findFirst(findings, (candidate) => timeTriggerId(candidate) === triggerId),
-					{
-						onNone: () => [],
-						onSome: (finding) => [
-							formatTimestampInTimezone(finding.createdAt, { timeZone, withYear: true }),
-						],
-					},
-				)
-			},
-			toView: ({ trigger, portal }) =>
-				h.div(
-					[h.Class("contents")],
-					[
-						panel(h, {}, [
-							h.ul(
-								[h.Class("divide-y")],
-								Arr.map(findings, (finding) =>
-									findingRow(h, finding, {
-										selected: model.search.review,
-										nowMs: model.frame.nowMs,
-										timeZone,
-										trigger,
-									}),
-								),
-							),
-						]),
-						...(portal === null ? [] : [portal]),
-					],
-				),
-		},
-	})
+	panel(h, {}, [
+		h.ul(
+			[h.Class("divide-y")],
+			Arr.map(findings, (finding) =>
+				findingRow(h, finding, {
+					selected: model.search.review,
+					nowMs: model.frame.nowMs,
+					timeZone,
+				}),
+			),
+		),
+	])

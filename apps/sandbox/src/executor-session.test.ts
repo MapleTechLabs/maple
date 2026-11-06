@@ -118,12 +118,24 @@ describe("prepare", () => {
 
 	it.effect("reports a failed prepare with its log, and never the credential", () =>
 		Effect.gen(function* () {
-			const fake = fakeHost([[isStatus, exited(`failed 11\nfatal: auth failed for ${TOKEN}\n`)]])
+			const fake = fakeHost([
+				[isStatus, exited(`failed 11\nfatal: auth failed for ${TOKEN}\n`)],
+				[(script) => Str.startsWith("rm -rf")(script), exited("")],
+			])
 			const answer = yield* prepare(fake.host, prepareRequest)
 			assert.strictEqual(answer._tag, "ExecutorPrepareFailed")
 			if (answer._tag !== "ExecutorPrepareFailed") return
 			assert.include(answer.message, "exit 11")
 			assert.notInclude(answer.message, TOKEN)
+		}),
+	)
+
+	it.effect("forgets a failed prepare as it reports it, so the next call prepares again", () =>
+		Effect.gen(function* () {
+			const fake = fakeHost([[isStatus, exited("failed 11\n")]])
+			// The reset has no answer here: it failing must not hide the failure being reported.
+			assert.strictEqual((yield* prepare(fake.host, prepareRequest))._tag, "ExecutorPrepareFailed")
+			assert.isTrue(Arr.some(fake.execs, (script) => Str.startsWith("rm -rf")(script)))
 		}),
 	)
 

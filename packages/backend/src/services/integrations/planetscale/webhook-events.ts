@@ -26,6 +26,7 @@ import { Clock, Effect, Option, Result, Schema, String as Str } from "effect"
 import { timestampMs } from "@maple/backend/platform/time"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { secretsEqual } from "@maple/backend/services/auth/secret-equal"
+import { applyIssueReopen, issueReopenFor } from "@maple/backend/services/errors/issue-reopen"
 
 /**
  * PlanetScale webhook event handling: signature verification, payload decode,
@@ -762,27 +763,28 @@ export const upsertPlanetScaleIssue: (
 									.where(($) => [$.orgId.eq(input.orgId), $.id.eq(prior.id)]),
 							)
 
-							const reopenFrom: WorkflowState | null =
-								prior.workflowState === "done" || prior.workflowState === "wontfix"
-									? prior.workflowState
-									: null
-							if (reopenFrom === null) return { issueId, action: "refreshed" as const }
+							const reopen = issueReopenFor(prior, input.timestamp)
+							if (reopen === null) return { issueId, action: "refreshed" as const }
 
-							yield* db.run(
-								PG.update(ErrorIssues)
-									.set({
-										workflowState: "triage",
-										resolvedAt: null,
-										resolvedByActorId: null,
-										snoozeUntil: null,
-										updatedAt: input.timestamp,
-									})
-									.where(($) => [$.orgId.eq(input.orgId), $.id.eq(prior.id)]),
+							// The row is locked FOR UPDATE above, so this guard only ever trips on a
+							// writer that skipped the lock; a lost reopen is then an ordinary refresh.
+							const reopened = yield* applyIssueReopen(
+								db,
+								input.orgId,
+								prior.id,
+								reopen,
+								input.timestamp,
+							).pipe(
+								Effect.as(true),
+								Effect.catchTag("@maple/backend/TransitionConflictError", () =>
+									Effect.succeed(false),
+								),
 							)
+							if (!reopened) return { issueId, action: "refreshed" as const }
 							const actorId = yield* ensureActor
 							yield* recordEvent(issueId, actorId, "state_change", {
-								fromState: reopenFrom,
-								toState: "triage",
+								fromState: reopen.fromState,
+								toState: reopen.toState,
 								payload: { viaRegression: true, event: input.payload.event },
 							})
 							yield* recordEvent(issueId, actorId, "regression", {

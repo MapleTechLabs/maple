@@ -6,13 +6,14 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { pressable } from "@maple/views/ui/pressable"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { disclosed, jsonPayload, viewSwitch } from "./payload-view"
 import { clampedBody, messageBodyView, payloadCopyButton } from "./transcript-kit"
 import { rowViewSwitch } from "./transcript-messages"
-import { avatar, CLOCK, clockOf, inlineNote, META, ON_HOVER, row, SPEAKER } from "./transcript-shell"
+import { avatar, clock, clockOf, inlineNote, META, ON_HOVER, row, SPEAKER } from "./transcript-shell"
 import { failedBadge } from "./view-kit"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -76,7 +77,12 @@ const assistantError = (
 	)
 }
 
-export type CallState = Readonly<{ isContinued: boolean; isSelected: boolean; timeZone: string }>
+export type CallState = Readonly<{
+	isContinued: boolean
+	isSelected: boolean
+	timeZone: string
+	nowMs: number
+}>
 
 const assistantHeader = (
 	h: H,
@@ -106,7 +112,7 @@ const assistantHeader = (
 				["Assistant"],
 			),
 			...(assistant.failed ? [failedBadge(h)] : []),
-			h.span([h.Class(CLOCK)], [clockOf(assistant.startMs, state.timeZone)]),
+			clock(h, assistant.startMs, state.timeZone, state.nowMs),
 			...(assistant.span.genAi.errorType === undefined
 				? []
 				: [
@@ -199,7 +205,7 @@ export const promptBlock = (
 					[h.Class("flex h-6 items-center gap-2")],
 					[
 						h.span([h.Class(SPEAKER)], ["Prompt"]),
-						h.span([h.Class(CLOCK)], [clockOf(prompt.startMs, timeZone)]),
+						clock(h, prompt.startMs, timeZone, model.nowMs),
 						h.span(
 							[h.Class(cn(META, ON_HOVER))],
 							[callMetaLine(prompt.span, { usage: false }), " · ", prompt.span.serviceName],
@@ -288,7 +294,18 @@ export const structureRow = (
 					h.span(
 						[h.Class(cn(META, "shrink-0"))],
 						[
-							h.span([h.Class(ON_HOVER)], [clockOf(structure.startMs, state.timeZone), " · "]),
+							h.span(
+								[h.Class(ON_HOVER)],
+								[
+									timestamp(h, {
+										value: structure.startMs,
+										timeZone: state.timeZone,
+										nowMs: state.nowMs,
+										label: clockOf(structure.startMs, state.timeZone),
+									}),
+									" · ",
+								],
+							),
 							formatDuration(structure.span.durationMs),
 						],
 					),

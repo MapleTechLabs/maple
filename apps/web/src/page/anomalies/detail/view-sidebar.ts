@@ -54,7 +54,7 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 	const fmt = (value: number) => formatSignalValue(incident.signalType, value)
 	const live = isOpen && !isStale
 	const time = (value: string, className?: string) =>
-		relativeTime(h, { value, nowMs: input.nowMs, timeZone: input.timeZone, tooltip: "title", className })
+		relativeTime(h, { value, nowMs: input.nowMs, timeZone: input.timeZone, className })
 	return h.div(
 		[h.Class("flex flex-col")],
 		[

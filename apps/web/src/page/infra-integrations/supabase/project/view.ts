@@ -129,7 +129,7 @@ const heroMeta = (
 		...(project === null || project.region === "" ? [] : [project.region]),
 		...(summary === null || summary.lastSeen === ""
 			? []
-			: [relativeTime(h, { value: summary.lastSeen, ...clock, prefix: "Scraped", tooltip: "title" })]),
+			: [relativeTime(h, { value: summary.lastSeen, ...clock, prefix: "Scraped", })]),
 	]
 	return parts.length === 0
 		? []

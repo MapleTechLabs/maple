@@ -391,7 +391,7 @@ describe("dashboard view", () => {
 		const xOf = (id: string) =>
 			Option.getOrUndefined(
 				Option.map(
-					Arr.findFirst(released.model.droppedLayout ?? [], (item) => item.i === id),
+					Arr.findFirst(released.model.layoutWrite?.layout ?? [], (item) => item.i === id),
 					(item) => item.x,
 				),
 			)

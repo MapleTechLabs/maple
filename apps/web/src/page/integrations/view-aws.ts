@@ -17,7 +17,14 @@ import { skeletonBlock } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { relativeTime } from "../kit/relative-time"
 import { integrationIconPlate } from "../infra-integrations/kit/integration-empty"
-import { isSelectionSaved, metricStreamOf, selectionOf } from "./aws"
+import {
+	isMetricsPanelOpen,
+	isSavingMetricsOf,
+	isSelectionSaved,
+	metricsErrorOf,
+	metricStreamOf,
+	selectionOf,
+} from "./aws"
 import { AWS_ACCENT } from "./catalog"
 import { AWS_CONDITION_LABEL, type AwsConnectionCondition, awsConditionOf, awsStreamOf } from "./derive"
 import { Message } from "./message"
@@ -51,7 +58,7 @@ const CONDITION_VARIANT = {
 /** Edit data: the regions and services to stream, saved with the stack's script reopened. */
 const editDataPanel = (h: H, model: Model, connection: V2AwsConnection): Html => {
 	const card = model.awsCard
-	const selection = selectionOf(connection, card.selection)
+	const selection = selectionOf(connection, card.metrics)
 	return h.form(
 		[
 			h.Class("flex w-full flex-col gap-4 rounded-md border bg-surface-faint p-3"),
@@ -59,13 +66,13 @@ const editDataPanel = (h: H, model: Model, connection: V2AwsConnection): Html =>
 		],
 		[
 			...dataPicker(h, model, connection),
-			...(card.metricsError === null
+			...(metricsErrorOf(card.metrics, connection.id) === null
 				? []
 				: [
 						typography(
 							h,
 							{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
-							[card.metricsError],
+							[metricsErrorOf(card.metrics, connection.id) ?? ""],
 						),
 					]),
 			hstack(h, { gap: "2", align: "stretch", wrap: true }, [
@@ -77,7 +84,7 @@ const editDataPanel = (h: H, model: Model, connection: V2AwsConnection): Html =>
 						isDisabled:
 							Option.isNone(metricStreamOf(selection)) ||
 							isSelectionSaved(connection, selection),
-						isLoading: card.isSavingMetrics,
+						isLoading: isSavingMetricsOf(card.metrics, connection.id),
 					},
 					["Save changes"],
 				),
@@ -86,7 +93,7 @@ const editDataPanel = (h: H, model: Model, connection: V2AwsConnection): Html =>
 					{
 						size: "sm",
 						variant: "outline",
-						isDisabled: card.isSavingMetrics,
+						isDisabled: isSavingMetricsOf(card.metrics, connection.id),
 						attributes: [h.OnClick(Message.ClickedAwsMetricsCancel())],
 					},
 					["Cancel"],
@@ -477,7 +484,7 @@ const connectionRow = (h: H, model: Model, connection: V2AwsConnection, timeZone
 	const condition = awsConditionOf(connection, model.nowMs)
 	const isChecking = Arr.some(model.awsCard.checking, (entry) => entry.id === connection.id)
 	const isOpen = model.awsCard.setupId === connection.id
-	const isEditing = model.awsCard.metricsId === connection.id
+	const isEditing = isMetricsPanelOpen(model.awsCard.metrics, connection.id)
 	const action = (
 		label: string,
 		message: Message,

@@ -1,4 +1,4 @@
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { relativeTime } from "../../kit/relative-time"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -33,8 +33,8 @@ export type RulesViewConfig<P> = Readonly<{
 	toParentMessage: (message: Message) => P
 	/** Prefix for control ids, unique on the page. */
 	idPrefix: string
-	/** `Date.now()` for the "Expires in" hint. */
-	nowMs: number
+	/** The page clock for an existing source's "Expires in" hint; `null` when there is none. */
+	clock: Readonly<{ nowMs: number; timeZone: string }> | null
 }>
 
 /** A Base UI field outside a form: never dirty, touched or focused in a capture. */
@@ -240,12 +240,15 @@ export const view = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html => 
 					size: "sm",
 					items: Arr.map(choices, (choice) => ({ value: choice.value, label: choice.label })),
 				}),
-				...(existing !== null && existing.expires_at !== null && model.expiry === "keep"
+				...(existing !== null &&
+				existing.expires_at !== null &&
+				config.clock !== null &&
+				model.expiry === "keep"
 					? [
 							fieldDescription(h, { ids: expiryIds, state: STATIC }, [
 								existing.status === "expired" ? "Expired" : "Expires",
 								" ",
-								formatRelativeTime(existing.expires_at, config.nowMs),
+								relativeTime(h, { value: existing.expires_at, ...config.clock }),
 								".",
 							]),
 						]
