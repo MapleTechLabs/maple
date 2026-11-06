@@ -1,7 +1,7 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { AlertRuleId, AlertSilenceId } from "@maple/domain/http"
-import type { V2AlertSilence } from "@maple/domain/http/v2"
+import { AlertMaintenanceWindowPublicId, type V2AlertSilence } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
 import * as Animation from "@foldkit/ui/animation"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -106,6 +106,25 @@ describe("alerts hub, Silences tab", () => {
 			expectView(text(/tag db/u)).toExist(),
 			expectView(role("button", { name: "End now" })).toExist(),
 			expectView(role("button", { name: "Cancel" })).toExist(),
+		)
+	})
+
+	test("a maintenance window's silence names its window instead of offering to end it", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				onSilences(ENGINEER, [
+					{
+						...silence({ startMin: -10, endMin: 50, reason: "Maintenance: Nightly DB" }),
+						maintenance_window_id: Schema.decodeSync(AlertMaintenanceWindowPublicId)(
+							"mw_23WPYrFnzjC78LcewZBWTvw",
+						),
+					},
+				]),
+			),
+			expectView(text("Maintenance: Nightly DB")).toExist(),
+			expectView(text("Maintenance window")).toExist(),
+			expectView(role("button", { name: "End now" })).not.toExist(),
 		)
 	})
 
