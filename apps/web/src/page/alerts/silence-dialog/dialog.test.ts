@@ -132,6 +132,15 @@ describe("saving", () => {
 		expect(saved.outMessage).toEqual(OutMessage.CreatedSilence({ silence: SILENCE }))
 	})
 
+	it("leaves a reopened form saving when an older save fails", () => {
+		const model = saving()
+		const failed = update(
+			model,
+			Message.CompletedSave({ openCount: model.openCount - 1, result: Result.fail("nope") }),
+		)
+		expect(failed.model.isSaving).toBe(true)
+	})
+
 	it("keeps the form open and toasts the failure", () => {
 		const model = saving()
 		const failed = update(

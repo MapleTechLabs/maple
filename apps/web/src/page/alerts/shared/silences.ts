@@ -40,8 +40,15 @@ export const listSilences = Effect.all(
 	}),
 )
 
-/** What a rule or incident page needs for its badge: only the silences in force. */
-export const listActiveSilences = listByStatus("active").pipe(Effect.mapError(toLoadFailure))
+/** What a rule or incident page needs for its badge: those in force, and those that start later. */
+export const listActiveSilences = Effect.all([listByStatus("active"), listByStatus("scheduled")], {
+	concurrency: "unbounded",
+}).pipe(
+	Effect.mapBoth({
+		onSuccess: ([active, scheduled]) => [...active, ...scheduled],
+		onFailure: toLoadFailure,
+	}),
+)
 
 export const createSilence = (payload: V2AlertSilenceCreateParams) =>
 	Effect.gen(function* () {
