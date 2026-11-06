@@ -211,7 +211,7 @@ function metricsWhere($: MetricsWhereColumns, opts: MetricsTimeseriesOpts) {
 	]
 }
 
-// Timeseries query — two stages for sum/gauge, bucket merge for histograms
+// Timeseries query: two stages for sum/gauge, bucket merge for histograms
 
 /**
  * Sum and gauge rows reduce in two stages, the model every metrics backend
