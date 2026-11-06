@@ -144,7 +144,7 @@ import {
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { formatComparator, signalCarriesDetail } from "./alert-formatting"
-import { ruleAtSeverity } from "./alert-thresholds"
+import { destinationsUpTo, ruleAtSeverity } from "./alert-thresholds"
 import { buildChatDigestBlocks, CHAT_DIGEST_THRESHOLD, type ChatDigestItem } from "./delivery/chat-digest"
 import { makeIncidentPushBudget, type IncidentPushBudget } from "./alert-push-budget"
 import { EmailService } from "@maple/backend/platform/EmailService"
@@ -1107,17 +1107,30 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// incident, valued by severity (0 once it ended), never the warehouse.
 				if (rule.signalType === "anomaly") {
 					const observations = yield* anomalyAlerts.observe(orgId, rule.id)
-					return Arr.map(observations, (observed) => ({
-						evaluation: {
-							...applyEvaluationLogic(
-								rule,
-								{ value: observed.value, sampleCount: 1, hasData: true },
-								observed.detail,
-							),
-							anomaly: observed,
-						},
-						groupKey: observed.groupKey,
-					}))
+					// A healthy heartbeat on the rule's ungrouped key, so an idle rule still records that it
+					// ran. Value 0 sits below every tier (1 and 2), so it can never open an incident.
+					const heartbeat = {
+						evaluation: applyEvaluationLogic(
+							rule,
+							{ value: 0, sampleCount: 1, hasData: true },
+							"No open anomaly",
+						),
+						groupKey: UNGROUPED_GROUP_KEY,
+					}
+					return Arr.append(
+						Arr.map(observations, (observed) => ({
+							evaluation: {
+								...applyEvaluationLogic(
+									rule,
+									{ value: observed.value, sampleCount: 1, hasData: true },
+									observed.detail,
+								),
+								anomaly: observed,
+							},
+							groupKey: observed.groupKey,
+						})),
+						heartbeat,
+					)
 				}
 				// Snapped, not raw `now`: excludes the still-filling current minute and
 				// lets rules over the same signal share bucket reads within a tick. See
@@ -1304,6 +1317,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// breach stopped while telemetry was reduced, not "back to X".
 				resolvedAfterHold: ResolvedAfterHold | null,
 			) {
+				// An anomaly tier with no destinations shows in the app only, so it never buzzes a phone.
+				// Every push path (trigger, escalate, reminder, resolve, owed page) comes through here.
+				const incidentSeverity = decodeAlertSeveritySync(incident.severity)
+				if (
+					rule.signalType === "anomaly" &&
+					destinationsUpTo(rule.thresholds, incidentSeverity).length === 0
+				) {
+					return
+				}
 				const linkUrl = resolveNotificationLinkUrl(rule, incident.groupKey, incident.id)
 				const pushAllowed =
 					pushBudget === null ||
@@ -4550,6 +4572,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					orgId: OrgId,
 					ruleId: AlertRuleId,
 				) => ReadonlyArray<AlertIncidentRow>
+				/** The group keys the rule had state rows for when the tick began. */
+				readonly stateKeysForRule: (orgId: OrgId, ruleId: AlertRuleId) => ReadonlyArray<string>
 			}
 
 			const EMPTY_INCIDENTS: ReadonlyArray<AlertIncidentRow> = []
@@ -4573,6 +4597,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						stateFor: () => null,
 						openIncidentFor: () => null,
 						openIncidentsForRule: () => EMPTY_INCIDENTS,
+						stateKeysForRule: () => [],
 					} satisfies TickPrefetch
 				}
 
@@ -4627,6 +4652,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const incidentsByRule = Arr.groupBy(incidentRows, (incident) =>
 					ruleCacheKey(incident.orgId, incident.ruleId),
 				)
+				const stateKeysByRule = Arr.groupBy(stateRows, (state) =>
+					ruleCacheKey(state.orgId, state.ruleId),
+				)
 
 				return {
 					stateFor: (orgId, ruleId, groupKey) =>
@@ -4640,6 +4668,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					openIncidentsForRule: (orgId, ruleId) =>
 						Record.get(incidentsByRule, ruleCacheKey(orgId, ruleId)).pipe(
 							Option.getOrElse(() => EMPTY_INCIDENTS),
+						),
+					stateKeysForRule: (orgId, ruleId) =>
+						Record.get(stateKeysByRule, ruleCacheKey(orgId, ruleId)).pipe(
+							Option.match({
+								onNone: () => [],
+								onSome: (states) => Arr.map(states, (state) => state.groupKey),
+							}),
 						),
 				} satisfies TickPrefetch
 			})
@@ -4667,6 +4702,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					readonly orgId: OrgId
 					readonly ruleId: AlertRuleId
 					readonly grouped: boolean
+					/** Anomaly rules only: state rows to drop. They skip the shape self-heal below. */
+					readonly staleGroupKeys: ReadonlyArray<string> | undefined
 				}>,
 				clearError: ReadonlyArray<{
 					readonly orgId: OrgId
@@ -4686,10 +4723,30 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							Effect.ignore,
 						)
 
-				const selfHealOrgIds = Arr.dedupe(Arr.map(selfHeal, (t) => t.orgId))
+				// Anomaly rules own both a heartbeat row and per-anomaly rows, so they only drop the
+				// groups they no longer report. Zero statements unless an anomaly has gone.
+				yield* Effect.forEach(
+					Arr.filter(
+						selfHeal,
+						(t) => t.staleGroupKeys !== undefined && t.staleGroupKeys.length > 0,
+					),
+					(target) =>
+						dbExecute((db) =>
+							db.run(
+								PG.deleteFrom(AlertRuleStates).where(($) => [
+									$.orgId.eq(target.orgId),
+									$.ruleId.eq(target.ruleId),
+									$.groupKey.in_(...(target.staleGroupKeys ?? [])),
+								]),
+							),
+						).pipe(bestEffort("Failed to drop state rows for ended anomalies")),
+					{ discard: true },
+				)
+				const keyedRules = Arr.filter(selfHeal, (t) => t.staleGroupKeys === undefined)
+				const selfHealOrgIds = Arr.dedupe(Arr.map(keyedRules, (t) => t.orgId))
 				// One pass: since Effect 4.0.0 `partition` returns [passes, fails], so the
 				// `Result` success arm carries the grouped ids and the failure arm the ungrouped.
-				const [groupedRuleIds, ungroupedRuleIds] = Arr.partition(selfHeal, (t) =>
+				const [groupedRuleIds, ungroupedRuleIds] = Arr.partition(keyedRules, (t) =>
 					t.grouped ? Result.succeed(t.ruleId) : Result.fail(t.ruleId),
 				)
 
@@ -4898,6 +4955,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						readonly orgId: OrgId
 						readonly ruleId: AlertRuleId
 						readonly grouped: boolean
+						readonly staleGroupKeys: ReadonlyArray<string> | undefined
 					}>(),
 				)
 				const clearErrorTargets = yield* Ref.make(
@@ -5338,9 +5396,18 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// defer: it is scoped to this rule and this rule's own writes are
 						// already done, so end-of-tick is the same state it would have seen
 						// here.
+						// An anomaly rule keeps its heartbeat and the groups reported this tick; `observe`
+						// reports a group while its incident is open, so the rest are anomalies long gone.
+						const staleGroupKeys =
+							normalized.signalType === "anomaly"
+								? Arr.filter(
+										prefetch.stateKeysForRule(row.orgId, row.id),
+										(key) => !HashSet.has(evaluatedGroups, key),
+									)
+								: undefined
 						yield* Ref.update(
 							selfHealTargets,
-							Chunk.append({ orgId: row.orgId, ruleId: row.id, grouped }),
+							Chunk.append({ orgId: row.orgId, ruleId: row.id, grouped, staleGroupKeys }),
 						)
 
 						yield* Metric.update(
