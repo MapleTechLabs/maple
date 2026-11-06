@@ -17,6 +17,7 @@ import { linkButton } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
 import { labShellView } from "../app-shell"
 import { Message, type Model } from "./model"
+import { Message as HubMessage } from "../../page/alerts/hub/message"
 import { FRAME_CLASS, hubSections, section } from "./view"
 
 type H = HtmlBuilder<Message>
@@ -77,12 +78,17 @@ const incidentFrame = (h: H, model: Model, fixture: AlertsLabFixture, isAcknowle
 						h,
 						headerTitle(h, incident, rule, model.nowMs, model.timeZone),
 						hstack(h, { gap: "2", wrap: true }, [
-							// The lab has no API: the button shows its state and its click goes nowhere.
+							// The lab hub drops this message, as it does the inbox buttons': the lab has no API.
 							...acknowledgeAction(h, {
 								incident,
 								isLoading: false,
-								onAcknowledge: () =>
-									Message.ResolvedThemeColors({ colors: model.themeColors ?? {} }),
+								onAcknowledge: (acknowledged) =>
+									Message.GotHubMessage({
+										message: HubMessage.ClickedAcknowledgeIncident({
+											incidentId: incident.id,
+											acknowledged,
+										}),
+									}),
 							}),
 							linkButton(
 								h,

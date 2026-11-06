@@ -64,8 +64,8 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 		const members = yield* OrgMembersService
 
 		// Who is acknowledging, with a name recorded alongside so every surface can show it without a
-		// directory lookup. An API key is named by its label; a session by the member directory, best
-		// effort: a slow or unconfigured directory records the ack without a name.
+		// directory lookup. An API key is not a person: it is named by its label and has no user. A
+		// session is named by the member directory, best effort: a slow one records no name.
 		const callerActor = Effect.gen(function* () {
 			const tenant = yield* CurrentTenant.Context
 			const credential = yield* CurrentAuditActor
@@ -81,7 +81,7 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 							),
 						)
 			const actor: AlertIncidentActor = {
-				userId: tenant.userId,
+				userId: credential?.type === "api_key" ? null : tenant.userId,
 				name,
 				source: credential?.source === "dashboard" ? "web" : "api",
 			}

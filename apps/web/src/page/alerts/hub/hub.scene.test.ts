@@ -13,6 +13,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { encodePublicId, PublicIdPrefixes, V2AlertIncident } from "@maple/domain/http/v2"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Menu from "@maple/views/ui/menu"
 import { PageOutMessage, type PageContext } from "../../contract"
@@ -94,6 +95,35 @@ describe("alerts hub", () => {
 		)
 	})
 
+	const v2Incident = Schema.decodeSync(V2AlertIncident)({
+		id: encodePublicId(PublicIdPrefixes.alertIncident, incidentRow().id),
+		object: "alert_incident",
+		rule_id: encodePublicId(PublicIdPrefixes.alertRule, ruleId(2)),
+		rule_name: "Payment p95 latency",
+		group_key: null,
+		signal_type: "p95_latency",
+		severity: "critical",
+		peak_severity: null,
+		status: "open",
+		comparator: "gt",
+		threshold: 1500,
+		threshold_upper: null,
+		first_triggered_at: new Date(NOW).toISOString(),
+		last_triggered_at: new Date(NOW).toISOString(),
+		resolved_at: null,
+		last_observed_value: 1840,
+		last_sample_count: 10,
+		dedupe_key: "d",
+		last_delivered_event_type: null,
+		last_notified_at: null,
+		hold_reason: null,
+		held_since: null,
+		acknowledged_at: null,
+		acknowledged_by: null,
+		acknowledged_via: null,
+		error_issue_id: null,
+	})
+
 	test("the inbox acknowledges a firing incident and moves it out of the firing count", () => {
 		const incidentId = Schema.decodeSync(AlertIncidentId)(incidentRow().id)
 		const acknowledged = pageUpdate(
@@ -138,6 +168,33 @@ describe("alerts hub", () => {
 			}),
 		)
 		expect(failed.model.acknowledgingIncidentIds).toEqual([])
+		// Success patches the synced row from the answer, so the row moves before the sync catches up.
+		const answered = Schema.decodeSync(V2AlertIncident)({
+			...Schema.encodeSync(V2AlertIncident)(v2Incident),
+			acknowledged_at: new Date(NOW - 60_000).toISOString(),
+			acknowledged_by: { user_id: null, name: "Dana Kim" },
+			acknowledged_via: "web",
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(clicked.model),
+			expectView(text(/1 acknowledged/)).not.toExist(),
+		)
+		const succeeded = pageUpdate(
+			clicked.model,
+			Message.CompletedAcknowledgeIncident({
+				incidentId,
+				acknowledged: true,
+				result: Result.succeed(answered),
+			}),
+		)
+		expect(succeeded.model.acknowledgingIncidentIds).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(succeeded.model),
+			expectView(text(/1 acknowledged/)).toExist(),
+			expectView(text(/^Acknowledged by Dana Kim ·/)).toExist(),
+		)
 		expect(failed.outMessage).toMatchObject({
 			_tag: "RequestedToast",
 			title: "Couldn't acknowledge the incident",

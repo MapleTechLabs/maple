@@ -1180,8 +1180,8 @@ describe("v2 alerts over HTTP", () => {
 		expect(acked.status).toBe(200)
 		expect(acked.body.status).toBe("open")
 		expect(acked.body.acknowledged_at).toEqual(expect.any(String))
-		// An API key is named by its label.
-		expect(acked.body.acknowledged_by).toEqual({ user_id: "user_alerts_e2e", name: "alerts-test" })
+		// An API key is not a person: it is named by its label and has no user.
+		expect(acked.body.acknowledged_by).toEqual({ user_id: null, name: "alerts-test" })
 		expect(acked.body.acknowledged_via).toBe("api")
 
 		const unacknowledgedOnly = await harness.request(
@@ -1225,7 +1225,7 @@ describe("v2 alerts over HTTP", () => {
 		expect(events.body.data[0]).toMatchObject({
 			object: "alert_incident_event",
 			incident_id: openId,
-			actor: { user_id: "user_alerts_e2e", name: "alerts-test" },
+			actor: { user_id: null, name: "alerts-test" },
 			source: "api",
 		})
 		expect(events.body.data[0].id).toMatch(/^evt_/)

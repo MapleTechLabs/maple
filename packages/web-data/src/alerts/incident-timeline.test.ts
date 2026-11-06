@@ -223,4 +223,17 @@ describe("buildIncidentTimeline", () => {
 			"Sent acknowledgement to #alerts",
 		)
 	})
+
+	it("keeps the state still in effect last when an ack came after it", () => {
+		const entries = build(
+			makeIncident({ holdReason: "no_data", heldSince: "2026-10-15T14:40:00.000Z" }),
+			[],
+			[makeActivity({ created_at: "2026-10-15T14:45:00.000Z" })],
+		)
+		expect(Arr.map(entries, (entry) => entry.title)).toEqual([
+			"Incident opened",
+			"Acknowledged by Dana Kim",
+			"Waiting on data",
+		])
+	})
 })

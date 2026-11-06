@@ -3257,53 +3257,65 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// `status = 'open'` plus RETURNING: the prefetch can predate a resolve
 						// by a tick that held this rule before us, and a resolved incident
 						// must not be refreshed or renotified.
+						// An escalation clears whatever ack stands when it commits, decided in SQL rather
+						// than from the prefetch, which a human ack or unack may have overtaken.
 						const refreshed = yield* writeUnderClaim(claim, (db) =>
-							db.run(
-								PG.update(AlertIncidents)
-									.set({
-										// A rule edit can remap the severity without a transition.
-										...(severity !== openIncident.severity
-											? {
-													severity,
-													peakSeverity,
-													threshold: tierRule.threshold,
-													thresholdUpper: tierRule.thresholdUpper,
-												}
-											: undefined),
-										lastTriggeredAt: timestamp,
-										lastObservedValue: evaluation.value,
-										lastSampleCount: evaluation.sampleCount,
-										lastEvaluatedAt: timestamp,
-										holdReason: null,
-										heldSince: null,
-										updatedAt: timestamp,
-										lastNotifiedAt: lifecycle.advanceNotificationAnchor
-											? timestamp
-											: openIncident.lastNotifiedAt,
-										...(lifecycle.clearAcknowledgement
-											? clearedAcknowledgement
-											: undefined),
-									})
-									.where(($) => [$.id.eq(openIncident.id), $.status.eq("open")])
-									.returning("id"),
-							),
+							Effect.gen(function* () {
+								const updated = yield* db.run(
+									PG.update(AlertIncidents)
+										.set({
+											// A rule edit can remap the severity without a transition.
+											...(severity !== openIncident.severity
+												? {
+														severity,
+														peakSeverity,
+														threshold: tierRule.threshold,
+														thresholdUpper: tierRule.thresholdUpper,
+													}
+												: undefined),
+											lastTriggeredAt: timestamp,
+											lastObservedValue: evaluation.value,
+											lastSampleCount: evaluation.sampleCount,
+											lastEvaluatedAt: timestamp,
+											holdReason: null,
+											heldSince: null,
+											updatedAt: timestamp,
+											lastNotifiedAt: lifecycle.advanceNotificationAnchor
+												? timestamp
+												: openIncident.lastNotifiedAt,
+										})
+										.where(($) => [$.id.eq(openIncident.id), $.status.eq("open")])
+										.returning("id"),
+								)
+								if (updated.length === 0 || lifecycle.transition !== "escalated")
+									return updated
+								const cleared = yield* db.run(
+									PG.update(AlertIncidents)
+										.set(clearedAcknowledgement)
+										.where(($) => [
+											$.id.eq(openIncident.id),
+											$.status.eq("open"),
+											$.acknowledgedAt.isNotNull(),
+										])
+										.returning("id"),
+								)
+								if (cleared.length > 0) {
+									yield* db.run(
+										PG.insertInto(AlertIncidentEvents).values({
+											id: decodeAlertIncidentEventIdSync(makeUuid()),
+											orgId: row.orgId,
+											incidentId: openIncident.id,
+											type: "ack_cleared",
+											actorUserId: null,
+											actorName: null,
+											source: null,
+											createdAt: timestamp,
+										}),
+									)
+								}
+								return updated
+							}),
 						)
-						if (refreshed.length > 0 && lifecycle.clearAcknowledgement) {
-							yield* dbExecute((db) =>
-								db.run(
-									PG.insertInto(AlertIncidentEvents).values({
-										id: decodeAlertIncidentEventIdSync(makeUuid()),
-										orgId: row.orgId,
-										incidentId: openIncident.id,
-										type: "ack_cleared",
-										actorUserId: null,
-										actorName: null,
-										source: null,
-										createdAt: timestamp,
-									}),
-								),
-							)
-						}
 						if (refreshed.length === 0) {
 							return {
 								transition: "none" as const,
