@@ -265,6 +265,32 @@ describe("buildIncidentTimeline", () => {
 		expect(entries[2]?.detail).toBe("The chat account could not be reached")
 	})
 
+	it("reads a queued page with an error as a retry", () => {
+		const entries = build(
+			makeIncident(),
+			[],
+			[
+				makeActivity({
+					type: "paged",
+					actor: null,
+					source: null,
+					created_at: "2026-10-15T14:21:00.000Z",
+					page: {
+						user_id: "user_ben",
+						name: "Ben Brook",
+						channel: "email",
+						status: "queued",
+						error_message: "The email could not be sent",
+					},
+				}),
+			],
+		)
+		expect([entries[1]?.title, entries[1]?.detail]).toEqual([
+			"Paging Ben Brook by email",
+			"Retrying: The email could not be sent",
+		])
+	})
+
 	it("keeps the state still in effect last when an ack came after it", () => {
 		const entries = build(
 			makeIncident({ holdReason: "no_data", heldSince: "2026-10-15T14:40:00.000Z" }),

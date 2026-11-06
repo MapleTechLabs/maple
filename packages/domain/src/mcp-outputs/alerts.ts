@@ -323,6 +323,8 @@ export const IncidentTimelineRow = Schema.Struct({
 				/** `email`, or the chat connector of the direct message. */
 				channel: Schema.String,
 				status: Schema.String,
+				/** Why a page failed or was skipped, or why a queued one is being retried. */
+				errorMessage: Schema.optionalKey(Schema.String),
 				at: Schema.String,
 			}),
 		),

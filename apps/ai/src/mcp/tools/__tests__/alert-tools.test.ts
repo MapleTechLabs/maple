@@ -296,10 +296,16 @@ const layer = (seen: Seen) =>
 						incidentId === INCIDENT_ID
 							? Arr.map(
 									[
-										["email", "sent"],
-										["slack", "failed"],
+										["email", "sent", null],
+										["slack", "failed", "The chat platform refused the direct message"],
+										["email", "queued", "The email could not be sent"],
+										[
+											"email",
+											"skipped",
+											"Stopped retrying: the incident was acknowledged",
+										],
 									] as const,
-									([channel, status], index) => ({
+									([channel, status, errorMessage], index) => ({
 										id: `page-${index}`,
 										incidentId,
 										createdAt: Date.parse(NOW),
@@ -308,8 +314,7 @@ const layer = (seen: Seen) =>
 											name: "Ben Brook",
 											channel,
 											status,
-											errorMessage:
-												status === "failed" ? "messages_tab_disabled" : null,
+											errorMessage,
 										},
 									}),
 								)
@@ -537,7 +542,10 @@ describe("alert tools", () => {
 		const result = await ok("get_incident_timeline", { rule_id: RULE_ID, limit: 1 }, seen)
 		expect(seen.incidentOptions).toMatchObject({ ruleId: RULE_ID, limit: 2 })
 		expect(text(result)).toContain(`Incident ID: ${INCIDENT_ID}`)
-		expect(text(result)).toContain("Paged: Ben Brook by email, Ben Brook by Slack DM (failed)")
+		expect(text(result)).toContain(
+			"Paged: Ben Brook by email, Ben Brook by Slack DM (failed: The chat platform refused the direct message), Ben Brook by email (retrying: The email could not be sent), Ben Brook by email (Stopped retrying: the incident was acknowledged)",
+		)
+		expect(text(result)).not.toContain("@")
 		expect(text(result)).toContain("Showing 1 incidents.")
 
 		const bad = await run("get_incident_timeline", { rule_id: "not-a-uuid" })

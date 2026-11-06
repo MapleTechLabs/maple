@@ -107,7 +107,10 @@ function activityEntry(event: V2AlertIncidentEvent): IncidentTimelineEntry {
 						: page?.status === "queued" || page?.status === "sending"
 							? { tone: "info" as const, title: `Paging ${who}${channel}`, pending: true }
 							: { tone: "info" as const, title: `Paged ${who}${channel}`, pending: false }
-			return { ...base, ...outcome, detail: page?.error_message ?? null }
+			const error = page?.error_message ?? null
+			// A pending page with an error is between retries.
+			const detail = outcome.pending && error !== null ? `Retrying: ${error}` : error
+			return { ...base, ...outcome, detail }
 		}
 	}
 }

@@ -51,6 +51,7 @@ const MAX_ATTEMPTS = DEFAULT_ALERT_DELIVERY_RETRY_POLICY.maxAttempts
  */
 const FailureMessages = {
 	directoryNotConfigured: "Member emails cannot be looked up on this deployment",
+	emailNotConfigured: "Email is not set up on this deployment",
 	directoryUnavailable: "The member directory could not be read",
 	noEmail: "No email address is known for this member",
 	emailFailed: "The email could not be sent",
@@ -279,6 +280,8 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 					if (Option.isNone(member)) {
 						return failure(FailureMessages.noEmail, false)
 					}
+					// A deployment that cannot send email never will: fail now instead of retrying.
+					if (!email.isConfigured) return failure(FailureMessages.emailNotConfigured, false)
 					const content = yield* buildAlertEmailContent(input.context, input.linkUrl)
 					return yield* email.send(member.value.email, content.subject, content.html).pipe(
 						Effect.as<Attempt>({ status: "sent" }),
@@ -376,10 +379,16 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 					incident.value.status !== "open" ||
 					incident.value.acknowledgedAt !== null
 				) {
+					const acknowledged = Option.isSome(incident) && incident.value.status === "open"
+					// A page with earlier attempts was on its way, so it stopped rather than never went.
+					const tried = row.attemptNumber > 0
 					yield* settle(row, claimedAt, {
 						status: "skipped",
-						errorMessage:
-							Option.isSome(incident) && incident.value.status === "open"
+						errorMessage: tried
+							? acknowledged
+								? "Stopped retrying: the incident was acknowledged"
+								: "Stopped retrying: the incident resolved"
+							: acknowledged
 								? "Not sent: the incident was acknowledged before this page went out"
 								: "Not sent: the incident resolved before this page went out",
 					})

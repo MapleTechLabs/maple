@@ -1758,6 +1758,64 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("names the wire field and what is wrong with it when an on-call request is refused", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const created = await harness.request(
+			"POST",
+			"/v2/alerts/oncall_schedules",
+			key.secret,
+			weeklySchedule,
+		)
+		const base = `/v2/alerts/oncall_schedules/${created.body.id}`
+		const [layer] = weeklySchedule.layers
+		const create = (body: unknown) =>
+			harness.request("POST", "/v2/alerts/oncall_schedules", key.secret, body)
+		const responses = await Promise.all([
+			create({ ...weeklySchedule, layers: [{ ...layer, starts_at: "1960-01-01T00:00:00.000Z" }] }),
+			create({ ...weeklySchedule, layers: [{ ...layer, participants: [] }] }),
+			create({ ...weeklySchedule, layers: [] }),
+			create({ ...weeklySchedule, layers: [{ ...layer, starts_at: "next monday" }] }),
+			create({
+				...weeklySchedule,
+				layers: [
+					{ ...layer, restrictions: [{ weekdays: [], start_time: "18:00", end_time: "08:00" }] },
+				],
+			}),
+			harness.request("POST", `${base}/overrides`, key.secret, {
+				user_id: "user_ben",
+				starts_at: "1969-12-31T23:59:59.000Z",
+				ends_at: "2030-01-04T08:00:00.000Z",
+			}),
+			harness.request("GET", `${base}/oncall?at=yesterday`, key.secret),
+		])
+		expect(
+			Arr.map(responses, (response) => [
+				response.status,
+				response.body.error.param,
+				response.body.error.message,
+			]),
+		).toEqual([
+			[400, "layers[0].starts_at", "layers[0].starts_at: must be on or after 1970-01-01T00:00:00Z"],
+			[400, "layers[0].participants", "layers[0].participants: needs at least one member"],
+			[400, "layers", "layers: needs at least one layer"],
+			[
+				400,
+				"layers[0].starts_at",
+				"layers[0].starts_at: is not a valid ISO-8601 UTC timestamp, e.g. 2026-07-15T12:34:56.000Z",
+			],
+			[
+				400,
+				"layers[0].restrictions[0].weekdays",
+				"layers[0].restrictions[0].weekdays: needs at least one weekday",
+			],
+			[400, "starts_at", "starts_at: must be on or after 1970-01-01T00:00:00Z"],
+			[400, "at", "at: is not a valid ISO-8601 UTC timestamp, e.g. 2026-07-15T12:34:56.000Z"],
+		])
+
+		await harness.dispose()
+	})
+
 	it("rejects bad on-call times and layers with 400s, unknown schedules with 404 and read-only writes with 403", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["alerts:write"])

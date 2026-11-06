@@ -35,13 +35,20 @@ export interface OnCallShift {
 export interface OnCallRender {
 	/** Each layer's own shifts after its restrictions, clipped to the range. */
 	readonly layers: ReadonlyArray<ReadonlyArray<OnCallShift>>
-	/** The effective schedule after layering and overrides. */
+	/** The effective schedule after layering and overrides, split at every handoff. */
+	readonly effective: ReadonlyArray<OnCallShift>
+	/** `effective` with back-to-back shifts of the same person and source merged, for display. */
 	readonly final: ReadonlyArray<OnCallShift>
 }
 
 interface Interval {
 	readonly startMs: number
 	readonly endMs: number
+}
+
+/** A shift clipped to the render range, with the unclipped bounds of the shift it came from. */
+interface Piece extends OnCallShift {
+	readonly full: Interval
 }
 
 const DAY_MS = 86_400_000
@@ -169,7 +176,7 @@ const layerShifts = (
 	layerIndex: number,
 	fromMs: number,
 	toMs: number,
-): Array<OnCallShift> => {
+): Array<Piece> => {
 	const startMs = Math.max(fromMs, layer.startsAt)
 	if (startMs >= toMs) return []
 	const clock = rotationClock(zone, layer.rotation, layer.startsAt)
@@ -178,16 +185,20 @@ const layerShifts = (
 	const source: OnCallSource = { kind: "layer", layerIndex }
 	const rotationShifts = Arr.flatMap(
 		Arr.makeBy(Math.max(count, 1), (i) => first + i),
-		(index) =>
-			clip(clock.bounds(index), startMs, toMs).pipe(
+		(index) => {
+			const bounds = clock.bounds(index)
+			const full = { startMs: Math.max(bounds.startMs, layer.startsAt), endMs: bounds.endMs }
+			return clip(full, startMs, toMs).pipe(
 				Option.map((interval) => ({
 					...interval,
+					full,
 					userId:
 						layer.participants[mod(index, layer.participants.length)] ?? layer.participants[0],
 					source,
 				})),
 				Option.toArray,
-			),
+			)
+		},
 	)
 	const restrictions = layer.restrictions ?? []
 	if (!Arr.isReadonlyArrayNonEmpty(restrictions)) return rotationShifts
@@ -195,7 +206,11 @@ const layerShifts = (
 	return Arr.flatMap(rotationShifts, (shift) =>
 		Arr.flatMap(windows, (window) =>
 			clip(window, shift.startMs, shift.endMs).pipe(
-				Option.map((piece) => ({ ...shift, ...piece })),
+				Option.map((piece) => ({
+					...shift,
+					...piece,
+					full: Option.getOrElse(clip(window, shift.full.startMs, shift.full.endMs), () => piece),
+				})),
 				Option.toArray,
 			),
 		),
@@ -203,12 +218,12 @@ const layerShifts = (
 }
 
 /** Binary search over sorted, disjoint shifts. */
-const shiftCovering = (
-	shifts: ReadonlyArray<OnCallShift>,
+const shiftCovering = <S extends OnCallShift>(
+	shifts: ReadonlyArray<S>,
 	ms: number,
 	lo = 0,
 	hi = shifts.length - 1,
-): Option.Option<OnCallShift> => {
+): Option.Option<S> => {
 	if (lo > hi) return Option.none()
 	const mid = Math.floor((lo + hi) / 2)
 	const shift = shifts[mid]
@@ -229,6 +244,17 @@ const sameSource = (a: OnCallSource, b: OnCallSource): boolean =>
 		? b.kind === "override" && a.overrideId === b.overrideId
 		: b.kind === "layer" && a.layerIndex === b.layerIndex
 
+// The same underlying shift: one override, or one rotation shift's piece of a layer.
+const samePiece = (a: Piece, b: Piece): boolean =>
+	sameSource(a.source, b.source) && a.full.startMs === b.full.startMs && a.full.endMs === b.full.endMs
+
+const toShift = ({ userId, startMs, endMs, source }: Piece): OnCallShift => ({
+	userId,
+	startMs,
+	endMs,
+	source,
+})
+
 const resolveZone = (config: OnCallScheduleConfig): DateTime.TimeZone =>
 	// A decoded config always names a valid zone; UTC only guards undecoded input.
 	Option.getOrElse(DateTime.zoneMakeNamed(config.timeZone), () => DateTime.zoneMakeOffset(0))
@@ -243,8 +269,33 @@ export const renderOnCall = (
 	fromMs: number,
 	toMs: number,
 ): OnCallRender => {
+	const { layers, effective } = renderPieces(config, overrides, fromMs, toMs)
+	const shifts = Arr.map(effective, toShift)
+	const final = Arr.reduce(shifts, Arr.empty<OnCallShift>(), (acc, shift) => {
+		const last = acc[acc.length - 1]
+		if (
+			last !== undefined &&
+			last.endMs === shift.startMs &&
+			last.userId === shift.userId &&
+			sameSource(last.source, shift.source)
+		) {
+			acc[acc.length - 1] = { ...last, endMs: shift.endMs }
+		} else {
+			acc.push(shift)
+		}
+		return acc
+	})
+	return { layers: Arr.map(layers, (layer) => Arr.map(layer, toShift)), effective: shifts, final }
+}
+
+const renderPieces = (
+	config: OnCallScheduleConfig,
+	overrides: ReadonlyArray<OnCallOverride>,
+	fromMs: number,
+	toMs: number,
+): { readonly layers: ReadonlyArray<ReadonlyArray<Piece>>; readonly effective: Array<Piece> } => {
 	const endMs = Math.min(toMs, fromMs + MAX_ONCALL_RENDER_RANGE_MS)
-	if (endMs <= fromMs) return { layers: Arr.map(config.layers, () => []), final: [] }
+	if (endMs <= fromMs) return { layers: Arr.map(config.layers, () => []), effective: [] }
 	const zone = resolveZone(config)
 	const layers = Arr.map(config.layers, (layer, index) => layerShifts(zone, layer, index, fromMs, endMs))
 	const activeOverrides = Arr.filter(
@@ -275,26 +326,28 @@ export const renderOnCall = (
 		}),
 	)
 
-	const winnerAt = (ms: number): Option.Option<Pick<OnCallShift, "userId" | "source">> => {
+	const winnerAt = (ms: number): Option.Option<Piece> => {
 		const covering = Arr.filter(activeOverrides, (o) => o.startsAt <= ms && ms < o.endsAt)
 		if (Arr.isArrayNonEmpty(covering)) {
 			const winner = Arr.max(covering, overrideOrder)
-			return Option.some({ userId: winner.userId, source: { kind: "override", overrideId: winner.id } })
+			const full = { startMs: winner.startsAt, endMs: winner.endsAt }
+			return Option.some({
+				...full,
+				full,
+				userId: winner.userId,
+				source: { kind: "override", overrideId: winner.id },
+			})
 		}
 		return Arr.findFirst(Arr.reverse(layers), (shifts) => shiftCovering(shifts, ms))
 	}
 
-	const final = Arr.reduce(segments, Arr.empty<OnCallShift>(), (acc, segment) =>
+	// Segments merge only within one underlying shift, so every rotation handoff stays a bound.
+	const effective = Arr.reduce(segments, Arr.empty<Piece>(), (acc, segment) =>
 		Option.match(winnerAt(segment.startMs), {
 			onNone: () => acc,
 			onSome: (winner) => {
 				const last = acc[acc.length - 1]
-				if (
-					last !== undefined &&
-					last.endMs === segment.startMs &&
-					last.userId === winner.userId &&
-					sameSource(last.source, winner.source)
-				) {
+				if (last !== undefined && last.endMs === segment.startMs && samePiece(last, winner)) {
 					acc[acc.length - 1] = { ...last, endMs: segment.endMs }
 				} else {
 					acc.push({ ...winner, ...segment })
@@ -303,21 +356,30 @@ export const renderOnCall = (
 			},
 		}),
 	)
-	return { layers, final }
+	return { layers, effective }
 }
 
 /**
- * Who is on call at `atMs`, with the bounds of the effective shift containing it (clamped
- * to ONCALL_LOOKAROUND_MS either side). Null is a gap: nobody is on call.
+ * Who is on call at `atMs`, with the bounds of the effective shift containing it: the real
+ * handoffs around it. Null is a gap: nobody is on call. Resolution looks ONCALL_LOOKAROUND_MS
+ * either side; a bound past that is the winning shift's own edge.
  */
 export const onCallAt = (
 	config: OnCallScheduleConfig,
 	overrides: ReadonlyArray<OnCallOverride>,
 	atMs: number,
-): OnCallShift | null =>
-	Option.getOrNull(
-		shiftCovering(
-			renderOnCall(config, overrides, atMs - ONCALL_LOOKAROUND_MS, atMs + ONCALL_LOOKAROUND_MS).final,
-			atMs,
+): OnCallShift | null => {
+	const fromMs = atMs - ONCALL_LOOKAROUND_MS
+	const toMs = atMs + ONCALL_LOOKAROUND_MS
+	return Option.getOrNull(
+		shiftCovering(renderPieces(config, overrides, fromMs, toMs).effective, atMs).pipe(
+			Option.map((piece) =>
+				toShift({
+					...piece,
+					startMs: piece.startMs === fromMs ? piece.full.startMs : piece.startMs,
+					endMs: piece.endMs === toMs ? piece.full.endMs : piece.endMs,
+				}),
+			),
 		),
 	)
+}
