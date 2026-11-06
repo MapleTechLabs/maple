@@ -4,8 +4,7 @@
 //! `maple_ai.llm_call` is `1` on the span that IS a model call — whether or not
 //! it reported usage, so a failed call still counts — and `0` on every other
 //! span the gateway stamps. The key being present at all is what tells a reader
-//! the gateway made that call, so a span ingested before it did falls back to
-//! the reader's own op/name heuristics.
+//! the gateway classified the span; a span without it counts as no agent work.
 //!
 //! Every emitter reports usage its own way. The prompt figure contains the
 //! cache buckets on every semconv/OpenAI-shaped wire, but excludes them where a
@@ -212,9 +211,9 @@ fn is_model_call(vendor: &str, span: &Span, facts: &Facts) -> bool {
     }
 }
 
-/// The span-name fallback `classifyAiSpan` applies to a span ingested before
-/// this stamp, for a dialect Maple has no vendor rules for: an op outside the convention, not a tool, not an agent or
-/// workflow, and a model named (or a name that says chat/completion).
+/// The span-name rule for a dialect Maple has no vendor rules for: an op
+/// outside the convention, not a tool, not an agent or workflow, and a model
+/// named (or a name that says chat/completion).
 fn named_like_a_model_call(op: &str, span_name: &str, facts: &Facts) -> bool {
     if KNOWN_OPS.contains(&op) {
         return false;
@@ -1750,7 +1749,7 @@ mod tests {
         assert!(stamped[1].buckets.is_none() && stamped[1].cost.is_none());
     }
 
-    /// Spans the op/name heuristics read as model calls because their names say
+    /// Spans a name-only rule would read as model calls because their names say
     /// "chat" and a model is named nearby.
     #[test]
     fn name_heuristic_false_positives_are_not_calls() {

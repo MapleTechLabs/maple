@@ -147,26 +147,17 @@ const decodeAttribute = (type: AiFieldDef["type"], raw: string): unknown => {
  * choice, not a spec-blessed rename: in practice they carried exactly that
  * content, and OpenRouter instrumentation in production still emits them.
  *
- * `gen_ai.usage.output_tokens.reasoning`, `gen_ai.usage.input_tokens.cached`
- * and `gen_ai.usage.total_cost` are likewise absent from the deprecation table —
- * they are the spelling OpenRouter emits in production for what the convention
- * calls `gen_ai.usage.reasoning.output_tokens`,
- * `gen_ai.usage.cache_read.input_tokens` and `gen_ai.usage.cost` (total_cost is
- * USD, the sum of the input_cost/output_cost keys beside it). All three were
- * confirmed against the warehouse; the plausible-looking
- * `gen_ai.usage.reasoning_tokens` was NOT, so it is deliberately not listed.
+ * `gen_ai.usage.input_tokens.cached` is likewise absent from the deprecation
+ * table — it is the spelling OpenRouter emits in production for what the
+ * convention calls `gen_ai.usage.cache_read.input_tokens`.
  */
 const GENAI_LEGACY_ALIASES = {
-	usageInputTokens: ["gen_ai.usage.prompt_tokens"],
-	usageOutputTokens: ["gen_ai.usage.completion_tokens"],
-	usageReasoningOutputTokens: ["gen_ai.usage.output_tokens.reasoning"],
 	usageCacheReadInputTokens: ["gen_ai.usage.input_tokens.cached"],
 	// Not legacy but the *registry* spelling: semconv names the bucket
 	// `cache_write` while the catalog's primary key keeps the `cache_creation`
 	// spelling Anthropic-era emitters (and Maple's own rows before this alias)
 	// used. Both must decode; Maple's agents emit the semconv form.
 	usageCacheCreationInputTokens: ["gen_ai.usage.cache_write.input_tokens"],
-	usageCost: ["gen_ai.usage.total_cost"],
 	inputMessages: ["gen_ai.prompt"],
 	outputMessages: ["gen_ai.completion"],
 	providerName: ["gen_ai.system"],

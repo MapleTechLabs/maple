@@ -84,6 +84,7 @@ const sessionSpanRows = [
 	sessionSpan("1111111111111111", "invoke_agent maple", "2026-08-19 10:00:00.000000000", {
 		"gen_ai.operation.name": "invoke_agent",
 		"gen_ai.agent.name": "maple",
+		"maple_ai.llm_call": "0",
 	}),
 	sessionSpan("2222222222222222", "chat gpt-5", "2026-08-19 10:00:00.500000000", {
 		"gen_ai.operation.name": "chat",
@@ -93,6 +94,12 @@ const sessionSpanRows = [
 		"gen_ai.usage.output_tokens": "300",
 		"gen_ai.usage.cache_read.input_tokens": "100",
 		"gen_ai.usage.cost": "0.02",
+		// What the ingest gateway stamps on the call.
+		"maple_ai.llm_call": "1",
+		"maple_ai.usage.input_tokens": "1100",
+		"maple_ai.usage.cache_read_tokens": "100",
+		"maple_ai.usage.output_tokens": "300",
+		"maple_ai.usage.cost": "0.02",
 		"gen_ai.input.messages": JSON.stringify([
 			{ role: "user", parts: [{ type: "text", content: "why is checkout failing?" }] },
 		]),
@@ -110,6 +117,9 @@ const sessionSpanRows = [
 			"gen_ai.tool.call.id": "call_1",
 			"gen_ai.tool.call.result": JSON.stringify({ error: "table orders does not exist" }),
 			"error.type": "tool_error",
+			"maple_ai.llm_call": "0",
+			"maple_ai.tool_call": "1",
+			"maple_ai.error": "1",
 		},
 		{ statusCode: "Error" },
 	),
@@ -118,6 +128,9 @@ const sessionSpanRows = [
 		"gen_ai.response.model": "gpt-5",
 		"gen_ai.usage.input_tokens": "1400",
 		"gen_ai.usage.output_tokens": "120",
+		"maple_ai.llm_call": "1",
+		"maple_ai.usage.input_tokens": "1400",
+		"maple_ai.usage.output_tokens": "120",
 	}),
 ]
 
@@ -131,7 +144,7 @@ const bigSessionSpanRows = [
 		bigSpanId(0),
 		"invoke_agent maple",
 		"2026-08-19 10:00:00.000000000",
-		{ "gen_ai.operation.name": "invoke_agent", "gen_ai.agent.name": "maple" },
+		{ "gen_ai.operation.name": "invoke_agent", "gen_ai.agent.name": "maple", "maple_ai.llm_call": "0" },
 		{ sessionId: BIG_SESSION_ID },
 	),
 	...Array.from({ length: AI_SESSION_SPANS_MAX_SPANS }, (_, index) =>
@@ -139,7 +152,7 @@ const bigSessionSpanRows = [
 			bigSpanId(index + 1),
 			"chat gpt-5",
 			bigSpanTimestamp(index + 1),
-			{ "gen_ai.operation.name": "chat", "gen_ai.response.model": "gpt-5" },
+			{ "gen_ai.operation.name": "chat", "gen_ai.response.model": "gpt-5", "maple_ai.llm_call": "1" },
 			{ sessionId: BIG_SESSION_ID },
 		),
 	),
