@@ -7,7 +7,7 @@ import {
 	type V2SloStatus,
 	V2SloUpdateParams,
 } from "@maple/domain/http/v2"
-import { Effect, Option, Schema } from "effect"
+import { Array as Arr, Effect, Option, Schema } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AppRoute, hrefOf } from "../../../route"
@@ -17,9 +17,6 @@ import type { AlertsSloNewSearch } from "../../../route/search"
 
 /** One page holds every SLO: the API caps an org at 50. */
 export const SLO_LIST_LIMIT = 100
-
-/** How many status reads the SLOs tab runs at once. */
-const STATUS_CONCURRENCY = 6
 
 /** `slos.list`: the org's SLOs, newest first, in a single read. */
 export const listSlos = Effect.gen(function* () {
@@ -34,19 +31,22 @@ export interface SloListRow {
 	readonly status: V2SloStatus | null
 }
 
-/** The SLOs tab: the list, then each SLO's status, a failed status leaving its row without figures. */
+/** The SLOs tab: the list and every status in one batched read; a failed status read leaves the rows without figures. */
 export const listSloRows = Effect.gen(function* () {
 	const client = yield* MapleApiV2Client
-	const slos = yield* listSlos
-	return yield* Effect.forEach(
-		slos,
-		(slo) =>
-			client.slos.status({ params: { id: slo.id } }).pipe(
-				Effect.map((status): SloListRow => ({ slo, status })),
-				Effect.orElseSucceed((): SloListRow => ({ slo, status: null })),
+	const [slos, statuses] = yield* Effect.all(
+		[
+			listSlos,
+			client.slos.statuses().pipe(
+				Effect.map(
+					(list) => new Map(Arr.map(list.data, (status) => [status.slo_id, status] as const)),
+				),
+				Effect.orElseSucceed(() => new Map<string, V2SloStatus>()),
 			),
-		{ concurrency: STATUS_CONCURRENCY },
+		],
+		{ concurrency: 2 },
 	)
+	return Arr.map(slos, (slo): SloListRow => ({ slo, status: statuses.get(slo.id) ?? null }))
 })
 
 export const retrieveSlo = (id: SloId) =>
