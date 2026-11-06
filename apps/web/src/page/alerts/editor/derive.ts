@@ -106,7 +106,7 @@ export const validationIssues = (form: RuleForm): ReadonlyArray<string> => {
 	const intervalIssue = intervalWindowIssue(form)
 	if (intervalIssue !== null) issues.push(intervalIssue)
 	issues.push(...deriveRuleQueryIssues(form), ...deriveTierIssues(form))
-	if (form.destinationIds.length === 0) issues.push("Who gets notified")
+	if (form.destinationIds.length === 0 && form.escalationChainId === null) issues.push("Who gets notified")
 	return issues
 }
 
