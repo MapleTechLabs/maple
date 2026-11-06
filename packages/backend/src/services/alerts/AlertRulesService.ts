@@ -47,8 +47,8 @@ import { tierConditionChanged } from "./alert-thresholds"
 import { lockOrgAlertRules, makePersistenceError } from "./alert-persistence"
 import { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
 import {
-	DEFAULT_ANOMALY_RULE_CONFLICT_MESSAGE,
-	DEFAULT_ANOMALY_RULE_DISABLED_MESSAGE,
+	DEFAULT_ANOMALY_RULE_SCOPE_MESSAGE,
+	DEFAULT_ANOMALY_RULE_SYSTEM_MESSAGE,
 	DEFAULT_ANOMALY_RULE_PROTECTED_MESSAGE,
 	isDefaultAnomalyScope,
 	storedAnomalyScope,
@@ -274,24 +274,17 @@ export const makeAlertRulePersistence = (options: {
 					// One default anomaly rule per org, kept enabled and unscoped while it exists. Read
 					// under the lock for every write, so a concurrent edit cannot turn this row into it unseen.
 					const defaultAnomalyRule = yield* findDefaultAnomalyRule(db, orgId)
-					const becomesDefault =
-						normalized.signalType === "anomaly" && isDefaultAnomalyScope(normalized)
-					// A disabled unscoped rule would hold the default slot and block the backfill.
-					if (becomesDefault && !normalized.enabled) {
-						return yield* makeAlertValidationError(
-							Option.isSome(defaultAnomalyRule) && defaultAnomalyRule.value.id === existingId
-								? DEFAULT_ANOMALY_RULE_PROTECTED_MESSAGE
-								: DEFAULT_ANOMALY_RULE_DISABLED_MESSAGE,
-						)
-					}
-					if (Option.isSome(defaultAnomalyRule)) {
-						const isTheDefault = defaultAnomalyRule.value.id === existingId
-						if (isTheDefault && !(becomesDefault && normalized.enabled)) {
+					// Only the backfill creates the default; it stays an enabled, unscoped anomaly rule.
+					const isTheDefault = Option.exists(defaultAnomalyRule, (rule) => rule.id === existingId)
+					if (isTheDefault) {
+						if (!normalized.enabled || normalized.signalType !== "anomaly") {
 							return yield* makeAlertValidationError(DEFAULT_ANOMALY_RULE_PROTECTED_MESSAGE)
 						}
-						if (!isTheDefault && becomesDefault) {
-							return yield* makeAlertValidationError(DEFAULT_ANOMALY_RULE_CONFLICT_MESSAGE)
+						if (!isDefaultAnomalyScope(normalized)) {
+							return yield* makeAlertValidationError(DEFAULT_ANOMALY_RULE_SCOPE_MESSAGE)
 						}
+					} else if (normalized.signalType === "anomaly" && isDefaultAnomalyScope(normalized)) {
+						return yield* makeAlertValidationError(DEFAULT_ANOMALY_RULE_SYSTEM_MESSAGE)
 					}
 					if (normalized.enabled) {
 						const activeRows = yield* db.run(

@@ -49,7 +49,7 @@ import { DateTime, Array as Arr, Effect, Match, Result, Schema, String as Str } 
 import type { AlertRuntimeApi } from "./AlertRuntime"
 import type { QueryBuilderDataSource } from "@maple/query-model"
 import { validateBreachWindow, validateThresholds } from "./alert-thresholds"
-import { ANOMALY_RULE_DEFAULTS, anomalySeverityCode } from "./anomaly/anomaly-rule"
+import { ANOMALY_RULE_DEFAULTS, anomalySeverityCode, isDefaultAnomalyScope } from "./anomaly/anomaly-rule"
 
 const StringArraySchema = Schema.Array(Schema.String)
 
@@ -987,6 +987,17 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 					requireDestinations: !options?.forPreview && !anomaly,
 				}),
 			)
+			// Only the unscoped default may stay unrouted; a scoped rule exists to page someone.
+			const scoped = !isDefaultAnomalyScope({ serviceNames, environments, anomalySignals })
+			if (
+				anomaly &&
+				scoped &&
+				(request.enabled ?? true) &&
+				!options?.forPreview &&
+				Arr.every(requestedThresholds, (tier) => tier.destinationIds.length === 0)
+			) {
+				details.push("A scoped anomaly rule needs a destination on at least one tier")
+			}
 		}
 		const consecutiveBreachesRequired = anomaly
 			? ANOMALY_RULE_DEFAULTS.consecutiveBreachesRequired
