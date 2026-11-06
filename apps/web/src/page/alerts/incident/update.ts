@@ -17,12 +17,15 @@ import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import {
 	CreateInvestigation,
+	FetchIncidentActivity,
 	FetchIncidentChecks,
 	FetchIncidentDeliveries,
 	FetchIncidentInvestigation,
 	FetchIncidentPreview,
 	ReadIncidentClock,
+	SetIncidentAcknowledged,
 } from "./command"
+import { withAcknowledgement } from "../shared/commands"
 import { incidentViewOf, minuteOf, ruleStatesOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -42,6 +45,8 @@ export const init = (route: IncidentRoute, _context: PageContext): Return => ({
 		checks: Keyed.idle(),
 		deliveries: Keyed.idle(),
 		investigation: Keyed.idle(),
+		activity: Keyed.idle(),
+		isUpdatingAcknowledgement: false,
 		isStartingInvestigation: false,
 		chart: Chart.init(),
 		chartRuntime: { _tag: "Loading" },
@@ -75,7 +80,23 @@ const followData = (model: Model, context: PageContext): Return =>
 			const investigationKey = requestKey(context.orgId, "investigations.list", {
 				query: { incident_kind: "alert", incident_id: incidentId, limit: 1 },
 			})
+			// Keyed on the acknowledgement, so an ack from anywhere (Slack, the API) refetches the history.
+			const activityKey = requestKey(context.orgId, "alertIncidents.listEvents", {
+				id: incidentId,
+				acknowledgedAt: view.incident.acknowledgedAt,
+			})
 			const steps: ReadonlyArray<{ patch: Partial<Model>; commands: Commands }> = [
+				...Option.toArray(
+					Option.map(
+						sameKey(model.activity, activityKey)
+							? Option.none()
+							: Keyed.request(model.activity, activityKey, "Load"),
+						(activity) => ({
+							patch: { activity },
+							commands: [FetchIncidentActivity({ key: activityKey, incidentId })],
+						}),
+					),
+				),
 				...Option.toArray(
 					Option.map(
 						sameKey(model.deliveries, deliveriesKey)
@@ -242,6 +263,44 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchDeliveries: ({ key, result }) => ({
 			model: { ...model, deliveries: Keyed.accept(model.deliveries, key, result) },
 		}),
+		CompletedFetchActivity: ({ key, result }) => ({
+			model: { ...model, activity: Keyed.accept(model.activity, key, result) },
+		}),
+		ClickedAcknowledge: ({ acknowledged }) =>
+			model.isUpdatingAcknowledgement
+				? { model }
+				: Option.match(incidentViewOf(model), {
+						onNone: () => ({ model }),
+						onSome: ({ incident }) => ({
+							model: { ...model, isUpdatingAcknowledgement: true },
+							commands: [SetIncidentAcknowledged({ incidentId: incident.id, acknowledged })],
+						}),
+					}),
+		CompletedSetAcknowledged: ({ acknowledged, result }) =>
+			Result.match(result, {
+				onSuccess: (incident) =>
+					followData(
+						{
+							...model,
+							isUpdatingAcknowledgement: false,
+							incidents:
+								model.incidents === null
+									? null
+									: withAcknowledgement(model.incidents, incident),
+						},
+						context,
+					),
+				onFailure: (failure) => ({
+					model: { ...model, isUpdatingAcknowledgement: false },
+					outMessage: PageOutMessage.RequestedToast({
+						type: "error",
+						title: acknowledged
+							? "Couldn't acknowledge the incident"
+							: "Couldn't unacknowledge the incident",
+						description: failure.message,
+					}),
+				}),
+			}),
 		CompletedFetchInvestigation: ({ key, result }) => ({
 			model: { ...model, investigation: Keyed.accept(model.investigation, key, result) },
 		}),

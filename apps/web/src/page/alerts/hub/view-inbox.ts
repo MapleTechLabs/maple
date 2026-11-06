@@ -1,4 +1,5 @@
-import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
+import type { AlertIncidentDocument, AlertIncidentId, AlertRuleDocument } from "@maple/domain/http"
+import { acknowledgedLine } from "@maple/web-data/alerts/incident-timeline"
 import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
 import { formatRelativeShortFrom } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
@@ -21,12 +22,13 @@ import {
 	incidentValues,
 } from "@maple/web-data/alerts/overview-derive"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { heading } from "@maple/views/ui/heading"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
-import { rowLink } from "@maple/views/ui/table"
+import { ROW_LINK_LIFT, rowLink } from "@maple/views/ui/table"
 import { severityBadge } from "../shared/badges"
 import { incidentHref, ruleHref } from "../shared/links"
 import { sortIncidents } from "../shared/sort"
@@ -41,7 +43,7 @@ import { Array as Arr } from "effect"
 // `InboxTab` and `HeadroomList`: the hub's Inbox tab.
 
 const HOUR_MS = 60 * 60 * 1000
-const INCIDENT_GRID = "grid grid-cols-[minmax(0,1fr)_150px_90px] items-center gap-4"
+const INCIDENT_GRID = "grid grid-cols-[minmax(0,1fr)_150px_90px_120px] items-center gap-4"
 const MAX_LANES = 8
 const MAX_HEADROOM_ROWS = 8
 const HEADROOM_GRID = "grid grid-cols-[minmax(0,220px)_minmax(0,1fr)_130px_44px] items-center gap-4"
@@ -49,18 +51,33 @@ const SECTIONS_GRID = "grid gap-8 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]"
 
 type Range = Readonly<{ min: number; max: number }>
 
-export const inboxTab = <M>(h: HtmlBuilder<M>, data: AlertsOverviewReady): Html => {
+/** The inbox rows' acknowledge button: the message it sends, and the rows with a request in flight. */
+export type InboxAcknowledge<M> = Readonly<{
+	onAcknowledge: (incidentId: AlertIncidentId, acknowledged: boolean) => M
+	pendingIds: ReadonlyArray<AlertIncidentId>
+}>
+
+const isAcknowledged = (incident: AlertIncidentDocument) => incident.acknowledgedAt !== null
+
+export const inboxTab = <M>(
+	h: HtmlBuilder<M>,
+	data: AlertsOverviewReady,
+	acknowledge: InboxAcknowledge<M>,
+): Html => {
 	const { rules, incidents, openIncidents, derivedByRuleId, statesByRule, timelineRange } = data
 	const now = timelineRange.max
 	const all = sortIncidents(openIncidents)
+	// What still needs someone first, then what someone is on, then what waits on data.
 	const sorted = [
-		...Arr.filter(all, (i) => i.holdReason === null),
+		...Arr.filter(all, (i) => i.holdReason === null && !isAcknowledged(i)),
+		...Arr.filter(all, (i) => i.holdReason === null && isAcknowledged(i)),
 		...Arr.filter(all, (i) => i.holdReason !== null),
 	]
 	const spots = deriveBlindSpots(rules, derivedByRuleId)
 	const lanes = fireLanes(incidents, timelineRange)
 	const held = Arr.filter(sorted, (i) => i.holdReason !== null).length
-	const firing = sorted.length - held
+	const acknowledged = Arr.filter(sorted, (i) => i.holdReason === null && isAcknowledged(i)).length
+	const firing = sorted.length - held - acknowledged
 	const enabledRuleIds = Arr.map(
 		Arr.filter(rules, (r) => r.enabled),
 		(r) => r.id,
@@ -93,6 +110,15 @@ export const inboxTab = <M>(h: HtmlBuilder<M>, data: AlertsOverviewReady): Html 
 					heading(h, { level: 2, variant: "title", className: "tabular-nums" }, [
 						isQuiet ? "Nothing firing" : `${firing} firing`,
 						...(isQuiet ? [quietStreak(h, incidents, now)] : []),
+						...(acknowledged > 0
+							? [
+									typography(h, { tone: "muted", weight: "normal" }, [
+										" · ",
+										String(acknowledged),
+										" acknowledged",
+									]),
+								]
+							: []),
 						...(held > 0
 							? [
 									typography(h, { tone: "muted", weight: "normal" }, [
@@ -115,7 +141,7 @@ export const inboxTab = <M>(h: HtmlBuilder<M>, data: AlertsOverviewReady): Html 
 								])
 							: sections,
 					]
-				: [openIncidentsList(h, sorted, now), sections]),
+				: [openIncidentsList(h, sorted, now, acknowledge), sections]),
 		],
 	)
 }
@@ -138,10 +164,11 @@ const openIncidentsList = <M>(
 	h: HtmlBuilder<M>,
 	incidents: ReadonlyArray<AlertIncidentDocument>,
 	now: number,
+	acknowledge: InboxAcknowledge<M>,
 ) =>
 	borderedBox(h, { overflow: "x-auto" }, [
 		h.div(
-			[h.Class("min-w-[560px]")],
+			[h.Class("min-w-[680px]")],
 			[
 				h.div(
 					[
@@ -156,18 +183,25 @@ const openIncidentsList = <M>(
 						h.span([], ["Open · ", String(incidents.length)]),
 						h.span([], ["Now / threshold"]),
 						h.span([], ["Open for"]),
+						h.span([h.Class("sr-only")], ["Acknowledge"]),
 					],
 				),
 				h.ul(
 					[h.Class("divide-y")],
-					Arr.map(incidents, (incident) => openIncidentRow(h, incident, now)),
+					Arr.map(incidents, (incident) => openIncidentRow(h, incident, now, acknowledge)),
 				),
 			],
 		),
 	])
 
-const openIncidentRow = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, now: number): Html => {
+const openIncidentRow = <M>(
+	h: HtmlBuilder<M>,
+	incident: AlertIncidentDocument,
+	now: number,
+	acknowledge: InboxAcknowledge<M>,
+): Html => {
 	const isHeld = incident.holdReason !== null
+	const acked = acknowledgedLine(incident)
 	const tone = incident.severity === "critical" ? "text-severity-error" : "text-severity-warn"
 	return h.li(
 		[
@@ -180,7 +214,7 @@ const openIncidentRow = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, 
 				h.Class(
 					cn(
 						"absolute inset-y-2 left-0 w-0.5 rounded-full",
-						isHeld
+						isHeld || acked !== null
 							? "bg-foreground-subtle"
 							: incident.severity === "critical"
 								? "bg-severity-error"
@@ -206,7 +240,9 @@ const openIncidentRow = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, 
 						),
 					]),
 					typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [
-						incidentSubline(incident),
+						acked === null
+							? incidentSubline(incident)
+							: `${acked} · ${incidentSubline(incident)}`,
 					]),
 				],
 			),
@@ -219,6 +255,27 @@ const openIncidentRow = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, 
 			typography(h, { size: "xs", mono: true, numeric: true }, [
 				formatAlertDuration(incident.firstTriggeredAt, msIso(now)),
 			]),
+			// Lifted above the row's stretched link, so the click acknowledges instead of navigating.
+			h.div(
+				[h.Class(cn(ROW_LINK_LIFT, "flex justify-end"))],
+				[
+					button(
+						h,
+						{
+							variant: acked === null ? "outline" : "ghost",
+							size: "xs",
+							isLoading: acknowledge.pendingIds.includes(incident.id),
+							attributes: [
+								h.OnClick(acknowledge.onAcknowledge(incident.id, acked === null)),
+								h.AriaLabel(
+									`${acked === null ? "Acknowledge" : "Unacknowledge"} ${incidentTitle(incident)}`,
+								),
+							],
+						},
+						acked === null ? [icon(h, "CheckIcon"), "Acknowledge"] : ["Unacknowledge"],
+					),
+				],
+			),
 		],
 	)
 }

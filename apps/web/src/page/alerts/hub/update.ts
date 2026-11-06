@@ -18,6 +18,7 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../contrac
 import { alertsHref, createHref, ruleHref } from "../shared/links"
 import { editMonitorHref, newMonitorHref, UPTIME_LIST_LIMIT } from "../shared/uptime-commands"
 import {
+	AcknowledgeIncident,
 	DeleteDestination,
 	DeleteMonitor,
 	FetchHubMonitors,
@@ -31,6 +32,7 @@ import {
 	ToggleRule,
 	UpdateDestination,
 } from "./command"
+import { withAcknowledgement } from "../shared/commands"
 import { resolveStatus, resolveTab } from "./derive"
 import { Message, type RuleBucket } from "./message"
 import type { Model } from "./model"
@@ -138,6 +140,7 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		hasToggleFailed: false,
 		isLoadFailed: false,
 		testingDestinationIds: [],
+		acknowledgingIncidentIds: [],
 		deletingDestinationIds: [],
 		confirmDeleteId: null,
 		deleteDialog: Dialog.init(DELETE_DIALOG_ID, "alert-dialog"),
@@ -449,6 +452,42 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedToggleRule: ({ result }) => ({
 			model: { ...model, togglingRuleId: null, hasToggleFailed: Result.isFailure(result) },
 		}),
+		ClickedAcknowledgeIncident: ({ incidentId, acknowledged }) =>
+			model.acknowledgingIncidentIds.includes(incidentId)
+				? { model }
+				: {
+						model: {
+							...model,
+							acknowledgingIncidentIds: [...model.acknowledgingIncidentIds, incidentId],
+						},
+						commands: [AcknowledgeIncident({ incidentId, acknowledged })],
+					},
+		CompletedAcknowledgeIncident: ({ incidentId, acknowledged, result }) => {
+			const settled = {
+				...model,
+				acknowledgingIncidentIds: withoutId(model.acknowledgingIncidentIds, incidentId),
+			}
+			return Result.match(result, {
+				onSuccess: (incident) => ({
+					model: {
+						...settled,
+						incidents:
+							settled.incidents === null
+								? null
+								: withAcknowledgement(settled.incidents, incident),
+					},
+				}),
+				onFailure: (failure) => ({
+					model: settled,
+					outMessage: errorToast(
+						acknowledged
+							? "Couldn't acknowledge the incident"
+							: "Couldn't unacknowledge the incident",
+						failure,
+					),
+				}),
+			})
+		},
 		ClickedToggleDestination: ({ destinationId }) => toggleDestination(model, destinationId),
 		CompletedUpdateDestination: ({ result }) =>
 			Result.match(result, {

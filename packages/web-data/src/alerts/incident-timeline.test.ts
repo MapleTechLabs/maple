@@ -1,4 +1,5 @@
 import { AlertDeliveryEventDocument, AlertIncidentDocument } from "@maple/domain/http"
+import { V2AlertIncidentEvent } from "@maple/domain/http/v2"
 import { Schema, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { buildIncidentTimeline } from "./incident-timeline"
@@ -63,10 +64,29 @@ function makeDelivery(overrides: Record<string, unknown> = {}): AlertDeliveryEve
 	})
 }
 
-const build = (incident: AlertIncidentDocument, deliveries: ReadonlyArray<AlertDeliveryEventDocument> = []) =>
+const decodeActivity = Schema.decodeUnknownSync(V2AlertIncidentEvent)
+
+const makeActivity = (overrides: Record<string, unknown>): V2AlertIncidentEvent =>
+	decodeActivity({
+		id: "evt_tC4d9V79DCDzgbGKhAnff9",
+		object: "alert_incident_event",
+		incident_id: "inc_tC4d9V79DCDzgbGKhAnff9",
+		type: "acknowledged",
+		actor: { user_id: "user_dana", name: "Dana Kim" },
+		source: "slack",
+		created_at: "2026-10-15T14:20:00.000Z",
+		...overrides,
+	})
+
+const build = (
+	incident: AlertIncidentDocument,
+	deliveries: ReadonlyArray<AlertDeliveryEventDocument> = [],
+	activity: ReadonlyArray<V2AlertIncidentEvent> = [],
+) =>
 	buildIncidentTimeline({
 		incident,
 		deliveries,
+		activity,
 		investigation: null,
 		renotifyIntervalMinutes: 30,
 		destinationTypeLabel: (type) => type,
@@ -116,5 +136,59 @@ describe("buildIncidentTimeline", () => {
 			}),
 		)
 		expect(entries.at(-1)).toMatchObject({ title: "Resolved", detail: "After 38m" })
+	})
+
+	it("places acknowledgements in order and pauses the reminder note while acknowledged", () => {
+		const entries = build(
+			makeIncident({
+				acknowledgedAt: "2026-10-15T14:26:00.000Z",
+				acknowledgedByName: "Dana Kim",
+				acknowledgedVia: "web",
+			}),
+			[makeDelivery()],
+			[
+				makeActivity({}),
+				makeActivity({
+					id: "evt_tC4d9V79DCDzgbGKhAnffA",
+					type: "unacknowledged",
+					actor: { user_id: null, name: "sam" },
+					source: "slack",
+					created_at: "2026-10-15T14:22:00.000Z",
+				}),
+				makeActivity({
+					id: "evt_tC4d9V79DCDzgbGKhAnffB",
+					actor: { user_id: "user_dana", name: null },
+					source: "mcp",
+					created_at: "2026-10-15T14:26:00.000Z",
+				}),
+			],
+		)
+		expect(Arr.map(entries, (entry) => entry.title)).toEqual([
+			"Incident opened",
+			"Notified #alerts",
+			"Acknowledged by Dana Kim",
+			"Unacknowledged by sam",
+			"Acknowledged by an agent over MCP",
+			"Still breaching",
+		])
+		expect(entries[2]?.detail).toBe("From Slack · reminders paused")
+		expect(entries.at(-1)?.detail).toBe("Last value 8.4% · reminders paused while acknowledged")
+	})
+
+	it("explains an acknowledgement the escalation cleared", () => {
+		const entries = build(
+			makeIncident(),
+			[],
+			[
+				makeActivity({
+					type: "ack_cleared",
+					actor: null,
+					source: null,
+					created_at: "2026-10-15T14:28:00.000Z",
+				}),
+			],
+		)
+		expect(entries[1]).toMatchObject({ title: "Acknowledgement cleared", tone: "warn" })
+		expect(entries.at(-1)?.detail).toBe("Last value 8.4% · reminders every 30m while open")
 	})
 })
