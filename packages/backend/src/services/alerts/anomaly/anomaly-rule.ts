@@ -31,10 +31,10 @@ export const DEFAULT_ANOMALY_RULE_NAME = "Anomaly detection"
 /** Used when a user already took the default name for another rule. */
 export const DEFAULT_ANOMALY_RULE_FALLBACK_NAME = "Anomaly detection (default)"
 
-export const DEFAULT_ANOMALY_RULE_CONFLICT_MESSAGE =
-	"An org has one default anomaly rule; scope this rule by service, environment or signal"
-export const DEFAULT_ANOMALY_RULE_DISABLED_MESSAGE =
-	"The default anomaly rule must stay enabled; turn anomaly detection off in anomaly settings instead"
+export const DEFAULT_ANOMALY_RULE_SYSTEM_MESSAGE =
+	"Maple creates the default anomaly rule; scope this rule by service, environment or signal"
+export const DEFAULT_ANOMALY_RULE_SCOPE_MESSAGE =
+	"The default anomaly rule covers every anomaly and cannot be scoped; create a scoped anomaly rule instead"
 export const DEFAULT_ANOMALY_RULE_PROTECTED_MESSAGE =
 	"The default anomaly rule cannot be deleted or disabled; turn anomaly detection off in anomaly settings instead"
 
