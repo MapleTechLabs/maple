@@ -1,4 +1,4 @@
-import { Array as Arr, Option, Schema } from "effect"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 import { SloLatencyThresholdMs } from "./primitives"
 
 // Service level objectives: what counts as a good event (the SLI), the target share of good
@@ -106,7 +106,7 @@ export const SLO_RULE_NAME_PREFIX = "SLO burn: "
 export const sloRuleName = (sloName: string): string => `${SLO_RULE_NAME_PREFIX}${sloName}`
 /** The SLO name inside a burn-rate rule's name, or `null` for any other rule name. */
 export const sloNameFromRuleName = (ruleName: string): string | null =>
-	ruleName.startsWith(SLO_RULE_NAME_PREFIX) ? ruleName.slice(SLO_RULE_NAME_PREFIX.length) : null
+	Str.startsWith(SLO_RULE_NAME_PREFIX)(ruleName) ? Str.slice(SLO_RULE_NAME_PREFIX.length)(ruleName) : null
 
 /** A bucket of events starting at `startMs`. */
 export interface SloBucket extends SloCounts {
