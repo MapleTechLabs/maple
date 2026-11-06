@@ -93,7 +93,8 @@ export class AlertIncidentPagesService extends Context.Service<
 							"createdAt",
 						)
 						.where(($) => [$.orgId.eq(orgId), $.incidentId.in_(...incidentIds)])
-						.orderBy(["createdAt", "asc"], ["id", "asc"])
+						// Newest first, so the cap only ever drops the oldest pages; put back in order below.
+						.orderBy(["createdAt", "desc"], ["id", "desc"])
 						.limit(MAX_PAGES_PER_READ),
 				),
 			)
@@ -101,7 +102,7 @@ export class AlertIncidentPagesService extends Context.Service<
 			// Display names only, never the address; a directory that cannot be read leaves them null.
 			const members = yield* orgMembers.listMembers(orgId).pipe(Effect.orElseSucceed(() => []))
 			const names = new Map(Arr.map(members, (member) => [member.userId, member.name] as const))
-			return Arr.map(rows, (row): AlertIncidentPageEntry => ({
+			return Arr.map(Arr.reverse(rows), (row): AlertIncidentPageEntry => ({
 				id: row.id,
 				incidentId: row.incidentId,
 				createdAt: row.createdAt,
