@@ -54,6 +54,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/slos",
+		title: "SLOs",
+		description:
+			"The SLOs tab, an SLO page healthy, burning, out of budget or failing its status read, and the SLO form (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/billing-orgs",
 		title: "Billing orgs",
 		description:

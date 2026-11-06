@@ -5,6 +5,8 @@ import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { listDeliveries } from "../shared/commands"
+import { listSlos } from "../shared/slo-commands"
+import { listMonitors } from "../shared/uptime-commands"
 import { fetchCheckSummary } from "../shared/check-summary"
 import { fetchPreview } from "../shared/preview"
 import { Message } from "./message"
@@ -75,5 +77,27 @@ export const CreateInvestigation = Command.define("CreateAlertInvestigation", {
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedCreateInvestigation({ result })),
+		),
+})
+
+/** An SLO incident's SLOs, to find the one whose burn-rate rule opened it. */
+export const FetchIncidentSlos = Command.define("FetchAlertIncidentSlos", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchSlos],
+	execute: ({ key }) =>
+		listSlos.pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchSlos({ key, result })),
+		),
+})
+
+/** An uptime incident's monitors, to find the one whose rule opened it. */
+export const FetchIncidentMonitors = Command.define("FetchAlertIncidentMonitors", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchMonitors],
+	execute: ({ key }) =>
+		listMonitors.pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchMonitors({ key, result })),
 		),
 })

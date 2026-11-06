@@ -1184,6 +1184,89 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "default",
 		compile: () => CH.compileUnionUnsafe(CH.signalPresenceQuery(), window),
 	},
+	// SLOs (SlosService): the budget window, the hourly budget chart, the minute burn windows.
+	{
+		module: "slos",
+		name: "sloTotalsQuery",
+		label: "availability",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.sloTotalsQuery({
+					serviceName: "api",
+					environments: ["production"],
+					sli: { _tag: "availability" },
+				}),
+				window,
+			),
+	},
+	{
+		module: "slos",
+		name: "sloTotalsQuery",
+		label: "latency",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.sloTotalsQuery({
+					serviceName: "api",
+					environments: [],
+					sli: { _tag: "latency", thresholdMs: 500 },
+				}),
+				window,
+			),
+	},
+	{
+		module: "slos",
+		name: "sloBucketsQuery",
+		label: "hour",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.sloBucketsQuery(
+					{ serviceName: "api", environments: [], sli: { _tag: "availability" } },
+					"hour",
+				),
+				{ ...window, bucketSeconds: 3600 },
+			),
+	},
+	{
+		module: "slos",
+		name: "sloBucketsQuery",
+		label: "minute",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.sloBucketsQuery(
+					{ serviceName: "api", environments: [], sli: { _tag: "availability" } },
+					"minute",
+				),
+				{ ...window, bucketSeconds: 60 },
+			),
+	},
+	{
+		// The SLOs tab: every SLO's window totals in one read per (SLI, window).
+		module: "slos",
+		name: "sloTotalsByServiceQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.sloTotalsByServiceQuery({
+					serviceNames: ["api", "checkout"],
+					sli: { _tag: "availability" },
+				}),
+				window,
+			),
+	},
+	{
+		// The SLOs tab: every SLO's four burn windows in one read per SLI.
+		module: "slos",
+		name: "sloBurnByServiceQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.sloBurnByServiceQuery({
+					serviceNames: ["api", "checkout"],
+					sli: { _tag: "latency", thresholdMs: 500 },
+				}),
+				window,
+			),
+	},
 	// Audit log listing (apps/api/src/services/audit/AuditLogService.ts `list`).
 	{
 		module: "audit-log",
@@ -2299,6 +2382,16 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "activityRollup",
 		compile: () =>
 			CH.compileUnsafe(CH.usersListQuery({ ...USERS_NAMESPACE_SCOPE, activityRollup: true }), window),
+	},
+	{
+		module: "users",
+		name: "usersListQuery",
+		label: "requestChannels",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.usersListQuery({ ...USERS_SCOPE, activityRollup: true, requestChannels: true }),
+				window,
+			),
 	},
 	{
 		module: "users",

@@ -133,6 +133,7 @@ export const formatSignalMetric = (value: number | null, display: SignalDisplay)
 				Match.when("apdex", () => round(metric, 3)),
 				Match.when("rpm", () => `${grouped(metric)} rpm`),
 				Match.whenOr("count", "plain", () => grouped(metric)),
+				Match.when("burn", () => `${round(metric, 1)}x`),
 				Match.exhaustive,
 			),
 	})
@@ -190,9 +191,11 @@ const uptimeObserved = (context: Pick<ObservedContext, "value" | "detail">): str
 export const formatObservedSummary = (context: ObservedContext): string =>
 	context.signalType === "uptime"
 		? uptimeObserved(context)
-		: context.value === null
-			? `No data (threshold ${formatThresholdSummary(context)})`
-			: `${formatSignalMetric(context.value, signalDisplayOf(context))} ${formatThresholdSummary(context)}`
+		: context.signalType === "slo_burn_rate" && context.detail != null
+			? context.detail
+			: context.value === null
+				? `No data (threshold ${formatThresholdSummary(context)})`
+				: `${formatSignalMetric(context.value, signalDisplayOf(context))} ${formatThresholdSummary(context)}`
 
 /**
  * A notification's subject line without its emoji: `checkout-api is down` for an uptime rule,

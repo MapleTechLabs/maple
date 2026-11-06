@@ -15,7 +15,9 @@ import { discordTransport } from "./transports/discord"
 import { chatTransport } from "./transports/chat"
 import { emailTransport } from "./transports/email"
 import { googleChatTransport } from "./transports/google-chat"
+import { incidentIoTransport } from "./transports/incident-io"
 import { linearTransport } from "./transports/linear"
+import { microsoftTeamsTransport } from "./transports/microsoft-teams"
 import { pagerDutyTransport } from "./transports/pagerduty"
 import { telegramTransport } from "./transports/telegram"
 import { webhookTransport } from "./transports/webhook"
@@ -50,6 +52,8 @@ export const dispatchDelivery = (
 			discord: (config) => runHttpTransport(discordTransport, input(config), runtime),
 			telegram: (config) => runHttpTransport(telegramTransport, input(config), runtime),
 			"google-chat": (config) => runHttpTransport(googleChatTransport, input(config), runtime),
+			"microsoft-teams": (config) => runHttpTransport(microsoftTeamsTransport, input(config), runtime),
+			"incident-io": (config) => runHttpTransport(incidentIoTransport, input(config), runtime),
 			email: (config) => runEffectTransport(emailTransport, input(config), deps),
 			chat: (config) => runEffectTransport(chatTransport, input(config), deps),
 			linear: (config) => runEffectTransport(linearTransport, input(config), deps),

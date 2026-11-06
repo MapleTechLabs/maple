@@ -565,3 +565,55 @@ describe("pickDefaultDestination", () => {
 		expect(pickDefaultDestination([live(a), live(c)], [])).toBeNull()
 	})
 })
+
+describe("incident.io destination params", () => {
+	const SOURCE = "01GW2G3V0S59R238FAHPDS1R66"
+
+	it("sends the alert source id and token, trimmed", () => {
+		const params = buildDestinationCreateParamsV2({
+			...defaultDestinationForm("incident-io"),
+			name: " Paging ",
+			incidentIoAlertSourceId: ` ${SOURCE} `,
+			incidentIoToken: " inc-s3cret ",
+		})
+		expect(params).toEqual({
+			type: "incident-io",
+			name: "Paging",
+			enabled: true,
+			alert_source_config_id: SOURCE,
+			token: "inc-s3cret",
+		})
+	})
+
+	it("an edit prefills the source id and leaves the stored token alone", () => {
+		const destination = Schema.decodeSync(AlertDestinationDocument)({
+			id: "0199a001-0000-7000-8000-0000000000ab",
+			name: "Paging",
+			type: "incident-io",
+			enabled: true,
+			summary: `Alert source ${SOURCE}`,
+			channelLabel: SOURCE,
+			memberUserIds: null,
+			lastTestedAt: null,
+			lastTestError: null,
+			createdAt: "2026-11-06T00:00:00.000Z",
+			updatedAt: "2026-11-06T00:00:00.000Z",
+		})
+		const form = destinationToFormState(destination)
+		expect([form.incidentIoAlertSourceId, form.incidentIoToken]).toEqual([SOURCE, ""])
+		expect(buildDestinationUpdateParamsV2({ ...form, name: "Paging (prod)" })).toEqual({
+			type: "incident-io",
+			enabled: true,
+			name: "Paging (prod)",
+			alert_source_config_id: SOURCE,
+		})
+	})
+})
+
+describe("microsoft teams destination params", () => {
+	it("omits a blank webhook URL on update, so the stored one is kept", () => {
+		expect(
+			buildDestinationUpdateParamsV2({ ...defaultDestinationForm("microsoft-teams"), name: "Ops" }),
+		).toEqual({ type: "microsoft-teams", enabled: true, name: "Ops" })
+	})
+})

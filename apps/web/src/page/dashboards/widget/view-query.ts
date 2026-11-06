@@ -53,8 +53,8 @@ const queryPanel = (
 			metricSearch: model.metricSearch,
 			metricBreakdownKeys:
 				query.dataSource === "metrics"
-					? (model.metricKeys[`${query.metricName}::${query.metricType}`] ?? [])
-					: [],
+					? model.metricKeys[`${query.metricName}::${query.metricType}`]
+					: undefined,
 			autocompleteValues: baseValuesOf(model, query),
 		},
 		toParentMessage: (message) => Message.GotQueryPanelMessage({ message }),

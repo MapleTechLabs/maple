@@ -853,7 +853,7 @@ const errorsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 				th(h, { label: "Issue", width: columnClass({ min: "0" }) }),
 				th(h, { label: "Service", width: "w-28 shrink-0" }),
 				th(h, { label: "This user", width: "w-20 shrink-0", align: "right" }),
-				th(h, { label: "Last seen", width: "w-28 shrink-0 pl-4" }),
+				th(h, { label: "Last seen", width: columnClass({ width: "28", shrink: false, inset: "4" }) }),
 				th(h, { label: "Status", width: "w-32 shrink-0" }),
 			]),
 			toolTableBody(
@@ -878,7 +878,12 @@ const errorsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 								]),
 							]),
 							cellText(h, formatNumber(issue.hits), "w-20 shrink-0", { right: true }),
-							timeCell(h, issue.lastSeenMs, clock, "w-28 shrink-0 pl-4"),
+							timeCell(
+								h,
+								issue.lastSeenMs,
+								clock,
+								columnClass({ width: "28", shrink: false, inset: "4" }),
+							),
 							h.span([h.Class("w-32 shrink-0")], [issueStatus(h, issue.status)]),
 						],
 					),

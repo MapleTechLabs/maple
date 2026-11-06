@@ -38,6 +38,10 @@ export const TimeseriesAxisSpec = Schema.Struct({
 	softMin: Schema.NullOr(Schema.Number),
 	softMax: Schema.NullOr(Schema.Number),
 	fitYAxisToData: Schema.Boolean,
+	/** A hard ceiling the axis tops out at whatever nicing would round to (a share capped at 100%). */
+	max: Schema.optionalKey(Schema.Number),
+	/** The zero tick's label, when "0" alone would drop the unit (a "0%" line the series crosses). */
+	zeroLabel: Schema.optionalKey(Schema.String),
 })
 export type TimeseriesAxisSpec = typeof TimeseriesAxisSpec.Type
 

@@ -364,6 +364,14 @@ export const AlertsUptimeNewSearch = Schema.Struct({
 
 export const AlertsUptimeMonitorSearch = Schema.Struct({})
 
+/** `/alerts/slos/new`: `sloId` edits that SLO; `serviceName` prefills a new one. */
+export const AlertsSloNewSearch = Schema.Struct({
+	sloId: Schema.optional(Schema.String),
+	serviceName: Schema.optional(Schema.String),
+})
+
+export const AlertsSloSearch = Schema.Struct({})
+
 /** `/settings/ingestion/rules/new`: `template` prefills the editor from an empty-state template. */
 export const IngestRuleNewSearch = Schema.Struct({
 	template: Schema.optional(Schema.String),
@@ -422,7 +430,9 @@ export const InvestigationSearch = Schema.Struct({
 // sessionTimeRangeSearchMiddleware()
 export const MetricSearch = Schema.Struct({
 	type: Schema.optional(Schema.Literals(QUERY_BUILDER_METRIC_TYPES)),
-	agg: Schema.optional(Schema.Literals(["avg", "sum", "min", "max", "count", "rate", "increase"])),
+	agg: Schema.optional(
+		Schema.Literals(["avg", "sum", "min", "max", "count", "latest", "rate", "increase"]),
+	),
 	where: Schema.optional(Schema.String),
 	groupBy: Schema.optional(Schema.String),
 	step: Schema.optional(Schema.String),

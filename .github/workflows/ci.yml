@@ -469,7 +469,7 @@ jobs:
               run: bun run --cwd lib/effect-clickhouse-http test
 
             # Migration replay and search indexes, raw-vs-rollup parity for web
-            # analytics and the service map (a divergence renders as a plausible wrong number), the
+            # analytics, the service map and SLOs (a divergence renders as a plausible wrong number), the
             # cascaded trace facets rollup (one that never fires reads as "no data"), and the users
             # directory's group view.
             - name: Replay migrations and verify rollups
@@ -482,6 +482,7 @@ jobs:
                   src/services/warehouse/ci-runs.clickhouse.e2e.test.ts
                   src/services/warehouse/service-api-materialization.clickhouse.e2e.test.ts
                   src/services/warehouse/service-map-parity.clickhouse.e2e.test.ts
+                  src/services/warehouse/slo-parity.clickhouse.e2e.test.ts
                   src/services/users/users-groups.clickhouse.e2e.test.ts
 
             # The fingerprint the error views compute, against the TS mirror every
@@ -493,6 +494,14 @@ jobs:
                   src/services/warehouse/error-fingerprint-v3.clickhouse.e2e.test.ts
                   src/services/warehouse/error-fingerprint-fuzz.clickhouse.e2e.test.ts
                   src/services/errors/error-tick-fingerprint.clickhouse.e2e.test.ts
+
+            # The metrics builder's two aggregation stages (per series in time, then
+            # across series) against a TS reference: seeded gauges and counters,
+            # random queries through the real engine. Replay with METRICS_FUZZ_SEED.
+            - name: Metrics aggregation differential fuzz
+              run: >-
+                  bun run --filter=@maple/backend test --
+                  src/services/warehouse/metrics-aggregation-fuzz.clickhouse.e2e.test.ts
 
             # Every SQL shape the product emits, against the real analyzer: unit tests
             # only compare SQL text, which is how a NO_COMMON_TYPE reached production.
