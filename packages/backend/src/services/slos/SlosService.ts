@@ -22,6 +22,7 @@ import {
 	SloTargetPercent,
 	type SloBurnWindow,
 	type SloHistoryPoint,
+	sloRuleName,
 	type SloSli,
 } from "@maple/domain/slo"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
@@ -34,7 +35,7 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { deleteRuleRows } from "@maple/backend/services/alerts/AlertRulesService"
 import { lockOrgAlertRules } from "@maple/backend/services/alerts/alert-persistence"
 import { readBudgetHistory, readBurnWindows, readWindowTotals } from "./slo-reads"
-import { sloRuleFields, sloRuleName, type SloRuleInput } from "./slo-alert-rule"
+import { sloRuleFields, type SloRuleInput } from "./slo-alert-rule"
 
 export interface SloRecord {
 	readonly id: SloId
