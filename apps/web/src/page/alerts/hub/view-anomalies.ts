@@ -1,5 +1,5 @@
 import type { AlertIncidentDocument } from "@maple/domain/http"
-import { formatRelativeShortFrom } from "@maple/ui/lib/time-format"
+import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { formatAlertDuration } from "@maple/web-data/alerts/form-utils"
 import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
@@ -133,9 +133,7 @@ const resolvedRow = (h: H, incident: AlertIncidentDocument, now: number): Html =
 			],
 		),
 		typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
-			incident.resolvedAt === null
-				? ""
-				: `${formatRelativeShortFrom(isoMs(incident.resolvedAt), now)} ago`,
+			incident.resolvedAt === null ? "" : formatRelativeFrom(isoMs(incident.resolvedAt), now),
 		]),
 		typography(h, { size: "xs", mono: true, numeric: true }, [
 			formatAlertDuration(incident.firstTriggeredAt, incident.resolvedAt),
