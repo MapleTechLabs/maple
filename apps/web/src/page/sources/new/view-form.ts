@@ -1,4 +1,4 @@
-import type { PushSourcePlatform } from "@maple/domain/primitives"
+import { isPublicSourcePlatform, type PushSourcePlatform } from "@maple/domain/primitives"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { collapsible } from "@maple/views/ui/collapsible"
@@ -87,13 +87,23 @@ export const createSourceForm = (h: H, model: Model, platform: PushSourcePlatfor
 			flowColumns(
 				h,
 				[
-					stepCard(h, { icon: "KeyIcon", title: "Name the source", note: "Write-only token" }, [
-						typography(h, { size: "xs", tone: "muted", as: "p" }, [
-							"Your app sends data to Maple with this source's token. It can only write to this source, never read.",
-						]),
-						nameField(h, model, platform),
-						advanced(h, model),
-					]),
+					stepCard(
+						h,
+						{
+							icon: "KeyIcon",
+							title: "Name the source",
+							note: isPublicSourcePlatform(platform) ? "Public token" : "Write-only token",
+						},
+						[
+							typography(h, { size: "xs", tone: "muted", as: "p" }, [
+								isPublicSourcePlatform(platform)
+									? "Your site sends data to Maple with this source's public token. It ships in your client code, which is safe: it can only write to this source, never read."
+									: "Your app sends data to Maple with this source's token. It can only write to this source, never read.",
+							]),
+							nameField(h, model, platform),
+							advanced(h, model),
+						],
+					),
 				],
 				howItWorksRail(h, platform),
 			),
