@@ -1095,12 +1095,14 @@ const make: Effect.Effect<
 					timestamp: nowMs,
 				})
 				// Only an issue still `in_progress` drops back to `todo`; one the holder already moved
-				// on (to review, verifying, triage) keeps its new state.
+				// on (to review, verifying, triage) keeps its new state, and so does one a new holder
+				// claimed after the clear above (guarded on the lease still being empty).
 				const refreshed = yield* requireIssue(orgId, row.id)
-				if (refreshed.workflowState === "in_progress") {
+				if (refreshed.workflowState === "in_progress" && refreshed.leaseHolderActorId === null) {
 					yield* applyTransition(orgId, systemActor.id, refreshed, "todo", {
 						payload: { viaLeaseExpiry: true },
 						timestamp: nowMs,
+						unleased: true,
 					}).pipe(skipLostTransition(row.id, "lease_expiry"))
 				}
 			}),

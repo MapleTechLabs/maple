@@ -701,6 +701,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				const reopened =
 					fromStatus === "resolved"
 						? reopenedInvestigationStatus({
+								failed: current.error !== null,
 								diagnosed: current.diagnosedAt !== null,
 								hasReport: current.reportJson !== null,
 							})

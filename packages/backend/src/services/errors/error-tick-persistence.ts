@@ -600,13 +600,18 @@ const buildNotificationRows = (input: PersistErrorTickWindowInput, payload: Noti
 /**
  * Reopen fixed issues as `regressed`, guarded on `done`: the scan read the state with a plain
  * SELECT, so a human transition committed since then (a re-triage, a `cancelled`) wins and the
- * row is left alone. Returns the ids that actually reopened.
+ * row is left alone. Returns the ids that actually reopened, plus the lost ones whose current
+ * state still suppresses them (closed again, or a `wontfix` under an active snooze), so the
+ * tick keeps them out of the incident path instead of trusting the scan's stale read.
  */
 export const applyRegressions = (
 	tx: MapleDb,
 	input: Pick<PersistErrorTickWindowInput, "orgId" | "windowEndMs">,
 	issueIds: ReadonlyArray<ErrorIssueId>,
-): Effect.Effect<ReadonlySet<ErrorIssueId>, MapleDbError> =>
+): Effect.Effect<
+	{ readonly reopened: ReadonlySet<ErrorIssueId>; readonly stillSuppressed: ReadonlySet<ErrorIssueId> },
+	MapleDbError
+> =>
 	Effect.gen(function* () {
 		const reopened = yield* inChunks(issueIds, (chunk) =>
 			tx.run(
@@ -632,7 +637,23 @@ export const applyRegressions = (
 				Effect.annotateLogs({ orgId: input.orgId, lost }),
 			)
 		}
-		return new Set(Arr.map(reopened, (row) => row.id))
+		const reopenedIds = new Set(Arr.map(reopened, (row) => row.id))
+		const lostIds = Arr.filter(issueIds, (id) => !reopenedIds.has(id))
+		const current = yield* inChunks(lostIds, (chunk) =>
+			tx.run(
+				PG.from(ErrorIssues)
+					.select("id", "workflowState", "snoozeUntil")
+					.where(($) => [$.orgId.eq(input.orgId), $.id.in_(...chunk)]),
+			),
+		)
+		const stillSuppressed = Arr.filter(
+			current,
+			(row) =>
+				row.workflowState === "done" ||
+				(row.workflowState === "wontfix" &&
+					(row.snoozeUntil === null || row.snoozeUntil > input.windowEndMs)),
+		)
+		return { reopened: reopenedIds, stillSuppressed: new Set(Arr.map(stillSuppressed, (row) => row.id)) }
 	})
 
 /**
@@ -846,7 +867,7 @@ export const persistErrorTickWindow = (
 				// `triage`: an issue that was fixed and came back is not the same thing
 				// as one nobody has looked at, and flattening the two is what let the
 				// same bug be picked up and fixed again from scratch.
-				const regressedIds = yield* applyRegressions(
+				const { reopened: regressedIds, stillSuppressed } = yield* applyRegressions(
 					tx,
 					input,
 					Arr.map(
@@ -888,7 +909,8 @@ export const persistErrorTickWindow = (
 					// Counters were accumulated by the upsert above; everything downstream
 					// of `observed` is the incident/notification/investigation path, which
 					// a pre-fix straggler must not enter.
-					if (suppressed) continue
+					// A lost reopen is suppressed by the state it lost to, not the scan's read.
+					if (suppressed || stillSuppressed.has(issueId)) continue
 
 					observed.push({
 						issueId,

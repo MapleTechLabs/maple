@@ -51,12 +51,16 @@ export const MANUAL_INVESTIGATION_TRANSITIONS = {
 
 /**
  * Where reopening a resolved investigation lands: back on the verdict its run reached, so a
- * reopen cannot claim a diagnosis that never happened.
+ * reopen cannot claim a diagnosis that never happened. `failed` is the latest run's own outcome
+ * (a failure records an error, a restart or a report clears it), so a rerun that failed after an
+ * earlier diagnosis reopens as `failed`, not on the stale report.
  */
 export const reopenedInvestigationStatus = (run: {
+	readonly failed: boolean
 	readonly diagnosed: boolean
 	readonly hasReport: boolean
-}): InvestigationStatus => (run.diagnosed ? "diagnosed" : run.hasReport ? "inconclusive" : "failed")
+}): InvestigationStatus =>
+	run.failed ? "failed" : run.diagnosed ? "diagnosed" : run.hasReport ? "inconclusive" : "failed"
 
 /** A run in flight cannot be restarted underneath itself; every settled one can. */
 export const RESTARTABLE_INVESTIGATION_STATUSES = [

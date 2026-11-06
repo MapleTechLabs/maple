@@ -56,7 +56,14 @@ export const applyIssueReopen = (
 					)
 				: db.run(
 						PG.update(ErrorIssues)
-							.set({ workflowState: "triage", snoozeUntil: null, updatedAt: timestamp })
+							.set({
+								workflowState: "triage",
+								snoozeUntil: null,
+								// Waking up reopens the issue, so it no longer reads as resolved.
+								resolvedAt: null,
+								resolvedByActorId: null,
+								updatedAt: timestamp,
+							})
 							.where(($) => [
 								$.orgId.eq(orgId),
 								$.id.eq(issueId),

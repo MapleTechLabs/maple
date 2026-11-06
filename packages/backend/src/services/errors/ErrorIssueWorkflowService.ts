@@ -199,6 +199,8 @@ export interface ErrorIssueWorkflowServiceApi extends ErrorIssueWorkflowPublicAp
 			readonly payload?: StoredJsonRecord
 			/** Only apply while the snooze has elapsed by this time, so a renewed snooze wins. */
 			readonly snoozeElapsedBy?: number
+			/** Only apply while nobody holds the lease, so a claim taken since the read wins. */
+			readonly unleased?: boolean
 		},
 	) => Effect.Effect<
 		ErrorIssueRow,
@@ -648,6 +650,7 @@ const make: Effect.Effect<
 										opts.snoozeElapsedBy === undefined
 											? undefined
 											: $.snoozeUntil.lte(opts.snoozeElapsedBy),
+										opts.unleased === true ? $.leaseHolderActorId.isNull() : undefined,
 									])
 									.returning("id"),
 							),
