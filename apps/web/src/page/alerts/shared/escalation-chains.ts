@@ -136,7 +136,7 @@ export type RunView = Readonly<{
 const ENDED = {
 	resolved: "Ended when the incident resolved",
 	exhausted: "Every step was sent",
-	superseded: "Replaced by the critical tier's chain",
+	superseded: "Stopped when the incident changed severity",
 } as const
 
 /** How an incident's run reads in the rail. An acknowledged incident pauses it before the scheduler's next tick does. */

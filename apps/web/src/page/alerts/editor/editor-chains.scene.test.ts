@@ -119,6 +119,15 @@ describe("alert rule editor, escalation chains", () => {
 		)
 	})
 
+	test("a failed chain read says so on a tier with no chain, rather than looking like the org has none", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(run(ready(), [Message.CompletedFetchEscalationChains({ chains: null })])),
+			themeResolved(),
+			expectView(text("Couldn't load escalation chains; reload the page to pick one")).toExist(),
+		)
+	})
+
 	test("returning to the tab reads the chains again, so one made in the Create a chain tab can be picked", () => {
 		expect(names(pageUpdate(ready(), Message.ReturnedToTab()).commands)).toEqual([
 			"FetchAlertEditorChains",
