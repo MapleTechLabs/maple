@@ -101,7 +101,8 @@ export const init = (route: NewRoute, context: PageContext): Return => {
 	const embedded = initEmbedded(integration, context)
 	const model = withForm(
 		{
-			grants: null,
+			// Read only on the page under Clerk; self-hosted sessions hold every permission.
+			grants: isClerkAuthEnabled ? null : Policy.allPermissions,
 			platform: null,
 			name: "",
 			isAdvancedOpen: false,
@@ -131,7 +132,7 @@ export const initPage = (route: NewRoute, context: PageContext): Return => {
 	const step = init(route, context)
 	return isClerkAuthEnabled
 		? { ...step, commands: [ReadNewSourceGrants(), ...(step.commands ?? [])] }
-		: { ...step, model: { ...step.model, grants: Policy.allPermissions } }
+		: step
 }
 
 const scrolledToTop = (step: Return): Return => ({

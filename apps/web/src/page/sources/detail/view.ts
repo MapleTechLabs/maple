@@ -107,15 +107,17 @@ const connectionPart = (
 	})
 }
 
-/** Token sources take their own actions; an integration source pauses and deletes beside its integration's. */
+/**
+ * Token sources take their own actions; an integration source pauses and deletes beside its integration's.
+ * Pause and delete need `sources:manage`; the integration's own actions follow its grants.
+ */
 const headerActions = (h: H, model: Model, source: V2Source, timeZone: string): Html | undefined => {
-	if (!canManage(model)) return undefined
-	if (hasToken(source)) return detailActions(h, sourceActions(h, model, source))
 	if (source.is_default) return undefined
-	return detailActions(
-		h,
-		integrationActions(h, model, source, connectionPart(h, model, source, timeZone, "actions")),
-	)
+	if (hasToken(source))
+		return canManage(model) ? detailActions(h, sourceActions(h, model, source)) : undefined
+	const connection = connectionPart(h, model, source, timeZone, "actions")
+	if (canManage(model)) return detailActions(h, integrationActions(h, model, source, connection))
+	return connection === null ? undefined : detailActions(h, [connection])
 }
 
 const found = (h: H, model: Model, source: V2Source, inputs: PageViewInputs, nowMs: number): Html => {
