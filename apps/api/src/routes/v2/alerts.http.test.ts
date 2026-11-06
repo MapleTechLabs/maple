@@ -41,6 +41,7 @@ import { DashboardPersistenceService } from "@maple/backend/services/dashboards/
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { AlertRuntime, AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
+import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
@@ -190,6 +191,9 @@ const makeHarness = (
 				alertReadModelsLive,
 				alertRulesLive,
 				UptimeAlertSource.layer.pipe(Layer.provide(testDb.layer)),
+				Layer.effect(SloAlertSource, SloAlertSource.make).pipe(
+					Layer.provide(Layer.mergeAll(testDb.layer, warehouseLive)),
+				),
 			),
 		),
 	)

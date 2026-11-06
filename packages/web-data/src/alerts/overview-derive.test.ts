@@ -139,6 +139,27 @@ describe("incident lines", () => {
 		expect(incidentScope(uptime({ groupKey: "checkout" }))).toBe("checkout")
 	})
 
+	it("names an SLO incident by its SLO, never the ungrouped key", () => {
+		const slo = (overrides: Record<string, unknown> = {}) =>
+			makeIncident({
+				ruleName: "SLO burn: Checkout API",
+				signalType: "slo_burn_rate",
+				comparator: "gte",
+				threshold: 6,
+				lastObservedValue: 16.1,
+				status: "open",
+				resolvedAt: null,
+				groupKey: "__total__",
+				...overrides,
+			})
+		expect(incidentTitle(slo())).toBe("Checkout API is burning its error budget")
+		expect(incidentTitle(slo({ status: "resolved", resolvedAt: iso(HOUR) }))).toBe(
+			"Checkout API stopped burning its error budget",
+		)
+		expect(incidentScope(slo())).toBeNull()
+		expect(incidentValues(slo())).toEqual({ now: "16.1x", threshold: "6.0x" })
+	})
+
 	it("keeps a telemetry incident's signal, value, group and threshold", () => {
 		const incident = makeIncident({ groupKey: "checkout", status: "open", resolvedAt: null })
 		expect(incidentTitle(incident)).toBe("Error rate 8.0% on checkout")

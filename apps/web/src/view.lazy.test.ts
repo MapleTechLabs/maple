@@ -42,6 +42,8 @@ const SAMPLE_PATHS = [
 	"/alerts/00000000-0000-4000-8000-000000000002",
 	"/alerts/create",
 	"/alerts/uptime/new",
+	"/alerts/slos/new",
+	"/alerts/slos/slo_YofPTrK9782DWwcnXhpcCw",
 	"/alerts/uptime/upm_abc",
 	"/status-pages",
 	"/status-pages/new",

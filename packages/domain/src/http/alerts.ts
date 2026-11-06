@@ -50,11 +50,22 @@ export const AlertSignalType = Schema.Literals([
 	"raw_query",
 	/** The hidden rule behind an uptime monitor; managed only through the monitor. */
 	"uptime",
+	/** The hidden burn-rate rule behind an SLO; managed only through the SLO. */
+	"slo_burn_rate",
 ]).annotate({
 	identifier: "@maple/AlertSignalType",
 	title: "Alert Signal Type",
 })
 export type AlertSignalType = Schema.Schema.Type<typeof AlertSignalType>
+
+/** Signal types whose rule another resource owns: hidden from and refused by the generic rule APIs. */
+export const MANAGED_SIGNAL_TYPES = [
+	"uptime",
+	"slo_burn_rate",
+] as const satisfies ReadonlyArray<AlertSignalType>
+export type ManagedSignalType = (typeof MANAGED_SIGNAL_TYPES)[number]
+export const isManagedSignalType = (signalType: string): signalType is ManagedSignalType =>
+	Arr.some(MANAGED_SIGNAL_TYPES, (managed) => managed === signalType)
 
 export const AlertGroupByDimension = Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed()).annotate({
 	identifier: "@maple/AlertGroupByDimension",

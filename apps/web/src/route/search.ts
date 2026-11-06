@@ -364,6 +364,14 @@ export const AlertsUptimeNewSearch = Schema.Struct({
 
 export const AlertsUptimeMonitorSearch = Schema.Struct({})
 
+/** `/alerts/slos/new`: `sloId` edits that SLO; `serviceName` prefills a new one. */
+export const AlertsSloNewSearch = Schema.Struct({
+	sloId: Schema.optional(Schema.String),
+	serviceName: Schema.optional(Schema.String),
+})
+
+export const AlertsSloSearch = Schema.Struct({})
+
 /** `/settings/ingestion/rules/new`: `template` prefills the editor from an empty-state template. */
 export const IngestRuleNewSearch = Schema.Struct({
 	template: Schema.optional(Schema.String),
