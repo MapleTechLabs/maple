@@ -416,31 +416,36 @@ const liftChainDialog = (
 	}
 }
 
-/** The names of the rules a chain says use it, from the synced rules. */
+/** The names of the rules that start `chain` that this tab has loaded; the rest are counted, not named. */
 export const chainRuleNames = (
 	model: Pick<Model, "rules">,
 	chain: V2EscalationChain,
 ): ReadonlyArray<string> =>
-	Array.map(chain.rule_ids, (id) =>
-		Option.getOrElse(
-			Option.map(
-				Array.findFirst(model.rules ?? [], (row) => row.id === id),
-				(row) => row.name,
-			),
-			() => "a rule you cannot see",
+	Array.filterMap(chain.rule_ids, (id) =>
+		Option.match(
+			Array.findFirst(model.rules ?? [], (row) => row.id === id),
+			{ onNone: () => Result.failVoid, onSome: (row) => Result.succeed(row.name) },
 		),
 	)
 
 /** Why a delete was refused: the API's 409 names no rules, so they come from the chain's own list. */
 // The cached chain can name no rules when one was attached after this tab read the list.
 const inUseMessage = (model: Model, chainId: EscalationChainId): string => {
-	const names = Option.match(
-		Array.findFirst(chainsOf(model), (chain) => chain.id === chainId),
-		{ onNone: () => [], onSome: (chain) => chainRuleNames(model, chain) },
+	const chain = Array.findFirst(chainsOf(model), (candidate) => candidate.id === chainId)
+	const names = Option.match(chain, { onNone: () => [], onSome: (c) => chainRuleNames(model, c) })
+	const total = Math.max(
+		Option.match(chain, { onNone: () => 0, onSome: (c) => c.rule_ids.length }),
+		names.length,
 	)
-	return names.length === 0
-		? "Alert rules still start this chain. Remove it from their severity tiers first."
-		: `Still used by ${Array.join(names, ", ")}. Remove it from their severity tiers first.`
+	const others = total - names.length
+	const tiers = total === 1 ? "its severity tiers" : "their severity tiers"
+	if (names.length === 0) {
+		return total === 1
+			? "An alert rule still starts this chain. Remove it from its severity tiers first."
+			: `Alert rules still start this chain. Remove it from ${tiers} first.`
+	}
+	const listed = others === 0 ? Array.join(names, ", ") : `${Array.join(names, ", ")} and ${others} more`
+	return `Still used by ${listed}. Remove it from ${tiers} first.`
 }
 
 /** Runs the chain delete dialog's update; `Closed` forgets the target and its error. */
