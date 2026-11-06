@@ -101,6 +101,19 @@ describe("maintenance window tools", () => {
 				output.windows.map((row) => row.id),
 				[window.id],
 			)
+			// A destructive delete is never handed back as a ready-made follow-up.
+			assert.notInclude(text(created.success), "delete_maintenance_window")
+			assert.notInclude(text(listed.success), "delete_maintenance_window")
+		}).pipe(Effect.provide(layerFor(testDb)))
+	})
+
+	it.effect("create_maintenance_window says a tag-only window leaves baselines alone", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const created = yield* call("create_maintenance_window", { ...weekly, tags: "deploys" })
+			assert.strictEqual(created._tag, "Success")
+			if (created._tag !== "Success") return
+			assert.include(text(created.success), "only service or environment matchers affect baselines")
 		}).pipe(Effect.provide(layerFor(testDb)))
 	})
 

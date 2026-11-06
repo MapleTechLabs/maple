@@ -69,6 +69,14 @@ const formatNext = (window: WindowRow) =>
 		? "-"
 		: `${window.nextOccurrence.startsAt} to ${window.nextOccurrence.endsAt}`
 
+/** Only service and environment matchers keep hours out of anomaly baselines. */
+const baselineExclusion = (window: WindowRow): string => {
+	if (!window.excludeFromBaselines) return "no"
+	const scoped =
+		(window.matchers.services?.length ?? 0) > 0 || (window.matchers.environments?.length ?? 0) > 0
+	return scoped ? "yes" : "no (only service or environment matchers affect baselines)"
+}
+
 export const maintenanceWindowFields = (window: WindowRow) =>
 	doc.fields([
 		["ID", window.id],
@@ -78,7 +86,7 @@ export const maintenanceWindowFields = (window: WindowRow) =>
 		["Matches", formatWindowMatchers(window.matchers)],
 		["Next occurrence", formatNext(window)],
 		["Enabled", window.enabled ? "yes" : "no"],
-		["Excluded from baselines", window.excludeFromBaselines ? "yes" : "no"],
+		["Excluded from baselines", baselineExclusion(window)],
 	])
 
 export const maintenanceWindowTableRow = (window: WindowRow) => [

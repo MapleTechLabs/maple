@@ -76,16 +76,8 @@ export function registerListMaintenanceWindowsTool(server: McpToolRegistrar) {
 						},
 					}
 				: undefined),
-			next: [
-				...Arr.map(output.windows.slice(0, 1), (window) =>
-					doc.next(
-						"delete_maintenance_window",
-						{ maintenance_window_id: window.id, confirm: true },
-						`delete "${window.name}"`,
-					),
-				),
-				doc.next("list_alert_rules", {}, "find rule ids and tags a window can match"),
-			],
+			// Deleting is destructive, so it is never offered as a ready-made follow-up.
+			next: [doc.next("list_alert_rules", {}, "find rule ids and tags a window can match")],
 		}),
 	})
 }

@@ -156,11 +156,7 @@ export function registerCreateMaintenanceWindowTool(server: McpToolRegistrar) {
 			blocks: [maintenanceWindowFields(output.window)],
 			next: [
 				doc.next("list_maintenance_windows", {}, "every maintenance window"),
-				doc.next(
-					"delete_maintenance_window",
-					{ maintenance_window_id: output.window.id, confirm: true },
-					"delete it",
-				),
+				doc.next("list_alert_silences", {}, "the silences its occurrences become"),
 			],
 		}),
 	})
