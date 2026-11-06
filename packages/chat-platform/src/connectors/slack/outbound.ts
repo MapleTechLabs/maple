@@ -236,6 +236,7 @@ const jsonRequest = (url: string, payload: SlackApiRequest) =>
 export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCredentials> = {
 	connectorId: SLACK_CONNECTOR_ID,
 	limits: { maxMessageChars: MAX_MESSAGE_CHARS, minEditInterval: MIN_EDIT_INTERVAL },
+	directMessages: true,
 	// The bot token is per workspace and arrives under `WORKSPACE_CREDENTIALS`; nothing is
 	// deployment-wide.
 	requiredConfig: [],

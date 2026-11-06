@@ -59,7 +59,6 @@ import {
 	type EscalationChainId,
 	AlertSignalType as AlertSignalTypeSchema,
 	AlertValidationError,
-	AlertNotificationTemplate,
 	type AlertEventType as AlertEventTypeValue,
 	type AlertRuleUpsertRequest,
 	type AlertGroupBy,
@@ -149,6 +148,7 @@ import {
 	enabledDestinationIds,
 	loadStepRecipients,
 	stepDestinationIds,
+	withoutDepartedMembers,
 	type EscalationWorkRow,
 	endEscalationRunsAbove,
 	loadEscalationChain,
@@ -163,6 +163,8 @@ import { makeIncidentPushBudget, type IncidentPushBudget } from "./alert-push-bu
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
+import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
+import { ChatConnectorRegistry } from "@maple/backend/services/integrations/chat-outbound"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makePersistenceError } from "./alert-persistence"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -203,6 +205,8 @@ import {
 	managedRuleMessage,
 } from "./AlertRuleModel"
 import { mapSignalUnit, resolveSignalDisplay } from "./alert-signal-display"
+import { StoredDeliveryPayloadSchema, type StoredDeliveryPayload } from "./delivery/stored-payload"
+import { incidentAcknowledgedBy } from "./delivery/transports/chat"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { AlertMemberNotifier } from "./AlertMemberNotifier"
 
@@ -410,50 +414,6 @@ const DELIVERY_LEASE_TTL_MS = 30_000
 /*  Schemas for stored JSON formats                                           */
 /* -------------------------------------------------------------------------- */
 
-const StoredDeliveryPayloadSchema = Schema.StructWithRest(
-	Schema.Struct({
-		event: Schema.optionalKey(Schema.Unknown),
-		eventType: Schema.optionalKey(Schema.String),
-		incidentId: Schema.optionalKey(Schema.NullOr(Schema.String)),
-		incidentStatus: Schema.optionalKey(Schema.String),
-		dedupeKey: Schema.optionalKey(Schema.String),
-		rule: Schema.optionalKey(
-			Schema.Struct({
-				id: Schema.optionalKey(Schema.String),
-				name: Schema.optionalKey(Schema.String),
-				signalType: Schema.optionalKey(Schema.String),
-				severity: Schema.optionalKey(Schema.String),
-				groupKey: Schema.optionalKey(Schema.NullOr(Schema.String)),
-				comparator: Schema.optionalKey(Schema.String),
-				threshold: Schema.optionalKey(Schema.Number),
-				thresholdUpper: Schema.optionalKey(Schema.NullOr(Schema.Number)),
-				windowMinutes: Schema.optionalKey(Schema.Number),
-				severities: Schema.optionalKey(Schema.Array(Schema.String)),
-			}),
-		),
-		peakSeverity: Schema.optionalKey(Schema.NullOr(Schema.String)),
-		observed: Schema.optionalKey(
-			Schema.Struct({
-				value: Schema.optionalKey(Schema.NullOr(Schema.Number)),
-				sampleCount: Schema.optionalKey(Schema.NullOr(Schema.Number)),
-				detail: Schema.optionalKey(Schema.NullOr(Schema.String)),
-			}),
-		),
-		template: Schema.optionalKey(Schema.NullOr(AlertNotificationTemplate)),
-		/** Set on an escalation step's trigger. */
-		escalation: Schema.optionalKey(Schema.Unknown),
-		chart: Schema.optionalKey(
-			Schema.NullOr(
-				Schema.Struct({
-					sparkline: Schema.optionalKey(Schema.String),
-					url: Schema.optionalKey(Schema.String),
-				}),
-			),
-		),
-	}),
-	[Schema.Record(Schema.String, Schema.Unknown)],
-)
-
 const decodeAlertRuleIdSync = Schema.decodeUnknownSync(AlertRuleDocument.fields.id)
 const decodeAlertIncidentIdSync = Schema.decodeUnknownSync(AlertIncidentDocument.fields.id)
 const decodeAlertIncidentEventIdSync = Schema.decodeUnknownSync(AlertIncidentEventId)
@@ -552,7 +512,7 @@ const isolate =
 
 const toIngestDateTime64 = warehouseDateTime64
 
-type StoredDeliveryPayloadType = Schema.Schema.Type<typeof StoredDeliveryPayloadSchema>
+type StoredDeliveryPayloadType = StoredDeliveryPayload
 
 const parseDeliveryPayload = (
 	value: unknown,
@@ -659,6 +619,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const orgChSettings = yield* OrgClickHouseSettingsService
 			const chatAlertPoster = yield* ChatAlertPoster
 			const memberNotifier = yield* AlertMemberNotifier
+			const orgMembers = yield* OrgMembersService
+			const chatConnectors = yield* ChatConnectorRegistry
+			// Connectors a page can reach a person through; the rest are not paged at all.
+			const directMessageConnectors = new Set(
+				Arr.flatMap(chatConnectors, (connector) =>
+					connector.outbound.directMessages === true ? [connector.id] : [],
+				),
+			)
 			const mobilePush = yield* MobilePushService
 			const encryptionKey = yield* parseAlertDestinationEncryptionKey(
 				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
@@ -2523,6 +2491,36 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						})
 						return
 					}
+					// An escalation since the click cleared the ack and paged again: acking now would silence
+					// that page. Read now, not from the claim batch, so a just-committed escalation counts.
+					const ackIncidentId = row.incidentId
+					const isStaleAcknowledgement =
+						row.eventType === "acknowledge" &&
+						(ackIncidentId === null ||
+							(yield* dbExecute((db) =>
+								db.run(
+									PG.from(AlertIncidents)
+										.select("id")
+										.where(($) => [
+											$.orgId.eq(row.orgId),
+											$.id.eq(ackIncidentId),
+											$.status.eq("open"),
+											$.acknowledgedAt.isNotNull(),
+										])
+										.limit(1),
+								),
+							)).length === 0)
+					if (isStaleAcknowledgement) {
+						yield* finalizeClaimedDelivery(row.id, claimTime, {
+							status: "success",
+							attemptedAt: claimTime,
+							providerMessage: "Skipped: the incident is no longer acknowledged",
+							providerReference: null,
+							responseCode: null,
+							errorMessage: null,
+						})
+						return
+					}
 					const ruleRow = ruleMap.get(row.ruleId) ?? null
 					const payloadRule = payload.rule
 					const storedRule = ruleRow ? yield* decodeStoredAlertRuleMetadata(ruleRow) : null
@@ -2582,6 +2580,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							eventType: decodeAlertEventTypeSync(row.eventType),
 							incidentId: row.incidentId ? decodeAlertIncidentIdSync(row.incidentId) : null,
 							incidentStatus: decodeAlertIncidentStatusSync(incidentRow?.status ?? "resolved"),
+							incidentAcknowledgedBy: incidentAcknowledgedBy(incidentRow),
 							dedupeKey: incidentRow?.dedupeKey ?? String(payload.dedupeKey ?? row.deliveryKey),
 							value: payload.observed?.value ?? null,
 							sampleCount: payload.observed?.sampleCount ?? null,
@@ -2619,7 +2618,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 					yield* clearDestinationFailureStreak(row.destinationId, claimTime)
 
-					if (row.incidentId) {
+					// An acknowledgement is not a notification: it must not restart the reminder clock.
+					if (row.incidentId && row.eventType !== "acknowledge") {
 						const incidentId = row.incidentId
 						yield* dbExecute((db) =>
 							db.run(
@@ -5520,6 +5520,27 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				}
 			})
 
+			/**
+			 * The org's member ids, or null to page everyone resolved: no directory on this
+			 * deployment, or one that could not be read (delivery then decides).
+			 */
+			const currentMemberIds = (orgId: OrgId) =>
+				orgMembers.listMembers(orgId).pipe(
+					Effect.map(
+						(members): ReadonlySet<string> | null =>
+							new Set(Arr.map(members, (member) => member.userId)),
+					),
+					Effect.catchTags({
+						"@maple/http/errors/AlertMemberDirectoryNotConfiguredError": () =>
+							Effect.succeed(null),
+						"@maple/http/errors/AlertMemberDirectoryUnavailableError": () =>
+							Effect.as(
+								Effect.logWarning("Member directory unavailable at an escalation step"),
+								null,
+							),
+					}),
+				)
+
 			/** One run: plan from the row, then a conditional write that only one tick can win. */
 			const advanceEscalationRun = Effect.fn("AlertsService.advanceEscalationRun")(function* (
 				row: EscalationWorkRow,
@@ -5540,10 +5561,31 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							)
 						: new Set<AlertDestinationId>()
 				// Who is on call is read now, at step time, not when the chain was saved.
-				const paged =
+				const resolved =
 					plan.kind === "send"
-						? yield* dbExecute((db) => loadStepRecipients(db, row.orgId, plan.step, nowMs))
+						? yield* dbExecute((db) =>
+								loadStepRecipients(db, row.orgId, plan.step, nowMs, directMessageConnectors),
+							)
 						: null
+				const paged =
+					resolved === null || resolved.userIds.length === 0
+						? resolved
+						: yield* Effect.map(currentMemberIds(row.orgId), (members) =>
+								withoutDepartedMembers(resolved, members),
+							)
+				if (paged !== null && paged.missingUserIds.length > 0) {
+					yield* Effect.annotateCurrentSpan(
+						"maple.escalation.recipients_missing",
+						paged.missingUserIds.length,
+					)
+					yield* Effect.logWarning("Escalation step targets people who left the organization").pipe(
+						Effect.annotateLogs({
+							runId: row.id,
+							incidentId: row.incidentId,
+							userIds: Arr.join(paged.missingUserIds, ","),
+						}),
+					)
+				}
 				if (paged !== null && paged.gapScheduleIds.length > 0) {
 					yield* Effect.annotateCurrentSpan("maple.escalation.oncall_gap", true)
 					yield* Effect.logWarning("Escalation step targets a schedule with nobody on call").pipe(
@@ -5688,6 +5730,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 		Layer.provide(
 			Layer.mergeAll(
 				AlertMemberNotifier.layer,
+				OrgMembersService.layer,
 				ChatAlertPoster.layer,
 				LinearIssueTracker.layer,
 				MobilePushService.layer,

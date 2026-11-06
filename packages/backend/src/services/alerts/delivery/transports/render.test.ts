@@ -440,3 +440,42 @@ describe("transport render: uptime monitors", () => {
 		)
 	})
 })
+
+describe("pagerduty acknowledge", () => {
+	const ack = (overrides: Partial<DispatchContext>) => {
+		const input = inputFor(
+			{ type: "pagerduty" as const, integrationKey: "k" },
+			{ context: { ...context, eventType: "acknowledge", ...overrides } },
+		)
+		return Arr.map(
+			[pagerDutyTransport.render(input), ...(pagerDutyTransport.followUps?.(input) ?? [])],
+			(spec) => JSON.parse(spec.body),
+		)
+	}
+	const tiered = { ruleSeverities: ["warning", "critical"] as const }
+
+	it("acknowledges the incident's key with a bare acknowledge event", () => {
+		assert.deepStrictEqual(ack({ ruleSeverities: ["critical"] }), [
+			{ routing_key: "k", event_action: "acknowledge", dedup_key: "org_1:rule_1:checkout" },
+		])
+	})
+
+	it("acknowledges both keys an incident of a tiered rule may hold open, whatever its tier now", () => {
+		const keys = (overrides: Partial<DispatchContext>) =>
+			Arr.map(ack(overrides), (body) => `${body.event_action} ${body.dedup_key}`)
+		const both = ["acknowledge org_1:rule_1:checkout", "acknowledge org_1:rule_1:checkout:critical"]
+		assert.deepStrictEqual(keys({ ...tiered, severity: "critical", incidentSeverity: "critical" }), both)
+		// A warning alert stays open beside a critical one; PagerDuty ignores a key with no open alert.
+		assert.deepStrictEqual(keys({ ...tiered, severity: "warning", incidentSeverity: "warning" }), both)
+	})
+
+	it("acknowledges the critical key of an incident that peaked there, after the rule lost its tiers", () => {
+		assert.deepStrictEqual(
+			Arr.map(
+				ack({ ruleSeverities: ["critical"], incidentPeakSeverity: "critical" }),
+				(body) => `${body.event_action} ${body.dedup_key}`,
+			),
+			["acknowledge org_1:rule_1:checkout", "acknowledge org_1:rule_1:checkout:critical"],
+		)
+	})
+})

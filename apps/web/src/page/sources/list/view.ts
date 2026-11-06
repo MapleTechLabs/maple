@@ -22,7 +22,7 @@ import { needsAttention, sourceStatusBadge } from "../kit/status"
 import { signalCounts, type VolumeTotals, volumeSize } from "../kit/volume"
 import { countChipItem } from "../../integrations/kit/count-chip"
 import { Message } from "./message"
-import type { Model, SourceKind } from "./model"
+import { canManage, type Model, type SourceKind } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
@@ -139,18 +139,20 @@ const sourceRow = (
 	)
 }
 
-const emptyState = (h: H): Html =>
+const emptyState = (h: H, model: Model): Html =>
 	empty(
 		h,
 		[
 			emptyHeader(h, [
 				emptyMedia(h, { variant: "icon" }, [icon(h, "ConnectionIcon", { size: 16 })]),
-				emptyTitle(h, ["Connect your first source"]),
+				emptyTitle(h, [canManage(model) ? "Connect your first source" : "No sources added yet"]),
 				emptyDescription(h, [
-					"Give each SDK, cluster or host its own source to see what it sends, cap its rate, or pause it on its own.",
+					canManage(model)
+						? "Give each SDK, cluster or host its own source to see what it sends, cap its rate, or pause it on its own."
+						: "Org admins and engineers can connect sources.",
 				]),
 			]),
-			connectButton(h),
+			...(canManage(model) ? [connectButton(h)] : []),
 		],
 		"py-8",
 	)
@@ -256,7 +258,7 @@ const sourcesTable = (h: H, model: Model, rows: ReadonlyArray<V2Source>, nowMs: 
 		? Arr.filter(ofKind, needsAttention)
 		: ofKind
 	const attention = attentionFilter(h, model, sources)
-	const strip = availableStrip(h, sources)
+	const strip = canManage(model) ? availableStrip(h, sources) : null
 	const usage = usageBySource(model)
 	const isUnavailable = AsyncData.isFailure(model.usage.data)
 	const total = orgTotal(h, sources, usage, isUnavailable)
@@ -286,7 +288,7 @@ const sourcesTable = (h: H, model: Model, rows: ReadonlyArray<V2Source>, nowMs: 
 			),
 		]),
 		...(added.length === 0
-			? [emptyState(h)]
+			? [emptyState(h, model)]
 			: shown.length === 0
 				? [filteredEmpty(h, { noun: "sources", description: "", className: "py-10 md:py-12" })]
 				: []),
@@ -314,7 +316,12 @@ const body = (h: H, model: Model): Html => {
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>
 	dashboardPage(
 		h,
-		{ title: "Sources", actions: connectButton(h, showsEmptyState(model) ? "outline" : undefined) },
+		{
+			title: "Sources",
+			actions: canManage(model)
+				? connectButton(h, showsEmptyState(model) ? "outline" : undefined)
+				: undefined,
+		},
 		[body(h, model)],
 	),
 )

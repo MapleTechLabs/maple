@@ -17,6 +17,7 @@ import {
 	EscalationChainId,
 	OnCallSchedulesListResponse,
 	OnCallShiftsResponse,
+	ONCALL_LOOKAROUND_MS,
 	OrgId,
 	UserId,
 	type OnCallOverrideCreateRequest,
@@ -76,6 +77,8 @@ interface Seen {
 	rejectMember?: boolean
 	/** An escalation chain still pages the schedule. */
 	inUse?: boolean
+	/** Ana's shift runs past the 15-day lookaround, so its end is the clamp, not a handoff. */
+	longShift?: boolean
 }
 
 const rejectMember = () => {
@@ -130,6 +133,19 @@ const layer = (seen: Seen) =>
 			},
 			onCallAt: (_org, _id, atMs) => {
 				seen.onCallAt = atMs
+				if (seen.longShift === true) {
+					return Effect.succeed(
+						Schema.decodeSync(OnCallAtResponse)({
+							at: new Date(atMs).toISOString(),
+							shift: {
+								userId: "user_ana",
+								startsAt: new Date(atMs - ONCALL_LOOKAROUND_MS).toISOString(),
+								endsAt: new Date(atMs + ONCALL_LOOKAROUND_MS).toISOString(),
+								source: { kind: "layer", layerIndex: 0 },
+							},
+						}),
+					)
+				}
 				return Effect.succeed(
 					Schema.decodeSync(OnCallAtResponse)({
 						at: new Date(atMs).toISOString(),
@@ -142,22 +158,39 @@ const layer = (seen: Seen) =>
 					}),
 				)
 			},
-			shifts: () =>
-				Effect.succeed(
-					Schema.decodeSync(OnCallShiftsResponse)({
-						from: "2026-11-13T08:00:00.000Z",
-						to: "2026-11-27T08:00:00.000Z",
-						layers: [],
-						final: [
-							{
-								userId: "user_ana",
-								startsAt: "2026-11-13T08:00:00.000Z",
-								endsAt: "2026-11-16T08:00:00.000Z",
-								source: { kind: "layer", layerIndex: 0 },
-							},
-						],
-					}),
-				),
+			shifts: (_org, _id, fromMs, toMs) =>
+				seen.longShift === true
+					? // Rendered from the clamp edge: the same shift, carrying on.
+						Effect.succeed(
+							Schema.decodeSync(OnCallShiftsResponse)({
+								from: new Date(fromMs).toISOString(),
+								to: new Date(toMs).toISOString(),
+								layers: [],
+								final: [
+									{
+										userId: "user_ana",
+										startsAt: new Date(fromMs).toISOString(),
+										endsAt: new Date(toMs).toISOString(),
+										source: { kind: "layer", layerIndex: 0 },
+									},
+								],
+							}),
+						)
+					: Effect.succeed(
+							Schema.decodeSync(OnCallShiftsResponse)({
+								from: "2026-11-13T08:00:00.000Z",
+								to: "2026-11-27T08:00:00.000Z",
+								layers: [],
+								final: [
+									{
+										userId: "user_ana",
+										startsAt: "2026-11-13T08:00:00.000Z",
+										endsAt: "2026-11-16T08:00:00.000Z",
+										source: { kind: "layer", layerIndex: 0 },
+									},
+								],
+							}),
+						),
 			createOverride: (_org, _user, _roles, id, request) => {
 				seen.overrideCreated = request
 				if (seen.rejectMember === true) return rejectMember()
@@ -238,6 +271,13 @@ describe("on-call schedule tools", () => {
 			"Ben Brook (user_ben) is on call for Checkout primary at 2026-11-12T19:00:00.000Z, through an override",
 		)
 		expect(text(result)).toContain("Ana Alves (user_ana) from 2026-11-13T08:00:00.000Z")
+	})
+
+	it("who_is_on_call reports no next shift when the current one runs past the lookaround", async () => {
+		const result = await ok("who_is_on_call", { schedule: SCHEDULE_ID }, { longShift: true })
+		const output = Schema.decodeUnknownSync(WhoIsOnCallOutput)(result.structuredContent)
+		expect([output.onCall?.user.userId, output.next]).toEqual(["user_ana", null])
+		expect(text(result)).toContain("no handoff within two weeks")
 	})
 
 	it("who_is_on_call takes a REST id and refuses an unknown schedule on the parameter", async () => {

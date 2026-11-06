@@ -41,7 +41,7 @@ export const incidentTimeline = <M>(
 			...(options.isFailed
 				? [
 						typography(h, { size: "xs", tone: "muted", as: "p" }, [
-							"Couldn't load delivery history, so notifications are missing.",
+							"Couldn't load the whole history, so some notifications or acknowledgements are missing.",
 						]),
 					]
 				: []),

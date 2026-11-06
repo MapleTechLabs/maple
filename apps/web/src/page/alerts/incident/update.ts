@@ -17,6 +17,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import {
 	CreateInvestigation,
+	FetchIncidentActivity,
 	FetchIncidentChecks,
 	FetchIncidentDeliveries,
 	FetchIncidentEscalation,
@@ -25,7 +26,10 @@ import {
 	FetchIncidentPreview,
 	FetchIncidentSlos,
 	ReadIncidentClock,
+	SetIncidentAcknowledged,
 } from "./command"
+import { withAcknowledgement } from "../shared/commands"
+import { isoMs } from "../shared/time"
 import { SLO_LIST_LIMIT } from "../shared/slo-commands"
 import { UPTIME_LIST_LIMIT } from "../shared/uptime-commands"
 import { incidentViewOf, minuteOf, ruleStatesOf } from "./derive"
@@ -48,6 +52,8 @@ export const init = (route: IncidentRoute, _context: PageContext): Return => ({
 		deliveries: Keyed.idle(),
 		investigation: Keyed.idle(),
 		escalation: Keyed.idle(),
+		activity: Keyed.idle(),
+		isUpdatingAcknowledgement: false,
 		slos: Keyed.idle(),
 		monitors: Keyed.idle(),
 		isStartingInvestigation: false,
@@ -97,6 +103,13 @@ const followData = (model: Model, context: PageContext): Return =>
 				lastNotifiedAt: view.incident.lastNotifiedAt,
 				acknowledgedAt: view.incident.acknowledgedAt,
 			})
+			// Keyed on the acknowledgement, so an ack from anywhere (Slack, the API) refetches the history.
+			const activityKey = requestKey(context.orgId, "alertIncidents.listEvents", {
+				id: incidentId,
+				// Epoch ms: the synced row and the API spell the same instant differently.
+				acknowledgedAt:
+					view.incident.acknowledgedAt === null ? null : isoMs(view.incident.acknowledgedAt),
+			})
 			const steps: ReadonlyArray<{ patch: Partial<Model>; commands: Commands }> = [
 				...Option.toArray(
 					Option.map(
@@ -106,6 +119,17 @@ const followData = (model: Model, context: PageContext): Return =>
 						(escalation) => ({
 							patch: { escalation },
 							commands: [FetchIncidentEscalation({ key: escalationKey, incidentId })],
+						}),
+					),
+				),
+				...Option.toArray(
+					Option.map(
+						sameKey(model.activity, activityKey)
+							? Option.none()
+							: Keyed.request(model.activity, activityKey, "Load"),
+						(activity) => ({
+							patch: { activity },
+							commands: [FetchIncidentActivity({ key: activityKey, incidentId })],
 						}),
 					),
 				),
@@ -306,6 +330,44 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchDeliveries: ({ key, result }) => ({
 			model: { ...model, deliveries: Keyed.accept(model.deliveries, key, result) },
 		}),
+		CompletedFetchActivity: ({ key, result }) => ({
+			model: { ...model, activity: Keyed.accept(model.activity, key, result) },
+		}),
+		ClickedAcknowledge: ({ acknowledged }) =>
+			model.isUpdatingAcknowledgement
+				? { model }
+				: Option.match(incidentViewOf(model), {
+						onNone: () => ({ model }),
+						onSome: ({ incident }) => ({
+							model: { ...model, isUpdatingAcknowledgement: true },
+							commands: [SetIncidentAcknowledged({ incidentId: incident.id, acknowledged })],
+						}),
+					}),
+		CompletedSetAcknowledged: ({ acknowledged, result }) =>
+			Result.match(result, {
+				onSuccess: (incident) =>
+					followData(
+						{
+							...model,
+							isUpdatingAcknowledgement: false,
+							incidents:
+								model.incidents === null
+									? null
+									: withAcknowledgement(model.incidents, incident),
+						},
+						context,
+					),
+				onFailure: (failure) => ({
+					model: { ...model, isUpdatingAcknowledgement: false },
+					outMessage: PageOutMessage.RequestedToast({
+						type: "error",
+						title: acknowledged
+							? "Couldn't acknowledge the incident"
+							: "Couldn't unacknowledge the incident",
+						description: failure.message,
+					}),
+				}),
+			}),
 		CompletedFetchInvestigation: ({ key, result }) => ({
 			model: { ...model, investigation: Keyed.accept(model.investigation, key, result) },
 		}),

@@ -1,4 +1,5 @@
 import { Array as Arr, DateTime, Option, Order, String as Str } from "effect"
+import { ONCALL_LOOKAROUND_MS } from "@maple/domain/http"
 import type {
 	OnCallLayer,
 	OnCallOverride,
@@ -18,7 +19,7 @@ export const MAX_ONCALL_RENDER_RANGE_MS = 90 * 86_400_000
 /** Each layer yields at most this many rotation shifts per render; later ones are dropped. */
 export const MAX_ONCALL_SHIFTS_PER_LAYER = 5_000
 /** `onCallAt` resolves within this distance of the instant, so its bounds are clamped to it. */
-export const ONCALL_LOOKAROUND_MS = 15 * 86_400_000
+export { ONCALL_LOOKAROUND_MS }
 
 export type OnCallSource =
 	| { readonly kind: "override"; readonly overrideId: OnCallOverrideId }

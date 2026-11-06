@@ -2,20 +2,30 @@
  * Drains `alert_member_notifications`, the pages escalation steps queued for people: email, or a
  * direct message through the linked chat workspace. The standard lane runs it after the destination drain.
  */
-import { alertDeliveryRetryDelayMs, canRetryAlertDelivery } from "@maple/alerting-core"
+import {
+	alertDeliveryRetryDelayMs,
+	canRetryAlertDelivery,
+	DEFAULT_ALERT_DELIVERY_RETRY_POLICY,
+} from "@maple/alerting-core"
 import {
 	AlertComparator,
 	AlertEventType,
 	AlertPersistenceError,
 	AlertSeverity,
 	AlertSignalType,
-	ChatWorkspaceId,
+	ChatConnectorId,
 	type AlertDeliveryFailure,
+	type ChatWorkspaceId,
 	type OrgId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { AlertIncidents, AlertMemberNotifications, type AlertMemberNotificationRow } from "@maple/db/tables"
-import { Array as Arr, Context, Effect, Exit, Layer, Option, Random, Schema } from "effect"
+import {
+	AlertIncidents,
+	AlertMemberNotifications,
+	ChatWorkspaces,
+	type AlertMemberNotificationRow,
+} from "@maple/db/tables"
+import { Array as Arr, Context, Effect, Exit, Layer, Option, Random, Ref, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -29,8 +39,29 @@ import { ChatAlertPoster } from "./ChatAlertPoster"
 import { buildChatAlertBlocks, type ChatAlertCardInput } from "./delivery/transports/chat"
 
 const LEASE_TTL_MS = 30_000
-const DRAIN_LIMIT = 100
+const DRAIN_LIMIT = 50
 const CONCURRENCY = 3
+/** Batches stop once this has passed, so the standard lane's minute tick stays bounded. */
+const DRAIN_BUDGET_MS = 20_000
+const MAX_ATTEMPTS = DEFAULT_ALERT_DELIVERY_RETRY_POLICY.maxAttempts
+
+/*
+ * What a failed page stores. Fixed per failure class: provider text can carry the address, and
+ * `error_message` reaches the v2 and MCP timelines.
+ */
+const FailureMessages = {
+	directoryNotConfigured: "Member emails cannot be looked up on this deployment",
+	directoryUnavailable: "The member directory could not be read",
+	noEmail: "No email address is known for this member",
+	emailFailed: "The email could not be sent",
+	unreadable: "The stored page could not be read",
+	noChatAccount: "The page names no chat account",
+	noWorkspaceKnowsUser: "No linked chat workspace could reach this member",
+	chatAuth: "The chat workspace refused Maple's credentials",
+	chatRejected: "The chat platform refused the direct message",
+	chatFailed: "The chat platform could not be reached",
+	gaveUp: "Not sent: every attempt was used up",
+} as const
 
 /** The stored step payload, read leniently: only what the email and the card show. */
 const MemberPayload = Schema.Struct({
@@ -66,7 +97,6 @@ const MemberPayload = Schema.Struct({
 		),
 	),
 	recipient: Schema.Struct({
-		workspaceId: Schema.optionalKey(ChatWorkspaceId),
 		externalUserId: Schema.optionalKey(Schema.String),
 	}),
 })
@@ -77,6 +107,7 @@ const decodeSeverity = Schema.decodeUnknownOption(AlertSeverity)
 const decodeSignalType = Schema.decodeUnknownOption(AlertSignalType)
 const decodeComparator = Schema.decodeUnknownOption(AlertComparator)
 const decodeEventType = Schema.decodeUnknownOption(AlertEventType)
+const decodeConnectorId = Schema.decodeUnknownOption(ChatConnectorId)
 
 /** What one attempt came to; `retryable` only matters for a failure. */
 type Attempt =
@@ -149,20 +180,47 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 					PG.and($.status.eq("sending"), $.claimExpiresAt.isNotNull(), $.claimExpiresAt.lte(nowMs)),
 				)
 
+			/**
+			 * Takes the row from the attempt count it was read at and counts this attempt, so a
+			 * crash after the claim still spends one. A row out of attempts is failed instead.
+			 */
 			const claim = (row: AlertMemberNotificationRow, nowMs: number) =>
 				dbExecute((db) =>
 					db.run(
 						PG.update(AlertMemberNotifications)
-							.set({
-								status: "sending",
-								claimedAt: nowMs,
-								claimExpiresAt: nowMs + LEASE_TTL_MS,
-								updatedAt: nowMs,
-							})
-							.where(($) => [$.id.eq(row.id), claimable($, nowMs)])
+							.set(
+								row.attemptNumber >= MAX_ATTEMPTS
+									? {
+											status: "failed",
+											errorMessage: FailureMessages.gaveUp,
+											claimedAt: null,
+											claimExpiresAt: null,
+											updatedAt: nowMs,
+										}
+									: {
+											status: "sending",
+											attemptNumber: row.attemptNumber + 1,
+											claimedAt: nowMs,
+											claimExpiresAt: nowMs + LEASE_TTL_MS,
+											updatedAt: nowMs,
+										},
+							)
+							.where(($) => [
+								$.id.eq(row.id),
+								$.attemptNumber.eq(row.attemptNumber),
+								claimable($, nowMs),
+							])
 							.returning("id"),
 					),
-				).pipe(Effect.map((rows) => rows.length > 0))
+				).pipe(
+					Effect.map((rows) =>
+						rows.length === 0
+							? ("lost" as const)
+							: row.attemptNumber >= MAX_ATTEMPTS
+								? ("exhausted" as const)
+								: ("claimed" as const),
+					),
+				)
 
 			/** Only the lease this worker took: a row reclaimed after it expired is not overwritten. */
 			const settle = (
@@ -185,6 +243,17 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 					)
 				})
 
+			/** Read after the claim, so an ack or resolve that landed during the drain still wins. */
+			const incidentOf = (row: AlertMemberNotificationRow) =>
+				dbExecute((db) =>
+					db.run(
+						PG.from(AlertIncidents)
+							.select("status", "acknowledgedAt")
+							.where(($) => [$.id.eq(row.incidentId), $.orgId.eq(row.orgId)])
+							.limit(1),
+					),
+				).pipe(Effect.map(Arr.head))
+
 			const sendEmail = (
 				row: AlertMemberNotificationRow,
 				input: ChatAlertCardInput,
@@ -200,52 +269,87 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 							),
 						)
 						return notConfigured
-							? failure("Member emails cannot be looked up on this deployment", false)
-							: failure("The member directory could not be read", true)
+							? failure(FailureMessages.directoryNotConfigured, false)
+							: failure(FailureMessages.directoryUnavailable, true)
 					}
 					const member = Arr.findFirst(
 						members.value,
 						(candidate) => candidate.userId === row.userId,
 					)
 					if (Option.isNone(member)) {
-						return failure("No email address is known for this member", false)
+						return failure(FailureMessages.noEmail, false)
 					}
 					const content = yield* buildAlertEmailContent(input.context, input.linkUrl)
 					return yield* email.send(member.value.email, content.subject, content.html).pipe(
 						Effect.as<Attempt>({ status: "sent" }),
-						Effect.catch((error) =>
-							Effect.succeed(failure(`Email failed: ${error.message}`, true)),
-						),
+						Effect.orElseSucceed(() => failure(FailureMessages.emailFailed, true)),
 					)
-				}).pipe(Effect.catch((error) => Effect.succeed(failure(error.message, false))))
+				}).pipe(Effect.orElseSucceed(() => failure(FailureMessages.emailFailed, false)))
 
+			const chatFailure = (error: AlertDeliveryFailure): Attempt => {
+				switch (error._tag) {
+					case "@maple/http/errors/AlertDeliveryAuthError":
+						return failure(FailureMessages.chatAuth, false)
+					case "@maple/http/errors/AlertDeliveryRejectedError":
+						return failure(FailureMessages.chatRejected, false)
+					case "@maple/http/errors/AlertDeliveryTargetMissingError":
+						return failure(FailureMessages.noWorkspaceKnowsUser, false)
+					case "@maple/http/errors/AlertDeliveryError":
+						return failure(FailureMessages.chatFailed, error.error.retryable)
+				}
+			}
+
+			/**
+			 * Identities do not record their workspace, so each of the org's workspaces on the
+			 * connector is tried, oldest first; only "no such user" moves on to the next one.
+			 */
 			const sendDirectMessage = (
 				row: AlertMemberNotificationRow,
 				payload: MemberPayload,
 				input: ChatAlertCardInput,
-			) => {
-				const { workspaceId, externalUserId } = payload.recipient
-				if (workspaceId === undefined || externalUserId === undefined) {
-					return Effect.succeed(failure("The page names no chat account", false))
-				}
-				return chat
-					.postDirect({
-						orgId: row.orgId,
-						workspaceId,
-						externalUserId,
-						blocks: buildChatAlertBlocks(input),
-					})
-					.pipe(
-						Effect.as<Attempt>({ status: "sent" }),
-						Effect.catch((error: AlertDeliveryFailure) =>
-							Effect.succeed(failure(error.message, error.error.retryable)),
+			) =>
+				Effect.gen(function* () {
+					const externalUserId = payload.recipient.externalUserId
+					const connector = decodeConnectorId(row.channel)
+					if (externalUserId === undefined || Option.isNone(connector)) {
+						return failure(FailureMessages.noChatAccount, false)
+					}
+					const workspaces = yield* dbExecute((db) =>
+						db.run(
+							PG.from(ChatWorkspaces)
+								.select("id", "createdAt")
+								.where(($) => [$.orgId.eq(row.orgId), $.connector.eq(connector.value)])
+								.orderBy(["createdAt", "asc"], ["id", "asc"]),
 						),
 					)
-			}
+					const blocks = buildChatAlertBlocks(input)
+					const tryFrom = (ids: ReadonlyArray<ChatWorkspaceId>): Effect.Effect<Attempt> =>
+						Arr.match(ids, {
+							onEmpty: () =>
+								Effect.succeed(failure(FailureMessages.noWorkspaceKnowsUser, false)),
+							onNonEmpty: ([workspaceId, ...rest]) =>
+								chat
+									.postDirect({ orgId: row.orgId, workspaceId, externalUserId, blocks })
+									.pipe(
+										Effect.as<Attempt>({ status: "sent" }),
+										Effect.catch((error: AlertDeliveryFailure) =>
+											error._tag ===
+											"@maple/http/errors/AlertDeliveryTargetMissingError"
+												? tryFrom(rest)
+												: Effect.succeed(chatFailure(error)),
+										),
+									),
+						})
+					yield* Effect.annotateCurrentSpan("maple.escalation.chat_workspaces", workspaces.length)
+					return yield* tryFrom(Arr.map(workspaces, (workspace) => workspace.id))
+				}).pipe(
+					Effect.catchTag("@maple/http/errors/AlertPersistenceError", () =>
+						Effect.succeed(failure(FailureMessages.chatFailed, true)),
+					),
+				)
 
 			const deliverOne = Effect.fn("AlertMemberNotifier.deliver")(function* (
 				row: AlertMemberNotificationRow,
-				incident: { readonly status: string; readonly acknowledgedAt: number | null } | undefined,
 				members: (orgId: OrgId) => Exit.Exit<ReadonlyArray<OrgMember>, { readonly _tag: string }>,
 			) {
 				yield* Effect.annotateCurrentSpan({
@@ -253,22 +357,29 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 					"maple.alert.incident_id": row.incidentId,
 					"maple.escalation.run_id": row.runId,
 					"maple.escalation.recipient_channel": row.channel,
-					"maple.escalation.attempt": row.attemptNumber,
+					"maple.escalation.attempt": row.attemptNumber + 1,
 				})
-				const claimedAt = yield* runtime.now
-				if (!(yield* claim(row, claimedAt))) return "lost" as const
 				const annotateStatus = (status: string) =>
 					Effect.annotateCurrentSpan("maple.escalation.recipient_status", status)
+				const claimedAt = yield* runtime.now
+				const claimed = yield* claim(row, claimedAt)
+				if (claimed === "lost") return "lost" as const
+				if (claimed === "exhausted") {
+					yield* annotateStatus("failed")
+					return "failed" as const
+				}
+				const attemptNumber = row.attemptNumber + 1
 				// Same rule as a queued step to a destination: a resolve or ack that won the race wins.
+				const incident = yield* incidentOf(row)
 				if (
-					incident === undefined ||
-					incident.status !== "open" ||
-					incident.acknowledgedAt !== null
+					Option.isNone(incident) ||
+					incident.value.status !== "open" ||
+					incident.value.acknowledgedAt !== null
 				) {
 					yield* settle(row, claimedAt, {
 						status: "skipped",
 						errorMessage:
-							incident !== undefined && incident.status === "open"
+							Option.isSome(incident) && incident.value.status === "open"
 								? "Not sent: the incident was acknowledged before this page went out"
 								: "Not sent: the incident resolved before this page went out",
 					})
@@ -281,7 +392,7 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 				)
 				const attempt: Attempt =
 					Option.isNone(payload) || Option.isNone(input)
-						? failure("The stored page could not be read", false)
+						? failure(FailureMessages.unreadable, false)
 						: row.channel === "email"
 							? yield* sendEmail(row, input.value, members(row.orgId))
 							: yield* sendDirectMessage(row, payload.value, input.value)
@@ -291,7 +402,7 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 					yield* annotateStatus("sent")
 					return "sent" as const
 				}
-				const retry = canRetryAlertDelivery(row.attemptNumber, attempt.retryable)
+				const retry = canRetryAlertDelivery(attemptNumber, attempt.retryable)
 				const jitter = yield* Random.nextIntBetween(0, 1_000)
 				yield* settle(
 					row,
@@ -299,93 +410,105 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 					retry
 						? {
 								status: "queued",
-								attemptNumber: row.attemptNumber + 1,
-								scheduledAt:
-									attemptedAt + alertDeliveryRetryDelayMs(row.attemptNumber, jitter),
+								scheduledAt: attemptedAt + alertDeliveryRetryDelayMs(attemptNumber, jitter),
 								attemptedAt,
 								errorMessage: attempt.message,
 							}
 						: { status: "failed", attemptedAt, errorMessage: attempt.message },
 				)
 				yield* annotateStatus(retry ? "retrying" : "failed")
-				// The message can carry what the platform said, never the address it was sent to.
+				// Fixed messages only: never the address or what the platform said about it.
 				yield* Effect.logWarning("Escalation page to a member failed").pipe(
 					Effect.annotateLogs({
 						notificationId: row.id,
 						incidentId: row.incidentId,
 						channel: row.channel,
-						attemptNumber: row.attemptNumber,
+						attemptNumber,
+						reason: attempt.message,
 						willRetry: retry,
 					}),
 				)
 				return "failed" as const
 			})
 
-			const drain = Effect.gen(function* () {
-				const nowMs = yield* runtime.now
-				// Across orgs: the scheduler is the system actor.
-				const rows = yield* dbExecute((db) =>
-					db.run(
-						PG.from(AlertMemberNotifications)
-							.select()
-							.where(($) => [claimable($, nowMs)])
-							.orderBy(["scheduledAt", "asc"])
-							.limit(DRAIN_LIMIT),
-					),
-				)
-				yield* Effect.annotateCurrentSpan("maple.escalation.member_notifications", rows.length)
-				if (rows.length === 0) return { processedCount: 0, failureCount: 0 }
-				const incidentIds = Arr.dedupe(Arr.map(rows, (row) => row.incidentId))
-				const incidents = yield* dbExecute((db) =>
-					db.run(
-						PG.from(AlertIncidents)
-							.select("id", "orgId", "status", "acknowledgedAt")
-							.where(($) => [$.id.in_(...incidentIds)]),
-					),
-				)
-				const incidentOf = (row: AlertMemberNotificationRow) =>
-					Arr.findFirst(
-						incidents,
-						(incident) => incident.id === row.incidentId && incident.orgId === row.orgId,
-					)
-				// One directory read per org with an email to send.
-				const emailOrgs = Arr.dedupe(
-					Arr.flatMap(rows, (row) => (row.channel === "email" ? [row.orgId] : [])),
-				)
-				const directoryEntries = yield* Effect.forEach(
-					emailOrgs,
-					(orgId) =>
-						Effect.map(
-							Effect.exit(orgMembers.listMembers(orgId)),
-							(exit) => [orgId, exit] as const,
+			const drainBatch = (deadline: number) =>
+				Effect.gen(function* () {
+					const nowMs = yield* runtime.now
+					// Across orgs: the scheduler is the system actor.
+					const rows = yield* dbExecute((db) =>
+						db.run(
+							PG.from(AlertMemberNotifications)
+								.select()
+								.where(($) => [claimable($, nowMs)])
+								.orderBy(["scheduledAt", "asc"])
+								.limit(DRAIN_LIMIT),
 						),
-					{ concurrency: CONCURRENCY },
-				)
-				const directories = new Map(directoryEntries)
-				const members = (orgId: OrgId) => directories.get(orgId) ?? Exit.succeed([])
-				const outcomes = yield* Effect.forEach(
-					rows,
-					(row) =>
-						deliverOne(row, Option.getOrUndefined(incidentOf(row)), members).pipe(
-							Effect.catchCause((cause) =>
-								Effect.logError("Escalation page crashed").pipe(
-									Effect.annotateLogs({
-										notificationId: row.id,
-										cause: summarizeCause(cause),
-									}),
-									Effect.as("failed" as const),
+					)
+					if (rows.length === 0) return { claimedCount: 0, processedCount: 0, failureCount: 0 }
+					// One directory read per org with an email to send.
+					const emailOrgs = Arr.dedupe(
+						Arr.flatMap(rows, (row) => (row.channel === "email" ? [row.orgId] : [])),
+					)
+					const directoryEntries = yield* Effect.forEach(
+						emailOrgs,
+						(orgId) =>
+							Effect.map(
+								Effect.exit(orgMembers.listMembers(orgId)),
+								(exit) => [orgId, exit] as const,
+							),
+						{ concurrency: CONCURRENCY },
+					)
+					const directories = new Map(directoryEntries)
+					const members = (orgId: OrgId) => directories.get(orgId) ?? Exit.succeed([])
+					const outcomes = yield* Effect.forEach(
+						rows,
+						(row) =>
+							Effect.flatMap(runtime.now, (time) =>
+								time >= deadline ? Effect.succeed("lost" as const) : deliverOne(row, members),
+							).pipe(
+								Effect.catchCause((cause) =>
+									Effect.logError("Escalation page crashed").pipe(
+										Effect.annotateLogs({
+											notificationId: row.id,
+											cause: summarizeCause(cause),
+										}),
+										Effect.as("failed" as const),
+									),
 								),
 							),
-						),
-					{ concurrency: CONCURRENCY },
-				)
-				const processedCount = Arr.filter(outcomes, (outcome) => outcome !== "lost").length
-				const failureCount = Arr.filter(outcomes, (outcome) => outcome === "failed").length
-				yield* Effect.annotateCurrentSpan({
-					"maple.escalation.member_notifications_processed": processedCount,
-					"maple.escalation.member_notifications_failed": failureCount,
+						{ concurrency: CONCURRENCY },
+					)
+					return {
+						claimedCount: rows.length,
+						processedCount: Arr.filter(outcomes, (outcome) => outcome !== "lost").length,
+						failureCount: Arr.filter(outcomes, (outcome) => outcome === "failed").length,
+					}
 				})
-				return { processedCount, failureCount }
+
+			const drain = Effect.gen(function* () {
+				const deadline = (yield* runtime.now) + DRAIN_BUDGET_MS
+				const totals = yield* Ref.make({ processedCount: 0, failureCount: 0 })
+				yield* drainBatch(deadline).pipe(
+					Effect.tap((batch) =>
+						Ref.update(totals, (sum) => ({
+							processedCount: sum.processedCount + batch.processedCount,
+							failureCount: sum.failureCount + batch.failureCount,
+						})),
+					),
+					Effect.flatMap((batch) =>
+						Effect.map(
+							runtime.now,
+							(time) => batch.claimedCount === DRAIN_LIMIT && time < deadline,
+						),
+					),
+					Effect.repeat({ while: (more) => more }),
+				)
+				const result = yield* Ref.get(totals)
+				yield* Effect.annotateCurrentSpan({
+					"maple.escalation.member_notifications_processed": result.processedCount,
+					"maple.escalation.member_notifications_failed": result.failureCount,
+				})
+				return result
 			}).pipe(Effect.withSpan("AlertMemberNotifier.drain"))
 
 			return { drain } satisfies AlertMemberNotifierApi

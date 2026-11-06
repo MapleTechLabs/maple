@@ -387,6 +387,8 @@ interface IncidentSpec {
 	readonly endAgo: number | null
 	readonly value: number
 	readonly held?: boolean
+	/** Acknowledged this long ago, from Slack. */
+	readonly ackedAgo?: number
 }
 
 const OPEN_INCIDENTS: ReadonlyArray<IncidentSpec> = [
@@ -405,6 +407,7 @@ const OPEN_INCIDENTS: ReadonlyArray<IncidentSpec> = [
 		startAgo: 41 * MIN,
 		endAgo: null,
 		value: 1920,
+		ackedAgo: 33 * MIN,
 	},
 	{
 		id: INCIDENT.ingest,
@@ -542,10 +545,10 @@ const incidentFrom = (spec: IncidentSpec, rule: AlertRuleDocument, nowMs: number
 		lastNotifiedAt: iso(nowMs - (open ? 8 * MIN : (spec.endAgo ?? 0))),
 		holdReason: spec.held ? "volume_collapsed" : null,
 		heldSince: spec.held ? iso(nowMs - 58 * MIN) : null,
-		acknowledgedAt: null,
+		acknowledgedAt: spec.ackedAgo === undefined ? null : iso(nowMs - spec.ackedAgo),
 		acknowledgedByUserId: null,
-		acknowledgedByName: null,
-		acknowledgedVia: null,
+		acknowledgedByName: spec.ackedAgo === undefined ? null : "Dana Kim",
+		acknowledgedVia: spec.ackedAgo === undefined ? null : "slack",
 		errorIssueId: null,
 	})
 }

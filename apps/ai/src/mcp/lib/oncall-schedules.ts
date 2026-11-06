@@ -233,8 +233,8 @@ export const deleteOverrideErrors = {
 
 const isScheduleId = Schema.is(OnCallScheduleId)
 
-/** A schedule by its UUID, its REST id or its name (case-insensitive). */
-export const resolveSchedule = (orgId: OrgId, raw: string, parameter: string) =>
+/** A schedule by its UUID, its REST id or its name (case-insensitive); errors name `toolName`. */
+export const resolveSchedule = (orgId: OrgId, raw: string, parameter: string, toolName: string) =>
 	Effect.gen(function* () {
 		const schedules = yield* OnCallSchedulesService
 		const id = Option.filter(P.internalIdOf("oncallSchedule", raw), isScheduleId)
@@ -243,11 +243,11 @@ export const resolveSchedule = (orgId: OrgId, raw: string, parameter: string) =>
 				Effect.catchTags({
 					"@maple/http/errors/OnCallScheduleNotFoundError": () =>
 						Effect.fail(scheduleNotFound(raw, parameter)),
-					"@maple/http/errors/AlertPersistenceError": failWith("who_is_on_call"),
+					"@maple/http/errors/AlertPersistenceError": failWith(toolName),
 				}),
 			)
 		}
-		const listed = yield* schedules.list(orgId).pipe(Effect.mapError(toMcpHttpError("who_is_on_call")))
+		const listed = yield* schedules.list(orgId).pipe(Effect.mapError(toMcpHttpError(toolName)))
 		const wanted = Str.toLowerCase(Str.trim(raw))
 		return yield* Effect.fromOption(
 			Arr.findFirst(listed.schedules, (s) => Str.toLowerCase(s.name) === wanted),

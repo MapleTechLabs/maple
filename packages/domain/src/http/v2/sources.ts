@@ -383,7 +383,7 @@ export class V2SourcesApiGroup extends HttpApiGroup.make("sources")
 				identifier: "listSources",
 				summary: "List sources",
 				description:
-					"Returns your organization's sources (without tokens): the default source first, then the most recently created. Requires an org-admin role and the `sources:read` scope.",
+					"Returns your organization's sources (without tokens): the default source first, then the most recently created. Open to every member of the organization; requires the `sources:read` scope.",
 			}),
 		),
 	)
@@ -397,7 +397,7 @@ export class V2SourcesApiGroup extends HttpApiGroup.make("sources")
 				identifier: "createSource",
 				summary: "Create a source",
 				description:
-					"Creates a push source and returns it **with its one-time `secret`**, the token its senders use as their ingest key. Requires an org-admin role and the `sources:write` scope.",
+					"Creates a push source and returns it **with its one-time `secret`**, the token its senders use as their ingest key. Requires an org-admin or engineer role and the `sources:write` scope.",
 			}),
 		),
 	)
@@ -411,7 +411,7 @@ export class V2SourcesApiGroup extends HttpApiGroup.make("sources")
 				identifier: "getSourcesUsage",
 				summary: "Retrieve usage for all sources",
 				description:
-					"Returns span, log and metric data point counts and estimated stored bytes per source, over 24 whole hours ending with the current one. Sources without data in the window are omitted. Requires an org-admin role and the `sources:read` scope.",
+					"Returns span, log and metric data point counts and estimated stored bytes per source, over 24 whole hours ending with the current one. Sources without data in the window are omitted. Open to every member of the organization; requires the `sources:read` scope.",
 			}),
 		),
 	)
@@ -425,7 +425,7 @@ export class V2SourcesApiGroup extends HttpApiGroup.make("sources")
 				identifier: "getSource",
 				summary: "Retrieve a source",
 				description:
-					"Returns a source by its `src_…` ID (without the token). Requires an org-admin role and the `sources:read` scope.",
+					"Returns a source by its `src_…` ID (without the token). Open to every member of the organization; requires the `sources:read` scope.",
 			}),
 		),
 	)
@@ -440,7 +440,7 @@ export class V2SourcesApiGroup extends HttpApiGroup.make("sources")
 				identifier: "updateSource",
 				summary: "Update a source",
 				description:
-					"Updates a source's settings; omitted fields are unchanged. The ingest gateway picks up changes within a minute. Requires an org-admin role and the `sources:write` scope.",
+					"Updates a source's settings; omitted fields are unchanged. The ingest gateway picks up changes within a minute. Requires an org-admin or engineer role and the `sources:write` scope.",
 			}),
 		),
 	)
@@ -454,7 +454,7 @@ export class V2SourcesApiGroup extends HttpApiGroup.make("sources")
 				identifier: "rollSource",
 				summary: "Roll a source token",
 				description:
-					"Replaces a push source's token, keeping its ID and settings, and returns the new one-time `secret`. The previous token stops working within a minute. The default source rolls through the ingest keys endpoints. Requires an org-admin role and the `sources:write` scope.",
+					"Replaces a push source's token, keeping its ID and settings, and returns the new one-time `secret`. The previous token stops working within a minute. The default source rolls through the ingest keys endpoints. Requires an org-admin or engineer role and the `sources:write` scope.",
 			}),
 		),
 	)
@@ -469,7 +469,7 @@ export class V2SourcesApiGroup extends HttpApiGroup.make("sources")
 				identifier: "pauseSource",
 				summary: "Pause a source",
 				description:
-					"Pauses ingestion for a source until `until`, or until resumed. Senders keep getting success responses, so nothing retries or backs up, but their data is dropped and not billed. Takes effect within a minute. Requires an org-admin role and the `sources:write` scope.",
+					"Pauses ingestion for a source until `until`, or until resumed. Senders keep getting success responses, so nothing retries or backs up, but their data is dropped and not billed. Takes effect within a minute. Requires an org-admin or engineer role and the `sources:write` scope.",
 			}),
 		),
 	)
@@ -483,7 +483,7 @@ export class V2SourcesApiGroup extends HttpApiGroup.make("sources")
 				identifier: "resumeSource",
 				summary: "Resume a source",
 				description:
-					"Ends a pause so data from the source is stored again, within a minute. Requires an org-admin role and the `sources:write` scope.",
+					"Ends a pause so data from the source is stored again, within a minute. Requires an org-admin or engineer role and the `sources:write` scope.",
 			}),
 		),
 	)
@@ -502,7 +502,7 @@ export class V2SourcesApiGroup extends HttpApiGroup.make("sources")
 				identifier: "getSourceUsage",
 				summary: "Retrieve source usage",
 				description:
-					"Returns hourly span, log and metric data point counts and estimated stored bytes from the source, over 24 whole hours ending with the current one. Requires an org-admin role and the `sources:read` scope.",
+					"Returns hourly span, log and metric data point counts and estimated stored bytes from the source, over 24 whole hours ending with the current one. Open to every member of the organization; requires the `sources:read` scope.",
 			}),
 		),
 	)
@@ -516,7 +516,7 @@ export class V2SourcesApiGroup extends HttpApiGroup.make("sources")
 				identifier: "deleteSource",
 				summary: "Delete a source",
 				description:
-					"Permanently deletes a source. Senders using a push source's token are rejected within a minute. Deleting an integration source disconnects its integration: Maple revokes the credential it holds and stops collecting. Data already stored is kept until retention ends. The default source cannot be deleted. Requires an org-admin role and the `sources:write` scope.",
+					"Permanently deletes a source. Senders using a push source's token are rejected within a minute. Deleting an integration source disconnects its integration: Maple revokes the credential it holds and stops collecting. Data already stored is kept until retention ends. The default source cannot be deleted. Requires an org-admin or engineer role and the `sources:write` scope.",
 			}),
 		),
 	)
@@ -526,6 +526,6 @@ export class V2SourcesApiGroup extends HttpApiGroup.make("sources")
 		OpenApi.annotations({
 			title: "Sources",
 			description:
-				"Everything that sends data to your organization: OpenTelemetry SDKs and collectors, Kubernetes clusters, Prometheus scrapes and cloud integrations. Push sources get their own token with allowed signals, a rate limit and resource attributes. All operations are admin-only.",
+				"Everything that sends data to your organization: OpenTelemetry SDKs and collectors, Kubernetes clusters, Prometheus scrapes and cloud integrations. Push sources get their own token with allowed signals, a rate limit and resource attributes. Every member can read sources; changing them needs an org-admin or engineer role.",
 		}),
 	) {}

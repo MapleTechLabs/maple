@@ -240,17 +240,19 @@ export class OnCallSchedulesService extends Context.Service<
 					}),
 			)
 
-		/** Every id must be a current member of the org. */
+		/** Every id must be a current member of the org; unchecked on a deployment with no directory. */
 		const requireMembers = (orgId: OrgId, userIds: ReadonlyArray<UserId>) =>
 			orgMembers.resolveMembers(orgId, userIds).pipe(
-				Effect.catchTag("@maple/http/errors/AlertRecipientSelectionError", (error) =>
-					Effect.fail(
-						validationError(
-							`Not members of this workspace: ${Arr.join(error.unknownUserIds, ", ")}`,
-						),
-					),
-				),
 				Effect.asVoid,
+				Effect.catchTags({
+					"@maple/http/errors/AlertMemberDirectoryNotConfiguredError": () => Effect.void,
+					"@maple/http/errors/AlertRecipientSelectionError": (error) =>
+						Effect.fail(
+							validationError(
+								`Not members of this workspace: ${Arr.join(error.unknownUserIds, ", ")}`,
+							),
+						),
+				}),
 			)
 
 		const annotate = (scheduleId: OnCallScheduleId) =>
@@ -306,7 +308,7 @@ export class OnCallSchedulesService extends Context.Service<
 		const list = Effect.fn("OnCallSchedulesService.list")(function* (orgId: OrgId) {
 			const nowMs = yield* runtime.now
 			const [from, to] = nowWindow(nowMs)
-			const [rows, overrides, chains] = yield* dbExecute((db) =>
+			const [rows, nearby, active, chains] = yield* dbExecute((db) =>
 				Effect.all([
 					db.run(
 						PG.from(OnCallSchedules)
@@ -316,9 +318,17 @@ export class OnCallSchedulesService extends Context.Service<
 							.limit(MAX_ONCALL_SCHEDULES_PER_ORG),
 					),
 					overlappingOverrides(db, orgId, from, to),
+					// The org-wide window above is capped, so the overrides that decide who is on
+					// call now are read on their own: at most the upcoming cap per schedule.
+					db.run(
+						PG.from(OnCallOverrides)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), $.startsAt.lte(nowMs), $.endsAt.gt(nowMs)]),
+					),
 					chainIdsBySchedule(db, orgId),
 				]),
 			)
+			const overrides = Arr.dedupeWith([...active, ...nearby], (a, b) => a.id === b.id)
 			yield* Effect.annotateCurrentSpan("result.rowCount", rows.length)
 			return new OnCallSchedulesListResponse({
 				schedules: Arr.map(rows, (row) =>
@@ -649,7 +659,10 @@ export class OnCallSchedulesService extends Context.Service<
 
 		const memberNames = Effect.fn("OnCallSchedulesService.memberNames")(function* (orgId: OrgId) {
 			const members = yield* orgMembers.listMembers(orgId).pipe(Effect.orElseSucceed(() => []))
-			return new Map(Arr.map(members, (m) => [m.userId, m.name ?? m.email] as const))
+			// Names only: an email is never a display name, and an unnamed member shows as their id.
+			return new Map(
+				Arr.flatMap(members, (m) => (m.name === null ? [] : [[m.userId, m.name] as const])),
+			)
 		})
 
 		return {

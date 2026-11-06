@@ -1,5 +1,6 @@
 import { HttpApiBuilder } from "effect/http-api"
 import {
+	AlertValidationError,
 	CurrentTenant,
 	OnCallOverrideCreateRequest,
 	OnCallScheduleCreateRequest,
@@ -25,7 +26,7 @@ import {
 	toV2OnCallLayer,
 	v2TimestampMs,
 } from "@maple/domain/http/v2"
-import { Array as Arr, Clock, Effect } from "effect"
+import { Array as Arr, Clock, Effect, Schema } from "effect"
 import { auditDiff } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
@@ -79,6 +80,23 @@ const toV2Shift = (shift: OnCallShiftDocument): V2OnCallShift => ({
 
 const scheduleObject = (id: OnCallScheduleId) => ({ schedule_id: id })
 
+/**
+ * The service request, decoded rather than constructed: a wire timestamp before 1970 is valid
+ * ISO but not a stored epoch, and must be a 400, not a thrown constructor.
+ */
+const decodeRequest =
+	<S extends Schema.Top & { readonly DecodingServices: never }>(schema: S) =>
+	(input: unknown) =>
+		Schema.decodeUnknownEffect(schema)(input).pipe(
+			Effect.mapError(
+				(error) => new AlertValidationError({ message: error.message, details: [error.message] }),
+			),
+		)
+
+const decodeScheduleCreate = decodeRequest(OnCallScheduleCreateRequest)
+const decodeScheduleUpdate = decodeRequest(OnCallScheduleUpdateRequest)
+const decodeOverrideCreate = decodeRequest(OnCallOverrideCreateRequest)
+
 export const HttpV2OnCallSchedulesLive = HttpApiBuilder.group(MapleApiV2, "oncallSchedules", (handlers) =>
 	Effect.gen(function* () {
 		const schedules = yield* OnCallSchedulesService
@@ -103,18 +121,19 @@ export const HttpV2OnCallSchedulesLive = HttpApiBuilder.group(MapleApiV2, "oncal
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
+					const request = yield* decodeScheduleCreate({
+						name: payload.name,
+						...(payload.description === undefined
+							? undefined
+							: { description: payload.description }),
+						timeZone: payload.time_zone,
+						layers: Arr.map(payload.layers, fromV2OnCallLayer),
+					})
 					const created = yield* schedules.create(
 						tenant.orgId,
 						tenant.userId,
 						tenant.roles,
-						new OnCallScheduleCreateRequest({
-							name: payload.name,
-							...(payload.description === undefined
-								? undefined
-								: { description: payload.description }),
-							timeZone: payload.time_zone,
-							layers: Arr.map(payload.layers, fromV2OnCallLayer),
-						}),
+						request,
 					)
 					yield* recordHttpAudit("oncall_schedule.created", {
 						resourceId: created.id,
@@ -126,24 +145,23 @@ export const HttpV2OnCallSchedulesLive = HttpApiBuilder.group(MapleApiV2, "oncal
 			.handle("update", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
+					const request = yield* decodeScheduleUpdate({
+						...(payload.name === undefined ? undefined : { name: payload.name }),
+						...(payload.description === undefined
+							? undefined
+							: { description: payload.description }),
+						...(payload.time_zone === undefined ? undefined : { timeZone: payload.time_zone }),
+						...(payload.layers === undefined
+							? undefined
+							: { layers: Arr.map(payload.layers, fromV2OnCallLayer) }),
+					})
 					const current = yield* schedules.get(tenant.orgId, params.id)
 					const updated = yield* schedules.update(
 						tenant.orgId,
 						tenant.userId,
 						tenant.roles,
 						params.id,
-						new OnCallScheduleUpdateRequest({
-							...(payload.name === undefined ? undefined : { name: payload.name }),
-							...(payload.description === undefined
-								? undefined
-								: { description: payload.description }),
-							...(payload.time_zone === undefined
-								? undefined
-								: { timeZone: payload.time_zone }),
-							...(payload.layers === undefined
-								? undefined
-								: { layers: Arr.map(payload.layers, fromV2OnCallLayer) }),
-						}),
+						request,
 					)
 					yield* recordHttpAudit("oncall_schedule.updated", {
 						resourceId: updated.id,
@@ -217,16 +235,17 @@ export const HttpV2OnCallSchedulesLive = HttpApiBuilder.group(MapleApiV2, "oncal
 			.handle("createOverride", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
+					const request = yield* decodeOverrideCreate({
+						userId: payload.user_id,
+						startsAt: v2TimestampMs(payload.starts_at),
+						endsAt: v2TimestampMs(payload.ends_at),
+					})
 					const created = yield* schedules.createOverride(
 						tenant.orgId,
 						tenant.userId,
 						tenant.roles,
 						params.id,
-						new OnCallOverrideCreateRequest({
-							userId: payload.user_id,
-							startsAt: v2TimestampMs(payload.starts_at),
-							endsAt: v2TimestampMs(payload.ends_at),
-						}),
+						request,
 					)
 					yield* recordHttpAudit("oncall_override.created", {
 						resourceId: created.id,

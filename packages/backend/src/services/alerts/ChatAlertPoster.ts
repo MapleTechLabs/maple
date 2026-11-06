@@ -36,8 +36,8 @@ import type { ChatAlertPosted, EffectTransportDeps } from "./delivery/Transport"
 
 /**
  * What the platform said, as the delivery queue's failure classes. The connector's `reason` is the
- * platform's own word where it gave one; otherwise the status decides, as it does for every HTTP
- * provider; with neither, the failure is worth retrying.
+ * platform's own word where it gave one (`rate_limited` always retries); otherwise the status
+ * decides, as it does for every HTTP provider; with neither, the failure is worth retrying.
  */
 export const chatDeliveryFailure = (error: ChatOutboundError): AlertDeliveryFailure => {
 	const fields = {
@@ -53,6 +53,9 @@ export const chatDeliveryFailure = (error: ChatOutboundError): AlertDeliveryFail
 			return new AlertDeliveryTargetMissingError(fields)
 		case "rejected":
 			return new AlertDeliveryRejectedError(fields)
+		// Asked to slow down: retried even when the status reads like a refusal (Discord's 400).
+		case "rate_limited":
+			return new AlertDeliveryError(fields)
 		case undefined:
 			return error.status === undefined
 				? new AlertDeliveryError(fields)

@@ -14,9 +14,22 @@ import {
 	text,
 	withViewInputs,
 } from "foldkit/scene"
-import { CreateInvestigation } from "./command"
+import {
+	CreateInvestigation,
+	FetchIncidentActivity,
+	FetchIncidentEscalation,
+	SetIncidentAcknowledged,
+} from "./command"
+import {
+	encodePublicId,
+	PublicIdPrefixes,
+	V2AlertIncident,
+	V2AlertIncidentEvent,
+} from "@maple/domain/http/v2"
 import { describe, expect, test } from "vitest"
 import * as Chart from "@maple/views/charts/chart"
+import { requestKey } from "@maple/views/data/request-key"
+import { isoMs } from "../shared/time"
 import { MountChart } from "@maple/views/charts/chart-mounts"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -340,7 +353,11 @@ describe("alert incident", () => {
 			{ update: pageUpdate, view },
 			given(updated.model),
 			themeResolved(),
-			expectView(text("Couldn't load delivery history, so notifications are missing.")).toExist(),
+			expectView(
+				text(
+					"Couldn't load the whole history, so some notifications or acknowledgements are missing.",
+				),
+			).toExist(),
 		)
 	})
 
@@ -448,6 +465,180 @@ describe("alert incident", () => {
 		)
 		expect(done.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/investigations/inv-1", isReplace: false }),
+		)
+	})
+
+	/** The API's answer for the page's incident: its `inc_` id decodes back to the row's id. */
+	const ackedIncident = (acknowledgedAt: string | null) =>
+		Schema.decodeSync(V2AlertIncident)({
+			id: encodePublicId(PublicIdPrefixes.alertIncident, INCIDENT_ID),
+			object: "alert_incident",
+			rule_id: "alrt_gU26thvJECdQvu54Ad9jiz",
+			rule_name: "x",
+			group_key: null,
+			signal_type: "error_rate",
+			severity: "critical",
+			peak_severity: null,
+			status: "open",
+			comparator: "gt",
+			threshold: 1,
+			threshold_upper: null,
+			first_triggered_at: new Date(NOW).toISOString(),
+			last_triggered_at: new Date(NOW).toISOString(),
+			resolved_at: null,
+			last_observed_value: null,
+			last_sample_count: null,
+			dedupe_key: "d",
+			last_delivered_event_type: null,
+			last_notified_at: null,
+			hold_reason: null,
+			held_since: null,
+			acknowledged_at: acknowledgedAt,
+			acknowledged_by: acknowledgedAt === null ? null : { user_id: "user_dana", name: "Dana Kim" },
+			acknowledged_via: acknowledgedAt === null ? null : "web",
+			error_issue_id: null,
+			escalation: null,
+		})
+
+	const ackEvent = (type: "acknowledged" | "unacknowledged", at: string) =>
+		Schema.decodeSync(V2AlertIncidentEvent)({
+			id: encodePublicId(
+				PublicIdPrefixes.event,
+				`0199a003-0000-7000-8000-00000000000${type === "acknowledged" ? 2 : 3}`,
+			),
+			object: "alert_incident_event",
+			incident_id: encodePublicId(PublicIdPrefixes.alertIncident, INCIDENT_ID),
+			type,
+			actor: { user_id: "user_dana", name: "Dana Kim" },
+			source: "web",
+			created_at: at,
+		})
+
+	const activityKey = (acknowledgedAt: string | null) =>
+		requestKey(ORG, "alertIncidents.listEvents", {
+			id: INCIDENT_ID,
+			acknowledgedAt: acknowledgedAt === null ? null : isoMs(acknowledgedAt),
+		})
+
+	test("Acknowledge marks the open incident and shows who is on it; Unacknowledge takes it back", () => {
+		const loaded = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow()] }),
+			],
+			init(route(), context).model,
+			(model, message) => step(model, message).model,
+		)
+		const ackedAt = new Date(NOW - 5 * 60_000).toISOString()
+		const unackedAt = new Date(NOW - 2 * 60_000).toISOString()
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			click(role("button", { name: "Acknowledge" })),
+			Command.resolve(
+				SetIncidentAcknowledged,
+				Message.CompletedSetAcknowledged({
+					acknowledged: true,
+					result: Result.succeed(ackedIncident(ackedAt)),
+				}),
+			),
+			// The patched row's ack moved the history's key, so the history is read again and drawn.
+			Command.resolve(
+				FetchIncidentActivity,
+				Message.CompletedFetchActivity({
+					key: activityKey(ackedAt),
+					result: Result.succeed([ackEvent("acknowledged", ackedAt)]),
+				}),
+			),
+			// The ack also moves the escalation's key; this scene draws no chain, so a null read.
+			Command.resolve(
+				FetchIncidentEscalation,
+				Message.CompletedFetchEscalation({ key: "", result: Result.succeed(null) }),
+			),
+			expectView(text(/Acknowledged by Dana Kim at/)).toExist(),
+			expectView(text("From the dashboard · reminders paused")).toExist(),
+			click(role("button", { name: "Unacknowledge" })),
+			Command.resolve(
+				SetIncidentAcknowledged,
+				Message.CompletedSetAcknowledged({
+					acknowledged: false,
+					result: Result.succeed(ackedIncident(null)),
+				}),
+			),
+			Command.resolve(
+				FetchIncidentActivity,
+				Message.CompletedFetchActivity({
+					key: activityKey(null),
+					result: Result.succeed([
+						ackEvent("acknowledged", ackedAt),
+						ackEvent("unacknowledged", unackedAt),
+					]),
+				}),
+			),
+			// The ack also moves the escalation's key; this scene draws no chain, so a null read.
+			Command.resolve(
+				FetchIncidentEscalation,
+				Message.CompletedFetchEscalation({ key: "", result: Result.succeed(null) }),
+			),
+			expectView(text("Unacknowledged by Dana Kim")).toExist(),
+			expectView(role("button", { name: "Acknowledge" })).toExist(),
+			expectView(text(/Acknowledged by Dana Kim at/)).not.toExist(),
+		)
+		const clicked = step(loaded, Message.ClickedAcknowledge({ acknowledged: true }))
+		// A second click while the request runs sends nothing.
+		expect(
+			step(clicked.model, Message.ClickedAcknowledge({ acknowledged: true })).commands ?? [],
+		).toHaveLength(0)
+		const done = step(
+			clicked.model,
+			Message.CompletedSetAcknowledged({
+				acknowledged: true,
+				result: Result.succeed(ackedIncident(ackedAt)),
+			}),
+		)
+		// The sync then delivers the same acknowledgement: no second read of the history.
+		const synced = step(
+			done.model,
+			Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow({ acknowledged_at: ackedAt })] }),
+		)
+		expect(names(synced.commands)).not.toContain("FetchAlertIncidentActivity")
+		const failed = step(
+			clicked.model,
+			Message.CompletedSetAcknowledged({
+				acknowledged: true,
+				result: Result.fail(toLoadFailure(new Error("boom"))),
+			}),
+		)
+		expect(failed.outMessage).toMatchObject({
+			_tag: "RequestedToast",
+			title: "Couldn't acknowledge the incident",
+		})
+		expect(failed.model.isUpdatingAcknowledgement).toBe(false)
+	})
+
+	test("a resolved incident offers no acknowledge button", () => {
+		const loaded = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedIncidents({
+					orgId: ORG,
+					rows: [
+						incidentRow({
+							status: "resolved",
+							resolved_at: new Date(NOW - 60_000).toISOString(),
+						}),
+					],
+				}),
+			],
+			init(route(), context).model,
+			(model, message) => step(model, message).model,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			expectView(role("button", { name: "Acknowledge" })).not.toExist(),
 		)
 	})
 })

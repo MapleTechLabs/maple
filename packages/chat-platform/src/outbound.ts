@@ -264,6 +264,11 @@ export interface ChatOutbound<R = never> {
 	 */
 	readonly liveMessages?: boolean
 	/**
+	 * Whether {@link ChatOutboundTransport.directMessage} can reach a person. Absent means it
+	 * cannot, so a host paging people skips the connector instead of queueing a page that fails.
+	 */
+	readonly directMessages?: boolean
+	/**
 	 * The deployment-wide configuration `transport` reads out of {@link ConnectorCredentials}.
 	 *
 	 * Declared so a host that posts without receiving anything — alert delivery — can resolve what
@@ -293,10 +298,11 @@ export class ChatOutboundError extends Schema.TaggedError<ChatOutboundError>()(
 		status: Schema.optionalKey(Schema.Finite),
 		/**
 		 * What the platform said was wrong, where it said so: the bot's grant (`auth`), the address
-		 * (`not_found`), or the message itself (`rejected`). Absent for a failure worth retrying —
-		 * a rate limit, an outage, a reply that could not be read.
+		 * (`not_found`), or the message itself (`rejected`). `rate_limited` is a request to slow
+		 * down whatever the status says, so it is retried. Absent for a failure the status decides:
+		 * an outage, a reply that could not be read.
 		 */
-		reason: Schema.optionalKey(Schema.Literals(["auth", "not_found", "rejected"])),
+		reason: Schema.optionalKey(Schema.Literals(["auth", "not_found", "rejected", "rate_limited"])),
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
