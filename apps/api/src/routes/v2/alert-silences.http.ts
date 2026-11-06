@@ -110,13 +110,10 @@ export const HttpV2AlertSilencesLive = HttpApiBuilder.group(MapleApiV2, "alertSi
 							},
 						)
 					}
-					// A duration runs from when the silence takes effect: a start a little in the past
-					// (client clock skew) is clamped to now by the service, so count from there too.
+					// The start is always sent, so a duration counts from exactly the start the silence gets.
 					const nowMs = yield* Clock.currentTimeMillis
-					const startsAtMs = Math.max(
-						payload.starts_at === undefined ? nowMs : timestampMs(payload.starts_at),
-						nowMs,
-					)
+					const startsAtMs =
+						payload.starts_at === undefined ? nowMs : timestampMs(payload.starts_at)
 					const endsAt = yield* decodeIso(
 						payload.ends_at ??
 							DateTime.formatIso(
@@ -124,10 +121,10 @@ export const HttpV2AlertSilencesLive = HttpApiBuilder.group(MapleApiV2, "alertSi
 							),
 						payload.ends_at === undefined ? "duration_minutes" : "ends_at",
 					)
-					const startsAt =
-						payload.starts_at === undefined
-							? undefined
-							: yield* decodeIso(payload.starts_at, "starts_at")
+					const startsAt = yield* decodeIso(
+						payload.starts_at ?? DateTime.formatIso(DateTime.makeUnsafe(startsAtMs)),
+						"starts_at",
+					)
 					const created = yield* silences.create(
 						tenant.orgId,
 						tenant.userId,
@@ -135,7 +132,7 @@ export const HttpV2AlertSilencesLive = HttpApiBuilder.group(MapleApiV2, "alertSi
 						new AlertSilenceCreateRequest({
 							reason: payload.reason,
 							matchers: toMatchers(payload.matchers),
-							...(startsAt === undefined ? undefined : { startsAt }),
+							startsAt,
 							endsAt,
 						}),
 					)

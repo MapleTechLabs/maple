@@ -209,7 +209,8 @@ export class AlertSilencesService extends Context.Service<AlertSilencesService, 
 				const requestedStart = request.startsAt === undefined ? nowMs : timestampMs(request.startsAt)
 				if (requestedStart < nowMs - START_SKEW_MS)
 					return yield* validationError("startsAt cannot be in the past")
-				const startsAtMs = Math.max(requestedStart, nowMs)
+				// A start within the skew stands as given, so a duration the caller added to it is kept exactly.
+				const startsAtMs = requestedStart
 				const endsAtMs = timestampMs(request.endsAt)
 				yield* validateWindow(startsAtMs, endsAtMs, nowMs)
 				yield* requireRuleIds(orgId, request.matchers)
