@@ -37,9 +37,15 @@ export type V2EscalationTarget = Schema.Schema.Type<typeof V2EscalationTarget>
 
 // Bounded arrays on the wire, not tuples: generated clients do not all read `prefixItems`.
 // The refine narrows the decoded type to non-empty and goes first, so the checks carry the docs.
+// Messages are wire terms: the v2 boundary prefixes them with the field path.
 const V2EscalationTargets = Schema.Array(V2EscalationTarget)
-	.pipe(Schema.refine(Arr.isReadonlyArrayNonEmpty))
-	.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_ESCALATION_STEP_TARGETS))
+	.pipe(Schema.refine(Arr.isReadonlyArrayNonEmpty, { message: "needs at least one target" }))
+	.check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(MAX_ESCALATION_STEP_TARGETS, {
+			message: `allows at most ${MAX_ESCALATION_STEP_TARGETS} targets per step`,
+		}),
+	)
 
 export const V2EscalationStep = Schema.Struct({
 	targets: V2EscalationTargets.annotate({
@@ -57,8 +63,11 @@ export const V2EscalationStep = Schema.Struct({
 export type V2EscalationStep = Schema.Schema.Type<typeof V2EscalationStep>
 
 const V2EscalationSteps = Schema.Array(V2EscalationStep)
-	.pipe(Schema.refine(Arr.isReadonlyArrayNonEmpty))
-	.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_ESCALATION_STEPS))
+	.pipe(Schema.refine(Arr.isReadonlyArrayNonEmpty, { message: "needs at least one step" }))
+	.check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(MAX_ESCALATION_STEPS, { message: `allows at most ${MAX_ESCALATION_STEPS} steps` }),
+	)
 	.annotate({ description: `The steps in order, 1 to ${MAX_ESCALATION_STEPS}.` })
 
 const RepeatCount = EscalationRepeatCount.annotate({

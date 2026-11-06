@@ -1485,4 +1485,46 @@ describe("v2 alerts over HTTP", () => {
 
 		await harness.dispose()
 	})
+
+	it("names the step field and what is wrong when escalation chain steps are empty or too long", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const primary = await createWebhook(harness, key.secret, "primary")
+		const target = { type: "destination", destination_id: primary.body.id }
+		const step = { targets: [target], wait_minutes: 10 }
+		const created = await harness.request("POST", "/v2/alerts/escalation_chains", key.secret, {
+			name: "Paging",
+			steps: [step],
+		})
+		expect(created.status, JSON.stringify(created.body)).toBe(200)
+		const post = (body: unknown) =>
+			harness.request("POST", "/v2/alerts/escalation_chains", key.secret, body)
+		const patch = (body: unknown) =>
+			harness.request("PATCH", `/v2/alerts/escalation_chains/${created.body.id}`, key.secret, body)
+
+		const responses = await Promise.all([
+			post({ name: "Empty", steps: [] }),
+			post({ name: "No targets", steps: [{ targets: [], wait_minutes: 10 }] }),
+			post({ name: "Long", steps: Arr.makeBy(11, () => step) }),
+			post({ name: "Wide", steps: [{ targets: Arr.makeBy(11, () => target), wait_minutes: 10 }] }),
+			patch({ steps: [] }),
+			patch({ steps: [step, { targets: [], wait_minutes: 5 }] }),
+		])
+		expect(
+			Arr.map(responses, (response) => [
+				response.status,
+				response.body.error.param,
+				response.body.error.message,
+			]),
+		).toEqual([
+			[400, "steps", "steps: needs at least one step"],
+			[400, "steps[0].targets", "steps[0].targets: needs at least one target"],
+			[400, "steps", "steps: allows at most 10 steps"],
+			[400, "steps[0].targets", "steps[0].targets: allows at most 10 targets per step"],
+			[400, "steps", "steps: needs at least one step"],
+			[400, "steps[1].targets", "steps[1].targets: needs at least one target"],
+		])
+
+		await harness.dispose()
+	})
 })
