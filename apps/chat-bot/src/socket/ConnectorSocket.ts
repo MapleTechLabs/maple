@@ -217,6 +217,8 @@ export class ConnectorSocket {
 		private readonly ctx: ConnectorSocketState,
 		env: Record<string, unknown>,
 		private readonly relays: ConnectorRelayClient,
+		/** The connectors this object can be; the registry unless a test hands it a fake. */
+		private readonly registry: ReadonlyArray<IngressConnector> = connectors,
 	) {
 		this.configLayer = workerEnvLayer(env)
 	}
@@ -487,7 +489,7 @@ export class ConnectorSocket {
 	private async resolve(): Promise<ResolvedConnector | undefined> {
 		const connectorId = await this.ctx.storage.get<string>(KEY.connectorId)
 		if (connectorId === undefined) return undefined
-		const found = Arr.findFirst(connectors, (candidate) => candidate.id === connectorId)
+		const found = Arr.findFirst(this.registry, (candidate) => candidate.id === connectorId)
 		if (Option.isNone(found)) return undefined
 		const connector = found.value
 		if (connector.ingress.kind !== "socket") return undefined

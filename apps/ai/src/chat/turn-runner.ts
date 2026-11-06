@@ -68,8 +68,9 @@ import {
 	SUBMIT_REVIEW,
 } from "./tools"
 
-import { abortReason, interruptOnAbort, makeTurnObservability, turnSpanAttributes } from "./turn-outcome"
+import { interruptOnAbort, makeTurnObservability, turnSpanAttributes } from "./turn-outcome"
 import { makeAutonomousOutcome, type PhaseKind } from "./autonomous-outcome"
+import { makeUnfinishedSettler, runAutonomousTurn } from "./autonomous-settle"
 import { type AgentDefinition, agentForSession } from "./agents"
 import { profileForTurn } from "./profiles"
 import { runChatTurn } from "./run"
@@ -152,13 +153,9 @@ const METERING_TIMEOUT = "5 seconds"
 const NO_DIAGNOSIS_MESSAGE = "Maple ended this investigation without a diagnosis."
 /** What the row records when the pass and its close-out both ended in prose or on an error. */
 const NO_DIAGNOSIS_ERROR = "no_diagnosis: the agent ended its pass without submitting a diagnosis; retry"
-/** What the row records when the turn was stopped before its report. */
-const NO_DIAGNOSIS_INTERRUPTED = "interrupted: the run was stopped before it submitted a diagnosis; retry"
 const NO_REVIEW_MESSAGE = "Maple ended this review without a report."
 const NO_REPLY_MESSAGE = "Maple ended this answer without posting it."
 const NO_REPLY_ERROR = "no_reply: the agent ended its pass without submitting an answer"
-/** How long a row write that settles an unfinished turn may take; it can run in a finalizer. */
-const ROW_WRITE_TIMEOUT = "10 seconds"
 /** How long filing a review's saved findings may take once the turn has started settling. */
 const SUBMIT_SAVED_TIMEOUT = "60 seconds"
 /** A review pass that answered in prose gets another pass only with at least this much of its clock left. */
@@ -667,50 +664,27 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				return
 			}
 
-			// Record a turn that stopped without a report on its rows. Not on a supersede: the newer
-			// head's review owns the row and marks it skipped itself. Bounded, since it can run in a finalizer.
-			const settleRow = <E>(write: Effect.Effect<void, E>, failed: string) =>
-				write.pipe(
-					Effect.timeout(ROW_WRITE_TIMEOUT),
-					Effect.catchCause((cause) => Effect.logError(failed, cause)),
-				)
-			const failUnfinished = (reason: PrReviewFailureReason, investigationError: string) =>
-				Effect.gen(function* () {
-					if (outcome.submitted()) return
-					if (Option.contains(abortReason(input.signal), "superseded")) return
-					if (investigationId !== undefined) {
-						observability.failureReason = "NoDiagnosis"
-						yield* settleRow(
-							investigations.failInvestigation(
-								tenant.orgId,
-								investigationId,
-								investigationError,
-							),
-							"Could not record the failed pass",
-						)
-					}
-					if (prReplyId !== undefined) {
-						observability.failureReason = "NoReply"
-						yield* settleRow(
-							conversations.failReply(tenant.orgId, prReplyId, NO_REPLY_ERROR),
-							"Could not record the failed reply",
-						)
-					}
-					if (prReviewId !== undefined) {
-						observability.failureReason = "NoReview"
-						yield* Effect.annotateCurrentSpan("maple.pr_review.failure_reason", reason)
-						yield* settleRow(
-							reviews.failReview(tenant.orgId, prReviewId, reviewFailureError(reason)),
-							"Could not record the failed review",
-						)
-					}
-				})
-
-			// An abort between or during phases still settles the rows: nothing else would move a
-			// review off `running` before the stale sweeps.
-			const aborted = Effect.suspend(() => {
-				observability.outcome = "aborted"
-				return failUnfinished("interrupted", NO_DIAGNOSIS_INTERRUPTED)
+			const { failUnfinished, aborted } = makeUnfinishedSettler({
+				outcome,
+				signal: input.signal,
+				observability,
+				rows: {
+					...(investigationId === undefined
+						? undefined
+						: {
+								failInvestigation: (error: string) =>
+									investigations.failInvestigation(tenant.orgId, investigationId, error),
+							}),
+					...(prReplyId === undefined
+						? undefined
+						: { failReply: conversations.failReply(tenant.orgId, prReplyId, NO_REPLY_ERROR) }),
+					...(prReviewId === undefined
+						? undefined
+						: {
+								failReview: (reason: PrReviewFailureReason) =>
+									reviews.failReview(tenant.orgId, prReviewId, reviewFailureError(reason)),
+							}),
+				},
 			})
 
 			const autonomousTurn = Effect.gen(function* () {
@@ -785,10 +759,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				yield* closeFeeds
 			})
 
-			// Once the phases are over the rows are settled exactly once: uninterruptible, so an abort
-			// arriving now cannot cut a write short and settle them a second time as interrupted.
+			// A turn that still holds its slot after the phases settles here, once (`runAutonomousTurn`).
 			const settleTurn = Effect.gen(function* () {
-				if (!holdsTurn()) return yield* aborted
 				// Findings the pass saved, and its children's warnings, are posted as a partial rather
 				// than lost with the report.
 				const saved = closeOutFindings(
@@ -840,12 +812,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				)
 			})
 
-			yield* Effect.uninterruptibleMask((restore) =>
-				restore(autonomousTurn).pipe(
-					Effect.onInterrupt(() => aborted),
-					Effect.andThen(settleTurn),
-				),
-			)
+			yield* runAutonomousTurn({ phases: autonomousTurn, settle: settleTurn, aborted, holdsTurn })
 			yield* annotateTurn()
 		})
 
