@@ -151,11 +151,16 @@ export const validateThresholds = (
 				)
 			}
 		}
-		if (options.requireDestinations && tier.destinationIds.length === 0) {
+		// An escalation chain routes the tier on its own.
+		if (
+			options.requireDestinations &&
+			tier.destinationIds.length === 0 &&
+			tier.escalationChainId == null
+		) {
 			details.push(
 				thresholds.length === 1
-					? "at least one destination must be selected"
-					: `the ${tier.severity} threshold needs at least one destination`,
+					? "at least one destination or an escalation chain must be selected"
+					: `the ${tier.severity} threshold needs at least one destination or an escalation chain`,
 			)
 		}
 	})

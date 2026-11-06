@@ -1,0 +1,398 @@
+import {
+	AlertDestinationInUseError,
+	AlertRuleUpsertRequest,
+	AlertValidationError,
+	EscalationChainCreateRequest,
+	EscalationChainId,
+	EscalationChainInUseError,
+	WebhookAlertDestinationConfig,
+	type AlertDestinationId,
+	type AlertThreshold,
+	type OrgId,
+	type UserId,
+} from "@maple/domain/http"
+import { afterEach, assert, describe, it } from "@effect/vitest"
+import { Duration, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { TestClock } from "effect/testing"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { AlertsService, type AlertsServiceApi } from "./AlertsService"
+import { EscalationChainsService } from "./EscalationChainsService"
+import {
+	DEFAULT_CLOCK_EPOCH_MS,
+	adminRoles,
+	asOrgId,
+	asUserId,
+	getError,
+	makeLayer,
+	makeWarehouseStub,
+	tracesRow,
+} from "./alerts-service-test-support"
+
+const decodeChainId = Schema.decodeUnknownSync(EscalationChainId)
+const trackedDbs: TestDb[] = []
+afterEach(() => cleanupTestDbs(trackedDbs))
+
+const errorRateRows = (errorRate: number): ReadonlyArray<Record<string, unknown>> => [
+	tracesRow({
+		count: 200,
+		avgDuration: 40,
+		p50Duration: 20,
+		p95Duration: 120,
+		p99Duration: 240,
+		errorRate,
+		satisfiedCount: 180,
+		toleratingCount: 10,
+		apdexScore: 0.925,
+	}),
+]
+
+/** `trigger https://example.com/slack` per webhook request, in send order. */
+const recordingFetch = (requests: Array<string>) =>
+	(async (input: RequestInfo | URL, init?: RequestInit) => {
+		const url = String(input instanceof Request ? input.url : input)
+		requests.push(
+			`${new Headers(init?.headers).get("x-maple-event-type")} ${Str.replace("https://example.com/", "")(url)}`,
+		)
+		return new Response("ok", { status: 200 })
+	}) as typeof fetch
+
+const layerFor = (
+	testDb: TestDb,
+	state: { tracesAggregateRows: ReadonlyArray<Record<string, unknown>> },
+	requests: Array<string>,
+) =>
+	Layer.mergeAll(
+		makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
+		EscalationChainsService.layer.pipe(Layer.provide(testDb.layer)),
+	)
+
+const tick = (alerts: AlertsServiceApi, minutes = 1) =>
+	Effect.gen(function* () {
+		yield* TestClock.adjust(Duration.minutes(minutes))
+		yield* alerts.runSchedulerTick()
+	})
+
+/** Ticks once a minute for `minutes` minutes. */
+const ticks = (alerts: AlertsServiceApi, minutes: number) =>
+	Effect.forEach(Arr.range(1, minutes), () => tick(alerts), { discard: true })
+
+const webhook = (alerts: AlertsServiceApi, orgId: OrgId, userId: UserId, name: string) =>
+	alerts.createDestination(
+		orgId,
+		userId,
+		adminRoles,
+		new WebhookAlertDestinationConfig({
+			type: "webhook",
+			name,
+			enabled: true,
+			url: `https://example.com/${name}`,
+			signingSecret: `${name}-secret`,
+		}),
+	)
+
+const ruleRequest = (thresholds: Arr.NonEmptyReadonlyArray<AlertThreshold>) =>
+	new AlertRuleUpsertRequest({
+		name: "Checkout error rate",
+		enabled: true,
+		serviceNames: ["checkout"],
+		signalType: "error_rate",
+		comparator: "gt",
+		thresholds,
+		windowMinutes: 5,
+		minimumSampleCount: 10,
+		consecutiveBreachesRequired: 2,
+		consecutiveHealthyRequired: 2,
+		renotifyIntervalMinutes: 60,
+	})
+
+const tier = (
+	severity: AlertThreshold["severity"],
+	value: number,
+	destinationIds: ReadonlyArray<AlertDestinationId>,
+	escalationChainId: EscalationChainId | null,
+): AlertThreshold => ({
+	severity,
+	value,
+	upper: null,
+	recoveryValue: null,
+	destinationIds,
+	escalationChainId,
+})
+
+/** "#team" on the tier; the chain notifies slack, waits 10 minutes, then pages, waits 15. */
+const setup = (orgName: string, options: { readonly repeatCount?: number } = {}) =>
+	Effect.gen(function* () {
+		const alerts = yield* AlertsService
+		const chains = yield* EscalationChainsService
+		const orgId = asOrgId(orgName)
+		const userId = asUserId(`user_${orgName}`)
+		const team = yield* webhook(alerts, orgId, userId, "team")
+		const slack = yield* webhook(alerts, orgId, userId, "slack")
+		const pager = yield* webhook(alerts, orgId, userId, "pager")
+		const chain = yield* chains.create(
+			orgId,
+			userId,
+			adminRoles,
+			new EscalationChainCreateRequest({
+				name: "API escalation",
+				steps: [
+					{ targets: [{ type: "destination", destinationId: slack.id }], waitMinutes: 10 },
+					{ targets: [{ type: "destination", destinationId: pager.id }], waitMinutes: 15 },
+				],
+				...(options.repeatCount === undefined ? undefined : { repeatCount: options.repeatCount }),
+			}),
+		)
+		const rule = yield* alerts.createRule(
+			orgId,
+			userId,
+			adminRoles,
+			ruleRequest([tier("critical", 5, [team.id], chain.id)]),
+		)
+		return { alerts, chains, orgId, userId, team, slack, pager, chain, rule }
+	})
+
+const runRows = (testDb: TestDb, orgId: OrgId) =>
+	Effect.promise(() =>
+		testDb.pglite.query<{ status: string; steps_sent: number; chain_name: string }>(
+			"select status, steps_sent, chain_name from alert_escalation_runs where org_id = $1 order by created_at",
+			[orgId],
+		),
+	).pipe(Effect.map((result) => result.rows))
+
+const setAck = (testDb: TestDb, orgId: OrgId, acknowledged: boolean) =>
+	Effect.promise(() =>
+		executeSql(
+			testDb,
+			acknowledged
+				? `update alert_incidents set acknowledged_at = now(), acknowledged_by_name = 'Ana', acknowledged_via = 'web' where org_id = $1`
+				: `update alert_incidents set acknowledged_at = null, acknowledged_by_name = null, acknowledged_via = null where org_id = $1`,
+			[orgId],
+		),
+	)
+
+describe("escalation chains", () => {
+	it.effect("pages the next step after the wait, once, and ends after the last step", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const requests: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const { alerts, orgId } = yield* setup("org_esc_walk")
+			yield* alerts.runSchedulerTick()
+			yield* tick(alerts)
+			// Opened: the tier's destination and the chain's first step, in the same tick.
+			assert.sameMembers(requests, ["trigger team", "trigger slack"])
+
+			yield* ticks(alerts, 9)
+			assert.lengthOf(requests, 2)
+			yield* tick(alerts)
+			assert.deepStrictEqual(requests.slice(2), ["trigger pager"])
+
+			yield* ticks(alerts, 20)
+			assert.lengthOf(requests, 3)
+			assert.deepStrictEqual(yield* runRows(testDb, orgId), [
+				{ status: "exhausted", steps_sent: 2, chain_name: "API escalation" },
+			])
+		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+	})
+
+	it.effect("repeats the whole chain repeatCount more times", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const requests: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const { alerts, orgId } = yield* setup("org_esc_repeat", { repeatCount: 1 })
+			yield* alerts.runSchedulerTick()
+			yield* tick(alerts)
+			// slack at 0, pager at 10, slack again at 25, pager at 35.
+			yield* ticks(alerts, 40)
+			assert.deepStrictEqual(
+				Arr.filter(requests, (request) => request !== "trigger team"),
+				["trigger slack", "trigger pager", "trigger slack", "trigger pager"],
+			)
+			assert.strictEqual((yield* runRows(testDb, orgId))[0]?.status, "exhausted")
+		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+	})
+
+	it.effect("stops at an acknowledgement and picks up where it was after an unacknowledge", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const requests: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const { alerts, orgId } = yield* setup("org_esc_ack")
+			yield* alerts.runSchedulerTick()
+			yield* tick(alerts)
+			yield* setAck(testDb, orgId, true)
+			yield* ticks(alerts, 20)
+			// Nobody paged while Ana is on it.
+			assert.sameMembers(requests, ["trigger team", "trigger slack"])
+			assert.strictEqual((yield* runRows(testDb, orgId))[0]?.status, "acknowledged")
+
+			yield* setAck(testDb, orgId, false)
+			yield* tick(alerts)
+			assert.deepStrictEqual(requests.slice(2), ["trigger pager"])
+		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+	})
+
+	it.effect("ends without paging once the incident resolves mid-wait", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const requests: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const { alerts, orgId } = yield* setup("org_esc_resolve")
+			yield* alerts.runSchedulerTick()
+			yield* tick(alerts)
+			state.tracesAggregateRows = errorRateRows(1)
+			yield* ticks(alerts, 3)
+			yield* ticks(alerts, 20)
+			assert.notInclude(requests, "trigger pager")
+			assert.strictEqual((yield* runRows(testDb, orgId))[0]?.status, "resolved")
+		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+	})
+
+	it.effect("sends a due step once when two scheduler ticks overlap", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const requests: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const { alerts, orgId } = yield* setup("org_esc_race")
+			yield* alerts.runSchedulerTick()
+			yield* tick(alerts)
+			yield* ticks(alerts, 9)
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* Effect.all([alerts.runSchedulerTick(), alerts.runSchedulerTick()], { concurrency: 2 })
+			assert.deepStrictEqual(
+				Arr.filter(requests, (request) => request === "trigger pager"),
+				["trigger pager"],
+			)
+			const rows = yield* Effect.promise(() =>
+				testDb.pglite.query<{ n: number }>(
+					`select count(*)::int as n from alert_delivery_events d join alert_destinations x on x.id = d.destination_id
+					 where d.org_id = $1 and x.name = 'pager'`,
+					[orgId],
+				),
+			)
+			assert.strictEqual(rows.rows[0]?.n, 1)
+		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+	})
+
+	it.effect("notifies a destination in both the tier and the first step once", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const requests: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const chains = yield* EscalationChainsService
+			const orgId = asOrgId("org_esc_dedupe")
+			const userId = asUserId("user_esc_dedupe")
+			const team = yield* webhook(alerts, orgId, userId, "team")
+			const chain = yield* chains.create(
+				orgId,
+				userId,
+				adminRoles,
+				new EscalationChainCreateRequest({
+					name: "Team first",
+					steps: [{ targets: [{ type: "destination", destinationId: team.id }], waitMinutes: 5 }],
+				}),
+			)
+			yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				ruleRequest([tier("critical", 5, [team.id], chain.id)]),
+			)
+			yield* alerts.runSchedulerTick()
+			yield* tick(alerts)
+			assert.deepStrictEqual(requests, ["trigger team"])
+		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+	})
+
+	it.effect("restarts on the critical tier's own chain when a warning incident escalates", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const requests: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const chains = yield* EscalationChainsService
+			const orgId = asOrgId("org_esc_supersede")
+			const userId = asUserId("user_esc_supersede")
+			const slack = yield* webhook(alerts, orgId, userId, "slack")
+			const pager = yield* webhook(alerts, orgId, userId, "pager")
+			const create = (name: string, destinationId: AlertDestinationId, repeatCount: number) =>
+				chains.create(
+					orgId,
+					userId,
+					adminRoles,
+					new EscalationChainCreateRequest({
+						name,
+						steps: [{ targets: [{ type: "destination", destinationId }], waitMinutes: 30 }],
+						repeatCount,
+					}),
+				)
+			// The warning chain is still waiting to repeat when the incident escalates.
+			const warnChain = yield* create("Warn chain", slack.id, 1)
+			const pageChain = yield* create("Page chain", pager.id, 0)
+			yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				ruleRequest([tier("critical", 20, [], pageChain.id), tier("warning", 5, [], warnChain.id)]),
+			)
+			yield* alerts.runSchedulerTick()
+			yield* tick(alerts)
+			assert.deepStrictEqual(requests, ["trigger slack"])
+			state.tracesAggregateRows = errorRateRows(30)
+			yield* ticks(alerts, 2)
+			assert.deepStrictEqual(requests, ["trigger slack", "trigger pager"])
+			assert.deepStrictEqual(
+				Arr.map(yield* runRows(testDb, orgId), (row) => [row.chain_name, row.status]),
+				[
+					["Warn chain", "superseded"],
+					["Page chain", "exhausted"],
+				],
+			)
+		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+	})
+
+	it.effect("refuses a rule naming an unknown chain, and deleting a chain or destination in use", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const requests: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const { alerts, chains, orgId, userId, team, slack, chain, rule } = yield* setup("org_esc_guards")
+			const unknown = yield* Effect.exit(
+				alerts.createRule(
+					orgId,
+					userId,
+					adminRoles,
+					ruleRequest([
+						tier("critical", 5, [team.id], decodeChainId("00000000-0000-4000-8000-0000000000ff")),
+					]),
+				),
+			)
+			assert.instanceOf(getError(unknown), AlertValidationError)
+
+			const inUse = getError(yield* Effect.exit(chains.delete(orgId, adminRoles, chain.id)))
+			assert.instanceOf(inUse, EscalationChainInUseError)
+			assert.deepStrictEqual((yield* chains.get(orgId, chain.id)).ruleIds, [rule.id])
+
+			const destinationInUse = getError(
+				yield* Effect.exit(alerts.deleteDestination(orgId, adminRoles, slack.id)),
+			)
+			if (!Schema.is(AlertDestinationInUseError)(destinationInUse))
+				return assert.fail("expected in use")
+			assert.include(destinationInUse.message, "API escalation")
+
+			yield* alerts.deleteRule(orgId, adminRoles, rule.id)
+			yield* chains.delete(orgId, adminRoles, chain.id)
+			assert.lengthOf((yield* chains.list(orgId)).chains, 0)
+		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+	})
+})

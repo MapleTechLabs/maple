@@ -23,7 +23,7 @@ import {
 	EscalationChains,
 } from "@maple/db/tables"
 import type { MapleDb } from "@maple/db/client"
-import { Array as Arr, Effect } from "effect"
+import { Array as Arr, DateTime, Effect } from "effect"
 import { queuedDeliveryEventRow } from "./alert-delivery-rows"
 
 const LIVE_STATUSES = ["active", "acknowledged"] as const
@@ -241,7 +241,7 @@ export const applyEscalationPlan = (db: MapleDb, input: ApplyEscalationPlanInput
 				if (!moved) return "lost" satisfies EscalationApplyOutcome
 				const payload = {
 					...row.payloadJson,
-					sentAt: new Date(nowMs).toISOString(),
+					sentAt: DateTime.formatIso(DateTime.makeUnsafe(nowMs)),
 					escalation: {
 						chainId: row.chainId,
 						chainName: row.chainName,
