@@ -7,6 +7,7 @@ import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/ba
 import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { registerAcknowledgeAlertIncidentTool } from "./acknowledge-alert-incident"
+import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import type { McpToolError, McpToolRegistrar } from "./types"
 import type { McpToolRequirements } from "./runtime-requirements"
 import { unimplementedMcpToolServices } from "../../../test/mcp/unimplemented-tool-services"
@@ -124,6 +125,25 @@ describe("acknowledge_alert_incident", () => {
 				_tag: "@maple/mcp/errors/McpInvalidInputError",
 				parameter: "incident_id",
 			})
+		}).pipe(Effect.provide(layerFor(testDb)))
+	})
+
+	it.effect("records Maple, not the token's placeholder user, when Maple itself acknowledges", () => {
+		const testDb = createTestDb(trackedDbs)
+		const call = acknowledgeTool()
+		return Effect.gen(function* () {
+			yield* seed(testDb)
+			const acked = yield* call({ incident_id: OPEN }).pipe(
+				Effect.provideService(CurrentAuditActor, { type: "system", source: "system" }),
+			)
+			assert.deepInclude(acked, { acknowledged: true, acknowledgedBy: "Maple" })
+			const rows = yield* Effect.promise(() =>
+				testDb.pglite.query<{ acknowledged_by_user_id: string | null }>(
+					"select acknowledged_by_user_id from alert_incidents where id = $1",
+					[OPEN],
+				),
+			)
+			assert.isNull(rows.rows[0]?.acknowledged_by_user_id)
 		}).pipe(Effect.provide(layerFor(testDb)))
 	})
 })
