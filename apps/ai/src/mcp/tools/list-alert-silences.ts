@@ -38,8 +38,15 @@ export function registerListAlertSilencesTool(server: McpToolRegistrar) {
 					.list(tenant.orgId, { status, limit: params.limit + 1 })
 					.pipe(Effect.mapError(toMcpHttpError("list_alert_silences"))),
 			)
-			const all = Arr.flatMap(pages, (page) => page.silences)
-			const shown = all.slice(0, params.limit)
+			// Both statuses share the window: a full page of active silences must not hide every
+			// scheduled one, so scheduled keeps at least half of it when it has that many.
+			const [first = [], second = []] = Arr.map(pages, (page) => page.silences)
+			const secondShare = Math.min(
+				second.length,
+				Math.max(params.limit - first.length, Math.floor(params.limit / 2)),
+			)
+			const shown = [...first.slice(0, params.limit - secondShare), ...second.slice(0, secondShare)]
+			const total = first.length + second.length
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
@@ -52,7 +59,7 @@ export function registerListAlertSilencesTool(server: McpToolRegistrar) {
 				total: shown.length,
 				...(params.status === undefined ? undefined : { status: params.status }),
 				limit: params.limit,
-				hasMore: all.length > params.limit,
+				hasMore: total > shown.length,
 			}
 		}),
 		render: (output) => ({
@@ -99,7 +106,15 @@ export function registerListAlertSilencesTool(server: McpToolRegistrar) {
 											"more silences",
 										),
 									}
-								: undefined),
+								: output.status === undefined
+									? {
+											next: doc.next(
+												"list_alert_silences",
+												{ status: "scheduled", limit: MAX_LIMIT },
+												"the scheduled silences on their own",
+											),
+										}
+									: undefined),
 						},
 					}
 				: undefined),

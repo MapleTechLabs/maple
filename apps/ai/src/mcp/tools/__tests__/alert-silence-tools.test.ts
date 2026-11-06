@@ -50,6 +50,8 @@ interface Seen {
 	created?: AlertSilenceCreateRequest
 	listedStatuses: Array<string | undefined>
 	ended?: string
+	/** More silences beside `stored`, for one test. */
+	extra?: ReadonlyArray<AlertSilenceDocument>
 }
 
 const layer = (seen: Seen) =>
@@ -66,7 +68,7 @@ const layer = (seen: Seen) =>
 				return Effect.succeed(
 					new AlertSilencesListResponse({
 						silences: Arr.filter(
-							stored,
+							[...stored, ...(seen.extra ?? [])],
 							(s) => options.status === undefined || s.status === options.status,
 						),
 					}),
@@ -236,6 +238,19 @@ describe("alert silence tools", () => {
 
 		const ended = await ok("list_alert_silences", { status: "ended" }, fresh())
 		expect(text(ended)).toContain("Old outage")
+	})
+
+	it("list_alert_silences keeps scheduled silences in view behind a full page of active ones", async () => {
+		const seen: Seen = {
+			...fresh(),
+			extra: Arr.map(["d", "e", "f"], (prefix) =>
+				silence(`${prefix}1111111-2222-4333-8444-555555555555`, "active", `Deploy ${prefix}`),
+			),
+		}
+		const result = await ok("list_alert_silences", { limit: 2 }, seen)
+		const output = Schema.decodeUnknownSync(ListAlertSilencesOutput)(result.structuredContent)
+		expect(Arr.map(output.silences, (s) => s.status)).toEqual(["active", "scheduled"])
+		expect(output.hasMore).toBe(true)
 	})
 
 	it("end_alert_silence ends by id and maps an unknown one to silence_id", async () => {
