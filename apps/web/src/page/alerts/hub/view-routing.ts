@@ -457,8 +457,11 @@ const logRow = (h: H, model: Model, inputs: RoutingInputs, event: AlertDeliveryE
 	const status = deliveryStatusMeta[event.status]
 	// Delivery events carry only the type; a `chat` destination's logo comes from its connector.
 	const chatConnector = Option.getOrUndefined(
-		Arr.findFirst(inputs.destinations, (d) => d.id === event.destinationId),
-	)?.chatConnector
+		Option.flatMapNullishOr(
+			Arr.findFirst(inputs.destinations, (d) => d.id === event.destinationId),
+			(d) => d.chatConnector,
+		),
+	)
 	return tableRow(h, [
 		tableCell(h, [
 			hstack(h, { gap: "1.5", as: "span" }, [
