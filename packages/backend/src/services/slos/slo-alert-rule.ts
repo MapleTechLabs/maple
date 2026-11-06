@@ -90,9 +90,11 @@ const describeTier = (tier: SloBurnTier, windows: ReadonlyArray<SloBurnWindow>) 
 		Option.match(burnWindowOf(windows, minutes), { onNone: () => 0, onSome: (window) => window.burnRate })
 	const long = rate(tier.longWindowMinutes)
 	const short = rate(tier.shortWindowMinutes)
+	const rates = `${formatRate(long)} over ${windowLabel(tier.longWindowMinutes)} and ${formatRate(short)} over ${windowLabel(tier.shortWindowMinutes)}`
 	return {
 		long,
-		text: `burning the error budget at ${formatRate(long)} over ${windowLabel(tier.longWindowMinutes)} and ${formatRate(short)} over ${windowLabel(tier.shortWindowMinutes)} (${tier.severity} at ${tier.factor}x)`,
+		text: `burning the error budget at ${rates} (${tier.severity} at ${tier.factor}x)`,
+		rates: `${rates} (${tier.severity} at ${tier.factor}x)`,
 	}
 }
 
@@ -138,6 +140,12 @@ export const evaluateSloBurn = (windows: ReadonlyArray<SloBurnWindow>): AlertEva
 		status: Option.isSome(firing) ? "breached" : "healthy",
 		levels,
 		value: headline.long,
-		reason: Option.isSome(firing) ? `SLO ${headline.text}` : `SLO within budget: ${headline.text}`,
+		// A recovery names every tier, so a resolved warning reports the windows it fired on.
+		reason: Option.isSome(firing)
+			? `SLO ${headline.text}`
+			: `SLO within budget: ${Arr.join(
+					Arr.map([CRITICAL_TIER, WARNING_TIER], (tier) => describeTier(tier, windows).rates),
+					"; ",
+				)}`,
 	}
 }
