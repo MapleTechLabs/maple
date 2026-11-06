@@ -108,6 +108,7 @@ import {
 	MutableHashMap,
 	Option,
 	Order,
+	Predicate,
 	Random,
 	Record,
 	Result,
@@ -2229,6 +2230,59 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					),
 				)
 
+			/**
+			 * The escalation steps among `rows` whose incident resolved or was acknowledged after the
+			 * step was queued, with why: read now, not from the claim batch, which can be a drain old.
+			 */
+			const staleEscalationSteps = Effect.fn("AlertsService.staleEscalationSteps")(function* (
+				rows: ReadonlyArray<AlertDeliveryEventRow>,
+			) {
+				const steps = Arr.filter(
+					rows,
+					(row) =>
+						row.eventType === "trigger" &&
+						row.incidentId !== null &&
+						Predicate.hasProperty(row.payloadJson, "escalation"),
+				)
+				const incidentIds = Arr.dedupe(
+					Arr.filterMap(steps, (row) =>
+						row.incidentId === null ? Result.failVoid : Result.succeed(row.incidentId),
+					),
+				)
+				const orgIds = Arr.dedupe(Arr.map(steps, (row) => row.orgId))
+				if (!Arr.isReadonlyArrayNonEmpty(incidentIds) || !Arr.isReadonlyArrayNonEmpty(orgIds)) {
+					return new Map<string, string>()
+				}
+				const incidents = yield* dbExecute((db) =>
+					db.run(
+						PG.from(AlertIncidents)
+							.select("id", "orgId", "status", "acknowledgedAt")
+							.where(($) => [$.orgId.in_(...orgIds), $.id.in_(...incidentIds)]),
+					),
+				)
+				const byKey = new Map(
+					Arr.map(incidents, (incident) => [`${incident.orgId}:${incident.id}`, incident]),
+				)
+				const reasonOf = (row: AlertDeliveryEventRow): ReadonlyArray<readonly [string, string]> => {
+					const incident = byKey.get(`${row.orgId}:${row.incidentId}`)
+					if (incident === undefined) return []
+					if (incident.status !== "open") {
+						return [
+							[row.id, "Not sent: the incident resolved before this escalation step went out"],
+						]
+					}
+					return incident.acknowledgedAt === null
+						? []
+						: [
+								[
+									row.id,
+									"Not sent: the incident was acknowledged before this escalation step went out",
+								],
+							]
+				}
+				return new Map<string, string>(Arr.flatMap(steps, reasonOf))
+			})
+
 			const recordDeliveryFailure = Effect.fn("AlertsService.recordDeliveryFailure")(function* (
 				row: AlertDeliveryEventRow,
 				currentTime: number,
@@ -2473,32 +2527,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					const hydrated = yield* hydrateDestination(destinationRow)
 					const incidentRow: AlertIncidentRow | null =
 						row.incidentId != null ? (incidentMap.get(row.incidentId) ?? null) : null
-					// A queued escalation step goes out only to an incident still open and unacknowledged:
-					// a resolve or ack that committed after the step was queued wins. Read now, not from
-					// the claim batch, which can be a drain's budget old.
-					const stepIncidentId = row.incidentId
-					const stepIncident =
-						payload.escalation !== undefined &&
-						row.eventType === "trigger" &&
-						stepIncidentId !== null
-							? ((yield* dbExecute((db) =>
-									db.run(
-										PG.from(AlertIncidents)
-											.select("status", "acknowledgedAt")
-											.where(($) => [$.orgId.eq(row.orgId), $.id.eq(stepIncidentId)])
-											.limit(1),
-									),
-								))[0] ?? null)
-							: null
-					if (
-						stepIncident !== null &&
-						(stepIncident.status !== "open" || stepIncident.acknowledgedAt !== null)
-					) {
+					// A queued escalation step goes out only to an incident still open and unacknowledged.
+					const staleStep = (yield* staleEscalationSteps([row])).get(row.id)
+					if (staleStep !== undefined) {
 						yield* recordDeliveryFailure(row, claimTime, {
-							message:
-								stepIncident.status !== "open"
-									? "Not sent: the incident resolved before this escalation step went out"
-									: "Not sent: the incident was acknowledged before this escalation step went out",
+							message: staleStep,
 							kind: "escalation",
 							retryable: false,
 						})
@@ -2814,12 +2847,26 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						),
 					)).flat()
 					if (claimed.length === 0) return
-					yield* Ref.update(processedCount, (count) => count + claimed.length)
-					yield* Metric.update(AlertingMetrics.deliveriesAttemptedTotal, claimed.length)
+					// Escalation steps in the digest go out only for incidents still open and unacknowledged.
+					const staleSteps = yield* staleEscalationSteps(claimed)
+					yield* Effect.forEach(
+						Arr.filter(claimed, (row) => staleSteps.has(row.id)),
+						(row) =>
+							recordDeliveryFailure(row, claimTime, {
+								message: staleSteps.get(row.id) ?? "Not sent",
+								kind: "escalation",
+								retryable: false,
+							}),
+						{ discard: true },
+					)
+					const sendable = Arr.filter(claimed, (row) => !staleSteps.has(row.id))
+					if (sendable.length === 0) return
+					yield* Ref.update(processedCount, (count) => count + sendable.length)
+					yield* Metric.update(AlertingMetrics.deliveriesAttemptedTotal, sendable.length)
 					yield* Effect.annotateCurrentSpan({
 						"maple.delivery.destination_id": destinationRow.id,
 						"maple.delivery.destination_type": "chat",
-						"maple.delivery.digest_size": claimed.length,
+						"maple.delivery.digest_size": sendable.length,
 					})
 					yield* Effect.gen(function* () {
 						const hydrated = yield* hydrateDestination(destinationRow)
@@ -2829,7 +2876,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								message: "Chat destination has a non-chat config",
 								details: [],
 							})
-						const items = yield* Effect.forEach(claimed, digestItem)
+						const items = yield* Effect.forEach(sendable, digestItem)
 						const posted = yield* chatAlertPoster.post({
 							orgId: destinationRow.orgId,
 							workspaceId: config.workspaceId,
@@ -2841,7 +2888,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						Effect.matchEffect({
 							onFailure: (error) =>
 								Effect.forEach(
-									claimed,
+									sendable,
 									(row, index) =>
 										recoverDeliveryFailure(row, error, index === 0).pipe(
 											isolate("Alert delivery recovery failed", {
@@ -2851,14 +2898,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									{ discard: true },
 								),
 							onSuccess: ({ posted, channelName }) =>
-								finalizeDigest(destinationRow, claimed, claimTime, {
-									providerMessage: `Delivered to ${posted.connectorName} #${channelName} in a digest of ${claimed.length}`,
+								finalizeDigest(destinationRow, sendable, claimTime, {
+									providerMessage: `Delivered to ${posted.connectorName} #${channelName} in a digest of ${sendable.length}`,
 									providerReference: posted.messageId,
 								}),
 						}),
 						Effect.catchDefect((defect) =>
 							Effect.forEach(
-								claimed,
+								sendable,
 								(row) =>
 									recoverDeliveryDefect(row, defect).pipe(
 										isolate("Alert delivery recovery failed", {
