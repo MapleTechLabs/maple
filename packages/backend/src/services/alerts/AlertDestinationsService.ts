@@ -31,6 +31,7 @@ import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDestinations,
+	AlertEscalationRuns,
 	AlertLinearIssues,
 	AlertRules,
 	EscalationChains,
@@ -1066,12 +1067,25 @@ export class AlertDestinationsService extends Context.Service<
 									])}::jsonb`,
 								]),
 						)
-						if (chains.length > 0) {
-							return {
-								referencedBy: [],
-								chainNames: Arr.map(chains, (chain) => chain.name),
-								deleted: [],
-							}
+						// A running escalation pages from its own snapshot, so a chain edited or deleted since
+						// can still name the destination until the run ends.
+						const runs = yield* db.run(
+							PG.from(AlertEscalationRuns)
+								.select("chainName")
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.status.in_("active", "acknowledged"),
+									PG.sql.cond`${$.stepsJson} @> ${encodeJson([
+										{ targets: [{ type: "destination", destinationId }] },
+									])}::jsonb`,
+								]),
+						)
+						const usedBy = Arr.dedupe([
+							...Arr.map(chains, (chain) => chain.name),
+							...Arr.map(runs, (run) => `${run.chainName} (escalating an open incident)`),
+						])
+						if (usedBy.length > 0) {
+							return { referencedBy: [], chainNames: usedBy, deleted: [] }
 						}
 						const deleted = yield* db.run(
 							PG.deleteFrom(AlertDestinations)
