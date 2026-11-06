@@ -1,6 +1,6 @@
 import { column, defineDatasource, engine, type InferRow, t } from "@maple-dev/effect-orm/tinybird"
 import * as CH from "@maple-dev/effect-orm/clickhouse"
-import { OrgId, SpanId, TraceId } from "@maple/primitives"
+import { OrgId, type SloLatencyThresholdMs, SpanId, TraceId } from "@maple/primitives"
 
 /**
  * A `DateTime` column queried as a `DateTime.Utc`. ClickHouse sends the
@@ -865,6 +865,27 @@ export const serviceOverviewSpans = defineDatasource("service_overview_spans", {
 
 export type ServiceOverviewSpansRow = InferRow<typeof serviceOverviewSpans>
 
+/** The rollup column counting entry-point spans faster than one `SLO_LATENCY_THRESHOLDS_MS` rung. */
+export const sloLatencyColumnName = <Ms extends SloLatencyThresholdMs>(ms: Ms): `EstimatedUnder${Ms}Ms` =>
+	`EstimatedUnder${ms}Ms`
+
+/** Spans the ladder covers (`sum(SampleRate)`): the latency SLI's total, 0 on pre-0058 buckets. */
+export const SLO_LATENCY_COVERAGE_COLUMN = "EstimatedLadderSpanCount" as const
+
+// Latency SLI ladder: `sumIf(SampleRate, Duration < ms)` per rung, any status. Written only by
+// the post-0058 views, so older buckets read 0 on every rung and on the coverage column.
+const sloLatencyLadderColumns = {
+	[SLO_LATENCY_COVERAGE_COLUMN]: t.simpleAggregateFunction("sum", t.float64()).default(0),
+	EstimatedUnder50Ms: t.simpleAggregateFunction("sum", t.float64()).default(0),
+	EstimatedUnder100Ms: t.simpleAggregateFunction("sum", t.float64()).default(0),
+	EstimatedUnder250Ms: t.simpleAggregateFunction("sum", t.float64()).default(0),
+	EstimatedUnder500Ms: t.simpleAggregateFunction("sum", t.float64()).default(0),
+	EstimatedUnder1000Ms: t.simpleAggregateFunction("sum", t.float64()).default(0),
+	EstimatedUnder2500Ms: t.simpleAggregateFunction("sum", t.float64()).default(0),
+	EstimatedUnder5000Ms: t.simpleAggregateFunction("sum", t.float64()).default(0),
+	EstimatedUnder10000Ms: t.simpleAggregateFunction("sum", t.float64()).default(0),
+} satisfies Record<`EstimatedUnder${SloLatencyThresholdMs}Ms` | typeof SLO_LATENCY_COVERAGE_COLUMN, unknown>
+
 /**
  * Hour-grain service overview metrics retained independently from the 30-day
  * entry-point span projection. This is the durable source for service
@@ -896,6 +917,7 @@ export const serviceOverviewHourly = defineDatasource("service_overview_hourly",
 		FirstSeen: t.simpleAggregateFunction("min", utcDateTime()),
 		ApdexSatisfiedCount: t.simpleAggregateFunction("sum", t.uint64()),
 		ApdexToleratingCount: t.simpleAggregateFunction("sum", t.uint64()),
+		...sloLatencyLadderColumns,
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toYYYYMM(Hour)",
@@ -946,6 +968,7 @@ export const serviceOverviewMinutely = defineDatasource("service_overview_minute
 		FirstSeen: t.simpleAggregateFunction("min", utcDateTime()),
 		ApdexSatisfiedCount: t.simpleAggregateFunction("sum", t.uint64()),
 		ApdexToleratingCount: t.simpleAggregateFunction("sum", t.uint64()),
+		...sloLatencyLadderColumns,
 	},
 	engine: engine.aggregatingMergeTree({
 		// Daily parts, not monthly: at minute grain a month-wide part is far too

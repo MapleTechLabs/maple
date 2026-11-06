@@ -7,7 +7,9 @@ import { type DateTime, Schema } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { fromUnion, param, unionAll, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
 import { from } from "@maple-dev/effect-orm/clickhouse"
+import type { SloLatencyThresholdMs } from "@maple/domain/primitives"
 import type { SloSli } from "@maple/domain/slo"
+import { SLO_LATENCY_COVERAGE_COLUMN, sloLatencyColumnName } from "@maple/domain/tinybird"
 import { DateTimeUtcFromWarehouse } from "../../datetime"
 import { CHNumber } from "../schema"
 import { ServiceOverviewHourly, ServiceOverviewMinutely, ServiceOverviewSpans, orgIdParam } from "../tables"
@@ -69,26 +71,39 @@ const rawEdges = (opts: SloSliQueryOpts, grain: "hour" | "minute") =>
 		])
 		.groupBy("bBucket")
 
-/** The good-event counter of a rollup row: non-errors, or the ladder column for the threshold. */
-const rollupGood = <
+type LadderColumns = {
+	readonly [K in `EstimatedUnder${SloLatencyThresholdMs}Ms`]: CH.Expr<number>
+} & { readonly EstimatedLadderSpanCount: CH.Expr<number> }
+
+/**
+ * A rollup row's counts: every span and the non-errors, or for latency the spans the ladder
+ * covers and those under the threshold. Buckets written before the ladder cover nothing, so
+ * they drop out of a latency SLI instead of reading as all slow.
+ */
+const rollupCounts = <
 	A extends {
 		readonly EstimatedSpanCount: CH.Expr<number>
 		readonly EstimatedErrorCount: CH.Expr<number>
-	},
+	} & LadderColumns,
 >(
 	$: A,
 	sli: SloSli,
 ) =>
 	sli._tag === "availability"
-		? CH.sum($.EstimatedSpanCount).sub(CH.sum($.EstimatedErrorCount))
-		: CH.sum($.EstimatedSpanCount)
+		? {
+				bTotal: CH.sum($.EstimatedSpanCount),
+				bGood: CH.sum($.EstimatedSpanCount).sub(CH.sum($.EstimatedErrorCount)),
+			}
+		: {
+				bTotal: CH.sum($[SLO_LATENCY_COVERAGE_COLUMN]),
+				bGood: CH.sum($[sloLatencyColumnName(sli.thresholdMs)]),
+			}
 
 const hourlyInterior = (opts: SloSliQueryOpts) =>
 	from(ServiceOverviewHourly)
 		.select(($) => ({
 			bBucket: $.Hour,
-			bTotal: CH.sum($.EstimatedSpanCount),
-			bGood: rollupGood($, opts.sli),
+			...rollupCounts($, opts.sli),
 		}))
 		.where(($) => [...rollupFilters($, opts), ...utcInteriorConditions($.Hour)])
 		.groupBy("bBucket")
@@ -97,8 +112,7 @@ const minutelyInterior = (opts: SloSliQueryOpts, withinHours: boolean) =>
 	from(ServiceOverviewMinutely)
 		.select(($) => ({
 			bBucket: $.Minute,
-			bTotal: CH.sum($.EstimatedSpanCount),
-			bGood: rollupGood($, opts.sli),
+			...rollupCounts($, opts.sli),
 		}))
 		.where(($) => [
 			...rollupFilters($, opts),

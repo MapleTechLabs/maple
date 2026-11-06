@@ -42,7 +42,9 @@ describe("sloTotalsQuery", () => {
 	it("counts spans under the threshold as good for a latency SLI", () => {
 		const { sql } = compileUnsafe(sloTotalsQuery(latency), params)
 		expect(sql).toContain("Duration < 250000000")
-		expect(sql).toContain("EstimatedUnder250Ms")
+		expect(sql).toContain("sum(service_overview_hourly.EstimatedUnder250Ms)")
+		// Rollup buckets from before the ladder cover nothing and drop out of the total.
+		expect(sql).toContain("sum(service_overview_hourly.EstimatedLadderSpanCount)")
 	})
 })
 
