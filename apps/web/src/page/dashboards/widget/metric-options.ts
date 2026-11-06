@@ -62,7 +62,10 @@ export const FetchMetricKeys = Command.define("FetchWidgetEditorMetricKeys", {
 		Effect.all(
 			{
 				attributes: getMetricAttributeKeys({ data: { metricName, metricType } }),
-				resources: getMetricAttributeKeys({ data: { metricName, metricType, scope: "resource" } }),
+				// Resource keys only add to the picker: their failure must not empty the label keys too.
+				resources: getMetricAttributeKeys({
+					data: { metricName, metricType, scope: "resource" },
+				}).pipe(Effect.orElseSucceed(() => ({ data: [] }))),
 			},
 			{ concurrency: 2 },
 		).pipe(

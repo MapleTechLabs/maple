@@ -411,6 +411,12 @@ function buildTimeseriesQuerySpec(data: CustomChartTimeSeriesDecoded): QuerySpec
 	if (!data.filters?.metricName || !data.filters.metricType) {
 		return "metricName and metricType are required for metrics source"
 	}
+	if (
+		data.metric === "latest" &&
+		(data.filters.metricType === "histogram" || data.filters.metricType === "exponential_histogram")
+	) {
+		return "Histogram metrics do not support latest; use avg, sum, min, max or count"
+	}
 	if (data.groupBy && !["service", "attribute", "none"].includes(data.groupBy)) {
 		return `Unsupported metrics groupBy: ${data.groupBy}`
 	}
