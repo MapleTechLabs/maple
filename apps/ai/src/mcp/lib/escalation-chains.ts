@@ -270,7 +270,7 @@ export const deleteChainErrors = {
 				message: `Escalation chain is still used by ${Arr.join(
 					Arr.map(error.ruleIds, (id, index) => `"${error.ruleNames[index] ?? id}" (${id})`),
 					", ",
-				)}. Detach it first with update_alert_rule escalation_chain_id="none"; a tier that pages only through the chain needs a destination first (destination_ids sets the first tier; a critical tier needs its own update).`,
+				)}. Detach it first with update_alert_rule escalation_chain_id="none"; a tier that pages only through the chain needs a destination first (destination_ids does that on a one-tier rule; a two-tier rule's critical tier gains one by replacing the rule's thresholds in the v2 API or the dashboard).`,
 				parameter: "chain_id",
 			}),
 		),

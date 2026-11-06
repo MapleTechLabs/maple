@@ -353,7 +353,7 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 				members: (orgId: OrgId) => Exit.Exit<ReadonlyArray<OrgMember>, { readonly _tag: string }>,
 			) {
 				yield* Effect.annotateCurrentSpan({
-					"maple.org_id": row.orgId,
+					orgId: row.orgId,
 					"maple.alert.incident_id": row.incidentId,
 					"maple.escalation.run_id": row.runId,
 					"maple.escalation.recipient_channel": row.channel,

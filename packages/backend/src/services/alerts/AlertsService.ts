@@ -5560,7 +5560,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				nowMs: number,
 			) {
 				yield* Effect.annotateCurrentSpan({
-					"maple.org_id": row.orgId,
+					orgId: row.orgId,
 					"maple.escalation.run_id": row.id,
 					"maple.escalation.chain_id": row.chainId,
 					"maple.alert.incident_id": row.incidentId,

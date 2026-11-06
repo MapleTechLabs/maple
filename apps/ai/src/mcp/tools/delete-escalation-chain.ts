@@ -12,7 +12,7 @@ export function registerDeleteEscalationChainTool(server: McpToolRegistrar) {
 		name: "delete_escalation_chain",
 		title: "Delete Escalation Chain",
 		description:
-			'Delete an escalation chain. Refused while a rule tier still names it: detach it with update_alert_rule escalation_chain_id="none" first. ' +
+			'Delete an escalation chain. Refused while a rule tier still names it: detach it with update_alert_rule escalation_chain_id="none" first; a tier that pages only through the chain needs a destination before that (destination_ids on a one-tier rule; the rule\'s thresholds via the v2 API or dashboard on a two-tier rule). ' +
 			"Escalations already running finish. Ids from list_escalation_chains.",
 		parameters: Schema.Struct({
 			chain_id: P.resourceId("escalationChain", "Escalation chain to delete"),
