@@ -87,7 +87,7 @@ const metricStrip = (
 ): Html =>
 	h.div(
 		[h.Class(GRID)],
-		Arr.map(ANALYTICS_METRICS, (metric, index) => {
+		Arr.map(ANALYTICS_METRICS, (metric) => {
 			const isAvailable = isMetricAvailable(metric, source)
 			const value = metric.value(source)
 			const change = isAvailable ? metricDelta(metric, source, previous) : null
@@ -100,7 +100,6 @@ const metricStrip = (
 				isSelected: metric.key === selected,
 				isDisabled: !isAvailable,
 				onSelect: Message.PickedMetric({ metric: metric.key }),
-				delay: (index % 4) * 60,
 				className: TILE_NARROW,
 				valueClassName: "@max-[560px]/page:text-xl",
 			})
