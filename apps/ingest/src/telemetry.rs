@@ -1910,10 +1910,9 @@ impl WalLane {
 
     /// Hand a segment event to the shipper, if one is attached.
     ///
-    /// A full channel drops the event rather than blocking the caller: an append
-    /// must not wait on S3. A dropped `Sealed` is shipped with the lane's next one;
-    /// a dropped `Exported` leaves an object behind that a later claim replays,
-    /// which is the at-least-once this whole tier is built on.
+    /// A full channel drops the event rather than block an append on S3. A dropped
+    /// `Sealed` ships with the lane's next one; a dropped `Exported` leaves an object
+    /// that a later claim replays, which is the at-least-once this tier is built on.
     fn notify(&self, event: SegmentEvent) {
         let Some(shipper) = self.shipper.get() else {
             return;
@@ -2648,33 +2647,35 @@ async fn run_owner_heartbeat(store: Arc<WalSegmentStore>, interval: Duration) {
 ///
 /// Events arrive in the order their lane produced them, so an `Exported` for a
 /// segment always follows the `Sealed` that uploaded it.
-async fn run_segment_shipper(
+fn run_segment_shipper(
     lanes: Vec<Arc<WalLane>>,
     store: Arc<WalSegmentStore>,
     mut receiver: mpsc::Receiver<SegmentEvent>,
-) {
-    // Per lane, the next segment expected to seal. A lane seals in sequence, so a
-    // `Sealed` past it means events were dropped on a full channel: ship the gap too.
+) -> impl std::future::Future<Output = ()> {
+    // Per lane, the next segment expected to seal, read when the shipper is created.
+    // A lane seals in sequence, so a `Sealed` past it means dropped events: ship the gap.
     let mut next_sealed: Vec<u64> = lanes
         .iter()
         .map(|lane| lane.active_seq.load(Ordering::Acquire))
         .collect();
-    while let Some(event) = receiver.recv().await {
-        let (SegmentEvent::Sealed { lane, seq } | SegmentEvent::Exported { lane, seq }) = event;
-        let (Some(lane_ref), Some(next)) = (lanes.get(lane), next_sealed.get_mut(lane)) else {
-            continue;
-        };
-        match event {
-            SegmentEvent::Sealed { .. } => {
-                let from = (*next).min(seq);
-                *next = seq.saturating_add(1);
-                for sealed in from..=seq {
-                    ship_sealed_segment(lane_ref, &store, sealed).await;
+    async move {
+        while let Some(event) = receiver.recv().await {
+            let (SegmentEvent::Sealed { lane, seq } | SegmentEvent::Exported { lane, seq }) = event;
+            let (Some(lane_ref), Some(next)) = (lanes.get(lane), next_sealed.get_mut(lane)) else {
+                continue;
+            };
+            match event {
+                SegmentEvent::Sealed { .. } => {
+                    let from = (*next).min(seq);
+                    *next = (*next).max(seq.saturating_add(1));
+                    for sealed in from..=seq {
+                        ship_sealed_segment(lane_ref, &store, sealed).await;
+                    }
                 }
-            }
-            SegmentEvent::Exported { .. } => {
-                if let Err(error) = store.delete_segment(&lane_ref.lane_key, seq).await {
-                    report_ship_failure(lane_ref, seq, &error);
+                SegmentEvent::Exported { .. } => {
+                    if let Err(error) = store.delete_segment(&lane_ref.lane_key, seq).await {
+                        report_ship_failure(lane_ref, seq, &error);
+                    }
                 }
             }
         }
@@ -3617,7 +3618,10 @@ impl ExportWorker {
             // Backoff is taken here (before the attempt) so that when the breaker
             // trips mid-batch the shed-check above can wait without first sleeping
             // out the previous failure's backoff; a breaker wait replaces it.
-            if attempt > 0 && !std::mem::take(&mut waited_on_breaker) {
+            // A probe already waited out a cooldown; backing off too could outlast
+            // its claim and let another worker supersede it.
+            let waited = std::mem::take(&mut waited_on_breaker) || permit.probe.is_some();
+            if attempt > 0 && !waited {
                 backoff(attempt).await;
             }
 
@@ -6678,9 +6682,9 @@ mod tests {
 
     #[test]
     fn clickhouse_breaker_shed_cannot_mark_a_breaker_another_worker_closed() {
-        // The old shed path decided, then re-locked to mark the deferral spent; a
-        // probe closing the breaker in between left a closed breaker marked, so the
-        // next outage got no deferral window. Deciding and marking is now one step.
+        // A worker whose window ran out after a probe closed the breaker must attempt,
+        // not shed, and must not mark the closed breaker, or the next outage would
+        // get no deferral window.
         let cooldown = Duration::from_secs(30);
         let registry = breaker(1, cooldown);
         let t0 = Instant::now();
