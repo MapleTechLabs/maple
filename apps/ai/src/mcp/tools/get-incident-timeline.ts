@@ -80,6 +80,7 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 					ruleName: i.ruleName,
 					groupKey: i.groupKey,
 					...(i.groupLabel === undefined ? undefined : { groupLabel: i.groupLabel }),
+					...(i.labels === undefined ? undefined : { labels: i.labels }),
 					signalType: i.signalType,
 					severity: i.severity,
 					status: i.status,

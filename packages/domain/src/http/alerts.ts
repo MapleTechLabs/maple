@@ -135,6 +135,13 @@ export type AlertIncidentStatus = Schema.Schema.Type<typeof AlertIncidentStatus>
  * `status` stays `"open"` while held — a hold is a sub-state of open, not a
  * third status, so every consumer of `open`/`resolved` keeps working.
  */
+/** Facts about what an incident is about, for rules whose group key does not say (anomaly rules). */
+export const AlertIncidentLabels = Schema.Struct({
+	service: Schema.optionalKey(Schema.String),
+	environment: Schema.optionalKey(Schema.String),
+})
+export type AlertIncidentLabels = Schema.Schema.Type<typeof AlertIncidentLabels>
+
 export const AlertIncidentHoldReason = Schema.Literals([
 	"no_data",
 	"volume_collapsed",
@@ -1075,6 +1082,8 @@ export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("
 	anomalyIncidentId: Schema.optionalKey(Schema.NullOr(AnomalyIncidentId)),
 	/** What to show as the group when the key is not readable, e.g. an anomaly's "checkout (production)". */
 	groupLabel: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	/** The service and environment the incident is about; silences match on these first. */
+	labels: Schema.optionalKey(Schema.NullOr(AlertIncidentLabels)),
 	/** The silence that last held back one of this incident's notifications. */
 	silenceId: Schema.NullOr(AlertSilenceId),
 	/** Set while a silenced notification is still owed; cleared once one is sent after the silence. */

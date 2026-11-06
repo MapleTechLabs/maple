@@ -1,6 +1,7 @@
 /** Output schemas for the alerts MCP tools. */
 import { Schema } from "effect"
 import { QueryBuilderQueryDraftSchema } from "@maple/query-model"
+import { AlertIncidentLabels } from "../http/alerts"
 import { OutputTimeRange } from "./shared"
 
 const NullableString = Schema.NullOr(Schema.String)
@@ -230,6 +231,8 @@ export const AlertIncidentRow = Schema.Struct({
 	anomalyIncidentId: Schema.optionalKey(NullableString),
 	/** Shown in place of `groupKey` when set, e.g. an anomaly's "checkout (production)". */
 	groupLabel: Schema.optionalKey(NullableString),
+	/** The service and environment the incident is about; silences match on these first. */
+	labels: Schema.optionalKey(Schema.NullOr(AlertIncidentLabels)),
 })
 
 /** Filters an incident list was narrowed by, echoed for the rendered scope. */
@@ -300,6 +303,8 @@ export const IncidentTimelineRow = Schema.Struct({
 	groupKey: NullableString,
 	/** Shown in place of `groupKey` when set, e.g. an anomaly's "checkout (production)". */
 	groupLabel: Schema.optionalKey(NullableString),
+	/** The service and environment the incident is about; silences match on these first. */
+	labels: Schema.optionalKey(Schema.NullOr(AlertIncidentLabels)),
 	signalType: Schema.String,
 	severity: Schema.String,
 	status: Schema.String,
