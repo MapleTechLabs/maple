@@ -22,6 +22,7 @@ import { typography } from "@maple/views/ui/typography"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { sectionHeading } from "../../kit/section-heading"
 import { chainSummary } from "../shared/escalation-chains"
+import { memberName } from "../shared/org-members"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { chainMenuId, chainRuleNames } from "./update"
@@ -48,7 +49,20 @@ export const chainRow = (
 	chain: V2EscalationChain,
 	destinations: ReadonlyArray<AlertDestinationRow>,
 ): Html => {
-	const summary = chainSummary(chain, nameOfDestination(destinations))
+	const summary = chainSummary(chain, nameOfDestination(destinations), {
+		userName: (id) => memberName(model.members, id),
+		scheduleName: (id) =>
+			Option.getOrElse(
+				Option.map(
+					Arr.findFirst(
+						Option.getOrElse(AsyncData.getData(model.schedules.data), () => []),
+						(schedule) => schedule.id === id,
+					),
+					(schedule) => schedule.name,
+				),
+				() => "a deleted schedule",
+			),
+	})
 	const ruleNames = chainRuleNames(model, chain)
 	const menuId = chainMenuId(chain.id)
 	const entries: ReadonlyArray<MenuEntry> = [

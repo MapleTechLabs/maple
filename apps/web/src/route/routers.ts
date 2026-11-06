@@ -103,6 +103,17 @@ const routers = {
 		search(Search.AlertsSloSearch),
 		Route.mapTo(AppRoute.AlertsSlo),
 	),
+	AlertsScheduleNew: pipe(
+		path("alerts", "schedules", "new"),
+		search(Search.AlertsScheduleNewSearch),
+		Route.mapTo(AppRoute.AlertsScheduleNew),
+	),
+	AlertsSchedule: pipe(
+		path("alerts", "schedules"),
+		slash(segment("scheduleId")),
+		search(Search.AlertsScheduleSearch),
+		Route.mapTo(AppRoute.AlertsSchedule),
+	),
 	IngestRuleNew: pipe(
 		path("settings", "ingestion", "rules", "new"),
 		search(Search.IngestRuleNewSearch),
@@ -515,6 +526,8 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
 		routers.AlertsUptimeMonitor,
 		routers.AlertsSloNew,
 		routers.AlertsSlo,
+		routers.AlertsScheduleNew,
+		routers.AlertsSchedule,
 		routers.IngestRuleNew,
 		routers.IngestRule,
 		routers.AlertsStatusPage,

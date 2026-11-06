@@ -5,8 +5,15 @@ import {
 	AlertDestinationId,
 	AlertRuleId,
 	EscalationChainId,
+	OnCallScheduleId,
 } from "@maple/domain/http"
-import { V2EscalationChain, V2Slo, V2SloStatus, V2UptimeMonitor } from "@maple/domain/http/v2"
+import {
+	V2EscalationChain,
+	V2OnCallSchedule,
+	V2Slo,
+	V2SloStatus,
+	V2UptimeMonitor,
+} from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -21,6 +28,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChainDialog from "../escalation-dialog/dialog"
+import { OrgMember } from "../shared/org-members"
 import { ServiceNamespaces } from "./uptime-groups"
 
 // The `/alerts` hub.
@@ -94,6 +102,14 @@ export const Model = Schema.Struct({
 	deletingChainId: Schema.NullOr(EscalationChainId),
 	deleteChainError: Schema.NullOr(Schema.String),
 	deleteChainDialog: Dialog.Model,
+	/** `oncallSchedules.list`, read on every tab: the inbox strip, the On-call tab and the chain dialog. */
+	schedules: KeyedSchema(Schema.Array(V2OnCallSchedule), LoadFailure),
+	/** The org's members, to name who is on call; `null` until Clerk answers (or failed). */
+	members: Schema.NullOr(Schema.Array(OrgMember)),
+	confirmDeleteScheduleId: Schema.NullOr(OnCallScheduleId),
+	deletingScheduleId: Schema.NullOr(OnCallScheduleId),
+	deleteScheduleError: Schema.NullOr(Schema.String),
+	deleteScheduleDialog: Dialog.Model,
 })
 export type Model = typeof Model.Type
 

@@ -34,6 +34,8 @@ export const AppRoute = defineRouteUnion({
 	AlertsUptimeMonitor: { monitorId: Schema.String, search: Search.AlertsUptimeMonitorSearch },
 	AlertsSloNew: { search: Search.AlertsSloNewSearch },
 	AlertsSlo: { sloId: Schema.String, search: Search.AlertsSloSearch },
+	AlertsScheduleNew: { search: Search.AlertsScheduleNewSearch },
+	AlertsSchedule: { scheduleId: Schema.String, search: Search.AlertsScheduleSearch },
 	IngestRuleNew: { search: Search.IngestRuleNewSearch },
 	IngestRule: { ruleId: Schema.String },
 	AlertsStatusPage: { pageId: Schema.String, search: Search.AlertsStatusPageSearch },

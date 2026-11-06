@@ -1,6 +1,7 @@
 import { MAX_ESCALATION_STEPS } from "@maple/domain/http"
+import type { V2EscalationTarget, V2OnCallSchedule } from "@maple/domain/http/v2"
 import type { AlertDestinationRow } from "@maple/web-data/collections/alerts"
-import { Option, Array as Arr } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
@@ -18,15 +19,19 @@ import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import type { FieldState } from "@maple/views/ui/input"
 import * as Menu from "@maple/views/ui/menu"
+import type { MenuEntry } from "@maple/views/ui/menu-view"
 import { panel } from "@maple/views/ui/panel"
+import { personAvatar } from "@maple/views/ui/person-avatar"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { textarea } from "@maple/views/ui/textarea"
 import { typography } from "@maple/views/ui/typography"
-import { destinationPicker } from "../../kit/destination-picker"
+import { type PickedEntry, pickList } from "../../kit/pick-list"
 import { formatWait } from "../shared/escalation-chains"
+import { memberName, memberOf, type OrgMember } from "../shared/org-members"
 import {
 	descriptionError,
-	destinationsError,
+	targetKey,
+	targetsError,
 	menuIdOf,
 	Message,
 	type Model,
@@ -44,7 +49,117 @@ export type ViewInputs = Readonly<{
 	id: string
 	/** The synced destinations steps pick from; `null` until they arrive. */
 	destinations: ReadonlyArray<AlertDestinationRow> | null
+	/** The org's members a step can page; `null` until they load. */
+	members: ReadonlyArray<OrgMember> | null
+	/** The on-call schedules a step can page; empty until they load. */
+	schedules: ReadonlyArray<V2OnCallSchedule>
 }>
+
+const nameOr = <A extends { readonly id: string; readonly name: string }>(
+	rows: ReadonlyArray<A> | null,
+	id: string,
+	fallback: string,
+): string =>
+	Option.getOrElse(
+		Option.map(
+			Arr.findFirst(rows ?? [], (row) => row.id === id),
+			(row) => row.name,
+		),
+		() => (rows === null ? fallback : `Unavailable ${Str.toLowerCase(fallback)}`),
+	)
+
+/** A picked target's row: a destination's bell, a member's avatar, a schedule's calendar. */
+const targetEntry = (
+	h: H,
+	inputs: ViewInputs,
+	key: string,
+	target: V2EscalationTarget,
+): PickedEntry<Message> => {
+	const onRemove = Message.ClickedRemoveTarget({ key, target: targetKey(target) })
+	switch (target.type) {
+		case "destination": {
+			const name = nameOr(inputs.destinations, target.destination_id, "Destination")
+			return {
+				key: targetKey(target),
+				label: name,
+				media: icon(h, "BellIcon", { className: "text-muted-foreground" }),
+				removeLabel: `Stop notifying ${name}`,
+				onRemove,
+			}
+		}
+		case "user": {
+			const name = memberName(inputs.members, target.user_id)
+			return {
+				key: targetKey(target),
+				label: name,
+				media: personAvatar(h, {
+					name,
+					size: "xs",
+					imageUrl: Option.getOrUndefined(
+						Option.map(memberOf(inputs.members, target.user_id), (member) => member.imageUrl),
+					),
+				}),
+				detail: "email and chat DM",
+				removeLabel: `Stop paging ${name}`,
+				onRemove,
+			}
+		}
+		case "schedule": {
+			const name = nameOr(inputs.schedules, target.schedule_id, "Schedule")
+			return {
+				key: targetKey(target),
+				label: name,
+				media: icon(h, "CalendarIcon", { className: "text-muted-foreground" }),
+				detail: "whoever is on call",
+				removeLabel: `Stop paging ${name}`,
+				onRemove,
+			}
+		}
+	}
+}
+
+/** The "Add target" menu: destinations, people and schedules not yet on the step, by kind. */
+const addEntries = (inputs: ViewInputs, step: StepDraft): ReadonlyArray<MenuEntry> => {
+	const picked = new Set(Arr.map(step.targets, targetKey))
+	const group = (
+		label: string,
+		items: ReadonlyArray<Readonly<{ value: string; label: string }>>,
+	): ReadonlyArray<MenuEntry> => {
+		const open = Arr.filter(items, (item) => !picked.has(item.value))
+		return open.length === 0
+			? []
+			: [
+					{
+						_tag: "Group",
+						label,
+						entries: Arr.map(open, (item): MenuEntry => ({ _tag: "Item", ...item })),
+					},
+				]
+	}
+	return [
+		...group(
+			"Destinations",
+			Arr.map(inputs.destinations ?? [], (row) => ({
+				value: `destination:${row.id}`,
+				label: row.name,
+			})),
+		),
+		...group(
+			"People",
+			Arr.map(inputs.members ?? [], (member) => ({
+				value: `user:${member.userId}`,
+				label: member.name,
+			})),
+		),
+		...group(
+			"Whoever is on call on",
+			Arr.map(inputs.schedules, (schedule) => ({
+				value: `schedule:${schedule.id}`,
+				label: schedule.name,
+			})),
+		),
+	]
+}
 
 const stateOf = (value: string, isInvalid: boolean): FieldState => ({
 	isInvalid,
@@ -157,7 +272,7 @@ const stepBlock = (h: H, model: Model, inputs: ViewInputs, step: StepDraft, inde
 	const count = model.steps.length
 	const previous = index === 0 ? undefined : model.steps[index - 1]
 	const wait = waitError(step.waitMinutes)
-	const destinations = shownError(model, destinationsError(step.destinationIds))
+	const targets = shownError(model, targetsError(step.targets))
 	const key = step.key
 	return panel(h, { padded: "sm", className: "gap-3", attributes: [h.Key(key)] }, [
 		hstack(h, { gap: "2", justify: "between" }, [
@@ -203,18 +318,15 @@ const stepBlock = (h: H, model: Model, inputs: ViewInputs, step: StepDraft, inde
 				),
 			]),
 		]),
-		destinationPicker(h, {
-			rows: inputs.destinations,
-			selectedIds: step.destinationIds,
+		pickList(h, {
+			entries: Arr.map(step.targets, (target) => targetEntry(h, inputs, key, target)),
 			menu: model.menus[key] ?? Menu.init(menuIdOf(model, key)),
 			toMenuMessage: (message) => Message.GotStepMenuMessage({ key, message }),
-			onRemove: (id) => Message.ClickedRemoveDestination({ key, id }),
-			emptyText:
-				inputs.destinations !== null && inputs.destinations.length === 0
-					? "No destinations exist yet. Add one in Routing first."
-					: "Pick who this step pages",
+			addEntries: addEntries(inputs, step),
+			addLabel: "Add destination, person or schedule",
+			emptyText: "Pick who this step pages",
 		}),
-		...Option.match(destinations, {
+		...Option.match(targets, {
 			onNone: () => [],
 			onSome: (text) => [fieldErrorText(h, { attributes: [h.Role("alert")] }, [text])],
 		}),
@@ -276,7 +388,7 @@ const descriptionField = (h: H, model: Model): Html => {
 	])
 }
 
-/** The escalation chain dialog: name, ordered steps of destinations and waits, and repeats. */
+/** The escalation chain dialog: name, ordered steps of targets and waits, and repeats. */
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const repeat = repeatError(model.repeatCount)
 	const isEditing = model.editingId !== null
@@ -287,7 +399,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		className: "sm:max-w-xl",
 		title: isEditing ? "Edit escalation chain" : "New escalation chain",
 		description:
-			"Each step pages its destinations, then waits for someone to acknowledge before paging the next. Acknowledging pauses the chain and resolving ends it.",
+			"Each step pages its destinations, people and whoever is on call, then waits for someone to acknowledge before paging the next. Acknowledging pauses the chain and resolving ends it.",
 		panelClassName: "space-y-5",
 		fields: [
 			textField(h, {

@@ -1,5 +1,5 @@
 import { UptimeMonitorId } from "@maple/domain"
-import { AlertDestinationId, AlertRuleId, EscalationChainId } from "@maple/domain/http"
+import { AlertDestinationId, AlertRuleId, EscalationChainId, OnCallScheduleId } from "@maple/domain/http"
 import { V2AlertDestinationUpdateParams } from "@maple/domain/http/v2"
 import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
@@ -18,6 +18,8 @@ import {
 	updateDestination,
 } from "../shared/commands"
 import { deleteEscalationChain, listEscalationChains } from "../shared/escalation-chains"
+import { deleteOnCallSchedule, listOnCallSchedules } from "../shared/oncall-schedules"
+import { listOrgMembers } from "../shared/org-members"
 import { listSloRows } from "../shared/slo-commands"
 import { deleteMonitor, listMonitors, setMonitorEnabled } from "../shared/uptime-commands"
 import { Message } from "./message"
@@ -184,5 +186,36 @@ export const DeleteChain = Command.define("DeleteEscalationChain", {
 		deleteEscalationChain(chainId).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedDeleteChain({ chainId, result })),
+		),
+})
+
+/** The on-call schedules, each with who is on call as the API reads it now. */
+export const FetchHubSchedules = Command.define("FetchAlertsHubSchedules", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchSchedules],
+	execute: ({ key }) =>
+		Effect.gen(function* () {
+			const result = yield* Effect.result(listOnCallSchedules)
+			const readAtMs = yield* Clock.currentTimeMillis
+			return Message.CompletedFetchSchedules({ key, readAtMs, result })
+		}),
+})
+
+/** The org's members, to name who is on call and to pick from in the chain dialog. */
+export const FetchHubMembers = Command.define("FetchAlertsHubMembers", {
+	messages: [Message.CompletedFetchMembers],
+	execute: listOrgMembers.pipe(
+		Effect.result,
+		Effect.map((result) => Message.CompletedFetchMembers({ result })),
+	),
+})
+
+export const DeleteSchedule = Command.define("DeleteOnCallSchedule", {
+	args: { scheduleId: OnCallScheduleId },
+	messages: [Message.CompletedDeleteSchedule],
+	execute: ({ scheduleId }) =>
+		deleteOnCallSchedule(scheduleId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedDeleteSchedule({ scheduleId, result })),
 		),
 })

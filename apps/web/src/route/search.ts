@@ -372,6 +372,13 @@ export const AlertsSloNewSearch = Schema.Struct({
 
 export const AlertsSloSearch = Schema.Struct({})
 
+/** `/alerts/schedules/new`: `scheduleId` edits that on-call schedule. */
+export const AlertsScheduleNewSearch = Schema.Struct({
+	scheduleId: Schema.optional(Schema.String),
+})
+
+export const AlertsScheduleSearch = Schema.Struct({})
+
 /** `/settings/ingestion/rules/new`: `template` prefills the editor from an empty-state template. */
 export const IngestRuleNewSearch = Schema.Struct({
 	template: Schema.optional(Schema.String),
