@@ -10,15 +10,15 @@ import FrontendTrace from "../../components/docs/FrontendTrace.astro"
 import GuideGrid from "../../components/docs/GuideGrid.astro"
 import { FRONTEND_GUIDES } from "../../lib/instrumentation-guides"
 
-Backend traces start when a request reaches your server. Everything before that, the route change, the loader that fires three requests one after another, the network and the render, is invisible from the backend, and it's often where a slow page spends its time.
+Frontend tracing records what happens in the browser before a request reaches your backend. Each click becomes one trace: a span for the navigation, spans for the data it loads, the `fetch` and XHR requests those make, and your backend's spans behind them. With server rendering, the first page load also joins the server render's trace.
 
-Frontend tracing covers that part. Each click becomes one trace: a span for the navigation, spans for the data it loads, the `fetch` calls those make, and your backend's spans behind them. Here's one navigation where every API call is fast and the page is still slow:
+The guides below set this up per framework with [`@maple-dev/browser`](/docs/session-replay/browser-sdk) 0.14.0 or later. Here's one navigation where every API call is fast and the page is still slow:
 
 <FrontendTrace />
 
 ## Choose your framework
 
-Each guide is self-contained: it installs the [browser SDK](/docs/session-replay/browser-sdk), connects browser traces to your backend, and wires navigation, data-loading and error reporting into that framework's own hooks. For Next.js, TanStack Router and Start, React Router, Vue and Nuxt, SvelteKit, Angular and Astro, the SDK ships an integration for the framework, like `@maple-dev/browser/nextjs` or `@maple-dev/browser/sveltekit`, so the setup is a few imports. Other frameworks call the SDK's navigation methods from their router's hooks.
+Each guide installs the SDK, connects browser traces to your backend, and wires navigations, data loading and errors into the framework's own hooks. React Router and TanStack Router use the adapters in `@maple-dev/browser/react`. The other frameworks call three SDK methods from their router's hooks: `startNavigation`, `traced` and `endNavigation`.
 
 <GuideGrid cards={FRONTEND_GUIDES} />
 
@@ -38,26 +38,21 @@ Use your public key from **Settings → Ingestion**. Without one, the agent uses
 
 ## What you get
 
-- **Navigation traces.** A `pageload` span for the first route and a `navigate` span for each one after it, named after the route template, like `navigate /projects/:id`. The framework integrations find the template for you.
-- **Data-loading spans.** Loaders, `load` functions or resolvers as children of the navigation, with the requests they make under them.
-- **Backend spans in the same trace.** Browser requests carry a `traceparent` header, so your API's spans join the click that caused them.
-- **Caught errors.** Errors your framework's error boundaries catch are reported, not only the ones that reach `window.onerror`, and grouped on the [Errors](/docs/errors/overview) page.
-- **The first page load, end to end.** With server rendering, the browser's `pageload` span joins the server render's trace.
-- **Session replay.** Every span carries the session id, so a trace links to the [recording](/docs/session-replay/replays) of what the user saw.
+- **Navigation spans.** `pageload` for the first route, `navigate` for each one after it, named after the route template (`navigate /projects/:id`). The concrete path is the `url.path` attribute. A navigation cut short by another click ends with `maple.navigation.interrupted: true`.
+- **Data-loading spans.** Loaders, `load` functions or resolvers under the navigation, with their requests under them.
+- **Backend spans in the same trace.** Requests carry a W3C `traceparent` header: same-origin automatically, cross-origin for the URLs you list in `tracing.propagateTraceHeaderCorsUrls`.
+- **Caught errors.** Errors the framework's error boundaries catch are reported once, next to uncaught errors, on the [Errors](/docs/errors/overview) page.
+- **Server render joined.** The `pageload` span becomes a child of the server's span when the HTML response carries a `Server-Timing: traceparent;desc="…"` entry or a `<meta name="traceparent">` tag. The server needs OpenTelemetry to write either; each guide shows where.
+- **Session replay.** Every span carries the session id, so a trace links to the [recording](/docs/session-replay/replays).
 
-## Why browser tracing is different
+## Limits
 
-If you've instrumented a backend service, most of this will look familiar. A few things are different, and each guide handles them:
-
-- **No async context.** On the server, Node's `AsyncLocalStorage` carries the active span across `await`. Browsers have nothing equivalent yet, so a `fetch()` after an `await` loses its parent and starts a new trace unless you pass the context along.
-- **Cross-origin requests don't carry trace context by default.** The browser only adds `traceparent` to requests you opt in, and your API's CORS preflight has to allow the header.
-- **Tabs close without warning.** Spans are exported in batches, so the SDK flushes when the tab is hidden or closed. Mobile browsers often never fire `unload`.
-- **Single-page apps have one page load.** Every route change after the first is JavaScript, and nothing traces it unless you hook into the router.
-- **Frameworks catch errors before you see them.** Error boundaries show a fallback instead of a blank page, which means those errors never reach a global error handler.
-- **The data is noisier and more sensitive.** Browser extensions throw errors into your page, ad blockers block telemetry requests, URLs carry tokens, and stack traces are minified.
+- **No async context in the browser.** Inside `traced`, only requests started before the first `await` nest under its span. Start independent requests together with `Promise.all`, or capture `context.active()` from `@opentelemetry/api` before the `await` and run the later request in `context.with(ctx, …)`.
+- **Cross-origin APIs must allow the header.** Add `traceparent` to `Access-Control-Allow-Headers` in the API's CORS preflight, or the browser blocks the request.
+- **Clock skew.** Browser and server clocks differ, so a server span can appear to start before the `fetch` that caused it. Durations are exact; offsets between browser and server spans are approximate.
+- **Cached HTML joins a stale trace.** Don't send the server trace context on responses a CDN or the back/forward cache serves to more than one page load.
 
 ## Related
 
-- [Browser SDK reference](/docs/session-replay/browser-sdk): every option, including consent, masking and URL redaction.
+- [Browser SDK reference](/docs/session-replay/browser-sdk): every option, including sampling, consent, masking and URL redaction.
 - [Instrument your application](/docs/instrumentation): backend guides, so browser traces continue into your services.
-- [Session replays](/docs/session-replay/replays): open the recording behind a trace.

@@ -1,166 +1,168 @@
 # SvelteKit
 
-Written against `@sveltejs/kit` 2.70, `svelte` 5.57, `@maple-dev/browser` 0.10.0. Human version: https://maple.dev/docs/frontend/sveltekit
+Written against `@sveltejs/kit` 3.1, `svelte` 5.57, `@sveltejs/adapter-node` 6, `@maple-dev/browser` 0.14. Human version: https://maple.dev/docs/frontend/sveltekit
 
-Install `@maple-dev/browser` (0.10.0+). Entries: `@maple-dev/browser/sveltekit` (client hooks, root layout, loads) and `@maple-dev/browser/sveltekit/server` (`handle`). Needs SvelteKit 2.10+ (the `init` hook); the server header needs 2.31+ server tracing. Put `maple.ts` (the `MapleBrowser.init` call) in `src/lib/`.
+There is no SvelteKit entry in the SDK. Wire SvelteKit's hooks to the core API (`MapleBrowser.startNavigation`, `endNavigation`, `traced`, `captureException`) as below. SvelteKit 3: hook types come from `@sveltejs/kit/hooks`, `$lib` is `#lib`, config lives in the `sveltekit()` options in `vite.config.ts` (no `svelte.config.js`), and `handleError` gets `kind`. On SvelteKit 2, check the installed types before copying.
 
 ## Client hooks
 
+Init the SDK in `src/hooks.client.ts` (browser only). Merge into an existing file; if `init` or `handleError` exist, add these calls inside them.
+
 ```ts
 // src/hooks.client.ts
-import "$lib/maple" // first: starts the SDK before anything else runs
-import { handleErrorWithMaple, startPageLoad } from "@maple-dev/browser/sveltekit"
+import { MapleBrowser } from "@maple-dev/browser"
+import type { ClientInit, HandleClientError } from "@sveltejs/kit/hooks"
 
-export const init = startPageLoad
-export const handleError = handleErrorWithMaple()
+MapleBrowser.init({
+	ingestKey: "MAPLE_TEST", // public key, maple_pk_…
+	serviceName: "acme-web",
+	region: "us", // "eu" for EU organizations
+	tracing: {
+		propagateTraceHeaderCorsUrls: [/^https:\/\/api\.acme\.com\//],
+	},
+})
+
+// Runs once, before hydration and the first page's load functions
+export const init: ClientInit = () => MapleBrowser.startNavigation(location.pathname)
+
+export const handleError: HandleClientError = ({ kind, error }) => {
+	// "app" is error(), "framework" is SvelteKit's own (404s): only "unknown" is a bug
+	if (kind === "unknown") MapleBrowser.captureException(error, { name: "sveltekit.client_error" })
+}
 ```
 
-- `startPageLoad` must be the `init` hook (`beforeNavigate` doesn't fire for the first load). If `init` already exists, call `startPageLoad()` first inside it. Without it, the first click is recorded as the `pageload`.
-- Existing `handleError`: `export const handleError = handleErrorWithMaple(existingHandleError)`; what it returns is kept.
-- `handleErrorWithMaple` reports `sveltekit.client_error`, skips 404s (unknown routes) and errors `loadSpan` recorded.
+- `init` must open the page load: `beforeNavigate` doesn't fire for it.
+- Use RegExps in `propagateTraceHeaderCorsUrls` (strings are exact-match on 0.14.0).
 
 ## Navigations
 
-In the **root** `+layout.svelte` (nested layouts miss navigations outside them). Merge into the existing `<script>`; keep its props and markup:
+In the **root** `src/routes/+layout.svelte` (nested layouts miss navigations outside them). Merge into the existing `<script>`; keep its props and markup.
 
 ```svelte
 <script lang="ts">
+	import { MapleBrowser } from "@maple-dev/browser"
 	import { afterNavigate, beforeNavigate } from "$app/navigation"
 	import { navigating, page } from "$app/state"
-	import { traceNavigation } from "@maple-dev/browser/sveltekit"
 
 	let { children } = $props()
 
-	traceNavigation({ beforeNavigate, afterNavigate, navigating, page })
+	beforeNavigate(({ to, willUnload, complete }) => {
+		if (willUnload || !to) return // leaving the app, or a link no route matches
+		MapleBrowser.startNavigation(to.url.pathname)
+		// A beforeNavigate guard called cancel(): end the span instead of leaving it open
+		complete.catch(() => {
+			if (!navigating.type) MapleBrowser.endNavigation()
+		})
+	})
+
+	// page.route.id, not to.route.id: SvelteKit 3.1 passes a null route id on the first load
+	afterNavigate(() => MapleBrowser.endNavigation(page.route.id ?? undefined))
 </script>
 
 {@render children()}
 ```
 
-- The `$app` imports are passed in because only the app can resolve them. SvelteKit 2.10/2.11 (no `$app/state`): pass `navigating: { get type() { return get(navigatingStore)?.type ?? null } }` and `page: { get route() { return get(pageStore).route } }`, stores from `$app/stores`, `get` from `svelte/store`.
-- Template: route id (`/projects/[id]`), route groups kept (same string as SvelteKit's server `http.route`).
-- A click or back during a pending navigation: one span, named after the final route, `url.path` from the first click. `redirect()` in a load stays in the span, named after the destination.
-- `cancel()` in a `beforeNavigate` guard ends the span as interrupted (plain `navigate`, ~0 ms).
-- Back/forward and query-only changes are navigations. Hash links, `invalidate()`, `invalidateAll()`, shallow routing and leaving the app start nothing. A link no route matches reloads the document: bare `pageload`.
-- Hash routing (`router.type: "hash"`): names are right, `url.path` is the document's path (`/`).
+- Name = route id (`/projects/[id]`, groups kept), same string as SvelteKit's server `http.route`.
+- Don't use `to.route.id` in `afterNavigate`: null on the first load (kit 3.1).
+- Expected shapes: `redirect()` in a load = one span named after the destination, both loaders under it. Click during a pending navigation = one span, final route's name, first click's `url.path`. `cancel()` = bare `navigate`, ~0 ms. Unknown route = document load, bare `pageload`. Hash links and `pushState` = no span; `invalidate()` reruns = own traces.
 
 ## Load functions
 
-Wrap universal loads (`+page.ts`, `+layout.ts`):
+Wrap universal loads (`+page.ts`, `+layout.ts`) with this helper:
+
+```ts
+// src/lib/trace-load.ts
+import { MapleBrowser } from "@maple-dev/browser"
+import { isHttpError, isRedirect } from "@sveltejs/kit"
+
+/** Runs a universal load in a `loader <route id>` span under the current navigation. */
+export const traceLoad = <T>(routeId: string | null, fn: () => Promise<T>) =>
+	MapleBrowser.traced(`loader ${routeId}`, fn, {
+		// redirect() and error() below 500 are control flow, not failures
+		isFailure: (e) => !isRedirect(e) && !(isHttpError(e) && e.status < 500),
+	})
+```
 
 ```ts
 // src/routes/projects/[id]/+page.ts
-import { loadSpan } from "@maple-dev/browser/sveltekit"
+import { traceLoad } from "#lib/trace-load.js"
 import { error } from "@sveltejs/kit"
 import type { PageLoad } from "./$types"
 
-export const load: PageLoad = async ({ fetch, params, route }) =>
-	loadSpan(`loader ${route.id}`, async () => {
+export const load: PageLoad = ({ fetch, params, route }) =>
+	traceLoad(route.id, async () => {
 		const [project, members] = await Promise.all([
 			fetch(`/api/projects/${params.id}`),
-			fetch(`/api/projects/${params.id}/members`),
+			fetch(`https://api.acme.com/projects/${params.id}/members`),
 		])
 		if (project.status === 404) error(404, "Project not found")
 		return { project: await project.json(), members: await members.json() }
 	})
 ```
 
-- `redirect()` and `error()` below 500 aren't failures. On the server `loadSpan` only runs `fn` (SvelteKit's own tracing spans each load).
-- Server loads (`+page.server.ts`) are traced by SvelteKit on the server; their `__data.json` request starts outside any span, so it and the server's `sveltekit.load` span form their own trace.
-- Keep typed loads `async`; a non-async arrow returning `loadSpan(...)` can infer `data` as `{}`.
-- Use the `fetch` SvelteKit passes to `load` so requests go through the SDK.
-- During hydration, loads rerun against inlined responses: first-load load spans are ~0 ms.
-- Preloads on hover (`data-sveltekit-preload-data="hover"`, the default template) run loads before the click, as their own traces; the `navigate` span after the click then has no children. Expected; don't change the preload setting.
-- `error(404)` after a 404 API response: navigation and load spans stay OK; the 404 `fetch` span is Error, like any 4xx client span.
-- The browser tracing code is imported on the server too (root layout, universal loads). It does nothing there, but bundling adapters ship it in the server bundle.
+- Import as `#lib/trace-load.js` (TypeScript doesn't resolve `#lib/trace-load`; Vite maps `.js` to the `.ts` file). Kit 2: `$lib/trace-load`.
+- Use the `fetch` SvelteKit passes to `load`. Start requests before the first `await` (`Promise.all`); later ones lose the span.
+- Don't wrap server loads (`+page.server.ts`): SvelteKit's server tracing spans them; their `__data.json` request is its own trace.
+- Expected, don't "fix": first-load loader spans ~0 ms (hydration reads inlined responses); hover preloads (`data-sveltekit-preload-data="hover"`) run loads before the click as their own traces, leaving the `navigate` span childless. Don't change the preload setting.
 
-## Render errors
+## Errors
 
-Without `experimental.handleRenderingErrors`, SvelteKit doesn't catch errors thrown while a component renders:
-
-- In the browser they reach `window.onerror`, and the SDK reports them once as `browser.uncaught_error`. `handleError` isn't called.
-- During SSR the response is a 500 and the server span is Error, but no span records the exception.
-
-With `handleRenderingErrors: true` (experimental; it also renders `+error.svelte` in place of the broken component), client render errors go through `handleError` and are reported once as `sveltekit.client_error`. Enable it only if the user wants that behavior change.
+Each recorded once: browser load throw → its `loader` span; browser render throw → `sveltekit.client_error`; event handler throw → `browser.uncaught_error`; SSR load throw → server `sveltekit.load` span. SSR render throw: 500, no span records it (known gap). Don't add a server `handleError` that records errors: it would duplicate the `sveltekit.load` ones.
 
 ## Server side
 
-SvelteKit 2.31+ has built-in, **experimental** server OpenTelemetry. Enable both flags where the project keeps its SvelteKit config. Projects scaffolded by `sv create` on SvelteKit 2.62+ pass it to the `sveltekit()` Vite plugin and have no `svelte.config.js`; there the flags go at the top level of the plugin options, with no `kit` key:
+Skip for `adapter-static` / SPA mode: the page load starts its own trace.
 
-```ts
-// vite.config.ts
-sveltekit({
-	adapter: adapter(),
-	experimental: {
-		tracing: { server: true },
-		instrumentation: { server: true },
-	},
-})
-```
-
-With a `svelte.config.js`, the same `experimental` object goes under `kit`. SvelteKit ignores `svelte.config.js` when options are passed to `sveltekit()`.
-
-Install `@opentelemetry/api`, `@opentelemetry/sdk-node`, `@opentelemetry/auto-instrumentations-node`, `@opentelemetry/exporter-trace-otlp-proto` and `import-in-the-middle` as `dependencies`, not `devDependencies`: `adapter-node` bundles devDependencies into the build, and it keeps `dependencies` as runtime imports.
-
-Start the Node SDK in `src/instrumentation.server.ts` (loaded before app code; confirmed for `adapter-node`, check other adapters):
+1. Add `tracing: { server: true }` to the `sveltekit({ ... })` options in `vite.config.ts`.
+2. `npm install @opentelemetry/api @opentelemetry/sdk-node @opentelemetry/exporter-trace-otlp-http` (as `dependencies`).
+3. `src/instrumentation.server.ts`, loaded before app code (supported by `adapter-node`; check other adapters' docs). Server code may use the private key from an env var:
 
 ```ts
 // src/instrumentation.server.ts
-import { register } from "node:module"
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node"
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
 import { NodeSDK } from "@opentelemetry/sdk-node"
-import { createAddHookMessageChannel } from "import-in-the-middle"
 
-// Lets the auto-instrumentations patch ES modules, not only CommonJS
-const { registerOptions } = createAddHookMessageChannel()
-register("import-in-the-middle/hook.mjs", import.meta.url, registerOptions)
-
-const MAPLE_ENDPOINT = "https://ingest.maple.dev" // EU: https://ingest.eu.maple.dev
-const MAPLE_KEY = "MAPLE_TEST" // ingest key, inline
-
-const sdk = new NodeSDK({
+new NodeSDK({
 	serviceName: "acme-web-server",
 	traceExporter: new OTLPTraceExporter({
-		url: `${MAPLE_ENDPOINT}/v1/traces`,
-		headers: { authorization: `Bearer ${MAPLE_KEY}` },
+		url: "https://ingest.maple.dev/v1/traces", // EU: https://ingest.eu.maple.dev/v1/traces
+		headers: { authorization: `Bearer ${process.env.MAPLE_INGEST_KEY}` },
 	}),
-	instrumentations: [
-		getNodeAutoInstrumentations({
-			// Hashed JS and CSS files: otherwise one trace per asset on every page load
-			"@opentelemetry/instrumentation-http": {
-				ignoreIncomingRequestHook: (request) => request.url?.startsWith("/_app/immutable/") ?? false,
-			},
-		}),
-	],
-})
-
-sdk.start()
+}).start()
 ```
 
-`/_app` is the default `kit.appDir`; use the project's value if it sets one.
+If the project already starts an OpenTelemetry SDK, keep it and skip this file.
 
-Spans you get: the HTTP server span from the Node instrumentation, with `sveltekit.handle.root` (with `http.route`), `sveltekit.resolve` and `sveltekit.load` per load (`sveltekit.load.node_id` names the file) under it. Don't add your own render span. Errors thrown in a load are recorded on its `sveltekit.load` span; don't add a server `handleError` that records them again.
-
-Header for the browser's pageload span:
+4. Add `<meta name="traceparent" content="%maple.traceparent%" />` to the `<head>` of `src/app.html`.
+5. Fill it in `src/hooks.server.ts`. Existing `handle`: compose with `sequence` from `@sveltejs/kit/hooks`, or merge the `transformPageChunk` into the existing `resolve` call.
 
 ```ts
 // src/hooks.server.ts
-import { mapleHandle } from "@maple-dev/browser/sveltekit/server"
+import { context, propagation, trace } from "@opentelemetry/api"
+import type { Handle } from "@sveltejs/kit/hooks"
 
-export const handle = mapleHandle
+export const handle: Handle = ({ event, resolve }) => {
+	// The trace context of SvelteKit's root span for this request
+	const carrier: { traceparent?: string } = {}
+	propagation.inject(trace.setSpan(context.active(), event.tracing.root), carrier)
+
+	return resolve(event, {
+		transformPageChunk: ({ html }) => html.replace("%maple.traceparent%", carrier.traceparent ?? ""),
+	})
+}
 ```
 
-- Existing `handle`: `export const handle = sequence(mapleHandle, existingHandle)` (`sequence` from `@sveltejs/kit/hooks`), `mapleHandle` first.
-- Adds `Server-Timing` from `event.tracing.root` on HTML responses and drops their `ETag` (a 304 revalidation would reuse the cached header and an earlier trace). Passes through without server tracing, before 2.31, and for immutable responses.
-- CDN-cached pages: skip `mapleHandle` for them, or every visitor joins one trace.
-- SPA / `adapter-static`: skip this section; the pageload span starts its own trace.
-- Node 26 prints a deprecation warning for `module.register()`; it still works.
+- No ETag handling needed: SvelteKit hashes the HTML after `transformPageChunk`, so each render has its own `ETag`.
+- Without server tracing the placeholder becomes `""` and the page load starts its own trace.
+- CDN-cached pages: leave the tag out, or every visitor joins one trace.
+- A load's server-side `fetch` to another origin carries no `traceparent` without HTTP instrumentation; same-origin `+server` endpoints join automatically.
 
 ## Check
 
-Production build (`vite build`, `node build`), in addition to `SKILL.md` Step 7:
+Dev server and `vite build && node build` behave the same. In addition to `SKILL.md` Step 7:
 
-- Page load `/projects/1`: `pageload /projects/[id]` child of `sveltekit.handle.root`; no `ETag` on the HTML; no header on `__data.json`; reload gets a new trace.
-- Click: `navigate /projects/[id]` → `loader /projects/[id]` → `fetch` spans. `/old` redirect: one span, `url.path=/old`, both loaders under it.
-- A load that throws (client and SSR): one `exception` event.
+- Load `/projects/1`: the meta tag holds a traceparent; `pageload /projects/[id]` has `parentSpanId` = the server's `sveltekit.handle.root` span, same `traceId`; `loader /projects/[id]` under it. Reload: new `traceId`.
+- Click a link with `el.click()` (no hover): `navigate /projects/[id]` → `loader /projects/[id]` → `fetch` spans → server `sveltekit.handle.root` / API server span.
+- Redirecting route: one `navigate <destination>` span with `url.path` = the original path.
+- Load that throws (client nav): one `exception` event, on the `loader` span; no `sveltekit.client_error` for it.
+- Link to a missing route: bare `pageload`, no `exception` events.

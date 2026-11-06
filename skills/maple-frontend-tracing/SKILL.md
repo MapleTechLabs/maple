@@ -39,7 +39,7 @@ Browser code takes the **public** ingest key (`maple_pk_…`) only. It is write-
 
 ## Step 2: Install and initialize the browser SDK
 
-Install `@maple-dev/browser` 0.10.0 or later with the project's package manager. The framework entries (`@maple-dev/browser/nextjs`, `/tanstack`, …) ship in the same package. Add `@opentelemetry/api` only if app code imports it (the `await` rule's `context`, or where a reference says so): strict package managers (pnpm) won't resolve it as the SDK's transitive dependency. Initialize the SDK once, before the app renders, at the place the framework reference names:
+Install `@maple-dev/browser` 0.14.0 or later with the project's package manager. It has two entries only: `@maple-dev/browser` and `@maple-dev/browser/react`. There are no per-framework or `/server` entries; never import `@maple-dev/browser/<framework>`. Add `@opentelemetry/api` only if app code imports it (the `await` rule's `context`, or where a reference says so): strict package managers (pnpm) won't resolve it as the SDK's transitive dependency. Initialize the SDK once, before the app renders, at the place the framework reference names:
 
 ```ts
 import { MapleBrowser } from "@maple-dev/browser"
@@ -52,14 +52,14 @@ MapleBrowser.init({
 	environment: import.meta.env.MODE,
 	tracing: {
 		// First-party APIs on another origin. Same-origin requests are covered already.
-		propagateTraceHeaderCorsUrls: [/^https:\/\/api\.acme\.com\//],
+		propagateTraceHeaderCorsUrls: [/^https:\/\/api\.acme\.com\//], // RegExp: a plain string only matches as a prefix from 0.14.1
 	},
 })
 ```
 
 - `serviceName`: distinct from the backend's, usually `<app>-web`.
 - `init()` is a no-op on the server, so importing it from code that also runs during SSR is safe.
-- The SDK instruments **`fetch` only**, not `XMLHttpRequest`. Find the app's HTTP client. `ky`, `ofetch`, `redaxios` and plain `fetch` are covered. axios uses XHR in browsers unless created with `adapter: "fetch"`; Angular's `HttpClient` uses fetch by default from Angular 22, and XHR in Angular 21 and older unless `provideHttpClient(withFetch())`. Switch those clients to fetch where it's a one-line change; otherwise register `XMLHttpRequestInstrumentation` from `@opentelemetry/instrumentation-xml-http-request` with the same `propagateTraceHeaderCorsUrls`.
+- The SDK instruments `fetch` and `XMLHttpRequest`, so axios, Angular's `HttpClient` (fetch or XHR backend), `ky` and `ofetch` are all covered. Don't add another fetch or XHR instrumentation.
 - If another tracer already instruments `fetch` (for example `@maple-dev/effect-sdk/client`), set `tracing.instrumentFetch: false`.
 - Keep existing error and RUM vendors (Sentry, Datadog, LogRocket…). If another tool on the page also reports global errors to Maple, set `tracing.captureErrors: false` so errors aren't counted twice.
 
@@ -67,14 +67,14 @@ MapleBrowser.init({
 
 1. Find every first-party API base URL the frontend calls (API client config, env vars like `VITE_API_URL`). Same-origin requests already carry `traceparent`. List each cross-origin first-party API in `propagateTraceHeaderCorsUrls` as an anchored regex.
 2. **Never list third-party origins** (analytics, payment providers, CDNs). It leaks trace ids and often breaks their CORS preflight.
-3. Check the API's CORS config. Many setups already echo the requested headers (the `cors` npm package default). If there's an explicit allow-list, add `traceparent` and `tracestate` and keep the existing entries. Without this, the browser blocks the request after the preflight.
+3. Check the API's CORS config. Many setups already echo the requested headers (the `cors` npm package default). If there's an explicit allow-list, add `traceparent` and keep the existing entries (plus `baggage` if the app sets OpenTelemetry baggage). Without this, the browser blocks the request after the preflight.
 
 ## Step 4: Navigation and data-loading spans
 
-Use the framework entry from the reference (`@maple-dev/browser/nextjs`, `/tanstack`, `/react-router`, `/vue`, `/sveltekit`, `/angular`, `/astro`): it names spans, handles the first page load, redirects and interrupted navigations, and wraps loaders. Add only the calls the reference lists; don't hand-write router glue it already covers. For other frameworks, call the SDK's navigation API from the router's hooks (`frameworks/other.md`):
+React Router (data routers) and TanStack Router: use `instrumentReactRouter` / `instrumentTanStackRouter` from `@maple-dev/browser/react` as the reference says. Every other framework: copy the reference's router glue, which calls the SDK's three navigation methods from the router's hooks:
 
-- `MapleBrowser.startNavigation(path)`: call when the router starts a navigation. The first call opens a `pageload` span (joined to the server render, see Step 6), later calls open `navigate` spans. A navigation that starts before the previous one ended ends the previous one as interrupted.
-- `MapleBrowser.endNavigation(routeTemplate?)`: call when the new route is ready. Renames the span to `<kind> <template>` and ends it. No-op when nothing is open.
+- `MapleBrowser.startNavigation(path)`: call when the router starts a navigation. The first call opens a `pageload` span (joined to the server render, see Step 6), later calls open `navigate` spans. A navigation that starts before the previous one ended ends the previous one with `maple.navigation.interrupted: true`.
+- `MapleBrowser.endNavigation(routeTemplate?)`: call when the new route is ready. Renames the span to `<kind> <template>` and ends it. It ends whichever navigation is open, so guard against a slow, superseded route calling it late. No-op when nothing is open.
 - `MapleBrowser.traced(name, fn, { isFailure })`: runs a data-loading function in a child span of the current navigation. Pass `isFailure` to exclude the framework's control-flow throws (redirects, not-found) from being marked as errors. An error it records isn't reported again by `captureException` or the global handlers.
 
 Rules:
@@ -86,25 +86,27 @@ Rules:
 
 ## Step 5: Report errors the framework catches
 
-Error boundaries stop errors from reaching `window.onerror`, so the SDK's global handlers never see them. Use the reporter from the framework entry, in the hook the reference names. For other frameworks, find the central caught-error hook and call `MapleBrowser.captureException(error)` there. No dedupe check is needed: it skips errors `traced` already recorded, and records each error object once.
+Error boundaries stop errors from reaching `window.onerror`, so the SDK's global handlers never see them. Call `MapleBrowser.captureException(error)` from the hook the reference names (React: `MapleErrorBoundary` and `mapleReactErrorHandler()` from `@maple-dev/browser/react`). For other frameworks, find the central caught-error hook and call `MapleBrowser.captureException(error)` there. No dedupe check is needed: it skips errors `traced` already recorded, and records each error object once.
 
-Keep whatever the hook already does (logging, other vendors, fallback UI). `init()` is a no-op on the server but `captureException` is not: if the hook also runs during SSR, the error is recorded in the server's trace.
+Keep whatever the hook already does (logging, other vendors, fallback UI). `init()`, `traced` and `captureException` do nothing on the server. To record an SSR error, use `trace.getActiveSpan()?.recordException(error)` from `@opentelemetry/api` where the reference says so.
 
 ## Step 6: Server-side rendering (only if the app renders on the server)
 
 1. The server needs OpenTelemetry like any backend: follow `maple-nodejs-style` (or `maple-nextjs-style` for Next.js) for the SDK bootstrap and inline key. If that skill isn't installed, install it with `npx skills add MapleTechLabs/maple/skills --skill maple-nodejs-style -y`, or read it at https://github.com/MapleTechLabs/maple/tree/main/skills/maple-nodejs-style.
-2. Use the reference's server entry (`withMapleProxy`, `traceRequests`/`traceRender`, `serverInstrumentation`, `mapleNitroPlugin`, `mapleHandle`, `tracedRender`, Astro's `maple()` middleware). Otherwise add a span around the render, named `ssr <template>`, unless the framework already creates one. If the framework loads data before it calls your render hook, open the span (or a request span) where the request arrives, so the server's loaders run inside it; otherwise every request's loaders become separate traces. Then, from inside that span's context, append the trace context to the response:
+2. Make sure a server span is active while the HTML response is built (the framework's own tracing, the HTTP instrumentation, or a span the reference adds). From inside it, write the trace context into the response, as a header or a meta tag:
 
 	```ts
-	import { serverTiming } from "@maple-dev/browser/server"
+	import { context, propagation } from "@opentelemetry/api"
 
-	const timing = serverTiming() // undefined when no span is active
-	if (timing) headers.append("server-timing", timing)
+	const carrier: Record<string, string> = {}
+	propagation.inject(context.active(), carrier)
+	if (carrier.traceparent) headers.append("server-timing", `traceparent;desc="${carrier.traceparent}"`)
+	// or: <meta name="traceparent" content="${carrier.traceparent}"> in <head>
 	```
 
-	The SDK reads it back from the Navigation Timing API and parents the browser's `pageload` span to it (or reads `<meta name="traceparent">`). Only the page load joins the server trace; later navigations are their own traces. The browser follows the server's sampling decision.
-3. Server-side data loading (SSR loaders, Server Components, resolvers): `traced` from `@maple-dev/browser/server` spans under the active server span through the global tracer, keeps parents across `await`, and only runs `fn` without server OpenTelemetry. `MapleBrowser.traced` behaves the same when there's no `window`. `@maple-dev/browser/server` depends only on `@opentelemetry/api`: safe in Node, edge runtimes and Workers.
-4. Don't send the header on responses a CDN caches, or every visitor joins the same trace. If the framework sets an `ETag` on HTML, delete it on responses that carry the header: a 304 revalidation reuses the cached header and joins an old trace.
+	The SDK reads it from the Navigation Timing API (or the meta tag) and parents the browser's `pageload` span to it. Only the page load joins the server trace; later navigations are their own traces. An unsampled server trace means no `pageload` span. On a Node ESM server, the OpenTelemetry SDK must load with its loader hook (`--import`), or no span is active and the header silently never appears.
+3. Server-side data loading (SSR loaders, Server Components, resolvers) is traced by the server's OpenTelemetry setup, not by `MapleBrowser.traced`, which only runs `fn` on the server.
+4. Don't send the trace context on responses a CDN caches, or every visitor joins the same trace.
 
 ## Step 7: Verify
 
@@ -112,12 +114,12 @@ Keep whatever the hook already does (logging, other vendors, fallback UI). `init
 2. Start the production build (or the dev server, if the framework behaves the same in both) and check the network tab:
 	- requests to `https://ingest(.eu).maple.dev/v1/traces` return 200 (a 401 means wrong key or wrong region);
 	- API requests carry a `traceparent` header, and cross-origin ones pass their CORS preflight;
-	- with SSR, the document response has a `server-timing` header containing `traceparent`.
+	- with SSR, the document response has a `server-timing` header containing `traceparent`, or the HTML a `<meta name="traceparent">` tag.
 3. Check the span shapes in the JSON bodies of the `/v1/traces` requests. This works with `MAPLE_TEST` too:
 	- a reload gives one `pageload <template>` span, never a bare `pageload`, and it is exported even when the page's render throws;
 	- one click gives exactly one `navigate <template>` span; its `loader …` spans have its `spanId` as `parentSpanId`, and the `fetch` spans sit under those. Repeat for a param-only change (`/items/1` to `/items/2`);
 	- unless the framework reference says otherwise (Astro islands have no loader span), a route whose data loading throws gives exactly one span with an `exception` event, and no `browser.unhandled_rejection` for the same error. An event handler that throws gives exactly one error span: `browser.uncaught_error`, or the framework hook's span when the framework catches handler errors (Angular: `angular.error`). Errors thrown in server-side data loading (Next.js Server Components, server loaders) are on the server's spans, not in the browser's `/v1/traces` bodies.
-	- click a link whose data loads slowly, then another link before it finishes: the first span ends at the second click (marked `app.navigation.interrupted`, or merged into the second where the reference says so), the second is `navigate <template>`, and no navigation span stays open;
+	- click a link whose data loads slowly, then another link before it finishes: the first span ends at the second click (marked `maple.navigation.interrupted`, or merged into the second where the reference says so), the second is `navigate <template>`, and no navigation span stays open;
 	- with SSR, load a route whose render throws directly (not by client navigation): exactly one `exception` event, on a server span. A URL that matches no route produces no `exception` event and no Error span other than a 4xx `fetch`.
 4. With a real key and the Maple MCP tools available, wait a minute, then `search_traces` for the frontend's `serviceName` and `inspect_trace` a `navigate …` trace: it should contain the loader span, `fetch` spans and the backend's spans, unless the framework reference says those are separate traces (Next.js App Router). With `MAPLE_TEST`, nothing is stored; say so instead.
 

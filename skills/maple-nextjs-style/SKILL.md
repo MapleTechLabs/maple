@@ -133,12 +133,10 @@ logger.emit({
 
 ## Client side
 
-The browser half of the app uses `@maple-dev/browser` from a client component rendered in the root layout. `init()` is a no-op during server rendering, so module scope is safe. On Next.js 15.3+, `instrumentation-client.ts` is the better place (it runs before hydration); for navigation spans and linking the page load to the server render, see `maple-frontend-tracing` (`frameworks/nextjs.md`).
+The browser half of the app uses `@maple-dev/browser`, initialized in `instrumentation-client.ts` (Next.js 15.3+, next to `instrumentation.ts`), which runs before hydration. Navigation spans, error boundaries and linking the page load to the server render are in `maple-frontend-tracing` (`frameworks/nextjs.md`); follow it rather than this minimal init.
 
-```tsx
-// app/maple.tsx
-"use client"
-
+```ts
+// src/instrumentation-client.ts
 import { MapleBrowser } from "@maple-dev/browser"
 
 MapleBrowser.init({
@@ -148,13 +146,9 @@ MapleBrowser.init({
 	environment: process.env.NODE_ENV,
 	serviceVersion: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA,
 })
-
-export function Maple() {
-	return null
-}
 ```
 
-Render `<Maple />` inside `<body>` in `app/layout.tsx` (Pages Router: import `./maple` from `pages/_app.tsx`). Give it a different `serviceName` from the server so browser and server spans stay distinguishable. Same-origin `fetch` calls to route handlers carry `traceparent`, so browser and server spans join one trace.
+Give it a different `serviceName` from the server so browser and server spans stay distinguishable. Same-origin `fetch` calls to route handlers carry `traceparent`, so browser and server spans join one trace. With `@vercel/otel` 2.x installed, add `"overrides": { "@opentelemetry/api": "^1.10.0" }` to `package.json` (the browser SDK is on OpenTelemetry JS 3.x; without it the build fails with `Export logs doesn't exist in target module`). Pages Router: call `init` from a module imported by `pages/_app.tsx`.
 
 ## Configuration and smoke
 

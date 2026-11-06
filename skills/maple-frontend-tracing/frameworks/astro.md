@@ -1,112 +1,101 @@
 # Astro
 
-Written against `astro` 7.3, `@astrojs/node` 11.1, `@astrojs/react` 7.0 and `@astrojs/vue` 7.0, `@maple-dev/browser` 0.10.0. Human version: https://maple.dev/docs/frontend/astro
+Checked against `astro` 7.4, `@astrojs/node` 11.1, `@astrojs/react` 7.1, `@astrojs/vue` 7.1, `@maple-dev/browser` 0.14.0. Human version: https://maple.dev/docs/frontend/astro
 
-Install `@maple-dev/browser` (0.10.0+). Entries: `@maple-dev/browser/astro` (the `maple()` integration), plus `@maple-dev/browser/astro/client` (`traceAstroNavigation`) and `@maple-dev/browser/astro/middleware` (`onRequest`) for wiring by hand. Needs Astro 5+ (`Astro.routePattern`); `astro:hydration-error` reporting needs 6.3, skipping route-cached pages needs 7. On Astro 4 the middleware passes everything through and spans keep generic names: tell the user.
+There is no Astro entry in the SDK: wire the core calls (`startNavigation`, `endNavigation`, `traced`) from the code below. Don't import `@maple-dev/browser/astro` or any `/server` entry; they don't exist. Needs `Astro.routePattern` (Astro 5+).
 
-Put `maple.ts` (the `MapleBrowser.init` call) in `src/`. Inline the key as `SKILL.md` Step 1 says. Astro only exposes `PUBLIC_`-prefixed env vars to the browser: if the project passes the key or version through env vars, read `import.meta.env.PUBLIC_MAPLE_INGEST_KEY` / `PUBLIC_COMMIT_SHA`, not `VITE_*`.
+Astro is multi-page by default: each document load is a `pageload` span. With `<ClientRouter />`, links are fetched and swapped in place, and each is a `navigate` span. The code below covers both. Don't add `<ClientRouter />` for tracing.
 
-Astro is multi-page by default: every link is a document load, and each page gets one `pageload` span. With `<ClientRouter />` (view transitions), links are fetched and swapped in place, and each one gets a `navigate` span. The integration handles both.
+## Browser
 
-## Integration and init
-
-```js
-// astro.config.mjs: add to the existing integrations array
-import maple from "@maple-dev/browser/astro"
-
-export default defineConfig({
-	integrations: [maple()],
-})
-```
-
-In the base layout that every page renders (merge into the existing `<head>`, keep its markup and props):
-
-```astro
-<script>
-	import "../maple" // starts the SDK
-</script>
-```
-
-That's all in the layouts. Don't add `data-route`, a navigation script, a `Tracing` component, or a hand-written `ssr` middleware: the integration covers them.
-
-- The integration adds a middleware (first in the chain, `order: "pre"`) that writes `Astro.routePattern` onto each page's `<html data-route>` (at build time for prerendered pages, while streaming for on-demand ones), and one bundled page script that calls `traceAstroNavigation()`. `MapleBrowser.init` stays in the user's script: its options can hold functions and `import.meta.env` values.
-- Keep the `init` `<script>` processed (no `is:inline`, no `data-astro-rerun`, no attributes besides `src`). Astro bundles it as a module and includes it once per page.
-- Several base layouts: the same `<script>` in each. No layout (the `minimal` starter writes `<html>` in each page): the same `<script>` in every page's `<head>`. Don't restructure the pages into a layout for tracing.
-- Don't add `<ClientRouter />` for tracing.
-- Template: `Astro.routePattern`, relative to `src/pages` without extension: `/`, `/projects/[id]`, `/blog/[slug]` (prerendered via `getStaticPaths` too), `/docs/[...path]`, `/404`. The server span uses the same string.
-- Route stamping needs `<html>` first in the document (only a doctype and comments before it), within the first 16 KiB; otherwise, or when another middleware compressed the body, spans keep the generic names. A `data-route` the page sets itself wins. Server islands and partials pass through. After `Astro.rewrite()`, the rendered page's route wins.
-- `pageload`: from `DOMContentLoaded` (after every module script, `init` included) to `load`. Often under a millisecond; the request and server render are in the server half of the trace.
-- With `<ClientRouter />`: `navigate` from `astro:before-preparation` to `astro:page-load`, with a `load page` span around the router's loader, so the document `fetch` (carrying `traceparent`) and, for an on-demand page, the server's spans are under it. The router copies the new page's `<html>` attributes on swap, so the name is the new template.
-- A click during a pending navigation: the first span ends as interrupted (generic `navigate`). Links to non-HTML responses (`/file.pdf`), to a page without `<ClientRouter />`, or redirects to another origin fall back to a document load: the `navigate` span ends with the generic name, and the new document gets its own `pageload`. Same-origin redirects: named after the destination, `url.path` is the path clicked. Query-only changes are navigations; hash-only links start nothing. Back/forward are navigations (with `<ClientRouter />`) or new `pageload`s (without; a back/forward cache restore runs no script, so no span).
-- A navigation that another `astro:before-preparation` listener cancels, or whose custom loader throws, ends as interrupted at the next navigation or page exit.
-- `<ClientRouter />` prefetches every link on hover (unless `prefetch: false`). `<link rel="prefetch">` makes no `fetch` span; the server renders the prefetch as its own trace, and the click's `load page` can be served from the prefetch cache with no server spans. Where `rel="prefetch"` isn't supported, Astro prefetches with `fetch()`: its own trace.
-- In Chromium, a view transition in a hidden tab rejects with `InvalidStateError: Transition was aborted because of invalid state`, which the SDK reports as `browser.unhandled_rejection`. The navigation completes. Mention it in the hand-off; don't suppress it.
-
-### Wiring by hand (only when asked to trace some pages only)
-
-The integration's script loads the SDK chunk on every page, including pages without the `init` script. To limit that, skip `maple()`:
+Create `src/maple.ts`. Inline the key per `SKILL.md` Step 1; if the project passes it through env vars, Astro only exposes `PUBLIC_*` to the browser (`import.meta.env.PUBLIC_MAPLE_INGEST_KEY`), never `VITE_*`.
 
 ```ts
-// src/middleware.ts (existing middleware: sequence(onRequest, existing) from astro:middleware, this one first)
-export { onRequest } from "@maple-dev/browser/astro/middleware"
+// src/maple.ts
+import { MapleBrowser } from "@maple-dev/browser"
+
+MapleBrowser.init({
+	ingestKey: "MAPLE_TEST", // public key, maple_pk_...
+	serviceName: "acme-web",
+	environment: import.meta.env.MODE,
+	tracing: {
+		propagateTraceHeaderCorsUrls: [/^https:\/\/api\.acme\.com\//],
+	},
+})
+
+const endNavigation = () => MapleBrowser.endNavigation(document.documentElement.dataset.route)
+
+// Every document load is a page load, named when the window load event fires
+MapleBrowser.startNavigation(location.pathname)
+addEventListener("load", endNavigation)
+
+// <ClientRouter /> navigations, with the page fetch inside them
+document.addEventListener("astro:before-preparation", (event) => {
+	MapleBrowser.startNavigation(event.to.pathname)
+	const loader = event.loader
+	event.loader = () => MapleBrowser.traced("load page", loader)
+})
+document.addEventListener("astro:page-load", endNavigation)
 ```
+
+In every base layout (merge into the existing markup, keep its props): add `data-route={Astro.routePattern}` to `<html>`, and in `<head>`:
 
 ```astro
 <script>
-	import "../maple" // starts the SDK
-	import { traceAstroNavigation } from "@maple-dev/browser/astro/client"
-
-	traceAstroNavigation()
+	import "../maple"
 </script>
 ```
 
-## Data loading
+- Plain `<script>`: no `is:inline`, no attributes. Astro bundles it once per page.
+- No layout (the `minimal` starter writes `<html>` per page): add both to every page. Don't restructure pages into a layout.
+- Keep an existing `data-route` or `astro:*` listeners; add these alongside.
+- `ClientRouter` copies the new page's `<html>` attributes on swap, so `endNavigation` reads the new route.
+- Route templates: `/`, `/projects/[id]`, `/blog/[slug]`, `/docs/[...path]`, `/404`. Brackets stay.
+- No route-level loaders run in the browser; the wrapped page `loader` is the data-loading span. Island requests are their own traces (not under the navigation span), still joined to the backend: don't wrap them in `traced`.
 
-- Frontmatter runs on the server (on-demand pages) or at build time (prerendered). There is no client loader to wrap; the browser never sees that data loading. Server-side, it nests under the integration's `ssr` span.
-- Islands (`client:*` components) fetch after hydration, which starts after `load` in testing, so their `fetch` spans are their own traces. Don't wrap them in `traced`.
-- Island data loading that fails: a rejection nothing catches reaches the SDK as one `browser.unhandled_rejection` span with the `exception` event. An island that catches it to show an error state hides it from the SDK: add `MapleBrowser.captureException(error)` in that `catch` (one `exception` span). There is no `loader` span, so for `SKILL.md` Step 7's "data loading throws" check, expect one of those two spans instead.
-- Server islands (`server:defer`) are fetched by an inline script Astro adds to the page. In testing those requests carried no `traceparent`, on the first load (the inline script runs before the SDK starts) and after a swap: each server island render is its own server trace (`ssr /_server-islands/[name]`).
-- `is:inline` scripts also run before the bundled scripts; requests they make on load aren't traced.
+## Island errors
 
-## Caught errors
+- React islands: wrap the island's root in `MapleErrorBoundary` from `@maple-dev/browser/react` (`fallback` prop). Reports `react.render_error` once.
+- Vue islands: `vue({ appEntrypoint: "/src/vue-app" })` (keep an existing `appEntrypoint`); that file default-exports `(app: App) => { app.config.errorHandler = (error, _instance, info) => { console.error(error); MapleBrowser.captureException(error, { name: "vue.error", attributes: { "vue.error.info": info } }) } }`.
+- Others (Svelte, Solid): `MapleBrowser.captureException(error)` in their error boundary hook.
+- Uncaught errors in scripts and handlers need nothing (`browser.uncaught_error`).
 
-Astro has no client error hook. What reaches Maple:
+## Server (only for on-demand pages: an adapter plus `output: "server"` or `prerender = false`)
 
-- Uncaught errors in islands and scripts: the SDK's global handler (`browser.uncaught_error`). A React 19 island that throws while rendering, with no boundary, lands here.
-- Island code that fails to load (chunk 404 after a deploy, network): Astro catches it, retries once, then dispatches `astro:hydration-error` (Astro 6.3+). The integration reports it as `astro.hydration_error`; add nothing.
-- Errors the island framework catches: report from its own boundary, once per framework used.
-	- React: `componentDidCatch(error)` in the app's error boundary, `MapleBrowser.captureException(error, { name: "react.render_error" })`. React calls it once; the error doesn't also reach the global handler.
-	- Vue: production builds only `console.error` component errors. Set `app.config.errorHandler` (as in `frameworks/vue.md`) from the file passed to `vue({ appEntrypoint: "/src/vue-app" })`; the file default-exports `(app: App) => void`. Keep an existing `appEntrypoint`.
-	- Svelte: `<svelte:boundary onerror={(error) => MapleBrowser.captureException(error)}>`. Solid: in the `ErrorBoundary` fallback.
+Static output: skip this section. Prerendered pages get no header and their `pageload` starts its own trace.
 
-## Server side
+1. `@astrojs/node`: server OpenTelemetry per `maple-nodejs-style` (its `tracing.mjs` registers the ES module hook; Astro's server build is ESM). Preload it: `node --import ./tracing.mjs ./dist/server/entry.mjs` (update the `start` script or Dockerfile). OpenTelemetry packages go in `dependencies`. In `getNodeAutoInstrumentations`, add `"@opentelemetry/instrumentation-http": { ignoreIncomingRequestHook: (request) => request.url?.startsWith("/_astro/") ?? false }` (use `build.assets` if the project changed it).
+2. Install `@opentelemetry/api`. Add to `src/middleware.ts` (if one exists, combine them with `sequence()` from `astro:middleware`):
 
-### Static output (default, no adapter)
+	```ts
+	import { context, propagation, trace } from "@opentelemetry/api"
+	import { defineMiddleware } from "astro:middleware"
 
-Skip this section. No server runs at request time, and the `pageload` span starts its own trace. The integration still writes the route into each page at build time.
+	export const onRequest = defineMiddleware(async ({ request, routePattern }, next) => {
+		// Name the HTTP server span after the route, like the browser spans
+		trace.getActiveSpan()?.setAttribute("http.route", routePattern).updateName(`${request.method} ${routePattern}`)
+		const response = await next()
+		const carrier: Record<string, string> = {}
+		propagation.inject(context.active(), carrier)
+		if (carrier.traceparent && response.headers.get("content-type")?.startsWith("text/html")) {
+			response.headers.append("server-timing", `traceparent;desc="${carrier.traceparent}"`)
+		}
+		return response
+	})
+	```
 
-### On-demand rendering (an adapter, with `output: "server"` or `export const prerender = false` pages)
-
-The integration's middleware runs every on-demand request in an `ssr <routePattern>` span and appends `Server-Timing` to its HTML response; the browser's `pageload` becomes its child. Nothing to add in `src/middleware.ts`; an existing one keeps working (the integration's runs first).
-
-- The span ends when Astro starts streaming: after the page's own frontmatter, before the components inside it render. Their server requests still nest under it (AsyncLocalStorage) but run past its end. The HTTP server span covers the whole response.
-- An error thrown in the page's frontmatter: recorded on the span (Error), 500 response, no header. A component deeper in the page that throws after streaming started produces a 200 with `Internal server error` appended, and nothing records it. Say so in the hand-off if the app renders data-fetching components.
-- Endpoints and server islands get the span too (`ssr /api/...`, `ssr /_server-islands/[name]`), no header (not HTML).
-- Skipped automatically, so cached copies don't share one trace: Astro 7 route-cached pages (`maxAge` or `swr`), `Cache-Control` with `public`, `s-maxage` or `max-age` > 0, `CDN-Cache-Control` and vendor variants, `Surrogate-Control` (unless `no-store`/`private`). A CDN that caches by its own rule without those headers isn't detected: tell the user to send one of them on those pages. Astro sets no `ETag` on on-demand HTML.
-- `Astro.rewrite()` runs the middleware twice: two nested `ssr` spans and two `traceparent` entries in `Server-Timing`; the browser joins the inner one, same trace.
-
-Server OpenTelemetry, by adapter:
-
-- `@astrojs/node`: Node SDK per `maple-nodejs-style`, preloaded: `node --import ./instrumentation.mjs ./dist/server/entry.mjs` (update the `start` script or Dockerfile). The server build is ES modules: `register("@opentelemetry/instrumentation/hook.mjs", import.meta.url)` before `sdk.start()` is required. Without it `node:http` isn't patched: no HTTP server span, and an incoming `traceparent` isn't continued, so `<ClientRouter />` page fetches don't join the click's trace. Ignore Astro's hashed assets in the HTTP instrumentation, or every script and stylesheet gets a trace: `"@opentelemetry/instrumentation-http": { ignoreIncomingRequestHook: (request) => request.url?.startsWith("/_astro/") ?? false }` (`build.assets` if the project changes it). Install the OpenTelemetry packages as `dependencies`: the preload file isn't bundled. Prerendered pages and `public/` files the adapter serves still get a lone HTTP server span each, in a trace of its own; their `pageload` doesn't join it (no header). Node 26 prints a deprecation warning for `module.register()`; it still works.
-- `@astrojs/cloudflare`: follow Maple's Cloudflare Workers guide (Workers Observability OTLP export, https://maple.dev/docs/guides/instrumentation-cloudflare-workers). Worker code can't read those spans' trace ids yet, and no OpenTelemetry provider is registered in the Worker, so the middleware sends no header (it still writes the route). The `pageload` span starts its own trace. Say so in the hand-off.
-- Other adapters (Vercel, Netlify, Deno): follow that runtime's Maple guide. The page load joins the server trace only if an OpenTelemetry SDK is registered in the server process.
+- Other adapters: the middleware only writes the header if an OpenTelemetry SDK runs in the server process. Otherwise page loads start their own traces; say so in the hand-off.
+- Pages a CDN caches must not get the header. Back/forward can reuse the cached document and its header (the `pageload` joins the old trace); `Cache-Control: no-store` prevents it. Mention, don't add.
 
 ## Check
 
-With the production build (`astro build`, then the adapter's start command; `astro preview` for static output), in addition to `SKILL.md` Step 7:
+Production build (`astro build`, then the start command; `astro preview` for static output; `astro dev` renders prerendered pages on demand, so it sends the header for them). In the `/v1/traces` bodies:
 
-- Every page's HTML has `<html data-route="<template>">`.
-- Full load of an on-demand page: one `pageload <template>` span whose parent is `ssr <template>`, with the frontmatter's server `fetch` spans in the same trace. A prerendered page: `pageload <template>` with no parent, and no `server-timing` header.
-- With `<ClientRouter />`, one click: `navigate <template>` > `load page` > `fetch`, and for an on-demand page the server's HTTP and `ssr` spans under that `fetch`. Repeat for a param-only change (`/projects/1` to `/projects/2`).
-- Without `<ClientRouter />`, each click is a new document: `pageload <template>` per page. The span is often under a millisecond; that's expected.
-- Interrupted navigation (`SKILL.md` Step 7) needs `<ClientRouter />` and a page whose response is slow, like an on-demand page with slow frontmatter. A slow `fetch` in an island doesn't hold the navigation open, and without `<ClientRouter />` there is no navigation span to interrupt.
+- Direct load of an on-demand page: one `pageload <route>`, `parentSpanId` = the server's `GET <route>` span, same `traceId`; document response has `server-timing: traceparent;desc="00-…"`. Prerendered page: `pageload <route>` with no parent, no header.
+- `<ClientRouter />` click: one `navigate <route>` > `load page` > `fetch` of the page URL; for an on-demand page the server's `GET <route>` span has the `fetch` as parent. Repeat for a param-only change (`/projects/1` → `/projects/2`).
+- Without `<ClientRouter />`: each click is a new `pageload <route>`, no `navigate`.
+- Same-origin redirect: `navigate <destination route>`, `url.path` = clicked path. Missing page: `navigate /404` (or `pageload /404`), a 404 `fetch`, no `exception` event.
+- Interrupted (needs `<ClientRouter />` and a slow on-demand page): first span `navigate` with `maple.navigation.interrupted: true`, second named, no error spans.
+- React render error under `MapleErrorBoundary`: exactly one `react.render_error`; handler throw: exactly one `browser.uncaught_error`; Vue: exactly one `vue.error`.
+- Cross-origin API: the API's server span has the browser `fetch` span as parent.
+- No server spans for `/_astro/*`.
