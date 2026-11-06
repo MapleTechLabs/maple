@@ -71,7 +71,7 @@ export const Message = defineMessageUnion({
 	CompletedReadClock: { nowMs: Schema.Number },
 	CompletedReadGrants: { grants: Schema.Array(Policy.PermissionName) },
 	CompletedFetchConnectors: { connectors: Schema.Array(V2ChatConnector) },
-	CompletedFetchEscalationChains: { chains: Schema.Array(V2EscalationChain) },
+	CompletedFetchEscalationChains: { chains: Schema.NullOr(Schema.Array(V2EscalationChain)) },
 	CompletedFetchTraceFacets: { key: Schema.String, result: Schema.Result(TraceFacets, LoadFailure) },
 	CompletedFetchAutocomplete: {
 		key: Schema.String,
