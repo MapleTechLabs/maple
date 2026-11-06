@@ -5,22 +5,27 @@
 //
 //   - system.cpu.utilization           gauge, 0..1, attributes: cpu, state
 //   - system.memory.utilization        gauge, 0..1, attributes: state
+//   - system.filesystem.usage          sum,   bytes, attributes: device, mode, mountpoint, type, state
+//                                      (state used/free/reserved; semconv renamed it system.filesystem.state)
 //   - system.filesystem.utilization    gauge, 0..1, attributes: device, mode, mountpoint, type
-//                                      (the hostmetrics receiver sets no state; some shippers add state=used)
+//                                      (off by default in the hostmetrics receiver, which sets no state;
+//                                      some shippers add state=used)
 //   - system.cpu.load_average.1m|5m|15m  gauge, absolute, no attributes
-//   - system.network.io                sum,   bytes, attributes: device, direction
+//   - system.network.io                cumulative sum, bytes, attributes: device, direction
+//                                      (semconv renamed direction to network.io.direction)
 //
 // Host identity is carried on the ResourceAttributes map under `host.name`.
 
 import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
-import { param } from "@maple-dev/effect-orm/clickhouse"
-import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
+import { defineUntypedFn, inSubquery, param } from "@maple-dev/effect-orm/clickhouse"
+import { from, fromQuery, fromUnion, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import { MetricsGauge, MetricsSum, orgIdParam } from "../tables"
 import { containerRuntimeExpr, deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { avgIfOrZero, facetAttrExpr, maxIfOrZero, type FacetOutput } from "./query-helpers"
 import { finiteOrZero } from "./format"
+import { metricDeltaExpr } from "./metrics"
 import { Array as Arr } from "effect"
 
 const HOSTMETRIC_NAMES = [
@@ -47,22 +52,166 @@ const hostCpuPctExpr = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
 		CH.lit(0),
 	)
 
-// Read-only and virtual mounts (snap squashfs, container overlays) always report ~100%.
-export const PSEUDO_FS_TYPES = ["squashfs", "overlay", "tmpfs", "devtmpfs", "iso9660", "ramfs"] as const
+// Read-only and virtual mounts (snap squashfs, container overlays, macOS devfs, optical
+// drives) always report ~100%.
+const PSEUDO_FS_TYPES = [
+	"squashfs",
+	"overlay",
+	"tmpfs",
+	"devtmpfs",
+	"iso9660",
+	"ramfs",
+	"erofs",
+	"devfs",
+	"autofs",
+	"CDFS",
+	"UDF",
+] as const
 
-// The hostmetrics receiver emits utilization with no `state` (Map get returns ''); other
-// shippers split it into used/free/reserved rows. Both shapes keep only the used share.
-export const FILESYSTEM_USED_STATES = ["used", ""] as const
-const filesystemUsedState = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
-	CH.inList($.Attributes.get("state"), FILESYSTEM_USED_STATES)
+interface AttributeMap {
+	get(key: string): CH.Expr<string>
+}
 
-const hostDiskPctExpr = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
-	maxIfOrZero(
-		$.Value,
-		$.MetricName.eq("system.filesystem.utilization")
-			.and(filesystemUsedState($))
-			.and(CH.notInList($.Attributes.get("type"), PSEUDO_FS_TYPES)),
-	)
+// The hostmetrics receiver sends `state`, `mountpoint`, `type` and `device`; current semconv
+// names them `system.filesystem.state` (…`.mountpoint`, `.type`) and `system.device`. Map get
+// returns '' for a missing key, so a point carrying neither name reads ''.
+const renamedAttr = (attributes: AttributeMap, current: string, legacy: string) =>
+	CH.coalesce(CH.nullIf(attributes.get(current), ""), attributes.get(legacy))
+const filesystemAttr = (attributes: AttributeMap, key: "state" | "mountpoint" | "type") =>
+	renamedAttr(attributes, `system.filesystem.${key}`, key)
+const filesystemDevice = (attributes: AttributeMap) => renamedAttr(attributes, "system.device", "device")
+
+// Utilization rows carry no state from the receiver; shippers that split them by state keep `used`.
+const FILESYSTEM_USED_STATES = ["used", ""] as const
+// `reserved` (root-only blocks) is left out: the receiver's utilization and `df` Use% are
+// used / (used + free), so a disk full for normal users reads 100%.
+const FILESYSTEM_USAGE_STATES = ["used", "free"] as const
+
+/** Which hosts to read, given the host.name expression. */
+type HostFilter = (hostName: CH.Expr<string>) => CH.Condition
+
+type SumColumns = ColumnAccessor<typeof MetricsSum.columns>
+type GaugeColumns = ColumnAccessor<typeof MetricsGauge.columns>
+
+const usageFilters = ($: SumColumns, hosts: HostFilter) => [
+	$.OrgId.eq(orgIdParam),
+	$.TimeUnix.gte(param.dateTime("startTime")),
+	$.TimeUnix.lte(param.dateTime("endTime")),
+	$.ResourceAttributes.get("host.name").neq(""),
+	$.MetricName.eq("system.filesystem.usage"),
+	CH.inList(filesystemAttr($.Attributes, "state"), FILESYSTEM_USAGE_STATES),
+	CH.notInList(filesystemAttr($.Attributes, "type"), PSEUDO_FS_TYPES),
+	hosts($.ResourceAttributes.get("host.name")),
+]
+
+const utilizationFilters = ($: GaugeColumns, hosts: HostFilter) => [
+	$.OrgId.eq(orgIdParam),
+	$.TimeUnix.gte(param.dateTime("startTime")),
+	$.TimeUnix.lte(param.dateTime("endTime")),
+	$.ResourceAttributes.get("host.name").neq(""),
+	$.MetricName.eq("system.filesystem.utilization"),
+	CH.inList(filesystemAttr($.Attributes, "state"), FILESYSTEM_USED_STATES),
+	CH.notInList(filesystemAttr($.Attributes, "type"), PSEUDO_FS_TYPES),
+	hosts($.ResourceAttributes.get("host.name")),
+]
+
+const mountKey = ($: SumColumns | GaugeColumns) => ({
+	hostName: $.ResourceAttributes.get("host.name"),
+	mountpoint: filesystemAttr($.Attributes, "mountpoint"),
+	device: filesystemDevice($.Attributes),
+})
+
+/**
+ * Used fraction per (host, mountpoint, device, sample time), from whichever metric the host
+ * sends. `system.filesystem.usage` is on by default and splits bytes by state, so its fraction
+ * is used / (used + free) over the rows of one scrape. `system.filesystem.utilization` is
+ * opt-in and is that same fraction. A host sending both yields matching points twice, which
+ * leaves averages and maxima unchanged.
+ */
+function filesystemUsedFractionPoints(hosts: HostFilter) {
+	const fromUsage = from(MetricsSum)
+		.select(($) => ({
+			...mountKey($),
+			sampleTime: $.TimeUnix,
+			usedFraction: finiteOrZero(
+				CH.sumIf($.Value, filesystemAttr($.Attributes, "state").eq("used")).div(CH.sum($.Value)),
+			),
+		}))
+		.where(($) => usageFilters($, hosts))
+		.groupBy("hostName", "mountpoint", "device", "sampleTime")
+
+	const fromUtilization = from(MetricsGauge)
+		.select(($) => ({ ...mountKey($), sampleTime: $.TimeUnix, usedFraction: $.Value }))
+		.where(($) => utilizationFilters($, hosts))
+
+	return fromUnion(unionAll(fromUsage, fromUtilization), "filesystem_points")
+}
+
+// A host's mounts are scraped together, so a mount whose newest reading is older than the
+// host's newest by more than this stopped reporting (detached, unmounted, a second shipper).
+const STALE_MOUNT_SECONDS = 60
+
+/**
+ * Headline disk %: the fullest real mount per host, at its latest reading. Each mount keeps
+ * only its newest reading across both metrics, so the cost stays at hosts × mounts however
+ * wide the window, and mounts that stopped reporting before the host's last scrape drop out.
+ */
+function hostDiskPctQuery(hosts: HostFilter) {
+	const latestUsage = from(MetricsSum)
+		.select(($) => ({
+			...mountKey($),
+			state: filesystemAttr($.Attributes, "state"),
+			bytes: CH.argMax($.Value, $.TimeUnix),
+			sampleTime: CH.max_($.TimeUnix),
+		}))
+		.where(($) => usageFilters($, hosts))
+		.groupBy("hostName", "mountpoint", "device", "state")
+
+	const fromUsage = fromQuery(latestUsage, "latest_usage")
+		.select(($) => ({
+			hostName: $.hostName,
+			mountpoint: $.mountpoint,
+			device: $.device,
+			sampleTime: CH.max_($.sampleTime),
+			usedFraction: finiteOrZero(CH.sumIf($.bytes, $.state.eq("used")).div(CH.sum($.bytes))),
+		}))
+		.groupBy("hostName", "mountpoint", "device")
+
+	const fromUtilization = from(MetricsGauge)
+		.select(($) => ({
+			...mountKey($),
+			sampleTime: CH.max_($.TimeUnix),
+			usedFraction: CH.argMax($.Value, $.TimeUnix),
+		}))
+		.where(($) => utilizationFilters($, hosts))
+		.groupBy("hostName", "mountpoint", "device")
+
+	const latestMounts = fromUnion(unionAll(fromUsage, fromUtilization), "mount_readings")
+		.select(($) => ({
+			hostName: $.hostName,
+			mountpoint: $.mountpoint,
+			device: $.device,
+			sampleTime: CH.max_($.sampleTime),
+			usedFraction: CH.argMax($.usedFraction, $.sampleTime),
+		}))
+		.groupBy("hostName", "mountpoint", "device")
+
+	const withHostLatest = fromQuery(latestMounts, "latest_mounts").select(($) => ({
+		hostName: $.hostName,
+		usedFraction: $.usedFraction,
+		sampleTime: $.sampleTime,
+		hostLatest: CH.over(CH.max_($.sampleTime), CH.windowSpec({ partitionBy: [$.hostName] })),
+	}))
+
+	return fromQuery(withHostLatest, "current_mounts")
+		.select(($) => ({
+			hostName: $.hostName,
+			diskPct: finiteOrZero(
+				CH.maxIf($.usedFraction, $.sampleTime.gte(CH.intervalSub($.hostLatest, STALE_MOUNT_SECONDS))),
+			),
+		}))
+		.groupBy("hostName")
+}
 
 // List hosts — one row per host.name with latest-window headline gauges
 
@@ -85,7 +234,7 @@ export interface ListHostsOutput {
 }
 
 export function listHostsQuery(opts: ListHostsOpts = {}) {
-	return from(MetricsGauge)
+	const hosts = from(MetricsGauge)
 		.select(($) => ({
 			hostName: $.ResourceAttributes.get("host.name"),
 			osType: CH.any_($.ResourceAttributes.get("os.type")),
@@ -97,7 +246,6 @@ export function listHostsQuery(opts: ListHostsOpts = {}) {
 				$.Value,
 				$.MetricName.eq("system.memory.utilization").and($.Attributes.get("state").eq("used")),
 			),
-			diskPct: hostDiskPctExpr($),
 			load15: avgIfOrZero($.Value, $.MetricName.eq("system.cpu.load_average.15m")),
 		}))
 		.where(($) => [
@@ -111,9 +259,28 @@ export function listHostsQuery(opts: ListHostsOpts = {}) {
 			),
 		])
 		.groupBy("hostName")
-		.orderBy(["lastSeen", "desc"])
+		.orderBy(["lastSeen", "desc"], ["hostName", "asc"])
 		.limit(opts.limit ?? 200)
 		.offset(opts.offset ?? 0)
+
+	// Disk reads only the page's hosts.
+	const pageHosts = fromQuery(hosts, "page").select(($) => ({ hostName: $.hostName }))
+	const disk = hostDiskPctQuery((hostName) => inSubquery(hostName, pageHosts))
+
+	return fromQuery(hosts, "hosts")
+		.leftJoinQuery(disk, "disk", (host, disk) => host.hostName.eq(disk.hostName))
+		.select(($) => ({
+			hostName: $.hostName,
+			osType: $.osType,
+			hostArch: $.hostArch,
+			cloudProvider: $.cloudProvider,
+			lastSeen: $.lastSeen,
+			cpuPct: $.cpuPct,
+			memoryPct: $.memoryPct,
+			diskPct: finiteOrZero($.disk.diskPct),
+			load15: $.load15,
+		}))
+		.orderBy(["lastSeen", "desc"], ["hostName", "asc"])
 		.format("JSON")
 }
 
@@ -140,7 +307,7 @@ export interface HostDetailSummaryOutput {
 }
 
 export function hostDetailSummaryQuery(opts: HostDetailSummaryOpts) {
-	return from(MetricsGauge)
+	const host = from(MetricsGauge)
 		.select(($) => ({
 			hostName: $.ResourceAttributes.get("host.name"),
 			osType: CH.any_($.ResourceAttributes.get("os.type")),
@@ -155,7 +322,6 @@ export function hostDetailSummaryQuery(opts: HostDetailSummaryOpts) {
 				$.Value,
 				$.MetricName.eq("system.memory.utilization").and($.Attributes.get("state").eq("used")),
 			),
-			diskPct: hostDiskPctExpr($),
 			load15: avgIfOrZero($.Value, $.MetricName.eq("system.cpu.load_average.15m")),
 		}))
 		.where(($) => [
@@ -166,21 +332,37 @@ export function hostDetailSummaryQuery(opts: HostDetailSummaryOpts) {
 			$.MetricName.in_(...HOSTMETRIC_NAMES),
 		])
 		.groupBy("hostName")
+
+	return fromQuery(host, "host")
+		.leftJoinQuery(
+			hostDiskPctQuery((hostName) => hostName.eq(opts.hostName)),
+			"disk",
+			(h, disk) => h.hostName.eq(disk.hostName),
+		)
+		.select(($) => ({
+			hostName: $.hostName,
+			osType: $.osType,
+			hostArch: $.hostArch,
+			cloudProvider: $.cloudProvider,
+			cloudRegion: $.cloudRegion,
+			sourceId: $.sourceId,
+			firstSeen: $.firstSeen,
+			lastSeen: $.lastSeen,
+			cpuPct: $.cpuPct,
+			memoryPct: $.memoryPct,
+			diskPct: finiteOrZero($.disk.diskPct),
+			load15: $.load15,
+		}))
 		.format("JSON")
 }
 
 // Host infra time-series — gauge metric broken down by a single attribute key
-// (e.g. CPU by state, filesystem by mountpoint). Always filtered to one host.
+// (e.g. CPU by state). Always filtered to one host.
 
 export interface HostGaugeTimeseriesOpts {
 	hostName: string
 	metricName: string
 	groupByAttributeKey?: string
-	// Keeps points whose attribute is one of `values` ('' matches a missing key), e.g.
-	// filesystem utilization's used state, which otherwise averages used/free/reserved.
-	attributeIn?: { readonly key: string; readonly values: readonly string[] }
-	// Drops points whose attribute is one of `values`, e.g. pseudo filesystem types.
-	attributeNotIn?: { readonly key: string; readonly values: readonly string[] }
 }
 
 export interface HostGaugeTimeseriesOutput {
@@ -204,12 +386,6 @@ export function hostGaugeTimeseriesQuery(opts: HostGaugeTimeseriesOpts) {
 			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("host.name").eq(opts.hostName),
 			$.MetricName.eq(opts.metricName),
-			opts.attributeIn
-				? CH.inList($.Attributes.get(opts.attributeIn.key), opts.attributeIn.values)
-				: undefined,
-			opts.attributeNotIn
-				? CH.notInList($.Attributes.get(opts.attributeNotIn.key), opts.attributeNotIn.values)
-				: undefined,
 		])
 
 	return (opts.groupByAttributeKey ? q.groupBy("bucket", "attributeValue") : q.groupBy("bucket"))
@@ -217,11 +393,30 @@ export function hostGaugeTimeseriesQuery(opts: HostGaugeTimeseriesOpts) {
 		.format("JSON")
 }
 
-// Host network time-series — sum metric broken down by direction.
-// Reports bytes/sec computed from the latest sample in each bucket divided by
-// the bucket size. `system.network.io` is a cumulative counter; the UI layer
-// is expected to render the derivative, but for the first cut we surface
-// average bytes/sec using the gauge-style aggregation.
+// Host filesystem time-series — used fraction per mountpoint, same row shape as the gauge series.
+
+export interface HostFilesystemTimeseriesOpts {
+	hostName: string
+}
+
+export function hostFilesystemTimeseriesQuery(opts: HostFilesystemTimeseriesOpts) {
+	return filesystemUsedFractionPoints((hostName) => hostName.eq(opts.hostName))
+		.select(($) => ({
+			bucket: CH.toStartOfInterval($.sampleTime, param.int("bucketSeconds")),
+			attributeValue: $.mountpoint,
+			avgValue: CH.avg($.usedFraction),
+		}))
+		.groupBy("bucket", "attributeValue")
+		.orderBy(["bucket", "asc"])
+		.format("JSON")
+}
+
+// Host network time-series — bytes/sec per direction. `system.network.io` is a cumulative
+// counter per (device, direction), so each sample's increase comes from the previous sample of
+// the same series (`metricDeltaExpr`, which also handles resets and delta temporality). A
+// series' rate in a bucket is its increase over the seconds since its previous samples, so
+// scrape spacing, buckets narrower than it and collection gaps all read the true rate; the
+// direction's rate sums its series. Loopback is left out: it is not traffic in or out.
 
 export interface HostNetworkTimeseriesOpts {
 	hostName: string
@@ -230,30 +425,100 @@ export interface HostNetworkTimeseriesOpts {
 export interface HostNetworkTimeseriesOutput {
 	readonly bucket: DateTime.Utc
 	readonly attributeValue: string
-	readonly sumValue: number
+	readonly rateValue: number
 }
 
+const LOOPBACK_DEVICES = ["lo", "lo0"] as const
+
+const mapSort = defineUntypedFn<[CH.Expr<unknown>]>("mapSort")
+
+// Reaches the sample before the range at the default 60s scrape and a few missed scrapes.
+const NETWORK_LOOKBACK_SECONDS = 600
+
 export function hostNetworkTimeseriesQuery(opts: HostNetworkTimeseriesOpts) {
-	return from(MetricsSum)
-		.select(($) => ({
-			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
-			attributeValue: $.Attributes.get("direction"),
-			sumValue: CH.sum($.Value),
-		}))
+	const deltas = from(MetricsSum)
+		.select(($) => {
+			// Sorted, so a sender that reorders a point's attributes keeps one series.
+			const attributesHash = CH.cityHash64(mapSort($.Attributes))
+			const resourceHash = CH.cityHash64(mapSort($.ResourceAttributes))
+			const previousSample = CH.windowSpec({
+				partitionBy: [$.ServiceName, attributesHash, resourceHash],
+				orderBy: [[$.TimeUnix, "asc"]],
+				frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
+			})
+			const previousTime = CH.over(CH.lagInFrame($.TimeUnix, 1, $.TimeUnix), previousSample)
+			const isDelta = CH.dynamicColumn<number>("AggregationTemporality").eq(1)
+			// Each side is divided on its own: the DSL prints `a.sub(b).div(c)` as `a - b / c`.
+			const secondsSince = (from: CH.Expr<DateTime.Utc>) =>
+				CH.toUnixTimestamp64Nano($.TimeUnix).div(1e9).sub(CH.toUnixTimestamp64Nano(from).div(1e9))
+			return {
+				TimeUnix: $.TimeUnix,
+				direction: renamedAttr($.Attributes, "network.io.direction", "direction"),
+				series: CH.cityHash64($.ServiceName, attributesHash, resourceHash),
+				delta: metricDeltaExpr({
+					value: $.Value,
+					previousValue: CH.over(CH.lagInFrame($.Value, 1, $.Value), previousSample),
+					startTime: $.StartTimeUnix,
+					previousTime,
+					time: $.TimeUnix,
+					isDeltaTemporality: isDelta,
+				}),
+				// A delta point, or a counter restarted since the previous sample, covers its own
+				// start..time; otherwise a point covers the time since the previous sample, 0 for a
+				// series' first, which has nothing to measure against.
+				elapsedSeconds: CH.multiIf(
+					[
+						[
+							$.StartTimeUnix.lt($.TimeUnix).and(
+								CH.or(
+									isDelta.and(CH.toUnixTimestamp64Nano($.StartTimeUnix).gt(0)),
+									// A restarted counter counts from its new start.
+									$.StartTimeUnix.gt(previousTime),
+								),
+							),
+							secondsSince($.StartTimeUnix),
+						],
+					],
+					secondsSince(previousTime),
+				),
+			}
+		})
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.gte(
+				CH.intervalSub(
+					param.dateTime("startTime"),
+					CH.greatest_(param.int("bucketSeconds"), CH.lit(NETWORK_LOOKBACK_SECONDS)),
+				),
+			),
 			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("host.name").eq(opts.hostName),
 			$.MetricName.eq("system.network.io"),
+			CH.notInList(renamedAttr($.Attributes, "system.device", "device"), LOOPBACK_DEVICES),
 		])
+
+	const seriesRates = fromQuery(deltas, "deltas")
+		.select(($) => ({
+			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
+			direction: $.direction,
+			series: $.series,
+			rate: CH.sum($.delta).div(CH.sum($.elapsedSeconds)),
+		}))
+		.where(($) => [$.TimeUnix.gte(param.dateTime("startTime")), $.elapsedSeconds.gt(0)])
+		.groupBy("bucket", "direction", "series")
+
+	return fromQuery(seriesRates, "series_rates")
+		.select(($) => ({
+			bucket: $.bucket,
+			attributeValue: $.direction,
+			rateValue: finiteOrZero(CH.sum($.rate)),
+		}))
 		.groupBy("bucket", "attributeValue")
 		.orderBy(["bucket", "asc"])
 		.format("JSON")
 }
 
-// Host filesystems: used fraction per mountpoint. Rows split by state must keep only
-// `used`; averaging used/free/reserved reads every disk as about a third full.
+// Host filesystems: used fraction per mountpoint.
 
 export interface HostFilesystemsOpts {
 	hostName: string
@@ -268,23 +533,14 @@ export interface HostFilesystemsOutput {
 }
 
 export function hostFilesystemsQuery(opts: HostFilesystemsOpts) {
-	return from(MetricsGauge)
+	return filesystemUsedFractionPoints((hostName) => hostName.eq(opts.hostName))
 		.select(($) => ({
-			mountpoint: $.Attributes.get("mountpoint"),
-			device: CH.any_($.Attributes.get("device")),
-			usedAvg: finiteOrZero(CH.avg($.Value)),
-			usedMax: CH.ifNotFinite(CH.max_($.Value), 0),
+			mountpoint: $.mountpoint,
+			device: $.device,
+			usedAvg: finiteOrZero(CH.avg($.usedFraction)),
+			usedMax: CH.ifNotFinite(CH.max_($.usedFraction), 0),
 		}))
-		.where(($) => [
-			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
-			$.ResourceAttributes.get("host.name").eq(opts.hostName),
-			$.MetricName.eq("system.filesystem.utilization"),
-			filesystemUsedState($),
-			CH.notInList($.Attributes.get("type"), PSEUDO_FS_TYPES),
-		])
-		.groupBy("mountpoint")
+		.groupBy("mountpoint", "device")
 		.orderBy(["usedMax", "desc"])
 		.limit(opts.limit ?? 20)
 		.format("JSON")
