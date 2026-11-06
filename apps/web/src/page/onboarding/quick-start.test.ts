@@ -5,6 +5,7 @@ import * as PricingCards from "./pricing-cards"
 import { init, Message, type Model, update as updateWith } from "./quick-start"
 import {
 	DEFAULT_QUICK_START_STATE,
+	type QuickStartState,
 	readQuickStartState,
 	resolveQuickStartStep,
 	STEP_IDS,
@@ -33,7 +34,28 @@ describe("quick start", () => {
 
 	test("a save from the old role and intent steps resumes at the first step still to do", () => {
 		const old = { ...DEFAULT_QUICK_START_STATE, activeStep: "intent", completedSteps: { role: true } }
-		expect(resolveQuickStartStep(old, true)).toBe("stack")
+		vi.stubGlobal("localStorage", { getItem: () => JSON.stringify(old) })
+		const state = Effect.runSync(readQuickStartState("maple-onboarding-v6-old"))
+		vi.unstubAllGlobals()
+		expect(state.activeStep).toBe("plan")
+		expect(resolveQuickStartStep(state, true)).toBe("stack")
+	})
+
+	test("a save that loaded before the plan was known is settled by the first update that knows it", () => {
+		const finished = Rec.fromEntries(Arr.map(STEP_IDS, (step) => [step, true] as const))
+		const state = { ...DEFAULT_QUICK_START_STATE, completedSteps: finished }
+		const early = updateWith(
+			init("maple-onboarding-v6-org_1").model,
+			Message.LoadedQuickStartState({ state }),
+			null,
+		).model
+		expect(early.saveEntry).toBe("AwaitingPlan")
+		// Another message gets there before the root's SettledPlan: the finished save still moves on.
+		const settled = update(early, Message.ChangedLanguageQuery({ query: "py" }))
+		expect(names(settled)).toContain("FinishQuickStart")
+		expect(settled.model.saveEntry).toBe("Entered")
+		expect(settled.model.languageQuery).toBe("py")
+		expect(names(update(settled.model, Message.SettledPlan()))).not.toContain("FinishQuickStart")
 	})
 
 	test("stack picks are saved and set what the setup checklist shows", () => {
@@ -168,7 +190,7 @@ describe("quick start live step", () => {
 		})
 
 	test("opened straight from a save, it reads what is arriving once the plan is known", () => {
-		const atLive = {
+		const atLive: QuickStartState = {
 			...DEFAULT_QUICK_START_STATE,
 			activeStep: "live",
 			completedSteps: { stack: true, connect: true, team: true },
@@ -183,7 +205,7 @@ describe("quick start live step", () => {
 	})
 
 	test("a signal arriving while it shows re-reads the findings; a poll with nothing new does not", () => {
-		const atLive = {
+		const atLive: Model = {
 			...init("maple-onboarding-v6-org_1", false, false, "/", "org_1").model,
 			state: { ...DEFAULT_QUICK_START_STATE, activeStep: "live" },
 		}
