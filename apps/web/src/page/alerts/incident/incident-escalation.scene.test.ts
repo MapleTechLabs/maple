@@ -83,7 +83,7 @@ describe("alert incident, escalation", () => {
 		)
 	})
 
-	test("a failed read keeps the section and says so; a pending one says it is loading", () => {
+	test("a failed read keeps the section and says so; a pending one adds nothing yet", () => {
 		const failed = pageUpdate(
 			synced(),
 			Message.CompletedFetchEscalation({
@@ -102,7 +102,7 @@ describe("alert incident, escalation", () => {
 			{ update: pageUpdate, view },
 			given(synced()),
 			themeResolved(),
-			expectView(text("Loading the escalation…")).toExist(),
+			expectView(role("heading", { name: "Escalation" })).not.toExist(),
 		)
 	})
 

@@ -336,12 +336,9 @@ const escalationBlock = <M>(
 ): ReadonlyArray<Html> =>
 	Option.match(AsyncData.getData(escalation), {
 		onSome: (run) => (run === null ? [] : [escalationSection(h, run, incident, timeZone, now)]),
-		onNone: () => [
-			escalationNote(
-				h,
-				AsyncData.isFailure(escalation) ? "Couldn't load the escalation." : "Loading the escalation…",
-			),
-		],
+		// While loading, most incidents have no chain, so the rail stays as it is rather than shift.
+		onNone: () =>
+			AsyncData.isFailure(escalation) ? [escalationNote(h, "Couldn't load the escalation.")] : [],
 	})
 
 export const incidentRail = <M>(
