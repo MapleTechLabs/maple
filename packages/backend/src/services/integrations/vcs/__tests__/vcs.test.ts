@@ -53,7 +53,7 @@ import {
 	PullRequestEventSink,
 } from "@maple/backend/services/integrations/vcs/PullRequestEventSink"
 import { WorkflowEventSink } from "@maple/backend/services/integrations/vcs/WorkflowEventSink"
-import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
+import { ANY_REPO_SYNC_STATUS, VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { clampQueueDelaySeconds } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import {
 	BACKFILL_WINDOW_MS,
@@ -1728,13 +1728,17 @@ describe("VcsRepository", () => {
 			const a = yield* repoFor(repo, orgId, "7")
 			const b = yield* repoFor(repo, orgId, "8")
 
-			yield* repo.updateRepoSyncStatus(a.id, { status: "ready", syncedAt: 1 })
+			yield* repo.updateRepoSyncStatus(a.id, {
+				status: "ready",
+				from: ANY_REPO_SYNC_STATUS,
+				syncedAt: 1,
+			})
 			const ok = yield* sourceState
 			assert.isNotNull(ok.last_poll_ok_at)
 			assert.isNull(ok.last_poll_error)
 			assert.deepStrictEqual(ok.poll_resources, { total: 2, unhealthy: 0 })
 
-			yield* repo.markRepoSyncError(b.id, "upstream unavailable")
+			yield* repo.markRepoSyncError(b.id, "upstream unavailable", ANY_REPO_SYNC_STATUS)
 			const failed = yield* sourceState
 			assert.strictEqual(failed.last_poll_error, "octo/b: upstream unavailable")
 			assert.deepStrictEqual(failed.poll_resources, { total: 2, unhealthy: 1 })
@@ -1748,6 +1752,44 @@ describe("VcsRepository", () => {
 			assert.isNull(recovered.disconnected_at)
 			assert.strictEqual(recovered.last_poll_error, "octo/b: upstream unavailable")
 			assert.deepStrictEqual(recovered.poll_resources, { total: 2, unhealthy: 1 })
+		}).pipe(Effect.provide(repoLayer(testDb)))
+	})
+
+	it.effect("an overlapping sync cannot regress a settled repo or write a removed one", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_sync_race")
+			yield* repo.upsertInstallation({ orgId, ...installationSeed("42", "100") })
+			yield* upsertReposFor(repo, "42", [
+				repoFixture({ externalRepoId: "7", fullName: "octo/a", name: "a" }),
+				repoFixture({ externalRepoId: "8", fullName: "octo/b", name: "b" }),
+			])
+			const a = yield* repoFor(repo, orgId, "7")
+			const b = yield* repoFor(repo, orgId, "8")
+
+			// Walks A and B both start; B finishes first.
+			yield* repo.updateRepoSyncStatus(a.id, { status: "backfilling", from: ANY_REPO_SYNC_STATUS })
+			yield* repo.updateRepoSyncStatus(a.id, { status: "ready", from: ["backfilling"], syncedAt: 5 })
+			// A's continuation checkpoint and its exhausted-retries error both find the repo settled.
+			const checkpoint = yield* repo.updateRepoSyncStatus(a.id, {
+				status: "backfilling",
+				from: ["backfilling"],
+			})
+			yield* repo.markRepoSyncError(a.id, "backfill failed", ["pending", "backfilling"])
+			assert.isFalse(checkpoint)
+			const settled = yield* repoFor(repo, orgId, "7")
+			assert.strictEqual(settled.syncStatus, "ready")
+			assert.strictEqual(settled.lastSyncError, null)
+
+			yield* repo.markRepositoryRemoved(b.id)
+			const written = yield* repo.updateRepoSyncStatus(b.id, {
+				status: "backfilling",
+				from: ANY_REPO_SYNC_STATUS,
+			})
+			assert.isFalse(written)
+			const removed = Option.getOrThrow(yield* repo.getRepositoryById(orgId, b.id))
+			assert.strictEqual(removed.syncStatus, "pending")
 		}).pipe(Effect.provide(repoLayer(testDb)))
 	})
 

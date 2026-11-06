@@ -38,6 +38,7 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (
 						{
 							note: payload.note,
 							snoozeUntil: payload.snoozeUntil,
+							expectedState: payload.expectedState,
 						},
 					)
 				}).pipe(Effect.withSpan("HttpErrors.transitionIssue")),

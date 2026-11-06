@@ -182,7 +182,12 @@ export interface ErrorsServiceApi {
 		actorId: ActorId,
 		issueId: ErrorIssueId,
 		toState: WorkflowState,
-		opts?: { readonly note?: string; readonly snoozeUntil?: string | null },
+		opts?: {
+			readonly note?: string
+			readonly snoozeUntil?: string | null
+			/** The state the caller last saw; a mismatch is a 409 so a stale client cannot overwrite. */
+			readonly expectedState?: WorkflowState
+		},
 	) => Effect.Effect<
 		ErrorIssueDocument,
 		ErrorPersistenceError | ErrorIssueNotFoundError | ErrorIssueTransitionError | ErrorValidationError
@@ -439,6 +444,20 @@ const make: Effect.Effect<
 			})
 			const timestamp = yield* Clock.currentTimeMillis
 			const current = yield* requireIssue(orgId, issueId)
+			// Checked before the lease is taken, so a stale move writes nothing. A move to the
+			// state the issue already has stays a no-op, as `applyTransition` treats it.
+			if (
+				opts?.expectedState !== undefined &&
+				opts.expectedState !== current.workflowState &&
+				current.workflowState !== toState
+			) {
+				return yield* new ErrorIssueTransitionError({
+					message: `This issue is now '${current.workflowState}', not '${opts.expectedState}'. Another change landed first; refresh and retry.`,
+					issueId,
+					fromState: current.workflowState,
+					toState,
+				})
+			}
 
 			let snoozeUntilMs: number | null | undefined
 			if (opts?.snoozeUntil !== undefined) {
@@ -464,7 +483,9 @@ const make: Effect.Effect<
 			// state change a human or agent is entitled to make, and `applyTransition`
 			// already renews the lease of a holder who is still working.
 			if (toState === "in_progress" && actorId !== null) {
-				yield* acquireLease(orgId, actorId, issueId, DEFAULT_LEASE_DURATION_MS, timestamp).pipe(
+				yield* acquireLease(orgId, actorId, issueId, DEFAULT_LEASE_DURATION_MS, timestamp, {
+					whileState: current.workflowState,
+				}).pipe(
 					Effect.flatMap(({ leaseExpiresAt }) =>
 						current.leaseHolderActorId === actorId
 							? Effect.void
@@ -522,6 +543,8 @@ const make: Effect.Effect<
 		issueId: ErrorIssueId,
 		leaseMs: number,
 		timestamp: number,
+		// Only while the issue is still in this state, so a move that loses its race takes no lease.
+		opts?: { readonly whileState?: WorkflowState },
 	) {
 		const leaseExpiresAt = timestamp + leaseMs
 		const claimed = yield* dbExecute((db) =>
@@ -541,6 +564,7 @@ const make: Effect.Effect<
 							$.leaseHolderActorId.eq(actorId),
 							$.leaseExpiresAt.lt(timestamp),
 						),
+						opts?.whileState === undefined ? undefined : $.workflowState.eq(opts.whileState),
 					])
 					.returning(),
 			),
