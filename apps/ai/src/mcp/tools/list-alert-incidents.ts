@@ -236,6 +236,7 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 													status: output.status,
 													severity: output.severity,
 													group_key: output.groupKey,
+													acknowledged: output.acknowledged,
 													limit: MAX_LIMIT,
 												},
 												"more incidents",
