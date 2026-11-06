@@ -204,14 +204,15 @@ export const anomalyInbox = (
 	const now = data.timelineRange.max
 	const hasOpenView = options.status !== "resolved"
 	const hasResolvedView = options.status !== "open"
-	const isEmpty =
-		(hasOpenView ? data.incidents.length === 0 : true) && (hasResolvedView ? resolved.length === 0 : true)
-	if (isEmpty) return anomaliesEmpty(h, options.status, options.serviceName)
+	// `incidents` also holds recently resolved ones, so the open side reads `openIncidents`.
+	const showOpen = hasOpenView && data.openIncidents.length > 0
+	const showResolved = hasResolvedView && resolved.length > 0
+	if (!showOpen && !showResolved) return anomaliesEmpty(h, options.status, options.serviceName)
 	return h.div(
 		[h.Class("space-y-8")],
 		[
-			...(hasOpenView ? [inboxTab(h, data, options.acknowledge)] : []),
-			...(hasResolvedView && resolved.length > 0 ? [resolvedList(h, resolved, now)] : []),
+			...(showOpen ? [inboxTab(h, data, options.acknowledge)] : []),
+			...(showResolved ? [resolvedList(h, resolved, now)] : []),
 		],
 	)
 }
