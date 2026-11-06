@@ -9,6 +9,7 @@ import { expect as expectView, given, scene, text, withViewInputs } from "foldki
 import { describe, expect, test } from "vitest"
 import * as Field from "@maple/views/ui/field"
 import { PageOutMessage, type PageContext } from "../contract"
+import { isMetricsPanelOpen, isSavingMetricsOf, metricsErrorOf } from "./aws"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
@@ -114,11 +115,12 @@ describe("aws card", () => {
 		const saved = pageUpdate(
 			sent.model,
 			Message.CompletedAwsMetricStream({
+				id: connectionId,
 				connection: connection({ verified_at, metric_stream: stream }),
 				error: null,
 			}),
 		)
-		expect(saved.model.awsCard.metricsId).toBeNull()
+		expect(saved.model.awsCard.metrics._tag).toBe("Idle")
 		expect(saved.model.awsCard.setupId).toBe(connectionId)
 		expect(names(saved.commands)).toContain("LoadAwsSetup")
 		expect(names(saved.commands)).toContain("LoadIntegrationsAwsStatus")
@@ -132,7 +134,9 @@ describe("aws card", () => {
 		).model
 		const sent = pageUpdate(none, Message.SubmittedAwsMetrics({ id: connectionId }))
 		expect(names(sent.commands)).toEqual([])
-		expect(sent.model.awsCard.metricsError).toBe("Pick at least one region and one service.")
+		expect(metricsErrorOf(sent.model.awsCard.metrics, connectionId)).toBe(
+			"Pick at least one region and one service.",
+		)
 	})
 
 	test("a stream saved while the setup is open reads the script again", () => {
@@ -156,9 +160,11 @@ describe("aws card", () => {
 				}),
 			}),
 		).model
+		const saving = pageUpdate(loaded, Message.SubmittedAwsMetrics({ id: connectionId })).model
 		const saved = pageUpdate(
-			loaded,
+			saving,
 			Message.CompletedAwsMetricStream({
+				id: connectionId,
 				connection: connection({ verified_at, metric_stream: stream }),
 				error: null,
 			}),
@@ -175,11 +181,47 @@ describe("aws card", () => {
 		const sent = pageUpdate(opened, Message.SubmittedAwsMetrics({ id: connectionId })).model
 		const failed = pageUpdate(
 			sent,
-			Message.CompletedAwsMetricStream({ connection: null, error: "Not allowed." }),
+			Message.CompletedAwsMetricStream({ id: connectionId, connection: null, error: "Not allowed." }),
 		).model
-		expect(failed.awsCard.metricsId).toBe(connectionId)
-		expect(failed.awsCard.metricsError).toBe("Not allowed.")
-		expect(failed.awsCard.isSavingMetrics).toBe(false)
+		expect(isMetricsPanelOpen(failed.awsCard.metrics, connectionId)).toBe(true)
+		expect(metricsErrorOf(failed.awsCard.metrics, connectionId)).toBe("Not allowed.")
+		expect(isSavingMetricsOf(failed.awsCard.metrics, connectionId)).toBe(false)
+	})
+
+	describe("a save answered after the editor moved to another connection", () => {
+		const otherId = Schema.decodeSync(AwsConnectionId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f9")
+		const moved = () => {
+			const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
+			const model = withStatus(entered(), [connection({ verified_at }), connection({ id: otherId, verified_at })])
+			const opened = pageUpdate(model, Message.ClickedAwsMetrics({ id: connectionId })).model
+			const sent = pageUpdate(opened, Message.SubmittedAwsMetrics({ id: connectionId })).model
+			const other = pageUpdate(sent, Message.ClickedAwsMetrics({ id: otherId })).model
+			return pageUpdate(other, Message.ToggledAwsRegion({ id: otherId, region: "eu-central-1" })).model
+		}
+
+		test("its failure is a toast, and the other connection's pick stays as it was", () => {
+			const failed = pageUpdate(
+				moved(),
+				Message.CompletedAwsMetricStream({ id: connectionId, connection: null, error: "Not allowed." }),
+			)
+			expect(failed.outMessage).toMatchObject({ _tag: "RequestedToast", type: "error" })
+			expect(metricsErrorOf(failed.model.awsCard.metrics, otherId)).toBeNull()
+			expect(isMetricsPanelOpen(failed.model.awsCard.metrics, otherId)).toBe(true)
+		})
+
+		test("its success keeps the other panel open and does not open the first one's setup", () => {
+			const saved = pageUpdate(
+				moved(),
+				Message.CompletedAwsMetricStream({
+					id: connectionId,
+					connection: connection({ metric_stream: stream }),
+					error: null,
+				}),
+			)
+			expect(isMetricsPanelOpen(saved.model.awsCard.metrics, otherId)).toBe(true)
+			expect(saved.model.awsCard.setupId).toBeNull()
+			expect(names(saved.commands)).toContain("LoadIntegrationsAwsStatus")
+		})
 	})
 
 	test("a new connection opens its setup and re-reads the status", () => {

@@ -19,7 +19,14 @@ import {
 	stepCard,
 } from "../kit/connect-flow"
 import { relativeTime } from "../kit/relative-time"
-import { decodeCreateRequest, isSelectionSaved, normalizeAccountId, selectionOf } from "./aws"
+import {
+	decodeCreateRequest,
+	isSavingMetricsOf,
+	isSelectionSaved,
+	metricsErrorOf,
+	normalizeAccountId,
+	selectionOf,
+} from "./aws"
 import { catalogEntry } from "./catalog"
 import { awsStreamOf, isoMs } from "./derive"
 import type { FlowStage } from "./flow"
@@ -318,7 +325,7 @@ const connectStep = (h: H, model: Model, timeZone: string): Html => {
 }
 
 const selectionRail = (h: H, model: Model, connection: V2AwsConnection): Html => {
-	const selection = selectionOf(connection, model.awsCard.selection)
+	const selection = selectionOf(connection, model.awsCard.metrics)
 	return flowRail(h, {
 		eyebrow: "Your selection",
 		items: [
@@ -404,7 +411,7 @@ const streamRail = (h: H): Html =>
 /** Go live's deploy card: save the picked stream, then run the script that deploys it. */
 const deployCard = (h: H, model: Model, connection: V2AwsConnection): Html => {
 	const card = model.awsCard
-	const selection = selectionOf(connection, card.selection)
+	const selection = selectionOf(connection, card.metrics)
 	const regions = Arr.join(selection.regions, ", ")
 	if (!isSelectionSaved(connection, selection))
 		return stepCard(h, { icon: "LayersIcon", title: "Deploy the metric stream" }, [
@@ -414,20 +421,20 @@ const deployCard = (h: H, model: Model, connection: V2AwsConnection): Html => {
 					`One stack per region: a CloudWatch metric stream and a Firehose that posts to Maple. Prefilled with ${regions}.`,
 				],
 			),
-			...(card.metricsError === null
+			...(metricsErrorOf(card.metrics, connection.id) === null
 				? []
 				: [
 						typography(
 							h,
 							{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
-							[card.metricsError],
+							[metricsErrorOf(card.metrics, connection.id) ?? ""],
 						),
 					]),
 			button(
 				h,
 				{
 					className: "w-fit",
-					isLoading: card.isSavingMetrics,
+					isLoading: isSavingMetricsOf(card.metrics, connection.id),
 					attributes: [h.OnClick(Message.SubmittedAwsMetrics({ id: connection.id }))],
 				},
 				["Get the stream script"],
@@ -463,7 +470,7 @@ const liveRows = (
 ): ReadonlyArray<CheckRow> => {
 	const stream = awsStreamOf(connection, model.nowMs)
 	const regions = connection.metric_stream?.regions ?? []
-	const isSaved = isSelectionSaved(connection, selectionOf(connection, model.awsCard.selection))
+	const isSaved = isSelectionSaved(connection, selectionOf(connection, model.awsCard.metrics))
 	const hasDelivered =
 		stream._tag === "delivering" ||
 		stream._tag === "silent" ||
@@ -550,7 +557,7 @@ const liveStep = (h: H, model: Model, timeZone: string): Html => {
 	const isDelivering = awsStreamOf(connection, model.nowMs)._tag === "delivering"
 	// A delivering stream still needs the script again when the pick changed since it was saved.
 	const needsDeploy =
-		!isDelivering || !isSelectionSaved(connection, selectionOf(connection, model.awsCard.selection))
+		!isDelivering || !isSelectionSaved(connection, selectionOf(connection, model.awsCard.metrics))
 	const chosen = awsChosenLabel(model, connection)
 	return flowColumns(
 		h,
